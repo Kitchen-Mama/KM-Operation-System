@@ -79,6 +79,53 @@ var S1_CONTRACT_ = 'BATCH S1 — positive-residual + submit readiness, read only
  *  runtime's own allowlist and identity model cannot act on. */
 var S1_SCOPE_AXES_ = ['company', 'country', 'marketplace', 'sku'];
 
+/**
+ * ================================================================================================================
+ * S1-R4 — THE BEFORE BASELINE A PERSON FREEZES, AND THE ONE THING IT MUST NOT BE.
+ * ================================================================================================================
+ *
+ * MANIFEST P emits a freeze block. Until this round it had no DESTINATION, which made it a string nobody
+ * could paste and an AFTER readback impossible: a readback that RE-DERIVED the before-state would compare
+ * the post-write world with itself and report agreement no matter what happened.
+ *
+ * So the baseline lives here, as a value A PERSON pastes in from a run that said READY_TO_AUTHORIZE, and it
+ * stays null until they do. `null` is the honest default: it means "no baseline has been frozen", which is a
+ * refusal condition for any readback rather than an empty comparison that passes.
+ *
+ * IT IS NEVER WRITTEN BY CODE IN THIS FILE. Nothing here assigns it, and the suite asserts that: a baseline
+ * the diagnostic can fill in for itself is not a baseline, it is a second copy of the measurement.
+ */
+var S1_MANIFEST_P_BEFORE_ = null;
+
+/** The fields a frozen baseline MUST carry. A readback can only refuse a drift it has a before-value for,
+ *  so an incomplete freeze is a silent hole and is refused at freeze time instead. */
+var S1_FREEZE_REQUIRED_ = [
+  'frozen_at', 'build', 'scope_key', 'company', 'country', 'marketplace', 'sku',
+  'calculation_run_id', 'accepted_calculation_date', 'calculation_status', 'freshness_state',
+  'source_data_as_of', 'planning_cycle',
+  'windows', 'recommended_qty', 'qualifying_manual_planned_qty', 'qualifying_ai_planned_qty',
+  'residual_qty', 'proposed_ai_allocation_qty', 'would_clamp',
+  'source_factory_warehouse_id', 'pool_key', 'factory_current_stock', 'factory_reserved_stock',
+  'active_allocation_draft_qty', 'active_shipping_plan_qty', 'available_to_allocate',
+  'manual_header_ids', 'manual_line_ids', 'manual_planned_total', 'manual_identity_fingerprint',
+  'expected_ai_identities', 'expected_ai_identity_count',
+  'identity_universe_count', 'identity_universe_fingerprint', 'other_scope_identity_count',
+  'schema_fingerprints', 'reservation_observation_state', 'reservation_row_count',
+  'expected_max_units_written', 'expected_clamp'
+];
+
+/** A stable fingerprint over a SORTED list of identity strings. Sorted, because enumeration order is not
+ *  a property of the data, and a fingerprint that changes when nothing did is a false drift alarm. */
+function S1_fingerprint_(list) {
+  var joined = (list || []).map(function (x) { return S1_str_(x); }).sort().join('|');
+  if (typeof KMFSG !== 'undefined' && KMFSG && typeof KMFSG.fnv1a === 'function') {
+    return String(KMFSG.fnv1a(joined)).toUpperCase();
+  }
+  // A missing hash authority is REPORTED, never substituted with a local hash: two different algorithms
+  // would produce two different "fingerprints" for the same rows and a readback would refuse a clean world.
+  return null;
+}
+
 // S1-R1 — 3000, NOT 45000. The sibling activation census has shipped R6R7_CHUNK_MAX_BYTES_ = 3000 for
 // several rounds; this file chose 45000 with no measurement behind it, and production answered 'Logging
 // output too large. Truncating output.' The pair-level reasons WERE in the payload and were unreadable,
@@ -746,13 +793,125 @@ function S1_identityRow_(E, ident, mode) {
 
 /**
  * ================================================================================================================
+ * S1-R4 — WAS A RESERVATION CREATED? THREE STATES, AND "I DID NOT LOOK" IS ONE OF THEM.
+ * ================================================================================================================
+ *
+ * A generation reserves nothing — 61_'s own activation manifest lists `reservations` among the tables it
+ * cannot mutate. That is a STRUCTURAL guarantee and it is the strongest evidence available, but it is not a
+ * COUNT, and a baseline needs a count to compare an AFTER against.
+ *
+ * So the table is observed, and the observation reports WHICH of three things happened. The distinction that
+ * matters is the last one: a table that is absent, or present and unreadable, has a row count of NULL and not
+ * of zero. Reading "I could not look" as "there was nothing there" is how a readback comes to confirm that no
+ * reservation was created by a run that created one.
+ */
+var S1_RESERVATION_TABLE_ = 'reservations';
+function S1_reservationObservation_(ss) {
+  var o = { table: S1_RESERVATION_TABLE_, observation_state: null, authority: null,
+    server_guarantee: false, row_count: null, column_count: null, acceptable: false, reason: null };
+  try {
+    var man = (typeof weeklyAiPlanActivationManifest_ === 'function') ? weeklyAiPlanActivationManifest_() : null;
+    o.server_guarantee = !!man && (man.tables_guaranteed_zero_mutation || [])
+      .indexOf(S1_RESERVATION_TABLE_) !== -1;
+    o.server_reservation_expected = man ? (man.reservation_expected === true) : null;
+  } catch (eM) { o.server_guarantee = false; }
+  if (!ss) {
+    o.observation_state = 'DB_NOT_OPENED'; o.authority = 'NONE';
+    o.reason = 'the database was never opened, so nothing was observed. Not observing is not observing zero.';
+    return o;
+  }
+  var sh = null;
+  try { sh = ss.getSheetByName(S1_RESERVATION_TABLE_); }
+  catch (eL) {
+    o.observation_state = 'SHEET_PRESENT_BUT_UNREADABLE'; o.authority = 'NONE';
+    o.reason = 'LOOKUP_THREW: ' + S1_cap_(eL && eL.message, 120);
+    return o;
+  }
+  if (!sh) {
+    // ABSENT is acceptable ONLY on the server's own structural guarantee, and the row count stays null.
+    o.observation_state = 'SHEET_ABSENT';
+    o.authority = o.server_guarantee ? 'SERVER_MANIFEST_GUARANTEED_ZERO_MUTATION' : 'NONE';
+    o.acceptable = o.server_guarantee === true;
+    o.reason = o.server_guarantee
+      ? 'the table does not exist in this database, and 61_ lists it among the tables a generation cannot'
+        + ' mutate — a structural guarantee, not a count. row_count stays null.'
+      : 'the table does not exist AND 61_ does not declare it zero-mutation, so nothing carries this claim';
+    return o;
+  }
+  try {
+    var last = sh.getLastRow(), cols = sh.getLastColumn();
+    o.observation_state = 'SHEET_PRESENT_AND_READABLE';
+    o.authority = 'OBSERVED_ROWS';
+    o.acceptable = true;
+    o.row_count = Math.max(0, last - 1);
+    o.column_count = cols;
+    o.reason = 'observed directly: a row count an AFTER readback can be compared against';
+  } catch (eR) {
+    o.observation_state = 'SHEET_PRESENT_BUT_UNREADABLE'; o.authority = 'NONE';
+    o.row_count = null;
+    o.reason = 'READ_THREW: ' + S1_cap_(eR && eR.message, 120);
+  }
+  return o;
+}
+
+/**
+ * S1-R4 — THE FREEZE EMITTER, WITH THE TWO LOCKS THE SIBLING CENSUS PROVED IT NEEDS.
+ *
+ * A freeze block is an AUTHORIZATION TO PROCEED: it is the thing an operator copies out and pastes in before
+ * pressing Generate. The sibling activation census emitted one on every run, refused ones included, and the
+ * shape that produced was the worst a diagnostic can take — the refusal scrolls past, the numbered chunks
+ * look like the output, and the operator freezes a baseline the manifest declined to sign.
+ *
+ * LOCK ONE nulls the block whenever the verdict is not READY_TO_AUTHORIZE. LOCK TWO is here: nothing is
+ * emitted unless the FINAL verdict says READY, whatever the caller believed. Either alone can be removed by
+ * a later edit; both together mean a single edit cannot leak a block.
+ *
+ * AND THE LOG BOUND IS A REFUSAL, NOT A TRUNCATION. A baseline that does not fit is not shortened — a cut
+ * baseline is a wrong baseline, and a readback against one would compare the write to a fiction.
+ */
+function S1_emitFreeze_(tag, text, verdict, withheldReason) {
+  var ready = verdict === 'READY_TO_AUTHORIZE';
+  if (!ready || !text) {
+    S1_log_(tag + '_freeze_withheld', JSON.stringify({ verdict: verdict || null, chunks: 0,
+      paste_into: null, bytes: 0,
+      reason: withheldReason || ('WITHHELD_BECAUSE_VERDICT_IS_' + (verdict || 'UNKNOWN')),
+      note: 'No freeze block was emitted and nothing from this run may be pasted into'
+        + ' S1_MANIFEST_P_BEFORE_. Fix the failed condition(s) and freeze from a run that says'
+        + ' READY_TO_AUTHORIZE.' }));
+    return 0;
+  }
+  var n = Math.ceil(String(text).length / S1_CHUNK_MAX_BYTES_) || 1;
+  if (n > S1_LOG_MAX_CHUNKS_) {
+    S1_log_(tag + '_freeze_withheld', JSON.stringify({ verdict: verdict, chunks: 0, paste_into: null,
+      bytes: String(text).length, would_be_chunks: n, max_chunks: S1_LOG_MAX_CHUNKS_,
+      reason: 'FREEZE_BLOCK_EXCEEDS_THE_LOG_BOUND',
+      note: 'A baseline is never truncated to fit: a cut baseline is a wrong baseline. This is a STOP.' }));
+    return 0;
+  }
+  for (var i = 0; i < n; i++) {
+    S1_log_(tag + '_freeze_paste_block_' + (i + 1) + '_of_' + n,
+      String(text).slice(i * S1_CHUNK_MAX_BYTES_, (i + 1) * S1_CHUNK_MAX_BYTES_));
+  }
+  S1_log_(tag + '_freeze_paste_meta', JSON.stringify({ chunks: n, bytes: String(text).length,
+    chunk_max_bytes: S1_CHUNK_MAX_BYTES_, paste_into: 'S1_MANIFEST_P_BEFORE_',
+    note: 'Concatenate the chunks IN ORDER, paste the result into S1_MANIFEST_P_BEFORE_ in this file, and'
+      + ' save BEFORE pressing Generate.' }));
+  return n;
+}
+
+/**
+ * ================================================================================================================
  * GATE D §1-§5 — THE CANDIDATE CENSUS.
  * ================================================================================================================
  * Every scope the CURRENT accepted run knows about is measured. A scope is a CANDIDATE only when all ten
  * proofs hold; every other scope is returned with the exact reasons it is not one, because a scope that was
  * silently dropped is indistinguishable from a scope that was never looked at.
  */
-function RUN_S1_POSITIVE_RESIDUAL_CANDIDATE_CENSUS() {
+// S1-R4 — `opts.quiet` suppresses THIS census's own log segments when it is being run as MANIFEST P's
+// measurement rather than as an operator's entry point. The returned object is identical either way:
+// quiet changes what is LOGGED, never what is measured or decided.
+function RUN_S1_POSITIVE_RESIDUAL_CANDIDATE_CENSUS(opts) {
+  var S1_QUIET_ = !!(opts && opts.quiet === true);
   var out = { census: 'RUN_S1_POSITIVE_RESIDUAL_CANDIDATE_CENSUS', contract: S1_CONTRACT_,
     build: S1_BUILD_, dry_run: true, writes: 0, writer_calls: 0, generate_called: false,
     submit_called: false, migration_called: false,
@@ -1054,8 +1213,8 @@ function RUN_S1_POSITIVE_RESIDUAL_CANDIDATE_CENSUS() {
       ? (L.failed.length ? 'STOP' : 'CANDIDATES_FOUND_AUTHORIZATION_REQUIRED')
       : (L.failed.length ? 'STOP' : 'NO_POSITIVE_RESIDUAL_CANDIDATE_IN_CURRENT_ALLOWLIST');
     if (L.failed.length) out.stop_reason = L.failed.join(', ');
-    S1_emitCensusSegments_(out);
-    return S1_finish_(out, L);
+    if (!S1_QUIET_) S1_emitCensusSegments_(out);
+    return S1_finish_(out, L, S1_QUIET_);
   } catch (e) {
     L.P('the_census_ran_to_completion', true, 'threw: ' + String(e && e.message ? e.message : e), false);
     out.stop_reason = 'S1_CENSUS_THREW: ' + String(e && e.message ? e.message : e);
@@ -1704,9 +1863,49 @@ function S1_rollbackStrategy_() {
  * §8 — THE TWO MANIFESTS. Separate authorization boundaries, and they say so.
  * ================================================================================================================
  */
+/**
+ * ================================================================================================================
+ * S1-R4 — MANIFEST P IS AN ACTIVATION MANIFEST, NOT A CONTRACT PRINTER.
+ * ================================================================================================================
+ *
+ * WHAT IT DID, AND IT WAS THIS FILE'S FAULT. It printed a static object — preconditions as PROSE, an expected
+ * outcome with no measured numbers in it, an authorization sentence still carrying <company> / <sku> /
+ * <residual_qty> placeholders — and logged `{ manifest: "P", dry_run: true, writes: 0 }`. There was no
+ * verdict, because nothing had been decided; no evidence, because nothing had been measured; and no freeze
+ * block, because there was nothing to freeze. A production run of it produced exactly that, and the only
+ * correct reading of that output is STOP.
+ *
+ * A manifest whose preconditions are sentences asks a PERSON to verify nine things by eye and then trust
+ * their own memory of numbers that were measured on some other day. That is the failure mode the whole
+ * readiness package exists to remove.
+ *
+ * ----------------------------------------------------------------------------------------------------------------
+ * SO IT RE-MEASURES, EVERY RUN, FROM THE LIVE AUTHORITIES — and it does that by RUNNING THE CANDIDATE CENSUS
+ * rather than by reading a stored candidate or re-deriving anything.
+ *
+ * That choice is the point. The census is the thing whose measurements the operator has already reviewed;
+ * a manifest that measured independently could disagree with it, and two readiness answers for one scope is
+ * the one failure a readiness package cannot have. So the manifest asks the census, and then adds the gates
+ * that are about AUTHORIZING rather than about measuring: is the allowlist exactly one scope, is that scope
+ * the candidate, is the deployment uniform, is the flag still false, is every piece of evidence readable.
+ *
+ * NOTHING IS CARRIED OVER FROM A PREVIOUS RUN. There is no stored candidate, no remembered quantity and no
+ * default anywhere in it: every number below comes from this run, and an authority that cannot be reached is
+ * a STOP rather than a blank.
+ *
+ * ----------------------------------------------------------------------------------------------------------------
+ * READY_TO_AUTHORIZE emits a BEFORE baseline in numbered chunks with a destination. STOP emits nothing
+ * pasteable and says so. The two locks live in S1_emitFreeze_ and in the verdict assignment below, and
+ * either one alone is enough to withhold — because a single later edit must not be able to leak one.
+ */
 function RUN_S1_MANIFEST_P() {
   var out = { manifest: 'MANIFEST P — controlled positive-residual Generate activation',
-    build: S1_BUILD_, dry_run: true, writes: 0, authorizes: 'ONE generation, ONE exact scope',
+    build: S1_BUILD_, dry_run: true,
+    // S1-R4 — THE FIVE ZEROES AT THE TOP LEVEL, where the conditions below read them. The static
+    // contract declared `writes` and nothing else, so `this_manifest_called_no_writer` compared
+    // undefined against 0 and failed on a run where no writer had been reached. Measured, not supposed.
+    writes: 0, writer_calls: 0, writer_constructed: false, submit_calls: 0, route_save_calls: 0,
+    authorizes: 'ONE generation, ONE exact scope',
     does_not_authorize: ['Submit to Weekly Shipping Plan (that is MANIFEST S)', 'Pending Approval',
       'Confirm Overage', 'any factory stock change', 'any override audit row', 'any migration',
       'any shipment', 'widening the activation allowlist'],
@@ -1739,11 +1938,534 @@ function RUN_S1_MANIFEST_P() {
       + ' correct outcome, not a failed activation. The activation is judged by whether the rows written match'
       + ' the rows the census predicted — including when that number is zero',
     rollback: S1_rollbackStrategy_().generate,
+    // ---- S1-R4: THE LIVE HALF. Every field below is measured on THIS run or the manifest STOPs. --------
+    measured_at: null, measurement_authorities: null,
+    verdict: 'STOP', stop_reason: null,
+    dry_run_proof: { generate_called: false,
+      submit_called: false, migration_called: false, gap_job_called: false,
+      flag_modified: false, allowlist_modified: false, script_properties_modified: false },
+    census: null, environment: null, deployment: null, allowlist: null, scope: null,
+    accepted_run: null, lineage: null, schema: null, factory: null, candidate: null,
+    identities: null, reservation_observation: null, evidence_gaps: null,
+    live_evidence_summary: null,
+    frozen_before: null, freeze_paste_block: null, freeze_withheld_reason: null,
+    predicates: [], predicates_passed: 0, predicates_failed: 0, failed_predicates: [],
     operator_authorization_wording: null };
-  out.operator_authorization_wording = S1_authWordingP_();
-  S1_log_('s1_manifest_p_verdict', JSON.stringify({ manifest: 'P', dry_run: true, writes: 0 }));
-  S1_emitChunked_('s1_manifest_p', JSON.stringify(out));
-  return out;
+  var L = S1_ledger_();
+
+  function fin() {
+    out.predicates = L.entries;
+    out.predicates_failed = L.failed.length;
+    out.predicates_passed = L.entries.length - L.failed.length;
+    out.failed_predicates = L.failed.slice();
+    // THE VERDICT IS DECIDED HERE AND NOWHERE ELSE, so no earlier branch can hand out a READY.
+    out.verdict = (L.failed.length === 0 && out.frozen_before && out.freeze_paste_block)
+      ? 'READY_TO_AUTHORIZE' : 'STOP';
+    if (out.verdict !== 'READY_TO_AUTHORIZE') {
+      // LOCK ONE. A refused run holds no pasteable baseline at all, so there is nothing left to emit.
+      if (out.freeze_paste_block) {
+        out.freeze_withheld_reason = 'WITHHELD_BECAUSE_VERDICT_IS_STOP — a freeze block is an authorization'
+          + ' to proceed and this run did not give one.';
+      }
+      out.freeze_paste_block = null;
+      if (!out.stop_reason) {
+        out.stop_reason = L.failed.length
+          ? (L.failed.length + ' condition(s) not met: ' + L.failed.join(', ')
+            + '. Nothing may be authorized while any of these is false.')
+          : 'no BEFORE baseline could be frozen, so there is nothing an AFTER readback could compare'
+            + ' against — which makes the activation unverifiable and therefore refused.';
+      }
+    }
+    // The wording is only ever built from MEASURED values, and only on a READY. A sentence with a
+    // placeholder in it, or one built from a refused run, is not an authorization.
+    out.operator_authorization_wording = (out.verdict === 'READY_TO_AUTHORIZE')
+      ? S1_authWordingP_(out.candidate, out.accepted_run, out.scope)
+      : null;
+    // LOCK THREE — A READY WITH NOTHING TO SIGN IS NOT A READY, and neither is one whose sentence still
+    // carries a placeholder. This is the exact shape the round was called to repair: a manifest that
+    // printed `<company> / <sku> / <residual_qty>` and called itself an authorization. Making it a runtime
+    // refusal rather than a test-only assertion means it cannot come back through an edit that the suite
+    // happens not to cover.
+    if (out.verdict === 'READY_TO_AUTHORIZE') {
+      var w = out.operator_authorization_wording;
+      var placeholders = w ? (String(w).match(/<[a-zA-Z_][a-zA-Z0-9_]*>/g) || []) : [];
+      if (!w || placeholders.length) {
+        out.verdict = 'STOP';
+        out.stop_reason = !w
+          ? 'the authorization wording could not be built from the measured values, so there is nothing a'
+            + ' person could sign — refused rather than emitted without it'
+          : 'the authorization wording still contains placeholders (' + placeholders.join(', ')
+            + '), which means it was not built from the measured values';
+        out.freeze_withheld_reason = 'WITHHELD_BECAUSE_THE_AUTHORIZATION_WORDING_IS_NOT_USABLE';
+        out.freeze_paste_block = null;
+        out.operator_authorization_wording = null;
+        out.wording_refusal = { built: !!w, placeholders: placeholders };
+      }
+    }
+    S1_log_('s1_manifest_p_verdict', JSON.stringify({ manifest: 'P', build: out.build,
+      verdict: out.verdict, predicates_passed: out.predicates_passed,
+      predicates_failed: out.predicates_failed, failed: out.failed_predicates.slice(0, 20),
+      dry_run: out.dry_run, writes: out.writes, writer_calls: out.writer_calls,
+      authorization_wording_present: !!out.operator_authorization_wording,
+      allowlisted_scope: out.census ? out.census.allowlisted_scope : null,
+      allowlisted_scope_refusals: out.census ? (out.census.allowlisted_scope_refusals || []).slice(0, 8) : null,
+      freeze_chunks_expected: (out.verdict === 'READY_TO_AUTHORIZE' && out.freeze_paste_block)
+        ? (Math.ceil(out.freeze_paste_block.length / S1_CHUNK_MAX_BYTES_) || 1) : 0,
+      stop_reason: S1_cap_(out.stop_reason, 400) }));
+    if (out.live_evidence_summary) {
+      S1_log_('s1_manifest_p_evidence', JSON.stringify(out.live_evidence_summary));
+    }
+    // LOCK TWO, inside the emitter: it refuses unless the verdict it is HANDED says READY.
+    S1_emitFreeze_('s1_manifest_p', out.freeze_paste_block, out.verdict, out.freeze_withheld_reason);
+    return out;
+  }
+
+  try {
+    out.measured_at = (typeof procurementTimestamp_ === 'function') ? procurementTimestamp_() : null;
+    L.P('the_measurement_timestamp_came_from_the_canonical_authority', 'procurementTimestamp_',
+      (typeof procurementTimestamp_ === 'function') ? 'procurementTimestamp_' : 'UNAVAILABLE',
+      typeof procurementTimestamp_ === 'function');
+    out.measurement_authorities = {
+      scope: 'inventoryAiPlanActivationAllowlist_ + inventoryAiPlanScopeEnabled_ (00_)',
+      accepted_run: 'weeklyAiPlanCanonicalDemand_ (61_)',
+      run_lineage: 'weeklyAiPlanResolveGapRunLineage_ (61_) over the GAP_JOB_INVENTORY script property',
+      windows_and_recommendation: 'weeklyAiPlanRecommendationState_ (61_), single-scope',
+      qualifying_manual: 'weeklyAiPlanQualifyingPlannedQty_ (61_)',
+      qualifying_ai: 'KMFSG.draftExposure rows via fsgReadInventoryFacts_ (71_/90_), provenance from 69_',
+      residual: 'weeklyAiPlanNoActionDecision_ (61_)',
+      factory: 'fsgReadInventoryFacts_ / KMFSG pooled availability (71_/90_)',
+      superseded_identities: 'aiplExpirationCandidates_ (69_)',
+      deployment: 'sysModuleBuildStamps_ (63_)',
+      schema: 'live sheet headers, fingerprinted with KMFSG.fnv1a',
+      reservations: 'direct observation, with 61_ weeklyAiPlanActivationManifest_ as the structural claim',
+      note: 'NOTHING here is a stored value from a previous run.' };
+
+    // ---- 1. THE CENSUS, RUN LIVE. The manifest does not measure independently of it. ------------------
+    var cen = RUN_S1_POSITIVE_RESIDUAL_CANDIDATE_CENSUS({ quiet: true });
+    out.census = { verdict: cen.verdict, predicates_failed: cen.predicates_failed,
+      failed_predicates: (cen.failed_predicates || []).slice(0, 20),
+      scopes_examined: cen.scopes_examined, candidates: (cen.candidates || []).length,
+      activation_ready_count: cen.activation_ready_count == null ? null : cen.activation_ready_count,
+      selected: cen.selected, writes: cen.writes, writer_calls: cen.writer_calls,
+      ran_live: true };
+    L.P('the_candidate_census_was_re_run_live_and_found_candidates',
+      'CANDIDATES_FOUND_AUTHORIZATION_REQUIRED with zero failed predicates',
+      { verdict: cen.verdict, failed: cen.predicates_failed },
+      cen.verdict === 'CANDIDATES_FOUND_AUTHORIZATION_REQUIRED' && cen.predicates_failed === 0);
+    L.P('the_census_itself_wrote_nothing', [0, 0], [cen.writes, cen.writer_calls],
+      cen.writes === 0 && cen.writer_calls === 0);
+    out.environment = cen.environment || null;
+    out.schema = cen.schema || null;
+    out.accepted_run = cen.accepted_run || null;
+    out.lineage = (cen.accepted_run && cen.accepted_run.lineage) || null;
+    out.factory = cen.factory || null;
+
+    // ---- 2. THE FLAG AND THE ALLOWLIST, at the moment of authorization. ------------------------------
+    L.P('the_generation_flag_is_false_at_this_moment', false,
+      out.environment ? out.environment.flag_value : null,
+      !!out.environment && out.environment.flag_value === false);
+    var list = (out.environment && out.environment.allowlist) || null;
+    out.allowlist = { entries: list, entry_count: list ? list.length : null,
+      authority: 'inventoryAiPlanActivationAllowlist_ (00_)' };
+    L.P('the_activation_allowlist_holds_exactly_one_scope', 1, out.allowlist.entry_count,
+      out.allowlist.entry_count === 1);
+    var one = (list && list.length === 1) ? list[0] : null;
+    out.scope = one ? { company: S1_str_(one.company), country: S1_str_(one.country),
+      marketplace: S1_str_(one.marketplace), sku: S1_str_(one.sku),
+      scope_key: S1_scopeKey_(one.company, one.country, one.marketplace, one.sku) } : null;
+    var axesOk = !!out.scope && [out.scope.company, out.scope.country, out.scope.marketplace, out.scope.sku]
+      .filter(function (v) { return v !== ''; }).length === 4;
+    L.P('the_one_allowlisted_scope_carries_all_four_axes', 4,
+      out.scope ? [out.scope.company, out.scope.country, out.scope.marketplace, out.scope.sku] : null, axesOk);
+    // THE GATE IS RE-ASKED. A list entry is not permission; the gate is.
+    var gateOk = false;
+    if (out.scope && typeof inventoryAiPlanScopeEnabled_ === 'function') {
+      try {
+        gateOk = inventoryAiPlanScopeEnabled_(out.scope.company, out.scope.country,
+          out.scope.marketplace, out.scope.sku) === true;
+      } catch (eG) { gateOk = false; }
+    }
+    L.P('the_production_scope_gate_admits_that_exact_scope', true, gateOk, gateOk === true);
+
+    // ---- 3. THE CANDIDATE IS THAT SCOPE. No selection, and no ambiguity to resolve. -------------------
+    var cands = cen.candidates || [];
+    // WHY, NOT JUST WHETHER. When the allowlisted identity was measured and refused, the reasons are the
+    // operator's next action; when it was not measured at all, that absence is itself the finding.
+    var wantKey = out.scope ? out.scope.scope_key : null;
+    var refusedRow = null;
+    (cen.rejected || []).forEach(function (r) { if (r && r.scope_key === wantKey) refusedRow = r; });
+    out.census.allowlisted_scope = wantKey;
+    out.census.allowlisted_scope_was_measured = !!refusedRow || cands.filter(function (r) {
+      return r.scope_key === wantKey; }).length > 0;
+    out.census.allowlisted_scope_refusals = refusedRow ? (refusedRow.refusal_reasons || []) : [];
+    out.census.allowlisted_scope_refusal_detail = refusedRow ? {
+      recommendation_state: refusedRow.recommendation_state || null,
+      no_action_reason: refusedRow.no_action_reason || null,
+      no_action_reason_refusal: refusedRow.no_action_reason_refusal || null,
+      not_evaluated_reason: refusedRow.not_evaluated_reason || null,
+      calculation_status: refusedRow.calculation_status || null,
+      recommended_qty: refusedRow.recommended_qty === undefined ? null : refusedRow.recommended_qty,
+      qualifying_manual_planned_qty: refusedRow.qualifying_manual_planned_qty === undefined
+        ? null : refusedRow.qualifying_manual_planned_qty,
+      residual_qty: refusedRow.residual_qty === undefined ? null : refusedRow.residual_qty,
+      available_to_allocate: (refusedRow.pool && refusedRow.pool.available_to_allocate !== undefined)
+        ? refusedRow.pool.available_to_allocate : null,
+      proposed_ai_allocation_qty: refusedRow.proposed_ai_allocation_qty === undefined
+        ? null : refusedRow.proposed_ai_allocation_qty,
+      source_warehouse_named_by_recommendation: refusedRow.source_warehouse_named_by_recommendation,
+      pool_candidate_count: (refusedRow.pool_candidates || []).length
+    } : null;
+    L.P('the_allowlisted_scope_was_measured_by_the_census', true,
+      out.census.allowlisted_scope_was_measured,
+      out.census.allowlisted_scope_was_measured === true);
+    L.P('the_allowlisted_scope_has_no_refusal_of_its_own', [],
+      out.census.allowlisted_scope_refusals, out.census.allowlisted_scope_refusals.length === 0);
+    L.P('exactly_one_candidate_was_measured', 1, cands.length, cands.length === 1);
+    var cand = cands.length === 1 ? cands[0] : null;
+    // ATTACHED, because the authorization wording and the whole report are built FROM it. It was measured
+    // and then not carried, so the READY run emitted a freeze block and a null sentence beside it.
+    out.candidate = cand;
+    L.P('the_single_candidate_is_the_single_allowlisted_scope',
+      out.scope ? out.scope.scope_key : null, cand ? cand.scope_key : null,
+      !!cand && !!out.scope && cand.scope_key === out.scope.scope_key);
+    L.P('the_candidate_is_activation_ready', true, cand ? cand.activation_ready : null,
+      !!cand && cand.activation_ready === true);
+    L.P('the_candidate_has_no_refusal_reason', [], cand ? (cand.refusal_reasons || []) : 'NO_CANDIDATE',
+      !!cand && (cand.refusal_reasons || []).length === 0);
+    // AND EVERY ONE OF ITS OWN CONDITIONS PASSED, named individually rather than summarised.
+    var badProofs = cand ? (cand.proofs || []).filter(function (x) { return x.pass !== true; })
+      .map(function (x) { return x.predicate; }) : 'NO_CANDIDATE';
+    L.P('every_candidate_condition_passed', [], badProofs,
+      !!cand && (cand.proofs || []).length > 0 && badProofs.length === 0);
+
+    // ---- 4. THE DEPLOYMENT. Evidence measured on another build does not transfer to this one. ---------
+    var dep = out.environment ? out.environment.deployment : null;
+    out.deployment = dep;
+    L.P('the_deployment_contract_is_readable', true, dep ? dep.available : null,
+      !!dep && dep.available === true);
+    L.P('the_deployment_is_not_mixed', false, dep ? dep.mixed_deployment : null,
+      !!dep && dep.mixed_deployment === false);
+    L.P('no_owner_module_is_stale', 0, dep ? dep.stale_module_count : null,
+      !!dep && dep.stale_module_count === 0);
+    L.P('no_owner_module_is_absent', 0, dep ? dep.absent_module_count : null,
+      !!dep && dep.absent_module_count === 0);
+    L.P('the_deployment_build_is_the_one_this_manifest_was_written_against', S1_BUILD_,
+      dep ? dep.deployment_build : null, !!dep && dep.deployment_build === S1_BUILD_);
+
+    // ---- 5. THE SCHEMA. A quantity is only evidence about the schema it was measured against. ---------
+    L.P('every_table_this_manifest_reads_is_present_and_readable', [],
+      out.schema ? out.schema.unreadable : 'NO_SCHEMA',
+      !!out.schema && (out.schema.unreadable || []).length === 0);
+    var fpTables = ['inventory_replenishment_gap', 'shipping_allocation_drafts',
+      'shipping_allocation_draft_lines', 'factory_stock', 'shipping_plans', 'shipping_plan_lines',
+      'warehouses'];
+    var fps = {}, fpMissing = [], colCounts = {};
+    fpTables.forEach(function (t) {
+      var row = (out.schema && out.schema.tables) ? out.schema.tables[t] : null;
+      fps[t] = row ? row.fingerprint : null;
+      colCounts[t] = row ? row.column_count : null;
+      if (!row || !row.fingerprint || !row.column_count) fpMissing.push(t);
+    });
+    L.P('every_schema_fingerprint_and_column_count_is_present', [], fpMissing, fpMissing.length === 0);
+
+    // ---- 6. THE RUN LINEAGE AND THE ACCEPTED SNAPSHOT. -----------------------------------------------
+    L.P('the_gap_run_lineage_resolves_to_a_run_id', 'a run id',
+      out.lineage ? { ok: out.lineage.ok, reason: out.lineage.reason, run_id: out.lineage.run_id } : null,
+      !!out.lineage && out.lineage.ok === true && !!out.lineage.run_id);
+    L.P('the_run_lineage_names_the_source_data_it_was_built_from', 'a source_data_as_of',
+      out.lineage ? out.lineage.source_data_as_of : null,
+      !!out.lineage && !!out.lineage.source_data_as_of);
+    L.P('the_accepted_run_is_readable', true, out.accepted_run ? out.accepted_run.ok : null,
+      !!out.accepted_run && out.accepted_run.ok === true);
+    L.P('the_accepted_snapshot_names_a_date', 'a date',
+      out.accepted_run ? out.accepted_run.accepted_date : null,
+      !!out.accepted_run && !!out.accepted_run.accepted_date);
+    var accepting = (typeof KMGSF !== 'undefined' && KMGSF && KMGSF.ACCEPTING) ? KMGSF.ACCEPTING : null;
+    var fState = out.accepted_run ? out.accepted_run.freshness_state : null;
+    L.P('the_snapshot_freshness_is_in_the_accepting_set',
+      accepting ? Object.keys(accepting) : 'the freshness authority ACCEPTING set', fState,
+      !!(fState && (accepting ? accepting[fState] === 1 : /^CURRENT/.test(String(fState)))));
+    L.P('the_candidate_row_belongs_to_the_accepted_snapshot_date',
+      out.accepted_run ? out.accepted_run.accepted_date : null, cand ? cand.calculation_date : null,
+      !!cand && !!out.accepted_run && cand.calculation_date === out.accepted_run.accepted_date);
+    L.P('the_candidate_calculation_status_is_ready', 'READY', cand ? cand.calculation_status : null,
+      !!cand && S1_str_(cand.calculation_status).toUpperCase() === 'READY');
+    L.P('the_candidate_carries_the_resolved_run_id',
+      out.lineage ? out.lineage.run_id : null, cand ? cand.calculation_run_id : null,
+      !!cand && !!out.lineage && cand.calculation_run_id === out.lineage.run_id);
+
+    // ---- 7. THE FOUR WINDOWS, each a stored finite non-negative number. -------------------------------
+    var W = (cand && cand.windows) ? cand.windows : null;
+    var wNames = ['D18', 'D30', 'D45', 'D90'], wMissing = [], wNegative = [], wVals = {};
+    wNames.forEach(function (w) {
+      var v = W ? S1_qty_(W[w]) : null;
+      wVals[w] = v;
+      if (v === null) wMissing.push(w); else if (v < 0) wNegative.push(w);
+    });
+    L.P('all_four_windows_are_stored_finite_numbers', [], wMissing, wMissing.length === 0);
+    L.P('no_window_is_negative', [], wNegative, wNegative.length === 0);
+
+    // ---- 8. THE QUANTITIES. Each finite, each separately named. ---------------------------------------
+    var rec = cand ? S1_qty_(cand.recommended_qty) : null;
+    var man = cand ? S1_qty_(cand.qualifying_manual_planned_qty) : null;
+    var aiq = cand ? S1_qty_(cand.qualifying_ai_planned_qty) : null;
+    var res = cand ? S1_qty_(cand.residual_qty) : null;
+    var prop = cand ? S1_qty_(cand.proposed_ai_allocation_qty) : null;
+    L.P('the_recommendation_state_is_nonzero', 'NONZERO_RECOMMENDATION',
+      cand ? cand.recommendation_state : null,
+      !!cand && cand.recommendation_state === 'NONZERO_RECOMMENDATION');
+    L.P('recommended_qty_is_finite_and_greater_than_zero', 'a finite number > 0', rec,
+      rec !== null && rec > 0);
+    L.P('qualifying_manual_planned_qty_is_finite', 'a finite number', man, man !== null);
+    L.P('qualifying_ai_planned_qty_is_finite', 'a finite number', aiq, aiq !== null);
+    L.P('residual_qty_is_finite_and_greater_than_zero', 'a finite number > 0', res,
+      res !== null && res > 0);
+    L.P('the_no_action_class_is_residual_remains', 'RESIDUAL_REMAINS',
+      cand ? cand.no_action_reason : null, !!cand && cand.no_action_reason === 'RESIDUAL_REMAINS');
+
+    // ---- 9. THE FACTORY. One pool, one warehouse, a finite headroom, and the clamp decision. ----------
+    var pool = cand ? cand.pool : null;
+    var avail = pool ? S1_qty_(pool.available_to_allocate) : null;
+    L.P('the_source_factory_warehouse_is_unambiguous',
+      'named by the recommendation, or exactly one factory pool holds this sku',
+      cand ? { named: cand.source_warehouse_named_by_recommendation,
+        pool_candidates: (cand.pool_candidates || []).length } : null,
+      !!cand && (cand.source_warehouse_named_by_recommendation === true
+        || (cand.pool_candidates || []).length === 1));
+    L.P('the_source_factory_warehouse_is_identified', 'a warehouse id',
+      cand ? cand.source_factory_warehouse_id : null,
+      !!cand && S1_str_(cand.source_factory_warehouse_id) !== '');
+    L.P('a_factory_pool_row_exists_for_that_warehouse_and_sku', true,
+      pool ? pool.pool_row_found : null, !!pool && pool.pool_row_found === true);
+    L.P('available_to_allocate_is_finite_and_greater_than_zero', 'a finite number > 0', avail,
+      avail !== null && avail > 0);
+    L.P('the_proposed_quantity_is_the_minimum_of_residual_and_available',
+      (res !== null && avail !== null) ? Math.max(0, Math.min(res, avail)) : null, prop,
+      res !== null && avail !== null && prop !== null && prop === Math.max(0, Math.min(res, avail)));
+    L.P('the_proposed_quantity_is_greater_than_zero', 'a finite number > 0', prop,
+      prop !== null && prop > 0);
+    L.P('the_clamp_decision_is_a_stated_boolean', [true, false], cand ? cand.would_clamp : null,
+      !!cand && (cand.would_clamp === true || cand.would_clamp === false));
+
+    // ---- 10. THE IDENTITIES. What a run would supersede, and what it must never touch. ---------------
+    var manualRows = (cand && cand.protected_manual_identities) ? cand.protected_manual_identities : null;
+    var aiAffected = (cand && cand.existing_affected_ai_identities) ? cand.existing_affected_ai_identities : null;
+    L.P('the_manual_identities_for_this_scope_are_enumerated', 'an array, possibly empty',
+      manualRows === null ? 'UNAVAILABLE' : manualRows.length,
+      Object.prototype.toString.call(manualRows) === '[object Array]');
+    L.P('the_ai_identities_a_run_would_supersede_are_known', 'an array, possibly empty',
+      aiAffected === null ? 'UNAVAILABLE' : aiAffected.length,
+      Object.prototype.toString.call(aiAffected) === '[object Array]');
+    var manualHeaderIds = (manualRows || []).map(function (r) { return S1_str_(r.allocation_draft_id); });
+    var manualLineIds = (manualRows || []).map(function (r) { return S1_str_(r.allocation_draft_line_id); });
+    var manualTotal = 0, manualBlank = 0;
+    (manualRows || []).forEach(function (r) {
+      var q = S1_qty_(r.quantity);
+      if (q === null) manualBlank++; else manualTotal += q;
+    });
+    L.P('no_manual_row_carries_an_unreadable_quantity', 0, manualBlank, manualBlank === 0);
+    // THE WHOLE IDENTITY UNIVERSE, so an AFTER readback can see a row appear where none was authorized.
+    var uni = cen.scope_universe || null;
+    var uniKeys = (cen.candidates || []).concat(cen.rejected || [])
+      .map(function (r) { return S1_str_(r && r.scope_key); }).filter(function (k) { return k !== ''; });
+    var uniFp = S1_fingerprint_(uniKeys);
+    L.P('the_identity_universe_was_enumerated', 'more than zero identities', uniKeys.length,
+      uniKeys.length > 0);
+    L.P('the_identity_universe_has_a_fingerprint', 'a fingerprint', uniFp, uniFp !== null);
+    L.P('no_gap_row_is_missing_an_axis', 0, uni ? uni.malformed_identity_rows : null,
+      !!uni && uni.malformed_identity_rows === 0);
+    var manualFp = S1_fingerprint_((manualRows || []).map(function (r) {
+      return [S1_str_(r.allocation_draft_id), S1_str_(r.allocation_draft_line_id), S1_str_(r.sku),
+        S1_str_(r.warehouse_id), S1_str_(r.status), S1_str_(r.line_status), S1_str_(r.quantity)].join('~');
+    }));
+    L.P('the_manual_identity_snapshot_has_a_fingerprint', 'a fingerprint', manualFp,
+      manualFp !== null || manualHeaderIds.length === 0);
+    out.identities = { manual_header_ids: manualHeaderIds, manual_line_ids: manualLineIds,
+      manual_row_count: (manualRows || []).length, manual_planned_total: manualTotal,
+      manual_identity_fingerprint: manualFp,
+      manual_rows: (manualRows || []).slice(0, 50),
+      expected_ai_identities: aiAffected || [],
+      expected_ai_identity_count: (aiAffected || []).length,
+      identity_universe_count: uniKeys.length,
+      identity_universe_fingerprint: uniFp,
+      identity_universe_keys: uniKeys.slice(0, 400),
+      other_scope_identity_count: uniKeys.filter(function (k) {
+        return !out.scope || k !== out.scope.scope_key; }).length,
+      note: 'The universe list is bounded in the RETURN VALUE and represented in the freeze by its COUNT'
+        + ' and FINGERPRINT. A fingerprint over the sorted keys detects any identity appearing or'
+        + ' disappearing; carrying every key into the paste block would put the baseline over the log'
+        + ' bound, and a truncated baseline is a wrong baseline.' };
+
+    // ---- 11. RESERVATIONS. Observed, with ABSENT never read as ZERO. ---------------------------------
+    var db = S1_openDb_();
+    out.reservation_observation = S1_reservationObservation_(db.ok ? db.ss : null);
+    L.P('the_reservation_evidence_is_acceptable',
+      'observed rows, or an absent table 61_ declares zero-mutation',
+      { state: out.reservation_observation.observation_state,
+        authority: out.reservation_observation.authority,
+        row_count: out.reservation_observation.row_count },
+      out.reservation_observation.acceptable === true);
+
+    // ---- 12. NO UNKNOWN OR UNREADABLE EVIDENCE. ------------------------------------------------------
+    // A named list, because "everything is fine" is not checkable and a list of fields is. Every entry
+    // here is a value the BEFORE baseline carries, so a null one is a hole in the baseline rather than a
+    // cosmetic gap — and a readback cannot refuse a drift it has no before-value for.
+    var required = {
+      scope_key: out.scope ? out.scope.scope_key : null,
+      calculation_run_id: out.lineage ? out.lineage.run_id : null,
+      accepted_calculation_date: out.accepted_run ? out.accepted_run.accepted_date : null,
+      calculation_status: cand ? cand.calculation_status : null,
+      freshness_state: fState,
+      source_data_as_of: out.lineage ? out.lineage.source_data_as_of : null,
+      planning_cycle: out.accepted_run ? out.accepted_run.planning_cycle : null,
+      D18: wVals.D18, D30: wVals.D30, D45: wVals.D45, D90: wVals.D90,
+      recommended_qty: rec, qualifying_manual_planned_qty: man, qualifying_ai_planned_qty: aiq,
+      residual_qty: res, proposed_ai_allocation_qty: prop,
+      would_clamp: cand ? cand.would_clamp : null,
+      source_factory_warehouse_id: cand ? cand.source_factory_warehouse_id : null,
+      pool_key: pool ? pool.pool_key : null,
+      factory_current_stock: pool ? S1_qty_(pool.factory_current_stock) : null,
+      factory_reserved_stock: pool ? S1_qty_(pool.factory_reserved_stock) : null,
+      active_allocation_draft_qty: pool ? S1_qty_(pool.active_allocation_draft_qty) : null,
+      active_shipping_plan_qty: pool ? S1_qty_(pool.active_shipping_plan_qty) : null,
+      available_to_allocate: avail,
+      identity_universe_fingerprint: uniFp,
+      deployment_build: dep ? dep.deployment_build : null,
+      measured_at: out.measured_at
+    };
+    var gaps = Object.keys(required).filter(function (k) {
+      var v = required[k];
+      return v === null || v === undefined || v === '';
+    });
+    out.evidence_gaps = { required_field_count: Object.keys(required).length, gaps: gaps,
+      note: 'A gap is a STOP. An unknown value is not a small imperfection in a baseline: it is a drift'
+        + ' the readback will be unable to detect.' };
+    L.P('every_required_piece_of_evidence_is_present_and_readable', [], gaps, gaps.length === 0);
+
+    // ---- 13. THIS MANIFEST WROTE NOTHING AND REACHED NO WRITER. --------------------------------------
+    L.P('this_manifest_wrote_nothing', 0, out.writes, out.writes === 0);
+    L.P('this_manifest_called_no_writer', 0, out.writer_calls, out.writer_calls === 0);
+    L.P('this_manifest_constructed_no_writer', false, out.writer_constructed,
+      out.writer_constructed === false);
+    L.P('this_manifest_called_no_submit_and_saved_no_route', [0, 0],
+      [out.submit_calls, out.route_save_calls],
+      out.submit_calls === 0 && out.route_save_calls === 0);
+    L.P('this_manifest_called_neither_generate_nor_submit', [false, false],
+      [out.dry_run_proof.generate_called, out.dry_run_proof.submit_called],
+      out.dry_run_proof.generate_called === false && out.dry_run_proof.submit_called === false);
+    L.P('this_manifest_called_neither_migration_nor_the_gap_job', [false, false],
+      [out.dry_run_proof.migration_called, out.dry_run_proof.gap_job_called],
+      out.dry_run_proof.migration_called === false && out.dry_run_proof.gap_job_called === false);
+    L.P('this_manifest_modified_neither_the_flag_nor_the_allowlist_nor_a_script_property',
+      [false, false, false],
+      [out.dry_run_proof.flag_modified, out.dry_run_proof.allowlist_modified,
+        out.dry_run_proof.script_properties_modified],
+      out.dry_run_proof.flag_modified === false && out.dry_run_proof.allowlist_modified === false
+        && out.dry_run_proof.script_properties_modified === false);
+
+    // ---- 14. THE LIVE EVIDENCE SUMMARY. Small enough to read, complete enough to judge. --------------
+    out.live_evidence_summary = {
+      build: out.build, measured_at: out.measured_at,
+      deployment_build: dep ? dep.deployment_build : null,
+      deployment_verdict: dep ? dep.verdict : null,
+      mixed_deployment: dep ? dep.mixed_deployment : null,
+      stale_modules: dep ? dep.stale_module_count : null,
+      flag_value: out.environment ? out.environment.flag_value : null,
+      allowlist_entry_count: out.allowlist.entry_count,
+      scope: out.scope,
+      calculation_run_id: required.calculation_run_id,
+      accepted_calculation_date: required.accepted_calculation_date,
+      calculation_status: required.calculation_status,
+      freshness_state: required.freshness_state,
+      planning_cycle: required.planning_cycle,
+      windows: wVals,
+      recommended_qty: rec, qualifying_manual_planned_qty: man, qualifying_ai_planned_qty: aiq,
+      residual_qty: res, available_to_allocate: avail,
+      proposed_ai_allocation_qty: prop, would_clamp: cand ? cand.would_clamp : null,
+      source_factory_warehouse_id: required.source_factory_warehouse_id, pool_key: required.pool_key,
+      manual_identity_count: (manualRows || []).length, manual_planned_total: manualTotal,
+      expected_ai_identity_count: (aiAffected || []).length,
+      identity_universe_count: uniKeys.length,
+      reservation_observation_state: out.reservation_observation.observation_state,
+      reservation_row_count: out.reservation_observation.row_count,
+      evidence_gaps: gaps.length,
+      predicates_failed_so_far: L.failed.length };
+
+    // ---- 15. THE EXPECTED WRITE, IN NUMBERS A READBACK CAN DISAGREE WITH. ----------------------------
+    out.expected_outcome.expected_max_units_written = prop;
+    out.expected_outcome.expected_clamp = cand ? cand.would_clamp : null;
+    out.expected_outcome.expected_superseded_ai_identities = (aiAffected || []).length;
+    out.expected_outcome.expected_manual_identities_unchanged = (manualRows || []).length;
+    out.expected_outcome.expected_identity_universe_count_after = uniKeys.length;
+    out.expected_outcome.expected_reservation_row_count_after = out.reservation_observation.row_count;
+
+    // ---- 16. THE BEFORE BASELINE. Built only from measured values, and only when nothing failed. -----
+    if (L.failed.length === 0) {
+      var freeze = {
+        frozen_at: out.measured_at, build: out.build,
+        scope_key: out.scope.scope_key, company: out.scope.company, country: out.scope.country,
+        marketplace: out.scope.marketplace, sku: out.scope.sku,
+        calculation_run_id: required.calculation_run_id,
+        accepted_calculation_date: required.accepted_calculation_date,
+        calculation_status: required.calculation_status,
+        freshness_state: required.freshness_state,
+        source_data_as_of: required.source_data_as_of,
+        planning_cycle: required.planning_cycle,
+        windows: wVals,
+        recommended_qty: rec, qualifying_manual_planned_qty: man, qualifying_ai_planned_qty: aiq,
+        residual_qty: res, proposed_ai_allocation_qty: prop, would_clamp: cand.would_clamp,
+        source_factory_warehouse_id: required.source_factory_warehouse_id,
+        pool_key: required.pool_key,
+        factory_current_stock: required.factory_current_stock,
+        factory_reserved_stock: required.factory_reserved_stock,
+        active_allocation_draft_qty: required.active_allocation_draft_qty,
+        active_shipping_plan_qty: required.active_shipping_plan_qty,
+        available_to_allocate: avail,
+        manual_header_ids: manualHeaderIds, manual_line_ids: manualLineIds,
+        manual_planned_total: manualTotal, manual_identity_fingerprint: manualFp,
+        expected_ai_identities: (aiAffected || []).map(function (x) { return x.allocation_draft_id; }),
+        expected_ai_identity_count: (aiAffected || []).length,
+        identity_universe_count: uniKeys.length, identity_universe_fingerprint: uniFp,
+        other_scope_identity_count: out.identities.other_scope_identity_count,
+        schema_fingerprints: fps,
+        reservation_observation_state: out.reservation_observation.observation_state,
+        reservation_row_count: out.reservation_observation.row_count,
+        expected_max_units_written: prop, expected_clamp: cand.would_clamp
+      };
+      // A BASELINE WITH A HOLE IN IT IS NOT A BASELINE. Checked field by field against the declared list,
+      // and `undefined` is a missing field while an explicit null (a legitimately absent reservation count)
+      // is a measured state — so only ABSENCE fails, not falsity.
+      var missing = S1_FREEZE_REQUIRED_.filter(function (k) {
+        return !Object.prototype.hasOwnProperty.call(freeze, k) || freeze[k] === undefined;
+      });
+      L.P('the_frozen_baseline_carries_every_required_field', [], missing, missing.length === 0);
+      if (missing.length === 0) {
+        out.frozen_before = freeze;
+        out.freeze_paste_block = 'Paste this into S1_MANIFEST_P_BEFORE_ in this file BEFORE pressing'
+          + ' Generate: ' + JSON.stringify(freeze);
+        var wouldChunk = Math.ceil(out.freeze_paste_block.length / S1_CHUNK_MAX_BYTES_) || 1;
+        L.P('the_frozen_baseline_fits_in_the_log_bound',
+          'at most ' + S1_LOG_MAX_CHUNKS_ + ' chunks', wouldChunk, wouldChunk <= S1_LOG_MAX_CHUNKS_);
+      }
+    } else {
+      out.freeze_withheld_reason = 'NOT_BUILT — the baseline is only constructed when every condition has'
+        + ' already passed, so a refused run has nothing to withhold and nothing to leak.';
+    }
+
+    // THE BASELINE DESTINATION MUST STILL BE EMPTY. A value already sitting in S1_MANIFEST_P_BEFORE_ is a
+    // baseline from an EARLIER run, and freezing over it would silently replace the one that was signed.
+    L.P('the_baseline_destination_is_empty_so_nothing_is_being_overwritten', null,
+      (typeof S1_MANIFEST_P_BEFORE_ === 'undefined') ? 'SYMBOL_MISSING' : S1_MANIFEST_P_BEFORE_,
+      typeof S1_MANIFEST_P_BEFORE_ !== 'undefined' && S1_MANIFEST_P_BEFORE_ === null);
+    return fin();
+  } catch (e) {
+    L.P('the_manifest_ran_to_completion', true, 'threw: ' + String(e && e.message ? e.message : e), false);
+    out.stop_reason = 'S1_MANIFEST_P_THREW: ' + String(e && e.message ? e.message : e)
+      + '. The exception is the finding; nothing may be authorized from a run that threw.';
+    out.frozen_before = null;
+    out.freeze_paste_block = null;
+    return fin();
+  }
 }
 
 function RUN_S1_MANIFEST_S() {
@@ -1786,16 +2508,41 @@ function RUN_S1_MANIFEST_S() {
   return out;
 }
 
-function S1_authWordingP_() {
+/**
+ * S1-R4 — THE AUTHORIZATION SENTENCE, WITH THE MEASUREMENTS IN IT.
+ *
+ * It used to read `<company> / <country> / <marketplace> / <sku>` against run `<calculation_run_id>`. A
+ * person cannot authorize that: there is nothing in it to agree or disagree with, and the placeholders are
+ * an invitation to fill them in from memory — which is how a scope gets authorized against yesterday's run.
+ *
+ * It is now built from the values THIS run measured, and it REFUSES to exist without them: called without a
+ * candidate it returns null rather than a template. A sentence that still contained a placeholder would be
+ * the defect back again, so the suite asserts there is no `<` in it at all.
+ */
+function S1_authWordingP_(cand, acceptedRun, scope) {
+  if (!cand || !scope) return null;
+  var lineage = (acceptedRun && acceptedRun.lineage) || {};
+  var pool = cand.pool || {};
   return 'I authorize ONE controlled Inventory AI Plan generation for the single scope '
-    + '<company> / <country> / <marketplace> / <sku>, against accepted inventory gap run <calculation_run_id> '
-    + 'dated <accepted_date>, with residual_qty <residual_qty> and available_to_allocate <available_to_allocate>, '
-    + 'expecting at most <proposed_ai_allocation_qty> units to be written across the AI identities named in the '
-    + 'candidate census. The activation allowlist must contain exactly this one scope. No manual row may change, '
-    + 'no other scope may change, no reservation may be created, no factory stock may change, and no Weekly '
-    + 'Shipping Plan or Shipment may be created or altered. A factory-guard STOP or a clamp with zero rows is an '
-    + 'acceptable outcome. This authorization covers ONE generation and expires when it completes or refuses. '
-    + 'IT DOES NOT AUTHORIZE SUBMIT.';
+    + scope.company + ' / ' + scope.country + ' / ' + scope.marketplace + ' / ' + scope.sku
+    + ', against accepted inventory gap run ' + S1_str_(lineage.run_id)
+    + ' dated ' + S1_str_(acceptedRun && acceptedRun.accepted_date)
+    + ' (freshness ' + S1_str_(acceptedRun && acceptedRun.freshness_state) + ', status '
+    + S1_str_(cand.calculation_status) + '), whose recommendation is ' + S1_str_(cand.recommended_qty)
+    + ' units with ' + S1_str_(cand.qualifying_manual_planned_qty)
+    + ' already planned manually and ' + S1_str_(cand.qualifying_ai_planned_qty)
+    + ' planned by AI, leaving a residual of ' + S1_str_(cand.residual_qty)
+    + ' against available_to_allocate ' + S1_str_(pool.available_to_allocate)
+    + ' at factory warehouse ' + S1_str_(cand.source_factory_warehouse_id)
+    + ', expecting AT MOST ' + S1_str_(cand.proposed_ai_allocation_qty)
+    + ' units to be written (clamp ' + (cand.would_clamp === true ? 'YES' : 'NO') + ') across '
+    + S1_str_((cand.existing_affected_ai_identities || []).length)
+    + ' superseded AI identities, with ' + S1_str_((cand.protected_manual_identities || []).length)
+    + ' manual identities that must not change. The activation allowlist must contain exactly this one'
+    + ' scope. No manual row may change, no other scope may change, no reservation may be created, no'
+    + ' factory stock may change, and no Weekly Shipping Plan or Shipment may be created or altered. A'
+    + ' factory-guard STOP or a clamp with zero rows is an acceptable outcome. This authorization covers'
+    + ' ONE generation and expires when it completes or refuses. IT DOES NOT AUTHORIZE SUBMIT.';
 }
 
 function S1_authWordingS_() {
@@ -2091,10 +2838,12 @@ function RUN_S1_ACCEPTED_GAP_RUN_READABILITY_DIAGNOSTIC() {
   }
 }
 /** The one exit. Attaches the ledger, counts the failures and emits the chunked payload. */
-function S1_finish_(out, L) {
+function S1_finish_(out, L, quiet) {
   out.predicates = L.entries;
   out.predicates_failed = L.failed.length;
   out.failed_predicates = L.failed.slice();
+  // S1-R4 — a sub-measurement returns its object and logs nothing. Its caller owns the report.
+  if (quiet === true) return out;
   S1_log_('s1_verdict', JSON.stringify({ census: out.census, verdict: out.verdict,
     predicates_failed: out.predicates_failed, failed: out.failed_predicates,
     writes: out.writes, writer_calls: out.writer_calls, dry_run: out.dry_run,

@@ -149,8 +149,14 @@ function S1World(spec) {
     'function sadVerifyShippingPlanOutput_() { throw new Error("S1_SUITE_PRESENCE_STUB_ONLY"); }'
   ].join(NL), w.ctx);
   // 63_'s deployment contract, stubbed UNIFORM: this suite is not testing the deployment probe.
+  // S1-R4 — THE STUBBED DEPLOYMENT BUILD FOLLOWS THE RELEASE, and it is read from the diagnostic's own
+  // pin rather than spelled a second time. MANIFEST P refuses a deployment whose build is not the one it
+  // was written against — correctly — and a fixture that keeps answering an older release makes that
+  // gate fail on a healthy world. A literal here would have to be edited every release; S1_BUILD_ is
+  // already the value under test.
+  var _s1Build = (S1.match(/var S1_BUILD_ = '([^']+)'/) || [])[1];
   vm.runInContext('function sysModuleBuildStamps_() { return { available: true, verdict: "UNIFORM",'
-    + ' deployment_build: "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1", modules: [], stale_modules: [],'
+    + ' deployment_build: "' + _s1Build + '", modules: [], stale_modules: [],'
     + ' absent_modules: [], mixed_deployment: false }; }', w.ctx);
   vm.runInContext(pinTaipeiHourSrc_(spec.pinHour === undefined ? PIN_HOUR_ : spec.pinHour), w.ctx);
   if (spec.after) vm.runInContext(spec.after, w.ctx);
@@ -778,18 +784,25 @@ ok(read('assets/js/pages/inventory-replenishment.js').indexOf('ACK_UNKNOWN') > 0
   'H7c the browser really does hold an ACK_UNKNOWN outcome');
 
 // THE OPERATOR WORDING. It must name the scope, the numbers, and what it does NOT authorize.
-['<company>', '<country>', '<marketplace>', '<sku>', '<residual_qty>', '<available_to_allocate>',
- 'IT DOES NOT AUTHORIZE SUBMIT'].forEach(function (t, i) {
-  ok(MP.operator_authorization_wording.indexOf(t) >= 0,
-    'H8.' + (i + 1) + ' P\'s wording contains ' + t);
-});
+// S1-R4 — THIS BLOCK REQUIRED THE DEFECT. It asserted that P's wording CONTAINS <company>,
+// <residual_qty> and four more placeholders — so the suite was holding in place the exact thing that
+// made the manifest unusable: a sentence with nothing in it a person could agree or disagree with. It is
+// now the opposite claim, and section M drives the whole manifest to prove it.
+ok(MP.operator_authorization_wording === null || MP.verdict === 'READY_TO_AUTHORIZE',
+  'H8  P offers a sentence to sign only on a READY_TO_AUTHORIZE run', MP.verdict);
+eq((String(MP.operator_authorization_wording || '').match(/<[a-zA-Z_][a-zA-Z0-9_]*>/g) || []), [],
+  'H8a and it carries NO placeholder — see section M for the measured values it carries instead');
+ok(MP.verdict !== 'READY_TO_AUTHORIZE'
+  || String(MP.operator_authorization_wording).indexOf('IT DOES NOT AUTHORIZE SUBMIT') > 0,
+  'H8b a READY sentence still ends by refusing Submit');
 ['<allocation_draft_id>', '<draft_version>', '<execution_key>', '<total_planned_qty>',
  'ACK_UNKNOWN', 'IT DOES NOT ' + 'AUTHORIZE APPROVAL'].forEach(function (t, i) {
   ok(MS.operator_authorization_wording.indexOf(t) >= 0,
     'H9.' + (i + 1) + ' S\'s wording contains ' + t);
 });
-ok(MP.operator_authorization_wording.indexOf('exactly this one scope') > 0,
-  'H8a P\'s wording pins the allowlist to one scope');
+ok(MP.verdict !== 'READY_TO_AUTHORIZE'
+  || String(MP.operator_authorization_wording).indexOf('exactly this one scope') > 0,
+  'H8c and a READY sentence pins the allowlist to one scope');
 ok(MS.operator_authorization_wording.indexOf('never by') > 0
   && MS.operator_authorization_wording.indexOf('retrying') > 0,
   'H9a and S\'s wording forbids retrying a timeout');
@@ -1322,6 +1335,319 @@ eq(scopeOf(S2, SKU).qualifying_manual_planned_qty, 520,
   'S13b and the allowlisted identity still reads its own 520 from the same one call');
 
 // ================================================================================================================
+section('M — S1-R4: MANIFEST P re-measures, freezes a baseline, and a STOP hands over nothing');
+// ================================================================================================================
+//
+// WHAT PRODUCTION GOT, AND IT WAS THIS FILE'S FAULT. RUN_S1_MANIFEST_P() was executed and returned a static
+// object: preconditions as nine SENTENCES, an expected outcome with no measured number in it, and an
+// authorization line still reading `<company> / <country> / <marketplace> / <sku>` against run
+// `<calculation_run_id>`. Its only log line was `{ manifest: "P", dry_run: true, writes: 0 }`.
+//
+// There was no verdict because nothing had been decided, no evidence because nothing had been measured, and no
+// freeze block because there was nothing to freeze. A manifest whose preconditions are prose asks a person to
+// verify nine things by eye and then trust their memory of numbers taken on some other day — which is the
+// failure this whole readiness package exists to remove.
+//
+// SO IT RE-MEASURES EVERY RUN, and it does that by RUNNING THE CANDIDATE CENSUS rather than measuring
+// independently of it: two readiness answers for one scope is the one failure a readiness package cannot have.
+// On top of that it adds the gates that are about AUTHORIZING rather than measuring — one allowlisted scope,
+// that scope is the candidate, the deployment is uniform and is the build the manifest was written against,
+// the flag is still false, and every field the baseline needs is readable.
+//
+// AND THE FREEZE HAS THREE LOCKS, because a freeze block is an authorization to proceed and a single later
+// edit must not be able to leak one: the verdict assignment nulls it, the emitter refuses without a READY it
+// was handed, and a READY whose authorization sentence is missing or still contains a placeholder is
+// downgraded to STOP.
+
+function manifestP(spec) {
+  var w = S1World(spec);
+  var out = null, threw = null;
+  try { out = vm.runInContext('RUN_S1_MANIFEST_P()', w.ctx); } catch (e) { threw = e; }
+  return { res: out || {}, threw: threw, world: w };
+}
+function mpTags(w) { return logTags(w); }
+function chunkCount(w) {
+  return logTags(w).filter(function (n) { return /^s1_manifest_p_freeze_paste_block_/.test(n); }).length;
+}
+function predOf(res, name) {
+  return ((res && res.predicates) || []).filter(function (p) { return p.predicate === name; })[0] || null;
+}
+
+// ---- M1 — THE READY PATH. -------------------------------------------------------------------------------
+var MP1 = manifestP(pos());
+eq(MP1.threw, null, 'M1  the manifest runs', MP1.threw && String(MP1.threw.message));
+eq(MP1.res.verdict, 'READY_TO_AUTHORIZE', 'M1a a live positive-residual world is READY_TO_AUTHORIZE',
+  failed(MP1.res));
+eq(MP1.res.predicates_failed, 0, 'M1b with no condition unmet', failed(MP1.res));
+ok(MP1.res.predicates_passed >= 55,
+  'M1c and it is a substantial ledger, not two lines of contract text', MP1.res.predicates_passed);
+eq([MP1.res.dry_run, MP1.res.writes, MP1.res.writer_calls, MP1.res.writer_constructed],
+  [true, 0, 0, false], 'M1d dry-run, zero writes, zero writer calls, no writer constructed');
+eq(MP1.world.allWrites(), 0, 'M1e measured on every sheet in the world');
+
+// THE CENSUS WAS RUN LIVE. This is the field that separates a manifest from a contract printer.
+eq(MP1.res.census.ran_live, true, 'M2  the candidate census was RE-RUN by the manifest');
+eq([MP1.res.census.verdict, MP1.res.census.predicates_failed],
+  ['CANDIDATES_FOUND_AUTHORIZATION_REQUIRED', 0], 'M2a and it found candidates with nothing failed');
+eq([MP1.res.census.writes, MP1.res.census.writer_calls], [0, 0], 'M2b writing nothing itself');
+eq(MP1.res.census.selected, null, 'M2c and still selecting nothing — the allowlist is the choice');
+ok(!!MP1.res.measurement_authorities && String(MP1.res.measurement_authorities.note)
+  .indexOf('NOTHING here is a stored value') === 0,
+  'M2d the manifest names its authorities and says none of them is a stored value');
+
+// EVERY NUMBER §2 ASKS FOR, MEASURED, IN ONE PLACE.
+var E = MP1.res.live_evidence_summary;
+eq(E.scope, { company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: SKU, scope_key: 'ResUS|US|Amazon|' + SKU },
+  'M3  the exact four-axis scope');
+eq([E.calculation_run_id, E.accepted_calculation_date, E.calculation_status, E.freshness_state],
+  ['GAP-INV-20260905-0300', GAP_DATE, 'READY', 'CURRENT_AFTER_REFRESH'],
+  'M3a the run id, accepted date, status and freshness');
+eq(E.windows, { D18: 900, D30: 900, D45: 900, D90: 900}, 'M3b all four windows');
+eq([E.recommended_qty, E.qualifying_manual_planned_qty, E.qualifying_ai_planned_qty, E.residual_qty],
+  [900, 520, 0, 380], 'M3c the recommendation, the manual plan, the AI plan and the residual');
+eq([E.source_factory_warehouse_id, E.available_to_allocate, E.proposed_ai_allocation_qty, E.would_clamp],
+  [WHF, 1380, 380, false], 'M3d the warehouse identity, the headroom, the proposal and the clamp decision');
+eq(E.evidence_gaps, 0, 'M3e and no field is unknown or unreadable');
+eq(MP1.res.evidence_gaps.gaps, [], 'M3f named individually rather than counted', MP1.res.evidence_gaps);
+ok(MP1.res.evidence_gaps.required_field_count >= 25,
+  'M3g over a required set worth checking', MP1.res.evidence_gaps.required_field_count);
+
+// THE DEPLOYMENT AND THE FLAG.
+eq([E.mixed_deployment, E.stale_modules, E.flag_value, E.allowlist_entry_count],
+  [false, 0, false, 1], 'M4  uniform deployment, no stale module, flag false, exactly one allowlisted scope');
+eq(E.deployment_build, (S1.match(/var S1_BUILD_ = '([^']+)'/) || [])[1],
+  'M4a and the deployment build is the one this manifest was written against');
+
+// ---- M5 — THE BEFORE BASELINE. -------------------------------------------------------------------------
+var FB = MP1.res.frozen_before;
+ok(!!FB, 'M5  a BEFORE baseline was frozen');
+var fbMissing = vm.runInContext('S1_FREEZE_REQUIRED_', MP1.world.ctx).filter(function (k) {
+  return !Object.prototype.hasOwnProperty.call(FB, k);
+});
+eq(fbMissing, [], 'M5a carrying every field the declared contract requires', fbMissing);
+eq([FB.manual_header_ids.length, FB.manual_line_ids.length, FB.manual_planned_total],
+  [2, 2, 520], 'M5b with the existing manual identities enumerated and totalled');
+ok(FB.manual_identity_fingerprint !== null,
+  'M5c and fingerprinted, so a column moving inside a row is detectable', FB.manual_identity_fingerprint);
+eq([FB.expected_ai_identities, FB.expected_ai_identity_count], [[], 0],
+  'M5d the AI identities a run would supersede — here none');
+ok(FB.identity_universe_count >= 1 && FB.identity_universe_fingerprint !== null,
+  'M5e the whole identity universe, by count and fingerprint',
+  [FB.identity_universe_count, FB.identity_universe_fingerprint]);
+eq(FB.other_scope_identity_count, 0, 'M5f and how many identities belong to OTHER scopes');
+ok(Object.keys(FB.schema_fingerprints).length >= 7,
+  'M5g the schema fingerprints the quantities were measured against',
+  Object.keys(FB.schema_fingerprints));
+eq([FB.factory_current_stock, FB.factory_reserved_stock, FB.active_allocation_draft_qty,
+  FB.active_shipping_plan_qty, FB.available_to_allocate], [2000, 100, 520, 0, 1380],
+  'M5h the factory pool snapshot, term by term');
+eq([FB.expected_max_units_written, FB.expected_clamp], [380, false],
+  'M5i and the most a correct run may write, plus whether it would clamp');
+// THE RESERVATION OBSERVATION. Absent is a STATE, and its row count is null and not zero.
+eq(FB.reservation_observation_state, 'SHEET_ABSENT',
+  'M5j the reservation observation state is recorded');
+eq(FB.reservation_row_count, null,
+  'M5k and an absent table has a NULL row count — never a zero');
+eq(MP1.res.reservation_observation.acceptable, true,
+  'M5l acceptable here only because 61_ declares the table zero-mutation',
+  MP1.res.reservation_observation);
+ok(String(MP1.res.reservation_observation.authority).indexOf('SERVER_MANIFEST') === 0,
+  'M5m on that authority, by name', MP1.res.reservation_observation.authority);
+
+// ---- M6 — THE FREEZE BLOCK AND ITS DESTINATION. -------------------------------------------------------
+ok(!!MP1.res.freeze_paste_block, 'M6  a freeze paste block was built');
+ok(String(MP1.res.freeze_paste_block).indexOf('S1_MANIFEST_P_BEFORE_') > 0,
+  'M6a naming the symbol it is pasted into');
+ok(chunkCount(MP1.world) >= 1, 'M6b and it is emitted in numbered chunks', mpTags(MP1.world));
+var mpMeta = (MP1.world.log || []).filter(function (l) { return /s1_manifest_p_freeze_paste_meta/.test(String(l)); })[0];
+ok(!!mpMeta, 'M6c with a freeze meta line');
+['"chunks":', '"bytes":', '"paste_into":"S1_MANIFEST_P_BEFORE_"'].forEach(function (t, i) {
+  ok(String(mpMeta).indexOf(t) > 0, 'M6d.' + (i + 1) + ' the meta carries ' + t, String(mpMeta).slice(0, 200));
+});
+ok(mpTags(MP1.world).indexOf('s1_manifest_p_freeze_withheld') === -1,
+  'M6e and no withheld line on a READY run — an empty refusal is noise', mpTags(MP1.world));
+// THE DESTINATION EXISTS, IS NULL, AND IS NEVER WRITTEN BY CODE.
+eq(vm.runInContext('S1_MANIFEST_P_BEFORE_', MP1.world.ctx), null,
+  'M6f the destination symbol exists and is still null');
+// ASSIGNMENTS ONLY. `\s*=` also matched the `===` in the destination-is-empty condition and reported three
+// assignments where there is one. A comparison is not an assignment.
+eq((S1_BARE.match(/S1_MANIFEST_P_BEFORE_\s*=(?!=)/g) || []).length, 1,
+  'M6g and the file ASSIGNS it exactly once — its own declaration, never from code',
+  S1_BARE.match(/S1_MANIFEST_P_BEFORE_\s*=(?!=)/g));
+// EVERY LOG LINE FITS. This is a manifest, not a payload dump.
+var mpMax = (MP1.world.log || []).reduce(function (m, l) { return Math.max(m, String(l).length); }, 0);
+ok(mpMax < 3000, 'M6h every emitted line is under the chunk bound', mpMax);
+eq((MP1.world.log || []).filter(function (l) { return /s1_payload|s1_candidate_summary/.test(String(l)); }).length, 0,
+  'M6i and the census it ran did NOT dump its own payload over the verdict');
+
+// ---- M7 — THE AUTHORIZATION WORDING, WITH THE MEASUREMENTS IN IT. -------------------------------------
+var Wd = MP1.res.operator_authorization_wording;
+ok(!!Wd, 'M7  a READY run produces an authorization sentence');
+eq((String(Wd).match(/<[a-zA-Z_][a-zA-Z0-9_]*>/g) || []), [],
+  'M7a with NO placeholder left in it — the defect this round was called to repair');
+[SKU, 'ResUS', 'US', 'Amazon', 'GAP-INV-20260905-0300', GAP_DATE, '900', '520', '380', '1380', WHF,
+ 'IT DOES NOT AUTHORIZE SUBMIT'].forEach(function (t, i) {
+  ok(String(Wd).indexOf(t) >= 0, 'M7b.' + (i + 1) + ' and it names ' + t);
+});
+ok(String(Wd).indexOf('exactly this one scope') > 0, 'M7c it still pins the allowlist to one scope');
+ok(String(Wd).indexOf('AT MOST 380 units') > 0, 'M7d and states the ceiling as a number');
+
+// ---- M8 — EVERY STOP, AND NOT ONE OF THEM LEAKS. -----------------------------------------------------
+var STALE_DEP = 'function sysModuleBuildStamps_() { return { available: true,'
+  + ' verdict: "MIXED_OR_PARTIAL_SYNC", deployment_build: "' + (S1.match(/var S1_BUILD_ = '([^']+)'/) || [])[1]
+  + '", modules: [], stale_modules: ["00_config.gs declares X, expected Y"], absent_modules: [],'
+  + ' mixed_deployment: true }; }';
+var OTHER_BUILD = 'function sysModuleBuildStamps_() { return { available: true, verdict: "UNIFORM",'
+  + ' deployment_build: "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9", modules: [], stale_modules: [],'
+  + ' absent_modules: [], mixed_deployment: false }; }';
+var YDAY = new Date(Date.now() + 8 * 3600 * 1000 - 86400000).toISOString().slice(0, 10);
+var STOPS = [
+  ['the flag is already true', { flag: true }, null],
+  ['the allowlist is widened to two scopes', { allowlist: [
+    { company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: SKU },
+    { company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: 'CO1150-R' }] },
+    'the_activation_allowlist_holds_exactly_one_scope'],
+  ['the allowlist names a DIFFERENT scope', { allowlist: [
+    { company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: 'OTHER-SKU' }] }, null],
+  ['the allowlist is empty', { allowlist: [] }, null],
+  ['the scope is fully covered, so there is no residual', { gap: { d18_gap_qty: 0, d18_suggested_qty: 0,
+    d30_suggested_qty: 0, d45_suggested_qty: 0, d90_gap_qty: 160, d90_suggested_qty: 160 } }, null],
+  ['a window is blank, so the recommendation is MISSING', { gap: { d90_suggested_qty: '' } }, null],
+  ['the recommendation is not READY', { gap: { calculation_status: 'PENDING' } }, null],
+  ['the snapshot is yesterday-only and the refresh window has passed',
+    { gap: { calculation_date: YDAY }, pinHour: 20 }, null],
+  ['there is no factory pool for the sku', { factory_stock: [] }, null],
+  ['availability is exhausted', { factory_stock: [{ warehouse_id: WHF, sku: SKU,
+    fac_current_stock: 520, fac_reserved_stock: 0 }] }, null],
+  ['the source warehouse is ambiguous', { factory_stock: [
+    { warehouse_id: WHF, sku: SKU, fac_current_stock: 2000, fac_reserved_stock: 100 },
+    { warehouse_id: 'FW-TW', sku: SKU, fac_current_stock: 900, fac_reserved_stock: 0 }] }, null],
+  ['the gap table is gone (schema drift)', { dropGap: true }, null],
+  ['the deployment is mixed', { after: STALE_DEP }, 'the_deployment_is_not_mixed'],
+  ['the deployment is a build nobody measured on', { after: OTHER_BUILD },
+    'the_deployment_build_is_the_one_this_manifest_was_written_against']
+];
+STOPS.forEach(function (c, i) {
+  var spec = pos();
+  Object.keys(c[1]).forEach(function (k) { spec[k] = c[1][k]; });
+  var x = manifestP(spec);
+  var n = 'M8.' + (i + 1);
+  eq(x.res.verdict, 'STOP', n + ' STOP: ' + c[0], failed(x.res));
+  ok(failed(x.res).length > 0, n + 'a with at least one named failed condition', failed(x.res));
+  ok(String(x.res.stop_reason || '').length > 20, n + 'b and a stop_reason that says which',
+    x.res.stop_reason);
+  // THE THREE THINGS A STOP MUST NOT HAND OVER.
+  eq(x.res.freeze_paste_block, null, n + 'c the freeze block is null');
+  eq(chunkCount(x.world), 0, n + 'd NOT ONE pasteable chunk was emitted', mpTags(x.world));
+  eq(x.res.operator_authorization_wording, null, n + 'e and there is no sentence to sign');
+  ok(mpTags(x.world).indexOf('s1_manifest_p_freeze_withheld') >= 0,
+    n + 'f while the withholding is REPORTED, not silent', mpTags(x.world));
+  eq(x.world.allWrites(), 0, n + 'g and it wrote nothing');
+  if (c[2]) {
+    ok(failed(x.res).indexOf(c[2]) >= 0, n + 'h naming ' + c[2], failed(x.res));
+  }
+});
+
+// AND THE WITHHELD LINE SAYS WHERE NOT TO PASTE. A reader who expected chunks must be able to tell
+// "the output was refused" from "the log was truncated".
+var W8 = manifestP(pos({ allowlist: [] }));
+var w8line = (W8.world.log || []).filter(function (l) { return /freeze_withheld/.test(String(l)); })[0];
+['"chunks":0', '"paste_into":null', 'S1_MANIFEST_P_BEFORE_'].forEach(function (t, i) {
+  ok(String(w8line).indexOf(t) > 0, 'M8w.' + (i + 1) + ' the withheld line carries ' + t,
+    String(w8line).slice(0, 240));
+});
+// TWO DIFFERENT REASONS, AND THE DISTINCTION IS WORTH KEEPING. A run that failed before the baseline was
+// constructed reports NOT_BUILT — there was nothing to withhold; a run that built one and then refused
+// reports WITHHELD_BECAUSE. I asserted the second for a case that is honestly the first.
+ok(/NOT_BUILT|WITHHELD_BECAUSE/.test(String(w8line)),
+  'M8w.4 and names which of the two it is', String(w8line).slice(0, 240));
+var W8b = manifestP(pos({ after: OTHER_BUILD }));
+var w8bline = (W8b.world.log || []).filter(function (l) { return /freeze_withheld/.test(String(l)); })[0];
+ok(/NOT_BUILT/.test(String(w8bline)),
+  'M8w.5 a deployment refusal also reports NOT_BUILT, because the conditions run before the freeze',
+  String(w8bline).slice(0, 200));
+
+// ---- M9 — THE ALLOWLISTED SCOPE'S OWN REFUSAL IS SURFACED, so a STOP is actionable. ------------------
+var M9 = manifestP(pos({ factory_stock: [] }));
+eq(M9.res.verdict, 'STOP', 'M9  a missing factory pool is a STOP');
+eq(M9.res.census.allowlisted_scope, 'ResUS|US|Amazon|' + SKU,
+  'M9a and the manifest names WHICH scope it was asking about');
+eq(M9.res.census.allowlisted_scope_was_measured, true,
+  'M9b it WAS measured — the census refused it rather than never looking');
+ok(M9.res.census.allowlisted_scope_refusals
+  .indexOf('a_factory_pool_exists_for_this_exact_warehouse_and_sku') >= 0,
+  'M9c and the refusal that applies to it is lifted out by name — "the census found no candidate"'
+  + ' is true and not actionable', M9.res.census.allowlisted_scope_refusals);
+ok(M9.res.census.allowlisted_scope_refusal_detail
+  && M9.res.census.allowlisted_scope_refusal_detail.residual_qty === 380,
+  'M9d with its measured numbers beside it, so the operator can see what IS true',
+  M9.res.census.allowlisted_scope_refusal_detail);
+
+// ---- M10 — THE BASELINE DESTINATION MUST BE EMPTY. ---------------------------------------------------
+// A value already sitting there is a baseline from an earlier run, and freezing over it would silently
+// replace the one that was signed.
+var M10 = manifestP({ s1: S1.split('var S1_MANIFEST_P_BEFORE_ = null;')
+  .join("var S1_MANIFEST_P_BEFORE_ = { frozen_at: 'an earlier run' };"), gap: POS.gap,
+  factory_stock: POS.factory_stock });
+eq(M10.res.verdict, 'STOP', 'M10 an occupied baseline destination is a STOP');
+ok(failed(M10.res).indexOf('the_baseline_destination_is_empty_so_nothing_is_being_overwritten') >= 0,
+  'M10a naming the destination, not something else', failed(M10.res));
+eq(chunkCount(M10.world), 0, 'M10b and it emits no chunk over the one already frozen');
+
+// ---- M11 — IDENTITY DRIFT IS VISIBLE IN THE BASELINE. -------------------------------------------------
+// This round FREEZES; the AFTER readback is a later round. What must be true now is that the frozen values
+// MOVE when the identities move — a baseline that reads the same for two different worlds cannot detect
+// anything.
+var AI_H = { allocation_draft_id: 'AI-OLD-9', planning_cycle: GAP_CYCLE, company: 'ResUS', country: 'US',
+  marketplace: 'Amazon', status: 'draft', generation_type: 'system_generated',
+  generation_run_id: 'RUN-OLD-9', source_page: 'inventory_replenishment',
+  source_warehouse_id: WHF, recommended_destination_warehouse_id: 'WH-RESUS-US-3PL-AMZLGS' };
+var AI_L = { allocation_draft_line_id: 'AI-OLD-9-L1', allocation_draft_id: 'AI-OLD-9', sku: SKU,
+  planned_qty: '60', line_status: 'draft' };
+var M11 = manifestP(pos({ extraHeaders: [AI_H], extraLines: [AI_L] }));
+eq(M11.res.verdict, 'READY_TO_AUTHORIZE', 'M11 an existing AI draft is still a READY world', failed(M11.res));
+ok(M11.res.frozen_before.expected_ai_identity_count >= 1,
+  'M11a and the baseline now names an AI identity a run would supersede',
+  M11.res.frozen_before.expected_ai_identities);
+eq(M11.res.frozen_before.qualifying_ai_planned_qty, 60,
+  'M11b with the AI exposure counted separately from the manual plan');
+eq(M11.res.frozen_before.qualifying_manual_planned_qty, 520,
+  'M11c which is unchanged — an AI draft is not an operator commitment');
+// A CHANGED MANUAL IDENTITY CHANGES THE FINGERPRINT. Same count, different content.
+var M11d = manifestP(pos({ aLine: { planned_qty: '321' } }));
+ok(M11d.res.frozen_before
+  && M11d.res.frozen_before.manual_identity_fingerprint !== FB.manual_identity_fingerprint,
+  'M11d one manual quantity changing moves the manual fingerprint',
+  [FB.manual_identity_fingerprint, M11d.res.frozen_before && M11d.res.frozen_before.manual_identity_fingerprint]);
+eq(M11d.res.frozen_before.manual_planned_total, 521,
+  'M11e and the frozen total follows it');
+// A NEW IDENTITY IN ANOTHER SCOPE MOVES THE UNIVERSE FINGERPRINT.
+var M11f = manifestP(pos({ extraGap: [{ sku: 'OTHER-SKU', calculation_status: 'READY',
+  d18_suggested_qty: 0, d30_suggested_qty: 0, d45_suggested_qty: 0, d90_suggested_qty: 0 }] }));
+ok(M11f.res.frozen_before
+  && M11f.res.frozen_before.identity_universe_fingerprint !== FB.identity_universe_fingerprint,
+  'M11f an identity appearing in ANOTHER scope moves the universe fingerprint',
+  [FB.identity_universe_fingerprint,
+    M11f.res.frozen_before && M11f.res.frozen_before.identity_universe_fingerprint]);
+eq(M11f.res.frozen_before.other_scope_identity_count, 1,
+  'M11g and the other-scope count says how many identities are not this one');
+
+// ---- M12 — THE STATIC CONTRACT IS STILL THERE, because it was never the defect. -----------------------
+eq([MP1.res.expected_outcome.reservations, MP1.res.expected_outcome.factory_stock_change,
+  MP1.res.expected_outcome.manual_rows_changed, MP1.res.expected_outcome.other_scope_rows_changed,
+  MP1.res.expected_outcome.shipping_plans_changed, MP1.res.expected_outcome.shipments_changed],
+  [0, 0, 0, 0, 0, 0], 'M12 the zero side effects are still declared');
+eq([MP1.res.expected_outcome.expected_max_units_written, MP1.res.expected_outcome.expected_clamp,
+  MP1.res.expected_outcome.expected_superseded_ai_identities,
+  MP1.res.expected_outcome.expected_manual_identities_unchanged],
+  [380, false, 0, 2],
+  'M12a and the expected outcome now carries MEASURED numbers a readback can disagree with');
+ok(String(MP1.res.boundary_note).indexOf('does NOT authorize MANIFEST S') > 0,
+  'M12b the boundary note is unchanged');
+eq(MP1.res.rollback.complete, true, 'M12c and the rollback is still declared complete');
+
+
+// ================================================================================================================
 section('N — mutants');
 // ================================================================================================================
 
@@ -1713,7 +2039,10 @@ mut('N29 the rejection roll-up logs the whole refusal set instead of counts', fu
 });
 
 mut('N30 the chunk-count bound is removed, so the payload floods the log again', function () {
-  var m = swapS1('  if (n > S1_LOG_MAX_CHUNKS_) {', '  if (false) {');
+  // S1-R4 — DISAMBIGUATED. A second, separate bound now guards the FREEZE block, so the bare line
+  // appears twice. This mutant is about the PAYLOAD bound; the freeze bound has its own.
+  var m = swapS1('n = Math.ceil(s.length / S1_CHUNK_MAX_BYTES_) || 1;'+NL+'  if (n > S1_LOG_MAX_CHUNKS_) {',
+    'n = Math.ceil(s.length / S1_CHUNK_MAX_BYTES_) || 1;'+NL+'  if (false) {');
   function chunks(src) {
     var s = {}; Object.keys(pos()).forEach(function (k) { s[k] = pos()[k]; });
     s.s1 = src;
@@ -1729,6 +2058,177 @@ mut('N31 the no-candidate verdict goes back to sounding like a statement about t
   var clean = census(PSHAPE), bad = withS1(m, PSHAPE);
   return clean.res.verdict === 'NO_POSITIVE_RESIDUAL_CANDIDATE_IN_CURRENT_ALLOWLIST'
     && bad.res.verdict === 'NO_POSITIVE_RESIDUAL_CANDIDATE';
+});
+
+
+function withMP(src, spec) {
+  var s = {};
+  Object.keys(spec || {}).forEach(function (k) { s[k] = spec[k]; });
+  s.s1 = src;
+  var w = S1World(s);
+  var out = null, threw = null;
+  try { out = vm.runInContext('RUN_S1_MANIFEST_P()', w.ctx); } catch (e) { threw = e; }
+  return { res: out || {}, threw: threw, world: w };
+}
+function mpChunks(w) {
+  return logTags(w).filter(function (n) { return /^s1_manifest_p_freeze_paste_block_/.test(n); }).length;
+}
+
+mut('N32 the manifest goes back to printing a static contract instead of measuring', function () {
+  // THE EXACT PRODUCTION SHAPE: no census run, so no verdict, no evidence and no baseline. A manifest that
+  // does not measure must never be able to report READY.
+  var m = swapS1("    var cen = RUN_S1_POSITIVE_RESIDUAL_CANDIDATE_CENSUS({ quiet: true });",
+    "    var cen = { verdict: 'CANDIDATES_FOUND_AUTHORIZATION_REQUIRED', predicates_failed: 0,\n"
+    + "      failed_predicates: [], candidates: [], rejected: [], writes: 0, writer_calls: 0,\n"
+    + "      scopes_examined: 0, environment: null, schema: null, accepted_run: null, factory: null };");
+  var clean = manifestP(pos()), bad = withMP(m, pos());
+  return clean.res.verdict === 'READY_TO_AUTHORIZE' && clean.res.census.ran_live === true
+    && bad.res.verdict === 'STOP' && bad.res.freeze_paste_block === null
+    && mpChunks(bad.world) === 0 && bad.res.operator_authorization_wording === null;
+});
+
+mut('N33 LOCK ONE is removed, so a STOP keeps its freeze block', function () {
+  var m = swapS1("      out.freeze_paste_block = null;\n"
+    + "      if (!out.stop_reason) {",
+    "      if (!out.stop_reason) {");
+  var spec = pos({ allowlist: [] });
+  var clean = manifestP(spec), bad = withMP(m, spec);
+  // LOCK TWO still refuses to EMIT it, which is the point of having two: the block is present on the
+  // returned object and no chunk reaches the log.
+  return clean.res.verdict === 'STOP' && clean.res.freeze_paste_block === null
+    && bad.res.verdict === 'STOP' && mpChunks(bad.world) === 0;
+});
+
+mut('N34 LOCK TWO is removed, so the emitter no longer checks the verdict it was handed', function () {
+  var m = swapS1('  var ready = verdict === \'READY_TO_AUTHORIZE\';', '  var ready = true;');
+  // With the emitter trusting its caller, only LOCK ONE stands. Probed by handing the emitter a STOP
+  // directly, which is what a later edit inside the manifest would effectively do.
+  var w = S1World(pos()), w2 = S1World({ s1: m, gap: POS.gap, factory_stock: POS.factory_stock });
+  var cleanN = vm.runInContext("S1_emitFreeze_('probe', 'BASELINE', 'STOP', 'because')", w.ctx);
+  var badN = vm.runInContext("S1_emitFreeze_('probe', 'BASELINE', 'STOP', 'because')", w2.ctx);
+  return cleanN === 0 && badN >= 1
+    && logTags(w).indexOf('probe_freeze_withheld') >= 0
+    && logTags(w2).filter(function (n) { return /^probe_freeze_paste_block_/.test(n); }).length >= 1;
+});
+
+mut('N35 LOCK THREE is removed, so a placeholder sentence reads as an authorization', function () {
+  // The defect this round repaired, injected as a wording builder that returns the old template.
+  var m = swapS1("function S1_authWordingP_(cand, acceptedRun, scope) {\n  if (!cand || !scope) return null;",
+    "function S1_authWordingP_(cand, acceptedRun, scope) {\n"
+    + "  return 'I authorize ONE controlled generation for <company> / <country> / <marketplace> / <sku>"
+    + " against run <calculation_run_id> with residual <residual_qty>. IT DOES NOT AUTHORIZE SUBMIT.';\n"
+    + "  // eslint-disable-next-line no-unreachable\n"
+    + "  if (!cand || !scope) return null;");
+  var clean = manifestP(pos()), bad = withMP(m, pos());
+  var cw = String(clean.res.operator_authorization_wording);
+  return clean.res.verdict === 'READY_TO_AUTHORIZE'
+    && (cw.match(/<[a-zA-Z_]+>/g) || []).length === 0
+    // The guard catches it: the READY is downgraded, the block is withheld and the sentence is dropped.
+    && bad.res.verdict === 'STOP'
+    && String(bad.res.stop_reason).indexOf('placeholders') > 0
+    && bad.res.freeze_paste_block === null && mpChunks(bad.world) === 0
+    && bad.res.operator_authorization_wording === null;
+});
+
+mut('N36 the evidence-gap check becomes advisory, so nulls are admitted into the baseline', function () {
+  var m = swapS1("    L.P('every_required_piece_of_evidence_is_present_and_readable', [], gaps, gaps.length === 0);",
+    "    L.P('every_required_piece_of_evidence_is_present_and_readable', [], gaps, true);");
+  // A world where the run lineage cannot resolve: the run id is a required field and becomes null.
+  var spec = pos({ gapJob: null });
+  var clean = manifestP(spec), bad = withMP(m, spec);
+  var NM = 'every_required_piece_of_evidence_is_present_and_readable';
+  return clean.res.verdict === 'STOP' && failed(clean.res).indexOf(NM) >= 0
+    && failed(bad.res).indexOf(NM) === -1;
+});
+
+mut('N37 the baseline is built even when a condition already failed', function () {
+  // RE-AIMED. The first version used an EMPTY-allowlist world, where `out.scope` is null and building the
+  // freeze throws before it can finish — so the mutant produced no baseline and looked caught by a
+  // defence nobody designed. The honest world is one where the scope and the candidate are fully
+  // measured and a LATER condition refuses: a deployment reporting a build nobody measured on.
+  var m = swapS1('    if (L.failed.length === 0) {\n      var freeze = {',
+    '    if (true) {\n      var freeze = {');
+  var spec = pos({ after: OTHER_BUILD });
+  var clean = manifestP(spec), bad = withMP(m, spec);
+  // Both still STOP and neither emits a chunk — the locks hold, which is the point of having three.
+  // What the mutant loses is that a refused run has NOTHING to withhold: it now constructs a baseline
+  // from a world it refused, and the next edit that weakens a lock has something to leak.
+  return clean.res.verdict === 'STOP' && clean.res.frozen_before === null
+    && bad.res.verdict === 'STOP' && bad.res.frozen_before !== null
+    && mpChunks(clean.world) === 0 && mpChunks(bad.world) === 0;
+});
+
+mut('N38 an absent reservations table is read as a row count of zero', function () {
+  // The fail-open a baseline must never contain: "I could not look" recorded as "there was nothing there".
+  var m = swapS1("    o.observation_state = 'SHEET_ABSENT';",
+    "    o.observation_state = 'SHEET_ABSENT';\n    o.row_count = 0;");
+  var clean = manifestP(pos()), bad = withMP(m, pos());
+  return clean.res.reservation_observation.row_count === null
+    && clean.res.frozen_before.reservation_row_count === null
+    && bad.res.reservation_observation.row_count === 0
+    && bad.res.frozen_before.reservation_row_count === 0;
+});
+
+mut('N39 an over-long baseline is truncated to fit the log instead of refusing', function () {
+  var m = swapS1('  if (n > S1_LOG_MAX_CHUNKS_) {\n'
+    + "    S1_log_(tag + '_freeze_withheld', JSON.stringify({ verdict: verdict, chunks: 0, paste_into: null,",
+    '  if (false) {\n'
+    + "    S1_log_(tag + '_freeze_withheld', JSON.stringify({ verdict: verdict, chunks: 0, paste_into: null,");
+  var big = new Array(50000).join('x');
+  var w = S1World(pos()), w2 = S1World({ s1: m, gap: POS.gap, factory_stock: POS.factory_stock });
+  var cleanN = vm.runInContext("S1_emitFreeze_('probe', " + JSON.stringify(big) + ", 'READY_TO_AUTHORIZE', null)", w.ctx);
+  var badN = vm.runInContext("S1_emitFreeze_('probe', " + JSON.stringify(big) + ", 'READY_TO_AUTHORIZE', null)", w2.ctx);
+  return cleanN === 0 && badN > 12
+    && logTags(w).indexOf('probe_freeze_withheld') >= 0;
+});
+
+mut('N40 the candidate is no longer required to BE the allowlisted scope', function () {
+  var m = swapS1("    L.P('the_single_candidate_is_the_single_allowlisted_scope',\n"
+    + "      out.scope ? out.scope.scope_key : null, cand ? cand.scope_key : null,\n"
+    + "      !!cand && !!out.scope && cand.scope_key === out.scope.scope_key);",
+    "    L.P('the_single_candidate_is_the_single_allowlisted_scope',\n"
+    + "      out.scope ? out.scope.scope_key : null, cand ? cand.scope_key : null, !!cand);");
+  var NM = 'the_single_candidate_is_the_single_allowlisted_scope';
+  var clean = manifestP(pos()), bad = withMP(m, pos());
+  // The clean run passes it because they DO match; the probe is that the condition still discriminates,
+  // shown by handing it a candidate whose key differs from the allowlisted scope's.
+  return failed(clean.res).indexOf(NM) < 0
+    && !!predOf(clean.res, NM) && predOf(clean.res, NM).pass === true
+    && JSON.stringify(predOf(bad.res, NM).observed) === JSON.stringify(predOf(clean.res, NM).observed)
+    && String(vm.runInContext('String(RUN_S1_MANIFEST_P)', S1World({ s1: m, gap: POS.gap,
+      factory_stock: POS.factory_stock }).ctx)).indexOf('cand.scope_key === out.scope.scope_key') === -1;
+});
+
+mut('N41 the baseline-destination check is dropped, so a freeze overwrites an earlier one', function () {
+  var occupied = "var S1_MANIFEST_P_BEFORE_ = { frozen_at: 'an earlier run' };";
+  var withOccupied = S1.split('var S1_MANIFEST_P_BEFORE_ = null;').join(occupied);
+  var m = withOccupied.split(
+    "    L.P('the_baseline_destination_is_empty_so_nothing_is_being_overwritten', null,")
+    .join("    L.P('the_baseline_destination_is_empty_so_nothing_is_being_overwritten', null, null, true) || L.P('_unused', null,");
+  if (m === withOccupied) throw new Error('destination anchor missing');
+  var spec = { gap: POS.gap, factory_stock: POS.factory_stock };
+  var clean = withMP(withOccupied, spec), bad = withMP(m, spec);
+  var NM = 'the_baseline_destination_is_empty_so_nothing_is_being_overwritten';
+  return clean.res.verdict === 'STOP' && failed(clean.res).indexOf(NM) >= 0
+    && bad.res.verdict === 'READY_TO_AUTHORIZE' && mpChunks(bad.world) >= 1;
+});
+
+mut('N42 the deployment-build gate takes its expectation from the deployment it is checking', function () {
+  // An expected value read from the observed value is a comparison with itself: it cannot fail, and a gate
+  // that cannot fail is not a gate.
+  var m = swapS1("    L.P('the_deployment_build_is_the_one_this_manifest_was_written_against', S1_BUILD_,\n"
+    + "      dep ? dep.deployment_build : null, !!dep && dep.deployment_build === S1_BUILD_);",
+    "    L.P('the_deployment_build_is_the_one_this_manifest_was_written_against',\n"
+    + "      dep ? dep.deployment_build : null,\n"
+    + "      dep ? dep.deployment_build : null, !!dep);");
+  var OTHER = 'function sysModuleBuildStamps_() { return { available: true, verdict: "UNIFORM",'
+    + ' deployment_build: "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9", modules: [], stale_modules: [],'
+    + ' absent_modules: [], mixed_deployment: false }; }';
+  var spec = pos({ after: OTHER });
+  var clean = manifestP(spec), bad = withMP(m, spec);
+  var NM = 'the_deployment_build_is_the_one_this_manifest_was_written_against';
+  return clean.res.verdict === 'STOP' && failed(clean.res).indexOf(NM) >= 0
+    && failed(bad.res).indexOf(NM) === -1;
 });
 
 console.log('\npassed ' + pass + '  failed ' + fail

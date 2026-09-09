@@ -675,18 +675,40 @@ function git(cmd) {
   try { return cp.execSync('git ' + cmd, { cwd: ROOT, encoding: 'utf8' }); } catch (e) { return null; }
 }
 var REL63 = 'assets/specs/active/apps-script/63_api_v1_system_health.gs';
-function roundBaseline() {
-  // NOTHING IS PASSED THROUGH A SHELL QUOTE. The first attempt used `git log -S"…'stamp'…"`, and a
-  // single-quoted argument means nothing to cmd.exe: the pickaxe matched no commit, the baseline silently
-  // became HEAD, and the diff was empty — a derivation that failed by returning a plausible answer.
+// NOTHING IS PASSED THROUGH A SHELL QUOTE. The first attempt used `git log -S"…'stamp'…"`, and a
+// single-quoted argument means nothing to cmd.exe: the pickaxe matched no commit, the baseline silently
+// became HEAD, and the diff was empty — a derivation that failed by returning a plausible answer.
+//
+// S1-R4 — AND BOTH ENDS ARE NOW ANCHORED ON THE STAMP, which completes the S1-R3 repair. That round bound
+// the END of the range to this round's own commit and left the START searching from the top of the list,
+// so the baseline was "the newest commit not carrying R5-R1" — which is HEAD the moment any later round
+// moves 63_. S1-R3 moved it, and the baseline resolved to HEAD: the range collapsed to nothing and C0a
+// caught it. The commits are listed newest-first, so THIS round is the first one carrying the stamp and
+// the baseline is the next one BELOW that which does not.
+function roundCommits() {
   var log = git('log --format=%H -- ' + REL63);
   if (log === null) return null;
-  var commits = log.split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
-  for (var i = 0; i < commits.length; i++) {
-    var blob = git('show ' + commits[i] + ':' + REL63);
-    if (blob === null) continue;
-    // The newest commit whose 63_ does NOT carry this stamp is the release being upgraded from.
-    if (blob.indexOf("SYS_DEPLOYMENT_RELEASE_ = '" + STAMP + "'") === -1) return commits[i];
+  return log.split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
+}
+function carriesStamp(sha) {
+  var blob = git('show ' + sha + ':' + REL63);
+  return blob === null ? null : (blob.indexOf("SYS_DEPLOYMENT_RELEASE_ = '" + STAMP + "'") !== -1);
+}
+function roundIntroIndex() {
+  var commits = roundCommits();
+  if (!commits) return -1;
+  for (var i = 0; i < commits.length; i++) { if (carriesStamp(commits[i]) === true) return i; }
+  return -1;
+}
+function roundBaseline() {
+  var commits = roundCommits();
+  if (!commits) return null;
+  var at = roundIntroIndex();
+  // When no committed 63_ carries the stamp yet, this round is still the working tree and the whole list
+  // is older than it — so the search starts at the top, exactly as it used to.
+  var from = at === -1 ? 0 : at + 1;
+  for (var i = from; i < commits.length; i++) {
+    if (carriesStamp(commits[i]) === false) return commits[i];
   }
   return null;
 }
@@ -696,15 +718,9 @@ function roundBaseline() {
 // is closed for ever. When the working tree IS that round (nothing later has moved 63_), INTRO is null and
 // the tree is the round — measured, not assumed.
 function roundIntro() {
-  var log = git('log --format=%H -- ' + REL63);
-  if (log === null) return null;
-  var commits = log.split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
-  for (var i = 0; i < commits.length; i++) {
-    var blob = git('show ' + commits[i] + ':' + REL63);
-    if (blob === null) continue;
-    if (blob.indexOf("SYS_DEPLOYMENT_RELEASE_ = '" + STAMP + "'") !== -1) return commits[i];
-  }
-  return null;
+  var commits = roundCommits();
+  var at = roundIntroIndex();
+  return (commits && at !== -1) ? commits[at] : null;
 }
 var BASE = roundBaseline();
 var INTRO = roundIntro();
