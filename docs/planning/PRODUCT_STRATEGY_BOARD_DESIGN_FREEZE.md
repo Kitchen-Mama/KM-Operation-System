@@ -2,11 +2,16 @@
 
 **Rounds:** `PRODUCT-STRATEGY-BOARD-P0` — Discovery, Data Mapping and Design Freeze
 · `PRODUCT-STRATEGY-BOARD-P0-R1` — Design Closure and Non-Runtime Visual Prototype
-**Status:** **DESIGN CLOSED.** All nine open decisions are now operator-decided and applied. Still nothing implemented.
+· `PRODUCT-STRATEGY-BOARD-P0-R2` — Interactive SKU Price-Band Prototype
+**Status:** **DESIGN CLOSED.** All nine open decisions are operator-decided and applied. Still nothing
+implemented in the application; the price band is now demonstrated in the isolated prototype (§22).
 **Base commit:** `e9fcd27` (`origin/main` at the time this branch was cut)
 **Branch:** `feature/product-strategy-board-p0` (isolated git worktree)
 **Scope of P0:** this document. **Scope of P0-R1:** this document + a non-runtime static prototype under
-`docs/prototypes/product-strategy-board/` (§22). No page, no table, no API, no `.gs` change, no deployment.
+`docs/prototypes/product-strategy-board/` (§22). **Scope of P0-R2:** that prototype made interactive — a
+real X/Y price band, a multi-select SKU selector, working filters, live gap/overlap/cannibalisation
+arithmetic and 120 automated DOM assertions — plus this section. In all three rounds: no page, no table,
+no API, no `.gs` change, no deployment.
 
 > **What "design freeze" means here.** Every table, column, action name and component named below was
 > read out of shipped source in this repository, and the file and line it came from is cited. Where a
@@ -1433,6 +1438,25 @@ into B1** (D-5), **revisions moved into B1** (D-7), **`DEAL_PLAN` moved from P2 
 - R9 Schema, MVP, batches and acceptance criteria are mutually consistent with the nine decisions. ✔
 - R10 No production file, no `.gs`, no S1 file changed; no push, merge, deploy or DB write. ✔ (§21)
 
+**P0-R2 (the interactive prototype) — all met:**
+- S1 The price band is a real X/Y chart: X = SKU, Y = price, with Y-axis ticks, SKU labels, a legend
+  and per-SKU details. ✔ (§22.4)
+- S2 Five price levels per SKU, and the vertical minimum→MSRP band. ✔
+- S3 Regular, official deal and proposed deal are three visually distinct markers, and no SKU ever
+  carries both deal markers. ✔
+- S4 Multi-select SKU selector with search, Select all and Clear all; the X axis follows it
+  immediately. ✔ (10 plotted members in the default panel — inside the 8–12 target)
+- S5 Series replaces the SKU universe; Company / Country / Marketplace narrow it. ✔
+- S6 Currencies never share a Y axis; three currencies produce three panels and no FX is applied. ✔
+- S7 Gap, overlap, cannibalisation and entry/core/premium computed live, with the threshold displayed;
+  a step exactly equal to the threshold is not a gap and a single-point touch is not an overlap. ✔
+- S8 `SOURCE_MISSING` is listed and never plotted; no point is invented. ✔
+- S9 Text, Price Band and Matrix create, edit and delete real elements; unimplemented tools are
+  disabled controls rather than dialogs, and the absent interactions are named on the page. ✔
+- S10 No network, no storage, no dependency, no production integration — proven by a
+  comment-and-string-stripped scan and by the page's own assertions. ✔
+- S11 120 automated DOM assertions pass. ✔ (§22.5)
+
 **P1 acceptance (for the batches above):**
 - **B1** a create replayed with the same idempotency key returns `replayed: true`, creates **no** second
   row, and the derived id is byte-identical across the retry — for **boards, elements and revisions**.
@@ -1559,60 +1583,122 @@ consume it rather than adding a second one.** Same tables, one owner (Q-3).
 - **No table created, no DB write, no API implemented, no AI implemented, no dependency added, no flag /
   release / build change, no Apps Script sync, no deployment, no push, no merge.**
 
+### 21.3 P0-R2 (the interactive price band)
+- **Preconditions verified read-only before any change:** the designated worktree; branch
+  `feature/product-strategy-board-p0`; **PRE HEAD `98ea5adae75298f212fad09cde3c88dae9460325`**; its sole
+  parent `5654db6`; worktree clean including untracked; the mainline worktree clean; `origin` still
+  carries no `feature/product-strategy-board-p0` branch — **expected, and this round pushes nothing**.
+- **Files changed: 4 modified**, all under `docs/` — this document (§22 plus the header) and the three
+  prototype files, plus its `README.md`.
+- **No production file touched.** `index.html`, `assets/**` and every `.gs` are byte-identical to
+  `e9fcd27` on this branch — verified by object hash, including `supplychain.js` and
+  `supply-chain-canvas.css`, which §11.5 describes and does not modify.
+- **No S1 file** read into a change or modified — `TEMP_S1_POSITIVE_RESIDUAL_READINESS_CENSUS.gs` hashed
+  identical. **`C:/km-lb` untouched. Mainline worktree untouched** — no branch switch, reset or checkout.
+- **No table, no migration, no DB write, no API, no AI, no dependency, no flag / release / build change,
+  no Apps Script sync, no deployment, no push, no merge.**
+
 ---
 
-## §22 — The non-runtime visual prototype (P0-R1)
+## §22 — The non-runtime prototype (P0-R1, extended in P0-R2)
 
 **Path:** `docs/prototypes/product-strategy-board/`
 — `index.html`, `prototype.css`, `prototype.js`, `README.md`
 
-**How to open it:** double-click `index.html`, or open the local file path in a browser. No server, no
-build step, no install.
+**How to open it:** double-click `index.html`, or open the local file path in a browser. No server,
+no build step, no install; it runs from `file://`.
 
-### 22.1 What it is, and what it deliberately is not
+### 22.1 What P0-R2 changed, and why
+
+P0-R1 illustrated the information architecture with static cards, and the operator's acceptance
+found the gap: **the point of this screen is not a card, it is an axis.** A Series' price
+architecture is a question about where every SKU sits relative to every other one, and that cannot
+be read from a stack of cards. So the price band stopped being a sketch and became the working
+centrepiece.
+
+| | P0-R1 | P0-R2 |
+|---|---|---|
+| Price band | a hand-drawn illustration | **a real X/Y chart**: X = SKU, Y = price, hand-built inline SVG |
+| SKU choice | fixed, three cards | **multi-select selector** with search, Select all, Clear all |
+| Filters | present, inert | **Series / Company / Country / Marketplace all really filter** |
+| Analysis | pre-written text | **computed live** from the mock data, re-computed on every change |
+| Gap threshold | a fixed label | **an input** that drives the arithmetic |
+| Currencies | two illustrated tracks | **three panels**, one per currency, each with its own Y axis |
+| Board tools | every button opened a dialog | **Text / Price Band / Matrix really work**, and delete; the rest are **disabled** |
+| Verification | none | **120 DOM assertions**, run on load, restoring the page afterwards |
+
+### 22.2 What it is, and what it deliberately is not
 
 | | |
 |---|---|
-| **Is** | A static, self-contained illustration of the board's **information architecture and user flow** — the screens, the element types, the states and the refusals, as decided in §§2–15 |
-| **Is not** | Runtime. Not a page of the app, not a drag engine, not CRUD, not a data layer, and not a preview of the final visual design |
+| **Is** | The first-priority screen, working: the price band, the SKU selector, the filters, the analysis arithmetic and three board elements — plus every refusal §9 and §15 require |
+| **Is not** | Runtime. Not a page of the app, not a data layer, not persistence, and not the Canvas Core |
 
-### 22.2 Hard constraints, all satisfied
+**What is open** is listed in `README.md`. **What is not open is not pretended:** drag, resize, pan,
+zoom, board multi-select and z-order are absent, the page says so where the tools are, and the tools
+that need P1 work (`SKU_CARD`, `REGIONAL_SKU_CARD`, `DEAL_PLAN`, `CHART`, `GROUP`, `CONNECTOR`) are
+**disabled controls rather than buttons wired to a dialog**. A prototype that answers every click
+with an apology teaches the reader nothing about which parts are real.
 
-| Constraint | How |
+### 22.3 Hard constraints, all satisfied
+
+| Constraint | How, and how it is checked |
 |---|---|
-| Local mock data only | One `MOCK` object literal at the top of `prototype.js`. Every SKU, price, campaign and note in it is invented and labelled as sample data |
-| No API call | The file contains no `fetch`, no `XMLHttpRequest`, no `WebSocket`, no `EventSource`, no dynamic `import()`, and no `<script src>`/`<link href>` to any remote origin |
-| No production DB read | No `KM.DB`, no action name, no Apps Script URL |
-| Not loaded by the app | Nothing in `index.html` (the app shell) or any `assets/**` file references `docs/prototypes/**`. It lives outside the app's file tree and is reachable only by opening it directly |
-| No production frontend change | Zero bytes changed in `assets/**` or the app's `index.html` (§21.2) |
-| Not deployed | `docs/**` is not part of any deployment or bundle |
-| No new dependency | Plain HTML + CSS + vanilla JS. No CDN, no library, no font fetch, no build tool |
-| No `localStorage` for real data | The prototype does not call `localStorage` at all — not for board data, not for preferences. Its state lives in a JS variable for the page's lifetime |
+| Local mock data only | One `MOCK` object whose own `note` field declares it invented. Every SKU, price and campaign is made up |
+| No network request | **Scanned with comments *and string literals* stripped first: zero occurrences** of `fetch(`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `sendBeacon`, dynamic `import(`, `KM.*`, `google.script`, `http://`, `https://`. Stripping matters: the file's own disclaimers name every API it promises not to use, so a raw grep counts those as hits |
+| No production DB read | No client accessor referenced, no action invoked, no Apps Script URL |
+| No storage | `localStorage` / `sessionStorage` / `indexedDB` / `openDatabase` are never called. State lives in one object; **reload clears it, and that is this round's intended behaviour** |
+| Exactly two subresources | `prototype.css` and `prototype.js`, both local siblings — asserted by the page itself (N3) |
+| No dependency | Plain HTML + CSS + vanilla JS; the charts are `createElementNS` SVG. **Zero** `@import`, `@font-face` or `url()` in the CSS |
+| Not loaded by the app | Nothing in the app's `index.html` or under `assets/**` references `docs/prototypes/**` |
+| No production frontend change | Zero bytes changed under `assets/**` or in the app's `index.html` |
+| Not deployed | `docs/**` is in no deployment or bundle |
+| No table or migration | None is created, and there is nothing to write to |
 
-### 22.3 The fifteen things it demonstrates
+### 22.4 The chart, and the rules it obeys
 
-| # | Demonstrated | Where in the prototype |
-|---|---|---|
-| 1 | The **Product Strategy** page shell (D-1) — a top-level surface, not a Pricing Center child | Page header + breadcrumb |
-| 2 | **Board selector** with board type and version | Top bar, left |
-| 3 | **Series / Company / Country / Marketplace filters** | Top bar |
-| 4 | **Left toolbar**: Text · SKU · Regional · Price Band · Matrix · **Deal Plan** (enabled, D-4); Chart / Group / Connector marked deferred | Toolbar rail |
-| 5 | **The central board** with placed, selectable element cards on a fixed grid | Canvas region |
-| 6 | **Right properties panel** — source, mode, `author_type`, `version`, notes, geometry | Right rail |
-| 7 | **`SKU_CARD`** at master-SKU grain, with the three price levels and their own unit columns | Canvas |
-| 8 | **`REGIONAL_SKU_CARD`** at `company\|country\|marketplace\|sku` grain, with `marketplace_sku_status` **labelled as coming from `marketplace_skus`** (§4.5) | Canvas |
-| 9 | **`TEXT_NOTE`** | Canvas |
-| 10 | **`DEAL_PLAN`** with a permanent **`PROPOSAL ONLY`** marker, `proposed_*` fields, and the official campaign price shown separately (D-4, §7.4) | Canvas |
-| 11 | **`SERIES_PRICE_BAND`** — normal marker, deal marker, proposal marker, entry/core/premium positions, an **overlap**, a **gap with its threshold displayed**, and a **cannibalisation warning** labelled proposal-driven (§9.3) | Canvas, the wide element |
-| 12 | **Separate tracks per currency** with their own axes, plus `MIXED_CURRENCY_COMPARISON_REFUSED` stated on the element (D-3) | Inside the price band |
-| 13 | **`LIVE_REFERENCE` vs `FROZEN_SNAPSHOT`** — badges on the cards, `captured_at` on the frozen one, and the refresh-diff idea | Cards + properties panel |
-| 14 | **`SOURCE_MISSING`** — a member listed with its reason and plotted nowhere (D-2), and an official deal price absent rendered as missing rather than "no deal" | Price band footer + Deal Plan |
-| 15 | **Save Checkpoint and the revision concept** (D-7) — the button, the revision count, and a revision list with `revision_type` and who caused it | Top bar + History drawer |
+X axis is SKU, Y axis is price, and **five levels per SKU**: `msrp` (top tick), `regular_price`
+(filled circle — the band basis, D-2), `official_deal_price` (filled diamond, only where
+`campaign_sku_lines.promo_price` exists), `proposed_deal_price` (dashed hollow diamond, D-4) and
+`minimum_price` (bottom tick). The vertical bar from minimum to MSRP **is** the price band.
 
-### 22.4 Interactions it does implement (deliberately few)
+Every §9 rule is enforced by the code rather than described by it:
 
-Enough to walk the flow, and no engine: select an element (the properties panel follows the selection),
-switch the selected element between Live and Snapshot to see the badge and `captured_at` change, toggle
-the History drawer, press Save checkpoint (which appends a `SAVE_CHECKPOINT` row to the in-memory
-revision list), and switch the price band's Series. **Drag, resize, pan, zoom, real CRUD and persistence
-are out of scope** — they are §11.5's Canvas Core, which P1 builds and P0-R1 only specifies.
+| Rule | Where |
+|---|---|
+| **D-2** — `pricing_list.regular_price` is the only basis; absent ⇒ `SOURCE_MISSING`, listed and **plotted nowhere**, never back-filled from `sku_details.selling_price` | one member of the mock data has no price row, and the self-test proves it never becomes a point |
+| **D-3** — one panel per currency, own axis, own domain, **no shared axis, no FX** | three currencies in the data; the self-test proves no panel mixes two and no finding crosses two |
+| **D-4** — a proposal is a third marker, visually distinct, and every finding it causes is labelled `PROPOSAL-DRIVEN` | two proposals in the data, driving one overlap and one cannibalisation |
+| **D-6 / D-8** — current selling price and margin are absent, with nothing standing in | stated in the tooltip and the details panel; the self-test looks for a **figure** beside the word rather than the word, so the honest absence-statement is not mistaken for a violation |
+| **§9.3.4** — every comparison in **integer cents** | `cents()` at the top of the file, and the two boundary rules below |
+| **§9.3.5** — entry / core / premium are **positions in the sorted list**, not a column | computed per panel; a single-member panel says `only` |
+| **§9.3.4** — a gap marking must display the threshold that produced it | every gap finding and every on-chart gap label carries it |
+
+**The two boundary rules, each with a case sitting in the default data on purpose:**
+
+- a step **exactly equal** to the threshold is **not** a gap — `CO1190-R → CO1195-R` is exactly
+  `8.00` against the default `8.00`;
+- intervals meeting at **a single point** are **not** an overlap — `CO1160-R`'s regular `52.99`
+  equals `CO1180-R`'s deal `52.99`. The same touch **is** a cannibalisation, because that test is
+  `≤`, and the two tests differing at the boundary is deliberate rather than an oversight.
+
+### 22.5 The verification
+
+**120 automated DOM assertions, run on load**, against the real DOM: they tick real checkboxes,
+change the real selects, read back the rendered SVG, and **restore the starting selection when they
+finish**. A badge in the top banner shows the count; a detail list and the browser console carry the
+failures; a button re-runs them.
+
+Groups: **A** integer cents · **B** empty state · **C** multi-select changes the X-axis item count ·
+**D** Select all / Clear all · **E** search · **F** Series replaces the universe · **G** band bounds
+per SKU · **H** the three markers, legend and axes · **I** `SOURCE_MISSING` never becomes a point ·
+**J** currency never shares an axis · **K** gap / overlap / cannibalisation values and the two
+boundary rules · **L** the four filters · **M** Text / Price Band / Matrix create, edit and delete ·
+**N** no storage, no network, no substituted price · **Z** the page is restored.
+
+**Two of these assertions were wrong when first written, and the corrections are worth recording**,
+because both are mistakes this document warns about elsewhere. One counted marker elements without
+scoping to the chart, so it also counted the **legend's own swatches** — a measurement whose subject
+was wider than its name. The other scanned the self-test function for the forbidden API names, and
+the self-test has to *name* them in order to look for them — a check that could only ever fail,
+about itself. Both now assert the narrower, real thing.

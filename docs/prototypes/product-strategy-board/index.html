@@ -3,22 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Product Strategy Board — NON-RUNTIME PROTOTYPE</title>
+<title>Product Strategy Board — Series Price Band (non-runtime prototype)</title>
 <!--
-  PRODUCT STRATEGY BOARD — NON-RUNTIME STATIC PROTOTYPE (PRODUCT-STRATEGY-BOARD-P0-R1 §22)
+  PRODUCT STRATEGY BOARD — NON-RUNTIME INTERACTIVE PROTOTYPE
+  P0-R1 built the information architecture. P0-R2 makes the price band the working centrepiece:
+  choose SKUs, read a real X/Y chart, and see the gap / overlap / cannibalisation arithmetic move.
 
   THIS IS NOT PART OF THE APPLICATION.
-    - It is not referenced by index.html or by any file under assets/**.
-    - It makes no network request of any kind: no fetch, no XMLHttpRequest, no WebSocket,
-      no EventSource, no dynamic import, no remote <script src> or <link href>.
-    - It reads no production database and names no Apps Script action.
-    - It adds no dependency: plain HTML + CSS + vanilla JS, no CDN, no remote font.
-    - It does not call localStorage at all. Its state lives in a JS variable for the
-      lifetime of the page.
-    - Every SKU, price, campaign and note below is INVENTED SAMPLE DATA.
+    - Not referenced by the app's index.html or by any file under assets/**.
+    - No network of any kind: no fetch, no XHR, no WebSocket, no EventSource, no dynamic import,
+      no remote script/style/font. The only two subresources are the siblings below.
+    - No production data path: no KM.DB, no Apps Script action invoked, no Apps Script URL.
+    - No storage: localStorage / sessionStorage / IndexedDB are never called. Reload clears
+      everything, and that is the intended behaviour this round.
+    - No dependency: plain HTML + CSS + vanilla JS. Charts are hand-built inline SVG.
+    - Every price, SKU, campaign and note is INVENTED SAMPLE DATA and labelled as such.
 
-  Its purpose is the INFORMATION ARCHITECTURE and the USER FLOW, not the visual design
-  and not a drag engine. See docs/planning/PRODUCT_STRATEGY_BOARD_DESIGN_FREEZE.md §22.
+  Design authority: docs/planning/PRODUCT_STRATEGY_BOARD_DESIGN_FREEZE.md (§9 price band, §22 this file).
 -->
 <link rel="stylesheet" href="prototype.css">
 </head>
@@ -26,13 +27,13 @@
 
 <div class="proto-banner">
   <strong>NON-RUNTIME PROTOTYPE</strong>
-  <span>Static illustration of information architecture and flow. All data is invented sample data.
-  No network request, no database, no persistence, not part of the app.</span>
+  <span>All data below is invented sample data. No network request, no database, no persistence
+  &mdash; reload clears everything. Not part of the application.</span>
+  <span class="banner-selftest" id="selftestBadge" tabindex="0" role="status">self-test&nbsp;&hellip;</span>
 </div>
 
 <div class="app">
 
-  <!-- ============================================================ PAGE SHELL (demo 1) -->
   <header class="page-head">
     <nav class="crumb" aria-label="Breadcrumb">
       <span class="crumb-group">Product Strategy</span>
@@ -40,20 +41,19 @@
       <span class="crumb-current">Product Strategy Board</span>
     </nav>
     <p class="crumb-note">
-      D-1 — a new top-level <em>Product Strategy</em> group. Deliberately not under
-      <em>Pricing Center</em>, which is logistics cost (Carrier / Container / Warehouse rate cards).
+      D-1 &mdash; a top-level <em>Product Strategy</em> group, deliberately not under
+      <em>Pricing Center</em> (which is logistics cost). The screen below is the first-priority one:
+      a Series' complete price architecture, by SKU, at a glance.
     </p>
   </header>
 
-  <!-- ============================================================ TOP BAR (demos 2, 3, 15) -->
+  <!-- ======================================================= TOP BAR: the filters that really filter -->
   <div class="topbar">
     <div class="topbar-row">
-
       <label class="field field--board">
         <span class="field-label">Board</span>
         <select id="boardSelect">
-          <option value="b1">Can Opener price architecture — 2027 H1</option>
-          <option value="b2">Jar Opener repositioning (draft)</option>
+          <option value="b1">Can Opener price architecture &mdash; 2027 H1</option>
         </select>
       </label>
       <button type="button" class="btn btn--ghost" id="btnNewBoard">+ New</button>
@@ -62,22 +62,23 @@
 
       <label class="field">
         <span class="field-label">Series</span>
-        <select id="seriesSelect">
-          <option value="Can Opener">Can Opener</option>
-          <option value="Jar Opener">Jar Opener</option>
-        </select>
+        <select id="fSeries"></select>
       </label>
       <label class="field">
         <span class="field-label">Company</span>
-        <select><option>All</option><option>ResUS</option><option>KM-TW</option></select>
+        <select id="fCompany"></select>
       </label>
       <label class="field">
         <span class="field-label">Country</span>
-        <select><option>All</option><option>US</option><option>DE</option><option>TW</option></select>
+        <select id="fCountry"></select>
       </label>
       <label class="field">
         <span class="field-label">Marketplace</span>
-        <select><option>All</option><option>Amazon</option><option>Shopify</option></select>
+        <select id="fMarketplace"></select>
+      </label>
+      <label class="field field--thr">
+        <span class="field-label">Gap threshold</span>
+        <input type="number" id="fThreshold" min="0" step="0.50" value="8.00" inputmode="decimal">
       </label>
 
       <span class="topbar-spacer"></span>
@@ -85,100 +86,140 @@
       <button type="button" class="btn btn--primary" id="btnCheckpoint">Save checkpoint</button>
       <button type="button" class="btn" id="btnHistory" aria-expanded="false">History <span id="revCount">3</span></button>
     </div>
-
-    <!-- board meta line: version, checkpoint, revisions, owner-as-provenance (D-7, D-9) -->
     <div class="topbar-meta">
       <span>board <strong id="metaVersion">v12</strong></span>
-      <span class="dot">·</span>
+      <span class="dot">&middot;</span>
       <span>last checkpoint <strong id="metaCheckpoint">14:22</strong></span>
-      <span class="dot">·</span>
+      <span class="dot">&middot;</span>
       <span><strong id="metaRevisions">3</strong> revisions</span>
-      <span class="dot">·</span>
-      <span class="owner">
-        owner <strong>vic</strong>
-        <span class="prov-tag" title="D-9: owner is client-asserted provenance, not access control">provenance</span>
-      </span>
-      <span class="dot">·</span>
-      <span class="visibility-note">
-        Any user of this deployment can open and edit this board. There is no access control yet.
-      </span>
+      <span class="dot">&middot;</span>
+      <span class="owner">owner <strong>vic</strong>
+        <span class="prov-tag" title="D-9: owner is client-asserted provenance, not access control">provenance</span></span>
+      <span class="dot">&middot;</span>
+      <span class="visibility-note">Any user of this deployment can open and edit this board. There is
+        no access control yet.</span>
     </div>
   </div>
 
-  <!-- ============================================================ HISTORY DRAWER (demo 15) -->
   <section class="drawer" id="historyDrawer" hidden aria-label="Board revisions">
     <div class="drawer-head">
-      <h2>Revisions <span class="tag tag--new">D-7 — ships in P1</span></h2>
+      <h2>Revisions <span class="tag tag--new">D-7 &mdash; ships in P1</span></h2>
       <button type="button" class="btn btn--ghost btn--sm" id="btnHistoryClose">Close</button>
     </div>
     <p class="drawer-note">
-      A revision is written on exactly four events — <code>SAVE_CHECKPOINT</code>,
-      <code>FREEZE_SNAPSHOT</code>, <code>PRE_RESTORE</code>, <code>PRE_AI_WRITE</code> — and on none of
-      drag, resize, pan, zoom or select. P1 writes and lists them; diff and restore UI is deferred, because
-      history that was never written cannot be built against later.
+      Written on exactly four events &mdash; <code>SAVE_CHECKPOINT</code>, <code>FREEZE_SNAPSHOT</code>,
+      <code>PRE_RESTORE</code>, <code>PRE_AI_WRITE</code> &mdash; and on none of drag, resize, pan, zoom
+      or select. P1 writes and lists them; diff and restore UI is deferred.
     </p>
     <table class="rev-table">
-      <thead>
-        <tr><th>revision_id</th><th>revision_type</th><th>board_version</th><th>author_type</th><th>created_by</th><th>created_at</th></tr>
-      </thead>
+      <thead><tr><th>revision_id</th><th>revision_type</th><th>board_version</th><th>author_type</th>
+        <th>created_by</th><th>created_at</th></tr></thead>
       <tbody id="revBody"></tbody>
     </table>
   </section>
 
-  <!-- ============================================================ MAIN 3-COLUMN LAYOUT -->
-  <div class="workspace">
+  <!-- ======================================================= THE PRICE BAND: selector + chart ------- -->
+  <section class="bandwork" aria-label="Series price band">
 
-    <!-- -------------------------------------------------- LEFT TOOLBAR (demo 4) -->
-    <aside class="toolrail" aria-label="Element tools">
-      <div class="toolrail-head">Add element</div>
-      <button type="button" class="tool" data-tool="TEXT_NOTE"><span class="tool-ico">▭</span>Text</button>
-      <button type="button" class="tool" data-tool="SKU_CARD"><span class="tool-ico">▣</span>SKU</button>
-      <button type="button" class="tool" data-tool="REGIONAL_SKU_CARD"><span class="tool-ico">▤</span>Regional</button>
-      <button type="button" class="tool" data-tool="SERIES_PRICE_BAND"><span class="tool-ico">⎯</span>Price&nbsp;Band</button>
-      <button type="button" class="tool" data-tool="MATRIX"><span class="tool-ico">▦</span>Matrix</button>
-      <button type="button" class="tool tool--flagged" data-tool="DEAL_PLAN">
-        <span class="tool-ico">◆</span>Deal&nbsp;Plan
-        <span class="tool-flag">D-4 · in MVP</span>
-      </button>
-
-      <div class="toolrail-head toolrail-head--sub">Deferred to P2</div>
-      <button type="button" class="tool tool--off" disabled><span class="tool-ico">▧</span>Chart <span class="tool-defer">⏳</span></button>
-      <button type="button" class="tool tool--off" disabled><span class="tool-ico">⬚</span>Group <span class="tool-defer">⏳</span></button>
-      <button type="button" class="tool tool--off" disabled><span class="tool-ico">↗</span>Connector <span class="tool-defer">⏳</span></button>
-
-      <p class="toolrail-note">
-        Clicking a tool is out of scope for this prototype — the elements below are pre-placed.
-        Placement, drag, resize, pan and zoom belong to the Canvas Core (§11.5), which P1 builds.
+    <!-- ---------------------------------------------- SKU selector -->
+    <aside class="skupick" aria-label="SKU selector">
+      <div class="skupick-head">
+        <span>SKUs</span>
+        <span class="skupick-count" id="skuCount">0 / 0</span>
+      </div>
+      <div class="skupick-tools">
+        <input type="search" id="skuSearch" placeholder="Search SKU or name&hellip;" aria-label="Search SKUs">
+        <div class="skupick-btns">
+          <button type="button" class="btn btn--sm" id="btnSelectAll">Select all</button>
+          <button type="button" class="btn btn--sm" id="btnClearAll">Clear all</button>
+        </div>
+      </div>
+      <div class="skupick-list" id="skuList" role="group" aria-label="SKU checkboxes"></div>
+      <p class="skupick-note">
+        Ticking a SKU adds a column to the X axis immediately. A SKU with no
+        <code>pricing_list.regular_price</code> stays listed and is <strong>never plotted</strong>
+        (D-2) &mdash; no point is invented for it.
       </p>
     </aside>
 
-    <!-- -------------------------------------------------- CENTRAL BOARD (demo 5) -->
-    <main class="board" id="board" aria-label="Board canvas">
+    <!-- ---------------------------------------------- chart panels, one per currency -->
+    <div class="charts" id="charts" aria-live="polite"></div>
+
+  </section>
+
+  <!-- ======================================================= THE BOARD: minimal working interactions -->
+  <section class="boardwork" aria-label="Board">
+    <aside class="toolrail" aria-label="Element tools">
+      <div class="toolrail-head">Add element</div>
+      <button type="button" class="tool" id="toolText"><span class="tool-ico">&#9645;</span>Text
+        <span class="tool-live">works</span></button>
+      <button type="button" class="tool" id="toolBand"><span class="tool-ico">&#9135;</span>Price&nbsp;Band
+        <span class="tool-live">works</span></button>
+      <button type="button" class="tool" id="toolMatrix"><span class="tool-ico">&#9638;</span>Matrix
+        <span class="tool-live">works</span></button>
+
+      <div class="toolrail-head toolrail-head--sub">Design-frozen, not in this prototype</div>
+      <button type="button" class="tool tool--off" disabled title="Needs the live source read (D-5)">
+        <span class="tool-ico">&#9635;</span>SKU card <span class="tool-defer">P1</span></button>
+      <button type="button" class="tool tool--off" disabled title="Needs the live source read (D-5)">
+        <span class="tool-ico">&#9636;</span>Regional <span class="tool-defer">P1</span></button>
+      <button type="button" class="tool tool--off" disabled title="Proposal-only element, P1 (D-4)">
+        <span class="tool-ico">&#9670;</span>Deal Plan <span class="tool-defer">P1</span></button>
+      <button type="button" class="tool tool--off" disabled title="Deferred to P2 (§2)">
+        <span class="tool-ico">&#9639;</span>Chart <span class="tool-defer">P2</span></button>
+      <button type="button" class="tool tool--off" disabled title="Deferred to P2 (§2)">
+        <span class="tool-ico">&#11034;</span>Group <span class="tool-defer">P2</span></button>
+      <button type="button" class="tool tool--off" disabled title="Deferred to P2 (§2)">
+        <span class="tool-ico">&#8599;</span>Connector <span class="tool-defer">P2</span></button>
+
+      <p class="toolrail-note">
+        <strong>Not implemented here, and not pretended:</strong> drag, resize, pan, zoom, multi-select
+        and z-order. Those are the Canvas Core (design freeze &sect;11.5), which P1 extracts from the
+        shipped <code>supplychain.js</code> engine. The three enabled tools above really do create,
+        edit and delete elements; the disabled ones are disabled rather than wired to a dialog.
+      </p>
+    </aside>
+
+    <main class="board" id="board">
       <div class="board-grid" aria-hidden="true"></div>
-      <div class="board-items" id="boardItems"><!-- rendered by prototype.js --></div>
+      <div class="board-items" id="boardItems"></div>
       <div class="board-foot">
-        <span class="zoomctl" aria-hidden="true">[ − <strong>100%</strong> + ] [ reset ]</span>
-        <span class="board-foot-note">Fixed grid. Pan / zoom / drag / resize are Canvas Core (§11.5), not this prototype.</span>
+        <span class="board-foot-note">Fixed grid, newest element last. Pan / zoom / drag / resize are
+          Canvas Core (&sect;11.5), not this prototype.</span>
       </div>
     </main>
 
-    <!-- -------------------------------------------------- RIGHT PROPERTIES PANEL (demo 6) -->
     <aside class="props" aria-label="Element properties">
       <div class="props-head">Properties</div>
-      <div id="propsBody" class="props-body"><!-- rendered by prototype.js --></div>
+      <div id="propsBody" class="props-body"></div>
     </aside>
+  </section>
 
-  </div>
+  <!-- ======================================================= SELF-TEST OUTPUT -->
+  <section class="selftest" id="selftest" aria-label="Prototype self-test">
+    <div class="selftest-head">
+      <h2>Automated DOM assertions</h2>
+      <span id="selftestSummary" class="selftest-summary"></span>
+      <button type="button" class="btn btn--ghost btn--sm" id="btnSelftestToggle" aria-expanded="false">Show detail</button>
+      <button type="button" class="btn btn--sm" id="btnSelftestRun">Re-run</button>
+    </div>
+    <p class="selftest-note">
+      These run automatically on load, against the real DOM: they tick real checkboxes, change the real
+      selects and read back the rendered SVG. They restore the starting selection when they finish.
+    </p>
+    <ol class="selftest-list" id="selftestList" hidden></ol>
+  </section>
 
   <footer class="foot">
-    <p>
-      <strong>Prototype scope.</strong> This page demonstrates the fifteen items listed in
-      <code>docs/planning/PRODUCT_STRATEGY_BOARD_DESIGN_FREEZE.md</code> §22.3. It is not runtime, it holds
-      no real data, it persists nothing, and it is loaded by nothing in the application.
-    </p>
+    <p><strong>Prototype scope.</strong> P0-R2 opens the price band, the SKU selector, the filters, the
+      analysis arithmetic and three board elements. It is still not runtime: no page of the app, no data
+      layer, no persistence. See <code>README.md</code> for the open / not-open list and
+      <code>docs/planning/PRODUCT_STRATEGY_BOARD_DESIGN_FREEZE.md</code> &sect;9 for the rules the chart obeys.</p>
   </footer>
 
 </div>
+
+<div class="tip" id="tip" hidden role="tooltip"></div>
 
 <script src="prototype.js"></script>
 </body>

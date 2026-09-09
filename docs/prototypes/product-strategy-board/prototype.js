@@ -1,173 +1,196 @@
 /* =============================================================================================
-   Product Strategy Board — NON-RUNTIME STATIC PROTOTYPE (P0-R1 §22)
+   Product Strategy Board — NON-RUNTIME INTERACTIVE PROTOTYPE (P0-R2)
 
-   NO NETWORK: this file contains no fetch, no XMLHttpRequest, no WebSocket, no EventSource,
-   no dynamic import, and no remote URL of any kind.
-   NO STORAGE: localStorage / sessionStorage / IndexedDB are never touched. State lives in the
-   STATE object below, for the lifetime of the page.
-   NO PRODUCTION DATA: every value in MOCK is invented sample data. No table is read, no
-   Apps Script action is invoked, and no client data-access accessor is referenced. The one
-   action NAME below is a string inside mock snapshot data (captured_via, per design freeze
-   section 8.2) - it records which read a snapshot came from; it is not a call.
+   NO NETWORK: no fetch, no XMLHttpRequest, no WebSocket, no EventSource, no dynamic import,
+   no remote URL. NO STORAGE: localStorage / sessionStorage / IndexedDB are never called; state
+   lives in STATE for the lifetime of the page and reload clears it. NO PRODUCTION DATA PATH: no
+   client data-access accessor is referenced and no Apps Script action is invoked.
+   NO DEPENDENCY: the charts are hand-built inline SVG.
 
-   What this file is for: showing the information architecture and the flow. It is deliberately
-   NOT a drag engine, NOT CRUD and NOT a data layer — those are §11.5 Canvas Core and §12 API,
-   which P1 builds and P0-R1 only specifies.
+   Every price below is INVENTED SAMPLE DATA. Field names are the real ones from the design
+   freeze section 4, so the prototype shows where each value would come from.
+
+   WHAT THIS FILE IS FOR: the first-priority screen. Choose SKUs, read a real X/Y price band, and
+   watch the gap / overlap / cannibalisation arithmetic move. It is not a drag engine and does not
+   pretend to be one - see the tool rail note in index.html.
    ============================================================================================= */
 (function () {
   'use strict';
 
   /* ==========================================================================================
-     1. MOCK DATA — invented. Field NAMES are the real ones from the design freeze (§4), so the
-     prototype shows where each value would come from; the VALUES are all made up.
+     1. INTEGER CENTS. Every comparison and every piece of arithmetic in this file runs on
+     integer cents, never on the decimal a sheet would hold.
+
+     THIS IS A CORRECTNESS RULE AND THE PROTOTYPE FOUND ITS OWN COUNTEREXAMPLE. `32.99 - 24.99`
+     is 8.000000000000004 in IEEE-754, so a step EXACTLY equal to a threshold of 8.00 satisfies
+     `distance > threshold`, is reported as a gap, and then renders through two decimals as
+     "gap 8.00 exceeds threshold 8.00" - a measurement that refutes itself on screen. Design
+     freeze section 9.3.4 carries the rule; this is where it is obeyed.
+     ========================================================================================== */
+  function cents(v) {
+    if (v === null || v === undefined || v === '') return null;
+    var n = Number(v);
+    if (!isFinite(n)) return null;
+    return Math.round(n * 100);
+  }
+  function fromCents(c) { return c === null || c === undefined ? null : (c / 100).toFixed(2); }
+  function money(c, cur) { return c === null ? '—' : fromCents(c) + (cur ? ' ' + cur : ''); }
+
+  /* ==========================================================================================
+     2. MOCK DATA.
+
+     One row per operational site SKU, at the grain the design freeze established: identity and
+     series from `sku_details`, scope and status from `marketplace_skus`, the three price levels
+     from `pricing_list`, the official deal price from `campaign_sku_lines.promo_price`, and the
+     proposal from a board-owned DEAL_PLAN element.
+
+     DELIBERATELY ABSENT, AND NOT SUBSTITUTED (design freeze section 9.1):
+       current selling price  D-6  no column carries it, and regular / selling / promo may not stand in
+       margin                 D-8  no cost source exists, so any margin here would be a made-up cost
      ========================================================================================== */
   var MOCK = {
+    note: 'INVENTED SAMPLE DATA. No row here corresponds to a real SKU, price or campaign.',
+    rows: [
+      // ---- Can Opener, ResUS / US / Amazon, USD. Ten plotted + one SOURCE_MISSING. -------------
+      { sku: 'CO1105-R', product_name: 'Can Opener Lite', series: 'Can Opener',
+        company: 'ResUS', country: 'US', marketplace: 'Amazon', currency: 'USD',
+        marketplace_sku_status: 'active',
+        minimum_price: 21.99, regular_price: 29.99, msrp: 34.99,
+        official_deal_price: null, official_campaign: null, proposed_deal_price: null },
+      { sku: 'CO1108-R', product_name: 'Can Opener Lite Plus', series: 'Can Opener',
+        company: 'ResUS', country: 'US', marketplace: 'Amazon', currency: 'USD',
+        marketplace_sku_status: 'active',
+        minimum_price: 24.99, regular_price: 32.99, msrp: 37.99,
+        official_deal_price: 27.99, official_campaign: 'Spring Reset 2027 (2027-03-01 - 2027-03-14)',
+        proposed_deal_price: null },
+      { sku: 'CO1100-R', product_name: 'Can Opener Classic', series: 'Can Opener',
+        company: 'ResUS', country: 'US', marketplace: 'Amazon', currency: 'USD',
+        marketplace_sku_status: 'active',
+        minimum_price: 29.99, regular_price: 39.99, msrp: 49.99,
+        official_deal_price: 31.99, official_campaign: 'Prime Day 2027 (2027-07-08 - 2027-07-09)',
+        proposed_deal_price: null },
+      { sku: 'CO1120-R', product_name: 'Can Opener Comfort', series: 'Can Opener',
+        company: 'ResUS', country: 'US', marketplace: 'Amazon', currency: 'USD',
+        marketplace_sku_status: 'active',
+        minimum_price: 31.99, regular_price: 44.99, msrp: 54.99,
+        official_deal_price: null, official_campaign: null,
+        // The proposal that drives both the overlap and the cannibalisation finding (D-4).
+        proposed_deal_price: 34.99 },
+      { sku: 'CO1130-R', product_name: 'Can Opener Comfort Wide', series: 'Can Opener',
+        company: 'ResUS', country: 'US', marketplace: 'Amazon', currency: 'USD',
+        marketplace_sku_status: 'active',
+        minimum_price: 34.99, regular_price: 47.99, msrp: 57.99,
+        official_deal_price: 42.99, official_campaign: 'Prime Day 2027 (2027-07-08 - 2027-07-09)',
+        proposed_deal_price: null },
+      { sku: 'CO1150-R', product_name: 'Can Opener Soft Grip', series: 'Can Opener',
+        company: 'ResUS', country: 'US', marketplace: 'Amazon', currency: 'USD',
+        marketplace_sku_status: 'active',
+        minimum_price: 37.99, regular_price: 49.99, msrp: 59.99,
+        official_deal_price: null, official_campaign: null, proposed_deal_price: null },
+      { sku: 'CO1160-R', product_name: 'Can Opener Steel', series: 'Can Opener',
+        company: 'ResUS', country: 'US', marketplace: 'Amazon', currency: 'USD',
+        marketplace_sku_status: 'phasing_out',
+        minimum_price: 39.99, regular_price: 52.99, msrp: 62.99,
+        official_deal_price: 46.99, official_campaign: 'Prime Day 2027 (2027-07-08 - 2027-07-09)',
+        proposed_deal_price: null },
+      { sku: 'CO1180-R', product_name: 'Can Opener Pro', series: 'Can Opener',
+        company: 'ResUS', country: 'US', marketplace: 'Amazon', currency: 'USD',
+        marketplace_sku_status: 'active',
+        minimum_price: 44.99, regular_price: 59.99, msrp: 69.99,
+        official_deal_price: 52.99, official_campaign: 'Prime Day 2027 (2027-07-08 - 2027-07-09)',
+        proposed_deal_price: null },
+      // A deliberate wide step above: 59.99 -> 74.99 is 15.00, well over the 8.00 threshold.
+      { sku: 'CO1190-R', product_name: 'Can Opener Pro X', series: 'Can Opener',
+        company: 'ResUS', country: 'US', marketplace: 'Amazon', currency: 'USD',
+        marketplace_sku_status: 'active',
+        minimum_price: 54.99, regular_price: 74.99, msrp: 84.99,
+        official_deal_price: null, official_campaign: null, proposed_deal_price: 64.99 },
+      { sku: 'CO1195-R', product_name: 'Can Opener Pro X Bundle', series: 'Can Opener',
+        company: 'ResUS', country: 'US', marketplace: 'Amazon', currency: 'USD',
+        marketplace_sku_status: 'active',
+        minimum_price: 59.99, regular_price: 82.99, msrp: 94.99,
+        official_deal_price: null, official_campaign: null, proposed_deal_price: null },
+      // D-2 / section 15.6 - no pricing_list row. LISTED, NEVER PLOTTED, and never back-filled
+      // from sku_details.selling_price: that is a master base input, not a site effective price.
+      { sku: 'CO1140-R', product_name: 'Can Opener Grip', series: 'Can Opener',
+        company: 'ResUS', country: 'US', marketplace: 'Amazon', currency: 'USD',
+        marketplace_sku_status: 'active',
+        minimum_price: null, regular_price: null, msrp: null,
+        official_deal_price: null, official_campaign: null, proposed_deal_price: null,
+        missing_reason: 'no pricing_list row for this marketplace_sku_id' },
 
-    // Series price-band members. `regular_price` is pricing_list.regular_price (D-2, the one basis).
-    // `promo_price` is campaign_sku_lines.promo_price (the ONLY official deal price).
-    // `proposed_deal_price` is board-owned content on a DEAL_PLAN (D-4) — never official.
-    bands: {
-      'Can Opener': [
-        { sku: 'CO1105-R', product_name: 'Can Opener Lite',      regular_price: 29.99, currency: 'USD',
-          promo_price: null,  proposed_deal_price: null,  scope: 'ResUS|US|Amazon' },
-        { sku: 'CO1100-R', product_name: 'Can Opener Classic',   regular_price: 39.99, currency: 'USD',
-          promo_price: 31.99, proposed_deal_price: null,  scope: 'ResUS|US|Amazon',
-          campaign: 'Prime Day 2027 (2027-07-08 → 2027-07-09)' },
-        { sku: 'CO1120-R', product_name: 'Can Opener Comfort',   regular_price: 44.99, currency: 'USD',
-          promo_price: null,  proposed_deal_price: 34.99, scope: 'ResUS|US|Amazon' },
-        { sku: 'CO1180-R', product_name: 'Can Opener Pro',       regular_price: 59.99, currency: 'USD',
-          promo_price: 52.99, proposed_deal_price: null,  scope: 'ResUS|US|Amazon',
-          campaign: 'Prime Day 2027 (2027-07-08 → 2027-07-09)' },
-        { sku: 'CO1100-R', product_name: 'Can Opener Classic',   regular_price: 36.99, currency: 'EUR',
-          promo_price: null,  proposed_deal_price: null,  scope: 'KM-EU|DE|Amazon' },
-        { sku: 'CO1180-R', product_name: 'Can Opener Pro',       regular_price: 54.99, currency: 'EUR',
-          promo_price: 47.99, proposed_deal_price: null,  scope: 'KM-EU|DE|Amazon',
-          campaign: 'DE Sommerangebot 2027 (2027-06-20 → 2027-06-27)' },
-        // D-2 / §15.6 — no pricing_list.regular_price. Listed with its reason and PLOTTED NOWHERE.
-        // It is NOT back-filled from sku_details.selling_price (a master base input, not a site price).
-        { sku: 'CO1140-R', product_name: 'Can Opener Grip',      regular_price: null,  currency: 'USD',
-          promo_price: null,  proposed_deal_price: null,  scope: 'ResUS|US|Amazon',
-          missing_reason: 'no pricing_list row for this marketplace_sku_id' }
-      ],
-      'Jar Opener': [
-        { sku: 'JO2100-R', product_name: 'Jar Opener Lite',      regular_price: 24.99, currency: 'USD',
-          promo_price: 19.99, proposed_deal_price: null,  scope: 'ResUS|US|Amazon',
-          campaign: 'Spring Reset 2027 (2027-03-01 → 2027-03-14)' },
-        { sku: 'JO2140-R', product_name: 'Jar Opener Comfort',   regular_price: 32.99, currency: 'USD',
-          promo_price: null,  proposed_deal_price: null,  scope: 'ResUS|US|Amazon' },
-        { sku: 'JO2180-R', product_name: 'Jar Opener Pro',       regular_price: 41.99, currency: 'USD',
-          promo_price: 37.99, proposed_deal_price: null,  scope: 'ResUS|US|Amazon',
-          campaign: 'Spring Reset 2027 (2027-03-01 → 2027-03-14)' }
-      ]
-    },
+      // ---- Can Opener, KM-EU / DE / Amazon, EUR. Its own axis, never compared across (D-3). ----
+      { sku: 'CO1100-R', product_name: 'Can Opener Classic', series: 'Can Opener',
+        company: 'KM-EU', country: 'DE', marketplace: 'Amazon', currency: 'EUR',
+        marketplace_sku_status: 'active',
+        minimum_price: 27.99, regular_price: 36.99, msrp: 44.99,
+        official_deal_price: null, official_campaign: null, proposed_deal_price: null },
+      { sku: 'CO1130-R', product_name: 'Can Opener Comfort Wide', series: 'Can Opener',
+        company: 'KM-EU', country: 'DE', marketplace: 'Amazon', currency: 'EUR',
+        marketplace_sku_status: 'active',
+        minimum_price: 32.99, regular_price: 43.99, msrp: 52.99,
+        official_deal_price: 38.99, official_campaign: 'DE Sommerangebot 2027 (2027-06-20 - 2027-06-27)',
+        proposed_deal_price: null },
+      { sku: 'CO1180-R', product_name: 'Can Opener Pro', series: 'Can Opener',
+        company: 'KM-EU', country: 'DE', marketplace: 'Amazon', currency: 'EUR',
+        marketplace_sku_status: 'active',
+        minimum_price: 41.99, regular_price: 54.99, msrp: 64.99,
+        official_deal_price: 47.99, official_campaign: 'DE Sommerangebot 2027 (2027-06-20 - 2027-06-27)',
+        proposed_deal_price: null },
 
-    // Board elements. Column names are §6.2's twenty; author_type is a REAL field, always written.
-    elements: [
-      {
-        element_id: 'PSE-4A17C0D2', element_type: 'TEXT_NOTE',
-        source_type: 'NONE', source_identity: '', source_mode: 'LIVE_REFERENCE',
-        author_type: 'HUMAN', created_by: 'vic', updated_by: 'vic',
-        created_at: '2027-01-14 09:02', updated_at: '2027-01-19 14:20', version: 4,
-        position_x: 1, position_y: 1, width: 4, height: 3, z_index: 1,
-        content: {
-          title: 'Objective / constraints',
-          text: 'Close the 30–45 USD hole without cannibalising Classic.\n' +
-                'Comfort must not undercut Classic on a deal.\n' +
-                'TODO: confirm whether DE gets its own band or follows US positioning.'
-        }
-      },
-      {
-        element_id: 'PSE-91B3E7A4', element_type: 'SKU_CARD',
-        source_type: 'SKU', source_identity: 'CO1100-R', source_mode: 'LIVE_REFERENCE',
-        author_type: 'HUMAN', created_by: 'vic', updated_by: 'vic',
-        created_at: '2027-01-14 09:05', updated_at: '2027-01-14 09:05', version: 1,
-        position_x: 6, position_y: 1, width: 4, height: 4, z_index: 2,
-        content: { note: '' },
-        resolved: {
-          series: 'Can Opener', product_name: 'Can Opener Classic', lifecycle: 'Running in the Market',
-          category: 'Kitchen Tools',
-          regular_price: '39.99', msrp: '49.99', minimum_price: '29.99', currency: 'USD',
-          price_source: 'manual_override', price_status: 'active'
-        }
-      },
-      {
-        element_id: 'PSE-3F02D8BB', element_type: 'REGIONAL_SKU_CARD',
-        source_type: 'REGIONAL_SKU', source_identity: 'KM-EU|DE|Amazon|CO1180-R',
-        source_mode: 'FROZEN_SNAPSHOT',
-        author_type: 'HUMAN', created_by: 'vic', updated_by: 'vic',
-        created_at: '2027-01-15 11:40', updated_at: '2027-01-15 11:40', version: 2,
-        position_x: 11, position_y: 1, width: 4, height: 4, z_index: 3,
-        content: { note: 'Frozen at the DE pricing review.' },
-        snapshot: {
-          snapshot_version: 1, captured_at: '2027-01-15T11:40:07Z',
-          captured_via: 'skuDetails.workspace.get',
-          values: {
-            site_sku: 'DE-CO1180R', marketplace_product_id: 'B0C9XXXX21',
-            marketplace_sku_status: 'active', regular_price: '54.99', currency: 'EUR',
-            language: 'de-DE', label_version: 'v3'
-          },
-          value_provenance: {
-            site_sku: 'sku_regional_details.site_sku',
-            marketplace_product_id: 'sku_regional_details.marketplace_product_id',
-            marketplace_sku_status: 'marketplace_skus.marketplace_sku_status',
-            regular_price: 'pricing_list.regular_price',
-            currency: 'pricing_list.currency'
-          }
-        },
-        live_now: { regular_price: '57.99', marketplace_sku_status: 'active' }
-      },
-      {
-        element_id: 'PSE-77CE1904', element_type: 'DEAL_PLAN',
-        source_type: 'CAMPAIGN_SKU_LINE', source_identity: 'CSL-0000A31F',
-        source_mode: 'LIVE_REFERENCE',
-        author_type: 'HUMAN', created_by: 'vic', updated_by: 'vic',
-        created_at: '2027-01-18 16:10', updated_at: '2027-01-19 10:03', version: 3,
-        position_x: 1, position_y: 5, width: 9, height: 5, z_index: 4,
-        content: {
-          proposed_regular_price: 44.99,
-          proposed_deal_price: 34.99,
-          currency: 'USD',
-          proposed_start_date: '2027-07-08',
-          proposed_end_date: '2027-07-09',
-          strategy_reason: 'Fill the 30–45 gap with Comfort rather than discounting Classic further.',
-          expected_effect: 'Recover the mid band without moving Classic off 39.99.',
-          cannibalization_risk: 'At 34.99 Comfort sits under Classic list — Classic must not also run a deal.',
-          note: 'Needs a call with the DE team before it can be proposed for EU.',
-          source_campaign_reference: 'CSL-0000A31F'
-        },
-        // Read from campaign_sku_lines through the official line. Absent here (§15.9): SOURCE_MISSING,
-        // never "no deal", and NEVER the proposal promoted into its place.
-        official: { campaign_sku_line_id: 'CSL-0000A31F', campaign: 'Prime Day 2027',
-                    promo_price: null, price_units: 'USD',
-                    missing_reason: 'the line exists but promo_price is blank' }
-      },
-      {
-        element_id: 'PSE-2D5B8C60', element_type: 'MATRIX',
-        source_type: 'NONE', source_identity: '', source_mode: 'LIVE_REFERENCE',
-        author_type: 'HUMAN', created_by: 'vic', updated_by: 'vic',
-        created_at: '2027-01-14 09:20', updated_at: '2027-01-16 08:55', version: 2,
-        position_x: 11, position_y: 5, width: 4, height: 5, z_index: 5,
-        content: {
-          title: 'Price × Product Tier',
-          x_axis: ['Entry', 'Core', 'Premium'],
-          y_axis: ['Manual', 'Assisted'],
-          cells: [['CO1105-R', 'CO1100-R', ''], ['', 'CO1120-R', 'CO1180-R']]
-        }
-      },
-      {
-        element_id: 'PSE-6E90AF13', element_type: 'SERIES_PRICE_BAND',
-        source_type: 'SERIES', source_identity: 'Can Opener', source_mode: 'LIVE_REFERENCE',
-        author_type: 'HUMAN', created_by: 'vic', updated_by: 'vic',
-        created_at: '2027-01-14 09:30', updated_at: '2027-01-19 14:22', version: 9,
-        position_x: 1, position_y: 11, width: 14, height: 7, z_index: 6,
-        content: {
-          price_basis: 'PRICING_LIST_REGULAR_PRICE',
-          currency_basis: 'AS_QUOTED_SINGLE_CURRENCY',
-          gap_threshold: 8.00
-        }
-      }
+      // ---- Can Opener, KM-UK / GB / Amazon, GBP. A third axis. -----------------------------
+      { sku: 'CO1100-R', product_name: 'Can Opener Classic', series: 'Can Opener',
+        company: 'KM-UK', country: 'GB', marketplace: 'Amazon', currency: 'GBP',
+        marketplace_sku_status: 'active',
+        minimum_price: 23.99, regular_price: 31.99, msrp: 38.99,
+        official_deal_price: null, official_campaign: null, proposed_deal_price: null },
+      { sku: 'CO1180-R', product_name: 'Can Opener Pro', series: 'Can Opener',
+        company: 'KM-UK', country: 'GB', marketplace: 'Amazon', currency: 'GBP',
+        marketplace_sku_status: 'active',
+        minimum_price: 37.99, regular_price: 47.99, msrp: 56.99,
+        official_deal_price: 41.99, official_campaign: 'UK Summer 2027 (2027-06-15 - 2027-06-22)',
+        proposed_deal_price: null },
+
+      // ---- Jar Opener, a second Series so the Series selector changes the SKU universe. --------
+      { sku: 'JO2100-R', product_name: 'Jar Opener Lite', series: 'Jar Opener',
+        company: 'ResUS', country: 'US', marketplace: 'Amazon', currency: 'USD',
+        marketplace_sku_status: 'active',
+        minimum_price: 17.99, regular_price: 24.99, msrp: 29.99,
+        official_deal_price: 19.99, official_campaign: 'Spring Reset 2027 (2027-03-01 - 2027-03-14)',
+        proposed_deal_price: null },
+      // 24.99 -> 32.99 is EXACTLY 8.00 against the default threshold. It must NOT be a gap.
+      { sku: 'JO2140-R', product_name: 'Jar Opener Comfort', series: 'Jar Opener',
+        company: 'ResUS', country: 'US', marketplace: 'Amazon', currency: 'USD',
+        marketplace_sku_status: 'active',
+        minimum_price: 24.99, regular_price: 32.99, msrp: 39.99,
+        official_deal_price: null, official_campaign: null, proposed_deal_price: null },
+      { sku: 'JO2180-R', product_name: 'Jar Opener Pro', series: 'Jar Opener',
+        company: 'ResUS', country: 'US', marketplace: 'Amazon', currency: 'USD',
+        marketplace_sku_status: 'active',
+        minimum_price: 29.99, regular_price: 41.99, msrp: 49.99,
+        official_deal_price: 37.99, official_campaign: 'Spring Reset 2027 (2027-03-01 - 2027-03-14)',
+        proposed_deal_price: null },
+      // A single-point touch: this SKU's deal equals JO2180-R's regular exactly. Intervals that
+      // meet at one point are NOT an overlap, and that is asserted rather than assumed.
+      { sku: 'JO2200-R', product_name: 'Jar Opener Pro Wide', series: 'Jar Opener',
+        company: 'ResUS', country: 'US', marketplace: 'Amazon', currency: 'USD',
+        marketplace_sku_status: 'active',
+        minimum_price: 34.99, regular_price: 47.99, msrp: 56.99,
+        official_deal_price: 41.99, official_campaign: 'Spring Reset 2027 (2027-03-01 - 2027-03-14)',
+        proposed_deal_price: null },
+
+      // ---- Bottle Opener, a third Series, and its two rows sit on different marketplaces. -----
+      { sku: 'BO3100-R', product_name: 'Bottle Opener Classic', series: 'Bottle Opener',
+        company: 'ResUS', country: 'US', marketplace: 'Amazon', currency: 'USD',
+        marketplace_sku_status: 'active',
+        minimum_price: 11.99, regular_price: 16.99, msrp: 19.99,
+        official_deal_price: null, official_campaign: null, proposed_deal_price: null },
+      { sku: 'BO3150-R', product_name: 'Bottle Opener Steel', series: 'Bottle Opener',
+        company: 'ResUS', country: 'US', marketplace: 'Shopify', currency: 'USD',
+        marketplace_sku_status: 'active',
+        minimum_price: 14.99, regular_price: 21.99, msrp: 25.99,
+        official_deal_price: null, official_campaign: null, proposed_deal_price: null }
     ],
-
     revisions: [
       { revision_id: 'PSR-01C4F8A2', revision_type: 'SAVE_CHECKPOINT', board_version: 1,
         author_type: 'HUMAN', created_by: 'vic', created_at: '2027-01-14 09:00' },
@@ -178,735 +201,846 @@
     ]
   };
 
+  /** One row, normalised: every money value converted ONCE into integer cents. */
+  function norm(r, i) {
+    return {
+      idx: i,
+      sku: r.sku, product_name: r.product_name, series: r.series,
+      company: r.company, country: r.country, marketplace: r.marketplace,
+      currency: r.currency, marketplace_sku_status: r.marketplace_sku_status,
+      scope: r.company + '|' + r.country + '|' + r.marketplace,
+      // The row key. pricing_list has no company column, so a site row is only addressable
+      // through the full scope plus the sku (design freeze section 4.4).
+      key: r.company + '|' + r.country + '|' + r.marketplace + '|' + r.sku,
+      minimum_c: cents(r.minimum_price),
+      regular_c: cents(r.regular_price),
+      msrp_c: cents(r.msrp),
+      official_deal_c: cents(r.official_deal_price),
+      official_campaign: r.official_campaign || null,
+      proposed_deal_c: cents(r.proposed_deal_price),
+      missing_reason: r.missing_reason || null
+    };
+  }
+  var ROWS = MOCK.rows.map(norm);
+
   /* ==========================================================================================
-     2. IN-MEMORY STATE. Not persisted anywhere, by design (§22.2).
+     3. STATE. In memory only. Reload clears it, by design.
      ========================================================================================== */
   var STATE = {
-    selectedId: 'PSE-6E90AF13',
     series: 'Can Opener',
+    company: 'All', country: 'All', marketplace: 'All',
+    thresholdCents: 800,
+    search: '',
+    selected: {},
     boardVersion: 12,
     lastCheckpoint: '14:22',
     revisions: MOCK.revisions.slice(),
-    modes: {},          // element_id -> source_mode override made in this page session
-    revSeq: 0
+    revSeq: 0,
+    elements: [],
+    elSeq: 0,
+    selectedElementId: null,
+    selftest: null
   };
-  MOCK.elements.forEach(function (el) { STATE.modes[el.element_id] = el.source_mode; });
 
   /* ==========================================================================================
-     3. SMALL HELPERS
+     4. SMALL DOM HELPERS
      ========================================================================================== */
+  var SVGNS = 'http://www.w3.org/2000/svg';
   function el(tag, cls, text) {
     var n = document.createElement(tag);
     if (cls) n.className = cls;
     if (text !== undefined && text !== null) n.textContent = String(text);
     return n;
   }
-  function money(v, cur) {
-    if (v === null || v === undefined) return null;
-    return Number(v).toFixed(2) + (cur ? ' ' + cur : '');
+  function svg(tag, attrs) {
+    var n = document.createElementNS(SVGNS, tag);
+    Object.keys(attrs || {}).forEach(function (k) { n.setAttribute(k, String(attrs[k])); });
+    return n;
   }
-  // PRICES ARE COMPARED IN INTEGER CENTS, never as binary floats.
-  // 32.99 - 24.99 is 8.000000000000004 in IEEE-754, so a step EXACTLY equal to the threshold
-  // would be reported as a gap and then labelled "gap 8.00 exceeds threshold 8.00" - a finding
-  // that refutes itself on screen. Every price comparison below goes through cents().
-  function cents(v) { return Math.round(Number(v) * 100); }
   function byId(id) { return document.getElementById(id); }
-  function mode(elem) { return STATE.modes[elem.element_id] || elem.source_mode; }
-  function elementById(id) {
-    for (var i = 0; i < MOCK.elements.length; i++) {
-      if (MOCK.elements[i].element_id === id) return MOCK.elements[i];
-    }
-    return null;
-  }
-  // A deterministic-looking id, purely so the prototype's new rows look like §6.5 ids.
-  // This is NOT fnv1a and is not a contract — the real derivation is in the design freeze.
-  function fakeId(prefix, seedText) {
-    var h = 0x811c9dc5;
-    for (var i = 0; i < seedText.length; i++) {
-      h ^= seedText.charCodeAt(i);
-      h = (h * 0x01000193) >>> 0;
-    }
-    return prefix + '-' + ('00000000' + h.toString(16)).slice(-8).toUpperCase();
-  }
-  function badge(cls, text, title) {
-    var b = el('span', 'badge badge--' + cls, text);
-    if (title) b.title = title;
-    return b;
-  }
-  function kv(pairs) {
-    var d = el('dl', 'kv');
-    pairs.forEach(function (p) {
-      d.appendChild(el('dt', null, p[0]));
-      var dd = el('dd', p[2] || 'num', p[1] === null || p[1] === undefined ? '—' : p[1]);
-      d.appendChild(dd);
-    });
-    return d;
+  function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+  function uniq(a) {
+    var o = [], s = {};
+    a.forEach(function (x) { if (!s[x]) { s[x] = 1; o.push(x); } });
+    return o;
   }
 
   /* ==========================================================================================
-     4. PRICE-BAND ARITHMETIC (§9.3) — the whole point is that the picture is CHECKABLE.
-     Every finding is computed here and carries the number that produced it.
-     ========================================================================================== */
+     5. SELECTION UNIVERSE - what the filters actually filter.
 
-  // Split members by currency. D-3: one axis serves exactly one currency, always.
-  function splitByCurrency(members) {
-    var plotted = [], missing = [], byCur = {}, order = [];
-    members.forEach(function (m) {
-      if (m.regular_price === null || m.regular_price === undefined) { missing.push(m); return; }
-      plotted.push(m);
-      if (!byCur[m.currency]) { byCur[m.currency] = []; order.push(m.currency); }
-      byCur[m.currency].push(m);
+     The Series selector changes the SKU universe; Company / Country / Marketplace narrow it. A
+     row that leaves the universe also leaves the selection, so the chart can never plot a SKU
+     the current filters exclude.
+     ========================================================================================== */
+  function universe() {
+    return ROWS.filter(function (r) {
+      return r.series === STATE.series
+        && (STATE.company === 'All' || r.company === STATE.company)
+        && (STATE.country === 'All' || r.country === STATE.country)
+        && (STATE.marketplace === 'All' || r.marketplace === STATE.marketplace);
     });
-    order.sort();
-    return { tracks: order.map(function (c) { return { currency: c, members: byCur[c] }; }),
-             missing: missing, plottedCount: plotted.length };
+  }
+  function searchHits(rows) {
+    var q = String(STATE.search || '').trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter(function (r) {
+      return r.sku.toLowerCase().indexOf(q) >= 0
+        || r.product_name.toLowerCase().indexOf(q) >= 0;
+    });
+  }
+  function selectedRows() {
+    return universe().filter(function (r) { return STATE.selected[r.key] === true; });
+  }
+  /** Drop selections the current filters have removed from the universe. */
+  function pruneSelection() {
+    var live = {};
+    universe().forEach(function (r) { live[r.key] = true; });
+    Object.keys(STATE.selected).forEach(function (k) {
+      if (!live[k]) delete STATE.selected[k];
+    });
   }
 
-  // The deal price a member actually has, and whether it is official or a proposal.
-  function dealOf(m) {
-    if (m.promo_price !== null && m.promo_price !== undefined) {
-      return { price: m.promo_price, kind: 'OFFICIAL' };
+  /* ==========================================================================================
+     6. THE ANALYSIS ENGINE - pure, and every finding carries the number that produced it.
+
+     D-3: currency is a HARD PARTITION. Members are split into one group per currency and nothing
+     is ever compared across groups - not a gap, not an overlap, not a cannibalisation flag, and
+     above all not an axis. No FX conversion is performed anywhere in this file.
+     ========================================================================================== */
+  function splitByCurrency(rows) {
+    var plotted = [], missing = [], by = {}, order = [];
+    rows.forEach(function (r) {
+      if (r.regular_c === null) { missing.push(r); return; }   // D-2: listed, never plotted
+      plotted.push(r);
+      if (!by[r.currency]) { by[r.currency] = []; order.push(r.currency); }
+      by[r.currency].push(r);
+    });
+    order.sort();
+    return {
+      panels: order.map(function (c) { return { currency: c, members: by[c] }; }),
+      missing: missing, plotted_count: plotted.length
+    };
+  }
+
+  /** The deal a member actually has, and whether it is official or a board proposal. */
+  function dealOf(r) {
+    if (r.official_deal_c !== null) {
+      return { c: r.official_deal_c, kind: 'OFFICIAL', label: 'campaign_sku_lines.promo_price' };
     }
-    if (m.proposed_deal_price !== null && m.proposed_deal_price !== undefined) {
-      return { price: m.proposed_deal_price, kind: 'PROPOSAL' };
+    if (r.proposed_deal_c !== null) {
+      return { c: r.proposed_deal_c, kind: 'PROPOSAL', label: 'board-owned proposed_deal_price' };
     }
     return null;
   }
 
-  function analyseTrack(track, threshold) {
-    var ms = track.members.slice().sort(function (a, b) { return a.regular_price - b.regular_price; });
-    var lo = ms[0].regular_price, hi = ms[ms.length - 1].regular_price;
-    var pad = Math.max((hi - lo) * 0.12, 1.5);
-    var d0 = lo - pad, d1 = hi + pad;
-
-    // Entry / core / premium are POSITIONS in the sorted list (§9.3.5) — no tier column exists.
+  function analyse(members, thrC) {
+    var ms = members.slice().sort(function (a, b) {
+      if (a.regular_c !== b.regular_c) return a.regular_c - b.regular_c;
+      return a.sku < b.sku ? -1 : 1;
+    });
     ms.forEach(function (m, i) {
-      m._tier = (ms.length === 1) ? 'only'
-              : (i === 0) ? 'entry'
-              : (i === ms.length - 1) ? 'premium'
-              : 'core';
+      m._tier = ms.length === 1 ? 'only'
+        : i === 0 ? 'entry' : i === ms.length - 1 ? 'premium' : 'core';
       m._deal = dealOf(m);
-      // The member's interval: from its deal price (if any) up to its regular price.
-      m._span = m._deal ? [Math.min(m._deal.price, m.regular_price), m.regular_price]
-                        : [m.regular_price, m.regular_price];
+      // The member's price interval: from its deal price (if any) up to its regular price.
+      m._lo = m._deal ? Math.min(m._deal.c, m.regular_c) : m.regular_c;
+      m._hi = m.regular_c;
     });
 
-    // GAP — adjacent distance greater than the user-set threshold, which is DISPLAYED with it.
+    // GAP - adjacent regular prices further apart than the threshold. STRICTLY greater, in cents,
+    // so a step exactly equal to the threshold is not a gap.
     var gaps = [];
     for (var i = 1; i < ms.length; i++) {
-      var distC = cents(ms[i].regular_price) - cents(ms[i - 1].regular_price);
-      if (distC > cents(threshold)) {
-        gaps.push({ from: ms[i - 1], to: ms[i], distance: distC / 100 });
-      }
+      var d = ms[i].regular_c - ms[i - 1].regular_c;
+      if (d > thrC) gaps.push({ from: ms[i - 1], to: ms[i], distance_c: d, threshold_c: thrC });
     }
 
-    // OVERLAP — two members whose [deal, regular] intervals intersect.
+    // OVERLAP - two intervals sharing MORE THAN A SINGLE POINT. `lo < hi` in cents, so intervals
+    // that merely touch are not an overlap.
     var overlaps = [];
     for (var a = 0; a < ms.length; a++) {
       for (var b = a + 1; b < ms.length; b++) {
-        var A = ms[a]._span, B = ms[b]._span;
-        var loI = Math.max(A[0], B[0]), hiI = Math.min(A[1], B[1]);
-        if (cents(loI) < cents(hiI)) {
-          overlaps.push({
-            a: ms[a], b: ms[b], from: loI, to: hiI,
-            proposal_driven: (ms[a]._deal && ms[a]._deal.kind === 'PROPOSAL') ||
-                             (ms[b]._deal && ms[b]._deal.kind === 'PROPOSAL')
-          });
+        var lo = Math.max(ms[a]._lo, ms[b]._lo), hi = Math.min(ms[a]._hi, ms[b]._hi);
+        if (lo < hi) {
+          overlaps.push({ a: ms[a], b: ms[b], from_c: lo, to_c: hi, width_c: hi - lo,
+            proposal_driven: !!((ms[a]._deal && ms[a]._deal.kind === 'PROPOSAL')
+              || (ms[b]._deal && ms[b]._deal.kind === 'PROPOSAL')) });
         }
       }
     }
 
-    // CANNIBALISATION — A's deal price <= B's regular price, where B sits BELOW A in normal order.
+    // CANNIBALISATION - A's deal price at or below B's regular price, where B sits BELOW A in the
+    // normal-price order. A flag driven by a proposal is labelled as such, so a warning caused by
+    // an idea on this board is never read as a warning caused by a live campaign.
     var cann = [];
     ms.forEach(function (A, ia) {
       if (!A._deal) return;
       ms.forEach(function (B, ib) {
-        if (ib >= ia) return;                        // B must sit below A
-        if (cents(A._deal.price) <= cents(B.regular_price)) {
-          cann.push({ higher: A, lower: B, deal: A._deal.price, kind: A._deal.kind });
+        if (ib >= ia) return;
+        if (A._deal.c <= B.regular_c) {
+          cann.push({ higher: A, lower: B, deal_c: A._deal.c, kind: A._deal.kind,
+            headroom_c: B.regular_c - A._deal.c });
         }
       });
     });
 
-    return { members: ms, d0: d0, d1: d1, lo: lo, hi: hi,
-             gaps: gaps, overlaps: overlaps, cannibalisation: cann };
+    var loD = Math.min.apply(null, ms.map(function (m) {
+      return Math.min(m.minimum_c === null ? m.regular_c : m.minimum_c, m._lo);
+    }));
+    var hiD = Math.max.apply(null, ms.map(function (m) {
+      return Math.max(m.msrp_c === null ? m.regular_c : m.msrp_c, m.regular_c);
+    }));
+    return { members: ms, gaps: gaps, overlaps: overlaps, cannibalisation: cann,
+      threshold_c: thrC, domain_lo_c: loD, domain_hi_c: hiD };
   }
 
-  function pct(v, d0, d1) { return ((v - d0) / (d1 - d0)) * 100; }
+  /* ==========================================================================================
+     7. THE CHART. Hand-built inline SVG: X axis is SKU, Y axis is price, and ONE PANEL PER
+     CURRENCY, because a shared axis across currencies is refused (D-3).
+     ========================================================================================== */
+  var COL_W = 78, PAD_L = 62, PAD_R = 22, PLOT_H = 300, PAD_T = 18, LABEL_H = 74;
 
-  function renderTrack(track, threshold, trackCount) {
-    var A = analyseTrack(track, threshold);
-    var wrap = el('div', 'track');
-
-    var head = el('div', 'track-head');
-    head.appendChild(el('span', 'track-cur', track.currency));
-    head.appendChild(el('span', 'track-domain',
-      money(A.lo, '') + ' – ' + money(A.hi, '') + '  ·  ' + A.members.length + ' plotted'));
-    if (trackCount > 1) {
-      head.appendChild(el('span', 'track-note', 'own axis, own domain — never compared across tracks'));
+  function niceTicks(loC, hiC) {
+    var span = Math.max(hiC - loC, 100);
+    var pad = Math.round(span * 0.08);
+    var lo = Math.max(0, loC - pad), hi = hiC + pad;
+    var steps = [100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000, 20000, 25000, 50000];
+    var step = steps[steps.length - 1];
+    for (var i = 0; i < steps.length; i++) {
+      if ((hi - lo) / steps[i] <= 7) { step = steps[i]; break; }
     }
+    var t0 = Math.floor(lo / step) * step, t1 = Math.ceil(hi / step) * step;
+    var ticks = [];
+    for (var v = t0; v <= t1 + 1; v += step) ticks.push(v);
+    return { lo: t0, hi: t1, step: step, ticks: ticks };
+  }
+
+  function diamond(cx, cy, r) {
+    return [cx + ',' + (cy - r), (cx + r) + ',' + cy,
+      cx + ',' + (cy + r), (cx - r) + ',' + cy].join(' ');
+  }
+
+  function renderPanel(panel, thrC, opts) {
+    opts = opts || {};
+    var A = analyse(panel.members, thrC);
+    var n = A.members.length;
+    var sc = niceTicks(A.domain_lo_c, A.domain_hi_c);
+    var W = PAD_L + n * COL_W + PAD_R;
+    var H = PAD_T + PLOT_H + LABEL_H;
+    function y(c) { return PAD_T + PLOT_H - ((c - sc.lo) / (sc.hi - sc.lo)) * PLOT_H; }
+    function x(i) { return PAD_L + i * COL_W + COL_W / 2; }
+
+    var wrap = el('div', 'panel');
+    wrap.setAttribute('data-currency', panel.currency);
+
+    var head = el('div', 'panel-head');
+    head.appendChild(el('span', 'panel-cur', panel.currency));
+    head.appendChild(el('span', 'panel-meta',
+      n + (n === 1 ? ' SKU' : ' SKUs') + ' plotted · axis '
+      + fromCents(sc.lo) + '–' + fromCents(sc.hi) + ' ' + panel.currency));
+    head.appendChild(el('span', 'panel-thr',
+      'gap threshold ' + fromCents(thrC) + ' ' + panel.currency));
     wrap.appendChild(head);
 
-    var axis = el('div', 'axis');
-    axis.appendChild(el('div', 'axis-line'));
-    var e0 = el('div', 'axis-end axis-end--lo', money(A.d0, '')); axis.appendChild(e0);
-    var e1 = el('div', 'axis-end axis-end--hi', money(A.d1, '')); axis.appendChild(e1);
+    var scroll = el('div', 'panel-scroll');
+    var s = svg('svg', { viewBox: '0 0 ' + W + ' ' + H, width: W, height: H,
+      'class': 'chart', role: 'img',
+      'aria-label': 'Price band for ' + STATE.series + ' in ' + panel.currency });
 
-    // markers
-    A.members.forEach(function (m) {
-      var x = pct(m.regular_price, A.d0, A.d1);
-      var mk = el('div', 'mk'); mk.style.left = x + '%';
-      var lab = el('div', 'mk-label');
-      lab.appendChild(el('span', 'sku', m.sku));
-      lab.appendChild(el('span', 'price', money(m.regular_price, track.currency)));
-      mk.appendChild(lab);
-      mk.appendChild(el('div', 'mk-dot'));
-      var tier = el('div', 'mk-tier');
-      var tb = el('b', null, m._tier); tier.appendChild(tb);
-      mk.appendChild(tier);
-      mk.title = m.sku + ' — ' + m.product_name + '\n' + m.scope +
-                 '\nregular_price ' + money(m.regular_price, track.currency) +
-                 ' (pricing_list.regular_price)';
-      axis.appendChild(mk);
+    // ---- Y axis: gridlines, ticks, labels, axis title ---------------------------------------
+    var gy = svg('g', { 'class': 'y-axis' });
+    sc.ticks.forEach(function (t) {
+      gy.appendChild(svg('line', { 'class': 'grid', x1: PAD_L - 6, x2: W - PAD_R + 4,
+        y1: y(t), y2: y(t) }));
+      var tl = svg('text', { 'class': 'y-tick', x: PAD_L - 10, y: y(t) + 3.5,
+        'text-anchor': 'end' });
+      tl.textContent = fromCents(t);
+      gy.appendChild(tl);
+    });
+    var yt = svg('text', { 'class': 'axis-title', x: 12, y: PAD_T + PLOT_H / 2,
+      transform: 'rotate(-90 12 ' + (PAD_T + PLOT_H / 2) + ')', 'text-anchor': 'middle' });
+    yt.textContent = 'Price (' + panel.currency + ')';
+    gy.appendChild(yt);
+    s.appendChild(gy);
+    s.appendChild(svg('line', { 'class': 'axis', x1: PAD_L - 6, x2: PAD_L - 6,
+      y1: PAD_T, y2: PAD_T + PLOT_H }));
+    s.appendChild(svg('line', { 'class': 'axis', x1: PAD_L - 6, x2: W - PAD_R + 4,
+      y1: PAD_T + PLOT_H, y2: PAD_T + PLOT_H }));
 
-      if (m._deal) {
-        var dx = pct(m._deal.price, A.d0, A.d1);
-        var dmk = el('div', 'mk'); dmk.style.left = dx + '%';
-        dmk.appendChild(el('div', 'mk-dia' + (m._deal.kind === 'PROPOSAL' ? ' mk-dia--prop' : '')));
-        dmk.title = m.sku + ' — ' +
-          (m._deal.kind === 'OFFICIAL'
-            ? 'campaign_sku_lines.promo_price ' + money(m._deal.price, track.currency) +
-              (m.campaign ? '\n' + m.campaign : '')
-            : 'PROPOSAL — board-owned proposed_deal_price ' + money(m._deal.price, track.currency) +
-              '\nNot a Deal. Not written to campaign_sku_lines.');
-        axis.appendChild(dmk);
+    // ---- one column per SKU -----------------------------------------------------------------
+    A.members.forEach(function (m, i) {
+      var cx = x(i);
+      var g = svg('g', { 'class': 'col', 'data-sku': m.sku, 'data-key': m.key,
+        tabindex: '0', role: 'button',
+        'aria-label': m.sku + ' ' + m.product_name + ', regular ' + money(m.regular_c, panel.currency) });
+
+      // the price band: minimum_price up to MSRP
+      if (m.minimum_c !== null && m.msrp_c !== null) {
+        g.appendChild(svg('line', { 'class': 'band', x1: cx, x2: cx,
+          y1: y(m.minimum_c), y2: y(m.msrp_c) }));
+        g.appendChild(svg('line', { 'class': 'cap', x1: cx - 11, x2: cx + 11,
+          y1: y(m.msrp_c), y2: y(m.msrp_c) }));
+        g.appendChild(svg('line', { 'class': 'floor', x1: cx - 11, x2: cx + 11,
+          y1: y(m.minimum_c), y2: y(m.minimum_c) }));
       }
+      // official deal price - filled diamond, only when campaign_sku_lines.promo_price exists
+      if (m.official_deal_c !== null) {
+        g.appendChild(svg('polygon', { 'class': 'mk-deal',
+          points: diamond(cx, y(m.official_deal_c), 6) }));
+      }
+      // proposed deal price - dashed hollow diamond, never the same shape as an official one
+      if (m.proposed_deal_c !== null) {
+        g.appendChild(svg('polygon', { 'class': 'mk-prop',
+          points: diamond(cx, y(m.proposed_deal_c), 7) }));
+      }
+      // regular price - the band basis (D-2), the primary marker
+      g.appendChild(svg('circle', { 'class': 'mk-reg', cx: cx, cy: y(m.regular_c), r: 5.5 }));
+
+      var tier = svg('text', { 'class': 'tier tier--' + m._tier, x: cx,
+        y: PAD_T + PLOT_H + 14, 'text-anchor': 'middle' });
+      tier.textContent = m._tier;
+      g.appendChild(tier);
+      var lab = svg('text', { 'class': 'x-label', x: cx, y: PAD_T + PLOT_H + 26,
+        transform: 'rotate(38 ' + cx + ' ' + (PAD_T + PLOT_H + 26) + ')' });
+      lab.textContent = m.sku;
+      g.appendChild(lab);
+
+      var ttl = svg('title');
+      ttl.textContent = tipText(m, panel.currency);
+      g.appendChild(ttl);
+
+      g.addEventListener('mouseenter', function (ev) { showTip(ev, m, panel.currency); });
+      g.addEventListener('mousemove', function (ev) { moveTip(ev); });
+      g.addEventListener('mouseleave', hideTip);
+      g.addEventListener('focus', function () { renderDetails(m, panel.currency); });
+      g.addEventListener('click', function () { renderDetails(m, panel.currency); });
+      s.appendChild(g);
     });
 
-    // overlap bars
+    // ---- analysis overlays, drawn where the findings are ------------------------------------
+    var ov = svg('g', { 'class': 'overlays' });
+    A.gaps.forEach(function (gp) {
+      var i1 = A.members.indexOf(gp.from), i2 = A.members.indexOf(gp.to);
+      var xm = (x(i1) + x(i2)) / 2;
+      ov.appendChild(svg('line', { 'class': 'gap-bar', x1: x(i1), x2: x(i2),
+        y1: y(gp.from.regular_c), y2: y(gp.to.regular_c) }));
+      var gl = svg('text', { 'class': 'gap-label', x: xm,
+        y: (y(gp.from.regular_c) + y(gp.to.regular_c)) / 2 - 6, 'text-anchor': 'middle' });
+      gl.textContent = 'gap ' + fromCents(gp.distance_c) + ' > thr ' + fromCents(gp.threshold_c);
+      ov.appendChild(gl);
+    });
     A.overlaps.forEach(function (o) {
-      var x0 = pct(o.from, A.d0, A.d1), x1 = pct(o.to, A.d0, A.d1);
-      var bar = el('div', 'span');
-      bar.style.left = x0 + '%'; bar.style.width = Math.max(x1 - x0, 0.6) + '%';
-      bar.title = 'overlap ' + money(o.from, track.currency) + ' – ' + money(o.to, track.currency) +
-                  '\n' + o.a.sku + ' ∩ ' + o.b.sku + (o.proposal_driven ? '\nproposal-driven' : '');
-      axis.appendChild(bar);
-      var lb = el('div', 'span-label', 'overlap ' + (o.to - o.from).toFixed(2) +
-                  (o.proposal_driven ? ' (prop)' : ''));
-      lb.style.left = ((x0 + x1) / 2) + '%';
-      axis.appendChild(lb);
+      var i1 = A.members.indexOf(o.a), i2 = A.members.indexOf(o.b);
+      var xl = Math.min(x(i1), x(i2)), xr = Math.max(x(i1), x(i2));
+      ov.appendChild(svg('rect', {
+        'class': 'ov-box' + (o.proposal_driven ? ' ov-box--prop' : ''),
+        x: xl, y: y(o.to_c), width: Math.max(xr - xl, 6),
+        height: Math.max(y(o.from_c) - y(o.to_c), 3) }));
     });
+    s.appendChild(ov);
 
-    // gap markers — always labelled with the threshold that produced them
-    A.gaps.forEach(function (g) {
-      var x0 = pct(g.from.regular_price, A.d0, A.d1), x1 = pct(g.to.regular_price, A.d0, A.d1);
-      var gm = el('div', 'gapmark');
-      gm.style.left = x0 + '%'; gm.style.width = (x1 - x0) + '%';
-      gm.title = 'gap ' + g.distance.toFixed(2) + ' > threshold ' + threshold.toFixed(2);
-      axis.appendChild(gm);
-      var gl = el('div', 'gapmark-label', 'gap ' + g.distance.toFixed(2) + ' (thr ' + threshold.toFixed(2) + ')');
-      gl.style.left = ((x0 + x1) / 2) + '%';
-      axis.appendChild(gl);
+    scroll.appendChild(s);
+    wrap.appendChild(scroll);
+
+    // ---- legend ------------------------------------------------------------------------------
+    var lg = el('div', 'legend');
+    [['mk-reg', 'regular_price', 'pricing_list.regular_price - the one band basis (D-2)'],
+     ['mk-deal', 'official deal', 'campaign_sku_lines.promo_price - the only authoritative deal price'],
+     ['mk-prop', 'proposed deal', 'board-owned proposal (D-4) - never official, never written back'],
+     ['sw-band', 'minimum to MSRP', 'the vertical price band: pricing_list.minimum_price up to msrp'],
+     ['sw-gap', 'gap', 'adjacent regular prices further apart than the displayed threshold'],
+     ['sw-ov', 'overlap', 'two [deal, regular] intervals sharing MORE THAN a single point']
+    ].forEach(function (row) {
+      var it = el('span', 'legend-item');
+      it.appendChild(el('span', 'sw ' + row[0]));
+      it.appendChild(el('b', null, row[1]));
+      it.appendChild(document.createTextNode(' - ' + row[2]));
+      lg.appendChild(it);
     });
+    var tiers = el('span', 'legend-item');
+    tiers.appendChild(el('b', null, 'entry / core / premium'));
+    tiers.appendChild(document.createTextNode(
+      ' - positions in the sorted list, computed here. No tier column exists (section 3.5).'));
+    lg.appendChild(tiers);
+    wrap.appendChild(lg);
 
-    wrap.appendChild(axis);
-
-    // findings, each carrying its own arithmetic
+    // ---- findings, each carrying its own arithmetic -----------------------------------------
     var f = el('div', 'findings');
-    A.gaps.forEach(function (g) {
-      var n = el('div', 'finding finding--gap');
-      n.appendChild(el('b', null, 'GAP '));
-      n.appendChild(document.createTextNode(
-        g.from.sku + ' → ' + g.to.sku + ' = ' + g.distance.toFixed(2) + ' ' + track.currency + ' '));
-      n.appendChild(el('span', 'why', '— exceeds gap_threshold ' + threshold.toFixed(2) +
-        ' (the threshold is displayed because a gap marking whose threshold is invisible is an opinion)'));
-      f.appendChild(n);
+    A.gaps.forEach(function (gp) {
+      var d = el('div', 'finding finding--gap');
+      d.appendChild(el('b', null, 'GAP '));
+      d.appendChild(document.createTextNode(gp.from.sku + ' → ' + gp.to.sku + ' = '
+        + fromCents(gp.distance_c) + ' ' + panel.currency + ' '));
+      d.appendChild(el('span', 'why', '- exceeds the gap threshold '
+        + fromCents(gp.threshold_c) + ', which is displayed because a gap marking whose threshold'
+        + ' is invisible is an opinion presented as a measurement'));
+      f.appendChild(d);
     });
     A.overlaps.forEach(function (o) {
-      var n = el('div', 'finding finding--over');
-      n.appendChild(el('b', null, 'OVERLAP '));
-      n.appendChild(document.createTextNode(
-        o.a.sku + ' ∩ ' + o.b.sku + ' over ' + money(o.from, track.currency) + ' – ' +
-        money(o.to, track.currency) + ' '));
-      n.appendChild(el('span', 'why', o.proposal_driven
-        ? '— caused by a PROPOSED deal price, not a live campaign'
-        : '— both intervals are live'));
-      f.appendChild(n);
+      var d = el('div', 'finding finding--over');
+      d.appendChild(el('b', null, 'OVERLAP '));
+      d.appendChild(document.createTextNode(o.a.sku + ' ∩ ' + o.b.sku + ' over '
+        + fromCents(o.from_c) + '–' + fromCents(o.to_c) + ' ' + panel.currency + ' '));
+      d.appendChild(el('span', 'why', o.proposal_driven
+        ? '- PROPOSAL-DRIVEN: caused by a proposed deal price on this board, not by a live campaign'
+        : '- both intervals are live'));
+      f.appendChild(d);
     });
     A.cannibalisation.forEach(function (c) {
-      var n = el('div', 'finding finding--cann');
-      n.appendChild(el('b', null, 'CANNIBALISATION '));
-      n.appendChild(document.createTextNode(
-        c.higher.sku + ' deal ' + money(c.deal, track.currency) + ' ≤ ' +
-        c.lower.sku + ' regular ' + money(c.lower.regular_price, track.currency) + ' '));
-      n.appendChild(el('span', 'why', c.kind === 'PROPOSAL'
-        ? '— PROPOSAL-DRIVEN. This warning comes from an idea on this board, not from a live campaign.'
-        : '— from a live campaign price'));
-      f.appendChild(n);
+      var d = el('div', 'finding finding--cann');
+      d.appendChild(el('b', null, 'CANNIBALISATION '));
+      d.appendChild(document.createTextNode(c.higher.sku + ' deal ' + fromCents(c.deal_c)
+        + ' ≤ ' + c.lower.sku + ' regular ' + fromCents(c.lower.regular_c) + ' '
+        + panel.currency + ' '));
+      d.appendChild(el('span', 'why', c.kind === 'PROPOSAL'
+        ? '- PROPOSAL-DRIVEN: this warning comes from an idea on this board, not from a live campaign'
+        : '- from a live campaign price'));
+      f.appendChild(d);
     });
     if (!f.childNodes.length) {
-      f.appendChild(el('div', 'finding', 'No gap, overlap or cannibalisation finding in this track.'));
+      f.appendChild(el('div', 'finding',
+        'No gap, overlap or cannibalisation finding in this currency at threshold '
+        + fromCents(thrC) + '.'));
     }
     wrap.appendChild(f);
 
+    if (opts.missing && opts.missing.length) wrap.appendChild(renderMissing(opts.missing));
     return wrap;
   }
 
-  function renderPriceBand(elem) {
-    var members = MOCK.bands[STATE.series] || [];
-    var split = splitByCurrency(members);
-    var threshold = elem.content.gap_threshold;
-
-    var card = el('div', 'el el--band');
-    card.dataset.id = elem.element_id;
-
-    var head = el('div', 'el-head');
-    head.appendChild(el('span', 'el-type', 'SERIES_PRICE_BAND'));
-    head.appendChild(el('span', 'el-title', STATE.series));
-    head.appendChild(badge('live', 'LIVE_REFERENCE'));
-    head.appendChild(el('span', 'el-id', elem.element_id));
-    card.appendChild(head);
-
-    var basis = el('div', 'band-head');
-    var b1 = el('span', 'band-basis');
-    b1.appendChild(document.createTextNode('price_basis '));
-    b1.appendChild(el('code', null, 'PRICING_LIST_REGULAR_PRICE'));
-    b1.appendChild(document.createTextNode('  ·  currency_basis '));
-    b1.appendChild(el('code', null, 'AS_QUOTED_SINGLE_CURRENCY'));
-    b1.appendChild(document.createTextNode('  ·  gap_threshold ' + threshold.toFixed(2)));
-    basis.appendChild(b1);
-    card.appendChild(basis);
-
-    // D-3 — the split IS the answer; the refusal explains why it is not one picture.
-    if (split.tracks.length > 1) {
-      var ref = el('div', 'refusal');
-      var rc = el('code', null, 'MIXED_CURRENCY_COMPARISON_REFUSED');
-      ref.appendChild(rc);
-      ref.appendChild(document.createTextNode('  ' +
-        split.tracks.map(function (t) { return t.currency + ' (' + t.members.length + ')'; }).join(' · ')));
-      var p = el('p', null,
-        'Members resolve to more than one currency, so this element splits into one band track per ' +
-        'currency, each with its own axis and its own domain. No shared axis is drawn and no ' +
-        'conversion is performed — pricing_list.fx_rate is displayed as a source fact where present ' +
-        'and is never applied. P1 decides no FX policy.');
-      ref.appendChild(p);
-      card.appendChild(ref);
-    }
-
-    split.tracks.forEach(function (t) {
-      card.appendChild(renderTrack(t, threshold, split.tracks.length));
+  function renderMissing(missing) {
+    var np = el('div', 'notplotted');
+    np.appendChild(el('h4', null,
+      'SOURCE_MISSING - listed, plotted nowhere (' + missing.length + ')'));
+    var ul = el('ul');
+    missing.forEach(function (m) {
+      var li = el('li');
+      li.appendChild(el('strong', null, m.sku));
+      li.appendChild(document.createTextNode(' ' + m.product_name + ' - ' + m.scope + ' - '
+        + (m.missing_reason || 'no pricing_list.regular_price') + '. '));
+      li.appendChild(el('em', null, 'Not back-filled from sku_details.selling_price: that is a'
+        + ' master base input, not a site effective price, and a substituted point would render'
+        + ' identically to a measured one.'));
+      ul.appendChild(li);
     });
+    np.appendChild(ul);
+    return np;
+  }
 
-    var leg = el('div', 'legend');
-    [['● ', 'regular_price', 'pricing_list.regular_price — the one band basis (D-2)'],
-     ['◆ ', 'promo_price', 'campaign_sku_lines.promo_price — the ONLY official deal price'],
-     ['◇ ', 'proposed_deal_price', 'board-owned PROPOSAL (D-4) — never official, never written back'],
-     ['', 'entry / core / premium', 'positions in the sorted list, not a column — no tier column exists']
-    ].forEach(function (row) {
-      var s = el('span');
-      s.appendChild(el('b', null, row[0] + row[1]));
-      s.appendChild(document.createTextNode(' — ' + row[2]));
-      leg.appendChild(s);
-    });
-    card.appendChild(leg);
-
-    // D-2 / §9.3.6 — listed, not plotted, with the reason. Never back-filled.
-    if (split.missing.length) {
-      var np = el('div', 'notplotted');
-      np.appendChild(el('h4', null, 'SOURCE_MISSING — listed, plotted nowhere (' + split.missing.length + ')'));
-      var ul = el('ul');
-      split.missing.forEach(function (m) {
-        var li = el('li');
-        li.appendChild(el('strong', null, m.sku));
-        li.appendChild(document.createTextNode(' ' + m.product_name + ' — ' + m.missing_reason + '. '));
-        li.appendChild(el('em', null,
-          'Not back-filled from sku_details.selling_price: that is a master base input, not a site ' +
-          'effective price, and a substituted point would render identically to a measured one.'));
-        ul.appendChild(li);
-      });
-      np.appendChild(ul);
-      np.appendChild(el('p', 'src-note',
-        'A Series where ' + split.missing.length + ' of ' + members.length +
-        ' members have no regular_price must not look like a ' + split.plottedCount + '-member Series.'));
-      card.appendChild(np);
+  /* ---------------------------------------------------------------- tooltip + details ------- */
+  function tipText(m, cur) {
+    var L = [m.sku + ' - ' + m.product_name, m.scope + ' · ' + m.marketplace_sku_status,
+      'MSRP            ' + money(m.msrp_c, cur),
+      'regular_price   ' + money(m.regular_c, cur),
+      'minimum_price   ' + money(m.minimum_c, cur)];
+    if (m.official_deal_c !== null) {
+      L.push('official deal   ' + money(m.official_deal_c, cur));
+      if (m.official_campaign) L.push('  ' + m.official_campaign);
+    } else {
+      L.push('official deal   SOURCE_MISSING (never "no deal")');
     }
-
-    return card;
-  }
-
-  /* ==========================================================================================
-     5. ELEMENT CARD RENDERERS
-     ========================================================================================== */
-
-  function cardShell(elem, title) {
-    var card = el('div', 'el');
-    card.dataset.id = elem.element_id;
-    if (elem.element_type === 'TEXT_NOTE') card.className += ' el--note';
-    if (elem.element_type === 'DEAL_PLAN') card.className += ' el--deal';
-    if (elem.element_type === 'MATRIX') card.className += ' el--matrix';
-
-    var head = el('div', 'el-head');
-    head.appendChild(el('span', 'el-type', elem.element_type));
-    head.appendChild(el('span', 'el-title', title));
-    if (elem.element_type !== 'TEXT_NOTE' && elem.element_type !== 'MATRIX') {
-      var m = mode(elem);
-      head.appendChild(m === 'FROZEN_SNAPSHOT'
-        ? badge('frozen', 'FROZEN_SNAPSHOT', 'Shows the values that were on screen when it was frozen')
-        : badge('live', 'LIVE_REFERENCE', 'Stores only the identity; resolves on every board open'));
+    if (m.proposed_deal_c !== null) {
+      L.push('PROPOSED deal   ' + money(m.proposed_deal_c, cur) + '  (board-owned, not a Deal)');
     }
-    head.appendChild(el('span', 'el-id', elem.element_id));
-    card.appendChild(head);
-    return card;
+    L.push('band            ' + money(m.minimum_c, '') + ' – ' + money(m.msrp_c, cur));
+    L.push('position        ' + (m._tier || '—'));
+    L.push('current selling price / margin: not shown (D-6 / D-8)');
+    return L.join('\n');
   }
-
-  function renderTextNote(elem) {
-    var card = cardShell(elem, elem.content.title);
-    card.appendChild(el('div', 'note-text', elem.content.text));
-    return card;
+  function showTip(ev, m, cur) {
+    var t = byId('tip');
+    if (!t) return;
+    t.textContent = tipText(m, cur);
+    t.hidden = false;
+    moveTip(ev);
   }
-
-  function renderSkuCard(elem) {
-    var card = cardShell(elem, elem.source_identity);
-    var r = elem.resolved;
-    card.appendChild(kv([
-      ['product_name', r.product_name, 'txt'],
-      ['series', r.series, 'txt'],
-      ['lifecycle', r.lifecycle, 'txt'],
-      ['regular_price', money(r.regular_price, r.currency)],
-      ['msrp', money(r.msrp, r.currency)],
-      ['minimum_price', money(r.minimum_price, r.currency)],
-      ['price_source', r.price_source, 'txt'],
-      ['current selling price', 'not shown (D-6)', 'missing']
-    ]));
-    var n = el('div', 'src-note');
-    n.appendChild(document.createTextNode('Prices from '));
-    n.appendChild(el('code', null, 'pricing_list'));
-    n.appendChild(document.createTextNode('; identity and series from '));
-    n.appendChild(el('code', null, 'sku_details'));
-    n.appendChild(document.createTextNode('. '));
-    n.appendChild(el('strong', null, 'No "current selling price" and no margin: '));
-    n.appendChild(document.createTextNode(
-      'neither column exists (D-6, D-8), and nothing is shown in their place — not blank, not zero, ' +
-      'not a substitute.'));
-    card.appendChild(n);
-    return card;
+  function moveTip(ev) {
+    var t = byId('tip');
+    if (!t || t.hidden) return;
+    t.style.left = ((ev.clientX === undefined ? 0 : ev.clientX) + 14) + 'px';
+    t.style.top = ((ev.clientY === undefined ? 0 : ev.clientY) + 14) + 'px';
   }
+  function hideTip() { var t = byId('tip'); if (t) t.hidden = true; }
 
-  function renderRegionalCard(elem) {
-    var card = cardShell(elem, elem.source_identity);
-    var s = elem.snapshot, v = s.values;
-    card.appendChild(kv([
-      ['site_sku', v.site_sku, 'txt'],
-      ['marketplace_product_id', v.marketplace_product_id, 'txt'],
-      ['status', v.marketplace_sku_status, 'txt'],
-      ['regular_price', money(v.regular_price, v.currency)],
-      ['label_version', v.label_version, 'txt'],
-      ['captured_at', s.captured_at, 'txt']
-    ]));
-
-    var n = el('div', 'src-note');
-    n.appendChild(el('strong', null, 'Status comes from marketplace_skus, not from this table. '));
-    n.appendChild(document.createTextNode(
-      'sku_regional_details declares in its own header that it carries no status column, so the card ' +
-      'resolves marketplace_sku_status on the shared sku+company+country+marketplace grain and labels ' +
-      'it as such. value_provenance records the column behind every frozen number.'));
-    card.appendChild(n);
-
-    var d = el('div', 'src-note');
-    d.appendChild(el('strong', null, 'Refresh would show a diff, not a rewrite: '));
-    d.appendChild(document.createTextNode(
-      'live regular_price is now ' + money(elem.live_now.regular_price, v.currency) +
-      ' while the snapshot holds ' + money(v.regular_price, v.currency) +
-      '. The snapshot always renders. A re-freeze is an explicit action, increments snapshot_version, ' +
-      'and writes its FREEZE_SNAPSHOT revision first.'));
-    card.appendChild(d);
-    return card;
-  }
-
-  function renderDealPlan(elem) {
-    var c = elem.content, o = elem.official;
-    var card = cardShell(elem, 'CO1120-R — Comfort mid-band');
-
-    // Permanent, non-dismissible PROPOSAL ONLY marker (§7.4.3)
-    var mk = el('div', 'deal-marker');
-    mk.appendChild(el('strong', null, 'PROPOSAL ONLY'));
-    mk.appendChild(el('span', null,
-      'Board-owned. Writes nothing to campaigns, campaign_sku_lines or pricing_list. ' +
-      'No Deal has been created, scheduled, submitted or approved.'));
-    card.appendChild(mk);
-
-    var split = el('div', 'deal-split');
-
-    var pc = el('div', 'deal-col');
-    var h1 = el('h4', null, 'Proposal (board-owned)');
-    h1.appendChild(badge('prop', 'proposed_*'));
-    pc.appendChild(h1);
-    pc.appendChild(kv([
-      ['proposed_regular_price', money(c.proposed_regular_price, c.currency)],
-      ['proposed_deal_price', money(c.proposed_deal_price, c.currency)],
-      ['proposed_start_date', c.proposed_start_date, 'txt'],
-      ['proposed_end_date', c.proposed_end_date, 'txt']
-    ]));
-    split.appendChild(pc);
-
-    var oc = el('div', 'deal-col deal-col--official');
-    var h2 = el('h4', null, 'Official campaign line (read only)');
-    h2.appendChild(badge('miss', 'SOURCE_MISSING'));
-    oc.appendChild(h2);
-    oc.appendChild(kv([
-      ['campaign_sku_line_id', o.campaign_sku_line_id, 'txt'],
-      ['campaign', o.campaign, 'txt'],
-      ['promo_price', 'SOURCE_MISSING', 'missing'],
-      ['price_units', o.price_units, 'txt']
-    ]));
-    var on = el('div', 'src-note');
-    on.appendChild(el('strong', null, 'Missing, not "no deal". '));
-    on.appendChild(document.createTextNode(
-      o.missing_reason + '. The proposal on the left is NOT promoted into this value, and the two are ' +
-      'never merged, averaged, or drawn on one marker.'));
-    oc.appendChild(on);
-    split.appendChild(oc);
-
-    card.appendChild(split);
-
-    var free = el('div', 'deal-free');
-    [['strategy_reason', c.strategy_reason],
-     ['expected_effect', c.expected_effect],
-     ['cannibalization_risk', c.cannibalization_risk],
-     ['note', c.note]].forEach(function (row) {
-      var p = el('div');
-      p.appendChild(el('b', null, row[0] + ': '));
-      p.appendChild(document.createTextNode(row[1]));
-      free.appendChild(p);
-    });
-    card.appendChild(free);
-
-    var n = el('div', 'src-note');
-    n.appendChild(el('strong', null, 'Closed field list. '));
-    n.appendChild(document.createTextNode(
-      'content_json accepts exactly ten keys and the handler refuses any other ' +
-      '(DEAL_PLAN_UNKNOWN_FIELD). Every price and date key is prefixed proposed_, so no key here ' +
-      'shares a name with campaign_sku_lines.promo_price, campaign_sku_lines.regular_price, ' +
-      'campaigns.start_date or campaigns.end_date. There is no promotion button, no action name and ' +
-      'no reserved router branch.'));
-    card.appendChild(n);
-    return card;
-  }
-
-  function renderMatrix(elem) {
-    var c = elem.content;
-    var card = cardShell(elem, c.title);
-    var t = el('table', 'mx');
-    var thead = el('thead'), hr = el('tr');
-    hr.appendChild(el('th', null, ''));
-    c.x_axis.forEach(function (x) { hr.appendChild(el('th', null, x)); });
-    thead.appendChild(hr); t.appendChild(thead);
-    var tb = el('tbody');
-    c.y_axis.forEach(function (y, i) {
-      var tr = el('tr');
-      tr.appendChild(el('th', null, y));
-      c.x_axis.forEach(function (x, j) {
-        var v = (c.cells[i] && c.cells[i][j]) || '';
-        tr.appendChild(el('td', v ? 'filled' : null, v || '—'));
-      });
-      tb.appendChild(tr);
-    });
-    t.appendChild(tb);
-    card.appendChild(t);
-    card.appendChild(el('div', 'src-note',
-      'Cells reference element_ids. Fixed grid in P1 — no infinite canvas, no live cursors.'));
-    return card;
-  }
-
-  /* ==========================================================================================
-     6. BOARD RENDER
-     ========================================================================================== */
-  function renderBoard() {
-    var host = byId('boardItems');
-    host.textContent = '';
-
-    var row1 = el('div', 'board-row');
-    row1.appendChild(renderTextNote(elementById('PSE-4A17C0D2')));
-    row1.appendChild(renderSkuCard(elementById('PSE-91B3E7A4')));
-    row1.appendChild(renderRegionalCard(elementById('PSE-3F02D8BB')));
-    host.appendChild(row1);
-
-    var row2 = el('div', 'board-row');
-    row2.appendChild(renderDealPlan(elementById('PSE-77CE1904')));
-    row2.appendChild(renderMatrix(elementById('PSE-2D5B8C60')));
-    host.appendChild(row2);
-
-    var row3 = el('div', 'board-row');
-    row3.appendChild(renderPriceBand(elementById('PSE-6E90AF13')));
-    host.appendChild(row3);
-
-    // selection highlight
-    var cards = host.querySelectorAll('.el');
-    for (var i = 0; i < cards.length; i++) {
-      if (cards[i].dataset.id === STATE.selectedId) cards[i].classList.add('is-selected');
-    }
-  }
-
-  /* ==========================================================================================
-     7. PROPERTIES PANEL
-     ========================================================================================== */
-  function renderProps() {
+  function renderDetails(m, cur) {
+    STATE.selectedElementId = null;
     var host = byId('propsBody');
-    host.textContent = '';
-    var elem = elementById(STATE.selectedId);
-    if (!elem) {
-      host.appendChild(el('p', 'props-empty', 'Select an element on the board.'));
-      return;
-    }
-
+    clear(host);
     var top = el('div');
-    top.appendChild(el('span', 'props-el', elem.element_type));
+    top.appendChild(el('span', 'props-el', 'SKU price detail'));
     host.appendChild(top);
 
-    // source
     var s1 = el('div', 'props-sec');
-    s1.appendChild(el('h4', null, 'Source'));
+    s1.appendChild(el('h4', null, m.sku + '  ' + cur));
     var dl = el('dl', 'props-kv');
-    [['source_type', elem.source_type],
-     ['source_identity', elem.source_identity || '""']].forEach(function (p) {
+    [['product', m.product_name], ['series', m.series], ['scope', m.scope],
+     ['status', m.marketplace_sku_status],
+     ['msrp', money(m.msrp_c, '')], ['regular', money(m.regular_c, '')],
+     ['minimum', money(m.minimum_c, '')],
+     ['official deal', m.official_deal_c === null ? 'SOURCE_MISSING' : money(m.official_deal_c, '')],
+     ['proposed deal', m.proposed_deal_c === null ? '—' : money(m.proposed_deal_c, '')],
+     ['position', m._tier || '—']].forEach(function (p) {
       dl.appendChild(el('dt', null, p[0]));
-      var dd = el('dd'); dd.appendChild(el('code', null, p[1])); dl.appendChild(dd);
+      dl.appendChild(el('dd', null, p[1]));
     });
     s1.appendChild(dl);
     host.appendChild(s1);
 
-    // mode
-    var s2 = el('div', 'props-sec');
-    s2.appendChild(el('h4', null, 'Mode'));
-    if (elem.source_type === 'NONE') {
-      s2.appendChild(el('p', 'props-note',
-        'This element has no source, so the live/snapshot distinction does not apply to it.'));
-    } else {
-      var group = el('div', 'mode-radio');
-      [['LIVE_REFERENCE', 'Live — stores only the identity'],
-       ['FROZEN_SNAPSHOT', 'Snapshot — stores the displayed values + captured_at']
-      ].forEach(function (opt) {
-        var lab = el('label');
-        var r = document.createElement('input');
-        r.type = 'radio'; r.name = 'mode'; r.value = opt[0];
-        r.checked = (mode(elem) === opt[0]);
-        r.addEventListener('change', function () {
-          STATE.modes[elem.element_id] = opt[0];
-          if (opt[0] === 'FROZEN_SNAPSHOT') {
-            // §8.6 — a freeze writes its revision, and it writes it FIRST.
-            addRevision('FREEZE_SNAPSHOT');
-          }
-          renderBoard(); renderProps();
-        });
-        lab.appendChild(r);
-        lab.appendChild(document.createTextNode(opt[1]));
-        group.appendChild(lab);
-      });
-      s2.appendChild(group);
-      var cap = el('dl', 'props-kv');
-      cap.appendChild(el('dt', null, 'captured_at'));
-      cap.appendChild(el('dd', null,
-        mode(elem) === 'FROZEN_SNAPSHOT' && elem.snapshot ? elem.snapshot.captured_at : '—'));
-      if (elem.snapshot) {
-        cap.appendChild(el('dt', null, 'snap_ver'));
-        cap.appendChild(el('dd', null, String(elem.snapshot.snapshot_version)));
-      }
-      s2.appendChild(cap);
-      s2.appendChild(el('p', 'props-note',
-        'Switching to Snapshot writes a FREEZE_SNAPSHOT revision before the element write (D-7, §8.6). ' +
-        'A re-freeze is never silent: it increments snapshot_version and writes a new captured_at.'));
+    if (m.official_campaign) {
+      var s2 = el('div', 'props-sec');
+      s2.appendChild(el('h4', null, 'Campaign'));
+      s2.appendChild(el('p', 'props-note', m.official_campaign));
+      host.appendChild(s2);
     }
-    host.appendChild(s2);
 
-    // notes
     var s3 = el('div', 'props-sec');
-    s3.appendChild(el('h4', null, 'Notes'));
-    var ta = document.createElement('textarea');
-    ta.className = 'props-textarea';
-    ta.value = (elem.content && (elem.content.note || elem.content.text)) || '';
-    ta.setAttribute('aria-label', 'Element notes');
-    s3.appendChild(ta);
-    s3.appendChild(el('p', 'props-note', 'Board-owned content. It has no path to any source table.'));
+    s3.appendChild(el('h4', null, 'Provenance'));
+    var pl = el('dl', 'props-kv');
+    [['regular', 'pricing_list.regular_price'], ['minimum', 'pricing_list.minimum_price'],
+     ['msrp', 'pricing_list.msrp'], ['official deal', 'campaign_sku_lines.promo_price'],
+     ['status', 'marketplace_skus.marketplace_sku_status'],
+     ['proposed deal', 'board-owned DEAL_PLAN content_json']].forEach(function (p) {
+      pl.appendChild(el('dt', null, p[0]));
+      var dd = el('dd');
+      dd.appendChild(el('code', null, p[1]));
+      pl.appendChild(dd);
+    });
+    s3.appendChild(pl);
+    s3.appendChild(el('p', 'props-note', 'Three tables supply one card, which is why a frozen'
+      + ' snapshot records the column behind every number (section 8.2).'));
     host.appendChild(s3);
 
-    // geometry
     var s4 = el('div', 'props-sec');
-    s4.appendChild(el('h4', null, 'Position / size'));
-    var g = el('dl', 'props-kv');
-    [['position_x', elem.position_x], ['position_y', elem.position_y],
-     ['width', elem.width], ['height', elem.height], ['z_index', elem.z_index]
-    ].forEach(function (p) {
-      g.appendChild(el('dt', null, p[0]));
-      g.appendChild(el('dd', null, String(p[1])));
-    });
-    s4.appendChild(g);
-    s4.appendChild(el('p', 'props-note',
-      'Geometry changes do NOT create a revision (§6.3). Drag, resize, pan, zoom and select never do.'));
+    s4.appendChild(el('h4', null, 'Deliberately absent'));
+    s4.appendChild(el('p', 'props-note', 'current selling price (D-6) and margin (D-8) are GAPs.'
+      + ' No field stands in for either - not blank, not zero, not a substitute.'));
     host.appendChild(s4);
-
-    // audit
-    var s5 = el('div', 'props-sec');
-    s5.appendChild(el('h4', null, 'Audit'));
-    var a = el('dl', 'props-kv');
-    a.appendChild(el('dt', null, 'author_type'));
-    var addl = el('dd');
-    addl.appendChild(el('span', 'author-pill', elem.author_type));
-    a.appendChild(addl);
-    [['created_by', elem.created_by], ['created_at', elem.created_at],
-     ['updated_by', elem.updated_by], ['updated_at', elem.updated_at],
-     ['version', String(elem.version)], ['deleted', 'false']
-    ].forEach(function (p) {
-      a.appendChild(el('dt', null, p[0]));
-      a.appendChild(el('dd', null, p[1]));
-    });
-    s5.appendChild(a);
-    s5.appendChild(el('p', 'props-note',
-      'author_type is a real column, written explicitly as HUMAN — never left blank to mean human. ' +
-      'A blank is a third state, and the AI seam distinguishes AI content by the presence of a value.'));
-    host.appendChild(s5);
   }
 
   /* ==========================================================================================
-     8. REVISIONS
+     8. RENDER: the SKU selector, the chart area, the board, the properties panel
      ========================================================================================== */
+  function renderSkuPicker() {
+    var uni = universe();
+    var shown = searchHits(uni);
+    var host = byId('skuList');
+    clear(host);
+    byId('skuCount').textContent = selectedRows().length + ' / ' + uni.length
+      + (shown.length !== uni.length ? ' (' + shown.length + ' shown)' : '');
+    if (!shown.length) {
+      host.appendChild(el('p', 'skupick-empty',
+        uni.length ? 'No SKU matches this search.' : 'No SKU matches these filters.'));
+      return;
+    }
+    shown.forEach(function (r) {
+      var row = el('label', 'skurow' + (r.regular_c === null ? ' skurow--missing' : ''));
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.className = 'skucb';
+      cb.value = r.key;
+      cb.setAttribute('data-sku', r.sku);
+      cb.setAttribute('data-key', r.key);
+      cb.checked = STATE.selected[r.key] === true;
+      cb.addEventListener('change', function () {
+        if (this.checked) STATE.selected[r.key] = true; else delete STATE.selected[r.key];
+        renderSkuPicker();
+        renderCharts();
+      });
+      row.appendChild(cb);
+      var txt = el('span', 'skurow-txt');
+      txt.appendChild(el('span', 'skurow-sku', r.sku));
+      txt.appendChild(el('span', 'skurow-name', r.product_name));
+      var meta = el('span', 'skurow-meta');
+      meta.appendChild(el('span', 'skurow-cur', r.currency));
+      meta.appendChild(document.createTextNode(' ' + r.country + '/' + r.marketplace + ' '));
+      if (r.regular_c === null) {
+        meta.appendChild(el('span', 'badge badge--miss', 'SOURCE_MISSING'));
+      } else {
+        meta.appendChild(el('span', 'skurow-price', fromCents(r.regular_c)));
+      }
+      txt.appendChild(meta);
+      row.appendChild(txt);
+      host.appendChild(row);
+    });
+  }
+
+  function renderCharts() {
+    var host = byId('charts');
+    clear(host);
+    var rows = selectedRows();
+    if (!rows.length) {
+      var e = el('div', 'charts-empty');
+      e.appendChild(el('h3', null, 'No SKU selected'));
+      e.appendChild(el('p', null, 'Tick SKUs on the left, or press Select all. The X axis is built'
+        + ' from the ticked SKUs and updates immediately.'));
+      host.appendChild(e);
+      return;
+    }
+    var sp = splitByCurrency(rows);
+    if (sp.panels.length > 1) {
+      var ref = el('div', 'refusal');
+      ref.appendChild(el('code', null, 'MIXED_CURRENCY_COMPARISON_REFUSED'));
+      ref.appendChild(document.createTextNode('  ' + sp.panels.map(function (p) {
+        return p.currency + ' (' + p.members.length + ')'; }).join(' · ')));
+      ref.appendChild(el('p', null, 'The selection resolves to more than one currency, so it splits'
+        + ' into one panel per currency, each with its own Y axis and its own domain. No shared axis'
+        + ' is drawn and no FX conversion is performed - D-3, and P0 decided no FX policy. Gaps,'
+        + ' overlaps, cannibalisation and entry/core/premium are computed WITHIN a panel only.'));
+      host.appendChild(ref);
+    }
+    if (!sp.panels.length) {
+      var only = el('div', 'panel');
+      only.appendChild(el('div', 'panel-head', 'Nothing to plot'));
+      only.appendChild(renderMissing(sp.missing));
+      host.appendChild(only);
+      return;
+    }
+    sp.panels.forEach(function (p, i) {
+      host.appendChild(renderPanel(p, STATE.thresholdCents,
+        { missing: i === sp.panels.length - 1 ? sp.missing : null }));
+    });
+  }
+
+  /* ---------------------------------------------------------------- board elements ---------- */
+  function addElement(type) {
+    STATE.elSeq += 1;
+    var id = 'PSE-PROTO-' + String(STATE.elSeq);
+    var e = { element_id: id, element_type: type, author_type: 'HUMAN',
+      created_by: 'vic', version: 1, content: {} };
+    if (type === 'TEXT_NOTE') {
+      e.content = { title: 'Note ' + STATE.elSeq,
+        text: 'Positioning / target price / strategy reason / risk / to-do...' };
+    } else if (type === 'SERIES_PRICE_BAND') {
+      e.content = { series: STATE.series,
+        keys: selectedRows().map(function (r) { return r.key; }),
+        threshold_c: STATE.thresholdCents };
+    } else if (type === 'MATRIX') {
+      e.content = { x_axis: 'Price', y_axis: 'Product Tier', cells: [['', ''], ['', '']] };
+    }
+    STATE.elements.push(e);
+    STATE.selectedElementId = id;
+    renderBoard();
+    renderElementProps(e);
+    return e;
+  }
+  function removeElement(id) {
+    STATE.elements = STATE.elements.filter(function (e) { return e.element_id !== id; });
+    if (STATE.selectedElementId === id) STATE.selectedElementId = null;
+    renderBoard();
+    var host = byId('propsBody');
+    clear(host);
+    host.appendChild(el('p', 'props-empty',
+      'Element deleted. Click a SKU column or another element.'));
+  }
+
+  function elCardShell(e, title) {
+    var card = el('div', 'el el--' + e.element_type.toLowerCase().replace(/_/g, '-'));
+    card.setAttribute('data-element-id', e.element_id);
+    card.setAttribute('data-element-type', e.element_type);
+    if (STATE.selectedElementId === e.element_id) card.className += ' is-selected';
+    var head = el('div', 'el-head');
+    head.appendChild(el('span', 'el-type', e.element_type));
+    head.appendChild(el('span', 'el-title', title));
+    head.appendChild(el('span', 'el-id', e.element_id));
+    var del = el('button', 'el-del', '×');
+    del.type = 'button';
+    del.title = 'Delete this prototype element';
+    del.setAttribute('aria-label', 'Delete ' + e.element_id);
+    del.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      removeElement(e.element_id);
+    });
+    head.appendChild(del);
+    card.appendChild(head);
+    card.addEventListener('click', function () {
+      STATE.selectedElementId = e.element_id;
+      renderBoard();
+      renderElementProps(e);
+    });
+    return card;
+  }
+
+  function renderTextEl(e, host) {
+    var c = elCardShell(e, e.content.title);
+    var ta = document.createElement('textarea');
+    ta.className = 'note-edit';
+    ta.value = e.content.text;
+    ta.setAttribute('aria-label', 'Note text for ' + e.element_id);
+    ta.addEventListener('input', function () { e.content.text = this.value; e.version += 1; });
+    c.appendChild(ta);
+    c.appendChild(el('div', 'src-note',
+      'Board-owned content. It has no path to any source table.'));
+    host.appendChild(c);
+  }
+
+  function renderBandEl(e, host) {
+    var c = elCardShell(e, e.content.series + ' — price band');
+    var rows = ROWS.filter(function (r) { return e.content.keys.indexOf(r.key) >= 0; });
+    if (!rows.length) {
+      c.appendChild(el('p', 'src-note', 'This element was created with no SKU selected, so there is'
+        + ' nothing to plot. Tick SKUs above and add another one.'));
+    } else {
+      var sp = splitByCurrency(rows);
+      if (sp.panels.length > 1) {
+        var r = el('div', 'refusal refusal--sm');
+        r.appendChild(el('code', null, 'MIXED_CURRENCY_COMPARISON_REFUSED'));
+        c.appendChild(r);
+      }
+      sp.panels.forEach(function (p, i) {
+        c.appendChild(renderPanel(p, e.content.threshold_c,
+          { missing: i === sp.panels.length - 1 ? sp.missing : null }));
+      });
+    }
+    c.appendChild(el('div', 'src-note', 'A snapshot of the selection at the moment it was added: '
+      + e.content.keys.length + ' SKU key(s), threshold ' + fromCents(e.content.threshold_c)
+      + '. Changing the selector above does not rewrite it.'));
+    host.appendChild(c);
+  }
+
+  function renderMatrixEl(e, host) {
+    var c = elCardShell(e, 'Matrix 2×2');
+    var ax = el('div', 'mx-axes');
+    [['x_axis', 'X axis'], ['y_axis', 'Y axis']].forEach(function (p) {
+      var lab = el('label', 'mx-axis');
+      lab.appendChild(el('span', null, p[1]));
+      var inp = document.createElement('input');
+      inp.type = 'text';
+      inp.className = 'mx-axis-input';
+      inp.value = e.content[p[0]];
+      inp.setAttribute('data-axis', p[0]);
+      inp.setAttribute('aria-label', p[1] + ' name for ' + e.element_id);
+      inp.addEventListener('input', function () {
+        e.content[p[0]] = this.value;
+        e.version += 1;
+        var h = c.querySelector('.mx-head-' + p[0]);
+        if (h) h.textContent = this.value;
+      });
+      lab.appendChild(inp);
+      ax.appendChild(lab);
+    });
+    c.appendChild(ax);
+    var t = el('table', 'mx');
+    var thead = el('thead'), hr = el('tr');
+    hr.appendChild(el('th', 'mx-corner', ''));
+    var hx = el('th', 'mx-head-x_axis', e.content.x_axis);
+    hx.setAttribute('colspan', '2');
+    hr.appendChild(hx);
+    thead.appendChild(hr);
+    t.appendChild(thead);
+    var tb = el('tbody');
+    ['low', 'high'].forEach(function (rowName, ri) {
+      var tr = el('tr');
+      tr.appendChild(el('th', ri === 0 ? 'mx-head-y_axis' : null,
+        ri === 0 ? e.content.y_axis : rowName));
+      [0, 1].forEach(function (ci) {
+        var td = el('td');
+        var inp2 = document.createElement('input');
+        inp2.type = 'text';
+        inp2.className = 'mx-cell';
+        inp2.value = e.content.cells[ri][ci];
+        inp2.placeholder = '—';
+        inp2.setAttribute('aria-label', 'cell ' + ri + ',' + ci);
+        inp2.addEventListener('input', function () {
+          e.content.cells[ri][ci] = this.value;
+          e.version += 1;
+        });
+        td.appendChild(inp2);
+        tr.appendChild(td);
+      });
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb);
+    c.appendChild(t);
+    c.appendChild(el('div', 'src-note', 'Axis names are editable. In P1 a cell references an'
+      + ' element_id; here it is free text.'));
+    host.appendChild(c);
+  }
+
+  function renderBoard() {
+    var host = byId('boardItems');
+    clear(host);
+    if (!STATE.elements.length) {
+      host.appendChild(el('p', 'board-empty', 'Empty board. Use Text, Price Band or Matrix on the'
+        + ' left - all three really create an element, and each one can be deleted again.'));
+      return;
+    }
+    STATE.elements.forEach(function (e) {
+      if (e.element_type === 'TEXT_NOTE') renderTextEl(e, host);
+      else if (e.element_type === 'SERIES_PRICE_BAND') renderBandEl(e, host);
+      else if (e.element_type === 'MATRIX') renderMatrixEl(e, host);
+    });
+  }
+
+  function renderElementProps(e) {
+    var host = byId('propsBody');
+    clear(host);
+    var top = el('div');
+    top.appendChild(el('span', 'props-el', e.element_type));
+    host.appendChild(top);
+    var s = el('div', 'props-sec');
+    s.appendChild(el('h4', null, 'Element'));
+    var dl = el('dl', 'props-kv');
+    [['element_id', e.element_id], ['author_type', e.author_type],
+     ['created_by', e.created_by], ['version', String(e.version)],
+     ['source_type', e.element_type === 'SERIES_PRICE_BAND' ? 'SERIES' : 'NONE']
+    ].forEach(function (p) {
+      dl.appendChild(el('dt', null, p[0]));
+      dl.appendChild(el('dd', null, p[1]));
+    });
+    s.appendChild(dl);
+    s.appendChild(el('p', 'props-note', 'author_type is written explicitly as HUMAN, never left'
+      + ' blank to mean human - a blank is a third state (section 6.2).'));
+    host.appendChild(s);
+    var s2 = el('div', 'props-sec');
+    s2.appendChild(el('h4', null, 'Not implemented here'));
+    s2.appendChild(el('p', 'props-note', 'position_x/y, width, height and z_index are Canvas Core'
+      + ' (section 11.5). This prototype stacks elements in a fixed column and does not drag,'
+      + ' resize, pan or zoom.'));
+    host.appendChild(s2);
+    var s3 = el('div', 'props-sec');
+    s3.appendChild(el('h4', null, 'Delete'));
+    var b = el('button', 'btn btn--sm', 'Delete this element');
+    b.type = 'button';
+    b.addEventListener('click', function () { removeElement(e.element_id); });
+    s3.appendChild(b);
+    host.appendChild(s3);
+  }
+
+  /* ---------------------------------------------------------------- revisions --------------- */
+  function fnv1a8(t) {
+    var h = 0x811c9dc5;
+    for (var i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = (h * 0x01000193) >>> 0; }
+    return ('00000000' + h.toString(16)).slice(-8).toUpperCase();
+  }
   function nowHM() {
     var d = new Date();
     return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
   }
   function nowStamp() {
     var d = new Date();
-    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' +
-           ('0' + d.getDate()).slice(-2) + ' ' + nowHM();
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-'
+      + ('0' + d.getDate()).slice(-2) + ' ' + nowHM();
   }
-
   function addRevision(type) {
     STATE.revSeq += 1;
     STATE.boardVersion += 1;
-    var idem = 'proto-' + type + '-' + STATE.revSeq;
     STATE.revisions.push({
-      revision_id: fakeId('PSR', 'PSR|b1|' + type + '|' + idem),
-      revision_type: type,
-      board_version: STATE.boardVersion,
-      author_type: 'HUMAN',
-      created_by: 'vic',
-      created_at: nowStamp(),
-      _fresh: true
-    });
+      revision_id: 'PSR-' + fnv1a8('PSR|b1|' + type + '|proto-' + STATE.revSeq),
+      revision_type: type, board_version: STATE.boardVersion,
+      author_type: 'HUMAN', created_by: 'vic', created_at: nowStamp(), _fresh: true });
     if (type === 'SAVE_CHECKPOINT') STATE.lastCheckpoint = nowHM();
     renderRevisions();
     renderMeta();
   }
-
   function renderRevisions() {
     var body = byId('revBody');
-    body.textContent = '';
+    clear(body);
     STATE.revisions.slice().reverse().forEach(function (r) {
       var tr = el('tr', r._fresh ? 'rev-row--fresh' : null);
       tr.appendChild(el('td', null, r.revision_id));
       var td = el('td');
-      td.appendChild(el('span',
-        'rev-type' + (r.revision_type === 'FREEZE_SNAPSHOT' ? ' rev-type--freeze' : ''),
-        r.revision_type));
+      td.appendChild(el('span', 'rev-type'
+        + (r.revision_type === 'FREEZE_SNAPSHOT' ? ' rev-type--freeze' : ''), r.revision_type));
       tr.appendChild(td);
       tr.appendChild(el('td', null, 'v' + r.board_version));
       tr.appendChild(el('td', null, r.author_type));
@@ -916,7 +1050,6 @@
       r._fresh = false;
     });
   }
-
   function renderMeta() {
     byId('metaVersion').textContent = 'v' + STATE.boardVersion;
     byId('metaCheckpoint').textContent = STATE.lastCheckpoint;
@@ -925,73 +1058,746 @@
   }
 
   /* ==========================================================================================
-     9. WIRING
+     9. FILTERS
      ========================================================================================== */
-  byId('boardItems').addEventListener('click', function (ev) {
-    var node = ev.target;
-    while (node && node !== this && !(node.classList && node.classList.contains('el'))) {
-      node = node.parentNode;
-    }
-    if (node && node.dataset && node.dataset.id) {
-      STATE.selectedId = node.dataset.id;
-      renderBoard();
-      renderProps();
-    }
-  });
+  function fillSelect(id, values, current) {
+    var s = byId(id);
+    clear(s);
+    values.forEach(function (v) {
+      var o = document.createElement('option');
+      o.value = v;
+      o.textContent = v;
+      if (v === current) o.selected = true;
+      s.appendChild(o);
+    });
+    s.value = current;
+  }
+  function seriesOf() { return uniq(ROWS.map(function (r) { return r.series; })).sort(); }
+  function scopeValues(field) {
+    var inSeries = ROWS.filter(function (r) { return r.series === STATE.series; });
+    return ['All'].concat(uniq(inSeries.map(function (r) { return r[field]; })).sort());
+  }
+  function fillScopeSelects() {
+    fillSelect('fCompany', scopeValues('company'), STATE.company);
+    fillSelect('fCountry', scopeValues('country'), STATE.country);
+    fillSelect('fMarketplace', scopeValues('marketplace'), STATE.marketplace);
+  }
+  function selectAll() {
+    searchHits(universe()).forEach(function (r) { STATE.selected[r.key] = true; });
+    renderSkuPicker();
+    renderCharts();
+  }
+  function clearAll() {
+    STATE.selected = {};
+    renderSkuPicker();
+    renderCharts();
+  }
 
-  byId('seriesSelect').addEventListener('change', function () {
-    STATE.series = this.value;
-    var band = elementById('PSE-6E90AF13');
-    band.source_identity = this.value;
+  /* ==========================================================================================
+     10. AUTOMATED DOM ASSERTIONS.
+
+     These run on load against the REAL DOM: they tick real checkboxes, change the real selects
+     and read back the rendered SVG. They restore the starting state when they finish, so the page
+     a person sees is the page the prototype boots with.
+     ========================================================================================== */
+  function fire(node, type) {
+    var ev;
+    try { ev = new Event(type, { bubbles: true }); }
+    catch (e) {
+      ev = document.createEvent('Event');
+      ev.initEvent(type, true, true);
+    }
+    node.dispatchEvent(ev);
+  }
+  function setSelect(id, value) { var s = byId(id); s.value = value; fire(s, 'change'); }
+  function tick(sku, on) {
+    var boxes = byId('skuList').querySelectorAll('.skucb');
+    for (var i = 0; i < boxes.length; i++) {
+      if (boxes[i].getAttribute('data-sku') === sku) {
+        if (boxes[i].checked !== on) { boxes[i].checked = on; fire(boxes[i], 'change'); }
+        return true;
+      }
+    }
+    return false;
+  }
+  function cols() { return byId('charts').querySelectorAll('.col'); }
+  function colSkus() {
+    var c = cols(), o = [];
+    for (var i = 0; i < c.length; i++) o.push(c[i].getAttribute('data-sku'));
+    return o;
+  }
+  function colBySku(sku) {
+    var c = cols();
+    for (var i = 0; i < c.length; i++) {
+      if (c[i].getAttribute('data-sku') === sku) return c[i];
+    }
+    return null;
+  }
+  function panels() { return byId('charts').querySelectorAll('.panel'); }
+  function findingTexts() {
+    var o = [], f = byId('charts').querySelectorAll('.finding');
+    for (var i = 0; i < f.length; i++) o.push(f[i].textContent);
+    return o;
+  }
+  function gapFindings() {
+    return findingTexts().filter(function (t) { return t.indexOf('GAP ') === 0; });
+  }
+
+  function runSelfTest() {
+    var res = [];
+    function T(label, cond, detail) {
+      res.push({ label: label, pass: !!cond,
+        detail: cond ? null : (detail === undefined ? null : detail) });
+    }
+    var save = { series: STATE.series, company: STATE.company, country: STATE.country,
+      marketplace: STATE.marketplace, thr: STATE.thresholdCents,
+      selected: JSON.parse(JSON.stringify(STATE.selected)),
+      elementCount: STATE.elements.length };
+
+    // ---- A. integer cents, which everything else rests on --------------------------------
+    T('A1 cents() turns a decimal into an exact integer', cents(32.99) === 3299, cents(32.99));
+    T('A2 cents() differences are exact where float differences are not',
+      cents(32.99) - cents(24.99) === 800 && (32.99 - 24.99) !== 8,
+      [cents(32.99) - cents(24.99), 32.99 - 24.99]);
+    T('A3 cents() maps blank / null / undefined to null, never to 0',
+      cents('') === null && cents(null) === null && cents(undefined) === null);
+    T('A4 every mock money value normalised to an integer or null', (function () {
+      for (var i = 0; i < ROWS.length; i++) {
+        var r = ROWS[i];
+        var vals = [r.minimum_c, r.regular_c, r.msrp_c, r.official_deal_c, r.proposed_deal_c];
+        for (var j = 0; j < vals.length; j++) {
+          if (vals[j] !== null && vals[j] !== Math.round(vals[j])) return false;
+        }
+      }
+      return true;
+    })());
+
+    // ---- B. a known baseline, and an empty chart that says so -----------------------------
+    setSelect('fSeries', 'Can Opener');
+    setSelect('fCountry', 'US');
+    byId('skuSearch').value = '';
+    fire(byId('skuSearch'), 'input');
+    clearAll();
+    T('B1 clear all leaves no plotted column', cols().length === 0, cols().length);
+    T('B2 and the chart says so rather than drawing an empty axis',
+      byId('charts').querySelectorAll('.charts-empty').length === 1);
+
+    // ---- C. multi-select changes the number of X-axis items --------------------------------
+    tick('CO1105-R', true);
+    var n1 = cols().length;
+    tick('CO1100-R', true);
+    var n2 = cols().length;
+    tick('CO1180-R', true);
+    var n3 = cols().length;
+    T('C1 ticking one SKU puts one column on the X axis', n1 === 1, n1);
+    T('C2 ticking a second adds a second', n2 === 2, n2);
+    T('C3 ticking a third adds a third', n3 === 3, n3);
+    tick('CO1100-R', false);
+    T('C4 unticking removes that column again', cols().length === 2, cols().length);
+    var lbl = colSkus();
+    T('C5 and the columns left are exactly the ones still ticked',
+      lbl.indexOf('CO1105-R') >= 0 && lbl.indexOf('CO1180-R') >= 0
+      && lbl.indexOf('CO1100-R') === -1, lbl);
+    T('C6 the X axis is ordered by regular_price ascending',
+      lbl.join(',') === 'CO1105-R,CO1180-R', lbl);
+
+    // ---- D. select all / clear all ---------------------------------------------------------
+    selectAll();
+    var uniUS = universe().length;
+    var plottableUS = universe().filter(function (r) { return r.regular_c !== null; }).length;
+    T('D1 select all ticks every SKU in the filtered universe',
+      selectedRows().length === uniUS, [selectedRows().length, uniUS]);
+    T('D2 and plots every one of them that has a regular_price',
+      cols().length === plottableUS, [cols().length, plottableUS]);
+    T('D3 the US Can Opener universe is 11 SKUs, 10 of them plottable',
+      uniUS === 11 && plottableUS === 10, [uniUS, plottableUS]);
+    T('D4 which is 8-12 members, enough to read a price architecture',
+      plottableUS >= 8 && plottableUS <= 12, plottableUS);
+    clearAll();
+    T('D5 clear all empties the selection', selectedRows().length === 0);
+    T('D6 and the X axis with it', cols().length === 0);
+
+    // ---- E. search narrows the list without changing the selection ------------------------
+    selectAll();
+    var before = selectedRows().length;
+    byId('skuSearch').value = 'pro x';
+    fire(byId('skuSearch'), 'input');
+    T('E1 search narrows the visible SKU list',
+      byId('skuList').querySelectorAll('.skucb').length === 2,
+      byId('skuList').querySelectorAll('.skucb').length);
+    T('E2 without changing the selection or the chart',
+      selectedRows().length === before && cols().length === 10,
+      [selectedRows().length, before, cols().length]);
+    byId('skuSearch').value = 'CO1190';
+    fire(byId('skuSearch'), 'input');
+    T('E3 and it matches the SKU code as well as the name',
+      byId('skuList').querySelectorAll('.skucb').length === 1);
+    byId('skuSearch').value = 'zzzz';
+    fire(byId('skuSearch'), 'input');
+    T('E4 no match says so rather than showing an empty box',
+      byId('skuList').querySelectorAll('.skupick-empty').length === 1);
+    byId('skuSearch').value = '';
+    fire(byId('skuSearch'), 'input');
+
+    // ---- F. Series really swaps the SKU universe ------------------------------------------
+    setSelect('fSeries', 'Jar Opener');
+    var jarSkus = universe().map(function (r) { return r.sku; });
+    T('F1 switching Series replaces the SKU universe',
+      jarSkus.length === 4 && jarSkus.indexOf('JO2100-R') >= 0
+      && jarSkus.indexOf('CO1100-R') === -1, jarSkus);
+    T('F2 and drops the previous Series selection rather than plotting it',
+      cols().length === 0 && selectedRows().length === 0, cols().length);
+    selectAll();
+    T('F3 the Jar Opener universe plots four columns', cols().length === 4, cols().length);
+    T('F4 and its X labels are the Jar Opener SKUs',
+      colSkus().join(',') === 'JO2100-R,JO2140-R,JO2180-R,JO2200-R', colSkus());
+
+    // ---- G. the band bounds, per SKU -------------------------------------------------------
+    var jo = colBySku('JO2140-R');
+    T('G1 the JO2140-R column exists', jo !== null);
+    if (jo) {
+      var band = jo.querySelector('.band'), cap = jo.querySelector('.cap');
+      var floor = jo.querySelector('.floor'), reg = jo.querySelector('.mk-reg');
+      T('G2 it draws a minimum-to-MSRP band', band !== null);
+      T('G3 with a floor tick at the minimum and a cap tick at the MSRP',
+        cap !== null && floor !== null);
+      if (band && cap && floor && reg) {
+        var y1 = Number(band.getAttribute('y1')), y2 = Number(band.getAttribute('y2'));
+        var yc = Number(cap.getAttribute('y1')), yf = Number(floor.getAttribute('y1'));
+        var yr = Number(reg.getAttribute('cy'));
+        // SVG y grows downward, so the MSRP end is the SMALLER y
+        T('G4 the band spans exactly the two ticks',
+          Math.min(y1, y2) === yc && Math.max(y1, y2) === yf, [y1, y2, yc, yf]);
+        T('G5 the MSRP end is above the minimum end on screen', yc < yf, [yc, yf]);
+        T('G6 and regular_price sits strictly inside the band', yr < yf && yr > yc, [yc, yr, yf]);
+      }
+      T('G7 JO2140-R has no deal at all, so it draws neither deal marker',
+        jo.querySelector('.mk-deal') === null && jo.querySelector('.mk-prop') === null);
+    }
+    T('G8 every plotted column draws its band', (function () {
+      var c = cols();
+      for (var i = 0; i < c.length; i++) if (!c[i].querySelector('.band')) return false;
+      return c.length === 4;
+    })());
+
+    // ---- H. the three marker kinds, the legend and the axes -------------------------------
+    var jo2180 = colBySku('JO2180-R');
+    T('H1 a SKU with an official promo_price draws the official deal marker',
+      jo2180 !== null && jo2180.querySelector('.mk-deal') !== null);
+    T('H2 and not the proposal marker',
+      jo2180 !== null && jo2180.querySelector('.mk-prop') === null);
+    setSelect('fSeries', 'Can Opener');
+    setSelect('fCountry', 'US');
+    selectAll();
+    var co1120 = colBySku('CO1120-R'), co1105 = colBySku('CO1105-R');
+    T('H3 a SKU with only a board proposal draws the proposal marker',
+      co1120 !== null && co1120.querySelector('.mk-prop') !== null);
+    T('H4 and not the official one, because it has no promo_price',
+      co1120 !== null && co1120.querySelector('.mk-deal') === null);
+    T('H5 a SKU with neither draws only the regular marker',
+      co1105 !== null && co1105.querySelector('.mk-reg') !== null
+      && co1105.querySelector('.mk-deal') === null
+      && co1105.querySelector('.mk-prop') === null);
+    T('H6 every plotted column carries a regular_price marker', (function () {
+      var c = cols();
+      for (var i = 0; i < c.length; i++) if (!c[i].querySelector('.mk-reg')) return false;
+      return c.length > 0;
+    })());
+    T('H7 official and proposal markers are distinct classes, and never both on one SKU',
+      byId('charts').querySelectorAll('.col .mk-deal').length === 5
+      && byId('charts').querySelectorAll('.col .mk-prop').length === 2
+      && (function () {
+        var c = cols();
+        for (var i = 0; i < c.length; i++) {
+          if (c[i].querySelector('.mk-deal') && c[i].querySelector('.mk-prop')) return false;
+        }
+        return true;
+      })(),
+      [byId('charts').querySelectorAll('.col .mk-deal').length,
+        byId('charts').querySelectorAll('.col .mk-prop').length]);
+    T('H7a and the legend carries one swatch of each of the three marker kinds',
+      byId('charts').querySelectorAll('.legend .sw.mk-reg').length === 1
+      && byId('charts').querySelectorAll('.legend .sw.mk-deal').length === 1
+      && byId('charts').querySelectorAll('.legend .sw.mk-prop').length === 1);
+    T('H8 the legend names seven symbols',
+      byId('charts').querySelectorAll('.panel .legend .legend-item').length === 7,
+      byId('charts').querySelectorAll('.panel .legend .legend-item').length);
+    T('H9 the Y axis is drawn with numeric ticks',
+      byId('charts').querySelectorAll('.panel .y-tick').length >= 4,
+      byId('charts').querySelectorAll('.panel .y-tick').length);
+    T('H10 the Y axis is titled with its currency',
+      byId('charts').querySelector('.panel .axis-title').textContent === 'Price (USD)',
+      byId('charts').querySelector('.panel .axis-title').textContent);
+    T('H11 every column carries an X-axis SKU label',
+      byId('charts').querySelectorAll('.panel .x-label').length === cols().length);
+    T('H12 and a details tooltip',
+      byId('charts').querySelectorAll('.panel .col title').length === cols().length);
+    T('H13 whose text carries the five price levels and the two named absences', (function () {
+      var t = byId('charts').querySelector('.panel .col title').textContent;
+      return t.indexOf('MSRP') >= 0 && t.indexOf('regular_price') >= 0
+        && t.indexOf('minimum_price') >= 0 && t.indexOf('official deal') >= 0
+        && t.indexOf('D-6 / D-8') > 0;
+    })(), byId('charts').querySelector('.panel .col title').textContent);
+
+    // ---- I. SOURCE_MISSING never becomes a point -----------------------------------------
+    T('I1 the SOURCE_MISSING SKU is not on the X axis',
+      colSkus().indexOf('CO1140-R') === -1, colSkus());
+    T('I2 but it IS listed, with its reason',
+      byId('charts').querySelectorAll('.notplotted li').length === 1);
+    T('I3 and the list says it was not back-filled from selling_price',
+      byId('charts').querySelector('.notplotted').textContent
+        .indexOf('Not back-filled from sku_details.selling_price') > 0);
+    clearAll();
+    tick('CO1140-R', true);
+    T('I4 selecting it alone plots nothing at all', cols().length === 0, cols().length);
+    T('I5 and still lists it rather than showing an empty page',
+      byId('charts').querySelectorAll('.notplotted li').length === 1);
+    T('I6 it is marked SOURCE_MISSING in the selector too',
+      byId('skuList').querySelectorAll('.skurow--missing').length === 1);
+
+    // ---- J. currency never shares an axis ------------------------------------------------
+    setSelect('fCountry', 'All');
+    selectAll();
+    var ps = panels(), curs = [];
+    for (var p1 = 0; p1 < ps.length; p1++) curs.push(ps[p1].getAttribute('data-currency'));
+    T('J1 three currencies produce three panels', ps.length === 3, curs);
+    T('J2 one per currency, EUR / GBP / USD', curs.join(',') === 'EUR,GBP,USD', curs);
+    T('J3 every panel has its own Y axis',
+      byId('charts').querySelectorAll('.panel .y-axis').length === 3);
+    T('J4 no panel contains a column from another currency', (function () {
+      for (var i = 0; i < ps.length; i++) {
+        var cur = ps[i].getAttribute('data-currency');
+        var cc = ps[i].querySelectorAll('.col');
+        for (var j = 0; j < cc.length; j++) {
+          var key = cc[j].getAttribute('data-key'), row = null;
+          ROWS.forEach(function (r) { if (r.key === key) row = r; });
+          if (!row || row.currency !== cur) return false;
+        }
+      }
+      return true;
+    })());
+    T('J5 each panel titles its own axis with its own currency', (function () {
+      var seen = [];
+      for (var i = 0; i < ps.length; i++) {
+        seen.push(ps[i].querySelector('.axis-title').textContent);
+      }
+      return seen.join(',') === 'Price (EUR),Price (GBP),Price (USD)';
+    })());
+    T('J6 and the refusal is stated on screen, above the split panels',
+      byId('charts').querySelectorAll('.refusal').length === 1
+      && byId('charts').querySelector('.refusal').textContent
+        .indexOf('MIXED_CURRENCY_COMPARISON_REFUSED') === 0,
+      byId('charts').querySelectorAll('.refusal').length);
+    T('J7 no FX conversion is offered or performed',
+      byId('charts').textContent.indexOf('no FX conversion is performed') > 0
+      && byId('charts').textContent.toLowerCase().indexOf('converted to') === -1);
+    T('J8 no finding crosses two currencies', (function () {
+      for (var i = 0; i < ps.length; i++) {
+        var cur = ps[i].getAttribute('data-currency');
+        var ff = ps[i].querySelectorAll('.finding');
+        for (var j = 0; j < ff.length; j++) {
+          var txt = ff[j].textContent;
+          if (/USD|EUR|GBP/.test(txt) && txt.indexOf(cur) === -1) return false;
+        }
+      }
+      return true;
+    })());
+
+    // ---- K. the analysis arithmetic ------------------------------------------------------
+    setSelect('fCountry', 'US');
+    selectAll();
+    var ft = findingTexts().join(' || ');
+    T('K1 the 59.99-to-74.99 step is a gap at threshold 8.00',
+      /GAP CO1180-R → CO1190-R = 15\.00 USD/.test(ft), ft);
+    T('K2 and the finding displays the threshold that produced it',
+      /exceeds the gap threshold 8\.00/.test(ft));
+    T('K3 a 3.00 step is not a gap', /GAP CO1105-R → CO1108-R/.test(ft) === false);
+    T('K4 the gap count at threshold 8.00 is exactly one',
+      gapFindings().length === 1, gapFindings());
+    T('K4a and the 74.99-to-82.99 step, EXACTLY 8.00, is not a second one',
+      /GAP CO1190-R . CO1195-R/.test(ft) === false
+      && cents(82.99) - cents(74.99) === 800,
+      [cents(82.99) - cents(74.99)]);
+    T('K5 the proposal-driven overlap is found',
+      /OVERLAP CO1100-R ∩ CO1120-R over 34\.99–39\.99 USD/.test(ft), ft);
+    T('K6 and labelled PROPOSAL-DRIVEN',
+      /OVERLAP[^|]*PROPOSAL-DRIVEN/.test(ft), ft);
+    T('K7 the proposal-driven cannibalisation is found',
+      /CANNIBALISATION CO1120-R deal 34\.99 ≤ CO1100-R regular 39\.99 USD/.test(ft), ft);
+    T('K8 and attributed to the board, not to a campaign',
+      /CANNIBALISATION CO1120-R[^|]*PROPOSAL-DRIVEN/.test(ft), ft);
+    T('K9 a live-campaign cannibalisation is NOT labelled proposal-driven', (function () {
+      var live = findingTexts().filter(function (t) {
+        return t.indexOf('CANNIBALISATION') === 0 && t.indexOf('CO1120-R') === -1; });
+      return live.length > 0 && live.every(function (t) {
+        return t.indexOf('PROPOSAL-DRIVEN') === -1
+          && t.indexOf('from a live campaign price') > 0; });
+    })(), findingTexts().filter(function (t) { return t.indexOf('CANNIBALISATION') === 0; }));
+    T('K10 entry / core / premium are all labelled on the axis', (function () {
+      var t = byId('charts').querySelectorAll('.panel .tier'), seen = {};
+      for (var i = 0; i < t.length; i++) seen[t[i].textContent] = 1;
+      return seen.entry === 1 && seen.core === 1 && seen.premium === 1;
+    })());
+    T('K11 exactly one entry and one premium per panel',
+      byId('charts').querySelectorAll('.panel .tier--entry').length === 1
+      && byId('charts').querySelectorAll('.panel .tier--premium').length === 1);
+    T('K12 the gap is drawn on the chart, not only listed',
+      byId('charts').querySelectorAll('.panel .gap-label').length === 1
+      && byId('charts').querySelectorAll('.panel .gap-bar').length === 1,
+      byId('charts').querySelectorAll('.panel .gap-label').length);
+    T('K13 four overlap boxes are drawn, two of them marked proposal-driven',
+      byId('charts').querySelectorAll('.panel .ov-box').length === 4
+      && byId('charts').querySelectorAll('.panel .ov-box--prop').length === 2,
+      [byId('charts').querySelectorAll('.panel .ov-box').length,
+        byId('charts').querySelectorAll('.panel .ov-box--prop').length]);
+    T('K13a and a touching pair is not among them (CO1160 regular 52.99 = CO1180 deal 52.99)',
+      /OVERLAP CO1160-R . CO1180-R/.test(ft) === false, ft);
+
+    // THE TWO BOUNDARY RULES, on data chosen to expose them.
+    setSelect('fSeries', 'Jar Opener');
+    selectAll();
+    var ft2 = findingTexts().join(' || ');
+    T('K14 a step EXACTLY equal to the threshold is not a gap (24.99 to 32.99 vs 8.00)',
+      /GAP JO2100-R → JO2140-R/.test(ft2) === false, ft2);
+    T('K15 intervals touching at a single point are not an overlap'
+      + ' (JO2200-R deal 41.99 = JO2180-R regular 41.99)',
+      /OVERLAP JO2180-R ∩ JO2200-R/.test(ft2) === false, ft2);
+    T('K16 but that same touch IS a cannibalisation, because that test is <=',
+      /CANNIBALISATION JO2200-R deal 41\.99 ≤ JO2180-R regular 41\.99/.test(ft2), ft2);
+
+    // the threshold input really drives the arithmetic
+    setSelect('fSeries', 'Can Opener');
+    setSelect('fCountry', 'US');
+    selectAll();
+    var at8 = gapFindings().length;
+    byId('fThreshold').value = '2.00';
+    fire(byId('fThreshold'), 'input');
+    var at2 = gapFindings().length;
+    T('K17 lowering the threshold finds more gaps', at2 > at8, [at8, at2]);
+    T('K18 and every gap finding re-states the new threshold',
+      gapFindings().length > 0 && gapFindings().every(function (t) {
+        return t.indexOf('gap threshold 2.00') > 0; }));
+    byId('fThreshold').value = '8.00';
+    fire(byId('fThreshold'), 'input');
+    T('K19 restoring the threshold restores the gap count', gapFindings().length === at8);
+
+    // ---- L. the filters really filter ----------------------------------------------------
+    setSelect('fCountry', 'DE');
+    T('L1 Country=DE narrows the universe to the EUR rows',
+      universe().length === 3 && universe().every(function (r) {
+        return r.currency === 'EUR'; }), universe().length);
+    selectAll();
+    T('L2 and only one panel is drawn', panels().length === 1);
+    T('L3 which is the EUR one', panels()[0].getAttribute('data-currency') === 'EUR');
+    setSelect('fMarketplace', 'Amazon');
+    T('L4 Marketplace=Amazon keeps all three', universe().length === 3);
+    setSelect('fCountry', 'US');
+    setSelect('fMarketplace', 'All');
+    setSelect('fCompany', 'ResUS');
+    T('L5 Company=ResUS is a real filter',
+      universe().length === 11 && universe().every(function (r) {
+        return r.company === 'ResUS'; }), universe().length);
+    setSelect('fCompany', 'KM-EU');
+    T('L6 and Company=KM-EU excludes the US rows',
+      universe().length === 0, universe().length);
+    T('L7 an empty universe says so instead of drawing an axis',
+      byId('skuList').querySelectorAll('.skupick-empty').length === 1);
+    setSelect('fCompany', 'All');
+    setSelect('fSeries', 'Bottle Opener');
+    setSelect('fMarketplace', 'Shopify');
+    T('L8 Series and Marketplace together narrow to one SKU',
+      universe().length === 1 && universe()[0].sku === 'BO3150-R',
+      universe().map(function (r) { return r.sku; }));
+    selectAll();
+    T('L9 a single-member panel labels it "only" rather than entry or premium',
+      byId('charts').querySelectorAll('.panel .tier--only').length === 1);
+    setSelect('fMarketplace', 'All');
+    setSelect('fSeries', 'Can Opener');
+    setSelect('fCountry', 'US');
+
+    // ---- M. the board elements really work ------------------------------------------------
+    var el0 = byId('boardItems').querySelectorAll('.el').length;
+    var t1 = addElement('TEXT_NOTE');
+    T('M1 Text creates one more visible element',
+      byId('boardItems').querySelectorAll('.el').length === el0 + 1);
+    T('M2 of type TEXT_NOTE, with an editable textarea',
+      byId('boardItems').querySelector('[data-element-id="' + t1.element_id
+        + '"][data-element-type="TEXT_NOTE"] .note-edit') !== null);
+    var ta = byId('boardItems').querySelector('[data-element-id="' + t1.element_id
+      + '"] .note-edit');
+    ta.value = 'edited by the self-test';
+    fire(ta, 'input');
+    T('M3 and editing it updates the element', t1.content.text === 'edited by the self-test');
+    selectAll();
+    var b1 = addElement('SERIES_PRICE_BAND');
+    T('M4 Price Band creates a visible chart element',
+      byId('boardItems').querySelector('[data-element-id="' + b1.element_id
+        + '"] svg.chart') !== null);
+    T('M5 whose column count matches the selection it captured',
+      byId('boardItems').querySelectorAll('[data-element-id="' + b1.element_id
+        + '"] .col').length === 10,
+      byId('boardItems').querySelectorAll('[data-element-id="' + b1.element_id + '"] .col').length);
+    T('M6 and which does not change when the selector afterwards does', (function () {
+      clearAll();
+      var still = byId('boardItems').querySelectorAll('[data-element-id="' + b1.element_id
+        + '"] .col').length;
+      selectAll();
+      return still === 10;
+    })());
+    var m1 = addElement('MATRIX');
+    T('M7 Matrix creates a visible 2x2 with four editable cells',
+      byId('boardItems').querySelectorAll('[data-element-id="' + m1.element_id
+        + '"] .mx-cell').length === 4);
+    var axi = byId('boardItems').querySelector('[data-element-id="' + m1.element_id
+      + '"] .mx-axis-input[data-axis="x_axis"]');
+    axi.value = 'Feature Level';
+    fire(axi, 'input');
+    T('M8 whose X axis name is editable and re-renders the header',
+      m1.content.x_axis === 'Feature Level'
+      && byId('boardItems').querySelector('[data-element-id="' + m1.element_id
+        + '"] .mx-head-x_axis').textContent === 'Feature Level');
+    var ayi = byId('boardItems').querySelector('[data-element-id="' + m1.element_id
+      + '"] .mx-axis-input[data-axis="y_axis"]');
+    ayi.value = 'Series';
+    fire(ayi, 'input');
+    T('M9 and so is the Y axis name', m1.content.y_axis === 'Series');
+    var cell = byId('boardItems').querySelector('[data-element-id="' + m1.element_id
+      + '"] .mx-cell');
+    cell.value = 'CO1100-R';
+    fire(cell, 'input');
+    T('M10 a matrix cell is editable', m1.content.cells[0][0] === 'CO1100-R');
+    T('M11 three prototype elements are on the board now',
+      byId('boardItems').querySelectorAll('.el').length === el0 + 3,
+      byId('boardItems').querySelectorAll('.el').length);
+    T('M12 each carries a delete control',
+      byId('boardItems').querySelectorAll('.el .el-del').length === el0 + 3);
+    removeElement(m1.element_id);
+    removeElement(b1.element_id);
+    removeElement(t1.element_id);
+    T('M13 and each one can be deleted again',
+      byId('boardItems').querySelectorAll('.el').length === el0);
+    T('M14 an empty board says so rather than showing nothing',
+      byId('boardItems').querySelectorAll('.board-empty').length === 1);
+    T('M15 the tools that are NOT implemented are disabled, not wired to a dialog', (function () {
+      var off = document.querySelectorAll('.toolrail .tool--off');
+      if (off.length !== 6) return false;
+      for (var i = 0; i < off.length; i++) if (!off[i].disabled) return false;
+      return true;
+    })(), document.querySelectorAll('.toolrail .tool--off').length);
+    T('M16 and the page says plainly that drag / resize / pan / zoom are absent',
+      document.querySelector('.toolrail-note').textContent
+        .indexOf('drag, resize, pan, zoom') > 0);
+
+    // ---- N. the things that must NOT be here ---------------------------------------------
+    // SCANNED OVER THE LOGIC, DELIBERATELY NOT OVER runSelfTest. The first version of this
+    // assertion stringified the test itself - and the test has to name the forbidden APIs in order
+    // to look for them, so it could only ever fail. The subject is the rendering and analysis code.
+    T('N1 no storage API appears anywhere in the prototype logic', (function () {
+      var src = String(renderPanel) + String(analyse) + String(addElement) + String(removeElement)
+        + String(renderCharts) + String(renderBoard) + String(renderSkuPicker)
+        + String(renderDetails) + String(addRevision) + String(norm) + String(splitByCurrency)
+        + String(universe) + String(selectAll) + String(clearAll) + String(cents);
+      return src.indexOf('localStorage') === -1 && src.indexOf('sessionStorage') === -1
+        && src.indexOf('indexedDB') === -1 && src.indexOf('openDatabase') === -1;
+    })());
+    T('N2 no network API appears anywhere in the prototype logic', (function () {
+      var src = String(renderPanel) + String(analyse) + String(addElement) + String(removeElement)
+        + String(renderCharts) + String(renderBoard) + String(renderSkuPicker)
+        + String(renderDetails) + String(addRevision) + String(norm) + String(splitByCurrency)
+        + String(universe) + String(selectAll) + String(clearAll) + String(tipText);
+      return src.indexOf('fetch(') === -1 && src.indexOf('XMLHttpRequest') === -1
+        && src.indexOf('WebSocket') === -1 && src.indexOf('EventSource') === -1
+        && src.indexOf('sendBeacon') === -1 && src.indexOf('import(') === -1;
+    })());
+    T('N3 the document loads exactly two local subresources', (function () {
+      var n = document.querySelectorAll('script[src], link[href]');
+      if (n.length !== 2) return false;
+      for (var i = 0; i < n.length; i++) {
+        var u = n[i].getAttribute('src') || n[i].getAttribute('href');
+        if (u !== 'prototype.css' && u !== 'prototype.js') return false;
+      }
+      return true;
+    })(), document.querySelectorAll('script[src], link[href]').length);
+    T('N4 no production accessor is named in the rendered page',
+      document.body.textContent.indexOf('KM.DB') === -1);
+    T('N5 current selling price appears only as a named absence', (function () {
+      var t = document.body.textContent;
+      var i = t.indexOf('current selling price');
+      return i === -1 || /current selling price[^.]{0,60}(not shown|GAP)/i.test(t);
+    })());
+    T('N6 margin appears only as a named absence', (function () {
+      var t = document.body.textContent;
+      var i = t.indexOf('margin');
+      return i === -1 || /margin[^.]{0,60}(not shown|GAP|D-8)/i.test(t);
+    })());
+    T('N7 no margin FIGURE is rendered anywhere', (function () {
+      // The first version of this looked for the WORD and flagged the prototype's own honest
+      // sentence, "current selling price / margin: not shown (D-6 / D-8)". The requirement is that
+      // no margin VALUE is shown, so the test looks for a number or a percent beside the word.
+      var t = document.body.textContent;
+      return /margin[^A-Za-z]{0,4}[-+]?[0-9]/i.test(t) === false
+        && /margin[^.]{0,12}%/i.test(t) === false;
+    })(), (document.body.textContent.match(/margin[^.]{0,30}/gi) || []).slice(0, 3));
+    T('N8 the mock data declares itself as invented',
+      MOCK.note.indexOf('INVENTED SAMPLE DATA') === 0);
+    T('N9 the banner tells the reader it is not runtime',
+      document.querySelector('.proto-banner').textContent.indexOf('NON-RUNTIME PROTOTYPE') >= 0);
+
+    // ---- Z. restore the page the reader was looking at -----------------------------------
+    STATE.search = '';
+    byId('skuSearch').value = '';
+    STATE.series = save.series;
+    fillSelect('fSeries', seriesOf(), STATE.series);
+    STATE.company = save.company;
+    STATE.country = save.country;
+    STATE.marketplace = save.marketplace;
+    fillScopeSelects();
+    STATE.thresholdCents = save.thr;
+    byId('fThreshold').value = fromCents(save.thr);
+    STATE.selected = save.selected;
+    renderSkuPicker();
+    renderCharts();
     renderBoard();
-    renderProps();
+    T('Z1 the self-test restored the starting selection',
+      selectedRows().length === Object.keys(save.selected).length,
+      [selectedRows().length, Object.keys(save.selected).length]);
+    T('Z2 and left none of its own elements behind',
+      STATE.elements.length === save.elementCount);
+    T('Z3 and the chart is back on screen', cols().length === 10, cols().length);
+
+    var passed = res.filter(function (r) { return r.pass; }).length;
+    STATE.selftest = { total: res.length, passed: passed, failed: res.length - passed,
+      results: res };
+    renderSelfTest();
+    return STATE.selftest;
+  }
+
+  function renderSelfTest() {
+    var st = STATE.selftest;
+    if (!st) return;
+    var badge = byId('selftestBadge'), sum = byId('selftestSummary'), list = byId('selftestList');
+    var okAll = st.failed === 0;
+    badge.textContent = 'self-test ' + st.passed + '/' + st.total;
+    badge.className = 'banner-selftest ' + (okAll ? 'is-ok' : 'is-bad');
+    badge.title = okAll ? 'every DOM assertion passed' : st.failed + ' assertion(s) failed';
+    sum.textContent = st.passed + ' passed, ' + st.failed + ' failed, ' + st.total + ' total';
+    sum.className = 'selftest-summary ' + (okAll ? 'is-ok' : 'is-bad');
+    clear(list);
+    st.results.forEach(function (r) {
+      var li = el('li', r.pass ? 'st-ok' : 'st-bad');
+      li.appendChild(el('span', 'st-mark', r.pass ? 'ok' : 'FAIL'));
+      li.appendChild(document.createTextNode(' ' + r.label));
+      if (!r.pass && r.detail !== null && r.detail !== undefined) {
+        li.appendChild(el('code', 'st-detail', ' got ' + JSON.stringify(r.detail)));
+      }
+      list.appendChild(li);
+    });
+    try {
+      if (window.console && console.log) {
+        console.log('[PSB prototype] self-test ' + st.passed + '/' + st.total
+          + (st.failed ? '  ' + st.failed + ' FAILED' : '  all passed'));
+        st.results.forEach(function (r) {
+          if (!r.pass) {
+            console.error('FAIL ' + r.label
+              + (r.detail === null ? '' : '  got ' + JSON.stringify(r.detail)));
+          }
+        });
+      }
+    } catch (e) { /* console is optional */ }
+  }
+
+  /* ==========================================================================================
+     11. WIRING
+     ========================================================================================== */
+  byId('fSeries').addEventListener('change', function () {
+    STATE.series = this.value;
+    STATE.selected = {};
+    STATE.company = 'All';
+    STATE.country = 'All';
+    STATE.marketplace = 'All';
+    fillScopeSelects();
+    renderSkuPicker();
+    renderCharts();
   });
+  [['fCompany', 'company'], ['fCountry', 'country'], ['fMarketplace', 'marketplace']]
+    .forEach(function (p) {
+      byId(p[0]).addEventListener('change', function () {
+        STATE[p[1]] = this.value;
+        pruneSelection();
+        renderSkuPicker();
+        renderCharts();
+      });
+    });
+  byId('fThreshold').addEventListener('input', function () {
+    var c = cents(this.value);
+    STATE.thresholdCents = (c === null || c < 0) ? 0 : c;
+    renderCharts();
+  });
+  byId('skuSearch').addEventListener('input', function () {
+    STATE.search = this.value;
+    renderSkuPicker();
+  });
+  byId('btnSelectAll').addEventListener('click', selectAll);
+  byId('btnClearAll').addEventListener('click', clearAll);
+
+  byId('toolText').addEventListener('click', function () { addElement('TEXT_NOTE'); });
+  byId('toolBand').addEventListener('click', function () { addElement('SERIES_PRICE_BAND'); });
+  byId('toolMatrix').addEventListener('click', function () { addElement('MATRIX'); });
 
   byId('btnCheckpoint').addEventListener('click', function () {
     addRevision('SAVE_CHECKPOINT');
-    var drawer = byId('historyDrawer');
-    if (drawer.hidden) { drawer.hidden = false; byId('btnHistory').setAttribute('aria-expanded', 'true'); }
+    var d = byId('historyDrawer');
+    if (d.hidden) { d.hidden = false; byId('btnHistory').setAttribute('aria-expanded', 'true'); }
   });
-
   byId('btnHistory').addEventListener('click', function () {
-    var drawer = byId('historyDrawer');
-    drawer.hidden = !drawer.hidden;
-    this.setAttribute('aria-expanded', drawer.hidden ? 'false' : 'true');
+    var d = byId('historyDrawer');
+    d.hidden = !d.hidden;
+    this.setAttribute('aria-expanded', d.hidden ? 'false' : 'true');
   });
   byId('btnHistoryClose').addEventListener('click', function () {
     byId('historyDrawer').hidden = true;
     byId('btnHistory').setAttribute('aria-expanded', 'false');
   });
-
   byId('btnNewBoard').addEventListener('click', function () {
-    // The seeding of a SERIES_PRICE_ARCHITECTURE board writes one SAVE_CHECKPOINT (§11.4), so a
-    // board has a restorable initial state from the moment it exists. Nothing is created here.
-    window.alert(
-      'Prototype only — no board is created.\n\n' +
-      'In P1 this seeds a SKU Series Price Architecture Board: one TEXT_NOTE, one SERIES_PRICE_BAND ' +
-      'bound to the Series in the top bar, one MATRIX labelled Price x Product Tier, and one empty ' +
-      'DEAL_PLAN — plus one SAVE_CHECKPOINT revision, so the initial state is restorable.');
+    // The seeded template of section 11.4, as far as this prototype implements it.
+    STATE.elements = [];
+    STATE.selectedElementId = null;
+    var n = addElement('TEXT_NOTE');
+    n.content.title = 'Objective / constraints';
+    n.content.text = 'Seeded template: the objective, the constraints, and the questions this board'
+      + ' has to answer.';
+    addElement('SERIES_PRICE_BAND');
+    addElement('MATRIX');
+    addRevision('SAVE_CHECKPOINT');
+    renderBoard();
   });
-
-  byId('boardSelect').addEventListener('change', function () {
-    window.alert('Prototype only — board switching is not implemented. ' +
-                 'One board is illustrated, with the Series filter live.');
-    this.selectedIndex = 0;
+  byId('btnSelftestToggle').addEventListener('click', function () {
+    var l = byId('selftestList');
+    l.hidden = !l.hidden;
+    this.textContent = l.hidden ? 'Show detail' : 'Hide detail';
+    this.setAttribute('aria-expanded', l.hidden ? 'false' : 'true');
   });
-
-  Array.prototype.forEach.call(document.querySelectorAll('.tool:not(:disabled)'), function (b) {
-    b.addEventListener('click', function () {
-      window.alert('Prototype only — element placement is not implemented.\n\n' +
-                   'Tool: ' + this.dataset.tool + '\n\n' +
-                   'Placement, drag, resize, pan and zoom belong to the Canvas Core (design freeze ' +
-                   'section 11.5), which P1 extracts. This page demonstrates the information ' +
-                   'architecture, not the engine.');
-    });
+  byId('btnSelftestRun').addEventListener('click', function () { runSelfTest(); });
+  byId('selftestBadge').addEventListener('click', function () {
+    var s = byId('selftest');
+    if (s && s.scrollIntoView) s.scrollIntoView();
   });
+  byId('boardSelect').addEventListener('change', function () { this.selectedIndex = 0; });
 
-  /* ---------------------------------------------------------------- boot */
+  /* ---------------------------------------------------------------- boot ------------------- */
+  fillSelect('fSeries', seriesOf(), STATE.series);
+  // Open on a useful screen rather than an empty one: the whole US price architecture.
+  STATE.country = 'US';
+  fillScopeSelects();
+  universe().forEach(function (r) { STATE.selected[r.key] = true; });
+  renderSkuPicker();
+  renderCharts();
   renderBoard();
-  renderProps();
   renderRevisions();
   renderMeta();
+  var host0 = byId('propsBody');
+  clear(host0);
+  host0.appendChild(el('p', 'props-empty',
+    'Click a SKU column in the chart, or an element on the board.'));
+  runSelfTest();
 })();
