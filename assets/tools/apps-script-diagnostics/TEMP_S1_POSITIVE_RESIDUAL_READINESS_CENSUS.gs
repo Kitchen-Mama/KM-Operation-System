@@ -216,8 +216,14 @@ var S1_LOG_MAX_CHUNKS_ = 12;
  * The suffix is priced at its widest (`_99_of_99`) so the budget does not depend on the chunk count that the
  * budget is being used to compute.
  */
-function S1_chunkBudget_(tag) {
-  var framing = '[S1] '.length + String(tag).length + '_99_of_99'.length + 1;
+// S1-R4D - AND THE SUFFIX IS NOW AN ARGUMENT, because a per-fault emitter numbers its lines _1_of_N where N
+// is a fault COUNT rather than a chunk count, and a three-digit N is four bytes wider than the '_99_of_99'
+// this was priced against. Extended rather than copied: R4A's whole point was that the framing arithmetic
+// lives in ONE place, so a second emitter must not carry a second copy of it. Called with one argument it
+// behaves exactly as before.
+function S1_chunkBudget_(tag, suffix) {
+  var framing = '[S1] '.length + String(tag).length
+    + String(suffix === undefined || suffix === null ? '_99_of_99' : suffix).length + 1;
   var b = S1_CHUNK_MAX_BYTES_ - framing;
   // A tag long enough to eat the whole budget is a naming mistake, not a reason to emit one byte per line.
   return b < 500 ? 500 : b;
@@ -1727,6 +1733,172 @@ function S1_idIntegrity_(t, idKey) {
   return o;
 }
 
+// ================================================================================================================
+// S1-R4D - THE FAULT WAS MEASURED AND NEVER PRINTED.
+//
+// WHAT THE LIVE RUN HANDED OVER. verdict STOP, predicates_failed 3,
+// factory_id_fault_codes ["FACTORY_MOVEMENT_ID_BLANK"], movement count 96, ok id count 95. That is enough
+// to know that exactly one row of ninety-six has no primary key, and not enough to open it.
+//
+// R4C DID measure the row number and the full-row fingerprint. It put them in two places, and the Logger is
+// neither: `surf.id_fault_detail` in the return value, and the `observed` value of the failing predicate in
+// the ledger. Manifest P deliberately logs a bounded SUMMARY rather than its whole return value - which is
+// correct, because the baseline would blow the log bound - and the summary carried the fault CODE. So the
+// same shape as R4C's third finding, one level down: a name standing in for the content it names. A code
+// tells an operator what kind of problem exists; a row number is what lets them go and look.
+//
+// Nothing about the JUDGEMENT changes here. S1_idIntegrity_ remains the single place that decides what a
+// fault is; everything below is presentation over what it already decided.
+// ================================================================================================================
+
+/** The one spelling of the movement table, so the census below, the surface spec and the id authority cannot
+ *  drift apart. Asserted in the suite against S1_FACTORY_ID_AUTHORITY_'s key. */
+var S1_FACTORY_MOVEMENT_TABLE_ = 'factory_stock_movements';
+
+/** What to do about each class of fault. Named, because 'the id is blank' and 'a stray cell sits outside the
+ *  schema' have different remedies and an operator should not have to infer which one they have. NONE of
+ *  these is performed, prepared or staged by this diagnostic: they are the next decision, not this one. */
+var S1_ID_FAULT_ACTION_ = {
+  BLANK: 'PREPARE_CONTROLLED_ID_BACKFILL',
+  WRONG_TYPE: 'PREPARE_CONTROLLED_ID_TYPE_NORMALIZATION',
+  DUPLICATE: 'PREPARE_CONTROLLED_ID_DEDUPLICATION',
+  OUTSIDE_NAMED: 'REVIEW_UNNAMED_CELL'
+};
+
+/**
+ * A fingerprint of the HEADER ROW, in live order.
+ *
+ * S1_fingerprint_ sorts, deliberately: for a list of identities, enumeration order is not a property of the
+ * data. For a header row it is - moving a column IS a change - so this reads the header row AS A ROW through
+ * S1_rowFingerprint_, which keeps live order and is the same hash authority every other fingerprint in this
+ * file goes through. A second algorithm would produce a second answer for the same headers.
+ */
+function S1_headerFingerprint_(hdrs) {
+  return S1_rowFingerprint_(hdrs || [], hdrs || []);
+}
+
+/**
+ * The NAMED, non-blank fields of one row, excluding the id column - which is what makes
+ * `row_has_business_content` a measurement rather than a restatement of the branch the row arrived on.
+ * Values are capped, and the cap SAYS so, because a log line is not the place a value gets silently cut.
+ */
+function S1_namedFields_(rec, skipColumn, liveColumns) {
+  var out = [];
+  if (!rec || !rec.__index) return out;
+  (liveColumns || []).forEach(function (c, i) {
+    if (c === '' || c === skipColumn) return;
+    if (rec.__index[c] !== i) return;          // first occurrence only, exactly as the reader indexed it
+    var raw = rec.__values[i];
+    if (S1_canonCell_(raw) === '~') return;
+    out.push({ field: c, value: S1_cap_(S1_str_(raw), 80),
+      type: Object.prototype.toString.call(raw) });
+  });
+  return out;
+}
+
+/**
+ * Turn what S1_idIntegrity_ decided into rows an operator can act on. One entry per fault, in SHEET ORDER,
+ * each carrying everything needed to find the row without re-running anything.
+ *
+ * THE ROW NUMBER DOES NOT COME FROM THE ID LIST, and that is the point. `ids` is sorted, so the blank that
+ * appeared at index 0 could have been any of the ninety-six rows; these row numbers come from the read
+ * itself, which walks the sheet top-down. Sorting the OUTPUT by row number then makes the emitted order the
+ * order a person scrolls in.
+ */
+function S1_idFaultRows_(t, integ, tableName, authority) {
+  var out = [];
+  if (!t || !integ || integ.checked !== true) return out;
+  var idKey = integ.id_column;
+  var pre = (authority && authority.stop_code_prefix) || 'ID';
+  var hdrFp = S1_headerFingerprint_(t.live_columns);
+  var namedCount = (t.live_columns || []).filter(function (c) { return c !== ''; }).length;
+  var byRow = {};
+  (t.rows || []).forEach(function (r) { byRow[r.row_number] = r; });
+
+  function record(kind, code, entry) {
+    var rec = byRow[entry.row_number] || null;
+    var fields = S1_namedFields_(rec, idKey, t.live_columns);
+    var raw = rec ? S1_cellOf_(rec, idKey) : undefined;
+    out.push({
+      table: tableName,
+      sheet_name: tableName,                   // the sheet IS the table in this database
+      fault_code: code,
+      fault_class: kind,
+      one_based_sheet_row_number: entry.row_number,
+      id_column_name: idKey,
+      observed_id_value: (raw === undefined || raw === null) ? null : S1_cap_(S1_str_(raw), 120),
+      observed_id_is_blank: S1_str_(raw) === '',
+      observed_id_type: Object.prototype.toString.call(raw),
+      first_seen_row: (entry.first_seen_row === undefined) ? null : entry.first_seen_row,
+      full_named_row_fingerprint: rec ? rec.fingerprint : null,
+      fingerprint_authority: 'S1_rowFingerprint_ - the same hash the BEFORE baseline freezes, so this'
+        + ' value can be matched against a frozen signature without recomputing anything',
+      fingerprint_covers: 'every live column of the row, named and unnamed, as name=value in live order',
+      live_column_count: t.live_column_count,
+      named_column_count: namedCount,
+      header_fingerprint: hdrFp,
+      named_nonblank_fields: fields,
+      named_nonblank_field_count: fields.length,
+      // MEASURED, not inferred from which branch the row arrived on: a row whose only content sits outside
+      // the named columns has no business fields, and one that lost its primary key has some.
+      row_has_business_content: fields.length > 0,
+      row_outside_named_columns: kind === 'OUTSIDE_NAMED',
+      authoritative_id_contract: authority || null,
+      recommended_next_action: S1_ID_FAULT_ACTION_[kind] || 'REVIEW',
+      action_is_not_authorized_by_this_run: true,
+      note: 'READ-ONLY. This diagnostic did not change, add, remove, reorder or mint anything. The'
+        + ' recommended action is the NEXT decision and is not authorized, prepared or staged here.'
+    });
+  }
+
+  (integ.blank_id_rows || []).forEach(function (e) { record('BLANK', pre + '_ID_BLANK', e); });
+  (integ.wrong_type_id_rows || []).forEach(function (e) {
+    record('WRONG_TYPE', pre + '_ID_WRONG_TYPE', e); });
+  (integ.duplicate_id_rows || []).forEach(function (e) {
+    record('DUPLICATE', pre + '_ID_DUPLICATE', e); });
+  (integ.outside_named_columns_rows || []).forEach(function (e) {
+    record('OUTSIDE_NAMED', pre + '_ROW_OUTSIDE_NAMED_COLUMNS', e); });
+
+  out.sort(function (a, b) {
+    return a.one_based_sheet_row_number - b.one_based_sheet_row_number;
+  });
+  return out;
+}
+
+/**
+ * Emit one LINE PER FAULT, bounded, and never truncated.
+ *
+ * The line count is the fault count, so the numbering itself tells a reader how many exist. Above the chunk
+ * bound the remainder is WITHHELD and the meta line says how many - the same rule the baseline has, for the
+ * same reason. And a single fault too wide for one line keeps every field that LOCATES the row and drops the
+ * wide one under a named reason, rather than being cut in the middle of a value.
+ */
+function S1_emitFaultRows_(tag, rows) {
+  var list = rows || [];
+  var n = list.length;
+  if (n === 0) return 0;
+  var suffix = '_' + n + '_of_' + n;
+  var budget = S1_chunkBudget_(tag, suffix);
+  var emit = Math.min(n, S1_LOG_MAX_CHUNKS_);
+  for (var i = 0; i < emit; i++) {
+    var payload = JSON.stringify(list[i]);
+    if (payload.length > budget) {
+      var slim = {};
+      Object.keys(list[i]).forEach(function (k) {
+        if (k !== 'named_nonblank_fields' && k !== 'authoritative_id_contract' && k !== 'note'
+            && k !== 'fingerprint_authority' && k !== 'fingerprint_covers') slim[k] = list[i][k];
+      });
+      slim.detail_withheld = ['named_nonblank_fields', 'authoritative_id_contract'];
+      slim.detail_withheld_reason = 'the complete fault payload is ' + payload.length + ' bytes, over the '
+        + budget + '-byte line budget. Every field that LOCATES this row is still here; the withheld'
+        + ' detail is in the return value, which is never truncated.';
+      payload = JSON.stringify(slim);
+    }
+    S1_log_(tag + '_' + (i + 1) + '_of_' + n, payload);
+  }
+  return emit;
+}
+
 function S1_factorySurfaceSpecs_() {
   var auditId = 'override_audit_id';
   if (typeof FSG_OVERRIDE_AUDIT_HEADERS_ !== 'undefined' && FSG_OVERRIDE_AUDIT_HEADERS_
@@ -1734,7 +1906,7 @@ function S1_factorySurfaceSpecs_() {
     auditId = S1_str_(FSG_OVERRIDE_AUDIT_HEADERS_[0]) || auditId;
   }
   return [
-    { table: 'factory_stock_movements', id: 'factory_stock_movement_id',
+    { table: S1_FACTORY_MOVEMENT_TABLE_, id: 'factory_stock_movement_id',
       id_authority: '21_ MOV_HEADERS[0] (spelled — no module constant to read)' },
     { table: 'factory_stock_override_audit', id: auditId,
       id_authority: (typeof FSG_OVERRIDE_AUDIT_HEADERS_ !== 'undefined')
@@ -1747,7 +1919,9 @@ function S1_factorySurfaces_(ss, poolWarehouseId, poolSku) {
   // looked and one of its records has no primary key' are different findings with different remedies, and
   // folding the second into the first would report a data fault as a deployment fault.
   var out = { pool: null, surfaces: {}, acceptable: true, unreadable: [], id_faults: [],
-    id_fault_detail: {} };
+    // S1-R4D - and the fault ROWS, built here because this is the only place the full-row read is still in
+    // scope. Bounded by construction: there is one entry per fault, not one per row.
+    id_fault_detail: {}, id_fault_rows: [] };
   // factory_stock: the authoritative quantity columns for THIS pool row, full-row fingerprinted.
   var fs = S1_fullRowTable_(ss, 'factory_stock', null, ['warehouse_id', 'sku']);
   var poolRec = null;
@@ -1808,6 +1982,10 @@ function S1_factorySurfaces_(ss, poolWarehouseId, poolSku) {
     }
     if (t.present && !t.readable) { out.acceptable = false; out.unreadable.push(spec.table); }
     if (idResolved === false) { out.acceptable = false; out.unreadable.push(spec.table + '#' + idKey); }
+    // S1-R4D - the actionable rows. Empty on a clean surface, so this costs nothing when nothing is wrong.
+    s.id_fault_rows = S1_idFaultRows_(t, integ, spec.table,
+      S1_FACTORY_ID_AUTHORITY_[spec.table] || null);
+    out.id_fault_rows = out.id_fault_rows.concat(s.id_fault_rows);
     out.surfaces[spec.table] = s;
   });
   return out;
@@ -3114,6 +3292,9 @@ function RUN_S1_MANIFEST_P() {
     // `writer_calls`: a condition that compares against a field which does not exist is not a condition.
     gap_scope_universe: null, allocation_draft_row_universe: null,
     factory_id_fault_codes: [],
+    // S1-R4D - declared at the top level for the reason R4A declared `writer_calls`: a world where nothing
+    // was reached must still have a field to compare against, and the emitter below reads these.
+    factory_id_fault_rows: [], factory_id_fault_chunks: 0,
     // S1-R4A — declared at the top level so a condition can compare against them on a world where nothing
     // was reached. R4 shipped `writer_calls` undeclared and its own read-only gate failed by comparing
     // `undefined` to 0; a gate that fails because its field does not exist is not a gate.
@@ -3285,6 +3466,41 @@ function RUN_S1_MANIFEST_P() {
         note: 'Nothing from this run may be signed, pasted or acted on. No wording was emitted and no'
           + ' baseline was released.' }));
     }
+    // ---- S1-R4D §1 - THE FACTORY ID FAULT ROWS, IN THE LOG. ---------------------------------------
+    //
+    // This is NOT baseline and it is NOT authorization: it is where the data problem is. A STOP withholds
+    // everything that could be signed or pasted and still owes the operator the row number - refusing to
+    // say what is wrong is not a safety property.
+    var frOut = out.factory_id_fault_rows || [];
+    if (frOut.length) {
+      out.factory_id_fault_chunks = S1_emitFaultRows_('s1_manifest_p_factory_id_fault', frOut);
+    }
+    S1_log_('s1_manifest_p_factory_id_fault_meta', JSON.stringify({
+      verdict: out.verdict,
+      fault_count: frOut.length,
+      lines_emitted: out.factory_id_fault_chunks,
+      lines_withheld: Math.max(0, frOut.length - out.factory_id_fault_chunks),
+      max_lines: S1_LOG_MAX_CHUNKS_,
+      fault_codes: out.factory_id_fault_codes,
+      counts_by_class: (function () {
+        var c = {};
+        frOut.forEach(function (f) { c[f.fault_class] = (c[f.fault_class] || 0) + 1; });
+        return c;
+      })(),
+      rows: frOut.slice(0, 40).map(function (f) { return f.one_based_sheet_row_number; }),
+      recommended_next_actions: (function () {
+        var a = [];
+        frOut.forEach(function (f) {
+          if (a.indexOf(f.recommended_next_action) === -1) a.push(f.recommended_next_action); });
+        return a;
+      })(),
+      note: frOut.length
+        ? 'One line per fault above, numbered _<i>_of_<fault count>, in SHEET ROW ORDER. Row numbers are'
+          + ' 1-based sheet rows and can be opened directly. NOTHING was changed, added, removed,'
+          + ' reordered or minted: the recommended action is the next decision and this run does not'
+          + ' authorize, prepare or stage it.'
+        : 'No factory id integrity fault was found, so there is nothing to locate. This line is emitted'
+          + ' anyway, because an absent line is not an answer.' }));
     // LOCK TWO, inside the emitter: it refuses unless the verdict it is HANDED says READY.
     S1_emitFreeze_('s1_manifest_p', out.freeze_paste_block, out.verdict, out.freeze_withheld_reason);
     return out;
@@ -3932,6 +4148,9 @@ function RUN_S1_MANIFEST_P() {
     // different remedy and an operator needs to know which one they have. The row numbers and full-row
     // fingerprints are in the observed value of each condition, so the finding is actionable from the log.
     out.factory_id_fault_codes = (surf.id_faults || []).slice();
+    // S1-R4D §1 - THE ROWS, so a fault code becomes a row a person can open. Emitted in fin(), which is the
+    // one place every Logger line for this manifest is written.
+    out.factory_id_fault_rows = (surf.id_fault_rows || []).slice();
     var idDet = surf.id_fault_detail || {};
     var blankTot = 0, dupTot = 0, wrongTot = 0, strayTot = 0, blankRows = [], dupRows = [],
       wrongRows = [], strayRows = [];
@@ -3984,6 +4203,26 @@ function RUN_S1_MANIFEST_P() {
       }));
     L.P('the_factory_surfaces_reported_no_id_integrity_fault', [], surf.id_faults || [],
       (surf.id_faults || []).length === 0);
+    // S1-R4D - A FAULT CODE WITH NO ROW BEHIND IT IS NOT ACTIONABLE. This is the condition the live run
+    // could not have failed, because it did not exist: the codes were reported and the rows that produced
+    // them were not. Every code claimed must be backed by at least one located row, and every located row
+    // must carry the fields that locate it.
+    var fr = out.factory_id_fault_rows || [];
+    var codesWithRows = {};
+    fr.forEach(function (f) { codesWithRows[f.fault_code] = 1; });
+    var orphanCodes = (surf.id_faults || []).filter(function (c) { return !codesWithRows[c]; });
+    L.P('every_reported_factory_id_fault_code_is_backed_by_a_located_row', [], orphanCodes,
+      orphanCodes.length === 0);
+    var unlocatable = fr.filter(function (f) {
+      return !(typeof f.one_based_sheet_row_number === 'number' && f.one_based_sheet_row_number >= 2)
+        || f.full_named_row_fingerprint === null || S1_str_(f.id_column_name) === ''
+        || S1_str_(f.recommended_next_action) === '';
+    });
+    L.P('every_located_fault_row_carries_a_row_number_a_fingerprint_and_a_next_action', [],
+      unlocatable.map(function (f) {
+        return { row: f.one_based_sheet_row_number, code: f.fault_code,
+          fingerprint: f.full_named_row_fingerprint }; }),
+      unlocatable.length === 0);
 
     // ---- 11. RESERVATIONS. Observed, with ABSENT never read as ZERO. ---------------------------------
     var db = S1_openDb_();
@@ -4346,6 +4585,273 @@ function RUN_S1_MANIFEST_P() {
       + '. The exception is the finding; nothing may be authorized from a run that threw.';
     out.frozen_before = null;
     out.freeze_paste_block = null;
+    return fin();
+  }
+}
+
+/**
+ * ================================================================================================================
+ * S1-R4D §2 - RUN_S1_FACTORY_MOVEMENT_ID_INTEGRITY_CENSUS
+ *
+ * ONE TABLE, READ ONLY, AND IT ANSWERS EXACTLY ONE QUESTION: which rows of factory_stock_movements do not
+ * carry a usable primary key, and where are they.
+ *
+ * WHY IT IS SEPARATE FROM MANIFEST P. Manifest P refuses on this fault, which is correct - it must not
+ * authorize a generation against a table whose identities cannot be trusted - but it also runs the whole
+ * candidate census, the write-set prediction and the full-row freeze to get there. An operator who has
+ * already been told the fault exists should not have to re-run all of that, on a world that will refuse
+ * again, to find out which row it is.
+ *
+ * WHAT IT DELIBERATELY DOES NOT DO. It judges nothing itself: S1_idIntegrity_ decides what a fault is, and
+ * S1_fullRowTable_ / S1_canonCell_ / S1_rowFingerprint_ / S1_fingerprint_ are the same read and the same
+ * hash authority the manifest and the freeze use. A second implementation would be a second opinion, and
+ * the first thing two opinions do is disagree about a row nobody can then classify.
+ *
+ * AND IT REPAIRS NOTHING. No cell is written, no id is minted, no row is added, removed or reordered, and no
+ * Factory Stock writer, migration, Generate, Submit or Gap Job is reached. `recommended_next_action` names
+ * the next decision; it does not take it, prepare it or stage it.
+ * ================================================================================================================
+ */
+function RUN_S1_FACTORY_MOVEMENT_ID_INTEGRITY_CENSUS() {
+  var out = {
+    census: 'S1 FACTORY MOVEMENT ID INTEGRITY - one table, read-only, no repair',
+    build: S1_BUILD_, dry_run: true, read_only: true,
+    // Every one of these is a claim this function makes about itself, declared so a caller can check it
+    // rather than infer it from the absence of evidence.
+    writes: 0, writer_calls: 0, writer_constructed: false, submit_calls: 0,
+    rows_modified: 0, rows_added: 0, rows_removed: 0, rows_reordered: false,
+    ids_minted: 0, ids_backfilled: 0, cells_written: 0,
+    generate_called: false, submit_called: false, migration_called: false, gap_job_called: false,
+    factory_writer_called: false,
+    table: S1_FACTORY_MOVEMENT_TABLE_, sheet_name: S1_FACTORY_MOVEMENT_TABLE_,
+    present: null, readable: null,
+    id_column: null, id_column_resolved: null, id_authority: null,
+    authoritative_id_contract: S1_FACTORY_ID_AUTHORITY_[S1_FACTORY_MOVEMENT_TABLE_] || null,
+    read_authority: 'S1_fullRowTable_ + S1_idIntegrity_ - the same read and the same judgement Manifest P'
+      + ' uses, so the two cannot disagree about a row',
+    hash_authority: 'S1_canonCell_ / S1_rowFingerprint_ / S1_fingerprint_ - the same hashes the BEFORE'
+      + ' baseline freezes, so a fingerprint here is matchable against a frozen one',
+    live_column_count: null, named_column_count: null, live_columns: [],
+    header_fingerprint: null, table_combined_fingerprint: null,
+    // S1-R4C's `ok_count` means 'the id cell was not blank', which INCLUDES a duplicate and a
+    // wrong-typed one. Calling that number `valid` would be the same class of mistake this file keeps
+    // finding: a name answering a different question than it asks. So both are reported, and `valid`
+    // means what the word means - present, a string, and unique.
+    row_count: null, non_blank_id_count: null, valid_id_count: null,
+    blank_id_count: null, duplicate_id_count: null, wrong_type_id_count: null,
+    outside_named_column_row_count: null,
+    count_derivations: null,
+    faults: [], fault_codes: [], fault_count: null, counts_by_class: {},
+    recommended_next_actions: [], fault_lines_emitted: 0,
+    verdict: 'STOP', stop_reasons: [],
+    predicates: [], predicates_passed: 0, predicates_failed: 0, failed_predicates: [],
+    row_counting_rule: 'a fully blank sheet row is not a record: it is skipped, it is not counted in'
+      + ' row_count and it is not a fault',
+    scope_rule: 'ONLY ' + S1_FACTORY_MOVEMENT_TABLE_ + ' is read. The clean rows are never printed: the log'
+      + ' carries a summary plus one line per fault and nothing else.',
+    verdict_meanings: { CLEAN: 'every row carries a unique, non-blank, string primary key',
+      FAULTS_FOUND: 'the table was fully readable and at least one row does not',
+      STOP: 'the headers, the id authority or the hash authority could not be read, so no judgement about'
+        + ' the rows is possible - which is not the same as finding them clean' } };
+  var L = S1_ledger_();
+  function stop(r) { if (out.stop_reasons.indexOf(r) === -1) out.stop_reasons.push(r); }
+
+  function fin() {
+    out.predicates = L.entries;
+    out.predicates_failed = L.failed.length;
+    out.predicates_passed = L.entries.length - L.failed.length;
+    out.failed_predicates = L.failed.slice();
+    // THE VERDICT IS DECIDED HERE AND NOWHERE ELSE. STOP wins: 'I could not look' must never be reported
+    // as 'I looked and it was clean', which is the same rule that keeps an absent table's row_count null.
+    out.verdict = (out.stop_reasons.length || L.failed.length) ? 'STOP'
+      : ((out.faults || []).length ? 'FAULTS_FOUND' : 'CLEAN');
+    out.fault_count = (out.faults || []).length;
+    out.fault_codes = (function () {
+      var c = [];
+      (out.faults || []).forEach(function (f) {
+        if (c.indexOf(f.fault_code) === -1) c.push(f.fault_code); });
+      return c;
+    })();
+    out.counts_by_class = (function () {
+      var c = {};
+      (out.faults || []).forEach(function (f) { c[f.fault_class] = (c[f.fault_class] || 0) + 1; });
+      return c;
+    })();
+    out.recommended_next_actions = (function () {
+      var a = [];
+      (out.faults || []).forEach(function (f) {
+        if (a.indexOf(f.recommended_next_action) === -1) a.push(f.recommended_next_action); });
+      return a;
+    })();
+    // ---- the summary. Bounded, and it never carries the clean rows. ----
+    S1_log_('s1_factory_movement_id_census_summary', JSON.stringify({
+      build: out.build, table: out.table, sheet_name: out.sheet_name,
+      dry_run: out.dry_run, writes: out.writes, writer_calls: out.writer_calls,
+      present: out.present, readable: out.readable,
+      id_column: out.id_column, id_column_resolved: out.id_column_resolved,
+      live_column_count: out.live_column_count, named_column_count: out.named_column_count,
+      live_columns: (out.live_columns || []).slice(0, 40),
+      live_columns_shown: Math.min((out.live_columns || []).length, 40),
+      header_fingerprint: out.header_fingerprint,
+      table_combined_fingerprint: out.table_combined_fingerprint,
+      row_count: out.row_count, non_blank_id_count: out.non_blank_id_count,
+      valid_id_count: out.valid_id_count,
+      blank_id_count: out.blank_id_count, duplicate_id_count: out.duplicate_id_count,
+      wrong_type_id_count: out.wrong_type_id_count,
+      outside_named_column_row_count: out.outside_named_column_row_count,
+      row_counting_rule: out.row_counting_rule }));
+    // ---- the fault rows. One line each, in sheet order, bounded and never truncated. ----
+    if ((out.faults || []).length) {
+      out.fault_lines_emitted = S1_emitFaultRows_('s1_factory_movement_id_fault', out.faults);
+    }
+    S1_log_('s1_factory_movement_id_fault_meta', JSON.stringify({
+      fault_count: out.fault_count, lines_emitted: out.fault_lines_emitted,
+      lines_withheld: Math.max(0, out.fault_count - out.fault_lines_emitted),
+      max_lines: S1_LOG_MAX_CHUNKS_,
+      fault_codes: out.fault_codes, counts_by_class: out.counts_by_class,
+      rows: (out.faults || []).slice(0, 40).map(function (f) {
+        return f.one_based_sheet_row_number; }),
+      recommended_next_actions: out.recommended_next_actions,
+      note: 'Row numbers are 1-based sheet rows and can be opened directly. Nothing was changed, added,'
+        + ' removed, reordered or minted by this run.' }));
+    S1_log_('s1_factory_movement_id_census_verdict', JSON.stringify({
+      verdict: out.verdict, fault_count: out.fault_count,
+      predicates_passed: out.predicates_passed, predicates_failed: out.predicates_failed,
+      failed: out.failed_predicates.slice(0, 12),
+      stop_reasons: out.stop_reasons.slice(0, 12),
+      recommended_next_actions: out.recommended_next_actions,
+      writes: out.writes, writer_calls: out.writer_calls, ids_minted: out.ids_minted,
+      ids_backfilled: out.ids_backfilled,
+      note: 'READ-ONLY CENSUS. It locates; it does not repair, and it authorizes no repair.' }));
+    return out;
+  }
+
+  try {
+    // ---- 1. THE ID COLUMN, FROM THE AUTHORITY THE MANIFEST ALSO USES. --------------------------
+    var spec = null;
+    S1_factorySurfaceSpecs_().forEach(function (sp) {
+      if (sp.table === S1_FACTORY_MOVEMENT_TABLE_) spec = sp;
+    });
+    L.P('the_movement_id_column_authority_is_available', 'a surface spec for '
+      + S1_FACTORY_MOVEMENT_TABLE_, spec ? spec.id : null, !!spec && S1_str_(spec.id) !== '');
+    if (!spec || S1_str_(spec.id) === '') { stop('ID_COLUMN_AUTHORITY_MISSING'); return fin(); }
+    out.id_column = spec.id;
+    out.id_authority = spec.id_authority;
+    // AND THE CONTRACT THAT MAKES A BLANK A FAULT RATHER THAN A STYLE. Without it there is nothing to
+    // refuse against, so its absence is a STOP and not a permissive default.
+    L.P('the_authoritative_id_contract_for_this_table_is_declared',
+      'required, unique, blank not permitted',
+      out.authoritative_id_contract,
+      !!out.authoritative_id_contract && out.authoritative_id_contract.required === true
+        && out.authoritative_id_contract.unique === true
+        && out.authoritative_id_contract.blank_permitted === false);
+    if (!out.authoritative_id_contract) { stop('ID_CONTRACT_MISSING'); return fin(); }
+
+    // ---- 2. THE DATABASE, OPENED READ-ONLY THROUGH THE CANONICAL TARGET AUTHORITY. --------------
+    var db = S1_openDb_();
+    L.P('the_production_database_was_opened_and_asserted_to_be_the_expected_target', true,
+      db.ok ? true : (db.reason + (db.detail ? (': ' + S1_cap_(db.detail, 120)) : '')), db.ok === true);
+    if (!db.ok) { stop('DB_NOT_OPENED_' + db.reason); return fin(); }
+
+    // ---- 3. THE TABLE, READ AS FULL ROWS. ONE SHEET, NOTHING ELSE. -----------------------------
+    var t = S1_fullRowTable_(db.ss, S1_FACTORY_MOVEMENT_TABLE_, null, [spec.id]);
+    out.present = t.present;
+    out.readable = t.readable;
+    out.live_columns = t.live_columns || [];
+    out.live_column_count = t.live_column_count;
+    out.named_column_count = (t.live_columns || []).filter(function (c) { return c !== ''; }).length;
+    out.table_combined_fingerprint = t.readable ? t.combined_fingerprint : null;
+    L.P('the_movement_table_exists', true, t.present, t.present === true);
+    if (!t.present) { stop('SHEET_ABSENT'); return fin(); }
+    L.P('the_movement_table_was_readable', true,
+      t.readable === true ? true : ('read failed: ' + S1_cap_(t.error, 120)), t.readable === true);
+    if (!t.readable) { stop('SHEET_PRESENT_BUT_UNREADABLE'); return fin(); }
+
+    // ---- 4. THE HEADER ROW AND THE HASH AUTHORITY. A table whose schema cannot be read cannot be
+    //         judged clean, and 'I could not look' is a STOP rather than a zero. -------------------
+    L.P('the_header_row_names_at_least_one_column', 'a non-empty header row',
+      out.named_column_count, out.named_column_count > 0);
+    if (out.named_column_count === 0) { stop('HEADER_ROW_UNREADABLE'); return fin(); }
+    out.id_column_resolved = (t.live_columns || []).indexOf(spec.id) >= 0;
+    L.P('the_id_column_resolves_against_the_live_header_row', spec.id,
+      out.id_column_resolved, out.id_column_resolved === true);
+    if (!out.id_column_resolved) { stop('ID_COLUMN_UNRESOLVED'); return fin(); }
+    out.header_fingerprint = S1_headerFingerprint_(t.live_columns);
+    L.P('the_schema_and_row_hash_authority_answered', 'a header fingerprint and a table fingerprint',
+      { header: out.header_fingerprint, table: out.table_combined_fingerprint },
+      out.header_fingerprint !== null && out.table_combined_fingerprint !== null);
+    if (out.header_fingerprint === null || out.table_combined_fingerprint === null) {
+      stop('HASH_AUTHORITY_UNAVAILABLE'); return fin();
+    }
+
+    // ---- 5. THE JUDGEMENT. NOT MADE HERE - S1_idIntegrity_ makes it. ---------------------------
+    var integ = S1_idIntegrity_(t, spec.id);
+    L.P('the_shared_id_integrity_authority_examined_this_table', true, integ.checked,
+      integ.checked === true);
+    if (integ.checked !== true) { stop('ID_INTEGRITY_NOT_CHECKED'); return fin(); }
+    out.row_count = integ.row_count;
+    out.non_blank_id_count = integ.ok_count;
+    out.blank_id_count = integ.blank_id_count;
+    out.duplicate_id_count = integ.duplicate_id_count;
+    out.wrong_type_id_count = integ.wrong_type_id_count;
+    out.outside_named_column_row_count = integ.outside_named_columns_count;
+    // A DUPLICATE IS NOT VALID AND NEITHER IS A COERCED NUMBER, so `valid` subtracts them. Both faults
+    // leave the cell populated, which is why they are inside the non-blank count and have to come out of
+    // this one.
+    out.valid_id_count = integ.ok_count - integ.duplicate_id_count - integ.wrong_type_id_count;
+    out.count_derivations = {
+      non_blank_id_count: 'rows whose id cell is not blank - a duplicate and a wrong-typed id are both'
+        + ' in here, because both are present',
+      valid_id_count: 'non_blank_id_count - duplicate_id_count - wrong_type_id_count: present, a string,'
+        + ' and unique',
+      row_count: 'non_blank_id_count + blank_id_count + outside_named_column_row_count. A fully blank'
+        + ' sheet row is in none of them because it is not a record.' };
+    // The two identities that have to close, or the counts describe a population that does not exist.
+    L.P('the_row_count_is_the_non_blank_ids_plus_the_blanks_plus_the_rows_outside_the_named_columns',
+      out.row_count,
+      out.non_blank_id_count + out.blank_id_count + out.outside_named_column_row_count,
+      out.non_blank_id_count + out.blank_id_count
+        + out.outside_named_column_row_count === out.row_count);
+    L.P('the_valid_ids_are_the_non_blank_ones_minus_the_duplicated_and_the_wrong_typed',
+      out.non_blank_id_count - out.duplicate_id_count - out.wrong_type_id_count,
+      out.valid_id_count,
+      out.valid_id_count === out.non_blank_id_count - out.duplicate_id_count
+        - out.wrong_type_id_count && out.valid_id_count >= 0);
+
+    // ---- 6. WHERE THEY ARE. -------------------------------------------------------------------
+    out.faults = S1_idFaultRows_(t, integ, S1_FACTORY_MOVEMENT_TABLE_, out.authoritative_id_contract);
+    L.P('every_fault_the_integrity_authority_found_is_located_by_a_row',
+      integ.blank_id_count + integ.wrong_type_id_count + integ.duplicate_id_count
+        + integ.outside_named_columns_count,
+      out.faults.length,
+      out.faults.length === integ.blank_id_count + integ.wrong_type_id_count
+        + integ.duplicate_id_count + integ.outside_named_columns_count);
+    var bad = out.faults.filter(function (f) {
+      return !(typeof f.one_based_sheet_row_number === 'number' && f.one_based_sheet_row_number >= 2)
+        || f.full_named_row_fingerprint === null || S1_str_(f.recommended_next_action) === '';
+    });
+    L.P('every_located_fault_carries_a_sheet_row_number_a_fingerprint_and_a_next_action', [], bad,
+      bad.length === 0);
+    // §3 - THE TWO CLASSES ARE NOT THE SAME FINDING. A real record that lost its primary key needs a
+    // controlled backfill decision; a stray cell in an unnamed column needs a person to look at that cell.
+    // Neither is done here, and the classification is what tells them apart.
+    var misclassified = out.faults.filter(function (f) {
+      if (f.fault_class === 'BLANK') {
+        return f.row_has_business_content !== true || f.row_outside_named_columns !== false
+          || f.recommended_next_action !== 'PREPARE_CONTROLLED_ID_BACKFILL';
+      }
+      if (f.fault_class === 'OUTSIDE_NAMED') {
+        return f.row_has_business_content !== false || f.row_outside_named_columns !== true
+          || f.recommended_next_action !== 'REVIEW_UNNAMED_CELL';
+      }
+      return false;
+    });
+    L.P('a_record_that_lost_its_key_and_a_stray_cell_are_classified_apart', [], misclassified,
+      misclassified.length === 0);
+    return fin();
+  } catch (e) {
+    L.P('the_census_ran_to_completion', true, 'threw: ' + String(e && e.message ? e.message : e), false);
+    stop('CENSUS_THREW: ' + S1_cap_(String(e && e.message ? e.message : e), 200));
     return fin();
   }
 }

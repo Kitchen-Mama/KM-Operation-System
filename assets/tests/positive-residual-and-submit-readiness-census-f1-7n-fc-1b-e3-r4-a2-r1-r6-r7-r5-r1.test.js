@@ -111,8 +111,17 @@ var FACTORY_TABLES_ = {
   // MOV_HEADERS spells it and `override_audit_id` is FSG_OVERRIDE_AUDIT_HEADERS_[0] in 71_. The first
   // version of this fixture invented `movement_id` / `audit_id` and the diagnostic invented them too, so the
   // tests agreed with the mistake while a live sheet would have frozen a list of blank ids.
+  // S1-R4D - AND THE WHOLE HEADER, not a convenient subset. This fixture carried 11 of 21_ MOV_HEADERS'
+  // 15 columns, so `named_column_count` and every full-row fingerprint were computed over a schema the
+  // production table does not have. Harmless while nothing read the column count; this round reports it to
+  // an operator, and a count that does not match the sheet they are about to open is worse than no count.
+  // The four that were missing are the before/after audit columns - exactly the ones a movement row exists
+  // to carry. Asserted against 21_'s own declaration below (Z0), so a drift there breaks this test rather
+  // than quietly diverging from it.
   factory_stock_movements: ['factory_stock_movement_id', 'movement_date', 'sku', 'warehouse_id',
-    'movement_type', 'qty', 'related_entity_type', 'related_entity_id', 'note', 'created_by', 'created_at'],
+    'movement_type', 'qty', 'related_entity_type', 'related_entity_id',
+    'before_current_stock', 'after_current_stock', 'before_reserved_stock', 'after_reserved_stock',
+    'note', 'created_by', 'created_at'],
   factory_stock_override_audit: ['override_audit_id', 'created_at', 'entity_type', 'entity_id',
     'transition', 'company', 'country', 'marketplace', 'sku', 'source_warehouse_id', 'override_reason']
 };
@@ -3227,6 +3236,528 @@ ok(read(S1_REL).indexOf("Logger.log('[S1] ' + tag + ' ' + payload)") > 0
   'Y13h and every line still carries the [S1] framing the budget was priced against');
 
 // ================================================================================================================
+section('Z — S1-R4D: the fault was measured and never printed, and now there is somewhere to look');
+// ================================================================================================================
+//
+// WHAT THE LIVE RUN HANDED OVER. verdict STOP, predicates_failed 3,
+// factory_id_fault_codes ["FACTORY_MOVEMENT_ID_BLANK"], movement count 96, ok id count 95. Enough to know
+// that exactly one row of ninety-six has no primary key; not enough to open it.
+//
+// R4C measured the row number and the full-row fingerprint and put them in two places the Logger is not:
+// the return value, and the `observed` field of the failing predicate. Manifest P logs a bounded summary
+// rather than its whole return value - correct, the baseline would blow the bound - and the summary carried
+// the code. A code says what kind of problem exists; a row number is what lets someone go and look.
+
+function fmCensus(spec, mutate) {
+  var w = S1World(spec);
+  if (mutate) mutate(w);
+  var res = null, threw = null;
+  try { res = vm.runInContext('RUN_S1_FACTORY_MOVEMENT_ID_INTEGRITY_CENSUS()', w.ctx); }
+  catch (e) { threw = e; }
+  return { res: res || {}, threw: threw, world: w };
+}
+function fmFaultLines(w) {
+  return logTags(w).filter(function (n) {
+    return /^s1_factory_movement_id_fault_\d+_of_\d+$/.test(n);
+  }).length;
+}
+function mpFaultLines(w) {
+  return logTags(w).filter(function (n) {
+    return /^s1_manifest_p_factory_id_fault_\d+_of_\d+$/.test(n);
+  }).length;
+}
+function logObj(w, tag) {
+  var pre = '[S1] ' + tag + ' ';
+  var hit = (w.log || []).filter(function (l) { return String(l).indexOf(pre) === 0; });
+  return hit.length ? JSON.parse(String(hit[0]).slice(pre.length)) : null;
+}
+function fmFaultPayloads(w) {
+  var out = [];
+  (w.log || []).forEach(function (l) {
+    var m = String(l).match(/^\[S1\] s1_factory_movement_id_fault_(\d+)_of_(\d+) ([\s\S]*)$/);
+    if (m) out.push({ i: Number(m[1]), n: Number(m[2]), body: JSON.parse(m[3]) });
+  });
+  out.sort(function (a, b) { return a.i - b.i; });
+  return out;
+}
+var MOVBASE_ = { movement_date: '2026-09-01', sku: SKU, warehouse_id: WHF, movement_type: 'IN', qty: 5,
+  related_entity_type: 'inventory_adjustment', related_entity_id: 'ADJ-20260901-AAAA',
+  created_at: '2026-09-01T00:00:00Z' };
+function movrow(over) {
+  var r = {};
+  Object.keys(MOVBASE_).forEach(function (k) { r[k] = MOVBASE_[k]; });
+  Object.keys(over || {}).forEach(function (k) { r[k] = over[k]; });
+  return r;
+}
+/** Every read-only claim the census makes about itself, asserted together rather than one at a time. */
+function fmZeroWrite(r, label) {
+  eq([r.res.dry_run, r.res.read_only], [true, true], label + ' declares dry_run and read_only');
+  eq([r.res.writes, r.res.writer_calls, r.res.submit_calls, r.res.cells_written],
+    [0, 0, 0, 0], label + ' zero writes, writer calls, submits and cells written');
+  eq([r.res.rows_modified, r.res.rows_added, r.res.rows_removed, r.res.rows_reordered],
+    [0, 0, 0, false], label + ' no row modified, added, removed or reordered');
+  eq([r.res.ids_minted, r.res.ids_backfilled], [0, 0], label + ' no id minted and none backfilled');
+  eq([r.res.generate_called, r.res.submit_called, r.res.migration_called, r.res.gap_job_called,
+    r.res.factory_writer_called], [false, false, false, false, false],
+    label + ' no Generate, Submit, migration, Gap Job or Factory Stock writer');
+  eq(r.world.allWrites(), 0, label + ' and zero writes MEASURED on every sheet in the world');
+}
+
+// ---- Z0 - THE FIXTURE'S MOVEMENT HEADER IS 21_'s, READ FROM 21_. -------------------------------------
+// R4A's lesson, applied to the schema rather than to one column name: a fixture that spells a header is a
+// fixture that can agree with a header production does not have. 21_ declares MOV_HEADERS as a LOCAL inside
+// its handlers, so there is no module constant to import - which is why it is spelled above AND checked
+// here against the shipped text. A column added to 21_ fails this assertion instead of silently leaving the
+// fixture measuring a narrower table than the one an operator opens.
+var Z0decl = (function () {
+  var g21 = read(GS + '21_factory_inventory_handlers.gs');
+  var m = g21.match(/var MOV_HEADERS = \[([\s\S]*?)\];/);
+  return m ? (m[1].match(/'([a-z_]+)'/g) || []).map(function (q) { return q.slice(1, -1); }) : [];
+})();
+eq(Z0decl.length, 15, 'Z0 21_ declares fifteen movement columns', Z0decl);
+eq(FACTORY_TABLES_['factory_stock_movements'], Z0decl,
+  'Z0a and the fixture header is exactly that declaration, in that order');
+eq(Z0decl[0], 'factory_stock_movement_id',
+  'Z0b whose first column is the primary key this section is about');
+['before_current_stock', 'after_current_stock', 'before_reserved_stock', 'after_reserved_stock']
+  .forEach(function (c) {
+    ok(FACTORY_TABLES_['factory_stock_movements'].indexOf(c) >= 0,
+      'Z0c including the audit column ' + c + ', which the narrower fixture was missing');
+  });
+
+// ---- Z1 — THE ONE THE LIVE RUN HIT: A REAL BUSINESS ROW WITH NO PRIMARY KEY. ---------------------------
+// Reproduced at the live shape: many good rows, exactly one without an id.
+var Z1rows = [];
+for (var z1 = 1; z1 <= 5; z1++) {
+  Z1rows.push(movrow({ factory_stock_movement_id: 'FSMV-0000000' + z1,
+    movement_date: '2026-09-0' + z1 }));
+}
+Z1rows.splice(2, 0, movrow({ movement_date: '2026-09-06', qty: 77 }));   // no id, sheet row 4
+var Z1 = fmCensus(pos({ movements: Z1rows }));
+eq(Z1.threw, null, 'Z1 the census does not throw');
+eq(Z1.res.verdict, 'FAULTS_FOUND', 'Z1a a readable table with a fault is FAULTS_FOUND, not STOP',
+  Z1.res.stop_reasons);
+eq([Z1.res.row_count, Z1.res.non_blank_id_count, Z1.res.valid_id_count, Z1.res.blank_id_count],
+  [6, 5, 5, 1], 'Z1b six records, five with a usable key, one without');
+eq([Z1.res.duplicate_id_count, Z1.res.wrong_type_id_count, Z1.res.outside_named_column_row_count],
+  [0, 0, 0], 'Z1c and no other class of fault is claimed');
+eq(Z1.res.fault_count, 1, 'Z1d exactly one fault is located');
+eq(Z1.res.fault_codes, ['FACTORY_MOVEMENT_ID_BLANK'], 'Z1e under the live code');
+// ---- Z2 — AND THE ROW NUMBER IS THE SHEET ROW. -------------------------------------------------------
+var Z1f = Z1.res.faults[0];
+eq(Z1f.one_based_sheet_row_number, 4,
+  'Z2 the fault names sheet row 4 — header is row 1, so the third data row is row 4', Z1f);
+eq([Z1f.table, Z1f.sheet_name, Z1f.id_column_name],
+  ['factory_stock_movements', 'factory_stock_movements', 'factory_stock_movement_id'],
+  'Z2a with the table, the sheet and the id column named');
+eq([Z1f.observed_id_value, Z1f.observed_id_is_blank, Z1f.observed_id_type],
+  ['', true, '[object String]'], 'Z2b and the observed id value and type');
+eq(Z1f.first_seen_row, null, 'Z2c first_seen_row is null on a blank — it only means something for a duplicate');
+eq([Z1f.live_column_count, Z1f.named_column_count], [Z0decl.length, Z0decl.length],
+  'Z2d with the live and named column counts, which are 21_\'s fifteen',
+  [Z1f.live_column_count, Z1f.named_column_count]);
+ok(Z1f.header_fingerprint !== null && Z1f.full_named_row_fingerprint !== null,
+  'Z2e and both fingerprints', [Z1f.header_fingerprint, Z1f.full_named_row_fingerprint]);
+eq(Z1f.recommended_next_action, 'PREPARE_CONTROLLED_ID_BACKFILL',
+  'Z2f the recommended next action for a record that lost its key');
+eq(Z1f.action_is_not_authorized_by_this_run, true,
+  'Z2g stated as the NEXT decision, which this run does not take');
+// ---- Z3 — THE NAMED BUSINESS FIELDS, so a person can recognise the row before opening it. -----------
+eq(Z1f.row_has_business_content, true, 'Z3 the row has business content');
+eq(Z1f.row_outside_named_columns, false, 'Z3a and it is inside the named schema');
+var Z3names = Z1f.named_nonblank_fields.map(function (f) { return f.field; });
+eq(Z3names.indexOf('factory_stock_movement_id'), -1,
+  'Z3b the id column is EXCLUDED from the business fields — which is what makes'
+  + ' row_has_business_content a measurement rather than a restatement of the branch');
+['movement_date', 'sku', 'warehouse_id', 'movement_type', 'qty', 'related_entity_id'].forEach(function (f) {
+  ok(Z3names.indexOf(f) >= 0, 'Z3c the business field ' + f + ' is reported', Z3names);
+});
+eq(Z1f.named_nonblank_field_count, Z1f.named_nonblank_fields.length,
+  'Z3d and the count is the length of the list it counts');
+var Z3qty = Z1f.named_nonblank_fields.filter(function (f) { return f.field === 'qty'; })[0];
+eq([Z3qty.value, Z3qty.type], ['77', '[object Number]'],
+  'Z3e each field carries its value AND its observed type', Z3qty);
+// ---- Z4 — THE FINGERPRINT IDENTIFIES CONTENT, NOT POSITION, AND MOVES WHEN CONTENT MOVES. -----------
+// Stability is what makes it matchable against a frozen signature: the same row read again, or read at a
+// different sheet position, must hash the same.
+var Z4again = fmCensus(pos({ movements: Z1rows }));
+eq(Z4again.res.faults[0].full_named_row_fingerprint, Z1f.full_named_row_fingerprint,
+  'Z4 the same table read twice gives the same fingerprint');
+var Z4moved = Z1rows.slice();
+Z4moved.splice(Z4moved.indexOf(Z1rows[2]), 1);
+Z4moved.push(Z1rows[2]);                              // same row, last position instead of third
+var Z4m = fmCensus(pos({ movements: Z4moved }));
+eq(Z4m.res.faults[0].full_named_row_fingerprint, Z1f.full_named_row_fingerprint,
+  'Z4a and the SAME fingerprint at a different sheet row — it identifies the content');
+eq(Z4m.res.faults[0].one_based_sheet_row_number, 7,
+  'Z4b while the row number follows the position, which is the other half of locating it');
+var Z4edit = Z1rows.map(function (r) {
+  if (r.factory_stock_movement_id !== undefined) return r;
+  var c = {}; Object.keys(r).forEach(function (k) { c[k] = r[k]; });
+  c.qty = 78;                                         // one cell, one value
+  return c;
+});
+var Z4e = fmCensus(pos({ movements: Z4edit }));
+ok(Z4e.res.faults[0].full_named_row_fingerprint !== Z1f.full_named_row_fingerprint,
+  'Z4c and one changed cell changes it', [Z1f.full_named_row_fingerprint,
+    Z4e.res.faults[0].full_named_row_fingerprint]);
+eq(Z4e.res.faults[0].header_fingerprint, Z1f.header_fingerprint,
+  'Z4d while the header fingerprint is unmoved — the schema did not change');
+
+// ---- Z5 — THE BLANK IS FOUND WHERE IT IS, NOT WHERE SORTING PUT IT. ---------------------------------
+// THE DEFECT THIS SECTION EXISTS FOR. `ids` was built by mapping the id cell of every row and sorting, and
+// the empty string sorts FIRST — so index 0 is where a blank lands no matter which row it came from. If the
+// export took its position from that list it would say the first data row every time. Here the blank is the
+// LAST record in the sheet and the surrounding ids sort around it, and the answer must still be its own row.
+var Z5rows = [
+  movrow({ factory_stock_movement_id: 'AAA-1' }),
+  movrow({ factory_stock_movement_id: 'ZZZ-9', movement_date: '2026-09-02' }),
+  movrow({ factory_stock_movement_id: 'MMM-5', movement_date: '2026-09-03' }),
+  movrow({ movement_date: '2026-09-04', qty: 41 })];
+var Z5 = fmCensus(pos({ movements: Z5rows }));
+eq(Z5.res.faults.length, 1, 'Z5 one fault');
+eq(Z5.res.faults[0].one_based_sheet_row_number, 5,
+  'Z5a the blank is at sheet row 5 and is reported at row 5, not at the front of a sorted list',
+  Z5.res.faults[0]);
+// the same content at the FRONT of the sheet, to show the number tracks the sheet and nothing else
+var Z5front = [Z5rows[3], Z5rows[0], Z5rows[1], Z5rows[2]];
+var Z5f = fmCensus(pos({ movements: Z5front }));
+eq(Z5f.res.faults[0].one_based_sheet_row_number, 2,
+  'Z5b and the same row moved to the top is reported at row 2');
+eq(Z5f.res.faults[0].full_named_row_fingerprint, Z5.res.faults[0].full_named_row_fingerprint,
+  'Z5c with an identical fingerprint, so the two reports are recognisably the same row');
+ok(Z5.res.faults[0].one_based_sheet_row_number !== Z5f.res.faults[0].one_based_sheet_row_number,
+  'Z5d — two different sheet positions, two different answers, one content');
+
+// ---- Z6 — A DUPLICATE NAMES BOTH ROWS. -------------------------------------------------------------
+var Z6 = fmCensus(pos({ movements: [
+  movrow({ factory_stock_movement_id: 'FSMV-DUP' }),
+  movrow({ factory_stock_movement_id: 'FSMV-OK', movement_date: '2026-09-02' }),
+  movrow({ factory_stock_movement_id: 'FSMV-DUP', movement_date: '2026-09-03', qty: 9 })] }));
+eq(Z6.res.verdict, 'FAULTS_FOUND', 'Z6 a duplicated primary key is a fault');
+eq([Z6.res.duplicate_id_count, Z6.res.blank_id_count], [1, 0],
+  'Z6a counted as a duplicate and not as a blank');
+eq([Z6.res.non_blank_id_count, Z6.res.valid_id_count], [3, 2],
+  'Z6b three ids present, two of them usable — a duplicate is present without being valid');
+var Z6f = Z6.res.faults[0];
+eq([Z6f.one_based_sheet_row_number, Z6f.first_seen_row], [4, 2],
+  'Z6c and BOTH row numbers: the collision at row 4 and the row that already held the id at row 2', Z6f);
+eq([Z6f.observed_id_value, Z6f.fault_class], ['FSMV-DUP', 'DUPLICATE'],
+  'Z6d naming the id that is claimed twice');
+eq(Z6f.recommended_next_action, 'PREPARE_CONTROLLED_ID_DEDUPLICATION', 'Z6e with its own next action');
+
+// ---- Z7 — A WRONG-TYPED ID. -----------------------------------------------------------------------
+var Z7 = fmCensus(pos({ movements: [
+  movrow({ factory_stock_movement_id: 'FSMV-OK' }),
+  movrow({ factory_stock_movement_id: 20260904, movement_date: '2026-09-04' })] }));
+eq(Z7.res.verdict, 'FAULTS_FOUND', 'Z7 a coerced number where a string key belongs is a fault');
+eq([Z7.res.wrong_type_id_count, Z7.res.blank_id_count, Z7.res.duplicate_id_count], [1, 0, 0],
+  'Z7a counted as a wrong TYPE and nothing else');
+eq([Z7.res.faults[0].observed_id_type, Z7.res.faults[0].observed_id_value],
+  ['[object Number]', '20260904'],
+  'Z7b with the type that was actually observed beside the value that prints like a string');
+eq(Z7.res.faults[0].one_based_sheet_row_number, 3, 'Z7c at its sheet row');
+eq(Z7.res.faults[0].recommended_next_action, 'PREPARE_CONTROLLED_ID_TYPE_NORMALIZATION',
+  'Z7d with its own next action');
+
+// ---- Z8 — A STRAY CELL OUTSIDE THE NAMED COLUMNS IS NOT A MISSING KEY. -----------------------------
+// §3 B. The remedy is to look at that cell, not to invent an id for a row that is not a record.
+var Z8 = fmCensus(pos({ movements: [movrow({ factory_stock_movement_id: 'FSMV-OK' })] }),
+  function (w) {
+    var sh = w.sheets['factory_stock_movements'];
+    sh.rows.forEach(function (r) { r.splice(4, 0, ''); });      // an UNLABELLED column, in the middle
+    var stray = sh.rows[0].map(function () { return ''; });
+    stray[4] = 'someone typed a note here';
+    sh.rows.push(stray);
+  });
+eq(Z8.res.verdict, 'FAULTS_FOUND', 'Z8 a stray row is a fault', Z8.res.stop_reasons);
+eq([Z8.res.outside_named_column_row_count, Z8.res.blank_id_count], [1, 0],
+  'Z8a counted as OUTSIDE the named columns and NOT as a record missing its id');
+eq(Z8.res.fault_codes, ['FACTORY_MOVEMENT_ROW_OUTSIDE_NAMED_COLUMNS'], 'Z8b under its own code');
+var Z8f = Z8.res.faults[0];
+eq([Z8f.row_outside_named_columns, Z8f.row_has_business_content], [true, false],
+  'Z8c with no business content — which is exactly what distinguishes it from Z1');
+eq(Z8f.named_nonblank_field_count, 0, 'Z8d and no named field to report');
+eq(Z8f.recommended_next_action, 'REVIEW_UNNAMED_CELL',
+  'Z8e so the recommendation is to look at the cell, not to backfill an id');
+eq([Z8.res.live_column_count, Z8.res.named_column_count], [Z0decl.length + 1, Z0decl.length],
+  'Z8f the live column count includes the unlabelled column and the named count does not',
+  [Z8.res.live_column_count, Z8.res.named_column_count]);
+
+// ---- Z9 — A FULLY BLANK TRAILING ROW IS NOT A RECORD AND NOT A FAULT. ------------------------------
+// §3 C. A spreadsheet artifact must not be reported as data damage, or every sheet with a spare row refuses.
+var Z9 = fmCensus(pos({ movements: [
+  movrow({ factory_stock_movement_id: 'FSMV-1' }),
+  movrow({ factory_stock_movement_id: 'FSMV-2', movement_date: '2026-09-02' })] }),
+  function (w) {
+    var sh = w.sheets['factory_stock_movements'];
+    sh.rows.push(sh.rows[0].map(function () { return ''; }));
+    sh.rows.push(sh.rows[0].map(function () { return ''; }));
+  });
+eq(Z9.res.verdict, 'CLEAN', 'Z9 two trailing blank rows leave the table CLEAN', Z9.res.faults);
+eq([Z9.res.row_count, Z9.res.non_blank_id_count, Z9.res.valid_id_count], [2, 2, 2],
+  'Z9a they are not counted in row_count');
+eq([Z9.res.blank_id_count, Z9.res.outside_named_column_row_count], [0, 0],
+  'Z9b and they are not a blank id and not a stray row either');
+eq(Z9.res.fault_count, 0, 'Z9c no fault');
+eq(fmFaultLines(Z9.world), 0, 'Z9d and no fault line is emitted');
+ok(String(Z9.res.row_counting_rule).indexOf('not a record') > 0,
+  'Z9e with the counting rule stated in the output rather than left implicit',
+  Z9.res.row_counting_rule);
+// AND THE ARITHMETIC CLOSES IN EVERY ONE OF THESE WORLDS.
+[['Z9f clean', Z9], ['Z9g blank id', Z1], ['Z9h duplicate', Z6], ['Z9i wrong type', Z7],
+  ['Z9j stray', Z8]].forEach(function (p) {
+  var r = p[1].res;
+  eq(r.row_count, r.non_blank_id_count + r.blank_id_count + r.outside_named_column_row_count,
+    p[0] + ': row_count is the non-blank ids plus the blanks plus the stray rows');
+  eq(r.valid_id_count, r.non_blank_id_count - r.duplicate_id_count - r.wrong_type_id_count,
+    p[0] + ': valid ids are the non-blank ones minus the duplicated and the wrong-typed');
+  eq(r.failed_predicates, [], p[0] + ': no condition failed', r.failed_predicates);
+});
+
+// ---- Z10 — THE CENSUS STOPS RATHER THAN REPORTING AN UNREADABLE TABLE AS CLEAN. --------------------
+// 'I could not look' and 'I looked and it was clean' are different answers, and only one of them is safe.
+var Z10a = fmCensus(pos({ movements: null }));
+eq(Z10a.res.verdict, 'STOP', 'Z10 an absent sheet is a STOP, never CLEAN');
+eq(Z10a.res.stop_reasons, ['SHEET_ABSENT'], 'Z10a under a named reason');
+eq([Z10a.res.row_count, Z10a.res.valid_id_count, Z10a.res.blank_id_count],
+  [null, null, null], 'Z10b with NULL counts — absent is not zero');
+eq(Z10a.res.fault_count, 0, 'Z10c and no fault is claimed about a table nobody read');
+var Z10b = fmCensus(pos(), function (w) {
+  w.sheets['factory_stock_movements'].rows[0][0] = 'renamed_id_column';
+});
+eq(Z10b.res.verdict, 'STOP', 'Z10d a renamed id column is a STOP');
+eq(Z10b.res.stop_reasons, ['ID_COLUMN_UNRESOLVED'], 'Z10e under its own reason');
+eq(Z10b.res.faults, [], 'Z10f with nothing classified, because nothing could be');
+var Z10c = fmCensus(pos(), function (w) {
+  var sh = w.sheets['factory_stock_movements'];
+  sh.rows[0] = sh.rows[0].map(function () { return ''; });        // the header row, erased
+});
+eq(Z10c.res.verdict, 'STOP', 'Z10g an unreadable header row is a STOP');
+ok(Z10c.res.stop_reasons.length >= 1, 'Z10h with a named reason', Z10c.res.stop_reasons);
+[['Z10i absent', Z10a], ['Z10j renamed id column', Z10b], ['Z10k erased header', Z10c]]
+  .forEach(function (p) {
+    eq(p[1].res.fault_lines_emitted, 0, p[0] + ': no fault line, because nothing was located');
+    fmZeroWrite(p[1], p[0] + ':');
+  });
+
+// ---- Z11 — MANIFEST P STILL REFUSES, AND NOW SAYS WHERE. -------------------------------------------
+// The live shape: the manifest must STOP and hand over nothing signable, and it must still print the row.
+var Z11spec = pos({ movements: [
+  movrow({ factory_stock_movement_id: 'FSMV-1' }),
+  movrow({ movement_date: '2026-09-02', qty: 12 }),
+  movrow({ factory_stock_movement_id: 'FSMV-3', movement_date: '2026-09-03' })] });
+var Z11 = manifestP(Z11spec);
+eq(Z11.res.verdict, 'STOP', 'Z11 the manifest refuses', failed(Z11.res));
+eq(Z11.res.factory_id_fault_codes, ['FACTORY_MOVEMENT_ID_BLANK'], 'Z11a with the code, as before');
+// ---- and now with the rows, which is what R4C measured and never printed ----
+eq(mpFaultLines(Z11.world), 1, 'Z11b one s1_manifest_p_factory_id_fault_<i>_of_<n> line is emitted',
+  logTags(Z11.world));
+eq(Z11.res.factory_id_fault_chunks, 1, 'Z11c and the returned count is the number emitted');
+var Z11line = (Z11.world.log || []).filter(function (l) {
+  return String(l).indexOf('[S1] s1_manifest_p_factory_id_fault_1_of_1 ') === 0; });
+eq(Z11line.length, 1, 'Z11d numbered by fault count');
+var Z11f = JSON.parse(String(Z11line[0]).replace('[S1] s1_manifest_p_factory_id_fault_1_of_1 ', ''));
+eq(Z11f.one_based_sheet_row_number, 3, 'Z11e THE ROW NUMBER IS IN THE LOG', Z11f);
+ok(Z11f.full_named_row_fingerprint !== null, 'Z11f and the full-row fingerprint',
+  Z11f.full_named_row_fingerprint);
+eq([Z11f.fault_code, Z11f.id_column_name, Z11f.observed_id_is_blank],
+  ['FACTORY_MOVEMENT_ID_BLANK', 'factory_stock_movement_id', true],
+  'Z11g with the code, the id column and the observed state');
+eq(Z11f.recommended_next_action, 'PREPARE_CONTROLLED_ID_BACKFILL', 'Z11h and the next action');
+ok(Z11f.named_nonblank_fields.length >= 3, 'Z11i and the named business fields',
+  Z11f.named_nonblank_fields.map(function (f) { return f.field; }));
+eq(Z11f.authoritative_id_contract.blank_permitted, false,
+  'Z11j carrying the contract that makes a blank a fault rather than a style');
+var Z11meta = logObj(Z11.world, 's1_manifest_p_factory_id_fault_meta');
+eq([Z11meta.fault_count, Z11meta.lines_emitted, Z11meta.lines_withheld], [1, 1, 0],
+  'Z11k with a meta line stating the fault count and how many lines were emitted');
+eq(Z11meta.rows, [3], 'Z11l and the row numbers at a glance');
+eq(Z11meta.recommended_next_actions, ['PREPARE_CONTROLLED_ID_BACKFILL'], 'Z11m and the next actions');
+// ---- AND STILL NOTHING SIGNABLE. A STOP owes the operator the fault and owes them no authorization. ----
+eq([Z11.res.frozen_before, Z11.res.freeze_paste_block, Z11.res.operator_authorization_wording],
+  [null, null, null], 'Z11n no baseline, no paste block, no wording');
+eq([mpChunks(Z11.world), authChunks(Z11.world)], [0, 0],
+  'Z11o freeze chunks 0 and authorization chunks 0');
+eq([Z11.res.writes, Z11.res.writer_calls, Z11.res.submit_calls], [0, 0, 0], 'Z11p zero writes');
+eq([Z11.res.dry_run_proof.generate_called, Z11.res.dry_run_proof.submit_called,
+  Z11.res.dry_run_proof.migration_called, Z11.res.dry_run_proof.gap_job_called],
+  [false, false, false, false], 'Z11q no Generate, Submit, migration or Gap Job');
+eq(Z11.world.allWrites(), 0, 'Z11r measured on every sheet');
+ok(maxLogBytes(Z11.world) <= 3000, 'Z11s and every emitted line is within the byte bound',
+  maxLogBytes(Z11.world));
+// A CLEAN WORLD STILL GETS THE META LINE, because an absent line is not an answer.
+var Z11clean = manifestP(pos());
+eq(Z11clean.res.verdict, 'READY_TO_AUTHORIZE', 'Z11t a clean world is unaffected', failed(Z11clean.res));
+eq(mpFaultLines(Z11clean.world), 0, 'Z11u with no fault line');
+var Z11cm = logObj(Z11clean.world, 's1_manifest_p_factory_id_fault_meta');
+eq([Z11cm.fault_count, Z11cm.lines_emitted], [0, 0], 'Z11v but the meta line is still emitted, saying zero');
+
+// ---- Z12 — ONE HELPER, TWO CALLERS, THE SAME ANSWER. ----------------------------------------------
+// §2.3. A second id classifier would be a second opinion, and the first thing two opinions do is disagree
+// about a row nobody can then classify. Asserted on the RESULTS, and on the source that produces them.
+var Z12c = fmCensus(Z11spec);
+eq(Z12c.res.verdict, 'FAULTS_FOUND', 'Z12 the standalone census finds the same world faulty');
+eq(Z12c.res.faults.length, Z11.res.factory_id_fault_rows.length,
+  'Z12a with the same number of located faults');
+var Z12keys = ['table', 'sheet_name', 'fault_code', 'fault_class', 'one_based_sheet_row_number',
+  'id_column_name', 'observed_id_value', 'observed_id_is_blank', 'observed_id_type', 'first_seen_row',
+  'full_named_row_fingerprint', 'live_column_count', 'named_column_count', 'header_fingerprint',
+  'named_nonblank_field_count', 'row_has_business_content', 'row_outside_named_columns',
+  'recommended_next_action'];
+Z12keys.forEach(function (k) {
+  eq(Z12c.res.faults[0][k], Z11.res.factory_id_fault_rows[0][k],
+    'Z12b the two callers agree on ' + k, [Z12c.res.faults[0][k], Z11.res.factory_id_fault_rows[0][k]]);
+});
+eq(JSON.stringify(Z12c.res.faults[0].named_nonblank_fields),
+  JSON.stringify(Z11.res.factory_id_fault_rows[0].named_nonblank_fields),
+  'Z12c and on the named business fields, field for field');
+// ---- and structurally: the census judges nothing of its own ----
+var Z12src = extractFn(S1, 'RUN_S1_FACTORY_MOVEMENT_ID_INTEGRITY_CENSUS');
+ok(Z12src.length > 0, 'Z12d the census function is extractable from the shipped source');
+eq((Z12src.match(/S1_idIntegrity_\(/g) || []).length, 1,
+  'Z12e it calls the shared id integrity authority exactly once');
+eq((Z12src.match(/S1_fullRowTable_\(/g) || []).length, 1,
+  'Z12f and reads exactly one table, through the shared full-row reader');
+eq((Z12src.match(/S1_idFaultRows_\(/g) || []).length, 1,
+  'Z12g and locates through the shared exporter');
+['blank_id_count++', 'duplicate_id_count++', 'wrong_type_id_count++', 'outside_named_columns_count++']
+  .forEach(function (frag) {
+    eq(Z12src.indexOf(frag), -1,
+      'Z12h it does NOT re-implement the ' + frag.replace('++', '') + ' judgement');
+  });
+['FSMV-', 'Utilities.getUuid', 'setValue', 'appendRow', 'fcWriteAppend', 'getRange']
+  .forEach(function (frag) {
+    eq(Z12src.indexOf(frag), -1, 'Z12i and contains no ' + frag + ' — it cannot write or mint');
+  });
+['shipping_allocation_drafts', 'shipping_allocation_draft_lines', 'inventory_replenishment_gap',
+  'factory_stock_override_audit'].forEach(function (tbl) {
+    eq(Z12src.indexOf(tbl), -1, 'Z12j and never names ' + tbl + ' — one table, as declared');
+  });
+ok(Z12src.indexOf('S1_FACTORY_MOVEMENT_TABLE_') > 0,
+  'Z12k the one table it does read comes from the single spelling');
+// AND THE THREE PLACES THAT SPELL THAT TABLE AGREE.
+var Z12w = S1World(pos());
+eq(vm.runInContext('S1_FACTORY_MOVEMENT_TABLE_', Z12w.ctx), 'factory_stock_movements',
+  'Z12l the constant is the live sheet name');
+eq(vm.runInContext('S1_FACTORY_ID_AUTHORITY_[S1_FACTORY_MOVEMENT_TABLE_].column', Z12w.ctx),
+  'factory_stock_movement_id', 'Z12m the id authority is keyed by it');
+eq(vm.runInContext('S1_factorySurfaceSpecs_()[0].table', Z12w.ctx), 'factory_stock_movements',
+  'Z12n and the surface spec uses it too');
+
+// ---- Z13 — ZERO WRITES, ON EVERY WORLD IN THIS SECTION. -------------------------------------------
+[['Z13a clean', Z9], ['Z13b blank id', Z1], ['Z13c duplicate', Z6], ['Z13d wrong type', Z7],
+  ['Z13e stray', Z8], ['Z13f sorted-position', Z5], ['Z13g moved row', Z4m],
+  ['Z13h same world as the manifest', Z12c]].forEach(function (p) {
+  fmZeroWrite(p[1], p[0] + ':');
+});
+// AND THE CENSUS NEVER PRINTS THE CLEAN ROWS. §2.8 — a summary plus the fault rows, and nothing else.
+var Z13big = [];
+for (var z13 = 1; z13 <= 96; z13++) {
+  Z13big.push(movrow({ factory_stock_movement_id: 'FSMV-' + (10000000 + z13),
+    movement_date: '2026-09-01', related_entity_id: 'ADJ-2026090' + (z13 % 10) + '-XXXX' }));
+}
+Z13big[42] = movrow({ movement_date: '2026-09-01', qty: 33 });          // the live shape: 96 rows, one blank
+var Z13 = fmCensus(pos({ movements: Z13big }));
+eq(Z13.res.verdict, 'FAULTS_FOUND', 'Z13i ninety-six rows, one without a key', Z13.res.stop_reasons);
+eq([Z13.res.row_count, Z13.res.non_blank_id_count, Z13.res.blank_id_count], [96, 95, 1],
+  'Z13j 96 / 95 / 1 — the live numbers');
+eq(Z13.res.faults[0].one_based_sheet_row_number, 44,
+  'Z13k and the one thing the live run could not say: which row', Z13.res.faults[0]);
+eq(fmFaultLines(Z13.world), 1, 'Z13l exactly ONE fault line for ninety-six rows');
+eq((Z13.world.log || []).length, 4,
+  'Z13m four log lines in total: summary, fault, fault meta, verdict', logTags(Z13.world));
+ok(maxLogBytes(Z13.world) <= 3000, 'Z13n every line within the byte bound', maxLogBytes(Z13.world));
+var Z13sum = logObj(Z13.world, 's1_factory_movement_id_census_summary');
+eq([Z13sum.row_count, Z13sum.non_blank_id_count, Z13sum.blank_id_count], [96, 95, 1],
+  'Z13o the summary carries the counts');
+ok(JSON.stringify(Z13sum).indexOf('FSMV-10000001') === -1,
+  'Z13p and NOT the ninety-five clean rows — a summary, not a dump');
+ok(String((Z13.world.log || []).join('|')).indexOf('FSMV-10000001') === -1,
+  'Z13q nor does any other emitted line carry them');
+fmZeroWrite(Z13, 'Z13r:');
+
+// ---- Z14 — MANY FAULTS ARE BOUNDED AND SAID SO, NEVER TRUNCATED. ---------------------------------
+var Z14rows = [];
+for (var z14 = 1; z14 <= 20; z14++) {
+  Z14rows.push(movrow({ movement_date: '2026-09-01', qty: z14 }));      // twenty rows, none with an id
+}
+var Z14 = fmCensus(pos({ movements: Z14rows }));
+eq(Z14.res.fault_count, 20, 'Z14 twenty faults are all located in the return value');
+eq(Z14.res.fault_lines_emitted, 12, 'Z14a twelve lines are emitted — the standing chunk bound');
+eq(fmFaultLines(Z14.world), 12, 'Z14b measured on the log');
+var Z14p = fmFaultPayloads(Z14.world);
+eq(Z14p[0].n, 20, 'Z14c numbered _1_of_20, so the numbering itself says how many exist');
+eq(Z14p.map(function (x) { return x.body.one_based_sheet_row_number; }),
+  [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+  'Z14d in sheet row order, so a reader walks the sheet top-down');
+var Z14meta = logObj(Z14.world, 's1_factory_movement_id_fault_meta');
+eq([Z14meta.fault_count, Z14meta.lines_emitted, Z14meta.lines_withheld], [20, 12, 8],
+  'Z14e and the meta line says how many were withheld rather than leaving them to be missed');
+ok(maxLogBytes(Z14.world) <= 3000, 'Z14f with every line inside the bound', maxLogBytes(Z14.world));
+fmZeroWrite(Z14, 'Z14g:');
+
+// ---- Z15 - A FAULT TOO WIDE FOR ONE LINE KEEPS WHAT LOCATES IT, AND SAYS WHAT IT DROPPED. ------------
+//
+// MEASURED, NOT HYPOTHETICAL. On 21_'s fifteen columns the complete fault payload is about 2.7KB against a
+// budget just under 3KB - so the margin is one wide column, and a live table that has grown a few would
+// cross it. Every field value is already capped at 80 characters, so the growth that matters is COLUMN
+// COUNT rather than value length.
+//
+// Over the line budget the payload keeps every field that LOCATES the row - table, sheet, row number, id
+// column, observed value and type, both fingerprints - and drops the wide ones under a named reason. Never
+// a value cut in the middle, and never a line that looks complete when it is not.
+var Z15 = fmCensus(pos({ movements: [movrow({ factory_stock_movement_id: 'FSMV-1' })] }),
+  function (w) {
+    var sh = w.sheets['factory_stock_movements'];
+    var extra = [];
+    for (var k = 1; k <= 30; k++) { extra.push('extended_attribute_column_number_' + k); }
+    sh.rows[0] = sh.rows[0].concat(extra);
+    sh.rows[1] = sh.rows[1].concat(extra.map(function () { return 'a value that is long enough to matter'; }));
+    var noid = sh.rows[1].slice();
+    noid[0] = '';                                    // the same wide row, with its primary key removed
+    sh.rows.push(noid);
+  });
+eq(Z15.res.verdict, 'FAULTS_FOUND', 'Z15 a wide table with a blank id is still FAULTS_FOUND',
+  Z15.res.stop_reasons);
+eq(Z15.res.named_column_count, Z0decl.length + 30, 'Z15a on forty-five named columns',
+  Z15.res.named_column_count);
+// The RETURN VALUE is never trimmed: it carries the whole fault, including the fields the line could not.
+var Z15f = Z15.res.faults[0];
+eq(Z15f.one_based_sheet_row_number, 3, 'Z15b the return value locates the row');
+// Derived from the fixture row rather than from the column count: MOVBASE_ populates eight of 21_'s
+// fourteen non-key columns, and the four before/after stock columns plus note and created_by stay blank -
+// which is correct, because a blank cell is not a business field.
+eq(Z15f.named_nonblank_field_count, Object.keys(MOVBASE_).length + 30,
+  'Z15c and carries every POPULATED named business field, blanks excluded',
+  [Z15f.named_nonblank_field_count, Object.keys(MOVBASE_).length]);
+ok(JSON.stringify(Z15f).length > 3000,
+  'Z15d which is more than a single log line can hold', JSON.stringify(Z15f).length);
+// The LINE keeps what locates the row and says what it dropped.
+var Z15p = fmFaultPayloads(Z15.world);
+eq(Z15p.length, 1, 'Z15e one fault line is still emitted');
+var Z15b = Z15p[0].body;
+eq(Z15b.one_based_sheet_row_number, 3, 'Z15f THE ROW NUMBER SURVIVES the narrowing', Z15b);
+eq([Z15b.table, Z15b.sheet_name, Z15b.fault_code, Z15b.id_column_name],
+  ['factory_stock_movements', 'factory_stock_movements', 'FACTORY_MOVEMENT_ID_BLANK',
+    'factory_stock_movement_id'], 'Z15g and so do the table, the code and the id column');
+eq(Z15b.full_named_row_fingerprint, Z15f.full_named_row_fingerprint,
+  'Z15h and the full-row fingerprint, so the line is still matchable against the baseline');
+eq([Z15b.observed_id_is_blank, Z15b.observed_id_type], [true, '[object String]'],
+  'Z15i and the observed id state');
+eq(Z15b.recommended_next_action, 'PREPARE_CONTROLLED_ID_BACKFILL', 'Z15j and the next action');
+eq(Z15b.detail_withheld, ['named_nonblank_fields', 'authoritative_id_contract'],
+  'Z15k with the dropped fields NAMED rather than silently missing');
+ok(String(Z15b.detail_withheld_reason).indexOf('over the') > 0
+  && String(Z15b.detail_withheld_reason).indexOf('return value') > 0,
+  'Z15l and a reason that says why and where the rest is', Z15b.detail_withheld_reason);
+eq(Z15b.named_nonblank_fields, undefined,
+  'Z15m the wide field is absent from the line, not truncated inside it');
+ok(maxLogBytes(Z15.world) <= 3000,
+  'Z15n and every emitted line is inside the byte bound', maxLogBytes(Z15.world));
+fmZeroWrite(Z15, 'Z15o:');
+
+// ================================================================================================================
 section('N — mutants');
 // ================================================================================================================
 
@@ -4024,7 +4555,11 @@ mut('N52 the predicted quantity is no longer checked against the proposal', func
 });
 
 mut('N53 the chunk budget ignores the tag, so an emitted line can exceed the bound', function () {
-  var m = swapS1("  var framing = '[S1] '.length + String(tag).length + '_99_of_99'.length + 1;",
+  // S1-R4D - RE-ANCHORED. The suffix is an argument now, because the per-fault emitter numbers its lines by
+  // fault COUNT and a three-digit N is wider than '_99_of_99'. Same mutant: stop pricing the framing, so
+  // the payload budget ignores how long the tag and suffix actually are.
+  var m = swapS1("  var framing = '[S1] '.length + String(tag).length" + NL
+    + "    + String(suffix === undefined || suffix === null ? '_99_of_99' : suffix).length + 1;",
     '  var framing = 0;');
   function longest(src) {
     var s = {}; Object.keys(pos()).forEach(function (k) { s[k] = pos()[k]; });
@@ -4350,6 +4885,243 @@ mut('N72 an absent factory surface is required to contribute a fingerprint', fun
     && String(bad.res.stop_reason).indexOf('AUTHORIZATION_WORDING_IS_NOT_VERIFIABLE') === 0;
 });
 
+// ---- S1-R4D mutants ------------------------------------------------------------------------------------
+
+mut('N73 the fault rows are measured and never printed', function () {
+  // THE LIVE DEFECT, INJECTED. R4C measured the row number and the fingerprint and put them in the return
+  // value and in a predicate's `observed` field; the Logger got the code. verdict STOP, one code, 96 rows,
+  // 95 good ids, and nowhere to look.
+  var m = swapS1("    var frOut = out.factory_id_fault_rows || [];\n"
+    + '    if (frOut.length) {',
+    "    var frOut = out.factory_id_fault_rows || [];\n"
+    + '    if (false) {');
+  var spec = pos({ movements: [
+    { factory_stock_movement_id: 'FSMV-1', movement_date: '2026-09-01', sku: SKU, warehouse_id: WHF,
+      movement_type: 'IN', qty: 5 },
+    { movement_date: '2026-09-02', sku: SKU, warehouse_id: WHF, movement_type: 'IN', qty: 6 }] });
+  var clean = manifestP(spec), bad = withMP(m, spec);
+  return clean.res.verdict === 'STOP' && mpFaultLines(clean.world) === 1
+    && bad.res.verdict === 'STOP' && mpFaultLines(bad.world) === 0
+    // the giveaway: the mutant still reports the CODE, which is exactly what the live run did
+    && String(bad.res.factory_id_fault_codes) === 'FACTORY_MOVEMENT_ID_BLANK'
+    && (bad.res.factory_id_fault_rows || []).length === 1;
+});
+
+mut('N74 the fault row number comes from the front of the sorted id list', function () {
+  // The defect the sort caused in the first place: '' sorts first, so a position taken from the id list is
+  // always the first data row no matter which row lost its key. Here the blank is the LAST record.
+  var m = swapS1('      one_based_sheet_row_number: entry.row_number,',
+    '      one_based_sheet_row_number: 2,');
+  var spec = pos({ movements: [
+    { factory_stock_movement_id: 'AAA-1', movement_date: '2026-09-01', sku: SKU, warehouse_id: WHF,
+      movement_type: 'IN', qty: 1 },
+    { factory_stock_movement_id: 'ZZZ-9', movement_date: '2026-09-02', sku: SKU, warehouse_id: WHF,
+      movement_type: 'IN', qty: 2 },
+    { movement_date: '2026-09-03', sku: SKU, warehouse_id: WHF, movement_type: 'IN', qty: 3 }] });
+  var clean = fmCensus(spec);
+  var bad = fmCensus(function () { var s = {}; Object.keys(spec).forEach(function (k) { s[k] = spec[k]; });
+    s.s1 = m; return s; }());
+  return clean.res.faults[0].one_based_sheet_row_number === 4
+    && bad.res.faults[0].one_based_sheet_row_number === 2;
+});
+
+mut('N75 the located fault loses its full-row fingerprint', function () {
+  // The other half of locating a row: the number says where it is now, the fingerprint says which row it is
+  // and matches the frozen signature. A null one makes the report unmatchable against the baseline.
+  var m = swapS1('      full_named_row_fingerprint: rec ? rec.fingerprint : null,',
+    '      full_named_row_fingerprint: null,');
+  var spec = pos({ movements: [
+    { movement_date: '2026-09-02', sku: SKU, warehouse_id: WHF, movement_type: 'IN', qty: 6 }] });
+  var clean = manifestP(spec), bad = withMP(m, spec);
+  var NM = 'every_located_fault_row_carries_a_row_number_a_fingerprint_and_a_next_action';
+  return clean.res.verdict === 'STOP' && failed(clean.res).indexOf(NM) === -1
+    && bad.res.verdict === 'STOP' && failed(bad.res).indexOf(NM) >= 0;
+});
+
+mut('N76 the business-content test counts the id column, so a bare key looks like a record', function () {
+  // RE-AIMED BY THE MEASUREMENT. The first version used a stray row, and the mutant survived: that row's id
+  // cell is EMPTY, so including the id column adds nothing and nothing observable changed. The exclusion is
+  // load-bearing only where the id IS populated - a row carrying a duplicated key and no other content.
+  //
+  // Clean, that row reports row_has_business_content false: it has a key and nothing else, so there is no
+  // record to back-fill a key for. Counting the id makes the flag true, and the report then claims business
+  // content whose only evidence is the very field that is at fault.
+  var m = swapS1("    if (c === '' || c === skipColumn) return;", "    if (c === '') return;");
+  function run(src) {
+    var s = {}; Object.keys(pos()).forEach(function (k) { s[k] = pos()[k]; });
+    s.movements = [
+      { factory_stock_movement_id: 'FSMV-D', movement_date: '2026-09-01', sku: SKU, warehouse_id: WHF,
+        movement_type: 'IN', qty: 1 },
+      { factory_stock_movement_id: 'FSMV-D' }];          // a bare duplicated key, nothing else on the row
+    if (src) s.s1 = src;
+    var w = S1World(s);
+    return vm.runInContext('RUN_S1_FACTORY_MOVEMENT_ID_INTEGRITY_CENSUS()', w.ctx);
+  }
+  var clean = run(null), bad = run(m);
+  var cf = clean.faults[0], bf = bad.faults[0];
+  var names = function (f) { return f.named_nonblank_fields.map(function (x) { return x.field; }); };
+  return clean.verdict === 'FAULTS_FOUND' && cf.fault_class === 'DUPLICATE'
+    && cf.row_has_business_content === false && cf.named_nonblank_field_count === 0
+    && names(cf).indexOf('factory_stock_movement_id') === -1
+    // the mutant reports the key itself as the row's business content
+    && bf.row_has_business_content === true && bf.named_nonblank_field_count === 1
+    && names(bf).indexOf('factory_stock_movement_id') >= 0;
+});
+
+mut('N77 an unreadable table is reported as CLEAN instead of STOP', function () {
+  // 'I could not look' and 'I looked and it was clean' are different answers. This is the same rule that
+  // keeps an absent table's row_count null, applied to the verdict.
+  var m = swapS1("    out.verdict = (out.stop_reasons.length || L.failed.length) ? 'STOP'\n"
+    + "      : ((out.faults || []).length ? 'FAULTS_FOUND' : 'CLEAN');",
+    "    out.verdict = (out.faults || []).length ? 'FAULTS_FOUND' : 'CLEAN';");
+  function run(src) {
+    var s = {}; Object.keys(pos()).forEach(function (k) { s[k] = pos()[k]; });
+    s.movements = null;
+    if (src) s.s1 = src;
+    var w = S1World(s);
+    return vm.runInContext('RUN_S1_FACTORY_MOVEMENT_ID_INTEGRITY_CENSUS()', w.ctx);
+  }
+  var clean = run(null), bad = run(m);
+  return clean.verdict === 'STOP' && clean.stop_reasons.indexOf('SHEET_ABSENT') >= 0
+    && bad.verdict === 'CLEAN' && bad.stop_reasons.indexOf('SHEET_ABSENT') >= 0
+    && bad.row_count === null;
+});
+
+mut('N78 valid_id_count goes back to meaning "the cell was not blank"', function () {
+  // R4C's `ok_count` includes a duplicate and a coerced number, because both leave the cell populated.
+  // Reporting that as `valid` is the same class of mistake as calling 118 gap scopes an identity count.
+  var m = swapS1('    out.valid_id_count = integ.ok_count - integ.duplicate_id_count'
+    + ' - integ.wrong_type_id_count;',
+    '    out.valid_id_count = integ.ok_count;');
+  function run(src) {
+    var s = {}; Object.keys(pos()).forEach(function (k) { s[k] = pos()[k]; });
+    s.movements = [
+      { factory_stock_movement_id: 'FSMV-D', movement_date: '2026-09-01', sku: SKU, warehouse_id: WHF,
+        movement_type: 'IN', qty: 1 },
+      { factory_stock_movement_id: 'FSMV-D', movement_date: '2026-09-02', sku: SKU, warehouse_id: WHF,
+        movement_type: 'IN', qty: 2 }];
+    if (src) s.s1 = src;
+    var w = S1World(s);
+    return vm.runInContext('RUN_S1_FACTORY_MOVEMENT_ID_INTEGRITY_CENSUS()', w.ctx);
+  }
+  var clean = run(null), bad = run(m);
+  var NM = 'the_valid_ids_are_the_non_blank_ones_minus_the_duplicated_and_the_wrong_typed';
+  return clean.verdict === 'FAULTS_FOUND'
+    && clean.non_blank_id_count === 2 && clean.valid_id_count === 1
+    && clean.failed_predicates.indexOf(NM) === -1
+    && bad.valid_id_count === 2 && bad.failed_predicates.indexOf(NM) >= 0;
+});
+
+mut('N79 the census judges the ids itself instead of asking the shared authority', function () {
+  // A second classifier is a second opinion, and the first thing two opinions do is disagree about a row
+  // nobody can then classify. Here the local one counts a blank as valid, so the standalone census and
+  // Manifest P report different worlds.
+  var m = swapS1('    var integ = S1_idIntegrity_(t, spec.id);',
+    "    var integ = { checked: true, clean: true, id_column: spec.id, row_count: t.row_count,\n"
+    + '      ok_count: t.row_count, blank_id_count: 0, wrong_type_id_count: 0, duplicate_id_count: 0,\n'
+    + '      outside_named_columns_count: 0, blank_id_rows: [], wrong_type_id_rows: [],\n'
+    + '      duplicate_id_rows: [], outside_named_columns_rows: [], faults: [] };');
+  var spec = pos({ movements: [
+    { factory_stock_movement_id: 'FSMV-1', movement_date: '2026-09-01', sku: SKU, warehouse_id: WHF,
+      movement_type: 'IN', qty: 5 },
+    { movement_date: '2026-09-02', sku: SKU, warehouse_id: WHF, movement_type: 'IN', qty: 6 }] });
+  var mp = manifestP(spec);
+  var clean = fmCensus(spec);
+  var bad = fmCensus(function () { var s = {}; Object.keys(spec).forEach(function (k) { s[k] = spec[k]; });
+    s.s1 = m; return s; }());
+  return mp.res.verdict === 'STOP'
+    // clean: one authority, so the two callers agree
+    && clean.res.verdict === 'FAULTS_FOUND' && clean.res.fault_count === 1
+    && clean.res.faults[0].one_based_sheet_row_number
+      === mp.res.factory_id_fault_rows[0].one_based_sheet_row_number
+    // mutant: the census calls the same world clean while the manifest still refuses it
+    && bad.res.verdict === 'CLEAN' && bad.res.fault_count === 0;
+});
+
+mut('N80 a fully blank trailing sheet row is counted as a record missing its id', function () {
+  // A spreadsheet artifact reported as data damage. Every sheet with a spare row would refuse, and an
+  // operator would be sent to a row that has nothing in it.
+  var m = swapS1('    if (blank) continue;                                  '
+    + '// a trailing empty sheet row is not a record',
+    '    if (false) continue;');
+  function run(src) {
+    var s = {}; Object.keys(pos()).forEach(function (k) { s[k] = pos()[k]; });
+    s.movements = [{ factory_stock_movement_id: 'FSMV-1', movement_date: '2026-09-01', sku: SKU,
+      warehouse_id: WHF, movement_type: 'IN', qty: 5 }];
+    if (src) s.s1 = src;
+    var w = S1World(s);
+    var sh = w.sheets['factory_stock_movements'];
+    sh.rows.push(sh.rows[0].map(function () { return ''; }));
+    return vm.runInContext('RUN_S1_FACTORY_MOVEMENT_ID_INTEGRITY_CENSUS()', w.ctx);
+  }
+  var clean = run(null), bad = run(m);
+  return clean.verdict === 'CLEAN' && clean.row_count === 1 && clean.fault_count === 0
+    && bad.verdict === 'FAULTS_FOUND' && bad.row_count === 2 && bad.fault_count === 1;
+});
+
+mut('N81 the withheld fault lines stop being counted, so the log looks complete', function () {
+  // Above the bound the remainder is withheld and SAID so - the same rule the baseline has. A meta line
+  // reporting 12 of 12 when 20 exist is a truncated report claiming to be a whole one.
+  var m = swapS1('      lines_withheld: Math.max(0, out.fault_count - out.fault_lines_emitted),',
+    '      lines_withheld: 0,');
+  function run(src) {
+    var s = {}; Object.keys(pos()).forEach(function (k) { s[k] = pos()[k]; });
+    s.movements = [];
+    for (var i = 1; i <= 20; i++) {
+      s.movements.push({ movement_date: '2026-09-01', sku: SKU, warehouse_id: WHF,
+        movement_type: 'IN', qty: i });
+    }
+    if (src) s.s1 = src;
+    var w = S1World(s);
+    vm.runInContext('RUN_S1_FACTORY_MOVEMENT_ID_INTEGRITY_CENSUS()', w.ctx);
+    return logObj(w, 's1_factory_movement_id_fault_meta');
+  }
+  var clean = run(null), bad = run(m);
+  return clean.fault_count === 20 && clean.lines_emitted === 12 && clean.lines_withheld === 8
+    && bad.fault_count === 20 && bad.lines_emitted === 12 && bad.lines_withheld === 0;
+});
+
+
+mut('N82 an over-wide fault line is cut instead of narrowed', function () {
+  // The rule the baseline already has, applied to a fault line: never truncated. A cut line is not a
+  // shorter report, it is a broken one - JSON.parse fails on it, so the row number an operator needs is
+  // not merely abbreviated but unreadable. Narrowing drops NAMED fields and keeps everything that locates
+  // the row; cutting keeps whatever happened to fit.
+  var m = swapS1('      payload = JSON.stringify(slim);', '      payload = payload.slice(0, budget);');
+  function wide(src) {
+    var sp = {};
+    Object.keys(pos()).forEach(function (k) { sp[k] = pos()[k]; });
+    sp.movements = [{ factory_stock_movement_id: 'FSMV-1', movement_date: '2026-09-01', sku: SKU,
+      warehouse_id: WHF, movement_type: 'IN', qty: 5 }];
+    if (src) sp.s1 = src;
+    var w = S1World(sp);
+    var sh = w.sheets['factory_stock_movements'];
+    var extra = [];
+    for (var k = 1; k <= 30; k++) { extra.push('extended_attribute_column_number_' + k); }
+    sh.rows[0] = sh.rows[0].concat(extra);
+    sh.rows[1] = sh.rows[1].concat(extra.map(function () {
+      return 'a value that is long enough to matter'; }));
+    var noid = sh.rows[1].slice();
+    noid[0] = '';
+    sh.rows.push(noid);
+    vm.runInContext('RUN_S1_FACTORY_MOVEMENT_ID_INTEGRITY_CENSUS()', w.ctx);
+    var line = (w.log || []).filter(function (l) {
+      return /^\[S1\] s1_factory_movement_id_fault_1_of_1 /.test(String(l)); })[0];
+    var body = String(line).replace('[S1] s1_factory_movement_id_fault_1_of_1 ', '');
+    var parsed = null;
+    try { parsed = JSON.parse(body); } catch (e) { parsed = null; }
+    return { bytes: String(line).length, parsed: parsed };
+  }
+  var clean = wide(null), bad = wide(m);
+  return clean.bytes <= 3000 && bad.bytes <= 3000
+    // clean: still valid JSON, still locates the row, and names what it left out
+    && clean.parsed !== null
+    && clean.parsed.one_based_sheet_row_number === 3
+    && clean.parsed.full_named_row_fingerprint !== null
+    && String(clean.parsed.detail_withheld_reason).indexOf('return value') > 0
+    // mutant: a cut line no reader can parse at all
+    && bad.parsed === null;
+});
 
 console.log('\npassed ' + pass + '  failed ' + fail
   + '  |  mutants caught ' + neg.caught + '  survived ' + neg.missed);
