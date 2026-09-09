@@ -128,6 +128,10 @@ var PIN_AFTER_WINDOW_ = 20;
 var PIN_DURING_REFRESH_ = 15;
 function preflight(over, projOver) {
   var w = new World(over || {});
+  // S1-R1 — THE PIN BELONGS HERE TOO, AND I MISSED IT. The previous round pinned `decide` and left this
+  // function reading the wall clock, so the F-loop's overdue case passed at 18:07 and failed at 09:48 the
+  // next morning — the same defect, in the half that was not repaired. Half a clock pin is not a clock pin.
+  vm.runInContext(pinTaipeiHourSrc_(PIN_AFTER_WINDOW_), w.ctx);
   projection(w.ctx, projOver);
   var r = w.run('RUN_R6R7_CONTROLLED_AI_PLAN_PREFLIGHT');
   r.world = w;

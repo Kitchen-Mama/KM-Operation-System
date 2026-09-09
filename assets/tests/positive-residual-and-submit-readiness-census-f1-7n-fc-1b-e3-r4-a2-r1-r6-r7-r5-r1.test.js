@@ -795,6 +795,215 @@ ok(MS.operator_authorization_wording.indexOf('never by') > 0
   'H9a and S\'s wording forbids retrying a timeout');
 
 // ================================================================================================================
+section('R — S1-R1: the eligible pair universe, and evidence that fits in its own log');
+// ================================================================================================================
+//
+// PRODUCTION SAID STOP, AND IT WAS THIS FILE'S FAULT — with the reason unreadable, which made it worse.
+//
+//   failed = ["the_accepted_inventory_gap_run_is_readable_for_every_pair"]   ← the ONLY one
+//   Logger  = "Logging output too large. Truncating output."
+//
+// The two predicates either side of it PASSED, and that combination is diagnostic on its own: at least one
+// pair was readable AND accepting, and at least one other pair was not readable. A census that requires
+// EVERY (company, country) pair in inventory_replenishment_gap to be readable is asking for something
+// production has never required and cannot require — handleGenerateWeeklyAiPlanDraft_ demands a company AND
+// a country and refuses without them, and weeklyAiPlanCanonicalDemand_ narrows to that pair BEFORE it
+// resolves which snapshot date is accepted. Another company's stale rows in the same table were vetoing a
+// scope they can never affect.
+//
+// AND THE LOG. S1_CHUNK_MAX_BYTES_ was 45000 against a sibling census that has shipped 3000 for rounds, with
+// the whole per-module deployment manifest inside the same payload. The pair-level reasons existed and could
+// not be read, which is the same as not having produced them.
+
+function gapDiag(spec) {
+  var w = S1World(spec);
+  var out, threw = null;
+  try { out = vm.runInContext('RUN_S1_ACCEPTED_GAP_RUN_READABILITY_DIAGNOSTIC()', w.ctx); }
+  catch (e) { threw = e; }
+  return { res: out || {}, threw: threw, world: w };
+}
+function logTags(w) {
+  return (w.log || []).map(function (l) {
+    var t = String(l).replace(/^\[S1\] /, '');
+    var sp = t.indexOf(' ');
+    return sp < 0 ? t : t.slice(0, sp);
+  });
+}
+function maxLogBytes(w) {
+  return (w.log || []).reduce(function (m, l) { return Math.max(m, String(l).length); }, 0);
+}
+
+// A pair no allowlist entry names, whose rows belong to an OLDER planning cycle. This is the production
+// shape: readable for the eligible pair, unreadable for a foreign one.
+var FOREIGN_PAIR = { company: 'ResEU', country: 'DE', marketplace: 'Amazon', sku: 'OTHER-SKU',
+  calculation_status: 'READY', calculation_date: '2026-08-01',
+  d18_suggested_qty: 0, d30_suggested_qty: 0, d45_suggested_qty: 0, d90_suggested_qty: 0 };
+
+// ---- R1  THE DIAGNOSTIC IS READ ONLY, AND MEASURED SO. --------------------------------------------------
+var R1 = gapDiag(pos({ extraGap: [FOREIGN_PAIR] }));
+eq(R1.threw, null, 'R1  the readability diagnostic does not throw');
+eq([R1.res.dry_run, R1.res.writes, R1.res.writer_calls], [true, 0, 0],
+  'R1a dry_run, zero writes, zero writer calls');
+eq([R1.res.generate_called, R1.res.submit_called, R1.res.migration_called, R1.res.refresh_started],
+  [false, false, false, false],
+  'R1b Generate, Submit, migration and refresh were all NOT called');
+eq(R1.world.allWrites(), 0, 'R1c measured on every sheet in the world');
+
+// ---- R2  THE LOG FITS. Four segments, one line per pair, and nothing near a limit. ---------------------
+var R2tags = logTags(R1.world);
+eq(R2tags, ['s1_gap_readability_summary', 's1_gap_pair_1_of_2', 's1_gap_pair_2_of_2',
+  's1_gap_scope_1_of_1', 's1_gap_readability_verdict'],
+  'R2  the four required segments, with ONE line per pair and one per eligible scope', R2tags);
+ok(maxLogBytes(R1.world) < 3000,
+  'R2a and the largest entry is under the chunk bound the sibling census proved', maxLogBytes(R1.world));
+ok(R2tags.indexOf('s1_gap_failed') === -1,
+  'R2b s1_gap_failed is emitted only when something failed — an empty failure line is noise');
+// THE MANIFEST IS NOT IN THERE. That is what truncated the evidence the first time.
+ok((R1.world.log || []).every(function (l) { return String(l).indexOf('WAP_BUILD_VERSION_') === -1; }),
+  'R2c no per-module deployment row appears in any log entry');
+eq(vm.runInContext('S1_CHUNK_MAX_BYTES_', R1.world.ctx), 3000,
+  'R2d and the payload chunk bound is 3000, not the unmeasured 45000');
+
+// ---- R3  THE ELIGIBLE UNIVERSE IS THE ALLOWLIST'S, AND IT AGREES WITH PRODUCTION'S OWN ANSWER. ----------
+eq(R1.res.eligible.eligible_pairs, ['ResUS|US'],
+  'R3  the eligible pair universe is exactly the allowlist\'s distinct (company, country)');
+eq(R1.res.eligible.eligible_scopes, [{ company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: SKU }],
+  'R3a with the four-axis scopes it came from');
+ok(String(R1.res.eligible.authority).indexOf('inventoryAiPlanActivationAllowlist_') === 0,
+  'R3b named as the allowlist authority, re-gated per entry', R1.res.eligible.authority);
+// BOUND TO PRODUCTION: weeklyAiPlanTargetScopes_ must answer with the same scopes for that pair.
+var R3prod = vm.runInContext('weeklyAiPlanTargetScopes_({ company: "ResUS", country: "US", planningCycle: gapCalcResolveContext_().planningCycle }, "")', R1.world.ctx);
+eq([R3prod.ok, R3prod.scopes], [true, [{ company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: SKU }]],
+  'R3c and PRODUCTION\'s own weeklyAiPlanTargetScopes_ returns the same scope set');
+var R3other = vm.runInContext('weeklyAiPlanTargetScopes_({ company: "ResEU", country: "DE", planningCycle: gapCalcResolveContext_().planningCycle }, "")', R1.world.ctx);
+eq([R3other.ok, R3other.reason], [false, 'AI_PLAN_SCOPE_NOT_ENABLED'],
+  'R3d while the foreign pair is NOT a scope production would write — so its readability cannot gate this');
+
+// ---- R4  THE REPRODUCTION, CLASSIFIED. ------------------------------------------------------------------
+var R4 = R1.res.pairs.filter(function (p) { return p.pair === 'ResEU|DE'; })[0];
+var R4e = R1.res.pairs.filter(function (p) { return p.pair === 'ResUS|US'; })[0];
+eq([R4.eligible, R4.readable], [false, false], 'R4  the foreign pair is NOT eligible and NOT readable');
+eq(R4.unreadable_reason, 'LINEAGE_MISMATCH', 'R4a its reason is named, not inferred');
+ok(String(R4.freshness_reason).indexOf('RECO-2026-08') >= 0,
+  'R4b with the freshness authority\'s OWN sentence, which is the useful part', R4.freshness_reason);
+eq([R4.gap_row_count, R4.distinct_dates, R4.calculation_statuses], [1, ['2026-08-01'], ['READY']],
+  'R4c and its row count, dates and statuses are on the same line');
+eq([R4e.eligible, R4e.readable, R4e.freshness_state], [true, true, 'CURRENT_AFTER_REFRESH'],
+  'R4d while the ELIGIBLE pair is readable and current');
+eq([R1.res.verdict, R1.res.root_cause_class],
+  ['ELIGIBLE_PAIRS_READABLE', 'DIAGNOSTIC_UNIVERSE_TOO_WIDE'],
+  'R4e so the root cause is classified as this census\'s own too-wide universe');
+ok(String(R1.res.next_action).indexOf('outside the activation allowlist') > 0,
+  'R4f and the next action says why, naming the pair', R1.res.next_action);
+eq(R1.res.failed_predicates, [], 'R4g with no failed predicate — nothing about the data is blocking');
+
+// ---- R5  FAIL-CLOSED IS PRESERVED. An ELIGIBLE pair that cannot be read still STOPS. --------------------
+var R5 = gapDiag(pos({ gap: { calculation_date: '2026-08-01' } }));
+eq([R5.res.verdict, R5.res.root_cause_class], ['STOP', 'DATA_NOT_READY'],
+  'R5  an ELIGIBLE pair the authority cannot read is DATA_NOT_READY and a STOP');
+ok(R5.res.failed_predicates.indexOf('the_accepted_inventory_gap_run_is_readable_for_every_eligible_pair') >= 0,
+  'R5a naming the eligible-pair readability gate', R5.res.failed_predicates);
+eq(R5.res.eligible_unreadable, ['ResUS|US'], 'R5b and naming WHICH eligible pair');
+ok(String(R5.res.next_action).indexOf('not this file') > 0
+  && String(R5.res.next_action).indexOf('Do not start it from here') > 0,
+  'R5c the next action sends it to the Gap Job and forbids starting one here', R5.res.next_action);
+ok(logTags(R5.world).indexOf('s1_gap_failed') >= 0,
+  'R5d and NOW the failure segment is emitted');
+
+// AN ELIGIBLE PAIR WITH NO ROW AT ALL is a different fact, and it is also DATA_NOT_READY.
+var R6 = gapDiag(pos({ dropGap: true, extraGap: [FOREIGN_PAIR] }));
+eq([R6.res.verdict, R6.res.root_cause_class], ['STOP', 'DATA_NOT_READY'],
+  'R6  an eligible pair with NO gap row is DATA_NOT_READY, not an empty scope');
+ok(R6.res.failed_predicates.indexOf('every_eligible_pair_has_rows_in_the_inventory_gap_table') >= 0,
+  'R6a under its own predicate', R6.res.failed_predicates);
+
+// ---- R7  ELIGIBILITY UNKNOWN MEANS NOTHING IS ASSUMED. -------------------------------------------------
+var R7 = gapDiag(pos({ allowlist: [], extraGap: [FOREIGN_PAIR] }));
+eq([R7.res.verdict, R7.res.root_cause_class], ['STOP', 'SCOPE_GUARD_UNAVAILABLE'],
+  'R7  an empty allowlist cannot decide eligibility, so the diagnostic refuses');
+ok(R7.res.failed_predicates.indexOf('the_eligible_pair_universe_is_derived_from_the_activation_allowlist') >= 0,
+  'R7a naming the universe gate', R7.res.failed_predicates);
+ok(String(R7.res.next_action).indexOf('Nothing is') >= 0
+  || String(R7.res.next_action).indexOf('nothing is') >= 0,
+  'R7b and stating that nothing is assumed while eligibility is unknown', R7.res.next_action);
+eq(R7.res.pairs, [], 'R7c with no pair verdict at all — an unknown universe yields no pair opinions');
+
+// ---- R8  THE FOUR WINDOWS, PER ELIGIBLE SCOPE, STORED OR NOT. ------------------------------------------
+var R8 = R1.res.scopes[0];
+eq(R8.scope, 'ResUS|US|Amazon|' + SKU, 'R8  the eligible scope is reported at four-axis identity');
+eq(R8.windows_stored, { D18: 900, D30: 900, D45: 900, D90: 900 },
+  'R8a with all four cumulative windows as STORED');
+eq([R8.windows_missing, R8.windows_non_finite, R8.windows_negative], [[], [], []],
+  'R8b none missing, none non-finite, none negative');
+eq([R8.all_four_stored_finite_nonnegative, R8.calculation_status, R8.recommendation_state],
+  [true, 'READY', 'NONZERO_RECOMMENDATION'], 'R8c and the summary flag, status and state agree');
+// A BLANK WINDOW IS REPORTED AS NON-FINITE, never as a zero.
+var R8b = gapDiag(pos({ gap: { d45_suggested_qty: '' } })).res.scopes[0];
+eq([R8b.windows_non_finite, R8b.all_four_stored_finite_nonnegative], [['D45'], false],
+  'R8d a blank window is NON-FINITE and the flag falls — a blank is never a zero', R8b && R8b.windows_stored);
+var R8c = gapDiag(pos({ gap: { d30_suggested_qty: -5 } })).res.scopes[0];
+eq([R8c.windows_negative, R8c.all_four_stored_finite_nonnegative], [['D30'], false],
+  'R8e and a negative window is reported as negative');
+
+// ---- R9  THE CENSUS ITSELF: a foreign unreadable pair no longer vetoes, and is still REPORTED. ----------
+var R9 = census(pos({ extraGap: [FOREIGN_PAIR] }));
+eq(R9.res.verdict, 'CANDIDATES_FOUND_AUTHORIZATION_REQUIRED',
+  'R9  the production shape now reaches a candidate verdict');
+eq(failed(R9.res), [], 'R9a with no failed predicate', failed(R9.res));
+eq(R9.res.eligible_universe.eligible_pairs, ['ResUS|US'], 'R9b eligible universe = the allowlist pair');
+eq(R9.res.eligible_universe.gap_table_pairs, ['ResEU|DE', 'ResUS|US'],
+  'R9c while BOTH table pairs are still enumerated — nothing is hidden');
+eq(R9.res.non_eligible_unreadable_pairs, ['ResEU|DE'],
+  'R9d and the unreadable foreign pair is REPORTED, just not allowed to veto');
+eq(R9.res.pair_readability.map(function (p) { return [p.pair, p.eligible, p.readable]; }),
+  [['ResEU|DE', false, false], ['ResUS|US', true, true]],
+  'R9e per-pair readability is carried for every pair in the table');
+var R9c = scopeOf(R9, SKU);
+eq([R9c.is_candidate, R9c.residual_qty, R9c.proposed_ai_allocation_qty], [true, 380, 380],
+  'R9f and the eligible scope is a candidate with the same numbers as before');
+// A NON-ELIGIBLE identity is never a candidate and never a rejection in these lists — it is reported at
+// PAIR grain instead, because per-identity candidacy for a scope nobody authorized is a meaningless claim.
+eq(R9.res.candidates.concat(R9.res.rejected).filter(function (r) {
+  return r.scope && r.scope.company === 'ResEU'; }), [],
+  'R9g no foreign identity enters the candidate or rejection lists');
+
+// ---- R10 AND THE FAIL-CLOSED HALF OF THE SAME CHANGE. --------------------------------------------------
+var R10 = census(pos({ gap: { calculation_date: '2026-08-01' } }));
+eq(R10.res.verdict, 'STOP',
+  'R10 an ELIGIBLE pair the authority cannot read still STOPS the census');
+ok(failed(R10.res).indexOf('the_accepted_inventory_gap_run_is_readable_for_every_eligible_pair') >= 0,
+  'R10a naming the eligible-pair gate', failed(R10.res));
+eq([R10.res.candidates, R10.res.scopes_examined], [[], 0],
+  'R10b with no candidate and nothing examined');
+var R10c = census(pos({ allowlist: [], extraGap: [FOREIGN_PAIR] }));
+eq(R10c.res.verdict, 'STOP', 'R10c an empty allowlist STOPS the census too');
+ok(failed(R10c.res).indexOf('the_eligible_pair_universe_is_derived_from_the_activation_allowlist') >= 0,
+  'R10d naming the universe gate rather than proceeding on the whole table', failed(R10c.res));
+
+// ---- R11 THE RUN ID COMES FROM ITS OWN AUTHORITY. ------------------------------------------------------
+// inventory_replenishment_gap has NO calculation_run_id column (43_ INV_GAP_HEADERS_), so reading it off the
+// row reported null for everything and made a resolvable run id look unknown.
+var R11cols = vm.runInNewContext(extractVar(read(GS + '43_api_v1_gap_materialization.gs'), 'INV_GAP_HEADERS_')
+  + ' INV_GAP_HEADERS_');
+eq(R11cols.indexOf('calculation_run_id'), -1,
+  'R11 the gap table genuinely has no calculation_run_id column');
+eq(R9.res.accepted_run.lineage.run_id, 'GAP-INV-20260905-0300',
+  'R11a and the census reports the run id from weeklyAiPlanResolveGapRunLineage_');
+ok(String(R9.res.accepted_run.lineage.authority).indexOf('GAP_JOB_INVENTORY') > 0,
+  'R11b naming the script property it actually came from', R9.res.accepted_run.lineage.authority);
+eq(R9c.calculation_run_id, 'GAP-INV-20260905-0300',
+  'R11c so a candidate row carries a real run id instead of a null');
+eq(R1.res.lineage.run_id, 'GAP-INV-20260905-0300',
+  'R11d and the readability diagnostic reports the same one');
+
+// ---- R12 THE DEPLOYMENT MANIFEST IS A SUMMARY IN THE PAYLOAD. ------------------------------------------
+var R12 = R9.res.environment.deployment;
+eq([typeof R12.module_count, R12.modules === undefined], ['number', true],
+  'R12 the deployment is carried as COUNTS, with no per-module row array');
+ok(String(R12.note).indexOf('SUMMARY ONLY') === 0,
+  'R12a and it says so, naming what it caused', R12.note);
+
+// ================================================================================================================
 section('N — mutants');
 // ================================================================================================================
 
@@ -949,6 +1158,98 @@ mut('N12 the exposure delta is declared non-zero, so Submit would look like it c
   var bad = vm.runInContext('RUN_S1_SUBMIT_READINESS_CENSUS("AI-NEW-1")', w2.ctx);
   return clean.res.expected_shipping_plan.before_after_exposure.delta_total_exposure === 0
     && bad.expected_shipping_plan.before_after_exposure.delta_total_exposure !== 0;
+});
+
+// ---- N13-N18  S1-R1: the universe, the fail-closed half, and the log. ----------------------------------
+
+function gapDiagWith(src, spec) {
+  var sp = {}; Object.keys(spec || {}).forEach(function (k) { sp[k] = spec[k]; });
+  sp.s1 = src;
+  var w = S1World(sp);
+  return { res: vm.runInContext('RUN_S1_ACCEPTED_GAP_RUN_READABILITY_DIAGNOSTIC()', w.ctx), world: w };
+}
+
+mut('N13 the census requires EVERY table pair to be readable again — the exact production STOP', function () {
+  var m = swapS1('    var notOk = eligiblePairKeys.filter(function (pk) { return !(canByPair[pk] && canByPair[pk].ok === true); });',
+    '    var notOk = pairKeys.filter(function (pk) { return !(canByPair[pk] && canByPair[pk].ok === true); });');
+  var spec = pos({ extraGap: [FOREIGN_PAIR] });
+  var clean = census(spec), bad = withS1(m, spec);
+  var NM = 'the_accepted_inventory_gap_run_is_readable_for_every_eligible_pair';
+  return clean.res.verdict === 'CANDIDATES_FOUND_AUTHORIZATION_REQUIRED'
+    && failed(clean.res).indexOf(NM) === -1
+    && bad.res.verdict === 'STOP' && failed(bad.res).indexOf(NM) >= 0
+    && bad.res.scopes_examined === 0;
+});
+
+mut('N14 an UNREADABLE eligible pair is accepted, so the fail-closed half is lost', function () {
+  // The predicate NAME now appears in BOTH entry points, so the anchor carries the pass expression from the
+  // census's own copy to stay unique.
+  var m = swapS1('      !!(out.accepted_run && out.accepted_run.ok) && notOk.length === 0);',
+    '      true);');
+  var spec = pos({ gap: { calculation_date: '2026-08-01' } });
+  var NM = 'the_accepted_inventory_gap_run_is_readable_for_every_eligible_pair';
+  var clean = census(spec), bad = withS1(m, spec);
+  return clean.res.verdict === 'STOP' && failed(clean.res).indexOf(NM) >= 0
+    && failed(bad.res).indexOf(NM) === -1;
+});
+
+mut('N15 the eligible universe falls back to the whole gap table when the allowlist is empty', function () {
+  var m = swapS1('  out.ok = out.scopes.length > 0;' + NL + "  if (!out.ok) out.reason = 'AI_PLAN_SCOPE_NOT_ENABLED';",
+    '  out.ok = true;');
+  var spec = pos({ allowlist: [], extraGap: [FOREIGN_PAIR] });
+  var NM = 'the_eligible_pair_universe_is_derived_from_the_activation_allowlist';
+  var clean = census(spec), bad = withS1(m, spec);
+  return clean.res.verdict === 'STOP' && failed(clean.res).indexOf(NM) >= 0
+    && failed(bad.res).indexOf(NM) === -1;
+});
+
+mut('N16 the eligibility gate stops being re-asked, so a blank allowlist entry becomes eligible', function () {
+  // 61_ re-asks inventoryAiPlanScopeEnabled_ per entry rather than trusting the list, precisely so a blank
+  // or ALL entry can never pass. This census must do the same or it would report a scope production refuses.
+  var m = swapS1('    if (!inventoryAiPlanScopeEnabled_(c, k, m, sk)) return;',
+    '    if (false) return;');
+  var spec = pos({ allowlist: [{ company: 'ResEU', country: 'DE', marketplace: 'ALL_SITES', sku: 'ALL' }],
+    extraGap: [FOREIGN_PAIR] });
+  var clean = gapDiag(spec), bad = gapDiagWith(m, spec);
+  return clean.res.root_cause_class === 'SCOPE_GUARD_UNAVAILABLE'
+    && bad.res.eligible.eligible_pairs.indexOf('ResEU|DE') >= 0;
+});
+
+mut('N17 the chunk bound goes back to 45000, which is what truncated the evidence', function () {
+  var m = swapS1('var S1_CHUNK_MAX_BYTES_ = 3000;', 'var S1_CHUNK_MAX_BYTES_ = 45000;');
+  var w = S1World(pos()), w2 = S1World({ s1: m });
+  return vm.runInContext('S1_CHUNK_MAX_BYTES_', w.ctx) === 3000
+    && vm.runInContext('S1_CHUNK_MAX_BYTES_', w2.ctx) === 45000;
+});
+
+mut('N18 the whole per-module deployment manifest goes back into the payload', function () {
+  var m = swapS1('    out.deployment = _dep ? {', '    out.deployment = _dep ? _dep && {' + NL
+    + '      modules: _dep.modules,');
+  var clean = census(pos()), bad = withS1(m, pos());
+  return clean.res.environment.deployment.modules === undefined
+    && bad.res.environment.deployment.modules !== undefined;
+});
+
+mut('N19 a DATA_NOT_READY eligible pair is misreported as this census\'s own defect', function () {
+  // The two root causes have opposite next actions — one is a Gap Job question and one is a code question —
+  // so mixing them up sends the operator to the wrong place with a confident answer.
+  var m = swapS1('    } else if (eligUnreadable.length) {' + NL
+    + "      out.verdict = 'STOP';" + NL
+    + "      out.root_cause_class = 'DATA_NOT_READY';",
+    '    } else if (eligUnreadable.length) {' + NL
+    + "      out.verdict = 'ELIGIBLE_PAIRS_READABLE';" + NL
+    + "      out.root_cause_class = 'DIAGNOSTIC_UNIVERSE_TOO_WIDE';");
+  var spec = pos({ gap: { calculation_date: '2026-08-01' } });
+  var clean = gapDiag(spec), bad = gapDiagWith(m, spec);
+  return clean.res.root_cause_class === 'DATA_NOT_READY' && clean.res.verdict === 'STOP'
+    && bad.res.root_cause_class === 'DIAGNOSTIC_UNIVERSE_TOO_WIDE';
+});
+
+mut('N20 the run id is read off the gap row again, so a resolvable one reports null', function () {
+  var m = swapS1("      row.calculation_run_id = (out.accepted_run.lineage && out.accepted_run.lineage.run_id) || null;",
+    '      row.calculation_run_id = mine ? (S1_str_(mine.calculation_run_id) || null) : null;');
+  var clean = scopeOf(census(pos()), SKU), bad = scopeOf(withS1(m, pos()), SKU);
+  return clean.calculation_run_id === 'GAP-INV-20260905-0300' && bad.calculation_run_id === null;
 });
 
 console.log('\npassed ' + pass + '  failed ' + fail
