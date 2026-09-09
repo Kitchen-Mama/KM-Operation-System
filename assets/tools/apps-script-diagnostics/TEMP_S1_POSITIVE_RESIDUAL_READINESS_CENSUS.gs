@@ -297,6 +297,248 @@ function S1_ledger_() {
  * a census run against an unknown deployment, or with the flag already true, is not evidence for authorizing
  * anything.
  */
+// ================================================================================================================
+// S1-R4B — THE DEPLOYMENT CONTRACT, VALIDATED AGAINST THE SHAPE 63_ ACTUALLY RETURNS.
+//
+// WHAT WENT WRONG, AND IT WAS NOT SUBTLE. The manifest asked `dep.available === true`, and
+// `sysModuleBuildStamps_()` HAS NO `available` FIELD. Its contract is:
+//
+//   { deployment_build, modules, runtime_authority, absent_modules, absent_optional_modules,
+//     stale_modules, mixed_deployment, verdict }
+//
+// So `available` read `undefined`, `undefined === true` was false, and
+// `the_deployment_contract_is_readable` failed on a deployment that was demonstrably readable — the SAME run
+// extracted deployment_build, mixed_deployment=false and stale_modules=0 out of the very object it had just
+// declared unreadable. 87 conditions passed and the one that failed was measuring a field nobody publishes.
+//
+// WHERE `available` CAME FROM. It was invented HERE, as a local marker on the catch path
+// (`_dep = { available: false, error: ... }`), and then read back as though 63_ had promised it. A field this
+// file makes up on failure is not a field the contract provides on success.
+//
+// AND THE FIXTURE AGREED WITH THE INVENTION. The suite's stub returned `available: true` alongside the real
+// field names, so every test passed while production could only ever fail. That is the second time this
+// package has been caught agreeing with its own invented schema — the factory-audit id columns were the
+// first — so the fixture no longer spells this shape at all: it EXECUTES the real 63_ function (see the
+// suite's realStamps_).
+//
+// WHAT REPLACES IT. One helper, and it separates two questions that were being answered by one flag:
+//
+//   IS THE CONTRACT READABLE?   the authority exists, it returned an object, and every field the contract
+//                               promises is present with the right TYPE. A shape question.
+//   IS THE DEPLOYMENT HEALTHY?  build, mixed, stale, absent, per-module stamps, verdict. Separate
+//                               predicates, so a shape fault and a sync fault are never one finding.
+//
+// The expected build comes from S1_BUILD_ — this file's own pin — and never from the object under test. An
+// expectation read from the thing being checked is a comparison with itself: it cannot fail, and a gate that
+// cannot fail is not a gate.
+//
+// NOT DONE, DELIBERATELY: the predicate is not relaxed to `true`, and the verdict string is never a sole
+// pass. `verdict_is_uniform` is anchored at the START of the string (63_'s failure branch is
+// 'MIXED_OR_PARTIAL_SYNC …', so a substring test for 'UNIFORM' would be a weaker check for no reason), and it
+// is one of ten independent conditions rather than the gate.
+// ================================================================================================================
+
+/** The fields 63_'s contract promises, with the type each must have. A field that is absent, null or of the
+ *  wrong type is a SHAPE fault and is named as one — never silently coerced into a health answer. */
+var S1_DEPLOYMENT_CONTRACT_FIELDS_ = [
+  { field: 'deployment_build', type: 'nonempty_string' },
+  { field: 'modules', type: 'array' },
+  { field: 'absent_modules', type: 'array' },
+  { field: 'absent_optional_modules', type: 'array' },
+  { field: 'stale_modules', type: 'array' },
+  { field: 'mixed_deployment', type: 'boolean' },
+  { field: 'verdict', type: 'nonempty_string' },
+  { field: 'runtime_authority', type: 'object' }
+];
+
+function S1_typeOk_(v, type) {
+  if (type === 'array') return Object.prototype.toString.call(v) === '[object Array]';
+  if (type === 'boolean') return v === true || v === false;
+  if (type === 'nonempty_string') return typeof v === 'string' && v.trim() !== '';
+  if (type === 'object') return !!v && typeof v === 'object'
+    && Object.prototype.toString.call(v) !== '[object Array]';
+  return false;
+}
+
+/**
+ * Read and validate the live deployment contract. ONE call, ONE normalized answer, every refusal named.
+ *
+ * Returns { readable, contract_ok, stop_reasons, … measured values … }. `readable` is the SHAPE verdict;
+ * `contract_ok` additionally requires the deployment to be healthy and to be THIS build.
+ */
+function S1_deploymentContract_() {
+  var o = {
+    // ---- shape ----
+    authority_present: (typeof sysModuleBuildStamps_ === 'function'),
+    called: false, threw: null, returned_object: false,
+    missing_fields: [], wrong_type_fields: [], readable: false,
+    // ---- measured ----
+    deployment_build: null, verdict: null, verdict_is_uniform: null, mixed_deployment: null,
+    module_count: null, required_module_count: null, optional_module_count: null,
+    stale_modules: null, stale_module_count: null,
+    absent_modules: null, absent_module_count: null,
+    absent_optional_modules: null, absent_optional_module_count: null,
+    module_mismatches: null, module_mismatch_count: null,
+    malformed_module_rows: null,
+    runtime_checked: null, runtime_uniform: null, runtime_divergent: null,
+    // ---- the expectation, from THIS FILE's pin ----
+    expected_build: S1_BUILD_, expected_build_source: 'S1_BUILD_ (this diagnostic\'s own pin)',
+    build_matches: null,
+    contract_ok: false, stop_reasons: [],
+    contract_fields: S1_DEPLOYMENT_CONTRACT_FIELDS_.map(function (f) { return f.field; }),
+    authority: 'sysModuleBuildStamps_ (63_api_v1_system_health.gs)'
+  };
+  function stop(reason) { o.stop_reasons.push(reason); }
+
+  if (!o.authority_present) {
+    stop('DEPLOYMENT_CONTRACT_AUTHORITY_ABSENT: sysModuleBuildStamps_ is not present in this deployment');
+    return o;
+  }
+  var raw = null;
+  try { raw = sysModuleBuildStamps_(); o.called = true; }
+  catch (e) {
+    o.threw = S1_cap_(String(e && e.message ? e.message : e), 200);
+    stop('DEPLOYMENT_CONTRACT_THREW: ' + o.threw);
+    return o;
+  }
+  o.returned_object = !!raw && typeof raw === 'object'
+    && Object.prototype.toString.call(raw) !== '[object Array]';
+  if (!o.returned_object) {
+    stop('DEPLOYMENT_CONTRACT_DID_NOT_RETURN_AN_OBJECT: got ' + (raw === null ? 'null' : typeof raw));
+    return o;
+  }
+
+  // ---- SHAPE: every promised field, present and of the right type. ----
+  S1_DEPLOYMENT_CONTRACT_FIELDS_.forEach(function (f) {
+    if (!Object.prototype.hasOwnProperty.call(raw, f.field) || raw[f.field] === undefined
+        || raw[f.field] === null) {
+      o.missing_fields.push(f.field);
+      return;
+    }
+    if (!S1_typeOk_(raw[f.field], f.type)) {
+      o.wrong_type_fields.push(f.field + ' is ' + Object.prototype.toString.call(raw[f.field])
+        + ', expected ' + f.type);
+    }
+  });
+  o.readable = o.missing_fields.length === 0 && o.wrong_type_fields.length === 0;
+  if (o.missing_fields.length) stop('DEPLOYMENT_CONTRACT_MISSING_FIELD: ' + o.missing_fields.join(', '));
+  if (o.wrong_type_fields.length) {
+    stop('DEPLOYMENT_CONTRACT_WRONG_FIELD_TYPE: ' + o.wrong_type_fields.join('; '));
+  }
+  // Values are read even when the shape is imperfect, because an operator needs to see WHAT was there — but
+  // `readable` is already false and contract_ok cannot become true below.
+
+  o.deployment_build = (typeof raw.deployment_build === 'string') ? raw.deployment_build.trim() : null;
+  o.verdict = (typeof raw.verdict === 'string') ? raw.verdict : null;
+  // ANCHORED AT THE START. 63_'s healthy verdict begins 'UNIFORM — …' and its failure branch begins
+  // 'MIXED_OR_PARTIAL_SYNC …', so this is exact rather than a substring guess — and it is never the only
+  // thing that has to be true.
+  o.verdict_is_uniform = o.verdict === null ? null : /^UNIFORM\b/.test(o.verdict.trim());
+  o.mixed_deployment = (raw.mixed_deployment === true || raw.mixed_deployment === false)
+    ? raw.mixed_deployment : null;
+  var mods = S1_typeOk_(raw.modules, 'array') ? raw.modules : null;
+  var stale = S1_typeOk_(raw.stale_modules, 'array') ? raw.stale_modules : null;
+  var absent = S1_typeOk_(raw.absent_modules, 'array') ? raw.absent_modules : null;
+  var absentOpt = S1_typeOk_(raw.absent_optional_modules, 'array') ? raw.absent_optional_modules : null;
+  o.stale_modules = stale === null ? null : stale.slice(0, 8);
+  o.stale_module_count = stale === null ? null : stale.length;
+  o.absent_modules = absent === null ? null : absent.slice(0, 8);
+  o.absent_module_count = absent === null ? null : absent.length;
+  o.absent_optional_modules = absentOpt === null ? null : absentOpt.slice(0, 8);
+  o.absent_optional_module_count = absentOpt === null ? null : absentOpt.length;
+  o.module_count = mods === null ? null : mods.length;
+
+  // ---- THE PER-MODULE STAMPS, ROW BY ROW. 63_'s own semantics, not a re-invention of them:
+  //      a REQUIRED owner must be present and match; an OPTIONAL owner may be absent (63_ §J.6 — a one-shot
+  //      migration the operator was told to remove) but a present one must still match, because
+  //      "a stale one is still a fault: a wrong version is never expected". ----
+  if (mods === null) {
+    stop('DEPLOYMENT_CONTRACT_MODULES_IS_NOT_AN_ARRAY');
+  } else {
+    var mism = [], malformed = [], req = 0, opt = 0;
+    mods.forEach(function (r, i) {
+      if (!r || typeof r !== 'object') { malformed.push('row ' + i + ' is not an object'); return; }
+      var file = S1_str_(r.file) || ('row ' + i);
+      if (S1_str_(r.file) === '') { malformed.push('row ' + i + ' has no file'); return; }
+      if (r.present !== true && r.present !== false) {
+        malformed.push(file + ' has no boolean `present`'); return;
+      }
+      if (r.matches_expected !== true && r.matches_expected !== false) {
+        malformed.push(file + ' has no boolean `matches_expected`'); return;
+      }
+      var optional = r.optional === true;
+      if (optional) opt++; else req++;
+      if (!r.present) {
+        if (!optional) {
+          mism.push(file + ' is ABSENT (expected ' + S1_str_(r.expected_build) + ')');
+        }
+        return;                                  // an absent OPTIONAL owner is not a mismatch
+      }
+      if (r.matches_expected !== true) {
+        mism.push(file + ' declares ' + S1_str_(r.declared_build) + ', expected '
+          + S1_str_(r.expected_build));
+      }
+    });
+    o.required_module_count = req;
+    o.optional_module_count = opt;
+    o.module_mismatches = mism.slice(0, 8);
+    o.module_mismatch_count = mism.length;
+    o.malformed_module_rows = malformed.slice(0, 8);
+    if (malformed.length) {
+      o.readable = false;
+      stop('DEPLOYMENT_CONTRACT_MALFORMED_MODULE_ROW: ' + malformed.slice(0, 4).join('; '));
+    }
+    if (mism.length) stop('MODULE_STAMP_MISMATCH: ' + mism.slice(0, 4).join('; '));
+    // A manifest that authorizes a write must have actually SEEN some owner rows. An empty manifest is not
+    // a uniform deployment; it is a contract that measured nothing.
+    if (mods.length === 0) stop('DEPLOYMENT_CONTRACT_LISTED_NO_MODULES');
+  }
+
+  // ---- THE RUNTIME HALF. 63_ folds runtime_authority.uniform into mixed_deployment, so requiring it here
+  //      adds no new refusal — it names the cause when mixed_deployment is true for that reason.
+  //
+  //      `checked` is RECORDED AND NOT GATED ON, deliberately. 63_ keeps uniform=true when nothing could be
+  //      compared ("NOT a divergence: nothing was compared, so nothing disagreed"), and an absent authority
+  //      is already named by absent_modules. Gating on `checked` would make this manifest STRICTER than the
+  //      contract it reads and could refuse a healthy deployment for a reason 63_ does not consider a
+  //      fault — which is precisely the bug this round exists to repair, rebuilt in the other direction.
+  var rt = S1_typeOk_(raw.runtime_authority, 'object') ? raw.runtime_authority : null;
+  if (rt) {
+    o.runtime_checked = (rt.checked === true || rt.checked === false) ? rt.checked : null;
+    o.runtime_uniform = (rt.uniform === true || rt.uniform === false) ? rt.uniform : null;
+    o.runtime_divergent = Object.prototype.toString.call(rt.divergent) === '[object Array]'
+      ? rt.divergent.slice(0, 4) : null;
+    if (o.runtime_uniform === null) {
+      o.readable = false;
+      stop('DEPLOYMENT_CONTRACT_RUNTIME_AUTHORITY_HAS_NO_BOOLEAN_UNIFORM');
+    } else if (o.runtime_uniform !== true) {
+      stop('RUNTIME_AUTHORITY_DIVERGENCE: ' + S1_cap_(S1_str_(rt.verdict), 160));
+    }
+  }
+
+  // ---- HEALTH, each with its own reason. ----
+  o.build_matches = o.deployment_build === null ? null : (o.deployment_build === S1_BUILD_);
+  if (o.deployment_build === null) {
+    stop('DEPLOYMENT_BUILD_IS_MISSING_OR_NOT_A_STRING');
+  } else if (o.build_matches !== true) {
+    stop('DEPLOYMENT_BUILD_IS_NOT_THE_ONE_THIS_MANIFEST_WAS_WRITTEN_AGAINST: deployment declares '
+      + o.deployment_build + ', this manifest was written against ' + S1_BUILD_);
+  }
+  if (o.mixed_deployment === null) stop('MIXED_DEPLOYMENT_IS_NOT_A_BOOLEAN');
+  else if (o.mixed_deployment !== false) stop('DEPLOYMENT_IS_MIXED: ' + S1_cap_(S1_str_(o.verdict), 160));
+  if (o.stale_module_count === null) stop('STALE_MODULES_IS_NOT_AN_ARRAY');
+  else if (o.stale_module_count !== 0) stop('OWNER_MODULE_IS_STALE: ' + o.stale_modules.join('; '));
+  if (o.absent_module_count === null) stop('ABSENT_MODULES_IS_NOT_AN_ARRAY');
+  else if (o.absent_module_count !== 0) stop('OWNER_MODULE_IS_ABSENT: ' + o.absent_modules.join('; '));
+  if (o.verdict_is_uniform === null) stop('DEPLOYMENT_VERDICT_IS_MISSING_OR_NOT_A_STRING');
+  else if (o.verdict_is_uniform !== true) {
+    stop('DEPLOYMENT_VERDICT_IS_NOT_UNIFORM: ' + S1_cap_(S1_str_(o.verdict), 160));
+  }
+
+  o.contract_ok = o.readable && o.stop_reasons.length === 0;
+  return o;
+}
+
 function S1_environment_() {
   var out = { build: S1_BUILD_, contract: S1_CONTRACT_,
     flag_present: (typeof inventoryAiPlanDbGenerationEnabled_ === 'function'),
@@ -311,23 +553,38 @@ function S1_environment_() {
   // S1-R1 — A SUMMARY, NOT THE WHOLE MANIFEST. The full contract carries a row per module and it was going
   // into the same log entry as everything else, which is how the pair-level reasons came to be truncated.
   // The full object is still available to a caller that wants it; it is simply not logged.
-  if (typeof sysModuleBuildStamps_ === 'function') {
-    var _dep = null;
-    try { _dep = sysModuleBuildStamps_(); } catch (e3) { _dep = { available: false, error: S1_cap_(e3 && e3.message, 120) }; }
-    out.deployment = _dep ? {
-      available: _dep.available === true, verdict: _dep.verdict || null,
-      deployment_build: _dep.deployment_build || null,
-      mixed_deployment: _dep.mixed_deployment === true,
-      module_count: (_dep.modules || []).length,
-      stale_module_count: (_dep.stale_modules || []).length,
-      absent_module_count: (_dep.absent_modules || []).length,
-      stale_modules: (_dep.stale_modules || []).slice(0, 6),
-      absent_modules: (_dep.absent_modules || []).slice(0, 6),
-      error: _dep.error || null,
-      note: 'SUMMARY ONLY — the per-module rows are deliberately not logged; they are what truncated the'
-        + ' pair-level evidence in the first production run'
-    } : null;
-  }
+  // S1-R4B — ONE VALIDATOR, AND IT READS THE FIELDS 63_ ACTUALLY PUBLISHES.
+  //
+  // This used to hand-roll the summary and read `_dep.available`, a field the contract has never had — it was
+  // invented on the catch path here and then read back as a promise. `undefined === true` was false, so the
+  // manifest called a readable contract unreadable while extracting values out of it in the same breath.
+  // S1_deploymentContract_ validates the real shape field by field and separates SHAPE from HEALTH.
+  var _dc = S1_deploymentContract_();
+  out.deployment = {
+    // `readable` is the SHAPE answer and `contract_ok` the HEALTH answer. They are different questions and
+    // one flag could not answer both, which is how a missing field came to read as a sync fault.
+    readable: _dc.readable, contract_ok: _dc.contract_ok,
+    authority_present: _dc.authority_present, threw: _dc.threw,
+    missing_fields: _dc.missing_fields, wrong_type_fields: _dc.wrong_type_fields,
+    verdict: _dc.verdict, verdict_is_uniform: _dc.verdict_is_uniform,
+    deployment_build: _dc.deployment_build,
+    expected_build: _dc.expected_build, expected_build_source: _dc.expected_build_source,
+    build_matches: _dc.build_matches,
+    mixed_deployment: _dc.mixed_deployment,
+    module_count: _dc.module_count, required_module_count: _dc.required_module_count,
+    optional_module_count: _dc.optional_module_count,
+    stale_module_count: _dc.stale_module_count, absent_module_count: _dc.absent_module_count,
+    absent_optional_module_count: _dc.absent_optional_module_count,
+    stale_modules: _dc.stale_modules, absent_modules: _dc.absent_modules,
+    module_mismatch_count: _dc.module_mismatch_count, module_mismatches: _dc.module_mismatches,
+    malformed_module_rows: _dc.malformed_module_rows,
+    runtime_checked: _dc.runtime_checked, runtime_uniform: _dc.runtime_uniform,
+    runtime_divergent: _dc.runtime_divergent,
+    stop_reasons: _dc.stop_reasons, authority: _dc.authority,
+    note: 'SUMMARY ONLY — the per-module rows are deliberately not logged; they are what truncated the'
+      + ' pair-level evidence in the first production run. Every field name here is one'
+      + ' sysModuleBuildStamps_ actually publishes; `readable` is this file\'s own shape verdict.'
+  };
   // Named individually, because "the census could not run" and "the deployment is missing 71_" are different
   // facts and only the second tells an operator what to sync.
   [['weeklyAiPlanCanonicalDemand_', '61_ accepted run + freshness'],
@@ -2905,16 +3162,56 @@ function RUN_S1_MANIFEST_P() {
     // ---- 4. THE DEPLOYMENT. Evidence measured on another build does not transfer to this one. ---------
     var dep = out.environment ? out.environment.deployment : null;
     out.deployment = dep;
-    L.P('the_deployment_contract_is_readable', true, dep ? dep.available : null,
-      !!dep && dep.available === true);
+    // S1-R4B — SHAPE FIRST, THEN HEALTH, EACH WITH ITS OWN NAME.
+    //
+    // `the_deployment_contract_is_readable` used to ask for `dep.available`, which 63_ does not publish, so
+    // it failed on a healthy deployment while the surrounding evidence read fine. It is now the SHAPE
+    // question and nothing else: the authority exists, it returned an object, and every field the contract
+    // promises is present with the right type. Health is the seven conditions after it.
+    L.P('the_deployment_contract_is_readable',
+      'an object carrying ' + S1_DEPLOYMENT_CONTRACT_FIELDS_.length + ' typed fields',
+      dep ? { readable: dep.readable, authority_present: dep.authority_present, threw: dep.threw,
+        missing_fields: dep.missing_fields, wrong_type_fields: dep.wrong_type_fields } : null,
+      !!dep && dep.readable === true);
+    L.P('every_module_row_in_the_contract_is_well_formed', [],
+      dep ? dep.malformed_module_rows : null,
+      !!dep && Object.prototype.toString.call(dep.malformed_module_rows) === '[object Array]'
+        && dep.malformed_module_rows.length === 0);
+    L.P('the_contract_listed_at_least_one_owner_module', 'more than zero',
+      dep ? dep.module_count : null, !!dep && dep.module_count > 0);
     L.P('the_deployment_is_not_mixed', false, dep ? dep.mixed_deployment : null,
       !!dep && dep.mixed_deployment === false);
     L.P('no_owner_module_is_stale', 0, dep ? dep.stale_module_count : null,
       !!dep && dep.stale_module_count === 0);
     L.P('no_owner_module_is_absent', 0, dep ? dep.absent_module_count : null,
       !!dep && dep.absent_module_count === 0);
+    // THE PER-MODULE STAMPS, not just the two summary lists. A required owner must be present AND match; an
+    // optional one may be absent (63_ §J.6) but a present one must still match, because 63_ says so itself:
+    // "a stale one is still a fault: a wrong version is never expected."
+    L.P('every_required_module_stamp_is_present_and_matches_what_is_expected', [],
+      dep ? dep.module_mismatches : null,
+      !!dep && Object.prototype.toString.call(dep.module_mismatches) === '[object Array]'
+        && dep.module_mismatch_count === 0);
+    // THE EXPECTATION COMES FROM S1_BUILD_, NEVER FROM THE OBJECT UNDER TEST. `expected_build_source` is
+    // carried so this is auditable rather than asserted.
     L.P('the_deployment_build_is_the_one_this_manifest_was_written_against', S1_BUILD_,
-      dep ? dep.deployment_build : null, !!dep && dep.deployment_build === S1_BUILD_);
+      dep ? { declared: dep.deployment_build, expected: dep.expected_build,
+        expected_from: dep.expected_build_source } : null,
+      !!dep && dep.deployment_build === S1_BUILD_ && dep.build_matches === true
+        && dep.expected_build === S1_BUILD_);
+    // The verdict is checked, and it is NOT a substring test and NOT the only thing that has to be true.
+    L.P('the_deployment_verdict_is_uniform', true, dep ? dep.verdict_is_uniform : null,
+      !!dep && dep.verdict_is_uniform === true);
+    L.P('the_runtime_authority_half_of_the_contract_is_uniform', true,
+      dep ? { uniform: dep.runtime_uniform, checked: dep.runtime_checked,
+        divergent: dep.runtime_divergent } : null,
+      !!dep && dep.runtime_uniform === true);
+    // ONE LINE THAT SAYS WHETHER ANYTHING AT ALL IS WRONG, with every reason named. A reader who wants the
+    // single answer gets it here; a reader who wants to act gets the list.
+    L.P('the_deployment_contract_reports_no_refusal_of_its_own', [],
+      dep ? dep.stop_reasons : null,
+      !!dep && Object.prototype.toString.call(dep.stop_reasons) === '[object Array]'
+        && dep.stop_reasons.length === 0 && dep.contract_ok === true);
 
     // ---- 5. THE SCHEMA. A quantity is only evidence about the schema it was measured against. ---------
     L.P('every_table_this_manifest_reads_is_present_and_readable', [],
