@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Product Strategy Board — NON-RUNTIME PROTOTYPE</title>
+<!--
+  PRODUCT STRATEGY BOARD — NON-RUNTIME STATIC PROTOTYPE (PRODUCT-STRATEGY-BOARD-P0-R1 §22)
+
+  THIS IS NOT PART OF THE APPLICATION.
+    - It is not referenced by index.html or by any file under assets/**.
+    - It makes no network request of any kind: no fetch, no XMLHttpRequest, no WebSocket,
+      no EventSource, no dynamic import, no remote <script src> or <link href>.
+    - It reads no production database and names no Apps Script action.
+    - It adds no dependency: plain HTML + CSS + vanilla JS, no CDN, no remote font.
+    - It does not call localStorage at all. Its state lives in a JS variable for the
+      lifetime of the page.
+    - Every SKU, price, campaign and note below is INVENTED SAMPLE DATA.
+
+  Its purpose is the INFORMATION ARCHITECTURE and the USER FLOW, not the visual design
+  and not a drag engine. See docs/planning/PRODUCT_STRATEGY_BOARD_DESIGN_FREEZE.md §22.
+-->
+<link rel="stylesheet" href="prototype.css">
+</head>
+<body>
+
+<div class="proto-banner">
+  <strong>NON-RUNTIME PROTOTYPE</strong>
+  <span>Static illustration of information architecture and flow. All data is invented sample data.
+  No network request, no database, no persistence, not part of the app.</span>
+</div>
+
+<div class="app">
+
+  <!-- ============================================================ PAGE SHELL (demo 1) -->
+  <header class="page-head">
+    <nav class="crumb" aria-label="Breadcrumb">
+      <span class="crumb-group">Product Strategy</span>
+      <span class="crumb-sep">/</span>
+      <span class="crumb-current">Product Strategy Board</span>
+    </nav>
+    <p class="crumb-note">
+      D-1 — a new top-level <em>Product Strategy</em> group. Deliberately not under
+      <em>Pricing Center</em>, which is logistics cost (Carrier / Container / Warehouse rate cards).
+    </p>
+  </header>
+
+  <!-- ============================================================ TOP BAR (demos 2, 3, 15) -->
+  <div class="topbar">
+    <div class="topbar-row">
+
+      <label class="field field--board">
+        <span class="field-label">Board</span>
+        <select id="boardSelect">
+          <option value="b1">Can Opener price architecture — 2027 H1</option>
+          <option value="b2">Jar Opener repositioning (draft)</option>
+        </select>
+      </label>
+      <button type="button" class="btn btn--ghost" id="btnNewBoard">+ New</button>
+
+      <span class="topbar-div" role="separator"></span>
+
+      <label class="field">
+        <span class="field-label">Series</span>
+        <select id="seriesSelect">
+          <option value="Can Opener">Can Opener</option>
+          <option value="Jar Opener">Jar Opener</option>
+        </select>
+      </label>
+      <label class="field">
+        <span class="field-label">Company</span>
+        <select><option>All</option><option>ResUS</option><option>KM-TW</option></select>
+      </label>
+      <label class="field">
+        <span class="field-label">Country</span>
+        <select><option>All</option><option>US</option><option>DE</option><option>TW</option></select>
+      </label>
+      <label class="field">
+        <span class="field-label">Marketplace</span>
+        <select><option>All</option><option>Amazon</option><option>Shopify</option></select>
+      </label>
+
+      <span class="topbar-spacer"></span>
+
+      <button type="button" class="btn btn--primary" id="btnCheckpoint">Save checkpoint</button>
+      <button type="button" class="btn" id="btnHistory" aria-expanded="false">History <span id="revCount">3</span></button>
+    </div>
+
+    <!-- board meta line: version, checkpoint, revisions, owner-as-provenance (D-7, D-9) -->
+    <div class="topbar-meta">
+      <span>board <strong id="metaVersion">v12</strong></span>
+      <span class="dot">·</span>
+      <span>last checkpoint <strong id="metaCheckpoint">14:22</strong></span>
+      <span class="dot">·</span>
+      <span><strong id="metaRevisions">3</strong> revisions</span>
+      <span class="dot">·</span>
+      <span class="owner">
+        owner <strong>vic</strong>
+        <span class="prov-tag" title="D-9: owner is client-asserted provenance, not access control">provenance</span>
+      </span>
+      <span class="dot">·</span>
+      <span class="visibility-note">
+        Any user of this deployment can open and edit this board. There is no access control yet.
+      </span>
+    </div>
+  </div>
+
+  <!-- ============================================================ HISTORY DRAWER (demo 15) -->
+  <section class="drawer" id="historyDrawer" hidden aria-label="Board revisions">
+    <div class="drawer-head">
+      <h2>Revisions <span class="tag tag--new">D-7 — ships in P1</span></h2>
+      <button type="button" class="btn btn--ghost btn--sm" id="btnHistoryClose">Close</button>
+    </div>
+    <p class="drawer-note">
+      A revision is written on exactly four events — <code>SAVE_CHECKPOINT</code>,
+      <code>FREEZE_SNAPSHOT</code>, <code>PRE_RESTORE</code>, <code>PRE_AI_WRITE</code> — and on none of
+      drag, resize, pan, zoom or select. P1 writes and lists them; diff and restore UI is deferred, because
+      history that was never written cannot be built against later.
+    </p>
+    <table class="rev-table">
+      <thead>
+        <tr><th>revision_id</th><th>revision_type</th><th>board_version</th><th>author_type</th><th>created_by</th><th>created_at</th></tr>
+      </thead>
+      <tbody id="revBody"></tbody>
+    </table>
+  </section>
+
+  <!-- ============================================================ MAIN 3-COLUMN LAYOUT -->
+  <div class="workspace">
+
+    <!-- -------------------------------------------------- LEFT TOOLBAR (demo 4) -->
+    <aside class="toolrail" aria-label="Element tools">
+      <div class="toolrail-head">Add element</div>
+      <button type="button" class="tool" data-tool="TEXT_NOTE"><span class="tool-ico">▭</span>Text</button>
+      <button type="button" class="tool" data-tool="SKU_CARD"><span class="tool-ico">▣</span>SKU</button>
+      <button type="button" class="tool" data-tool="REGIONAL_SKU_CARD"><span class="tool-ico">▤</span>Regional</button>
+      <button type="button" class="tool" data-tool="SERIES_PRICE_BAND"><span class="tool-ico">⎯</span>Price&nbsp;Band</button>
+      <button type="button" class="tool" data-tool="MATRIX"><span class="tool-ico">▦</span>Matrix</button>
+      <button type="button" class="tool tool--flagged" data-tool="DEAL_PLAN">
+        <span class="tool-ico">◆</span>Deal&nbsp;Plan
+        <span class="tool-flag">D-4 · in MVP</span>
+      </button>
+
+      <div class="toolrail-head toolrail-head--sub">Deferred to P2</div>
+      <button type="button" class="tool tool--off" disabled><span class="tool-ico">▧</span>Chart <span class="tool-defer">⏳</span></button>
+      <button type="button" class="tool tool--off" disabled><span class="tool-ico">⬚</span>Group <span class="tool-defer">⏳</span></button>
+      <button type="button" class="tool tool--off" disabled><span class="tool-ico">↗</span>Connector <span class="tool-defer">⏳</span></button>
+
+      <p class="toolrail-note">
+        Clicking a tool is out of scope for this prototype — the elements below are pre-placed.
+        Placement, drag, resize, pan and zoom belong to the Canvas Core (§11.5), which P1 builds.
+      </p>
+    </aside>
+
+    <!-- -------------------------------------------------- CENTRAL BOARD (demo 5) -->
+    <main class="board" id="board" aria-label="Board canvas">
+      <div class="board-grid" aria-hidden="true"></div>
+      <div class="board-items" id="boardItems"><!-- rendered by prototype.js --></div>
+      <div class="board-foot">
+        <span class="zoomctl" aria-hidden="true">[ − <strong>100%</strong> + ] [ reset ]</span>
+        <span class="board-foot-note">Fixed grid. Pan / zoom / drag / resize are Canvas Core (§11.5), not this prototype.</span>
+      </div>
+    </main>
+
+    <!-- -------------------------------------------------- RIGHT PROPERTIES PANEL (demo 6) -->
+    <aside class="props" aria-label="Element properties">
+      <div class="props-head">Properties</div>
+      <div id="propsBody" class="props-body"><!-- rendered by prototype.js --></div>
+    </aside>
+
+  </div>
+
+  <footer class="foot">
+    <p>
+      <strong>Prototype scope.</strong> This page demonstrates the fifteen items listed in
+      <code>docs/planning/PRODUCT_STRATEGY_BOARD_DESIGN_FREEZE.md</code> §22.3. It is not runtime, it holds
+      no real data, it persists nothing, and it is loaded by nothing in the application.
+    </p>
+  </footer>
+
+</div>
+
+<script src="prototype.js"></script>
+</body>
+</html>

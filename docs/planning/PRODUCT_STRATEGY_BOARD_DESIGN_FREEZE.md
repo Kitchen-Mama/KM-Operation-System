@@ -1,16 +1,35 @@
-# Product Strategy Board — Design Freeze (P0)
+# Product Strategy Board — Design Freeze (P0 · updated by P0-R1)
 
-**Round:** PRODUCT-STRATEGY-BOARD-P0 — Discovery, Data Mapping and Design Freeze
-**Status:** DESIGN FREEZE — investigation complete, nothing implemented
+**Rounds:** `PRODUCT-STRATEGY-BOARD-P0` — Discovery, Data Mapping and Design Freeze
+· `PRODUCT-STRATEGY-BOARD-P0-R1` — Design Closure and Non-Runtime Visual Prototype
+**Status:** **DESIGN CLOSED.** All nine open decisions are now operator-decided and applied. Still nothing implemented.
 **Base commit:** `e9fcd27` (`origin/main` at the time this branch was cut)
 **Branch:** `feature/product-strategy-board-p0` (isolated git worktree)
-**Scope of this round:** this document only. No page, no table, no API, no deployment.
+**Scope of P0:** this document. **Scope of P0-R1:** this document + a non-runtime static prototype under
+`docs/prototypes/product-strategy-board/` (§22). No page, no table, no API, no `.gs` change, no deployment.
 
 > **What "design freeze" means here.** Every table, column, action name and component named below was
 > read out of shipped source in this repository, and the file and line it came from is cited. Where a
 > field the product needs does **not** exist, it is recorded as a **GAP** with no invented mapping.
 > Where two authorities in the repo disagree, both are quoted and the divergence is named rather than
 > reconciled by preference.
+
+> **What P0-R1 changed.** P0 ended with nine open decisions (§19) and five defaults. The operator has now
+> decided all nine, and **six of the nine went against the P0 default**. This document is not P0 with a
+> decision log appended — the affected sections were rewritten so that no superseded default survives
+> anywhere in the text. The nine decisions and where each one landed:
+>
+> | # | Decision | vs. P0 default | Sections rewritten |
+> |---|---|---|---|
+> | **D-1** | New top-level `Product Strategy` nav group. **Never** under *Pricing Center* (which is logistics cost) | same, now binding | §11.1, §16 |
+> | **D-2** | Band price source is **`pricing_list.regular_price`**; absent ⇒ `SOURCE_MISSING`. **No fallback** to `sku_details.selling_price` | same + a new prohibition | §9.1, §9.3, §15 |
+> | **D-3** | P1 supports **only** `AS_QUOTED_SINGLE_CURRENCY`; other currencies **split into separate bands**, never converted, never on a shared axis | **CHANGED** — split, not just refuse | §9.4, §11.2 |
+> | **D-4** | **`DEAL_PLAN` enters the P1 MVP** as `PROPOSAL_ONLY` | **CHANGED** — was deferred to P2 | §2, §7, §10, §17, §18 |
+> | **D-5** | P1 **must not** use the legacy 44-tab `getOperationDb`. Bounded reads land **in B1**, before the price band | **CHANGED** — was "accept the legacy read" | §12.3, §17, §16 |
+> | **D-6** | Current selling price is **not displayed** until its source is settled. No substitute may stand in for it | same + a named prohibition | §9.1, §15 |
+> | **D-7** | **A third table, `product_strategy_board_revisions`, ships in P1** | **CHANGED** — was deferred to P2 | §6.3, §6.4, §8.6, §16, §17 |
+> | **D-8** | `margin` waits for a real cost source. **No margin may be estimated from a selling price** | same + a named prohibition | §9.1, §15 |
+> | **D-9** | `owner` is **provenance, not access control**; no "Private"/"Secure" wording; the production feature ships **disabled**; enablement needs a separate authorization/security gate | **CHANGED** — "accept and say so" was not enough | §13, §16, §17, §18 |
 
 ---
 
@@ -57,26 +76,30 @@ positions, gaps, overlaps, and where a Deal price would cannibalise a neighbouri
 
 | # | Capability | Why it is first |
 |---|---|---|
-| 1 | Board CRUD + durable server persistence | Without this it is not a record, it is a browser cache (§3.7) |
-| 2 | `TEXT_NOTE` element | The whole short-term purpose: positioning, target price, Deal price, reasoning, risk, to-do |
-| 3 | `SKU_CARD` element (master-SKU grain) | Series, product name, price fields all live at this grain |
-| 4 | `REGIONAL_SKU_CARD` element (company/country/marketplace/sku grain) | Site SKU / ASIN / Regional status / site currency price |
-| 5 | `SERIES_PRICE_BAND` element | The price-band overview — the first-priority screen |
-| 6 | `MATRIX` element (2-D, fixed grid) | Price × Tier, Price × Feature, Series × Band |
-| 7 | LIVE_REFERENCE / FROZEN_SNAPSHOT modes | §5 — decision evidence must not be rewritten by later master-data edits |
-| 8 | Initial template: **SKU Series Price Architecture Board** | Gives the board a reason to exist on first open |
+| 1 | Board CRUD + durable **server** persistence | Without this it is not a record, it is a browser cache (§3.7) |
+| 2 | **Bounded, scoped source reads** — no legacy 44-tab read | **D-5.** The board's first act is a read; if that read is the full-DB read, every later batch inherits it (§12.3) |
+| 3 | `product_strategy_board_revisions` | **D-7.** History UI can wait; the history *data* cannot, because a checkpoint not written at v1 is not recoverable later (§6.3) |
+| 4 | `TEXT_NOTE` element | The whole short-term purpose: positioning, target price, Deal price, reasoning, risk, to-do |
+| 5 | `SKU_CARD` element (master-SKU grain) | Series, product name, price fields all live at this grain |
+| 6 | `REGIONAL_SKU_CARD` element (company/country/marketplace/sku grain) | Site SKU / ASIN / site status / site currency price |
+| 7 | `SERIES_PRICE_BAND` element | The price-band overview — the first-priority screen |
+| 8 | **`DEAL_PLAN` element, `PROPOSAL_ONLY`** | **D-4.** Deal layout is half of the first-priority use case. It ships as a *proposal* with no write path to `campaigns` / `campaign_sku_lines` / `pricing_list` (§10) |
+| 9 | `MATRIX` element (2-D, fixed grid) | Price × Tier, Price × Feature, Series × Band |
+| 10 | LIVE_REFERENCE / FROZEN_SNAPSHOT modes | §8 — decision evidence must not be rewritten by later master-data edits |
+| 11 | Initial template: **SKU Series Price Architecture Board** | Gives the board a reason to exist on first open |
 
 ### Deferred (P2+), and the reason
 
 | Element / feature | Deferred because |
 |---|---|
-| `CHART` | Chart.js is already available (§6.4) but every chart needs an agreed metric; §7 shows the price series is incomplete (no margin, no effective date). A chart over a GAP is a confident wrong picture. |
-| `DEAL_PLAN` | Deal price exists only inside a **campaign** (`campaign_sku_lines.promo_price`, §4.6). A Deal plan element that is not bound to a campaign would become a second, unauthoritative promo-price store. Needs the §10 boundary decision first. |
+| `CHART` | Chart.js is already available (§3.7) but every chart needs an agreed metric, and §9.1 shows the price series is incomplete: **no current selling price (D-6), no margin (D-8), no effective date**. A chart over a GAP is a confident wrong picture. |
 | `GROUP` | Pure UI convenience; the matrix covers the grouping need in P1. |
-| `CONNECTOR` | The existing canvas already has arrow anchors (§6.3) so this is cheap, but connectors have no analytical meaning for a price band. |
+| `CONNECTOR` | The existing canvas already has arrow anchors (§3.7) so this is cheap, but connectors have no analytical meaning for a price band. |
+| **History UI** (diff + restore) | **The `revisions` table itself is P1 (D-7)**; only the *screen* that diffs and restores is deferred. The data is written from the first version, so the UI can be built later against real history rather than against an empty table. |
 | Infinite canvas, multi-user live cursors | Explicitly out of scope per the round brief. Fixed grid + module cards in v1. |
-| Board sharing / per-user ownership | There is **no user identity and no RBAC** in this system (§13). Ownership would be a string nobody verifies. |
-
+| Board-level access control | There is **no user identity and no RBAC** in this system (§13). `owner` is provenance, and P1 says so in the UI rather than implying otherwise — **D-9**. |
+| Cross-currency comparison on one axis | **D-3.** P1 splits by currency instead. No FX policy is decided here, and none is inferred (§9.4). |
+| `DEAL_PLAN` → real campaign lines | **D-4** admits the element, not the write. Promoting a proposal into `campaign_sku_lines` is a separate authorized flow this design does not create (§10). |
 ---
 
 ## §3 — Existing source inventory (what the repo already has)
@@ -219,9 +242,13 @@ This is precisely the boundary between what P1 reuses and what P1 must add.
   Commands there **must** carry an idempotency key or no request is issued
   (`IDEMPOTENCY_KEY_REQUIRED`, `:227`), and a second adapter (in-memory, `:250`) exists so the
   contract is testable without a backend.
-- Reads the board needs are **all already available with zero backend work**, via
+- Every read the board needs **does** already resolve through
   `KM.DB.getSkuDetails / getMarketplaceSkus / getPricingList / getCampaigns / getCampaignSkuLines`
-  — at the cost of the legacy 44-tab `getOperationDb` read.
+  — but only at the cost of the legacy 44-tab `getOperationDb` read.
+  **P0 read that as "zero backend work for reads" and recommended taking it. D-5 refused it**
+  (§12.3): three of the six tables already have a scoped owner the board reuses unchanged, the other
+  three have no owner at all, and building that owner is B1 work rather than a later optional batch.
+  So the reads are *available*, and they are **not** the P1 read path.
 
 ### 3.10 Role / permission / audit / user identity
 
@@ -414,72 +441,129 @@ rate, and this board must inherit that refusal.
 | Company / country / marketplace / site SKU / site status / site currency | `marketplace_skus` | **Read only** |
 | Regional regulatory + site identity detail | `sku_regional_details` | **Read only** |
 | Effective prices (regular / minimum / MSRP), FX, price source & status | `pricing_list` | **Read only** |
-| Deal / promo price | `campaign_sku_lines` (inside a `campaigns` row) | **Read only** |
-| Board layout, notes, positioning, target price, strategy reasoning, risk, to-dos | **`product_strategy_board_elements` (new, board-owned)** | **Owns** |
-| Snapshot of displayed source values at decision time | **`snapshot_json` on the element (new)** | **Owns** |
+| **Official** Deal / promo price | `campaign_sku_lines.promo_price` (inside a `campaigns` row) | **Read only** |
+| Board layout, notes, positioning, target price, strategy reasoning, risk, to-dos | **`product_strategy_board_elements`** (new, board-owned) | **Owns** |
+| **A *proposed* deal (price, window, reason, risk) that is not yet a campaign** | **`content_json` on a `DEAL_PLAN` element** (new, board-owned) | **Owns — and it is a proposal, never a Deal (§10)** |
+| Snapshot of displayed source values at decision time | **`snapshot_json` on the element** (new) | **Owns** |
+| Board checkpoints, freezes and pre-restore states | **`product_strategy_board_revisions`** (new, board-owned — **D-7**) | **Owns** |
 
 **The boundary, stated as a rule the implementation must enforce (§15.4):**
 the board **never writes** to `sku_details`, `marketplace_skus`, `sku_regional_details`,
 `pricing_list`, `pricing_change_log`, `campaigns` or `campaign_sku_lines`. A board element that holds
-a "target price" holds a *proposal*, in board-owned storage, with no path to the pricing tables.
-Promoting a board proposal into `pricing_list` would be a separate, explicitly authorized flow that
-this design does **not** create.
+a "target price" or a `DEAL_PLAN` holds a *proposal*, in board-owned storage, with no path to the
+pricing or campaign tables. Promoting a board proposal into `pricing_list` or `campaign_sku_lines`
+would be a separate, explicitly authorized flow that this design does **not** create.
 
 **Why this matters more than usual here.** `pricing_list` is described in the roadmap as
 *"the only source of truth for Regular Price / Minimum Price / MSRP / Currency"* and
 *"Any page requiring pricing data must read from `pricing_list`"*
 (`SYSTEM_ROADMAP.md` §3.5-1b). A board that stored its own prices would become a second pricing
-authority — the exact thing that rule exists to prevent.
+authority — the exact thing that rule exists to prevent. **D-4 admits `DEAL_PLAN` into P1 precisely
+because the element is defined so that it cannot become that second authority**: it stores
+`proposed_*` fields under names that can never be mistaken for the official columns (§7.4).
 
 ---
 
 ## §6 — Proposed board schema
 
-Two tables. Deliberately two, not five.
+**Three tables** — two owned by the live board, one by its history. The third is new in P0-R1 (**D-7**).
 
 ### 6.1 `product_strategy_boards`
 
 | Column | Type | Notes |
 |---|---|---|
-| `board_id` | string, PK | `PSB-` + 8 uppercase hex. **Deterministic derivation, not `Utilities.getUuid()`** — see §6.4 |
+| `board_id` | string, PK | `PSB-` + 8 uppercase hex. **Deterministic derivation, not `Utilities.getUuid()`** — §6.5 |
 | `board_name` | string | Required |
 | `board_type` | enum | `SERIES_PRICE_ARCHITECTURE` \| `FREEFORM` (P1: two values only) |
-| `owner` | string | **Client-asserted, same contract as `created_by`.** Not authenticated (§13) |
+| `owner` | string | **Client-asserted provenance, same contract as `created_by`. NOT access control** (§13, D-9) |
 | `status` | enum | `DRAFT` \| `ACTIVE` \| `ARCHIVED` |
+| `created_by` | string | Client-asserted (§13) |
 | `created_at` | datetime | |
+| `updated_by` | string | Client-asserted (§13) |
 | `updated_at` | datetime | |
 | `version` | integer | Monotonic; incremented on every accepted write. Optimistic-concurrency token (§15.3) |
 
 ### 6.2 `product_strategy_board_elements`
 
+**The canonical column list. Twenty columns, in this order.** P0 carried `author_type` inside
+`content_json`; **P0-R1 promotes it to a real column**, because a field the handler must enforce
+(§14: an AI write may never update a `HUMAN` element in place) cannot live inside an opaque JSON
+string the handler does not parse.
+
+| # | Column | Type | Notes |
+|---|---|---|---|
+| 1 | `element_id` | string, PK | `PSE-` + 8 uppercase hex, derived (§6.5) |
+| 2 | `board_id` | string, FK | → `product_strategy_boards.board_id` |
+| 3 | `element_type` | enum | §7.1 |
+| 4 | `position_x` | number | Board coordinates (grid units in P1) |
+| 5 | `position_y` | number | |
+| 6 | `width` | number | |
+| 7 | `height` | number | |
+| 8 | `z_index` | integer | |
+| 9 | `source_type` | enum | `NONE` \| `SKU` \| `REGIONAL_SKU` \| `SERIES` \| `PRICING` \| `CAMPAIGN_SKU_LINE` |
+| 10 | `source_identity` | string | The **official** identity, verbatim, in a documented shape (§7.2) |
+| 11 | `source_mode` | enum | `LIVE_REFERENCE` \| `FROZEN_SNAPSHOT` (§8) |
+| 12 | `snapshot_json` | JSON string | Populated **only** when `source_mode = FROZEN_SNAPSHOT`; carries `captured_at` |
+| 13 | `content_json` | JSON string | Human-authored content + per-type config (§7) |
+| 14 | `author_type` | enum | **`HUMAN` \| `AI`. A real column, NOT a `content_json` key.** P1 writes the literal `HUMAN` on every row |
+| 15 | `created_by` | string | Client-asserted (§13) |
+| 16 | `created_at` | datetime | |
+| 17 | `updated_by` | string | Client-asserted (§13) |
+| 18 | `updated_at` | datetime | |
+| 19 | `version` | integer | Per-element monotonic |
+| 20 | `deleted` | boolean | Soft delete (§12.1). No row is removed and no id is ever reused |
+
+**`author_type` is written, never defaulted.** The value `HUMAN` is stored explicitly on every P1 row.
+A blank `author_type` is **not** `HUMAN` — it is an unclassified row, and the handler must reject a
+write that omits it (`AUTHOR_TYPE_REQUIRED`). The reason is §14: the AI seam distinguishes AI content
+*by the presence of a value*, and a scheme where "blank means human" cannot tell an AI row written by
+an older build from a human row at all. **A blank is a third state, never a synonym for the default.**
+
+### 6.3 `product_strategy_board_revisions` — new in P0-R1 (**D-7**)
+
 | Column | Type | Notes |
 |---|---|---|
-| `element_id` | string, PK | `PSE-` + 8 uppercase hex, derived (§6.4) |
+| `revision_id` | string, PK | `PSR-` + 8 uppercase hex, derived (§6.5) |
 | `board_id` | string, FK | → `product_strategy_boards.board_id` |
-| `element_type` | enum | §7 |
-| `position_x`, `position_y` | number | Board coordinates (grid units in P1) |
-| `width`, `height` | number | |
-| `z_index` | integer | |
-| `source_type` | enum | `NONE` \| `SKU` \| `REGIONAL_SKU` \| `SERIES` \| `PRICING` \| `CAMPAIGN_SKU_LINE` |
-| `source_identity` | string | The **official** identity, verbatim, in a documented shape (§7.2) |
-| `source_mode` | enum | `LIVE_REFERENCE` \| `FROZEN_SNAPSHOT` (§8) |
-| `snapshot_json` | JSON string | Populated **only** when `source_mode = FROZEN_SNAPSHOT`; carries `captured_at` |
-| `content_json` | JSON string | Human-authored content + per-type config (§7) |
+| `board_version` | integer | The board `version` this revision captures — the join back to §6.1 |
+| `revision_type` | enum | `SAVE_CHECKPOINT` \| `FREEZE_SNAPSHOT` \| `PRE_RESTORE` \| `PRE_AI_WRITE` |
+| `snapshot_json` | JSON string | The board row + **all** its element rows at that moment |
 | `created_by` | string | Client-asserted (§13) |
-| `created_at`, `updated_at` | datetime | |
-| `version` | integer | Per-element monotonic |
+| `created_at` | datetime | |
+| `author_type` | enum | `HUMAN` \| `AI` — who caused the revision. P1 writes `HUMAN` explicitly |
+| `idempotency_key` | string | The key the command carried. **Stored**, so a retry is provably the same revision (§6.5) |
 
-### 6.3 What is deliberately NOT created
+**A revision is created on exactly four events, and on nothing else:**
+
+| Event | `revision_type` | Why it earns a row |
+|---|---|---|
+| The user presses **Save checkpoint** | `SAVE_CHECKPOINT` | An explicit human statement that this state is worth returning to |
+| An element is **frozen** (`LIVE_REFERENCE` → `FROZEN_SNAPSHOT`), or re-frozen | `FREEZE_SNAPSHOT` | The freeze *is* the decision evidence (§8.2); the board state around it is part of that evidence |
+| **Before** a restore is applied | `PRE_RESTORE` | A restore that cannot itself be undone is a delete with a friendly name |
+| **Before** any future AI write | `PRE_AI_WRITE` | §14 requires it. Reserved in P1; no AI writes anything |
+
+**Explicitly NOT revision events:** drag, resize, pan, zoom, selection, z-order change, panel toggle,
+filter change, or any autosave of geometry. A canvas produces hundreds of these per session; one row
+each would make the table larger than the board and the checkpoints impossible to find.
+
+**Deliberate P1 asymmetry.** P1 **writes** revisions and **lists** them (id, type, version, who, when).
+It does **not** ship diff or restore UI (§2, deferred). This is not a half-built feature — it is the
+one ordering that cannot be reversed later: a restore screen can be built at any time against history
+that exists, and cannot be built at all against history that was never written.
+
+### 6.4 What is deliberately NOT created
 
 - **No `board_links` table.** Connectors are deferred (§2), and when they arrive a `CONNECTOR`
   element with two ids in `content_json` costs one row and no new table.
-- **No `board_history` table in P1.** `version` + `updated_at` on both tables carries "which version
-  am I looking at". A full history table is only worth building once there is an actual restore or
-  diff requirement — and once AI writes to the board (§14), which is when it becomes mandatory.
-  **This is recorded as open decision D-7 (§19).**
-- **No AI table.** §14 is a seam, not a schema.
+- **No AI table.** §14 is a seam, not a schema. `PRE_AI_WRITE` is a reserved enum value, not a feature.
+- **No `board_permissions` / `board_shares` table.** There is no identity to key it on (§13, D-9).
+  Inventing one would produce a table that looks like access control and enforces nothing.
+- ~~No `board_history` table in P1~~ — **superseded by D-7.** P0 argued that `version` + `updated_at`
+  answers "which version am I looking at", which is true and is also not the question. The question a
+  strategy record has to answer is *"what did we decide, and what did the board look like when we
+  decided it"*, and `version` alone cannot answer it once the row has moved on. §6.3 ships in P1.
 
-### 6.4 Id derivation — and why it is not a UUID
+### 6.5 Id derivation, and the idempotency contract for all three tables
 
 `21_factory_inventory_handlers.gs` mints operational ids with
 `Utilities.getUuid().replace(/-/g,'').substring(0,8)`, and that is correct for a row that can only be
@@ -488,16 +572,35 @@ created once. But `71_api_v1_factory_stock_guard.gs:574` mints its audit id as
 the shipped precedent for **anything a retry can reach twice**.
 
 Board writes go through `km-data-access.js`, where a command **must** carry an idempotency key
-(`IDEMPOTENCY_KEY_REQUIRED`, `km-data-access.js:227`). A retried "create element" must therefore
-resolve to the **same** `element_id` or one gesture produces two elements. So:
+(`IDEMPOTENCY_KEY_REQUIRED`, `km-data-access.js:227` and `:305`). A retried write must therefore
+resolve to the **same** id or one gesture produces two rows. P0 specified this for `element_id` and
+left `board_id` half-stated; **P0-R1 states all three, plus what the handler does on replay:**
 
 ```
-element_id = 'PSE-' + fnv1a('PSE|' + board_id + '|' + idempotency_key).toUpperCase()
-board_id   = 'PSB-' + fnv1a('PSB|' + board_name + '|' + created_at + '|' + idempotency_key).toUpperCase()
+board_id    = 'PSB-' + fnv1a('PSB|' + board_name + '|' + idempotency_key).toUpperCase()
+element_id  = 'PSE-' + fnv1a('PSE|' + board_id   + '|' + idempotency_key).toUpperCase()
+revision_id = 'PSR-' + fnv1a('PSR|' + board_id   + '|' + revision_type + '|' + idempotency_key).toUpperCase()
 ```
 
 `fnv1a` returns `('00000000' + h.toString(16)).slice(-8)` — always 8 zero-padded hex characters — so
-the shape is byte-identical to the `FSMV-`/`FSOA-` family already in the database.
+the shape is byte-identical to the `FSMV-` / `FSOA-` family already in the database.
+
+**`created_at` is deliberately NOT part of the `board_id` key.** P0's draft included it, and that was a
+defect: the server clock differs between the original call and the retry, so a retried create would
+derive a *different* `board_id` and produce a second board — the exact failure the derivation exists to
+prevent. **A deterministic key may contain only values the client sends and resends unchanged.**
+
+**The replay contract, for each table:**
+
+| Situation | Handler behaviour |
+|---|---|
+| Derived id does not exist | Insert. Return `{ id, version: 1, applied: true, replayed: false }` |
+| Derived id exists, payload identical | **Write nothing.** Return `{ id, version: <current>, applied: false, replayed: true }` |
+| Derived id exists, payload differs | This is an **edit**, and it must carry `expected_version`. Version match → apply; mismatch → `BOARD_VERSION_CONFLICT`, write nothing (§15.3) |
+| `idempotency_key` absent | Refuse before deriving anything: `IDEMPOTENCY_KEY_REQUIRED`. Zero writes |
+
+`product_strategy_board_revisions.idempotency_key` is **stored on the row**, not merely consumed to
+derive the id, so a replay can be *proven* rather than inferred from an id collision.
 
 ---
 
@@ -510,15 +613,14 @@ the shape is byte-identical to the `FSMV-`/`FSOA-` family already in the databas
 | `TEXT_NOTE` | **Yes** | `NONE` | `{ text, title?, colour?, tags[] }` |
 | `SKU_CARD` | **Yes** | `SKU` | `{ shown_fields[], note? }` |
 | `REGIONAL_SKU_CARD` | **Yes** | `REGIONAL_SKU` | `{ shown_fields[], note? }` |
-| `SERIES_PRICE_BAND` | **Yes** | `SERIES` | `{ axis, currency_basis, members[], annotations[] }` (§9) |
-| `MATRIX` | **Yes** | `NONE` | `{ x_axis, y_axis, cells[] }` where a cell references an element_id |
-| `CHART` | No (P2) | `NONE` \| `SERIES` | `{ chart_type, metric, series[] }` — blocked by §9 gaps |
-| `DEAL_PLAN` | No (P2) | `CAMPAIGN_SKU_LINE` | blocked by the §10 boundary decision |
+| `SERIES_PRICE_BAND` | **Yes** | `SERIES` | `{ price_basis, currency_basis, gap_threshold, members[], annotations[] }` (§9) |
+| **`DEAL_PLAN`** | **Yes — `PROPOSAL_ONLY` (D-4)** | `NONE` \| `CAMPAIGN_SKU_LINE` | §7.4 — a fixed, closed field list, every price and date key prefixed `proposed_` |
+| `MATRIX` | **Yes** | `NONE` | `{ x_axis, y_axis, cells[] }` where a cell references an `element_id` |
+| `CHART` | No (P2) | `NONE` \| `SERIES` | `{ chart_type, metric, series[] }` — blocked by the §9.1 gaps |
 | `GROUP` | No (P2) | `NONE` | `{ member_element_ids[] }` |
 | `CONNECTOR` | No (P2) | `NONE` | `{ from_element_id, to_element_id, style }` |
 
-Also carried on every element, in `content_json`, for §14:
-`author_type` ∈ `HUMAN` \| `AI` (P1 writes `HUMAN` only, always explicitly — never by omission).
+`author_type` is **not** in this table any more — it is column 14 of the element row (§6.2).
 
 ### 7.2 `source_identity` shapes — the official identities, verbatim
 
@@ -534,6 +636,7 @@ source_type = SERIES             → "<series>"
 source_type = PRICING            → "<marketplace_sku_id>"
                                    (pricing_list has no company column — §4.4)
 source_type = CAMPAIGN_SKU_LINE  → "<campaign_sku_line_id>"
+source_type = NONE               → ""   (the empty string; never null, never absent)
 ```
 
 `REGIONAL_SKU` deliberately keeps the four-part scope key rather than `regional_detail_id`, because
@@ -541,9 +644,47 @@ the board resolves **two** tables at that grain — `sku_regional_details` *and*
 `marketplace_skus` (for status, §4.5) — and only the scope key addresses both.
 
 ### 7.3 Refusal contract per element
-Every element renders one of exactly four states, and they are never collapsed:
+Every element renders one of exactly four resolution states, and they are never collapsed:
 `RESOLVED` · `SOURCE_MISSING` · `SOURCE_INACTIVE` · `UNRESOLVABLE` (§15).
 
+### 7.4 `DEAL_PLAN` — the P1 element, and its closed field list (**D-4**)
+
+A `DEAL_PLAN` element stores **exactly** these keys in `content_json`, and the handler rejects any
+other key (`DEAL_PLAN_UNKNOWN_FIELD`). A closed list is what keeps the element a proposal: an open
+object drifts into a price store the first time somebody adds a key named `promo_price`.
+
+| Key | Type | Notes |
+|---|---|---|
+| `proposed_regular_price` | number \| null | A proposal. Never written to `pricing_list.regular_price` |
+| `proposed_deal_price` | number \| null | A proposal. Never written to `campaign_sku_lines.promo_price` |
+| `currency` | string \| null | As quoted. **No conversion** (D-3) |
+| `proposed_start_date` | date \| null | A proposal. Never written to `campaigns.start_date` |
+| `proposed_end_date` | date \| null | A proposal. Never written to `campaigns.end_date` |
+| `strategy_reason` | string | Free text |
+| `expected_effect` | string | Free text |
+| `cannibalization_risk` | string | Free text. The §9.3 arithmetic *flags* cannibalisation; this is the human's reading of it |
+| `note` | string | Free text |
+| `source_campaign_reference` | string \| null | **May be empty.** When set it is a `campaign_id` or a `campaign_sku_line_id`, and it is a **read** reference — a link to what exists, not a claim to have written it |
+
+**Every price and date key is prefixed `proposed_`, and that is a design device, not a naming style.**
+The four official columns are `campaign_sku_lines.promo_price`, `campaign_sku_lines.regular_price`,
+`campaigns.start_date` and `campaigns.end_date`. Because no key on this element shares a name with any
+of them, a copy-paste from proposal to writer cannot silently line up, and a grep for an official
+column name never lands inside board-owned content.
+
+**What a `DEAL_PLAN` may not do — the prohibition list, enforced structurally (§8.5, §15.4):**
+
+1. It may **not** write `campaigns` or `campaign_sku_lines`. The board handler has no such action.
+2. It may **not** write `pricing_list` (or `pricing_change_log`).
+3. It may **not** claim a Deal exists. The element renders a permanent, non-dismissible
+   **`PROPOSAL ONLY`** marker, and its resolved-campaign section is visually and textually separate
+   from its proposal section.
+4. It may **not** be the answer to "what is the deal price". `campaign_sku_lines.promo_price` is, and
+   when a `DEAL_PLAN` carries `source_campaign_reference`, the element shows the **official** price
+   read from that line *beside* the proposal, labelled as the official one — the two are never merged,
+   never averaged, and never drawn on one marker.
+5. Absence of an official price renders `SOURCE_MISSING`, **never** "no deal", and never the proposal
+   promoted into the official value's place (§10).
 ---
 
 ## §8 — Live vs snapshot lifecycle
@@ -582,7 +723,7 @@ shows. A frozen number without the column it came from cannot be re-checked late
 | Mode | On board open | On explicit "Refresh" |
 |---|---|---|
 | `LIVE_REFERENCE` | Re-reads; shows current values | Same as open |
-| `FROZEN_SNAPSHOT` | Shows the snapshot, **always**, with `captured_at` visible | Shows a **side-by-side diff** (snapshot vs live) and requires an explicit user action to re-freeze. Re-freezing **increments `snapshot_version`** and writes a new `captured_at`. |
+| `FROZEN_SNAPSHOT` | Shows the snapshot, **always**, with `captured_at` visible | Shows a **side-by-side diff** (snapshot vs live) and requires an explicit user action to re-freeze. Re-freezing **increments `snapshot_version`**, writes a new `captured_at`, and writes a `FREEZE_SNAPSHOT` revision (§8.6) |
 
 A silent re-freeze is prohibited: it would destroy the only copy of the decision evidence while
 appearing to be a refresh.
@@ -593,37 +734,88 @@ appearing to be a refresh.
 |---|---|---|---|
 | **Missing** — identity resolves to no row | no matching row | `SOURCE_MISSING`, identity shown, no value invented | Snapshot still renders, badged *"source no longer present"* |
 | **Inactive** — row exists, `marketplace_sku_status` ∈ `inactive`/`discontinued`, or `lifecycle` = `Closure` | vocabulary from `00_config.gs:9-12` | `SOURCE_INACTIVE` + current values | Snapshot renders + inactive badge |
-| **Unreadable** — the read failed | transport/ business error from `km-data-access` | `UNRESOLVABLE`, **never** rendered as empty or zero | Snapshot renders (this is exactly what it is for) |
+| **Unreadable** — the read itself failed | transport / envelope error | `UNRESOLVABLE`, and it is **not** shown as missing | Snapshot renders (it needs no read) |
 
-"I could not read it" is never displayed as "it is empty". A blank price cell and a failed price read
-are different facts with different remedies.
+The third row is the one that matters: **a failed read and an absent row are different facts.** An
+element that shows "no price" because a request timed out has told the operator something false.
 
 ### 8.5 The no-reverse-write boundary
-- The board's write actions accept `board_id` / `element_id` **only**. There is no code path from a
-  board write to a source table, because the handler has no such action to call.
+- The board's write actions accept `board_id` / `element_id` / `revision_id` **only**. There is no code
+  path from a board write to a source table, because the handler has no such action to call.
 - `snapshot_json` is write-once-per-freeze and is never read back into any source write.
+- A `DEAL_PLAN`'s `proposed_*` fields have no writer anywhere in the system (§7.4).
 - **Testable claim (§18):** the board handler's source contains no reference to `sku_details`,
   `marketplace_skus`, `sku_regional_details`, `pricing_list`, `pricing_change_log`, `campaigns` or
-  `campaign_sku_lines` as a **write** target — asserted on the source, not promised in prose.
+  `campaign_sku_lines` as a **write** target — asserted on the source text, not promised in prose.
+
+### 8.6 Revision events — how the lifecycle and the history table meet (**D-7**)
+
+The freeze lifecycle and the revision table are one mechanism, not two. Every freeze is a decision, and
+a decision that leaves no board-level record is only half-recorded.
+
+| Lifecycle action | Element write | Revision write | Order |
+|---|---|---|---|
+| Create / move / resize / edit an element | yes | **no** | — |
+| Save checkpoint | no (geometry already saved) | `SAVE_CHECKPOINT` | — |
+| Freeze `LIVE_REFERENCE` → `FROZEN_SNAPSHOT` | yes (`snapshot_json`) | `FREEZE_SNAPSHOT` | **revision first, then the element write** |
+| Re-freeze (`snapshot_version` + 1) | yes | `FREEZE_SNAPSHOT` | **revision first** |
+| Restore (P2 UI; the data path exists in P1) | yes | `PRE_RESTORE` | **revision first** |
+| Future AI write (§14) | yes | `PRE_AI_WRITE` | **revision first** |
+
+**The revision is always written before the change it precedes.** Writing it afterwards records the
+state that already includes the change, which is the one state a restore does not need.
+
+**If the revision write fails, the change does not happen.** The pair is refused as a unit
+(`REVISION_WRITE_FAILED`, zero writes) rather than applying the change and losing its checkpoint — a
+freeze whose revision is missing is exactly the case the table exists to prevent.
 
 ---
 
 ## §9 — Price-band calculation and display rules
 
-### 9.1 The available price fields, and the gaps
+### 9.1 The available price fields, the gaps, and the three decisions that closed them
 
 | Requested concept | Field that exists | Where | Verdict |
 |---|---|---|---|
-| 正常售價 / normal selling price | `pricing_list.regular_price` | `04_…:152` | **OK** |
-| MSRP / List price | `pricing_list.msrp` (site), `sku_details.msrp` (+`msrp_unit`, master base) | `04_…:152`, `sku-details.js:2369` | **OK — two levels, must be labelled** |
-| Current selling price | — | — | **GAP.** `sku_details.selling_price` is a master **base** input the importer feeds into `base_regular_price`, not a live site price. `pricing_list` has no "current" column distinct from `regular_price`. |
-| Planned deal price | `campaign_sku_lines.promo_price` | `20_…:41` | **OK, but campaign-scoped only** (§10) |
-| Floor / minimum price | `pricing_list.minimum_price`; `sku_details.minimum_price` (+`minimum_price_unit`) | `04_…:152` | **OK — two levels** |
-| Margin | — | — | **GAP.** No `margin`, `margin_percent` or `gross_margin` column exists anywhere in the Apps Script tree (measured). Cost data lives in the (planned) Cost & Pricing layer, `SYSTEM_ROADMAP.md` §3.5-4. |
+| **Band basis / normal selling price** | **`pricing_list.regular_price`** | `04_…:152` | **DECIDED — D-2.** The one and only band basis. Absent ⇒ `SOURCE_MISSING`, and **no fallback** |
+| MSRP / List price | `pricing_list.msrp` (site), `sku_details.msrp` (+ `msrp_unit`, master base) | `04_…:152`, `sku-details.js:2369` | **OK — two levels, each labelled with its own** |
+| **Current selling price** | — | — | **GAP — NOT DISPLAYED IN P1 (D-6).** No column carries it, and none of `regular_price`, `selling_price` or `promo_price` may stand in for it |
+| Planned deal price (official) | `campaign_sku_lines.promo_price` | `20_…:41` | **OK, campaign-scoped only** (§10) |
+| Planned deal price (proposal) | **board-owned** `proposed_deal_price` | §7.4 | **OK — and it is never the official one (D-4)** |
+| Floor / minimum price | `pricing_list.minimum_price`; `sku_details.minimum_price` (+ `minimum_price_unit`) | `04_…:152` | **OK — two levels** |
+| **Margin** | — | — | **GAP — OUT OF SCOPE IN P1 (D-8).** No `margin`, `margin_percent` or `gross_margin` column exists anywhere in the Apps Script tree (measured). **No margin may be estimated from a selling price** |
 | Currency | `pricing_list.currency` (site), `pricing_list.base_currency`, `campaign_sku_lines.price_units`, and the master `*_unit` trio | `04_…:152`, `20_…:42` | **OK — four different currency carriers, see 9.4** |
 | Effective date | — | — | **GAP — AND IT IS DELIBERATE.** See 9.2 |
 | Data source | `pricing_list.price_source` (`auto_fx` / `manual_override` / `import`) + `price_status` | `PRICING_DATABASE_MAPPING.md` §4 | **OK** |
 | `captured_at` | — | — | **GAP in the source; board-owned** (§8.2) |
+
+**D-2 — the band basis, and the fallback that is now prohibited.**
+`SERIES_PRICE_BAND.price_basis` has exactly one P1 value: **`PRICING_LIST_REGULAR_PRICE`**.
+When a member has no `pricing_list.regular_price`, the member renders `SOURCE_MISSING` and is **plotted
+nowhere**. It is **not** back-filled from `sku_details.selling_price`.
+
+The reason is a category difference, not a preference. `sku_details.selling_price` is a **master base
+input**: the importer reads it into `pricing_list.base_regular_price` and derives the site price from it
+with `fx_rate` (`04_…:54-56`, `:344`). So `selling_price` is upstream of the number the band is about.
+Substituting it would draw a point that looks like a site price, is not one, and is indistinguishable
+on the chart from a real one. **A missing point is a fact; a substituted point is a fabrication that
+renders identically to a measurement.**
+
+**D-6 — "current selling price" is not displayed, and no field is promoted into its place.**
+The concept is real and the column is not. The three candidates each mean something else:
+`pricing_list.regular_price` is the *set* site price, `sku_details.selling_price` is the master base
+input, and `campaign_sku_lines.promo_price` is a *campaign* price with a window. Labelling any of them
+"current selling price" would make the board assert something no table says. P1 therefore does not show
+the field at all — not blank, not zero, not a substitute. Where it is settled, it lands as a new
+labelled field; that source question remains open (§19, Q-1).
+
+**D-8 — margin is out of scope, and may not be estimated.**
+There is no cost column anywhere in this layer, so any margin the board displayed would be derived from
+prices alone — i.e. a made-up cost. Margin waits for the planned Cost & Pricing DB
+(`SYSTEM_ROADMAP.md` §3.5-4). **Prohibited in P1:** any percentage, ratio or "margin-like" figure
+computed from `regular_price`, `msrp`, `minimum_price`, `promo_price` or a `proposed_*` price. A
+discount percentage between two *prices* is permitted and must be labelled *discount*, never *margin* —
+they differ by exactly the cost that does not exist.
 
 ### 9.2 The effective-date gap is an architectural decision, not an omission
 
@@ -638,127 +830,182 @@ warehouse-config** — never pricing.
 
 **Therefore this design does not propose adding an effective date to `pricing_list`, and the board must
 not synthesise one.** Time-bounded price information in P1 comes from the campaign window
-(`campaigns.start_date` / `end_date`), which is the repo's own answer to the question.
+(`campaigns.start_date` / `end_date`), which is the repo's own answer to the question. A `DEAL_PLAN`'s
+`proposed_start_date` / `proposed_end_date` are a *proposal's* window and are never presented as an
+effective date of any price on record (§7.4).
 
 ### 9.3 Price-band visual — what P1 renders
 
-1. **Horizontal price axis per Series.** Domain from the members' own values; no fixed scale.
-2. **One point (or a low–high range) per SKU** at the chosen basis, carrying: `sku`,
-   `product_name`, and — for a regional card — `company|country|marketplace`.
-3. **Normal vs Deal are visually distinct**: `regular_price` as the primary marker,
-   `campaign_sku_lines.promo_price` as a secondary marker with the campaign window in the tooltip.
-   They are never averaged and never drawn on the same marker.
+1. **Horizontal price axis per Series, per currency.** Domain from the members' own values; no fixed
+   scale. One axis serves exactly one currency (9.4).
+2. **One point (or a low–high range) per SKU** at `price_basis = PRICING_LIST_REGULAR_PRICE` (D-2),
+   carrying `sku`, `product_name`, and — for a regional card — `company|country|marketplace`.
+3. **Normal vs Deal are visually distinct.** `regular_price` is the primary marker;
+   `campaign_sku_lines.promo_price` is a secondary marker with the campaign window in the tooltip; a
+   board `proposed_deal_price` is a **third, explicitly provisional** marker (dashed, labelled
+   `PROPOSAL`). The three are never averaged and never drawn on one marker.
 4. **Gap and overlap marking, defined arithmetically** so the picture is checkable:
    - sort members ascending by basis price;
    - **overlap** = two members whose `[promo_price, regular_price]` intervals intersect;
-   - **gap** = adjacent members whose price distance exceeds a **user-set threshold** on the element.
-     There is no repo-derived "correct" band width, so the threshold is an input, is stored in
-     `content_json`, and is displayed next to the finding. A gap marking whose threshold is invisible
-     is an opinion presented as a measurement.
-   - **Cannibalisation flag** = member A's `promo_price` ≤ member B's `regular_price` where
-     B sits below A in the normal-price order. Flagged, counted, never auto-resolved.
+   - **gap** = adjacent members whose price distance exceeds a **user-set threshold** stored in
+     `content_json.gap_threshold`. There is no repo-derived "correct" band width, so the threshold is
+     an input and is **displayed next to every finding it produced**. A gap marking whose threshold is
+     invisible is an opinion presented as a measurement.
+   - **Cannibalisation flag** = member A's deal price ≤ member B's `regular_price` where B sits below A
+     in the normal-price order. Flagged, counted, never auto-resolved. **A flag computed from a
+     `proposed_deal_price` is labelled as proposal-driven**, so a warning caused by an idea is never
+     read as a warning caused by a live campaign.
+   - **EVERY PRICE COMPARISON IS PERFORMED IN INTEGER CENTS, never on binary floats.** Not a style
+     preference — a correctness rule, and the §22 prototype demonstrated why before any of this was
+     built. `32.99 - 24.99` evaluates to `8.000000000000004` in IEEE-754, so a step **exactly equal**
+     to a threshold of `8.00` satisfies `distance > threshold` and is reported as a gap; the finding
+     then renders through two decimals as *"gap 8.00 exceeds threshold 8.00"* — a measurement that
+     refutes itself on screen, and the one kind of error a checkable picture must not contain. The
+     rule applies to the gap test, the overlap-interval test and the cannibalisation test alike, and
+     it is an acceptance criterion (§18, B5).
 5. **Entry / core / premium** are **positions in the sorted list**, computed and labelled as such
    (lowest / median band / highest), **not** read from any column — no tier column exists (§3.5).
    A human can override the label per member; the override is board-owned content.
+6. **Members that resolve to `SOURCE_MISSING` are listed, not plotted**, with the reason, immediately
+   under the axis. A Series where four of nine SKUs have no `regular_price` must not look like a
+   five-SKU Series.
 
-### 9.4 Currency and cross-country comparison — the refusal
+### 9.4 Currency — P1 splits, it does not convert (**D-3**)
 
 Four different currency carriers exist (9.1). They are not interchangeable:
 `pricing_list.currency` is the site currency, `base_currency` is the master basis,
 `campaign_sku_lines.price_units` is *"a display/audit currency snapshot only — NOT … an FX rate"*
 (`20_…:38`), and the master trio (`minimum_price_unit`, `msrp_unit`, `selling_unit`) is a third level.
 
-**Rules:**
-- A `SERIES_PRICE_BAND` element carries an explicit **`currency_basis`**. P1 supports exactly one
-  value: `AS_QUOTED_SINGLE_CURRENCY`.
-- If the members resolve to **more than one** currency, the element renders
-  `MIXED_CURRENCY_COMPARISON_REFUSED`, lists the currencies found and the members in each, and draws
-  **no shared axis**. It offers to split into one band per currency.
-- `pricing_list.fx_rate` / `fx_rate_date` exist and are **displayed** when present, but **P0 does not
-  decide any conversion policy or base currency** and P1 performs **no** conversion. Cross-country
-  comparison requires an operator decision — recorded as **D-3 (§19)**.
+**The P1 rule, decided:**
+
+- `SERIES_PRICE_BAND.currency_basis` has exactly one permitted value: **`AS_QUOTED_SINGLE_CURRENCY`**.
+- If the members resolve to **more than one** currency, the element **splits into one band track per
+  currency**, each with **its own axis and its own domain**, ordered by currency code. Every track is
+  labelled with its currency. **No shared axis is drawn under any circumstance.**
+- The element additionally renders **`MIXED_CURRENCY_COMPARISON_REFUSED`** — as a visible, permanent
+  statement on the element, alongside the split tracks. It is not an error state and does not replace
+  the tracks: the split is what the operator gets, and the refusal is why they are not one picture.
+- **No conversion is performed.** `pricing_list.fx_rate` and `fx_rate_date` exist and are **displayed
+  when present**, as source facts on the member. They are **not** applied.
+- Entry / core / premium positions, gaps, overlaps and cannibalisation flags are computed
+  **within a single currency track only**, never across tracks. A cross-track comparison is not a
+  wrong number, it is a meaningless one.
+- **P0 decided no FX policy and P1 implements none.** A base-currency view is a later decision, and
+  the only remaining question — *which* FX source would be authoritative if one is ever wanted —
+  is recorded at §19 Q-2.
 
 ---
 
 ## §10 — Deal planning boundaries
 
-- **The only authoritative Deal price is `campaign_sku_lines.promo_price`, inside a `campaigns` row.**
-  A Deal price therefore always has a scope (`company|country|marketplace`), a window
-  (`start_date`/`end_date`) and a campaign identity.
-- **The board reads it. The board does not write it.** No board element writes `promo_price`,
-  `discount_percent`, `regular_price` or `price_units` into `campaign_sku_lines`.
-- A board-authored Deal idea is a **proposal** in `content_json` with no path to the campaign tables.
-  It must be visually distinguishable from a resolved `campaign_sku_lines` row, and the element
-  states which it is.
-- **`DEAL_PLAN` is deferred (P2)** for a concrete reason: a Deal plan element that is *not* bound to a
-  `campaign_id` becomes a second promo-price store the moment someone treats it as one, and whether
-  the board may create campaign lines is a product decision, not an implementation detail
-  — **D-4 (§19)**.
-- **Note for the operator:** `campaign_sku_lines.promo_price` is currently stored and has **no read
-  surface in the UI** (§3.6 — `campaign-risk.js` reads the tables but never these four columns). The
-  board's price band would be the **first** place Deal price becomes visible. That is a benefit and
-  also a risk: the first reader of a column often discovers that the column is not populated the way
-  everyone assumed. P1 must therefore render `promo_price` absence as `SOURCE_MISSING`, not as "no
-  deal".
+**`DEAL_PLAN` is in the P1 MVP, as `PROPOSAL_ONLY` (D-4).** P0 deferred it to P2 for a real reason —
+an unbound Deal element becomes a second promo-price store the moment somebody treats it as one — and
+that reason is answered by *how the element is defined* (§7.4) rather than by leaving it out. Deal
+layout is half of the first-priority use case; a price-band board that cannot record a proposed deal
+cannot do the job it exists for.
 
+- **The only authoritative Deal price is `campaign_sku_lines.promo_price`, inside a `campaigns` row.**
+  An official Deal price always has a scope (`company|country|marketplace`), a window
+  (`start_date`/`end_date`) and a campaign identity.
+- **The board reads it. The board never writes it.** No board element and no board action writes
+  `promo_price`, `discount_percent`, `regular_price` or `price_units` into `campaign_sku_lines`, nor any
+  column of `campaigns`, nor any column of `pricing_list`. The handler exposes no action that could.
+- **A `DEAL_PLAN` is a proposal, and it says so permanently.** Its keys are all `proposed_*` or free
+  text (§7.4); it carries a non-dismissible `PROPOSAL ONLY` marker; and it never claims a Deal has been
+  created, scheduled, submitted or approved.
+- **Where a proposal sits next to an official line**, the two are separate sections of the element with
+  separate labels and separate markers on the band (§9.3.3). They are never merged into one number.
+- **Promotion is out of scope, by design.** Turning a proposal into a real `campaign_sku_lines` row is a
+  separate, explicitly authorized flow that this design does not create and P1 does not contain. There
+  is no button, no action name, and no reserved router branch for it.
+- **Note for the operator, unchanged from P0 and now more relevant:** `campaign_sku_lines.promo_price`
+  is currently stored and has **no read surface in the UI** (§3.6 — `campaign-risk.js` reads both
+  campaign tables but never these four columns). The board's price band would be the **first** place
+  the Deal price becomes visible. That is a benefit and also a risk: the first reader of a column often
+  discovers the column is not populated the way everyone assumed. So P1 renders `promo_price` absence as
+  **`SOURCE_MISSING`, never as "no deal"** — and, with `DEAL_PLAN` now in P1, never as the proposal
+  quietly filling the official value's place.
 ---
 
 ## §11 — UI wireframe description
 
-### 11.1 Navigation placement
+### 11.1 Navigation placement — **DECIDED (D-1)**
 
-**Recommendation: a new top-level sidebar group, `Product Strategy`, with one child,
-`Product Strategy Board`.**
+**A new top-level sidebar group, `Product Strategy`, with one child, `Product Strategy Board`.**
 
-Reasoning from the existing IA:
-- **Not** under *Pricing Center* — that group is logistics **cost** (Carrier / Container / Warehouse
-  Rate Cards) despite its name (§3.6). Putting a retail price-band board there conflates two axes.
-- **Not** under *Training Center*, where the current canvas sits (§3.11) — this board is an
-  operational planning surface, not a teaching aid.
-- *SKU Management* is the closest existing fit and is the fallback, but the board spans SKU **+**
-  Pricing **+** Campaign, so it is not a SKU sub-page.
+**It is explicitly NOT placed under *Pricing Center*.** That group is labelled *"Pricing Center"* at
+`index.html:189` while keeping the internal routing key `carrier`, and its children are *Carrier Rate
+Card* (live), *Container Rate Card* (Soon) and *Warehouse Pricing* (Soon) — i.e. the group is
+**logistics cost**, not retail price (§3.6). A retail price-band board placed there would put two
+different meanings of the word "pricing" in one menu, and the one that is already there is the one
+that does not match the name.
 
-Placement is **D-1 (§19)**. Until the page exists, the repo's own convention for a designed-but-unbuilt
-page applies: `menu-item menu-item--disabled` + `<span class="stage-badge">Soon</span>`
-(`index.html:181`).
+Also rejected: *Training Center*, where the existing Supply Chain Canvas sits (`index.html:221`) — this
+board is an operational planning surface, not a teaching aid; and *SKU Management*, which is the
+closest existing fit but is a grain too narrow, since the board spans SKU **+** Pricing **+** Campaign.
+
+**Until the page exists** the repo's own convention for a designed-but-unbuilt page applies:
+`menu-item menu-item--disabled` + `<span class="stage-badge">Soon</span>` (`index.html:183-185`,
+`:198-204`). **And per D-9 it stays that way through B1–B6**: the nav entry is only enabled by the
+separate authorization/security gate (§13), not by the batch that finishes the UI.
 
 ### 11.2 Layout
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────────────┐
-│ TOP BAR                                                                              │
-│ [Board ▾ New] │ Series ▾ │ Country ▾ │ Marketplace ▾ │ Company ▾ │ [Save] [History ▾]│
-│                                             board v12 · saved 14:22 · LIVE/SNAPSHOT  │
-├────────────┬──────────────────────────────────────────────────┬──────────────────────┤
-│ TOOLBAR    │  BOARD (fixed grid, pan / zoom / drag / resize)  │ PROPERTIES           │
-│            │                                                  │                      │
-│ ▭ Text     │   ┌──────────────┐   ┌──────────────────────┐    │ Element: SKU_CARD    │
-│ ▣ SKU      │   │ TEXT_NOTE    │   │ SKU_CARD  CO1100-R   │    │ ─────────────────    │
-│ ▤ Regional │   │ positioning… │   │ Series: …            │    │ Source               │
-│ ⎯ Price    │   │ risk…        │   │ regular 39.99 USD    │    │  type  SKU           │
-│   Band     │   └──────────────┘   │ msrp    49.99 USD    │    │  id    CO1100-R      │
-│ ▦ Matrix   │                      │ min     29.99 USD    │    │  mode  ◉ Live        │
-│ ▧ Chart ⏳ │   ┌───────────────────┴──────────────────────┐    │        ○ Snapshot    │
-│ ◆ Deal  ⏳ │   │ SERIES_PRICE_BAND — "Can Opener" (USD)   │    │  captured_at  —      │
-│            │   │ 25 ──●──────●───◇─────────●──────── 60   │    │ ─────────────────    │
-│            │   │      ▲gap 12.0   ▲overlap  ▲cannibal.    │    │ Notes                │
-│            │   │  ● regular  ◇ promo   threshold 8.00     │    │  [            ]      │
-│            │   └──────────────────────────────────────────┘    │ ─────────────────    │
-│            │                                                  │ Position / Size      │
-│            │  [− 100% +] [reset]                              │ z-index              │
-└────────────┴──────────────────────────────────────────────────┴──────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────────────────┐
+│ TOP BAR                                                                               │
+│ [Board ▾ New] │ Series ▾ │ Company ▾ │ Country ▾ │ Marketplace ▾ │ [Save ✓] [History ▾]│
+│                          board v12 · checkpoint 14:22 · 4 revisions · owner: vic (prov.)│
+├────────────┬───────────────────────────────────────────────────┬──────────────────────┤
+│ TOOLBAR    │  BOARD (fixed grid, pan / zoom / drag / resize)   │ PROPERTIES           │
+│            │                                                   │                      │
+│ ▭ Text     │   ┌──────────────┐   ┌──────────────────────┐     │ Element: SKU_CARD    │
+│ ▣ SKU      │   │ TEXT_NOTE    │   │ SKU_CARD  CO1100-R   │     │ ─────────────────    │
+│ ▤ Regional │   │ positioning… │   │ Series: Can Opener   │     │ Source               │
+│ ⎯ Price    │   │ risk…        │   │ regular 39.99 USD    │     │  type  SKU           │
+│   Band     │   └──────────────┘   │ msrp    49.99 USD    │     │  id    CO1100-R      │
+│ ▦ Matrix   │                      │ min     29.99 USD    │     │  mode  ◉ Live        │
+│ ◆ Deal     │   ┌───────────────────┴──────────────────────┐     │        ○ Snapshot    │
+│   Plan     │   │ SERIES_PRICE_BAND — "Can Opener"         │     │  captured_at  —      │
+│            │   │ ── USD ─────────────────────────────────  │     │ ─────────────────    │
+│ ▧ Chart ⏳ │   │ 25 ──●──────●───◇────┈◇┈────●──────── 60 │     │ Notes                │
+│ ⬚ Group ⏳ │   │      ▲gap 12.0  ▲overlap ▲cannibal(prop) │     │  [            ]      │
+│ ↗ Conn. ⏳ │   │ ── EUR ─────────────────────────────────  │     │ ─────────────────    │
+│            │   │ 22 ────●────────●──────────────────── 48 │     │ Position / Size      │
+│            │   │ ⚠ MIXED_CURRENCY_COMPARISON_REFUSED      │     │ z-index              │
+│            │   │ ● regular ◇ promo ┈◇┈ proposal · thr 8.00 │     │ ─────────────────    │
+│            │   │ not plotted: CO1140-R SOURCE_MISSING      │     │ author_type  HUMAN   │
+│            │   └──────────────────────────────────────────┘     │ version      3       │
+│            │                                                    │                      │
+│            │  [− 100% +] [reset]                                │                      │
+└────────────┴───────────────────────────────────────────────────┴──────────────────────┘
 ```
+
+Five things in that sketch are decisions rather than decoration:
+
+1. **`Deal Plan` is an enabled tool** (D-4); `Chart`, `Group` and `Connector` carry the `⏳` deferred
+   marker instead.
+2. **The band has one axis per currency** (D-3), stacked, each labelled, with
+   `MIXED_CURRENCY_COMPARISON_REFUSED` stated on the element — the split *and* the reason.
+3. **`not plotted:` is part of the band**, not a tooltip (§9.3.6, D-2). Members with no
+   `regular_price` are named with their reason and are absent from the axis.
+4. **The top bar shows the revision count and last checkpoint** (D-7), because a history that is
+   written and never surfaced is indistinguishable from one that is not written.
+5. **`owner: vic (prov.)`** — the owner is rendered with an explicit provenance qualifier and no lock
+   icon, no "Private", no "Secure" (D-9, §13).
 
 ### 11.3 Behaviour, and what it reuses
 
 | Region | Behaviour | Reuses |
 |---|---|---|
-| Board | pan, zoom, drag, resize, multi-select, group | `CanvasController` from `supplychain.js` (§3.7) — engine reused, **`localStorage` persistence replaced** |
-| Top bar filters | Series / Country / Marketplace / Company | `KM.ui` multi-select filter; `KM.scopeModal` for scope picking |
-| Properties panel | element props, source, live/snapshot toggle, notes | `.kmf-panel--right` |
-| Cards | module card visuals | `.km-category-card` |
-| Charts (P2) | — | Chart.js, already loaded |
-| Page shell | mount / unmount with epoch guards | `KM.lifecycle.register` |
+| Board | pan, zoom, drag, resize, multi-select, group | **Canvas Core — an extraction, not a copy. See §11.5** |
+| Top bar filters | Series / Company / Country / Marketplace | `KM.ui` multi-select filter (`multi-select-filter.js:32`); `KM.scopeModal` (`scope-select-modal.js:21`) for scope picking |
+| Properties panel | element props, source, live/snapshot toggle, notes | `.kmf-panel--right` (`components.css`) |
+| Cards | module card visuals | `.km-category-card` (`components.css`) |
+| History list | revision list (id, type, version, who, when) | plain list; no diff/restore UI in P1 (§6.3) |
+| Charts (P2) | — | Chart.js, already loaded (`index.html:34`) |
+| Page shell | mount / unmount with epoch guards | `KM.lifecycle.register` (`lifecycle.js:37`) |
 
 **Explicitly not added:** React, Konva, Fabric, React Flow, or any other library. The repo proves a
 DOM board works (§3.8); nothing in the requirement exceeds what it does today.
@@ -766,72 +1013,262 @@ DOM board works (§3.8); nothing in the requirement exceeds what it does today.
 ### 11.4 Initial template — "SKU Series Price Architecture Board"
 On first creation with `board_type = SERIES_PRICE_ARCHITECTURE`, the board is seeded with:
 one `TEXT_NOTE` ("Objective / constraints"), one `SERIES_PRICE_BAND` bound to the Series chosen in the
-top bar, and one `MATRIX` pre-labelled `Price × Product Tier`. Nothing is auto-populated with values
-the user did not ask for; the band resolves live and shows its own refusals.
+top bar, one `MATRIX` pre-labelled `Price × Product Tier`, and one **empty** `DEAL_PLAN` (D-4).
+Nothing is auto-populated with values the user did not ask for; the band resolves live and shows its
+own refusals. **The seeding writes one `SAVE_CHECKPOINT` revision**, so a board has a restorable
+initial state from the moment it exists.
 
+### 11.5 Canvas Core reuse contract — **new in P0-R1**
+
+**The rule: `supplychain.js` is not copied.** Not the file, not the class, not a renamed fork. What P1
+reuses is an extracted **Canvas Core** with two adapters; what stays behind is the Supply Chain
+Canvas's own data model, its own storage, and its own behaviour.
+
+#### 11.5.1 Why a copy is refused — measured, not assumed
+
+The existing controller is good engineering that is nonetheless not copyable, and the reasons are
+facts in the file:
+
+| Measured fact | Where | Why it forbids a copy |
+|---|---|---|
+| `CanvasController` is a **single module-level object literal singleton**, with all mutable state (`panX`, `panY`, `zoom`, `items`, `arrows`, `selectedItem`, `nextId`, `_initialized`, …) as its own properties | `supplychain.js:2-26` | There is one instance, ever. A copy gives two singletons that both answer to `window`-reachable globals, and no path to two boards on one page |
+| **Two duplicate object keys.** `onCanvasClick` is defined at `:179` **and** `:587`; `showColorPicker` at `:883` **and** `:1515` — all four inside the one object literal that closes at `:1544` | `supplychain.js:179, 587, 883, 1515, 1544` | In an object literal the **later key silently wins**. `showColorPicker`'s two definitions have *incompatible signatures* — `(itemId, colorType)` vs `(e, item)` — and the only caller, `:538`, passes `(e, item)`, so `:883` is **dead code that appears to exist**. Copying the file copies the defect and its plausible-looking dead branch |
+| Item creation is **shape-specific and hard-coded**: `addShape`, `addText`, `addNote`, `addHighlight` | `:313, 355, 376, 395` | The board's element types are `TEXT_NOTE` / `SKU_CARD` / `REGIONAL_SKU_CARD` / `SERIES_PRICE_BAND` / `DEAL_PLAN` / `MATRIX`. None of them is a shape, and a fork would grow six more `addX` methods |
+| Persistence is **two lines, inline, with a literal key** | `:1526`, `:1535` (`localStorage`, key `'supplychain-canvas'`) | The board needs server persistence with idempotency, versioning and revisions (§6, §12). This is the one part that must not be reused at all |
+| A **prototype-time rebind** patches a method after definition | `:1585` (`CanvasController.showColorPicker = CanvasController.showColorPicker.bind(CanvasController)`) | State and behaviour are bound to the singleton, so extraction has to break that binding deliberately rather than inherit it |
+
+**Two duplicate keys in 1544 lines is the whole argument.** They are invisible in review and harmless
+today only because one caller happens to match the surviving definition. A fork doubles that surface
+and guarantees the two copies diverge — because the second copy is the one that gets the new features.
+
+#### 11.5.2 The seven separated concerns
+
+Canvas Core is **extractable or adapter-based** — the extraction may be done by moving code into a new
+`assets/js/utils/canvas-core.js` **or** by leaving `supplychain.js` in place behind an adapter that
+implements the same interface. The contract is the boundary, not the file layout.
+
+| # | Concern | What it owns | What it must not know |
+|---|---|---|---|
+| 1 | **Viewport** | `panX`, `panY`, `zoom`, wheel/button zoom, reset, the transform, the zoom label | What an element *is* |
+| 2 | **Element geometry** | `position_x/y`, `width`, `height`, `z_index`; grid snapping | Element type, source, or content |
+| 3 | **Selection** | current selection, multi-select, selection change events | What the selected thing renders as |
+| 4 | **Drag / resize** | pointer capture, 8-way handles, live geometry, commit-on-release | Whether the commit goes to a server or nowhere |
+| 5 | **Connectors** | anchors, edge-point maths, arrow rendering | Board semantics (deferred to P2 for the board; **kept working for Supply Chain**) |
+| 6 | **Serialization adapter** | model ⇄ core-neutral geometry (`{ id, x, y, w, h, z }` + an opaque payload) | The shape of either consumer's model |
+| 7 | **Persistence adapter** | `load()`, `save(changes)`, conflict surfacing | Everything above it |
+
+Concerns 1–5 are the reusable engine. **6 and 7 are where the two consumers differ, and they are the
+only place they differ.**
+
+#### 11.5.3 The two adapters
+
+```
+                       ┌───────────────────────────────┐
+                       │        CANVAS CORE            │
+                       │ viewport · geometry · select   │
+                       │ drag/resize · connectors       │
+                       └───────┬───────────────┬───────┘
+                    serialization         persistence
+                       ┌───────┴───────┐   ┌───┴───────────────┐
+     Supply Chain ───▶ │ items/arrows  │   │ localStorage      │
+        Canvas         │ nextId/       │   │ 'supplychain-     │
+                       │ nextArrowId   │   │  canvas'          │
+                       └───────────────┘   └───────────────────┘
+                       ┌───────────────┐   ┌───────────────────┐
+   Product Strategy ─▶ │ elements[]    │   │ SERVER            │
+        Board          │ (§6.2, 20 col)│   │ productStrategy-  │
+                       │ + revisions   │   │ Board.upsert*     │
+                       └───────────────┘   └───────────────────┘
+```
+
+| | Supply Chain Canvas | Product Strategy Board |
+|---|---|---|
+| Model | `items[]` + `arrows[]` + `nextId` / `nextArrowId` | `elements[]` per §6.2 (20 columns) |
+| Ids | client counters | derived `PSE-` ids (§6.5) |
+| Persistence | `localStorage`, key **`'supplychain-canvas'`** — **unchanged** | **server**, via §12.1 actions |
+| Storage key | keeps its own; **no key is shared** | **holds no `localStorage` key for board data at all** |
+| History | none | `product_strategy_board_revisions` (§6.3) |
+| Connectors | in use today | P2 |
+
+#### 11.5.4 The non-regression contract
+
+1. **The Supply Chain Canvas's observable behaviour does not change.** Same key, same model, same
+   arrows, same colour and text tooling, same `KM.lifecycle` mount/unmount and `_initialized`
+   idempotency, same rendered DOM.
+2. **`localStorage` is never shared.** The board stores **no** board data in `localStorage` under any
+   key — its record is the server (§3.7: `localStorage` is per-browser, per-device, invisible to others
+   and lost with site data, which is the opposite of a durable strategy record). Per-viewer UI
+   conveniences (last board opened, panel width) may use a **board-namespaced** key and must never hold
+   element data. **`'supplychain-canvas'` is read and written by the Supply Chain Canvas only.**
+3. **The extraction is behaviour-preserving and separately proven.** The batch that extracts Canvas
+   Core (B2a) changes the Supply Chain Canvas's *structure* and nothing else, and it ships with tests
+   asserting the storage key, the serialized shape and the mount/unmount contract are unchanged.
+4. **The two duplicate keys are resolved during extraction, not carried through it** — the dead
+   `showColorPicker(itemId, colorType)` at `:883` and the shadowed `onCanvasClick` at `:179` are
+   settled explicitly, with the surviving behaviour named, because an extraction that preserves a
+   silent shadow has preserved the wrong thing.
+5. **No new dependency.** The extraction is a move plus an interface; it adds no library.
+
+#### 11.5.5 What P0-R1 does about it: nothing but this contract
+
+**No production code is extracted, moved, refactored or touched in this round.** `supplychain.js` and
+`supply-chain-canvas.css` are byte-identical to `e9fcd27` on this branch (§21). The prototype in §22
+demonstrates the *information architecture* with its own throwaway code and does not import, fork or
+adapt the shipped canvas.
 ---
 
 ## §12 — API proposal
 
-### 12.1 New actions (three)
+### 12.1 New board actions (four)
 
 | Action | Kind | Payload | Returns |
 |---|---|---|---|
-| `productStrategyBoard.workspace.get` | read | `{ board_id? }` | `{ boards[], elements[] }` — all boards when `board_id` omitted (list), one board's elements when given |
-| `productStrategyBoard.upsertBoard` | write | `{ board_id?, board_name, board_type, owner, status, expected_version?, idempotency_key }` | `{ board_id, version, applied, replayed }` |
-| `productStrategyBoard.upsertElements` | write | `{ board_id, elements[], expected_version?, idempotency_key }` | `{ element_ids[], version, applied, replayed }` |
+| `productStrategyBoard.workspace.get` | read | `{ board_id?, include: { revisions?: bool } }` | `{ boards[], elements[], revisions[] }` — all boards when `board_id` omitted (list); one board's elements when given; revisions only when included |
+| `productStrategyBoard.upsertBoard` | write | `{ board_id?, board_name, board_type, owner, status, created_by, expected_version?, idempotency_key }` | `{ board_id, version, applied, replayed }` |
+| `productStrategyBoard.upsertElements` | write | `{ board_id, elements[], expected_version?, idempotency_key }` — each element carries `author_type` explicitly | `{ element_ids[], version, applied, replayed }` |
+| **`productStrategyBoard.createRevision`** | write | `{ board_id, revision_type, created_by, author_type, idempotency_key }` | `{ revision_id, board_version, applied, replayed }` |
 
-Deletion is `status`/soft-delete on the board and an element-level `deleted` flag in `content_json`
-for P1 — no row removal, so an accidental delete is recoverable and no id is ever reused.
+- **Revisions are append-only.** There is no update and no delete action for a revision. A history that
+  can be edited is not a history.
+- **Deletion** is `status` / soft-delete on the board and the `deleted` flag on the element (§6.2 col 20)
+  — no row removal, so an accidental delete is recoverable and no id is ever reused.
+- **`include.revisions` is bounded** the same way `59_`'s includes are: off by default, missing-safe, and
+  capped with the cap **reported** rather than silently applied (`59_…:57`, `skdCap_`).
 
 ### 12.2 Client resource registration
-One entry in the existing registry (`assets/js/api/km-data-access.js:150`):
+
+Two entries in the existing registry (`assets/js/api/km-data-access.js:150`) — the board, and the
+bounded pricing read of §12.3:
+
 ```js
 productStrategyBoard: {
   read: 'productStrategyBoard.workspace.get', rowsAt: 'elements',
-  commands: { upsertBoard:    'productStrategyBoard.upsertBoard',
-              upsertElements: 'productStrategyBoard.upsertElements' }
-}
+  commands: { upsertBoard:     'productStrategyBoard.upsertBoard',
+              upsertElements:  'productStrategyBoard.upsertElements',
+              createRevision:  'productStrategyBoard.createRevision' }
+},
+productPricing: { read: 'productPricing.workspace.get', rowsAt: 'pricing_list' }
 ```
+
 This inherits, for free: the typed envelope, business-vs-transport error separation, the mandatory
-idempotency key, and the in-memory adapter for contract tests.
+idempotency key (`:227`, `:305`), and the in-memory adapter (`:250`) for contract tests.
 
-### 12.3 The pricing read gap — a separate, smaller proposal
-`pricing_list`, `campaigns` and `campaign_sku_lines` have **no scoped read owner** (§4.8), so a board
-that needs prices today must trigger the 44-tab `getOperationDb`. Two options:
+**`skuDetails` needs no new entry** — it is already registered at `km-data-access.js:155`
+(`skuDetails: { read: 'skuDetails.workspace.get', rowsAt: 'rows' }`). The board is simply a second
+caller of an owner that already exists, which is exactly what D-5 asks for.
 
-- **P1 (recommended): ship the board on the existing `KM.DB.*` accessors.** Zero backend work for
-  reads; accepts the legacy full-DB read cost, which every other non-workspace page already pays.
-- **P1.5: add `productPricing.workspace.get`** — a bounded read over
-  `pricing_list` + `campaigns` + `campaign_sku_lines` (+ `marketplace_skus` for the company join,
-  §4.4). This is squarely in line with the repo's own direction: `F1-7J-A3` in
-  `docs/planning/F1_7J_REMAINING_SECONDARY_SURFACES_AND_AUTHORITY_MASTER_AUDIT_R1.md` §10 already
-  plans *"Remaining non-workspace PRIMARY pages → scoped reads … campaign-risk, carrier-rate-card
-  (new small workspaces or bounded reads)"*.
+### 12.3 The source reads — **DECIDED (D-5): no legacy 44-tab read in P1**
 
-Sequencing is **D-5 (§19)**.
+P0 offered two options and recommended the cheap one: ship on the existing `KM.DB.*` accessors and
+accept the legacy full-DB read. **That option is now withdrawn.** P1 must not read through
+`getOperationDb` (`03_master_data_handlers.gs:35`, 44 tabs).
+
+**The six tables the board reads, and who owns each read:**
+
+| Table | Read owner in P1 | New work |
+|---|---|---|
+| `sku_details` | **`skuDetails.workspace.get`** — `59_api_v1_sku_details_workspace.gs`, `[BASE]` (`SKD_WORKSPACE_TABLES_`, `59_…:46`) | **None.** Reuse |
+| `marketplace_skus` | **`skuDetails.workspace.get`** with `include.regional` (`59_…:50`) | **None.** Reuse |
+| `sku_regional_details` | **`skuDetails.workspace.get`** with `include.regional` (`59_…:51`) | **None.** Reuse |
+| `pricing_list` | **`productPricing.workspace.get`** (new) | New bounded owner |
+| `campaigns` | **`productPricing.workspace.get`** (new) | New bounded owner |
+| `campaign_sku_lines` | **`productPricing.workspace.get`** (new) | New bounded owner |
+
+**Three of the six already have a scoped owner, and the board reuses it verbatim.** `59_` declares in
+its own header that it reads *"the SKU Details master/reference table set — never getOperationDb"*
+(`59_…:10`) and that the `'regional'` include is *"bounded includes, not broad loading; read
+missing-safe"* (`59_…:16`). The board adds **no** table to `SKD_WORKSPACE_TABLES_`, changes **no** line
+of `59_`, and becomes a caller — one more consumer of one owner.
+
+**The other three have no read owner at all today** (§4.8), so creating one is filling a vacuum, not
+competing with an incumbent. `productPricing.workspace.get` is the **single** owner for those three
+tables and the `marketplace_skus` join key they need (§4.4 — a price lookup must route through
+`marketplace_sku_id`, never `(country, marketplace, sku)`).
+
+**Why not extend `59_` to cover all six?** Because `59_`'s declared scope is
+*"MASTER/REFERENCE READ MODEL ONLY … the SKU Details master-data surface"* (`59_…:5-10`). Adding pricing
+and campaign tables would widen an owner past its own stated boundary and make one action responsible
+for two surfaces — the shape D-5's "no second competing read authority" rule is protecting against,
+arrived at from the other direction.
+
+**One owner for these tables, system-wide.** `campaign-risk.js` today reads `campaigns` and
+`campaign_sku_lines` through the legacy path, and `F1-7J-A3`
+(`docs/planning/F1_7J_REMAINING_SECONDARY_SURFACES_AND_AUTHORITY_MASTER_AUDIT_R1.md` §10) already plans
+*"Remaining non-workspace PRIMARY pages → scoped reads … campaign-risk, carrier-rate-card (new small
+workspaces or bounded reads)"*. **`productPricing.workspace.get` should be that owner for both
+surfaces.** Sequencing consequence, and it is the one coordination item in this design: whichever round
+lands first builds it, and the other consumes it. Two bounded readers over `campaign_sku_lines` would be
+the competing authority D-5 forbids, arrived at by accident.
+
+**Cost of the decision, stated plainly.** D-5 moves roughly 400–600 lines of `.gs` plus tests, and one
+user-owned Apps Script sync, from an optional late batch (P0's B7) into the **mandatory first batch**
+(§17, B1). The board cannot render a price band before it exists. That is the trade the decision makes,
+and it buys the board never having to be migrated off the legacy read later — with the price band, the
+Deal markers and the frozen snapshots all already built on top of it.
 
 ---
 
-## §13 — Permission / audit model
+## §13 — Permission / audit model — **DECIDED (D-9)**
 
 **The honest position: this system has no authentication and no authorization, and the board must not
-pretend otherwise.**
+pretend otherwise.** P0 stated this and set the default to "accept it and say so in the UI". D-9 goes
+further: **saying so is necessary and not sufficient.**
 
-- `owner` and `created_by` are **client-asserted strings** with a literal default, exactly like every
-  other table (§3.10). The board displays them as *provenance*, never as access control, and the UI
-  must not imply a board is private.
-- **No board is hidden from anyone.** Any user of the deployment can read and edit any board. Stating
-  this in the UI is part of the design, because a board labelled "owner: X" that anyone can edit is
-  worse than one with no owner label at all.
-- **Audit in P1** = `created_by` / `created_at` / `updated_by` / `updated_at` / `version` on both
-  tables, plus `author_type` on every element (§14).
-- **P2 alignment.** When `users` / `roles` / `permissions` / `user_roles` / `role_permissions` and
-  backend token verification land in **P2-A** (`SYSTEM_ROADMAP.md`), `owner` becomes a real FK and
-  board-level read/write scoping becomes enforceable. The schema is already shaped for it: `owner`
-  and `created_by` are single string columns.
+### 13.1 What is true today (measured, §3.10)
+- **No RBAC.** No `users` / `roles` / `permissions` / `user_roles` / `acl` table is referenced by any
+  shipped `.gs` file.
+- **No server-side identity.** `Session.getActiveUser()` appears exactly **once** in the whole Apps
+  Script tree, in a TEMP migration file (`TEMP_migrate_request_order_draft_v2.gs:1803`), not in runtime.
+- **`created_by` is client-asserted**: `String(body.created_by || 'operation-system')`.
+- **Scheduled, not forgotten.** `SYSTEM_ROADMAP.md` puts Login + Google Identity +
+  `users`/`roles`/`permissions`/`user_roles`/`role_permissions` + backend token verification + API
+  permission enforcement in **P2-A**, and states that Phase-1A is *"NOT gated on Login / RBAC"* and that
+  *"'Knowing the URL' is NOT a security control."*
+
+### 13.2 The five rules D-9 imposes
+
+1. **`owner` is provenance, never access control.** It is a client-asserted string with the same
+   contract as `created_by`. It answers *"who made this"*, and it does not and cannot answer
+   *"who may open this"*.
+2. **The UI may not say `Private`, `Secure`, `Confidential`, `Restricted`, `Only you`, or show a lock
+   icon** on a board, an element or a revision. The owner renders with an explicit provenance qualifier
+   (§11.2: `owner: vic (prov.)`). Any user of the deployment can read and edit any board, and the board
+   list says so once, in plain words, where it cannot be missed.
+3. **The production feature ships disabled by default.** The repo's own two-layer pattern applies:
+   - **Server:** a module-level flag plus an accessor, exactly as
+     `00_config.gs:88-89` does it — `var PRODUCT_STRATEGY_BOARD_ENABLED_ = false;` +
+     `function productStrategyBoardEnabled_() { return PRODUCT_STRATEGY_BOARD_ENABLED_ === true; }`.
+     While false, **every board action refuses with zero writes**.
+   - **Frontend:** the mirror default is **fail-safe false**, read as
+     `window.KM_FLAGS && window.KM_FLAGS.PRODUCT_STRATEGY_BOARD === true` — the shape already used at
+     `inventory-replenishment.js:13234` and `request-order.js:446`, and the deliberate asymmetry
+     `00_config.gs:84-87` names: *"if the capability transport cannot be read, the page must not offer a
+     write it cannot confirm the server accepts."*
+   - The nav entry stays `menu-item--disabled` + `Soon` until the gate opens (§11.1).
+4. **A hidden button is not a control, and the design must not count it as one.** `00_config.gs:93-101`
+   is the shipped statement of this: activation there is *"TWO conditions, not one"*, the allowlist is
+   *"SERVER-OWNED config in the same file as the flag, which means a browser cannot widen it, a request
+   payload cannot widen it, and widening it is a deployment with a diff."* The board inherits that
+   standard. **The server flag is the control; the frontend flag only avoids offering what the server
+   would refuse.** No claim of safety in this document rests on the UI hiding anything.
+5. **Enabling it in production requires a separate authorization / security gate.** Not this document,
+   not the batch that finishes the UI, and not a frontend change. A distinct authorization round must
+   decide the flag flip, and it must answer at least: is every board being readable and editable by
+   every deployment user acceptable for the content that will be on these boards; and is the board's
+   content in scope for P2-A RBAC when it lands. **That round is out of scope here, and P1 is not
+   complete without it** (§17, B-GATE).
+
+### 13.3 Audit in P1
+- `created_by` / `created_at` / `updated_by` / `updated_at` / `version` on **all three** tables (§6).
+- `author_type` as a **real column** on elements and revisions, written explicitly (§6.2).
+- `product_strategy_board_revisions`, append-only, with the `idempotency_key` stored (§6.3, §12.1).
 - **No credential, token or secret** is introduced anywhere by this design — consistent with the
-  Phase-1A rule that no secret may sit in the frontend, repo or Sheet.
+  Phase-1A rule that no secret may sit in the frontend, the repo or the Sheet.
+
+### 13.4 P2-A alignment
+When identity and RBAC land, `owner` becomes a real FK and board-level read/write scoping becomes
+enforceable. The schema is already shaped for it: `owner`, `created_by` and `updated_by` are single
+string columns on every table, and the revision table already records who caused each checkpoint.
 
 ---
 
@@ -840,38 +1277,59 @@ pretend otherwise.**
 | Requirement | How the schema already satisfies it |
 |---|---|
 | AI can read board, elements, source references and snapshots | `productStrategyBoard.workspace.get` returns exactly that; `source_type` + `source_identity` are the official identities (§7.2), so AI cites the source rather than the board's copy |
-| AI content marked `author_type=AI` | `author_type` ∈ `HUMAN`\|`AI` on every element, written **explicitly** in P1 (always `HUMAN`), so an AI element is distinguishable by presence of a value, not by absence |
-| Human content never silently overwritten by AI | Element `version` + `expected_version` optimistic concurrency (§15.3). An AI write to an element whose `author_type = HUMAN` must create a **new adjacent element** (a suggestion), never an in-place update. Enforced by the handler, not by convention |
-| AI suggestions separated from official SKU/Pricing writes | Already structural: the board has **no write path to any source table** (§8.5). An AI suggestion cannot reach `pricing_list` even in principle |
-| Version + audit for every AI change | `version`, `updated_at`, `updated_by`, `author_type`. **A full `board_history` table becomes mandatory at this point** — see D-7 |
-| Future: meeting notes, price-gap analysis, Deal cannibalisation alerts | `TEXT_NOTE` carries meeting notes today; §9.3's gap/overlap/cannibalisation findings are **computed and stored in `content_json`**, so an AI reads a measurement rather than re-deriving it from a picture |
+| AI content marked `author_type=AI` | **`author_type` is a real column** (§6.2 col 14), written explicitly as `HUMAN` on every P1 row. An AI element is distinguishable by the *presence of a value*, never by the absence of one, and a row with a blank `author_type` is rejected outright |
+| Human content never silently overwritten by AI | Element `version` + `expected_version` optimistic concurrency (§15.3). An AI write to an element whose `author_type = HUMAN` must create a **new adjacent element** (a suggestion), never an in-place update. Enforced by the handler on a column it can read, not by a convention inside `content_json` |
+| AI suggestions separated from official SKU / Pricing writes | Already structural: the board has **no write path to any source table** (§8.5), and a `DEAL_PLAN` has no writer at all (§7.4). An AI suggestion cannot reach `pricing_list` or `campaign_sku_lines` even in principle |
+| Version + audit for every AI change | `version`, `updated_at`, `updated_by`, `author_type` — **plus a mandatory `PRE_AI_WRITE` revision before the write** (§8.6). **D-7 landed this in P1**, so the AI seam is not waiting on a table |
+| Future: meeting notes, price-gap analysis, Deal cannibalisation alerts | `TEXT_NOTE` carries meeting notes today; §9.3's gap / overlap / cannibalisation findings are **computed and stored in `content_json`** with the threshold that produced them, so an AI reads a measurement rather than re-deriving one from a picture; and `DEAL_PLAN` (D-4) gives a cannibalisation alert somewhere to land as a proposal rather than as a source edit |
 
 **Nothing in this round implements any of it.** No AI table, no prompt, no model configuration, no
-action name reserved in the router.
+model call, and no action name reserved in the router. `PRE_AI_WRITE` is an enum value in a table
+definition — the seam is that the write path *cannot* exist without first creating a revision.
 
 ---
 
 ## §15 — Failure and refusal behaviour
 
 1. **Source unreadable → `UNRESOLVABLE`, never empty and never zero.** A failed price read and a blank
-   price are different facts; the element says which.
-2. **Mixed currency → `MIXED_CURRENCY_COMPARISON_REFUSED`** (§9.4). The band refuses the shared axis
-   and names the currencies rather than drawing a misleading comparison.
+   price are different facts; the element says which (§8.4).
+2. **Mixed currency → split tracks + `MIXED_CURRENCY_COMPARISON_REFUSED`** (§9.4, D-3). The band never
+   draws a shared axis, never converts, and states the refusal on the element next to the split.
 3. **Concurrent edit → refuse, do not merge.** Every write carries `expected_version`; a mismatch
-   returns `BOARD_VERSION_CONFLICT` with the current version, and the client re-reads. Last-write-wins
-   on a strategy board silently destroys someone's reasoning.
+   returns `BOARD_VERSION_CONFLICT` with the current version and writes nothing, and the client
+   re-reads. Last-write-wins on a strategy board silently destroys someone's reasoning.
 4. **No reverse write, structurally.** The handler exposes no action that targets a source table
-   (§8.5), and that is asserted on its source in tests (§18).
+   (§8.5), and that is asserted on its source text in tests (§18).
 5. **Ambiguous price join → refuse.** If `sku + country + marketplace` resolves to more than one
    `marketplace_sku_id` (i.e. multiple companies), the element must **not** pick one: it renders
    `PRICE_SOURCE_AMBIGUOUS_ACROSS_COMPANIES` and asks for a company. This follows directly from
    `pricing_list` having no `company` column (§4.4).
-6. **Snapshot never silently re-frozen** (§8.3).
-7. **Missing element type → refuse to render**, not a default type. A `CHART` element created by a
-   future version and opened by an older client shows `UNSUPPORTED_ELEMENT_TYPE` and is preserved
-   untouched on save.
-8. **Element cap.** A board is bounded (proposal: 500 elements) and the cap is reported, never
-   silently applied — the same rule `59_…` uses for its row cap (`capped` is always surfaced).
+6. **Missing band basis → `SOURCE_MISSING`, listed and not plotted** (§9.3.6, D-2). **No fallback to
+   `sku_details.selling_price`, ever.** A substituted point renders identically to a measured one, and
+   that is the whole objection.
+7. **No substitute for "current selling price"** (D-6). The field is absent from P1; it is not rendered
+   blank, zero, or filled from `regular_price` / `selling_price` / `promo_price`.
+8. **No estimated margin** (D-8). Any margin-shaped figure derived from prices alone is refused at
+   design level: it does not appear in an element, a tooltip, an export or a chart. A price-to-price
+   percentage is permitted and is labelled **discount**.
+9. **A `DEAL_PLAN` never claims to be a Deal** (§7.4, D-4). The `PROPOSAL ONLY` marker is
+   non-dismissible; an official price absent renders `SOURCE_MISSING`, never "no deal", and never the
+   proposal in the official value's place.
+10. **Snapshot never silently re-frozen** (§8.3), and a re-freeze always writes its revision first
+    (§8.6).
+11. **Revision write failure blocks the change it precedes** (§8.6). `REVISION_WRITE_FAILED`, zero
+    writes, nothing applied.
+12. **Missing element type → refuse to render**, not a default type. A `CHART` element created by a
+    future version and opened by an older client shows `UNSUPPORTED_ELEMENT_TYPE` and is preserved
+    untouched on save.
+13. **Missing `author_type` → refuse the write** (`AUTHOR_TYPE_REQUIRED`, §6.2). A blank is a third
+    state, not a default.
+14. **Feature disabled → refuse with zero writes** (§13.2.3). While `PRODUCT_STRATEGY_BOARD_ENABLED_`
+    is false the server refuses every board action, and the refusal is a named fact
+    (`FEATURE_DISABLED`), not a silent empty response.
+15. **Element cap.** A board is bounded (proposal: 500 elements) and the cap is **reported**, never
+    silently applied — the same rule `59_` uses for its row cap (`skdCap_`, `capped` always surfaced,
+    `59_…:57`).
 
 ---
 
@@ -879,54 +1337,74 @@ action name reserved in the router.
 
 | Item | Impact |
 |---|---|
-| New Google Sheet tabs | **2** — `product_strategy_boards`, `product_strategy_board_elements` |
+| New Google Sheet tabs | **3** — `product_strategy_boards`, `product_strategy_board_elements`, **`product_strategy_board_revisions`** (D-7) |
 | Changes to existing tabs | **None.** No column added, renamed or removed anywhere |
-| Data migration | **None.** No existing row is read-modified-written; the two tabs start empty |
-| New Apps Script file | 1 (proposed `65_api_v1_product_strategy_board.gs` — number to be confirmed against the live project) |
-| Router changes | 3 new `if (action === …)` branches in `01_router.gs` |
-| `getOperationDb` `validTabs` | Optional. **Recommended NOT to add** the two board tabs — the board has its own bounded read, and adding them makes every page's legacy full-DB read bigger |
-| Frontend files | 3 new (`assets/html/pages/product-strategy-board.html`, `assets/js/pages/product-strategy-board.js`, `assets/css/pages/product-strategy-board.css`) + 1 `<link>` and 1 nav block in `index.html` + 1 `RESOURCES` entry |
-| **Apps Script sync** | **REQUIRED at P1, and it is USER-owned.** `CLAUDE.md`: `APPS_SCRIPT_SYNC_OWNER = USER`, `DEPLOYMENT_OWNER = USER`. A new Web App deployment version is required because a new action must be reachable |
-| Web App deployment version | **Required at P1** (new router actions). **Not required for P0** — this round changes no `.gs` file |
-| DB capacity | Two more tabs count toward the Google-Sheet cell budget tracked by the planned DB Capacity Monitor (`SYSTEM_ROADMAP.md`, Phase 2). Board elements are the only growing table; the §15.8 cap bounds it |
-| Rollback | Delete the two tabs and revert the frontend files. No source table is touched, so rollback cannot lose operational data |
-
+| Data migration | **None.** No existing row is read-modify-written; the three tabs start empty |
+| New Apps Script files | **2** — a board handler and **a bounded pricing/campaign read owner** (D-5). Proposed `65_api_v1_product_strategy_board.gs` and `66_api_v1_product_pricing_workspace.gs`; **both numbers to be confirmed against the live Apps Script project before use** |
+| Changes to `59_api_v1_sku_details_workspace.gs` | **None** (D-5). The board reuses `skuDetails.workspace.get` as a caller; `SKD_WORKSPACE_TABLES_` is not extended |
+| Router changes | **5** new `if (action === …)` branches in `01_router.gs` — 4 board actions (§12.1) + 1 pricing read |
+| Frontend deployment-probe registries | **3 edits** — the 5 new actions into `KM_REQUIRED_DEPLOYED_ACTIONS_` (`operation-system-db-api.js:4069`), a `'product-strategy-board'` entry in `KM_PAGE_REQUIRED_ACTIONS_` (`:4097`), and 2 rows in `KM_PERF_SURFACES_` (`:4380`). Without these, a deployment missing an action is discovered by the page failing rather than by a named `DEPLOYMENT_CONTRACT_MISMATCH` |
+| `getOperationDb` `validTabs` | **Do NOT add the three board tabs.** The board has its own bounded read, and adding them makes every other page's legacy full-DB read bigger |
+| Frontend files | **4 new** — `assets/html/pages/product-strategy-board.html`, `assets/js/pages/product-strategy-board.js`, `assets/css/pages/product-strategy-board.css`, **`assets/js/utils/canvas-core.js`** (the §11.5 extraction) + 1 `<link>` and 1 nav block in `index.html` + 2 `RESOURCES` entries |
+| Changes to `supplychain.js` / `supply-chain-canvas.css` | **Structural only, in B2a**: the Canvas Core extraction, behaviour-preserving, with the `localStorage` key `'supplychain-canvas'` and the serialized shape asserted unchanged (§11.5.4) |
+| **Feature flag** | **`PRODUCT_STRATEGY_BOARD_ENABLED_ = false` ships in `00_config.gs`, and stays false** (D-9). A frontend mirror defaults fail-safe false. Flipping it is a separate authorization round (§17, B-GATE) |
+| **Apps Script sync** | **REQUIRED at B1, and it is USER-owned.** `CLAUDE.md`: `APPS_SCRIPT_SYNC_OWNER = USER`, `DEPLOYMENT_OWNER = USER`. A new Web App deployment version is required because new actions must be reachable |
+| Web App deployment version | **Required at B1.** **Not required for P0 or P0-R1** — neither round changes any `.gs` file |
+| DB capacity | Three more tabs count toward the Google-Sheet cell budget tracked by the planned DB Capacity Monitor (`SYSTEM_ROADMAP.md`, Phase 2). `…_elements` and `…_revisions` are the growing tables; §15.15 caps elements per board, and §6.3 bounds revisions by making them a *deliberate* act rather than an autosave |
+| Rollback | Delete the three tabs, revert the frontend files, and revert the B2a extraction. No source table is touched, so rollback cannot lose operational data. With the flag false, a partially deployed board is inert rather than half-live |
 ---
 
 ## §17 — Implementation batches
 
+The decisions reshaped this plan in three places: **the bounded read moved from an optional last batch
+into B1** (D-5), **revisions moved into B1** (D-7), **`DEAL_PLAN` moved from P2 into B6** (D-4), and a
+**terminal authorization gate was added** (D-9).
+
 | Batch | Scope | Ships | Apps Script sync |
 |---|---|---|---|
-| **B0** *(this round)* | Design freeze — this document | docs only | No |
-| **B1** | Two tabs + `65_` handler + 3 router actions + `RESOURCES` entry. Read + write + version conflict. **No UI.** Proven by fixture tests | backend seam | **Yes (user)** |
-| **B2** | Page shell + nav + `CanvasController` reuse with **server** persistence replacing `localStorage`. `TEXT_NOTE` only | a usable notes board | No (frontend only) |
-| **B3** | `SKU_CARD` + `REGIONAL_SKU_CARD`, `LIVE_REFERENCE` mode, the four resolution states, the §15.5 ambiguity refusal | SKU modules on the board | No |
-| **B4** | `FROZEN_SNAPSHOT` mode: freeze, `captured_at`, `value_provenance`, the refresh diff, re-freeze versioning | decision evidence | No |
-| **B5** | `SERIES_PRICE_BAND`: axis, points, normal-vs-deal markers, gap / overlap / cannibalisation arithmetic, mixed-currency refusal, entry/core/premium positions | **the first-priority screen** | No |
-| **B6** | `MATRIX` + the "SKU Series Price Architecture Board" template | matrices | No |
-| **B7** *(optional)* | `productPricing.workspace.get` bounded read, replacing the legacy full-DB read | performance | **Yes (user)** |
-| **P2** | `CHART`, `DEAL_PLAN`, `GROUP`, `CONNECTOR`, `board_history`, AI seam activation | deferred | TBD |
+| **B0** *(P0)* | Design freeze — discovery, mapping, schema, 9 open decisions | docs only | No |
+| **B0-R1** *(this round)* | Design closure — all 9 decisions applied, Canvas Core contract (§11.5), non-runtime prototype (§22) | docs + prototype only | No |
+| **B1** | **3 tabs** + board handler + **4 board actions** + **`productPricing.workspace.get` bounded read** (D-5) + 2 `RESOURCES` entries + probe-registry entries + **the disabled feature flag** (D-9). Read + write + idempotent replay + version conflict + **revisions** (D-7). **No UI.** Proven by fixture tests with zero `SpreadsheetApp` | the whole backend seam | **Yes (user)** |
+| **B2a** | **Canvas Core extraction** (§11.5) — behaviour-preserving, Supply Chain Canvas unchanged, storage key and serialized shape asserted, the two duplicate keys resolved | a reusable engine | No (frontend only) |
+| **B2b** | Page shell + nav (`disabled`) + Canvas Core wired to the **server** persistence adapter. `TEXT_NOTE` only. Save checkpoint + revision list | a usable notes board | No |
+| **B3** | `SKU_CARD` + `REGIONAL_SKU_CARD`, `LIVE_REFERENCE` mode, the four resolution states, the §15.5 company-ambiguity refusal | SKU modules on the board | No |
+| **B4** | `FROZEN_SNAPSHOT`: freeze, `captured_at`, `value_provenance`, the refresh diff, re-freeze versioning, `FREEZE_SNAPSHOT` revisions | decision evidence | No |
+| **B5** | `SERIES_PRICE_BAND`: per-currency tracks, points, normal-vs-deal markers, gap / overlap / cannibalisation arithmetic with a visible threshold, the D-2 `SOURCE_MISSING` list, entry/core/premium positions | **the first-priority screen** | No |
+| **B6** | **`DEAL_PLAN` (`PROPOSAL_ONLY`, D-4)** — closed field list, permanent `PROPOSAL ONLY` marker, official-vs-proposal separation, the third band marker | Deal layout | No |
+| **B7** | `MATRIX` + the "SKU Series Price Architecture Board" template | matrices | No |
+| **B-GATE** | **Authorization / security round (D-9).** Decides whether the flag may be flipped, and answers the two questions §13.2.5 names. **P1 is not complete without it** | production enablement | **Yes (user)** — the flag flip is a deployment |
+| **P2** | `CHART`, `GROUP`, `CONNECTOR`, **History UI (diff + restore)**, AI seam activation | deferred | TBD |
 
 **Complexity and effort estimate** (rough, for sequencing only — not a commitment):
 
 | Batch | Complexity | Rough size |
 |---|---|---|
-| B1 | Medium — new table pattern, idempotency, version conflict | ~600–900 lines `.gs` + tests |
-| B2 | Low-Medium — the engine exists; swapping persistence is the work | ~400–600 lines JS/CSS |
-| B3 | Medium — three-table join, four refusal states | ~400–600 lines |
-| B4 | Medium — snapshot/diff/re-freeze semantics | ~300–500 lines |
-| B5 | **High** — the price arithmetic and its refusals are where correctness lives | ~600–900 lines + heavy tests |
-| B6 | Low | ~200–300 lines |
-| B7 | Medium | ~400–600 lines `.gs` + tests |
+| B1 | **High** — three tables, derived ids, replay, version conflict, revisions **and** a new bounded read owner. D-5 and D-7 both land here | ~1200–1600 lines `.gs` + heavy tests |
+| B2a | Medium — a behaviour-preserving extraction is easy to do and easy to do wrong; the tests are the work | ~300–500 lines moved + ~200 lines tests |
+| B2b | Low-Medium — the engine exists; the persistence adapter is the work | ~400–600 lines JS/CSS |
+| B3 | Medium — three-table join, four refusal states, the company ambiguity | ~400–600 lines |
+| B4 | Medium — snapshot / diff / re-freeze semantics + revision ordering | ~350–550 lines |
+| B5 | **High** — the price arithmetic, the per-currency split and their refusals are where correctness lives | ~700–1000 lines + heavy tests |
+| B6 | Low-Medium — the element is small; keeping it a proposal is a discipline, not a cost | ~250–400 lines |
+| B7 | Low | ~200–300 lines |
+| B-GATE | Not an engineering size — a decision round | — |
 
-B1 is the only batch that blocks the others, and it is the only one before B7 that needs a user-owned
-Apps Script sync.
+**Sequencing facts:**
+- **B1 blocks everything**, and D-5 made it bigger. It is also the only batch besides B-GATE that needs
+  a user-owned Apps Script sync.
+- **B2a is the only batch that touches shipped production frontend code.** It ships alone, so a
+  Supply Chain Canvas regression can only have come from it.
+- **B5 depends on B1's bounded read**, which is the point of D-5: the price band is never built on the
+  legacy full-DB read and therefore never has to be migrated off it.
+- **B6 depends on B5** (the third band marker) and on B1 (the closed-field validation).
+- **Total P1 is roughly 30–40% larger than P0's plan.** D-5, D-7 and D-9 each added real work, and each
+  of them added it *before* the screen the board exists for rather than after.
 
 ---
 
 ## §18 — Acceptance criteria
 
-**P0 (this round) — all met:**
+**P0 (first round) — all met:**
 - A1 Isolated worktree + feature branch off the real `origin/main`; mainline untouched. ✔
 - A2 Every table, column, action and component cited to a shipped file and line. ✔
 - A3 Every field the product asked for is either mapped to a real column or marked **GAP** with no
@@ -934,38 +1412,104 @@ Apps Script sync.
 - A4 No page, table, API, `.gs`, frontend or deployment change. ✔
 - A5 No push, no merge, no deploy, no DB write. ✔
 
+**P0-R1 (this round) — all met:**
+- R1 All nine decisions applied, and **no superseded default survives anywhere in the text** — the
+  affected sections were rewritten, not annotated. ✔ (§19 records each one and where it landed)
+- R2 The element schema is stated **once**, canonically, with all twenty columns including
+  `author_type` as a **real column** and `updated_by`. ✔ (§6.2)
+- R3 Board create has a stated idempotency and deterministic-id contract, not only element create —
+  including the removal of `created_at` from the derived key. ✔ (§6.5)
+- R4 `DEAL_PLAN` is in the MVP and is `PROPOSAL_ONLY`, with a **closed** field list and a prohibition
+  list. It is **not** deferred to P2 anywhere in this document. ✔ (§2, §7.4, §10, §17)
+- R5 The legacy 44-tab read is **not** an accepted P1 approach anywhere in this document, and the
+  bounded read is in B1. ✔ (§12.3, §17)
+- R6 `owner` is never described as providing secure access, and the feature ships disabled behind a
+  server-owned flag with a separate authorization gate. ✔ (§13, §16, §17 B-GATE)
+- R7 A Canvas Core reuse contract exists, forbids copying `supplychain.js`, separates the seven named
+  concerns, keeps the two storage keys apart, and states that **P0-R1 extracts no production code**. ✔
+  (§11.5)
+- R8 A non-runtime prototype exists, opens from the filesystem, makes no network request, and is loaded
+  by nothing in the app. ✔ (§22)
+- R9 Schema, MVP, batches and acceptance criteria are mutually consistent with the nine decisions. ✔
+- R10 No production file, no `.gs`, no S1 file changed; no push, merge, deploy or DB write. ✔ (§21)
+
 **P1 acceptance (for the batches above):**
-- B1: a create replayed with the same idempotency key returns `replayed: true` and creates **no**
-  second row; `element_id` is byte-identical across the retry.
-- B1: a write with a stale `expected_version` returns `BOARD_VERSION_CONFLICT` and writes nothing.
-- B1: the handler's own source contains **no write** to any of the seven source tables — asserted on
+- **B1** a create replayed with the same idempotency key returns `replayed: true`, creates **no** second
+  row, and the derived id is byte-identical across the retry — for **boards, elements and revisions**.
+- **B1** a board create retried after a clock change still derives the same `board_id` (§6.5 — proves
+  `created_at` is not in the key).
+- **B1** a write with a stale `expected_version` returns `BOARD_VERSION_CONFLICT` and writes nothing.
+- **B1** an element write omitting `author_type` returns `AUTHOR_TYPE_REQUIRED` and writes nothing.
+- **B1** with `PRODUCT_STRATEGY_BOARD_ENABLED_ = false`, every board action returns `FEATURE_DISABLED`
+  with **zero writes** — asserted per action, not once.
+- **B1** the handler's own source contains **no write** to any of the seven source tables — asserted on
   the source text, and a mutation that adds one must fail a test.
-- B3: an element whose source row is absent renders `SOURCE_MISSING` and displays no numeric value.
-- B3: `sku + country + marketplace` matching two companies renders
+- **B1** the board reads **no** table through `getOperationDb`; the six source tables resolve through
+  `skuDetails.workspace.get` and `productPricing.workspace.get` only (D-5), and `59_` is unmodified.
+- **B1** a revision is written for each of the four events and for **none** of drag / resize / pan /
+  zoom / select; and a failed revision write blocks the change it precedes (§8.6).
+- **B2a** the Supply Chain Canvas's `localStorage` key is still `'supplychain-canvas'`, its serialized
+  shape is unchanged, its mount/unmount and `_initialized` idempotency are unchanged, and the board
+  writes **no** element data to `localStorage` under any key.
+- **B3** an element whose source row is absent renders `SOURCE_MISSING` and displays no numeric value;
+  an element whose *read failed* renders `UNRESOLVABLE` and is not shown as missing.
+- **B3** `sku + country + marketplace` matching two companies renders
   `PRICE_SOURCE_AMBIGUOUS_ACROSS_COMPANIES` and picks neither.
-- B4: after editing `pricing_list` behind a frozen element, the element still shows the original
-  values and `captured_at`; the refresh diff shows both.
-- B5: a Series whose members resolve to two currencies renders
-  `MIXED_CURRENCY_COMPARISON_REFUSED`, names both currencies, and draws no shared axis.
-- B5: gap findings display the threshold that produced them.
-- B5: `promo_price` absent renders `SOURCE_MISSING`, never "no deal".
-- All: measured zero writes to every source table across the whole test suite.
+- **B4** after editing `pricing_list` behind a frozen element, the element still shows the original
+  values and `captured_at`; the refresh diff shows both; a re-freeze increments `snapshot_version` and
+  wrote its `FREEZE_SNAPSHOT` revision first.
+- **B5** a Series whose members resolve to two currencies renders **one track per currency with its own
+  axis**, states `MIXED_CURRENCY_COMPARISON_REFUSED`, draws **no** shared axis, and performs no
+  conversion — with gaps and overlaps computed within a track only (D-3).
+- **B5** a member with no `pricing_list.regular_price` is **listed with its reason and plotted nowhere**,
+  and is **never** back-filled from `sku_details.selling_price` (D-2).
+- **B5** gap findings display the threshold that produced them.
+- **B5** a price step **exactly equal** to `gap_threshold` is **not** a gap, and an interval touching
+  at a single point is **not** an overlap — asserted on values chosen to expose binary-float error
+  (e.g. `24.99 → 32.99` against a threshold of `8.00`), because every comparison runs in integer
+  cents (§9.3.4).
+- **B5** `promo_price` absent renders `SOURCE_MISSING`, never "no deal".
+- **B5/B6** no margin-shaped figure appears in any element, tooltip, export or chart (D-8); a
+  price-to-price percentage is labelled *discount*.
+- **B5/B6** no field is labelled "current selling price", and no other field is shown in its place (D-6).
+- **B6** a `DEAL_PLAN` with an unknown `content_json` key is refused (`DEAL_PLAN_UNKNOWN_FIELD`); the
+  `PROPOSAL ONLY` marker cannot be dismissed; and a proposal price and an official `promo_price` never
+  merge into one value or one marker (D-4).
+- **All:** measured zero writes to every source table across the whole suite.
 
 ---
 
-## §19 — Open decisions requiring operator confirmation
+## §19 — Decisions — closed, and what remains
 
-| # | Decision | Why it cannot be decided from the repo | Default if you do not decide |
-|---|---|---|---|
-| **D-1** | **Navigation placement.** New top-level *Product Strategy* group (recommended), or under *SKU Management*? | *Pricing Center* means logistics cost, and the board spans SKU + Pricing + Campaign. IA judgement, not a fact in the repo (§11.1) | New top-level group |
-| **D-2** | **Which price is the band's default basis** — `pricing_list.regular_price` (site, effective) or `sku_details.selling_price` (master base)? | Both exist and mean different things; the repo does not rank them for a strategy view (§9.1) | `pricing_list.regular_price`, because the roadmap calls `pricing_list` the only pricing SSOT |
-| **D-3** | **Cross-country comparison basis.** Original currency only, or a base currency + which FX source? | P0 is explicitly forbidden to decide FX. `pricing_list.fx_rate` exists but the repo's promo-currency field is explicitly *"NOT an FX rate"* (§9.4) | Original currency only; refuse mixed-currency axes |
-| **D-4** | **May the board ever create `campaign_sku_lines` rows?** | Determines whether `DEAL_PLAN` is a proposal or a writer. Product decision (§10) | No — proposals only, and `DEAL_PLAN` stays deferred |
-| **D-5** | **Accept the legacy 44-tab read for prices in P1, or build `productPricing.workspace.get` first?** | A performance/sequencing trade-off, not a correctness one (§12.3) | Accept it in P1; add the bounded read as B7 |
-| **D-6** | **"Current selling price" is a GAP.** Do you want it, and if so where does it come from — a new `pricing_list` column, an Amazon snapshot, or manual entry? | No column exists, and inventing one would create a second price authority (§9.1) | Not shown in P1 |
-| **D-7** | **`board_history`** — needed at P1, or when AI starts writing? | No restore/diff requirement exists yet; `version` covers "which version". But it becomes mandatory once AI writes (§14) | Defer to P2, together with the AI seam |
-| **D-8** | **`margin` is a GAP** — no cost data exists in this layer. Is margin in scope at all, or does it wait for the planned Cost & Pricing DB (`SYSTEM_ROADMAP.md` §3.5-4)? | There is no cost column anywhere to compute it from (§9.1) | Out of scope until Cost & Pricing exists |
-| **D-9** | **Board visibility.** Accept that every board is readable and editable by every user of the deployment until P2-A RBAC lands? | There is no identity or RBAC to build on, and Phase-1A is explicitly not gated on it (§13) | Accept, and say so in the UI |
+### 19.1 The nine decisions, as decided by the operator (P0-R1)
+
+| # | Decision | P0 default | **DECIDED** | Landed in |
+|---|---|---|---|---|
+| **D-1** | Navigation placement | New top-level group | **New top-level `Product Strategy` group. Never *Pricing Center*, which is logistics cost** | §11.1, §16 |
+| **D-2** | Band price basis | `pricing_list.regular_price` | **`pricing_list.regular_price`; absent ⇒ `SOURCE_MISSING`; NO fallback to `sku_details.selling_price` (a master base input, not a site effective price)** | §9.1, §9.3, §15.6 |
+| **D-3** | Cross-country basis | Original currency; refuse mixed axes | **`AS_QUOTED_SINGLE_CURRENCY` only. Other currencies SPLIT into separate bands; no conversion; no shared axis; state `MIXED_CURRENCY_COMPARISON_REFUSED`** | §9.4, §11.2, §15.2 |
+| **D-4** | May the board create campaign lines? | No — and `DEAL_PLAN` deferred | **No writes — but `DEAL_PLAN` IS in the P1 MVP as `PROPOSAL_ONLY`, with a closed `proposed_*` field list** | §2, §7.4, §10, §17 B6 |
+| **D-5** | Legacy 44-tab read in P1? | Accept it; bounded read later | **NOT acceptable. Bounded scoped reads land in B1. Reuse `skuDetails.workspace.get` for 3 tables; ONE new owner for the other 3; no second competing authority** | §12.3, §16, §17 B1 |
+| **D-6** | Current selling price | Not shown in P1 | **Not shown until the source is settled, and NO field may stand in for it** | §9.1, §15.7 |
+| **D-7** | `board_history` | Defer to P2 | **A third table, `product_strategy_board_revisions`, ships in P1. Four revision events only. History UI may wait; the DATA may not** | §6.3, §8.6, §16, §17 B1 |
+| **D-8** | `margin` | Out of scope until Cost & Pricing | **Out of scope, AND no margin may be estimated from a selling price** | §9.1, §15.8 |
+| **D-9** | Board visibility | Accept it; say so in the UI | **`owner` = provenance only; no Private/Secure wording; production feature ships DISABLED behind a server-owned flag; a hidden button is not a control; enablement needs a separate authorization/security gate** | §13, §16, §17 B-GATE |
+
+**Six of the nine changed the plan** (D-3, D-4, D-5, D-7, D-9 outright; D-2/D-6/D-8 added prohibitions
+that the design did not previously state). The affected sections were rewritten so that no superseded
+default remains anywhere in this document.
+
+### 19.2 What is still open — and none of it blocks B1
+
+These are **not** re-openings of the nine. They are the questions the nine deliberately left downstream.
+
+| # | Open question | Raised by | Blocks | If it stays unanswered |
+|---|---|---|---|---|
+| **Q-1** | **Where does "current selling price" come from** — a new `pricing_list` column, a marketplace snapshot job, or manual entry? | D-6 | Nothing in P1 | The field stays absent. It is a **new labelled field** when it arrives, never a rename of an existing one |
+| **Q-2** | **If a base-currency view is ever wanted, which FX source is authoritative** — `pricing_list.fx_rate`, or something else? | D-3 | Nothing in P1 | P1 stays as-quoted and split by currency. `fx_rate` / `fx_rate_date` are displayed as source facts, never applied |
+| **Q-3** | **Who builds `productPricing.workspace.get`** — this board's B1, or `F1-7J-A3`'s `campaign-risk` migration? | D-5 | B1's sequencing, not its design | Whichever lands first owns it and the other consumes it. **Two bounded readers over `campaign_sku_lines` would be the competing authority D-5 forbids, arrived at by accident** |
+| **Q-4** | **The two Apps Script file numbers** (`65_`, `66_` proposed) | §16 | B1's first commit | Must be confirmed against the live Apps Script project before use; a collision would overwrite a shipped file |
+| **Q-5** | **The B-GATE questions** — is universal read/write acceptable for this content, and is board content in scope for P2-A RBAC? | D-9 | **Production enablement only** | The flag stays false. B1–B7 are fully buildable and testable with it false |
 
 ---
 
@@ -973,27 +1517,102 @@ Apps Script sync.
 
 | Work | Overlap | Verdict |
 |---|---|---|
-| **S1 diagnostic slice** (`TEMP_S1_POSITIVE_RESIDUAL_READINESS_CENSUS.gs`, Manifest P / S, factory movement census, R4C–R4F) | Tables: `factory_stock*`, `shipping_allocation_drafts*`, `reservations`, `inventory_gap*`. Files: one TEMP diagnostic + its suite | **No conflict.** Zero table overlap, zero file overlap. This round touched no S1 file (§21) |
-| **F1-7J S1–S5 surface migrations** (S1 = SKU Handbook, S2 = weekly line-logistics, S3 = PO-list, S4 = RO scope, S5 = IR reference lookups) | The board adds a **consumer** of `skuDetails.workspace.get` | **Aligned, not conflicting.** F1-7J-A prescribes exactly this move for `sku-regional-details.js`. The board follows the same direction |
-| **F1-7J-A3** (non-workspace pages → scoped reads, incl. `campaign-risk`) | The board's B7 (`productPricing.workspace.get`) covers `campaigns` / `campaign_sku_lines` | **Complementary.** B7 should be coordinated with F1-7J-A3 so one bounded read serves both |
+| **S1 diagnostic slice** (`TEMP_S1_POSITIVE_RESIDUAL_READINESS_CENSUS.gs`, Manifest P / S, factory movement census, R4C–R4F) | Tables: `factory_stock*`, `shipping_allocation_drafts*`, `reservations`, `inventory_gap*`. Files: one TEMP diagnostic + its suite | **No conflict.** Zero table overlap, zero file overlap. Neither P0 nor P0-R1 touched any S1 file (§21) |
+| **F1-7J S1–S5 surface migrations** (S1 = SKU Handbook, S2 = weekly line-logistics, S3 = PO-list, S4 = RO scope, S5 = IR reference lookups) | The board adds a **consumer** of `skuDetails.workspace.get` — and **D-5 makes that reuse mandatory rather than optional** | **Aligned, not conflicting.** F1-7J-A prescribes exactly this move for `sku-regional-details.js`. The board follows the same direction and extends `59_` by zero lines |
+| **F1-7J-A3** (non-workspace pages → scoped reads, incl. `campaign-risk`) | **Direct overlap, now load-bearing.** D-5 requires `pricing_list` / `campaigns` / `campaign_sku_lines` to have a bounded owner in **B1** | **Complementary but must be coordinated** — see Q-3. One owner for those tables, system-wide |
 | **P1-A…P1-G supply-chain closed loop** | None. The board reads no forecast, gap, recommendation, allocation, PO or shipment data | **No conflict** |
-| **P2-A RBAC** | The board's `owner` becomes a real FK | **Forward-compatible by design** (§13) |
+| **P2-A RBAC** | The board's `owner` becomes a real FK; **D-9 makes the board's production enablement wait on a security decision** | **Forward-compatible by design** (§13.4), and now explicitly gated (§17 B-GATE) |
+| **Supply Chain Canvas** (`supplychain.js`, Training Center) | **New overlap introduced by §11.5**: B2a extracts a shared Canvas Core from it | **Managed, not conflicting.** B2a is behaviour-preserving, ships alone, keeps `'supplychain-canvas'` as that page's own key, and is proven by non-regression tests (§11.5.4, §18) |
 
-The one thing to coordinate: **if F1-7J-A3 builds a `campaign-risk` bounded read first, the board
-should consume it rather than adding a second one.** Same table, one owner.
+The one thing to coordinate: **if F1-7J-A3 builds a `campaign-risk` bounded read first, the board must
+consume it rather than adding a second one.** Same tables, one owner (Q-3).
 
 ---
 
-## §21 — Isolation record for this round
+## §21 — Isolation record
 
+### 21.1 P0 (first round)
 - **Read-only baseline taken before any change:** branch `main`, HEAD `e9fcd27`,
   `origin/main` `e9fcd27` (confirmed against the live remote with `git ls-remote`), 0 ahead / 0 behind,
   worktree clean.
-- **Isolated worktree** created at
-  `…/Vibe Coding/Operation System/wt-product-strategy-board-p0` on branch
-  `feature/product-strategy-board-p0`, based on `e9fcd27`.
+- **Isolated worktree** created at `…/Vibe Coding/Operation System/wt-product-strategy-board-p0` on
+  branch `feature/product-strategy-board-p0`, based on `e9fcd27`.
 - **`C:/km-lb` untouched** (a pre-existing worktree on another branch; `CLAUDE.md` forbids modifying it).
 - **No branch switch, reset, checkout or cleanup in the mainline working tree.**
 - **No S1 TEMP diagnostic file** was read into this branch's changes or modified.
-- **Files created this round: 1** — this document.
+- **Files created: 1** — this document. Commit `5654db6`.
 - **No push, no merge, no deploy, no Apps Script sync, no DB write, no frontend or `.gs` change.**
+
+### 21.2 P0-R1 (this round)
+- **Preconditions verified read-only before any change**, all seven from the brief:
+  worktree is the designated one; branch `feature/product-strategy-board-p0`; **PRE HEAD
+  `5654db64583797cdf4d2eda87968201cd7e7b358`**; its sole parent `e9fcd27`; worktree clean including
+  untracked; the mainline worktree at `e9fcd27` and clean; `origin` carries no
+  `feature/product-strategy-board-p0` branch — **expected, and this round pushes nothing**.
+- **Files changed: 1 modified** (this document) **+ 4 created** (§22, all under
+  `docs/prototypes/product-strategy-board/`).
+- **No production file touched.** `index.html`, `assets/js/**`, `assets/css/**`, `assets/html/**` and
+  every `.gs` file are byte-identical to `e9fcd27` on this branch — including `supplychain.js` and
+  `supply-chain-canvas.css`, which §11.5 describes and does not modify.
+- **No S1 file** read into a change or modified. **`C:/km-lb` untouched.** **Mainline worktree
+  untouched** — no branch switch, reset, checkout or cleanup anywhere.
+- **No table created, no DB write, no API implemented, no AI implemented, no dependency added, no flag /
+  release / build change, no Apps Script sync, no deployment, no push, no merge.**
+
+---
+
+## §22 — The non-runtime visual prototype (P0-R1)
+
+**Path:** `docs/prototypes/product-strategy-board/`
+— `index.html`, `prototype.css`, `prototype.js`, `README.md`
+
+**How to open it:** double-click `index.html`, or open the local file path in a browser. No server, no
+build step, no install.
+
+### 22.1 What it is, and what it deliberately is not
+
+| | |
+|---|---|
+| **Is** | A static, self-contained illustration of the board's **information architecture and user flow** — the screens, the element types, the states and the refusals, as decided in §§2–15 |
+| **Is not** | Runtime. Not a page of the app, not a drag engine, not CRUD, not a data layer, and not a preview of the final visual design |
+
+### 22.2 Hard constraints, all satisfied
+
+| Constraint | How |
+|---|---|
+| Local mock data only | One `MOCK` object literal at the top of `prototype.js`. Every SKU, price, campaign and note in it is invented and labelled as sample data |
+| No API call | The file contains no `fetch`, no `XMLHttpRequest`, no `WebSocket`, no `EventSource`, no dynamic `import()`, and no `<script src>`/`<link href>` to any remote origin |
+| No production DB read | No `KM.DB`, no action name, no Apps Script URL |
+| Not loaded by the app | Nothing in `index.html` (the app shell) or any `assets/**` file references `docs/prototypes/**`. It lives outside the app's file tree and is reachable only by opening it directly |
+| No production frontend change | Zero bytes changed in `assets/**` or the app's `index.html` (§21.2) |
+| Not deployed | `docs/**` is not part of any deployment or bundle |
+| No new dependency | Plain HTML + CSS + vanilla JS. No CDN, no library, no font fetch, no build tool |
+| No `localStorage` for real data | The prototype does not call `localStorage` at all — not for board data, not for preferences. Its state lives in a JS variable for the page's lifetime |
+
+### 22.3 The fifteen things it demonstrates
+
+| # | Demonstrated | Where in the prototype |
+|---|---|---|
+| 1 | The **Product Strategy** page shell (D-1) — a top-level surface, not a Pricing Center child | Page header + breadcrumb |
+| 2 | **Board selector** with board type and version | Top bar, left |
+| 3 | **Series / Company / Country / Marketplace filters** | Top bar |
+| 4 | **Left toolbar**: Text · SKU · Regional · Price Band · Matrix · **Deal Plan** (enabled, D-4); Chart / Group / Connector marked deferred | Toolbar rail |
+| 5 | **The central board** with placed, selectable element cards on a fixed grid | Canvas region |
+| 6 | **Right properties panel** — source, mode, `author_type`, `version`, notes, geometry | Right rail |
+| 7 | **`SKU_CARD`** at master-SKU grain, with the three price levels and their own unit columns | Canvas |
+| 8 | **`REGIONAL_SKU_CARD`** at `company\|country\|marketplace\|sku` grain, with `marketplace_sku_status` **labelled as coming from `marketplace_skus`** (§4.5) | Canvas |
+| 9 | **`TEXT_NOTE`** | Canvas |
+| 10 | **`DEAL_PLAN`** with a permanent **`PROPOSAL ONLY`** marker, `proposed_*` fields, and the official campaign price shown separately (D-4, §7.4) | Canvas |
+| 11 | **`SERIES_PRICE_BAND`** — normal marker, deal marker, proposal marker, entry/core/premium positions, an **overlap**, a **gap with its threshold displayed**, and a **cannibalisation warning** labelled proposal-driven (§9.3) | Canvas, the wide element |
+| 12 | **Separate tracks per currency** with their own axes, plus `MIXED_CURRENCY_COMPARISON_REFUSED` stated on the element (D-3) | Inside the price band |
+| 13 | **`LIVE_REFERENCE` vs `FROZEN_SNAPSHOT`** — badges on the cards, `captured_at` on the frozen one, and the refresh-diff idea | Cards + properties panel |
+| 14 | **`SOURCE_MISSING`** — a member listed with its reason and plotted nowhere (D-2), and an official deal price absent rendered as missing rather than "no deal" | Price band footer + Deal Plan |
+| 15 | **Save Checkpoint and the revision concept** (D-7) — the button, the revision count, and a revision list with `revision_type` and who caused it | Top bar + History drawer |
+
+### 22.4 Interactions it does implement (deliberately few)
+
+Enough to walk the flow, and no engine: select an element (the properties panel follows the selection),
+switch the selected element between Live and Snapshot to see the badge and `captured_at` change, toggle
+the History drawer, press Save checkpoint (which appends a `SAVE_CHECKPOINT` row to the in-memory
+revision list), and switch the price band's Series. **Drag, resize, pan, zoom, real CRUD and persistence
+are out of scope** — they are §11.5's Canvas Core, which P1 builds and P0-R1 only specifies.
