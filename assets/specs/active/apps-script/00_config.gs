@@ -143,8 +143,24 @@ var WEEKLY_AI_PLAN_TRANSIT_BUFFER_ = {
 };
 function weeklyAiPlanTransitBuffer_() { return WEEKLY_AI_PLAN_TRANSIT_BUFFER_; }
 
+// S1-R3 — THE SINGLE-SCOPE CUTOVER. CO1100-R is RETIRED from this list and SP0750-M replaces it,
+// one entry for one entry, on explicit user authorization naming that exact scope.
+//
+// WHY IT MOVED. CO1100-R proved the FIRST half of the vertical slice and nothing else can be learned
+// from it: its recommendation is already FULLY_COVERED_BY_ACTIVE_PLAN (160 recommended against 520
+// already planned manually), so a controlled Generate against it correctly writes nothing, forever. The
+// second half — a POSITIVE residual, where the correct answer is that rows ARE written — needs a scope
+// that is actually short. SP0750-M is that scope.
+//
+// TWO ENTRIES WOULD NOT BE A NARROWER BLAST RADIUS THAN ONE, IT WOULD BE A WIDER ONE. A controlled
+// activation is only controlled while exactly one identity can be written, so this list holds exactly
+// one entry and the retired scope is REMOVED rather than kept beside its replacement.
+//
+// THE FLAG IS STILL false. Moving the allowlist changes WHICH single scope a generation could write; it
+// does not arm the generation. Both are required, they are separate authorizations, and only the first
+// has been given.
 var INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_ = [
-  { company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: 'CO1100-R' }
+  { company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: 'SP0750-M' }
 ];
 
 // Exact, case-sensitive, four-part match. No wildcard, no prefix, no "ALL", no empty-means-any.
@@ -184,4 +200,4 @@ function inventoryAiPlanActivationAllowlist_() {
 // like any other.
 // F1-7N-FC-1B-E3-R4-A2-R1-R5 §10 — also never rotated, and this round changes the file again (the
 // transit buffer authority), so it moves to the current round.
-var CONFIG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6';
+var CONFIG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6';

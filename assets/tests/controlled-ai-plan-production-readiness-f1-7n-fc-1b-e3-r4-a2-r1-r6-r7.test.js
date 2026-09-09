@@ -289,7 +289,22 @@ function World(over, censusSrc, g61Src) {
   vm.runInContext([extractVar(G43, 'INV_GAP_TABLE_'), extractVar(G43, 'INV_GAP_HEADERS_'),
     extractVar(G43, 'GAP_INV_WINDOWS_')].join(NL), ctx);
   vm.runInContext([
-    over.allowlist === undefined ? extractVar(G00, 'INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_')
+    // S1-R3 — THE DEFAULT IS THIS WORLD'S OWN SCOPE, NOT THE LIVE CONFIG.
+    //
+    // It used to be extractVar(G00, ...), i.e. whichever scope the activation allowlist happens to name
+    // today. This suite and the five built on it freeze what production DID for CO1100-R; they are not
+    // about which scope is currently armed. When the S1-R3 cutover moved the allowlist to SP0750-M, all
+    // six failed at once on a scope gate that was working exactly as designed — and the only way to make
+    // them green by renaming would have been to claim CO1100-R'S measured numbers for a scope nobody has
+    // measured.
+    //
+    // A world declares the scope it is a world OF. `over.allowlist` still drives the widened, empty and
+    // other-scope cases, so the gate itself is still tested against every shape; what is no longer tested
+    // HERE is the live config'S VALUE, which has exactly one owner:
+    // single-scope-allowlist-cutover-f1-7n-fc-1b-e3-r4-a2-r1-r6-r7-r6.test.js.
+    over.allowlist === undefined
+      ? ('var INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_ = ' + JSON.stringify(
+          [{ company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: SKU }]) + ';')
       : ('var INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_ = ' + JSON.stringify(over.allowlist) + ';'),
     extractFn(G00, 'inventoryAiPlanScopeEnabled_'),
     'var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = ' + (over.flag === true ? 'true' : 'false') + ';',
@@ -521,8 +536,11 @@ eq([B.db_writes, B.writer_calls, B.submit_calls, B.route_save_calls, B.writer_co
   [0, 0, 0, 0, false], 'B1c and reporting the five zeroes §4 asks for');
 
 eq(B.flag.value, false, 'B2 the flag is still false, which is what this round requires');
-eq(B.allowlist.entries.length, 1, 'B2a the allowlist holds exactly one scope');
-eq(B.allowlist.scope_is_listed, true, 'B2b and it is this one');
+// S1-R3 — these two read the allowlist THIS WORLD declares, not 00_config.gs. The census must report the
+// requested scope as listed exactly once when it is, and B11 / B_OUT below prove it reports the opposite
+// when the list is widened or names another scope. The LIVE value is asserted in the cutover suite.
+eq(B.allowlist.entries.length, 1, 'B2a the census reads exactly one scope out of the allowlist it was given');
+eq(B.allowlist.scope_is_listed, true, 'B2b and reports the requested scope as the listed one');
 eq(B.current_manual_planned_total, 520, 'B3 the manual planned total is 520');
 eq(B.before_counts, { visible_route_rows: 2, headers: 2, lines: 2, manual_planned_total: 520 },
   'B3a and the before shape is two headers, two lines, two rows');

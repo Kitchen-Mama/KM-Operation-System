@@ -114,8 +114,12 @@ ok(/var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = false;/.test(stripComments(CF
   'A1 the AI Plan DB generation flag is still declared false');
 var allowlist = /var INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_ = \[([\s\S]*?)\];/.exec(stripComments(CFG))[1];
 eq((allowlist.match(/\{/g) || []).length, 1, 'A2 the activation allowlist still holds exactly one entry');
-ok(allowlist.indexOf("company: 'ResUS'") !== -1 && allowlist.indexOf("sku: 'CO1100-R'") !== -1,
-  'A3 that entry is still the single live scope, unwidened');
+// S1-R3 — WHAT THIS ROUND DEPENDS ON IS THE SHAPE, NOT THE SKU. This spelled CO1100-R; the S1-R3 cutover
+// moved the allowlist to SP0750-M and the assertion above already covers the property that matters (one
+// entry). A complete, exact, wildcard-free single scope is what "controlled" means, and it survives every
+// cutover. The live VALUE has one owner: single-scope-allowlist-cutover-...-r6-r7-r6.test.js.
+ok(/company: '[^']+', country: '[^']+', marketplace: '[^']+', sku: '[^']+'/.test(allowlist) && !/ALL_SITES|'ALL'|'\*'|sku: ''|marketplace: ''/.test(allowlist),
+  'A3 that entry is a complete four-axis scope, unwidened', allowlist);
 // R6-R3 RESTATEMENT. These pinned "this round is the newest", which is true exactly once and false for every
 // round after. What they are about is that the round IS registered and that the family moved together, and
 // that is round-independent.

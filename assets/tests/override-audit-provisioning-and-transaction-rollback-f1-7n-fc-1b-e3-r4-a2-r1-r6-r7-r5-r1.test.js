@@ -690,8 +690,35 @@ function roundBaseline() {
   }
   return null;
 }
+// S1-R3 — AND THE ROUND'S OWN COMMIT, which is the OTHER end of the range and was missing.
+// `git diff BASE` is BASE..WORKING TREE, so every later round enlarged a set that describes R5-R1. The
+// newest commit whose 63_ still declares THIS stamp is where R5-R1 ended; the range is BASE..there, and it
+// is closed for ever. When the working tree IS that round (nothing later has moved 63_), INTRO is null and
+// the tree is the round — measured, not assumed.
+function roundIntro() {
+  var log = git('log --format=%H -- ' + REL63);
+  if (log === null) return null;
+  var commits = log.split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
+  for (var i = 0; i < commits.length; i++) {
+    var blob = git('show ' + commits[i] + ':' + REL63);
+    if (blob === null) continue;
+    if (blob.indexOf("SYS_DEPLOYMENT_RELEASE_ = '" + STAMP + "'") !== -1) return commits[i];
+  }
+  return null;
+}
 var BASE = roundBaseline();
+var INTRO = roundIntro();
+// Read a file AS THE ROUND SHIPPED IT. Falls back to the working tree only when this round has not been
+// committed yet, which is the one case where the tree genuinely IS the round.
+function atRound(rel) {
+  if (!INTRO) return read(rel);
+  var b = git('show ' + INTRO + ':' + rel);
+  return b === null ? read(rel) : String(b);
+}
 ok(!!BASE, 'C0  the round baseline is DERIVED from the commit that introduced this stamp', BASE);
+ok(!!INTRO, 'C0-i and the round' + 'S OWN COMMIT is derived the same way, so the range has both ends', INTRO);
+ok(!INTRO || String(git('show ' + INTRO + ':' + REL63)).indexOf("SYS_DEPLOYMENT_RELEASE_ = '" + STAMP + "'") !== -1,
+  'C0-i1 and 63_ at that commit declares THIS release, which is what makes it this round' + 'S end');
 // A baseline that resolves to HEAD is the failure mode of the first attempt: it makes the diff empty and
 // the sync set look like nothing changed. It has to be a STRICT ancestor.
 ok(!!BASE && String(git('merge-base --is-ancestor ' + BASE + ' HEAD')) !== 'null'
@@ -701,8 +728,11 @@ ok(!!BASE && String(git('show ' + BASE + ':' + REL63)).indexOf("SYS_DEPLOYMENT_R
   'C0b and 63_ at that baseline declares the PREVIOUS release, which is what makes it the right baseline');
 function changedSinceBaseline() {
   if (!BASE) return null;
-  var tracked = git('diff --name-only ' + BASE);
-  var others = git('ls-files --others --exclude-standard');
+  // S1-R3 — A CLOSED RANGE. `diff BASE` ended at the working tree, so this set grew with every later
+  // round and the assertions below slowly became claims about the present. BASE..INTRO is what R5-R1
+  // shipped. Untracked files are included ONLY while this round is still uncommitted.
+  var tracked = INTRO ? git('diff --name-only ' + BASE + ' ' + INTRO) : git('diff --name-only ' + BASE);
+  var others = INTRO ? '' : git('ls-files --others --exclude-standard');
   if (tracked === null || others === null) return null;
   return (tracked + '\n' + others).split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
 }
@@ -762,7 +792,7 @@ if (changed === null) {
     }
     return null;
   }
-  var censusNow = read(CENSUS_REL).replace(/\r\n/g, '\n');
+  var censusNow = atRound(CENSUS_REL).replace(/\r\n/g, '\n');
   var censusBase = String(git('show ' + BASE + ':' + CENSUS_REL)).replace(/\r\n/g, '\n');
   ['R6R7_NO_ACTION_BEFORE_', 'R6R7_SET_BEFORE_', 'R6R7_MANUAL_ROUTES_', 'R6R7_ACTUAL_BROWSER_RESPONSE_']
     .forEach(function (nm, i) {
@@ -772,8 +802,11 @@ if (changed === null) {
     });
   // The activation pin follows the RELEASE by that suite's own rule, so it is expected to have moved — and
   // it must equal the release exactly, not merely be close to it.
+  // S1-R3 — AT THIS ROUND'S COMMIT. The pin tracks SYS_DEPLOYMENT_RELEASE_ by the manifest suite'S own
+  // BP3, so a later release MUST move it; asserting it still reads R5-R1 in the working tree forbade
+  // exactly the thing the rule requires. What is true for ever is that it equalled this release HERE.
   eq((censusNow.match(/var R6R7_ACTIVATION_BUILD_ = '([^']+)'/) || [])[1], STAMP,
-    'C1b the activation pin is the deployed build, unchanged by any later round in this series');
+    'C1b the activation pin equalled the deployed build in the commit this round shipped');
   ok(all.indexOf('assets/specs/active/apps-script/90_generated_supply_planning_bundle.gs') === -1,
     'C2  §C 90_ did NOT change — no pure module moved, so BUNDLE_REBUILD is NOT required this round');
   ok(all.indexOf('assets/specs/active/apps-script/00_config.gs') === -1,
@@ -783,27 +816,41 @@ if (changed === null) {
 }
 
 // The action contract did NOT move, which is what makes C4 safe: a new action would have forced both.
-var sysAC = (G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1];
+// S1-R3 — §C IS ABOUT WHAT R5-R1 SHIPPED, so from here it reads the modules at that commit. Everything
+// above (the behavioural sections) still reads the working tree, which is right: those are claims about
+// the code as it stands, and they must keep holding.
+var C63 = atRound(GS + '63_api_v1_system_health.gs');
+var C71 = atRound(GS + '71_api_v1_factory_stock_guard.gs');
+var C11 = atRound(GS + '11_shipping_plan_handlers.gs');
+var C61 = atRound(GS + '61_api_v1_weekly_ai_plan.gs');
+var C01 = atRound(GS + '01_router.gs');
+var sysAC = (C63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1];
 var expAC = (DBAPI.match(/KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+)/) || [])[1];
 eq([sysAC, expAC], ['12', '12'],
   'C5  §C the action contract stays at 12 on BOTH sides — no action was added or removed');
 // But a NEW DEPLOYMENT VERSION *is* required, and this is the field that says so.
-var sysRel = (G63.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1];
+var sysRel = (C63.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1];
 eq(sysRel, STAMP, 'C6  §C SYS_DEPLOYMENT_RELEASE_ moved, so a NEW Web App deployment version IS required');
-var fsgB = (G71.match(/var FSG_BUILD_VERSION_ = '([^']+)'/) || [])[1];
-var spB = (G11.match(/var SP_BUILD_VERSION_ = '([^']+)'/) || [])[1];
-var sysB = (G63.match(/var SYS_BUILD_VERSION_ = '([^']+)'/) || [])[1];
-var wapB = (G61.match(/var WAP_BUILD_VERSION_ = '([^']+)'/) || [])[1];
-var rtrB = (G01.match(/var RTR_BUILD_VERSION_ = '([^']+)'/) || [])[1];
+var fsgB = (C71.match(/var FSG_BUILD_VERSION_ = '([^']+)'/) || [])[1];
+var spB = (C11.match(/var SP_BUILD_VERSION_ = '([^']+)'/) || [])[1];
+var sysB = (C63.match(/var SYS_BUILD_VERSION_ = '([^']+)'/) || [])[1];
+var wapB = (C61.match(/var WAP_BUILD_VERSION_ = '([^']+)'/) || [])[1];
+var rtrB = (C01.match(/var RTR_BUILD_VERSION_ = '([^']+)'/) || [])[1];
 eq([fsgB, spB, sysB], [STAMP, STAMP, STAMP], 'C7  the three modules that changed declare this round …');
 eq([wapB, rtrB], [PREV_STAMP, PREV_STAMP], 'C7a … and the two that did not, do NOT — a stamp is not a release');
 ok(RO.stampAtOrAfter(sysRel, wapB) && RO.stampAtOrAfter(sysRel, rtrB),
   'C7b while the RELEASE is at or after every module it ships');
-ok(RO.OWNER_STAMPS.indexOf(STAMP) === RO.OWNER_STAMPS.length - 1 && RO.BUILD_STAMP_RE.test(STAMP),
-  'C8  and this round\'s stamp is registered, last, and legally shaped');
+// S1-R3 — 'LAST' WAS TRUE EXACTLY ONCE. OWNER_STAMPS is append-only and this suite pinned itself to its
+// tail, which the sibling suites had already documented as a defect in their own §A4 ("a suite that pins
+// itself to the tail of a growing list fails on the next round for a reason that is not its subject").
+// REGISTERED and LEGALLY SHAPED are the properties; being last is a property of the calendar.
+ok(RO.OWNER_STAMPS.indexOf(STAMP) !== -1 && RO.BUILD_STAMP_RE.test(STAMP),
+  'C8  and this round\'s stamp is registered and legally shaped');
+ok(RO.stampAtOrAfter(RO.OWNER_STAMPS[RO.OWNER_STAMPS.length - 1], STAMP),
+  'C8a with every later release ordered after it, never before');
 
 // The manifest can be ASKED which files to sync, so the list is not a prose artifact.
-var manifest = (G63.match(/\{ file: '(?:71_api_v1_factory_stock_guard|11_shipping_plan_handlers|63_api_v1_system_health)\.gs'[^}]*\}/g) || []);
+var manifest = (C63.match(/\{ file: '(?:71_api_v1_factory_stock_guard|11_shipping_plan_handlers|63_api_v1_system_health)\.gs'[^}]*\}/g) || []);
 eq(manifest.length, 3, 'C9  §C all three changed modules have a manifest row …');
 ok(manifest.every(function (r) { return r.indexOf(STAMP) !== -1; }),
   'C9a … and every one of those rows expects this round');
@@ -818,7 +865,7 @@ ok(manifest.every(function (r) { return r.indexOf(STAMP) !== -1; }),
 // A MANIFEST ROW, not a mention. 63_ now carries a comment explaining why the row is absent, and that
 // comment necessarily names the file — testing for the filename would forbid the explanation.
 function manifestRowFor(file) {
-  return new RegExp("\\{ file: '" + file.replace(/\./g, '\\.') + "'").test(G63);
+  return new RegExp("\\{ file: '" + file.replace(/\./g, '\\.') + "'").test(C63);
 }
 ok(!manifestRowFor('TEMP_migrate_factory_stock_override_audit_r5.gs'),
   'C10 the provisioning tool has NO deployment-manifest row — it is not synced as runtime');

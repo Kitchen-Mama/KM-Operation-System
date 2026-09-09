@@ -111,8 +111,12 @@ ok(/var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = false;/.test(CFG),
 var allowlist = extractVar(CFG, 'INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_');
 eq((allowlist.match(/\{ company:/g) || []).length, 1,
   'A2  the activation allowlist still holds exactly ONE scope');
-ok(/company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: 'CO1100-R'/.test(allowlist),
-  'A2a and it is the same scope — not widened');
+// S1-R3 — WHAT THIS ROUND DEPENDS ON IS THE SHAPE, NOT THE SKU. This spelled CO1100-R; the S1-R3 cutover
+// moved the allowlist to SP0750-M and the assertion above already covers the property that matters (one
+// entry). A complete, exact, wildcard-free single scope is what "controlled" means, and it survives every
+// cutover. The live VALUE has one owner: single-scope-allowlist-cutover-...-r6-r7-r6.test.js.
+ok(/company: '[^']+', country: '[^']+', marketplace: '[^']+', sku: '[^']+'/.test(allowlist) && !/ALL_SITES|'ALL'|'\*'|sku: ''|marketplace: ''/.test(allowlist),
+  'A2a and it is one complete four-axis scope — not widened', allowlist);
 // The two new diagnostic entry points, and the one that deliberately does not exist.
 ok(/function RUN_R6R6_MANUAL_ROUTE_SAVE_PREFLIGHT\(\)/.test(CENSUS),
   'A3  the read-only preflight entry point exists');

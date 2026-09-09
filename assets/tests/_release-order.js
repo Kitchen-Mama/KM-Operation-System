@@ -584,7 +584,10 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R2', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R3',
   'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R4',
   'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5',
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1',
+  // S1-R3 — the single-scope allowlist cutover: INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_ moves from
+  // CO1100-R to SP0750-M (00_config.gs), and 63_ moves the release and its own stamp with it.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

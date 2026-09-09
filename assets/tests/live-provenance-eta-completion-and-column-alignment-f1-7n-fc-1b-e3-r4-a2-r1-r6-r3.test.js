@@ -88,7 +88,12 @@ ok(/var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = false;/.test(stripComments(CF
   'A1 the AI Plan DB generation flag is still declared false');
 var allowlist = /var INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_ = \[([\s\S]*?)\];/.exec(stripComments(CFG))[1];
 eq((allowlist.match(/\{/g) || []).length, 1, 'A2 the activation allowlist still holds exactly one entry');
-ok(allowlist.indexOf("sku: 'CO1100-R'") !== -1, 'A3 and it is still the single live scope');
+// S1-R3 — WHAT THIS ROUND DEPENDS ON IS THE SHAPE, NOT THE SKU. This spelled CO1100-R; the S1-R3 cutover
+// moved the allowlist to SP0750-M and the assertion above already covers the property that matters (one
+// entry). A complete, exact, wildcard-free single scope is what "controlled" means, and it survives every
+// cutover. The live VALUE has one owner: single-scope-allowlist-cutover-...-r6-r7-r6.test.js.
+ok(/company: '[^']+', country: '[^']+', marketplace: '[^']+', sku: '[^']+'/.test(allowlist) && !/ALL_SITES|'ALL'|'\*'|sku: ''|marketplace: ''/.test(allowlist),
+  'A3 and that entry is a complete four-axis scope with no wildcard', allowlist);
 // R6-R4 RESTATEMENT. The claim was never "R6-R3 is last for ever" — it was that this round's stamp is
 // REGISTERED and ORDERED. A suite that pins itself to the tail of a growing list fails on the next round for
 // a reason that has nothing to do with what it tests.

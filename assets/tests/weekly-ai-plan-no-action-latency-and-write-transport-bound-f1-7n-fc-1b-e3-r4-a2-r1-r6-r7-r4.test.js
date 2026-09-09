@@ -557,7 +557,11 @@ D5.settle()
     // ============================================================================================================
     ok(/INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_\s*=\s*false/.test(G00), 'G1  the production flag is still FALSE');
     var allow = (G00.match(/INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_ = \[[\s\S]*?\];/) || [''])[0];
-    ok(/ResUS/.test(allow) && /CO1100-R/.test(allow), 'G1a and the allowlist is still the one frozen scope');
+    // S1-R3 — WHAT THIS ROUND DEPENDS ON IS THE SHAPE, NOT THE SKU. This spelled CO1100-R; the S1-R3 cutover
+    // moved the allowlist to SP0750-M and the assertion above already covers the property that matters (one
+    // entry). A complete, exact, wildcard-free single scope is what "controlled" means, and it survives every
+    // cutover. The live VALUE has one owner: single-scope-allowlist-cutover-...-r6-r7-r6.test.js.
+    ok(/company: '[^']+', country: '[^']+', marketplace: '[^']+', sku: '[^']+'/.test(allow), 'G1a and the allowlist entry names all four axes, none of them blank', allow);
     eq((allow.match(/company:/g) || []).length, 1, 'G1b with exactly one entry');
     ok(!/ALL_SITES/.test(allow), 'G1c and no wildcard');
     // The harvest short-circuit writes nothing and constructs nothing.

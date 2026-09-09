@@ -233,15 +233,29 @@ var C0 = gsCtx(at('2026-09-04', '10:41'));
 var scopeEnabled = vm.runInContext('inventoryAiPlanScopeEnabled_', C0);
 var allowlist = vm.runInContext('inventoryAiPlanActivationAllowlist_', C0);
 eq(vm.runInContext('inventoryAiPlanDbGenerationEnabled_', C0)(), false, 'G0  §12.21 the flag is FALSE this round');
-eq(allowlist(), [{ company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: 'CO1100-R' }],
-  'G1  the allowlist names exactly one scope');
-eq(scopeEnabled('ResUS', 'US', 'Amazon', 'CO1100-R'), true, 'G2  §12.23 the exact scope is enabled');
-[['ResUS', 'US', 'Amazon', 'CO1150-R', 'another sku'],
- ['ResUS', 'US', 'Walmart', 'CO1100-R', 'another marketplace'],
- ['ResUS', 'CA', 'Amazon', 'CO1100-R', 'another country'],
- ['KM', 'US', 'Amazon', 'CO1100-R', 'another company'],
- ['ResUS', 'US', 'Amazon', 'CO1100-R2', 'a sku PREFIXED by an enabled one'],
- ['resus', 'us', 'amazon', 'co1100-r', 'a case-folded near-match']].forEach(function (c, i) {
+// S1-R3 — THE GUARD IS THE SUBJECT; WHICH SCOPE IT GUARDS IS NOT. G1 deep-equalled the CO1100-R entry and
+// G2 spelled it again, so the S1-R3 cutover to SP0750-M failed both — and, worse, every near-miss below
+// was built from CO1100-R, so after a cutover "a sku PREFIXED by an enabled one" would have been testing
+// a prefix of a sku that is no longer enabled: still green, no longer the case it names.
+//
+// The enabled scope is now READ from the authority and the near-misses are DERIVED from it, so each case
+// keeps meaning exactly what its label says through any cutover. Exactly-one-entry and all-four-axes are
+// asserted as the invariants they are.
+var G_LIST = allowlist();
+eq(G_LIST.length, 1, 'G1  the allowlist names exactly one scope');
+var G_S = G_LIST[0] || {};
+eq([!!G_S.company, !!G_S.country, !!G_S.marketplace, !!G_S.sku], [true, true, true, true],
+  'G1a and that scope carries all four axes, none of them blank', G_S);
+eq(scopeEnabled(G_S.company, G_S.country, G_S.marketplace, G_S.sku), true,
+  'G2  §12.23 the exact scope is enabled');
+[[G_S.company, G_S.country, G_S.marketplace, G_S.sku + '-X', 'another sku'],
+ [G_S.company, G_S.country, 'Walmart', G_S.sku, 'another marketplace'],
+ [G_S.company, 'CA', G_S.marketplace, G_S.sku, 'another country'],
+ ['KM', G_S.country, G_S.marketplace, G_S.sku, 'another company'],
+ [G_S.company, G_S.country, G_S.marketplace, G_S.sku + '2', 'a sku PREFIXED by an enabled one'],
+ [String(G_S.company).toLowerCase(), String(G_S.country).toLowerCase(),
+  String(G_S.marketplace).toLowerCase(), String(G_S.sku).toLowerCase(), 'a case-folded near-match']
+].forEach(function (c, i) {
   eq(scopeEnabled(c[0], c[1], c[2], c[3]), false, 'G3.' + (i + 1) + ' §12.22 refused: ' + c[4]);
 });
 [['ResUS', 'US', 'ALL_SITES', 'CO1100-R'], ['ResUS', 'US', 'all', 'CO1100-R'],

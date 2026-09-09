@@ -494,8 +494,14 @@ settle()
       'H2  00_config.gs still holds the production flag at FALSE');
     eq((G61.match(/INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_\s*=/g) || []).length, 0,
       'H2a and 61_ does not redeclare the allowlist');
-    ok(/ResUS[\s\S]{0,400}CO1100-R/.test((G00.match(/INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_ = \[[\s\S]*?\];/) || [])[0] || ''),
-      'H2b the allowlist is still the one frozen scope');
+    // S1-R3 — WHAT THIS ROUND DEPENDS ON IS THE SHAPE, NOT THE SKU. This spelled CO1100-R; the S1-R3 cutover
+    // moved the allowlist to SP0750-M and the assertion above already covers the property that matters (one
+    // entry). A complete, exact, wildcard-free single scope is what "controlled" means, and it survives every
+    // cutover. The live VALUE has one owner: single-scope-allowlist-cutover-...-r6-r7-r6.test.js.
+    var _h2Allow = (G00.match(/INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_ = \[[\s\S]*?\];/) || [])[0] || '';
+    ok(/company: '[^']+', country: '[^']+', marketplace: '[^']+', sku: '[^']+'/.test(_h2Allow) && (_h2Allow.match(/company:/g) || []).length === 1
+      && !/ALL_SITES|'ALL'|'\*'|sku: ''|marketplace: ''/.test(_h2Allow),
+      'H2b the allowlist is still exactly one complete four-axis scope', _h2Allow);
 
     // The gate order: the flag is read before anything can write, and this round did not move it.
     var pre = runIt('RUN_R6R7_CONTROLLED_AI_PLAN_PREFLIGHT', live(), {});

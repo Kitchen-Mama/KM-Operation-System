@@ -93,13 +93,13 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 // R6-R7-R4 - THE RELEASE MOVES AGAIN: 61_ changed, so a new Web App deployment version is required. A
 // deployment still on R3 answers NO_ACTION only after the full KMAF pipeline, which is the 90-second
 // request this round exists to end.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1';
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6';
 // 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
 // R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
 // not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
 // R6-R7-R3 — moved because 61_'s manifest row moved with 61_ itself, which is a change to THIS FILE.
 // R6-R7-R4 - moved because 61_'s manifest row moved with 61_, which is a change to THIS FILE.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1';
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -311,11 +311,11 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
   // F1-7N-FC-1B-E3 §E.9 — the CONFIG is an owner file too. It holds
   // INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_, so a project still running the previous copy of it writes no
   // allocation drafts while the repository says it should; without an entry here that difference had no name.
-  { file: '00_config.gs', symbol: 'CONFIG_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6', owns: 'global constants + the feature flags of record (incl. Inventory AI Plan DB generation)' },
+  { file: '00_config.gs', symbol: 'CONFIG_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6', owns: 'global constants + the feature flags of record (incl. Inventory AI Plan DB generation)' },
   // F1-7N-FC-1B-E3-R1 — 61_ owns the harvest, the canonical readiness decision and the K2 generation, and
   // it carried no stamp at all: a deployment that answers HARVEST_NOT_READY with no issues and a deployment
   // that predates the typed-readiness fix were the same observation from outside. Now they are not.

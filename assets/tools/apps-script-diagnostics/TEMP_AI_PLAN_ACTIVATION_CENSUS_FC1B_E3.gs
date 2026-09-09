@@ -70,7 +70,11 @@
 // R6-R7-R3 — moves again: the capture snippet was reading the mutation counters out of a nested sub-object
 // the response contract does not have, so it recorded seven measured zeros as nulls.
 // R6-R7-R4 - moves with the file: the census now records the NO_ACTION short-circuit.
-var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1';
+// S1-R3 - moves with the release. This file did not change its BEHAVIOUR this round; its two pins are
+// the deployment identity it refuses to run against, and the manifest suite holds them equal to
+// SYS_DEPLOYMENT_RELEASE_ (BP3) and to each other (BP3a) precisely so a lagging pin cannot refuse a
+// correctly synced project.
+var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6';
 
 /** Read-only row reader. The Sheet object stays inside this function — the caller gets values, never a writer. */
 // R6-R3 §2 — the OPTIONAL third argument is a metrics sink. §2 requires the diagnostic to report how many
@@ -7798,7 +7802,13 @@ function RUN_R6R7_CONTROLLED_NO_ACTION_ACTIVATION_MANIFEST() {
 // KMAF pipeline instead of after it. The R3 activation's preflight timings were taken on a system that no
 // longer exists, so the preflight and the manifest must be re-run on the R4 deployment. The frozen ROW
 // baseline is unaffected: rows are rows, and none of them moved.
-var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1';
+// S1-R3 - MOVED, AND THE FROZEN EVIDENCE BELOW DOES NOT TRANSFER, FOR A NEW REASON. Every previous move
+// was a code change under the same scope. This one RETIRES the scope: CO1100-R is no longer in
+// INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_ at all. So on an S1-R3 deployment this census refuses at its
+// own scope gate, and that refusal is CORRECT - the controlled no-action activation it proves is
+// complete, and its scope is not one a generation may write any more. The pin follows the release so
+// that the refusal a reader sees names the SCOPE rather than a stale build.
+var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6';
 
 // ================================================================================================================
 // THE BROWSER HALF. Run in the page console; nothing here writes, and nothing here is a substitute for the

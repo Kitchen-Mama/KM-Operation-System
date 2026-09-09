@@ -91,7 +91,10 @@ var DEPLOYMENT_BUILD = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R2';
 // and the census pin followed. This literal is a DOUBLE of what a healthy deployment REPORTS, not a record
 // of what production currently serves — production is still on the previous release until the user syncs
 // and publishes, and the activation evidence must be RE-RUN there rather than restamped here.
-var OBSERVED_BUILD = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1';
+// S1-R3 — and again, and this time the release moved because 00_config.gs did: the activation allowlist
+// was cut over from CO1100-R to SP0750-M. The pin follows the release (BP3) and this double follows the
+// pin, because it is what a HEALTHY deployment REPORTS.
+var OBSERVED_BUILD = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6';
 var ACTIVATION_PIN = (CENSUS.match(/var R6R7_ACTIVATION_BUILD_ = '([^']+)'/) || [])[1] || null;
 
 // The deployment contract is 63_'s to report and 63_ is not in this world. A DOUBLE stands in for it, and it
@@ -407,7 +410,7 @@ eq((CENSUS.match(/var R6R7_ACTIVATION_BUILD_ = '[^']+';/g) || []).length, 1,
 eq((CENSUS.match(/R6R7_ACTIVATION_BUILD_/g) || []).length, 3,
   'BP1a and it is referenced exactly twice besides its declaration: the expected value and the comparison');
 ok(ACTIVATION_PIN !== null, 'BP2  the pin is readable from the census');
-eq(ACTIVATION_PIN, 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1', 'BP2a and it is this round: R6-R7-R5-R1');
+eq(ACTIVATION_PIN, 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6', 'BP2a and it is this round: R6-R7-R6');
 eq(ACTIVATION_PIN, RELEASE_P3,
   'BP3  the pin equals 63_\'s SYS_DEPLOYMENT_RELEASE_ — a pin that lags a release refuses a healthy deployment');
 eq(ACTIVATION_PIN, CENSUS_STAMP_P3,
@@ -434,7 +437,10 @@ eq([BP.res.deployment.mixed_deployment, BP.res.deployment.stale_modules], [false
 // EVERY OTHER MISMATCH STILL STOPS. Raising the pin must not have turned this gate into a formality.
 [['an older release', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R4'],
  ['an older release still', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R1'],
- ['a NEWER release nobody measured on', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6'],
+ // S1-R3 - DERIVED, NOT SPELLED. This case spelled a release that was hypothetical when written and
+ // became the CURRENT one the moment S1-R3 shipped, so the suite asserted that a healthy deployment must
+ // STOP. A revision of whatever the observed build IS can never collide with it.
+ ['a NEWER release nobody measured on', OBSERVED_BUILD + '-R1'],
  ['an empty build', ''], ['a null build', null]
 ].forEach(function (c, i) {
   var r = manifest(live(), { deployment: { deployment_build: c[1] } });
@@ -1517,12 +1523,20 @@ eq(P7.res.no_action_classification.checks.map(function (c) { return c.predicate;
   'P7a with no class-B condition in its ledger at all');
 ok(labels(P7.world).filter(function (n) { return /^r6r7_freeze_paste_block_/.test(n); }).length > 0,
   'P7b and a READY still emits its freeze chunks — the locks gate on the verdict, not on the class');
-eq(extractVar(CENSUS, 'R6R7_ACTIVATION_BUILD_').match(/'([^']+)'/)[1],
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1',
-  'P7c the deployment build pin is still R5-R1 — no production runtime file changed this round');
-eq(read('assets/specs/active/apps-script/63_api_v1_system_health.gs')
-  .match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/)[1], 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1',
-  'P7d and the release it follows has not moved either');
+// S1-R3 — THESE TWO USED TO SPELL A RELEASE, AND THAT WAS A CLAIM ABOUT WHICHEVER ROUND IS IN PROGRESS.
+// P7c asserted the pin "is still R5-R1 — no production runtime file changed this round", and P7d that
+// the release "has not moved either". Both were true when written and both are properties of a MOMENT,
+// not of this suite'S subject: the first later round to change a production runtime file breaks them for
+// a reason unrelated to controlled no-action. S1-R3 is that round. What is INVARIANT is the equality —
+// the pin tracks the release, so a correctly synced deployment is never refused for its build — and that
+// is what BP3 already states and what these two now state at the end of the run as well.
+var _p7Pin = extractVar(CENSUS, 'R6R7_ACTIVATION_BUILD_').match(/'([^']+)'/)[1];
+var _p7Rel = read('assets/specs/active/apps-script/63_api_v1_system_health.gs')
+  .match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/)[1];
+eq(_p7Pin, _p7Rel, 'P7c the deployment build pin equals the release — a lagging pin refuses a healthy'
+  + ' deployment, whichever release is current');
+ok(RO.OWNER_STAMPS.indexOf(_p7Rel) !== -1 && RO.BUILD_STAMP_RE.test(_p7Rel),
+  'P7d and that release is a registered, well-formed owner stamp', _p7Rel);
 
 // ================================================================================================================
 section('N — mutants');
@@ -1692,7 +1706,7 @@ mut('N12 the manifest proof dropping the frozen fingerprints', function () {
 // R6-R7-R3-P3 — THE REGRESSION THAT ACTUALLY HAPPENED, as a mutant. The pin left behind at R2 while the
 // release moved to R3: the live manifest STOPs on a healthy deployment, and the old suite saw nothing.
 mut('N13 the activation build pin left behind a release while the release moved on', function () {
-  var m = swap(CENSUS, "var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1';",
+  var m = swap(CENSUS, "var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6';",
     "var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5';");
   var stalePin = (m.match(/var R6R7_ACTIVATION_BUILD_ = '([^']+)'/) || [])[1];
   var bad = withCensus(m, 'RUN_R6R7_CONTROLLED_NO_ACTION_ACTIVATION_MANIFEST');

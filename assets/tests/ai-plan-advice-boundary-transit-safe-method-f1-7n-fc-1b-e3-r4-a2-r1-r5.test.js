@@ -77,6 +77,20 @@ var G13 = read(GS + '13_procurement_handlers.gs');
 var G17 = read(GS + '17_carrier_handlers.gs');
 var G02 = read(GS + '02_core_sheet_db.gs');
 var CFG = read(GS + '00_config.gs');
+// S1-R3 — THE WORLD DECLARES THE SCOPE IT IS A WORLD OF, RATHER THAN INHERITING A LIVE CONTROL.
+//
+// This suite loads 00_config.gs wholesale into its context and then builds a CO1100-R world on top of it,
+// so the activation allowlist it ran against was whichever scope was armed THAT DAY. The S1-R3 cutover
+// moved that list to SP0750-M and every fixture here started failing at a scope gate that was working
+// exactly as designed. Renaming the fixture would have been worse than the failure: the numbers frozen
+// below were measured on CO1100-R, and claiming them for a scope nobody has measured is a fabrication.
+//
+// So the WORLD gets a config whose allowlist is this suite'S OWN scope, and `CFG` stays the real file for
+// the assertions that are about the real file. The live allowlist VALUE has exactly one owner:
+// single-scope-allowlist-cutover-f1-7n-fc-1b-e3-r4-a2-r1-r6-r7-r6.test.js.
+var CFG_WORLD = CFG.replace(/\{ company: '[^']*', country: '[^']*', marketplace: '[^']*', sku: '[^']*' \}/,
+  "{ company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: 'CO1100-R' }");
+
 var TEMP = read('assets/tools/apps-script-diagnostics/TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3.gs');
 var RO = require('./_release-order.js');
 
@@ -166,7 +180,7 @@ function build(opts) {
   // the guard is not in the project (FACTORY_STOCK_GUARD_SEAM_MISSING), because an unguarded generation can
   // over-commit the shared pool. Omitting it here would report this harness's own missing file as a
   // production defect, exactly as the route-identity note above describes.
-  var SRC = { bundle: read(GS + '90_generated_supply_planning_bundle.gs'), cfg: CFG,
+  var SRC = { bundle: read(GS + '90_generated_supply_planning_bundle.gs'), cfg: CFG_WORLD,
     fsg: read(GS + '71_api_v1_factory_stock_guard.gs'),
     ric: read(GS + '69_api_v1_route_identity_contract.gs'), aipl: read(GS + '69_api_v1_ai_plan_lifecycle.gs'),
     sad: G16, wap: G61, sys: G63, carrier: G17, census: TEMP };
