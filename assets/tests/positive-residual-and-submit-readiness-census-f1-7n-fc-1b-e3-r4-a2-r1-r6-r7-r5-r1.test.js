@@ -4577,15 +4577,30 @@ eq(AB4.chronology.ordering_is_unambiguous, false,
 // §1.4. This is the whole point of asking another row: every writer records before/after, so the next
 // movement's opening balance is an INDEPENDENT statement of what this row's closing balance was.
 var AB5 = abRun([abLive(), abFull()]);
-eq(AB5.next_same_pool_movement.one_based_sheet_row_number, 3,
+var AB5n = AB5.next_classifiable_same_pool_movement;
+eq(AB5n.one_based_sheet_row_number, 3,
   'AB5 the next classifiable movement in the pool is located');
-eq(AB5.next_same_pool_movement.movement_type, 'manual_adjustment',
-  'AB5a with its type');
-eq([AB5.next_same_pool_movement.before_current_stock, AB5.next_same_pool_movement.after_current_stock],
+eq(AB5n.movement_type, 'manual_adjustment', 'AB5a with its type');
+eq([AB5n.before_current_stock, AB5n.after_current_stock],
   [12000, 12500], 'AB5b and both of its current-axis cells');
-eq(AB5.next_same_pool_movement.movement_id, 'FSMV-000000A1', 'AB5c and its primary key');
-ok(AB5.next_same_pool_movement.full_named_row_fingerprint !== null,
+eq(AB5n.movement_id, 'FSMV-000000A1', 'AB5c and its primary key');
+ok(AB5n.full_named_row_fingerprint !== null,
   'AB5d and its own full-row fingerprint, so it can be re-found');
+// R4G §C — THE THREE SUCCESSOR QUESTIONS COINCIDE HERE, AND THAT IS WHY ONE VARIABLE SURVIVED R4F.
+// This world's next row opens at 12000, exactly where the target closed, so it is the physical successor,
+// the classifiable one AND the one in the target's own ledger epoch. R4F's single `next_same_pool_movement`
+// was measured against worlds like this one and looked correct on all of them. Section AC is the world
+// where the three answers differ.
+eq([AB5.next_physical_same_pool_movement.one_based_sheet_row_number,
+  AB5.next_classifiable_same_pool_movement.one_based_sheet_row_number,
+  AB5.next_same_ledger_epoch_movement.one_based_sheet_row_number], [3, 3, 3],
+  'AB5d1 all three successor questions have the same answer on a single-epoch chain');
+eq(AB5.ledger_epochs.epoch_count, 1, 'AB5d2 because this chain is one ledger epoch');
+eq(AB5.chain_continuity.links[0].current.state, 'AGREES', 'AB5d3 its one link agrees');
+ok(String(AB5.chain_continuity.links[0].current.comparability_basis)
+  .indexOf('BOTH_CELLS_ARE_READINGS_OF_THE_SAME_POOL_QUANTITY') === 0,
+  'AB5d4 and says WHY the two cells are commensurable, citing the writers that read them',
+  AB5.chain_continuity.links[0].current.comparability_basis);
 var AB5ev = AB5.evidence.filter(function (e) { return e.source === 'LEDGER_CHAIN_OVERLAP'; });
 ok(AB5ev.length >= 1, 'AB5e the overlap produces evidence', AB5.evidence);
 ok(AB5ev[0].supports.indexOf('CURRENT_DELTA_FROM_BEFORE_AFTER') >= 0
@@ -4643,12 +4658,13 @@ var AB9 = abRun([abLive(), abFull(), abFull({ factory_stock_movement_id: 'FSMV-0
   before_current_stock: 12500, after_current_stock: 12800, qty: 300,
   created_at: '2026-06-25T00:00:00Z', movement_date: '2026-06-25' })]);
 eq(AB9.chain_continuity.links_examined, 2, 'AB9 two links across three pool rows');
-eq(AB9.chain_continuity.current_axis, { checked: 2, agree: 2, disagree: 0, unevaluable: 0 },
-  'AB9a and the current axis joins up on both');
+eq(AB9.chain_continuity.current_axis,
+  { checked: 2, agree: 2, disagree: 0, unevaluable: 0, epoch_boundary: 0, not_comparable: 0 },
+  'AB9a and the current axis joins up on both, with NO epoch boundary anywhere in it');
 eq(AB9.chain_continuity.chain_is_continuous_on_the_current_axis, true,
   'AB9b so the current chain is continuous');
 eq(AB9.chain_continuity.reserved_axis,
-  { checked: 2, agree: 1, disagree: 0, unevaluable: 1 },
+  { checked: 2, agree: 1, disagree: 0, unevaluable: 1, epoch_boundary: 0, not_comparable: 0 },
   'AB9c while the reserved link touching the blank pair is UNEVALUABLE, not broken');
 eq(AB9.chain_continuity.links[0].reserved.state, 'UNEVALUABLE',
   'AB9d named per link');
@@ -4703,7 +4719,8 @@ ok(String(AB12.balance_reconcile.why_not_independent).indexOf('CELL_UNDER_QUESTI
 eq(AB12.evidence.filter(function (e) { return e.source === 'FACTORY_STOCK_BALANCE'; }).length, 0,
   'AB12b so it produces NO evidence at all, rather than agreeable-looking evidence');
 AB12.candidates.forEach(function (c) {
-  ok(String(c.current_factory_stock_compatibility).indexOf('NOT_INDEPENDENT') === 0,
+  ok(String(c.current_factory_stock_compatibility).indexOf('NOT_ATTRIBUTABLE') === 0
+    && String(c.current_factory_stock_compatibility).indexOf('NOT_INDEPENDENT') > 0,
     'AB12c.' + c.number + ' and every candidate reports it as not independent: ' + c.candidate,
     c.current_factory_stock_compatibility);
 });
@@ -4726,8 +4743,10 @@ eq(AB13c2.independent_supporting_sources.sort(),
   'AB13c two DISTINCT independent sources, named');
 eq(AB13c2.contradicting_sources, [], 'AB13d and nothing authoritative contradicts it');
 eq(AB13c2.computed_delta, 11000, 'AB13e the delta the pair implies is 11000');
-eq(AB13c2.subsequent_chain_compatibility, 'CONSISTENT_WITH_THE_NEXT_MOVEMENT', 'AB13f chain-consistent');
-eq(AB13c2.current_factory_stock_compatibility, 'THE_LEDGER_RECONCILES_TO_THE_LIVE_BALANCE',
+eq(AB13c2.subsequent_chain_compatibility, 'CONSISTENT_WITH_THE_NEXT_MOVEMENT_IN_THE_SAME_LEDGER_EPOCH',
+  'AB13f chain-consistent, and the reading names the epoch it is consistent WITHIN');
+eq(AB13c2.current_factory_stock_compatibility,
+  'THE_TARGETS_OWN_LEDGER_EPOCH_RECONCILES_TO_THE_LIVE_BALANCE',
   'AB13g and balance-consistent');
 // INITIAL_BALANCE_SET is blocked, not merely out-scored, and the block is recorded with its reason.
 eq(AB13.verdict_detail.blocked_by_contradiction,
@@ -5066,6 +5085,9 @@ eq(AB29b.chain_without_the_target.removing_it_breaks_a_link, false,
   'AB29b a two-row chain has no link to break');
 eq(AB29b.chain_without_the_target.neighbours_overlap_each_other_directly, null,
   'AB29c and with the target first there is nothing to bridge, which stays null rather than false');
+eq(AB29b.chain_without_the_target.neighbours_overlap_state,
+  'NOT_APPLICABLE_THE_TARGET_ROW_IS_FIRST_OR_LAST_IN_THE_CHAIN',
+  'AB29c1 and R4G makes the null say which of the several nulls it is');
 // AND THIS IS A WORLD THAT REACHES READY ON "NOT A LEDGER ROW". The chain says the row took no effect and
 // the writer contract says no shipped writer produced it: two independent sources, nothing contradicting.
 // Worth asserting, because it is the one candidate whose repair is not a cell edit at all.
@@ -5176,7 +5198,10 @@ function abTags(w) {
     var m = String(l).match(/^\[S1\] (\S+)/); return m ? m[1] : null; }).filter(Boolean);
 }
 var AB31 = AB13, AB31t = abTags(AB31.world);
-['s1_provenance_summary', 's1_provenance_target_row', 's1_provenance_next_same_pool_movement',
+['s1_provenance_summary', 's1_provenance_target_row',
+  's1_provenance_next_physical_same_pool_movement',
+  's1_provenance_next_classifiable_same_pool_movement',
+  's1_provenance_next_same_ledger_epoch_movement', 's1_provenance_ledger_epochs',
   's1_provenance_chain_continuity', 's1_provenance_sibling_shape_summary',
   's1_provenance_cross_table_evidence', 's1_provenance_candidate_1', 's1_provenance_candidate_2',
   's1_provenance_candidate_3', 's1_provenance_candidate_4', 's1_provenance_verdict']
@@ -5212,7 +5237,7 @@ ok(AB31g && AB31g.computed_delta === 11000 && AB31g.supporting.length === 3
   && AB31g.supporting.filter(function (x) { return x.independent; }).length === 2
   && AB31g.independent_supporting_sources.length === 2 && AB31g.missing_evidence,
   'AB31g and each candidate line carries its arithmetic, its evidence and its gaps', AB31g);
-var AB31h = abPayload(AB13.world, 's1_provenance_next_same_pool_movement');
+var AB31h = abPayload(AB13.world, 's1_provenance_next_classifiable_same_pool_movement');
 ok(AB31h && AB31h.row === 3 && AB31h.movement_id === 'FSMV-000000A1'
   && AB31h.its_before_equals_the_targets_after === true,
   'AB31h and the next-movement line answers §1.4 directly', AB31h);
@@ -5278,6 +5303,396 @@ ok(G21V.indexOf("if (!note) return jsonResponse_({ success: false, error: 'Note 
   'AB33i and really does validate note as required, which is why blank note eliminates that writer');
 
 // ================================================================================================================
+section('AC — S1-R4G: the epoch boundary, and a balance that reconciles somebody else');
+
+// ======================================================================================================
+// THE LIVE SCENE, REPRODUCED CELL FOR CELL.
+//
+//   sheet row 2  (the target)  id blank, movement_type blank, qty 12000, before 1000, after 12000
+//   sheet row 3                id FSMV-e5bf1d8f, inventory_import, qty 2210, before 0, after 2210
+//   factory_stock              fac_current_stock 2210
+//
+// R4F published four contradictions about this table and every one of them came from the same root: it
+// had no way to say that row 3's `before_current_stock` of 0 might not be a reading of anything.
+//
+//   1. all four candidates said "no classifiable movement follows this one in this pool" - about a table
+//      whose very next row is `inventory_import`, which R4F itself printed two lines above;
+//   2. all four then asked for that row in `missing_evidence`;
+//   3. `removing_it_repairs_a_break: true`, blaming the target row for a boundary it is upstream of;
+//   4. the factory_stock agreement - which reconciles row 3's epoch - was scored as SUPPORTING two of
+//      the four classifications of row 2.
+//
+// Section AC is that scene, and every assertion below is one of those four not happening.
+// ======================================================================================================
+
+/** Sheet row 3, exactly as the live table holds it: the pool-creating import signature. */
+function acImport(over) {
+  var r = { factory_stock_movement_id: 'FSMV-e5bf1d8f', movement_date: '2026-06-20',
+    sku: SKU, warehouse_id: WHF, movement_type: 'inventory_import', qty: 2210,
+    related_entity_type: 'factory_inventory_import', related_entity_id: 'FIB-20260620-0001',
+    before_current_stock: 0, after_current_stock: 2210,
+    before_reserved_stock: 0, after_reserved_stock: 0,
+    note: '', created_by: 'operation-system', created_at: '2026-06-20T00:00:00Z' };
+  Object.keys(over || {}).forEach(function (k) { r[k] = over[k]; });
+  return r;
+}
+/** The live factory_stock: one pool row holding 2210, which is row 3's `after` and not row 2's. */
+var AC_POOL_ = [{ warehouse_id: WHF, sku: SKU, fac_current_stock: 2210, fac_reserved_stock: 0 }];
+function acRun(rows, pool, pinOver) {
+  return abRun(rows, pinOver, { factory_stock: pool === undefined ? AC_POOL_ : pool });
+}
+
+var AC = acRun([abLive(), acImport()]);
+
+// ---- AC1 — the scene is the scene. -----------------------------------------------------------------
+eq(AC.target_row_number, 2, 'AC1 the target is sheet row 2');
+eq([AC.target_row.qty, AC.target_row.before_current_stock, AC.target_row.after_current_stock],
+  [12000, 1000, 12000], 'AC1a with the live quantities');
+eq([AC.target_row.movement_id, AC.target_row.movement_type], [null, null],
+  'AC1b and both the key and the type still blank');
+eq(AC.chronology.entry_count, 2, 'AC1c two movements in this pool');
+eq(AC.balance_reconcile.factory_stock_current, 2210, 'AC1d and factory_stock holds 2210');
+
+// ---- AC2 — REQUIREMENT 1. A FOUND ROW IS NEVER REPORTED AS AN ABSENT ONE. --------------------------
+ok(AC.next_classifiable_same_pool_movement !== null,
+  'AC2 the next classifiable movement in this pool IS found');
+eq(AC.next_classifiable_same_pool_movement.one_based_sheet_row_number, 3,
+  'AC2a and it is sheet row 3');
+eq([AC.next_classifiable_same_pool_movement.movement_id,
+  AC.next_classifiable_same_pool_movement.movement_type],
+  ['FSMV-e5bf1d8f', 'inventory_import'], 'AC2b with its key and its type');
+var AC2c = AC.candidates.filter(function (c) {
+  return String(c.subsequent_chain_compatibility).indexOf('NO_LATER_CLASSIFIABLE_MOVEMENT') === 0
+    || String(c.subsequent_chain_compatibility).indexOf('NO_LATER_MOVEMENT') === 0; });
+eq(AC2c.map(function (c) { return c.candidate; }), [],
+  'AC2c so NO candidate claims that no classifiable movement follows - the R4F sentence, four times over',
+  AC.candidates.map(function (c) { return c.subsequent_chain_compatibility; }));
+var AC2d = AC.candidates.filter(function (c) {
+  return (c.missing_evidence || []).filter(function (m) {
+    return String(m).indexOf('A_LATER_CLASSIFIABLE_MOVEMENT_IN_THIS_POOL') === 0
+      || String(m).indexOf('ANY_LATER_MOVEMENT_IN_THIS_POOL') === 0; }).length > 0; });
+eq(AC2d.map(function (c) { return c.candidate; }), [],
+  'AC2d and none asks for the row it just printed',
+  AC.candidates.map(function (c) { return c.missing_evidence; }));
+// WHAT IS ACTUALLY MISSING IS A COMPARABLE ROW, AND THAT IS WHAT IT ASKS FOR.
+AC.candidates.forEach(function (c, i) {
+  ok((c.missing_evidence || []).filter(function (m) {
+    return String(m).indexOf('A_LATER_MOVEMENT_IN_THE_TARGETS_OWN_LEDGER_EPOCH') === 0; }).length === 1,
+    'AC2e.' + (i + 1) + ' candidate ' + c.candidate
+      + ' asks for a movement in the target\'s OWN epoch instead', c.missing_evidence);
+});
+
+// ---- AC3 — REQUIREMENT 2. THE THREE SUCCESSOR QUESTIONS, AND HERE THEY DIFFER. --------------------
+eq(AC.next_physical_same_pool_movement.one_based_sheet_row_number, 3,
+  'AC3 the next PHYSICAL movement is row 3');
+eq(AC.next_classifiable_same_pool_movement.one_based_sheet_row_number, 3,
+  'AC3a the next CLASSIFIABLE movement is also row 3');
+eq(AC.next_same_ledger_epoch_movement, null,
+  'AC3b but the next movement in the target\'s OWN LEDGER EPOCH is null - and that is the difference'
+  + ' R4F\'s single variable could not express');
+eq(AC.next_movements.a_later_movement_exists_in_this_pool, true, 'AC3c a later movement exists');
+eq(AC.next_movements.a_later_classifiable_movement_exists_in_this_pool, true,
+  'AC3d a later CLASSIFIABLE movement exists');
+eq(AC.next_movements.a_later_movement_exists_in_the_targets_own_epoch, false,
+  'AC3e and yet none of them is in the target\'s own epoch. All three facts are true at once.');
+eq(AC.chain_reading_state, 'NOT_COMPARABLE_ACROSS_A_BOUNDARY',
+  'AC3f so the chain reading is NOT_COMPARABLE rather than NOT_MEASURABLE');
+AC.candidates.forEach(function (c, i) {
+  ok(String(c.subsequent_chain_compatibility)
+    .indexOf('NOT_COMPARABLE_ACROSS_A_LEDGER_EPOCH_BOUNDARY') === 0,
+    'AC3g.' + (i + 1) + ' and candidate ' + c.candidate + ' says exactly that',
+    c.subsequent_chain_compatibility);
+  ok(String(c.subsequent_chain_compatibility).indexOf('EXISTS') > 0,
+    'AC3h.' + (i + 1) + ' naming that the later movement EXISTS');
+});
+
+// ---- AC4 — REQUIREMENT 3. THE EPOCH DETERMINATION, FROM THE WRITER CONTRACT. ---------------------
+eq(AC.ledger_epochs.epoch_count, 2, 'AC4 this pool holds TWO ledger epochs');
+eq(AC.ledger_epochs.target_epoch_index, 1, 'AC4a the target row is in epoch 1');
+eq(AC.ledger_epochs.last_entry_epoch_index, 2, 'AC4b and the chain ends in epoch 2');
+eq(AC.ledger_epochs.target_is_in_the_last_epoch, false, 'AC4c so the target is not in the last epoch');
+eq(AC.ledger_epochs.boundaries.length, 1, 'AC4d with exactly one boundary between them');
+var ACb = AC.ledger_epochs.boundaries[0];
+eq([ACb.at_sheet_row, ACb.from_sheet_row], [3, 2], 'AC4e from sheet row 2 into sheet row 3');
+eq(ACb.state, 'LEDGER_EPOCH_BOUNDARY', 'AC4f classified as a ledger epoch boundary');
+eq(ACb.kind, 'POOL_CREATION_OR_UNRECORDED_BALANCE_CHANGE',
+  'AC4g whose kind names BOTH readings, because the ledger cannot settle which it is');
+eq([ACb.earlier_after_current, ACb.later_before_current], [12000, 0],
+  'AC4h and carries the two numbers 12000 -> 0 it was decided from');
+// THE SIGNATURE, AND THE SHIPPED LINES IT IS READ OFF.
+var ACsig = AC.chain_continuity.links[0].current.epoch_boundary.signature;
+eq(ACsig.matches, true, 'AC4i row 3 carries the pool-creating write\'s signature');
+eq(ACsig.before_current_is_the_create_path_literal, true,
+  'AC4j its before_current_stock is the create-path literal 0');
+eq(ACsig.movement_type_is_known, true,
+  'AC4k and its type is in the shipped vocabulary, so a shipped writer could have put it there');
+eq(ACsig.both_axes_open_at_zero, true,
+  'AC4l with BOTH axes opening at zero, which is what both writers do on that branch');
+ok(ACsig.writer_citations.join(' ').indexOf('244-247') > 0
+  && ACsig.writer_citations.join(' ').indexOf('959-960') > 0,
+  'AC4m citing factoryStockApplyDeltaTx_ 21_:244-247 AND the import commit 21_:959-960 - the rule is not'
+  + ' inventory_import-specific, because BOTH current-axis writers take that branch', ACsig.writer_citations);
+ok(AC.chain_continuity.links[0].current.epoch_boundary.both_readings_require_something_unrecorded === true,
+  'AC4n and the honest limit is published: both readings need something the record does not contain');
+// THE TWO SHIPPED LINES REALLY DO SAY THAT. Asserted against 21_'s own source, so the contract this
+// whole section rests on is anchored in the file rather than in this file's opinion of it.
+ok(G21V.indexOf('beforeCurrent = 0; beforeReserved = 0; created = true') > 0,
+  'AC4o 21_ really does set beforeCurrent = 0 on the branch that creates the pool row');
+ok(G21V.indexOf('var beforeCurrent = ex ? ex.current : 0') > 0,
+  'AC4p and the import commit really does default it to 0 when there is no pool row to read');
+
+// ---- AC5 — REQUIREMENT 4a. THIS IS NOT A DELTA CHAIN BREAK. --------------------------------------
+eq(AC.chain_continuity.current_axis.disagree, 0,
+  'AC5 ZERO comparable disagreements on the current axis');
+eq(AC.chain_continuity.current_axis.epoch_boundary, 1,
+  'AC5a because the one non-agreeing link is an epoch boundary');
+eq(AC.chain_continuity.first_break_at_position, null,
+  'AC5b so there is no first break to point at');
+eq(AC.chain_continuity.first_epoch_boundary_at_position, 2,
+  'AC5c and the boundary is reported at its own position under its own name');
+eq(AC.chain_continuity.the_current_chain_crosses_a_ledger_epoch_boundary, true,
+  'AC5d the chain says plainly that it crosses one');
+eq(AC.chain_continuity.chain_is_continuous_on_the_current_axis, false,
+  'AC5e it is still NOT called continuous - a chain with a boundary in it has not been shown to join up');
+eq(AC.chain_continuity.every_comparable_link_agrees_on_the_current_axis, false,
+  'AC5f and the weaker claim is false too, because there was no comparable link to agree');
+eq(AC.chain_continuity.links[0].current.state, 'LEDGER_EPOCH_BOUNDARY',
+  'AC5g the link itself is named, not scored');
+eq(AC.chain_continuity.links[0].current.comparable, false, 'AC5h and marked not comparable');
+eq(AC.chain_continuity.links[0].current.discriminating, false, 'AC5i and not discriminating');
+ok(String(AC.chain_continuity.links[0].current.epoch_boundary.why_not_a_delta_break)
+  .indexOf('a break is a disagreement between two readings of one quantity') === 0,
+  'AC5j with the reason a boundary is not a break spelled out',
+  AC.chain_continuity.links[0].current.epoch_boundary.why_not_a_delta_break);
+
+// ---- AC6 — REQUIREMENT 4b. `removing_target_repairs_break` MUST NOT BE TRUE. --------------------
+var ACw = AC.chain_without_the_target;
+ok(ACw.removing_it_repairs_a_break !== true,
+  'AC6 removing the target row is NOT claimed to repair a break - the flagship R4F false positive',
+  ACw.removing_it_repairs_a_break);
+eq(ACw.removing_it_repairs_a_break, null,
+  'AC6a it is null rather than a bare false, because there was never a break to not-repair');
+eq(ACw.removing_it_repairs_a_break_state,
+  'NOT_APPLICABLE_THE_ONLY_NON_AGREEING_LINKS_ARE_LEDGER_EPOCH_BOUNDARIES',
+  'AC6b with a named NOT_APPLICABLE state');
+ok(String(ACw.removing_it_repairs_a_break_why).indexOf('A boundary is not a break') > 0,
+  'AC6c and an explicit reason', ACw.removing_it_repairs_a_break_why);
+eq([ACw.comparable_breaks_with_the_target, ACw.comparable_breaks_without_the_target], [0, 0],
+  'AC6d comparable breaks are zero both with and without the row, which is what makes the claim vacuous');
+eq(ACw.with_the_target_row.current_epoch_boundary, 1,
+  'AC6e the boundary is counted in its own bucket rather than in the disagreement bucket');
+
+// ---- AC7 — REQUIREMENT 4c. 2210 PROVES THE CURRENT EPOCH AND NOTHING ABOUT ROW 2. --------------
+var ACba = AC.balance_reconcile;
+eq([ACba.factory_stock_current, ACba.ledger_last_after_current], [2210, 2210],
+  'AC7 factory_stock and the ledger\'s last after both hold 2210');
+eq(ACba.current_agrees, true, 'AC7a so they agree');
+eq(ACba.independent_of_the_target_row, true,
+  'AC7b and the agreement IS independent of the target row - the last chain entry is row 3');
+eq(ACba.attributable_to_the_target_row, false,
+  'AC7c BUT IT IS NOT ATTRIBUTABLE TO IT. Independence and attribution are two different tests, and R4F'
+  + ' only had the first.');
+eq([ACba.target_epoch_index, ACba.ledger_last_epoch_index], [1, 2],
+  'AC7d because the balance reconciles epoch 2 and the target row sits in epoch 1');
+eq(ACba.balance_is_in_the_same_epoch_as_the_target, false, 'AC7e stated directly');
+ok(String(ACba.why_not_attributable).indexOf('THE_LIVE_BALANCE_RECONCILES_TO_LEDGER_EPOCH_2') === 0,
+  'AC7f with the reason naming both epochs', ACba.why_not_attributable);
+ok(String(ACba.what_this_proves).indexOf('ONLY_THAT_LEDGER_EPOCH_2_RECONCILES') === 0,
+  'AC7g and what_this_proves says only what it proves', ACba.what_this_proves);
+// AND THE SCORING. This is the assertion R4F would have failed.
+AC.candidates.forEach(function (c, i) {
+  eq(c.supporting_sources.indexOf('FACTORY_STOCK_BALANCE'), -1,
+    'AC7h.' + (i + 1) + ' FACTORY_STOCK_BALANCE supports candidate ' + c.candidate + ' NOWHERE',
+    c.supporting_sources);
+  eq(c.contradicting_sources.indexOf('FACTORY_STOCK_BALANCE'), -1,
+    'AC7i.' + (i + 1) + ' and contradicts it nowhere either');
+});
+// IT IS STILL PUBLISHED. Refusing to score it is not the same as hiding it.
+var ACbev = AC.evidence.filter(function (e) { return e.source === 'FACTORY_STOCK_BALANCE'; });
+eq(ACbev.length, 1, 'AC7j the balance agreement is still published as evidence', AC.evidence);
+eq(ACbev[0].discriminates, false, 'AC7k marked as discriminating nothing');
+eq([ACbev[0].supports.length, ACbev[0].contradicts.length], [0, 0],
+  'AC7l with both of its candidate lists empty');
+ok(String(ACbev[0].statement).indexOf('LEDGER EPOCH 2 AND THE TARGET ROW IS IN EPOCH 1') > 0,
+  'AC7m and a statement that says which epoch it reconciles', ACbev[0].statement);
+AC.candidates.forEach(function (c, i) {
+  ok(String(c.current_factory_stock_compatibility).indexOf('NOT_ATTRIBUTABLE') === 0,
+    'AC7n.' + (i + 1) + ' candidate ' + c.candidate + ' reads the balance as NOT_ATTRIBUTABLE',
+    c.current_factory_stock_compatibility);
+  ok((c.missing_evidence || []).filter(function (m) {
+    return String(m).indexOf('A_BALANCE_STATEMENT_ATTRIBUTABLE_TO_THE_TARGET_ROWS_OWN_LEDGER_EPOCH') === 0;
+  }).length === 1, 'AC7o.' + (i + 1) + ' and asks for one that is attributable');
+});
+
+// ---- AC8 — REQUIREMENT 6. ONE SOURCE, ONE SCORE, AND EVERY LISTED ITEM DISCRIMINATES. ----------
+AC.candidates.forEach(function (c, i) {
+  eq(c.no_source_counted_more_than_once, true,
+    'AC8.' + (i + 1) + ' candidate ' + c.candidate + ' counts no evidence source twice',
+    c.supporting_source_multiplicity);
+  eq(c.every_listed_evidence_item_discriminates_this_candidate, true,
+    'AC8a.' + (i + 1) + ' and every item in its two lists actually discriminates it');
+  eq(c.independent_supporting_source_count, c.independent_supporting_sources.length,
+    'AC8b.' + (i + 1) + ' and the gating count is the number of DISTINCT source names');
+});
+ok(AC.non_discriminating_evidence_count >= 2,
+  'AC8c the non-discriminating items are separated out rather than mixed into support',
+  AC.non_discriminating_evidence_count);
+eq(AC.discriminating_evidence_count + AC.non_discriminating_evidence_count, AC.evidence_count,
+  'AC8d and the two partitions add up to the whole evidence list');
+AC.non_discriminating_evidence.forEach(function (e, i) {
+  eq([e.supports.length, e.contradicts.length], [0, 0],
+    'AC8e.' + (i + 1) + ' each one names no candidate at all');
+});
+
+// ---- AC9 — REQUIREMENT 7. THE VERDICT STAYS WITH THE OPERATOR. --------------------------------
+eq(AC.verdict, 'OPERATOR_BUSINESS_CLASSIFICATION_REQUIRED',
+  'AC9 row 2 still needs an operator business classification');
+eq(AC.selected_candidate, null, 'AC9a with nothing selected');
+eq(AC.proposed_repair_fields, null, 'AC9b and no proposed repair fields');
+eq(AC.verdict_detail.why, 'NO_CANDIDATE_HAS_TWO_INDEPENDENT_SUPPORTING_SOURCES',
+  'AC9c because no candidate reaches two independent sources');
+eq(AC.candidates.filter(function (c) {
+  return c.independent_supporting_source_count >= 2; }).map(function (c) { return c.candidate; }), [],
+  'AC9d measured per candidate, not asserted',
+  AC.candidates.map(function (c) { return [c.candidate, c.independent_supporting_source_count]; }));
+ok(AC.operator_questions && AC.operator_questions.question_count >= 3,
+  'AC9e and the exact questions are published instead',
+  AC.operator_questions && AC.operator_questions.question_count);
+eq([AC.has_execute_path, AC.proposes_authorized_repair], [false, false],
+  'AC9f with no execute path and nothing authorized');
+abZeroWrite(AC, 'AC9g');
+
+// ---- AC10 — THE CONTRADICTION SWEEP. NO OUTPUT MAY DENY A FACT THE SAME OUTPUT ASSERTS. --------
+// The four R4F defects were all one shape: a claim in one field contradicted a measurement in another.
+// So this is checked structurally rather than field by field - the serialized output is searched for
+// sentences that the measured facts forbid.
+(function () {
+  var blob = JSON.stringify({ candidates: AC.candidates, chain: AC.chain_continuity,
+    without: AC.chain_without_the_target, balance: AC.balance_reconcile,
+    next: AC.next_movements, epochs: AC.ledger_epochs });
+  var forbidden = [];
+  if (AC.next_classifiable_same_pool_movement !== null) {
+    ['NO_LATER_CLASSIFIABLE_MOVEMENT_IN_THIS_POOL', 'NO_LATER_MOVEMENT_IN_THIS_POOL',
+      'no classifiable movement follows'].forEach(function (p) {
+      if (blob.indexOf(p) >= 0) forbidden.push('claims absence of a found row: ' + p); });
+  }
+  if (AC.chain_continuity.current_axis.disagree === 0) {
+    if (blob.indexOf('"first_break_at_position":2') >= 0) {
+      forbidden.push('points at a break position with zero comparable disagreements');
+    }
+    if (blob.indexOf('"removing_it_repairs_a_break":true') >= 0) {
+      forbidden.push('claims a removal repairs a break with zero comparable disagreements');
+    }
+  }
+  if (AC.balance_reconcile.attributable_to_the_target_row === false) {
+    if (blob.indexOf('THE_TARGETS_OWN_LEDGER_EPOCH_RECONCILES_TO_THE_LIVE_BALANCE') >= 0) {
+      forbidden.push('claims the target\'s own epoch reconciles when the balance is not attributable');
+    }
+  }
+  eq(forbidden, [], 'AC10 the output contains no sentence its own measurements forbid', forbidden);
+})();
+// AND IN THE LOG, WHICH IS WHAT AN OPERATOR ACTUALLY READS.
+var ACtags = abProvTags(AC.world);
+['s1_provenance_next_physical_same_pool_movement',
+  's1_provenance_next_classifiable_same_pool_movement',
+  's1_provenance_next_same_ledger_epoch_movement',
+  's1_provenance_ledger_epochs'].forEach(function (t, i) {
+  ok(ACtags.indexOf(t) >= 0, 'AC10a.' + (i + 1) + ' the log publishes ' + t, ACtags);
+});
+var ACp1 = abPayload(AC.world, 's1_provenance_next_classifiable_same_pool_movement');
+eq([ACp1.row, ACp1.movement_type], [3, 'inventory_import'],
+  'AC10b the classifiable-successor line names row 3 and its type');
+eq(ACp1.its_before_equals_the_targets_after, false,
+  'AC10c and reports plainly that its before does not equal the target\'s after');
+var ACp2 = abPayload(AC.world, 's1_provenance_next_same_ledger_epoch_movement');
+eq(ACp2.next, null, 'AC10d while the same-epoch line is null');
+ok(String(ACp2.why).indexOf('A LATER CLASSIFIABLE MOVEMENT EXISTS AND IS NOT COMPARABLE') === 0,
+  'AC10e and its `why` says the row EXISTS and is not comparable - never that none was found', ACp2.why);
+var ACp3 = abPayload(AC.world, 's1_provenance_ledger_epochs');
+eq([ACp3.epoch_count, ACp3.target_epoch_index, ACp3.last_entry_epoch_index], [2, 1, 2],
+  'AC10f the epoch line carries the two epochs and where the target sits');
+eq(ACp3.boundaries.length, 1, 'AC10g with its one boundary');
+var ACp4 = abPayload(AC.world, 's1_provenance_chain_continuity');
+eq(ACp4.balance.attributable_to_the_target_row, false,
+  'AC10h and the chain line carries the attribution verdict, not only the independence one');
+eq(ACp4.without_the_target.removing_it_repairs_a_break, null,
+  'AC10i with the repair claim null in the log too');
+ok(String(ACp4.without_the_target.removing_it_repairs_a_break_state).indexOf('NOT_APPLICABLE') === 0,
+  'AC10j and its named state beside it');
+
+// ---- AC11 — REQUIREMENT 5. WHEN IT IS *NOT* A BOUNDARY, SAY WHY THE COMPARISON IS VALID. -------
+// The same import row, opening where the target closed. Now it is an ordinary comparable link, and the
+// census owes a positive writer-contract reason for comparing across rows at all.
+var AC11 = acRun([abLive(), acImport({ before_current_stock: 12000, after_current_stock: 14210,
+  qty: 2210 })], [{ warehouse_id: WHF, sku: SKU, fac_current_stock: 14210, fac_reserved_stock: 0 }]);
+eq(AC11.ledger_epochs.epoch_count, 1, 'AC11 one epoch when the import opens where the target closed');
+eq(AC11.ledger_epochs.boundaries.length, 0, 'AC11a with no boundary');
+eq(AC11.chain_continuity.links[0].current.state, 'AGREES', 'AC11b the link agrees');
+ok(String(AC11.chain_continuity.links[0].current.comparability_basis)
+  .indexOf('BOTH_CELLS_ARE_READINGS_OF_THE_SAME_POOL_QUANTITY') === 0,
+  'AC11c and carries the WRITER CONTRACT reason the comparison is legitimate',
+  AC11.chain_continuity.links[0].current.comparability_basis);
+ok(String(AC11.chain_continuity.links[0].current.comparability_basis).indexOf('257-258') > 0,
+  'AC11d citing the shipped lines that READ before_current_stock out of factory_stock');
+eq(AC11.next_same_ledger_epoch_movement.one_based_sheet_row_number, 3,
+  'AC11e so the same-epoch successor exists here');
+eq(AC11.chain_reading_state, 'CONSISTENT', 'AC11f and the chain reading is a real reading');
+eq(AC11.balance_reconcile.attributable_to_the_target_row, true,
+  'AC11g the balance is now attributable, because it reconciles the target\'s own epoch');
+ok(AC11.candidates.filter(function (c) {
+  return c.supporting_sources.indexOf('FACTORY_STOCK_BALANCE') >= 0; }).length > 0,
+  'AC11h and only NOW may it support a candidate - the gate is the epoch, not the source');
+
+// A REAL ZERO IS NOT A BOUNDARY EITHER. Three rows: the first closes the pool at 0, so the import's 0 is
+// a genuine reading and the discriminator says so. This is the (b) branch of §A, tested on its own.
+var AC12 = acRun([abLive(), abFull({ factory_stock_movement_id: 'FSMV-000000F1',
+  created_at: '2026-06-15T00:00:00Z', movement_date: '2026-06-15',
+  before_current_stock: 12000, after_current_stock: 0, qty: -12000 }),
+  acImport({ before_current_stock: 0, after_current_stock: 2210, qty: 2210 })]);
+eq(AC12.ledger_epochs.epoch_count, 1,
+  'AC12 an import opening at 0 after a row that CLOSED at 0 is one epoch, not two');
+eq(AC12.chain_continuity.links[1].current.state, 'AGREES', 'AC12a its link agrees');
+ok(String(AC12.chain_continuity.links[1].current.comparability_basis).length > 0,
+  'AC12b with a comparability basis, because a real zero is a reading like any other');
+eq(AC12.next_same_ledger_epoch_movement.one_based_sheet_row_number, 3,
+  'AC12c and the target keeps a same-epoch successor');
+eq(AC12.balance_reconcile.attributable_to_the_target_row, true,
+  'AC12d so the balance is attributable to it');
+
+// AND A GENUINE BREAK IS STILL A GENUINE BREAK. The import opens at a value that is neither 0 nor the
+// target's after, so nothing about the create path applies and the disagreement is real.
+var AC13 = acRun([abLive(), acImport({ before_current_stock: 9999, after_current_stock: 12209 })],
+  [{ warehouse_id: WHF, sku: SKU, fac_current_stock: 12209, fac_reserved_stock: 0 }]);
+eq(AC13.ledger_epochs.epoch_count, 1, 'AC13 a non-zero mismatch is not a boundary');
+eq(AC13.chain_continuity.links[0].current.state, 'DISAGREES', 'AC13a it is a comparable DISAGREEMENT');
+eq(AC13.chain_continuity.current_axis.disagree, 1, 'AC13b counted as one');
+eq(AC13.chain_continuity.first_break_at_position, 2, 'AC13c with a real break position');
+eq(AC13.chain_continuity.the_current_chain_crosses_a_ledger_epoch_boundary, false,
+  'AC13d and no boundary claimed');
+ok(String(AC13.chain_continuity.links[0].current.comparability_basis)
+  .indexOf('AND THIS LINK IS NOT AN EPOCH BOUNDARY') > 0,
+  'AC13e the basis states positively why the boundary reading does not apply here',
+  AC13.chain_continuity.links[0].current.comparability_basis);
+
+// ---- AC14 — AN ABSENT VOCABULARY AUTHORITY IS NOT A DECIDED BOUNDARY EITHER. ------------------
+// R4E's lesson, applied to R4G's new test. Without 21_ loaded, whether a shipped writer produced row 3
+// cannot be established, so the link is NOT_COMPARABLE with its own reason - never a break, and never a
+// confirmed boundary. The census must not decide a question its deployment cannot answer.
+var AC14 = abRun([abLive(), acImport()], null,
+  { factory_stock: AC_POOL_,
+    after: 'factoryStockIsKnownMovementType_ = undefined;'
+      + ' factoryStockIsCurrentMovement_ = undefined;'
+      + ' factoryStockIsReservationMovement_ = undefined;' });
+eq(AC14.chain_continuity.links[0].current.state, 'NOT_COMPARABLE',
+  'AC14 with no vocabulary authority the link is NOT_COMPARABLE',
+  AC14.chain_continuity.links[0].current.state);
+eq(AC14.chain_continuity.links[0].current.epoch_boundary.kind,
+  'UNDECIDABLE_THE_VOCABULARY_AUTHORITY_IS_ABSENT',
+  'AC14a and the reason is the absent authority, not the data');
+eq(AC14.chain_continuity.current_axis.disagree, 0, 'AC14b still zero disagreements');
+ok(AC14.chain_without_the_target.removing_it_repairs_a_break !== true,
+  'AC14c and still no claim that removing the row repairs anything');
+
 section('N — mutants');
 // ================================================================================================================
 
@@ -7124,7 +7539,8 @@ mut('N106 the ordering claims to be unambiguous with a row whose time nobody rec
 });
 
 mut('N100 a chain link nobody recorded is counted as a link that agreed', function () {
-  var m = swapS1('        bucket.unevaluable++;', '        bucket.agree++;');
+  var m = swapS1("      } else if (c.state === 'UNEVALUABLE') bucket.unevaluable++;",
+    "      } else if (c.state === 'UNEVALUABLE') bucket.agree++;");
   var rows = [abLive(), abFull(), abFull({ factory_stock_movement_id: 'FSMV-000000D4',
     before_current_stock: 12500, after_current_stock: 12800, qty: 300,
     created_at: '2026-06-25T00:00:00Z', movement_date: '2026-06-25' })];
@@ -7172,7 +7588,7 @@ mut('N102 the batch sibling is looked for on the exact blank-shape, which can ne
 });
 
 mut('N103 the balance is used as evidence even when it is the target row echoing itself', function () {
-  var m = swapS1('  if (bal && bal.independent_of_the_target_row && bal.current_agrees === true) {',
+  var m = swapS1('  if (bal && bal.current_agrees === true && bal.attributable_to_the_target_row === true) {',
     '  if (bal && bal.current_agrees === true) {');
   var rows = [abLive({ created_at: '2026-12-31' }), abFull()];
   var extra = { factory_stock: [{ warehouse_id: WHF, sku: SKU,
@@ -7208,6 +7624,145 @@ mut('N105 a caller-supplied expectation is presented as the frozen authorization
   return String(clean.expectation_source).indexOf('CALLER_SUPPLIED') === 0
     && bad.expectation_source === 'THE_FROZEN_S1_R4E_AUTHORIZATION';
 });
+
+// ---- S1-R4G — the epoch boundary and the evidence attribution. --------------------------------------
+// Each of these eight restores ONE of R4F's behaviours. They are not hypothetical mutations: N107, N108,
+// N109 and N110 are the four contradictions R4F actually published about the live table, expressed as code
+// changes. If any of them survives, the repair is decoration.
+var AC_POOL_MUT_ = { factory_stock: AC_POOL_ };
+function acMut(src, rows) { return abMut(src, rows, null, AC_POOL_MUT_); }
+var AC_ROWS_ = [abLive(), acImport()];
+
+mut('N107 a ledger epoch boundary is counted as a chain break', function () {
+  var m = swapS1("      o.state = 'LEDGER_EPOCH_BOUNDARY'; o.comparable = false; o.discriminating = false;",
+    "      o.state = 'DISAGREES'; o.comparable = true; o.discriminating = true;");
+  var clean = acMut(null, AC_ROWS_), bad = acMut(m, AC_ROWS_);
+  // The target closes at 12000 and the next row opens at the create-path literal 0. Under the mutation that
+  // is one broken link and a break position to point at - about a chain in which nothing was ever compared.
+  return clean.chain_continuity.current_axis.disagree === 0
+    && clean.chain_continuity.current_axis.epoch_boundary === 1
+    && clean.chain_continuity.first_break_at_position === null
+    && bad.chain_continuity.current_axis.disagree === 1
+    && bad.chain_continuity.first_break_at_position === 2;
+});
+
+mut('N108 the balance scores on independence alone, without asking which epoch it reconciles', function () {
+  var m = swapS1('  if (bal && bal.current_agrees === true && bal.attributable_to_the_target_row === true) {',
+    '  if (bal && bal.current_agrees === true && bal.independent_of_the_target_row === true) {');
+  var clean = acMut(null, AC_ROWS_), bad = acMut(m, AC_ROWS_);
+  function backs(r) {
+    return r.candidates.filter(function (c) {
+      return c.supporting_sources.indexOf('FACTORY_STOCK_BALANCE') >= 0; }).length;
+  }
+  // factory_stock holds 2210, which is row 3's closing balance in row 3's OWN epoch. It is independent of
+  // the target row and says nothing about it. R4F's test was independence, so it scored the agreement as
+  // support for two classifications of a row on the far side of a boundary the balance cannot see past.
+  return clean.balance_reconcile.independent_of_the_target_row === true
+    && clean.balance_reconcile.attributable_to_the_target_row === false
+    && backs(clean) === 0
+    && backs(bad) === 2;
+});
+
+mut('N109 a successor that was found is reported as a successor that does not exist', function () {
+  var m = swapS1("        case 'NOT_COMPARABLE_ACROSS_A_BOUNDARY':\n"
+    + "          return 'NOT_COMPARABLE_ACROSS_A_LEDGER_EPOCH_BOUNDARY - a later classifiable movement EXISTS in'\n"
+    + "            + ' this pool and is not comparable with this row';",
+    "        case 'NOT_COMPARABLE_ACROSS_A_BOUNDARY':\n"
+    + "          return 'NOT_MEASURABLE - no classifiable movement follows this one in this pool';");
+  var clean = acMut(null, AC_ROWS_), bad = acMut(m, AC_ROWS_);
+  function denies(r) {
+    return r.candidates.filter(function (c) {
+      return String(c.subsequent_chain_compatibility).indexOf('no classifiable movement follows') > 0;
+    }).length;
+  }
+  // THE FLAGSHIP R4F CONTRADICTION, RESTORED VERBATIM. Row 3 is `inventory_import`, it is printed in the
+  // census's own successor line, and all four candidates deny it exists. What is unusable about it is that
+  // it is not comparable - which is a different sentence, and the only true one.
+  return clean.next_classifiable_same_pool_movement !== null
+    && denies(clean) === 0
+    && bad.next_classifiable_same_pool_movement !== null
+    && denies(bad) === 4;
+});
+
+mut('N110 removing the target row is claimed to repair a break that was only a boundary', function () {
+  var m = swapS1('  var brokeWith = withAll.current_axis.disagree;',
+    '  var brokeWith = withAll.current_axis.disagree + withAll.current_axis.epoch_boundary;');
+  var clean = acMut(null, AC_ROWS_), bad = acMut(m, AC_ROWS_);
+  // R4F counted boundaries as breaks, so the arithmetic 1 > 0 && 0 < 1 published `true` - and pointed the
+  // operator at the target row as the cause of a boundary it sits upstream of. Deleting one of the two rows
+  // a comparison was made between removes the comparison; it never settles it.
+  return clean.chain_without_the_target.removing_it_repairs_a_break === null
+    && String(clean.chain_without_the_target.removing_it_repairs_a_break_state)
+      .indexOf('NOT_APPLICABLE') === 0
+    && bad.chain_without_the_target.removing_it_repairs_a_break === true;
+});
+
+mut('N111 the continuity argument is made against a row on the far side of the boundary', function () {
+  var m = swapS1('  var nxtEpoch = nm.next_same_ledger_epoch_movement || null;',
+    '  var nxtEpoch = nm.next_classifiable_same_pool_movement || null;');
+  var clean = acMut(null, AC_ROWS_), bad = acMut(m, AC_ROWS_);
+  // The next classifiable row opens at the create-path literal 0. Comparing the target's after_current_stock
+  // against it is comparing a balance with a placeholder for an absence - and the mutant then reports the
+  // result of that comparison as a measurement of the chain.
+  return clean.chain_reading_state === 'NOT_COMPARABLE_ACROSS_A_BOUNDARY'
+    && bad.chain_reading_state === 'MEASURED_AND_NEUTRAL'
+    && String(clean.candidates[0].subsequent_chain_compatibility)
+      .indexOf('NOT_COMPARABLE_ACROSS_A_LEDGER_EPOCH_BOUNDARY') === 0
+    && String(bad.candidates[0].subsequent_chain_compatibility)
+      .indexOf('NOT_COMPARABLE') !== 0;
+});
+
+mut('N112 the create-path signature is claimed without checking that a writer could have written it', function () {
+  // AIMED AT THE ONE GUARD THAT DECIDES. The first version of this mutant swapped the signature
+  // function's own `if`, and SURVIVED - because the link classifier re-asked the same question and still
+  // refused. Two copies of one rule is not defence in depth, it is two authorities; the census now answers
+  // it once, in `writer_could_have_written_it`, and this is that line.
+  var m = swapS1('  o.writer_could_have_written_it = o.movement_type_is_known === true;',
+    '  o.writer_could_have_written_it = o.movement_type_is_known !== undefined;');
+  var noVocab = { factory_stock: AC_POOL_,
+    after: 'factoryStockIsKnownMovementType_ = undefined;'
+      + ' factoryStockIsCurrentMovement_ = undefined;'
+      + ' factoryStockIsReservationMovement_ = undefined;' };
+  var clean = abMut(null, AC_ROWS_, null, noVocab), bad = abMut(m, AC_ROWS_, null, noVocab);
+  // R4E's lesson, on R4G's new test. With the vocabulary absent, `movement_type_is_known` is null - and null
+  // is neither yes nor no. The clean code refuses to confirm the boundary and says WHY; the mutant asserts a
+  // decided boundary from a question the deployment could not answer. An absent authority is not a value.
+  return clean.chain_continuity.links[0].current.state === 'NOT_COMPARABLE'
+    && clean.chain_continuity.links[0].current.epoch_boundary.kind
+      === 'UNDECIDABLE_THE_VOCABULARY_AUTHORITY_IS_ABSENT'
+    && clean.chain_continuity.links[0].current.epoch_boundary.signature
+      .writer_could_have_written_it === false
+    && bad.chain_continuity.links[0].current.state === 'LEDGER_EPOCH_BOUNDARY'
+    && bad.chain_continuity.links[0].current.epoch_boundary.signature
+      .writer_could_have_written_it === true;
+});
+
+mut('N113 a measurement that discriminated nothing is filed as though it did', function () {
+  var m = swapS1('    discriminates: s.length > 0 || c.length > 0 };', '    discriminates: true };');
+  var clean = acMut(null, AC_ROWS_), bad = acMut(m, AC_ROWS_);
+  // MEASURED AND NEUTRAL IS NOT THE SAME AS NOT MEASURED, and it is not the same as support either. Two of
+  // this world's evidence items name no candidate at all - the boundary and the unattributable balance - and
+  // the partition is what lets a reader see that they were read and still counted for nothing.
+  return clean.non_discriminating_evidence_count >= 2
+    && clean.discriminating_evidence_count + clean.non_discriminating_evidence_count
+      === clean.evidence_count
+    && bad.non_discriminating_evidence_count === 0;
+});
+
+mut('N114 the chronology is never segmented, so every row is in one epoch', function () {
+  var m = swapS1('      if (link && link.starts_a_new_epoch) {',
+    '      if (link && link.starts_a_new_epoch && false) {');
+  var clean = acMut(null, AC_ROWS_), bad = acMut(m, AC_ROWS_);
+  // One epoch means the balance reconciles the target's own chain, which is how the unattributable agreement
+  // gets back in. The segmentation is not bookkeeping - it is the thing the attribution test reads.
+  return clean.ledger_epochs.epoch_count === 2
+    && clean.balance_reconcile.attributable_to_the_target_row === false
+    && bad.ledger_epochs.epoch_count === 1
+    && bad.balance_reconcile.attributable_to_the_target_row === true;
+});
+
+
+
 
 console.log('\npassed ' + pass + '  failed ' + fail
   + '  |  mutants caught ' + neg.caught + '  survived ' + neg.missed);

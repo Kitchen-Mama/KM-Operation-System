@@ -6289,7 +6289,11 @@ function S1_movPoolChronology_(t, warehouseId, sku) {
       note: S1_cap_(S1_cellOf_(rec, 'note'), 60) || null,
       created_by: S1_str_(S1_cellOf_(rec, 'created_by')) || null,
       full_named_row_fingerprint: rec.fingerprint,
-      classifiable: S1_str_(S1_cellOf_(rec, 'movement_type')) !== ''
+      classifiable: S1_str_(S1_cellOf_(rec, 'movement_type')) !== '',
+      // R4G — CLASSIFIABLE AND WRITER-PRODUCED ARE DIFFERENT QUESTIONS. `classifiable` asks only whether a
+      // type is present; the epoch test (§A) needs to know whether the shipped vocabulary knows it, because
+      // only a row a shipped writer produced can be claimed to carry that writer's create-path literal.
+      movement_type_is_known: S1_movTypeIsKnown_(S1_cellOf_(rec, 'movement_type'))
     });
   });
   o.entry_count = o.entries.length;
@@ -6299,60 +6303,278 @@ function S1_movPoolChronology_(t, warehouseId, sku) {
 }
 
 /**
- * §1.4/§1.5 — DOES THE CHAIN JOIN UP?
+ * R4G §A — THE LEDGER EPOCH CONTRACT. WHEN IS A `before` NOT A READING OF THE PREVIOUS `after`?
  *
- * Every writer records the before/after of BOTH axes on every row, so consecutive rows in one pool overlap:
- * the later row's `before` is an independent statement of the earlier row's `after`. Each link is checked on
- * both axes and reported separately, and a link where either side is blank is UNEVALUABLE rather than broken -
- * a distinction that matters here, because the target row's reserved pair is blank and calling that a broken
- * chain would blame the row for a fact nobody recorded.
+ * R4F built the chain on one sentence that is true of every SHIPPED row: the later row's `before_*` is an
+ * independent statement of the earlier row's `after_*`. It is true because both current-axis writers read
+ * that cell out of the live `factory_stock` row before writing:
+ *
+ *   factoryStockApplyDeltaTx_          21_:257-258   beforeCurrent = Math.round(parseFloat(data[row][curCol]) || 0)
+ *   handleFactoryInventoryImportCommit_ 21_:960       beforeCurrent = ex ? ex.current : 0
+ *
+ * BUT BOTH OF THOSE LINES HAVE A SECOND BRANCH, AND ON IT THE CELL IS NOT A READING AT ALL:
+ *
+ *   factoryStockApplyDeltaTx_          21_:244-247   targetRow === -1  ->  beforeCurrent = 0; created = true
+ *   handleFactoryInventoryImportCommit_ 21_:959-960  ex === null       ->  beforeCurrent = 0  (the ternary default)
+ *
+ * When the pool row does not exist, `0` is a LITERAL DEFAULT STANDING IN FOR "there was nothing to read".
+ * It is not a measurement of a previous balance, because there was no previous balance recorded. Comparing
+ * an earlier row's `after_current_stock` against it is the same category of error this file has already
+ * found twice: R4C compared a position in a sorted list with an identity, and R4E compared a fingerprint
+ * with itself. YOU CANNOT COMPARE AGAINST A PLACEHOLDER FOR AN ABSENCE and call the difference a break.
+ *
+ * So a link into a row that carries the create-path signature is a LEDGER EPOCH BOUNDARY, and it is neither
+ * AGREES nor DISAGREES. That matters in exactly the way R4F got wrong: on the live table the target row
+ * closes at 12000 and the next row opens at 0, and R4F reported a broken current chain that removing the
+ * target row would "repair" - when what is actually there is a boundary the target row is upstream of.
+ *
+ * THE SIGNATURE IS NOT `inventory_import`-SPECIFIC, and writing it that way would repeat R4F's other
+ * corrected mistake (a sibling testifying by its TYPE NAME rather than by its own cells). BOTH writers
+ * take the create path, so the signature is the CELL - `before_current_stock === 0` - plus a type the
+ * shipped vocabulary knows, because a type no writer writes cannot be claimed to carry a writer's literal.
+ *
+ * AND THE SIGNATURE DOES NOT PROVE THE CREATE PATH. `before_current_stock === 0` is genuinely ambiguous:
+ *   (a) CREATE  - no pool row existed, and the 0 is the ternary default. The pool's history begins here.
+ *   (b) UPDATE  - the pool row existed holding a real 0, and this is an ordinary delta inside one epoch.
+ * The discriminator is the EARLIER row: if the previous same-pool `after_current_stock` is also 0 then (b)
+ * is fully consistent and the link is an ordinary comparable link. If it is NOT 0 then the two readings are
+ * mutually exclusive AND BOTH REQUIRE SOMETHING THE RECORD DOES NOT CONTAIN - (b) an unrecorded balance
+ * change from that value down to 0, (a) a pool row that did not exist even though an earlier movement in
+ * the same pool claims to have written a balance into it. That is not a break and it is not a reset either;
+ * it is a boundary whose kind the ledger cannot settle, so the census names it and refuses to compare.
+ */
+var S1_MOV_EPOCH_CONTRACT_ = {
+  create_path_before_current_literal: 0,
+  writer_citations: [
+    '21_factory_inventory_handlers.gs:244-247 factoryStockApplyDeltaTx_ - targetRow === -1 =>'
+      + ' beforeCurrent = 0; beforeReserved = 0; created = true',
+    '21_factory_inventory_handlers.gs:959-960 handleFactoryInventoryImportCommit_ -'
+      + ' var ex = stock.byKey[key] || null; var beforeCurrent = ex ? ex.current : 0,'
+      + ' beforeReserved = ex ? ex.reserved : 0'
+  ],
+  comparable_path_citations: [
+    '21_factory_inventory_handlers.gs:257-258 - beforeCurrent/beforeReserved are READ from the live'
+      + ' factory_stock row, so they are an independent reading of the pool balance at that moment',
+    '21_factory_inventory_handlers.gs:960 - ex.current, the same reading on the import path'
+  ],
+  both_axes_open_at_zero_is_a_strengthening_signal: true,
+  a_blank_reserved_cell_does_not_disprove_the_signature: true,
+  rule: 'a link INTO a row whose before_current_stock is 0 and whose type the shipped vocabulary knows is'
+    + ' NOT COMPARABLE with the previous row\'s after_current_stock unless that previous after is also 0'
+};
+
+/** The vocabulary question, asked through the shipped authority and degrading to null when it is absent. */
+function S1_movTypeIsKnown_(t) {
+  var s = S1_str_(t);
+  if (s === '') return false;
+  if (typeof factoryStockIsKnownMovementType_ !== 'function') return null;
+  try { return factoryStockIsKnownMovementType_(s) === true; } catch (e) { return null; }
+}
+
+/**
+ * R4G §A.1 — DOES THIS ENTRY CARRY THE POOL-CREATING WRITE'S SIGNATURE?
+ * Reported in full rather than as a bare boolean, because the reserved half is a STRENGTHENING signal and a
+ * blank reserved cell must not be read as disproof. A blank is not a zero, and it is not a "no" either.
+ */
+function S1_movCreatePathSignature_(entry) {
+  var o = { before_current_is_the_create_path_literal: null, before_reserved_is_zero: null,
+    both_axes_open_at_zero: null, movement_type: null, movement_type_is_known: null,
+    // THE SINGLE AUTHORITY ON THE VOCABULARY QUESTION. Nothing downstream re-asks it.
+    writer_could_have_written_it: null,
+    matches: false, undecidable: false, why: null,
+    writer_citations: S1_MOV_EPOCH_CONTRACT_.writer_citations.slice() };
+  if (!entry) { o.why = 'NO_ENTRY'; return o; }
+  o.movement_type = entry.movement_type === undefined ? null : entry.movement_type;
+  o.movement_type_is_known = S1_movTypeIsKnown_(o.movement_type);
+  o.writer_could_have_written_it = o.movement_type_is_known === true;
+  var bc = entry.before_current_stock === undefined ? null : entry.before_current_stock;
+  var br = entry.before_reserved_stock === undefined ? null : entry.before_reserved_stock;
+  o.before_current_is_the_create_path_literal =
+    bc === null ? null : bc === S1_MOV_EPOCH_CONTRACT_.create_path_before_current_literal;
+  o.before_reserved_is_zero = br === null ? null : br === 0;
+  o.both_axes_open_at_zero = (o.before_current_is_the_create_path_literal === true)
+    ? (o.before_reserved_is_zero === null ? null : o.before_reserved_is_zero) : false;
+  if (o.before_current_is_the_create_path_literal !== true) {
+    o.why = bc === null
+      ? 'before_current_stock IS BLANK, SO THE SIGNATURE CANNOT BE READ - a blank is not a zero'
+      : 'before_current_stock IS ' + bc + ', NOT THE CREATE-PATH LITERAL 0';
+    return o;
+  }
+  if (o.writer_could_have_written_it) {
+    o.matches = true;
+    o.why = 'before_current_stock IS THE CREATE-PATH LITERAL 0 AND movement_type "' + o.movement_type
+      + '" IS IN THE SHIPPED VOCABULARY, so this cell may be the ternary default a pool-creating write'
+      + ' leaves behind rather than a reading of any previous balance'
+      + (o.both_axes_open_at_zero === true ? '. BOTH AXES OPEN AT ZERO, which is what both writers do'
+        + ' on the create path and strengthens the reading'
+        : (o.both_axes_open_at_zero === null ? '. The reserved half is blank and so cannot strengthen or'
+          + ' weaken it' : '. The reserved half is NOT zero, which the create path would not produce'));
+    return o;
+  }
+  o.undecidable = true;
+  o.why = o.movement_type_is_known === null
+    ? 'before_current_stock IS 0 BUT THE VOCABULARY AUTHORITY IS ABSENT, so it cannot be confirmed that a'
+      + ' shipped writer produced this row - and an ABSENT AUTHORITY IS NOT AN INVALID VALUE'
+    : 'before_current_stock IS 0 BUT movement_type "' + o.movement_type + '" IS NOT IN THE SHIPPED'
+      + ' VOCABULARY, so no shipped writer produced this row and the 0 cannot be claimed as a writer literal';
+  return o;
+}
+
+/**
+ * R4G §A.2 — ONE LINK, CLASSIFIED INTO FIVE STATES INSTEAD OF THREE.
+ *
+ * R4F had AGREES / DISAGREES / UNEVALUABLE. Two states are missing and their absence is what produced the
+ * false break: a link across a pool-creating write, and a link whose comparability cannot be established.
+ * Neither of those is an agreement and NEITHER IS A DISAGREEMENT.
+ *
+ * Every comparable link also carries WHY it is comparable (R4G requirement 5): the positive writer-contract
+ * reason plus the arithmetic. A continuity claim that does not say what makes the two cells commensurable
+ * is the claim R4F could not defend.
+ */
+function S1_movLinkComparability_(prevEntry, nextEntry, axisName) {
+  var afterKey = axisName === 'reserved' ? 'after_reserved_stock' : 'after_current_stock';
+  var beforeKey = axisName === 'reserved' ? 'before_reserved_stock' : 'before_current_stock';
+  var prev = prevEntry ? prevEntry[afterKey] : null;
+  var next = nextEntry ? nextEntry[beforeKey] : null;
+  var o = { axis: axisName, earlier_after: prev === undefined ? null : prev,
+    later_before: next === undefined ? null : next,
+    state: null, comparable: null, discriminating: null, gap: null,
+    comparability_basis: null, why: null, epoch_boundary: null, starts_a_new_epoch: false };
+  if (o.earlier_after === null || o.later_before === null) {
+    o.state = 'UNEVALUABLE'; o.comparable = false; o.discriminating = false;
+    o.why = 'one side of the overlap is blank, and a blank is not a quantity';
+    return o;
+  }
+  if (o.earlier_after === o.later_before) {
+    o.state = 'AGREES'; o.comparable = true; o.discriminating = true; o.gap = 0;
+    o.comparability_basis = 'BOTH_CELLS_ARE_READINGS_OF_THE_SAME_POOL_QUANTITY: '
+      + S1_MOV_EPOCH_CONTRACT_.comparable_path_citations.join(' | ');
+    o.why = 'the later row opens at ' + o.later_before + ', the value the earlier row says it set';
+    return o;
+  }
+  // The two states R4F did not have. Only the current axis has a documented create-path literal; the
+  // reserved axis is carried by the same writers on the same branch, so the same test applies to it.
+  var sig = S1_movCreatePathSignature_(nextEntry);
+  var opensAtTheCreatePathLiteral = axisName === 'reserved'
+    ? (o.later_before === 0)
+    : sig.before_current_is_the_create_path_literal === true;
+  if (opensAtTheCreatePathLiteral && o.earlier_after !== 0) {
+    if (sig.writer_could_have_written_it === true) {
+      o.state = 'LEDGER_EPOCH_BOUNDARY'; o.comparable = false; o.discriminating = false;
+      o.starts_a_new_epoch = true;
+      o.epoch_boundary = { kind: 'POOL_CREATION_OR_UNRECORDED_BALANCE_CHANGE',
+        signature: sig,
+        both_readings_require_something_unrecorded: true,
+        reading_a_pool_creation: 'no factory_stock row existed, so the 0 is the ternary default and this'
+          + ' row begins the pool\'s recorded history - but an earlier movement in this same pool claims'
+          + ' to have written a balance into that row',
+        reading_b_unrecorded_change: 'the pool row existed holding a real 0, which requires the balance to'
+          + ' have moved from ' + o.earlier_after + ' to 0 with no movement recording it',
+        why_not_a_delta_break: 'a break is a disagreement between two readings of one quantity. Under (a)'
+          + ' the later cell is not a reading at all, and under (b) the disagreement is with a change'
+          + ' nobody recorded rather than with this link. Neither is a break in this link.' };
+      o.why = 'LEDGER_EPOCH_BOUNDARY - ' + sig.why;
+      return o;
+    }
+    o.state = 'NOT_COMPARABLE'; o.comparable = false; o.discriminating = false;
+    o.starts_a_new_epoch = true;
+    o.epoch_boundary = { kind: sig.movement_type_is_known === null
+        ? 'UNDECIDABLE_THE_VOCABULARY_AUTHORITY_IS_ABSENT'
+        : 'UNDECIDABLE_THE_LATER_ROW_WAS_NOT_WRITTEN_BY_A_SHIPPED_WRITER',
+      signature: sig, both_readings_require_something_unrecorded: null,
+      why_not_a_delta_break: 'the later row opens at 0, which is the create-path literal, and whether a'
+        + ' shipped writer put it there cannot be established. Calling this a break would assert the one'
+        + ' reading that has not been shown.' };
+    o.why = 'NOT_COMPARABLE - ' + sig.why;
+    return o;
+  }
+  o.state = 'DISAGREES'; o.comparable = true; o.discriminating = true;
+  o.gap = o.later_before - o.earlier_after;
+  o.comparability_basis = 'BOTH_CELLS_ARE_READINGS_OF_THE_SAME_POOL_QUANTITY: '
+    + S1_MOV_EPOCH_CONTRACT_.comparable_path_citations.join(' | ')
+    + ' || AND THIS LINK IS NOT AN EPOCH BOUNDARY: ' + (o.later_before === 0
+      ? 'the later row opens at 0 but the earlier row also closes at 0, so a real zero balance explains'
+        + ' it without a pool creation'
+      : 'the later row opens at ' + o.later_before + ', which is not the create-path literal 0');
+  o.why = 'the later row opens at ' + o.later_before + ' and the earlier row closes at ' + o.earlier_after
+    + ', a difference of ' + o.gap + ', with both cells commensurable';
+  return o;
+}
+
+/**
+ * §1.4/§1.5 — DOES THE CHAIN JOIN UP?  (R4G: AND IS THE QUESTION EVEN ASKABLE AT THIS LINK?)
+ *
+ * Every SHIPPED writer records the before/after of BOTH axes on every row by READING them out of the live
+ * factory_stock row, so consecutive rows in one pool overlap: the later row's `before` is an independent
+ * statement of the earlier row's `after`. That is true on the branch where a pool row exists.
+ *
+ * R4G §A is the branch where it does not. Both writers pass a LITERAL 0 when they create the pool row, so
+ * a `before_current_stock` of 0 may be a placeholder for "there was nothing to read" rather than a reading
+ * of anything. A link into such a row is a LEDGER_EPOCH_BOUNDARY and is neither AGREES nor DISAGREES.
+ *
+ * Five states, then, not three: AGREES, DISAGREES, UNEVALUABLE (a blank on either side - a blank is not a
+ * quantity), LEDGER_EPOCH_BOUNDARY, and NOT_COMPARABLE (the signature is there but it cannot be shown that
+ * a shipped writer put it there). Only the first two are comparisons, and only they may discriminate.
  */
 function S1_movChainContinuity_(chron) {
-  var o = { links_examined: 0, links: [], current_axis: { checked: 0, agree: 0, disagree: 0, unevaluable: 0 },
-    reserved_axis: { checked: 0, agree: 0, disagree: 0, unevaluable: 0 },
-    first_break_at_position: null, chain_is_continuous_on_the_current_axis: null,
+  var o = { links_examined: 0, links: [],
+    current_axis: { checked: 0, agree: 0, disagree: 0, unevaluable: 0, epoch_boundary: 0, not_comparable: 0 },
+    reserved_axis: { checked: 0, agree: 0, disagree: 0, unevaluable: 0, epoch_boundary: 0, not_comparable: 0 },
+    first_break_at_position: null, first_epoch_boundary_at_position: null,
+    chain_is_continuous_on_the_current_axis: null,
     chain_is_continuous_on_the_reserved_axis: null,
     every_readable_link_agrees_on_the_current_axis: null,
     every_readable_link_agrees_on_the_reserved_axis: null,
-    rule: 'the later row\'s before_* is an independent statement of the earlier row\'s after_*;'
-      + ' a link with a blank on either side is UNEVALUABLE, never broken' };
+    every_comparable_link_agrees_on_the_current_axis: null,
+    the_current_chain_crosses_a_ledger_epoch_boundary: null,
+    rule: 'the later row\'s before_* is an independent statement of the earlier row\'s after_* ONLY WHEN'
+      + ' both cells are readings of the same pool quantity. A link with a blank on either side is'
+      + ' UNEVALUABLE; a link into a pool-creating write is a LEDGER_EPOCH_BOUNDARY; a link whose'
+      + ' comparability cannot be established is NOT_COMPARABLE. None of those three is a break.' };
   var e = chron.entries || [];
   for (var i = 0; i + 1 < e.length; i++) {
     var a = e[i], b = e[i + 1];
     var link = { from_position: a.position_in_chronology_1based, to_position: b.position_in_chronology_1based,
       from_sheet_row: a.one_based_sheet_row_number, to_sheet_row: b.one_based_sheet_row_number,
-      current: null, reserved: null };
-    [['current', 'after_current_stock', 'before_current_stock'],
-      ['reserved', 'after_reserved_stock', 'before_reserved_stock']].forEach(function (ax) {
-      var prev = a[ax[1]], next = b[ax[2]];
-      var bucket = ax[0] === 'current' ? o.current_axis : o.reserved_axis;
+      current: null, reserved: null, starts_a_new_epoch: false };
+    ['current', 'reserved'].forEach(function (axisName) {
+      var c = S1_movLinkComparability_(a, b, axisName);
+      var bucket = axisName === 'current' ? o.current_axis : o.reserved_axis;
       bucket.checked++;
-      if (prev === null || next === null) {
-        link[ax[0]] = { earlier_after: prev, later_before: next, state: 'UNEVALUABLE',
-          why: 'one side of the overlap is blank, and a blank is not a quantity' };
-        bucket.unevaluable++;
-        return;
-      }
-      var agrees = prev === next;
-      link[ax[0]] = { earlier_after: prev, later_before: next,
-        state: agrees ? 'AGREES' : 'DISAGREES', gap: agrees ? 0 : (next - prev) };
-      if (agrees) bucket.agree++; else {
+      if (c.state === 'AGREES') bucket.agree++;
+      else if (c.state === 'DISAGREES') {
         bucket.disagree++;
-        if (o.first_break_at_position === null) o.first_break_at_position = b.position_in_chronology_1based;
+        if (axisName === 'current' && o.first_break_at_position === null) {
+          o.first_break_at_position = b.position_in_chronology_1based;
+        }
+      } else if (c.state === 'UNEVALUABLE') bucket.unevaluable++;
+      else if (c.state === 'LEDGER_EPOCH_BOUNDARY') bucket.epoch_boundary++;
+      else if (c.state === 'NOT_COMPARABLE') bucket.not_comparable++;
+      if (axisName === 'current' && c.starts_a_new_epoch) {
+        link.starts_a_new_epoch = true;
+        if (o.first_epoch_boundary_at_position === null) {
+          o.first_epoch_boundary_at_position = b.position_in_chronology_1based;
+        }
       }
+      link[axisName] = c;
     });
     o.links.push(link);
     o.links_examined++;
   }
-  // MEASURED, AND IT CORRECTED THE FIRST DEFINITION. This began as 'every EVALUABLE link agreed and at
-  // least one was evaluable', which reported the live-shaped chain as CONTINUOUS on the reserved axis while
-  // the link touching the target row's blank reserved pair had not been read at all. That is precisely the
-  // mistake this file keeps finding: a name answering a narrower question than it asks. A chain with a hole
-  // in it is not continuous, however well the readable parts join up.
+  // R4F CORRECTED THIS ONCE AND R4G CORRECTS IT AGAIN, IN THE OPPOSITE DIRECTION.
   //
-  // So both facts are published and neither borrows the other's name. CONTINUOUS requires every link to
-  // have been read AND to have agreed; the weaker reading keeps its own longer name, which is what a person
-  // needs when the only thing wrong with a link is that nobody recorded one side of it.
+  // R4F's fix was that a chain with an UNREAD link is not continuous, however well the readable parts join
+  // up - a name answering a narrower question than it asks. That fix stands. What R4F still got wrong is the
+  // other half: it counted an EPOCH BOUNDARY as a disagreement, so a chain that is perfectly well-formed
+  // across a pool creation was reported as broken, and `removing_it_repairs_a_break` then said the target
+  // row was the cause. A boundary is not a break, and three different facts now have three different names:
+  //
+  //   chain_is_continuous_*                    every link read AND agreed. The strongest claim.
+  //   every_readable_link_agrees_*             nothing that could be read disagreed. Silent about holes.
+  //   every_comparable_link_agrees_*           nothing COMPARABLE disagreed. Silent about boundaries.
+  //
+  // None of them borrows another's name, and the boundary count is published beside them so a reader can
+  // see which of the three they are entitled to.
   o.chain_is_continuous_on_the_current_axis =
     o.current_axis.checked > 0 && o.current_axis.agree === o.current_axis.checked;
   o.chain_is_continuous_on_the_reserved_axis =
@@ -6361,6 +6583,144 @@ function S1_movChainContinuity_(chron) {
     o.current_axis.agree > 0 && o.current_axis.disagree === 0;
   o.every_readable_link_agrees_on_the_reserved_axis =
     o.reserved_axis.agree > 0 && o.reserved_axis.disagree === 0;
+  o.every_comparable_link_agrees_on_the_current_axis =
+    (o.current_axis.agree + o.current_axis.disagree) > 0 && o.current_axis.disagree === 0;
+  o.the_current_chain_crosses_a_ledger_epoch_boundary =
+    (o.current_axis.epoch_boundary + o.current_axis.not_comparable) > 0;
+  return o;
+}
+
+/**
+ * R4G §B — THE CHRONOLOGY, SEGMENTED INTO LEDGER EPOCHS.
+ *
+ * An epoch is a run of movements whose before/after cells are all readings of one continuously recorded pool
+ * balance. A pool-creating write starts a new one, because on that branch the writer's `before` is a literal
+ * default rather than a reading (§A). Continuity, and every argument that leans on continuity, is only valid
+ * WITHIN an epoch - which is exactly the constraint R4F did not have.
+ */
+function S1_movEpochs_(chron, targetRowNumber) {
+  var chain = S1_movChainContinuity_(chron);
+  var e = chron.entries || [];
+  var o = { epoch_count: e.length ? 1 : 0, boundaries: [], epoch_index_by_sheet_row: {},
+    epoch_index_by_position: {}, target_epoch_index: null, last_entry_epoch_index: null,
+    target_is_in_the_last_epoch: null, epochs: [],
+    rule: 'an epoch is a run of movements whose before/after cells are all readings of one continuously'
+      + ' recorded balance. Continuity arguments are valid WITHIN an epoch and meaningless across one.' };
+  var idx = e.length ? 1 : 0;
+  var cur = null;
+  e.forEach(function (entry, pos) {
+    if (pos > 0) {
+      var link = chain.links[pos - 1];
+      if (link && link.starts_a_new_epoch) {
+        idx++;
+        o.boundaries.push({ new_epoch_index: idx,
+          at_position: entry.position_in_chronology_1based,
+          at_sheet_row: entry.one_based_sheet_row_number,
+          from_position: chain.links[pos - 1].from_position,
+          from_sheet_row: chain.links[pos - 1].from_sheet_row,
+          state: link.current.state, kind: link.current.epoch_boundary
+            ? link.current.epoch_boundary.kind : null,
+          earlier_after_current: link.current.earlier_after,
+          later_before_current: link.current.later_before,
+          why: link.current.why,
+          why_not_a_delta_break: link.current.epoch_boundary
+            ? link.current.epoch_boundary.why_not_a_delta_break : null });
+        cur = null;
+      }
+    }
+    if (!cur) { cur = { epoch_index: idx, entry_count: 0, first_position: entry.position_in_chronology_1based,
+      first_sheet_row: entry.one_based_sheet_row_number, last_position: null, last_sheet_row: null,
+      opening_before_current: entry.before_current_stock, closing_after_current: null,
+      sheet_rows: [] }; o.epochs.push(cur); }
+    cur.entry_count++;
+    cur.last_position = entry.position_in_chronology_1based;
+    cur.last_sheet_row = entry.one_based_sheet_row_number;
+    cur.closing_after_current = entry.after_current_stock;
+    cur.sheet_rows.push(entry.one_based_sheet_row_number);
+    o.epoch_index_by_sheet_row[String(entry.one_based_sheet_row_number)] = idx;
+    o.epoch_index_by_position[String(entry.position_in_chronology_1based)] = idx;
+    if (entry.one_based_sheet_row_number === targetRowNumber) o.target_epoch_index = idx;
+  });
+  o.epoch_count = idx;
+  o.last_entry_epoch_index = e.length ? idx : null;
+  o.target_is_in_the_last_epoch = (o.target_epoch_index !== null && o.last_entry_epoch_index !== null)
+    ? o.target_epoch_index === o.last_entry_epoch_index : null;
+  return o;
+}
+
+/**
+ * R4G §C — THE THREE "NEXT" QUESTIONS, WHICH R4F ANSWERED WITH ONE VARIABLE.
+ *
+ * R4F had a single `nxt`, found by scanning forward for the first entry with a non-blank movement_type, and
+ * published it as `next_same_pool_movement`. Three different questions were collapsed into it, and on the
+ * live table they have three different answers:
+ *
+ *   next_physical_same_pool_movement      the immediate chronological successor, whatever it is
+ *   next_classifiable_same_pool_movement  the first successor carrying a movement_type
+ *   next_same_ledger_epoch_movement       the first successor reachable WITHOUT crossing a boundary (§B)
+ *
+ * The third is the only one a continuity argument may use, and it is the one that can be null while the
+ * other two are found. R4F having only the second is why it could report "no classifiable movement follows"
+ * about a table in which one plainly does.
+ */
+function S1_movNextMovements_(chron, epochs, targetRowNumber) {
+  var e = chron.entries || [];
+  var o = { target_position: null, target_epoch_index: epochs ? epochs.target_epoch_index : null,
+    next_physical_same_pool_movement: null,
+    next_classifiable_same_pool_movement: null,
+    next_same_ledger_epoch_movement: null,
+    next_same_ledger_epoch_movement_is_classifiable: null,
+    a_later_movement_exists_in_this_pool: false,
+    a_later_classifiable_movement_exists_in_this_pool: false,
+    a_later_movement_exists_in_the_targets_own_epoch: false,
+    a_later_classifiable_movement_exists_in_the_targets_own_epoch: false,
+    epoch_boundary_immediately_after_the_target: null,
+    boundaries_between_the_target_and_the_next_classifiable_movement: [],
+    rule: 'THESE ARE THREE DIFFERENT QUESTIONS. A movement that follows physically is not automatically'
+      + ' classifiable, and a classifiable one is not automatically in the target\'s own ledger epoch.'
+      + ' Only the third may carry a continuity argument, and none of them may be reported as absent'
+      + ' when a different one of them was found.' };
+  var ti = -1;
+  for (var i = 0; i < e.length; i++) {
+    if (e[i].one_based_sheet_row_number === targetRowNumber) { ti = i; break; }
+  }
+  if (ti === -1) return o;
+  o.target_position = e[ti].position_in_chronology_1based;
+  var tEpoch = epochs && epochs.epoch_index_by_sheet_row
+    ? epochs.epoch_index_by_sheet_row[String(targetRowNumber)] : null;
+  if (tEpoch !== undefined && tEpoch !== null) o.target_epoch_index = tEpoch;
+  if (ti + 1 < e.length) {
+    o.next_physical_same_pool_movement = e[ti + 1];
+    o.a_later_movement_exists_in_this_pool = true;
+  }
+  for (var j = ti + 1; j < e.length; j++) {
+    if (e[j].classifiable) { o.next_classifiable_same_pool_movement = e[j];
+      o.a_later_classifiable_movement_exists_in_this_pool = true; break; }
+  }
+  for (var k = ti + 1; k < e.length; k++) {
+    var kEpoch = epochs && epochs.epoch_index_by_sheet_row
+      ? epochs.epoch_index_by_sheet_row[String(e[k].one_based_sheet_row_number)] : null;
+    if (kEpoch === undefined) kEpoch = null;
+    if (o.target_epoch_index !== null && kEpoch !== o.target_epoch_index) break;   // a boundary intervenes
+    o.a_later_movement_exists_in_the_targets_own_epoch = true;
+    if (o.next_same_ledger_epoch_movement === null) {
+      o.next_same_ledger_epoch_movement = e[k];
+      o.next_same_ledger_epoch_movement_is_classifiable = e[k].classifiable === true;
+    }
+    if (e[k].classifiable) { o.a_later_classifiable_movement_exists_in_the_targets_own_epoch = true; break; }
+  }
+  (epochs && epochs.boundaries ? epochs.boundaries : []).forEach(function (b) {
+    if (o.next_physical_same_pool_movement
+        && b.at_sheet_row === o.next_physical_same_pool_movement.one_based_sheet_row_number
+        && b.from_sheet_row === targetRowNumber) {
+      o.epoch_boundary_immediately_after_the_target = b;
+    }
+    if (o.target_position !== null && b.at_position > o.target_position
+        && (!o.next_classifiable_same_pool_movement
+          || b.at_position <= o.next_classifiable_same_pool_movement.position_in_chronology_1based)) {
+      o.boundaries_between_the_target_and_the_next_classifiable_movement.push(b);
+    }
+  });
   return o;
 }
 
@@ -6372,7 +6732,7 @@ function S1_movChainContinuity_(chron) {
  * which is the self-comparison this whole family of diagnostics exists to refuse. So independence is
  * computed and reported, not assumed.
  */
-function S1_movBalanceReconcile_(chron, pool, targetRowNumber) {
+function S1_movBalanceReconcile_(chron, pool, targetRowNumber, epochs) {
   var e = chron.entries || [];
   var last = e.length ? e[e.length - 1] : null;
   var o = { ledger_last_position: last ? last.position_in_chronology_1based : null,
@@ -6383,7 +6743,15 @@ function S1_movBalanceReconcile_(chron, pool, targetRowNumber) {
     factory_stock_current: pool ? pool.fac_current_stock : null,
     factory_stock_reserved: pool ? pool.fac_reserved_stock : null,
     current_agrees: null, reserved_agrees: null,
-    independent_of_the_target_row: null, why_not_independent: null };
+    independent_of_the_target_row: null, why_not_independent: null,
+    // R4G §D — the epoch attribution. This is the field whose absence let R4F score a balance agreement
+    // as support for a classification of a row on the far side of a boundary.
+    target_epoch_index: epochs ? epochs.target_epoch_index : null,
+    ledger_last_epoch_index: epochs ? epochs.last_entry_epoch_index : null,
+    epoch_count: epochs ? epochs.epoch_count : null,
+    balance_is_in_the_same_epoch_as_the_target: null,
+    attributable_to_the_target_row: null, why_not_attributable: null,
+    what_this_proves: null };
   o.independent_of_the_target_row = !!(last && last.one_based_sheet_row_number !== targetRowNumber);
   if (!o.independent_of_the_target_row) {
     o.why_not_independent = 'THE_TARGET_ROW_IS_THE_LAST_IN_THE_CHAIN_SO_THE_BALANCE_WOULD_BE_COMPARED'
@@ -6395,6 +6763,44 @@ function S1_movBalanceReconcile_(chron, pool, targetRowNumber) {
   if (o.factory_stock_reserved !== null && o.ledger_last_after_reserved !== null) {
     o.reserved_agrees = o.factory_stock_reserved === o.ledger_last_after_reserved;
   }
+  // INDEPENDENCE AND ATTRIBUTION ARE TWO DIFFERENT TESTS, AND R4F ONLY HAD THE FIRST.
+  //
+  // Independence asks: is the balance being compared with a cell other than the one under question? On the
+  // live table the answer is yes, because the last chain entry is not the target row. R4F stopped there and
+  // scored the agreement as support for two of the four candidates.
+  //
+  // Attribution asks the question that actually matters: does this agreement say anything about THE TARGET
+  // ROW? It does not, if the balance reconciles to an epoch the target row is not in. factory_stock holds
+  // one number - the CURRENT balance - and the current balance is produced by the CURRENT epoch. An earlier
+  // epoch's rows are upstream of a boundary the balance cannot see past. So the agreement proves the current
+  // epoch is well-formed and proves NOTHING about how a row in a previous epoch should be classified.
+  //
+  // A balance agreement that is independent but not attributable is published, and it supports and
+  // contradicts NOTHING. That is the whole of R4G requirement 4's third clause.
+  if (o.target_epoch_index !== null && o.ledger_last_epoch_index !== null) {
+    o.balance_is_in_the_same_epoch_as_the_target = o.target_epoch_index === o.ledger_last_epoch_index;
+  }
+  o.attributable_to_the_target_row = !!(o.independent_of_the_target_row
+    && o.balance_is_in_the_same_epoch_as_the_target === true);
+  if (!o.attributable_to_the_target_row) {
+    if (!o.independent_of_the_target_row) {
+      o.why_not_attributable = 'NOT_INDEPENDENT:' + o.why_not_independent;
+    } else if (o.balance_is_in_the_same_epoch_as_the_target === false) {
+      o.why_not_attributable = 'THE_LIVE_BALANCE_RECONCILES_TO_LEDGER_EPOCH_' + o.ledger_last_epoch_index
+        + '_AND_THE_TARGET_ROW_IS_IN_EPOCH_' + o.target_epoch_index
+        + '_SO_THE_AGREEMENT_IS_UPSTREAM_UNREACHABLE_FROM_THE_TARGET';
+    } else {
+      o.why_not_attributable = 'THE_EPOCH_OF_THE_TARGET_ROW_OR_OF_THE_LAST_CHAIN_ENTRY_COULD_NOT_BE_DETERMINED';
+    }
+  }
+  o.what_this_proves = o.current_agrees === null
+    ? 'NOTHING_MEASURED - the pool row or one of the quantities is absent'
+    : (o.current_agrees === false
+      ? 'THE_LEDGER_AND_THE_LIVE_BALANCE_ALREADY_DISAGREE - this row is not the only thing to settle'
+      : (o.attributable_to_the_target_row
+        ? 'THE_TARGETS_OWN_LEDGER_EPOCH_RECONCILES_TO_THE_LIVE_BALANCE'
+        : 'ONLY_THAT_LEDGER_EPOCH_' + o.ledger_last_epoch_index + '_RECONCILES_TO_THE_LIVE_BALANCE'
+          + ' - it says nothing about the target row, which is in epoch ' + o.target_epoch_index));
   return o;
 }
 
@@ -6591,33 +6997,128 @@ function S1_movCrossTableScan_(ss, markers, maxHitsPerTable) {
  * the balance and removing it costs the chain nothing. That is real support for "this is not a ledger row".
  * If removing it BREAKS an overlap that currently holds, the opposite: the row is load-bearing.
  */
-function S1_movChainWithoutTarget_(chron, targetRowNumber) {
+function S1_movChainWithoutTarget_(chron, targetRowNumber, epochs) {
   var kept = { entries: (chron.entries || []).filter(function (e) {
     return e.one_based_sheet_row_number !== targetRowNumber; }) };
   var without = S1_movChainContinuity_(kept);
   var withAll = S1_movChainContinuity_(chron);
-  return { with_the_target_row: { current_agree: withAll.current_axis.agree,
+  var o = { with_the_target_row: { current_agree: withAll.current_axis.agree,
       current_disagree: withAll.current_axis.disagree,
       current_unevaluable: withAll.current_axis.unevaluable,
+      current_epoch_boundary: withAll.current_axis.epoch_boundary,
+      current_not_comparable: withAll.current_axis.not_comparable,
       reserved_unevaluable: withAll.reserved_axis.unevaluable },
     without_the_target_row: { current_agree: without.current_axis.agree,
       current_disagree: without.current_axis.disagree,
       current_unevaluable: without.current_axis.unevaluable,
+      current_epoch_boundary: without.current_axis.epoch_boundary,
+      current_not_comparable: without.current_axis.not_comparable,
       reserved_unevaluable: without.reserved_axis.unevaluable },
-    removing_it_repairs_a_break: withAll.current_axis.disagree > 0
-      && without.current_axis.disagree < withAll.current_axis.disagree,
-    removing_it_breaks_a_link: without.current_axis.disagree > withAll.current_axis.disagree,
-    neighbours_overlap_each_other_directly: (function () {
-      var e = chron.entries || [];
-      for (var i = 0; i + 2 < e.length; i++) {
-        if (e[i + 1].one_based_sheet_row_number !== targetRowNumber) continue;
-        if (e[i].after_current_stock === null || e[i + 2].before_current_stock === null) return null;
-        return e[i].after_current_stock === e[i + 2].before_current_stock;
-      }
-      return null;                                   // the target is first or last: nothing to bridge
-    })(),
+    // R4G §E — TRI-STATE, AND THE STATE IS NEVER NULL EVEN WHEN THE BOOLEAN IS.
+    removing_it_repairs_a_break: null, removing_it_repairs_a_break_state: null,
+    removing_it_repairs_a_break_why: null,
+    removing_it_breaks_a_link: null, removing_it_breaks_a_link_state: null,
+    comparable_breaks_with_the_target: withAll.current_axis.disagree,
+    comparable_breaks_without_the_target: without.current_axis.disagree,
+    neighbours_overlap_each_other_directly: null,
+    neighbours_overlap_state: null, neighbours_overlap_why: null,
     rule: 'a row the chain does not need is a candidate for not being a ledger row; a row whose removal'
-      + ' breaks an overlap is load-bearing and cannot be dismissed' };
+      + ' breaks an overlap is load-bearing and cannot be dismissed. BOTH CLAIMS REQUIRE A COMPARABLE'
+      + ' LINK: an epoch boundary is not a break, so removing a row cannot repair one.' };
+
+  // WHY THIS IS THE CORRECTION R4G EXISTS FOR.
+  //
+  // R4F computed `removing_it_repairs_a_break` from the DISAGREE count alone, and R4F's DISAGREE count
+  // included epoch boundaries. On the live table that produced the flagship false claim: the target row
+  // closes at 12000, the next row opens at 0 through the create-path literal, R4F counted one disagreement,
+  // removing the target row left zero links at all - and the arithmetic 1 > 0 && 0 < 1 published
+  // `removing_it_repairs_a_break: true` about a chain that was never broken.
+  //
+  // Two things are wrong with that and both are fixed here. The count is now boundary-free, so a boundary
+  // can no longer be mistaken for a break. And a reduction that comes from having FEWER LINKS rather than
+  // fewer disagreements is not a repair either: deleting one of the two rows a comparison was made between
+  // removes the comparison, it does not settle it.
+  var brokeWith = withAll.current_axis.disagree;
+  var brokeWithout = without.current_axis.disagree;
+  var comparableWith = withAll.current_axis.agree + withAll.current_axis.disagree;
+  var comparableWithout = without.current_axis.agree + without.current_axis.disagree;
+  var boundaries = withAll.current_axis.epoch_boundary + withAll.current_axis.not_comparable;
+  if (brokeWith === 0) {
+    o.removing_it_repairs_a_break = boundaries > 0 ? null : false;
+    o.removing_it_repairs_a_break_state = boundaries > 0
+      ? 'NOT_APPLICABLE_THE_ONLY_NON_AGREEING_LINKS_ARE_LEDGER_EPOCH_BOUNDARIES'
+      : 'NO_BREAK_TO_REPAIR';
+    o.removing_it_repairs_a_break_why = boundaries > 0
+      ? 'the current chain holds ' + boundaries + ' epoch boundary link(s) and ZERO comparable'
+        + ' disagreements. A boundary is not a break, so there is nothing for the removal of any row to'
+        + ' repair, and reporting true here would blame the target row for a boundary it is upstream of.'
+      : 'the current chain holds no comparable disagreement, so no removal can repair one';
+  } else if (brokeWithout < brokeWith && comparableWithout >= comparableWith) {
+    o.removing_it_repairs_a_break = true;
+    o.removing_it_repairs_a_break_state = 'YES_A_COMPARABLE_DISAGREEMENT_IS_RESOLVED_WITHOUT_IT';
+    o.removing_it_repairs_a_break_why = 'comparable disagreements fall from ' + brokeWith + ' to '
+      + brokeWithout + ' while the number of comparable links does not fall, so the removal resolves a'
+      + ' disagreement rather than merely removing the comparison';
+  } else if (brokeWithout < brokeWith) {
+    o.removing_it_repairs_a_break = null;
+    o.removing_it_repairs_a_break_state = 'NOT_APPLICABLE_THE_DISAGREEMENT_COUNT_ONLY_FELL_BECAUSE_'
+      + 'FEWER_LINKS_REMAIN';
+    o.removing_it_repairs_a_break_why = 'comparable disagreements fall from ' + brokeWith + ' to '
+      + brokeWithout + ', but comparable links also fall from ' + comparableWith + ' to '
+      + comparableWithout + '. Deleting one of the two rows a comparison was made between removes the'
+      + ' comparison; it does not settle it.';
+  } else {
+    o.removing_it_repairs_a_break = false;
+    o.removing_it_repairs_a_break_state = 'NO_THE_DISAGREEMENT_SURVIVES_WITHOUT_IT';
+    o.removing_it_repairs_a_break_why = 'comparable disagreements are ' + brokeWith + ' with the row and '
+      + brokeWithout + ' without it';
+  }
+  if (brokeWithout > brokeWith) {
+    o.removing_it_breaks_a_link = true;
+    o.removing_it_breaks_a_link_state = 'YES_REMOVING_IT_CREATES_A_COMPARABLE_DISAGREEMENT';
+  } else {
+    o.removing_it_breaks_a_link = false;
+    o.removing_it_breaks_a_link_state = comparableWithout < comparableWith
+      ? 'NO_BUT_REMOVING_IT_ALSO_REMOVES_COMPARABLE_LINKS_SO_THIS_IS_NOT_EVIDENCE_THE_ROW_IS_SPARE'
+      : 'NO';
+  }
+
+  // The bridge test, now boundary-aware: neighbours that sit either side of a boundary cannot bridge,
+  // because the value they would be compared on is not a reading of the same balance.
+  (function () {
+    var e = chron.entries || [];
+    for (var i = 0; i + 2 < e.length; i++) {
+      if (e[i + 1].one_based_sheet_row_number !== targetRowNumber) continue;
+      var epA = epochs && epochs.epoch_index_by_sheet_row
+        ? epochs.epoch_index_by_sheet_row[String(e[i].one_based_sheet_row_number)] : null;
+      var epC = epochs && epochs.epoch_index_by_sheet_row
+        ? epochs.epoch_index_by_sheet_row[String(e[i + 2].one_based_sheet_row_number)] : null;
+      if (epA !== null && epC !== null && epA !== epC) {
+        o.neighbours_overlap_each_other_directly = null;
+        o.neighbours_overlap_state = 'NOT_COMPARABLE_THE_NEIGHBOURS_ARE_IN_DIFFERENT_LEDGER_EPOCHS';
+        o.neighbours_overlap_why = 'sheet row ' + e[i].one_based_sheet_row_number + ' is in epoch ' + epA
+          + ' and sheet row ' + e[i + 2].one_based_sheet_row_number + ' is in epoch ' + epC
+          + ', so bridging them would compare readings of two different recorded balances';
+        return;
+      }
+      var c = S1_movLinkComparability_(e[i], e[i + 2], 'current');
+      if (c.state === 'AGREES' || c.state === 'DISAGREES') {
+        o.neighbours_overlap_each_other_directly = c.state === 'AGREES';
+        o.neighbours_overlap_state = c.state === 'AGREES'
+          ? 'YES_THE_NEIGHBOURS_OVERLAP_DIRECTLY' : 'NO_THE_NEIGHBOURS_DO_NOT_OVERLAP';
+        o.neighbours_overlap_why = c.why;
+        return;
+      }
+      o.neighbours_overlap_each_other_directly = null;
+      o.neighbours_overlap_state = 'NOT_COMPARABLE_' + c.state;
+      o.neighbours_overlap_why = c.why;
+      return;
+    }
+    o.neighbours_overlap_each_other_directly = null;
+    o.neighbours_overlap_state = 'NOT_APPLICABLE_THE_TARGET_ROW_IS_FIRST_OR_LAST_IN_THE_CHAIN';
+    o.neighbours_overlap_why = 'there is nothing on both sides of it to bridge';
+  })();
+  return o;
 }
 
 /**
@@ -6646,15 +7147,22 @@ var S1_MOV_PROV_SOURCES_ = {
 };
 
 function S1_movProvEvidence_(source, statement, supports, contradicts) {
+  var s = (supports || []).slice(), c = (contradicts || []).slice();
   return { source: source,
     independent: !!(S1_MOV_PROV_SOURCES_[source] && S1_MOV_PROV_SOURCES_[source].independent),
-    statement: statement, supports: (supports || []).slice(), contradicts: (contradicts || []).slice() };
+    statement: statement, supports: s, contradicts: c,
+    // R4G §F — MEASURED AND NEUTRAL IS NOT THE SAME AS NOT MEASURED, and R4F had no way to say so. An
+    // evidence item that names neither a candidate it supports nor one it contradicts is a MEASUREMENT
+    // THAT DID NOT DISCRIMINATE. It must be published (something was read) and it must never be counted
+    // as support - which is precisely the confusion that let R4F report a found row as an absent one.
+    discriminates: s.length > 0 || c.length > 0 };
 }
 
 var S1_MOV_CAND_ = ['INITIAL_BALANCE_SET', 'CURRENT_DELTA_FROM_BEFORE_AFTER',
   'CURRENT_DELTA_FROM_QTY', 'INVALID_NON_LEDGER_ROW'];
 
-function S1_movCandidates_(ax, chron, chain, bal, sib, cross, elim, noTarget, targetRowNumber) {
+function S1_movCandidates_(ax, chron, chain, bal, sib, cross, elim, noTarget, targetRowNumber,
+                           epochs, nextMoves) {
   var qty = ax.qty, bef = ax.before_current, aft = ax.after_current;
   var deltaFromPair = (aft === null || bef === null) ? null : (aft - bef);
   var afterFromQty = (bef === null || qty === null) ? null : (bef + qty);
@@ -6673,10 +7181,13 @@ function S1_movCandidates_(ax, chron, chain, bal, sib, cross, elim, noTarget, ta
       + ', so exactly one of the two readings must be wrong',
       ['CURRENT_DELTA_FROM_BEFORE_AFTER', 'CURRENT_DELTA_FROM_QTY', 'INVALID_NON_LEDGER_ROW'], []));
   }
+  // R4G §A applied to the TARGET ROW ITSELF. The create-path signature is what a pool initialization
+  // leaves behind, and this row does not carry it - on either writer, not just the import one.
   if (bef !== null && bef !== 0) {
     ev.push(S1_movProvEvidence_('WRITER_CONTRACT',
-      'before_current_stock is ' + bef + ' and not 0. factoryImportMovObj_ passes beforeCurrent = 0 when the'
-      + ' import CREATES the pool row, so an initialization of this pool would carry 0 here',
+      'before_current_stock is ' + bef + ' and not 0. BOTH current-axis writers pass beforeCurrent = 0 on'
+      + ' the branch that CREATES the pool row (factoryStockApplyDeltaTx_ 21_:244-247; the import commit'
+      + ' 21_:959-960), so an initialization of this pool would carry 0 here and this row does not',
       [], ['INITIAL_BALANCE_SET']));
   }
 
@@ -6689,63 +7200,114 @@ function S1_movCandidates_(ax, chron, chain, bal, sib, cross, elim, noTarget, ta
       ['INVALID_NON_LEDGER_ROW'], []));
   }
 
-  // ---- §1.4 the discriminator: the next row's `before` is an independent statement about `after`. ----
-  var nxt = null;
-  var e = chron.entries || [];
-  for (var i = 0; i < e.length; i++) {
-    if (e[i].one_based_sheet_row_number === targetRowNumber) {
-      for (var j = i + 1; j < e.length; j++) { if (e[j].classifiable) { nxt = e[j]; break; } }
-      break;
-    }
-  }
-  if (nxt && nxt.before_current_stock !== null && aft !== null) {
-    if (nxt.before_current_stock === aft) {
+  // ---- R4G §C/§F the discriminator, on the ONLY successor a continuity argument may use. ----
+  //
+  // R4F used the next CLASSIFIABLE movement, which on the live table sits on the far side of a pool-creating
+  // write. Its `before_current_stock` is the create-path literal 0, so comparing it with the target row's
+  // `after_current_stock` compares a balance against a placeholder for an absence. R4F's comparison fell
+  // through to its final `else`, produced an evidence item supporting and contradicting nothing, and then -
+  // because the branch that names the chain reading was derived from WHETHER EVIDENCE ATTACHED rather than
+  // from WHETHER A ROW WAS FOUND - every candidate reported "no classifiable movement follows this one in
+  // this pool" about a table whose very next row is one, and asked for it in `missing_evidence`.
+  //
+  // So the successor used here is `next_same_ledger_epoch_movement`, the boundary is published as its own
+  // non-discriminating fact, and the chain reading below is computed from the measured facts.
+  var nm = nextMoves || {};
+  var nxtEpoch = nm.next_same_ledger_epoch_movement || null;
+  var nxtClass = nm.next_classifiable_same_pool_movement || null;
+  var nxtPhys = nm.next_physical_same_pool_movement || null;
+  var chainState = null, chainWhy = null;
+
+  if (nxtEpoch && nxtEpoch.classifiable && nxtEpoch.before_current_stock !== null && aft !== null) {
+    if (nxtEpoch.before_current_stock === aft) {
+      chainState = 'CONSISTENT'; chainWhy = 'the next movement in the target\'s own ledger epoch opens at '
+        + nxtEpoch.before_current_stock + ', confirming after_current_stock = ' + aft;
       ev.push(S1_movProvEvidence_('LEDGER_CHAIN_OVERLAP',
-        'the next classifiable movement in this pool (sheet row ' + nxt.one_based_sheet_row_number
-        + ', ' + nxt.movement_type + ') opens at before_current_stock = ' + nxt.before_current_stock
+        'the next movement in the target\'s OWN ledger epoch (sheet row '
+        + nxtEpoch.one_based_sheet_row_number + ', ' + nxtEpoch.movement_type
+        + ') opens at before_current_stock = ' + nxtEpoch.before_current_stock
         + ', which independently confirms after_current_stock = ' + aft,
         ['INITIAL_BALANCE_SET', 'CURRENT_DELTA_FROM_BEFORE_AFTER'], ['CURRENT_DELTA_FROM_QTY']));
-    } else if (afterFromQty !== null && nxt.before_current_stock === afterFromQty) {
+    } else if (afterFromQty !== null && nxtEpoch.before_current_stock === afterFromQty) {
+      chainState = 'CONTRADICTS_THE_AFTER_CELL';
+      chainWhy = 'the next same-epoch movement opens at before+qty, so qty is the reliable cell';
       ev.push(S1_movProvEvidence_('LEDGER_CHAIN_OVERLAP',
-        'the next classifiable movement opens at ' + nxt.before_current_stock + ', which is'
-        + ' before_current_stock + qty (' + bef + ' + ' + qty + '), so qty is the reliable cell and'
-        + ' after_current_stock is the wrong one',
+        'the next movement in the target\'s own ledger epoch opens at ' + nxtEpoch.before_current_stock
+        + ', which is before_current_stock + qty (' + bef + ' + ' + qty + '), so qty is the reliable cell'
+        + ' and after_current_stock is the wrong one',
         ['CURRENT_DELTA_FROM_QTY'], ['INITIAL_BALANCE_SET', 'CURRENT_DELTA_FROM_BEFORE_AFTER']));
-    } else if (bef !== null && nxt.before_current_stock === bef) {
+    } else if (bef !== null && nxtEpoch.before_current_stock === bef) {
+      chainState = 'THE_BALANCE_NEVER_MOVED';
+      chainWhy = 'the next same-epoch movement opens at the target\'s own before_current_stock';
       ev.push(S1_movProvEvidence_('LEDGER_CHAIN_OVERLAP',
-        'the next classifiable movement opens at ' + nxt.before_current_stock + ', the target row\'s own'
-        + ' before_current_stock, so the balance never moved and this row took no effect',
-        ['INVALID_NON_LEDGER_ROW'], ['INITIAL_BALANCE_SET', 'CURRENT_DELTA_FROM_BEFORE_AFTER',
-          'CURRENT_DELTA_FROM_QTY']));
+        'the next movement in the target\'s own ledger epoch opens at ' + nxtEpoch.before_current_stock
+        + ', the target row\'s own before_current_stock, so the balance never moved and this row took no'
+        + ' effect', ['INVALID_NON_LEDGER_ROW'], ['INITIAL_BALANCE_SET',
+          'CURRENT_DELTA_FROM_BEFORE_AFTER', 'CURRENT_DELTA_FROM_QTY']));
     } else {
+      chainState = 'MEASURED_AND_NEUTRAL';
+      chainWhy = 'the next same-epoch movement opens at ' + nxtEpoch.before_current_stock
+        + ', which matches none of the three readings';
       ev.push(S1_movProvEvidence_('LEDGER_CHAIN_OVERLAP',
-        'the next classifiable movement opens at ' + nxt.before_current_stock + ', which matches none of'
-        + ' after_current_stock (' + aft + '), before+qty (' + afterFromQty + ') or before ('
-        + bef + '), so the chain does not choose between the candidates either',
-        [], []));
+        'the next movement in the target\'s own ledger epoch opens at ' + nxtEpoch.before_current_stock
+        + ', which matches none of after_current_stock (' + aft + '), before+qty (' + afterFromQty
+        + ') or before (' + bef + '), so the chain does not choose between the candidates either. MEASURED,'
+        + ' AND IT DISCRIMINATES NOTHING - which is not the same as unmeasured.', [], []));
     }
+  } else if (nxtEpoch && nxtEpoch.classifiable) {
+    chainState = 'NOT_MEASURABLE_BLANK_CELL';
+    chainWhy = 'the next same-epoch movement (sheet row ' + nxtEpoch.one_based_sheet_row_number
+      + ') has a blank before_current_stock, or the target row has a blank after_current_stock';
+  } else if (nxtClass) {
+    // FOUND, AND ACROSS A BOUNDARY. This is the live case, and it is the one R4F reported as absent.
+    chainState = 'NOT_COMPARABLE_ACROSS_A_BOUNDARY';
+    var bl = (nm.boundaries_between_the_target_and_the_next_classifiable_movement || [])[0] || null;
+    chainWhy = 'sheet row ' + nxtClass.one_based_sheet_row_number + ' (' + nxtClass.movement_type
+      + ') DOES follow the target row in this pool and IS classifiable, but a ledger epoch boundary sits'
+      + ' between them' + (bl ? ' at sheet row ' + bl.at_sheet_row + ' (' + bl.kind + ')' : '')
+      + ', so its before_current_stock is not a reading of the balance the target row closed at';
+    ev.push(S1_movProvEvidence_('LEDGER_CHAIN_OVERLAP',
+      'THE NEXT CLASSIFIABLE MOVEMENT IN THIS POOL WAS FOUND - sheet row '
+      + nxtClass.one_based_sheet_row_number + ', ' + nxtClass.movement_type + ', opening at '
+      + nxtClass.before_current_stock + ' - AND IT IS NOT COMPARABLE WITH THE TARGET ROW, because a ledger'
+      + ' epoch boundary separates them' + (bl ? ': ' + bl.kind : '') + '. It therefore supports and'
+      + ' contradicts NOTHING about the target row. Its absence is NOT what is missing; a movement in the'
+      + ' target\'s OWN epoch is.', [], []));
+  } else if (nxtPhys) {
+    chainState = 'NO_LATER_CLASSIFIABLE_MOVEMENT';
+    chainWhy = 'sheet row ' + nxtPhys.one_based_sheet_row_number + ' follows the target row physically but'
+      + ' carries no movement_type, and no later row in this pool carries one either';
+  } else {
+    chainState = 'NO_LATER_MOVEMENT';
+    chainWhy = 'the target row is the last movement in this pool\'s chronology';
   }
 
-  // ---- §1.6 the balance, when it is independent of the row under question. ----
-  if (bal && bal.independent_of_the_target_row && bal.current_agrees === true) {
+  // ---- R4G §D the balance, only where it is ATTRIBUTABLE to the target row. ----
+  if (bal && bal.current_agrees === true && bal.attributable_to_the_target_row === true) {
     ev.push(S1_movProvEvidence_('FACTORY_STOCK_BALANCE',
       'factory_stock holds fac_current_stock = ' + bal.factory_stock_current + ' and the ledger\'s last'
-      + ' after_current_stock agrees, so the chain as it stands reconciles to the live balance',
+      + ' after_current_stock agrees, IN THE TARGET ROW\'S OWN LEDGER EPOCH (' + bal.target_epoch_index
+      + '), so the chain the target row belongs to reconciles to the live balance',
       ['INITIAL_BALANCE_SET', 'CURRENT_DELTA_FROM_BEFORE_AFTER'], []));
-  } else if (bal && bal.independent_of_the_target_row && bal.current_agrees === false) {
+  } else if (bal && bal.current_agrees === true && bal.independent_of_the_target_row === true) {
+    // THE REPAIR THAT MATTERS MOST. R4F scored this exact agreement as support for two candidates. It
+    // reconciles ledger epoch N to the live balance, and the target row is in an earlier epoch upstream of
+    // a boundary the balance cannot see past. One number, one epoch, and no statement about this row.
+    ev.push(S1_movProvEvidence_('FACTORY_STOCK_BALANCE',
+      'factory_stock holds fac_current_stock = ' + bal.factory_stock_current + ' and the ledger\'s last'
+      + ' after_current_stock (sheet row ' + bal.ledger_last_sheet_row + ') agrees - BUT THAT IS LEDGER'
+      + ' EPOCH ' + bal.ledger_last_epoch_index + ' AND THE TARGET ROW IS IN EPOCH ' + bal.target_epoch_index
+      + '. factory_stock holds one number, the CURRENT balance, produced by the CURRENT epoch. This proves'
+      + ' the current epoch is well-formed and proves NOTHING about how a row in a previous epoch should be'
+      + ' classified, so it supports and contradicts no candidate. ' + bal.why_not_attributable, [], []));
+  } else if (bal && bal.current_agrees === false) {
     ev.push(S1_movProvEvidence_('FACTORY_STOCK_BALANCE',
       'factory_stock holds fac_current_stock = ' + bal.factory_stock_current + ' and the ledger\'s last'
       + ' after_current_stock is ' + bal.ledger_last_after_current + ', so the ledger and the balance'
-      + ' already disagree and this row is not the only thing to settle',
-      [], []));
+      + ' already disagree and this row is not the only thing to settle', [], []));
   }
 
   // ---- §2 the batch, when a classified sibling shares the exact shape. ----
-  // THE SIBLING'S EVIDENCE IS ITS CONVENTION, NOT ITS TYPE NAME. Mapping `inventory_import` to
-  // INITIAL_BALANCE_SET would be a guess about what that type means in a hand-made batch - and 21_'s own
-  // import writer stores a DELTA in qty for inventory_import rows, so the mapping would have been wrong.
-  // What the sibling can actually testify to is how ITS OWN qty relates to ITS OWN before/after pair, which
-  // is a measurement of the batch's convention and is checkable on the sibling alone.
   if (sib && sib.classified_sibling_available_as_a_template
       && sib.per_column_diff_against_the_first_classified_sibling) {
     var d = sib.per_column_diff_against_the_first_classified_sibling;
@@ -6776,16 +7338,16 @@ function S1_movCandidates_(ax, chron, chain, bal, sib, cross, elim, noTarget, ta
       + cross.tables_with_a_hit.join(','), [], []));
   }
 
-  // ---- §4.4 whether the ledger needs this row at all. ----
+  // ---- §4.4 whether the ledger needs this row at all - now boundary-aware (§E). ----
   if (noTarget && noTarget.neighbours_overlap_each_other_directly === true) {
     ev.push(S1_movProvEvidence_('LEDGER_CHAIN_OVERLAP',
-      'the rows either side of the target overlap each other directly, so the target carries no part of the'
-      + ' balance and the chain is complete without it',
+      'the rows either side of the target overlap each other directly, in the same ledger epoch, so the'
+      + ' target carries no part of the balance and the chain is complete without it',
       ['INVALID_NON_LEDGER_ROW'], ['INITIAL_BALANCE_SET', 'CURRENT_DELTA_FROM_BEFORE_AFTER',
         'CURRENT_DELTA_FROM_QTY']));
   } else if (noTarget && noTarget.removing_it_breaks_a_link === true) {
     ev.push(S1_movProvEvidence_('LEDGER_CHAIN_OVERLAP',
-      'removing the target row breaks an overlap that currently holds, so it is load-bearing in the chain',
+      'removing the target row breaks a COMPARABLE overlap that currently holds, so it is load-bearing',
       [], ['INVALID_NON_LEDGER_ROW']));
   }
 
@@ -6819,6 +7381,7 @@ function S1_movCandidates_(ax, chron, chain, bal, sib, cross, elim, noTarget, ta
       reading: 'this row is not a movement at all - a placeholder, a paste or an aborted entry - and must'
         + ' not be treated as one',
       ledger_stands_without_it: noTarget ? noTarget.neighbours_overlap_each_other_directly : null,
+      ledger_stands_without_it_state: noTarget ? noTarget.neighbours_overlap_state : null,
       implies_wrong_cell: 'none - the row itself is the error',
       downstream_balance_impact: 'none today: factoryStockReconcileReservations_ already counts it as an'
         + ' unknown_type row and deliberately neither adds nor drops it.' }
@@ -6829,7 +7392,13 @@ function S1_movCandidates_(ax, chron, chain, bal, sib, cross, elim, noTarget, ta
     c.supporting_sources = [];
     c.independent_supporting_sources = [];
     c.contradicting_sources = [];
+    // R4G §G — ONE SOURCE CANNOT SCORE TWICE, AND THE PROOF IS PUBLISHED RATHER THAN ASSERTED.
+    // The multiplicity map shows how many evidence items each source contributed; the count that gates the
+    // verdict is the number of DISTINCT source names. Where a source appears more than once, the reader can
+    // see it and can see that it still counted once.
+    c.supporting_source_multiplicity = {};
     c.supporting_evidence.forEach(function (x) {
+      c.supporting_source_multiplicity[x.source] = (c.supporting_source_multiplicity[x.source] || 0) + 1;
       if (c.supporting_sources.indexOf(x.source) === -1) c.supporting_sources.push(x.source);
       if (x.independent && c.independent_supporting_sources.indexOf(x.source) === -1) {
         c.independent_supporting_sources.push(x.source);
@@ -6839,20 +7408,47 @@ function S1_movCandidates_(ax, chron, chain, bal, sib, cross, elim, noTarget, ta
       if (c.contradicting_sources.indexOf(x.source) === -1) c.contradicting_sources.push(x.source);
     });
     c.independent_supporting_source_count = c.independent_supporting_sources.length;
+    c.supporting_evidence_item_count = c.supporting_evidence.length;
+    c.no_source_counted_more_than_once = c.supporting_sources.length
+      === Object.keys(c.supporting_source_multiplicity).length;
+    c.every_listed_evidence_item_discriminates_this_candidate =
+      c.supporting_evidence.concat(c.contradicting_evidence).filter(function (x) {
+        return x.discriminates !== true; }).length === 0;
+
+    // R4G §F — THE CHAIN READING, DERIVED FROM WHAT WAS MEASURED RATHER THAN FROM WHAT ATTACHED.
     c.subsequent_chain_compatibility = (function () {
-      var hit = c.supporting_evidence.concat(c.contradicting_evidence).filter(function (x) {
-        return x.source === 'LEDGER_CHAIN_OVERLAP'; });
-      if (!hit.length) return 'NOT_MEASURABLE - no classifiable movement follows this one in this pool';
-      return c.contradicting_sources.indexOf('LEDGER_CHAIN_OVERLAP') >= 0
-        ? 'CONTRADICTED_BY_THE_NEXT_MOVEMENT' : 'CONSISTENT_WITH_THE_NEXT_MOVEMENT';
+      switch (chainState) {
+        case 'CONSISTENT':
+          return 'CONSISTENT_WITH_THE_NEXT_MOVEMENT_IN_THE_SAME_LEDGER_EPOCH';
+        case 'CONTRADICTS_THE_AFTER_CELL':
+        case 'THE_BALANCE_NEVER_MOVED':
+          return c.contradicting_sources.indexOf('LEDGER_CHAIN_OVERLAP') >= 0
+            ? 'CONTRADICTED_BY_THE_NEXT_MOVEMENT_IN_THE_SAME_LEDGER_EPOCH'
+            : 'CONSISTENT_WITH_THE_NEXT_MOVEMENT_IN_THE_SAME_LEDGER_EPOCH';
+        case 'MEASURED_AND_NEUTRAL':
+          return 'MEASURED_AND_NEUTRAL - the next movement in this epoch matches none of the readings';
+        case 'NOT_COMPARABLE_ACROSS_A_BOUNDARY':
+          return 'NOT_COMPARABLE_ACROSS_A_LEDGER_EPOCH_BOUNDARY - a later classifiable movement EXISTS in'
+            + ' this pool and is not comparable with this row';
+        case 'NOT_MEASURABLE_BLANK_CELL':
+          return 'NOT_MEASURABLE - the next movement in this epoch has a blank overlap cell';
+        case 'NO_LATER_CLASSIFIABLE_MOVEMENT':
+          return 'NO_LATER_CLASSIFIABLE_MOVEMENT_IN_THIS_POOL - a later movement exists but carries no type';
+        default:
+          return 'NO_LATER_MOVEMENT_IN_THIS_POOL';
+      }
     })();
+    c.subsequent_chain_reading_why = chainWhy;
+
     c.current_factory_stock_compatibility = (!bal || bal.current_agrees === null)
       ? 'NOT_MEASURABLE - the pool row or one of the quantities is absent'
-      : (bal.independent_of_the_target_row
-        ? (bal.current_agrees ? 'THE_LEDGER_RECONCILES_TO_THE_LIVE_BALANCE'
+      : (bal.attributable_to_the_target_row
+        ? (bal.current_agrees ? 'THE_TARGETS_OWN_LEDGER_EPOCH_RECONCILES_TO_THE_LIVE_BALANCE'
           : 'THE_LEDGER_AND_THE_LIVE_BALANCE_ALREADY_DISAGREE')
-        : 'NOT_INDEPENDENT - the target row is the last in the chain, so this would compare the cell under'
-          + ' question with itself');
+        : (bal.current_agrees === false ? 'THE_LEDGER_AND_THE_LIVE_BALANCE_ALREADY_DISAGREE'
+          : 'NOT_ATTRIBUTABLE - ' + bal.why_not_attributable));
+    c.current_factory_stock_reading_why = bal ? bal.what_this_proves : null;
+
     c.confidence_basis = c.independent_supporting_source_count === 0
       ? 'NONE - nothing outside the row itself points here'
       : (c.independent_supporting_source_count === 1
@@ -6860,13 +7456,25 @@ function S1_movCandidates_(ax, chron, chain, bal, sib, cross, elim, noTarget, ta
           + ') - a single agreement is not a classification'
         : c.independent_supporting_source_count + ' INDEPENDENT SOURCES ('
           + c.independent_supporting_sources.join(',') + ')');
+
+    // R4G §F — MISSING EVIDENCE MUST NEVER ASK FOR A ROW THE CENSUS JUST PRINTED.
     c.missing_evidence = [];
-    if (c.subsequent_chain_compatibility.indexOf('NOT_MEASURABLE') === 0) {
-      c.missing_evidence.push('A_LATER_CLASSIFIABLE_MOVEMENT_IN_THE_SAME_POOL');
+    if (chainState === 'NO_LATER_MOVEMENT') {
+      c.missing_evidence.push('ANY_LATER_MOVEMENT_IN_THIS_POOL');
+    } else if (chainState === 'NO_LATER_CLASSIFIABLE_MOVEMENT') {
+      c.missing_evidence.push('A_LATER_CLASSIFIABLE_MOVEMENT_IN_THIS_POOL');
+    } else if (chainState === 'NOT_COMPARABLE_ACROSS_A_BOUNDARY') {
+      c.missing_evidence.push('A_LATER_MOVEMENT_IN_THE_TARGETS_OWN_LEDGER_EPOCH'
+        + ' - a later classifiable movement EXISTS and is separated from this row by a ledger epoch'
+        + ' boundary, so what is missing is not that row but a comparable one');
+    } else if (chainState === 'NOT_MEASURABLE_BLANK_CELL') {
+      c.missing_evidence.push('A_READABLE_OVERLAP_CELL_ON_THE_NEXT_MOVEMENT_IN_THIS_EPOCH');
     }
-    if (c.current_factory_stock_compatibility.indexOf('NOT_MEASURABLE') === 0
-        || c.current_factory_stock_compatibility.indexOf('NOT_INDEPENDENT') === 0) {
-      c.missing_evidence.push('A_BALANCE_STATEMENT_INDEPENDENT_OF_THE_TARGET_ROW');
+    if (!bal || bal.current_agrees === null) {
+      c.missing_evidence.push('A_BALANCE_STATEMENT_FOR_THIS_POOL');
+    } else if (!bal.attributable_to_the_target_row) {
+      c.missing_evidence.push('A_BALANCE_STATEMENT_ATTRIBUTABLE_TO_THE_TARGET_ROWS_OWN_LEDGER_EPOCH'
+        + ' - ' + bal.why_not_attributable);
     }
     if (!sib || !sib.classified_sibling_available_as_a_template) {
       c.missing_evidence.push('A_CLASSIFIED_ROW_FROM_THE_SAME_PRODUCTION_BATCH');
@@ -6878,13 +7486,24 @@ function S1_movCandidates_(ax, chron, chain, bal, sib, cross, elim, noTarget, ta
       c.missing_evidence.push('A_SECOND_INDEPENDENT_SOURCE_POINTING_AT_THIS_SAME_READING');
     }
   });
+  var nonDisc = ev.filter(function (x) { return x.discriminates !== true; });
   return { candidates: cands, evidence: ev, evidence_count: ev.length,
+    discriminating_evidence_count: ev.length - nonDisc.length,
+    non_discriminating_evidence: nonDisc,
+    non_discriminating_evidence_count: nonDisc.length,
     source_catalogue: S1_MOV_PROV_SOURCES_,
     computed: { delta_from_the_before_after_pair: deltaFromPair, after_implied_by_qty: afterFromQty,
       qty: qty, before_current_stock: bef, after_current_stock: aft },
-    next_same_pool_movement: nxt,
+    // R4G §C — all three, separately named, and never collapsed into one.
+    next_physical_same_pool_movement: nxtPhys,
+    next_classifiable_same_pool_movement: nxtClass,
+    next_same_ledger_epoch_movement: nxtEpoch,
+    chain_reading_state: chainState, chain_reading_why: chainWhy,
     independence_rule: 'a classification needs TWO DISTINCT INDEPENDENT sources agreeing and no'
-      + ' authoritative contradiction. One equality is a coincidence with a sample size of one.' };
+      + ' authoritative contradiction. One equality is a coincidence with a sample size of one, and one'
+      + ' source cannot become two by producing two evidence items.',
+    attribution_rule: 'evidence counts for a candidate only where it DISCRIMINATES that candidate AND is'
+      + ' ATTRIBUTABLE to the target row. A balance that reconciles a different ledger epoch is neither.' };
 }
 
 /** §5 — WHICH VERDICT THE EVIDENCE EARNS. Decided in one place, from the candidate table alone. */
@@ -7021,7 +7640,15 @@ function RUN_S1_FACTORY_MOVEMENT_LEGACY_PROVENANCE_CENSUS(opts) {
     chronology: null, chain_continuity: null, chain_without_the_target: null,
     balance_reconcile: null, siblings: null, cross_table: null,
     candidates: [], evidence: [], evidence_count: 0, computed: null,
-    next_same_pool_movement: null,
+    discriminating_evidence_count: 0, non_discriminating_evidence: [],
+    non_discriminating_evidence_count: 0,
+    // R4G §B/§C — the epochs, and the three successors under their own names. `next_same_pool_movement`
+    // is retired: one variable answering three questions is what let a found row be reported as absent.
+    ledger_epochs: null, next_movements: null, epoch_contract: null,
+    next_physical_same_pool_movement: null,
+    next_classifiable_same_pool_movement: null,
+    next_same_ledger_epoch_movement: null,
+    chain_reading_state: null, chain_reading_why: null,
     verdict: 'STOP', selected_candidate: null, verdict_detail: null, stop_reasons: [],
     operator_questions: null,
     proposed_repair_fields: null,
@@ -7179,9 +7806,54 @@ function RUN_S1_FACTORY_MOVEMENT_LEGACY_PROVENANCE_CENSUS(opts) {
     L.P('the_target_row_is_in_its_own_pool_chronology', true,
       out.chronology.target_position !== null, out.chronology.target_position !== null);
     out.chain_continuity = S1_movChainContinuity_(chron);
-    out.chain_without_the_target = S1_movChainWithoutTarget_(chron, target.row_number);
+    // ---- R4G §B/§C THE EPOCHS, AND THE THREE SEPARATED SUCCESSORS. ----
+    var epochs = S1_movEpochs_(chron, target.row_number);
+    out.ledger_epochs = epochs;
+    out.next_movements = S1_movNextMovements_(chron, epochs, target.row_number);
+    out.epoch_contract = S1_MOV_EPOCH_CONTRACT_;
+    out.chain_without_the_target = S1_movChainWithoutTarget_(chron, target.row_number, epochs);
     var surf = S1_factorySurfaces_(R.ss, pWh, pSku);
-    out.balance_reconcile = S1_movBalanceReconcile_(chron, surf.pool, target.row_number);
+    out.balance_reconcile = S1_movBalanceReconcile_(chron, surf.pool, target.row_number, epochs);
+    // R4G REQUIREMENT 1, ENFORCED RATHER THAN STATED. The census may not report the absence of a
+    // successor it found. These three predicates make that a test failure rather than a reading.
+    var nmv = out.next_movements;
+    L.P('a_found_later_movement_is_never_reported_as_absent',
+      { later_movement_exists: nmv.a_later_movement_exists_in_this_pool,
+        later_classifiable_exists: nmv.a_later_classifiable_movement_exists_in_this_pool },
+      { physical: nmv.next_physical_same_pool_movement
+          ? nmv.next_physical_same_pool_movement.one_based_sheet_row_number : null,
+        classifiable: nmv.next_classifiable_same_pool_movement
+          ? nmv.next_classifiable_same_pool_movement.one_based_sheet_row_number : null },
+      nmv.a_later_classifiable_movement_exists_in_this_pool
+        === (nmv.next_classifiable_same_pool_movement !== null)
+      && nmv.a_later_movement_exists_in_this_pool === (nmv.next_physical_same_pool_movement !== null));
+    L.P('the_three_successor_questions_are_answered_separately',
+      ['next_physical_same_pool_movement', 'next_classifiable_same_pool_movement',
+        'next_same_ledger_epoch_movement'],
+      Object.keys(nmv).filter(function (k) { return k.indexOf('next_') === 0 && k.indexOf('_is_') === -1; }),
+      Object.keys(nmv).filter(function (k) {
+        return k.indexOf('next_') === 0 && k.indexOf('_is_') === -1; }).length === 3);
+    L.P('a_ledger_epoch_boundary_is_never_counted_as_a_chain_break', 0,
+      out.chain_continuity.links.filter(function (lk) {
+        return lk.current && lk.current.starts_a_new_epoch && lk.current.state === 'DISAGREES'; }).length,
+      out.chain_continuity.links.filter(function (lk) {
+        return lk.current && lk.current.starts_a_new_epoch && lk.current.state === 'DISAGREES'; }).length === 0);
+    // R4G REQUIREMENT 4, second clause. Where the only non-agreeing links are boundaries, the repair
+    // claim may not be true - it must be false, null or a named NOT_APPLICABLE with a reason.
+    L.P('removing_the_target_row_is_never_claimed_to_repair_an_epoch_boundary',
+      { repairs: 'false|null', state_named: true },
+      { repairs: out.chain_without_the_target.removing_it_repairs_a_break,
+        state_named: S1_str_(out.chain_without_the_target.removing_it_repairs_a_break_state) !== '' },
+      (out.chain_continuity.current_axis.disagree > 0
+        || out.chain_without_the_target.removing_it_repairs_a_break !== true)
+      && S1_str_(out.chain_without_the_target.removing_it_repairs_a_break_state) !== ''
+      && S1_str_(out.chain_without_the_target.removing_it_repairs_a_break_why) !== '');
+    // R4G REQUIREMENT 4, third clause. A balance that reconciles another epoch supports nothing.
+    L.P('a_balance_agreement_outside_the_targets_epoch_supports_no_candidate', true,
+      out.balance_reconcile.attributable_to_the_target_row === true
+        || S1_str_(out.balance_reconcile.why_not_attributable) !== '',
+      out.balance_reconcile.attributable_to_the_target_row === true
+        || S1_str_(out.balance_reconcile.why_not_attributable) !== '');
 
     // ---- §2 THE SIBLINGS. ----
     out.siblings = S1_movSiblings_(R.t, target, liveCols);
@@ -7208,12 +7880,41 @@ function RUN_S1_FACTORY_MOVEMENT_LEGACY_PROVENANCE_CENSUS(opts) {
     // ---- §4 THE FOUR CANDIDATES. ----
     var cs = S1_movCandidates_(ax, chron, out.chain_continuity, out.balance_reconcile,
       out.siblings, out.cross_table, out.writer_elimination, out.chain_without_the_target,
-      target.row_number);
+      target.row_number, epochs, out.next_movements);
     out.candidates = cs.candidates;
     out.evidence = cs.evidence;
     out.evidence_count = cs.evidence_count;
+    out.discriminating_evidence_count = cs.discriminating_evidence_count;
+    out.non_discriminating_evidence = cs.non_discriminating_evidence;
+    out.non_discriminating_evidence_count = cs.non_discriminating_evidence_count;
     out.computed = cs.computed;
-    out.next_same_pool_movement = cs.next_same_pool_movement;
+    // R4G §C — the three successors are published under their own names. `next_same_pool_movement` is
+    // RETIRED: it was one variable answering three questions, and that is what produced the contradiction.
+    out.next_physical_same_pool_movement = cs.next_physical_same_pool_movement;
+    out.next_classifiable_same_pool_movement = cs.next_classifiable_same_pool_movement;
+    out.next_same_ledger_epoch_movement = cs.next_same_ledger_epoch_movement;
+    out.chain_reading_state = cs.chain_reading_state;
+    out.chain_reading_why = cs.chain_reading_why;
+    // R4G REQUIREMENT 1, on the candidate text itself. No candidate may claim nothing follows when
+    // something does - the exact sentence R4F published four times about a table containing row 3.
+    var falseAbsence = out.candidates.filter(function (c) {
+      return out.next_classifiable_same_pool_movement !== null
+        && S1_str_(c.subsequent_chain_compatibility).indexOf('NO_LATER_CLASSIFIABLE_MOVEMENT') === 0; });
+    L.P('no_candidate_reports_no_classifiable_movement_follows_while_one_was_found', [], falseAbsence,
+      falseAbsence.length === 0);
+    var falseMissing = out.candidates.filter(function (c) {
+      return out.next_classifiable_same_pool_movement !== null
+        && (c.missing_evidence || []).filter(function (m) {
+          return S1_str_(m).indexOf('A_LATER_CLASSIFIABLE_MOVEMENT_IN_THIS_POOL') === 0; }).length > 0; });
+    L.P('no_candidate_asks_for_a_later_classifiable_movement_that_was_found', [], falseMissing,
+      falseMissing.length === 0);
+    // R4G REQUIREMENT 6. One source, one score - and every listed item discriminates.
+    var dbl = out.candidates.filter(function (c) { return c.no_source_counted_more_than_once !== true; });
+    L.P('no_candidate_scores_one_evidence_source_twice', [], dbl, dbl.length === 0);
+    var nonDisc = out.candidates.filter(function (c) {
+      return c.every_listed_evidence_item_discriminates_this_candidate !== true; });
+    L.P('every_listed_supporting_or_contradicting_item_discriminates_its_candidate', [], nonDisc,
+      nonDisc.length === 0);
     L.P('all_four_candidates_were_measured', S1_MOV_CAND_, out.candidates.map(function (c) {
       return c.candidate; }), S1_str_(S1_MOV_CAND_.join(',')) === S1_str_(out.candidates.map(
         function (c) { return c.candidate; }).join(',')));
@@ -7319,21 +8020,63 @@ function S1_movProvEmit_(out) {
     shape_fingerprint: tr.shape ? tr.shape.shape_fingerprint : null,
     axis: out.axis_audit ? out.axis_audit.axis : null,
     readings: out.axis_audit ? out.axis_audit.readings : null });
-  var nx = out.next_same_pool_movement;
-  line('s1_provenance_next_same_pool_movement', nx === null || nx === undefined
-    ? { next: null, why: 'no classifiable movement follows the target row in this pool, so the chain'
-        + ' cannot speak to the balance after it' }
-    : { row: nx.one_based_sheet_row_number, position: nx.position_in_chronology_1based,
-        movement_id: nx.movement_id, movement_type: nx.movement_type,
-        created_at: nx.created_at, movement_date: nx.movement_date,
-        time_source: nx.time_source, time_iso: nx.time_iso, qty: nx.qty,
-        before_current_stock: nx.before_current_stock, after_current_stock: nx.after_current_stock,
-        before_reserved_stock: nx.before_reserved_stock, after_reserved_stock: nx.after_reserved_stock,
-        related_entity_type: nx.related_entity_type, related_entity_id: nx.related_entity_id,
-        fingerprint: nx.full_named_row_fingerprint,
-        its_before_equals_the_targets_after: (tr && nx.before_current_stock !== null
-          && tr.after_current_stock !== null)
-          ? (nx.before_current_stock === tr.after_current_stock) : null });
+  // R4G §C — THREE LINES, BECAUSE THERE ARE THREE QUESTIONS. The single R4F line said
+  // "no classifiable movement follows the target row in this pool" whenever its one variable was empty,
+  // and its one variable was the next CLASSIFIABLE row - so on the live table it printed that sentence
+  // about a table whose next row is `inventory_import`. Each line now names its own question, says which
+  // row answered it, and - where the answer is "found but not usable" - says which of the two that is.
+  function movLine(tag, nx, question, absentWhy) {
+    line(tag, nx === null || nx === undefined
+      ? { next: null, question: question, why: absentWhy }
+      : { question: question, row: nx.one_based_sheet_row_number,
+          position: nx.position_in_chronology_1based,
+          movement_id: nx.movement_id, movement_type: nx.movement_type,
+          movement_type_is_known: nx.movement_type_is_known,
+          classifiable: nx.classifiable,
+          created_at: nx.created_at, movement_date: nx.movement_date,
+          time_source: nx.time_source, time_iso: nx.time_iso, qty: nx.qty,
+          before_current_stock: nx.before_current_stock, after_current_stock: nx.after_current_stock,
+          before_reserved_stock: nx.before_reserved_stock, after_reserved_stock: nx.after_reserved_stock,
+          related_entity_type: nx.related_entity_type, related_entity_id: nx.related_entity_id,
+          fingerprint: nx.full_named_row_fingerprint,
+          its_before_equals_the_targets_after: (tr && nx.before_current_stock !== null
+            && tr.after_current_stock !== null)
+            ? (nx.before_current_stock === tr.after_current_stock) : null });
+  }
+  var nmv = out.next_movements;
+  movLine('s1_provenance_next_physical_same_pool_movement',
+    out.next_physical_same_pool_movement,
+    'which row follows the target row in this pool chronologically, whatever it is?',
+    'the target row is the last movement in this pool');
+  movLine('s1_provenance_next_classifiable_same_pool_movement',
+    out.next_classifiable_same_pool_movement,
+    'which is the first following row that carries a movement_type?',
+    'a later row may exist but none of them carries a movement_type');
+  movLine('s1_provenance_next_same_ledger_epoch_movement',
+    out.next_same_ledger_epoch_movement,
+    'which is the first following row in the target row\'s OWN ledger epoch - the only one a continuity'
+      + ' argument may use?',
+    out.next_classifiable_same_pool_movement
+      ? 'A LATER CLASSIFIABLE MOVEMENT EXISTS AND IS NOT COMPARABLE WITH THIS ROW: a ledger epoch'
+        + ' boundary separates them, so its before_current_stock is not a reading of the balance the'
+        + ' target row closed at. What is missing is a comparable movement, NOT this one.'
+      : 'no later movement exists in the target row\'s own ledger epoch');
+  var ep = out.ledger_epochs;
+  line('s1_provenance_ledger_epochs', ep === null || ep === undefined ? { epochs: null } : {
+    epoch_count: ep.epoch_count,
+    target_epoch_index: ep.target_epoch_index,
+    last_entry_epoch_index: ep.last_entry_epoch_index,
+    target_is_in_the_last_epoch: ep.target_is_in_the_last_epoch,
+    boundaries: (ep.boundaries || []).map(function (b) {
+      return { new_epoch: b.new_epoch_index, at_sheet_row: b.at_sheet_row,
+        from_sheet_row: b.from_sheet_row, state: b.state, kind: b.kind,
+        earlier_after_current: b.earlier_after_current, later_before_current: b.later_before_current }; }),
+    epochs: (ep.epochs || []).map(function (x) {
+      return { epoch: x.epoch_index, rows: x.sheet_rows, entries: x.entry_count,
+        opening_before_current: x.opening_before_current,
+        closing_after_current: x.closing_after_current }; }),
+    contract: out.epoch_contract ? out.epoch_contract.rule : null,
+    chain_reading_state: out.chain_reading_state, chain_reading_why: out.chain_reading_why });
   var ch = out.chain_continuity, wo = out.chain_without_the_target, ba = out.balance_reconcile;
   line('s1_provenance_chain_continuity', {
     pool_entries: out.chronology ? out.chronology.entry_count : null,
@@ -7346,15 +8089,35 @@ function S1_movProvEmit_(out) {
     continuous_reserved: ch ? ch.chain_is_continuous_on_the_reserved_axis : null,
     every_readable_link_agrees_current: ch ? ch.every_readable_link_agrees_on_the_current_axis : null,
     every_readable_link_agrees_reserved: ch ? ch.every_readable_link_agrees_on_the_reserved_axis : null,
+    // R4G — three claims of decreasing strength, each under its own name, plus the boundary count that
+    // says which of them a reader is entitled to.
+    every_comparable_link_agrees_current: ch ? ch.every_comparable_link_agrees_on_the_current_axis : null,
+    crosses_a_ledger_epoch_boundary: ch ? ch.the_current_chain_crosses_a_ledger_epoch_boundary : null,
     first_break_at_position: ch ? ch.first_break_at_position : null,
+    first_epoch_boundary_at_position: ch ? ch.first_epoch_boundary_at_position : null,
     without_the_target: wo ? { neighbours_overlap_each_other_directly:
-      wo.neighbours_overlap_each_other_directly, removing_it_repairs_a_break: wo.removing_it_repairs_a_break,
-      removing_it_breaks_a_link: wo.removing_it_breaks_a_link } : null,
+      wo.neighbours_overlap_each_other_directly,
+      neighbours_overlap_state: wo.neighbours_overlap_state,
+      removing_it_repairs_a_break: wo.removing_it_repairs_a_break,
+      removing_it_repairs_a_break_state: wo.removing_it_repairs_a_break_state,
+      removing_it_repairs_a_break_why: wo.removing_it_repairs_a_break_why,
+      removing_it_breaks_a_link: wo.removing_it_breaks_a_link,
+      removing_it_breaks_a_link_state: wo.removing_it_breaks_a_link_state,
+      comparable_breaks_with_the_target: wo.comparable_breaks_with_the_target,
+      comparable_breaks_without_the_target: wo.comparable_breaks_without_the_target } : null,
     balance: ba ? { factory_stock_current: ba.factory_stock_current,
       factory_stock_reserved: ba.factory_stock_reserved,
       ledger_last_after_current: ba.ledger_last_after_current,
+      ledger_last_sheet_row: ba.ledger_last_sheet_row,
       current_agrees: ba.current_agrees, reserved_agrees: ba.reserved_agrees,
-      independent_of_the_target_row: ba.independent_of_the_target_row } : null });
+      independent_of_the_target_row: ba.independent_of_the_target_row,
+      // R4G §D — independence is not attribution, and only attribution may score.
+      target_epoch_index: ba.target_epoch_index,
+      ledger_last_epoch_index: ba.ledger_last_epoch_index,
+      balance_is_in_the_same_epoch_as_the_target: ba.balance_is_in_the_same_epoch_as_the_target,
+      attributable_to_the_target_row: ba.attributable_to_the_target_row,
+      why_not_attributable: ba.why_not_attributable,
+      what_this_proves: ba.what_this_proves } : null });
   var sb = out.siblings;
   line('s1_provenance_sibling_shape_summary', sb === null ? { siblings: null } : {
     target_shape_fingerprint: sb.target_shape_fingerprint,
