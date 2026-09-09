@@ -1740,10 +1740,47 @@ eq(FB.expected_k2_group_keys.length, 1, 'M5d6 across one route group, keyed cano
 eq(FB.expected_post_generation_active_ai_identities, FB.expected_header_ids,
   'M5d7 so the post-generation AI set is exactly the one written identity');
 eq(FB.writeset_measurable, true, 'M5d8 measured, not approximated', FB.writeset_stage);
-ok(FB.identity_universe_count >= 1 && FB.identity_universe_fingerprint !== null,
-  'M5e the whole identity universe, by count and fingerprint',
-  [FB.identity_universe_count, FB.identity_universe_fingerprint]);
-eq(FB.other_scope_identity_count, 0, 'M5f and how many identities belong to OTHER scopes');
+// S1-R4C §2 — TWO POPULATIONS, ASSERTED APART. These three used to read `identity_universe_count` and
+// `other_scope_identity_count`, and a live run put 118 and 117 of them next to 11 header rows and 13 line
+// rows under that one word. The gap scope count is a count of GAP SCOPES; the draft row count is a count of
+// SHEET ROWS; and the freeze now names which is which so a readback cannot compare one against the other.
+ok(FB.gap_scope_universe_count === undefined && FB.identity_universe_count === undefined
+  && FB.other_scope_identity_count === undefined,
+  'M5e0 the ambiguous `identity universe` names are gone from the baseline',
+  [FB.identity_universe_count, FB.other_scope_identity_count]);
+eq(FB.gap_scope_universe_population, 'INVENTORY_GAP_SCOPES',
+  'M5e the gap scope universe says what population it counts');
+ok(FB.gap_scope_universe_total_count >= 1 && FB.gap_scope_universe_fingerprint !== null,
+  'M5e2 by count and fingerprint',
+  [FB.gap_scope_universe_total_count, FB.gap_scope_universe_fingerprint]);
+eq(FB.gap_scope_universe_target_count, 1, 'M5e3 the target scope is exactly one of them');
+eq(FB.gap_scope_universe_total_count,
+  FB.gap_scope_universe_target_count + FB.gap_scope_universe_other_count,
+  'M5e4 and the split is exact arithmetic');
+eq(FB.gap_scope_universe_other_count, 0, 'M5f and how many GAP SCOPES are not this one');
+// ---- and the draft ROW universe, which is a different number counted from different sheets ----
+eq(FB.draft_row_universe_population, 'ALLOCATION_DRAFT_ROWS',
+  'M5f2 the draft row universe names its own population');
+eq(FB.draft_row_universe_total_row_count,
+  FB.draft_row_universe_header_count + FB.draft_row_universe_line_count,
+  'M5f3 its total is header rows plus line rows',
+  [FB.draft_row_universe_header_count, FB.draft_row_universe_line_count,
+    FB.draft_row_universe_total_row_count]);
+eq(FB.draft_row_universe_total_row_count,
+  FB.draft_row_universe_target_row_count + FB.draft_row_universe_other_scope_row_count,
+  'M5f4 and it partitions exactly into target-scope and other-scope rows');
+// The other-scope bucket is already frozen under its R4A names, and this ties the two namings to the same
+// rows: if they ever described different populations the arithmetic would stop closing.
+eq(FB.draft_row_universe_other_scope_row_count,
+  FB.other_scope_header_count + FB.other_scope_line_count,
+  'M5f5 with the other-scope total being its own header and line counts',
+  [FB.other_scope_header_count, FB.other_scope_line_count,
+    FB.draft_row_universe_other_scope_row_count]);
+eq(FB.draft_row_universe_row_signature_count, FB.draft_row_universe_total_row_count,
+  'M5f6 every draft row carries exactly one full-row signature');
+ok(FB.draft_row_universe_combined_fingerprint !== null,
+  'M5f7 and the whole row universe has a full-content fingerprint',
+  FB.draft_row_universe_combined_fingerprint);
 ok(Object.keys(FB.schema_fingerprints).length >= 7,
   'M5g the schema fingerprints the quantities were measured against',
   Object.keys(FB.schema_fingerprints));
@@ -1966,12 +2003,20 @@ eq(M11d.res.frozen_before.manual_planned_total, 521,
 var M11f = manifestP(pos({ extraGap: [{ sku: 'OTHER-SKU', calculation_status: 'READY',
   d18_suggested_qty: 0, d30_suggested_qty: 0, d45_suggested_qty: 0, d90_suggested_qty: 0 }] }));
 ok(M11f.res.frozen_before
-  && M11f.res.frozen_before.identity_universe_fingerprint !== FB.identity_universe_fingerprint,
-  'M11f an identity appearing in ANOTHER scope moves the universe fingerprint',
-  [FB.identity_universe_fingerprint,
-    M11f.res.frozen_before && M11f.res.frozen_before.identity_universe_fingerprint]);
-eq(M11f.res.frozen_before.other_scope_identity_count, 1,
-  'M11g and the other-scope count says how many identities are not this one');
+  && M11f.res.frozen_before.gap_scope_universe_fingerprint !== FB.gap_scope_universe_fingerprint,
+  'M11f a GAP SCOPE appearing elsewhere moves the GAP SCOPE fingerprint',
+  [FB.gap_scope_universe_fingerprint,
+    M11f.res.frozen_before && M11f.res.frozen_before.gap_scope_universe_fingerprint]);
+eq(M11f.res.frozen_before.gap_scope_universe_other_count, 1,
+  'M11g and the other-scope count says how many GAP SCOPES are not this one');
+// S1-R4C §2 — AND THE OTHER UNIVERSE DID NOT MOVE, which is the whole point of separating them. A new
+// gap scope is not a new draft row: one population changed and the other did not, and a single
+// `identity_universe` fingerprint could not have said which.
+eq(M11f.res.frozen_before.draft_row_universe_combined_fingerprint,
+  FB.draft_row_universe_combined_fingerprint,
+  'M11g2 while the DRAFT ROW fingerprint is untouched — a gap scope is not a draft row');
+eq(M11f.res.frozen_before.draft_row_universe_total_row_count, FB.draft_row_universe_total_row_count,
+  'M11g3 and no draft row was added by adding a gap scope');
 
 // ---- M12 — THE STATIC CONTRACT IS STILL THERE, because it was never the defect. -----------------------
 eq([MP1.res.expected_outcome.reservations, MP1.res.expected_outcome.factory_stock_change,
@@ -2170,8 +2215,18 @@ eq(W5.res.frozen_before.target_manual_line_ids, W5base.target_manual_line_ids,
 eq(W5.res.frozen_before.target_manual_planned_total, W5base.target_manual_planned_total,
   'W5c and every quantity unchanged too');
 // AND THE OLD ID-ONLY FINGERPRINT PROVES THE POINT: it cannot tell these two worlds apart.
-eq(W5.res.frozen_before.identity_universe_fingerprint, W5base.identity_universe_fingerprint,
-  'W5d the identity-universe fingerprint is blind to it, which is the defect this replaces');
+// S1-R4C — re-aimed onto the renamed field. Comparing `identity_universe_fingerprint` after the rename
+// compared undefined with undefined, so this assertion had quietly become unfalsifiable: it would have
+// passed on a world where the fingerprint DID move, which is the opposite of what it exists to show.
+eq(W5.res.frozen_before.gap_scope_universe_fingerprint, W5base.gap_scope_universe_fingerprint,
+  'W5d the GAP SCOPE fingerprint is blind to it, which is the defect this replaces');
+// ...and the DRAFT ROW fingerprint is not, which is the repair. Two populations, and only one of them
+// changed when a note was edited.
+ok(W5.res.frozen_before.draft_row_universe_combined_fingerprint
+  !== W5base.draft_row_universe_combined_fingerprint,
+  'W5d2 while the DRAFT ROW full-content fingerprint does catch it',
+  [W5base.draft_row_universe_combined_fingerprint,
+    W5.res.frozen_before.draft_row_universe_combined_fingerprint]);
 
 // ---- W6 — AN updated_at-ONLY CHANGE IS VISIBLE. --------------------------------------------------------
 // The column that moves whenever something wrote, and the one most likely to be the ONLY evidence.
@@ -2686,6 +2741,492 @@ var X6max = (X6.world.log || []).reduce(function (m, l) { return Math.max(m, Str
 ok(X6max < 3000, 'X6c with every emitted line still under the chunk bound', X6max);
 
 // ================================================================================================================
+section('Y — S1-R4C: an id that is there, two populations that are not one, and a sentence a person can read');
+// ================================================================================================================
+//
+// THREE FINDINGS FROM ONE READY RUN, and none of them was a failed condition — which is the point. The run
+// reported 99 passed / 0 failed and handed over a freeze block, and a human reading it found:
+//
+//   factory_stock_movement_count = 96 beside factory_stock_movement_ids[0] = ""
+//   identity_universe_count = 118 / other_scope_identity_count = 117 beside 11 header rows and 13 line rows
+//   authorization_wording_present = true, and no wording anywhere in the log
+//
+// Each is a claim the manifest could not have contradicted: a blank accepted as an identity, one word covering
+// two populations, and a boolean standing in for the text it describes.
+
+function authChunks(w) {
+  return logTags(w).filter(function (n) {
+    return /^s1_manifest_p_authorization_\d+_of_\d+$/.test(n);
+  }).length;
+}
+function authText(w) {
+  // Reassembled the way the meta line tells an operator to reassemble it: by segment order, concatenated.
+  var out = [];
+  (w.log || []).forEach(function (l) {
+    var m = String(l).match(/^\[S1\] s1_manifest_p_authorization_(\d+)_of_(\d+) ([\s\S]*)$/);
+    if (m) out.push({ i: Number(m[1]), text: m[3] });
+  });
+  out.sort(function (a, b) { return a.i - b.i; });
+  return out.map(function (x) { return x.text; }).join('');
+}
+function mvSurf(res) {
+  return ((res.factory_surfaces || {}).surfaces || {})['factory_stock_movements'] || {};
+}
+var MOVROW_ = { movement_date: '2026-09-01', sku: SKU, warehouse_id: WHF, movement_type: 'IN', qty: 5,
+  created_at: '2026-09-01T00:00:00Z' };
+function mov(over) {
+  var r = {};
+  Object.keys(MOVROW_).forEach(function (k) { r[k] = MOVROW_[k]; });
+  Object.keys(over || {}).forEach(function (k) { r[k] = over[k]; });
+  return r;
+}
+/** Every refusal in this section owes the same eight things, so they are asserted together rather than
+ *  remembered one at a time: a STOP, the named condition, the named code, and nothing signable. */
+function idFaultStop(r, label, predicate, code) {
+  eq(r.res.verdict, 'STOP', label + ' the manifest STOPs', failed(r.res));
+  ok(failed(r.res).indexOf(predicate) >= 0, label + '1 on ' + predicate, failed(r.res));
+  ok((r.res.factory_id_fault_codes || []).indexOf(code) >= 0,
+    label + '2 with the named code ' + code, r.res.factory_id_fault_codes);
+  eq(mvSurf(r.res).observation_state, 'ID_INTEGRITY_FAULT',
+    label + '3 and the surface is marked ID_INTEGRITY_FAULT');
+  eq(mvSurf(r.res).ids, null,
+    label + '4 with NO id list published — a blank is never quietly a member of one', mvSurf(r.res).ids);
+  eq([r.res.freeze_paste_block, r.res.operator_authorization_wording, r.res.frozen_before],
+    [null, null, null], label + '5 nothing pasteable, nothing to sign, no baseline');
+  eq([mpChunks(r.world), authChunks(r.world)], [0, 0],
+    label + '6 zero freeze chunks and zero authorization chunks');
+  eq([r.res.writes, r.res.writer_calls, r.res.submit_calls], [0, 0, 0], label + '7 and zero writes');
+  eq(r.world.allWrites(), 0, label + '8 measured on every sheet in the world');
+}
+
+// ---- Y1 — THE FIRST ROW HAS NO ID. -----------------------------------------------------------------------
+// The live shape, reproduced. `ids` was built by mapping the id cell of every row and sorting the result, so
+// the empty string sorted to index 0 — which is why the log said `ids[0] = ""` and why the position told a
+// reader nothing at all about which row to go and look at.
+var Y1 = manifestP(pos({ movements: [mov({}), mov({ factory_stock_movement_id: 'MV-2' })] }));
+idFaultStop(Y1, 'Y1 ', 'every_factory_audit_row_carries_a_non_blank_id', 'FACTORY_MOVEMENT_ID_BLANK');
+var Y1i = mvSurf(Y1.res).id_integrity;
+eq([Y1i.checked, Y1i.clean, Y1i.blank_id_count, Y1i.ok_count],
+  [true, false, 1, 1], 'Y1a one blank id out of two rows, counted');
+eq(Y1i.blank_id_rows.length, 1, 'Y1b and the blank is reported as a ROW, not as a position in a sorted list');
+eq(Y1i.blank_id_rows[0].row_number, 2,
+  'Y1c naming the 1-based sheet row a person can open — the header is row 1',
+  Y1i.blank_id_rows[0]);
+ok(Y1i.blank_id_rows[0].fingerprint !== null,
+  'Y1d with the full-row fingerprint of that row, so the row is identifiable by content too',
+  Y1i.blank_id_rows[0].fingerprint);
+eq(Y1i.faults, ['FACTORY_MOVEMENT_ID_BLANK'], 'Y1e and exactly one fault class is claimed');
+// The full-row fingerprint of the TABLE is still computed: it is derived from the cells, not from the ids,
+// so it stays valid evidence even while the id list is withheld.
+ok(mvSurf(Y1.res).combined_fingerprint !== null,
+  'Y1f the table fingerprint survives the id fault — the cells were readable',
+  mvSurf(Y1.res).combined_fingerprint);
+
+// ---- Y2 — A ROW IN THE MIDDLE HAS NO ID. -----------------------------------------------------------------
+// Sorting hid position, so the first version of this defect was only ever seen at index 0. A blank in row 3
+// is the same fault and must be reported at row 3.
+var Y2 = manifestP(pos({ movements: [
+  mov({ factory_stock_movement_id: 'MV-1' }),
+  mov({ movement_date: '2026-09-02' }),
+  mov({ factory_stock_movement_id: 'MV-3', movement_date: '2026-09-03' })] }));
+idFaultStop(Y2, 'Y2 ', 'every_factory_audit_row_carries_a_non_blank_id', 'FACTORY_MOVEMENT_ID_BLANK');
+var Y2i = mvSurf(Y2.res).id_integrity;
+eq([Y2i.blank_id_count, Y2i.ok_count, Y2i.row_count], [1, 2, 3],
+  'Y2a one of three rows has no id, and the other two are counted as having one');
+eq(Y2i.blank_id_rows[0].row_number, 3, 'Y2b reported at row 3, where it actually is',
+  Y2i.blank_id_rows[0]);
+
+// ---- Y3 — TWO ROWS CLAIM ONE IDENTITY. -------------------------------------------------------------------
+// A duplicate is not a missing id and it is not harmless: the id is the key an AFTER readback matches rows
+// by, so two rows under one key make "this row is unchanged" unanswerable.
+var Y3 = manifestP(pos({ movements: [
+  mov({ factory_stock_movement_id: 'MV-DUP' }),
+  mov({ factory_stock_movement_id: 'MV-DUP', movement_date: '2026-09-02', qty: 9 })] }));
+idFaultStop(Y3, 'Y3 ', 'no_factory_audit_row_id_is_duplicated', 'FACTORY_MOVEMENT_ID_DUPLICATE');
+var Y3i = mvSurf(Y3.res).id_integrity;
+eq([Y3i.duplicate_id_count, Y3i.blank_id_count], [1, 0],
+  'Y3a counted as a duplicate and NOT as a blank — different faults, different remedies');
+eq(Y3i.duplicate_ids, ['MV-DUP'], 'Y3b naming the id that is claimed twice');
+eq([Y3i.duplicate_id_rows[0].row_number, Y3i.duplicate_id_rows[0].first_seen_row], [3, 2],
+  'Y3c and BOTH rows, so a person can compare them', Y3i.duplicate_id_rows[0]);
+
+// ---- Y3b — AN ID THAT IS NOT A STRING. -------------------------------------------------------------------
+// A sheet coerces on read. A numeric-looking id comes back as a number and prints in a log exactly like the
+// string would, while comparing and hashing differently on the way back.
+var Y3b = manifestP(pos({ movements: [
+  mov({ factory_stock_movement_id: 'MV-1' }),
+  mov({ factory_stock_movement_id: 20260901, movement_date: '2026-09-02' })] }));
+idFaultStop(Y3b, 'Y3b ', 'every_factory_audit_row_id_is_a_string_not_a_coerced_number_or_date',
+  'FACTORY_MOVEMENT_ID_WRONG_TYPE');
+var Y3bi = mvSurf(Y3b.res).id_integrity;
+eq([Y3bi.wrong_type_id_count, Y3bi.blank_id_count, Y3bi.duplicate_id_count], [1, 0, 0],
+  'Y3b_a counted as a wrong TYPE, not as missing and not as duplicated');
+eq(Y3bi.wrong_type_id_rows[0].observed_type, '[object Number]',
+  'Y3b_b with the type that was actually observed', Y3bi.wrong_type_id_rows[0]);
+
+// ---- Y4 — THE HEADER ROW IS NOT A RECORD, AND NEITHER IS A BLANK ONE. ------------------------------------
+// Asserted rather than assumed, because "did the reader include the header" is exactly the question the live
+// finding raised, and the answer has to be checkable. The header cell for the id column literally contains
+// the string `factory_stock_movement_id`, so if it were ever read as data that value would appear in the id
+// list — a uniquely recognisable footprint.
+var Y4 = manifestP(pos({ movements: [
+  mov({ factory_stock_movement_id: 'MV-1' }),
+  mov({ factory_stock_movement_id: 'MV-2', movement_date: '2026-09-02' })] }));
+eq(Y4.res.verdict, 'READY_TO_AUTHORIZE', 'Y4 two well-formed movement rows are simply fine', failed(Y4.res));
+eq(mvSurf(Y4.res).row_count, 2, 'Y4a the row count is 2 — the header row is not one of them');
+eq(mvSurf(Y4.res).ids, ['MV-1', 'MV-2'], 'Y4b and the id list is exactly the two data ids');
+ok(mvSurf(Y4.res).ids.indexOf('factory_stock_movement_id') === -1,
+  'Y4c the header cell value never appears as an identity', mvSurf(Y4.res).ids);
+eq(mvSurf(Y4.res).id_integrity.blank_id_count, 0,
+  'Y4d and the header contributes no blank id either');
+// A TRAILING EMPTY SHEET ROW IS NOT A RECORD WITH A MISSING ID. The two must not be confused: one is a
+// spreadsheet artifact, the other is a data fault, and treating the first as the second would make every
+// sheet with a spare row refuse.
+var Y4w = S1World(pos({ movements: [mov({ factory_stock_movement_id: 'MV-1' })] }));
+var Y4sh = Y4w.sheets['factory_stock_movements'];
+Y4sh.rows.push(Y4sh.rows[0].map(function () { return ''; }));
+var Y4res = vm.runInContext('RUN_S1_MANIFEST_P()', Y4w.ctx);
+eq(Y4res.verdict, 'READY_TO_AUTHORIZE',
+  'Y4e a trailing empty sheet row is skipped, not refused as a blank id', failed(Y4res));
+eq([mvSurf(Y4res).row_count, mvSurf(Y4res).id_integrity.blank_id_count], [1, 0],
+  'Y4f it is not counted as a row and it is not counted as a fault');
+eq(Y4w.allWrites(), 0, 'Y4g and zero writes');
+
+// ---- Y5 — THE AUTHORITY, AND WHY THERE IS NO LEGACY ALLOWANCE TO HONOUR. ---------------------------------
+// §6 asks for authority evidence if a blank is permitted. It is not, and the evidence for THAT is what this
+// asserts — from the shipped schema and from 21_'s own source, not from a sentence in the diagnostic.
+var Y5c = mvSurf(Y4.res).id_authority_contract;
+eq([Y5c.required, Y5c.unique, Y5c.blank_permitted], [true, true, false],
+  'Y5 the contract for factory_stock_movement_id: required, unique, blank NOT permitted');
+ok(Y5c.schema_authority.indexOf('PK') > 0 && Y5c.schema_authority.indexOf('Required Yes') > 0,
+  'Y5a naming the schema authority that makes it a required primary key', Y5c.schema_authority);
+// AND THE WRITER SIDE, READ FROM 21_ RATHER THAN SPELLED HERE. Every movement row in production is written
+// by one of three places in 21_ (12_, 13_ and 22_ all delegate to factoryStockApplyDeltaTx_), and each
+// generates the id. So a blank cannot have come from a writer, which is why it is a data fault and a STOP.
+var Y5g21 = read(GS + '21_factory_inventory_handlers.gs');
+eq((Y5g21.match(/factory_stock_movement_id: /g) || []).length, 3,
+  'Y5b 21_ has exactly three places that build a movement row',
+  (Y5g21.match(/factory_stock_movement_id: [^,\n]*/g) || []));
+ok((Y5g21.match(/'FSMV-' \+ Utilities\.getUuid\(\)/g) || []).length >= 3,
+  'Y5c and every one of them mints FSMV-<hex> — none can emit a blank',
+  (Y5g21.match(/'FSMV-' \+ Utilities\.getUuid\(\)/g) || []).length);
+ok(Y5g21.indexOf('function factoryStockApplyDeltaTx_') > 0,
+  'Y5d including the shared path 12_, 13_ and 22_ delegate to');
+ok(Y5c.writer_authority.indexOf('FSMV-') > 0
+  && Y5c.writer_authority.indexOf('factoryStockApplyDeltaTx_') > 0,
+  'Y5e which is what the recorded writer authority claims', Y5c.writer_authority);
+
+// ---- Y6 — A ROW OUTSIDE THE NAMED COLUMNS IS A READ-RANGE FAULT, NOT A MISSING ID. ----------------------
+// The one case where §4 applies rather than §5. A value in a column whose header cell is empty makes a row
+// non-blank without making it a record: every named field of it, the id included, reads empty. Reporting
+// that as a missing primary key would send a person looking for data damage that is not there.
+var Y6w = S1World(pos({ movements: [mov({ factory_stock_movement_id: 'MV-1' })] }));
+var Y6sh = Y6w.sheets['factory_stock_movements'];
+Y6sh.rows.forEach(function (r) { r.splice(3, 0, ''); });     // an UNLABELLED column, in the middle
+var Y6stray = Y6sh.rows[0].map(function () { return ''; });
+Y6stray[3] = 'someone typed a note here';
+Y6sh.rows.push(Y6stray);
+var Y6res = vm.runInContext('RUN_S1_MANIFEST_P()', Y6w.ctx);
+eq(Y6res.verdict, 'STOP', 'Y6 a stray row outside the named columns is refused', failed(Y6res));
+ok(failed(Y6res).indexOf('no_row_outside_the_named_columns_was_counted_as_a_factory_record') >= 0,
+  'Y6a under its OWN condition, not as a blank id', failed(Y6res));
+ok((Y6res.factory_id_fault_codes || []).indexOf('FACTORY_MOVEMENT_ROW_OUTSIDE_NAMED_COLUMNS') >= 0,
+  'Y6b with its own named code', Y6res.factory_id_fault_codes);
+var Y6i = mvSurf(Y6res).id_integrity;
+eq([Y6i.outside_named_columns_count, Y6i.blank_id_count], [1, 0],
+  'Y6c counted as OUTSIDE the schema and NOT as a record missing its id — different remedies');
+eq(Y6i.outside_named_columns_rows[0].row_number, 3,
+  'Y6d naming the row to clear', Y6i.outside_named_columns_rows[0]);
+eq([Y6res.freeze_paste_block, Y6res.operator_authorization_wording], [null, null],
+  'Y6e and nothing is released from it');
+eq(Y6w.allWrites(), 0, 'Y6f zero writes');
+
+// ---- Y7 — MANY GAP SCOPES AND A FEW DRAFT ROWS, IN ONE WORLD, NOT CONFUSED. -----------------------------
+// The live numbers, reproduced at their real magnitudes: 118 gap scopes beside a couple of dozen draft rows.
+// The old field names invited a reader to treat 118 as an identity count and 11 + 13 as a subset of it.
+var Y7extraGap = [];
+for (var y7 = 1; y7 <= 117; y7++) {
+  Y7extraGap.push({ sku: 'GAPONLY-' + y7, calculation_status: 'READY',
+    d18_suggested_qty: 0, d30_suggested_qty: 0, d45_suggested_qty: 0, d90_suggested_qty: 0 });
+}
+var Y7hdrs = [], Y7lns = [];
+for (var y7h = 1; y7h <= 5; y7h++) {
+  Y7hdrs.push({ allocation_draft_id: 'OTHER-Y7-' + y7h, planning_cycle: GAP_CYCLE, company: 'ResEU',
+    country: 'DE', marketplace: 'Amazon', status: 'draft', generation_type: 'user_created' });
+  Y7lns.push({ allocation_draft_line_id: 'OTHER-Y7-' + y7h + '-L1',
+    allocation_draft_id: 'OTHER-Y7-' + y7h, sku: 'OTHER-SKU', planned_qty: 10, line_status: 'planned' });
+}
+var Y7 = manifestP(pos({ extraGap: Y7extraGap, extraHeaders: Y7hdrs, extraLines: Y7lns }));
+eq(Y7.res.verdict, 'READY_TO_AUTHORIZE', 'Y7 the world is still READY', failed(Y7.res));
+var Y7g = Y7.res.gap_scope_universe, Y7d = Y7.res.allocation_draft_row_universe;
+eq(Y7g.population, 'INVENTORY_GAP_SCOPES', 'Y7a the gap universe names its population');
+eq(Y7d.population, 'ALLOCATION_DRAFT_ROWS', 'Y7a2 and the draft universe names a different one');
+eq(Y7g.total_scope_count, 118, 'Y7c 118 GAP SCOPES — the live number', Y7g.total_scope_count);
+eq([Y7g.target_scope_count, Y7g.other_scope_count], [1, 117],
+  'Y7d of which 1 is the target scope and 117 are not');
+// AND THE DRAFT ROWS ARE A DIFFERENT POPULATION WITH A DIFFERENT TOTAL.
+eq(Y7d.total_row_count, Y7d.header_count + Y7d.line_count,
+  'Y7e the draft row total is header rows plus line rows',
+  [Y7d.header_count, Y7d.line_count, Y7d.total_row_count]);
+ok(Y7d.total_row_count !== Y7g.total_scope_count,
+  'Y7f and it is NOT 118 — two populations, two numbers',
+  [Y7d.total_row_count, Y7g.total_scope_count]);
+eq(Y7d.other_scope_row_count, Y7d.other_scope_header_count + Y7d.other_scope_line_count,
+  'Y7g the other-scope row total is its own header and line counts',
+  [Y7d.other_scope_header_count, Y7d.other_scope_line_count, Y7d.other_scope_row_count]);
+eq(Y7d.other_scope_header_count, 5, 'Y7h five other-scope headers, counted as ROWS');
+eq(Y7d.other_scope_line_count, 5, 'Y7i and five other-scope lines');
+eq(Y7d.target_row_count + Y7d.other_scope_row_count, Y7d.total_row_count,
+  'Y7j the partition closes exactly');
+eq(Y7d.row_signature_count, Y7d.total_row_count,
+  'Y7k with exactly one full-row signature per row');
+ok(Y7d.combined_fingerprint !== null && Y7g.scope_fingerprint !== null
+  && Y7d.combined_fingerprint !== Y7g.scope_fingerprint,
+  'Y7l and two DIFFERENT fingerprints, so a readback cannot compare one against the other',
+  [Y7g.scope_fingerprint, Y7d.combined_fingerprint]);
+// THE FROZEN BASELINE CARRIES BOTH, EACH UNDER ITS OWN NAME.
+var Y7fb = Y7.res.frozen_before;
+eq([Y7fb.gap_scope_universe_total_count, Y7fb.gap_scope_universe_other_count], [118, 117],
+  'Y7m the freeze carries the gap scope counts under gap_scope_universe_*');
+eq(Y7fb.draft_row_universe_total_row_count, Y7d.total_row_count,
+  'Y7n and the draft row count under draft_row_universe_*');
+ok(Y7fb.identity_universe_count === undefined && Y7fb.other_scope_identity_count === undefined,
+  'Y7o and the ambiguous names are gone from it entirely');
+// AND THE READBACK EXPECTATION IS STATED PER POPULATION: a generation adds draft rows and no gap scopes.
+eq(Y7.res.expected_outcome.expected_gap_scope_universe_count_after, 118,
+  'Y7p a generation is expected to add NO gap scope');
+eq(Y7.res.expected_outcome.expected_draft_row_universe_total_after,
+  Y7d.total_row_count + Y7.res.predicted_write_set.expected_create_header_count
+    + Y7.res.predicted_write_set.expected_create_line_count,
+  'Y7q while the draft row total is expected to grow by exactly the CREATED rows',
+  Y7.res.expected_outcome.expected_draft_row_universe_derivation);
+eq(Y7.world.allWrites(), 0, 'Y7r and zero writes across the whole world');
+
+// ---- Y7b — AN EMPTY TARGET SCOPE ACQUIRES NO IDENTITY FROM THE OTHER UNIVERSE. --------------------------
+// 118 gap scopes exist and the target scope holds no AI rows at all. Zero must stay zero: the count that
+// belongs to one population must never be borrowed by the other.
+eq(Y7d.target_ai_header_count, 0, 'Y7b the target scope has no existing AI header');
+eq(Y7.res.ai_identity_sets.existing_active_ai_identity_count, 0,
+  'Y7b1 and the AI identity set agrees — not 117, not 118');
+ok(Y7.res.predicted_write_set.expected_header_ids.length >= 1,
+  'Y7b2 while the run still predicts a CREATE, which is the distinction R4A drew',
+  Y7.res.predicted_write_set.expected_header_ids);
+
+// ---- Y8 — DRAFT UNIVERSE ARITHMETIC THAT DOES NOT CLOSE IS A STOP. -------------------------------------
+// The guard against the confusion coming back: if a future edit fed this block a count from the gap census,
+// the partition would stop adding up and the run refuses rather than freezing a total of a population that
+// does not exist.
+var Y8 = withMP(swapS1('      other_scope_row_count: duOtherRows,',
+  '      other_scope_row_count: duOtherRows + 1,'), pos());
+eq(Y8.res.verdict, 'STOP', 'Y8 an other-scope row total that does not equal its parts is refused',
+  failed(Y8.res));
+ok(failed(Y8.res).indexOf('the_other_scope_row_total_is_its_header_count_plus_its_line_count') >= 0,
+  'Y8a on the arithmetic condition', failed(Y8.res));
+eq([Y8.res.freeze_paste_block, Y8.res.operator_authorization_wording], [null, null],
+  'Y8b and nothing is released');
+var Y8b = withMP(swapS1('      total_row_count: part.header_table.row_count + part.line_table.row_count,',
+  '      total_row_count: uniKeys.length,'), pos());
+eq(Y8b.res.verdict, 'STOP',
+  'Y8c and feeding it the GAP SCOPE count — the exact confusion — is refused too', failed(Y8b.res));
+ok(failed(Y8b.res).indexOf('the_draft_row_universe_total_is_its_header_rows_plus_its_line_rows') >= 0,
+  'Y8d by the arithmetic, without needing to know where the wrong number came from', failed(Y8b.res));
+
+// ---- Y9 — THE SENTENCE IS PRINTED, IN SEGMENTS, AND IT REASSEMBLES EXACTLY. -----------------------------
+var Y9 = manifestP(pos());
+eq(Y9.res.verdict, 'READY_TO_AUTHORIZE', 'Y9 a READY run', failed(Y9.res));
+ok(authChunks(Y9.world) >= 1, 'Y9a emits at least one s1_manifest_p_authorization_<i>_of_<n> line',
+  authChunks(Y9.world));
+eq(Y9.res.authorization_chunks, authChunks(Y9.world),
+  'Y9b and the returned chunk count is the number of lines actually emitted');
+eq(authText(Y9.world), String(Y9.res.operator_authorization_wording),
+  'Y9c the segments reassemble to the EXACT sentence, byte for byte — nothing truncated');
+ok(logTags(Y9.world).indexOf('s1_manifest_p_authorization_meta') >= 0,
+  'Y9d with a meta line so a reader can confirm what they reassembled', logTags(Y9.world));
+var Y9meta = JSON.parse(String((Y9.world.log || []).filter(function (l) {
+  return String(l).indexOf('[S1] s1_manifest_p_authorization_meta ') === 0;
+})[0]).replace('[S1] s1_manifest_p_authorization_meta ', ''));
+eq([Y9meta.chunks, Y9meta.bytes],
+  [Y9.res.authorization_chunks, String(Y9.res.operator_authorization_wording).length],
+  'Y9e the meta line states the segment count and the byte count');
+ok(Y9meta.wording_fingerprint !== null,
+  'Y9f and a fingerprint over the whole text, so a mis-assembled copy is detectable',
+  Y9meta.wording_fingerprint);
+eq(Y9meta.placeholders, [], 'Y9g with no placeholders in it');
+eq(Y9meta.facts_missing, [], 'Y9h and no required fact missing');
+// ---- and the sentence carries every fact a person has to be able to check ----
+var Y9w = String(Y9.res.operator_authorization_wording);
+eq(Y9.res.wording_audit.missing, [], 'Y9i the wording audit finds every required fact',
+  Y9.res.wording_audit.missing);
+ok(Y9.res.wording_audit.required_item_count >= 25,
+  'Y9j and there are enough of them for the check to mean something',
+  Y9.res.wording_audit.required_item_count);
+['ResUS', 'US', 'Amazon', SKU].forEach(function (t) {
+  ok(Y9w.indexOf(t) > 0, 'Y9k the exact scope axis ' + t + ' is in the sentence');
+});
+Y9.res.predicted_write_set.expected_header_ids.forEach(function (id) {
+  ok(Y9w.indexOf(id) > 0, 'Y9l the exact expected header id ' + id + ' is in the sentence');
+});
+Y9.res.predicted_write_set.expected_line_ids.forEach(function (id) {
+  ok(Y9w.indexOf(id) > 0, 'Y9m the exact expected line id ' + id + ' is in the sentence');
+});
+Y9.res.predicted_write_set.expected_k2_group_keys.forEach(function (k) {
+  ok(Y9w.indexOf(k) > 0, 'Y9n and the K2 group key is too');
+});
+ok(Y9w.indexOf('CREATE ') > 0 && Y9w.indexOf('UPDATE ') > 0 && Y9w.indexOf('EXPIRE ') > 0,
+  'Y9o with CREATE, UPDATE and EXPIRE counts');
+ok(Y9w.indexOf(String(Y9.res.row_content.target_manual.combined_fingerprint)) > 0
+  && Y9w.indexOf(String(Y9.res.row_content.other_scope.combined_fingerprint)) > 0,
+  'Y9p the protected manual and other-scope full-row fingerprints');
+// S1-R4C §3 — THE FACTORY BASELINE IS NOW IN THE SENTENCE, not only in the freeze.
+ok(Y9w.indexOf('factory_stock_movements ') > 0 && Y9w.indexOf('factory_stock_override_audit ') > 0
+  && Y9w.indexOf('reservations ') > 0,
+  'Y9q the factory movement, override-audit and reservation baselines');
+ok(Y9w.indexOf(String(mvSurf(Y9.res).combined_fingerprint)) > 0,
+  'Y9r including the movement table fingerprint a readback would compare');
+ok(Y9w.indexOf('IT DOES NOT AUTHORIZE SUBMIT') > 0, 'Y9s and the boundary of what it authorizes');
+eq((Y9w.match(/<[a-zA-Z_][a-zA-Z0-9_]*>/g) || []), [], 'Y9t with no placeholder anywhere in it');
+eq([Y9.res.writes, Y9.res.writer_calls, Y9.res.submit_calls, Y9.res.route_save_calls], [0, 0, 0, 0],
+  'Y9u and the run that produced it wrote nothing');
+eq([Y9.res.dry_run_proof.generate_called, Y9.res.dry_run_proof.submit_called], [false, false],
+  'Y9v having called neither Generate nor Submit');
+eq(Y9.world.allWrites(), 0, 'Y9w measured on every sheet');
+
+// ---- Y9x — AN ABSENT SURFACE IS STATED IN THE SENTENCE, NOT LEFT AS A GAP IN IT. ----------------------
+// R4A's rule reaches the wording too: absent is not zero. The first version rendered a null row count
+// through S1_str_ and produced 'reservations SHEET_ABSENT with  row(s)' — a double space where a number
+// belongs, which a reader takes for a typo instead of the deliberate distinction it is. And an absent
+// surface is not asked for a fingerprint it cannot have; it is asked to say that it is absent.
+var Y9x = manifestP(pos({ movements: null }));
+eq(Y9x.res.verdict, 'READY_TO_AUTHORIZE',
+  'Y9x an absent movement table is honest, not a fault', failed(Y9x.res));
+var Y9xw = String(Y9x.res.operator_authorization_wording);
+ok(Y9xw.indexOf('factory_stock_movements SHEET_ABSENT') > 0,
+  'Y9x1 and the sentence names the absence');
+ok(Y9xw.indexOf('the table is absent, which is not the same as zero rows') > 0,
+  'Y9x2 spelling out that it is not zero rows, rather than leaving a blank where a count goes');
+ok(Y9xw.indexOf(' with  row(s)') === -1,
+  'Y9x3 with no empty count anywhere in it');
+eq(Y9x.res.wording_audit.missing, [],
+  'Y9x4 and the audit does not demand a fingerprint the absent table cannot have',
+  Y9x.res.wording_audit.missing);
+eq([Y9x.res.frozen_before.factory_stock_movement_state,
+  Y9x.res.frozen_before.factory_stock_movement_count], ['SHEET_ABSENT', null],
+  'Y9x5 while the freeze still records SHEET_ABSENT with a NULL count, never 0');
+eq(authText(Y9x.world), Y9xw, 'Y9x6 and the printed segments still reassemble exactly');
+eq(Y9x.world.allWrites(), 0, 'Y9x7 zero writes');
+
+// ---- Y10 — A PLACEHOLDER SENTENCE IS REFUSED, AND PRINTS NOTHING. --------------------------------------
+var Y10 = withMP(swapS1("  if (!ws || ws.measurable !== true || !ids) return null;",
+  "  if (!ws || ws.measurable !== true || !ids) return null;\n"
+  + "  return 'I authorize ONE controlled generation for <company> / <country> / <marketplace> /"
+  + " <sku>. IT DOES NOT AUTHORIZE SUBMIT.';"), pos());
+eq(Y10.res.verdict, 'STOP', 'Y10 a sentence with placeholders is refused', failed(Y10.res));
+ok(String(Y10.res.stop_reason).indexOf('placeholder') > 0,
+  'Y10a naming the placeholders as the reason', Y10.res.stop_reason);
+eq(Y10.res.operator_authorization_wording, null, 'Y10b and the wording is withheld');
+eq([authChunks(Y10.world), mpChunks(Y10.world)], [0, 0],
+  'Y10c with zero authorization chunks and zero freeze chunks — nothing signable was printed');
+ok(String(authText(Y10.world)).indexOf('<company>') === -1,
+  'Y10d and the placeholder text never reached the log at all', authText(Y10.world));
+
+// ---- Y11 — A SENTENCE THAT DROPS THE EXACT IDENTITIES IS REFUSED. -------------------------------------
+// LOCK THREE cannot catch this: the sentence is filled in from measured values and has no placeholder. It
+// simply no longer says WHICH identities may be written, which is the one thing the authorization bounds.
+var Y11 = withMP(swapS1(
+  "    + ' The EXACT K2 identities it may write are header(s) ' + (hIds.length ? hIds.join(', ') : '(none)')\n"
+  + "    + ' and line(s) ' + (lIds.length ? lIds.join(', ') : '(none)')\n"
+  + "    + '; K2 group key(s) ' + ((ws.expected_k2_group_keys || []).join(', ') || '(none)')\n"
+  + "    + '. No other identity may be created or altered.'",
+  "    + ' No other identity may be created or altered.'"), pos());
+eq(Y11.res.verdict, 'STOP', 'Y11 a filled-in sentence that names no identity is refused', failed(Y11.res));
+ok(String(Y11.res.stop_reason).indexOf('AUTHORIZATION_WORDING_IS_NOT_VERIFIABLE') === 0,
+  'Y11a under its own named reason', Y11.res.stop_reason);
+eq(Y11.res.wording_audit.placeholders, [],
+  'Y11b with NO placeholder in it — which is why LOCK THREE could not have caught this');
+ok(Y11.res.wording_audit.missing.length >= 3,
+  'Y11c and the missing facts are named, one per identity',
+  Y11.res.wording_audit.missing);
+ok(Y11.res.wording_audit.missing.filter(function (m) {
+  return m.indexOf('expected_header_id:') === 0; }).length >= 1,
+  'Y11d including the exact header id the sentence stopped naming',
+  Y11.res.wording_audit.missing);
+eq([Y11.res.operator_authorization_wording, Y11.res.freeze_paste_block], [null, null],
+  'Y11e and nothing is released');
+eq([authChunks(Y11.world), mpChunks(Y11.world)], [0, 0], 'Y11f zero chunks of either kind');
+// AND A DROPPED FINGERPRINT IS THE SAME CLASS OF FAULT.
+var Y11g = withMP(swapS1(
+  "    + ' (fingerprint ' + S1_str_(mv && mv.combined_fingerprint) + ')'", "    + ''"), pos());
+eq(Y11g.res.verdict, 'STOP',
+  'Y11g dropping the factory movement fingerprint from the sentence is refused too', failed(Y11g.res));
+ok(Y11g.res.wording_audit.missing.indexOf('factory_movement_fingerprint') >= 0,
+  'Y11h naming the fact that went missing', Y11g.res.wording_audit.missing);
+
+// ---- Y12 — ON EVERY STOP: NO WORDING, NO BASELINE, NO CHUNKS OF EITHER KIND. --------------------------
+// One table over refusals of four different KINDS, because "a STOP hands over nothing" has to hold for all
+// of them and not only for the one that was being worked on.
+[['Y12a a blank movement id', Y1],
+  ['Y12b a duplicate movement id', Y3],
+  ['Y12c a stray row outside the named columns', { res: Y6res, world: Y6w }],
+  ['Y12d broken draft-universe arithmetic', Y8],
+  ['Y12e a placeholder sentence', Y10],
+  ['Y12f a sentence missing the exact identities', Y11]].forEach(function (p) {
+  var n = p[0], r = p[1];
+  eq(r.res.verdict, 'STOP', n + ' STOPs');
+  eq([r.res.operator_authorization_wording, r.res.freeze_paste_block, r.res.frozen_before],
+    [null, null, null], n + ' — no wording, no paste block, no baseline');
+  eq([authChunks(r.world), mpChunks(r.world)], [0, 0],
+    n + ' — authorization chunks 0 and freeze chunks 0');
+  eq([r.res.writes, r.res.writer_calls], [0, 0], n + ' — zero writes');
+  eq([r.res.dry_run_proof.generate_called, r.res.dry_run_proof.submit_called], [false, false],
+    n + ' — no Generate and no Submit');
+  eq(r.world.allWrites(), 0, n + ' — zero writes measured on every sheet');
+  // AND THE META LINE SAYS SO IN THE LOG, rather than simply being absent — an operator scrolling the log
+  // must be told that nothing was released, not left to notice that nothing appeared.
+  var meta = (r.world.log || []).filter(function (l) {
+    return String(l).indexOf('[S1] s1_manifest_p_authorization_meta ') === 0; });
+  eq(meta.length, 1, n + ' — and one authorization meta line is still emitted');
+  var mj = JSON.parse(String(meta[0]).replace('[S1] s1_manifest_p_authorization_meta ', ''));
+  eq([mj.chunks, mj.bytes], [0, 0], n + ' — reporting chunks 0 and bytes 0');
+  ok(String(mj.reason).indexOf('NO_AUTHORIZATION_WORDING_ON_A_STOP') === 0,
+    n + ' — under a named reason', mj.reason);
+});
+
+// ---- Y13 — EVERY EMITTED LINE IS WITHIN THE LOGGER BOUND, INCLUDING THE NEW ONES. ---------------------
+// S1-R4A's lesson, re-measured now that there are more lines: the bound belongs to the emitted LINE, and the
+// authorization tag is longer than the freeze tag it was modelled on.
+ok(maxLogBytes(Y9.world) <= 3000,
+  'Y13 the longest line a READY run emits is within the 3000-byte bound', maxLogBytes(Y9.world));
+var Y13auth = (Y9.world.log || []).filter(function (l) {
+  return /^\[S1\] s1_manifest_p_authorization_\d+_of_\d+ /.test(String(l)); });
+ok(Y13auth.length >= 1 && Y13auth.every(function (l) { return String(l).length <= 3000; }),
+  'Y13a and every authorization segment line is too — measured on the LINE, framing included',
+  Y13auth.map(function (l) { return String(l).length; }));
+ok(maxLogBytes(Y7.world) <= 3000,
+  'Y13b including the 118-gap-scope world, whose evidence line is the longest',
+  maxLogBytes(Y7.world));
+// OVER THE BOUND, NOTHING IS CUT. Measured, and the measurement corrected a wrong expectation of mine: with
+// the chunk bound at zero the FREEZE bound condition fails first, so the run never reaches READY and the
+// authorization is never built at all. That is the stronger outcome, not a weaker one - a deployment whose
+// log cannot carry the evidence refuses, rather than emitting a partial sentence - so this asserts what
+// actually happens instead of the withheld line I expected.
+var Y13c = withMP(swapS1('var S1_LOG_MAX_CHUNKS_ = 12;', 'var S1_LOG_MAX_CHUNKS_ = 0;'), pos());
+eq(Y13c.res.verdict, 'STOP', 'Y13c a log that cannot carry the evidence is a STOP', failed(Y13c.res));
+ok(failed(Y13c.res).indexOf('the_frozen_baseline_fits_in_the_log_bound') >= 0,
+  'Y13d on the log-bound condition, before any authorization is built', failed(Y13c.res));
+eq([authChunks(Y13c.world), mpChunks(Y13c.world)], [0, 0],
+  'Y13e with zero chunks of either kind - nothing truncated, nothing partial');
+eq([Y13c.res.operator_authorization_wording, Y13c.res.frozen_before], [null, null],
+  'Y13f and no sentence and no baseline survive it');
+// AND THE SENTENCE GOES THROUGH THE BOUNDED CHUNKER, not a raw Logger call - which is what makes the
+// bound apply to it at all. Asserted on the source, because the alternative is invisible on a short
+// sentence and only appears once the wording grows.
+ok(read(S1_REL).indexOf("S1_emitChunked_('s1_manifest_p_authorization',") > 0,
+  'Y13g the authorization is emitted through S1_emitChunked_, so the line bound applies to it');
+ok(read(S1_REL).indexOf("Logger.log('[S1] ' + tag + ' ' + payload)") > 0
+  || read(S1_REL).indexOf("Logger.log('[S1] '") > 0,
+  'Y13h and every line still carries the [S1] framing the budget was priced against');
+
+// ================================================================================================================
 section('N — mutants');
 // ================================================================================================================
 
@@ -3166,9 +3707,10 @@ mut('N35 LOCK THREE is removed, so a placeholder sentence reads as an authorizat
   // The defect this round repaired, injected as a wording builder that returns the old template.
   // S1-R4A — the builder now takes the write set and the identity sets too, so the anchor carries the new
   // signature. Same mutant: the wording goes back to a template with nothing measured in it.
-  var m = swapS1("function S1_authWordingP_(cand, acceptedRun, scope, ws, ids, content) {\n"
+  // S1-R4C — the builder also takes the factory + reservation baseline now, so the anchor moved again.
+  var m = swapS1("function S1_authWordingP_(cand, acceptedRun, scope, ws, ids, content, surf, resv) {\n"
     + "  if (!cand || !scope) return null;",
-    "function S1_authWordingP_(cand, acceptedRun, scope, ws, ids, content) {\n"
+    "function S1_authWordingP_(cand, acceptedRun, scope, ws, ids, content, surf, resv) {\n"
     + "  return 'I authorize ONE controlled generation for <company> / <country> / <marketplace> / <sku>"
     + " against run <calculation_run_id> with residual <residual_qty>. IT DOES NOT AUTHORIZE SUBMIT.';\n"
     + "  // eslint-disable-next-line no-unreachable\n"
@@ -3204,11 +3746,20 @@ mut('N37 the baseline is built even when a condition already failed', function (
     '    if (true) {\n      var freeze = {');
   var spec = pos(OTHER_BUILD);
   var clean = manifestP(spec), bad = withMP(m, spec);
-  // Both still STOP and neither emits a chunk — the locks hold, which is the point of having three.
-  // What the mutant loses is that a refused run has NOTHING to withhold: it now constructs a baseline
-  // from a world it refused, and the next edit that weakens a lock has something to leak.
-  return clean.res.verdict === 'STOP' && clean.res.frozen_before === null
-    && bad.res.verdict === 'STOP' && bad.res.frozen_before !== null
+  // RE-AIMED AGAIN in S1-R4C. LOCK FIVE now nulls `frozen_before` on every STOP, so `frozen_before !== null`
+  // stopped being observable and this mutant survived — the same shape as R4B's N61: aimed at something a
+  // new lock had made redundant. The fact the guard actually protects is WHETHER A BASELINE WAS BUILT AT
+  // ALL, and that is visible in two places that LOCK FIVE does not touch: the withheld reason distinguishes
+  // 'NOT_BUILT' from 'built, then held back', and the freeze-completeness conditions can only appear in the
+  // ledger if there was a freeze to check. A refused run must have nothing to withhold.
+  var names = function (r) { return (r.res.predicates || []).map(function (p) { return p.predicate; }); };
+  return clean.res.verdict === 'STOP' && bad.res.verdict === 'STOP'
+    && String(clean.res.freeze_withheld_reason).indexOf('NOT_BUILT') === 0
+    && String(bad.res.freeze_withheld_reason).indexOf('NOT_BUILT') !== 0
+    && names(clean).indexOf('the_frozen_baseline_carries_every_required_field') === -1
+    && names(bad).indexOf('the_frozen_baseline_carries_every_required_field') >= 0
+    // and both still leak nothing, which is what having five locks is for
+    && clean.res.frozen_before === null && bad.res.frozen_before === null
     && mpChunks(clean.world) === 0 && mpChunks(bad.world) === 0;
 });
 
@@ -3581,6 +4132,224 @@ mut('N61 the contract-level refusal list stops being surfaced', function () {
     && failed(bad.res).indexOf(NM) === -1
     && bad.res.verdict === 'STOP';
 });
+
+// ---- S1-R4C mutants ------------------------------------------------------------------------------------
+
+/** swapS1 always swaps against the pristine source, so a mutant that needs TWO edits cannot chain it.
+ *  Some of the locks below are only reachable on a world that a FIRST edit made refuse, which is exactly
+ *  the shape that needs two. Same anchor-count discipline: a swap that matches 0 or 2 places is a broken
+ *  probe, not a surviving mutant, and it says so. */
+function swap2_(src, a, b) {
+  var n = src.split(a).length - 1;
+  if (n !== 1) throw new Error('swap2 anchor count ' + n + ' :: ' + a.slice(0, 90));
+  return src.split(a).join(b);
+}
+
+mut('N62 the id list goes back to mapping the raw cell and sorting it', function () {
+  // THE LIVE BUG, INJECTED. This is the expression that produced `factory_stock_movement_ids[0] = ""`
+  // beside `count = 96` on a run that called itself READY: map the id cell of every row, sort, publish.
+  // The empty string sorts first, so the blank both joined the identity list and lost its row number.
+  var m = swapS1('      ids: integ.ok_ids,',
+    "      ids: (t.present && t.readable && idResolved === true)\n"
+    + "        ? (t.rows || []).map(function (r) { return S1_str_(r[idKey]); }).sort() : null,");
+  var spec = pos({ movements: [
+    { movement_date: '2026-09-01', sku: SKU, warehouse_id: WHF, movement_type: 'IN', qty: 5 },
+    { factory_stock_movement_id: 'MV-2', movement_date: '2026-09-02', sku: SKU, warehouse_id: WHF,
+      movement_type: 'IN', qty: 7 }] });
+  var clean = manifestP(spec), bad = withMP(m, spec);
+  var NM = 'every_factory_audit_row_carries_a_non_blank_id';
+  var bs = ((bad.res.factory_surfaces || {}).surfaces || {})['factory_stock_movements'] || {};
+  return clean.res.verdict === 'STOP' && failed(clean.res).indexOf(NM) >= 0
+    && ((clean.res.factory_surfaces.surfaces['factory_stock_movements'] || {}).ids === null)
+    // the giveaway the live run showed: a blank sitting at index 0 of a published identity list
+    && Object.prototype.toString.call(bs.ids) === '[object Array]' && bs.ids[0] === '';
+});
+
+mut('N63 a blank id is counted but does not make the integrity pass dirty', function () {
+  // RE-AIMED ONCE, BY THE MEASUREMENT. The first version asserted that the mutant reaches READY, and it
+  // does not: with the blank excluded from the id list, `ok_count` (0) stops matching `row_count` (1) and
+  // `every_published_factory_id_list_is_complete_and_blank_free` refuses on the arithmetic. That is
+  // defence in depth working, and it is worth recording as such.
+  //
+  // What the mutant DOES destroy is the diagnosis. The run still STOPs, but it no longer says the id is
+  // BLANK, no longer emits FACTORY_MOVEMENT_ID_BLANK, and no longer hands over the row number and
+  // fingerprint — so an operator is told a count does not add up instead of being told which row to open.
+  var m = swapS1("  if (o.blank_id_count) o.faults.push(pre + '_ID_BLANK');",
+    "  if (false) o.faults.push(pre + '_ID_BLANK');");
+  var spec = pos({ movements: [
+    { movement_date: '2026-09-01', sku: SKU, warehouse_id: WHF, movement_type: 'IN', qty: 5 }] });
+  var clean = manifestP(spec), bad = withMP(m, spec);
+  var NM = 'every_factory_audit_row_carries_a_non_blank_id';
+  var CO = 'every_published_factory_id_list_is_complete_and_blank_free';
+  return clean.res.verdict === 'STOP'
+    && failed(clean.res).indexOf(NM) >= 0
+    && (clean.res.factory_id_fault_codes || []).indexOf('FACTORY_MOVEMENT_ID_BLANK') >= 0
+    // the mutant still refuses — on the wrong condition, with no named code and no row to go and look at
+    && bad.res.verdict === 'STOP'
+    && failed(bad.res).indexOf(NM) === -1 && failed(bad.res).indexOf(CO) >= 0
+    && (bad.res.factory_id_fault_codes || []).length === 0;
+});
+
+mut('N64 a duplicate id is folded into the blank count', function () {
+  // Four faults exist as four counts because they have four remedies. Collapsing two of them reports a
+  // duplicated primary key as a missing one, which sends a person looking for the wrong thing.
+  var m = swapS1('      o.duplicate_id_count++;', '      o.blank_id_count++;');
+  var spec = pos({ movements: [
+    { factory_stock_movement_id: 'MV-D', movement_date: '2026-09-01', sku: SKU, warehouse_id: WHF,
+      movement_type: 'IN', qty: 5 },
+    { factory_stock_movement_id: 'MV-D', movement_date: '2026-09-02', sku: SKU, warehouse_id: WHF,
+      movement_type: 'IN', qty: 6 }] });
+  var clean = manifestP(spec), bad = withMP(m, spec);
+  var DUP = 'no_factory_audit_row_id_is_duplicated';
+  var BLK = 'every_factory_audit_row_carries_a_non_blank_id';
+  return clean.res.verdict === 'STOP'
+    && failed(clean.res).indexOf(DUP) >= 0 && failed(clean.res).indexOf(BLK) === -1
+    && bad.res.verdict === 'STOP'
+    && failed(bad.res).indexOf(DUP) === -1 && failed(bad.res).indexOf(BLK) >= 0;
+});
+
+mut('N65 a row outside the named columns is judged as a record missing its id', function () {
+  // The read-range fault reported as a data fault. Both STOP, so the verdict cannot tell them apart — what
+  // the mutant loses is WHICH remedy the operator is sent to: clear a stray cell, or repair a record.
+  var m = swapS1("    if (r.named_column_nonblank === false) {", '    if (false) {');
+  var w = S1World(pos({ movements: [{ factory_stock_movement_id: 'MV-1', movement_date: '2026-09-01',
+    sku: SKU, warehouse_id: WHF, movement_type: 'IN', qty: 5 }] }));
+  var sh = w.sheets['factory_stock_movements'];
+  sh.rows.forEach(function (r) { r.splice(3, 0, ''); });
+  var stray = sh.rows[0].map(function () { return ''; });
+  stray[3] = 'stray';
+  sh.rows.push(stray);
+  var clean = vm.runInContext('RUN_S1_MANIFEST_P()', w.ctx);
+  var w2 = S1World(pos({ s1: m, movements: [{ factory_stock_movement_id: 'MV-1',
+    movement_date: '2026-09-01', sku: SKU, warehouse_id: WHF, movement_type: 'IN', qty: 5 }] }));
+  var sh2 = w2.sheets['factory_stock_movements'];
+  sh2.rows.forEach(function (r) { r.splice(3, 0, ''); });
+  var stray2 = sh2.rows[0].map(function () { return ''; });
+  stray2[3] = 'stray';
+  sh2.rows.push(stray2);
+  var bad = vm.runInContext('RUN_S1_MANIFEST_P()', w2.ctx);
+  var STRAY = 'no_row_outside_the_named_columns_was_counted_as_a_factory_record';
+  var BLK = 'every_factory_audit_row_carries_a_non_blank_id';
+  return failed(clean).indexOf(STRAY) >= 0 && failed(clean).indexOf(BLK) === -1
+    && failed(bad).indexOf(STRAY) === -1 && failed(bad).indexOf(BLK) >= 0;
+});
+
+mut('N66 the wording audit accepts an empty needle, so an unmeasured fact reads as present', function () {
+  // HOW A SUBSTRING CHECK QUIETLY STOPS CHECKING. `indexOf('')` is 0 on every string, so a required fact
+  // whose measured value came back null would be 'found' in any sentence at all - including one that says
+  // nothing about it. The whole audit would then pass on a world where the measurement failed.
+  //
+  // Two edits, because the rule is only observable when some required value IS empty: the first makes one
+  // (the factory pool row fingerprint), the second removes the guard.
+  var EMPTY = "  need('factory_pool_row_fingerprint', ((surf && surf.pool) || {}).row_fingerprint);";
+  var GUARD = "    r.present = r.needle !== '' && text.indexOf(r.needle) >= 0;";
+  var withEmpty = swapS1(EMPTY, "  need('factory_pool_row_fingerprint', null);");
+  var clean = withMP(withEmpty, pos());
+  var bad = withMP(swap2_(withEmpty, GUARD, '    r.present = text.indexOf(r.needle) >= 0;'), pos());
+  var NM = 'AUTHORIZATION_WORDING_IS_NOT_VERIFIABLE';
+  return clean.res.verdict === 'STOP' && String(clean.res.stop_reason).indexOf(NM) === 0
+    && clean.res.wording_audit.missing.indexOf('factory_pool_row_fingerprint') >= 0
+    // the mutant finds the unmeasured fact 'present' and authorizes
+    && bad.res.verdict === 'READY_TO_AUTHORIZE'
+    && bad.res.wording_audit.missing.length === 0;
+});
+
+mut('N67 the authorization is logged in one raw line instead of the bounded chunker', function () {
+  // The bound belongs to the emitted LINE (S1-R4A), and it only applies to the wording if the wording goes
+  // through the chunker. A raw call is invisible on a short sentence and truncates on a long one.
+  var m = swapS1("      out.authorization_chunks = S1_emitChunked_('s1_manifest_p_authorization',\n"
+    + '        out.operator_authorization_wording);',
+    "      S1_log_('s1_manifest_p_authorization', out.operator_authorization_wording);\n"
+    + '      out.authorization_chunks = 1;');
+  var clean = manifestP(pos()), bad = withMP(m, pos());
+  return clean.res.verdict === 'READY_TO_AUTHORIZE' && authChunks(clean.world) >= 1
+    && authText(clean.world) === String(clean.res.operator_authorization_wording)
+    && bad.res.verdict === 'READY_TO_AUTHORIZE' && authChunks(bad.world) === 0;
+});
+
+mut('N68 the sentence is not printed at all — only the boolean about it', function () {
+  // THE LIVE DEFECT. `authorization_wording_present = true` was the whole of what an operator saw, and the
+  // sentence exists precisely so that a human can check its numbers against the evidence.
+  var m = swapS1("    if (out.verdict === 'READY_TO_AUTHORIZE' && out.operator_authorization_wording) {\n"
+    + "      out.authorization_chunks = S1_emitChunked_('s1_manifest_p_authorization',",
+    "    if (false) {\n"
+    + "      out.authorization_chunks = S1_emitChunked_('s1_manifest_p_authorization',");
+  var clean = manifestP(pos()), bad = withMP(m, pos());
+  return clean.res.verdict === 'READY_TO_AUTHORIZE' && authChunks(clean.world) >= 1
+    && bad.res.verdict === 'READY_TO_AUTHORIZE'
+    && !!bad.res.operator_authorization_wording          // the boolean would still have said true
+    && authChunks(bad.world) === 0 && authText(bad.world) === '';
+});
+
+mut('N69 the draft row universe is fed the gap scope count', function () {
+  // The confusion this round ended, injected: 118 gap scopes reported as the draft row total. Caught by
+  // arithmetic rather than by recognising the number, so it does not depend on knowing that 118 is wrong.
+  var m = swapS1('      total_row_count: part.header_table.row_count + part.line_table.row_count,',
+    '      total_row_count: uniKeys.length,');
+  var clean = manifestP(pos()), bad = withMP(m, pos());
+  var NM = 'the_draft_row_universe_total_is_its_header_rows_plus_its_line_rows';
+  return clean.res.verdict === 'READY_TO_AUTHORIZE' && failed(clean.res).indexOf(NM) === -1
+    && bad.res.verdict === 'STOP' && failed(bad.res).indexOf(NM) >= 0
+    && bad.res.freeze_paste_block === null && mpChunks(bad.world) === 0;
+});
+
+mut('N70 the two populations go back to sharing one fingerprint', function () {
+  // A fingerprint whose population is ambiguous cannot refuse anything. With both names pointing at the
+  // gap scope hash, a draft row edited in place moves neither — which is the readback hole the split closed.
+  var m = swapS1('      combined_fingerprint: S1_fingerprint_(duAllSigs),',
+    '      combined_fingerprint: uniFp,');
+  var base = manifestP(pos()), baseM = withMP(m, pos());
+  var edit = manifestP(pos({ aLine: { note: 'operator added a note' } }));
+  var editM = withMP(m, pos({ aLine: { note: 'operator added a note' } }));
+  return base.res.verdict === 'READY_TO_AUTHORIZE'
+    // clean: the draft fingerprint moves when a draft row is edited, and the gap one does not
+    && edit.res.frozen_before.draft_row_universe_combined_fingerprint
+      !== base.res.frozen_before.draft_row_universe_combined_fingerprint
+    && edit.res.frozen_before.gap_scope_universe_fingerprint
+      === base.res.frozen_before.gap_scope_universe_fingerprint
+    // mutant: the draft fingerprint is the gap one, so the in-place edit is invisible to both
+    && editM.res.frozen_before.draft_row_universe_combined_fingerprint
+      === baseM.res.frozen_before.draft_row_universe_combined_fingerprint;
+});
+
+mut('N71 LOCK FIVE is removed, so a refused run keeps the baseline it built', function () {
+  // FOUND BY THIS ROUND'S OWN STOP TABLE (Y12). LOCKS THREE and FOUR fire AFTER a clean measurement, so on
+  // those two paths the freeze had already been built - and nulling only the paste block left the same
+  // content reachable as an object an operator could stringify and paste. Two edits: the first produces a
+  // world that measures cleanly and is then refused for its sentence, which is the only state where a
+  // baseline exists at the moment of refusal; the second removes the lock.
+  var IDS = "    + ' The EXACT K2 identities it may write are header(s) '"
+    + " + (hIds.length ? hIds.join(', ') : '(none)')";
+  var LOCK5 = "    if (out.verdict !== 'READY_TO_AUTHORIZE') {" + NL
+    + '      if (out.frozen_before && !out.freeze_withheld_reason) {';
+  var LOCK5OFF = '    if (false) {' + NL
+    + '      if (out.frozen_before && !out.freeze_withheld_reason) {';
+  var refused = swapS1(IDS, "    + ' The identities it may write are header(s) (withheld)'");
+  var clean = withMP(refused, pos());
+  var bad = withMP(swap2_(refused, LOCK5, LOCK5OFF), pos());
+  return clean.res.verdict === 'STOP' && clean.res.frozen_before === null
+    && clean.res.freeze_paste_block === null
+    // the mutant STOPs and still hands back the whole measured baseline
+    && bad.res.verdict === 'STOP' && bad.res.frozen_before !== null
+    && bad.res.frozen_before.expected_header_ids.length >= 1
+    && mpChunks(bad.world) === 0;
+});
+
+mut('N72 an absent factory surface is required to contribute a fingerprint', function () {
+  // THIS ROUND'S OWN MISTAKE, KEPT AS A MUTANT. The wording audit's first version demanded a fingerprint
+  // from every surface, and an honestly ABSENT movement table has none — so a healthy world (W8h) was
+  // refused. R4A's rule holds here too: absent stays absent, and it is never asked to behave like present.
+  var m = swapS1("    if (sv && sv.observation_state === 'SHEET_PRESENT_AND_READABLE') {",
+    '    if (true) {');
+  var spec = pos({ movements: null });
+  var clean = manifestP(spec), bad = withMP(m, spec);
+  return clean.res.verdict === 'READY_TO_AUTHORIZE'
+    && clean.res.frozen_before.factory_stock_movement_state === 'SHEET_ABSENT'
+    && clean.res.frozen_before.factory_stock_movement_count === null
+    && bad.res.verdict === 'STOP'
+    && String(bad.res.stop_reason).indexOf('AUTHORIZATION_WORDING_IS_NOT_VERIFIABLE') === 0;
+});
+
 
 console.log('\npassed ' + pass + '  failed ' + fail
   + '  |  mutants caught ' + neg.caught + '  survived ' + neg.missed);

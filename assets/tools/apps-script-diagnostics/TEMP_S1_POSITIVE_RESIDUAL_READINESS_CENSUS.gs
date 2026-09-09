@@ -108,7 +108,13 @@ var S1_FREEZE_REQUIRED_ = [
   'source_factory_warehouse_id', 'pool_key', 'factory_current_stock', 'factory_reserved_stock',
   'active_allocation_draft_qty', 'active_shipping_plan_qty', 'available_to_allocate',
   'manual_header_ids', 'manual_line_ids', 'manual_planned_total', 'manual_identity_fingerprint',
-  'identity_universe_count', 'identity_universe_fingerprint', 'other_scope_identity_count',
+  // S1-R4C §2 - RENAMED SO A READBACK KNOWS WHICH POPULATION EACH FINGERPRINT COVERS. These three used to
+  // be `identity_universe_count` / `_fingerprint` / `other_scope_identity_count`, and they count INVENTORY
+  // GAP SCOPES. A live run put 118 and 117 of them beside 11 header rows and 13 line rows under one word,
+  // 'identity'. The draft row population is frozen separately, below.
+  'gap_scope_universe_population', 'gap_scope_universe_total_count',
+  'gap_scope_universe_target_count', 'gap_scope_universe_other_count',
+  'gap_scope_universe_fingerprint',
   'schema_fingerprints', 'reservation_observation_state', 'reservation_row_count',
   'expected_max_units_written', 'expected_clamp',
   // S1-R4A §A — THE THREE AI IDENTITY SETS, SEPARATELY NAMED. `expected_ai_identities` used to be here and
@@ -127,6 +133,13 @@ var S1_FREEZE_REQUIRED_ = [
   'target_ai_row_signatures', 'target_ai_combined_fingerprint',
   'other_scope_header_count', 'other_scope_line_count',
   'other_scope_row_signatures', 'other_scope_combined_fingerprint',
+  // S1-R4C §2B - the DRAFT ROW universe, with its own name, its own arithmetic and its own fingerprint.
+  'draft_row_universe_population', 'draft_row_universe_header_count',
+  'draft_row_universe_line_count', 'draft_row_universe_total_row_count',
+  'draft_row_universe_target_manual_header_count', 'draft_row_universe_target_manual_line_count',
+  'draft_row_universe_target_ai_header_count', 'draft_row_universe_target_ai_line_count',
+  'draft_row_universe_target_row_count', 'draft_row_universe_other_scope_row_count',
+  'draft_row_universe_row_signature_count', 'draft_row_universe_combined_fingerprint',
   'draft_header_live_column_count', 'draft_line_live_column_count',
   'draft_header_excluded_fields', 'draft_line_excluded_fields',
   // S1-R4A §B.4 — the surfaces a factory move would be recorded on.
@@ -134,7 +147,11 @@ var S1_FREEZE_REQUIRED_ = [
   'factory_stock_movement_state', 'factory_stock_movement_count', 'factory_stock_movement_ids',
   'factory_stock_movement_fingerprint',
   'factory_override_audit_state', 'factory_override_audit_count', 'factory_override_audit_ids',
-  'factory_override_audit_fingerprint'
+  'factory_override_audit_fingerprint',
+  // S1-R4C §1 - the id integrity of each surface, frozen, so a blank appearing after the run is a drift the
+  // readback has a before-value for rather than a number it has to trust.
+  'factory_stock_movement_ok_id_count', 'factory_stock_movement_id_faults',
+  'factory_override_audit_ok_id_count', 'factory_override_audit_id_faults'
 ];
 
 /** A stable fingerprint over a SORTED list of identity strings. Sorted, because enumeration order is not
@@ -162,6 +179,16 @@ function S1_cap_(v, n) {
 }
 
 function S1_str_(v) { return String(v === undefined || v === null ? '' : v).trim(); }
+/** S1-R4C - A ROW COUNT THAT IS NULL IS NOT A ROW COUNT OF ZERO, AND THE SENTENCE HAS TO SAY SO.
+ *  Rendering it through S1_str_ produced 'reservations SHEET_ABSENT with  row(s)' - a double space where a
+ *  number should be, which reads as a typo rather than as the deliberate distinction it is. An absent table
+ *  has no count, and a person signing the baseline needs to see that stated rather than inferred from a gap
+ *  in the text. */
+function S1_rowCountPhrase_(n) {
+  return (n === null || n === undefined)
+    ? 'no row count (the table is absent, which is not the same as zero rows)'
+    : (String(n) + ' row(s)');
+}
 /** MISSING IS NOT ZERO, anywhere in this file. A blank, a null, a non-numeric string and an infinity all
  *  return null, and every consumer below treats null as "unknown" and refuses rather than as 0. */
 function S1_qty_(v) {
@@ -1529,7 +1556,16 @@ function S1_fullRowTable_(ss, table, authorityColumns, idColumns) {
     for (var c = 0; c < hdrs.length; c++) { if (S1_canonCell_(row[c]) !== '~') { blank = false; break; } }
     if (blank) continue;                                  // a trailing empty sheet row is not a record
     var fp = S1_rowFingerprint_(hdrs, row);
-    var rec = { row_number: r + 1, fingerprint: fp };
+    // S1-R4C - A ROW CAN BE NON-BLANK WITHOUT BEING A RECORD OF THIS SCHEMA. The blank test above
+    // scans every live POSITION, including columns whose header cell is empty. A stray value typed
+    // into an unlabelled column therefore counts as a row, and every named field of it - the id
+    // included - reads blank. That is a different fault from a record that lost its id, and it has a
+    // different remedy (clear the stray cell vs. repair the data), so the two are counted apart.
+    var namedNonBlank = false;
+    for (var nc = 0; nc < hdrs.length; nc++) {
+      if (hdrs[nc] !== '' && S1_canonCell_(row[nc]) !== '~') { namedNonBlank = true; break; }
+    }
+    var rec = { row_number: r + 1, fingerprint: fp, named_column_nonblank: namedNonBlank };
     (idColumns || []).forEach(function (c) { rec[c] = idx[c] === undefined ? null : S1_str_(row[idx[c]]); });
     rec.__values = row;
     rec.__index = idx;
@@ -1578,6 +1614,119 @@ function S1_recToObject_(rec) {
 // the table 71_ writes. The movement id is spelled, because 21_ declares MOV_HEADERS as a local inside its
 // handlers and there is no module constant to read — and an UNRESOLVED id column is reported and refused
 // below rather than filled with blanks.
+// ================================================================================================================
+// S1-R4C §1 - AN ID COLUMN THAT RESOLVED IS NOT AN ID THAT IS THERE.
+//
+// THE LIVE FINDING. A READY run froze `factory_stock_movement_count = 96` beside
+// `factory_stock_movement_ids[0] = ""`. Two separate defects met in that one line.
+//
+// FIRST, THE POSITION MEANT NOTHING. `ids` is `.sort()`ed, and the empty string sorts first, so index 0 is
+// where a blank lands no matter which sheet row it came from. The one fact a person needs in order to go and
+// look - the row number - had been thrown away before the value was logged.
+//
+// SECOND, THE BLANK WAS ACCEPTED. R4A refused an id column that could not be RESOLVED, on exactly the right
+// reasoning: 'a present, readable table whose id column cannot be found would otherwise freeze a list of blank
+// strings, and a readback comparing blanks to blanks passes'. But it then took a resolved column at its word.
+// A column that exists and a column that is populated are two different claims, and only the first was
+// checked - so one row missing its primary key produced a baseline that lists an identity which is not an
+// identity, and an AFTER readback comparing '' to '' would confirm it unchanged.
+//
+// THE AUTHORITY IS EXPLICIT AND IT DOES NOT PERMIT A BLANK. So this is not a read-range repair and there is
+// no legacy allowance to honour: it is a STOP, named, with the row numbers and full-row fingerprints that let
+// a person find the row without re-running anything.
+// ================================================================================================================
+
+/** Why a blank movement id is refused rather than tolerated, recorded in the output so the refusal carries its
+ *  own authority instead of asking to be trusted. Nothing here is inferred from the data being checked. */
+var S1_FACTORY_ID_AUTHORITY_ = {
+  'factory_stock_movements': {
+    column: 'factory_stock_movement_id', required: true, unique: true, blank_permitted: false,
+    schema_authority: 'SHIPMENT_DATABASE_SCHEMA.md, factory_stock_movements: factory_stock_movement_id'
+      + ' | string | Required Yes | PK',
+    writer_authority: 'EVERY writer sets it to FSMV-<8 hex>: 21_ handleAdjustFactoryInventory_,'
+      + ' 21_ factoryStockApplyDeltaTx_ (the shared path 12_, 13_ and 22_ all delegate to), and'
+      + ' 21_ factoryImportMovObj_. No production path can emit a blank one.',
+    stop_code_prefix: 'FACTORY_MOVEMENT'
+  },
+  'factory_stock_override_audit': {
+    column: null, required: true, unique: true, blank_permitted: false,
+    schema_authority: '71_ FSG_OVERRIDE_AUDIT_HEADERS_[0] is the audit row identity column',
+    writer_authority: '71_ writes one audit row per override with a generated id in column 0',
+    stop_code_prefix: 'FACTORY_AUDIT'
+  }
+};
+
+/**
+ * Classify EVERY row's id in a full-row table. Four faults, counted apart because they have four remedies:
+ *
+ *   BLANK          a record of this schema whose primary key cell is empty
+ *   WRONG_TYPE     a date, a number or a boolean where a string primary key belongs - a sheet will happily
+ *                  coerce one on read, and '20260901' and a Date print alike in a log while hashing apart
+ *   DUPLICATE      two rows claiming one identity, which makes the id useless as a readback key
+ *   OUTSIDE_NAMED  a row that is non-blank only in an unlabelled column: not a record at all, and reading it
+ *                  as one is the read-range error rather than a data error
+ *
+ * Row numbers and full-row fingerprints travel with every fault, because 'one of the 96 is blank' is not an
+ * actionable finding and 'row 47, fingerprint 3F2A11B9' is.
+ */
+function S1_idIntegrity_(t, idKey) {
+  var o = { id_column: idKey, checked: false, clean: false, row_count: null, ok_count: 0,
+    ok_ids: null, faults: [],
+    blank_id_count: 0, blank_id_rows: [],
+    wrong_type_id_count: 0, wrong_type_id_rows: [],
+    duplicate_id_count: 0, duplicate_ids: [], duplicate_id_rows: [],
+    outside_named_columns_count: 0, outside_named_columns_rows: [],
+    note: 'Row numbers are 1-based sheet rows, so a reported number can be opened directly.' };
+  if (!t || !t.present || !t.readable) return o;
+  if ((t.live_columns || []).indexOf(idKey) === -1) return o;   // unresolved is R4A's fault, not this one
+  o.checked = true;
+  o.row_count = t.row_count;
+  var seen = {}, ok = [];
+  (t.rows || []).forEach(function (r) {
+    var sigRow = { row_number: r.row_number, fingerprint: r.fingerprint };
+    if (r.named_column_nonblank === false) {
+      o.outside_named_columns_count++;
+      o.outside_named_columns_rows.push(sigRow);
+      return;                                     // not a record of this schema; not judged as one
+    }
+    var raw = S1_cellOf_(r, idKey);
+    var canon = S1_str_(raw);
+    if (canon === '') {
+      o.blank_id_count++;
+      o.blank_id_rows.push(sigRow);
+      return;
+    }
+    if (typeof raw !== 'string') {
+      // Recorded AND still counted for uniqueness: a numeric id is a wrong-typed identity, not a missing one.
+      o.wrong_type_id_count++;
+      o.wrong_type_id_rows.push({ row_number: r.row_number, fingerprint: r.fingerprint,
+        id: canon, observed_type: Object.prototype.toString.call(raw) });
+    }
+    if (seen[canon]) {
+      o.duplicate_id_count++;
+      if (o.duplicate_ids.indexOf(canon) === -1) o.duplicate_ids.push(canon);
+      o.duplicate_id_rows.push({ row_number: r.row_number, fingerprint: r.fingerprint, id: canon,
+        first_seen_row: seen[canon] });
+    } else {
+      seen[canon] = r.row_number;
+    }
+    ok.push(canon);
+  });
+  o.ok_count = ok.length;
+  var pre = (S1_FACTORY_ID_AUTHORITY_[t.table] && S1_FACTORY_ID_AUTHORITY_[t.table].stop_code_prefix)
+    || 'ID';
+  if (o.blank_id_count) o.faults.push(pre + '_ID_BLANK');
+  if (o.wrong_type_id_count) o.faults.push(pre + '_ID_WRONG_TYPE');
+  if (o.duplicate_id_count) o.faults.push(pre + '_ID_DUPLICATE');
+  if (o.outside_named_columns_count) o.faults.push(pre + '_ROW_OUTSIDE_NAMED_COLUMNS');
+  o.clean = o.faults.length === 0;
+  // THE ID LIST IS ONLY PUBLISHED WHEN IT IS A LIST OF IDENTITIES. On a fault it stays null: an array with a
+  // blank in it claims an identity that does not exist, and an array with the blank quietly dropped claims a
+  // completeness it does not have. Both would be frozen and both would read clean on the way back.
+  o.ok_ids = o.clean ? ok.slice().sort() : null;
+  return o;
+}
+
 function S1_factorySurfaceSpecs_() {
   var auditId = 'override_audit_id';
   if (typeof FSG_OVERRIDE_AUDIT_HEADERS_ !== 'undefined' && FSG_OVERRIDE_AUDIT_HEADERS_
@@ -1594,7 +1743,11 @@ function S1_factorySurfaceSpecs_() {
 }
 
 function S1_factorySurfaces_(ss, poolWarehouseId, poolSku) {
-  var out = { pool: null, surfaces: {}, acceptable: true, unreadable: [] };
+  // S1-R4C - `id_faults` is separate from `unreadable` on purpose. 'I could not look at this table' and 'I
+  // looked and one of its records has no primary key' are different findings with different remedies, and
+  // folding the second into the first would report a data fault as a deployment fault.
+  var out = { pool: null, surfaces: {}, acceptable: true, unreadable: [], id_faults: [],
+    id_fault_detail: {} };
   // factory_stock: the authoritative quantity columns for THIS pool row, full-row fingerprinted.
   var fs = S1_fullRowTable_(ss, 'factory_stock', null, ['warehouse_id', 'sku']);
   var poolRec = null;
@@ -1617,6 +1770,7 @@ function S1_factorySurfaces_(ss, poolWarehouseId, poolSku) {
     // found would otherwise freeze a list of blank strings, and a readback comparing blanks to blanks passes.
     var idResolved = !t.present || !t.readable
       ? null : ((t.live_columns || []).indexOf(idKey) >= 0);
+    var integ = S1_idIntegrity_(t, idKey);
     var s = { table: spec.table, present: t.present, readable: t.readable,
       id_column: idKey, id_authority: spec.id_authority, id_column_resolved: idResolved,
       observation_state: !t.present ? 'SHEET_ABSENT'
@@ -1624,10 +1778,34 @@ function S1_factorySurfaces_(ss, poolWarehouseId, poolSku) {
           : 'SHEET_PRESENT_BUT_UNREADABLE'),
       // ABSENT KEEPS NULL. Not zero.
       row_count: t.present && t.readable ? t.row_count : null,
-      ids: (t.present && t.readable && idResolved === true)
-        ? (t.rows || []).map(function (r) { return S1_str_(r[idKey]); }).sort() : null,
+      // S1-R4C - THE ID LIST NOW COMES FROM THE INTEGRITY PASS, which publishes it only when every row
+      // actually carries one. The old expression mapped and sorted whatever was in the cell, so a blank
+      // became a member of the identity list and `.sort()` put it at index 0 - which is exactly how a live
+      // freeze came to say `ids[0] = ""` next to `count = 96` and still call itself READY.
+      ids: integ.ok_ids,
+      id_integrity: integ,
+      id_authority_contract: S1_FACTORY_ID_AUTHORITY_[spec.table] || null,
       combined_fingerprint: t.present && t.readable ? t.combined_fingerprint : null,
       live_column_count: t.live_column_count, live_columns: t.live_columns, error: t.error || null };
+    // A present, readable table whose id column resolved must ALSO be internally consistent. The full-row
+    // fingerprint above stays valid evidence either way - it is computed from the cells, not from the ids -
+    // so the fingerprint is kept and it is the ID LIST that is withheld.
+    if (integ.checked && !integ.clean) {
+      s.observation_state = 'ID_INTEGRITY_FAULT';
+      out.acceptable = false;
+      integ.faults.forEach(function (f) {
+        if (out.id_faults.indexOf(f) === -1) out.id_faults.push(f);
+      });
+      out.id_fault_detail[spec.table] = {
+        faults: integ.faults, row_count: integ.row_count, ok_count: integ.ok_count,
+        blank_id_count: integ.blank_id_count, blank_id_rows: integ.blank_id_rows,
+        wrong_type_id_count: integ.wrong_type_id_count, wrong_type_id_rows: integ.wrong_type_id_rows,
+        duplicate_id_count: integ.duplicate_id_count, duplicate_ids: integ.duplicate_ids,
+        duplicate_id_rows: integ.duplicate_id_rows,
+        outside_named_columns_count: integ.outside_named_columns_count,
+        outside_named_columns_rows: integ.outside_named_columns_rows,
+        authority: S1_FACTORY_ID_AUTHORITY_[spec.table] || null };
+    }
     if (t.present && !t.readable) { out.acceptable = false; out.unreadable.push(spec.table); }
     if (idResolved === false) { out.acceptable = false; out.unreadable.push(spec.table + '#' + idKey); }
     out.surfaces[spec.table] = s;
@@ -2932,6 +3110,10 @@ function RUN_S1_MANIFEST_P() {
     census: null, environment: null, deployment: null, allowlist: null, scope: null,
     accepted_run: null, lineage: null, schema: null, factory: null, candidate: null,
     identities: null, reservation_observation: null, evidence_gaps: null,
+    // S1-R4C §2 - TWO POPULATIONS, TWO FIELDS, DECLARED AT THE TOP LEVEL for the same reason R4A declared
+    // `writer_calls`: a condition that compares against a field which does not exist is not a condition.
+    gap_scope_universe: null, allocation_draft_row_universe: null,
+    factory_id_fault_codes: [],
     // S1-R4A — declared at the top level so a condition can compare against them on a world where nothing
     // was reached. R4 shipped `writer_calls` undeclared and its own read-only gate failed by comparing
     // `undefined` to 0; a gate that fails because its field does not exist is not a gate.
@@ -2940,7 +3122,9 @@ function RUN_S1_MANIFEST_P() {
     live_evidence_summary: null,
     frozen_before: null, freeze_paste_block: null, freeze_withheld_reason: null,
     predicates: [], predicates_passed: 0, predicates_failed: 0, failed_predicates: [],
-    operator_authorization_wording: null };
+    operator_authorization_wording: null,
+    // S1-R4C §3 - the sentence is now PRINTED and AUDITED, and both facts are part of the return value.
+    authorization_chunks: 0, wording_audit: null };
   var L = S1_ledger_();
 
   function fin() {
@@ -2984,7 +3168,8 @@ function RUN_S1_MANIFEST_P() {
     // placeholder in it, or one built from a refused run, is not an authorization.
     out.operator_authorization_wording = (out.verdict === 'READY_TO_AUTHORIZE')
       ? S1_authWordingP_(out.candidate, out.accepted_run, out.scope,
-          out.predicted_write_set, out.ai_identity_sets, out.row_content)
+          out.predicted_write_set, out.ai_identity_sets, out.row_content,
+          out.factory_surfaces, out.reservation_observation)
       : null;
     // LOCK THREE — A READY WITH NOTHING TO SIGN IS NOT A READY, and neither is one whose sentence still
     // carries a placeholder. This is the exact shape the round was called to repair: a manifest that
@@ -3007,11 +3192,57 @@ function RUN_S1_MANIFEST_P() {
         out.wording_refusal = { built: !!w, placeholders: placeholders };
       }
     }
+    // LOCK FOUR - S1-R4C §3. A SENTENCE THAT WAS FILLED IN CAN STILL LEAVE THE WRITE UNNAMED.
+    //
+    // LOCK THREE refuses a template that was never filled. It cannot refuse one that was filled and is
+    // missing a fact, and the fact most worth losing is the one that bounds the write: the exact K2 header
+    // and line ids. So every required fact is looked for IN the text by a needle built from the MEASURED
+    // value - one needle per id, so a list that drops an identity is a STOP rather than a shorter list.
+    if (out.verdict === 'READY_TO_AUTHORIZE') {
+      out.wording_audit = S1_wordingAudit_(out.operator_authorization_wording, out.scope,
+        out.accepted_run, out.candidate, out.predicted_write_set, out.ai_identity_sets,
+        out.row_content, out.factory_surfaces, out.reservation_observation);
+      if (!out.wording_audit.ok) {
+        out.verdict = 'STOP';
+        out.stop_reason = 'AUTHORIZATION_WORDING_IS_NOT_VERIFIABLE - the sentence does not carry '
+          + out.wording_audit.missing.length + ' of the '
+          + out.wording_audit.required_item_count + ' facts a person must be able to check against the'
+          + ' evidence: ' + out.wording_audit.missing.slice(0, 12).join(', ')
+          + '. A person cannot authorize a write the sentence does not name.';
+        out.freeze_withheld_reason = 'WITHHELD_BECAUSE_THE_AUTHORIZATION_WORDING_IS_NOT_VERIFIABLE';
+        out.freeze_paste_block = null;
+        out.operator_authorization_wording = null;
+      }
+    }
+    // LOCK FIVE - S1-R4C. A STOP CARRIES NO BASELINE BY ANY ROUTE, AND IT IS ENFORCED IN ONE PLACE.
+    //
+    // LOCK ONE nulls the paste block on the ordinary refusal path, where the baseline was never BUILT: the
+    // freeze is only constructed when no condition has failed. LOCKS THREE and FOUR fire after a clean
+    // measurement, so on those two paths the baseline HAD been built - and it survived the refusal. A run
+    // that STOPped for an unusable sentence was still returning `frozen_before`, which is the same content
+    // an operator would have pasted, reachable by a second route that the lock did not cover.
+    //
+    // Found by this round's own STOP table (Y12), which asserted the same four things about six different
+    // kinds of refusal instead of about the one being worked on. Enforced here rather than repeated inside
+    // each lock, so a future lock cannot forget it.
+    if (out.verdict !== 'READY_TO_AUTHORIZE') {
+      if (out.frozen_before && !out.freeze_withheld_reason) {
+        out.freeze_withheld_reason = 'WITHHELD_BECAUSE_VERDICT_IS_' + (out.verdict || 'UNKNOWN');
+      }
+      out.frozen_before = null;
+      out.freeze_paste_block = null;
+      out.operator_authorization_wording = null;
+    }
     S1_log_('s1_manifest_p_verdict', JSON.stringify({ manifest: 'P', build: out.build,
       verdict: out.verdict, predicates_passed: out.predicates_passed,
       predicates_failed: out.predicates_failed, failed: out.failed_predicates.slice(0, 20),
       dry_run: out.dry_run, writes: out.writes, writer_calls: out.writer_calls,
       authorization_wording_present: !!out.operator_authorization_wording,
+      // S1-R4C - the boolean stays, but it is no longer the only thing a reader gets: the sentence is
+      // printed below under s1_manifest_p_authorization_<i>_of_<n>.
+      authorization_facts_present: out.wording_audit ? out.wording_audit.present_count : null,
+      authorization_facts_missing: out.wording_audit ? out.wording_audit.missing.length : null,
+      factory_id_fault_codes: (out.factory_id_fault_codes || []).slice(0, 8),
       allowlisted_scope: out.census ? out.census.allowlisted_scope : null,
       allowlisted_scope_refusals: out.census ? (out.census.allowlisted_scope_refusals || []).slice(0, 8) : null,
       freeze_chunks_expected: (out.verdict === 'READY_TO_AUTHORIZE' && out.freeze_paste_block)
@@ -3019,6 +3250,40 @@ function RUN_S1_MANIFEST_P() {
       stop_reason: S1_cap_(out.stop_reason, 400) }));
     if (out.live_evidence_summary) {
       S1_log_('s1_manifest_p_evidence', JSON.stringify(out.live_evidence_summary));
+    }
+    // ---- S1-R4C §3 - THE SENTENCE ITSELF, IN THE LOG, IN BOUNDED SEGMENTS. -------------------------
+    //
+    // `authorization_wording_present = true` was the only thing a live operator ever saw. On a STOP there is
+    // nothing to print and the meta line says so with chunks 0 - the same discipline as the freeze block,
+    // for the same reason: a refused run must not hand over anything that looks signable.
+    if (out.verdict === 'READY_TO_AUTHORIZE' && out.operator_authorization_wording) {
+      out.authorization_chunks = S1_emitChunked_('s1_manifest_p_authorization',
+        out.operator_authorization_wording);
+      S1_log_('s1_manifest_p_authorization_meta', JSON.stringify({
+        chunks: out.authorization_chunks,
+        bytes: String(out.operator_authorization_wording).length,
+        chunk_payload_budget: S1_chunkBudget_('s1_manifest_p_authorization'),
+        wording_fingerprint: out.wording_audit ? out.wording_audit.fingerprint : null,
+        placeholders: out.wording_audit ? out.wording_audit.placeholders : null,
+        required_item_count: out.wording_audit ? out.wording_audit.required_item_count : null,
+        facts_present: out.wording_audit ? out.wording_audit.present_count : null,
+        facts_missing: out.wording_audit ? out.wording_audit.missing : null,
+        expected_header_ids: out.predicted_write_set
+          ? out.predicted_write_set.expected_header_ids : null,
+        expected_line_ids: out.predicted_write_set
+          ? out.predicted_write_set.expected_line_ids : null,
+        note: 'Concatenate s1_manifest_p_authorization_1_of_N .. _N_of_N IN ORDER to recover the exact'
+          + ' sentence; its fingerprint above is over the whole text, so a mis-assembled copy is'
+          + ' detectable. Every fact listed as present was found in the text by an exact match against'
+          + ' the measured value. THIS AUTHORIZES ONE GENERATION AND DOES NOT AUTHORIZE SUBMIT.' }));
+    } else {
+      S1_log_('s1_manifest_p_authorization_meta', JSON.stringify({
+        chunks: 0, bytes: 0, wording_fingerprint: null,
+        verdict: out.verdict,
+        facts_missing: out.wording_audit ? out.wording_audit.missing : null,
+        reason: 'NO_AUTHORIZATION_WORDING_ON_A_' + (out.verdict || 'UNKNOWN'),
+        note: 'Nothing from this run may be signed, pasted or acted on. No wording was emitted and no'
+          + ' baseline was released.' }));
     }
     // LOCK TWO, inside the emitter: it refuses unless the verdict it is HANDED says READY.
     S1_emitFreeze_('s1_manifest_p', out.freeze_paste_block, out.verdict, out.freeze_withheld_reason);
@@ -3325,14 +3590,46 @@ function RUN_S1_MANIFEST_P() {
       if (q === null) manualBlank++; else manualTotal += q;
     });
     L.P('no_manual_row_carries_an_unreadable_quantity', 0, manualBlank, manualBlank === 0);
-    // THE WHOLE IDENTITY UNIVERSE, so an AFTER readback can see a row appear where none was authorized.
+    // ---- S1-R4C §2A - THE GAP SCOPE UNIVERSE. Named for what it actually counts. -------------------
+    //
+    // THE MIS-NAMING, AND WHY IT MATTERED. This block used to be called the `identity_universe`, and a live
+    // run reported `identity_universe_count = 118` and `other_scope_identity_count = 117` a few lines away
+    // from `other_scope_header_count = 11` and `other_scope_line_count = 13`. Four numbers, one word
+    // 'identity', and TWO DIFFERENT POPULATIONS: 118 is the number of inventory-gap SCOPES the census
+    // enumerated (candidates + rejected), while 11 + 13 = 24 is the number of allocation-draft ROWS that
+    // belong to other scopes. A reader is invited to conclude that 117 other-scope identities exist and that
+    // 24 of them are rows - and 118 was never a row count of anything.
+    //
+    // The two are frozen separately from here on, each with its own count, its own fingerprint and its own
+    // named source, so an AFTER readback can never compare a fingerprint of gap scopes against a claim about
+    // draft rows. A fingerprint whose population is ambiguous cannot refuse anything.
     var uni = cen.scope_universe || null;
     var uniKeys = (cen.candidates || []).concat(cen.rejected || [])
       .map(function (r) { return S1_str_(r && r.scope_key); }).filter(function (k) { return k !== ''; });
     var uniFp = S1_fingerprint_(uniKeys);
-    L.P('the_identity_universe_was_enumerated', 'more than zero identities', uniKeys.length,
+    var targetKey = out.scope ? S1_str_(out.scope.scope_key) : '';
+    var uniTarget = uniKeys.filter(function (k) { return k === targetKey; }).length;
+    out.gap_scope_universe = {
+      population: 'INVENTORY_GAP_SCOPES',
+      source: 'the inventory gap census of THIS run: candidates + rejected, by scope_key',
+      unit: 'one entry per company|country|marketplace|sku gap scope - NOT one per draft row',
+      total_scope_count: uniKeys.length,
+      target_scope_count: uniTarget,
+      other_scope_count: uniKeys.length - uniTarget,
+      scope_fingerprint: uniFp,
+      scope_keys: uniKeys.slice(0, 400),
+      note: 'These are GAP SCOPES. They are not allocation draft headers, not draft lines and not draft'
+        + ' identities. The draft row population is reported separately as allocation_draft_row_universe.' };
+    L.P('the_gap_scope_universe_was_enumerated', 'more than zero gap scopes', uniKeys.length,
       uniKeys.length > 0);
-    L.P('the_identity_universe_has_a_fingerprint', 'a fingerprint', uniFp, uniFp !== null);
+    L.P('the_gap_scope_universe_has_a_fingerprint', 'a fingerprint', uniFp, uniFp !== null);
+    // The target scope is one of the enumerated gap scopes, and the split is exact arithmetic rather than an
+    // assumption: 118 = 1 + 117 is checkable, 'about 117 others' is not.
+    L.P('the_target_scope_appears_exactly_once_in_the_gap_scope_universe', 1, uniTarget, uniTarget === 1);
+    L.P('the_gap_scope_universe_splits_exactly_into_the_target_scope_and_the_others',
+      uniKeys.length, out.gap_scope_universe.target_scope_count + out.gap_scope_universe.other_scope_count,
+      out.gap_scope_universe.target_scope_count
+        + out.gap_scope_universe.other_scope_count === uniKeys.length);
     L.P('no_gap_row_is_missing_an_axis', 0, uni ? uni.malformed_identity_rows : null,
       !!uni && uni.malformed_identity_rows === 0);
     var manualFp = S1_fingerprint_((manualRows || []).map(function (r) {
@@ -3345,17 +3642,20 @@ function RUN_S1_MANIFEST_P() {
       manual_row_count: (manualRows || []).length, manual_planned_total: manualTotal,
       manual_identity_fingerprint: manualFp,
       manual_rows: (manualRows || []).slice(0, 50),
-      expected_ai_identities: aiAffected || [],
-      expected_ai_identity_count: (aiAffected || []).length,
-      identity_universe_count: uniKeys.length,
-      identity_universe_fingerprint: uniFp,
-      identity_universe_keys: uniKeys.slice(0, 400),
-      other_scope_identity_count: uniKeys.filter(function (k) {
-        return !out.scope || k !== out.scope.scope_key; }).length,
-      note: 'The universe list is bounded in the RETURN VALUE and represented in the freeze by its COUNT'
-        + ' and FINGERPRINT. A fingerprint over the sorted keys detects any identity appearing or'
-        + ' disappearing; carrying every key into the paste block would put the baseline over the log'
-        + ' bound, and a truncated baseline is a wrong baseline.' };
+      // S1-R4C - RENAMED TO WHAT IT HOLDS. `expected_ai_identities` was removed from the freeze in R4A for
+      // holding the rows that ALREADY EXIST, but the return value kept the name; a name that answers a
+      // different question than it asks is not repaired by removing it from one of its two readers.
+      existing_affected_ai_identities: aiAffected || [],
+      existing_affected_ai_identity_count: (aiAffected || []).length,
+      // S1-R4C - the gap scope counts live under gap_scope_universe now, and they are cross-referenced
+      // rather than duplicated under an 'identity' name here.
+      gap_scope_universe_ref: 'see out.gap_scope_universe - population INVENTORY_GAP_SCOPES',
+      allocation_draft_row_universe_ref: 'see out.allocation_draft_row_universe - population DRAFT_ROWS',
+      note: 'Neither universe is an "identity universe". One counts inventory gap scopes and the other'
+        + ' counts allocation draft rows; they are different populations and this object names neither as'
+        + ' the other. Both are represented in the freeze by COUNT plus FINGERPRINT, because carrying every'
+        + ' key into the paste block would put the baseline over the log bound and a truncated baseline is'
+        + ' a wrong baseline.' };
 
     // ---- 10b. S1-R4A §B — THE WHOLE DRAFT TABLE AS FULL ROWS, IN THREE BUCKETS. ---------------------
     //
@@ -3398,9 +3698,94 @@ function RUN_S1_MANIFEST_P() {
         + ' nothing else. One universe fingerprint would make a change in the protected part'
         + ' indistinguishable from the change that was authorized.' };
 
+    // ---- S1-R4C §2B - THE ALLOCATION DRAFT ROW UNIVERSE. A row count, from the row tables. -------
+    //
+    // Every number here is derived from the two draft sheets and from nothing else, and the arithmetic below
+    // is what makes that checkable rather than asserted. If a future edit fed this block the gap scope count
+    // - the confusion this section exists to end - the totals would stop adding up and the run would STOP.
+    var duTargetHeaders = (part.target_manual.header_ids || []).length
+      + (part.target_ai.header_ids || []).length;
+    var duTargetLines = (part.target_manual.line_ids || []).length
+      + (part.target_ai.line_ids || []).length;
+    var duOtherRows = part.other_scope.header_count + part.other_scope.line_count;
+    var duAllSigs = (part.target_manual.header_sigs || []).concat(part.target_manual.line_sigs || [])
+      .concat(part.target_ai.header_sigs || []).concat(part.target_ai.line_sigs || [])
+      .concat(part.other_scope.header_sigs || []).concat(part.other_scope.line_sigs || []).sort();
+    out.allocation_draft_row_universe = {
+      population: 'ALLOCATION_DRAFT_ROWS',
+      source: 'the two draft sheets read as full rows: ' + S1_DRAFT_HEADER_TABLE_ + ' + '
+        + S1_DRAFT_LINE_TABLE_,
+      unit: 'one entry per sheet row - one header row and one line row each count as one row',
+      header_count: part.header_table.row_count,
+      line_count: part.line_table.row_count,
+      total_row_count: part.header_table.row_count + part.line_table.row_count,
+      target_manual_header_count: (part.target_manual.header_ids || []).length,
+      target_manual_line_count: (part.target_manual.line_ids || []).length,
+      target_ai_header_count: (part.target_ai.header_ids || []).length,
+      target_ai_line_count: (part.target_ai.line_ids || []).length,
+      target_row_count: duTargetHeaders + duTargetLines,
+      other_scope_header_count: part.other_scope.header_count,
+      other_scope_line_count: part.other_scope.line_count,
+      other_scope_row_count: duOtherRows,
+      row_signature_count: duAllSigs.length,
+      combined_fingerprint: S1_fingerprint_(duAllSigs),
+      note: 'These are DRAFT ROWS across every scope, full-row fingerprinted. They are not gap scopes. The'
+        + ' combined fingerprint covers every row of both tables, so a row edited in place with no id'
+        + ' changed is visible here even when every per-bucket count is identical.' };
+    var du = out.allocation_draft_row_universe;
+
     L.P('both_draft_tables_are_present_and_readable', [true, true],
       [part.header_table.readable, part.line_table.readable],
       part.header_table.readable === true && part.line_table.readable === true);
+    // ---- §2 THE ARITHMETIC. Four identities that must hold, so a mixed-up population cannot pass. ----
+    L.P('the_draft_row_universe_total_is_its_header_rows_plus_its_line_rows',
+      du.header_count + du.line_count, du.total_row_count,
+      du.total_row_count === du.header_count + du.line_count);
+    L.P('the_draft_row_universe_partitions_exactly_into_target_scope_and_other_scope_rows',
+      du.total_row_count, du.target_row_count + du.other_scope_row_count,
+      du.target_row_count + du.other_scope_row_count === du.total_row_count);
+    L.P('the_other_scope_row_total_is_its_header_count_plus_its_line_count',
+      du.other_scope_header_count + du.other_scope_line_count, du.other_scope_row_count,
+      du.other_scope_row_count === du.other_scope_header_count + du.other_scope_line_count);
+    // EVERY ROW HAS EXACTLY ONE FULL-ROW SIGNATURE. A signature list shorter than the row count is a row
+    // protected by nothing; longer means a row was counted twice and the fingerprint is of a population
+    // that does not exist.
+    L.P('every_draft_row_carries_exactly_one_full_row_signature',
+      du.total_row_count, du.row_signature_count, du.row_signature_count === du.total_row_count);
+    L.P('the_draft_row_universe_has_a_full_content_fingerprint', 'a fingerprint',
+      du.combined_fingerprint, du.combined_fingerprint !== null);
+    // ---- §2 AND THE TWO POPULATIONS ARE NOT THE SAME NUMBER WEARING TWO NAMES. -----------------------
+    //
+    // AN EMPTY TARGET SCOPE MUST NOT ACQUIRE AN IDENTITY FROM THE OTHER UNIVERSE. When the target scope
+    // holds no draft rows at all, every target-scope identity count must be zero - and the gap scope
+    // universe, which has 118 entries in this deployment, must not supply one.
+    L.P('the_target_scope_identity_counts_are_exactly_its_own_row_counts',
+      { manual_headers: du.target_manual_header_count, ai_headers: du.target_ai_header_count },
+      { manual_ids: (part.target_manual.header_ids || []).length,
+        existing_ai_ids: (part.target_ai.header_ids || []).length },
+      (part.target_manual.header_ids || []).length === du.target_manual_header_count
+        && (part.target_ai.header_ids || []).length === du.target_ai_header_count);
+    L.P('an_empty_target_scope_reports_no_existing_identities',
+      'zero target rows implies zero target identities',
+      { target_row_count: du.target_row_count,
+        manual_ids: (part.target_manual.header_ids || []).length
+          + (part.target_manual.line_ids || []).length,
+        ai_ids: (part.target_ai.header_ids || []).length + (part.target_ai.line_ids || []).length },
+      du.target_row_count > 0
+        || ((part.target_manual.header_ids || []).length === 0
+          && (part.target_manual.line_ids || []).length === 0
+          && (part.target_ai.header_ids || []).length === 0
+          && (part.target_ai.line_ids || []).length === 0));
+    // The draft universe is a row count of the draft tables and the gap universe is a scope count of the
+    // census. Asserted on the SOURCE of each number, which is the claim a mis-wiring would break.
+    L.P('the_draft_row_universe_is_counted_from_the_draft_tables_and_not_from_the_gap_census',
+      { header_rows: part.header_table.row_count, line_rows: part.line_table.row_count },
+      { universe_header: du.header_count, universe_line: du.line_count,
+        gap_scope_total: out.gap_scope_universe.total_scope_count },
+      du.header_count === part.header_table.row_count
+        && du.line_count === part.line_table.row_count
+        && du.population === 'ALLOCATION_DRAFT_ROWS'
+        && out.gap_scope_universe.population === 'INVENTORY_GAP_SCOPES');
     L.P('the_draft_column_authority_is_available_in_this_deployment', true,
       part.column_authority_available, part.column_authority_available === true);
     // AN UNKNOWN LIVE COLUMN IS A STOP. It is either a half-applied migration or something writing to a
@@ -3540,7 +3925,65 @@ function RUN_S1_MANIFEST_P() {
         && S1_qty_(pool.factory_current_stock) === surf.pool.fac_current_stock
         && S1_qty_(pool.factory_reserved_stock) === surf.pool.fac_reserved_stock);
     L.P('every_factory_write_surface_is_either_readable_or_honestly_absent', [], surf.unreadable,
-      surf.acceptable === true && (surf.unreadable || []).length === 0);
+      (surf.unreadable || []).length === 0);
+    // ---- S1-R4C §1 - THE IDS ON THOSE SURFACES ARE IDENTITIES, ONE PER ROW, EACH ITS OWN. ----------
+    //
+    // Five separate conditions rather than one 'ids look fine', because each names a different fault with a
+    // different remedy and an operator needs to know which one they have. The row numbers and full-row
+    // fingerprints are in the observed value of each condition, so the finding is actionable from the log.
+    out.factory_id_fault_codes = (surf.id_faults || []).slice();
+    var idDet = surf.id_fault_detail || {};
+    var blankTot = 0, dupTot = 0, wrongTot = 0, strayTot = 0, blankRows = [], dupRows = [],
+      wrongRows = [], strayRows = [];
+    Object.keys(idDet).forEach(function (tb) {
+      var d = idDet[tb];
+      blankTot += d.blank_id_count; dupTot += d.duplicate_id_count;
+      wrongTot += d.wrong_type_id_count; strayTot += d.outside_named_columns_count;
+      (d.blank_id_rows || []).forEach(function (r) {
+        blankRows.push({ table: tb, row_number: r.row_number, fingerprint: r.fingerprint }); });
+      (d.duplicate_id_rows || []).forEach(function (r) {
+        dupRows.push({ table: tb, row_number: r.row_number, id: r.id,
+          first_seen_row: r.first_seen_row, fingerprint: r.fingerprint }); });
+      (d.wrong_type_id_rows || []).forEach(function (r) {
+        wrongRows.push({ table: tb, row_number: r.row_number, id: r.id,
+          observed_type: r.observed_type, fingerprint: r.fingerprint }); });
+      (d.outside_named_columns_rows || []).forEach(function (r) {
+        strayRows.push({ table: tb, row_number: r.row_number, fingerprint: r.fingerprint }); });
+    });
+    // THE ONE THE LIVE RUN HIT. `factory_stock_movement_id` is Required + PK in the shipment schema and
+    // every writer generates FSMV-<8 hex>, so a blank is not a legacy allowance to be honoured - it is a
+    // record with no primary key, and the manifest refuses rather than freezing '' as an identity.
+    L.P('every_factory_audit_row_carries_a_non_blank_id', 0,
+      { blank_id_count: blankTot, rows: blankRows.slice(0, 20) }, blankTot === 0);
+    L.P('no_factory_audit_row_id_is_duplicated', 0,
+      { duplicate_id_count: dupTot, rows: dupRows.slice(0, 20) }, dupTot === 0);
+    // A sheet coerces on read: a numeric-looking id comes back as a number and a date-looking one as a Date.
+    // Both print like a string in a log and neither compares like one on the way back.
+    L.P('every_factory_audit_row_id_is_a_string_not_a_coerced_number_or_date', 0,
+      { wrong_type_id_count: wrongTot, rows: wrongRows.slice(0, 20) }, wrongTot === 0);
+    // AND THE READ RANGE ITSELF. A row that is non-blank only in an unlabelled column is not a record of
+    // this schema; counting it inflates the row count and contributes a blank id, so it is refused as a
+    // range fault under its own name rather than being reported as missing data.
+    L.P('no_row_outside_the_named_columns_was_counted_as_a_factory_record', 0,
+      { outside_named_columns_count: strayTot, rows: strayRows.slice(0, 20) }, strayTot === 0);
+    // AND WHAT GETS FROZEN IS EITHER A COMPLETE IDENTITY LIST OR NOTHING. `ids` is published only when the
+    // integrity pass is clean, so the freeze can never carry a list with a blank in it - nor one with the
+    // blank silently dropped, which would claim a completeness it does not have.
+    var idPublish = S1_factorySurfaceSpecs_().map(function (sp) {
+      var sv = surf.surfaces[sp.table] || {};
+      var ig = sv.id_integrity || {};
+      return { table: sp.table, checked: ig.checked === true, clean: ig.clean === true,
+        ids_published: sv.ids !== null && sv.ids !== undefined,
+        row_count: sv.row_count, id_count: sv.ids ? sv.ids.length : null };
+    });
+    L.P('every_published_factory_id_list_is_complete_and_blank_free',
+      'ids published only on a clean integrity pass, and then one id per row', idPublish,
+      idPublish.every(function (p) {
+        if (!p.checked) return p.ids_published === false;
+        return p.clean === true && p.ids_published === true && p.id_count === p.row_count;
+      }));
+    L.P('the_factory_surfaces_reported_no_id_integrity_fault', [], surf.id_faults || [],
+      (surf.id_faults || []).length === 0);
 
     // ---- 11. RESERVATIONS. Observed, with ABSENT never read as ZERO. ---------------------------------
     var db = S1_openDb_();
@@ -3575,7 +4018,8 @@ function RUN_S1_MANIFEST_P() {
       active_allocation_draft_qty: pool ? S1_qty_(pool.active_allocation_draft_qty) : null,
       active_shipping_plan_qty: pool ? S1_qty_(pool.active_shipping_plan_qty) : null,
       available_to_allocate: avail,
-      identity_universe_fingerprint: uniFp,
+      gap_scope_universe_fingerprint: uniFp,
+      draft_row_universe_combined_fingerprint: du.combined_fingerprint,
       deployment_build: dep ? dep.deployment_build : null,
       measured_at: out.measured_at,
       // S1-R4A — the prediction and the content freeze are REQUIRED evidence, not extras. A baseline missing
@@ -3663,7 +4107,19 @@ function RUN_S1_MANIFEST_P() {
         ? surf.surfaces['factory_stock_movements'].row_count : null,
       factory_override_audit_count: surf.surfaces['factory_stock_override_audit']
         ? surf.surfaces['factory_stock_override_audit'].row_count : null,
-      identity_universe_count: uniKeys.length,
+      // S1-R4C - BOTH POPULATIONS, BOTH NAMED. The summary is what a person reads first, so this is
+      // where an ambiguous count did the most damage.
+      gap_scope_universe_total_count: out.gap_scope_universe.total_scope_count,
+      gap_scope_universe_other_count: out.gap_scope_universe.other_scope_count,
+      draft_row_universe_total_row_count: du.total_row_count,
+      draft_row_universe_header_count: du.header_count,
+      draft_row_universe_line_count: du.line_count,
+      draft_row_universe_target_row_count: du.target_row_count,
+      draft_row_universe_other_scope_row_count: du.other_scope_row_count,
+      factory_stock_movement_ok_id_count: (surf.surfaces['factory_stock_movements']
+        && surf.surfaces['factory_stock_movements'].id_integrity)
+        ? surf.surfaces['factory_stock_movements'].id_integrity.ok_count : null,
+      factory_id_fault_codes: out.factory_id_fault_codes,
       reservation_observation_state: out.reservation_observation.observation_state,
       reservation_row_count: out.reservation_observation.row_count,
       evidence_gaps: gaps.length,
@@ -3674,7 +4130,16 @@ function RUN_S1_MANIFEST_P() {
     out.expected_outcome.expected_clamp = cand ? cand.would_clamp : null;
     out.expected_outcome.expected_superseded_ai_identities = ids.ai_expiration_candidate_count;
     out.expected_outcome.expected_manual_identities_unchanged = (manualRows || []).length;
-    out.expected_outcome.expected_identity_universe_count_after = uniKeys.length;
+    // S1-R4C - TWO EXPECTATIONS, because there are two populations and a Generate moves only one of them.
+    // The gap scope count is unchanged by a generation; the draft row count grows by exactly the rows the
+    // prediction says would be CREATED. Stated as arithmetic so a readback can disagree with it.
+    out.expected_outcome.expected_gap_scope_universe_count_after = uniKeys.length;
+    out.expected_outcome.expected_draft_row_universe_total_after = du.total_row_count
+      + ws.expected_create_header_count + ws.expected_create_line_count;
+    out.expected_outcome.expected_draft_row_universe_derivation = 'before total ' + du.total_row_count
+      + ' + created headers ' + ws.expected_create_header_count
+      + ' + created lines ' + ws.expected_create_line_count
+      + '. Updates change content, not row count, so they are deliberately not added here.';
     out.expected_outcome.expected_reservation_row_count_after = out.reservation_observation.row_count;
     // S1-R4A — the numbers a readback counts rows against, stated as CREATE and UPDATE rather than as one
     // total. A run that updates one header and a run that creates one are the same delta and not the same
@@ -3772,8 +4237,38 @@ function RUN_S1_MANIFEST_P() {
           ? surf.surfaces['factory_stock_override_audit'].ids : null,
         factory_override_audit_fingerprint: surf.surfaces['factory_stock_override_audit']
           ? surf.surfaces['factory_stock_override_audit'].combined_fingerprint : null,
-        identity_universe_count: uniKeys.length, identity_universe_fingerprint: uniFp,
-        other_scope_identity_count: out.identities.other_scope_identity_count,
+        // ---- S1-R4C §1 - the id integrity of each surface as a before-value ----
+        factory_stock_movement_ok_id_count: (surf.surfaces['factory_stock_movements']
+          && surf.surfaces['factory_stock_movements'].id_integrity)
+          ? surf.surfaces['factory_stock_movements'].id_integrity.ok_count : null,
+        factory_stock_movement_id_faults: (surf.surfaces['factory_stock_movements']
+          && surf.surfaces['factory_stock_movements'].id_integrity)
+          ? surf.surfaces['factory_stock_movements'].id_integrity.faults : null,
+        factory_override_audit_ok_id_count: (surf.surfaces['factory_stock_override_audit']
+          && surf.surfaces['factory_stock_override_audit'].id_integrity)
+          ? surf.surfaces['factory_stock_override_audit'].id_integrity.ok_count : null,
+        factory_override_audit_id_faults: (surf.surfaces['factory_stock_override_audit']
+          && surf.surfaces['factory_stock_override_audit'].id_integrity)
+          ? surf.surfaces['factory_stock_override_audit'].id_integrity.faults : null,
+        // ---- S1-R4C §2A - THE GAP SCOPE UNIVERSE, under a name that says what it counts. ----
+        gap_scope_universe_population: out.gap_scope_universe.population,
+        gap_scope_universe_total_count: out.gap_scope_universe.total_scope_count,
+        gap_scope_universe_target_count: out.gap_scope_universe.target_scope_count,
+        gap_scope_universe_other_count: out.gap_scope_universe.other_scope_count,
+        gap_scope_universe_fingerprint: out.gap_scope_universe.scope_fingerprint,
+        // ---- S1-R4C §2B - AND THE DRAFT ROW UNIVERSE, which is a different population. ----
+        draft_row_universe_population: du.population,
+        draft_row_universe_header_count: du.header_count,
+        draft_row_universe_line_count: du.line_count,
+        draft_row_universe_total_row_count: du.total_row_count,
+        draft_row_universe_target_manual_header_count: du.target_manual_header_count,
+        draft_row_universe_target_manual_line_count: du.target_manual_line_count,
+        draft_row_universe_target_ai_header_count: du.target_ai_header_count,
+        draft_row_universe_target_ai_line_count: du.target_ai_line_count,
+        draft_row_universe_target_row_count: du.target_row_count,
+        draft_row_universe_other_scope_row_count: du.other_scope_row_count,
+        draft_row_universe_row_signature_count: du.row_signature_count,
+        draft_row_universe_combined_fingerprint: du.combined_fingerprint,
         schema_fingerprints: fps,
         reservation_observation_state: out.reservation_observation.observation_state,
         reservation_row_count: out.reservation_observation.row_count,
@@ -3906,7 +4401,7 @@ function RUN_S1_MANIFEST_S() {
  * candidate it returns null rather than a template. A sentence that still contained a placeholder would be
  * the defect back again, so the suite asserts there is no `<` in it at all.
  */
-function S1_authWordingP_(cand, acceptedRun, scope, ws, ids, content) {
+function S1_authWordingP_(cand, acceptedRun, scope, ws, ids, content, surf, resv) {
   if (!cand || !scope) return null;
   // S1-R4A §C — A SENTENCE THAT DOES NOT NAME THE WRITE CANNOT AUTHORIZE IT. Without the predicted write
   // set there is nothing to sign for, so the sentence is REFUSED rather than written with the numbers that
@@ -3918,6 +4413,11 @@ function S1_authWordingP_(cand, acceptedRun, scope, ws, ids, content) {
   var lIds = (ws.expected_line_ids || []).slice().sort();
   var lineage = (acceptedRun && acceptedRun.lineage) || {};
   var pool = cand.pool || {};
+  // S1-R4C §3 - THE FACTORY BASELINE BELONGS IN THE SENTENCE, NOT ONLY IN THE FREEZE. The wording already
+  // said 'no factory movement or override-audit row may be added'; a prohibition with no before-count is
+  // not something a person can check afterwards. These are the numbers the readback compares against.
+  var mv = (surf && surf.surfaces) ? surf.surfaces['factory_stock_movements'] : null;
+  var au = (surf && surf.surfaces) ? surf.surfaces['factory_stock_override_audit'] : null;
   return 'I authorize ONE controlled Inventory AI Plan generation for the single scope '
     + scope.company + ' / ' + scope.country + ' / ' + scope.marketplace + ' / ' + scope.sku
     + ', against accepted inventory gap run ' + S1_str_(lineage.run_id)
@@ -3959,12 +4459,139 @@ function S1_authWordingP_(cand, acceptedRun, scope, ws, ids, content) {
     + ' line(s) belonging to every other scope (combined fingerprint '
     + S1_str_(((content && content.other_scope) || {}).combined_fingerprint)
     + ') — every column, not only the ids.'
+    // ---- S1-R4C §3 - AND THE FACTORY SURFACES, AS BEFORE-VALUES A READBACK CAN SUBTRACT FROM ----
+    + ' The factory write surfaces are frozen at: pool row fingerprint '
+    + S1_str_(((surf && surf.pool) || {}).row_fingerprint)
+    + ' (fac_current_stock ' + S1_str_(((surf && surf.pool) || {}).fac_current_stock)
+    + ', fac_reserved_stock ' + S1_str_(((surf && surf.pool) || {}).fac_reserved_stock) + ')'
+    + ', factory_stock_movements ' + S1_str_(mv && mv.observation_state)
+    + ' with ' + S1_rowCountPhrase_(mv ? mv.row_count : null) + ' all carrying a non-blank id'
+    + ' (fingerprint ' + S1_str_(mv && mv.combined_fingerprint) + ')'
+    + ', factory_stock_override_audit ' + S1_str_(au && au.observation_state)
+    + ' with ' + S1_rowCountPhrase_(au ? au.row_count : null)
+    + ' (fingerprint ' + S1_str_(au && au.combined_fingerprint) + ')'
+    + ', and reservations ' + S1_str_(resv && resv.observation_state)
+    + ' with ' + S1_rowCountPhrase_(resv ? resv.row_count : null) + '.'
+    + ' Every one of those five baselines must be unchanged when this generation finishes.'
     + ' The activation allowlist must contain exactly this one'
     + ' scope. No reservation may be created, no'
     + ' factory stock may change, no factory movement or override-audit row may be added, and no Weekly'
     + ' Shipping Plan or Shipment may be created or altered. A'
     + ' factory-guard STOP or a clamp with zero rows is an acceptable outcome. This authorization covers'
     + ' ONE generation and expires when it completes or refuses. IT DOES NOT AUTHORIZE SUBMIT.';
+}
+
+/**
+ * ================================================================================================================
+ * S1-R4C §3 - AN AUTHORIZATION NOBODY CAN READ IS NOT AN AUTHORIZATION.
+ *
+ * WHAT THE LIVE RUN ACTUALLY HANDED OVER. `authorization_wording_present = true`. That is the diagnostic
+ * asserting that it built a sentence, in place of the sentence. A person was being asked to authorize a
+ * production write on the strength of a boolean about text they had never seen - and the whole point of the
+ * wording is that a HUMAN checks the numbers in it against the numbers in the evidence.
+ *
+ * Two things follow, and they are separate.
+ *
+ * FIRST, IT GETS PRINTED, in bounded segments, under `s1_manifest_p_authorization_<i>_of_<n>` plus a meta line
+ * carrying the byte count, the segment count and a fingerprint of the whole text, so a reader can confirm that
+ * what they reassembled is what was produced. Never truncated: over the bound it is withheld and said so.
+ *
+ * SECOND, IT GETS AUDITED AGAINST THE MEASUREMENT. LOCK THREE already refused a sentence with a `<placeholder>`
+ * in it. That catches a template that was never filled; it does not catch a sentence that was filled and left
+ * a fact out. So every fact the sentence is required to carry is looked for IN the sentence, by exact needle,
+ * and a missing one is a STOP. The needles are built from the measured values - so this cannot pass by
+ * agreeing with itself, and if a future edit drops the K2 identities from the text the run refuses.
+ * ================================================================================================================
+ */
+function S1_wordingAudit_(w, scope, acceptedRun, cand, ws, ids, content, surf, resv) {
+  var o = { built: !!w, bytes: w ? String(w).length : 0, fingerprint: null,
+    placeholders: [], required_items: [], missing: [], present_count: 0, ok: false };
+  if (!w) { o.missing.push('THE_WORDING_ITSELF'); return o; }
+  var text = String(w);
+  o.fingerprint = S1_fingerprint_([text]);
+  o.placeholders = text.match(/<[a-zA-Z_][a-zA-Z0-9_]*>/g) || [];
+  var lineage = (acceptedRun && acceptedRun.lineage) || {};
+  var pool = (cand && cand.pool) || {};
+  var mv = (surf && surf.surfaces) ? surf.surfaces['factory_stock_movements'] : null;
+  var au = (surf && surf.surfaces) ? surf.surfaces['factory_stock_override_audit'] : null;
+  var req = [];
+  function need(name, needle) { req.push({ item: name, needle: S1_str_(needle) }); }
+
+  // ---- the exact scope, all four axes ----
+  need('scope_company', scope && scope.company);
+  need('scope_country', scope && scope.country);
+  need('scope_marketplace', scope && scope.marketplace);
+  need('scope_sku', scope && scope.sku);
+  // ---- the calculation run this is authorized against, and how fresh it is ----
+  need('calculation_run_id', lineage.run_id);
+  need('accepted_calculation_date', acceptedRun && acceptedRun.accepted_date);
+  need('freshness_state', acceptedRun && acceptedRun.freshness_state);
+  // ---- the quantity chain, each on its own LABELLED phrase so a bare number cannot satisfy it ----
+  need('recommended_qty', 'recommendation is ' + S1_str_(cand && cand.recommended_qty));
+  need('qualifying_manual_planned_qty',
+    S1_str_(cand && cand.qualifying_manual_planned_qty) + ' already planned manually');
+  need('qualifying_ai_planned_qty', S1_str_(cand && cand.qualifying_ai_planned_qty) + ' planned by AI');
+  need('residual_qty', 'residual of ' + S1_str_(cand && cand.residual_qty));
+  need('available_to_allocate', 'available_to_allocate ' + S1_str_(pool.available_to_allocate));
+  need('proposed_ai_allocation_qty', 'AT MOST ' + S1_str_(cand && cand.proposed_ai_allocation_qty));
+  // ---- the exact identities. One entry PER ID, so a partial list is a partial list. ----
+  (ws && ws.expected_header_ids ? ws.expected_header_ids : []).forEach(function (id) {
+    need('expected_header_id:' + S1_str_(id), id);
+  });
+  (ws && ws.expected_line_ids ? ws.expected_line_ids : []).forEach(function (id) {
+    need('expected_line_id:' + S1_str_(id), id);
+  });
+  (ws && ws.expected_k2_group_keys ? ws.expected_k2_group_keys : []).forEach(function (k) {
+    need('expected_k2_group_key:' + S1_str_(k), k);
+  });
+  // ---- create / update / expire, as the labelled counts ----
+  need('create_counts', 'CREATE ' + S1_str_(ws && ws.expected_create_header_count)
+    + ' allocation draft header(s) and ' + S1_str_(ws && ws.expected_create_line_count) + ' line(s)');
+  need('update_counts', 'UPDATE ' + S1_str_(ws && ws.expected_update_header_count)
+    + ' existing header(s) and ' + S1_str_(ws && ws.expected_update_line_count) + ' existing line(s)');
+  need('expire_count', 'EXPIRE ' + S1_str_(ids && ids.ai_expiration_candidate_count));
+  need('existing_active_ai_count', S1_str_(ids && ids.existing_active_ai_identity_count)
+    + ' AI identity/identities active in this scope before the run');
+  // ---- what must be byte-for-byte unchanged ----
+  need('protected_manual_full_row_fingerprint',
+    ((content && content.target_manual) || {}).combined_fingerprint);
+  need('protected_other_scope_full_row_fingerprint',
+    ((content && content.other_scope) || {}).combined_fingerprint);
+  // ---- and the factory / reservation baseline ----
+  need('factory_pool_row_fingerprint', ((surf && surf.pool) || {}).row_fingerprint);
+  // AN HONESTLY ABSENT TABLE HAS NO FINGERPRINT, AND DEMANDING ONE WOULD BE THIS ROUND'S OWN MISTAKE
+  // FACING THE OTHER WAY. R4A established that SHEET_ABSENT stays absent - row_count null, never 0 - so a
+  // surface that is not there cannot be asked to contribute a hash, and asking would turn an honest absence
+  // into a refusal. What the sentence must carry in that case is the ABSENCE, stated. Measured on the
+  // movements-absent world (W8h), which this gate refused on its first version.
+  function needSurface(prefix, label, sv) {
+    need(prefix + '_baseline', label + ' ' + S1_str_(sv && sv.observation_state)
+      + ' with ' + S1_rowCountPhrase_(sv ? sv.row_count : null));
+    if (sv && sv.observation_state === 'SHEET_PRESENT_AND_READABLE') {
+      need(prefix + '_fingerprint', sv.combined_fingerprint);
+    } else {
+      need(prefix + '_absence_is_stated', label + ' ' + S1_str_(sv && sv.observation_state));
+    }
+  }
+  needSurface('factory_movement', 'factory_stock_movements', mv);
+  needSurface('factory_audit', 'factory_stock_override_audit', au);
+  need('reservation_baseline', 'reservations ' + S1_str_(resv && resv.observation_state)
+    + ' with ' + S1_rowCountPhrase_(resv ? resv.row_count : null));
+  // ---- and the boundary of the authorization itself ----
+  need('scope_is_exactly_one', 'exactly this one scope');
+  need('does_not_authorize_submit', 'IT DOES NOT AUTHORIZE SUBMIT');
+
+  req.forEach(function (r) {
+    // A NEEDLE THAT IS ITSELF EMPTY WOULD MATCH ANYTHING. An unmeasured fact cannot be found in a sentence,
+    // so it counts as missing rather than as trivially satisfied - which is how a null slips through a
+    // substring check and takes the whole audit with it.
+    r.present = r.needle !== '' && text.indexOf(r.needle) >= 0;
+    if (r.present) o.present_count++; else o.missing.push(r.item);
+  });
+  o.required_items = req.map(function (r) { return { item: r.item, present: r.present }; });
+  o.required_item_count = req.length;
+  o.ok = o.missing.length === 0 && o.placeholders.length === 0;
+  return o;
 }
 
 function S1_authWordingS_() {
