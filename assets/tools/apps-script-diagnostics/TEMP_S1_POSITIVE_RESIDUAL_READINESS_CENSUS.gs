@@ -1372,6 +1372,115 @@ function S1_writeSetAuthorityReport_() {
  * Returns { measurable, stop_code, stage, route_groups, expected_header_ids, expected_line_ids,
  *           expected_k2_group_keys, create/update counts, blocked_lines, conflicts, ... }.
  */
+/**
+ * R6C — IS THE LIVE HEADER SHEET K4-READY? PRODUCTION'S PREDICATE, OVER THE LIVE HEADER NAMES.
+ *
+ * `sadK4SchemaReady_` wants the `destination_marketplace` column AND 69_'s three functions present. Both
+ * halves matter: a K4 id may only be minted where its destination can actually be stored, and only where
+ * the authority that derives it is deployed. Asking production rather than spelling the condition here is
+ * what stops this file from having an opinion about K4 that could drift from the writer's.
+ */
+function S1_k4SchemaReadyLive_(ss) {
+  if (typeof sadK4SchemaReady_ !== 'function' || typeof sadLiveHeaderNames_ !== 'function') return null;
+  var sh = null;
+  try { sh = ss && ss.getSheetByName ? ss.getSheetByName(S1_DRAFT_HEADER_TABLE_) : null; } catch (e) { return null; }
+  if (!sh) return null;
+  try { return sadK4SchemaReady_(sadLiveHeaderNames_(sh)) === true; } catch (e2) { return null; }
+}
+
+/**
+ * ONE RESOLUTION, FROM THE AUTHORITY THE WRITER USES, PLUS WHAT K2 ALONE WOULD HAVE SAID.
+ *
+ * The unified resolver is preferred because it is the one the atomic writer calls, k4Ready and all. The
+ * K2-only resolver is still consulted — not to decide anything, but so the prediction can REPORT the id it
+ * would have produced on its own. That number is what made the last run unreadable, and a diagnostic that
+ * silently starts being right is worth less than one that shows both answers and names which is the row's.
+ */
+function S1_resolveIdentityLikeProduction_(ss, headerRows, header) {
+  var o = { family: null, authority: null, k4_schema_ready: null, group_key: null,
+    allocation_draft_id: null, classification: 'BLOCKED_CONFLICT', resolution: null,
+    k2_group_key: null, k2_would_have_predicted: null, k4_group_key: null, unavailable_reason: null,
+    self_consistent: null, self_consistency_basis: null, derived_id: null };
+  try { o.k2_group_key = S1_str_(sadK2GroupKey_(header)); } catch (e0) { o.k2_group_key = null; }
+  var k2r = null;
+  try { k2r = sadK2ResolveActiveDraft_(headerRows || [], header); } catch (e1) { k2r = null; }
+  o.k2_would_have_predicted = S1_str_(k2r && k2r.allocation_draft_id) || null;
+  if (typeof ricK4GroupKey_ === 'function') {
+    try { o.k4_group_key = S1_str_(ricK4GroupKey_(header)); } catch (e2) { o.k4_group_key = null; }
+  }
+  o.k4_schema_ready = S1_k4SchemaReadyLive_(ss);
+  var sh = null;
+  try { sh = ss && ss.getSheetByName ? ss.getSheetByName(S1_DRAFT_HEADER_TABLE_) : null; } catch (e3) { sh = null; }
+  if (typeof sadResolveActiveDraftK2OrK3_ === 'function' && sh) {
+    var res = null;
+    try {
+      res = sadResolveActiveDraftK2OrK3_(sh, header,
+        { allowLegacyReconcile: false, k4Ready: o.k4_schema_ready === true });
+    } catch (e4) { res = null; o.unavailable_reason = 'UNIFIED_RESOLVER_THREW'; }
+    if (res) {
+      o.resolution = res;
+      o.family = res.k4 === true ? 'K4' : 'K2';
+      o.authority = res.k4 === true
+        ? '16_ sadResolveActiveDraftK2OrK3_ -> 69_ ricK4GroupKey_ / ricK4DeterministicHeaderId_'
+        : '16_ sadResolveActiveDraftK2OrK3_ -> sadK2GroupKey_ / sadK2DeterministicHeaderId_';
+      o.group_key = res.k4 === true ? (o.k4_group_key || o.k2_group_key) : o.k2_group_key;
+      o.allocation_draft_id = S1_str_(res.id) || null;
+      o.classification = res.status === 'CREATE' ? 'CREATE'
+        : (res.status === 'REUSE' ? 'UPDATE' : 'BLOCKED_CONFLICT');
+      S1_identitySelfConsistency_(o, header);
+      return o;
+    }
+  }
+  // THE FALLBACK IS NAMED, NEVER SILENT. Without the unified resolver this deployment cannot be asked which
+  // family it mints, so the K2 answer is returned WITH `unavailable_reason` set — a prediction whose
+  // authority was missing must not read like one that was confirmed.
+  o.unavailable_reason = o.unavailable_reason || 'UNIFIED_RESOLVER_UNAVAILABLE';
+  o.family = 'K2';
+  o.authority = '16_ sadK2ResolveActiveDraft_ (unified resolver unavailable in this deployment)';
+  o.group_key = o.k2_group_key;
+  o.allocation_draft_id = o.k2_would_have_predicted;
+  o.classification = (k2r && k2r.status === 'CREATE') ? 'CREATE'
+    : ((k2r && k2r.status === 'REUSE') ? 'UPDATE' : 'BLOCKED_CONFLICT');
+  o.resolution = k2r;
+  S1_identitySelfConsistency_(o, header);
+  return o;
+}
+
+/**
+ * DOES THE RESOLVED ID RE-DERIVE FROM THE HEADER IT CLAIMS TO NAME?
+ *
+ * For a CREATE it must, exactly, by the chosen family's own builder — that is what `deterministic` means,
+ * and an id that does not re-derive is an id no readback can find. For a REUSE it need not: adopting a
+ * stored row is legitimate precisely when the row predates the family, and 69_ is explicit that an adopted
+ * K2-generation row is never re-keyed. So a REUSE is EXEMPT and says which it is, rather than being
+ * counted as consistent by a check that never applied to it.
+ */
+function S1_identitySelfConsistency_(o, header) {
+  var id = S1_str_(o.allocation_draft_id);
+  if (o.classification === 'UPDATE') {
+    o.self_consistent = true;
+    o.self_consistency_basis = 'REUSE_OF_A_STORED_ID_IS_EXEMPT_AND_MUST_NOT_BE_RE_KEYED';
+    return o;
+  }
+  if (o.classification !== 'CREATE' || !id) {
+    o.self_consistent = false;
+    o.self_consistency_basis = 'NO_CREATE_IDENTITY_TO_CHECK';
+    return o;
+  }
+  var derived = null;
+  try {
+    derived = (o.family === 'K4' && typeof ricK4DeterministicHeaderId_ === 'function')
+      ? S1_str_(ricK4DeterministicHeaderId_(header))
+      : S1_str_(sadK2DeterministicHeaderId_(header));
+  } catch (e) { derived = null; }
+  o.derived_id = derived;
+  o.self_consistent = !!derived && derived === id;
+  o.self_consistency_basis = o.self_consistent
+    ? (o.family === 'K4' ? 'K4_ID_RE_DERIVES_FROM_THIS_HEADER' : 'K2_ID_RE_DERIVES_FROM_THIS_HEADER')
+    : 'RESOLVED_ID_DOES_NOT_RE_DERIVE_FROM_THE_HEADER_IT_NAMES';
+  return o;
+}
+
 function S1_predictedWriteSet_(ss, scope, cycle, headerRows, existingLineIds) {
   var out = { measurable: false, stop_code: null, stage: null, stage_detail: null,
     authorities: null, missing_authorities: [],
@@ -1382,6 +1491,10 @@ function S1_predictedWriteSet_(ss, scope, cycle, headerRows, existingLineIds) {
     blocked_lines: [], conflicts: [], duplicate_header_ids: [],
     allocated_line_count: null, kept_line_count: null, excluded_line_count: null,
     conserved: null, ship_date: null,
+    // R6C — WHICH IDENTITY FAMILY THE LIVE SHEET'S OWN RESOLVER CHOOSES, stated rather than assumed. A
+    // prediction that cannot say which family it is in is a prediction nobody can check against the row.
+    identity_family: null, k4_schema_ready: null, identity_authority: null,
+    identity_unavailable_reason: null, k2_only_predictions: [],
     authority_note: 'Every identity here was produced by the production authorities named in `authorities`.'
       + ' Nothing in this object is a local re-implementation of the allocator, the route grouping or the'
       + ' K2 identity, and nothing is carried over from a previous run.' };
@@ -1505,11 +1618,43 @@ function S1_predictedWriteSet_(ss, scope, cycle, headerRows, existingLineIds) {
         // header would produce an id the writer never mints. These four are lineage/provenance only; no
         // quantity and no route field is touched here.
         g.header.generation_type = 'system_generated';
-        var wantKey = sadK2GroupKey_(g.header);
-        var r = sadK2ResolveActiveDraft_(headerRows || [], g.header);
-        var hid = S1_str_(r && r.allocation_draft_id);
-        var cls = (r && r.status === 'CREATE') ? 'CREATE'
-          : ((r && r.status === 'REUSE') ? 'UPDATE' : 'BLOCKED_CONFLICT');
+        // R6C §六 — THE IDENTITY THIS PREDICTED, AND THE IDENTITY THE WRITER MINTED, WERE COMPUTED BY TWO
+        // DIFFERENT AUTHORITIES.
+        //
+        // Measured on the live run: the frozen baseline predicted SADH-K2-A4239AC6 / SADL-K2-2FD4DCA2, the
+        // in-lock re-measurement agreed with it field for field, the generation SUCCEEDED — and neither id
+        // existed afterwards, while one unpredicted header carrying this run's calculation_run_id did.
+        //
+        // This line was the reason. It called `sadK2ResolveActiveDraft_`, which is K2-only and knows nothing
+        // about `k4Ready`. The atomic writer calls `sadResolveActiveDraftK2OrK3_(sheet, header, { k4Ready })`
+        // (16_:2013), whose comment on the id it hands back says `K2/K4 deterministic id`, and on a sheet
+        // that carries a `destination_marketplace` column it resolves through 69_'s K4 authority instead —
+        // eleven dimensions, the raw destination-warehouse dimension replaced by a derived destination_type
+        // and destination_identity, and the service passed through `ricCanonicalService_`. A DIFFERENT
+        // CANONICAL STRING IS A DIFFERENT HASH IS A DIFFERENT ID. The live sheet has five SADH-K4- headers
+        // in it already, so it has been K4-ready for some time; this predictor never asked.
+        //
+        // And the LINE id is derived FROM the header id (`sadK2LineNaturalKey_` = draftId|sku|site_sku|
+        // window_code, 16_:939), so one divergence produced two absent predictions.
+        //
+        // 69_ is explicit that K4 is the successor and that `sadK2GroupKey_` is left byte-identical, so
+        // PRODUCTION IS THE SSOT and it was right. The prediction was wrong, and this is the prediction.
+        // So it now calls what the writer calls, with k4Ready measured from the LIVE header names by
+        // production's own `sadK4SchemaReady_` — no second opinion about which family applies.
+        var idr = S1_resolveIdentityLikeProduction_(ss, headerRows || [], g.header);
+        var wantKey = idr.group_key;
+        var r = idr.resolution;
+        var hid = S1_str_(idr.allocation_draft_id);
+        var cls = idr.classification;
+        if (out.identity_family === null) out.identity_family = idr.family;
+        else if (out.identity_family !== idr.family) out.identity_family = 'MIXED';
+        out.k4_schema_ready = idr.k4_schema_ready;
+        out.identity_authority = idr.authority;
+        out.identity_unavailable_reason = idr.unavailable_reason;
+        if (idr.k2_would_have_predicted
+            && out.k2_only_predictions.indexOf(idr.k2_would_have_predicted) === -1) {
+          out.k2_only_predictions.push(idr.k2_would_have_predicted);
+        }
         if (cls === 'BLOCKED_CONFLICT') {
           out.conflicts.push({ marketplace: M, k2_group_key: wantKey,
             conflicting_ids: (r && r.conflictIds) || [] });
@@ -1539,6 +1684,14 @@ function S1_predictedWriteSet_(ss, scope, cycle, headerRows, existingLineIds) {
         });
         out.route_groups.push({ marketplace: M, group_no: g.groupNo,
           k2_group_key: wantKey, allocation_draft_id: hid, classification: cls,
+          identity_family: idr.family, identity_authority: idr.authority,
+          // THE ID RE-DERIVED FROM THE HEADER IT CLAIMS TO NAME, by the chosen family's own builder. A
+          // CREATE must equal it exactly; a REUSE legitimately adopts a stored id that may predate the
+          // family, so it is exempt and says so rather than being quietly counted as consistent.
+          identity_self_consistent: idr.self_consistent,
+          identity_self_consistency_basis: idr.self_consistency_basis,
+          k2_would_have_predicted: idr.k2_would_have_predicted,
+          k4_group_key: idr.k4_group_key,
           resolve_status: r ? r.status : null,
           source_warehouse_id: S1_str_(g.header.recommended_source_warehouse_id),
           destination_warehouse_id: S1_str_(g.header.recommended_destination_warehouse_id),
@@ -4142,16 +4295,47 @@ function RUN_S1_MANIFEST_P() {
       'header_ids >= 1 and line_ids >= 1',
       { headers: (ws.expected_header_ids || []).length, lines: (ws.expected_line_ids || []).length },
       (ws.expected_header_ids || []).length >= 1 && (ws.expected_line_ids || []).length >= 1);
-    L.P('every_predicted_header_carries_a_deterministic_k2_identity',
-      'every id non-blank and K2-prefixed', (ws.expected_header_ids || []).slice(0, 20),
-      (ws.expected_header_ids || []).length > 0 && (ws.expected_header_ids || []).every(function (id) {
-        return S1_str_(id).indexOf('SADH-K2-') === 0;
+    // R6C — THE PREFIX WAS THE WRONG QUESTION, AND ASKING IT IS WHY NOTHING CAUGHT THE LIVE DIVERGENCE.
+    //
+    // `every id is SADH-K2-prefixed` passes for an id this file computed with the K2-only resolver and
+    // FAILS for the id the writer actually mints on a K4-ready sheet — so the predicate defended the wrong
+    // side. Worse, it can only ever confirm the family it already assumed: a prefix test cannot notice a
+    // correctly-minted successor id, which is precisely the row that turned up live.
+    //
+    // What matters is not the family. It is that the predicted id is EXACTLY the id the family production's
+    // own resolver chose would derive from this very header — re-derived here, from that authority, and
+    // compared for equality. That is strictly stronger than the prefix: it fails on a wrong family AND on
+    // a right family with a wrong hash, and it needs no opinion of its own about which family is current.
+    var idFam = S1_str_(ws.identity_family);
+    L.P('the_identity_family_was_resolved_by_a_production_authority',
+      'K2 or K4, named by the resolver the writer calls', idFam, idFam === 'K2' || idFam === 'K4');
+    L.P('every_predicted_header_id_re_derives_from_that_authority',
+      'each id equals the deterministic id of its own route group',
+      (ws.route_groups || []).map(function (g) { return g.identity_self_consistent; }),
+      (ws.route_groups || []).length > 0 && (ws.route_groups || []).every(function (g) {
+        return g.identity_self_consistent === true;
       }));
-    L.P('every_predicted_line_carries_a_deterministic_k2_identity',
-      'every id non-blank and K2-prefixed', (ws.expected_line_ids || []).slice(0, 20),
+    L.P('every_predicted_line_carries_a_deterministic_line_identity',
+      'every id non-blank and SADL-K2- prefixed (the LINE scheme is K2 in both families)',
+      (ws.expected_line_ids || []).slice(0, 20),
       (ws.expected_line_ids || []).length > 0 && (ws.expected_line_ids || []).every(function (id) {
         return S1_str_(id).indexOf('SADL-K2-') === 0;
       }));
+    // AND THE ONE THAT WOULD HAVE STOPPED THE LIVE RUN.
+    //
+    // NOT "the two resolvers agree" — on a K4-ready sheet they are SUPPOSED to disagree, and demanding
+    // agreement would make every correctly-configured project un-authorizable. The requirement is that the
+    // prediction came from THE RESOLVER THE WRITER CALLS. When that authority is missing from a deployment
+    // this file can still produce a K2 id, and that id is a guess; a readback keyed on a guess is what
+    // looked for two rows the writer was never going to create.
+    //
+    // So: the authority must have answered, and it must be named. The K2-only number is kept beside it as
+    // evidence, never as a requirement.
+    L.P('the_predicted_identity_came_from_the_resolver_the_writer_calls',
+      'the unified resolver answered and named itself',
+      { authority: ws.identity_authority, unavailable: ws.identity_unavailable_reason },
+      !!ws.identity_authority && S1_str_(ws.identity_authority).indexOf('sadResolveActiveDraftK2OrK3_') >= 0
+        && !ws.identity_unavailable_reason);
     L.P('every_predicted_route_group_is_classified_as_a_create_or_an_update',
       'CREATE or UPDATE for every group',
       (ws.route_groups || []).map(function (g) { return g.classification; }),
@@ -11497,6 +11681,9 @@ function S1_cgProductionCall_(ss, b) {
   var o = { attempted: false, generator_calls: 0, stage: null, capability_minted: false,
     capability_scope_key: null, capability_nonce_present: false, threw: false, throw_message: null,
     response_readable: false, resp: null,
+    // R6C — the raw return and the parsed envelope, judged separately. See the call site below.
+    raw_carried_get_content: null, resp_is_object: null, resp_key_count: null,
+    resp_parse_error: null, resp_declares_an_outcome: null,
     writer_authority: '61_ weeklyAiPlanGenerateK2_ -> KMWRR -> atomic header+lines upsert',
     second_writer_constructed: false };
   if (typeof KMWHA === 'undefined' || typeof KMWRB === 'undefined' || typeof KMWRR === 'undefined'
@@ -11553,9 +11740,27 @@ function S1_cgProductionCall_(ss, b) {
   o.generator_calls = 1;
   o.stage = 'CALLED';
   try {
-    o.resp = weeklyAiPlanParseResp_(weeklyAiPlanGenerateK2_(ss, mapped.request, h, deps,
-      { company: b.company, country: b.country, marketplace: b.marketplace }, cap));
-    o.response_readable = !!o.resp && typeof o.resp === 'object';
+    // R6C §十一.A.2 — THE RAW RETURN IS INSPECTED BEFORE THE ADAPTER GETS TO HIDE IT.
+    //
+    // `weeklyAiPlanParseResp_` answers `JSON.parse('{}')` for anything that is not a TextOutput and not a
+    // string, and `{ success: false, parse_error: true }` for content it cannot parse. Both are objects, so
+    // `typeof o.resp === 'object'` called them READABLE and the classifier went on to report that the
+    // response named no reason — which is indistinguishable from a real refusal that named none.
+    var rawResp = weeklyAiPlanGenerateK2_(ss, mapped.request, h, deps,
+      { company: b.company, country: b.country, marketplace: b.marketplace }, cap);
+    o.raw_carried_get_content = !!rawResp && typeof rawResp.getContent === 'function';
+    o.resp = weeklyAiPlanParseResp_(rawResp);
+    o.resp_is_object = !!o.resp && typeof o.resp === 'object';
+    o.resp_key_count = o.resp_is_object ? Object.keys(o.resp).length : 0;
+    o.resp_parse_error = !!(o.resp && o.resp.parse_error === true);
+    // AND THE PREDICATE THAT DECIDES IT: does the envelope state an OUTCOME? Production's every return
+    // carries `success`, and most carry `data` or a non-empty `errors` too. An adapter-manufactured `{}`
+    // carries none of the three, and that is the difference between a response and a shape.
+    o.resp_declares_an_outcome = o.resp_is_object && (o.resp.success !== undefined
+      || (!!o.resp.data && typeof o.resp.data === 'object')
+      || (!!o.resp.errors && o.resp.errors.length > 0));
+    o.response_readable = o.resp_is_object && o.resp_key_count > 0
+      && o.resp_parse_error === false && o.resp_declares_an_outcome === true;
     o.stage = o.response_readable ? 'RETURNED' : 'RETURNED_UNREADABLE';
   } catch (e) {
     o.threw = true;
@@ -11565,13 +11770,79 @@ function S1_cgProductionCall_(ss, b) {
   return o;
 }
 
-/** The error codes a response names, from the production error contract `{ code, message }`. An unnamed
- *  refusal is not a guard refusal — it is an outcome nobody can act on. */
+/** The error codes a response names, from the production error contract `{ code, message }`. This is ONE
+ *  of eleven places production states a reason — see `S1_cgRespReasons_` for the rest, and R6B's §PF
+ *  header for how reading only this one turned a completed generation into an unexplained zero write. */
 function S1_cgRespCodes_(resp) {
   var out = [];
   if (!resp || typeof resp !== 'object') return out;
   ((resp.errors) || []).forEach(function (e) { var c = S1_str_(e && e.code); if (c) out.push(c); });
   return out;
+}
+
+/**
+ * R6C §十一.A.2 — EVERY PLACE THE PRODUCTION CONTRACT STATES A REASON, READ FROM THE ENVELOPE.
+ *
+ * Each entry is `<path>=<value>`, so the reason and the place it was found travel together. The paths are
+ * production's; the VALUES are whatever production put there. This function invents no token: an unknown
+ * job status is reported as the unknown job status it is.
+ */
+function S1_cgRespReasons_(resp) {
+  var out = [];
+  if (!resp || typeof resp !== 'object') return out;
+  function add(path, v) { var t = S1_str_(v); if (t) out.push(path + '=' + t); }
+  S1_cgRespCodes_(resp).forEach(function (c) { out.push('errors[].code=' + c); });
+  var d = (resp.data && typeof resp.data === 'object') ? resp.data : {};
+  add('data.job_status', d.job_status);
+  add('data.outcome', d.outcome);
+  add('data.no_action_reason', d.no_action_reason);
+  ((d.blocked) || []).forEach(function (b) {
+    add('data.blocked[].block', b && b.block);
+    add('data.blocked[].reason', b && b.reason);
+    if (b && b.lane_query) add('data.blocked[].lane_query', JSON.stringify(b.lane_query));
+  });
+  ((d.groups) || []).forEach(function (g) { add('data.groups[].outcome', g && g.outcome); });
+  if (d.factory_stock_guard && typeof d.factory_stock_guard === 'object') {
+    add('data.factory_stock_guard.verdict', d.factory_stock_guard.verdict);
+    add('data.factory_stock_guard.reason', d.factory_stock_guard.reason);
+  }
+  if (d.all_suppressed_by_manual === true) out.push('data.all_suppressed_by_manual=true');
+  ((d.suppressed_by_active_manual_draft) || []).forEach(function (g) {
+    add('data.suppressed_by_active_manual_draft[].outcome', g && g.outcome);
+  });
+  if (d.zero_result === true) out.push('data.zero_result=true');
+  if (resp.parse_error === true) out.push('parse_error=true');
+  return out;
+}
+
+/**
+ * AND THE IDENTITIES THE RESPONSE SAYS IT WROTE.
+ *
+ * `data.groups[]` carries `allocation_draft_id` for every group the writer touched, and `created_headers`
+ * counts them. The live run wrote one header and said so in this very field — and the classifier, which
+ * read `errors[].code` and nothing else, reported that the response named no reason while holding the id
+ * of the row it was about to fail to find. A readback that keys only on the PREDICTION can only ever say
+ * `absent`; the response is the one witness that knows what was actually created.
+ */
+function S1_cgRespWrittenIdentities_(resp) {
+  var o = { header_ids: [], line_count_total: null, created_headers: null, updated_headers: null,
+    created_lines: null, updated_lines: null, declares_a_write: false };
+  if (!resp || typeof resp !== 'object') return o;
+  var d = (resp.data && typeof resp.data === 'object') ? resp.data : {};
+  ['created_headers', 'updated_headers', 'created_lines', 'updated_lines'].forEach(function (k) {
+    o[k] = (d[k] === undefined || d[k] === null) ? null : d[k];
+  });
+  var lines = 0, sawLine = false;
+  ((d.groups) || []).forEach(function (g) {
+    var id = S1_str_(g && g.allocation_draft_id);
+    if (id && o.header_ids.indexOf(id) === -1) o.header_ids.push(id);
+    if (g && g.line_count !== undefined && g.line_count !== null) { lines += (Number(g.line_count) || 0); sawLine = true; }
+  });
+  o.line_count_total = sawLine ? lines : null;
+  o.declares_a_write = o.header_ids.length > 0
+    || (Number(o.created_headers) || 0) > 0 || (Number(o.updated_headers) || 0) > 0
+    || (Number(o.created_lines) || 0) > 0 || (Number(o.updated_lines) || 0) > 0;
+  return o;
 }
 
 /**
@@ -11704,7 +11975,15 @@ function S1_cgReadback_(before, after, b) {
 function S1_cgClassify_(call, rb, b) {
   var ack = call.threw === true || call.response_readable !== true;
   var codes = S1_cgRespCodes_(call.resp);
-  var o = { ack_unknown: ack, response_error_codes: codes, guard_reason_named: null,
+  var reasons = S1_cgRespReasons_(call.resp);
+  var wrote = S1_cgRespWrittenIdentities_(call.resp);
+  var expectedH = (b.expected_header_ids || []).map(function (x) { return S1_str_(x); });
+  var unexpected = wrote.header_ids.filter(function (id) { return expectedH.indexOf(id) === -1; });
+  var o = { ack_unknown: ack, response_error_codes: codes,
+    response_named_reasons: reasons,
+    response_declared_write: wrote,
+    response_header_ids_not_in_the_authorized_write_set: unexpected,
+    guard_reason_named: null,
     verdict: null, next_action: null, why: null };
   if (rb.both_sides_landed && rb.ok) {
     var clamped = rb.written_qty < b.expected_max_units_written;
@@ -11718,6 +11997,23 @@ function S1_cgClassify_(call, rb, b) {
         : 'the authorized pair landed at the full authorized quantity');
     return o;
   }
+  // R6C — BEFORE A ZERO IS CALLED A ZERO, ASK THE RESPONSE WHAT IT WROTE.
+  //
+  // Measured live: the generation SUCCEEDED, `data.created_headers` was 1 and `data.groups[0]
+  // .allocation_draft_id` held the id — while both authorized ids were absent because the prediction and
+  // the writer used different identity authorities. `neither_side_landed` was TRUE and every protected
+  // surface was intact, so this arm reported a proven zero write about a row that exists.
+  //
+  // A response that declares a write it cannot account for is not a zero, and it is not a refusal. It is
+  // its own verdict, and the id it names is the whole finding.
+  if (rb.neither_side_landed && wrote.declares_a_write === true) {
+    o.verdict = 'WROTE_UNDER_AN_UNEXPECTED_IDENTITY';
+    o.next_action = 'STOP_AND_PERFORM_MANUAL_RECOVERY';
+    o.why = 'neither authorized identity exists, and the production response declares a write under '
+      + (unexpected.length ? unexpected.join(',') : 'an identity it did not name')
+      + ' — the prediction and the writer did not agree about the identity';
+    return o;
+  }
   if (rb.neither_side_landed && rb.protected_surfaces_intact) {
     if (ack) {
       o.verdict = 'NOT_APPLIED_ACK_UNKNOWN';
@@ -11727,11 +12023,14 @@ function S1_cgClassify_(call, rb, b) {
     }
     // A REFUSAL HAS TO SAY WHY. Zero rows and no named reason is not a guard refusal; it is an outcome
     // nobody can act on, and calling it one would file an unexplained no-write as a success shape.
-    o.guard_reason_named = codes.length > 0 ? codes.slice() : [];
-    if (codes.length > 0) {
+    // R6C — a reason from ANY of the eleven contract sites, not only `errors[].code`. A zero write that
+    // named ALL_BLOCKED in `data.job_status` is an explained refusal; calling it unexplained because the
+    // errors array was empty is what filed a routing block as an unclassifiable outcome.
+    o.guard_reason_named = reasons.length > 0 ? reasons.slice() : [];
+    if (reasons.length > 0) {
       o.verdict = 'FACTORY_GUARD_REFUSED_ZERO_WRITE';
       o.next_action = 'RERUN_MANIFEST_P_AND_REQUIRE_NEW_AUTHORIZATION';
-      o.why = 'the production generator refused with zero writes, naming ' + codes.join(',');
+      o.why = 'the production generator refused with zero writes, naming ' + reasons.slice(0, 6).join('; ');
       return o;
     }
     o.verdict = 'MANUAL_RECOVERY_REQUIRED';
@@ -11780,6 +12079,10 @@ var S1_CG_RETRY_CONTRACT_ = {
   EXECUTED_OK_AFTER_ACK_UNKNOWN: [false, false, false, false, 'NO_FURTHER_GENERATE_ACTION'],
   // RESOLVED AS NOT APPLIED. A generate is still permitted — from a new manifest and a new sentence.
   NOT_APPLIED_ACK_UNKNOWN: [false, false, false, true, 'RERUN_MANIFEST_P_AND_REQUIRE_NEW_AUTHORIZATION'],
+  // R6C — A WRITE LANDED, UNDER AN IDENTITY NOBODY AUTHORIZED BY NAME. Nothing may be retried and nothing
+  // reused: the row exists, and what to do with a correct plan under an unpredicted id is a decision, not
+  // a retry. It routes to manual recovery for the same reason MANUAL_RECOVERY_REQUIRED does.
+  WROTE_UNDER_AN_UNEXPECTED_IDENTITY: [false, false, false, false, 'STOP_AND_PERFORM_MANUAL_RECOVERY'],
   // AND THE ONE A TOOL MUST NOT ROUTE. A manifest ends in a freeze block and a sentence to sign; pointing
   // an unresolved data state at it describes the recovery as something this tool can drive.
   MANUAL_RECOVERY_REQUIRED: [false, false, false, false, 'STOP_AND_PERFORM_MANUAL_RECOVERY']
@@ -12467,9 +12770,17 @@ function S1_cgFinishOnce_(out) {
 //
 // SO THE REFUSAL PROBABLY DID NAME A REASON, ONE LAYER BELOW WHERE THE CLASSIFIER LOOKED. This manifest does
 // not assume which one. It re-reads the world, and — where production gives it a pure authority to do so —
-// rebuilds the zero-write pass that decides routability, because that is the ONE gate the frozen baseline
-// never measured: `buildK2GenerationPlan`, `job_status` and `blocked_count` appear nowhere in this census, so
-// READY_TO_AUTHORIZE was never a statement about whether the authorized line could be ROUTED.
+// rebuilds the zero-write pass that decides routability.
+//
+// R6C CORRECTION. The paragraph that stood here claimed routability was "the ONE gate the frozen baseline
+// never measured", on the grounds that `buildK2GenerationPlan`, `job_status` and `blocked_count` appear
+// nowhere in this census. THAT WAS FALSE. `S1_predictedWriteSet_` has called `KMWRR.buildK2GenerationPlan`
+// and collected `blocked_lines` since long before R6B; the grep that produced the claim was wrong and the
+// claim was never checked against the file. It is left standing here, corrected rather than deleted,
+// because a diagnostic that quietly edits out its own wrong finding teaches nobody anything.
+//
+// The live evidence then settled it from the other side: block_tokens [] and ship_date_is_blank false, and
+// a row that had in fact landed. Routing was never the problem. The identity was — see §AI2.
 //
 // IT IS READ ONLY, AND IT PROVES THAT BY MEASUREMENT RATHER THAN BY SAYING SO. The protected surfaces are
 // measured, the reconstruction runs, and they are measured again; the manifest asserts the two agree. A
@@ -12560,6 +12871,12 @@ function S1_pfExpectedIdentities_(part, obs, b) {
     group_key_authority: (typeof sadK2GroupKey_ === 'function') ? '16_ sadK2GroupKey_' : 'UNAVAILABLE',
     expected_group_keys: (b.expected_k2_group_keys || []).slice(),
     alternate_identity_rows: [], alternate_identity_count: 0,
+    // R6C §二.3 — COUNTED SEPARATELY, because they are separate rows and a reader acting on this has to
+    // know whether the line came with the header. `alternate_pair_count` counts alternate headers that
+    // carry at least one line for the target sku; `alternate_orphan_count` counts those that carry none.
+    // A header with no line is not half a finding — it is a different one.
+    alternate_line_count: 0, alternate_pair_count: 0, alternate_orphan_count: 0,
+    alternate_line_rows: [],
     orphan_line_rows: [], orphan_line_count: 0, wrong_run_rows: [], wrong_run_count: 0 };
   if (obs.line_fields) {
     o.line_fk_points_at_expected_header =
@@ -12594,6 +12911,26 @@ function S1_pfExpectedIdentities_(part, obs, b) {
   });
   o.alternate_identity_count = o.alternate_identity_rows.length;
   o.wrong_run_count = o.wrong_run_rows.length;
+  // The LINES those alternate headers carry for the target sku, with the quantity a reader has to see.
+  var altIds = {};
+  o.alternate_identity_rows.forEach(function (r) { altIds[S1_str_(r.allocation_draft_id)] = 0; });
+  var wantSku = S1_str_(b.sku);
+  ((part.line_table && part.line_table.rows) || []).forEach(function (lr) {
+    var parent = S1_str_(S1_cellOf_(lr, 'allocation_draft_id'));
+    if (!Object.prototype.hasOwnProperty.call(altIds, parent)) return;
+    if (S1_str_(S1_cellOf_(lr, 'sku')) !== wantSku) return;
+    altIds[parent]++;
+    o.alternate_line_rows.push({
+      allocation_draft_line_id: S1_str_(S1_cellOf_(lr, 'allocation_draft_line_id')),
+      allocation_draft_id: parent, sku: S1_str_(S1_cellOf_(lr, 'sku')),
+      planned_qty: S1_qty_(S1_cellOf_(lr, 'planned_qty')),
+      recommended_qty: S1_qty_(S1_cellOf_(lr, 'recommended_qty')),
+      full_row_fingerprint: S1_str_(lr.fingerprint) });
+  });
+  o.alternate_line_count = o.alternate_line_rows.length;
+  Object.keys(altIds).forEach(function (k) {
+    if (altIds[k] > 0) o.alternate_pair_count++; else o.alternate_orphan_count++;
+  });
   // A LINE WITH NO HEADER. `existing_line_ids` is every line id in the table; a line whose parent id is not a
   // header row is an orphan, and an orphan in this scope is a half-landed write nobody would see from the
   // pair's side.
@@ -13110,10 +13447,72 @@ function S1_pfFinish_(out, L) {
   out.classification_is_known = S1_PF_CLASSES_.indexOf(S1_str_(out.classification)) >= 0;
   out.retry_contract = S1_pfRetryContract_(out.classification);
   out.next_action = out.retry_contract.next_action;
-  out.zero_write_confirmed = (out.writes === 0 && out.writer_calls === 0 && out.generator_calls === 0
-    && out.attempts === 0 && out.capability_minted === false && out.authorization_read === false
-    && out.repairs_attempted === 0 && out.rows_created === 0 && out.rows_updated === 0
-    && out.rows_deleted === 0);
+  // R6C §二 — TWO DIFFERENT QUESTIONS, AND THEY HAD ONE ANSWER.
+  //
+  // `zero_write_confirmed` used to be computed from THIS TOOL'S OWN counters, so it meant `the manifest
+  // wrote nothing` — which is true of a read-only manifest by construction. It was then printed beside
+  // `classification: WRITE_LANDED_UNDER_UNEXPECTED_IDENTITY`, and the two together said that nothing was
+  // written and that something was. The tool's own zero keeps its meaning under a name that says whose
+  // zero it is; `zero_write_confirmed` now answers the question a reader thinks it is asking.
+  out.this_manifest_wrote_nothing = (out.writes === 0 && out.writer_calls === 0
+    && out.generator_calls === 0 && out.attempts === 0 && out.capability_minted === false
+    && out.authorization_read === false && out.repairs_attempted === 0 && out.rows_created === 0
+    && out.rows_updated === 0 && out.rows_deleted === 0);
+  var ei = out.expected_identities || null;
+  var uni = out.target_scope_universe || null;
+  var surf = out.protected_surfaces || null;
+  // THE COUNTS, SEPARATELY. A header and a line are two rows, and a pair count is neither of them.
+  out.alternate_header_count = ei ? ei.alternate_identity_count : null;
+  out.alternate_line_count = ei ? ei.alternate_line_count : null;
+  out.alternate_pair_count = ei ? ei.alternate_pair_count : null;
+  out.alternate_orphan_count = ei ? ei.alternate_orphan_count : null;
+  out.expected_identity_write_absent = ei ? (ei.both_absent === true) : null;
+  // ---- ANY WRITE IN THE TARGET SCOPE, BY ANY IDENTITY — measured AGAINST THE FROZEN PRE-STATE. ----
+  //
+  // "the target scope holds zero rows" is the special case, not the rule. A scope with a standing MANUAL
+  // Execution Plan holds rows before any generation runs, and demanding an EMPTY target scope would make a
+  // zero write unprovable there forever — while a scope that starts empty and ends empty is provable in
+  // exactly the same way. What separates "a row landed" from "a row was always there" is the BASELINE, and
+  // the baseline already carries all six numbers plus both content fingerprints.
+  //
+  // For the live scope the two rules coincide: its frozen target counts are 0/0/0/0 with a zero total, so
+  // "matches the baseline" and "is empty" are the same statement. This one is simply also correct elsewhere.
+  // The frozen baseline, read from the one place that holds it. `S1_pfFinish_` takes no baseline argument
+  // and this function assigns nothing to it — the expectation is READ here, exactly as the entry point read
+  // it, so the comparison below cannot be against a value this run produced.
+  var b = S1_MANIFEST_P_BEFORE_;
+  var tgt = null;
+  if (uni !== null && b && typeof b === 'object') {
+    tgt = { compared: [], changed: [] };
+    [['manual_header_count', 'draft_row_universe_target_manual_header_count'],
+     ['manual_line_count', 'draft_row_universe_target_manual_line_count'],
+     ['ai_header_count', 'draft_row_universe_target_ai_header_count'],
+     ['ai_line_count', 'draft_row_universe_target_ai_line_count'],
+     ['manual_planned_total', 'target_manual_planned_total'],
+     ['manual_combined_fingerprint', 'target_manual_combined_fingerprint'],
+     ['ai_combined_fingerprint', 'target_ai_combined_fingerprint']].forEach(function (p) {
+      var expected = b[p[1]], observed = uni[p[0]];
+      var same = S1_str_(expected) === S1_str_(observed);
+      tgt.compared.push({ field: p[0], baseline_field: p[1],
+        expected: expected, observed: observed, unchanged: same });
+      if (!same) tgt.changed.push(p[0]);
+    });
+  }
+  out.target_scope_vs_frozen_pre_state = tgt;
+  out.any_target_scope_write_present = (uni === null || tgt === null) ? null
+    : (tgt.changed.length > 0
+       || (ei ? (ei.alternate_identity_count > 0 || ei.alternate_line_count > 0) : false));
+  // AND THE FLAG A READER THINKS THEY ARE READING. Eight conditions, and an ALTERNATE ROW OF ANY KIND
+  // fails it — which is the contradiction the live run printed: `zero_write_confirmed: true` beside
+  // `classification: WRITE_LANDED_UNDER_UNEXPECTED_IDENTITY`.
+  out.zero_write_confirmed = (out.this_manifest_wrote_nothing === true
+    && ei !== null && uni !== null && surf !== null && tgt !== null
+    && out.tables_readable === true && out.column_authority_available === true
+    && ei.header_hit_count === 0 && ei.line_hit_count === 0
+    && ei.alternate_identity_count === 0 && ei.alternate_line_count === 0
+    && ei.orphan_line_count === 0 && ei.duplicated === false
+    && out.any_target_scope_write_present === false
+    && surf.all_compared_intact === true);
   // TWO DIRECTIONS ON ONE QUESTION. The contract says no further generate may be attempted; the next_action
   // is checked against the same table the R6 executor uses, so a next_action that permits one cannot be
   // returned beside a contract that forbids one.
@@ -13145,5 +13544,830 @@ function S1_pfFinish_(out, L) {
     generate_may_be_attempted_again: out.retry_contract.generate_may_be_attempted_again,
     next_action: out.next_action,
     stop_reason: S1_cap_(out.stop_reason, 400) }));
+  return out;
+}
+
+// ================================================================================================================
+// §AI2 — R6C: THE ALTERNATE IDENTITY, EXACTLY, AND WHY IT IS NOT THE ONE THAT WAS PREDICTED
+//
+// The R6B recovery manifest answered WRITE_LANDED_UNDER_UNEXPECTED_IDENTITY with alternate_identity_count 1 —
+// and could not say WHICH row, whether its line came with it, or why the id differed. This does all three.
+//
+// THE ID DIVERGENCE IS ALREADY SOLVED IN SOURCE, and this exists to prove it against the row. Manifest P
+// resolved through `sadK2ResolveActiveDraft_`, which is K2-only. The atomic writer resolves through
+// `sadResolveActiveDraftK2OrK3_(sheet, header, { k4Ready })` (16_:2013), whose own comment on the id it hands
+// back reads `K2/K4 deterministic id`. On a sheet carrying a `destination_marketplace` column with 69_
+// deployed — which the live sheet is, and has been for the five SADH-K4- headers already in it —
+// `sadK4SchemaReady_` is true and the writer mints from 69_'s ELEVEN-dimension key: the raw
+// destination-warehouse dimension replaced by a derived destination_type + destination_identity, and the
+// service passed through `ricCanonicalService_`. A different canonical string is a different hash.
+//
+// AND THE LINE FOLLOWED THE HEADER. `sadK2LineNaturalKey_` is draftId|sku|site_sku|window_code (16_:939), so
+// the line id is derived FROM the header id. One divergence, two absent predictions — which is exactly what
+// the readback saw. Arithmetic, checked: fnv1a of the frozen K2 key is A4239AC6, and
+// fnv1a('sadh-k2-a4239ac6|sp0750-m|sp0750-m|d90') is 2FD4DCA2. Both frozen ids re-derive from the frozen
+// key, so the prediction was internally consistent and externally wrong.
+//
+// 69_ states that K4 is the successor and that `sadK2GroupKey_` is left byte-identical, so PRODUCTION IS THE
+// SSOT and it was right. The prediction was fixed (see `S1_resolveIdentityLikeProduction_`); this reads the
+// row back and says, dimension by dimension, which canonical string the stored row actually hashes to.
+// ================================================================================================================
+
+var S1_AI2_ACTOR_ = 's1_r6c_alternate_identity_readback';
+
+/** §五 — the six answers this tool may give, and nothing else. */
+var S1_AI2_CLASSES_ = ['COMPLETE_WRITE_UNDER_ALTERNATE_IDENTITIES',
+  'PARTIAL_WRITE_UNDER_ALTERNATE_IDENTITIES', 'DUPLICATE_ALTERNATE_WRITE', 'ORPHAN_ALTERNATE_WRITE',
+  'PREEXISTING_ROW_MISCLASSIFIED_AS_ALTERNATE', 'READBACK_INDETERMINATE'];
+
+/**
+ * THE PRECEDENCE. Index 0 wins, and every candidate is kept so nothing hides behind the winner.
+ *
+ * INDETERMINATE first, for the same reason it is first everywhere: the classes below it are statements about
+ * what was read. PREEXISTING next, because a row that was already there is not this run's output at all and
+ * every judgement below would be about the wrong row. Then the three shapes of a real write, worst first.
+ */
+var S1_AI2_CLASS_PRECEDENCE_ = ['READBACK_INDETERMINATE', 'PREEXISTING_ROW_MISCLASSIFIED_AS_ALTERNATE',
+  'DUPLICATE_ALTERNATE_WRITE', 'ORPHAN_ALTERNATE_WRITE', 'PARTIAL_WRITE_UNDER_ALTERNATE_IDENTITIES',
+  'COMPLETE_WRITE_UNDER_ALTERNATE_IDENTITIES'];
+
+/**
+ * §四 — THE SEARCH CONTRACT, AS DATA.
+ *
+ * A row is a candidate if it matches ANY of these, and every match records WHICH predicate matched — so a
+ * hit on the run id and a hit on the group key are never reported as the same kind of evidence. Widening
+ * the net is deliberate: the question is what this generation touched, and an identity it minted under a
+ * scheme nobody predicted will not match on identity.
+ */
+var S1_AI2_MATCH_PREDICATES_ = ['SAME_FOUR_AXIS_SCOPE_AND_TARGET_SKU', 'SAME_CALCULATION_RUN_ID',
+  'SAME_PLANNING_CYCLE', 'SAME_SOURCE_FACTORY_WAREHOUSE', 'SAME_K2_GROUP_KEY', 'SAME_K4_GROUP_KEY',
+  'CARRIES_AI_PROVENANCE', 'CREATED_AFTER_THE_FROZEN_BASELINE'];
+
+/**
+ * AND THE THREE OF THOSE EIGHT THAT ACTUALLY IDENTIFY A GENERATION.
+ *
+ * The other five are AMBIENT: a standing manual Execution Plan for this SKU sits in the same four-axis
+ * scope, in the same planning cycle, out of the same factory warehouse, and may well carry a recent
+ * created_at. Admitting on those would return every row in the neighbourhood — measured, it returned the
+ * two standing manual rows beside the one this generation wrote, and reported 2 headers and 2 lines as
+ * `DUPLICATE_ALTERNATE_WRITE`. A list that cannot tell the operator's plan from the run's output is not a
+ * finding, it is a haystack.
+ *
+ * A run id and a K2-or-K4 group key are the only facts that tie a row to a SPECIFIC generation, so those
+ * three admit and the other five are REPORTED — they stay in `matched_by` because knowing that a candidate
+ * also carries AI provenance and postdates the freeze is exactly what the completeness proof needs.
+ */
+var S1_AI2_IDENTIFYING_PREDICATES_ = ['SAME_CALCULATION_RUN_ID', 'SAME_K2_GROUP_KEY',
+  'SAME_K4_GROUP_KEY'];
+
+/** The retry contract: identical for all six, because the authorization and the baseline are both spent and
+ *  no reading of a row can un-spend either. §八. */
+function S1_ai2RetryContract_(cls) {
+  return { known: S1_AI2_CLASSES_.indexOf(S1_str_(cls)) >= 0, contract_key: S1_str_(cls),
+    retryable: false, automatic_retry_allowed: false,
+    same_authorization_reusable: false, same_frozen_baseline_reusable: false,
+    generate_may_be_attempted_again: false,
+    next_action: 'STOP_AND_PERFORM_MANUAL_RECOVERY_WITH_THIS_MANIFEST' };
+}
+
+/**
+ * §六 — TWO CANONICAL STRINGS, COMPARED DIMENSION BY DIMENSION, USING PRODUCTION'S OWN DIMENSION NAMES.
+ *
+ * No header object is reconstructed and no value is retyped. The frozen baseline carries the K2 canonical
+ * STRING it predicted; the stored row produces its own K2 and K4 strings from production's builders. Splitting
+ * all three on '|' against `SAD_K2_GROUP_DIMENSIONS_` and `RIC_K4_GROUP_DIMENSIONS_` gives a field-by-field
+ * diff that cannot be wrong about which field moved, because the dimension NAMES come from the authorities
+ * that own the order.
+ */
+function S1_ai2KeyDiff_(predictedKey, storedKey, dimNames) {
+  var o = { comparable: false, dimension_count_expected: (dimNames || []).length,
+    predicted_field_count: null, stored_field_count: null, dimensions: [], differing: [],
+    identical: null };
+  if (!S1_str_(predictedKey) || !S1_str_(storedKey) || !dimNames || !dimNames.length) return o;
+  var p = String(predictedKey).split('|'), q = String(storedKey).split('|');
+  o.predicted_field_count = p.length;
+  o.stored_field_count = q.length;
+  // A DIFFERENT NUMBER OF DIMENSIONS IS THE FINDING, not something to pad past. K2 has ten and K4 eleven,
+  // so comparing a K2 prediction against a K4 string is EXPECTED to land here — and saying so is the point.
+  o.comparable = (p.length === dimNames.length && q.length === dimNames.length);
+  var n = Math.max(p.length, q.length, dimNames.length);
+  for (var i = 0; i < n; i++) {
+    var d = { index: i, dimension: dimNames[i] === undefined ? '<beyond the declared dimensions>' : dimNames[i],
+      predicted: p[i] === undefined ? null : p[i], stored: q[i] === undefined ? null : q[i] };
+    d.same = S1_str_(d.predicted) === S1_str_(d.stored);
+    o.dimensions.push(d);
+    if (!d.same) o.differing.push(d.dimension + ': predicted ' + JSON.stringify(d.predicted)
+      + ' vs stored ' + JSON.stringify(d.stored));
+  }
+  o.identical = o.differing.length === 0;
+  return o;
+}
+
+/**
+ * ONE STORED HEADER, EVERY FACT §四 ASKS FOR, PLUS BOTH FAMILIES' VERDICT ON IT.
+ *
+ * The row number is carried for LOCATION ONLY and labelled as such: a physical row is where a thing is, never
+ * what it is, and a diagnostic that let a row number stand in for an identity would be handing a person a
+ * pointer that moves the next time anything is inserted.
+ */
+function S1_ai2HeaderFacts_(obj, rowNumber, fingerprint, b, matched) {
+  var f = { table: S1_DRAFT_HEADER_TABLE_,
+    physical_row_number: rowNumber,
+    physical_row_number_is_for_location_only: true,
+    allocation_draft_id: S1_str_(obj.allocation_draft_id),
+    company: S1_str_(obj.company), country: S1_str_(obj.country),
+    marketplace: S1_str_(obj.marketplace),
+    planning_cycle: S1_str_(obj.planning_cycle),
+    calculation_run_id: S1_str_(obj.calculation_run_id),
+    source_page: S1_str_(obj.source_page),
+    status: S1_str_(obj.status),
+    generation_type: S1_str_(obj.generation_type),
+    generation_run_id: S1_str_(obj.generation_run_id),
+    recommended_source_warehouse_id: S1_str_(obj.recommended_source_warehouse_id),
+    recommended_destination_warehouse_id: S1_str_(obj.recommended_destination_warehouse_id),
+    destination_marketplace: S1_str_(obj.destination_marketplace),
+    recommended_shipping_method: S1_str_(obj.recommended_shipping_method),
+    recommended_last_mile_delivery: S1_str_(obj.recommended_last_mile_delivery),
+    recommendation_group_no: S1_str_(obj.recommendation_group_no),
+    created_at: S1_str_(obj.created_at), updated_at: S1_str_(obj.updated_at),
+    draft_version: S1_str_(obj.draft_version),
+    full_row_fingerprint: S1_str_(fingerprint),
+    matched_by: (matched || []).slice(),
+    // ---- both families, from their own builders ----
+    k2_group_key: null, k4_group_key: null,
+    k2_derived_id: null, k4_derived_id: null,
+    id_family_by_prefix: null, id_re_derives_from_its_own_fields: null,
+    id_self_consistency_basis: null,
+    production_reconcile_basis: null,
+    is_ai_generated_by_production_authority: null,
+    created_after_the_frozen_baseline: null };
+  try { f.k2_group_key = S1_str_(sadK2GroupKey_(obj)); } catch (e1) { f.k2_group_key = null; }
+  try {
+    f.k2_derived_id = (typeof sadK2DeterministicHeaderId_ === 'function')
+      ? S1_str_(sadK2DeterministicHeaderId_(obj)) : null;
+  } catch (e2) { f.k2_derived_id = null; }
+  if (typeof ricK4GroupKey_ === 'function') {
+    try { f.k4_group_key = S1_str_(ricK4GroupKey_(obj)); } catch (e3) { f.k4_group_key = null; }
+  }
+  if (typeof ricK4DeterministicHeaderId_ === 'function') {
+    try { f.k4_derived_id = S1_str_(ricK4DeterministicHeaderId_(obj)); } catch (e4) { f.k4_derived_id = null; }
+  }
+  f.id_family_by_prefix = f.allocation_draft_id.indexOf('SADH-K4-') === 0 ? 'K4'
+    : (f.allocation_draft_id.indexOf('SADH-K2-') === 0 ? 'K2' : 'LEGACY_OR_UNKNOWN');
+  // DOES THE STORED ID RE-DERIVE FROM THE STORED ROW? This is the discriminator, and it decides which side
+  // was wrong: a row whose id re-derives from its own fields was written by a consistent writer, and the
+  // PREDICTION differed. A row whose id does not re-derive was stamped with an id its own values do not
+  // produce, which would be a production fault.
+  var want = f.id_family_by_prefix === 'K4' ? f.k4_derived_id
+    : (f.id_family_by_prefix === 'K2' ? f.k2_derived_id : null);
+  f.id_re_derives_from_its_own_fields = (want === null) ? null : (want === f.allocation_draft_id);
+  f.id_self_consistency_basis = f.id_re_derives_from_its_own_fields === true
+    ? f.id_family_by_prefix + '_ID_RE_DERIVES_FROM_ITS_OWN_STORED_FIELDS'
+    : (f.id_re_derives_from_its_own_fields === false
+      ? 'STORED_ID_DOES_NOT_RE_DERIVE_FROM_ITS_OWN_STORED_FIELDS'
+      : 'NO_DETERMINISTIC_FAMILY_TO_CHECK_THIS_ID_AGAINST');
+  // AND PRODUCTION'S OWN PURE PREDICATE ON THE SAME QUESTION, so the answer is not only this file's.
+  if (typeof sadK2ReconcileDecision_ === 'function') {
+    try { f.production_reconcile_basis = S1_str_(sadK2ReconcileDecision_(obj, null, []).basis); }
+    catch (e5) { f.production_reconcile_basis = null; }
+  }
+  if (typeof aiplIsAiGenerated_ === 'function') {
+    try { f.is_ai_generated_by_production_authority = (aiplIsAiGenerated_(obj) === true); }
+    catch (e6) { f.is_ai_generated_by_production_authority = null; }
+  }
+  f.created_after_the_frozen_baseline = S1_ai2StrictlyAfter_(f.created_at, b && b.frozen_at);
+  return f;
+}
+
+/**
+ * IS `a` STRICTLY LATER THAN `b`? true, false, OR NULL WHEN THE QUESTION CANNOT BE ANSWERED.
+ *
+ * This was a string comparison, and it was wrong in the quiet way. `frozen_at` is written by whatever
+ * produced the freeze: the live manifest emits `2026-09-10 14:42:06`, and a Date that has been through
+ * `String()` emits `Sun Sep 06 2026 14:31:12 GMT+0800 (Taiwan Standard Time)`. Compared as text, an ISO
+ * `2099-...` sorts BEFORE `Sun ...` because `'2' < 'S'` — so a row created seventy years after the freeze
+ * was reported as predating it, and the classifier called this generation's own output a pre-existing row.
+ *
+ * `Date.parse` reads both forms. When either side does not parse the answer is NULL, because a timestamp
+ * nobody can order is not evidence in either direction — and the completeness proof names that as its own
+ * missing part rather than letting it read as `the row predates the freeze`.
+ */
+function S1_ai2StrictlyAfter_(a, b) {
+  var sa = S1_str_(a), sb = S1_str_(b);
+  if (!sa || !sb) return null;
+  var ta = Date.parse(sa), tb = Date.parse(sb);
+  if (!isFinite(ta) || !isFinite(tb)) return null;
+  return ta > tb;
+}
+
+/** One stored LINE, every fact §四 asks for. */
+function S1_ai2LineFacts_(lr) {
+  return { table: S1_DRAFT_LINE_TABLE_,
+    physical_row_number: lr.row_number === undefined ? null : lr.row_number,
+    physical_row_number_is_for_location_only: true,
+    allocation_draft_line_id: S1_str_(S1_cellOf_(lr, 'allocation_draft_line_id')),
+    allocation_draft_id: S1_str_(S1_cellOf_(lr, 'allocation_draft_id')),
+    sku: S1_str_(S1_cellOf_(lr, 'sku')),
+    site_sku: S1_str_(S1_cellOf_(lr, 'site_sku')),
+    window_code: S1_str_(S1_cellOf_(lr, 'window_code')),
+    planned_qty: S1_qty_(S1_cellOf_(lr, 'planned_qty')),
+    recommended_qty: S1_qty_(S1_cellOf_(lr, 'recommended_qty')),
+    line_status: S1_str_(S1_cellOf_(lr, 'line_status')),
+    source_warehouse_id: S1_str_(S1_cellOf_(lr, 'source_warehouse_id')),
+    created_at: S1_str_(S1_cellOf_(lr, 'created_at')),
+    updated_at: S1_str_(S1_cellOf_(lr, 'updated_at')),
+    full_row_fingerprint: S1_str_(lr.fingerprint),
+    // The LINE id is derived from the PARENT id, so it is checked against the parent it actually points at.
+    line_id_re_derives_from_its_parent: null, derived_line_id: null };
+}
+
+/** The line id, re-derived from the parent it names. One divergence in the header moves this too — which is
+ *  why BOTH frozen ids were absent from a database that held the pair. */
+function S1_ai2LineSelfConsistency_(lf) {
+  if (typeof sadK2DeterministicLineId_ !== 'function') return lf;
+  var l = { sku: lf.sku, site_sku: lf.site_sku, window_code: lf.window_code };
+  try {
+    lf.derived_line_id = S1_str_(sadK2DeterministicLineId_(lf.allocation_draft_id, l));
+    lf.line_id_re_derives_from_its_parent = lf.derived_line_id === lf.allocation_draft_line_id;
+  } catch (e) { lf.derived_line_id = null; lf.line_id_re_derives_from_its_parent = null; }
+  return lf;
+}
+
+/**
+ * §四 — FIND EVERY ROW THAT COULD BE THIS GENERATION'S OUTPUT, BY ANY OF THE EIGHT PREDICATES.
+ */
+function S1_ai2Search_(part, b) {
+  var o = { predicates: S1_AI2_MATCH_PREDICATES_.slice(),
+    expected_header_ids: (b.expected_header_ids || []).slice(),
+    expected_line_ids: (b.expected_line_ids || []).slice(),
+    expected_k2_group_keys: (b.expected_k2_group_keys || []).slice(),
+    headers_examined: 0, candidate_headers: [], candidate_lines: [], parentless_line_ids: [],
+    expected_header_present: false, expected_line_present: false };
+  var expH = {}, expL = {};
+  (b.expected_header_ids || []).forEach(function (x) { expH[S1_str_(x)] = 1; });
+  (b.expected_line_ids || []).forEach(function (x) { expL[S1_str_(x)] = 1; });
+  var wantKeys = {};
+  (b.expected_k2_group_keys || []).forEach(function (k) { wantKeys[S1_str_(k)] = 1; });
+  var sku = S1_str_(b.sku), run = S1_str_(b.calculation_run_id), cyc = S1_str_(b.planning_cycle);
+  var wh = S1_str_(b.source_factory_warehouse_id);
+
+  // lines grouped by parent, so a header's sku membership and its line set are one read
+  var byParent = {};
+  ((part.line_table && part.line_table.rows) || []).forEach(function (lr) {
+    var p = S1_str_(S1_cellOf_(lr, 'allocation_draft_id'));
+    (byParent[p] = byParent[p] || []).push(lr);
+    if (expL[S1_str_(S1_cellOf_(lr, 'allocation_draft_line_id'))]) o.expected_line_present = true;
+  });
+
+  (part.header_objects || []).forEach(function (obj, i) {
+    o.headers_examined++;
+    var hid = S1_str_(obj.allocation_draft_id);
+    if (expH[hid]) { o.expected_header_present = true; return; }   // the predicted row is not an ALTERNATE
+    var kids = byParent[hid] || [];
+    var carriesSku = false;
+    kids.forEach(function (lr) { if (S1_str_(S1_cellOf_(lr, 'sku')) === sku) carriesSku = true; });
+    var axes = S1_str_(obj.company) === S1_str_(b.company)
+      && S1_str_(obj.country) === S1_str_(b.country)
+      && S1_str_(obj.marketplace) === S1_str_(b.marketplace);
+    var k2k = null, k4k = null;
+    try { k2k = S1_str_(sadK2GroupKey_(obj)); } catch (e1) { k2k = null; }
+    if (typeof ricK4GroupKey_ === 'function') {
+      try { k4k = S1_str_(ricK4GroupKey_(obj)); } catch (e2) { k4k = null; }
+    }
+    var isAi = null;
+    if (typeof aiplIsAiGenerated_ === 'function') {
+      try { isAi = aiplIsAiGenerated_(obj) === true; } catch (e3) { isAi = null; }
+    }
+    var matched = [];
+    if (axes && carriesSku) matched.push('SAME_FOUR_AXIS_SCOPE_AND_TARGET_SKU');
+    if (run && S1_str_(obj.calculation_run_id) === run) matched.push('SAME_CALCULATION_RUN_ID');
+    if (cyc && S1_str_(obj.planning_cycle) === cyc) matched.push('SAME_PLANNING_CYCLE');
+    if (wh && S1_str_(obj.recommended_source_warehouse_id) === wh) {
+      matched.push('SAME_SOURCE_FACTORY_WAREHOUSE');
+    }
+    if (k2k && wantKeys[k2k] === 1) matched.push('SAME_K2_GROUP_KEY');
+    if (k4k && wantKeys[k4k] === 1) matched.push('SAME_K4_GROUP_KEY');
+    if (isAi === true) matched.push('CARRIES_AI_PROVENANCE');
+    if (S1_ai2StrictlyAfter_(obj.created_at, b.frozen_at) === true) {
+      matched.push('CREATED_AFTER_THE_FROZEN_BASELINE');
+    }
+    // A CANDIDATE MUST BE IN THE TARGET SCOPE **AND** CARRY AT LEAST ONE IDENTIFYING PREDICATE. Scope alone
+    // admits every standing manual plan for this SKU; the run id and the two group keys are the only facts
+    // that name a generation. The other five predicates travel with the row as evidence, not as admission.
+    var identifying = matched.filter(function (p) {
+      return S1_AI2_IDENTIFYING_PREDICATES_.indexOf(p) >= 0;
+    });
+    if (!axes || !identifying.length) return;
+    var fingerprint = null, rowNo = null;
+    ((part.header_table && part.header_table.rows) || []).forEach(function (rec) {
+      if (S1_str_(S1_cellOf_(rec, 'allocation_draft_id')) !== hid) return;
+      fingerprint = S1_str_(rec.fingerprint);
+      rowNo = rec.row_number === undefined ? null : rec.row_number;
+    });
+    var hf = S1_ai2HeaderFacts_(obj, rowNo, fingerprint, b, matched);
+    hf.identifying_predicates = identifying.slice();
+    hf.carries_target_sku = carriesSku;
+    hf.line_count_for_target_sku = kids.filter(function (lr) {
+      return S1_str_(S1_cellOf_(lr, 'sku')) === sku;
+    }).length;
+    hf.line_count_total = kids.length;
+    o.candidate_headers.push(hf);
+    kids.forEach(function (lr) {
+      if (S1_str_(S1_cellOf_(lr, 'sku')) !== sku) return;
+      o.candidate_lines.push(S1_ai2LineSelfConsistency_(S1_ai2LineFacts_(lr)));
+    });
+  });
+
+  // ---- AND THE LINES NO HEADER LOOP WILL EVER REACH -------------------------------------------
+  //
+  // The scan above walks HEADERS and collects the lines hanging off each one, so a line whose parent header
+  // does not exist is invisible to it — and that line is precisely a half-landed write. Measured: a line
+  // seeded with no header at all, and a line pointing at a header that is not the one beside it, both came
+  // back as "nothing found", which reads identically to a clean zero.
+  //
+  // So the line table is scanned in its own right for the target sku, and any line whose parent is not a
+  // header row is carried as a PARENTLESS candidate. It is not attributed to any candidate header, because
+  // it belongs to none.
+  var headerIds = {};
+  (part.header_objects || []).forEach(function (ho) { headerIds[S1_str_(ho.allocation_draft_id)] = 1; });
+  var already = {};
+  o.candidate_lines.forEach(function (l) { already[l.allocation_draft_line_id] = 1; });
+  ((part.line_table && part.line_table.rows) || []).forEach(function (lr) {
+    if (S1_str_(S1_cellOf_(lr, 'sku')) !== sku) return;
+    var lid = S1_str_(S1_cellOf_(lr, 'allocation_draft_line_id'));
+    if (expL[lid]) return;                                   // the predicted line is not an ALTERNATE
+    if (already[lid]) return;                                // already carried under its own header
+    var parent = S1_str_(S1_cellOf_(lr, 'allocation_draft_id'));
+    if (headerIds[parent] === 1) return;                      // it has a header; it is simply not a candidate
+    var lf = S1_ai2LineSelfConsistency_(S1_ai2LineFacts_(lr));
+    lf.parent_header_exists = false;
+    lf.parentless = true;
+    o.candidate_lines.push(lf);
+    o.parentless_line_ids.push(lid);
+  });
+  return o;
+}
+
+/**
+ * §五 — IS IT A COMPLETE PAIR, AND IS IT THIS RUN'S?
+ *
+ * Ten questions, each answered with a value rather than a verdict, and then one class. `business_facts_ok`
+ * is deliberately the AND of every business check: a pair that is complete but carries the wrong quantity is
+ * not a complete write of the authorized plan, and calling it one is how a wrong row gets accepted.
+ */
+function S1_ai2PairCompleteness_(search, b) {
+  var o = { alternate_header_count: search.candidate_headers.length,
+    alternate_line_count: search.candidate_lines.length,
+    exactly_one_header_and_one_line: false,
+    header_exists: search.candidate_headers.length > 0,
+    line_exists: search.candidate_lines.length > 0,
+    line_fk_points_at_the_alternate_header: null,
+    duplicate_header_ids: [], duplicate_line_ids: [], orphan_line_ids: [], parentless_line_ids: [],
+    planned_qty: null, planned_qty_is_positive_and_within_the_ceiling: null,
+    planned_qty_equals_the_authorized_maximum: null,
+    scope_correct: null, run_correct: null, cycle_correct: null, sku_correct: null,
+    warehouse_correct: null, route_present: null, status_active: null,
+    carries_production_ai_provenance: null,
+    created_after_the_frozen_baseline: null,
+    frozen_target_scope_was_empty: null,
+    frozen_row_signature_count: null, id_absent_from_the_frozen_row_signatures: null,
+    proves_it_was_added_after_the_freeze: null,
+    proof_missing_parts: [],
+    business_facts_ok: null };
+  o.exactly_one_header_and_one_line = (o.alternate_header_count === 1 && o.alternate_line_count === 1);
+  o.parentless_line_ids = (search.parentless_line_ids || []).slice();
+  var seenH = {}, seenL = {};
+  search.candidate_headers.forEach(function (h) {
+    if (seenH[h.allocation_draft_id]) o.duplicate_header_ids.push(h.allocation_draft_id);
+    else seenH[h.allocation_draft_id] = 1;
+  });
+  var hIds = {};
+  search.candidate_headers.forEach(function (h) { hIds[h.allocation_draft_id] = 1; });
+  search.candidate_lines.forEach(function (l) {
+    if (seenL[l.allocation_draft_line_id]) o.duplicate_line_ids.push(l.allocation_draft_line_id);
+    else seenL[l.allocation_draft_line_id] = 1;
+    if (hIds[l.allocation_draft_id] !== 1) o.orphan_line_ids.push(l.allocation_draft_line_id);
+  });
+  if (!o.exactly_one_header_and_one_line) return o;
+  var H = search.candidate_headers[0], L = search.candidate_lines[0];
+  o.line_fk_points_at_the_alternate_header = (L.allocation_draft_id === H.allocation_draft_id);
+  o.planned_qty = L.planned_qty;
+  var max = b.expected_max_units_written;
+  o.planned_qty_is_positive_and_within_the_ceiling =
+    (L.planned_qty !== null && L.planned_qty > 0 && L.planned_qty <= max);
+  o.planned_qty_equals_the_authorized_maximum = (L.planned_qty === max);
+  o.scope_correct = (H.company === S1_str_(b.company) && H.country === S1_str_(b.country)
+    && H.marketplace === S1_str_(b.marketplace));
+  o.run_correct = (H.calculation_run_id === S1_str_(b.calculation_run_id));
+  o.cycle_correct = (H.planning_cycle === S1_str_(b.planning_cycle));
+  o.sku_correct = (L.sku === S1_str_(b.sku));
+  o.warehouse_correct = (H.recommended_source_warehouse_id
+    === S1_str_(b.source_factory_warehouse_id));
+  o.route_present = !!(H.recommended_shipping_method && H.recommended_last_mile_delivery);
+  var term = (typeof SAD_TERMINAL_STATUSES_ !== 'undefined')
+    ? SAD_TERMINAL_STATUSES_ : { submitted: 1, cancelled: 1, expired: 1 };
+  o.status_active = !term[String(H.status).toLowerCase()];
+  o.carries_production_ai_provenance = H.is_ai_generated_by_production_authority === true;
+  o.created_after_the_frozen_baseline = H.created_after_the_frozen_baseline;
+  // §五.10 — THREE FACTS, AND THE ANSWER IS THEIR CONJUNCTION, NOT ANY ONE OF THEM.
+  //
+  //   THIS id was absent from the frozen row signatures  +  it is there now  +  created after the freeze
+  //
+  // The first is deliberately about THIS ROW and not about the scope. "The frozen target scope held no
+  // rows" is a weaker claim that happens to be true of the live scope and false of any scope carrying a
+  // standing manual plan — and it would answer `cannot prove it` for a row that is demonstrably new simply
+  // because something ELSE was already there. The baseline carries every pre-execute row as `id~fingerprint`
+  // in three signature lists, so the precise question is answerable: was this id among them.
+  //
+  // Each missing part is NAMED, because "probably this run" is not something a recovery decision can rest on.
+  var frozenIds = {};
+  ['target_manual_row_signatures', 'target_ai_row_signatures', 'other_scope_row_signatures']
+    .forEach(function (k) {
+      (b[k] || []).forEach(function (sig) { frozenIds[S1_str_(sig).split('~')[0]] = 1; });
+    });
+  o.frozen_row_signature_count = Object.keys(frozenIds).length;
+  o.id_absent_from_the_frozen_row_signatures = frozenIds[H.allocation_draft_id] !== 1;
+  o.frozen_target_scope_was_empty = [b.draft_row_universe_target_manual_header_count,
+    b.draft_row_universe_target_manual_line_count,
+    b.draft_row_universe_target_ai_header_count,
+    b.draft_row_universe_target_ai_line_count].every(function (n) { return n === 0; });
+  if (o.frozen_row_signature_count === 0) {
+    o.proof_missing_parts.push('THE_BASELINE_CARRIES_NO_ROW_SIGNATURES_TO_COMPARE_AGAINST');
+  } else if (!o.id_absent_from_the_frozen_row_signatures) {
+    o.proof_missing_parts.push('THIS_ID_WAS_ALREADY_IN_THE_FROZEN_ROW_SIGNATURES');
+  }
+  if (!o.header_exists) o.proof_missing_parts.push('NO_ROW_IS_PRESENT_NOW');
+  if (o.created_after_the_frozen_baseline !== true) {
+    o.proof_missing_parts.push(o.created_after_the_frozen_baseline === null
+      ? 'CREATED_AT_COULD_NOT_BE_COMPARED_WITH_THE_FREEZE_TIME'
+      : 'THE_ROW_PREDATES_THE_FREEZE');
+  }
+  o.proves_it_was_added_after_the_freeze = o.proof_missing_parts.length === 0;
+  o.business_facts_ok = (o.line_fk_points_at_the_alternate_header === true
+    && o.planned_qty_is_positive_and_within_the_ceiling === true
+    && o.scope_correct === true && o.run_correct === true && o.cycle_correct === true
+    && o.sku_correct === true && o.warehouse_correct === true && o.route_present === true
+    && o.status_active === true && o.carries_production_ai_provenance === true);
+  return o;
+}
+
+/** §六 — the reconciliation, per candidate header, against both dimension lists. */
+function S1_ai2Reconciliation_(search, b) {
+  var o = { predicted_header_ids: (b.expected_header_ids || []).slice(),
+    predicted_line_ids: (b.expected_line_ids || []).slice(),
+    predicted_k2_group_key: (b.expected_k2_group_keys || [])[0] || null,
+    k2_dimension_names: (typeof SAD_K2_GROUP_DIMENSIONS_ !== 'undefined')
+      ? SAD_K2_GROUP_DIMENSIONS_.slice() : null,
+    k4_dimension_names: (typeof RIC_K4_GROUP_DIMENSIONS_ !== 'undefined')
+      ? RIC_K4_GROUP_DIMENSIONS_.slice() : null,
+    prediction_authority: '16_ sadK2ResolveActiveDraft_ (K2-only) — what the FROZEN baseline used',
+    writer_authority: '16_ sadResolveActiveDraftK2OrK3_({ k4Ready }) -> 69_ ricK4DeterministicHeaderId_'
+      + ' on a K4-ready sheet, else sadK2DeterministicHeaderId_',
+    live_k4_schema_ready: null,
+    per_candidate: [], ssot: null, which_side_was_wrong: null };
+  o.live_k4_schema_ready = (typeof sadK4SchemaReady_ === 'function'
+    && typeof ricK4GroupKey_ === 'function') ? null : false;
+  search.candidate_headers.forEach(function (h) {
+    var r = { allocation_draft_id: h.allocation_draft_id,
+      id_family_by_prefix: h.id_family_by_prefix,
+      stored_k2_group_key: h.k2_group_key, stored_k4_group_key: h.k4_group_key,
+      k2_derived_id: h.k2_derived_id, k4_derived_id: h.k4_derived_id,
+      id_re_derives_from_its_own_fields: h.id_re_derives_from_its_own_fields,
+      id_self_consistency_basis: h.id_self_consistency_basis,
+      production_reconcile_basis: h.production_reconcile_basis,
+      // the predicted K2 string against the stored K2 string — same ten dimensions, so a real field diff
+      predicted_k2_vs_stored_k2: S1_ai2KeyDiff_(o.predicted_k2_group_key, h.k2_group_key,
+        o.k2_dimension_names),
+      // and against the stored K4 string — ELEVEN dimensions, so `comparable` is false BY DESIGN and that
+      // is the whole finding: the two sides were not even keyed on the same number of fields.
+      predicted_k2_vs_stored_k4: S1_ai2KeyDiff_(o.predicted_k2_group_key, h.k4_group_key,
+        o.k4_dimension_names),
+      the_predicted_id_would_have_been: (b.expected_header_ids || [])[0] || null,
+      matches_the_prediction: (b.expected_header_ids || []).indexOf(h.allocation_draft_id) >= 0 };
+    r.dimension_count_differs = !!(r.predicted_k2_vs_stored_k4
+      && r.predicted_k2_vs_stored_k4.predicted_field_count !== null
+      && r.predicted_k2_vs_stored_k4.stored_field_count !== null
+      && r.predicted_k2_vs_stored_k4.predicted_field_count
+        !== r.predicted_k2_vs_stored_k4.stored_field_count);
+    o.per_candidate.push(r);
+  });
+  // WHICH SIDE WAS WRONG, decided by whether the stored id re-derives from the stored row.
+  var anyStored = o.per_candidate.length > 0;
+  var allSelfConsistent = anyStored && o.per_candidate.every(function (r) {
+    return r.id_re_derives_from_its_own_fields === true;
+  });
+  if (!anyStored) {
+    o.which_side_was_wrong = 'NO_CANDIDATE_TO_RECONCILE_AGAINST';
+  } else if (allSelfConsistent) {
+    o.ssot = 'THE_PRODUCTION_WRITER — 69_ states K4 is the successor and that sadK2GroupKey_ stays'
+      + ' byte-identical, and every stored id re-derives from its own stored fields';
+    o.which_side_was_wrong = 'THE_PREDICTION. The stored identity is internally consistent, so the frozen'
+      + ' baseline predicted from an authority the writer does not use. Fix the prediction, never the row.';
+  } else {
+    o.ssot = 'UNDECIDED — a stored id that does not re-derive from its own fields cannot be treated as the'
+      + ' authority for what the identity should be';
+    o.which_side_was_wrong = 'PRODUCTION_MAY_HAVE_STAMPED_AN_ID_ITS_OWN_ROW_DOES_NOT_PRODUCE. Do not change'
+      + ' either side until a person has looked: this is the one shape where the writer, not the'
+      + ' prediction, is the suspect.';
+  }
+  return o;
+}
+
+/** §五 — one of six, by the stated precedence, with every candidate kept. */
+function S1_ai2Classify_(search, pair, readable) {
+  var o = { classification: null, why: null, precedence: S1_AI2_CLASS_PRECEDENCE_.slice(), candidates: [] };
+  if (readable !== true) o.candidates.push('READBACK_INDETERMINATE');
+  // A ROW THAT PREDATES THE FREEZE IS NOT THIS RUN'S OUTPUT, whatever else is true of it. Judged first
+  // among the real classes, because every judgement below would otherwise be about the wrong row.
+  if (pair.header_exists && pair.created_after_the_frozen_baseline === false) {
+    o.candidates.push('PREEXISTING_ROW_MISCLASSIFIED_AS_ALTERNATE');
+  }
+  if (pair.duplicate_header_ids.length > 0 || pair.duplicate_line_ids.length > 0
+      || pair.alternate_header_count > 1 || pair.alternate_line_count > 1) {
+    o.candidates.push('DUPLICATE_ALTERNATE_WRITE');
+  }
+  // AN ORPHAN IS A LINE WITH NO HEADER OF ITS OWN, whether it points at nothing or at somebody else's row.
+  // `parentless_line_ids` is the case a header-walking scan cannot see at all.
+  if (pair.orphan_line_ids.length > 0 || pair.parentless_line_ids.length > 0
+      || (pair.exactly_one_header_and_one_line
+          && pair.line_fk_points_at_the_alternate_header === false)) {
+    o.candidates.push('ORPHAN_ALTERNATE_WRITE');
+  }
+  if ((pair.header_exists !== pair.line_exists)
+      || (pair.exactly_one_header_and_one_line && pair.business_facts_ok !== true)) {
+    o.candidates.push('PARTIAL_WRITE_UNDER_ALTERNATE_IDENTITIES');
+  }
+  if (pair.exactly_one_header_and_one_line && pair.business_facts_ok === true
+      && pair.proves_it_was_added_after_the_freeze === true) {
+    o.candidates.push('COMPLETE_WRITE_UNDER_ALTERNATE_IDENTITIES');
+  }
+  if (!o.candidates.length) o.candidates.push('READBACK_INDETERMINATE');
+  for (var i = 0; i < S1_AI2_CLASS_PRECEDENCE_.length; i++) {
+    if (o.candidates.indexOf(S1_AI2_CLASS_PRECEDENCE_[i]) >= 0) {
+      o.classification = S1_AI2_CLASS_PRECEDENCE_[i]; break;
+    }
+  }
+  o.why = {
+    READBACK_INDETERMINATE: 'a table or expectation this classification needs could not be read reliably',
+    PREEXISTING_ROW_MISCLASSIFIED_AS_ALTERNATE: 'the row predates the frozen baseline, so it is not this'
+      + ' generation output and the alternate match was a false positive',
+    DUPLICATE_ALTERNATE_WRITE: 'more than one row holds this identity or this group',
+    ORPHAN_ALTERNATE_WRITE: 'a line points at a header that is not the one found beside it',
+    PARTIAL_WRITE_UNDER_ALTERNATE_IDENTITIES: 'one side only, or a pair whose business facts are not the'
+      + ' authorized ones — a complete write of the WRONG plan is not a complete write',
+    COMPLETE_WRITE_UNDER_ALTERNATE_IDENTITIES: 'one header, one line, the line points at the header, the'
+      + ' quantity is within the authorized ceiling and every scope/run/cycle/sku/warehouse/route fact is'
+      + ' the authorized one — under identities the frozen baseline did not predict'
+  }[o.classification] || null;
+  return o;
+}
+
+/**
+ * ================================================================================================================
+ * RUN_S1_CONTROLLED_GENERATE_ALTERNATE_IDENTITY_READBACK()
+ *
+ * READ ONLY, NO OPTIONS, NO AUTHORIZATION, NO MINT, NO GENERATOR, NO WRITER, NO REPAIR.
+ *
+ * It answers the question R6B could only raise: WHICH row, whether its line came with it, and why its id is
+ * not the one that was predicted. The identity reconciliation is mechanical — production's own dimension
+ * arrays, production's own hash, production's own reconcile predicate — because the one thing this must not
+ * do is have an opinion of its own about what the identity should have been.
+ * ================================================================================================================
+ */
+function RUN_S1_CONTROLLED_GENERATE_ALTERNATE_IDENTITY_READBACK() {
+  var out = { tool: 'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_IDENTITY_READBACK', build: S1_BUILD_,
+    read_only: true, writes: 0, writer_calls: 0, writer_constructed: false, submit_calls: 0,
+    generator_calls: 0, attempts: 0, capability_minted: false, authorization_read: false,
+    repairs_attempted: 0, rows_created: 0, rows_updated: 0, rows_deleted: 0,
+    authorizes: 'NOTHING. It reports which rows exist and which authority minted their ids.',
+    baseline_role: 'EXPECTATION ONLY — the frozen baseline supplies the predicted identities and the'
+      + ' pre-execute counts a comparison needs. It is never read here as permission.',
+    classification: null, next_action: null, stop_reason: '' };
+  var L = S1_ledger_();
+  try {
+    var b = S1_MANIFEST_P_BEFORE_;
+    out.baseline_present = !!b && typeof b === 'object' && !!b.scope_key;
+    L.P('a_frozen_baseline_is_present_to_compare_against', true, out.baseline_present,
+      out.baseline_present === true);
+    if (!out.baseline_present) {
+      out.classification = 'READBACK_INDETERMINATE';
+      out.stop_reason = 'S1_MANIFEST_P_BEFORE_ carries no scope, so there is no predicted identity to'
+        + ' reconcile against and no pre-execute count to prove a row is new.';
+      return S1_ai2Finish_(out, L);
+    }
+    out.scope = { company: S1_str_(b.company), country: S1_str_(b.country),
+      marketplace: S1_str_(b.marketplace), sku: S1_str_(b.sku),
+      scope_key: S1_str_(b.scope_key), planning_cycle: S1_str_(b.planning_cycle),
+      calculation_run_id: S1_str_(b.calculation_run_id), frozen_at: S1_str_(b.frozen_at) };
+    var db = S1_openDb_();
+    out.db_opened = db.ok;
+    L.P('the_production_database_was_opened_read_only', true, db.ok, db.ok === true);
+    if (!db.ok) {
+      out.classification = 'READBACK_INDETERMINATE';
+      out.stop_reason = 'the production database could not be opened: ' + S1_str_(db.reason);
+      return S1_ai2Finish_(out, L);
+    }
+    var part = S1_draftPartition_(db.ss,
+      { company: b.company, country: b.country, marketplace: b.marketplace, sku: b.sku });
+    out.tables_readable = !!(part.header_table.readable && part.line_table.readable);
+    out.column_authority_available = part.column_authority_available;
+    L.P('both_draft_tables_were_readable', true, out.tables_readable, out.tables_readable === true);
+    L.P('the_production_column_authority_was_available', true, out.column_authority_available,
+      out.column_authority_available === true);
+    // THE IDENTITY AUTHORITIES, NAMED AND CHECKED FOR PRESENCE. A reconciliation missing one of them can
+    // still produce numbers, and those numbers would be about one family while the row is in the other.
+    out.identity_authorities = [
+      { authority: 'sadK2GroupKey_', present: typeof sadK2GroupKey_ === 'function' },
+      { authority: 'sadK2DeterministicHeaderId_', present: typeof sadK2DeterministicHeaderId_ === 'function' },
+      { authority: 'sadK2DeterministicLineId_', present: typeof sadK2DeterministicLineId_ === 'function' },
+      { authority: 'sadK2ReconcileDecision_', present: typeof sadK2ReconcileDecision_ === 'function' },
+      { authority: 'ricK4GroupKey_', present: typeof ricK4GroupKey_ === 'function' },
+      { authority: 'ricK4DeterministicHeaderId_', present: typeof ricK4DeterministicHeaderId_ === 'function' },
+      { authority: 'sadK4SchemaReady_', present: typeof sadK4SchemaReady_ === 'function' },
+      { authority: 'sadResolveActiveDraftK2OrK3_', present: typeof sadResolveActiveDraftK2OrK3_ === 'function' }
+    ];
+    out.identity_authorities_missing = out.identity_authorities.filter(function (a) { return !a.present; })
+      .map(function (a) { return a.authority; });
+    L.P('every_identity_authority_this_reconciliation_needs_is_present', [],
+      out.identity_authorities_missing, out.identity_authorities_missing.length === 0);
+    out.live_k4_schema_ready = S1_k4SchemaReadyLive_(db.ss);
+    L.P('the_live_header_sheet_k4_readiness_was_measurable', 'true or false',
+      out.live_k4_schema_ready, out.live_k4_schema_ready !== null);
+
+    out.search = S1_ai2Search_(part, b);
+    out.pair = S1_ai2PairCompleteness_(out.search, b);
+    out.reconciliation = S1_ai2Reconciliation_(out.search, b);
+    out.reconciliation.live_k4_schema_ready = out.live_k4_schema_ready;
+    out.protected_surfaces = S1_pfProtectedSurfaces_(S1_cgObserve_(db.ss, b), b);
+    L.P('every_comparable_protected_surface_is_unchanged', [],
+      out.protected_surfaces.changed, out.protected_surfaces.all_compared_intact === true);
+    L.P('the_authorized_identities_are_still_absent',
+      { header: false, line: false },
+      { header: out.search.expected_header_present, line: out.search.expected_line_present },
+      out.search.expected_header_present === false && out.search.expected_line_present === false);
+
+    var readable = out.tables_readable === true && out.column_authority_available === true
+      && out.identity_authorities_missing.length === 0;
+    var cls = S1_ai2Classify_(out.search, out.pair, readable);
+    out.classification = cls.classification;
+    out.classification_detail = cls;
+    return S1_ai2Finish_(out, L);
+  } catch (e) {
+    out.classification = 'READBACK_INDETERMINATE';
+    out.stop_reason = 'S1_ALTERNATE_IDENTITY_READBACK_THREW: ' + String(e && e.message ? e.message : e)
+      + '. The exception is the finding; a run that threw proves nothing about the row.';
+    return S1_ai2Finish_(out, L);
+  }
+}
+
+/** The report. Its own function so the zero proof and the closed contract are asserted once, not once per
+ *  return path — and every return path here is a refusal of some kind. */
+function S1_ai2Finish_(out, L) {
+  out.predicates = L.entries;
+  out.predicates_passed = L.entries.length - L.failed.length;
+  out.predicates_failed = L.failed.length;
+  out.failed_predicates = L.failed.slice();
+  out.classification_is_known = S1_AI2_CLASSES_.indexOf(S1_str_(out.classification)) >= 0;
+  out.retry_contract = S1_ai2RetryContract_(out.classification);
+  out.next_action = out.retry_contract.next_action;
+  out.this_manifest_wrote_nothing = (out.writes === 0 && out.writer_calls === 0
+    && out.generator_calls === 0 && out.attempts === 0 && out.capability_minted === false
+    && out.authorization_read === false && out.repairs_attempted === 0 && out.rows_created === 0
+    && out.rows_updated === 0 && out.rows_deleted === 0);
+  out.next_action_permits_another_generate =
+    S1_CG_NEXT_ACTION_ALLOWS_ANOTHER_GENERATE_[out.next_action] === true;
+  out.next_action_agrees_with_the_permission =
+    out.next_action_permits_another_generate === out.retry_contract.generate_may_be_attempted_again;
+  S1_log_('s1_controlled_generate_alternate_identity_readback', JSON.stringify({
+    tool: out.tool, build: out.build, classification: out.classification,
+    classification_is_known: out.classification_is_known,
+    predicates_passed: out.predicates_passed, predicates_failed: out.predicates_failed,
+    failed: out.failed_predicates.slice(0, 12),
+    this_manifest_wrote_nothing: out.this_manifest_wrote_nothing,
+    alternate_header_count: out.pair ? out.pair.alternate_header_count : null,
+    alternate_line_count: out.pair ? out.pair.alternate_line_count : null,
+    alternate_ids: out.search
+      ? out.search.candidate_headers.map(function (h) { return h.allocation_draft_id; }).slice(0, 8) : null,
+    id_families: out.search
+      ? out.search.candidate_headers.map(function (h) { return h.id_family_by_prefix; }).slice(0, 8) : null,
+    ids_re_derive: out.search
+      ? out.search.candidate_headers.map(function (h) {
+        return h.id_re_derives_from_its_own_fields; }).slice(0, 8) : null,
+    business_facts_ok: out.pair ? out.pair.business_facts_ok : null,
+    proves_added_after_freeze: out.pair ? out.pair.proves_it_was_added_after_the_freeze : null,
+    live_k4_schema_ready: out.live_k4_schema_ready === undefined ? null : out.live_k4_schema_ready,
+    which_side_was_wrong: out.reconciliation ? S1_cap_(out.reconciliation.which_side_was_wrong, 200) : null,
+    generate_may_be_attempted_again: out.retry_contract.generate_may_be_attempted_again,
+    next_action: out.next_action, stop_reason: S1_cap_(out.stop_reason, 400) }));
+  return out;
+}
+
+/**
+ * ================================================================================================================
+ * RUN_S1_CONTROLLED_GENERATE_ALTERNATE_PAIR_ACCEPTANCE_MANIFEST()
+ *
+ * READ ONLY. IT ACCEPTS NOTHING — it states, as measured facts, whether the preconditions for a person to
+ * accept the alternate pair are met. §八: a complete pair with correct business content is not deleted, not
+ * rebuilt and not regenerated; it is a Manifest-prediction identity drift, and the identity contract and the
+ * post-generation readback are what get fixed.
+ *
+ * IT HAS NO EXECUTE SWITCH BECAUSE THERE IS NOTHING FOR ONE TO DO. Accepting a row is a decision recorded by
+ * a person, not a mutation; the moment this tool could write, "accepted" would become something a diagnostic
+ * can assert about itself.
+ * ================================================================================================================
+ */
+function RUN_S1_CONTROLLED_GENERATE_ALTERNATE_PAIR_ACCEPTANCE_MANIFEST() {
+  var out = { tool: 'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_PAIR_ACCEPTANCE_MANIFEST', build: S1_BUILD_,
+    read_only: true, writes: 0, writer_calls: 0, generator_calls: 0, attempts: 0,
+    capability_minted: false, authorization_read: false, repairs_attempted: 0,
+    rows_created: 0, rows_updated: 0, rows_deleted: 0, accepts_nothing: true,
+    authorizes: 'NOTHING. It reports whether the preconditions for a PERSON to accept the alternate pair'
+      + ' hold. Acceptance is a decision, not a mutation, and this tool performs neither.',
+    verdict: null, next_action: null, stop_reason: '' };
+  var L = S1_ledger_();
+  try {
+    var rb = RUN_S1_CONTROLLED_GENERATE_ALTERNATE_IDENTITY_READBACK();
+    out.readback = { classification: rb.classification, predicates_failed: rb.predicates_failed,
+      failed_predicates: rb.failed_predicates.slice(0, 12),
+      alternate_header_count: rb.pair ? rb.pair.alternate_header_count : null,
+      alternate_line_count: rb.pair ? rb.pair.alternate_line_count : null,
+      this_manifest_wrote_nothing: rb.this_manifest_wrote_nothing };
+    // THE READBACK IS THE ONLY SOURCE. A second measurement here would be a second opinion about the same
+    // rows, and the first thing two opinions do is disagree about a row nobody can then reconcile.
+    L.P('the_readback_ran_and_wrote_nothing', true, rb.this_manifest_wrote_nothing,
+      rb.this_manifest_wrote_nothing === true);
+    L.P('the_readback_reached_a_known_classification', true, rb.classification_is_known,
+      rb.classification_is_known === true);
+    L.P('the_readback_found_a_complete_pair_under_alternate_identities',
+      'COMPLETE_WRITE_UNDER_ALTERNATE_IDENTITIES', rb.classification,
+      rb.classification === 'COMPLETE_WRITE_UNDER_ALTERNATE_IDENTITIES');
+    L.P('every_business_fact_of_that_pair_is_the_authorized_one', true,
+      rb.pair ? rb.pair.business_facts_ok : null, !!rb.pair && rb.pair.business_facts_ok === true);
+    L.P('the_pair_is_proved_to_have_been_added_after_the_freeze', true,
+      rb.pair ? rb.pair.proves_it_was_added_after_the_freeze : null,
+      !!rb.pair && rb.pair.proves_it_was_added_after_the_freeze === true);
+    L.P('the_quantity_is_within_the_authorized_ceiling', true,
+      rb.pair ? rb.pair.planned_qty_is_positive_and_within_the_ceiling : null,
+      !!rb.pair && rb.pair.planned_qty_is_positive_and_within_the_ceiling === true);
+    L.P('every_comparable_protected_surface_is_unchanged', [],
+      rb.protected_surfaces ? rb.protected_surfaces.changed : null,
+      !!rb.protected_surfaces && rb.protected_surfaces.all_compared_intact === true);
+    L.P('the_stored_identity_re_derives_from_its_own_fields',
+      'every candidate self-consistent',
+      rb.search ? rb.search.candidate_headers.map(function (h) {
+        return h.id_re_derives_from_its_own_fields; }) : null,
+      !!rb.search && rb.search.candidate_headers.length > 0
+        && rb.search.candidate_headers.every(function (h) {
+          return h.id_re_derives_from_its_own_fields === true; }));
+    L.P('and_the_prediction_is_the_side_that_was_wrong',
+      'THE_PREDICTION', rb.reconciliation ? S1_cap_(rb.reconciliation.which_side_was_wrong, 60) : null,
+      !!rb.reconciliation && String(rb.reconciliation.which_side_was_wrong)
+        .indexOf('THE_PREDICTION') === 0);
+    out.acceptance_preconditions_met = L.failed.length === 0;
+    out.verdict = out.acceptance_preconditions_met
+      ? 'ALTERNATE_PAIR_IS_ACCEPTABLE_BY_A_PERSON'
+      : 'ALTERNATE_PAIR_IS_NOT_ACCEPTABLE_YET';
+    out.next_action = out.acceptance_preconditions_met
+      ? 'A_PERSON_RECORDS_THE_ACCEPTANCE_THEN_THE_IDENTITY_CONTRACT_AND_READBACK_ARE_CORRECTED'
+      : 'STOP_AND_PERFORM_MANUAL_RECOVERY_WITH_THIS_MANIFEST';
+    if (!out.acceptance_preconditions_met) {
+      out.stop_reason = 'not acceptable: ' + L.failed.slice(0, 8).join(', ');
+    }
+    // §八 — WHAT MUST NOT HAPPEN EITHER WAY, said in the object rather than left to be remembered.
+    out.forbidden_regardless_of_the_verdict = ['DELETE_THE_ALTERNATE_ROWS', 'REBUILD_THEM',
+      'REGENERATE_UNDER_THE_PREDICTED_IDENTITIES', 'REUSE_THE_SPENT_AUTHORIZATION',
+      'REUSE_THE_SPENT_FROZEN_BASELINE'];
+    out.retry_contract = S1_ai2RetryContract_(out.verdict);
+    out.retry_contract.contract_key = out.verdict;
+    out.retry_contract.known = true;
+    return S1_ai2FinishAcceptance_(out, L);
+  } catch (e) {
+    out.verdict = 'ALTERNATE_PAIR_IS_NOT_ACCEPTABLE_YET';
+    out.stop_reason = 'S1_ALTERNATE_PAIR_ACCEPTANCE_THREW: ' + String(e && e.message ? e.message : e);
+    out.retry_contract = S1_ai2RetryContract_(out.verdict);
+    return S1_ai2FinishAcceptance_(out, L);
+  }
+}
+
+function S1_ai2FinishAcceptance_(out, L) {
+  out.predicates = L.entries;
+  out.predicates_passed = L.entries.length - L.failed.length;
+  out.predicates_failed = L.failed.length;
+  out.failed_predicates = L.failed.slice();
+  out.this_manifest_wrote_nothing = (out.writes === 0 && out.writer_calls === 0
+    && out.generator_calls === 0 && out.attempts === 0 && out.capability_minted === false
+    && out.authorization_read === false && out.repairs_attempted === 0 && out.rows_created === 0
+    && out.rows_updated === 0 && out.rows_deleted === 0);
+  out.next_action_permits_another_generate =
+    S1_CG_NEXT_ACTION_ALLOWS_ANOTHER_GENERATE_[out.next_action] === true;
+  S1_log_('s1_controlled_generate_alternate_pair_acceptance', JSON.stringify({
+    tool: out.tool, build: out.build, verdict: out.verdict,
+    predicates_passed: out.predicates_passed, predicates_failed: out.predicates_failed,
+    failed: out.failed_predicates.slice(0, 12),
+    acceptance_preconditions_met: out.acceptance_preconditions_met === undefined
+      ? null : out.acceptance_preconditions_met,
+    readback_classification: out.readback ? out.readback.classification : null,
+    this_manifest_wrote_nothing: out.this_manifest_wrote_nothing,
+    next_action: out.next_action, stop_reason: S1_cap_(out.stop_reason, 400) }));
   return out;
 }

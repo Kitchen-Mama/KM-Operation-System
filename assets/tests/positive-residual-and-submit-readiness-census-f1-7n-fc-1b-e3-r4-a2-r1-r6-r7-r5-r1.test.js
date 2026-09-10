@@ -449,7 +449,22 @@ function S1World(spec) {
     extractFn(G16, 'sadK2ResolveActiveDraft_'),
     extractFn(G16, 'sadK2PayloadFingerprint_'),
     extractFn(G16, 'sadK2LineNaturalKey_'),
-    extractFn(G16, 'sadK2PartitionLinesIntoGroups_')
+    extractFn(G16, 'sadK2PartitionLinesIntoGroups_'),
+    // R6C — THE RESOLVER THE ATOMIC WRITER ACTUALLY CALLS, and the pure reconcile decision beside it.
+    //
+    // Their absence is why no test caught the live divergence. The world already carried the whole K4
+    // authority (ricK4GroupKey_, ricDestinationIdentity_, ricCanonicalService_, sadK4ResolveActiveDraft_)
+    // and `sadK4SchemaReady_` answered TRUE in it — but the only resolver present was the K2-only one, so
+    // every fixture predicted a K2 id and agreed with itself. The writer calls this one, with k4Ready.
+    extractFn(G16, 'sadResolveActiveDraftK2OrK3_'),
+    // and the five BASIS constants it answers with — without them it throws on its own return value,
+    // which a try/catch turns into `null` and a reader into someone who thinks the predicate said nothing.
+    extractVar(G16, 'SAD_K2_BASIS_ID_MATCHES_'),
+    extractVar(G16, 'SAD_K2_BASIS_STALE_ACCEPTED_'),
+    extractVar(G16, 'SAD_K2_BASIS_DIFFERENT_GROUP_'),
+    extractVar(G16, 'SAD_K2_BASIS_NO_REQUEST_GROUP_'),
+    extractVar(G16, 'SAD_K2_BASIS_CONTESTED_'),
+    extractFn(G16, 'sadK2ReconcileDecision_')
   ].join(NL), w.ctx, { filename: '16_writeset' });
   // 69_'s real expiration selector — the SAME one a generation uses to expire, so the set the census reports
   // and the set a run would expire cannot differ.
@@ -658,14 +673,15 @@ var S1_BARE = bareCode(S1);
     && src.indexOf('getRange') === -1,
     'A7.19.' + (i + 1) + 'b ' + fn + ' reaches no write API, no lock and no getRange at all');
 });
-// THIRTEEN READ-ONLY ENTRY POINTS, THREE THAT GATE ON `opts.execute !== true`, AND ONE THAT WRITES ON
+// FIFTEEN READ-ONLY ENTRY POINTS, THREE THAT GATE ON `opts.execute !== true`, AND ONE THAT WRITES ON
 // SIGHT. S1-R6A added the last of those: the Run dropdown passes no arguments, so the no-arg entry point
-// cannot have a dry-run flag and does not pretend to. S1-R6B added the thirteenth read-only one — the
-// post-failure recovery manifest, which is read-only for the same reason the preflight is: there is
-// nothing to pass it. §AI partitions all seventeen by NAME, so an eighteenth cannot appear in any class
-// without that failing; this line is the count on its own.
-eq((S1_BARE.match(/^function RUN_S1_[A-Z_]+/gm) || []).length, 17,
-  'A7.20 seventeen public entry points in total');
+// cannot have a dry-run flag and does not pretend to. R6B and R6C added four read-only ones between them
+// — the post-failure recovery manifest, the alternate-identity readback, and the acceptance manifest —
+// each read-only for the same structural reason the preflight is: there is nothing to pass them.
+// §AI partitions all nineteen by NAME, so a twentieth cannot appear in any class without that failing;
+// this line is the count on its own.
+eq((S1_BARE.match(/^function RUN_S1_[A-Z_]+/gm) || []).length, 19,
+  'A7.20 nineteen public entry points in total');
 ['RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL', 'RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL',
  'RUN_S1_CONTROLLED_GENERATE_EXECUTE'].forEach(function (fn, i) {
   var src = bareCode(extractFn(S1, fn));
@@ -706,9 +722,13 @@ eq((A8SITE.match(/WeeklyAiPlanControlledAuthority_\.mint\(/g) || []).length, 1,
   'A8.6c and so is the mint');
 ['RUN_S1_CONTROLLED_GENERATE_PREFLIGHT', 'RUN_S1_CONTROLLED_GENERATE_EXECUTE',
  'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE', 'RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK',
+ 'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_IDENTITY_READBACK',
+ 'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_PAIR_ACCEPTANCE_MANIFEST',
  'RUN_S1_MANIFEST_P',
  'RUN_S1_MANIFEST_S', 'S1_cgReadback_', 'S1_cgObserve_', 'S1_cgIdempotency_', 'S1_cgClassify_',
- 'S1_pfInputEvidence_', 'S1_pfClassify_', 'S1_pfExpectedIdentities_', 'S1_pfProtectedSurfaces_'
+ 'S1_pfInputEvidence_', 'S1_pfClassify_', 'S1_pfExpectedIdentities_', 'S1_pfProtectedSurfaces_',
+ 'S1_ai2Search_', 'S1_ai2HeaderFacts_', 'S1_ai2PairCompleteness_', 'S1_ai2Reconciliation_',
+ 'S1_ai2Classify_', 'S1_ai2KeyDiff_'
 ].forEach(function (fn, i) {
   var src = bareCode(extractFn(S1, fn));
   eq((src.match(/weeklyAiPlanGenerateK2_\(/g) || []).length, 0,
@@ -725,8 +745,13 @@ eq((A8SITE.match(/WeeklyAiPlanControlledAuthority_\.mint\(/g) || []).length, 1,
  'S1_cgOnceAuthorizationCheck_', 'S1_cgFinishOnce_',
  'S1_pfExpectedIdentities_', 'S1_pfTargetUniverse_', 'S1_pfProtectedSurfaces_', 'S1_pfInputEvidence_',
  'S1_pfClassify_', 'S1_pfFinish_', 'S1_pfRetryContract_',
+ 'S1_ai2KeyDiff_', 'S1_ai2HeaderFacts_', 'S1_ai2LineFacts_', 'S1_ai2LineSelfConsistency_',
+ 'S1_ai2Search_', 'S1_ai2PairCompleteness_', 'S1_ai2Reconciliation_', 'S1_ai2Classify_',
+ 'S1_ai2Finish_', 'S1_ai2RetryContract_', 'S1_ai2FinishAcceptance_',
  'RUN_S1_CONTROLLED_GENERATE_PREFLIGHT', 'RUN_S1_CONTROLLED_GENERATE_EXECUTE',
- 'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE', 'RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK'
+ 'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE', 'RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK',
+ 'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_IDENTITY_READBACK',
+ 'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_PAIR_ACCEPTANCE_MANIFEST'
 ].forEach(function (fn, i) {
   var src = bareCode(extractFn(S1, fn));
   ok(src.length > 0, 'A8.7.' + (i + 1) + 'a ' + fn + ' is extractable');
@@ -1929,8 +1954,19 @@ eq([FB.ai_expiration_candidates, FB.ai_expiration_candidate_count], [[], 0],
 eq([FB.expected_create_header_count, FB.expected_create_line_count,
   FB.expected_update_header_count, FB.expected_update_line_count], [1, 1, 0, 0],
   'M5d3 while the run is predicted to CREATE one header and one line, and update nothing');
-ok(FB.expected_header_ids.length === 1 && /^SADH-K2-[0-9A-F]+$/.test(FB.expected_header_ids[0]),
-  'M5d4 named by its deterministic K2 header id', FB.expected_header_ids);
+// R6C — the family the writer's own resolver chose, not a hardcoded prefix. The freeze carries the family
+// it used, so a baseline can no longer name an identity without saying which authority minted it.
+ok(FB.expected_header_ids.length === 1 && /^SADH-K[24]-[0-9A-F]{8}$/.test(FB.expected_header_ids[0]),
+  'M5d4 named by a deterministic header id', FB.expected_header_ids);
+// AND A GAP THIS ROUND RECORDS RATHER THAN CLOSES. The freeze carries the identity but NOT the family that
+// minted it, because the freeze is a 95-field contract asserted field-for-field and adding a 96th would make
+// every existing frozen baseline non-comparable — an `extra_in_measurement` on every drift check. So the
+// family stays out of the freeze this round, and the fact is asserted so it cannot be quietly forgotten:
+// closing it means rotating the baseline to 96 fields, which is its own authorized round.
+eq(FB.identity_family, undefined,
+  'M5d4a the freeze does not yet carry the identity FAMILY — a known gap, not an oversight');
+eq(FB.expected_header_ids[0], MP1.res.predicted_write_set.expected_header_ids[0],
+  'M5d4b and it is the very id the resolver handed back, not a re-derivation of it');
 ok(FB.expected_line_ids.length === 1 && /^SADL-K2-[0-9A-F]+$/.test(FB.expected_line_ids[0]),
   'M5d5 and its deterministic K2 line id', FB.expected_line_ids);
 eq(FB.expected_k2_group_keys.length, 1, 'M5d6 across one route group, keyed canonically',
@@ -2288,6 +2324,40 @@ section('W — S1-R4A: the exact write set, and a freeze that covers every colum
 var WG0 = MP1.res.predicted_write_set.route_groups[0];
 var PRED_H = WG0.allocation_draft_id, PRED_L = WG0.line_ids[0];
 
+// ---- R6C — WHICH IDENTITY FAMILY THIS WORLD MINTS, ASKED RATHER THAN ASSUMED --------------------
+//
+// Every assertion below used to recompute the expected id with `sadK2DeterministicHeaderId_`, and the
+// prediction used to be produced by the K2-only resolver, so the two agreed — and agreed with each other
+// while disagreeing with the live writer. On a sheet that carries a `destination_marketplace` column and
+// has 69_ deployed, the atomic writer resolves through K4: eleven dimensions, the raw destination-warehouse
+// dimension replaced by a derived destination_type + destination_identity, and the service canonicalised.
+//
+// This fixture world is one of those sheets, and always was — `sadK4SchemaReady_` answers TRUE in it. What
+// was missing was the resolver that reads that answer, so nothing here could tell the two families apart.
+var W_FAM = MP1.res.predicted_write_set.identity_family;
+eq(W_FAM, 'K4', 'W0  this fixture sheet is K4-ready, so the writer\'s resolver mints the K4 family',
+  [W_FAM, MP1.res.predicted_write_set.k4_schema_ready]);
+ok(String(MP1.res.predicted_write_set.identity_authority || '')
+    .indexOf('sadResolveActiveDraftK2OrK3_') >= 0,
+  'W0a and the prediction names the resolver the atomic writer calls',
+  MP1.res.predicted_write_set.identity_authority);
+eq(MP1.res.predicted_write_set.identity_unavailable_reason, null,
+  'W0b with that authority actually present, so the id is derived and not guessed');
+/** The deterministic header id for `hdr`, from the builder the named family owns. */
+function detHeaderId(ctx, hdr, fam) {
+  var fn = (fam || W_FAM) === 'K4' ? 'ricK4DeterministicHeaderId_' : 'sadK2DeterministicHeaderId_';
+  return vm.runInContext(fn + '(' + JSON.stringify(hdr) + ')', ctx);
+}
+function detGroupKey(ctx, hdr, fam) {
+  var fn = (fam || W_FAM) === 'K4' ? 'ricK4GroupKey_' : 'sadK2GroupKey_';
+  return vm.runInContext(fn + '(' + JSON.stringify(hdr) + ')', ctx);
+}
+/** The header-id form for a family. The LINE scheme is SADL-K2- in BOTH families (16_:1220 picks the K2
+ *  line authority for any K2-or-K4 group), so there is deliberately no K4 line prefix. */
+function detHeaderRe(fam) {
+  return (fam || W_FAM) === 'K4' ? /^SADH-K4-[0-9A-F]{8}$/ : /^SADH-K2-[0-9A-F]{8}$/;
+}
+
 // ---- W1 — THE IDENTITIES ARE PRODUCED BY THE PRODUCTION AUTHORITIES, NOT BY THIS FILE. -------------------
 // Recomputed here by calling the SAME shipped functions with the SAME header the manifest reported, so the
 // claim is "the manifest used the authority", not "the manifest produced a plausible-looking string".
@@ -2297,12 +2367,28 @@ var W1hdr = { planning_cycle: GAP_CYCLE, company: 'ResUS', country: 'US', market
   recommended_destination_warehouse_id: WG0.destination_warehouse_id,
   recommended_shipping_method: WG0.shipping_method,
   recommended_last_mile_delivery: WG0.last_mile_delivery,
-  recommendation_group_no: WG0.recommendation_group_no };
-var W1key = vm.runInContext('sadK2GroupKey_(' + JSON.stringify(W1hdr) + ')', MP1.world.ctx);
-var W1id = vm.runInContext('sadK2DeterministicHeaderId_(' + JSON.stringify(W1hdr) + ')', MP1.world.ctx);
-eq(WG0.k2_group_key, W1key, 'W1  the reported K2 group key is sadK2GroupKey_ of the reported header');
-eq(PRED_H, W1id, 'W1a and the header id is sadK2DeterministicHeaderId_ of that same header');
-ok(/^SADH-K2-[0-9A-F]{8}$/.test(PRED_H), 'W1b in the deterministic K2 header form', PRED_H);
+  recommendation_group_no: WG0.recommendation_group_no,
+  // K4 needs the destination it derives its identity from. A marketplace route stores it here, and a
+  // header without it is the legacy row K4 deliberately cannot classify.
+  destination_marketplace: WG0.destination_marketplace };
+var W1key = detGroupKey(MP1.world.ctx, W1hdr);
+var W1id = detHeaderId(MP1.world.ctx, W1hdr);
+eq(WG0.k2_group_key, W1key,
+  'W1  the reported group key is the chosen family\'s own group key of the reported header');
+eq(PRED_H, W1id,
+  'W1a and the header id is that family\'s deterministic id of that same header');
+ok(detHeaderRe().test(PRED_H), 'W1b in the deterministic header form of the family that minted it',
+  [W_FAM, PRED_H]);
+// AND THE STRONGER CLAIM THE PREFIX TEST COULD NEVER MAKE: the reported id re-derives from the header it
+// names, checked by the census itself, per group. A wrong family fails this and so does a right family
+// with a wrong hash — the prefix caught neither.
+eq(WG0.identity_self_consistent, true,
+  'W1a2 and the census re-derived it from that header rather than reporting it', WG0);
+eq(WG0.identity_family, W_FAM, 'W1a3 naming the family it used', WG0.identity_family);
+// The K2-only answer is reported BESIDE it, which is the number that made the live readback unreadable.
+ok(!!WG0.k2_would_have_predicted && WG0.k2_would_have_predicted !== PRED_H,
+  'W1a4 with the id the K2-only resolver would have predicted kept as evidence, and DIFFERENT',
+  [WG0.k2_would_have_predicted, PRED_H]);
 ok(/^SADL-K2-[0-9A-F]{8}$/.test(PRED_L), 'W1c and the line in the deterministic K2 line form', PRED_L);
 // EVERY AUTHORITY NAMED AND PRESENT, so a half-synced deployment is a refusal rather than an approximation.
 var W1auth = MP1.res.predicted_write_set.authorities;
@@ -2354,8 +2440,12 @@ ok(W2ws.measurable === true && (W2ws.route_groups || []).length >= 2,
   [(W2ws.route_groups || []).length, W2ws.stage]);
 eq(W2ws.expected_header_ids.length, (W2ws.route_groups || []).length,
   'W2a with one predicted header id per group', W2ws.expected_header_ids);
-ok(W2ws.expected_header_ids.every(function (id) { return /^SADH-K2-[0-9A-F]{8}$/.test(id); }),
-  'W2b every one of them deterministic', W2ws.expected_header_ids);
+ok(W2ws.expected_header_ids.every(function (id) { return detHeaderRe().test(id); }),
+  'W2b every one of them deterministic in the minting family\'s form',
+  [W2ws.identity_family, W2ws.expected_header_ids]);
+ok((W2ws.route_groups || []).every(function (g) { return g.identity_self_consistent === true; }),
+  'W2b2 and every one re-derives from its own group header',
+  (W2ws.route_groups || []).map(function (g) { return g.identity_self_consistency_basis; }));
 eq(W2ws.duplicate_header_ids, [], 'W2c and no two groups minting the same id');
 eq(W2ws.expected_k2_group_keys.length, (W2ws.route_groups || []).length,
   'W2d one canonical group key per group');
@@ -2369,8 +2459,14 @@ eq(W2ws.expected_line_ids.length,
 eq(W2.world.allWrites(), 0, 'W2h measured: zero writes');
 
 // ---- W3 — CREATE vs UPDATE, classified by the production resolver. --------------------------------------
-// An ACTIVE AI draft seeded on the EXACT group key the CREATE path predicted. sadK2ResolveActiveDraft_ must
+// An ACTIVE AI draft seeded on the EXACT group the CREATE path predicted. The writer's resolver must
 // return REUSE, so the same world that was a CREATE becomes an UPDATE, with no change to the identity.
+//
+// R6C — `destination_marketplace` is now seeded too, and it is not a convenience. K4 derives its identity
+// from the destination, so a header WITHOUT one is not 'the same row missing a field' — it is the legacy
+// row K4 deliberately cannot classify and refuses to adopt silently. Seeding the row the way production
+// would actually have written it is the precondition of the REUSE this asserts; the legacy shape is its
+// own case and gets its own assertion below.
 var W3hdr = {
   allocation_draft_id: PRED_H, planning_cycle: GAP_CYCLE, source_page: 'inventory_replenishment',
   company: 'ResUS', country: 'US', marketplace: 'Amazon', status: 'draft',
@@ -2379,7 +2475,8 @@ var W3hdr = {
   recommended_destination_warehouse_id: WG0.destination_warehouse_id,
   recommended_shipping_method: WG0.shipping_method,
   recommended_last_mile_delivery: WG0.last_mile_delivery,
-  recommendation_group_no: WG0.recommendation_group_no };
+  recommendation_group_no: WG0.recommendation_group_no,
+  destination_marketplace: WG0.destination_marketplace };
 var W3 = manifestP(pos({ extraHeaders: [W3hdr],
   extraLines: [{ allocation_draft_line_id: PRED_L, allocation_draft_id: PRED_H, sku: SKU,
     planned_qty: '380', line_status: 'draft' }] }));
@@ -2387,7 +2484,7 @@ var W3ws = W3.res.predicted_write_set;
 eq(W3ws.route_groups[0].classification, 'UPDATE',
   'W3  an active draft on the predicted group key makes it an UPDATE', W3ws.route_groups[0]);
 eq(W3ws.route_groups[0].resolve_status, 'REUSE',
-  'W3a and the classification came from sadK2ResolveActiveDraft_ saying REUSE');
+  'W3a and the classification came from the writer\'s own resolver saying REUSE');
 eq([W3ws.expected_create_header_count, W3ws.expected_update_header_count], [0, 1],
   'W3b counted as an update, not a create');
 eq([W3ws.expected_create_line_count, W3ws.expected_update_line_count], [0, 1],
@@ -2948,8 +3045,10 @@ var X5fb = X2.res.frozen_before;
 ok(!!X5fb, 'X5  the READY run froze a baseline');
 eq([X5fb.expected_create_header_count, X5fb.expected_create_line_count], [1, 1],
   'X5a with the exact write set intact: one header, one line to CREATE');
-ok(X5fb.expected_header_ids.length === 1 && /^SADH-K2-[0-9A-F]{8}$/.test(X5fb.expected_header_ids[0]),
-  'X5b named by its deterministic K2 header id', X5fb.expected_header_ids);
+ok(X5fb.expected_header_ids.length === 1 && /^SADH-K[24]-[0-9A-F]{8}$/.test(X5fb.expected_header_ids[0]),
+  'X5b named by a deterministic header id', X5fb.expected_header_ids);
+eq(X5fb.expected_header_ids[0], X2.res.predicted_write_set.expected_header_ids[0],
+  'X5b2 and it is the id the resolver handed back, carried into the freeze unchanged');
 ok(X5fb.expected_line_ids.length === 1 && /^SADL-K2-[0-9A-F]{8}$/.test(X5fb.expected_line_ids[0]),
   'X5c and its deterministic K2 line id', X5fb.expected_line_ids);
 eq([X5fb.draft_header_live_column_count, X5fb.draft_line_live_column_count], [36, 31],
@@ -5436,12 +5535,14 @@ ok(String(AB13.repair_route).indexOf('a PERSON may now decide, never that a tool
 // AND THE ENTRY POINT COUNT. R4F added one, read-only; R4H added two more - a read-only manifest and the
 // one tool in this file that may empty a range; R6 added a read-only preflight and the one path from this
 // file to a production Generate; R6A added the no-argument adapter that path needed to be reachable from
-// the Run dropdown; R6B added the read-only post-failure recovery manifest. The count is asserted so a
-// further writer cannot appear without this line changing.
-eq((S1_BARE.match(/^function RUN_S1_[A-Z_]+/gm) || []).length, 17,
-  'AB32g seventeen public entry points: nine from R4E and before, R4F\'s read-only census, R4H\'s two,'
+// the Run dropdown; R6B added the read-only post-failure recovery manifest; R6C added the read-only
+// alternate-identity readback and the read-only acceptance manifest. The count is asserted so a further
+// writer cannot appear without this line changing.
+eq((S1_BARE.match(/^function RUN_S1_[A-Z_]+/gm) || []).length, 19,
+  'AB32g nineteen public entry points: nine from R4E and before, R4F\'s read-only census, R4H\'s two,'
   + ' R4J\'s read-only post-deletion acceptance manifest, R6\'s preflight plus its one executor,'
-  + ' R6A\'s no-argument adapter, and R6B\'s read-only post-failure recovery manifest');
+  + ' R6A\'s no-argument adapter, R6B\'s read-only post-failure recovery manifest, and R6C\'s'
+  + ' alternate-identity readback plus its acceptance manifest');
 
 // ---- AB33 — THE FIELD CONTRACT IS R4E's, NOT A SECOND OPINION. ------------------------------------
 // A second required-ness table would be a second opinion, and the first thing two opinions do is disagree.
@@ -7775,6 +7876,13 @@ function ahWorld(script, over) {
     '  if (__ahScript.mode === "GUARD_REFUSE") return { success: false, zero_write: true,',
     '    errors: [{ code: "FACTORY_STOCK_GUARD_STOP", message: "available fell below the claim" }] };',
     '  if (__ahScript.mode === "SILENT_ZERO") return { success: false, errors: [] };',
+    // R6C — THE LIVE SHAPE: the generation SUCCEEDS and names the id it wrote in data.groups[], and that
+    // id is not either authorized identity. Nothing is applied to the sheets, because the point is what
+    // the CLASSIFIER does with a response that declares a write the readback cannot find.
+    '  if (__ahScript.mode === "WROTE_ELSEWHERE") return { success: true, errors: [],',
+    '    data: { job_status: "COMPLETED", created_headers: 1, created_lines: 1,',
+    '      groups: [{ allocation_draft_id: "SADH-K4-ELSEWHERE", outcome: "CREATED", line_count: 1,',
+    '        ok: true }] } };',
     '  __ahApply();',
     '  if (__ahScript.mode === "THROW_AFTER_WRITE") throw new Error("GATEWAY_TIMEOUT_AFTER_180000MS");',
     '  if (__ahScript.mode === "UNREADABLE_AFTER_WRITE") return null;',
@@ -8100,8 +8208,12 @@ eq(AH14.res.verdict, 'MANUAL_RECOVERY_REQUIRED',
 var AH15 = ahExec({ mode: 'GUARD_REFUSE' }, {}, ahOpts());
 eq(AH15.res.verdict, 'FACTORY_GUARD_REFUSED_ZERO_WRITE',
   'AH15 a named refusal with zero rows is an ACCEPTED outcome', AH15.res.stop_reason);
-eq(AH15.res.classification.guard_reason_named, ['FACTORY_STOCK_GUARD_STOP'],
-  'AH15a and the guard reason is named, from the production error contract');
+// R6C — the reason now travels WITH THE PATH IT WAS FOUND AT. `FACTORY_STOCK_GUARD_STOP` alone did not say
+// whether it came from `errors[].code` or from `data.job_status`, and those send a reader to different
+// halves of the contract. Ten of the eleven sites were unread before this round; naming the site is what
+// makes it checkable that the right one answered.
+eq(AH15.res.classification.guard_reason_named, ['errors[].code=FACTORY_STOCK_GUARD_STOP'],
+  'AH15a and the guard reason is named, with the contract path it was read from');
 eq([AH15.res.observation_after.header_hit_count, AH15.res.observation_after.line_hit_count], [0, 0],
   'AH15b with neither identity present');
 eq([AH15.res.attempts, AH15.calls], [1, 1], 'AH15c one attempt, one call');
@@ -8523,13 +8635,13 @@ eq(AI6w.allWrites(), 0, 'AI6e the wrapper still wrote nothing of its own');
 });
 
 // ---- AI9 THE WHOLE PUBLIC SURFACE, PARTITIONED BY NAME ---------------------------------------
-// Seventeen entry points: thirteen that reach no write API at all, three that gate on
-// `opts.execute !== true`, and ONE that writes on sight. The partition is exhaustive by name, so an
-// eighteenth cannot appear in any of the three classes without this failing.
+// Nineteen entry points: fifteen that reach no write API at all, three that gate on
+// `opts.execute !== true`, and ONE that writes on sight. The partition is exhaustive by name, so a
+// twentieth cannot appear in any of the three classes without this failing.
 var AI_ALL = (S1_BARE.match(/^function (RUN_S1_[A-Z_]+)/gm) || []).map(function (l) {
   return l.replace('function ', '');
 });
-eq(AI_ALL.length, 17, 'AI9  seventeen public entry points', AI_ALL.length);
+eq(AI_ALL.length, 19, 'AI9  nineteen public entry points', AI_ALL.length);
 var AI_READONLY = ['RUN_S1_POSITIVE_RESIDUAL_CANDIDATE_CENSUS', 'RUN_S1_POSITIVE_RESIDUAL_PROPOSAL_CENSUS',
   'RUN_S1_SUBMIT_READINESS_CENSUS', 'RUN_S1_MANIFEST_P', 'RUN_S1_MANIFEST_S',
   'RUN_S1_ACCEPTED_GAP_RUN_READABILITY_DIAGNOSTIC', 'RUN_S1_FACTORY_MOVEMENT_ID_INTEGRITY_CENSUS',
@@ -8539,12 +8651,18 @@ var AI_READONLY = ['RUN_S1_POSITIVE_RESIDUAL_CANDIDATE_CENSUS', 'RUN_S1_POSITIVE
   'RUN_S1_CONTROLLED_GENERATE_PREFLIGHT',
   // R6B. Read-only for the same structural reason the preflight is: it takes no options, so there is
   // nothing to pass it that would make it write.
-  'RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK'];
+  'RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK',
+  // R6C. Both read-only for the same structural reason: neither takes options, and the acceptance
+  // manifest has no execute switch because accepting a row is a decision a PERSON records, not a
+  // mutation — the moment it could write, `accepted` would become something a diagnostic asserts about
+  // itself.
+  'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_IDENTITY_READBACK',
+  'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_PAIR_ACCEPTANCE_MANIFEST'];
 var AI_GATED = ['RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL', 'RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL',
   'RUN_S1_CONTROLLED_GENERATE_EXECUTE'];
 var AI_UNGATED = ['RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE'];
-eq(AI_READONLY.length + AI_GATED.length + AI_UNGATED.length, 17,
-  'AI9a thirteen plus three plus one');
+eq(AI_READONLY.length + AI_GATED.length + AI_UNGATED.length, 19,
+  'AI9a fifteen plus three plus one');
 eq(AI_ALL.slice().sort(), AI_READONLY.concat(AI_GATED).concat(AI_UNGATED).sort(),
   'AI9b and the three classes account for EVERY entry point by name');
 // AND THE ONE THAT WRITES ON SIGHT IS THE ONLY ONE WITHOUT AN EXECUTE FLAG. Said as its own claim,
@@ -8749,8 +8867,34 @@ eq(AJ1.calls, 0, 'AJ1h and called the production generator zero times');
 eq([AJ1.res.writes, AJ1.res.writer_calls, AJ1.res.generator_calls, AJ1.res.attempts,
   AJ1.res.repairs_attempted, AJ1.res.rows_created, AJ1.res.rows_updated, AJ1.res.rows_deleted],
   [0, 0, 0, 0, 0, 0, 0, 0], 'AJ1i and every counter it reports is zero');
-eq([AJ1.res.capability_minted, AJ1.res.authorization_read, AJ1.res.zero_write_confirmed],
-  [false, false, true], 'AJ1j nothing minted, no authorization read, zero write confirmed');
+// R6C §二 — TWO ZEROS, ASSERTED SEPARATELY, BECAUSE THEY ANSWER TWO QUESTIONS.
+//
+// `this_manifest_wrote_nothing` is about the TOOL and is true of a read-only manifest by construction.
+// `zero_write_confirmed` is about the WORLD, and the live run printed the old single flag as `true` beside
+// `classification: WRITE_LANDED_UNDER_UNEXPECTED_IDENTITY` — saying in one object that nothing was written
+// and that something was. In THIS world both are true, and each is asserted for its own reason.
+eq([AJ1.res.capability_minted, AJ1.res.authorization_read, AJ1.res.this_manifest_wrote_nothing],
+  [false, false, true], 'AJ1j nothing minted, no authorization read, and the manifest itself wrote nothing');
+eq(AJ1.res.zero_write_confirmed, true,
+  'AJ1j2 and the WORLD is a proven zero too — no expected pair, no alternate, an empty target scope');
+eq([AJ1.res.expected_identity_write_absent, AJ1.res.any_target_scope_write_present],
+  [true, false], 'AJ1j3 with the two facts stated apart: the expected ids are absent AND nothing else wrote');
+// AND THE REASON THAT IS NOT A CONTRADICTION IN A SCOPE THAT WAS NEVER EMPTY. This world holds two standing
+// MANUAL rows carrying 520 units — they were there before any generation ran, the frozen baseline records
+// them, and they are therefore not a write. "The target scope is empty" would have called this world dirty
+// forever; "the target scope still matches its frozen pre-state" calls it what it is.
+eq([AJ1.res.target_scope_universe.manual_header_count,
+  AJ1.res.target_scope_universe.manual_line_count,
+  AJ1.res.target_scope_universe.total_planned_quantity], [2, 2, 520],
+  'AJ1j3a the target scope was never empty — two standing manual rows and 520 units');
+eq(AJ1.res.target_scope_vs_frozen_pre_state.changed, [],
+  'AJ1j3b and every one of the seven target-scope facts still equals the frozen baseline',
+  AJ1.res.target_scope_vs_frozen_pre_state.changed);
+eq(AJ1.res.target_scope_vs_frozen_pre_state.compared.length, 7,
+  'AJ1j3c compared field by field against the baseline, not against a live re-reading');
+eq([AJ1.res.alternate_header_count, AJ1.res.alternate_line_count,
+  AJ1.res.alternate_pair_count, AJ1.res.alternate_orphan_count], [0, 0, 0, 0],
+  'AJ1j4 and the alternate counts are separate numbers, all zero here');
 eq(AJ1.flag, false, 'AJ1k the flag is still false');
 eq(AJ1.allowlistCount, 1, 'AJ1l and the allowlist still holds exactly one scope');
 
@@ -8884,7 +9028,17 @@ eq(AJ6.res.classification, 'READBACK_INDETERMINATE',
 eq(AJ6.res.baseline_present, false, 'AJ6a the baseline really is absent in that world');
 ok(AJ6.res.stop_reason.indexOf('compared with itself') > 0,
   'AJ6b and it says why: a live reading compared with itself proves nothing');
-eq(AJ6.res.zero_write_confirmed, true, 'AJ6c the refusal still carries its zero proof');
+// R6C — AND THIS IS WHERE THE TWO ZEROS COME APART, WHICH IS THE POINT OF SEPARATING THEM.
+//
+// The manifest still wrote nothing — that is structural. But with no frozen baseline there is no
+// expectation, and a zero write is a claim ABOUT THE WORLD that needs one: the old single flag said `true`
+// here, which read as "confirmed: nothing was written" when what actually happened is that nothing could
+// be confirmed at all.
+eq(AJ6.res.this_manifest_wrote_nothing, true, 'AJ6c the refusal still carries the manifest own zero proof');
+eq(AJ6.res.zero_write_confirmed, false,
+  'AJ6c2 while the WORLD zero is NOT confirmed — without an expectation there is nothing to confirm it against');
+eq([AJ6.res.expected_identity_write_absent, AJ6.res.any_target_scope_write_present], [null, null],
+  'AJ6c3 and both halves are null rather than false — unmeasured is not the same as measured-and-clean');
 eq(AJ6.res.retry_contract.generate_may_be_attempted_again, false,
   'AJ6d and an unreadable world certainly permits no generate');
 
@@ -8989,6 +9143,460 @@ eq(AJ9K.res.classification, 'CONFIRMED_GUARD_REFUSAL_ZERO_WRITE',
   'AJ9m which explains the zero write');
 eq(AJ9K.writes, 0, 'AJ9n and evaluating the guard wrote nothing');
 
+
+// ================================================================================================================
+section('AK — R6C: the alternate identity, exactly, and which authority minted it');
+// ================================================================================================================
+//
+// The live readback said WRITE_LANDED_UNDER_UNEXPECTED_IDENTITY with alternate_identity_count 1 and could not
+// say which row, whether the line came with it, or why the id differed. The source answer is that Manifest P
+// resolved through the K2-only resolver while the atomic writer resolves through
+// `sadResolveActiveDraftK2OrK3_({ k4Ready })` — and this fixture sheet is K4-ready, which is what makes the
+// two families exercisable here at all.
+
+/** The route the AH world's own manifest predicted, read off its route group rather than parsed out of a
+ *  canonical string — because the string in `expected_k2_group_keys` is now the CHOSEN FAMILY's key, and
+ *  on a K4-ready sheet that is eleven dimensions, not ten. The field keeps its name: it is part of the
+ *  frozen 95-field contract, and renaming it would make every existing baseline non-comparable. What it
+ *  holds is the group key of the family that will mint, which is what a reader needs.
+ */
+var AK_RG = AH_MP.res.predicted_write_set.route_groups[0];
+ok(!!AK_RG, 'AK0  the AH world predicted a route group to build an alternate row from', AK_RG);
+eq(AH_MP.res.predicted_write_set.identity_family, 'K4',
+  'AK0a and it resolved the K4 family, which is what makes both families exercisable here');
+// THE FIELD NAME OUTLIVED ITS FAMILY, and that is recorded rather than quietly relied on.
+eq(String(AK_RG.k2_group_key).split('|').length, 11,
+  'AK0b so expected_k2_group_keys now carries an ELEVEN-dimension K4 key under a K2 name',
+  AK_RG.k2_group_key);
+
+/** A header shaped the way production writes one for this route. `destination_marketplace` is present
+ *  because K4 derives its identity from the destination; a header without one is the legacy row K4
+ *  deliberately cannot classify, and that is its own case below. */
+function akHeaderObj(over) {
+  var h = { planning_cycle: AH_BASE.planning_cycle, company: AH_BASE.company, country: AH_BASE.country,
+    marketplace: AH_BASE.marketplace, source_page: 'inventory_replenishment', status: 'draft',
+    generation_type: 'system_generated', generation_run_id: 'AIRUN-LIVE',
+    calculation_run_id: AH_BASE.calculation_run_id,
+    recommended_source_warehouse_id: AK_RG.source_warehouse_id,
+    recommended_destination_warehouse_id: AK_RG.destination_warehouse_id,
+    destination_marketplace: AK_RG.destination_marketplace,
+    recommended_shipping_method: AK_RG.shipping_method,
+    recommended_last_mile_delivery: AK_RG.last_mile_delivery,
+    recommendation_group_no: AK_RG.recommendation_group_no,
+    created_at: '2099-01-01T00:00:00Z', updated_at: '2099-01-01T00:00:00Z', draft_version: '1' };
+  Object.keys(over || {}).forEach(function (k) { h[k] = over[k]; });
+  return h;
+}
+// ---- ONE ROUTE, TWO IDENTITIES, AND A BASELINE FROZEN ON THE WRONG ONE -------------------------
+//
+// This is the live shape, reproduced: the frozen baseline predicted the K2 identity (because Manifest P
+// resolved through the K2-only resolver) and the writer stored the row under the K4 one. Seeding the K4 id
+// against a baseline that ALSO predicts K4 would produce no alternate at all — the row would simply be the
+// expected row, which is what the fixture did before this correction and why it found nothing.
+var AK_LINE_OBJ = { sku: AH_BASE.sku, site_sku: AH_BASE.sku, window_code: 'D90' };
+var AK_IDS = (function () {
+  var w0 = ahWorld({}, {});
+  var h0 = akHeaderObj({});
+  function call(fn, args) { return vm.runInContext(fn + '(' + args + ')', w0.ctx); }
+  var k2h = call('sadK2DeterministicHeaderId_', JSON.stringify(h0));
+  var k4h = call('ricK4DeterministicHeaderId_', JSON.stringify(h0));
+  return { k2_header: k2h, k4_header: k4h,
+    k2_key: call('sadK2GroupKey_', JSON.stringify(h0)),
+    k4_key: call('ricK4GroupKey_', JSON.stringify(h0)),
+    k2_line: call('sadK2DeterministicLineId_',
+      JSON.stringify(k2h) + ', ' + JSON.stringify(AK_LINE_OBJ)),
+    k4_line: call('sadK2DeterministicLineId_',
+      JSON.stringify(k4h) + ', ' + JSON.stringify(AK_LINE_OBJ)) };
+})();
+ok(AK_IDS.k2_header !== AK_IDS.k4_header,
+  'AK0c the two families mint DIFFERENT header ids for one identical route',
+  [AK_IDS.k2_header, AK_IDS.k4_header]);
+ok(AK_IDS.k2_line !== AK_IDS.k4_line,
+  'AK0d and because the LINE key contains the header id, the line id moves with it',
+  [AK_IDS.k2_line, AK_IDS.k4_line]);
+eq(String(AK_IDS.k2_key).split('|').length, 10, 'AK0e the K2 key is ten dimensions');
+eq(String(AK_IDS.k4_key).split('|').length, 11, 'AK0f and the K4 key is eleven');
+
+/** The frozen baseline as the live one was: predicting the K2 identity for this route. */
+var AK_BASE = (function () {
+  var b = JSON.parse(JSON.stringify(AH_BASE));
+  b.expected_header_ids = [AK_IDS.k2_header];
+  b.expected_line_ids = [AK_IDS.k2_line];
+  b.expected_k2_group_keys = [AK_IDS.k2_key];
+  b.expected_post_generation_active_ai_identities = [AK_IDS.k2_header];
+  return b;
+})();
+/** A mutated source whose destination holds THIS fixture's baseline — the AK one, not the AH one. */
+function akS1(src) {
+  return src.split(NL).map(function (l) {
+    return l.indexOf(S1_FROZEN_DECL_) === 0
+      ? S1_FROZEN_DECL_ + JSON.stringify(AK_BASE) + ';' : l;
+  }).join(NL);
+}
+
+/** Seeds ONE alternate pair whose header id is minted by the family named, exactly as the writer would. */
+function akWorld(over) {
+  over = over || {};
+  var w = ahWorld({}, over.s1 ? { s1: akS1(over.s1) } : { baseline: AK_BASE });
+  var hdr = akHeaderObj(over.header || {});
+  var fam = over.family || 'K4';
+  var hid = over.hid !== undefined ? over.hid
+    : (fam === 'K4' ? AK_IDS.k4_header : AK_IDS.k2_header);
+  if (over.header && Object.keys(over.header).length) {
+    // a header whose ROUTE or scope was altered gets the id its own altered fields produce, so the row
+    // stays self-consistent and the test is about the altered FACT, not about a mismatched id
+    var fn2 = fam === 'K4' ? 'ricK4DeterministicHeaderId_' : 'sadK2DeterministicHeaderId_';
+    if (over.hid === undefined) hid = vm.runInContext(fn2 + '(' + JSON.stringify(hdr) + ')', w.ctx);
+  }
+  hdr.allocation_draft_id = hid;
+  var H = w.sheets['shipping_allocation_drafts'];
+  function push(o) {
+    H.rows.push(AH_HDR.map(function (h) { return o[h] === undefined ? '' : o[h]; }));
+  }
+  if (over.header !== false) push(hdr);
+  if (over.duplicateHeader === true) push(hdr);
+  if (over.secondHeader) push(akHeaderObj(
+    { allocation_draft_id: over.secondHeader, recommendation_group_no: '2' }));
+  var L = w.sheets['shipping_allocation_draft_lines'];
+  var lineObj = { allocation_draft_id: over.lineParent !== undefined ? over.lineParent : hid,
+    sku: AH_BASE.sku, site_sku: AH_BASE.sku, window_code: 'D90',
+    planned_qty: over.qty === undefined ? AH_BASE.expected_max_units_written : over.qty,
+    recommended_qty: AH_BASE.expected_max_units_written, line_status: 'draft',
+    source_warehouse_id: AH_BASE.source_factory_warehouse_id,
+    created_at: '2099-01-01T00:00:00Z', updated_at: '2099-01-01T00:00:00Z' };
+  lineObj.allocation_draft_line_id = over.lid !== undefined ? over.lid
+    : vm.runInContext('sadK2DeterministicLineId_(' + JSON.stringify(lineObj.allocation_draft_id)
+      + ', ' + JSON.stringify(AK_LINE_OBJ) + ')', w.ctx);
+  if (over.line !== false) {
+    L.rows.push(AH_LINE.map(function (h) { return lineObj[h] === undefined ? '' : lineObj[h]; }));
+  }
+  if (over.duplicateLine === true) {
+    L.rows.push(AH_LINE.map(function (h) { return lineObj[h] === undefined ? '' : lineObj[h]; }));
+  }
+  w.__akHid = hid;
+  w.__akLid = lineObj.allocation_draft_line_id;
+  return w;
+}
+function akRun(over) {
+  var w = akWorld(over);
+  var r = ahRun(w, 'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_IDENTITY_READBACK()');
+  r.writes = w.allWrites();
+  r.hid = w.__akHid;
+  r.lid = w.__akLid;
+  return r;
+}
+function akAccept(over) {
+  var w = akWorld(over);
+  var r = ahRun(w, 'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_PAIR_ACCEPTANCE_MANIFEST()');
+  r.writes = w.allWrites();
+  r.hid = w.__akHid;
+  return r;
+}
+
+var AK_REGION = ['S1_ai2RetryContract_', 'S1_ai2KeyDiff_', 'S1_ai2HeaderFacts_', 'S1_ai2LineFacts_',
+  'S1_ai2LineSelfConsistency_', 'S1_ai2Search_', 'S1_ai2PairCompleteness_', 'S1_ai2Reconciliation_',
+  'S1_ai2Classify_', 'S1_ai2Finish_', 'S1_ai2FinishAcceptance_',
+  'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_IDENTITY_READBACK',
+  'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_PAIR_ACCEPTANCE_MANIFEST'].map(function (f) {
+    return extractFn(S1, f);
+  }).join(NL).split(NL).filter(function (l) {
+    var t = l.replace(/^\s+/, '');
+    return t.indexOf('//') !== 0 && t.indexOf('*') !== 0 && t.indexOf('/*') !== 0;
+  }).join(NL);
+
+// ---- AK1 STRUCTURE: NO OPTIONS, NO AUTHORIZATION, NO WRITE, NO REPAIR ---------------------------
+ok(/function RUN_S1_CONTROLLED_GENERATE_ALTERNATE_IDENTITY_READBACK\(\)/.test(S1),
+  'AK1  the readback is declared with an EMPTY parameter list');
+ok(/function RUN_S1_CONTROLLED_GENERATE_ALTERNATE_PAIR_ACCEPTANCE_MANIFEST\(\)/.test(S1),
+  'AK1a and so is the acceptance manifest — accepting a row is a decision, not a mutation');
+['weeklyAiPlanGenerateK2_(', '.mint(', 'RUN_S1_CONTROLLED_GENERATE_EXECUTE(',
+ 'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE(', 'handleUpsertShippingAllocationDraftAtomic_(',
+ 'setValue', 'setValues', 'appendRow', 'clearContent', 'deleteRow', 'insertRow', 'getRange',
+ 'S1_CG_ONCE_AUTHORIZATION_', 'S1_cgAuthorizationAudit_'].forEach(function (t, i) {
+  eq(AK_REGION.split(t).length - 1, 0,
+    'AK1b.' + (i + 1) + ' §AI2 reaches no ' + t);
+});
+['S1_MANIFEST_P_BEFORE_', 'INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_',
+ 'INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_'].forEach(function (n, i) {
+  eq((AK_REGION.match(new RegExp(n + '\\s*=(?!=)', 'g')) || []).length, 0,
+    'AK1c.' + (i + 1) + ' and assigns nothing to ' + n);
+});
+// NO IDENTITY ALGORITHM OF ITS OWN. Every id and every key comes from a production builder.
+//
+// A prefix is READ here — `indexOf('SADH-K4-') === 0` is how a stored id says which family it belongs to,
+// and that is a classification of an existing value, not the construction of a new one. What must not
+// exist is a prefix being CONCATENATED into an id, which is the shape of a second minting authority.
+eq((AK_REGION.match(/'SAD[HL]-K[24]-'\s*\+|"SAD[HL]-K[24]-"\s*\+/g) || []).length, 0,
+  'AK1d it mints no id itself — no prefix is ever concatenated into one');
+ok(AK_REGION.indexOf("indexOf('SADH-K4-')") > 0,
+  'AK1d2 while a prefix IS read, to say which family a stored id is in');
+['sadK2GroupKey_(', 'ricK4GroupKey_(', 'sadK2DeterministicHeaderId_(', 'ricK4DeterministicHeaderId_(',
+ 'sadK2DeterministicLineId_(', 'sadK2ReconcileDecision_(', 'aiplIsAiGenerated_('].forEach(function (t, i) {
+  ok(AK_REGION.indexOf(t) > 0, 'AK1e.' + (i + 1) + ' and it calls the production authority ' + t);
+});
+// THE DIMENSION NAMES ARE PRODUCTION'S TOO — the one thing that makes a field-by-field diff trustworthy.
+ok(AK_REGION.indexOf('SAD_K2_GROUP_DIMENSIONS_') > 0 && AK_REGION.indexOf('RIC_K4_GROUP_DIMENSIONS_') > 0,
+  'AK1f and both dimension-name arrays come from the modules that own the frozen order');
+eq((AK_REGION.match(/'planning_cycle', 'company', 'country'/g) || []).length, 0,
+  'AK1g with no local copy of either dimension list');
+
+// ---- AK2 THE COMPLETE PAIR UNDER AN ALTERNATE IDENTITY -----------------------------------------
+var AK2 = akRun({});
+eq(AK2.res.classification, 'COMPLETE_WRITE_UNDER_ALTERNATE_IDENTITIES',
+  'AK2  one header, one line, correct business facts, unpredicted identity', AK2.res.stop_reason);
+eq(AK2.res.classification_is_known, true, 'AK2a the class is one of the six');
+eq([AK2.res.pair.alternate_header_count, AK2.res.pair.alternate_line_count], [1, 1],
+  'AK2b the header and the line are counted SEPARATELY, one each');
+eq(AK2.res.pair.exactly_one_header_and_one_line, true, 'AK2c which is exactly one pair');
+eq(AK2.res.pair.line_fk_points_at_the_alternate_header, true,
+  'AK2d and the line points at that very header');
+eq(AK2.res.pair.business_facts_ok, true, 'AK2e every business fact is the authorized one');
+eq([AK2.res.pair.scope_correct, AK2.res.pair.run_correct, AK2.res.pair.cycle_correct,
+  AK2.res.pair.sku_correct, AK2.res.pair.warehouse_correct, AK2.res.pair.route_present,
+  AK2.res.pair.status_active, AK2.res.pair.carries_production_ai_provenance],
+  [true, true, true, true, true, true, true, true],
+  'AK2f named one at a time, so a single wrong fact cannot hide inside a summary');
+eq(AK2.res.pair.planned_qty, AH_BASE.expected_max_units_written,
+  'AK2g the quantity is the authorized maximum');
+eq([AK2.res.pair.planned_qty_is_positive_and_within_the_ceiling,
+  AK2.res.pair.planned_qty_equals_the_authorized_maximum], [true, true],
+  'AK2h within the ceiling AND equal to it, which are two different claims');
+// THE ROW IS NAMED, AND THE ROW NUMBER IS LABELLED AS A LOCATION.
+var AK2H = AK2.res.search.candidate_headers[0];
+eq(AK2H.allocation_draft_id, AK2.hid, 'AK2i the actual header id is reported');
+eq(AK2H.physical_row_number_is_for_location_only, true,
+  'AK2j with the physical row number labelled as location, never identity');
+ok(!!AK2H.full_row_fingerprint, 'AK2k and a full-row fingerprint', AK2H.full_row_fingerprint);
+ok(AK2H.matched_by.length > 0 && AK2H.matched_by.indexOf('SAME_CALCULATION_RUN_ID') >= 0,
+  'AK2l and it says WHICH search predicate matched', AK2H.matched_by);
+eq(AK2.writes, 0, 'AK2m and finding all of it wrote nothing');
+eq(AK2.calls, 0, 'AK2n with no production generator call');
+eq(AK2.res.this_manifest_wrote_nothing, true, 'AK2o the manifest own zero holds');
+
+// ---- AK3 §六 THE RECONCILIATION: WHICH FIELD MOVED, AND WHICH SIDE WAS WRONG --------------------
+var AK3 = AK2.res.reconciliation.per_candidate[0];
+eq(AK3.id_family_by_prefix, 'K4', 'AK3  the stored id is in the K4 family');
+eq(AK3.matches_the_prediction, false, 'AK3a and it is NOT the id the baseline predicted');
+eq(AK3.the_predicted_id_would_have_been, AK_IDS.k2_header,
+  'AK3b with the prediction — the K2 identity — carried beside it');
+eq(AK2H.allocation_draft_id, AK_IDS.k4_header,
+  'AK3b2 while the row that exists is the K4 one');
+eq(AK3.id_re_derives_from_its_own_fields, true,
+  'AK3c THE DISCRIMINATOR: the stored id re-derives from the stored row own fields');
+eq(AK3.id_self_consistency_basis, 'K4_ID_RE_DERIVES_FROM_ITS_OWN_STORED_FIELDS',
+  'AK3d by the K4 builder, named');
+// production's OWN pure predicate agrees, so the answer is not only this file's
+// `sadK2ReconcileDecision_` returns a REASON and a BASIS, and this reads the basis: with no request
+// header to compare against, a stored id that does not hash to its own K2 key is exactly
+// `K2_ID_DRIFTED_AND_NO_REQUEST_GROUP_SUPPLIED_TO_COMPARE`. Production says, in its own words, that the
+// row is not K2-self-consistent — which is the same fact the K4 builder states positively.
+eq(AK3.production_reconcile_basis, 'K2_ID_DRIFTED_AND_NO_REQUEST_GROUP_SUPPLIED_TO_COMPARE',
+  'AK3e and production own reconcile predicate reports the K2 view of the same row',
+  AK3.production_reconcile_basis);
+ok(String(AK2.res.reconciliation.which_side_was_wrong).indexOf('THE_PREDICTION') === 0,
+  'AK3f so THE PREDICTION was the side that was wrong — never the row',
+  AK2.res.reconciliation.which_side_was_wrong);
+ok(String(AK2.res.reconciliation.ssot).indexOf('THE_PRODUCTION_WRITER') === 0,
+  'AK3g and the writer is the SSOT', AK2.res.reconciliation.ssot);
+// THE FIELD-BY-FIELD DIFF, AGAINST BOTH DIMENSION LISTS.
+eq(AK3.predicted_k2_vs_stored_k2.comparable, true,
+  'AK3h the predicted K2 string and the stored K2 string are both ten dimensions');
+eq(AK3.predicted_k2_vs_stored_k2.identical, true,
+  'AK3i and they are IDENTICAL — the route is the same route, so no K2 dimension moved',
+  AK3.predicted_k2_vs_stored_k2.differing);
+// WHICH IS THE WHOLE POINT: no field moved, and the id still differs. The difference is not a VALUE, it is
+// the number of dimensions and which ones they are.
+eq(AK3.dimension_count_differs, true,
+  'AK3j while the stored K4 string has a DIFFERENT NUMBER of dimensions than the K2 prediction');
+eq([AK3.predicted_k2_vs_stored_k4.predicted_field_count,
+  AK3.predicted_k2_vs_stored_k4.stored_field_count], [10, 11],
+  'AK3k ten against eleven — that is the divergence, stated as a count');
+eq(AK3.predicted_k2_vs_stored_k4.comparable, false,
+  'AK3l so the two are not comparable dimension for dimension, and it says so rather than padding');
+eq(AK2.res.reconciliation.k2_dimension_names.length, 10,
+  'AK3m the K2 dimension names come from SAD_K2_GROUP_DIMENSIONS_');
+eq(AK2.res.reconciliation.k4_dimension_names.length, 11,
+  'AK3n and the K4 names from RIC_K4_GROUP_DIMENSIONS_');
+ok(AK2.res.reconciliation.k4_dimension_names.indexOf('destination_type') >= 0
+  && AK2.res.reconciliation.k4_dimension_names.indexOf('destination_identity') >= 0,
+  'AK3o including the two derived destination dimensions K2 has no equivalent of',
+  AK2.res.reconciliation.k4_dimension_names);
+ok(AK2.res.reconciliation.k2_dimension_names.indexOf('recommended_destination_warehouse_id') >= 0
+  && AK2.res.reconciliation.k4_dimension_names.indexOf('recommended_destination_warehouse_id') === -1,
+  'AK3p and the raw destination-warehouse dimension K4 replaced');
+// AND THE LINE FOLLOWED THE HEADER — one divergence, two absent predictions.
+var AK3L = AK2.res.search.candidate_lines[0];
+eq(AK3L.line_id_re_derives_from_its_parent, true,
+  'AK3q the line id re-derives from the parent it actually points at');
+eq(AK3L.allocation_draft_line_id, AK2.lid, 'AK3r which is the stored line id');
+ok(AK3L.allocation_draft_line_id !== AK_IDS.k2_line,
+  'AK3s and it is NOT the predicted line id — because the line key contains the header id',
+  [AK3L.allocation_draft_line_id, AK_IDS.k2_line]);
+eq(AK3L.allocation_draft_line_id, AK_IDS.k4_line,
+  'AK3s2 it is the line id the K4 header produces — one divergence, two absent predictions');
+
+// ---- AK4 §五.10 PROVING THE ROW IS NEW ---------------------------------------------------------
+eq(AK2.res.pair.proves_it_was_added_after_the_freeze, true,
+  'AK4  the row is proved to postdate the freeze', AK2.res.pair.proof_missing_parts);
+eq(AK2.res.pair.id_absent_from_the_frozen_row_signatures, true,
+  'AK4a because THIS id is absent from the frozen row signatures');
+ok(AK2.res.pair.frozen_row_signature_count > 0,
+  'AK4b of which the baseline carries a non-empty set', AK2.res.pair.frozen_row_signature_count);
+eq(AK2.res.pair.created_after_the_frozen_baseline, true, 'AK4c and its created_at postdates the freeze');
+// A ROW THAT WAS ALREADY THERE IS NOT THIS RUN OUTPUT, whatever else is true of it.
+var AK4d = akRun({ header: { created_at: '2000-01-01T00:00:00Z' } });
+eq(AK4d.res.classification, 'PREEXISTING_ROW_MISCLASSIFIED_AS_ALTERNATE',
+  'AK4d a row created before the freeze is a false positive, not an alternate write');
+ok(AK4d.res.pair.proof_missing_parts.indexOf('THE_ROW_PREDATES_THE_FREEZE') >= 0,
+  'AK4e and the missing part of the proof is NAMED', AK4d.res.pair.proof_missing_parts);
+// AND THE PROOF IS A CONJUNCTION: an id already in the frozen signatures fails it too.
+var AK4fSig = ((AK_BASE.other_scope_row_signatures || [])
+  .concat(AK_BASE.target_manual_row_signatures || [])
+  .concat(AK_BASE.target_ai_row_signatures || []))[0];
+ok(!!AK4fSig, 'AK4f the baseline carries row signatures to borrow a pre-existing id from', AK4fSig);
+// DRIVEN ON THE PURE FUNCTION, because seeding a row under an id the world ALREADY holds produces a
+// duplicate — a different finding, which returns before the proof is computed and would mask it. The
+// completeness check is pure, so it can be asked the question directly with a one-pair search.
+var AK4gW = akWorld({});
+function ak4Pair(hid) {
+  var search = { candidate_headers: [{ allocation_draft_id: hid, company: AK_BASE.company,
+      country: AK_BASE.country, marketplace: AK_BASE.marketplace,
+      planning_cycle: AK_BASE.planning_cycle, calculation_run_id: AK_BASE.calculation_run_id,
+      recommended_source_warehouse_id: AK_BASE.source_factory_warehouse_id,
+      recommended_shipping_method: AK_RG.shipping_method,
+      recommended_last_mile_delivery: AK_RG.last_mile_delivery,
+      status: 'draft', is_ai_generated_by_production_authority: true,
+      created_after_the_frozen_baseline: true }],
+    candidate_lines: [{ allocation_draft_line_id: 'SADL-K2-ANY', allocation_draft_id: hid,
+      sku: AK_BASE.sku, planned_qty: AK_BASE.expected_max_units_written,
+      recommended_qty: AK_BASE.expected_max_units_written }],
+    parentless_line_ids: [] };
+  return JSON.parse(vm.runInContext('JSON.stringify(S1_ai2PairCompleteness_('
+    + JSON.stringify(search) + ', S1_MANIFEST_P_BEFORE_))', AK4gW.ctx));
+}
+var AK4gNew = ak4Pair('SADH-K4-BRANDNEW01');
+eq(AK4gNew.id_absent_from_the_frozen_row_signatures, true,
+  'AK4g0 an id absent from the frozen signatures is recognised as new');
+eq(AK4gNew.proves_it_was_added_after_the_freeze, true, 'AK4g1 and the proof holds');
+var AK4gOld = ak4Pair(String(AK4fSig).split('~')[0]);
+eq(AK4gOld.id_absent_from_the_frozen_row_signatures, false,
+  'AK4g an id that WAS in the frozen signatures is recognised as pre-existing');
+ok(AK4gOld.proof_missing_parts.indexOf('THIS_ID_WAS_ALREADY_IN_THE_FROZEN_ROW_SIGNATURES') >= 0,
+  'AK4h and that is the named missing part', AK4gOld.proof_missing_parts);
+eq(AK4gOld.proves_it_was_added_after_the_freeze, false,
+  'AK4i so the row is not proved new, even though its created_at is late');
+
+// ---- AK5 THE FOUR WAYS IT IS NOT A COMPLETE PAIR -----------------------------------------------
+[[{ line: false }, 'PARTIAL_WRITE_UNDER_ALTERNATE_IDENTITIES', 'a header with no line'],
+ // A LINE WITH NO HEADER IS AN ORPHAN, and it outranks the partial. The distinction is not cosmetic: a
+ // partial says one half of the authorized pair is missing, and an orphan says a row exists that belongs
+ // to nothing — which is the one that cannot be completed, only removed by a person.
+ [{ header: false }, 'ORPHAN_ALTERNATE_WRITE', 'a line with no header at all'],
+ [{ duplicateHeader: true }, 'DUPLICATE_ALTERNATE_WRITE', 'the same header twice'],
+ [{ duplicateLine: true }, 'DUPLICATE_ALTERNATE_WRITE', 'the same line twice'],
+ [{ qty: 0 }, 'PARTIAL_WRITE_UNDER_ALTERNATE_IDENTITIES', 'a zero quantity'],
+ [{ qty: AH_BASE.expected_max_units_written + 1 }, 'PARTIAL_WRITE_UNDER_ALTERNATE_IDENTITIES',
+   'a quantity above the authorized ceiling'],
+ [{ header: { generation_type: 'user_created' } }, 'PARTIAL_WRITE_UNDER_ALTERNATE_IDENTITIES',
+   'a row with no production AI provenance'],
+ [{ header: { calculation_run_id: 'GAP-INV-SOMEONE-ELSE-0001' } },
+   'PARTIAL_WRITE_UNDER_ALTERNATE_IDENTITIES', 'a row stamped with another run'],
+ [{ header: { planning_cycle: 'RECO-2099-12' } }, 'PARTIAL_WRITE_UNDER_ALTERNATE_IDENTITIES',
+   'a row stamped with another planning cycle'],
+ [{ header: { recommended_shipping_method: '', recommended_last_mile_delivery: '' } },
+   'PARTIAL_WRITE_UNDER_ALTERNATE_IDENTITIES', 'a row with no route']
+].forEach(function (c, i) {
+  var r = akRun(c[0]);
+  eq(r.res.classification, c[1], 'AK5.' + (i + 1) + ' ' + c[2] + ' is ' + c[1], r.res.pair);
+  eq(r.writes, 0, 'AK5.' + (i + 1) + 'a and classifying it wrote nothing');
+  eq(r.res.retry_contract.generate_may_be_attempted_again, false,
+    'AK5.' + (i + 1) + 'b with no further generate permitted');
+});
+// AN ORPHAN LINE IS ITS OWN CLASS, and it outranks the partial it would otherwise look like.
+var AK5o = akRun({ lineParent: 'SADH-K4-SOMEONE-ELSE' });
+eq(AK5o.res.classification, 'ORPHAN_ALTERNATE_WRITE',
+  'AK5o a line pointing at a header that is not the one beside it is an ORPHAN', AK5o.res.pair);
+ok(AK5o.res.pair.orphan_line_ids.length > 0, 'AK5p and the orphan line is named',
+  AK5o.res.pair.orphan_line_ids);
+ok(AK5o.res.classification_detail.candidates.indexOf('PARTIAL_WRITE_UNDER_ALTERNATE_IDENTITIES') >= 0,
+  'AK5q while the partial stays listed as a candidate — precedence hides nothing');
+
+// ---- AK6 THE CONTRACT IS CLOSED IN ALL SIX CLASSES ---------------------------------------------
+var AK6W = akWorld({});
+var AK6C = JSON.parse(vm.runInContext('JSON.stringify(S1_AI2_CLASSES_)', AK6W.ctx));
+eq(AK6C.length, 6, 'AK6  there are exactly six answers the readback may give');
+var AK6P = JSON.parse(vm.runInContext('JSON.stringify(S1_AI2_CLASS_PRECEDENCE_)', AK6W.ctx));
+eq(AK6P.slice().sort(), AK6C.slice().sort(),
+  'AK6a and the precedence is a permutation of exactly those six');
+eq(AK6P[0], 'READBACK_INDETERMINATE',
+  'AK6b with INDETERMINATE first, because every class below it is a statement about what was read');
+eq(AK6P[1], 'PREEXISTING_ROW_MISCLASSIFIED_AS_ALTERNATE',
+  'AK6c and a pre-existing row next, because every judgement below it would be about the wrong row');
+AK6C.forEach(function (c, i) {
+  var rc = JSON.parse(vm.runInContext(
+    'JSON.stringify(S1_ai2RetryContract_(' + JSON.stringify(c) + '))', AK6W.ctx));
+  eq([rc.retryable, rc.automatic_retry_allowed, rc.same_authorization_reusable,
+    rc.same_frozen_baseline_reusable, rc.generate_may_be_attempted_again],
+    [false, false, false, false, false],
+    'AK6.' + (i + 1) + ' ' + c + ' permits no retry, no reuse and no further generate');
+  eq(rc.next_action.indexOf('GENERATE'), -1,
+    'AK6.' + (i + 1) + 'a and its next_action does not point at a Generate');
+});
+eq(AK2.res.next_action_permits_another_generate, false,
+  'AK6g the returned next_action permits no further generate');
+eq(AK2.res.next_action_agrees_with_the_permission, true,
+  'AK6h and agrees with the contract flag beside it');
+
+// ---- AK7 THE ACCEPTANCE MANIFEST ACCEPTS NOTHING AND REFUSES WHAT IT SHOULD ---------------------
+var AK7 = akAccept({});
+eq(AK7.res.verdict, 'ALTERNATE_PAIR_IS_ACCEPTABLE_BY_A_PERSON',
+  'AK7  a complete correct pair meets the acceptance preconditions', AK7.res.stop_reason);
+eq(AK7.res.accepts_nothing, true, 'AK7a while the manifest itself accepts nothing');
+eq(AK7.res.this_manifest_wrote_nothing, true, 'AK7b and wrote nothing');
+eq(AK7.writes, 0, 'AK7c measured on the sheets');
+eq(AK7.res.predicates_failed, 0, 'AK7d with every precondition met', AK7.res.failed_predicates);
+eq(AK7.res.next_action, 'A_PERSON_RECORDS_THE_ACCEPTANCE_THEN_THE_IDENTITY_CONTRACT_AND_READBACK_ARE_CORRECTED',
+  'AK7e and the next step is a PERSON recording it, then the contract being fixed');
+eq(AK7.res.forbidden_regardless_of_the_verdict.length, 5,
+  'AK7f with the five forbidden actions stated in the object, not left to be remembered',
+  AK7.res.forbidden_regardless_of_the_verdict);
+ok(AK7.res.forbidden_regardless_of_the_verdict.indexOf('DELETE_THE_ALTERNATE_ROWS') >= 0
+  && AK7.res.forbidden_regardless_of_the_verdict.indexOf('REGENERATE_UNDER_THE_PREDICTED_IDENTITIES') >= 0,
+  'AK7g including not deleting the rows and not regenerating under the predicted ids');
+eq(AK7.res.retry_contract.generate_may_be_attempted_again, false,
+  'AK7h and acceptance still permits no further generate');
+// AND IT REFUSES EVERY SHAPE THAT IS NOT A COMPLETE CORRECT PAIR.
+[[{ line: false }, 'a header with no line'],
+ [{ duplicateHeader: true }, 'a duplicated header'],
+ [{ qty: AH_BASE.expected_max_units_written + 1 }, 'a quantity over the ceiling'],
+ [{ header: { generation_type: 'user_created' } }, 'a row with no AI provenance'],
+ [{ header: { created_at: '2000-01-01T00:00:00Z' } }, 'a row that predates the freeze']
+].forEach(function (c, i) {
+  var r = akAccept(c[0]);
+  eq(r.res.verdict, 'ALTERNATE_PAIR_IS_NOT_ACCEPTABLE_YET',
+    'AK7i.' + (i + 1) + ' ' + c[1] + ' is NOT acceptable');
+  ok(r.res.predicates_failed > 0, 'AK7j.' + (i + 1) + ' with a named failed precondition',
+    r.res.failed_predicates);
+  eq(r.writes, 0, 'AK7k.' + (i + 1) + ' and refusing wrote nothing');
+});
+
+// ---- AK8 AND THE ZERO THAT IS NO LONGER A CONTRADICTION ----------------------------------------
+// The R6B recovery manifest printed `zero_write_confirmed: true` beside WRITE_LANDED_UNDER_UNEXPECTED_IDENTITY.
+// Driven here in the world that produces exactly that, through the manifest that produced it.
+var AK8 = ahRun(akWorld({}), 'RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK()');
+eq(AK8.res.classification, 'WRITE_LANDED_UNDER_UNEXPECTED_IDENTITY',
+  'AK8  the recovery manifest still finds the alternate identity');
+eq(AK8.res.zero_write_confirmed, false,
+  'AK8a and NO LONGER calls that a confirmed zero write');
+eq(AK8.res.this_manifest_wrote_nothing, true,
+  'AK8b while still reporting truthfully that the manifest itself wrote nothing');
+eq([AK8.res.expected_identity_write_absent, AK8.res.any_target_scope_write_present], [true, true],
+  'AK8c with the two facts stated apart: the expected ids are absent AND something else wrote');
+eq([AK8.res.alternate_header_count, AK8.res.alternate_line_count], [1, 1],
+  'AK8d and the header and line counted separately, one each');
+eq([AK8.res.alternate_pair_count, AK8.res.alternate_orphan_count], [1, 0],
+  'AK8e one complete pair, no orphan header');
+
 mut('N1 the proposal is sized from the RECOMMENDATION instead of the residual', function () {
   var m = swapS1('    prop = Math.min(row.residual_qty, a);',
     '    prop = Math.min(row.recommended_qty, a);');
@@ -9077,7 +9685,7 @@ mut('N8 MISSING is coerced to zero by the census\'s own numeric reader', functio
   // authority, so the claim is aimed at its own contract — blank, null and undefined are UNKNOWN, not zero.
   var m = swapS1('function S1_qty_(v) {' + NL + "  if (v === '' || v === null || v === undefined) return null;",
     'function S1_qty_(v) {' + NL + "  if (v === '' || v === null || v === undefined) return 0;");
-  var w = S1World(pos()), w2 = S1World({ s1: m });
+  var w = S1World(pos()), w2 = S1World({ s1: ahS1(m) });
   function probe(ctx) {
     return vm.runInContext('[S1_qty_(""), S1_qty_(null), S1_qty_(undefined), S1_qty_(0), S1_qty_(7)]', ctx);
   }
@@ -9089,7 +9697,7 @@ mut('N8 MISSING is coerced to zero by the census\'s own numeric reader', functio
 mut('N9 the manifests stop declaring that one does not authorize the other', function () {
   var m = swapS1("    boundary_note: 'MANIFEST P succeeding does NOT authorize MANIFEST S. They are separate because a Generate'",
     "    boundary_note: 'MANIFEST P and MANIFEST S may be authorized together. A Generate'");
-  var w = S1World(pos()); var w2 = S1World({ s1: m });
+  var w = S1World(pos()); var w2 = S1World({ s1: ahS1(m) });
   var clean = vm.runInContext('RUN_S1_MANIFEST_P()', w.ctx);
   var bad = vm.runInContext('RUN_S1_MANIFEST_P()', w2.ctx);
   return String(clean.boundary_note).indexOf('does NOT authorize MANIFEST S') > 0
@@ -9100,7 +9708,7 @@ mut('N10 the submit census reports a readiness verdict when no draft was named',
   var m = swapS1("      out.verdict = L.failed.length ? 'STOP' : 'CONTRACT_ONLY_NO_DRAFT_NAMED';",
     "      out.verdict = L.failed.length ? 'STOP' : 'SUBMIT_READY_AUTHORIZATION_REQUIRED';");
   var clean = submitCensus(pos());
-  var w2 = S1World({ s1: m });
+  var w2 = S1World({ s1: ahS1(m) });
   var bad = vm.runInContext('RUN_S1_SUBMIT_READINESS_CENSUS(null)', w2.ctx);
   return clean.res.verdict === 'CONTRACT_ONLY_NO_DRAFT_NAMED'
     && bad.verdict === 'SUBMIT_READY_AUTHORIZATION_REQUIRED';
@@ -9184,7 +9792,7 @@ mut('N16 the eligibility gate stops being re-asked, so a blank allowlist entry b
 
 mut('N17 the chunk bound goes back to 45000, which is what truncated the evidence', function () {
   var m = swapS1('var S1_CHUNK_MAX_BYTES_ = 3000;', 'var S1_CHUNK_MAX_BYTES_ = 45000;');
-  var w = S1World(pos()), w2 = S1World({ s1: m });
+  var w = S1World(pos()), w2 = S1World({ s1: ahS1(m) });
   return vm.runInContext('S1_CHUNK_MAX_BYTES_', w.ctx) === 3000
     && vm.runInContext('S1_CHUNK_MAX_BYTES_', w2.ctx) === 45000;
 });
@@ -9682,9 +10290,13 @@ mut('N45 the deterministic line id is minted here instead of by the K2 authority
 });
 
 mut('N46 CREATE and UPDATE collapse into one classification', function () {
-  var m = swapS1("        var cls = (r && r.status === 'CREATE') ? 'CREATE'"+NL
-    + "          : ((r && r.status === 'REUSE') ? 'UPDATE' : 'BLOCKED_CONFLICT');",
-    "        var cls = 'CREATE';");
+  // R6C moved the classification into S1_resolveIdentityLikeProduction_, beside the resolver whose status
+  // it reads. Aimed there, and scoped to that function so the K2-only fallback arm below it stays intact —
+  // a mutant that neutralised both arms would not distinguish the two.
+  var m = swapS1In('S1_resolveIdentityLikeProduction_',
+    "      o.classification = res.status === 'CREATE' ? 'CREATE'" + NL
+    + "        : (res.status === 'REUSE' ? 'UPDATE' : 'BLOCKED_CONFLICT');",
+    "      o.classification = 'CREATE';");
   var seeded = pos({ extraHeaders: [W3hdr],
     extraLines: [{ allocation_draft_line_id: PRED_L, allocation_draft_id: PRED_H, sku: SKU,
       planned_qty: '380', line_status: 'draft' }] });
@@ -11425,7 +12037,7 @@ mut('N134 the shift is believed instead of measured, so a reordered table passes
   var rows = aeGoodRows();
   var t = rows[2]; rows[2] = rows[3]; rows[3] = t;
   var clean = aeAccept(aeDeleted(rows), aePin(AEpre.fz, 'DELETED'));
-  var bad = aeAccept(aeDeleted(rows, { s1: m }), aePin(AEpre.fz, 'DELETED'));
+  var bad = aeAccept(aeDeleted(rows, { s1: ahS1(m) }), aePin(AEpre.fz, 'DELETED'));
   return clean.verdict === 'STOP'
     && clean.stop_reasons.join(',').indexOf('DID_NOT_ALL_MOVE_BY_THE_SAME_AMOUNT') >= 0
     && bad.verdict === 'MANUAL_LEGACY_TEST_ROW_DELETION_ACCEPTED';
@@ -11458,7 +12070,7 @@ mut('N136 the logical fingerprint carries a row number, so a legal deletion read
     "    sig.push(id + '~' + S1_str_(r.fingerprint));",
     "    sig.push(String(r.row_number) + '~' + id + '~' + S1_str_(r.fingerprint));");
   var clean = aeAccept(aeDeleted(), aePin(AEpre.fz, 'DELETED'));
-  var bad = aeAccept(aeDeleted(undefined, { s1: m }), aePin(AEpre.fz, 'DELETED'));
+  var bad = aeAccept(aeDeleted(undefined, { s1: ahS1(m) }), aePin(AEpre.fz, 'DELETED'));
   return clean.verdict === 'MANUAL_LEGACY_TEST_ROW_DELETION_ACCEPTED' && bad.verdict === 'STOP'
     && bad.stop_reasons.join(',').indexOf('BUSINESS_CONTENT_CHANGED') >= 0;
 });
@@ -11485,7 +12097,7 @@ mut('N138 the residue is looked for by row number, so a real movement is mistake
     '    if (S1_str_(r.fingerprint) === S1_str_(residueFingerprint)) rows.push(r.row_number);',
     '    if (r.row_number === 2) rows.push(r.row_number);');
   var clean = aeAccept(aeDeleted(), aePin(AEpre.fz, 'DELETED'));
-  var bad = aeAccept(aeDeleted(undefined, { s1: m }), aePin(AEpre.fz, 'DELETED'));
+  var bad = aeAccept(aeDeleted(undefined, { s1: ahS1(m) }), aePin(AEpre.fz, 'DELETED'));
   return clean.verdict === 'MANUAL_LEGACY_TEST_ROW_DELETION_ACCEPTED' && bad.verdict === 'STOP'
     && bad.stop_reasons.join(',').indexOf('RESIDUE_IS_STILL_ON_THE_SHEET') >= 0;
 });
@@ -11517,7 +12129,7 @@ mut('N140 the freeze identity stops naming the calculation run, so yesterday lin
     var m = swapS1("  return ['build', 'scope_key', 'calculation_run_id', 'accepted_calculation_date',",
       "  return ['build', 'scope_key',");
     var ctx = S1World(pos()).ctx;
-    var bctx = S1World(pos({ s1: m })).ctx;
+    var bctx = S1World(pos({ s1: ahS1(m) })).ctx;
     var cleanOld = vm.runInContext('S1_freezeIdentity_(' + AG_SUPERSEDED_JSON_ + ')', ctx);
     var cleanNew = vm.runInContext('S1_freezeIdentity_(' + S1_FROZEN_JSON_ + ')', ctx);
     var badOld = vm.runInContext('S1_freezeIdentity_(' + AG_SUPERSEDED_JSON_ + ')', bctx);
@@ -11549,7 +12161,7 @@ mut('N142 the identity stops naming the writable identities, so a baseline that 
     var moved = JSON.parse(S1_FROZEN_JSON_);
     moved.expected_header_ids = ['SADH-K2-DEADBEEF'];
     moved.expected_line_ids = ['SADL-K2-DEADBEEF'];
-    var ctx = S1World(pos()).ctx, bctx = S1World(pos({ s1: m })).ctx;
+    var ctx = S1World(pos()).ctx, bctx = S1World(pos({ s1: ahS1(m) })).ctx;
     function id(c, o) { return vm.runInContext("S1_freezeIdentity_(" + JSON.stringify(o) + ")", c); }
     return id(ctx, moved) !== id(ctx, JSON.parse(S1_FROZEN_JSON_))
       && id(bctx, moved) === id(bctx, JSON.parse(S1_FROZEN_JSON_));
@@ -11647,8 +12259,10 @@ mut('N148 the drift comparison is neutralised, so an authorization applies to an
 mut('N149 the generator is called twice under one authorization', function () {
   // One authorization, two headers. The one-shot nonce is what makes the second call refuse in
   // production — so this asserts BOTH that the wrapper calls once and that the authority would catch it.
-  var A = '    o.resp = weeklyAiPlanParseResp_(weeklyAiPlanGenerateK2_(ss, mapped.request, h, deps,';
-  var m = swapS1(A, '    weeklyAiPlanGenerateK2_(ss, mapped.request, h, deps,' + NL
+  // R6C split the raw return from the parsed envelope, so the call site is now its own statement.
+  var A = '    var rawResp = weeklyAiPlanGenerateK2_(ss, mapped.request, h, deps,';
+  var m = swapS1In('S1_cgProductionCall_', A,
+    '    weeklyAiPlanGenerateK2_(ss, mapped.request, h, deps,' + NL
     + '      { company: b.company, country: b.country, marketplace: b.marketplace }, cap);' + NL + A);
   var clean = ahExec({}, {}, ahOpts());
   var bad = ahExec({}, { s1: ahS1(m) }, ahOpts());
@@ -12088,6 +12702,285 @@ mut('N177 a recovery class hands back a reusable authorization or a retry', func
     && bad.res.next_action_permits_another_generate === true
     && bad.res.next_action_agrees_with_the_permission === false
     && bad2.res.retry_contract.same_authorization_reusable === true;
+});
+
+
+mut('N178 an alternate row is present and the zero write is still confirmed', function () {
+  // THE CONTRADICTION THE LIVE RUN PRINTED. `zero_write_confirmed: true` beside
+  // WRITE_LANDED_UNDER_UNEXPECTED_IDENTITY said, in one object, that nothing was written and that something
+  // was. The mutant restores the old definition — the TOOL's own counters — which is true of any read-only
+  // manifest by construction and therefore says nothing about the world.
+  var m = swapS1In('S1_pfFinish_',
+    '  out.zero_write_confirmed = (out.this_manifest_wrote_nothing === true',
+    '  out.zero_write_confirmed = (out.this_manifest_wrote_nothing === true || true');
+  function drive(src) {
+    var r = ahRun(akWorld(src ? { s1: src } : {}),
+      'RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK()');
+    return [r.res.classification, r.res.zero_write_confirmed];
+  }
+  var clean = drive(null), bad = drive(m);
+  return clean[0] === 'WRITE_LANDED_UNDER_UNEXPECTED_IDENTITY' && clean[1] === false
+    && bad[0] === 'WRITE_LANDED_UNDER_UNEXPECTED_IDENTITY' && bad[1] === true;
+});
+
+mut('N179 the header and the line are not counted separately', function () {
+  // A reader deciding what to do about a half-landed write needs to know whether the line came with the
+  // header. One number for two rows cannot answer that, and `alternate_identity_count: 1` was the number
+  // the live report had.
+  var m = swapS1In('S1_pfFinish_',
+    '  out.alternate_line_count = ei ? ei.alternate_line_count : null;',
+    '  out.alternate_line_count = ei ? ei.alternate_identity_count : null;');
+  function drive(src) {
+    var o = { duplicateLine: true }; if (src) o.s1 = src;
+    var r = ahRun(akWorld(o), 'RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK()');
+    return [r.res.alternate_header_count, r.res.alternate_line_count];
+  }
+  // ONE header carrying TWO lines. The counts must differ; the mutant reports the header count twice,
+  // which is how `alternate_identity_count: 1` came to stand for two rows in the live report.
+  var clean = drive(null), bad = drive(m);
+  return clean[0] === 1 && clean[1] === 2 && bad[0] === 1 && bad[1] === 1;
+});
+
+mut('N180 an orphan line is accepted as a complete pair', function () {
+  // AIMED AT THE BRANCH. The orphan condition is a three-way disjunction; neutralising only its first
+  // line leaves the wrong-foreign-key clause live, and the mutant would still be caught for the wrong
+  // reason while proving nothing about the two cases that are not wrong-FK.
+  var m = swapS1In('S1_ai2Classify_',
+    '  if (pair.orphan_line_ids.length > 0 || pair.parentless_line_ids.length > 0' + NL
+    + '      || (pair.exactly_one_header_and_one_line' + NL
+    + '          && pair.line_fk_points_at_the_alternate_header === false)) {',
+    '  if (false) {');
+  var clean = akRun({ lineParent: 'SADH-K4-SOMEONE-ELSE' });
+  var badRes = ahRun(akWorld({ lineParent: 'SADH-K4-SOMEONE-ELSE', s1: m }),
+    'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_IDENTITY_READBACK()');
+  return clean.res.classification === 'ORPHAN_ALTERNATE_WRITE'
+    && badRes.res.classification !== 'ORPHAN_ALTERNATE_WRITE';
+});
+
+mut('N181 a partial write is accepted as a complete pair', function () {
+  // `business_facts_ok` is the AND of ten checks. Neutralising it is how a pair that is COMPLETE in shape
+  // but wrong in content — the wrong run, the wrong cycle, no route, no provenance — becomes acceptable.
+  var m = swapS1In('S1_ai2Classify_',
+    '  if ((pair.header_exists !== pair.line_exists)',
+    '  if (false && (pair.header_exists !== pair.line_exists)');
+  function drive(src, over) {
+    return ahRun(akWorld(src ? mergeAk(over, src) : over),
+      'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_IDENTITY_READBACK()').res.classification;
+  }
+  function mergeAk(over, s1) {
+    var o = {}; Object.keys(over || {}).forEach(function (k) { o[k] = over[k]; }); o.s1 = s1; return o;
+  }
+  return drive(null, { line: false }) === 'PARTIAL_WRITE_UNDER_ALTERNATE_IDENTITIES'
+    && drive(m, { line: false }) !== 'PARTIAL_WRITE_UNDER_ALTERNATE_IDENTITIES';
+});
+
+mut('N182 a row stamped with the wrong scope, run or cycle is accepted', function () {
+  var m = swapS1In('S1_ai2PairCompleteness_',
+    '  o.business_facts_ok = (o.line_fk_points_at_the_alternate_header === true',
+    '  o.business_facts_ok = (true || o.line_fk_points_at_the_alternate_header === true');
+  function drive(src, over) {
+    var o = {}; Object.keys(over).forEach(function (k) { o[k] = over[k]; });
+    if (src) o.s1 = src;
+    return ahRun(akWorld(o), 'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_IDENTITY_READBACK()');
+  }
+  var cases = [{ header: { calculation_run_id: 'GAP-INV-SOMEONE-ELSE-0001' } },
+    { header: { planning_cycle: 'RECO-2099-12' } },
+    { header: { marketplace: 'Walmart' } }];
+  // clean: every one of the three is refused; mutant: every one becomes a complete write
+  return cases.every(function (c) {
+    return drive(null, c).res.classification !== 'COMPLETE_WRITE_UNDER_ALTERNATE_IDENTITIES';
+  }) && cases.filter(function (c) {
+    return drive(m, c).res.classification === 'COMPLETE_WRITE_UNDER_ALTERNATE_IDENTITIES';
+  }).length >= 1;
+});
+
+mut('N183 a quantity outside the authorized ceiling is accepted', function () {
+  // 25 was authorized. A row carrying 26 is not a clamped run and it is not this plan — and a quantity
+  // check that reads `>= 0` instead of the ceiling accepts every number a writer could produce.
+  var m = swapS1In('S1_ai2PairCompleteness_',
+    '    (L.planned_qty !== null && L.planned_qty > 0 && L.planned_qty <= max);',
+    '    (L.planned_qty !== null && L.planned_qty >= 0);');
+  function drive(src, qty) {
+    var o = { qty: qty }; if (src) o.s1 = src;
+    return ahRun(akWorld(o), 'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_IDENTITY_READBACK()').res;
+  }
+  var over = AH_BASE.expected_max_units_written + 1;
+  return drive(null, over).classification === 'PARTIAL_WRITE_UNDER_ALTERNATE_IDENTITIES'
+    && drive(null, 0).classification === 'PARTIAL_WRITE_UNDER_ALTERNATE_IDENTITIES'
+    && drive(m, over).classification === 'COMPLETE_WRITE_UNDER_ALTERNATE_IDENTITIES';
+});
+
+mut('N184 a row with no production AI provenance is accepted as this generation output', function () {
+  // `aiplIsAiGenerated_` is the production authority, and 61_ has a standing note about the round in which
+  // every AI row was STORED with a manual marker and the next generation read its own output back as an
+  // operator decision. A row that fails that predicate is not this generation's output.
+  var m = swapS1In('S1_ai2PairCompleteness_',
+    '  o.carries_production_ai_provenance = H.is_ai_generated_by_production_authority === true;',
+    '  o.carries_production_ai_provenance = true;');
+  function drive(src) {
+    var o = { header: { generation_type: 'user_created' } }; if (src) o.s1 = src;
+    return ahRun(akWorld(o), 'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_IDENTITY_READBACK()').res;
+  }
+  return drive(null).classification === 'PARTIAL_WRITE_UNDER_ALTERNATE_IDENTITIES'
+    && drive(m).classification === 'COMPLETE_WRITE_UNDER_ALTERNATE_IDENTITIES';
+});
+
+mut('N185 the Manifest and production canonical strings are never compared', function () {
+  // THE FINDING ITSELF. Without the dimension-count comparison the report says only that the ids differ,
+  // which is where R6B stopped. What makes it actionable is that the two sides were keyed on a different
+  // NUMBER of dimensions — ten against eleven — so no value moved and the id still changed.
+  var m = swapS1In('S1_ai2KeyDiff_',
+    '  o.comparable = (p.length === dimNames.length && q.length === dimNames.length);',
+    '  o.comparable = true;');
+  function drive(src) {
+    var o = {}; if (src) o.s1 = src;
+    var r = ahRun(akWorld(o), 'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_IDENTITY_READBACK()').res;
+    var c = r.reconciliation.per_candidate[0];
+    return [c.dimension_count_differs, c.predicted_k2_vs_stored_k4.comparable,
+      c.predicted_k2_vs_stored_k4.predicted_field_count,
+      c.predicted_k2_vs_stored_k4.stored_field_count];
+  }
+  var clean = drive(null), bad = drive(m);
+  return clean[0] === true && clean[1] === false && clean[2] === 10 && clean[3] === 11
+    && bad[1] === true;
+});
+
+mut('N186 the stored id is never re-derived, so nobody can say which side was wrong', function () {
+  // THE DISCRIMINATOR. A stored id that re-derives from its own row means the WRITER was consistent and the
+  // PREDICTION differed — fix the prediction. A stored id that does not re-derive would mean production
+  // stamped an id its own values do not produce, which is the opposite conclusion and the opposite fix.
+  // Answering `true` unconditionally always blames the prediction, including when it should not.
+  var m = swapS1In('S1_ai2HeaderFacts_',
+    '  f.id_re_derives_from_its_own_fields = (want === null) ? null : (want === f.allocation_draft_id);',
+    '  f.id_re_derives_from_its_own_fields = true;');
+  function drive(src, hid) {
+    var o = {}; if (hid) o.hid = hid; if (src) o.s1 = src;
+    var r = ahRun(akWorld(o), 'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_IDENTITY_READBACK()').res;
+    return [r.reconciliation.per_candidate[0].id_re_derives_from_its_own_fields,
+      String(r.reconciliation.which_side_was_wrong).slice(0, 30)];
+  }
+  // A HAND-STAMPED ID that does not hash to its own row: the clean code refuses to blame the prediction.
+  var clean = drive(null, 'SADH-K4-DEADBEEF'), bad = drive(m, 'SADH-K4-DEADBEEF');
+  var honest = drive(null, null);
+  return clean[0] === false && clean[1].indexOf('PRODUCTION_MAY_HAVE') === 0
+    && bad[0] === true && bad[1].indexOf('THE_PREDICTION') === 0
+    && honest[0] === true && honest[1].indexOf('THE_PREDICTION') === 0;
+});
+
+mut('N187 a live re-reading stands in for the frozen pre-state', function () {
+  // LIVE AGAINST LIVE IS NOT A COMPARISON. The proof that a row is NEW rests on the frozen row signatures;
+  // taking the expectation from the rows that are there now makes every row look pre-existing, and the one
+  // question this round exists to answer becomes unanswerable in the direction that matters.
+  var m = swapS1In('S1_ai2PairCompleteness_',
+    "  o.id_absent_from_the_frozen_row_signatures = frozenIds[H.allocation_draft_id] !== 1;",
+    "  o.id_absent_from_the_frozen_row_signatures = false;");
+  function drive(src) {
+    var o = {}; if (src) o.s1 = src;
+    var r = ahRun(akWorld(o), 'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_IDENTITY_READBACK()').res;
+    return [r.classification, r.pair.id_absent_from_the_frozen_row_signatures,
+      r.pair.proves_it_was_added_after_the_freeze];
+  }
+  var clean = drive(null), bad = drive(m);
+  return clean[0] === 'COMPLETE_WRITE_UNDER_ALTERNATE_IDENTITIES' && clean[1] === true && clean[2] === true
+    && bad[2] === false && bad[0] !== 'COMPLETE_WRITE_UNDER_ALTERNATE_IDENTITIES';
+});
+
+mut('N188 the readback reaches a generator, a mint or a writer', function () {
+  var A = '    var db = S1_openDb_();';
+  var mg = swapS1In('RUN_S1_CONTROLLED_GENERATE_ALTERNATE_IDENTITY_READBACK', A,
+    '    weeklyAiPlanGenerateK2_(null, null, null, null, null, null);' + NL + A);
+  var mm = swapS1In('RUN_S1_CONTROLLED_GENERATE_ALTERNATE_IDENTITY_READBACK', A,
+    '    WeeklyAiPlanControlledAuthority_.mint({ scope: { company: 1 } });' + NL + A);
+  function inFn(src, needle) {
+    return (bareCode(extractFn(src, 'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_IDENTITY_READBACK'))
+      .match(needle) || []).length;
+  }
+  var clean = akRun({});
+  return inFn(S1, /weeklyAiPlanGenerateK2_\(/g) === 0 && inFn(S1, /\.mint\(/g) === 0
+    && inFn(mg, /weeklyAiPlanGenerateK2_\(/g) === 1 && inFn(mm, /\.mint\(/g) === 1
+    && clean.calls === 0 && clean.writes === 0
+    && (bareCode(extractFn(S1, 'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_PAIR_ACCEPTANCE_MANIFEST'))
+      .match(/setValue|appendRow|getRange/g) || []).length === 0;
+});
+
+mut('N189 a recovery class permits a retry or reuses the spent authorization', function () {
+  var m = swapS1In('S1_ai2RetryContract_',
+    '    retryable: false, automatic_retry_allowed: false,',
+    '    retryable: true, automatic_retry_allowed: false,');
+  var m2 = swapS1In('S1_ai2RetryContract_',
+    '    same_authorization_reusable: false, same_frozen_baseline_reusable: false,',
+    '    same_authorization_reusable: true, same_frozen_baseline_reusable: true,');
+  function drive(src) {
+    var o = {}; if (src) o.s1 = src;
+    return ahRun(akWorld(o), 'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_IDENTITY_READBACK()')
+      .res.retry_contract;
+  }
+  var clean = drive(null), bad = drive(m), bad2 = drive(m2);
+  return clean.retryable === false && clean.same_authorization_reusable === false
+    && clean.same_frozen_baseline_reusable === false
+    && clean.generate_may_be_attempted_again === false
+    && bad.retryable === true
+    && bad2.same_authorization_reusable === true && bad2.same_frozen_baseline_reusable === true;
+});
+
+mut('N190 the acceptance manifest accepts a pair the readback did not call complete', function () {
+  // The acceptance manifest has ONE source of truth — the readback — and no measurement of its own. A
+  // second measurement would be a second opinion about the same rows; accepting without the readback's
+  // verdict is worse, because "accepted" would then be something the tool asserts about itself.
+  var m = swapS1In('RUN_S1_CONTROLLED_GENERATE_ALTERNATE_PAIR_ACCEPTANCE_MANIFEST',
+    "      rb.classification === 'COMPLETE_WRITE_UNDER_ALTERNATE_IDENTITIES');",
+    '      true);');
+  function drive(src, over) {
+    var o = {}; Object.keys(over || {}).forEach(function (k) { o[k] = over[k]; });
+    if (src) o.s1 = src;
+    return ahRun(akWorld(o), 'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_PAIR_ACCEPTANCE_MANIFEST()').res;
+  }
+  // a DUPLICATED header is not a complete pair, and the business facts still read clean on the first one
+  var clean = drive(null, { duplicateHeader: true });
+  var bad = drive(m, { duplicateHeader: true });
+  return clean.verdict === 'ALTERNATE_PAIR_IS_NOT_ACCEPTABLE_YET'
+    && clean.predicates_failed > 0
+    && bad.predicates_failed < clean.predicates_failed;
+});
+
+mut('N191 Manifest P predicts with the K2-only resolver again', function () {
+  // THE ROOT CAUSE, AS A MUTANT. The atomic writer resolves through sadResolveActiveDraftK2OrK3_ with
+  // k4Ready; this predictor used to call the K2-only resolver and agreed with itself while disagreeing with
+  // the writer. Reverting it puts the prediction back in the wrong family — and the readiness predicate
+  // that now demands the writer's own authority is what refuses it.
+  var m = swapS1In('S1_resolveIdentityLikeProduction_',
+    "  if (typeof sadResolveActiveDraftK2OrK3_ === 'function' && sh) {",
+    '  if (false) {');
+  var clean = manifestP(pos({}));
+  var bad = withMP(m, pos({}));
+  var cw = clean.res.predicted_write_set, bw = bad.res.predicted_write_set;
+  return cw.identity_family === 'K4' && cw.identity_unavailable_reason === null
+    && clean.res.verdict === 'READY_TO_AUTHORIZE'
+    && bw.identity_family === 'K2'
+    && bw.identity_unavailable_reason === 'UNIFIED_RESOLVER_UNAVAILABLE'
+    && bad.res.verdict === 'STOP'
+    && bad.res.failed_predicates.indexOf(
+      'the_predicted_identity_came_from_the_resolver_the_writer_calls') >= 0;
+});
+
+mut('N192 the response written-identity reader is dropped, so a landed write reads as a zero', function () {
+  // `data.groups[].allocation_draft_id` is the id production wrote, and the classifier used to discard the
+  // whole `data` object. That is how a completed generation came back as an unexplained zero write while
+  // the response in hand held the id of the row.
+  var m = swapS1In('S1_cgClassify_',
+    '  if (rb.neither_side_landed && wrote.declares_a_write === true) {',
+    '  if (false) {');
+  var script = { mode: 'WROTE_ELSEWHERE' };
+  var clean = ahExec(script, {}, ahOpts());
+  var bad = ahExec(script, { s1: ahS1(m) }, ahOpts());
+  // WITHOUT THE BRANCH THE VERDICT IS ONE OF THE TWO THAT MEAN NOTHING LANDED — and which of the two it
+  // is depends only on whether the envelope happened to carry a readable status. Both are wrong about a
+  // row that exists, and neither carries the id production handed over.
+  var NOTHING_LANDED = ['MANUAL_RECOVERY_REQUIRED', 'FACTORY_GUARD_REFUSED_ZERO_WRITE'];
+  return clean.res.verdict === 'WROTE_UNDER_AN_UNEXPECTED_IDENTITY'
+    && clean.res.classification.response_header_ids_not_in_the_authorized_write_set.length === 1
+    && clean.res.classification.response_declared_write.header_ids[0] === 'SADH-K4-ELSEWHERE'
+    && NOTHING_LANDED.indexOf(bad.res.verdict) >= 0;
 });
 
 console.log('\npassed ' + pass + '  failed ' + fail
