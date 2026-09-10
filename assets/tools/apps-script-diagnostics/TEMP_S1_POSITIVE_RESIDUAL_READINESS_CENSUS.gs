@@ -12236,3 +12236,207 @@ function S1_cgFinishExecute_(out, L, lockHandle) {
     stop_reason: S1_cap_(out.stop_reason, 400) }));
   return out;
 }
+
+/**
+ * ================================================================================================================
+ * S1-R6A — THE RUN MENU CANNOT PASS AN ARGUMENT, SO THIS IS THE ENTRY POINT THAT NEEDS NONE.
+ * ================================================================================================================
+ *
+ * WHAT IT IS. `RUN_S1_CONTROLLED_GENERATE_EXECUTE(opts)` requires `{ execute: true, authorization: <the exact
+ * sentence> }`, and the Apps Script editor's Run dropdown calls a function with no arguments. So the
+ * controlled path was complete and unreachable from the one place an operator actually presses. This is the
+ * adapter, and it is named for what pressing Run does: EXECUTE_ONCE.
+ *
+ * WHAT IT IS NOT. It is not a second executor. It adds no gate, no readback, no retry, no rollback and no
+ * writer, and it holds no scope, SKU, quantity or identity of its own. Everything that decides whether a
+ * write may happen is still `RUN_S1_CONTROLLED_GENERATE_EXECUTE`: the baseline, the lock, the idempotency
+ * question, the 95-field comparison, the one mint, the one call, the readback and the retry contract. This
+ * function's whole body is three checks on the sentence it carries and ONE call.
+ *
+ * ---------------------------------------------------------------------------------------------------------------
+ * THE ONE THING IT CHANGES ABOUT THE RISK, SAID PLAINLY.
+ *
+ * Until now the authorization sentence lived only in a log and in an operator's paste buffer, so reaching a
+ * production write took a person who had read it. It is now IN THIS FILE, which means the sentence is no
+ * longer what stands between the Run dropdown and a production Generate — the FUNCTION NAME is. That is why
+ * the name says ONCE, why the returned object opens with what the function does rather than with a verdict,
+ * and why the dry run is a DIFFERENT function (`RUN_S1_CONTROLLED_GENERATE_PREFLIGHT`, also no-arg) instead
+ * of a flag on this one.
+ *
+ * It is also why the deeper gates matter more than they did, and none of them moved: this sentence only
+ * authorizes ONE generation, for ONE scope, against ONE calculation run and ONE frozen baseline. Press it
+ * twice and the second press reads the data, finds the pair, and answers ALREADY_APPLIED with zero attempts.
+ * Press it after the Gap Job has moved the accepted run and the sentence no longer matches the baseline's
+ * facts, so it refuses before the lock. Press it in a project whose flag or allowlist has moved and the
+ * readiness gate refuses. The sentence being local buys a caller nothing that those gates were protecting.
+ *
+ * ---------------------------------------------------------------------------------------------------------------
+ * THE SENTENCE WAS NOT TYPED. It is the `s1_manifest_p_authorization_1_of_1` payload of the live
+ * RUN_S1_MANIFEST_P run, reproduced VERBATIM on one line — 2245 characters, fingerprint 8A830413 under this
+ * file's own hash authority, zero placeholders. Those three facts are re-derived at call time and printed as
+ * NUMBERS: a wrapper that trusted its own constant would be asserting that a literal is what it says it is.
+ *
+ * AND IT IS NEVER REPRINTED. The result carries the length, the fingerprint and the placeholder count, and
+ * not one character of the text. A refused run that echoes the sentence has handed back something that looks
+ * signable, and the log line is the one place a sentence can leak into a screenshot.
+ * ================================================================================================================
+ */
+
+/** The number of characters the emitted sentence had. Named, so a shortened paste fails on the LENGTH before
+ *  anybody has to read a hash — a length is the cheapest proof there is. */
+var S1_CG_ONCE_AUTHORIZATION_LENGTH_ = 2245;
+
+/**
+ * The `s1_manifest_p_authorization_1_of_1` payload, verbatim, on one line.
+ *
+ * ONE LINE ON PURPOSE. It is character-for-character what the run emitted, so a reader can SEARCH for it
+ * rather than trust a re-wrapping — the same discipline `S1_MANIFEST_P_BEFORE_` is held to. It carries no
+ * quote, no backslash and no newline (measured), which is why a single-quoted literal reproduces it exactly.
+ *
+ * IT IS NOT BASELINE DATA, and nothing here writes it anywhere else: not into `S1_MANIFEST_P_BEFORE_`, not
+ * into a production module, not into the database, and not into a log line.
+ */
+var S1_CG_ONCE_AUTHORIZATION_ = 'I authorize ONE controlled Inventory AI Plan generation for the single scope ResUS / US / Amazon / SP0750-M, against accepted inventory gap run GAP-INV-20260910T132343-0001 dated 2026-09-10 (freshness CURRENT_AFTER_REFRESH, status READY), whose recommendation is 25 units with 0 already planned manually and 0 planned by AI, leaving a residual of 25 against available_to_allocate 310 at factory warehouse WH-TW-CN-FACTORY-YOUXIN, expecting AT MOST 25 units to be written (clamp NO). This generation is predicted to CREATE 1 allocation draft header(s) and 1 line(s), and to UPDATE 0 existing header(s) and 0 existing line(s), across 1 route group(s). It is predicted to EXPIRE 0 existing AI identity/identities, against 0 AI identity/identities active in this scope before the run. The EXACT K2 identities it may write are header(s) SADH-K2-A4239AC6 and line(s) SADL-K2-2FD4DCA2; K2 group key(s) reco-2026-09|resus|us|amazon|inventory_replenishment|wh-tw-cn-factory-youxin||sea|truck|1. No other identity may be created or altered. The 0 manual header(s) and 0 manual line(s) in this scope must remain FULL-ROW IDENTICAL (combined fingerprint 811C9DC5), and so must all 11 header(s) and 13 line(s) belonging to every other scope (combined fingerprint C2F89714) — every column, not only the ids. The factory write surfaces are frozen at: pool row fingerprint 58D7A2C7 (fac_current_stock 310, fac_reserved_stock 0), factory_stock_movements SHEET_PRESENT_AND_READABLE with 95 row(s) all carrying a non-blank id (fingerprint FC67B70E), factory_stock_override_audit SHEET_PRESENT_AND_READABLE with 0 row(s) (fingerprint 811C9DC5), and reservations SHEET_ABSENT with no row count (the table is absent, which is not the same as zero rows). Every one of those five baselines must be unchanged when this generation finishes. The activation allowlist must contain exactly this one scope. No reservation may be created, no factory stock may change, no factory movement or override-audit row may be added, and no Weekly Shipping Plan or Shipment may be created or altered. A factory-guard STOP or a clamp with zero rows is an acceptable outcome. This authorization covers ONE generation and expires when it completes or refuses. IT DOES NOT AUTHORIZE SUBMIT.';
+
+/**
+ * The three facts §三 requires, re-derived from the constant rather than asserted about it. Returns numbers
+ * and booleans only — the text never appears in the result, so this object is safe to log and to paste.
+ */
+function S1_cgOnceAuthorizationCheck_(text) {
+  var o = { is_string: typeof text === 'string',
+    length: null, expected_length: S1_CG_ONCE_AUTHORIZATION_LENGTH_, length_ok: false,
+    needs_no_trim: false,
+    fingerprint: null, expected_fingerprint: S1_CG_AUTH_FINGERPRINT_,
+    fingerprint_authority_available: false, fingerprint_ok: false,
+    superseded_fingerprint: false,
+    placeholder_count: null, placeholders_ok: false,
+    text_is_never_reprinted: true, ok: false, reason: null };
+  if (!o.is_string) { o.reason = 'AUTHORIZATION_CONSTANT_IS_NOT_A_STRING'; return o; }
+  o.length = text.length;
+  o.length_ok = o.length === S1_CG_ONCE_AUTHORIZATION_LENGTH_;
+  if (!o.length_ok) { o.reason = 'AUTHORIZATION_LENGTH_IS_NOT_' + S1_CG_ONCE_AUTHORIZATION_LENGTH_; return o; }
+  // THE HASH AUTHORITY TRIMS. A sentence that needed trimming would fingerprint as though it never had the
+  // whitespace, so the untrimmed input is refused rather than normalised — the same rule the executor applies.
+  o.needs_no_trim = text === S1_str_(text);
+  if (!o.needs_no_trim) { o.reason = 'AUTHORIZATION_CARRIES_LEADING_OR_TRAILING_WHITESPACE'; return o; }
+  o.placeholder_count = (text.match(/<[a-zA-Z_][a-zA-Z0-9_]*>/g) || []).length;
+  o.placeholders_ok = o.placeholder_count === 0;
+  if (!o.placeholders_ok) { o.reason = 'AUTHORIZATION_CARRIES_PLACEHOLDERS'; return o; }
+  o.fingerprint = S1_fingerprint_([text]);
+  o.fingerprint_authority_available = o.fingerprint !== null;
+  if (!o.fingerprint_authority_available) {
+    o.reason = 'HASH_AUTHORITY_UNAVAILABLE_SO_THE_SENTENCE_CANNOT_BE_IDENTIFIED'; return o;
+  }
+  o.superseded_fingerprint = S1_CG_SUPERSEDED_AUTH_FINGERPRINTS_.indexOf(o.fingerprint) !== -1;
+  if (o.superseded_fingerprint) { o.reason = 'AUTHORIZATION_FINGERPRINT_SUPERSEDED'; return o; }
+  o.fingerprint_ok = o.fingerprint === S1_CG_AUTH_FINGERPRINT_;
+  if (!o.fingerprint_ok) { o.reason = 'AUTHORIZATION_FINGERPRINT_MISMATCH'; return o; }
+  o.ok = true;
+  return o;
+}
+
+/**
+ * ================================================================================================================
+ * RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE()
+ *
+ * PRESSING RUN ON THIS PERFORMS THE ONE AUTHORIZED PRODUCTION GENERATE. It is not a dry run and there is no
+ * option that makes it one; `RUN_S1_CONTROLLED_GENERATE_PREFLIGHT()` is the read-only question and is also
+ * callable from the Run menu.
+ *
+ * NO ARGUMENTS, AND THEREFORE NOTHING TO WIDEN. There is no parameter to carry a scope, a SKU, a quantity or
+ * an identity; every one of those comes from `S1_MANIFEST_P_BEFORE_`, through the executor, exactly as before.
+ *
+ * ONE CALL, AND IT IS NOT THE WRITER. This function calls `RUN_S1_CONTROLLED_GENERATE_EXECUTE` once. It does
+ * not mint a capability, does not call `weeklyAiPlanGenerateK2_`, does not reach any Submit authority, and
+ * carries no loop, no recursion and no second call site — the suite asserts each of those by identity.
+ * ================================================================================================================
+ */
+function RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE() {
+  var out = {
+    tool: 'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE',
+    build: S1_BUILD_,
+    what_pressing_run_does: 'PERFORMS the ONE authorized production Generate for the single scope the frozen'
+      + ' baseline names. This is NOT a dry run. The read-only question is'
+      + ' RUN_S1_CONTROLLED_GENERATE_PREFLIGHT(), which is also callable with no arguments.',
+    authorizes: 'ONE generation, ONE exact scope, against ONE calculation run and ONE frozen baseline',
+    does_not_authorize: ['Submit to Weekly Shipping Plan (that is MANIFEST S)', 'a second generation',
+      'any factory stock change', 'any reservation', 'widening the activation allowlist',
+      'flipping INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_'],
+    delegates_to: 'RUN_S1_CONTROLLED_GENERATE_EXECUTE({ execute: true, authorization: <the sentence this'
+      + ' file carries> }) — one call, and every gate is that function’s',
+    // THE COUNTERS ARE MIRRORED FROM THE EXECUTOR, NOT KEPT HERE. A wrapper that counted its own attempts
+    // would be reporting a number nothing had measured; these start at the safe value and are overwritten
+    // with what the executor actually measured, on every path that reaches it.
+    attempts: 0, generator_calls: 0, capability_minted: false, writes: 0, writer_calls: 0, submit_calls: 0,
+    flag_modified: false, allowlist_modified: false, baseline_modified: false,
+    authorization_check: null, verdict: null, stop_reason: '', next_action: null,
+    retry_contract: null, result: null
+  };
+  try {
+    // ---- THE ONLY THING THIS FUNCTION CHECKS FOR ITSELF -------------------------------------------
+    var chk = S1_cgOnceAuthorizationCheck_(S1_CG_ONCE_AUTHORIZATION_);
+    out.authorization_check = chk;
+    if (!chk.ok) {
+      out.verdict = 'STOP';
+      out.next_action = 'RERUN_MANIFEST_P_AND_REPLACE_THE_SENTENCE_THIS_FILE_CARRIES';
+      out.stop_reason = 'the authorization sentence this file carries is not the one this baseline was'
+        + ' measured with (' + chk.reason + '). Nothing was called: zero attempts, zero generator calls,'
+        + ' no capability minted, zero writes.';
+      return S1_cgFinishOnce_(out);
+    }
+    // ---- THE ONE CALL. Every gate below this line belongs to the executor. ------------------------
+    var r = RUN_S1_CONTROLLED_GENERATE_EXECUTE({ execute: true,
+      authorization: S1_CG_ONCE_AUTHORIZATION_ });
+    out.result = r;
+    out.verdict = r.verdict;
+    out.stop_reason = S1_str_(r.stop_reason);
+    out.attempts = r.attempts;
+    out.generator_calls = r.generator_calls;
+    out.capability_minted = r.capability_minted;
+    out.submit_calls = r.submit_calls;
+    out.flag_modified = r.flag_modified;
+    out.allowlist_modified = r.allowlist_modified;
+    out.retry_contract = r.retry_contract;
+    out.next_action = r.retry_contract ? r.retry_contract.next_action : null;
+    return S1_cgFinishOnce_(out);
+  } catch (e) {
+    // A THROW HERE IS NOT AN ACK_UNKNOWN OF ITS OWN. Whether the write was reached is the executor's
+    // measurement, and it is in `out.attempts` if the executor got far enough to report it.
+    out.verdict = out.attempts > 0 ? 'MANUAL_RECOVERY_REQUIRED' : 'STOP';
+    out.stop_reason = 'S1_CONTROLLED_GENERATE_EXECUTE_ONCE_THREW: ' + String(e && e.message ? e.message : e)
+      + (out.attempts > 0
+        ? '. The production call HAD been reached, so where the data stands is unknown: a person looks.'
+        : '. The production call was never reached; zero attempts and zero writes.');
+    return S1_cgFinishOnce_(out);
+  }
+}
+
+/**
+ * The report, and the one place the zero-proof is derived.
+ *
+ * IT PRINTS NO SENTENCE. `authorization_check` holds a length, a fingerprint and a count; the text is not in
+ * it and is not added here. A log line is the easiest way for an authorization to end up in a screenshot.
+ */
+function S1_cgFinishOnce_(out) {
+  out.zero_write_confirmed = (out.attempts === 0 && out.generator_calls === 0
+    && out.capability_minted === false && out.writes === 0 && out.writer_calls === 0);
+  out.no_second_generate_instruction = 'This authorization is spent whether it completed or refused. There'
+    + ' is no second press of this function against it: another generation, if one is wanted, starts at'
+    + ' RUN_S1_MANIFEST_P, a new sentence, and a new frozen baseline.';
+  S1_log_('s1_controlled_generate_execute_once', JSON.stringify({
+    tool: out.tool, build: out.build, verdict: out.verdict,
+    authorization_length: out.authorization_check ? out.authorization_check.length : null,
+    authorization_fingerprint: out.authorization_check ? out.authorization_check.fingerprint : null,
+    authorization_placeholder_count: out.authorization_check ? out.authorization_check.placeholder_count : null,
+    authorization_ok: out.authorization_check ? out.authorization_check.ok : null,
+    attempts: out.attempts, generator_calls: out.generator_calls,
+    capability_minted: out.capability_minted, submit_calls: out.submit_calls,
+    flag_modified: out.flag_modified, allowlist_modified: out.allowlist_modified,
+    baseline_modified: out.baseline_modified,
+    zero_write_confirmed: out.zero_write_confirmed,
+    next_action: out.next_action,
+    retry_contract: out.retry_contract,
+    stop_reason: S1_cap_(out.stop_reason, 400)
+  }));
+  return out;
+}

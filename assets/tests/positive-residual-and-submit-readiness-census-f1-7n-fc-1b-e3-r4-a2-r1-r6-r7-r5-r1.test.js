@@ -658,17 +658,17 @@ var S1_BARE = bareCode(S1);
     && src.indexOf('getRange') === -1,
     'A7.19.' + (i + 1) + 'b ' + fn + ' reaches no write API, no lock and no getRange at all');
 });
-// TWELVE READ-ONLY ENTRY POINTS AND THREE THAT MAY WRITE, WHICH IS THE WHOLE PUBLIC SURFACE.
-// S1-R6 added two: a preflight that is on the read-only list above, and the ONE path in this file from
-// here to a production Generate. The count is asserted so a fourth writer cannot appear without this
-// line changing.
-eq((S1_BARE.match(/^function RUN_S1_[A-Z_]+/gm) || []).length, 15,
-  'A7.20 fifteen public entry points in total');
+// TWELVE READ-ONLY ENTRY POINTS, THREE THAT GATE ON `opts.execute !== true`, AND ONE THAT WRITES ON
+// SIGHT. S1-R6A added the last of those: the Run dropdown passes no arguments, so the no-arg entry point
+// cannot have a dry-run flag and does not pretend to. §AI partitions all sixteen by NAME, so a
+// seventeenth cannot appear in any class without that failing; this line is the count on its own.
+eq((S1_BARE.match(/^function RUN_S1_[A-Z_]+/gm) || []).length, 16,
+  'A7.20 sixteen public entry points in total');
 ['RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL', 'RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL',
  'RUN_S1_CONTROLLED_GENERATE_EXECUTE'].forEach(function (fn, i) {
   var src = bareCode(extractFn(S1, fn));
   ok(src.indexOf('opts.execute !== true') > 0,
-    'A7.20.' + (i + 1) + ' and each of the three that MAY write gates on `opts.execute !== true`, by identity');
+    'A7.20.' + (i + 1) + ' and each of the three that TAKE OPTIONS and may write gates on `opts.execute !== true`, by identity');
 });
 ok(S1_BARE.indexOf('inventoryAiPlanDbGenerationEnabled_') > 0,
   'A7a it READS the flag …');
@@ -702,7 +702,8 @@ eq((A8SITE.match(/weeklyAiPlanGenerateK2_\(/g) || []).length, 1,
   'A8.6b the generator call is inside it, once');
 eq((A8SITE.match(/WeeklyAiPlanControlledAuthority_\.mint\(/g) || []).length, 1,
   'A8.6c and so is the mint');
-['RUN_S1_CONTROLLED_GENERATE_PREFLIGHT', 'RUN_S1_CONTROLLED_GENERATE_EXECUTE', 'RUN_S1_MANIFEST_P',
+['RUN_S1_CONTROLLED_GENERATE_PREFLIGHT', 'RUN_S1_CONTROLLED_GENERATE_EXECUTE',
+ 'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE', 'RUN_S1_MANIFEST_P',
  'RUN_S1_MANIFEST_S', 'S1_cgReadback_', 'S1_cgObserve_', 'S1_cgIdempotency_', 'S1_cgClassify_'
 ].forEach(function (fn, i) {
   var src = bareCode(extractFn(S1, fn));
@@ -717,7 +718,9 @@ eq((A8SITE.match(/WeeklyAiPlanControlledAuthority_\.mint\(/g) || []).length, 1,
 ['S1_cgProductionCall_', 'S1_cgObserve_', 'S1_cgReadback_', 'S1_cgClassify_', 'S1_cgIdempotency_',
  'S1_cgAuthorizationAudit_', 'S1_cgBaselineDrift_', 'S1_cgPermittedWriteSet_', 'S1_cgTableSnapshot_',
  'S1_cgRetryContract_', 'S1_cgFinishExecute_', 'S1_cgFinishPreflight_',
- 'RUN_S1_CONTROLLED_GENERATE_PREFLIGHT', 'RUN_S1_CONTROLLED_GENERATE_EXECUTE'
+ 'S1_cgOnceAuthorizationCheck_', 'S1_cgFinishOnce_',
+ 'RUN_S1_CONTROLLED_GENERATE_PREFLIGHT', 'RUN_S1_CONTROLLED_GENERATE_EXECUTE',
+ 'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE'
 ].forEach(function (fn, i) {
   var src = bareCode(extractFn(S1, fn));
   ok(src.length > 0, 'A8.7.' + (i + 1) + 'a ' + fn + ' is extractable');
@@ -5426,11 +5429,12 @@ ok(String(AB13.repair_route).indexOf('a PERSON may now decide, never that a tool
   'AB32f and what READY means, in words', AB13.repair_route);
 // AND THE ENTRY POINT COUNT. R4F added one, read-only; R4H added two more - a read-only manifest and the
 // one tool in this file that may empty a range; R6 added a read-only preflight and the one path from this
-// file to a production Generate. The count is asserted so a fourth writer cannot appear without this
-// line changing.
-eq((S1_BARE.match(/^function RUN_S1_[A-Z_]+/gm) || []).length, 15,
-  'AB32g fifteen public entry points: nine from R4E and before, R4F\'s read-only census, R4H\'s two,'
-  + ' R4J\'s read-only post-deletion acceptance manifest, and R6\'s preflight plus its one executor');
+// file to a production Generate; R6A added the no-argument adapter that path needed to be reachable from
+// the Run dropdown. The count is asserted so a further writer cannot appear without this line changing.
+eq((S1_BARE.match(/^function RUN_S1_[A-Z_]+/gm) || []).length, 16,
+  'AB32g sixteen public entry points: nine from R4E and before, R4F\'s read-only census, R4H\'s two,'
+  + ' R4J\'s read-only post-deletion acceptance manifest, R6\'s preflight plus its one executor, and'
+  + ' R6A\'s no-argument adapter');
 
 // ---- AB33 — THE FIELD CONTRACT IS R4E's, NOT A SECOND OPINION. ------------------------------------
 // A second required-ness table would be a second opinion, and the first thing two opinions do is disagree.
@@ -8227,6 +8231,331 @@ eq([AH21u.known, AH21u.retryable, AH21u.same_authorization_reusable,
   + ' fields that read as false by accident');
 eq(AH21u.next_action, 'STOP_AND_PERFORM_MANUAL_RECOVERY', 'AH21z1 and is routed to a person');
 
+
+// ================================================================================================
+// AI — S1-R6A. THE NO-ARGUMENT ENTRY POINT, AND WHAT IT IS ALLOWED TO BE.
+//
+// The Run dropdown calls a function with no arguments, so the controlled path was complete and
+// unreachable from the one place an operator actually presses. This section owns the adapter, and the
+// thing it has to prove is a NEGATIVE: that the adapter added nothing. Three checks on the sentence it
+// carries, one delegation, and no gate, readback, retry, rollback or writer of its own.
+//
+// AND ONE POSITIVE THAT MATTERS MORE THAN THE REST. The authorization sentence now lives in the repo, so
+// the sentence is no longer what stands between the Run dropdown and a production write. What stands
+// there is the function NAME plus the deeper gates — and those gates are asserted here through the
+// adapter, driven, rather than assumed to still apply because the code below it did not change.
+// ================================================================================================
+section('AI — S1-R6A: the no-argument one-shot entry point');
+
+// ---- AI0 THE SHAPE, FROM THE SOURCE -------------------------------------------------------------
+ok(/^function RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE\(\)/m.test(S1),
+  'AI0  the entry point takes NO arguments — which is the whole reason it exists');
+var AI_ONCE = bareCode(extractFn(S1, 'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE'));
+// ITS OWN DECLARATION LINE IS DROPPED FOR THE RECURSION CHECK: 'function RUN_..._ONCE(' contains the
+// name, so a naive scan finds the definition and reports every function as recursive.
+var AI_ONCE_BODY = AI_ONCE.split(NL).slice(1).join(NL);
+ok(AI_ONCE.length > 0, 'AI0a and it is extractable');
+// NOTHING TO WIDEN, BECAUSE THERE IS NOTHING TO PASS.
+['opts', 'body', 'request', 'arguments['].forEach(function (n, i) {
+  eq(AI_ONCE.indexOf(n), -1, 'AI0b.' + (i + 1) + ' its body reads no ' + n);
+});
+// EXACTLY ONE DELEGATION, AND IT IS THE EXISTING EXECUTOR.
+eq((AI_ONCE.match(/RUN_S1_CONTROLLED_GENERATE_EXECUTE\(/g) || []).length, 1,
+  'AI0c it calls the existing controlled executor exactly once');
+eq((S1_BARE.match(/RUN_S1_CONTROLLED_GENERATE_EXECUTE\(\{/g) || []).length, 1,
+  'AI0d and that is the only call of it anywhere in the file');
+ok(/RUN_S1_CONTROLLED_GENERATE_EXECUTE\(\{ execute: true,\s*\n?\s*authorization: S1_CG_ONCE_AUTHORIZATION_ \}\)/
+  .test(S1.split(NL).join('\n')),
+  'AI0e passing execute:true and the sentence this file carries, and nothing else');
+// NO WRITER, NO CAPABILITY, NO SUBMIT, NO LOOP, NO RECURSION.
+['setValue', 'setValues', 'appendRow', 'clearContent', 'deleteRow', 'insertRow', 'getRange',
+ '.mint(', 'weeklyAiPlanGenerateK2_', 'sadSubmitToShippingPlansCore_',
+ 'handleSubmitAllocationDraftsToShippingPlans_', 'shippingPlanCommitFromLines_',
+ 'handleGenerateWeeklyAiPlanDraft_', 'for (', 'while (', 'do {',
+ 'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE('].forEach(function (n, i) {
+  eq(AI_ONCE_BODY.indexOf(n), -1, 'AI0f.' + (i + 1) + ' and its body contains no ' + n.trim());
+});
+// IT ASSIGNS NOTHING IT MUST NOT.
+['S1_MANIFEST_P_BEFORE_', 'INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_',
+ 'INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_', 'S1_CG_AUTH_FINGERPRINT_',
+ 'S1_CG_ONCE_AUTHORIZATION_'].forEach(function (n, i) {
+  eq((AI_ONCE.match(new RegExp(n + '\\s*=(?!=)', 'g')) || []).length, 0,
+    'AI0g.' + (i + 1) + ' nor does it assign ' + n);
+});
+// THE THREE CHECKS ARE IN THE HELPER, AND THE HELPER IS WHERE THE ORDER LIVES.
+var AI_CHKFN = bareCode(extractFn(S1, 'S1_cgOnceAuthorizationCheck_'));
+ok(AI_CHKFN.indexOf('length_ok') > 0 && AI_CHKFN.indexOf('needs_no_trim') > 0
+  && AI_CHKFN.indexOf('placeholders_ok') > 0 && AI_CHKFN.indexOf('fingerprint_ok') > 0,
+  'AI0h the check names all four conditions');
+// LENGTH FIRST. A shortened paste should fail on the cheapest proof there is, not on a hash nobody can
+// read — and the placeholder check must come before the fingerprint so a template says so by name.
+ok(AI_CHKFN.indexOf('length_ok') < AI_CHKFN.indexOf('needs_no_trim')
+  && AI_CHKFN.indexOf('needs_no_trim') < AI_CHKFN.indexOf('placeholder_count')
+  && AI_CHKFN.indexOf('placeholder_count') < AI_CHKFN.indexOf('o.fingerprint = S1_fingerprint_'),
+  'AI0i in that order: length, then trim, then placeholders, then the fingerprint');
+
+// ---- AI1 THE SHIPPED SENTENCE, MEASURED BY THE REPO'S OWN HASH AUTHORITY ------------------------
+// Not read as text and compared to a number typed here: the census's own S1_cgOnceAuthorizationCheck_
+// is EXECUTED over the census's own constant, in a world with the shipped fingerprint expectation.
+var AI_SHIPPED = S1World(pos());
+var AI_CHK = vm.runInContext('S1_cgOnceAuthorizationCheck_(S1_CG_ONCE_AUTHORIZATION_)', AI_SHIPPED.ctx);
+eq(AI_CHK.ok, true, 'AI1  the sentence the file carries passes its own check', AI_CHK);
+eq(AI_CHK.length, 2245, 'AI1a 2245 characters');
+eq(AI_CHK.expected_length, 2245, 'AI1b which is the length the constant declares');
+eq(AI_CHK.fingerprint, '8A830413', 'AI1c fingerprint 8A830413, under this file\'s own hash authority');
+eq(AI_CHK.expected_fingerprint, '8A830413', 'AI1d which is the fingerprint the executor expects');
+eq(AI_CHK.placeholder_count, 0, 'AI1e zero placeholders');
+eq(AI_CHK.needs_no_trim, true, 'AI1f and it needs no trimming — so the hash authority\'s trim did no work');
+eq(AI_CHK.superseded_fingerprint, false, 'AI1g and it is not the superseded F700840D sentence');
+// THE SENTENCE IS IN THE FILE ONCE, ON ONE LINE, AND IS NOT THE BASELINE.
+var AI_DECL = 'var S1_CG_ONCE_AUTHORIZATION_ = ';
+var AI_LINES = S1.split(NL).filter(function (l) { return l.indexOf(AI_DECL) === 0; });
+eq(AI_LINES.length, 1, 'AI1h declared exactly once');
+eq(AI_LINES[0].length, AI_DECL.length + 2245 + 3,
+  'AI1i on ONE line — the declaration, 2245 characters, two quotes and a semicolon', AI_LINES[0].length);
+var AI_TEXT = AI_LINES[0].slice(AI_DECL.length + 1, -2);
+eq(AI_TEXT.length, 2245, 'AI1j and the literal really is those 2245 characters');
+eq(S1.split(AI_TEXT).length - 1, 1, 'AI1k appearing in the file exactly once');
+eq(S1_FROZEN_JSON_.indexOf(AI_TEXT.slice(0, 60)), -1,
+  'AI1l it is NOT in the frozen baseline — the sentence is a separate artefact and not baseline data');
+eq((S1_BARE.match(/S1_MANIFEST_P_BEFORE_\s*=(?!=)/g) || []).length, 1,
+  'AI1m and the baseline is still assigned exactly once, by its own declaration');
+eq(S1_FROZEN_JSON_.length, 5958, 'AI1n the frozen baseline itself is untouched — still 5958 characters');
+ok(S1_FROZEN_JSON_.indexOf('GAP-INV-20260910T132343-0001') > 0,
+  'AI1o still describing the 2026-09-10 run, so no freeze block was pasted back over it');
+
+// ---- AI2 THE FOUR REFUSALS, EACH REACHED AND EACH NAMED ----------------------------------------
+// Driven through the shipped check function rather than through its source, and each variant is built
+// FROM the real sentence so none of them is a hand-written approximation of it.
+function aiCheck(text, lengthConst, superseded) {
+  var w = S1World(pos());
+  if (lengthConst !== undefined) {
+    vm.runInContext('S1_CG_ONCE_AUTHORIZATION_LENGTH_ = ' + lengthConst + ';', w.ctx);
+  }
+  if (superseded !== undefined) {
+    vm.runInContext('S1_CG_SUPERSEDED_AUTH_FINGERPRINTS_ = ' + JSON.stringify(superseded) + ';', w.ctx);
+  }
+  return vm.runInContext('S1_cgOnceAuthorizationCheck_(' + JSON.stringify(text) + ')', w.ctx);
+}
+var AI2short = aiCheck(AI_TEXT.slice(0, -1));
+eq([AI2short.ok, AI2short.reason], [false, 'AUTHORIZATION_LENGTH_IS_NOT_2245'],
+  'AI2  one character SHORTER fails on the length — the cheapest proof, before any hash');
+var AI2one = aiCheck(AI_TEXT.slice(0, 40) + 'X' + AI_TEXT.slice(41));
+eq([AI2one.ok, AI2one.reason, AI2one.length_ok], [false, 'AUTHORIZATION_FINGERPRINT_MISMATCH', true],
+  'AI2a one character CHANGED keeps the length and fails on the fingerprint');
+var AI2ws = aiCheck(AI_TEXT.slice(0, -1) + ' ');
+eq([AI2ws.ok, AI2ws.reason], [false, 'AUTHORIZATION_CARRIES_LEADING_OR_TRAILING_WHITESPACE'],
+  'AI2b a trailing space of the same length is refused rather than trimmed');
+var AI2ph = (function () {
+  var t = AI_TEXT.split('ResUS').join('<company>');
+  return aiCheck(t, t.length);
+})();
+eq([AI2ph.ok, AI2ph.reason], [false, 'AUTHORIZATION_CARRIES_PLACEHOLDERS'],
+  'AI2c a placeholder is named as one, before the fingerprint is even computed');
+ok(AI2ph.placeholder_count > 0, 'AI2d with the count reported', AI2ph.placeholder_count);
+var AI2sup = aiCheck(AI_TEXT, undefined, ['8A830413']);
+eq([AI2sup.ok, AI2sup.reason], [false, 'AUTHORIZATION_FINGERPRINT_SUPERSEDED'],
+  'AI2e and a fingerprint on the superseded list is refused even though the text hashes to it');
+// NO REFUSAL REPRINTS THE SENTENCE.
+[AI2short, AI2one, AI2ws, AI2ph, AI2sup, AI_CHK].forEach(function (c, i) {
+  eq(JSON.stringify(c).indexOf(AI_TEXT.slice(0, 60)), -1,
+    'AI2f.' + (i + 1) + ' and the check result carries no part of the text — only a length, a hash and'
+    + ' a count');
+});
+
+// ---- THE WORLD, FOR THE DELEGATION ------------------------------------------------------------
+// THE WORLD DECLARES WHICH SENTENCE IT IS A WORLD OF, exactly as ahWorld already does for the
+// fingerprint expectation: the shipped constant is the REAL 2245-character sentence (executed against
+// its own check at AI1), and a synthetic world measured a different one.
+function aiWorld(script, over) {
+  over = over || {};
+  var w = ahWorld(script, over);
+  var sentence = over.sentence === undefined ? AH_WORD : over.sentence;
+  var lengthConst = over.lengthConst === undefined ? AH_WORD.length : over.lengthConst;
+  vm.runInContext('S1_CG_ONCE_AUTHORIZATION_ = ' + JSON.stringify(sentence) + ';', w.ctx);
+  vm.runInContext('S1_CG_ONCE_AUTHORIZATION_LENGTH_ = ' + lengthConst + ';', w.ctx);
+  return w;
+}
+function aiOnce(script, over) {
+  return ahRun(aiWorld(script, over), 'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE()');
+}
+
+// ---- AI3 THE CLEAN PRESS: ONE DELEGATION, ONE GENERATOR CALL ----------------------------------
+var AI3 = aiOnce({});
+eq(AI3.threw, null, 'AI3  pressing Run does not throw');
+eq(AI3.res.verdict, 'EXECUTED_OK', 'AI3a and the ONE authorized generation lands EXECUTED_OK',
+  [AI3.res.stop_reason, AI3.res.authorization_check]);
+eq([AI3.res.attempts, AI3.res.generator_calls], [1, 1],
+  'AI3b one attempt and one generator call, MIRRORED from the executor rather than counted here');
+eq(AI3.calls, 1, 'AI3c MEASURED ON THE GENERATOR — called exactly once');
+eq(AI3.res.capability_minted, true, 'AI3d one capability, minted by the executor');
+eq(AI3.res.authorization_check.ok, true, 'AI3e the wrapper\'s own three checks passed');
+eq(AI3.res.result.verdict, 'EXECUTED_OK', 'AI3f and the executor\'s own result is carried through whole');
+eq([AI3.res.flag_modified, AI3.res.allowlist_modified, AI3.res.baseline_modified,
+  AI3.res.submit_calls], [false, false, false, 0],
+  'AI3g no flag, no allowlist, no baseline and no Submit');
+eq([AI3.flag, AI3.allowlistCount], [false, 1],
+  'AI3h MEASURED IN THE WORLD — the flag is still false and the allowlist still one scope');
+eq(AI3.world.allWrites(), 0, 'AI3i and the wrapper wrote nothing of its own');
+eq(AI3.res.next_action, 'NO_FURTHER_GENERATE_ACTION', 'AI3j the case is closed');
+eq([AI3.res.retry_contract.automatic_retry_allowed,
+  AI3.res.retry_contract.same_authorization_reusable,
+  AI3.res.retry_contract.same_frozen_baseline_reusable], [false, false, false],
+  'AI3k and all three reuse flags are false');
+// THE RESULT NEVER REPRINTS THE SENTENCE, on any path.
+eq(JSON.stringify(AI3.res).indexOf(AH_WORD.slice(0, 60)), -1,
+  'AI3l no part of the sentence appears anywhere in the returned object');
+
+// ---- AI4 THE SENTENCE THIS FILE CARRIES IS THE THING BEING CHECKED, NOT ASSUMED ----------------
+var AI4 = aiOnce({}, { sentence: AH_WORD.slice(0, 40) + 'X' + AH_WORD.slice(41) });
+eq(AI4.res.verdict, 'STOP', 'AI4  one character different in the local constant is a STOP');
+eq(AI4.res.authorization_check.reason, 'AUTHORIZATION_FINGERPRINT_MISMATCH', 'AI4a named');
+eq([AI4.res.attempts, AI4.res.generator_calls, AI4.res.capability_minted], [0, 0, false],
+  'AI4b zero attempts, zero generator calls, no capability');
+eq(AI4.calls, 0, 'AI4c MEASURED — the generator was never reached');
+eq(AI4.res.result, null,
+  'AI4d and the executor was never called AT ALL — the wrapper\'s own check is what stopped it');
+eq(AI4.res.zero_write_confirmed, true, 'AI4e with the zero-proof as one measured field');
+eq(AI4.res.next_action, 'RERUN_MANIFEST_P_AND_REPLACE_THE_SENTENCE_THIS_FILE_CARRIES',
+  'AI4f and the next action is to replace the sentence, not to retry');
+var AI4s = aiOnce({}, { sentence: AH_WORD.slice(0, -1) });
+eq(AI4s.res.authorization_check.reason, 'AUTHORIZATION_LENGTH_IS_NOT_' + AH_WORD.length,
+  'AI4g a shortened constant fails on the length');
+eq([AI4s.res.verdict, AI4s.calls, AI4s.res.result], ['STOP', 0, null], 'AI4h with nothing called');
+
+// ---- AI5 §四 — THE ONE-SHOT AND RE-PRESS CONTRACT, THROUGH THE NO-ARG ENTRY POINT --------------
+var AI5 = aiOnce({}, { preseed: true });
+eq(AI5.res.verdict, 'ALREADY_APPLIED', 'AI5  the pair already present is ALREADY_APPLIED',
+  [AI5.res.stop_reason, AI5.res.result && AI5.res.result.idempotency]);
+eq([AI5.res.attempts, AI5.res.generator_calls, AI5.res.capability_minted], [0, 0, false],
+  'AI5a attempts 0, generator calls 0, no capability');
+eq(AI5.calls, 0, 'AI5b MEASURED — the generator was not called');
+eq(AI5.res.retry_contract.generate_may_be_attempted_again, false,
+  'AI5c and NO FURTHER GENERATE is permitted');
+eq(AI5.res.next_action, 'RUN_POST_GENERATION_READBACK',
+  'AI5d the next step is to VERIFY, which is the stricter form of "no further generate action": nothing'
+  + ' has been read back yet');
+[['line', 'ONLY_ONE_SIDE_OF_THE_HEADER_LINE_PAIR_EXISTS', 'half a pair'],
+ ['duplicateHeader', 'DUPLICATE_EXPECTED_IDENTITY', 'a duplicated identity'],
+ ['wrongRun', 'THE_EXISTING_PAIR_DOES_NOT_MATCH_THIS_RUN', 'a pair from another run'],
+ ['orphanLine', 'THE_EXISTING_PAIR_DOES_NOT_MATCH_THIS_RUN', 'a line pointing at another header']
+].forEach(function (c, i) {
+  var sc = {};
+  if (c[0] === 'line') sc.line = false; else sc[c[0]] = true;
+  var r = aiOnce(sc, { preseed: true });
+  eq(r.res.verdict, 'MANUAL_RECOVERY_REQUIRED',
+    'AI5e.' + (i + 1) + ' ' + c[2] + ' already present is a recovery, never a reuse');
+  eq([r.res.attempts, r.res.generator_calls, r.calls], [0, 0, 0],
+    'AI5f.' + (i + 1) + ' with zero attempts and no call over it');
+  eq(r.res.next_action, 'STOP_AND_PERFORM_MANUAL_RECOVERY', 'AI5g.' + (i + 1) + ' and a person looks');
+});
+
+// ---- AI6 PRESSED TWICE, IN THE SAME WORLD ------------------------------------------------------
+// THE DEFINITIVE ONE-SHOT PROOF, and the reason the entry point can be named ONCE without an argument:
+// the second press reads the DATA, finds the pair the first press wrote, and closes the case.
+var AI6w = aiWorld({});
+var AI6a = ahRun(AI6w, 'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE()');
+var AI6b = ahRun(AI6w, 'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE()');
+eq(AI6a.res.verdict, 'EXECUTED_OK', 'AI6  the first press generates');
+eq(AI6b.res.verdict, 'ALREADY_APPLIED', 'AI6a the second press finds the pair and closes the case',
+  [AI6b.res.stop_reason, AI6b.res.result && AI6b.res.result.idempotency]);
+eq([AI6b.res.attempts, AI6b.res.generator_calls], [0, 0], 'AI6b with zero attempts on the second press');
+eq(AI6b.calls, 1,
+  'AI6c MEASURED CUMULATIVELY ON THE GENERATOR — two presses, ONE production call, ever');
+eq(AI6b.res.retry_contract.generate_may_be_attempted_again, false,
+  'AI6d and the second press does not offer a third');
+eq(AI6w.allWrites(), 0, 'AI6e the wrapper still wrote nothing of its own');
+
+// ---- AI7 THE GENERATOR THROWS: ONE READBACK, NEVER A RETRY -------------------------------------
+[['THROW', 'NOT_APPLIED_ACK_UNKNOWN', 'nothing landed'],
+ ['THROW_AFTER_WRITE', 'EXECUTED_OK_AFTER_ACK_UNKNOWN', 'both sides landed'],
+ ['UNREADABLE', 'NOT_APPLIED_ACK_UNKNOWN', 'the response was unreadable and nothing landed']
+].forEach(function (c, i) {
+  var r = aiOnce({ mode: c[0] });
+  eq(r.threw, null, 'AI7.' + (i + 1) + 'a the no-arg entry point does not throw — ' + c[2]);
+  eq(r.res.verdict, c[1], 'AI7.' + (i + 1) + 'b settled by the readback as ' + c[1],
+    [r.res.result && r.res.result.readback && r.res.result.readback.failed_predicates]);
+  eq([r.res.attempts, r.res.generator_calls], [1, 1], 'AI7.' + (i + 1) + 'c one attempt, one call');
+  eq(r.calls, 1, 'AI7.' + (i + 1) + 'd MEASURED — called once, NEVER retried');
+  eq([r.res.retry_contract.retryable, r.res.retry_contract.automatic_retry_allowed,
+    r.res.retry_contract.same_authorization_reusable,
+    r.res.retry_contract.same_frozen_baseline_reusable], [false, false, false, false],
+    'AI7.' + (i + 1) + 'e and §四.7 holds: all four are false');
+});
+
+// ---- AI8 §四.7 ACROSS EVERY VERDICT THE NO-ARG ENTRY POINT CAN REACH --------------------------
+[['clean', {}, {}, 'EXECUTED_OK'],
+ ['clamped', { qty: Math.max(1, AH_MAX - 5) }, {}, 'CLAMPED_EXECUTED_OK'],
+ ['guard refusal', { mode: 'GUARD_REFUSE' }, {}, 'FACTORY_GUARD_REFUSED_ZERO_WRITE'],
+ ['already applied', {}, { preseed: true }, 'ALREADY_APPLIED'],
+ ['recovery', { line: false }, {}, 'MANUAL_RECOVERY_REQUIRED'],
+ ['ack unknown, applied', { mode: 'THROW_AFTER_WRITE' }, {}, 'EXECUTED_OK_AFTER_ACK_UNKNOWN'],
+ ['ack unknown, not applied', { mode: 'THROW' }, {}, 'NOT_APPLIED_ACK_UNKNOWN'],
+ ['lock contention', {}, { lockFree: false }, 'REFUSED_LOCK_CONTENTION']
+].forEach(function (c, i) {
+  var r = aiOnce(c[1], c[2]);
+  eq(r.res.verdict, c[3], 'AI8.' + (i + 1) + 'a ' + c[0] + ' reaches ' + c[3],
+    [r.res.stop_reason, r.res.authorization_check && r.res.authorization_check.reason]);
+  eq(r.res.retry_contract.automatic_retry_allowed, false,
+    'AI8.' + (i + 1) + 'b automatic_retry_allowed is false');
+  // LOCK CONTENTION IS THE ONE CASE THAT MEASURED NOTHING, so it is the one case where the sentence and
+  // the baseline are still good — and §四.7 is read as "never after the write was REACHED".
+  if (c[3] === 'REFUSED_LOCK_CONTENTION') {
+    eq([r.res.retry_contract.same_authorization_reusable,
+      r.res.retry_contract.same_frozen_baseline_reusable], [true, true],
+      'AI8.' + (i + 1) + 'c and only here are they still reusable — nothing was measured, minted or called');
+    eq([r.res.attempts, r.res.generator_calls, r.calls], [0, 0, 0],
+      'AI8.' + (i + 1) + 'd with zero attempts');
+  } else {
+    eq([r.res.retry_contract.same_authorization_reusable,
+      r.res.retry_contract.same_frozen_baseline_reusable], [false, false],
+      'AI8.' + (i + 1) + 'c and the sentence and the baseline are both spent');
+  }
+  eq(JSON.stringify(r.res).indexOf(AH_WORD.slice(0, 60)), -1,
+    'AI8.' + (i + 1) + 'e and no path reprints the sentence');
+});
+
+// ---- AI9 THE WHOLE PUBLIC SURFACE, PARTITIONED BY NAME ---------------------------------------
+// Sixteen entry points: twelve that reach no write API at all, three that gate on `opts.execute !== true`,
+// and ONE that writes on sight. The partition is exhaustive by name, so a seventeenth cannot appear in any
+// of the three classes without this failing.
+var AI_ALL = (S1_BARE.match(/^function (RUN_S1_[A-Z_]+)/gm) || []).map(function (l) {
+  return l.replace('function ', '');
+});
+eq(AI_ALL.length, 16, 'AI9  sixteen public entry points', AI_ALL.length);
+var AI_READONLY = ['RUN_S1_POSITIVE_RESIDUAL_CANDIDATE_CENSUS', 'RUN_S1_POSITIVE_RESIDUAL_PROPOSAL_CENSUS',
+  'RUN_S1_SUBMIT_READINESS_CENSUS', 'RUN_S1_MANIFEST_P', 'RUN_S1_MANIFEST_S',
+  'RUN_S1_ACCEPTED_GAP_RUN_READABILITY_DIAGNOSTIC', 'RUN_S1_FACTORY_MOVEMENT_ID_INTEGRITY_CENSUS',
+  'RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL_MANIFEST', 'RUN_S1_FACTORY_MOVEMENT_LEGACY_PROVENANCE_CENSUS',
+  'RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL_MANIFEST',
+  'RUN_S1_FACTORY_MOVEMENT_POST_MANUAL_DELETION_ACCEPTANCE_MANIFEST',
+  'RUN_S1_CONTROLLED_GENERATE_PREFLIGHT'];
+var AI_GATED = ['RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL', 'RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL',
+  'RUN_S1_CONTROLLED_GENERATE_EXECUTE'];
+var AI_UNGATED = ['RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE'];
+eq(AI_READONLY.length + AI_GATED.length + AI_UNGATED.length, 16, 'AI9a twelve plus three plus one');
+eq(AI_ALL.slice().sort(), AI_READONLY.concat(AI_GATED).concat(AI_UNGATED).sort(),
+  'AI9b and the three classes account for EVERY entry point by name');
+// AND THE ONE THAT WRITES ON SIGHT IS THE ONLY ONE WITHOUT AN EXECUTE FLAG. Said as its own claim,
+// because it is the whole risk this round introduced: the Run dropdown can now reach a production write
+// in one press, and what stops an accidental press is the NAME, not an option.
+AI_GATED.forEach(function (fn, i) {
+  ok(bareCode(extractFn(S1, fn)).indexOf('opts.execute !== true') > 0,
+    'AI9c.' + (i + 1) + ' ' + fn + ' still gates on `opts.execute !== true`');
+});
+eq(AI_ONCE.indexOf('execute !== true'), -1,
+  'AI9d while the no-arg entry point has NO dry-run gate — by design, because there is nothing to pass it');
+ok(AI_ONCE.indexOf('execute: true') > 0,
+  'AI9e it hands `execute: true` to the executor on sight');
+ok(/RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE\(\)/.test(S1)
+  && S1.indexOf('PRESSING RUN ON THIS PERFORMS THE ONE AUTHORIZED PRODUCTION GENERATE') > 0,
+  'AI9f and its own doctrine says that in the first line an operator reads');
+ok(S1.indexOf('RUN_S1_CONTROLLED_GENERATE_PREFLIGHT()') > 0
+  && extractFn(S1, 'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE')
+    .indexOf('RUN_S1_CONTROLLED_GENERATE_PREFLIGHT()') > 0,
+  'AI9g pointing at the no-arg PREFLIGHT as the read-only question, so a dry run is a different function'
+  + ' rather than a flag on this one');
+
 mut('N1 the proposal is sized from the RECOMMENDATION instead of the residual', function () {
   var m = swapS1('    prop = Math.min(row.residual_qty, a);',
     '    prop = Math.min(row.recommended_qty, a);');
@@ -10985,6 +11314,148 @@ mut('N157 the preflight mints a capability, so a read arms a write', function ()
   var bad = ahPre({}, { s1: ahS1(m) });
   return clean.calls === 0 && clean.res.verdict === 'READY_FOR_ONE_CONTROLLED_GENERATE'
     && bad.calls === 1;
+});
+
+
+mut('N158 the no-arg entry point forgets execute:true, so pressing Run is a dry run', function () {
+  // A one-shot Execute that silently does not execute is worse than one that refuses: the operator reads
+  // a verdict, believes the generation happened, and the residual is still sitting there.
+  var m = swapS1In('RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE',
+    '    var r = RUN_S1_CONTROLLED_GENERATE_EXECUTE({ execute: true,',
+    '    var r = RUN_S1_CONTROLLED_GENERATE_EXECUTE({ execute: false,');
+  var clean = aiOnce({});
+  var bad = aiOnce({}, { s1: ahS1(m) });
+  return clean.res.verdict === 'EXECUTED_OK' && clean.calls === 1
+    && bad.res.verdict === 'DRY_RUN' && bad.calls === 0;
+});
+
+mut('N159 the entry point hands on a SHORTENED authorization', function () {
+  var m = swapS1In('RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE',
+    '      authorization: S1_CG_ONCE_AUTHORIZATION_ });',
+    '      authorization: S1_CG_ONCE_AUTHORIZATION_.slice(0, -1) });');
+  var clean = aiOnce({});
+  var bad = aiOnce({}, { s1: ahS1(m) });
+  // The wrapper's own check passes (it checks the CONSTANT), and the executor refuses what it was handed —
+  // which is exactly why the executor re-audits the text it receives instead of trusting its caller.
+  return clean.res.verdict === 'EXECUTED_OK' && clean.calls === 1
+    && bad.res.verdict === 'STOP' && bad.calls === 0
+    // A sentence one character short is still far above the 1000-byte floor, so what catches it is the
+    // FINGERPRINT — which is the point: the floor separates 'a hash was pasted' from 'the text is wrong'.
+    && bad.res.result.refusal_class === 'AUTHORIZATION_FINGERPRINT_MISMATCH';
+});
+
+mut('N160 the length and fingerprint check is skipped, so a wrong local sentence is handed on', function () {
+  // Defence in depth: the executor still refuses it. What the wrapper's own check buys is that a wrong
+  // sentence never REACHES the executor at all — no lock taken, no measurement run, nothing observed.
+  var m = swapS1In('RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE', '    if (!chk.ok) {', '    if (false) {');
+  var wrong = AH_WORD.slice(0, 40) + 'X' + AH_WORD.slice(41);
+  var clean = aiOnce({}, { sentence: wrong });
+  var bad = aiOnce({}, { sentence: wrong, s1: ahS1(m) });
+  return clean.res.verdict === 'STOP' && clean.res.result === null && clean.calls === 0
+    && bad.res.result !== null && bad.res.result.verdict === 'STOP' && bad.calls === 0;
+});
+
+mut('N161 the no-arg entry point mints a capability of its own', function () {
+  // ONE MINT SITE, IN ONE FUNCTION. A capability minted anywhere else is a second authorization, and the
+  // authority's nonce is one-shot precisely so that a second one cannot exist for the same generation.
+  var m = swapS1In('RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE', '    var r = RUN_S1_CONTROLLED_GENERATE_EXECUTE({ execute: true,',
+    '    WeeklyAiPlanControlledAuthority_.mint({ scope: { company: 1 } });' + NL
+    + '    var r = RUN_S1_CONTROLLED_GENERATE_EXECUTE({ execute: true,');
+  function mintSites(src) {
+    return (bareCode(src).match(/WeeklyAiPlanControlledAuthority_\.mint\(/g) || []).length;
+  }
+  function inOnce(src) {
+    return (bareCode(extractFn(src, 'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE'))
+      .match(/\.mint\(/g) || []).length;
+  }
+  return mintSites(S1) === 1 && inOnce(S1) === 0 && mintSites(m) === 2 && inOnce(m) === 1;
+});
+
+mut('N162 the no-arg entry point calls the production generator directly', function () {
+  var m = swapS1In('RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE', '    var r = RUN_S1_CONTROLLED_GENERATE_EXECUTE({ execute: true,',
+    '    weeklyAiPlanGenerateK2_(null, null, null, null, null, null);' + NL
+    + '    var r = RUN_S1_CONTROLLED_GENERATE_EXECUTE({ execute: true,');
+  function genSites(src) {
+    return (bareCode(src).match(/weeklyAiPlanGenerateK2_\(/g) || []).length;
+  }
+  function inOnce(src) {
+    return (bareCode(extractFn(src, 'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE'))
+      .match(/weeklyAiPlanGenerateK2_\(/g) || []).length;
+  }
+  return genSites(S1) === 1 && inOnce(S1) === 0 && genSites(m) === 2 && inOnce(m) === 1;
+});
+
+mut('N163 the no-arg entry point calls the executor twice', function () {
+  // Driven on the THROW path on purpose: nothing lands, so the idempotency gate stays ABSENT and the
+  // second delegation really does reach the generator. On the clean path the second call would be
+  // absorbed by ALREADY_APPLIED, and a mutant that a downstream gate hides is a mutant that proves
+  // nothing about the site being mutated.
+  var A = '    var r = RUN_S1_CONTROLLED_GENERATE_EXECUTE({ execute: true,';
+  var m = swapS1In('RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE', A,
+    '    RUN_S1_CONTROLLED_GENERATE_EXECUTE({ execute: true,' + NL
+    + '      authorization: S1_CG_ONCE_AUTHORIZATION_ });' + NL + A);
+  var clean = aiOnce({ mode: 'THROW' });
+  var bad = aiOnce({ mode: 'THROW' }, { s1: ahS1(m) });
+  return clean.calls === 1 && bad.calls === 2;
+});
+
+mut('N164 the entry point reports a next_action that permits another Generate', function () {
+  // The four reuse flags and the next_action answer one question from two directions. Overwriting the
+  // action with the one that sends somebody back to MANIFEST P is how a completed generation comes to
+  // authorize a second one.
+  var m = swapS1In('RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE',
+    '    out.next_action = r.retry_contract ? r.retry_contract.next_action : null;',
+    "    out.next_action = 'RERUN_MANIFEST_P_AND_REQUIRE_NEW_AUTHORIZATION';");
+  var clean = aiOnce({});
+  var bad = aiOnce({}, { s1: ahS1(m) });
+  return clean.res.verdict === 'EXECUTED_OK'
+    && clean.res.next_action === 'NO_FURTHER_GENERATE_ACTION'
+    && bad.res.next_action === 'RERUN_MANIFEST_P_AND_REQUIRE_NEW_AUTHORIZATION';
+});
+
+mut('N165 the result reprints the full authorization sentence', function () {
+  // A returned object and a log line are the two easiest ways for an authorization to end up in a
+  // screenshot. The length, the fingerprint and the placeholder count identify it; the text is not needed.
+  var m = swapS1In('RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE', '    out.authorization_check = chk;',
+    '    out.authorization_check = chk;' + NL
+    + '    out.authorization_text = S1_CG_ONCE_AUTHORIZATION_;');
+  var clean = aiOnce({});
+  var bad = aiOnce({}, { s1: ahS1(m) });
+  var needle = AH_WORD.slice(0, 60);
+  return clean.res.verdict === 'EXECUTED_OK'
+    && JSON.stringify(clean.res).indexOf(needle) === -1
+    && JSON.stringify(bad.res).indexOf(needle) >= 0;
+});
+
+mut('N166 the no-arg entry point flips the flag or widens the allowlist', function () {
+  var m = swapS1In('RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE', '    var r = RUN_S1_CONTROLLED_GENERATE_EXECUTE({ execute: true,',
+    '    INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = true;' + NL
+    + '    var r = RUN_S1_CONTROLLED_GENERATE_EXECUTE({ execute: true,');
+  var clean = aiOnce({});
+  var bad = aiOnce({}, { s1: ahS1(m) });
+  return clean.flag === false && clean.res.verdict === 'EXECUTED_OK' && bad.flag === true;
+});
+
+mut('N167 the no-arg entry point re-freezes the baseline from the run it just made', function () {
+  // The one thing this round was told twice not to do. A baseline the tool can refresh for itself is not
+  // a baseline: the next run would compare the world against a value taken FROM that world, and every
+  // drift check below it would pass by agreeing with itself.
+  var m = swapS1In('RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE', '    out.result = r;',
+    '    out.result = r;' + NL
+    + "    S1_MANIFEST_P_BEFORE_ = { frozen_at: 'RE-FROZEN BY THE WRAPPER' };");
+  function baselineAfter(src) {
+    var w = aiWorld({}, src ? { s1: ahS1(src) } : {});
+    ahRun(w, 'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE()');
+    return vm.runInContext('JSON.stringify(S1_MANIFEST_P_BEFORE_)', w.ctx);
+  }
+  var held = JSON.stringify(AH_BASE);
+  // AND THE STATIC RULE THAT FORBIDS IT: one assignment of the destination in the whole file, its own
+  // declaration. The mutant adds a second, so the count is what catches it even without running.
+  function assignments(src) {
+    return (bareCode(src).match(/S1_MANIFEST_P_BEFORE_\s*=(?!=)/g) || []).length;
+  }
+  return baselineAfter(null) === held && baselineAfter(m) !== held
+    && assignments(S1) === 1 && assignments(m) === 2;
 });
 
 console.log('\npassed ' + pass + '  failed ' + fail
