@@ -13670,6 +13670,23 @@ function S1_ai2KeyDiff_(predictedKey, storedKey, dimNames) {
  * what it is, and a diagnostic that let a row number stand in for an identity would be handing a person a
  * pointer that moves the next time anything is inserted.
  */
+/**
+ * THE IDS THE FREEZE ALREADY HELD, as one set, built once.
+ *
+ * The pair proof asked this question of the single candidate and answered it inline. §四 asks it of EVERY
+ * candidate header, and two copies of the same three-list walk is how the two answers start to disagree.
+ * A baseline carrying no signatures at all returns count 0, and every caller must read that as UNKNOWN
+ * rather than as "this id is new" — an empty set says nothing about membership.
+ */
+function S1_ai2FrozenIdSet_(b) {
+  var ids = {};
+  ['target_manual_row_signatures', 'target_ai_row_signatures', 'other_scope_row_signatures']
+    .forEach(function (k) {
+      ((b && b[k]) || []).forEach(function (sig) { ids[S1_str_(sig).split('~')[0]] = 1; });
+    });
+  return { ids: ids, count: Object.keys(ids).length };
+}
+
 function S1_ai2HeaderFacts_(obj, rowNumber, fingerprint, b, matched) {
   var f = { table: S1_DRAFT_HEADER_TABLE_,
     physical_row_number: rowNumber,
@@ -13689,6 +13706,15 @@ function S1_ai2HeaderFacts_(obj, rowNumber, fingerprint, b, matched) {
     recommended_shipping_method: S1_str_(obj.recommended_shipping_method),
     recommended_last_mile_delivery: S1_str_(obj.recommended_last_mile_delivery),
     recommendation_group_no: S1_str_(obj.recommendation_group_no),
+    // RAW BESIDE DERIVED, because the K4 key is not built from what the sheet stores. The sheet holds a
+    // destination WAREHOUSE ID and a service LABEL; the eleven-dimension key is built from a
+    // (destination_type, destination_identity) pair and from the service AFTER ricCanonicalService_.
+    // Printing only the raw values would let a reader compare two strings that were never the inputs.
+    destination_type: null, destination_identity: null,
+    destination_identity_ok: null, destination_identity_refusal: null,
+    recommended_shipping_method_canonical: null,
+    // and whether the freeze already held THIS id — per header, not only for the one judged pair
+    id_present_in_frozen_row_signatures: null,
     created_at: S1_str_(obj.created_at), updated_at: S1_str_(obj.updated_at),
     draft_version: S1_str_(obj.draft_version),
     full_row_fingerprint: S1_str_(fingerprint),
@@ -13735,6 +13761,30 @@ function S1_ai2HeaderFacts_(obj, rowNumber, fingerprint, b, matched) {
     try { f.is_ai_generated_by_production_authority = (aiplIsAiGenerated_(obj) === true); }
     catch (e6) { f.is_ai_generated_by_production_authority = null; }
   }
+  // 69_ OWNS BOTH DERIVATIONS. Neither is re-spelled here: a second copy of `destination_identity` would
+  // be a second identity authority, which is the fault this whole round exists to reconcile.
+  if (typeof ricDestinationIdentity_ === 'function') {
+    try {
+      var d = ricDestinationIdentity_(obj);
+      f.destination_type = S1_str_(d && d.type);
+      f.destination_identity = S1_str_(d && d.id);
+      f.destination_identity_ok = !!(d && d.ok === true);
+      f.destination_identity_refusal = (d && d.code) ? S1_str_(d.code) : null;
+    } catch (e7) {
+      f.destination_type = null; f.destination_identity = null;
+      f.destination_identity_ok = null; f.destination_identity_refusal = null;
+    }
+  }
+  if (typeof ricCanonicalService_ === 'function') {
+    try {
+      f.recommended_shipping_method_canonical = S1_str_(ricCanonicalService_(
+        (obj.recommended_shipping_method != null && obj.recommended_shipping_method !== '')
+          ? obj.recommended_shipping_method : obj.shipping_method));
+    } catch (e8) { f.recommended_shipping_method_canonical = null; }
+  }
+  var frz = S1_ai2FrozenIdSet_(b);
+  f.id_present_in_frozen_row_signatures = frz.count === 0
+    ? null : (frz.ids[f.allocation_draft_id] === 1);
   f.created_after_the_frozen_baseline = S1_ai2StrictlyAfter_(f.created_at, b && b.frozen_at);
   return f;
 }
@@ -13777,6 +13827,10 @@ function S1_ai2LineFacts_(lr) {
     created_at: S1_str_(S1_cellOf_(lr, 'created_at')),
     updated_at: S1_str_(S1_cellOf_(lr, 'updated_at')),
     full_row_fingerprint: S1_str_(lr.fingerprint),
+    // WHY THIS LINE IS IN THE LIST, and whether the header it names is a row at all. Both were carried
+    // only on the parentless branch, so a line found under a candidate header reached the log with no
+    // statement about its parent — and "no statement" reads as "not checked".
+    matched_by: [], parent_header_exists: null, parentless: false,
     // The LINE id is derived from the PARENT id, so it is checked against the parent it actually points at.
     line_id_re_derives_from_its_parent: null, derived_line_id: null };
 }
@@ -13874,7 +13928,11 @@ function S1_ai2Search_(part, b) {
     o.candidate_headers.push(hf);
     kids.forEach(function (lr) {
       if (S1_str_(S1_cellOf_(lr, 'sku')) !== sku) return;
-      o.candidate_lines.push(S1_ai2LineSelfConsistency_(S1_ai2LineFacts_(lr)));
+      var lfc = S1_ai2LineSelfConsistency_(S1_ai2LineFacts_(lr));
+      lfc.matched_by = ['PARENT_IS_A_CANDIDATE_ALTERNATE_HEADER', 'SAME_TARGET_SKU'];
+      lfc.parent_header_exists = true;
+      lfc.parentless = false;
+      o.candidate_lines.push(lfc);
     });
   });
 
@@ -13900,6 +13958,7 @@ function S1_ai2Search_(part, b) {
     var parent = S1_str_(S1_cellOf_(lr, 'allocation_draft_id'));
     if (headerIds[parent] === 1) return;                      // it has a header; it is simply not a candidate
     var lf = S1_ai2LineSelfConsistency_(S1_ai2LineFacts_(lr));
+    lf.matched_by = ['SAME_TARGET_SKU', 'NO_PARENT_HEADER_ROW_EXISTS'];
     lf.parent_header_exists = false;
     lf.parentless = true;
     o.candidate_lines.push(lf);
@@ -13923,6 +13982,22 @@ function S1_ai2PairCompleteness_(search, b) {
     line_exists: search.candidate_lines.length > 0,
     line_fk_points_at_the_alternate_header: null,
     duplicate_header_ids: [], duplicate_line_ids: [], orphan_line_ids: [], parentless_line_ids: [],
+    // §C — FOUR COUNTS, EACH ABOUT A DIFFERENT SHAPE, and none of them a synonym for another. The live
+    // report said `alternate_identity_count: 1` and that one number had to stand for a header, a line, a
+    // pair and a finding at once, so a reader could not tell which of them was 1.
+    //
+    //   complete_pair_count   a candidate header that at least one candidate line points at
+    //   orphan_header_count   a candidate header no candidate line points at — the header landed alone
+    //   orphan_line_count     a candidate line whose parent is not a candidate header — the line alone
+    //   partial_pair_count    the two above added: how many HALVES of a pair are standing on their own
+    //   duplicate_pair_count  ids held more than once, header side plus line side
+    //
+    // complete_pair_count is STRUCTURAL and says nothing about whether the pair carries the authorized
+    // plan. `business_facts_ok` is that question, and a complete write of the WRONG plan must not be able
+    // to borrow this number as its evidence.
+    complete_pair_count: 0, orphan_header_count: 0, orphan_line_count: 0,
+    partial_pair_count: 0, duplicate_pair_count: 0,
+    complete_pair_is_also_business_correct: null,
     planned_qty: null, planned_qty_is_positive_and_within_the_ceiling: null,
     planned_qty_equals_the_authorized_maximum: null,
     scope_correct: null, run_correct: null, cycle_correct: null, sku_correct: null,
@@ -13948,6 +14023,19 @@ function S1_ai2PairCompleteness_(search, b) {
     else seenL[l.allocation_draft_line_id] = 1;
     if (hIds[l.allocation_draft_id] !== 1) o.orphan_line_ids.push(l.allocation_draft_line_id);
   });
+  var lineParents = {};
+  search.candidate_lines.forEach(function (l) { lineParents[l.allocation_draft_id] = 1; });
+  o.complete_pair_count = search.candidate_headers.filter(function (h) {
+    return lineParents[h.allocation_draft_id] === 1; }).length;
+  o.orphan_header_count = search.candidate_headers.length - o.complete_pair_count;
+  var orphanLineSet = {};
+  o.orphan_line_ids.concat(o.parentless_line_ids).forEach(function (id) { orphanLineSet[id] = 1; });
+  o.orphan_line_count = Object.keys(orphanLineSet).length;
+  o.partial_pair_count = o.orphan_header_count + o.orphan_line_count;
+  o.duplicate_pair_count = o.duplicate_header_ids.length + o.duplicate_line_ids.length;
+  // COUNTED BEFORE THE EARLY RETURN. Every count above is about the whole candidate set, so returning
+  // them only for the one shape this function goes on to judge would report zeros for exactly the
+  // duplicate, partial and orphan worlds they exist to describe.
   if (!o.exactly_one_header_and_one_line) return o;
   var H = search.candidate_headers[0], L = search.candidate_lines[0];
   o.line_fk_points_at_the_alternate_header = (L.allocation_draft_id === H.allocation_draft_id);
@@ -14008,6 +14096,7 @@ function S1_ai2PairCompleteness_(search, b) {
     && o.scope_correct === true && o.run_correct === true && o.cycle_correct === true
     && o.sku_correct === true && o.warehouse_correct === true && o.route_present === true
     && o.status_active === true && o.carries_production_ai_provenance === true);
+  o.complete_pair_is_also_business_correct = o.business_facts_ok;
   return o;
 }
 
@@ -14120,6 +14209,275 @@ function S1_ai2Classify_(search, pair, readable) {
       + ' the authorized one — under identities the frozen baseline did not predict'
   }[o.classification] || null;
   return o;
+}
+
+/**
+ * ================================================================================================================
+ * S1-R6D0 §AI2L — THE EVIDENCE HAS TO LEAVE THE FUNCTION.
+ *
+ * The readback computed every fact §四/§五/§六 asks for and returned them as an object. Apps Script does not
+ * reliably render a returned object of that size from the Run menu, so in practice the operator saw the
+ * summary log line and nothing else: the candidate rows, the pair verdict, the eleven-versus-ten dimension
+ * diff and the protected-surface comparison were all COMPUTED AND UNREADABLE. A finding nobody can read is
+ * indistinguishable from a finding that was never made.
+ *
+ * So each of the five detail objects is emitted as its own numbered, fingerprinted group, and the rules are
+ * the ones this file already lives by:
+ *
+ *   NOTHING IS TRUNCATED. A payload over the chunk bound is WITHHELD and says so, because a JSON object cut
+ *   in the middle of a value is worse than an absent one — it parses as nothing and reads as everything.
+ *
+ *   AN EMPTY ARRAY IS EMITTED. `[]` is a measurement. Emitting nothing for an empty candidate list would
+ *   make "no alternate row exists" and "the emitter did not run" the same log.
+ *
+ *   THE CHUNKS RECONSTRUCT BYTE-FOR-BYTE. Each chunk line carries a raw slice — not a re-wrapped, not a
+ *   re-escaped one — so concatenating them IN ORDER yields the exact string JSON.stringify produced. The
+ *   meta line carries the total byte count, the per-chunk byte counts and an ORDER-SENSITIVE fingerprint,
+ *   which is what lets a reader prove the paste is whole rather than assume it.
+ *
+ *   THE PAYLOAD IS A PROJECTION, NEVER A DUMP. Every group is one of the curated facts objects, whose
+ *   fields were chosen field by field in §AI2. That is the guarantee that no authorization text and no
+ *   unnecessary column can appear here — not a scan afterwards. The tripwire below is a belt, not the
+ *   trousers, and it is deliberately blind to the authorization constant: a guard that had to be handed the
+ *   secret in order to check for it would be one more place the secret lives.
+ * ================================================================================================================
+ */
+
+// The five detail SECTIONS, each named by the tag it emits under and the path it reads. ORDERED: a reader
+// scrolling the Executions log meets the rows, then the verdict about them, then the reconciliation, then
+// the surfaces that had to stay still — the order the argument is made in.
+var S1_AI2_LOG_SECTIONS_ = [
+  { tag: 's1_ai2_header_candidates', path: 'search.candidate_headers' },
+  { tag: 's1_ai2_line_candidates', path: 'search.candidate_lines' },
+  { tag: 's1_ai2_pair_completeness', path: 'pair' },
+  { tag: 's1_ai2_identity_reconciliation', path: 'reconciliation' },
+  { tag: 's1_ai2_protected_surfaces', path: 'protected_surfaces' }
+];
+
+// The one phrase every authorization sentence in this file opens with. It is eleven characters of English
+// and it is not the authorization: no field name in any emitted object contains it, and nothing here reads
+// S1_CG_ONCE_AUTHORIZATION_ to obtain it. `planned_qty_equals_the_authorized_maximum` is why the probe is
+// this phrase and not the substring "authoriz" — a field NAME must not be able to withhold a group.
+var S1_AI2_LOG_TRIPWIRE_ = 'I authorize';
+
+/**
+ * AN ORDER-SENSITIVE FINGERPRINT OVER THE EXACT TEXT, and the authority is NAMED beside the value.
+ *
+ * S1_fingerprint_ SORTS its input, which is right for a set of row ids and wrong for a byte stream: two
+ * chunks swapped would fingerprint identically, and reordering is one of the three faults this exists to
+ * catch. So the text is hashed as it stands.
+ *
+ * The hash is production’s, and which production hash answered is reported: KMFSG.fnv1a is the file’s
+ * usual authority, sadFnv1a_ is the one 16_ and 69_ mint every draft id with. Either is fine BECAUSE the
+ * emitter and the verifier ask in the same run and the answer says which was used; what is never fine is a
+ * local hash substituted silently, which would let two algorithms produce two "fingerprints" for one text.
+ */
+function S1_ai2TextFingerprint_(text) {
+  var t = String(text == null ? '' : text);
+  if (typeof KMFSG !== 'undefined' && KMFSG && typeof KMFSG.fnv1a === 'function') {
+    return { value: String(KMFSG.fnv1a(t)).toUpperCase(), authority: 'KMFSG.fnv1a' };
+  }
+  if (typeof sadFnv1a_ === 'function') {
+    return { value: String(sadFnv1a_(t)).toUpperCase(), authority: 'sadFnv1a_' };
+  }
+  // NULL, NEVER A LOCAL HASH. A reader is told the paste cannot be content-verified rather than being
+  // shown a number that means something different from the one the next run will print.
+  return { value: null, authority: null };
+}
+
+/** Cap a string for a log line, but leave a null as NULL. `S1_cap_` runs its argument through S1_str_,
+ *  which maps null to '' — and an empty string is a value. `ssot` is legitimately unset when there is no
+ *  candidate to reconcile, and printing it as "" says the reconciliation reached a conclusion it named
+ *  with nothing. */
+function S1_ai2CapOrNull_(v, n) {
+  return (v === null || v === undefined) ? null : S1_cap_(v, n);
+}
+
+/** A dotted path read that answers `undefined` for anything absent rather than throwing. */
+function S1_ai2LogValueAt_(root, path) {
+  var cur = root;
+  var parts = String(path).split('.');
+  for (var i = 0; i < parts.length; i++) {
+    if (cur === null || cur === undefined || typeof cur !== 'object') return undefined;
+    cur = cur[parts[i]];
+  }
+  return cur;
+}
+
+/**
+ * EMIT ONE SECTION: numbered chunks, then a meta line that describes them precisely enough to check.
+ *
+ * NOT named ...EmitGroup_: W1h forbids this file from declaring any S1_...Group...() function, because a
+ * GROUP in this system is a route group and a diagnostic that declared its own grouping function would be
+ * a second grouping authority. A log section is not a route group; the name keeps them apart.
+ *
+ * Returns the spec rather than a count, because the spec IS the thing a verifier needs and returning only
+ * a number is how "12 chunks were emitted" came to be the whole of what a caller could say about them.
+ */
+function S1_ai2EmitSection_(tag, value, path) {
+  // `path` is carried so ONE meta line is self-describing: a reader who scrolled to
+  // s1_ai2_pair_completeness_meta should not have to find the index line to learn which field it holds.
+  var spec = { tag: S1_str_(tag), path: (path === undefined ? null : S1_str_(path)),
+    emitted: false, chunks: 0, bytes: null,
+    chunk_payload_budget: null, chunk_bytes: [], fingerprint: null, fingerprint_authority: null,
+    is_empty_array: false, value_was_absent: (value === undefined || value === null),
+    withheld: false, withheld_reason: null };
+  var text = null;
+  try { text = JSON.stringify(value === undefined ? null : value); } catch (e) { text = null; }
+  if (typeof text !== 'string') {
+    spec.withheld = true;
+    spec.withheld_reason = 'THE_VALUE_COULD_NOT_BE_SERIALISED';
+    S1_log_(spec.tag + '_withheld', JSON.stringify(spec));
+    return spec;
+  }
+  spec.bytes = text.length;
+  spec.is_empty_array = (text === '[]');
+  var fp = S1_ai2TextFingerprint_(text);
+  spec.fingerprint = fp.value;
+  spec.fingerprint_authority = fp.authority;
+  if (text.indexOf(S1_AI2_LOG_TRIPWIRE_) >= 0) {
+    spec.withheld = true;
+    spec.withheld_reason = 'AUTHORIZATION_PROSE_DETECTED_IN_THE_PAYLOAD';
+    // The BYTES and the FINGERPRINT still go out; the text does not. A reader needs to know a group was
+    // suppressed and how big the thing was, and neither of those reveals it.
+    S1_log_(spec.tag + '_withheld', JSON.stringify({ tag: spec.tag, withheld: true,
+      withheld_reason: spec.withheld_reason, bytes: spec.bytes, fingerprint: spec.fingerprint }));
+    return spec;
+  }
+  var budget = S1_chunkBudget_(tag);
+  spec.chunk_payload_budget = budget;
+  var n = Math.ceil(text.length / budget) || 1;
+  if (n > S1_LOG_MAX_CHUNKS_) {
+    spec.withheld = true;
+    spec.withheld_reason = 'OVER_THE_CHUNK_BOUND_' + n + '_WOULD_EXCEED_' + S1_LOG_MAX_CHUNKS_;
+    S1_log_(spec.tag + '_withheld', JSON.stringify(spec));
+    return spec;
+  }
+  for (var i = 0; i < n; i++) {
+    var slice = text.slice(i * budget, (i + 1) * budget);
+    spec.chunk_bytes.push(slice.length);
+    S1_log_(spec.tag + '_' + (i + 1) + '_of_' + n, slice);
+  }
+  spec.chunks = n;
+  spec.emitted = true;
+  S1_log_(spec.tag + '_meta', JSON.stringify(spec));
+  return spec;
+}
+
+/**
+ * REBUILD A GROUP FROM ITS CHUNK LINES AND REFUSE ANYTHING THAT DOES NOT ADD UP.
+ *
+ * This is the half that makes the meta line worth emitting. Given the spec and the payloads in the order a
+ * reader collected them, it answers whether what they hold is what was emitted — and names the fault when
+ * it is not. A missing chunk fails the count, a truncated one fails the byte total, a swapped pair of
+ * unequal chunks fails the per-chunk lengths, and a swapped pair of EQUAL ones fails the fingerprint, which
+ * is the only one of the four a length check can never see.
+ *
+ * WITHOUT A FINGERPRINT AUTHORITY IT REFUSES. `ok` stays false and the reason says why, because "the byte
+ * count matched" is not the same claim as "this is the text" and must not be printed as though it were.
+ */
+function S1_ai2VerifyChunks_(spec, lines) {
+  var o = { ok: false, reason: null, text: null, bytes: null, fingerprint: null,
+    fingerprint_authority: null };
+  if (!spec || typeof spec !== 'object') { o.reason = 'NO_SPEC_TO_VERIFY_AGAINST'; return o; }
+  if (spec.emitted !== true) {
+    o.reason = 'THE_GROUP_WAS_NOT_EMITTED_' + S1_str_(spec.withheld_reason || 'FOR_AN_UNSTATED_REASON');
+    return o;
+  }
+  var got = lines || [];
+  if (got.length !== spec.chunks) {
+    o.reason = 'CHUNK_COUNT_IS_' + got.length + '_NOT_' + spec.chunks;
+    return o;
+  }
+  for (var i = 0; i < got.length; i++) {
+    var want = (spec.chunk_bytes || [])[i];
+    if (String(got[i]).length !== want) {
+      o.reason = 'CHUNK_' + (i + 1) + '_IS_' + String(got[i]).length + '_BYTES_NOT_' + want;
+      return o;
+    }
+  }
+  var text = got.join('');
+  o.bytes = text.length;
+  if (o.bytes !== spec.bytes) {
+    o.reason = 'TOTAL_BYTES_ARE_' + o.bytes + '_NOT_' + spec.bytes;
+    return o;
+  }
+  var fp = S1_ai2TextFingerprint_(text);
+  o.fingerprint = fp.value;
+  o.fingerprint_authority = fp.authority;
+  if (fp.value === null || spec.fingerprint === null) {
+    o.reason = 'NO_FINGERPRINT_AUTHORITY_WAS_AVAILABLE_SO_THE_CONTENT_CANNOT_BE_VERIFIED';
+    return o;
+  }
+  if (fp.value !== spec.fingerprint) {
+    o.reason = 'FINGERPRINT_IS_' + fp.value + '_NOT_' + spec.fingerprint;
+    return o;
+  }
+  o.ok = true;
+  o.text = text;
+  return o;
+}
+
+/**
+ * EMIT ALL FIVE GROUPS AND THEN THE ONE META LINE THAT INDEXES THEM.
+ *
+ * It reads the report object and writes log lines. It resolves nothing, decides nothing and mutates nothing
+ * about the finding: `classification` here is copied from the classification the readback already made, so
+ * a summary that disagreed with the detail would be a defect this file can be asked about rather than a
+ * second opinion it is entitled to have.
+ */
+function S1_ai2EmitDetailLogs_(out) {
+  var meta = { tool: S1_str_(out.tool), build: S1_str_(out.build),
+    classification: out.classification === undefined ? null : out.classification,
+    detail_classification: (out.classification_detail && out.classification_detail.classification)
+      ? out.classification_detail.classification : null,
+    groups: [], group_count: 0, all_groups_emitted: false, withheld_groups: [],
+    chunk_max_bytes: S1_CHUNK_MAX_BYTES_, max_chunks_per_group: S1_LOG_MAX_CHUNKS_,
+    alternate_header_count: null, alternate_line_count: null,
+    complete_pair_count: null, partial_pair_count: null,
+    duplicate_pair_count: null, orphan_header_count: null, orphan_line_count: null,
+    business_facts_ok: null, proves_it_was_added_after_the_freeze: null,
+    which_side_was_wrong: null, ssot: null,
+    next_action: out.next_action === undefined ? null : out.next_action,
+    retry_contract: out.retry_contract === undefined ? null : out.retry_contract,
+    this_manifest_wrote_nothing: out.this_manifest_wrote_nothing === undefined
+      ? null : out.this_manifest_wrote_nothing,
+    predicates_passed: out.predicates_passed === undefined ? null : out.predicates_passed,
+    predicates_failed: out.predicates_failed === undefined ? null : out.predicates_failed,
+    reconstruction: 'Concatenate the chunk payloads of one group IN ORDER, 1_of_N through N_of_N, with'
+      + ' no separator and no re-wrapping. The result is exactly what JSON.stringify produced: check it'
+      + ' against the byte count and the fingerprint on the _meta line of that group.' };
+  S1_AI2_LOG_SECTIONS_.forEach(function (g) {
+    var v = S1_ai2LogValueAt_(out, g.path);
+    var spec = S1_ai2EmitSection_(g.tag, v, g.path);
+    meta.groups.push({ tag: spec.tag, path: g.path, emitted: spec.emitted, chunks: spec.chunks,
+      bytes: spec.bytes, fingerprint: spec.fingerprint,
+      fingerprint_authority: spec.fingerprint_authority,
+      is_empty_array: spec.is_empty_array, value_was_absent: spec.value_was_absent,
+      withheld_reason: spec.withheld_reason });
+    if (spec.emitted !== true) meta.withheld_groups.push(spec.tag);
+  });
+  meta.group_count = meta.groups.length;
+  meta.all_groups_emitted = (meta.withheld_groups.length === 0);
+  var p = out.pair;
+  if (p && typeof p === 'object') {
+    meta.alternate_header_count = p.alternate_header_count;
+    meta.alternate_line_count = p.alternate_line_count;
+    meta.complete_pair_count = p.complete_pair_count;
+    meta.partial_pair_count = p.partial_pair_count;
+    meta.duplicate_pair_count = p.duplicate_pair_count;
+    meta.orphan_header_count = p.orphan_header_count;
+    meta.orphan_line_count = p.orphan_line_count;
+    meta.business_facts_ok = p.business_facts_ok;
+    meta.proves_it_was_added_after_the_freeze = p.proves_it_was_added_after_the_freeze;
+  }
+  var r = out.reconciliation;
+  if (r && typeof r === 'object') {
+    meta.which_side_was_wrong = S1_ai2CapOrNull_(r.which_side_was_wrong, 240);
+    meta.ssot = S1_ai2CapOrNull_(r.ssot, 240);
+  }
+  S1_log_('s1_ai2_readback_meta', JSON.stringify(meta));
+  return meta;
 }
 
 /**
@@ -14238,6 +14596,20 @@ function S1_ai2Finish_(out, L) {
     S1_CG_NEXT_ACTION_ALLOWS_ANOTHER_GENERATE_[out.next_action] === true;
   out.next_action_agrees_with_the_permission =
     out.next_action_permits_another_generate === out.retry_contract.generate_may_be_attempted_again;
+  // THE DETAIL GOES OUT BEFORE THE SUMMARY, and the two carry the same classification because the second
+  // reads it off the first. Emitted from S1_ai2Finish_ rather than from the success path, so a refusal —
+  // an unreadable table, a missing authority, a thrown exception — still emits five explicit groups. A
+  // refusal that logged nothing is how a run that proved something and a run that never looked came to
+  // read the same in the Executions list.
+  //
+  // §六 asks for the final classification and the retry contract alongside the reconciliation, so they are
+  // attached to it here — after they exist. Attaching them earlier would mean printing a verdict computed
+  // from a reconciliation that had not been made yet.
+  if (out.reconciliation && typeof out.reconciliation === 'object') {
+    out.reconciliation.final_classification = out.classification;
+    out.reconciliation.retry_contract = out.retry_contract;
+  }
+  out.log_emission = S1_ai2EmitDetailLogs_(out);
   S1_log_('s1_controlled_generate_alternate_identity_readback', JSON.stringify({
     tool: out.tool, build: out.build, classification: out.classification,
     classification_is_known: out.classification_is_known,

@@ -7837,6 +7837,18 @@ function ahWorld(script, over) {
   var w = S1World(spec);
   w.ctx.__ahApply = function () { ahApply(w, script); };
   vm.runInContext('var __ahCalls = []; var __ahScript = ' + JSON.stringify(script) + ';', w.ctx);
+  // S1-R6D0 — A LOGGER THAT REMEMBERS.
+  //
+  // `S1_log_` is `try { Logger.log(...) } catch (e) {}`, and no world declared Logger — so every log line
+  // this file has ever emitted was thrown away by the catch, and no test could say anything about what
+  // the operator would actually SEE. That is precisely the gap R6D0 exists to close: the readback
+  // computed the evidence and the operator could not read it. A suite that cannot read it either is in no
+  // position to prove it arrived.
+  //
+  // It captures and does nothing else. Behaviour is unchanged either way, because the catch made the
+  // absent Logger a no-op rather than a failure.
+  vm.runInContext('var __s1Logs = [];'
+    + ' var Logger = { log: function (m) { __s1Logs.push(String(m)); } };', w.ctx);
   if (over.fingerprint !== undefined) {
     vm.runInContext('S1_CG_AUTH_FINGERPRINT_ = ' + JSON.stringify(over.fingerprint) + ';', w.ctx);
   } else {
@@ -7904,7 +7916,12 @@ function ahS1(src) {
 function ahRun(w, expr) {
   var out = null, threw = null;
   try { out = vm.runInContext(expr, w.ctx); } catch (e) { threw = e; }
-  return { res: out || {}, threw: threw, world: w,
+  var logs = [];
+  try {
+    logs = JSON.parse(vm.runInContext(
+      "JSON.stringify(typeof __s1Logs === 'undefined' ? [] : __s1Logs)", w.ctx));
+  } catch (e2) { logs = []; }
+  return { res: out || {}, threw: threw, world: w, logs: logs,
     calls: vm.runInContext('__ahCalls.length', w.ctx),
     callArgs: vm.runInContext('JSON.stringify(__ahCalls)', w.ctx),
     flag: vm.runInContext('INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_', w.ctx),
@@ -12981,6 +12998,475 @@ mut('N192 the response written-identity reader is dropped, so a landed write rea
     && clean.res.classification.response_header_ids_not_in_the_authorized_write_set.length === 1
     && clean.res.classification.response_declared_write.header_ids[0] === 'SADH-K4-ELSEWHERE'
     && NOTHING_LANDED.indexOf(bad.res.verdict) >= 0;
+});
+
+
+// ==================================================================================================
+// AL — S1-R6D0: A FINDING NOBODY CAN READ IS NOT A FINDING.
+// ==================================================================================================
+//
+// §AI2 computed the candidate rows, the pair verdict, the ten-versus-eleven dimension diff and the
+// protected-surface comparison, and returned all of it. The operator ran it from the Run menu and saw a
+// summary log line. Everything the round was for — WHICH row, under WHICH id, derived from WHICH fields —
+// was computed and then discarded by the transport.
+//
+// So this section is about the transport, and it holds it to the same standard as the finding: nothing
+// truncated, nothing silently absent, and a reader able to PROVE the paste in their hand is what was
+// emitted rather than assume it. The proofs below reconstruct each section from its own chunk lines and
+// then break them on purpose — one chunk lost, one truncated, two swapped — because an emitter whose
+// output cannot be rejected cannot be verified either.
+// ==================================================================================================
+
+/** The chunk lines of one log section, in emission order, with the '[S1] <tag>_i_of_n ' framing removed. */
+function alChunkRecs(logs, tag) {
+  var pre = '[S1] ' + tag + '_';
+  var out = [];
+  (logs || []).forEach(function (line) {
+    var s = String(line);
+    if (s.indexOf(pre) !== 0) return;
+    var rest = s.slice(pre.length);
+    var sp = rest.indexOf(' ');
+    if (sp < 0) return;
+    var m = /^(\d+)_of_(\d+)$/.exec(rest.slice(0, sp));
+    if (!m) return;                       // '_meta' and '_withheld' are not chunks
+    out.push({ i: Number(m[1]), n: Number(m[2]), payload: rest.slice(sp + 1) });
+  });
+  out.sort(function (a, b) { return a.i - b.i; });
+  return out;
+}
+function alPayloads(logs, tag) {
+  return alChunkRecs(logs, tag).map(function (r) { return r.payload; });
+}
+/** A single-line JSON log, parsed. Used for '<tag>_meta', '<tag>_withheld' and 's1_ai2_readback_meta'. */
+function alJsonLine(logs, tag) {
+  var pre = '[S1] ' + tag + ' ';
+  var found = null;
+  (logs || []).forEach(function (line) {
+    if (String(line).indexOf(pre) === 0) found = String(line).slice(pre.length);
+  });
+  if (found === null) return null;
+  try { return JSON.parse(found); } catch (e) { return { __unparseable: found }; }
+}
+function alLogsOf(w) {
+  return JSON.parse(vm.runInContext('JSON.stringify(__s1Logs)', w.ctx));
+}
+/** The census's OWN verifier, asked from inside the world — not a re-implementation of it here. A second
+ *  copy of the reconstruction rule in this file could agree with a broken emitter forever. */
+function alVerify(w, spec, lines) {
+  return JSON.parse(vm.runInContext('JSON.stringify(S1_ai2VerifyChunks_('
+    + JSON.stringify(spec) + ', ' + JSON.stringify(lines) + '))', w.ctx));
+}
+function alEmit(w, tag, value) {
+  return JSON.parse(vm.runInContext('JSON.stringify(S1_ai2EmitSection_('
+    + JSON.stringify(tag) + ', ' + JSON.stringify(value) + '))', w.ctx));
+}
+
+// ---- AL0 — THE FIVE SECTIONS ARE THE FIVE THAT WERE ASKED FOR, UNDER THOSE NAMES ---------------
+var AL_TAGS = ['s1_ai2_header_candidates', 's1_ai2_line_candidates', 's1_ai2_pair_completeness',
+  's1_ai2_identity_reconciliation', 's1_ai2_protected_surfaces'];
+var AL_DECL = extractVar(S1, 'S1_AI2_LOG_SECTIONS_');
+AL_TAGS.forEach(function (t, i) {
+  ok(AL_DECL.indexOf("'" + t + "'") > 0, 'AL0.' + (i + 1) + ' the emitter declares the section ' + t);
+});
+ok(S1.indexOf("S1_log_('s1_ai2_readback_meta'") > 0,
+  'AL0f and the index line is emitted under s1_ai2_readback_meta');
+
+// ---- AL1 — A COMPLETE ALTERNATE PAIR: ALL FIVE SECTIONS, EACH REBUILT BYTE-FOR-BYTE ------------
+var AL1 = akRun({});
+eq(AL1.res.classification, 'COMPLETE_WRITE_UNDER_ALTERNATE_IDENTITIES',
+  'AL1  the world under test is the complete-alternate-pair one');
+eq(AL1.res.log_emission.group_count, 5, 'AL1a five sections were emitted');
+eq(AL1.res.log_emission.all_groups_emitted, true, 'AL1b and none of them was withheld');
+eq(AL1.res.log_emission.withheld_groups, [], 'AL1c so the withheld list is empty');
+AL_TAGS.forEach(function (tag, i) {
+  var recs = alChunkRecs(AL1.logs, tag);
+  var meta = alJsonLine(AL1.logs, tag + '_meta');
+  var n = i + 1;
+  ok(recs.length > 0, 'AL1d.' + n + ' ' + tag + ' emitted at least one chunk line', recs.length);
+  ok(!!meta, 'AL1e.' + n + ' and a meta line describing them');
+  eq(recs.length, meta.chunks, 'AL1f.' + n + ' the chunk count on the wire matches the meta');
+  recs.forEach(function (r) {
+    eq(r.n, meta.chunks, 'AL1g.' + n + ' every chunk declares the same total');
+  });
+  // THE RECONSTRUCTION, CHECKED BY THE CENSUS'S OWN VERIFIER.
+  var v = alVerify(AL1.world, meta, alPayloads(AL1.logs, tag));
+  eq(v.ok, true, 'AL1h.' + n + ' ' + tag + ' reconstructs and verifies', v.reason);
+  eq(v.bytes, meta.bytes, 'AL1i.' + n + ' at exactly the declared byte count');
+  eq(v.fingerprint, meta.fingerprint, 'AL1j.' + n + ' and the declared fingerprint');
+  ok(meta.fingerprint_authority === 'KMFSG.fnv1a' || meta.fingerprint_authority === 'sadFnv1a_',
+    'AL1k.' + n + ' hashed by a production authority, which is NAMED', meta.fingerprint_authority);
+  // AND IT IS THE OBJECT THE FUNCTION RETURNED — not merely well-formed JSON.
+  var path = meta.path.split('.');
+  var want = AL1.res;
+  path.forEach(function (p) { want = want[p]; });
+  eq(v.text, JSON.stringify(want), 'AL1l.' + n + ' and equals JSON.stringify of the returned ' + meta.path);
+});
+// NOT ONE LINE OVER THE APPS SCRIPT LINE BUDGET. The whole reason the payload is chunked at 3000 rather
+// than 45000 is that the logger truncates the LINE, framing included.
+var AL1over = AL1.logs.filter(function (l) { return String(l).length > 3000; });
+eq(AL1over.length, 0, 'AL1m no emitted line exceeds the 3000-byte budget the chunker is priced against',
+  AL1over.map(function (l) { return String(l).slice(0, 60) + ' @' + String(l).length; }));
+
+// ---- AL2 — THE THREE WAYS A PASTE GOES WRONG, EACH REFUSED BY NAME ----------------------------
+var AL2meta = alJsonLine(AL1.logs, 's1_ai2_identity_reconciliation_meta');
+var AL2full = alPayloads(AL1.logs, 's1_ai2_identity_reconciliation');
+ok(AL2full.length >= 2, 'AL2  the reconciliation section is genuinely multi-chunk', AL2full.length);
+var AL2lost = alVerify(AL1.world, AL2meta, AL2full.slice(0, AL2full.length - 1));
+eq(AL2lost.ok, false, 'AL2a a MISSING chunk is refused');
+ok(String(AL2lost.reason).indexOf('CHUNK_COUNT_IS_') === 0,
+  'AL2b and the refusal names the count it got', AL2lost.reason);
+var AL2cut = AL2full.slice();
+AL2cut[0] = AL2cut[0].slice(0, AL2cut[0].length - 10);
+var AL2trunc = alVerify(AL1.world, AL2meta, AL2cut);
+eq(AL2trunc.ok, false, 'AL2c a TRUNCATED chunk is refused');
+ok(String(AL2trunc.reason).indexOf('CHUNK_1_IS_') === 0,
+  'AL2d and the refusal names which chunk and by how much', AL2trunc.reason);
+// A REORDER OF UNEQUAL CHUNKS fails on length; the equal-length case is the one only a fingerprint sees,
+// so it is driven separately below on a payload whose first two chunks are both exactly full.
+var AL2rev = alVerify(AL1.world, AL2meta, AL2full.slice().reverse());
+eq(AL2rev.ok, false, 'AL2e a REORDERED pair of chunks is refused');
+
+var AL2W = akWorld({});
+var AL2big = alEmit(AL2W, 's1_ai2_probe_big', { p: new Array(7001).join('x') });
+eq(AL2big.emitted, true, 'AL2f a payload of three chunks is emitted, not withheld', AL2big);
+eq(AL2big.chunks, 3, 'AL2g in three chunks', AL2big.chunk_bytes);
+eq(AL2big.chunk_bytes[0], AL2big.chunk_bytes[1],
+  'AL2h whose first two are EXACTLY equal in length — the case a length check cannot see',
+  AL2big.chunk_bytes);
+var AL2bigP = alPayloads(alLogsOf(AL2W), 's1_ai2_probe_big');
+eq(alVerify(AL2W, AL2big, AL2bigP).ok, true, 'AL2i and in order it verifies');
+var AL2swap = [AL2bigP[1], AL2bigP[0], AL2bigP[2]];
+var AL2swapV = alVerify(AL2W, AL2big, AL2swap);
+eq(AL2swapV.ok, false, 'AL2j while swapping the two EQUAL-LENGTH chunks is still refused');
+ok(String(AL2swapV.reason).indexOf('FINGERPRINT_IS_') === 0,
+  'AL2k by the fingerprint, which is the only check that can see it', AL2swapV.reason);
+
+// ---- AL3 — AN EMPTY CANDIDATE LIST IS EMITTED, EXPLICITLY ------------------------------------
+var AL3 = akRun({ header: false, line: false });
+eq(AL3.res.pair.alternate_header_count, 0, 'AL3  the world holds no alternate row at all');
+['s1_ai2_header_candidates', 's1_ai2_line_candidates'].forEach(function (tag, i) {
+  var recs = alChunkRecs(AL3.logs, tag);
+  var meta = alJsonLine(AL3.logs, tag + '_meta');
+  eq(recs.length, 1, 'AL3a.' + (i + 1) + ' ' + tag + ' still emits exactly one chunk line');
+  eq(recs[0].payload, '[]', 'AL3b.' + (i + 1) + ' carrying the empty array itself');
+  eq(meta.is_empty_array, true, 'AL3c.' + (i + 1) + ' and the meta says so in a field');
+  eq(meta.emitted, true, 'AL3d.' + (i + 1) + ' emitted, not withheld — "none" is a measurement');
+  eq(alVerify(AL3.world, meta, alPayloads(AL3.logs, tag)).ok, true,
+    'AL3e.' + (i + 1) + ' and it verifies like any other section');
+});
+eq(AL3.res.log_emission.all_groups_emitted, true,
+  'AL3f a readback that found nothing still emits all five sections');
+
+// ---- AL4 — THE HEADER SECTION CARRIES EVERY FACT §A ASKS FOR --------------------------------
+var AL4h = JSON.parse(alPayloads(AL1.logs, 's1_ai2_header_candidates').join(''))[0];
+ok(!!AL4h, 'AL4  the header section holds the alternate header');
+['allocation_draft_id', 'id_family_by_prefix', 'calculation_run_id', 'planning_cycle', 'company',
+ 'country', 'marketplace', 'recommended_source_warehouse_id', 'recommended_destination_warehouse_id',
+ 'destination_marketplace', 'destination_type', 'destination_identity', 'destination_identity_ok',
+ 'recommended_shipping_method', 'recommended_shipping_method_canonical',
+ 'recommended_last_mile_delivery', 'recommendation_group_no',
+ 'k2_group_key', 'k4_group_key', 'k2_derived_id', 'k4_derived_id',
+ 'id_re_derives_from_its_own_fields', 'id_self_consistency_basis', 'production_reconcile_basis',
+ 'matched_by', 'identifying_predicates', 'id_present_in_frozen_row_signatures',
+ 'created_after_the_frozen_baseline', 'created_at', 'updated_at', 'status', 'generation_type',
+ 'full_row_fingerprint', 'physical_row_number', 'physical_row_number_is_for_location_only'
+].forEach(function (k, i) {
+  ok(Object.prototype.hasOwnProperty.call(AL4h, k),
+    'AL4a.' + (i + 1) + ' the emitted header carries ' + k);
+});
+eq(AL4h.allocation_draft_id, AL1.hid, 'AL4b and it is the id the world was seeded with');
+eq(AL4h.id_family_by_prefix, 'K4', 'AL4c read as the K4 family');
+eq(AL4h.id_re_derives_from_its_own_fields, true, 'AL4d re-deriving from its own stored fields');
+eq(AL4h.k4_derived_id, AL4h.allocation_draft_id, 'AL4e which is the K4 builder answering with it');
+ok(AL4h.k2_derived_id !== AL4h.allocation_draft_id,
+  'AL4f while the K2 builder answers with a different id — the whole divergence, in two fields');
+eq(AL4h.physical_row_number_is_for_location_only, true,
+  'AL4g the physical row number is marked LOCATION ONLY, never an identity');
+ok(String(AL4h.k2_group_key).split('|').length === 10 && String(AL4h.k4_group_key).split('|').length === 11,
+  'AL4h and both canonical strings are present at their own dimension counts',
+  [AL4h.k2_group_key, AL4h.k4_group_key]);
+ok(AL4h.destination_type === 'WAREHOUSE' || AL4h.destination_type === 'MARKETPLACE',
+  'AL4i the DERIVED destination type is one of the two 69_ allows', AL4h.destination_type);
+ok(String(AL4h.recommended_shipping_method_canonical).length > 0,
+  'AL4j and the service appears in its canonical form beside the raw one',
+  [AL4h.recommended_shipping_method, AL4h.recommended_shipping_method_canonical]);
+eq(AL4h.id_present_in_frozen_row_signatures, false,
+  'AL4k the freeze did not already hold this id');
+
+// ---- AL5 — AND THE LINE SECTION EVERY FACT §B ASKS FOR --------------------------------------
+var AL5l = JSON.parse(alPayloads(AL1.logs, 's1_ai2_line_candidates').join(''))[0];
+ok(!!AL5l, 'AL5  the line section holds the alternate line');
+['allocation_draft_line_id', 'allocation_draft_id', 'sku', 'site_sku', 'window_code', 'planned_qty',
+ 'recommended_qty', 'line_status', 'derived_line_id', 'line_id_re_derives_from_its_parent',
+ 'parent_header_exists', 'parentless', 'matched_by', 'full_row_fingerprint', 'physical_row_number',
+ 'physical_row_number_is_for_location_only', 'created_at', 'updated_at'
+].forEach(function (k, i) {
+  ok(Object.prototype.hasOwnProperty.call(AL5l, k), 'AL5a.' + (i + 1) + ' the emitted line carries ' + k);
+});
+eq(AL5l.allocation_draft_id, AL1.hid, 'AL5b its parent is the alternate header');
+eq(AL5l.parent_header_exists, true, 'AL5c and that parent is stated to exist');
+eq(AL5l.line_id_re_derives_from_its_parent, true,
+  'AL5d the line id re-derives from the parent it actually points at');
+ok((AL5l.matched_by || []).length > 0, 'AL5e and it says why it is in the list', AL5l.matched_by);
+
+// ---- AL6 — THE FOUR COUNTS, IN THE FOUR SHAPES THEY EXIST TO TELL APART ---------------------
+[[{}, 1, 1, 1, 0, 0, 0, 'a complete pair'],
+ [{ line: false }, 1, 0, 0, 1, 1, 0, 'a header with no line'],
+ [{ header: false }, 0, 1, 0, 1, 0, 1, 'a line with no header'],
+ [{ duplicateLine: true }, 1, 2, 1, 0, 0, 0, 'one header carrying two lines']
+].forEach(function (row, i) {
+  var r = akRun(row[0]);
+  var m = alJsonLine(r.logs, 's1_ai2_readback_meta');
+  var n = i + 1;
+  eq(m.alternate_header_count, row[1], 'AL6a.' + n + ' ' + row[7] + ': header count');
+  eq(m.alternate_line_count, row[2], 'AL6b.' + n + ' ' + row[7] + ': line count');
+  eq(m.complete_pair_count, row[3], 'AL6c.' + n + ' ' + row[7] + ': complete pair count');
+  eq(m.partial_pair_count, row[4], 'AL6d.' + n + ' ' + row[7] + ': partial pair count');
+  eq(m.orphan_header_count, row[5], 'AL6e.' + n + ' ' + row[7] + ': orphan header count');
+  eq(m.orphan_line_count, row[6], 'AL6f.' + n + ' ' + row[7] + ': orphan line count');
+  eq(m.classification, r.res.classification,
+    'AL6g.' + n + ' and the index line agrees with the returned classification');
+  eq(m.detail_classification, r.res.classification_detail.classification,
+    'AL6h.' + n + ' and with the classifier detail');
+});
+var AL6dup = akRun({ duplicateHeader: true });
+ok(alJsonLine(AL6dup.logs, 's1_ai2_readback_meta').duplicate_pair_count > 0,
+  'AL6i a duplicated header id is counted as a duplicate, not as a second complete pair');
+
+// ---- AL7 — THE PAIR AND RECONCILIATION SECTIONS CARRY WHAT §五/§六 ASK FOR -------------------
+var AL7p = JSON.parse(alPayloads(AL1.logs, 's1_ai2_pair_completeness').join(''));
+['alternate_header_count', 'alternate_line_count', 'complete_pair_count', 'partial_pair_count',
+ 'duplicate_pair_count', 'orphan_header_count', 'orphan_line_count', 'orphan_line_ids',
+ 'parentless_line_ids', 'duplicate_header_ids', 'duplicate_line_ids', 'proof_missing_parts',
+ 'business_facts_ok', 'proves_it_was_added_after_the_freeze',
+ 'id_absent_from_the_frozen_row_signatures', 'created_after_the_frozen_baseline',
+ 'frozen_row_signature_count', 'planned_qty', 'complete_pair_is_also_business_correct'
+].forEach(function (k, i) {
+  ok(Object.prototype.hasOwnProperty.call(AL7p, k), 'AL7a.' + (i + 1) + ' the pair section carries ' + k);
+});
+var AL7r = JSON.parse(alPayloads(AL1.logs, 's1_ai2_identity_reconciliation').join(''));
+['k2_dimension_names', 'k4_dimension_names', 'predicted_k2_group_key', 'predicted_header_ids',
+ 'per_candidate', 'which_side_was_wrong', 'ssot', 'prediction_authority', 'writer_authority',
+ 'live_k4_schema_ready', 'final_classification', 'retry_contract'
+].forEach(function (k, i) {
+  ok(Object.prototype.hasOwnProperty.call(AL7r, k),
+    'AL7b.' + (i + 1) + ' the reconciliation section carries ' + k);
+});
+eq(AL7r.k2_dimension_names.length, 10, 'AL7c the ten K2 dimension NAMES travel with the diff');
+eq(AL7r.k4_dimension_names.length, 11, 'AL7d and the eleven K4 ones');
+eq(AL7r.final_classification, AL1.res.classification,
+  'AL7e the reconciliation carries the final classification §六 asks it to');
+eq(AL7r.retry_contract.generate_may_be_attempted_again, false,
+  'AL7f and the retry contract, which refuses another generate in every class');
+var AL7c = AL7r.per_candidate[0];
+['predicted_k2_vs_stored_k2', 'predicted_k2_vs_stored_k4', 'dimension_count_differs',
+ 'the_predicted_id_would_have_been', 'matches_the_prediction'].forEach(function (k, i) {
+  ok(Object.prototype.hasOwnProperty.call(AL7c, k),
+    'AL7g.' + (i + 1) + ' and the per-candidate diff carries ' + k);
+});
+eq(AL7c.dimension_count_differs, true,
+  'AL7h the field-by-field diff states that the two sides were not even keyed on the same field count');
+
+// ---- AL8 — THE AUTHORIZATION IS IN NO LOG LINE, AND A PAYLOAD CARRYING PROSE IS WITHHELD ----
+var AL8auth = vm.runInContext('S1_CG_ONCE_AUTHORIZATION_', AL1.world.ctx);
+ok(typeof AL8auth === 'string' && AL8auth.length > 1000,
+  'AL8  the world does hold the authorization text, so its absence below is a measurement');
+var AL8all = AL1.logs.join(NL);
+eq(AL8all.indexOf(AL8auth), -1, 'AL8a and it appears in no emitted log line');
+eq(AL8all.indexOf(AL8auth.slice(0, 96)), -1, 'AL8b nor does its opening ninety-six characters');
+eq(AL8all.indexOf(AL8auth.slice(AL8auth.length - 96)), -1, 'AL8c nor its closing ninety-six');
+eq(AL8all.indexOf('I authorize'), -1, 'AL8d nor the phrase every authorization here opens with');
+eq(AL1.res.authorization_read, false, 'AL8e and the readback did not read an authorization at all');
+// THE TRIPWIRE, DRIVEN. The guarantee is the projection — every emitted section is a curated facts object
+// — but a tripwire that is never fired is a tripwire nobody knows the state of.
+var AL8W = akWorld({});
+var AL8t = alEmit(AL8W, 's1_ai2_probe_leak', { status: 'I authorize ONE controlled generation' });
+eq(AL8t.emitted, false, 'AL8f a payload carrying authorization prose is NOT emitted');
+eq(AL8t.withheld, true, 'AL8g it is withheld');
+eq(AL8t.withheld_reason, 'AUTHORIZATION_PROSE_DETECTED_IN_THE_PAYLOAD', 'AL8h under that name');
+eq(alChunkRecs(alLogsOf(AL8W), 's1_ai2_probe_leak').length, 0,
+  'AL8i and no chunk line was written for it');
+var AL8wl = alJsonLine(alLogsOf(AL8W), 's1_ai2_probe_leak_withheld');
+ok(!!AL8wl && AL8wl.withheld === true, 'AL8j while the withholding itself IS reported', AL8wl);
+eq(String(JSON.stringify(AL8wl)).indexOf('I authorize'), -1,
+  'AL8k and the withheld line does not quote what it withheld');
+
+// ---- AL9 — OVER THE BOUND IS WITHHELD, NEVER TRUNCATED --------------------------------------
+var AL9W = akWorld({});
+var AL9 = alEmit(AL9W, 's1_ai2_probe_huge', { p: new Array(40001).join('y') });
+eq(AL9.emitted, false, 'AL9  a payload over the chunk bound is not emitted');
+ok(String(AL9.withheld_reason).indexOf('OVER_THE_CHUNK_BOUND_') === 0,
+  'AL9a and the reason names the bound it would have exceeded', AL9.withheld_reason);
+eq(alChunkRecs(alLogsOf(AL9W), 's1_ai2_probe_huge').length, 0,
+  'AL9b nothing partial was written — a JSON object cut mid-value parses as nothing');
+ok(AL9.bytes > 40000, 'AL9c while the SIZE is still reported, which is what a reader needs', AL9.bytes);
+eq(alVerify(AL9W, AL9, []).ok, false, 'AL9d and the verifier refuses a section that was never emitted');
+ok(String(alVerify(AL9W, AL9, []).reason).indexOf('THE_GROUP_WAS_NOT_EMITTED_') === 0,
+  'AL9e naming the reason it was not', alVerify(AL9W, AL9, []).reason);
+
+// ---- AL10 — THE EMITTER IS A LOGGER. IT REACHES NOTHING THAT WRITES -------------------------
+var AL_REGION = ['S1_ai2TextFingerprint_', 'S1_ai2CapOrNull_', 'S1_ai2LogValueAt_',
+  'S1_ai2EmitSection_', 'S1_ai2VerifyChunks_', 'S1_ai2EmitDetailLogs_', 'S1_ai2FrozenIdSet_']
+  .map(function (f) { return extractFn(S1, f); }).join(NL);
+['weeklyAiPlanGenerateK2_(', '.mint(', 'RUN_S1_CONTROLLED_GENERATE_EXECUTE(',
+ 'handleUpsertShippingAllocationDraftAtomic_(', 'setValue', 'setValues', 'appendRow',
+ 'clearContent', 'deleteRow', 'insertRow', 'getRange', 'S1_CG_ONCE_AUTHORIZATION_',
+ 'S1_cgAuthorizationAudit_', 'S1_openDb_('].forEach(function (t, i) {
+  eq(AL_REGION.split(t).length - 1, 0, 'AL10.' + (i + 1) + ' the log emitter reaches no ' + t);
+});
+['S1_MANIFEST_P_BEFORE_', 'INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_',
+ 'INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_', 'S1_CG_AUTH_FINGERPRINT_'].forEach(function (n, i) {
+  eq((AL_REGION.match(new RegExp(n + '\\s*=(?!=)', 'g')) || []).length, 0,
+    'AL10b.' + (i + 1) + ' and assigns nothing to ' + n);
+});
+eq(AL1.writes, 0, 'AL10c a readback that emitted five sections still wrote nothing');
+eq(AL1.res.this_manifest_wrote_nothing, true, 'AL10d and says so');
+['writes', 'writer_calls', 'generator_calls', 'attempts', 'repairs_attempted', 'rows_created',
+ 'rows_updated', 'rows_deleted'].forEach(function (k, i) {
+  eq(AL1.res[k], 0, 'AL10e.' + (i + 1) + ' ' + k + ' is zero');
+});
+eq(AL1.calls, 0, 'AL10f and the generator seam was never entered');
+eq(AL1.res.capability_minted, false, 'AL10g no capability was minted');
+
+
+// ---- AL MUTANTS — N193..N201 ------------------------------------------------------------------
+/** A complete-pair run against a mutated census, with its logs. */
+function alMutRun(src, over) {
+  var o = {}; Object.keys(over || {}).forEach(function (k) { o[k] = over[k]; });
+  o.s1 = src;
+  return akRun(o);
+}
+
+mut('N193 the chunker drops a byte per chunk, so the paste no longer reconstructs', function () {
+  // The one failure mode that looks like success: every line is present, every line looks like JSON, and
+  // the concatenation is not what was measured. Only the byte count and the fingerprint can see it.
+  var m = swapS1In('S1_ai2EmitSection_',
+    '    var slice = text.slice(i * budget, (i + 1) * budget);',
+    '    var slice = text.slice(i * budget, (i + 1) * budget - 1);');
+  var clean = akRun({});
+  var bad = alMutRun(m, {});
+  function verifies(r) {
+    var meta = alJsonLine(r.logs, 's1_ai2_identity_reconciliation_meta');
+    if (!meta) return false;
+    return alVerify(r.world, meta, alPayloads(r.logs, 's1_ai2_identity_reconciliation')).ok === true;
+  }
+  return verifies(clean) === true && verifies(bad) === false;
+});
+
+mut('N194 the verifier stops comparing fingerprints, so a reorder is accepted', function () {
+  var m = swapS1In('S1_ai2VerifyChunks_',
+    '  if (fp.value !== spec.fingerprint) {',
+    '  if (false) {');
+  function swapAccepted(src) {
+    var w = akWorld(src ? { s1: src } : {});
+    var spec = alEmit(w, 's1_ai2_probe_big', { p: new Array(7001).join('x') });
+    var p = alPayloads(alLogsOf(w), 's1_ai2_probe_big');
+    return alVerify(w, spec, [p[1], p[0], p[2]]).ok === true;
+  }
+  // clean: the swap is REFUSED. mutant: the swap passes, because the only check that could see two
+  // equal-length chunks in the wrong order has been removed.
+  return swapAccepted(null) === false && swapAccepted(m) === true;
+});
+
+mut('N195 a LOST chunk is diagnosed as a truncated paste instead of a missing line', function () {
+  // MEASURED, AND IT CHANGED THIS MUTANT. With the count check removed a missing chunk is still REFUSED,
+  // because the byte total catches it. So the count check is not what makes the verifier safe — it is what
+  // makes it USEFUL. TOTAL_BYTES_ARE_2968_NOT_5275 tells an operator their copy was cut short and sends
+  // them to re-copy the last line; CHUNK_COUNT_IS_1_NOT_2 tells them a whole log line is absent, which is
+  // a different action. A refusal that names the wrong fault sends the reader to the wrong fix.
+  var m = swapS1In('S1_ai2VerifyChunks_',
+    '  if (got.length !== spec.chunks) {',
+    '  if (false) {');
+  function diagnosis(src) {
+    var r = src ? alMutRun(src, {}) : akRun({});
+    var meta = alJsonLine(r.logs, 's1_ai2_identity_reconciliation_meta');
+    var p = alPayloads(r.logs, 's1_ai2_identity_reconciliation');
+    var v = alVerify(r.world, meta, p.slice(0, p.length - 1));
+    return [v.ok, String(v.reason).split('_IS_')[0].split('_ARE_')[0]];
+  }
+  var clean = diagnosis(null), bad = diagnosis(m);
+  return clean[0] === false && clean[1] === 'CHUNK_COUNT'
+    && bad[0] === false && bad[1] === 'TOTAL_BYTES';
+});
+
+mut('N196 an empty candidate list is skipped instead of emitted', function () {
+  // "No alternate row exists" and "the emitter did not run" must not read the same in the log.
+  var m = swapS1In('S1_ai2EmitDetailLogs_',
+    '    var spec = S1_ai2EmitSection_(g.tag, v, g.path);',
+    '    var spec = (v && v.length === 0)'
+      + " ? { tag: g.tag, emitted: false, chunks: 0, chunk_bytes: [], withheld_reason: 'SKIPPED' }"
+      + ' : S1_ai2EmitSection_(g.tag, v, g.path);');
+  function emptyEmitted(src) {
+    var r = src ? alMutRun(src, { header: false, line: false }) : akRun({ header: false, line: false });
+    var recs = alChunkRecs(r.logs, 's1_ai2_header_candidates');
+    return recs.length === 1 && recs[0].payload === '[]';
+  }
+  return emptyEmitted(null) === true && emptyEmitted(m) === false;
+});
+
+mut('N197 the payload tripwire is removed, so authorization prose could be emitted', function () {
+  var m = swapS1In('S1_ai2EmitSection_',
+    '  if (text.indexOf(S1_AI2_LOG_TRIPWIRE_) >= 0) {',
+    '  if (false) {');
+  function leaks(src) {
+    var w = akWorld(src ? { s1: src } : {});
+    alEmit(w, 's1_ai2_probe_leak', { status: 'I authorize ONE controlled generation' });
+    return alLogsOf(w).join(NL).indexOf('I authorize') >= 0;
+  }
+  return leaks(null) === false && leaks(m) === true;
+});
+
+mut('N198 the index line states a classification of its own instead of copying the finding', function () {
+  // A summary entitled to its own opinion is a second classifier, and the one a reader meets first.
+  var m = swapS1In('S1_ai2EmitDetailLogs_',
+    '    classification: out.classification === undefined ? null : out.classification,',
+    "    classification: 'COMPLETE_WRITE_UNDER_ALTERNATE_IDENTITIES',");
+  function agrees(src) {
+    var r = src ? alMutRun(src, { header: false, line: false }) : akRun({ header: false, line: false });
+    var meta = alJsonLine(r.logs, 's1_ai2_readback_meta');
+    return meta.classification === r.res.classification
+      && meta.classification === r.res.classification_detail.classification;
+  }
+  return agrees(null) === true && agrees(m) === false;
+});
+
+mut('N199 the detail sections are not emitted at all — back to a summary and nothing else', function () {
+  var m = swapS1In('S1_ai2Finish_',
+    '  out.log_emission = S1_ai2EmitDetailLogs_(out);',
+    '  out.log_emission = null;');
+  var clean = akRun({});
+  var bad = alMutRun(m, {});
+  function sections(r) {
+    return AL_TAGS.filter(function (t) { return alChunkRecs(r.logs, t).length > 0; }).length;
+  }
+  return sections(clean) === 5 && sections(bad) === 0;
+});
+
+mut('N200 the derived destination is dropped, so raw cannot be compared with derived', function () {
+  // The K4 key is built from (destination_type, destination_identity). Printing only the stored warehouse
+  // id and marketplace leaves a reader comparing two strings that were never the key's inputs.
+  var m = swapS1In('S1_ai2HeaderFacts_',
+    "  if (typeof ricDestinationIdentity_ === 'function') {",
+    '  if (false) {');
+  function derived(src) {
+    var r = src ? alMutRun(src, {}) : akRun({});
+    var h = JSON.parse(alPayloads(r.logs, 's1_ai2_header_candidates').join(''))[0];
+    return String(h.destination_type || '').length > 0 && h.destination_identity_ok === true;
+  }
+  return derived(null) === true && derived(m) === false;
+});
+
+mut('N201 the orphan header count is hard-zeroed, so a half-landed write reads as none', function () {
+  var m = swapS1In('S1_ai2PairCompleteness_',
+    '  o.orphan_header_count = search.candidate_headers.length - o.complete_pair_count;',
+    '  o.orphan_header_count = 0;');
+  function counts(src) {
+    var r = src ? alMutRun(src, { line: false }) : akRun({ line: false });
+    var meta = alJsonLine(r.logs, 's1_ai2_readback_meta');
+    return [meta.orphan_header_count, meta.partial_pair_count];
+  }
+  var clean = counts(null), bad = counts(m);
+  return clean[0] === 1 && clean[1] === 1 && bad[0] === 0 && bad[1] === 0;
 });
 
 console.log('\npassed ' + pass + '  failed ' + fail
