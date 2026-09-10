@@ -1,17 +1,60 @@
-# Product Strategy Board — Design Freeze (P0 · updated by P0-R1)
+# Product Strategy Board — Design Freeze (P0 · updated by P0-R1, P0-R3, P0-R3-R1, P0-R3-R2)
 
 **Rounds:** `PRODUCT-STRATEGY-BOARD-P0` — Discovery, Data Mapping and Design Freeze
 · `PRODUCT-STRATEGY-BOARD-P0-R1` — Design Closure and Non-Runtime Visual Prototype
 · `PRODUCT-STRATEGY-BOARD-P0-R2` — Interactive SKU Price-Band Prototype
-**Status:** **DESIGN CLOSED.** All nine open decisions are operator-decided and applied. Still nothing
-implemented in the application; the price band is now demonstrated in the isolated prototype (§22).
+· `PRODUCT-STRATEGY-BOARD-P0-R3` — Data-Contract-First Executive Report Prototype
+· `PRODUCT-STRATEGY-BOARD-P0-R3-R1` — Product Image Identity Correction and Visual Acceptance
+· `PRODUCT-STRATEGY-BOARD-P0-R3-R2` — Category Command Center, Image Price Markers, Five-Unit Axis
+**Status:** **DESIGN CLOSED, AND THE DATA CONTRACT IS NOW FROZEN TOO.** All nine decisions are
+operator-decided and applied; §23–§28 add the measured source audit, the canonical data contract, the
+variant-grouping and image rules, the adapter seam and the P1-B1 handoff. Still nothing implemented in
+the application.
+
+> **CATEGORY IS A CORRECTNESS RULE, NOT A FILTER (P0-R3-R2).** `sku_details.category` is now the
+> FIRST scope. Two categories never share a price axis, and no gap, overlap or cannibalisation is
+> ever computed across one — a step between an electric can opener and a spatula is not an
+> opportunity, because they are not alternatives. The cross-category view is cards and a table.
+> §30 records the command-center shell, the five-unit axis and the image price markers.
+
+> **IMAGES RESTORED ON NEW EVIDENCE (P0-R3-R2).** Seven photographs are back, on evidence class E —
+> the operator's per-SKU statement of the `image_url` on the live `sku_details` row, plus a check
+> that the named file exists at that exact path. P0-R3-R1's finding is unchanged: nothing in the
+> REPOSITORY binds a file to a SKU. What changed is the witness. A real photograph still does not
+> make a price real, and every row keeps `identity_source` and `price_source` apart.
+
+> **CORRECTION OF RECORD (P0-R3-R1).** P0-R3 shipped seven product photographs on the strength of a
+> filename that matches a SKU plus a shipped mention of that SKU. That pair corroborates the **SKU**;
+> it says nothing about the **bytes**. Nothing in the repository binds any file under
+> `assets/img/products/` to any SKU, so all seven were reclassified UNVERIFIED and **removed**. The
+> prototype now ships **zero** product images and states the absence on every card. §26 is rewritten
+> with the evidence standard, the probes and a row per file; §29 records the correction.
+
+> **CORRECTION OF RECORD (P0-R3).** Every SKU, price, deal and warning shown in the P0-R2 prototype was
+> **mock data**. It was not connected to `sku_details`, `marketplace_skus`, `sku_regional_details`,
+> `pricing_list`, `campaigns` or `campaign_sku_lines`, and **no gap, overlap or cannibalisation on that
+> screen was a conclusion about Kitchen Mama's products**. The prototype now says so permanently, on
+> every screen, and every finding it renders is tagged as a demonstration.
 **Base commit:** `e9fcd27` (`origin/main` at the time this branch was cut)
 **Branch:** `feature/product-strategy-board-p0` (isolated git worktree)
 **Scope of P0:** this document. **Scope of P0-R1:** this document + a non-runtime static prototype under
 `docs/prototypes/product-strategy-board/` (§22). **Scope of P0-R2:** that prototype made interactive — a
-real X/Y price band, a multi-select SKU selector, working filters, live gap/overlap/cannibalisation
-arithmetic and 120 automated DOM assertions — plus this section. In all three rounds: no page, no table,
-no API, no `.gs` change, no deployment.
+real X/Y price band, a multi-select SKU selector, working filters and live gap/overlap/cannibalisation
+arithmetic. **Scope of P0-R3:** a measured audit of the six real source tables (§23), a frozen
+`ProductStrategyDataContract` (§24), the variant-grouping and image contracts (§25, §26), a data adapter
+seam with the Operation DB adapter defined-and-disabled (§27), the P1-B1 handoff (§28), and the prototype
+rebuilt as an executive report on top of that contract with 285 automated DOM assertions. In all four
+rounds: no page, no table, no API, no `.gs` change, no deployment, and **no live data**.
+**Scope of P0-R3-R1:** a re-audit of the seven copied product photographs against a real
+image-to-SKU identity standard (§26, rewritten), their removal, the frozen live image behaviour
+(one authority, two failure states, no fallback of any kind), a report-grade missing-image state,
+a manual visual acceptance package, and 312 automated DOM assertions. Nothing else in P0-R3
+changed.
+**Scope of P0-R3-R2:** category as the first scope with its own authority and ladder (§30.2), a
+professional sidebar shell with six destinations and an icon rail, a cross-category overview that
+draws no shared axis, a per-category analysis page with a product comparison table, a Y axis fixed
+at five currency units per gridline (§30.3), product photographs as the everyday-price marker
+(§30.4), and seven images restored on evidence class E (§30.5). 222 automated DOM assertions.
 
 > **What "design freeze" means here.** Every table, column, action name and component named below was
 > read out of shipped source in this repository, and the file and line it came from is cited. Where a
@@ -1457,6 +1500,59 @@ into B1** (D-5), **revisions moved into B1** (D-7), **`DEAL_PLAN` moved from P2 
   comment-and-string-stripped scan and by the page's own assertions. ✔
 - S11 120 automated DOM assertions pass. ✔ (§22.5)
 
+**P0-R3 (the data contract and the executive report) — all met:**
+- T1 Every source mapping is quoted from shipped source at a cited line; no column is inferred from a
+  field name, and a field with no column is a **GAP**. ✔ (§23, §24)
+- T2 The contract is machine-readable and the preview fixture satisfies it field for field, with no
+  extra field of its own. ✔ (asserted, group B)
+- T3 The renderer never reads the fixture — it is handed an adapter, chosen in one line at boot. ✔
+- T4 `OperationDbProductStrategyDataAdapter` is defined, disabled, makes zero requests and returns
+  `SOURCE_NOT_CONNECTED`; checked as a property of the object. ✔ (§27, group C)
+- T5 The page carries a permanent, undismissible notice that it is not connected to the database, and
+  never uses the words "live data", "current data" or "official database". ✔ (group D)
+- T6 Every finding is tagged `DEMONSTRATION INSIGHT`; live and proposed are never conflated. ✔ (group K)
+- T7 Variant grouping merges only on a proven `variant_group` plus identical prices, splits on any price
+  difference, and refuses without authority. Nothing is derived from a SKU string. ✔ (§25, group E)
+- T8 A missing image is stated in words; no placeholder, no similar photograph, no unproven file. ✔
+  (§26, group J) — **restated by P0-R3-R1: no LOCAL file either, proven or otherwise; the preview
+  ships zero images.**
+- T9 Executive Report and Strategy Workspace both work; the report carries no schema name and no
+  decision code on its **visible** surface. ✔ (group L)
+- T10 Print/PDF and 16:9 presentation both work; the findings drawer and Advanced details are collapsed
+  by default. ✔ (groups L, P)
+- T11 Every P0-R2 price rule still holds, including all three boundary cases. ✔ (group I)
+- T12 No network, no storage, four local subresources, zero production integration. ✔ (group O + scan)
+- T13 312 automated DOM assertions pass. ✔ (285 at P0-R3; 27 added by P0-R3-R1)
+
+**P0-R3-R1 (the image-identity correction) — all met:**
+- T14 Every retained image carries evidence of class A, B, C or D that this exact file belongs to
+  this exact SKU. **Zero images are retained**, because zero met it. ✔ (§26.2, §26.3)
+- T15 A filename, a SKU appearing in tests or mock data, visual similarity, the directory name, a
+  person's judgement and a matching hash are each explicitly **not** evidence — recorded as data on
+  `IMAGE_POLICY.not_evidence` and asserted. ✔ (group Q)
+- T16 The live contract is unchanged: one authority, `IMAGE_SOURCE_MISSING` on an empty column,
+  `IMAGE_LOAD_FAILED` on a failed load, and no fallback to a local file, another SKU's photograph
+  or a placeholder — each a checkable field, and the no-local-fallback rule enforced by the
+  renderer composing no path at all. ✔ (§26.4, group Q)
+
+**P0-R3-R2 (the category command center) — all met:**
+- T17 Navigation is a collapsible sidebar with six destinations, exactly one active, tooltips on
+  the rail, inline SVG icons, no emoji and **no browser storage**. ✔ (group L)
+- T18 Category is the first scope. Two categories never share a price axis, the cross-category view
+  draws none at all, and no finding is computed across one. ✔ (§30.2, group M)
+- T19 Summary, chart, table and insights on a category page come from ONE scoped row set, and a
+  category switch leaves nothing behind. ✔ (group M)
+- T20 Every Y axis is `floor(min/5)*5 → ceil(max/5)*5` in steps of 5, every tick drawn and
+  labelled, pixels compressing rather than the scale. ✔ (§30.3, group G)
+- T21 The everyday price is a product photograph where the mapping is verified, its CENTRE on the
+  coordinate, with a neutral fallback otherwise — and deal markers keep their own shapes. ✔
+  (§30.4, group H)
+- T22 Every image on the page traces to a named per-SKU mapping whose SKU is a member of that very
+  grouping; the two near misses are refused; no path is composed anywhere. ✔ (§30.5, group Q)
+- T23 A real photograph does not make a price real: `identity_source` and `price_source` are kept
+  apart on every row and in the provenance. ✔ (§30.6, group C)
+- T24 Every earlier guarantee re-asserted against the new markup. ✔ (§30.8, group R)
+
 **P1 acceptance (for the batches above):**
 - **B1** a create replayed with the same idempotency key returns `replayed: true`, creates **no** second
   row, and the derived id is byte-identical across the retry — for **boards, elements and revisions**.
@@ -1598,9 +1694,56 @@ consume it rather than adding a second one.** Same tables, one owner (Q-3).
 - **No table, no migration, no DB write, no API, no AI, no dependency, no flag / release / build change,
   no Apps Script sync, no deployment, no push, no merge.**
 
+### 21.4 P0-R3 (the data contract and the executive report)
+- **Preconditions verified read-only before any change:** the designated worktree; branch
+  `feature/product-strategy-board-p0`; **PRE HEAD `3d762cc326f6978091aa556ab4ef0dc12907c527`**; worktree
+  clean including untracked; the mainline worktree clean and untouched.
+- **Files changed: 5 modified, 3 added, 7 image copies added** — all under `docs/`.
+- **The audit was a READ.** Every source file quoted in §23 was opened read-only. `assets/**` is
+  byte-identical to the branch base by object hash, the seven copied photographs included — the copies
+  are under `docs/`, and `assets/img/products/` itself is unchanged.
+- **No production file touched.** `index.html`, `assets/**` and every `.gs` hash identical to `e9fcd27`.
+- **No S1 file** read into a change or modified. **`C:/km-lb` untouched. Mainline worktree untouched.**
+- **No network request, no storage, no dependency, no table, no migration, no DB write, no API, no AI,
+  no flag / release / build change, no Apps Script sync, no deployment, no push, no merge.**
+
 ---
 
-## §22 — The non-runtime prototype (P0-R1, extended in P0-R2)
+### 21.5 P0-R3-R1 (the image-identity correction)
+- **Preconditions verified read-only before any change:** the designated worktree; branch
+  `feature/product-strategy-board-p0`; **PRE HEAD `2c7bb13966a5cbc9a3e68f34e9e52a0af9f2b461`**;
+  worktree clean including untracked; **`git ls-remote` confirming `origin` carries no such branch**,
+  because the round amends that commit and amending a published commit cannot be undone locally.
+- **Files changed: 6 modified, 7 binaries deleted, 0 added** — all under `docs/`.
+- **The re-audit was a READ.** `git grep`, `git log`, `git ls-files`. No file outside `docs/` was
+  opened for writing, and **`assets/img/products/` is byte-identical to the branch base**.
+- **No production file touched.** `index.html`, `assets/**` and every `.gs` hash identical to
+  `e9fcd27`. No S1 file read into a change. **`C:/km-lb` untouched. Mainline worktree untouched.**
+- **No network request, no storage, no dependency, no table, no migration, no DB write, no Drive
+  write, no API, no AI, no flag / release / build change, no Apps Script sync, no deployment, no
+  push, no merge.**
+
+### 21.6 P0-R3-R2 (the category command center)
+- **Preconditions verified read-only before any change:** the designated worktree; branch
+  `feature/product-strategy-board-p0`; **PRE HEAD `0b71e6c566173e45c2dde38eeeae67474c8b4de8`**;
+  worktree clean including untracked; **`git ls-remote` confirming `origin` carries no such
+  branch**, because the round amends that commit.
+- **Files changed: 6 modified, 7 image binaries added, 0 deleted** — all under `docs/`.
+- **`assets/img/products/` is untouched** — 138 files, byte-identical to the branch base; the seven
+  copies were hash-checked against their sources and live under `docs/`.
+- **No production file touched.** `index.html`, `assets/**` and every `.gs` hash identical to
+  `e9fcd27`. No S1 file read into a change. **`C:/km-lb` untouched. Mainline worktree untouched.**
+- **No network request, no DB or API read, no DB / Drive write, no storage, no dependency, no CDN,
+  no table, no migration, no flag / release / build change, no Apps Script sync, no deployment, no
+  push, no merge.**
+
+## §22 — The non-runtime prototype (P0-R1, extended in P0-R2, rebuilt in P0-R3)
+
+> **P0-R3 superseded most of this section.** The prototype is now three files behind an adapter — the
+> contract (`data-contract.js`), the invented data (`preview-fixture.js`) and the renderer
+> (`prototype.js`) — and the screen is an executive report. The rules recorded below still hold and are
+> still enforced; the counts and the file list are P0-R2's. The current description is §23–§28 and the
+> prototype's own `README.md`.
 
 **Path:** `docs/prototypes/product-strategy-board/`
 — `index.html`, `prototype.css`, `prototype.js`, `README.md`
@@ -1702,3 +1845,729 @@ scoping to the chart, so it also counted the **legend's own swatches** — a mea
 was wider than its name. The other scanned the self-test function for the forbidden API names, and
 the self-test has to *name* them in order to look for them — a check that could only ever fail,
 about itself. Both now assert the narrower, real thing.
+
+---
+
+## §23 — Canonical source audit (P0-R3)
+
+> **Why this section exists.** P0-R2 produced a convincing screen out of invented data. A convincing
+> screen is exactly the thing that must not be mistaken for a finding, and the way to make sure it
+> is not is to write down — from the shipped source, at cited lines — what the real data actually
+> is. Everything in §24 is built on this section and nothing in it is inferred from a field name.
+>
+> **Correction of record, restated because it matters:** every SKU, price, deal and warning shown in
+> P0-R2 was mock. None of it came from `sku_details`, `marketplace_skus`, `sku_regional_details`,
+> `pricing_list`, `campaigns` or `campaign_sku_lines`, and no gap, overlap or cannibalisation on that
+> screen was a conclusion about Kitchen Mama's products.
+
+### 23.1 The fourteen questions, answered
+
+**1 — Live column names.** Re-verified verbatim against the shipped declarations; §4.1–4.7 are
+correct and unchanged. The authorities are `sku-details.js:2369` (43 columns),
+`04_marketplace_forecast_import.gs:151` / `:152` (the `marketplace_skus` and `pricing_list`
+required-header gates, checked before any write), `18_sku_regional_handlers.gs:17`,
+`20_campaign_write_handlers.gs:28` and `:40`.
+
+**2 — Primary keys.**
+
+| Table | Primary key | Business grain |
+|---|---|---|
+| `sku_details` | `sku` | one row per MASTER sku |
+| `marketplace_skus` | `marketplace_sku_id` | `sku + company + country + marketplace` |
+| `sku_regional_details` | `regional_detail_id` | the same four-part grain (`18_:13`) |
+| `pricing_list` | `pricing_id` | one row per `marketplace_sku_id` |
+| `campaigns` | `campaign_id` | `company\|country\|marketplace\|campaign_name\|year` (`20_:49`) |
+| `campaign_sku_lines` | `campaign_sku_line_id` | `campaign_id + marketplace_sku_id` |
+
+**3 — The join grain.** One contract row = one operational site SKU = one `marketplace_skus` row.
+
+```
+sku_details.sku            -> marketplace_skus.sku                    (1 master : N sites)
+marketplace_skus(sku, company, country, marketplace) -> marketplace_sku_id
+marketplace_sku_id         -> pricing_list.marketplace_sku_id          (1 : 1)
+marketplace_sku_id         -> campaign_sku_lines.marketplace_sku_id    (1 : N deal lines)
+campaign_sku_lines.campaign_id -> campaigns.campaign_id                (period + status)
+sku + (company, country, marketplace) -> sku_regional_details          (same grain)
+```
+
+**`pricing_list` has no `company` column,** so joining it on `(country, marketplace, sku)` cannot
+separate two companies operating the same site SKU. That join is ambiguous and must never be
+implemented.
+
+**4 — Series authority.** `sku_details.series`. Master grain only; required by both import gates.
+It is the **only** grouping column that exists — and it groups a *series*, not a *model*, which is
+why §25 exists.
+
+**5 — Product name authority.** `sku_details.product_name`. Required by the import contract
+(`sku-details.js:2371`) but **not** by the pre-write header gate (`04_:150`), so a row can exist
+without one. Nullable on read. A Chinese companion `product_name_cn` appears in the editable-field
+allowlist (`03_:125`) but **not** in the 43-column export schema — a real asymmetry, recorded and
+not used.
+
+**6 — Product image. The column exists and it has an owner chain.**
+
+| Layer | Evidence |
+|---|---|
+| Column | `sku_details.image_url`, in the 43-column export schema (`sku-details.js:2369`) |
+| Editable | `03_master_data_handlers.gs:132` — `image_url` is in `SKU_DETAILS_UPSERT_FIELDS_` |
+| Client mapping | `operation-system-db-api.js:184` — `image: String(r.image_url || '')` |
+| Render contract | `sku-overrides.js` — `getNormalizedSkuImage`, `resolveSkuImageUrl`, and `classifySkuImageSource` returning `PRESENT` / `ABSENT` with reason `NO_IMAGE_URL_ON_RECORD` |
+| Reported as a data gap | `sku-handbook.js:502-506` counts `skus_with_image_url` / `skus_without_image_url` and calls the second *"a DATA gap — fill in sku_details.image_url"* |
+
+The format is a **URL string**, and the shipped resolver already knows one way it fails: an
+`http://` image on an `https://` page is mixed content and is upgraded at render time
+(`sku-overrides.js`, F1-7N-FB-4E-R3 §F). The board inherits that classification. It does **not**
+inherit the resolver's `localStorage` override branch. See §26 for the local-file question.
+
+**7 — Master SKU vs site SKU.** `sku_details.sku` is the master identity. `marketplace_skus.site_sku`
+is the listing code on that site, and `marketplace_sku_id` is the site identity. One master maps to
+N sites. `sku_regional_details` carries its own copy of `site_sku` at the same grain, which is a
+convenience column and not a second authority.
+
+**8 — Colour / variant identity. There is none.** Searched across
+`assets/specs/active/apps-script/*.gs`: no `parent_sku`, no `variant_group`, no `model`, no
+`model_code`, no colour column, in any of the six tables. This is a **GAP**, not a missing value.
+The naming convention (`CO1150-R`, `CO1150-T`) is visible and is **not** evidence: a shared prefix is
+a habit, and §25 refuses to treat it as a declaration.
+
+**9 — Regular / minimum / MSRP / currency.**
+
+| Level | Table | Columns |
+|---|---|---|
+| **Site-effective (the board's basis)** | `pricing_list` | `regular_price`, `minimum_price`, `msrp`, `currency` |
+| Master base inputs | `sku_details` | `minimum_price` + `minimum_price_unit`, `msrp` + `msrp_unit`, `selling_price` + **`selling_unit`** |
+
+Three price fields with three different unit-column spellings, and decision **D-2** forbids using
+the master values as a fallback for the site ones. **Two currency columns exist** —
+`marketplace_skus.currency` and `pricing_list.currency`. The price row wins, because it is the
+currency *of those numbers*; reading the other one would let a panel be labelled in a currency its
+prices are not in.
+
+**10 — Official deal price and campaign period.** `campaign_sku_lines.promo_price` is the only
+authoritative deal price (`20_:36`). The **period is not on the line** — it is
+`campaigns.start_date` / `campaigns.end_date`, reached through `campaign_id`. `price_units` is a
+display/audit currency snapshot and the shipped file explicitly refuses to let it be an FX rate
+(`20_:37-39`).
+
+**11 — Status. There are five, and they are not interchangeable.**
+
+| Status | Table.column | Vocabulary |
+|---|---|---|
+| Master lifecycle | `sku_details.lifecycle` | `00_config.gs:9` `VALID_LIFECYCLES_` |
+| **Site status** | `marketplace_skus.marketplace_sku_status` | `00_config.gs:12` `VALID_MARKETPLACE_SKU_STATUSES_` |
+| Price row | `pricing_list.price_status` | not pinned in config |
+| Deal line | `campaign_sku_lines.line_status` | not pinned in config |
+| Campaign | `campaigns.status` | not pinned in config |
+
+`sku_regional_details` has **no status column at all** — the file says so itself (`18_:16`). Site
+status therefore comes from `marketplace_skus`, which is the mapping correction §4.5 already made.
+
+**12 — What `skuDetails.workspace.get` can actually read.** Five tables, and only five
+(`59_api_v1_sku_details_workspace.gs:46-52`):
+
+| Table | Gate |
+|---|---|
+| `sku_details` | BASE, always, `requiredCols: ['sku']`, fail-closed |
+| `tax_referral_rates` | BASE, always |
+| `tax_rate_components` | BASE, always |
+| `marketplace_skus` | **include-gated `regional`** |
+| `sku_regional_details` | **include-gated `regional`** |
+
+Every array is **raw passthrough** — each source row unmodified — so every live column, `image_url`
+included, arrives. The cap is `SKD_WS_ROW_MAX_ = 50000` and truncation is reported via `capped.*`,
+never silent (`59_:74-82`). An un-requested include costs no read (`59_:164`). **It reads no
+pricing and no campaign data.**
+
+**13 — Is there a bounded read owner for pricing or campaigns? No.**
+
+| Route | What it is | Why it is not an owner |
+|---|---|---|
+| `getOperationDb` | 44 tabs in one response (`03_:31`) | Reads 44 tabs to answer one question; **D-5** forbids it in P1 |
+| `getTable?table=…` | one whole tab (`03_:52`) | `readSheetAsObjects_` then `filterRows_` and nothing else — no scope, no bounds, no pagination, no cap |
+
+`filterRows_` (`02_core_sheet_db.gs:90-118`) drops only rows with no identifying key; it is a
+blank-row filter, not a scope. The router's campaign actions are **writes** — `upsertCampaign` and
+`upsertCampaignSkuLines` (`01_router.gs:857-864`). There is no campaign read action and no pricing
+read action of any kind.
+
+**14 — What has no API owner at all.**
+
+| Thing | State |
+|---|---|
+| `pricing_list`, `campaigns`, `campaign_sku_lines` | No **bounded** owner. Reachable only through the two unbounded legacy routes above. |
+| `variant_group` / `variant_name` | No **column**, so nothing to own. |
+| `product_strategy_boards` / `_elements` / `_revisions` | The tables do not exist. Proposed in §6; nothing is created. |
+
+### 23.2 What the audit changed about the design
+
+Nothing in §4 was wrong. Three things it did not say are now recorded: the **image column is real
+and already has a client mapping and a render contract** (§26); **two currency columns exist and one
+of them is the wrong one to read**; and **the period of a deal lives on the campaign, not on the
+line**, so a `promo_price` whose campaign cannot be resolved is a price with no validity and must
+not be drawn as a live deal.
+
+---
+
+## §24 — `ProductStrategyDataContract` (P0-R3, frozen)
+
+One contract row = **one operational site SKU**. The contract is machine-readable in
+`docs/prototypes/product-strategy-board/data-contract.js`; this table is its authority.
+
+**Two words that are not interchangeable, and the contract depends on the difference:**
+- **ABSENT VALUE** — the column exists and this row's cell is empty → `SOURCE_MISSING`.
+- **ABSENT COLUMN** — no table has this field at all → **GAP**.
+
+The first is a data question and can be fixed by typing. The second is a schema question and needs a
+decision. Reporting one as the other is how a board comes to promise something nobody can supply.
+
+| # | Field | Source table | Source column | Join key | Nullable | On missing | API today | Needs P1-B1 |
+|---|---|---|---|---|---|---|---|---|
+| 1 | `identity` | `marketplace_skus` | `marketplace_sku_id` | the site identity | no | `CONTRACT_MISMATCH` | ✔ `skuDetails.workspace.get` + `include.regional` | — |
+| 2 | `master_sku` | `sku_details` | `sku` | `= marketplace_skus.sku` | no | `CONTRACT_MISMATCH` | ✔ base | — |
+| 3 | `site_sku` | `marketplace_skus` | `site_sku` | same row as identity | yes | `SOURCE_MISSING` | ✔ regional | — |
+| 4 | `product_name` | `sku_details` | `product_name` | `sku` | yes | `SOURCE_MISSING` | ✔ base | — |
+| 5 | `series` | `sku_details` | `series` | `sku` | no | `SOURCE_MISSING` | ✔ base | — |
+| 6 | `variant_group` | — | — | — | yes | **`VARIANT_GROUPING_SOURCE_MISSING`** | ✘ **GAP** | **yes — new column** |
+| 7 | `variant_name` | — | — | — | yes | **`VARIANT_GROUPING_SOURCE_MISSING`** | ✘ **GAP** | **yes — new column** |
+| 8 | `company` | `marketplace_skus` | `company` | site grain | no | `CONTRACT_MISMATCH` | ✔ regional | — |
+| 9 | `country` | `marketplace_skus` | `country` | site grain | no | `CONTRACT_MISMATCH` | ✔ regional | — |
+| 10 | `marketplace` | `marketplace_skus` | `marketplace` | site grain | no | `CONTRACT_MISMATCH` | ✔ regional | — |
+| 11 | `currency` | `pricing_list` | `currency` | `marketplace_sku_id` | no | `SOURCE_MISSING` | ✘ | **yes — read owner** |
+| 12 | `regular_price` | `pricing_list` | `regular_price` | `marketplace_sku_id` | yes | `SOURCE_MISSING` | ✘ | **yes — read owner** |
+| 13 | `minimum_price` | `pricing_list` | `minimum_price` | `marketplace_sku_id` | yes | `SOURCE_MISSING` | ✘ | **yes — read owner** |
+| 14 | `msrp` | `pricing_list` | `msrp` | `marketplace_sku_id` | yes | `SOURCE_MISSING` | ✘ | **yes — read owner** |
+| 15 | `official_deal_price` | `campaign_sku_lines` | `promo_price` | `marketplace_sku_id` | yes | `SOURCE_MISSING` | ✘ | **yes — read owner** |
+| 16 | `official_deal_start` | `campaigns` | `start_date` | `campaign_id` | yes | `SOURCE_MISSING` | ✘ | **yes — read owner** |
+| 17 | `official_deal_end` | `campaigns` | `end_date` | `campaign_id` | yes | `SOURCE_MISSING` | ✘ | **yes — read owner** |
+| 18 | `product_image` | `sku_details` | `image_url` | `sku` | yes | `IMAGE_SOURCE_MISSING` | ✔ base (raw passthrough) | — |
+| 19 | `lifecycle_status` | `sku_details` | `lifecycle` | `sku` | no | `SOURCE_MISSING` | ✔ base | — |
+| 20 | `source_status` | `marketplace_skus` | `marketplace_sku_status` | site grain | no | `SOURCE_MISSING` | ✔ regional | — |
+| 21 | `missing_reasons` | — | derived | — | no (always an array) | `CONTRACT_MISMATCH` | derived | — |
+| 22 | `provenance` | — | derived | — | no | `CONTRACT_MISMATCH` | derived | — |
+
+**Nine of the twenty-two fields cannot be supplied by any bounded read that exists today** — every
+price, the currency, and every part of the official deal. **Two have no column at all.**
+
+**Fields deliberately NOT in the contract, and they stay out:** `current_selling_price` (D-6 — no
+source of record; `regular_price`, `selling_price` and `promo_price` are each a different thing and
+none of them is it) and `margin` (D-8 — no cost source). A field with no source is left out rather
+than filled from a neighbour.
+
+---
+
+## §25 — Variant grouping contract (P0-R3)
+
+The operator's requirement: *when one model differs only by colour and every price is identical,
+show one product node; when any price differs, split them.* That requires knowing which SKUs are
+variants of one model, and **the database cannot say** (§23.1 Q8).
+
+| Rule | |
+|---|---|
+| **Authority** | `variant_group`. State: **GAP** — no column proves it. |
+| **Merge** | Two rows merge into one product node only when they share the **same non-empty `variant_group`** AND all four prices — `regular_price`, `minimum_price`, `msrp`, `official_deal_price` — are **equal to the cent**. |
+| **Split** | Any difference in any one of those four makes a **distinct price variant** with its own column. A price band is a statement about price; two prices cannot occupy one position on a price axis. |
+| **Refuse** | A row with no `variant_group` is rendered **alone** and labelled `VARIANT_GROUPING_SOURCE_MISSING`. It is never merged, not even with a row it obviously belongs to. |
+| **Never** | Derive a group from the SKU string. Truncating at a dash would merge on a naming habit, and a habit that is right 95% of the time merges the other 5% wrongly and **invisibly** — the merge, once made, looks exactly like a correct one. |
+| **Representative** | A merged node shows ONE image, from the member whose image identity is provable. It publishes the **variant count** and **lists every merged SKU**, so the merge is legible rather than a number that hides its members. |
+
+**What P1-B1 must add for this to work on real data:** a `variant_group` (or `parent_sku`) column on
+`sku_details`, with a `variant_name` beside it, and an owner for both. Until then a real-data board
+will show every SKU separately and say why — which is the correct behaviour, not a degraded one.
+
+---
+
+## §26 — Product image source audit (P0-R3, **corrected and re-measured by P0-R3-R1**)
+
+> **P0-R3's rule 2 is RETRACTED.** It admitted a local file on two conditions — the filename **is**
+> the SKU, and that SKU is corroborated by a shipped reference elsewhere in the repo. Those two
+> facts corroborate the **SKU**. They say nothing about the **bytes**. The evidence and the claim
+> are about different things, and on a price board a wrong photograph is indistinguishable from a
+> right one. All seven local copies were re-audited against a real identity standard, none met it,
+> and all seven were removed.
+
+### 26.1 The evidence standard
+
+A file may be shown as a product's photograph only with at least one of these:
+
+| | Evidence that proves *this exact file belongs to this exact SKU* |
+|---|---|
+| **A** | `sku_details` data, or a controlled fixture source, whose `image_url` for that SKU names that exact file |
+| **B** | A shipped mapping file recording master SKU → exact local image path |
+| **C** | A shipped renderer or importer carrying a traceable SKU → exact image asset mapping |
+| **D** | Any other repo content that directly proves this exact file belongs to this exact SKU |
+
+**None of these is evidence on its own:** the filename contains the SKU · the SKU appears in tests ·
+the SKU appears in mock data · the images look alike · the directory is called `products` · a person
+thinks it looks right · **a hash matches** — a hash proves the copy is faithful, not what it is a
+copy *of*.
+
+No web search and no download may be used to supply the missing evidence.
+
+### 26.2 The re-audit, probe by probe
+
+| Probe | Result |
+|---|---|
+| `git grep` for `img/products`, `images/products`, `product_images` across **all** tracked files of every type | **0 hits** |
+| Any tracked file naming any of the seven filenames | **0** |
+| A manifest, index or provenance file beside the images | **none.** `assets/img/` carries only `earth/PROVENANCE.md`, for a different asset set |
+| Any `image_url` **value** anywhere in the repository | **none.** Every occurrence is a schema header, an allowlist entry (`03_master_data_handlers.gs:132`), a client field map (`operation-system-db-api.js:184`) or a spec line — declarations, never data |
+| Any CSV / import fixture carrying an image column | **none.** The repo's two CSVs (`amazon_daily_sales_snapshot`, `logistics_locations_import_template`) have no image column |
+| A shipped SKU → local-path resolver | **none.** The one SKU→image mechanism, `getSkuImageOverride` (`sku-overrides.js:26`), reads `localStorage['km_sku_image_overrides_v1']` — a per-browser store a person types into, not a repository artifact |
+| What the shipped pipeline actually expects | **remote URLs.** `resolveSkuImageUrl` (`sku-overrides.js:76`) upgrades `http://` to `https://`, and `operation-system-db-api.js:6180` tells the operator to *"add image paths to Google Sheet"* |
+| How `assets/img/products/` arrived | one bulk commit, `864d1d8` *0526_SKU Details資料建置_Submit*. Provenance for **when**, not for **which SKU** |
+
+### 26.3 The seven files, one row each
+
+Every row below carries the same verdict, and it is worth seeing why: the hash column is real and
+it is the one column that proves nothing about identity.
+
+| Prototype path | Original repo path | Claimed SKU | Object hash | Identity evidence | Class | Verdict | Action |
+|---|---|---|---|---|---|---|---|
+| `images/CO1100-R.jpg` | `assets/img/products/CO1100-R.jpg` | CO1100-R | `8659b25aebdc0d20d92c849a19f09d315ed9d069` | none found | — | **UNVERIFIED** | **REMOVE** |
+| `images/CO1150-R.jpg` | `assets/img/products/CO1150-R.jpg` | CO1150-R | `22742b8f4d70c872fc165703d195da7dc0512d32` | none found | — | **UNVERIFIED** | **REMOVE** |
+| `images/CO1200-R.jpg` | `assets/img/products/CO1200-R.jpg` | CO1200-R | `bf83977e44b980254623908fb37122d68e6aa4a1` | none found | — | **UNVERIFIED** | **REMOVE** |
+| `images/CO2102-R.jpg` | `assets/img/products/CO2102-R.jpg` | CO2102-R | `c355b556a8029ead6402893a0b759c284202c727` | none found | — | **UNVERIFIED** | **REMOVE** |
+| `images/CO2300-R.jpg` | `assets/img/products/CO2300-R.jpg` | CO2300-R | `60f8e92c8958b780d6aa1e3101e15019aeb0c07e` | none found | — | **UNVERIFIED** | **REMOVE** |
+| `images/CO2600-R.jpg` | `assets/img/products/CO2600-R.jpg` | CO2600-R | `d69bc8ac5d6c1b31cdabe71572fdf0d6690e276b` | none found | — | **UNVERIFIED** | **REMOVE** |
+| `images/CO5600-R.jpg` | `assets/img/products/CO5600-R.jpg` | CO5600-R | `3a4af65c8410da5b0403ab5d1ad2d6c523e53c84` | none found | — | **UNVERIFIED** | **REMOVE** |
+
+**Kept: 0. Removed: 7. Final preview image count: 0.** The `images/` directory is gone, no source
+file references an image file, and the prototype ships no image binary of any kind — measured by
+walking the whole prototype tree for `.jpg/.jpeg/.png/.gif/.webp/.svg/.bmp/.avif/.ico`.
+
+`assets/img/products/` itself is **unmodified** — 138 files, byte-identical to the branch base. The
+old A/B/C tiering (94 / 43 / 1) is superseded: **Tier A was never an identity claim**, and counting
+it as one is the error this round corrects.
+
+### 26.4 The live image contract, unchanged and now frozen in fields
+
+Removing the preview copies removed a *preview* claim. `ProductStrategyDataContract.product_image`
+still has exactly one authority, `sku_details.image_url`, and P1-B1 inherits these — as checkable
+properties of `IMAGE_POLICY`, not as prose:
+
+| Rule | Field |
+|---|---|
+| One authority, and no second | `authority: 'sku_details.image_url'` |
+| Column empty → say so | state `IMAGE_SOURCE_MISSING` |
+| URL supplied but will not load → say so | state `IMAGE_LOAD_FAILED` |
+| Never fall back to a same-named local file | `fallback_to_local_file: false` |
+| Never substitute another SKU's photograph | `fallback_to_another_sku_image: false` |
+| Never let a placeholder read as a product photo | `placeholder_may_read_as_a_product_photo: false` |
+| No network image loading in this round | `network_image_loading_in_this_round: false` |
+| Local copies shipped in the preview | `local_copies_in_preview: 0` |
+
+The no-local-fallback rule is enforced **structurally** rather than by intent: the renderer assigns
+`n.image` to `src` verbatim and composes no directory, filename or extension of its own. The
+assertion reads the renderer's own source for `images/`, `.jpg` and `assets/`, so the rule cannot be
+broken without a test noticing.
+
+### 26.5 The missing state on screen
+
+The card keeps its **full height** — a card that shrinks when a photograph is absent turns a data
+gap into a layout event. Flat neutral ground, a quiet field label `IMAGE SOURCE MISSING`, and one
+plain sentence, *Product image unavailable in preview source*. No broken-image glyph, no invented
+product outline, nothing red, and no `svg` / `canvas` / `picture` standing in. On a load failure the
+same slot reads `IMAGE LOAD FAILED` — *The image on record could not be loaded* — and the failing
+URL is left exactly as it was.
+
+In the Insight Drawer the absence is reported **once per reason**, not once per product. Eleven
+copies of one sentence is the wall of warnings §21 exists to prevent; the reader needs the count,
+the reason and the list, once. Two reasons are two findings, because *"the column is empty for this
+row"* and *"no source can say which file this is"* are different problems with different owners.
+
+### 26.6 What P1-B1 should decide
+
+1. **Give `assets/img/products/` an owner, or stop treating it as a source.** 138 files, named by
+   SKU, referenced by nothing. Either a shipped mapping and a documented naming rule (which would
+   satisfy evidence class B and make them usable), or an explicit statement that they are not a
+   source and the board never looks at them.
+2. **A blank-`image_url` report.** `sku-handbook.js:502-506` already counts the gap; a strategy
+   board is the natural second consumer of that count.
+3. **Where authoritative images will be hosted.** The shipped pipeline expects a URL and upgrades
+   `http://` to `https://`; a board that renders images over `file://` or in a print sheet needs
+   that host to be reachable and stable, or the `IMAGE_LOAD_FAILED` state becomes the normal one.
+
+---
+
+## §27 — The data adapter seam (P0-R3)
+
+```
+ProductStrategyDataAdapter.load(filters) -> LoadResult
+  filters     { series, company, country, marketplace, search }
+  LoadResult  { state, rows, row_count, fields, refusals, provenance, notice,
+                applied_filters, capped }
+```
+
+**Rules the interface imposes.**
+- Every row has **every** contract field as an own property. A missing field is
+  `CONTRACT_MISMATCH`, not an `undefined` the renderer has to guess about.
+- A `null` value is a value: the source had nothing, and `missing_reasons` says which.
+- The adapter never computes a price, never substitutes one field for another, and never invents a
+  deal, an image, a margin or a current selling price.
+- A filter the adapter cannot apply at the source is reported as `applied_at: "client"`, never
+  silently ignored.
+
+**The five refusal states.**
+
+| State | Meaning |
+|---|---|
+| `SOURCE_NOT_CONNECTED` | No connection to the Operation System database was attempted or exists. |
+| `SOURCE_MISSING` | A column exists and this row has no value in it. |
+| `PARTIAL_DATA` | Some rows or fields resolved and others did not; both counts are reported. |
+| `CONTRACT_MISMATCH` | A row does not have the shape the contract requires. |
+| `MIXED_CURRENCY_REFUSED` | Rows in more than one currency were asked to share one price axis. |
+
+**The two implementations.**
+
+| Adapter | This round |
+|---|---|
+| `PreviewProductStrategyDataAdapter` | **Implemented and enabled.** Returns invented rows in contract shape. `provenance.connected = false`, `provenance.requests_made = 0`. |
+| `OperationDbProductStrategyDataAdapter` | **Defined and disabled.** `load()` returns `SOURCE_NOT_CONNECTED`, zero rows, `requests_made: 0`. It contains no transport call and no client accessor reference; it carries the interface, the response contract, the list of tables it is waiting on, and the instruction that it **must not become a second read authority** for the three tables that already have one. |
+
+**Why it is disabled rather than merely unused.** Three of the six tables have no bounded read
+owner. Enabling it before P1-B1 would mean reading them through the 44-tab legacy path, which D-5
+refuses. The refusal is a value returned by the object, not a comment about it, and the prototype's
+own assertions check it as a property.
+
+---
+
+## §28 — P1-B1 handoff (P0-R3, design only — nothing is implemented or deployed)
+
+### 28.1 What can be reused as-is
+
+| Need | Existing action | Reuse |
+|---|---|---|
+| `sku_details` (incl. `image_url`, `series`, `lifecycle`, `product_name`) | `skuDetails.workspace.get` | **Direct.** Already bounded, already raw passthrough. |
+| `marketplace_skus`, `sku_regional_details` | `skuDetails.workspace.get` with `include.regional` | **Direct.** Include-gated, so no read cost when not requested. |
+
+**Do not create a second owner for these three tables.** They have one; two owners of one resource
+disagree, and the first symptom is a screen that contradicts another screen.
+
+### 28.2 What is missing, and the one action that closes it
+
+| Table | Owner today | Needed |
+|---|---|---|
+| `pricing_list` | none (bounded) | ✔ |
+| `campaigns` | none (bounded) | ✔ |
+| `campaign_sku_lines` | none (bounded) | ✔ |
+
+**Proposed action — ONE, not three:** `productPricing.workspace.get`.
+
+One action, because the three tables are only ever read together for this purpose and three actions
+would mean three round trips and three chances for the scope to drift apart. It is a *workspace*
+read in the shape `59_` and `61_` already established, not a new pattern.
+
+**Request**
+
+```json
+{
+  "action": "productPricing.workspace.get",
+  "scope":  { "company": "…", "country": "…", "marketplace": "…", "series": "…" },
+  "include": { "campaigns": true },
+  "page":   { "limit": 2000, "cursor": null }
+}
+```
+
+- `scope` is **required** and at least one of `company` / `country` / `marketplace` / `series` must
+  be non-empty. An unscoped read is refused rather than answered with everything.
+- `include.campaigns` gates the two campaign tables the way `include.regional` gates the two
+  regional ones — an un-requested include costs no read.
+
+**Response**
+
+```json
+{ "success": true,
+  "data": {
+    "pricing":          [ /* raw pricing_list rows in scope */ ],
+    "campaigns":        [ /* raw campaigns rows in scope */ ],
+    "campaignSkuLines": [ /* raw campaign_sku_lines rows for those campaigns */ ],
+    "counts":  { "pricing": 0, "campaigns": 0, "campaignSkuLines": 0 },
+    "capped":  { "pricing": false, "campaigns": false, "campaignSkuLines": false },
+    "cursor":  null,
+    "scope_applied": { "…": "…" }
+  },
+  "meta": { "action": "productPricing.workspace.get", "requestId": "…", "build": "…" },
+  "errors": [] }
+```
+
+- **Raw passthrough**, like `59_`. The client normalises; the server does not reshape.
+- **`capped` is reported, never silent** — `59_`'s rule, and the reason a truncated read cannot be
+  mistaken for a short one.
+- **Bounds:** a hard row cap per array plus `page.limit` / `cursor`. `pricing_list` is one row per
+  site SKU and is the array that will grow.
+- **Scope resolution:** `pricing_list` has no `company`, so a company scope resolves through
+  `marketplace_skus` to a set of `marketplace_sku_id`s and filters on that. This is the join rule of
+  §23.1 Q3, enforced server-side rather than trusted client-side.
+
+### 28.3 Read-only and authorization contract
+
+- **Read-only by construction.** The handler opens the spreadsheet through the same exact-ID gate
+  the rest of the API uses and calls no writer. No `setValue`, no `appendRow`, no ensure-sheet.
+- **No new authorization surface.** D-9 still holds: there is no backend RBAC, so this action is
+  exactly as exposed as every other read action and must not be described as protected. If the
+  pricing data needs restricting, that is a separate authorization round and this action waits for
+  it.
+
+### 28.4 Deployment, flag and rollback
+
+| | |
+|---|---|
+| **New file** | `assets/specs/active/apps-script/<nn>_api_v1_product_pricing_workspace.gs` |
+| **Modified** | `01_router.gs` — one action branch. `assets/js/api/*` — one client accessor. |
+| **Sync required** | Both `.gs` files, copied by the **user** into the Apps Script project, then a deployment version. Never `clasp`. |
+| **Flag** | `PRODUCT_PRICING_WORKSPACE_ENABLED_`, default **false**, in `00_config.gs`. The client falls back to showing `SOURCE_NOT_CONNECTED` while it is false — which is what the board already does today, so the fallback path is the one currently in production use. |
+| **Rollback** | Set the flag false. The action stays deployed and unreachable; no data changes, because nothing was written. A read-only action needs no compensating write. |
+| **Not in scope for B1** | The board tables (§6), any write path, any AI, any authorization change. |
+
+### 28.5 Two decisions B1 needs before it starts
+
+1. **`variant_group` / `variant_name`** — add the columns to `sku_details`, or accept that a
+   real-data board shows every SKU separately (§25). Both are legitimate; only one of them is a
+   product the operator asked for.
+2. **The local product image directory** (§26.4) — give it an owner and a naming rule, or stop
+   treating it as a source.
+
+---
+
+## §29 — P0-R3-R1: the image-identity correction, and the visual acceptance package
+
+### 29.1 What was wrong, in one sentence
+
+P0-R3 proved that seven SKUs are real and then showed seven photographs as if that were the same
+proof. **Corroborating the SKU is not corroborating the image.** The two facts are about different
+objects, and the gap between them is invisible on the page: a photograph of the wrong product looks
+exactly as convincing as a photograph of the right one, which is precisely the failure mode that
+this document's correction of record (P0-R3, header) was written about.
+
+### 29.2 What changed
+
+| | Before (P0-R3) | After (P0-R3-R1) |
+|---|---|---|
+| Admissible sources | `sku_details.image_url`, **plus** a filename-matched local file with a corroborated SKU | `sku_details.image_url`. **Nothing else.** |
+| Local copies shipped | 7 | **0** |
+| `images/` directory | present | **removed** |
+| Image binaries anywhere under the prototype | 7 | **0** |
+| Cards with a photograph (default view) | 8 | **0** |
+| Cards stating the absence | 3 | **11** |
+| Image findings in the drawer | 3 (one per product) | **2** (one per **reason**) |
+| Renderer states | PRESENT / IMAGE_SOURCE_MISSING | PRESENT / IMAGE_SOURCE_MISSING / **IMAGE_LOAD_FAILED** |
+| Fallback to a same-named local file | not stated | **`false`, and structurally impossible in the renderer** |
+| DOM assertions | 285 | **312** |
+
+Every price rule, boundary case, grouping rule, currency rule, refusal state, adapter behaviour and
+preview label from P0-R3 is unchanged and still asserted. The audit (§23), the contract (§24), the
+grouping contract (§25) and the handoff (§28) are untouched; only §26 is rewritten.
+
+### 29.3 The demonstration got stronger, not weaker
+
+The prototype's job is to show what the board does when the data is not there. With seven
+photographs on screen, the refusal was a footnote on three cards. With none, **the refusal is the
+page** — eleven cards holding their full size and saying, in report language, what is missing and
+why. That is the state the board will actually be in on the day it first meets real data, because
+`sku_details.image_url` is populated by hand and `sku-handbook.js:502-506` already counts the gap.
+
+### 29.4 Manual visual acceptance
+
+The full walk-through — exact path, browser, window size, hard-refresh, the Executive Report
+checklist with every expected count, the Strategy Workspace checklist, 16:9 presentation, and
+Print → Save as PDF — is in the prototype's
+[`README.md`](../prototypes/product-strategy-board/README.md), under *Manual acceptance*. The
+headline figures, measured by executing the page:
+
+| Default view (Executive Report · US · Amazon · Can Opener) | |
+|---|---|
+| self-test badge | **312 / 312** |
+| summary cells | 7 — products 10 · variants 32 · range 21.99–82.99 USD · opportunities 2 · watch 1 · risks 4 · data to fix 5 |
+| chart | 1 panel · 10 columns · 10 bands · 7 y-ticks · 10 x-labels · 5 legend items |
+| markers | 10 everyday · 2 live promotion · 2 proposed |
+| product strip | 11 cards · 10 tier badges · **0 photographs · 11 missing-image states** |
+| drawer (collapsed by default) | 12 findings — gap 2 · overlap 1 · cannibalisation 4 · no price 1 · **image 2** · grouping 1 · dateless deal 1 |
+
+| Country | Panels | Columns | Cards | Findings | Photographs |
+|---|---|---|---|---|---|
+| US (default) | 1 | 10 | 11 | 12 | 0 |
+| DE | 1 | 3 | 3 | 2 | 0 |
+| UK | 1 | 1 | 1 | 1 | 0 |
+| All | 3 (USD, EUR, GBP) | 14 | 15 | 15 | 0 |
+
+**No screenshots are shipped.** The only test environment available is a hand-written DOM in Node
+with no rendering engine; producing images would require a headless browser, which is a new
+dependency and forbidden this round. The tables above are the acceptance artefact, and the on-page
+self-test badge is a faster and more precise check than an image would be.
+
+### 29.5 Isolation record
+
+- **PRE HEAD `2c7bb13966a5cbc9a3e68f34e9e52a0af9f2b461`**, branch `feature/product-strategy-board-p0`,
+  worktree clean including untracked. `origin` carries **no** such branch — verified by
+  `git ls-remote` before amending, because amending a published commit is not reversible by a local
+  action.
+- **Files changed:** 6 modified, **7 binaries deleted**, 0 added. All under
+  `docs/prototypes/product-strategy-board/` and `docs/planning/`.
+- **`assets/img/products/` is untouched** — 138 files, byte-identical to the branch base. The
+  removal happened only under `docs/`.
+- No production file, no `.gs`, no S1–S5 file, no mainline worktree change, `C:/km-lb` untouched.
+- **No network request, no DB read or write, no Drive write, no storage, no dependency, no CDN, no
+  deployment, no push, no merge.** The re-audit was `git grep` and `git log`; the verification was
+  the page's own self-test.
+
+---
+
+---
+
+## §30 — P0-R3-R2: the Category Command Center, the five-unit axis, and the images restored on evidence
+
+### 30.1 What the visual acceptance said, and what it actually meant
+
+Three findings came back from the walk-through: *it still looks like a prototype*, *the top of the
+page is a pile of buttons*, and *different categories must not share one price chart*. The first
+two are the same finding. What made it read as a prototype was not the palette — it was that every
+tool sat at the same visual weight in the same place, so nothing was primary, nothing was a
+destination, and the page had no answer to "where am I". A sidebar is not decoration; it is the
+statement of a hierarchy.
+
+The third is not a layout preference at all. It is a correctness rule, and it is now in the
+contract.
+
+### 30.2 Category is the first scope
+
+`sku_details.category` is a real column — 43-column export schema, `sku-details.js:2369` — so this
+is a scope the database can **enforce**, not a label the page invents.
+
+```
+category → company → country → marketplace → currency → series
+```
+
+| Rule | Where it is enforced |
+|---|---|
+| Two categories never share a price axis | one panel per currency, inside one category model |
+| No gap, overlap or cannibalisation across a category | `analyse()` only ever sees one panel |
+| The cross-category view is cards and a table | `viewOverview` draws no `<svg class="chart">` at all |
+| Narrowing filters are closed until a category is chosen | `disabled` while the scope is All categories |
+| Category is part of the grouping key | so two categories cannot merge into one node either |
+| P1-B1 bounds `filters.category` server-side | `CATEGORY_AUTHORITY.p1b1`, frozen |
+
+**Why this is a correctness rule and not taste.** A price ladder is an argument about products a
+buyer would consider *instead of one another*. An electric can opener is not an alternative to a
+spatula, so a step between them is not an opportunity, an overlap between them is not a conflict,
+and a discount from one to the other cannibalises nothing. Pooling them does not widen the ladder;
+it fills it with findings that are all false in the same invisible way.
+
+### 30.3 The five-unit axis
+
+```
+axis_min = floor(min displayed price / 5) * 5
+axis_max = ceil (max displayed price / 5) * 5
+ticks    = axis_min, +5, +5, … , axis_max        (every tick drawn, every tick labelled)
+```
+
+No "nice number" search, no magnitude rounding, no adaptive step: 20 / 40 / 60 can appear only as
+members of the 5-unit sequence. When a category's range is tall the **pixel** distance between
+ticks compresses — clamped to a 480 px plot — and the **scale** never does. The axis stays linear;
+tooltips carry two decimals. Each currency keeps its own panel and its own axis, and nothing is ever
+converted.
+
+Measured on Electric Can Opener / US: data span 17.99 – 84.99 → axis **15.00 – 85.00**, fifteen
+ticks, fifteen gridlines, every step exactly 5.00.
+
+### 30.4 The everyday price is a photograph
+
+| | |
+|---|---|
+| Verified image | 36 px rounded white plate, 1 px border, soft shadow, `preserveAspectRatio="xMidYMid meet"` |
+| **The coordinate** | the plate is drawn at `cy − 18`, so its **centre** is the price. A 2 px anchor circle is drawn **at** `cy` carrying `data-price-c`, and it is what the assertions measure |
+| Why that matters | the marker may grow on hover without moving the datum. A picture that could shift a price is a picture that has become the data |
+| No verified image | the same plate, neutral, carrying the model code. No broken image, no other SKU's photograph, no shape that could pass for a product |
+| Deal markers | live promotions stay red diamonds, proposals stay dashed outlines, and both are drawn **before** the plate so a photograph can never hide one |
+| Representative image | resolved from the node's **own members**. A price-split sibling shares a `variant_group` and is a different node, so it does **not** inherit the photograph |
+
+### 30.5 The images, restored on evidence — class E
+
+P0-R3-R1 removed all seven because nothing in the **repository** bound a file to a SKU. That
+finding stands. What changed is the witness: the repository was never the only one, and the
+operator can read the database.
+
+**Evidence class E — `OPERATOR_ASSERTED_DB_RECORD` + `EXACT_REPO_FILE_EXISTS`.** The operator
+reports, SKU by SKU, the `image_url` the live `sku_details` row carries; the named file is then
+checked to exist at that exact path with exact case and extension. **Neither half is sufficient
+alone**, and the mapping is per-SKU — nothing is extended to a SKU nobody named.
+
+| # | SKU | `image_url` asserted on the row | Repo file | Object hash (prototype copy identical) |
+|---|---|---|---|---|
+| 1 | `CO1100-R` | `assets/img/products/CO1100-R.jpg` | exists | `8659b25aebdc0d20d92c849a19f09d315ed9d069` |
+| 2 | `CO1150-R` | `assets/img/products/CO1150-R.jpg` | exists | `22742b8f4d70c872fc165703d195da7dc0512d32` |
+| 3 | `CO2600-B` | `assets/img/products/CO2600-B.jpg` | exists | `35b1146e435166037c93c083f313f6e6fa96e949` |
+| 4 | `CO5600-RB` | `assets/img/products/CO5600-RB.jpg` | exists | `2785d6bdcab7e00a912f74383b696982911db6d2` |
+| 5 | `SP3120-R` | `assets/img/products/SP3120-R.jpg` | exists | `1d47cc50d303407c9cbc1703deae5e52471492d0` |
+| 6 | `SP3410-R` | `assets/img/products/SP3410-R.jpg` | exists | `b4fc87a1431edfbe833995f36cab530b424aee3e` |
+| 7 | `MO5600-R` | `assets/img/products/MO5600-R.jpg` | exists | `3c280fa42a3e828682763e12a0a5b35434cc1679` |
+
+**Seven, and not an eighth.** `CO2600-R.jpg` and `CO5600-R.jpg` both exist in the repository and
+**neither is used**, because the operator named `CO2600-B` and `CO5600-RB`. Those two files are the
+whole reason the table is per-SKU: a SKU family is not a product, and the near miss is the failure
+mode that looks most like success.
+
+> **The evidence was operator TESTIMONY, and this document should say so plainly.** The database
+> screenshot referred to in the round brief did not reach this session — no image was attached to
+> the request. So what was verified here is: (a) the operator's per-SKU statement of the mapping,
+> recorded verbatim in `IMAGE_POLICY.verified_mappings`, and (b) that every named target exists at
+> that exact path, checked against the repository. Class E is named after exactly that pair, and it
+> is deliberately not called "verified from a database record", because nothing in this session read
+> one.
+
+### 30.6 A real photograph does not make a price real
+
+Every fixture row now carries the two halves apart:
+
+```
+identity_source   USER_PROVIDED_DB_EVIDENCE      price_source   PREVIEW_DEMONSTRATION
+image_identity_verified  true | false            connected_to_db  false
+```
+
+and the load result repeats them in its provenance. The banner is unchanged and unconditional, and
+every finding is still tagged DEMONSTRATION INSIGHT. This is the one confusion the round could
+plausibly have introduced — a page that looks more real is a page more easily mistaken for real —
+so the distinction is carried on the data rather than in a sentence somebody has to remember.
+
+### 30.7 What the shell became
+
+| Before (P0-R3-R1) | After (P0-R3-R2) |
+|---|---|
+| A row of loose buttons across the top | A **sidebar** with six destinations, one active, plus a separate action area |
+| Two modes behind a toggle | Executive Overview · Category Analysis · Deal Risk · Data Quality · Strategy Workspace · Advanced Details |
+| Category was not a concept | Category is the **first scope**, with its own selector above every other filter |
+| One shared chart | One chart per currency **inside one category**, and none at all on the overview |
+| Auto-scaled Y axis | **Five currency units per gridline**, always |
+| Circle markers | **Product photographs** on the everyday price, with neutral fallbacks |
+| No product table | A **comparison table** per category: image, model, representative SKU, variants, series, floor, everyday, list, official deal, proposed, status, data quality |
+| 0 images shipped | **7**, each traceable to a named mapping |
+| 312 assertions | **222** (the suite was rewritten with the shell; §30.8 records what carried over) |
+
+The sidebar collapses to a 64 px icon rail with tooltips, and **the collapsed state is a variable,
+not `localStorage`** — a preference worth persisting is a preference worth an owner, and this page
+has neither. Icons are inline SVG, stroked, `currentColor`; no emoji, no icon font, no CDN, and not
+one of them is ever used where a photograph would go.
+
+### 30.8 What carried over from the earlier rounds
+
+The suite was rewritten because the markup was, so group **R** re-asserts the earlier guarantees
+against the new shell rather than assuming they survived: the contract shape and its two GAPs, the
+five refusal states, the disabled Operation DB adapter refusing to become a second read authority,
+**no schema name or decision code on the visible executive surface**, Advanced details collapsed by
+default and carrying the engineering vocabulary, the workspace's three working and six disabled
+tools, the `.bel-note` class collision that P0-R3 found the hard way, and the notice surviving every
+one of the six destinations. Group **I** re-asserts every price rule and all three boundary cases.
+
+### 30.9 Isolation record
+
+- **Preconditions verified read-only:** worktree `wt-product-strategy-board-p0`, branch
+  `feature/product-strategy-board-p0`, **PRE HEAD `0b71e6c566173e45c2dde38eeeae67474c8b4de8`**,
+  clean including untracked, and `git ls-remote` confirming `origin` carries no such branch —
+  checked before amending, because amending a published commit cannot be undone locally.
+- **Files changed:** 6 modified, **7 image binaries added**, all under `docs/`.
+- **`assets/img/products/` is untouched** — 138 files, byte-identical to the branch base. The seven
+  copies live under `docs/`, and each was hash-checked against its source.
+- No production file, no `.gs`, no S1–S5 file, no mainline worktree change, `C:/km-lb` untouched.
+- **No network request, no DB or API read, no DB / Drive write, no storage, no dependency, no CDN,
+  no deployment, no push, no merge.**
+
+---
