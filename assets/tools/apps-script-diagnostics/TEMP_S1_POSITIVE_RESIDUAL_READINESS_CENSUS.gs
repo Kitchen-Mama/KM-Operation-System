@@ -6925,7 +6925,30 @@ function S1_remRollback_(sheet, fz, beforeRaw, why) {
  * row can grant it and a mutant has to attack the resolver itself rather than one line of data.
  * ================================================================================================================
  */
+/**
+ * S1-R4H-R2 — WHAT HAPPENS NEXT IS NOT THE SAME QUESTION AS WHETHER ANYTHING MAY BE REUSED.
+ *
+ * R4H-R1 got the reuse answers right and then gave all four ACK_UNKNOWN outcomes the SAME next_action:
+ * go back to the manifest and get a new authorization. For two of them that is exactly right. For the
+ * other two it is wrong in opposite directions.
+ *
+ *   EXECUTED_OK_AFTER_ACK_UNKNOWN — the readback PROVED the clear landed and the postcondition holds.
+ *   The removal is DONE. Sending the operator back to a manifest asks them to re-open a settled case,
+ *   and the natural next step from a manifest is an execute; an instruction whose obvious continuation
+ *   is "clear the row again" is the wrong instruction to hand someone holding a completed removal.
+ *
+ *   MANUAL_RECOVERY_REQUIRED — the tool could NOT establish where it left the table. A manifest is a
+ *   measurement that ends in a freeze block and an authorization sentence, i.e. the front door of the
+ *   removal path. Pointing an unresolved data state at that door describes the recovery as something
+ *   the tool can drive. It cannot. A person has to look first.
+ *
+ * So next_action is now outcome-specific, and it is checked against removal_may_be_attempted_again
+ * rather than merely stated: an action that ends the case must not sit beside a permission to run the
+ * removal again, and an action that sends someone back to the manifest must.
+ */
 var S1_REMOVAL_NEXT_MANIFEST_ = 'RERUN_MANIFEST_AND_REQUIRE_NEW_OPERATOR_AUTHORIZATION';
+var S1_REMOVAL_NEXT_DONE_ = 'NO_FURTHER_ACTION_THE_REMOVAL_IS_COMPLETE';
+var S1_REMOVAL_NEXT_MANUAL_ = 'STOP_AND_PERFORM_MANUAL_RECOVERY';
 /** [retryable, same_authorization_reusable, same_frozen_baseline_reusable,
  *   removal_may_be_attempted_again, next_action] */
 var S1_REMOVAL_RETRY_CONTRACT_ = {
@@ -6938,23 +6961,33 @@ var S1_REMOVAL_RETRY_CONTRACT_ = {
   // what the refusal detected.
   REFUSED: [false, false, false, true, S1_REMOVAL_NEXT_MANIFEST_],
   // ---- THE REMOVAL HAD ALREADY HAPPENED BEFORE THIS RUN. ---------------------------------------------
-  ALREADY_APPLIED: [false, false, false, false,
-    'NO_FURTHER_ACTION_THE_REMOVAL_IS_ALREADY_COMPLETE'],
+  // The removal is complete. It does not matter that a different run completed it: the case is the
+  // same case, so it gets the same sentence as EXECUTED_OK rather than a near-synonym of its own.
+  ALREADY_APPLIED: [false, false, false, false, S1_REMOVAL_NEXT_DONE_],
   ALREADY_APPLIED_BUT_READBACK_MISMATCH: [false, false, false, false,
     'INVESTIGATE_THE_TABLE_DOES_NOT_MATCH_THE_FROZEN_EXPECTED_AFTER'],
   // ---- THE WRITE WAS REACHED. FROM HERE NOTHING IS EVER REUSABLE. ------------------------------------
-  EXECUTED_OK: [false, false, false, false,
-    'NO_FURTHER_ACTION_THE_REMOVAL_IS_COMPLETE'],
-  // The four ACK_UNKNOWN outcomes. All four spend the authorization and the baseline; they differ only in
-  // whether a removal may be attempted again at all, and that is the LAST column, not the first.
+  EXECUTED_OK: [false, false, false, false, S1_REMOVAL_NEXT_DONE_],
+  // The ACK_UNKNOWN family. All of them spend the authorization and the baseline — that is settled and
+  // unchanged. S1-R4H-R2: what they ask the operator to DO NEXT is not the same for all four.
+  //
+  // Still unresolved when they leave this table: nobody knows where the table stands, so re-measure.
   ACK_UNKNOWN: [false, false, false, true, S1_REMOVAL_NEXT_MANIFEST_],
   ACK_UNKNOWN_UNRESOLVED: [false, false, false, true, S1_REMOVAL_NEXT_MANIFEST_],
-  EXECUTED_OK_AFTER_ACK_UNKNOWN: [false, false, false, false, S1_REMOVAL_NEXT_MANIFEST_],
+  // RESOLVED AS APPLIED. The readback proved the clear landed and the postcondition holds, so the
+  // removal is COMPLETE and there is nothing to go back for. The unacknowledged write was settled by
+  // the readback that already ran — that is what "classified by readback, never by retry" means.
+  EXECUTED_OK_AFTER_ACK_UNKNOWN: [false, false, false, false, S1_REMOVAL_NEXT_DONE_],
+  // RESOLVED AS NOT APPLIED. The row is intact and the table is at its BEFORE fingerprint, so a removal
+  // is still permitted — from a new manifest, a new baseline and a new operator authorization.
   NOT_APPLIED_ACK_UNKNOWN: [false, false, false, true, S1_REMOVAL_NEXT_MANIFEST_],
   // A verified rollback returned the table to its BEFORE state — the TABLE, not the authorization.
   ROLLED_BACK_VERIFIED: [false, false, false, true, S1_REMOVAL_NEXT_MANIFEST_],
-  // And the one outcome where a removal must not be run again by this tool at all.
-  MANUAL_RECOVERY_REQUIRED: [false, false, false, false, S1_REMOVAL_NEXT_MANIFEST_]
+  // AND THE ONE OUTCOME A TOOL MUST NOT ROUTE. The postcondition or the rollback could not be verified,
+  // so where the data stands is unknown. A manifest ends in a freeze block and an authorization
+  // sentence: it is the front door of the removal path, and pointing an unresolved state at it
+  // describes the recovery as something this tool can drive. A person looks first.
+  MANUAL_RECOVERY_REQUIRED: [false, false, false, false, S1_REMOVAL_NEXT_MANUAL_]
 };
 /**
  * The verdict is the key, with ONE refinement: a REFUSED that is a lock contention is a different contract
@@ -6984,11 +7017,28 @@ function S1_remRetryContract_(verdict, contentionNotDrift) {
     removal_may_be_attempted_again: row[3] === true,
     next_action: row[4] };
 }
-/** The verdicts after which the operator must go back to the manifest — every unacknowledged outcome and
- *  every rollback, whichever branch produced it. */
+/** The verdicts after which the operator MUST go back to the manifest: the outcome is unresolved, or it
+ *  is resolved as "nothing stands removed" and a removal is still wanted. */
 var S1_REMOVAL_MUST_REMANIFEST_ = ['ACK_UNKNOWN', 'ACK_UNKNOWN_UNRESOLVED',
-  'EXECUTED_OK_AFTER_ACK_UNKNOWN', 'NOT_APPLIED_ACK_UNKNOWN',
-  'ROLLED_BACK_VERIFIED', 'MANUAL_RECOVERY_REQUIRED'];
+  'NOT_APPLIED_ACK_UNKNOWN', 'ROLLED_BACK_VERIFIED'];
+/** And the verdicts after which a manifest is the WRONG next step — two because the case is closed, one
+ *  because a manifest is the front door of the removal path and this state needs a person, not a door. */
+var S1_REMOVAL_MUST_NOT_REMANIFEST_ = ['EXECUTED_OK', 'EXECUTED_OK_AFTER_ACK_UNKNOWN',
+  'ALREADY_APPLIED', 'MANUAL_RECOVERY_REQUIRED'];
+/**
+ * EVERY next_action, AND WHAT IT IMPLIES ABOUT TRYING AGAIN. These two fields answer one question from
+ * two directions, so they are checked against each other on every return rather than trusted to agree:
+ * an action that CLOSES the case must not sit beside a permission to run the removal again, and an
+ * action that sends somebody back to the manifest must.
+ */
+var S1_REMOVAL_NEXT_ACTION_ALLOWS_ANOTHER_REMOVAL_ = {
+  'NO_FURTHER_ACTION_THE_REMOVAL_IS_COMPLETE': false,
+  'INVESTIGATE_THE_TABLE_DOES_NOT_MATCH_THE_FROZEN_EXPECTED_AFTER': false,
+  'STOP_AND_PERFORM_MANUAL_RECOVERY': false,
+  'RERUN_MANIFEST_AND_REQUIRE_NEW_OPERATOR_AUTHORIZATION': true,
+  'RERUN_WITH_EXECUTE_TRUE_USING_THIS_FROZEN_BASELINE': true,
+  'RETRY_LATER_WITH_THIS_FROZEN_BASELINE_WHEN_THE_LOCK_IS_FREE': true
+};
 
 /**
  * ================================================================================================================
@@ -7075,10 +7125,31 @@ function RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL(opts) {
       { attempt_was_made: spent, anything_reusable: false },
       { attempt_was_made: spent, anything_reusable: anyReuse },
       spent === false || anyReuse === false);
-    L.P('every_unacknowledged_or_rolled_back_outcome_is_sent_back_to_a_new_manifest',
+    L.P('an_unresolved_or_not_applied_outcome_is_sent_back_to_a_new_manifest',
       S1_REMOVAL_NEXT_MANIFEST_, out.next_action,
       S1_REMOVAL_MUST_REMANIFEST_.indexOf(S1_str_(out.verdict)) === -1
         || out.next_action === S1_REMOVAL_NEXT_MANIFEST_);
+    // S1-R4H-R2 — AND THE OTHER HALF, WHICH THE FIRST ONE CANNOT SAY. A completed removal and a state
+    // nobody can read are both wrongly served by "go back to the manifest": the first because the case
+    // is closed, the second because a manifest is the front door of the removal path.
+    L.P('a_completed_or_unrecoverable_outcome_is_not_sent_back_to_a_manifest',
+      { verdict: out.verdict, sent_to_manifest: false },
+      { verdict: out.verdict, sent_to_manifest: out.next_action === S1_REMOVAL_NEXT_MANIFEST_ },
+      S1_REMOVAL_MUST_NOT_REMANIFEST_.indexOf(S1_str_(out.verdict)) === -1
+        || out.next_action !== S1_REMOVAL_NEXT_MANIFEST_);
+    L.P('a_state_that_needs_a_person_says_so_rather_than_naming_a_tool_to_run',
+      S1_REMOVAL_NEXT_MANUAL_, out.next_action,
+      S1_str_(out.verdict) !== 'MANUAL_RECOVERY_REQUIRED'
+        || out.next_action === S1_REMOVAL_NEXT_MANUAL_);
+    // AND THE TWO FIELDS ARE CHECKED AGAINST EACH OTHER, not merely stated side by side.
+    var implied = Object.prototype.hasOwnProperty.call(
+      S1_REMOVAL_NEXT_ACTION_ALLOWS_ANOTHER_REMOVAL_, S1_str_(out.next_action))
+      ? S1_REMOVAL_NEXT_ACTION_ALLOWS_ANOTHER_REMOVAL_[S1_str_(out.next_action)] : null;
+    L.P('the_next_action_and_the_permission_to_remove_again_agree',
+      { next_action: out.next_action, removal_may_be_attempted_again: implied },
+      { next_action: out.next_action,
+        removal_may_be_attempted_again: out.removal_may_be_attempted_again },
+      implied !== null && implied === out.removal_may_be_attempted_again);
     out.predicates = L.entries;
     out.predicates_failed = L.failed.length;
     out.predicates_passed = L.entries.length - L.failed.length;

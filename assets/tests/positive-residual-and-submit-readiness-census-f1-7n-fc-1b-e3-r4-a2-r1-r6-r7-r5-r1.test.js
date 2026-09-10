@@ -6534,8 +6534,8 @@ eq(AD33f.verdict, 'EXECUTED_OK_AFTER_ACK_UNKNOWN', 'AD33f resolved by readback a
   [AD33f.refusal_reasons, AD33f.readback ? AD33f.readback.mismatches : null]);
 eq(adSpent(AD33f), AD_NOTHING_REUSABLE_, 'AD33f.1 nothing reusable');
 eq(AD33f.removal_may_be_attempted_again, false, 'AD33f.2 and nothing left to remove');
-eq(AD33f.next_action, AD_REMANIFEST_,
-  'AD33f.3 the operator is still sent back to a manifest — an unacknowledged run is re-measured, not assumed');
+eq(AD33f.next_action, 'NO_FURTHER_ACTION_THE_REMOVAL_IS_COMPLETE',
+  'AD33f.3 S1-R4H-R2: the readback SETTLED it, so the case is closed and no manifest is asked for');
 eq([AD33f.attempts, AD33fc.clears], [1, 1], 'AD33f.4 one attempt, one clearContent ISSUED');
 
 // AD33g — ACK_UNKNOWN, INDETERMINATE, AND THE ROLLBACK SUCCEEDS. The clear threw AND landed, and the
@@ -6576,8 +6576,8 @@ eq(AD33h.rollback.error, 'THE_ROW_CAME_BACK_BUT_THE_TABLE_FINGERPRINT_DID_NOT',
 eq(adSpent(AD33h), AD_NOTHING_REUSABLE_, 'AD33h.2 nothing is reusable');
 eq(AD33h.removal_may_be_attempted_again, false,
   'AD33h.3 and this is the one outcome where the removal must NOT be run again by this tool');
-eq(AD33h.next_action, AD_REMANIFEST_,
-  'AD33h.4 the operator is still sent to a manifest — to find out where they are, not to retry');
+eq(AD33h.next_action, 'STOP_AND_PERFORM_MANUAL_RECOVERY',
+  'AD33h.4 S1-R4H-R2: an unreadable state is handed to a PERSON, not to the removal path\'s front door');
 eq([AD33h.attempts, AD33hc.clears], [1, 1], 'AD33h.5 still exactly one clearContent issued');
 
 // AD33i — THE SAME CONTRACT REACHED THE OTHER WAY: a rollback from a plain readback mismatch, with no
@@ -6603,8 +6603,8 @@ var AD33j = adRun(AD33jw, { execute: true, frozen: AD33jm.frozen_before,
   authorization: AD33jm.authorization_wording });
 eq(AD33j.verdict, 'ALREADY_APPLIED', 'AD33j the second run finds the removal already done');
 eq(adSpent(AD33j), AD_NOTHING_REUSABLE_, 'AD33j.1 nothing reusable');
-eq(AD33j.next_action, 'NO_FURTHER_ACTION_THE_REMOVAL_IS_ALREADY_COMPLETE',
-  'AD33j.2 and the next action says so');
+eq(AD33j.next_action, 'NO_FURTHER_ACTION_THE_REMOVAL_IS_COMPLETE',
+  'AD33j.2 and the next action is the same sentence a fresh success gets — it is the same case');
 eq([AD33j.attempts, AD33j.writes], [0, 0], 'AD33j.3 with no attempt and no write');
 
 // AD33k — EVERY VERDICT THE SOURCE CAN EMIT HAS A ROW IN THE TABLE. Read off the function's own text, so a
@@ -6662,6 +6662,90 @@ eq(AD33res.indexOf('automatic_retry_allowed: row['), -1,
     'an_attempt_that_reached_the_write_leaves_no_authorization_and_no_baseline_reusable') > 0,
     'AD33l.11.' + (i + 1) + ' ' + r.verdict + ' states the spent-attempt invariant in its own ledger');
 });
+
+
+
+// ---- AD34 — S1-R4H-R2. THE FOUR ACK_UNKNOWN OUTCOMES, AS ONE MATRIX. -----------------------------
+//
+// R4H-R1 settled what may be REUSED after an unacknowledged clear: nothing, in all four cases. It then
+// gave all four the same next_action, and for two of them that is wrong in opposite directions.
+//
+//   RESOLVED AS APPLIED — the readback proved the clear landed and the postcondition holds. The case is
+//   CLOSED. Sending that operator back to a manifest asks them to reopen a settled removal, and the
+//   natural continuation of a manifest is an execute.
+//
+//   UNRECOVERABLE — the tool could not establish where it left the table. A manifest ends in a freeze
+//   block and an authorization sentence; it is the front door of the removal path. Pointing an
+//   unreadable state at that door describes the recovery as something a tool can drive.
+//
+// The two middle cases are unchanged: nothing stands removed, so a removal is still permitted, and it
+// begins at a new manifest with a new baseline and a new operator authorization.
+//
+// The four responses are the ones AD33 already drove, with their clearContent counters, so this is a
+// matrix over real runs rather than a re-reading of the table.
+var AD34 = [
+  { r: AD33f, c: AD33fc, v: 'EXECUTED_OK_AFTER_ACK_UNKNOWN',
+    again: false, next: 'NO_FURTHER_ACTION_THE_REMOVAL_IS_COMPLETE' },
+  { r: AD33e, c: AD33ec, v: 'NOT_APPLIED_ACK_UNKNOWN',
+    again: true, next: AD_REMANIFEST_ },
+  { r: AD33g, c: AD33gc, v: 'ROLLED_BACK_VERIFIED',
+    again: true, next: AD_REMANIFEST_ },
+  { r: AD33h, c: AD33hc, v: 'MANUAL_RECOVERY_REQUIRED',
+    again: false, next: 'STOP_AND_PERFORM_MANUAL_RECOVERY' }
+];
+AD34.forEach(function (row, i) {
+  var n = 'AD34.' + (i + 1) + ' ' + row.v;
+  eq(row.r.verdict, row.v, n + ' — the outcome under test');
+  eq(row.r.next_action, row.next, n + ' next_action', row.r.next_action);
+  eq(row.r.removal_may_be_attempted_again, row.again, n + ' removal_may_be_attempted_again');
+  /* THE FOUR REUSE ANSWERS ARE STILL false FOR ALL FOUR. R4H-R1's result, re-measured here so that a
+     round about next_action cannot quietly loosen the thing next_action sits beside. */
+  eq(adSpent(row.r), AD_NOTHING_REUSABLE_,
+    n + ' retryable / automatic / authorization / baseline all false');
+  eq(row.r.attempts, 1, n + ' attempts');
+  eq(row.c.clears, 1, n + ' clearContent calls ISSUED in the invocation');
+});
+/* THE TWO THAT MUST NOT BE ROUTED TO A MANIFEST, SAID DIRECTLY. */
+eq(AD33f.next_action === AD_REMANIFEST_, false,
+  'AD34.5 a completed removal is NOT told to rerun the manifest');
+eq(AD33h.next_action === AD_REMANIFEST_, false,
+  'AD34.6 nor is an unrecoverable state — a manifest is the front door of the removal path');
+ok(String(AD33h.next_action).indexOf('MANUAL') >= 0,
+  'AD34.7 which is told to stop and be recovered by a person', AD33h.next_action);
+/* AND THE TWO FIELDS AGREE ON EVERY RESPONSE THIS SECTION PRODUCED, not just the four above. */
+var AD34all = [AD33a, AD33b, AD33c, AD33d, AD33e, AD33f, AD33g, AD33h, AD33i, AD33j];
+var AD34map = vm.runInContext('S1_REMOVAL_NEXT_ACTION_ALLOWS_ANOTHER_REMOVAL_', AD1w.ctx);
+AD34all.forEach(function (r, i) {
+  var known = Object.prototype.hasOwnProperty.call(AD34map, String(r.next_action));
+  ok(known, 'AD34.8.' + (i + 1) + ' ' + r.verdict + ' carries a declared next_action',
+    r.next_action);
+  eq(AD34map[String(r.next_action)], r.removal_may_be_attempted_again,
+    'AD34.9.' + (i + 1) + ' ' + r.verdict + ' — its next_action and its permission agree');
+});
+/* NO OTHER LIFECYCLE WAS INVENTED: the tool emits exactly the six actions the vocabulary declares. */
+var AD34used = {};
+AD34all.forEach(function (r) { AD34used[String(r.next_action)] = true; });
+eq(Object.keys(AD34used).sort(),
+  ['INVESTIGATE_THE_TABLE_DOES_NOT_MATCH_THE_FROZEN_EXPECTED_AFTER',
+    'NO_FURTHER_ACTION_THE_REMOVAL_IS_COMPLETE',
+    'RERUN_MANIFEST_AND_REQUIRE_NEW_OPERATOR_AUTHORIZATION',
+    'RERUN_WITH_EXECUTE_TRUE_USING_THIS_FROZEN_BASELINE',
+    'RETRY_LATER_WITH_THIS_FROZEN_BASELINE_WHEN_THE_LOCK_IS_FREE',
+    'STOP_AND_PERFORM_MANUAL_RECOVERY'].filter(function (k) { return !!AD34used[k]; }),
+  'AD34.10 every action emitted is one of the declared six, and no seventh appeared');
+/* A LOCK CONTENTION IS NOT AN ACK_UNKNOWN, and the matrix must not have quietly absorbed it. */
+eq([AD33b.verdict, AD33b.attempts, AD33b.retry_contract_key],
+  ['REFUSED', 0, 'REFUSED_LOCK_CONTENTION'],
+  'AD34.11 a lock contention never reached the write and is classified on its own');
+eq(AD33b.next_action, 'RETRY_LATER_WITH_THIS_FROZEN_BASELINE_WHEN_THE_LOCK_IS_FREE',
+  'AD34.12 so it comes back later with the SAME baseline, which no ACK_UNKNOWN outcome may do');
+/* AND THE MANIFEST-ROUTING LISTS ARE DISJOINT, so no verdict can be in both. */
+var AD34must = vm.runInContext('S1_REMOVAL_MUST_REMANIFEST_', AD1w.ctx);
+var AD34not = vm.runInContext('S1_REMOVAL_MUST_NOT_REMANIFEST_', AD1w.ctx);
+eq(AD34must.filter(function (v) { return AD34not.indexOf(v) >= 0; }), [],
+  'AD34.13 the two routing lists are disjoint');
+eq(AD34not.indexOf('MANUAL_RECOVERY_REQUIRED') >= 0, true,
+  'AD34.14 and the unrecoverable state is on the do-not-route list');
 
 
 section('N — mutants');
@@ -8963,8 +9047,8 @@ mut('N125 a proven zero-write after an unacknowledged clear is offered back as r
 mut('N126 an unacknowledged run hands the same authorization and the same baseline back', function () {
   // The subtler half of the same mistake: `retryable` stays false and the two REUSE flags say yes, which
   // is the same instruction written in two words instead of one.
-  var m = swapS1('  EXECUTED_OK_AFTER_ACK_UNKNOWN: [false, false, false, false, S1_REMOVAL_NEXT_MANIFEST_],',
-    '  EXECUTED_OK_AFTER_ACK_UNKNOWN: [false, true, true, false, S1_REMOVAL_NEXT_MANIFEST_],');
+  var m = swapS1('  EXECUTED_OK_AFTER_ACK_UNKNOWN: [false, false, false, false, S1_REMOVAL_NEXT_DONE_],',
+    '  EXECUTED_OK_AFTER_ACK_UNKNOWN: [false, true, true, false, S1_REMOVAL_NEXT_DONE_],');
   var p = function (w) { adThrowOnClear(w, true); };
   var clean = adCycle(null, { execute: true }, undefined, null, false, p);
   var bad = adCycle(m, { execute: true }, undefined, null, false, p);
@@ -9007,14 +9091,91 @@ mut('N128 a verified rollback is treated as though the attempt had never happene
 mut('N129 the one outcome that forbids a second removal says one may be attempted again', function () {
   // MANUAL_RECOVERY_REQUIRED means the tool could not establish where it left the table. That is the
   // single case where "you may start again from a new manifest" is the wrong sentence.
-  var m = swapS1('  MANUAL_RECOVERY_REQUIRED: [false, false, false, false, S1_REMOVAL_NEXT_MANIFEST_]',
-    '  MANUAL_RECOVERY_REQUIRED: [false, false, false, true, S1_REMOVAL_NEXT_MANIFEST_]');
+  var m = swapS1('  MANUAL_RECOVERY_REQUIRED: [false, false, false, false, S1_REMOVAL_NEXT_MANUAL_]',
+    '  MANUAL_RECOVERY_REQUIRED: [false, false, false, true, S1_REMOVAL_NEXT_MANUAL_]');
   var clean = adCycle(null, { execute: true }, undefined, null, false, adSpillOnClear);
   var bad = adCycle(m, { execute: true }, undefined, null, false, adSpillOnClear);
   return clean.verdict === 'MANUAL_RECOVERY_REQUIRED'
     && clean.removal_may_be_attempted_again === false && clean.retryable === false
     && bad.verdict === 'MANUAL_RECOVERY_REQUIRED'
     && bad.removal_may_be_attempted_again === true && bad.retryable === false;
+});
+
+// ---- S1-R4H-R2 — ONE MUTANT PER OUTCOME, EACH GIVEN A NEIGHBOUR'S next_action. -------------------
+//
+// Every one of these four is a real sentence that would be handed to a person holding a real table in
+// a real state, and each is wrong in a different way: reopening a settled case, routing an unreadable
+// state at the front door of the removal path, and twice declaring a case closed that is not.
+var N_AGREE_ = 'the_next_action_and_the_permission_to_remove_again_agree';
+var N_NOTBACK_ = 'a_completed_or_unrecoverable_outcome_is_not_sent_back_to_a_manifest';
+var N_MANUAL_ = 'a_state_that_needs_a_person_says_so_rather_than_naming_a_tool_to_run';
+var N_BACK_ = 'an_unresolved_or_not_applied_outcome_is_sent_back_to_a_new_manifest';
+
+mut('N130 a removal the readback proved complete is sent back to the manifest', function () {
+  // R4H-R1's own behaviour, now a regression. The natural continuation of a manifest is an execute,
+  // so this hands somebody holding a FINISHED removal an instruction that leads to clearing the row.
+  var m = swapS1('  EXECUTED_OK_AFTER_ACK_UNKNOWN: [false, false, false, false, S1_REMOVAL_NEXT_DONE_],',
+    '  EXECUTED_OK_AFTER_ACK_UNKNOWN: [false, false, false, false, S1_REMOVAL_NEXT_MANIFEST_],');
+  var p = function (w) { adThrowOnClear(w, true); };
+  var clean = adCycle(null, { execute: true }, undefined, null, false, p);
+  var bad = adCycle(m, { execute: true }, undefined, null, false, p);
+  return clean.verdict === 'EXECUTED_OK_AFTER_ACK_UNKNOWN'
+    && clean.next_action === 'NO_FURTHER_ACTION_THE_REMOVAL_IS_COMPLETE'
+    && clean.failed_predicates.indexOf(N_NOTBACK_) === -1
+    && bad.verdict === 'EXECUTED_OK_AFTER_ACK_UNKNOWN'
+    && bad.next_action === 'RERUN_MANIFEST_AND_REQUIRE_NEW_OPERATOR_AUTHORIZATION'
+    && bad.failed_predicates.indexOf(N_NOTBACK_) >= 0
+    && bad.failed_predicates.indexOf(N_AGREE_) >= 0;
+});
+
+mut('N131 a state nobody can read is routed at the front door of the removal path', function () {
+  // A manifest ends in a freeze block and an authorization sentence. Sending MANUAL_RECOVERY_REQUIRED
+  // there says the recovery is something this tool can drive, and it is precisely the case where it
+  // cannot: the postcondition or the rollback could not be VERIFIED.
+  var m = swapS1('  MANUAL_RECOVERY_REQUIRED: [false, false, false, false, S1_REMOVAL_NEXT_MANUAL_]',
+    '  MANUAL_RECOVERY_REQUIRED: [false, false, false, false, S1_REMOVAL_NEXT_MANIFEST_]');
+  var clean = adCycle(null, { execute: true }, undefined, null, false, adSpillOnClear);
+  var bad = adCycle(m, { execute: true }, undefined, null, false, adSpillOnClear);
+  return clean.verdict === 'MANUAL_RECOVERY_REQUIRED'
+    && clean.next_action === 'STOP_AND_PERFORM_MANUAL_RECOVERY'
+    && clean.removal_may_be_attempted_again === false
+    && clean.failed_predicates.indexOf(N_MANUAL_) === -1
+    && bad.verdict === 'MANUAL_RECOVERY_REQUIRED'
+    && bad.next_action === 'RERUN_MANIFEST_AND_REQUIRE_NEW_OPERATOR_AUTHORIZATION'
+    && bad.failed_predicates.indexOf(N_MANUAL_) >= 0
+    && bad.failed_predicates.indexOf(N_NOTBACK_) >= 0;
+});
+
+mut('N132 a proven zero-write is told the removal is complete', function () {
+  // Nothing was removed. Closing the case here loses the row the operator asked to have removed, and
+  // loses it silently: the response reads exactly like a success.
+  var m = swapS1('  NOT_APPLIED_ACK_UNKNOWN: [false, false, false, true, S1_REMOVAL_NEXT_MANIFEST_],',
+    '  NOT_APPLIED_ACK_UNKNOWN: [false, false, false, true, S1_REMOVAL_NEXT_DONE_],');
+  var p = function (w) { adThrowOnClear(w, false); };
+  var clean = adCycle(null, { execute: true }, undefined, null, false, p);
+  var bad = adCycle(m, { execute: true }, undefined, null, false, p);
+  return clean.verdict === 'NOT_APPLIED_ACK_UNKNOWN'
+    && clean.next_action === 'RERUN_MANIFEST_AND_REQUIRE_NEW_OPERATOR_AUTHORIZATION'
+    && clean.failed_predicates.indexOf(N_BACK_) === -1
+    && bad.verdict === 'NOT_APPLIED_ACK_UNKNOWN'
+    && bad.next_action === 'NO_FURTHER_ACTION_THE_REMOVAL_IS_COMPLETE'
+    && bad.failed_predicates.indexOf(N_BACK_) >= 0
+    && bad.failed_predicates.indexOf(N_AGREE_) >= 0;
+});
+
+mut('N133 a verified rollback is filed as a finished removal', function () {
+  // The table came back to its BEFORE fingerprint — which means the row is STILL THERE. "Complete" is
+  // the one word that must not be attached to it.
+  var m = swapS1('  ROLLED_BACK_VERIFIED: [false, false, false, true, S1_REMOVAL_NEXT_MANIFEST_],',
+    '  ROLLED_BACK_VERIFIED: [false, false, false, true, S1_REMOVAL_NEXT_DONE_],');
+  var clean = adRollbackCycle(null), bad = adRollbackCycle(m);
+  return clean.verdict === 'ROLLED_BACK_VERIFIED'
+    && clean.next_action === 'RERUN_MANIFEST_AND_REQUIRE_NEW_OPERATOR_AUTHORIZATION'
+    && clean.failed_predicates.indexOf(N_BACK_) === -1
+    && bad.verdict === 'ROLLED_BACK_VERIFIED'
+    && bad.next_action === 'NO_FURTHER_ACTION_THE_REMOVAL_IS_COMPLETE'
+    && bad.failed_predicates.indexOf(N_BACK_) >= 0
+    && bad.failed_predicates.indexOf(N_AGREE_) >= 0;
 });
 
 console.log('\npassed ' + pass + '  failed ' + fail
