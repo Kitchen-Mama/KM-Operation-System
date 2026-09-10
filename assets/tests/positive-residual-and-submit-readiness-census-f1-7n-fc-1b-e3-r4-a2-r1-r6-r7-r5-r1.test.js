@@ -678,10 +678,13 @@ var S1_BARE = bareCode(S1);
 // cannot have a dry-run flag and does not pretend to. R6B and R6C added four read-only ones between them
 // — the post-failure recovery manifest, the alternate-identity readback, and the acceptance manifest —
 // each read-only for the same structural reason the preflight is: there is nothing to pass them.
-// §AI partitions all nineteen by NAME, so a twentieth cannot appear in any class without that failing;
+// R6E added the twentieth: the read-only post-generation Manifest S. Read-only for the same structural
+// reason as the rest of that family - it takes no options, so there is nothing to pass it that could make
+// it write, and both of its outcomes are registered non-generating in the next-action table.
+// §AI partitions all twenty by NAME, so a twenty-first cannot appear in any class without that failing;
 // this line is the count on its own.
-eq((S1_BARE.match(/^function RUN_S1_[A-Z_]+/gm) || []).length, 19,
-  'A7.20 nineteen public entry points in total');
+eq((S1_BARE.match(/^function RUN_S1_[A-Z_]+/gm) || []).length, 20,
+  'A7.20 twenty public entry points in total');
 ['RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL', 'RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL',
  'RUN_S1_CONTROLLED_GENERATE_EXECUTE'].forEach(function (fn, i) {
   var src = bareCode(extractFn(S1, fn));
@@ -5538,11 +5541,12 @@ ok(String(AB13.repair_route).indexOf('a PERSON may now decide, never that a tool
 // the Run dropdown; R6B added the read-only post-failure recovery manifest; R6C added the read-only
 // alternate-identity readback and the read-only acceptance manifest. The count is asserted so a further
 // writer cannot appear without this line changing.
-eq((S1_BARE.match(/^function RUN_S1_[A-Z_]+/gm) || []).length, 19,
-  'AB32g nineteen public entry points: nine from R4E and before, R4F\'s read-only census, R4H\'s two,'
+eq((S1_BARE.match(/^function RUN_S1_[A-Z_]+/gm) || []).length, 20,
+  'AB32g twenty public entry points: nine from R4E and before, R4F\'s read-only census, R4H\'s two,'
   + ' R4J\'s read-only post-deletion acceptance manifest, R6\'s preflight plus its one executor,'
   + ' R6A\'s no-argument adapter, R6B\'s read-only post-failure recovery manifest, and R6C\'s'
-  + ' alternate-identity readback plus its acceptance manifest');
+  + ' alternate-identity readback plus its acceptance manifest,'
+  + ' and R6E read-only post-generation Manifest S');
 
 // ---- AB33 — THE FIELD CONTRACT IS R4E's, NOT A SECOND OPINION. ------------------------------------
 // A second required-ness table would be a second opinion, and the first thing two opinions do is disagree.
@@ -8435,7 +8439,20 @@ ok(AI_CHKFN.indexOf('length_ok') < AI_CHKFN.indexOf('needs_no_trim')
 // is EXECUTED over the census's own constant, in a world with the shipped fingerprint expectation.
 var AI_SHIPPED = S1World(pos());
 var AI_CHK = vm.runInContext('S1_cgOnceAuthorizationCheck_(S1_CG_ONCE_AUTHORIZATION_)', AI_SHIPPED.ctx);
-eq(AI_CHK.ok, true, 'AI1  the sentence the file carries passes its own check', AI_CHK);
+// S1-R6E — THIS ASSERTION CHANGED, AND IT GOT STRONGER RATHER THAN WEAKER.
+//
+// It used to say `ok === true`: the sentence is intact, therefore usable. Those are two claims, and the
+// generation this sentence authorized has since COMPLETED — so the second one is now false while the
+// first is exactly as true as it was. The check reports them separately, and every structural proof
+// below (2245 characters, the 8A830413 hash, zero placeholders, no trim needed, not superseded) is
+// asserted UNCHANGED. What is added is the lifecycle fact that makes intact insufficient.
+eq(AI_CHK.structurally_ok, true, 'AI1  the sentence the file carries is structurally intact', AI_CHK);
+eq(AI_CHK.consumed_fingerprint, true, 'AI1a0 and it is on the CONSUMED list — it authorized one'
+  + ' generation, and that generation completed');
+eq(AI_CHK.ok, false, 'AI1a1 so it is refused: intact is not the same as unspent');
+eq(AI_CHK.reason, 'AUTHORIZATION_FINGERPRINT_ALREADY_CONSUMED',
+  'AI1a2 under its own reason, which is NOT the superseded one — there is no replacement paste to go'
+  + ' looking for, there is a new Manifest P to run');
 eq(AI_CHK.length, 2245, 'AI1a 2245 characters');
 eq(AI_CHK.expected_length, 2245, 'AI1b which is the length the constant declares');
 eq(AI_CHK.fingerprint, '8A830413', 'AI1c fingerprint 8A830413, under this file\'s own hash authority');
@@ -8443,6 +8460,15 @@ eq(AI_CHK.expected_fingerprint, '8A830413', 'AI1d which is the fingerprint the e
 eq(AI_CHK.placeholder_count, 0, 'AI1e zero placeholders');
 eq(AI_CHK.needs_no_trim, true, 'AI1f and it needs no trimming — so the hash authority\'s trim did no work');
 eq(AI_CHK.superseded_fingerprint, false, 'AI1g and it is not the superseded F700840D sentence');
+var AI_LIFE = vm.runInContext('JSON.stringify(S1_MANIFEST_P_BASELINE_LIFECYCLE_)', AI_SHIPPED.ctx);
+AI_LIFE = JSON.parse(AI_LIFE);
+eq(AI_LIFE.state, 'CONSUMED', 'AI1g1 the frozen baseline is recorded as CONSUMED');
+eq(AI_LIFE.may_authorize_another_generate, false,
+  'AI1g2 and it may not authorize another generate');
+eq(AI_LIFE.identity_prediction_is_stale, true,
+  'AI1g3 its identity prediction is recorded as stale');
+eq(AI_LIFE.frozen_at, '2026-09-10 14:42:06',
+  'AI1g4 and the lifecycle names the baseline it is about, so it cannot drift onto a later one');
 // THE SENTENCE IS IN THE FILE ONCE, ON ONE LINE, AND IS NOT THE BASELINE.
 var AI_DECL = 'var S1_CG_ONCE_AUTHORIZATION_ = ';
 var AI_LINES = S1.split(NL).filter(function (l) { return l.indexOf(AI_DECL) === 0; });
@@ -8652,13 +8678,13 @@ eq(AI6w.allWrites(), 0, 'AI6e the wrapper still wrote nothing of its own');
 });
 
 // ---- AI9 THE WHOLE PUBLIC SURFACE, PARTITIONED BY NAME ---------------------------------------
-// Nineteen entry points: fifteen that reach no write API at all, three that gate on
+// Twenty entry points: sixteen that reach no write API at all, three that gate on
 // `opts.execute !== true`, and ONE that writes on sight. The partition is exhaustive by name, so a
-// twentieth cannot appear in any of the three classes without this failing.
+// twenty-first cannot appear in any of the three classes without this failing.
 var AI_ALL = (S1_BARE.match(/^function (RUN_S1_[A-Z_]+)/gm) || []).map(function (l) {
   return l.replace('function ', '');
 });
-eq(AI_ALL.length, 19, 'AI9  nineteen public entry points', AI_ALL.length);
+eq(AI_ALL.length, 20, 'AI9  twenty public entry points', AI_ALL.length);
 var AI_READONLY = ['RUN_S1_POSITIVE_RESIDUAL_CANDIDATE_CENSUS', 'RUN_S1_POSITIVE_RESIDUAL_PROPOSAL_CENSUS',
   'RUN_S1_SUBMIT_READINESS_CENSUS', 'RUN_S1_MANIFEST_P', 'RUN_S1_MANIFEST_S',
   'RUN_S1_ACCEPTED_GAP_RUN_READABILITY_DIAGNOSTIC', 'RUN_S1_FACTORY_MOVEMENT_ID_INTEGRITY_CENSUS',
@@ -8674,12 +8700,16 @@ var AI_READONLY = ['RUN_S1_POSITIVE_RESIDUAL_CANDIDATE_CENSUS', 'RUN_S1_POSITIVE
   // mutation — the moment it could write, `accepted` would become something a diagnostic asserts about
   // itself.
   'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_IDENTITY_READBACK',
-  'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_PAIR_ACCEPTANCE_MANIFEST'];
+  'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_PAIR_ACCEPTANCE_MANIFEST',
+  // R6E. The post-generation verification. It verifies a state a person already accepted and offers no
+  // action a generation could start from: both of its next actions are registered false in
+  // S1_CG_NEXT_ACTION_ALLOWS_ANOTHER_GENERATE_, asserted in section AM rather than described here.
+  'RUN_S1_POST_GENERATION_MANIFEST_S'];
 var AI_GATED = ['RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL', 'RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL',
   'RUN_S1_CONTROLLED_GENERATE_EXECUTE'];
 var AI_UNGATED = ['RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE'];
-eq(AI_READONLY.length + AI_GATED.length + AI_UNGATED.length, 19,
-  'AI9a fifteen plus three plus one');
+eq(AI_READONLY.length + AI_GATED.length + AI_UNGATED.length, 20,
+  'AI9a sixteen plus three plus one');
 eq(AI_ALL.slice().sort(), AI_READONLY.concat(AI_GATED).concat(AI_UNGATED).sort(),
   'AI9b and the three classes account for EVERY entry point by name');
 // AND THE ONE THAT WRITES ON SIGHT IS THE ONLY ONE WITHOUT AN EXECUTE FLAG. Said as its own claim,
@@ -13047,6 +13077,16 @@ function alJsonLine(logs, tag) {
   if (found === null) return null;
   try { return JSON.parse(found); } catch (e) { return { __unparseable: found }; }
 }
+/** THE INDEX LINE, READ THE WAY AN OPERATOR HAS TO READ IT. R6E grew it past the line budget in the
+ *  complete-pair world, so it goes out chunked there and as a single line in the smaller worlds. A reader
+ *  that only knew one of the two shapes would report "no index was emitted" for the richest run. */
+function alIndex(logs) {
+  var one = alJsonLine(logs, 's1_ai2_readback_meta');
+  if (one !== null) return one;
+  var p = alPayloads(logs, 's1_ai2_readback_meta');
+  if (!p.length) return null;
+  try { return JSON.parse(p.join('')); } catch (e) { return null; }
+}
 function alLogsOf(w) {
   return JSON.parse(vm.runInContext('JSON.stringify(__s1Logs)', w.ctx));
 }
@@ -13068,8 +13108,15 @@ var AL_DECL = extractVar(S1, 'S1_AI2_LOG_SECTIONS_');
 AL_TAGS.forEach(function (t, i) {
   ok(AL_DECL.indexOf("'" + t + "'") > 0, 'AL0.' + (i + 1) + ' the emitter declares the section ' + t);
 });
-ok(S1.indexOf("S1_log_('s1_ai2_readback_meta'") > 0,
-  'AL0f and the index line is emitted under s1_ai2_readback_meta');
+// S1-R6E — THE INDEX TAG IS NOW NAMED ONCE AND EMITTED TWO WAYS, and both ways are asserted. It goes out
+// as one line while it fits and through the ordinary chunker when it does not, which is what keeps it off
+// the one path this file forbids: a line the logger truncates.
+ok(S1.indexOf("var idxTag = 's1_ai2_readback_meta';") > 0,
+  'AL0f the index tag is declared once, as s1_ai2_readback_meta');
+ok(S1.indexOf('S1_log_(idxTag, JSON.stringify(meta));') > 0,
+  'AL0g and emitted as a single line when it fits inside the budget');
+ok(S1.indexOf('S1_ai2EmitSection_(idxTag, meta,') > 0,
+  'AL0h and through the numbered chunker when it does not — never truncated');
 
 // ---- AL1 — A COMPLETE ALTERNATE PAIR: ALL FIVE SECTIONS, EACH REBUILT BYTE-FOR-BYTE ------------
 var AL1 = akRun({});
@@ -13216,7 +13263,7 @@ ok((AL5l.matched_by || []).length > 0, 'AL5e and it says why it is in the list',
  [{ duplicateLine: true }, 1, 2, 1, 0, 0, 0, 'one header carrying two lines']
 ].forEach(function (row, i) {
   var r = akRun(row[0]);
-  var m = alJsonLine(r.logs, 's1_ai2_readback_meta');
+  var m = alIndex(r.logs);
   var n = i + 1;
   eq(m.alternate_header_count, row[1], 'AL6a.' + n + ' ' + row[7] + ': header count');
   eq(m.alternate_line_count, row[2], 'AL6b.' + n + ' ' + row[7] + ': line count');
@@ -13230,7 +13277,7 @@ ok((AL5l.matched_by || []).length > 0, 'AL5e and it says why it is in the list',
     'AL6h.' + n + ' and with the classifier detail');
 });
 var AL6dup = akRun({ duplicateHeader: true });
-ok(alJsonLine(AL6dup.logs, 's1_ai2_readback_meta').duplicate_pair_count > 0,
+ok(alIndex(AL6dup.logs).duplicate_pair_count > 0,
   'AL6i a duplicated header id is counted as a duplicate, not as a second complete pair');
 
 // ---- AL7 — THE PAIR AND RECONCILIATION SECTIONS CARRY WHAT §五/§六 ASK FOR -------------------
@@ -13423,7 +13470,7 @@ mut('N198 the index line states a classification of its own instead of copying t
     "    classification: 'COMPLETE_WRITE_UNDER_ALTERNATE_IDENTITIES',");
   function agrees(src) {
     var r = src ? alMutRun(src, { header: false, line: false }) : akRun({ header: false, line: false });
-    var meta = alJsonLine(r.logs, 's1_ai2_readback_meta');
+    var meta = alIndex(r.logs);
     return meta.classification === r.res.classification
       && meta.classification === r.res.classification_detail.classification;
   }
@@ -13462,11 +13509,690 @@ mut('N201 the orphan header count is hard-zeroed, so a half-landed write reads a
     '  o.orphan_header_count = 0;');
   function counts(src) {
     var r = src ? alMutRun(src, { line: false }) : akRun({ line: false });
-    var meta = alJsonLine(r.logs, 's1_ai2_readback_meta');
+    var meta = alIndex(r.logs);
     return [meta.orphan_header_count, meta.partial_pair_count];
   }
   var clean = counts(null), bad = counts(m);
   return clean[0] === 1 && clean[1] === 1 && bad[0] === 0 && bad[1] === 0;
+});
+
+
+// ==================================================================================================
+// AM — S1-R6E: THE GENERATION SUCCEEDED. RECORD IT, FIX THE CONTRACT, AND VERIFY THE RESULT.
+// ==================================================================================================
+//
+// The controlled Generate wrote one header and one line, with the authorized quantity, in the authorized
+// scope, against the authorized run — under identities the frozen baseline had not predicted. A person read
+// the reconciliation and accepted the pair. This section holds three things to account:
+//
+//   THE RECORD is exact. Nine fields must match before the acceptance routes anything anywhere, and the
+//   proofs below change one field at a time to show that each of the nine is load-bearing. An acceptance
+//   that tolerated a different quantity would be an acceptance of a row nobody read.
+//
+//   THE CONTRACT derives. The two accepted ids are not asserted against numbers typed here: production's
+//   own builders are executed over the recorded route and the ids they produce are compared. The same
+//   execution reproduces the STALE K2 pair from the same row, which is what makes the divergence a measured
+//   fact rather than a story about one.
+//
+//   THE VERIFICATION is read-only and offers no way forward except a person. Manifest S has no execute
+//   switch, no authorization, no capability and no next action a generation could be started from.
+// ==================================================================================================
+
+// ---- AM0 — THE RECORDED DECISION, AS DECIDED ---------------------------------------------------
+var AM_REC = JSON.parse(vm.runInContext('JSON.stringify(S1_ACCEPTED_ALTERNATE_PAIR_)', S1World(pos()).ctx));
+eq(AM_REC.accepted_header_id, 'SADH-K4-1443C1AF', 'AM0  the accepted header is recorded');
+eq(AM_REC.accepted_line_id, 'SADL-K2-7F2C46B2', 'AM0a and the accepted line');
+eq(AM_REC.scope_key, 'ResUS|US|Amazon|SP0750-M', 'AM0b for the one scope');
+eq(AM_REC.calculation_run_id, 'GAP-INV-20260910T132343-0001', 'AM0c and the one run');
+eq(AM_REC.planning_cycle, 'RECO-2026-09', 'AM0d and the one cycle');
+eq(AM_REC.accepted_qty, 25, 'AM0e at the accepted quantity of 25');
+eq(AM_REC.acceptance_manifest_verdict, 'ALTERNATE_PAIR_IS_ACCEPTABLE_BY_A_PERSON',
+  'AM0f with the acceptance verdict a person reached');
+eq([AM_REC.acceptance_predicates_passed, AM_REC.acceptance_predicates_failed], [9, 0],
+  'AM0g on nine predicates, none failed');
+// THE FOUR FLAGS §A.3 NAMES.
+eq(AM_REC.generate_completed, true, 'AM0h generate_completed = true');
+eq(AM_REC.generate_may_be_attempted_again, false, 'AM0i generate_may_be_attempted_again = false');
+eq(AM_REC.manual_db_repair_required, false, 'AM0j manual_db_repair_required = false');
+eq(AM_REC.accepted_under_alternate_identity, true, 'AM0k accepted_under_alternate_identity = true');
+// AND THE HISTORY IS STILL HERE. §A.2: the predicted identities are not overwritten by the actual ones.
+eq(AM_REC.originally_predicted_header_id, 'SADH-K2-A4239AC6',
+  'AM0l the originally predicted header is preserved');
+eq(AM_REC.originally_predicted_line_id, 'SADL-K2-2FD4DCA2',
+  'AM0m and the originally predicted line');
+ok(AM_REC.originally_predicted_header_id !== AM_REC.accepted_header_id
+  && AM_REC.originally_predicted_line_id !== AM_REC.accepted_line_id,
+  'AM0n and neither history field has been quietly set to the actual id');
+ok(String(AM_REC.prediction_authority_that_was_used).indexOf('sadK2ResolveActiveDraft_') > 0
+  && String(AM_REC.writer_authority_that_actually_minted)
+    .indexOf('sadResolveActiveDraftK2OrK3_') > 0,
+  'AM0o both authorities are named, so the divergence is attributable');
+eq(AM_REC.consumed_authorization_fingerprint, '8A830413',
+  'AM0p and the spent authorization is named in the record');
+ok((AM_REC.timeline || []).length >= 6, 'AM0q with the round-by-round timeline preserved',
+  (AM_REC.timeline || []).length);
+// THE BASELINE ITSELF IS UNTOUCHED. The record sits beside it; it does not edit it.
+eq(S1_FROZEN_JSON_.indexOf('SADH-K4-1443C1AF'), -1,
+  'AM0r the frozen baseline was NOT rewritten to name the accepted identity');
+ok(S1_FROZEN_JSON_.indexOf('SADH-K2-A4239AC6') > 0,
+  'AM0s it still carries the prediction it was signed with — that is what makes it evidence');
+
+// ---- AM1 — §B.4: THE ACCEPTED IDS DERIVE, FROM PRODUCTION'S OWN BUILDERS -----------------------
+// Nothing here is compared against a number this file computed. The recorded route is handed to 69_'s and
+// 16_'s shipped builders and the ids they return are compared with the ids a person accepted.
+var AM_W0 = ahWorld({}, {});
+function amCall(expr) { return vm.runInContext(expr, AM_W0.ctx); }
+var AM_HDR = { planning_cycle: AM_REC.planning_cycle, company: AM_REC.company,
+  country: AM_REC.country, marketplace: AM_REC.marketplace, source_page: AM_REC.source_page,
+  recommended_source_warehouse_id: AM_REC.source_factory_warehouse_id,
+  recommended_destination_warehouse_id: AM_REC.recommended_destination_warehouse_id,
+  destination_marketplace: AM_REC.destination_marketplace,
+  recommended_shipping_method: AM_REC.recommended_shipping_method,
+  recommended_last_mile_delivery: AM_REC.recommended_last_mile_delivery,
+  recommendation_group_no: AM_REC.recommendation_group_no };
+var AM_LINE = { sku: AM_REC.sku, site_sku: AM_REC.site_sku, window_code: AM_REC.window_code };
+var AM_K4KEY = amCall('ricK4GroupKey_(' + JSON.stringify(AM_HDR) + ')');
+var AM_K2KEY = amCall('sadK2GroupKey_(' + JSON.stringify(AM_HDR) + ')');
+var AM_K4ID = amCall('ricK4DeterministicHeaderId_(' + JSON.stringify(AM_HDR) + ')');
+var AM_K2ID = amCall('sadK2DeterministicHeaderId_(' + JSON.stringify(AM_HDR) + ')');
+var AM_K4LINE = amCall('sadK2DeterministicLineId_(' + JSON.stringify(AM_K4ID) + ', '
+  + JSON.stringify(AM_LINE) + ')');
+var AM_K2LINE = amCall('sadK2DeterministicLineId_(' + JSON.stringify(AM_K2ID) + ', '
+  + JSON.stringify(AM_LINE) + ')');
+eq(AM_K4ID, 'SADH-K4-1443C1AF',
+  'AM1  the recorded route, through 69_ ricK4DeterministicHeaderId_, IS the accepted header id');
+eq(AM_K4LINE, 'SADL-K2-7F2C46B2',
+  'AM1a and the line id 16_ derives from that parent IS the accepted line id');
+eq(AM_K4KEY, AM_REC.accepted_k4_group_key,
+  'AM1b and the recorded canonical key is the one ricK4GroupKey_ produces', AM_K4KEY);
+// THE SAME ROW REPRODUCES THE STALE PAIR. This is what makes the divergence measured rather than narrated.
+eq(AM_K2ID, 'SADH-K2-A4239AC6',
+  'AM1c the SAME row, through the K2-only builder, reproduces the stale predicted header');
+eq(AM_K2LINE, 'SADL-K2-2FD4DCA2', 'AM1d and the stale predicted line');
+eq(AM_K2KEY, AM_REC.originally_predicted_k2_group_key,
+  'AM1e from the ten-dimension key the baseline was frozen with');
+// AND THE DIFFERENCE IS ONE DIMENSION-PAIR, NAMED. §B.3: the K4 inputs are 69_'s derivations, not the raw
+// columns — and the ONLY thing that moved is the destination the ten-dimension key cannot hold.
+eq(String(AM_K2KEY).split('|').length, 10, 'AM1f the K2 key is ten dimensions');
+eq(String(AM_K4KEY).split('|').length, 11, 'AM1g and the K4 key is eleven');
+var AM_DEST = JSON.parse(amCall('JSON.stringify(ricDestinationIdentity_('
+  + JSON.stringify(AM_HDR) + '))'));
+eq([AM_DEST.type, AM_DEST.id, AM_DEST.ok], ['MARKETPLACE', 'amazon', true],
+  'AM1h the destination is derived by 69_ as a MARKETPLACE identity', AM_DEST);
+eq(amCall('ricCanonicalService_(' + JSON.stringify(AM_REC.recommended_shipping_method) + ')'), 'sea',
+  'AM1i and the service through ricCanonicalService_ is the canonical token');
+// The two keys, side by side: K2 carries an EMPTY destination segment, K4 carries the derived pair.
+ok(String(AM_K2KEY).indexOf('|wh-tw-cn-factory-youxin||sea|') > 0,
+  'AM1j the K2 key has an EMPTY segment where the destination belongs', AM_K2KEY);
+ok(String(AM_K4KEY).indexOf('|wh-tw-cn-factory-youxin|marketplace|amazon|sea|') > 0,
+  'AM1k while K4 carries (marketplace, amazon) in that position — one dimension-pair, two ids', AM_K4KEY);
+// NO SECOND HAND-WRITTEN ALGORITHM. §B.2: the census still mints nothing of its own.
+eq((S1_BARE.match(/'SAD[HL]-K[24]-'\s*\+|"SAD[HL]-K[24]-"\s*\+/g) || []).length, 0,
+  'AM1l and the diagnostic still concatenates no id prefix anywhere — one minting authority, in production');
+eq(S1_BARE.split('sadResolveActiveDraftK2OrK3_(').length - 1, 1,
+  'AM1m the prediction goes through the writer own resolver, at exactly one call site');
+
+// ---- AM2 — §B.5: THE STALE PREDICTION IS IDENTIFIABLE AS ONE -----------------------------------
+function amStale(id) {
+  return JSON.parse(vm.runInContext('JSON.stringify(S1_acStaleIdentity_('
+    + JSON.stringify(id) + '))', AM_W0.ctx));
+}
+[['SADH-K2-A4239AC6', 'header'], ['SADL-K2-2FD4DCA2', 'line']].forEach(function (row, i) {
+  var st = amStale(row[0]);
+  eq(st.stale, true, 'AM2.' + (i + 1) + ' the stale predicted ' + row[1] + ' is classified stale');
+  eq(st.classification, 'STALE_PREDICTION_HISTORY_ONLY',
+    'AM2a.' + (i + 1) + ' as history only');
+  eq(st.may_be_an_authorization_target, false,
+    'AM2b.' + (i + 1) + ' and may never be an authorization target again');
+  eq(st.is_the_live_accepted_identity, false,
+    'AM2c.' + (i + 1) + ' and is not the live accepted identity');
+});
+['SADH-K4-1443C1AF', 'SADL-K2-7F2C46B2'].forEach(function (id, i) {
+  var st = amStale(id);
+  eq(st.stale, false, 'AM2d.' + (i + 1) + ' the accepted ' + id + ' is NOT stale');
+  eq(st.is_the_live_accepted_identity, true, 'AM2e.' + (i + 1) + ' it is the live accepted identity');
+  eq(st.may_be_an_authorization_target, true,
+    'AM2f.' + (i + 1) + ' and is the identity a later manifest may name');
+});
+
+// ---- AM3 — §E.4: THE ACCEPTANCE IS EXACT. NINE FIELDS, EACH ONE LOAD-BEARING -------------------
+var AM_TUPLE = { company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: 'SP0750-M',
+  calculation_run_id: 'GAP-INV-20260910T132343-0001', planning_cycle: 'RECO-2026-09',
+  accepted_header_id: 'SADH-K4-1443C1AF', accepted_line_id: 'SADL-K2-7F2C46B2', accepted_qty: 25 };
+function amApplies(over) {
+  var t = {};
+  Object.keys(AM_TUPLE).forEach(function (k) { t[k] = AM_TUPLE[k]; });
+  Object.keys(over || {}).forEach(function (k) { t[k] = over[k]; });
+  return JSON.parse(vm.runInContext('JSON.stringify(S1_acAppliesTo_('
+    + JSON.stringify(t) + '))', AM_W0.ctx));
+}
+var AM3 = amApplies({});
+eq(AM3.applies, true, 'AM3  the exact recorded tuple is the one the acceptance applies to', AM3);
+eq(AM3.mismatched_fields, [], 'AM3a with no mismatched field');
+eq(AM3.compared.length, 9, 'AM3b and all nine fields were compared, not a subset');
+// ONE FIELD AT A TIME. Each of the nine must be sufficient on its own to refuse.
+[['company', 'ResEU'], ['country', 'CA'], ['marketplace', 'Walmart'], ['sku', 'SP0751-M'],
+ ['calculation_run_id', 'GAP-INV-20260911T000000-0001'], ['planning_cycle', 'RECO-2026-10'],
+ ['accepted_header_id', 'SADH-K4-DEADBEEF'], ['accepted_line_id', 'SADL-K2-DEADBEEF'],
+ ['accepted_qty', 24]
+].forEach(function (row, i) {
+  var o = {}; o[row[0]] = row[1];
+  var r = amApplies(o);
+  eq(r.applies, false, 'AM3c.' + (i + 1) + ' a different ' + row[0] + ' is NOT the accepted pair');
+  eq(r.mismatched_fields, [row[0]],
+    'AM3d.' + (i + 1) + ' and ' + row[0] + ' is the field named', r.mismatched_fields);
+});
+// A BLANK QUANTITY IS NOT 25, AND '25' AS TEXT MUST NOT SNEAK PAST AS A NUMBER EITHER.
+eq(amApplies({ accepted_qty: null }).applies, false, 'AM3e a null quantity does not match 25');
+eq(amApplies({ accepted_qty: '' }).applies, false, 'AM3f nor does a blank one');
+eq(amApplies({ accepted_qty: '25' }).applies, true,
+  'AM3g while a numeric string 25 IS 25 — compared as a number, as a sheet cell arrives');
+
+// ---- AM4 — §C.4/C.5/C.6: THE ROUTE. ONLY THE ACCEPTED PAIR LEAVES STOP -------------------------
+function amContract(cls, applies) {
+  return JSON.parse(vm.runInContext('JSON.stringify(S1_ai2RetryContract_('
+    + JSON.stringify(cls) + ', ' + JSON.stringify({ applies: applies, mismatched_fields: [] })
+    + '))', AM_W0.ctx));
+}
+var AM4 = amContract('COMPLETE_WRITE_UNDER_ALTERNATE_IDENTITIES', true);
+eq(AM4.next_action, 'RUN_POST_GENERATION_MANIFEST_S',
+  'AM4  a complete pair that IS the accepted one routes to the post-generation manifest');
+eq(AM4.generate_may_be_attempted_again, false, 'AM4a and still forbids another generate');
+eq(AM4.same_authorization_reusable, false, 'AM4b and reuse of the spent authorization');
+eq(AM4.same_frozen_baseline_reusable, false, 'AM4c and reuse of the spent baseline');
+eq(amContract('COMPLETE_WRITE_UNDER_ALTERNATE_IDENTITIES', false).next_action,
+  'STOP_AND_PERFORM_MANUAL_RECOVERY_WITH_THIS_MANIFEST',
+  'AM4d a complete pair that is NOT the accepted one keeps the STOP');
+// EVERY OTHER CLASS KEEPS THE STOP, even when handed an acceptance that applies.
+['PARTIAL_WRITE_UNDER_ALTERNATE_IDENTITIES', 'DUPLICATE_ALTERNATE_WRITE', 'ORPHAN_ALTERNATE_WRITE',
+ 'PREEXISTING_ROW_MISCLASSIFIED_AS_ALTERNATE', 'READBACK_INDETERMINATE'
+].forEach(function (cls, i) {
+  var r = amContract(cls, true);
+  eq(r.next_action, 'STOP_AND_PERFORM_MANUAL_RECOVERY_WITH_THIS_MANIFEST',
+    'AM4e.' + (i + 1) + ' ' + cls + ' keeps the STOP even when handed an acceptance that applies');
+  eq(r.acceptance_applies, null,
+    'AM4f.' + (i + 1) + ' and the acceptance is not even consulted for it');
+});
+// NO NEXT ACTION THIS ROUND INTRODUCED PERMITS A GENERATE.
+var AM_NA = JSON.parse(vm.runInContext(
+  'JSON.stringify(S1_CG_NEXT_ACTION_ALLOWS_ANOTHER_GENERATE_)', AM_W0.ctx));
+['RUN_POST_GENERATION_MANIFEST_S', 'MARK_S1_COMPLETE_AND_RESUME_P_BRANCH',
+ 'STOP_AND_INVESTIGATE_NO_AUTOMATIC_REPAIR', 'STOP_AND_PERFORM_MANUAL_RECOVERY_WITH_THIS_MANIFEST'
+].forEach(function (na, i) {
+  eq(AM_NA[na], false, 'AM4g.' + (i + 1) + ' the next-action table registers ' + na + ' as NOT generating');
+});
+
+// ---- AM5 — §E.1: THE SPENT AUTHORIZATION IS REFUSED, AND FOR THE RIGHT REASON -------------------
+var AM_CONS = JSON.parse(vm.runInContext(
+  'JSON.stringify(S1_CG_CONSUMED_AUTH_FINGERPRINTS_)', AM_W0.ctx));
+eq(AM_CONS, ['8A830413'], 'AM5  8A830413 is on the consumed list');
+var AM5exec = JSON.parse(vm.runInContext('JSON.stringify(S1_cgAuthorizationAudit_('
+  + JSON.stringify(vm.runInContext('S1_CG_ONCE_AUTHORIZATION_', S1World(pos()).ctx))
+  + ', S1_MANIFEST_P_BEFORE_))', S1World(pos()).ctx));
+eq(AM5exec.ok, false, 'AM5a the executor own audit refuses the consumed sentence');
+eq(AM5exec.reason, 'AUTHORIZATION_FINGERPRINT_ALREADY_CONSUMED',
+  'AM5b under the consumed reason, not the superseded one — there is no replacement to go and find');
+eq(AM5exec.consumed_fingerprint_supplied, true, 'AM5c with the fact named in its own field');
+eq(AM5exec.superseded_fingerprint_supplied, false, 'AM5d and superseded left false');
+// THE HISTORY IS NOT DELETED BY BEING REFUSED. §E.1.
+ok(S1.indexOf('8A830413') > 0, 'AM5e the fingerprint is still recorded in the file');
+ok(S1.indexOf("var S1_CG_ONCE_AUTHORIZATION_ = 'I authorize ONE controlled") > 0,
+  'AM5f and so is the sentence it identifies');
+
+// ---- THE WORLD FOR THE POST-GENERATION MANIFEST ----------------------------------------------
+// The pair is seeded by akWorld, which mints the header id from the route with 69_'s own builder — so the
+// row is self-consistent and every proof below is about the FACT under test rather than a broken id. The
+// recorded acceptance is then overridden to name THIS fixture's pair: the real record names the live
+// identities, which no synthetic world can hold, and AM0/AM1 are where those are proven.
+function amRecord(over) {
+  var r = { acceptance_recorded_in_round: 'S1-R6E',
+    acceptance_manifest_verdict: 'ALTERNATE_PAIR_IS_ACCEPTABLE_BY_A_PERSON',
+    acceptance_predicates_passed: 9, acceptance_predicates_failed: 0,
+    decided_by: 'THE_OPERATOR', generate_completed: true,
+    generate_may_be_attempted_again: false, manual_db_repair_required: false,
+    accepted_under_alternate_identity: true,
+    scope_key: AH_BASE.company + '|' + AH_BASE.country + '|' + AH_BASE.marketplace + '|' + AH_BASE.sku,
+    company: AH_BASE.company, country: AH_BASE.country, marketplace: AH_BASE.marketplace,
+    sku: AH_BASE.sku, calculation_run_id: AH_BASE.calculation_run_id,
+    planning_cycle: AH_BASE.planning_cycle,
+    source_factory_warehouse_id: AH_BASE.source_factory_warehouse_id,
+    window_code: 'D90', site_sku: AH_BASE.sku,
+    accepted_qty: AH_BASE.expected_max_units_written,
+    accepted_header_id: AK_IDS.k4_header, accepted_line_id: AK_IDS.k4_line,
+    accepted_identity_family: 'K4', accepted_k4_group_key: AK_IDS.k4_key,
+    originally_predicted_header_id: AK_IDS.k2_header,
+    originally_predicted_line_id: AK_IDS.k2_line,
+    originally_predicted_k2_group_key: AK_IDS.k2_key,
+    consumed_authorization_fingerprint: '8A830413' };
+  Object.keys(over || {}).forEach(function (k) { r[k] = over[k]; });
+  return r;
+}
+function amWorld(over) {
+  over = over || {};
+  var w = akWorld(over.world || {});
+  vm.runInContext('S1_ACCEPTED_ALTERNATE_PAIR_ = '
+    + JSON.stringify(amRecord(over.record || {})) + ';', w.ctx);
+  if (over.lifecycle !== undefined) {
+    vm.runInContext('S1_MANIFEST_P_BASELINE_LIFECYCLE_ = '
+      + JSON.stringify(over.lifecycle) + ';', w.ctx);
+  }
+  if (over.consumed !== undefined) {
+    vm.runInContext('S1_CG_CONSUMED_AUTH_FINGERPRINTS_ = '
+      + JSON.stringify(over.consumed) + ';', w.ctx);
+  }
+  return w;
+}
+function amRun(over) {
+  var w = amWorld(over);
+  var r = ahRun(w, 'RUN_S1_POST_GENERATION_MANIFEST_S()');
+  r.writes = w.allWrites();
+  return r;
+}
+
+// ---- AM6 — THE EXACT ACCEPTED PAIR: MANIFEST S PASSES ----------------------------------------
+var AM6 = amRun({});
+eq(AM6.res.verdict, 'S1_POST_GENERATION_VERIFIED', 'AM6  the accepted pair verifies',
+  AM6.res.failed_predicates);
+eq(AM6.res.next_action, 'MARK_S1_COMPLETE_AND_RESUME_P_BRANCH',
+  'AM6a and the next action is the one a PERSON records');
+eq(AM6.res.predicates_failed, 0, 'AM6b with no condition unmet');
+ok(AM6.res.predicates_passed >= 30, 'AM6c on the full set of conditions', AM6.res.predicates_passed);
+eq(AM6.res.row_facts.header_hit_count, 1, 'AM6d exactly one header carries the accepted id');
+eq(AM6.res.row_facts.line_hit_count, 1, 'AM6e exactly one line carries the accepted id');
+eq(AM6.res.row_facts.header_id_re_derives_from_its_own_fields, true,
+  'AM6f the stored header id re-derives from its own stored fields');
+eq(AM6.res.row_facts.line_id_re_derives_from_its_parent, true,
+  'AM6g and the line id from the parent it points at');
+eq(AM6.res.row_facts.parent_fk_points_at_the_accepted_header, true,
+  'AM6h the parent FK points at the accepted header');
+eq(AM6.res.protected_surfaces.changed, [], 'AM6i every comparable protected surface is intact');
+eq(AM6.res.second_pair_scan.clean, true, 'AM6j and no second active AI pair stands in the scope');
+eq(AM6.res.generate_may_be_attempted_again, false, 'AM6k a PASS still forbids another generate');
+eq(AM6.res.next_action_permits_another_generate, false,
+  'AM6l and the next-action table agrees');
+
+// ---- AM7 — RUN IT TWICE: THE SAME PASS, AND STILL NOTHING WRITTEN ----------------------------
+var AM7w = amWorld({});
+var AM7a = ahRun(AM7w, 'RUN_S1_POST_GENERATION_MANIFEST_S()');
+var AM7b = ahRun(AM7w, 'RUN_S1_POST_GENERATION_MANIFEST_S()');
+eq([AM7a.res.verdict, AM7b.res.verdict],
+  ['S1_POST_GENERATION_VERIFIED', 'S1_POST_GENERATION_VERIFIED'],
+  'AM7  running it twice gives the same verdict — it is a measurement, not a transition');
+eq([AM7a.res.predicates_failed, AM7b.res.predicates_failed], [0, 0], 'AM7a both times');
+eq(AM7w.allWrites(), 0, 'AM7b and two runs wrote nothing at all');
+eq(AM7a.res.row_facts.planned_qty, AM7b.res.row_facts.planned_qty,
+  'AM7c reading the same quantity both times');
+
+// ---- AM8 — EVERY STOP §F NAMES ----------------------------------------------------------------
+// Each row changes ONE thing about a world that otherwise passes, so the STOP is attributable to it. The
+// failed predicate is named as well as the verdict: a manifest that stopped for the wrong reason would
+// send an operator to the wrong place.
+[
+  // §F — expected K2 IDs wrongly demanded. The record is pointed at the STALE prediction, which names no
+  // row; the manifest must not find one and must not quietly succeed on the row that IS there.
+  [{ record: { accepted_header_id: AK_IDS.k2_header, accepted_line_id: AK_IDS.k2_line } },
+   'exactly_one_row_carries_the_accepted_header_id', 'the stale K2 ids demanded'],
+  // §F — K4 destination identity drift. The row is re-minted for its altered destination, so its id is
+  // self-consistent — and it is no longer the id a person accepted.
+  [{ world: { header: { destination_marketplace: 'Walmart' } } },
+   'exactly_one_row_carries_the_accepted_header_id', 'the destination marketplace drifted'],
+  // A SECOND DESTINATION makes the destination AMBIGUOUS by 69_ own rule, which moves the derived pair
+  // and therefore the id. Driving the destination rather than the service on purpose: the service goes
+  // through ricCanonicalService_, whose vocabulary is 69_ business, and a fixture that guessed which
+  // spellings collapse together would be testing the guess.
+  [{ world: { header: { recommended_destination_warehouse_id: 'WH-US-AMZ' } } },
+   'exactly_one_row_carries_the_accepted_header_id', 'a second destination made it ambiguous'],
+  [{ world: { header: { recommended_last_mile_delivery: 'RAIL' } } },
+   'exactly_one_row_carries_the_accepted_header_id', 'the last-mile delivery drifted'],
+  [{ world: { header: { recommendation_group_no: '7' } } },
+   'exactly_one_row_carries_the_accepted_header_id', 'the recommendation group drifted'],
+  // §F — wrong parent FK.
+  [{ world: { lineParent: 'SADH-K4-SOMEONEELSE' } },
+   'exactly_one_row_carries_the_accepted_line_id', 'the line points at another header'],
+  // §F — the quantity is not the accepted one.
+  [{ world: { qty: 24 } },
+   'the_written_quantity_is_the_accepted_quantity', 'the quantity is not the accepted one'],
+  [{ world: { qty: '' } },
+   'the_written_quantity_is_the_accepted_quantity', 'the quantity is blank, which is not zero'],
+  // §F — duplicate header and duplicate line.
+  [{ world: { duplicateHeader: true } },
+   'exactly_one_row_carries_the_accepted_header_id', 'the header is duplicated'],
+  [{ world: { duplicateLine: true } },
+   'exactly_one_row_carries_the_accepted_line_id', 'the line is duplicated'],
+  // §F — partial: the header landed and the line did not, and the other way round.
+  [{ world: { line: false } },
+   'exactly_one_row_carries_the_accepted_line_id', 'the line never landed'],
+  [{ world: { header: false } },
+   'exactly_one_row_carries_the_accepted_header_id', 'the header never landed'],
+  // §F — a second active AI pair for the same scope.
+  [{ world: { secondHeader: 'SADH-K4-SECONDPAIR' } },
+   'no_other_header_carries_this_calculation_run', 'a second header of this run appeared'],
+  [{ world: { secondHeader: 'SADH-K4-SECONDPAIR' } },
+   'no_other_active_ai_header_stands_in_this_scope',
+   'and that stray AI header is counted even though it carries no line'],
+  // §E — the lifecycle records that are the manifest's own preconditions.
+  [{ lifecycle: { frozen_at: '2026-09-10 14:42:06', state: 'ACTIVE',
+      may_authorize_another_generate: true, identity_prediction_is_stale: false } },
+   'the_frozen_baseline_is_recorded_as_consumed', 'the baseline is not recorded as consumed'],
+  [{ consumed: [] },
+   'the_spent_authorization_is_recorded_as_consumed', 'the authorization is not recorded as consumed'],
+  [{ record: { generate_may_be_attempted_again: true } },
+   'the_record_forbids_another_generate', 'the record would permit another generate'],
+  [{ record: { manual_db_repair_required: true } },
+   'the_record_says_no_manual_db_repair_is_required', 'the record demands a manual repair'],
+  [{ record: { acceptance_manifest_verdict: 'ALTERNATE_PAIR_IS_NOT_ACCEPTABLE_YET' } },
+   'a_recorded_human_acceptance_exists', 'no acceptance was recorded']
+].forEach(function (row, i) {
+  var r = amRun(row[0]);
+  var n = i + 1;
+  eq(r.res.verdict, 'STOP_AND_INVESTIGATE_NO_AUTOMATIC_REPAIR',
+    'AM8.' + n + ' ' + row[2] + ': STOP');
+  eq(r.res.next_action, 'STOP_AND_INVESTIGATE_NO_AUTOMATIC_REPAIR',
+    'AM8a.' + n + ' with no automatic repair offered');
+  ok(r.res.failed_predicates.indexOf(row[1]) >= 0,
+    'AM8b.' + n + ' and ' + row[1] + ' is among the conditions that failed',
+    r.res.failed_predicates);
+  eq(r.writes, 0, 'AM8c.' + n + ' and it still wrote nothing');
+  eq(r.res.generate_may_be_attempted_again, false,
+    'AM8d.' + n + ' and still offers no generate');
+});
+
+// ---- AM9 — PROTECTED SURFACE DRIFT: OTHER SCOPE, STOCK, MOVEMENTS, AUDIT ----------------------
+// Driven by moving the world out from under a baseline that describes it, one surface at a time.
+[[{ factory_stock_movements: [] }, 'factory_stock_movement_count', 'the movement count moved'],
+ [{ factory_stock: [] }, 'factory_pool_row_fingerprint', 'the factory pool row changed'],
+ [{ factory_stock_override_audit: [{ override_audit_id: 'AU-NEW',
+     created_at: '2099-01-01T00:00:00Z',
+     entity_type: 'shipping_plan', entity_id: 'SP-X', transition: 'x', company: 'ResUS',
+     country: 'US', marketplace: 'Amazon', sku: 'SP0750-M', source_warehouse_id: WHF }] },
+  'factory_override_audit_count', 'an override-audit row appeared']
+].forEach(function (row, i) {
+  var w = akWorld({});
+  // Replace the surface in the already-built world, keyed by the SHEET name. Keyed by the World spec name
+  // it silently addressed a sheet that does not exist: `movements` is the spec key for the sheet called
+  // `factory_stock_movements`, and `w.sheets.movements` is undefined.
+  Object.keys(row[0]).forEach(function (tbl) {
+    var H = FACTORY_TABLES_[tbl];
+    ok(!!H && !!w.sheets[tbl], 'AM9pre.' + (i + 1) + ' the sheet ' + tbl + ' exists to be moved');
+    w.sheets[tbl].rows = row[0][tbl].map(function (o) {
+      return H.map(function (h) { return o[h] === undefined ? '' : o[h]; });
+    });
+  });
+  vm.runInContext('S1_ACCEPTED_ALTERNATE_PAIR_ = ' + JSON.stringify(amRecord({})) + ';', w.ctx);
+  var r = ahRun(w, 'RUN_S1_POST_GENERATION_MANIFEST_S()');
+  var n = i + 1;
+  eq(r.res.verdict, 'STOP_AND_INVESTIGATE_NO_AUTOMATIC_REPAIR',
+    'AM9.' + n + ' ' + row[2] + ': STOP');
+  ok(r.res.failed_predicates.indexOf('every_comparable_protected_surface_is_unchanged') >= 0,
+    'AM9a.' + n + ' on the protected-surface condition', r.res.failed_predicates);
+  ok(r.res.protected_surfaces.changed.indexOf(row[1]) >= 0,
+    'AM9b.' + n + ' naming ' + row[1] + ' as the surface that moved',
+    r.res.protected_surfaces.changed);
+  eq(w.allWrites(), 0, 'AM9c.' + n + ' and nothing was written');
+});
+
+// ---- AM10 — §D.14: THE SHIPPING PINS ARE CURRENT-STATE, AND SAY SO --------------------------
+var AM10 = AM6.res.shipping_pins;
+eq(AM10.historical_before_state, 'UNPROVABLE',
+  'AM10  the historical before-state of the three shipping tables is UNPROVABLE');
+eq(AM10.pinned_at_relative_to_the_generation, 'AFTER',
+  'AM10a and the pins are explicitly taken AFTER the generation');
+eq(AM10.pins.map(function (p) { return p.table; }),
+  ['shipping_plans', 'shipping_plan_lines', 'shipments'],
+  'AM10b all three tables are pinned');
+AM10.pins.forEach(function (p, i) {
+  eq(p.proves_unchanged_since_before_the_generation, false,
+    'AM10c.' + (i + 1) + ' ' + p.table + ' proves nothing about before');
+  eq(p.is_a_historical_before_state, false,
+    'AM10d.' + (i + 1) + ' and is not a historical before-state');
+  eq(p.is_a_current_state_starting_point, true,
+    'AM10e.' + (i + 1) + ' it is a starting point for the NEXT round');
+  ok(['SHEET_PRESENT_AND_READABLE', 'SHEET_ABSENT', 'SHEET_PRESENT_AND_UNREADABLE']
+    .indexOf(p.observation_state) >= 0,
+    'AM10f.' + (i + 1) + ' with a stated observation state', p.observation_state);
+});
+// A PRESENT TABLE YIELDS THREE NUMBERS; AN ABSENT ONE YIELDS NONE, AND INVENTS NOTHING.
+AM10.pins.filter(function (p) { return p.observation_state === 'SHEET_PRESENT_AND_READABLE'; })
+  .forEach(function (p, i) {
+    ok(p.row_count !== null && p.schema_fingerprint !== null && p.content_fingerprint !== null,
+      'AM10g.' + (i + 1) + ' ' + p.table + ' carries row count, schema and content fingerprints', p);
+  });
+AM10.pins.filter(function (p) { return p.observation_state === 'SHEET_ABSENT'; })
+  .forEach(function (p, i) {
+    eq([p.row_count, p.schema_fingerprint, p.content_fingerprint], [null, null, null],
+      'AM10h.' + (i + 1) + ' while absent ' + p.table + ' carries no invented fingerprint — a hash of'
+      + ' the empty column list is not a schema');
+  });
+// A PRESENT-BUT-UNREADABLE PINNED TABLE IS A FAULT, not an absence.
+ok(AM6.res.failed_predicates.indexOf('no_pinned_table_is_present_but_unreadable') === -1,
+  'AM10i and in the passing world no pinned table was present-but-unreadable');
+// THE SCHEMA FINGERPRINT IS THE SAME FORMULA THE SCHEMA COMPARISON USES.
+var AM10sp = AM10.pins.filter(function (p) { return p.table === 'shipping_plans'; })[0];
+eq(AM10sp.schema_fingerprint, AM6.res.protected_surfaces.compared
+  .filter(function (c) { return c.surface === 'schema:shipping_plans'; })[0].observed,
+  'AM10j and the pin schema fingerprint equals the one the protected-surface comparison read — ONE'
+  + ' formula, so a pin can never disagree with the comparison about the same schema');
+
+// ---- AM11 — MANIFEST S REACHES NOTHING THAT WRITES, AND OFFERS NO GENERATE -------------------
+var AM_MS_REGION = ['S1_msExpectation_', 'S1_msShippingPins_', 'S1_msNoSecondActivePair_',
+  'S1_msFinish_', 'RUN_S1_POST_GENERATION_MANIFEST_S', 'S1_acAppliesTo_', 'S1_acStaleIdentity_']
+  .map(function (f) { return bareCode(extractFn(S1, f)); }).join(NL);
+['weeklyAiPlanGenerateK2_(', '.mint(', 'RUN_S1_CONTROLLED_GENERATE_EXECUTE(',
+ 'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE(', 'handleUpsertShippingAllocationDraftAtomic_(',
+ 'handleSubmitAllocationDraftsToShippingPlans_(', 'sadSubmitToShippingPlansCore_(',
+ 'shippingPlanCommitFromLines_(', 'RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL(',
+ 'setValue', 'setValues', 'appendRow', 'clearContent', 'deleteRow', 'insertRow', 'getRange',
+ 'S1_CG_ONCE_AUTHORIZATION_', 'S1_cgAuthorizationAudit_'].forEach(function (t, i) {
+  eq(AM_MS_REGION.split(t).length - 1, 0, 'AM11.' + (i + 1) + ' Manifest S reaches no ' + t);
+});
+['S1_MANIFEST_P_BEFORE_', 'INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_',
+ 'INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_', 'S1_CG_AUTH_FINGERPRINT_',
+ 'S1_ACCEPTED_ALTERNATE_PAIR_', 'S1_MANIFEST_P_BASELINE_LIFECYCLE_'].forEach(function (n, i) {
+  eq((AM_MS_REGION.match(new RegExp(n + '\\s*=(?!=)', 'g')) || []).length, 0,
+    'AM11b.' + (i + 1) + ' and assigns nothing to ' + n);
+});
+ok(/function RUN_S1_POST_GENERATION_MANIFEST_S\(\)\s*\{/.test(S1),
+  'AM11c it is declared with an EMPTY parameter list — nothing to pass, nothing to widen');
+eq((bareCode(extractFn(S1, 'RUN_S1_POST_GENERATION_MANIFEST_S')).match(/\bopts\b/g) || []).length, 0,
+  'AM11d and never mentions opts');
+eq(S1_BARE.split('RUN_S1_POST_GENERATION_MANIFEST_S(').length - 1, 1,
+  'AM11e it is declared once and called by nothing in this file — a person presses Run');
+['writes', 'writer_calls', 'generator_calls', 'attempts', 'repairs_attempted', 'rows_created',
+ 'rows_updated', 'rows_deleted', 'submit_calls'].forEach(function (k, i) {
+  eq(AM6.res[k], 0, 'AM11f.' + (i + 1) + ' ' + k + ' is zero');
+});
+eq(AM6.res.capability_minted, false, 'AM11g no capability was minted');
+eq(AM6.res.authorization_read, false, 'AM11h no authorization was read');
+eq(AM6.res.this_manifest_wrote_nothing, true, 'AM11i and it says so');
+eq(AM6.calls, 0, 'AM11j the generator seam was never entered');
+eq(AM6.res.offers_no_generate_action, true, 'AM11k it offers no generate action');
+ok((AM6.res.does_not_authorize || []).length >= 6,
+  'AM11l and states what it does not authorize', AM6.res.does_not_authorize);
+// THE EVIDENCE LEAVES THE FUNCTION, through the same chunker §AI2L uses.
+eq(AM6.res.log_emission.sections.length, 4, 'AM11m four evidence sections are emitted');
+AM6.res.log_emission.sections.forEach(function (sec, i) {
+  eq(sec.emitted, true, 'AM11n.' + (i + 1) + ' ' + sec.tag + ' was emitted, not withheld',
+    sec.withheld_reason);
+});
+var AM11over = AM6.logs.filter(function (l) { return String(l).length > 3000; });
+eq(AM11over.length, 0, 'AM11o and no emitted line exceeds the logger line budget',
+  AM11over.map(function (l) { return String(l).slice(0, 60) + ' @' + String(l).length; }));
+
+
+// ---- AM MUTANTS — N202..N211 -------------------------------------------------------------------
+function amMutRun(src, over) {
+  var o = {};
+  Object.keys(over || {}).forEach(function (k) { o[k] = over[k]; });
+  o.world = o.world || {};
+  var w = akWorld((function () {
+    var ww = {}; Object.keys(o.world).forEach(function (k) { ww[k] = o.world[k]; });
+    ww.s1 = src; return ww;
+  })());
+  vm.runInContext('S1_ACCEPTED_ALTERNATE_PAIR_ = '
+    + JSON.stringify(amRecord(o.record || {})) + ';', w.ctx);
+  if (o.consumed !== undefined) {
+    vm.runInContext('S1_CG_CONSUMED_AUTH_FINGERPRINTS_ = ' + JSON.stringify(o.consumed) + ';', w.ctx);
+  }
+  var r = ahRun(w, 'RUN_S1_POST_GENERATION_MANIFEST_S()');
+  r.writes = w.allWrites();
+  return r;
+}
+
+mut('N202 the acceptance is generalised — any complete pair routes to Manifest S', function () {
+  // THE ONE THING THIS ROUND MUST NOT DO. An acceptance that applies to a pair nobody read is an amnesty
+  // for every future unpredicted identity, and it would arrive looking exactly like a fix.
+  var m = swapS1In('S1_ai2RetryContract_', '  if (o.acceptance_applies) {', '  if (true) {');
+  function routes(src, applies) {
+    var w = akWorld(src ? { s1: src } : {});
+    return JSON.parse(vm.runInContext('JSON.stringify(S1_ai2RetryContract_('
+      + JSON.stringify('COMPLETE_WRITE_UNDER_ALTERNATE_IDENTITIES') + ', '
+      + JSON.stringify({ applies: applies, mismatched_fields: ['company'] }) + '))', w.ctx))
+      .next_action;
+  }
+  return routes(null, true) === 'RUN_POST_GENERATION_MANIFEST_S'
+    && routes(null, false) === 'STOP_AND_PERFORM_MANUAL_RECOVERY_WITH_THIS_MANIFEST'
+    && routes(m, false) === 'RUN_POST_GENERATION_MANIFEST_S';
+});
+
+mut('N203 the acceptance stops comparing the quantity, so a wrong-qty pair is accepted', function () {
+  var m = swapS1In('S1_acAppliesTo_', '    if (!same) o.mismatched_fields.push(k);',
+    "    if (!same && k !== 'accepted_qty') o.mismatched_fields.push(k);");
+  function applies(src, qty) {
+    var w = akWorld(src ? { s1: src } : {});
+    var t = {}; Object.keys(AM_TUPLE).forEach(function (k) { t[k] = AM_TUPLE[k]; });
+    t.accepted_qty = qty;
+    return JSON.parse(vm.runInContext('JSON.stringify(S1_acAppliesTo_('
+      + JSON.stringify(t) + '))', w.ctx)).applies;
+  }
+  return applies(null, 25) === true && applies(null, 24) === false && applies(m, 24) === true;
+});
+
+mut('N204 the stale K2 prediction becomes an authorization target again', function () {
+  var m = swapS1In('S1_acStaleIdentity_',
+    '  var stale = !!rec && (t === S1_str_(rec.originally_predicted_header_id)',
+    '  var stale = false && (t === S1_str_(rec.originally_predicted_header_id)');
+  function stale(src, id) {
+    var w = akWorld(src ? { s1: src } : {});
+    var r = JSON.parse(vm.runInContext('JSON.stringify(S1_acStaleIdentity_('
+      + JSON.stringify(id) + '))', w.ctx));
+    return [r.stale, r.may_be_an_authorization_target];
+  }
+  var clean = stale(null, 'SADH-K2-A4239AC6'), bad = stale(m, 'SADH-K2-A4239AC6');
+  return clean[0] === true && clean[1] === false && bad[0] === false && bad[1] === true;
+});
+
+mut('N205 Manifest S stops requiring exactly one row per accepted identity', function () {
+  var m = swapS1In('RUN_S1_POST_GENERATION_MANIFEST_S',
+    "    L.P('exactly_one_row_carries_the_accepted_header_id', 1, hHit.count, hHit.count === 1);",
+    "    L.P('exactly_one_row_carries_the_accepted_header_id', 1, hHit.count, hHit.count >= 1);");
+  var clean = amRun({ world: { duplicateHeader: true } });
+  var bad = amMutRun(m, { world: { duplicateHeader: true } });
+  return clean.res.verdict === 'STOP_AND_INVESTIGATE_NO_AUTOMATIC_REPAIR'
+    && bad.res.failed_predicates.indexOf('exactly_one_row_carries_the_accepted_header_id') === -1;
+});
+
+mut('N206 Manifest S stops re-deriving the stored identity and trusts the id it reads', function () {
+  // A stored id is a string somebody wrote. Re-deriving it from its own fields is the only thing that
+  // separates \"the row production minted\" from \"a row with a plausible id in it\".
+  var m = swapS1In('RUN_S1_POST_GENERATION_MANIFEST_S',
+    "      L.P('the_stored_header_id_re_derives_from_its_own_stored_fields', true,",
+    "      L.P('the_stored_header_id_re_derives_from_its_own_stored_fields_DISABLED', true,");
+  function names(r) {
+    return r.res.predicates.map(function (p) { return p.predicate; })
+      .indexOf('the_stored_header_id_re_derives_from_its_own_stored_fields') >= 0;
+  }
+  return names(amRun({})) === true && names(amMutRun(m, {})) === false;
+});
+
+mut('N207 the quantity check accepts a blank as the accepted quantity', function () {
+  var m = swapS1In('RUN_S1_POST_GENERATION_MANIFEST_S',
+    '        rf.planned_qty !== null && rf.planned_qty === S1_qty_(rec.accepted_qty));',
+    '        rf.planned_qty === S1_qty_(rec.accepted_qty) || rf.planned_qty === null);');
+  var clean = amRun({ world: { qty: '' } });
+  var bad = amMutRun(m, { world: { qty: '' } });
+  return clean.res.failed_predicates.indexOf('the_written_quantity_is_the_accepted_quantity') >= 0
+    && bad.res.failed_predicates.indexOf('the_written_quantity_is_the_accepted_quantity') === -1;
+});
+
+mut('N208 a shipping pin claims to prove the table is unchanged since before', function () {
+  // The pin is a forward guarantee. Labelling it a historical proof is the one thing that would make the
+  // three UNPROVABLE tables read as verified, which is exactly the claim §D.14 forbids.
+  var m = swapS1In('S1_msShippingPins_',
+    '      proves_unchanged_since_before_the_generation: false,',
+    '      proves_unchanged_since_before_the_generation: true,');
+  function honest(r) {
+    return r.res.shipping_pins.pins.every(function (p) {
+      return p.proves_unchanged_since_before_the_generation === false;
+    }) && r.res.failed_predicates
+      .indexOf('no_shipping_pin_claims_to_prove_anything_about_the_past') === -1;
+  }
+  var clean = amRun({}), bad = amMutRun(m, {});
+  return honest(clean) === true
+    && bad.res.failed_predicates
+      .indexOf('no_shipping_pin_claims_to_prove_anything_about_the_past') >= 0;
+});
+
+mut('N209 an absent pinned table is handed a fingerprint of the empty column list', function () {
+  // MEASURED: computing the schema fingerprint unconditionally gave an absent `shipments` sheet the
+  // fingerprint 811C9DC5, which is fnv1a(''), the FNV offset basis. A hash of nothing is indistinguishable
+  // from a hash of something, and the NEXT round would compare against it.
+  var m = swapS1In('S1_msShippingPins_',
+    '      schema_fingerprint: live ? S1_schemaFingerprintOf_(full.live_columns) : null,',
+    '      schema_fingerprint: S1_schemaFingerprintOf_(full.live_columns),');
+  function absentPins(r) {
+    return r.res.shipping_pins.pins.filter(function (p) {
+      return p.observation_state === 'SHEET_ABSENT';
+    });
+  }
+  var clean = absentPins(amRun({})), bad = absentPins(amMutRun(m, {}));
+  if (!clean.length || !bad.length) return false;      // the fixture must actually have an absent table
+  return clean.every(function (p) { return p.schema_fingerprint === null; })
+    && bad.some(function (p) { return p.schema_fingerprint !== null; });
+});
+
+mut('N210 a stray AI header with no lines belongs to no sku, so the scan drops it', function () {
+  // A header with nothing under it cannot be placed by the sku its lines carry, and dropping it for that
+  // reason discards exactly the shape of a half-landed second generation. MEASURED: the scan did drop it,
+  // and the fixture second header — same scope, same run, no line — came back as a clean world.
+  var m = swapS1In('S1_msNoSecondActivePair_',
+    '    if (lineCounts[hid] === undefined || lineCounts[hid] === 0) {',
+    '    if (false) {');
+  function seen(r) {
+    return r.res.second_pair_scan.other_active_ai_header_ids.length > 0
+      && r.res.failed_predicates.indexOf('no_other_active_ai_header_stands_in_this_scope') >= 0;
+  }
+  var clean = amRun({ world: { secondHeader: 'SADH-K4-SECONDPAIR' } });
+  var bad = amMutRun(m, { world: { secondHeader: 'SADH-K4-SECONDPAIR' } });
+  return seen(clean) === true && seen(bad) === false;
+});
+
+mut('N211a the calculation-run check goes back inside the scope guard, where it cannot be reached',
+  function () {
+    // The ordering IS the fix. A row stamped with THIS run is this generation output wherever it sits, so
+    // asking about it only after deciding it is in the target scope makes the check unreachable for the one
+    // header it exists to catch.
+    var m = swapS1In('S1_msNoSecondActivePair_',
+      '    if (run && S1_str_(h.calculation_run_id) === run) o.same_run_other_header_ids.push(hid);',
+      '    if (false && S1_str_(h.calculation_run_id) === run) o.same_run_other_header_ids.push(hid);');
+    function caught(r) {
+      return r.res.second_pair_scan.same_run_other_header_count === 1
+        && r.res.failed_predicates.indexOf('no_other_header_carries_this_calculation_run') >= 0;
+    }
+    var clean = amRun({ world: { secondHeader: 'SADH-K4-SECONDPAIR' } });
+    var bad = amMutRun(m, { world: { secondHeader: 'SADH-K4-SECONDPAIR' } });
+    return caught(clean) === true && caught(bad) === false;
+  });
+
+mut('N211 the consumed authorization is accepted again because CONSUMED is not checked', function () {
+  var m = swapS1In('S1_cgOnceAuthorizationCheck_', '  if (o.consumed_fingerprint) {', '  if (false) {');
+  function check(src) {
+    var w = S1World(src ? pos({ s1: src }) : pos());
+    var r = vm.runInContext('S1_cgOnceAuthorizationCheck_(S1_CG_ONCE_AUTHORIZATION_)', w.ctx);
+    return [r.ok, r.reason];
+  }
+  var clean = check(null), bad = check(m);
+  return clean[0] === false && clean[1] === 'AUTHORIZATION_FINGERPRINT_ALREADY_CONSUMED'
+    && bad[0] === true;
 });
 
 console.log('\npassed ' + pass + '  failed ' + fail

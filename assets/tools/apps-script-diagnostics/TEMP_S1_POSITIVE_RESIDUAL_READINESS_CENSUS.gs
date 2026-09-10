@@ -821,6 +821,18 @@ function S1_openDb_() {
  * §1 / §4 — THE SCHEMA FINGERPRINTS. Read from the live sheets, in the live order, so a candidate's evidence
  * is bound to the schema it was measured against. Two schemas are two different tables.
  */
+/** THE schema fingerprint, in ONE place. The separator is a literal UNIT SEPARATOR (U+001F), not the
+ *  empty string: joining on '' would make ['ab','c'] and ['a','bc'] the same schema, and a separator no
+ *  column name can contain is what stops that. Copying this formula into the pin builder instead of calling
+ *  it was the first thing tried here, and it produced a DIFFERENT number for the same header row — two
+ *  fingerprints for one schema, with nothing to say which one was the schema's.
+ *
+ *  Null when the repo hash authority is absent, never a local substitute — the rule S1_fingerprint_ follows. */
+function S1_schemaFingerprintOf_(columns) {
+  if (typeof KMFSG === 'undefined' || !KMFSG || typeof KMFSG.fnv1a !== 'function') return null;
+  return KMFSG.fnv1a((columns || []).join('')).toUpperCase();
+}
+
 function S1_schemaFingerprints_(ss) {
   var out = { tables: {}, ok: true, unreadable: [] };
   ['inventory_replenishment_gap', 'shipping_allocation_drafts', 'shipping_allocation_draft_lines',
@@ -834,9 +846,7 @@ function S1_schemaFingerprints_(ss) {
         ? sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0].map(function (h) { return S1_str_(h); })
         : [];
     } catch (e2) { out.tables[t] = { present: true, column_count: null, fingerprint: null, error: String(e2 && e2.message) }; out.unreadable.push(t); out.ok = false; return; }
-    var fp = (typeof KMFSG !== 'undefined' && KMFSG && typeof KMFSG.fnv1a === 'function')
-      ? KMFSG.fnv1a(hdrs.join('')).toUpperCase()
-      : null;
+    var fp = S1_schemaFingerprintOf_(hdrs);
     out.tables[t] = { present: true, column_count: hdrs.length, columns: hdrs, fingerprint: fp };
   });
   return out;
@@ -11366,6 +11376,192 @@ var S1_CG_AUTH_FINGERPRINT_ = '8A830413';
 /** Fingerprints that were valid once and are not valid now. Named rather than deleted: a superseded
  *  authorization that leaves no trace cannot be told apart from one that was never issued. */
 var S1_CG_SUPERSEDED_AUTH_FINGERPRINTS_ = ['F700840D'];
+
+// S1-R6E — CONSUMED IS NOT SUPERSEDED, AND THE TWO REFUSALS MUST NOT SHARE A NAME.
+//
+// A SUPERSEDED sentence was replaced before it was ever used: the operator has the wrong paste and needs
+// the current one. A CONSUMED sentence was used, the generation it authorized COMPLETED, and there is no
+// current one to reach for — what is needed is a new Manifest P, a new baseline and a new sentence. Told
+// "superseded", an operator goes looking for a replacement that does not exist.
+//
+// 8A830413 authorized ONE generation on 2026-09-10. It ran, it wrote the pair recorded in
+// S1_ACCEPTED_ALTERNATE_PAIR_, and the sentence says so itself: "This authorization covers ONE
+// generation and expires when it completes or refuses."
+var S1_CG_CONSUMED_AUTH_FINGERPRINTS_ = ['8A830413'];
+
+/**
+ * ================================================================================================================
+ * S1-R6E §AC — THE HUMAN ACCEPTANCE, RECORDED AS DATA AND SCOPED TO EXACTLY ONE PAIR.
+ *
+ * The controlled Generate SUCCEEDED. It wrote one header and one line, with the authorized quantity, in the
+ * authorized scope, against the authorized run — under identities the frozen baseline had not predicted,
+ * because the baseline predicted through a K2-only resolver and the writer minted through the K4 one. A
+ * person read the readback, read the reconciliation, and accepted the pair.
+ *
+ * WHY THIS IS A RECORD AND NOT A RULE. Nothing here relaxes what happens to an alternate identity in
+ * general. An unpredicted pair still classifies as COMPLETE_WRITE_UNDER_ALTERNATE_IDENTITIES and still
+ * routes to a person; what this record changes is the routing for THIS EXACT TUPLE — scope, run, cycle,
+ * header id, line id, quantity — and `S1_acAppliesTo_` requires every one of them to match. A second scope,
+ * a second run, a different quantity or a different id gets the STOP it would have got yesterday.
+ *
+ * THE HISTORY IS NOT OVERWRITTEN. The predicted identities stay here beside the actual ones, with the two
+ * authorities named and the reason they diverged. `S1_MANIFEST_P_BEFORE_` is left BYTE-IDENTICAL: it is the
+ * evidence of what was frozen and signed, and a baseline edited after the fact is not a baseline. Its
+ * spent-ness is recorded next to it instead, in S1_MANIFEST_P_BASELINE_LIFECYCLE_.
+ * ================================================================================================================
+ */
+var S1_ACCEPTED_ALTERNATE_PAIR_ = {
+  // ---- the decision -----------------------------------------------------------------------------
+  acceptance_recorded_in_round: 'S1-R6E',
+  acceptance_manifest_verdict: 'ALTERNATE_PAIR_IS_ACCEPTABLE_BY_A_PERSON',
+  acceptance_predicates_passed: 9,
+  acceptance_predicates_failed: 0,
+  decided_by: 'THE_OPERATOR',
+  generate_completed: true,
+  generate_may_be_attempted_again: false,
+  manual_db_repair_required: false,
+  accepted_under_alternate_identity: true,
+  // ---- the exact tuple it applies to, and nothing else ------------------------------------------
+  scope_key: 'ResUS|US|Amazon|SP0750-M',
+  company: 'ResUS',
+  country: 'US',
+  marketplace: 'Amazon',
+  sku: 'SP0750-M',
+  calculation_run_id: 'GAP-INV-20260910T132343-0001',
+  planning_cycle: 'RECO-2026-09',
+  source_factory_warehouse_id: 'WH-TW-CN-FACTORY-YOUXIN',
+  window_code: 'D90',
+  site_sku: 'SP0750-M',
+  accepted_qty: 25,
+  // THE ROUTE, RECORDED, so the accepted ids can be RE-DERIVED from the record rather than compared with
+  // numbers somebody typed. Every field here is an input to one of the two canonical strings below, and the
+  // blank destination warehouse is not an omission: this route ships to a MARKETPLACE, which is the whole
+  // reason the two families disagree.
+  source_page: 'inventory_replenishment',
+  recommended_destination_warehouse_id: '',
+  destination_marketplace: 'Amazon',
+  recommended_shipping_method: 'SEA',
+  recommended_last_mile_delivery: 'TRUCK',
+  recommendation_group_no: '1',
+  accepted_header_id: 'SADH-K4-1443C1AF',
+  accepted_line_id: 'SADL-K2-7F2C46B2',
+  accepted_identity_family: 'K4',
+  // The canonical string the accepted header id is the hash of. Kept as EVIDENCE, never as an input: every
+  // check re-derives it from the stored row through 69_'s own builder and compares.
+  accepted_k4_group_key: 'reco-2026-09|resus|us|amazon|inventory_replenishment'
+    + '|wh-tw-cn-factory-youxin|marketplace|amazon|sea|truck|1',
+  // ---- the history, preserved -------------------------------------------------------------------
+  originally_predicted_header_id: 'SADH-K2-A4239AC6',
+  originally_predicted_line_id: 'SADL-K2-2FD4DCA2',
+  originally_predicted_k2_group_key: 'reco-2026-09|resus|us|amazon|inventory_replenishment'
+    + '|wh-tw-cn-factory-youxin||sea|truck|1',
+  prediction_authority_that_was_used: '16_ sadK2ResolveActiveDraft_ — the K2-only resolver, which takes no'
+    + ' k4Ready flag and therefore always mints SADH-K2-',
+  writer_authority_that_actually_minted: '16_ sadResolveActiveDraftK2OrK3_({ k4Ready }) at 16_:2013, which'
+    + ' on a K4-ready sheet mints through 69_ ricK4DeterministicHeaderId_',
+  why_they_differed: 'ONE DIMENSION, AND IT IS A DESTINATION THAT K2 CANNOT HOLD. The route ships to a'
+    + ' MARKETPLACE, so recommended_destination_warehouse_id is blank and destination_marketplace is'
+    + ' Amazon. K2 has ten dimensions and none of them is a destination marketplace, so its key carries an'
+    + ' empty segment where the destination belongs — the || in the K2 string above. K4 has eleven and'
+    + ' derives (destination_type, destination_identity) = (MARKETPLACE, amazon) from the same row. A'
+    + ' different canonical string is a different hash is a different id; and because the LINE natural key'
+    + ' begins with the header id, one header divergence moved BOTH frozen identities out of existence.',
+  the_line_id_derives_from_the_header_id: 'sadK2LineNaturalKey_ = draftId|sku|site_sku|window_code (16_:939)'
+    + ', so the line stays SADL-K2- in both families and moves with its parent',
+  // ---- what was spent ---------------------------------------------------------------------------
+  consumed_authorization_fingerprint: '8A830413',
+  consumed_frozen_baseline_frozen_at: '2026-09-10 14:42:06',
+  timeline: [
+    'R6A  the controlled Generate ran once. verdict MANUAL_RECOVERY_REQUIRED, zero expected rows found.',
+    'R6B  the refusal did name a reason, one layer below where the classifier looked; 61_ leaves errors[]'
+      + ' empty by construction for five zero-write terminal states.',
+    'R6C  the divergence located in source: two resolvers and one k4Ready flag. Production is the SSOT,'
+      + ' by 69_’s own text, so only the prediction was fixed.',
+    'R6D  the live readback returned WRITE_LANDED_UNDER_UNEXPECTED_IDENTITY with alternate_identity_count 1'
+      + ' but no id, because the evidence never left the function.',
+    'R6D0 five detail log sections, numbered and fingerprinted, so the operator could read it.',
+    'R6E  the actual pair read back: SADH-K4-1443C1AF / SADL-K2-7F2C46B2. Both re-derive from their own'
+      + ' stored fields through production’s builders. The writer was self-consistent throughout; the'
+      + ' prediction was stale. Accepted by a person. No repair, no deletion, no second Generate.'
+  ]
+};
+
+/**
+ * THE SPENT-NESS OF THE FROZEN BASELINE, RECORDED BESIDE IT RATHER THAN INSIDE IT.
+ *
+ * The baseline is the signed evidence of what was measured before the generation. Editing it to say "used"
+ * would destroy the one artefact that proves what was promised — and would also make every fingerprint in
+ * it unverifiable. So it stays byte-identical and this says what became of it.
+ */
+var S1_MANIFEST_P_BASELINE_LIFECYCLE_ = {
+  frozen_at: '2026-09-10 14:42:06',
+  state: 'CONSUMED',
+  consumed_by: 'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE, one call, 2026-09-10',
+  generation_outcome: 'COMPLETED — one header and one line written, under the K4 identities recorded in'
+    + ' S1_ACCEPTED_ALTERNATE_PAIR_',
+  may_authorize_another_generate: false,
+  identity_prediction_is_stale: true,
+  why_stale: 'expected_header_ids / expected_line_ids name the K2 identities a K2-only resolver predicted.'
+    + ' The corrected prediction resolves through the writer’s own resolver and produces the K4 pair, so'
+    + ' a fresh Manifest P would CONFLICT with this baseline — which is the safe outcome, not a fault.',
+  what_a_further_generate_would_require: 'a NEW Manifest P run, a NEW frozen baseline measured after this'
+    + ' generation, and a NEW authorization sentence. None of those exist, and this baseline may not stand'
+    + ' in for them.'
+};
+
+/**
+ * DOES THE RECORDED ACCEPTANCE APPLY TO THE PAIR IN FRONT OF US? PURE, AND EXACT ON EVERY FIELD.
+ *
+ * This is the whole of what keeps the acceptance from becoming a general amnesty for unpredicted
+ * identities. Every field is compared, each mismatch is NAMED, and a single one is enough to refuse. There
+ * is no "close enough" branch and no field that is merely advisory: an acceptance that tolerated a
+ * different quantity would be an acceptance of a row nobody read.
+ */
+var S1_AC_MATCH_FIELDS_ = ['company', 'country', 'marketplace', 'sku', 'calculation_run_id',
+  'planning_cycle', 'accepted_header_id', 'accepted_line_id', 'accepted_qty'];
+
+function S1_acAppliesTo_(facts) {
+  var rec = S1_ACCEPTED_ALTERNATE_PAIR_;
+  var o = { applies: false, record_present: !!rec, mismatched_fields: [], compared: [],
+    scope_key: rec ? rec.scope_key : null };
+  if (!rec) { o.mismatched_fields.push('NO_ACCEPTANCE_RECORD_EXISTS'); return o; }
+  var f = facts || {};
+  S1_AC_MATCH_FIELDS_.forEach(function (k) {
+    var want = rec[k];
+    var got = f[k];
+    // The quantity is compared as a NUMBER and everything else as a trimmed string. Comparing 25 with '25'
+    // as text would pass, and comparing them as numbers would make every id NaN.
+    var same = (k === 'accepted_qty')
+      ? (S1_qty_(got) !== null && S1_qty_(got) === S1_qty_(want))
+      : (S1_str_(got) === S1_str_(want));
+    o.compared.push({ field: k, expected: want, observed: got === undefined ? null : got, same: same });
+    if (!same) o.mismatched_fields.push(k);
+  });
+  o.applies = o.mismatched_fields.length === 0;
+  return o;
+}
+
+/**
+ * IS THIS ID A STALE PREDICTION? Named, so it can never be an authorization target again.
+ *
+ * The two K2 ids are kept in the record as history. History is exactly the thing that must not be mistaken
+ * for a live expectation: `SADH-K2-A4239AC6` is the id a superseded resolver predicted, it names no row in
+ * the database, and any manifest that asked for it would be asking for a row that was never written.
+ */
+function S1_acStaleIdentity_(id) {
+  var rec = S1_ACCEPTED_ALTERNATE_PAIR_;
+  var t = S1_str_(id);
+  var stale = !!rec && (t === S1_str_(rec.originally_predicted_header_id)
+    || t === S1_str_(rec.originally_predicted_line_id));
+  return { id: t, stale: stale,
+    is_the_live_accepted_identity: !!rec && (t === S1_str_(rec.accepted_header_id)
+      || t === S1_str_(rec.accepted_line_id)),
+    classification: stale ? 'STALE_PREDICTION_HISTORY_ONLY' : null,
+    may_be_an_authorization_target: !stale,
+    why: stale ? 'this id was predicted by 16_ sadK2ResolveActiveDraft_, which the atomic writer does not'
+      + ' call. No row carries it, and none ever did.' : null };
+}
+
 /** A sentence shorter than this is not the sentence — it is a summary, a fingerprint or a stub. The real
  *  one is 2245 characters; this floor exists so "I pasted the hash" fails as its own named refusal rather
  *  than as a puzzling missing-fact list. */
@@ -11456,7 +11652,8 @@ function S1_cgAuthorizationAudit_(text, b) {
   var o = { supplied: false, is_string: false, bytes: null,
     untrimmed_input_rejected: false, fingerprint: null, fingerprint_authority_available: null,
     expected_fingerprint: S1_CG_AUTH_FINGERPRINT_, fingerprint_matches: false,
-    superseded_fingerprint_supplied: false, looks_like_a_fingerprint_not_a_sentence: false,
+    superseded_fingerprint_supplied: false, consumed_fingerprint_supplied: false,
+    looks_like_a_fingerprint_not_a_sentence: false,
     placeholders: [], required_item_count: 0, present_count: 0, missing: [],
     normalization_applied: 'NONE — the text is compared and hashed exactly as supplied',
     ok: false, reason: null };
@@ -11485,6 +11682,10 @@ function S1_cgAuthorizationAudit_(text, b) {
   if (S1_CG_SUPERSEDED_AUTH_FINGERPRINTS_.indexOf(o.fingerprint) !== -1) {
     o.superseded_fingerprint_supplied = true;
     o.reason = 'AUTHORIZATION_FINGERPRINT_SUPERSEDED'; return o;
+  }
+  if (S1_CG_CONSUMED_AUTH_FINGERPRINTS_.indexOf(o.fingerprint) !== -1) {
+    o.consumed_fingerprint_supplied = true;
+    o.reason = 'AUTHORIZATION_FINGERPRINT_ALREADY_CONSUMED'; return o;
   }
   o.fingerprint_matches = o.fingerprint === S1_CG_AUTH_FINGERPRINT_;
   if (!o.fingerprint_matches) { o.reason = 'AUTHORIZATION_FINGERPRINT_MISMATCH'; return o; }
@@ -12093,6 +12294,12 @@ var S1_CG_NEXT_ACTION_ALLOWS_ANOTHER_GENERATE_ = {
   'NO_FURTHER_GENERATE_ACTION': false,
   'RUN_POST_GENERATION_READBACK': false,
   'STOP_AND_PERFORM_MANUAL_RECOVERY': false,
+  // S1-R6E — the accepted-pair route. It goes to a READ-ONLY verification and nowhere else: this table
+  // is the one place that says which next actions may generate, and both new rows say no.
+  'RUN_POST_GENERATION_MANIFEST_S': false,
+  'STOP_AND_PERFORM_MANUAL_RECOVERY_WITH_THIS_MANIFEST': false,
+  'MARK_S1_COMPLETE_AND_RESUME_P_BRANCH': false,
+  'STOP_AND_INVESTIGATE_NO_AUTOMATIC_REPAIR': false,
   'RERUN_MANIFEST_P_AND_REQUIRE_NEW_AUTHORIZATION': true,
   'RERUN_WITH_EXECUTE_TRUE_USING_THIS_FROZEN_BASELINE': true,
   'RERUN_PREFLIGHT_THEN_RETRY_WHEN_THE_LOCK_IS_FREE': true
@@ -12612,6 +12819,8 @@ function S1_cgOnceAuthorizationCheck_(text) {
     fingerprint: null, expected_fingerprint: S1_CG_AUTH_FINGERPRINT_,
     fingerprint_authority_available: false, fingerprint_ok: false,
     superseded_fingerprint: false,
+    // S1-R6E — the sentence can be perfectly intact AND spent. Two questions, two fields.
+    consumed_fingerprint: false, structurally_ok: false,
     placeholder_count: null, placeholders_ok: false,
     text_is_never_reprinted: true, ok: false, reason: null };
   if (!o.is_string) { o.reason = 'AUTHORIZATION_CONSTANT_IS_NOT_A_STRING'; return o; }
@@ -12634,6 +12843,13 @@ function S1_cgOnceAuthorizationCheck_(text) {
   if (o.superseded_fingerprint) { o.reason = 'AUTHORIZATION_FINGERPRINT_SUPERSEDED'; return o; }
   o.fingerprint_ok = o.fingerprint === S1_CG_AUTH_FINGERPRINT_;
   if (!o.fingerprint_ok) { o.reason = 'AUTHORIZATION_FINGERPRINT_MISMATCH'; return o; }
+  // EVERY STRUCTURAL PROOF HAS PASSED AT THIS POINT, and that is recorded before the lifecycle question
+  // is asked — so a refusal here can never be read as "the paste is wrong".
+  o.structurally_ok = true;
+  o.consumed_fingerprint = S1_CG_CONSUMED_AUTH_FINGERPRINTS_.indexOf(o.fingerprint) !== -1;
+  if (o.consumed_fingerprint) {
+    o.reason = 'AUTHORIZATION_FINGERPRINT_ALREADY_CONSUMED'; return o;
+  }
   o.ok = true;
   return o;
 }
@@ -13622,12 +13838,53 @@ var S1_AI2_IDENTIFYING_PREDICATES_ = ['SAME_CALCULATION_RUN_ID', 'SAME_K2_GROUP_
 
 /** The retry contract: identical for all six, because the authorization and the baseline are both spent and
  *  no reading of a row can un-spend either. §八. */
-function S1_ai2RetryContract_(cls) {
-  return { known: S1_AI2_CLASSES_.indexOf(S1_str_(cls)) >= 0, contract_key: S1_str_(cls),
+/**
+ * THE TUPLE THE RECORDED ACCEPTANCE IS COMPARED AGAINST, TAKEN FROM THE STORED ROW.
+ *
+ * Every field comes off the header and line that were FOUND, never off the baseline or the record. A
+ * comparison fed from the record would agree with itself, which is the shape of a check that cannot fail.
+ */
+function S1_ai2AcceptanceFacts_(rb) {
+  var hs = (rb && rb.search && rb.search.candidate_headers) || [];
+  var ls = (rb && rb.search && rb.search.candidate_lines) || [];
+  // EXACTLY ONE OF EACH, or there is no tuple to compare. Two headers is a duplicate and one side alone
+  // is a partial; both are STOPs, and neither may be routed by an acceptance of a different shape.
+  if (hs.length !== 1 || ls.length !== 1) return null;
+  var h = hs[0], l = ls[0];
+  return { company: h.company, country: h.country, marketplace: h.marketplace, sku: l.sku,
+    calculation_run_id: h.calculation_run_id, planning_cycle: h.planning_cycle,
+    accepted_header_id: h.allocation_draft_id, accepted_line_id: l.allocation_draft_line_id,
+    accepted_qty: l.planned_qty };
+}
+
+/**
+ * THE RETRY CONTRACT — AND THE ONE ROUTE OUT OF STOP.
+ *
+ * `generate_may_be_attempted_again` is FALSE on every path here and there is no branch that sets it true;
+ * the authorization is consumed and the baseline is spent, so no classification of an already-written row
+ * could make another generation legitimate.
+ *
+ * What the recorded acceptance changes is the NEXT ACTION, and only for the one class where a person has
+ * something to accept: a COMPLETE pair whose every identifying field matches the record. A complete pair
+ * that is NOT that pair keeps the STOP, and so do partial, duplicate, orphan, pre-existing and
+ * indeterminate — reached here by the guard below rather than by remembering to check.
+ */
+function S1_ai2RetryContract_(cls, acceptance) {
+  var o = { known: S1_AI2_CLASSES_.indexOf(S1_str_(cls)) >= 0, contract_key: S1_str_(cls),
     retryable: false, automatic_retry_allowed: false,
     same_authorization_reusable: false, same_frozen_baseline_reusable: false,
     generate_may_be_attempted_again: false,
+    acceptance_applies: null, acceptance_mismatched_fields: [],
     next_action: 'STOP_AND_PERFORM_MANUAL_RECOVERY_WITH_THIS_MANIFEST' };
+  if (S1_str_(cls) !== 'COMPLETE_WRITE_UNDER_ALTERNATE_IDENTITIES') return o;
+  var ap = acceptance && typeof acceptance === "object" ? acceptance
+    : { applies: false, mismatched_fields: ['NO_TUPLE_WAS_SUPPLIED_TO_COMPARE'] };
+  o.acceptance_applies = ap.applies === true;
+  o.acceptance_mismatched_fields = (ap.mismatched_fields || []).slice();
+  if (o.acceptance_applies) {
+    o.next_action = 'RUN_POST_GENERATION_MANIFEST_S';
+  }
+  return o;
 }
 
 /**
@@ -14476,7 +14733,31 @@ function S1_ai2EmitDetailLogs_(out) {
     meta.which_side_was_wrong = S1_ai2CapOrNull_(r.which_side_was_wrong, 240);
     meta.ssot = S1_ai2CapOrNull_(r.ssot, 240);
   }
-  S1_log_('s1_ai2_readback_meta', JSON.stringify(meta));
+  // S1-R6E — the recorded acceptance decides the route, so it belongs in the line a reader meets first.
+  if (out.acceptance && typeof out.acceptance === 'object') {
+    meta.acceptance_applies = out.acceptance.applies === true;
+    meta.acceptance_mismatched_fields = (out.acceptance.mismatched_fields || []).slice(0, 12);
+  }
+  meta.accepted_under_alternate_identity = out.accepted_under_alternate_identity === undefined
+    ? null : out.accepted_under_alternate_identity;
+  // ONE LINE WHEN IT FITS, NUMBERED CHUNKS WHEN IT DOES NOT — AND NEVER A TRUNCATED LINE.
+  //
+  // MEASURED: R6E added the acceptance outcome and the mismatch list to this object and the rendered line
+  // went past 3000 bytes, which the Apps Script logger cuts. The suite caught it on the assertion that no
+  // emitted line exceeds the budget. The fix is not to trim the facts back out — they are the facts that
+  // decide the route — and it is certainly not to raise the assertion. Above the budget the index goes out
+  // through the same chunker every other section uses, so the tag gains _1_of_N and nothing is lost.
+  var idxTag = 's1_ai2_readback_meta';
+  var idxText = JSON.stringify(meta);
+  var idxLine = '[S1] '.length + idxTag.length + 1 + idxText.length;
+  meta.index_line_bytes = idxLine;
+  meta.index_was_chunked = idxLine > S1_CHUNK_MAX_BYTES_;
+  if (meta.index_was_chunked) {
+    // re-stringify: the two fields above are part of what a reader gets to see
+    S1_ai2EmitSection_(idxTag, meta, "the readback index");
+  } else {
+    S1_log_(idxTag, JSON.stringify(meta));
+  }
   return meta;
 }
 
@@ -14586,7 +14867,18 @@ function S1_ai2Finish_(out, L) {
   out.predicates_failed = L.failed.length;
   out.failed_predicates = L.failed.slice();
   out.classification_is_known = S1_AI2_CLASSES_.indexOf(S1_str_(out.classification)) >= 0;
-  out.retry_contract = S1_ai2RetryContract_(out.classification);
+  // §A/§C — THE RECORDED ACCEPTANCE, ASKED OF THE ROW THAT WAS FOUND.
+  //
+  // `S1_acAppliesTo_` compares nine fields and names each mismatch, so the report says not just whether
+  // the acceptance applied but WHICH field stopped it. A readback in another scope, or against another
+  // run, or on a pair whose quantity is not 25, lands here with a named mismatch and keeps the STOP.
+  out.acceptance_tuple = S1_ai2AcceptanceFacts_(out);
+  out.acceptance = out.acceptance_tuple === null
+    ? { applies: false, record_present: true, mismatched_fields: ['NO_SINGLE_PAIR_TO_COMPARE'],
+        compared: [], scope_key: null }
+    : S1_acAppliesTo_(out.acceptance_tuple);
+  out.accepted_under_alternate_identity = out.acceptance.applies === true;
+  out.retry_contract = S1_ai2RetryContract_(out.classification, out.acceptance);
   out.next_action = out.retry_contract.next_action;
   out.this_manifest_wrote_nothing = (out.writes === 0 && out.writer_calls === 0
     && out.generator_calls === 0 && out.attempts === 0 && out.capability_minted === false
@@ -14699,9 +14991,21 @@ function RUN_S1_CONTROLLED_GENERATE_ALTERNATE_PAIR_ACCEPTANCE_MANIFEST() {
     out.verdict = out.acceptance_preconditions_met
       ? 'ALTERNATE_PAIR_IS_ACCEPTABLE_BY_A_PERSON'
       : 'ALTERNATE_PAIR_IS_NOT_ACCEPTABLE_YET';
-    out.next_action = out.acceptance_preconditions_met
-      ? 'A_PERSON_RECORDS_THE_ACCEPTANCE_THEN_THE_IDENTITY_CONTRACT_AND_READBACK_ARE_CORRECTED'
-      : 'STOP_AND_PERFORM_MANUAL_RECOVERY_WITH_THIS_MANIFEST';
+    // S1-R6E — THE RECORDING STEP THIS USED TO POINT AT HAS HAPPENED, for one exact pair. So the route
+    // now depends on whether the pair in front of it IS that pair: if it is, the next step is the
+    // read-only post-generation verification; if it is acceptable but unrecorded, the operator is still
+    // the next step, and that is said in its own words rather than by falling back to a STOP.
+    out.acceptance_tuple = S1_ai2AcceptanceFacts_(rb);
+    out.acceptance = out.acceptance_tuple === null
+      ? { applies: false, record_present: true, mismatched_fields: ['NO_SINGLE_PAIR_TO_COMPARE'],
+          compared: [], scope_key: null }
+      : S1_acAppliesTo_(out.acceptance_tuple);
+    out.acceptance_is_already_recorded = out.acceptance.applies === true;
+    out.next_action = !out.acceptance_preconditions_met
+      ? 'STOP_AND_PERFORM_MANUAL_RECOVERY_WITH_THIS_MANIFEST'
+      : (out.acceptance_is_already_recorded
+        ? 'RUN_POST_GENERATION_MANIFEST_S'
+        : 'A_PERSON_RECORDS_THE_ACCEPTANCE_THEN_THE_IDENTITY_CONTRACT_AND_READBACK_ARE_CORRECTED');
     if (!out.acceptance_preconditions_met) {
       out.stop_reason = 'not acceptable: ' + L.failed.slice(0, 8).join(', ');
     }
@@ -14709,7 +15013,8 @@ function RUN_S1_CONTROLLED_GENERATE_ALTERNATE_PAIR_ACCEPTANCE_MANIFEST() {
     out.forbidden_regardless_of_the_verdict = ['DELETE_THE_ALTERNATE_ROWS', 'REBUILD_THEM',
       'REGENERATE_UNDER_THE_PREDICTED_IDENTITIES', 'REUSE_THE_SPENT_AUTHORIZATION',
       'REUSE_THE_SPENT_FROZEN_BASELINE'];
-    out.retry_contract = S1_ai2RetryContract_(out.verdict);
+    out.retry_contract = S1_ai2RetryContract_(out.verdict, out.acceptance);
+    out.retry_contract.next_action = out.next_action;
     out.retry_contract.contract_key = out.verdict;
     out.retry_contract.known = true;
     return S1_ai2FinishAcceptance_(out, L);
@@ -14742,4 +15047,507 @@ function S1_ai2FinishAcceptance_(out, L) {
     this_manifest_wrote_nothing: out.this_manifest_wrote_nothing,
     next_action: out.next_action, stop_reason: S1_cap_(out.stop_reason, 400) }));
   return out;
+}
+
+/**
+ * ================================================================================================================
+ * S1-R6E §MS — POST-GENERATION MANIFEST S. READ ONLY, NO OPTIONS, NO REPAIR, AND NO WAY TO GENERATE.
+ *
+ * The generation happened, the pair was read back, and a person accepted it. What is left is to VERIFY the
+ * accepted state against the recorded decision and against the surfaces the authorization promised not to
+ * touch — and then to say S1 is complete, or to stop.
+ *
+ * IT IS NOT A SECOND MANIFEST P. Manifest P measured a world before a write and froze an expectation; this
+ * measures the world after one and compares it with a decision a person already made. There is no freeze
+ * block, no authorization sentence, no capability and no execute switch, because there is no action here to
+ * authorize: `MARK_S1_COMPLETE_AND_RESUME_P_BRANCH` is a thing a person records, not a thing this runs.
+ *
+ * WHERE ITS EXPECTATIONS COME FROM, AND WHY THAT MATTERS. The two identities come from
+ * S1_ACCEPTED_ALTERNATE_PAIR_ — the recorded human decision — and the protected surfaces come from
+ * S1_MANIFEST_P_BEFORE_, the signed pre-execute measurement. Neither is edited. The one thing this must not
+ * do is invent its own idea of what should be there.
+ *
+ * AND IT DOES NOT PRETEND ABOUT THE THREE TABLES IT CANNOT SPEAK FOR. shipping_plans, shipping_plan_lines
+ * and shipments have no pre-execute row content in the frozen baseline, so no reading taken now can prove
+ * they are unchanged. They are reported UNPROVABLE, exactly as the readback reports them, and this manifest
+ * additionally lays down CURRENT-STATE PINS for them — row count, schema fingerprint, content fingerprint —
+ * so that the NEXT round has a before-state it did not have this time. A pin is a starting point, never a
+ * proof about the past, and it says so in its own fields.
+ * ================================================================================================================
+ */
+
+// The three tables a Submit would write and this generation promised not to. Named from the existing
+// unprovable list rather than retyped, so the two can never disagree about which tables they are.
+var S1_MS_PINNED_TABLES_ = S1_PF_UNPROVABLE_TABLES_.slice();
+
+/**
+ * THE EXPECTATION OBJECT, ASSEMBLED FROM THE TWO RECORDS AND NOTHING ELSE.
+ *
+ * A shallow copy of the frozen baseline with the two identity fields REPLACED by the accepted ones. The copy
+ * is what lets `S1_cgObserve_` and `S1_pfProtectedSurfaces_` be reused unchanged: the row lookup then finds
+ * the row that exists, while every protected surface is still compared against the value that was signed.
+ * The baseline itself is not mutated — `S1_MANIFEST_P_BEFORE_` is evidence, and a copy is not a rotation.
+ */
+function S1_msExpectation_() {
+  var b = S1_MANIFEST_P_BEFORE_;
+  var rec = S1_ACCEPTED_ALTERNATE_PAIR_;
+  var o = {};
+  Object.keys(b || {}).forEach(function (k) { o[k] = b[k]; });
+  o.expected_header_ids = [rec.accepted_header_id];
+  o.expected_line_ids = [rec.accepted_line_id];
+  o.identity_expectation_source = 'S1_ACCEPTED_ALTERNATE_PAIR_ (the recorded human acceptance)';
+  o.protected_surface_expectation_source = 'S1_MANIFEST_P_BEFORE_ (the signed pre-execute measurement)';
+  o.superseded_identity_prediction = { header: rec.originally_predicted_header_id,
+    line: rec.originally_predicted_line_id,
+    state: 'STALE_PREDICTION_HISTORY_ONLY — no row carries these and none ever did' };
+  return o;
+}
+
+/**
+ * CURRENT-STATE PINS FOR THE THREE TABLES NOTHING CAN PROVE ANYTHING HISTORICAL ABOUT.
+ *
+ * Each pin carries the three facts a later comparison needs — row count, schema fingerprint, content
+ * fingerprint — and three fields that keep it honest about what it is not. `proves_unchanged_since_before`
+ * is FALSE by construction, on every pin, and there is no branch that sets it true: a reading taken after
+ * the write cannot become a reading taken before it by being labelled one.
+ */
+function S1_msShippingPins_(ss) {
+  var o = { pinned_at_relative_to_the_generation: 'AFTER', pins: [], absent_tables: [],
+    unreadable_present_table_count: null, all_present_tables_readable: null,
+    historical_before_state: 'UNPROVABLE',
+    why_historical_is_unprovable: 'the frozen baseline carries a SCHEMA fingerprint for two of these tables'
+      + ' and no row count or row content for any of them, and this manifest takes no arguments, so the'
+      + ' in-lock BEFORE snapshot the executor took cannot be handed to it',
+    what_these_pins_are_for: 'the NEXT round. A Submit, or any later write, can be compared against these'
+      + ' three numbers per table. That is a forward guarantee only.' };
+  var unreadable = 0;
+  S1_MS_PINNED_TABLES_.forEach(function (t) {
+    var full = S1_fullRowTable_(ss, t, null, []);
+    // THE OBSERVATION STATE, IN THE VOCABULARY THE BASELINE ALREADY USES FOR THE RESERVATION SHEET.
+    // A table that is not there has no row count, no schema and no content, and each of those must read
+    // as ABSENT rather than as a number. MEASURED: computing the schema fingerprint unconditionally gave
+    // an absent `shipments` sheet the fingerprint 811C9DC5 - which is fnv1a of the empty string, the FNV
+    // offset basis. A hash of nothing looks exactly like a hash of something.
+    var state = !full.present ? 'SHEET_ABSENT'
+      : (full.readable ? 'SHEET_PRESENT_AND_READABLE' : 'SHEET_PRESENT_AND_UNREADABLE');
+    var live = state === 'SHEET_PRESENT_AND_READABLE';
+    var pin = { table: t, observation_state: state,
+      present: full.present, readable: full.readable,
+      row_count: live ? full.row_count : null,
+      live_column_count: live ? full.live_column_count : null,
+      schema_fingerprint: live ? S1_schemaFingerprintOf_(full.live_columns) : null,
+      content_fingerprint: live ? full.combined_fingerprint : null,
+      // WHAT THIS PIN IS NOT.
+      proves_unchanged_since_before_the_generation: false,
+      is_a_historical_before_state: false,
+      is_a_current_state_starting_point: true };
+    // PRESENT-BUT-UNREADABLE IS A FAULT; ABSENT IS A FACT. The first means a pin was asked for and could
+    // not be taken, which the next round would silently inherit as "no pin"; the second means there is no
+    // table to pin, which a later Submit creating one will show as a table appearing.
+    if (state === 'SHEET_PRESENT_AND_UNREADABLE') unreadable++;
+    if (state === 'SHEET_ABSENT') o.absent_tables.push(t);
+    o.pins.push(pin);
+  });
+  o.unreadable_present_table_count = unreadable;
+  o.all_present_tables_readable = unreadable === 0;
+  return o;
+}
+
+/**
+ * IS THERE A SECOND ACTIVE AI PAIR IN THIS SCOPE FOR THIS RUN?
+ *
+ * The accepted pair is one header and one line. A second AI header in the same scope carrying the same
+ * calculation run is a duplicate generation however different its id is — and asking only about the ACCEPTED
+ * id could never see it, because a duplicate under a third identity is exactly the case that has already
+ * happened once in this scope.
+ */
+function S1_msNoSecondActivePair_(part, rec) {
+  var o = { other_active_ai_header_ids: [], other_active_ai_header_count: 0,
+    axis_matching_ai_headers_without_lines: [],
+    same_run_other_header_ids: [], same_run_other_header_count: 0, clean: null };
+  var accepted = S1_str_(rec.accepted_header_id);
+  var run = S1_str_(rec.calculation_run_id);
+  var sku = S1_str_(rec.sku);
+  var lineSkus = {};
+  ((part.line_table && part.line_table.rows) || []).forEach(function (lr) {
+    if (S1_str_(lr.sku) !== sku) return;
+    lineSkus[S1_str_(lr.allocation_draft_id)] = 1;
+  });
+  var lineCounts = {};
+  ((part.line_table && part.line_table.rows) || []).forEach(function (lr) {
+    var pid = S1_str_(lr.allocation_draft_id);
+    lineCounts[pid] = (lineCounts[pid] || 0) + 1;
+  });
+  (part.active_header_objects || []).forEach(function (h) {
+    var hid = S1_str_(h.allocation_draft_id);
+    if (hid === accepted) return;
+    // THE RUN CHECK COMES FIRST, AND IT IS NOT INSIDE THE SCOPE GUARD.
+    //
+    // MEASURED: it was, and it was therefore unreachable for exactly the header it exists to catch. A row
+    // stamped with THIS calculation run is this generation output wherever it sits — asking about it only
+    // after deciding it is in the target scope means a second row of this run in a neighbouring scope, or
+    // one carrying no line at all, was never counted.
+    if (run && S1_str_(h.calculation_run_id) === run) o.same_run_other_header_ids.push(hid);
+    var axesMatch = S1_str_(h.company) === S1_str_(rec.company)
+      && S1_str_(h.country) === S1_str_(rec.country)
+      && S1_str_(h.marketplace) === S1_str_(rec.marketplace);
+    if (!axesMatch) return;
+    var isAi = (typeof aiplIsAiGenerated_ === 'function') ? (aiplIsAiGenerated_(h) === true) : null;
+    if (isAi !== true) return;
+    // A HEADER WITH NO LINES BELONGS TO NO SKU, so the sku test cannot place it — and dropping it for that
+    // reason would discard a stray AI header standing in this scope, which is the shape of a half-landed
+    // second generation. It is counted, and counted SEPARATELY, because the two findings differ: one is a
+    // rival plan for this sku, the other is a header with nothing under it.
+    if (lineCounts[hid] === undefined || lineCounts[hid] === 0) {
+      o.axis_matching_ai_headers_without_lines.push(hid);
+      o.other_active_ai_header_ids.push(hid);
+      return;
+    }
+    if (lineSkus[hid] === 1) o.other_active_ai_header_ids.push(hid);
+  });
+  o.other_active_ai_header_count = o.other_active_ai_header_ids.length;
+  o.same_run_other_header_count = o.same_run_other_header_ids.length;
+  o.clean = (o.other_active_ai_header_count === 0 && o.same_run_other_header_count === 0);
+  return o;
+}
+
+/** The report. One place, so the zero proof and the closed contract are asserted once per run and not once
+ *  per return path — and every early return here is a refusal. */
+function S1_msFinish_(out, L) {
+  out.predicates = L.entries;
+  out.predicates_passed = L.entries.length - L.failed.length;
+  out.predicates_failed = L.failed.length;
+  out.failed_predicates = L.failed.slice();
+  out.this_manifest_wrote_nothing = (out.writes === 0 && out.writer_calls === 0
+    && out.generator_calls === 0 && out.attempts === 0 && out.capability_minted === false
+    && out.authorization_read === false && out.repairs_attempted === 0 && out.rows_created === 0
+    && out.rows_updated === 0 && out.rows_deleted === 0);
+  // THE VERDICT IS THE LEDGER, not a judgement made beside it. Every core condition is a predicate, so
+  // "any core condition failed" and "a predicate failed" are the same sentence.
+  if (out.predicates_failed === 0) {
+    out.verdict = 'S1_POST_GENERATION_VERIFIED';
+    out.next_action = 'MARK_S1_COMPLETE_AND_RESUME_P_BRANCH';
+  } else {
+    out.verdict = 'STOP_AND_INVESTIGATE_NO_AUTOMATIC_REPAIR';
+    out.next_action = 'STOP_AND_INVESTIGATE_NO_AUTOMATIC_REPAIR';
+    if (!out.stop_reason) {
+      out.stop_reason = out.predicates_failed + ' condition(s) did not hold: '
+        + out.failed_predicates.slice(0, 10).join(', ');
+    }
+  }
+  out.generate_may_be_attempted_again = false;
+  out.next_action_permits_another_generate =
+    S1_CG_NEXT_ACTION_ALLOWS_ANOTHER_GENERATE_[out.next_action] === true;
+  out.retry_contract = { known: true, contract_key: out.verdict,
+    retryable: false, automatic_retry_allowed: false,
+    same_authorization_reusable: false, same_frozen_baseline_reusable: false,
+    generate_may_be_attempted_again: false, next_action: out.next_action };
+  // THE EVIDENCE LEAVES THE FUNCTION, through the same numbered and fingerprinted chunker §AI2L uses. R6D
+  // is the round where a complete finding was computed and could not be read; this does not repeat it.
+  out.log_emission = { sections: [] };
+  [['s1_ms_accepted_pair', 'row_facts'], ['s1_ms_protected_surfaces', 'protected_surfaces'],
+   ['s1_ms_shipping_pins', 'shipping_pins'], ['s1_ms_predicates', 'predicates']
+  ].forEach(function (g) {
+    var spec = S1_ai2EmitSection_(g[0], S1_ai2LogValueAt_(out, g[1]), g[1]);
+    out.log_emission.sections.push({ tag: spec.tag, emitted: spec.emitted, chunks: spec.chunks,
+      bytes: spec.bytes, fingerprint: spec.fingerprint, withheld_reason: spec.withheld_reason });
+  });
+  S1_log_('s1_post_generation_manifest_s', JSON.stringify({
+    tool: out.tool, build: out.build, verdict: out.verdict,
+    predicates_passed: out.predicates_passed, predicates_failed: out.predicates_failed,
+    failed: out.failed_predicates.slice(0, 12),
+    accepted_header_id: out.accepted_header_id, accepted_line_id: out.accepted_line_id,
+    header_hit_count: out.row_facts ? out.row_facts.header_hit_count : null,
+    line_hit_count: out.row_facts ? out.row_facts.line_hit_count : null,
+    written_qty: out.row_facts ? out.row_facts.planned_qty : null,
+    identity_re_derives: out.row_facts ? out.row_facts.header_id_re_derives_from_its_own_fields : null,
+    line_re_derives: out.row_facts ? out.row_facts.line_id_re_derives_from_its_parent : null,
+    protected_surfaces_changed: out.protected_surfaces ? out.protected_surfaces.changed : null,
+    shipping_pins_are_forward_only: true,
+    this_manifest_wrote_nothing: out.this_manifest_wrote_nothing,
+    generate_may_be_attempted_again: out.generate_may_be_attempted_again,
+    next_action: out.next_action, stop_reason: S1_cap_(out.stop_reason, 400) }));
+  return out;
+}
+
+/**
+ * ================================================================================================================
+ * RUN_S1_POST_GENERATION_MANIFEST_S()
+ *
+ * READ ONLY. NO ARGUMENTS, so there is nothing to widen: no parameter carries a scope, an identity, a
+ * quantity or a table name. It calls no generator, no writer, no Submit authority, no Gap Job, no backfill
+ * and no repair, and it offers no next action that another generation could be started from — the
+ * next-action table says so for both of its outcomes.
+ * ================================================================================================================
+ */
+function RUN_S1_POST_GENERATION_MANIFEST_S() {
+  var out = {
+    manifest: 'MANIFEST S (POST-GENERATION) — read-only verification of the accepted S1 pair',
+    tool: 'RUN_S1_POST_GENERATION_MANIFEST_S', build: S1_BUILD_,
+    read_only: true, dry_run: true,
+    writes: 0, writer_calls: 0, generator_calls: 0, attempts: 0, submit_calls: 0,
+    capability_minted: false, authorization_read: false, repairs_attempted: 0,
+    rows_created: 0, rows_updated: 0, rows_deleted: 0,
+    authorizes: 'NOTHING. It states whether the accepted pair is present and correct and whether the'
+      + ' promised surfaces are intact. Marking S1 complete is a person’s act, recorded by a person.',
+    does_not_authorize: ['any further Generate', 'any Submit', 'any Gap Job', 'any backfill',
+      'any repair, deletion, rename or rebuild of the accepted pair',
+      'reuse of the consumed authorization 8A830413',
+      'reuse of the spent frozen baseline'],
+    offers_no_generate_action: true,
+    accepted_header_id: null, accepted_line_id: null,
+    acceptance_record: null, baseline_lifecycle: null,
+    row_facts: null, protected_surfaces: null, shipping_pins: null, second_pair_scan: null,
+    verdict: null, next_action: null, stop_reason: '' };
+  var L = S1_ledger_();
+  try {
+    var rec = S1_ACCEPTED_ALTERNATE_PAIR_;
+    var life = S1_MANIFEST_P_BASELINE_LIFECYCLE_;
+    out.accepted_header_id = S1_str_(rec && rec.accepted_header_id);
+    out.accepted_line_id = S1_str_(rec && rec.accepted_line_id);
+    out.acceptance_record = rec ? { verdict: rec.acceptance_manifest_verdict,
+      predicates_passed: rec.acceptance_predicates_passed,
+      predicates_failed: rec.acceptance_predicates_failed,
+      scope_key: rec.scope_key, calculation_run_id: rec.calculation_run_id,
+      planning_cycle: rec.planning_cycle, accepted_qty: rec.accepted_qty,
+      accepted_header_id: rec.accepted_header_id, accepted_line_id: rec.accepted_line_id,
+      accepted_identity_family: rec.accepted_identity_family,
+      generate_completed: rec.generate_completed,
+      generate_may_be_attempted_again: rec.generate_may_be_attempted_again,
+      manual_db_repair_required: rec.manual_db_repair_required,
+      accepted_under_alternate_identity: rec.accepted_under_alternate_identity,
+      originally_predicted_header_id: rec.originally_predicted_header_id,
+      originally_predicted_line_id: rec.originally_predicted_line_id } : null;
+    out.baseline_lifecycle = life || null;
+
+    // ---- §E LIFECYCLE, FIRST. A verification that ran against a live authorization would be verifying
+    // ---- a world someone could still change under it.
+    L.P('a_recorded_human_acceptance_exists',
+      'ALTERNATE_PAIR_IS_ACCEPTABLE_BY_A_PERSON',
+      rec ? rec.acceptance_manifest_verdict : null,
+      !!rec && rec.acceptance_manifest_verdict === 'ALTERNATE_PAIR_IS_ACCEPTABLE_BY_A_PERSON');
+    L.P('the_record_says_the_generation_completed', true, rec ? rec.generate_completed : null,
+      !!rec && rec.generate_completed === true);
+    L.P('the_record_forbids_another_generate', false,
+      rec ? rec.generate_may_be_attempted_again : null,
+      !!rec && rec.generate_may_be_attempted_again === false);
+    L.P('the_record_says_no_manual_db_repair_is_required', false,
+      rec ? rec.manual_db_repair_required : null,
+      !!rec && rec.manual_db_repair_required === false);
+    L.P('the_spent_authorization_is_recorded_as_consumed', true,
+      S1_CG_CONSUMED_AUTH_FINGERPRINTS_.indexOf('8A830413') !== -1,
+      S1_CG_CONSUMED_AUTH_FINGERPRINTS_.indexOf('8A830413') !== -1);
+    L.P('the_frozen_baseline_is_recorded_as_consumed', 'CONSUMED', life ? life.state : null,
+      !!life && life.state === 'CONSUMED');
+    L.P('the_superseded_k2_prediction_is_named_as_history_only',
+      { header: 'STALE_PREDICTION_HISTORY_ONLY', line: 'STALE_PREDICTION_HISTORY_ONLY' },
+      { header: S1_acStaleIdentity_(rec && rec.originally_predicted_header_id).classification,
+        line: S1_acStaleIdentity_(rec && rec.originally_predicted_line_id).classification },
+      S1_acStaleIdentity_(rec && rec.originally_predicted_header_id).stale === true
+        && S1_acStaleIdentity_(rec && rec.originally_predicted_line_id).stale === true);
+    L.P('and_the_accepted_identities_are_not_themselves_stale',
+      { header: false, line: false },
+      { header: S1_acStaleIdentity_(out.accepted_header_id).stale,
+        line: S1_acStaleIdentity_(out.accepted_line_id).stale },
+      S1_acStaleIdentity_(out.accepted_header_id).stale === false
+        && S1_acStaleIdentity_(out.accepted_line_id).stale === false);
+
+    var db = S1_openDb_();
+    out.db_opened = db.ok;
+    L.P('the_production_database_was_opened_read_only', true, db.ok, db.ok === true);
+    if (!db.ok) {
+      out.stop_reason = 'the production database could not be opened: ' + S1_str_(db.reason);
+      return S1_msFinish_(out, L);
+    }
+
+    var exp = S1_msExpectation_();
+    var part = S1_draftPartition_(db.ss, { company: rec.company, country: rec.country,
+      marketplace: rec.marketplace, sku: rec.sku });
+    out.tables_readable = !!(part.header_table.readable && part.line_table.readable);
+    L.P('both_draft_tables_were_readable', true, out.tables_readable, out.tables_readable === true);
+    L.P('the_production_column_authority_was_available', true, part.column_authority_available,
+      part.column_authority_available === true);
+    if (!out.tables_readable) {
+      out.stop_reason = 'the draft tables could not be read, so nothing below is a measurement';
+      return S1_msFinish_(out, L);
+    }
+
+    // ---- §D.9 EXACTLY ONE OF EACH -----------------------------------------------------------------
+    var hHit = S1_cgRowsById_(part.header_table, 'allocation_draft_id', rec.accepted_header_id);
+    var lHit = S1_cgRowsById_(part.line_table, 'allocation_draft_line_id', rec.accepted_line_id);
+    var rf = { header_hit_count: hHit.count, line_hit_count: lHit.count,
+      header_row_numbers: hHit.row_numbers, line_row_numbers: lHit.row_numbers,
+      physical_row_numbers_are_for_location_only: true,
+      header: null, line: null, planned_qty: null,
+      header_id_re_derives_from_its_own_fields: null, line_id_re_derives_from_its_parent: null,
+      parent_fk_points_at_the_accepted_header: null };
+    L.P('exactly_one_row_carries_the_accepted_header_id', 1, hHit.count, hHit.count === 1);
+    L.P('exactly_one_row_carries_the_accepted_line_id', 1, lHit.count, lHit.count === 1);
+    if (hHit.count === 1 && lHit.count === 1) {
+      var hObj = S1_recToObject_(hHit.rows[0]);
+      rf.header = S1_ai2HeaderFacts_(hObj, hHit.rows[0].row_number, hHit.rows[0].fingerprint, exp,
+        ['THE_RECORDED_ACCEPTED_HEADER_ID']);
+      rf.line = S1_ai2LineSelfConsistency_(S1_ai2LineFacts_(lHit.rows[0]));
+      rf.line.matched_by = ['THE_RECORDED_ACCEPTED_LINE_ID'];
+      rf.line.parent_header_exists = true;
+      rf.planned_qty = rf.line.planned_qty;
+      rf.header_id_re_derives_from_its_own_fields = rf.header.id_re_derives_from_its_own_fields;
+      rf.line_id_re_derives_from_its_parent = rf.line.line_id_re_derives_from_its_parent;
+      rf.parent_fk_points_at_the_accepted_header =
+        (rf.line.allocation_draft_id === S1_str_(rec.accepted_header_id));
+
+      // ---- §D.11 THE IDENTITY RE-DERIVES, THROUGH THE FAMILY IT CLAIMS ------------------------
+      L.P('the_stored_header_id_re_derives_from_its_own_stored_fields', true,
+        rf.header.id_self_consistency_basis, rf.header.id_re_derives_from_its_own_fields === true);
+      L.P('through_the_k4_family_it_names', 'K4', rf.header.id_family_by_prefix,
+        rf.header.id_family_by_prefix === 'K4');
+      L.P('and_the_recorded_k4_group_key_is_the_one_the_row_produces',
+        rec.accepted_k4_group_key, rf.header.k4_group_key,
+        S1_str_(rf.header.k4_group_key) === S1_str_(rec.accepted_k4_group_key));
+      L.P('the_stored_line_id_re_derives_from_the_parent_it_points_at', true,
+        rf.line.derived_line_id, rf.line.line_id_re_derives_from_its_parent === true);
+      // AND THE K4 IDENTITY INPUTS COME FROM 69_'s OWN DERIVATION, not from the raw columns.
+      L.P('the_destination_identity_was_derived_by_the_production_authority',
+        { ok: true, type: 'MARKETPLACE or WAREHOUSE' },
+        { ok: rf.header.destination_identity_ok, type: rf.header.destination_type,
+          id: rf.header.destination_identity, refusal: rf.header.destination_identity_refusal },
+        rf.header.destination_identity_ok === true
+          && ['MARKETPLACE', 'WAREHOUSE'].indexOf(S1_str_(rf.header.destination_type)) >= 0);
+      L.P('the_shipping_method_appears_in_its_canonical_form',
+        'a non-blank canonical service from ricCanonicalService_',
+        { raw: rf.header.recommended_shipping_method,
+          canonical: rf.header.recommended_shipping_method_canonical },
+        S1_str_(rf.header.recommended_shipping_method_canonical) !== '');
+
+      // ---- §D.10 THE BUSINESS FACTS -----------------------------------------------------------
+      L.P('the_line_parent_fk_points_at_the_accepted_header', S1_str_(rec.accepted_header_id),
+        rf.line.allocation_draft_id, rf.parent_fk_points_at_the_accepted_header === true);
+      L.P('the_scope_is_the_accepted_one',
+        [rec.company, rec.country, rec.marketplace, rec.sku],
+        [rf.header.company, rf.header.country, rf.header.marketplace, rf.line.sku],
+        S1_str_(rf.header.company) === S1_str_(rec.company)
+          && S1_str_(rf.header.country) === S1_str_(rec.country)
+          && S1_str_(rf.header.marketplace) === S1_str_(rec.marketplace)
+          && S1_str_(rf.line.sku) === S1_str_(rec.sku));
+      L.P('the_calculation_run_is_the_accepted_one', rec.calculation_run_id,
+        rf.header.calculation_run_id,
+        S1_str_(rf.header.calculation_run_id) === S1_str_(rec.calculation_run_id));
+      L.P('the_planning_cycle_is_the_accepted_one', rec.planning_cycle, rf.header.planning_cycle,
+        S1_str_(rf.header.planning_cycle) === S1_str_(rec.planning_cycle));
+      L.P('the_source_factory_warehouse_is_the_accepted_one', rec.source_factory_warehouse_id,
+        rf.header.recommended_source_warehouse_id,
+        S1_str_(rf.header.recommended_source_warehouse_id)
+          === S1_str_(rec.source_factory_warehouse_id));
+      L.P('the_route_is_present_on_the_header',
+        'a shipping method and a last mile delivery',
+        { method: rf.header.recommended_shipping_method,
+          last_mile: rf.header.recommended_last_mile_delivery },
+        S1_str_(rf.header.recommended_shipping_method) !== ''
+          && S1_str_(rf.header.recommended_last_mile_delivery) !== '');
+      var TERM = (typeof SAD_TERMINAL_STATUSES_ !== 'undefined')
+        ? SAD_TERMINAL_STATUSES_ : { submitted: 1, cancelled: 1, expired: 1 };
+      L.P('the_header_status_is_not_terminal', 'a non-terminal status', rf.header.status,
+        !TERM[String(rf.header.status).toLowerCase()]);
+      L.P('the_row_carries_ai_provenance_by_the_production_classifier', true,
+        rf.header.is_ai_generated_by_production_authority,
+        rf.header.is_ai_generated_by_production_authority === true);
+      // THE QUANTITY IS COMPARED AS A NUMBER, and a blank is not a zero.
+      L.P('the_written_quantity_is_the_accepted_quantity', rec.accepted_qty, rf.planned_qty,
+        rf.planned_qty !== null && rf.planned_qty === S1_qty_(rec.accepted_qty));
+    } else {
+      out.stop_reason = 'the accepted pair is not present exactly once: header x' + hHit.count
+        + ', line x' + lHit.count + '. Nothing below this is a statement about the accepted pair.';
+    }
+    out.row_facts = rf;
+
+    // ---- §D.12 NO PARTIAL, NO DUPLICATE, NO ORPHAN, NO SECOND PAIR --------------------------------
+    var scan = S1_msNoSecondActivePair_(part, rec);
+    out.second_pair_scan = scan;
+    L.P('no_other_active_ai_header_stands_in_this_scope', [], scan.other_active_ai_header_ids,
+      scan.other_active_ai_header_count === 0);
+    L.P('no_other_header_carries_this_calculation_run', [], scan.same_run_other_header_ids,
+      scan.same_run_other_header_count === 0);
+    // A LINE WHOSE PARENT IS NOT A HEADER ROW is invisible to any header-walking scan, so the line table is
+    // asked in its own right — the same lesson §AI2 learned about orphans.
+    var headerIds = {};
+    (part.header_objects || []).forEach(function (h) {
+      headerIds[S1_str_(h.allocation_draft_id)] = 1;
+    });
+    var parentless = [];
+    ((part.line_table && part.line_table.rows) || []).forEach(function (lr) {
+      if (S1_str_(lr.sku) !== S1_str_(rec.sku)) return;
+      if (headerIds[S1_str_(lr.allocation_draft_id)] !== 1) {
+        parentless.push(S1_str_(lr.allocation_draft_line_id));
+      }
+    });
+    out.parentless_line_ids = parentless;
+    L.P('no_line_for_this_sku_is_parentless', [], parentless, parentless.length === 0);
+    var acceptedKids = ((part.line_table && part.line_table.rows) || []).filter(function (lr) {
+      return S1_str_(lr.allocation_draft_id) === S1_str_(rec.accepted_header_id);
+    });
+    out.accepted_header_line_count = acceptedKids.length;
+    L.P('the_accepted_header_carries_exactly_one_line', 1, acceptedKids.length,
+      acceptedKids.length === 1);
+
+    // ---- §D.13 THE PROMISED SURFACES, AGAINST THE SIGNED PRE-EXECUTE VALUES ----------------------
+    var obs = S1_cgObserve_(db.ss, exp);
+    out.protected_surfaces = S1_pfProtectedSurfaces_(obs, S1_MANIFEST_P_BEFORE_);
+    L.P('every_comparable_protected_surface_is_unchanged', [], out.protected_surfaces.changed,
+      out.protected_surfaces.all_compared_intact === true);
+    L.P('the_reservation_sheet_is_still_absent', 'SHEET_ABSENT',
+      obs.reservation_observation_state, obs.reservation_observation_state === 'SHEET_ABSENT');
+
+    // ---- §D.14 THE THREE TABLES NOTHING HERE CAN SPEAK FOR, PINNED FOR NEXT TIME -----------------
+    out.shipping_pins = S1_msShippingPins_(db.ss);
+    L.P('the_three_shipping_tables_are_reported_unprovable_not_verified', 'UNPROVABLE',
+      out.shipping_pins.historical_before_state,
+      out.shipping_pins.historical_before_state === 'UNPROVABLE');
+    L.P('no_shipping_pin_claims_to_prove_anything_about_the_past',
+      'every pin: false', out.shipping_pins.pins.map(function (p) {
+        return p.table + '=' + p.proves_unchanged_since_before_the_generation; }),
+      out.shipping_pins.pins.length > 0 && out.shipping_pins.pins.every(function (p) {
+        return p.proves_unchanged_since_before_the_generation === false
+          && p.is_a_historical_before_state === false;
+      }));
+    // EVERY PINNED TABLE IS VISITED, AND EVERY ONE THAT EXISTS YIELDS ALL THREE NUMBERS.
+    //
+    // An ABSENT table is not a failure and must not be one: `shipments` may simply not exist yet, and a
+    // manifest that STOPPED over that would refuse a perfectly good post-state. It is named in
+    // absent_tables instead, which is itself the pin - a table appearing later is a change a reader can
+    // see. A table that is PRESENT and could not be read is a different thing entirely: a pin was asked
+    // for and not taken, and the next round would inherit that as though nothing had been missed.
+    L.P('every_pinned_table_was_visited', S1_MS_PINNED_TABLES_.length,
+      out.shipping_pins.pins.length,
+      out.shipping_pins.pins.length === S1_MS_PINNED_TABLES_.length);
+    L.P('no_pinned_table_is_present_but_unreadable', 0,
+      out.shipping_pins.unreadable_present_table_count,
+      out.shipping_pins.unreadable_present_table_count === 0);
+    L.P('every_pinned_table_that_exists_yielded_all_three_current_state_numbers',
+      'row_count, schema_fingerprint and content_fingerprint on each table that is present',
+      out.shipping_pins.pins.map(function (p) {
+        return p.table + '=' + p.observation_state + ':' + p.row_count + '/'
+          + p.schema_fingerprint + '/' + p.content_fingerprint; }),
+      out.shipping_pins.pins.every(function (p) {
+        return p.observation_state !== 'SHEET_PRESENT_AND_READABLE'
+          || (p.row_count !== null && p.schema_fingerprint !== null
+              && p.content_fingerprint !== null);
+      }));
+    L.P('and_an_absent_pinned_table_carries_no_invented_fingerprint',
+      'null row_count, null schema and null content on any absent table',
+      out.shipping_pins.pins.filter(function (p) {
+        return p.observation_state === 'SHEET_ABSENT'; }).map(function (p) {
+        return p.table + '=' + p.row_count + '/' + p.schema_fingerprint + '/'
+          + p.content_fingerprint; }),
+      out.shipping_pins.pins.every(function (p) {
+        return p.observation_state !== 'SHEET_ABSENT'
+          || (p.row_count === null && p.schema_fingerprint === null
+              && p.content_fingerprint === null);
+      }));
+    return S1_msFinish_(out, L);
+  } catch (e) {
+    out.stop_reason = 'S1_POST_GENERATION_MANIFEST_S_THREW: ' + String(e && e.message ? e.message : e)
+      + '. The exception is the finding; a run that threw verifies nothing.';
+    L.P('the_manifest_completed_without_throwing', true, false, false);
+    return S1_msFinish_(out, L);
+  }
 }
