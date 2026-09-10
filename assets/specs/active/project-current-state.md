@@ -4929,7 +4929,7 @@ and carries the value under `marketplace_sku_status`** — so `S.statusStateOf` 
 `SITE_STATUS_SHAPE_UNEXPECTED` on an array. That is the assertion that will catch the adapter swap instead of
 every row silently reading "not recognised".
 
-**TESTS: `product-strategy-board-p1-b2.test.js` — 232 passed / 0 failed / 17 mutants / 0 survived.** The
+**TESTS: `product-strategy-board-p1-b2.test.js` — 239 passed / 0 failed / 17 mutants / 0 survived.** The
 prototype's own DOM assertions now RUN HEADLESS (231/231) against a shim narrow enough to audit, which THROWS on
 a selector it cannot parse rather than returning an empty list — an engine that answers "no matches" to what it
 cannot read turns every DOM assertion into a passing one. The shim is HELD TO `index.html`: every id asserted to
@@ -4941,7 +4941,13 @@ would be the same defect one number along, so each now asserts the derivation an
 requires the menu to change). Two mutants were re-aimed after surviving: one assigned `'Other'` above the
 branch's own `return` so the bucket was unreachable, the other forced the ABSOLUTE branch and survived because
 `S.cents('-15')` is negative, so the override was dropped and the ladder stayed intact for the wrong reason.
-Full sweep: the four PRE-EXISTING red suites and nothing else.
+AND THE SUITE WAS GREEN ON LF AND RED ON CRLF WHILE LYING ABOUT WHY: `core.autocrlf=true` lands CRLF in
+the working tree, a mutant anchor is a multi-line string, and an anchor matching zero times makes `swap`
+throw — which `mut` reports as MUTANT SURVIVED. A `git stash pop` during the pre-existing-failure check
+flipped six mutants to SURVIVED with the targeted code unchanged by a byte: red with a message about a
+rule, when git had touched the file. Sources are normalized on read and section Z asserts it, so next time
+ONE assertion says so instead of six mutants blaming the rules. Full sweep 446 suites: the four
+PRE-EXISTING red ones (3/1/7/2), reproduced at PRE on a clean worktree, and nothing else.
 
 **BACKUP-TABLE AUDIT (read-only, nothing deleted).** `request_order_allocation_drafts_backup` and
 `request_order_allocation_draft_lines_backup` have **ZERO references** anywhere in either worktree — code,

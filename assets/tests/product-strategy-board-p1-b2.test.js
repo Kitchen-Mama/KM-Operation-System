@@ -47,7 +47,22 @@ function mut(label, f) {
 }
 var ROOT = path.join(__dirname, '..', '..');
 var PROTO = path.join(ROOT, 'docs', 'prototypes', 'product-strategy-board');
-function readProto(f) { return fs.readFileSync(path.join(PROTO, f), 'utf8'); }
+/**
+ * LINE ENDINGS ARE NORMALIZED ON READ, AND THIS IS LOAD-BEARING.
+ *
+ * The repository is configured `core.autocrlf=true`, so every checkout of these files lands CRLF in
+ * the working tree while the blob stays LF. Nothing this suite asserts is about a line ending — but a
+ * mutant's anchor is a multi-line string, and an anchor that matches zero times makes `swap` throw,
+ * which `mut` reports as MUTANT SURVIVED. That is the worst failure mode available: the suite goes red
+ * with a message about a rule, when what actually happened is that git touched the file.
+ *
+ * It was not hypothetical. Six mutants — every one whose anchor spans more than a line — flipped to
+ * SURVIVED the moment a `git stash pop` re-checked these files out, and the code they target had not
+ * changed by a byte. Normalizing here fixes it for every reader, including the next clone.
+ */
+function readProto(f) {
+  return fs.readFileSync(path.join(PROTO, f), 'utf8').replace(/\r\n/g, '\n');
+}
 /** Comments AND string literals out — a file's own prose names everything it promises not to do. */
 function bare(src) {
   src = src.replace(/\/\*[\s\S]*?\*\//g, ' ');
@@ -425,6 +440,19 @@ function board(sel, over) {
   return S.deriveBoardModel(spec);
 }
 function catValues(m) { return m.categoryOptions.options.map(function (o) { return o.value; }); }
+
+console.log('\nSECTION Z  THE SUITE READS WHAT IT THINKS IT READS');
+(function () {
+  Object.keys(SRC).forEach(function (k, i) {
+    ok(SRC[k].indexOf('\r') < 0,
+      'Z' + (i + 1) + ' ' + k + ' was read with normalized line endings');
+  });
+  // A multi-line anchor of the kind every mutant uses, asserted to match exactly once. If a checkout
+  // ever breaks this again THIS says so — instead of six mutants reporting a rule that is intact.
+  var probe = '  S.setScenarioOverride = function (overrides, spec) {\n    spec = spec || {};';
+  eq(SRC.selectors.split(probe).length - 1, 1,
+    'Z7 and a multi-line mutant anchor matches exactly once');
+}());
 
 console.log('\n=== §A  THE ROOT CAUSE, MEASURED ===');
 // A1 the three categories are three literals in a fixture, and the fixture reads nothing.

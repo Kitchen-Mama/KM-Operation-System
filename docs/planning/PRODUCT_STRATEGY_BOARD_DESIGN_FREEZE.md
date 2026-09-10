@@ -3817,10 +3817,11 @@ artefacts above they correspond to.
 
 ### §34.12 Tests
 
-`assets/tests/product-strategy-board-p1-b2.test.js` — **232 assertions passed, 0 failed, 17 mutants,
-0 survived.** Sections: §A root cause · §B site identity and eligibility · §C regional detail · §D the
-category menu · §E the scenario · §F one pipeline · §G derived numbers recomputed · §H the real page,
-rendered and driven · §I the Data Quality ledger and the printed page.
+`assets/tests/product-strategy-board-p1-b2.test.js` — **239 assertions passed, 0 failed, 17 mutants,
+0 survived.** Sections: Z the suite reads what it thinks it reads · §A root cause · §B site identity and
+eligibility · §C regional detail · §D the category menu · §E the scenario · §F one pipeline · §G derived
+numbers recomputed · §H the real page, rendered and driven · §I the Data Quality ledger and the printed
+page.
 
 **The prototype's own DOM assertions now run headless.** They used to be observable only by opening the
 file in a browser, which meant a refactor of the render pipeline could be reasoned about but not proved.
@@ -3834,7 +3835,7 @@ to exist in the real file, and the script tags, link tags, banner text and butto
 from it. A skeleton nobody checks is a second page, and a suite that tests a second page proves nothing
 about the first.
 
-**Five findings came out of the work rather than out of the brief:**
+**Six findings came out of the work rather than out of the brief:**
 
 1. **The menu was never site-derived** (§34.2) — found by executing the old fixture per country.
 2. **A series-wide absolute everyday price flattens the ladder** (§34.7) — the feature's first
@@ -3848,6 +3849,15 @@ about the first.
 5. **The page's own assertions encoded "three"** — three cards, three rows, and a literal list of three
    names. Changing 3 to 4 would have been the same defect one number along, so each now asserts the
    derivation, and one of them switches the country and requires the menu to change.
+6. **The suite was green on LF and red on CRLF, and it lied about why.** `core.autocrlf=true` means every
+   checkout lands CRLF in the working tree while the blob stays LF. A mutant's anchor is a multi-line
+   string, so an anchor that matches zero times makes `swap` throw — which `mut` reports as MUTANT
+   SURVIVED. A `git stash pop` during the pre-existing-failure check re-checked the files out and six
+   mutants flipped to SURVIVED with the code they target unchanged by a byte. **That is the worst
+   failure mode available: red with a message about a rule, when what happened is that git touched the
+   file.** Sources are now normalized on read, and section Z asserts the normalization worked and that a
+   representative multi-line anchor still matches exactly once — so the next time a checkout breaks
+   this, one assertion says so instead of six mutants blaming the rules.
 
 Two mutants had to be re-aimed after surviving: one assigned `'Other'` above the branch's own `return`,
 so the bucket it was meant to create was unreachable; the other forced the `ABSOLUTE` branch and
