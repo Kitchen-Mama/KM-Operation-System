@@ -658,12 +658,14 @@ var S1_BARE = bareCode(S1);
     && src.indexOf('getRange') === -1,
     'A7.19.' + (i + 1) + 'b ' + fn + ' reaches no write API, no lock and no getRange at all');
 });
-// TWELVE READ-ONLY ENTRY POINTS, THREE THAT GATE ON `opts.execute !== true`, AND ONE THAT WRITES ON
+// THIRTEEN READ-ONLY ENTRY POINTS, THREE THAT GATE ON `opts.execute !== true`, AND ONE THAT WRITES ON
 // SIGHT. S1-R6A added the last of those: the Run dropdown passes no arguments, so the no-arg entry point
-// cannot have a dry-run flag and does not pretend to. §AI partitions all sixteen by NAME, so a
-// seventeenth cannot appear in any class without that failing; this line is the count on its own.
-eq((S1_BARE.match(/^function RUN_S1_[A-Z_]+/gm) || []).length, 16,
-  'A7.20 sixteen public entry points in total');
+// cannot have a dry-run flag and does not pretend to. S1-R6B added the thirteenth read-only one — the
+// post-failure recovery manifest, which is read-only for the same reason the preflight is: there is
+// nothing to pass it. §AI partitions all seventeen by NAME, so an eighteenth cannot appear in any class
+// without that failing; this line is the count on its own.
+eq((S1_BARE.match(/^function RUN_S1_[A-Z_]+/gm) || []).length, 17,
+  'A7.20 seventeen public entry points in total');
 ['RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL', 'RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL',
  'RUN_S1_CONTROLLED_GENERATE_EXECUTE'].forEach(function (fn, i) {
   var src = bareCode(extractFn(S1, fn));
@@ -703,8 +705,10 @@ eq((A8SITE.match(/weeklyAiPlanGenerateK2_\(/g) || []).length, 1,
 eq((A8SITE.match(/WeeklyAiPlanControlledAuthority_\.mint\(/g) || []).length, 1,
   'A8.6c and so is the mint');
 ['RUN_S1_CONTROLLED_GENERATE_PREFLIGHT', 'RUN_S1_CONTROLLED_GENERATE_EXECUTE',
- 'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE', 'RUN_S1_MANIFEST_P',
- 'RUN_S1_MANIFEST_S', 'S1_cgReadback_', 'S1_cgObserve_', 'S1_cgIdempotency_', 'S1_cgClassify_'
+ 'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE', 'RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK',
+ 'RUN_S1_MANIFEST_P',
+ 'RUN_S1_MANIFEST_S', 'S1_cgReadback_', 'S1_cgObserve_', 'S1_cgIdempotency_', 'S1_cgClassify_',
+ 'S1_pfInputEvidence_', 'S1_pfClassify_', 'S1_pfExpectedIdentities_', 'S1_pfProtectedSurfaces_'
 ].forEach(function (fn, i) {
   var src = bareCode(extractFn(S1, fn));
   eq((src.match(/weeklyAiPlanGenerateK2_\(/g) || []).length, 0,
@@ -719,8 +723,10 @@ eq((A8SITE.match(/WeeklyAiPlanControlledAuthority_\.mint\(/g) || []).length, 1,
  'S1_cgAuthorizationAudit_', 'S1_cgBaselineDrift_', 'S1_cgPermittedWriteSet_', 'S1_cgTableSnapshot_',
  'S1_cgRetryContract_', 'S1_cgFinishExecute_', 'S1_cgFinishPreflight_',
  'S1_cgOnceAuthorizationCheck_', 'S1_cgFinishOnce_',
+ 'S1_pfExpectedIdentities_', 'S1_pfTargetUniverse_', 'S1_pfProtectedSurfaces_', 'S1_pfInputEvidence_',
+ 'S1_pfClassify_', 'S1_pfFinish_', 'S1_pfRetryContract_',
  'RUN_S1_CONTROLLED_GENERATE_PREFLIGHT', 'RUN_S1_CONTROLLED_GENERATE_EXECUTE',
- 'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE'
+ 'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE', 'RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK'
 ].forEach(function (fn, i) {
   var src = bareCode(extractFn(S1, fn));
   ok(src.length > 0, 'A8.7.' + (i + 1) + 'a ' + fn + ' is extractable');
@@ -5430,11 +5436,12 @@ ok(String(AB13.repair_route).indexOf('a PERSON may now decide, never that a tool
 // AND THE ENTRY POINT COUNT. R4F added one, read-only; R4H added two more - a read-only manifest and the
 // one tool in this file that may empty a range; R6 added a read-only preflight and the one path from this
 // file to a production Generate; R6A added the no-argument adapter that path needed to be reachable from
-// the Run dropdown. The count is asserted so a further writer cannot appear without this line changing.
-eq((S1_BARE.match(/^function RUN_S1_[A-Z_]+/gm) || []).length, 16,
-  'AB32g sixteen public entry points: nine from R4E and before, R4F\'s read-only census, R4H\'s two,'
-  + ' R4J\'s read-only post-deletion acceptance manifest, R6\'s preflight plus its one executor, and'
-  + ' R6A\'s no-argument adapter');
+// the Run dropdown; R6B added the read-only post-failure recovery manifest. The count is asserted so a
+// further writer cannot appear without this line changing.
+eq((S1_BARE.match(/^function RUN_S1_[A-Z_]+/gm) || []).length, 17,
+  'AB32g seventeen public entry points: nine from R4E and before, R4F\'s read-only census, R4H\'s two,'
+  + ' R4J\'s read-only post-deletion acceptance manifest, R6\'s preflight plus its one executor,'
+  + ' R6A\'s no-argument adapter, and R6B\'s read-only post-failure recovery manifest');
 
 // ---- AB33 — THE FIELD CONTRACT IS R4E's, NOT A SECOND OPINION. ------------------------------------
 // A second required-ness table would be a second opinion, and the first thing two opinions do is disagree.
@@ -8516,24 +8523,28 @@ eq(AI6w.allWrites(), 0, 'AI6e the wrapper still wrote nothing of its own');
 });
 
 // ---- AI9 THE WHOLE PUBLIC SURFACE, PARTITIONED BY NAME ---------------------------------------
-// Sixteen entry points: twelve that reach no write API at all, three that gate on `opts.execute !== true`,
-// and ONE that writes on sight. The partition is exhaustive by name, so a seventeenth cannot appear in any
-// of the three classes without this failing.
+// Seventeen entry points: thirteen that reach no write API at all, three that gate on
+// `opts.execute !== true`, and ONE that writes on sight. The partition is exhaustive by name, so an
+// eighteenth cannot appear in any of the three classes without this failing.
 var AI_ALL = (S1_BARE.match(/^function (RUN_S1_[A-Z_]+)/gm) || []).map(function (l) {
   return l.replace('function ', '');
 });
-eq(AI_ALL.length, 16, 'AI9  sixteen public entry points', AI_ALL.length);
+eq(AI_ALL.length, 17, 'AI9  seventeen public entry points', AI_ALL.length);
 var AI_READONLY = ['RUN_S1_POSITIVE_RESIDUAL_CANDIDATE_CENSUS', 'RUN_S1_POSITIVE_RESIDUAL_PROPOSAL_CENSUS',
   'RUN_S1_SUBMIT_READINESS_CENSUS', 'RUN_S1_MANIFEST_P', 'RUN_S1_MANIFEST_S',
   'RUN_S1_ACCEPTED_GAP_RUN_READABILITY_DIAGNOSTIC', 'RUN_S1_FACTORY_MOVEMENT_ID_INTEGRITY_CENSUS',
   'RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL_MANIFEST', 'RUN_S1_FACTORY_MOVEMENT_LEGACY_PROVENANCE_CENSUS',
   'RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL_MANIFEST',
   'RUN_S1_FACTORY_MOVEMENT_POST_MANUAL_DELETION_ACCEPTANCE_MANIFEST',
-  'RUN_S1_CONTROLLED_GENERATE_PREFLIGHT'];
+  'RUN_S1_CONTROLLED_GENERATE_PREFLIGHT',
+  // R6B. Read-only for the same structural reason the preflight is: it takes no options, so there is
+  // nothing to pass it that would make it write.
+  'RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK'];
 var AI_GATED = ['RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL', 'RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL',
   'RUN_S1_CONTROLLED_GENERATE_EXECUTE'];
 var AI_UNGATED = ['RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE'];
-eq(AI_READONLY.length + AI_GATED.length + AI_UNGATED.length, 16, 'AI9a twelve plus three plus one');
+eq(AI_READONLY.length + AI_GATED.length + AI_UNGATED.length, 17,
+  'AI9a thirteen plus three plus one');
 eq(AI_ALL.slice().sort(), AI_READONLY.concat(AI_GATED).concat(AI_UNGATED).sort(),
   'AI9b and the three classes account for EVERY entry point by name');
 // AND THE ONE THAT WRITES ON SIGHT IS THE ONLY ONE WITHOUT AN EXECUTE FLAG. Said as its own claim,
@@ -8555,6 +8566,428 @@ ok(S1.indexOf('RUN_S1_CONTROLLED_GENERATE_PREFLIGHT()') > 0
     .indexOf('RUN_S1_CONTROLLED_GENERATE_PREFLIGHT()') > 0,
   'AI9g pointing at the no-arg PREFLIGHT as the read-only question, so a dry run is a different function'
   + ' rather than a flag on this one');
+
+
+// ================================================================================================================
+section('AJ — R6B: the post-failure recovery manifest reads the world and authorizes nothing');
+// ================================================================================================================
+//
+// The generation ran once and came back MANUAL_RECOVERY_REQUIRED for the honest reason that it could not be
+// classified. The source audit found why: `S1_cgRespCodes_` reads `errors[].code` and nothing else, and 61_
+// leaves `errors` EMPTY for every zero-write state that never reaches PASS 2 — ALL_BLOCKED, NO_DEMAND,
+// ALL_SUPPRESSED_BY_MANUAL and the AI_PLAN_NO_ACTION short circuit all state their reason in `data`.
+//
+// So this manifest is the answer to the only question left, and the tests below are about the two ways it
+// could be wrong: reading the world incorrectly, and doing anything to it.
+
+/** The zero-write authorities `S1_pfInputEvidence_` reconstructs PASS 1 from, scripted. NONE of them is a
+ *  writer, and the manifest re-measures the surfaces around the reconstruction to prove that rather than
+ *  assert it. */
+function ajWorld(script, over) {
+  script = script || {};
+  var w = ahWorld(script, over || {});
+  vm.runInContext('var __ajScript = ' + JSON.stringify(script) + ';', w.ctx);
+  vm.runInContext([
+    'function weeklyAiPlanHarvest_(ss, scope) {',
+    '  if (__ajScript.harvestOk === false) return { ok: false };',
+    '  return { ok: true, sourceDataAsOf: "2026-09-10", warehousesById: {}, kmaf: {},',
+    '    horizonsByDemandRef: {}, poolsBySku: {}, site_count: 1,',
+    '    noActionDecision: __ajScript.noAction || null };',
+    '}',
+    'function weeklyAiPlanShipDate_(h) {',
+    '  return __ajScript.shipDate === undefined ? "2026-09-10" : __ajScript.shipDate;',
+    '}',
+    'function weeklyAiPlanK2NoAction_(h) {',
+    '  var d = h && h.noActionDecision;',
+    '  if (!d) return { noAction: false, reason: "NO_ACTION_AUTHORITY_UNAVAILABLE",',
+    '    recommended_qty: null, residual_qty: null, qualifying_planned_qty: null };',
+    '  return d;',
+    '}',
+    'var KMWHA = { mapWeeklyHarvestToBatchRequest: function (i) {',
+    '  if (__ajScript.mapReady === false) return { ready: false };',
+    '  return { ready: true, request: { planningCycle: i.planningCycle,',
+    '    businessScope: { company: i.businessScope.company, country: i.businessScope.country,',
+    '      marketplace: i.businessScope.marketplace, source_page: i.businessScope.source_page } } };',
+    '} };',
+    'var KMWRB = { buildWeeklySourceLines: function (req) {',
+    '  return { ok: true, skuCount: 1, unresolvedTotal: 0, lines: [{ sku: ' + JSON.stringify(AH_BASE.sku) + ',',
+    '    marketplace: ' + JSON.stringify(AH_BASE.marketplace) + ', window_code: "W1",',
+    '    source_warehouse_id: ' + JSON.stringify(AH_BASE.source_factory_warehouse_id) + ',',
+    '    planned_qty: ' + AH_MAX + ', recommended_qty: ' + AH_MAX + ',',
+    '    destination: { kind: "marketplace", marketplace: ' + JSON.stringify(AH_BASE.marketplace) + ',',
+    '      country: ' + JSON.stringify(AH_BASE.country) + ' } }] };',
+    '} };',
+    'function weeklyAiPlanK2AllocatedLines_(lines, h) { return lines; }',
+    'function weeklyAiPlanReadCarrierAuthorities_(ss) { return { rateCards: [], leadTimes: [] }; }',
+    'var KMWRR = { buildK2GenerationPlan: function (i) {',
+    '  __ajPass1.push({ marketplace: i.scope.marketplace, lines: (i.allocatedLines || []).length,',
+    '    shipDate: i.shipDate });',
+    '  if (__ajScript.blocked) {',
+    '    return { groups: [], blocked: __ajScript.blocked, conservation: { conserved: true },',
+    '      completeness: { complete: false } };',
+    '  }',
+    '  return { groups: __ajScript.groups || [], blocked: [], conservation: { conserved: true },',
+    '    completeness: { complete: true } };',
+    '} };',
+    'function fsgEvaluateAiClaims_(ss, claims, opts) {',
+    '  __ajGuard.push(claims.length);',
+    '  return __ajScript.guard || { ok: true, verdict: "PROCEED", reason: null, available_to_allocate: 310 };',
+    '}'
+  ].join(NL), w.ctx, { filename: 'aj_pass1' });
+  vm.runInContext('var __ajPass1 = []; var __ajGuard = [];', w.ctx);
+  return w;
+}
+function ajRun(script, over) {
+  var w = ajWorld(script, over);
+  var r = ahRun(w, 'RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK()');
+  r.writes = w.allWrites();
+  r.pass1 = vm.runInContext('__ajPass1.length', w.ctx);
+  r.guardCalls = vm.runInContext('__ajGuard.length', w.ctx);
+  return r;
+}
+/** A run whose world already holds whatever `script` seeds. `preseed` puts the rows there BEFORE the
+ *  manifest looks, which is the whole point: this tool runs after the fact. */
+function ajSeeded(script) { return ajRun(script, { preseed: true }); }
+
+var AJ_PF = extractFn(S1, 'RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK');
+var AJ_PF_BODY = bareCode(AJ_PF).split(NL).slice(1).join(NL);
+/** The §PF region's code with COMMENTS removed but STRINGS KEPT — `bareCode` blanks both, and the claim
+ *  below is precisely that no reason TOKEN appears as a string literal. */
+function ajNoComments(src) {
+  return src.split(NL).filter(function (l) {
+    var t = l.replace(/^\s+/, '');
+    return t.indexOf('//') !== 0 && t.indexOf('*') !== 0 && t.indexOf('/*') !== 0;
+  }).join(NL);
+}
+var AJ_REGION = ajNoComments(['S1_pfRetryContract_', 'S1_pfExpectedIdentities_', 'S1_pfTargetUniverse_',
+  'S1_pfProtectedSurfaces_', 'S1_pfInputEvidence_', 'S1_pfClassify_', 'S1_pfFinish_',
+  'RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK'].map(function (f) {
+    return extractFn(S1, f);
+  }).join(NL));
+
+// ---- AJ0 THE STRUCTURE: IT TAKES NOTHING, AND IT REACHES NOTHING ----------------------------------
+ok(AJ_PF.length > 0, 'AJ0  the recovery manifest is extractable from the shipped source');
+ok(/function RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK\(\)/.test(S1),
+  'AJ0a it is declared with an EMPTY parameter list — there is nothing to pass it');
+eq((bareCode(AJ_PF).match(/\bopts\b/g) || []).length, 0,
+  'AJ0b and its body never mentions `opts`, so no option can change what it does');
+// THE FOUR THINGS A READ-ONLY TOOL AFTER A FAILED WRITE MUST NOT DO.
+eq((AJ_REGION.match(/weeklyAiPlanGenerateK2_\(/g) || []).length, 0,
+  'AJ0c nothing in §PF calls the production generator');
+eq((AJ_REGION.match(/\.mint\(/g) || []).length, 0, 'AJ0d nothing in §PF mints a capability');
+// A CALL, not a mention: §PF names the executor in the sentence that says which retained output would
+// make the three unprovable tables provable, and naming where evidence lives is not reaching for it.
+eq((AJ_REGION.match(/RUN_S1_CONTROLLED_GENERATE_EXECUTE[A-Z_]*\s*\(/g) || []).length, 0,
+  'AJ0e nor CALLS the executor or its no-arg adapter');
+ok(AJ_REGION.indexOf('RUN_S1_CONTROLLED_GENERATE_EXECUTE') > 0,
+  'AJ0e2 while still naming it as the place the retained snapshot would come from');
+eq((AJ_REGION.match(/handleUpsertShippingAllocationDraftAtomic_|handleSubmit|handleGenerate/g) || []).length, 0,
+  'AJ0f nor any public handler, writer or Submit authority');
+['setValue', 'setValues', 'appendRow', 'clearContent', 'deleteRow', 'insertRow', 'getRange'].forEach(
+  function (api, i) {
+    eq((AJ_REGION.match(new RegExp(api.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length, 0,
+      'AJ0g.' + (i + 1) + ' and §PF reaches no ' + api);
+  });
+// IT NEVER READS THE AUTHORIZATION. The sentence is spent; a tool that read it would be describing itself
+// as something the sentence could still cover.
+eq((AJ_REGION.match(/S1_CG_ONCE_AUTHORIZATION_|S1_cgOnceAuthorizationCheck_|S1_cgAuthorizationAudit_/g)
+  || []).length, 0, 'AJ0h §PF never reads the authorization sentence or its audit');
+['S1_MANIFEST_P_BEFORE_', 'INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_',
+ 'INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_', 'S1_CG_AUTH_FINGERPRINT_'].forEach(function (n, i) {
+  eq((AJ_REGION.match(new RegExp(n + '\\s*=(?!=)', 'g')) || []).length, 0,
+    'AJ0i.' + (i + 1) + ' and assigns nothing to ' + n);
+});
+eq((AJ_PF_BODY.match(/RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK\(/g) || []).length, 0,
+  'AJ0j it does not call itself');
+
+// THE SIX CLASSES, AND THE PRECEDENCE AS A PERMUTATION OF EXACTLY THEM.
+var AJ_CLASSES = JSON.parse(vm.runInContext('JSON.stringify(S1_PF_CLASSES_)', ajWorld({}).ctx));
+var AJ_PREC = JSON.parse(vm.runInContext('JSON.stringify(S1_PF_CLASS_PRECEDENCE_)', ajWorld({}).ctx));
+eq(AJ_CLASSES.length, 6, 'AJ0k there are exactly six answers this manifest may give');
+eq(AJ_PREC.slice().sort(), AJ_CLASSES.slice().sort(),
+  'AJ0l and the precedence is a permutation of exactly those six — no unreachable class, no extra one');
+eq(AJ_PREC[0], 'READBACK_INDETERMINATE',
+  'AJ0m INDETERMINATE wins first: every class below it is a statement about what was read');
+eq(AJ_PREC[AJ_PREC.length - 1], 'CONFIRMED_NO_WRITE_UNEXPLAINED',
+  'AJ0n and the unexplained zero is LAST — it is what is left when nothing else is true');
+
+// THE REASON SITES ARE PATHS, NOT TOKENS, AND THE FIRST ONE IS THE GAP THIS ROUND FOUND.
+var AJ_SITES = JSON.parse(vm.runInContext('JSON.stringify(S1_PF_REASON_SITES_)', ajWorld({}).ctx));
+eq(AJ_SITES[0], 'errors[].code',
+  'AJ0o the first reason site is the one the R6 classifier reads');
+ok(AJ_SITES.length >= 10, 'AJ0p and there are at least nine more it does not', AJ_SITES.length);
+AJ_SITES.forEach(function (p, i) {
+  ok(p.indexOf('.') >= 0 || p.indexOf('[]') >= 0 || p === 'parse_error',
+    'AJ0q.' + (i + 1) + ' ' + p + ' is a field PATH, not a reason token');
+  ok(!/^[A-Z0-9_]+$/.test(p),
+    'AJ0r.' + (i + 1) + ' and it is not spelled as a production error CODE');
+});
+// AND THE GAP ITSELF, ASSERTED ON THE SHIPPED CLASSIFIER RATHER THAN DESCRIBED IN PROSE.
+var AJ_CODES = bareCode(extractFn(S1, 'S1_cgRespCodes_'));
+ok(AJ_CODES.indexOf('errors') > 0, 'AJ0s S1_cgRespCodes_ reads resp.errors');
+['job_status', 'blocked', 'no_action_reason', 'zero_result', 'parse_error'].forEach(function (f, i) {
+  eq(AJ_CODES.indexOf(f), -1,
+    'AJ0t.' + (i + 1) + ' and reads NOTHING at data.' + f + ' — which is why an empty `errors` read as'
+      + ' "no reason given"');
+});
+
+// ---- AJ1 THE OBSERVED WORLD: A ZERO WRITE WITH NO REASON ANYWHERE --------------------------------
+// Neither identity present, every comparable surface unchanged, and the reconstruction naming nothing.
+var AJ1 = ajRun({ header: false, line: false });
+eq(AJ1.res.classification, 'CONFIRMED_NO_WRITE_UNEXPLAINED',
+  'AJ1  a clean zero with no production reason is the UNEXPLAINED class, not a refusal');
+eq(AJ1.res.expected_identities.header_hit_count, 0, 'AJ1a the authorized header is absent');
+eq(AJ1.res.expected_identities.line_hit_count, 0, 'AJ1b and so is the authorized line');
+eq(AJ1.res.expected_identities.both_absent, true, 'AJ1c which is the both-absent case');
+eq(AJ1.res.protected_surfaces.all_compared_intact, true, 'AJ1d every comparable surface is unchanged');
+eq(AJ1.res.expected_identities.alternate_identity_count, 0,
+  'AJ1e no row in the target scope carries this run under another id');
+eq(AJ1.res.classification_is_known, true, 'AJ1f the class it returned is one of the six');
+// THE ZERO PROOF, MEASURED ON THE WORLD AND NOT REPORTED BY THE TOOL.
+eq(AJ1.writes, 0, 'AJ1g it wrote nothing — counted on the sheets');
+eq(AJ1.calls, 0, 'AJ1h and called the production generator zero times');
+eq([AJ1.res.writes, AJ1.res.writer_calls, AJ1.res.generator_calls, AJ1.res.attempts,
+  AJ1.res.repairs_attempted, AJ1.res.rows_created, AJ1.res.rows_updated, AJ1.res.rows_deleted],
+  [0, 0, 0, 0, 0, 0, 0, 0], 'AJ1i and every counter it reports is zero');
+eq([AJ1.res.capability_minted, AJ1.res.authorization_read, AJ1.res.zero_write_confirmed],
+  [false, false, true], 'AJ1j nothing minted, no authorization read, zero write confirmed');
+eq(AJ1.flag, false, 'AJ1k the flag is still false');
+eq(AJ1.allowlistCount, 1, 'AJ1l and the allowlist still holds exactly one scope');
+
+// ---- AJ2 A REASON PRODUCTION NAMED, IN PRODUCTION'S WORDS ----------------------------------------
+// The block token arrives from the SCRIPTED plan builder. That is the whole contract: the token is data,
+// and the diagnostic that reports it carries no vocabulary of its own to drift.
+var AJ2 = ajRun({ header: false, line: false,
+  blocked: [{ block: 'ZZ_SCRIPTED_LANE_BLOCK', method_unresolved_reason: 'ZZ_SCRIPTED_SUB_REASON',
+    lane_query: { originCountry: 'CN', destinationCountry: 'US', marketplace: 'Amazon' },
+    line: { sku: AH_BASE.sku, planned_qty: AH_MAX } }] });
+eq(AJ2.res.classification, 'CONFIRMED_GUARD_REFUSAL_ZERO_WRITE',
+  'AJ2  a zero write WITH a production-named reason is a guard refusal');
+eq(AJ2.res.input_evidence.reconstructed, true, 'AJ2a the read-only PASS 1 reconstruction completed');
+eq(AJ2.res.input_evidence.plan_block_tokens, ['ZZ_SCRIPTED_LANE_BLOCK'],
+  'AJ2b and it reports the block token the production builder returned');
+eq(AJ2.res.input_evidence.reason_named_by_production, true, 'AJ2c so a reason WAS named');
+ok((AJ2.res.guard_reason_named || []).length > 0, 'AJ2d and the classification carries it');
+ok(JSON.stringify(AJ2.res.input_evidence.plan_blocked_detail).indexOf('ZZ_SCRIPTED_SUB_REASON') > 0,
+  'AJ2e together with the sub-reason, which is the half that names the table to fix');
+ok(JSON.stringify(AJ2.res.input_evidence.plan_blocked_detail).indexOf('originCountry') > 0,
+  'AJ2f and the lane query, which is the half that names WHICH lane');
+// THE TOKEN IS NOT IN THE FILE. If it were, the diagnostic would be asserting which refusals exist.
+eq(AJ_REGION.indexOf('ZZ_SCRIPTED_LANE_BLOCK'), -1,
+  'AJ2g the token appears in the OUTPUT and nowhere in the source — it is data, not vocabulary');
+eq(AJ2.writes, 0, 'AJ2h the reconstruction wrote nothing');
+eq(AJ2.res.reconstruction_wrote_nothing, true,
+  'AJ2i and the manifest proves that by re-measuring, not by declaring it');
+eq(AJ2.pass1, 1, 'AJ2j PASS 1 was rebuilt exactly once');
+eq(AJ2.res.retry_contract.generate_may_be_attempted_again, false,
+  'AJ2k and even a fully explained refusal permits no further generate');
+
+// ---- AJ3 A WRITE THAT LANDED SOMEWHERE ELSE ------------------------------------------------------
+// The pair is absent, so from the pair's side this looks like a clean zero. It is not: a target-scope row
+// carrying THIS run's calculation_run_id under another id is this generation's output under another name.
+var AJ3 = null;
+// seeded by hand — ahApply has no switch for it, so the row goes in directly with the run id that matters
+(function () {
+  var w = ajWorld({ header: false, line: false });
+  var H = w.sheets['shipping_allocation_drafts'];
+  H.rows.push(AH_HDR.map(function (h) {
+    return ({ allocation_draft_id: 'SADH-K2-SOMETHINGELSE', planning_cycle: AH_BASE.planning_cycle,
+      company: AH_BASE.company, country: AH_BASE.country, marketplace: AH_BASE.marketplace,
+      status: 'draft', generation_type: 'system_generated',
+      calculation_run_id: AH_BASE.calculation_run_id, created_at: '2026-09-10T14:42:06Z' })[h] || '';
+  }));
+  var L = w.sheets['shipping_allocation_draft_lines'];
+  L.rows.push(AH_LINE.map(function (h) {
+    return ({ allocation_draft_line_id: 'SADL-K2-SOMETHINGELSE',
+      allocation_draft_id: 'SADH-K2-SOMETHINGELSE', sku: AH_BASE.sku, planned_qty: AH_MAX,
+      recommended_qty: AH_MAX, line_status: 'draft' })[h] || '';
+  }));
+  AJ3 = ahRun(w, 'RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK()');
+  AJ3.writes = w.allWrites();
+})();
+eq(AJ3.res.classification, 'WRITE_LANDED_UNDER_UNEXPECTED_IDENTITY',
+  'AJ3  a target-scope row carrying this run under another id is found, not read as a clean zero');
+eq(AJ3.res.expected_identities.both_absent, true,
+  'AJ3a even though the AUTHORIZED pair really is absent');
+eq(AJ3.res.expected_identities.alternate_identity_count, 1, 'AJ3b exactly one substitute row was found');
+eq(AJ3.res.expected_identities.alternate_identity_rows[0].allocation_draft_id, 'SADH-K2-SOMETHINGELSE',
+  'AJ3c named by its id');
+eq(AJ3.res.expected_identities.alternate_identity_rows[0].matches_run_id, true,
+  'AJ3d and by WHY it is a substitute: it carries this run\'s calculation_run_id');
+eq(AJ3.writes, 0, 'AJ3e and finding it required no write');
+
+// ---- AJ4 PARTIAL, DUPLICATE AND ORPHAN -----------------------------------------------------------
+[[{ line: false }, 'header only'],
+ [{ header: false }, 'line only'],
+ [{ duplicateHeader: true }, 'a duplicated header'],
+ [{ orphanLine: true }, 'a line whose parent header does not exist']
+].forEach(function (c, i) {
+  var r = ajSeeded(c[0]);
+  eq(r.res.classification, 'PARTIAL_OR_DUPLICATE_WRITE',
+    'AJ4.' + (i + 1) + ' ' + c[1] + ' is a partial/duplicate write, never a success and never a clean zero');
+  eq(r.writes, 0, 'AJ4.' + (i + 1) + 'a and classifying it wrote nothing');
+  eq(r.res.retry_contract.generate_may_be_attempted_again, false,
+    'AJ4.' + (i + 1) + 'b with no further generate permitted');
+});
+
+// AND THE SPLIT THAT MAKES AJ4.1 A PARTIAL RATHER THAN A BROKEN PROMISE. A header written without its
+// line carries no line for the target sku, so the partition cannot see it as target scope and counts it
+// as another scope's. The count really did move — and it moved BECAUSE of the half-landed write.
+var AJ4E = ajSeeded({ line: false });
+ok(AJ4E.res.protected_surfaces.changed.length > 0,
+  'AJ4e a header-only write does move a draft-table count');
+eq(AJ4E.res.protected_surfaces.changed_promised_untouched, [],
+  'AJ4f but nothing it promised not to touch moved');
+ok(AJ4E.res.protected_surfaces.changed_draft_tables.length > 0,
+  'AJ4g the movement is entirely in the tables the write was aimed at');
+eq(AJ4E.res.classification_detail.surface_change_explained_by_the_pair, true,
+  'AJ4h so the change is explained by the pair, and the finding is the partial write');
+eq(AJ4E.res.classification, 'PARTIAL_OR_DUPLICATE_WRITE', 'AJ4i which is what it is reported as');
+// EVERY SCHEMA FINGERPRINT IS PROMISED_UNTOUCHED, THE DRAFT TABLES' OWN INCLUDED: a column that moved
+// is never a row write's doing.
+AJ1.res.protected_surfaces.compared.filter(function (c) {
+  return c.surface.indexOf('schema:') === 0;
+}).forEach(function (c, i) {
+  eq(c.family, 'PROMISED_UNTOUCHED',
+    'AJ4j.' + (i + 1) + ' ' + c.surface + ' is promised-untouched, not a draft-table surface');
+});
+
+// ---- AJ5 A PROTECTED SURFACE THAT MOVED OUTRANKS EVERYTHING BELOW IT ------------------------------
+// It is the only class that says the authorization's PROMISE was broken, which is wider than anything the
+// authorized pair itself did — so it wins even when the pair is a clean absent.
+[[{ header: false, line: false, poolChanged: true }, 'the factory pool row'],
+ [{ header: false, line: false, movementAdded: true }, 'a factory stock movement'],
+ [{ header: false, line: false, otherScopeDrift: true }, 'another scope\'s drafts']
+].forEach(function (c, i) {
+  var r = ajSeeded(c[0]);
+  eq(r.res.classification, 'PROTECTED_SURFACE_CHANGED',
+    'AJ5.' + (i + 1) + ' ' + c[1] + ' changing is classified as a protected-surface change');
+  ok(r.res.protected_surfaces.changed.length > 0,
+    'AJ5.' + (i + 1) + 'a and the surface is NAMED: ' + r.res.protected_surfaces.changed.slice(0, 3));
+  eq(r.res.protected_surfaces.all_compared_intact, false,
+    'AJ5.' + (i + 1) + 'b not reported as intact');
+  eq(r.res.classification_detail.surface_change_explained_by_the_pair, false,
+    'AJ5.' + (i + 1) + 'c and NOTHING about the authorized pair explains it');
+});
+// AND IT OUTRANKS A PARTIAL, WITH THE LOSING CANDIDATE STILL RECORDED.
+var AJ5d = ajSeeded({ line: false, poolChanged: true });
+eq(AJ5d.res.classification, 'PROTECTED_SURFACE_CHANGED',
+  'AJ5d a broken promise outranks a partial write');
+ok(AJ5d.res.classification_detail.candidates.indexOf('PARTIAL_OR_DUPLICATE_WRITE') >= 0,
+  'AJ5e and the partial is still listed as a candidate — precedence hides nothing');
+
+// ---- AJ6 WHAT CANNOT BE READ IS NOT CLASSIFIED ---------------------------------------------------
+var AJ6 = ahRun(ajWorld({ header: false, line: false }, { s1: S1_WORLD }),
+  'RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK()');
+eq(AJ6.res.classification, 'READBACK_INDETERMINATE',
+  'AJ6  with no frozen baseline there is no expectation, so no class is available');
+eq(AJ6.res.baseline_present, false, 'AJ6a the baseline really is absent in that world');
+ok(AJ6.res.stop_reason.indexOf('compared with itself') > 0,
+  'AJ6b and it says why: a live reading compared with itself proves nothing');
+eq(AJ6.res.zero_write_confirmed, true, 'AJ6c the refusal still carries its zero proof');
+eq(AJ6.res.retry_contract.generate_may_be_attempted_again, false,
+  'AJ6d and an unreadable world certainly permits no generate');
+
+// ---- AJ7 LIVE-VS-LIVE MAY NOT IMPERSONATE A BASELINE COMPARISON ----------------------------------
+// The baseline carries the shipping/shipment tables' SCHEMA and nothing about their rows. Reading them now
+// and comparing them with themselves would produce a PASS that means nothing, so they are UNPROVABLE.
+eq(AJ1.res.protected_surfaces.unprovable_count, 3,
+  'AJ7  three surfaces are reported UNPROVABLE rather than compared');
+var AJ7N = AJ1.res.protected_surfaces.unprovable.map(function (u) { return u.surface; }).sort();
+eq(AJ7N, ['shipments', 'shipping_plan_lines', 'shipping_plans'],
+  'AJ7a and they are exactly the three the baseline carries no row content for');
+AJ1.res.protected_surfaces.unprovable.forEach(function (u, i) {
+  eq(u.state, 'UNPROVABLE', 'AJ7b.' + (i + 1) + ' ' + u.surface + ' is stated UNPROVABLE');
+  eq(u.baseline_carries_row_content, false,
+    'AJ7c.' + (i + 1) + ' because the baseline carries no row content for it');
+  ok(u.what_would_make_it_provable.indexOf('EXECUTE') > 0,
+    'AJ7d.' + (i + 1) + ' and what WOULD make it provable is named');
+});
+// THE DECISIVE PART: an unprovable surface is never counted as an intact one.
+var AJ7C = AJ1.res.protected_surfaces.compared.map(function (c) { return c.surface; });
+['shipping_plans', 'shipping_plan_lines', 'shipments'].forEach(function (t, i) {
+  eq(AJ7C.indexOf(t), -1,
+    'AJ7e.' + (i + 1) + ' ' + t + ' appears in NO compared entry — it cannot pass, only be unprovable');
+});
+// A schema fingerprint the baseline DOES carry is compared, for those same tables.
+ok(AJ7C.filter(function (s) { return s.indexOf('schema:') === 0; }).length > 0,
+  'AJ7f while the schema fingerprints the baseline does carry ARE compared');
+AJ1.res.protected_surfaces.compared.forEach(function (c, i) {
+  eq(c.expectation_source, 'S1_MANIFEST_P_BEFORE_',
+    'AJ7g.' + (i + 1) + ' and every comparison names the frozen baseline as its expectation source');
+});
+
+// ---- AJ8 EVERY CLASS CLOSES THE CONTRACT ---------------------------------------------------------
+var AJ8W = ajWorld({});
+AJ_CLASSES.forEach(function (c, i) {
+  var rc = JSON.parse(vm.runInContext(
+    'JSON.stringify(S1_pfRetryContract_(' + JSON.stringify(c) + '))', AJ8W.ctx));
+  eq([rc.retryable, rc.automatic_retry_allowed, rc.same_authorization_reusable,
+    rc.same_frozen_baseline_reusable, rc.generate_may_be_attempted_again],
+    [false, false, false, false, false],
+    'AJ8.' + (i + 1) + ' ' + c + ' closes all five: nothing retryable, nothing reusable, no generate');
+  eq(rc.known, true, 'AJ8.' + (i + 1) + 'a and the class is known to the contract');
+  eq(rc.next_action.indexOf('GENERATE'), -1,
+    'AJ8.' + (i + 1) + 'b and its next_action does not point at a Generate');
+});
+// AND AN UNKNOWN CLASS IS NOT SILENTLY PERMISSIVE.
+var AJ8U = JSON.parse(vm.runInContext(
+  'JSON.stringify(S1_pfRetryContract_("SOMETHING_NOBODY_DEFINED"))', AJ8W.ctx));
+eq(AJ8U.known, false, 'AJ8g an unrecognised class says so');
+eq([AJ8U.retryable, AJ8U.generate_may_be_attempted_again], [false, false],
+  'AJ8h and still permits nothing');
+// THE TWO DIRECTIONS, CHECKED AGAINST EACH OTHER RATHER THAN TRUSTED TO AGREE.
+[AJ1, AJ2, AJ3, AJ5d, AJ6].forEach(function (r, i) {
+  eq(r.res.next_action_permits_another_generate, false,
+    'AJ8i.' + (i + 1) + ' the returned next_action permits no further generate');
+  eq(r.res.next_action_agrees_with_the_permission, true,
+    'AJ8j.' + (i + 1) + ' and agrees with the contract flag beside it');
+});
+
+// ---- AJ9 THE INPUT EVIDENCE, AND THE FIELD THAT IS NOT THE FIELD IT LOOKS LIKE --------------------
+// 61_ resolves the ship date from `harvest.sourceDataAsOf`, and 61_'s own lineage comment records that this
+// field is "blank for scopes whose lines omit it". The baseline froze the GAP RUN's `source_data_as_of`,
+// which carries a date. Two fields, one name, and a blank one refuses every lane through the effective-date
+// axis without any table being wrong — so the manifest reports it as its own fact.
+eq(AJ2.res.input_evidence.ship_date_is_blank, false,
+  'AJ9  the reconstruction reports whether the ship date is blank');
+var AJ9B = ajRun({ header: false, line: false, shipDate: '' });
+eq(AJ9B.res.input_evidence.ship_date_is_blank, true,
+  'AJ9a and a blank one is reported as blank, not defaulted to a date');
+eq(AJ9B.res.input_evidence.harvest_ship_date, '',
+  'AJ9b with the value itself carried beside the flag');
+// The reconstruction reports what it was handed, and NEVER promotes a missing authority into a reason.
+var AJ9C = ajRun({ header: false, line: false, mapReady: false });
+eq(AJ9C.res.input_evidence.reconstructed, false,
+  'AJ9c a mapping that is not ready leaves the reconstruction incomplete');
+eq(AJ9C.res.input_evidence.unavailable_reason, 'MAP_NOT_READY',
+  'AJ9d and says which authority stopped it');
+eq(AJ9C.res.input_evidence.reason_named_by_production, false,
+  'AJ9e an incomplete reconstruction names NO reason');
+eq(AJ9C.res.classification, 'CONFIRMED_NO_WRITE_UNEXPLAINED',
+  'AJ9f so the zero stays UNEXPLAINED — an unavailable authority is not a refusal');
+// The no-action authority is read from production, and its reason is production's.
+var AJ9G = ajRun({ header: false, line: false,
+  noAction: { noAction: true, reason: 'ZZ_SCRIPTED_NO_ACTION_REASON', recommended_qty: 25,
+    residual_qty: 0, qualifying_planned_qty: 25 } });
+eq(AJ9G.res.input_evidence.no_action, true, 'AJ9g a production no-action decision is read back');
+eq(AJ9G.res.classification, 'CONFIRMED_GUARD_REFUSAL_ZERO_WRITE',
+  'AJ9h and it is a NAMED reason, so the zero is explained');
+ok(JSON.stringify(AJ9G.res.guard_reason_named).indexOf('ZZ_SCRIPTED_NO_ACTION_REASON') > 0,
+  'AJ9i in production\'s words');
+eq(AJ_REGION.indexOf('ZZ_SCRIPTED_NO_ACTION_REASON'), -1,
+  'AJ9j which, again, appear nowhere in this file');
+// AND THE GUARD, EVALUATED ON THE CLAIMS PASS 1 WOULD HAVE SUBMITTED.
+var AJ9K = ajRun({ header: false, line: false,
+  groups: [{ groupNo: 1, header: {}, lines: [{ sku: AH_BASE.sku, planned_qty: AH_MAX,
+    source_warehouse_id: AH_BASE.source_factory_warehouse_id }] }],
+  guard: { ok: false, verdict: 'STOP', reason: 'ZZ_SCRIPTED_GUARD_REASON', available_to_allocate: 0 } });
+eq(AJ9K.guardCalls, 1, 'AJ9k the factory guard was evaluated once, on real claims');
+eq(AJ9K.res.input_evidence.factory_guard.reason, 'ZZ_SCRIPTED_GUARD_REASON',
+  'AJ9l and its named reason is carried');
+eq(AJ9K.res.classification, 'CONFIRMED_GUARD_REFUSAL_ZERO_WRITE',
+  'AJ9m which explains the zero write');
+eq(AJ9K.writes, 0, 'AJ9n and evaluating the guard wrote nothing');
 
 mut('N1 the proposal is sized from the RECOMMENDATION instead of the residual', function () {
   var m = swapS1('    prop = Math.min(row.residual_qty, a);',
@@ -11173,7 +11606,10 @@ mut('N146 the request stops naming the marketplace, so the capability authorizes
   // 61_'s gate re-derives the live scope key from the REQUEST and requires it to equal the minted one.
   // Dropping the marketplace is how a controlled run becomes a fan-out; the REAL authority is what
   // refuses it here, which is why this fixture loads the shipped IIFE rather than a stub of it.
-  var m = swapS1('  mapped.request.businessScope.marketplace = b.marketplace;',
+  // SCOPED TO THE ONE CALL SITE. R6B's read-only reconstruction rebuilds the same request for PASS 1,
+  // so this line now appears twice in the file and a whole-file swap would mutate both.
+  var m = swapS1In('S1_cgProductionCall_',
+    '  mapped.request.businessScope.marketplace = b.marketplace;',
     '  mapped.request.businessScope.marketplace = null;');
   var clean = ahExec({}, {}, ahOpts());
   var bad = ahExec({}, { s1: ahS1(m) }, ahOpts());
@@ -11456,6 +11892,202 @@ mut('N167 the no-arg entry point re-freezes the baseline from the run it just ma
   }
   return baselineAfter(null) === held && baselineAfter(m) !== held
     && assignments(S1) === 1 && assignments(m) === 2;
+});
+
+
+mut('N168 the recovery manifest calls the production generator', function () {
+  // ONE GENERATOR CALL SITE, IN ONE FUNCTION, AND THE RECOVERY TOOL IS NOT IT. The authorization is spent;
+  // a second call would be a generation nobody authorized, made by the tool sent to find out what the
+  // first one did.
+  var m = swapS1In('RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK',
+    '    var db = S1_openDb_();',
+    '    weeklyAiPlanGenerateK2_(null, null, null, null, null, null);' + NL
+    + '    var db = S1_openDb_();');
+  function sites(src) { return (bareCode(src).match(/weeklyAiPlanGenerateK2_\(/g) || []).length; }
+  function inPf(src) {
+    return (bareCode(extractFn(src, 'RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK'))
+      .match(/weeklyAiPlanGenerateK2_\(/g) || []).length;
+  }
+  var clean = ajRun({ header: false, line: false });
+  return sites(S1) === 1 && inPf(S1) === 0 && sites(m) === 2 && inPf(m) === 1
+    && clean.calls === 0 && clean.res.generator_calls === 0;
+});
+
+mut('N169 the recovery manifest mints a capability', function () {
+  var m = swapS1In('RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK',
+    '    var db = S1_openDb_();',
+    '    WeeklyAiPlanControlledAuthority_.mint({ scope: { company: 1 } });' + NL
+    + '    var db = S1_openDb_();');
+  function sites(src) {
+    return (bareCode(src).match(/WeeklyAiPlanControlledAuthority_\.mint\(/g) || []).length;
+  }
+  function inPf(src) {
+    return (bareCode(extractFn(src, 'RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK'))
+      .match(/\.mint\(/g) || []).length;
+  }
+  var clean = ajRun({ header: false, line: false });
+  return sites(S1) === 1 && inPf(S1) === 0 && sites(m) === 2 && inPf(m) === 1
+    && clean.res.capability_minted === false;
+});
+
+mut('N170 the recovery manifest repairs the missing row it was sent to look for', function () {
+  // THE WHOLE POINT OF THE CLASS NAMES. A tool that can write the row it failed to find can never report
+  // that the row is missing, and the operator who reads MANUAL_RECOVERY_REQUIRED is told to look at a
+  // world the diagnostic has already changed.
+  var m = swapS1In('RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK',
+    '    var obs = S1_cgObserve_(db.ss, b);',
+    '    db.ss.getSheetByName(\'shipping_allocation_drafts\').appendRow([b.expected_header_ids[0]]);' + NL
+    + '    var obs = S1_cgObserve_(db.ss, b);');
+  var clean = ajRun({ header: false, line: false });
+  var bad = ajRun({ header: false, line: false }, { s1: ahS1(m) });
+  return clean.writes === 0 && clean.res.rows_created === 0
+    && clean.res.classification === 'CONFIRMED_NO_WRITE_UNEXPLAINED'
+    && bad.writes > 0;
+});
+
+mut('N171 the substitute-identity scan is skipped, so a write that landed elsewhere reads as a clean zero',
+function () {
+  // The pair is absent either way. What changes is whether the manifest looked for the run's output under
+  // another name — and a WRITE_LANDED_UNDER_UNEXPECTED_IDENTITY reported as an unexplained zero sends a
+  // person to create a row that already exists.
+  var m = swapS1In('S1_pfExpectedIdentities_',
+    '    if (sameRun || sameKey) {',
+    '    if (false) {');
+  function drive(src) {
+    var w = ajWorld({ header: false, line: false }, src ? { s1: ahS1(src) } : {});
+    var H = w.sheets['shipping_allocation_drafts'];
+    H.rows.push(AH_HDR.map(function (h) {
+      return ({ allocation_draft_id: 'SADH-K2-SOMETHINGELSE', planning_cycle: AH_BASE.planning_cycle,
+        company: AH_BASE.company, country: AH_BASE.country, marketplace: AH_BASE.marketplace,
+        status: 'draft', generation_type: 'system_generated',
+        calculation_run_id: AH_BASE.calculation_run_id })[h] || '';
+    }));
+    var L = w.sheets['shipping_allocation_draft_lines'];
+    L.rows.push(AH_LINE.map(function (h) {
+      return ({ allocation_draft_line_id: 'SADL-K2-SOMETHINGELSE',
+        allocation_draft_id: 'SADH-K2-SOMETHINGELSE', sku: AH_BASE.sku, planned_qty: AH_MAX,
+        recommended_qty: AH_MAX, line_status: 'draft' })[h] || '';
+    }));
+    return ahRun(w, 'RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK()').res;
+  }
+  return drive(null).classification === 'WRITE_LANDED_UNDER_UNEXPECTED_IDENTITY'
+    && drive(m).classification === 'CONFIRMED_NO_WRITE_UNEXPLAINED';
+});
+
+mut('N172 a half-landed pair is not classified as partial', function () {
+  // AIMED AT THE BRANCH, NOT AT THE FIRST HALF OF THE PREDICATE. `partial` is a four-way disjunction and
+  // neutralising only its first line leaves the wrong-foreign-key clause live, so an orphan would still be
+  // caught and the mutant would prove nothing about the three cases that are not orphans.
+  var m = swapS1In('S1_pfClassify_',
+    "  if (partial) o.candidates.push('PARTIAL_OR_DUPLICATE_WRITE');",
+    "  if (false) o.candidates.push('PARTIAL_OR_DUPLICATE_WRITE');");
+  function drive(src, script) {
+    return ajRun(script, src ? { s1: ahS1(src), preseed: true } : { preseed: true }).res.classification;
+  }
+  // header only, and a line whose parent does not exist — two different half-writes, both must survive.
+  return drive(null, { line: false }) === 'PARTIAL_OR_DUPLICATE_WRITE'
+    && drive(null, { orphanLine: true }) === 'PARTIAL_OR_DUPLICATE_WRITE'
+    && drive(m, { line: false }) !== 'PARTIAL_OR_DUPLICATE_WRITE'
+    && drive(m, { orphanLine: true }) !== 'PARTIAL_OR_DUPLICATE_WRITE';
+});
+
+mut('N173 a moved protected surface is reported intact', function () {
+  var m = swapS1In('S1_pfProtectedSurfaces_',
+    '    var ok = S1_str_(expected) === S1_str_(observed);',
+    '    var ok = true;');
+  function drive(src) {
+    var r = ajRun({ header: false, line: false, poolChanged: true },
+      src ? { s1: ahS1(src), preseed: true } : { preseed: true });
+    return [r.res.classification, r.res.protected_surfaces.all_compared_intact,
+      r.res.protected_surfaces.changed.length];
+  }
+  var clean = drive(null), bad = drive(m);
+  return clean[0] === 'PROTECTED_SURFACE_CHANGED' && clean[1] === false && clean[2] > 0
+    && bad[0] !== 'PROTECTED_SURFACE_CHANGED' && bad[1] === true && bad[2] === 0;
+});
+
+mut('N174 an unexplained zero is promoted to a guard refusal with no reason to show', function () {
+  // THE ONE THAT MATTERS MOST. "Zero rows and the guard refused" is a finished story; "zero rows and
+  // nobody can say why" is the finding. Collapsing the second into the first files the actual defect as a
+  // success shape — which is exactly what the R6 classifier refused to do, and why this round exists.
+  var m = swapS1In('S1_pfClassify_',
+    '    if (ev.reconstructed === true && ev.reason_named_by_production === true) {',
+    '    if (true) {');
+  var clean = ajRun({ header: false, line: false });
+  var bad = ajRun({ header: false, line: false }, { s1: ahS1(m) });
+  return clean.res.classification === 'CONFIRMED_NO_WRITE_UNEXPLAINED'
+    && clean.res.input_evidence.reason_named_by_production === false
+    && bad.res.classification === 'CONFIRMED_GUARD_REFUSAL_ZERO_WRITE';
+});
+
+mut('N175 the diagnostic invents a guard reason instead of reading production\'s', function () {
+  // A reason this file spells is a reason that keeps being reported after production renames it. The
+  // token must arrive as data or not at all — so the mutant is a hardcoded one, and what catches it is
+  // both the changed answer AND the token appearing in the source.
+  var m = swapS1In('S1_pfInputEvidence_',
+    '  o.reason_named_by_production = o.production_named_reasons.length > 0;',
+    "  o.production_named_reasons.push('ROUTE_METHOD_UNRESOLVED');" + NL
+    + '  o.reason_named_by_production = o.production_named_reasons.length > 0;');
+  function tokensInSource(src) {
+    var region = ['S1_pfInputEvidence_', 'S1_pfClassify_'].map(function (f) {
+      return extractFn(src, f);
+    }).join(NL).split(NL).filter(function (l) {
+      var t = l.replace(/^\s+/, '');
+      return t.indexOf('//') !== 0 && t.indexOf('*') !== 0;
+    }).join(NL);
+    return ['ROUTE_METHOD_UNRESOLVED', 'NO_TRANSIT_AUTHORITY_FOR_LANE', 'ALL_BLOCKED',
+      'ALL_SUPPRESSED_BY_MANUAL', 'AI_PLAN_NO_ACTION', 'DROPPED_FACTORY_STOCK_EXHAUSTED']
+      .filter(function (t) { return region.indexOf(t) >= 0; }).length;
+  }
+  var clean = ajRun({ header: false, line: false });
+  var bad = ajRun({ header: false, line: false }, { s1: ahS1(m) });
+  return tokensInSource(S1) === 0 && tokensInSource(m) === 1
+    && clean.res.classification === 'CONFIRMED_NO_WRITE_UNEXPLAINED'
+    && bad.res.classification === 'CONFIRMED_GUARD_REFUSAL_ZERO_WRITE';
+});
+
+mut('N176 the three unprovable tables are compared with themselves and pass', function () {
+  // LIVE AGAINST LIVE IS NOT A COMPARISON. The baseline carries no row content for these three, so a PASS
+  // here would mean only that the table did not change between two readings taken microseconds apart —
+  // and it would be counted as evidence that the generation left them alone.
+  var m = swapS1In('S1_pfProtectedSurfaces_',
+    '  S1_PF_UNPROVABLE_TABLES_.forEach(function (t) {',
+    '  S1_PF_UNPROVABLE_TABLES_.forEach(function (t) {' + NL
+    + '    var live = (obs.unchanged_tables || {})[t] || null;' + NL
+    + '    cmp(t, live ? live.row_count : null, live ? live.row_count : null);' + NL
+    + '    if (true) return;');
+  function drive(src) {
+    var r = ajRun({ header: false, line: false }, src ? { s1: ahS1(src) } : {});
+    var names = r.res.protected_surfaces.compared.map(function (c) { return c.surface; });
+    return [r.res.protected_surfaces.unprovable_count,
+      ['shipping_plans', 'shipping_plan_lines', 'shipments']
+        .filter(function (t) { return names.indexOf(t) >= 0; }).length];
+  }
+  var clean = drive(null), bad = drive(m);
+  return clean[0] === 3 && clean[1] === 0 && bad[0] === 0 && bad[1] === 3;
+});
+
+mut('N177 a recovery class hands back a reusable authorization or a retry', function () {
+  // The sentence is spent and the baseline is spent with it. No reading of the world can un-spend either,
+  // so the contract is the same for all six classes — and the next_action is cross-checked against the
+  // same permission table the executor uses, so a permissive action cannot be returned quietly beside a
+  // contract that forbids one.
+  var m = swapS1In('S1_pfRetryContract_',
+    "    next_action: 'STOP_AND_PERFORM_MANUAL_RECOVERY_WITH_THIS_MANIFEST' };",
+    "    next_action: 'RERUN_MANIFEST_P_AND_REQUIRE_NEW_AUTHORIZATION' };");
+  var m2 = swapS1In('S1_pfRetryContract_',
+    '    same_authorization_reusable: false, same_frozen_baseline_reusable: false,',
+    '    same_authorization_reusable: true, same_frozen_baseline_reusable: true,');
+  var clean = ajRun({ header: false, line: false });
+  var bad = ajRun({ header: false, line: false }, { s1: ahS1(m) });
+  var bad2 = ajRun({ header: false, line: false }, { s1: ahS1(m2) });
+  return clean.res.next_action_permits_another_generate === false
+    && clean.res.next_action_agrees_with_the_permission === true
+    && clean.res.retry_contract.same_authorization_reusable === false
+    // the permissive next_action is caught by the cross-check, not by a literal
+    && bad.res.next_action_permits_another_generate === true
+    && bad.res.next_action_agrees_with_the_permission === false
+    && bad2.res.retry_contract.same_authorization_reusable === true;
 });
 
 console.log('\npassed ' + pass + '  failed ' + fail

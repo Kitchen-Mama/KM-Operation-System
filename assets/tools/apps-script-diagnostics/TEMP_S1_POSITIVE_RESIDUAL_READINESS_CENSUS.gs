@@ -12440,3 +12440,710 @@ function S1_cgFinishOnce_(out) {
   }));
   return out;
 }
+
+// ================================================================================================================
+// §PF — R6B: THE POST-FAILURE READ-ONLY RECOVERY MANIFEST
+//
+// The one controlled generation ran. It came back MANUAL_RECOVERY_REQUIRED with the honest reason that it
+// could not be classified: zero rows landed and `resp.errors` was empty, so `S1_cgRespCodes_` — which reads
+// `errors[].code` and nothing else — had no name to report.
+//
+// THE SOURCE AUDIT FOUND WHY AN EMPTY `errors` IS NOT THE SAME AS A SILENT REFUSAL. In 61_, a zero-write run
+// that is a *decision* states that decision in `data`, and puts nothing in `errors`:
+//
+//   errors: (anyFail ? [K2_GENERATION_PARTIAL] : []).concat(...)      61_ (the success return)
+//
+// `anyFail` is only ever set by a FAILED atomic upsert in PASS 2. Every terminal state that never reaches
+// PASS 2 therefore returns `errors: []` by construction — and there are four of them:
+//
+//   jobStatus = 'ALL_BLOCKED'                 every line refused a route in PASS 1; reason in data.blocked[]
+//   jobStatus = 'ALL_SUPPRESSED_BY_MANUAL'    an operator decision outranks the identity; data.suppressed_*
+//   jobStatus = 'NO_DEMAND'                   nothing to write at all; data.zero_result
+//   AI_PLAN_NO_ACTION                         the short circuit above PASS 1; data.no_action_reason
+//
+// plus a fifth that wears the second one's label: a group whose every line the factory guard clamped to zero
+// is pushed with `suppressed: true`, so DROPPED_FACTORY_STOCK_EXHAUSTED is reported as ALL_SUPPRESSED_BY_MANUAL
+// with the real reason in data.groups[].outcome and data.factory_stock_guard.
+//
+// SO THE REFUSAL PROBABLY DID NAME A REASON, ONE LAYER BELOW WHERE THE CLASSIFIER LOOKED. This manifest does
+// not assume which one. It re-reads the world, and — where production gives it a pure authority to do so —
+// rebuilds the zero-write pass that decides routability, because that is the ONE gate the frozen baseline
+// never measured: `buildK2GenerationPlan`, `job_status` and `blocked_count` appear nowhere in this census, so
+// READY_TO_AUTHORIZE was never a statement about whether the authorized line could be ROUTED.
+//
+// IT IS READ ONLY, AND IT PROVES THAT BY MEASUREMENT RATHER THAN BY SAYING SO. The protected surfaces are
+// measured, the reconstruction runs, and they are measured again; the manifest asserts the two agree. A
+// diagnostic that only declared itself read-only would be making exactly the kind of claim this round exists
+// to stop accepting.
+//
+// AND IT AUTHORIZES NOTHING. The sentence that authorized the generation is SPENT. The frozen baseline is read
+// here as an EXPECTATION — the numbers a comparison needs — and never as permission: there is no code path
+// from this file's reading of it to a mint, a generator call or a writer.
+// ================================================================================================================
+
+var S1_PF_ACTOR_ = 's1_r6b_post_failure_readback';
+
+/** The six answers this manifest may give, and nothing else. An outcome outside this set is a bug in the
+ *  classifier, not a seventh kind of world. */
+var S1_PF_CLASSES_ = ['CONFIRMED_NO_WRITE_UNEXPLAINED', 'CONFIRMED_GUARD_REFUSAL_ZERO_WRITE',
+  'WRITE_LANDED_UNDER_UNEXPECTED_IDENTITY', 'PARTIAL_OR_DUPLICATE_WRITE', 'PROTECTED_SURFACE_CHANGED',
+  'READBACK_INDETERMINATE'];
+
+/**
+ * THE PRECEDENCE, STATED AS DATA SO A CLAIM ABOUT IT CAN BE CHECKED RATHER THAN BELIEVED. Index 0 wins.
+ *
+ * INDETERMINATE is first because every class below it is a statement about what was read, and a table that
+ * could not be read cannot support one. PROTECTED_SURFACE_CHANGED is next because it is the only class that
+ * says the authorization's PROMISE was broken, which is wider than anything the authorized pair itself did.
+ * The two "unexplained" answers are last, and the guard-refusal one requires a reason to have been rebuilt
+ * from production — a zero write with no reason is never promoted to a refusal for tidiness.
+ */
+var S1_PF_CLASS_PRECEDENCE_ = ['READBACK_INDETERMINATE', 'PROTECTED_SURFACE_CHANGED',
+  'PARTIAL_OR_DUPLICATE_WRITE', 'WRITE_LANDED_UNDER_UNEXPECTED_IDENTITY',
+  'CONFIRMED_GUARD_REFUSAL_ZERO_WRITE', 'CONFIRMED_NO_WRITE_UNEXPLAINED'];
+
+/**
+ * THE THREE TABLES THIS MANIFEST MAY NOT PROVE ANYTHING ABOUT, AND WHY.
+ *
+ * `S1_MANIFEST_P_BEFORE_` carries their SCHEMA fingerprints and `active_shipping_plan_qty` — it carries no
+ * row count and no content fingerprint for any of them. The R6 executor did snapshot all three inside the
+ * lock, but that snapshot exists only in the object that invocation returned, and this manifest takes no
+ * arguments, so it cannot be handed one.
+ *
+ * Reading them now and comparing them with themselves would produce a PASS that means nothing. So they are
+ * reported UNPROVABLE, with the thing that would make them provable named.
+ */
+var S1_PF_UNPROVABLE_TABLES_ = ['shipping_plans', 'shipping_plan_lines', 'shipments'];
+
+/**
+ * EVERY PATH IN THE PRODUCTION RESPONSE CONTRACT WHERE A ZERO-WRITE RUN STATES ITS REASON.
+ *
+ * These are PATHS, quoted from 61_ — never reason TOKENS. A diagnostic that carried the tokens would be
+ * asserting which refusals exist, and would keep reporting them after production renamed one. The tokens
+ * arrive as data or not at all.
+ *
+ * `errors[].code` is the FIRST entry and the only one `S1_cgRespCodes_` reads. The other nine are the gap
+ * this round found.
+ */
+var S1_PF_REASON_SITES_ = ['errors[].code', 'data.job_status', 'data.outcome', 'data.no_action_reason',
+  'data.blocked[].block', 'data.blocked[].reason', 'data.groups[].outcome', 'data.factory_stock_guard',
+  'data.all_suppressed_by_manual', 'data.zero_result', 'parse_error'];
+
+/** The retry contract for a post-failure readback: the same for every class, because the authorization is
+ *  spent and the baseline is spent with it, and no reading of the world can un-spend either. */
+function S1_pfRetryContract_(cls) {
+  return { known: S1_PF_CLASSES_.indexOf(S1_str_(cls)) >= 0, contract_key: S1_str_(cls),
+    retryable: false, automatic_retry_allowed: false,
+    same_authorization_reusable: false, same_frozen_baseline_reusable: false,
+    generate_may_be_attempted_again: false,
+    next_action: 'STOP_AND_PERFORM_MANUAL_RECOVERY_WITH_THIS_MANIFEST' };
+}
+
+/**
+ * §四.A — THE TWO AUTHORIZED IDENTITIES, AND EVERY ROW THAT COULD BE MISTAKEN FOR THEM.
+ *
+ * The question is not only "is the pair there". It is also "did the write land somewhere else": a row in the
+ * target scope carrying this run's calculation_run_id or this run's K2 group key under a DIFFERENT id is a
+ * write that happened and was not the authorized one, and it looks like a clean zero from the pair's side.
+ */
+function S1_pfExpectedIdentities_(part, obs, b) {
+  var o = { expected_header_id: obs.expected_header_id, expected_line_id: obs.expected_line_id,
+    header_hit_count: obs.header_hit_count, line_hit_count: obs.line_hit_count,
+    header_row_numbers: obs.header_row_numbers.slice(), line_row_numbers: obs.line_row_numbers.slice(),
+    header_full_row_fingerprint: obs.header_fingerprint, line_full_row_fingerprint: obs.line_fingerprint,
+    header_fields: obs.header_fields, line_fields: obs.line_fields,
+    line_fk_points_at_expected_header: null,
+    both_absent: obs.header_hit_count === 0 && obs.line_hit_count === 0,
+    both_present_once: obs.header_hit_count === 1 && obs.line_hit_count === 1,
+    exactly_one_side_present: (obs.header_hit_count > 0) !== (obs.line_hit_count > 0),
+    duplicated: obs.header_hit_count > 1 || obs.line_hit_count > 1,
+    group_key_authority: (typeof sadK2GroupKey_ === 'function') ? '16_ sadK2GroupKey_' : 'UNAVAILABLE',
+    expected_group_keys: (b.expected_k2_group_keys || []).slice(),
+    alternate_identity_rows: [], alternate_identity_count: 0,
+    orphan_line_rows: [], orphan_line_count: 0, wrong_run_rows: [], wrong_run_count: 0 };
+  if (obs.line_fields) {
+    o.line_fk_points_at_expected_header =
+      S1_str_(obs.line_fields.allocation_draft_id) === S1_str_(obs.expected_header_id);
+  }
+  var expH = S1_str_(obs.expected_header_id);
+  var wantRun = S1_str_(b.calculation_run_id);
+  var wantKeys = {};
+  (b.expected_k2_group_keys || []).forEach(function (k) { wantKeys[S1_str_(k)] = 1; });
+  // Every TARGET-SCOPE header that is not the authorized one, judged on the two things that would make it
+  // this run's output under another name.
+  (part.target_manual.header_ids || []).concat(part.target_ai.header_ids || []).forEach(function (hid) {
+    if (S1_str_(hid) === expH) return;
+    var row = null;
+    (part.header_objects || []).forEach(function (ho) {
+      if (S1_str_(ho.allocation_draft_id) === S1_str_(hid)) row = ho;
+    });
+    if (!row) return;
+    var gk = (typeof sadK2GroupKey_ === 'function') ? S1_str_(sadK2GroupKey_(row)) : '';
+    var sameRun = wantRun && S1_str_(row.calculation_run_id) === wantRun;
+    var sameKey = gk && wantKeys[gk] === 1;
+    if (sameRun || sameKey) {
+      o.alternate_identity_rows.push({ allocation_draft_id: S1_str_(hid),
+        matches_run_id: !!sameRun, matches_group_key: !!sameKey, group_key: gk || null,
+        calculation_run_id: S1_str_(row.calculation_run_id), status: S1_str_(row.status),
+        generation_type: S1_str_(row.generation_type),
+        generation_run_id: S1_str_(row.generation_run_id) });
+    } else if (wantRun && S1_str_(row.calculation_run_id) && !sameRun) {
+      o.wrong_run_rows.push({ allocation_draft_id: S1_str_(hid),
+        calculation_run_id: S1_str_(row.calculation_run_id) });
+    }
+  });
+  o.alternate_identity_count = o.alternate_identity_rows.length;
+  o.wrong_run_count = o.wrong_run_rows.length;
+  // A LINE WITH NO HEADER. `existing_line_ids` is every line id in the table; a line whose parent id is not a
+  // header row is an orphan, and an orphan in this scope is a half-landed write nobody would see from the
+  // pair's side.
+  var headerIds = {};
+  (part.header_objects || []).forEach(function (ho) { headerIds[S1_str_(ho.allocation_draft_id)] = 1; });
+  ((part.line_table && part.line_table.rows) || []).forEach(function (lr) {
+    var parent = S1_str_(S1_cellOf_(lr, 'allocation_draft_id'));
+    if (parent && headerIds[parent] !== 1) {
+      o.orphan_line_rows.push({ allocation_draft_line_id: S1_str_(S1_cellOf_(lr, 'allocation_draft_line_id')),
+        allocation_draft_id: parent, sku: S1_str_(S1_cellOf_(lr, 'sku')) });
+    }
+  });
+  o.orphan_line_count = o.orphan_line_rows.length;
+  return o;
+}
+
+/** §四.B — the target scope universe, counted rather than inferred. */
+function S1_pfTargetUniverse_(part, b) {
+  var o = { scope_key: S1_scopeKey_(b.company, b.country, b.marketplace, b.sku),
+    header_count: (part.target_manual.header_ids || []).length + (part.target_ai.header_ids || []).length,
+    line_count: (part.target_manual.line_ids || []).length + (part.target_ai.line_ids || []).length,
+    manual_header_count: (part.target_manual.header_ids || []).length,
+    manual_line_count: (part.target_manual.line_ids || []).length,
+    manual_planned_total: part.target_manual.planned_total,
+    manual_combined_fingerprint: part.target_manual.combined_fingerprint,
+    ai_header_count: (part.target_ai.header_ids || []).length,
+    ai_line_count: (part.target_ai.line_ids || []).length,
+    ai_planned_total: part.target_ai.planned_total,
+    ai_combined_fingerprint: part.target_ai.combined_fingerprint,
+    total_planned_quantity: part.target_manual.planned_total + part.target_ai.planned_total,
+    unreadable_qty_rows: part.target_manual.unreadable_qty_rows,
+    unclassified_headers: part.unclassified_headers,
+    provenance_authority: part.provenance_authority,
+    terminal_statuses: part.terminal_statuses,
+    status_universe: [], calculation_run_id_universe: [], planning_cycle_universe: [],
+    group_key_universe: [] };
+  var st = {}, run = {}, cyc = {}, gk = {};
+  var target = {};
+  (part.target_manual.header_ids || []).concat(part.target_ai.header_ids || [])
+    .forEach(function (h) { target[S1_str_(h)] = 1; });
+  (part.header_objects || []).forEach(function (ho) {
+    if (target[S1_str_(ho.allocation_draft_id)] !== 1) return;
+    st[S1_str_(ho.status)] = 1;
+    if (S1_str_(ho.calculation_run_id)) run[S1_str_(ho.calculation_run_id)] = 1;
+    if (S1_str_(ho.planning_cycle)) cyc[S1_str_(ho.planning_cycle)] = 1;
+    if (typeof sadK2GroupKey_ === 'function') {
+      var k = S1_str_(sadK2GroupKey_(ho)); if (k) gk[k] = 1;
+    }
+  });
+  o.status_universe = Object.keys(st).sort();
+  o.calculation_run_id_universe = Object.keys(run).sort();
+  o.planning_cycle_universe = Object.keys(cyc).sort();
+  o.group_key_universe = Object.keys(gk).sort();
+  return o;
+}
+
+/**
+ * §四.C — THE PROTECTED SURFACES, EACH AGAINST THE AUTHORITY THAT CAN ACTUALLY SPEAK FOR IT.
+ *
+ * Every comparison names its expectation source. Where the frozen baseline carries the number, the baseline
+ * is the authority. Where it carries nothing — the three shipping/shipment tables — the surface is UNPROVABLE
+ * and says so, rather than being compared against a live reading of itself.
+ */
+/**
+ * TWO FAMILIES, BECAUSE THEY ARE TWO FINDINGS.
+ *
+ * DRAFT_TABLES are the row surfaces of the two tables this authorization was aimed at. A count that moved
+ * there can be the authorized write itself, half-landed: a header written without its line carries no line
+ * for the target sku, so `S1_draftPartition_` cannot see it as target scope and counts it as another
+ * scope's. Reporting that as a broken promise would send an operator looking for an unauthorized change
+ * that is really the partial write they were already being told about, one row away.
+ *
+ * PROMISED_UNTOUCHED is everything the authorization said it would not touch — the factory pool, the
+ * movements, the override audit, the reservations — plus EVERY schema fingerprint, including the draft
+ * tables' own: a column that moved is never a row write's doing.
+ *
+ * So a DRAFT_TABLES change is a broken promise only when nothing about the authorized pair explains it.
+ * A PROMISED_UNTOUCHED change always is.
+ */
+var S1_PF_DRAFT_TABLE_SURFACES_ = ['other_scope_header_count', 'other_scope_line_count',
+  'other_scope_combined_fingerprint', 'target_manual_combined_fingerprint'];
+
+function S1_pfProtectedSurfaces_(obs, b) {
+  var o = { compared: [], unprovable: [], all_compared_intact: null,
+    unprovable_count: 0, changed: [], changed_draft_tables: [], changed_promised_untouched: [] };
+  function cmp(name, expected, observed) {
+    var ok = S1_str_(expected) === S1_str_(observed);
+    var fam = S1_PF_DRAFT_TABLE_SURFACES_.indexOf(name) >= 0 ? 'DRAFT_TABLES' : 'PROMISED_UNTOUCHED';
+    o.compared.push({ surface: name, family: fam, expectation_source: 'S1_MANIFEST_P_BEFORE_',
+      expected: expected, observed: observed, intact: ok });
+    if (!ok) {
+      o.changed.push(name);
+      (fam === 'DRAFT_TABLES' ? o.changed_draft_tables : o.changed_promised_untouched).push(name);
+    }
+  }
+  cmp('other_scope_header_count', b.other_scope_header_count, obs.other_scope_header_count);
+  cmp('other_scope_line_count', b.other_scope_line_count, obs.other_scope_line_count);
+  cmp('other_scope_combined_fingerprint', b.other_scope_combined_fingerprint,
+    obs.other_scope_combined_fingerprint);
+  cmp('factory_pool_row_fingerprint', b.factory_pool_row_fingerprint, obs.factory_pool_row_fingerprint);
+  cmp('factory_current_stock', b.factory_current_stock, obs.factory_current_stock);
+  cmp('factory_reserved_stock', b.factory_reserved_stock, obs.factory_reserved_stock);
+  cmp('factory_stock_movement_count', b.factory_stock_movement_count, obs.factory_stock_movement_count);
+  cmp('factory_stock_movement_fingerprint', b.factory_stock_movement_fingerprint,
+    obs.factory_stock_movement_fingerprint);
+  cmp('factory_override_audit_count', b.factory_override_audit_count, obs.factory_override_audit_count);
+  cmp('factory_override_audit_fingerprint', b.factory_override_audit_fingerprint,
+    obs.factory_override_audit_fingerprint);
+  cmp('reservation_observation_state', b.reservation_observation_state, obs.reservation_observation_state);
+  cmp('target_manual_combined_fingerprint', b.target_manual_combined_fingerprint,
+    obs.target_manual_combined_fingerprint);
+  // The schema of every table the baseline fingerprinted — a column that moved is a protected-surface change
+  // even when every row is untouched.
+  var bs = b.schema_fingerprints || {}, os = obs.schema_fingerprints || {};
+  Object.keys(bs).sort().forEach(function (t) { cmp('schema:' + t, bs[t], os[t]); });
+  // AND THE THREE THIS MANIFEST CANNOT SPEAK FOR.
+  S1_PF_UNPROVABLE_TABLES_.forEach(function (t) {
+    var snap = (obs.unchanged_tables || {})[t] || null;
+    o.unprovable.push({ surface: t, state: 'UNPROVABLE',
+      baseline_carries_row_content: false,
+      baseline_carries_schema_fingerprint: Object.prototype.hasOwnProperty.call(bs, t),
+      live_reading: snap,
+      why: 'the frozen baseline carries no row count or content fingerprint for this table, and this'
+        + ' manifest takes no arguments, so the in-lock BEFORE snapshot the R6 executor took cannot be'
+        + ' handed to it',
+      what_would_make_it_provable: 'the retained RUN_S1_CONTROLLED_GENERATE_EXECUTE output from the'
+        + ' generation, whose before.unchanged_tables carries this table\'s row count and fingerprint' });
+  });
+  o.unprovable_count = o.unprovable.length;
+  o.all_compared_intact = o.changed.length === 0;
+  return o;
+}
+
+/**
+ * §四.D — WHAT THE GENERATOR WOULD HAVE BEEN HANDED, REBUILT FROM PRODUCTION AUTHORITIES ONLY.
+ *
+ * This is the part that can name the reason, and it may only do so in production's words. It calls, in order,
+ * the same three authorities `S1_cgProductionCall_` calls before the generator — `weeklyAiPlanHarvest_`,
+ * `KMWHA.mapWeeklyHarvestToBatchRequest`, `weeklyAiPlanK2AllocatedLines_` — and then the ONE pure pass that
+ * decides routability: `KMWRR.buildK2GenerationPlan`, which 61_ documents as PASS 1, computing every group
+ * and writing nothing.
+ *
+ * IT DOES NOT CALL `weeklyAiPlanGenerateK2_`, and it does not call the atomic upsert PASS 2 uses. The block
+ * tokens it reports are read out of `plan.blocked[]`; this file spells none of them.
+ */
+function S1_pfInputEvidence_(ss, b) {
+  var o = { reconstructed: false, unavailable_reason: null,
+    gap_run_present: null, gap_run_id: null, gap_run_status: null, gap_run_cycle: null,
+    gap_run_calculation_date: null, lineage_ok: null, lineage_reason: null,
+    harvest_ok: null, harvest_source_data_as_of: null, harvest_ship_date: null,
+    ship_date_is_blank: null, harvest_site_count: null,
+    recommended_qty: null, residual_qty: null, qualifying_manual_planned_qty: null,
+    qualifying_ai_planned_qty: null, no_action: null, no_action_reason: null,
+    mapped_ready: null, mapped_scope: null, mapped_line_count: null,
+    allocated_line_count: null, allocated_for_target_marketplace: null,
+    allocated_target_sku_qty: null,
+    plan_group_count: null, plan_blocked_count: null,
+    plan_block_tokens: [], plan_blocked_detail: [], plan_conserved: null, plan_completeness: null,
+    factory_guard: { evaluated: false, verdict: null, reason: null, available_to_allocate: null },
+    reason_named_by_production: false, production_named_reasons: [],
+    reason_source: null };
+
+  // ---- the lineage authority the header would have been stamped from -------------------------------
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty('GAP_JOB_INVENTORY');
+    var stt = raw ? JSON.parse(raw) : null;
+    o.gap_run_present = !!stt;
+    if (stt) {
+      o.gap_run_id = S1_str_(stt.runId);
+      o.gap_run_status = S1_str_(stt.status);
+      o.gap_run_cycle = S1_str_(stt.planningCycle);
+      o.gap_run_calculation_date = S1_str_(stt.calculationDate);
+    }
+  } catch (eG) { o.gap_run_present = null; }
+
+  if (typeof weeklyAiPlanHarvest_ !== 'function' || typeof KMWHA === 'undefined'
+      || typeof KMWRR === 'undefined' || typeof KMWRR.buildK2GenerationPlan !== 'function'
+      || typeof weeklyAiPlanK2AllocatedLines_ !== 'function' || typeof KMWRB === 'undefined') {
+    o.unavailable_reason = 'PRODUCTION_PASS_1_AUTHORITIES_NOT_ALL_PRESENT';
+    return o;
+  }
+  var h = null;
+  try { h = weeklyAiPlanHarvest_(ss, { company: b.company, country: b.country,
+    planningCycle: b.planning_cycle }); }
+  catch (eH) { o.unavailable_reason = 'HARVEST_THREW:' + S1_cap_(String(eH && eH.message ? eH.message : eH), 120);
+    return o; }
+  o.harvest_ok = !!(h && h.ok);
+  if (!o.harvest_ok) { o.unavailable_reason = 'HARVEST_UNAVAILABLE'; return o; }
+  o.harvest_source_data_as_of = S1_str_(h.sourceDataAsOf) || null;
+  o.harvest_site_count = (h.site_count === undefined || h.site_count === null) ? null : h.site_count;
+  // THE SHIP DATE, AND THE TRAP IN IT. 61_ resolves it from `harvest.sourceDataAsOf`, and 61_'s own lineage
+  // comment records that this field "is blank for scopes whose lines omit it" — a DIFFERENT field from the
+  // GAP run's `source_data_as_of` the baseline froze, which happens to carry a date. A blank ship date is
+  // the effective-window axis of every rate-card match, so it can refuse every lane without any table
+  // being wrong.
+  if (typeof weeklyAiPlanShipDate_ === 'function') {
+    o.harvest_ship_date = weeklyAiPlanShipDate_(h);
+    o.ship_date_is_blank = S1_str_(o.harvest_ship_date) === '';
+  }
+  var na = (typeof weeklyAiPlanK2NoAction_ === 'function') ? weeklyAiPlanK2NoAction_(h) : null;
+  if (na) {
+    o.no_action = na.noAction === true;
+    o.no_action_reason = S1_str_(na.reason) || null;
+    o.recommended_qty = (na.recommended_qty === undefined) ? null : na.recommended_qty;
+    o.residual_qty = (na.residual_qty === undefined) ? null : na.residual_qty;
+    o.qualifying_manual_planned_qty = (na.qualifying_planned_qty === undefined)
+      ? null : na.qualifying_planned_qty;
+  }
+  var mapped = null;
+  try {
+    mapped = KMWHA.mapWeeklyHarvestToBatchRequest({
+      planningCycle: b.planning_cycle,
+      businessScope: { company: b.company, country: b.country, marketplace: b.marketplace,
+        source_page: (typeof WEEKLY_AI_PLAN_SOURCE_PAGE_ !== 'undefined')
+          ? WEEKLY_AI_PLAN_SOURCE_PAGE_ : 'inventory_replenishment' },
+      mode: 'MANUAL_REGENERATE', confirmRegenerateOverUserEdits: false, actor: S1_PF_ACTOR_,
+      now: (typeof procurementTimestamp_ === 'function') ? procurementTimestamp_() : new Date(),
+      sourceDataAsOf: h.sourceDataAsOf, formulaVersion: 'WEEKLY_AI_PLAN_V1',
+      factoryIdentityConfig: (typeof WEEKLY_AI_PLAN_FACTORY_IDENTITY_ !== 'undefined')
+        ? WEEKLY_AI_PLAN_FACTORY_IDENTITY_ : null,
+      warehousesById: h.warehousesById, kmaf: h.kmaf,
+      horizonsByDemandRef: h.horizonsByDemandRef, poolsBySku: h.poolsBySku });
+  } catch (eM) { o.unavailable_reason = 'MAP_THREW:' + S1_cap_(String(eM && eM.message ? eM.message : eM), 120);
+    return o; }
+  o.mapped_ready = !!(mapped && mapped.ready);
+  if (!o.mapped_ready) { o.unavailable_reason = 'MAP_NOT_READY'; return o; }
+  mapped.request.businessScope = mapped.request.businessScope || {};
+  mapped.request.businessScope.marketplace = b.marketplace;
+  o.mapped_scope = { company: S1_str_(mapped.request.businessScope.company),
+    country: S1_str_(mapped.request.businessScope.country),
+    marketplace: S1_str_(mapped.request.businessScope.marketplace),
+    planning_cycle: S1_str_(mapped.request.planningCycle) };
+  var srcLines = null;
+  try { srcLines = KMWRB.buildWeeklySourceLines(mapped.request); }
+  catch (eS) { o.unavailable_reason = 'SOURCE_LINES_THREW:' + S1_cap_(String(eS && eS.message ? eS.message : eS), 120);
+    return o; }
+  if (!srcLines || !srcLines.ok) {
+    o.unavailable_reason = 'SOURCE_LINES_BLOCKED:' + S1_cap_(S1_str_(srcLines && srcLines.reason), 120);
+    return o;
+  }
+  o.mapped_line_count = (srcLines.lines || []).length;
+  var allocated = weeklyAiPlanK2AllocatedLines_(srcLines.lines, h);
+  o.allocated_line_count = (allocated || []).length;
+  var mkt = S1_str_(b.marketplace);
+  var forMkt = (allocated || []).filter(function (a) {
+    return S1_str_(a && a.destination && a.destination.marketplace) === mkt
+      || S1_str_(a && a.marketplace) === mkt;
+  });
+  o.allocated_for_target_marketplace = forMkt.length;
+  var wantSku = S1_str_(b.sku).toLowerCase();
+  var q = 0;
+  forMkt.forEach(function (a) {
+    if (S1_str_(a.sku).toLowerCase() !== wantSku) return;
+    var v = S1_qty_(a.planned_qty);
+    if (v === null) v = S1_qty_(a.recommended_qty);
+    if (v !== null) q += v;
+  });
+  o.allocated_target_sku_qty = q;
+
+  // ---- PASS 1, THE ZERO-WRITE PASS, REBUILT --------------------------------------------------------
+  var carriers = null;
+  try { carriers = (typeof weeklyAiPlanReadCarrierAuthorities_ === 'function')
+    ? weeklyAiPlanReadCarrierAuthorities_(ss) : null; }
+  catch (eC) { carriers = null; }
+  if (!carriers) { o.unavailable_reason = 'CARRIER_AUTHORITIES_UNREADABLE'; return o; }
+  var plan = null;
+  try {
+    plan = KMWRR.buildK2GenerationPlan({
+      scope: { planning_cycle: b.planning_cycle, company: b.company, country: b.country,
+        marketplace: mkt, source_page: (typeof WEEKLY_AI_PLAN_SOURCE_PAGE_ !== 'undefined')
+          ? WEEKLY_AI_PLAN_SOURCE_PAGE_ : 'inventory_replenishment' },
+      allocatedLines: forMkt, warehousesById: h.warehousesById,
+      rateCards: carriers.rateCards, leadTimes: carriers.leadTimes,
+      shipDate: o.harvest_ship_date,
+      authorizedBySkuWindow: (function () {
+        var a = {};
+        forMkt.forEach(function (x) {
+          var k = S1_str_(x.sku).toLowerCase() + '|' + S1_str_(x.window_code).toLowerCase();
+          a[k] = (a[k] || 0) + (Number(x.planned_qty) || 0);
+        });
+        return a;
+      })(),
+      sourceCeilingById: {} });
+  } catch (eP) { o.unavailable_reason = 'PASS_1_THREW:' + S1_cap_(String(eP && eP.message ? eP.message : eP), 120);
+    return o; }
+  o.plan_group_count = ((plan && plan.groups) || []).length;
+  o.plan_blocked_count = ((plan && plan.blocked) || []).length;
+  o.plan_conserved = (plan && plan.conservation) ? (plan.conservation.conserved === true) : null;
+  o.plan_completeness = (plan && plan.completeness) || null;
+  ((plan && plan.blocked) || []).forEach(function (bk) {
+    var tok = S1_str_(bk && bk.block);
+    if (tok && o.plan_block_tokens.indexOf(tok) === -1) o.plan_block_tokens.push(tok);
+    o.plan_blocked_detail.push({ block: tok || null,
+      reason: S1_str_(bk && (bk.method_unresolved_reason || bk.auto_ranking_insufficient_reason)) || null,
+      lane_query: (bk && bk.lane_query) || null,
+      sku: S1_str_(bk && bk.line && bk.line.sku) || null,
+      quantity: (bk && bk.line && (bk.line.planned_qty != null ? bk.line.planned_qty
+        : bk.line.recommended_qty)) || 0 });
+  });
+  o.plan_block_tokens.sort();
+
+  // ---- the factory guard, on the claims PASS 1 would have submitted ------------------------------
+  if (typeof fsgEvaluateAiClaims_ === 'function' && typeof KMFSG !== 'undefined' && KMFSG) {
+    var claims = [];
+    ((plan && plan.groups) || []).forEach(function (g) {
+      (g.lines || []).forEach(function (ln) {
+        var qq = S1_qty_(ln.planned_qty);
+        if (qq === null) qq = S1_qty_(ln.recommended_qty);
+        if (qq === null || qq <= 0) return;
+        claims.push({ warehouse_id: S1_str_(ln.source_warehouse_id), sku: S1_str_(ln.sku),
+          qty: qq, submitted_index: claims.length });
+      });
+    });
+    if (claims.length) {
+      try {
+        var v = fsgEvaluateAiClaims_(ss, claims, { releaseSet: {} });
+        o.factory_guard.evaluated = true;
+        o.factory_guard.verdict = S1_str_(v && v.verdict) || null;
+        o.factory_guard.reason = S1_str_(v && v.reason) || null;
+        o.factory_guard.available_to_allocate =
+          (v && v.available_to_allocate !== undefined) ? v.available_to_allocate : null;
+      } catch (eF) { o.factory_guard.evaluated = false; o.factory_guard.reason = 'GUARD_EVALUATION_THREW'; }
+    }
+  }
+
+  // ---- AND WHETHER PRODUCTION NAMED A REASON. ITS WORDS, OR NONE. --------------------------------
+  o.plan_block_tokens.forEach(function (t) { o.production_named_reasons.push('data.blocked[].block=' + t); });
+  if (o.no_action === true && o.no_action_reason) {
+    o.production_named_reasons.push('data.no_action_reason=' + o.no_action_reason);
+  }
+  if (o.factory_guard.evaluated && o.factory_guard.reason) {
+    o.production_named_reasons.push('data.factory_stock_guard.reason=' + o.factory_guard.reason);
+  }
+  o.reason_named_by_production = o.production_named_reasons.length > 0;
+  o.reason_source = o.reason_named_by_production
+    ? 'read out of the production PASS 1 / no-action / guard authorities; this diagnostic spells no reason'
+      + ' token of its own'
+    : null;
+  o.reconstructed = true;
+  return o;
+}
+
+/**
+ * THE CLASSIFICATION. Exactly one of six, chosen by the stated precedence, with every failed predicate kept
+ * so nothing is hidden behind the one that won.
+ */
+function S1_pfClassify_(ident, uni, surf, ev, readable) {
+  var o = { classification: null, why: null, precedence: S1_PF_CLASS_PRECEDENCE_.slice(),
+    candidates: [], guard_reason_named: null, guard_reason_source: null };
+  var partial = ident.duplicated || ident.exactly_one_side_present || ident.orphan_line_count > 0
+    || (ident.both_present_once && ident.line_fk_points_at_expected_header !== true);
+  var alternate = ident.alternate_identity_count > 0;
+  // A COUNT THAT MOVED INSIDE THE TABLES THIS WRITE WAS AIMED AT IS THE WRITE, NOT A BROKEN PROMISE —
+  // but only when something about the authorized pair explains it. A surface that moved with a clean pair
+  // behind it is unexplained, and unexplained movement on any surface is the broken promise.
+  var promiseBroken = surf.changed_promised_untouched.length > 0
+    || (surf.changed.length > 0 && !partial && !alternate);
+  o.surface_change_explained_by_the_pair = surf.changed.length > 0 && !promiseBroken;
+  if (readable !== true) o.candidates.push('READBACK_INDETERMINATE');
+  if (promiseBroken) o.candidates.push('PROTECTED_SURFACE_CHANGED');
+  if (partial) o.candidates.push('PARTIAL_OR_DUPLICATE_WRITE');
+  if (alternate) o.candidates.push('WRITE_LANDED_UNDER_UNEXPECTED_IDENTITY');
+  if (ident.both_absent) {
+    // A REASON PROMOTES THIS, AND ONLY A REASON PRODUCTION NAMED. `reason_named_by_production` is set from
+    // block tokens, a no-action reason or a guard reason that came back out of a production authority — never
+    // from a token this file carries.
+    if (ev.reconstructed === true && ev.reason_named_by_production === true) {
+      o.candidates.push('CONFIRMED_GUARD_REFUSAL_ZERO_WRITE');
+    } else {
+      o.candidates.push('CONFIRMED_NO_WRITE_UNEXPLAINED');
+    }
+  }
+  if (!o.candidates.length) o.candidates.push('READBACK_INDETERMINATE');
+  for (var i = 0; i < S1_PF_CLASS_PRECEDENCE_.length; i++) {
+    if (o.candidates.indexOf(S1_PF_CLASS_PRECEDENCE_[i]) >= 0) {
+      o.classification = S1_PF_CLASS_PRECEDENCE_[i]; break;
+    }
+  }
+  if (o.classification === 'CONFIRMED_GUARD_REFUSAL_ZERO_WRITE') {
+    o.guard_reason_named = ev.production_named_reasons.slice();
+    o.guard_reason_source = ev.reason_source;
+  }
+  o.why = {
+    READBACK_INDETERMINATE: 'a table, schema or expectation this classification needs could not be read'
+      + ' reliably, so no stronger statement is available',
+    PROTECTED_SURFACE_CHANGED: 'a surface this authorization promised not to touch has changed: '
+      + surf.changed.slice(0, 8).join(','),
+    PARTIAL_OR_DUPLICATE_WRITE: 'the header/line pair is not a clean pair — one side, a duplicate, a'
+      + ' wrong foreign key or an orphan line',
+    WRITE_LANDED_UNDER_UNEXPECTED_IDENTITY: 'a row in the target scope carries this run\'s run id or K2'
+      + ' group key under an id this authorization did not name',
+    CONFIRMED_GUARD_REFUSAL_ZERO_WRITE: 'zero rows were written and a production authority names the'
+      + ' reason: ' + ev.production_named_reasons.slice(0, 6).join('; '),
+    CONFIRMED_NO_WRITE_UNEXPLAINED: 'zero rows were written, the target scope carries no substitute row,'
+      + ' every comparable protected surface is unchanged, and no production authority named a reason'
+  }[o.classification] || null;
+  return o;
+}
+
+/**
+ * ================================================================================================================
+ * RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK()
+ *
+ * READ ONLY, WITH NO SWITCH THAT CHANGES THAT. It takes no options, so there is nothing to pass it that would
+ * make it write. It mints no capability, reads no authorization, calls no generator, no writer and no public
+ * handler, and repairs nothing: it has no path to a row that does not already exist.
+ *
+ * IT IS FOR AFTER THE FACT. The generation ran, came back unclassifiable, and this answers the only question
+ * left — WHAT IS ACTUALLY THERE — in one of six named ways, with the retry contract closed in every one of
+ * them. Nothing it reports may be read as permission to generate again.
+ * ================================================================================================================
+ */
+function RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK() {
+  var out = { tool: 'RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK', build: S1_BUILD_,
+    read_only: true, writes: 0, writer_calls: 0, writer_constructed: false, submit_calls: 0,
+    generator_calls: 0, attempts: 0, capability_minted: false, authorization_read: false,
+    repairs_attempted: 0, rows_created: 0, rows_updated: 0, rows_deleted: 0,
+    authorizes: 'NOTHING. The authorization that ran the generation is SPENT, and so is the baseline it was'
+      + ' measured against. This manifest reports what is in the database; it is not an input to any'
+      + ' further generation.',
+    baseline_role: 'EXPECTATION ONLY — the frozen baseline supplies the numbers a comparison needs. It is'
+      + ' never read here as permission, and there is no path from this function to a mint, a generator'
+      + ' call or a writer.',
+    classification: null, next_action: null, stop_reason: '' };
+  var L = S1_ledger_();
+  try {
+    var b = S1_MANIFEST_P_BEFORE_;
+    out.baseline_present = !!b && typeof b === 'object';
+    L.P('a_frozen_baseline_is_present_to_compare_against', true, out.baseline_present,
+      out.baseline_present === true);
+    if (!out.baseline_present) {
+      out.classification = 'READBACK_INDETERMINATE';
+      out.stop_reason = 'S1_MANIFEST_P_BEFORE_ is empty, so there is no expectation to compare the live'
+        + ' world against. A live reading compared with itself proves nothing.';
+      return S1_pfFinish_(out, L);
+    }
+    out.baseline_identity = S1_freezeIdentity_(b);
+    out.scope = { company: S1_str_(b.company), country: S1_str_(b.country),
+      marketplace: S1_str_(b.marketplace), sku: S1_str_(b.sku),
+      scope_key: S1_str_(b.scope_key), planning_cycle: S1_str_(b.planning_cycle),
+      calculation_run_id: S1_str_(b.calculation_run_id) };
+    out.reason_sites_in_the_production_contract = S1_PF_REASON_SITES_.slice();
+    out.reason_site_the_r6_classifier_reads = S1_PF_REASON_SITES_[0];
+
+    var db = S1_openDb_();
+    out.db_opened = db.ok;
+    L.P('the_production_database_was_opened_read_only', true, db.ok, db.ok === true);
+    if (!db.ok) {
+      out.classification = 'READBACK_INDETERMINATE';
+      out.stop_reason = 'the production database could not be opened: ' + S1_str_(db.reason);
+      return S1_pfFinish_(out, L);
+    }
+    var scope = { company: b.company, country: b.country, marketplace: b.marketplace, sku: b.sku };
+    var part = S1_draftPartition_(db.ss, scope);
+    out.tables_readable = !!(part.header_table.readable && part.line_table.readable);
+    out.column_authority_available = part.column_authority_available;
+    L.P('both_draft_tables_were_readable', true, out.tables_readable, out.tables_readable === true);
+    L.P('the_production_column_authority_was_available', true, out.column_authority_available,
+      out.column_authority_available === true);
+    var obs = S1_cgObserve_(db.ss, b);
+    out.expected_identities = S1_pfExpectedIdentities_(part, obs, b);
+    out.target_scope_universe = S1_pfTargetUniverse_(part, b);
+    out.protected_surfaces = S1_pfProtectedSurfaces_(obs, b);
+    out.idempotency = S1_cgIdempotency_(obs, b);
+
+    var env = S1_environment_();
+    out.flag_value = env.flag_value;
+    out.allowlist_entry_count = (env.allowlist || []).length;
+    L.P('the_global_generation_flag_is_still_false', false, env.flag_value, env.flag_value === false);
+    L.P('the_activation_allowlist_still_holds_exactly_one_scope', 1, out.allowlist_entry_count,
+      out.allowlist_entry_count === 1);
+
+    // ---- THE READ-ONLY CLAIM, PROVED BY MEASUREMENT ------------------------------------------------
+    // The reconstruction below calls production authorities. They are documented and measured as
+    // write-free, but this manifest does not take that on trust: the surfaces are fingerprinted here,
+    // the reconstruction runs, and they are fingerprinted again.
+    var beforeSurf = S1_fingerprint_([S1_str_(obs.other_scope_combined_fingerprint),
+      S1_str_(obs.target_manual_combined_fingerprint), S1_str_(obs.factory_pool_row_fingerprint),
+      S1_str_(obs.factory_stock_movement_fingerprint), S1_str_(obs.factory_override_audit_fingerprint)]);
+    out.input_evidence = S1_pfInputEvidence_(db.ss, b);
+    var obs2 = S1_cgObserve_(db.ss, b);
+    var afterSurf = S1_fingerprint_([S1_str_(obs2.other_scope_combined_fingerprint),
+      S1_str_(obs2.target_manual_combined_fingerprint), S1_str_(obs2.factory_pool_row_fingerprint),
+      S1_str_(obs2.factory_stock_movement_fingerprint), S1_str_(obs2.factory_override_audit_fingerprint)]);
+    out.reconstruction_wrote_nothing = beforeSurf === afterSurf;
+    out.surface_fingerprint_before_reconstruction = beforeSurf;
+    out.surface_fingerprint_after_reconstruction = afterSurf;
+    L.P('the_read_only_reconstruction_changed_no_surface', beforeSurf, afterSurf,
+      beforeSurf === afterSurf);
+
+    var readable = out.tables_readable === true && out.column_authority_available === true
+      && out.reconstruction_wrote_nothing === true;
+    var cls = S1_pfClassify_(out.expected_identities, out.target_scope_universe,
+      out.protected_surfaces, out.input_evidence, readable);
+    out.classification = cls.classification;
+    out.classification_detail = cls;
+    out.guard_reason_named = cls.guard_reason_named;
+    return S1_pfFinish_(out, L);
+  } catch (e) {
+    out.classification = 'READBACK_INDETERMINATE';
+    out.stop_reason = 'S1_POST_FAILURE_READBACK_THREW: ' + String(e && e.message ? e.message : e)
+      + '. The exception is the finding; a run that threw proves nothing about the world.';
+    return S1_pfFinish_(out, L);
+  }
+}
+
+/** The manifest's report. Its own function so the zero-proof and the closed retry contract are asserted in
+ *  one place rather than once per return path — and every return path here is a refusal of some kind. */
+function S1_pfFinish_(out, L) {
+  out.predicates = L.entries;
+  out.predicates_passed = L.entries.length - L.failed.length;
+  out.predicates_failed = L.failed.length;
+  out.failed_predicates = L.failed.slice();
+  out.classification_is_known = S1_PF_CLASSES_.indexOf(S1_str_(out.classification)) >= 0;
+  out.retry_contract = S1_pfRetryContract_(out.classification);
+  out.next_action = out.retry_contract.next_action;
+  out.zero_write_confirmed = (out.writes === 0 && out.writer_calls === 0 && out.generator_calls === 0
+    && out.attempts === 0 && out.capability_minted === false && out.authorization_read === false
+    && out.repairs_attempted === 0 && out.rows_created === 0 && out.rows_updated === 0
+    && out.rows_deleted === 0);
+  // TWO DIRECTIONS ON ONE QUESTION. The contract says no further generate may be attempted; the next_action
+  // is checked against the same table the R6 executor uses, so a next_action that permits one cannot be
+  // returned beside a contract that forbids one.
+  out.next_action_permits_another_generate =
+    S1_CG_NEXT_ACTION_ALLOWS_ANOTHER_GENERATE_[out.next_action] === true;
+  out.next_action_agrees_with_the_permission =
+    out.next_action_permits_another_generate === out.retry_contract.generate_may_be_attempted_again;
+  S1_log_('s1_controlled_generate_post_failure_readback', JSON.stringify({
+    tool: out.tool, build: out.build, classification: out.classification,
+    classification_is_known: out.classification_is_known,
+    predicates_passed: out.predicates_passed, predicates_failed: out.predicates_failed,
+    failed: out.failed_predicates.slice(0, 12),
+    writes: out.writes, writer_calls: out.writer_calls, generator_calls: out.generator_calls,
+    attempts: out.attempts, capability_minted: out.capability_minted,
+    authorization_read: out.authorization_read, repairs_attempted: out.repairs_attempted,
+    zero_write_confirmed: out.zero_write_confirmed,
+    reconstruction_wrote_nothing: out.reconstruction_wrote_nothing === undefined
+      ? null : out.reconstruction_wrote_nothing,
+    header_hit_count: out.expected_identities ? out.expected_identities.header_hit_count : null,
+    line_hit_count: out.expected_identities ? out.expected_identities.line_hit_count : null,
+    alternate_identity_count: out.expected_identities
+      ? out.expected_identities.alternate_identity_count : null,
+    protected_surfaces_changed: out.protected_surfaces ? out.protected_surfaces.changed : null,
+    unprovable_surfaces: out.protected_surfaces ? out.protected_surfaces.unprovable.length : null,
+    production_named_reasons: out.input_evidence
+      ? out.input_evidence.production_named_reasons.slice(0, 8) : null,
+    block_tokens: out.input_evidence ? out.input_evidence.plan_block_tokens : null,
+    ship_date_is_blank: out.input_evidence ? out.input_evidence.ship_date_is_blank : null,
+    generate_may_be_attempted_again: out.retry_contract.generate_may_be_attempted_again,
+    next_action: out.next_action,
+    stop_reason: S1_cap_(out.stop_reason, 400) }));
+  return out;
+}
