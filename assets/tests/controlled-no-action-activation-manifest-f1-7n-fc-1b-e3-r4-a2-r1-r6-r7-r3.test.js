@@ -94,8 +94,17 @@ var DEPLOYMENT_BUILD = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R2';
 // S1-R3 — and again, and this time the release moved because 00_config.gs did: the activation allowlist
 // was cut over from CO1100-R to SP0750-M. The pin follows the release (BP3) and this double follows the
 // pin, because it is what a HEALTHY deployment REPORTS.
-var OBSERVED_BUILD = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6';
+// PRODUCT-STRATEGY-P1-B1-R1 — DERIVED FROM THE PIN, NOT RETYPED BESIDE IT.
+// The comment above already states the rule: this double follows the pin, because the pin is what a
+// healthy deployment reports. It was still a hand-edited literal, so every release had to remember to
+// move two things that are by definition the same thing, and R6-R7-R7 is the release that forgot —
+// three suites went STOP on `deployment_build_is_the_measured_one` while the deployment they describe
+// was perfectly healthy. The chain that matters is unchanged and still asserted end to end:
+// SYS_DEPLOYMENT_RELEASE_ -> R6R7_ACTIVATION_BUILD_ (BP3) -> this double. A stale pin is still caught,
+// by BP3, which is where that claim belongs; what is gone is a second copy that could only ever agree
+// or be a bug.
 var ACTIVATION_PIN = (CENSUS.match(/var R6R7_ACTIVATION_BUILD_ = '([^']+)'/) || [])[1] || null;
+var OBSERVED_BUILD = ACTIVATION_PIN;
 
 // The deployment contract is 63_'s to report and 63_ is not in this world. A DOUBLE stands in for it, and it
 // is a double of the SHAPE 63_ returns — the manifest reads exactly those fields and nothing else. A healthy
@@ -410,7 +419,17 @@ eq((CENSUS.match(/var R6R7_ACTIVATION_BUILD_ = '[^']+';/g) || []).length, 1,
 eq((CENSUS.match(/R6R7_ACTIVATION_BUILD_/g) || []).length, 3,
   'BP1a and it is referenced exactly twice besides its declaration: the expected value and the comparison');
 ok(ACTIVATION_PIN !== null, 'BP2  the pin is readable from the census');
-eq(ACTIVATION_PIN, 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6', 'BP2a and it is this round: R6-R7-R6');
+// PRODUCT-STRATEGY-P1-B1-R1 — THE PROPERTIES, NOT THE CALENDAR. This spelled the then-current release,
+// so every release had to come back and retype it, and the one that did not (R6-R7-R7) failed here for a
+// reason that has nothing to do with the no-action manifest. What BP2a can own durably is that the pin is
+// a REGISTERED, LEGALLY SHAPED stamp that has not fallen behind the round this suite is about. The claim
+// that it equals the CURRENT release is BP3's, one line below, and that one is exact by construction.
+ok(RO.BUILD_STAMP_RE.test(ACTIVATION_PIN), 'BP2a the pin is a legally shaped owner stamp', ACTIVATION_PIN);
+ok(RO.OWNER_STAMPS.indexOf(ACTIVATION_PIN) !== -1,
+  'BP2a1 registered in the shared release order', ACTIVATION_PIN);
+ok(RO.stampAtOrAfter(ACTIVATION_PIN, 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R3'),
+  'BP2a2 and at or after R6-R7-R3, the round this suite is for — a pin may move forward, never back',
+  ACTIVATION_PIN);
 eq(ACTIVATION_PIN, RELEASE_P3,
   'BP3  the pin equals 63_\'s SYS_DEPLOYMENT_RELEASE_ — a pin that lags a release refuses a healthy deployment');
 eq(ACTIVATION_PIN, CENSUS_STAMP_P3,
@@ -1706,8 +1725,13 @@ mut('N12 the manifest proof dropping the frozen fingerprints', function () {
 // R6-R7-R3-P3 — THE REGRESSION THAT ACTUALLY HAPPENED, as a mutant. The pin left behind at R2 while the
 // release moved to R3: the live manifest STOPs on a healthy deployment, and the old suite saw nothing.
 mut('N13 the activation build pin left behind a release while the release moved on', function () {
-  var m = swap(CENSUS, "var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6';",
-    "var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5';");
+  // The mutation is 'the pin falls one registered release behind', derived from whatever the pin is now.
+  // Spelling both releases meant the probe threw `swap anchor not found` on the next legal bump, which
+  // reads as a surviving mutant when the mutant was never built.
+  var _n13i = RO.OWNER_STAMPS.indexOf(ACTIVATION_PIN);
+  var _n13prev = RO.OWNER_STAMPS[_n13i > 0 ? _n13i - 1 : 0];
+  var m = swap(CENSUS, "var R6R7_ACTIVATION_BUILD_ = '" + ACTIVATION_PIN + "';",
+    "var R6R7_ACTIVATION_BUILD_ = '" + _n13prev + "';");
   var stalePin = (m.match(/var R6R7_ACTIVATION_BUILD_ = '([^']+)'/) || [])[1];
   var bad = withCensus(m, 'RUN_R6R7_CONTROLLED_NO_ACTION_ACTIVATION_MANIFEST');
   // Caught three ways, and all three have to hold — the source parity, the live verdict, and the named

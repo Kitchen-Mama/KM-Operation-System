@@ -645,6 +645,13 @@ GS_OWNED_SINCE_R1['17_carrier_handlers.gs'] = 'FC-1B-E3-R4-A2-R1-R5 freezes the 
 // accepted overage that no record justified. R5-R1 makes the ledger a REQUIREMENT with a named refusal and
 // makes the whole transition one journalled, read-back-verified transaction. An unexpected file still fails.
 GS_OWNED_SINCE_R1['71_api_v1_factory_stock_guard.gs'] = 'FC-1B-E3-R4-A2-R1-R6-R7-R5-R1 the override-audit ledger is required rather than lazily created, plus the verified journal rollback the plan transition unwinds through';
+// PRODUCT-STRATEGY-P1-B1-R1 - 72_ joins the owned set, and it is the first entry here for a file that
+// did not exist at R1. P1-B1 added the site-scoped Product Pricing workspace read as its own owner
+// rather than teaching 59_ about a scope it must not have, and R6-R7-R7 makes it a REQUIRED row in
+// 63_'s deployment manifest. An unexpected file still fails: this list is named files with reasons,
+// never a pattern that would forgive the next one too.
+GS_OWNED_SINCE_R1['72_api_v1_product_pricing_workspace.gs'] = 'PRODUCT-STRATEGY-P1-B1 the site-scoped Product Pricing workspace read owner, routed as productPricing.workspace.get and REQUIRED in the deployment manifest from R6-R7-R7; it answers FEATURE_DISABLED while PRODUCT_STRATEGY_ENABLED_ is false';
+gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
 gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
 gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
 eq(gsUnexpected.join(','), '', "8. no Apps Script file outside this line's owned set changed since the R1 commit");

@@ -306,3 +306,92 @@ Next slice:                  complete §14 + both verifiers PASS → flips to A.
 ```
 
 **STATUS: READY_AFTER_REMAINING_USER_ACTIONS — code/repo side READY; production deployment + read-only verifiers are the USER-owned gate to authorize Live Acceptance R2.**
+
+---
+
+## Entry — 2026-09-10 · PRODUCT-STRATEGY-P1-B1-R1 (deployment CANDIDATE prepared — nothing synced, nothing deployed)
+
+```
+Release ID:                  F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R7
+                             (SYS_DEPLOYMENT_RELEASE_ in 63_api_v1_system_health.gs; next in the
+                             existing chain after …R6-R7-R6, registered in assets/tests/_release-order.js)
+Ledger entry ID:             P1-B1-R1-2026-09-10-product-pricing-workspace-release-candidate
+Environment:                 (none — NOT DEPLOYED, NOT SYNCED, NOT PUSHED)
+Git branch:                  feature/product-strategy-board-p0
+Git state:                   follow-up commit on 9ee85d5 (P1-B1). 9ee85d5 is NOT amended, NOT squashed.
+                             origin/feature/product-strategy-board-p0 = e98fded — both P1-B1 and this
+                             round are local-only.
+Why the release moves:       P1-B1 changed FOUR sync-visible backend files — 72_ (new), 01_router.gs,
+                             00_config.gs, 63_ — while SYS_DEPLOYMENT_RELEASE_ still read …R6-R7-R6.
+                             63_:35 requires the release to move in the same commit as any sync-visible
+                             change. It moved a round late; this entry is that bookkeeping.
+
+Changed files (17):
+  runtime .gs   63_api_v1_system_health.gs      release + own stamp + action contract 12->13
+                                                + manifest rows for 63_/00_/01_ + NEW REQUIRED row for 72_
+                00_config.gs                    CONFIG_BUILD_VERSION_ -> R7 (P1-B1 edited it)
+                01_router.gs                    RTR_BUILD_VERSION_    -> R7 (P1-B1 added the dispatch)
+                72_api_v1_product_pricing_workspace.gs
+                                                PPW_BUILD_VERSION_ -> R7 (into the orderable vocabulary)
+                                                + the dynamic Category contract + filterOptions
+  browser       assets/js/api/operation-system-db-api.js
+                                                KM_EXPECTED_ACTION_CONTRACT_VERSION_ 12 -> 13
+                assets/js/api/km-product-pricing-workspace.js
+                                                filterOptions shape validation; no category VALUE
+  diagnostics   TEMP_S1_POSITIVE_RESIDUAL_READINESS_CENSUS.gs      S1_BUILD_ -> R7
+                TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3.gs          two pins -> R7
+  tests         _release-order.js (+R7), 8 suites re-aimed at durable properties,
+                1 NEW suite: api-product-pricing-category-contract-p1-b1-r1.test.js
+  docs          PRODUCT_STRATEGY_BOARD_DESIGN_FREEZE.md §33, project-current-state.md, this ledger
+
+Apps Script files synced:    NONE
+APPS_SCRIPT_SYNC_REQUIRED:   72_api_v1_product_pricing_workspace.gs (NEW FILE) ·
+                             00_config.gs · 01_router.gs · 63_api_v1_system_health.gs
+Bundle source changed:       no  (90_ untouched — no bundle rebuild required)
+Apps Script deployment version: NOT CREATED
+Frontend deployment:         NOT REDEPLOYED
+
+ORDERING CONSTRAINT (read this before deploying anything):
+                             KM_EXPECTED_ACTION_CONTRACT_VERSION_ is now 13, and the browser refuses any
+                             deployment below its pin with DEPLOYMENT_CONTRACT_MISMATCH. So:
+                               1. git push        (USER)
+                               2. Apps Script sync of the four files above + NEW Web App version  (USER)
+                               3. ONLY THEN redeploy Pages  (USER)
+                             Redeploying Pages before step 2 makes the app refuse to boot against the
+                             currently-deployed backend. The pin moved because ~11 suites hold it to
+                             EQUALITY with SYS_DEPLOYED_ACTION_CONTRACT_VERSION_, not because any page
+                             needs the new action — no page calls it.
+
+Database migration:          none          Migration ID: n/a         Backup reference: n/a
+Deployed by:                 nobody — no remote or deployment command was executed this round
+Deployment time:             n/a
+
+Feature state at this release:
+  PRODUCT_STRATEGY_ENABLED_  false. A project carrying this release still answers FEATURE_DISABLED for
+                             productPricing.workspace.get, BEFORE it opens a spreadsheet (0 opens,
+                             0 table reads — measured, not asserted).
+  Production UI              none. index.html loads neither the accessor nor a Product Strategy nav entry,
+                             and no page references the action.
+  Formal DB / API read       none performed this round.
+  DB / Drive writes          0.
+
+Smoke-test scope:            repository regression only — no live system was contacted.
+Smoke-test result:           444 suites swept. New category suite 73 passed / 0 failed / 12 mutants
+                             caught / 0 survived. P1-B1 suite 163/0/13. The five assertions this line
+                             caused (E4, G1, G1a, G2.7, action-registry 8) all pass. Four suites remain
+                             red and are PRE-EXISTING on the untouched main worktree: gap-job-done-notice
+                             (3), order-planning-monthly-projection-consumer (1), replen-header-toggle
+                             (7), supply-planning-route-inventory (2).
+Known limitations:           This is a CANDIDATE. Nothing has been synced or deployed, so no live
+                             behaviour has changed and none has been verified. The release id says what a
+                             sync WOULD be.
+Rollback version:            n/a — nothing was deployed to roll back from.
+Notes:                       72_ is a REQUIRED manifest owner from this release, deliberately not
+                             optional: the router already dispatches its action, so a deployment carrying
+                             01_router.gs without 72_ routes a live action to an undefined handler and
+                             MUST read as mixed/stale. The feature flag is a separate axis — a refusal
+                             from a handler that is present is a different fact from a handler that is
+                             absent, and only the first is recoverable by flipping a flag.
+```
+
+**STATUS: DEPLOYMENT CANDIDATE PREPARED · NOT PUSHED · APPS SCRIPT NOT SYNCED · NO DEPLOYMENT VERSION · PRODUCT STRATEGY NOT ENABLED.**

@@ -225,4 +225,7 @@ function inventoryAiPlanActivationAllowlist_() {
 // like any other.
 // F1-7N-FC-1B-E3-R4-A2-R1-R5 §10 — also never rotated, and this round changes the file again (the
 // transit buffer authority), so it moves to the current round.
-var CONFIG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6';
+// PRODUCT-STRATEGY-P1-B1-R1 - moved because P1-B1 changed this file (PRODUCT_STRATEGY_ENABLED_ and
+// productStrategyEnabled_) and did not move it. A config one round behind answers the flag question with
+// the previous file's answer, which is the whole reason this file carries a stamp at all.
+var CONFIG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R7';

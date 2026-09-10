@@ -861,10 +861,23 @@ ok(cfg !== STAMP && new RegExp("symbol: 'CONFIG_BUILD_VERSION_', expected: '" + 
   'F3  00_config.gs did NOT change, so its stamp is not marched forward');
 ok(RO.stampAtOrAfter(RO.OWNER_STAMPS[RO.OWNER_STAMPS.length - 1], STAMP),
   'F4  this round is registered in the release order');
-eq(Number((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/) || [])[1]), 12,
-  'F5  the action contract moved to 12, because a router ACTION was added');
-eq(Number((DBAPI.match(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+)/) || [])[1]), 12,
-  'F5a and the frontend raises its pinned minimum to MATCH, in the same commit');
+// PRODUCT-STRATEGY-P1-B1-R1 - A FLOOR, NOT AN EQUALITY. This pinned 12 as a literal, which was true
+// exactly once: R6-R7-R7 adds productPricing.workspace.get and moves the same constant to 13 under the
+// same rule this line is about, so the equality turned a CORRECT bump into a regression. That is the
+// defect R5-R1's C8 and R5's E3a both named and repaired the same way. What R5 owns is that the
+// contract
+// moved BECAUSE it added a route, and that nothing may take it back below where R5 left it.
+var _f5ac = Number((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/) || [])[1]);
+ok(_f5ac >= 12,
+  'F5  the action contract is at or after 12, where R5 moved it because a router ACTION was added',
+  _f5ac);
+// PRODUCT-STRATEGY-P1-B1-R1 — THE CLAIM IS 'TO MATCH', so it is asserted as a match. Pinning the
+// literal 12 said the same thing only while 12 was current; R6-R7-R7 moves both sides to 13 under the
+// rule this line is about and the literal turned that into a failure. MATCH is the durable property
+// and it is the one the drift mutants (R5-R1 E10) are aimed at.
+eq(Number((DBAPI.match(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+)/) || [])[1]),
+  Number((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/) || [])[1]),
+  'F5a and the frontend pins its minimum to MATCH the deployed contract, in the same commit');
 eq(Number((G63.match(/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+)/) || [])[1]), 1,
   'F5b while the transport envelope is unchanged');
 ok(/{ action: 'factoryStockGuard\.get', handler: 'handleFactoryStockGuardGet_'/.test(G63),

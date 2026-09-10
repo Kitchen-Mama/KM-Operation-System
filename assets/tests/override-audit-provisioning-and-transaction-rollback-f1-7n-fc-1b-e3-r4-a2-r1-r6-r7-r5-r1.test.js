@@ -841,7 +841,11 @@ var C11 = atRound(GS + '11_shipping_plan_handlers.gs');
 var C61 = atRound(GS + '61_api_v1_weekly_ai_plan.gs');
 var C01 = atRound(GS + '01_router.gs');
 var sysAC = (C63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1];
-var expAC = (DBAPI.match(/KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+)/) || [])[1];
+// PRODUCT-STRATEGY-P1-B1-R1 — BOTH SIDES AT THE ROUND. sysAC already reads 63_ at this round's own
+// commit; expAC was reading the browser file as it stands TODAY, so a later release moving both sides
+// together broke a claim about what R5-R1 shipped. §C is about R5-R1, so both of its sides are.
+var CDBAPI = atRound('assets/js/api/operation-system-db-api.js');
+var expAC = (CDBAPI.match(/KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+)/) || [])[1];
 eq([sysAC, expAC], ['12', '12'],
   'C5  §C the action contract stays at 12 on BOTH sides — no action was added or removed');
 // But a NEW DEPLOYMENT VERSION *is* required, and this is the field that says so.
@@ -1425,8 +1429,12 @@ mut('E9 the commit stops being read back, so a write that never landed reports s
 });
 
 mut('E10 the frontend pin drifts below the deployed action contract', function () {
-  var mSrc = swap(DBAPI, 'KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 12', 'KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 11');
+  // The mutation is 'one below whatever the pin currently is', not 'twelve becomes eleven'. The
+  // literal made this probe fail with mutation target absent the moment the pin legally moved, which
+  // reads as a surviving mutant when nothing survived at all.
   var honest = Number((DBAPI.match(/KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+)/) || [])[1]);
+  var mSrc = swap(DBAPI, 'KM_EXPECTED_ACTION_CONTRACT_VERSION_ = ' + honest,
+    'KM_EXPECTED_ACTION_CONTRACT_VERSION_ = ' + (honest - 1));
   var mutant = Number((mSrc.match(/KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+)/) || [])[1]);
   var deployed = Number((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]);
   return honest === deployed && mutant !== deployed;

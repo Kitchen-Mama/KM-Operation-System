@@ -75,6 +75,55 @@ var CENSUS_REL = 'assets/tools/apps-script-diagnostics/TEMP_AI_PLAN_ACTIVATION_C
 var S1SRC = read(S1_REL);
 var CENSUS = read(CENSUS_REL);
 
+// PRODUCT-STRATEGY-P1-B1-R1 - THIS ROUND'S OWN COMMIT, which is the other end of every range below.
+//
+// Sections F and G describe what THIS release changed, and both were measuring against the WORKING TREE:
+// `git diff BASE` is BASE..tree, and the module reads were of whatever the files say today. So every
+// later round enlarged a set that describes R6-R7-R6 and moved stamps this suite asserts did not move -
+// and the next release (R6-R7-R7, which adds 72_ and routes its action) broke fifteen assertions here,
+// not one of which was about the allowlist cutover this suite is for.
+//
+// The newest commit whose 63_ still declares THIS release is where the round ended. The range is
+// BASE..there and it is closed for ever. When the working tree IS this round (nothing later has moved
+// 63_), INTRO is null and the tree is the round - measured, not assumed. This is the repair 96a2fb7
+// applied to the R5-R1 suite for exactly this reason; the behavioural sections above deliberately keep
+// reading the working tree, because those are claims about the code as it stands.
+var _cp0 = require('child_process');
+function _git0(c) { try { return _cp0.execSync('git ' + c, { cwd: ROOT, encoding: 'utf8' }); }
+  catch (e) { return null; } }
+// THE COMMIT THAT INTRODUCED THIS RELEASE - the OLDEST one whose 63_ declares it, not the newest.
+//
+// The sibling repair in the R5-R1 suite took the newest, and for R5-R1 the two were the same commit. They
+// are NOT the same here, and the difference is this round's whole subject: P1-B1 changed four runtime
+// files while 63_ still read R6-R7-R6, so the newest commit declaring this release is P1-B1's - a round
+// that has nothing to do with the allowlist cutover and reused this release id by omission. Ending the
+// window there would hard-code that omission into the historical claim.
+//
+// The introducing commit is what a release-window suite actually owns: what THIS release's own change
+// set was. A release that legitimately spans several commits is a real case and is not this one - it
+// would need an explicit end anchor rather than 'whatever last happened to carry the id'.
+function roundIntro() {
+  var log = _git0('log --format=%H -- ' + GS + '63_api_v1_system_health.gs');
+  if (log === null) return null;
+  var commits = String(log).split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
+  var found = null;
+  for (var i = 0; i < commits.length; i++) {
+    var blob = _git0('show ' + commits[i] + ':' + GS + '63_api_v1_system_health.gs');
+    if (blob !== null && String(blob).indexOf("SYS_DEPLOYMENT_RELEASE_ = '" + RELEASE + "'") !== -1) {
+      found = commits[i];   // keep walking: `git log` is newest-first, so the last hit is the oldest
+    }
+  }
+  return found;
+}
+var INTRO = roundIntro();
+// Read a file AS THIS ROUND SHIPPED IT. Falls back to the working tree only when the round has not been
+// committed yet, which is the one case where the tree genuinely IS the round.
+function atRound(rel) {
+  if (!INTRO) return read(rel);
+  var b = _git0('show ' + INTRO + ':' + rel);
+  return b === null ? read(rel) : String(b);
+}
+
 // Comments are stripped before any claim about what the CODE says, so an explanation naming CO1100-R cannot
 // be mistaken for the value still being armed — and cannot make a check pass either.
 function stripComments(src) {
@@ -418,12 +467,26 @@ eq([E_PROP.allowlist_modified, E_PROP.flag_modified, E_PROP.script_properties_mo
 // ================================================================================================================
 section('F — deployment identity: one new release, and only the files that changed declare it');
 // ================================================================================================================
+// PRODUCT-STRATEGY-P1-B1-R1 - FROM HERE THE SOURCES ARE THIS ROUND'S, not today's. See the note beside
+// roundIntro() above. F0 proves the range has both ends rather than silently degrading to the tree.
+ok(!!INTRO, 'F0  this round' + 'S OWN COMMIT is derived from 63_, so the range has both ends', INTRO);
+ok(!INTRO || String(_git0('show ' + INTRO + ':' + GS + '63_api_v1_system_health.gs'))
+  .indexOf("SYS_DEPLOYMENT_RELEASE_ = '" + RELEASE + "'") !== -1,
+  'F0a and 63_ at that commit declares THIS release, which is what makes it this round' + 'S end');
+var R63 = atRound(GS + '63_api_v1_system_health.gs');
+var RCFG = atRound(GS + '00_config.gs');
+var R61 = atRound(GS + '61_api_v1_weekly_ai_plan.gs');
+var R71 = atRound(GS + '71_api_v1_factory_stock_guard.gs');
+var R11 = atRound(GS + '11_shipping_plan_handlers.gs');
+var R01 = atRound(GS + '01_router.gs');
+var RS1SRC = atRound(S1_REL);
+var RCENSUS = atRound(CENSUS_REL);
 
-eq((G63.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1], RELEASE,
+eq((R63.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1], RELEASE,
   'F1  SYS_DEPLOYMENT_RELEASE_ is this round');
-eq((G63.match(/var SYS_BUILD_VERSION_ = '([^']+)'/) || [])[1], RELEASE,
+eq((R63.match(/var SYS_BUILD_VERSION_ = '([^']+)'/) || [])[1], RELEASE,
   'F1a and 63_ declares it as its own module stamp too, because 63_ changed');
-eq((CFG.match(/var CONFIG_BUILD_VERSION_ = '([^']+)'/) || [])[1], RELEASE,
+eq((RCFG.match(/var CONFIG_BUILD_VERSION_ = '([^']+)'/) || [])[1], RELEASE,
   'F1b and 00_config.gs declares it, because 00_config.gs changed');
 ok(RO.BUILD_STAMP_RE.test(RELEASE), 'F2  the stamp is legally shaped');
 ok(RO.OWNER_STAMPS.indexOf(RELEASE) !== -1, 'F2a and registered in the shared release order');
@@ -434,16 +497,16 @@ ok(RO.OWNER_STAMPS.indexOf(PREV_RELEASE) !== -1 && RO.OWNER_STAMPS.indexOf(PREV_
 // THE MANIFEST IS EXACT: every row's expectation equals what that file actually declares. This is the check
 // that catches BOTH failure directions — a file whose stamp moved without its row, and a row that marched to
 // the release while its file did not change.
-var rows = (G63.match(/\{ file: '[^']+', symbol: '[^']+', expected: '[^']+'/g) || []).map(function (r) {
+var rows = (R63.match(/\{ file: '[^']+', symbol: '[^']+', expected: '[^']+'/g) || []).map(function (r) {
   return { file: /file: '([^']+)'/.exec(r)[1], symbol: /symbol: '([^']+)'/.exec(r)[1],
     expected: /expected: '([^']+)'/.exec(r)[1] };
 });
 ok(rows.length >= 10, 'F3  the deployment manifest carries a row per owner file', rows.length);
 var mismatched = [], unreadable = [];
 rows.forEach(function (r) {
-  var p = path.join(ROOT, GS + r.file);
-  if (!fs.existsSync(p)) { unreadable.push(r.file); return; }
-  var d = (fs.readFileSync(p, 'utf8').match(new RegExp('var ' + r.symbol + " = '([^']+)'")) || [])[1] || null;
+  var src = atRound(GS + r.file);
+  if (!src) { unreadable.push(r.file); return; }
+  var d = (src.match(new RegExp('var ' + r.symbol + " = '([^']+)'")) || [])[1] || null;
   if (d !== r.expected) mismatched.push(r.file + ' declares ' + d + ', manifest expects ' + r.expected);
 });
 eq(unreadable, [], 'F3a and every one of those files exists');
@@ -455,10 +518,10 @@ eq([row00 && row00.expected, row63 && row63.expected], [RELEASE, RELEASE],
   'F4  the 00_config.gs and 63_ rows both expect this round');
 // AND THE ROWS THAT MUST NOT HAVE MOVED. A module stamp records the round its file last changed; marching one
 // to the release is the confusion 63_'s own header warns about.
-[['61_api_v1_weekly_ai_plan.gs', 'WAP_BUILD_VERSION_', G61],
- ['71_api_v1_factory_stock_guard.gs', 'FSG_BUILD_VERSION_', G71],
- ['11_shipping_plan_handlers.gs', 'SP_BUILD_VERSION_', G11],
- ['01_router.gs', 'RTR_BUILD_VERSION_', G01]
+[['61_api_v1_weekly_ai_plan.gs', 'WAP_BUILD_VERSION_', R61],
+ ['71_api_v1_factory_stock_guard.gs', 'FSG_BUILD_VERSION_', R71],
+ ['11_shipping_plan_handlers.gs', 'SP_BUILD_VERSION_', R11],
+ ['01_router.gs', 'RTR_BUILD_VERSION_', R01]
 ].forEach(function (c, i) {
   var d = (c[2].match(new RegExp('var ' + c[1] + " = '([^']+)'")) || [])[1] || null;
   ok(d !== RELEASE, 'F5.' + (i + 1) + ' ' + c[0] + ' did NOT march its stamp to this release', d);
@@ -470,13 +533,13 @@ eq([row00 && row00.expected, row63 && row63.expected], [RELEASE, RELEASE],
 // 63_'s own function rather than asserted about it.
 var DCTX = vm.createContext({ String: String, Object: Object, Array: Array, JSON: JSON });
 vm.runInContext('var globalThisRef = this;', DCTX);
-vm.runInContext((G63.match(/var SYS_MODULE_BUILD_STAMPS_ = \[[\s\S]*?\n\];/) || [])[0], DCTX);
+vm.runInContext((R63.match(/var SYS_MODULE_BUILD_STAMPS_ = \[[\s\S]*?\n\];/) || [])[0], DCTX);
 vm.runInContext("var SYS_DEPLOYMENT_RELEASE_ = '" + RELEASE + "';", DCTX);
 // Every owner symbol, set to what its own file declares — i.e. a project synced from this exact tree.
 rows.forEach(function (r) {
-  var p = path.join(ROOT, GS + r.file);
-  if (!fs.existsSync(p)) return;
-  var d = (fs.readFileSync(p, 'utf8').match(new RegExp('var ' + r.symbol + " = '([^']+)'")) || [])[1];
+  var src = atRound(GS + r.file);
+  if (!src) return;
+  var d = (src.match(new RegExp('var ' + r.symbol + " = '([^']+)'")) || [])[1];
   if (d) vm.runInContext('var ' + r.symbol + ' = ' + JSON.stringify(d) + ';', DCTX);
 });
 vm.runInContext('function sysGlobalValue_(n) { try { return eval(n); } catch (e) { return undefined; } }', DCTX);
@@ -484,7 +547,7 @@ vm.runInContext('function sysGlobalValue_(n) { try { return eval(n); } catch (e)
 // lifecycle resolver parity has its own suites. Stated rather than hidden.
 vm.runInContext('function sysRuntimeAuthorityChecks_() { return { uniform: true, verdict: "STUBBED_UNIFORM'
   + ' — the executed writer/lifecycle parity is proved by its own suites, not here" }; }', DCTX);
-vm.runInContext((G63.match(/function sysModuleBuildStamps_\(\)[\s\S]*?\n\}/) || [])[0], DCTX);
+vm.runInContext((R63.match(/function sysModuleBuildStamps_\(\)[\s\S]*?\n\}/) || [])[0], DCTX);
 var CONTRACT = vm.runInContext('sysModuleBuildStamps_()', DCTX);
 eq(CONTRACT.deployment_build, RELEASE, 'F6  the executed contract reports this release');
 eq(CONTRACT.stale_modules, [], 'F6a stale_modules is EMPTY on a project synced from this tree');
@@ -501,11 +564,11 @@ ok(STALE.stale_modules.join(' ').indexOf('00_config.gs') !== -1,
 vm.runInContext("CONFIG_BUILD_VERSION_ = '" + RELEASE + "';", DCTX);
 
 // THE DIAGNOSTIC PINS. A pin that lags the release refuses a correctly synced project.
-eq((S1SRC.match(/var S1_BUILD_ = '([^']+)'/) || [])[1], RELEASE,
+eq((RS1SRC.match(/var S1_BUILD_ = '([^']+)'/) || [])[1], RELEASE,
   'F8  the S1 census build pin is this release');
-eq((CENSUS.match(/var TEMP_E3_CENSUS_BUILD_ = '([^']+)'/) || [])[1], RELEASE,
+eq((RCENSUS.match(/var TEMP_E3_CENSUS_BUILD_ = '([^']+)'/) || [])[1], RELEASE,
   'F8a the activation census stamp is this release');
-eq((CENSUS.match(/var R6R7_ACTIVATION_BUILD_ = '([^']+)'/) || [])[1], RELEASE,
+eq((RCENSUS.match(/var R6R7_ACTIVATION_BUILD_ = '([^']+)'/) || [])[1], RELEASE,
   'F8b and its deployment pin is too — equal to SYS_DEPLOYMENT_RELEASE_, as the manifest suite requires');
 
 // §四.7 — checkDeploymentContract(): THE ONLY TERM THIS ROUND CAN MOVE IS mixed_deployment.
@@ -541,7 +604,12 @@ section('G — safety: nothing that holds business state changed, and no gate wa
 var ALLOWED_RUNTIME = ['00_config.gs', '63_api_v1_system_health.gs'];
 var cp = require('child_process');
 function git(c) { try { return cp.execSync('git ' + c, { cwd: ROOT, encoding: 'utf8' }); } catch (e) { return null; } }
-var diff = git('diff --name-only ' + PREV_RELEASE_COMMIT());
+// PRODUCT-STRATEGY-P1-B1-R1 - A CLOSED RANGE. `diff BASE` ended at the working tree, so this set grew
+// with every later round and the assertions below slowly became claims about the present rather than
+// about what R6-R7-R6 shipped. BASE..INTRO is this round. Untracked files count ONLY while the round is
+// still uncommitted, which is the same case in which INTRO is null.
+var diff = INTRO ? git('diff --name-only ' + PREV_RELEASE_COMMIT() + ' ' + INTRO)
+  : git('diff --name-only ' + PREV_RELEASE_COMMIT());
 function PREV_RELEASE_COMMIT() {
   // The commit whose 63_ still declares the PREVIOUS release: the deployment being upgraded FROM.
   var log = git('log --format=%H -- ' + GS + '63_api_v1_system_health.gs');
@@ -696,26 +764,28 @@ mut('N5 the accessor accepts any truthy flag value instead of an exact true', fu
 });
 
 mut('N6 00_config.gs changes without its module stamp moving', function () {
-  var m = swapCfg("var CONFIG_BUILD_VERSION_ = '" + RELEASE + "';",
-    "var CONFIG_BUILD_VERSION_ = '" + PREV_RELEASE + "';");
+  // Round-scoped, like §F above: the claim is about the stamp THIS ROUND declared.
+  var m = RCFG.split("var CONFIG_BUILD_VERSION_ = '" + RELEASE + "';")
+    .join("var CONFIG_BUILD_VERSION_ = '" + PREV_RELEASE + "';");
+  if (m === RCFG) throw new Error('swap anchor count 0');
   // The manifest expects this release, so a file that did not move its stamp is a STALE MODULE — which is
   // exactly what an operator who pasted only 63_ would have.
   var declared = (m.match(/var CONFIG_BUILD_VERSION_ = '([^']+)'/) || [])[1];
   return row00.expected === RELEASE
-    && (CFG.match(/var CONFIG_BUILD_VERSION_ = '([^']+)'/) || [])[1] === RELEASE
+    && (RCFG.match(/var CONFIG_BUILD_VERSION_ = '([^']+)'/) || [])[1] === RELEASE
     && declared !== row00.expected;
 });
 
 mut('N7 the manifest row for 00_config.gs is left behind while the file moves', function () {
-  var m = G63.split("{ file: '00_config.gs', symbol: 'CONFIG_BUILD_VERSION_', expected: '" + RELEASE + "'")
+  var m = R63.split("{ file: '00_config.gs', symbol: 'CONFIG_BUILD_VERSION_', expected: '" + RELEASE + "'")
     .join("{ file: '00_config.gs', symbol: 'CONFIG_BUILD_VERSION_', expected: '" + PREV_RELEASE + "'");
-  if (m === G63) throw new Error('manifest anchor missing');
+  if (m === R63) throw new Error('manifest anchor missing');
   var expect = (new RegExp("\\{ file: '00_config\\.gs', symbol: 'CONFIG_BUILD_VERSION_', expected: '([^']+)'")
     .exec(m) || [])[1];
   // The static exactness check (F3b) is what catches this direction: the row expects the old release while
   // the file declares the new one, so a correctly synced project is reported stale.
   return mismatched.length === 0 && expect === PREV_RELEASE
-    && expect !== (CFG.match(/var CONFIG_BUILD_VERSION_ = '([^']+)'/) || [])[1];
+    && expect !== (RCFG.match(/var CONFIG_BUILD_VERSION_ = '([^']+)'/) || [])[1];
 });
 
 mut('N8 an unchanged module marches its stamp to the release', function () {
@@ -731,10 +801,10 @@ mut('N8 an unchanged module marches its stamp to the release', function () {
 });
 
 mut('N9 the S1 census pin lags the release, so it refuses a correctly synced project', function () {
-  var m = S1SRC.split("var S1_BUILD_ = '" + RELEASE + "'")
+  var m = RS1SRC.split("var S1_BUILD_ = '" + RELEASE + "'")
     .join("var S1_BUILD_ = '" + PREV_RELEASE + "'");
-  if (m === S1SRC) throw new Error('S1_BUILD_ anchor missing');
-  return (S1SRC.match(/var S1_BUILD_ = '([^']+)'/) || [])[1] === RELEASE
+  if (m === RS1SRC) throw new Error('S1_BUILD_ anchor missing');
+  return (RS1SRC.match(/var S1_BUILD_ = '([^']+)'/) || [])[1] === RELEASE
     && (m.match(/var S1_BUILD_ = '([^']+)'/) || [])[1] === PREV_RELEASE;
 });
 
@@ -764,11 +834,11 @@ mut('N11 the new release is not registered in the shared order, so every floor c
 });
 
 mut('N12 the activation census pin is left at the previous release', function () {
-  var m = CENSUS.split("var R6R7_ACTIVATION_BUILD_ = '" + RELEASE + "'")
+  var m = RCENSUS.split("var R6R7_ACTIVATION_BUILD_ = '" + RELEASE + "'")
     .join("var R6R7_ACTIVATION_BUILD_ = '" + PREV_RELEASE + "'");
-  if (m === CENSUS) throw new Error('pin anchor missing');
-  var sys = (G63.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1];
-  return (CENSUS.match(/var R6R7_ACTIVATION_BUILD_ = '([^']+)'/) || [])[1] === sys
+  if (m === RCENSUS) throw new Error('pin anchor missing');
+  var sys = (R63.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1];
+  return (RCENSUS.match(/var R6R7_ACTIVATION_BUILD_ = '([^']+)'/) || [])[1] === sys
     && (m.match(/var R6R7_ACTIVATION_BUILD_ = '([^']+)'/) || [])[1] !== sys;
 });
 

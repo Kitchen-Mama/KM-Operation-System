@@ -93,13 +93,30 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 // R6-R7-R4 - THE RELEASE MOVES AGAIN: 61_ changed, so a new Web App deployment version is required. A
 // deployment still on R3 answers NO_ACTION only after the full KMAF pipeline, which is the 90-second
 // request this round exists to end.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6';
+// R6-R7-R7 - THE RELEASE MOVES AGAIN, and this time for a file that did not exist before. P1-B1 added
+// 72_api_v1_product_pricing_workspace.gs, routed productPricing.workspace.get to it in 01_router.gs, and
+// changed 00_config.gs and this file. Four sync-visible backend files, so a new Web App deployment version
+// is required and the release id is what says which of the two a deployment is.
+//
+// IT MOVED A ROUND LATE, AND THE STANDING CHECKS ARE WHAT SAID SO. P1-B1 shipped those four files while
+// this constant still read R6-R7-R6, and three assertions failed: the release-window suite (a third
+// runtime file changed inside a window that permits two) and the stamp-rotation check (three manifest
+// owners edited without moving their stamps). Neither was a false alarm and neither is repaired by being
+// re-scoped; they are repaired by the bookkeeping they were asking for, which is this line.
+//
+// THIS IS A DEPLOYMENT CANDIDATE, NOT A DEPLOYMENT. Nothing has been synced, no Web App version exists,
+// and PRODUCT_STRATEGY_ENABLED_ is false - so a project that DOES carry this release still answers
+// FEATURE_DISABLED before it opens a spreadsheet. The release id names what a sync WOULD be; the ledger
+// entry in docs/planning/DEPLOYMENT_RELEASE_LOG.md records that it has not happened.
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R7';
 // 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
 // R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
 // not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
 // R6-R7-R3 — moved because 61_'s manifest row moved with 61_ itself, which is a change to THIS FILE.
 // R6-R7-R4 - moved because 61_'s manifest row moved with 61_, which is a change to THIS FILE.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6';
+// R6-R7-R7 - moved because THIS FILE changed: 72_'s manifest row was added, 00_config's, 01_router's and
+// this file's own rows moved, and the action-contract version was bumped for the new route.
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R7';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -136,7 +153,16 @@ var SYS_TRANSPORT_CONTRACT_VERSION_ = 1;
 // stated rule. No action was removed and no existing action changed shape, so the frontend's pinned minimum
 // is satisfied by 11 and by 12 alike; what moves here is the deployment's ability to answer "do you have the
 // guard read?" without anyone having to call it and see.
-var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 12;
+// R6-R7-R7 - 13. One router ACTION was added (productPricing.workspace.get), which is exactly this
+// constant's stated rule, and P1-B1 added the route without moving it. The frontend's pinned minimum
+// (KM_EXPECTED_ACTION_CONTRACT_VERSION_) deliberately STAYS AT 12: no page calls this action - the
+// accessor is loaded by nothing and the flag is false - so raising the browser's floor would make every
+// currently-deployed project refuse to boot over a feature nobody can reach. What moves here is the
+// deployment's ability to answer "do you route the pricing workspace?" without anyone calling it to find
+// out. SYS_REQUIRED_ACTION_LIST_VERSION_ does NOT move either: SYS_REQUIRED_ACTIONS_ is the list of
+// actions PAGES depend on, and no page depends on this one yet - the same reason createShipmentFromPlan
+// waited for a page before it was listed.
+var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 13;
 // Incremented when SYS_REQUIRED_ACTIONS_ changes, so a caller can tell a "nothing missing" answer from an
 // OLD list apart from a "nothing missing" answer from the CURRENT list.
 // F1-7N-FB-4E-R2: 7 -> 8. SYS_REQUIRED_ACTIONS_ gained four entries, and the whole purpose of this number is
@@ -311,11 +337,11 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R7', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
   // F1-7N-FC-1B-E3 §E.9 — the CONFIG is an owner file too. It holds
   // INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_, so a project still running the previous copy of it writes no
   // allocation drafts while the repository says it should; without an entry here that difference had no name.
-  { file: '00_config.gs', symbol: 'CONFIG_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6', owns: 'global constants + the feature flags of record (incl. Inventory AI Plan DB generation)' },
+  { file: '00_config.gs', symbol: 'CONFIG_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R7', owns: 'global constants + the feature flags of record (incl. Inventory AI Plan DB generation)' },
   // F1-7N-FC-1B-E3-R1 — 61_ owns the harvest, the canonical readiness decision and the K2 generation, and
   // it carried no stamp at all: a deployment that answers HARVEST_NOT_READY with no issues and a deployment
   // that predates the typed-readiness fix were the same observation from outside. Now they are not.
@@ -325,6 +351,15 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // failure this manifest exists to name: a deployment carrying the R3 router but no 70_ would route the action
   // to an undefined handler, and the page has no fan-out left to fall back to.
   { file: '70_api_v1_overseas_stock_workspace.gs', symbol: 'OSW_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R3', owns: 'Overseas Stock scoped read workspace' },
+  // PRODUCT-STRATEGY-P1-B1-R1 - 72_ IS REQUIRED FROM ITS FIRST RELEASE, AND DELIBERATELY NOT OPTIONAL.
+  // 01_router.gs already dispatches productPricing.workspace.get to handleProductPricingWorkspaceGet_ on
+  // both GET and POST, so a deployment carrying the router but not 72_ routes a live action to an
+  // undefined handler - the exact partial sync this manifest exists to name. An `optional: true` row
+  // would forgive precisely that. The FEATURE FLAG is a separate axis and does not soften this one:
+  // PRODUCT_STRATEGY_ENABLED_ = false makes the action REFUSE, and a refusal from a handler that is
+  // present is a different fact from a handler that is not there. Only the first is recoverable by
+  // flipping a flag; the second needs a file copied.
+  { file: '72_api_v1_product_pricing_workspace.gs', symbol: 'PPW_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R7', owns: 'the site-scoped Product Pricing workspace read: the marketplace_skus membership universe, the four-part regional join, the marketplace_sku_id pricing join, and the scoped category/series filter options derived from surviving rows' },
   { file: '66_api_v1_request_order_send.gs', symbol: 'ROS_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R4B-R3', owns: 'Request Order Send orchestration + planning-cycle authority' },
   // 71_ is the guard SEAM. Its absence is precisely the failure the manifest exists to name: 11_ and 61_ both
   // refuse closed without it (FACTORY_STOCK_GUARD_SEAM_MISSING), so a partial sync stops the flow rather than
@@ -373,7 +408,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   { file: '22_shipment_dispatch_handlers.gs', symbol: 'CSD_BUILD_VERSION_', expected: 'F1-7N-FC-1A-R1', owns: 'Confirm Shipment & Dispatch: deduction + reservation release through the shared authority + the cancelled-shipment dispatch refusal' },
   // F1-7N-FB-4E-R4B-R3 §1 - moved with the file. R4B-R2 changed the GET read dispatch; leaving the manifest at
   // R4A1 would have made a CORRECTLY synced router report as stale, and an UNSYNCED one report as current.
-  { file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5', owns: 'doGet/doPost action routing (incl. the GET read table + cancelShipmentDraft) + typed handler/method response identity + the R6-R5 per-execution entry stamp handlers report as server evidence' },
+  { file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R7', owns: 'doGet/doPost action routing (incl. the GET read table + cancelShipmentDraft) + typed handler/method response identity + the R6-R5 per-execution entry stamp handlers report as server evidence' },
   // F1-7N-FB-4E-R4B-R3 §1 - THE TWO OWNERS THAT CHANGED IN R4B AND HAD NO STAMP AT ALL. Both answer every one of
   // their actions when a round behind, so a resolvable action list can never see a partial sync of them; only a
   // declared build can. The stamp VALUE names the round in which each last changed BEHAVIOURALLY; the SYMBOL was

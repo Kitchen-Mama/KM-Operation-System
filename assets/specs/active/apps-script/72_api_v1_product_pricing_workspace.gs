@@ -47,7 +47,12 @@
  */
 
 // Module stamp — the ROUND this file last changed, not the deployment release.
-var PPW_BUILD_VERSION_ = 'PRODUCT-STRATEGY-P1-B1';
+// PRODUCT-STRATEGY-P1-B1-R1 - re-stamped into the repository's owner-stamp vocabulary. 'PRODUCT-STRATEGY-
+// P1-B1' named the round honestly but could not be ORDERED against any other stamp: _release-order.js
+// keeps one append-only sequence and 63_'s manifest compares members of it, so a stamp outside that
+// sequence cannot answer "is this file at or after that release" at all. A manifest owner has to be
+// comparable, and this file becomes a REQUIRED owner in this round.
+var PPW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R7';
 
 var PPW_ACTION_ = 'productPricing.workspace.get';
 var PPW_WS_SEQ_ = 0;
@@ -68,6 +73,25 @@ var PPW_SOURCE_ROW_MAX_ = 50000;
 var PPW_PAGE_DEFAULT_ = 200;
 var PPW_PAGE_MAX_ = 1000;
 var PPW_CAMPAIGNS_PER_SKU_MAX_ = 50;
+
+// R1 §5 — THE CATEGORY AUTHORITY, AND THE ONLY ONE.
+//
+// A category is what sku_details.category says for that SKU. It is never derived from `series`, never
+// from product_name, and never from a SKU prefix: those three describe a product FAMILY, a label and a
+// naming habit, and each of them would silently invent a taxonomy nobody maintains. A SKU whose
+// category cell is empty HAS no category - it does not become 'Other', because 'Other' is a value an
+// operator can select and would then be unable to find in the sheet.
+//
+// THE UNIVERSE IS THE SITE'S, NOT THE TABLE'S. Reading DISTINCT category off the whole of sku_details
+// would put categories in the menu that this site does not sell, which is the same defect as showing a
+// SKU that is not on the site - one level up. So the options are derived from rows that have already
+// survived membership and the status gate, and nothing earlier.
+var PPW_CATEGORY_SOURCE_ = 'sku_details.category';
+var PPW_SERIES_SOURCE_ = 'sku_details.series';
+// The prototype ships three demo categories. They are fixture data and they are NOT this list: there is
+// no category allowlist here, no count limit, and nothing that would survive a fourth category appearing
+// in the Operation DB tomorrow.
+var PPW_CATEGORY_ALLOWLIST_ = null;
 var PPW_CURSOR_PREFIX_ = 'PPW1';
 
 // A request field this action does not have is a request field it must REFUSE, not ignore. Ignoring
@@ -564,6 +588,48 @@ function ppwNormalizeRow_(id, msku, skuIdx, regIdx, priceIdx, campIdx, include) 
 // --------------------------------------------------------------------------------------------------------
 // §5 THE BUILDER — raw tables in, ONE site-scoped read model out.
 // --------------------------------------------------------------------------------------------------------
+/**
+ * R1 §6 — the filter options for ONE dimension, derived from rows that already survived membership,
+ * the status gate and the OTHER dimension's filter.
+ *
+ * SELF-EXCLUDING BY DESIGN. A dimension's options are not narrowed by its own filter, because a menu
+ * that collapses to the item you just picked cannot be used to pick anything else. They ARE narrowed by
+ * the other dimension, so the pair stays consistent: every option shown leads to at least one row.
+ *
+ * THE COUNTS ARE THE WHOLE FILTERED UNIVERSE, never the current page. Pagination is a window onto
+ * normalizedRows; a category that has 12 SKUs on this site has 12 whether the page shows 200 or 5.
+ */
+function ppwFilterOptions_(rows, key) {
+  var seen = {}, order = [], blank = 0;
+  rows.forEach(function (r) {
+    var v = ppwStr_(r[key]);            // TRIM is the only normalization performed
+    if (v === '') { blank++; return; }  // blank is ABSENT, never a bucket and never renamed
+    if (!Object.prototype.hasOwnProperty.call(seen, v)) {
+      seen[v] = { value: v, siteSkuCount: 0, analysableSiteSkuCount: 0 };
+      order.push(v);
+    }
+    seen[v].siteSkuCount++;
+    if (r.analysable) seen[v].analysableSiteSkuCount++;
+  });
+  // EXACT-VALUE de-duplication above; deterministic order here. Identical values collapsed into one
+  // option; values that merely LOOK alike stayed two, and are reported by the caller.
+  order.sort();
+  return { options: order.map(function (v) { return seen[v]; }), blank_count: blank };
+}
+
+/** Values that differ only by case or by internal whitespace, once trimmed. Reported, never merged. */
+function ppwNormalizationVariants_(options) {
+  var byFolded = {}, out = [];
+  options.forEach(function (o) {
+    var f = String(o.value).toLowerCase().replace(/\s+/g, ' ');
+    (byFolded[f] = byFolded[f] || []).push(o.value);
+  });
+  Object.keys(byFolded).sort().forEach(function (f) {
+    if (byFolded[f].length > 1) out.push({ normalized: f, variants: byFolded[f].slice().sort() });
+  });
+  return out;
+}
+
 function ppwWorkspaceBuild_(tables, req) {
   tables = tables || {};
   var include = req.include, scope = req.scope, filters = req.filters;
@@ -601,13 +667,22 @@ function ppwWorkspaceBuild_(tables, req) {
   }
 
   // ---- ALL rows first, so the counts are TOTALS and the page is a window onto them ----
-  var all = [];
+  // R1 §5 — `survived` is the site universe AFTER membership and the status gate and BEFORE the
+  // category/series filter. It is what the filter options are built from, and it is the only
+  // population that can honestly answer "what can this site be filtered by".
+  var survived = [], all = [];
   mem.ids.forEach(function (id) {
     var row = ppwNormalizeRow_(id, mem.byId[id], skuIdx, regIdx, priceIdx, campIdx, include);
+    survived.push(row);
     // CATEGORY AND SERIES NARROW **AFTER** MEMBERSHIP, never instead of it. They are a view of the site's
     // SKUs, and a SKU that is not on the site cannot be filtered into one.
-    if (filters.category !== null && ppwLower_(row.category) !== ppwLower_(filters.category)) return;
-    if (filters.series !== null && ppwLower_(row.series) !== ppwLower_(filters.series)) return;
+    // R1 §5 — EXACT, TRIM-ONLY MATCHING. This compared lower-cased values, which is a semantic merge:
+    // it makes 'Can Opener' and 'can opener' the same filter while the OPTIONS below list them as two,
+    // so a menu with two entries would have had one behaviour. Two spellings in the DB are a data
+    // question for an operator, reported as CATEGORY_NORMALIZATION_REVIEW_REQUIRED, not something this
+    // read decides on their behalf.
+    if (filters.category !== null && ppwStr_(row.category) !== ppwStr_(filters.category)) return;
+    if (filters.series !== null && ppwStr_(row.series) !== ppwStr_(filters.series)) return;
     all.push(row);
   });
 
@@ -632,6 +707,30 @@ function ppwWorkspaceBuild_(tables, req) {
     }
     if (r.analysable) counts.analysableSiteSkuCount++;
   });
+
+  // ---- R1 §6 the filter options, from `survived`, self-excluding per dimension ----
+  var catBase = survived.filter(function (r) {
+    return filters.series === null || ppwStr_(r.series) === ppwStr_(filters.series); });
+  var serBase = survived.filter(function (r) {
+    return filters.category === null || ppwStr_(r.category) === ppwStr_(filters.category); });
+  var catOpt = ppwFilterOptions_(catBase, 'category');
+  var serOpt = ppwFilterOptions_(serBase, 'series');
+  var catVariants = ppwNormalizationVariants_(catOpt.options);
+  if (catOpt.blank_count > 0) {
+    // The SKUs are kept and counted; what is missing is the category, and it is named as missing
+    // rather than swept into a bucket the sheet does not contain.
+    findings.push({ code: 'CATEGORY_SOURCE_MISSING',
+      detail: 'site SKUs whose ' + PPW_CATEGORY_SOURCE_ + ' is empty; they are counted and returned,'
+        + ' they carry category null, and they are NOT placed in an invented category',
+      evidence: { rows: catOpt.blank_count, source: PPW_CATEGORY_SOURCE_,
+        renamed_to_other: false } });
+  }
+  if (catVariants.length) {
+    findings.push({ code: 'CATEGORY_NORMALIZATION_REVIEW_REQUIRED',
+      detail: 'category values that differ only by case or spacing are KEPT AS SEPARATE options; this'
+        + ' read trims and does not merge, because merging is a data decision an operator owns',
+      evidence: { groups: catVariants, merged: false } });
+  }
 
   // ---- pagination over normalizedRows, the page grain ----
   var total = all.length;
@@ -658,6 +757,11 @@ function ppwWorkspaceBuild_(tables, req) {
       cappedSources));
   }
 
+  // R1 §6 — WITHHELD WHEN THE UNIVERSE IS NOT PROVABLE. A capped source, or any other refusal, makes
+  // "these are the site's categories" a claim this read cannot support - and a menu that LOOKS complete
+  // is worse than no menu, because the operator cannot see what is missing from it. One expression
+  // decides this and analysis_permitted, so the two can never disagree.
+  var permitted = refusals.length === 0;
   return {
     scope: scope,
     filtersApplied: {
@@ -668,6 +772,23 @@ function ppwWorkspaceBuild_(tables, req) {
       applied_during_membership: ['statuses']
     },
     normalizedRows: page,
+    filterOptions: !permitted ? null : {
+      categories: catOpt.options, series: serOpt.options,
+      provenance: {
+        category_source: PPW_CATEGORY_SOURCE_, series_source: PPW_SERIES_SOURCE_,
+        derived_from: 'rows surviving membership + the status gate, before the category/series filter'
+          + ' for their own dimension',
+        counts_are: 'the whole scope/filter universe, NOT the current page',
+        page_size_independent: true,
+        self_excluding: true,
+        normalization: 'trim only; exact-value de-duplication; deterministic ascending sort',
+        semantic_merge: false,
+        blank_category_rows: catOpt.blank_count, blank_series_rows: serOpt.blank_count,
+        blank_becomes_other: false,
+        allowlist: PPW_CATEGORY_ALLOWLIST_, max_options: null,
+        inferred_from: []
+      }
+    },
     sources: {
       marketplaceSkus: { rows: mem.count, total_in_table: src.marketplace_skus.total },
       skuDetails: { rows: rowsOf('sku_details').length, total_in_table: src.sku_details.total },
@@ -689,7 +810,7 @@ function ppwWorkspaceBuild_(tables, req) {
     findings: findings,
     refusals: refusals,
     // SUCCESS IS NOT THE SAME AS USABLE, and this is the field that says so.
-    analysis_permitted: refusals.length === 0,
+    analysis_permitted: permitted,
     membership: {
       authority: 'marketplace_skus',
       scope_key: ['company', 'country', 'marketplace'],
@@ -735,6 +856,9 @@ function ppwRefusedData_(req, extraRefusals) {
       statuses_were_explicit: req.filters.statuses_were_explicit,
       applied_after_membership: ['category', 'series'], applied_during_membership: ['statuses'] },
     normalizedRows: [],
+    // NULL, NOT AN EMPTY LIST. An empty categories array reads as "this site has no categories", which
+    // is a measurement; nothing was measured here.
+    filterOptions: null,
     sources: { marketplaceSkus: null, skuDetails: null, skuRegionalDetails: null,
       pricingList: null, campaigns: null, campaignSkuLines: null },
     // NOT ZERO. Nothing was counted, and a count nobody took is null, because a real site with no SKUs must

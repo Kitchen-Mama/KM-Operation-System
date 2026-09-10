@@ -1,4 +1,4 @@
-# Product Strategy Board — Design Freeze (P0 · updated by P0-R1, P0-R3, P0-R3-R1, P0-R3-R2, P1-B0, P1-B1)
+# Product Strategy Board — Design Freeze (P0 · updated by P0-R1, P0-R3, P0-R3-R1, P0-R3-R2, P1-B0, P1-B1, P1-B1-R1)
 
 **Rounds:** `PRODUCT-STRATEGY-BOARD-P0` — Discovery, Data Mapping and Design Freeze
 · `PRODUCT-STRATEGY-BOARD-P0-R1` — Design Closure and Non-Runtime Visual Prototype
@@ -8,10 +8,21 @@
 · `PRODUCT-STRATEGY-BOARD-P0-R3-R2` — Category Command Center, Image Price Markers, Five-Unit Axis
 · `PRODUCT-STRATEGY-P1-B0` — Site-Scoped Data Contract + Operation System Integration Freeze (audit only)
 · `PRODUCT-STRATEGY-P1-B1` — Site-Scoped Bounded Read API, implemented behind a false flag
+· `PRODUCT-STRATEGY-P1-B1-R1` — Release-Identity Completion + Dynamic Category Contract
 **Status:** **DESIGN CLOSED, AND THE DATA CONTRACT IS NOW FROZEN TOO.** All nine decisions are
 operator-decided and applied; §23–§28 add the measured source audit, the canonical data contract, the
 variant-grouping and image rules, the adapter seam and the P1-B1 handoff. Still nothing implemented in
 the application.
+
+> **THE CATEGORIES ARE THE SITE'S, AND THE RELEASE NOW SAYS WHAT IT IS (P1-B1-R1).** P1-B1 changed
+> four sync-visible backend files without moving the deployment release, and five standing assertions
+> said so — every one of them correctly. The release is `F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R7`, `72_` is a
+> **REQUIRED** manifest owner (the router already dispatches its action, so its absence is a partial
+> sync and never an optional one), and this is a **deployment CANDIDATE**: nothing synced, no Web App
+> version, flag still false. Category is now **discovered from the site**, never declared — the
+> prototype's three are fixture data, `sku_details.category` is the authority, and the universe is the
+> rows that survived membership and the status gate. §33 records all of it, including the one ordering
+> constraint a release creates: **Pages must be redeployed AFTER the Apps Script sync, never before.**
 
 > **THE CONTRACT IS BUILT, AND NOBODY CAN REACH IT (P1-B1).** `productPricing.workspace.get` exists,
 > resolves the membership universe server-side, and refuses an unscoped read. `PRODUCT_STRATEGY_ENABLED_`
@@ -3201,3 +3212,246 @@ sync-visible backend change exists and has not been released.
   no flag change, no merge, no push.**
 
 ---
+
+---
+
+## §33 — `PRODUCT-STRATEGY-P1-B1-R1`: the release identity P1-B1 owed, and the Category universe made dynamic
+
+**Round:** `PRODUCT-STRATEGY-P1-B1-R1` — Release-Identity Completion + Dynamic Category Contract
+**Branch:** `feature/product-strategy-board-p0` · follow-up commit on top of `9ee85d5`, which is **not** amended
+**Flag:** `PRODUCT_STRATEGY_ENABLED_` **stays false.** Production visibility remains **zero.**
+
+### §33.1 P1-B1 changed four sync-visible files and did not move the release. Three assertions said so.
+
+P1-B1 added `72_api_v1_product_pricing_workspace.gs`, routed `productPricing.workspace.get` to it in
+`01_router.gs`, and edited `00_config.gs` and `63_api_v1_system_health.gs`. `63_`'s own contract
+(`63_:35-38`) is explicit about what that obliges:
+
+- `SYS_DEPLOYMENT_RELEASE_` — bumped in the same commit as **any** sync-visible backend change.
+- `SYS_BUILD_VERSION_` — bumped in the same commit as any change to `63_` itself.
+- `SYS_DEPLOYED_ACTION_CONTRACT_VERSION_` — bumped whenever a router **ACTION** is added or removed.
+
+None of the three moved. Three assertions failed as a result, and **all three were right**:
+
+| suite | assertion | what it was saying |
+|---|---|---|
+| `ai-plan-advice…r5` | `E4` | three manifest owners were edited without their stamps moving |
+| `single-scope-allowlist-cutover…r6-r7-r6` | `G1` | a release window that permits two runtime files saw four |
+| same | `G2.7` | `01_router.gs` — named individually — changed inside that window |
+
+Two more failed for the same cause and are recorded here because the brief did not name them: `G1a`
+(a browser file changed in that window — the new accessor) and `action-registry…fb-4e-r2` item **8**
+(an Apps Script file outside the R1 line's owned set changed — `72_`, which only became visible once
+P1-B1 was committed). **Five assertions, one omission.**
+
+### §33.2 The release: `F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R7`
+
+Derived from the chain in `63_`, not invented: `…R6-R6` → `…R6-R6-R4-R2` → `…R6-R7-R1` → `R2` → `R3`
+→ `R4` → `R5` → `R5-R1` → `R6` → **`R7`**. It satisfies `_release-order.js`'s `BUILD_STAMP_RE` and is
+appended to `OWNER_STAMPS`, which is append-only.
+
+Everything that moves with it, and why each one had to:
+
+| what | from | to |
+|---|---|---|
+| `SYS_DEPLOYMENT_RELEASE_` (63_) | `…R6-R7-R6` | `…R6-R7-R7` |
+| `SYS_BUILD_VERSION_` (63_'s own stamp) | `…R6-R7-R6` | `…R6-R7-R7` |
+| `SYS_DEPLOYED_ACTION_CONTRACT_VERSION_` | 12 | **13** — one router action was added |
+| `KM_EXPECTED_ACTION_CONTRACT_VERSION_` (browser) | 12 | **13** — held to EQUALITY by ~11 suites |
+| `CONFIG_BUILD_VERSION_` (00_config) | `…R6-R7-R6` | `…R6-R7-R7` |
+| `RTR_BUILD_VERSION_` (01_router) | `…R6-R7-R5` | `…R6-R7-R7` |
+| `PPW_BUILD_VERSION_` (72_) | `PRODUCT-STRATEGY-P1-B1` | `…R6-R7-R7` |
+| `SYS_MODULE_BUILD_STAMPS_` rows for 63_ / 00_ / 01_ | — | moved with their files |
+| **new REQUIRED row for `72_`** | — | added |
+| `S1_BUILD_`, `R6R7_ACTIVATION_BUILD_`, `TEMP_E3_CENSUS_BUILD_` | `…R6-R7-R6` | `…R6-R7-R7` |
+| `OWNER_STAMPS` (`_release-order.js`) | — | `…R6-R7-R7` appended |
+
+`SYS_REQUIRED_ACTION_LIST_VERSION_` deliberately **does not** move. `SYS_REQUIRED_ACTIONS_` is the list of
+actions **pages** depend on, and no page depends on this one — the same reason `createShipmentFromPlan`
+waited for a page before it was listed.
+
+`PPW_BUILD_VERSION_` had to be re-stamped into the release vocabulary. `PRODUCT-STRATEGY-P1-B1` named the
+round honestly but could not be **ordered** against any other stamp, and a manifest owner must be
+comparable: `_release-order.js` keeps one sequence and `stampAtOrAfter` is an index lookup in it.
+
+### §33.3 `72_` is a REQUIRED owner, and never an optional one
+
+The manifest's `optional: true` flag exempts a row from `absent_modules`, so an absent optional owner is
+not a partial sync. `72_` gets **no such flag**:
+
+- `01_router.gs` already dispatches the action on both GET and POST. A deployment carrying the router but
+  not `72_` routes a live action to an **undefined handler** — the exact partial sync the manifest exists
+  to name, and `optional: true` would forgive precisely that.
+- The **feature flag is a separate axis and does not soften this one.** `PRODUCT_STRATEGY_ENABLED_ = false`
+  makes the action **refuse**; a refusal from a handler that is present is a different fact from a handler
+  that is not there. Only the first is recoverable by flipping a flag.
+
+P1-B1 had briefly added this row as an absent OPTIONAL owner and an older suite caught it (the health
+contract is **exactly one** absent optional owner — the one-shot migration file). It was removed then and
+returns now as REQUIRED, which is where it belonged.
+
+### §33.4 This is a deployment CANDIDATE. Nothing has been deployed.
+
+The release id says what a sync **would** be. It is not a claim that one happened, and the ledger entry
+in `docs/planning/DEPLOYMENT_RELEASE_LOG.md` records the difference explicitly:
+
+```
+deployment candidate prepared     ·  PRODUCT_STRATEGY_ENABLED_ = false
+Apps Script sync                  ·  NOT PERFORMED
+Web App deployment version        ·  NOT CREATED
+production UI                     ·  NOT OPENED
+formal DB / API read              ·  NONE
+Product Strategy                  ·  NOT ENABLED
+```
+
+**One operational coupling, stated rather than discovered.** The browser pin now requires a deployment at
+action-contract **13**. A browser carrying this build refuses anything below it with
+`DEPLOYMENT_CONTRACT_MISMATCH` — so **Pages must not be redeployed before the Apps Script sync**. Both are
+USER-owned steps; the ledger records the order.
+
+### §33.5 Five release-window assertions were bound to their own round, none was weakened
+
+The repair is the one this repo already applies, quoted from the commit that created the cutover suite:
+
+> *"The R5-R1 sync-set section was measuring BASE..working tree while describing a shipped round, so it is
+> now bound to that round's own commit and can no longer be broken by a later one."*
+
+`git diff BASE` is BASE..**working tree**, so a suite describing a shipped release silently re-scopes
+itself to the present on every later commit. §F and §G of the cutover suite now read the modules and the
+change set **at the commit that introduced R6-R7-R6**; the behavioural sections above them keep reading
+the working tree, which is right, because those are claims about the code as it stands.
+
+**One refinement over the sibling repair.** R5-R1 took the *newest* commit declaring the release; for that
+round the newest and the introducing commit were the same. Here they are **not** — P1-B1 reused
+`R6-R7-R6` by omission, so the newest commit declaring it is P1-B1's. Ending the window there would
+hard-code the omission into the historical claim, so `roundIntro()` takes the **oldest** commit declaring
+the release: the one that introduced it.
+
+Nothing was deleted, skipped, downgraded to a warning, or widened to a pattern:
+
+| assertion | before | after |
+|---|---|---|
+| cutover `G1`/`G1a`/`G2.7` | window ended at the working tree | window ends at the round's own commit |
+| cutover `F1`…`F8b`, `N6`/`N7`/`N9`/`N12` | read today's sources | read the round's sources |
+| `ai-plan-advice E4` | — | passes because the stamps moved, not because it was changed |
+| `action-registry` item 8 | `72_` unaccounted | `GS_OWNED_SINCE_R1['72_…']` **named, with the reason** |
+| guard `F5` | `=== 12` | `>= 12` — a floor, which is what "R5 moved it" durably means |
+| guard `F5a` | `=== 12` | equals the deployed contract — which is what "to MATCH" says |
+| override `C5` | `.gs` at the round vs browser file **today** | both sides at the round |
+| override `E10` (mutant) | mutated the literal `12` | mutates one below whatever the pin is |
+| activation `BP2a` | `=== 'R6-R7-R6'` | registered · legally shaped · at or after R6-R7-R3 |
+| activation `N13` (mutant) | mutated two spelled releases | mutates one registered release back |
+| activation `OBSERVED_BUILD` | a literal retyped every release | **derived** from the pin it already documents |
+| census `AB20c`/`AB20e` | assumed build == frozen build | assert the gate that fires, **plus three new ones** |
+
+Two of these deserve naming. `OBSERVED_BUILD` was a hand-edited copy of a value whose own comment said
+*"this double follows the pin"* — two things that are by definition the same, and R6-R7-R7 is the release
+that forgot the second. It is derived now, and the chain `SYS_DEPLOYMENT_RELEASE_ → R6R7_ACTIVATION_BUILD_
+(BP3) → the healthy double` is still asserted end to end.
+
+And `AB20`: with `S1_BUILD_` following the release, the frozen S1-R4E authorization is now pinned to an
+**earlier** build, so §6.1 STOPs with `BUILD_DRIFTED` before §6.3 ever reads the sheet. That is the designed
+order — *"an expectation frozen against another build is not this build's evidence"* — and marching the
+frozen build field to match would claim the operator measured at a release that did not exist. So the
+default run asserts the gate that actually fires, and the live-state gate is proved immediately below on
+the same world with the expectation re-pinned to the current build: **one assertion re-aimed, three added,
+and the ORDER between the two gates now covered where it had been assumed.**
+
+### §33.6 Category is dynamic. The prototype's three are a fixture, and they are not a contract.
+
+**`category authority = sku_details.category`, and nothing else.** Never `series`, never `product_name`,
+never a SKU prefix — those are a product family, a label and a naming habit, and each would invent a
+taxonomy nobody maintains.
+
+**But the universe is the SITE's, not the table's.** Reading `DISTINCT category` off the whole of
+`sku_details` would put categories in the menu that this site does not sell — the same defect as showing a
+SKU that is not on the site, one level up. The order is fixed:
+
+```
+complete company/country/marketplace scope
+  → marketplace_skus membership universe        (server-resolved)
+  → status gate
+  → join sku_details by sku
+  → take category from the SURVIVING rows
+  → trim
+  → drop blanks
+  → exact-value de-duplication
+  → deterministic ascending sort
+  → offer as the UI category filter
+```
+
+| situation | behaviour |
+|---|---|
+| category exists in `sku_details`, no site SKU sells it | **absent** from this site's menu |
+| at least one site SKU with a permitted status | **present** |
+| only `inactive` / `discontinued` SKUs | absent by default; present under `include_inactive: true` |
+| only `phasing_out` SKUs | **present by default** — still on sale |
+| `category` blank | **`CATEGORY_SOURCE_MISSING`**; the SKU is kept and returned with `category: null`, and is **never** renamed `Other` |
+| two values differing only by case or spacing | trimmed, **kept as two**, and reported as `CATEGORY_NORMALIZATION_REVIEW_REQUIRED` — merging is a data decision an operator owns |
+
+There is **no category allowlist, no limit of three, and no maximum at all**: `PPW_CATEGORY_ALLOWLIST_` is
+`null` and `max_options` is `null`, both published in the response so a reader can check rather than trust.
+
+The **category filter itself is now exact** (trim-only). It compared lower-cased values, which is a semantic
+merge: it would have made two menu entries behave as one, contradicting the very list the menu is built from.
+
+### §33.7 `filterOptions` — derived from membership, counted over the universe, withheld when unprovable
+
+```
+filterOptions: {
+  categories: [ { value: "Electric Can Opener", siteSkuCount: 12, analysableSiteSkuCount: 10 }, … ],
+  series:     [ … ],
+  provenance: { category_source, series_source, derived_from, counts_are, page_size_independent,
+                self_excluding, normalization, semantic_merge, blank_category_rows,
+                blank_becomes_other, allowlist, max_options, inferred_from }
+}
+```
+
+- **Server-resolved.** Built from rows that already survived membership and the status gate. A client that
+  received every master SKU could not compute this, and is not asked to.
+- **Self-excluding.** A dimension's options are not narrowed by its own filter — a menu that collapses to
+  the item you just picked cannot be used to pick anything else — but they **are** narrowed by the other
+  dimension, so every option shown still leads to at least one row.
+- **Counts are the whole scope/filter universe, never the page.** Pagination is a window onto
+  `normalizedRows`; a category with 12 SKUs has 12 whether the page shows 200 or 1.
+- **Withheld when the universe is not provable.** A capped source — or any refusal — sets `filterOptions`
+  to **`null`**, not to an empty list, and `analysis_permitted` to false from the *same expression*, so the
+  two can never disagree. A menu that looks complete over a truncated universe is worse than no menu.
+- **No second endpoint.** There is no generic category read; the options travel with the answer they
+  describe, so they cannot drift from it.
+
+The accessor learns the **shape** and not one **value**: it validates that `categories`/`series` are arrays
+of `{value, …}`, accepts `null` as meaningful, refuses `null` when `analysis_permitted` is true, and
+contains no category string, no default list and no three-item fallback. `contract.categoryVocabulary` is
+`null`, `contract.categorySource` is `'server'`, `contract.categoryLimit` is `null`, and
+`contract.derivesCategoriesFromMasterData` is `false`.
+
+### §33.8 The prototype boundary, restated
+
+`docs/prototypes/product-strategy-board/` is **unchanged this round** — no HTML, no CSS, no JS, no fixture.
+Its banner stays. And, again, on the record:
+
+- The prototype's **three categories are demonstration data**. They are not the Operation DB category
+  universe and they never were.
+- **The prototype's category count says nothing about the real data.** A site may have one category or
+  forty; §33.6 is how many it has.
+- **P1-B2's live UI must not carry the fixture list in.** The menu comes from `filterOptions.categories`
+  or it does not render.
+- **No Preview fallback before the live adapter succeeds.** A failed read is `SOURCE_NOT_CONNECTED`.
+- **An empty real response shows a true empty state**, never the three demo categories. `filterOptions:
+  null` and `categories: []` are different answers and must look different.
+
+### §33.9 What this round did not do
+
+No production UI file, no `app.js`, no page HTML/CSS/JS, no prototype change, no `index.html`, no schema,
+no migration, no new table, no S1–S5 work, no main worktree change, no DB or API read, no DB/Drive write,
+no network, no Apps Script sync, no deployment version, no `flag = true`, no merge, no push.
+
+`APPS_SCRIPT_SYNC_REQUIRED` when the user releases: `72_api_v1_product_pricing_workspace.gs` (NEW) +
+`00_config.gs` + `01_router.gs` + `63_api_v1_system_health.gs`. Pages redeploy **after** that sync, never
+before it.
+
+**Next:** P1-B2 — Operation System page integration, `.km-tab-rail` sub-navigation, the live adapter, the
+category menu fed from `filterOptions`, no Preview fallback, flag still false. Then P1-B3 — production
+readback, DB-vs-UI counts, no cross-site contamination, operator acceptance. Only then is `flag = true`
+a question that can be asked.

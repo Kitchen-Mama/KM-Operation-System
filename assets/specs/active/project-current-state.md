@@ -4789,3 +4789,69 @@ APPS_SCRIPT_SYNC_REQUIRED (when the user releases) = 72_api_v1_product_pricing_w
 + 01_router.gs + 63_api_v1_system_health.gs. NEXT: P1-B2 (Operation System page integration, .km-tab-rail
 sub-navigation, live adapter, no preview fallback, flag still false) → P1-B3 (production readback, DB-vs-UI
 counts, no cross-site contamination, operator acceptance) — only then is flag=true a question.
+
+## PRODUCT-STRATEGY-P1-B1-R1 (2026-09-10) — release identity completed, Category made dynamic, FLAG STILL FALSE
+
+Full text: `docs/planning/PRODUCT_STRATEGY_BOARD_DESIGN_FREEZE.md` §33; ledger entry in
+`docs/planning/DEPLOYMENT_RELEASE_LOG.md`. Follow-up commit on `9ee85d5` (feature branch), which is NOT
+amended and NOT squashed. **RELEASE IDENTITY.** P1-B1 changed four sync-visible backend files — new `72_`,
+`01_router.gs` (the dispatch), `00_config.gs` (the flag), `63_` — while `SYS_DEPLOYMENT_RELEASE_` still read
+`…R6-R7-R6`, which `63_:35` forbids. FIVE assertions said so and all five were right: `ai-plan-advice E4`
+(three manifest owners edited without their stamps), cutover `G1`/`G1a`/`G2.7` (four runtime files and a
+browser file inside a two-file window), and `action-registry` item 8 (`72_` outside the R1 owned set, visible
+only once P1-B1 was committed). The release is now `F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R7`, derived from the chain
+in `63_` and appended to `_release-order.js`'s append-only `OWNER_STAMPS`. Moving with it:
+`SYS_BUILD_VERSION_`, `CONFIG_BUILD_VERSION_`, `RTR_BUILD_VERSION_`, `PPW_BUILD_VERSION_` (re-stamped out of
+`PRODUCT-STRATEGY-P1-B1`, which no comparator could ORDER), the three manifest rows, and the three diagnostic
+pins (`S1_BUILD_`, `R6R7_ACTIVATION_BUILD_`, `TEMP_E3_CENSUS_BUILD_`) — the precedent being the previous
+release bump, which moved exactly these. `SYS_DEPLOYED_ACTION_CONTRACT_VERSION_` 12 → 13 because a router
+ACTION was added, which is that constant's stated rule; `KM_EXPECTED_ACTION_CONTRACT_VERSION_` 12 → 13 because
+~11 suites plus a mutant hold it to EQUALITY with it. `SYS_REQUIRED_ACTION_LIST_VERSION_` deliberately does NOT
+move: that list is the actions PAGES depend on and no page depends on this one. **`72_` IS A REQUIRED MANIFEST
+OWNER, NEVER OPTIONAL** — the router already dispatches its action, so a deployment with the router and without
+`72_` routes a live action to an undefined handler, which must read as mixed/stale; the feature flag is a
+separate axis, because a refusal from a present handler is a different fact from an absent handler and only
+the first is recoverable by flipping a flag. **DEPLOYMENT CANDIDATE, NOT A DEPLOYMENT:** nothing synced, no Web
+App version, no Pages redeploy, no live read, flag still false. ONE ORDERING CONSTRAINT, recorded in the
+ledger: the browser now refuses deployments below action-contract 13, so Pages must be redeployed AFTER the
+Apps Script sync, never before. **WINDOW ASSERTIONS BOUND TO THEIR OWN ROUND, NONE WEAKENED.** `git diff BASE`
+ends at the working tree, so a suite describing a shipped release silently re-scopes itself to the present;
+§F/§G of the cutover suite now read the modules and the change set at the commit that INTRODUCED
+`…R6-R7-R6` — the oldest commit declaring it, not the newest, because P1-B1 reused that id by omission and
+ending the window at P1-B1's commit would hard-code the omission. Eight other literals that were true exactly
+once became the properties they meant: guard `F5` `=== 12` → a floor, guard `F5a` → equals the deployed
+contract, override `C5` → both sides read at the round, override `E10` and activation `N13` mutants → mutate
+relative to the current value, activation `BP2a` → registered + legally shaped + at or after its own round,
+and `OBSERVED_BUILD` → DERIVED from the pin whose comment already said it follows it. Census `AB20c`/`AB20e`
+now assert the gate that actually fires (`BUILD_DRIFTED`, `live_state_confirmed: null`) because `S1_BUILD_`
+following the release leaves the frozen S1-R4E authorization pinned to an earlier build — the designed order —
+with three NEW assertions proving the live-state gate on the same world re-pinned to the current build.
+**CATEGORY IS DYNAMIC.** Authority = `sku_details.category`, never `series`, `product_name` or a SKU prefix.
+But the universe is the SITE's: complete scope → `marketplace_skus` membership → status gate → join
+`sku_details` by sku → take category from SURVIVING rows → trim → drop blanks → exact-value de-dup →
+deterministic sort. A category with no site SKU never appears; `phasing_out`-only appears by default;
+`inactive`/`discontinued`-only only under `include_inactive`; blank is `CATEGORY_SOURCE_MISSING` with the SKU
+kept and `category: null` and NEVER renamed `Other`; case/space variants are trimmed, KEPT APART, and reported
+as `CATEGORY_NORMALIZATION_REVIEW_REQUIRED`. No allowlist (`PPW_CATEGORY_ALLOWLIST_ = null`), no limit
+(`max_options: null`), no cap of three. The category FILTER became exact (trim-only) — lower-casing it was a
+semantic merge that made two menu entries behave as one. **`filterOptions`** carries `categories` and `series`
+as `{value, siteSkuCount, analysableSiteSkuCount}` plus a provenance block; derived server-side from
+membership-surviving rows, SELF-EXCLUDING per dimension (a menu must not collapse to your own choice) but
+narrowed by the other, counts are the whole scope/filter universe and never the page, and NULL — not an empty
+list — whenever a source is capped or any refusal stands, decided by the same expression as
+`analysis_permitted`. No second generic category endpoint. The accessor validates the SHAPE and knows no
+category VALUE (`categoryVocabulary: null`, `categorySource: 'server'`, `categoryLimit: null`,
+`derivesCategoriesFromMasterData: false`). **PROTOTYPE UNCHANGED** — no HTML/CSS/JS/fixture, banner intact; §33.8
+re-records that its three categories are demo data, that P1-B2's live UI must not carry them in, that there is
+no Preview fallback before the live adapter succeeds, and that an empty real response shows a true empty state.
+TESTS: new suite `api-product-pricing-category-contract-p1-b1-r1.test.js` 73 passed / 0 failed / 12 mutants /
+0 survived (the mutants are the ways a menu goes wrong: built from all of `sku_details`, membership after the
+derivation, `phasing_out` dropped, `inactive` defaulted in, series fallback, capped at three, built from the
+page, silently lower-cased, blank bucketed as `Other`, published over a capped source, filtered
+case-insensitively, and narrowed by its own filter). P1-B1 suite 163/0/13. Full sweep 444 suites; the four red
+ones — `gap-job-done-notice` (3), `order-planning-monthly-projection-consumer` (1), `replen-header-toggle` (7),
+`supply-planning-route-inventory` (2) — are PRE-EXISTING and verified on the untouched main worktree. NOT DONE:
+production UI, `app.js`, page HTML/CSS/JS, `index.html`, prototype, schema, migration, new table, S1–S5 work,
+main worktree, DB/API read, DB/Drive write, network, Apps Script sync, deployment version, `flag = true`,
+merge, push. NEXT: P1-B2 (page integration, `.km-tab-rail`, live adapter, category menu from `filterOptions`,
+no Preview fallback, flag still false) → P1-B3 (production readback, DB-vs-UI counts, operator acceptance).

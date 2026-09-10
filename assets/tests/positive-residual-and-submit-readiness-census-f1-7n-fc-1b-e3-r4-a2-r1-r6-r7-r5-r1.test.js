@@ -4881,14 +4881,37 @@ eq(AB20.expectation_source, 'THE_FROZEN_S1_R4E_AUTHORIZATION',
   'AB20a naming the frozen authorization as the expectation source');
 eq(AB20.expected.table_combined_fingerprint, 'E3E783BF',
   'AB20b which carries the operator\'s frozen table fingerprint');
-ok(AB20.stop_reasons.filter(function (r) {
-  return String(r).indexOf('LIVE_STATE_DRIFTED:') === 0; }).length >= 1,
-  'AB20c and the STOP names which frozen facts drifted', AB20.stop_reasons);
+// PRODUCT-STRATEGY-P1-B1-R1 - THE BUILD GATE COMES FIRST, AND THAT IS THE POINT OF IT.
+// This asserted LIVE_STATE_DRIFTED from the DEFAULT expectation, which held only while S1_BUILD_ still
+// equalled the build S1_MOV_LIVE_FROZEN_ was signed at. R6-R7-R7 moves the release, S1_BUILD_ follows
+// it (a pin that lags refuses a correctly synced project), and the R4E authorization is now frozen
+// against an EARLIER build - so 6.1 STOPs before 6.3 ever reads the sheet. That is the
+// designed order: 'an expectation frozen against another build is not this build's evidence'. Marching
+// the frozen build field to match would claim the operator measured at a release that did not exist.
+// So the default run now asserts the gate that actually fires, and the live-state gate is proved just
+// below on the same world with the expectation re-pinned to the current build - one assertion re-aimed,
+// three added, none dropped, and the ORDER between the two gates is now covered where it was assumed.
+eq(AB20.stop_reasons, ['BUILD_DRIFTED'],
+  'AB20c the STOP names the BUILD, because the frozen R4E authorization predates this release',
+  AB20.stop_reasons);
 // A STOP PUBLISHES NO CONCLUSION. Not a classification, not a candidate, not a proposal, and not a set of
 // operator questions dressed up as one - the same lock LOCK FIVE enforces one table over.
 eq([AB20.selected_candidate, AB20.proposed_repair_fields, AB20.operator_questions],
   [null, null, null], 'AB20d and it publishes no candidate, no proposal and no questions');
-eq(AB20.live_state_confirmed, false, 'AB20e with the confirmation recorded as failed');
+eq(AB20.live_state_confirmed, null,
+  'AB20e and the live confirmation is NULL, not false - it was never reached, which is a different'
+  + ' fact from being reached and failing');
+// THE LIVE-STATE GATE, STILL PROVED, on the same world with ONLY the build re-pinned to the current
+// one. Everything the old AB20c/AB20e claimed is claimed here, against an expectation that can reach it.
+var AB20rf = JSON.parse(JSON.stringify(AB20.expected));
+AB20rf.build = (S1.match(/var S1_BUILD_ = '([^']+)'/) || [])[1];
+var AB20r = abProv(abWorld([abLive(), abFull()]), { expect: AB20rf });
+eq(AB20r.verdict, 'STOP', 'AB20e1 re-pinned to this build, the census still STOPs on the fixture');
+ok(AB20r.stop_reasons.filter(function (r) {
+  return String(r).indexOf('LIVE_STATE_DRIFTED:') === 0; }).length >= 1,
+  'AB20e2 and NOW the STOP names which frozen facts drifted', AB20r.stop_reasons);
+eq(AB20r.live_state_confirmed, false,
+  'AB20e3 with the confirmation reached and recorded as failed');
 abZeroWrite(AB20, 'AB20f:');
 // AND THE CALLER-SUPPLIED PIN IS LABELLED SO IT CANNOT BE MISTAKEN FOR A MEASUREMENT.
 ok(String(AB1.expectation_source).indexOf('CALLER_SUPPLIED') === 0,

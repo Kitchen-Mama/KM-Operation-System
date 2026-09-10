@@ -32,7 +32,10 @@
 // stamp behind would make a CORRECTLY synced router report as current while being unable to give units back.
 // F1-7N-FC-1B-E3-R4-A2-R1-R5 §10 — found by the standing stamp-rotation check added this round: this file
 // last changed in F1-7N-FC-1B-E3-R4-A2-R1-R2 and its label was still at FC-1A-R1.
-var RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5';
+// PRODUCT-STRATEGY-P1-B1-R1 - moved because P1-B1 added the productPricing.workspace.get dispatch (one GET
+// registry entry and one POST branch) and did not move it. A router one round behind answers every other
+// action normally and simply cannot route this one, which is exactly the state a stamp must make visible.
+var RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R7';
 
 // =============================================================================================================
 // F1-7N-FB-4E-R4A1 §3 — READ ACTIONS ARE SERVED ON GET, AND THIS IS WHY.

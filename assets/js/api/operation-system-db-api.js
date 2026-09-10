@@ -4012,7 +4012,24 @@ function _kmWriterError_(json, fallbackMessage) {
 // applies no guard at all. There is nothing in the response for the page to notice, so an operator would be
 // told the plan was sent for approval and would be right, while the over-commitment this round exists to stop
 // happened silently. That is worse than a visible mismatch, which is exactly what this constant is for.
-var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 12;      // the minimum deployed_action_contract_version this build needs
+// PRODUCT-STRATEGY-P1-B1-R1 - 13, AND THIS ONE IS THE OPPOSITE OF LOAD-BEARING, WHICH IS WORTH SAYING.
+//
+// The release adds ONE router action, productPricing.workspace.get, and NO page calls it: the accessor
+// km-product-pricing-workspace.js is loaded by nothing, there is no Product Strategy nav entry, and
+// PRODUCT_STRATEGY_ENABLED_ is false. So unlike the R5 bump above - where a pre-R5 deployment silently
+// skipped a guard the page could not see - nothing a user does today behaves differently on a v12
+// deployment than on a v13 one.
+//
+// IT MOVES ANYWAY, because this pin is held to EQUALITY with SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ by
+// the suites that exist to stop the two sides drifting apart (FB-4F-B6 H5, FB-3B 16., FB-3C 20., and
+// R5-R1's E10 mutant, which fails when this number sits below the deployed contract). A pin left
+// behind would be indistinguishable from the drift those checks are for.
+//
+// THE OPERATIONAL CONSEQUENCE, STATED RATHER THAN DISCOVERED: a browser carrying this file refuses a
+// deployment below 13 with DEPLOYMENT_CONTRACT_MISMATCH. Pages must therefore NOT be redeployed before
+// the Apps Script sync for this release - both are USER-owned steps and the release ledger records the
+// order.
+var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 13;      // the minimum deployed_action_contract_version this build needs
 var KM_EXPECTED_REGISTRY_PROJECTION_VERSION_ = 'FB-3.1';
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT AXIS. Deliberately NOT folded into the action-contract number.
 //

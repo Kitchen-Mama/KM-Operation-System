@@ -417,7 +417,12 @@ eq((GS72.match(/prodRequireSheet_/g) || []).length, 1,
   eq(BARE_ACC.indexOf(api), -1, '38.' + (i + 1) + ' the accessor real code contains no ' + api);
 });
 var ACCMOD = require('../js/api/km-product-pricing-workspace.js');
-eq(ACCMOD.contract, { caches: false, stores: false, previewFallback: false, callerMayChooseAction: false,
+// R1 §6 — the four category promises join the contract, and the comparison stays EXACT on purpose: this
+// assertion's job is to notice a key being removed or quietly flipped, which a subset check would not.
+eq(ACCMOD.contract, { caches: false, stores: false, previewFallback: false,
+  categoryVocabulary: null, categorySource: 'server', categoryLimit: null,
+  derivesCategoriesFromMasterData: false,
+  callerMayChooseAction: false,
   failsClosedWithoutCapability: true }, '38a and declares that contract as data');
 eq(ACCMOD.isEnabled(), false, '38b the capability mirror defaults FALSE');
 eq(ACCMOD.setCapability({ product_strategy_enabled: 'yes' }), false,

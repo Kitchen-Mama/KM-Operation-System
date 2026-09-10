@@ -140,6 +140,33 @@
     if (typeof d.analysis_permitted !== 'boolean') {
       return { ok: false, code: 'RESPONSE_MISSING_ANALYSIS_FLAG' };
     }
+    // R1 §6 — THE FILTER OPTIONS ARE THE SERVER'S ANSWER, AND THIS SIDE ONLY CHECKS THE SHAPE.
+    //
+    // The categories a site has are resolved from marketplace_skus membership on the server. This
+    // file therefore knows the FIELD and not one single VALUE: no category list, no default, no
+    // three-item fallback, and nothing to merge or re-sort. A page that wants the menu renders what
+    // came back, in the order it came back, or renders nothing.
+    //
+    // `null` is a legal and MEANINGFUL value: the server withholds the options whenever the universe
+    // is not provable (a capped source, or any refusal). A caller must be able to tell that apart
+    // from an empty list, so null passes here and an empty list is a real measurement of a site that
+    // sells nothing.
+    if (d.filterOptions !== null) {
+      if (!isObj(d.filterOptions)) return { ok: false, code: 'RESPONSE_BAD_FILTER_OPTIONS' };
+      if (!(d.filterOptions.categories instanceof Array)
+        || !(d.filterOptions.series instanceof Array)) {
+        return { ok: false, code: 'RESPONSE_BAD_FILTER_OPTIONS' };
+      }
+      var badOption = false;
+      d.filterOptions.categories.forEach(function (c) {
+        if (!isObj(c) || typeof c.value !== 'string' || c.value === '') badOption = true;
+      });
+      if (badOption) return { ok: false, code: 'RESPONSE_BAD_FILTER_OPTIONS' };
+    } else if (d.analysis_permitted === true) {
+      // An analysable answer that withheld its options would leave a page unable to say why the
+      // menu is empty, which is the confusion the whole withholding rule exists to prevent.
+      return { ok: false, code: 'RESPONSE_OPTIONS_WITHHELD_WITHOUT_REASON' };
+    }
     if (!isObj(env.meta) || env.meta.action !== ACTION) {
       return { ok: false, code: 'RESPONSE_ACTION_MISMATCH' };
     }
@@ -198,7 +225,10 @@
     // exported for tests and for a caller that wants to check before it asks
     validateParams: validateParams, buildPayload: buildPayload, validateResponse: validateResponse,
     // stated as data so a test does not have to read the source to assert them
-    contract: { caches: false, stores: false, previewFallback: false, callerMayChooseAction: false,
+    contract: { caches: false, stores: false, previewFallback: false,
+      // R1 §6 — the category universe is the server's to resolve and this file's to render.
+      categoryVocabulary: null, categorySource: 'server', categoryLimit: null,
+      derivesCategoriesFromMasterData: false, callerMayChooseAction: false,
       failsClosedWithoutCapability: true }
   };
 
