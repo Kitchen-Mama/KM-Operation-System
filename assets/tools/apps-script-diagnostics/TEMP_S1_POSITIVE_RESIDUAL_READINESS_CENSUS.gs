@@ -5958,6 +5958,1335 @@ function S1_movRollback_(sheet, fz, col, why) {
 }
 
 // ================================================================================================================
+// S1-R4H — THE CONTROLLED LEGACY TEST-ROW REMOVAL PACKAGE.
+//
+// R4E proved sheet row 2 cannot be repaired by writing one cell. R4F asked the rest of the database where it
+// came from and R4G repaired how that answer was stated; both ended at the same place -
+// OPERATOR_BUSINESS_CLASSIFICATION_REQUIRED, because the database does not contain the answer.
+//
+// THE OPERATOR HAS NOW ANSWERED, AND THE ANSWER IS AN INPUT TO THIS FILE RATHER THAN A FINDING OF IT:
+// the row is early test residue, it is not a ledger record, its qty and after_current_stock are not readings
+// of anything, and the correct handling is a controlled REMOVAL. Nothing below re-derives that; this package
+// records the classification, names who made it, and refuses to act if the row it was issued against has
+// moved. A CLASSIFICATION IS ISSUED AGAINST A STATE, NOT AGAINST A ROW NUMBER - a row number still points at
+// something after the row underneath it changes, which is exactly the situation an authorization must not
+// survive.
+//
+// TWO ENTRY POINTS, AND THE READ-ONLY ONE OWNS THE EVIDENCE. Same split as R4E's backfill package and for the
+// same reason: the MANIFEST measures and freezes, the REMOVAL re-measures and compares against a frozen
+// expectation it did not produce. A check whose expectation comes from the thing being checked passes by
+// construction.
+//
+// CLEARING IS NOT DELETING, AND THE DIFFERENCE IS THE WHOLE METHOD. `deleteRow` would move every row below
+// the target up by one, so every frozen row number in this file - R4E's target, R4F's chronology, this
+// package's own 95 remaining row fingerprints - would silently point at a different record. The physical row
+// therefore SURVIVES and is emptied in place, which is why this round is the first in the file where a
+// LOGICAL RECORD COUNT and a PHYSICAL ROW COUNT are two different numbers and must be reported apart:
+// 96 -> 95 logical, unchanged physical.
+//
+// DEFAULT IS DRY RUN. `execute` must be exactly `true`; anything else, including absent and the string
+// 'true', is a dry run that performs every check and writes nothing.
+// ================================================================================================================
+
+var S1_REMOVAL_CLASSIFICATION_ = 'INVALID_NON_LEDGER_ROW';
+var S1_REMOVAL_OPERATOR_BASIS_ = 'CONFIRMED_EARLY_TEST_RESIDUE';
+
+/**
+ * THE OPERATOR'S DECISION, RECORDED AS AN INPUT.
+ *
+ * Every field here is something a person decided, not something this file measured. It is kept as data so the
+ * manifest can print it, the authorization sentence can quote it and the execute path can refuse a baseline
+ * that carries a different one - and so that the one thing a reader must not confuse (a classification that
+ * was supplied with one that was derived) is answered by a field rather than by tone.
+ *
+ * `issued_against` NAMES the frozen live state rather than repeating its values. Two copies of a fingerprint
+ * is two authorities, and the first thing two authorities do is disagree.
+ */
+var S1_REMOVAL_DECISION_ = {
+  classification: S1_REMOVAL_CLASSIFICATION_,
+  operator_basis: S1_REMOVAL_OPERATOR_BASIS_,
+  decided_by: 'OPERATOR',
+  decided_in: 'S1-R4H',
+  derived_by_this_file: false,
+  issued_against: 'S1_MOV_LIVE_FROZEN_ — target_row_number and target_row_fingerprint. The values are read'
+    + ' from that one pin at run time and are deliberately not repeated here.',
+  qty_is_not_a_delta: true,
+  after_current_stock_is_not_a_balance: true,
+  reading: 'The row is early test residue. Its qty and its after_current_stock are not readings of any'
+    + ' balance, so neither may be interpreted as a movement delta or as a historical stock level. The'
+    + ' live factory_stock row is the correct present state and it is not being changed.',
+  must_not_mint_movement_id: true,
+  must_not_write_movement_type: true,
+  must_not_become_a_movement: 'Filling the primary key or the ledger axis would convert a row nobody can'
+    + ' classify into a row the reconciliation believes — which is the SILENCING hazard R4E named. The'
+    + ' correct handling is removal, and removal is the opposite of completion.'
+};
+
+/**
+ * THE METHOD, AND EVERY ALTERNATIVE THAT IS REFUSED, WITH THE REASON EACH IS REFUSED FOR.
+ *
+ * The refusals are spelled in string values rather than as identifiers on purpose: this file's own suite
+ * scans its source with comments and string literals stripped and requires that no row-deletion API appears
+ * in real code at all, so naming them anywhere but inside a string would break that check - which is the
+ * check working.
+ */
+var S1_REMOVAL_METHOD_ = {
+  method: 'CLEAR_CONTENT_OF_THE_WHOLE_TARGET_ROW_RANGE',
+  api: 'Range.clearContent() — one call, on one row, across every live column',
+  range_shape: 'row <target_row_number>, columns 1..live_column_count',
+  physical_row_survives: true,
+  logical_record_leaves: true,
+  refused_row_deletion: 'deleteRow / deleteRows would shift every row below the target up by one. Every'
+    + ' frozen row number in this file — R4E\'s target, R4F\'s pool chronology, and this package\'s own'
+    + ' 95 remaining row fingerprints — would then point at a different record, and a baseline that'
+    + ' points at the wrong record is worse than no baseline.',
+  refused_row_insertion: 'insertRow / insertRows would shift rows the other way, with the same effect.',
+  refused_reorder: 'Sorting or moving rows would change row numbers without changing any value, so the'
+    + ' identity evidence would drift while every content fingerprint stayed intact.',
+  refused_quarantine_table: 'A quarantine table would be a second home for a record that is not a record.'
+    + ' It would also need a schema, an owner and a retention rule, none of which exist.',
+  refused_new_table: 'No table is created. There is nothing to migrate and nothing to write to.',
+  refused_mint_id: 'No primary key is minted. R4E\'s deterministic id path exists and is deliberately NOT'
+    + ' reachable from here: a removed row must not first be given an identity.',
+  refused_fill_movement_type: 'No ledger axis is written. See S1_REMOVAL_DECISION_.must_not_become_a_movement.',
+  counts_note: 'A LOGICAL RECORD COUNT AND A PHYSICAL ROW COUNT ARE TWO DIFFERENT COUNTS. The full-row read'
+    + ' skips a row whose every live cell is blank, so the logical movement record count falls 96 -> 95'
+    + ' while the sheet keeps exactly as many physical rows as it had. Both are reported, apart.'
+};
+
+/** The protected surfaces: tables this removal must be able to prove it did not touch. An ABSENT table is a
+ *  STATE, not a zero — it is frozen as absent and must still be absent afterwards. */
+var S1_REMOVAL_PROTECTED_TABLES_ = [
+  'factory_stock',
+  'shipping_allocation_drafts',
+  'shipping_allocation_draft_lines',
+  'shipping_plans',
+  'shipping_plan_lines',
+  'shipments',
+  'shipment_lines',
+  'reservations'
+];
+
+/** The fields a removal baseline MUST carry. An incomplete freeze is a hole a readback cannot see through,
+ *  so it is refused at freeze time rather than discovered at execute time. */
+var S1_REMOVAL_FREEZE_REQUIRED_ = [
+  'frozen_at', 'build', 'table', 'sheet_name',
+  'live_column_count', 'named_column_count', 'live_columns', 'header_fingerprint',
+  'table_combined_fingerprint',
+  'logical_movement_record_count', 'physical_last_row',
+  'non_blank_id_count', 'valid_id_count', 'blank_id_count', 'duplicate_id_count',
+  'wrong_type_id_count', 'outside_named_column_row_count',
+  'target_row_number', 'target_range_a1', 'target_range_cell_count',
+  'target_row_fingerprint', 'target_row_occurrences', 'target_row_cells',
+  'target_non_blank_cell_count', 'target_id_column', 'target_movement_id_is_blank',
+  'target_movement_type_is_blank',
+  'classification', 'operator_basis', 'classification_issued_against',
+  'remaining_record_count', 'remaining_ids', 'remaining_id_universe_fingerprint',
+  'remaining_row_fingerprint_map_fingerprint',
+  'pool_table', 'pool_warehouse_id', 'pool_sku', 'pool_fac_current_stock',
+  'pool_fac_reserved_stock', 'pool_row_fingerprint', 'pool_table_combined_fingerprint',
+  'protected_surfaces', 'protected_surface_fingerprint',
+  'flag_value', 'allowlist_count', 'allowlist_fingerprint', 'deployment_build',
+  'expected_after', 'authorization_wording'
+];
+
+/** A1 column letter for a 1-based column index. Spelled out because the range this package clears is named
+ *  in the authorization a person signs, and 'columns 1 to 15' is not what they will see on screen. */
+function S1_remColLetter_(n) {
+  var k = Number(n);
+  if (!isFinite(k) || k < 1) return null;
+  k = Math.floor(k);
+  var s = '';
+  while (k > 0) {
+    var r = (k - 1) % 26;
+    s = String.fromCharCode(65 + r) + s;
+    k = Math.floor((k - 1) / 26);
+  }
+  return s;
+}
+
+/** The one range this package may touch, in the notation the operator will see in the sheet. */
+function S1_remRangeA1_(rowNumber, liveColumnCount) {
+  var last = S1_remColLetter_(liveColumnCount);
+  if (last === null || !isFinite(Number(rowNumber))) return null;
+  return 'A' + String(rowNumber) + ':' + last + String(rowNumber);
+}
+
+/** How many of a frozen row's cells actually hold something. The clear touches every cell in the range; only
+ *  these CHANGE. Touched and changed are different numbers and the package publishes both, because a range
+ *  write's blast radius is the range rather than the cells that happened to differ. */
+function S1_remNonBlankCellCount_(cells) {
+  var n = 0;
+  (cells || []).forEach(function (c) { if (S1_str_(c.canonical) !== '~') n++; });
+  return n;
+}
+
+/** The fingerprint the target row WILL have once every live cell is empty. Computed from the live header, so
+ *  a column append changes it rather than leaving a stale expectation that still passes. */
+function S1_remBlankRowFingerprint_(liveColumns) {
+  var blanks = (liveColumns || []).map(function () { return ''; });
+  return S1_rowFingerprint_(liveColumns, blanks);
+}
+
+/** How many rows in the table carry the target's fingerprint. A removal authorized against a fingerprint that
+ *  matches two rows is a removal that cannot say which row it removed. */
+function S1_remFingerprintOccurrences_(t, fingerprint) {
+  var n = 0;
+  (t.rows || []).forEach(function (r) { if (S1_str_(r.fingerprint) === S1_str_(fingerprint)) n++; });
+  return n;
+}
+
+/**
+ * The 95 records that must survive, byte for byte AND row number for row number.
+ *
+ * `row_fingerprint_map_fingerprint` hashes `row_number~row_fingerprint` pairs, so it is one value that
+ * refuses BOTH an edited cell and a moved row. A fingerprint over content alone would let a reorder pass;
+ * that is precisely the failure the clear-instead-of-delete method exists to prevent, so the check has to be
+ * able to see it.
+ */
+function S1_remRemaining_(t, idKey, targetRowNumber) {
+  var ids = [], pairs = [], detail = [];
+  (t.rows || []).forEach(function (r) {
+    if (r.row_number === targetRowNumber) return;
+    var id = S1_str_(r[idKey]);
+    ids.push(id);
+    pairs.push(String(r.row_number) + '~' + S1_str_(r.fingerprint));
+    detail.push({ row_number: r.row_number, id: id, row_fingerprint: r.fingerprint });
+  });
+  return { count: ids.length, ids: ids,
+    id_universe_fingerprint: S1_fingerprint_(ids),
+    row_fingerprint_map_fingerprint: S1_fingerprint_(pairs),
+    row_fingerprints: detail };
+}
+
+/**
+ * The table fingerprint the sheet WILL have after the clear — not "it will change", but the exact value.
+ *
+ * S1_fullRowTable_ builds its combined fingerprint from one `id~row_fingerprint` signature per non-blank row,
+ * so dropping the target's signature reproduces the AFTER value exactly. An expectation that says only "this
+ * must differ" is satisfied by any damage at all.
+ */
+function S1_remExpectedAfterCombined_(t, idKey, targetRowNumber) {
+  var sig = [];
+  (t.rows || []).forEach(function (r) {
+    if (r.row_number === targetRowNumber) return;
+    sig.push(S1_str_(r[idKey]) + '~' + S1_str_(r.fingerprint));
+  });
+  return S1_fingerprint_(sig);
+}
+
+/** The pool row this removal must leave alone, and the whole table it sits in. */
+function S1_remPoolObservation_(ss, warehouseId, sku) {
+  var o = { table: 'factory_stock', warehouse_id: S1_str_(warehouseId), sku: S1_str_(sku),
+    present: false, readable: false, row_found: false,
+    fac_current_stock: null, fac_reserved_stock: null,
+    row_fingerprint: null, table_row_count: null, table_combined_fingerprint: null };
+  var t = S1_fullRowTable_(ss, 'factory_stock', null, ['warehouse_id', 'sku']);
+  o.present = t.present;
+  o.readable = t.readable;
+  if (!t.present || !t.readable) return o;
+  o.table_row_count = t.row_count;
+  o.table_combined_fingerprint = t.combined_fingerprint;
+  var rec = null;
+  (t.rows || []).forEach(function (r) {
+    if (S1_str_(r.warehouse_id) === o.warehouse_id && S1_str_(r.sku) === o.sku) rec = r;
+  });
+  if (!rec) return o;
+  o.row_found = true;
+  o.fac_current_stock = S1_qty_(S1_cellOf_(rec, 'fac_current_stock'));
+  o.fac_reserved_stock = S1_qty_(S1_cellOf_(rec, 'fac_reserved_stock'));
+  o.row_fingerprint = rec.fingerprint;
+  return o;
+}
+
+/** Every protected surface, as a state plus a shape plus a content fingerprint, and one fingerprint over all
+ *  of them so a single comparison can refuse a change on any one. */
+function S1_remProtectedSurfaces_(ss) {
+  var rows = [], sig = [];
+  S1_REMOVAL_PROTECTED_TABLES_.forEach(function (name) {
+    var t = S1_fullRowTable_(ss, name, null, []);
+    var state = !t.present ? 'SHEET_ABSENT'
+      : (t.readable ? 'SHEET_PRESENT_AND_READABLE' : 'SHEET_PRESENT_BUT_UNREADABLE');
+    var e = { table: name, state: state,
+      row_count: (t.present && t.readable) ? t.row_count : null,
+      live_column_count: t.live_column_count,
+      combined_fingerprint: (t.present && t.readable) ? t.combined_fingerprint : null };
+    rows.push(e);
+    sig.push(name + '~' + state + '~' + S1_rowCountPhrase_(e.row_count) + '~'
+      + S1_str_(e.combined_fingerprint));
+  });
+  return { surfaces: rows, fingerprint: S1_fingerprint_(sig), table_count: rows.length };
+}
+
+/** The flag, the allowlist and the deployment build, frozen so the postcondition can say they did not move.
+ *  The allowlist is fingerprinted over four-part scope keys rather than over an object, because a key order
+ *  change is not a change to the allowlist. */
+function S1_remControlSurface_() {
+  var env = S1_environment_();
+  var keys = [];
+  (env.allowlist || []).forEach(function (e) {
+    keys.push(S1_scopeKey_(e && e.company, e && e.country, e && e.marketplace, e && e.sku));
+  });
+  return { flag_present: env.flag_present, flag_value: env.flag_value,
+    allowlist_present: env.allowlist_present,
+    allowlist_count: env.allowlist ? env.allowlist.length : null,
+    allowlist_scope_keys: keys, allowlist_fingerprint: S1_fingerprint_(keys),
+    deployment_build: env.deployment ? env.deployment.deployment_build : null,
+    deployment_readable: env.deployment ? env.deployment.readable : null };
+}
+
+/** The live expectation this package holds the sheet to. Derived from R4F's one pin and extended with the two
+ *  facts R4H adds — the pool balance the operator stated and the logical record count. Extended rather than
+ *  copied: a second table of the same live numbers would be a second authority. */
+function S1_remLiveExpect_() {
+  var e = {};
+  Object.keys(S1_MOV_LIVE_FROZEN_).forEach(function (k) { e[k] = S1_MOV_LIVE_FROZEN_[k]; });
+  e.logical_movement_record_count = S1_MOV_LIVE_FROZEN_.row_count;
+  e.pool_fac_current_stock = 2210;
+  e.pool_fac_reserved_stock = 0;
+  e.target_movement_id_is_blank = true;
+  e.authority = S1_MOV_LIVE_FROZEN_.authority
+    + '; the pool balance and the record count are the operator\'s S1-R4H statement of the live sheet';
+  return e;
+}
+
+/** The sentence a person signs. Built only from frozen, measured values — never from a default. */
+function S1_remAuthWording_(fz) {
+  if (!fz) return null;
+  return 'I authorize ONE controlled removal of ONE legacy test row from table ' + fz.table
+    + ' in the operation database.'
+    + ' THE ROW: sheet row ' + fz.target_row_number + ', full-row fingerprint '
+    + S1_str_(fz.target_row_fingerprint) + ', sku ' + S1_str_(fz.pool_sku)
+    + ', warehouse_id ' + S1_str_(fz.pool_warehouse_id) + '.'
+    + ' THE OPERATOR CLASSIFICATION: ' + S1_str_(fz.classification) + ', on the basis '
+    + S1_str_(fz.operator_basis) + '. This classification was decided by a person and is an INPUT to the'
+    + ' diagnostic; the diagnostic did not derive it.'
+    + ' THE METHOD: clear the content of range ' + S1_str_(fz.target_range_a1) + ' — '
+    + fz.target_range_cell_count + ' cells touched, of which ' + fz.target_non_blank_cell_count
+    + ' currently hold a value and will change. NO row is deleted, inserted, moved or reordered; the'
+    + ' physical sheet row survives and is left empty.'
+    + ' NOTHING IS COMPLETED: no movement id is minted, no movement_type is written, and the row does not'
+    + ' become a movement.'
+    + ' THE TABLE BEFORE: ' + fz.logical_movement_record_count + ' logical movement records, '
+    + fz.valid_id_count + ' valid ids, ' + fz.blank_id_count + ' blank id, '
+    + fz.duplicate_id_count + ' duplicate ids, ' + fz.wrong_type_id_count + ' wrong-typed ids,'
+    + ' header fingerprint ' + S1_str_(fz.header_fingerprint) + ', table fingerprint '
+    + S1_str_(fz.table_combined_fingerprint) + ', over ' + fz.live_column_count + ' live columns.'
+    + ' THE TABLE AFTER: ' + fz.expected_after.logical_movement_record_count
+    + ' logical movement records, ' + fz.expected_after.valid_id_count + ' valid ids, '
+    + fz.expected_after.blank_id_count + ' blank id, table fingerprint '
+    + S1_str_(fz.expected_after.table_combined_fingerprint) + '. The remaining '
+    + fz.remaining_record_count + ' records keep every identity and every row number: id universe '
+    + S1_str_(fz.remaining_id_universe_fingerprint) + ', row-number map '
+    + S1_str_(fz.remaining_row_fingerprint_map_fingerprint) + '.'
+    + ' WHAT MUST NOT CHANGE: factory_stock ' + S1_str_(fz.pool_sku) + ' at '
+    + S1_str_(fz.pool_warehouse_id) + ' stays fac_current_stock ' + fz.pool_fac_current_stock
+    + ' and fac_reserved_stock ' + fz.pool_fac_reserved_stock + ' (row fingerprint '
+    + S1_str_(fz.pool_row_fingerprint) + ', table fingerprint '
+    + S1_str_(fz.pool_table_combined_fingerprint) + '); the ' + fz.protected_surfaces.length
+    + ' protected surfaces stay at fingerprint ' + S1_str_(fz.protected_surface_fingerprint) + ';'
+    + ' the generation flag stays ' + String(fz.flag_value) + ', the activation allowlist stays '
+    + fz.allowlist_count + ' entry at ' + S1_str_(fz.allowlist_fingerprint)
+    + ', and the build stays ' + S1_str_(fz.build) + '.'
+    + ' IF ANY POSTCONDITION FAILS the same fifteen cells are restored from the frozen BEFORE under the same'
+    + ' lock and the restoration is verified against fingerprint ' + S1_str_(fz.target_row_fingerprint)
+    + '; the clear is never attempted a second time.';
+}
+
+/** Every fact the sentence must carry, looked for by a needle built from the FROZEN value — so a sentence
+ *  that quotes a different number fails rather than reads well. */
+function S1_remWordingAudit_(w, fz) {
+  var text = S1_str_(w);
+  var need = [
+    ['table', fz.table],
+    ['target_row_number', 'sheet row ' + fz.target_row_number],
+    ['target_row_fingerprint', fz.target_row_fingerprint],
+    ['sku', fz.pool_sku],
+    ['warehouse_id', fz.pool_warehouse_id],
+    ['classification', fz.classification],
+    ['operator_basis', fz.operator_basis],
+    ['target_range_a1', fz.target_range_a1],
+    ['cells_touched', String(fz.target_range_cell_count) + ' cells touched'],
+    ['cells_changed', String(fz.target_non_blank_cell_count) + ' currently hold a value'],
+    ['no_row_deleted', 'NO row is deleted'],
+    ['no_id_minted', 'no movement id is minted'],
+    ['no_movement_type', 'no movement_type is written'],
+    ['records_before', String(fz.logical_movement_record_count) + ' logical movement records'],
+    ['records_after', String(fz.expected_after.logical_movement_record_count) + ' logical movement records'],
+    ['header_fingerprint', fz.header_fingerprint],
+    ['table_fingerprint_before', fz.table_combined_fingerprint],
+    ['table_fingerprint_after', fz.expected_after.table_combined_fingerprint],
+    ['remaining_count', String(fz.remaining_record_count) + ' records keep every identity'],
+    ['remaining_id_fingerprint', fz.remaining_id_universe_fingerprint],
+    ['remaining_row_map_fingerprint', fz.remaining_row_fingerprint_map_fingerprint],
+    ['pool_current', 'fac_current_stock ' + fz.pool_fac_current_stock],
+    ['pool_reserved', 'fac_reserved_stock ' + fz.pool_fac_reserved_stock],
+    ['pool_row_fingerprint', fz.pool_row_fingerprint],
+    ['protected_surface_fingerprint', fz.protected_surface_fingerprint],
+    ['flag_value', 'generation flag stays ' + String(fz.flag_value)],
+    ['allowlist_fingerprint', fz.allowlist_fingerprint],
+    ['build', fz.build],
+    ['rollback', 'restored from the frozen BEFORE under the same lock'],
+    ['no_retry', 'never attempted a second time']
+  ];
+  var missing = [];
+  need.forEach(function (n) {
+    if (!S1_needleFound_(text, n[1])) missing.push(n[0]);
+  });
+  return { required_item_count: need.length, missing: missing, bytes: text.length };
+}
+
+/**
+ * ================================================================================================================
+ * RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL_MANIFEST(opts) — READ ONLY.
+ *
+ * Re-measures the deployment, the flag, the allowlist, the movement table, the target row, the 95 records
+ * that must survive, the factory pool and every protected surface; confirms that the state the operator's
+ * classification was issued against is still the state on the sheet; states the exact AFTER; and freezes a
+ * baseline plus the sentence a person signs.
+ *
+ * IT WRITES NOTHING, AND IT FREEZES NOTHING UNLESS EVERY PREDICATE PASSES. A drift is a STOP: the previous
+ * run's numbers are never carried forward, because a baseline assembled from two different states describes
+ * no state at all.
+ *
+ * `opts.expect` replaces the frozen live expectation and is REPORTED as caller-supplied — the same seam R4F
+ * uses, so the suite can drive a world it built while a bare live run stays pinned to the operator's freeze.
+ * ================================================================================================================
+ */
+function RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL_MANIFEST(opts) {
+  opts = opts || {};
+  var out = {
+    manifest: 'S1 FACTORY MOVEMENT LEGACY TEST-ROW REMOVAL — read-only measurement, confirmation and freeze',
+    build: S1_BUILD_, dry_run: true, read_only: true,
+    writes: 0, writer_calls: 0, cells_written: 0, cells_cleared: 0, cells_restored: 0,
+    ids_minted: 0, movement_types_written: 0,
+    rows_modified: 0, rows_added: 0, rows_removed: 0, rows_reordered: false,
+    tables_created: 0, migration_called: false, gap_job_called: false,
+    generate_called: false, submit_called: false, factory_writer_called: false,
+    tables_touched: [],
+    measured_at: null,
+    table: S1_FACTORY_MOVEMENT_TABLE_, sheet_name: S1_FACTORY_MOVEMENT_TABLE_,
+    method: S1_REMOVAL_METHOD_, operator_decision: S1_REMOVAL_DECISION_,
+    expectation_source: null, expected: null,
+    live_state_confirmation: null, live_state_confirmed: null,
+    live_column_count: null, named_column_count: null, live_columns: [],
+    header_fingerprint: null, table_combined_fingerprint: null,
+    logical_movement_record_count: null, physical_last_row: null,
+    non_blank_id_count: null, valid_id_count: null, blank_id_count: null,
+    duplicate_id_count: null, wrong_type_id_count: null, outside_named_column_row_count: null,
+    target: null, remaining: null, pool: null, protected_surfaces: null, control_surface: null,
+    classification: S1_REMOVAL_CLASSIFICATION_, operator_basis: S1_REMOVAL_OPERATOR_BASIS_,
+    classification_applies: null, classification_issued_against: null,
+    expected_after: null, frozen_before: null, authorization_wording: null, wording_audit: null,
+    next_decision: null,
+    verdict: 'STOP', stop_reasons: [],
+    predicates: [], predicates_passed: 0, predicates_failed: 0, failed_predicates: [] };
+  var L = S1_ledger_();
+  function stop(r) { if (out.stop_reasons.indexOf(r) === -1) out.stop_reasons.push(r); }
+
+  var EXP = opts.expect ? opts.expect : S1_remLiveExpect_();
+  out.expectation_source = opts.expect
+    ? 'CALLER_SUPPLIED — NOT the operator\'s frozen live state. This run is pinned to an expectation the'
+      + ' caller provided, which is stated here so it can never be mistaken for the live freeze.'
+    : 'THE_OPERATOR_FROZEN_LIVE_STATE (S1_MOV_LIVE_FROZEN_, extended by S1_remLiveExpect_)';
+  out.expected = EXP;
+
+  function fin() {
+    out.predicates = L.entries;
+    out.predicates_failed = L.failed.length;
+    out.predicates_passed = L.entries.length - L.failed.length;
+    out.failed_predicates = L.failed.slice();
+    if (out.stop_reasons.length || L.failed.length) out.verdict = 'STOP';
+    // A REFUSED MANIFEST FREEZES NOTHING AND SIGNS NOTHING. The baseline and the sentence are the same
+    // authorization by two routes, so both go together.
+    if (out.verdict !== 'READY_TO_AUTHORIZE_REMOVAL') {
+      out.frozen_before = null;
+      out.authorization_wording = null;
+      if (!out.next_decision) {
+        out.next_decision = 'NOTHING IS AUTHORIZED. Fix the failed condition(s) and re-run the manifest;'
+          + ' no value from this run may be pasted into a removal.';
+      }
+    }
+    S1_log_('s1_mov_removal_manifest_verdict', JSON.stringify({
+      build: out.build, verdict: out.verdict, table: out.table,
+      expectation_source: S1_cap_(out.expectation_source, 90),
+      live_state_confirmed: out.live_state_confirmed,
+      classification: out.classification, operator_basis: out.operator_basis,
+      classification_applies: out.classification_applies,
+      target_row: out.target ? out.target.row_number : null,
+      target_range: out.target ? out.target.range_a1 : null,
+      cells_touched: out.target ? out.target.range_cell_count : null,
+      cells_that_change: out.target ? out.target.non_blank_cell_count : null,
+      logical_records_before: out.logical_movement_record_count,
+      logical_records_after: out.expected_after ? out.expected_after.logical_movement_record_count : null,
+      remaining: out.remaining ? out.remaining.count : null,
+      pool_current: out.pool ? out.pool.fac_current_stock : null,
+      pool_reserved: out.pool ? out.pool.fac_reserved_stock : null,
+      writes: out.writes, cells_cleared: out.cells_cleared, ids_minted: out.ids_minted,
+      rows_removed: out.rows_removed, rows_reordered: out.rows_reordered,
+      frozen: !!out.frozen_before, authorization_present: !!out.authorization_wording,
+      predicates_passed: out.predicates_passed, predicates_failed: out.predicates_failed,
+      failed: out.failed_predicates.slice(0, 12), stop_reasons: out.stop_reasons.slice(0, 12),
+      next_decision: S1_cap_(out.next_decision, 300) }));
+    if (out.verdict === 'READY_TO_AUTHORIZE_REMOVAL' && out.frozen_before) {
+      S1_emitChunked_('s1_mov_removal_manifest_freeze_paste_block',
+        JSON.stringify(out.frozen_before));
+      S1_emitChunked_('s1_mov_removal_manifest_authorization', out.authorization_wording);
+      S1_log_('s1_mov_removal_manifest_freeze_meta', JSON.stringify({
+        paste_into: 'the `frozen` argument of RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL',
+        authorization_into: 'the `authorization` argument of the same call',
+        s1_manifest_p_before: 'UNRELATED — this baseline is NOT pasted into S1_MANIFEST_P_BEFORE_, which'
+          + ' belongs to the generation manifest and stays null.',
+        note: 'Concatenate the chunks IN ORDER. The removal defaults to a DRY RUN and needs both.' }));
+    } else {
+      S1_log_('s1_mov_removal_manifest_freeze_withheld', JSON.stringify({
+        verdict: out.verdict, chunks: 0, frozen: false, authorization_present: false,
+        reason: 'NOTHING_MAY_BE_AUTHORIZED_ON_A_' + out.verdict,
+        note: 'No baseline and no authorization were produced, so the removal has nothing to consume.' }));
+    }
+    return out;
+  }
+
+  try {
+    out.measured_at = (typeof procurementTimestamp_ === 'function') ? procurementTimestamp_() : null;
+
+    // ---- §2.1 THE BUILD. An expectation frozen against another build is not this build's evidence. ----
+    L.P('the_build_matches_the_frozen_expectation', EXP.build, S1_BUILD_, S1_BUILD_ === EXP.build);
+    if (S1_BUILD_ !== EXP.build) { stop('BUILD_DRIFTED'); return fin(); }
+
+    // ---- §2.2 THE CONTROL SURFACE: the flag must be false and the allowlist must be the one entry. ----
+    var ctl = S1_remControlSurface_();
+    out.control_surface = ctl;
+    L.P('the_generation_flag_is_readable_and_false', false, ctl.flag_value, ctl.flag_value === false);
+    if (ctl.flag_value !== false) { stop('THE_GENERATION_FLAG_IS_NOT_FALSE'); }
+    L.P('the_activation_allowlist_is_readable_and_holds_exactly_one_scope', 1, ctl.allowlist_count,
+      ctl.allowlist_count === 1);
+    if (ctl.allowlist_count !== 1) { stop('THE_ALLOWLIST_IS_NOT_A_SINGLE_SCOPE'); }
+    // COULD A GENERATION BE WRITING TO THIS POOL WHILE THE REMOVAL RUNS? That takes BOTH an allowlisted
+    // scope AND the flag, so it is asked as one question rather than two. The allowlist entry on its own
+    // authorizes nothing while the flag is false, and refusing a removal for it would be refusing on a
+    // fact that cannot act - the same over-reach as treating a measured-and-neutral reading as a fault.
+    var allowKeys = ctl.allowlist_scope_keys || [];
+    var targetSkuAllowed = false;
+    allowKeys.forEach(function (k) {
+      if (String(k).split('|')[3] === S1_str_(EXP.pool_sku)) targetSkuAllowed = true;
+    });
+    ctl.target_sku_is_on_the_activation_allowlist = targetSkuAllowed;
+    ctl.concurrent_generation_possible = targetSkuAllowed === true && ctl.flag_value === true;
+    ctl.concurrency_note = 'A generation could only touch this pool if the sku were allowlisted AND the'
+      + ' flag were true. The allowlist membership is published either way, because a person reading a'
+      + ' removal authorization should be able to see it rather than infer it from a silence.';
+    L.P('no_generation_could_be_writing_to_this_pool_while_the_removal_runs', false,
+      ctl.concurrent_generation_possible, ctl.concurrent_generation_possible === false);
+    if (ctl.concurrent_generation_possible) { stop('A_GENERATION_COULD_BE_WRITING_TO_THIS_POOL'); }
+
+    // ---- §2.3 THE MOVEMENT TABLE, THROUGH THE SAME READ AUTHORITY THE OTHER TWO PACKAGES USE. ----
+    var R = S1_movReadForRepair_();
+    L.P('the_movement_table_was_read_through_the_shared_read_authority', [], R.stop_reasons,
+      R.ok === true && R.stop_reasons.length === 0);
+    if (!R.ok) { R.stop_reasons.forEach(stop); return fin(); }
+    out.tables_touched = [];
+    out.live_columns = R.live_columns;
+    out.live_column_count = R.live_column_count;
+    out.named_column_count = R.named_column_count;
+    out.header_fingerprint = R.header_fingerprint;
+    out.table_combined_fingerprint = R.table_combined_fingerprint;
+    out.logical_movement_record_count = R.integrity.row_count;
+    out.non_blank_id_count = R.integrity.ok_count;
+    out.blank_id_count = R.integrity.blank_id_count;
+    out.duplicate_id_count = R.integrity.duplicate_id_count;
+    out.wrong_type_id_count = R.integrity.wrong_type_id_count;
+    out.outside_named_column_row_count = R.integrity.outside_named_columns_count;
+    out.valid_id_count = R.integrity.ok_count - R.integrity.duplicate_id_count
+      - R.integrity.wrong_type_id_count;
+    var lastRow = null;
+    try { lastRow = R.sheet.getLastRow(); } catch (e0) { lastRow = null; }
+    out.physical_last_row = lastRow;
+    L.P('the_physical_last_row_was_measurable', 'a number', lastRow, typeof lastRow === 'number');
+    if (typeof lastRow !== 'number') { stop('PHYSICAL_ROW_EXTENT_NOT_MEASURABLE'); return fin(); }
+
+    // ---- §2.4 EVERY FROZEN FACT, ITEM BY ITEM. ----
+    var conf = [];
+    function confirm(name, expected, observed) {
+      var okv = S1_str_(expected) === S1_str_(observed);
+      conf.push({ what: name, expected: expected, observed: observed, confirmed: okv });
+      L.P('the_live_state_still_matches_the_frozen_' + name, expected, observed, okv);
+      if (!okv) stop('LIVE_STATE_DRIFTED:' + name);
+      return okv;
+    }
+    confirm('header_fingerprint', EXP.header_fingerprint, R.header_fingerprint);
+    confirm('table_combined_fingerprint', EXP.table_combined_fingerprint, R.table_combined_fingerprint);
+    confirm('logical_movement_record_count', EXP.logical_movement_record_count, R.integrity.row_count);
+    confirm('valid_id_count', EXP.valid_id_count, out.valid_id_count);
+    confirm('blank_id_count', EXP.blank_id_count, R.integrity.blank_id_count);
+    confirm('duplicate_id_count', EXP.duplicate_id_count, R.integrity.duplicate_id_count);
+    confirm('wrong_type_id_count', EXP.wrong_type_id_count, R.integrity.wrong_type_id_count);
+    confirm('outside_named_column_row_count', EXP.outside_named_column_row_count,
+      R.integrity.outside_named_columns_count);
+
+    // ---- §2.5 THE TARGET ROW: present, unique, and still the row the classification was issued against. --
+    var rec = null;
+    (R.t.rows || []).forEach(function (r) { if (r.row_number === EXP.target_row_number) rec = r; });
+    L.P('the_target_row_is_present_at_the_frozen_row_number', EXP.target_row_number,
+      rec ? rec.row_number : null, rec !== null);
+    if (!rec) { stop('TARGET_ROW_MISSING_AT_THE_FROZEN_ROW_NUMBER'); return fin(); }
+    confirm('target_row_fingerprint', EXP.target_row_fingerprint, rec.fingerprint);
+    var occ = S1_remFingerprintOccurrences_(R.t, rec.fingerprint);
+    L.P('the_target_row_fingerprint_identifies_exactly_one_row', 1, occ, occ === 1);
+    if (occ !== 1) { stop('THE_TARGET_ROW_IS_NOT_UNIQUE:' + occ + '_ROWS_SHARE_ITS_FINGERPRINT'); }
+    var idBlank = S1_canonCell_(S1_cellOf_(rec, R.id_column)) === '~';
+    var mtBlank = S1_canonCell_(S1_cellOf_(rec, 'movement_type')) === '~';
+    L.P('the_target_movement_id_is_still_blank', EXP.target_movement_id_is_blank, idBlank,
+      idBlank === EXP.target_movement_id_is_blank);
+    if (idBlank !== EXP.target_movement_id_is_blank) {
+      // A ROW THAT HAS ACQUIRED A KEY IS A DIFFERENT ROW TO REMOVE. This is also the interlock against
+      // R4E's backfill: if that path has run, this classification no longer describes what is on the sheet.
+      stop('THE_TARGET_ROW_HAS_ACQUIRED_A_PRIMARY_KEY_SINCE_THE_CLASSIFICATION_WAS_ISSUED');
+    }
+    L.P('the_target_movement_type_is_still_blank', EXP.target_movement_type_is_blank, mtBlank,
+      mtBlank === EXP.target_movement_type_is_blank);
+    if (mtBlank !== EXP.target_movement_type_is_blank) {
+      stop('THE_TARGET_ROW_HAS_ACQUIRED_A_LEDGER_AXIS_SINCE_THE_CLASSIFICATION_WAS_ISSUED');
+    }
+    var pWh = S1_str_(S1_cellOf_(rec, 'warehouse_id')), pSku = S1_str_(S1_cellOf_(rec, 'sku'));
+    confirm('pool_warehouse_id', EXP.pool_warehouse_id, pWh);
+    confirm('pool_sku', EXP.pool_sku, pSku);
+    out.live_state_confirmation = conf;
+    out.live_state_confirmed = conf.filter(function (c) { return !c.confirmed; }).length === 0;
+
+    // THE CLASSIFICATION APPLIES TO A STATE. Recorded as its own answer rather than folded into the drift
+    // list, because 'the sheet moved' and 'the decision no longer describes this row' are different facts.
+    out.classification_issued_against = { table: S1_FACTORY_MOVEMENT_TABLE_,
+      row_number: EXP.target_row_number, row_fingerprint: EXP.target_row_fingerprint,
+      authority: out.expectation_source };
+    out.classification_applies = out.live_state_confirmed === true
+      && S1_str_(rec.fingerprint) === S1_str_(EXP.target_row_fingerprint) && occ === 1;
+    L.P('the_operator_classification_still_describes_the_row_on_the_sheet', true,
+      out.classification_applies, out.classification_applies === true);
+
+    var cells = S1_movRowCells_(rec, R.live_columns);
+    var rangeA1 = S1_remRangeA1_(rec.row_number, R.live_column_count);
+    var nonBlank = S1_remNonBlankCellCount_(cells);
+    out.target = { row_number: rec.row_number, range_a1: rangeA1,
+      range_cell_count: R.live_column_count, non_blank_cell_count: nonBlank,
+      row_fingerprint: rec.fingerprint, occurrences: occ,
+      id_column: R.id_column, movement_id_is_blank: idBlank, movement_type_is_blank: mtBlank,
+      warehouse_id: pWh, sku: pSku, cells: cells,
+      note: 'range_cell_count is what the clear TOUCHES; non_blank_cell_count is what it CHANGES. They are'
+        + ' different numbers and a report that gave only one of them would be describing a different'
+        + ' operation than the one being authorized.' };
+    L.P('the_target_range_is_one_row_across_every_live_column', 'A1 over ' + R.live_column_count
+      + ' columns on row ' + rec.row_number, rangeA1, rangeA1 !== null);
+    if (rangeA1 === null) { stop('TARGET_RANGE_NOT_EXPRESSIBLE'); return fin(); }
+    L.P('every_frozen_cell_of_the_target_row_was_captured', R.live_column_count, cells.length,
+      cells.length === R.live_column_count);
+
+    // ---- §2.6 THE 95 THAT MUST SURVIVE. ----
+    var rem = S1_remRemaining_(R.t, R.id_column, rec.row_number);
+    out.remaining = rem;
+    L.P('the_surviving_record_count_is_the_table_minus_the_one_target',
+      R.integrity.row_count - 1, rem.count, rem.count === R.integrity.row_count - 1);
+    var blankAmongRemaining = rem.ids.filter(function (i) { return S1_str_(i) === ''; }).length;
+    L.P('no_surviving_record_is_missing_its_primary_key', 0, blankAmongRemaining,
+      blankAmongRemaining === 0);
+    if (blankAmongRemaining !== 0) { stop('A_SURVIVING_RECORD_HAS_NO_PRIMARY_KEY'); }
+    L.P('the_surviving_identities_are_the_valid_id_population', out.valid_id_count, rem.count,
+      rem.count === out.valid_id_count);
+
+    // ---- §2.7 THE POOL AND THE PROTECTED SURFACES. ----
+    var pool = S1_remPoolObservation_(R.ss, pWh, pSku);
+    out.pool = pool;
+    L.P('the_factory_pool_row_for_this_sku_is_readable', true, pool.row_found, pool.row_found === true);
+    if (!pool.row_found) { stop('FACTORY_POOL_ROW_NOT_FOUND'); return fin(); }
+    confirm('pool_fac_current_stock', EXP.pool_fac_current_stock, pool.fac_current_stock);
+    confirm('pool_fac_reserved_stock', EXP.pool_fac_reserved_stock, pool.fac_reserved_stock);
+    // THE POOL IS EVIDENCE OF THE PRESENT, NOT OF THE TARGET ROW. R4G established that the live balance
+    // reconciles a LATER ledger epoch, so it says nothing about row 2 - and it is frozen here for exactly
+    // one purpose: to prove afterwards that the removal did not touch it.
+    out.pool.role = 'FROZEN_TO_PROVE_IT_DID_NOT_CHANGE. It is not evidence about the target row: R4G'
+      + ' measured that this balance reconciles a later ledger epoch and is not attributable to row '
+      + rec.row_number + '.';
+    var prot = S1_remProtectedSurfaces_(R.ss);
+    out.protected_surfaces = prot;
+    L.P('every_protected_surface_was_observed', S1_REMOVAL_PROTECTED_TABLES_.length, prot.table_count,
+      prot.table_count === S1_REMOVAL_PROTECTED_TABLES_.length);
+    var unreadable = prot.surfaces.filter(function (s) {
+      return s.state === 'SHEET_PRESENT_BUT_UNREADABLE'; }).map(function (s) { return s.table; });
+    L.P('no_protected_surface_is_present_but_unreadable', [], unreadable, unreadable.length === 0);
+    if (unreadable.length) { stop('PROTECTED_SURFACE_UNREADABLE:' + unreadable.join(',')); }
+
+    // ---- §2.8 THE EXACT AFTER. Not "it will change" — the value it will change TO. ----
+    var afterCombined = S1_remExpectedAfterCombined_(R.t, R.id_column, rec.row_number);
+    var blankFp = S1_remBlankRowFingerprint_(R.live_columns);
+    L.P('the_expected_after_table_fingerprint_was_computed_and_differs_from_the_before_one',
+      'a fingerprint that is not the BEFORE one',
+      { before: R.table_combined_fingerprint, after: afterCombined },
+      afterCombined !== null && afterCombined !== R.table_combined_fingerprint);
+    L.P('the_expected_after_target_row_fingerprint_is_the_all_blank_row',
+      'a fingerprint that is not the BEFORE one', { before: rec.fingerprint, after: blankFp },
+      blankFp !== null && blankFp !== rec.fingerprint);
+    out.expected_after = {
+      logical_movement_record_count: R.integrity.row_count - 1,
+      physical_last_row: lastRow,
+      physical_rows_removed: 0, rows_added: 0, rows_reordered: false,
+      non_blank_id_count: out.non_blank_id_count,
+      valid_id_count: out.valid_id_count,
+      blank_id_count: 0, duplicate_id_count: 0, wrong_type_id_count: 0,
+      id_fault_count: 0,
+      outside_named_column_row_count: out.outside_named_column_row_count,
+      header_fingerprint: out.header_fingerprint,
+      table_combined_fingerprint: afterCombined,
+      target_row_is_a_logical_record: false,
+      target_row_all_blank: true,
+      target_row_raw_fingerprint: blankFp,
+      cells_touched: R.live_column_count,
+      cells_changed: nonBlank,
+      remaining_record_count: rem.count,
+      remaining_id_universe_fingerprint: rem.id_universe_fingerprint,
+      remaining_row_fingerprint_map_fingerprint: rem.row_fingerprint_map_fingerprint,
+      pool_fac_current_stock: pool.fac_current_stock,
+      pool_fac_reserved_stock: pool.fac_reserved_stock,
+      pool_row_fingerprint: pool.row_fingerprint,
+      pool_table_combined_fingerprint: pool.table_combined_fingerprint,
+      protected_surface_fingerprint: prot.fingerprint,
+      flag_value: ctl.flag_value, allowlist_fingerprint: ctl.allowlist_fingerprint,
+      build: S1_BUILD_,
+      note: 'The TABLE fingerprint MUST change — a record left the population — and the value it must'
+        + ' change TO is stated, because "it must differ" is satisfied by any damage at all. What must'
+        + ' NOT change is every surviving row AND its row number, which is what the row-number map'
+        + ' fingerprint refuses, and the physical extent of the sheet, which is why nothing is deleted.' };
+
+    // ---- §2.9 THE FREEZE AND THE SENTENCE. ----
+    var frozen = {
+      frozen_at: out.measured_at, build: S1_BUILD_,
+      table: S1_FACTORY_MOVEMENT_TABLE_, sheet_name: S1_FACTORY_MOVEMENT_TABLE_,
+      live_column_count: out.live_column_count, named_column_count: out.named_column_count,
+      live_columns: out.live_columns, header_fingerprint: out.header_fingerprint,
+      table_combined_fingerprint: out.table_combined_fingerprint,
+      logical_movement_record_count: out.logical_movement_record_count,
+      physical_last_row: out.physical_last_row,
+      non_blank_id_count: out.non_blank_id_count, valid_id_count: out.valid_id_count,
+      blank_id_count: out.blank_id_count, duplicate_id_count: out.duplicate_id_count,
+      wrong_type_id_count: out.wrong_type_id_count,
+      outside_named_column_row_count: out.outside_named_column_row_count,
+      target_row_number: rec.row_number, target_range_a1: rangeA1,
+      target_range_cell_count: R.live_column_count,
+      target_row_fingerprint: rec.fingerprint, target_row_occurrences: occ,
+      target_row_cells: cells, target_non_blank_cell_count: nonBlank,
+      target_id_column: R.id_column,
+      target_movement_id_is_blank: idBlank, target_movement_type_is_blank: mtBlank,
+      classification: S1_REMOVAL_CLASSIFICATION_, operator_basis: S1_REMOVAL_OPERATOR_BASIS_,
+      classification_issued_against: out.classification_issued_against,
+      remaining_record_count: rem.count, remaining_ids: rem.ids,
+      remaining_id_universe_fingerprint: rem.id_universe_fingerprint,
+      remaining_row_fingerprint_map_fingerprint: rem.row_fingerprint_map_fingerprint,
+      pool_table: pool.table, pool_warehouse_id: pool.warehouse_id, pool_sku: pool.sku,
+      pool_fac_current_stock: pool.fac_current_stock,
+      pool_fac_reserved_stock: pool.fac_reserved_stock,
+      pool_row_fingerprint: pool.row_fingerprint,
+      pool_table_combined_fingerprint: pool.table_combined_fingerprint,
+      protected_surfaces: prot.surfaces, protected_surface_fingerprint: prot.fingerprint,
+      flag_value: ctl.flag_value, allowlist_count: ctl.allowlist_count,
+      allowlist_fingerprint: ctl.allowlist_fingerprint,
+      deployment_build: ctl.deployment_build,
+      expected_after: out.expected_after,
+      authorization_wording: null };
+
+    frozen.authorization_wording = S1_remAuthWording_(frozen);
+    out.authorization_wording = frozen.authorization_wording;
+    var missing = S1_REMOVAL_FREEZE_REQUIRED_.filter(function (k) {
+      return !Object.prototype.hasOwnProperty.call(frozen, k) || frozen[k] === undefined
+        || frozen[k] === null;
+    });
+    L.P('the_frozen_baseline_carries_every_required_field', [], missing, missing.length === 0);
+    var ph = (String(frozen.authorization_wording || '').match(/<[a-zA-Z_][a-zA-Z0-9_]*>/g) || []);
+    L.P('the_authorization_wording_carries_no_placeholder', [], ph, ph.length === 0);
+    var wa = S1_remWordingAudit_(frozen.authorization_wording, frozen);
+    out.wording_audit = wa;
+    L.P('the_authorization_wording_names_every_fact_a_person_must_check', [], wa.missing,
+      wa.missing.length === 0);
+
+    if (missing.length === 0 && ph.length === 0 && wa.missing.length === 0
+        && out.stop_reasons.length === 0 && L.failed.length === 0) {
+      out.frozen_before = frozen;
+      out.verdict = 'READY_TO_AUTHORIZE_REMOVAL';
+      out.next_decision = 'A person may now run RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL with this'
+        + ' frozen baseline and this exact authorization sentence. It defaults to a DRY RUN, and the dry'
+        + ' run performs every check under the same lock while writing nothing.';
+    }
+    return fin();
+  } catch (e) {
+    L.P('the_manifest_ran_to_completion', true, 'threw: ' + String(e && e.message ? e.message : e), false);
+    stop('MANIFEST_THREW: ' + S1_cap_(String(e && e.message ? e.message : e), 200));
+    return fin();
+  }
+}
+
+/** The script lock, asked for once and reported honestly. An absent lock authority is a REFUSAL, never a
+ *  reason to proceed unlocked: the whole safety property of this package is that the verification and the
+ *  write happen without anything else moving in between. */
+function S1_remAcquireLock_(timeoutMs) {
+  var o = { authority_present: false, acquired: false, lock: null, reason: null,
+    timeout_ms: timeoutMs, released: false };
+  if (typeof LockService === 'undefined') { o.reason = 'LOCK_AUTHORITY_UNAVAILABLE'; return o; }
+  o.authority_present = true;
+  var lk = null;
+  try { lk = LockService.getScriptLock(); }
+  catch (e) { o.reason = 'LOCK_HANDLE_THREW:' + S1_cap_(String(e && e.message ? e.message : e), 120); return o; }
+  if (!lk) { o.reason = 'LOCK_HANDLE_NULL'; return o; }
+  var got = false;
+  try { got = lk.tryLock(timeoutMs) === true; }
+  catch (e2) { o.reason = 'LOCK_TRY_THREW:' + S1_cap_(String(e2 && e2.message ? e2.message : e2), 120); return o; }
+  if (!got) { o.reason = 'LOCK_NOT_ACQUIRED_WITHIN_' + timeoutMs + 'MS'; return o; }
+  o.acquired = true;
+  o.lock = lk;
+  return o;
+}
+
+/**
+ * THE POSTCONDITION, MEASURED AGAINST THE FROZEN EXPECTATION AND NOTHING ELSE.
+ *
+ * Every comparison's expected side comes from `fz`, which the manifest produced from a different read. The
+ * target row is checked from the RAW range rather than from the record list, because a fully blank row is
+ * not a record and would simply be absent — and "absent" is what a deleted row looks like too. The whole
+ * method rests on the difference, so the check has to be able to see it.
+ */
+function S1_remReadback_(sheet, fz) {
+  var o = { ok: false, mismatches: [], measured: {},
+    target_cells_read: 0, target_cells_blank: 0, target_row_raw_fingerprint: null,
+    surviving_rows_compared: 0 };
+  function cmp(what, expected, actual) {
+    o.measured[what] = actual;
+    if (String(expected) !== String(actual)) {
+      o.mismatches.push({ what: what, expected: expected, actual: actual });
+    }
+  }
+  var R = S1_movReadForRepair_();
+  if (!R.ok) {
+    o.mismatches.push({ what: 'TABLE_NOT_READABLE_ON_READBACK', detail: R.stop_reasons });
+    return o;
+  }
+  var ea = fz.expected_after;
+  cmp('header_fingerprint', ea.header_fingerprint, R.header_fingerprint);
+  cmp('live_column_count', fz.live_column_count, R.live_column_count);
+  cmp('logical_movement_record_count', ea.logical_movement_record_count, R.integrity.row_count);
+  cmp('non_blank_id_count', ea.non_blank_id_count, R.integrity.ok_count);
+  cmp('valid_id_count', ea.valid_id_count,
+    R.integrity.ok_count - R.integrity.duplicate_id_count - R.integrity.wrong_type_id_count);
+  cmp('blank_id_count', ea.blank_id_count, R.integrity.blank_id_count);
+  cmp('duplicate_id_count', ea.duplicate_id_count, R.integrity.duplicate_id_count);
+  cmp('wrong_type_id_count', ea.wrong_type_id_count, R.integrity.wrong_type_id_count);
+  // THE FAULT THE WHOLE ROUND EXISTS FOR. The blank primary key is gone because the record is gone, not
+  // because it was filled in — which is why this is checked beside a valid_id_count that did NOT rise.
+  cmp('id_fault_count', ea.id_fault_count, (R.faults || []).length);
+  cmp('outside_named_column_row_count', ea.outside_named_column_row_count,
+    R.integrity.outside_named_columns_count);
+  cmp('table_combined_fingerprint', ea.table_combined_fingerprint, R.table_combined_fingerprint);
+
+  // THE PHYSICAL SHEET DID NOT SHRINK. This is the check that separates a clear from a delete, and it is
+  // asked of the sheet rather than of the record list, which cannot tell the two apart.
+  var lastRow = null;
+  try { lastRow = sheet ? sheet.getLastRow() : null; } catch (e) { lastRow = null; }
+  cmp('physical_last_row', ea.physical_last_row, lastRow);
+
+  // THE TARGET ROW, FROM THE RAW RANGE.
+  var raw = null;
+  try {
+    raw = sheet ? sheet.getRange(fz.target_row_number, 1, 1, fz.live_column_count).getValues()[0] : null;
+  } catch (e2) { raw = null; }
+  if (!raw) {
+    o.mismatches.push({ what: 'TARGET_RANGE_NOT_READABLE_ON_READBACK',
+      expected: fz.target_range_a1, actual: null });
+  } else {
+    o.target_cells_read = raw.length;
+    raw.forEach(function (v) { if (S1_canonCell_(v) === '~') o.target_cells_blank++; });
+    o.target_row_raw_fingerprint = S1_rowFingerprint_(fz.live_columns, raw);
+    cmp('target_cells_read', fz.target_range_cell_count, o.target_cells_read);
+    cmp('target_cells_blank', fz.target_range_cell_count, o.target_cells_blank);
+    cmp('target_row_raw_fingerprint', ea.target_row_raw_fingerprint, o.target_row_raw_fingerprint);
+  }
+  var stillARecord = false;
+  (R.t.rows || []).forEach(function (r) { if (r.row_number === fz.target_row_number) stillARecord = true; });
+  cmp('target_row_is_a_logical_record', ea.target_row_is_a_logical_record, stillARecord);
+
+  // THE 95, BY IDENTITY AND BY ROW NUMBER.
+  var rem = S1_remRemaining_(R.t, fz.target_id_column, fz.target_row_number);
+  o.surviving_rows_compared = rem.count;
+  cmp('remaining_record_count', ea.remaining_record_count, rem.count);
+  cmp('remaining_id_universe_fingerprint', ea.remaining_id_universe_fingerprint,
+    rem.id_universe_fingerprint);
+  cmp('remaining_row_fingerprint_map_fingerprint', ea.remaining_row_fingerprint_map_fingerprint,
+    rem.row_fingerprint_map_fingerprint);
+
+  // THE POOL AND THE PROTECTED SURFACES: unchanged, and proved unchanged rather than left unmentioned.
+  var pool = S1_remPoolObservation_(R.ss, fz.pool_warehouse_id, fz.pool_sku);
+  cmp('pool_fac_current_stock', ea.pool_fac_current_stock, pool.fac_current_stock);
+  cmp('pool_fac_reserved_stock', ea.pool_fac_reserved_stock, pool.fac_reserved_stock);
+  cmp('pool_row_fingerprint', ea.pool_row_fingerprint, pool.row_fingerprint);
+  cmp('pool_table_combined_fingerprint', ea.pool_table_combined_fingerprint,
+    pool.table_combined_fingerprint);
+  var prot = S1_remProtectedSurfaces_(R.ss);
+  cmp('protected_surface_fingerprint', ea.protected_surface_fingerprint, prot.fingerprint);
+  var ctl = S1_remControlSurface_();
+  cmp('flag_value', ea.flag_value, ctl.flag_value);
+  cmp('allowlist_fingerprint', ea.allowlist_fingerprint, ctl.allowlist_fingerprint);
+  cmp('build', ea.build, S1_BUILD_);
+
+  o.ok = o.mismatches.length === 0;
+  return o;
+}
+
+/**
+ * THE ROLLBACK. One call, the SAME fifteen cells, restored from values held IN MEMORY since before the clear.
+ *
+ * The in-memory copy is what makes this restorable at all. The frozen baseline carries the BEFORE row
+ * canonically, for comparison — but a canonical form has been through JSON, and a Date pasted back as an ISO
+ * string would not re-hash to the value it came from. So the restore writes the raw cells captured under this
+ * same lock, and the frozen fingerprint is what PROVES the restore landed. A rollback that is not verified is
+ * a hope; a rollback verified against a value it produced itself is not even that.
+ */
+function S1_remRollback_(sheet, fz, beforeRaw, why) {
+  var o = { attempted: true, why: why, outcome: 'FAILED', cells_rolled_back: 0,
+    restored_row_fingerprint: null, expected_row_fingerprint: fz.target_row_fingerprint,
+    restored_table_fingerprint: null, expected_table_fingerprint: fz.table_combined_fingerprint,
+    error: null };
+  if (!beforeRaw || beforeRaw.length !== fz.target_range_cell_count) {
+    o.error = 'NO_IN_MEMORY_BEFORE_ROW_TO_RESTORE_FROM';
+    o.outcome = 'MANUAL_RECOVERY_REQUIRED';
+    return o;
+  }
+  try {
+    sheet.getRange(fz.target_row_number, 1, 1, fz.target_range_cell_count).setValues([beforeRaw]);
+    o.cells_rolled_back = fz.target_range_cell_count;
+  } catch (e) {
+    o.error = 'ROLLBACK_WRITE_THREW: ' + S1_cap_(String(e && e.message ? e.message : e), 160);
+    o.outcome = 'MANUAL_RECOVERY_REQUIRED';
+    return o;
+  }
+  var R = S1_movReadForRepair_();
+  if (!R.ok) {
+    o.error = 'ROLLBACK_READBACK_UNREADABLE:' + R.stop_reasons.join(',');
+    o.outcome = 'MANUAL_RECOVERY_REQUIRED';
+    return o;
+  }
+  var rec = null;
+  (R.t.rows || []).forEach(function (r) { if (r.row_number === fz.target_row_number) rec = r; });
+  if (!rec) {
+    o.error = 'ROLLBACK_READBACK_ROW_IS_STILL_NOT_A_RECORD';
+    o.outcome = 'MANUAL_RECOVERY_REQUIRED';
+    return o;
+  }
+  o.restored_row_fingerprint = rec.fingerprint;
+  o.restored_table_fingerprint = R.table_combined_fingerprint;
+  var rowOk = S1_str_(rec.fingerprint) === S1_str_(fz.target_row_fingerprint);
+  var tableOk = S1_str_(R.table_combined_fingerprint) === S1_str_(fz.table_combined_fingerprint);
+  // BOTH, NOT EITHER. The row fingerprint proves the fifteen cells came back; the table fingerprint proves
+  // nothing else moved while they did.
+  o.outcome = (rowOk && tableOk) ? 'ROLLED_BACK_VERIFIED' : 'MANUAL_RECOVERY_REQUIRED';
+  if (!rowOk) o.error = 'THE_ROW_DID_NOT_RETURN_TO_ITS_FROZEN_BEFORE_FINGERPRINT';
+  else if (!tableOk) o.error = 'THE_ROW_CAME_BACK_BUT_THE_TABLE_FINGERPRINT_DID_NOT';
+  return o;
+}
+
+/**
+ * ================================================================================================================
+ * RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL({ execute, frozen, authorization, lock_timeout_ms })
+ *
+ * DEFAULT IS A DRY RUN. `execute` must be exactly `true`; absent, false, 'true', 1 and anything else are all
+ * dry runs. A dry run takes the same lock, performs every check, and writes nothing.
+ *
+ * IT COMPUTES NO EXPECTATION OF ITS OWN. Every BEFORE value and every expected AFTER value comes from the
+ * frozen manifest; this function re-measures and compares.
+ *
+ * ONE RANGE, ONE CALL, NO RETRY. There is exactly one clear site and exactly one restore site, both over
+ * (frozen.target_row_number, 1) to (…, live_column_count), and the live column count is re-measured and
+ * required to equal the frozen one — so a column append refuses rather than clearing a range that no longer
+ * describes the row. A clear that throws is ACK_UNKNOWN: the outcome is UNKNOWN until a readback classifies
+ * it, and it is never attempted again either way.
+ * ================================================================================================================
+ */
+function RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL(opts) {
+  opts = opts || {};
+  var out = {
+    tool: 'S1 FACTORY MOVEMENT LEGACY TEST-ROW REMOVAL — one range, frozen evidence, dry run by default',
+    build: S1_BUILD_,
+    // `execute` MUST be exactly true. A truthy check here would turn a typo into a production write.
+    execute_requested: opts.execute === true,
+    dry_run: opts.execute !== true,
+    method: S1_REMOVAL_METHOD_.method,
+    writes: 0, write_acknowledged: null, cells_touched: 0, cells_cleared: 0, cells_restored: 0,
+    ids_minted: 0, movement_types_written: 0,
+    rows_added: 0, rows_removed: 0, rows_reordered: false, tables_created: 0,
+    other_tables_touched: [],
+    generate_called: false, submit_called: false, migration_called: false, gap_job_called: false,
+    factory_writer_called: false,
+    table: S1_FACTORY_MOVEMENT_TABLE_, sheet_name: S1_FACTORY_MOVEMENT_TABLE_,
+    target_row_number: null, target_range_a1: null,
+    frozen_supplied: false, frozen_complete: false,
+    authorization_supplied: false, authorization_matches_frozen: false,
+    lock: null, verification: {}, readback: null, rollback: null,
+    already_applied: false, retryable: null, attempts: 0,
+    verdict: 'REFUSED', refusal_reasons: [],
+    predicates: [], predicates_passed: 0, predicates_failed: 0, failed_predicates: [] };
+  var L = S1_ledger_();
+  function refuse(r) { if (out.refusal_reasons.indexOf(r) === -1) out.refusal_reasons.push(r); }
+
+  function fin() {
+    out.predicates = L.entries;
+    out.predicates_failed = L.failed.length;
+    out.predicates_passed = L.entries.length - L.failed.length;
+    out.failed_predicates = L.failed.slice();
+    if (out.verdict === 'REFUSED' && !out.refusal_reasons.length && L.failed.length) {
+      out.refusal_reasons.push(L.failed.length + ' condition(s) not met: ' + L.failed.join(', '));
+    }
+    S1_log_('s1_mov_removal_verdict', JSON.stringify({
+      build: out.build, verdict: out.verdict,
+      execute_requested: out.execute_requested, dry_run: out.dry_run,
+      table: out.table, target_range: out.target_range_a1,
+      lock_acquired: out.lock ? out.lock.acquired : null,
+      writes: out.writes, write_acknowledged: out.write_acknowledged,
+      cells_touched: out.cells_touched, cells_cleared: out.cells_cleared,
+      cells_restored: out.cells_restored, ids_minted: out.ids_minted,
+      rows_added: out.rows_added, rows_removed: out.rows_removed,
+      rows_reordered: out.rows_reordered, tables_created: out.tables_created,
+      attempts: out.attempts, retryable: out.retryable, already_applied: out.already_applied,
+      readback_ok: out.readback ? out.readback.ok : null,
+      readback_mismatches: out.readback
+        ? out.readback.mismatches.map(function (m) { return m.what; }).slice(0, 8) : null,
+      rollback: out.rollback ? out.rollback.outcome : null,
+      predicates_passed: out.predicates_passed, predicates_failed: out.predicates_failed,
+      failed: out.failed_predicates.slice(0, 12),
+      refusal_reasons: out.refusal_reasons.slice(0, 12),
+      note: 'A REFUSED or DRY_RUN verdict wrote nothing. Only EXECUTED_OK means the one range was cleared.' }));
+    return out;
+  }
+
+  var LK = null;
+  function release() {
+    if (LK && LK.acquired && LK.lock) {
+      try { LK.lock.releaseLock(); LK.released = true; } catch (e) { LK.released = false; }
+    }
+  }
+
+  try {
+    // ---- §3.1 THE FROZEN EVIDENCE IS THE INPUT, AND IT MUST BE WHOLE. --------------------------
+    var fz = opts.frozen || null;
+    out.frozen_supplied = !!fz;
+    L.P('a_frozen_baseline_from_the_manifest_was_supplied', true, out.frozen_supplied,
+      out.frozen_supplied === true);
+    if (!fz) {
+      refuse('NO_FROZEN_BASELINE - run the MANIFEST first and pass its frozen_before');
+      return fin();
+    }
+    var fzMissing = S1_REMOVAL_FREEZE_REQUIRED_.filter(function (k) {
+      return !Object.prototype.hasOwnProperty.call(fz, k) || fz[k] === undefined || fz[k] === null;
+    });
+    out.frozen_complete = fzMissing.length === 0;
+    L.P('the_frozen_baseline_carries_every_required_field', [], fzMissing, fzMissing.length === 0);
+    if (fzMissing.length) { refuse('FROZEN_BASELINE_INCOMPLETE:' + fzMissing.join(',')); return fin(); }
+    out.target_row_number = fz.target_row_number;
+    out.target_range_a1 = fz.target_range_a1;
+
+    // ---- §3.2 THE AUTHORIZATION MUST BE THE EXACT SENTENCE THE MANIFEST FROZE. -----------------
+    var auth = S1_str_(opts.authorization);
+    out.authorization_supplied = auth !== '';
+    out.authorization_matches_frozen = auth !== '' && auth === S1_str_(fz.authorization_wording);
+    L.P('an_authorization_sentence_was_supplied', true, out.authorization_supplied,
+      out.authorization_supplied === true);
+    L.P('the_authorization_is_byte_identical_to_the_one_the_manifest_froze', true,
+      out.authorization_matches_frozen, out.authorization_matches_frozen === true);
+    if (!out.authorization_matches_frozen) {
+      refuse(auth === '' ? 'NO_AUTHORIZATION_SUPPLIED'
+        : 'AUTHORIZATION_DOES_NOT_MATCH_THE_FROZEN_SENTENCE');
+      return fin();
+    }
+    L.P('the_frozen_baseline_was_taken_against_this_build', S1_BUILD_, fz.build,
+      S1_str_(fz.build) === S1_BUILD_);
+    L.P('the_frozen_baseline_targets_the_movement_table', S1_FACTORY_MOVEMENT_TABLE_, fz.table,
+      S1_str_(fz.table) === S1_FACTORY_MOVEMENT_TABLE_);
+    L.P('the_frozen_classification_is_the_operator_removal_decision',
+      { classification: S1_REMOVAL_CLASSIFICATION_, basis: S1_REMOVAL_OPERATOR_BASIS_ },
+      { classification: fz.classification, basis: fz.operator_basis },
+      fz.classification === S1_REMOVAL_CLASSIFICATION_
+        && fz.operator_basis === S1_REMOVAL_OPERATOR_BASIS_);
+    if (fz.classification !== S1_REMOVAL_CLASSIFICATION_
+        || fz.operator_basis !== S1_REMOVAL_OPERATOR_BASIS_) {
+      refuse('FROZEN_CLASSIFICATION_IS_NOT_THE_REMOVAL_DECISION:' + S1_str_(fz.classification)
+        + '/' + S1_str_(fz.operator_basis));
+      return fin();
+    }
+    if (S1_str_(fz.build) !== S1_BUILD_ || S1_str_(fz.table) !== S1_FACTORY_MOVEMENT_TABLE_) {
+      refuse('FROZEN_BASELINE_IS_FOR_A_DIFFERENT_BUILD_OR_TABLE'); return fin();
+    }
+
+    // ---- §3.3 THE LOCK, BEFORE ANY MEASUREMENT THE WRITE WILL DEPEND ON. -----------------------
+    LK = S1_remAcquireLock_(Number(opts.lock_timeout_ms) > 0 ? Number(opts.lock_timeout_ms) : 30000);
+    out.lock = { authority_present: LK.authority_present, acquired: LK.acquired,
+      reason: LK.reason, timeout_ms: LK.timeout_ms };
+    L.P('the_script_lock_authority_is_present', true, LK.authority_present,
+      LK.authority_present === true);
+    L.P('the_script_lock_was_acquired_before_anything_was_measured_or_written', true, LK.acquired,
+      LK.acquired === true);
+    if (!LK.acquired) {
+      // NOT RETRIED HERE. A lock this run could not take is a lock something else is holding, and the
+      // right response is to come back later with the same frozen baseline, not to spin.
+      refuse('LOCK_NOT_HELD:' + S1_str_(LK.reason));
+      out.retryable = true;
+      return fin();
+    }
+
+    // ---- §3.4 RE-MEASURE UNDER THE LOCK. EVERY FROZEN FACT MUST STILL HOLD. --------------------
+    var R = S1_movReadForRepair_();
+    L.P('the_movement_table_is_readable_now', [], R.stop_reasons,
+      R.ok === true && R.stop_reasons.length === 0);
+    if (!R.ok) { refuse('TABLE_NOT_READABLE:' + R.stop_reasons.join(',')); return fin(); }
+
+    // IDEMPOTENCY IS ASKED FIRST, BECAUSE A RETRY IS A DIFFERENT QUESTION. On a completed removal every
+    // pre-clear condition is legitimately false — the row is not a record, the blank id count is 0, the
+    // table fingerprint is the AFTER one — so asking them about a run that already happened would report a
+    // drift for a removal that succeeded.
+    var already = true;
+    (R.t.rows || []).forEach(function (r) { if (r.row_number === fz.target_row_number) already = false; });
+    if (already) {
+      out.already_applied = true;
+      out.readback = S1_remReadback_(R.sheet, fz);
+      L.P('a_retry_of_a_completed_removal_writes_nothing', [0, 0, 0],
+        [out.writes, out.cells_cleared, out.cells_restored],
+        out.writes === 0 && out.cells_cleared === 0 && out.cells_restored === 0);
+      L.P('a_retry_confirms_the_completed_removal_against_the_frozen_expected_after', [],
+        out.readback.mismatches, out.readback.ok === true);
+      out.verdict = out.readback.ok === true ? 'ALREADY_APPLIED'
+        : 'ALREADY_APPLIED_BUT_READBACK_MISMATCH';
+      if (out.readback.ok !== true) {
+        refuse('THE_TARGET_ROW_IS_ALREADY_GONE_BUT_THE_TABLE_DOES_NOT_MATCH_THE_EXPECTED_AFTER');
+      }
+      out.retryable = false;
+      return fin();
+    }
+
+    var v = out.verification;
+    function chk(name, expected, observed, pass) {
+      v[name] = { frozen: expected, now: observed };
+      L.P('the_' + name + '_is_the_one_that_was_frozen', expected, observed, pass);
+      if (!pass) refuse('DRIFT:' + name);
+      return pass;
+    }
+    chk('header_fingerprint', fz.header_fingerprint, R.header_fingerprint,
+      S1_str_(fz.header_fingerprint) === S1_str_(R.header_fingerprint));
+    chk('live_column_count', fz.live_column_count, R.live_column_count,
+      fz.live_column_count === R.live_column_count);
+    chk('named_column_count', fz.named_column_count, R.named_column_count,
+      fz.named_column_count === R.named_column_count);
+    chk('table_combined_fingerprint', fz.table_combined_fingerprint, R.table_combined_fingerprint,
+      S1_str_(fz.table_combined_fingerprint) === S1_str_(R.table_combined_fingerprint));
+    chk('logical_movement_record_count', fz.logical_movement_record_count, R.integrity.row_count,
+      fz.logical_movement_record_count === R.integrity.row_count);
+    chk('blank_id_count', fz.blank_id_count, R.integrity.blank_id_count,
+      fz.blank_id_count === R.integrity.blank_id_count);
+    chk('duplicate_id_count', fz.duplicate_id_count, R.integrity.duplicate_id_count,
+      fz.duplicate_id_count === R.integrity.duplicate_id_count);
+    chk('wrong_type_id_count', fz.wrong_type_id_count, R.integrity.wrong_type_id_count,
+      fz.wrong_type_id_count === R.integrity.wrong_type_id_count);
+    chk('outside_named_column_row_count', fz.outside_named_column_row_count,
+      R.integrity.outside_named_columns_count,
+      fz.outside_named_column_row_count === R.integrity.outside_named_columns_count);
+    var lastRow = null;
+    try { lastRow = R.sheet.getLastRow(); } catch (e1) { lastRow = null; }
+    chk('physical_last_row', fz.physical_last_row, lastRow, fz.physical_last_row === lastRow);
+
+    // THE TARGET ROW: present, unique, unchanged, and still without a key or an axis.
+    var rec = null;
+    (R.t.rows || []).forEach(function (r) { if (r.row_number === fz.target_row_number) rec = r; });
+    L.P('the_target_sheet_row_is_still_a_readable_record', true, rec !== null, rec !== null);
+    if (!rec) { refuse('TARGET_ROW_NOT_FOUND_AT_THE_FROZEN_ROW_NUMBER'); return fin(); }
+    chk('target_row_fingerprint', fz.target_row_fingerprint, rec.fingerprint,
+      S1_str_(fz.target_row_fingerprint) === S1_str_(rec.fingerprint));
+    var occ = S1_remFingerprintOccurrences_(R.t, rec.fingerprint);
+    chk('target_row_occurrences', fz.target_row_occurrences, occ, occ === 1 && fz.target_row_occurrences === 1);
+    var idBlank = S1_canonCell_(S1_cellOf_(rec, fz.target_id_column)) === '~';
+    var mtBlank = S1_canonCell_(S1_cellOf_(rec, 'movement_type')) === '~';
+    chk('target_movement_id_is_blank', fz.target_movement_id_is_blank, idBlank,
+      idBlank === fz.target_movement_id_is_blank);
+    chk('target_movement_type_is_blank', fz.target_movement_type_is_blank, mtBlank,
+      mtBlank === fz.target_movement_type_is_blank);
+
+    // THE 95, THE POOL, THE PROTECTED SURFACES AND THE CONTROL SURFACE, ALL BEFORE ANYTHING IS WRITTEN.
+    var rem = S1_remRemaining_(R.t, fz.target_id_column, fz.target_row_number);
+    chk('remaining_record_count', fz.remaining_record_count, rem.count,
+      fz.remaining_record_count === rem.count);
+    chk('remaining_id_universe_fingerprint', fz.remaining_id_universe_fingerprint,
+      rem.id_universe_fingerprint,
+      S1_str_(fz.remaining_id_universe_fingerprint) === S1_str_(rem.id_universe_fingerprint));
+    chk('remaining_row_fingerprint_map_fingerprint', fz.remaining_row_fingerprint_map_fingerprint,
+      rem.row_fingerprint_map_fingerprint,
+      S1_str_(fz.remaining_row_fingerprint_map_fingerprint)
+        === S1_str_(rem.row_fingerprint_map_fingerprint));
+    var pool = S1_remPoolObservation_(R.ss, fz.pool_warehouse_id, fz.pool_sku);
+    chk('pool_fac_current_stock', fz.pool_fac_current_stock, pool.fac_current_stock,
+      fz.pool_fac_current_stock === pool.fac_current_stock);
+    chk('pool_fac_reserved_stock', fz.pool_fac_reserved_stock, pool.fac_reserved_stock,
+      fz.pool_fac_reserved_stock === pool.fac_reserved_stock);
+    chk('pool_row_fingerprint', fz.pool_row_fingerprint, pool.row_fingerprint,
+      S1_str_(fz.pool_row_fingerprint) === S1_str_(pool.row_fingerprint));
+    chk('pool_table_combined_fingerprint', fz.pool_table_combined_fingerprint,
+      pool.table_combined_fingerprint,
+      S1_str_(fz.pool_table_combined_fingerprint) === S1_str_(pool.table_combined_fingerprint));
+    var prot = S1_remProtectedSurfaces_(R.ss);
+    chk('protected_surface_fingerprint', fz.protected_surface_fingerprint, prot.fingerprint,
+      S1_str_(fz.protected_surface_fingerprint) === S1_str_(prot.fingerprint));
+    var ctl = S1_remControlSurface_();
+    chk('flag_value', fz.flag_value, ctl.flag_value, fz.flag_value === ctl.flag_value);
+    L.P('the_generation_flag_is_still_false', false, ctl.flag_value, ctl.flag_value === false);
+    chk('allowlist_fingerprint', fz.allowlist_fingerprint, ctl.allowlist_fingerprint,
+      S1_str_(fz.allowlist_fingerprint) === S1_str_(ctl.allowlist_fingerprint));
+
+    // ---- §3.5 THE RANGE. RE-DERIVED FROM THE LIVE HEADER, NOT TAKEN FROM THE FREEZE. -----------
+    var rangeNow = S1_remRangeA1_(fz.target_row_number, R.live_column_count);
+    L.P('the_range_to_clear_is_exactly_the_one_that_was_frozen', fz.target_range_a1, rangeNow,
+      rangeNow !== null && rangeNow === S1_str_(fz.target_range_a1));
+    if (rangeNow === null || rangeNow !== S1_str_(fz.target_range_a1)) {
+      refuse('THE_TARGET_RANGE_NO_LONGER_DESCRIBES_THE_ROW:' + S1_str_(rangeNow));
+    }
+    out.cells_touched = 0;
+
+    // ---- §3.6 THE IN-MEMORY BEFORE ROW, CAPTURED UNDER THE LOCK AND PROVED TO BE THE FROZEN ONE. --
+    var beforeRaw = null;
+    try {
+      beforeRaw = R.sheet.getRange(fz.target_row_number, 1, 1, R.live_column_count).getValues()[0];
+    } catch (e2) { beforeRaw = null; }
+    L.P('the_before_row_was_captured_in_memory', fz.target_range_cell_count,
+      beforeRaw ? beforeRaw.length : null,
+      !!beforeRaw && beforeRaw.length === fz.target_range_cell_count);
+    if (!beforeRaw || beforeRaw.length !== fz.target_range_cell_count) {
+      refuse('THE_BEFORE_ROW_COULD_NOT_BE_HELD_IN_MEMORY_SO_THERE_IS_NOTHING_TO_ROLL_BACK_TO');
+      return fin();
+    }
+    var rawFp = S1_rowFingerprint_(R.live_columns, beforeRaw);
+    L.P('the_in_memory_before_row_hashes_to_the_frozen_before_fingerprint',
+      fz.target_row_fingerprint, rawFp, S1_str_(rawFp) === S1_str_(fz.target_row_fingerprint));
+    if (S1_str_(rawFp) !== S1_str_(fz.target_row_fingerprint)) {
+      refuse('THE_RANGE_READ_DOES_NOT_MATCH_THE_FROZEN_ROW');
+    }
+    var nonBlankNow = 0;
+    beforeRaw.forEach(function (x) { if (S1_canonCell_(x) !== '~') nonBlankNow++; });
+    L.P('the_number_of_cells_that_will_actually_change_is_the_frozen_one',
+      fz.target_non_blank_cell_count, nonBlankNow, nonBlankNow === fz.target_non_blank_cell_count);
+    if (nonBlankNow !== fz.target_non_blank_cell_count) {
+      refuse('THE_NUMBER_OF_NON_BLANK_CELLS_DRIFTED:' + nonBlankNow);
+    }
+
+    if (L.failed.length || out.refusal_reasons.length) { return fin(); }
+
+    // ---- §DEFAULT: A DRY RUN STOPS HERE, HAVING WRITTEN NOTHING. -------------------------------
+    if (opts.execute !== true) {
+      out.verdict = 'DRY_RUN_OK';
+      out.retryable = true;
+      L.P('a_dry_run_wrote_nothing', [0, 0, 0], [out.writes, out.cells_cleared, out.cells_restored],
+        out.writes === 0 && out.cells_cleared === 0 && out.cells_restored === 0);
+      L.P('a_dry_run_took_the_same_lock_and_ran_the_same_checks', true, LK.acquired,
+        LK.acquired === true);
+      return fin();
+    }
+
+    // ---- §3.7 THE REMOVAL. ONE RANGE. ONE CALL. NEVER TWICE. ----------------------------------
+    out.attempts = 1;
+    out.cells_touched = R.live_column_count;
+    var ackUnknown = false;
+    try {
+      R.sheet.getRange(fz.target_row_number, 1, 1, R.live_column_count).clearContent();
+      out.write_acknowledged = true;
+      out.writes = 1;
+      out.cells_cleared = nonBlankNow;
+    } catch (wErr) {
+      // TIMEOUT OR TRANSPORT FAILURE IS NOT A FAILED WRITE. It is an UNKNOWN one, and the difference
+      // decides whether anything may be tried again. It is classified by READBACK, never by retry.
+      ackUnknown = true;
+      out.write_acknowledged = 'UNKNOWN';
+      out.verdict = 'ACK_UNKNOWN';
+      refuse('WRITE_ACK_UNKNOWN: ' + S1_cap_(String(wErr && wErr.message ? wErr.message : wErr), 200));
+      L.P('the_single_range_clear_was_acknowledged', true, 'threw', false);
+    }
+
+    // ---- §3.8 READBACK, AGAINST THE FROZEN EXPECTATION. ---------------------------------------
+    out.readback = S1_remReadback_(R.sheet, fz);
+    if (ackUnknown) {
+      // THREE OUTCOMES, AND THE ONE THAT MATTERS MOST IS THE PROVEN ZERO-WRITE.
+      var recNow = null;
+      var R2 = S1_movReadForRepair_();
+      if (R2.ok) {
+        (R2.t.rows || []).forEach(function (r) { if (r.row_number === fz.target_row_number) recNow = r; });
+      }
+      if (out.readback.ok === true) {
+        // It landed after all. The write is real and it is exactly the authorized one.
+        out.writes = 1;
+        out.cells_cleared = nonBlankNow;
+        out.write_acknowledged = 'RESOLVED_BY_READBACK_AS_APPLIED';
+        out.verdict = 'EXECUTED_OK_AFTER_ACK_UNKNOWN';
+        out.retryable = false;
+        L.P('an_unacknowledged_write_was_classified_by_readback_and_not_by_retry', 1, out.attempts,
+          out.attempts === 1);
+      } else if (recNow && S1_str_(recNow.fingerprint) === S1_str_(fz.target_row_fingerprint)
+          && S1_str_(R2.table_combined_fingerprint) === S1_str_(fz.table_combined_fingerprint)) {
+        // A PROVEN ZERO-WRITE. The row is intact and the whole table is at its BEFORE fingerprint, so
+        // nothing happened - and only a proven zero-write stays retryable.
+        out.writes = 0;
+        out.cells_cleared = 0;
+        out.write_acknowledged = 'RESOLVED_BY_READBACK_AS_NOT_APPLIED';
+        out.verdict = 'NOT_APPLIED_ACK_UNKNOWN';
+        out.retryable = true;
+        L.P('a_proven_zero_write_wrote_nothing', [0, 0], [out.writes, out.cells_cleared],
+          out.writes === 0 && out.cells_cleared === 0);
+      } else {
+        out.verdict = 'ACK_UNKNOWN_UNRESOLVED';
+        out.retryable = false;
+        out.rollback = S1_remRollback_(R.sheet, fz, beforeRaw, 'ACK_UNKNOWN_UNRESOLVED');
+        out.cells_restored = out.rollback.cells_rolled_back;
+        out.verdict = out.rollback.outcome === 'ROLLED_BACK_VERIFIED'
+          ? 'ROLLED_BACK_VERIFIED' : 'MANUAL_RECOVERY_REQUIRED';
+      }
+      return fin();
+    }
+
+    L.P('the_readback_matched_the_frozen_expected_after', [], out.readback.mismatches,
+      out.readback.ok === true);
+    if (out.readback.ok !== true) {
+      refuse('READBACK_MISMATCH:' + out.readback.mismatches.map(function (m) {
+        return m.what; }).join(','));
+      out.rollback = S1_remRollback_(R.sheet, fz, beforeRaw, 'READBACK_MISMATCH');
+      out.cells_restored = out.rollback.cells_rolled_back;
+      out.retryable = false;
+      // AND THE CLEAR IS NOT ATTEMPTED AGAIN. attempts stays 1 whatever the rollback outcome.
+      out.verdict = out.rollback.outcome === 'ROLLED_BACK_VERIFIED'
+        ? 'ROLLED_BACK_VERIFIED' : 'MANUAL_RECOVERY_REQUIRED';
+      L.P('the_clear_was_never_attempted_a_second_time', 1, out.attempts, out.attempts === 1);
+      return fin();
+    }
+
+    out.verdict = 'EXECUTED_OK';
+    out.retryable = false;
+    L.P('exactly_one_range_of_the_frozen_size_was_touched', fz.target_range_cell_count,
+      out.cells_touched, out.cells_touched === fz.target_range_cell_count);
+    L.P('exactly_the_frozen_number_of_cells_changed', fz.target_non_blank_cell_count,
+      out.cells_cleared, out.cells_cleared === fz.target_non_blank_cell_count);
+    L.P('no_row_was_added_removed_or_reordered', [0, 0, false],
+      [out.rows_added, out.rows_removed, out.rows_reordered],
+      out.rows_added === 0 && out.rows_removed === 0 && out.rows_reordered === false);
+    L.P('no_primary_key_was_minted_and_no_ledger_axis_was_written', [0, 0],
+      [out.ids_minted, out.movement_types_written],
+      out.ids_minted === 0 && out.movement_types_written === 0);
+    L.P('the_clear_was_attempted_exactly_once', 1, out.attempts, out.attempts === 1);
+    return fin();
+  } catch (e) {
+    L.P('the_tool_ran_to_completion', true, 'threw: ' + String(e && e.message ? e.message : e), false);
+    refuse('TOOL_THREW: ' + S1_cap_(String(e && e.message ? e.message : e), 200));
+    return fin();
+  } finally {
+    release();
+    if (out.lock && LK) { out.lock.released = LK.released === true; }
+  }
+}
+
+// ================================================================================================================
 // S1-R4F — WHERE DID ROW 2 COME FROM? THE TABLE CANNOT SAY, SO EVERYTHING ELSE IS ASKED.
 //
 // R4D located the row. R4E proved it cannot be repaired by writing one cell, and named the reason: it is

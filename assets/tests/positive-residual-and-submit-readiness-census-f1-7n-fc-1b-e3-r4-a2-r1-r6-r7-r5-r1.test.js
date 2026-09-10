@@ -579,31 +579,63 @@ var S1_BARE = bareCode(S1);
 // checkable claim for nothing. It is replaced by a claim that says WHERE a write may live: every other write
 // API stays banned file-wide, `setValue` is allowed at exactly two sites, both of them are inside the two
 // backfill functions, and every read-only entry point is checked on its OWN source.
-['setValues', 'appendRow', 'deleteRow', 'insertSheet', 'deleteSheet', 'setFormula',
- 'removeSheet', 'setName', 'LockService'].forEach(function (api, i) {
+// S1-R4H - NARROWED AGAIN, AND AGAIN THEREFORE STRONGER.
+//
+// R4E allowed `setValue` at two named sites. R4H adds an authorized REMOVAL, and it needs three more APIs:
+// `clearContent` to empty the one range, `setValues` to put the fifteen cells back, and `LockService` to
+// hold the sheet still while that happens. Dropping the file-wide bans on those three would trade a
+// checkable claim for nothing, so each becomes a claim about WHERE it may live - a total count for the
+// whole file, and that same count found inside the one function allowed to have it.
+//
+// WHAT STAYS BANNED OUTRIGHT is every API that changes the SHAPE of a sheet. That is not a stylistic line:
+// the removal method is "empty the row, never move it", and `deleteRow` is the single call that would make
+// every frozen row number in this file - R4E's target, R4F's chronology, R4H's 95 survivors - point at a
+// different record.
+['appendRow', 'deleteRow', 'deleteRows', 'insertRow', 'insertRows', 'moveRows', 'insertSheet',
+ 'deleteSheet', 'removeSheet', 'setFormula', 'setName', 'clearContents', 'Utilities.getUuid',
+ 'SpreadsheetApp.flush', 'DriveApp', 'MailApp', 'UrlFetchApp'].forEach(function (api, i) {
   ok(S1_BARE.indexOf(api) === -1,
     'A7.' + (i + 1) + ' the census source contains no ' + api + ' (comments and string literals stripped)');
 });
-// setValue: exactly two sites - the repair and its rollback - and nowhere else.
-eq((S1_BARE.match(/setValue\(/g) || []).length, 2,
-  'A7.10 setValue appears exactly TWICE in the whole file: the one repair and its one rollback');
-var A7write = extractFn(S1, 'RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL');
-var A7roll = extractFn(S1, 'S1_movRollback_');
-eq((bareCode(A7write).match(/setValue\(/g) || []).length, 1,
-  'A7.11 one of them is in the backfill tool');
-eq((bareCode(A7roll).match(/setValue\(/g) || []).length, 1,
-  'A7.12 and the other is in its rollback');
+// THE THREE WRITE APIS THAT ARE ALLOWED, EACH WITH A TOTAL AND A HOME.
+[['setValue(', 2, ['RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL', 'S1_movRollback_'],
+  'R4E\'s single-cell repair and its rollback'],
+ ['setValues(', 1, ['S1_remRollback_'],
+  'R4H\'s removal rollback, which restores all fifteen cells at once'],
+ ['clearContent(', 1, ['RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL'],
+  'R4H\'s removal, which empties exactly one range'],
+ ['LockService', 2, ['S1_remAcquireLock_'],
+  'the one place a script lock is taken']].forEach(function (row, i) {
+  var api = row[0], total = row[1], fns = row[2], inside = 0;
+  fns.forEach(function (fn) { inside += bareCode(extractFn(S1, fn)).split(api).length - 1; });
+  eq(S1_BARE.split(api).length - 1, total,
+    'A7.18.' + (i + 1) + 'a ' + api + ' appears exactly ' + total + ' time(s) in the whole file');
+  eq(inside, total,
+    'A7.18.' + (i + 1) + 'b and every one of them is inside ' + fns.join(' / ') + ' - ' + row[3]);
+});
 // EVERY READ-ONLY ENTRY POINT, ON ITS OWN SOURCE. A file-wide claim could not have said this once one
 // function was allowed to write; this can, and it is the claim that actually matters.
 ['RUN_S1_POSITIVE_RESIDUAL_CANDIDATE_CENSUS', 'RUN_S1_POSITIVE_RESIDUAL_PROPOSAL_CENSUS',
  'RUN_S1_SUBMIT_READINESS_CENSUS', 'RUN_S1_MANIFEST_P', 'RUN_S1_MANIFEST_S',
  'RUN_S1_ACCEPTED_GAP_RUN_READABILITY_DIAGNOSTIC', 'RUN_S1_FACTORY_MOVEMENT_ID_INTEGRITY_CENSUS',
- 'RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL_MANIFEST'].forEach(function (fn, i) {
+ 'RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL_MANIFEST',
+ 'RUN_S1_FACTORY_MOVEMENT_LEGACY_PROVENANCE_CENSUS',
+ 'RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL_MANIFEST'].forEach(function (fn, i) {
   var src = bareCode(extractFn(S1, fn));
-  ok(src.length > 0, 'A7.13.' + (i + 1) + 'a ' + fn + ' is extractable');
+  ok(src.length > 0, 'A7.19.' + (i + 1) + 'a ' + fn + ' is extractable');
   ok(src.indexOf('setValue') === -1 && src.indexOf('appendRow') === -1
+    && src.indexOf('clearContent') === -1 && src.indexOf('LockService') === -1
     && src.indexOf('getRange') === -1,
-    'A7.13.' + (i + 1) + 'b ' + fn + ' reaches no write API and no getRange at all');
+    'A7.19.' + (i + 1) + 'b ' + fn + ' reaches no write API, no lock and no getRange at all');
+});
+// TEN READ-ONLY ENTRY POINTS AND TWO THAT MAY WRITE, WHICH IS THE WHOLE PUBLIC SURFACE.
+eq((S1_BARE.match(/^function RUN_S1_[A-Z_]+/gm) || []).length, 12,
+  'A7.20 twelve public entry points in total');
+['RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL', 'RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL']
+  .forEach(function (fn, i) {
+  var src = bareCode(extractFn(S1, fn));
+  ok(src.indexOf('opts.execute !== true') > 0,
+    'A7.20.' + (i + 1) + ' and each of the two that MAY write gates on `opts.execute !== true`, by identity');
 });
 ok(S1_BARE.indexOf('inventoryAiPlanDbGenerationEnabled_') > 0,
   'A7a it READS the flag …');
@@ -1599,9 +1631,13 @@ eq(vm.runInContext('JSON.stringify(inventoryAiPlanActivationAllowlist_())', S5.w
 eq(vm.runInContext('inventoryAiPlanActivationAllowlist_().length', S5.world.ctx), 1,
   'S8f still exactly one entry');
 // The proposal census is in the SAME zero-write source scan the rest of the file is under.
-ok(S1_BARE.indexOf('RUN_S1_POSITIVE_RESIDUAL_PROPOSAL_CENSUS') > 0
-  && S1_BARE.indexOf('setValues') < 0 && S1_BARE.indexOf('appendRow') < 0,
-  'S8g and the file carrying it still contains no write API at all');
+// S1-R4H - RE-AIMED AT THE CENSUS ITSELF. `setValues` is no longer absent from the FILE: R4H's rollback
+// has one. A file-wide claim would now be false about a function it was never really about, so the claim
+// is asked of the proposal census's own source, where it is both true and the thing that matters.
+var S8gsrc = bareCode(extractFn(S1, 'RUN_S1_POSITIVE_RESIDUAL_PROPOSAL_CENSUS'));
+ok(S8gsrc.length > 0 && S8gsrc.indexOf('setValue') < 0 && S8gsrc.indexOf('appendRow') < 0
+  && S8gsrc.indexOf('clearContent') < 0 && S8gsrc.indexOf('getRange') < 0,
+  'S8g and the proposal census itself reaches no write API at all');
 
 // ---- S9 — THE SEGMENTED OUTPUT. §8's five names, and no 189-line payload. --------------------------------
 var S9tags = logTags(S5.world);
@@ -5272,9 +5308,11 @@ eq(AB32src.indexOf('S1_movProposedId_'), -1,
 eq(AB13.repair_route.indexOf('NONE'), 0, 'AB32e the output states the repair route is NONE');
 ok(String(AB13.repair_route).indexOf('a PERSON may now decide, never that a tool may act') > 0,
   'AB32f and what READY means, in words', AB13.repair_route);
-// AND THE ENTRY POINT COUNT IS NOW TEN, none of them new writers.
-eq((S1_BARE.match(/^function RUN_S1_[A-Z_]+/gm) || []).length, 10,
-  'AB32g ten public entry points, one more than R4E and read-only');
+// AND THE ENTRY POINT COUNT. R4F added one, read-only; R4H added two more - a read-only manifest and the
+// one tool in this file that may empty a range. The count is asserted so a third writer cannot appear
+// without this line changing.
+eq((S1_BARE.match(/^function RUN_S1_[A-Z_]+/gm) || []).length, 12,
+  'AB32g twelve public entry points: nine from R4E and before, R4F\'s read-only census, and R4H\'s two');
 
 // ---- AB33 — THE FIELD CONTRACT IS R4E's, NOT A SECOND OPINION. ------------------------------------
 // A second required-ness table would be a second opinion, and the first thing two opinions do is disagree.
@@ -5692,6 +5730,655 @@ eq(AC14.chain_continuity.links[0].current.epoch_boundary.kind,
 eq(AC14.chain_continuity.current_axis.disagree, 0, 'AC14b still zero disagreements');
 ok(AC14.chain_without_the_target.removing_it_repairs_a_break !== true,
   'AC14c and still no claim that removing the row repairs anything');
+// ================================================================================================================
+section('AD — S1-R4H: the operator classified it, and removal is not completion');
+// ================================================================================================================
+//
+// R4E proved the row cannot be repaired by writing one cell. R4F and R4G ended at
+// OPERATOR_BUSINESS_CLASSIFICATION_REQUIRED, because the database does not contain the answer. The operator
+// has now answered - INVALID_NON_LEDGER_ROW on the basis CONFIRMED_EARLY_TEST_RESIDUE - and that answer is an
+// INPUT to the diagnostic rather than a finding of it. Everything below tests a package that records the
+// classification, refuses to act if the row it was issued against has moved, and removes the row by EMPTYING
+// it in place.
+//
+// THE TWO COUNTS. Clearing is not deleting: the record leaves the population while the physical row stays
+// where it is, so 96 -> 95 logical against an unchanged sheet extent. Every remaining row keeps its ROW
+// NUMBER as well as its content, which is the property `deleteRow` would destroy and the reason the method
+// is what it is.
+//
+// FakeSheet's range has no clearContent - nothing in this family could clear one before. It is added here,
+// as a REAL clear that counts a write, so allWrites() still measures what actually happened.
+(function () {
+  var baseGetRange = FakeSheet.prototype.getRange;
+  FakeSheet.prototype.getRange = function (row, col, nr, nc) {
+    var s = this;
+    var r = baseGetRange.call(this, row, col, nr, nc);
+    r.clearContent = function () {
+      s.writes++;
+      for (var i = 0; i < (nr || 1); i++) {
+        for (var j = 0; j < (nc || 1); j++) s.rows[row - 1 + i][col - 1 + j] = '';
+      }
+    };
+    return r;
+  };
+})();
+
+// A script lock that can be observed and can be made to refuse. Injected per world, so a world built without
+// it is the genuine "no lock authority" case rather than a flag.
+var AD_LOCK_SRC_ = 'var __AD_LOCK = { tries: 0, releases: 0, held: false, grant: true, thrw: null,'
+  + ' last_timeout: null };' + NL
+  + 'var LockService = { getScriptLock: function () { return {' + NL
+  + '  tryLock: function (ms) { __AD_LOCK.tries++; __AD_LOCK.last_timeout = ms;' + NL
+  + '    if (__AD_LOCK.thrw) { throw new Error(__AD_LOCK.thrw); }' + NL
+  + '    if (__AD_LOCK.grant) { __AD_LOCK.held = true; return true; }' + NL
+  + '    return false; },' + NL
+  + '  releaseLock: function () { __AD_LOCK.releases++; __AD_LOCK.held = false; } }; } };';
+
+var AD_POOL_ = [{ warehouse_id: WHF, sku: SKU, fac_current_stock: 2210, fac_reserved_stock: 0 }];
+
+/** The live target row 2, and 95 records every writer would recognise. */
+function adRows(first, count) {
+  var rows = [first === undefined ? abLive() : first];
+  for (var i = 1; i <= (count === undefined ? 95 : count); i++) rows.push(aaGood(i));
+  return rows;
+}
+function adWorld(rows, extra, noLock, mutate) {
+  var sp = {};
+  Object.keys(pos()).forEach(function (k) { sp[k] = pos()[k]; });
+  sp.movements = rows === undefined ? adRows() : rows;
+  sp.factory_stock = AD_POOL_;
+  // THE BASE HARNESS ALREADY SUPPLIES A LOCK, and it always grants. So "no lock authority" has to be made
+  // EXPLICITLY - an absent stub is not the same as an absent service, and the world that proves the refusal
+  // has to actually not have one.
+  sp.after = noLock ? 'LockService = undefined;' : AD_LOCK_SRC_;
+  Object.keys(extra || {}).forEach(function (k) { sp[k] = extra[k]; });
+  var w = S1World(sp);
+  if (mutate) mutate(w);
+  return w;
+}
+/** The world's own measured state, read through the SHIPPED read-only id census, as the pin. Same seam R4F
+ *  uses: the package REPORTS that its expectation was caller-supplied, and AD16 drives the default. */
+function adPin(w, over) {
+  var c = vm.runInContext('RUN_S1_FACTORY_MOVEMENT_ID_INTEGRITY_CENSUS()', w.ctx);
+  var f = (c.faults || [])[0] || {};
+  var e = { build: c.build, header_fingerprint: c.header_fingerprint,
+    table_combined_fingerprint: c.table_combined_fingerprint,
+    row_count: c.row_count, logical_movement_record_count: c.row_count,
+    valid_id_count: c.valid_id_count, blank_id_count: c.blank_id_count,
+    duplicate_id_count: c.duplicate_id_count, wrong_type_id_count: c.wrong_type_id_count,
+    outside_named_column_row_count: c.outside_named_column_row_count,
+    target_row_number: f.one_based_sheet_row_number,
+    target_row_fingerprint: f.full_named_row_fingerprint,
+    target_movement_id_is_blank: true, target_movement_type_is_blank: true,
+    pool_warehouse_id: WHF, pool_sku: SKU,
+    pool_fac_current_stock: 2210, pool_fac_reserved_stock: 0,
+    authority: 'the suite\'s own measurement of the world it built' };
+  Object.keys(over || {}).forEach(function (k) { e[k] = over[k]; });
+  return e;
+}
+function adMan(w, optsOver) {
+  var o = { expect: adPin(w, (optsOver || {}).pinOver) };
+  Object.keys(optsOver || {}).forEach(function (k) { if (k !== 'pinOver') o[k] = optsOver[k]; });
+  vm.runInContext('var __AD_ARG = ' + JSON.stringify(o) + ';', w.ctx);
+  return vm.runInContext('RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL_MANIFEST(__AD_ARG)', w.ctx);
+}
+function adRun(w, arg) {
+  vm.runInContext('var __AD_RUN = ' + JSON.stringify(arg || {}) + ';', w.ctx);
+  return vm.runInContext('RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL(__AD_RUN)', w.ctx);
+}
+function adLock(w) { return vm.runInContext('JSON.parse(JSON.stringify(__AD_LOCK))', w.ctx); }
+/** Every refusal owes the same things: nothing written anywhere, nothing minted, no row structure changed. */
+function adNoWrite(r, w, label) {
+  eq([r.writes, r.cells_cleared, r.cells_restored, r.ids_minted], [0, 0, 0, 0],
+    label + ' zero writes, zero cells cleared, zero restored, zero ids minted');
+  eq(w.allWrites(), 0, label + ' and zero writes MEASURED on every sheet in the world');
+  eq(w.writesByTable(), {}, label + ' with no table written at all');
+  eq([r.rows_added, r.rows_removed, r.rows_reordered, r.tables_created], [0, 0, false, 0],
+    label + ' and no row added, removed or reordered, and no table created');
+}
+/** The whole movement sheet as raw rows, so a physical claim can be checked physically. */
+function adSheet(w) { return w.sheets.factory_stock_movements.rows; }
+
+// ---- AD1 — THE MANIFEST MEASURES, CONFIRMS AND FREEZES. --------------------------------------------
+var AD1w = adWorld();
+var AD1 = adMan(AD1w);
+eq(AD1.verdict, 'READY_TO_AUTHORIZE_REMOVAL',
+  'AD1  the manifest is ready to authorize a removal', [AD1.failed_predicates, AD1.stop_reasons]);
+eq([AD1.read_only, AD1.dry_run], [true, true], 'AD1a and says of itself that it is read-only');
+eq(AD1.live_state_confirmed, true, 'AD1b every frozen fact was re-confirmed against the sheet');
+eq(AD1.classification_applies, true,
+  'AD1c and the operator classification still describes the row that is on the sheet');
+eq([AD1.classification, AD1.operator_basis],
+  ['INVALID_NON_LEDGER_ROW', 'CONFIRMED_EARLY_TEST_RESIDUE'],
+  'AD1d classified INVALID_NON_LEDGER_ROW on the basis CONFIRMED_EARLY_TEST_RESIDUE');
+// THE CLASSIFICATION IS AN INPUT. This is the fact the whole round rests on and it is published, not implied.
+eq(AD1.operator_decision.decided_by, 'OPERATOR', 'AD1e the decision was made by a person');
+eq(AD1.operator_decision.derived_by_this_file, false,
+  'AD1f and the diagnostic states that it did NOT derive it');
+eq([AD1.operator_decision.qty_is_not_a_delta,
+  AD1.operator_decision.after_current_stock_is_not_a_balance], [true, true],
+  'AD1g qty and after_current_stock are recorded as readings of nothing');
+eq([AD1.operator_decision.must_not_mint_movement_id,
+  AD1.operator_decision.must_not_write_movement_type], [true, true],
+  'AD1h and neither the primary key nor the ledger axis may be filled in');
+ok(String(AD1.operator_decision.must_not_become_a_movement).indexOf('SILENCING') > 0,
+  'AD1i naming R4E\'s silencing hazard as the reason completion is refused',
+  AD1.operator_decision.must_not_become_a_movement);
+// A CLASSIFICATION IS ISSUED AGAINST A STATE.
+eq(AD1.classification_issued_against.row_number, 2, 'AD1j the decision names the row it was issued against');
+eq(AD1.classification_issued_against.row_fingerprint, AD1.target.row_fingerprint,
+  'AD1k and the FINGERPRINT that row had, which is what makes it revocable by drift');
+
+// ---- AD2 — THE METHOD, AND EVERY ALTERNATIVE IT REFUSES. -------------------------------------------
+eq(AD1.method.method, 'CLEAR_CONTENT_OF_THE_WHOLE_TARGET_ROW_RANGE', 'AD2 the method is a range clear');
+eq([AD1.method.physical_row_survives, AD1.method.logical_record_leaves], [true, true],
+  'AD2a the physical row survives and the logical record leaves');
+ok(String(AD1.method.refused_row_deletion).indexOf('shift every row below the target up by one') > 0,
+  'AD2b row deletion is refused, and the reason is the row numbers it would move',
+  AD1.method.refused_row_deletion);
+['refused_row_insertion', 'refused_reorder', 'refused_quarantine_table', 'refused_new_table',
+ 'refused_mint_id', 'refused_fill_movement_type'].forEach(function (k, i) {
+  ok(String(AD1.method[k]).length > 30, 'AD2c.' + (i + 1) + ' ' + k + ' is refused with a reason');
+});
+ok(String(AD1.method.counts_note).indexOf('LOGICAL RECORD COUNT AND A PHYSICAL ROW COUNT') > 0,
+  'AD2d and the two counts are named as two counts', AD1.method.counts_note);
+
+// ---- AD3 — THE TARGET: ONE ROW, ONE RANGE, FIFTEEN TOUCHED, SIX CHANGED. ---------------------------
+eq(AD1.target.row_number, 2, 'AD3 the target is sheet row 2');
+eq(AD1.target.range_a1, 'A2:O2', 'AD3a and the range is A2:O2', AD1.target.range_a1);
+eq(AD1.target.range_cell_count, 15, 'AD3b fifteen cells are TOUCHED');
+eq(AD1.target.non_blank_cell_count, 6, 'AD3c and six of them currently hold a value and will CHANGE');
+ok(String(AD1.target.note).indexOf('TOUCHES') > 0 && String(AD1.target.note).indexOf('CHANGES') > 0,
+  'AD3d with the difference between the two stated rather than left to the reader', AD1.target.note);
+eq(AD1.target.occurrences, 1, 'AD3e the target fingerprint identifies exactly one row');
+eq([AD1.target.movement_id_is_blank, AD1.target.movement_type_is_blank], [true, true],
+  'AD3f the key and the ledger axis are both still blank');
+eq([AD1.target.warehouse_id, AD1.target.sku], [WHF, SKU], 'AD3g at the pool the operator named');
+eq(AD1.target.cells.length, 15, 'AD3h and all fifteen BEFORE cells are captured, canonically');
+eq(AD1.target.cells.filter(function (c) { return c.canonical !== '~'; })
+  .map(function (c) { return c.column; }),
+  ['sku', 'warehouse_id', 'qty', 'before_current_stock', 'after_current_stock', 'created_at'],
+  'AD3i the six that change are exactly the six the operator listed');
+
+// ---- AD4 — THE TABLE BEFORE, AND THE EXACT TABLE AFTER. -------------------------------------------
+eq([AD1.logical_movement_record_count, AD1.valid_id_count, AD1.blank_id_count,
+  AD1.duplicate_id_count, AD1.wrong_type_id_count], [96, 95, 1, 0, 0],
+  'AD4 the BEFORE table: 96 logical records, 95 valid ids, 1 blank, 0 duplicate, 0 wrong-typed');
+eq([AD1.live_column_count, AD1.named_column_count], [15, 15], 'AD4a over fifteen live columns');
+eq(AD1.expected_after.logical_movement_record_count, 95,
+  'AD4b the AFTER is 95 logical movement records');
+eq([AD1.expected_after.valid_id_count, AD1.expected_after.blank_id_count,
+  AD1.expected_after.id_fault_count], [95, 0, 0],
+  'AD4c the valid id count does NOT rise — the blank key goes because the record goes, not because it was filled');
+eq(AD1.expected_after.physical_last_row, AD1.physical_last_row,
+  'AD4d and the physical extent of the sheet does not move at all');
+eq([AD1.expected_after.physical_rows_removed, AD1.expected_after.rows_added,
+  AD1.expected_after.rows_reordered], [0, 0, false], 'AD4e no row is removed, added or reordered');
+eq([AD1.expected_after.cells_touched, AD1.expected_after.cells_changed], [15, 6],
+  'AD4f fifteen touched, six changed');
+eq([AD1.expected_after.target_row_is_a_logical_record, AD1.expected_after.target_row_all_blank],
+  [false, true], 'AD4g the target row stops being a record and becomes an empty row');
+ok(AD1.expected_after.table_combined_fingerprint !== AD1.table_combined_fingerprint,
+  'AD4h the table fingerprint is expected to CHANGE',
+  [AD1.table_combined_fingerprint, AD1.expected_after.table_combined_fingerprint]);
+ok(String(AD1.expected_after.note).indexOf('"it must differ" is satisfied by any damage at all') > 0,
+  'AD4i and the exact value it must change TO is stated, because "it differs" is not an expectation',
+  AD1.expected_after.note);
+ok(AD1.expected_after.target_row_raw_fingerprint !== AD1.target.row_fingerprint,
+  'AD4j the all-blank row has its own fingerprint, computed from the live header');
+
+// ---- AD5 — THE 95 THAT MUST SURVIVE, BY IDENTITY AND BY ROW NUMBER. -------------------------------
+eq(AD1.remaining.count, 95, 'AD5 ninety-five records must survive');
+eq(AD1.remaining.ids.filter(function (i) { return i === ''; }).length, 0,
+  'AD5a none of them is missing its primary key');
+eq(AD1.remaining.row_fingerprints.length, 95, 'AD5b each with its row number and its row fingerprint');
+eq(AD1.remaining.row_fingerprints[0].row_number, 3,
+  'AD5c starting at row 3 — the target is row 2 and it is excluded');
+ok(AD1.remaining.id_universe_fingerprint && AD1.remaining.row_fingerprint_map_fingerprint
+  && AD1.remaining.id_universe_fingerprint !== AD1.remaining.row_fingerprint_map_fingerprint,
+  'AD5d and the identity fingerprint and the row-number map fingerprint are two different values',
+  [AD1.remaining.id_universe_fingerprint, AD1.remaining.row_fingerprint_map_fingerprint]);
+eq(AD1.expected_after.remaining_id_universe_fingerprint, AD1.remaining.id_universe_fingerprint,
+  'AD5e both are expected to survive the removal unchanged');
+eq(AD1.expected_after.remaining_row_fingerprint_map_fingerprint,
+  AD1.remaining.row_fingerprint_map_fingerprint, 'AD5f including the row-number map');
+
+// ---- AD6 — THE POOL AND THE PROTECTED SURFACES. --------------------------------------------------
+eq([AD1.pool.fac_current_stock, AD1.pool.fac_reserved_stock], [2210, 0],
+  'AD6 factory_stock CO1100-R is 2210 current, 0 reserved');
+ok(String(AD1.pool.role).indexOf('FROZEN_TO_PROVE_IT_DID_NOT_CHANGE') === 0,
+  'AD6a and it is frozen to prove it did not change', AD1.pool.role);
+ok(String(AD1.pool.role).indexOf('later ledger epoch') > 0,
+  'AD6b explicitly NOT as evidence about the target row — R4G measured that it reconciles a later epoch');
+eq(AD1.protected_surfaces.table_count, 8, 'AD6c eight protected surfaces were observed');
+eq(AD1.protected_surfaces.surfaces.filter(function (s) {
+  return s.state === 'SHEET_ABSENT'; }).map(function (s) { return s.table; }),
+  ['shipments', 'shipment_lines', 'reservations'],
+  'AD6d three of them are ABSENT in this world, and absence is frozen as a STATE');
+eq(AD1.protected_surfaces.surfaces.filter(function (s) {
+  return s.state === 'SHEET_ABSENT' && s.row_count === null; }).length, 3,
+  'AD6e an absent table has NO row count — null, never zero');
+eq(AD1.protected_surfaces.surfaces.filter(function (s) {
+  return s.state === 'SHEET_PRESENT_AND_READABLE'; }).length, 5,
+  'AD6f and five are present and readable');
+ok(AD1.protected_surfaces.fingerprint && AD1.protected_surfaces.fingerprint.length > 0,
+  'AD6g with one fingerprint over all eight, so one comparison can refuse a change to any');
+
+// ---- AD7 — THE CONTROL SURFACE: the flag, the allowlist and the build. ---------------------------
+eq(AD1.control_surface.flag_value, false, 'AD7 the generation flag is false');
+eq(AD1.control_surface.allowlist_count, 1, 'AD7a the allowlist holds exactly one scope');
+eq(AD1.control_surface.allowlist_scope_keys, ['ResUS|US|Amazon|' + SKU],
+  'AD7b measured, not assumed — in THIS world the one allowlisted scope is the removal target\'s own');
+// AND THAT IS NOT A REFUSAL, WHICH IS THE POINT. An allowlist entry authorizes nothing while the flag is
+// false, so refusing on it would be refusing on a fact that cannot act. The two are asked as ONE question.
+eq(AD1.control_surface.target_sku_is_on_the_activation_allowlist, true,
+  'AD7c the membership is published either way, rather than inferred from a silence');
+eq(AD1.control_surface.concurrent_generation_possible, false,
+  'AD7c1 but no generation could be writing to this pool, because the flag is false');
+eq(AD1.stop_reasons, [], 'AD7c2 so the allowlist entry alone is not a stop reason', AD1.stop_reasons);
+eq(AD1.build, 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6', 'AD7d measured against the pinned build');
+
+// ---- AD8 — THE FREEZE AND THE SENTENCE. ----------------------------------------------------------
+var ADfz = AD1.frozen_before;
+ok(ADfz !== null, 'AD8  a baseline was frozen');
+eq(ADfz.target_range_a1, 'A2:O2', 'AD8a naming the one range');
+eq([ADfz.target_range_cell_count, ADfz.target_non_blank_cell_count], [15, 6],
+  'AD8b the cells touched and the cells that change');
+eq(ADfz.remaining_ids.length, 95, 'AD8c the 95 surviving identities');
+eq(ADfz.protected_surfaces.length, 8, 'AD8d and every protected surface');
+eq(AD1.wording_audit.missing, [], 'AD8e the authorization names every fact a person must check',
+  AD1.wording_audit.missing);
+ok(AD1.wording_audit.required_item_count >= 28,
+  'AD8f and there are enough of them to mean something', AD1.wording_audit.required_item_count);
+eq((String(AD1.authorization_wording).match(/<[a-zA-Z_][a-zA-Z0-9_]*>/g) || []), [],
+  'AD8g with no placeholder in it');
+['NO row is deleted', 'no movement id is minted', 'no movement_type is written',
+ 'never attempted a second time'].forEach(function (n, i) {
+  ok(String(AD1.authorization_wording).indexOf(n) > 0,
+    'AD8h.' + (i + 1) + ' and the sentence itself says "' + n + '"');
+});
+var ADtags = logTags(AD1w);
+var ADchunks = ADtags.filter(function (t) {
+  return t.indexOf('s1_mov_removal_manifest_freeze_paste_block_') === 0; });
+ok(ADchunks.length >= 1 && ADchunks[0] === 's1_mov_removal_manifest_freeze_paste_block_1_of_'
+  + ADchunks.length,
+  'AD8i the freeze paste block was emitted, in numbered chunks', ADchunks);
+ok(ADtags.indexOf('s1_mov_removal_manifest_freeze_meta') >= 0,
+  'AD8i2 with a meta line saying where it is pasted');
+ok(ADtags.indexOf('s1_mov_removal_manifest_freeze_withheld') < 0,
+  'AD8j and nothing was withheld on a READY run');
+adNoWrite(AD1, AD1w, 'AD8k');
+
+// ---- AD9 — execute OMITTED and execute:false BOTH WRITE NOTHING. ---------------------------------
+var AD9dry = adRun(AD1w, { frozen: ADfz, authorization: AD1.authorization_wording });
+eq(AD9dry.verdict, 'DRY_RUN_OK', 'AD9  the default is a DRY RUN and every check passes',
+  [AD9dry.failed_predicates, AD9dry.refusal_reasons]);
+eq([AD9dry.execute_requested, AD9dry.dry_run], [false, true], 'AD9a reported as such');
+eq(AD9dry.lock.acquired, true, 'AD9b the dry run took the SAME lock as the execute path');
+eq(AD9dry.lock.released, true, 'AD9c and released it');
+eq(adLock(AD1w).held, false, 'AD9d measured on the lock itself: it is not held afterwards');
+eq(adLock(AD1w).last_timeout, 30000, 'AD9e with the default 30s budget');
+adNoWrite(AD9dry, AD1w, 'AD9f');
+var AD9false = adRun(AD1w, { execute: false, frozen: ADfz, authorization: AD1.authorization_wording });
+eq(AD9false.verdict, 'DRY_RUN_OK', 'AD9g execute:false is also a dry run');
+var AD9str = adRun(AD1w, { execute: 'true', frozen: ADfz, authorization: AD1.authorization_wording });
+eq(AD9str.verdict, 'DRY_RUN_OK',
+  'AD9h and so is the STRING "true" — the gate is identity, not truthiness');
+eq([AD9str.execute_requested, AD9str.dry_run], [false, true], 'AD9i reported honestly');
+adNoWrite(AD9str, AD1w, 'AD9j');
+eq(AD1w.allWrites(), 0, 'AD9k after three dry runs the world has still never been written to');
+
+// ---- AD10 — THE EXECUTE. ONE RANGE, SIX CELLS CHANGED, NOTHING ELSE MOVED. ------------------------
+var AD10w = adWorld();
+var AD10m = adMan(AD10w);
+eq(AD10m.verdict, 'READY_TO_AUTHORIZE_REMOVAL', 'AD10 a fresh world is ready');
+var AD10before = adSheet(AD10w).map(function (r) { return r.slice(); });
+var AD10 = adRun(AD10w, { execute: true, frozen: AD10m.frozen_before,
+  authorization: AD10m.authorization_wording });
+eq(AD10.verdict, 'EXECUTED_OK', 'AD10a the removal executed and the readback confirmed it',
+  [AD10.failed_predicates, AD10.refusal_reasons,
+    AD10.readback ? AD10.readback.mismatches : null]);
+eq([AD10.writes, AD10.cells_touched, AD10.cells_cleared], [1, 15, 6],
+  'AD10b one write, fifteen cells touched, six changed');
+eq(AD10w.allWrites(), 1, 'AD10c measured on the sheets: one write in the whole world');
+eq(AD10w.writesByTable(), { factory_stock_movements: 1 },
+  'AD10d and it landed on the movement table and no other');
+eq([AD10.ids_minted, AD10.movement_types_written], [0, 0],
+  'AD10e no primary key was minted and no ledger axis was written');
+eq([AD10.rows_added, AD10.rows_removed, AD10.rows_reordered, AD10.tables_created], [0, 0, false, 0],
+  'AD10f no row added, removed or reordered, and no table created');
+eq([AD10.attempts, AD10.retryable], [1, false], 'AD10g attempted exactly once, and not retryable');
+eq(AD10.lock.released, true, 'AD10h the lock was released');
+// THE PHYSICAL SHEET, CHECKED PHYSICALLY.
+eq(adSheet(AD10w).length, AD10before.length,
+  'AD11 the sheet has exactly as many physical rows as it started with');
+eq(adSheet(AD10w)[1].join('|'), (new Array(15)).join('|'),
+  'AD11a physical row 2 is fifteen empty cells', adSheet(AD10w)[1]);
+eq(adSheet(AD10w)[0].join('|'), AD10before[0].join('|'), 'AD11b the header row is untouched');
+var AD11moved = 0;
+for (var adI = 2; adI < AD10before.length; adI++) {
+  if (adSheet(AD10w)[adI].join('|') !== AD10before[adI].join('|')) AD11moved++;
+}
+eq(AD11moved, 0, 'AD11c and every one of the 95 other physical rows is byte-identical, in place');
+// THE READBACK, AGAINST THE FROZEN EXPECTATION.
+eq(AD10.readback.mismatches, [], 'AD12 nothing mismatched on readback');
+eq([AD10.readback.measured.logical_movement_record_count,
+  AD10.readback.measured.valid_id_count, AD10.readback.measured.blank_id_count,
+  AD10.readback.measured.duplicate_id_count, AD10.readback.measured.wrong_type_id_count],
+  [95, 95, 0, 0, 0],
+  'AD12a 95 logical records, 95 valid ids, and the blank-id fault is gone');
+eq(AD10.readback.measured.id_fault_count, 0, 'AD12b the id integrity fault count is zero');
+eq(AD10.readback.measured.physical_last_row, AD10m.frozen_before.physical_last_row,
+  'AD12c while the physical last row did not move — clearing is not deleting');
+eq([AD10.readback.measured.target_cells_read, AD10.readback.measured.target_cells_blank], [15, 15],
+  'AD12d the target range reads fifteen cells and all fifteen are blank');
+eq(AD10.readback.measured.target_row_is_a_logical_record, false,
+  'AD12e the row is no longer a record …');
+eq(AD10.readback.measured.target_row_raw_fingerprint,
+  AD10m.frozen_before.expected_after.target_row_raw_fingerprint,
+  'AD12f … and the RAW range hashes to the all-blank fingerprint, which is how "emptied" is told from "deleted"');
+eq([AD10.readback.measured.remaining_record_count,
+  AD10.readback.measured.remaining_id_universe_fingerprint,
+  AD10.readback.measured.remaining_row_fingerprint_map_fingerprint],
+  [95, AD10m.frozen_before.remaining_id_universe_fingerprint,
+    AD10m.frozen_before.remaining_row_fingerprint_map_fingerprint],
+  'AD12g the 95 keep every identity AND every row number');
+eq([AD10.readback.measured.pool_fac_current_stock, AD10.readback.measured.pool_fac_reserved_stock],
+  [2210, 0], 'AD12h factory_stock CO1100-R is untouched at 2210 / 0');
+eq(AD10.readback.measured.pool_row_fingerprint, AD10m.frozen_before.pool_row_fingerprint,
+  'AD12i to the byte');
+eq(AD10.readback.measured.protected_surface_fingerprint,
+  AD10m.frozen_before.protected_surface_fingerprint,
+  'AD12j and all eight protected surfaces are at their frozen fingerprint');
+eq([AD10.readback.measured.flag_value, AD10.readback.measured.build],
+  [false, 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6'], 'AD12k with the flag and the build unmoved');
+eq(AD10.readback.measured.table_combined_fingerprint,
+  AD10m.frozen_before.expected_after.table_combined_fingerprint,
+  'AD12l and the table fingerprint is the exact value the manifest predicted');
+
+// ---- AD13 — A RETRY OF A COMPLETED REMOVAL WRITES NOTHING. ---------------------------------------
+var AD13 = adRun(AD10w, { execute: true, frozen: AD10m.frozen_before,
+  authorization: AD10m.authorization_wording });
+eq(AD13.verdict, 'ALREADY_APPLIED', 'AD13 a retry recognises the completed removal',
+  [AD13.failed_predicates, AD13.refusal_reasons]);
+eq(AD13.already_applied, true, 'AD13a and says so');
+eq([AD13.writes, AD13.cells_cleared, AD13.attempts], [0, 0, 0],
+  'AD13b having written nothing and attempted nothing');
+eq(AD10w.allWrites(), 1, 'AD13c the world still carries exactly the one write from AD10');
+eq(AD13.readback.ok, true, 'AD13d and it CONFIRMS the completed removal rather than shrugging at it');
+eq(AD13.retryable, false, 'AD13e a completed removal is not retryable');
+
+// ---- AD14 — THE REFUSALS. Each one writes nothing. -----------------------------------------------
+var AD14w = adWorld();
+var AD14m = adMan(AD14w);
+var AD14 = adRun(AD14w, { execute: true });
+eq(AD14.verdict, 'REFUSED', 'AD14 no frozen baseline: refused');
+ok(String(AD14.refusal_reasons[0]).indexOf('NO_FROZEN_BASELINE') === 0,
+  'AD14a under that named reason', AD14.refusal_reasons);
+adNoWrite(AD14, AD14w, 'AD14b');
+var AD14partial = {};
+Object.keys(AD14m.frozen_before).forEach(function (k) {
+  if (k !== 'remaining_id_universe_fingerprint') AD14partial[k] = AD14m.frozen_before[k]; });
+var AD14c = adRun(AD14w, { execute: true, frozen: AD14partial,
+  authorization: AD14m.authorization_wording });
+eq(AD14c.verdict, 'REFUSED', 'AD14c an incomplete baseline is refused');
+ok(String(AD14c.refusal_reasons[0]).indexOf('FROZEN_BASELINE_INCOMPLETE') === 0
+  && String(AD14c.refusal_reasons[0]).indexOf('remaining_id_universe_fingerprint') > 0,
+  'AD14d naming the field that is missing', AD14c.refusal_reasons);
+var AD14e = adRun(AD14w, { execute: true, frozen: AD14m.frozen_before,
+  authorization: 'I authorize something else entirely.' });
+eq(AD14e.verdict, 'REFUSED', 'AD14e a sentence that is not the frozen one is refused');
+eq(AD14e.refusal_reasons, ['AUTHORIZATION_DOES_NOT_MATCH_THE_FROZEN_SENTENCE'], 'AD14f by name');
+var AD14g = adRun(AD14w, { execute: true, frozen: AD14m.frozen_before });
+eq(AD14g.refusal_reasons, ['NO_AUTHORIZATION_SUPPLIED'], 'AD14g and an absent one likewise');
+adNoWrite(AD14g, AD14w, 'AD14h');
+// A BASELINE THAT CARRIES A DIFFERENT DECISION IS A DIFFERENT AUTHORIZATION.
+var AD14i = JSON.parse(JSON.stringify(AD14m.frozen_before));
+AD14i.classification = 'ID_ONLY_MISSING';
+var AD14j = adRun(AD14w, { execute: true, frozen: AD14i,
+  authorization: AD14m.authorization_wording });
+eq(AD14j.verdict, 'REFUSED', 'AD14i a baseline classified as something else is refused');
+ok(String(AD14j.refusal_reasons[0]).indexOf('FROZEN_CLASSIFICATION_IS_NOT_THE_REMOVAL_DECISION') === 0,
+  'AD14j by name', AD14j.refusal_reasons);
+adNoWrite(AD14j, AD14w, 'AD14k');
+
+// ---- AD15 — DRIFT BETWEEN THE MANIFEST AND THE EXECUTE. ------------------------------------------
+function adDrift(label, mutateAfterManifest, expectReason) {
+  var w = adWorld();
+  var m = adMan(w);
+  if (m.verdict !== 'READY_TO_AUTHORIZE_REMOVAL') {
+    ok(false, label + ' the manifest was ready before the drift', m.failed_predicates);
+    return;
+  }
+  var wrote0 = w.allWrites();
+  mutateAfterManifest(w);
+  var r = adRun(w, { execute: true, frozen: m.frozen_before, authorization: m.authorization_wording });
+  eq(r.verdict, 'REFUSED', label + ' refused', [r.refusal_reasons, r.failed_predicates]);
+  ok(r.refusal_reasons.indexOf(expectReason) >= 0,
+    label + 'a naming ' + expectReason, r.refusal_reasons);
+  eq([r.writes, r.cells_cleared, r.cells_restored], [0, 0, 0], label + 'b having written nothing');
+  eq(w.allWrites(), wrote0, label + 'c measured on every sheet in the world');
+  eq(r.lock.acquired, true, label + 'd the drift was found UNDER the lock, not before it');
+}
+adDrift('AD15 a fingerprint drifted:', function (w) {
+  w.sheets.factory_stock_movements.rows[3][5] = 999999;
+}, 'DRIFT:table_combined_fingerprint');
+adDrift('AD16 the schema drifted:', function (w) {
+  w.sheets.factory_stock_movements.rows[0][14] = 'created_at_v2';
+}, 'DRIFT:header_fingerprint');
+adDrift('AD17 the factory pool drifted:', function (w) {
+  w.sheets.factory_stock.rows[1][2] = 2211;
+}, 'DRIFT:pool_fac_current_stock');
+adDrift('AD18 a protected surface drifted:', function (w) {
+  w.sheets.shipping_plans.rows.push(['SP-NEW', '', 'ResUS', 'US', 'Amazon', WHF, 'DRAFT', 1, '', '']);
+}, 'DRIFT:protected_surface_fingerprint');
+adDrift('AD19 the target row itself was edited:', function (w) {
+  w.sheets.factory_stock_movements.rows[1][5] = 12001;
+}, 'DRIFT:target_row_fingerprint');
+// THE INTERLOCK WITH R4E. If the backfill has run, this classification no longer describes the sheet.
+adDrift('AD20 the target row acquired a primary key:', function (w) {
+  w.sheets.factory_stock_movements.rows[1][0] = 'FSMV-DEADBEEF';
+}, 'DRIFT:target_movement_id_is_blank');
+adDrift('AD21 the target row acquired a ledger axis:', function (w) {
+  w.sheets.factory_stock_movements.rows[1][4] = 'inventory_import';
+}, 'DRIFT:target_movement_type_is_blank');
+// A ROW THAT MOVED. Inserting above the target puts a different record at the frozen row number.
+adDrift('AD22 the target row moved:', function (w) {
+  var sh = w.sheets.factory_stock_movements;
+  sh.rows.splice(1, 0, sh.rows[0].map(function (h, i) { return i === 0 ? 'FSMV-0000AAAA' : (i === 5 ? 7 : ''); }));
+}, 'DRIFT:target_row_fingerprint');
+
+// ---- AD23 — THE MANIFEST REFUSES BEFORE THE EXECUTE EVER SEES ANYTHING. --------------------------
+var AD23w = adWorld();
+var AD23 = adMan(AD23w, { pinOver: { table_combined_fingerprint: 'DEADBEEF' } });
+eq(AD23.verdict, 'STOP', 'AD23 a drifted pin STOPs the manifest');
+ok(AD23.stop_reasons.indexOf('LIVE_STATE_DRIFTED:table_combined_fingerprint') >= 0,
+  'AD23a naming which of the frozen facts moved', AD23.stop_reasons);
+eq(AD23.live_state_confirmed, false, 'AD23b with the confirmation recorded as failed');
+eq([AD23.frozen_before, AD23.authorization_wording], [null, null],
+  'AD23c and it freezes NOTHING and signs NOTHING');
+ok(String(AD23.next_decision).indexOf('NOTHING IS AUTHORIZED') === 0,
+  'AD23d saying so in words', AD23.next_decision);
+ok(logTags(AD23w).indexOf('s1_mov_removal_manifest_freeze_withheld') >= 0,
+  'AD23e and the withheld freeze is logged as withheld rather than silently absent', logTags(AD23w));
+adNoWrite(AD23, AD23w, 'AD23f');
+// AND THE EXECUTE HAS NOTHING TO CONSUME.
+var AD23g = adRun(AD23w, { execute: true, frozen: AD23.frozen_before,
+  authorization: AD23.authorization_wording });
+eq(AD23g.verdict, 'REFUSED', 'AD23g so the removal refuses for want of a baseline');
+adNoWrite(AD23g, AD23w, 'AD23h');
+
+// ---- AD24 — A TARGET THAT IS NOT UNIQUE. ---------------------------------------------------------
+var AD24rows = [abLive(), abLive()];
+for (var ad24i = 1; ad24i <= 94; ad24i++) AD24rows.push(aaGood(ad24i));
+var AD24w = adWorld(AD24rows);
+var AD24 = adMan(AD24w);
+eq(AD24.verdict, 'STOP', 'AD24 two rows sharing the target fingerprint STOP the manifest');
+ok(AD24.stop_reasons.filter(function (r) {
+  return String(r).indexOf('THE_TARGET_ROW_IS_NOT_UNIQUE') === 0; }).length === 1,
+  'AD24a because a removal authorized against a fingerprint that matches two rows cannot say which it removed',
+  AD24.stop_reasons);
+eq(AD24.classification_applies, false,
+  'AD24b and the operator classification is recorded as no longer applying');
+eq(AD24.frozen_before, null, 'AD24c nothing is frozen');
+adNoWrite(AD24, AD24w, 'AD24d');
+
+// ---- AD25 — THE MANIFEST REFUSES ON THE CONTROL SURFACE. -----------------------------------------
+var AD25w = adWorld(undefined, { flag: true });
+var AD25 = adMan(AD25w);
+eq(AD25.verdict, 'STOP', 'AD25 a true generation flag STOPs the manifest');
+ok(AD25.stop_reasons.indexOf('THE_GENERATION_FLAG_IS_NOT_FALSE') >= 0,
+  'AD25a by name', AD25.stop_reasons);
+adNoWrite(AD25, AD25w, 'AD25b');
+
+// ---- AD26 — THE LOCK. ----------------------------------------------------------------------------
+var AD26w = adWorld(undefined, null, true);            // built WITHOUT a lock authority
+var AD26m = adMan(AD26w);
+eq(AD26m.verdict, 'READY_TO_AUTHORIZE_REMOVAL',
+  'AD26 the read-only manifest needs no lock and is ready', AD26m.failed_predicates);
+var AD26 = adRun(AD26w, { execute: true, frozen: AD26m.frozen_before,
+  authorization: AD26m.authorization_wording });
+eq(AD26.verdict, 'REFUSED', 'AD26a but with no lock authority the removal refuses');
+eq(AD26.lock.authority_present, false, 'AD26b saying the authority is absent');
+ok(String(AD26.refusal_reasons[0]).indexOf('LOCK_NOT_HELD:LOCK_AUTHORITY_UNAVAILABLE') === 0,
+  'AD26c rather than proceeding unlocked', AD26.refusal_reasons);
+adNoWrite(AD26, AD26w, 'AD26d');
+var AD27w = adWorld();
+var AD27m = adMan(AD27w);
+vm.runInContext('__AD_LOCK.grant = false;', AD27w.ctx);
+var AD27 = adRun(AD27w, { execute: true, frozen: AD27m.frozen_before,
+  authorization: AD27m.authorization_wording });
+eq(AD27.verdict, 'REFUSED', 'AD27 a lock somebody else holds refuses the run');
+ok(String(AD27.refusal_reasons[0]).indexOf('LOCK_NOT_HELD:LOCK_NOT_ACQUIRED_WITHIN_30000MS') === 0,
+  'AD27a naming the timeout it waited', AD27.refusal_reasons);
+eq(AD27.retryable, true, 'AD27b and a run that never started IS retryable');
+eq(adLock(AD27w).tries, 1, 'AD27c it asked for the lock exactly once — it did not spin');
+adNoWrite(AD27, AD27w, 'AD27d');
+
+// ---- AD28 — A FORCED POSTCONDITION FAILURE, AND A VERIFIED ROLLBACK. -----------------------------
+//
+// The postcondition is forced to fail by handing the run an AFTER expectation the sheet cannot satisfy. The
+// write itself is the authorized one; what is under test is what happens NEXT.
+var AD28w = adWorld();
+var AD28m = adMan(AD28w);
+var AD28fz = JSON.parse(JSON.stringify(AD28m.frozen_before));
+AD28fz.expected_after.remaining_id_universe_fingerprint = 'DEADBEEF';
+var AD28 = adRun(AD28w, { execute: true, frozen: AD28fz,
+  authorization: AD28m.authorization_wording });
+eq(AD28.verdict, 'ROLLED_BACK_VERIFIED', 'AD28 a failed postcondition rolls back, verified',
+  [AD28.refusal_reasons, AD28.rollback]);
+ok(String(AD28.refusal_reasons[0]).indexOf('READBACK_MISMATCH') === 0,
+  'AD28a naming the readback as the thing that failed', AD28.refusal_reasons);
+eq(AD28.rollback.outcome, 'ROLLED_BACK_VERIFIED', 'AD28b the rollback reports itself verified');
+eq(AD28.cells_restored, 15, 'AD28c all fifteen cells were restored, not the six that changed');
+eq(AD28.rollback.restored_row_fingerprint, AD28m.frozen_before.target_row_fingerprint,
+  'AD28d and the row is back at its frozen BEFORE fingerprint');
+eq(AD28.rollback.restored_table_fingerprint, AD28m.frozen_before.table_combined_fingerprint,
+  'AD28e AND the whole table is back at its BEFORE fingerprint — both, not either');
+eq(AD28.attempts, 1, 'AD28f the clear was never attempted a second time');
+eq(AD28w.writesByTable(), { factory_stock_movements: 2 },
+  'AD28g exactly two writes on the one table: the clear and the restore');
+eq(adSheet(AD28w)[1].filter(function (c) { return String(c) !== ''; }).length, 6,
+  'AD28h and physical row 2 carries its six values again');
+eq(adLock(AD28w).held, false, 'AD28i with the lock released after the rollback');
+// A PROTECTED SURFACE THAT CANNOT BE SATISFIED ROLLS BACK THE SAME WAY.
+var AD29w = adWorld();
+var AD29m = adMan(AD29w);
+var AD29fz = JSON.parse(JSON.stringify(AD29m.frozen_before));
+AD29fz.expected_after.pool_fac_current_stock = 9999;
+var AD29 = adRun(AD29w, { execute: true, frozen: AD29fz,
+  authorization: AD29m.authorization_wording });
+eq(AD29.verdict, 'ROLLED_BACK_VERIFIED',
+  'AD29 an unsatisfiable protected-surface expectation also rolls back, verified', AD29.rollback);
+ok(String(AD29.refusal_reasons[0]).indexOf('pool_fac_current_stock') > 0,
+  'AD29a naming the surface it could not satisfy', AD29.refusal_reasons);
+eq(adSheet(AD29w)[1].filter(function (c) { return String(c) !== ''; }).length, 6,
+  'AD29b and the row came back');
+
+// ---- AD30 — ACK_UNKNOWN. A TIMEOUT IS NOT A FAILED WRITE, AND IT IS NEVER RETRIED. ---------------
+//
+// Three outcomes, and the whole point is that the run does not guess which one it is: it re-reads and
+// classifies. Only a PROVEN zero-write stays retryable.
+function adThrowOnClear(w, alsoClear) {
+  var sh = w.sheets.factory_stock_movements;
+  var orig = sh.getRange;
+  sh.getRange = function (row, col, nr, nc) {
+    var r = orig.call(this, row, col, nr, nc);
+    var self = this;
+    var base = r.clearContent;
+    r.clearContent = function () {
+      if (alsoClear) base.call(r);
+      throw new Error('Service timed out while accessing spreadsheet');
+    };
+    return r;
+  };
+}
+var AD30w = adWorld();
+var AD30m = adMan(AD30w);
+adThrowOnClear(AD30w, false);
+var AD30 = adRun(AD30w, { execute: true, frozen: AD30m.frozen_before,
+  authorization: AD30m.authorization_wording });
+eq(AD30.verdict, 'NOT_APPLIED_ACK_UNKNOWN',
+  'AD30 a clear that threw and provably did not land is NOT_APPLIED_ACK_UNKNOWN',
+  [AD30.refusal_reasons, AD30.readback ? AD30.readback.mismatches : null]);
+eq(AD30.write_acknowledged, 'RESOLVED_BY_READBACK_AS_NOT_APPLIED',
+  'AD30a resolved by READBACK, never by retry');
+eq([AD30.writes, AD30.cells_cleared], [0, 0], 'AD30b with a proven zero-write');
+eq(AD30.retryable, true, 'AD30c and only a proven zero-write stays retryable');
+eq(AD30.attempts, 1, 'AD30d the clear was attempted exactly once');
+ok(String(AD30.refusal_reasons[0]).indexOf('WRITE_ACK_UNKNOWN') === 0,
+  'AD30e and the unacknowledged write is named as unacknowledged', AD30.refusal_reasons);
+eq(adSheet(AD30w)[1].filter(function (c) { return String(c) !== ''; }).length, 6,
+  'AD30f the row is intact');
+eq(adLock(AD30w).held, false, 'AD30g and the lock was released');
+// AND THE OTHER RESOLUTION: it landed, and the acknowledgement is what went missing.
+var AD31w = adWorld();
+var AD31m = adMan(AD31w);
+adThrowOnClear(AD31w, true);
+var AD31 = adRun(AD31w, { execute: true, frozen: AD31m.frozen_before,
+  authorization: AD31m.authorization_wording });
+eq(AD31.verdict, 'EXECUTED_OK_AFTER_ACK_UNKNOWN',
+  'AD31 a clear that threw but DID land is resolved as applied',
+  [AD31.refusal_reasons, AD31.readback ? AD31.readback.mismatches : null]);
+eq(AD31.write_acknowledged, 'RESOLVED_BY_READBACK_AS_APPLIED', 'AD31a by readback');
+eq([AD31.writes, AD31.cells_cleared], [1, 6], 'AD31b and the write is counted, once');
+eq(AD31.retryable, false, 'AD31c an applied write is not retryable');
+eq(AD31.attempts, 1, 'AD31d still exactly one attempt');
+eq(adSheet(AD31w)[1].join('|'), (new Array(15)).join('|'), 'AD31e the row is empty');
+eq(adSheet(AD31w).length, 97, 'AD31f and the sheet still has all 97 physical rows');
+
+// ---- AD32 — THE WRITE SURFACE, ON THE SOURCE. ----------------------------------------------------
+var AD32man = bareCode(extractFn(S1, 'RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL_MANIFEST'));
+var AD32run = bareCode(extractFn(S1, 'RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL'));
+var AD32roll = bareCode(extractFn(S1, 'S1_remRollback_'));
+ok(AD32man.length > 3000 && AD32run.length > 3000,
+  'AD32 both entry points were located for inspection', [AD32man.length, AD32run.length]);
+['setValue', 'setValues', 'appendRow', 'clearContent', 'getRange', 'LockService'].forEach(function (a, i) {
+  eq(AD32man.indexOf(a), -1, 'AD32a.' + (i + 1) + ' the MANIFEST reaches no ' + a + ' at all');
+});
+eq((AD32run.match(/clearContent\(/g) || []).length, 1,
+  'AD32b the removal has exactly ONE clear site');
+eq((S1_BARE.match(/clearContent\(/g) || []).length, 1,
+  'AD32c and it is the only one in the whole file');
+eq((AD32roll.match(/setValues\(/g) || []).length, 1,
+  'AD32d the rollback has exactly ONE restore site');
+eq((S1_BARE.match(/setValues\(/g) || []).length, 1,
+  'AD32e and it is the only setValues in the whole file');
+eq(AD32run.indexOf('setValue('), -1, 'AD32f the removal itself writes no single cell');
+// THE ROW-STRUCTURE APIS ARE ABSENT FROM THE WHOLE FILE, WHICH IS THE METHOD STATED AS A PROPERTY.
+['deleteRow', 'deleteRows', 'insertRow', 'insertRows', 'moveRows', 'clearContents',
+ 'insertSheet', 'deleteSheet', 'removeSheet'].forEach(function (a, i) {
+  eq(S1_BARE.indexOf(a), -1,
+    'AD32g.' + (i + 1) + ' no ' + a + ' anywhere in the census source (comments and strings stripped)');
+});
+eq(AD32run.indexOf('S1_movProposedId_'), -1, 'AD32h the removal never mints a primary key');
+eq(AD32man.indexOf('S1_movProposedId_'), -1, 'AD32i and neither does its manifest');
+eq(AD32run.indexOf('S1_MANIFEST_P_BEFORE_'), -1,
+  'AD32j nor does either touch the generation baseline …');
+eq(AD32man.indexOf('S1_MANIFEST_P_BEFORE_'), -1, 'AD32k … which stays null and unrelated');
+eq(vm.runInContext('S1_MANIFEST_P_BEFORE_', AD1w.ctx), null,
+  'AD32l measured after every run in this section: it is still null');
+
 
 section('N — mutants');
 // ================================================================================================================
@@ -5709,6 +6396,22 @@ function swapS1(a, b) {
   var n = S1.split(a).length - 1;
   if (n !== 1) throw new Error('swap anchor count ' + n + ' :: ' + a.slice(0, 90));
   return S1.split(a).join(b);
+}
+// S1-R4H - A SWAP SCOPED TO ONE FUNCTION, BECAUSE A WHOLE-FILE ANCHOR CAN BE QUIETLY AMBIGUOUS.
+//
+// The removal tool needs its OWN execute gate, its OWN authorization check and its OWN drift refusal - a
+// per-entry-point guard is not a shared authority, it is a guard each entry point owes. But the moment the
+// second copy existed, four mutants that had anchored on the text of the first stopped resolving, and a
+// mutant that cannot resolve is not testing the second copy: it has stopped testing the first one too.
+// This says WHICH copy it is aiming at, and the mutants below name their function.
+function swapS1In(fnName, a, b) {
+  var body = extractFn(S1, fnName);
+  if (S1.split(body).length - 1 !== 1) throw new Error('function body is not unique :: ' + fnName);
+  var n = body.split(a).length - 1;
+  if (n !== 1) {
+    throw new Error('scoped swap anchor count ' + n + ' in ' + fnName + ' :: ' + a.slice(0, 80));
+  }
+  return S1.split(body).join(body.split(a).join(b));
 }
 
 mut('N1 the proposal is sized from the RECOMMENDATION instead of the residual', function () {
@@ -7134,7 +7837,8 @@ mut('N83 the repair also touches a second cell', function () {
 mut('N84 execute becomes a truthy check, so a typo writes to production', function () {
   // `execute` must be exactly true. A truthy test turns the string 'false', 'no' and 1 into an execution,
   // and the default-dry-run property is the whole reason this tool is safe to hand over.
-  var m = swapS1("    if (opts.execute !== true) {\n"
+  var m = swapS1In('RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL',
+    "    if (opts.execute !== true) {\n"
     + "      out.verdict = 'DRY_RUN_OK';", '    if (!opts.execute) {\n'
     + "      out.verdict = 'DRY_RUN_OK';");
   var clean = aaMut(null), bad = aaMut(m);
@@ -7273,7 +7977,8 @@ mut('N89 the rollback is not verified, so a failed restore reads as a success', 
 mut('N90 the authorization check becomes a presence check', function () {
   // The sentence is the authorization. Accepting any non-empty string accepts one that describes a different
   // repair - a different row, a different id, a different table.
-  var m = swapS1("    out.authorization_matches_frozen = auth !== '' && auth === S1_str_(fz.authorization_wording);",
+  var m = swapS1In('RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL',
+    "    out.authorization_matches_frozen = auth !== '' && auth === S1_str_(fz.authorization_wording);",
     "    out.authorization_matches_frozen = auth !== '';");
   var clean = aaMut(null), bad = aaMut(m);
   var cr = aaRun(clean.world, { execute: true, frozen: clean.man.frozen_before,
@@ -7439,7 +8144,8 @@ mut('N95 two qualifying candidates picks the first instead of refusing', functio
 });
 
 mut('N96 a drifted live state is reported and then reasoned past anyway', function () {
-  var m = swapS1("      if (!okv) stop('LIVE_STATE_DRIFTED:' + name);", '');
+  var m = swapS1In('RUN_S1_FACTORY_MOVEMENT_LEGACY_PROVENANCE_CENSUS',
+    "      if (!okv) stop('LIVE_STATE_DRIFTED:' + name);", '');
   var rows = [abLive(), abFull()];
   var over = { table_combined_fingerprint: 'DEADBEEF' };
   var clean = abMut(null, rows, over), bad = abMut(m, rows, over);
@@ -7616,7 +8322,8 @@ mut('N104 a provenance table that does not exist is reported as one that had not
 });
 
 mut('N105 a caller-supplied expectation is presented as the frozen authorization', function () {
-  var m = swapS1('  out.expectation_source = opts.expect', '  out.expectation_source = false');
+  var m = swapS1In('RUN_S1_FACTORY_MOVEMENT_LEGACY_PROVENANCE_CENSUS',
+    '  out.expectation_source = opts.expect', '  out.expectation_source = false');
   var rows = [abLive(), abFull()];
   var clean = abMut(null, rows), bad = abMut(m, rows);
   // The pin is what the census holds the world to. A run pinned to something the caller handed it is not a
@@ -7763,6 +8470,179 @@ mut('N114 the chronology is never segmented, so every row is in one epoch', func
 
 
 
+
+// ---- S1-R4H — the controlled removal package. ------------------------------------------------------
+// Ten restorations of a behaviour this round exists to prevent. Several of them are measured on the FIELD
+// they destroy rather than on the verdict: the package has more than one check over the same fact in places,
+// and where that is true the mutant is aimed at what it actually breaks rather than asserted around.
+function adMutWorld(src, rows, extra, noLock) {
+  var e = { s1: src };
+  Object.keys(extra || {}).forEach(function (k) { e[k] = extra[k]; });
+  return adWorld(rows, e, noLock);
+}
+/** Build a world on the given source, take the manifest, run the removal. */
+function adCycle(src, arg, rows, extra, noLock, patch) {
+  var w = adMutWorld(src, rows, extra, noLock);
+  var m = adMan(w);
+  if (patch) patch(w);
+  var a = { frozen: m.frozen_before, authorization: m.authorization_wording };
+  Object.keys(arg || {}).forEach(function (k) { a[k] = arg[k]; });
+  var r = adRun(w, a);
+  r.world = w;
+  r.man = m;
+  return r;
+}
+/** Clear one row too far. Injected on the WORLD, not on the source, so a mutant can be about the ROLLBACK. */
+function adSpillOnClear(w) {
+  var sh = w.sheets.factory_stock_movements;
+  var orig = sh.getRange;
+  sh.getRange = function (row, col, nr, nc) {
+    var r = orig.call(this, row, col, nr, nc);
+    var s = this;
+    var base = r.clearContent;
+    if (base) {
+      r.clearContent = function () {
+        base.call(r);
+        for (var j = 0; j < (nc || 1); j++) s.rows[row][col - 1 + j] = '';
+      };
+    }
+    return r;
+  };
+}
+
+mut('N115 the removal execute gate becomes truthy, so a typo empties a production row', function () {
+  var m = swapS1In('RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL',
+    "    if (opts.execute !== true) {" + NL + "      out.verdict = 'DRY_RUN_OK';",
+    "    if (!opts.execute) {" + NL + "      out.verdict = 'DRY_RUN_OK';");
+  var clean = adCycle(null, { execute: 'false' });
+  var bad = adCycle(m, { execute: 'false' });
+  return clean.verdict === 'DRY_RUN_OK' && clean.cells_cleared === 0 && clean.world.allWrites() === 0
+    && bad.verdict === 'EXECUTED_OK' && bad.cells_cleared === 6 && bad.world.allWrites() === 1;
+});
+
+mut('N116 the removal authorization check becomes a presence check', function () {
+  var m = swapS1In('RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL',
+    "    out.authorization_matches_frozen = auth !== '' && auth === S1_str_(fz.authorization_wording);",
+    "    out.authorization_matches_frozen = auth !== '';");
+  var arg = { execute: true, authorization: 'I authorize something else entirely.' };
+  var clean = adCycle(null, arg), bad = adCycle(m, arg);
+  return clean.verdict === 'REFUSED' && clean.world.allWrites() === 0
+    && bad.verdict === 'EXECUTED_OK' && bad.world.allWrites() === 1;
+});
+
+mut('N117 the clear spills onto the next row, and the readback lets it', function () {
+  // The blast radius of a range write is the RANGE. One row too far destroys a record nobody authorized
+  // touching, and the row-number map is what refuses it.
+  var m = swapS1In('RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL',
+    '      R.sheet.getRange(fz.target_row_number, 1, 1, R.live_column_count).clearContent();',
+    '      R.sheet.getRange(fz.target_row_number, 1, 2, R.live_column_count).clearContent();');
+  var clean = adCycle(null, { execute: true }), bad = adCycle(m, { execute: true });
+  return clean.verdict === 'EXECUTED_OK' && clean.readback.ok === true
+    && bad.verdict !== 'EXECUTED_OK' && bad.readback.ok === false
+    && bad.readback.mismatches.filter(function (x) {
+      return x.what === 'remaining_row_fingerprint_map_fingerprint'; }).length === 1;
+});
+
+mut('N118 the rollback verifies the row and not the table, so a spill is called fully restored', function () {
+  // BOTH, NOT EITHER. The row fingerprint proves the fifteen cells came back; only the TABLE fingerprint can
+  // say that nothing else moved while they did. The spill is injected on the world, so this mutant is about
+  // the rollback and nothing else.
+  var m = swapS1In('S1_remRollback_',
+    "  o.outcome = (rowOk && tableOk) ? 'ROLLED_BACK_VERIFIED' : 'MANUAL_RECOVERY_REQUIRED';",
+    "  o.outcome = rowOk ? 'ROLLED_BACK_VERIFIED' : 'MANUAL_RECOVERY_REQUIRED';");
+  var clean = adCycle(null, { execute: true }, undefined, null, false, adSpillOnClear);
+  var bad = adCycle(m, { execute: true }, undefined, null, false, adSpillOnClear);
+  return clean.verdict === 'MANUAL_RECOVERY_REQUIRED'
+    && clean.rollback.error === 'THE_ROW_CAME_BACK_BUT_THE_TABLE_FINGERPRINT_DID_NOT'
+    && bad.verdict === 'ROLLED_BACK_VERIFIED' && bad.rollback.outcome === 'ROLLED_BACK_VERIFIED';
+});
+
+mut('N119 an unacknowledged write that never landed is reported as applied', function () {
+  // The ACK_UNKNOWN hazard in one line: a removal reported as done that never happened, and a retryable
+  // zero-write turned into a closed case.
+  var m = swapS1In('RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL',
+    "        out.write_acknowledged = 'RESOLVED_BY_READBACK_AS_NOT_APPLIED';" + NL
+    + "        out.verdict = 'NOT_APPLIED_ACK_UNKNOWN';" + NL
+    + '        out.retryable = true;',
+    "        out.write_acknowledged = 'ASSUMED_APPLIED';" + NL
+    + "        out.verdict = 'EXECUTED_OK_AFTER_ACK_UNKNOWN';" + NL
+    + '        out.retryable = false;');
+  var clean = adCycle(null, { execute: true }, undefined, null, false,
+    function (w) { adThrowOnClear(w, false); });
+  var bad = adCycle(m, { execute: true }, undefined, null, false,
+    function (w) { adThrowOnClear(w, false); });
+  var cleanRowIntact = adSheet(clean.world)[1].filter(function (c) { return String(c) !== ''; }).length === 6;
+  var badRowIntact = adSheet(bad.world)[1].filter(function (c) { return String(c) !== ''; }).length === 6;
+  return clean.verdict === 'NOT_APPLIED_ACK_UNKNOWN' && clean.writes === 0 && clean.retryable === true
+    && cleanRowIntact
+    && bad.verdict === 'EXECUTED_OK_AFTER_ACK_UNKNOWN' && bad.retryable === false && badRowIntact;
+});
+
+mut('N120 the classification is claimed to describe a row that two rows now answer to', function () {
+  // MEASURED ON THE FIELD IT DESTROYS. Both runs STOP, because the uniqueness test is also a ledger
+  // predicate — defence in depth working. What the mutant destroys is the ANSWER to whether the operator's
+  // decision still names one row, which is the fact a person would read before re-issuing it.
+  var m = swapS1In('RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL_MANIFEST',
+    '    out.classification_applies = out.live_state_confirmed === true' + NL
+    + '      && S1_str_(rec.fingerprint) === S1_str_(EXP.target_row_fingerprint) && occ === 1;',
+    '    out.classification_applies = true;');
+  var rows = [abLive(), abLive()];
+  for (var i = 1; i <= 94; i++) rows.push(aaGood(i));
+  var clean = adMan(adMutWorld(null, rows)), bad = adMan(adMutWorld(m, rows));
+  return clean.verdict === 'STOP' && clean.classification_applies === false
+    && bad.verdict === 'STOP' && bad.classification_applies === true;
+});
+
+mut('N121 a STOPped removal manifest keeps the sentence it was refused the right to write', function () {
+  var m = swapS1In('RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL_MANIFEST',
+    "    if (out.verdict !== 'READY_TO_AUTHORIZE_REMOVAL') {" + NL + '      out.frozen_before = null;',
+    '    if (false) {' + NL + '      out.frozen_before = null;');
+  var over = { pinOver: { table_combined_fingerprint: 'DEADBEEF' } };
+  var clean = adMan(adMutWorld(null), over), bad = adMan(adMutWorld(m), over);
+  return clean.verdict === 'STOP' && clean.authorization_wording === null
+    && bad.verdict === 'STOP' && String(bad.authorization_wording).indexOf('I authorize') === 0;
+});
+
+mut('N122 an absent lock authority is reported as a lock that was taken', function () {
+  // RE-AIMED ONCE, AND THE FIRST AIM IS WORTH RECORDING. Setting only `acquired` still refused, because
+  // `authority_present` is a SEPARATE predicate - two guards over one fact, working. What actually opens the
+  // door is claiming BOTH, which is what "the lock is optional here" looks like when it is written down.
+  var m = swapS1In('S1_remAcquireLock_',
+    "  if (typeof LockService === 'undefined') { o.reason = 'LOCK_AUTHORITY_UNAVAILABLE'; return o; }",
+    "  if (typeof LockService === 'undefined') { o.authority_present = true; o.acquired = true; return o; }");
+  var clean = adCycle(null, { execute: true }, undefined, null, true);
+  var bad = adCycle(m, { execute: true }, undefined, null, true);
+  return clean.verdict === 'REFUSED' && clean.world.allWrites() === 0
+    && String(clean.refusal_reasons[0]).indexOf('LOCK_AUTHORITY_UNAVAILABLE') > 0
+    && bad.verdict === 'EXECUTED_OK' && bad.world.allWrites() === 1;
+});
+
+mut('N123 the dry run skips the lock, so its all-clear is about a moment that has gone', function () {
+  var m = swapS1In('RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL',
+    '    LK = S1_remAcquireLock_(Number(opts.lock_timeout_ms) > 0 ? Number(opts.lock_timeout_ms) : 30000);',
+    '    LK = opts.execute === true' + NL
+    + '      ? S1_remAcquireLock_(Number(opts.lock_timeout_ms) > 0 ? Number(opts.lock_timeout_ms) : 30000)' + NL
+    + '      : { authority_present: true, acquired: true, lock: null, reason: null, timeout_ms: 0 };');
+  var clean = adCycle(null, {}), bad = adCycle(m, {});
+  return clean.verdict === 'DRY_RUN_OK' && adLock(clean.world).tries === 1
+    && bad.verdict === 'DRY_RUN_OK' && adLock(bad.world).tries === 0;
+});
+
+mut('N124 the physical extent is expected to shrink, collapsing the two counts into one', function () {
+  // THE HEADLINE OF THE ROUND, INVERTED. A logical record count and a physical row count are two different
+  // numbers; expecting the sheet to shrink by one makes a CORRECT removal fail its own postcondition and be
+  // undone.
+  var m = swapS1In('RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL_MANIFEST',
+    '      physical_last_row: lastRow,' + NL
+    + '      physical_rows_removed: 0, rows_added: 0, rows_reordered: false,',
+    '      physical_last_row: R.integrity.row_count - 1,' + NL
+    + '      physical_rows_removed: 1, rows_added: 0, rows_reordered: false,');
+  var clean = adCycle(null, { execute: true }), bad = adCycle(m, { execute: true });
+  return clean.verdict === 'EXECUTED_OK'
+    && bad.verdict === 'ROLLED_BACK_VERIFIED'
+    && bad.readback.mismatches.filter(function (x) {
+      return x.what === 'physical_last_row'; }).length === 1;
+});
 
 console.log('\npassed ' + pass + '  failed ' + fail
   + '  |  mutants caught ' + neg.caught + '  survived ' + neg.missed);
