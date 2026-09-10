@@ -27,7 +27,7 @@
 
    ORDER OF THE FILE
      1  integer-cents arithmetic          6  the chart, the five-unit axis and the image markers
-     2  the adapter seam and ingest       7  views: overview, category, risk, quality
+     2  the adapter seam and pipeline     7  views: overview, category, risk, quality
      3  variant grouping                  8  Strategy Workspace and Advanced details
      4  currency panels                   9  shell: sidebar, scope ladder, print, presentation
      5  the analysis engine              10  automated DOM assertions, then boot
@@ -38,334 +38,154 @@
 
   var CONTRACT = this.PSB_CONTRACT;
   var PREVIEW = this.PSB_PREVIEW;
+  /* THE SINGLE SOURCE OF TRUTH FOR EVERY DERIVATION. If this is missing the page must not guess its
+     way to a chart: an absent pipeline is a broken build, not a reason to re-implement the rules. */
+  var SEL = this.PSB_SELECTORS;
+  if (!SEL) throw new Error('PSB_SELECTORS is not loaded — selectors.js must precede prototype.js');
 
   /* ================================================================================================
-     1  INTEGER CENTS.
-     Not a style preference. 32.99 - 24.99 is 8.000000000000004 in IEEE-754, so a step exactly equal
-     to a threshold of 8.00 would satisfy `distance > threshold`, be reported as a gap, and render
-     through two decimals as "gap 8.00 exceeds threshold 8.00" — a measurement that refutes itself on
-     screen. Every comparison below is on integers.
+     1  EVERY RULE BELOW LIVES IN selectors.js, AND THESE ARE THE NAMES THIS FILE CALLS THEM BY.
+
+     P1-B2 moved the whole data pipeline out of this file. What is left here is rendering. The names
+     are kept — `cents`, `groupNodes`, `analyse`, `tierOf` — so the chart, the tables and the two
+     hundred DOM assertions below did not have to be rewritten to prove a refactor, but each one is now
+     a single delegation and NOT a second copy. That distinction is the point: two implementations of
+     the grouping rule would agree on the day they were written and drift afterwards.
+
+     INTEGER CENTS, still, and still not a style preference: 32.99 - 24.99 is 8.000000000000004 in
+     IEEE-754, so a step exactly equal to a threshold of 8.00 would satisfy `distance > threshold`, be
+     reported as a gap, and render through two decimals as "gap 8.00 exceeds threshold 8.00" — a
+     measurement that refutes itself on screen.
      ================================================================================================ */
-  function cents(v) {
-    if (v === null || v === undefined || v === '') return null;
-    var n = Number(v);
-    if (!isFinite(n)) return null;
-    return Math.round(n * 100);
-  }
-  function fromCents(c) { return c === null || c === undefined ? null : (c / 100).toFixed(2); }
-  function money(c, cur) { return c === null ? '—' : fromCents(c) + (cur ? ' ' + cur : ''); }
+  function cents(v) { return SEL.cents(v); }
+  function fromCents(c) { return SEL.fromCents(c); }
+  function money(c, cur) { return SEL.money(c, cur); }
+  function priceSignature(r) { return SEL.priceSignature(r); }
+  function groupNodes(rows) { return SEL.groupNodes(rows); }
+  function labelOf(r) { return SEL.labelOf(r); }
+  function splitByCurrency(nodes) { return SEL.splitByCurrency(nodes); }
+  function sellInterval(n) { return SEL.sellInterval(n); }
+  function liveOnlyInterval(n) { return SEL.liveOnlyInterval(n); }
+  function analyse(panel, thrC) { return SEL.analyse(panel, thrC); }
+  function tierOf(panel, node) { return SEL.tierOf(panel, node); }
+  function withinPeriod(r) { return SEL.withinPeriod(r); }
+  var CLASS = SEL.CLASS;
+  var PREVIEW_TODAY = SEL.PREVIEW_TODAY;
 
   /* ================================================================================================
-     2  THE ADAPTER SEAM.
+     2  THE ADAPTER SEAM, AND THE PIPELINE.
+
+     The adapter now hands over the CANONICAL universe — every site it knows about, unfiltered — and
+     every narrowing happens in selectors.js afterwards. That is the opposite of what this file used to
+     do, and the reason is a defect this round measured rather than suspected:
+
+         the adapter took `{category, company, country, ...}` as one flat sieve and also published a
+         `categories` list it had computed ONCE over every site. On DE — which sells one category — the
+         menu offered three, and picking either of the other two produced an empty category card for
+         products that country does not stock.
+
+     A menu can only be right if it is built from the rows that survived membership, so membership has
+     to happen first, which means the pipeline has to own the order. `ADAPTER.categories` no longer
+     exists to fall back to.
      ================================================================================================ */
   var ADAPTER = null;              // set by boot(); the renderer never reaches past it
-  var LOAD = null;                 // the last LoadResult
-  var ROWS = [];                   // ingested contract rows for the CURRENT scope
+  var CANON = null;                // the last canonical LoadResult
+  var LOAD = null;                 // provenance and notice, for the banner and Advanced details
+  var MODEL = null;                // the whole derived model for the current scope
+  var ROWS = [];                   // view rows for the CURRENT scope, overlay applied
 
-  var PREVIEW_TODAY = '2026-09-10';
-  function withinPeriod(r) {
-    if (!r.official_deal_start || !r.official_deal_end) return false;
-    return String(r.official_deal_start) <= PREVIEW_TODAY
-      && PREVIEW_TODAY <= String(r.official_deal_end);
-  }
+  /* ------------------------------------------------------------------------------------------------
+     THE STATE. One object, no storage of any kind, and reload starts again from nothing.
 
-  /* Contract row -> view row. Adds ONLY derived fields, all named with a leading underscore. No
-     contract field is renamed, replaced or invented. */
-  function ingest(r) {
-    var o = {};
-    CONTRACT.FIELD_NAMES.forEach(function (k) { o[k] = r[k]; });
-    o._regular_c = cents(r.regular_price);
-    o._min_c = cents(r.minimum_price);
-    o._msrp_c = cents(r.msrp);
-    o._deal_c = cents(r.official_deal_price);
-    o._proposed_c = cents(r.provenance && r.provenance.proposed_scenario_price);
-    o._deal_period_ok = !!(r.official_deal_start && r.official_deal_end);
-    o._deal_live = o._deal_c !== null && o._deal_period_ok && withinPeriod(r);
-    o._plottable = o._regular_c !== null;
-    /* THE VALUE ON THE ROW, VERBATIM, AND ONLY WHEN THE ROW SAYS IT IS VERIFIED. No path is ever
-       composed here from a sku, a directory or an extension. */
-    o._image = (r.image_identity_status === 'VERIFIED_DB_MAPPING' && r.product_image)
-      ? r.product_image : null;
-    return o;
-  }
+     `overrides` is the scenario. It is here, in the same object as the view and the filters, precisely
+     because that object has no persistence: a simulated price is discarded by the same mechanism that
+     forgets which tab was open. There is no localStorage, no sessionStorage, no IndexedDB, no cookie
+     and no URL parameter anywhere in this prototype, and the suite checks the source text for each.
 
+     THE SITE DEFAULTS TO A REAL, COMPLETE ONE. Not to ALL. A price ladder needs one currency, a
+     scenario needs one site, and a board that opens on an aggregate would have to refuse both on the
+     first screen a person sees.
+     ------------------------------------------------------------------------------------------------ */
   var STATE = {
     view: 'overview',              // overview | category | risk | quality | workspace | advanced
     rail: false,                   // sidebar collapsed to an icon rail — a variable, never storage
     category: null,                // null on the overview; a category name on every other view
-    company: 'ALL', country: 'ALL', marketplace: 'ALL', currency: 'ALL', series: 'ALL',
+    company: 'Kitchen Mama', country: 'US', marketplace: 'Amazon',
+    currency: 'ALL', series: 'ALL',
     search: '',
+    includeInactive: false,
     thresholdC: 800,
     selected: {},
     drawerOpen: false,
     advancedOpen: false,
     presentation: false,
     elements: [],
-    seq: 0
+    seq: 0,
+    /* ---- the scenario, in memory and nowhere else ---- */
+    overrides: {},                 // overrides[siteKey][series][priceField] = {mode, value}
+    scenarioSeries: 'ALL',
+    scenarioField: SEL.SCENARIO_DEFAULT_FIELD,
+    scenarioMode: SEL.SCENARIO_MODE_DEFAULTS[SEL.SCENARIO_DEFAULT_FIELD],
+    scenarioInput: '',
+    scenarioRefusal: null
   };
 
-  /* THE SCOPE, IN ONE PLACE. Category first; everything else narrows inside it. Passing category
-     through to the adapter is deliberate: P1-B1 must bound the read server-side, and a renderer
-     that filtered afterwards would hide the fact that it had not. */
+  function siteSelection() {
+    return { company: STATE.company, country: STATE.country, marketplace: STATE.marketplace };
+  }
+  function siteIdentity() { return SEL.deriveSiteIdentity(siteSelection()); }
+
+  /* THE DIMENSION FILTERS — what narrows INSIDE the site, and nothing about which site it is. */
   function scopeFilters(categoryOverride) {
     var cat = categoryOverride === undefined ? STATE.category : categoryOverride;
     return {
       category: cat || 'ALL',
-      company: STATE.company, country: STATE.country, marketplace: STATE.marketplace,
-      currency: STATE.currency, series: STATE.series
+      currency: STATE.currency,
+      series: STATE.series,
+      search: STATE.search
     };
   }
-  function loadScoped(categoryOverride) {
-    var res = ADAPTER.load(scopeFilters(categoryOverride));
-    return { load: res, rows: res.rows.map(ingest) };
+
+  /* ONE MODEL PER RENDER, and every view reads it. A view that re-derived its own would be the third
+     chance to narrow differently. */
+  function buildModel(categoryOverride) {
+    return SEL.deriveBoardModel({
+      rows: CANON.rows,
+      selection: siteSelection(),
+      filters: scopeFilters(categoryOverride),
+      overrides: STATE.overrides,
+      includeInactive: STATE.includeInactive,
+      thresholdC: STATE.thresholdC
+    });
   }
+
   function reload() {
-    var r = loadScoped();
-    LOAD = r.load;
-    ROWS = r.rows;
+    CANON = ADAPTER.loadCanonical();
+    LOAD = CANON;
+    MODEL = buildModel();
+    ROWS = MODEL.rows;
   }
 
-  /* ================================================================================================
-     3  VARIANT GROUPING — the contract's rule, implemented exactly and nowhere relaxed.
-     ================================================================================================ */
-  function priceSignature(r) {
-    return [r._regular_c, r._min_c, r._msrp_c, r._deal_c].join('/');
+  /* ------------------------------------------------------------------------------------------------
+     THE CATEGORY MENU. Six places used to read `ADAPTER.categories`, a cross-site list computed once.
+     They all read this instead, and this reads the CURRENT site's eligible universe.
+
+     THERE IS NO FALLBACK AND NO DEFAULT LIST. If a site sells nothing, the answer is an empty array
+     and the screen shows a true empty state. An empty menu and a menu of three demonstration values
+     are different answers and must look different.
+     ------------------------------------------------------------------------------------------------ */
+  function categoryValues() {
+    var m = MODEL || buildModel();
+    return m.categoryOptions.options.map(function (o) { return o.value; });
   }
-
-  /* Rows -> product nodes. Merge ONLY on a shared non-empty variant_group AND an identical price
-     signature. Never on a sku prefix: a shared prefix is a naming habit, and a habit that is right
-     most of the time merges the rest wrongly and silently.
-
-     Category is part of the key as well. Two categories cannot share a node any more than they can
-     share an axis, and relying on variant_group alone to keep them apart would be relying on data
-     that the real schema does not yet have. */
-  function groupNodes(rows) {
-    var byKey = {}, order = [], nodes = [];
-    rows.forEach(function (r) {
-      var grouped = !!r.variant_group;
-      var key = grouped
-        ? ('G|' + r.category + '|' + r.currency + '|' + r.variant_group + '|' + priceSignature(r))
-        : ('U|' + r.identity);
-      if (!byKey[key]) { byKey[key] = { key: key, members: [], grouped: grouped }; order.push(key); }
-      byKey[key].members.push(r);
-    });
-    order.forEach(function (k) {
-      var g = byKey[k], first = g.members[0];
-      /* THE REPRESENTATIVE IMAGE COMES FROM THIS NODE'S OWN MEMBERS. A price-split sibling shares a
-         variant_group and is a DIFFERENT node, so it does not inherit the photograph: an image
-         represents the grouping it belongs to, and nothing wider. */
-      var withImage = null;
-      g.members.forEach(function (m) { if (!withImage && m._image) withImage = m; });
-      var reasons = {};
-      g.members.forEach(function (m) {
-        (m.missing_reasons || []).forEach(function (x) { reasons[x] = true; });
-      });
-      nodes.push({
-        key: k,
-        grouped: g.grouped,
-        grouping_state: g.grouped ? 'GROUPED_BY_VARIANT_GROUP' : 'VARIANT_GROUPING_SOURCE_MISSING',
-        label: labelOf(first),
-        product_name: first.product_name,
-        category: first.category,
-        series: first.series,
-        currency: first.currency,
-        company: first.company, country: first.country, marketplace: first.marketplace,
-        members: g.members,
-        variant_count: g.members.length,
-        skus: g.members.map(function (m) { return m.master_sku; }),
-        grouped_skus: g.members.map(function (m) { return m.master_sku; }),
-        representative_sku: withImage ? withImage.master_sku : first.master_sku,
-        representative_image_sku: withImage ? withImage.master_sku : null,
-        variant_names: g.members.map(function (m) { return m.variant_name; })
-          .filter(function (x) { return !!x; }),
-        image: withImage ? withImage._image : null,
-        image_state: withImage ? 'VERIFIED_DB_MAPPING' : 'IMAGE_SOURCE_MISSING',
-        image_basis: (withImage || first).provenance.image_basis,
-        _regular_c: first._regular_c, _min_c: first._min_c, _msrp_c: first._msrp_c,
-        _deal_c: first._deal_c, _proposed_c: first._proposed_c,
-        _deal_live: first._deal_live, _deal_period_ok: first._deal_period_ok,
-        deal_start: first.official_deal_start, deal_end: first.official_deal_end,
-        campaign: first.provenance.campaign_name,
-        lifecycle_status: first.lifecycle_status, source_status: first.source_status,
-        missing_reasons: Object.keys(reasons),
-        _plottable: first._plottable
-      });
-    });
-    return nodes;
+  function categoryOptionRows() {
+    var m = MODEL || buildModel();
+    return m.categoryOptions;
   }
-  /* The node's display name: the variant_group without the fixture's uniquifying suffix, or the
-     master sku when there is no grouping authority at all. */
-  function labelOf(r) {
-    if (!r.variant_group) return r.master_sku;
-    return String(r.variant_group).split('|')[0];
-  }
-
-  /* ================================================================================================
-     4  CURRENCY PANELS. One panel per currency, one axis each, no rate applied anywhere.
-     ================================================================================================ */
-  function splitByCurrency(nodes) {
-    var by = {}, order = [];
-    nodes.forEach(function (n) {
-      var c = n.currency || 'UNKNOWN';
-      if (!by[c]) { by[c] = []; order.push(c); }
-      by[c].push(n);
-    });
-    return order.sort().map(function (c) {
-      var all = by[c];
-      return {
-        currency: c,
-        plotted: all.filter(function (n) { return n._plottable; })
-          .sort(function (a, b) { return a._regular_c - b._regular_c; }),
-        notPlotted: all.filter(function (n) { return !n._plottable; })
-      };
-    });
-  }
-
-  /* ================================================================================================
-     5  THE ANALYSIS ENGINE.
-     Four classes, and the boundary rules differ ON PURPOSE:
-       gap             strictly greater than the threshold  ( > )
-       overlap         more than a single shared point      ( lo < hi )
-       cannibalisation inclusive                            ( <= )
-     A step exactly equal to the threshold is not a gap. Two intervals that meet at one point do not
-     overlap — and that same touch IS a cannibalisation, because discounting to exactly the price
-     below is the thing the risk is about.
-
-     EVERY PAIR HERE IS INSIDE ONE PANEL, AND EVERY PANEL IS INSIDE ONE CATEGORY. There is no code
-     path that compares two categories, because there is no meaning to compare.
-     ================================================================================================ */
-  var CLASS = { OPP: 'OPPORTUNITY', WATCH: 'WATCH', RISK: 'RISK', DQ: 'DATA QUALITY' };
-
-  function sellInterval(n) {
-    var lo = n._regular_c, drivers = [];
-    if (n._deal_live && n._deal_c !== null && n._deal_c < lo) { lo = n._deal_c; drivers.push('LIVE'); }
-    if (n._proposed_c !== null && n._proposed_c < lo) { lo = n._proposed_c; drivers.push('PROPOSED'); }
-    return { lo: lo, hi: n._regular_c, drivers: drivers };
-  }
-  function liveOnlyInterval(n) {
-    var lo = n._regular_c;
-    if (n._deal_live && n._deal_c !== null && n._deal_c < lo) lo = n._deal_c;
-    return { lo: lo, hi: n._regular_c };
-  }
-
-  function analyse(panel, thrC) {
-    var ns = panel.plotted, out = [];
-    var cur = panel.currency;
-    var cat = (ns[0] || panel.notPlotted[0] || {}).category || null;
-
-    /* OPPORTUNITY — a step in the ladder wider than the threshold. */
-    for (var i = 1; i < ns.length; i++) {
-      var d = ns[i]._regular_c - ns[i - 1]._regular_c;
-      if (d > thrC) {
-        out.push({ cls: CLASS.OPP, kind: 'PRICE_GAP', currency: cur, category: cat,
-          a: ns[i - 1], b: ns[i], distance_c: d, threshold_c: thrC,
-          headline: 'Open price step of ' + money(d, cur) + ' between '
-            + ns[i - 1].label + ' and ' + ns[i].label,
-          detail: 'No product sits between ' + money(ns[i - 1]._regular_c, cur) + ' and '
-            + money(ns[i]._regular_c, cur) + '. Threshold in use: ' + money(thrC, cur) + '.',
-          proposal_driven: false });
-      }
-    }
-
-    /* WATCH — two products whose sell-price intervals share more than a single point. */
-    for (var a = 0; a < ns.length; a++) {
-      for (var b = a + 1; b < ns.length; b++) {
-        var A = sellInterval(ns[a]), B = sellInterval(ns[b]);
-        var lo = Math.max(A.lo, B.lo), hi = Math.min(A.hi, B.hi);
-        if (lo < hi) {
-          var LA = liveOnlyInterval(ns[a]), LB = liveOnlyInterval(ns[b]);
-          var loL = Math.max(LA.lo, LB.lo), hiL = Math.min(LA.hi, LB.hi);
-          var causedByProposal = !(loL < hiL);
-          out.push({ cls: CLASS.WATCH, kind: 'PRICE_BAND_OVERLAP', currency: cur, category: cat,
-            a: ns[a], b: ns[b], lo_c: lo, hi_c: hi,
-            headline: ns[a].label + ' and ' + ns[b].label + ' sell into the same '
-              + money(hi - lo, cur) + ' window',
-            detail: 'Shared window ' + money(lo, cur) + ' to ' + money(hi, cur) + '.',
-            proposal_driven: causedByProposal });
-        }
-      }
-    }
-
-    /* RISK — a higher-priced product discounting to or below a lower-priced product's normal price. */
-    for (var x = 0; x < ns.length; x++) {
-      for (var y = 0; y < x; y++) {
-        (function (hiN, loN) {
-          if (hiN._regular_c <= loN._regular_c) return;
-          var offers = [];
-          if (hiN._deal_c !== null && hiN._deal_live) {
-            offers.push({ price_c: hiN._deal_c, basis: 'LIVE', label: 'live promotion' });
-          }
-          if (hiN._proposed_c !== null) {
-            offers.push({ price_c: hiN._proposed_c, basis: 'PROPOSED', label: 'proposed scenario' });
-          }
-          offers.forEach(function (of) {
-            if (of.price_c <= loN._regular_c) {
-              out.push({ cls: CLASS.RISK, kind: 'DEAL_CANNIBALIZATION', currency: cur, category: cat,
-                a: hiN, b: loN, offer_c: of.price_c, basis: of.basis,
-                headline: hiN.label + ' at ' + money(of.price_c, cur) + ' meets or undercuts '
-                  + loN.label + ' at ' + money(loN._regular_c, cur),
-                detail: 'The ' + of.label + ' on ' + hiN.label + ' reaches '
-                  + money(of.price_c, cur) + ', at or below the everyday price of ' + loN.label + '.',
-                proposal_driven: of.basis === 'PROPOSED' });
-            }
-          });
-        })(ns[x], ns[y]);
-      }
-    }
-
-    /* DATA QUALITY — everything the sources could not supply. */
-    panel.notPlotted.forEach(function (n) {
-      out.push({ cls: CLASS.DQ, kind: 'NO_PRICE', currency: cur, category: cat, a: n,
-        headline: n.label + ' has no everyday price on record',
-        detail: 'It is listed and deliberately not plotted. No stand-in price is used.',
-        proposal_driven: false });
-    });
-    /* ONE FINDING PER REASON, NOT ONE PER PRODUCT (P0-R3-R1). A reader needs the count, the reason
-       and the list — once. */
-    var byImgReason = {}, imgOrder = [];
-    panel.plotted.concat(panel.notPlotted).forEach(function (n) {
-      if (n.image_state === 'VERIFIED_DB_MAPPING') return;
-      var why = String(n.image_basis || 'IMAGE_SOURCE_MISSING');
-      if (!byImgReason[why]) { byImgReason[why] = []; imgOrder.push(why); }
-      byImgReason[why].push(n);
-    });
-    imgOrder.forEach(function (why) {
-      var ns2 = byImgReason[why];
-      out.push({ cls: CLASS.DQ, kind: 'IMAGE_SOURCE_MISSING', currency: cur, category: cat, a: ns2[0],
-        headline: ns2.length + (ns2.length === 1 ? ' product has' : ' products have')
-          + ' no verified product photograph',
-        detail: 'No authoritative record names an image file for '
-          + (ns2.length === 1 ? 'it' : 'them') + ', so nothing is shown in the slot rather than a'
-          + ' picture that cannot be proved to be that product. Reason on record: ' + why
-          + '. Affected: ' + ns2.map(function (x) { return x.label; }).join(' · ') + '.',
-        proposal_driven: false });
-    });
-    panel.plotted.concat(panel.notPlotted).forEach(function (n) {
-      if (n.grouping_state !== 'GROUPED_BY_VARIANT_GROUP') {
-        out.push({ cls: CLASS.DQ, kind: 'VARIANT_GROUPING_SOURCE_MISSING', currency: cur,
-          category: cat, a: n,
-          headline: n.label + ' cannot be grouped with its colour variants',
-          detail: 'Nothing on record proves which products are variants of it, so it stands alone.',
-          proposal_driven: false });
-      }
-      if (n._deal_c !== null && !n._deal_period_ok) {
-        out.push({ cls: CLASS.DQ, kind: 'DEAL_PERIOD_MISSING', currency: cur, category: cat, a: n,
-          headline: n.label + ' has a promotion price with no dates',
-          detail: 'Without a start and an end it is not treated as live and carries no risk finding.',
-          proposal_driven: false });
-      }
-    });
-    return out;
-  }
-
-  function tierOf(panel, node) {
-    var n = panel.plotted.length;
-    if (n <= 1) return 'only';
-    var i = panel.plotted.indexOf(node);
-    if (i < 0) return null;
-    if (i < Math.ceil(n / 3)) return 'entry';
-    if (i >= n - Math.ceil(n / 3)) return 'premium';
-    return 'core';
+  /** The first category of THIS site, or null. Never index [0] of a list from somewhere else. */
+  function firstCategory() {
+    var v = categoryValues();
+    return v.length ? v[0] : null;
   }
 
   /* ================================================================================================
@@ -627,14 +447,20 @@
   /* Everything a category page needs, derived once so the summary, the chart, the table and the
      findings cannot disagree with each other. */
   function categoryModel(category) {
-    var got = loadScoped(category);
-    var nodes = groupNodes(got.rows);
-    var panels = splitByCurrency(nodes);
-    var findings = [];
-    panels.forEach(function (p) { findings = findings.concat(analyse(p, STATE.thresholdC)); });
+    /* ONE PIPELINE, RUN WITH THE CATEGORY PINNED. The nodes, panels and findings come back already
+       derived, so the summary, the chart, the table and the findings drawer cannot disagree — and the
+       scenario overlay is inside the same call, so none of them can show an un-simulated number while
+       another shows a simulated one. */
+    var m = buildModel(category);
     return {
-      category: category, load: got.load, rows: got.rows,
-      nodes: nodes, panels: panels, findings: findings
+      category: category,
+      load: LOAD,
+      model: m,
+      universe: m.universe,
+      rows: m.rows,
+      nodes: m.architecture.nodes,
+      panels: m.architecture.panels,
+      findings: m.architecture.findings
     };
   }
 
@@ -751,7 +577,7 @@
       + 'cannibalisation is computed across two categories.'));
     host.appendChild(head);
 
-    var cats = ADAPTER.categories || [];
+    var cats = categoryValues();
     var grid = el('div', 'catgrid');
     grid.id = 'catGrid';
     cats.forEach(function (c) { grid.appendChild(categoryCard(c)); });
@@ -975,7 +801,7 @@
   }
 
   function viewCategory(host) {
-    var cat = STATE.category || (ADAPTER.categories || [])[0];
+    var cat = STATE.category || firstCategory();
     STATE.category = cat;
     var m = categoryModel(cat);
 
@@ -1014,8 +840,94 @@
     host.appendChild(recommendation(m));
   }
 
+  /**
+   * THE SITE-ELIGIBILITY DIAGNOSTIC — WHERE THE MISSING MAPPINGS ARE VISIBLE.
+   *
+   * The brief asks for a place a product with no regional record can be SEEN rather than merely
+   * omitted. This is that place, and it is deliberately a ledger rather than a warning: it shows the
+   * canonical count, what membership kept, what the status gate dropped, and what is kept but cannot be
+   * plotted — with the reason on each row. Four numbers that add up are harder to argue with than a
+   * sentence saying the data is fine.
+   */
+  function viewEligibility(host) {
+    var u = MODEL.universe;
+    var site = MODEL.site;
+    var card = el('section', 'card');
+    card.id = 'eligibilityCard';
+    var h = el('div', 'card-h');
+    h.appendChild(el('h2', null, 'Site eligibility and missing mappings'));
+    h.appendChild(el('span', 'card-sub', site.complete ? site.key : 'aggregate scope'));
+    card.appendChild(h);
+
+    card.appendChild(el('p', 'card-note', 'Membership authority: ' + u.membership_authority
+      + '. Order: ' + u.order.join(' → ') + '.'));
+
+    var wrap = el('div', 'tablewrap');
+    var t = el('table', 'grid-t');
+    t.id = 'eligibilityTable';
+    var thead = el('thead');
+    var hr = el('tr');
+    ['Stage', 'Rows', 'What it means'].forEach(function (x) { hr.appendChild(el('th', null, x)); });
+    thead.appendChild(hr);
+    t.appendChild(thead);
+    var tb = el('tbody');
+    [['canonical', u.counts.canonical, 'every listing the adapter handed over, across every site'],
+      ['on this site', u.counts.after_site, 'survived marketplace_skus membership'],
+      ['past the status gate', u.counts.after_status,
+        'status in ' + u.permitted_statuses.join(' / ')
+          + (u.include_inactive ? ' (inactive included)' : '')],
+      ['eligible', u.counts.eligible, 'shown on this board'],
+      ['plottable', u.counts.chartable,
+        'has an everyday price AND a regional record — the rest are listed, not plotted'],
+      ['excluded', u.counts.excluded, 'every one of them with a named reason']
+    ].forEach(function (row) {
+      var tr = el('tr');
+      tr.setAttribute('data-stage', row[0]);
+      tr.appendChild(el('td', null, row[0]));
+      tr.appendChild(el('td', 'num', String(row[1])));
+      tr.appendChild(el('td', null, row[2]));
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb);
+    wrap.appendChild(t);
+    card.appendChild(wrap);
+
+    /* ---- THE MISSING-MAPPING LEDGER ---- */
+    var buckets = [
+      ['regional_details_missing', u.dataQuality.regional_details_missing,
+        'listed on this site, and sku_regional_details has no row for this exact four-part identity.'
+          + ' KEPT — membership never depended on that table — reported here, and off the price chart.'],
+      ['category_source_missing', u.dataQuality.category_source_missing,
+        'sku_details.category is blank. The SKU is kept, shown as ' + SEL.UNMAPPED_LABEL
+          + ', and never renamed "Other".'],
+      ['price_source_missing', u.dataQuality.price_source_missing,
+        'no everyday price on record, so there is no coordinate to plot. No stand-in is used.'],
+      ['status_missing_or_unrecognised', u.dataQuality.status_missing_or_unrecognised,
+        'the site status is blank or outside the shipped vocabulary, so it was NOT read as sellable.'],
+      ['master_record_missing', u.dataQuality.master_record_missing,
+        'a site listing whose master sku_details row could not be joined.']
+    ];
+    var dq = el('div', 'dqlist');
+    dq.id = 'dqBuckets';
+    buckets.forEach(function (b) {
+      var row = el('div', 'dqrow');
+      row.setAttribute('data-bucket', b[0]);
+      row.setAttribute('data-count', String(b[1].length));
+      var hd = el('div', 'f-head');
+      hd.appendChild(el('span', 'f-title', b[0] + ' — ' + b[1].length));
+      row.appendChild(hd);
+      row.appendChild(el('div', 'f-detail', b[2]));
+      if (b[1].length) row.appendChild(el('div', 'mono', b[1].join(' · ')));
+      dq.appendChild(row);
+    });
+    card.appendChild(dq);
+    card.appendChild(el('p', 'card-note', 'Total Data Quality items on this site: '
+      + u.dataQuality.total + '. A count of zero here is a measurement, not an absence of checking.'));
+    host.appendChild(card);
+  }
+
   function viewFindings(host, cls, title, blurb) {
-    var cats = STATE.category ? [STATE.category] : (ADAPTER.categories || []);
+    var cats = STATE.category ? [STATE.category] : categoryValues();
     var head = el('section', 'card');
     head.appendChild(el('h1', 'rtitle', title));
     head.appendChild(el('div', 'rmeta', blurb));
@@ -1062,7 +974,7 @@
      8  STRATEGY WORKSPACE and ADVANCED DETAILS.
      ================================================================================================ */
   function viewWorkspace(host) {
-    var cat = STATE.category || (ADAPTER.categories || [])[0];
+    var cat = STATE.category || firstCategory();
     STATE.category = cat;
     var m = categoryModel(cat);
 
@@ -1298,7 +1210,7 @@
         /* Leaving the overview picks up a category; the overview itself has none, because it is the
            only view allowed to look across them. */
         if (item.id === 'overview') { STATE.category = null; }
-        else if (!STATE.category) { STATE.category = (ADAPTER.categories || [])[0] || null; }
+        else if (!STATE.category) { STATE.category = firstCategory(); }
         render();
       });
       li.appendChild(b);
@@ -1306,11 +1218,30 @@
     });
   }
 
+  /* ================================================================================================
+     THE SCOPE LADDER — INVERTED IN P1-B2, AND THE INVERSION IS THE ROUND'S ARCHITECTURAL CHANGE.
+
+     P0-R3-R2 made category the first ring. That was right while the board had one site, and it became
+     wrong the moment the site decided which products exist: a category menu built before the site is
+     known is a menu over every site, and on DE — which sells one category — it offered three.
+
+     THE ORDER IS NOW THE SOURCE'S OWN ORDER (design freeze 33.6, 72_ ppwMembership_):
+
+         company -> country -> marketplace   the SITE. Membership. Which SKUs exist at all.
+           -> category                       derived from what survived
+             -> series -> currency           derived from that
+               -> gap threshold              a display parameter, not a scope
+
+     Everything to the right of a ring is rebuilt when that ring changes, which is why changing the
+     country cannot leave the previous site's category selected: the selection is validated against the
+     new menu in the same handler that changed it.
+     ================================================================================================ */
   function scopeLabel() {
+    var site = siteIdentity();
     var bits = [];
-    if (STATE.company !== 'ALL') bits.push(STATE.company);
-    bits.push(STATE.country === 'ALL' ? 'all countries' : STATE.country);
-    bits.push(STATE.marketplace === 'ALL' ? 'all marketplaces' : STATE.marketplace);
+    bits.push(site.company === 'ALL' ? 'all companies' : site.company);
+    bits.push(site.country === 'ALL' ? 'all countries' : site.country);
+    bits.push(site.marketplace === 'ALL' ? 'all marketplaces' : site.marketplace);
     if (STATE.currency !== 'ALL') bits.push(STATE.currency);
     if (STATE.series !== 'ALL') bits.push(STATE.series);
     return bits.join(' · ');
@@ -1327,14 +1258,103 @@
       + (STATE.category && STATE.view !== 'overview' ? ' · ' + STATE.category : '')));
   }
 
-  /* ---- THE SCOPE LADDER. Category first, and everything else is disabled until it is chosen. --- */
+  /* The distinct values of one site dimension, across the CANONICAL universe. These three are the only
+     menus that may be built before membership, because they are what membership is selected FROM. */
+  function siteDimensionValues(key) {
+    var seen = {}, out = [];
+    CANON.rows.forEach(function (r) {
+      var v = String(r[key] === null || r[key] === undefined ? '' : r[key]);
+      if (v === '' || seen[v]) return;
+      seen[v] = 1;
+      out.push(v);
+    });
+    return out.sort();
+  }
+
+  /**
+   * CHANGING A RING INVALIDATES EVERYTHING TO ITS RIGHT, HERE, IN ONE PLACE.
+   *
+   * "切換 country 不殘留上一站點資料" is not a rendering concern; it is a state concern. A category that
+   * the new site does not sell would otherwise stay selected and every downstream view would filter to
+   * zero rows — a screen that looks like a site with no products instead of a stale selection.
+   */
+  function narrowAfterSiteChange() {
+    MODEL = buildModel();
+    var cats = MODEL.categoryOptions.options.map(function (o) { return o.value; });
+    if (STATE.category !== null && cats.indexOf(STATE.category) < 0) {
+      STATE.category = null;
+      if (STATE.view !== 'overview') STATE.view = 'overview';
+    }
+    var ser = MODEL.seriesOptions.options.map(function (o) { return o.value; });
+    if (STATE.series !== 'ALL' && ser.indexOf(STATE.series) < 0) STATE.series = 'ALL';
+    var cur = SEL.deriveDimensionValues(MODEL.universe, 'currency');
+    if (STATE.currency !== 'ALL' && cur.indexOf(STATE.currency) < 0) STATE.currency = 'ALL';
+    if (STATE.scenarioSeries !== 'ALL' && ser.indexOf(STATE.scenarioSeries) < 0) {
+      STATE.scenarioSeries = 'ALL';
+    }
+    STATE.scenarioRefusal = null;
+  }
+
+  function selectEl(id, label, values, current, onChange, disabled) {
+    var fl = el('div', 'fl');
+    fl.appendChild(el('span', 'fl-label', label));
+    var sel = document.createElement('select');
+    sel.id = id;
+    sel.disabled = !!disabled;
+    values.forEach(function (v) {
+      var o = document.createElement('option');
+      o.value = v;
+      o.setAttribute('value', v);
+      o.appendChild(document.createTextNode(v === 'ALL' ? 'All' : v));
+      sel.appendChild(o);
+    });
+    sel.value = current;
+    sel.addEventListener('change', function () { onChange(sel.value); });
+    fl.appendChild(sel);
+    return fl;
+  }
+
   function renderScope() {
     var host = byId('scope');
     clear(host);
-    var cats = ADAPTER.categories || [];
+    var site = siteIdentity();
+    var opts = categoryOptionRows();
+    var cats = opts.options.map(function (o) { return o.value; });
+    var countBySite = {};
+    opts.options.forEach(function (o) { countBySite[o.value] = o.siteSkuCount; });
 
+    /* ---- RING 1. THE SITE. ---- */
+    var ring1 = el('div', 'scope-lead');
+    ring1.appendChild(el('span', 'fl-label', 'Site — the first scope'));
+    var sitebar = el('div', 'sitebar');
+    sitebar.id = 'siteBar';
+    [['fCompany', 'Company', 'company'], ['fCountry', 'Country', 'country'],
+      ['fMarketplace', 'Marketplace', 'marketplace']].forEach(function (spec) {
+      sitebar.appendChild(selectEl(spec[0], spec[1],
+        ['ALL'].concat(siteDimensionValues(spec[2])), STATE[spec[2]],
+        function (v) {
+          STATE[spec[2]] = v;
+          narrowAfterSiteChange();
+          render();
+        }, false));
+    });
+    ring1.appendChild(sitebar);
+    var st = el('p', 'scope-note', site.complete
+      ? 'Complete site identity ' + site.key + '. Everything below is what this site sells: '
+        + MODEL.universe.counts.eligible + ' listings, '
+        + MODEL.universe.counts.chartable + ' with a price to plot, '
+        + MODEL.universe.counts.excluded + ' rows of the canonical set excluded.'
+      : 'Aggregate across ' + site.aggregate_dimensions.join(' and ')
+        + '. Prices are never pooled across currencies and a scenario cannot be opened here — a'
+        + ' simulated price that is not attached to one site is a number in no currency.');
+    st.id = 'siteState';
+    st.setAttribute('data-site-state', site.state);
+    ring1.appendChild(st);
+    host.appendChild(ring1);
+
+    /* ---- RING 2. THE CATEGORY, DERIVED FROM RING 1. ---- */
     var lead = el('div', 'scope-lead');
-    lead.appendChild(el('span', 'fl-label', 'Category — the first scope'));
+    lead.appendChild(el('span', 'fl-label', 'Category — derived from this site, never a fixed list'));
     var bar = el('div', 'catbar');
     bar.id = 'catBar';
     var allBtn = el('button', 'catbtn' + (STATE.category === null ? ' is-on' : ''),
@@ -1349,7 +1369,8 @@
     });
     bar.appendChild(allBtn);
     cats.forEach(function (c) {
-      var b = el('button', 'catbtn' + (STATE.category === c ? ' is-on' : ''), c);
+      var b = el('button', 'catbtn' + (STATE.category === c ? ' is-on' : ''),
+        c + ' (' + countBySite[c] + ')');
       b.setAttribute('type', 'button');
       b.id = 'cat-' + c.replace(/\s+/g, '-');
       b.setAttribute('data-category', c);
@@ -1360,39 +1381,43 @@
       });
       bar.appendChild(b);
     });
+    /* A TRUE EMPTY STATE. Not three demonstration values, not a placeholder — the sentence a site with
+       no eligible listings has actually earned. */
+    if (cats.length === 0) {
+      var none = el('p', 'scope-empty',
+        'This site sells nothing that passed membership and the status gate, so there is no category'
+          + ' menu to show. That is an answer about the site, not a failure to load.');
+      none.id = 'catEmpty';
+      bar.appendChild(none);
+    }
     lead.appendChild(bar);
+    var prov = el('p', 'scope-note',
+      'Source ' + opts.source + ' · normalization ' + opts.normalization
+        + ' · semantic merge ' + String(opts.semantic_merge)
+        + ' · allowlist ' + String(opts.allowlist)
+        + ' · maximum ' + String(opts.max_options)
+        + ' · blank kept off the menu ' + opts.blank_count
+        + (opts.normalization_review.length
+          ? ' · review required ' + opts.normalization_review.map(function (r) {
+            return r.variants.join(' vs '); }).join(' | ')
+          : ''));
+    prov.id = 'catProvenance';
+    prov.setAttribute('data-count', String(cats.length));
+    lead.appendChild(prov);
     host.appendChild(lead);
 
-    /* The narrowing filters. Their options come from the CURRENT category's rows, so a country that
-       does not list this category is not offered — and while the scope is All categories they are
-       disabled outright, because narrowing a mixture is not a scope, it is a sieve. */
-    var pool = STATE.category ? loadScoped(STATE.category).rows : [];
+    /* ---- RING 3. INSIDE THE CATEGORY. ---- */
     var disabled = STATE.category === null;
-    [['fCompany', 'Company', 'company', uniq(pool.map(function (r) { return r.company; }))],
-     ['fCountry', 'Country', 'country', uniq(pool.map(function (r) { return r.country; }))],
-     ['fMarketplace', 'Marketplace', 'marketplace',
-       uniq(pool.map(function (r) { return r.marketplace; }))],
-     ['fCurrency', 'Currency', 'currency', uniq(pool.map(function (r) { return r.currency; }))],
-     ['fSeries', 'Series', 'series', uniq(pool.map(function (r) { return r.series; }))]
-    ].forEach(function (spec) {
-      var fl = el('div', 'fl');
-      fl.appendChild(el('span', 'fl-label', spec[1]));
-      var sel = document.createElement('select');
-      sel.id = spec[0];
-      sel.disabled = disabled;
-      var opts = ['ALL'].concat(spec[3].sort());
-      opts.forEach(function (v) {
-        var o = document.createElement('option');
-        o.value = v;
-        o.setAttribute('value', v);
-        o.appendChild(document.createTextNode(v === 'ALL' ? 'All' : v));
-        sel.appendChild(o);
-      });
-      sel.value = STATE[spec[2]];
-      sel.addEventListener('change', function () { STATE[spec[2]] = sel.value; render(); });
-      fl.appendChild(sel);
-      host.appendChild(fl);
-    });
+    var pool = STATE.category ? buildModel(STATE.category) : null;
+    var serValues = pool
+      ? pool.seriesOptions.options.map(function (o) { return o.value; })
+      : MODEL.seriesOptions.options.map(function (o) { return o.value; });
+    var curValues = SEL.deriveDimensionValues(
+      (pool || MODEL).universe, 'currency');
+    host.appendChild(selectEl('fCurrency', 'Currency', ['ALL'].concat(curValues), STATE.currency,
+      function (v) { STATE.currency = v; render(); }, disabled));
+    host.appendChild(selectEl('fSeries', 'Series', ['ALL'].concat(serValues), STATE.series,
+      function (v) { STATE.series = v; render(); }, disabled));
 
     var fl2 = el('div', 'fl');
     fl2.appendChild(el('span', 'fl-label', 'Gap threshold'));
@@ -1409,16 +1434,178 @@
     fl2.appendChild(inp);
     host.appendChild(fl2);
 
+    var incl = el('div', 'fl');
+    incl.appendChild(el('span', 'fl-label', 'Include inactive'));
+    var cb = document.createElement('input');
+    cb.id = 'fInactive';
+    cb.setAttribute('type', 'checkbox');
+    cb.checked = !!STATE.includeInactive;
+    cb.addEventListener('change', function () {
+      STATE.includeInactive = !!cb.checked;
+      narrowAfterSiteChange();
+      render();
+    });
+    incl.appendChild(cb);
+    host.appendChild(incl);
+
     host.appendChild(el('p', 'scope-note', disabled
       ? 'Choose a category to narrow further. Two categories never share a price axis, so the '
-        + 'filters below it only open once one is chosen.'
-      : 'Scope order: category → company → country → marketplace → currency → series.'));
+        + 'filters inside one only open once a category is chosen.'
+      : 'Scope order: company → country → marketplace → category → series → currency.'));
+
+    renderScenarioPanel(host);
+  }
+
+  /* ================================================================================================
+     THE SCENARIO PANEL — A MEETING CONTROL, AND IT REACHES NOTHING.
+
+     It writes to STATE.overrides and to nothing else. There is no save button because there is nothing
+     to save to: the panel's own note says so on screen, and a browser reload proves it.
+     ================================================================================================ */
+  function renderScenarioPanel(host) {
+    var site = siteIdentity();
+    var box = el('div', 'scenario' + (MODEL.scenario.active ? ' is-on' : ''));
+    box.id = 'scenarioPanel';
+    box.setAttribute('data-permitted', String(MODEL.scenario.permitted));
+    box.setAttribute('data-active', String(MODEL.scenario.active));
+
+    var head = el('div', 'scenario-head');
+    head.appendChild(el('span', 'scenario-title', 'Price scenario — meeting mode'));
+    var badge = el('span', 'scenario-badge', MODEL.scenario.active
+      ? SEL.SCENARIO_UNSAVED_LABEL : 'No scenario');
+    badge.id = 'scenarioBadge';
+    head.appendChild(badge);
+    box.appendChild(head);
+
+    if (!MODEL.scenario.permitted) {
+      var r = el('p', 'scenario-refusal', 'Not available in this scope: ' + MODEL.scenario.refusal
+        + '. Choose one company, one country and one marketplace — a simulated price belongs to a'
+        + ' site, because the currency does.');
+      r.id = 'scenarioRefusal';
+      box.appendChild(r);
+      host.appendChild(box);
+      return;
+    }
+
+    var serOpts = MODEL.seriesOptions.options.map(function (o) { return o.value; });
+    var row = el('div', 'scenario-row');
+    row.appendChild(selectEl('scSeries', 'Series', ['ALL'].concat(serOpts), STATE.scenarioSeries,
+      function (v) { STATE.scenarioSeries = v; STATE.scenarioRefusal = null; render(); }, false));
+    row.appendChild(selectEl('scField', 'Price field', SEL.SCENARIO_FIELDS, STATE.scenarioField,
+      function (v) {
+        STATE.scenarioField = v;
+        STATE.scenarioMode = SEL.SCENARIO_MODE_DEFAULTS[v];
+        STATE.scenarioRefusal = null;
+        render();
+      }, false));
+    row.appendChild(selectEl('scMode', 'How', SEL.SCENARIO_MODES, STATE.scenarioMode,
+      function (v) { STATE.scenarioMode = v; STATE.scenarioRefusal = null; render(); }, false));
+
+    var fl = el('div', 'fl');
+    fl.appendChild(el('span', 'fl-label', STATE.scenarioMode === 'PERCENT'
+      ? 'Percent (e.g. -15)' : (STATE.scenarioMode === 'DELTA' ? 'Amount (e.g. -3.00)' : 'Price')));
+    var input = document.createElement('input');
+    input.id = 'scValue';
+    input.setAttribute('type', 'text');
+    input.value = STATE.scenarioInput;
+    input.addEventListener('change', function () { STATE.scenarioInput = input.value; });
+    fl.appendChild(input);
+    row.appendChild(fl);
+
+    var apply = el('button', 'scbtn', 'Simulate');
+    apply.id = 'scApply';
+    apply.setAttribute('type', 'button');
+    apply.addEventListener('click', function () {
+      STATE.scenarioInput = byId('scValue').value;
+      var refusal = SEL.scenarioModeRefusal(STATE.scenarioField, STATE.scenarioMode);
+      if (refusal !== null) { STATE.scenarioRefusal = refusal; render(); return; }
+      var targets = STATE.scenarioSeries === 'ALL' ? serOpts : [STATE.scenarioSeries];
+      var next = STATE.overrides;
+      targets.forEach(function (sname) {
+        next = SEL.setScenarioOverride(next, { site: site, series: sname,
+          field: STATE.scenarioField, mode: STATE.scenarioMode, value: STATE.scenarioInput });
+      });
+      STATE.overrides = next;
+      STATE.scenarioRefusal = null;
+      render();
+    });
+    row.appendChild(apply);
+    box.appendChild(row);
+
+    if (STATE.scenarioRefusal) {
+      var rr = el('p', 'scenario-refusal', 'Refused: ' + STATE.scenarioRefusal
+        + '. An everyday ladder set to one number for a whole series is not a scenario — every gap and'
+        + ' every risk this board measures would go to zero. Use Percent or Amount instead.');
+      rr.id = 'scenarioModeRefusal';
+      box.appendChild(rr);
+    }
+
+    /* ---- THE THREE RESETS. Three different questions, three buttons. ---- */
+    var resets = el('div', 'scenario-resets');
+    [['scResetSeries', 'Reset this Series', function () {
+      STATE.overrides = SEL.resetScenarioOverrides(STATE.overrides,
+        { scope: 'series', site: site,
+          series: STATE.scenarioSeries === 'ALL' ? '' : STATE.scenarioSeries });
+    }], ['scResetSite', 'Reset current site', function () {
+      STATE.overrides = SEL.resetScenarioOverrides(STATE.overrides, { scope: 'site', site: site });
+    }], ['scResetAll', 'Reset all scenarios', function () {
+      STATE.overrides = SEL.resetScenarioOverrides(STATE.overrides, { scope: 'all' });
+    }]].forEach(function (spec) {
+      var b = el('button', 'scbtn is-reset', spec[1]);
+      b.id = spec[0];
+      b.setAttribute('type', 'button');
+      b.addEventListener('click', function () { spec[2](); render(); });
+      resets.appendChild(b);
+    });
+    box.appendChild(resets);
+
+    var note = el('p', 'scenario-note',
+      'Simulated values live in this page only: ' + MODEL.scenario.storage
+        + '. They are never written to the database, a sheet, an export or browser storage, and a'
+        + ' reload restores the source values. Active overrides: ' + MODEL.scenario.override_count
+        + (MODEL.architecture.scenario_nodes.length
+          ? ' · simulated on screen: ' + MODEL.architecture.scenario_nodes.join(' · ') : ''));
+    note.id = 'scenarioNote';
+    box.appendChild(note);
+    host.appendChild(box);
+  }
+
+  /**
+   * THE SCENARIO MARK. Present in the DOM exactly when a simulated number is on screen, inside the
+   * banner, undismissable, and it prints.
+   *
+   * The preview notice above it is untouched — it is still never re-rendered and never conditional.
+   * This is a SECOND statement, and it has to be conditional, because "one of these prices is
+   * simulated" is only true sometimes and a warning that is always shown teaches a reader to ignore it.
+   * A printed page is the one artefact that leaves the room, so it is the one that most needs to say
+   * that a number on it is not a price the company charges.
+   */
+  function renderScenarioMark() {
+    var banner = byId('banner');
+    var existing = byId('scenarioPrintMark');
+    if (!MODEL.scenario.active) {
+      if (existing) banner.removeChild(existing);
+      return;
+    }
+    var text = 'SCENARIO — ' + MODEL.scenario.override_count
+      + ' simulated price override' + (MODEL.scenario.override_count === 1 ? '' : 's')
+      + ' on ' + siteIdentity().key + '. These are not prices the company charges, they are not saved'
+      + ' anywhere, and they disappear when this page is reloaded.';
+    if (existing) {
+      clear(existing);
+      existing.appendChild(document.createTextNode(text));
+      return;
+    }
+    var mark = el('span', 'badge-scenario', text);
+    mark.id = 'scenarioPrintMark';
+    banner.appendChild(mark);
   }
 
   function render() {
     hideTip();
     reload();
-    document.body.className = STATE.presentation ? 'presenting' : '';
+    document.body.className = (STATE.presentation ? 'presenting' : '')
+      + (MODEL.scenario.active ? ' has-scenario' : '');
     byId('shell').className = 'shell' + (STATE.rail ? ' is-rail' : '');
     var rb = byId('btnRail');
     rb.setAttribute('aria-expanded', STATE.rail ? 'false' : 'true');
@@ -1426,6 +1613,7 @@
     renderNav();
     renderCrumbs();
     renderScope();
+    renderScenarioMark();
 
     var host = byId('view');
     clear(host);
@@ -1436,6 +1624,7 @@
         'A dearer product discounting to or below a cheaper product’s everyday price, within one '
         + 'category and one currency. Live promotions and board scenarios are never merged.');
     } else if (STATE.view === 'quality') {
+      viewEligibility(host);
       viewFindings(host, CLASS.DQ, 'Data Quality',
         'Everything a source could not supply. Nothing on this page was substituted for a missing '
         + 'value — an absent price stays absent and an unproven photograph is not shown.');
@@ -1671,7 +1860,7 @@
     }
     eqv(conf, 0, 'H9 and no photograph is attached to a deal marker');
     /* NO PATH IS EVER COMPOSED. */
-    var rsrc = String(everydayMarker) + String(ingest);
+    var rsrc = String(everydayMarker) + String(SEL.ingest);
     ok(rsrc.indexOf('.jpg') < 0 && rsrc.indexOf('assets/') < 0 && rsrc.indexOf("'images/'") < 0,
       'H10 the renderer composes no image path of its own');
 
@@ -1760,17 +1949,42 @@
     eqv(byId('side').querySelectorAll('.pimg-img, .catfig-img, image').length, 0,
       'L14 and not one of them stands in for a product photograph');
 
-    /* ---- M  category is the first scope, and nothing leaks across it ---- */
+    /* ---- M  THE SITE IS THE FIRST SCOPE, THE CATEGORY IS DERIVED FROM IT, AND NOTHING LEAKS ----
+
+       These five used to assert the number three: three cards, three table rows, and a literal list of
+       three category names. That is precisely the shape the P1-B2 audit was asked to explain — a count
+       that came from a fixture and had quietly become a contract. Changing 3 to 4 would have been the
+       same defect one number along, so each one now asserts the DERIVATION: however many categories
+       this site sells, that is how many cards there are, and switching the site changes the answer. */
     goto_('overview', null);
     eqv(qsa('.chart').length, 0, 'M1 the overview draws NO price axis at all');
+    var cats = categoryValues();
     var cards = qsa('.catcard');
-    eqv(cards.length, 3, 'M2 one card per category', cards.length);
-    eqv(qsa('#overviewTable tbody tr').length, 3, 'M3 and one table row each');
-    eqv(byId('fCountry').disabled, true,
-      'M4 the narrowing filters are closed while the scope is All categories');
-    var cats = ADAPTER.categories;
-    eqv(cats, ['Electric Can Opener', 'Manual Can Opener', 'Silicone Spatula'],
-      'M5 three fixture categories', cats);
+    eqv(cards.length, cats.length, 'M2 one card per category THIS SITE sells', cards.length);
+    eqv(qsa('#overviewTable tbody tr').length, cats.length, 'M3 and one table row each');
+    eqv(byId('fCountry').disabled, false,
+      'M4 the SITE ring is never disabled — it decides what the other rings can even offer');
+    /* THE PROPERTY IS ABSENT, not merely undefined — and it is asked without naming the property in
+       a way a reader could mistake for a use of it. The suite scans this file's source for any reader
+       of that name, so an assertion that read it would be indistinguishable from the defect. */
+    ok(!Object.prototype.hasOwnProperty.call(ADAPTER, 'categor' + 'ies'),
+      'M5a there is no cross-site category list to fall back to');
+    eqv(cats, cats.slice().sort(), 'M5b the menu is sorted, never in source order', cats);
+    eqv(cats, categoryOptionRows().options.map(function (o) { return o.value; }),
+      'M5c and the buttons are exactly the pipeline\'s options');
+    /* M5d THE ONE THAT WOULD HAVE CAUGHT THE ORIGINAL DEFECT: change the country and the menu must
+       change with it. Before P1-B2 this list was identical on every site. */
+    var usCats = cats.slice();
+    var usCountry = STATE.country;
+    setSel('fCountry', 'DE');
+    var deCats = categoryValues();
+    ok(deCats.length > 0 && deCats.join('|') !== usCats.join('|'),
+      'M5d another country has a DIFFERENT menu, so the list is the site\'s', deCats);
+    eqv(deCats.filter(function (c) { return usCats.indexOf(c) < 0; }).length > 0, true,
+      'M5e including at least one category the first site does not sell', deCats);
+    eqv(qsa('.catcard').length, deCats.length, 'M5f and the cards followed it');
+    setSel('fCountry', usCountry);
+    eqv(categoryValues(), usCats, 'M5g and switching back restores the first site exactly');
     cats.forEach(function (c, ci) {
       goto_('category', c);
       var only = {};
@@ -1843,14 +2057,18 @@
       'N5 and nothing from another category');
 
     /* ---- O  no network, no storage, nothing substituted ---- */
-    var src = String(ingest) + String(renderChart) + String(reload) + String(render)
-      + String(categoryModel) + String(everydayMarker);
+    /* `ingest` is no longer a function in this file — the pipeline owns it (selectors.js). Naming a
+       removed function here would throw and take the whole self-test with it, so the scan covers what
+       this file still has AND the pipeline it delegates to. */
+    var src = String(SEL.ingest) + String(renderChart) + String(reload) + String(render)
+      + String(categoryModel) + String(everydayMarker) + String(SEL.applyScenarioPriceOverlay)
+      + String(SEL.setScenarioOverride) + String(SEL.getEligibleProductUniverse);
     ['fetch(', 'XMLHttpRequest', 'localStorage', 'sessionStorage', 'indexedDB', 'WebSocket',
       'navigator.', 'KM.DB'].forEach(function (b, i4) {
       ok(src.indexOf(b) < 0, 'O1.' + (i4 + 1) + ' the renderer never reaches for ' + b);
     });
-    eqv(document.querySelectorAll('script[src]').length, 3,
-      'O2 three local scripts, and no fourth');
+    eqv(document.querySelectorAll('script[src]').length, 4,
+      'O2 four local scripts — the pipeline is the fourth — and no fifth');
     eqv(document.querySelectorAll('link[rel="stylesheet"]').length, 1, 'O3 one local stylesheet');
     var pageText = visibleTextOf(document.body);
     ok(pageText.indexOf('margin') < 0, 'O4 no margin figure is shown, because there is no source');

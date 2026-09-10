@@ -4855,3 +4855,124 @@ production UI, `app.js`, page HTML/CSS/JS, `index.html`, prototype, schema, migr
 main worktree, DB/API read, DB/Drive write, network, Apps Script sync, deployment version, `flag = true`,
 merge, push. NEXT: P1-B2 (page integration, `.km-tab-rail`, live adapter, category menu from `filterOptions`,
 no Preview fallback, flag still false) → P1-B3 (production readback, DB-vs-UI counts, operator acceptance).
+
+### `PRODUCT-STRATEGY-P1-B2` — canonical category/regional mapping, site-safe filtering, session price simulation (P worktree, local commit only)
+
+**WHY THE SCREEN SHOWED THREE CATEGORIES.** Measured by executing the files, not by reading them: the screen is
+the non-runtime prototype, it is connected to nothing (`connected_to_db: false`, `requests_made: 0`), and its
+three categories were three `cat:` string literals in a hard-coded 14-entry `MODELS` array — 54 rows, counts
+32/5/17. Each of the six candidate causes was checked and ruled out: no allowlist (`PPW_CATEGORY_ALLOWLIST_` is
+`null` and no client list existed), no cap, no normalization merge, no sampling, no dropped blanks (there were
+none to drop). P1-B1-R1 had already made the server universe dynamic; the number three was never a statement
+about the database. **AND A SECOND DEFECT THE AUDIT FOUND RATHER THAN THE BRIEF:** `F.CATEGORIES` /
+`ADAPTER.categories` was a distinct-category list computed ONCE over every site, read in six places. DE and UK
+sell one category each and the menu offered three, so picking either of the other two produced an EMPTY
+category card. The list is DELETED, not corrected — a site-derived menu with a cross-site list still in reach
+has a fallback, and a fallback is where the next round's version of this lives. The suite asserts the absence.
+
+**D-B2-1 THE SCOPE LADDER INVERTS, superseding §30.2.** `company → country → marketplace → category → series →
+currency → threshold`, which is the source's own order (§33.6, `72_ ppwMembership_`). Category first was right
+while the board had one site and became wrong once the site decides which products exist. Changing a ring
+invalidates everything to its right in ONE function, so switching country cannot leave a stale category
+selected — otherwise every view filters to zero rows and the screen looks like a site with no products. The
+board opens on a COMPLETE site identity (`Kitchen Mama|US|Amazon`), not `ALL`: a ladder needs one currency and a
+scenario needs one site. `ALL` remains, as a DIFFERENT state (`AGGREGATE_ACROSS_SITES`): one axis per currency,
+never pooled, `fx_applied: false`, and no scenario — a simulated price not attached to a site is a number in no
+currency. Per site the menu is now the site's: US Amazon 4, US Walmart 4 + 1 blank off-menu, DE 2, UK 2, and no
+two agree.
+
+**MEMBERSHIP IS `marketplace_skus` AND NOTHING ELSE** — not a master SKU, not a USD price. A DE row with its
+currency rewritten to USD does not reach the US site, and `currency_decides_membership` /
+`master_table_decides_membership` are published as `false`. Status gate needs one of EACH to be demonstrated:
+one model `inactive` (excluded by default, RETURNED under `include_inactive` — a gate, not a deletion) and one
+`phasing_out` (present, because it is still on sale). A blank or unrecognised status is NOT "yes":
+`SITE_STATUS_MISSING` / `SITE_STATUS_NOT_RECOGNISED`, excluded and reported. **REGIONAL DETAIL DOES NOT DECIDE
+MEMBERSHIP, and a missing one has THREE outcomes at once** — KEPT in the universe, REPORTED in the
+missing-mapping ledger by identity, and NOT PLOTTED (`chart_refusals: ['REGIONAL_DETAILS_MISSING']`). Collapsing
+those three would make "we cannot describe this listing" look like "it is not sold here" or like "all is well".
+**ONE chart-refusal rule, two callers:** the first version computed chartability in the universe and published a
+`chartRows` list nothing read, so the universe knew a row was unplottable and the chart drew it anyway (caught
+by §I14). `S.chartRefusalsFor` is now called by the universe AND `ingest`, and it decides on the CANONICAL
+price — a scenario must not give a coordinate to a product that has no price on record.
+
+**D-B2-2 THE SESSION SCENARIO, AND THE MODE THAT ALMOST SHIPPED MISSING.** `overrides[siteKey][series][field]`,
+one object in `STATE`, and nowhere else: no localStorage / sessionStorage / IndexedDB / cookie / URL / DB /
+sheet / API / export, checked on all four sources with literals stripped. Keyed by SITE first because a price is
+a number in a currency. **The first implementation assigned one number per series to every member: the Spatula
+ladder 14.99/19.99/24.99/34.99 became four products at 9.99 and every gap and risk finding went to zero — not a
+simulation, the deletion of the structure the board exists to show.** So an override carries a mode: `PERCENT`
+and `DELTA` move each member by its OWN price and the ladder keeps its shape; `ABSOLUTE` is the default for the
+PROMOTION field (a series-wide deal genuinely IS one number — simulating 12.99 surfaces six cannibalisation
+findings that were not there) and is REFUSED for the everyday price at series scope with
+`EVERYDAY_ABSOLUTE_AT_SERIES_SCOPE_WOULD_FLATTEN_THE_LADDER`, returned as a value and shown on the panel, with
+nothing stored. `proposed_scenario_price` is the default field; `everyday_scenario_price` NEVER replaces
+`regular_price` — `_canonical` keeps the original beside it so a reload has something to restore to. The overlay
+is applied at the ONE point where cents are computed, so axis, steps, gaps, comparison table and category
+summary all reflect it by construction. Three resets (series / site / all); an unrecognised scope resets
+NOTHING — a typo must not clear the board. A printed page carries `#scenarioPrintMark` in the banner, kept
+visible by the print stylesheet against its own hide-the-chrome rules, naming the site, the count, that these
+are not prices the company charges and that they vanish on reload; the controls do not print; the preview notice
+is untouched and still first.
+
+**ONE PIPELINE IN ONE FILE.** NEW `selectors.js` (`PSB_SELECTORS`, ~1000 lines) owns `deriveSiteIdentity →
+getEligibleProductUniverse → deriveCategoryOptions/deriveSeriesOptions → applyDimensionFilters →
+applyScenarioPriceOverlay → derivePriceArchitecture`. Pure: no DOM, storage, network, clock, random or input
+mutation. `prototype.js` is rendering; the pure functions it used to hold (`groupNodes`, `splitByCurrency`,
+`analyse`, `tierOf`, `sellInterval`, `priceSignature`, `ingest`, `cents`) were MOVED and their names remain as
+SINGLE DELEGATIONS, each asserted to be a delegation and not a copy. An absent pipeline throws at load.
+CONTRACT now `P1-B2`: `regional` appended in the exact live shape (`72_ ppwNormalizeRow_`), `category` and
+`series` nullable ON READ (the pre-write header gate is not a claim that every existing row has one, and calling
+a blank category a CONTRACT_MISMATCH would force the renderer to drop the row or invent a bucket — the two
+things §33.6 forbids). ONE field carries the site status: `source_status`, which the contract already mapped to
+`marketplace_skus.marketplace_sku_status`. **The live response uses that same name for an ARRAY of state codes
+and carries the value under `marketplace_sku_status`** — so `S.statusStateOf` returns
+`SITE_STATUS_SHAPE_UNEXPECTED` on an array. That is the assertion that will catch the adapter swap instead of
+every row silently reading "not recognised".
+
+**TESTS: `product-strategy-board-p1-b2.test.js` — 232 passed / 0 failed / 17 mutants / 0 survived.** The
+prototype's own DOM assertions now RUN HEADLESS (231/231) against a shim narrow enough to audit, which THROWS on
+a selector it cannot parse rather than returning an empty list — an engine that answers "no matches" to what it
+cannot read turns every DOM assertion into a passing one. The shim is HELD TO `index.html`: every id asserted to
+exist there, and the script tags, link tag, banner text and button titles extracted from it. Four more findings
+came out of the work: `us_only` meant "the home site" not "the United States" (the same thing only while the US
+had one marketplace — adding US Walmart made it silently withhold every US-only product from the second US
+site), and the page's OWN assertions encoded "three" (three cards, three rows, a literal list; changing 3 to 4
+would be the same defect one number along, so each now asserts the derivation and one switches country and
+requires the menu to change). Two mutants were re-aimed after surviving: one assigned `'Other'` above the
+branch's own `return` so the bucket was unreachable, the other forced the ABSOLUTE branch and survived because
+`S.cents('-15')` is negative, so the override was dropped and the ladder stayed intact for the wrong reason.
+Full sweep: the four PRE-EXISTING red suites and nothing else.
+
+**BACKUP-TABLE AUDIT (read-only, nothing deleted).** `request_order_allocation_drafts_backup` and
+`request_order_allocation_draft_lines_backup` have **ZERO references** anywhere in either worktree — code,
+tests, docs, migrations, diagnostics. **The migration used a different name:** the design freeze names
+`request_order_allocation_drafts_legacy_backup` as the atomic-swap product and rollback target (§19.12 step 4),
+and it appears in no code. The UN-SUFFIXED `request_order_allocation_draft_lines` is LIVE: 34 references in 10
+shipped `.gs` files including the valid-tab registry (`03_:35`, `:52`), a sheet-ensuring write (`15_:316`), the
+header registry (`23_:38`), a read (`47_:530`) and flow diagnostics that count it and declare an UPSERT
+(`65_:259/:332/:355/:657`); `REQUEST_ORDER_DRAFT_V2_FLAT_CUTOVER_` is `true` (`00_config.gs:37`). **All four:
+RETAIN.** Nothing is `SAFE_TO_DELETE` — there is no live dependency evidence either way, this repo has no
+execution channel into the spreadsheet, and recommending deletion of a table nobody can see under a name the
+system does not use would be a decision made on a name mismatch.
+
+**INTEGRATION ASSESSMENT ONLY — nothing integrated.** Reusable as-is: `selectors.js` entire (zero dependencies,
+no DOM, so it can move to `assets/js/pages/` unchanged) with the analysis engine, grouping rule, currency split
+and five-unit axis. Reuse from the Operation System, do not port from the prototype: shell, `.km-tab-rail`
+sub-navigation, sidebar hierarchy, modal/card primitives, i18n, print stylesheet — the prototype's own shell and
+`prototype.css` are prototype-only. Adapter replacement `PreviewProductStrategyDataAdapter` →
+`productPricing.workspace.get`, with SIX named row-shape gaps: the `source_status` collision, deal/promotion
+(`official_deal_*` vs `campaigns[]`), variant grouping (`variant_group` does not exist as a column; `series` is
+the live authority), `variant_name` (no authoritative column, §28.5 open), image evidence, and identity shape.
+BLOCKING: P1-B1-R1's four-file `APPS_SCRIPT_SYNC_REQUIRED` is still unsynced so the live adapter has no endpoint;
+P1-B3 readback; the six gaps; §25/§28.5 still open. Flag stays `false`; no Preview fallback (a failed read is
+`SOURCE_NOT_CONNECTED`) and an empty real response shows a TRUE empty state.
+
+**NOT DONE:** live UI page, `app.js`, production page HTML/CSS/JS, application `index.html`, Operation System
+shell/navigation integration, `assets/js/pages/**`, `assets/specs/active/apps-script/**`, schema, migration, new
+table, S1–S5, main worktree, `C:/km-lb`, DB/API read, DB/Sheets/Drive write, network, Apps Script sync,
+deployment version, `flag = true`, backup-table deletion, merge, push. The live category universe is NOT
+enumerated — there is no channel to enumerate it with, and it is not guessed at. Visual result (layout, colour,
+print pagination) is still verified by a person opening `index.html`. `APPS_SCRIPT_SYNC_REQUIRED` for this
+round: **none**. **NEXT:** P1-B3 — production readback once the four files are synced: DB-vs-UI counts per site,
+no cross-site contamination, the real category universe read off `filterOptions`, operator acceptance. Only then
+is `flag = true` a question that can be asked.

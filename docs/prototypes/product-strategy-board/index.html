@@ -5,8 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Product Strategy Command Center — preview prototype</title>
 <!--
-  P0-R3-R2. Four local subresources and nothing else: no CDN, no font host, no analytics, no
-  favicon request. The seven images beside this file are byte-identical copies of repo assets whose
+  P1-B2. FIVE local subresources and nothing else: no CDN, no font host, no analytics, no
+  favicon request. The fifth is selectors.js, the whole data pipeline, and it is loaded BEFORE the
+  fixture and the renderer because both delegate to it: the site scope, the category universe, the
+  scenario overlay and every derived metric live there, in one order, and nowhere else. The seven images beside this file are byte-identical copies of repo assets whose
   sku -> image_url mapping the operator read off the live database, sku by sku.
 
   The shell is deliberately thin. Everything below #app is built by prototype.js from whatever the
@@ -92,6 +94,7 @@
 <div class="tip" id="tip" hidden></div>
 
 <script src="data-contract.js"></script>
+<script src="selectors.js"></script>
 <script src="preview-fixture.js"></script>
 <script src="prototype.js"></script>
 </body>

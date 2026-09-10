@@ -24,7 +24,10 @@
   var C = {};
 
   C.CONTRACT_NAME = 'ProductStrategyDataContract';
-  C.CONTRACT_VERSION = 'P0-R3';
+  C.CONTRACT_VERSION = 'P1-B2';
+  /* P1-B2 changed three things and nothing else: `regional` was appended, and `category` and `series`
+     became nullable on READ. See the two notes below and REGIONAL, at the bottom of this section. */
+  C.CONTRACT_VERSION_HISTORY = ['P0-R3', 'P0-R3-R2', 'P1-B2'];
   C.AUDIT_SECTION = 'PRODUCT_STRATEGY_BOARD_DESIGN_FREEZE.md section 23 (source audit) + 24 (this contract)';
 
   /* ------------------------------------------------------------------------------------------------
@@ -116,11 +119,17 @@
        43-column export schema at sku-details.js:2369 — so this is a scope the database can actually
        enforce, and P1-B1 must bound the read by it server-side rather than filter after the fact. */
     { field: 'category', source_table: 'sku_details', source_column: 'category',
-      join_key: 'sku_details.sku', nullable: false, on_missing: 'SOURCE_MISSING',
+      join_key: 'sku_details.sku', nullable: true, on_missing: 'CATEGORY_SOURCE_MISSING',
       api_today: 'skuDetails.workspace.get (base table)', needs_p1b1: false,
-      note: 'THE FIRST SCOPE. Two categories never share a price axis, and no gap, overlap or'
-        + ' cannibalisation may be computed across one. A cross-category view is cards and a table,'
-        + ' never a shared Y axis.' },
+      note: 'Two categories never share a price axis, and no gap, overlap or cannibalisation may be'
+        + ' computed across one. A cross-category view is cards and a table, never a shared Y axis.',
+      p1b2_note: 'NULLABLE ON READ, corrected in P1-B2. The pre-write header gate (04_:150) requires a'
+        + ' category before a WRITE, which is not the same as every existing row having one — and the'
+        + ' frozen rule (design freeze 33.6) is that a blank category keeps the SKU, returns'
+        + ' category: null, is reported as CATEGORY_SOURCE_MISSING, and is NEVER renamed "Other". A'
+        + ' contract that called that a CONTRACT_MISMATCH would force the renderer to choose between'
+        + ' dropping the row and inventing a bucket for it, which are the two outcomes the rule exists'
+        + ' to forbid. It is a Data Quality finding, not a malformed row.' },
 
     { field: 'product_name', source_table: 'sku_details', source_column: 'product_name',
       join_key: 'sku_details.sku', nullable: false, on_missing: 'SOURCE_MISSING',
@@ -129,7 +138,9 @@
         + ' gate (04_:150), so a row can exist without one. Hence nullable on read.' },
 
     { field: 'series', source_table: 'sku_details', source_column: 'series',
-      join_key: 'sku_details.sku', nullable: false, on_missing: 'SOURCE_MISSING',
+      join_key: 'sku_details.sku', nullable: true, on_missing: 'SOURCE_MISSING',
+      p1b2_note: 'NULLABLE ON READ, for the same reason as category: 72_ already reports a blank series'
+        + ' as VARIANT_GROUPING_SOURCE_MISSING and renders the row ungrouped rather than dropping it.',
       api_today: 'skuDetails.workspace.get (base table)', needs_p1b1: false,
       note: 'THE ONLY grouping column that exists in the database. It groups a SERIES, not a model:'
         + ' see VARIANT_GROUPING below for why that is not enough to merge colours.' },
@@ -249,6 +260,24 @@
         + ' row carries it, so a screen can never render a preview number without being able to say'
         + ' that it is one.' }
   ];
+
+  /* P1-B2 — THE REGIONAL RECORD, PRESENT OR HONESTLY ABSENT.
+
+     A SEPARATE TABLE, SO IT CAN BE MISSING WITHOUT THE LISTING BEING MISSING. `null` here means
+     sku_regional_details has no row for this exact four-part identity (sku + company + country +
+     marketplace). It does NOT mean the SKU is not sold on this site: membership is marketplace_skus and
+     only marketplace_skus (design freeze 31.5). So a null is three outcomes at once and none of them is
+     removal — the row stays in the universe, it is reported as Data Quality, and it is kept off the
+     price chart until somebody supplies the record.
+
+     THE FIELD IS AN OBJECT OR NULL, never a flattened prefix. The live read returns exactly this shape
+     (72_ ppwNormalizeRow_), so the live adapter hands it over without translation. */
+  C.FIELDS.push({ field: 'regional', source_table: 'sku_regional_details',
+    source_column: 'the row itself, as an object',
+    join_key: 'sku + company + country + marketplace', nullable: true,
+    on_missing: 'REGIONAL_DETAILS_MISSING',
+    api_today: 'productPricing.workspace.get with include.regional', needs_p1b1: false,
+    note: 'Absent is a value. It is never read as "not sold here" and never as "sold everywhere".' });
 
   /* P0-R3-R2 — HOW THE IMAGE WAS PROVED, CARRIED BESIDE THE IMAGE. product_image says WHAT to
      draw; this says WHY it may be drawn, and it travels with the row so a renderer never has to
