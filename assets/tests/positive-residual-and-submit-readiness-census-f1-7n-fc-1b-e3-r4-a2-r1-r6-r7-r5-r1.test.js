@@ -6298,7 +6298,13 @@ eq(adSheet(AD29w)[1].filter(function (c) { return String(c) !== ''; }).length, 6
 // ---- AD30 — ACK_UNKNOWN. A TIMEOUT IS NOT A FAILED WRITE, AND IT IS NEVER RETRIED. ---------------
 //
 // Three outcomes, and the whole point is that the run does not guess which one it is: it re-reads and
-// classifies. Only a PROVEN zero-write stays retryable.
+// classifies.
+//
+// S1-R4H-R1 — AND NONE OF THE THREE IS RETRYABLE. R4H asserted here that a proven zero-write "stays
+// retryable", which is what the tool then reported, and it is the wrong field for the true thing it was
+// trying to say. What a proven zero-write establishes is that no harm was done; what `retryable` is read
+// as is "run this same call again", and the authorization was spent by the ATTEMPT, not by the write.
+// AD33 measures the full contract on every verdict; these two keep the classification itself.
 function adThrowOnClear(w, alsoClear) {
   var sh = w.sheets.factory_stock_movements;
   var orig = sh.getRange;
@@ -6324,7 +6330,8 @@ eq(AD30.verdict, 'NOT_APPLIED_ACK_UNKNOWN',
 eq(AD30.write_acknowledged, 'RESOLVED_BY_READBACK_AS_NOT_APPLIED',
   'AD30a resolved by READBACK, never by retry');
 eq([AD30.writes, AD30.cells_cleared], [0, 0], 'AD30b with a proven zero-write');
-eq(AD30.retryable, true, 'AD30c and only a proven zero-write stays retryable');
+eq(AD30.retryable, false,
+  'AD30c and a proven zero-write is NOT APPLIED AND FINISHED, not retryable');
 eq(AD30.attempts, 1, 'AD30d the clear was attempted exactly once');
 ok(String(AD30.refusal_reasons[0]).indexOf('WRITE_ACK_UNKNOWN') === 0,
   'AD30e and the unacknowledged write is named as unacknowledged', AD30.refusal_reasons);
@@ -6342,7 +6349,7 @@ eq(AD31.verdict, 'EXECUTED_OK_AFTER_ACK_UNKNOWN',
   [AD31.refusal_reasons, AD31.readback ? AD31.readback.mismatches : null]);
 eq(AD31.write_acknowledged, 'RESOLVED_BY_READBACK_AS_APPLIED', 'AD31a by readback');
 eq([AD31.writes, AD31.cells_cleared], [1, 6], 'AD31b and the write is counted, once');
-eq(AD31.retryable, false, 'AD31c an applied write is not retryable');
+eq(AD31.retryable, false, 'AD31c an applied write is not retryable — nor is any other outcome');
 eq(AD31.attempts, 1, 'AD31d still exactly one attempt');
 eq(adSheet(AD31w)[1].join('|'), (new Array(15)).join('|'), 'AD31e the row is empty');
 eq(adSheet(AD31w).length, 97, 'AD31f and the sheet still has all 97 physical rows');
@@ -6378,6 +6385,283 @@ eq(AD32run.indexOf('S1_MANIFEST_P_BEFORE_'), -1,
 eq(AD32man.indexOf('S1_MANIFEST_P_BEFORE_'), -1, 'AD32k … which stays null and unrelated');
 eq(vm.runInContext('S1_MANIFEST_P_BEFORE_', AD1w.ctx), null,
   'AD32l measured after every run in this section: it is still null');
+
+// ---- AD33 — S1-R4H-R1. THE RETRY CONTRACT, ON EVERY VERDICT THAT CAN LEAVE THE FUNCTION. ---------
+//
+// R4H's own report contained the contradiction this section closes: the prose said a timeout is never
+// retried, and the verdict table said NOT_APPLIED_ACK_UNKNOWN was `retryable: true`. Both were describing
+// something true and they were describing DIFFERENT things — "this function will not loop" and "a removal
+// may still happen one day" — in one field. The field an operator reads answers the first question, so the
+// second answer had to move out of it.
+//
+// WHAT IS MEASURED HERE. Four questions on every response: may this call be re-driven as-is, may anything
+// retry it automatically, is the authorization sentence still good, is the frozen baseline still good. Plus
+// the fifth, which is the one that is allowed to say yes after an ACK_UNKNOWN: may a removal be attempted
+// again at all, starting from a new manifest.
+var AD_REMANIFEST_ = 'RERUN_MANIFEST_AND_REQUIRE_NEW_OPERATOR_AUTHORIZATION';
+/** [retryable, automatic_retry_allowed, same_authorization_reusable, same_frozen_baseline_reusable] */
+function adSpent(r) {
+  return [r.retryable, r.automatic_retry_allowed, r.same_authorization_reusable,
+    r.same_frozen_baseline_reusable];
+}
+var AD_NOTHING_REUSABLE_ = [false, false, false, false];
+/** Count every clearContent() the tool ISSUES, whatever happens next. Applied LAST, so it wraps a throwing
+ *  stub too: the count under test is of ATTEMPTS, and an attempt that threw is still an attempt. */
+function adCountClears(w) {
+  var sh = w.sheets.factory_stock_movements;
+  var orig = sh.getRange;
+  var n = { clears: 0 };
+  sh.getRange = function (row, col, nr, nc) {
+    var r = orig.call(this, row, col, nr, nc);
+    var base = r.clearContent;
+    if (base) { r.clearContent = function () { n.clears++; return base.call(r); }; }
+    return r;
+  };
+  return n;
+}
+/** The clear lands, spills onto the next row AND throws — the only combination that leaves the outcome
+ *  genuinely indeterminate and the rollback unable to verify. */
+function adSpillAndThrowOnClear(w) {
+  var sh = w.sheets.factory_stock_movements;
+  var orig = sh.getRange;
+  sh.getRange = function (row, col, nr, nc) {
+    var r = orig.call(this, row, col, nr, nc);
+    var s = this;
+    var base = r.clearContent;
+    if (base) {
+      r.clearContent = function () {
+        base.call(r);
+        for (var j = 0; j < (nc || 1); j++) s.rows[row][col - 1 + j] = '';
+        throw new Error('Service timed out while accessing spreadsheet');
+      };
+    }
+    return r;
+  };
+}
+
+// AD33a — THE DRY RUN IS THE ONE CONTRACT THAT SAYS YES TO EVERYTHING, and it must, because the whole
+// workflow is: manifest, dry run on that baseline, execute on that same baseline.
+var AD33aw = adWorld();
+var AD33am = adMan(AD33aw);
+var AD33a = adRun(AD33aw, { frozen: AD33am.frozen_before,
+  authorization: AD33am.authorization_wording });
+eq(AD33a.verdict, 'DRY_RUN_OK', 'AD33a a dry run on a good baseline');
+eq(adSpent(AD33a), [true, false, true, true],
+  'AD33a.1 re-drivable, with the authorization and the baseline both still current …');
+eq(AD33a.automatic_retry_allowed, false, 'AD33a.2 … and STILL nothing may retry it automatically');
+eq(AD33a.next_action, 'RERUN_WITH_EXECUTE_TRUE_USING_THIS_FROZEN_BASELINE',
+  'AD33a.3 the next action is the execute it exists to precede');
+eq(AD33a.attempts, 0, 'AD33a.4 with no attempt made');
+eq(AD33a.retry_contract_key, 'DRY_RUN_OK', 'AD33a.5 keyed by its own verdict');
+
+// AD33b — A LOCK SOMEBODY ELSE HOLDS IS A CONTENTION, NOT A DRIFT. Nothing was measured and nothing was
+// written, so the baseline is exactly as current as it was — but the retry is a PERSON coming back later.
+var AD33bw = adWorld();
+var AD33bm = adMan(AD33bw);
+vm.runInContext('__AD_LOCK.grant = false;', AD33bw.ctx);
+var AD33b = adRun(AD33bw, { execute: true, frozen: AD33bm.frozen_before,
+  authorization: AD33bm.authorization_wording });
+eq([AD33b.verdict, AD33b.retry_contract_key], ['REFUSED', 'REFUSED_LOCK_CONTENTION'],
+  'AD33b a lock contention refuses under its own contract, not the drift one');
+eq(adSpent(AD33b), [true, false, true, true],
+  'AD33b.1 nothing was spent, because nothing was attempted');
+eq(AD33b.next_action, 'RETRY_LATER_WITH_THIS_FROZEN_BASELINE_WHEN_THE_LOCK_IS_FREE',
+  'AD33b.2 and it says come back later rather than spin');
+eq(AD33b.attempts, 0, 'AD33b.3 with no attempt made');
+
+// AD33c — A REFUSAL THAT IS A DRIFT IS THE OPPOSITE: being stale is what the refusal DETECTED.
+var AD33cw = adWorld();
+var AD33cm = adMan(AD33cw);
+var AD33cfz = JSON.parse(JSON.stringify(AD33cm.frozen_before));
+AD33cfz.table_combined_fingerprint = 'DEADBEEF';
+var AD33c = adRun(AD33cw, { execute: true, frozen: AD33cfz,
+  authorization: AD33cm.authorization_wording });
+eq([AD33c.verdict, AD33c.retry_contract_key], ['REFUSED', 'REFUSED'],
+  'AD33c a drift refusal is keyed as a plain REFUSED');
+eq(adSpent(AD33c), AD_NOTHING_REUSABLE_,
+  'AD33c.1 and the baseline it refused is not offered back as reusable');
+eq(AD33c.next_action, AD_REMANIFEST_, 'AD33c.2 the next action is a new manifest');
+eq(AD33c.removal_may_be_attempted_again, true,
+  'AD33c.3 a removal is still permitted — from a new baseline, which is a different sentence');
+adNoWrite(AD33c, AD33cw, 'AD33c.4');
+
+// AD33d — A CLEAN EXECUTE. Done is done: nothing is reusable and nothing is left to do.
+var AD33dw = adWorld();
+var AD33dm = adMan(AD33dw);
+var AD33dc = adCountClears(AD33dw);
+var AD33d = adRun(AD33dw, { execute: true, frozen: AD33dm.frozen_before,
+  authorization: AD33dm.authorization_wording });
+eq(AD33d.verdict, 'EXECUTED_OK', 'AD33d a clean execute', AD33d.refusal_reasons);
+eq(adSpent(AD33d), AD_NOTHING_REUSABLE_, 'AD33d.1 nothing is reusable after the write was reached');
+eq(AD33d.removal_may_be_attempted_again, false, 'AD33d.2 and there is nothing left to remove');
+eq(AD33d.next_action, 'NO_FURTHER_ACTION_THE_REMOVAL_IS_COMPLETE', 'AD33d.3 so: no further action');
+eq([AD33d.attempts, AD33dc.clears], [1, 1], 'AD33d.4 one attempt, one clearContent ISSUED');
+
+// AD33e — THE ONE THIS ROUND EXISTS FOR. A proven zero-write after an unacknowledged clear.
+//
+// R4H reported this as retryable, meaning "no harm was done". It is now reported as NOT APPLIED AND
+// FINISHED. The distinction is not academic: `retryable: true` in front of an operator who is holding the
+// same frozen block and the same authorization sentence is an instruction to paste them back in, and the
+// authorization was issued against a state whose currency the ATTEMPT ended — not the write.
+var AD33ew = adWorld();
+var AD33em = adMan(AD33ew);
+adThrowOnClear(AD33ew, false);
+var AD33ec = adCountClears(AD33ew);
+var AD33e = adRun(AD33ew, { execute: true, frozen: AD33em.frozen_before,
+  authorization: AD33em.authorization_wording });
+eq(AD33e.verdict, 'NOT_APPLIED_ACK_UNKNOWN', 'AD33e a proven zero-write after ACK_UNKNOWN',
+  [AD33e.refusal_reasons, AD33e.readback ? AD33e.readback.mismatches : null]);
+eq([AD33e.writes, AD33e.cells_cleared], [0, 0], 'AD33e.1 with nothing written');
+eq(adSpent(AD33e), AD_NOTHING_REUSABLE_,
+  'AD33e.2 AND IT IS NOT RETRYABLE — not the call, not automatically, not the authorization, not the baseline');
+eq(AD33e.next_action, AD_REMANIFEST_,
+  'AD33e.3 the next action is a new manifest and a new operator authorization');
+eq(AD33e.removal_may_be_attempted_again, true,
+  'AD33e.4 a future removal is still permitted — in the field that means that, and only there');
+eq([AD33e.attempts, AD33ec.clears], [1, 1],
+  'AD33e.5 exactly one attempt and exactly one clearContent ISSUED in this invocation');
+eq(adSheet(AD33ew)[1].filter(function (c) { return String(c) !== ''; }).length, 6,
+  'AD33e.6 and the row is intact');
+
+// AD33f — IT LANDED, AND THE ACKNOWLEDGEMENT IS WHAT WENT MISSING.
+var AD33fw = adWorld();
+var AD33fm = adMan(AD33fw);
+adThrowOnClear(AD33fw, true);
+var AD33fc = adCountClears(AD33fw);
+var AD33f = adRun(AD33fw, { execute: true, frozen: AD33fm.frozen_before,
+  authorization: AD33fm.authorization_wording });
+eq(AD33f.verdict, 'EXECUTED_OK_AFTER_ACK_UNKNOWN', 'AD33f resolved by readback as applied',
+  [AD33f.refusal_reasons, AD33f.readback ? AD33f.readback.mismatches : null]);
+eq(adSpent(AD33f), AD_NOTHING_REUSABLE_, 'AD33f.1 nothing reusable');
+eq(AD33f.removal_may_be_attempted_again, false, 'AD33f.2 and nothing left to remove');
+eq(AD33f.next_action, AD_REMANIFEST_,
+  'AD33f.3 the operator is still sent back to a manifest — an unacknowledged run is re-measured, not assumed');
+eq([AD33f.attempts, AD33fc.clears], [1, 1], 'AD33f.4 one attempt, one clearContent ISSUED');
+
+// AD33g — ACK_UNKNOWN, INDETERMINATE, AND THE ROLLBACK SUCCEEDS. The clear threw AND landed, and the
+// frozen AFTER cannot be satisfied, so neither "applied as authorized" nor "provably untouched" holds.
+var AD33gw = adWorld();
+var AD33gm = adMan(AD33gw);
+var AD33gfz = JSON.parse(JSON.stringify(AD33gm.frozen_before));
+AD33gfz.expected_after.remaining_id_universe_fingerprint = 'DEADBEEF';
+adThrowOnClear(AD33gw, true);
+var AD33gc = adCountClears(AD33gw);
+var AD33g = adRun(AD33gw, { execute: true, frozen: AD33gfz,
+  authorization: AD33gm.authorization_wording });
+eq(AD33g.verdict, 'ROLLED_BACK_VERIFIED',
+  'AD33g an indeterminate ACK_UNKNOWN rolls back, verified', [AD33g.refusal_reasons, AD33g.rollback]);
+eq(AD33g.rollback.outcome, 'ROLLED_BACK_VERIFIED', 'AD33g.1 the rollback reports itself verified');
+eq(adSpent(AD33g), AD_NOTHING_REUSABLE_, 'AD33g.2 and nothing is reusable');
+eq(AD33g.next_action, AD_REMANIFEST_, 'AD33g.3 next action: a new manifest and a new authorization');
+eq(AD33g.removal_may_be_attempted_again, true,
+  'AD33g.4 the table is back at BEFORE, so a removal may be attempted again — from scratch');
+eq([AD33g.attempts, AD33gc.clears], [1, 1],
+  'AD33g.5 ONE clearContent issued: the rollback restores, it does not clear again');
+eq(adSheet(AD33gw)[1].filter(function (c) { return String(c) !== ''; }).length, 6,
+  'AD33g.6 and the row came back');
+
+// AD33h — ACK_UNKNOWN AND THE ROLLBACK CANNOT VERIFY. The clear threw, landed, and took the next row with
+// it, so the row returns but the TABLE fingerprint cannot.
+var AD33hw = adWorld();
+var AD33hm = adMan(AD33hw);
+adSpillAndThrowOnClear(AD33hw);
+var AD33hc = adCountClears(AD33hw);
+var AD33h = adRun(AD33hw, { execute: true, frozen: AD33hm.frozen_before,
+  authorization: AD33hm.authorization_wording });
+eq(AD33h.verdict, 'MANUAL_RECOVERY_REQUIRED',
+  'AD33h an unverifiable rollback after ACK_UNKNOWN is MANUAL_RECOVERY_REQUIRED',
+  [AD33h.refusal_reasons, AD33h.rollback]);
+eq(AD33h.rollback.error, 'THE_ROW_CAME_BACK_BUT_THE_TABLE_FINGERPRINT_DID_NOT',
+  'AD33h.1 naming which of the two fingerprints did not come back');
+eq(adSpent(AD33h), AD_NOTHING_REUSABLE_, 'AD33h.2 nothing is reusable');
+eq(AD33h.removal_may_be_attempted_again, false,
+  'AD33h.3 and this is the one outcome where the removal must NOT be run again by this tool');
+eq(AD33h.next_action, AD_REMANIFEST_,
+  'AD33h.4 the operator is still sent to a manifest — to find out where they are, not to retry');
+eq([AD33h.attempts, AD33hc.clears], [1, 1], 'AD33h.5 still exactly one clearContent issued');
+
+// AD33i — THE SAME CONTRACT REACHED THE OTHER WAY: a rollback from a plain readback mismatch, with no
+// ACK_UNKNOWN anywhere. The verdict decides the contract, not the branch that produced it.
+var AD33iw = adWorld();
+var AD33im = adMan(AD33iw);
+var AD33ifz = JSON.parse(JSON.stringify(AD33im.frozen_before));
+AD33ifz.expected_after.remaining_id_universe_fingerprint = 'DEADBEEF';
+var AD33ic = adCountClears(AD33iw);
+var AD33i = adRun(AD33iw, { execute: true, frozen: AD33ifz,
+  authorization: AD33im.authorization_wording });
+eq(AD33i.verdict, 'ROLLED_BACK_VERIFIED', 'AD33i a readback mismatch rolls back, verified');
+eq(AD33i.write_acknowledged, true, 'AD33i.1 with the write acknowledged — this was never ACK_UNKNOWN');
+eq(adSpent(AD33i), AD_NOTHING_REUSABLE_, 'AD33i.2 and the contract is identical');
+eq([AD33i.attempts, AD33ic.clears], [1, 1], 'AD33i.3 one clearContent, and the restore is not one');
+
+// AD33j — A REMOVAL THAT HAD ALREADY HAPPENED. No attempt, and nothing to do.
+var AD33jw = adWorld();
+var AD33jm = adMan(AD33jw);
+adRun(AD33jw, { execute: true, frozen: AD33jm.frozen_before,
+  authorization: AD33jm.authorization_wording });
+var AD33j = adRun(AD33jw, { execute: true, frozen: AD33jm.frozen_before,
+  authorization: AD33jm.authorization_wording });
+eq(AD33j.verdict, 'ALREADY_APPLIED', 'AD33j the second run finds the removal already done');
+eq(adSpent(AD33j), AD_NOTHING_REUSABLE_, 'AD33j.1 nothing reusable');
+eq(AD33j.next_action, 'NO_FURTHER_ACTION_THE_REMOVAL_IS_ALREADY_COMPLETE',
+  'AD33j.2 and the next action says so');
+eq([AD33j.attempts, AD33j.writes], [0, 0], 'AD33j.3 with no attempt and no write');
+
+// AD33k — EVERY VERDICT THE SOURCE CAN EMIT HAS A ROW IN THE TABLE. Read off the function's own text, so a
+// verdict added later without a contract is a failure here rather than an `undefined` in a response.
+var AD33src = extractFn(S1, 'RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL');
+var AD33verdicts = {};
+(AD33src.match(/out\.verdict = [^;]+;/g) || []).forEach(function (stmt) {
+  (stmt.match(/'([A-Z][A-Z0-9_]{3,})'/g) || []).forEach(function (q) {
+    AD33verdicts[q.replace(/'/g, '')] = true;
+  });
+});
+AD33verdicts.REFUSED = true;    // the initial value of out.verdict, not an assignment
+var AD33keys = vm.runInContext('Object.keys(S1_REMOVAL_RETRY_CONTRACT_)', AD1w.ctx);
+var AD33missing = Object.keys(AD33verdicts).filter(function (v) {
+  return AD33keys.indexOf(v) === -1; });
+ok(Object.keys(AD33verdicts).length >= 9,
+  'AD33k the verdicts were read off the source, and there are several', Object.keys(AD33verdicts));
+eq(AD33missing, [], 'AD33k.1 and every one of them has a declared retry contract');
+eq(AD33keys.indexOf('REFUSED_LOCK_CONTENTION') >= 0, true,
+  'AD33k.2 plus the one contract key that is a refinement of a verdict rather than a verdict');
+
+// AD33l — THE CONTRACT IS WRITTEN IN ONE PLACE AND THE BRANCHES DO NOT ARGUE WITH IT.
+eq((AD33src.match(/out\.retryable = /g) || []).length, 1,
+  'AD33l exactly one assignment to retryable in the whole function …');
+ok(AD33src.indexOf('out.retryable = RC.retryable;') > 0,
+  'AD33l.1 … and it is the derived one, in fin()');
+['same_authorization_reusable', 'same_frozen_baseline_reusable', 'removal_may_be_attempted_again',
+ 'next_action'].forEach(function (f, i) {
+  eq((AD33src.match(new RegExp('out\\.' + f + ' = ', 'g')) || []).length, 1,
+    'AD33l.' + (i + 2) + ' and one assignment to ' + f);
+});
+var AD33res = extractFn(S1, 'S1_remRetryContract_');
+eq((AD33res.match(/automatic_retry_allowed: false/g) || []).length, 2,
+  'AD33l.6 automatic_retry_allowed is a literal false on both returns of the resolver …');
+eq(AD33res.indexOf('automatic_retry_allowed: row['), -1,
+  'AD33l.7 … and never read from the table, so no row can grant it');
+// AND MEASURED, NOT ONLY READ: not one response in this whole section allows an automatic retry.
+[AD33a, AD33b, AD33c, AD33d, AD33e, AD33f, AD33g, AD33h, AD33i, AD33j].forEach(function (r, i) {
+  eq(r.automatic_retry_allowed, false,
+    'AD33l.8.' + (i + 1) + ' ' + r.verdict + ' does not permit an automatic retry');
+});
+// AND NO RESPONSE ANYWHERE IN THE AD SECTION LEAVES A CONTRACT FIELD UNANSWERED.
+[AD33a, AD33b, AD33c, AD33d, AD33e, AD33f, AD33g, AD33h, AD33i, AD33j].forEach(function (r, i) {
+  ok(typeof r.retryable === 'boolean' && typeof r.same_authorization_reusable === 'boolean'
+    && typeof r.same_frozen_baseline_reusable === 'boolean'
+    && typeof r.removal_may_be_attempted_again === 'boolean' && !!r.next_action,
+    'AD33l.9.' + (i + 1) + ' ' + r.verdict + ' answers every contract field', r);
+  eq(r.predicates_failed !== undefined, true, 'AD33l.10.' + (i + 1) + ' with a ledger');
+});
+// AND THE INVARIANT ITSELF IS IN THE LEDGER, so a response carries its own proof rather than needing this
+// suite to re-derive it.
+[AD33d, AD33e, AD33f, AD33g, AD33h, AD33i].forEach(function (r, i) {
+  var names = (r.predicates || []).map(function (p) { return p.predicate; });
+  ok(JSON.stringify(names).indexOf(
+    'an_attempt_that_reached_the_write_leaves_no_authorization_and_no_baseline_reusable') > 0,
+    'AD33l.11.' + (i + 1) + ' ' + r.verdict + ' states the spent-attempt invariant in its own ledger');
+});
 
 
 section('N — mutants');
@@ -8560,22 +8844,22 @@ mut('N118 the rollback verifies the row and not the table, so a spill is called 
 mut('N119 an unacknowledged write that never landed is reported as applied', function () {
   // The ACK_UNKNOWN hazard in one line: a removal reported as done that never happened, and a retryable
   // zero-write turned into a closed case.
+  // S1-R4H-R1 — re-aimed: `retryable` is no longer set here, or anywhere else in this function.
   var m = swapS1In('RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL',
     "        out.write_acknowledged = 'RESOLVED_BY_READBACK_AS_NOT_APPLIED';" + NL
-    + "        out.verdict = 'NOT_APPLIED_ACK_UNKNOWN';" + NL
-    + '        out.retryable = true;',
+    + "        out.verdict = 'NOT_APPLIED_ACK_UNKNOWN';",
     "        out.write_acknowledged = 'ASSUMED_APPLIED';" + NL
-    + "        out.verdict = 'EXECUTED_OK_AFTER_ACK_UNKNOWN';" + NL
-    + '        out.retryable = false;');
+    + "        out.verdict = 'EXECUTED_OK_AFTER_ACK_UNKNOWN';");
   var clean = adCycle(null, { execute: true }, undefined, null, false,
     function (w) { adThrowOnClear(w, false); });
   var bad = adCycle(m, { execute: true }, undefined, null, false,
     function (w) { adThrowOnClear(w, false); });
   var cleanRowIntact = adSheet(clean.world)[1].filter(function (c) { return String(c) !== ''; }).length === 6;
   var badRowIntact = adSheet(bad.world)[1].filter(function (c) { return String(c) !== ''; }).length === 6;
-  return clean.verdict === 'NOT_APPLIED_ACK_UNKNOWN' && clean.writes === 0 && clean.retryable === true
-    && cleanRowIntact
-    && bad.verdict === 'EXECUTED_OK_AFTER_ACK_UNKNOWN' && bad.retryable === false && badRowIntact;
+  return clean.verdict === 'NOT_APPLIED_ACK_UNKNOWN' && clean.writes === 0
+    && clean.removal_may_be_attempted_again === true && cleanRowIntact
+    && bad.verdict === 'EXECUTED_OK_AFTER_ACK_UNKNOWN'
+    && bad.removal_may_be_attempted_again === false && badRowIntact;
 });
 
 mut('N120 the classification is claimed to describe a row that two rows now answer to', function () {
@@ -8642,6 +8926,95 @@ mut('N124 the physical extent is expected to shrink, collapsing the two counts i
     && bad.verdict === 'ROLLED_BACK_VERIFIED'
     && bad.readback.mismatches.filter(function (x) {
       return x.what === 'physical_last_row'; }).length === 1;
+});
+
+// ---- S1-R4H-R1 — THE RETRY CONTRACT UNDER MUTATION. ----------------------------------------------
+//
+// The defect this round fixed was one wrong literal in one branch, and it survived R4H's whole suite
+// because nothing asserted the contract as a CONTRACT — only that a particular verdict carried a
+// particular flag. These five attack the table and the resolver directly.
+var N_INV_ = 'an_attempt_that_reached_the_write_leaves_no_authorization_and_no_baseline_reusable';
+/** Build a world on the given source, take the manifest, tamper the frozen AFTER, run. Forces the
+ *  readback to fail so the rollback path is the one under test. */
+function adRollbackCycle(src) {
+  var w = adMutWorld(src);
+  var man = adMan(w);
+  var fz = JSON.parse(JSON.stringify(man.frozen_before));
+  fz.expected_after.remaining_id_universe_fingerprint = 'DEADBEEF';
+  var r = adRun(w, { execute: true, frozen: fz, authorization: man.authorization_wording });
+  r.world = w;
+  return r;
+}
+
+mut('N125 a proven zero-write after an unacknowledged clear is offered back as retryable', function () {
+  // THE EXACT DEFECT R4H SHIPPED. Nothing was written, so the flag looks harmless — and the reader of
+  // this field is a person holding the same frozen block and the same authorization sentence.
+  var m = swapS1('  NOT_APPLIED_ACK_UNKNOWN: [false, false, false, true, S1_REMOVAL_NEXT_MANIFEST_],',
+    '  NOT_APPLIED_ACK_UNKNOWN: [true, false, false, true, S1_REMOVAL_NEXT_MANIFEST_],');
+  var p = function (w) { adThrowOnClear(w, false); };
+  var clean = adCycle(null, { execute: true }, undefined, null, false, p);
+  var bad = adCycle(m, { execute: true }, undefined, null, false, p);
+  return clean.verdict === 'NOT_APPLIED_ACK_UNKNOWN' && clean.retryable === false
+    && clean.failed_predicates.indexOf(N_INV_) === -1 && clean.writes === 0
+    && bad.verdict === 'NOT_APPLIED_ACK_UNKNOWN' && bad.retryable === true
+    && bad.failed_predicates.indexOf(N_INV_) >= 0;
+});
+
+mut('N126 an unacknowledged run hands the same authorization and the same baseline back', function () {
+  // The subtler half of the same mistake: `retryable` stays false and the two REUSE flags say yes, which
+  // is the same instruction written in two words instead of one.
+  var m = swapS1('  EXECUTED_OK_AFTER_ACK_UNKNOWN: [false, false, false, false, S1_REMOVAL_NEXT_MANIFEST_],',
+    '  EXECUTED_OK_AFTER_ACK_UNKNOWN: [false, true, true, false, S1_REMOVAL_NEXT_MANIFEST_],');
+  var p = function (w) { adThrowOnClear(w, true); };
+  var clean = adCycle(null, { execute: true }, undefined, null, false, p);
+  var bad = adCycle(m, { execute: true }, undefined, null, false, p);
+  return clean.verdict === 'EXECUTED_OK_AFTER_ACK_UNKNOWN'
+    && clean.same_authorization_reusable === false && clean.same_frozen_baseline_reusable === false
+    && clean.failed_predicates.indexOf(N_INV_) === -1
+    && bad.verdict === 'EXECUTED_OK_AFTER_ACK_UNKNOWN'
+    && bad.same_authorization_reusable === true && bad.same_frozen_baseline_reusable === true
+    && bad.failed_predicates.indexOf(N_INV_) >= 0;
+});
+
+mut('N127 automatic retry becomes something a table row can grant', function () {
+  // It is a literal false on both returns of the resolver precisely so that no row of data can turn it
+  // on. Wire it to the table and the one verdict that IS re-drivable by a person starts claiming a
+  // machine may do it.
+  var m = swapS1('    // one clear site, no loop, no recursion, and the caller is a person.' + NL
+    + '    automatic_retry_allowed: false,',
+    '    // one clear site, no loop, no recursion, and the caller is a person.' + NL
+    + '    automatic_retry_allowed: row[0] === true,');
+  var clean = adCycle(null, {}), bad = adCycle(m, {});
+  return clean.verdict === 'DRY_RUN_OK' && clean.retryable === true
+    && clean.automatic_retry_allowed === false && clean.predicates_failed === 0
+    && bad.verdict === 'DRY_RUN_OK' && bad.automatic_retry_allowed === true
+    && bad.failed_predicates.indexOf('no_verdict_of_this_tool_permits_an_automatic_retry') >= 0;
+});
+
+mut('N128 a verified rollback is treated as though the attempt had never happened', function () {
+  // The table is back at its BEFORE fingerprint, so "nothing changed" is true of the TABLE. It is not
+  // true of the authorization, which was issued against a state and spent by the attempt.
+  var m = swapS1('  ROLLED_BACK_VERIFIED: [false, false, false, true, S1_REMOVAL_NEXT_MANIFEST_],',
+    '  ROLLED_BACK_VERIFIED: [true, true, true, true, S1_REMOVAL_NEXT_MANIFEST_],');
+  var clean = adRollbackCycle(null), bad = adRollbackCycle(m);
+  return clean.verdict === 'ROLLED_BACK_VERIFIED' && clean.retryable === false
+    && clean.same_frozen_baseline_reusable === false
+    && clean.failed_predicates.indexOf(N_INV_) === -1
+    && bad.verdict === 'ROLLED_BACK_VERIFIED' && bad.retryable === true
+    && bad.failed_predicates.indexOf(N_INV_) >= 0;
+});
+
+mut('N129 the one outcome that forbids a second removal says one may be attempted again', function () {
+  // MANUAL_RECOVERY_REQUIRED means the tool could not establish where it left the table. That is the
+  // single case where "you may start again from a new manifest" is the wrong sentence.
+  var m = swapS1('  MANUAL_RECOVERY_REQUIRED: [false, false, false, false, S1_REMOVAL_NEXT_MANIFEST_]',
+    '  MANUAL_RECOVERY_REQUIRED: [false, false, false, true, S1_REMOVAL_NEXT_MANIFEST_]');
+  var clean = adCycle(null, { execute: true }, undefined, null, false, adSpillOnClear);
+  var bad = adCycle(m, { execute: true }, undefined, null, false, adSpillOnClear);
+  return clean.verdict === 'MANUAL_RECOVERY_REQUIRED'
+    && clean.removal_may_be_attempted_again === false && clean.retryable === false
+    && bad.verdict === 'MANUAL_RECOVERY_REQUIRED'
+    && bad.removal_may_be_attempted_again === true && bad.retryable === false;
 });
 
 console.log('\npassed ' + pass + '  failed ' + fail

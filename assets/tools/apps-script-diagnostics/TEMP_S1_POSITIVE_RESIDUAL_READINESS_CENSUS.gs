@@ -6890,6 +6890,108 @@ function S1_remRollback_(sheet, fz, beforeRaw, why) {
 
 /**
  * ================================================================================================================
+ * S1-R4H-R1 — A VERDICT DECIDES WHAT MAY HAPPEN NEXT, AND IT HAS TO DECIDE IT IN ONE PLACE.
+ *
+ * R4H set `retryable` at eight separate branch sites inside the execute function, and one of them disagreed
+ * with the contract the rest of the file states. A PROVEN zero-write after an unacknowledged clear reported
+ * `NOT_APPLIED_ACK_UNKNOWN` with `retryable: true`. In isolation that reading is defensible — nothing was
+ * written, so nothing is at risk — and it is still WRONG, because of who reads it.
+ *
+ * NOTHING IN THIS TOOL READS `retryable`. There is no caller. The reader is a PERSON, and the person is the
+ * runtime: what they would do with `retryable: true` is paste the SAME frozen baseline and the SAME
+ * authorization sentence straight back in. An output field that no program reads is not therefore harmless —
+ * it is the field with the fewest checks between it and an action.
+ *
+ * THE RULE, RESTATED. An authorization is issued against a MEASURED STATE at a MOMENT, and once an execute
+ * attempt has reached the write, that moment is over whatever the outcome was. A readback that proves
+ * zero-write proves what is true at the instant of the readback; it does not restore the authorization's
+ * currency, because the thing that spent the baseline was not the write — it was the ATTEMPT. So a proven
+ * zero-write is not "retryable". It is NOT APPLIED, AND FINISHED: a future removal is still permitted, and it
+ * must begin at a new manifest, a new frozen baseline and a new operator authorization.
+ *
+ * WHAT `retryable` MEANS HERE, EXACTLY, AND NOTHING BROADER: may THIS response be re-driven with THIS frozen
+ * baseline and THIS authorization sentence, unchanged? Whether a removal may EVER happen again is a different
+ * question and it now has its own field, `removal_may_be_attempted_again`. Collapsing the two is what produced
+ * the contradiction: "you may try again one day" was written into a field that reads as "run this again now".
+ *
+ * TWO CONTRACTS STILL ANSWER YES, and they are why this is a table and not a constant `false`:
+ *   DRY_RUN_OK               — the dry run exists PRECISELY so the same baseline can then be executed.
+ *   REFUSED, lock contention — nothing was measured and nothing was written, so the baseline is exactly as
+ *                              current as it was a second ago. The retry is a person coming back later, not
+ *                              a loop; `automatic_retry_allowed` is false here too.
+ * Every verdict that reached the write says no, to all four questions.
+ *
+ * `automatic_retry_allowed` IS NOT IN THE TABLE. It is returned as a literal `false` by the resolver, so no
+ * row can grant it and a mutant has to attack the resolver itself rather than one line of data.
+ * ================================================================================================================
+ */
+var S1_REMOVAL_NEXT_MANIFEST_ = 'RERUN_MANIFEST_AND_REQUIRE_NEW_OPERATOR_AUTHORIZATION';
+/** [retryable, same_authorization_reusable, same_frozen_baseline_reusable,
+ *   removal_may_be_attempted_again, next_action] */
+var S1_REMOVAL_RETRY_CONTRACT_ = {
+  // ---- NOTHING WAS ATTEMPTED. The baseline is still the current one. --------------------------------
+  DRY_RUN_OK: [true, true, true, true,
+    'RERUN_WITH_EXECUTE_TRUE_USING_THIS_FROZEN_BASELINE'],
+  REFUSED_LOCK_CONTENTION: [true, true, true, true,
+    'RETRY_LATER_WITH_THIS_FROZEN_BASELINE_WHEN_THE_LOCK_IS_FREE'],
+  // A refusal that is a DRIFT is the opposite: the baseline is stale by definition, because being stale is
+  // what the refusal detected.
+  REFUSED: [false, false, false, true, S1_REMOVAL_NEXT_MANIFEST_],
+  // ---- THE REMOVAL HAD ALREADY HAPPENED BEFORE THIS RUN. ---------------------------------------------
+  ALREADY_APPLIED: [false, false, false, false,
+    'NO_FURTHER_ACTION_THE_REMOVAL_IS_ALREADY_COMPLETE'],
+  ALREADY_APPLIED_BUT_READBACK_MISMATCH: [false, false, false, false,
+    'INVESTIGATE_THE_TABLE_DOES_NOT_MATCH_THE_FROZEN_EXPECTED_AFTER'],
+  // ---- THE WRITE WAS REACHED. FROM HERE NOTHING IS EVER REUSABLE. ------------------------------------
+  EXECUTED_OK: [false, false, false, false,
+    'NO_FURTHER_ACTION_THE_REMOVAL_IS_COMPLETE'],
+  // The four ACK_UNKNOWN outcomes. All four spend the authorization and the baseline; they differ only in
+  // whether a removal may be attempted again at all, and that is the LAST column, not the first.
+  ACK_UNKNOWN: [false, false, false, true, S1_REMOVAL_NEXT_MANIFEST_],
+  ACK_UNKNOWN_UNRESOLVED: [false, false, false, true, S1_REMOVAL_NEXT_MANIFEST_],
+  EXECUTED_OK_AFTER_ACK_UNKNOWN: [false, false, false, false, S1_REMOVAL_NEXT_MANIFEST_],
+  NOT_APPLIED_ACK_UNKNOWN: [false, false, false, true, S1_REMOVAL_NEXT_MANIFEST_],
+  // A verified rollback returned the table to its BEFORE state — the TABLE, not the authorization.
+  ROLLED_BACK_VERIFIED: [false, false, false, true, S1_REMOVAL_NEXT_MANIFEST_],
+  // And the one outcome where a removal must not be run again by this tool at all.
+  MANUAL_RECOVERY_REQUIRED: [false, false, false, false, S1_REMOVAL_NEXT_MANIFEST_]
+};
+/**
+ * The verdict is the key, with ONE refinement: a REFUSED that is a lock contention is a different contract
+ * from a REFUSED that is a drift, because the first one never measured anything.
+ *
+ * AN UNKNOWN VERDICT GETS THE MOST RESTRICTIVE CONTRACT, not `undefined`. A verdict added later without a row
+ * here refuses everything and reports `known: false`, rather than returning undefined fields that read as
+ * false by accident and cannot be told apart from a deliberate false.
+ */
+function S1_remRetryContract_(verdict, contentionNotDrift) {
+  var key = (S1_str_(verdict) === 'REFUSED' && contentionNotDrift === true)
+    ? 'REFUSED_LOCK_CONTENTION' : S1_str_(verdict);
+  var row = Object.prototype.hasOwnProperty.call(S1_REMOVAL_RETRY_CONTRACT_, key)
+    ? S1_REMOVAL_RETRY_CONTRACT_[key] : null;
+  if (!row) {
+    return { known: false, contract_key: key, retryable: false, automatic_retry_allowed: false,
+      same_authorization_reusable: false, same_frozen_baseline_reusable: false,
+      removal_may_be_attempted_again: false, next_action: S1_REMOVAL_NEXT_MANIFEST_ };
+  }
+  return { known: true, contract_key: key,
+    retryable: row[0] === true,
+    // NEVER, FOR ANY VERDICT, AND NOT FROM THE TABLE. There is no automatic retry anywhere in this tool:
+    // one clear site, no loop, no recursion, and the caller is a person.
+    automatic_retry_allowed: false,
+    same_authorization_reusable: row[1] === true,
+    same_frozen_baseline_reusable: row[2] === true,
+    removal_may_be_attempted_again: row[3] === true,
+    next_action: row[4] };
+}
+/** The verdicts after which the operator must go back to the manifest — every unacknowledged outcome and
+ *  every rollback, whichever branch produced it. */
+var S1_REMOVAL_MUST_REMANIFEST_ = ['ACK_UNKNOWN', 'ACK_UNKNOWN_UNRESOLVED',
+  'EXECUTED_OK_AFTER_ACK_UNKNOWN', 'NOT_APPLIED_ACK_UNKNOWN',
+  'ROLLED_BACK_VERIFIED', 'MANUAL_RECOVERY_REQUIRED'];
+
+/**
+ * ================================================================================================================
  * RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL({ execute, frozen, authorization, lock_timeout_ms })
  *
  * DEFAULT IS A DRY RUN. `execute` must be exactly `true`; absent, false, 'true', 1 and anything else are all
@@ -6903,6 +7005,12 @@ function S1_remRollback_(sheet, fz, beforeRaw, why) {
  * required to equal the frozen one — so a column append refuses rather than clearing a range that no longer
  * describes the row. A clear that throws is ACK_UNKNOWN: the outcome is UNKNOWN until a readback classifies
  * it, and it is never attempted again either way.
+ *
+ * S1-R4H-R1 — AND NOT ONLY "NOT HERE". No branch sets `retryable`; the whole retry contract is derived from
+ * the verdict in fin(), from S1_REMOVAL_RETRY_CONTRACT_. Once the write has been REACHED — landed, not
+ * landed, or unknowable — this frozen baseline and this authorization sentence are spent, and the response
+ * says so in four fields and a next_action. A proven zero-write is NOT APPLIED AND FINISHED, not retryable:
+ * a further removal is still permitted, and it starts at a new manifest.
  * ================================================================================================================
  */
 function RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL(opts) {
@@ -6925,13 +7033,52 @@ function RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL(opts) {
     frozen_supplied: false, frozen_complete: false,
     authorization_supplied: false, authorization_matches_frozen: false,
     lock: null, verification: {}, readback: null, rollback: null,
-    already_applied: false, retryable: null, attempts: 0,
+    already_applied: false, attempts: 0,
+    // S1-R4H-R1 — DERIVED IN fin() FROM THE VERDICT, NEVER ASSIGNED BY A BRANCH. `retryable` answers one
+    // narrow question: may THIS response be re-driven with THIS baseline and THIS authorization, unchanged?
+    // Whether a removal may ever happen again is `removal_may_be_attempted_again`, which is not the same
+    // question and must not be answered in the same field.
+    retryable: null, automatic_retry_allowed: false, retry_contract_key: null,
+    same_authorization_reusable: null, same_frozen_baseline_reusable: null,
+    removal_may_be_attempted_again: null, next_action: null,
+    // The only refusal in this function that leaves the baseline current: a lock somebody else is holding.
+    refusal_is_a_contention_not_a_drift: false,
     verdict: 'REFUSED', refusal_reasons: [],
     predicates: [], predicates_passed: 0, predicates_failed: 0, failed_predicates: [] };
   var L = S1_ledger_();
   function refuse(r) { if (out.refusal_reasons.indexOf(r) === -1) out.refusal_reasons.push(r); }
 
   function fin() {
+    // ---- S1-R4H-R1 — THE RETRY CONTRACT IS DERIVED HERE AND NOWHERE ELSE. --------------------
+    // Every return in this function goes through fin(), so no branch can disagree with the contract and no
+    // branch added later can forget it. That is the whole reason it moved: R4H set `retryable` at eight
+    // separate sites and one of them said the opposite of the other seven.
+    var RC = S1_remRetryContract_(out.verdict, out.refusal_is_a_contention_not_a_drift === true);
+    out.retry_contract_key = RC.contract_key;
+    out.retryable = RC.retryable;
+    out.automatic_retry_allowed = RC.automatic_retry_allowed;
+    out.same_authorization_reusable = RC.same_authorization_reusable;
+    out.same_frozen_baseline_reusable = RC.same_frozen_baseline_reusable;
+    out.removal_may_be_attempted_again = RC.removal_may_be_attempted_again;
+    out.next_action = RC.next_action;
+    L.P('this_verdict_has_a_declared_retry_contract', true, RC.known, RC.known === true);
+    L.P('no_verdict_of_this_tool_permits_an_automatic_retry', false, out.automatic_retry_allowed,
+      out.automatic_retry_allowed === false);
+    L.P('the_clear_was_attempted_at_most_once', true, out.attempts <= 1, out.attempts <= 1);
+    // AN ATTEMPT THAT REACHED THE WRITE SPENT BOTH OF THEM. The authorization was issued against a measured
+    // state; what ended that state's currency was the ATTEMPT, not the write, so a proven zero-write spends
+    // it exactly as a landed write does.
+    var spent = out.attempts >= 1;
+    var anyReuse = out.retryable === true || out.same_authorization_reusable === true
+      || out.same_frozen_baseline_reusable === true;
+    L.P('an_attempt_that_reached_the_write_leaves_no_authorization_and_no_baseline_reusable',
+      { attempt_was_made: spent, anything_reusable: false },
+      { attempt_was_made: spent, anything_reusable: anyReuse },
+      spent === false || anyReuse === false);
+    L.P('every_unacknowledged_or_rolled_back_outcome_is_sent_back_to_a_new_manifest',
+      S1_REMOVAL_NEXT_MANIFEST_, out.next_action,
+      S1_REMOVAL_MUST_REMANIFEST_.indexOf(S1_str_(out.verdict)) === -1
+        || out.next_action === S1_REMOVAL_NEXT_MANIFEST_);
     out.predicates = L.entries;
     out.predicates_failed = L.failed.length;
     out.predicates_passed = L.entries.length - L.failed.length;
@@ -6950,6 +7097,11 @@ function RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL(opts) {
       rows_added: out.rows_added, rows_removed: out.rows_removed,
       rows_reordered: out.rows_reordered, tables_created: out.tables_created,
       attempts: out.attempts, retryable: out.retryable, already_applied: out.already_applied,
+      automatic_retry_allowed: out.automatic_retry_allowed,
+      same_authorization_reusable: out.same_authorization_reusable,
+      same_frozen_baseline_reusable: out.same_frozen_baseline_reusable,
+      removal_may_be_attempted_again: out.removal_may_be_attempted_again,
+      next_action: out.next_action,
       readback_ok: out.readback ? out.readback.ok : null,
       readback_mismatches: out.readback
         ? out.readback.mismatches.map(function (m) { return m.what; }).slice(0, 8) : null,
@@ -7031,7 +7183,10 @@ function RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL(opts) {
       // NOT RETRIED HERE. A lock this run could not take is a lock something else is holding, and the
       // right response is to come back later with the same frozen baseline, not to spin.
       refuse('LOCK_NOT_HELD:' + S1_str_(LK.reason));
-      out.retryable = true;
+      // THE ONE REFUSAL THAT LEAVES THE BASELINE CURRENT. Nothing was measured and nothing was written, so
+      // the same frozen evidence is exactly as true as it was. fin() turns this into the contract; the
+      // retry is a person coming back later, and `automatic_retry_allowed` stays false here as everywhere.
+      out.refusal_is_a_contention_not_a_drift = true;
       return fin();
     }
 
@@ -7060,7 +7215,6 @@ function RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL(opts) {
       if (out.readback.ok !== true) {
         refuse('THE_TARGET_ROW_IS_ALREADY_GONE_BUT_THE_TABLE_DOES_NOT_MATCH_THE_EXPECTED_AFTER');
       }
-      out.retryable = false;
       return fin();
     }
 
@@ -7180,7 +7334,6 @@ function RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL(opts) {
     // ---- §DEFAULT: A DRY RUN STOPS HERE, HAVING WRITTEN NOTHING. -------------------------------
     if (opts.execute !== true) {
       out.verdict = 'DRY_RUN_OK';
-      out.retryable = true;
       L.P('a_dry_run_wrote_nothing', [0, 0, 0], [out.writes, out.cells_cleared, out.cells_restored],
         out.writes === 0 && out.cells_cleared === 0 && out.cells_restored === 0);
       L.P('a_dry_run_took_the_same_lock_and_ran_the_same_checks', true, LK.acquired,
@@ -7222,23 +7375,29 @@ function RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL(opts) {
         out.cells_cleared = nonBlankNow;
         out.write_acknowledged = 'RESOLVED_BY_READBACK_AS_APPLIED';
         out.verdict = 'EXECUTED_OK_AFTER_ACK_UNKNOWN';
-        out.retryable = false;
         L.P('an_unacknowledged_write_was_classified_by_readback_and_not_by_retry', 1, out.attempts,
           out.attempts === 1);
       } else if (recNow && S1_str_(recNow.fingerprint) === S1_str_(fz.target_row_fingerprint)
           && S1_str_(R2.table_combined_fingerprint) === S1_str_(fz.table_combined_fingerprint)) {
         // A PROVEN ZERO-WRITE. The row is intact and the whole table is at its BEFORE fingerprint, so
-        // nothing happened - and only a proven zero-write stays retryable.
+        // nothing happened.
+        //
+        // S1-R4H-R1 — AND IT IS STILL NOT RETRYABLE. R4H wrote `retryable = true` here, meaning "no harm was
+        // done, so a further removal is still permitted", which is true. But the field it wrote that into
+        // reads as "run this same call again", and the reader is a person holding the same frozen baseline
+        // and the same authorization sentence. The readback proves what was true at the instant it ran; it
+        // does not make the authorization current again, because what spent the authorization was the
+        // ATTEMPT. So: NOT APPLIED, AND FINISHED. The permission to try again one day is a different field.
         out.writes = 0;
         out.cells_cleared = 0;
         out.write_acknowledged = 'RESOLVED_BY_READBACK_AS_NOT_APPLIED';
         out.verdict = 'NOT_APPLIED_ACK_UNKNOWN';
-        out.retryable = true;
         L.P('a_proven_zero_write_wrote_nothing', [0, 0], [out.writes, out.cells_cleared],
           out.writes === 0 && out.cells_cleared === 0);
+        L.P('a_proven_zero_write_is_finished_and_not_repeated_under_this_authorization', 1, out.attempts,
+          out.attempts === 1);
       } else {
         out.verdict = 'ACK_UNKNOWN_UNRESOLVED';
-        out.retryable = false;
         out.rollback = S1_remRollback_(R.sheet, fz, beforeRaw, 'ACK_UNKNOWN_UNRESOLVED');
         out.cells_restored = out.rollback.cells_rolled_back;
         out.verdict = out.rollback.outcome === 'ROLLED_BACK_VERIFIED'
@@ -7254,7 +7413,6 @@ function RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL(opts) {
         return m.what; }).join(','));
       out.rollback = S1_remRollback_(R.sheet, fz, beforeRaw, 'READBACK_MISMATCH');
       out.cells_restored = out.rollback.cells_rolled_back;
-      out.retryable = false;
       // AND THE CLEAR IS NOT ATTEMPTED AGAIN. attempts stays 1 whatever the rollback outcome.
       out.verdict = out.rollback.outcome === 'ROLLED_BACK_VERIFIED'
         ? 'ROLLED_BACK_VERIFIED' : 'MANUAL_RECOVERY_REQUIRED';
@@ -7263,7 +7421,6 @@ function RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL(opts) {
     }
 
     out.verdict = 'EXECUTED_OK';
-    out.retryable = false;
     L.P('exactly_one_range_of_the_frozen_size_was_touched', fz.target_range_cell_count,
       out.cells_touched, out.cells_touched === fz.target_range_cell_count);
     L.P('exactly_the_frozen_number_of_cells_changed', fz.target_non_blank_cell_count,
