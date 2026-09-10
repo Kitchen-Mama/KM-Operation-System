@@ -4668,3 +4668,58 @@ keys). Full suite 113 files / 1 PRE-EXISTING unrelated failure (replen-header-to
 Pending. APPS_SCRIPT_SYNC_REQUIRED = 90_generated_supply_planning_bundle.gs (new hash) +
 42_api_v1_recommendation_workspace.gs. NEXT: Commit 2 (B/C within-request overseas + factory allocation → residual
 new-order need). Inventory vs Order Planning remain distinct models (numbers NOT reconciled). New live read: fc_target_rules.
+
+## PRODUCT-STRATEGY-P1-B0 freeze (2026-09-10) — Site-scoped data contract + Operation System integration (AUDIT + DESIGN ONLY; nothing implemented)
+
+Records a design freeze only. No mainline priority, batch order or existing entry is changed; no code, API, schema,
+migration, flag or deployment is touched. Full text: `docs/planning/PRODUCT_STRATEGY_BOARD_DESIGN_FREEZE.md` §31
+(feature branch `feature/product-strategy-board-p0`). THREE SOURCE CORRECTIONS the audit forced. (1)
+`sku_regional_details` has NO `marketplace_sku_id` column — its canonical header says so in its own comment
+(`18_sku_regional_handlers.gs:16-23`) and the live match grain is `sku + company + country + marketplace` (`:13`,
+`skuRegionalFind_` `:30-51`, `DATABASE_RELATIONSHIP_MAP.md:139`); the proposed id-to-id regional join does not exist and
+must not be built. (2) There is no `running` marketplace-SKU status: `VALID_MARKETPLACE_SKU_STATUSES_ =
+['active','phasing_out','inactive','discontinued']` (`00_config.gs:12`), while `Running in the Market` is a MASTER
+lifecycle on `sku_details` (`00_config.gs:9`) — site membership is decided by `marketplace_sku_status` alone and
+`lifecycle` never participates. (3) `phasing_out` is a fourth answer the active/inactive default cannot express; frozen
+default = `active` + `phasing_out` on the ladder (still purchasable, badged, counted separately), `inactive` +
+`discontinued` only under `include_inactive`, four values never collapsed to two on screen. FROZEN CONTRACT: site scope
+key `{company, country, marketplace}` all required (an unscoped read is refused, never answered with everything); site
+identity `marketplace_skus.marketplace_sku_id`; membership resolved SERVER-SIDE into a universe U before any join, and a
+master SKU with no `marketplace_skus` row in scope is absent from summary/chart/table/gap/overlap/cannibalization/deal
+risk/recommendation; `pricing_list` has no `company` (`PRICING_DATABASE_MAPPING.md` §4) so its `country`/`marketplace`
+are denormalised copies and joining pricing on `(country, marketplace, sku)` is forbidden; `pricing_list.currency` is
+the currency authority and a disagreement with `marketplace_skus.currency` is a `CURRENCY_SOURCE_CONFLICT` finding, not
+a tiebreak; `price_status` is NOT filtered on (its default is recorded as unconfirmed). Missing regional ⇒ the site SKU
+still exists, `REGIONAL_DETAILS_MISSING`, counted, never fabricated from master columns; missing pricing ⇒ Data Quality
+only, `PRICING_SOURCE_MISSING`, never plotted and never a gap/overlap/cannibalization input. API OWNER AUDIT
+(`59_api_v1_sku_details_workspace.gs`, routed `01_router.gs:75`/`:572`): reads `sku_details` + tax tables, and
+`marketplace_skus` + `sku_regional_details` only under `include.regional`; cap `SKD_WS_ROW_MAX_ = 50000` reported via
+`capped`, never silent; NO server-side company/country/marketplace/category/series filter of ANY kind — `:27` states
+FULL-SET (NOT server-filtered) BY DESIGN, BEFORE == AFTER, because both SKU pages build their filter universes from all
+rows; no caller-level authorization (the gate is `prodExpectedDbId_`/`prodAssertDbTarget_`, a wrong-spreadsheet gate,
+matching D-9 §13.1's measured absence of RBAC). Consequence frozen: B1 does NOT modify `59_`; any later scope must be
+opt-in with a byte-identical no-scope response, proven by test. `pricing_list` / `campaigns` / `campaign_sku_lines`
+remain with no bounded read owner (§4.8 GAP unchanged); ONE new read owner `productPricing.workspace.get` is frozen as
+the site-membership authority (required tri-part site scope, server-resolved U, category/series narrowing after U,
+`include.campaigns`, pagination + hard caps, `capped` reported, exact-ID target gate, read-only by construction) —
+superseding §28.2's "at least one of company/country/marketplace/series", which would have admitted a series-only read
+across every site. INTEGRATION: Operation System global navigation gains exactly ONE entry (Product Strategy) with six
+sub-pages behind the EXISTING `.km-tab-rail` pattern (`components.css:889-941`, `assets/js/utils/tab-rail.js`); the
+prototype sidebar/rail/toggle/brand is deleted rather than ported, because `#appSidebar` + `toggleSidebar()`
+(`app.js:35`) + `showSection()` (`app.js:67`) + `KM.lifecycle.switchTo`/`enforceSingleActiveSection`
+(`core/lifecycle.js`) + `KM.partialLoader` already own navigation, active-page state and lazy init; production menu
+icons are emoji and Product Strategy follows that convention, not the prototype's inline-SVG rule. No `@media print`
+exists anywhere in `assets/css/`, so print/presentation must be section-scoped. FLAG: `PRODUCT_STRATEGY_ENABLED_ =
+false` + `productStrategyEnabled_()` in `00_config.gs` (the `:88-89` shape), backend action refuses `FEATURE_DISABLED`
+with zero reads, frontend mirror fail-safe false via the existing capability transport, nav entry
+`menu-item--disabled` + `Soon`, effective value reportable from `system.health` (the `63_:655` shape), rollback = set
+false + a NEW deployment version (both user-owned, no compensating write). This supersedes BOTH earlier names —
+§13.2's `PRODUCT_STRATEGY_BOARD_ENABLED_` and §28.4's `PRODUCT_PRICING_WORKSPACE_ENABLED_` — because two flags for one
+feature admits a state where the page is on and its only data source is off. There is still NO permission hook
+anywhere (D-9 §13.1); until P2-A Login/RBAC the flag IS the access control, and a hidden button is not one.
+`PreviewProductStrategyDataAdapter` may never become a production fallback: API failure shows `SOURCE_NOT_CONNECTED`,
+and `FEATURE_DISABLED` / `SOURCE_NOT_CONNECTED` / a genuinely empty scope stay three distinct states. NEXT: P1-B1
+(bounded read API + contract tests, flag false, no production visibility) → P1-B2 (page integration, live adapter, no
+preview fallback, flag false) → P1-B3 (production readback, DB-vs-UI counts, no cross-site contamination, operator
+acceptance) — only then is `flag = true` a question. OPEN: `variant_group`/`variant_name` on `sku_details` (§28.5);
+`pricing_list.price_status` default. APPS_SCRIPT_SYNC_REQUIRED = none (no `.gs` changed).

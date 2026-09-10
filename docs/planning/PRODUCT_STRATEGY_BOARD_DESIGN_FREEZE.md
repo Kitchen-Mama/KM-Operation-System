@@ -1,4 +1,4 @@
-# Product Strategy Board — Design Freeze (P0 · updated by P0-R1, P0-R3, P0-R3-R1, P0-R3-R2)
+# Product Strategy Board — Design Freeze (P0 · updated by P0-R1, P0-R3, P0-R3-R1, P0-R3-R2, P1-B0)
 
 **Rounds:** `PRODUCT-STRATEGY-BOARD-P0` — Discovery, Data Mapping and Design Freeze
 · `PRODUCT-STRATEGY-BOARD-P0-R1` — Design Closure and Non-Runtime Visual Prototype
@@ -6,10 +6,20 @@
 · `PRODUCT-STRATEGY-BOARD-P0-R3` — Data-Contract-First Executive Report Prototype
 · `PRODUCT-STRATEGY-BOARD-P0-R3-R1` — Product Image Identity Correction and Visual Acceptance
 · `PRODUCT-STRATEGY-BOARD-P0-R3-R2` — Category Command Center, Image Price Markers, Five-Unit Axis
+· `PRODUCT-STRATEGY-P1-B0` — Site-Scoped Data Contract + Operation System Integration Freeze (audit only)
 **Status:** **DESIGN CLOSED, AND THE DATA CONTRACT IS NOW FROZEN TOO.** All nine decisions are
 operator-decided and applied; §23–§28 add the measured source audit, the canonical data contract, the
 variant-grouping and image rules, the adapter seam and the P1-B1 handoff. Still nothing implemented in
 the application.
+
+> **SITE MEMBERSHIP IS A FACT, NOT AN INFERENCE (P1-B0).** A SKU is sold on a site only when
+> `marketplace_skus` says so, for that exact `company + country + marketplace`. It is never inferred
+> from `sku_details`, a currency, an `image_url` or a SKU naming pattern, and the membership decision
+> is made SERVER-SIDE — a client filter over everything is a rendering choice, not a bound. §31
+> freezes the site scope key, the six-table join map (with the regional join **corrected**: there is
+> no `marketplace_sku_id` on `sku_regional_details`), the missing-regional and missing-pricing
+> behaviour, the response contract, the two read owners, the Operation System integration and the
+> feature-flag contract. **Nothing in §31 is implemented.**
 
 > **CATEGORY IS A CORRECTNESS RULE, NOT A FILTER (P0-R3-R2).** `sku_details.category` is now the
 > FIRST scope. Two categories never share a price axis, and no gap, overlap or cannibalisation is
@@ -2569,5 +2579,405 @@ one of the six destinations. Group **I** re-asserts every price rule and all thr
 - No production file, no `.gs`, no S1–S5 file, no mainline worktree change, `C:/km-lb` untouched.
 - **No network request, no DB or API read, no DB / Drive write, no storage, no dependency, no CDN,
   no deployment, no push, no merge.**
+
+---
+
+---
+
+## §31 — P1-B0: the site-scoped data contract and the Operation System integration freeze
+
+**Nothing in this section is implemented.** It is an audit of what the repository actually contains
+and a freeze of the contract P1-B1 and P1-B2 must build to. No API, no production UI, no DB, no
+deployment, no flag change.
+
+### 31.1 Three corrections the audit forced, before anything else
+
+The round brief carried three assumptions the source does not support. Each is corrected here rather
+than carried forward, because a contract that is frozen wrong is worse than one that is not frozen.
+
+**(1) `sku_regional_details` has no `marketplace_sku_id`, so that join does not exist.**
+
+The brief proposed `marketplace_skus.marketplace_sku_id → sku_regional_details.marketplace_sku_id`,
+and allowed for verification against the live schema. The live canonical header says the opposite in
+its own comment:
+
+```js
+// v2.0 canonical header (NO hscode/duty/declared-value; NO status/note/marketplace_sku_id).
+var SKU_REGIONAL_DETAILS_HEADERS_ = [
+  'regional_detail_id', 'sku', 'company', 'country', 'marketplace',
+  'site_sku', 'marketplace_product_id', 'product_url', … ];
+```
+`18_sku_regional_handlers.gs:16-23`. The match grain is stated at `:13` — *"Match grain: sku +
+company + country + marketplace"* — and enforced by `skuRegionalFind_` (`:30-51`), which compares
+exactly those four. `DATABASE_RELATIONSHIP_MAP.md:139` records the same pairing, 1→1.
+
+**So regional is the one join in the map that does not travel on `marketplace_sku_id`** — which
+makes it the one join that can silently mis-match, because a composite key can be *partly* right.
+The frozen rule: the four parts are read **from the `marketplace_skus` row**, which already carries
+all four, and never re-derived from `sku_details` or from the request. A regional row is attached to
+a site SKU only when all four match; three out of four is not a near miss, it is a different site.
+
+**(2) There is no `running` marketplace-SKU status. "active / running" is two columns on two tables.**
+
+```js
+var VALID_LIFECYCLES_               = ['Upcoming SKU','Running in the Market','Phasing Out','Closure','Other'];
+var VALID_MARKETPLACE_SKU_STATUSES_ = ['active','phasing_out','inactive','discontinued'];
+```
+`00_config.gs:9` and `:12`. *Running in the Market* is a **master lifecycle** on `sku_details` — a
+statement about the product. `marketplace_sku_status` is a **site status** on `marketplace_skus` — a
+statement about one company selling it in one marketplace. They answer different questions and a SKU
+can be `Running in the Market` while `inactive` on a specific site. **Site membership is decided by
+`marketplace_sku_status` alone; `lifecycle` never participates in it** and is display only.
+
+**(3) `phasing_out` is a fourth answer, and the brief's two-way default cannot express it.**
+
+The brief says show active by default and exclude inactive. `phasing_out` is neither. It is
+**still on sale**, so excluding it understates the ladder a buyer actually faces; calling it active
+misreports it. Frozen default, and it is a decision the operator may overturn in one line:
+
+| Status | In the default (Executive) set | Counted as | On the price axis |
+|---|---|---|---|
+| `active` | yes | `activeSiteSkuCount` | yes |
+| `phasing_out` | **yes**, badged with its exact value | `phasingOutSiteSkuCount` | yes — it is still purchasable |
+| `inactive` | no — only with `include_inactive` | `inactiveSiteSkuCount` | no |
+| `discontinued` | no — only with `include_inactive` | `discontinuedSiteSkuCount` | no |
+
+The four values are **never collapsed into two on screen**. `include_inactive` admits `inactive` and
+`discontinued` together, because both mean *not on sale*, and each row keeps its exact status string.
+
+### 31.2 The site membership authority and the scope key
+
+| Concern | Authority | Never inferred from |
+|---|---|---|
+| Master identity, `category`, `series`, `image_url` | `sku_details` | — |
+| **Which SKUs exist on a site** | **`marketplace_skus`** | `sku_details`, currency, `image_url`, SKU naming, pricing |
+| Site regulatory / identity enrichment | `sku_regional_details` | master columns |
+| **Site pricing and currency** | **`pricing_list`** | `sku_details` base price, `marketplace_skus.currency`, country default |
+| Official campaign / deal price | `campaigns` + `campaign_sku_lines` | a proposal, a board element, a fixture |
+
+**Site scope key — all three parts required, no defaults, no partial:**
+
+```
+{ company, country, marketplace }
+```
+
+**Site SKU identity: `marketplace_skus.marketplace_sku_id`.** `company` lives on `marketplace_skus`
+and not on `pricing_list` (`PRICING_DATABASE_MAPPING.md` §4: *"company — Not required in
+`pricing_list`"*), so `pricing_list.country` / `.marketplace` are **denormalised copies, not a scope
+key**. Two companies operating the same `country|marketplace|sku` produce price rows that are
+distinguishable *only* by `marketplace_sku_id` — the ambiguity §4.5 already recorded. Joining
+pricing on `(country, marketplace, sku)` is therefore forbidden, not merely discouraged.
+
+### 31.3 The six-table join map, as the source actually has it
+
+```
+sku_details.sku
+   └─(sku)──────────────▶ marketplace_skus.sku                                     [MEMBERSHIP GATE]
+                              marketplace_skus WHERE company+country+marketplace = scope
+                              ⇒ THE UNIVERSE  U = { marketplace_sku_id … }
+                                 │
+   sku_regional_details ◀────────┤ (sku + company + country + marketplace)   ← NOT marketplace_sku_id
+                                 │
+   pricing_list ◀────────────────┤ (marketplace_sku_id)
+                                 │
+   campaign_sku_lines ◀──────────┘ (marketplace_sku_id)
+        └─(campaign_id)─────────▶ campaigns.campaign_id
+```
+
+| Edge | Key | Verified at |
+|---|---|---|
+| `sku_details` → `marketplace_skus` | `sku` | `04_marketplace_forecast_import.gs:151` header list |
+| `marketplace_skus` ↔ `sku_regional_details` | **`sku + company + country + marketplace`** | `18_sku_regional_handlers.gs:13`, `:16-23`, `skuRegionalFind_` `:30-51` |
+| `marketplace_skus` → `pricing_list` | `marketplace_sku_id` | `PRICING_DATABASE_MAPPING.md` §4 |
+| `marketplace_skus` → `campaign_sku_lines` | `marketplace_sku_id` | `CAMPAIGN_SKU_LINES_HEADERS_`, `20_campaign_write_handlers.gs:40` |
+| `campaign_sku_lines` → `campaigns` | `campaign_id` | `20_campaign_write_handlers.gs:28`, `:40` |
+
+`campaigns` also carries `company` and `marketplace_id` additively (`:28`) *"because a campaign is
+NOT uniquely scoped by country+marketplace alone — the same marketplace name can belong to two
+companies"*. A campaign is therefore filtered by its **line universe**, and its own `country` /
+`marketplace` columns are display snapshots, exactly like `pricing_list`'s.
+
+### 31.4 The membership gate, stated as an order of operations
+
+1. Resolve `U = { marketplace_sku_id }` from `marketplace_skus` where `company + country +
+   marketplace` equal the scope, **server-side**.
+2. Apply the status filter to `U` (§31.1(3)).
+3. **Only members of `U` may become rows.** Master, regional, pricing and campaign data are
+   *enrichment of a member*, never a way in.
+4. A `sku_details` row with no `marketplace_skus` row in scope is **absent** — not greyed, not
+   zero-priced, not "missing data". It does not appear in the summary, the chart, the comparison
+   table, gap, overlap, cannibalisation, deal risk, or a recommendation.
+
+> **Reading everything and filtering in the browser does not satisfy step 1.** The membership
+> decision must be made by the side that owns the table, because a client filter is a rendering
+> choice and can be widened by a request payload, a stale cache or a bug — and when it is widened,
+> nothing on screen says so.
+
+**`AMBIGUOUS_SITE_IDENTITY`.** If more than one `marketplace_skus` row matches the same
+`sku + company + country + marketplace`, the four-part regional join is no longer 1→1. That is a
+refusal for those rows, not a first-match, and it is reported per SKU.
+
+### 31.5 Regional details missing — the site SKU still exists
+
+`marketplace_skus` present, `sku_regional_details` absent:
+
+- The site SKU **exists**. It is never re-classified as not sold on the site.
+- It appears in Data Quality, counted in `regionalMissingCount`.
+- If identity and pricing are complete it **may be analysed**, carrying the row status
+  `REGIONAL_DETAILS_MISSING`.
+- **No master column is copied into a regional field to fill the hole.** An invented regional row is
+  indistinguishable from a real one, and the whole purpose of the layer is that the two differ.
+
+`sku_regional_details` present but its four-part scope disagrees with the site row: status
+`CONTRACT_MISMATCH`. No cross-site join, and no fallback to another country's regional row — that
+would answer a question about Germany with a fact about the United States.
+
+### 31.6 Pricing missing — the SKU exists and has no coordinate
+
+`marketplace_skus` present, `pricing_list` absent:
+
+- Listed in Data Quality, counted in `pricingMissingCount`, status `PRICING_SOURCE_MISSING`.
+- **Not plotted.** No axis position, no gap, no overlap, no cannibalisation. A missing price is not a
+  price of zero and is not the bottom of the ladder.
+- Counted in `siteSkuCount` but excluded from `analysableSiteSkuCount`, so the two numbers disagree
+  visibly rather than the shortfall disappearing.
+
+**`pricing_list.currency` is the pricing currency authority.** Not `sku_details`, not
+`marketplace_skus.currency`, not a country default. `PRICING_DATABASE_MAPPING.md` §4 maps
+`pricing_list.currency ← marketplace_skus.currency` **at creation**, which means the two are a copy
+that can drift — so when they differ the row carries `CURRENCY_SOURCE_CONFLICT` and `pricing_list`
+still wins. A conflict is a finding; it is never a tiebreak.
+
+**`price_status` must not be filtered on in B1.** `PRICING_DATABASE_MAPPING.md` §4 records its
+default as *"draft or active — default to be confirmed (system convention unclear)"*. Filtering on
+an undecided enum would silently drop rows on a rule nobody has agreed. B1 carries the value through
+and reports its distribution; the filter waits for the decision.
+
+### 31.7 `ProductStrategyWorkspaceResponse` — frozen
+
+```jsonc
+{
+  "scope": { "company": "", "country": "", "marketplace": "",
+             "category": null, "series": null, "include_inactive": false },
+  "masterSkus": [], "marketplaceSkus": [], "regionalDetails": [],
+  "pricing": [], "campaigns": [], "campaignSkuLines": [],
+  "normalizedRows": [],
+  "counts": {
+    "siteSkuCount": 0, "activeSiteSkuCount": 0, "inactiveSiteSkuCount": 0,
+    "regionalMissingCount": 0, "pricingMissingCount": 0, "imageMissingCount": 0,
+    // additive to the brief's six — the four statuses do not fit in two counters
+    "phasingOutSiteSkuCount": 0, "discontinuedSiteSkuCount": 0, "analysableSiteSkuCount": 0
+  },
+  "capped": {}, "pagination": {}, "provenance": {}, "refusals": []
+}
+```
+
+- **`normalizedRows` grain is one `marketplace_sku_id`.** A master SKU with no site identity can
+  never be a row. `masterSkus` is enrichment and is not a row source.
+- **Raw passthrough** for the six table arrays, as `59_` established: the client normalises, the
+  server does not reshape.
+- **`capped` is per array and never silent** — `59_`'s rule, and the reason a truncated read cannot
+  be mistaken for a short one.
+- **`provenance`** carries `connected: true|false`, `scope_applied`, the action, the build, the
+  request id and the row counts as read. It is what makes "this is live" a fact on the payload
+  rather than a claim in the UI.
+- **`refusals`** is an array of `{ code, scope_part | marketplace_sku_id, message }`. Frozen codes:
+  `SCOPE_INCOMPLETE`, `FEATURE_DISABLED`, `SOURCE_NOT_CONNECTED`, `AMBIGUOUS_SITE_IDENTITY`,
+  `CAPPED_RESULT`.
+- **Row statuses** (per `normalizedRows` entry, a list, never booleans): `REGIONAL_DETAILS_MISSING`,
+  `CONTRACT_MISMATCH`, `PRICING_SOURCE_MISSING`, `CURRENCY_SOURCE_CONFLICT`, `IMAGE_SOURCE_MISSING`,
+  `IMAGE_LOAD_FAILED`, `VARIANT_GROUPING_SOURCE_MISSING`, `DEAL_PERIOD_MISSING`.
+
+### 31.8 Existing API owner audit — `skuDetails.workspace.get`
+
+Owner `59_api_v1_sku_details_workspace.gs`; routed at `01_router.gs:75` and `:572`.
+
+| Question | Measured answer |
+|---|---|
+| Reads `sku_details`? | **Yes** — BASE, `requiredCols: ['sku']`, fail-closed (`:46-52`) |
+| Does `include.regional` read `marketplace_skus`? | **Yes** — and `sku_regional_details` with it. Both `optional: true`, missing-safe, and skipped entirely when not requested (`:46-52`, `:160`) |
+| Reads `sku_regional_details`? | **Yes**, under the same include |
+| Server-side `company` / `country` / `marketplace` / `category` / `series`? | **NO. None. There is no scope parameter of any kind.** The only request knobs are `payload.include.*`, `include.summary` and `requestId` |
+| Row cap / truncation | `SKD_WS_ROW_MAX_ = 50000` (`:56`), applied per array by `skdCap_`, reported in `capped` and `counts` — **never silent** |
+| Authorization gate | **None at the caller level.** The gate is `prodExpectedDbId_()` + `prodAssertDbTarget_()` — a *wrong-spreadsheet* gate, not a *who-is-asking* gate. D-9 §13.1 measured the same thing system-wide: no RBAC, no server-side identity |
+| Response shape | `{ success, data:{ summary, skuDetails, taxReferralRates, taxRateComponents, capped, counts, (+marketplaceSkus, skuRegionalDetails under include.regional) }, meta, errors }` |
+| Reads pricing / campaigns? | **No.** Not in `SKD_WORKSPACE_TABLES_` |
+| Uses `getOperationDb` / unrestricted `getTable`? | **No** — the file states it, and the table list proves it |
+
+**The gap is total, and it is deliberate.** `:27` states the design: *"FULL-SET (NOT server-filtered)
+BY DESIGN — BEFORE == AFTER … Server-side narrowing would shrink those universes → a user-visible
+change."* Both existing consumers build their filter universes and country tabs from **all** rows.
+
+> **So option A cannot be "add a site scope to `skuDetails.workspace.get`".** Adding one changes what
+> two shipped pages see. The freeze is narrower and safe: **B1 does not modify `59_` at all.** If a
+> later round does add a scope, it must be **opt-in and absent by default** — a request carrying no
+> `scope` must produce a byte-identical response — and that equality must be a test, not a promise.
+
+**Pricing and campaigns have no bounded read owner.** `KM.DB.getPricingList()`,
+`getCampaigns()`, `getCampaignSkuLines()` exist only through `getOperationDb`. §4.8 recorded this as
+a GAP and it is unchanged. `getOperationDb` and unrestricted `getTable` are forbidden to this
+feature, and no second SKU Details read authority may be created.
+
+### 31.9 The read owners, frozen — two, and only one decides membership
+
+**A. `skuDetails.workspace.get` — UNCHANGED.** Master identity, `category`, `series`, `image_url`,
+plus `marketplace_skus` / `sku_regional_details` under `include.regional`. It is the SKU-page
+universe builder. **It is never used to decide site membership**, because it cannot: it has no
+scope, and a client narrowing its full set is the very thing §31.4 forbids.
+
+**B. `productPricing.workspace.get` — NEW, and it is the site-membership authority.** One action for
+the three unowned tables plus the membership resolution, not six competing endpoints. Its name is
+narrower than its responsibility; the name is kept because it is the one the operator issued and the
+one §28.2 already carries, and one name in two documents beats two names for one action.
+
+| Requirement | Frozen rule |
+|---|---|
+| Site scope | `company` **and** `country` **and** `marketplace`, all non-empty. Missing any ⇒ `SCOPE_INCOMPLETE`, zero rows. **An unscoped read is refused, never answered with everything** |
+| Membership | Server resolves `U` from `marketplace_skus`; only `U`'s ids may appear in any returned array |
+| Narrowing | `category` / `series` optional, applied server-side **after** `U` |
+| Status | `include_inactive` (default `false`) per §31.1(3) |
+| Campaigns | `include.campaigns` gates the two campaign tables the way `include.regional` gates the regional pair — an un-requested include costs no read |
+| Bounds | `page.limit` / `page.cursor` plus a hard per-array cap; `capped` reported per array, never silent |
+| Target gate | the same exact-ID `prodExpectedDbId_` / `prodAssertDbTarget_` pair every other read uses |
+| Read-only | no `setValue`, no `appendRow`, no ensure-sheet, no writer call, no lock — **by construction, verified by a test that greps the shipped handler** |
+| Flag | refuses with `FEATURE_DISABLED` and zero reads while `PRODUCT_STRATEGY_ENABLED_` is false (§31.12) |
+
+**This supersedes §28.2's scope rule.** §28.2 required *"at least one of company / country /
+marketplace / series"*. That admits a series-only read across every site — which is exactly the
+cross-site contamination this round exists to prevent. All three site parts are now required.
+
+### 31.10 Operation System navigation ownership — measured
+
+| Concern | Owner, measured |
+|---|---|
+| Global sidebar markup | **`index.html`** — `<nav class="sidebar" id="appSidebar">`, hand-written `menu-parent` / `menu-children` blocks |
+| Collapse / expand | `toggleSidebar()` `app.js:35`; group open/close `toggleMenu(menuId)` `app.js:20` |
+| Route / section registry | **`showSection(key)` `app.js:67`** — two literal `sectionMap` objects mapping nav key → `*-section` id |
+| Page lifecycle | **`KM.lifecycle` `core/lifecycle.js`** — `register(pageName, hooks)`, `switchTo(sectionId)`, monotonic nav epoch, `isCurrent(epoch)` for late async mounts |
+| Active-page state | **`enforceSingleActiveSection()`** — at all times exactly one `.module-section` carries `.active`, re-enforced by a `MutationObserver` |
+| Lazy init | **`KM.partialLoader.loadPartial(pageKey, url, mountSelector)`** — fetch-once-and-inject, cached per key; called from each page's mount |
+| HTML partial ownership | `assets/html/pages/<page>.html` — **23 partials exist**; `index.html` holds only a `<div id="<page>-mount">` |
+| CSS scope | one file per page, `assets/css/pages/<page>.css`, linked from `index.html` with a cache-busting `?v=` |
+| Responsive | `assets/css/responsive-foundation.css` — canonical breakpoint tokens `--km-bp-tablet/compact/laptop/desktop/xl`; *"new code MUST use the tiers frozen here"* |
+| **Secondary navigation** | **`.km-tab-rail` already exists** — `components.css:889-941` + `assets/js/utils/tab-rail.js`, in use by `campaign-risk`, `inventory-replenishment`, `request-order` |
+| Permission / visibility hook | **None exists.** The header user is a hard-coded string in `index.html`. D-9 §13.1 measured the same absence server-side |
+| Print / presentation | **No `@media print` rule exists anywhere in `assets/css/`** |
+
+**Two consequences that decide the integration.**
+
+1. **The prototype sidebar does not survive contact with the app.** Its six destinations become a
+   `.km-tab-rail` inside one section; the rail, the collapse toggle, the tooltips and the brand block
+   are deleted, because `#appSidebar` already owns every one of those jobs. A second collapsible
+   sidebar would be a second global shell, and the first symptom is two "where am I" indicators
+   disagreeing.
+2. **The production menu icons are emoji** (`🏬 🏭 📈 🚢 🧾 🎯 📝 💰 🎓 ⚙️`), one per
+   `<span class="menu-icon">`. The prototype forbade emoji — a *prototype* rule, made when it owned
+   the whole page. Product Strategy follows the **production** convention: one emoji icon like every
+   sibling. Importing the prototype's inline-SVG set would make this the one menu item that looks
+   different, which is the two-shells problem in miniature.
+
+### 31.11 Production integration file plan — frozen, and not touched this round
+
+| File | Change | Note |
+|---|---|---|
+| `index.html` | one `menu-parent` + `menu-children` group under **Product Strategy**, six `menu-item`s; one `<div id="product-strategy-mount">`; one CSS `<link>` | starts `menu-item--disabled` + `Soon`, as D-9 §13.2 requires |
+| `assets/js/app.js` | six keys added to **both** `sectionMap` objects → `product-strategy-section` | both, or navigation and lifecycle disagree |
+| `assets/html/pages/product-strategy.html` | new — the whole section, `.km-tab-rail` + six panels | |
+| `assets/css/pages/product-strategy.css` | new — page-scoped; **every selector under `#product-strategy-section`** | no global rule, no `@media print` outside the section |
+| `assets/js/pages/product-strategy.js` | new — `KM.lifecycle.register`, `loadPartial`, epoch guard, live adapter | |
+| `assets/js/api/*` | one accessor for `productPricing.workspace.get` | |
+| `assets/specs/active/apps-script/<nn>_api_v1_product_pricing_workspace.gs` | new handler | `APPS_SCRIPT_SYNC_REQUIRED` |
+| `assets/specs/active/apps-script/01_router.gs` | one action branch | `APPS_SCRIPT_SYNC_REQUIRED` |
+| `assets/specs/active/apps-script/00_config.gs` | the flag + accessor | `APPS_SCRIPT_SYNC_REQUIRED` |
+| `assets/specs/active/apps-script/63_api_v1_system_health.gs` | report the effective flag | `APPS_SCRIPT_SYNC_REQUIRED` |
+
+**Six sub-pages, one section, one mount, one lifecycle registration.** The internal tab is state in
+the page module; it is not a `showSection` key and it is not in `sectionMap`, because the global
+router owns pages and the page owns its tabs.
+
+**What must not cross over from the prototype:** the preview banner, the self-test badge, the fixture
+controls, the `PreviewProductStrategyDataAdapter`, and the prototype's own shell. None of them may
+appear in the live default view.
+
+### 31.12 Feature flag and permission contract — designed, not implemented
+
+```js
+// 00_config.gs — server-owned, the same shape as 00_config.gs:88-89
+var PRODUCT_STRATEGY_ENABLED_ = false;
+function productStrategyEnabled_() { return PRODUCT_STRATEGY_ENABLED_ === true; }
+```
+
+| | |
+|---|---|
+| **Flag owner** | `00_config.gs`, server-side. A browser cannot widen it, a request payload cannot widen it, and widening it is a deployment with a diff |
+| **Backend action gate** | **`productPricing.workspace.get` refuses while the flag is false** — `FEATURE_DISABLED`, zero rows, zero table reads. The gate is in the handler, before the spreadsheet is opened |
+| **Frontend visibility gate** | the nav group stays `menu-item--disabled` + `Soon`; the mirror default is **fail-safe false**, read through the capability transport that already carries `inventoryAiPlanDbGenerationEnabled` (`km-api-foundation.js:507`, `failSafeDefaults` `:521-522`) |
+| **Permission hook** | **there is none, and the design must not pretend there is.** D-9 §13.1: no RBAC, no server-side identity, `created_by` client-asserted, Login/RBAC scheduled for P2-A. **Until then the flag *is* the access control** |
+| **Unauthorized behaviour** | there is no authorization to fail. Every caller of a deployed, enabled read action is equally able to call it — so the data restriction question, if it matters, is a separate round and this feature waits for it rather than claiming a protection it does not have |
+| **flag = false behaviour** | the nav entry is visible-but-disabled, the section does not mount, the action refuses. **No preview data is shown in its place** |
+| **Rollback** | set the flag to `false`, then publish a **new Apps Script deployment version** — two steps, both the user's. No compensating write exists or is needed: the action never wrote |
+| **Reportable** | `system.health` exposes `product_strategy_enabled`, the way `63_:655` exposes the AI-Plan flag, so *"is it on in the deployment that is actually answering"* has an answer instead of an inference |
+
+> **A hidden button is not a control.** `00_config.gs:93-101` is the repo's own statement of this.
+> The disabled nav item only avoids offering what the server would refuse; the refusal is the
+> control, and it lives in the handler.
+
+**Correction of record — the flag has one name.** §13.2 froze
+`PRODUCT_STRATEGY_BOARD_ENABLED_`, and §28.4 separately proposed
+`PRODUCT_PRICING_WORKSPACE_ENABLED_`. Both are **superseded by `PRODUCT_STRATEGY_ENABLED_`**, which
+is the operator's name and the only one. Two flags for one feature admits a state where the page is
+on and its only data source is off — a state with no meaning and no owner. Neither name exists in
+any shipped file, so the cost of settling this now is zero and the cost of settling it later is a
+live disagreement.
+
+### 31.13 Live-versus-preview, at the seam
+
+- **`PreviewProductStrategyDataAdapter` must never be a production fallback.** It is a fixture, and a
+  fixture reached by a failure path is a lie told at the worst possible moment.
+- **API failure shows `SOURCE_NOT_CONNECTED`** — the state, not a substitute. The three refusal
+  states stay distinct: `FEATURE_DISABLED` (off on purpose), `SOURCE_NOT_CONNECTED` (the read
+  failed), and an **empty** scope (a real configuration answer: this site sells nothing matching).
+  An empty select presented as success is the failure `core/scope-registry.js` was written to end,
+  and this feature inherits that standard.
+- **Live and preview rows are never mixed in one view**, one chart, one table or one count.
+
+### 31.14 Handoff
+
+**P1-B1 — the bounded read.** `productPricing.workspace.get`: site scope required; server-resolved
+membership universe; the frozen response of §31.7; read-only by construction; flag false; no
+production visibility; contract tests covering scope refusal, membership exclusion, the four status
+values, missing regional, missing pricing, currency conflict, ambiguous identity, `capped`, and the
+byte-identical no-scope response of `59_`.
+
+**P1-B2 — the integration.** The global shell as-is; one nav group; the six sub-pages behind
+`.km-tab-rail`; the live adapter; category and site filters; **no preview fallback**; flag false;
+visual and regression tests including *exactly one `.module-section` active* and *no second sidebar
+in the DOM*.
+
+**P1-B3 — the readback.** Verify real site membership against the database; verify the missing-
+regional and missing-pricing behaviour on real rows; compare DB counts with UI counts; prove no
+cross-site contamination; operator visual acceptance. **Only then is `flag = true` even a question**,
+and it remains a user-owned two-step release.
+
+### 31.15 Two decisions B1 needs, carried forward and still open
+
+1. **`variant_group` / `variant_name`** on `sku_details` (§28.5) — add the columns, or accept that a
+   real-data board shows every SKU separately.
+2. **`pricing_list.price_status`** — its default is recorded as unconfirmed. Until it is decided, B1
+   filters on it not at all (§31.6).
+
+### 31.16 Isolation record
+
+- **Preconditions verified read-only:** worktree `wt-product-strategy-board-p0`, branch
+  `feature/product-strategy-board-p0`, **PRE HEAD `08a507041e9fd95d7131c4f76150c2cd423d7615`**,
+  clean including untracked.
+- **Files changed: 2, both documentation.** This file, and one appended checkpoint block in
+  `assets/specs/active/project-current-state.md` recording the freeze — no existing entry edited, no
+  mainline priority changed.
+- **Nothing was implemented.** No API, no handler, no router branch, no flag, no production frontend
+  file, no `.gs`, no schema, no migration, no prototype runtime change, no S1–S5 file, no mainline
+  worktree change, `C:/km-lb` untouched.
+- **No DB or API read, no DB / API / Drive write, no network request, no deployment, no flag change,
+  no merge, no push.**
 
 ---
