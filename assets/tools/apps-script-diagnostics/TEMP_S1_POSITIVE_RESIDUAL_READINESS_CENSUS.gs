@@ -3560,8 +3560,25 @@ function RUN_S1_MANIFEST_P() {
     out.predicates_passed = L.entries.length - L.failed.length;
     out.failed_predicates = L.failed.slice();
     // THE VERDICT IS DECIDED HERE AND NOWHERE ELSE, so no earlier branch can hand out a READY.
-    out.verdict = (L.failed.length === 0 && out.frozen_before && out.freeze_paste_block)
-      ? 'READY_TO_AUTHORIZE' : 'STOP';
+    // S1-R7 — MANIFEST P STILL MEASURES, AND ISSUES NOTHING.
+    //
+    // §三.6: it may not re-emit a freeze block or an authorization. Both are withheld HERE, at the verdict,
+    // rather than at the two emission sites further down — a withholding placed at the emitter would leave
+    // `out.freeze_paste_block` populated on the returned object, and the block is exactly the thing a
+    // person is meant to paste. The reason is named so the withholding cannot read as a failure to compute.
+    out.lifecycle = S1_lifecycleGate_();
+    out.verdict = !out.lifecycle.open
+      ? out.lifecycle.verdict
+      : ((L.failed.length === 0 && out.frozen_before && out.freeze_paste_block)
+        ? 'READY_TO_AUTHORIZE' : 'STOP');
+    if (!out.lifecycle.open) {
+      out.freeze_paste_block = null;
+      out.freeze_withheld_reason = 'S1_IS_COMPLETE — no further generation may be authorized, so no'
+        + ' baseline is offered for freezing and no authorization wording is emitted.';
+      out.operator_authorization_wording = null;
+      out.authorization_may_be_issued = false;
+      out.stop_reason = out.lifecycle.reason;
+    }
     if (out.verdict !== 'READY_TO_AUTHORIZE') {
       // LOCK ONE. A refused run holds no pasteable baseline at all, so there is nothing left to emit.
       if (out.freeze_paste_block) {
@@ -11486,6 +11503,220 @@ var S1_ACCEPTED_ALTERNATE_PAIR_ = {
   ]
 };
 
+
+/**
+ * ================================================================================================================
+ * S1-R7 §CO — S1 IS COMPLETE. THE WRITE PATH IS CLOSED, AND CLOSED HERE RATHER THAN IN THE DATABASE.
+ *
+ * The live post-generation Manifest S returned S1_POST_GENERATION_VERIFIED on 40 of 40 conditions: the
+ * accepted pair is present exactly once, its ids re-derive, the quantity is 25, and every comparable
+ * protected surface is unchanged. There is nothing left for this file's write path to do.
+ *
+ * WHY THE GATE IS HERE AND NOT IN THE DATABASE'S IDEMPOTENCY. The idempotency check answers "does the row
+ * already exist" — a question about the WORLD, asked after a capability has been minted and the executor
+ * has been entered. That is the wrong question and it is asked too late. "Has S1 finished" is a question
+ * about the LIFECYCLE, it has a recorded answer, and it can be asked before anything is reached. A gate
+ * that relies on the row being there would re-open the moment somebody moved the row.
+ *
+ * WHAT IS NOT CLOSED. The read-only tools stay exactly as they are, and Manifest S stays re-runnable: a
+ * verification that could only be performed once is a verification nobody can repeat. The preflight and
+ * Manifest P also still RUN — they are the historical diagnostics — but neither can now produce a freeze
+ * block, an authorization sentence, or a verdict that says a generation may proceed.
+ * ================================================================================================================
+ */
+var S1_LIFECYCLE_STATUS_COMPLETE_ = 'COMPLETE';
+var S1_LIFECYCLE_REFUSAL_VERDICT_ = 'REFUSED_S1_ALREADY_COMPLETE';
+
+var S1_LIFECYCLE_ = {
+  status: 'COMPLETE',
+  completed_at: '2026-09-10',
+  closed_in_round: 'S1-R7',
+  verified_by: 'RUN_S1_POST_GENERATION_MANIFEST_S, run live, verdict S1_POST_GENERATION_VERIFIED,'
+    + ' 40 predicates passed and 0 failed',
+  generate_result: 'ACCEPTED_AND_VERIFIED',
+  another_generate: 'FORBIDDEN',
+  manual_db_repair: 'NOT_REQUIRED',
+  temporary_recovery_path: 'CLOSED',
+  authorization_state: 'CONSUMED',
+  manifest_p_baseline_state: 'CONSUMED',
+  next_project_track: 'P_BRANCH',
+  after_p_completion: 'S2',
+  // WHAT THE GATE REFUSES, BY NAME. Listed so a reader does not have to grep for the call sites, and
+  // asserted by the suite so the list cannot drift away from the code.
+  refused_paths: ['RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE',
+    'RUN_S1_CONTROLLED_GENERATE_EXECUTE with { execute: true }',
+    'RUN_S1_MANIFEST_P freeze block and authorization wording',
+    'RUN_S1_CONTROLLED_GENERATE_PREFLIGHT verdict READY_FOR_ONE_CONTROLLED_GENERATE'],
+  still_available_read_only: ['RUN_S1_POST_GENERATION_MANIFEST_S',
+    'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_IDENTITY_READBACK',
+    'RUN_S1_CONTROLLED_GENERATE_ALTERNATE_PAIR_ACCEPTANCE_MANIFEST',
+    'RUN_S1_CONTROLLED_GENERATE_POST_FAILURE_READBACK',
+    'RUN_S1_CONTROLLED_GENERATE_PREFLIGHT (historical diagnostic, authorizes nothing)',
+    'RUN_S1_MANIFEST_P (historical diagnostic, emits no freeze and no authorization)'],
+  // §四 — THE ACTIVATION SURFACE, AND WHY IT IS NOT EMPTIED HERE.
+  activation_flag: 'INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = false, in 00_config.gs. Unchanged by this'
+    + ' round, and it is the production half of the two-part authorization.',
+  activation_allowlist_state: 'RETIRED_FOR_GENERATION_BY_LIFECYCLE_NOT_BY_DELETION',
+  activation_allowlist_evidence: 'INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_ is NOT S1-only. Emptying it'
+    + ' would change a read-only outcome as well as the write path: weeklyAiPlanTargetScopes_ (61_:2285)'
+    + ' returns AI_PLAN_SCOPE_NOT_ENABLED for an empty list, and it is called by'
+    + ' weeklyAiPlanControlledDecision_ (61_:2934) — documented "READ-ONLY by construction" and used by'
+    + ' TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3 — and by weeklyAiPlanHarvest_ (61_:2014), whose no-action'
+    + ' decision is the ADVICE the UI reads. So per §四.4 the entry stays and THIS generation is blocked'
+    + ' by the S1 COMPLETE lifecycle instead. No production module is edited.',
+  activation_allowlist_scope: 'ResUS|US|Amazon|SP0750-M',
+  apps_script_sync_required: 'NONE — this closeout changes no production module'
+};
+
+/**
+ * THE COMPLETION RECORD: the live Manifest S result, as data, testable and not narrated.
+ *
+ * IT CARRIES NO PHYSICAL ROW NUMBER. The live run reported the pair at particular sheet rows; a row number
+ * is where a row is sitting today and is not what it IS. Recording one here would invite a later comparison
+ * against a position that a sort, an insert or a manual edit can change without anything being wrong.
+ */
+var S1_COMPLETION_RECORD_ = {
+  source: 'RUN_S1_POST_GENERATION_MANIFEST_S, live, log s1_post_generation_manifest_s',
+  recorded_in_round: 'S1-R7',
+  recorded_at: '2026-09-10',
+  tool: 'RUN_S1_POST_GENERATION_MANIFEST_S',
+  verdict: 'S1_POST_GENERATION_VERIFIED',
+  predicates_passed: 40,
+  predicates_failed: 0,
+  next_action_reported_live: 'MARK_S1_COMPLETE_AND_RESUME_P_BRANCH',
+  // ---- the accepted pair, as verified ----------------------------------------------------------
+  scope_key: 'ResUS|US|Amazon|SP0750-M',
+  calculation_run_id: 'GAP-INV-20260910T132343-0001',
+  planning_cycle: 'RECO-2026-09',
+  accepted_header_id: 'SADH-K4-1443C1AF',
+  accepted_line_id: 'SADL-K2-7F2C46B2',
+  header_hit_count: 1,
+  line_hit_count: 1,
+  written_qty: 25,
+  identity_re_derives: true,
+  line_re_derives: true,
+  protected_surfaces_changed: [],
+  this_manifest_wrote_nothing: true,
+  generate_may_be_attempted_again: false,
+  physical_row_numbers_are_not_identities: true,
+  why_no_row_numbers: 'the live run located the pair at particular sheet rows and reported them as'
+    + ' location-only. They are deliberately absent here: an identity that moved when somebody sorted a'
+    + ' sheet was never an identity.',
+  // ---- §五 THE FORWARD PINS ---------------------------------------------------------------------
+  //
+  // These are the three tables no reading taken after the generation can prove anything historical about.
+  // They are a STARTING POINT for the next round and nothing else — and the two fields below say so in the
+  // record rather than in a comment, so a later consumer can check the claim instead of trusting it.
+  shipping_historical_before_state: 'UNPROVABLE',
+  shipping_pins_are_forward_only: true,
+  shipping_pins_pinned_at_relative_to_the_generation: 'AFTER',
+  shipping_forward_pins: [
+    { table: 'shipping_plans', row_count: 6, schema_fingerprint: '819C7F26',
+      content_fingerprint: 'B398B4D7' },
+    { table: 'shipping_plan_lines', row_count: 12, schema_fingerprint: 'B09125C1',
+      content_fingerprint: '1EE24160' },
+    { table: 'shipments', row_count: 4, schema_fingerprint: '22461121',
+      content_fingerprint: '31EE9CF5' }
+  ],
+  how_a_later_round_must_use_the_pins: 'a Submit, or anything else that may write these tables, cites'
+    + ' THESE three rows as its before-state. It does not re-measure them first and overwrite them: a'
+    + ' before-state taken after the change it is meant to detect is not a before-state.',
+  // ---- history, not rewritten -------------------------------------------------------------------
+  originally_predicted_header_id: 'SADH-K2-A4239AC6',
+  originally_predicted_line_id: 'SADL-K2-2FD4DCA2',
+  the_prediction_was_stale_not_correct: 'The frozen baseline predicted the K2 pair and the writer minted'
+    + ' the K4 pair. This record does not say the prediction was right all along; it says the prediction'
+    + ' resolved through an authority the writer does not call, and that the row was correct throughout.'
+    + ' The full reconciliation is in S1_ACCEPTED_ALTERNATE_PAIR_.',
+  consumed_authorization_fingerprint: '8A830413',
+  consumed_frozen_baseline_frozen_at: '2026-09-10 14:42:06'
+};
+
+/**
+ * THE LIFECYCLE GATE. ONE ANSWER, ASKED BEFORE ANYTHING IS REACHED.
+ *
+ * Pure: it reads the recorded status and nothing else. No sheet, no row, no capability, no authorization —
+ * so there is no state a caller could arrange that would make it open, and no failure mode in which it
+ * cannot answer. `open` is false whenever the status is COMPLETE, which is the whole of the closeout.
+ */
+/**
+ * DO THE THREE RECORDS AGREE WITH EACH OTHER?
+ *
+ * The closeout is written down in three independent places on purpose: the lifecycle says COMPLETE and
+ * CONSUMED, the consumed-fingerprint list holds 8A830413, and the acceptance record names the verified
+ * pair. Three records mean no single edit re-opens the path — and it also means they can DISAGREE, which
+ * is the failure mode of redundancy. "authorization_state: ACTIVE" beside a consumed list still holding
+ * the fingerprint is not a lifecycle anybody can act on, and the disagreement must be a finding rather
+ * than something a reader has to notice.
+ *
+ * Pure. It compares recorded values and reads nothing live.
+ */
+function S1_lifecycleConsistency_() {
+  var o = { consistent: false, disagreements: [] };
+  var life = (typeof S1_LIFECYCLE_ !== 'undefined') ? S1_LIFECYCLE_ : null;
+  var rec = (typeof S1_COMPLETION_RECORD_ !== 'undefined') ? S1_COMPLETION_RECORD_ : null;
+  var acc = (typeof S1_ACCEPTED_ALTERNATE_PAIR_ !== 'undefined') ? S1_ACCEPTED_ALTERNATE_PAIR_ : null;
+  var consumed = (typeof S1_CG_CONSUMED_AUTH_FINGERPRINTS_ !== 'undefined')
+    ? S1_CG_CONSUMED_AUTH_FINGERPRINTS_ : [];
+  if (!life) { o.disagreements.push('NO_LIFECYCLE_RECORD'); return o; }
+  if (!rec) { o.disagreements.push('NO_COMPLETION_RECORD'); return o; }
+  if (!acc) { o.disagreements.push('NO_ACCEPTANCE_RECORD'); return o; }
+  var fp = S1_str_(rec.consumed_authorization_fingerprint);
+  // THE LIFECYCLE SAYS CONSUMED; THE LIST MUST HOLD THE FINGERPRINT IT SAYS THAT ABOUT.
+  if (S1_str_(life.authorization_state) === 'CONSUMED' && consumed.indexOf(fp) === -1) {
+    o.disagreements.push('THE_LIFECYCLE_SAYS_CONSUMED_BUT_THE_CONSUMED_LIST_DOES_NOT_HOLD_' + fp);
+  }
+  // AND IF THE LIST HOLDS IT, THE LIFECYCLE MAY NOT CALL IT ANYTHING ELSE.
+  //
+  // NOT STATED IS NOT STATED AS SOMETHING ELSE. A lifecycle that is still OPEN carries no
+  // authorization_state at all, and comparing a blank against CONSUMED reported a disagreement for every
+  // pre-closeout world — the same `missing rendered as a value` fault this file refuses everywhere else.
+  // The comparison only runs when the lifecycle actually says something.
+  if (consumed.indexOf(fp) !== -1 && S1_str_(life.authorization_state) !== ''
+      && S1_str_(life.authorization_state) !== 'CONSUMED') {
+    o.disagreements.push('THE_CONSUMED_LIST_HOLDS_' + fp + '_BUT_THE_LIFECYCLE_CALLS_IT_'
+      + S1_str_(life.authorization_state));
+  }
+  if (S1_str_(rec.accepted_header_id) !== S1_str_(acc.accepted_header_id)
+      || S1_str_(rec.accepted_line_id) !== S1_str_(acc.accepted_line_id)) {
+    o.disagreements.push('THE_TWO_RECORDS_NAME_DIFFERENT_PAIRS');
+  }
+  if (S1_qty_(rec.written_qty) !== S1_qty_(acc.accepted_qty)) {
+    o.disagreements.push('THE_TWO_RECORDS_NAME_DIFFERENT_QUANTITIES');
+  }
+  if (S1_str_(life.status) === 'COMPLETE' && rec.generate_may_be_attempted_again !== false) {
+    o.disagreements.push('S1_IS_COMPLETE_BUT_THE_COMPLETION_RECORD_PERMITS_ANOTHER_GENERATE');
+  }
+  o.consistent = o.disagreements.length === 0;
+  return o;
+}
+
+function S1_lifecycleGate_() {
+  var st = (typeof S1_LIFECYCLE_ !== 'undefined' && S1_LIFECYCLE_)
+    ? S1_str_(S1_LIFECYCLE_.status) : '';
+  var complete = st === S1_LIFECYCLE_STATUS_COMPLETE_;
+  return {
+    status: st,
+    open: !complete,
+    verdict: complete ? S1_LIFECYCLE_REFUSAL_VERDICT_ : null,
+    next_action: complete ? 'NO_FURTHER_GENERATE_ACTION' : null,
+    reason: complete
+      ? 'S1 is COMPLETE. The one authorized generation ran, its pair was accepted by a person, and'
+        + ' RUN_S1_POST_GENERATION_MANIFEST_S verified it live on 40 of 40 conditions. Authorization'
+        + ' 8A830413 is CONSUMED and the frozen baseline is CONSUMED. Nothing was called here: zero'
+        + ' attempts, zero generator calls, no capability minted, zero writes.'
+      : null,
+    completion_evidence: complete
+      ? { verdict: S1_COMPLETION_RECORD_.verdict,
+          predicates: S1_COMPLETION_RECORD_.predicates_passed + '/'
+            + (S1_COMPLETION_RECORD_.predicates_passed + S1_COMPLETION_RECORD_.predicates_failed),
+          accepted_header_id: S1_COMPLETION_RECORD_.accepted_header_id,
+          accepted_line_id: S1_COMPLETION_RECORD_.accepted_line_id,
+          written_qty: S1_COMPLETION_RECORD_.written_qty }
+      : null
+  };
+}
+
 /**
  * THE SPENT-NESS OF THE FROZEN BASELINE, RECORDED BESIDE IT RATHER THAN INSIDE IT.
  *
@@ -12261,6 +12492,12 @@ function S1_cgClassify_(call, rb, b) {
  * rather than undefined fields that read as false by accident.
  */
 var S1_CG_RETRY_CONTRACT_ = {
+  // S1-R7 — THE PERMANENT REFUSAL. Nothing was reached and nothing may be: not a retry, not the
+  // authorization, not the baseline. It is listed here rather than left to the unknown-verdict default
+  // because a refusal that reported `known: false` would read as a gap in the table instead of a decision
+  // in it — and the unknown default would still route to STOP_AND_PERFORM_MANUAL_RECOVERY, which asks a
+  // person to recover something that is already verified.
+  REFUSED_S1_ALREADY_COMPLETE: [false, false, false, false, 'NO_FURTHER_GENERATE_ACTION'],
   // NOTHING WAS REACHED. The baseline and the sentence are untouched, so both are still good.
   DRY_RUN: [true, true, true, true, 'RERUN_WITH_EXECUTE_TRUE_USING_THIS_FROZEN_BASELINE'],
   // The lock was busy, so nothing was measured and nothing was decided.
@@ -12407,7 +12644,22 @@ function RUN_S1_CONTROLLED_GENERATE_PREFLIGHT() {
       L.P('neither_authorized_identity_exists_yet', 'ABSENT', out.idempotency.state,
         out.idempotency.state === 'ABSENT');
     }
-    out.verdict = L.failed.length === 0 ? 'READY_FOR_ONE_CONTROLLED_GENERATE' : 'STOP';
+    // S1-R7 — IT STILL RUNS, AND IT CAN NO LONGER SAY YES.
+    //
+    // The preflight is kept because it is the historical record of what was true before the generation,
+    // and because "authorizes NOTHING" was always its first line. But READY_FOR_ONE_CONTROLLED_GENERATE
+    // is a next action, and after closeout there is no next action it could be. Every predicate below is
+    // still measured and still reported: the verdict changes, the evidence does not.
+    out.lifecycle = S1_lifecycleGate_();
+    out.verdict = !out.lifecycle.open
+      ? out.lifecycle.verdict
+      : (L.failed.length === 0 ? 'READY_FOR_ONE_CONTROLLED_GENERATE' : 'STOP');
+    if (!out.lifecycle.open) {
+      out.authorization_may_be_issued = false;
+      out.execute_entry_point = 'NONE — S1 is COMPLETE and the execute path is permanently refused';
+      out.stop_reason = out.lifecycle.reason;
+      return S1_cgFinishPreflight_(out, L);
+    }
     if (out.verdict === 'STOP') {
       out.stop_reason = 'not authorizable: ' + L.failed.slice(0, 8).join(', ');
     }
@@ -12489,6 +12741,19 @@ function RUN_S1_CONTROLLED_GENERATE_EXECUTE(opts) {
   var L = S1_ledger_();
   var lockHandle = null;
   try {
+    // ---- S1-R7 GATE 0. THE EXECUTE PATH IS CLOSED -------------------------------------------------
+    //
+    // Scoped to `execute === true` on purpose. The dry run reaches no writer, mints nothing and is one of
+    // the read-only questions this file still answers, so closing it would remove evidence rather than
+    // risk. What is closed is the path that writes, and it is closed before the lock is taken: a refusal
+    // that first acquires a script lock makes a finished project contend with live traffic.
+    out.lifecycle = S1_lifecycleGate_();
+    if (out.execute_requested && !out.lifecycle.open) {
+      out.verdict = out.lifecycle.verdict;
+      out.refusal_class = 'S1_LIFECYCLE_COMPLETE';
+      out.stop_reason = out.lifecycle.reason;
+      return S1_cgFinishExecute_(out, L, lockHandle);
+    }
     // ---- GATE 1. THE BASELINE ---------------------------------------------------------------------
     var b = S1_MANIFEST_P_BEFORE_;
     out.baseline_present = !!b && typeof b === 'object';
@@ -12892,6 +13157,21 @@ function RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE() {
     retry_contract: null, result: null
   };
   try {
+    // ---- S1-R7 GATE 0. IS S1 STILL OPEN? -----------------------------------------------------------
+    //
+    // BEFORE the authorization check, before the delegation, before anything. The authorization is
+    // CONSUMED and would be refused a line later anyway — but "your paste is spent" and "S1 is finished"
+    // are different sentences, and an operator who presses this after the project closed deserves the
+    // second one. Asked first so no later gate can be the thing that happened to stop it.
+    var life = S1_lifecycleGate_();
+    out.lifecycle = life;
+    if (!life.open) {
+      out.verdict = life.verdict;
+      out.next_action = life.next_action;
+      out.stop_reason = life.reason;
+      out.retry_contract = S1_cgRetryContract_(out.verdict);
+      return S1_cgFinishOnce_(out);
+    }
     // ---- THE ONLY THING THIS FUNCTION CHECKS FOR ITSELF -------------------------------------------
     var chk = S1_cgOnceAuthorizationCheck_(S1_CG_ONCE_AUTHORIZATION_);
     out.authorization_check = chk;
@@ -15339,6 +15619,11 @@ function RUN_S1_POST_GENERATION_MANIFEST_S() {
       S1_CG_CONSUMED_AUTH_FINGERPRINTS_.indexOf('8A830413') !== -1);
     L.P('the_frozen_baseline_is_recorded_as_consumed', 'CONSUMED', life ? life.state : null,
       !!life && life.state === 'CONSUMED');
+    // S1-R7 — AND THE THREE CLOSEOUT RECORDS AGREE WITH EACH OTHER. Redundancy that can disagree is
+    // worse than one record, unless the disagreement is itself a finding.
+    out.lifecycle_consistency = S1_lifecycleConsistency_();
+    L.P('the_three_closeout_records_agree_with_each_other', [],
+      out.lifecycle_consistency.disagreements, out.lifecycle_consistency.consistent === true);
     L.P('the_superseded_k2_prediction_is_named_as_history_only',
       { header: 'STALE_PREDICTION_HISTORY_ONLY', line: 'STALE_PREDICTION_HISTORY_ONLY' },
       { header: S1_acStaleIdentity_(rec && rec.originally_predicted_header_id).classification,

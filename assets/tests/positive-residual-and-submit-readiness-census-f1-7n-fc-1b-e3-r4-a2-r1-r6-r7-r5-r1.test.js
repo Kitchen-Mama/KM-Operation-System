@@ -510,6 +510,26 @@ function S1World(spec) {
   vm.runInContext(pinTaipeiHourSrc_(spec.pinHour === undefined ? PIN_HOUR_ : spec.pinHour), w.ctx);
   if (spec.after) vm.runInContext(spec.after, w.ctx);
   vm.runInContext(spec.s1 || S1_WORLD, w.ctx, { filename: 'S1' });
+  // ================================================================================================================
+  // S1-R7 — THE WORLD DECLARES WHICH LIFECYCLE ERA IT IS A WORLD OF.
+  //
+  // S1 is COMPLETE in the shipped file, and the closeout gate refuses the execute path, the freeze block and
+  // the authorization wording on that basis. Most of this suite is about what those paths DID while S1 was
+  // open — including the Manifest P run that PRODUCED the baseline every later fixture is built from. Left
+  // to read the shipped status, that fixture returns REFUSED_S1_ALREADY_COMPLETE with a null freeze block,
+  // AH_BASE becomes undefined, and roughly four hundred assertions about historical behaviour stop existing
+  // rather than start failing. Deleting them to match the closeout would be deleting the evidence the
+  // closeout rests on.
+  //
+  // So a world says which era it is, exactly as ahWorld already declares which authorization sentence it is
+  // a world of. The DEFAULT is OPEN, because the overwhelming majority of these worlds are historical; the
+  // closed era is asked for by name in section AN, which is also where the SHIPPED constant is asserted to
+  // be COMPLETE. A fixture cannot therefore drift into agreeing with a lifecycle it never declared.
+  // ================================================================================================================
+  if (spec.lifecycle !== null) {
+    vm.runInContext('S1_LIFECYCLE_ = ' + JSON.stringify(
+      spec.lifecycle === undefined ? { status: 'OPEN' } : spec.lifecycle) + ';', w.ctx);
+  }
   // S1-R4E - WRITES ARE ALREADY COUNTED, AND I CHECKED THE WRONG FakeSheet BEFORE BELIEVING OTHERWISE.
   // The base harness this suite borrows (controlled-ai-plan-production-readiness) increments `writes` on
   // setValue, setValues and appendRow; the near-identical FakeSheet in the k2-route-intent suite does not,
@@ -7838,6 +7858,9 @@ function ahWorld(script, over) {
   script = script || {};
   over = over || {};
   var spec = pos({ s1: over.s1 || s1WithBaseline(JSON.stringify(over.baseline || AH_BASE)) });
+  // S1-R7 — the lifecycle era travels through, so a closed-era world can be asked for by name. Without
+  // this every ahWorld silently defaulted to OPEN and the closeout was untestable through this builder.
+  if (over.lifecycle !== undefined) spec.lifecycle = over.lifecycle;
   var w = S1World(spec);
   w.ctx.__ahApply = function () { ahApply(w, script); };
   vm.runInContext('var __ahCalls = []; var __ahScript = ' + JSON.stringify(script) + ';', w.ctx);
@@ -13770,8 +13793,16 @@ function amRecord(over) {
 function amWorld(over) {
   over = over || {};
   var w = akWorld(over.world || {});
-  vm.runInContext('S1_ACCEPTED_ALTERNATE_PAIR_ = '
-    + JSON.stringify(amRecord(over.record || {})) + ';', w.ctx);
+  var rec = amRecord(over.record || {});
+  vm.runInContext('S1_ACCEPTED_ALTERNATE_PAIR_ = ' + JSON.stringify(rec) + ';', w.ctx);
+  // S1-R7 — AND THE COMPLETION RECORD, because Manifest S now checks that the closeout records AGREE.
+  // Overriding only the acceptance record left this fixture naming one pair while the shipped completion
+  // record named the live one — which the new consistency predicate correctly reported as a disagreement.
+  // A world that pointed one record at a fixture and the other at production was never coherent.
+  vm.runInContext('S1_COMPLETION_RECORD_.accepted_header_id = '
+    + JSON.stringify(rec.accepted_header_id) + ';'
+    + ' S1_COMPLETION_RECORD_.accepted_line_id = ' + JSON.stringify(rec.accepted_line_id) + ';'
+    + ' S1_COMPLETION_RECORD_.written_qty = ' + JSON.stringify(rec.accepted_qty) + ';', w.ctx);
   if (over.lifecycle !== undefined) {
     vm.runInContext('S1_MANIFEST_P_BASELINE_LIFECYCLE_ = '
       + JSON.stringify(over.lifecycle) + ';', w.ctx);
@@ -14193,6 +14224,495 @@ mut('N211 the consumed authorization is accepted again because CONSUMED is not c
   var clean = check(null), bad = check(m);
   return clean[0] === false && clean[1] === 'AUTHORIZATION_FINGERPRINT_ALREADY_CONSUMED'
     && bad[0] === true;
+});
+
+
+// ==================================================================================================
+// AN — S1-R7: S1 IS COMPLETE. THE WRITE PATH IS CLOSED IN THE LIFECYCLE, NOT IN THE DATABASE.
+// ==================================================================================================
+//
+// Every world above declares itself OPEN, because almost all of them are about what the controlled path
+// DID while it was open — including the Manifest P run that produced the baseline the rest are built from.
+// This section is the only one that asks for the SHIPPED status, and it asserts that the shipped status is
+// COMPLETE. So the closeout is proven exactly where it is claimed, and four hundred historical assertions
+// are neither deleted nor quietly re-pointed at a lifecycle they were never about.
+//
+// The gate is asked BEFORE anything is reached, and that is the point. "Does the row already exist" is a
+// question about the world, answered after a capability has been minted; "has S1 finished" is a question
+// about the lifecycle, it has a recorded answer, and a gate that depended on the row would re-open the
+// moment somebody moved the row.
+// ==================================================================================================
+
+// ---- AN0 — THE SHIPPED LIFECYCLE IS COMPLETE ---------------------------------------------------
+var AN_W = S1World(pos({ lifecycle: null }));          // null = use the SHIPPED constant
+function anGet(name) {
+  return JSON.parse(vm.runInContext('JSON.stringify(' + name + ')', AN_W.ctx));
+}
+var AN_LIFE = anGet('S1_LIFECYCLE_');
+var AN_REC = anGet('S1_COMPLETION_RECORD_');
+eq(AN_LIFE.status, 'COMPLETE', 'AN0  the shipped lifecycle status is COMPLETE');
+eq(AN_LIFE.generate_result, 'ACCEPTED_AND_VERIFIED', 'AN0a the generate result is accepted and verified');
+eq(AN_LIFE.another_generate, 'FORBIDDEN', 'AN0b another Generate is FORBIDDEN');
+eq(AN_LIFE.manual_db_repair, 'NOT_REQUIRED', 'AN0c manual DB repair is NOT REQUIRED');
+eq(AN_LIFE.temporary_recovery_path, 'CLOSED', 'AN0d the temporary recovery path is CLOSED');
+eq(AN_LIFE.authorization_state, 'CONSUMED', 'AN0e authorization 8A830413 is CONSUMED');
+eq(AN_LIFE.manifest_p_baseline_state, 'CONSUMED', 'AN0f the Manifest P baseline is CONSUMED');
+eq(AN_LIFE.next_project_track, 'P_BRANCH', 'AN0g the next project track is the P branch');
+eq(AN_LIFE.after_p_completion, 'S2', 'AN0h and S2 follows P');
+// THE GATE ITSELF, ASKED OF THE SHIPPED STATUS.
+var AN_GATE = JSON.parse(vm.runInContext('JSON.stringify(S1_lifecycleGate_())', AN_W.ctx));
+eq(AN_GATE.open, false, 'AN0i so the lifecycle gate is CLOSED');
+eq(AN_GATE.verdict, 'REFUSED_S1_ALREADY_COMPLETE', 'AN0j with the refusal verdict');
+eq(AN_GATE.next_action, 'NO_FURTHER_GENERATE_ACTION', 'AN0k and no further generate action');
+eq(AN_GATE.completion_evidence.predicates, '40/40',
+  'AN0l and it carries the live evidence it refuses on', AN_GATE.completion_evidence);
+// AND IT IS PURE: no sheet, no row, no authorization, no capability.
+var AN_GATE_SRC = bareCode(extractFn(S1, 'S1_lifecycleGate_'));
+['getRange', 'getSheetByName', 'S1_openDb_', 'S1_MANIFEST_P_BEFORE_', 'S1_CG_ONCE_AUTHORIZATION_',
+ '.mint(', 'weeklyAiPlanGenerateK2_'].forEach(function (t, i) {
+  eq(AN_GATE_SRC.split(t).length - 1, 0, 'AN0m.' + (i + 1) + ' the gate reaches no ' + t);
+});
+
+// ---- AN1 — §七.1 THE COMPLETION RECORD IS THE LIVE PASS, FIELD FOR FIELD ----------------------
+eq(AN_REC.tool, 'RUN_S1_POST_GENERATION_MANIFEST_S', 'AN1  recorded from the post-generation manifest');
+eq(AN_REC.verdict, 'S1_POST_GENERATION_VERIFIED', 'AN1a verdict S1_POST_GENERATION_VERIFIED');
+eq([AN_REC.predicates_passed, AN_REC.predicates_failed], [40, 0], 'AN1b 40 passed, 0 failed');
+eq(AN_REC.accepted_header_id, 'SADH-K4-1443C1AF', 'AN1c the accepted header');
+eq(AN_REC.accepted_line_id, 'SADL-K2-7F2C46B2', 'AN1d the accepted line');
+eq([AN_REC.header_hit_count, AN_REC.line_hit_count], [1, 1], 'AN1e one row each');
+eq(AN_REC.written_qty, 25, 'AN1f written quantity 25');
+eq(AN_REC.identity_re_derives, true, 'AN1g the identity re-derives');
+eq(AN_REC.line_re_derives, true, 'AN1h and so does the line');
+eq(AN_REC.protected_surfaces_changed, [], 'AN1i no protected surface changed');
+eq(AN_REC.this_manifest_wrote_nothing, true, 'AN1j the manifest wrote nothing');
+eq(AN_REC.generate_may_be_attempted_again, false, 'AN1k and forbids another generate');
+eq(AN_REC.next_action_reported_live, 'MARK_S1_COMPLETE_AND_RESUME_P_BRANCH',
+  'AN1l the live next action was to mark S1 complete and resume P');
+eq(AN_REC.scope_key, 'ResUS|US|Amazon|SP0750-M', 'AN1m for the one scope');
+eq(AN_REC.calculation_run_id, 'GAP-INV-20260910T132343-0001', 'AN1n the one run');
+eq(AN_REC.planning_cycle, 'RECO-2026-09', 'AN1o the one cycle');
+// THE RECORD AGREES WITH THE ACCEPTANCE RECORD IT VERIFIES — two records, one pair.
+var AN_ACC = anGet('S1_ACCEPTED_ALTERNATE_PAIR_');
+eq([AN_REC.accepted_header_id, AN_REC.accepted_line_id, AN_REC.written_qty],
+  [AN_ACC.accepted_header_id, AN_ACC.accepted_line_id, AN_ACC.accepted_qty],
+  'AN1p and the completion record names the SAME pair and quantity the acceptance record does');
+// §五 — NO PHYSICAL ROW NUMBER IS AN IDENTITY HERE.
+eq(AN_REC.physical_row_numbers_are_not_identities, true,
+  'AN1q the record states that physical row numbers are not identities');
+eq(JSON.stringify(AN_REC).indexOf('"row_number"'), -1,
+  'AN1r and carries no row_number field at all');
+ok(JSON.stringify(AN_REC).indexOf('13') === -1 || AN_REC.written_qty === 25,
+  'AN1s the live sheet positions 13 and 15 were not recorded as identity');
+// HISTORY IS NOT REWRITTEN INTO "CORRECT ALL ALONG".
+eq(AN_REC.originally_predicted_header_id, 'SADH-K2-A4239AC6',
+  'AN1t the stale predicted header is still recorded');
+eq(AN_REC.originally_predicted_line_id, 'SADL-K2-2FD4DCA2', 'AN1u and the stale predicted line');
+ok(String(AN_REC.the_prediction_was_stale_not_correct).indexOf('does not say the prediction was right') > 0,
+  'AN1v and the record says explicitly that the prediction was NOT right all along');
+
+// ---- AN2 — §七.10/11 THE FORWARD PINS ----------------------------------------------------------
+eq(AN_REC.shipping_historical_before_state, 'UNPROVABLE',
+  'AN2  the shipping historical before-state is UNPROVABLE');
+eq(AN_REC.shipping_pins_are_forward_only, true, 'AN2a the pins are forward-only');
+eq(AN_REC.shipping_pins_pinned_at_relative_to_the_generation, 'AFTER',
+  'AN2b and were taken AFTER the generation');
+eq(AN_REC.shipping_forward_pins.map(function (p) { return p.table; }),
+  ['shipping_plans', 'shipping_plan_lines', 'shipments'], 'AN2c all three tables are pinned');
+[['shipping_plans', 6, '819C7F26', 'B398B4D7'],
+ ['shipping_plan_lines', 12, 'B09125C1', '1EE24160'],
+ ['shipments', 4, '22461121', '31EE9CF5']].forEach(function (row, i) {
+  var pin = AN_REC.shipping_forward_pins.filter(function (p) { return p.table === row[0]; })[0];
+  ok(!!pin, 'AN2d.' + (i + 1) + ' ' + row[0] + ' is pinned');
+  eq([pin.row_count, pin.schema_fingerprint, pin.content_fingerprint], [row[1], row[2], row[3]],
+    'AN2e.' + (i + 1) + ' at the live values ' + row[1] + ' / ' + row[2] + ' / ' + row[3]);
+});
+// EVERY PIN CARRIES ALL THREE NUMBERS — a pin missing one is not a before-state a later round can use.
+AN_REC.shipping_forward_pins.forEach(function (p, i) {
+  ok(typeof p.row_count === 'number' && p.row_count >= 0
+    && typeof p.schema_fingerprint === 'string' && p.schema_fingerprint.length === 8
+    && typeof p.content_fingerprint === 'string' && p.content_fingerprint.length === 8,
+    'AN2f.' + (i + 1) + ' ' + p.table + ' carries a row count and two eight-character fingerprints', p);
+});
+// AND NOTHING IN THE RECORD CLAIMS THEY PROVE THE PRE-GENERATION STATE.
+eq(JSON.stringify(AN_REC).indexOf('VERIFIED_BEFORE'), -1,
+  'AN2g no pin is labelled as a verified before-state');
+ok(String(AN_REC.how_a_later_round_must_use_the_pins).indexOf('does not re-measure them first') > 0,
+  'AN2h and the record tells a later round to CITE these pins rather than re-measure and overwrite');
+// THE SHIPPED SCHEMA FINGERPRINTS THE BASELINE ALREADY CARRIED STILL AGREE FOR THE TWO TABLES IT HAD.
+// A pin that disagreed with the frozen schema fingerprint for the same table would mean one of the two was
+// measured with a different formula — the fault R6E found by copying the join separator.
+eq(AN_REC.shipping_forward_pins.filter(function (p) {
+  return p.table === 'shipping_plan_lines'; })[0].schema_fingerprint,
+  JSON.parse(S1_FROZEN_JSON_).schema_fingerprints.shipping_plan_lines,
+  'AN2i the shipping_plan_lines schema pin equals the one the frozen baseline carried — one formula');
+eq(AN_REC.shipping_forward_pins.filter(function (p) {
+  return p.table === 'shipping_plans'; })[0].schema_fingerprint,
+  JSON.parse(S1_FROZEN_JSON_).schema_fingerprints.shipping_plans,
+  'AN2j and so does shipping_plans');
+
+// ---- THE CLOSED-ERA WORLDS ---------------------------------------------------------------------
+// `lifecycle: null` means "read the shipped constant", which is COMPLETE. Everything below runs against
+// the real closeout rather than against a synthetic one.
+function anClosed(script, over) {
+  over = over || {};
+  var o = {}; Object.keys(over).forEach(function (k) { o[k] = over[k]; });
+  o.lifecycle = o.lifecycle === undefined ? null : o.lifecycle;
+  return ahWorld(script || {}, o);
+}
+
+// ---- AN3 — §七.4 EXECUTE_ONCE IS PERMANENTLY REFUSED -------------------------------------------
+var AN3w = anClosed({}, {});
+var AN3 = ahRun(AN3w, 'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE()');
+eq(AN3.res.verdict, 'REFUSED_S1_ALREADY_COMPLETE',
+  'AN3  pressing Run on EXECUTE_ONCE is refused: S1 is already complete', AN3.res.stop_reason);
+eq(AN3.res.next_action, 'NO_FURTHER_GENERATE_ACTION', 'AN3a with no further generate action');
+['attempts', 'generator_calls', 'writes', 'writer_calls', 'submit_calls'].forEach(function (k, i) {
+  eq(AN3.res[k], 0, 'AN3b.' + (i + 1) + ' ' + k + ' = 0');
+});
+eq(AN3.res.capability_minted, false, 'AN3c capability_minted = false');
+eq(AN3.res.flag_modified, false, 'AN3d the flag was not modified');
+eq(AN3.res.allowlist_modified, false, 'AN3e nor the allowlist');
+eq(AN3.res.baseline_modified, false, 'AN3f nor the baseline');
+eq(AN3.res.zero_write_confirmed, true, 'AN3g and it confirms zero writes');
+eq(AN3w.allWrites(), 0, 'AN3h MEASURED on every sheet in the world');
+eq(AN3.calls, 0, 'AN3i the generator seam was never entered');
+// IT IS REFUSED BEFORE THE AUTHORIZATION IS EVEN LOOKED AT. Two different sentences for two different
+// situations: "your paste is spent" and "the project is finished".
+eq(AN3.res.authorization_check, null,
+  'AN3j and refused BEFORE the authorization check — a finished project is not a bad paste');
+ok(String(AN3.res.stop_reason).indexOf('S1 is COMPLETE') === 0,
+  'AN3k the reason says so first', AN3.res.stop_reason);
+eq(AN3.res.retry_contract.generate_may_be_attempted_again, false,
+  'AN3l and the retry contract forbids another attempt');
+eq(AN3.res.retry_contract.known, true,
+  'AN3m as a KNOWN contract row, not an unknown-verdict default');
+eq(AN3.res.retry_contract.same_authorization_reusable, false, 'AN3n no authorization reuse');
+eq(AN3.res.retry_contract.same_frozen_baseline_reusable, false, 'AN3o no baseline reuse');
+// PRESSING IT TWICE CHANGES NOTHING.
+var AN3b = ahRun(AN3w, 'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE()');
+eq(AN3b.res.verdict, 'REFUSED_S1_ALREADY_COMPLETE', 'AN3p and a second press is refused identically');
+eq(AN3w.allWrites(), 0, 'AN3q with still zero writes across both presses');
+
+// ---- AN4 — §七.5 THE EXECUTE PATH IS REFUSED EVEN WITH THE REAL HISTORICAL AUTHORIZATION -------
+var AN_SENTENCE = vm.runInContext('S1_CG_ONCE_AUTHORIZATION_', AN_W.ctx);
+ok(typeof AN_SENTENCE === 'string' && AN_SENTENCE.length === 2245,
+  'AN4  the genuine 2245-character authorization is available to hand to the executor');
+var AN4w = anClosed({}, {});
+var AN4 = ahRun(AN4w, 'RUN_S1_CONTROLLED_GENERATE_EXECUTE({ execute: true, authorization: '
+  + JSON.stringify(AN_SENTENCE) + ' })');
+eq(AN4.res.verdict, 'REFUSED_S1_ALREADY_COMPLETE',
+  'AN4a the execute path is refused at the lifecycle gate, holding the real sentence', AN4.res.stop_reason);
+eq(AN4.res.refusal_class, 'S1_LIFECYCLE_COMPLETE', 'AN4b under its own refusal class');
+['attempts', 'generator_calls', 'submit_calls'].forEach(function (k, i) {
+  eq(AN4.res[k], 0, 'AN4c.' + (i + 1) + ' ' + k + ' = 0');
+});
+eq(AN4.res.capability_minted, false, 'AN4d capability_minted = false');
+eq(AN4w.allWrites(), 0, 'AN4e zero writes on every sheet');
+eq(AN4.calls, 0, 'AN4f the generator was never called');
+// REFUSED BEFORE THE LOCK IS TAKEN. A finished project must not contend with live traffic to say no.
+eq(AN4.res.lock, null, 'AN4g and no script lock was acquired to refuse');
+eq(AN4.res.baseline_drift, undefined, 'AN4h nor was the baseline drift computed');
+// THE DRY RUN IS *NOT* CLOSED: it reaches no writer, and it is one of the read-only questions that remain.
+var AN4dry = ahRun(anClosed({}, {}), 'RUN_S1_CONTROLLED_GENERATE_EXECUTE({})');
+ok(AN4dry.res.verdict !== 'REFUSED_S1_ALREADY_COMPLETE',
+  'AN4i the DRY RUN is not refused — closing a read-only path removes evidence, not risk',
+  AN4dry.res.verdict);
+eq(AN4dry.res.execute_requested, false, 'AN4j because it requested no execution');
+eq(AN4dry.res.generator_calls, 0, 'AN4k and it calls the generator either way');
+
+// ---- AN5 — §七.6 MANIFEST P ISSUES NOTHING -----------------------------------------------------
+var AN5 = ahRun(anClosed({}, {}), 'RUN_S1_MANIFEST_P()');
+eq(AN5.res.verdict, 'REFUSED_S1_ALREADY_COMPLETE',
+  'AN5  Manifest P no longer reaches READY_TO_AUTHORIZE', AN5.res.verdict);
+eq(AN5.res.freeze_paste_block, null, 'AN5a it emits no freeze block');
+eq(AN5.res.operator_authorization_wording, null, 'AN5b and no authorization wording');
+eq(AN5.res.authorization_may_be_issued, false, 'AN5c and says no authorization may be issued');
+ok(String(AN5.res.freeze_withheld_reason).indexOf('S1_IS_COMPLETE') === 0,
+  'AN5d naming the reason, so the withholding cannot read as a failure to compute',
+  AN5.res.freeze_withheld_reason);
+eq(AN5.res.writes, 0, 'AN5e and it wrote nothing');
+// IT STILL MEASURES. The evidence is not deleted along with the permission.
+ok((AN5.res.predicates || []).length > 20,
+  'AN5f it still evaluates its full predicate ledger', (AN5.res.predicates || []).length);
+ok(!!AN5.res.measurement_authorities,
+  'AN5g and still names the production authorities it measured through');
+// AND THE PREFLIGHT: still runs, cannot say yes.
+var AN5p = ahRun(anClosed({}, {}), 'RUN_S1_CONTROLLED_GENERATE_PREFLIGHT()');
+eq(AN5p.res.verdict, 'REFUSED_S1_ALREADY_COMPLETE',
+  'AN5h the preflight no longer reaches READY_FOR_ONE_CONTROLLED_GENERATE');
+eq(AN5p.res.authorization_may_be_issued, false, 'AN5i and issues no authorization');
+eq(AN5p.res.execute_entry_point,
+  'NONE — S1 is COMPLETE and the execute path is permanently refused',
+  'AN5j and names no execute entry point');
+eq([AN5p.res.writes, AN5p.res.generator_calls, AN5p.res.capability_minted], [0, 0, false],
+  'AN5k with zero writes, zero generator calls and no capability');
+
+// ---- AN6 — §七.7/8 THE PRODUCTION ACTIVATION SURFACE -------------------------------------------
+var AN_CFG = read(GS + '00_config.gs');
+eq((AN_CFG.match(/var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = (\w+);/) || [])[1], 'false',
+  'AN6  the production flag is still false, in 00_config.gs');
+eq(AN3.flag, false, 'AN6a and false in the world after a refused press', AN3.flag);
+// THE ALLOWLIST IS NOT EMPTIED, AND THE REASON IS EVIDENCE RATHER THAN CAUTION.
+eq(AN_LIFE.activation_allowlist_state, 'RETIRED_FOR_GENERATION_BY_LIFECYCLE_NOT_BY_DELETION',
+  'AN6b the allowlist is retired for generation by the lifecycle, not by deletion');
+eq(AN3.allowlistCount, 1, 'AN6c the entry is still present', AN3.allowlistCount);
+// THE SHARING EVIDENCE, ASSERTED AGAINST THE SHIPPED SOURCE — not just recorded as prose.
+var AN_61 = read(GS + '61_api_v1_weekly_ai_plan.gs');
+ok(AN_61.indexOf('function weeklyAiPlanControlledDecision_') > 0,
+  'AN6d 61_ carries weeklyAiPlanControlledDecision_');
+var AN_DEC = extractFn(AN_61, 'weeklyAiPlanControlledDecision_');
+ok(AN_DEC.indexOf('weeklyAiPlanTargetScopes_(') > 0,
+  'AN6e which consults the allowlist through weeklyAiPlanTargetScopes_');
+ok(AN_61.indexOf('READ-ONLY by construction') > 0,
+  'AN6f and 61_ documents that function as READ-ONLY by construction');
+var AN_TS = extractFn(AN_61, 'weeklyAiPlanTargetScopes_');
+ok(AN_TS.indexOf("'AI_PLAN_SCOPE_NOT_ENABLED'") > 0,
+  'AN6g so an emptied allowlist would answer AI_PLAN_SCOPE_NOT_ENABLED');
+ok(extractFn(AN_61, 'weeklyAiPlanHarvest_').indexOf('weeklyAiPlanTargetScopes_(') > 0,
+  'AN6h and the harvest — whose no-action decision is the advice the UI reads — consults it too');
+ok(String(AN_LIFE.activation_allowlist_evidence).indexOf('weeklyAiPlanControlledDecision_') > 0
+  && String(AN_LIFE.activation_allowlist_evidence).indexOf('READ-ONLY') > 0,
+  'AN6i which is exactly the sharing evidence the lifecycle record cites');
+eq(AN_LIFE.apps_script_sync_required, 'NONE — this closeout changes no production module',
+  'AN6j so no production module is edited and no Apps Script sync is required');
+// AND THIS GENERATION IS BLOCKED ANYWAY — by the lifecycle, which is what §四.4 asks for.
+eq(AN3.res.verdict, 'REFUSED_S1_ALREADY_COMPLETE',
+  'AN6k with THIS generation blocked by the S1 COMPLETE lifecycle instead');
+
+// ---- AN7 — §七.9/12/13 MANIFEST S STILL RE-RUNS, AND COMPLETION TOUCHES NOTHING ----------------
+var AN7w = amWorld({});
+vm.runInContext('S1_LIFECYCLE_ = ' + JSON.stringify(AN_LIFE) + ';', AN7w.ctx);
+var AN7a = ahRun(AN7w, 'RUN_S1_POST_GENERATION_MANIFEST_S()');
+var AN7b = ahRun(AN7w, 'RUN_S1_POST_GENERATION_MANIFEST_S()');
+eq([AN7a.res.verdict, AN7b.res.verdict],
+  ['S1_POST_GENERATION_VERIFIED', 'S1_POST_GENERATION_VERIFIED'],
+  'AN7  Manifest S still verifies, twice, with S1 COMPLETE — a verification nobody can repeat is not one');
+eq(AN7w.allWrites(), 0, 'AN7a and both runs wrote nothing');
+// §七.12 — COMPLETION DOES NOT TRIGGER SUBMIT.
+var AN_MS_SRC = bareCode(extractFn(S1, 'RUN_S1_POST_GENERATION_MANIFEST_S'));
+['handleSubmitAllocationDraftsToShippingPlans_(', 'sadSubmitToShippingPlansCore_(',
+ 'shippingPlanCommitFromLines_(', 'RUN_S1_MANIFEST_S('].forEach(function (t, i) {
+  eq(AN_MS_SRC.split(t).length - 1, 0, 'AN7b.' + (i + 1) + ' completion reaches no ' + t);
+});
+eq(AN7a.res.submit_calls, 0, 'AN7c and reports zero submit calls');
+ok((AN7a.res.does_not_authorize || []).join('|').indexOf('Submit') >= 0,
+  'AN7d while stating that it does not authorize any Submit');
+// §七.13 — AND IT DOES NOT MODIFY, DELETE OR RECREATE THE ACCEPTED PAIR.
+eq(AN7w.writesByTable(), {}, 'AN7e no table in the world was written at all');
+var AN_H = AN7w.sheets['shipping_allocation_drafts'].rows.length;
+var AN_L = AN7w.sheets['shipping_allocation_draft_lines'].rows.length;
+ahRun(AN7w, 'RUN_S1_POST_GENERATION_MANIFEST_S()');
+eq([AN7w.sheets['shipping_allocation_drafts'].rows.length,
+    AN7w.sheets['shipping_allocation_draft_lines'].rows.length], [AN_H, AN_L],
+  'AN7f and a third run added, removed and renamed no row');
+['setValue', 'setValues', 'appendRow', 'clearContent', 'deleteRow', 'insertRow'].forEach(function (t, i) {
+  eq(AN_MS_SRC.split(t).length - 1, 0, 'AN7g.' + (i + 1) + ' it reaches no ' + t);
+});
+
+// ---- AN8 — §六 THE FINAL ENTRY-POINT CLASSIFICATION -------------------------------------------
+var AN_ALL = (S1_BARE.match(/^function (RUN_S1_[A-Z_]+)/gm) || []).map(function (l) {
+  return l.replace('function ', '');
+});
+eq(AN_ALL.length, 20, 'AN8  twenty public entry points', AN_ALL.length);
+// PERMANENTLY REFUSED WRITE PATHS: the two that could reach a production Generate.
+var AN_REFUSED = ['RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE', 'RUN_S1_CONTROLLED_GENERATE_EXECUTE'];
+AN_REFUSED.forEach(function (fn, i) {
+  ok(bareCode(extractFn(S1, fn)).indexOf('S1_lifecycleGate_()') > 0,
+    'AN8a.' + (i + 1) + ' ' + fn + ' consults the lifecycle gate');
+});
+// THE GATE IS AT FOUR SITES, AND THE LIFECYCLE RECORD LISTS FOUR REFUSED PATHS.
+// Counted by the ASSIGNMENT, not by the bare name: `function S1_lifecycleGate_() {` contains the name
+// too, so a bare split reports five for four call sites and the fifth is the definition.
+eq(S1_BARE.split('= S1_lifecycleGate_()').length - 1, 4,
+  'AN8b the gate is consulted at exactly four sites');
+eq((AN_LIFE.refused_paths || []).length, 4,
+  'AN8c and the lifecycle record names four refused paths — the list cannot drift from the code');
+['RUN_S1_MANIFEST_P', 'RUN_S1_CONTROLLED_GENERATE_PREFLIGHT'].forEach(function (fn, i) {
+  ok(bareCode(extractFn(S1, fn)).indexOf('S1_lifecycleGate_()') > 0,
+    'AN8d.' + (i + 1) + ' ' + fn + ' consults it too, to issue nothing');
+});
+// STILL REACHING THE PRODUCTION GENERATOR: the one wrapper, and it is gated. The generator call itself
+// lives in S1_cgProductionCall_, which no entry point may reach except through the gated executor.
+eq(S1_BARE.split('weeklyAiPlanGenerateK2_(').length - 1, 1,
+  'AN8e there is still exactly ONE generator call site in the whole file');
+eq(bareCode(extractFn(S1, 'S1_cgProductionCall_')).split('weeklyAiPlanGenerateK2_(').length - 1, 1,
+  'AN8f and it is inside S1_cgProductionCall_');
+eq(S1_BARE.split('= S1_cgProductionCall_(').length - 1, 1,
+  'AN8g which has exactly one caller');
+ok(bareCode(extractFn(S1, 'RUN_S1_CONTROLLED_GENERATE_EXECUTE')).indexOf('S1_cgProductionCall_(') > 0,
+  'AN8h and that caller is the gated executor');
+// MINT SITES AND AUTHORIZATION USE.
+eq(S1_BARE.split('WeeklyAiPlanControlledAuthority_.mint(').length - 1, 1,
+  'AN8i exactly one mint site');
+eq(bareCode(extractFn(S1, 'S1_cgProductionCall_'))
+  .split('WeeklyAiPlanControlledAuthority_.mint(').length - 1, 1,
+  'AN8j in the same gated place');
+// THE READ-ONLY SET IS THE REST, and every one of them reaches no write API.
+var AN_READONLY = AN_ALL.filter(function (fn) {
+  return ['RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE', 'RUN_S1_CONTROLLED_GENERATE_EXECUTE',
+    'RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL',
+    'RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL'].indexOf(fn) === -1;
+});
+eq(AN_READONLY.length, 16, 'AN8k sixteen entry points reach no write API at all', AN_READONLY.length);
+AN_READONLY.forEach(function (fn, i) {
+  var src = bareCode(extractFn(S1, fn));
+  ok(src.indexOf('setValue') === -1 && src.indexOf('appendRow') === -1
+    && src.indexOf('clearContent') === -1 && src.indexOf('deleteRow') === -1
+    && src.indexOf('insertRow') === -1 && src.indexOf('getRange') === -1,
+    'AN8l.' + (i + 1) + ' ' + fn + ' reaches no write API');
+});
+
+
+// ---- AN MUTANTS — N212..N219 -------------------------------------------------------------------
+/** A closed-era run against a mutated census. */
+function anMut(src, expr, over) {
+  var o = {}; Object.keys(over || {}).forEach(function (k) { o[k] = over[k]; });
+  o.s1 = ahS1(src); o.lifecycle = null;
+  var w = ahWorld({}, o);
+  var r = ahRun(w, expr);
+  r.writes = w.allWrites();
+  return r;
+}
+
+mut('N212 the lifecycle gate opens again, so a second production Generate becomes reachable', function () {
+  // THE ONE THING THIS ROUND EXISTS TO PREVENT. Everything else here is bookkeeping; this is the door.
+  var m = swapS1In('S1_lifecycleGate_',
+    '  var complete = st === S1_LIFECYCLE_STATUS_COMPLETE_;',
+    '  var complete = false;');
+  var clean = ahRun(anClosed({}, {}), 'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE()');
+  var bad = anMut(m, 'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE()');
+  return clean.res.verdict === 'REFUSED_S1_ALREADY_COMPLETE'
+    && bad.res.verdict !== 'REFUSED_S1_ALREADY_COMPLETE';
+});
+
+mut('N213 EXECUTE_ONCE skips the gate and falls through to the authorization check', function () {
+  // The authorization is CONSUMED, so it would still refuse — with the WRONG sentence. An operator told
+  // "your paste is not the one this baseline was measured with" goes looking for a better paste.
+  var m = swapS1In('RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE', '    if (!life.open) {', '    if (false) {');
+  function verdictAndReason(r) {
+    return [r.res.verdict, String(r.res.stop_reason).indexOf('S1 is COMPLETE') === 0];
+  }
+  var clean = verdictAndReason(ahRun(anClosed({}, {}), 'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE()'));
+  var bad = verdictAndReason(anMut(m, 'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE()'));
+  return clean[0] === 'REFUSED_S1_ALREADY_COMPLETE' && clean[1] === true
+    && !(bad[0] === 'REFUSED_S1_ALREADY_COMPLETE' && bad[1] === true);
+});
+
+mut('N214 the EXECUTE path stops consulting the gate and only the dry run is safe', function () {
+  var m = swapS1In('RUN_S1_CONTROLLED_GENERATE_EXECUTE',
+    '    if (out.execute_requested && !out.lifecycle.open) {',
+    '    if (false) {');
+  var sentence = vm.runInContext('S1_CG_ONCE_AUTHORIZATION_', AN_W.ctx);
+  var expr = 'RUN_S1_CONTROLLED_GENERATE_EXECUTE({ execute: true, authorization: '
+    + JSON.stringify(sentence) + ' })';
+  var clean = ahRun(anClosed({}, {}), expr);
+  var bad = anMut(m, expr);
+  return clean.res.verdict === 'REFUSED_S1_ALREADY_COMPLETE'
+    && clean.res.refusal_class === 'S1_LIFECYCLE_COMPLETE'
+    && bad.res.refusal_class !== 'S1_LIFECYCLE_COMPLETE';
+});
+
+mut('N215 Manifest P starts issuing a freeze block and an authorization again', function () {
+  // AIMED AT THE VERDICT, NOT AT THE NULLING BESIDE IT. Measured: neutralising the block that clears the
+  // freeze changes nothing observable, because the pre-existing not-READY_TO_AUTHORIZE path already clears
+  // it — so that block is a belt and the ternary is the trousers. A mutant on the belt survives while the
+  // thing it was meant to guard is still guarded, which is the least useful kind of green.
+  var m = swapS1In('RUN_S1_MANIFEST_P',
+    '    out.verdict = !out.lifecycle.open',
+    '    out.verdict = false && !out.lifecycle.open');
+  // OBSERVED ON THE VERDICT. Measured first: in a synthetic world the mutant STOPs for its own reasons
+  // and the existing STOP path nulls the freeze block too, so the block cannot tell the two apart. What
+  // distinguishes them is WHICH decision was made — the closed lifecycle, or the predicate ledger.
+  var clean = ahRun(anClosed({}, {}), 'RUN_S1_MANIFEST_P()');
+  var bad = anMut(m, 'RUN_S1_MANIFEST_P()');
+  return clean.res.verdict === 'REFUSED_S1_ALREADY_COMPLETE'
+    && clean.res.freeze_paste_block === null
+    && clean.res.operator_authorization_wording === null
+    && bad.res.verdict !== 'REFUSED_S1_ALREADY_COMPLETE';
+});
+
+mut('N216 the preflight can say READY_FOR_ONE_CONTROLLED_GENERATE again', function () {
+  var m = swapS1In('RUN_S1_CONTROLLED_GENERATE_PREFLIGHT',
+    '    out.verdict = !out.lifecycle.open\n      ? out.lifecycle.verdict\n'
+      + "      : (L.failed.length === 0 ? 'READY_FOR_ONE_CONTROLLED_GENERATE' : 'STOP');",
+    "    out.verdict = L.failed.length === 0 ? 'READY_FOR_ONE_CONTROLLED_GENERATE' : 'STOP';");
+  var clean = ahRun(anClosed({}, {}), 'RUN_S1_CONTROLLED_GENERATE_PREFLIGHT()');
+  var bad = anMut(m, 'RUN_S1_CONTROLLED_GENERATE_PREFLIGHT()');
+  return clean.res.verdict === 'REFUSED_S1_ALREADY_COMPLETE'
+    && clean.res.authorization_may_be_issued === false
+    && bad.res.verdict !== 'REFUSED_S1_ALREADY_COMPLETE';
+});
+
+mut('N217 the lifecycle calls the authorization ACTIVE while the consumed list still holds it', function () {
+  // Three records say the path is closed, so no single edit re-opens it — and that same redundancy means
+  // they can DISAGREE. A lifecycle claiming ACTIVE beside a consumed list holding 8A830413 is not a state
+  // anybody can act on, and the disagreement has to be a finding rather than something a reader notices.
+  var m = swapS1("  authorization_state: 'CONSUMED',", "  authorization_state: 'ACTIVE',");
+  function agree(src) {
+    var w = S1World(pos({ s1: src, lifecycle: null }));
+    var c = JSON.parse(vm.runInContext('JSON.stringify(S1_lifecycleConsistency_())', w.ctx));
+    return [c.consistent, c.disagreements.join('|')];
+  }
+  var clean = agree(S1_WORLD), bad = agree(m);
+  // AND THE GATE STILL REFUSES EITHER WAY: the status is what closes the path, so a tampered
+  // authorization_state cannot reach the generator even before the disagreement is reported.
+  var w2 = ahWorld({}, { s1: m, lifecycle: null });
+  var still = ahRun(w2, 'RUN_S1_CONTROLLED_GENERATE_EXECUTE_ONCE()');
+  return clean[0] === true && bad[0] === false
+    && bad[1].indexOf('THE_CONSUMED_LIST_HOLDS_8A830413_BUT_THE_LIFECYCLE_CALLS_IT_ACTIVE') >= 0
+    && still.res.verdict === 'REFUSED_S1_ALREADY_COMPLETE'
+    && still.res.generator_calls === 0;
+});
+
+mut('N218 the completion record is re-pointed at the stale K2 identities', function () {
+  // §七.2 — the accepted pair must not become the pair that was predicted and never written.
+  var m = swapS1(
+    "  accepted_header_id: 'SADH-K4-1443C1AF',\n  accepted_line_id: 'SADL-K2-7F2C46B2',\n"
+      + '  header_hit_count: 1,',
+    "  accepted_header_id: 'SADH-K2-A4239AC6',\n  accepted_line_id: 'SADL-K2-2FD4DCA2',\n"
+      + '  header_hit_count: 1,');
+  function pair(src) {
+    var w = S1World(pos({ s1: src, lifecycle: null }));
+    var r = JSON.parse(vm.runInContext('JSON.stringify(S1_COMPLETION_RECORD_)', w.ctx));
+    var st = JSON.parse(vm.runInContext('JSON.stringify(S1_acStaleIdentity_('
+      + JSON.stringify(r.accepted_header_id) + '))', w.ctx));
+    return [r.accepted_header_id, st.stale];
+  }
+  var clean = pair(S1_WORLD), bad = pair(m);
+  // The clean record names the accepted id, which is NOT stale. The mutant names a stale one, and
+  // S1_acStaleIdentity_ says so — which is what makes this catchable rather than a matter of opinion.
+  return clean[0] === 'SADH-K4-1443C1AF' && clean[1] === false
+    && bad[0] === 'SADH-K2-A4239AC6' && bad[1] === true;
+});
+
+mut('N219 the forward pins are relabelled as a proven pre-generation before-state', function () {
+  // §七.11 — the three shipping tables have no pre-execute content anywhere. Calling a reading taken
+  // AFTER the write a before-state is the one claim that would make UNPROVABLE read as VERIFIED.
+  var m = swapS1(
+    "  shipping_historical_before_state: 'UNPROVABLE',\n  shipping_pins_are_forward_only: true,",
+    "  shipping_historical_before_state: 'VERIFIED',\n  shipping_pins_are_forward_only: false,");
+  function honest(src) {
+    var w = S1World(pos({ s1: src, lifecycle: null }));
+    var r = JSON.parse(vm.runInContext('JSON.stringify(S1_COMPLETION_RECORD_)', w.ctx));
+    return r.shipping_historical_before_state === 'UNPROVABLE'
+      && r.shipping_pins_are_forward_only === true;
+  }
+  return honest(S1_WORLD) === true && honest(m) === false;
+});
+
+mut('N220 a forward pin is overwritten with a re-measurement instead of being cited', function () {
+  // §五 — a before-state taken after the change it is meant to detect is not a before-state. The pin
+  // VALUES are the record; a later round that re-measures and overwrites them has no before-state left.
+  var m = swapS1(
+    "    { table: 'shipping_plans', row_count: 6, schema_fingerprint: '819C7F26',",
+    "    { table: 'shipping_plans', row_count: 99, schema_fingerprint: '819C7F26',");
+  function plans(src) {
+    var w = S1World(pos({ s1: src, lifecycle: null }));
+    var r = JSON.parse(vm.runInContext('JSON.stringify(S1_COMPLETION_RECORD_)', w.ctx));
+    return r.shipping_forward_pins.filter(function (p) {
+      return p.table === 'shipping_plans'; })[0].row_count;
+  }
+  return plans(S1_WORLD) === 6 && plans(m) === 99;
 });
 
 console.log('\npassed ' + pass + '  failed ' + fail
