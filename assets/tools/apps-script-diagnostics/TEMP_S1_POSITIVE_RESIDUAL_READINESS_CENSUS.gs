@@ -95,7 +95,24 @@ var S1_SCOPE_AXES_ = ['company', 'country', 'marketplace', 'sku'];
  * IT IS NEVER WRITTEN BY CODE IN THIS FILE. Nothing here assigns it, and the suite asserts that: a baseline
  * the diagnostic can fill in for itself is not a baseline, it is a second copy of the measurement.
  */
-var S1_MANIFEST_P_BEFORE_ = null;
+// S1-R5 — FROZEN. This is the freeze block of the RUN_S1_MANIFEST_P executed on the live project at
+// 2026-09-10 12:37:53, verdict READY_TO_AUTHORIZE, 117 predicates passed / 0 failed, 0 writes.
+//
+// IT WAS NOT TYPED. The run emitted it as three log chunks of 2953 / 2953 / 128 characters; they were
+// concatenated in order with nothing between them, the 77-character prose prefix the emitter prepends
+// was removed, and the remaining 5957 characters are reproduced here VERBATIM on one line. That is
+// deliberate: the line is character-for-character the value the run produced, so a reader can search
+// for it rather than trust a re-indentation. Re-serialising the parse reproduces the same 5957
+// characters, which is what says nothing was normalised, reordered or de-duplicated on the way in.
+//
+// IT IS STILL NEVER WRITTEN BY CODE. Nothing in this file assigns it; a person pasted it, exactly as
+// the doctrine above requires, and the suite still asserts the single assignment.
+//
+// WHAT IT IS NOT. It carries no row number and no physical extent: not E3E783BF (the removal BEFORE
+// fingerprint of a table that no longer exists in that shape), not the blank row-2 fingerprint
+// 91702192, not 2CA4D4BE, not physical last row 97, and not the authorization sentence — that is a
+// separate artefact with its own fingerprint F700840D and it is not baseline data.
+var S1_MANIFEST_P_BEFORE_ = {"frozen_at":"2026-09-10 12:37:53","build":"F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6","scope_key":"ResUS|US|Amazon|SP0750-M","company":"ResUS","country":"US","marketplace":"Amazon","sku":"SP0750-M","calculation_run_id":"GAP-INV-20260909T132353-0001","accepted_calculation_date":"2026-09-09","calculation_status":"READY","freshness_state":"CURRENT_PRE_SCHEDULE","source_data_as_of":"2026-09-09","planning_cycle":"RECO-2026-09","windows":{"D18":0,"D30":0,"D45":0,"D90":25},"recommended_qty":25,"qualifying_manual_planned_qty":0,"qualifying_ai_planned_qty":0,"residual_qty":25,"proposed_ai_allocation_qty":25,"would_clamp":false,"source_factory_warehouse_id":"WH-TW-CN-FACTORY-YOUXIN","pool_key":"WH:WH-TW-CN-FACTORY-YOUXIN||SP0750-M","factory_current_stock":310,"factory_reserved_stock":0,"active_allocation_draft_qty":0,"active_shipping_plan_qty":0,"available_to_allocate":310,"manual_header_ids":[],"manual_line_ids":[],"manual_planned_total":0,"manual_identity_fingerprint":"811C9DC5","writeset_measurable":true,"writeset_stage":"COMPLETE","expected_header_ids":["SADH-K2-A4239AC6"],"expected_line_ids":["SADL-K2-2FD4DCA2"],"expected_k2_group_keys":["reco-2026-09|resus|us|amazon|inventory_replenishment|wh-tw-cn-factory-youxin||sea|truck|1"],"expected_create_header_count":1,"expected_update_header_count":0,"expected_create_line_count":1,"expected_update_line_count":0,"existing_active_ai_identities":[],"existing_active_ai_identity_count":0,"ai_expiration_candidates":[],"ai_expiration_candidate_count":0,"expected_post_generation_active_ai_identities":["SADH-K2-A4239AC6"],"target_manual_header_ids":[],"target_manual_line_ids":[],"target_manual_planned_total":0,"target_manual_row_signatures":[],"target_manual_combined_fingerprint":"811C9DC5","target_ai_row_signatures":[],"target_ai_combined_fingerprint":"811C9DC5","other_scope_header_count":11,"other_scope_line_count":13,"other_scope_row_signatures":["SAD-27976058-2~62304AEF","SAD-C787D1B1-D~D1388F3C","SAD-FD833D8A-E~BF0F579D","SADH-K2-179FBB0E~D36362C7","SADH-K2-7F15DD7D~9E3BA813","SADH-K2-E7AF9242~0AAEF965","SADH-K4-38523A90~2138D5D5","SADH-K4-507F3A05~59CB0B0B","SADH-K4-A3872518~D86B4917","SADH-K4-D8E6A23B~0A92D373","SADH-K4-DCF3CFC8~991CEA46","SADL-K2-0AA58729~7F6C8AD3","SADL-K2-0D2C920B~8F519999","SADL-K2-16F4E4F9~2BE6B6E3","SADL-K2-25BAA672~E0DFC918","SADL-K2-344FB2B2~54658884","SADL-K2-434B65FA~1DDB424A","SADL-K2-477B4D96~4448A09B","SADL-K2-4B150F56~36243147","SADL-K2-4ED9AD78~2B8ADD01","SADL-K2-8756129E~139D23B3","SADL-K2-92B8BAD2~77AA124E","SADL-K2-A5AF5DC0~496F0B41","SADL-K2-A9F07664~62FF48B2"],"other_scope_combined_fingerprint":"C2F89714","draft_header_live_column_count":36,"draft_line_live_column_count":31,"draft_header_excluded_fields":[],"draft_line_excluded_fields":[],"factory_pool_row_fingerprint":"58D7A2C7","factory_stock_movement_state":"SHEET_PRESENT_AND_READABLE","factory_stock_movement_count":95,"factory_stock_movement_ids":["FSMV-0332bc3c","FSMV-04e06e5c","FSMV-04e4b078","FSMV-069464ef","FSMV-070296f2","FSMV-0ab3930b","FSMV-13208649","FSMV-16f38c6f","FSMV-173b4b7c","FSMV-1cf772c6","FSMV-23c176e0","FSMV-280bb686","FSMV-281a49db","FSMV-3086d3ce","FSMV-35b6153c","FSMV-3797f9a0","FSMV-3a7c17f3","FSMV-3bb1b10c","FSMV-3d57c7bc","FSMV-3e38941b","FSMV-4545f1a9","FSMV-4626c613","FSMV-4b313b43","FSMV-4c4bd69b","FSMV-4d3cd744","FSMV-4e6b1bfe","FSMV-547dbb9b","FSMV-560cddb3","FSMV-5a6a6cd2","FSMV-5ef872d2","FSMV-63106ba1","FSMV-632a2845","FSMV-65112317","FSMV-68750b75","FSMV-6a4f8d4f","FSMV-718bfc6a","FSMV-72e17098","FSMV-73ee099d","FSMV-742eff9e","FSMV-784eed15","FSMV-7c462aa9","FSMV-7e0e60e7","FSMV-7fe0d21a","FSMV-81dfcfb7","FSMV-880b656e","FSMV-8c4dead1","FSMV-8c880ccd","FSMV-8c9fac28","FSMV-8e50938a","FSMV-8e9b2571","FSMV-8fd17704","FSMV-90f3379d","FSMV-93e7cd59","FSMV-9aeae3e9","FSMV-a317febd","FSMV-a43ddf68","FSMV-a96c6717","FSMV-ae66ac1a","FSMV-b1cc6cc0","FSMV-b3f4c867","FSMV-b54bbb5f","FSMV-b7b31d44","FSMV-ba6f52d7","FSMV-bfbe4fec","FSMV-c602f612","FSMV-c62ca13a","FSMV-c660e255","FSMV-c6f973c5","FSMV-d252da34","FSMV-d511479b","FSMV-d5990154","FSMV-d9000b82","FSMV-d940a9bb","FSMV-dae32460","FSMV-dbea7287","FSMV-dc0d673f","FSMV-dcb7e556","FSMV-e0b30169","FSMV-e104e937","FSMV-e367fb39","FSMV-e56a54f7","FSMV-e5bf1d8f","FSMV-e5d99afb","FSMV-e6e80552","FSMV-eba01818","FSMV-ed1d0a61","FSMV-ee435515","FSMV-ef2ff959","FSMV-ef3eacc6","FSMV-efc22cf3","FSMV-f33921ee","FSMV-f43a8c1d","FSMV-f77ef96f","FSMV-fd4d2bff","FSMV-fe6f1b7f"],"factory_stock_movement_fingerprint":"FC67B70E","factory_override_audit_state":"SHEET_PRESENT_AND_READABLE","factory_override_audit_count":0,"factory_override_audit_ids":[],"factory_override_audit_fingerprint":"811C9DC5","factory_stock_movement_ok_id_count":95,"factory_stock_movement_id_faults":[],"factory_override_audit_ok_id_count":0,"factory_override_audit_id_faults":[],"gap_scope_universe_population":"INVENTORY_GAP_SCOPES","gap_scope_universe_total_count":118,"gap_scope_universe_target_count":1,"gap_scope_universe_other_count":117,"gap_scope_universe_fingerprint":"D578A971","draft_row_universe_population":"ALLOCATION_DRAFT_ROWS","draft_row_universe_header_count":11,"draft_row_universe_line_count":13,"draft_row_universe_total_row_count":24,"draft_row_universe_target_manual_header_count":0,"draft_row_universe_target_manual_line_count":0,"draft_row_universe_target_ai_header_count":0,"draft_row_universe_target_ai_line_count":0,"draft_row_universe_target_row_count":0,"draft_row_universe_other_scope_row_count":24,"draft_row_universe_row_signature_count":24,"draft_row_universe_combined_fingerprint":"C2F89714","schema_fingerprints":{"inventory_replenishment_gap":"16B18595","shipping_allocation_drafts":"766AE25C","shipping_allocation_draft_lines":"BC70D284","factory_stock":"83D61B62","shipping_plans":"819C7F26","shipping_plan_lines":"B09125C1","warehouses":"6DFA468E"},"reservation_observation_state":"SHEET_ABSENT","reservation_row_count":null,"expected_max_units_written":25,"expected_clamp":false};
 
 /** The fields a frozen baseline MUST carry. A readback can only refuse a drift it has a before-value for,
  *  so an incomplete freeze is a silent hole and is refused at freeze time instead. */
@@ -153,6 +170,48 @@ var S1_FREEZE_REQUIRED_ = [
   'factory_stock_movement_ok_id_count', 'factory_stock_movement_id_faults',
   'factory_override_audit_ok_id_count', 'factory_override_audit_id_faults'
 ];
+
+/**
+ * S1-R5 — WHICH MEASUREMENT A BASELINE IS, ignoring when it was taken.
+ *
+ * `frozen_at` is a clock reading, so two runs of the same unchanged world produce two baselines that
+ * differ in exactly one field. Comparing whole objects would call that an overwrite; comparing nothing
+ * would let a baseline measured against a DIFFERENT world replace a signed one silently. So the
+ * comparison is over what the baseline is ABOUT: the build, the scope, the accepted run it was taken
+ * against, every content fingerprint, and the exact identities the generation may write.
+ *
+ * A null in, a null out — an absent baseline has no identity, which is a different answer from an
+ * identity that disagrees.
+ */
+function S1_freezeIdentity_(b) {
+  if (!b || typeof b !== 'object') return null;
+  return ['build', 'scope_key', 'calculation_run_id', 'accepted_calculation_date',
+    'manual_identity_fingerprint', 'target_manual_combined_fingerprint',
+    'target_ai_combined_fingerprint', 'other_scope_combined_fingerprint',
+    'draft_row_universe_combined_fingerprint', 'gap_scope_universe_fingerprint',
+    'factory_pool_row_fingerprint', 'factory_stock_movement_fingerprint',
+    'factory_override_audit_fingerprint', 'expected_header_ids', 'expected_line_ids',
+    'proposed_ai_allocation_qty', 'expected_max_units_written'
+  ].map(function (k) {
+    return k + '=' + JSON.stringify(b[k] === undefined ? null : b[k]);
+  }).join('|');
+}
+
+/** The removal-era facts a Manifest P baseline must never carry forward, as an executable list
+ *  rather than the prose one the R4J handoff publishes. */
+function S1_freezeCarriesRemovalEra_(b) {
+  if (!b || typeof b !== 'object') return [];
+  var text = '';
+  try { text = JSON.stringify(b); } catch (e) { return ['UNSERIALISABLE_BASELINE']; }
+  var bad = [];
+  ['E3E783BF', '91702192', '2CA4D4BE', 'I authorize'].forEach(function (t) {
+    if (text.indexOf(t) !== -1) bad.push(t);
+  });
+  // 97 as a REQUIRED physical extent. Searched as a VALUE, never as a substring: '97' occurs inside
+  // hashes and ids, and a substring hit there would be a false alarm, which is its own kind of wrong.
+  Object.keys(b).forEach(function (k) { if (b[k] === 97) bad.push(k + '=97'); });
+  return bad;
+}
 
 /** A stable fingerprint over a SORTED list of identity strings. Sorted, because enumeration order is not
  *  a property of the data, and a fingerprint that changes when nothing did is a false drift alarm. */
@@ -4573,11 +4632,44 @@ function RUN_S1_MANIFEST_P() {
         + ' already passed, so a refused run has nothing to withhold and nothing to leak.';
     }
 
-    // THE BASELINE DESTINATION MUST STILL BE EMPTY. A value already sitting in S1_MANIFEST_P_BEFORE_ is a
-    // baseline from an EARLIER run, and freezing over it would silently replace the one that was signed.
-    L.P('the_baseline_destination_is_empty_so_nothing_is_being_overwritten', null,
-      (typeof S1_MANIFEST_P_BEFORE_ === 'undefined') ? 'SYMBOL_MISSING' : S1_MANIFEST_P_BEFORE_,
-      typeof S1_MANIFEST_P_BEFORE_ !== 'undefined' && S1_MANIFEST_P_BEFORE_ === null);
+    // S1-R5 — THE DESTINATION HAS TWO LEGAL STAGES, AND 'EMPTY' WAS ONLY THE FIRST ONE.
+    //
+    // This asked for null, which was right for exactly as long as nothing had been frozen. The moment a
+    // person pasted the baseline the run told them to paste, the predicate began refusing the state it
+    // had just asked for — and a gate that fails on success teaches an operator to ignore it.
+    //
+    // WHAT IT WAS ACTUALLY PROTECTING is unchanged and is still enforced: freezing over a baseline
+    // measured against a DIFFERENT world would silently replace the one that was signed. So the stages
+    // are named, and only the third is a STOP:
+    //
+    //   EMPTY   — nothing frozen yet. This run's block is the one to paste.
+    //   FROZEN  — already holds a baseline of THIS SAME measurement. Not an overwrite; re-running the
+    //             manifest against an unchanged world is a re-measurement, and it agrees.
+    //   CONFLICT— holds a baseline of a DIFFERENT measurement. STOP, exactly as before.
+    //
+    // Sameness is `S1_freezeIdentity_`, which excludes `frozen_at` — a clock reading is not a world.
+    // Everything else it compares (build, scope, accepted run, every content fingerprint, the exact
+    // identities that may be written) IS the world, so a drifted table cannot pass as the same baseline.
+    var destVal = (typeof S1_MANIFEST_P_BEFORE_ === 'undefined') ? undefined : S1_MANIFEST_P_BEFORE_;
+    var heldIdentity = S1_freezeIdentity_(destVal);
+    var measuredIdentity = S1_freezeIdentity_(out.frozen_before);
+    out.baseline_stage = (destVal === undefined) ? 'SYMBOL_MISSING'
+      : (destVal === null ? 'EMPTY'
+        : (measuredIdentity !== null && heldIdentity !== measuredIdentity ? 'CONFLICT' : 'FROZEN'));
+    out.baseline_held_identity = heldIdentity;
+    out.baseline_measured_identity = measuredIdentity;
+    // A frozen destination must also be free of the removal-era facts R4J's handoff forbids. The
+    // handoff publishes that list as prose; here it is executed against the value actually held.
+    out.baseline_removal_era_facts = S1_freezeCarriesRemovalEra_(destVal);
+    L.P('the_baseline_destination_is_empty_or_holds_this_same_measurement',
+      { stage: 'EMPTY or FROZEN', would_overwrite_a_different_baseline: false,
+        removal_era_facts: [] },
+      { stage: out.baseline_stage,
+        would_overwrite_a_different_baseline: out.baseline_stage === 'CONFLICT',
+        removal_era_facts: out.baseline_removal_era_facts,
+        held: heldIdentity, measured: measuredIdentity },
+      (out.baseline_stage === 'EMPTY' || out.baseline_stage === 'FROZEN')
+        && out.baseline_removal_era_facts.length === 0);
     return fin();
   } catch (e) {
     L.P('the_manifest_ran_to_completion', true, 'threw: ' + String(e && e.message ? e.message : e), false);
@@ -8185,8 +8277,17 @@ function RUN_S1_FACTORY_MOVEMENT_POST_MANUAL_DELETION_ACCEPTANCE_MANIFEST(opts) 
     out.manifest_p_handoff = {
       next_action: S1_ACCEPT_NEXT_,
       manifest_p_must_remeasure: true,
+      // S1-R5 — the handoff reports the STAGE the destination is in, not a null it will stop being.
+      // `s1_manifest_p_before_is_still_null` is kept and still answers exactly what it says, because a
+      // reader of an older report needs the same word to keep the same meaning; it is now beside the
+      // stage, which is the fact that actually matters after the freeze.
       s1_manifest_p_before_is_still_null:
         (typeof S1_MANIFEST_P_BEFORE_ !== 'undefined' && S1_MANIFEST_P_BEFORE_ === null),
+      s1_manifest_p_baseline_stage: (typeof S1_MANIFEST_P_BEFORE_ === 'undefined') ? 'SYMBOL_MISSING'
+        : (S1_MANIFEST_P_BEFORE_ === null ? 'EMPTY' : 'FROZEN'),
+      s1_manifest_p_baseline_carries_removal_era_facts:
+        (typeof S1_MANIFEST_P_BEFORE_ === 'undefined') ? null
+          : S1_freezeCarriesRemovalEra_(S1_MANIFEST_P_BEFORE_),
       live_state_manifest_p_will_measure: {
         physical_last_row: lastRow,
         logical_movement_record_count: logical.record_count,
@@ -8206,9 +8307,20 @@ function RUN_S1_FACTORY_MOVEMENT_POST_MANUAL_DELETION_ACCEPTANCE_MANIFEST(opts) 
       note: 'Manifest P freezes from its own read. Hand-editing an old freeze block to the new numbers would'
         + ' produce a baseline nobody measured, which is the one thing a baseline exists to prevent.'
     };
-    L.P('the_manifest_p_baseline_destination_is_still_empty', null,
-      (typeof S1_MANIFEST_P_BEFORE_ === 'undefined') ? 'SYMBOL_MISSING' : S1_MANIFEST_P_BEFORE_,
-      typeof S1_MANIFEST_P_BEFORE_ !== 'undefined' && S1_MANIFEST_P_BEFORE_ === null);
+    // S1-R5 — WHAT THIS PREDICATE OWNS IS THE `must_not_be_carried_forward` LIST ABOVE, EXECUTED.
+    //
+    // It asked for null, which was a proxy for "Manifest P has not yet frozen anything from the
+    // removal era". Manifest P has now run and frozen, so the proxy fails while the thing it stood for
+    // is perfectly true — and the list right above this line is the thing it stood for. A frozen
+    // baseline is fine; a frozen baseline carrying E3E783BF, 91702192, 2CA4D4BE, a physical extent of
+    // 97, or the consumed authorization sentence is not, and that is now checked rather than implied.
+    var mpDest = (typeof S1_MANIFEST_P_BEFORE_ === 'undefined') ? undefined : S1_MANIFEST_P_BEFORE_;
+    var mpCarried = (mpDest === undefined) ? ['SYMBOL_MISSING'] : S1_freezeCarriesRemovalEra_(mpDest);
+    L.P('the_manifest_p_baseline_carries_nothing_from_the_removal_era',
+      { stage: 'EMPTY or FROZEN', must_not_be_carried_forward_found: [] },
+      { stage: (mpDest === undefined) ? 'SYMBOL_MISSING' : (mpDest === null ? 'EMPTY' : 'FROZEN'),
+        must_not_be_carried_forward_found: mpCarried },
+      mpDest !== undefined && mpCarried.length === 0);
 
     // ---- §7 THIS RUN WROTE NOTHING, AND SAYS SO AS A MEASUREMENT. -----------------------------------
     L.P('this_manifest_wrote_nothing',

@@ -75,6 +75,31 @@ var G21V = read(GS + '21_factory_inventory_handlers.gs');
 var S1_REL = 'assets/tools/apps-script-diagnostics/TEMP_S1_POSITIVE_RESIDUAL_READINESS_CENSUS.gs';
 var S1 = read(S1_REL).split(String.fromCharCode(13) + String.fromCharCode(10)).join(NL);
 
+// S1-R5 — THE WORLD DECLARES WHICH BASELINE STAGE IT IS A WORLD OF.
+//
+// S1_MANIFEST_P_BEFORE_ now holds the baseline frozen from the live 2026-09-10 12:37:53 run. Every
+// synthetic world below is a DIFFERENT world, so loading the file wholesale would make each of them
+// collide with that baseline and STOP — a hundred assertions failing at a gate that is working
+// exactly as designed. The same shape the sibling suites already use for the activation allowlist:
+// the WORLD gets a source whose destination is EMPTY, because these worlds are worlds in which
+// nothing has been frozen yet, and `S1` stays the real file for every assertion about the real file.
+//
+// Neutralising is LINE-EXACT rather than a regex over the object: the baseline is one 5957-character
+// line and a greedy match could swallow the rest of the file without saying so.
+var S1_FROZEN_DECL_ = 'var S1_MANIFEST_P_BEFORE_ = ';
+var S1_FROZEN_LINES_ = S1.split(NL).filter(function (l) {
+  return l.indexOf(S1_FROZEN_DECL_ + '{') === 0;
+});
+var S1_FROZEN_JSON_ = S1_FROZEN_LINES_.length === 1
+  ? S1_FROZEN_LINES_[0].slice(S1_FROZEN_DECL_.length, -1) : null;
+var S1_WORLD = S1.split(NL).map(function (l) {
+  return l.indexOf(S1_FROZEN_DECL_ + '{') === 0 ? S1_FROZEN_DECL_ + 'null;' : l;
+}).join(NL);
+/** The same source with the destination holding a caller-supplied baseline. */
+function s1WithBaseline(objSrc) {
+  return S1_WORLD.split(S1_FROZEN_DECL_ + 'null;').join(S1_FROZEN_DECL_ + objSrc + ';');
+}
+
 // ---- THE CLOCK, PINNED TO A STATED HOUR. Same reason as the family it borrows from: the freshness resolver
 // is a state machine over the Taipei hour (accepting below 17:45, REFRESH_OVERDUE above it), so a census
 // verdict asserted without stating the hour is an equality with now. Today's DATE is kept because the gap
@@ -469,7 +494,7 @@ function S1World(spec) {
   }
   vm.runInContext(pinTaipeiHourSrc_(spec.pinHour === undefined ? PIN_HOUR_ : spec.pinHour), w.ctx);
   if (spec.after) vm.runInContext(spec.after, w.ctx);
-  vm.runInContext(spec.s1 || S1, w.ctx, { filename: 'S1' });
+  vm.runInContext(spec.s1 || S1_WORLD, w.ctx, { filename: 'S1' });
   // S1-R4E - WRITES ARE ALREADY COUNTED, AND I CHECKED THE WRONG FakeSheet BEFORE BELIEVING OTHERWISE.
   // The base harness this suite borrows (controlled-ai-plan-production-readiness) increments `writes` on
   // setValue, setValues and appendRow; the near-identical FakeSheet in the k2-route-intent suite does not,
@@ -1929,7 +1954,10 @@ ok(mpTags(MP1.world).indexOf('s1_manifest_p_freeze_withheld') === -1,
   'M6e and no withheld line on a READY run — an empty refusal is noise', mpTags(MP1.world));
 // THE DESTINATION EXISTS, IS NULL, AND IS NEVER WRITTEN BY CODE.
 eq(vm.runInContext('S1_MANIFEST_P_BEFORE_', MP1.world.ctx), null,
-  'M6f the destination symbol exists and is still null');
+  'M6f the destination symbol exists and is EMPTY in this world — which is the stage this world is in');
+eq(MP1.res.baseline_stage, 'EMPTY', 'M6f1 and the manifest reports that stage by name');
+eq(MP1.res.baseline_removal_era_facts, [],
+  'M6f2 carrying nothing from the removal era');
 // ASSIGNMENTS ONLY. `\s*=` also matched the `===` in the destination-is-empty condition and reported three
 // assignments where there is one. A comparison is not an assignment.
 eq((S1_BARE.match(/S1_MANIFEST_P_BEFORE_\s*=(?!=)/g) || []).length, 1,
@@ -2053,13 +2081,49 @@ ok(M9.res.census.allowlisted_scope_refusal_detail
 // ---- M10 — THE BASELINE DESTINATION MUST BE EMPTY. ---------------------------------------------------
 // A value already sitting there is a baseline from an earlier run, and freezing over it would silently
 // replace the one that was signed.
-var M10 = manifestP({ s1: S1.split('var S1_MANIFEST_P_BEFORE_ = null;')
-  .join("var S1_MANIFEST_P_BEFORE_ = { frozen_at: 'an earlier run' };"), gap: POS.gap,
-  factory_stock: POS.factory_stock });
-eq(M10.res.verdict, 'STOP', 'M10 an occupied baseline destination is a STOP');
-ok(failed(M10.res).indexOf('the_baseline_destination_is_empty_so_nothing_is_being_overwritten') >= 0,
+// S1-R5 — A DIFFERENT MEASUREMENT IS STILL A STOP. This is the case the gate has always existed for
+// and it is unchanged: what was relaxed is the OTHER case, where the destination already holds the
+// very measurement this run just took.
+var M10 = manifestP({ s1: s1WithBaseline("{ frozen_at: 'an earlier run', scope_key: 'OTHER|X|Y|Z',"
+  + " build: 'SOME-OTHER-BUILD' }"), gap: POS.gap, factory_stock: POS.factory_stock });
+eq(M10.res.verdict, 'STOP', 'M10 a destination holding a DIFFERENT baseline is a STOP');
+eq(M10.res.baseline_stage, 'CONFLICT', 'M10a1 and the stage is named CONFLICT, not merely occupied');
+ok(failed(M10.res).indexOf('the_baseline_destination_is_empty_or_holds_this_same_measurement') >= 0,
   'M10a naming the destination, not something else', failed(M10.res));
 eq(chunkCount(M10.world), 0, 'M10b and it emits no chunk over the one already frozen');
+// AND THE STAGE THAT MUST NOT STOP: the destination already holds THIS run's own measurement.
+// Re-running the manifest against an unchanged world is a re-measurement, and it agrees with itself.
+var M10c = manifestP({ gap: POS.gap, factory_stock: POS.factory_stock });
+var M10same = manifestP({ s1: s1WithBaseline(JSON.stringify(M10c.res.frozen_before)),
+  gap: POS.gap, factory_stock: POS.factory_stock });
+eq(M10same.res.baseline_stage, 'FROZEN',
+  'M10c a destination holding THIS SAME measurement is FROZEN, not a conflict');
+eq(M10same.res.verdict, 'READY_TO_AUTHORIZE',
+  'M10d and it is not a STOP — a gate that fails on success teaches an operator to ignore it',
+  failed(M10same.res));
+// The clock is not the world: the same measurement taken a second later is still the same baseline.
+var M10later = JSON.parse(JSON.stringify(M10c.res.frozen_before));
+M10later.frozen_at = '2099-01-01 00:00:00';
+var M10clock = manifestP({ s1: s1WithBaseline(JSON.stringify(M10later)),
+  gap: POS.gap, factory_stock: POS.factory_stock });
+eq(M10clock.res.baseline_stage, 'FROZEN',
+  'M10e frozen_at differing does not make it a different baseline');
+// But a drifted WORLD does, on the very fingerprint that drifted.
+var M10drift = JSON.parse(JSON.stringify(M10c.res.frozen_before));
+M10drift.factory_stock_movement_fingerprint = 'DEADBEEF';
+var M10dw = manifestP({ s1: s1WithBaseline(JSON.stringify(M10drift)),
+  gap: POS.gap, factory_stock: POS.factory_stock });
+eq(M10dw.res.baseline_stage, 'CONFLICT',
+  'M10f while ONE content fingerprint differing does — the baseline describes another world');
+eq(M10dw.res.verdict, 'STOP', 'M10g which is a STOP');
+// A baseline carrying the removal era is refused even when it is otherwise this same measurement.
+var M10rem = JSON.parse(JSON.stringify(M10c.res.frozen_before));
+M10rem.legacy_note = 'E3E783BF';
+var M10rw = manifestP({ s1: s1WithBaseline(JSON.stringify(M10rem)),
+  gap: POS.gap, factory_stock: POS.factory_stock });
+eq(M10rw.res.baseline_removal_era_facts, ['E3E783BF'],
+  'M10h a frozen baseline carrying a removal-era fact is NAMED');
+eq(M10rw.res.verdict, 'STOP', 'M10i and refused');
 
 // ---- M11 — IDENTITY DRIFT IS VISIBLE IN THE BASELINE. -------------------------------------------------
 // This round FREEZES; the AFTER readback is a later round. What must be true now is that the frozen values
@@ -6387,7 +6451,7 @@ eq(AD32run.indexOf('S1_MANIFEST_P_BEFORE_'), -1,
   'AD32j nor does either touch the generation baseline …');
 eq(AD32man.indexOf('S1_MANIFEST_P_BEFORE_'), -1, 'AD32k … which stays null and unrelated');
 eq(vm.runInContext('S1_MANIFEST_P_BEFORE_', AD1w.ctx), null,
-  'AD32l measured after every run in this section: it is still null');
+  'AD32l measured after every run in this section: the removal never touched the destination');
 
 // ---- AD33 — S1-R4H-R1. THE RETRY CONTRACT, ON EVERY VERDICT THAT CAN LEAVE THE FUNCTION. ---------
 //
@@ -6764,9 +6828,12 @@ function withS1(src, spec) {
   return r;
 }
 function swapS1(a, b) {
-  var n = S1.split(a).length - 1;
+  // S1-R5 — mutations are applied to the WORLD source (destination EMPTY), because the result is loaded
+  // into a synthetic world. Starting from the real file would hand every mutant a frozen baseline that
+  // describes a different world, and each would STOP at the destination gate instead of at its subject.
+  var n = S1_WORLD.split(a).length - 1;
   if (n !== 1) throw new Error('swap anchor count ' + n + ' :: ' + a.slice(0, 90));
-  return S1.split(a).join(b);
+  return S1_WORLD.split(a).join(b);
 }
 // S1-R4H - A SWAP SCOPED TO ONE FUNCTION, BECAUSE A WHOLE-FILE ANCHOR CAN BE QUIETLY AMBIGUOUS.
 //
@@ -7065,7 +7132,11 @@ eq([AE16.completion.header_matches_the_frozen_one, AE16.completion.no_blank_move
 eq(AE1.manifest_p_handoff.next_action, 'RUN_FRESH_S1_MANIFEST_P', 'AE18 the handoff names a FRESH run');
 eq(AE1.manifest_p_handoff.manifest_p_must_remeasure, true, 'AE18a which must re-measure');
 eq(AE1.manifest_p_handoff.s1_manifest_p_before_is_still_null, true,
-  'AE18b with S1_MANIFEST_P_BEFORE_ still empty');
+  'AE18b with S1_MANIFEST_P_BEFORE_ still empty IN THIS WORLD');
+eq(AE1.manifest_p_handoff.s1_manifest_p_baseline_stage, 'EMPTY',
+  'AE18b1 and the handoff names the stage, which is what survives the freeze');
+eq(AE1.manifest_p_handoff.s1_manifest_p_baseline_carries_removal_era_facts, [],
+  'AE18b2 carrying nothing the handoff forbids');
 eq(AE1.manifest_p_handoff.freeze_block_may_be_hand_edited, false,
   'AE18c and no hand-edited freeze block');
 ['E3E783BF', '97', '91702192', 'authorization', 'frozen removal baseline'].forEach(function (s, i) {
@@ -7096,8 +7167,164 @@ ok(/physical_last_row:\s*96/.test(AEpinSrc) && AEpinSrc.indexOf('97') === -1,
   'AE19f and the physical extent it carries is 96, never 97');
 eq((S1.match(/var S1_MOV_LIVE_FROZEN_ = \{/g) || []).length, 1,
   'AE19g the pre-deletion pin is kept, once, as the historical record it is');
-eq((S1.match(/var S1_MANIFEST_P_BEFORE_ = null;/g) || []).length, 1,
-  'AE19h and the Manifest P baseline destination is still an empty null');
+// S1-R5 — THE DESTINATION IS NO LONGER EMPTY, AND THAT IS THE POINT OF THIS ROUND. What AE19 owns is
+// that the pre-deletion pin above stays a historical record; what the destination holds is asserted
+// in full by §AF below, against the repo's own 95-field validator.
+eq((S1.match(/var S1_MANIFEST_P_BEFORE_ = null;/g) || []).length, 0,
+  'AE19h the Manifest P baseline destination is no longer an empty null');
+eq(S1_FROZEN_LINES_.length, 1,
+  'AE19h1 it is declared exactly once, as one object literal');
+
+// ================================================================================================
+// AF — S1-R5. THE FROZEN BASELINE ITSELF, HELD TO THE REPO'S OWN VALIDATOR.
+//
+// Everything above tests the census against synthetic worlds. This section tests the VALUE a person
+// pasted into this file from the live 2026-09-10 12:37:53 run: that it is complete by
+// S1_FREEZE_REQUIRED_ (read out of the source, never restated here — a second copy of a contract is
+// a second thing to drift), that it says what the operator measured, and that it carries nothing
+// from the removal era it succeeded.
+// ================================================================================================
+section('AF — the frozen Manifest P baseline');
+
+var AF_B = null, AF_PARSE = null;
+try { AF_B = JSON.parse(S1_FROZEN_JSON_); } catch (e) { AF_PARSE = String(e && e.message); }
+eq(AF_PARSE, null, 'AF1  the destination holds one parseable JSON object literal');
+ok(AF_B && typeof AF_B === 'object' && !(AF_B instanceof Array),
+  'AF1a which is an object, not an array and not null');
+// NOTHING WAS REFORMATTED ON THE WAY IN. Re-serialising must reproduce the same characters, which is
+// what says no number was normalised, no key reordered and no duplicate collapsed when it was pasted.
+eq(JSON.stringify(AF_B), S1_FROZEN_JSON_,
+  'AF1b and re-serialising it reproduces the pasted characters exactly');
+eq(S1_FROZEN_JSON_.length, 5957,
+  'AF1c 5957 characters — the emitted 6034-byte block less its 77-character prose prefix');
+ok(S1.indexOf('Paste this into S1_MANIFEST_P_BEFORE_ in this file BEFORE pressing Generate: {') === -1,
+  'AF1d and the prose prefix was NOT pasted into the constant');
+
+// ---- AF2 THE FORMAL VALIDATOR. Its field list is read from the file it belongs to. ----------------
+var AF_REQ = (function () {
+  var m = S1.match(/var S1_FREEZE_REQUIRED_ = \[([\s\S]*?)\n\];/);
+  if (!m) return null;
+  var body = m[1].replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+  return (body.match(/'([a-z0-9_]+)'/g) || []).map(function (x) { return x.slice(1, -1); });
+})();
+ok(AF_REQ && AF_REQ.length === 95, 'AF2  S1_FREEZE_REQUIRED_ names 95 fields', AF_REQ && AF_REQ.length);
+eq(AF_REQ.filter(function (k) {
+  return !Object.prototype.hasOwnProperty.call(AF_B, k);
+}), [], 'AF2a and the frozen baseline carries EVERY one of them');
+eq(Object.keys(AF_B).filter(function (k) { return AF_REQ.indexOf(k) === -1; }), [],
+  'AF2b and nothing the validator does not name');
+// `undefined` is absence wearing a key. `null` is a measured absence and is legal — reservation_row_count
+// is null on purpose — so the two are distinguished rather than lumped together as falsy.
+eq(Object.keys(AF_B).filter(function (k) { return AF_B[k] === undefined; }), [],
+  'AF2c with no field present-but-undefined');
+
+// ---- AF3 THE OPERATOR'S FROZEN FACTS -------------------------------------------------------------
+[['scope_key', 'ResUS|US|Amazon|SP0750-M'], ['company', 'ResUS'], ['country', 'US'],
+ ['marketplace', 'Amazon'], ['sku', 'SP0750-M'],
+ ['build', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6'],
+ ['calculation_run_id', 'GAP-INV-20260909T132353-0001'],
+ ['accepted_calculation_date', '2026-09-09'], ['calculation_status', 'READY'],
+ ['freshness_state', 'CURRENT_PRE_SCHEDULE'], ['planning_cycle', 'RECO-2026-09'],
+ ['recommended_qty', 25], ['manual_planned_total', 0], ['qualifying_ai_planned_qty', 0],
+ ['residual_qty', 25], ['proposed_ai_allocation_qty', 25], ['available_to_allocate', 310],
+ ['would_clamp', false], ['source_factory_warehouse_id', 'WH-TW-CN-FACTORY-YOUXIN'],
+ ['factory_current_stock', 310], ['factory_reserved_stock', 0],
+ ['expected_create_header_count', 1], ['expected_update_header_count', 0],
+ ['expected_create_line_count', 1], ['expected_update_line_count', 0],
+ ['expected_header_ids', ['SADH-K2-A4239AC6']], ['expected_line_ids', ['SADL-K2-2FD4DCA2']],
+ ['expected_post_generation_active_ai_identities', ['SADH-K2-A4239AC6']],
+ ['other_scope_header_count', 11], ['other_scope_line_count', 13],
+ ['other_scope_combined_fingerprint', 'C2F89714'],
+ ['factory_pool_row_fingerprint', '58D7A2C7'],
+ ['factory_stock_movement_state', 'SHEET_PRESENT_AND_READABLE'],
+ ['factory_stock_movement_count', 95], ['factory_stock_movement_ok_id_count', 95],
+ ['factory_stock_movement_id_faults', []], ['factory_stock_movement_fingerprint', 'FC67B70E'],
+ ['factory_override_audit_count', 0], ['factory_override_audit_fingerprint', '811C9DC5'],
+ ['gap_scope_universe_total_count', 118], ['gap_scope_universe_target_count', 1],
+ ['gap_scope_universe_other_count', 117], ['gap_scope_universe_fingerprint', 'D578A971'],
+ ['draft_row_universe_header_count', 11], ['draft_row_universe_line_count', 13],
+ ['draft_row_universe_total_row_count', 24], ['draft_row_universe_target_row_count', 0],
+ ['draft_row_universe_other_scope_row_count', 24],
+ ['draft_row_universe_combined_fingerprint', 'C2F89714'],
+ ['reservation_observation_state', 'SHEET_ABSENT'],
+ ['expected_max_units_written', 25], ['expected_clamp', false],
+ ['writeset_stage', 'COMPLETE'], ['writeset_measurable', true],
+ ['draft_header_excluded_fields', []], ['draft_line_excluded_fields', []]
+].forEach(function (c, i) {
+  eq(AF_B[c[0]], c[1], 'AF3.' + (i + 1) + ' ' + c[0] + ' = ' + JSON.stringify(c[1]));
+});
+// MISSING IS NOT ZERO, and the table being ABSENT is not the table having no rows.
+ok(Object.prototype.hasOwnProperty.call(AF_B, 'reservation_row_count')
+  && AF_B.reservation_row_count === null,
+  'AF3a reservation_row_count is an EXPLICIT null — absent is not zero, and not a missing key');
+
+// ---- AF4 THE 95 MOVEMENT IDENTITIES --------------------------------------------------------------
+var AF_IDS = AF_B.factory_stock_movement_ids;
+ok(AF_IDS instanceof Array, 'AF4  the movement ids are an array');
+eq(AF_IDS.length, 95, 'AF4a there are 95 of them');
+eq(AF_IDS.length, AF_B.factory_stock_movement_count,
+  'AF4b array length equals the declared count');
+eq(AF_IDS.length, AF_B.factory_stock_movement_ok_id_count,
+  'AF4c and equals the declared ok-id count — every row carries a usable key');
+var AF_SEEN = {}, AF_DUP = [];
+AF_IDS.forEach(function (v) { if (AF_SEEN[v]) AF_DUP.push(v); AF_SEEN[v] = 1; });
+eq(AF_DUP, [], 'AF4d no id appears twice');
+eq(AF_IDS.filter(function (v) { return typeof v !== 'string' || v.trim() === ''; }), [],
+  'AF4e none is blank or the wrong type');
+eq(AF_IDS.filter(function (v) { return v.indexOf('FSMV-') !== 0; }), [],
+  'AF4f every one carries the FSMV- prefix the id authority defines');
+// THE COUNT IS NOT A ROW COUNT. 95 records is a LOGICAL population; the sheet's physical extent is
+// not in this baseline at all, which is the whole point of R4J.
+eq(Object.keys(AF_B).filter(function (k) { return /row_number|last_row|physical/.test(k); }), [],
+  'AF4g and the baseline names no row number, last row or physical extent');
+
+// ---- AF5 THE 24 OTHER-SCOPE ROW SIGNATURES -------------------------------------------------------
+var AF_SIG = AF_B.other_scope_row_signatures;
+eq(AF_SIG.length, 24, 'AF5  24 other-scope row signatures');
+eq(AF_SIG.length, AF_B.other_scope_header_count + AF_B.other_scope_line_count,
+  'AF5a which is 11 headers plus 13 lines');
+eq(AF_SIG.length, AF_B.draft_row_universe_row_signature_count,
+  'AF5b and the draft-row universe counts the same 24');
+var AF_SSEEN = {}, AF_SDUP = [];
+AF_SIG.forEach(function (v) { if (AF_SSEEN[v]) AF_SDUP.push(v); AF_SSEEN[v] = 1; });
+eq(AF_SDUP, [], 'AF5c none appears twice');
+eq(AF_SIG.filter(function (v) { return !/^[A-Za-z0-9-]+~[0-9A-F]{8}$/.test(v); }), [],
+  'AF5d each is an identity and a full-row hash, so an in-place edit is visible');
+eq(AF_B.other_scope_combined_fingerprint, AF_B.draft_row_universe_combined_fingerprint,
+  'AF5e and the two populations that cover the same rows agree on one fingerprint');
+// THE TARGET SCOPE IS EMPTY, which is why a generation there creates rather than updates.
+eq([AF_B.target_manual_header_ids, AF_B.target_manual_line_ids,
+  AF_B.target_manual_row_signatures, AF_B.target_ai_row_signatures], [[], [], [], []],
+  'AF5f the target scope holds no existing row to protect');
+
+// ---- AF6 NOTHING FROM THE REMOVAL ERA CAME BACK --------------------------------------------------
+[['E3E783BF', 'the removal BEFORE table fingerprint'],
+ ['91702192', 'the blank row-2 raw fingerprint'],
+ ['2CA4D4BE', 'the deleted legacy test row fingerprint'],
+ ['I authorize', 'the authorization sentence'],
+ ['DOES NOT AUTHORIZE SUBMIT', 'its tail']
+].forEach(function (c, i) {
+  eq(S1_FROZEN_JSON_.indexOf(c[0]), -1, 'AF6.' + (i + 1) + ' the baseline does not carry ' + c[1]);
+});
+// 97 AS A VALUE, NEVER AS A SUBSTRING. '97' occurs inside hashes and ids, and a substring search here
+// would report a fault that is not one — which is its own kind of wrong answer.
+eq(Object.keys(AF_B).filter(function (k) { return AF_B[k] === 97; }), [],
+  'AF6a and no field requires a physical last row of 97');
+eq(vm.runInContext('S1_freezeCarriesRemovalEra_(' + S1_FROZEN_JSON_ + ')',
+  S1World(pos()).ctx), [],
+  'AF6b measured by the census own executable list, not only by this suite');
+
+// ---- AF7 THE DESTINATION IS STILL NEVER WRITTEN BY CODE ------------------------------------------
+eq((S1_BARE.match(/S1_MANIFEST_P_BEFORE_\s*=(?!=)/g) || []).length, 1,
+  'AF7  the file ASSIGNS it exactly once — its own declaration, never from code');
+eq((S1.match(/var S1_MANIFEST_P_BEFORE_ = /g) || []).length, 1,
+  'AF7a declared once');
+// ASSIGNMENTS ONLY — the same trap M6g names one section up. `S1_MANIFEST_P_BEFORE_ =` matches the
+// `===` in the destination gate's own comparison, and bareCode blanks the string beside it, so a plain
+// substring search reports the gate as an assignment. A comparison is not an assignment.
+eq((bareCode(extractFn(S1, 'RUN_S1_MANIFEST_P')).match(/S1_MANIFEST_P_BEFORE_\s*=(?!=)/g) || []).length, 0,
+  'AF7b and the manifest itself never assigns it — a baseline the diagnostic can fill in is a second'
+  + ' copy of the measurement, not a baseline');
 
 mut('N1 the proposal is sized from the RECOMMENDATION instead of the residual', function () {
   var m = swapS1('    prop = Math.min(row.residual_qty, a);',
@@ -7658,19 +7885,48 @@ mut('N40 the candidate is no longer required to BE the allowlisted scope', funct
       factory_stock: POS.factory_stock }).ctx)).indexOf('cand.scope_key === out.scope.scope_key') === -1;
 });
 
-mut('N41 the baseline-destination check is dropped, so a freeze overwrites an earlier one', function () {
-  var occupied = "var S1_MANIFEST_P_BEFORE_ = { frozen_at: 'an earlier run' };";
-  var withOccupied = S1.split('var S1_MANIFEST_P_BEFORE_ = null;').join(occupied);
-  var m = withOccupied.split(
-    "    L.P('the_baseline_destination_is_empty_so_nothing_is_being_overwritten', null,")
-    .join("    L.P('the_baseline_destination_is_empty_so_nothing_is_being_overwritten', null, null, true) || L.P('_unused', null,");
+mut('N41 the baseline-destination check is dropped, so a freeze overwrites a DIFFERENT one', function () {
+  // S1-R5 — same mutant, aimed at the case that still must STOP: the destination holds a baseline of
+  // another world. The mutation forces the predicate true so the conflict passes unnoticed.
+  var withOccupied = s1WithBaseline("{ frozen_at: 'an earlier run', scope_key: 'OTHER|X|Y|Z',"
+    + " build: 'SOME-OTHER-BUILD' }");
+  var NM = 'the_baseline_destination_is_empty_or_holds_this_same_measurement';
+  var m = withOccupied.split("    L.P('" + NM + "',")
+    .join("    L.P('" + NM + "', null, null, true) || L.P('_unused',");
   if (m === withOccupied) throw new Error('destination anchor missing');
   var spec = { gap: POS.gap, factory_stock: POS.factory_stock };
   var clean = withMP(withOccupied, spec), bad = withMP(m, spec);
-  var NM = 'the_baseline_destination_is_empty_so_nothing_is_being_overwritten';
   return clean.res.verdict === 'STOP' && failed(clean.res).indexOf(NM) >= 0
     && bad.res.verdict === 'READY_TO_AUTHORIZE' && mpChunks(bad.world) >= 1;
 });
+
+mut('N41a the stage check accepts ANY occupied destination, so a different world passes as the same',
+  function () {
+    var m = S1_WORLD.split('        : (measuredIdentity !== null && heldIdentity !== measuredIdentity'
+      + " ? 'CONFLICT' : 'FROZEN'));")
+      .join("        : 'FROZEN');");
+    if (m === S1_WORLD) throw new Error('stage anchor missing');
+    var other = "{ frozen_at: 'an earlier run', scope_key: 'OTHER|X|Y|Z', build: 'SOME-OTHER-BUILD' }";
+    var spec = { gap: POS.gap, factory_stock: POS.factory_stock };
+    var clean = withMP(s1WithBaseline(other), spec);
+    var bad = withMP(m.split(S1_FROZEN_DECL_ + 'null;').join(S1_FROZEN_DECL_ + other + ';'), spec);
+    return clean.res.baseline_stage === 'CONFLICT' && clean.res.verdict === 'STOP'
+      && bad.res.baseline_stage === 'FROZEN' && bad.res.verdict === 'READY_TO_AUTHORIZE';
+  });
+
+mut('N41b the identity ignores the content fingerprints, so a drifted world passes as the same',
+  function () {
+    var m = swapS1("    'factory_pool_row_fingerprint', 'factory_stock_movement_fingerprint',",
+      "    'factory_pool_row_fingerprint',");
+    var spec = { gap: POS.gap, factory_stock: POS.factory_stock };
+    var base = manifestP(spec).res.frozen_before;
+    var drift = JSON.parse(JSON.stringify(base));
+    drift.factory_stock_movement_fingerprint = 'DEADBEEF';
+    var clean = withMP(s1WithBaseline(JSON.stringify(drift)), spec);
+    var bad = withMP(m.split(S1_FROZEN_DECL_ + 'null;')
+      .join(S1_FROZEN_DECL_ + JSON.stringify(drift) + ';'), spec);
+    return clean.res.baseline_stage === 'CONFLICT' && bad.res.baseline_stage === 'FROZEN';
+  });
 
 mut('N42 the deployment-build gate takes its expectation from the deployment it is checking', function () {
   // An expected value read from the observed value is a comparison with itself: it cannot fail, and a gate
