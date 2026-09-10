@@ -11126,3 +11126,1113 @@ function S1_finish_(out, L, quiet) {
   S1_emitChunked_('s1_payload', JSON.stringify(out));
   return out;
 }
+
+/**
+ * ================================================================================================================
+ * S1-R6 — THE ONE CONTROLLED GENERATE, AND THE READBACK THAT SETTLES IT.
+ * ================================================================================================================
+ *
+ * TWO ENTRY POINTS, AND ONLY ONE OF THEM CAN REACH A WRITE.
+ *
+ *   RUN_S1_CONTROLLED_GENERATE_PREFLIGHT()   read-only, always. It mints no capability and calls no
+ *                                            generator. Its whole job is to say whether ONE controlled
+ *                                            generation is currently authorizable.
+ *   RUN_S1_CONTROLLED_GENERATE_EXECUTE(opts) the only path in this repository from this file to a
+ *                                            production write, and it is a DRY RUN unless
+ *                                            `opts.execute === true`.
+ *
+ * IT HAS NO WRITER OF ITS OWN, AND THAT IS THE POINT. The write authority is `weeklyAiPlanGenerateK2_`
+ * (61_) → KMWRR → the atomic header+lines upsert — the SAME path a manual save uses. This file calls it
+ * exactly once, from exactly one function, with a capability minted by `WeeklyAiPlanControlledAuthority_`
+ * (also 61_). A second writer here would be a second opinion about what a written row looks like, and the
+ * first thing two opinions do is disagree about a row nobody can then reconcile. There is no `setValue`,
+ * no `setValues` and no `appendRow` anywhere in this section, and the suite asserts that by identity.
+ *
+ * WHY THE GLOBAL FLAG STAYS FALSE. `INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_` is GLOBAL: flipping it to
+ * true arms the browser button for every scope in the project, which is a different act from authorizing
+ * one generation for one SKU. 61_'s gate accepts EITHER the flag OR a valid internal capability, and the
+ * capability is the narrow one: a closure-private one-shot nonce, bound to an exact
+ * (company|country|marketplace|planning_cycle) key, passed as the SIXTH positional argument — which is
+ * why no browser request can manufacture it. The public router passes five arguments, so anything a
+ * client puts in `body` arrives as the fifth and never as `controlledAuth`. This section never assigns the
+ * flag and never assigns the allowlist.
+ *
+ * IT COMPUTES NO EXPECTATION OF ITS OWN. Every value it authorizes against comes from
+ * `S1_MANIFEST_P_BEFORE_` — the baseline a PERSON pasted — and the live re-measurement comes from
+ * `RUN_S1_MANIFEST_P()`, the same 117-predicate manifest the operator already reviewed. Asking the
+ * manifest rather than re-deriving is deliberate: two readiness answers for one scope is the one failure
+ * a readiness package cannot have.
+ *
+ * ONE CALL, NO RETRY, AND THE READBACK DECIDES. The generator is called from one clear site. There is no
+ * loop, no recursion and no catch-then-call-again: a throw, a timeout or an unreadable response is
+ * ACK_UNKNOWN, and ACK_UNKNOWN is settled by READING THE DATA, never by trying again. A second call after
+ * an unacknowledged first one is how one authorization becomes two headers.
+ *
+ * AND IT COMPENSATES NOTHING. `S1_rollbackStrategy_().generate` already records where the undo authority
+ * lives — the shipping-allocation lifecycle (cancel / expire) — and the production write unit is already
+ * atomic per route group. This wrapper adds no second compensation path: an unresolvable outcome is
+ * MANUAL_RECOVERY_REQUIRED and a person looks first.
+ * ================================================================================================================
+ */
+
+/** The authorization sentence this baseline was measured with. Held to EQUALITY: the sentence is a separate
+ *  artefact from the baseline, and the one that accompanied the superseded 2026-09-09 lineage expired with
+ *  it. A fingerprint is not an authorization — the full text must be supplied and must hash to this. */
+var S1_CG_AUTH_FINGERPRINT_ = '8A830413';
+/** Fingerprints that were valid once and are not valid now. Named rather than deleted: a superseded
+ *  authorization that leaves no trace cannot be told apart from one that was never issued. */
+var S1_CG_SUPERSEDED_AUTH_FINGERPRINTS_ = ['F700840D'];
+/** A sentence shorter than this is not the sentence — it is a summary, a fingerprint or a stub. The real
+ *  one is 2245 characters; this floor exists so "I pasted the hash" fails as its own named refusal rather
+ *  than as a puzzling missing-fact list. */
+var S1_CG_AUTH_MIN_BYTES_ = 1000;
+var S1_CG_LOCK_TIMEOUT_MS_ = 30000;
+/** The one field a re-measurement is ALLOWED to differ on. A clock reading is not a world. */
+var S1_CG_CLOCK_FIELDS_ = ['frozen_at'];
+var S1_CG_ACTOR_ = 's1_r6_controlled_generate_executor';
+/** Tables the baseline does not carry a row count for, and which a Generate must still not touch. They are
+ *  snapshotted INSIDE the lock before the call and compared after — the frozen baseline is the authority
+ *  wherever it has a field, and this in-invocation pair is the authority only where it does not. */
+var S1_CG_UNCHANGED_TABLES_ = ['shipping_plans', 'shipping_plan_lines', 'shipments'];
+
+/**
+ * THE PERMITTED WRITE SET, DERIVED FROM THE BASELINE AND FROM NOTHING ELSE.
+ *
+ * Not a parameter, not a default, and not a constant spelled here: if it were spelled here it could
+ * disagree with the baseline the operator signed, and the disagreement would be invisible.
+ */
+function S1_cgPermittedWriteSet_(b) {
+  if (!b || typeof b !== 'object') return null;
+  return {
+    create_header_ids: (b.expected_header_ids || []).slice(),
+    create_line_ids: (b.expected_line_ids || []).slice(),
+    create_header_count: b.expected_create_header_count,
+    create_line_count: b.expected_create_line_count,
+    update_header_count: 0, update_line_count: 0, expire_ai_identity_count: 0,
+    max_units_written: b.expected_max_units_written,
+    tables_that_may_be_written: [S1_DRAFT_HEADER_TABLE_, S1_DRAFT_LINE_TABLE_],
+    nothing_else_may_change: ['the target scope manual rows', 'every other scope header and line',
+      'factory_stock', S1_FACTORY_MOVEMENT_TABLE_, 'factory_stock_override_audit',
+      S1_RESERVATION_TABLE_, 'shipping_plans', 'shipping_plan_lines', 'shipments',
+      'INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_', 'INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_'],
+    submit_authorized: false
+  };
+}
+
+/**
+ * THE FACTS THE AUTHORIZATION SENTENCE MUST CARRY, BUILT FROM THE BASELINE.
+ *
+ * Every needle is a measured value, so this audit cannot pass by agreeing with itself. `S1_needleFound_`
+ * is the empty-needle rule in one place: `indexOf('')` is 0 on every string, so a fact whose measured
+ * value came back blank would be "found" in any sentence at all.
+ */
+function S1_cgAuthRequiredFacts_(b) {
+  if (!b || typeof b !== 'object') return [];
+  return [
+    ['company', b.company], ['country', b.country], ['marketplace', b.marketplace], ['sku', b.sku],
+    ['calculation_run_id', b.calculation_run_id],
+    ['accepted_calculation_date', b.accepted_calculation_date],
+    ['freshness_state', b.freshness_state],
+    ['calculation_status', b.calculation_status],
+    ['residual_qty', String(b.residual_qty)],
+    ['available_to_allocate', String(b.available_to_allocate)],
+    ['expected_max_units_written', String(b.expected_max_units_written)],
+    ['source_factory_warehouse_id', b.source_factory_warehouse_id],
+    ['expected_header_id', (b.expected_header_ids || [])[0]],
+    ['expected_line_id', (b.expected_line_ids || [])[0]],
+    // THE FIELD THE SENTENCE ACTUALLY CARRIES, AND IT IS NOT THE ONE THAT LOOKS LIKE IT.
+    // The wording protects the manual rows by their COMBINED FULL-ROW fingerprint
+    // (target_manual_combined_fingerprint). In the live 2026-09-10 measurement that value and
+    // manual_identity_fingerprint are both 811C9DC5, so the two are indistinguishable there — and asking
+    // for the wrong one passed against the real baseline while refusing every world where the target scope
+    // has manual rows. Measured: a synthetic world reported the sentence missing 53C529C9, a number the
+    // sentence never claimed to carry. Two fields that coincide in one measurement are not the same field.
+    ['target_manual_combined_fingerprint', b.target_manual_combined_fingerprint],
+    ['other_scope_header_count', String(b.other_scope_header_count)],
+    ['other_scope_line_count', String(b.other_scope_line_count)],
+    ['other_scope_combined_fingerprint', b.other_scope_combined_fingerprint],
+    ['factory_pool_row_fingerprint', b.factory_pool_row_fingerprint],
+    ['factory_stock_movement_count', String(b.factory_stock_movement_count)],
+    ['factory_stock_movement_fingerprint', b.factory_stock_movement_fingerprint],
+    ['factory_override_audit_fingerprint', b.factory_override_audit_fingerprint],
+    ['reservation_observation_state', b.reservation_observation_state],
+    ['submit_is_not_authorized', 'IT DOES NOT AUTHORIZE SUBMIT']
+  ];
+}
+
+/**
+ * THE SENTENCE IS AUDITED AS GIVEN. No trim, no case fold, no whitespace collapse.
+ *
+ * A sentence that has to be normalised before it matches is not the sentence that was authorized. The one
+ * place normalisation could still creep in is the hash authority — `S1_fingerprint_` runs its input
+ * through `S1_str_`, which trims — so this checks separately that the supplied text needs no trimming.
+ * Otherwise a sentence with a stray trailing newline would fingerprint as though it did not have one.
+ */
+function S1_cgAuthorizationAudit_(text, b) {
+  var o = { supplied: false, is_string: false, bytes: null,
+    untrimmed_input_rejected: false, fingerprint: null, fingerprint_authority_available: null,
+    expected_fingerprint: S1_CG_AUTH_FINGERPRINT_, fingerprint_matches: false,
+    superseded_fingerprint_supplied: false, looks_like_a_fingerprint_not_a_sentence: false,
+    placeholders: [], required_item_count: 0, present_count: 0, missing: [],
+    normalization_applied: 'NONE — the text is compared and hashed exactly as supplied',
+    ok: false, reason: null };
+  o.supplied = text !== undefined && text !== null;
+  if (!o.supplied) { o.reason = 'AUTHORIZATION_TEXT_ABSENT'; return o; }
+  o.is_string = typeof text === 'string';
+  if (!o.is_string) { o.reason = 'AUTHORIZATION_NOT_A_STRING'; return o; }
+  o.bytes = text.length;
+  // A FINGERPRINT IS NOT AN AUTHORIZATION. Named as its own refusal so the operator is told what is wrong
+  // rather than handed a list of twenty-four facts that are "missing" from an eight-character string.
+  if (text.length < S1_CG_AUTH_MIN_BYTES_) {
+    o.looks_like_a_fingerprint_not_a_sentence = true;
+    o.reason = 'AUTHORIZATION_IS_NOT_THE_FULL_TEXT'; return o;
+  }
+  if (text !== S1_str_(text)) {
+    o.untrimmed_input_rejected = true;
+    o.reason = 'AUTHORIZATION_CARRIES_LEADING_OR_TRAILING_WHITESPACE'; return o;
+  }
+  o.placeholders = text.match(/<[a-zA-Z_][a-zA-Z0-9_]*>/g) || [];
+  if (o.placeholders.length) { o.reason = 'AUTHORIZATION_CARRIES_PLACEHOLDERS'; return o; }
+  o.fingerprint = S1_fingerprint_([text]);
+  o.fingerprint_authority_available = o.fingerprint !== null;
+  if (!o.fingerprint_authority_available) {
+    o.reason = 'HASH_AUTHORITY_UNAVAILABLE_SO_THE_SENTENCE_CANNOT_BE_IDENTIFIED'; return o;
+  }
+  if (S1_CG_SUPERSEDED_AUTH_FINGERPRINTS_.indexOf(o.fingerprint) !== -1) {
+    o.superseded_fingerprint_supplied = true;
+    o.reason = 'AUTHORIZATION_FINGERPRINT_SUPERSEDED'; return o;
+  }
+  o.fingerprint_matches = o.fingerprint === S1_CG_AUTH_FINGERPRINT_;
+  if (!o.fingerprint_matches) { o.reason = 'AUTHORIZATION_FINGERPRINT_MISMATCH'; return o; }
+  var req = S1_cgAuthRequiredFacts_(b);
+  o.required_item_count = req.length;
+  req.forEach(function (r) {
+    if (S1_needleFound_(text, r[1])) o.present_count++;
+    else o.missing.push(r[0] + '=' + S1_cap_(S1_str_(r[1]), 40));
+  });
+  if (o.missing.length) { o.reason = 'AUTHORIZATION_IS_MISSING_MEASURED_FACTS'; return o; }
+  o.ok = true;
+  return o;
+}
+
+/**
+ * THE FULL 95-FIELD COMPARISON, NOT THE IDENTITY SUMMARY.
+ *
+ * `S1_freezeIdentity_` is what the freeze gate compares on and it is deliberately narrow. This is the
+ * EXECUTE gate, and here every frozen field is compared — because the fields the identity leaves out
+ * (freshness, the residual, the available quantity, the movement count, the universes, the schemas, the
+ * reservation state) are exactly the ones a day of Gap Job activity moves.
+ */
+function S1_cgBaselineDrift_(held, measured) {
+  var o = { comparable: false, compared_field_count: 0, excluded_fields: S1_CG_CLOCK_FIELDS_.slice(),
+    drifted: [], missing_from_measurement: [], extra_in_measurement: [], identity_matches: false };
+  if (!held || typeof held !== 'object' || !measured || typeof measured !== 'object') return o;
+  o.comparable = true;
+  o.identity_matches = S1_freezeIdentity_(held) === S1_freezeIdentity_(measured);
+  Object.keys(held).forEach(function (k) {
+    if (S1_CG_CLOCK_FIELDS_.indexOf(k) !== -1) return;
+    o.compared_field_count++;
+    if (!Object.prototype.hasOwnProperty.call(measured, k)) { o.missing_from_measurement.push(k); return; }
+    if (JSON.stringify(held[k]) !== JSON.stringify(measured[k])) o.drifted.push(k);
+  });
+  Object.keys(measured).forEach(function (k) {
+    if (!Object.prototype.hasOwnProperty.call(held, k)) o.extra_in_measurement.push(k);
+  });
+  return o;
+}
+/** No drift at all, by every one of the three ways a comparison can fail. */
+function S1_cgNoDrift_(d) {
+  return !!d && d.comparable === true && d.identity_matches === true && d.drifted.length === 0
+    && d.missing_from_measurement.length === 0 && d.extra_in_measurement.length === 0;
+}
+
+/** Rows carrying an exact id, and HOW MANY of them. One is a hit; two is a fault that a `find` would
+ *  have hidden by returning the first. */
+function S1_cgRowsById_(t, idColumn, id) {
+  var o = { count: 0, rows: [], row_numbers: [] };
+  if (!t || !t.rows || !S1_str_(id)) return o;
+  t.rows.forEach(function (rec) {
+    if (S1_str_(rec[idColumn]) === S1_str_(id)) { o.count++; o.rows.push(rec); o.row_numbers.push(rec.row_number); }
+  });
+  return o;
+}
+
+/** Row count and a content fingerprint for a table the baseline carries no numbers for. Same read, same
+ *  canon and same hash authority as everything else in this file. */
+function S1_cgTableSnapshot_(ss, table) {
+  var t = S1_fullRowTable_(ss, table, null, []);
+  return { table: table, present: t.present, readable: t.readable,
+    row_count: t.present ? t.row_count : null,
+    combined_fingerprint: t.present ? t.combined_fingerprint : null };
+}
+
+/**
+ * ONE LIVE OBSERVATION OF EVERYTHING THIS AUTHORIZATION TOUCHES OR PROMISES NOT TO TOUCH.
+ *
+ * Called twice per EXECUTE — once inside the lock before the call, once immediately after it — so the
+ * readback compares like with like. The protected surfaces come from the same helpers the baseline was
+ * built with, never from a second reader.
+ */
+function S1_cgObserve_(ss, b) {
+  var scope = { company: b.company, country: b.country, marketplace: b.marketplace, sku: b.sku,
+    scope_key: S1_scopeKey_(b.company, b.country, b.marketplace, b.sku) };
+  var part = S1_draftPartition_(ss, scope);
+  var surf = S1_factorySurfaces_(ss, b.source_factory_warehouse_id, b.sku);
+  var hHit = S1_cgRowsById_(part.header_table, 'allocation_draft_id', (b.expected_header_ids || [])[0]);
+  var lHit = S1_cgRowsById_(part.line_table, 'allocation_draft_line_id', (b.expected_line_ids || [])[0]);
+  var o = {
+    scope: scope,
+    expected_header_id: (b.expected_header_ids || [])[0] || null,
+    expected_line_id: (b.expected_line_ids || [])[0] || null,
+    header_hit_count: hHit.count, header_row_numbers: hHit.row_numbers,
+    line_hit_count: lHit.count, line_row_numbers: lHit.row_numbers,
+    header_fingerprint: hHit.count === 1 ? hHit.rows[0].fingerprint : null,
+    line_fingerprint: lHit.count === 1 ? lHit.rows[0].fingerprint : null,
+    header_fields: null, line_fields: null,
+    other_scope_header_count: part.other_scope.header_count,
+    other_scope_line_count: part.other_scope.line_count,
+    other_scope_combined_fingerprint: part.other_scope.combined_fingerprint,
+    target_manual_combined_fingerprint: part.target_manual.combined_fingerprint,
+    target_manual_header_ids: part.target_manual.header_ids.slice(),
+    target_manual_line_ids: part.target_manual.line_ids.slice(),
+    factory_pool_row_fingerprint: surf.pool ? surf.pool.row_fingerprint : null,
+    factory_current_stock: surf.pool ? surf.pool.fac_current_stock : null,
+    factory_reserved_stock: surf.pool ? surf.pool.fac_reserved_stock : null,
+    factory_stock_movement_count: null, factory_stock_movement_fingerprint: null,
+    factory_override_audit_count: null, factory_override_audit_fingerprint: null,
+    reservation_observation_state: null, reservation_row_count: null,
+    schema_fingerprints: null, unchanged_tables: {}
+  };
+  var mv = (surf.surfaces || {})[S1_FACTORY_MOVEMENT_TABLE_];
+  if (mv) { o.factory_stock_movement_count = mv.row_count; o.factory_stock_movement_fingerprint = mv.combined_fingerprint; }
+  var au = (surf.surfaces || {})['factory_stock_override_audit'];
+  if (au) { o.factory_override_audit_count = au.row_count; o.factory_override_audit_fingerprint = au.combined_fingerprint; }
+  var resv = S1_reservationObservation_(ss);
+  o.reservation_observation_state = resv.observation_state;
+  o.reservation_row_count = resv.row_count;
+  var sch = S1_schemaFingerprints_(ss);
+  o.schema_fingerprints = {};
+  Object.keys(sch.tables || {}).forEach(function (t) { o.schema_fingerprints[t] = sch.tables[t].fingerprint; });
+  S1_CG_UNCHANGED_TABLES_.forEach(function (t) { o.unchanged_tables[t] = S1_cgTableSnapshot_(ss, t); });
+  // The named fields of the two rows this generation may create, for the readback's identity checks. A
+  // full-row fingerprint says the row did not change; these say it is the RIGHT row.
+  if (hHit.count === 1) {
+    var hr = S1_recToObject_(hHit.rows[0]);
+    o.header_fields = { allocation_draft_id: S1_str_(hr.allocation_draft_id),
+      company: S1_str_(hr.company), country: S1_str_(hr.country), marketplace: S1_str_(hr.marketplace),
+      planning_cycle: S1_str_(hr.planning_cycle), status: S1_str_(hr.status),
+      generation_type: S1_str_(hr.generation_type),
+      calculation_run_id: S1_str_(hr.calculation_run_id),
+      is_ai_generated_by_production_authority: (typeof aiplIsAiGenerated_ === 'function')
+        ? (aiplIsAiGenerated_(hr) === true) : null };
+  }
+  if (lHit.count === 1) {
+    var lr = S1_recToObject_(lHit.rows[0]);
+    o.line_fields = { allocation_draft_line_id: S1_str_(lr.allocation_draft_line_id),
+      allocation_draft_id: S1_str_(lr.allocation_draft_id), sku: S1_str_(lr.sku),
+      planned_qty: S1_qty_(lr.planned_qty), recommended_qty: S1_qty_(lr.recommended_qty) };
+  }
+  return o;
+}
+
+/** The quantity this generation actually wrote, from the LINE and not from the response. A number a caller
+ *  reported is a claim; a number in the row is the outcome. */
+function S1_cgWrittenQty_(obs) {
+  if (!obs || !obs.line_fields) return null;
+  var p = obs.line_fields.planned_qty;
+  return (p === null || p === undefined) ? null : p;
+}
+
+/**
+ * IDEMPOTENCY, BEFORE ANYTHING IS MINTED OR CALLED.
+ *
+ * ABSENT       neither identity exists — a generation is what is missing.
+ * ALREADY      both exist, exactly once each, the line points at the header, the scope is exact and the
+ *              run id is this run's. Nothing to do, and the generator is NOT called.
+ * INCONSISTENT one side only, a duplicate, or content that belongs to a different run. A person looks.
+ */
+function S1_cgIdempotency_(obs, b) {
+  var o = { state: null, reason: null, header_present: obs.header_hit_count > 0,
+    line_present: obs.line_hit_count > 0, header_hit_count: obs.header_hit_count,
+    line_hit_count: obs.line_hit_count, content_matches_this_run: null };
+  if (obs.header_hit_count === 0 && obs.line_hit_count === 0) {
+    o.state = 'ABSENT'; o.reason = 'neither expected identity exists'; return o;
+  }
+  if (obs.header_hit_count > 1 || obs.line_hit_count > 1) {
+    o.state = 'INCONSISTENT'; o.reason = 'DUPLICATE_EXPECTED_IDENTITY'; return o;
+  }
+  if (obs.header_hit_count !== 1 || obs.line_hit_count !== 1) {
+    o.state = 'INCONSISTENT'; o.reason = 'ONLY_ONE_SIDE_OF_THE_HEADER_LINE_PAIR_EXISTS'; return o;
+  }
+  var h = obs.header_fields || {}, l = obs.line_fields || {};
+  var q = S1_cgWrittenQty_(obs);
+  var matches = h.allocation_draft_id === S1_str_(obs.expected_header_id)
+    && l.allocation_draft_line_id === S1_str_(obs.expected_line_id)
+    && l.allocation_draft_id === S1_str_(obs.expected_header_id)
+    && h.company === S1_str_(b.company) && h.country === S1_str_(b.country)
+    && h.marketplace === S1_str_(b.marketplace) && l.sku === S1_str_(b.sku)
+    && h.planning_cycle === S1_str_(b.planning_cycle)
+    && h.calculation_run_id === S1_str_(b.calculation_run_id)
+    && h.is_ai_generated_by_production_authority === true
+    && q !== null && q > 0 && q <= b.expected_max_units_written;
+  o.content_matches_this_run = matches;
+  if (matches) { o.state = 'ALREADY'; o.reason = 'the exact pair for this run is already present'; return o; }
+  o.state = 'INCONSISTENT'; o.reason = 'THE_EXISTING_PAIR_DOES_NOT_MATCH_THIS_RUN';
+  return o;
+}
+
+/**
+ * THE ONE PRODUCTION CALL. THE ONLY ONE, AND THE ONLY PLACE THAT MINTS.
+ *
+ * Every argument is production-shaped and comes from a production authority: the harvest from
+ * `weeklyAiPlanHarvest_`, the request from `KMWHA.mapWeeklyHarvestToBatchRequest`, the persistence deps
+ * from `weeklyAiPlanPersistenceDeps_`. Nothing here is a browser payload and nothing here is a parameter:
+ * the scope, the cycle and the identities are the baseline's.
+ *
+ * `attempts` and `generator_calls` are set BEFORE the call, not after it. A call that throws still
+ * happened, and a counter incremented on the success path would report zero attempts for the one outcome
+ * where knowing there was an attempt matters most.
+ */
+function S1_cgProductionCall_(ss, b) {
+  var o = { attempted: false, generator_calls: 0, stage: null, capability_minted: false,
+    capability_scope_key: null, capability_nonce_present: false, threw: false, throw_message: null,
+    response_readable: false, resp: null,
+    writer_authority: '61_ weeklyAiPlanGenerateK2_ -> KMWRR -> atomic header+lines upsert',
+    second_writer_constructed: false };
+  if (typeof KMWHA === 'undefined' || typeof KMWRB === 'undefined' || typeof KMWRR === 'undefined'
+      || typeof weeklyAiPlanHarvest_ !== 'function'
+      || typeof weeklyAiPlanPersistenceDeps_ !== 'function'
+      || typeof weeklyAiPlanParseResp_ !== 'function'
+      || typeof WeeklyAiPlanControlledAuthority_ === 'undefined') {
+    // A MISSING PRODUCTION AUTHORITY IS A REFUSAL, NEVER A LOCAL SUBSTITUTE.
+    o.stage = 'PRODUCTION_AUTHORITY_MISSING'; return o;
+  }
+  var h = null;
+  try { h = weeklyAiPlanHarvest_(ss, { company: b.company, country: b.country, planningCycle: b.planning_cycle }); }
+  catch (eH) { o.stage = 'HARVEST_THREW:' + S1_cap_(String(eH && eH.message ? eH.message : eH), 120); return o; }
+  if (!h || !h.ok) { o.stage = 'HARVEST_UNAVAILABLE'; return o; }
+  var mapped = null;
+  try {
+    mapped = KMWHA.mapWeeklyHarvestToBatchRequest({
+      planningCycle: b.planning_cycle,
+      businessScope: { company: b.company, country: b.country, marketplace: b.marketplace,
+        source_page: (typeof WEEKLY_AI_PLAN_SOURCE_PAGE_ !== 'undefined')
+          ? WEEKLY_AI_PLAN_SOURCE_PAGE_ : 'inventory_replenishment' },
+      mode: 'MANUAL_REGENERATE', confirmRegenerateOverUserEdits: false, actor: S1_CG_ACTOR_,
+      now: (typeof procurementTimestamp_ === 'function') ? procurementTimestamp_() : new Date(),
+      sourceDataAsOf: h.sourceDataAsOf, formulaVersion: 'WEEKLY_AI_PLAN_V1',
+      factoryIdentityConfig: (typeof WEEKLY_AI_PLAN_FACTORY_IDENTITY_ !== 'undefined')
+        ? WEEKLY_AI_PLAN_FACTORY_IDENTITY_ : null,
+      warehousesById: h.warehousesById, kmaf: h.kmaf,
+      horizonsByDemandRef: h.horizonsByDemandRef, poolsBySku: h.poolsBySku });
+  } catch (eM) { o.stage = 'MAP_THREW:' + S1_cap_(String(eM && eM.message ? eM.message : eM), 120); return o; }
+  if (!mapped || !mapped.ready) { o.stage = 'MAP_NOT_READY'; return o; }
+  // EXACT SCOPE, NEVER WIDENED. Naming the marketplace engages 61_'s marketplace-exact guard, which fails
+  // the run closed if the applied scope is not the requested one.
+  mapped.request.businessScope = mapped.request.businessScope || {};
+  mapped.request.businessScope.marketplace = b.marketplace;
+  var deps = null;
+  try { deps = weeklyAiPlanPersistenceDeps_(ss); }
+  catch (eD) { o.stage = 'DEPS_THREW:' + S1_cap_(String(eD && eD.message ? eD.message : eD), 120); return o; }
+  var cap = null;
+  try {
+    cap = WeeklyAiPlanControlledAuthority_.mint({
+      scope: { company: b.company, country: b.country, marketplace: b.marketplace },
+      planning_cycle: b.planning_cycle,
+      s1_baseline_identity: S1_freezeIdentity_(b),
+      authorization_fingerprint: S1_CG_AUTH_FINGERPRINT_,
+      expected_header_ids: (b.expected_header_ids || []).slice(),
+      expected_line_ids: (b.expected_line_ids || []).slice() });
+  } catch (eC) { o.stage = 'MINT_THREW:' + S1_cap_(String(eC && eC.message ? eC.message : eC), 120); return o; }
+  if (!cap || cap.__wap_controlled !== true) { o.stage = 'CAPABILITY_NOT_MINTED'; return o; }
+  o.capability_minted = true;
+  o.capability_nonce_present = !!cap.nonce;
+  o.capability_scope_key = WeeklyAiPlanControlledAuthority_.scopeKey(cap.spec);
+  // ---- THE SITE. ONE CALL, COUNTED BEFORE IT IS MADE, NEVER REPEATED. --------------------------------
+  o.attempted = true;
+  o.generator_calls = 1;
+  o.stage = 'CALLED';
+  try {
+    o.resp = weeklyAiPlanParseResp_(weeklyAiPlanGenerateK2_(ss, mapped.request, h, deps,
+      { company: b.company, country: b.country, marketplace: b.marketplace }, cap));
+    o.response_readable = !!o.resp && typeof o.resp === 'object';
+    o.stage = o.response_readable ? 'RETURNED' : 'RETURNED_UNREADABLE';
+  } catch (e) {
+    o.threw = true;
+    o.throw_message = S1_cap_(String(e && e.message ? e.message : e), 300);
+    o.stage = 'THREW';
+  }
+  return o;
+}
+
+/** The error codes a response names, from the production error contract `{ code, message }`. An unnamed
+ *  refusal is not a guard refusal — it is an outcome nobody can act on. */
+function S1_cgRespCodes_(resp) {
+  var out = [];
+  if (!resp || typeof resp !== 'object') return out;
+  ((resp.errors) || []).forEach(function (e) { var c = S1_str_(e && e.code); if (c) out.push(c); });
+  return out;
+}
+
+/**
+ * THE READBACK. IT DECIDES, AND THE RESPONSE DOES NOT.
+ *
+ * Two authorities, and each comparison says which it used: the FROZEN BASELINE wherever it carries the
+ * field, and the in-lock BEFORE observation only for the tables the baseline carries no numbers for. A
+ * readback that took its expectation from the response would be asking the writer whether it wrote.
+ */
+function S1_cgReadback_(before, after, b) {
+  var L = S1_ledger_();
+  var ws = S1_cgPermittedWriteSet_(b);
+  var hid = S1_str_((b.expected_header_ids || [])[0]);
+  var lid = S1_str_((b.expected_line_ids || [])[0]);
+  var h = after.header_fields || {}, l = after.line_fields || {};
+  var q = S1_cgWrittenQty_(after);
+  var o = { authority: 'the frozen baseline, and the in-lock BEFORE snapshot only where it has no field',
+    header_created: after.header_hit_count === 1 && before.header_hit_count === 0,
+    line_created: after.line_hit_count === 1 && before.line_hit_count === 0,
+    written_qty: q, header_fingerprint: after.header_fingerprint, line_fingerprint: after.line_fingerprint,
+    both_sides_landed: false, neither_side_landed: false, exactly_one_side_landed: false,
+    protected_surfaces_intact: false, identity_exact: false, quantity_within_ceiling: false,
+    predicates: null, predicates_failed: null, failed_predicates: null, ok: false };
+
+  // ---- THE TWO IDENTITIES: PRESENT, UNIQUE, AND LINKED ------------------------------------------------
+  L.P('the_expected_header_exists_exactly_once', 1, after.header_hit_count, after.header_hit_count === 1);
+  L.P('the_expected_line_exists_exactly_once', 1, after.line_hit_count, after.line_hit_count === 1);
+  L.P('the_line_foreign_key_points_at_the_expected_header', hid, l.allocation_draft_id,
+    S1_str_(l.allocation_draft_id) === hid);
+  L.P('the_header_carries_the_expected_identity', hid, h.allocation_draft_id,
+    S1_str_(h.allocation_draft_id) === hid);
+  L.P('the_line_carries_the_expected_identity', lid, l.allocation_draft_line_id,
+    S1_str_(l.allocation_draft_line_id) === lid);
+  L.P('the_header_scope_is_the_authorized_scope_on_all_four_axes',
+    [b.company, b.country, b.marketplace, b.sku],
+    [h.company, h.country, h.marketplace, l.sku],
+    S1_str_(h.company) === S1_str_(b.company) && S1_str_(h.country) === S1_str_(b.country)
+      && S1_str_(h.marketplace) === S1_str_(b.marketplace) && S1_str_(l.sku) === S1_str_(b.sku));
+  L.P('the_header_is_AI_generated_by_the_production_provenance_authority', true,
+    h.is_ai_generated_by_production_authority, h.is_ai_generated_by_production_authority === true);
+  L.P('the_header_carries_the_authorized_calculation_run', b.calculation_run_id, h.calculation_run_id,
+    S1_str_(h.calculation_run_id) === S1_str_(b.calculation_run_id));
+  L.P('the_header_carries_the_authorized_planning_cycle', b.planning_cycle, h.planning_cycle,
+    S1_str_(h.planning_cycle) === S1_str_(b.planning_cycle));
+  L.P('the_written_quantity_is_positive_and_within_the_authorized_ceiling',
+    '0 < q <= ' + ws.max_units_written, q, q !== null && q > 0 && q <= ws.max_units_written);
+  L.P('no_second_header_or_line_was_created_beyond_the_authorized_pair',
+    [1, 1], [after.header_hit_count, after.line_hit_count],
+    after.header_hit_count <= 1 && after.line_hit_count <= 1);
+  L.P('a_full_row_fingerprint_was_readable_for_each_created_row', 'two fingerprints',
+    [after.header_fingerprint, after.line_fingerprint],
+    after.header_fingerprint !== null && after.line_fingerprint !== null);
+
+  // ---- WHAT MUST NOT HAVE MOVED, EACH AGAINST THE FROZEN BASELINE ------------------------------------
+  L.P('the_target_scope_manual_rows_are_unchanged', b.target_manual_combined_fingerprint,
+    after.target_manual_combined_fingerprint,
+    S1_str_(after.target_manual_combined_fingerprint) === S1_str_(b.target_manual_combined_fingerprint));
+  L.P('every_other_scope_header_and_line_is_unchanged',
+    [b.other_scope_header_count, b.other_scope_line_count, b.other_scope_combined_fingerprint],
+    [after.other_scope_header_count, after.other_scope_line_count, after.other_scope_combined_fingerprint],
+    after.other_scope_header_count === b.other_scope_header_count
+      && after.other_scope_line_count === b.other_scope_line_count
+      && S1_str_(after.other_scope_combined_fingerprint) === S1_str_(b.other_scope_combined_fingerprint));
+  L.P('the_factory_pool_row_is_unchanged', b.factory_pool_row_fingerprint,
+    after.factory_pool_row_fingerprint,
+    S1_str_(after.factory_pool_row_fingerprint) === S1_str_(b.factory_pool_row_fingerprint));
+  L.P('no_factory_stock_movement_was_added',
+    [b.factory_stock_movement_count, b.factory_stock_movement_fingerprint],
+    [after.factory_stock_movement_count, after.factory_stock_movement_fingerprint],
+    after.factory_stock_movement_count === b.factory_stock_movement_count
+      && S1_str_(after.factory_stock_movement_fingerprint) === S1_str_(b.factory_stock_movement_fingerprint));
+  L.P('no_override_audit_row_was_added',
+    [b.factory_override_audit_count, b.factory_override_audit_fingerprint],
+    [after.factory_override_audit_count, after.factory_override_audit_fingerprint],
+    after.factory_override_audit_count === b.factory_override_audit_count
+      && S1_str_(after.factory_override_audit_fingerprint) === S1_str_(b.factory_override_audit_fingerprint));
+  // ABSENT STAYS ABSENT. A reservations table that came into existence during the run is a change even
+  // though it holds no rows, so the STATE is compared and not only the count.
+  L.P('the_reservations_table_is_still_in_the_state_the_baseline_froze',
+    [b.reservation_observation_state, b.reservation_row_count],
+    [after.reservation_observation_state, after.reservation_row_count],
+    S1_str_(after.reservation_observation_state) === S1_str_(b.reservation_observation_state)
+      && JSON.stringify(after.reservation_row_count) === JSON.stringify(b.reservation_row_count));
+  var schemaDrift = [];
+  Object.keys(b.schema_fingerprints || {}).forEach(function (t) {
+    if (S1_str_((after.schema_fingerprints || {})[t]) !== S1_str_(b.schema_fingerprints[t])) schemaDrift.push(t);
+  });
+  L.P('every_schema_fingerprint_is_unchanged', [], schemaDrift, schemaDrift.length === 0);
+  // ---- AND THE TABLES THE BASELINE CARRIES NO NUMBERS FOR, against the in-lock BEFORE snapshot -------
+  var tblDrift = [];
+  S1_CG_UNCHANGED_TABLES_.forEach(function (t) {
+    var x = (before.unchanged_tables || {})[t] || {}, y = (after.unchanged_tables || {})[t] || {};
+    if (x.present !== y.present || x.row_count !== y.row_count
+        || S1_str_(x.combined_fingerprint) !== S1_str_(y.combined_fingerprint)) tblDrift.push(t);
+  });
+  L.P('no_weekly_shipping_plan_plan_line_or_shipment_changed', [], tblDrift, tblDrift.length === 0);
+
+  o.both_sides_landed = after.header_hit_count === 1 && after.line_hit_count === 1;
+  o.neither_side_landed = after.header_hit_count === 0 && after.line_hit_count === 0;
+  o.exactly_one_side_landed = (after.header_hit_count === 0) !== (after.line_hit_count === 0);
+  o.protected_surfaces_intact = ['the_target_scope_manual_rows_are_unchanged',
+    'every_other_scope_header_and_line_is_unchanged', 'the_factory_pool_row_is_unchanged',
+    'no_factory_stock_movement_was_added', 'no_override_audit_row_was_added',
+    'the_reservations_table_is_still_in_the_state_the_baseline_froze',
+    'every_schema_fingerprint_is_unchanged',
+    'no_weekly_shipping_plan_plan_line_or_shipment_changed']
+    .filter(function (n) { return L.failed.indexOf(n) !== -1; }).length === 0;
+  o.identity_exact = ['the_expected_header_exists_exactly_once', 'the_expected_line_exists_exactly_once',
+    'the_line_foreign_key_points_at_the_expected_header', 'the_header_carries_the_expected_identity',
+    'the_line_carries_the_expected_identity',
+    'the_header_scope_is_the_authorized_scope_on_all_four_axes',
+    'the_header_is_AI_generated_by_the_production_provenance_authority',
+    'the_header_carries_the_authorized_calculation_run']
+    .filter(function (n) { return L.failed.indexOf(n) !== -1; }).length === 0;
+  o.quantity_within_ceiling = q !== null && q > 0 && q <= ws.max_units_written;
+  o.predicates = L.entries;
+  o.predicates_failed = L.failed.length;
+  o.failed_predicates = L.failed.slice();
+  o.ok = L.failed.length === 0;
+  return o;
+}
+
+/**
+ * WHAT THE READBACK MEANS, AND THE ACK_UNKNOWN COLUMN BESIDE IT.
+ *
+ * The same three shapes settle both columns — both sides landed, neither did, or the state is not one of
+ * those two — because the question is the same question. What differs is only whether the call
+ * acknowledged, and that changes the NAME of the outcome, never the evidence it is read from.
+ */
+function S1_cgClassify_(call, rb, b) {
+  var ack = call.threw === true || call.response_readable !== true;
+  var codes = S1_cgRespCodes_(call.resp);
+  var o = { ack_unknown: ack, response_error_codes: codes, guard_reason_named: null,
+    verdict: null, next_action: null, why: null };
+  if (rb.both_sides_landed && rb.ok) {
+    var clamped = rb.written_qty < b.expected_max_units_written;
+    o.verdict = ack ? 'EXECUTED_OK_AFTER_ACK_UNKNOWN'
+      : (clamped ? 'CLAMPED_EXECUTED_OK' : 'EXECUTED_OK');
+    o.next_action = 'NO_FURTHER_GENERATE_ACTION';
+    o.why = ack
+      ? 'the call did not acknowledge, and the readback proves the authorized pair landed intact'
+      : (clamped
+        ? 'the authorized pair landed and the production guard clamped the quantity below the ceiling'
+        : 'the authorized pair landed at the full authorized quantity');
+    return o;
+  }
+  if (rb.neither_side_landed && rb.protected_surfaces_intact) {
+    if (ack) {
+      o.verdict = 'NOT_APPLIED_ACK_UNKNOWN';
+      o.next_action = 'RERUN_MANIFEST_P_AND_REQUIRE_NEW_AUTHORIZATION';
+      o.why = 'the call did not acknowledge and the readback proves nothing was written';
+      return o;
+    }
+    // A REFUSAL HAS TO SAY WHY. Zero rows and no named reason is not a guard refusal; it is an outcome
+    // nobody can act on, and calling it one would file an unexplained no-write as a success shape.
+    o.guard_reason_named = codes.length > 0 ? codes.slice() : [];
+    if (codes.length > 0) {
+      o.verdict = 'FACTORY_GUARD_REFUSED_ZERO_WRITE';
+      o.next_action = 'RERUN_MANIFEST_P_AND_REQUIRE_NEW_AUTHORIZATION';
+      o.why = 'the production generator refused with zero writes, naming ' + codes.join(',');
+      return o;
+    }
+    o.verdict = 'MANUAL_RECOVERY_REQUIRED';
+    o.next_action = 'STOP_AND_PERFORM_MANUAL_RECOVERY';
+    o.why = 'zero rows were written and the response named no reason, so the refusal cannot be classified';
+    return o;
+  }
+  o.verdict = 'MANUAL_RECOVERY_REQUIRED';
+  o.next_action = 'STOP_AND_PERFORM_MANUAL_RECOVERY';
+  o.why = rb.exactly_one_side_landed
+    ? 'exactly one side of the header/line pair is present — a partial write is never a success'
+    : (!rb.protected_surfaces_intact
+      ? 'a surface this authorization promised not to touch has changed: '
+        + rb.failed_predicates.join(',')
+      : 'the state is neither the authorized pair nor a proven zero write: '
+        + rb.failed_predicates.join(','));
+  return o;
+}
+
+/**
+ * [retryable, same_authorization_reusable, same_frozen_baseline_reusable,
+ *  a_further_generate_may_be_attempted, next_action]
+ *
+ * `automatic_retry_allowed` is not in the table. It is false for every verdict, everywhere, and is
+ * returned as a constant rather than looked up — a table row cannot be edited into permitting a retry
+ * that does not exist. An unknown verdict gets the most restrictive contract and says `known: false`,
+ * rather than undefined fields that read as false by accident.
+ */
+var S1_CG_RETRY_CONTRACT_ = {
+  // NOTHING WAS REACHED. The baseline and the sentence are untouched, so both are still good.
+  DRY_RUN: [true, true, true, true, 'RERUN_WITH_EXECUTE_TRUE_USING_THIS_FROZEN_BASELINE'],
+  // The lock was busy, so nothing was measured and nothing was decided.
+  REFUSED_LOCK_CONTENTION: [true, true, true, true,
+    'RERUN_PREFLIGHT_THEN_RETRY_WHEN_THE_LOCK_IS_FREE'],
+  // A refusal SPENDS the sentence. Not because anything was written — nothing was — but because an
+  // authorization that has been answered is answered; the next attempt is a new decision.
+  STOP: [false, false, false, true, 'RERUN_MANIFEST_P_AND_REQUIRE_NEW_AUTHORIZATION'],
+  // The pair is already there. Same case as EXECUTED_OK, so it gets the same sentence rather than a
+  // near-synonym of its own — with the readback as the next step, because nothing has been verified yet.
+  ALREADY_APPLIED: [false, false, false, false, 'RUN_POST_GENERATION_READBACK'],
+  EXECUTED_OK: [false, false, false, false, 'NO_FURTHER_GENERATE_ACTION'],
+  CLAMPED_EXECUTED_OK: [false, false, false, false, 'NO_FURTHER_GENERATE_ACTION'],
+  FACTORY_GUARD_REFUSED_ZERO_WRITE: [false, false, false, true,
+    'RERUN_MANIFEST_P_AND_REQUIRE_NEW_AUTHORIZATION'],
+  // RESOLVED AS APPLIED by the readback that already ran. There is nothing to go back for.
+  EXECUTED_OK_AFTER_ACK_UNKNOWN: [false, false, false, false, 'NO_FURTHER_GENERATE_ACTION'],
+  // RESOLVED AS NOT APPLIED. A generate is still permitted — from a new manifest and a new sentence.
+  NOT_APPLIED_ACK_UNKNOWN: [false, false, false, true, 'RERUN_MANIFEST_P_AND_REQUIRE_NEW_AUTHORIZATION'],
+  // AND THE ONE A TOOL MUST NOT ROUTE. A manifest ends in a freeze block and a sentence to sign; pointing
+  // an unresolved data state at it describes the recovery as something this tool can drive.
+  MANUAL_RECOVERY_REQUIRED: [false, false, false, false, 'STOP_AND_PERFORM_MANUAL_RECOVERY']
+};
+/** next_action against "may another generate be attempted" — two directions on one question, checked
+ *  against each other rather than trusted to agree. */
+var S1_CG_NEXT_ACTION_ALLOWS_ANOTHER_GENERATE_ = {
+  'NO_FURTHER_GENERATE_ACTION': false,
+  'RUN_POST_GENERATION_READBACK': false,
+  'STOP_AND_PERFORM_MANUAL_RECOVERY': false,
+  'RERUN_MANIFEST_P_AND_REQUIRE_NEW_AUTHORIZATION': true,
+  'RERUN_WITH_EXECUTE_TRUE_USING_THIS_FROZEN_BASELINE': true,
+  'RERUN_PREFLIGHT_THEN_RETRY_WHEN_THE_LOCK_IS_FREE': true
+};
+function S1_cgRetryContract_(verdict) {
+  var key = S1_str_(verdict);
+  var row = Object.prototype.hasOwnProperty.call(S1_CG_RETRY_CONTRACT_, key)
+    ? S1_CG_RETRY_CONTRACT_[key] : null;
+  if (!row) {
+    return { known: false, contract_key: key, retryable: false, automatic_retry_allowed: false,
+      same_authorization_reusable: false, same_frozen_baseline_reusable: false,
+      generate_may_be_attempted_again: false, next_action: 'STOP_AND_PERFORM_MANUAL_RECOVERY' };
+  }
+  return { known: true, contract_key: key,
+    retryable: row[0] === true,
+    // NEVER, FOR ANY VERDICT, AND NOT FROM THE TABLE.
+    automatic_retry_allowed: false,
+    same_authorization_reusable: row[1] === true,
+    same_frozen_baseline_reusable: row[2] === true,
+    generate_may_be_attempted_again: row[3] === true,
+    next_action: row[4] };
+}
+
+/**
+ * ================================================================================================================
+ * RUN_S1_CONTROLLED_GENERATE_PREFLIGHT()
+ *
+ * READ ONLY, ALWAYS, WITH NO SWITCH THAT CHANGES THAT. It takes no options, so there is nothing to pass it
+ * that would make it write. It mints no capability, calls no generator and takes no lock — a lock is a
+ * write-path concern and a read that takes one teaches an operator that this entry point is one.
+ *
+ * READY_FOR_ONE_CONTROLLED_GENERATE means five things, measured in this run: a baseline is frozen, the live
+ * manifest is READY_TO_AUTHORIZE, the live measurement equals the frozen baseline field for field, neither
+ * authorized identity exists yet, and the flag is still false.
+ * ================================================================================================================
+ */
+function RUN_S1_CONTROLLED_GENERATE_PREFLIGHT() {
+  var out = { tool: 'RUN_S1_CONTROLLED_GENERATE_PREFLIGHT', build: S1_BUILD_,
+    read_only: true, dry_run: true, writes: 0, writer_calls: 0, writer_constructed: false,
+    submit_calls: 0, capability_minted: false, generator_calls: 0, attempts: 0,
+    authorizes: 'NOTHING. It reports whether ONE controlled generation is currently authorizable.',
+    execute_entry_point: 'RUN_S1_CONTROLLED_GENERATE_EXECUTE({ execute: true, authorization: <the exact'
+      + ' sentence>, lock_timeout_ms? })',
+    verdict: null, stop_reason: '' };
+  var L = S1_ledger_();
+  try {
+    var b = S1_MANIFEST_P_BEFORE_;
+    out.baseline_present = !!b && typeof b === 'object';
+    L.P('a_frozen_manifest_p_baseline_is_present', true, out.baseline_present, out.baseline_present === true);
+    if (!out.baseline_present) {
+      out.verdict = 'STOP';
+      out.stop_reason = 'S1_MANIFEST_P_BEFORE_ is empty. Run RUN_S1_MANIFEST_P and have a PERSON paste the'
+        + ' emitted freeze block before anything can be authorized against it.';
+      return S1_cgFinishPreflight_(out, L);
+    }
+    out.baseline_identity = S1_freezeIdentity_(b);
+    out.baseline_removal_era_facts = S1_freezeCarriesRemovalEra_(b);
+    L.P('the_frozen_baseline_carries_nothing_from_the_removal_era', [],
+      out.baseline_removal_era_facts, out.baseline_removal_era_facts.length === 0);
+    out.permitted_write_set = S1_cgPermittedWriteSet_(b);
+    out.authorization_expectation = { expected_fingerprint: S1_CG_AUTH_FINGERPRINT_,
+      superseded_fingerprints: S1_CG_SUPERSEDED_AUTH_FINGERPRINTS_.slice(),
+      required_facts: S1_cgAuthRequiredFacts_(b).map(function (r) { return r[0]; }),
+      the_full_text_is_required: true,
+      note: 'EXECUTE takes the sentence itself. A fingerprint is not an authorization, and the sentence is'
+        + ' hashed exactly as supplied — no trim, no case fold, no whitespace collapse.' };
+
+    // ---- THE LIVE RE-MEASUREMENT, FROM THE MANIFEST AND NOT FROM A SECOND READER -------------------
+    var mp = RUN_S1_MANIFEST_P();
+    out.manifest_p = { verdict: mp.verdict, predicates_failed: mp.predicates_failed,
+      failed_predicates: (mp.failed_predicates || []).slice(0, 12),
+      writes: mp.writes, writer_calls: mp.writer_calls, stop_reason: S1_cap_(mp.stop_reason, 300) };
+    L.P('the_live_manifest_p_is_ready_to_authorize', 'READY_TO_AUTHORIZE', mp.verdict,
+      mp.verdict === 'READY_TO_AUTHORIZE');
+    L.P('and_it_reached_no_writer_of_its_own', [0, 0], [mp.writes, mp.writer_calls],
+      mp.writes === 0 && mp.writer_calls === 0);
+    var drift = S1_cgBaselineDrift_(b, mp.frozen_before);
+    out.baseline_drift = { comparable: drift.comparable, compared_field_count: drift.compared_field_count,
+      excluded_fields: drift.excluded_fields, identity_matches: drift.identity_matches,
+      drifted: drift.drifted, missing_from_measurement: drift.missing_from_measurement,
+      extra_in_measurement: drift.extra_in_measurement };
+    L.P('the_live_measurement_equals_the_frozen_baseline_field_for_field',
+      { drifted: [], missing: [], extra: [] },
+      { drifted: drift.drifted, missing: drift.missing_from_measurement, extra: drift.extra_in_measurement },
+      S1_cgNoDrift_(drift));
+
+    // ---- THE FLAG STAYS FALSE, AND THE ALLOWLIST STAYS ONE ------------------------------------------
+    var env = S1_environment_();
+    out.flag_value = env.flag_value;
+    out.allowlist_entry_count = (env.allowlist || []).length;
+    L.P('the_global_generation_flag_is_still_false', false, env.flag_value, env.flag_value === false);
+    L.P('the_activation_allowlist_still_holds_exactly_one_scope', 1, out.allowlist_entry_count,
+      out.allowlist_entry_count === 1);
+    L.P('and_that_one_scope_is_the_baseline_scope', b.scope_key,
+      mp.scope ? mp.scope.scope_key : null, !!mp.scope && mp.scope.scope_key === b.scope_key);
+
+    // ---- NEITHER AUTHORIZED IDENTITY EXISTS YET -----------------------------------------------------
+    var db = S1_openDb_();
+    out.db_opened = db.ok;
+    L.P('the_production_database_was_opened_for_the_identity_check', true, db.ok, db.ok === true);
+    if (db.ok) {
+      var obs = S1_cgObserve_(db.ss, b);
+      out.live_observation = obs;
+      out.idempotency = S1_cgIdempotency_(obs, b);
+      L.P('neither_authorized_identity_exists_yet', 'ABSENT', out.idempotency.state,
+        out.idempotency.state === 'ABSENT');
+    }
+    out.verdict = L.failed.length === 0 ? 'READY_FOR_ONE_CONTROLLED_GENERATE' : 'STOP';
+    if (out.verdict === 'STOP') {
+      out.stop_reason = 'not authorizable: ' + L.failed.slice(0, 8).join(', ');
+    }
+    return S1_cgFinishPreflight_(out, L);
+  } catch (e) {
+    out.verdict = 'STOP';
+    out.stop_reason = 'S1_CONTROLLED_GENERATE_PREFLIGHT_THREW: '
+      + String(e && e.message ? e.message : e)
+      + '. The exception is the finding; nothing may be authorized from a run that threw.';
+    return S1_cgFinishPreflight_(out, L);
+  }
+}
+
+/** The preflight's report. Its own function so the zero-proof is asserted in one place rather than once
+ *  per return path — five of which are refusals, and a refusal is exactly where a forgotten zero hides. */
+function S1_cgFinishPreflight_(out, L) {
+  out.predicates = L.entries;
+  out.predicates_passed = L.entries.length - L.failed.length;
+  out.predicates_failed = L.failed.length;
+  out.failed_predicates = L.failed.slice();
+  out.zero_write_confirmed = (out.writes === 0 && out.writer_calls === 0 && out.generator_calls === 0
+    && out.attempts === 0 && out.capability_minted === false);
+  S1_log_('s1_controlled_generate_preflight', JSON.stringify({
+    tool: out.tool, build: out.build, verdict: out.verdict,
+    predicates_passed: out.predicates_passed, predicates_failed: out.predicates_failed,
+    failed: out.failed_predicates.slice(0, 12),
+    writes: out.writes, writer_calls: out.writer_calls, generator_calls: out.generator_calls,
+    attempts: out.attempts, capability_minted: out.capability_minted,
+    zero_write_confirmed: out.zero_write_confirmed,
+    baseline_identity_matches: out.baseline_drift ? out.baseline_drift.identity_matches : null,
+    baseline_drifted_fields: out.baseline_drift ? out.baseline_drift.drifted : null,
+    flag_value: out.flag_value === undefined ? null : out.flag_value,
+    idempotency_state: out.idempotency ? out.idempotency.state : null,
+    stop_reason: S1_cap_(out.stop_reason, 400) }));
+  return out;
+}
+
+/**
+ * ================================================================================================================
+ * RUN_S1_CONTROLLED_GENERATE_EXECUTE({ execute, authorization, lock_timeout_ms })
+ *
+ * DEFAULT IS A DRY RUN. `execute` must be exactly `true`; absent, false, 'true', 1 and anything else are
+ * all dry runs. A dry run runs every gate, takes the lock, and mints nothing.
+ *
+ * IT ACCEPTS NO SCOPE, NO SKU, NO QUANTITY AND NO IDENTITY. There is nothing to pass it that would widen
+ * what it may write: every such value is read from `S1_MANIFEST_P_BEFORE_`. The only two inputs are the
+ * authorization sentence, which is checked against the baseline, and a lock timeout.
+ *
+ * THE GATE ORDER, AND WHY IT IS THIS ORDER.
+ *   1  a baseline is frozen                     — with none, there is nothing to authorize against
+ *   2  the sentence is valid for THIS baseline   — before the lock: a wrong sentence needs no lock
+ *   3  the ScriptLock is acquired                — REFUSED_LOCK_CONTENTION, attempts 0
+ *   4  is it already done?                        — asked FIRST of everything inside the lock, because a
+ *                                                   completed generation changes the world and a readiness
+ *                                                   question about it answers `not ready`, which routes to
+ *                                                   a new authorization (see the note at the gate).
+ *                                                   ALREADY_APPLIED and MANUAL_RECOVERY_REQUIRED both
+ *                                                   return with attempts 0 and no capability minted
+ *   5  RUN_S1_MANIFEST_P re-measures IN the lock — the 117 predicates, not a second opinion
+ *   6  the measurement equals the baseline, all 95 fields but the clock — any drift STOPs, attempts 0
+ *   7  ONE mint, ONE production call             — counted before it is made
+ *   8  the readback runs in the SAME invocation  — whether the call returned, refused or threw
+ *   9  the verdict comes from the readback, and the retry contract from the verdict
+ *
+ * NOT DONE, DELIBERATELY: no branch sets `retryable`, and no branch calls the generator a second time.
+ * ================================================================================================================
+ */
+function RUN_S1_CONTROLLED_GENERATE_EXECUTE(opts) {
+  opts = opts || {};
+  var out = { tool: 'RUN_S1_CONTROLLED_GENERATE_EXECUTE', build: S1_BUILD_,
+    execute_requested: opts.execute === true,
+    dry_run: opts.execute !== true,
+    // THE FIVE COUNTERS, AT THE TOP LEVEL, MEASURED AND NEVER SUPPOSED.
+    attempts: 0, generator_calls: 0, writer_constructed: false, submit_calls: 0, capability_minted: false,
+    writer_authority: '61_ weeklyAiPlanGenerateK2_ — this tool constructs no writer of its own',
+    flag_modified: false, allowlist_modified: false, script_properties_modified: false,
+    lock: null, verdict: null, stop_reason: '', refusal_class: null,
+    readback: null, retry_contract: null };
+  var L = S1_ledger_();
+  var lockHandle = null;
+  try {
+    // ---- GATE 1. THE BASELINE ---------------------------------------------------------------------
+    var b = S1_MANIFEST_P_BEFORE_;
+    out.baseline_present = !!b && typeof b === 'object';
+    L.P('a_frozen_manifest_p_baseline_is_present', true, out.baseline_present, out.baseline_present === true);
+    if (!out.baseline_present) {
+      out.verdict = 'STOP'; out.refusal_class = 'NO_FROZEN_BASELINE';
+      out.stop_reason = 'S1_MANIFEST_P_BEFORE_ is empty; there is nothing to authorize against.';
+      return S1_cgFinishExecute_(out, L, lockHandle);
+    }
+    out.baseline_identity = S1_freezeIdentity_(b);
+    out.scope = { company: b.company, country: b.country, marketplace: b.marketplace, sku: b.sku,
+      scope_key: b.scope_key };
+    out.permitted_write_set = S1_cgPermittedWriteSet_(b);
+    out.baseline_removal_era_facts = S1_freezeCarriesRemovalEra_(b);
+    L.P('the_frozen_baseline_carries_nothing_from_the_removal_era', [],
+      out.baseline_removal_era_facts, out.baseline_removal_era_facts.length === 0);
+
+    // ---- GATE 2. THE SENTENCE, BEFORE THE LOCK ----------------------------------------------------
+    var aud = S1_cgAuthorizationAudit_(opts.authorization, b);
+    out.authorization_audit = { supplied: aud.supplied, is_string: aud.is_string, bytes: aud.bytes,
+      fingerprint: aud.fingerprint, expected_fingerprint: aud.expected_fingerprint,
+      fingerprint_matches: aud.fingerprint_matches,
+      superseded_fingerprint_supplied: aud.superseded_fingerprint_supplied,
+      looks_like_a_fingerprint_not_a_sentence: aud.looks_like_a_fingerprint_not_a_sentence,
+      untrimmed_input_rejected: aud.untrimmed_input_rejected,
+      placeholders: aud.placeholders, required_item_count: aud.required_item_count,
+      present_count: aud.present_count, missing: aud.missing,
+      normalization_applied: aud.normalization_applied, ok: aud.ok, reason: aud.reason };
+    // THE SENTENCE IS NEVER ECHOED BACK. Reprinting it would hand a refused run something that looks
+    // signable; the fingerprint is what identifies it, and MANIFEST P is what prints it.
+    L.P('the_operator_authorization_is_the_full_text_for_this_exact_baseline', 'ok',
+      aud.reason || 'ok', aud.ok === true);
+    if (!aud.ok) {
+      out.verdict = 'STOP'; out.refusal_class = aud.reason;
+      out.stop_reason = 'the authorization was not accepted: ' + aud.reason
+        + (aud.missing.length ? ' [' + aud.missing.slice(0, 6).join('; ') + ']' : '');
+      return S1_cgFinishExecute_(out, L, lockHandle);
+    }
+
+    // ---- GATE 3. THE LOCK -------------------------------------------------------------------------
+    var timeout = S1_qty_(opts.lock_timeout_ms) > 0 ? S1_qty_(opts.lock_timeout_ms) : S1_CG_LOCK_TIMEOUT_MS_;
+    var lk = S1_remAcquireLock_(timeout);
+    out.lock = { authority_present: lk.authority_present, acquired: lk.acquired,
+      timeout_ms: lk.timeout_ms, reason: lk.reason, released: false };
+    L.P('the_script_lock_was_acquired', true, lk.acquired, lk.acquired === true);
+    if (!lk.acquired) {
+      // NOTHING WAS MEASURED, SO NOTHING IS SPENT. This is the one refusal that leaves the baseline and
+      // the sentence exactly as good as they were.
+      out.verdict = 'REFUSED_LOCK_CONTENTION';
+      out.stop_reason = 'the script lock was not acquired (' + lk.reason + '); nothing was measured,'
+        + ' nothing was minted and nothing was called.';
+      return S1_cgFinishExecute_(out, L, lockHandle);
+    }
+    lockHandle = lk.lock;
+
+    // ---- GATE 4. IS IT ALREADY DONE? ASKED FIRST, AND THE ORDER IS THE WHOLE POINT ----------------
+    //
+    // THE FIRST VERSION ASKED THIS LAST, AND IT GAVE THE WRONG ANSWER TO THE MOST IMPORTANT QUESTION.
+    //
+    // A COMPLETED GENERATION CHANGES THE WORLD. The pair it wrote is now an active AI draft in the target
+    // scope, so the residual falls to zero, the AI fingerprints and the draft-row universe move, and the
+    // predicted write set is no longer a CREATE. Re-measuring readiness first therefore answers a second
+    // Execute with `STOP — this scope is not a candidate` or `STOP — the baseline drifted`. Both are true.
+    // Both are the wrong thing to say, because both route the operator to a NEW MANIFEST P — and the next
+    // thing that manifest authorizes is a SECOND generation over rows that already exist.
+    //
+    // MEASURED, both ways round: with the authorized pair pre-seeded, asking readiness first returned
+    // next_action RERUN_MANIFEST_P_AND_REQUIRE_NEW_AUTHORIZATION — the one next_action that permits
+    // another generate — for a scope whose generation had already succeeded.
+    //
+    // ASKING IT FIRST COSTS NOTHING IN SAFETY, and that is why the order is allowed to change. Neither
+    // answer this gate can give mints a capability or calls the generator: ALREADY_APPLIED closes the case
+    // and asks for a readback, INCONSISTENT asks for a person. Every path that can WRITE still passes the
+    // readiness gates and the field-for-field comparison below, which is what §四 requires of them. And
+    // ALREADY_APPLIED is not a weak match: the pair must carry this run's calculation_run_id, this scope on
+    // all four axes, the AI provenance the production authority reports, and a quantity within the ceiling.
+    var db = S1_openDb_();
+    out.db_opened = db.ok;
+    L.P('the_production_database_was_opened', true, db.ok, db.ok === true);
+    if (!db.ok) {
+      out.verdict = 'STOP'; out.refusal_class = 'DB_NOT_OPENED';
+      out.stop_reason = 'the production database could not be opened (' + db.reason + ').';
+      return S1_cgFinishExecute_(out, L, lockHandle);
+    }
+    var before = S1_cgObserve_(db.ss, b);
+    out.observation_before = before;
+    out.idempotency = S1_cgIdempotency_(before, b);
+    if (out.idempotency.state === 'ALREADY') {
+      out.verdict = 'ALREADY_APPLIED';
+      out.stop_reason = '';
+      out.note = 'the exact authorized pair is already present for this run; the generator was NOT called.';
+      return S1_cgFinishExecute_(out, L, lockHandle);
+    }
+    if (out.idempotency.state === 'INCONSISTENT') {
+      out.verdict = 'MANUAL_RECOVERY_REQUIRED';
+      out.stop_reason = 'the authorized identities are in a state a generation must not be run over: '
+        + out.idempotency.reason;
+      return S1_cgFinishExecute_(out, L, lockHandle);
+    }
+
+    // ---- GATE 5. THE RE-MEASUREMENT, INSIDE THE LOCK ----------------------------------------------
+    // From here on nothing has happened yet, so readiness is the right question again — and it is asked
+    // from RUN_S1_MANIFEST_P rather than re-derived, because two readiness answers for one scope is the
+    // one failure a readiness package cannot have.
+    var mp = RUN_S1_MANIFEST_P();
+    out.manifest_p = { verdict: mp.verdict, predicates_failed: mp.predicates_failed,
+      failed_predicates: (mp.failed_predicates || []).slice(0, 12),
+      writes: mp.writes, writer_calls: mp.writer_calls, stop_reason: S1_cap_(mp.stop_reason, 300) };
+    L.P('the_in_lock_manifest_p_is_ready_to_authorize', 'READY_TO_AUTHORIZE', mp.verdict,
+      mp.verdict === 'READY_TO_AUTHORIZE');
+    var env = S1_environment_();
+    out.flag_value = env.flag_value;
+    out.allowlist_entry_count = (env.allowlist || []).length;
+    L.P('the_global_generation_flag_is_still_false', false, env.flag_value, env.flag_value === false);
+    L.P('the_activation_allowlist_still_holds_exactly_one_scope', 1, out.allowlist_entry_count,
+      out.allowlist_entry_count === 1);
+    L.P('and_the_one_allowlisted_scope_is_the_baseline_scope', b.scope_key,
+      mp.scope ? mp.scope.scope_key : null, !!mp.scope && mp.scope.scope_key === b.scope_key);
+    var dep = (env.deployment || {});
+    L.P('the_deployment_is_uniform_and_no_owner_module_is_stale', { mixed: false, stale: 0 },
+      { mixed: dep.mixed_deployment, stale: dep.stale_module_count },
+      dep.mixed_deployment === false && dep.stale_module_count === 0);
+    if (L.failed.length > 0) {
+      out.verdict = 'STOP'; out.refusal_class = 'PREFLIGHT_NOT_READY';
+      out.stop_reason = 'the project is not in the state this authorization was issued against: '
+        + L.failed.slice(0, 8).join(', ');
+      return S1_cgFinishExecute_(out, L, lockHandle);
+    }
+
+    // ---- GATE 6. FIELD FOR FIELD, AND NOTHING MAY WRITE UNTIL IT PASSES ---------------------------
+    var drift = S1_cgBaselineDrift_(b, mp.frozen_before);
+    out.baseline_drift = { comparable: drift.comparable, compared_field_count: drift.compared_field_count,
+      excluded_fields: drift.excluded_fields, identity_matches: drift.identity_matches,
+      drifted: drift.drifted, missing_from_measurement: drift.missing_from_measurement,
+      extra_in_measurement: drift.extra_in_measurement };
+    L.P('the_in_lock_measurement_equals_the_frozen_baseline_field_for_field',
+      { drifted: [], missing: [], extra: [] },
+      { drifted: drift.drifted, missing: drift.missing_from_measurement, extra: drift.extra_in_measurement },
+      S1_cgNoDrift_(drift));
+    if (L.failed.length > 0) {
+      out.verdict = 'STOP'; out.refusal_class = 'BASELINE_DRIFT';
+      out.stop_reason = 'the world is not the world the baseline describes, so this authorization does not'
+        + ' apply to it: ' + L.failed.slice(0, 8).join(', ')
+        + (drift.drifted.length ? ' [drifted: ' + drift.drifted.slice(0, 10).join(',') + ']' : '');
+      return S1_cgFinishExecute_(out, L, lockHandle);
+    }
+
+    // ---- THE DRY RUN STOPS HERE, HAVING PROVED EVERYTHING AND MINTED NOTHING ----------------------
+    if (opts.execute !== true) {
+      out.verdict = 'DRY_RUN';
+      out.note = 'every gate passed. No capability was minted and the production generator was not called.'
+        + ' Re-run with { execute: true, authorization: <the exact sentence> } to perform the ONE'
+        + ' authorized generation.';
+      return S1_cgFinishExecute_(out, L, lockHandle);
+    }
+
+    // ---- GATE 7. ONE MINT, ONE CALL ---------------------------------------------------------------
+    var call = S1_cgProductionCall_(db.ss, b);
+    out.attempts = call.attempted ? 1 : 0;
+    out.generator_calls = call.generator_calls;
+    out.capability_minted = call.capability_minted;
+    out.production_call = { stage: call.stage, attempted: call.attempted,
+      generator_calls: call.generator_calls, capability_minted: call.capability_minted,
+      capability_scope_key: call.capability_scope_key,
+      capability_nonce_present: call.capability_nonce_present,
+      capability_is_one_shot: 'the authority deletes the nonce inside verify(); a second use of the same'
+        + ' capability fails CAPABILITY_NOT_MINTED_IN_EXECUTION',
+      threw: call.threw, throw_message: call.throw_message,
+      response_readable: call.response_readable,
+      writer_authority: call.writer_authority,
+      response_error_codes: S1_cgRespCodes_(call.resp),
+      response_success: call.resp ? (call.resp.success === true) : null };
+    if (!call.attempted) {
+      // THE CALL WAS NEVER REACHED, so nothing is unknown. A pre-call authority or harvest failure is a
+      // refusal with attempts 0, and it must not be dressed as an ACK_UNKNOWN.
+      out.verdict = 'STOP'; out.refusal_class = call.stage;
+      out.stop_reason = 'the production call was not reached (' + call.stage + '); zero attempts, zero'
+        + ' writes, and no capability was minted.';
+      return S1_cgFinishExecute_(out, L, lockHandle);
+    }
+
+    // ---- GATE 8. THE READBACK, IN THIS SAME INVOCATION, WHATEVER THE CALL DID ---------------------
+    var after = S1_cgObserve_(db.ss, b);
+    out.observation_after = after;
+    var rb = S1_cgReadback_(before, after, b);
+    out.readback = rb;
+
+    // ---- GATE 9. THE VERDICT COMES FROM THE READBACK ----------------------------------------------
+    var cls = S1_cgClassify_(call, rb, b);
+    out.ack_unknown = cls.ack_unknown;
+    out.classification = cls;
+    out.verdict = cls.verdict;
+    out.written_qty = rb.written_qty;
+    if (cls.verdict === 'MANUAL_RECOVERY_REQUIRED') out.stop_reason = cls.why;
+    return S1_cgFinishExecute_(out, L, lockHandle);
+  } catch (e) {
+    // A THROW OUTSIDE THE CALL IS NOT AN ACK_UNKNOWN unless the call was reached. `attempts` already says
+    // which, and it is not touched here.
+    out.verdict = out.attempts > 0 ? 'MANUAL_RECOVERY_REQUIRED' : 'STOP';
+    out.refusal_class = 'EXECUTOR_THREW';
+    out.stop_reason = 'S1_CONTROLLED_GENERATE_EXECUTE_THREW: ' + String(e && e.message ? e.message : e)
+      + (out.attempts > 0
+        ? '. The production call HAD been reached, so where the data stands is unknown: a person looks.'
+        : '. The production call was never reached; zero attempts and zero writes.');
+    return S1_cgFinishExecute_(out, L, lockHandle);
+  }
+}
+
+/**
+ * THE REPORT, AND THE LOCK RELEASE, IN ONE PLACE.
+ *
+ * Twelve return paths above, and every one of them has to release the lock and derive the retry contract.
+ * Doing it here rather than at each return is why a later branch cannot forget: the contract is derived
+ * FROM the verdict, so a new verdict without a table row reports `known: false` instead of undefined
+ * fields that read as false by accident.
+ */
+function S1_cgFinishExecute_(out, L, lockHandle) {
+  if (lockHandle) {
+    try { lockHandle.releaseLock(); if (out.lock) out.lock.released = true; }
+    catch (e) { if (out.lock) out.lock.release_error = S1_cap_(String(e && e.message ? e.message : e), 120); }
+  }
+  out.predicates = L.entries;
+  out.predicates_passed = L.entries.length - L.failed.length;
+  out.predicates_failed = L.failed.length;
+  out.failed_predicates = L.failed.slice();
+  out.retry_contract = S1_cgRetryContract_(out.verdict);
+  // TWO DIRECTIONS ON ONE QUESTION, CHECKED AGAINST EACH OTHER. An action that closes the case must not
+  // sit beside a permission to generate again, and an action that sends somebody back to the manifest must.
+  var allows = S1_CG_NEXT_ACTION_ALLOWS_ANOTHER_GENERATE_;
+  out.retry_contract.next_action_agrees_with_the_permission =
+    Object.prototype.hasOwnProperty.call(allows, out.retry_contract.next_action)
+      ? allows[out.retry_contract.next_action] === out.retry_contract.generate_may_be_attempted_again
+      : false;
+  out.zero_write_confirmed = (out.attempts === 0 && out.generator_calls === 0
+    && out.capability_minted === false);
+  out.no_second_generate_instruction = 'This authorization is spent. There is no second Execute to run'
+    + ' against it: another generation, if one is wanted, starts at RUN_S1_MANIFEST_P and a new sentence.';
+  S1_log_('s1_controlled_generate_execute', JSON.stringify({
+    tool: out.tool, build: out.build, verdict: out.verdict,
+    execute_requested: out.execute_requested, dry_run: out.dry_run,
+    attempts: out.attempts, generator_calls: out.generator_calls,
+    capability_minted: out.capability_minted, submit_calls: out.submit_calls,
+    flag_modified: out.flag_modified, allowlist_modified: out.allowlist_modified,
+    zero_write_confirmed: out.zero_write_confirmed,
+    lock: out.lock, refusal_class: out.refusal_class,
+    predicates_passed: out.predicates_passed, predicates_failed: out.predicates_failed,
+    failed: out.failed_predicates.slice(0, 12),
+    authorization_fingerprint: out.authorization_audit ? out.authorization_audit.fingerprint : null,
+    baseline_drifted_fields: out.baseline_drift ? out.baseline_drift.drifted : null,
+    idempotency_state: out.idempotency ? out.idempotency.state : null,
+    ack_unknown: out.ack_unknown === undefined ? null : out.ack_unknown,
+    written_qty: out.written_qty === undefined ? null : out.written_qty,
+    readback_failed: out.readback ? out.readback.failed_predicates : null,
+    retry_contract: out.retry_contract,
+    stop_reason: S1_cap_(out.stop_reason, 400) }));
+  return out;
+}

@@ -646,7 +646,11 @@ var S1_BARE = bareCode(S1);
  'RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL_MANIFEST',
  'RUN_S1_FACTORY_MOVEMENT_LEGACY_PROVENANCE_CENSUS',
  'RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL_MANIFEST',
- 'RUN_S1_FACTORY_MOVEMENT_POST_MANUAL_DELETION_ACCEPTANCE_MANIFEST'].forEach(function (fn, i) {
+ 'RUN_S1_FACTORY_MOVEMENT_POST_MANUAL_DELETION_ACCEPTANCE_MANIFEST',
+  // S1-R6 — the controlled-generate PREFLIGHT belongs on THIS list. It takes no options, so there is
+  // nothing to pass it that would make it write, and it deliberately takes no lock either: a lock is a
+  // write-path concern and a read that takes one teaches an operator that this entry point is one.
+ 'RUN_S1_CONTROLLED_GENERATE_PREFLIGHT'].forEach(function (fn, i) {
   var src = bareCode(extractFn(S1, fn));
   ok(src.length > 0, 'A7.19.' + (i + 1) + 'a ' + fn + ' is extractable');
   ok(src.indexOf('setValue') === -1 && src.indexOf('appendRow') === -1
@@ -654,15 +658,17 @@ var S1_BARE = bareCode(S1);
     && src.indexOf('getRange') === -1,
     'A7.19.' + (i + 1) + 'b ' + fn + ' reaches no write API, no lock and no getRange at all');
 });
-// ELEVEN READ-ONLY ENTRY POINTS AND TWO THAT MAY WRITE, WHICH IS THE WHOLE PUBLIC SURFACE.
-// R4J's addition is the eleventh read-only one: it accepts the current state and has no execute path.
-eq((S1_BARE.match(/^function RUN_S1_[A-Z_]+/gm) || []).length, 13,
-  'A7.20 thirteen public entry points in total');
-['RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL', 'RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL']
-  .forEach(function (fn, i) {
+// TWELVE READ-ONLY ENTRY POINTS AND THREE THAT MAY WRITE, WHICH IS THE WHOLE PUBLIC SURFACE.
+// S1-R6 added two: a preflight that is on the read-only list above, and the ONE path in this file from
+// here to a production Generate. The count is asserted so a fourth writer cannot appear without this
+// line changing.
+eq((S1_BARE.match(/^function RUN_S1_[A-Z_]+/gm) || []).length, 15,
+  'A7.20 fifteen public entry points in total');
+['RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL', 'RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL',
+ 'RUN_S1_CONTROLLED_GENERATE_EXECUTE'].forEach(function (fn, i) {
   var src = bareCode(extractFn(S1, fn));
   ok(src.indexOf('opts.execute !== true') > 0,
-    'A7.20.' + (i + 1) + ' and each of the two that MAY write gates on `opts.execute !== true`, by identity');
+    'A7.20.' + (i + 1) + ' and each of the three that MAY write gates on `opts.execute !== true`, by identity');
 });
 ok(S1_BARE.indexOf('inventoryAiPlanDbGenerationEnabled_') > 0,
   'A7a it READS the flag …');
@@ -670,11 +676,55 @@ ok(!/INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_\s*=/.test(S1_BARE),
   'A7b … and never assigns it');
 ok(!/INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_\s*=/.test(S1_BARE),
   'A7c nor the activation allowlist');
-['handleGenerateWeeklyAiPlanDraft_(', 'weeklyAiPlanGenerateK2_(', 'sadSubmitToShippingPlansCore_(',
- 'handleSubmitAllocationDraftsToShippingPlans_(', 'shippingPlanCommitFromLines_(',
- 'WeeklyAiPlanControlledAuthority_'].forEach(function (c, i) {
+// S1-R6 — THE BLANKET CLAIM SPLIT IN TWO, BECAUSE ONE OF THE SIX NAMES CHANGED MEANING AND FIVE DID NOT.
+//
+// Four of these are the SUBMIT authorities and the public Generate handler. None may ever be reached from
+// here: Submit is a different authorization boundary (MANIFEST S), and the public handler is the browser's
+// door — a diagnostic that called it would be asking to be gated by the GLOBAL flag instead of by one
+// capability, which is the whole distinction this round exists to keep.
+['handleGenerateWeeklyAiPlanDraft_(', 'sadSubmitToShippingPlansCore_(',
+ 'handleSubmitAllocationDraftsToShippingPlans_(', 'shippingPlanCommitFromLines_('
+].forEach(function (c, i) {
   ok(S1_BARE.indexOf(c) === -1,
     'A8.' + (i + 1) + ' and it never CALLS ' + c.replace('(', '') + ' — it is named in prose only');
+});
+// AND THE TWO THAT R6 DELIBERATELY REACHES. An absence claim cannot describe them any more, so what is
+// asserted instead is narrower and says more: EXACTLY ONE call site each, both inside ONE named function,
+// and nowhere else in the file. The generator is the write authority; the mint is what authorizes it while
+// the global flag stays false. A second site of either is a second generation.
+eq((S1_BARE.match(/weeklyAiPlanGenerateK2_\(/g) || []).length, 1,
+  'A8.5 the production generator is CALLED from exactly one site in the whole file');
+eq((S1_BARE.match(/WeeklyAiPlanControlledAuthority_\.mint\(/g) || []).length, 1,
+  'A8.6 and the controlled capability is MINTED at exactly one site');
+var A8SITE = bareCode(extractFn(S1, 'S1_cgProductionCall_'));
+ok(A8SITE.length > 0, 'A8.6a the one site is S1_cgProductionCall_, and it is extractable');
+eq((A8SITE.match(/weeklyAiPlanGenerateK2_\(/g) || []).length, 1,
+  'A8.6b the generator call is inside it, once');
+eq((A8SITE.match(/WeeklyAiPlanControlledAuthority_\.mint\(/g) || []).length, 1,
+  'A8.6c and so is the mint');
+['RUN_S1_CONTROLLED_GENERATE_PREFLIGHT', 'RUN_S1_CONTROLLED_GENERATE_EXECUTE', 'RUN_S1_MANIFEST_P',
+ 'RUN_S1_MANIFEST_S', 'S1_cgReadback_', 'S1_cgObserve_', 'S1_cgIdempotency_', 'S1_cgClassify_'
+].forEach(function (fn, i) {
+  var src = bareCode(extractFn(S1, fn));
+  eq((src.match(/weeklyAiPlanGenerateK2_\(/g) || []).length, 0,
+    'A8.6d.' + (i + 1) + ' ' + fn + ' does not call the generator itself');
+  eq((src.match(/\.mint\(/g) || []).length, 0,
+    'A8.6e.' + (i + 1) + ' nor mint a capability');
+});
+// AND NO WRITE API ANYWHERE IN R6's OWN CODE. The wrapper has no writer of its own: a second writer here
+// would be a second opinion about what a written row looks like, and the first thing two opinions do is
+// disagree about a row nobody can then reconcile.
+['S1_cgProductionCall_', 'S1_cgObserve_', 'S1_cgReadback_', 'S1_cgClassify_', 'S1_cgIdempotency_',
+ 'S1_cgAuthorizationAudit_', 'S1_cgBaselineDrift_', 'S1_cgPermittedWriteSet_', 'S1_cgTableSnapshot_',
+ 'S1_cgRetryContract_', 'S1_cgFinishExecute_', 'S1_cgFinishPreflight_',
+ 'RUN_S1_CONTROLLED_GENERATE_PREFLIGHT', 'RUN_S1_CONTROLLED_GENERATE_EXECUTE'
+].forEach(function (fn, i) {
+  var src = bareCode(extractFn(S1, fn));
+  ok(src.length > 0, 'A8.7.' + (i + 1) + 'a ' + fn + ' is extractable');
+  ok(src.indexOf('setValue') === -1 && src.indexOf('appendRow') === -1
+    && src.indexOf('clearContent') === -1 && src.indexOf('deleteRow') === -1
+    && src.indexOf('getRange') === -1,
+    'A8.7.' + (i + 1) + 'b ' + fn + ' reaches no write API of its own');
 });
 
 // ================================================================================================================
@@ -5375,11 +5425,12 @@ eq(AB13.repair_route.indexOf('NONE'), 0, 'AB32e the output states the repair rou
 ok(String(AB13.repair_route).indexOf('a PERSON may now decide, never that a tool may act') > 0,
   'AB32f and what READY means, in words', AB13.repair_route);
 // AND THE ENTRY POINT COUNT. R4F added one, read-only; R4H added two more - a read-only manifest and the
-// one tool in this file that may empty a range. The count is asserted so a third writer cannot appear
-// without this line changing.
-eq((S1_BARE.match(/^function RUN_S1_[A-Z_]+/gm) || []).length, 13,
-  'AB32g thirteen public entry points: nine from R4E and before, R4F\'s read-only census, R4H\'s two,'
-  + ' and R4J\'s read-only post-deletion acceptance manifest');
+// one tool in this file that may empty a range; R6 added a read-only preflight and the one path from this
+// file to a production Generate. The count is asserted so a fourth writer cannot appear without this
+// line changing.
+eq((S1_BARE.match(/^function RUN_S1_[A-Z_]+/gm) || []).length, 15,
+  'AB32g fifteen public entry points: nine from R4E and before, R4F\'s read-only census, R4H\'s two,'
+  + ' R4J\'s read-only post-deletion acceptance manifest, and R6\'s preflight plus its one executor');
 
 // ---- AB33 — THE FIELD CONTRACT IS R4E's, NOT A SECOND OPINION. ------------------------------------
 // A second required-ness table would be a second opinion, and the first thing two opinions do is disagree.
@@ -7477,6 +7528,704 @@ eq((S1_BARE.match(/S1_MANIFEST_P_BEFORE_\s*=(?!=)/g) || []).length, 1,
   'AG7b assigned exactly once, still only by its own declaration');
 eq((S1.match(/var S1_MOV_LIVE_FROZEN_ = \{/g) || []).length, 1,
   'AG7c and the pre-deletion movement pin is untouched — rotating one record is not licence to rewrite another');
+
+
+// ================================================================================================
+// AH — S1-R6. THE ONE CONTROLLED GENERATE, DRIVEN.
+//
+// Everything above tests measurement. This section tests a WRITE PATH, so the fixture is built to make
+// the parts that decide whether a write is allowed REAL:
+//
+//   WeeklyAiPlanControlledAuthority_   the shipped 61_ IIFE, loaded verbatim. The closure-private minted
+//                                     set, the unguessable nonce, the one-shot delete and the scope
+//                                     re-derivation are exactly what a forged, reused or widened
+//                                     capability has to fail against — a stub would let this suite agree
+//                                     with a gate production does not have.
+//   the generator's AUTHORIZATION arm  61_'s own two-branch gate, reproduced as the only stubbed part of
+//                                     the generator: flag true OR verify(cap, liveScopeSpec). It reads the
+//                                     live scope out of the REQUEST, so widening the scope fails here for
+//                                     the reason it fails in production.
+//   everything the wrapper decides     real: the baseline comparison, the lock order, the idempotency
+//                                     classification, the readback and the ACK_UNKNOWN matrix are the
+//                                     shipped functions, run against these worlds.
+//
+// WHAT IS DELIBERATELY STUBBED, AND WHY IT IS THE RIGHT SEAM. The generator's WRITE arm. Its behaviour —
+// route grouping, the atomic upsert, the factory guard — has its own suites; what this section owns is
+// whether the WRAPPER calls it once, refuses when it should, and classifies the outcome from the data
+// rather than from what the call said. So the write arm is scripted, and every outcome shape §六 and §八
+// name is driven: both sides, neither side, header only, line only, a duplicate, a clamp, a named guard
+// refusal, an unnamed one, a throw and an unreadable response.
+// ================================================================================================
+section('AH — S1-R6: the controlled Generate executor');
+
+var AH61 = read(GS + '61_api_v1_weekly_ai_plan.gs');
+// THE SHIPPED AUTHORITY, SLICED BY ITS OWN BOUNDARIES. It is an IIFE, not an array literal, so
+// extractVar (which stops at the first `];`) would hand back a fragment that loads as a SyntaxError —
+// measured. The slice is verified below rather than trusted: a truncated authority that happened to
+// parse would be a stub of the one thing this section must not stub.
+var AH_AUTH_SRC = (function () {
+  var a = AH61.indexOf('var WeeklyAiPlanControlledAuthority_ = (function () {');
+  var b = a < 0 ? -1 : AH61.indexOf(NL + '})();', a);
+  return (a < 0 || b < 0) ? '' : AH61.slice(a, b + 6);
+})();
+ok(AH_AUTH_SRC.length > 0, 'AH0k the shipped controlled authority is sliceable out of 61_');
+['var minted = {};', 'mint: function (spec)', 'verify: function (cap, liveScopeSpec)',
+ 'CAPABILITY_NOT_MINTED_IN_EXECUTION', 'CAPABILITY_TAMPERED', 'CAPABILITY_SCOPE_MISMATCH',
+ 'CONTROLLED_REQUIRES_EXACT_MARKETPLACE', 'delete minted[cap.nonce];', 'Utilities.getUuid()'
+].forEach(function (needle, i) {
+  ok(AH_AUTH_SRC.indexOf(needle) > 0,
+    'AH0k.' + (i + 1) + ' and the slice carries ' + needle + ' — so it is the whole authority, not a'
+    + ' fragment that happens to parse');
+});
+var AH_HDR = SHARED.HDR_FULL, AH_LINE = SHARED.LINE_FULL;
+
+// ---- AH0 THE SHIPPED CONSTANTS AND THE SHAPE OF THE TWO ENTRY POINTS -----------------------------
+ok(/^function RUN_S1_CONTROLLED_GENERATE_PREFLIGHT\(\)/m.test(S1),
+  'AH0  the preflight takes NO arguments — there is nothing to pass it that would make it write');
+ok(/^function RUN_S1_CONTROLLED_GENERATE_EXECUTE\(opts\)/m.test(S1),
+  'AH0a and the executor takes only opts');
+eq((S1.match(/var S1_CG_AUTH_FINGERPRINT_ = '([^']+)'/) || [])[1], '8A830413',
+  'AH0b the expected authorization fingerprint is the 2026-09-10 sentence, 8A830413');
+ok(/var S1_CG_SUPERSEDED_AUTH_FINGERPRINTS_ = \['F700840D'\]/.test(S1),
+  'AH0c and F700840D is named as superseded rather than deleted');
+// THE EXECUTOR ACCEPTS NO SCOPE, NO SKU, NO QUANTITY AND NO IDENTITY.
+var AH_EXEC = bareCode(extractFn(S1, 'RUN_S1_CONTROLLED_GENERATE_EXECUTE'));
+['opts.company', 'opts.country', 'opts.marketplace', 'opts.sku', 'opts.scope', 'opts.qty',
+ 'opts.quantity', 'opts.header', 'opts.line', 'opts.identity', 'body.', 'request.'
+].forEach(function (n, i) {
+  eq(AH_EXEC.indexOf(n), -1, 'AH0d.' + (i + 1) + ' the executor reads no ' + n + ' — every value is the'
+    + ' baseline\'s, so there is nothing to pass it that would widen what it may write');
+});
+['opts.execute', 'opts.authorization', 'opts.lock_timeout_ms'].forEach(function (n, i) {
+  ok(AH_EXEC.indexOf(n) > 0, 'AH0e.' + (i + 1) + ' and the only three inputs it does read are ' + n);
+});
+// THE LOCK IS THE ONE THE REMOVAL TOOL ALREADY USES. A second lock helper would be a second opinion about
+// what "acquired" means.
+ok(AH_EXEC.indexOf('S1_remAcquireLock_') > 0,
+  'AH0f the executor takes its lock through the existing S1_remAcquireLock_ authority');
+eq(AH_EXEC.indexOf('LockService'), -1, 'AH0g and never reaches LockService directly');
+ok(bareCode(extractFn(S1, 'RUN_S1_CONTROLLED_GENERATE_PREFLIGHT')).indexOf('S1_remAcquireLock_') === -1,
+  'AH0h while the preflight takes NO lock at all — a lock is a write-path concern, and a read that takes'
+  + ' one teaches an operator that this entry point is one');
+// NO LOOP AND NO RECURSION AROUND THE CALL.
+var AH_CALLFN = bareCode(extractFn(S1, 'S1_cgProductionCall_'));
+// ITS OWN DECLARATION LINE IS DROPPED FIRST. `function S1_cgProductionCall_(` contains the name, so a
+// naive scan for recursion finds the definition and reports every function as recursive.
+var AH_CALLBODY = AH_CALLFN.split(NL).slice(1).join(NL);
+['for (', 'while (', 'do {', 'S1_cgProductionCall_('].forEach(function (n, i) {
+  eq(AH_CALLBODY.indexOf(n), -1,
+    'AH0i.' + (i + 1) + ' the one call site carries no ' + n.trim() + ' — one clear site, never repeated');
+});
+ok(/o\.attempted = true;\s*o\.generator_calls = 1;/.test(AH_CALLFN),
+  'AH0j and the attempt is counted BEFORE the call, so a call that throws still reports one attempt');
+
+// ---- AH1 61_'s TWO-BRANCH GATE, FROM ITS OWN SOURCE ---------------------------------------------
+// The claim this whole round rests on: a flag-false project can be generated into by an INTERNAL
+// capability, and cannot be generated into by a browser.
+var AH_PUB = extractFn(AH61, 'handleGenerateWeeklyAiPlanDraft_');
+ok(AH_PUB.indexOf('INVENTORY_AI_PLAN_DB_GENERATION_DISABLED') > 0
+  && AH_PUB.indexOf('inventoryAiPlanDbGenerationEnabled_') > 0,
+  'AH1  the PUBLIC handler still refuses outright while the global flag is false');
+var AH_K2 = extractFn(AH61, 'weeklyAiPlanGenerateK2_');
+ok(/if \(!flagTrue\) \{/.test(AH_K2) && AH_K2.indexOf('WeeklyAiPlanControlledAuthority_.verify(controlledAuth')
+  > 0, 'AH1a and the K2 writer accepts EITHER the flag OR a verified internal capability');
+ok(AH_K2.indexOf('CONTROLLED_GENERATION_UNAUTHORIZED') > 0,
+  'AH1b refusing by name when neither holds');
+ok(/^function weeklyAiPlanGenerateK2_\(ss, request, harvest, deps, body, controlledAuth\)/m.test(AH61),
+  'AH1c the capability is the SIXTH positional argument');
+ok(/return weeklyAiPlanGenerateK2_\(ss, mapped\.request, h, deps, body\);/.test(AH61),
+  'AH1d and the public call site passes FIVE — so a capability-shaped object in `body` arrives as the'
+  + ' fifth argument and never as controlledAuth');
+
+// ---- THE WORLD ---------------------------------------------------------------------------------
+// One measurement, taken once, used as the frozen baseline for every world below: these are worlds in
+// which the operator has already pasted what this fixture measures.
+var AH_MP = manifestP(pos());
+var AH_BASE = AH_MP.res.frozen_before;
+var AH_WORD = AH_MP.res.operator_authorization_wording;
+var AH_FP = AH_MP.res.wording_audit ? AH_MP.res.wording_audit.fingerprint : null;
+eq(AH_MP.res.verdict, 'READY_TO_AUTHORIZE', 'AH2  the fixture world is authorizable to begin with');
+ok(!!AH_BASE && Object.keys(AH_BASE).length === 95, 'AH2a and it produced a 95-field baseline',
+  AH_BASE ? Object.keys(AH_BASE).length : null);
+ok(!!AH_WORD && AH_WORD.length > 1000 && !!AH_FP,
+  'AH2b together with its own authorization sentence and fingerprint', AH_WORD ? AH_WORD.length : null);
+var AH_HID = (AH_BASE.expected_header_ids || [])[0], AH_LID = (AH_BASE.expected_line_ids || [])[0];
+var AH_MAX = AH_BASE.expected_max_units_written;
+ok(!!AH_HID && !!AH_LID && AH_MAX > 0, 'AH2c and names one header, one line and a positive ceiling',
+  [AH_HID, AH_LID, AH_MAX]);
+
+function ahRow(headers, obj) {
+  return headers.map(function (h) { return obj[h] === undefined ? '' : obj[h]; });
+}
+/** The scripted write arm. Rows are pushed onto the fixture sheets DIRECTLY rather than through
+ *  appendRow, so `allWrites()` keeps counting only writes the WRAPPER made — which must stay zero. */
+function ahApply(w, script) {
+  var H = w.sheets['shipping_allocation_drafts'], L = w.sheets['shipping_allocation_draft_lines'];
+  var qty = script.qty === undefined ? AH_MAX : script.qty;
+  function hdr(id) {
+    return ahRow(AH_HDR, { allocation_draft_id: id, planning_cycle: AH_BASE.planning_cycle,
+      source_page: 'inventory_replenishment', company: AH_BASE.company, country: AH_BASE.country,
+      marketplace: AH_BASE.marketplace, destination_marketplace: AH_BASE.marketplace, status: 'draft',
+      generation_type: 'system_generated', calculation_run_id: AH_BASE.calculation_run_id,
+      recommended_source_warehouse_id: AH_BASE.source_factory_warehouse_id,
+      created_by: 'ai', created_at: '2026-09-10T14:42:06Z', draft_version: '1' });
+  }
+  function ln(id, parent) {
+    return ahRow(AH_LINE, { allocation_draft_line_id: id, allocation_draft_id: parent,
+      sku: AH_BASE.sku, planned_qty: qty, recommended_qty: qty, line_status: 'draft',
+      source_warehouse_id: AH_BASE.source_factory_warehouse_id, created_at: '2026-09-10T14:42:06Z' });
+  }
+  if (script.header !== false) H.rows.push(hdr(AH_HID));
+  if (script.duplicateHeader === true) H.rows.push(hdr(AH_HID));
+  if (script.line !== false) L.rows.push(ln(AH_LID, script.orphanLine === true ? 'SADH-SOMEONE-ELSE' : AH_HID));
+  if (script.wrongRun === true) {
+    H.rows[H.rows.length - 1][AH_HDR.indexOf('calculation_run_id')] = 'GAP-INV-SOMEONE-ELSE-0001';
+  }
+  if (script.otherScopeDrift === true) {
+    H.rows.push(ahRow(AH_HDR, { allocation_draft_id: 'SADH-OTHER-SCOPE-DRIFT', company: 'ResTW',
+      country: 'TW', marketplace: 'Amazon', status: 'draft', generation_type: 'user_created',
+      planning_cycle: AH_BASE.planning_cycle }));
+  }
+  if (script.planAdded === true) {
+    var PH = w.sheets['shipping_plans'].rows[0];
+    w.sheets['shipping_plans'].rows.push(PH.map(function (h) {
+      return h === 'shipping_plan_id' ? 'SP-CREATED-DURING-RUN' : ''; }));
+  }
+  if (script.poolChanged === true) {
+    var FS = w.sheets['factory_stock'];
+    var ci = FS.rows[0].indexOf('fac_current_stock');
+    if (ci >= 0 && FS.rows.length > 1) FS.rows[1][ci] = 1;
+  }
+  if (script.reservationAppeared === true) {
+    var RS = new FakeSheet(['reservation_id', 'sku', 'qty']);
+    w.sheets['reservations'] = RS;
+  }
+  if (script.movementAdded === true) {
+    var MH = FACTORY_TABLES_['factory_stock_movements'];
+    w.sheets['factory_stock_movements'].rows.push(MH.map(function (h) {
+      return ({ factory_stock_movement_id: 'FSMV-ADDED-DURING-RUN', movement_date: '2026-09-10',
+        sku: AH_BASE.sku, warehouse_id: AH_BASE.source_factory_warehouse_id, movement_type: 'OUT',
+        qty: 25, created_at: '2026-09-10T14:42:06Z' })[h] || ''; }));
+  }
+}
+
+/**
+ * A world whose destination already holds this measurement, whose authorization expectation is this
+ * world's own sentence, and whose generator is scripted.
+ *
+ * THE WORLD DECLARES WHICH SENTENCE IT IS A WORLD OF, for the same reason S1_WORLD declares which baseline
+ * stage it is: the shipped constant pins the REAL 2026-09-10 sentence (asserted at AH0b, from the source),
+ * and a synthetic world measures a different one. Overriding the expectation is what lets the audit be
+ * exercised at all; asserting the shipped value separately is what stops the override from being a hole.
+ */
+function ahWorld(script, over) {
+  script = script || {};
+  over = over || {};
+  var spec = pos({ s1: over.s1 || s1WithBaseline(JSON.stringify(over.baseline || AH_BASE)) });
+  var w = S1World(spec);
+  w.ctx.__ahApply = function () { ahApply(w, script); };
+  vm.runInContext('var __ahCalls = []; var __ahScript = ' + JSON.stringify(script) + ';', w.ctx);
+  if (over.fingerprint !== undefined) {
+    vm.runInContext('S1_CG_AUTH_FINGERPRINT_ = ' + JSON.stringify(over.fingerprint) + ';', w.ctx);
+  } else {
+    vm.runInContext('S1_CG_AUTH_FINGERPRINT_ = ' + JSON.stringify(AH_FP) + ';', w.ctx);
+  }
+  if (over.superseded !== undefined) {
+    vm.runInContext('S1_CG_SUPERSEDED_AUTH_FINGERPRINTS_ = ' + JSON.stringify(over.superseded) + ';', w.ctx);
+  }
+  if (over.lockFree === false) {
+    vm.runInContext('LockService = { getScriptLock: function () { return { tryLock: function () {'
+      + ' return false; }, releaseLock: function () {} }; } };', w.ctx);
+  }
+  if (over.preseed === true) ahApply(w, script);
+  // The production seams the wrapper reaches. Only the generator's WRITE arm is scripted; its
+  // AUTHORIZATION arm is 61_'s own gate, and the authority behind it is 61_'s own IIFE.
+  vm.runInContext(AH_AUTH_SRC, w.ctx, { filename: '61_authority' });
+  vm.runInContext([
+    'function weeklyAiPlanParseResp_(r) { return r; }',
+    'function weeklyAiPlanPersistenceDeps_(ss) { return { ss: ss }; }',
+    'function procurementTimestamp_() { return "2026-09-10T14:42:06Z"; }',
+    'function weeklyAiPlanGenerateK2_(ss, request, harvest, deps, body, controlledAuth) {',
+    '  var bs = request.businessScope || {};',
+    '  __ahCalls.push({ marketplace: bs.marketplace, company: bs.company, country: bs.country,',
+    '    cycle: request.planningCycle, cap_nonce: controlledAuth && controlledAuth.nonce });',
+    // 61_'s GATE, not a stub of it: flag true OR verify against the scope re-derived from the request.
+    '  var flagTrue = (typeof inventoryAiPlanDbGenerationEnabled_ === "function")',
+    '    && inventoryAiPlanDbGenerationEnabled_() === true;',
+    '  if (!flagTrue) {',
+    '    var live = { scope: { company: bs.company, country: bs.country, marketplace: bs.marketplace },',
+    '      planning_cycle: request.planningCycle };',
+    '    var v = WeeklyAiPlanControlledAuthority_.verify(controlledAuth, live);',
+    '    if (!v.ok) return { success: false, disabled: true,',
+    '      errors: [{ code: "CONTROLLED_GENERATION_UNAUTHORIZED", message: v.reason }] };',
+    '  }',
+    '  if (__ahScript.mode === "THROW") throw new Error("GATEWAY_TIMEOUT_AFTER_180000MS");',
+    '  if (__ahScript.mode === "UNREADABLE") return null;',
+    '  if (__ahScript.mode === "GUARD_REFUSE") return { success: false, zero_write: true,',
+    '    errors: [{ code: "FACTORY_STOCK_GUARD_STOP", message: "available fell below the claim" }] };',
+    '  if (__ahScript.mode === "SILENT_ZERO") return { success: false, errors: [] };',
+    '  __ahApply();',
+    '  if (__ahScript.mode === "THROW_AFTER_WRITE") throw new Error("GATEWAY_TIMEOUT_AFTER_180000MS");',
+    '  if (__ahScript.mode === "UNREADABLE_AFTER_WRITE") return null;',
+    '  return { success: true, data: { job_status: "OK" }, errors: [] };',
+    '}'
+  ].join(NL), w.ctx, { filename: 'ah_generator' });
+  return w;
+}
+/** A mutated S1 source whose destination holds THIS fixture's baseline. `swapS1` works from S1_WORLD
+ *  (destination EMPTY) and `swapS1In` from S1 (destination FROZEN with the REAL 2026-09-10 value), so
+ *  both are normalised here rather than at each mutant — a mutant that forgot would silently drive the
+ *  real baseline against a synthetic world and refuse for the wrong reason. */
+function ahS1(src) {
+  return src.split(NL).map(function (l) {
+    return l.indexOf(S1_FROZEN_DECL_) === 0
+      ? S1_FROZEN_DECL_ + JSON.stringify(AH_BASE) + ';' : l;
+  }).join(NL);
+}
+function ahRun(w, expr) {
+  var out = null, threw = null;
+  try { out = vm.runInContext(expr, w.ctx); } catch (e) { threw = e; }
+  return { res: out || {}, threw: threw, world: w,
+    calls: vm.runInContext('__ahCalls.length', w.ctx),
+    callArgs: vm.runInContext('JSON.stringify(__ahCalls)', w.ctx),
+    flag: vm.runInContext('INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_', w.ctx),
+    allowlistCount: vm.runInContext('inventoryAiPlanActivationAllowlist_().length', w.ctx) };
+}
+function ahExec(script, over, opts) {
+  var w = ahWorld(script, over);
+  return ahRun(w, 'RUN_S1_CONTROLLED_GENERATE_EXECUTE(' + JSON.stringify(opts || {}) + ')');
+}
+function ahPre(script, over) {
+  return ahRun(ahWorld(script, over), 'RUN_S1_CONTROLLED_GENERATE_PREFLIGHT()');
+}
+/** The three inputs a clean run needs, with the sentence this world measured. */
+function ahOpts(extra) {
+  var o = { execute: true, authorization: AH_WORD };
+  Object.keys(extra || {}).forEach(function (k) { o[k] = extra[k]; });
+  return o;
+}
+
+// ---- AH3 THE PREFLIGHT IS READ ONLY, MEASURED -----------------------------------------------------
+var AH3 = ahPre({});
+eq(AH3.threw, null, 'AH3  the preflight does not throw');
+eq(AH3.res.verdict, 'READY_FOR_ONE_CONTROLLED_GENERATE',
+  'AH3a and says ONE controlled generation is authorizable', failed(AH3.res));
+eq([AH3.res.writes, AH3.res.writer_calls, AH3.res.generator_calls, AH3.res.attempts,
+  AH3.res.capability_minted], [0, 0, 0, 0, false],
+  'AH3b with zero writes, zero writer calls, zero generator calls, zero attempts and NO capability');
+eq(AH3.res.zero_write_confirmed, true, 'AH3c and it confirms that as one measured field');
+eq(AH3.calls, 0, 'AH3d MEASURED ON THE GENERATOR — it was never called');
+eq(AH3.world.allWrites(), 0, 'AH3e and MEASURED ON THE SHEETS — nothing in the world was written');
+eq([AH3.res.flag_value, AH3.flag], [false, false],
+  'AH3f the global flag is false before and still false after');
+eq(AH3.res.idempotency.state, 'ABSENT', 'AH3g neither authorized identity exists yet');
+eq(AH3.res.baseline_drift.drifted, [], 'AH3h and the live measurement matches the frozen baseline');
+eq(AH3.res.baseline_drift.excluded_fields, ['frozen_at'],
+  'AH3i comparing every field but the clock — a clock reading is not a world');
+ok(AH3.res.baseline_drift.compared_field_count === 94,
+  'AH3j which is ninety-four of the ninety-five', AH3.res.baseline_drift.compared_field_count);
+// A DRIFTED WORLD IS NOT AUTHORIZABLE, and the preflight is still read-only about it.
+// A DRIFTED WORLD IS NOT AUTHORIZABLE, and the preflight is still read-only about it. The field chosen
+// here is deliberately one the census identity does NOT cover: `S1_freezeIdentity_` is narrow, so a
+// fingerprint drift makes MANIFEST P itself STOP with CONFLICT and the wrapper's comparison never runs.
+// `freshness_state` is the field a day of Gap Job activity actually moves, and only the full 95-field
+// comparison sees it — which is the whole reason the executor does not settle for the identity summary.
+var AH3d = (function () {
+  var b = JSON.parse(JSON.stringify(AH_BASE));
+  b.freshness_state = 'CURRENT_PRE_SCHEDULE';
+  return ahPre({}, { baseline: b });
+})();
+eq(AH3d.res.manifest_p.verdict, 'READY_TO_AUTHORIZE',
+  'AH3k the census identity says this baseline is the SAME measurement — so the manifest is READY');
+eq(AH3d.res.verdict, 'STOP',
+  'AH3k1 and the preflight refuses anyway, because a narrow identity is not the whole baseline');
+eq(AH3d.res.baseline_drift.identity_matches, true, 'AH3k2 the identity matched');
+eq(AH3d.res.baseline_drift.drifted, ['freshness_state'],
+  'AH3l while the field-for-field comparison names what actually moved');
+eq([AH3d.calls, AH3d.world.allWrites(), AH3d.res.zero_write_confirmed], [0, 0, true],
+  'AH3m and the refusal is still zero-write');
+// AND THE OTHER DIRECTION: a fingerprint drift IS in the identity, so the census refuses it first.
+var AH3c = (function () {
+  var b = JSON.parse(JSON.stringify(AH_BASE));
+  b.other_scope_combined_fingerprint = 'DEADBEEF';
+  return ahPre({}, { baseline: b });
+})();
+eq(AH3c.res.manifest_p.verdict, 'STOP',
+  'AH3n a baseline whose content fingerprint moved is a CONFLICT to the census itself');
+eq(AH3c.res.verdict, 'STOP', 'AH3o and the preflight refuses');
+eq([AH3c.calls, AH3c.res.zero_write_confirmed], [0, true], 'AH3p zero-write');
+
+// ---- AH4 THE DRY RUN PROVES EVERYTHING AND MINTS NOTHING -----------------------------------------
+var AH4 = ahExec({}, {}, { authorization: AH_WORD });
+eq(AH4.res.verdict, 'DRY_RUN', 'AH4  execute without `execute: true` is a DRY RUN',
+  [AH4.res.refusal_class, AH4.res.stop_reason, failed(AH4.res),
+    AH4.res.authorization_audit && AH4.res.authorization_audit.missing]);
+eq([AH4.res.attempts, AH4.res.generator_calls, AH4.res.capability_minted], [0, 0, false],
+  'AH4a zero attempts, zero generator calls, no capability minted');
+eq(AH4.calls, 0, 'AH4b MEASURED — the generator was not called');
+eq(AH4.world.allWrites(), 0, 'AH4c and nothing was written');
+eq(AH4.res.lock.acquired, true, 'AH4d it DID take the lock — a dry run that skips the lock proves less');
+eq(AH4.res.lock.released, true, 'AH4e and released it');
+eq(AH4.res.retry_contract.same_authorization_reusable, true,
+  'AH4f the sentence is still good afterwards: a dry run is neither a completion nor a refusal');
+eq(AH4.res.retry_contract.next_action, 'RERUN_WITH_EXECUTE_TRUE_USING_THIS_FROZEN_BASELINE',
+  'AH4g and the next action is the real run');
+['true', 1, 'TRUE', {}, null].forEach(function (v, i) {
+  var r = ahExec({}, {}, { execute: v, authorization: AH_WORD });
+  eq([r.res.verdict, r.calls], ['DRY_RUN', 0],
+    'AH4h.' + (i + 1) + ' execute must be exactly true — ' + JSON.stringify(v) + ' is a dry run');
+});
+
+// ---- AH5 THE AUTHORIZATION IS THE FULL TEXT, FOR THIS EXACT BASELINE -----------------------------
+var AH5abs = ahExec({}, {}, { execute: true });
+eq([AH5abs.res.verdict, AH5abs.res.refusal_class], ['STOP', 'AUTHORIZATION_TEXT_ABSENT'],
+  'AH5  no sentence at all is a STOP');
+eq([AH5abs.res.attempts, AH5abs.calls], [0, 0], 'AH5a with zero attempts and no call');
+eq(AH5abs.res.lock, null, 'AH5b and the lock was never taken — a wrong sentence needs no lock');
+var AH5fp = ahExec({}, {}, { execute: true, authorization: AH_FP });
+eq([AH5fp.res.verdict, AH5fp.res.refusal_class], ['STOP', 'AUTHORIZATION_IS_NOT_THE_FULL_TEXT'],
+  'AH5c a FINGERPRINT is not an authorization, and is refused as that rather than as missing facts');
+var AH5one = ahExec({}, {}, { execute: true,
+  authorization: AH_WORD.slice(0, 40) + 'X' + AH_WORD.slice(41) });
+eq([AH5one.res.verdict, AH5one.res.refusal_class], ['STOP', 'AUTHORIZATION_FINGERPRINT_MISMATCH'],
+  'AH5d ONE character changed anywhere in the sentence is a different sentence');
+eq([AH5one.res.attempts, AH5one.calls], [0, 0], 'AH5e refused with zero attempts');
+var AH5ws = ahExec({}, {}, { execute: true, authorization: AH_WORD + NL });
+eq([AH5ws.res.verdict, AH5ws.res.refusal_class],
+  ['STOP', 'AUTHORIZATION_CARRIES_LEADING_OR_TRAILING_WHITESPACE'],
+  'AH5f and a trailing newline is refused rather than trimmed — the hash authority trims, so a sentence'
+  + ' that needed trimming would fingerprint as though it never had it');
+var AH5ph = ahExec({}, {}, { execute: true,
+  authorization: AH_WORD.split(AH_BASE.company).join('<company>') });
+eq([AH5ph.res.verdict, AH5ph.res.refusal_class], ['STOP', 'AUTHORIZATION_CARRIES_PLACEHOLDERS'],
+  'AH5g a placeholder is refused, and refused BEFORE the fingerprint so the operator is told what is wrong');
+eq(AH5ph.res.authorization_audit.placeholders, ['<company>'], 'AH5h naming it');
+var AH5sup = ahExec({}, { superseded: [AH_FP] }, ahOpts());
+eq([AH5sup.res.verdict, AH5sup.res.refusal_class], ['STOP', 'AUTHORIZATION_FINGERPRINT_SUPERSEDED'],
+  'AH5i a superseded fingerprint is refused even when the text hashes to it');
+// THE FACTS BRANCH, reached by pointing the expectation at a sentence that carries none of them.
+var AH5filler = (function () { var s = 'x'; while (s.length < 1200) s += 'x'; return s; })();
+var AH5f = (function () {
+  var w = ahWorld({}, {});
+  var fp = vm.runInContext('S1_fingerprint_([' + JSON.stringify(AH5filler) + '])', w.ctx);
+  vm.runInContext('S1_CG_AUTH_FINGERPRINT_ = ' + JSON.stringify(fp) + ';', w.ctx);
+  return ahRun(w, 'RUN_S1_CONTROLLED_GENERATE_EXECUTE('
+    + JSON.stringify({ execute: true, authorization: AH5filler }) + ')');
+})();
+eq([AH5f.res.verdict, AH5f.res.refusal_class], ['STOP', 'AUTHORIZATION_IS_MISSING_MEASURED_FACTS'],
+  'AH5j a sentence that hashes correctly but carries none of the measured facts is still refused');
+ok(AH5f.res.authorization_audit.missing.length > 20,
+  'AH5k naming every fact it does not carry', AH5f.res.authorization_audit.missing.length);
+eq(AH5f.res.authorization_audit.present_count, 0, 'AH5l and none present');
+// THE SENTENCE IS NEVER ECHOED. A refused run must not hand back anything that looks signable.
+eq(JSON.stringify(AH5one.res).indexOf(AH_WORD.slice(0, 80)), -1,
+  'AH5m no return path reprints the sentence — the fingerprint is what identifies it');
+eq(AH5one.res.authorization_audit.normalization_applied.indexOf('NONE'), 0,
+  'AH5n and the audit says so: the text is hashed exactly as supplied');
+
+// ---- AH6 DRIFT REFUSES BEFORE ANYTHING IS MINTED -------------------------------------------------
+// THREE GATES CATCH A DRIFT, AT THREE DIFFERENT DEPTHS, AND WHICH ONE FIRES IS NOT AN ACCIDENT.
+//
+//   the census identity        content fingerprints, scope, lineage, the writable ids — CONFLICT, and the
+//                             manifest itself refuses (AH3n).
+//   the authorization sentence every fact the wording carries is a needle built FROM the baseline, so a
+//                             baseline whose residual, freshness or movement count moved is a baseline the
+//                             sentence was not written for. Refused BEFORE the lock (AH6b).
+//   the 95-field comparison    everything else — and this is the only gate that sees it (AH6).
+//
+// `gap_scope_universe_total_count` is in neither the identity nor the wording, so it reaches the third.
+var AH6 = (function () {
+  var b = JSON.parse(JSON.stringify(AH_BASE));
+  b.gap_scope_universe_total_count = 999999;
+  return ahExec({}, { baseline: b }, ahOpts());
+})();
+eq(AH6.res.manifest_p.verdict, 'READY_TO_AUTHORIZE',
+  'AH6  the gap-universe COUNT is not in the census identity, so the manifest is still READY');
+eq(AH6.res.authorization_audit.ok, true,
+  'AH6a1 and the sentence does not carry it either, so the wording audit passes');
+eq(AH6.res.verdict, 'STOP',
+  'AH6a and the executor refuses anyway — the 95-field comparison is the gate, not the summary');
+eq(AH6.res.baseline_drift.drifted, ['gap_scope_universe_total_count'], 'AH6a2 naming the drift');
+// AND THE MIDDLE GATE, WHICH FIRES EARLIER AND CHEAPER: a fact the wording quotes.
+var AH6b = (function () {
+  var b = JSON.parse(JSON.stringify(AH_BASE));
+  b.freshness_state = 'CURRENT_PRE_SCHEDULE';
+  return ahExec({}, { baseline: b }, ahOpts());
+})();
+eq([AH6b.res.verdict, AH6b.res.refusal_class],
+  ['STOP', 'AUTHORIZATION_IS_MISSING_MEASURED_FACTS'],
+  'AH6b a baseline whose freshness moved is one the sentence was not written for');
+eq(AH6b.res.authorization_audit.missing, ['freshness_state=CURRENT_PRE_SCHEDULE'],
+  'AH6b1 named, because every needle is built from the baseline and not from the text');
+eq(AH6b.res.lock, null, 'AH6b2 refused before the lock was ever taken');
+eq([AH6b.res.attempts, AH6b.calls], [0, 0], 'AH6b3 with zero attempts and no call');
+eq([AH6.res.attempts, AH6.res.generator_calls, AH6.res.capability_minted, AH6.calls],
+  [0, 0, false, 0], 'AH6b with zero attempts, zero calls and NO capability minted');
+eq(AH6.world.allWrites(), 0, 'AH6c and nothing written');
+eq(AH6.res.lock.released, true, 'AH6d the lock was released on the refusal path too');
+eq(AH6.res.retry_contract.same_frozen_baseline_reusable, false,
+  'AH6e and the baseline is not reusable: the world it describes is gone');
+
+// ---- AH7 LOCK CONTENTION IS THE ONE REFUSAL THAT SPENDS NOTHING ----------------------------------
+var AH7 = ahExec({}, { lockFree: false }, ahOpts());
+eq(AH7.res.verdict, 'REFUSED_LOCK_CONTENTION', 'AH7  a busy lock is REFUSED_LOCK_CONTENTION');
+eq([AH7.res.attempts, AH7.res.generator_calls, AH7.res.capability_minted, AH7.calls],
+  [0, 0, false, 0], 'AH7a attempts 0, no call, no capability');
+eq(AH7.res.lock.acquired, false, 'AH7b the lock was not acquired');
+eq([AH7.res.retry_contract.retryable, AH7.res.retry_contract.same_authorization_reusable,
+  AH7.res.retry_contract.same_frozen_baseline_reusable], [true, true, true],
+  'AH7c and NOTHING is spent — this is the only refusal that measured nothing');
+eq(AH7.res.retry_contract.next_action, 'RERUN_PREFLIGHT_THEN_RETRY_WHEN_THE_LOCK_IS_FREE',
+  'AH7d so the operator is sent back to the preflight, not to a new manifest');
+eq(AH7.res.baseline_drift, undefined,
+  'AH7e and nothing was re-measured — the refusal happened before the measurement');
+
+// ---- AH8 THE CLEAN RUN: ONE HEADER, ONE LINE, ONE CALL -------------------------------------------
+var AH8 = ahExec({}, {}, ahOpts());
+eq(AH8.threw, null, 'AH8  the clean execute does not throw');
+eq(AH8.res.verdict, 'EXECUTED_OK', 'AH8a and lands EXECUTED_OK',
+  [failed(AH8.res), AH8.res.readback && AH8.res.readback.failed_predicates, AH8.res.stop_reason]);
+eq([AH8.res.attempts, AH8.res.generator_calls], [1, 1], 'AH8b one attempt, one generator call');
+eq(AH8.calls, 1, 'AH8c MEASURED ON THE GENERATOR — called exactly once');
+eq(AH8.res.capability_minted, true, 'AH8d one capability was minted');
+eq(JSON.parse(AH8.callArgs)[0].marketplace, AH_BASE.marketplace,
+  'AH8e and the request named the EXACT marketplace — the production scope guard engages on it');
+eq(AH8.res.production_call.capability_scope_key,
+  [AH_BASE.company, AH_BASE.country, AH_BASE.marketplace, AH_BASE.planning_cycle].join('|'),
+  'AH8f the capability was bound to that exact four-part scope key');
+eq([AH8.res.readback.header_created, AH8.res.readback.line_created], [true, true],
+  'AH8g the readback sees one header and one line CREATED');
+eq(AH8.res.readback.written_qty, AH_MAX, 'AH8h at the authorized quantity, read off the LINE');
+ok(AH8.res.readback.written_qty > 0 && AH8.res.readback.written_qty <= AH_MAX,
+  'AH8i which is positive and within the ceiling');
+eq(AH8.res.readback.failed_predicates, [], 'AH8j and every readback predicate passed',
+  AH8.res.readback.failed_predicates);
+eq([AH8.res.readback.protected_surfaces_intact, AH8.res.readback.identity_exact], [true, true],
+  'AH8k the protected surfaces are intact and the identity is exact');
+eq(AH8.world.allWrites(), 0,
+  'AH8l MEASURED ON THE SHEETS — the WRAPPER wrote nothing itself; the rows came from the generator');
+eq([AH8.flag, AH8.allowlistCount], [false, 1],
+  'AH8m the global flag is STILL false and the allowlist is still one scope');
+eq([AH8.res.flag_modified, AH8.res.allowlist_modified, AH8.res.submit_calls], [false, false, 0],
+  'AH8n and it modified neither, and called no Submit');
+eq([AH8.res.retry_contract.retryable, AH8.res.retry_contract.automatic_retry_allowed,
+  AH8.res.retry_contract.same_authorization_reusable,
+  AH8.res.retry_contract.same_frozen_baseline_reusable], [false, false, false, false],
+  'AH8o the authorization and the baseline are SPENT');
+eq(AH8.res.retry_contract.next_action, 'NO_FURTHER_GENERATE_ACTION', 'AH8p and the case is closed');
+ok(String(AH8.res.no_second_generate_instruction).indexOf('no second Execute') > 0,
+  'AH8q with no instruction to press Execute again');
+
+// ---- AH9 THE CAPABILITY, AGAINST THE REAL AUTHORITY ----------------------------------------------
+// One-shot, scope-bound and unforgeable are asserted by USING 61_'s own verify(), not by reading it.
+var AH9w = ahWorld({}, {});
+var AH9 = vm.runInContext('(function () {'
+  + ' var A = WeeklyAiPlanControlledAuthority_;'
+  + ' var spec = { scope: { company: "ResUS", country: "US", marketplace: "Amazon" }, planning_cycle: "C1" };'
+  + ' var live = { scope: { company: "ResUS", country: "US", marketplace: "Amazon" }, planning_cycle: "C1" };'
+  + ' var cap = A.mint(spec);'
+  + ' var first = A.verify(cap, live);'
+  + ' var second = A.verify(cap, live);'
+  + ' var cap2 = A.mint(spec);'
+  + ' var widened = A.verify(cap2, { scope: { company: "ResUS", country: "US", marketplace: "Walmart" },'
+  + '   planning_cycle: "C1" });'
+  + ' var forged = A.verify({ __wap_controlled: true, nonce: "GUESSED", spec: spec }, live);'
+  + ' var none = A.verify(null, live);'
+  // MINTED WITHOUT A MARKETPLACE TOO, so the two scope keys AGREE and the mismatch check passes — the
+  // marketplace requirement is a separate condition and this is what reaches it.
+  + ' var blank = { scope: { company: "ResUS", country: "US", marketplace: "" }, planning_cycle: "C1" };'
+  + ' var cap3 = A.mint(blank);'
+  + ' var noMkt = A.verify(cap3, blank);'
+  + ' return { nonce: !!cap.nonce, first: first, second: second, widened: widened, forged: forged,'
+  + '   none: none, noMkt: noMkt };'
+  + '})()', AH9w.ctx);
+eq(AH9.nonce, true, 'AH9  a minted capability carries a nonce');
+eq(AH9.first.ok, true, 'AH9a and verifies once');
+eq([AH9.second.ok, AH9.second.reason], [false, 'CAPABILITY_NOT_MINTED_IN_EXECUTION'],
+  'AH9b ONE-SHOT — the same capability cannot authorize a second generation');
+eq([AH9.widened.ok, AH9.widened.reason], [false, 'CAPABILITY_SCOPE_MISMATCH'],
+  'AH9c SCOPE-BOUND — it cannot authorize a different marketplace');
+eq([AH9.forged.ok, AH9.forged.reason], [false, 'CAPABILITY_NOT_MINTED_IN_EXECUTION'],
+  'AH9d UNFORGEABLE — a hand-built capability fails because the minted set is closure-private');
+eq([AH9.none.ok, AH9.none.reason], [false, 'NO_INTERNAL_CAPABILITY'],
+  'AH9e and no capability at all is refused by name');
+eq([AH9.noMkt.ok, AH9.noMkt.reason], [false, 'CONTROLLED_REQUIRES_EXACT_MARKETPLACE'],
+  'AH9f a controlled run must name a marketplace — an aggregated run is not the controlled path');
+
+// ---- AH10 A CLAMP IS A SUCCESS SHAPE; A PARTIAL WRITE IS NOT -------------------------------------
+var AH10 = ahExec({ qty: Math.max(1, AH_MAX - 5) }, {}, ahOpts());
+eq(AH10.res.verdict, 'CLAMPED_EXECUTED_OK',
+  'AH10 a quantity below the ceiling with both rows intact is CLAMPED_EXECUTED_OK',
+  [AH10.res.readback && AH10.res.readback.failed_predicates, AH10.res.stop_reason]);
+ok(AH10.res.readback.written_qty > 0 && AH10.res.readback.written_qty < AH_MAX,
+  'AH10a with a positive quantity strictly below the ceiling', AH10.res.readback.written_qty);
+eq(AH10.res.retry_contract.next_action, 'NO_FURTHER_GENERATE_ACTION', 'AH10b and the case is closed');
+var AH10z = ahExec({ qty: 0 }, {}, ahOpts());
+eq(AH10z.res.verdict, 'MANUAL_RECOVERY_REQUIRED',
+  'AH10c a ZERO quantity with rows written is not a clamp and not a success');
+var AH10over = ahExec({ qty: AH_MAX + 1 }, {}, ahOpts());
+eq(AH10over.res.verdict, 'MANUAL_RECOVERY_REQUIRED',
+  'AH10d and a quantity ABOVE the authorized ceiling is a recovery, not a bigger success');
+ok(AH10over.res.readback.failed_predicates
+  .indexOf('the_written_quantity_is_positive_and_within_the_authorized_ceiling') >= 0,
+  'AH10e named by the predicate that owns the ceiling', AH10over.res.readback.failed_predicates);
+
+var AH11 = ahExec({ line: false }, {}, ahOpts());
+eq(AH11.res.verdict, 'MANUAL_RECOVERY_REQUIRED', 'AH11 a HEADER with no line is never a success');
+eq(AH11.res.classification.next_action, 'STOP_AND_PERFORM_MANUAL_RECOVERY', 'AH11a a person looks');
+ok(String(AH11.res.classification.why).indexOf('partial write is never a success') > 0,
+  'AH11b and the reason says so', AH11.res.classification.why);
+var AH12 = ahExec({ header: false }, {}, ahOpts());
+eq(AH12.res.verdict, 'MANUAL_RECOVERY_REQUIRED', 'AH12 a LINE with no header is never a success either');
+var AH13 = ahExec({ duplicateHeader: true }, {}, ahOpts());
+eq(AH13.res.verdict, 'MANUAL_RECOVERY_REQUIRED',
+  'AH13 a DUPLICATE authorized identity is a recovery — a find() would have hidden it by returning the first');
+eq(AH13.res.observation_after.header_hit_count, 2, 'AH13a and the count is what makes it visible');
+var AH14 = ahExec({ orphanLine: true }, {}, ahOpts());
+eq(AH14.res.verdict, 'MANUAL_RECOVERY_REQUIRED',
+  'AH14 a line whose foreign key points somewhere else is a recovery');
+
+// ---- AH15 A ZERO-WRITE REFUSAL HAS TO SAY WHY ----------------------------------------------------
+var AH15 = ahExec({ mode: 'GUARD_REFUSE' }, {}, ahOpts());
+eq(AH15.res.verdict, 'FACTORY_GUARD_REFUSED_ZERO_WRITE',
+  'AH15 a named refusal with zero rows is an ACCEPTED outcome', AH15.res.stop_reason);
+eq(AH15.res.classification.guard_reason_named, ['FACTORY_STOCK_GUARD_STOP'],
+  'AH15a and the guard reason is named, from the production error contract');
+eq([AH15.res.observation_after.header_hit_count, AH15.res.observation_after.line_hit_count], [0, 0],
+  'AH15b with neither identity present');
+eq([AH15.res.attempts, AH15.calls], [1, 1], 'AH15c one attempt, one call');
+eq(AH15.res.retry_contract.generate_may_be_attempted_again, true,
+  'AH15d a further generate is permitted — from a new manifest and a new sentence');
+eq(AH15.res.retry_contract.same_authorization_reusable, false, 'AH15e but not on this sentence');
+var AH15s = ahExec({ mode: 'SILENT_ZERO' }, {}, ahOpts());
+eq(AH15s.res.verdict, 'MANUAL_RECOVERY_REQUIRED',
+  'AH15f an UNNAMED zero-write is NOT a guard refusal — an outcome nobody can act on is not a success shape');
+eq(AH15s.res.classification.guard_reason_named, [], 'AH15g and the empty reason list is what says so');
+
+// ---- AH16 A SURFACE THIS AUTHORIZATION PROMISED NOT TO TOUCH ------------------------------------
+var AH16 = ahExec({ movementAdded: true }, {}, ahOpts());
+eq(AH16.res.verdict, 'MANUAL_RECOVERY_REQUIRED',
+  'AH16 a factory movement appearing during the run is a recovery, even though the rows landed');
+ok(AH16.res.readback.failed_predicates.indexOf('no_factory_stock_movement_was_added') >= 0,
+  'AH16a named by the predicate that owns it', AH16.res.readback.failed_predicates);
+eq(AH16.res.readback.protected_surfaces_intact, false, 'AH16b and the surfaces are reported as not intact');
+var AH17 = ahExec({ otherScopeDrift: true }, {}, ahOpts());
+eq(AH17.res.verdict, 'MANUAL_RECOVERY_REQUIRED',
+  'AH17 a row appearing in ANOTHER scope is a recovery too');
+ok(AH17.res.readback.failed_predicates.indexOf('every_other_scope_header_and_line_is_unchanged') >= 0,
+  'AH17a named', AH17.res.readback.failed_predicates);
+// EVERY OTHER SURFACE §七 NAMES, DRIVEN RATHER THAN ASSERTED BY ABSENCE. A predicate that has never seen
+// the state it refuses is a predicate nobody has tested.
+[['planAdded', 'no_weekly_shipping_plan_plan_line_or_shipment_changed',
+  'a Weekly Shipping Plan created during the run'],
+ ['poolChanged', 'the_factory_pool_row_is_unchanged', 'factory stock moved during the run'],
+ ['reservationAppeared', 'the_reservations_table_is_still_in_the_state_the_baseline_froze',
+  'a reservations table that came into existence during the run — ABSENT is a state, not a row count']
+].forEach(function (c, i) {
+  var sc = { header: true, line: true };
+  sc[c[0]] = true;
+  var r = ahExec(sc, {}, ahOpts());
+  eq(r.res.verdict, 'MANUAL_RECOVERY_REQUIRED',
+    'AH17b.' + (i + 1) + ' ' + c[2] + ' is a recovery, even though the authorized pair landed');
+  ok(r.res.readback.failed_predicates.indexOf(c[1]) >= 0,
+    'AH17c.' + (i + 1) + ' named by ' + c[1], r.res.readback.failed_predicates);
+});
+
+var AH18 = ahExec({ wrongRun: true }, {}, ahOpts());
+eq(AH18.res.verdict, 'MANUAL_RECOVERY_REQUIRED',
+  'AH18 a header stamped with somebody else\'s calculation run is a recovery');
+ok(AH18.res.readback.failed_predicates.indexOf('the_header_carries_the_authorized_calculation_run') >= 0,
+  'AH18a named — the identity being right is not the lineage being right');
+
+// ---- AH19 IDEMPOTENCY: THE PAIR IS ALREADY THERE ------------------------------------------------
+var AH19 = ahExec({}, { preseed: true }, ahOpts());
+eq(AH19.res.verdict, 'ALREADY_APPLIED', 'AH19 the exact pair already present is ALREADY_APPLIED',
+  [AH19.res.stop_reason, AH19.res.idempotency]);
+eq([AH19.res.attempts, AH19.res.generator_calls, AH19.res.capability_minted], [0, 0, false],
+  'AH19a and the generator is NOT called — no attempt, no capability');
+eq(AH19.calls, 0, 'AH19b MEASURED');
+eq(AH19.res.retry_contract.next_action, 'RUN_POST_GENERATION_READBACK',
+  'AH19c with the readback as the next step, because nothing has been verified yet');
+eq(AH19.res.retry_contract.generate_may_be_attempted_again, false, 'AH19d and no further generate');
+// THE GATE ORDER, MEASURED. Idempotency is asked BEFORE readiness is re-measured, because a completed
+// generation makes the scope stop being a candidate — and `not a candidate` is a refusal that routes to a
+// new authorization, which is the one route that permits a second generation over the same rows.
+eq(AH19.res.manifest_p, undefined,
+  'AH19d1 and readiness was never re-asked — a completed generation is not a readiness question');
+eq(AH19.res.baseline_drift, undefined,
+  'AH19d2 nor was the baseline compared: the pair is already there, so what the baseline describes is moot');
+ok(AH19.res.idempotency.content_matches_this_run === true,
+  'AH19d3 and it is not a weak match — the run id, all four axes, the AI provenance and the ceiling');
+var AH19h = ahExec({ line: false }, { preseed: true }, ahOpts());
+eq(AH19h.res.verdict, 'MANUAL_RECOVERY_REQUIRED',
+  'AH19e half a pair already present is a recovery, not an idempotent reuse');
+eq([AH19h.res.attempts, AH19h.calls], [0, 0], 'AH19f and still no attempt');
+var AH19r = ahExec({ wrongRun: true }, { preseed: true }, ahOpts());
+eq(AH19r.res.verdict, 'MANUAL_RECOVERY_REQUIRED',
+  'AH19g a pair belonging to a DIFFERENT run is a recovery — it is not this generation');
+eq([AH19r.res.attempts, AH19r.calls], [0, 0], 'AH19h with no attempt over it');
+
+// ---- AH20 THE ACK_UNKNOWN MATRIX ----------------------------------------------------------------
+// The same three shapes settle it as settle the acknowledged column, because it is the same question. What
+// differs is the NAME, never the evidence — and it is NEVER settled by calling again.
+[['THROW_AFTER_WRITE', {}, 'EXECUTED_OK_AFTER_ACK_UNKNOWN', 'NO_FURTHER_GENERATE_ACTION',
+  'the call threw AFTER both rows landed'],
+ ['UNREADABLE_AFTER_WRITE', {}, 'EXECUTED_OK_AFTER_ACK_UNKNOWN', 'NO_FURTHER_GENERATE_ACTION',
+  'the response was unreadable but both rows landed'],
+ ['THROW', {}, 'NOT_APPLIED_ACK_UNKNOWN', 'RERUN_MANIFEST_P_AND_REQUIRE_NEW_AUTHORIZATION',
+  'the call threw and nothing landed'],
+ ['UNREADABLE', {}, 'NOT_APPLIED_ACK_UNKNOWN', 'RERUN_MANIFEST_P_AND_REQUIRE_NEW_AUTHORIZATION',
+  'the response was unreadable and nothing landed'],
+ ['THROW_AFTER_WRITE', { line: false }, 'MANUAL_RECOVERY_REQUIRED', 'STOP_AND_PERFORM_MANUAL_RECOVERY',
+  'the call threw and only the header landed'],
+ ['THROW_AFTER_WRITE', { header: false }, 'MANUAL_RECOVERY_REQUIRED', 'STOP_AND_PERFORM_MANUAL_RECOVERY',
+  'the call threw and only the line landed'],
+ ['THROW_AFTER_WRITE', { movementAdded: true }, 'MANUAL_RECOVERY_REQUIRED',
+  'STOP_AND_PERFORM_MANUAL_RECOVERY', 'the call threw and a protected surface moved']
+].forEach(function (c, i) {
+  var script = { mode: c[0] };
+  Object.keys(c[1]).forEach(function (k) { script[k] = c[1][k]; });
+  var r = ahExec(script, {}, ahOpts());
+  var tag = 'AH20.' + (i + 1);
+  eq(r.threw, null, tag + 'a the executor itself does not throw — ' + c[4]);
+  eq(r.res.ack_unknown, true, tag + 'b the outcome is ACK_UNKNOWN');
+  eq(r.res.verdict, c[2], tag + 'c settled by the READBACK as ' + c[2],
+    [r.res.readback && r.res.readback.failed_predicates, r.res.classification]);
+  eq(r.res.classification.next_action, c[3], tag + 'd next_action ' + c[3]);
+  // NEVER SETTLED BY CALLING AGAIN. One attempt, one call, and four fields that say the sentence and the
+  // baseline are spent whichever way the readback went.
+  eq([r.res.attempts, r.res.generator_calls], [1, 1], tag + 'e one attempt and one generator call');
+  eq(r.calls, 1, tag + 'f MEASURED ON THE GENERATOR — called exactly once, never retried');
+  eq([r.res.retry_contract.retryable, r.res.retry_contract.automatic_retry_allowed,
+    r.res.retry_contract.same_authorization_reusable,
+    r.res.retry_contract.same_frozen_baseline_reusable], [false, false, false, false],
+    tag + 'g and nothing is reusable once the write has been REACHED');
+  eq(r.res.production_call.generator_calls, 1, tag + 'h the call site itself reports one');
+  eq(r.world.allWrites(), 0, tag + 'i and the wrapper wrote nothing of its own');
+});
+
+// ---- AH21 THE RETRY CONTRACT TABLE, WHOLE ------------------------------------------------------
+var AH_VERDICTS = ['DRY_RUN', 'REFUSED_LOCK_CONTENTION', 'STOP', 'ALREADY_APPLIED', 'EXECUTED_OK',
+  'CLAMPED_EXECUTED_OK', 'FACTORY_GUARD_REFUSED_ZERO_WRITE', 'EXECUTED_OK_AFTER_ACK_UNKNOWN',
+  'NOT_APPLIED_ACK_UNKNOWN', 'MANUAL_RECOVERY_REQUIRED'];
+var AH21w = ahWorld({}, {});
+AH_VERDICTS.forEach(function (v, i) {
+  var c = vm.runInContext('S1_cgRetryContract_(' + JSON.stringify(v) + ')', AH21w.ctx);
+  eq(c.known, true, 'AH21.' + (i + 1) + 'a ' + v + ' has a contract row');
+  eq(c.automatic_retry_allowed, false,
+    'AH21.' + (i + 1) + 'b and automatic retry is false — for every verdict, everywhere');
+  var allows = vm.runInContext('S1_CG_NEXT_ACTION_ALLOWS_ANOTHER_GENERATE_['
+    + JSON.stringify(c.next_action) + ']', AH21w.ctx);
+  eq(allows, c.generate_may_be_attempted_again,
+    'AH21.' + (i + 1) + 'c and its next_action agrees with the permission it sits beside');
+});
+var AH21u = vm.runInContext('S1_cgRetryContract_("A_VERDICT_ADDED_LATER")', AH21w.ctx);
+eq([AH21u.known, AH21u.retryable, AH21u.same_authorization_reusable,
+  AH21u.same_frozen_baseline_reusable, AH21u.generate_may_be_attempted_again],
+  [false, false, false, false, false],
+  'AH21z an unknown verdict gets the MOST RESTRICTIVE contract and says known:false — never undefined'
+  + ' fields that read as false by accident');
+eq(AH21u.next_action, 'STOP_AND_PERFORM_MANUAL_RECOVERY', 'AH21z1 and is routed to a person');
 
 mut('N1 the proposal is sized from the RECOMMENDATION instead of the residual', function () {
   var m = swapS1('    prop = Math.min(row.residual_qty, a);',
@@ -10075,6 +10824,168 @@ mut('N144 the 24 other-scope row signatures fall out of the freeze and the requi
       && failed(clean.res).indexOf('the_frozen_baseline_carries_every_required_field') >= 0
       && bad.res.verdict === 'READY_TO_AUTHORIZE';
   });
+
+
+mut('N145 the wrapper flips the GLOBAL flag instead of relying on the capability', function () {
+  // The flag is GLOBAL: flipping it arms the browser button for every scope in the project, which is a
+  // different act from authorizing one generation for one SKU. That is the whole reason the capability
+  // exists, and a wrapper that flips it has quietly widened the blast radius to the whole page.
+  // SCOPED TO THE EXECUTOR. The same predicate line is in the preflight, so a file-wide swap hits two
+  // sites and the mutant would be measuring which one it happened to find.
+  var A = "    L.P('the_global_generation_flag_is_still_false', false, env.flag_value, env.flag_value === false);";
+  var m = swapS1In('RUN_S1_CONTROLLED_GENERATE_EXECUTE', A,
+    '    INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = true;' + NL + A);
+  var clean = ahExec({}, {}, ahOpts());
+  var bad = ahExec({}, { s1: ahS1(m) }, ahOpts());
+  return clean.flag === false && clean.res.verdict === 'EXECUTED_OK' && bad.flag === true;
+});
+
+mut('N146 the request stops naming the marketplace, so the capability authorizes a widened scope', function () {
+  // 61_'s gate re-derives the live scope key from the REQUEST and requires it to equal the minted one.
+  // Dropping the marketplace is how a controlled run becomes a fan-out; the REAL authority is what
+  // refuses it here, which is why this fixture loads the shipped IIFE rather than a stub of it.
+  var m = swapS1('  mapped.request.businessScope.marketplace = b.marketplace;',
+    '  mapped.request.businessScope.marketplace = null;');
+  var clean = ahExec({}, {}, ahOpts());
+  var bad = ahExec({}, { s1: ahS1(m) }, ahOpts());
+  return clean.res.verdict === 'EXECUTED_OK'
+    && bad.res.verdict !== 'EXECUTED_OK'
+    && String(JSON.stringify(bad.res.production_call.response_error_codes))
+      .indexOf('CONTROLLED_GENERATION_UNAUTHORIZED') >= 0;
+});
+
+mut('N147 the fingerprint is looked for INSIDE the sentence instead of computed over it', function () {
+  // A containment test passes on any text that happens to mention the hash — including a sentence with
+  // different numbers in it. The fingerprint is only an identity if it is COMPUTED from the whole text.
+  var m = swapS1('  o.fingerprint_matches = o.fingerprint === S1_CG_AUTH_FINGERPRINT_;',
+    '  o.fingerprint_matches = text.indexOf(S1_CG_AUTH_FINGERPRINT_) >= 0;');
+  var forged = AH_WORD.slice(0, 40) + 'X' + AH_WORD.slice(41) + ' [' + AH_FP + ']';
+  var clean = ahExec({}, {}, { execute: true, authorization: forged });
+  var bad = ahExec({}, { s1: ahS1(m) }, { execute: true, authorization: forged });
+  return clean.res.refusal_class === 'AUTHORIZATION_FINGERPRINT_MISMATCH' && clean.calls === 0
+    && bad.res.verdict === 'EXECUTED_OK' && bad.calls === 1;
+});
+
+mut('N148 the drift comparison is neutralised, so an authorization applies to another world', function () {
+  var m = swapS1('function S1_cgNoDrift_(d) {', 'function S1_cgNoDrift_(d) { return true;');
+  // A field in NEITHER the census identity nor the wording, so this comparison is the only gate that
+  // sees it — which is what makes neutralising it observable at all.
+  var b = JSON.parse(JSON.stringify(AH_BASE));
+  b.gap_scope_universe_total_count = 999999;
+  var clean = ahExec({}, { baseline: b }, ahOpts());
+  var bad = ahExec({}, { baseline: b, s1: ahS1(m).split(S1_FROZEN_DECL_ + JSON.stringify(AH_BASE) + ';')
+    .join(S1_FROZEN_DECL_ + JSON.stringify(b) + ';') }, ahOpts());
+  return clean.res.verdict === 'STOP' && clean.res.attempts === 0 && clean.calls === 0
+    && bad.res.attempts === 1 && bad.calls === 1;
+});
+
+mut('N149 the generator is called twice under one authorization', function () {
+  // One authorization, two headers. The one-shot nonce is what makes the second call refuse in
+  // production — so this asserts BOTH that the wrapper calls once and that the authority would catch it.
+  var A = '    o.resp = weeklyAiPlanParseResp_(weeklyAiPlanGenerateK2_(ss, mapped.request, h, deps,';
+  var m = swapS1(A, '    weeklyAiPlanGenerateK2_(ss, mapped.request, h, deps,' + NL
+    + '      { company: b.company, country: b.country, marketplace: b.marketplace }, cap);' + NL + A);
+  var clean = ahExec({}, {}, ahOpts());
+  var bad = ahExec({}, { s1: ahS1(m) }, ahOpts());
+  return clean.calls === 1 && bad.calls === 2;
+});
+
+mut('N150 the call is retried after it throws, so an unacknowledged write becomes two', function () {
+  // THE ONE THIS SECTION EXISTS FOR. A timeout is ACK_UNKNOWN, and ACK_UNKNOWN is settled by reading the
+  // data. A second call after an unacknowledged first one is how one authorization becomes two headers.
+  var A = '    o.threw = true;';
+  var m = swapS1(A, '    try { weeklyAiPlanGenerateK2_(ss, mapped.request, h, deps,' + NL
+    + '      { company: b.company, country: b.country, marketplace: b.marketplace }, cap); }' + NL
+    + '    catch (eR) { }' + NL + A);
+  var clean = ahExec({ mode: 'THROW' }, {}, ahOpts());
+  var bad = ahExec({ mode: 'THROW' }, { s1: ahS1(m) }, ahOpts());
+  return clean.calls === 1 && clean.res.verdict === 'NOT_APPLIED_ACK_UNKNOWN' && bad.calls === 2;
+});
+
+mut('N151 the two identities landing is taken as the whole readback', function () {
+  // An id being present says a row exists. It does not say the rows this authorization promised not to
+  // touch are still the rows that were frozen — so the success branch requires the WHOLE readback, not
+  // just the pair. Dropping `rb.ok` files a run that moved a protected surface as a clean success.
+  var m = swapS1('  if (rb.both_sides_landed && rb.ok) {', '  if (rb.both_sides_landed) {');
+  var clean = ahExec({ movementAdded: true }, {}, ahOpts());
+  var bad = ahExec({ movementAdded: true }, { s1: ahS1(m) }, ahOpts());
+  return clean.res.verdict === 'MANUAL_RECOVERY_REQUIRED' && bad.res.verdict === 'EXECUTED_OK';
+});
+
+mut('N152 other-scope drift is dropped from the readback', function () {
+  var m = swapS1("  L.P('every_other_scope_header_and_line_is_unchanged',",
+    "  L.P('every_other_scope_header_and_line_is_unchanged', null, null, true) || L.P('_unused',");
+  var clean = ahExec({ otherScopeDrift: true }, {}, ahOpts());
+  var bad = ahExec({ otherScopeDrift: true }, { s1: ahS1(m) }, ahOpts());
+  return clean.res.verdict === 'MANUAL_RECOVERY_REQUIRED' && bad.res.verdict === 'EXECUTED_OK';
+});
+
+mut('N153 a factory movement added during the run is dropped from the readback', function () {
+  var m = swapS1("  L.P('no_factory_stock_movement_was_added',",
+    "  L.P('no_factory_stock_movement_was_added', null, null, true) || L.P('_unused',");
+  var clean = ahExec({ movementAdded: true }, {}, ahOpts());
+  var bad = ahExec({ movementAdded: true }, { s1: ahS1(m) }, ahOpts());
+  return clean.res.verdict === 'MANUAL_RECOVERY_REQUIRED' && bad.res.verdict === 'EXECUTED_OK';
+});
+
+mut('N154 a partial header-or-line write is classified as a success', function () {
+  var m = swapS1('  if (rb.both_sides_landed && rb.ok) {',
+    '  if (rb.header_created || rb.line_created) {');
+  var clean = ahExec({ line: false }, {}, ahOpts());
+  var bad = ahExec({ line: false }, { s1: ahS1(m) }, ahOpts());
+  // The mutant reaches a SUCCESS NAME, and which one is incidental: with no line there is no quantity,
+  // so `written_qty < ceiling` is vacuously true and it lands on the clamp name. Filing a half-written
+  // pair under either name is the defect.
+  return clean.res.verdict === 'MANUAL_RECOVERY_REQUIRED'
+    && ['EXECUTED_OK', 'CLAMPED_EXECUTED_OK'].indexOf(bad.res.verdict) >= 0;
+});
+
+mut('N155 the authorization survives the generation it authorized', function () {
+  // "Spent" is the whole of §九: a completed OR refused authorization is answered, and the next attempt
+  // is a new decision. A reusable sentence is a standing permission to generate again.
+  var m = swapS1("  EXECUTED_OK: [false, false, false, false, 'NO_FURTHER_GENERATE_ACTION'],",
+    "  EXECUTED_OK: [false, true, true, true, 'NO_FURTHER_GENERATE_ACTION'],");
+  var clean = ahExec({}, {}, ahOpts());
+  var bad = ahExec({}, { s1: m.split(S1_FROZEN_DECL_ + 'null;')
+    .join(S1_FROZEN_DECL_ + JSON.stringify(AH_BASE) + ';') }, ahOpts());
+  return clean.res.retry_contract.same_authorization_reusable === false
+    && clean.res.retry_contract.next_action_agrees_with_the_permission === true
+    && bad.res.retry_contract.same_authorization_reusable === true
+    // AND THE CROSS-CHECK CATCHES IT INDEPENDENTLY: "the case is closed" cannot sit beside "you may
+    // generate again", so the disagreement is reported even if nobody reads the four flags.
+    && bad.res.retry_contract.next_action_agrees_with_the_permission === false;
+});
+
+mut('N156 a completed generation is answered as `not ready` instead of ALREADY_APPLIED', function () {
+  // WHAT THE ORDER OF THE GATES IS FOR, AS A MUTANT. Removing the idempotent return does NOT reach the
+  // generator — the readiness gate below it stops that, which is the defence-in-depth working. The damage
+  // is the ANSWER: a scope whose generation already succeeded is told `not ready`, and `not ready` routes
+  // to RERUN_MANIFEST_P_AND_REQUIRE_NEW_AUTHORIZATION, the one next_action that permits another generate
+  // over rows that already exist. So that is what this asserts, and the zero call count is asserted
+  // deterministically at AH19a/AH19b instead.
+  var m = swapS1("    if (out.idempotency.state === 'ALREADY') {",
+    "    if (false && out.idempotency.state === 'ALREADY') {");
+  var clean = ahExec({}, { preseed: true }, ahOpts());
+  var bad = ahExec({}, { preseed: true, s1: ahS1(m) }, ahOpts());
+  return clean.res.verdict === 'ALREADY_APPLIED' && clean.calls === 0
+    && clean.res.retry_contract.next_action === 'RUN_POST_GENERATION_READBACK'
+    && clean.res.retry_contract.generate_may_be_attempted_again === false
+    && bad.res.verdict === 'STOP'
+    && bad.res.retry_contract.next_action === 'RERUN_MANIFEST_P_AND_REQUIRE_NEW_AUTHORIZATION'
+    && bad.res.retry_contract.generate_may_be_attempted_again === true;
+});
+
+mut('N157 the preflight mints a capability, so a read arms a write', function () {
+  // A preflight that mints has already done the one thing only the executor may do. The capability is
+  // one-shot: a read that spends it makes the next Execute fail for a reason no operator could explain.
+  // SCOPED TO THE PREFLIGHT — the executor re-measures with the same two lines.
+  var m = swapS1In('RUN_S1_CONTROLLED_GENERATE_PREFLIGHT', '    var mp = RUN_S1_MANIFEST_P();',
+    '    var mp = RUN_S1_MANIFEST_P();' + NL + '    S1_cgProductionCall_(S1_openDb_().ss, b);');
+  var clean = ahPre({});
+  var bad = ahPre({}, { s1: ahS1(m) });
+  return clean.calls === 0 && clean.res.verdict === 'READY_FOR_ONE_CONTROLLED_GENERATE'
+    && bad.calls === 1;
+});
 
 console.log('\npassed ' + pass + '  failed ' + fail
   + '  |  mutants caught ' + neg.caught + '  survived ' + neg.missed);
