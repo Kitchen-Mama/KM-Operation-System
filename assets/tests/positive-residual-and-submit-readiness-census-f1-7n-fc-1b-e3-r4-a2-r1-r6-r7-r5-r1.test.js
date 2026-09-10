@@ -620,7 +620,8 @@ var S1_BARE = bareCode(S1);
  'RUN_S1_ACCEPTED_GAP_RUN_READABILITY_DIAGNOSTIC', 'RUN_S1_FACTORY_MOVEMENT_ID_INTEGRITY_CENSUS',
  'RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL_MANIFEST',
  'RUN_S1_FACTORY_MOVEMENT_LEGACY_PROVENANCE_CENSUS',
- 'RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL_MANIFEST'].forEach(function (fn, i) {
+ 'RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL_MANIFEST',
+ 'RUN_S1_FACTORY_MOVEMENT_POST_MANUAL_DELETION_ACCEPTANCE_MANIFEST'].forEach(function (fn, i) {
   var src = bareCode(extractFn(S1, fn));
   ok(src.length > 0, 'A7.19.' + (i + 1) + 'a ' + fn + ' is extractable');
   ok(src.indexOf('setValue') === -1 && src.indexOf('appendRow') === -1
@@ -628,9 +629,10 @@ var S1_BARE = bareCode(S1);
     && src.indexOf('getRange') === -1,
     'A7.19.' + (i + 1) + 'b ' + fn + ' reaches no write API, no lock and no getRange at all');
 });
-// TEN READ-ONLY ENTRY POINTS AND TWO THAT MAY WRITE, WHICH IS THE WHOLE PUBLIC SURFACE.
-eq((S1_BARE.match(/^function RUN_S1_[A-Z_]+/gm) || []).length, 12,
-  'A7.20 twelve public entry points in total');
+// ELEVEN READ-ONLY ENTRY POINTS AND TWO THAT MAY WRITE, WHICH IS THE WHOLE PUBLIC SURFACE.
+// R4J's addition is the eleventh read-only one: it accepts the current state and has no execute path.
+eq((S1_BARE.match(/^function RUN_S1_[A-Z_]+/gm) || []).length, 13,
+  'A7.20 thirteen public entry points in total');
 ['RUN_S1_FACTORY_MOVEMENT_ID_BACKFILL', 'RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL']
   .forEach(function (fn, i) {
   var src = bareCode(extractFn(S1, fn));
@@ -5311,8 +5313,9 @@ ok(String(AB13.repair_route).indexOf('a PERSON may now decide, never that a tool
 // AND THE ENTRY POINT COUNT. R4F added one, read-only; R4H added two more - a read-only manifest and the
 // one tool in this file that may empty a range. The count is asserted so a third writer cannot appear
 // without this line changing.
-eq((S1_BARE.match(/^function RUN_S1_[A-Z_]+/gm) || []).length, 12,
-  'AB32g twelve public entry points: nine from R4E and before, R4F\'s read-only census, and R4H\'s two');
+eq((S1_BARE.match(/^function RUN_S1_[A-Z_]+/gm) || []).length, 13,
+  'AB32g thirteen public entry points: nine from R4E and before, R4F\'s read-only census, R4H\'s two,'
+  + ' and R4J\'s read-only post-deletion acceptance manifest');
 
 // ---- AB33 — THE FIELD CONTRACT IS R4E's, NOT A SECOND OPINION. ------------------------------------
 // A second required-ness table would be a second opinion, and the first thing two opinions do is disagree.
@@ -6781,6 +6784,320 @@ function swapS1In(fnName, a, b) {
   }
   return S1.split(body).join(body.split(a).join(b));
 }
+
+
+// ==================================================================================================
+// AE — S1-R4J: A GOOGLE SHEET ROW NUMBER IS NOT A MOVEMENT IDENTITY.
+//
+// The operator deleted the legacy test row by hand rather than clearing it, so ninety-five real movements
+// each moved up one row and the sheet lost a row of extent. R4I proposed inserting a blank row so the frozen
+// PHYSICAL postconditions would pass again — repairing the evidence to fit the expectation, by writing to
+// the one table this package exists to leave alone.
+//
+// These tests hold the corrected contract: the two completion shapes are equally acceptable, a shift is not
+// a drift, and every way of ACTUALLY losing data still stops.
+//
+// THE PIN IS MEASURED THE WAY PRODUCTION MEASURED IT. The PRE world (residue still on row 2) is manifested
+// READ-ONLY, and the expected-AFTER hashes it publishes are what the POST world is held to. A pin invented
+// after the deletion would be a comparison with itself, and could not fail.
+// ==================================================================================================
+
+/** The ninety-five real movements, with no residue row in front of them. */
+function aeGoodRows(n) {
+  var r = [];
+  for (var i = 1; i <= (n === undefined ? 95 : n); i++) r.push(aaGood(i));
+  return r;
+}
+/** The PRE world and the expected-AFTER the read-only manifest published against it. */
+function aePre(rows) {
+  var w = adWorld(rows);
+  var m = adMan(w);
+  return { world: w, manifest: m, fz: m.frozen_before };
+}
+/** The POST world after the manual DELETION: the same ninety-five rows, each one row higher. */
+function aeDeleted(rows, extra, mutate) {
+  return adWorld(rows === undefined ? aeGoodRows() : rows, extra, false, mutate);
+}
+/** The POST world after a CLEAR: the residue's physical row survives, empty, and nothing moved. */
+function aeCleared() {
+  return adWorld(adRows(), undefined, false, function (w) {
+    var rs = w.sheets.factory_stock_movements.rows;
+    for (var c = 0; c < rs[1].length; c++) rs[1][c] = '';
+  });
+}
+function aePin(fz, shape, over) {
+  var ea = fz.expected_after;
+  var deleted = shape !== 'CLEARED';
+  var e = {
+    authority: 'the suite manifested the PRE world read-only and is holding the POST world to the'
+      + ' expected-AFTER that run published',
+    header_row: 1,
+    live_column_count: fz.live_column_count,
+    physical_last_row: deleted ? (ea.physical_last_row - 1) : ea.physical_last_row,
+    logical_movement_record_count: ea.logical_movement_record_count,
+    valid_id_count: ea.valid_id_count,
+    blank_id_count: ea.blank_id_count,
+    duplicate_id_count: ea.duplicate_id_count,
+    wrong_type_id_count: ea.wrong_type_id_count,
+    outside_named_column_row_count: ea.outside_named_column_row_count,
+    header_fingerprint: ea.header_fingerprint,
+    logical_table_fingerprint: ea.table_combined_fingerprint,
+    id_universe_fingerprint: ea.remaining_id_universe_fingerprint,
+    pre_deletion_row_map_fingerprint: ea.remaining_row_fingerprint_map_fingerprint,
+    expected_rows_moved_up_by: deleted ? 1 : 0,
+    residue_row_fingerprint: fz.target_row_fingerprint,
+    pool_warehouse_id: fz.pool_warehouse_id, pool_sku: fz.pool_sku,
+    pool_fac_current_stock: ea.pool_fac_current_stock,
+    pool_fac_reserved_stock: ea.pool_fac_reserved_stock,
+    pool_row_fingerprint: ea.pool_row_fingerprint,
+    pool_table_combined_fingerprint: ea.pool_table_combined_fingerprint,
+    protected_surface_fingerprint: ea.protected_surface_fingerprint,
+    flag_value: ea.flag_value,
+    allowlist_count: fz.allowlist_count,
+    allowlist_fingerprint: ea.allowlist_fingerprint
+  };
+  Object.keys(over || {}).forEach(function (k) { e[k] = over[k]; });
+  return e;
+}
+function aeAccept(w, pin) {
+  vm.runInContext('var __AE_ARG = ' + JSON.stringify({ expect: pin }) + ';', w.ctx);
+  return vm.runInContext(
+    'RUN_S1_FACTORY_MOVEMENT_POST_MANUAL_DELETION_ACCEPTANCE_MANIFEST(__AE_ARG)', w.ctx);
+}
+/** A world that should be REFUSED, and the refusal. */
+function aeBad(label, mutate, extra, rows) {
+  var w = aeDeleted(rows, extra, mutate);
+  var r = aeAccept(w, aePin(AEpre.fz, 'DELETED'));
+  eq(r.verdict, 'STOP', label);
+  adNoWrite(r, w, label + ' —');
+  return r;
+}
+
+var AEpre = aePre();
+eq(AEpre.manifest.verdict, 'READY_TO_AUTHORIZE_REMOVAL',
+  'AE0  the PRE world manifests cleanly, so its published expected-AFTER is a real measurement',
+  [AEpre.manifest.failed_predicates, AEpre.manifest.stop_reasons]);
+
+// ---- AE1 — THE MANUAL DELETION IS ACCEPTED. --------------------------------------------------------
+var AE1w = aeDeleted();
+var AE1 = aeAccept(AE1w, aePin(AEpre.fz, 'DELETED'));
+eq(AE1.verdict, 'MANUAL_LEGACY_TEST_ROW_DELETION_ACCEPTED',
+  'AE1  a manual row deletion that left the ninety-five intact is ACCEPTED',
+  [AE1.failed_predicates, AE1.stop_reasons]);
+eq(AE1.next_action, 'RUN_FRESH_S1_MANIFEST_P', 'AE1a and the next action is a FRESH Manifest P');
+eq(AE1.completion_shape, 'ROW_DELETED_RECORDS_SHIFTED_UP', 'AE1b named as the deletion shape');
+eq(AE1.predicates_failed, 0, 'AE1c with no failed predicate', AE1.failed_predicates);
+eq(AE1.logical.record_count, 95, 'AE1d ninety-five logical movement records');
+eq(AE1.physical.physical_last_row, 96, 'AE1e physical last row 96 — reported, not refused');
+eq(AE1.physical.is_an_identity, false, 'AE1f and the physical layout declares itself not an identity');
+eq(AE1.residue.absent, true, 'AE1g the legacy test residue is absent');
+eq(AE1.shift.uniform_shift_detected, true, 'AE1h every surviving row moved together');
+eq(AE1.shift.rows_moved_up_by, 1, 'AE1i by exactly one row');
+eq(AE1.physical.blank_spacer_rows, 0, 'AE1j and no blank spacer row was inserted to make it fit');
+adNoWrite(AE1, AE1w, 'AE1k the acceptance manifest');
+eq([AE1.read_only, AE1.dry_run, AE1.rows_inserted], [true, true, 0],
+  'AE1l it declares itself read-only and inserts no row');
+eq([AE1.frozen_baseline_required, AE1.frozen_baseline_used,
+  AE1.authorization_required, AE1.authorization_used], [false, null, false, null],
+  'AE1m it required and consumed NO frozen removal baseline and NO authorization');
+eq(AE1.repair_path_exists, false, 'AE1n and it has no repair path at all');
+
+// ---- AE2 — THE CLEAR IS EQUALLY ACCEPTED, AND THE TWO AGREE ON EVERYTHING LOGICAL. -----------------
+var AE2w = aeCleared();
+var AE2 = aeAccept(AE2w, aePin(AEpre.fz, 'CLEARED'));
+eq(AE2.verdict, 'LEGACY_TEST_ROW_REMOVAL_COMPLETED_BY_CLEAR',
+  'AE2  a cleared row with the physical row kept is ALSO an accepted completion',
+  [AE2.failed_predicates, AE2.stop_reasons]);
+eq(AE2.completion_shape, 'CLEARED_PHYSICAL_ROW_KEPT', 'AE2a named as the clear shape');
+eq(AE2.shift.rows_moved_up_by, 0, 'AE2b nothing moved, because the physical row was kept');
+eq(AE2.physical.physical_last_row, 97, 'AE2c and the sheet kept its extent');
+eq(AE2.next_action, 'RUN_FRESH_S1_MANIFEST_P', 'AE2d both shapes lead to the same next step');
+// THE HEADLINE. Two different methods, one identical ledger — which is why insisting on the physical
+// shape of one of them was refusing a correct outcome for being correct in the other way.
+eq(AE2.logical.logical_table_fingerprint, AE1.logical.logical_table_fingerprint,
+  'AE2e THE TWO COMPLETION SHAPES PRODUCE THE IDENTICAL LOGICAL TABLE FINGERPRINT');
+eq(AE2.logical.id_universe_fingerprint, AE1.logical.id_universe_fingerprint,
+  'AE2f and the identical id universe');
+eq(AE2.logical.content_by_id_fingerprint, AE1.logical.content_by_id_fingerprint,
+  'AE2g and the identical content-by-id fingerprint');
+eq(AE2.logical.record_count, AE1.logical.record_count, 'AE2h and the same ninety-five records');
+
+// ---- AE3 — A SHIFT IS NOT A DRIFT, AND THE PHYSICAL VIEW IS REPORTED APART. ------------------------
+ok(AE1.logical.physical_layout_fingerprint !== AE2.logical.physical_layout_fingerprint,
+  'AE3  the PHYSICAL layout fingerprints DO differ between the two shapes');
+eq(AE1.logical.physical_layout_is_an_identity, false,
+  'AE3a which is exactly why it is declared not to be an identity');
+ok(AE1.physical.note.indexOf('never a reason to insert a row') > 0,
+  'AE3b and the report says in words that a shrunken extent is not a reason to insert a row',
+  AE1.physical.note);
+eq(AE1.identity_contract.physical_layout.may_be_an_identity, false,
+  'AE3c the contract itself separates the two vocabularies');
+eq(AE1.identity_contract.logical_identity.contains_a_row_number, false,
+  'AE3d and states that logical identity contains no row number');
+// AND THE TABLE FINGERPRINT WAS ALREADY LOGICAL — asserted against the shipped reader, not claimed.
+eq(AE1.logical.logical_table_fingerprint, AE1.table_combined_fingerprint,
+  'AE3e the fingerprint this package has always quoted never contained a row number');
+
+// ---- AE4..AE12 — EVERY WAY OF ACTUALLY LOSING DATA STILL STOPS. ------------------------------------
+var AE4 = aeBad('AE4  one movement id short: STOP', null, undefined, aeGoodRows(94));
+ok(AE4.stop_reasons.join(',').indexOf('LOGICAL_RECORD_COUNT_IS_NOT_95') >= 0,
+  'AE4a and it names the count, not the layout', AE4.stop_reasons);
+
+var AE5rows = aeGoodRows();
+AE5rows[2] = aaGood(3); AE5rows[2].qty = 999999;
+var AE5 = aeBad('AE5  the id survived but its business content changed: STOP', null, undefined, AE5rows);
+ok(AE5.stop_reasons.join(',').indexOf('BUSINESS_CONTENT_CHANGED') >= 0,
+  'AE5a and it says the content changed, not that a record is missing', AE5.stop_reasons);
+eq(AE5.logical.id_universe_fingerprint, AE1.logical.id_universe_fingerprint,
+  'AE5b — the ID UNIVERSE is unchanged, which is why the two fingerprints must be separate');
+ok(AE5.logical.content_by_id_fingerprint !== AE1.logical.content_by_id_fingerprint,
+  'AE5c while the content-by-id fingerprint moved');
+
+var AE6rows = aeGoodRows();
+AE6rows[2].factory_stock_movement_id = AE6rows[1].factory_stock_movement_id;
+aeBad('AE6  a duplicate movement id: STOP', null, undefined, AE6rows);
+
+var AE7rows = aeGoodRows();
+AE7rows[2].factory_stock_movement_id = '';
+aeBad('AE7  a blank movement id: STOP', null, undefined, AE7rows);
+
+var AE8rows = aeGoodRows();
+AE8rows[2].factory_stock_movement_id = 'NOT-A-MOVEMENT-ID';
+aeBad('AE8  a wrong-typed movement id: STOP', null, undefined, AE8rows);
+
+var AE9 = aeBad('AE9  the residue is still on the sheet: STOP', null, undefined, adRows());
+ok(AE9.stop_reasons.join(',').indexOf('RESIDUE_IS_STILL_ON_THE_SHEET') >= 0,
+  'AE9a and says so by name', AE9.stop_reasons);
+
+var AE10 = aeBad('AE10 the header drifted: STOP', function (w) {
+  w.sheets.factory_stock_movements.rows[0][12] = 'note_v2';
+});
+ok(AE10.stop_reasons.join(',').indexOf('HEADER_OR_SCHEMA_DRIFTED') >= 0,
+  'AE10a and names the schema, not the row map', AE10.stop_reasons);
+
+var AE11 = aeBad('AE11 factory_stock drifted: STOP', null,
+  { factory_stock: [{ warehouse_id: WHF, sku: SKU, fac_current_stock: 2000, fac_reserved_stock: 0 }] });
+ok(AE11.stop_reasons.join(',').indexOf('FACTORY_STOCK') >= 0,
+  'AE11a and names the pool', AE11.stop_reasons);
+
+var AE12 = aeBad('AE12 a protected surface drifted: STOP', function (w) {
+  var sh = w.sheets.shipping_plans, row = [];
+  for (var i = 0; i < sh.rows[0].length; i++) row.push('X');
+  sh.rows.push(row);
+});
+ok(AE12.stop_reasons.join(',').indexOf('PROTECTED_SURFACE_DRIFTED') >= 0,
+  'AE12a and names the protected surface', AE12.stop_reasons);
+
+// ---- AE13 — A REORDER IS INVISIBLE TO EVERY LOGICAL FINGERPRINT, AND THE ROW MAP IS WHY IT STOPS. --
+// Sorting is what makes the logical fingerprints immune to row order — and immune is the same word as
+// blind. The row map, compared at the shift the shape should have produced, is the only thing that can
+// still see it.
+var AE13rows = aeGoodRows();
+var AE13tmp = AE13rows[2]; AE13rows[2] = AE13rows[3]; AE13rows[3] = AE13tmp;
+var AE13 = aeBad('AE13 two real movements swapped places: STOP', null, undefined, AE13rows);
+eq(AE13.logical.logical_table_fingerprint, AE1.logical.logical_table_fingerprint,
+  'AE13a — the LOGICAL fingerprint cannot see a reorder at all');
+eq(AE13.shift.uniform_shift_detected, false,
+  'AE13b and the uniform-shift test is what refuses it');
+ok(AE13.stop_reasons.join(',').indexOf('DID_NOT_ALL_MOVE_BY_THE_SAME_AMOUNT') >= 0,
+  'AE13c naming the movement, not the data', AE13.stop_reasons);
+
+// ---- AE14 — THE REMOVAL TOOL, RE-RUN AFTER THE MANUAL DELETION. ------------------------------------
+// The realistic accident: an operator pastes the old baseline back in. Before R4J the row-number test read
+// "not done yet", the drift checks then refused a healthy table, and the suggested remedy was to repair it.
+var AE14w = aeDeleted();
+var AE14n = adCountClears(AE14w);        // installed BEFORE the run — a counter cannot count the past
+var AE14 = adRun(AE14w, { frozen: AEpre.fz, authorization: AEpre.fz.authorization_wording });
+eq(AE14.verdict, 'ALREADY_APPLIED',
+  'AE14 re-running the removal after the manual deletion reports ALREADY_APPLIED',
+  [AE14.refusal_reasons, AE14.failed_predicates]);
+eq(AE14.completion_shape, 'ROW_DELETED_RECORDS_SHIFTED_UP',
+  'AE14a and names the shape that finished it');
+eq(AE14.readback.ok, true, 'AE14b the readback passes against the deleted layout',
+  AE14.readback.mismatches);
+eq(AE14.readback.shift.rows_moved_up_by, 1, 'AE14c having found the survivors one row higher');
+eq(AE14.attempts, 0, 'AE14d and it never reached the write');
+eq([AE14.retryable, AE14.same_authorization_reusable, AE14.same_frozen_baseline_reusable,
+  AE14.removal_may_be_attempted_again], AD_NOTHING_REUSABLE_,
+  'AE14e a completed removal offers nothing back');
+eq(AE14.next_action, 'NO_FURTHER_ACTION_THE_REMOVAL_IS_COMPLETE', 'AE14f and says the job is done');
+adNoWrite(AE14, AE14w, 'AE14g');
+eq(AE14n.clears, 0, 'AE14h with zero clearContent calls');
+
+// ---- AE15 — THE SAME, FOR A CLEAR. The tool must not have LOST the shape it already understood. -----
+var AE15w = aeCleared();
+var AE15 = adRun(AE15w, { frozen: AEpre.fz, authorization: AEpre.fz.authorization_wording });
+eq(AE15.verdict, 'ALREADY_APPLIED', 'AE15 the cleared shape is still recognised',
+  [AE15.refusal_reasons, AE15.failed_predicates]);
+eq(AE15.completion_shape, 'CLEARED_PHYSICAL_ROW_KEPT', 'AE15a and named');
+eq(AE15.readback.shift.rows_moved_up_by, 0, 'AE15b with nothing having moved');
+
+// ---- AE16 — THE MANIFEST CALLS A FINISHED JOB FINISHED, NOT A DRIFT. -------------------------------
+var AE16w = aeDeleted();
+var AE16 = adMan(AE16w, { pinOver: {
+  row_count: AEpre.fz.logical_movement_record_count,
+  logical_movement_record_count: AEpre.fz.logical_movement_record_count,
+  header_fingerprint: AEpre.fz.header_fingerprint,
+  table_combined_fingerprint: AEpre.fz.table_combined_fingerprint,
+  valid_id_count: AEpre.fz.valid_id_count, blank_id_count: AEpre.fz.blank_id_count,
+  target_row_number: AEpre.fz.target_row_number,
+  target_row_fingerprint: AEpre.fz.target_row_fingerprint } });
+eq(AE16.verdict, 'REMOVAL_ALREADY_COMPLETE',
+  'AE16 the removal manifest reports a completed removal as complete', AE16.stop_reasons);
+eq([AE16.frozen_before, AE16.authorization_wording], [null, null],
+  'AE16a freezing nothing and authorizing nothing');
+eq(AE16.completion.completion_shape, 'ROW_DELETED_RECORDS_SHIFTED_UP', 'AE16b naming the shape');
+ok(AE16.next_decision.indexOf('Do NOT insert a blank row') > 0,
+  'AE16c and telling the operator, in words, not to insert a blank row', AE16.next_decision);
+ok(AE16.next_decision.indexOf('POST_MANUAL_DELETION_ACCEPTANCE_MANIFEST') > 0,
+  'AE16d pointing at the read-only acceptance manifest instead');
+adNoWrite(AE16, AE16w, 'AE16e');
+
+// ---- AE17 — ABSENCE MUST BE CORROBORATED. -----------------------------------------------------------
+// "No row hashes to 2CA4D4BE" is also what a header change produces. The corroboration is what stops the
+// tool answering ALREADY_APPLIED to a schema drift.
+eq(AE16.completion.corroboration.indexOf('necessary and NOT sufficient') >= 0, true,
+  'AE17 the completion test says in words that a missing hash is not sufficient');
+eq([AE16.completion.header_matches_the_frozen_one, AE16.completion.no_blank_movement_id_remains],
+  [true, true], 'AE17a and reports both corroborating facts');
+
+// ---- AE18 — THE HANDOFF TO MANIFEST P. --------------------------------------------------------------
+eq(AE1.manifest_p_handoff.next_action, 'RUN_FRESH_S1_MANIFEST_P', 'AE18 the handoff names a FRESH run');
+eq(AE1.manifest_p_handoff.manifest_p_must_remeasure, true, 'AE18a which must re-measure');
+eq(AE1.manifest_p_handoff.s1_manifest_p_before_is_still_null, true,
+  'AE18b with S1_MANIFEST_P_BEFORE_ still empty');
+eq(AE1.manifest_p_handoff.freeze_block_may_be_hand_edited, false,
+  'AE18c and no hand-edited freeze block');
+['E3E783BF', '97', '91702192', 'authorization', 'frozen removal baseline'].forEach(function (s, i) {
+  ok(AE1.manifest_p_handoff.must_not_be_carried_forward.join(' | ').indexOf(s) >= 0,
+    'AE18d.' + (i + 1) + ' the handoff names ' + s + ' as not carried forward');
+});
+eq(AE1.manifest_p_handoff.live_state_manifest_p_will_measure.physical_last_row, 96,
+  'AE18e and publishes the live state Manifest P will actually see');
+eq(AE1.expectation_is_a_before_value, false,
+  'AE18f the acceptance run is pinned to an AFTER state, never to the removal BEFORE fingerprint');
+
+// ---- AE19 — THE SOURCE ITSELF. No row insertion exists anywhere, in any form. ------------------------
+['insertRowsBefore', 'insertRowsAfter', 'insertRows(', 'insertRowBefore', 'insertRowAfter',
+ 'deleteRow(', 'deleteRows('].forEach(function (api, i) {
+  eq(S1_BARE.indexOf(api), -1,
+    'AE19.' + (i + 1) + ' the census source contains no ' + api + ' (comments and strings stripped)');
+});
+eq(bareCode(extractFn(S1, 'RUN_S1_FACTORY_MOVEMENT_POST_MANUAL_DELETION_ACCEPTANCE_MANIFEST'))
+  .indexOf('setValue'), -1, 'AE19a and the acceptance manifest reaches no write API');
+// THE PIN'S OWN TEXT — nothing this round forbade may be inside it.
+var AEpinSrc = S1.split('var S1_MOV_POST_DELETION_LIVE_ = {')[1].split('};')[0];
+ok(AEpinSrc.length > 0, 'AE19b the post-deletion pin exists');
+ok(/logical_table_fingerprint:\s*'FC67B70E'/.test(AEpinSrc),
+  'AE19c pinned to the published expected-AFTER, FC67B70E');
+eq(AEpinSrc.indexOf('E3E783BF'), -1, 'AE19d the removal BEFORE fingerprint is NOT inside it');
+eq(AEpinSrc.indexOf('91702192'), -1, 'AE19e nor the blank row-2 raw fingerprint');
+ok(/physical_last_row:\s*96/.test(AEpinSrc) && AEpinSrc.indexOf('97') === -1,
+  'AE19f and the physical extent it carries is 96, never 97');
+eq((S1.match(/var S1_MOV_LIVE_FROZEN_ = \{/g) || []).length, 1,
+  'AE19g the pre-deletion pin is kept, once, as the historical record it is');
+eq((S1.match(/var S1_MANIFEST_P_BEFORE_ = null;/g) || []).length, 1,
+  'AE19h and the Manifest P baseline destination is still an empty null');
 
 mut('N1 the proposal is sized from the RECOMMENDATION instead of the residual', function () {
   var m = swapS1('    prop = Math.min(row.residual_qty, a);',
@@ -9176,6 +9493,100 @@ mut('N133 a verified rollback is filed as a finished removal', function () {
     && bad.next_action === 'NO_FURTHER_ACTION_THE_REMOVAL_IS_COMPLETE'
     && bad.failed_predicates.indexOf(N_BACK_) >= 0
     && bad.failed_predicates.indexOf(N_AGREE_) >= 0;
+});
+
+mut('N134 the shift is believed instead of measured, so a reordered table passes', function () {
+  // A REORDER IS INVISIBLE TO EVERY LOGICAL FINGERPRINT, because they are all sorted — and immune is the
+  // same word as blind. The row map compared at the expected shift is the only thing that can still see it,
+  // so a shift that reports itself found without matching anything is that check switched off while it
+  // still appears to run.
+  var m = swapS1In('S1_movDetectUniformShift_',
+    '    var hit = fp !== null && S1_str_(fp) === S1_str_(expectedRowMapFingerprint);',
+    '    var hit = fp !== null && s === 1;');
+  var rows = aeGoodRows();
+  var t = rows[2]; rows[2] = rows[3]; rows[3] = t;
+  var clean = aeAccept(aeDeleted(rows), aePin(AEpre.fz, 'DELETED'));
+  var bad = aeAccept(aeDeleted(rows, { s1: m }), aePin(AEpre.fz, 'DELETED'));
+  return clean.verdict === 'STOP'
+    && clean.stop_reasons.join(',').indexOf('DID_NOT_ALL_MOVE_BY_THE_SAME_AMOUNT') >= 0
+    && bad.verdict === 'MANUAL_LEGACY_TEST_ROW_DELETION_ACCEPTED';
+});
+
+mut('N135 a missing residue hash alone is believed, so a drifted table reads as a finished job', function () {
+  // "No row hashes to the residue" is ALSO what a header change produces — every row fingerprint moves —
+  // and what an edit to that very row produces. Without the population corroborating it, the manifest
+  // answers "already complete" to a table that drifted under it.
+  var m = swapS1In('S1_movRemovalAlreadyComplete_',
+    '    complete: residue.absent === true && now !== null && now === expectedAfter\n'
+      + '      && headerOk === true && noBlankId === true,',
+    '    complete: residue.absent === true,');
+  function run(src) {
+    var w = adWorld(undefined, src ? { s1: src } : undefined, false, function (ww) {
+      ww.sheets.factory_stock_movements.rows[0][12] = 'note_v2';
+    });
+    return adMan(w, { pinOver: { header_fingerprint: AEpre.fz.header_fingerprint,
+      target_row_fingerprint: AEpre.fz.target_row_fingerprint } });
+  }
+  var clean = run(null), bad = run(m);
+  return clean.verdict === 'STOP' && bad.verdict === 'REMOVAL_ALREADY_COMPLETE';
+});
+
+mut('N136 the logical fingerprint carries a row number, so a legal deletion reads as data loss', function () {
+  // THE R4I BUG, IN ONE LINE. Put the row number back inside the identity and every surviving record looks
+  // edited the moment the sheet is renumbered — which is exactly what sent the last round looking for a
+  // repair that would have written to the ledger.
+  var m = swapS1In('S1_movLogicalIdentity_',
+    "    sig.push(id + '~' + S1_str_(r.fingerprint));",
+    "    sig.push(String(r.row_number) + '~' + id + '~' + S1_str_(r.fingerprint));");
+  var clean = aeAccept(aeDeleted(), aePin(AEpre.fz, 'DELETED'));
+  var bad = aeAccept(aeDeleted(undefined, { s1: m }), aePin(AEpre.fz, 'DELETED'));
+  return clean.verdict === 'MANUAL_LEGACY_TEST_ROW_DELETION_ACCEPTED' && bad.verdict === 'STOP'
+    && bad.stop_reasons.join(',').indexOf('BUSINESS_CONTENT_CHANGED') >= 0;
+});
+
+mut('N137 the readback compares the row map at shift 0 always, refusing a completed deletion', function () {
+  var m = swapS1In('S1_remReadback_',
+    '  var expShift = (o.completion_shape === S1_MOV_COMPLETION_DELETED_) ? 1 : 0;',
+    '  var expShift = 0;');
+  function run(src) {
+    return adRun(aeDeleted(undefined, src ? { s1: src } : undefined),
+      { frozen: AEpre.fz, authorization: AEpre.fz.authorization_wording });
+  }
+  var clean = run(null), bad = run(m);
+  return clean.verdict === 'ALREADY_APPLIED'
+    && bad.verdict === 'ALREADY_APPLIED_BUT_READBACK_MISMATCH'
+    && bad.readback.mismatches.filter(function (x) {
+      return x.what === 'remaining_row_fingerprint_map_fingerprint'; }).length === 1;
+});
+
+mut('N138 the residue is looked for by row number, so a real movement is mistaken for it', function () {
+  // After the deletion, sheet row 2 holds a legitimate movement. Asking "is row 2 the residue" answers a
+  // question about the spreadsheet while appearing to answer one about the ledger.
+  var m = swapS1In('S1_movResidueAbsent_',
+    '    if (S1_str_(r.fingerprint) === S1_str_(residueFingerprint)) rows.push(r.row_number);',
+    '    if (r.row_number === 2) rows.push(r.row_number);');
+  var clean = aeAccept(aeDeleted(), aePin(AEpre.fz, 'DELETED'));
+  var bad = aeAccept(aeDeleted(undefined, { s1: m }), aePin(AEpre.fz, 'DELETED'));
+  return clean.verdict === 'MANUAL_LEGACY_TEST_ROW_DELETION_ACCEPTED' && bad.verdict === 'STOP'
+    && bad.stop_reasons.join(',').indexOf('RESIDUE_IS_STILL_ON_THE_SHEET') >= 0;
+});
+
+mut('N139 the manifest stops short-circuiting, so a finished job is reported as a damaged table', function () {
+  var m = swapS1In('RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL_MANIFEST',
+    '    if (doneChk.complete === true) {', '    if (false) {');
+  function run(src) {
+    return adMan(aeDeleted(undefined, src ? { s1: src } : undefined), { pinOver: {
+      row_count: AEpre.fz.logical_movement_record_count,
+      logical_movement_record_count: AEpre.fz.logical_movement_record_count,
+      header_fingerprint: AEpre.fz.header_fingerprint,
+      table_combined_fingerprint: AEpre.fz.table_combined_fingerprint,
+      valid_id_count: AEpre.fz.valid_id_count, blank_id_count: AEpre.fz.blank_id_count,
+      target_row_number: AEpre.fz.target_row_number,
+      target_row_fingerprint: AEpre.fz.target_row_fingerprint } });
+  }
+  var clean = run(null), bad = run(m);
+  return clean.verdict === 'REMOVAL_ALREADY_COMPLETE' && bad.verdict === 'STOP'
+    && bad.stop_reasons.join(',').indexOf('LIVE_STATE_DRIFTED') >= 0;
 });
 
 console.log('\npassed ' + pass + '  failed ' + fail

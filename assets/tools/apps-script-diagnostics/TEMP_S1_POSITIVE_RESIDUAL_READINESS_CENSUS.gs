@@ -6041,6 +6041,13 @@ var S1_REMOVAL_METHOD_ = {
     + ' 95 remaining row fingerprints — would then point at a different record, and a baseline that'
     + ' points at the wrong record is worse than no baseline.',
   refused_row_insertion: 'insertRow / insertRows would shift rows the other way, with the same effect.',
+  // S1-R4J — UNCHANGED, AND NOT CONTRADICTED BY WHAT HAPPENED. This tool still performs exactly one clear
+  // and still refuses to delete or insert a row. What R4J added is RECOGNITION: an operator deleted the row
+  // by hand, and a diagnostic that could only recognise its own method would have called their finished work
+  // a drift. Performing a deletion and accepting one are different permissions, and only the second was given.
+  s1_r4j_manual_deletion: 'A row deletion performed BY A PERSON is an accepted completion shape'
+    + ' (ROW_DELETED_RECORDS_SHIFTED_UP). This tool still never performs one, and never inserts a row to'
+    + ' undo one — restoring a blank spacer would be writing to the ledger to make a fingerprint agree.',
   refused_reorder: 'Sorting or moving rows would change row numbers without changing any value, so the'
     + ' identity evidence would drift while every content fingerprint stayed intact.',
   refused_quarantine_table: 'A quarantine table would be a second home for a record that is not a record.'
@@ -6378,7 +6385,7 @@ function RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL_MANIFEST(opts) {
     classification: S1_REMOVAL_CLASSIFICATION_, operator_basis: S1_REMOVAL_OPERATOR_BASIS_,
     classification_applies: null, classification_issued_against: null,
     expected_after: null, frozen_before: null, authorization_wording: null, wording_audit: null,
-    next_decision: null,
+    completion: null, next_decision: null,
     verdict: 'STOP', stop_reasons: [],
     predicates: [], predicates_passed: 0, predicates_failed: 0, failed_predicates: [] };
   var L = S1_ledger_();
@@ -6504,6 +6511,31 @@ function RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL_MANIFEST(opts) {
     out.physical_last_row = lastRow;
     L.P('the_physical_last_row_was_measurable', 'a number', lastRow, typeof lastRow === 'number');
     if (typeof lastRow !== 'number') { stop('PHYSICAL_ROW_EXTENT_NOT_MEASURABLE'); return fin(); }
+
+    // ---- S1-R4J §2.3b THE REMOVAL MAY ALREADY BE DONE, AND "DRIFT" IS THE WRONG WORD FOR THAT. ----
+    // Asked BEFORE the frozen comparisons, because on a completed removal every one of them is legitimately
+    // false — the residue is gone, so the BEFORE table fingerprint cannot match — and reporting that as
+    // LIVE_STATE_DRIFTED tells an operator their table is damaged when it is finished. Worse, it invites the
+    // repair that must not happen: putting a blank row back so the old numbers agree again.
+    //
+    // This branch freezes nothing and authorizes nothing. It is the manifest declining to re-open a closed
+    // job, and pointing at the read-only acceptance manifest instead.
+    var doneChk = S1_movRemovalAlreadyComplete_(R, lastRow, EXP);
+    out.completion = doneChk;
+    if (doneChk.complete === true) {
+      out.verdict = 'REMOVAL_ALREADY_COMPLETE';
+      L.P('a_completed_removal_is_reported_as_complete_and_never_as_drift', true, true, true);
+      L.P('a_completed_removal_freezes_nothing_and_authorizes_nothing',
+        { frozen: null, authorization: null },
+        { frozen: out.frozen_before, authorization: out.authorization_wording },
+        out.frozen_before === null && out.authorization_wording === null);
+      out.next_decision = 'NOTHING TO AUTHORIZE. The legacy test row is already gone ('
+        + doneChk.completion_shape + '), leaving ' + S1_str_(doneChk.logical_movement_record_count)
+        + ' logical records. Run RUN_S1_FACTORY_MOVEMENT_POST_MANUAL_DELETION_ACCEPTANCE_MANIFEST to accept'
+        + ' the current state on its own evidence, then a FRESH RUN_S1_MANIFEST_P. Do NOT insert a blank'
+        + ' row, do NOT restore the old physical extent, and do NOT re-run a removal.';
+      return fin();
+    }
 
     // ---- §2.4 EVERY FROZEN FACT, ITEM BY ITEM. ----
     var conf = [];
@@ -6754,7 +6786,10 @@ function S1_remAcquireLock_(timeoutMs) {
 function S1_remReadback_(sheet, fz) {
   var o = { ok: false, mismatches: [], measured: {},
     target_cells_read: 0, target_cells_blank: 0, target_row_raw_fingerprint: null,
-    surviving_rows_compared: 0 };
+    surviving_rows_compared: 0,
+    // S1-R4J — which of the two accepted completion shapes this is, and the evidence that decided it.
+    completion_shape: null, residue: null, shift: null, physical_last_row: null,
+    target_range_checks_skipped_because: null };
   function cmp(what, expected, actual) {
     o.measured[what] = actual;
     if (String(expected) !== String(actual)) {
@@ -6783,40 +6818,85 @@ function S1_remReadback_(sheet, fz) {
     R.integrity.outside_named_columns_count);
   cmp('table_combined_fingerprint', ea.table_combined_fingerprint, R.table_combined_fingerprint);
 
-  // THE PHYSICAL SHEET DID NOT SHRINK. This is the check that separates a clear from a delete, and it is
-  // asked of the sheet rather than of the record list, which cannot tell the two apart.
+  // ---- S1-R4J WHICH COMPLETION SHAPE IS THIS? -------------------------------------------------
+  // A CLEAR and a DELETE are the same OUTCOME reached by two methods, and R4H could only recognise one of
+  // them. The shape is decided by the RESIDUE and the sheet extent, never by the row number: after a
+  // deletion sheet row 2 still exists and holds a legitimate movement, so "is row 2 blank" asks about the
+  // spreadsheet while pretending to answer a question about the ledger.
   var lastRow = null;
   try { lastRow = sheet ? sheet.getLastRow() : null; } catch (e) { lastRow = null; }
-  cmp('physical_last_row', ea.physical_last_row, lastRow);
-
-  // THE TARGET ROW, FROM THE RAW RANGE.
-  var raw = null;
-  try {
-    raw = sheet ? sheet.getRange(fz.target_row_number, 1, 1, fz.live_column_count).getValues()[0] : null;
-  } catch (e2) { raw = null; }
-  if (!raw) {
-    o.mismatches.push({ what: 'TARGET_RANGE_NOT_READABLE_ON_READBACK',
-      expected: fz.target_range_a1, actual: null });
+  o.physical_last_row = lastRow;
+  o.residue = S1_movResidueAbsent_(R.t, fz.target_row_fingerprint);
+  if (!o.residue.absent) {
+    o.completion_shape = S1_MOV_COMPLETION_NONE_;
+    o.mismatches.push({ what: 'THE_LEGACY_TEST_RESIDUE_IS_STILL_PRESENT',
+      expected: 0, actual: o.residue.occurrences });
+  } else if (lastRow === ea.physical_last_row) {
+    o.completion_shape = S1_MOV_COMPLETION_CLEARED_;
+  } else if (lastRow === ea.physical_last_row - 1) {
+    o.completion_shape = S1_MOV_COMPLETION_DELETED_;
   } else {
-    o.target_cells_read = raw.length;
-    raw.forEach(function (v) { if (S1_canonCell_(v) === '~') o.target_cells_blank++; });
-    o.target_row_raw_fingerprint = S1_rowFingerprint_(fz.live_columns, raw);
-    cmp('target_cells_read', fz.target_range_cell_count, o.target_cells_read);
-    cmp('target_cells_blank', fz.target_range_cell_count, o.target_cells_blank);
-    cmp('target_row_raw_fingerprint', ea.target_row_raw_fingerprint, o.target_row_raw_fingerprint);
+    o.completion_shape = S1_MOV_COMPLETION_UNKNOWN_;
   }
-  var stillARecord = false;
-  (R.t.rows || []).forEach(function (r) { if (r.row_number === fz.target_row_number) stillARecord = true; });
-  cmp('target_row_is_a_logical_record', ea.target_row_is_a_logical_record, stillARecord);
+  // The physical extent is still COMPARED — against the value the shape it is in should produce. It is not
+  // dropped, because an extent that matches neither shape is a layout nobody performed.
+  cmp('physical_last_row',
+    (o.completion_shape === S1_MOV_COMPLETION_DELETED_) ? ea.physical_last_row - 1 : ea.physical_last_row,
+    lastRow);
+  cmp('completion_shape_is_accepted', true,
+    S1_MOV_IDENTITY_CONTRACT_.accepted_completions_for_an_INVALID_NON_LEDGER_ROW
+      .indexOf(o.completion_shape) !== -1);
 
-  // THE 95, BY IDENTITY AND BY ROW NUMBER.
-  var rem = S1_remRemaining_(R.t, fz.target_id_column, fz.target_row_number);
+  if (o.completion_shape === S1_MOV_COMPLETION_DELETED_) {
+    // THE PHYSICAL ROW IS GONE, SO THERE IS NO RANGE TO READ BACK. Reading sheet row 2 and requiring it to
+    // be blank would refuse a real movement for standing where the residue used to stand.
+    o.target_range_checks_skipped_because = 'The physical row was deleted, so sheet row '
+      + fz.target_row_number + ' now holds a legitimate movement. The residue is proved gone by CONTENT'
+      + ' fingerprint instead, which is the only test that does not depend on where a row is kept.';
+    cmp('the_legacy_test_residue_is_absent', 0, o.residue.occurrences);
+    cmp('no_blank_spacer_row_was_inserted', ea.remaining_record_count + 1, lastRow);
+  } else {
+    // THE TARGET ROW, FROM THE RAW RANGE.
+    var raw = null;
+    try {
+      raw = sheet ? sheet.getRange(fz.target_row_number, 1, 1, fz.live_column_count).getValues()[0] : null;
+    } catch (e2) { raw = null; }
+    if (!raw) {
+      o.mismatches.push({ what: 'TARGET_RANGE_NOT_READABLE_ON_READBACK',
+        expected: fz.target_range_a1, actual: null });
+    } else {
+      o.target_cells_read = raw.length;
+      raw.forEach(function (v) { if (S1_canonCell_(v) === '~') o.target_cells_blank++; });
+      o.target_row_raw_fingerprint = S1_rowFingerprint_(fz.live_columns, raw);
+      cmp('target_cells_read', fz.target_range_cell_count, o.target_cells_read);
+      cmp('target_cells_blank', fz.target_range_cell_count, o.target_cells_blank);
+      cmp('target_row_raw_fingerprint', ea.target_row_raw_fingerprint, o.target_row_raw_fingerprint);
+    }
+    var stillARecord = false;
+    (R.t.rows || []).forEach(function (r) { if (r.row_number === fz.target_row_number) stillARecord = true; });
+    cmp('target_row_is_a_logical_record', ea.target_row_is_a_logical_record, stillARecord);
+  }
+
+  // THE 95, BY IDENTITY. After a deletion the target row number belongs to a SURVIVOR, so excluding it
+  // would drop a real movement from the comparison and report ninety-four.
+  var remTarget = (o.completion_shape === S1_MOV_COMPLETION_DELETED_) ? null : fz.target_row_number;
+  var rem = S1_remRemaining_(R.t, fz.target_id_column, remTarget);
   o.surviving_rows_compared = rem.count;
   cmp('remaining_record_count', ea.remaining_record_count, rem.count);
   cmp('remaining_id_universe_fingerprint', ea.remaining_id_universe_fingerprint,
     rem.id_universe_fingerprint);
+  // AND BY ROW NUMBER — compared at the shift THIS SHAPE should have produced. Same check, same name and
+  // same meaning as before R4J: a clear reproduces the frozen map at shift 0 and a deletion at shift 1, and
+  // a clear that spilled onto the next row reproduces it at neither. Generalising the comparison by one
+  // integer is the whole change; it does not weaken what the map refuses.
+  var expShift = (o.completion_shape === S1_MOV_COMPLETION_DELETED_) ? 1 : 0;
   cmp('remaining_row_fingerprint_map_fingerprint', ea.remaining_row_fingerprint_map_fingerprint,
-    rem.row_fingerprint_map_fingerprint);
+    S1_movShiftedRowMap_(R.t, expShift));
+  // The same evidence read the other way round: WHICH shift, if any, reproduces the frozen map at all.
+  o.shift = S1_movDetectUniformShift_(R.t, ea.remaining_row_fingerprint_map_fingerprint, [0, 1]);
+  o.measured.current_row_fingerprint_map_fingerprint = rem.row_fingerprint_map_fingerprint;
+  cmp('all_surviving_records_shifted_consistently', true, o.shift.uniform_shift_detected);
+  cmp('surviving_rows_moved_up_by', expShift, o.shift.rows_moved_up_by);
 
   // THE POOL AND THE PROTECTED SURFACES: unchanged, and proved unchanged rather than left unmentioned.
   var pool = S1_remPoolObservation_(R.ss, fz.pool_warehouse_id, fz.pool_sku);
@@ -7083,6 +7163,8 @@ function RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL(opts) {
     frozen_supplied: false, frozen_complete: false,
     authorization_supplied: false, authorization_matches_frozen: false,
     lock: null, verification: {}, readback: null, rollback: null,
+    // S1-R4J — the residue is what "already done" means; the row NUMBER is not.
+    residue: null, completion_shape: null,
     already_applied: false, attempts: 0,
     // S1-R4H-R1 — DERIVED IN fin() FROM THE VERDICT, NEVER ASSIGNED BY A BRANCH. `retryable` answers one
     // narrow question: may THIS response be re-driven with THIS baseline and THIS authorization, unchanged?
@@ -7271,8 +7353,21 @@ function RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL(opts) {
     // pre-clear condition is legitimately false — the row is not a record, the blank id count is 0, the
     // table fingerprint is the AFTER one — so asking them about a run that already happened would report a
     // drift for a removal that succeeded.
-    var already = true;
-    (R.t.rows || []).forEach(function (r) { if (r.row_number === fz.target_row_number) already = false; });
+    // S1-R4J — IDEMPOTENCY IS ASKED BY IDENTITY, NOT BY ROW NUMBER. The completed state can be reached by
+    // a clear (the physical row survives, blank) or by a manual delete (the row is gone and everything below
+    // it moved up one). After a delete, sheet row 2 exists and holds a real movement, so the old row-number
+    // test answered "not done yet" about a removal that was finished — and the drift checks below would then
+    // refuse a healthy table and invite somebody to repair it.
+    //
+    // NOT the residue hash ALONE, though. A header change moves every row fingerprint and an edit to the
+    // target row moves its own, so "2CA4D4BE is not here" is equally what a DRIFT looks like — and answering
+    // ALREADY_APPLIED to a drift would be the same error in the other direction. S1_movRemovalAlreadyComplete_
+    // corroborates the absence against the population, the header and the blank-id count before believing it.
+    var lastRowNow = null;
+    try { lastRowNow = R.sheet.getLastRow(); } catch (eLR) { lastRowNow = null; }
+    var done = S1_movRemovalAlreadyComplete_(R, lastRowNow, fz);
+    out.residue = done.residue;
+    var already = done.complete === true;
     if (already) {
       out.already_applied = true;
       out.readback = S1_remReadback_(R.sheet, fz);
@@ -7281,6 +7376,14 @@ function RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL(opts) {
         out.writes === 0 && out.cells_cleared === 0 && out.cells_restored === 0);
       L.P('a_retry_confirms_the_completed_removal_against_the_frozen_expected_after', [],
         out.readback.mismatches, out.readback.ok === true);
+      out.completion_shape = out.readback.completion_shape;
+      // S1-R4J — BOTH completion shapes are a completed removal. Recorded so a reader of ALREADY_APPLIED
+      // can see WHICH method finished it without inferring it from a row count.
+      L.P('the_completed_removal_took_one_of_the_two_accepted_shapes',
+        S1_MOV_IDENTITY_CONTRACT_.accepted_completions_for_an_INVALID_NON_LEDGER_ROW,
+        out.completion_shape,
+        S1_MOV_IDENTITY_CONTRACT_.accepted_completions_for_an_INVALID_NON_LEDGER_ROW
+          .indexOf(out.completion_shape) !== -1);
       out.verdict = out.readback.ok === true ? 'ALREADY_APPLIED'
         : 'ALREADY_APPLIED_BUT_READBACK_MISMATCH';
       if (out.readback.ok !== true) {
@@ -7562,6 +7665,569 @@ function RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL(opts) {
  * because provenance evidence gathered against a sheet that has since moved is evidence about a different
  * sheet. A mismatch is a STOP: the old numbers are not re-used and no classification is published.
  */
+/**
+ * ================================================================================================================
+ * S1-R4J — LOGICAL MOVEMENT IDENTITY vs PHYSICAL SHEET LAYOUT.
+ *
+ * WHAT HAPPENED. The operator did not clear A2:O2 — they DELETED sheet row 2. So the ninety-five real movements
+ * each moved up one row, the sheet's last row went 97 -> 96, and every PHYSICAL fact this package had frozen
+ * about the AFTER state stopped being true. Not one movement changed.
+ *
+ * THE REPAIR THAT WAS ALMOST MADE. R4I proposed insertRowsBefore(2, 1), putting a blank row back so the frozen
+ * physical postconditions would pass again. That is editing the evidence to fit the expectation. A blank spacer
+ * row is not data; the only thing it would have restored is the diagnostic's comfort, and it would have done it
+ * by writing to the very table this package exists to leave alone.
+ *
+ * THE DEFECT WAS IN THE CONTRACT, and it is one confusion:
+ *
+ *     A GOOGLE SHEET ROW NUMBER IS NOT A MOVEMENT IDENTITY. It is where the row is being kept today.
+ *
+ * So the two are separated here and never mixed again:
+ *
+ *   LOGICAL IDENTITY   factory_stock_movement_id, the business content under that id, the id universe, and the
+ *                      blank / duplicate / wrong-type counts. NONE of it contains a row number.
+ *   PHYSICAL LAYOUT    sheet row number, physical last row, blank spacer rows. Measured and reported, and NEVER
+ *                      an identity — a change here is a fact about the spreadsheet, not about the ledger.
+ *
+ * AND ONE THING WAS ALREADY RIGHT, which is why the deletion corrupted nothing. S1_fullRowTable_ builds
+ * combined_fingerprint from one `id~row_fingerprint` signature per row, and S1_fingerprint_ SORTS before
+ * hashing — so the table fingerprint never contained a row number and never depended on row order. FC67B70E,
+ * the value R4H froze as the expected AFTER of a CLEAR, is the value the sheet now carries after a DELETE. The
+ * two completion shapes were always going to agree on it. What disagreed were the physical predicates standing
+ * next to it.
+ * ================================================================================================================
+ */
+
+var S1_MOV_COMPLETION_CLEARED_ = 'CLEARED_PHYSICAL_ROW_KEPT';
+var S1_MOV_COMPLETION_DELETED_ = 'ROW_DELETED_RECORDS_SHIFTED_UP';
+var S1_MOV_COMPLETION_NONE_ = 'NOT_COMPLETED';
+var S1_MOV_COMPLETION_UNKNOWN_ = 'COMPLETED_BUT_LAYOUT_UNRECOGNISED';
+
+/** The two vocabularies, written down so a later round cannot quietly move a term from one to the other. */
+var S1_MOV_IDENTITY_CONTRACT_ = {
+  logical_identity: {
+    is: ['factory_stock_movement_id', 'the business content stored under that id', 'the id universe',
+      'blank_id_count', 'duplicate_id_count', 'wrong_type_id_count'],
+    decides: 'whether a movement exists and whether it still says what it said',
+    contains_a_row_number: false
+  },
+  physical_layout: {
+    is: ['sheet row number', 'physical last row', 'blank spacer rows', 'row order'],
+    decides: 'nothing about the data — it is where the rows are being kept',
+    contains_a_row_number: true,
+    may_be_an_identity: false
+  },
+  accepted_completions_for_an_INVALID_NON_LEDGER_ROW: [S1_MOV_COMPLETION_CLEARED_,
+    S1_MOV_COMPLETION_DELETED_],
+  a_shrunken_sheet_is_not_a_lost_record: 'physical_last_row 96 instead of 97, and a row map that moved, are'
+    + ' PHYSICAL observations. Neither may be reported as data loss on its own, and neither may be repaired'
+    + ' by inserting a row.'
+};
+
+/**
+ * A record's CONTENT fingerprint with the ID COLUMN REMOVED.
+ *
+ * Deliberately not the full-row fingerprint. If the id were inside the content hash, a changed id would move
+ * BOTH the id-universe fingerprint and the content fingerprint, and the pair could no longer say WHICH of the
+ * two things went wrong. Excluded, they answer two questions: "are these the same ninety-five records" and
+ * "does each of them still say the same thing".
+ */
+function S1_movContentFp_(rec, liveColumns, idColumn) {
+  var hdrs = [], vals = [];
+  (liveColumns || []).forEach(function (c, i) {
+    if (c === idColumn) return;
+    hdrs.push(c);
+    vals.push(rec && rec.__values ? rec.__values[i] : null);
+  });
+  return S1_rowFingerprint_(hdrs, vals);
+}
+
+/**
+ * THE LOGICAL VIEW OF THE MOVEMENT TABLE, plus the physical layout reported ALONGSIDE it rather than inside it.
+ *
+ * `logical_table_fingerprint` is built exactly the way S1_fullRowTable_ builds `combined_fingerprint` — sorted
+ * `id~row_fingerprint` signatures — which is why the acceptance manifest can assert the two are equal. That
+ * assertion is the proof that the table fingerprint this package has been quoting all along never contained a
+ * row number, rather than a claim that it didn't.
+ */
+function S1_movLogicalIdentity_(t, idKey) {
+  var liveColumns = (t && t.live_columns) || [];
+  var ids = [], byId = [], sig = [], phys = [];
+  ((t && t.rows) || []).forEach(function (r) {
+    var id = S1_str_(r[idKey]);
+    ids.push(id);
+    byId.push(id + '~' + S1_str_(S1_movContentFp_(r, liveColumns, idKey)));
+    sig.push(id + '~' + S1_str_(r.fingerprint));
+    phys.push(String(r.row_number) + '~' + id);
+  });
+  return {
+    record_count: ids.length,
+    id_universe: ids,
+    id_universe_fingerprint: S1_fingerprint_(ids),
+    content_by_id_fingerprint: S1_fingerprint_(byId),
+    logical_table_fingerprint: S1_fingerprint_(sig),
+    physical_layout_fingerprint: S1_fingerprint_(phys),
+    physical_layout_is_an_identity: false,
+    note: 'content_by_id EXCLUDES the id column so that "a record vanished" and "a record was edited" cannot'
+      + ' arrive as the same finding. physical_layout is reported and is never compared as identity.'
+  };
+}
+
+/** The row-number map this table would produce if every row were renumbered by `shift`. */
+function S1_movShiftedRowMap_(t, shift) {
+  var pairs = [];
+  ((t && t.rows) || []).forEach(function (r) {
+    pairs.push(String(r.row_number + shift) + '~' + S1_str_(r.fingerprint));
+  });
+  return S1_fingerprint_(pairs);
+}
+
+/**
+ * DID EVERY SURVIVING ROW MOVE BY THE SAME AMOUNT?
+ *
+ * The question is answered against the row map the READ-ONLY manifest published BEFORE the deletion. A uniform
+ * shift is the only way every survivor can land on a new number and the SET of (number, content) pairs still
+ * reproduce that map: one row moving on its own breaks it, one row changing content breaks it, and a row
+ * quietly disappearing breaks it. So this is one measurement that answers "consistent" and "by how much" at
+ * the same time, and it cannot be satisfied by a partial move.
+ */
+function S1_movDetectUniformShift_(t, expectedRowMapFingerprint, candidates) {
+  var tried = [], matched = null;
+  (candidates || [0, 1]).forEach(function (s) {
+    var fp = S1_movShiftedRowMap_(t, s);
+    var hit = fp !== null && S1_str_(fp) === S1_str_(expectedRowMapFingerprint);
+    tried.push({ shift_applied: s, row_map_fingerprint: fp, matches: hit });
+    if (matched === null && hit) matched = s;
+  });
+  return { expected_row_map_fingerprint: S1_str_(expectedRowMapFingerprint),
+    candidates_tried: tried,
+    uniform_shift_detected: matched !== null,
+    rows_moved_up_by: matched === null ? null : matched,
+    current_row_map_fingerprint: S1_movShiftedRowMap_(t, 0) };
+}
+
+/** Is the legacy test residue gone? Asked by CONTENT fingerprint, because after a deletion the row NUMBER it
+ *  used to occupy holds a legitimate movement, and asking about the number would refuse that record for
+ *  standing where the residue used to stand. */
+function S1_movResidueAbsent_(t, residueFingerprint) {
+  var rows = [];
+  ((t && t.rows) || []).forEach(function (r) {
+    if (S1_str_(r.fingerprint) === S1_str_(residueFingerprint)) rows.push(r.row_number);
+  });
+  return { residue_fingerprint: S1_str_(residueFingerprint), occurrences: rows.length,
+    rows_found_at: rows, absent: rows.length === 0 };
+}
+
+/**
+ * IS THE REMOVAL ALREADY DONE, AND BY WHICH METHOD? Decided by the residue and the sheet extent — never by the
+ * row number.
+ *
+ * ABSENCE MUST BE CORROBORATED, and this is the part that is easy to get wrong. "No row hashes to 2CA4D4BE"
+ * is ALSO what a header change produces (every row fingerprint moves), and what an edit to that very row
+ * produces (it hashes to something else while sitting exactly where it was). A missing hash says the row is
+ * not there AS IT WAS; on its own it does not say it is gone. So a completion additionally requires the
+ * population to have dropped by exactly one, the header to still be the frozen one, and no blank id to
+ * remain — three facts a schema drift or a row edit cannot fake.
+ *
+ * `complete` does not depend on the LAYOUT answer: a completion whose layout this function cannot name is
+ * still a completion, and is reported as one rather than as damage.
+ */
+function S1_movRemovalAlreadyComplete_(R, lastRow, EXP) {
+  var residue = S1_movResidueAbsent_(R ? R.t : null, EXP ? EXP.target_row_fingerprint : null);
+  var now = (R && R.integrity) ? R.integrity.row_count : null;
+  var expectedAfter = (EXP && typeof EXP.logical_movement_record_count === 'number')
+    ? EXP.logical_movement_record_count - 1 : null;
+  var headerOk = !(EXP && EXP.header_fingerprint)
+    || S1_str_(R ? R.header_fingerprint : null) === S1_str_(EXP.header_fingerprint);
+  var noBlankId = !!(R && R.integrity) && R.integrity.blank_id_count === 0;
+  var shape = S1_MOV_COMPLETION_NONE_;
+  if (residue.absent === true) {
+    // AFTER A CLEAR the blank row still occupies extent (records + header + the blank one). AFTER A DELETE it
+    // does not. That arithmetic is the whole difference between the two shapes.
+    if (typeof lastRow === 'number' && typeof now === 'number' && lastRow === now + 1) {
+      shape = S1_MOV_COMPLETION_DELETED_;
+    } else if (typeof lastRow === 'number' && typeof now === 'number' && lastRow === now + 2) {
+      shape = S1_MOV_COMPLETION_CLEARED_;
+    } else {
+      shape = S1_MOV_COMPLETION_UNKNOWN_;
+    }
+  }
+  return { residue: residue, completion_shape: shape,
+    logical_movement_record_count: now, expected_after_record_count: expectedAfter,
+    physical_last_row: lastRow,
+    header_matches_the_frozen_one: headerOk,
+    no_blank_movement_id_remains: noBlankId,
+    complete: residue.absent === true && now !== null && now === expectedAfter
+      && headerOk === true && noBlankId === true,
+    corroboration: 'A missing residue hash is necessary and NOT sufficient — a header change and an edit to'
+      + ' the target row both produce one. The population count, the header and the blank-id count are what'
+      + ' turn "not there as it was" into "gone".',
+    note: 'A completed removal is not a drift. Every BEFORE fingerprint is legitimately wrong once the row is'
+      + ' gone, so a manifest that compared them first would report damage to a table that is finished.' };
+}
+
+/**
+ * THE POST-DELETION LIVE PIN.
+ *
+ * Two kinds of value, and the difference matters:
+ *
+ *   THE OPERATOR'S STATEMENT of the state their manual deletion left — counts, extent, balances.
+ *   TWO HASHES THE READ-ONLY R4H MANIFEST PUBLISHED BEFORE THE DELETION — the expected-after table fingerprint
+ *   FC67B70E and the surviving-row map 9036FD1A. Neither is an authorization and neither is a frozen removal
+ *   baseline. They are published expected values, and comparing today against them is the only way "and
+ *   nothing else changed" can be a measurement instead of a hope.
+ *
+ * WHAT IS DELIBERATELY NOT HERE: a pinned `content_by_id_fingerprint`. Nobody measured one before the
+ * deletion, so there is no expected value, and inventing one now would be comparing a measurement with itself.
+ * It is REPORTED by this round and becomes the pin a later round can hold the table to.
+ *
+ * WHAT MUST NEVER COME BACK: E3E783BF (the BEFORE fingerprint of a table that no longer exists in that shape),
+ * physical last row 97 as a required condition, and the blank-row-2 fingerprint 91702192.
+ */
+var S1_MOV_POST_DELETION_LIVE_ = {
+  authority: 'S1-R4J operator statement of the manual deletion, plus the two hashes the READ-ONLY R4H'
+    + ' manifest published before it (expected-after FC67B70E, surviving-row map 9036FD1A)',
+  header_row: 1,
+  live_column_count: 15,
+  physical_last_row: 96,
+  logical_movement_record_count: 95,
+  valid_id_count: 95,
+  blank_id_count: 0,
+  duplicate_id_count: 0,
+  wrong_type_id_count: 0,
+  outside_named_column_row_count: 0,
+  header_fingerprint: 'FDC8D1DB',
+  logical_table_fingerprint: 'FC67B70E',
+  id_universe_fingerprint: '183943D3',
+  pre_deletion_row_map_fingerprint: '9036FD1A',
+  expected_rows_moved_up_by: 1,
+  residue_row_fingerprint: '2CA4D4BE',
+  pool_warehouse_id: 'WH-TW-CN-FACTORY-YOUXIN',
+  pool_sku: 'CO1100-R',
+  pool_fac_current_stock: 2210,
+  pool_fac_reserved_stock: 0,
+  pool_row_fingerprint: 'CEF2DBFE',
+  pool_table_combined_fingerprint: 'A906EA1A',
+  protected_surface_fingerprint: 'A5D988F9',
+  flag_value: false,
+  allowlist_count: 1,
+  allowlist_fingerprint: '1CD59B3E'
+};
+
+var S1_ACCEPT_VERDICT_DELETED_ = 'MANUAL_LEGACY_TEST_ROW_DELETION_ACCEPTED';
+var S1_ACCEPT_VERDICT_CLEARED_ = 'LEGACY_TEST_ROW_REMOVAL_COMPLETED_BY_CLEAR';
+var S1_ACCEPT_NEXT_ = 'RUN_FRESH_S1_MANIFEST_P';
+var S1_ACCEPT_NEXT_STOP_ = 'STOP_AND_INVESTIGATE_NOTHING_IS_REPAIRED_AUTOMATICALLY';
+
+/**
+ * ================================================================================================================
+ * RUN_S1_FACTORY_MOVEMENT_POST_MANUAL_DELETION_ACCEPTANCE_MANIFEST — READ ONLY, ZERO WRITES.
+ *
+ * Accepts the CURRENT state on its own evidence. It requires no frozen removal baseline, consumes no
+ * authorization, and re-measures the live sheet from scratch. It has no execute path and no repair path: if a
+ * real movement id or a movement's content is missing, it STOPS and says so, because the remedy for missing
+ * ledger data is a person, not a diagnostic.
+ *
+ * WHAT IT WILL NOT DO, and each of these was a live proposal: insert a row, restore the physical extent to 97,
+ * move a movement back to an old sheet row, roll back the operator's deletion, or clear or delete anything.
+ * ================================================================================================================
+ */
+function RUN_S1_FACTORY_MOVEMENT_POST_MANUAL_DELETION_ACCEPTANCE_MANIFEST(opts) {
+  opts = opts || {};
+  // The same seam R4F and R4H use: a caller may pin a different expectation, and the run SAYS SO in its own
+  // output so a fixture's answer can never be read as the live one.
+  var EXP = opts.expect ? opts.expect : S1_MOV_POST_DELETION_LIVE_;
+  var out = {
+    manifest: 'S1 FACTORY MOVEMENT POST-MANUAL-DELETION ACCEPTANCE — read-only re-measurement of the'
+      + ' current state; no frozen baseline, no authorization, no repair path',
+    build: S1_BUILD_, dry_run: true, read_only: true,
+    writes: 0, writer_calls: 0, cells_written: 0, cells_cleared: 0, cells_restored: 0,
+    rows_added: 0, rows_inserted: 0, rows_removed: 0, rows_reordered: false, ids_minted: 0,
+    tables_created: 0, migration_called: false, gap_job_called: false,
+    generate_called: false, submit_called: false, factory_writer_called: false,
+    tables_touched: [],
+    frozen_baseline_required: false, frozen_baseline_used: null,
+    authorization_required: false, authorization_used: null,
+    measured_at: null,
+    table: S1_FACTORY_MOVEMENT_TABLE_, sheet_name: S1_FACTORY_MOVEMENT_TABLE_,
+    identity_contract: S1_MOV_IDENTITY_CONTRACT_,
+    expectation_source: opts.expect
+      ? 'CALLER_SUPPLIED — NOT the operator statement. This run is pinned to an expectation the caller'
+        + ' provided, which is stated here so it can never be mistaken for the live one.'
+      : 'S1_MOV_POST_DELETION_LIVE_ — the operator statement of the state their manual deletion left, plus'
+        + ' the two hashes the read-only R4H manifest published before it. NOT S1_MOV_LIVE_FROZEN_, which'
+        + ' describes a table that no longer exists in that shape.',
+    expected: EXP,
+    live_column_count: null, named_column_count: null, live_columns: [],
+    header_fingerprint: null, table_combined_fingerprint: null,
+    logical: null, physical: null, residue: null, shift: null, integrity: null,
+    completion_shape: null,
+    pool: null, protected_surfaces: null, control_surface: null,
+    manifest_p_handoff: null,
+    verdict: 'STOP', stop_reasons: [],
+    predicates: [], predicates_passed: 0, predicates_failed: 0, failed_predicates: [],
+    next_action: null };
+  var L = S1_ledger_();
+  function stop(r) { if (out.stop_reasons.indexOf(r) === -1) out.stop_reasons.push(r); }
+
+  function fin() {
+    out.predicates = L.entries;
+    out.predicates_failed = L.failed.length;
+    out.predicates_passed = L.entries.length - L.failed.length;
+    out.failed_predicates = L.failed.slice();
+    if (out.stop_reasons.length || L.failed.length) out.verdict = 'STOP';
+    out.next_action = (out.verdict === S1_ACCEPT_VERDICT_DELETED_
+      || out.verdict === S1_ACCEPT_VERDICT_CLEARED_) ? S1_ACCEPT_NEXT_ : S1_ACCEPT_NEXT_STOP_;
+    // THIS MANIFEST NEVER REPAIRS. Stated in the return value rather than only in a comment, so a caller
+    // reading a STOP cannot mistake it for something that will resolve itself on a second run.
+    out.repair_path_exists = false;
+    out.insert_row_considered = false;
+    S1_log_('s1_mov_post_deletion_acceptance_verdict', JSON.stringify({
+      build: out.build, verdict: out.verdict, next_action: out.next_action,
+      completion_shape: out.completion_shape,
+      writes: out.writes, rows_inserted: out.rows_inserted, rows_removed: out.rows_removed,
+      frozen_baseline_used: out.frozen_baseline_used, authorization_used: out.authorization_used,
+      logical_movement_record_count: out.logical ? out.logical.record_count : null,
+      id_universe_fingerprint: out.logical ? out.logical.id_universe_fingerprint : null,
+      content_by_id_fingerprint: out.logical ? out.logical.content_by_id_fingerprint : null,
+      logical_table_fingerprint: out.logical ? out.logical.logical_table_fingerprint : null,
+      physical_layout_fingerprint: out.logical ? out.logical.physical_layout_fingerprint : null,
+      physical_last_row: out.physical ? out.physical.physical_last_row : null,
+      rows_moved_up_by: out.shift ? out.shift.rows_moved_up_by : null,
+      residue_absent: out.residue ? out.residue.absent : null,
+      predicates_passed: out.predicates_passed, predicates_failed: out.predicates_failed,
+      failed: out.failed_predicates.slice(0, 12),
+      stop_reasons: out.stop_reasons.slice(0, 12) }));
+    return out;
+  }
+
+  try {
+    out.measured_at = (typeof procurementTimestamp_ === 'function') ? procurementTimestamp_() : null;
+    // THE EXPECTATION IS THE AFTER, NEVER THE BEFORE. E3E783BF describes a table that no longer exists in
+    // that shape; a run that held today's sheet to it would refuse a finished job. Asserted against
+    // S1_MOV_LIVE_FROZEN_ itself rather than against the literal, so the check survives a re-pin.
+    out.expectation_is_a_before_value = S1_str_(EXP.logical_table_fingerprint)
+      === S1_str_(S1_MOV_LIVE_FROZEN_.table_combined_fingerprint);
+    L.P('the_expectation_is_an_after_state_and_not_the_removal_BEFORE_fingerprint',
+      false, out.expectation_is_a_before_value, out.expectation_is_a_before_value === false);
+    if (!opts.expect) {
+      L.P('the_default_pin_is_the_post_deletion_one', 'FC67B70E', EXP.logical_table_fingerprint,
+        EXP.logical_table_fingerprint === 'FC67B70E');
+    }
+    L.P('no_frozen_removal_baseline_and_no_authorization_were_consumed',
+      { frozen: null, authorization: null },
+      { frozen: out.frozen_baseline_used, authorization: out.authorization_used },
+      out.frozen_baseline_used === null && out.authorization_used === null);
+
+    var R = S1_movReadForRepair_();
+    L.P('the_movement_table_was_read_through_the_shared_read_authority', [], R.stop_reasons,
+      R.ok === true && R.stop_reasons.length === 0);
+    if (!R.ok) { R.stop_reasons.forEach(stop); return fin(); }
+    out.live_columns = R.live_columns;
+    out.live_column_count = R.live_column_count;
+    out.named_column_count = R.named_column_count;
+    out.header_fingerprint = R.header_fingerprint;
+    out.table_combined_fingerprint = R.table_combined_fingerprint;
+    out.integrity = { row_count: R.integrity.row_count, ok_count: R.integrity.ok_count,
+      blank_id_count: R.integrity.blank_id_count, duplicate_id_count: R.integrity.duplicate_id_count,
+      wrong_type_id_count: R.integrity.wrong_type_id_count,
+      outside_named_columns_count: R.integrity.outside_named_columns_count,
+      id_fault_count: (R.faults || []).length };
+
+    // ---- §1 THE SCHEMA. A shifted row map is acceptable; a changed header is not. --------------------
+    L.P('the_header_is_the_one_it_has_always_been', EXP.header_fingerprint, R.header_fingerprint,
+      S1_str_(R.header_fingerprint) === EXP.header_fingerprint);
+    if (S1_str_(R.header_fingerprint) !== EXP.header_fingerprint) { stop('HEADER_OR_SCHEMA_DRIFTED'); }
+    L.P('the_live_column_count_is_unchanged', EXP.live_column_count, R.live_column_count,
+      R.live_column_count === EXP.live_column_count);
+    if (R.live_column_count !== EXP.live_column_count) { stop('COLUMN_COUNT_DRIFTED'); }
+
+    // ---- §2 LOGICAL IDENTITY. Not one of these values contains a row number. ------------------------
+    var logical = S1_movLogicalIdentity_(R.t, R.id_column);
+    out.logical = logical;
+    L.P('the_logical_record_count_is_the_ninety_five_real_movements',
+      EXP.logical_movement_record_count, logical.record_count,
+      logical.record_count === EXP.logical_movement_record_count);
+    if (logical.record_count !== EXP.logical_movement_record_count) {
+      stop('LOGICAL_RECORD_COUNT_IS_NOT_' + EXP.logical_movement_record_count);
+    }
+    var validNow = R.integrity.ok_count - R.integrity.duplicate_id_count - R.integrity.wrong_type_id_count;
+    L.P('every_record_carries_a_valid_movement_id', EXP.valid_id_count, validNow,
+      validNow === EXP.valid_id_count);
+    if (validNow !== EXP.valid_id_count) { stop('VALID_ID_COUNT_IS_NOT_' + EXP.valid_id_count); }
+    L.P('no_blank_movement_id_remains', EXP.blank_id_count, R.integrity.blank_id_count,
+      R.integrity.blank_id_count === EXP.blank_id_count);
+    if (R.integrity.blank_id_count !== EXP.blank_id_count) { stop('A_BLANK_MOVEMENT_ID_IS_PRESENT'); }
+    L.P('no_duplicate_movement_id', EXP.duplicate_id_count, R.integrity.duplicate_id_count,
+      R.integrity.duplicate_id_count === EXP.duplicate_id_count);
+    if (R.integrity.duplicate_id_count !== EXP.duplicate_id_count) { stop('A_DUPLICATE_MOVEMENT_ID_IS_PRESENT'); }
+    L.P('no_wrong_typed_movement_id', EXP.wrong_type_id_count, R.integrity.wrong_type_id_count,
+      R.integrity.wrong_type_id_count === EXP.wrong_type_id_count);
+    if (R.integrity.wrong_type_id_count !== EXP.wrong_type_id_count) { stop('A_WRONG_TYPED_MOVEMENT_ID_IS_PRESENT'); }
+    L.P('no_row_sits_outside_the_named_columns', EXP.outside_named_column_row_count,
+      R.integrity.outside_named_columns_count,
+      R.integrity.outside_named_columns_count === EXP.outside_named_column_row_count);
+    if (R.integrity.outside_named_columns_count !== EXP.outside_named_column_row_count) {
+      stop('A_ROW_SITS_OUTSIDE_THE_NAMED_COLUMNS');
+    }
+    L.P('the_id_universe_is_the_complete_ninety_five', EXP.id_universe_fingerprint,
+      logical.id_universe_fingerprint,
+      S1_str_(logical.id_universe_fingerprint) === EXP.id_universe_fingerprint);
+    if (S1_str_(logical.id_universe_fingerprint) !== EXP.id_universe_fingerprint) {
+      stop('A_MOVEMENT_ID_IS_MISSING_FROM_OR_FOREIGN_TO_THE_UNIVERSE');
+    }
+    // CONTENT-BY-ID, PROVED THROUGH THE PUBLISHED EXPECTED-AFTER. FC67B70E is a hash over one
+    // `id~full-row-content` signature per record, sorted — so if today's value equals it, the ninety-five
+    // (id, content) pairs are exactly the ninety-five that were there before the deletion. Nothing was
+    // edited while the rows were being moved.
+    L.P('the_content_under_every_id_is_the_content_that_was_there_before_the_deletion',
+      EXP.logical_table_fingerprint, logical.logical_table_fingerprint,
+      S1_str_(logical.logical_table_fingerprint) === EXP.logical_table_fingerprint);
+    if (S1_str_(logical.logical_table_fingerprint) !== EXP.logical_table_fingerprint) {
+      stop('A_MOVEMENT_ID_SURVIVED_BUT_ITS_BUSINESS_CONTENT_CHANGED');
+    }
+    // AND THE FINGERPRINT THIS PACKAGE HAS BEEN QUOTING WAS ALREADY LOGICAL. Asserted rather than claimed.
+    L.P('the_table_fingerprint_never_contained_a_row_number',
+      logical.logical_table_fingerprint, R.table_combined_fingerprint,
+      S1_str_(logical.logical_table_fingerprint) === S1_str_(R.table_combined_fingerprint));
+
+    // ---- §3 PHYSICAL LAYOUT. Measured, reported, and not an identity. -------------------------------
+    var lastRow = null;
+    try { lastRow = R.sheet.getLastRow(); } catch (e0) { lastRow = null; }
+    out.physical = { physical_last_row: lastRow, header_row: 1,
+      physical_layout_fingerprint: logical.physical_layout_fingerprint,
+      blank_spacer_rows: (typeof lastRow === 'number') ? (lastRow - 1 - logical.record_count) : null,
+      is_an_identity: false,
+      note: 'A physical_last_row of ' + S1_str_(lastRow) + ' is where the rows are kept. On its own it is'
+        + ' never evidence of data loss, and it is never a reason to insert a row.' };
+    L.P('the_physical_extent_was_measurable', 'a number', lastRow, typeof lastRow === 'number');
+    if (typeof lastRow !== 'number') { stop('PHYSICAL_ROW_EXTENT_NOT_MEASURABLE'); return fin(); }
+
+    // ---- §4 THE RESIDUE IS GONE, AND THE SURVIVORS MOVED TOGETHER. ----------------------------------
+    out.residue = S1_movResidueAbsent_(R.t, EXP.residue_row_fingerprint);
+    L.P('the_legacy_test_residue_is_absent', 0, out.residue.occurrences, out.residue.absent === true);
+    if (!out.residue.absent) { stop('THE_LEGACY_TEST_RESIDUE_IS_STILL_ON_THE_SHEET'); }
+    out.shift = S1_movDetectUniformShift_(R.t, EXP.pre_deletion_row_map_fingerprint, [0, 1]);
+    L.P('all_surviving_records_shifted_consistently', true, out.shift.uniform_shift_detected,
+      out.shift.uniform_shift_detected === true);
+    if (out.shift.uniform_shift_detected !== true) {
+      stop('THE_SURVIVING_ROWS_DID_NOT_ALL_MOVE_BY_THE_SAME_AMOUNT');
+    }
+
+    var completion = S1_movRemovalAlreadyComplete_(R, lastRow, {
+      target_row_fingerprint: EXP.residue_row_fingerprint,
+      header_fingerprint: EXP.header_fingerprint,
+      logical_movement_record_count: EXP.logical_movement_record_count + 1 });
+    out.completion_shape = completion.completion_shape;
+    L.P('the_completion_shape_is_one_this_contract_accepts',
+      S1_MOV_IDENTITY_CONTRACT_.accepted_completions_for_an_INVALID_NON_LEDGER_ROW,
+      out.completion_shape,
+      S1_MOV_IDENTITY_CONTRACT_.accepted_completions_for_an_INVALID_NON_LEDGER_ROW
+        .indexOf(out.completion_shape) !== -1);
+    if (S1_MOV_IDENTITY_CONTRACT_.accepted_completions_for_an_INVALID_NON_LEDGER_ROW
+      .indexOf(out.completion_shape) === -1) {
+      stop('THE_COMPLETION_SHAPE_IS_NOT_RECOGNISED:' + out.completion_shape);
+    }
+    if (out.completion_shape === S1_MOV_COMPLETION_DELETED_) {
+      L.P('the_rows_moved_up_by_exactly_one', EXP.expected_rows_moved_up_by, out.shift.rows_moved_up_by,
+        out.shift.rows_moved_up_by === EXP.expected_rows_moved_up_by);
+      L.P('no_blank_spacer_row_was_inserted_to_make_the_layout_match', 0,
+        out.physical.blank_spacer_rows, out.physical.blank_spacer_rows === 0);
+      L.P('the_physical_extent_is_the_one_the_deletion_left', EXP.physical_last_row, lastRow,
+        lastRow === EXP.physical_last_row);
+    } else if (out.completion_shape === S1_MOV_COMPLETION_CLEARED_) {
+      L.P('nothing_moved_because_the_physical_row_was_kept', 0, out.shift.rows_moved_up_by,
+        out.shift.rows_moved_up_by === 0);
+    }
+
+    // ---- §5 EVERYTHING THIS REMOVAL WAS NEVER ALLOWED TO TOUCH. -------------------------------------
+    var pool = S1_remPoolObservation_(R.ss, EXP.pool_warehouse_id, EXP.pool_sku);
+    out.pool = pool;
+    L.P('the_factory_stock_pool_row_is_unchanged',
+      { current: EXP.pool_fac_current_stock, reserved: EXP.pool_fac_reserved_stock,
+        row_fingerprint: EXP.pool_row_fingerprint },
+      { current: pool.fac_current_stock, reserved: pool.fac_reserved_stock,
+        row_fingerprint: pool.row_fingerprint },
+      pool.fac_current_stock === EXP.pool_fac_current_stock
+        && pool.fac_reserved_stock === EXP.pool_fac_reserved_stock
+        && S1_str_(pool.row_fingerprint) === EXP.pool_row_fingerprint);
+    if (!(pool.fac_current_stock === EXP.pool_fac_current_stock
+      && pool.fac_reserved_stock === EXP.pool_fac_reserved_stock
+      && S1_str_(pool.row_fingerprint) === EXP.pool_row_fingerprint)) { stop('FACTORY_STOCK_DRIFTED'); }
+    L.P('the_factory_stock_table_is_unchanged', EXP.pool_table_combined_fingerprint,
+      pool.table_combined_fingerprint,
+      S1_str_(pool.table_combined_fingerprint) === EXP.pool_table_combined_fingerprint);
+    if (S1_str_(pool.table_combined_fingerprint) !== EXP.pool_table_combined_fingerprint) {
+      stop('FACTORY_STOCK_TABLE_DRIFTED');
+    }
+    var prot = S1_remProtectedSurfaces_(R.ss);
+    out.protected_surfaces = prot;
+    L.P('every_protected_surface_is_unchanged', EXP.protected_surface_fingerprint, prot.fingerprint,
+      S1_str_(prot.fingerprint) === EXP.protected_surface_fingerprint);
+    if (S1_str_(prot.fingerprint) !== EXP.protected_surface_fingerprint) { stop('PROTECTED_SURFACE_DRIFTED'); }
+    var ctl = S1_remControlSurface_();
+    out.control_surface = ctl;
+    L.P('the_generation_flag_is_still_false', EXP.flag_value, ctl.flag_value,
+      ctl.flag_value === EXP.flag_value);
+    if (ctl.flag_value !== EXP.flag_value) { stop('THE_GENERATION_FLAG_IS_NOT_FALSE'); }
+    L.P('the_activation_allowlist_is_still_the_one_scope',
+      { count: EXP.allowlist_count, fingerprint: EXP.allowlist_fingerprint },
+      { count: ctl.allowlist_count, fingerprint: ctl.allowlist_fingerprint },
+      ctl.allowlist_count === EXP.allowlist_count
+        && S1_str_(ctl.allowlist_fingerprint) === EXP.allowlist_fingerprint);
+    if (!(ctl.allowlist_count === EXP.allowlist_count
+      && S1_str_(ctl.allowlist_fingerprint) === EXP.allowlist_fingerprint)) { stop('ALLOWLIST_DRIFTED'); }
+    L.P('the_build_is_this_files_own_pin', S1_BUILD_, ctl.deployment_build,
+      S1_str_(ctl.deployment_build) === S1_BUILD_);
+    if (S1_str_(ctl.deployment_build) !== S1_BUILD_) { stop('BUILD_DRIFTED'); }
+
+    // ---- §6 THE HANDOFF. Manifest P re-measures; it inherits nothing from the removal. ---------------
+    out.manifest_p_handoff = {
+      next_action: S1_ACCEPT_NEXT_,
+      manifest_p_must_remeasure: true,
+      s1_manifest_p_before_is_still_null:
+        (typeof S1_MANIFEST_P_BEFORE_ !== 'undefined' && S1_MANIFEST_P_BEFORE_ === null),
+      live_state_manifest_p_will_measure: {
+        physical_last_row: lastRow,
+        logical_movement_record_count: logical.record_count,
+        header_fingerprint: R.header_fingerprint,
+        logical_table_fingerprint: logical.logical_table_fingerprint,
+        id_universe_fingerprint: logical.id_universe_fingerprint,
+        content_by_id_fingerprint: logical.content_by_id_fingerprint
+      },
+      must_not_be_carried_forward: [
+        'the removal BEFORE table fingerprint E3E783BF',
+        'physical last row 97 as a required condition',
+        'the blank row-2 raw fingerprint 91702192',
+        'the removal authorization sentence — it was issued against a state that no longer exists',
+        'any frozen removal baseline'
+      ],
+      freeze_block_may_be_hand_edited: false,
+      note: 'Manifest P freezes from its own read. Hand-editing an old freeze block to the new numbers would'
+        + ' produce a baseline nobody measured, which is the one thing a baseline exists to prevent.'
+    };
+    L.P('the_manifest_p_baseline_destination_is_still_empty', null,
+      (typeof S1_MANIFEST_P_BEFORE_ === 'undefined') ? 'SYMBOL_MISSING' : S1_MANIFEST_P_BEFORE_,
+      typeof S1_MANIFEST_P_BEFORE_ !== 'undefined' && S1_MANIFEST_P_BEFORE_ === null);
+
+    // ---- §7 THIS RUN WROTE NOTHING, AND SAYS SO AS A MEASUREMENT. -----------------------------------
+    L.P('this_manifest_wrote_nothing',
+      { writes: 0, rows_inserted: 0, rows_removed: 0, cells_cleared: 0 },
+      { writes: out.writes, rows_inserted: out.rows_inserted, rows_removed: out.rows_removed,
+        cells_cleared: out.cells_cleared },
+      out.writes === 0 && out.rows_inserted === 0 && out.rows_removed === 0 && out.cells_cleared === 0);
+
+    if (!out.stop_reasons.length && !L.failed.length) {
+      out.verdict = (out.completion_shape === S1_MOV_COMPLETION_DELETED_)
+        ? S1_ACCEPT_VERDICT_DELETED_ : S1_ACCEPT_VERDICT_CLEARED_;
+    }
+    return fin();
+  } catch (e) {
+    stop('ACCEPTANCE_MANIFEST_THREW:' + S1_cap_(String(e && e.message ? e.message : e), 160));
+    return fin();
+  }
+}
+
 var S1_MOV_LIVE_FROZEN_ = {
   build: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6',
   header_fingerprint: 'FDC8D1DB',
