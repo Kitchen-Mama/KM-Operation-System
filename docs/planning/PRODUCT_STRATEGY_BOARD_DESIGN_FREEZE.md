@@ -1,4 +1,4 @@
-# Product Strategy Board — Design Freeze (P0 · updated by P0-R1, P0-R3, P0-R3-R1, P0-R3-R2, P1-B0)
+# Product Strategy Board — Design Freeze (P0 · updated by P0-R1, P0-R3, P0-R3-R1, P0-R3-R2, P1-B0, P1-B1)
 
 **Rounds:** `PRODUCT-STRATEGY-BOARD-P0` — Discovery, Data Mapping and Design Freeze
 · `PRODUCT-STRATEGY-BOARD-P0-R1` — Design Closure and Non-Runtime Visual Prototype
@@ -7,10 +7,19 @@
 · `PRODUCT-STRATEGY-BOARD-P0-R3-R1` — Product Image Identity Correction and Visual Acceptance
 · `PRODUCT-STRATEGY-BOARD-P0-R3-R2` — Category Command Center, Image Price Markers, Five-Unit Axis
 · `PRODUCT-STRATEGY-P1-B0` — Site-Scoped Data Contract + Operation System Integration Freeze (audit only)
+· `PRODUCT-STRATEGY-P1-B1` — Site-Scoped Bounded Read API, implemented behind a false flag
 **Status:** **DESIGN CLOSED, AND THE DATA CONTRACT IS NOW FROZEN TOO.** All nine decisions are
 operator-decided and applied; §23–§28 add the measured source audit, the canonical data contract, the
 variant-grouping and image rules, the adapter seam and the P1-B1 handoff. Still nothing implemented in
 the application.
+
+> **THE CONTRACT IS BUILT, AND NOBODY CAN REACH IT (P1-B1).** `productPricing.workspace.get` exists,
+> resolves the membership universe server-side, and refuses an unscoped read. `PRODUCT_STRATEGY_ENABLED_`
+> is false, so it answers FEATURE_DISABLED before the spreadsheet is opened; `index.html` loads neither
+> the accessor nor a nav entry. **Production visibility is zero.** `skuDetails.workspace.get` is
+> unchanged — the site scope lives in the new owner precisely so the shared one did not have to grow it.
+> §32 records what was built, the two decisions the implementation had to make, and the three older
+> assertions that now say — correctly — that a sync-visible backend change has not been released.
 
 > **SITE MEMBERSHIP IS A FACT, NOT AN INFERENCE (P1-B0).** A SKU is sold on a site only when
 > `marketplace_skus` says so, for that exact `company + country + marketplace`. It is never inferred
@@ -2979,5 +2988,216 @@ and it remains a user-owned two-step release.
   worktree change, `C:/km-lb` untouched.
 - **No DB or API read, no DB / API / Drive write, no network request, no deployment, no flag change,
   no merge, no push.**
+
+---
+
+---
+
+## §32 — P1-B1: the site-scoped bounded read, implemented behind a false flag
+
+P1-B0 §31 froze the contract. This section records what was BUILT to it, what was deliberately not
+touched, and the two places the implementation had to decide something §31 left open.
+
+**Nothing here is visible to a user.** `PRODUCT_STRATEGY_ENABLED_` is false, `index.html` loads
+neither the accessor nor any Product Strategy markup, and there is no nav entry. Production
+visibility is zero by construction, not by a hidden button.
+
+### 32.1 What was added
+
+| File | Role |
+|---|---|
+| `assets/specs/active/apps-script/72_api_v1_product_pricing_workspace.gs` | **NEW.** The one bounded read owner and the site-membership authority. `productPricing.workspace.get` |
+| `assets/js/api/km-product-pricing-workspace.js` | **NEW.** The client half. Not referenced by `index.html` and imported by no page |
+| `assets/tests/api-product-pricing-workspace-p1-b1.test.js` | **NEW.** 163 assertions + 13 mutants |
+| `assets/specs/active/apps-script/00_config.gs` | `PRODUCT_STRATEGY_ENABLED_ = false` + `productStrategyEnabled_()` |
+| `assets/specs/active/apps-script/01_router.gs` | one GET read-table entry, one POST branch, same handler |
+| `assets/specs/active/apps-script/63_api_v1_system_health.gs` | the `product_strategy_enabled` capability + the owner's build stamp |
+
+**72 was chosen by reading the registry, not by guessing.** The highest existing owner is
+`71_api_v1_factory_stock_guard.gs`; 72 is free and keeps the API-v1 owners contiguous.
+
+**72 is deliberately NOT in 63_'s module-stamp manifest yet, and the first attempt to add it was
+wrong.** It was registered `optional: true`, reasoning that health should be able to report whether
+the handler is deployed. The census suite refused it immediately: the health contract is *exactly
+one absent optional owner*, and a second one makes "an absent optional owner" — a real, measured
+signal — into a number that no longer means anything. The row belongs in the round that turns the
+flag on, as a REQUIRED row, because that is when "is the handler actually deployed" becomes a
+question whose wrong answer is visible to a user.
+
+### 32.2 The membership algorithm, in the order it actually runs
+
+```
+1  flag            productStrategyEnabled_() — BEFORE the spreadsheet is opened
+2  request         schema, bounds, forbidden fields, cursor identity
+3  scope           company AND country AND marketplace, all non-empty, none defaulted or derived
+4  target          SpreadsheetApp.openById(prodExpectedDbId_()) + prodAssertDbTarget_
+5  membership      marketplace_skus WHERE company + country + marketplace = scope
+6  U               = { marketplace_sku_id }, sorted ascending
+7  status          marketplace_sku_status ∈ the requested set
+8..13  enrichment  master → regional → pricing → campaign lines → campaigns
+14 narrowing       category / series, applied to rows that are ALREADY members
+15..17             normalize → paginate → counts / capped / provenance
+```
+
+Steps 1–3 cost **zero reads**: a disabled feature and an unscoped request are both refused before the
+spreadsheet is opened, and the tests measure the open count rather than trusting the ordering.
+
+**What can never confer membership:** `sku_details` (a master SKU with no site row is absent, however
+complete its record), `lifecycle`, a currency, an `image_url`, a price existing, a SKU naming pattern,
+or a client filter. The response says so as data — `membership.inferred_from: []` and
+`membership.lifecycle_participates: false`.
+
+### 32.3 The joins, each on the key the live schema has
+
+| Edge | Key | Why not the obvious one |
+|---|---|---|
+| master | `sku_details.sku = marketplace_skus.sku` | — |
+| **regional** | **`sku + company + country + marketplace`** | `sku_regional_details` has no `marketplace_sku_id` (`18_:16-23`). It is the only edge not travelling on an id, so it is the only one that can half-match; all four parts are taken from the membership row itself |
+| **pricing** | **`marketplace_sku_id` only** | `pricing_list` has no `company`, so its `country`/`marketplace` are denormalised copies. Two companies on one `country|marketplace|sku` are distinguishable only by the id |
+| campaign lines | `campaign_sku_lines.marketplace_sku_id` | — |
+| campaign parent | `campaigns.campaign_id`, then `company` / `country` / `marketplace` checked **column by column** | a campaign is not uniquely scoped by country+marketplace alone (`20_:27`) |
+
+The fixture proves the pricing rule rather than restating it: a neighbouring company's price row sits
+on the same `(country, marketplace, sku)` as the SKU under test, at a visibly different price. A join
+on those three columns returns it; the shipped join does not.
+
+### 32.4 Two decisions the implementation had to make
+
+**(1) `include` defaults.** `regional` and `pricing` default **on**, `campaigns` defaults **off**.
+The response's own counts — `regionalMissingCount`, `pricingMissingCount`, `analysableSiteSkuCount` —
+are unanswerable without the first two, and an un-requested include must cost no read, which is what
+makes the third opt-in. When an include is off the matching count is **`null`, not `0`**: a count
+nobody took is not a measurement of zero.
+
+**(2) What "success" means when nothing is usable.** Every answer carries
+**`data.analysis_permitted`**, false whenever `refusals` is non-empty, and `meta.refused`. A refused
+request returns the same shape with **null counts** — so a site that genuinely sells nothing
+(`refusals: []`, `siteSkuCount: 0`, `analysis_permitted: true`) stays distinguishable from
+`FEATURE_DISABLED`, `SCOPE_INCOMPLETE`, `SOURCE_NOT_CONNECTED` and `CAPPED_RESULT`, which was §31's
+requirement and is the one thing a `success: true` envelope could otherwise have blurred.
+
+### 32.5 Refusals and row statuses, frozen
+
+```
+REFUSALS   FEATURE_DISABLED · SCOPE_INCOMPLETE · UNKNOWN_STATUS_VALUE · INVALID_STATUS_FILTER
+           INVALID_PAGE_LIMIT · PAGE_LIMIT_EXCEEDS_MAXIMUM · INVALID_CURSOR
+           CURSOR_SCOPE_MISMATCH · UNSUPPORTED_REQUEST_FIELD · CAPPED_RESULT
+ROW STATUS REGIONAL_DETAILS_MISSING · REGIONAL_NOT_REQUESTED · AMBIGUOUS_SITE_IDENTITY
+           PRICING_SOURCE_MISSING · PRICING_NOT_REQUESTED · AMBIGUOUS_PRICING_SOURCE
+           IMAGE_SOURCE_MISSING
+FINDINGS   CONTRACT_MISMATCH · AMBIGUOUS_SITE_IDENTITY · AMBIGUOUS_PRICING_SOURCE
+           CURRENCY_SOURCE_CONFLICT · SITE_SKU_WITHOUT_IDENTITY · UNKNOWN_SITE_STATUS_VALUE
+           CAMPAIGN_RECORDS_CAPPED
+```
+
+`AMBIGUOUS_PRICING_SOURCE` is the one §31 did not name in advance. `pricing_list` is one row per
+`marketplace_sku_id` (`PRICING_DATABASE_MAPPING` §4), so a second row is a contract violation and no
+rule in the contract picks a winner — therefore none is picked. Not the last row, not the highest
+price, not the lowest.
+
+### 32.6 Pagination, bounds and the cursor
+
+No existing workspace read paginates — the convention is a full set with a non-silent `capped`
+backstop, and that convention is kept for the six SOURCE arrays. Pagination is added only over
+**`normalizedRows`**, which is the page grain, because six independently pageable tables would let a
+client assemble a view no server ever agreed to.
+
+```
+default 200 · hard maximum 1000 · sort marketplace_sku_id ascending (deterministic)
+cursor  PPW1-<scope+filter fingerprint>-<offset>
+counts  TOTALS over the whole membership; only pagination.returned describes the page
+```
+
+The fingerprint covers company, country, marketplace, category, series, the effective status set and
+the include flags. A cursor issued under a different scope or filter set is **refused**
+(`CURSOR_SCOPE_MISMATCH`), because a cursor that survived a scope change would page through one
+site's rows using another site's offsets — cross-site contamination arriving by the back door.
+
+A capped SOURCE is a refusal, not a shorter answer: if `marketplace_skus` or any joined table was
+truncated, membership or join completeness cannot be proved, and an answer that cannot prove its own
+completeness must not be handed over looking analytics-ready.
+
+### 32.7 `skuDetails.workspace.get` is unchanged, and it is proved by execution
+
+`59_api_v1_sku_details_workspace.gs` was **not modified** — object hash identical to the P1-B0 commit.
+The site scope lives in 72 precisely so the shared SKU-page owner did not have to grow one, which
+would have changed what two shipped pages see (`59_:27` states the BEFORE == AFTER contract).
+
+The regression is not a source read. The suite EXECUTES `skdWorkspaceBuild_` against a fixture and
+compares it to a frozen expected response, then calls it again **passing a scope** and asserts the
+answer is identical — so if a later round teaches that builder about scope, this line turns red.
+
+### 32.8 Flag and permission contract
+
+```
+server    PRODUCT_STRATEGY_ENABLED_ = false      productStrategyEnabled_()        00_config.gs
+gate      the handler refuses FEATURE_DISABLED with 0 opens and 0 reads
+health    system.health.product_strategy_enabled, read from that one resolver     63_
+client    a fail-safe-FALSE mirror inside the accessor; only a server capability payload raises it
+rollback  set false + a NEW deployment version — both user-owned, no compensating write
+```
+
+One name. §13.2's `PRODUCT_STRATEGY_BOARD_ENABLED_` and §28.4's
+`PRODUCT_PRICING_WORKSPACE_ENABLED_` are superseded and neither is declared anywhere. **There is
+still no RBAC** (§13.1), so the flag is not a convenience — it is the access control, and a control
+that runs after the read has already failed at the only job it had.
+
+### 32.9 Tests
+
+**163 assertions, 0 failed, 13 mutants, 0 survived.** The mutants are the ways the site scope could
+leak, written as the change that would do it: the scope becoming optional; membership dropping the
+company comparison; `phasing_out` dropped from the default or squashed into `active`; `lifecycle`
+promoted to a membership gate; the regional join losing one of its four parts; pricing joining on
+`sku`; a currency conflict resolved silently; a missing price becoming zero; a capped source handed
+over as complete; the flag checked after the read; a writer reaching the read path; a preview
+fallback introduced.
+
+Three of my own defects were caught by these tests before the round closed, and one of them was in
+the harness rather than the handler: the sandbox had been given the host's `Array`, so every
+in-context `instanceof Array` compared against a foreign constructor and answered false. The code
+under test was correct and the test was measuring the wrong realm.
+
+### 32.9a Three assertions in older suites are red, and one act clears all three
+
+The whole suite was swept before and after. One suite found a real defect (the manifest row, §32.1),
+and **three assertions in two older suites remain red. All three say the same thing and all three
+are cleared by the release step, which is user-owned.**
+
+| Suite | Assertion | What it says |
+|---|---|---|
+| `ai-plan-advice-…-r5` | `E4` | a file edited in this working tree must move its own module stamp — `00_config.gs`, `01_router.gs` and `63_` were edited and their stamps did not move |
+| `single-scope-allowlist-cutover-…-r7-r6` | `G1` | since release `…R6-R7-R6`, exactly two runtime files may have changed; `01_router.gs` is now a third |
+| same | `G2.7` | `01_router.gs` is unchanged |
+
+**Why the stamps were not moved here.** Moving them was tried and reverted. `SYS_BUILD_VERSION_` has
+always been *equal to* `SYS_DEPLOYMENT_RELEASE_`, and the deployment-contract probe compares the
+payload's `build_id` (the RELEASE) against the scraped `SYS_BUILD_VERSION_` (the STAMP) — so
+separating them declares a release as a side effect, and four probe assertions plus two transport
+assertions went red to say so. 63_'s own manifest row calls itself *"self-referential — not a
+partial-sync check"*, which is the same fact stated in the source: **for the deployment-identity
+module, the stamp IS the release.**
+
+And a release is not this round's to declare. `63_:35` — *"SYS_DEPLOYMENT_RELEASE_ MUST be bumped in
+the same commit as any sync-visible backend change"* — is exactly right, and it is the reason this
+belongs to the round that ships: the release id goes in `DEPLOYMENT_RELEASE_LOG.md`, which is
+user-owned, and this round is forbidden to sync or deploy. Claiming a release for a change nobody
+has deployed would put a name in the ledger's blind spot.
+
+**So the act that clears all three is one act, and it is the release step:** bump
+`SYS_DEPLOYMENT_RELEASE_`, move `SYS_BUILD_VERSION_` / `CONFIG_BUILD_VERSION_` /
+`RTR_BUILD_VERSION_` and their manifest rows with it, and re-base the two release-window suites onto
+the new release. Until then the three red assertions are an accurate statement of the position: a
+sync-visible backend change exists and has not been released.
+
+### 32.10 Isolation record
+
+- **PRE HEAD `e98fdedc164f5c6039d069bb0a5b679117d81b52`**, branch
+  `feature/product-strategy-board-p0`, clean including untracked.
+- **No production UI file touched:** `index.html`, `assets/js/app.js`, every page HTML / CSS / JS,
+  and the prototype are unchanged. `59_api_v1_sku_details_workspace.gs` object hash identical.
+- **No schema, no migration, no new table, no S1–S5 file, no mainline worktree change,
+  `C:/km-lb` untouched.**
+- **No DB or API read, no DB / Drive write, no network request, no Apps Script sync, no deployment,
+  no flag change, no merge, no push.**
 
 ---

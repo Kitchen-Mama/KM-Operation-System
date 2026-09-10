@@ -654,6 +654,11 @@ function handleSystemHealth_(body) {
     // deployment at all, which is a different fault from the flag being off.
     inventory_ai_plan_db_generation_enabled: (typeof inventoryAiPlanDbGenerationEnabled_ === 'function')
       ? (inventoryAiPlanDbGenerationEnabled_() === true) : null,
+    // PRODUCT-STRATEGY-P1-B1 — the Product Strategy feature flag, read from the SAME resolver the handler's
+    // gate reads, in the deployment that is actually answering. `null` means 00_config.gs is not present in
+    // that deployment at all, which is a different fault from the flag being off.
+    product_strategy_enabled: (typeof productStrategyEnabled_ === 'function')
+      ? (productStrategyEnabled_() === true) : null,
     config_build: (typeof CONFIG_BUILD_VERSION_ !== 'undefined') ? CONFIG_BUILD_VERSION_ : null,
     required_action_list_version: SYS_REQUIRED_ACTION_LIST_VERSION_,
     required_action_count: SYS_REQUIRED_ACTIONS_.length,

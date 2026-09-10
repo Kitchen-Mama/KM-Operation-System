@@ -4723,3 +4723,69 @@ and `FEATURE_DISABLED` / `SOURCE_NOT_CONNECTED` / a genuinely empty scope stay t
 preview fallback, flag false) → P1-B3 (production readback, DB-vs-UI counts, no cross-site contamination, operator
 acceptance) — only then is `flag = true` a question. OPEN: `variant_group`/`variant_name` on `sku_details` (§28.5);
 `pricing_list.price_status` default. APPS_SCRIPT_SYNC_REQUIRED = none (no `.gs` changed).
+
+## PRODUCT-STRATEGY-P1-B1 (2026-09-10) — Site-scoped bounded read API, FLAG FALSE, no production visibility
+
+Implements P1-B0 §31. Full text: `docs/planning/PRODUCT_STRATEGY_BOARD_DESIGN_FREEZE.md` §32 (feature branch
+`feature/product-strategy-board-p0`). NEW OWNER `72_api_v1_product_pricing_workspace.gs` (registry read, not
+guessed: 71_ was the highest), action `productPricing.workspace.get`, routed once on GET (`rtrGetReadHandlers_`)
+and once on POST to the SAME handler. It is the ONE bounded read owner for pricing_list / campaigns /
+campaign_sku_lines AND the SITE-MEMBERSHIP authority: company + country + marketplace are all required and none
+may be defaulted or derived; the marketplace_sku_id universe is resolved SERVER-SIDE from marketplace_skus; only
+its members become rows; a master SKU with no marketplace_skus row in scope never appears however complete its
+sku_details record; category/series narrow AFTER membership; membership is never inferred from sku_details,
+lifecycle, currency, image_url, price presence or a SKU naming pattern (`membership.inferred_from: []`,
+`lifecycle_participates: false`). JOINS on the keys the live schema has: master by `sku`; REGIONAL by the
+four-part `sku + company + country + marketplace` taken from the membership row (18_:16-23 — that table has no
+marketplace_sku_id); PRICING by `marketplace_sku_id` ONLY (pricing_list has no `company`, so its
+country/marketplace are denormalised copies and a three-column join returns the other company's price — the
+fixture plants exactly that row); campaign lines by `marketplace_sku_id` then campaigns by `campaign_id` with
+company/country/marketplace checked column by column. STATUSES: the four from 00_config.gs:12; default =
+`active` + `phasing_out` (still on sale, badged, counted apart), `inactive` + `discontinued` only under
+`include_inactive`, an unknown value FAILS CLOSED before any read, and the raw string is never squashed into a
+boolean. MISSING BEHAVIOUR: no regional → REGIONAL_DETAILS_MISSING, counted, SKU kept, never fabricated from
+master, cross-site rows REPORTED as CONTRACT_MISMATCH and never used; >1 regional → AMBIGUOUS_SITE_IDENTITY, no
+first-match; no pricing → PRICING_SOURCE_MISSING, nulls not zeros, not plotted, in siteSkuCount but not
+analysableSiteSkuCount; >1 pricing row for one id → AMBIGUOUS_PRICING_SOURCE (pricing_list is one row per
+marketplace_sku_id and no rule picks a winner, so none is picked); pricing_list.currency is the authority and a
+disagreement with marketplace_skus.currency is a CURRENCY_SOURCE_CONFLICT finding, never a silent overwrite; no
+FX; price_status filters nothing (its default is recorded as unconfirmed) and is carried in provenance.
+PAGINATION over normalizedRows only (default 200, hard max 1000, deterministic marketplace_sku_id sort, cursor
+`PPW1-<scope+filter fingerprint>-<offset>` refused across a scope or filter change); counts are TOTALS; a capped
+SOURCE is a CAPPED_RESULT refusal because membership/join completeness becomes unprovable. Every answer carries
+`analysis_permitted`, and a refused request returns NULL counts so a genuinely empty site (refusals [],
+siteSkuCount 0) stays distinct from FEATURE_DISABLED / SCOPE_INCOMPLETE / SOURCE_NOT_CONNECTED / CAPPED_RESULT.
+FLAG: `PRODUCT_STRATEGY_ENABLED_ = false` + `productStrategyEnabled_()` in 00_config.gs; the handler refuses
+FEATURE_DISABLED with 0 spreadsheet opens and 0 table reads (measured, not asserted); reported by system.health
+as `product_strategy_enabled` from that one resolver; supersedes BOTH §13.2's PRODUCT_STRATEGY_BOARD_ENABLED_ and
+§28.4's PRODUCT_PRICING_WORKSPACE_ENABLED_, neither of which is declared anywhere. There is still no RBAC, so
+the flag IS the access control. ACCESSOR `assets/js/api/km-product-pricing-workspace.js` — fixed action, request
+and response schema validation, fail-safe-FALSE capability mirror, NO storage of any kind, NO cache, NO
+google.script.run, NO preview fallback (a failed read is SOURCE_NOT_CONNECTED), and it is loaded by NO page:
+index.html references neither the file, nor a Product Strategy nav entry, nor the action. PRODUCTION VISIBILITY
+= 0. 59_api_v1_sku_details_workspace.gs is UNCHANGED (object hash identical); the regression EXECUTES
+skdWorkspaceBuild_ against a frozen expected response and calls it again PASSING A SCOPE, asserting the answer is
+identical — so a later round that teaches it about scope turns that line red. TESTS: new suite 163 assertions / 0
+failed / 13 mutants / 0 survived (the mutants are the leak paths: optional scope, membership dropping company,
+phasing_out dropped or squashed into active, lifecycle as a membership gate, the regional join losing a part,
+pricing joining on sku, a silent currency conflict, a missing price becoming 0, a capped source treated as
+complete, the flag checked after the read, a writer on the read path, a preview fallback). Whole suite swept
+before and after. ONE REAL DEFECT FOUND BY AN OLDER SUITE and fixed: a 72_ row had been added to 63_'s
+module-stamp manifest as an absent OPTIONAL owner, and the health contract is exactly one — the row now waits for
+the round that turns the flag on, where it belongs as REQUIRED. THREE ASSERTIONS REMAIN RED, all saying one
+thing: `ai-plan-advice…r5 E4` (a file edited in this tree must move its module stamp) and
+`single-scope-allowlist-cutover…r7-r6 G1 / G2.7` (since release R6-R7-R6 exactly two runtime files may have
+changed; 01_router.gs is a third). Moving the stamps was tried and REVERTED: SYS_BUILD_VERSION_ has always
+equalled SYS_DEPLOYMENT_RELEASE_ and the deployment-contract probe compares the payload's build_id against the
+scraped stamp, so separating them declares a release by side effect (4 probe + 2 transport assertions went red).
+63_'s own row calls itself self-referential — for the deployment-identity module the stamp IS the release — and
+63_:35 requires the release to move with any sync-visible backend change. That is one act, it is the release
+step, and it is USER-OWNED: bump SYS_DEPLOYMENT_RELEASE_, move the three stamps and their manifest rows with it,
+re-base the two release-window suites. Until then the three red assertions are an accurate statement that a
+sync-visible backend change exists and has not been released. NOT DONE: no production UI file, no app.js, no page
+HTML/CSS/JS, no prototype change, no schema, no migration, no new table, no S1–S5, no main worktree, no DB or API
+read, no DB/Drive write, no network, no Apps Script sync, no deployment, no flag=true, no merge, no push.
+APPS_SCRIPT_SYNC_REQUIRED (when the user releases) = 72_api_v1_product_pricing_workspace.gs (NEW) + 00_config.gs
++ 01_router.gs + 63_api_v1_system_health.gs. NEXT: P1-B2 (Operation System page integration, .km-tab-rail
+sub-navigation, live adapter, no preview fallback, flag still false) → P1-B3 (production readback, DB-vs-UI
+counts, no cross-site contamination, operator acceptance) — only then is flag=true a question.

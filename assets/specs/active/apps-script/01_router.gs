@@ -79,6 +79,7 @@ function rtrGetReadHandlers_() {
     'requestOrder.workspace.get':                  handleRequestOrderWorkspaceGet_,
     'inventoryReplenishment.workspace.get':        handleInventoryReplenishmentWorkspaceGet_,
     'overseasStock.workspace.get':                 handleOverseasStockWorkspaceGet_,
+    'productPricing.workspace.get':                handleProductPricingWorkspaceGet_,
     'shipment.workspace.get':                      handleShipmentWorkspaceGet_,
     'recommendation.workspace.get':                handleRecommendationWorkspaceGet_,
     // Scoped gap / composer reads
@@ -571,6 +572,17 @@ function doPost(e) {
     }
     if (action === 'skuDetails.workspace.get') {
       return jsonResponse_(handleSkuDetailsWorkspaceGet_(body));
+    }
+
+    // PRODUCT-STRATEGY-P1-B1 — API v1 · PRODUCT PRICING SITE-SCOPED READ workspace (owner = 72_). The ONE
+    // bounded read owner for pricing_list / campaigns / campaign_sku_lines, and the SITE-MEMBERSHIP authority:
+    // it resolves which marketplace_sku_ids exist for company + country + marketplace SERVER-SIDE and only
+    // those may become rows. An unscoped request is REFUSED, never answered with everything. Read-only, no
+    // lock, no writer, never getOperationDb; gated on PRODUCT_STRATEGY_ENABLED_ (00_config.gs, default false),
+    // which refuses before the spreadsheet is opened. `skuDetails.workspace.get` is UNCHANGED by this round —
+    // the site scope lives here precisely so the shared SKU-page owner did not have to grow one.
+    if (action === 'productPricing.workspace.get') {
+      return jsonResponse_(handleProductPricingWorkspaceGet_(body));
     }
 
     // API v1 · Inventory Replenishment READ-ONLY Workspace (Phase F1-7I). A body-carrying READ (no write); owner =

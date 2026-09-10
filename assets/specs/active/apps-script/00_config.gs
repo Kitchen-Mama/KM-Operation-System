@@ -88,6 +88,31 @@ function requestOrderSiteConfirmRequired_() { return REQUEST_ORDER_SITE_CONFIRM_
 var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = false;
 function inventoryAiPlanDbGenerationEnabled_() { return INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ === true; }
 
+// ================================================================================================================
+// PRODUCT-STRATEGY-P1-B1 — THE PRODUCT STRATEGY FEATURE FLAG. Server-owned, default FALSE.
+//
+// THIS FLAG IS THE ACCESS CONTROL, not a convenience. P0 §13.1 measured the position and it has not changed:
+// no RBAC, no server-side identity, `created_by` client-asserted, Login/RBAC scheduled for P2-A. So while this
+// is false, `productPricing.workspace.get` must REFUSE — with FEATURE_DISABLED, before the spreadsheet is
+// opened and before any table is read. A disabled nav entry only avoids OFFERING what the server would refuse;
+// the refusal is the control, and a control that runs after the read has already failed.
+//
+// ONE NAME. P0 §13.2 had frozen PRODUCT_STRATEGY_BOARD_ENABLED_ and §28.4 had separately proposed
+// PRODUCT_PRICING_WORKSPACE_ENABLED_. Both are superseded here and neither exists: two flags for one feature
+// admits a state where the page is on and its only data source is off — a state with no meaning and no owner.
+//
+// A BROWSER CANNOT WIDEN IT. Not from a payload, not from a query string, not from a client-side mirror. The
+// frontend mirror is fail-safe FALSE and is a mirror, never a second authority. Widening this is a deployment
+// with a diff, and rollback is setting it back to false plus a NEW deployment version — both user-owned, and
+// neither needs a compensating write, because this feature has never written anything.
+//
+// The effective value in the deployment that is actually ANSWERING is reportable from system.health as
+// `product_strategy_enabled` (63_), so "is it on over there" is a question with an answer rather than an
+// inference from behaviour.
+// ================================================================================================================
+var PRODUCT_STRATEGY_ENABLED_ = false;
+function productStrategyEnabled_() { return PRODUCT_STRATEGY_ENABLED_ === true; }
+
 // F1-7N-FC-1B-E3-R4-A2-R1 §9 — THE FLAG IS TOO BLUNT TO TURN ON.
 //
 // `INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_` is global. Flipping it to true does not enable a controlled

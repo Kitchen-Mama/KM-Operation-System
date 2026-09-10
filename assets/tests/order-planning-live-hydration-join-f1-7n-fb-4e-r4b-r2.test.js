@@ -193,7 +193,10 @@ eq(JSON.parse(gsSb.rtrEmitHandlerResult_({ a: 1 }).getContent()), { a: 1 }, '1b.
 eq(JSON.stringify(gsSb.jsonResponse_({ big: 'payload' })), '{}', '1b.8 JSON.stringify(TextOutput) is "{}" — the two bytes the page received');
 // EVERY read-table action must now reach the client as its own payload, whatever its handler returns.
 var readActions = gsCtx.rtrGetReadActionList_();
-eq(readActions.length, 21, '1b.9 the read table still has its 21 actions');
+// 21 -> 22: PRODUCT-STRATEGY-P1-B1 added `productPricing.workspace.get` to the GET read table. Only the
+// inventory COUNT moves. 1b.10 below is the actual guarantee — it EXECUTES every entry in the table — and
+// it now covers the new action too, so nothing this line was protecting has been weakened.
+eq(readActions.length, 22, '1b.9 the read table still has its 22 actions');
 var emptyAnswers = readActions.filter(function (a) {
   var txt = gsCtx.doGet({ parameter: { action: a, km_via: 'get' } }).getContent();
   return String(txt).replace(/\s/g, '') === '{}';
