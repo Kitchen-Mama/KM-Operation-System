@@ -77,14 +77,14 @@ var S1 = read(S1_REL).split(String.fromCharCode(13) + String.fromCharCode(10)).j
 
 // S1-R5 — THE WORLD DECLARES WHICH BASELINE STAGE IT IS A WORLD OF.
 //
-// S1_MANIFEST_P_BEFORE_ now holds the baseline frozen from the live 2026-09-10 12:37:53 run. Every
+// S1_MANIFEST_P_BEFORE_ now holds the baseline frozen from the live 2026-09-10 14:42:06 run. Every
 // synthetic world below is a DIFFERENT world, so loading the file wholesale would make each of them
 // collide with that baseline and STOP — a hundred assertions failing at a gate that is working
 // exactly as designed. The same shape the sibling suites already use for the activation allowlist:
 // the WORLD gets a source whose destination is EMPTY, because these worlds are worlds in which
 // nothing has been frozen yet, and `S1` stays the real file for every assertion about the real file.
 //
-// Neutralising is LINE-EXACT rather than a regex over the object: the baseline is one 5957-character
+// Neutralising is LINE-EXACT rather than a regex over the object: the baseline is one 5958-character
 // line and a greedy match could swallow the rest of the file without saying so.
 var S1_FROZEN_DECL_ = 'var S1_MANIFEST_P_BEFORE_ = ';
 var S1_FROZEN_LINES_ = S1.split(NL).filter(function (l) {
@@ -7179,7 +7179,7 @@ eq(S1_FROZEN_LINES_.length, 1,
 // AF — S1-R5. THE FROZEN BASELINE ITSELF, HELD TO THE REPO'S OWN VALIDATOR.
 //
 // Everything above tests the census against synthetic worlds. This section tests the VALUE a person
-// pasted into this file from the live 2026-09-10 12:37:53 run: that it is complete by
+// pasted into this file from the live 2026-09-10 14:42:06 run: that it is complete by
 // S1_FREEZE_REQUIRED_ (read out of the source, never restated here — a second copy of a contract is
 // a second thing to drift), that it says what the operator measured, and that it carries nothing
 // from the removal era it succeeded.
@@ -7195,8 +7195,8 @@ ok(AF_B && typeof AF_B === 'object' && !(AF_B instanceof Array),
 // what says no number was normalised, no key reordered and no duplicate collapsed when it was pasted.
 eq(JSON.stringify(AF_B), S1_FROZEN_JSON_,
   'AF1b and re-serialising it reproduces the pasted characters exactly');
-eq(S1_FROZEN_JSON_.length, 5957,
-  'AF1c 5957 characters — the emitted 6034-byte block less its 77-character prose prefix');
+eq(S1_FROZEN_JSON_.length, 5958,
+  'AF1c 5958 characters — the emitted 6035-byte block less its 77-character prose prefix');
 ok(S1.indexOf('Paste this into S1_MANIFEST_P_BEFORE_ in this file BEFORE pressing Generate: {') === -1,
   'AF1d and the prose prefix was NOT pasted into the constant');
 
@@ -7222,9 +7222,11 @@ eq(Object.keys(AF_B).filter(function (k) { return AF_B[k] === undefined; }), [],
 [['scope_key', 'ResUS|US|Amazon|SP0750-M'], ['company', 'ResUS'], ['country', 'US'],
  ['marketplace', 'Amazon'], ['sku', 'SP0750-M'],
  ['build', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6'],
- ['calculation_run_id', 'GAP-INV-20260909T132353-0001'],
- ['accepted_calculation_date', '2026-09-09'], ['calculation_status', 'READY'],
- ['freshness_state', 'CURRENT_PRE_SCHEDULE'], ['planning_cycle', 'RECO-2026-09'],
+ ['frozen_at', '2026-09-10 14:42:06'],
+ ['calculation_run_id', 'GAP-INV-20260910T132343-0001'],
+ ['accepted_calculation_date', '2026-09-10'], ['source_data_as_of', '2026-09-10'],
+ ['calculation_status', 'READY'],
+ ['freshness_state', 'CURRENT_AFTER_REFRESH'], ['planning_cycle', 'RECO-2026-09'],
  ['recommended_qty', 25], ['manual_planned_total', 0], ['qualifying_ai_planned_qty', 0],
  ['residual_qty', 25], ['proposed_ai_allocation_qty', 25], ['available_to_allocate', 310],
  ['would_clamp', false], ['source_factory_warehouse_id', 'WH-TW-CN-FACTORY-YOUXIN'],
@@ -7325,6 +7327,156 @@ eq((S1.match(/var S1_MANIFEST_P_BEFORE_ = /g) || []).length, 1,
 eq((bareCode(extractFn(S1, 'RUN_S1_MANIFEST_P')).match(/S1_MANIFEST_P_BEFORE_\s*=(?!=)/g) || []).length, 0,
   'AF7b and the manifest itself never assigns it — a baseline the diagnostic can fill in is a second'
   + ' copy of the measurement, not a baseline');
+
+
+// ================================================================================================
+// AG — S1-R5A. THE ROTATION: WHAT MOVED, AND WHAT WAS NOT ALLOWED TO.
+//
+// The baseline frozen by S1-R5 measured gap run GAP-INV-20260909T132353-0001. The daily Gap Job then
+// produced GAP-INV-20260910T132343-0001, and the readback refused — correctly, because a baseline
+// whose calculation lineage has moved describes a world that no longer exists. An operator re-ran the
+// manifest and pasted the new block. This section is what makes that a ROTATION rather than a reset:
+// it holds the superseded value beside the current one and proves that only the lineage moved.
+//
+// The superseded object is recorded HERE, in the suite, and deliberately not in the census: a file
+// holding two baselines has no baseline. It is a historical record, exactly as S1_MOV_LIVE_FROZEN_ is.
+// ================================================================================================
+section('AG — the 2026-09-10 baseline rotation');
+
+var AG_SUPERSEDED_JSON_ = '{"frozen_at":"2026-09-10 12:37:53","build":"F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6","scope_key":"ResUS|US|Amazon|SP0750-M","company":"ResUS","country":"US","marketplace":"Amazon","sku":"SP0750-M","calculation_run_id":"GAP-INV-20260909T132353-0001","accepted_calculation_date":"2026-09-09","calculation_status":"READY","freshness_state":"CURRENT_PRE_SCHEDULE","source_data_as_of":"2026-09-09","planning_cycle":"RECO-2026-09","windows":{"D18":0,"D30":0,"D45":0,"D90":25},"recommended_qty":25,"qualifying_manual_planned_qty":0,"qualifying_ai_planned_qty":0,"residual_qty":25,"proposed_ai_allocation_qty":25,"would_clamp":false,"source_factory_warehouse_id":"WH-TW-CN-FACTORY-YOUXIN","pool_key":"WH:WH-TW-CN-FACTORY-YOUXIN||SP0750-M","factory_current_stock":310,"factory_reserved_stock":0,"active_allocation_draft_qty":0,"active_shipping_plan_qty":0,"available_to_allocate":310,"manual_header_ids":[],"manual_line_ids":[],"manual_planned_total":0,"manual_identity_fingerprint":"811C9DC5","writeset_measurable":true,"writeset_stage":"COMPLETE","expected_header_ids":["SADH-K2-A4239AC6"],"expected_line_ids":["SADL-K2-2FD4DCA2"],"expected_k2_group_keys":["reco-2026-09|resus|us|amazon|inventory_replenishment|wh-tw-cn-factory-youxin||sea|truck|1"],"expected_create_header_count":1,"expected_update_header_count":0,"expected_create_line_count":1,"expected_update_line_count":0,"existing_active_ai_identities":[],"existing_active_ai_identity_count":0,"ai_expiration_candidates":[],"ai_expiration_candidate_count":0,"expected_post_generation_active_ai_identities":["SADH-K2-A4239AC6"],"target_manual_header_ids":[],"target_manual_line_ids":[],"target_manual_planned_total":0,"target_manual_row_signatures":[],"target_manual_combined_fingerprint":"811C9DC5","target_ai_row_signatures":[],"target_ai_combined_fingerprint":"811C9DC5","other_scope_header_count":11,"other_scope_line_count":13,"other_scope_row_signatures":["SAD-27976058-2~62304AEF","SAD-C787D1B1-D~D1388F3C","SAD-FD833D8A-E~BF0F579D","SADH-K2-179FBB0E~D36362C7","SADH-K2-7F15DD7D~9E3BA813","SADH-K2-E7AF9242~0AAEF965","SADH-K4-38523A90~2138D5D5","SADH-K4-507F3A05~59CB0B0B","SADH-K4-A3872518~D86B4917","SADH-K4-D8E6A23B~0A92D373","SADH-K4-DCF3CFC8~991CEA46","SADL-K2-0AA58729~7F6C8AD3","SADL-K2-0D2C920B~8F519999","SADL-K2-16F4E4F9~2BE6B6E3","SADL-K2-25BAA672~E0DFC918","SADL-K2-344FB2B2~54658884","SADL-K2-434B65FA~1DDB424A","SADL-K2-477B4D96~4448A09B","SADL-K2-4B150F56~36243147","SADL-K2-4ED9AD78~2B8ADD01","SADL-K2-8756129E~139D23B3","SADL-K2-92B8BAD2~77AA124E","SADL-K2-A5AF5DC0~496F0B41","SADL-K2-A9F07664~62FF48B2"],"other_scope_combined_fingerprint":"C2F89714","draft_header_live_column_count":36,"draft_line_live_column_count":31,"draft_header_excluded_fields":[],"draft_line_excluded_fields":[],"factory_pool_row_fingerprint":"58D7A2C7","factory_stock_movement_state":"SHEET_PRESENT_AND_READABLE","factory_stock_movement_count":95,"factory_stock_movement_ids":["FSMV-0332bc3c","FSMV-04e06e5c","FSMV-04e4b078","FSMV-069464ef","FSMV-070296f2","FSMV-0ab3930b","FSMV-13208649","FSMV-16f38c6f","FSMV-173b4b7c","FSMV-1cf772c6","FSMV-23c176e0","FSMV-280bb686","FSMV-281a49db","FSMV-3086d3ce","FSMV-35b6153c","FSMV-3797f9a0","FSMV-3a7c17f3","FSMV-3bb1b10c","FSMV-3d57c7bc","FSMV-3e38941b","FSMV-4545f1a9","FSMV-4626c613","FSMV-4b313b43","FSMV-4c4bd69b","FSMV-4d3cd744","FSMV-4e6b1bfe","FSMV-547dbb9b","FSMV-560cddb3","FSMV-5a6a6cd2","FSMV-5ef872d2","FSMV-63106ba1","FSMV-632a2845","FSMV-65112317","FSMV-68750b75","FSMV-6a4f8d4f","FSMV-718bfc6a","FSMV-72e17098","FSMV-73ee099d","FSMV-742eff9e","FSMV-784eed15","FSMV-7c462aa9","FSMV-7e0e60e7","FSMV-7fe0d21a","FSMV-81dfcfb7","FSMV-880b656e","FSMV-8c4dead1","FSMV-8c880ccd","FSMV-8c9fac28","FSMV-8e50938a","FSMV-8e9b2571","FSMV-8fd17704","FSMV-90f3379d","FSMV-93e7cd59","FSMV-9aeae3e9","FSMV-a317febd","FSMV-a43ddf68","FSMV-a96c6717","FSMV-ae66ac1a","FSMV-b1cc6cc0","FSMV-b3f4c867","FSMV-b54bbb5f","FSMV-b7b31d44","FSMV-ba6f52d7","FSMV-bfbe4fec","FSMV-c602f612","FSMV-c62ca13a","FSMV-c660e255","FSMV-c6f973c5","FSMV-d252da34","FSMV-d511479b","FSMV-d5990154","FSMV-d9000b82","FSMV-d940a9bb","FSMV-dae32460","FSMV-dbea7287","FSMV-dc0d673f","FSMV-dcb7e556","FSMV-e0b30169","FSMV-e104e937","FSMV-e367fb39","FSMV-e56a54f7","FSMV-e5bf1d8f","FSMV-e5d99afb","FSMV-e6e80552","FSMV-eba01818","FSMV-ed1d0a61","FSMV-ee435515","FSMV-ef2ff959","FSMV-ef3eacc6","FSMV-efc22cf3","FSMV-f33921ee","FSMV-f43a8c1d","FSMV-f77ef96f","FSMV-fd4d2bff","FSMV-fe6f1b7f"],"factory_stock_movement_fingerprint":"FC67B70E","factory_override_audit_state":"SHEET_PRESENT_AND_READABLE","factory_override_audit_count":0,"factory_override_audit_ids":[],"factory_override_audit_fingerprint":"811C9DC5","factory_stock_movement_ok_id_count":95,"factory_stock_movement_id_faults":[],"factory_override_audit_ok_id_count":0,"factory_override_audit_id_faults":[],"gap_scope_universe_population":"INVENTORY_GAP_SCOPES","gap_scope_universe_total_count":118,"gap_scope_universe_target_count":1,"gap_scope_universe_other_count":117,"gap_scope_universe_fingerprint":"D578A971","draft_row_universe_population":"ALLOCATION_DRAFT_ROWS","draft_row_universe_header_count":11,"draft_row_universe_line_count":13,"draft_row_universe_total_row_count":24,"draft_row_universe_target_manual_header_count":0,"draft_row_universe_target_manual_line_count":0,"draft_row_universe_target_ai_header_count":0,"draft_row_universe_target_ai_line_count":0,"draft_row_universe_target_row_count":0,"draft_row_universe_other_scope_row_count":24,"draft_row_universe_row_signature_count":24,"draft_row_universe_combined_fingerprint":"C2F89714","schema_fingerprints":{"inventory_replenishment_gap":"16B18595","shipping_allocation_drafts":"766AE25C","shipping_allocation_draft_lines":"BC70D284","factory_stock":"83D61B62","shipping_plans":"819C7F26","shipping_plan_lines":"B09125C1","warehouses":"6DFA468E"},"reservation_observation_state":"SHEET_ABSENT","reservation_row_count":null,"expected_max_units_written":25,"expected_clamp":false}';
+var AG_OLD = JSON.parse(AG_SUPERSEDED_JSON_);
+
+eq(AG_SUPERSEDED_JSON_.length, 5957,
+  'AG1  the superseded baseline is recorded verbatim — 5957 characters, one character shorter because'
+  + ' CURRENT_AFTER_REFRESH is one longer than CURRENT_PRE_SCHEDULE');
+eq(JSON.stringify(AG_OLD), AG_SUPERSEDED_JSON_,
+  'AG1a and it too re-serialises to itself, so the record is the value and not a retyping');
+eq(S1.indexOf(AG_SUPERSEDED_JSON_), -1,
+  'AG1b the census does NOT still carry it — a file holding two baselines has no baseline');
+// THE SUPERSEDED RUN IS NAMED, NOT ERASED. The census comment records which lineage was replaced —
+// a rotation whose predecessor left no trace is indistinguishable from a first freeze. What must be
+// true is that it appears ONLY as prose about the past, never as a value the file is still holding.
+eq(S1_FROZEN_JSON_.indexOf('GAP-INV-20260909T132353-0001'), -1,
+  'AG1c the superseded run id is not in the active baseline value');
+eq(S1.split(NL).filter(function (l) {
+  return l.indexOf('GAP-INV-20260909T132353-0001') >= 0 && l.indexOf('//') !== 0;
+}), [], 'AG1d and every mention of it in the census is a comment line, not code');
+
+// ---- AG2 THE DESTINATION HOLDS THE CURRENT RUN ---------------------------------------------------
+eq(AF_B.calculation_run_id, 'GAP-INV-20260910T132343-0001',
+  'AG2  the active baseline is the 2026-09-10 run');
+eq(AG_OLD.calculation_run_id, 'GAP-INV-20260909T132353-0001',
+  'AG2a and the one it replaced is the 2026-09-09 run');
+ok(AF_B.calculation_run_id !== AG_OLD.calculation_run_id,
+  'AG2b which is why the old baseline could not be kept: the lineage it describes is gone');
+
+// ---- AG3 THE STRUCTURAL DIFF. Exactly five fields, named one at a time. --------------------------
+// "The write set looks the same" is not a check. Every field is compared, and the set of fields that
+// differ is pinned — so a sixth change, of any kind, fails here rather than passing unmentioned.
+eq(Object.keys(AG_OLD).slice().sort(), Object.keys(AF_B).slice().sort(),
+  'AG3  old and new carry the same 95-key set — this is a rotation, not a reshape');
+var AG_CHANGED = Object.keys(AF_B).filter(function (k) {
+  return JSON.stringify(AG_OLD[k]) !== JSON.stringify(AF_B[k]);
+}).sort();
+eq(AG_CHANGED, ['accepted_calculation_date', 'calculation_run_id', 'freshness_state',
+  'frozen_at', 'source_data_as_of'],
+  'AG3a and EXACTLY five fields differ — the clock and the calculation lineage, nothing else',
+  AG_CHANGED);
+[['frozen_at', '2026-09-10 12:37:53', '2026-09-10 14:42:06'],
+ ['calculation_run_id', 'GAP-INV-20260909T132353-0001', 'GAP-INV-20260910T132343-0001'],
+ ['accepted_calculation_date', '2026-09-09', '2026-09-10'],
+ ['source_data_as_of', '2026-09-09', '2026-09-10'],
+ ['freshness_state', 'CURRENT_PRE_SCHEDULE', 'CURRENT_AFTER_REFRESH']
+].forEach(function (c, i) {
+  eq([AG_OLD[c[0]], AF_B[c[0]]], [c[1], c[2]],
+    'AG3b.' + (i + 1) + ' ' + c[0] + ': ' + c[1] + ' -> ' + c[2]);
+});
+
+// ---- AG4 EVERY PROTECTED SURFACE IS CHARACTER-IDENTICAL ------------------------------------------
+['scope_key', 'company', 'country', 'marketplace', 'sku', 'build', 'planning_cycle',
+ 'calculation_status', 'windows', 'recommended_qty', 'residual_qty',
+ 'qualifying_manual_planned_qty', 'qualifying_ai_planned_qty', 'proposed_ai_allocation_qty',
+ 'would_clamp', 'expected_max_units_written', 'expected_clamp',
+ 'expected_header_ids', 'expected_line_ids', 'expected_k2_group_keys',
+ 'expected_post_generation_active_ai_identities',
+ 'expected_create_header_count', 'expected_update_header_count',
+ 'expected_create_line_count', 'expected_update_line_count',
+ 'manual_header_ids', 'manual_line_ids', 'manual_planned_total', 'manual_identity_fingerprint',
+ 'target_manual_row_signatures', 'target_manual_combined_fingerprint',
+ 'target_ai_row_signatures', 'target_ai_combined_fingerprint',
+ 'existing_active_ai_identities', 'ai_expiration_candidates',
+ 'other_scope_row_signatures', 'other_scope_combined_fingerprint',
+ 'other_scope_header_count', 'other_scope_line_count',
+ 'factory_pool_row_fingerprint', 'factory_current_stock', 'factory_reserved_stock',
+ 'available_to_allocate', 'source_factory_warehouse_id', 'pool_key',
+ 'factory_stock_movement_ids', 'factory_stock_movement_count',
+ 'factory_stock_movement_fingerprint', 'factory_stock_movement_ok_id_count',
+ 'factory_stock_movement_id_faults', 'factory_override_audit_ids',
+ 'factory_override_audit_count', 'factory_override_audit_fingerprint',
+ 'gap_scope_universe_total_count', 'gap_scope_universe_target_count',
+ 'gap_scope_universe_other_count', 'gap_scope_universe_fingerprint',
+ 'draft_row_universe_row_signature_count', 'draft_row_universe_combined_fingerprint',
+ 'draft_row_universe_total_row_count', 'draft_row_universe_target_row_count',
+ 'draft_row_universe_other_scope_row_count', 'draft_header_live_column_count',
+ 'draft_line_live_column_count', 'draft_header_excluded_fields', 'draft_line_excluded_fields',
+ 'schema_fingerprints', 'reservation_observation_state', 'reservation_row_count'
+].forEach(function (k, i) {
+  eq(JSON.stringify(AF_B[k]), JSON.stringify(AG_OLD[k]),
+    'AG4.' + (i + 1) + ' protected surface unchanged: ' + k);
+});
+
+// ---- AG5 THE RUNTIME STILL CANNOT ROTATE FOR ITSELF ----------------------------------------------
+// What made this round necessary must still be able to make the next one necessary. The identity the
+// stage machine compares on has to keep naming the calculation lineage — if it stopped, a Gap Job
+// would silently re-point a signed baseline at a run nobody looked at.
+var AG_ID = extractFn(S1, 'S1_freezeIdentity_');
+ok(AG_ID.indexOf("'calculation_run_id'") >= 0,
+  'AG5  the freeze identity still names calculation_run_id');
+ok(AG_ID.indexOf("'accepted_calculation_date'") >= 0,
+  'AG5a and accepted_calculation_date');
+ok(AG_ID.indexOf("'frozen_at'") === -1,
+  'AG5b and still does NOT name frozen_at — a clock reading is not a world');
+// EXECUTABLE, on the two real objects: the superseded baseline and the current one are different
+// worlds by the census own identity, so the STOP that forced this round is reproducible from the file.
+var AG_CTX = S1World(pos()).ctx;
+var AG_IDOLD = vm.runInContext('S1_freezeIdentity_(' + AG_SUPERSEDED_JSON_ + ')', AG_CTX);
+var AG_IDNEW = vm.runInContext('S1_freezeIdentity_(' + S1_FROZEN_JSON_ + ')', AG_CTX);
+ok(typeof AG_IDOLD === 'string' && AG_IDOLD.length > 0, 'AG5c the superseded baseline has an identity');
+ok(AG_IDOLD !== AG_IDNEW,
+  'AG5d and it is NOT the current one — so re-installing it would read CONFLICT, exactly as it did');
+// And the difference is the lineage, not something that drifted quietly: neutralise the two lineage
+// fields and the identities coincide.
+var AG_ALIGN = JSON.parse(AG_SUPERSEDED_JSON_);
+AG_ALIGN.calculation_run_id = AF_B.calculation_run_id;
+AG_ALIGN.accepted_calculation_date = AF_B.accepted_calculation_date;
+eq(vm.runInContext('S1_freezeIdentity_(' + JSON.stringify(AG_ALIGN) + ')', AG_CTX), AG_IDNEW,
+  'AG5e with the run id and accepted date aligned they are the SAME identity — the conflict was the'
+  + ' lineage and nothing else drifted underneath it');
+
+// ---- AG6 THE AUTHORIZATION SENTENCE ROTATED WITH IT ----------------------------------------------
+// The sentence is a separate artefact with its own fingerprint. Neither fingerprint belongs in the
+// baseline, and the one that accompanied the superseded lineage cannot authorize the current one.
+eq(S1_FROZEN_JSON_.indexOf('8A830413'), -1,
+  'AG6  the current authorization fingerprint is not baseline data');
+eq(S1_FROZEN_JSON_.indexOf('F700840D'), -1,
+  'AG6a nor is the superseded one');
+eq(AG_SUPERSEDED_JSON_.indexOf('F700840D'), -1,
+  'AG6b and it was never in the superseded baseline either');
+ok(S1.indexOf('F700840D') >= 0 && /F700840D[^\n]*(expired|superseded)/i.test(S1.split('\n')
+  .filter(function (l) { return l.indexOf('F700840D') >= 0; }).join(' ')),
+  'AG6c the census records F700840D as expired rather than deleting it — a superseded authorization that leaves no trace is indistinguishable from one that was never issued');
+ok(S1.indexOf('8A830413') >= 0,
+  'AG6d and names 8A830413 as the sentence measured alongside the baseline now frozen');
+
+// ---- AG7 NO NULL INTERMEDIATE STATE, AND STILL EXACTLY ONE BASELINE ------------------------------
+eq((S1.match(/var S1_MANIFEST_P_BEFORE_ = null;/g) || []).length, 0,
+  'AG7  the destination was never left empty on the way through');
+eq(S1_FROZEN_LINES_.length, 1,
+  'AG7a and exactly one object literal is declared — one baseline, not two');
+eq((S1_BARE.match(/S1_MANIFEST_P_BEFORE_\s*=(?!=)/g) || []).length, 1,
+  'AG7b assigned exactly once, still only by its own declaration');
+eq((S1.match(/var S1_MOV_LIVE_FROZEN_ = \{/g) || []).length, 1,
+  'AG7c and the pre-deletion movement pin is untouched — rotating one record is not licence to rewrite another');
 
 mut('N1 the proposal is sized from the RECOMMENDATION instead of the residual', function () {
   var m = swapS1('    prop = Math.min(row.residual_qty, a);',
@@ -9844,6 +9996,85 @@ mut('N139 the manifest stops short-circuiting, so a finished job is reported as 
   return clean.verdict === 'REMOVAL_ALREADY_COMPLETE' && bad.verdict === 'STOP'
     && bad.stop_reasons.join(',').indexOf('LIVE_STATE_DRIFTED') >= 0;
 });
+
+
+mut('N140 the freeze identity stops naming the calculation run, so yesterday lineage passes as today',
+  function () {
+    // THE MUTANT THIS ROUND EXISTS TO CATCH. Drop the two lineage fields from the identity and the
+    // superseded baseline becomes indistinguishable from the current one — the Gap Job could move the
+    // accepted run under a signed baseline and nothing would say so.
+    var m = swapS1("  return ['build', 'scope_key', 'calculation_run_id', 'accepted_calculation_date',",
+      "  return ['build', 'scope_key',");
+    var ctx = S1World(pos()).ctx;
+    var bctx = S1World(pos({ s1: m })).ctx;
+    var cleanOld = vm.runInContext('S1_freezeIdentity_(' + AG_SUPERSEDED_JSON_ + ')', ctx);
+    var cleanNew = vm.runInContext('S1_freezeIdentity_(' + S1_FROZEN_JSON_ + ')', ctx);
+    var badOld = vm.runInContext('S1_freezeIdentity_(' + AG_SUPERSEDED_JSON_ + ')', bctx);
+    var badNew = vm.runInContext('S1_freezeIdentity_(' + S1_FROZEN_JSON_ + ')', bctx);
+    return cleanOld !== cleanNew && badOld === badNew;
+  });
+
+mut('N141 the stage machine calls every occupied destination FROZEN, so the SUPERSEDED baseline stands',
+  function () {
+    // The real 2026-09-09 baseline, left where it was: against any other world it must read CONFLICT.
+    var m = S1_WORLD.split('        : (measuredIdentity !== null && heldIdentity !== measuredIdentity'
+      + " ? 'CONFLICT' : 'FROZEN'));")
+      .join("        : 'FROZEN');");
+    if (m === S1_WORLD) throw new Error('stage anchor missing');
+    var spec = { gap: POS.gap, factory_stock: POS.factory_stock };
+    var clean = withMP(s1WithBaseline(AG_SUPERSEDED_JSON_), spec);
+    var bad = withMP(m.split(S1_FROZEN_DECL_ + 'null;')
+      .join(S1_FROZEN_DECL_ + AG_SUPERSEDED_JSON_ + ';'), spec);
+    return clean.res.baseline_stage === 'CONFLICT' && clean.res.verdict === 'STOP'
+      && bad.res.baseline_stage === 'FROZEN' && bad.res.verdict === 'READY_TO_AUTHORIZE';
+  });
+
+mut('N142 the identity stops naming the writable identities, so a baseline that moved them passes',
+  function () {
+    // A rotation may not change WHAT the generation is allowed to write. If the identity stops
+    // covering the header and line ids, a baseline naming different ones reads as the same measurement.
+    var m = swapS1("    'factory_override_audit_fingerprint', 'expected_header_ids', 'expected_line_ids',",
+      "    'factory_override_audit_fingerprint',");
+    var moved = JSON.parse(S1_FROZEN_JSON_);
+    moved.expected_header_ids = ['SADH-K2-DEADBEEF'];
+    moved.expected_line_ids = ['SADL-K2-DEADBEEF'];
+    var ctx = S1World(pos()).ctx, bctx = S1World(pos({ s1: m })).ctx;
+    function id(c, o) { return vm.runInContext("S1_freezeIdentity_(" + JSON.stringify(o) + ")", c); }
+    return id(ctx, moved) !== id(ctx, JSON.parse(S1_FROZEN_JSON_))
+      && id(bctx, moved) === id(bctx, JSON.parse(S1_FROZEN_JSON_));
+  });
+
+mut('N143 the 95 movement ids fall out of the freeze and the required list is trimmed to match',
+  function () {
+    // A baseline with a hole in it is not a baseline. The hole is only visible because the required
+    // list still names the field — so the mutant removes the field AND the requirement, together.
+    var hole = "        factory_stock_movement_ids: surf.surfaces['factory_stock_movements']";
+    var c = swapS1(hole, "        factory_stock_movement_idz: surf.surfaces['factory_stock_movements']");
+    var b = c.split("  'factory_stock_movement_state', 'factory_stock_movement_count', 'factory_stock_movement_ids',")
+      .join("  'factory_stock_movement_state', 'factory_stock_movement_count',");
+    if (b === c) throw new Error("required-list anchor missing");
+    var spec = { gap: POS.gap, factory_stock: POS.factory_stock };
+    var clean = withMP(c, spec), bad = withMP(b, spec);
+    return clean.res.verdict === 'STOP'
+      && failed(clean.res).indexOf('the_frozen_baseline_carries_every_required_field') >= 0
+      && bad.res.verdict === 'READY_TO_AUTHORIZE';
+  });
+
+mut('N144 the 24 other-scope row signatures fall out of the freeze and the requirement with them',
+  function () {
+    // The rows this generation must not touch are protected by their signatures. Drop them and the
+    // baseline still names the counts — 11 and 13 — which is a number, not a row.
+    var hole = '        other_scope_row_signatures: part.other_scope.header_sigs.concat(part.other_scope.line_sigs),';
+    var c = swapS1(hole, '        other_scope_row_signaturez: part.other_scope.header_sigs.concat(part.other_scope.line_sigs),');
+    var b = c.split("  'other_scope_row_signatures', 'other_scope_combined_fingerprint',")
+      .join("  'other_scope_combined_fingerprint',");
+    if (b === c) throw new Error("required-list anchor missing");
+    var spec = { gap: POS.gap, factory_stock: POS.factory_stock };
+    var clean = withMP(c, spec), bad = withMP(b, spec);
+    return clean.res.verdict === 'STOP'
+      && failed(clean.res).indexOf('the_frozen_baseline_carries_every_required_field') >= 0
+      && bad.res.verdict === 'READY_TO_AUTHORIZE';
+  });
 
 console.log('\npassed ' + pass + '  failed ' + fail
   + '  |  mutants caught ' + neg.caught + '  survived ' + neg.missed);
