@@ -4881,3 +4881,314 @@ sync.
 All nine conditions of the P1-B2A brief's §十一 still stand. This round is fixture UI work and
 claims no live database connection. **Next:** P1-B3 — production readback once the user has synced
 P1-B1-R1's four Apps Script files.
+
+## §38 — P1-B3 · PRODUCTION API READBACK · LIVE UNIVERSE CENSUS · ADAPTER CONTRACT FREEZE
+
+**Nothing in this section was measured against production.** The readback is built, proved and
+committed; it has not been synced and has not read a live table. Every number below comes from a
+synthetic fixture and is labelled so. The live universe is still unmeasured, and the whole point of
+this round is to make measuring it a single safe act rather than a project.
+
+### §38.1 The package is read-only, and the proof is a call graph rather than a promise
+
+The four P1-B1-R1 files were audited from the repository, not from the previous report. The filenames
+were confirmed by `git diff` against `main`, and the read-only claim was proved by enumerating every
+identifier each file CALLS that it does not define — **with comments and string literals stripped
+first**, because 72_'s own header paragraph names every writer it promises not to use, and a scan that
+counted those would be measuring the promise instead of the code.
+
+| File | External calls | Google services |
+|---|---|---|
+| `72_api_v1_product_pricing_workspace.gs` | `prodAssertDbTarget_` · `prodExpectedDbId_` · `prodRequireSheet_` · `prodRequireColumns_` · `productStrategyEnabled_` | `SpreadsheetApp.openById` only |
+| `TEMP_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK.gs` | the five above (minus two) plus `ppwRowsToObjects_` · `ppwSchemaFingerprint_` · `ppwValidateRequest_` · `ppwWorkspaceBuild_` · `handleProductPricingWorkspaceGet_` | `SpreadsheetApp.openById` only |
+| `00_config.gs` · `01_router.gs` · `63_` | shared files; the round's own added lines were diffed and scanned separately | — |
+
+**The shared safety adapter CAN write, and the read path does not call the half that does.** `29_` was
+the interesting case. Asserting "this file calls no writer" is FALSE: `prodMigrateCreateSheet_` holds
+`insertSheet` and a header write, `prodMigrateAppendColumns_` holds `setValues`. Both are
+migration-only and both demand a Migration authorization. So the claim worth proving is not that the
+file cannot write but that **nothing on the read path reaches the two functions that can** — which is
+checkable, and which a whole-file scan would have hidden by failing for the wrong reason. The six read
+helpers are scanned individually; the two migration writers are asserted to EXIST (so that deleting
+them cannot turn the first assertion into a claim about a file with no writers in it), to be
+authorization-gated, and to be absent from both 72_ and the readback.
+
+**A known blind spot, stated rather than left looking like coverage.** `Range.sort()` and
+`Range.removeDuplicates()` are writers; `Array.prototype.sort` is not, and a source scan cannot tell
+them apart — it flagged `headers.sort()` in both files. `sort` is therefore NOT in the writer
+vocabulary, and a `Range.sort()` would instead be caught in §38.2, where the fake Sheet has no such
+method to call.
+
+### §38.2 The write API is not reachable, and that is structural rather than asserted
+
+The suite runs the readback against a synthetic production DB behind a **fake Spreadsheet whose writer
+methods are absent, not stubbed**. A readback that tried to write does not fail an assertion — it
+throws `TypeError` naming the method it reached for. *A test that asserts `writes === 0` against a
+counter the code under test increments is a test of the counter.*
+
+The readback reports both kinds of zero and says which is which:
+
+- `rows_modified` is **MEASURED** — every table's `lastRow`/`lastColumn` is captured before the census
+  and again after it, and the delta is reported. It would catch an `appendRow`.
+- `writer_calls: 0` is **DECLARED**, backed by the call graph above, and labelled as declared in the
+  output. *A zero that looks measured and is not is the thing this project keeps finding at the bottom
+  of a false green.*
+
+### §38.3 The flag is never touched, and the readback proves the gate instead of working round it
+
+The obvious way to exercise a flag-gated read from a diagnostic is to inject an `io` whose
+`flagEnabled` returns true. The readback deliberately does the opposite, which is stronger:
+
+1. It **calls the real endpoint with the real `io`** and expects `FEATURE_DISABLED`, `dbOpened: false`,
+   `tablesRead: 0`. That is a live proof that the gate works in the project that is answering.
+2. It reads the four tables itself, through the same shared safety helpers 72_ uses.
+3. It hands those tables to `ppwWorkspaceBuild_` — the **pure** builder, which has no gate because the
+   gate lives in the handler.
+
+So the eligibility classification is computed by the very code that will serve the page. **A census
+that computes eligibility its own way measures a pipeline nobody ships**, and a census taken by
+bypassing the gate could not have reported on the gate at all. There is no flag bypass in the project.
+
+### §38.4 THE CONTRACT, FROZEN — `productPricing.workspace.get`
+
+`PPW_SCHEMA_CONTRACT_VERSION_ = 2`. This is the **response SHAPE's** version, separate from
+`PPW_BUILD_VERSION_` (which round the FILE last changed) and from `SYS_DEPLOYMENT_RELEASE_` (which tree
+a project came from). A caller pins the shape, so a comment-only edit must not make a correctly-pinned
+client refuse.
+
+**Request.** `payload.scope` requires `company`, `country` and `marketplace` — none defaulted, none
+derived, an incomplete scope is `SCOPE_INCOMPLETE` and costs zero reads. `payload.filters` takes
+`statuses[]` (from the four the schema defines; an unknown value fails closed) and `include_inactive`,
+plus `category` and `series` which narrow AFTER membership. `payload.include` gates `regional`,
+`pricing` (both default true) and `campaigns` (default false). `payload.page` takes `limit` (default
+200, max 1000), `offset` and `cursor`. Naming `spreadsheetId`, `sheet`, `table`, `sql` or `query` is
+`UNSUPPORTED_REQUEST_FIELD` — *ignoring `spreadsheetId` would let a caller believe it had redirected
+the read.*
+
+**Response.** One key set for success AND refusal, so a caller has one shape to read:
+`sourceState` · `scope` · `filtersApplied` · `normalizedRows` · `filterOptions` · `sources` ·
+`counts` · `capped` · `pagination` · `findings` · `refusals` · `analysis_permitted` · `schema` ·
+`membership` · `provenance`.
+
+**THE FIVE SOURCE STATES, AND WHY A SERVER MAY ONLY SEND FOUR.**
+
+| State | Means | Who may say it |
+|---|---|---|
+| `READY` | rows, and nothing withheld | server |
+| `SOURCE_EMPTY` | every table read in full; this scope has nothing in it — **a measurement** | server |
+| `SOURCE_PARTIALLY_READABLE` | a source was capped, so completeness is unprovable | server |
+| `STOP_DATA_INTEGRITY` | identities are ambiguous, so no number here can be trusted | server |
+| `SOURCE_NOT_CONNECTED` | **no server answered** | accessor ONLY |
+
+`SOURCE_NOT_CONNECTED` is not servable, and that asymmetry is the contract: *a response that carries
+this field is proof that a server answered*, so the server can never honestly emit it. The adapter
+passes a server state through untouched and may only ADD the client-only state; a server answer that
+claims it is reported as `SERVER_SENT_A_CLIENT_ONLY_STATE` rather than believed.
+
+`analysis_permitted` stays, derived from the same facts, because eleven assertions and the accessor's
+validator hold it — but it is a BOOLEAN and so could only ever say "not usable". Which of the four it
+was, the caller had to infer from the refusal list, **and inferring a state from a list is how a
+genuinely empty site came to look like a broken one.**
+
+**Precedence is severity, and it is not negotiable.** Integrity → partially readable → empty → ready.
+Partially-readable outranks empty deliberately: *a read that could not see all of a table has not
+established that a scope is empty*, and empty is the one state a caller answers by moving on.
+
+**A refusal reports `sourceState: null`.** Nothing was read, so no state was MEASURED — the same reason
+`counts` are null and `filterOptions` is null rather than `[]`. `SOURCE_EMPTY` would report a
+measurement of a site nobody looked at; `SOURCE_NOT_CONNECTED` would blame the transport for a refusal
+the server chose.
+
+**THE SAME FINDING CODE AT TWO LEVELS MEANS TWO SEVERITIES, AND THE LEVEL DECIDES.**
+`AMBIGUOUS_SITE_IDENTITY` raised on one ROW says that row's regional join matched twice — that row is
+not analysable and the other forty-three are fine. Raised at MEMBERSHIP level it says two rows claim
+one `marketplace_sku_id`, so the universe itself is wrong. Same code, two severities. The stop is
+therefore derived from the build's **top-level** findings only; no code had to be renamed and the two
+lists are built in different places by construction.
+
+**And a blank identity is not a duplicate one.** `SITE_SKU_WITHOUT_IDENTITY` was in the stop set for
+one round and made a healthy site report `STOP_DATA_INTEGRITY` over a single unjoinable row.
+
+- duplicate id → every join may attach to the **wrong** product; the numbers are wrong and nothing says
+  which ones. **A stop.**
+- blank id → the row is dropped, **counted** and named; every remaining row is correct and the universe
+  is short by an amount the response reports. **Incomplete, and saying so.**
+
+**MIS-ATTRIBUTION IS A STOP; A COUNTED OMISSION IS NOT.**
+
+**`schema` — freshness and shape.** `read_at` (the server clock when the read ran), `contract_version`,
+`build`, `integrity_stops`, and a per-table fingerprint of the **header NAMES** — order-independent,
+because columns get dragged about in a spreadsheet without any change of meaning and a fingerprint that
+moved when they did would cry wolf on every reorder. No cell value is hashed, so it cannot leak a price.
+
+`source_modified_at` is **null with its reason attached**. A Spreadsheet object exposes no
+last-modified time, and the Drive file service that does needs a scope this action deliberately does
+not hold. *Reporting a freshness nobody measured would be worse than reporting none.*
+
+**`readAt` is a PARAMETER, which is why the builder is still pure.** The response has to carry when it
+was read and the builder must not grow a clock: a clock read inside would make the output depend on WHEN
+it ran, and three identical calls are asserted byte-identical. Same argument as the chart layout
+engine's measured box (§37), same conclusion — *a measurement passed in as a named argument is the
+opposite of a hidden dependency.*
+
+**Production never falls back to the preview fixture.** Declared in `provenance.preview_fallback`,
+`provenance.fx_conversion`, the adapter's `CONTRACT.fixture_fallback`, and asserted in the adapter's
+source: an empty scope adapts to zero rows, never a demo row.
+
+### §38.5 One production adapter — `assets/js/api/km-product-pricing-adapter.js`
+
+Six fields differ between the live schema and the shape the board's selectors read. **§6 requires one
+adapter, and the reason is sharper than tidiness:** if each page converts them itself, a page that
+forgets `image_identity_status` renders a broken `<img>`, a page that forgets the `source_status`
+collision marks every row "not recognised", and a page that maps `campaigns[]` its own way shows a
+different promotion from the page beside it. Each of those is a bug you can only find by opening two
+pages and comparing them — *which is to say, one nobody finds.*
+
+| # | Gap | What it actually was | Resolution |
+|---|---|---|---|
+| 1 | `source_status` | **ONE NAME FOR TWO THINGS.** The fixture's is the status STRING; live uses the same name for an ARRAY of diagnostic codes and carries the status under `marketplace_sku_status`. | `source_status` becomes the status value; the codes keep `source_status_codes`. Nothing is dropped; one is renamed. |
+| 2 | Promotion | **A JOIN, NOT A COLUMN.** Live has `campaigns[]` with dates; the fixture has `official_deal_*`. | The effective campaign is derived against an `asOf` **parameter**. Dates survive. Rejections keep their reason. |
+| 3 | `variant_group` | No such column exists in the live schema. | `series` — the only product-family column the schema can prove. |
+| 4 | `variant_name` | Live is null. | **Stays null.** No colour is composed from a sku suffix, a product name or a series label; the absence is `VARIANT_NAME_SOURCE_MISSING` and the grouping falls back to the master SKU, so two series-less products stay two nodes. |
+| 5 | Image | **THREE STATES, NOT TWO.** | `VERIFIED_DB_MAPPING` (absolute http(s) URL on that SKU's own row) · `UNVERIFIED_SOURCE_REFERENCE` (a bare filename, a Drive id, or no master row to have come from) · `IMAGE_SOURCE_MISSING`. The selectors render only on the first, so an unverified reference draws the marker plate instead of a broken image. |
+| 6 | Identity | `MSK-<country>-<marketplace>-<sku>` is composed from three attributes, so it changes when a listing moves marketplace and collides when two companies share one. | `MSKU:<marketplace_sku_id>`. The fixture form appears nowhere in the adapter. |
+
+**Two effective campaigns is ambiguity, not a tie-break.** No rule in the contract ranks them — not the
+lower price, not the later start, not the sheet order — so none is applied, `official_deal_price` is
+null, and `AMBIGUOUS_EFFECTIVE_PROMOTION` is reported with both candidates. *A promotion chosen by a
+rule nobody agreed is a number an operator cannot reproduce.*
+
+**A non-ISO campaign period yields no deal, and says so.** The selectors compare these as STRINGS
+(`start <= today && today <= end`), which is correct for `YYYY-MM-DD` and silently wrong for anything
+else: `'1/3/2026'` compares as less than `'2026-09-11'`, so a loose parse would make a campaign that
+finished in March look like today's deal. The value is reported as
+`CAMPAIGN_PERIOD_NOT_AN_ISO_DAY`, never coerced.
+
+**`asOf` is a parameter and the adapter has no clock.** Without a date there is no "currently", so
+nothing is declared effective and `NO_AS_OF_DATE_SUPPLIED` says why. A clock in here would turn a
+campaign that expired at midnight into a test that fails once a day.
+
+**The adapter is loaded by no page.** Asserted, and stated in its own `CONTRACT.applies_to`.
+
+### §38.6 What the readback measures (§4, §5, §7)
+
+Per table: present · readable · typed reason · row count · column count · header names · fingerprint ·
+lastRow/lastColumn. **An absent table is not an empty one** — that is the single most important
+distinction in §4, and an empty array says the first about the second. `SCHEMA_NOT_PROVISIONED` on a
+missing sheet makes the verdict `SOURCE_PARTIALLY_READABLE` and the next action
+`PROVISION_OR_REPAIR_THE_NAMED_TABLES_THEN_RERUN`; a present, readable, zero-row table makes it
+`SOURCE_EMPTY` and `POPULATE_MARKETPLACE_SKUS_THEN_RERUN`.
+
+`sku_details`: distinct RAW category and series values with blank counts and type faults kept separate,
+alias candidates, `category_allowlist: null`, `category_max: null`. `marketplace_skus`: the
+company/country/marketplace identities, status distribution against the four the schema defines,
+distinct `site_sku`, blank-identity rows, duplicate identities. `sku_regional_details`: the four-part
+canonical identity, duplicates, orphans, missing `site_sku`. `pricing_list`: identity coverage on
+`marketplace_sku_id`, duplicates, orphans, currency coverage, missing everyday/minimum/**msrp** counts,
+and cross-currency sites. **`msrp` IS the list price — one band, two words in its name**; looking for a
+separate `list_price` column would report every row as incomplete.
+
+**The six eligibility classes**, each computed from the shipped builder's own row output:
+`ELIGIBLE_AND_CHARTABLE` · `ELIGIBLE_REGIONAL_MISSING` · `ELIGIBLE_PRICE_MISSING` ·
+`EXCLUDED_BY_STATUS` · `ORPHAN_OR_INVALID_IDENTITY` · `DATA_QUALITY_ONLY`. All six appear in the output
+including the zeroes. Regional is checked before price: *a site SKU with no Regional Detail is not
+confirmed as sold there at all, so its missing price is the second question.* `EXCLUDED_BY_STATUS`
+comes from the builder's membership report rather than the row tally, because those rows never become
+rows — and the site pass leaves the status filter at its DEFAULT (`active` + `phasing_out`) on purpose:
+asking for all four would make `excluded_by_status` zero by construction.
+
+**Seven proofs, and `NOT_PROVABLE` is a real answer.** A proof that needs two countries cannot be given
+by a DB that has one, and reporting PASS there would be a lie about the evidence rather than about the
+code. P1 (USD does not leak a non-US SKU into a US site) checks the rows that came back — not the rule
+that was supposed to produce them — and reports `NOT_PROVABLE` when no USD-priced row exists outside
+the US, because a clean result with no population at risk proves nothing.
+
+**Alias candidates are proposed and never applied.** Two category spellings differing only by case or
+whitespace are reported as a candidate group with `merged: false`, both spellings stay distinct options,
+and `CATEGORY_ALIAS_APPROVAL_REQUIRED` is recorded as an evidence gap an operator owns. *A read that
+merges on a guess makes the sheet and the menu disagree while looking tidier than either.*
+
+**No sensitive data, and no "first N then claim complete".** Counts, distinct KEY values and header
+NAMES only — no price, no cost, no URL, no spreadsheet id (asserted, including on the failure path).
+Ledgers are capped with the cap reported beside the total; the per-site pass reports its own cap rather
+than counting the sites it did not classify.
+
+### §38.7 THE DEFECT THE CENSUS FOUND — `analysable` did not require a Regional Detail
+
+72_'s own comment says `analysable` means *"MAY BE PLOTTED AND COMPARED"*. It checked the price, the
+currency, and both ambiguities — **and not the regional match.** The prototype's `chartRefusalsFor`
+refuses a row with `REGIONAL_DETAILS_MISSING`, and the rule is explicit: a site SKU with no Regional
+Detail does not go on the price chart but does go into Data Quality.
+
+So one question had two authorities with two answers. **Nothing looked broken, because the client's
+answer was the right one:** the chart plotted the correct products while `analysableSiteSkuCount`
+counted one more than the chart drew. A KPI that says three while the chart shows two is the quiet
+disagreement, and the first site pass of the census is what made it visible — 3 of 3 analysable on a
+site where one product has no Regional Detail at all.
+
+`analysable` now requires a confirmed regional match, and **is false when the caller did not request
+the join**: a caller holding no evidence that the listing exists cannot be told the row may be plotted.
+`REGIONAL_NOT_REQUESTED` already distinguishes that case from a genuine miss.
+
+**Two standing assertions were superseded, not patched, and both are recorded here.**
+
+- `api-product-pricing-workspace-p1-b1` **21d** asserted `analysableSiteSkuCount === 3`. The right
+  answer for that fixture is **1**: of six site SKUs, M1 has both a regional row and a price; M2's only
+  regional row is the deliberate cross-site DE one; M5 has no price; M6 has no regional row; M7's
+  regional match is ambiguous; M8's pricing is ambiguous. The old 3 counted two products the chart would
+  not draw, and the assertion was holding it in place. M2, M6 and M1 are now named individually so the
+  change is legible rather than a number that quietly moved.
+- `api-product-pricing-category-contract-p1-b1-r1` **C9a** — here the **FIXTURE** was the defect, not
+  the number. It carried `sku_regional_details: []`, describing a catalogue in which nothing is listed
+  anywhere: harmless while `analysable` ignored the join, and not representative of any site now. C9a
+  exists to assert that the two counts DIFFER and that CAN-2's missing PRICE is why. Dropping it to 0
+  would have kept the suite green and deleted the thing it was written to check, so the fixture gained
+  the ten regional rows a real site would have.
+
+### §38.8 A guard read an absence as a presence — for the third time this round
+
+`final-output-seam-audit-f1-5c-export-r1.test.js §K` proves there is exactly one binary file renderer
+(37_) by scanning every `.gs` for `DriveApp` / `DocumentApp` / `getAs` / `createFile` / `makeCopy`. It
+strips **comments** first — and not string literals. 72_'s new
+`source_modified_at_unavailable_because` explained, in a string, that the freshness is unavailable
+because DriveApp would need a scope this action does not hold. **Naming the API in order to say the file
+does not use it made a long-standing guard report 72_ as a second file engine.**
+
+The guard was **not** relaxed. Stripping string literals in §K would weaken a check whose job is to
+catch a second file engine, to accommodate an explanatory sentence — the wrong trade. The identifier
+moved into a comment, where §K strips it, and the string says the same thing in words.
+
+This is the same shape three times in one round, which is the finding worth keeping: **a declaration
+that something is absent, read as evidence that it is present.** The accessor's
+`preview_fallback: false` tripped this suite's own §G10a the same way (fixed by aiming at identifiers —
+`PreviewProductStrategy`, `previewFixture` — rather than at the word "preview"), and 72_'s "no
+setValue" paragraph is exactly why §38.1 strips string literals before it counts anything.
+
+### §38.9 Line endings are per-file, and a pure line-ending change is invisible to `git diff`
+
+`core.autocrlf=true` normalises CRLF to LF when git reads the working tree, so a patch that only
+rewrites line endings shows up as **nothing at all**. One patch this round wrote `72_` back as CRLF;
+`git diff --stat` reported +145/−3 and looked correct, and the next test run found that every
+multi-line `swap()` anchor in two suites had stopped matching — including anchors in code the patch had
+never touched.
+
+The files in this worktree are **not uniform**: `72_` and the prototype are LF, `00_config` /
+`01_router` / `63_` / `_release-order.js` are CRLF, because each holds whatever its last writer used and
+git never rewrites a file it has not been asked to. **A patch does not get to choose**: it detects what
+the file already uses and writes that back, and refuses to guess on a file with mixed endings.
+
+### §38.10 What is NOT done
+
+No Apps Script sync. No deployment version. No live table read — **the live universe is still
+unmeasured**, and every number in this section is from a synthetic fixture. No `flag = true`. No page
+loads the adapter or the accessor. No production DB, Sheets or Drive write. No Operation System shell
+integration. No other production page. No S1–S5, no `main`, no `km-lb`. No schema change and no
+migration. The nine merge conditions from §31 remain open, and nothing here closes any of them.
+
+`APPS_SCRIPT_SYNC_REQUIRED` is now **five files** — the four P1-B1-R1 has owed since 2026-09-10, plus
+the readback. This round grows that sync; it does not replace it. There is exactly one package to paste.
+
+**NEXT:** the user syncs the five files, creates a Web App version, and runs
+`RUN_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK()`. Its verdict decides P1-B4: `READY` means the universe
+gets recorded here and the adapter gets wired to a page behind the flag; anything else names a repair
+first.

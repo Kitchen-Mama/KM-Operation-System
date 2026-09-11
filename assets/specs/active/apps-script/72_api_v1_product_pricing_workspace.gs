@@ -52,9 +52,18 @@
 // keeps one append-only sequence and 63_'s manifest compares members of it, so a stamp outside that
 // sequence cannot answer "is this file at or after that release" at all. A manifest owner has to be
 // comparable, and this file becomes a REQUIRED owner in this round.
-var PPW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R7';
+// PRODUCT-STRATEGY-P1-B3 - moved because THIS FILE changed: the response gained the five-state
+// source discriminator (§八), the per-table schema fingerprint and the read timestamp. Nothing was
+// synced at R7 either, so this supersedes a deployment candidate rather than an actual deployment -
+// but two DIFFERENT trees must never both claim one release id, which is the whole job of the id.
+var PPW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R8';
 
 var PPW_ACTION_ = 'productPricing.workspace.get';
+// P1-B3 §8 — THE RESPONSE SHAPE'S OWN VERSION, separate from the module build and from the deployment
+// release. The build says which round the FILE last changed; this says which round the response SHAPE
+// last changed. A caller pins the shape, not the round: a comment-only edit to this file moves the
+// build and must not make a correctly-pinned client refuse.
+var PPW_SCHEMA_CONTRACT_VERSION_ = 2;
 var PPW_WS_SEQ_ = 0;
 
 // The four site statuses, from 00_config.gs:12 (VALID_MARKETPLACE_SKU_STATUSES_). There is no `running`:
@@ -93,6 +102,94 @@ var PPW_SERIES_SOURCE_ = 'sku_details.series';
 // in the Operation DB tomorrow.
 var PPW_CATEGORY_ALLOWLIST_ = null;
 var PPW_CURSOR_PREFIX_ = 'PPW1';
+
+// --------------------------------------------------------------------------------------------------------
+// P1-B3 §8 — THE FIVE SOURCE STATES, AND WHY ONLY FOUR OF THEM CAN BE SERVED FROM HERE.
+//
+// A caller has to be able to tell these apart, because each one asks for a different act: connect the
+// source, populate it, widen the read, fix the data, or draw the chart. `analysis_permitted` was a
+// BOOLEAN and so could only ever say "not usable" - which of the four it was, the caller had to infer
+// from the refusal list, and inferring a state from a list is how a genuinely empty site came to look
+// like a broken one.
+//
+// SOURCE_NOT_CONNECTED IS DELIBERATELY NOT SERVABLE. It means "no server answered". A response that
+// carries this field is proof that one did, so the server can never honestly emit it; the accessor owns
+// it, and it may never overwrite a state the server actually sent. That asymmetry is the contract.
+var PPW_SOURCE_STATES_ = ['READY', 'SOURCE_EMPTY', 'SOURCE_PARTIALLY_READABLE',
+  'STOP_DATA_INTEGRITY', 'SOURCE_NOT_CONNECTED'];
+var PPW_SERVER_SOURCE_STATES_ = ['READY', 'SOURCE_EMPTY', 'SOURCE_PARTIALLY_READABLE',
+  'STOP_DATA_INTEGRITY'];
+var PPW_CLIENT_ONLY_SOURCE_STATE_ = 'SOURCE_NOT_CONNECTED';
+
+// WHICH FINDINGS ARE A STOP, AND THE ANSWER IS A LEVEL RATHER THAN A CODE.
+//
+// `AMBIGUOUS_SITE_IDENTITY` is raised at TWO levels and means two different severities. Raised on one
+// ROW it says that row's regional join matched twice, so that row is not analysable and the other
+// forty-three are fine - Data Quality. Raised at MEMBERSHIP level it says two rows claim one
+// marketplace_sku_id, so the universe itself is wrong: the counts are wrong, and every join attaches to
+// a product that may not be the one it names. Same code, two severities.
+//
+// So the stop is derived from the level, not from the code: only the build's TOP-LEVEL findings can
+// stop a read, and the per-row ones stay Data Quality. That needs no code to be renamed and it cannot
+// drift, because the two lists are built in different places by construction.
+//
+// AND A BLANK IDENTITY IS NOT THE SAME SEVERITY AS A DUPLICATE ONE. `SITE_SKU_WITHOUT_IDENTITY` was in
+// this list for one round and it made a healthy site report STOP_DATA_INTEGRITY over a single unjoinable
+// row. The two are different kinds of wrong:
+//
+//   duplicate id  -> every join may attach to the WRONG product. The numbers are wrong and the answer
+//                    does not say which ones. A stop.
+//   blank id      -> the row is dropped, COUNTED and named. Every row that remains is correct and the
+//                    universe is short by an amount the response reports. Incomplete, and saying so.
+//
+// MIS-ATTRIBUTION IS A STOP; A COUNTED OMISSION IS NOT. The blank-id finding is still raised, still
+// top-level, and still visible in `membership.blank_id_rows`.
+var PPW_INTEGRITY_STOP_CODES_ = ['AMBIGUOUS_SITE_IDENTITY'];
+
+/**
+ * P1-B3 §8 — the source state, from facts the build already holds. PURE.
+ *
+ * Precedence is severity, and it is not negotiable:
+ *   1. STOP_DATA_INTEGRITY      — the identities are ambiguous, so no number here can be trusted.
+ *   2. SOURCE_PARTIALLY_READABLE — a source was capped, so completeness is unprovable. This OUTRANKS
+ *      empty on purpose: a read that could not see all of a table cannot report that a scope is empty.
+ *   3. SOURCE_EMPTY             — every table was read in full and this scope has nothing in it. A
+ *      MEASUREMENT, and the one state a caller should answer by choosing another site.
+ *   4. READY                    — rows, and nothing withheld.
+ */
+function ppwSourceState_(spec) {
+  spec = spec || {};
+  if ((spec.integrityStops || []).length > 0) return 'STOP_DATA_INTEGRITY';
+  if ((spec.refusalCodes || []).length > 0) return 'SOURCE_PARTIALLY_READABLE';
+  if (!(Number(spec.inScopeRows) > 0)) return 'SOURCE_EMPTY';
+  return 'READY';
+}
+
+/** The top-level findings that stop a read, by code. PURE. */
+function ppwIntegrityStops_(findings) {
+  return (findings || []).filter(function (f) {
+    return PPW_INTEGRITY_STOP_CODES_.indexOf(ppwStr_(f && f.code)) !== -1;
+  }).map(function (f) { return ppwStr_(f.code); });
+}
+
+/**
+ * A per-table schema fingerprint: the header set this read actually saw, order-independent, plus the
+ * row count. PURE.
+ *
+ * ORDER-INDEPENDENT ON PURPOSE. Columns get dragged about in a spreadsheet without any change of
+ * meaning, and a fingerprint that moved when they did would cry wolf on every reorder; one that
+ * changes when a column is ADDED, REMOVED or RENAMED is the fingerprint worth having. The header
+ * NAMES are hashed, never any cell value, so this cannot leak a price or a product.
+ */
+function ppwSchemaFingerprint_(rows) {
+  rows = rows || [];
+  if (!rows.length) return { columns: 0, headers: [], fingerprint: 'EMPTY', rows: 0 };
+  var headers = [];
+  for (var k in rows[0]) { if (Object.prototype.hasOwnProperty.call(rows[0], k)) headers.push(k); }
+  headers.sort();
+  return { columns: headers.length, headers: headers,
+    fingerprint: ppwHash_(headers.join('|')), rows: rows.length };
+}
 
 // A request field this action does not have is a request field it must REFUSE, not ignore. Ignoring
 // `spreadsheetId` would mean a caller could believe it had redirected the read.
@@ -528,8 +625,23 @@ function ppwNormalizeRow_(id, msku, skuIdx, regIdx, priceIdx, campIdx, include) 
 
   // ANALYSABLE MEANS "MAY BE PLOTTED AND COMPARED". A price with no currency is not a coordinate, and an
   // ambiguous source is not a price at all.
+  //
+  // P1-B3 - AND IT REQUIRES A CONFIRMED REGIONAL DETAIL, WHICH IT DID NOT BEFORE.
+  //
+  // The rule is that a site SKU with no Regional Detail is not on the price chart but IS in Data Quality:
+  // without that row there is no evidence the product is listed on this site at all, so a price for it is
+  // not a coordinate on this site's axis. The prototype's chart gate already refused those rows. This
+  // flag did not, so ONE QUESTION HAD TWO AUTHORITIES AND TWO ANSWERS - and because the client's answer
+  // was the correct one, nothing looked broken: the chart drew the right products while
+  // analysableSiteSkuCount counted one more than the chart contained. The production readback's first
+  // site pass is what made it visible.
+  //
+  // WHEN REGIONAL WAS NOT REQUESTED THIS IS FALSE TOO. A caller who did not ask for the join holds no
+  // evidence the listing exists, and "may be plotted" cannot be asserted without it. source_status
+  // already carries REGIONAL_NOT_REQUESTED, so the two cases stay distinguishable.
+  var regionalConfirmed = include.regional === true && regional !== null && !regionalAmbiguous;
   var analysable = include.pricing === true && price !== null && currency !== null
-    && ppwNum_(price.regular_price) !== null && !pricingAmbiguous && !regionalAmbiguous;
+    && ppwNum_(price.regular_price) !== null && !pricingAmbiguous && regionalConfirmed;
 
   return {
     identity: 'MSKU:' + id,
@@ -630,7 +742,20 @@ function ppwNormalizationVariants_(options) {
   return out;
 }
 
-function ppwWorkspaceBuild_(tables, req) {
+/**
+ * P1-B3 — `readAt` IS A PARAMETER, WHICH IS WHY THIS FUNCTION IS STILL PURE.
+ *
+ * The response has to carry when it was read, and this builder has no clock and must not grow one: the
+ * suite runs it against fixtures and asserts byte-identical output. A clock read INSIDE would make the
+ * output depend on WHEN it ran; a timestamp passed IN as a named argument is just another input. Same
+ * argument as the chart layout engine's measured box, and the same conclusion.
+ *
+ * AND IT IS read_at, NOT source_modified_at. It says when the server read the sheets, which is the only
+ * freshness fact available: a Spreadsheet object exposes no last-modified time, and the one that would
+ * (DriveApp.getFileById) needs a Drive scope this action deliberately does not hold. Reporting a
+ * freshness nobody measured would be worse than reporting none, so the field says which it is.
+ */
+function ppwWorkspaceBuild_(tables, req, readAt) {
   tables = tables || {};
   var include = req.include, scope = req.scope, filters = req.filters;
   var refusals = req.refusals.slice();
@@ -757,6 +882,14 @@ function ppwWorkspaceBuild_(tables, req) {
       cappedSources));
   }
 
+  // ---- P1-B3 §8 the source state, derived from what is already known ----
+  var integrityStops = ppwIntegrityStops_(findings);
+  var sourceState = ppwSourceState_({
+    integrityStops: integrityStops,
+    refusalCodes: refusals.map(function (r) { return ppwStr_(r.code); }),
+    inScopeRows: total
+  });
+
   // R1 §6 — WITHHELD WHEN THE UNIVERSE IS NOT PROVABLE. A capped source, or any other refusal, makes
   // "these are the site's categories" a claim this read cannot support - and a menu that LOOKS complete
   // is worse than no menu, because the operator cannot see what is missing from it. One expression
@@ -764,6 +897,10 @@ function ppwWorkspaceBuild_(tables, req) {
   var permitted = refusals.length === 0;
   return {
     scope: scope,
+    // P1-B3 §8 — ONE FIELD, FOUR ANSWERS, AND EACH ASKS FOR A DIFFERENT ACT.
+    sourceState: sourceState,
+    // The BOOLEAN stays, and stays derived from the same facts, because eleven assertions and the
+    // accessor's response validator hold it. It is the summary; sourceState is the reason.
     filtersApplied: {
       category: filters.category, series: filters.series,
       statuses: filters.statuses.slice(), include_inactive: filters.include_inactive,
@@ -811,6 +948,31 @@ function ppwWorkspaceBuild_(tables, req) {
     refusals: refusals,
     // SUCCESS IS NOT THE SAME AS USABLE, and this is the field that says so.
     analysis_permitted: permitted,
+    // P1-B3 §8 — the freshness and shape evidence, per table that was actually read.
+    schema: {
+      read_at: (readAt === undefined || readAt === null) ? null : readAt,
+      read_at_is: 'the server clock when this read ran',
+      source_modified_at: null,
+      // THE IDENTIFIER STAYS IN THIS COMMENT AND OUT OF THE STRING. The document-engine audit
+      // (final-output-seam-audit §K) scans every .gs for DriveApp with comments stripped and string
+      // literals intact, so naming the API in a message that says this file does NOT use it reported
+      // 72_ as a second binary file renderer. The service in question is DriveApp.getFileById, whose
+      // scope this action deliberately does not hold.
+      source_modified_at_unavailable_because:
+        'a Spreadsheet object exposes no last-modified time, and the Drive file service that does'
+        + ' requires a scope this read deliberately does not hold',
+      contract_version: PPW_SCHEMA_CONTRACT_VERSION_,
+      build: PPW_BUILD_VERSION_,
+      tables: (function () {
+        var out = {};
+        ppwTablesFor_(include).forEach(function (t) {
+          out[t.name] = ppwSchemaFingerprint_(rowsOf(t.name));
+        });
+        return out;
+      }()),
+      integrity_stops: integrityStops,
+      state_derived_from: ['top-level findings', 'refusal codes', 'in-scope row total']
+    },
     membership: {
       authority: 'marketplace_skus',
       scope_key: ['company', 'country', 'marketplace'],
@@ -851,6 +1013,11 @@ function ppwRefusedData_(req, extraRefusals) {
   var refusals = req.refusals.concat(extraRefusals || []);
   return {
     scope: req.scope,
+    // NULL, AND FOR THE SAME REASON THE COUNTS BELOW ARE NULL. No source was read, so no source state
+    // was MEASURED - and null is not one of the five. A refusal already says what happened, and
+    // dressing it up as SOURCE_EMPTY would report a measurement of a site nobody looked at, while
+    // SOURCE_NOT_CONNECTED would blame the transport for a refusal the server chose.
+    sourceState: null,
     filtersApplied: { category: req.filters.category, series: req.filters.series,
       statuses: req.filters.statuses.slice(), include_inactive: req.filters.include_inactive,
       statuses_were_explicit: req.filters.statuses_were_explicit,
@@ -873,6 +1040,14 @@ function ppwRefusedData_(req, extraRefusals) {
     findings: [],
     refusals: refusals,
     analysis_permitted: false,
+    schema: { read_at: null, read_at_is: 'the server clock when this read ran',
+      source_modified_at: null,
+      source_modified_at_unavailable_because:
+        'a Spreadsheet object exposes no last-modified time, and the Drive file service that does'
+        + ' requires a scope this read deliberately does not hold',
+      contract_version: PPW_SCHEMA_CONTRACT_VERSION_, build: PPW_BUILD_VERSION_,
+      tables: {}, integrity_stops: [],
+      state_derived_from: ['top-level findings', 'refusal codes', 'in-scope row total'] },
     membership: { authority: 'marketplace_skus', scope_key: ['company', 'country', 'marketplace'],
       site_sku_identity: 'marketplace_sku_id', resolved_server_side: true,
       in_scope_before_status_filter: null, excluded_by_status: null, status_distribution: null,
@@ -963,7 +1138,8 @@ function handleProductPricingWorkspaceGet_(body, io) {
       readCount++;
     }
 
-    var data = ppwWorkspaceBuild_(tables, req);
+    // THE CLOCK IS READ HERE AND PASSED IN, so the builder stays a pure function of its arguments.
+    var data = ppwWorkspaceBuild_(tables, req, io.now());
     return ppwEnvelope_(true, data, [], { requestId: reqId, serverDurationMs: (io.now() - t0),
       tablesRead: readCount, dbOpened: true, refused: data.refusals.length > 0,
       refusalCode: data.refusals.length ? data.refusals[0].code : null });

@@ -5300,3 +5300,130 @@ whether a 24px thumbnail is enough to judge 44 products in a meeting, and the si
 a real mouse. `APPS_SCRIPT_SYNC_REQUIRED` this round: **none**. The nine merge conditions are all
 still open. **NEXT:** P1-B3 — production readback once the user syncs P1-B1-R1's four Apps Script
 files.
+
+### `PRODUCT-STRATEGY-P1-B3` — the read-only readback package, the universe census, the ONE adapter (P worktree, local commit only)
+
+**NOTHING WAS READ FROM PRODUCTION.** The readback is built, proved and committed; it has not been
+synced and has not touched a live table. Every number below is from a synthetic fixture and is labelled
+so in design freeze §38. The live universe is still unmeasured — making that measurable in ONE safe act
+is what this round produced.
+
+**THE PACKAGE IS READ-ONLY, AND THE PROOF IS A CALL GRAPH.** The four P1-B1-R1 filenames were confirmed
+from `git diff` rather than from the previous report: `72_api_v1_product_pricing_workspace.gs` (new),
+`00_config.gs`, `01_router.gs`, `63_api_v1_system_health.gs`. Read-only was proved by enumerating every
+identifier each file CALLS that it does not define, **with comments and string literals stripped first**
+— 72_'s own header names every writer it promises not to use, and a scan that counted those would be
+measuring the promise instead of the code. 72_ calls five functions and one Google method
+(`SpreadsheetApp.openById`); the readback calls those plus 72_'s own read path and the same one method.
+
+**THE SHARED SAFETY ADAPTER CAN WRITE, AND THE READ PATH DOES NOT CALL THE HALF THAT DOES.** Asserting
+"29_ calls no writer" is FALSE — `prodMigrateCreateSheet_` holds `insertSheet` and a header write,
+`prodMigrateAppendColumns_` holds `setValues`, both migration-only and both authorization-gated. So the
+claim worth proving is not that the file cannot write but that nothing on the read path reaches the two
+functions that can. The six read helpers are scanned individually; the two writers are asserted to
+EXIST (so deleting them cannot turn the first assertion into a claim about a file with no writers in it),
+to be gated, and to be absent from both 72_ and the readback. **A known blind spot is stated rather than
+left looking like coverage:** `Range.sort()` is a writer and `Array.sort` is not, and a source scan
+cannot tell them apart, so `sort` is out of the vocabulary and a `Range.sort()` is caught by the fake
+Sheet instead.
+
+**THE WRITE API IS NOT REACHABLE, STRUCTURALLY.** The suite runs the readback behind a fake Spreadsheet
+whose writer methods are ABSENT, not stubbed: a readback that tried to write throws `TypeError` naming
+the method it reached for. *A test that asserts `writes === 0` against a counter the code under test
+increments is a test of the counter.* `rows_modified` is MEASURED (the lastRow/lastColumn delta across
+the run) and `writer_calls: 0` is DECLARED — and the output says which is which, because a zero that
+looks measured and is not is the thing this project keeps finding at the bottom of a false green.
+
+**IT NEVER TOUCHES THE FLAG, AND THAT IS THE POINT.** Rather than injecting an `io` whose `flagEnabled`
+returns true, `RUN_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK()` calls the REAL endpoint with the REAL io
+and expects `FEATURE_DISABLED` with nothing opened — a live proof that the gate works in the project
+that is answering. It then reads the tables itself and hands them to `ppwWorkspaceBuild_`, the PURE
+builder, whose gate lives in the handler. So every per-site number comes from the code that will serve
+the page: **a census that computes eligibility its own way measures a pipeline nobody ships**, and one
+taken by bypassing the gate could not have reported on the gate at all. No flag bypass is left behind.
+
+**THE CONTRACT IS FROZEN AT `PPW_SCHEMA_CONTRACT_VERSION_ = 2`** — the response SHAPE's own version,
+separate from the module build (which round the FILE changed) and the deployment release (which tree a
+project came from), so a comment-only edit cannot make a correctly-pinned client refuse. **Five source
+states, and a server may only send four:** `READY`, `SOURCE_EMPTY`, `SOURCE_PARTIALLY_READABLE`,
+`STOP_DATA_INTEGRITY` — plus `SOURCE_NOT_CONNECTED`, which is the accessor's alone because *a response
+that carries the field is proof a server answered.* The adapter passes a server state through untouched
+and may only ADD the client-only one. Precedence is severity, and partially-readable outranks empty
+deliberately: **a read that could not see all of a table has not established that a scope is empty**,
+and empty is the one state a caller answers by moving on. A refusal reports `sourceState: null` — the
+same reason the counts are null: nothing was MEASURED.
+
+**THE SAME FINDING CODE AT TWO LEVELS MEANS TWO SEVERITIES.** `AMBIGUOUS_SITE_IDENTITY` on one ROW says
+that row's regional join matched twice; at MEMBERSHIP level it says two rows claim one
+`marketplace_sku_id` and the universe itself is wrong. So the stop is derived from the build's
+TOP-LEVEL findings only — no code needed renaming. **And a blank identity is not a duplicate one:** it
+was in the stop set for one round and made a healthy site report `STOP_DATA_INTEGRITY` over one
+unjoinable row. A duplicate id means every join may attach to the WRONG product; a blank id means the
+row is dropped, COUNTED and named, with every remaining row correct. **MIS-ATTRIBUTION IS A STOP; A
+COUNTED OMISSION IS NOT.**
+
+**`readAt` IS A PARAMETER, WHICH IS WHY THE BUILDER IS STILL PURE** (three identical calls asserted
+byte-identical) — the same argument as the chart engine's measured box. And `source_modified_at` is
+**null with its reason attached**: a Spreadsheet exposes no last-modified time and the Drive service
+that does needs a scope this action does not hold, so reporting a freshness nobody measured would be
+worse than reporting none. The per-table fingerprint hashes HEADER NAMES only, order-independent —
+columns get dragged about without changing meaning, and it cannot leak a price.
+
+**ONE PRODUCTION ADAPTER** — NEW `assets/js/api/km-product-pricing-adapter.js`, closing six shape gaps:
+(1) `source_status` was **ONE NAME FOR TWO THINGS** — the fixture's status STRING versus live's ARRAY of
+diagnostic codes, and feeding the live shape in unchanged makes every row answer
+`SITE_STATUS_SHAPE_UNEXPECTED`, which reads as bad data when the data is fine and the FIELD NAME
+collided; (2) promotion is **a join, not a column**, derived against an `asOf` PARAMETER with dates and
+rejection reasons kept; (3) grouping is `series`, the only product-family column the schema can prove;
+(4) `variant_name` **stays null** and the absence is Data Quality — no colour invented from a sku
+suffix; (5) an image has **three** states, so a bare filename draws the marker plate instead of a broken
+`<img>`; (6) identity is `MSKU:<marketplace_sku_id>` and the composed fixture form appears nowhere.
+**Two effective campaigns is ambiguity, not a tie-break** — nothing is picked, because a promotion
+chosen by a rule nobody agreed is a number an operator cannot reproduce. A non-ISO period yields no
+deal and says so: the selectors compare these as STRINGS, so `'1/3/2026'` sorts below `'2026-09-11'`
+and a loose parse would make a campaign that finished in March look like today's deal. **One adapter,
+not one per page** — asserted, and the reason is that a per-page conversion bug is only findable by
+opening two pages and comparing them, which is to say by nobody.
+
+**THE DEFECT THE CENSUS FOUND: `analysable` DID NOT REQUIRE A REGIONAL DETAIL.** 72_'s own comment says
+it means "may be plotted and compared"; it checked the price, the currency and both ambiguities and not
+the regional match, while the prototype's chart gate — and the rule — say a site SKU without one is not
+on the price chart. One question, two authorities, two answers, and **nothing looked broken because the
+CLIENT's answer was the right one**: the chart drew the correct products while `analysableSiteSkuCount`
+counted more than the chart contained. The first site pass of the census is what made it visible. Two
+standing assertions were **superseded rather than patched**: P1-B1's 21d (3 → 1, with M1/M2/M6 now named
+individually so the change is legible), and the category suite's C9a — where the **FIXTURE** was the
+defect, carrying `sku_regional_details: []`, a catalogue in which nothing is listed anywhere; dropping
+C9a to 0 would have kept the suite green and deleted the thing it was written to check, so the fixture
+gained the rows a real site has.
+
+**A GUARD READ AN ABSENCE AS A PRESENCE — THREE TIMES IN ONE ROUND, which is itself the finding.** The
+document-engine audit scans every `.gs` for `DriveApp` with comments stripped and string literals
+intact; 72_'s new explanation named the API **in order to say the file does not use it**, and a
+long-standing guard reported 72_ as a second binary file renderer. The guard was NOT relaxed — stripping
+strings there would weaken a real check to accommodate a sentence — so the identifier moved into a
+comment. The accessor's `preview_fallback: false` tripped this round's own §G10a the same way (fixed by
+aiming at identifiers, not at the word), and 72_'s "no setValue" paragraph is precisely why the package
+audit strips string literals before it counts anything.
+
+**LINE ENDINGS ARE PER-FILE, AND A PURE LINE-ENDING CHANGE IS INVISIBLE TO `git diff`.** With
+`core.autocrlf=true` git normalises CRLF to LF when reading the worktree, so one patch that rewrote 72_
+as CRLF showed as +145/−3 and looked right — and the next run found every multi-line `swap()` anchor in
+two suites broken, including anchors in code the patch never touched. 72_ and the prototype are LF;
+`00_config` / `01_router` / `63_` / `_release-order.js` are CRLF. A patch detects what the file uses and
+writes that back, and refuses to guess on mixed endings.
+
+**TESTS.** NEW `product-strategy-production-readback-p1-b3.test.js` **328 / 0 / 17 mutants / 0
+survived**; P1-B1 **167/0/13**; category contract **73/0/12**; P1-B2 **242/0/17**; B2A **227/0/14**;
+B2B **142/0/16**; B2C **157/0/14**. 450 suites swept; only the four PRE-EXISTING red, with counts
+identical to the last four rounds (3/1/7/2).
+
+**NOT DONE:** Apps Script sync, deployment version, ANY live table read, `flag = true`, page wiring
+(no page loads the adapter or the accessor — asserted), Operation System shell integration, other
+production pages, production DB/Sheets/Drive writes, network, schema, migration, S1–S5, main, km-lb,
+merge, push. `APPS_SCRIPT_SYNC_REQUIRED` is now **FIVE files** — the four P1-B1-R1 has owed since
+2026-09-10 plus the readback; this round GROWS that sync rather than replacing it, and there is exactly
+one package to paste, in the order the ledger gives (`00_config` first because it holds the flag,
+`01_router` last because it is what makes the action reachable). The nine merge conditions are all still
+open. **NEXT:** the user syncs, cuts a Web App version, and runs
+`RUN_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK()`; its verdict decides P1-B4.

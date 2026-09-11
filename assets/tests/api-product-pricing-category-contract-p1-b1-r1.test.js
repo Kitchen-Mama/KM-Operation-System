@@ -52,6 +52,18 @@ function msku(id, sku, status, extra) {
   Object.keys(extra || {}).forEach(function (k) { r[k] = extra[k]; });
   return r;
 }
+/* P1-B3 — THE SITE LISTINGS THIS FIXTURE HAD NO ROWS FOR.
+ *
+ * It carried `sku_regional_details: []`, which describes a catalogue in which nothing is listed on any
+ * marketplace. That was invisible while `analysable` ignored the regional join; now that a product with
+ * no Regional Detail is correctly not plottable, an empty regional table makes EVERY count zero and
+ * C9a's contrast - two SKUs in a category, one of them plottable - disappears along with the reason it
+ * exists. So the fixture gains the rows a real site would have, and CAN-2's missing PRICE remains the
+ * one thing that separates the two counts. */
+function reg(id, sku) {
+  return { regional_detail_id: id, sku: sku, company: 'KM', country: 'US', marketplace: 'Amazon',
+    site_sku: 'KM-' + sku, marketplace_product_id: 'B-' + sku, language: 'en' };
+}
 function price(id, mid, sku, amount) {
   return { pricing_id: id, marketplace_sku_id: mid, sku: sku, country: 'US', marketplace: 'Amazon',
     currency: 'USD', regular_price: amount, minimum_price: 1, msrp: amount + 5,
@@ -90,7 +102,13 @@ var TABLES = {
     // A MASTER SKU SOLD NOWHERE AT ALL. Its category must never reach a menu.
     { sku: 'GHOST-1', product_name: 'Never Sold',    category: 'Air Fryer',           series: 'AF0000' }
   ],
-  sku_regional_details: [],
+  // Every SKU listed on KM/US/Amazon has its Regional Detail. PRESS-1 deliberately does NOT: it is the
+  // other-site SKU, and giving it one here would make it look listed on the site under test.
+  sku_regional_details: [
+    reg('RD1',  'CAN-1'), reg('RD2',  'CAN-2'), reg('RD3', 'PEEL-1'), reg('RD4', 'SPAT-1'),
+    reg('RD5',  'SCALE-1'), reg('RD6', 'TONG-1'), reg('RD7', 'BOARD-1'), reg('RD8', 'BOARD-2'),
+    reg('RD9',  'WHISK-1'), reg('RD10', 'LADLE-1')
+  ],
   pricing_list: [
     price('PR1', 'A1', 'CAN-1',   32.99),
     // CAN-2 has NO price: same category as CAN-1, so the two counts must differ for that category.

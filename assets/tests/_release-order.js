@@ -591,7 +591,12 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // PRODUCT-STRATEGY-P1-B1-R1 - the deployment-candidate release for the site-scoped Product Pricing
   // workspace: 72_ is new and REQUIRED, 01_router routes its action, 00_config holds its flag (false),
   // and 63_ carries the manifest row and the action-contract bump.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R7'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R7',
+  // PRODUCT-STRATEGY-P1-B3 - the same deployment candidate, one round on: 72_ gains the five-state
+  // source discriminator (§8), the per-table schema fingerprint and the read timestamp, and the
+  // read-only production readback is added as a TEMP diagnostic. R7 was never synced; an id may
+  // still not name two trees.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R8'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

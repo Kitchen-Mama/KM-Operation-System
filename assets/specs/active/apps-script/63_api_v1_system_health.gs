@@ -108,7 +108,15 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 // and PRODUCT_STRATEGY_ENABLED_ is false - so a project that DOES carry this release still answers
 // FEATURE_DISABLED before it opens a spreadsheet. The release id names what a sync WOULD be; the ledger
 // entry in docs/planning/DEPLOYMENT_RELEASE_LOG.md records that it has not happened.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R7';
+// P1-B3 - THE RELEASE MOVES AGAIN, and R7 was never synced. That is not a reason to reuse the id:
+// R7's tree and this one differ (72_ now carries the five-state source discriminator, the per-table
+// schema fingerprint and the read timestamp), and an id that names two different trees cannot answer
+// the one question it exists for. R7 is superseded as a CANDIDATE; no deployment ever carried it.
+//
+// STILL A CANDIDATE, STILL NOT A DEPLOYMENT. Nothing has been synced, no Web App version exists, and
+// PRODUCT_STRATEGY_ENABLED_ is false - so a project that DOES carry this release answers
+// FEATURE_DISABLED before it opens a spreadsheet. The ledger records that it has not happened.
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R8';
 // 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
 // R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
 // not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
@@ -116,7 +124,9 @@ var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R7';
 // R6-R7-R4 - moved because 61_'s manifest row moved with 61_, which is a change to THIS FILE.
 // R6-R7-R7 - moved because THIS FILE changed: 72_'s manifest row was added, 00_config's, 01_router's and
 // this file's own rows moved, and the action-contract version was bumped for the new route.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R7';
+// P1-B3 - moved because THIS FILE changed again: the release above and 72_'s expected stamp. The action
+// contract does NOT move with it - no action was added this round, only the shape of one response.
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R8';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -337,7 +347,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R7', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R8', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
   // F1-7N-FC-1B-E3 §E.9 — the CONFIG is an owner file too. It holds
   // INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_, so a project still running the previous copy of it writes no
   // allocation drafts while the repository says it should; without an entry here that difference had no name.
@@ -359,7 +369,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // PRODUCT_STRATEGY_ENABLED_ = false makes the action REFUSE, and a refusal from a handler that is
   // present is a different fact from a handler that is not there. Only the first is recoverable by
   // flipping a flag; the second needs a file copied.
-  { file: '72_api_v1_product_pricing_workspace.gs', symbol: 'PPW_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R7', owns: 'the site-scoped Product Pricing workspace read: the marketplace_skus membership universe, the four-part regional join, the marketplace_sku_id pricing join, and the scoped category/series filter options derived from surviving rows' },
+  { file: '72_api_v1_product_pricing_workspace.gs', symbol: 'PPW_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R8', owns: 'the site-scoped Product Pricing workspace read: the marketplace_skus membership universe, the four-part regional join, the marketplace_sku_id pricing join, and the scoped category/series filter options derived from surviving rows' },
   { file: '66_api_v1_request_order_send.gs', symbol: 'ROS_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R4B-R3', owns: 'Request Order Send orchestration + planning-cycle authority' },
   // 71_ is the guard SEAM. Its absence is precisely the failure the manifest exists to name: 11_ and 61_ both
   // refuse closed without it (FACTORY_STOCK_GUARD_SEAM_MISSING), so a partial sync stops the flow rather than

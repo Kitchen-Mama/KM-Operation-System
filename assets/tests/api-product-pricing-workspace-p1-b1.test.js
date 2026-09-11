@@ -303,9 +303,30 @@ eq([m5.regular_price, m5.minimum_price, m5.msrp, m5.currency], [null, null, null
 eq(m5.analysable, false, '21a and cannot be plotted');
 ok(m5.source_status.indexOf('PRICING_SOURCE_MISSING') !== -1, '21b flagged as the source being missing');
 ok(idsOf(OK1).indexOf('M5') !== -1, '21c while remaining a site SKU');
+/* P1-B3 — SUPERSEDED, AND THE OLD NUMBER WAS THE DEFECT.
+ *
+ * This asserted analysableSiteSkuCount === 3. M2 has a price and NO sku_regional_details row, and
+ * `analysable` did not check for one — so the server counted it plottable while the prototype's chart
+ * gate refused it, and the two authorities disagreed by exactly this row. §5 of P1-B3 states the rule
+ * (no Regional Detail means not on the price chart, but in Data Quality), so the flag was wrong and the
+ * assertion was holding it in place. It is now 2, and M2 is named below so the change is legible rather
+ * than a number that quietly moved. */
 eq([OK1.data.counts.siteSkuCount, OK1.data.counts.pricingMissingCount,
-  OK1.data.counts.analysableSiteSkuCount], [6, 1, 3],
+  OK1.data.counts.analysableSiteSkuCount], [6, 1, 1],
   '21d siteSkuCount includes it and analysableSiteSkuCount does not — the two disagree visibly');
+/* AND ONE IS THE RIGHT ANSWER FOR THIS FIXTURE, which is worth spelling out because 3 looked
+ * reasonable for a year. Of the six site SKUs: M1 has a regional row and a price; M2's only regional
+ * row is the deliberate cross-site DE one, so it has none HERE; M5 has no price; M6 has no regional
+ * row at all; M7's regional match is ambiguous; M8's pricing is ambiguous. Exactly one is plottable. */
+eq([rowOf(OK1, 'M2').analysable, rowOf(OK1, 'M2').regional], [false, null],
+  '21e M2 is priced, has no Regional Detail on THIS site, and is not analysable');
+eq([rowOf(OK1, 'M6').analysable, rowOf(OK1, 'M6').regional], [false, null],
+  '21e2 and neither is M6 — the server now agrees with the chart gate instead of counting two more'
+  + ' products than the chart can draw');
+eq(rowOf(OK1, 'M1').analysable, true,
+  '21e3 while the one row with both a Regional Detail and a price still is');
+ok(rowOf(OK1, 'M2').source_status.indexOf('REGIONAL_DETAILS_MISSING') !== -1,
+  '21f while still being reported, so it reaches Data Quality rather than vanishing');
 eq(rowOf(OK1, 'M6').currency, 'USD',
   '22 pricing_list.currency is the authority (marketplace_skus says EUR)');
 eq(codes(rowOf(OK1, 'M6').findings), ['CURRENCY_SOURCE_CONFLICT'],
@@ -617,8 +638,10 @@ mut('M10 the flag is checked after the read, so a disabled feature still touches
 });
 
 mut('M11 a writer reaches the read path', function () {
-  var s = swap("  var data = ppwWorkspaceBuild_(tables, req);",
-    "  ss.getSheetByName('marketplace_skus').getRange(1, 1).setValue('x');\n    var data = ppwWorkspaceBuild_(tables, req);");
+  // P1-B3 - the anchor follows the code. The builder now takes the read clock as a third argument
+  // (so it can report read_at and stay pure), and this mutant splices a writer in front of that call.
+  var s = swap("  var data = ppwWorkspaceBuild_(tables, req, io.now());",
+    "  ss.getSheetByName('marketplace_skus').getRange(1, 1).setValue('x');\n    var data = ppwWorkspaceBuild_(tables, req, io.now());");
   return bare(GS72).indexOf('setValue') === -1 && bare(s).indexOf('setValue') !== -1;
 });
 

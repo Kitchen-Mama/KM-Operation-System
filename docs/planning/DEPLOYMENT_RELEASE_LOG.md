@@ -395,3 +395,141 @@ Notes:                       72_ is a REQUIRED manifest owner from this release,
 ```
 
 **STATUS: DEPLOYMENT CANDIDATE PREPARED · NOT PUSHED · APPS SCRIPT NOT SYNCED · NO DEPLOYMENT VERSION · PRODUCT STRATEGY NOT ENABLED.**
+
+## Entry — 2026-09-11 · PRODUCT-STRATEGY-P1-B3 (read-only readback package prepared — nothing synced, nothing deployed)
+
+```
+Release ID:                  F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R8
+                             (SYS_DEPLOYMENT_RELEASE_ in 63_api_v1_system_health.gs; next in the chain
+                             after …R6-R7-R7, appended to assets/tests/_release-order.js)
+Ledger entry ID:             P1-B3-2026-09-11-product-strategy-production-readback-package
+Environment:                 (none — NOT DEPLOYED, NOT SYNCED, NOT PUSHED)
+Git branch:                  feature/product-strategy-board-p0
+Git state:                   follow-up commit on 1898621 (P1-B2C). Nothing amended, squashed or rebased.
+                             origin/feature/product-strategy-board-p0 = e98fded — every round since is
+                             local-only.
+
+WHY THE RELEASE MOVES, AND WHY R7 BEING UNSYNCED IS NOT A REASON TO REUSE IT
+                             R7 was a CANDIDATE and no project ever carried it. This round changes 72_
+                             again (the five-state source discriminator, the per-table schema
+                             fingerprint, the read timestamp, and the corrected `analysable` rule) and
+                             adds a fifth file. So R7's tree and this tree are DIFFERENT, and a release
+                             id that names two different trees cannot answer the only question it
+                             exists for. R7 is superseded as a candidate; nothing is superseded as a
+                             deployment, because there was none.
+
+Changed files (13):
+  runtime .gs   72_api_v1_product_pricing_workspace.gs
+                                                PPW_BUILD_VERSION_ -> R8; NEW: sourceState (the five
+                                                states), ppwSourceState_, ppwIntegrityStops_,
+                                                ppwSchemaFingerprint_, PPW_SCHEMA_CONTRACT_VERSION_ = 2,
+                                                the `schema` block with read_at; `analysable` now
+                                                requires a confirmed Regional Detail (CORRECTION — see
+                                                Notes); ppwWorkspaceBuild_ takes readAt as a parameter
+                63_api_v1_system_health.gs      release + own stamp -> R8; 72_'s manifest row -> R8.
+                                                Action contract stays 13 — no ACTION was added.
+  NEW .gs       TEMP_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK.gs
+                                                the read-only production readback. One no-parameter
+                                                entry point, in no router table, no web entry point.
+  NEW browser   assets/js/api/km-product-pricing-adapter.js
+                                                the ONE production adapter: the six §6 shape gaps.
+                                                Loaded by NO page — deliberately.
+  diagnostics   TEMP_S1_POSITIVE_RESIDUAL_READINESS_CENSUS.gs      S1_BUILD_ -> R8
+                TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3.gs          two pins -> R8
+  tests         _release-order.js (+R8)
+                NEW product-strategy-production-readback-p1-b3.test.js  (328 / 0 / 17 mutants / 0)
+                api-product-pricing-workspace-p1-b1.test.js        21d superseded (3 -> 1) + 21e/21e2/21e3
+                api-product-pricing-category-contract-p1-b1-r1.test.js   fixture gains the regional rows
+  docs          PRODUCT_STRATEGY_BOARD_DESIGN_FREEZE.md §38, project-current-state.md, this ledger
+
+Bundle source changed:       no  (90_ untouched — no bundle rebuild required; KMSAFE is already deployed)
+Apps Script deployment version: NOT CREATED
+Frontend deployment:         NOT REDEPLOYED — and NOT REQUIRED by this round (see below)
+
+-------------------------------------------------------------------------------------------------------
+APPS_SCRIPT_SYNC_REQUIRED — FIVE FILES, IN THIS ORDER
+-------------------------------------------------------------------------------------------------------
+  1. 00_config.gs                                    (from P1-B1-R1, still unsynced)
+  2. 72_api_v1_product_pricing_workspace.gs   NEW FILE
+  3. 63_api_v1_system_health.gs
+  4. 01_router.gs                                    (from P1-B1-R1, still unsynced)
+  5. TEMP_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK.gs  NEW FILE
+
+  WHY THAT ORDER. 01_router.gs is LAST because it is the file that makes the action reachable. Paste it
+  before 72_ exists and the project routes a live action to an undefined handler for as long as the gap
+  lasts. 00_config.gs is FIRST because it holds PRODUCT_STRATEGY_ENABLED_ = false, so the flag is in
+  place before anything can be routed to. The readback is last-but-one to nothing: it depends on 72_ and
+  00_config, and is reachable only from the editor.
+
+  THE FOUR FROM P1-B1-R1 ARE STILL OUTSTANDING. This round does not replace that sync, it grows it.
+  There is exactly ONE package to paste, not two.
+
+-------------------------------------------------------------------------------------------------------
+THE ONLY FUNCTION TO RUN AFTER SYNCING
+-------------------------------------------------------------------------------------------------------
+      RUN_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK()
+
+  No parameters. Run it from the Apps Script editor and read the execution log. Expect:
+      read_only true · writes 0 · writer_calls 0 · sheets_created 0 · rows_modified 0 ·
+      feature_flag false · gate_proof.refusal_code FEATURE_DISABLED · gate_proof.db_opened false
+  and one of these verdicts:
+      READY                          — record the universe in the design freeze, proceed to P1-B4
+      SOURCE_EMPTY                   — marketplace_skus has no rows; populate and rerun
+      SOURCE_PARTIALLY_READABLE      — a named table is absent or unreadable; repair and rerun
+      STOP_READBACK_INVARIANT_BROKEN — STOP. hard_stops names which invariant
+      STOP_READBACK_FAILED           — STOP. error.token names the safety refusal
+
+  It reports in chunks, each carrying its index, the chunk count and a fingerprint of the whole report,
+  so a truncated log is detectable rather than silently short.
+
+  DO NOT FLIP PRODUCT_STRATEGY_ENABLED_ TO RUN IT. The readback does not need the flag and does not
+  touch it: it calls the real endpoint expecting a refusal, then reads the tables itself and hands them
+  to the PURE builder, which has no gate because the gate lives in the handler. A readback that flipped
+  the flag would measure a pipeline that is not the deployed one and would leave a bypass behind.
+
+ORDERING CONSTRAINT (unchanged from P1-B1-R1, and it still applies):
+                             KM_EXPECTED_ACTION_CONTRACT_VERSION_ is 12 and
+                             SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ is 13. Neither moves this round.
+                               1. git push                                              (USER)
+                               2. Apps Script sync of the five files + NEW Web App version  (USER)
+                               3. RUN_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK()          (USER)
+                               4. Pages redeploy is NOT required by this round — no browser file that
+                                  any page loads has changed. The new adapter is loaded by no page.
+
+Database migration:          none          Migration ID: n/a         Backup reference: n/a
+Deployed by:                 nobody — no remote or deployment command was executed this round
+Deployment time:             n/a
+
+Feature state at this release:
+  PRODUCT_STRATEGY_ENABLED_  false. A project carrying this release still answers FEATURE_DISABLED for
+                             productPricing.workspace.get before it opens a spreadsheet — and the
+                             readback now PROVES that in the live project rather than asserting it.
+  Production UI              none. No page loads the accessor, the adapter, or a nav entry.
+  Formal DB / API read       none performed this round. The readback is prepared, not run.
+  DB / Drive writes          0.
+
+Smoke-test scope:            repository regression only — no live system was contacted.
+Smoke-test result:           450 suites swept. NEW readback suite 328 passed / 0 failed / 17 mutants
+                             caught / 0 survived. P1-B1 167/0/13. Category contract 73/0/12.
+                             P1-B2 242/0/17 · B2A 227/0/14 · B2B 142/0/16 · B2C 157/0/14.
+                             Four suites remain red and are PRE-EXISTING on the untouched main
+                             worktree, with identical counts to the previous four rounds:
+                             gap-job-done-notice (3), order-planning-monthly-projection-consumer (1),
+                             replen-header-toggle (7), supply-planning-route-inventory (2).
+Known limitations:           This is a CANDIDATE and a PREPARED readback. Nothing has been synced, no
+                             live table has been read, and the live universe is therefore still
+                             unmeasured. Every number in §38 of the design freeze is from a synthetic
+                             fixture and is labelled as such.
+Rollback version:            n/a — nothing was deployed to roll back from.
+Notes:                       A CORRECTION SHIPPED WITH THIS PACKAGE. 72_'s `analysable` flag did not
+                             require a Regional Detail, while the rule — and the prototype's own chart
+                             gate — say a site SKU without one is not on the price chart. One question
+                             had two authorities and two answers; because the CLIENT's answer was the
+                             right one, the chart always drew the correct products while
+                             analysableSiteSkuCount counted more than the chart contained. The readback's
+                             first site pass is what made it visible. The flag now requires a confirmed
+                             regional match, and is false when the caller did not request the join at
+                             all — "may be plotted" cannot be asserted without the evidence.
+```
+
+**STATUS: READ-ONLY READBACK PACKAGE PREPARED · NOT PUSHED · APPS SCRIPT NOT SYNCED · NO DEPLOYMENT VERSION · PRODUCT STRATEGY NOT ENABLED · NO LIVE READ PERFORMED.**
