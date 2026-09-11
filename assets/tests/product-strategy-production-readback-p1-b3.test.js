@@ -43,7 +43,20 @@ function mut(label, f) {
 function section(t) {
   console.log('\n=== ' + t + ' ===');
 }
-function read(rel) { return fs.readFileSync(path.join(__dirname, '..', '..', rel), 'utf8'); }
+/* LINE ENDINGS ARE NORMALISED AT THE READ, AND THAT IS THE WHOLE FIX.
+ *
+ * Checked out fresh, `core.autocrlf=true` gives every .gs CRLF. Every multi-line `swap()` anchor below
+ * is written with \n, so on a REAL checkout not one of them matches: swap throws and the mutant is
+ * reported by whatever polarity the suite uses. Measured at the previous commit from a detached
+ * worktree, this defect was already hiding three surviving mutants in the P1-B1 suite — green only in a
+ * working tree where an earlier patch happened to leave 72_ as LF.
+ *
+ * The fix belongs HERE rather than in the anchors: CRLF anchors would break in an LF worktree and on any
+ * Linux checkout, which is the same bug with the sign flipped. Normalising changes nothing about what is
+ * executed — these sources run in a vm, where line endings are not semantics. */
+function read(rel) {
+  return fs.readFileSync(path.join(__dirname, '..', '..', rel), 'utf8').replace(/\r\n/g, '\n');
+}
 
 /** Comments AND string literals out. A file's own disclaimers name every API it promises not to use, so a
  *  scan that counted them would be measuring the promise instead of the code. */
@@ -55,7 +68,9 @@ function bare(src) {
 
 var GS = 'assets/specs/active/apps-script/';
 var F72 = GS + '72_api_v1_product_pricing_workspace.gs';
-var FRB = GS + 'TEMP_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK.gs';
+// NOT under GS: the readback is an admin census, not a runtime owner. See §A11d.
+var DIAG = 'assets/tools/apps-script-diagnostics/';
+var FRB = DIAG + 'TEMP_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK.gs';
 var F00 = GS + '00_config.gs', F01 = GS + '01_router.gs', F63 = GS + '63_api_v1_system_health.gs';
 var F29 = GS + '29_production_safety_adapter.gs';
 var FAD = 'assets/js/api/km-product-pricing-adapter.js';
@@ -267,6 +282,16 @@ var rbFns = (SRCRB.match(/^function\s+([A-Za-z0-9_$]+)/gm) || []).map(function (
 eq(rbFns.filter(function (n) { return /^RUN_/.test(n); }),
   ['RUN_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK'],
   'A11b exactly one RUN_ entry point exists');
+// A11d — AND IT IS FILED WITH THE OTHER CENSUSES, NOT AMONG THE RUNTIME OWNERS. Every .gs in the
+// runtime mirror is audited as a named owner with the reason it was touched; a one-off admin census
+// owns no action, no table and no schema. It is still synced — this is where it is KEPT.
+ok(fs.existsSync(path.join(__dirname, '..', '..', FRB)),
+  'A11d the readback lives in assets/tools/apps-script-diagnostics/');
+ok(!fs.existsSync(path.join(__dirname, '..', '..', GS,
+  'TEMP_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK.gs')),
+  'A11e and not in the runtime-owner mirror');
+ok(fs.readdirSync(path.join(__dirname, '..', '..', DIAG)).length > 10,
+  'A11f alongside the other read-only censuses');
 ok(/function RUN_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK\(\)/.test(SRCRB),
   'A11c and it takes NO parameters — there is nothing for a caller to widen');
 

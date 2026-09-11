@@ -5413,8 +5413,31 @@ two suites broken, including anchors in code the patch never touched. 72_ and th
 `00_config` / `01_router` / `63_` / `_release-order.js` are CRLF. A patch detects what the file uses and
 writes that back, and refuses to guess on mixed endings.
 
-**TESTS.** NEW `product-strategy-production-readback-p1-b3.test.js` **328 / 0 / 17 mutants / 0
-survived**; P1-B1 **167/0/13**; category contract **73/0/12**; P1-B2 **242/0/17**; B2A **227/0/14**;
+**AND THE SAME FACT WAS HIDING A YEAR-OLD HOLE — found by checking the commit out, which is why that
+step is not optional.** On a real checkout autocrlf gives every `.gs` CRLF, and the `
+`-written mutant
+anchors match nothing. Measured at the PREVIOUS commit from its own detached worktree,
+`api-product-pricing-workspace-p1-b1` already reported **163 passed, 3 failed — M5, M6 and M12
+SURVIVED**: the regional join losing a part of its four-part key, pricing joining on `sku` instead of
+the id, and a preview fallback on the failure path. Three rules that matter were reported as checked by
+a suite that could not check them, green only in a tree where an earlier patch left 72_ as LF — and
+`git diff` cannot show why, because autocrlf normalises the comparison it would have to make. Both
+suites now normalise at the READ; CRLF anchors would be the same bug with the sign flipped, broken in an
+LF worktree and on any Linux checkout. **A suite that is green in your tree and red on a fresh checkout
+is indistinguishable from a passing suite until somebody checks out the commit.**
+
+**A ONE-OFF CENSUS IS NOT A RUNTIME OWNER.** The first commit filed the readback in
+`assets/specs/active/apps-script/` and the action-registry audit failed with its name: every `.gs` in
+the runtime mirror that changed since R1 must be a NAMED entry with the REASON it was touched. The
+obvious response is to add the entry; the right one was to read what the audit was saying. A one-off
+admin census owns no action, no table and no schema, and sixteen read-only censuses of the same genus —
+same entry point, same release pin, same header — already live in
+`assets/tools/apps-script-diagnostics/`, including the two whose pins this round moved. Not an audit
+dodge: nothing joined an allowlist, the file is still in the sync package and still proved read-only by
+call graph, and the suite asserts both where it IS and where it is NOT.
+
+**TESTS.** NEW `product-strategy-production-readback-p1-b3.test.js` **332 / 0 / 17 mutants / 0
+survived**; P1-B1 **167/0/13** (and now genuinely 13, on a CRLF checkout as well as this one); category contract **73/0/12**; P1-B2 **242/0/17**; B2A **227/0/14**;
 B2B **142/0/16**; B2C **157/0/14**. 450 suites swept; only the four PRE-EXISTING red, with counts
 identical to the last four rounds (3/1/7/2).
 

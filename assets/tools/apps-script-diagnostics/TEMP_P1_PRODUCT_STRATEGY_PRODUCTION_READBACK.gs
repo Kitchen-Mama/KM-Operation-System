@@ -11,6 +11,14 @@
  * arguments — there is nothing for a caller to widen. It answers one question: what is actually in the
  * production SSOT, and what would the Product Strategy Board be able to draw from it?
  *
+ * WHY IT LIVES HERE AND NOT IN assets/specs/active/apps-script/. That directory is the project's RUNTIME
+ * mirror, and every .gs in it that changes is audited as a named owner with the reason it was touched.
+ * A one-off admin census is not a runtime owner: it owns no action, no table and no schema, and it is
+ * deleted when the question it answers is closed. Sixteen read-only censuses of exactly this genus
+ * already live in this folder, including the two whose release pins this round moved. It is still
+ * SYNCED like any other file in the package — being filed here changes where it is kept, not whether a
+ * person has to paste it.
+ *
  * ------------------------------------------------------------------------------------------------------------
  * IT DOES NOT TOUCH THE FEATURE FLAG, AND THAT IS THE POINT.
  *

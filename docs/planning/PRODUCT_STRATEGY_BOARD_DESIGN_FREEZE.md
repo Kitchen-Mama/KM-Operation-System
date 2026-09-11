@@ -5164,7 +5164,7 @@ that something is absent, read as evidence that it is present.** The accessor's
 `PreviewProductStrategy`, `previewFixture` — rather than at the word "preview"), and 72_'s "no
 setValue" paragraph is exactly why §38.1 strips string literals before it counts anything.
 
-### §38.9 Line endings are per-file, and a pure line-ending change is invisible to `git diff`
+### §38.9 Line endings, and three mutants that had never actually run
 
 `core.autocrlf=true` normalises CRLF to LF when git reads the working tree, so a patch that only
 rewrites line endings shows up as **nothing at all**. One patch this round wrote `72_` back as CRLF;
@@ -5177,6 +5177,51 @@ The files in this worktree are **not uniform**: `72_` and the prototype are LF, 
 git never rewrites a file it has not been asked to. **A patch does not get to choose**: it detects what
 the file already uses and writes that back, and refuses to guess on a file with mixed endings.
 
+**AND THEN THE SAME FACT TURNED OUT TO BE HIDING A YEAR-OLD HOLE.** The first commit of this round was
+checked out into a detached worktree to verify it on real bytes — the routine this project adopted in
+P1-B2B — and on that checkout, where `autocrlf` gives every `.gs` CRLF, the mutant anchors do not match
+*at all*, because they are written with `
+`. Measured at the PREVIOUS commit from its own detached
+worktree, `api-product-pricing-workspace-p1-b1` already reported **163 passed, 3 failed: M5, M6 and M12
+SURVIVED.**
+
+Those three mutants — the regional join losing a part of its four-part key, pricing joining on `sku`
+instead of the id, and a preview fallback appearing on the failure path — have been green only in a
+working tree where an earlier Python patch happened to leave `72_` as LF. **Three rules that matter
+were being reported as checked by a suite that could not check them**, and `git diff` cannot show why,
+because autocrlf normalises the comparison it would have to make.
+
+**The fix is at the READ, not at the anchors.** Both suites now normalise `
+` to `
+` when they read
+a source for mutation. CRLF anchors would have been the same bug with the sign flipped — broken in an
+LF worktree and on any Linux checkout — and normalising changes nothing about what executes, because
+these sources are run in a `vm` where line endings are not semantics.
+
+**The routine is what found it.** A suite that is green in the tree you are working in and red on a
+fresh checkout is indistinguishable from a passing suite until somebody checks out the commit, which is
+why that step is not optional.
+
+### §38.9a A one-off census is not a runtime owner
+
+The first commit put `TEMP_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK.gs` in
+`assets/specs/active/apps-script/`, and `action-registry-and-router-completeness §8` failed with its
+name. That audit requires every `.gs` in the runtime mirror that changed since the R1 commit to be a
+NAMED entry carrying the REASON it was touched — *"never a pattern that would forgive the next one
+too"*.
+
+The obvious response is to add the entry. The right response was to read what the audit was saying:
+**that directory is the project's runtime mirror, and a one-off admin census is not a runtime owner.**
+It owns no action, no table and no schema, and it is deleted when the question it answers is closed.
+Sixteen read-only censuses of exactly this genus — same admin-only entry point, same release pin, the
+same *"READ ONLY. ZERO WRITES ON EVERY PATH."* header, including the two whose pins this round
+moved — already live in `assets/tools/apps-script-diagnostics/`. That is where it now is.
+
+Worth stating plainly that this is **not** an audit dodge: nothing was added to any allowlist, the file
+is still in the sync package, still named in the runbook, and still proved read-only by call graph.
+What changed is that it is filed with its siblings instead of among the owners, and the suite asserts
+both halves of that (`A11d`/`A11e`).
+
 ### §38.10 What is NOT done
 
 No Apps Script sync. No deployment version. No live table read — **the live universe is still
@@ -5187,6 +5232,8 @@ migration. The nine merge conditions from §31 remain open, and nothing here clo
 
 `APPS_SCRIPT_SYNC_REQUIRED` is now **five files** — the four P1-B1-R1 has owed since 2026-09-10, plus
 the readback. This round grows that sync; it does not replace it. There is exactly one package to paste.
+Four come from `assets/specs/active/apps-script/`; the readback comes from
+`assets/tools/apps-script-diagnostics/`, and the ledger lists every path in the order to paste them.
 
 **NEXT:** the user syncs the five files, creates a Web App version, and runs
 `RUN_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK()`. Its verdict decides P1-B4: `READY` means the universe

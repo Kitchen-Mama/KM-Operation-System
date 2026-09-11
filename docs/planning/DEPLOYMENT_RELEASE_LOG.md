@@ -428,9 +428,13 @@ Changed files (13):
                                                 Notes); ppwWorkspaceBuild_ takes readAt as a parameter
                 63_api_v1_system_health.gs      release + own stamp -> R8; 72_'s manifest row -> R8.
                                                 Action contract stays 13 — no ACTION was added.
-  NEW .gs       TEMP_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK.gs
+  NEW census    assets/tools/apps-script-diagnostics/
+                TEMP_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK.gs
                                                 the read-only production readback. One no-parameter
                                                 entry point, in no router table, no web entry point.
+                                                Filed with the other sixteen read-only censuses rather
+                                                than in the runtime mirror: a one-off admin census owns
+                                                no action, no table and no schema. Still synced.
   NEW browser   assets/js/api/km-product-pricing-adapter.js
                                                 the ONE production adapter: the six §6 shape gaps.
                                                 Loaded by NO page — deliberately.
@@ -454,6 +458,14 @@ APPS_SCRIPT_SYNC_REQUIRED — FIVE FILES, IN THIS ORDER
   3. 63_api_v1_system_health.gs
   4. 01_router.gs                                    (from P1-B1-R1, still unsynced)
   5. TEMP_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK.gs  NEW FILE
+
+  Repository paths (1-4 are the runtime mirror; 5 is filed with the other read-only censuses because a
+  one-off admin census owns no action, no table and no schema):
+      assets/specs/active/apps-script/00_config.gs
+      assets/specs/active/apps-script/72_api_v1_product_pricing_workspace.gs
+      assets/specs/active/apps-script/63_api_v1_system_health.gs
+      assets/specs/active/apps-script/01_router.gs
+      assets/tools/apps-script-diagnostics/TEMP_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK.gs
 
   WHY THAT ORDER. 01_router.gs is LAST because it is the file that makes the action reachable. Paste it
   before 72_ exists and the project routes a live action to an undefined handler for as long as the gap
@@ -508,14 +520,26 @@ Feature state at this release:
   Formal DB / API read       none performed this round. The readback is prepared, not run.
   DB / Drive writes          0.
 
-Smoke-test scope:            repository regression only — no live system was contacted.
-Smoke-test result:           450 suites swept. NEW readback suite 328 passed / 0 failed / 17 mutants
-                             caught / 0 survived. P1-B1 167/0/13. Category contract 73/0/12.
-                             P1-B2 242/0/17 · B2A 227/0/14 · B2B 142/0/16 · B2C 157/0/14.
-                             Four suites remain red and are PRE-EXISTING on the untouched main
-                             worktree, with identical counts to the previous four rounds:
+Smoke-test scope:            repository regression only — no live system was contacted. Swept twice:
+                             in the working tree AND from a detached worktree checked out at the commit,
+                             where core.autocrlf gives every .gs CRLF.
+Smoke-test result:           450 suites swept, both ways, identical. NEW readback suite 332 passed /
+                             0 failed / 17 mutants caught / 0 survived. P1-B1 167/0/13. Category
+                             contract 73/0/12. P1-B2 242/0/17 · B2A 227/0/14 · B2B 142/0/16 ·
+                             B2C 157/0/14. Four suites remain red and are PRE-EXISTING on the untouched
+                             main worktree, with identical counts to the previous four rounds:
                              gap-job-done-notice (3), order-planning-monthly-projection-consumer (1),
                              replen-header-toggle (7), supply-planning-route-inventory (2).
+
+                             THE CHECKOUT IS WHAT FOUND THE REAL PROBLEM. On a genuine CRLF checkout the
+                             \n-written mutant anchors match nothing, so `swap` throws. Measured at the
+                             PREVIOUS commit from its own detached worktree, P1-B1 already reported
+                             163 passed / 3 FAILED — M5, M6 and M12 SURVIVED. Those three had been green
+                             only in a working tree where an earlier patch happened to leave 72_ as LF,
+                             and git diff cannot show why because autocrlf normalises the comparison.
+                             Both suites now normalise line endings at the READ. A suite that is green
+                             in your tree and red on a fresh checkout is indistinguishable from a passing
+                             suite until somebody checks out the commit.
 Known limitations:           This is a CANDIDATE and a PREPARED readback. Nothing has been synced, no
                              live table has been read, and the live universe is therefore still
                              unmeasured. Every number in §38 of the design freeze is from a synthetic

@@ -26,7 +26,17 @@ function mut(label, f) {
   if (caught) { mutCaught++; console.log('ok   ' + label + ' (caught)'); }
   else { mutSurvived++; fail++; console.error('FAIL ' + label + ' — MUTANT SURVIVED'); }
 }
-function read(rel) { return fs.readFileSync(path.join(__dirname, '..', '..', rel), 'utf8'); }
+/* P1-B3 — LINE ENDINGS NORMALISED AT THE READ, because three mutants here had never actually run.
+ *
+ * On a fresh checkout `core.autocrlf=true` makes every .gs CRLF, and every multi-line `swap()` anchor in
+ * this file is written with \n — so no anchor matched, `swap` threw, and M5, M6 and M12 were reported as
+ * SURVIVED. Measured from a detached worktree at the previous commit: 163 passed, 3 failed. They had
+ * been green only in a working tree where an earlier Python patch left 72_ as LF, which git diff cannot
+ * show, because autocrlf normalises the comparison. Normalising at the read makes the anchors correct on
+ * any checkout and changes nothing about what runs — the source is executed in a vm. */
+function read(rel) {
+  return fs.readFileSync(path.join(__dirname, '..', '..', rel), 'utf8').replace(/\r\n/g, '\n');
+}
 
 /** Comments AND string literals out. A file's own disclaimers name every API it promises not to use, so a
  *  scan that counts them is measuring the promise instead of the code. */
