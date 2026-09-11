@@ -39,14 +39,22 @@
   --sp: 8px;
 }
 
-* { box-sizing: border-box; }
-body {
-  margin: 0; background: var(--ground); color: var(--ink);
+/* P1-B7 — the global reset is GONE, not scoped. assets/css/base.css already declares
+   `* { margin:0; padding:0; box-sizing:border-box }`, which is strictly stronger than this
+   rule was, so removing it changes nothing for the board and removes a second global reset
+   from the application. A duplicate reset is not harmless because it agrees today. */
+/* P1-B7 — THE PAGE GROUND, and it is a container rule now rather than a document rule.
+   As `body` this set the font family, the line-height and the background of the entire Operation
+   System: the `font:` shorthand is not additive, so it replaced base.css's --font-primary and its
+   line-height 1.6 on every page in the application. `.psb-page` is the board's own root in both
+   documents that use this sheet — the production section and the prototype's body. */
+.psb-page {
+  background: var(--ground); color: var(--ink);
   font: 14px/1.5 var(--sans);
   -webkit-font-smoothing: antialiased;
 }
-h1, h2, h3, h4 { margin: 0; font-weight: 650; letter-spacing: -0.01em; }
-button { font: inherit; color: inherit; }
+.psb-page h1, .psb-page h2, .psb-page h3, .psb-page h4 { margin: 0; font-weight: 650; letter-spacing: -0.01em; }
+.psb-page button { font: inherit; color: inherit; }
 .sr {
   position: absolute; width: 1px; height: 1px; overflow: hidden;
   clip: rect(0 0 0 0); white-space: nowrap;
@@ -562,9 +570,51 @@ table.grid-t { border-collapse: collapse; width: 100%; font-size: 13px; }
 .tipline.is-head { font-weight: 650; font-size: 13px; margin-bottom: 3px; }
 .tipline.is-miss { color: #f2c9c4; }
 
+/* ================================================================================================
+   P1-B7 — THE IN-PAGE VIEW RAIL, AND THE SHELL BOUNDARY
+
+   The Operation System owns the sidebar. This board owns the six views inside its own page, and in
+   production they are a horizontal rail under the header rather than a dark left column. The button
+   markup is identical — psb-board-ui.js `renderNav()` writes the same `.navbtn` it always did — so
+   what changes here is direction and ink, not structure. `.nav` and `.navbtn` themselves are left
+   exactly as the prototype needs them; every rule below is scoped to `.psb-viewnav`, which exists
+   only in the production partial.
+   ================================================================================================ */
+.psb-viewnav { border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+.psb-viewnav .nav {
+  flex-direction: row; flex-wrap: wrap; gap: 2px;
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+}
+.psb-viewnav .navbtn {
+  width: auto; color: var(--ink-2); border-radius: 7px 7px 0 0;
+  padding: 9px 12px; white-space: nowrap;
+}
+.psb-viewnav .navbtn:hover { background: var(--line-2); color: var(--ink); }
+.psb-viewnav .navbtn.is-active { background: transparent; color: var(--ink); font-weight: 650; }
+/* The prototype marks the active destination with a bar down its LEFT edge, which is where an eye
+   looks in a vertical list. In a horizontal rail the same fact belongs under the label. */
+.psb-viewnav .navbtn.is-active::before {
+  content: ''; position: absolute; left: 8px; right: 8px; top: auto; bottom: -1px;
+  width: auto; height: 2px; border-radius: 2px; background: var(--accent);
+}
+.psb-viewnav .nav-count { margin-left: 6px; }
+
+/* Empty until a scenario is applied — no height, no border, no reserved space, because a warning
+   strip that is always present is one a reader has already learned to skip. */
+.psb-printbanner:empty { display: none; }
+.psb-printbanner {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 0 0 10px; padding: 8px 12px; border-radius: var(--r);
+  background: #fff4ed; border: 1px solid #f0c9b4; color: #7a3a1c;
+  font-size: 12.5px; line-height: 1.45;
+}
+.psb-crumbs { margin: 0 0 10px; }
+
 /* ---------------------------------------------------------------- print ------------------------- */
 @media print {
-  body { background: #fff; }
+  /* P1-B7 — was `body`, which whitened the printed background of every page in the
+     application, not only this one. */
+  .psb-page { background: #fff; }
   .shell { display: block; }
   .side, .topright, .selftest, .printhint, .advanced, .tip, .scope-note { display: none !important; }
   .main { padding: 0; }
@@ -750,7 +800,7 @@ body.presenting .navbtn, body.presenting .act { justify-content: center; padding
 
 /* The Operation System filter row: controls side by side, wrapping, one gap token. */
 
-.filter-group { display: flex; flex-direction: column; min-width: 170px; flex: 0 1 210px; }
+.psb-page .filter-group { display: flex; flex-direction: column; min-width: 170px; flex: 0 1 210px; }
 
 /* The control box model, token for token, as components.css declares it. */
 .scope select, .scope input[type="text"],
@@ -832,7 +882,7 @@ body.presenting .navbtn, body.presenting .act { justify-content: center; padding
   background: transparent; color: var(--text-secondary);
 }
 .filt-toggle:hover { border-color: var(--border-medium); color: var(--text-primary); }
-.filter-group--check { flex: 0 1 auto; min-width: 0; justify-content: flex-end; }
+.psb-page .filter-group--check { flex: 0 1 auto; min-width: 0; justify-content: flex-end; }
 
 /* ---------------------------------------------------------------- the `?` and its popover ------- */
 .h-row { display: flex; align-items: center; gap: 6px; }
@@ -1010,7 +1060,7 @@ body.is-fullscreen .view > .drawer, body.is-fullscreen .view > .reco { display: 
   margin: 0; font-size: 12px; color: var(--text-secondary);
 }
 .scenario-applied { color: #6b4f06; }
-.btn {
+.psb-page .btn {
   font: inherit; height: var(--btn-height); border-radius: var(--btn-radius);
   padding: 0 var(--btn-padding-inline); font-size: var(--btn-font-size);
   font-weight: var(--btn-font-weight); cursor: pointer; border: 1px solid transparent;
@@ -1022,7 +1072,7 @@ body.is-fullscreen .view > .drawer, body.is-fullscreen .view > .reco { display: 
 }
 .btn-quiet:hover { border-color: var(--border-medium); color: var(--text-primary); }
 .btn-quiet:disabled { opacity: .5; cursor: not-allowed; }
-.btn:focus-visible { outline: 2px solid #3b82f6; outline-offset: 1px; }
+.psb-page .btn:focus-visible { outline: 2px solid #3b82f6; outline-offset: 1px; }
 
 /* Everything P1-B2A needs at print time was added to the ONE @media print block earlier in this
    file, rather than to a second block that would have to be kept in step with it. */
@@ -1130,7 +1180,7 @@ body.is-fullscreen .view > .drawer, body.is-fullscreen .view > .reco { display: 
 .cmd-more { flex: 0 0 auto; }
 /* A set filter is marked by BORDER and WEIGHT, not by fill: the count pill is the loud part, and one
    loud thing per control is the budget. */
-.kmf-trigger.is-set { border-color: var(--filter-focus-ring); font-weight: 600; }
+.psb-page .kmf-trigger.is-set { border-color: var(--filter-focus-ring); font-weight: 600; }
 .cmd-count { flex: 0 0 auto; }
 
 /* The popover OVERLAYS. This is the entire fix for "opening a filter pushed the chart down". */
@@ -1229,8 +1279,8 @@ body.is-fullscreen .view > .drawer, body.is-fullscreen .view > .reco { display: 
    THE OPERATION SYSTEM POPOVER PRIMITIVE — copied from assets/css/components.css and held to it.
    See the header of this patch for why the real sheet cannot simply be loaded here.
    ================================================================================================= */
-.kmf { position: relative; display: inline-block; }
-.kmf-trigger {
+.psb-page .kmf { position: relative; display: inline-block; }
+.psb-page .kmf-trigger {
   display: inline-flex; align-items: center; justify-content: space-between; gap: 8px;
   min-width: 150px; max-width: 240px;
   height: var(--filter-height);
@@ -1242,12 +1292,12 @@ body.is-fullscreen .view > .drawer, body.is-fullscreen .view > .reco { display: 
   font: inherit; font-size: var(--filter-font-size); line-height: 1; cursor: pointer;
   box-sizing: border-box; text-align: left;
 }
-.kmf-trigger:hover { border-color: #cbd5e1; }
-.kmf-trigger:focus-visible { outline: 2px solid var(--filter-focus-ring); outline-offset: -1px; }
-.kmf-trigger[aria-expanded="true"] { border-color: var(--filter-focus-ring); }
-.kmf-trigger__label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.kmf-trigger__icon { font-size: var(--filter-chevron-size); color: var(--filter-chevron-color); flex-shrink: 0; }
-.kmf-panel {
+.psb-page .kmf-trigger:hover { border-color: #cbd5e1; }
+.psb-page .kmf-trigger:focus-visible { outline: 2px solid var(--filter-focus-ring); outline-offset: -1px; }
+.psb-page .kmf-trigger[aria-expanded="true"] { border-color: var(--filter-focus-ring); }
+.psb-page .kmf-trigger__label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.psb-page .kmf-trigger__icon { font-size: var(--filter-chevron-size); color: var(--filter-chevron-color); flex-shrink: 0; }
+.psb-page .kmf-panel {
   position: absolute; top: calc(100% + 4px); left: 0; z-index: var(--filter-panel-z, 50);
   width: max-content; min-width: 200px; max-width: min(300px, calc(100vw - 24px));
   background: var(--filter-panel-bg);
@@ -1256,16 +1306,16 @@ body.is-fullscreen .view > .drawer, body.is-fullscreen .view > .reco { display: 
   box-shadow: var(--filter-panel-shadow);
   padding: 8px;
 }
-.kmf-panel[hidden] { display: none; }
-.kmf-panel--right { left: auto; right: 0; }
-.kmf-tools { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; padding: 0 2px; }
-.kmf-link {
+.psb-page .kmf-panel[hidden] { display: none; }
+.psb-page .kmf-panel--right { left: auto; right: 0; }
+.psb-page .kmf-tools { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; padding: 0 2px; }
+.psb-page .kmf-link {
   background: none; border: none; padding: 2px 4px;
   color: var(--km-brand-blue, #0080bb); font: inherit; font-size: var(--filter-search-font-size);
   font-weight: 600; cursor: pointer;
 }
-.kmf-link:hover { text-decoration: underline; }
-.filter-checkbox-item { display: flex; align-items: center; gap: 8px; }
+.psb-page .kmf-link:hover { text-decoration: underline; }
+.psb-page .filter-checkbox-item { display: flex; align-items: center; gap: 8px; }
 @media (max-width: 640px) { .kmf-panel { max-width: calc(100vw - 24px); } }
 
 /* =================================================================================================

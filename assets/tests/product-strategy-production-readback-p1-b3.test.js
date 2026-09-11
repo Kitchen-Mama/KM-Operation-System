@@ -269,7 +269,15 @@ var callers = pages.filter(function (f) {
   return read(f).indexOf('productPricing.workspace.get') !== -1
     || read(f).indexOf('km-product-pricing-adapter.js') !== -1;
 });
-eq(callers, [], 'A10c and not one page in the repository loads the accessor or the adapter', callers);
+/* A10c RESTATED AT P1-B7 §4. It asserted `[]` — no root document loads the adapter — which was the
+   form of "a false flag cannot produce UI" available before the page was installed. The shell loads
+   it now, so the assertion names WHICH document, and a second one is still a failure. The rule it
+   protects has not moved: what stops unauthorised UI is the server flag and the staged section, and
+   neither of those is "nothing loads the file". */
+eq(callers, ['index.html'],
+  'A10c the adapter is loaded by exactly one root document — the Operation System shell', callers);
+ok(read('index.html').indexOf("showSection('product-strategy") === -1,
+  'A10c1 and that document cannot switch to the section: no menu item, no call');
 
 // A11 — §2.10: the readback is reachable ONLY from the editor. No action name, no router row.
 ok(SRC01.indexOf('RUN_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK') === -1,
@@ -1184,8 +1192,13 @@ ok(!/scenario/i.test(bare(SRC72).replace(/proposed_scenario_price/g, '')),
   'H5c and 72_ has no scenario concept at all — there is nothing to write to');
 eq(built.provenance.price_status_filtering, false, 'H5d nor does it filter on price status');
 
-// H6 — the adapter is loaded by NO page, so nothing changed for a user this round.
-eq(callers, [], 'H6  no page loads the adapter yet, and that is deliberate');
+// H6 — RESTATED AT P1-B7 §4/§7. "Nothing changed for a user" used to rest on the adapter being loaded
+// by no page. It is loaded now, and the claim rests on the two gates instead: the section is declared
+// staged with enabled false, and PRODUCT_STRATEGY_ENABLED_ is false, so the page is installed and
+// cannot be opened. Absence was never the rule; it was the cheapest available proxy for it.
+eq(callers, ['index.html'], 'H6  the adapter is loaded by the shell and by nothing else', callers);
+ok(/'product-strategy':\s*\{[^}]*enabled:\s*false/.test(read('assets/js/app.js')),
+  'H6a and the shell declares that section staged OFF, so no user can reach it');
 eq(ADAPTER.CONTRACT.applies_to, 'productPricing.workspace.get responses; no page has adopted it yet',
   'H6a which the contract states in its own applies_to');
 

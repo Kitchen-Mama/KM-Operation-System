@@ -34,6 +34,29 @@
         </div>
     </div>
 
+    <!-- P1-B7 — THE SCENARIO PRINT STRIP, and it is not the prototype's banner. The prototype's
+         said "Preview data — not connected to Operation System Database", which is why P1-B5 dropped
+         it: on live prices that sentence is false. This one is EMPTY until a Meeting scenario is
+         applied, and then it carries the sentence that has to survive being printed and carried out
+         of the room — that the numbers on the page are simulated and are not prices the company
+         charges. psb-board-ui.js `renderScenarioMark()` owns its content and nothing else writes
+         here. -->
+    <div id="banner" class="psb-printbanner" role="status" aria-live="polite"></div>
+
+    <!-- P1-B7 — THE SIX VIEWS OF THIS BOARD, as an in-page rail. This is not application
+         navigation: the Operation System sidebar moves between PAGES, this moves between views of
+         one page, and §6 forbids a second sidebar. The prototype rendered the same six buttons down
+         a dark left rail; the markup and the `.navbtn` class are unchanged so psb-board-ui.js
+         renders into it without knowing the difference — only the direction and the colours differ,
+         and those are in the stylesheet. -->
+    <nav class="psb-viewnav" aria-label="Product Strategy views">
+        <ul class="nav" id="nav"></ul>
+    </nav>
+
+    <!-- Which of the six is showing, and the category inside it. Also the one line that tells a
+         printed page what it is a picture of. -->
+    <div class="crumbs psb-crumbs" id="crumbs"></div>
+
     <!-- EVERY ANSWER THAT IS NOT A CHART IS WRITTEN HERE, and the chart is never drawn beside one.
          SOURCE_EMPTY, SOURCE_PARTIALLY_READABLE, STOP_DATA_INTEGRITY, SOURCE_NOT_CONNECTED,
          FEATURE_DISABLED, SCHEMA_CONTRACT_MISMATCH, CONTRACT_MISMATCH and the page's own

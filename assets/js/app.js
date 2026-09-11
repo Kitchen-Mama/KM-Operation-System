@@ -15,6 +15,38 @@ const menuConfig = [
 ];
 
 // ========================================
+// STAGED SECTIONS — INSTALLED, DELIBERATELY NOT REACHABLE
+// ========================================
+//
+// A section listed here is fully INSTALLED — its scripts, its stylesheet, its HTML partial, its mount
+// point and its lifecycle registration are all present — and is NOT ACTIVATED. `showSection` refuses it
+// by name.
+//
+// IT IS DECLARED RATHER THAN OMITTED ON PURPOSE. An absent section map entry and a refused one produce
+// the same page and mean different things: absent, nobody can tell whether the entry was left out or
+// lost, and enabling the page later is an addition nobody can review against an intent. Written down
+// with its reason, the decision has one line, the tests have something to assert, and a mutant that
+// flips `enabled` to true has somewhere to fail.
+//
+// THIS IS ONE OF TWO GATES AND THE WEAKER ONE. The other is `PRODUCT_STRATEGY_ENABLED_ = false` in
+// 00_config.gs, which makes the server refuse the read regardless of anything the browser believes.
+// This gate only decides whether a section can be shown. Opening the page needs BOTH — and the
+// accessor's capability mirror, which starts false and can only be raised by a server capability
+// payload, is what keeps a directly-invoked controller at zero requests in the meantime.
+//
+// TO ACTIVATE (P1-B8, and not before the Apps Script action is deployed): set `enabled: true` here,
+// add the section id to the two maps in showSection, and add the sidebar item to index.html. Enabling
+// this alone opens a board onto a site menu it cannot fill.
+var KM_STAGED_SECTIONS_ = {
+    'product-strategy': {
+        sectionId: 'product-strategy-board-section',
+        enabled: false,
+        reason: 'PRODUCT_STRATEGY_ENABLED_ is false and productPricing.siteUniverse.get is not yet deployed'
+    }
+};
+if (window.KM) { window.KM.stagedSections = KM_STAGED_SECTIONS_; }
+
+// ========================================
 // Menu Toggle Function
 // ========================================
 function toggleMenu(menuId) {
@@ -65,6 +97,15 @@ window.setHomeShellVisible = setHomeShellVisible;
 
 // 區塊切換函式
 function showSection(section) {
+    // STAGED SECTIONS FIRST, AND BEFORE ANY SHELL MUTATION. Returning after setHomeShellVisible(false)
+    // and the `.active` sweep below would leave NO section visible — a blank page, which reads as a
+    // crash rather than as a feature that is not switched on. Refusing here leaves the page the
+    // operator is looking at exactly as it is.
+    var staged = KM_STAGED_SECTIONS_[section];
+    if (staged && staged.enabled !== true) {
+        return;
+    }
+
     // TEMP Phase-2 disable: Overseas Inbound / Overseas Outbound sidebar nav is intentionally
     // non-interactive ("coming later"). This guard is SCOPED to only these two section ids so all
     // other sidebar navigation is unaffected. The pages/routes/section maps below are kept intact.

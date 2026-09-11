@@ -5955,3 +5955,234 @@ delta). It prints identities and counts, never rows.
 * **Display names are an evidence gap**: no canonical company/country master exists, so `KM` and `EU`
   are shown as themselves.
 * The board has still not been rendered against live rows in a browser.
+
+
+---
+
+## 42.  P1-B7 — LIVE EVIDENCE FROZEN · SHELL INTEGRATION · DEPLOYMENT ORDER PROVED
+
+### 42.1  The live evidence, frozen (§2)
+
+`RUN_P1_SITE_UNIVERSE_READBACK()` was run once by the user against the deployed R9 project. Recorded
+here as formal evidence; **not re-measured, not rewritten**.
+
+```
+executed_at        2026-09-11T13:31:30.059Z        chunks 2/2
+report fingerprint D53C96CE                        report length 7272
+readback           P1_B6_SITE_UNIVERSE             endpoint build F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9
+action             productPricing.siteUniverse.get contract version 1
+read_only true · writes 0 · writer_calls 0 · sheets_created 0 · rows_modified 0
+gate: feature flag false · refusal FEATURE_DISABLED · db_opened false · tables_read 0
+source_state READY · site_count 10 · marketplace_skus rows 495
+table fingerprint 2AF82658 · columns 15 · capped false · cap 2000 · is_whole_universe true
+findings [] · refusals []
+evidence gap  SOURCE_MODIFIED_AT_NOT_MEASURABLE_IN_THIS_DEPLOYMENT_SCOPE
+verdict       P1_B6_SITE_UNIVERSE_READY
+```
+
+| # | company | country | marketplace | membership rows |
+|---|---------|---------|-------------|-----------------|
+| 1 | KM | US | Shopify | 101 |
+| 2 | KM | US | Target | 19 |
+| 3 | KM | US | Walmart | 64 |
+| 4 | ResTW | AU | Amazon | 35 |
+| 5 | ResTW | CA | Amazon | 51 |
+| 6 | ResTW | EU | Amazon | 39 |
+| 7 | ResTW | JP | Amazon | 26 |
+| 8 | ResTW | UK | Amazon | 42 |
+| 9 | ResUS | US | Amazon | 100 |
+| 10 | ResUS | US | Walmart | 18 |
+
+All ten active, `selectable`, `selectable_with_inactive`. Blank identity, blank listing id and unknown
+status all **0**. 101+19+64+35+51+39+26+42+100+18 = **495**.
+
+**THE GATE REFUSED, LIVE, AND THAT IS THE STRONGEST LINE IN THE REPORT.** `FEATURE_DISABLED` with
+`db_opened false` and `tables_read 0` is the flag being checked *before the door*, measured on the
+deployed project rather than argued from the source. A readback that had flipped the flag to get a
+prettier verdict would have measured a pipeline nobody ships and left a bypass behind.
+
+**`SOURCE_MODIFIED_AT` REMAINS UNMEASURED.** It is not "assumed fresh" and not "probably fine": the
+deployment scope cannot see a sheet's last-modified time, so the board cannot tell a reader how old the
+numbers are. Carried forward as an evidence gap.
+
+**THE TEN IDENTITIES ARE NOW MEASURED, NOT SPECIFIED.** P1-B6 asserted them against a fixture built to
+the brief. This round replaces the provenance of that claim, not the claim: the same ten came back from
+the live table, and the per-site row counts — which no earlier round had — are new information.
+
+### 42.2  What running it found that reading it could not (§4)
+
+P1-B5 asserted the adapter seam and P1-B6 asserted the read order, both by reading, and every one of
+those assertions was true. Installing the page ran them, and three defects fell out at once.
+
+**1. THE BOARD COULD NOT RENDER IN THE SHELL AT ALL.** `render()` dereferenced `#shell` and `#btnRail`
+unconditionally, and `renderNav` / `renderCrumbs` / `renderScenarioMark` appended into hosts the
+production partial does not have — because §6 forbids a second sidebar, and P1-B5 was right to drop
+them. The first `render()` threw, so nothing after it ran. It was invisible because the test harness
+builds its DOM from **the prototype's** index.html: the board had only ever been rendered into a page
+that had all of the chrome. P1-B7 boots it into a DOM parsed from the **production partial**.
+
+**2. THE LIVE ADAPTER DID NOT IMPLEMENT THE METHOD THE RENDERER CALLS.** psb-board-ui.js asks an adapter
+for `loadCanonical()` — and has since P1-B2A moved the category menu out of the adapter and into the
+pipeline, because *a menu built from rows a sieve has already narrowed cannot tell "this site does not
+sell it" from "a filter removed it"*. The live adapter offered `load()`, under a comment claiming the
+interfaces matched. Mounting threw on the first render. Both methods now return the same snapshot, and
+that is right rather than lazy: in the fixture the two differ because it holds every site, while the
+server already scoped this response, so the canonical universe for this board **is** the response.
+
+**3. LOADING THE SCRIPT CRASHED EVERY PAGE IN THE APPLICATION.** psb-board-ui.js auto-boots on load, and
+`boot()` throws when there is no adapter and no fixture. Correct in the prototype; in a shared shell it
+is a thrown exception at the startup of every page, for a feature that is switched off, on a page nobody
+can navigate to. The refusal was right and its *timing* was wrong. The auto-boot now runs where a
+fixture is present — which is what it exists for — and an explicit `mount()` with no adapter still
+throws, because that is a caller asking for a board it has given no data for.
+
+**A DEFAULT THAT IS SAFE WHEN NOBODY SAYS ANYTHING BEATS A CONVENTION EVERYBODY HAS TO KNOW.** The
+alternative was one line of `window.PSB_BOARD_DEFER = true` in index.html, which works and makes every
+future host responsible for remembering a global whose absence crashes the page at load.
+
+### 42.3  The stylesheet stopped being a page (§6)
+
+`product-strategy-board.css` was written for a standalone prototype: it styled `body`, reset `*`, and
+claimed generic names. Linked from index.html it loads **after** base.css and components.css, so all of
+it won — across the whole application, on every page, whether or not the board was open.
+
+The leak was **measured before anything was changed**, against all production markup and all production
+JS class tokens:
+
+| what | where it actually reached |
+|---|---|
+| `body` | every page — the `font:` shorthand replaces family *and* line-height (1.6 → 1.5); background cream-white → `#f5f6f9` |
+| `h1,h2,h3,h4` · `button` | every page, every button element |
+| `.btn` | 18 markup uses + request-order.js |
+| `.filter-group` | **49 markup uses** — and the copy drops `position: relative`, which is what a popover is positioned against |
+| `.kmf*` | the shared popover primitive, generated by utils/multi-select-filter.js for other pages |
+| `* { box-sizing }` | duplicate of base.css, which also zeroes margin and padding — strictly stronger |
+| `@media print { body }` | every page's printed output |
+
+Each is now a descendant of `.psb-page`. **Scoped rather than deleted**, because those declarations are
+copies of base.css and components.css and the P1-B2A suite holds every value to the original — that pin
+is what keeps the copy a mirror instead of a second system, and deleting the block would have dropped
+the pin along with the leak.
+
+**AND THE ONES THAT DO NOT LEAK WERE LEFT ALONE, measured the same way**: `.shell` `.side` `.main`
+`.banner` `.card` `.view` `.scope` `.sw` `.pill` `.act` `.navbtn` `.stbadge` `.catbtn` `.segbtn`
+`.scenario` have **zero** occurrences anywhere in production outside this board, in markup or in JS.
+Renaming them would be churn against a risk that does not exist today. **Named residual risk:** if
+another page ever adopts one of those names, it will collide, and the fix then is to scope that rule —
+not to pretend the collision was unforeseeable.
+
+The scope root exists in **both** documents that use the sheet: the production `<section class="…
+psb-page">` and the prototype's `<body class="psb-page">`. One stylesheet, two documents, one scope.
+
+### 42.4  The three hosts, as in-page controls rather than a second shell
+
+`#shell`, `#side` and `#btnRail` stay absent — they are the second sidebar §6 forbids. But three of the
+elements dropped with them are not navigation:
+
+* **`#nav`** — the board's six views. Switching between views of one page is a page control. Dropped,
+  five of six views were unreachable; kept as a sidebar, it is a second sidebar. It is an **in-page
+  horizontal rail**; the button markup is unchanged, so the renderer does not know the difference.
+* **`#crumbs`** — which of the six is showing. Without it the six-way switch has no label and a printed
+  page cannot say what it is a picture of.
+* **`#banner`** — the strip `renderScenarioMark()` writes into. **Not the prototype's demonstration
+  banner**, which says "Preview data" — the truest sentence on the prototype and a false one here. It is
+  empty until a scenario is applied, and then carries the one sentence that has to survive being printed
+  and carried out of the room.
+
+### 42.5  Two gates, and the weaker one is declared rather than absent (§7)
+
+| gate | where | value |
+|---|---|---|
+| server flag | `00_config.gs` `PRODUCT_STRATEGY_ENABLED_` | **false** — the read is refused at the source |
+| navigation | `app.js` `KM_STAGED_SECTIONS_['product-strategy']` | **enabled: false**, with the reason written next to it |
+| capability | accessor mirror, raised only by a server payload | **false** — a direct call costs **zero requests** |
+
+**A SECTION THAT IS MISSING FROM `showSection` AND ONE THAT IS DELIBERATELY REFUSED LOOK IDENTICAL FROM
+OUTSIDE AND ARE COMPLETELY DIFFERENT IN THE CODE.** Absent, nobody can tell whether the entry was left
+out or lost, enabling the page later is an addition nobody can review against an intent, and there is no
+line for a mutant to flip. Declared and false, the decision has one line, the tests have something to
+assert, and two mutants that switch it on both fail.
+
+**THE GUARD IS THE FIRST STATEMENT IN `showSection`**, above `setHomeShellVisible(false)` and above the
+`.active` sweep. A refusal after those would leave no visible section at all — a blank page, which reads
+as a crash rather than as a feature that is off.
+
+### 42.6  The deployment order, proved by execution (§8)
+
+P1-B6 recorded "Apps Script first, frontend second" as binding. That is a claim about a comparison, so
+the comparison was **run**: the real `checkDeploymentContract` loaded into four sandboxes with the
+frontend pin rewritten and the deployment's own answer varied.
+
+| Browser pin | Server contract | Result |
+|---|---|---|
+| 13 | 13 | `DEPLOYMENT_CONTRACT_OK` — today, unchanged |
+| 13 | 14 | **`DEPLOYMENT_CONTRACT_OK` — BACKEND-FIRST IS SAFE, zero interruption** |
+| 14 | 13 | `DEPLOYMENT_CONTRACT_MISMATCH` — frontend-first breaks **every page** |
+| 14 | 14 | `DEPLOYMENT_CONTRACT_OK` — after both steps |
+
+**THE RULE IS MINIMUM-COMPATIBLE, NOT EQUALITY**:
+`identity.deployed_action_contract_version < KM_EXPECTED_ACTION_CONTRACT_VERSION_`. That single `<` is
+the only reason the 13/14 cell is green, so **no compatibility window is needed** and the round does not
+have to stop. A mutant changes it to `!==` and the suite fails.
+
+**AND `productPricing.siteUniverse.get` IS NOT IN THE REQUIRED-ACTION PROBE LIST.** That is what makes a
+**rollback** clean: a browser carrying this build against a rolled-back deployment reports one contract
+version, not a list of missing actions — one named fact instead of a hunt.
+`SYS_REQUIRED_ACTION_LIST_VERSION_` did not move.
+
+**SYNCING IS NOT DEPLOYING, and that is the safety property of the sync step.** An Apps Script
+deployment serves an immutable version: saving files in the editor changes nothing a user can reach.
+A half-copied project is invisible until a new version is published — so the version is created **after**
+every file is saved, and there is no partial-sync window facing users. (If one were published mid-way,
+`mixed_deployment` reports `DEPLOYMENT_PARTIAL_SYNC` naming the stale files.)
+
+### 42.7  Evidence gaps and what is still unproven
+
+* **`SOURCE_MODIFIED_AT` is unmeasurable in this deployment scope** (frozen above).
+* **The live readback calls the handler directly, not through the router.** It proves
+  `handleProductPricingSiteUniverseGet_` exists and behaves; it does **not** prove `01_router.gs` routes
+  the action. The cheap proof is `system.health` — and a browser at pin 14 against a project whose
+  router is a round behind reports `DEPLOYMENT_PARTIAL_SYNC` naming the file. Assigned to P1-B8.
+* **Display names remain an evidence gap.** No canonical company/country master exists, so `KM` is `KM`
+  and `EU` is `EU`.
+* **The board has still never been rendered in a browser** — §42.2 is a DOM shim, which is a model. It
+  is a much better model than a source search, and it is not a browser.
+
+### 42.8  P1-B8 browser acceptance matrix (§10)
+
+`F` = verifiable with the flag **false** (today, on a controlled build). `A` = requires the controlled
+activation P1-B8 owns.
+
+| # | case | when |
+|---|---|---|
+| 1 | Feature disabled — direct controller call answers FEATURE_DISABLED, network tab shows 0 requests | F |
+| 2 | Navigation invisible — no menu item; `showSection('product-strategy')` from the console changes nothing | F |
+| 3 | No page regression — every existing page's fonts, buttons, filter widths and popovers unchanged after the stylesheet is linked | F |
+| 4 | Print regression — another page prints with its own background | F |
+| 5 | Boot — no console exception on any page from the nine new scripts | F |
+| 6 | Site Universe loading state | A |
+| 7 | Site Universe READY, and the ten-site hierarchy exactly as frozen | A |
+| 8 | Company switch clears Country and Marketplace, and names what it cleared | A |
+| 9 | Country narrowing offers only that company's countries | A |
+| 10 | Marketplace narrowing offers only that company+country's marketplaces | A |
+| 11 | Single-option tier resolves to read-only context, marked `autoResolved` | A |
+| 12 | Workspace loading state, and **no workspace request before the scope is complete** | A |
+| 13 | Workspace READY draws the chart | A |
+| 14 | `SOURCE_EMPTY` — zero rows, no fixture | A |
+| 15 | `SOURCE_PARTIALLY_READABLE` — zero rows, the unreadable source named | A |
+| 16 | `STOP_DATA_INTEGRITY` — zero rows, no normal chart | A |
+| 17 | `SCHEMA_CONTRACT_MISMATCH` — a version this build never read | A |
+| 18 | Stale response — a slow first answer never overwrites a newer selection | A |
+| 19 | Fast site switching — single flight; one request outstanding | A |
+| 20 | Missing Regional Detail — counted in Data Quality, excluded from the chart, site not dropped | A |
+| 21 | Missing regular / minimum / MSRP — never treated as 0 | A |
+| 22 | Six currencies, and **no cross-currency aggregate on any axis** | A |
+| 23 | Category and Series menus built from the response, never hard-coded | A |
+| 24 | Scenario apply / reset / reload — in memory only, cleared by reload | A |
+| 25 | Site switch clears inapplicable scenario overrides | A |
+| 26 | Responsive viewports — Auto Fit / Comfortable / Fullscreen, stable axes, no scroll jump | A |
+| 27 | Print / PDF, with the scenario warning present when and only when a scenario is applied | A |
+| 28 | Router proof — `system.health` reports contract 14 and no `mixed_deployment` | F (after sync) |
+
+**#3, #4 and #5 are the ones to run first and they need no activation at all.** They are the regression
+surface this round actually created: a stylesheet and nine scripts loaded by every page.

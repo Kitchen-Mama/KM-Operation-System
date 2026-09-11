@@ -31,6 +31,14 @@
     <link rel="stylesheet" href="assets/css/pages/sku-regional-details.css?v=donenotice-20260811">
     <link rel="stylesheet" href="assets/css/pages/global-logistics-map.css?v=map-labelmode-r9-20260831">
     <link rel="stylesheet" href="assets/css/pages/automation-schedule.css?v=donenotice-20260811">
+    <!-- PRODUCT STRATEGY BOARD (PRODUCT-STRATEGY-P1-B7) — INSTALLED, NOT ACTIVATED.
+         Loaded last so its component rules sit above the shell owners, and scoped to `.psb-page`
+         so they reach nothing else: P1-B7 removed this sheet's global reset and turned its
+         `body`, `h1-h4`, `button`, `.btn`, `.filter-group` and `.kmf-*` rules into descendants of
+         the board's own root. Before that, linking it here restyled every page in the
+         application — the `font:` shorthand on `body` alone replaced the font family and the
+         line-height everywhere. -->
+    <link rel="stylesheet" href="assets/css/product-strategy-board.css?v=productstrategy-p1b7-20260911">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- ExcelJS — client-side XLSX generation for formatted export templates (TEMPLATE_UI_STANDARD_SPEC). -->
     <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
@@ -388,6 +396,13 @@
             <!-- Automation Schedule (ADMIN-AUTOMATION-R1) — Administration / System Management.
                  KM.partialLoader injects #automation-schedule-section into this mount point on lifecycle mount. -->
             <div id="automation-schedule-mount"></div>
+
+            <!-- Product Strategy Board (PRODUCT-STRATEGY-P1-B7) — INSTALLED, NOT ACTIVATED.
+                 An empty mount point and nothing more. KM.partialLoader fetches the partial on the
+                 first lifecycle mount of `product-strategy-board-section`, and no navigation can
+                 reach that section: there is no menu item above, and app.js refuses the id by name.
+                 Until then this div is empty, costs no request and renders nothing. -->
+            <div id="product-strategy-board-mount"></div>
             </main>
         </div>
     </div>
@@ -453,6 +468,35 @@
     <script src="assets/js/api/km-loading-state.js?v=sku-read-path-20260826"></script>
     <!-- API Foundation (Phase API-1) — weeklyShipping READ now canonical; wraps the legacy transport otherwise -->
     <script src="assets/js/api/km-api-foundation.js?v=fc1be3r4a2r1r6r7r5-factorystockguard-20260908"></script>
+
+    <!-- ============================================================================================
+         PRODUCT STRATEGY BOARD (PRODUCT-STRATEGY-P1-B7) — INSTALLED, NOT ACTIVATED
+         ============================================================================================
+         LOADED AND UNREACHABLE, WHICH ARE TWO DIFFERENT FACTS. Every module the board needs is
+         here; none of them starts anything. The page controller registers a lifecycle and does
+         nothing until a section switch it has no route to. The accessor's capability mirror is
+         FALSE and only a server capability payload can raise it, so even a direct call to the
+         controller answers FEATURE_DISABLED and sends ZERO requests.
+
+         THE ORDER IS LOAD-BEARING AND IT IS WHY THESE NINE TAGS STAY TOGETHER. Each line below is
+         consumed by the ones under it: the accessor needs KM.api from km-api-foundation.js above;
+         the live adapter needs PSB_CONTRACT, KM_PRODUCT_PRICING_ADAPTER and the accessor; the
+         board UI needs the contract, the selectors and the chart layout; the page controller needs
+         all of them. Nothing here is deferred and nothing probes for a dependency later, so a tag
+         in the wrong place is a TypeError at boot rather than a slow degradation.
+
+         NOT FROM docs/prototypes. The prototype consumes these production modules; production
+         consumes nothing of the prototype's, and its preview fixture is not loaded, not
+         referenced and not reachable. -->
+    <script src="assets/js/api/km-product-pricing-workspace.js?v=productstrategy-p1b7-20260911"></script>
+    <script src="assets/js/api/km-product-pricing-adapter.js?v=productstrategy-p1b7-20260911"></script>
+    <script src="assets/js/product-strategy/psb-data-contract.js?v=productstrategy-p1b7-20260911"></script>
+    <script src="assets/js/product-strategy/km-product-strategy-site-universe.js?v=productstrategy-p1b7-20260911"></script>
+    <script src="assets/js/product-strategy/km-product-strategy-live-adapter.js?v=productstrategy-p1b7-20260911"></script>
+    <script src="assets/js/product-strategy/psb-selectors.js?v=productstrategy-p1b7-20260911"></script>
+    <script src="assets/js/product-strategy/psb-chart-layout.js?v=productstrategy-p1b7-20260911"></script>
+    <script src="assets/js/product-strategy/psb-board-ui.js?v=productstrategy-p1b7-20260911"></script>
+    <script src="assets/js/pages/product-strategy-board.js?v=productstrategy-p1b7-20260911"></script>
 
     <!-- Pages -->
     <script src="assets/js/pages/home.js?v=r6c-navlifecycle-20260822"></script>

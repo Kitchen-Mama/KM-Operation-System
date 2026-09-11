@@ -5733,3 +5733,69 @@ before this action is deployed or the board opens with a site menu it cannot fil
 are an evidence gap (no canonical company/country master, so `KM` and `EU` are shown as themselves);
 the board has still not been rendered against live rows in a browser. **NEXT:** the user syncs the
 package and runs `RUN_P1_SITE_UNIVERSE_READBACK()`.
+
+
+---
+
+## P1-B7 — LIVE EVIDENCE FROZEN · SHELL INTEGRATION · DEPLOYMENT ORDER PROVED  (2026-09-11)
+
+**THE LIVE READBACK RAN AND IS NOW FORMAL EVIDENCE.** `2026-09-11T13:31:30.059Z`, fingerprint
+`D53C96CE`, endpoint build `…R6-R7-R9`, `source_state READY`, **10 sites / 495 membership rows**, table
+fingerprint `2AF82658`, `capped false`, `is_whole_universe true`, `findings []`, `refusals []`,
+`writes/writer_calls/sheets_created/rows_modified 0`, and the gate refusing **live** with
+`FEATURE_DISABLED · db_opened false · tables_read 0`. Verdict `P1_B6_SITE_UNIVERSE_READY`. The ten
+identities are the same ten P1-B6 asserted — what changed is the provenance of the claim, plus per-site
+row counts nobody had before (101/19/64/35/51/39/26/42/100/18). `SOURCE_MODIFIED_AT` stays an
+**evidence gap**; it is not rewritten as proven.
+
+**THE PAGE IS NOW INSTALLED IN THE OPERATION SYSTEM SHELL AND STILL CANNOT BE OPENED.** index.html
+loads the stylesheet, nine scripts in dependency order and one mount point; the controller registers a
+lifecycle and fetches its partial through the shared loader. Three gates keep it shut: the server flag
+`PRODUCT_STRATEGY_ENABLED_ = false`, `KM_STAGED_SECTIONS_['product-strategy'].enabled = false` in
+app.js with the reason written next to it, and the capability mirror, which only a server payload can
+raise and which makes a direct controller call cost **zero requests**. *A section missing from
+`showSection` and one deliberately refused look identical from outside and are completely different in
+the code* — declared and false, there is a line to review and a mutant to fail.
+
+**INSTALLING IT RAN WHAT TWO ROUNDS HAD ONLY READ, AND THREE DEFECTS FELL OUT.** (1) The board could
+not render in the shell at all — `render()` dereferenced `#shell`/`#btnRail` and three renderers
+appended into hosts the production partial does not have, so the first render threw; invisible because
+**the harness builds its DOM from the prototype's index.html**, which has all the chrome. (2) The live
+adapter did not implement `loadCanonical()`, the method the renderer actually calls, under a comment
+claiming the interfaces matched. (3) psb-board-ui.js auto-boots and `boot()` throws without an adapter,
+so loading the script **crashed every page in the application** — correct refusal, wrong moment; it now
+auto-boots where a fixture is present, which is what the auto-boot exists for.
+
+**THE STYLESHEET STOPPED BEING A PAGE.** No page had ever loaded it, so nothing was broken yet — this
+is the regression that linking it WOULD have caused, found by measuring before wiring rather than after
+deploying. It loads after base.css and components.css, so all of it would have won, everywhere: `body` (the `font:` shorthand replaces family AND line-height on every page), `h1-h4`,
+`button`, `.btn` (18 uses), **`.filter-group` (49 uses, and the copy drops the `position: relative` a
+popover is positioned against)**, the shared `.kmf*` popover primitive, a duplicate global reset, and a
+print rule that whitened every page's output. All measured first, all now scoped to `.psb-page` —
+**scoped rather than deleted**, because those values are pinned to base.css by the P1-B2A suite and
+deleting them would drop the pin with the leak. The names that do NOT leak (`.card` `.view` `.scope`
+`.shell` `.side` `.main` …, zero occurrences in production) were left alone and recorded as a named
+residual.
+
+**THE DEPLOYMENT ORDER IS NOW PROVED BY EXECUTION, NOT BY READING A `<`.** The real gate, four
+sandboxes: **13/13 OK · 13/14 OK · 14/13 MISMATCH · 14/14 OK**. The rule is *minimum-compatible*, not
+equality — which is the only reason **backend-first is safe with zero interruption** and no
+compatibility window is needed. Frontend-first breaks every page. `productPricing.siteUniverse.get` is
+deliberately **not** in the required-action probe list, which is what makes a rollback report one
+contract version instead of a list of missing actions. And **syncing is not deploying**: an Apps Script
+deployment serves an immutable version, so a half-copied project is invisible until a version is
+published.
+
+**TESTS.** NEW `product-strategy-shell-integration-p1-b7.test.js` — §I mounts the real board over the
+real live adapter into a DOM parsed from the real production partial, and §K executes the contract
+matrix. Six absence-assertions restated across b1/b3/b5 (each said "nothing loads this", which was the
+honest form of the rule while nothing did — *an assertion that something is absent expires the moment
+it is supposed to be present*). The harness shim gained a `textContent` setter, because a page now uses
+one.
+
+**NOT DONE:** the board has still never been rendered in a browser (§I is a shim, which is a model);
+the live readback calls the handler directly, so **the router registration is not yet proven** — the
+cheap proof is `system.health`; display names remain an evidence gap; navigation is not enabled and
+must not be enabled before the action is deployed. **NEXT:** push, sync + deploy Apps Script, then
+the P1-B8 acceptance matrix — items 3, 4 and 5 first, because they are the regression surface this
+round created and they need no activation.

@@ -525,12 +525,29 @@ console.log('\n=== §I  THE STRESS FIXTURE IS UNREACHABLE FROM PRODUCTION ===');
     ok(bare(SRC.live).indexOf(n) < 0, 'I5.' + (i + 1) + ' and neither does the live adapter');
   });
 
-  /* AND THE PAGE IS NOT REACHABLE AT ALL THIS ROUND — §4 forbids enabling the entry. */
-  ok(SRC.index.indexOf('product-strategy-board') < 0,
-    'I6 index.html has no menu item, mount or script tag for the board');
-  ok(SRC.app.indexOf('product-strategy-board') < 0,
-    'I7 and app.js has no section-map entry, so showSection cannot reach it');
+  /* THE PAGE IS INSTALLED AND STILL UNREACHABLE (restated at P1-B7 §4/§7).
+     Until P1-B7 this was two string searches: the name appeared in neither index.html nor app.js.
+     That was the honest form of the rule while the page was not installed, and P1-B5 §L recorded it
+     as temporary for the obvious reason — an assertion that something is ABSENT expires the moment
+     the thing is supposed to be present, and it cannot tell an installation from a menu item.
+     Installed, the same rule has to be asserted against what actually keeps the page unreachable. */
+  ok(SRC.index.indexOf('assets/js/pages/product-strategy-board.js') > 0
+    && SRC.index.indexOf('product-strategy-board-mount') > 0,
+    'I6 index.html installs the board — the controller is loaded and a mount point exists');
+  ok(SRC.index.indexOf("showSection('product-strategy") < 0
+    && SRC.index.indexOf('showSection("product-strategy') < 0,
+    'I6a and nothing in index.html can show it: there is no menu item');
+
+  /* app.js may name the section EXACTLY ONCE — inside the staged registry, refused. A section map
+     entry is what `showSection` reads, so an entry there is reachability whatever else is written. */
+  ok(SRC.app.indexOf('KM_STAGED_SECTIONS_') > 0
+    && /'product-strategy':\s*\{[^}]*enabled:\s*false/.test(SRC.app),
+    'I7 app.js declares the section staged with enabled false');
+  ok(SRC.app.indexOf("'product-strategy': 'product-strategy-board-section'") < 0,
+    'I7a and it is in neither section map, so showSection cannot resolve it');
   eq(PAGE.CONTRACT.registered_in_navigation, false, 'I8 which the page states as its own contract');
+  eq(PAGE.CONTRACT.installed_in_shell, true,
+    'I8a and it states the other half too — installed is not activated');
 }());
 
 // ===================================================================================================

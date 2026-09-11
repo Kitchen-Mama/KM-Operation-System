@@ -250,6 +250,16 @@
       fixture_fallback: false,
       preview_fallback: false,
       price_source: verdict.state === 'OK' ? 'OPERATION_SYSTEM_DATABASE' : 'NONE',
+      /* P1-B7 — BOTH OF THESE ARE PRINTED, in one line of Advanced Details ("identity … · verified
+         images …"). Without them that line said `undefined` twice: a panel that exists to say where
+         the numbers came from, reporting that it did not know. The identity is not derived here and
+         not guessed — it is the membership table the server read. The image count is a count of the
+         rows in hand, and it is zero whenever there are no rows, which is the truthful answer for
+         every state except OK. */
+      identity_source: verdict.state === 'OK' ? 'OPERATION_SYSTEM_DATABASE' : 'NONE',
+      images_verified: rows.filter(function (r) {
+        return r && r.image_identity_status === 'VERIFIED_DB_MAPPING';
+      }).length,
       source_state: adapted.sourceState === undefined ? null : adapted.sourceState,
       schema_contract_expected: pricingAdapter.EXPECTED_SCHEMA_CONTRACT_VERSION,
       schema_contract_seen: adapted.provenance ? adapted.provenance.schema_contract_seen : null,
@@ -279,8 +289,20 @@
   };
 
   /**
-   * The adapter object the board mounts. Same interface as the preview one, so `ADAPTER.load(filters)` in
-   * the renderer does not learn that anything changed.
+   * THE ADAPTER OBJECT THE BOARD MOUNTS, and the two methods it is asked for.
+   *
+   * `loadCanonical()` is the one the RENDERER calls — psb-board-ui.js `reload()`, and it has been since
+   * P1-B2A moved the category menu out of the adapter and into the pipeline. This file used to say it
+   * offered "the same interface as the preview one, so ADAPTER.load(filters) in the renderer does not
+   * learn that anything changed", which named a method the renderer does not call; mounting the board on
+   * a live adapter threw on its first render, for two rounds, because nothing ever mounted it.
+   *
+   * BOTH RETURN THE SAME SNAPSHOT, AND THAT IS CORRECT HERE RATHER THAN LAZY. In the preview fixture the
+   * two differ because it holds every site: canonical is the universe, load(filters) is a view of it. The
+   * server already scoped this response — productPricing.workspace.get is site-scoped BY CONSTRUCTION,
+   * which is the single reason one site's rows can never appear under another site's heading — so the
+   * canonical universe for this board IS the response. There is nothing left to narrow, and narrowing it
+   * again here would be a second membership rule.
    */
   L.createFromResponse = function (response, opts) {
     var snapshot = L.fromResponse(response, opts);
@@ -288,6 +310,7 @@
       id: L.ID,
       enabled: true,
       /** Pure, and the SAME answer every call — see the note at the top about why that is the point. */
+      loadCanonical: function () { return snapshot; },
       load: function () { return snapshot; },
       snapshot: snapshot
     };
@@ -326,6 +349,11 @@
 
   /** The boundary as data, the same discipline the pricing adapter and the layout engine publish. */
   L.CONTRACT = {
+    // P1-B7 — the two methods the renderer and the page controller each call, named so a future
+    // change to either side is a failing assertion rather than a TypeError on first render.
+    board_entry_point: 'loadCanonical',
+    page_entry_point: 'load',
+    canonical_equals_load: true,
     id: L.ID,
     build: L.BUILD,
     implements: 'PSB_CONTRACT.ADAPTER_INTERFACE',

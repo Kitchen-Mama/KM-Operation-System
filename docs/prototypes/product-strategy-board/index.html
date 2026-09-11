@@ -16,7 +16,11 @@
 -->
 <link rel="stylesheet" href="../../../assets/css/product-strategy-board.css">
 </head>
-<body>
+<!-- P1-B7 — `psb-page` is the stylesheet's scope root. It was `body` until the sheet was linked
+     into the Operation System shell, where a `body` rule restyles every page in the application.
+     The prototype is the other document that uses this sheet, so it carries the class its rules
+     now hang from. Nothing else about this page changes. -->
+<body class="psb-page">
 
 <!-- THE ONE THING THAT IS NEVER RE-RENDERED, NEVER DISMISSIBLE AND NEVER CONDITIONAL. -->
 <div class="banner" id="banner">

@@ -3,10 +3,23 @@
  * PRODUCT STRATEGY BOARD — THE PRODUCTION PAGE CONTROLLER   (P1-B5 §4/§5 · P1-B6 §7/§8)
  * ================================================================================================================
  *
- * NOT REGISTERED, AND THAT IS THE POINT. This file is not referenced from index.html, there is no menu item and
- * no entry in the app.js section map, so `showSection` cannot reach it. §12 forbids enabling the navigation
- * entry; production visibility stays zero by construction rather than by a hidden button — the same discipline
- * the accessor has carried since P1-B1.
+ * INSTALLED, NOT ACTIVATED — AND THOSE ARE TWO FACTS, NOT ONE (P1-B7 §4/§7).
+ *
+ * Until P1-B7 this file was unreachable because nothing loaded it. That is no longer true: index.html loads it,
+ * it registers a lifecycle for `product-strategy-board-section`, and the partial and mount point exist. What
+ * keeps it unreachable now is three things that are written down rather than absent:
+ *
+ *   1. THE SERVER FLAG.  PRODUCT_STRATEGY_ENABLED_ = false in 00_config.gs. The read is refused at the source,
+ *                        whatever any browser believes.
+ *   2. THE NAVIGATION.   app.js `KM_STAGED_SECTIONS_` carries this section with `enabled: false` and
+ *                        `showSection` returns on it before touching the shell. There is no menu item, and a
+ *                        hidden-but-clickable one is forbidden.
+ *   3. THE CAPABILITY.   The accessor's mirror starts FALSE and only a server capability payload can raise it.
+ *                        This is what makes a DIRECT call to the controller answer FEATURE_DISABLED at ZERO
+ *                        requests, which is the case the other two gates do not cover.
+ *
+ * A missing thing and a refused thing look identical from outside and are completely different in the code. The
+ * first cannot be reviewed, asserted, or protected by a mutant; the second can, and is.
  *
  * ------------------------------------------------------------------------------------------------------------
  * THE ORDER OF READS, WHICH IS THE WHOLE SHAPE OF THIS FILE
@@ -47,8 +60,7 @@
 
   var P = {};
 
-  P.BUILD = 'PRODUCT-STRATEGY-P1-B6';
-  P.SECTION_ID = 'product-strategy-board-section';
+  P.BUILD = 'PRODUCT-STRATEGY-P1-B7';
 
   /** States the PAGE owns. None of them is a source state — no table was read to reach one. */
   P.AWAITING_SITE_SELECTION = 'AWAITING_SITE_SELECTION';
@@ -287,10 +299,83 @@
     return c.loadUniverse();
   };
 
+  /* ==============================================================================================
+     THE SHELL SIDE (P1-B7 §4). Everything above this line is shell-agnostic and is driven directly by
+     the suites; everything below knows about KM.lifecycle, KM.partialLoader and one mount point.
+     ============================================================================================== */
+
+  P.SECTION_ID = 'product-strategy-board-section';
+  P.PARTIAL_URL = 'assets/html/pages/product-strategy-board.html';
+  P.MOUNT_SELECTOR = '#product-strategy-board-mount';
+
+  /**
+   * Fetch the partial once. Resolves true when the section markup is in the document.
+   *
+   * The board's own hosts — `#psb-state-host`, `#scope`, `#view`, `#nav`, `#crumbs`, `#banner` — all live
+   * in that partial, so NOTHING may render before this resolves. That is why the read order starts here
+   * rather than at the capability: a FEATURE_DISABLED notice also needs somewhere to be written.
+   */
+  P.ensureMarkup = function () {
+    var doc = root.document;
+    if (!doc) return Promise.resolve(false);
+    if (doc.getElementById(P.SECTION_ID)) return Promise.resolve(true);
+    var loader = root.KM && root.KM.partialLoader;
+    if (!loader || typeof loader.loadPartial !== 'function') return Promise.resolve(false);
+    return Promise.resolve(loader.loadPartial('product-strategy-board', P.PARTIAL_URL, P.MOUNT_SELECTOR))
+      .then(function () { return !!doc.getElementById(P.SECTION_ID); })
+      .catch(function () { return false; });
+  };
+
+  /**
+   * The lifecycle mount. Registered unconditionally, reachable by nothing: app.js refuses this section
+   * id by name, so `switchTo` is never called for it while the feature is staged.
+   */
+  P.onMount = function (epoch) {
+    var doc = root.document;
+    return P.ensureMarkup().then(function (ok) {
+      /* THE NAVIGATION MAY HAVE MOVED WHILE THE PARTIAL WAS IN THE AIR. The lifecycle hands every
+         mount its epoch for this; rendering into a section the operator has already left is the same
+         mistake as rendering a superseded workspace response, one layer up. */
+      var lc = root.KM && root.KM.lifecycle;
+      if (lc && typeof lc.isCurrent === 'function' && !lc.isCurrent(epoch)) return null;
+      if (!ok) return null;
+      var sec = doc.getElementById(P.SECTION_ID);
+      if (sec && sec.classList) sec.classList.add('active');
+      return P.mount({});
+    });
+  };
+
+  /**
+   * The lifecycle unmount. The MARKUP stays — the partial is fetched once and re-fetching it would be
+   * a request for something already in the document. The CONTROLLER does not: it holds a universe, a
+   * chosen scope, a request token and a mounted board, and carrying those into the next visit is how
+   * one site's scope ends up above another site's rows.
+   */
+  P.onUnmount = function () {
+    P.lastController = null;
+    var doc = root.document;
+    var sec = doc && doc.getElementById(P.SECTION_ID);
+    if (sec && sec.classList) sec.classList.remove('active');
+    var host = doc && doc.getElementById('psb-state-host');
+    if (host) { while (host.firstChild) host.removeChild(host.firstChild); }
+  };
+
+  if (root.KM && root.KM.lifecycle && typeof root.KM.lifecycle.register === 'function') {
+    root.KM.lifecycle.register(P.SECTION_ID, { mount: P.onMount, unmount: P.onUnmount });
+  }
+
   /** The boundary as data — asserted by the suite rather than described in prose. */
   P.CONTRACT = {
     build: P.BUILD,
     registered_in_navigation: false,
+    // P1-B7 — INSTALLED is not ACTIVATED, and both halves are stated so neither can be inferred from
+    // the other. The shell loads this file and knows this section; nothing can navigate to it.
+    installed_in_shell: true,
+    lifecycle_section: 'product-strategy-board-section',
+    partial_url: 'assets/html/pages/product-strategy-board.html',
+    mount_selector: '#product-strategy-board-mount',
+    staged_section_key: 'product-strategy',
+    loads_prototype_assets: false,
     reads_url_parameters: false,
     writes_browser_storage: false,
     fixture_fallback: false,

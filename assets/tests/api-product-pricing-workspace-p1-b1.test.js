@@ -472,9 +472,19 @@ eq(ACCMOD.buildPayload({ scope: { company: 'KM', country: 'US', marketplace: 'Am
   '38f the payload builder forwards only named fields — a caller cannot smuggle a spreadsheet id');
 eq(ACCMOD.validateParams({ scope: { company: 'KM', country: 'US' } }).code, 'SCOPE_INCOMPLETE',
   '38g and it refuses an incomplete scope locally, with the server\'s own code');
-eq(INDEX.indexOf('km-product-pricing-workspace'), -1,
-  '38h PRODUCTION VISIBILITY IS ZERO: index.html does not load the accessor');
-eq(INDEX.indexOf('Product Strategy'), -1, '38i and there is no Product Strategy nav entry');
+/* 38h/38i RESTATED AT P1-B7 §4/§7. These asserted that the accessor's name and the words "Product
+   Strategy" appear NOWHERE in index.html — the only available way to say "invisible in production"
+   while the shell did not load the page. It is loaded now, so the same rule is asserted against what
+   makes it invisible instead: it is installed from exactly one place, and there is no way to show it. */
+ok(INDEX.indexOf('assets/js/api/km-product-pricing-workspace.js') > 0,
+  '38h index.html INSTALLS the accessor — the one accessor, from the one path');
+/* THE COMMENTS NAME THE FEATURE AND MUST BE ALLOWED TO. What may not exist is a navigation LABEL, and
+   a label is rendered text — so the search runs on the markup with comments removed. */
+var INDEX_MARKUP = INDEX.replace(/<!--[\s\S]*?-->/g, '');
+eq(INDEX_MARKUP.indexOf('Product Strategy'), -1,
+  '38i and no rendered text in the shell names it: there is no nav entry, hidden or otherwise');
+eq(INDEX.indexOf("showSection('product-strategy"), -1,
+  '38i2 and nothing in the shell can switch to the section');
 eq(INDEX.indexOf('productPricing'), -1, '38j nor any reference to the action');
 
 // ---- 39..40 skuDetails.workspace.get IS UNCHANGED --------------------------------------------------

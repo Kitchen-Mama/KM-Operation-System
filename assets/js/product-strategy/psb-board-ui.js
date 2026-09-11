@@ -364,6 +364,24 @@
     return n;
   }
   function byId(id) { return document.getElementById(id); }
+  /* P1-B7 — THREE CLASSES, TOGGLED, NEVER ASSIGNED. This used to be
+     `document.body.className = …`, which does not add three classes so much as delete every other
+     one. The board does not own `<body>` in the Operation System: utils/resizable-columns.js marks a
+     column drag there, and the prototype's body carries `psb-page` so the scoped stylesheet can find
+     it. A redraw is not a reason for either to disappear. */
+  var BODY_STATE_CLASSES = ['presenting', 'has-scenario', 'is-fullscreen'];
+  function setBodyState() {
+    var b = document && document.body;
+    if (!b) return;
+    var on = [STATE.presentation === true, MODEL.scenario.active === true, STATE.fullscreen === true];
+    var keep = String(b.className || '').split(/\s+/).filter(function (t) {
+      return t !== '' && BODY_STATE_CLASSES.indexOf(t) < 0;
+    });
+    for (var i = 0; i < BODY_STATE_CLASSES.length; i++) {
+      if (on[i]) keep.push(BODY_STATE_CLASSES[i]);
+    }
+    b.className = keep.join(' ');
+  }
   function clear(node) { while (node && node.firstChild) node.removeChild(node.firstChild); }
   function uniq(a) {
     var s = {}, o = [];
@@ -2230,6 +2248,7 @@
 
   function renderNav() {
     var ul = byId('nav');
+    if (!ul) return;          /* P1-B7 — a host that is not there is a missing control, not a dead page */
     clear(ul);
     NAV.forEach(function (item) {
       var li = document.createElement('li');
@@ -2286,6 +2305,7 @@
 
   function renderCrumbs() {
     var c = byId('crumbs');
+    if (!c) return;           /* P1-B7 — see renderNav */
     clear(c);
     var item = null;
     NAV.forEach(function (n) { if (n.id === STATE.view) item = n; });
@@ -3643,9 +3663,14 @@
     var banner = byId('banner');
     var existing = byId('scenarioPrintMark');
     if (!MODEL.scenario.active) {
-      if (existing) banner.removeChild(existing);
+      if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
       return;
     }
+    /* P1-B7 — WITHOUT A STRIP THERE IS NO WARNING, SO THERE MUST BE NO SCENARIO PRINT EITHER. This
+       returns rather than inventing a host: the mark exists to say that a printed number is
+       simulated, and a mark appended somewhere arbitrary is a warning nobody reads. The production
+       partial provides `#banner` for exactly this. */
+    if (!banner) return;
     var text = 'SCENARIO — ' + MODEL.scenario.override_count
       + ' simulated price override' + (MODEL.scenario.override_count === 1 ? '' : 's')
       + ' on ' + siteIdentity().key + '. These are not prices the company charges, they are not saved'
@@ -3772,13 +3797,18 @@
     withViewport(function () {
       hideTip();
       reload();
-      document.body.className = (STATE.presentation ? 'presenting' : '')
-        + (MODEL.scenario.active ? ' has-scenario' : '')
-        + (STATE.fullscreen ? ' is-fullscreen' : '');
-      byId('shell').className = 'shell' + (STATE.rail ? ' is-rail' : '');
+      setBodyState();
+      /* P1-B7 — ABSENT ON PURPOSE IN PRODUCTION. `#shell` and `#btnRail` are the prototype's own
+         sidebar and its collapse toggle; the Operation System owns navigation and §6 forbids a
+         second sidebar, so the production partial has neither. Unguarded, this line was a TypeError
+         on the first render and the board never drew at all. */
+      var shellEl = byId('shell');
+      if (shellEl) shellEl.className = 'shell' + (STATE.rail ? ' is-rail' : '');
       var rb = byId('btnRail');
-      rb.setAttribute('aria-expanded', STATE.rail ? 'false' : 'true');
-      rb.setAttribute('title', STATE.rail ? 'Expand navigation' : 'Collapse navigation');
+      if (rb) {
+        rb.setAttribute('aria-expanded', STATE.rail ? 'false' : 'true');
+        rb.setAttribute('title', STATE.rail ? 'Expand navigation' : 'Collapse navigation');
+      }
       renderNav();
       renderCrumbs();
       renderScope();
@@ -3797,9 +3827,7 @@
     withViewport(function () {
       hideTip();
       reload();
-      document.body.className = (STATE.presentation ? 'presenting' : '')
-        + (MODEL.scenario.active ? ' has-scenario' : '')
-        + (STATE.fullscreen ? ' is-fullscreen' : '');
+      setBodyState();
       renderScenarioMark();
       paintView();
       /* INSIDE THE MEASUREMENT, not after it. The readouts are part of the redraw: measuring the
@@ -4651,9 +4679,19 @@
       adapter_is_an_argument: true,
       default_adapter: 'PREVIEW (prototype only)',
       fixture_fallback_when_an_adapter_is_given: false,
-      auto_mounts_unless: 'PSB_BOARD_DEFER === true'
+      /* P1-B7 — WAS 'PSB_BOARD_DEFER === true', WHICH MADE EVERY OTHER HOST CARRY A GLOBAL. The
+         auto-boot exists so the prototype renders with no calling code, and what makes the
+         prototype the prototype is that it loads a fixture. A host with no fixture and no call has
+         not misconfigured anything; it has loaded a renderer it is not using yet, and answering
+         that with a thrown exception at load meant every page in the Operation System threw for a
+         feature that is switched off. */
+      auto_mounts_when: 'a preview fixture is present AND PSB_BOARD_DEFER !== true',
+      auto_mounts_unless: 'PSB_BOARD_DEFER === true || no preview fixture is loaded',
+      /* Unchanged and deliberate: an explicit mount() with no adapter in a page with no fixture
+         still throws. That is a caller asking for a board it has given no data for. */
+      mount_without_adapter_or_fixture: 'throws'
     }
   };
   this.PSB_BOARD = BOARD;
-  if (this.PSB_BOARD_DEFER !== true) boot();
+  if (this.PSB_BOARD_DEFER !== true && PREVIEW && PREVIEW.PreviewProductStrategyDataAdapter) boot();
 }).call(this);

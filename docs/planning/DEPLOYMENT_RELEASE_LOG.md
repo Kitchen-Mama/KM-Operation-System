@@ -760,3 +760,100 @@ ORDERING CONSTRAINT
          with a site menu it cannot fill.
 
 **STATUS: SITE UNIVERSE OWNER BUILT · NOT PUSHED · APPS SCRIPT NOT SYNCED · NO DEPLOYMENT VERSION · PRODUCT STRATEGY NOT ENABLED · NAVIGATION NOT ENABLED · NO LIVE READ PERFORMED.**
+
+
+---
+
+## Entry — 2026-09-11 · PRODUCT-STRATEGY-P1-B7 · shell integration + live evidence freeze
+
+```
+Release ID:                  PSB-2026-09-11-p1-b7-shell-integration
+Environment:                 (none — NOT DEPLOYED, NOT PUSHED)
+Git branch:                  feature/product-strategy-board-p0
+PRE  HEAD:                   5633025bc76a93f32c9558c58b005667710b2335   (== origin at PRE)
+Apps Script sync:            NOT PERFORMED THIS ROUND
+Web App deployment:          NOT CREATED THIS ROUND
+Frontend deployment:         NOT PERFORMED THIS ROUND
+Feature flag:                PRODUCT_STRATEGY_ENABLED_ = false          (unchanged)
+                             INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = false (unchanged)
+Navigation:                  NOT ENABLED — staged with enabled:false in app.js
+Build/release pin:           F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9           (unchanged — no server change)
+Action contract:             14 (unchanged — no router action added this round)
+```
+
+### Live evidence accepted (P1-B6 readback, run by the USER)
+
+```
+executed_at 2026-09-11T13:31:30.059Z · fingerprint D53C96CE · length 7272 · chunks 2/2
+endpoint build F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9 · action productPricing.siteUniverse.get · contract 1
+read_only true · writes 0 · writer_calls 0 · sheets_created 0 · rows_modified 0
+gate FEATURE_DISABLED · db_opened false · tables_read 0
+source_state READY · site_count 10 · marketplace_skus 495 rows · table fingerprint 2AF82658 · 15 cols
+capped false · cap 2000 · is_whole_universe true · findings [] · refusals []
+evidence gap SOURCE_MODIFIED_AT_NOT_MEASURABLE_IN_THIS_DEPLOYMENT_SCOPE
+verdict P1_B6_SITE_UNIVERSE_READY
+```
+
+Ten sites: KM/US/Shopify 101 · KM/US/Target 19 · KM/US/Walmart 64 · ResTW/AU/Amazon 35 ·
+ResTW/CA/Amazon 51 · ResTW/EU/Amazon 39 · ResTW/JP/Amazon 26 · ResTW/UK/Amazon 42 ·
+ResUS/US/Amazon 100 · ResUS/US/Walmart 18.
+
+-------------------------------------------------------------------------------------------------------
+APPS_SCRIPT_SYNC_REQUIRED  —  **NO NEW FILES THIS ROUND**
+-------------------------------------------------------------------------------------------------------
+  No Apps Script source changed in P1-B7. The R9 package recorded in the P1-B6 entry is unchanged and
+  is already synced by the USER (the readback above answered from build R9, which is the proof).
+
+  STILL OUTSTANDING FROM P1-B6, IF NOT ALREADY DONE:
+      create the immutable Web App VERSION for build R9.
+  The readback proves the SOURCE is R9. It does NOT prove a deployment version serving R9 exists, and
+  it does not prove 01_router.gs routes the action — the readback calls the handler directly. The one
+  cheap proof of both is system.health reporting deployed_action_contract_version 14 with
+  mixed_deployment false.
+
+-------------------------------------------------------------------------------------------------------
+FRONTEND_DEPLOY_REQUIRED  —  **YES**, and only AFTER the Apps Script version exists
+-------------------------------------------------------------------------------------------------------
+  Changed and required together (they are one page):
+      index.html                                          (stylesheet, 9 scripts, 1 mount point)
+      assets/js/app.js                                    (staged-section registry + guard)
+      assets/css/product-strategy-board.css               (scoped to .psb-page)
+      assets/html/pages/product-strategy-board.html       (in-page rail, crumbs, scenario strip)
+      assets/js/api/km-product-pricing-workspace.js       (unchanged content, newly LOADED)
+      assets/js/api/km-product-pricing-adapter.js         (unchanged content, newly LOADED)
+      assets/js/product-strategy/psb-data-contract.js     (unchanged content, newly LOADED)
+      assets/js/product-strategy/km-product-strategy-site-universe.js   (newly LOADED)
+      assets/js/product-strategy/km-product-strategy-live-adapter.js    (loadCanonical + provenance)
+      assets/js/product-strategy/psb-selectors.js         (unchanged content, newly LOADED)
+      assets/js/product-strategy/psb-chart-layout.js      (unchanged content, newly LOADED)
+      assets/js/product-strategy/psb-board-ui.js          (chrome tolerance, body classes, auto-boot)
+      assets/js/pages/product-strategy-board.js           (lifecycle + partial)
+
+  NAVIGATION STAYS DISABLED and the capability stays false in this deployment. What ships is an
+  installed, unreachable page.
+
+-------------------------------------------------------------------------------------------------------
+DEPLOYMENT ORDER — PROVED, NOT ASSERTED
+-------------------------------------------------------------------------------------------------------
+      browser 13 / server 13   DEPLOYMENT_CONTRACT_OK
+      browser 13 / server 14   DEPLOYMENT_CONTRACT_OK        <- backend-first is SAFE
+      browser 14 / server 13   DEPLOYMENT_CONTRACT_MISMATCH  <- frontend-first breaks EVERY page
+      browser 14 / server 14   DEPLOYMENT_CONTRACT_OK
+
+  The gate is `deployed < expected`, a MINIMUM and not an equality. Therefore:
+
+      1. git push                                                     (USER)
+      2. Apps Script: confirm R9 source, then create a NEW Web App VERSION   (USER)
+      3. Verify system.health: action contract 14, mixed_deployment false    (USER)
+      4. Frontend redeploy — ONLY after step 2                         (USER)
+      5. P1-B8 acceptance matrix items 3/4/5 (page regressions) — no activation needed
+      6. Navigation entry — DEFERRED, and only after steps 2-5
+
+  ROLLBACK.  Frontend: redeploy the commit before this one (5633025) — every file above is additive to
+  the shell, so the previous build simply does not load the page. Apps Script: re-publish the previous
+  deployment version; a browser at pin 14 then reports DEPLOYMENT_CONTRACT_MISMATCH by name, which is
+  why the frontend must be rolled back FIRST in that direction — the reverse of the deploy order.
+  `productPricing.siteUniverse.get` is deliberately absent from the required-action probe list, so a
+  rollback reports one contract version rather than a list of missing actions.
+
+**STATUS: PAGE INSTALLED AND UNREACHABLE · NOT PUSHED · NO NEW APPS SCRIPT SOURCE · NO DEPLOYMENT VERSION CREATED · FRONTEND NOT DEPLOYED · PRODUCT STRATEGY NOT ENABLED · NAVIGATION NOT ENABLED.**

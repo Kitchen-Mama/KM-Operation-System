@@ -116,6 +116,16 @@ function makeDom(skeleton) {
         out += k.nodeType === 3 ? k.data : k.textContent;
       });
       return out;
+    },
+    /* P1-B7 — THE SETTER, because a page now uses it. The shim implements the DOM surface the pages
+       actually reach for and nothing else, and until the production page controller wrote
+       `h.textContent = …` nothing had. Declared with a getter alone, the assignment threw rather
+       than doing nothing, which is the better failure of the two but is still the shim's failure and
+       not the page's. A browser replaces every child with one text node; so does this. */
+    set: function (v) {
+      while (this.childNodes.length) this.removeChild(this.childNodes[0]);
+      var t = String(v === undefined || v === null ? '' : v);
+      if (t !== '') this.appendChild(new Text(t));
     }
   });
   Node.prototype.appendChild = function (k) {
