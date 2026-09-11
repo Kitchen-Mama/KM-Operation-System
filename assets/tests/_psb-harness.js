@@ -527,7 +527,16 @@ function buildSkeleton(document, head, body, mk) {
 }
 
 /** Load the four files into one context and let boot() run, exactly as the browser would. */
-function bootPage(mutateSrc) {
+/**
+ * P1-B4 — `opts.devMode` sets `__PSB_DEV_MODE__` BEFORE the page scripts run.
+ *
+ * The stress fixture is no longer a control on the page, and there is deliberately no URL parameter
+ * that could turn it on (§4.6 — a link is forwardable, so a query string is how one person's
+ * debugging becomes another person's screenshot). A suite that wants it asks for developer mode at
+ * BOOT, which is the one moment a page cannot be talked into later.
+ */
+function bootPage(mutateSrc, opts) {
+  opts = opts || {};
   var dom = makeDom(buildSkeleton);
   var sandbox = { console: { log: function () {}, error: function () {}, warn: function () {} } };
   var ctx = vm.createContext(sandbox);
@@ -559,6 +568,7 @@ function bootPage(mutateSrc) {
     dom.window.__frames.push(fn);
     return dom.window.__frames.length;
   };
+  if (opts.devMode === true) ctx.__PSB_DEV_MODE__ = true;
   var order = ['contract', 'layout', 'selectors', 'fixture', 'prototype'];
   var thrown = null;
   try {
@@ -600,9 +610,111 @@ function pipeline() {
   return { C: C, F: F, S: S, canon: F.PreviewProductStrategyDataAdapter.loadCanonical().rows };
 }
 
+
+/**
+ * P1-B4 — PICK A CATEGORY, WHATEVER SHAPE THE CONTROL IS IN.
+ *
+ * The category control has two shapes: a row of chips, and a trigger with a searchable menu. The
+ * command bar asks for the menu (a fixed-height bar cannot host a control whose width grows with the
+ * option count); a card can still ask for chips. Every suite used to hard-code the chip path, so a
+ * shape change broke six call sites in four files.
+ *
+ * Returns true when something was clicked, false when the category is not on offer — a caller that
+ * wants to assert the category EXISTS should check the return rather than assume the click landed.
+ */
+function pickCategory(pg, name) {
+  var doc = pg.dom.document;
+  var want = name || 'Silicone Spatula';
+  var chip = doc.querySelectorAll('#catBar .catbtn').filter(function (b) {
+    return b.getAttribute('data-category') === want;
+  })[0];
+  if (chip) { chip.click(); return true; }
+  var more = doc.getElementById('catMore');
+  if (!more) return false;
+  if (more.getAttribute('aria-expanded') !== 'true') more.click();
+  var row = doc.querySelectorAll('#catMenu .catmenu-item').filter(function (n) {
+    return n.getAttribute('data-category') === want;
+  })[0];
+  if (!row) {
+    var back = doc.getElementById('catMore');
+    if (back && back.getAttribute('aria-expanded') === 'true') back.click();
+    return false;
+  }
+  row.click();
+  return true;
+}
+
+/** Every category the control currently offers, in the order it offers them. Shape-independent. */
+function categoryOptionsOffered(pg) {
+  var doc = pg.dom.document;
+  var chips = doc.querySelectorAll('#catBar .catbtn').map(function (b) {
+    return b.getAttribute('data-category');
+  }).filter(function (c) { return c && c !== 'ALL'; });
+  if (chips.length) return chips;
+  var more = doc.getElementById('catMore');
+  if (!more) return [];
+  var wasOpen = more.getAttribute('aria-expanded') === 'true';
+  if (!wasOpen) more.click();
+  var out = doc.querySelectorAll('#catMenu .catmenu-item').map(function (n) {
+    return n.getAttribute('data-category');
+  }).filter(function (c) { return c && c !== 'ALL'; });
+  var back = doc.getElementById('catMore');
+  if (back && !wasOpen && back.getAttribute('aria-expanded') === 'true') back.click();
+  return out;
+}
+
+/**
+ * P1-B4 §3 — OPEN THE More filters POPOVER. The threshold and the inactive checkbox live inside it
+ * now, so a suite that wants to set one has to open it first; before P1-B4 they were in a band that
+ * was expanded by `advFiltersToggle`.
+ */
+function openMoreFilters(pg) {
+  var t = pg.dom.document.getElementById('moreFiltersToggle');
+  if (!t) return false;
+  if (t.getAttribute('aria-expanded') !== 'true') t.click();
+  return !!pg.dom.document.getElementById('moreFiltersPanel');
+}
+
+/**
+ * P1-B4 §4 — THE STRESS FIXTURE, THROUGH THE DEVELOPER HOOK AND NOTHING ELSE.
+ *
+ * The checkbox is gone from the page. The hook is defined only when `__PSB_DEV_MODE__` was true
+ * BEFORE the scripts ran, which is what `bootPage(mutate, { devMode: true })` arranges — there is no
+ * URL parameter and no control to click, so a suite has to ask for developer mode deliberately.
+ *
+ * NOTE `pg.ctx`, NOT `pg.dom.window`. Inside the sandbox the page's `window` IS the vm context, so a
+ * global the page defines on `window` lands on ctx; looking on dom.window would find undefined and
+ * this would silently return false, which is the failure mode that hides a missing hook.
+ */
+function useStressFixture(pg) {
+  if (typeof pg.ctx.__psbUseStressFixture !== 'function') return false;
+  pg.ctx.__psbUseStressFixture(true);
+  return true;
+}
+
+/**
+ * P1-B4 — THE STRESS FIXTURE AND A BIG CATEGORY, WHICH IS ALWAYS WHAT A DENSITY TEST WANTS.
+ *
+ * Six call sites across two suites spelled this out by hand: expand the advanced band, tick the
+ * checkbox, open the category menu, click the twelve-product category. All six broke together when
+ * the checkbox left the page. Requires a page booted with `{ devMode: true }`.
+ */
+function stressChart(pg, category) {
+  if (!useStressFixture(pg)) return false;
+  return pickCategory(pg, category || 'Electric Can Opener');
+}
+
+/** Is the developer hook reachable at all? §4.5 wants this false on a normal load. */
+function devHookPresent(pg) {
+  return typeof pg.ctx.__psbUseStressFixture === 'function';
+}
+
 module.exports = {
   ROOT: ROOT, PROTO: PROTO, SRC: SRC, readProto: readProto, bare: bare,
   makeDom: makeDom, buildSkeleton: buildSkeleton, bootPage: bootPage,
   selfTestVerdict: selfTestVerdict, pipeline: pipeline,
-  PAGE_IDS: PAGE_IDS, PAGE_TREE: PAGE_TREE
+  PAGE_IDS: PAGE_IDS, PAGE_TREE: PAGE_TREE,
+  pickCategory: pickCategory, categoryOptionsOffered: categoryOptionsOffered,
+  openMoreFilters: openMoreFilters, useStressFixture: useStressFixture,
+  devHookPresent: devHookPresent, stressChart: stressChart
 };

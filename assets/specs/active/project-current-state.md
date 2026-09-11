@@ -5450,3 +5450,121 @@ one package to paste, in the order the ledger gives (`00_config` first because i
 `01_router` last because it is what makes the action reachable). The nine merge conditions are all still
 open. **NEXT:** the user syncs, cuts a Web App version, and runs
 `RUN_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK()`; its verdict decides P1-B4.
+
+### `PRODUCT-STRATEGY-P1-B4` — one compact command bar, More filters, the scenario drawer (P worktree, local commit only)
+
+**THE READBACK HAS NOT RUN.** This round's brief opens with "after the production DB/API readback is
+complete", and it is not: P1-B3 built it and it still needs a person to sync five files and run one
+function. Nothing here depends on that — it is prototype UI work on the preview fixture — but the live
+Company/Country/Marketplace/Category/Series universe is still unmeasured, so every count and every
+menu on this page is a fixture's.
+
+**MEASURED: 422px → 112px AT 1920×1080**, which is inside the 90–130px target; 184px at 1366, 257px at
+1024, 452px at 768 (from 422/422/458), and no horizontal overflow at any of them. The first KPI moved
+from y=678 to y≈250. **AND THE HEIGHT WAS NEVER THE CONTROLS.** Five dropdowns are five dropdowns;
+what took 422px was FOUR CARDS — four headings, four `?` rows, four borders, three state paragraphs —
+inside a FIFTH card (`.scope`), so a border inside a border and 24px of padding for nothing. Every
+control still stands at the shared 38px `--filter-height`: not one was shrunk to hit the number, which
+is what §7's last line asks.
+
+**A DEFECT UNDERNEATH THE LAYOUT ONE.** `siteDimensionValues` read the WHOLE fixture, so the Country
+menu listed every country whatever Company was chosen and the Marketplace menu every marketplace
+whatever Country was. Nothing looked broken because `narrowAfterSiteChange` cleared an invalid
+selection AFTER it was made — **a repair where a constraint belongs**, and a menu offering journeys
+that end in an empty chart. `scopeDimensionValues` filters on the tiers ABOVE and nothing below. The
+test walks every country and compares its marketplace menu against the data, plus a companion
+assertion that the countries do NOT all offer the same list — *without the second one the first would
+pass on a global menu.*
+
+**ONE OPTION IS A FACT, NOT A CHOICE (§1.4).** A single-valued dimension renders as read-only context —
+label, value, no chevron, no focus stop — and the state is corrected to that value so the scope cannot
+read "aggregate" about a single site. The fixture has one company, so that case is on screen today;
+DE and UK each have one marketplace, so Marketplace becomes context when either is chosen. **This also
+broke two of my own first-draft tests**, which read `<option>` elements and reported "no marketplaces"
+for a country that sells on exactly one — the feature working and the test being naive.
+
+**THE SUMMARY SHOWS VALUES, NOT AN EXPLANATION OF ITSELF (§2).** Country · marketplace · category ·
+series · currency, with company OMITTED while there is only one, because a word that cannot change is
+not information. The site KEY is in the `?` popover and nowhere on the line, asserted both ways. And
+**currency is derived rather than chosen**: P1-B3 proved the read refuses to pool currencies, so a
+complete site has exactly one and a dropdown offering it is a decision already made.
+
+**MORE FILTERS IS A POPOVER (§3).** Renamed from "Advanced filters" — developer vocabulary for "the
+ones we put away", and nothing behind it is expert analysis. Closed means NOT IN THE DOM. Open, it is
+the Operation System's own `.kmf-panel`: absolute, viewport-clamped, so **opening it moves nothing**,
+where the old band pushed everything below it by its own height. `More filters · 1` on the button with
+the shared count pill. §3.8's consistent rule is one sentence — **a value change never closes it** —
+and the three closing paths come from the ONE pair of document listeners the `?` icons already use.
+The drawer is deliberately NOT in that set: Escape closes popovers, and a workspace someone is
+half-way through typing into is not a popover.
+
+**THE STRESS FIXTURE IS OUT OF THE PRODUCT (§4).** It loads forty-four invented products, and a
+control that loads fake data beside the controls that filter real data is one misclick from a meeting
+shown fiction. Gone from the UI, NOT hidden in More filters, and **no URL parameter** — the page never
+reads `location.search`, `URLSearchParams`, `location.href` or `window.location`, asserted by name,
+because a link is forwardable and a query string is how one person's debugging becomes another
+person's screenshot. Reachable only via `__PSB_DEV_MODE__` set before the scripts run, which shows a
+labelled strip and defines the hook the suites call through `bootPage(mutate, { devMode: true })`.
+
+**THE DRAWER, AND THERE IS NO SHARED ONE TO REUSE.** §5 asks for the Operation System's drawer
+component; three PAGES define their own (`.glm-drawer`, `.oow-drawer`, sku-regional-details), all
+page-prefixed, with no `--drawer-*` token anywhere. So this is a fourth local drawer and **the thing
+to add to the shared layer before a fifth page needs one.** `position: fixed` is the whole geometry
+guarantee, measured in Chrome with it open: viewBox identical, every `data-cy` identical, view width
+identical, scroll unchanged. Closing is not clearing; only Reset clears and only a reload forgets, and
+the page touches no storage, cookie or transport — asserted by name.
+
+**THE CHIP WAS STALE AFTER APPLY — the same shape as P1-B2A's badge, in a new place.** Apply runs
+`renderData()`, which by contract rebuilds no control, so the chip sat in the bar reading "No
+scenario" while the chart showed simulated prices. `updateScenarioChip()` writes it in place and runs
+BEFORE the permitted check, so a scope where a scenario is not allowed has its chip corrected rather
+than left showing the last site's state.
+
+**`flex: 1 1 160px` IS A WIDTH IN A ROW AND A HEIGHT IN A COLUMN.** The first column layout at 768
+produced an 886px bar — every select field 160px tall — from one line written for a different
+container: the narrow rule sets that on `.filter-group`, correct as a width when a filter group only
+ever sat in a row, and a main-axis BASIS the moment the container becomes a column. Nothing was wrong
+with the rule; what was wrong was reusing a container in a direction it had never been in.
+
+**TWO MEASUREMENTS THE FORMAL MERGE NEEDS (§8).** `components.css` styles the bare `button` element
+solid green with a 60px min-width, and `base.css` sets `body { overflow: hidden }` — so the shared
+sheets **cannot be loaded à la carte**: they assume they ARE the page. The prototype therefore loads
+one stylesheet, its own, and 22 shared tokens are copied and asserted equal to base.css value for
+value. §8 permits that as design validation; the second SSOT goes at merge time by putting the page
+inside the shell, not by loading its CSS beside a different one. And **`.btn-secondary` is not a
+secondary button**: solid green fill, white text, no border, with literal padding and radius that
+override the `--btn-*` contract `.btn` sets one line above it. Using it would have put two green pills
+in the bar — the loud hierarchy §1.8 and §5 rule out. `.btn-quiet` is used instead, and the missing
+quiet secondary is a **third recorded gap** beside the missing drawer and the missing badge tokens.
+
+**A FOURTH ROUND OF DEFECTS ONLY A SCREENSHOT COULD SEE.** `.scenario-row` is a five-column GRID whose
+minimums total 570px and the drawer body is ~392px; the re-housing rule said `flex-direction: column`,
+which does nothing to a grid — so ADJUSTMENT was cut in half and the Amount field was off the edge of
+the drawer entirely. **Every DOM assertion was green**: the fields were present, in order and
+reachable, and none of them was about whether a person could SEE one. Also caught by eye at 768: the
+category trigger kept a 260px cap and the scenario button sized to its text, leaving two ragged edges
+beside three full-width selects.
+
+**TESTS.** NEW `product-strategy-board-p1-b4.test.js` **251 / 0 / 12 mutants / 0 survived**. P1-B2
+**246/0/17** · B2A **237/0/14** · B2B **142/0/16** · B2C **157/0/14** · B3 readback **332/0/17** ·
+B1 **167/0/13** · page self-test **238/238**. 451 suites swept; only the four PRE-EXISTING red with
+counts identical to the untouched main worktree (3/1/7/2). **Three assertions were superseded and each
+was measuring the harness rather than the page:** B2A's H13 (chips, which the bar can no longer host),
+B2A's N11 (a mutant **neutralised by the design change** — `CATEGORY_CHIP_LIMIT` no longer reaches the
+bar, so the mutation changed nothing observable and was a green light for a rule nobody checks; now
+aimed at the bar asking for chips), and B2B's M11 (pinned to `'scSeries@24'`, where 24 is the shim's
+synthetic `document-order × 24` and moves with the node count; it is about FOCUS, so it compares clean
+against mutant). **One shared helper replaced six copies** of "find the chip and click it" —
+`H.pickCategory` works with either shape, because a suite should say what it wants selected, not how
+the control happens to be built this round.
+
+**NOT DONE:** the readback has still not run; no live DB or API read; `PRODUCT_STRATEGY_ENABLED_`
+still false; no page loads the accessor or the adapter; no Apps Script, `assets/js`, `assets/css`,
+`index.html` or production page touched — **so no release bookkeeping moved and nothing became
+sync-visible**, and P1-B3's five files are unchanged and still outstanding. No Operation System shell
+integration (§39.9 measures what it will cost). No DB/Sheets/Drive writes, no network, no S1–S5, no
+main, no km-lb, no merge, no push. Print/PDF is asserted in the stylesheet and NOT photographed — a
+person still needs that, plus a judgement on the drawer covering the last KPI cell at 1920, which is
+the deliberate cost of overlaying rather than resizing, because resizing would move every price.
+**NEXT:** the user syncs P1-B3's package and runs
+`RUN_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK()`; its verdict still decides what P1-B5 can connect.

@@ -75,10 +75,9 @@ function id(p, x) { return p.dom.document.getElementById(x); }
 function num(n, a) { return Number(n.getAttribute(a)); }
 function toChart(p, category) {
   if (p.thrown) return p;
-  var chip = q(p, '#catBar .catbtn').filter(function (b) {
-    return b.getAttribute('data-category') === (category || 'Silicone Spatula');
-  });
-  if (chip.length) chip[0].click();
+  /* P1-B4 — ONE SHARED PICKER. The command bar asks the category control for its menu shape, so a
+     chip lookup finds only the trigger. `H.pickCategory` works with either shape. */
+  H.pickCategory(p, category || 'Silicone Spatula');
   return p;
 }
 function openMeeting(p) {
@@ -201,8 +200,9 @@ console.log('\n=== SECTION B  THE DOMAIN BELONGS TO THE SCOPE, NOT TO THE CHECKB
   /* B15 AND SO DOES A DIFFERENT SITE. */
   var pSite = bootPage(null);
   fire(pSite, 'fCountry', 'DE');
-  var deCats = q(pSite, '#catBar .catbtn').map(function (b2) {
-    return b2.getAttribute('data-category'); }).filter(function (v) { return v !== 'ALL'; });
+  /* `categoryOptionsOffered` returns the VALUES, already without 'ALL' — it has to, because the two
+     shapes carry them in different places (a chip's attribute, a menu row's attribute). */
+  var deCats = H.categoryOptionsOffered(pSite);
   toChart(pSite, deCats[0]);
   ok(q(pSite, '.chart').length >= 1, 'B15 a different country draws its own chart', deCats);
   ok(q(pSite, '.chart')[0].getAttribute('data-currency') !== 'USD',
@@ -361,15 +361,8 @@ console.log('\n=== SECTION E  THE LABEL LANE ===');
   ok(/\d/.test(q(PG, '.xsub')[0].textContent), 'E10 the second row carries the everyday price');
 
   /* E11 TRUNCATION, NOT OVERLAP — measured on the 44-product chart where the columns are narrow. */
-  var w = bootPage(null);
-  id(w, 'advFiltersToggle').click();
-  var sw = id(w, 'fStress');
-  sw.checked = true;
-  sw.dispatchEvent(new w.dom.Event('change', { bubbles: true }));
-  id(w, 'catMore').click();
-  var t2 = q(w, '.catmenu-item').filter(function (n) {
-    return n.getAttribute('data-category') === 'Electric Can Opener'; });
-  t2[0].click();
+  var w = bootPage(null, { devMode: true });
+  H.stressChart(w, 'Electric Can Opener');
   var wide = q(w, '.chart')[0];
   var colW = num(wide, 'data-col-w');
   eq(q(w, '.col').length, 44, 'E11 forty-four columns to crowd');
@@ -761,7 +754,9 @@ console.log('\n=== SECTION I  WHAT KEEPS ITS IDENTITY ===');
   if (PG.thrown) return;
   var p = openMeeting(chartPage());
   var names = ['scenarioPanel', 'scSeries', 'scField', 'scAdjust', 'scValue', 'scApply',
-    'scenarioRow', 'scenarioReach', 'scenarioStatus', 'view', 'scopeSite', 'scopeAnalysis'];
+    /* P1-B4 — `scopeAnalysis` was the second tier and there is one bar now. `scopeSummaryRow` takes
+       its place in this list: the context line, rebuilt by the same redraw. */
+    'scenarioRow', 'scenarioReach', 'scenarioStatus', 'view', 'scopeSite', 'scopeSummaryRow'];
   var before = {};
   names.forEach(function (n) { before[n] = id(p, n); });
   var chartBefore = q(p, '.chartwrap')[0];
@@ -788,9 +783,9 @@ console.log('\n=== SECTION I  WHAT KEEPS ITS IDENTITY ===');
   /* I5 A CHANGE OF SITE DOES REBUILD THE MENUS, and must — those are different products. The rule
      is not "never rebuild", it is "rebuild what changed". */
   var p3 = chartPage();
-  var siteBefore = id(p3, 'scopeAnalysis');
+  var siteBefore = id(p3, 'scopeSummaryRow');
   fire(p3, 'fCountry', 'DE');
-  ok(id(p3, 'scopeAnalysis') !== siteBefore,
+  ok(id(p3, 'scopeSummaryRow') !== siteBefore,
     'I5 changing the country DOES rebuild the analysis filters, because the menus differ');
 }());
 
@@ -862,15 +857,8 @@ console.log('\n=== SECTION J  WHAT ONLY A SCREENSHOT COULD SEE, AGAIN ===');
   eq(bad, [], 'J6 no gap label reaches another column\u2019s centre line');
 
   /* J7 AND THE SAME AT 44 COLUMNS, where the gutter is 37px and the long phrase cannot fit. */
-  var w2 = bootPage(null);
-  id(w2, 'advFiltersToggle').click();
-  var sw2 = id(w2, 'fStress');
-  sw2.checked = true;
-  sw2.dispatchEvent(new w2.dom.Event('change', { bubbles: true }));
-  id(w2, 'catMore').click();
-  var tgt = q(w2, '.catmenu-item').filter(function (n) {
-    return n.getAttribute('data-category') === 'Electric Can Opener'; });
-  tgt[0].click();
+  var w2 = bootPage(null, { devMode: true });
+  H.stressChart(w2, 'Electric Can Opener');
   var wide = q(w2, '.gapmark');
   var over = wide.filter(function (n) {
     return num(n, 'data-label-w') > num(n, 'data-room');
@@ -1073,8 +1061,14 @@ mut('M11 Apply re-focuses a control, and the browser scrolls the page to find it
     var a2 = pg.dom.document.activeElement;
     return (a2 && a2.id) + '@' + pg.dom.window.scrollY;
   }
-  return scrollAfterApply(bootPage(null)) === 'scSeries@24'
-    && scrollAfterApply(m) !== 'scSeries@24';
+  /* P1-B4 — CLEAN VERSUS MUTANT, NOT AGAINST A LITERAL. `@24` was the synthetic layout's answer:
+     the shim gives each element a top of (document order x 24), so the anchor compensation depends on
+     the NUMBER OF NODES above #view. The command bar has a different count from the four tiers it
+     replaced, and the same correct behaviour now reports 48. What M11 is about is the FOCUS. */
+  var cleanApply = scrollAfterApply(bootPage(null));
+  var dirtyApply = scrollAfterApply(m);
+  return /^scSeries@/.test(cleanApply) && !/^scSeries@/.test(dirtyApply)
+    && cleanApply !== dirtyApply;
 });
 
 mut('M12 a scenario select collapses meeting mode under the reader', function () {

@@ -5191,9 +5191,7 @@ working tree where an earlier Python patch happened to leave `72_` as LF. **Thre
 were being reported as checked by a suite that could not check them**, and `git diff` cannot show why,
 because autocrlf normalises the comparison it would have to make.
 
-**The fix is at the READ, not at the anchors.** Both suites now normalise `
-` to `
-` when they read
+**The fix is at the READ, not at the anchors.** Both suites now normalise `\r\n` to `\n` when they read
 a source for mutation. CRLF anchors would have been the same bug with the sign flipped — broken in an
 LF worktree and on any Linux checkout — and normalising changes nothing about what executes, because
 these sources are run in a `vm` where line endings are not semantics.
@@ -5239,3 +5237,255 @@ Four come from `assets/specs/active/apps-script/`; the readback comes from
 `RUN_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK()`. Its verdict decides P1-B4: `READY` means the universe
 gets recorded here and the adapter gets wired to a page behind the flag; anything else names a repair
 first.
+
+## §39 — P1-B4 · COMPACT COMMAND BAR · CLEAR USER FLOW
+
+**The readback has not run.** This addendum opens with "after the production DB/API readback is
+complete", and it is not: P1-B3 built it and it still needs a person to sync five files and run one
+function. Nothing here depends on that — it is prototype UI work against the preview fixture — but the
+live Company / Country / Marketplace / Category / Series universe is still unmeasured, so every count
+and every menu on this page remains a fixture's.
+
+### §39.1 What was actually wrong, measured
+
+| viewport | command area BEFORE | AFTER | of viewport | first chart element |
+|---|---|---|---|---|
+| 1920×1080 | **422px** | **112px** | 43% → **11.5%** | KPI strip y=678 → **y≈250** |
+| 1366×768 | 422px | **184px** | 63% → 28% | y=677 → y≈319 |
+| 1024×768 | 422px | **257px** | 63% → 39% | y=677 → y≈391 |
+| 768×1024 | 458px | **452px** | 50% → 49% | y=743 → y≈616 |
+
+**1920×1080 lands inside the 90–130px target.** No horizontal overflow at any of the four widths.
+
+**And the height was never the controls.** Five dropdowns are five dropdowns; what took 422px was
+FOUR CARDS — four headings, four `?` rows, four borders, three state paragraphs — plus a fifth card
+(`.scope`) wrapped around them, so a border inside a border and 24px of padding for nothing. Every
+control still stands at the Operation System's 38px `--filter-height`; not one was shrunk to hit the
+number, which §7's last line asks for explicitly.
+
+### §39.2 The bar
+
+```
+Company    Country   Marketplace   Category            Series          [More filters] [Meeting scenario]
+Kitchen…   US ▾      Amazon ▾      Silicone Spatula ▾  Spatula
+US · Amazon · Silicone Spatula · All series · USD   [No scenario]      43 listings · 42 with a price to plot  (?)
+```
+
+Row one is the ladder, in the order of dependence, with the two secondary entrances pushed right and
+**outside the wrapping container** — that last detail is why they stay on the first line. Row two is a
+12px muted context line. Hierarchy is position and weight: no uppercase and no alarm colour anywhere
+in the bar's stylesheet block, both asserted.
+
+**§1.4 — one option is a fact, not a choice.** A dimension with a single value renders as read-only
+context: the label, the value, no chevron, no focus stop, and the state is corrected to that value so
+the scope cannot read "aggregate" about a single site. The fixture has one company, so `Company:
+Kitchen Mama` is that case on screen today; DE and UK each have one marketplace, so the Marketplace
+control becomes context when either is selected. *A dropdown with one item is a control that cannot do
+anything, and it reads as a decision still to be made.*
+
+**§2 — the summary shows values, not an explanation of itself.** Country · marketplace · category ·
+series · currency. Company is **omitted while there is only one**, because a word that cannot change
+is not information. The site KEY (`Kitchen Mama|US|Amazon`) is in the `?` popover with the rest of the
+mapping and nowhere on the line — asserted both ways.
+
+**Currency is derived, not chosen.** P1-B3 proved the read refuses to pool currencies, so a complete
+site has exactly one and a dropdown offering it is a decision already made. It appears in the summary
+always, and becomes a real control inside More filters only when the scope is an aggregate holding
+more than one.
+
+### §39.3 A defect underneath the layout one: the menus were never narrowed
+
+`siteDimensionValues` read the WHOLE fixture. The Country menu listed every country in the data
+whatever Company was chosen, and the Marketplace menu every marketplace whatever Country was. Nothing
+looked broken because `narrowAfterSiteChange` cleared an invalid selection **after** it had been
+made — *a repair where a constraint belongs*. The menu was offering journeys that end in an empty
+chart.
+
+`scopeDimensionValues(key)` filters on the tiers ABOVE and on nothing below, so choosing a marketplace
+never restricts the country list that produced it. §9's dependent-filter test walks every country and
+compares its marketplace menu against the data, and a companion assertion checks the countries do NOT
+all offer the same list — *without that second one, the first would pass on a global menu.*
+
+### §39.4 More filters
+
+`Advanced filters` → **`More filters`**. §3.9 is right that "advanced" is developer vocabulary for
+"the ones we put away": nothing behind the button is expert analysis, it is a threshold and a
+checkbox.
+
+Closed by default, and **closed means not in the DOM** rather than rendered-and-hidden. Open, it is
+the Operation System's own `.kmf-panel` — absolutely positioned, its own shadow, clamped to the
+viewport, with a right-edge modifier — so **opening it moves nothing.** The band it replaces was in
+the flow and pushed everything below it by its own height every time, which is a layout that punishes
+you for looking.
+
+`More filters · 1` on the button, using the shared `.km-tab-rail__count` pill: *a filter you cannot
+see is a filter you forget you set* — the same argument as the Layers count in §37.
+
+**§3.8 asks for a consistent rule about staying open, and the rule is one sentence: a value change
+never closes it.** Only Escape, a click outside, or the trigger again. Reset stays open too, so the
+reader watches the controls return to their defaults instead of watching the panel vanish. The three
+closing paths come from the ONE pair of document listeners the `?` popovers already use — a component
+that registered its own would be a second rule to keep in step.
+
+**The drawer is deliberately NOT in that set.** Escape closes popovers; a workspace someone is halfway
+through typing into is not a popover, and a stray key should not throw the form away.
+
+### §39.5 The stress fixture is out of the product
+
+`Load generated stress fixture (density test)` was a checkbox beside the filters. It loads
+forty-four invented products, and *a control that loads fake data sitting next to the controls that
+filter real data is one misclick from a meeting shown fiction.*
+
+It is gone from the UI, it is **not** hidden in More filters, and there is **no URL parameter** —
+§4.6 rules that out and is right to: a link is forwardable, so a query string is how one person's
+debugging becomes another person's screenshot. The page never reads `location.search`,
+`URLSearchParams`, `location.href` or `window.location` at all, asserted by name.
+
+Two ways in remain, both deliberate. `window.__PSB_DEV_MODE__ = true` set BEFORE the scripts run
+shows a labelled developer strip and defines `window.__psbUseStressFixture()`; the suites call that —
+query-independent fixture injection, exactly as §4.3 asks, through
+`bootPage(mutate, { devMode: true })`. On a normal load neither exists, so there is nothing to find.
+
+### §39.6 The meeting scenario drawer
+
+**There is no shared drawer in the Operation System, and that is now recorded rather than worked
+around.** §5 asks for the shared component if one exists. Three PAGES define their own —
+`.glm-drawer` (global logistics map), `.oow-drawer` (overseas ops) and one in sku-regional-details —
+every one page-prefixed and page-local, with no `--drawer-*` token anywhere. So this is a fourth local
+drawer, and **the thing to add to the shared layer before a fifth page needs one.**
+
+`position: fixed` is the whole geometry guarantee. Out of flow means the chart's container never
+changes width and the layout engine is never re-measured. **Measured in Chrome with the drawer open:
+viewBox identical, every `data-cy` identical, the view width identical, and the scroll position
+unchanged** (3→3 at 1920, 250→250 at 768). The panel it replaces was IN the flow, which is why every
+open and close pushed the chart down and back.
+
+The form is the same form, re-housed, in §5's order: site context → series, price to simulate,
+adjustment → amount → Apply → Undo and the three resets → the unsaved explanation. Every refusal code
+and status line P1-B2/B2A proved still works, because nothing was rebuilt.
+
+**Closing is not clearing.** The overrides stay, the chart keeps showing them, the chip stays active,
+and the banner keeps its scenario mark. Only Reset clears; only a reload forgets. The page touches no
+`localStorage`, no `sessionStorage`, no `indexedDB`, no cookie, no transport — asserted by name.
+
+**The command bar shows a button and a chip, and the chip is on the CONTEXT row** because §6 files
+"scenario status" under Context, not among the controls. It is a `<span>` with `role="status"`, a
+light tint with dark text and a same-family border — never a saturated block, which on paper is a
+quarter page of ink — carrying the count of listings currently showing a simulated price.
+
+### §39.7 The chip was stale after Apply — the same shape as §33's badge
+
+Apply runs `renderData()`, which by the P1-B2B contract rebuilds no control. So the chip sat in the
+command bar reading `No scenario` while the chart showed simulated prices. **This is exactly the
+defect P1-B2A found on the scenario badge**, in a new place, and it gets the same fix:
+`updateScenarioChip()` writes the class, `data-active`, the label and the count IN PLACE, and it runs
+BEFORE the permitted check so a scope where a scenario is not allowed still has its chip corrected
+rather than left showing the last site's state.
+
+*A chart showing a simulated price beside a chip reading "No scenario" would be the worst defect on
+the screen* — which is the sentence already written above the badge update, and the reason it was worth
+recognising the shape rather than quietly repeating the fix.
+
+### §39.8 `flex: 1 1 160px` is a width in a row and a height in a column
+
+The first column layout at 768 produced an **886px** command area — every select field 160px tall.
+The cause is one line written for a different container: the narrow rule further up the prototype's
+stylesheet sets `.filter-group { flex: 1 1 160px }`, correct as a WIDTH when a filter group only ever
+sat in a row, and a flex-BASIS on the main axis the moment the container becomes a column. Nothing
+was wrong with the rule; what was wrong was reusing a container in a direction it had never been in.
+The basis is cleared in the 820px block, and the assertion that holds it says why.
+
+### §39.9 The shared stylesheets cannot be loaded à la carte, and `.btn-secondary` is not secondary
+
+Two measurements that matter for the formal merge, because §8 asks for direct reuse.
+
+**`components.css` and `base.css` assume they ARE the page.** `components.css` styles the bare
+`button` element with `background: var(--soft-green)`, white text, a 60px min-width and a hover
+translate; `base.css` sets `body { overflow: hidden }`. Loading them into a standalone prototype turns
+every control on the page green and kills page scrolling. That is not a design finding — it is what
+happens when a stylesheet that is a page is asked to be a component library. So the prototype loads
+exactly one stylesheet, its own, and the shared values are COPIED and asserted equal to base.css
+value for value (22 tokens, including the three added this round for the popover primitive). §8 permits
+that as design validation; what it forbids is a second SSOT in the formal version, and that is the
+thing to remove at merge time — by putting the page inside the shell, not by loading its CSS beside a
+different one.
+
+**`.btn-secondary` is a filled green primary.** `background: var(--soft-green)`, white text, no
+border, and its own literal `padding: 0.8rem 1.5rem` / `border-radius: 8px` which override the
+`--btn-*` token contract `.btn` sets one line above it. A class named "secondary" that renders as a
+saturated primary and breaks the height every other control shares. Using it for the two entrances
+would have given the bar two green pills — exactly the loud hierarchy §1.8 and §5 rule out. This round
+uses `.btn-quiet`, which is the real quiet secondary, and **the absence of one in the shared layer is a
+third recorded gap** beside the missing drawer and the missing status-chip tokens.
+
+### §39.10 A fourth round of defects only a screenshot could see
+
+**The drawer's form row was clipped.** `.scenario-row` is a five-column GRID whose minimums add up to
+570px; the drawer body is about 392px. The re-housing rule said `flex-direction: column`, which does
+nothing to a grid — so `ADJUSTMENT` was cut in half and the Amount field was off the edge of the
+drawer entirely. **Every DOM assertion was green**, because the fields were all present, all in the
+right order, and all reachable; none of them was about whether a person could SEE one. One column, and
+the grid stacks.
+
+Also caught by eye at 768: the category trigger kept a 260px cap and the scenario button sized to its
+text, so a stacked column had two ragged edges beside three full-width selects.
+
+**Four rounds running, which is the finding.** What survives a green suite is what lives INSIDE the
+elements the suite checks, and what a layout engine does with a rule written for a different container.
+
+### §39.11 The suite, and three assertions that were measuring the harness
+
+NEW `product-strategy-board-p1-b4.test.js` — **251 / 0 / 12 mutants / 0 survived**. Sections: the bar
+and its order · dependent filters · single-option context · the summary · More filters · the fixture's
+removal · the drawer · the structural facts behind the height · what is reused and what is missing ·
+the information hierarchy · keyboard, touch and aria.
+
+**What this suite can and cannot see.** The DOM shim has no layout engine, so the §7 pixel targets are
+measured in Chrome and recorded in §39.1, and the suite asserts the structural facts that produce
+them: one bar not four cards, one card not two nested, the popover absolute, the drawer fixed, the
+category control a single trigger, and the media queries that carry the three widths. *A structural
+assertion cannot prove a height; it can prove that the things which made it 422px are gone.*
+
+**Three assertions were superseded and each was measuring the harness rather than the page:**
+
+- **P1-B2A's H13** asserted that a few categories render as CHIPS. The bar always asks for the menu
+  shape, because a control whose width grows with the option count cannot live in a fixed-height bar —
+  measured at 833px wide, pushing the other four fields onto two extra rows. The count-based default
+  stays in the control for a card to use; the assertion now checks the BAR's choice and that the
+  count is still published either way.
+- **P1-B2A's N11** raised `CATEGORY_CHIP_LIMIT` to 999 and counted chips. The bar names its shape, so
+  the limit has no effect there and the mutation changed nothing observable — **a mutant neutralised
+  by a design change, which is a green light for a rule nobody checks.** Re-aimed at the one decision
+  the harm now comes from: the bar asking for chips.
+- **P1-B2B's M11** expected exactly `'scSeries@24'`. The 24 is the shim's synthetic layout — every
+  element gets a top of (document order × 24) — so the anchor compensation depends on how many nodes
+  sit above `#view`, and the same correct behaviour reports 48 with a different bar. M11 is about
+  FOCUS, and it now compares the clean page against the mutant.
+
+**And one shared helper replaced six copies.** "Find the chip whose `data-category` is X and click it"
+appeared six times across four suites; every copy broke together and each had to be found separately.
+`H.pickCategory` works with either shape, `H.categoryOptionsOffered` reads the options from whichever
+control is there, `H.openMoreFilters` and `H.stressChart` do the same for the two new entrances. *A
+suite should say what it wants selected, not how the control happens to be built this round.*
+
+**Non-regression:** P1-B2 **246/0/17/0** · B2A **237/0/14/0** · B2B **142/0/16/0** · B2C
+**157/0/14/0** · B3 readback **332/0/17/0** · B1 **167/0/13/0** · page self-test **238/238**. 451
+suites swept; only the four PRE-EXISTING red, counts identical to the untouched main worktree
+(3/1/7/2).
+
+### §39.12 What is NOT done
+
+No Apps Script file changed, no `assets/js`, no `assets/css`, no production page, no `index.html` —
+**so no release bookkeeping moved this round, and nothing became sync-visible.** The five files
+P1-B3 left for the user to sync are unchanged and still outstanding.
+
+The readback has still not run. No live DB or API read. `PRODUCT_STRATEGY_ENABLED_` is still false. No
+page loads the accessor or the adapter. No Operation System shell integration — and §39.9 is the
+measurement of what that will cost. No production DB, Sheets or Drive write. No S1–S5, no `main`, no
+`km-lb`. The nine merge conditions from §31 remain open.
+
+**Print/PDF is asserted, not photographed.** The drawer's print rule makes the fixed overlay static
+and drops the two entrances; that is checked in the stylesheet and has not been rendered to paper.
+A person still needs to confirm it, along with whether the drawer covering the last KPI cell at 1920
+is acceptable — it is the deliberate cost of overlaying rather than resizing, because resizing would
+move every price.

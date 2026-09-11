@@ -60,11 +60,15 @@ function board(sel, over) {
 function chartPage() {
   var p = bootPage(null);
   if (p.thrown) return p;
-  var doc = p.dom.document;
-  var chip = doc.querySelectorAll('#catBar .catbtn').filter(function (b) {
-    return b.getAttribute('data-category') === 'Silicone Spatula';
-  });
-  if (chip.length) chip[0].click();
+  H.pickCategory(p, 'Silicone Spatula');
+  return p;
+}
+
+/** Boot in DEVELOPER MODE, where the stress-fixture hook exists. §4: nowhere else does. */
+function devChartPage() {
+  var p = bootPage(null, { devMode: true });
+  if (p.thrown) return p;
+  H.pickCategory(p, 'Silicone Spatula');
   return p;
 }
 /**
@@ -547,31 +551,39 @@ console.log('\n=== SECTION F  PROGRESSIVE DISCLOSURE ===');
       ok(scope.indexOf(t) < 0, 'F3.' + (i + 1) + ' "' + t + '" is not permanently on screen');
     });
 
-  // F4 CLICK OPENS IT, AND IT CONTAINS THE DETAIL THAT LEFT THE SCREEN.
-  var catIcon = id(p, 'info-category');
-  ok(!!catIcon, 'F4 the category block has one');
+  /* F4 CLICK OPENS IT, AND IT CONTAINS THE DETAIL THAT LEFT THE SCREEN.
+     P1-B4 — ONE BAR, ONE `?`. `info-site` and `info-category` were the help icons of two tiers; §2
+     puts the whole mapping behind a single icon instead. The CONTENT assertions below are unchanged
+     on purpose: F9 and F10 still demand the source column and the rule, so merging two icons cannot
+     become a way of losing what was behind them. */
+  var catIcon = id(p, 'info-scope');
+  ok(!!catIcon, 'F4 the command bar has one');
   eq(catIcon.getAttribute('aria-expanded'), 'false', 'F5 closed to begin with');
   catIcon.click();
-  var pop = id(p, 'infopanel-category');
+  var pop = id(p, 'infopanel-scope');
   ok(!!pop, 'F6 clicking it opens a panel');
-  eq(id(p, 'info-category').getAttribute('aria-expanded'), 'true', 'F7 and says so to a reader');
+  eq(id(p, 'info-scope').getAttribute('aria-expanded'), 'true', 'F7 and says so to a reader');
   eq(pop.getAttribute('role'), 'note', 'F8 the panel is announced, not merely painted');
   ok(pop.textContent.indexOf('sku_details.category') > 0,
     'F9 THE DETAIL IS HERE — including the source column, which a person asked to see');
   ok(pop.textContent.indexOf('never renamed') > 0, 'F10 and the rule that goes with it');
+  ok(pop.textContent.indexOf('marketplace_skus') > 0,
+    'F10a and the membership source that used to be in the site icon');
 
-  // F11 ONE AT A TIME.
-  id(p, 'info-site').click();
+  /* F11 ONE AT A TIME — and it takes two DIFFERENT popovers to show it. The view-size help on the
+     chart controls is a genuinely separate one. */
+  id(p, 'info-viewsize').click();
   eq(q(p, '.info-pop').length, 1, 'F11 opening another closes the first');
-  eq(id(p, 'info-site').getAttribute('aria-expanded'), 'true', 'F12 and the new one is marked open');
+  eq(id(p, 'info-viewsize').getAttribute('aria-expanded'), 'true',
+    'F12 and the new one is marked open');
 
   // F13 THE THREE WAYS TO CLOSE.
-  id(p, 'info-site').click();
+  id(p, 'info-viewsize').click();
   eq(q(p, '.info-pop').length, 0, 'F13 the same control closes it');
-  id(p, 'info-site').click();
+  id(p, 'info-scope').click();
   id(p, 'scope').dispatchEvent(new p.dom.Event('click', { bubbles: true }));
   eq(q(p, '.info-pop').length, 0, 'F14 a click outside closes it');
-  id(p, 'info-site').click();
+  id(p, 'info-scope').click();
   ok(q(p, '.info-pop').length === 1, 'F15 open it once more');
   p.dom.document.dispatchEvent(new p.dom.Event('keydown', { key: 'Escape' }));
   eq(q(p, '.info-pop').length, 0, 'F16 and Escape closes it — no mouse required');
@@ -624,21 +636,51 @@ console.log('\n=== SECTION G  THE OPERATION SYSTEM CONTRACT ===');
   // G4 THE SHARED FILTER-BAR CLASS IS USED BY NAME.
   var p = chartPage();
   if (p.thrown) return;
-  ok(q(p, '.km-filter-bar').length >= 2,
-    'G4 the filter bars carry the Operation System `.km-filter-bar` contract class');
-  ok(q(p, '.filter-group').length >= 5, 'G5 and the controls are `.filter-group`s');
+  /* P1-B4 — THE CONTRACT CLASSES, AIMED AT THE ONES NOW IN USE. `.km-filter-bar` wrapped each of
+     the old tiers; there is one bar, and the shared classes it carries are `.filter-group` for every
+     field and the `.kmf-*` popover primitive for the two entrances. Asserting the wrapper class of a
+     component that no longer exists would be asserting the furniture. */
+  ok(q(p, '.filter-group').length >= 5, 'G4 the controls are Operation System `.filter-group`s');
+  ok(!!id(p, 'moreFiltersToggle')
+    && String(id(p, 'moreFiltersToggle').className).indexOf('kmf-trigger') >= 0,
+    'G5 and More filters uses the shared `.kmf-trigger` popover primitive');
 
-  // G6 THREE TIERS, IN ORDER.
-  var tiers = id(p, 'scope').childNodes.map(function (n) { return n.id; });
-  eq(tiers.slice(0, 3), ['scopeSite', 'scopeAnalysis', 'scopeAdvanced'],
-    'G6 site first, analysis second, advanced third');
-  eq(id(p, 'advFiltersBody').hidden, true, 'G7 advanced starts collapsed');
-  ['fThreshold', 'fInactive'].forEach(function (c, i) {
-    ok(id(p, 'advFiltersBody').querySelectorAll('#' + c).length === 1,
-      'G8.' + (i + 1) + ' ' + c + ' lives inside it, not in the main bar');
+  /* G6 — SUPERSEDED BY P1-B4, AND THE RULE MOVED WHERE IT BELONGS.
+     This asserted three tier containers in order, as a proxy for "the site is chosen before the
+     things it decides". There is one command bar now, so the proxy names a container that is gone
+     while the rule is untouched — and the rule is about the order of the FIELDS. */
+  var bar = id(p, 'cmdBar');
+  ok(!!bar, 'G6 there is ONE command bar rather than a stack of tiers');
+  var rows = bar.childNodes.map(function (n) { return n.id; });
+  eq(rows, ['scopeSite', 'scopeSummaryRow'],
+    'G6a two rows: the ladder, then the context line', rows);
+  var ladder = q(p, '#scopeFields .cmd-field').map(function (f) {
+    var c = f.querySelectorAll('select').concat(
+      f.querySelectorAll('.cmd-context-value'), f.querySelectorAll('.catbtn'))[0];
+    return String((c && (c.id || c.getAttribute('data-context-for'))) || '').replace(/Context$/, '');
   });
-  id(p, 'advFiltersToggle').click();
-  eq(id(p, 'advFiltersBody').hidden, false, 'G9 and opens on request');
+  eq(ladder.slice(0, 3), ['fCompany', 'fCountry', 'fMarketplace'],
+    'G6b and the ladder runs company -> country -> marketplace before category and series', ladder);
+
+  /* G7..G9 — MORE FILTERS IS A POPOVER. Closed means NOT RENDERED, not rendered-and-hidden: an
+     absolutely-positioned panel that exists but is invisible still has to be kept out of the way,
+     and the cheaper guarantee is that there is nothing there at all. */
+  eq(id(p, 'moreFiltersPanel'), null, 'G7 More filters starts closed — the panel is not in the DOM');
+  eq(id(p, 'moreFiltersToggle').getAttribute('aria-expanded'), 'false', 'G7a and says so');
+  H.openMoreFilters(p);
+  ok(!!id(p, 'moreFiltersPanel'), 'G9 and opens on request');
+  ['fThreshold', 'fInactive'].forEach(function (c, i) {
+    ok(id(p, 'moreFiltersPanel').querySelectorAll('#' + c).length === 1,
+      'G8.' + (i + 1) + ' ' + c + ' lives inside the popover, not in the bar');
+    /* `#scopeFields`, NOT `#scopeSite`. The More filters trigger lives in the primary row, so its
+       popover is a descendant of `#scopeSite` by construction — asserting otherwise would fail for a
+       correct layout. The rule is that these two are not standing FIELDS competing for bar width. */
+    ok(id(p, 'scopeFields').querySelectorAll('#' + c).length === 0,
+      'G8.' + (i + 1) + 'a and not one of the standing fields in the ladder');
+  });
+  /* AND IT OVERLAYS. The whole point of the change: the old band displaced everything under it. */
+  ok(/\.kmf-panel\s*\{[^}]*position:\s*absolute/.test(SRC.css),
+    'G9a the panel is absolutely positioned, so opening it moves nothing');
 
   // G10 MEETING MODE IS ITS OWN PANEL, not another row of filters.
   ok(!!id(p, 'scenarioPanel'), 'G10 the scenario is a separate panel');
@@ -692,18 +734,26 @@ console.log('\n=== SECTION H  DENSITY ===');
   // H13 THE CATEGORY CONTROL CHANGES SHAPE rather than becoming a wall of chips.
   var p = bootPage(null);
   if (p.thrown) { ok(false, 'H13 boot', String(p.thrown)); return; }
-  eq(id(p, 'categoryControl').getAttribute('data-shape'), 'chips',
-    'H13 a few categories are chips');
-  id(p, 'advFiltersToggle').click();
-  var sw = id(p, 'fStress');
-  sw.checked = true;
-  sw.dispatchEvent(new p.dom.Event('change', { bubbles: true }));
+  /* H13 — SUPERSEDED BY P1-B4. This asserted that a few categories render as CHIPS. The command bar
+     always asks for the MENU shape, because a control whose width grows with the option count cannot
+     live in a fixed-height bar — measured: the chip row was 833px wide and pushed the other four
+     fields onto two extra rows. The count-based default is still in the control for a card layout to
+     use; what is asserted here is the BAR's choice, and that the count is published either way. */
   eq(id(p, 'categoryControl').getAttribute('data-shape'), 'menu',
-    'H14 twelve become a searchable menu instead');
-  eq(id(p, 'categoryControl').getAttribute('data-count'), '12', 'H15 and the count is still shown');
-  ok(q(p, '#catBar .catbtn').length <= 7,
-    'H16 the chip row does NOT grow without limit', q(p, '#catBar .catbtn').length);
-  ok(!!id(p, 'catMore'), 'H17 the rest are behind a More control');
+    'H13 the command bar always uses the searchable menu shape');
+  ok(q(p, '#catBar .catbtn').length <= 1,
+    'H13a so the bar holds ONE trigger, not a row that grows', q(p, '#catBar .catbtn').length);
+  var beforeCount = id(p, 'categoryControl').getAttribute('data-count');
+  ok(H.useStressFixture(p) === false,
+    'H13b and the stress hook is absent on a normal load — §4.5', H.devHookPresent(p));
+  var pd = devChartPage();
+  ok(H.useStressFixture(pd), 'H14 developer mode can load the stress fixture');
+  eq(id(pd, 'categoryControl').getAttribute('data-shape'), 'menu',
+    'H14a twelve categories are the same searchable menu');
+  eq(id(pd, 'categoryControl').getAttribute('data-count'), '12',
+    'H15 and the count is still shown', beforeCount);
+  ok(!!id(pd, 'catMore'), 'H17 behind one trigger');
+  p = pd;
 
   // H18 THE MENU IS SEARCHABLE, and a miss says so.
   id(p, 'catMore').click();
@@ -796,7 +846,9 @@ console.log('\n=== SECTION J  WHAT ONLY A SCREENSHOT COULD SEE ===');
   // J2 `hidden` MEANS HIDDEN, whatever a class says about display.
   ok(/\[hidden\]\s*\{[^}]*display:\s*none\s*!important/.test(SRC.css),
     'J2 the stylesheet forces [hidden] to win against any class that sets display');
-  var hidden = ['advFiltersBody', 'scenarioBody', 'dqDetail'];
+  /* `scenarioDrawer` replaces `advFiltersBody` here: More filters is not rendered when closed, so it
+     cannot demonstrate the `[hidden]` rule, while the drawer is rendered-and-hidden and can. */
+  var hidden = ['scenarioDrawer', 'scenarioBody', 'dqDetail'];
   hidden.forEach(function (hid, i) {
     var n = id(p, hid);
     ok(!n || n.hidden === true || n.hidden === false,
@@ -825,10 +877,8 @@ console.log('\n=== SECTION J  WHAT ONLY A SCREENSHOT COULD SEE ===');
   // the 44-product chart, at Fit
   var p = bootPage(null);
   if (p.thrown) { ok(false, 'J8 boot', String(p.thrown)); return; }
-  id(p, 'advFiltersToggle').click();
-  var sw = id(p, 'fStress');
-  sw.checked = true;
-  sw.dispatchEvent(new p.dom.Event('change', { bubbles: true }));
+  p = devChartPage();
+  ok(H.useStressFixture(p), 'the stress fixture loads through the developer hook');
   id(p, 'catMore').click();
   var target = q(p, '.catmenu-item').filter(function (i2) {
     return i2.getAttribute('data-category') === 'Electric Can Opener'; });
@@ -884,11 +934,7 @@ function swap(a, b) {
  */
 function toChart(pg, category) {
   if (pg.thrown) return pg;
-  var doc = pg.dom.document;
-  var chip = doc.querySelectorAll('#catBar .catbtn').filter(function (b) {
-    return b.getAttribute('data-category') === (category || 'Silicone Spatula');
-  });
-  if (chip.length) chip[0].click();
+  H.pickCategory(pg, category || 'Silicone Spatula');
   return pg;
 }
 
@@ -958,9 +1004,7 @@ mut('N4 a hidden layer keeps its legend key, so the chart claims something it do
     function keysAfterHiding(pg) {
       if (pg.thrown) return 'THREW';
       var doc = pg.dom.document;
-      var chip = doc.querySelectorAll('#catBar .catbtn').filter(function (b) {
-        return b.getAttribute('data-category') === 'Silicone Spatula'; });
-      if (chip.length) chip[0].click();
+      H.pickCategory(pg, 'Silicone Spatula');
       openLayers(pg);
       var cb = doc.getElementById('layer-promo');
       cb.checked = false;
@@ -971,6 +1015,18 @@ mut('N4 a hidden layer keeps its legend key, so the chart claims something it do
     return keysAfterHiding(chartPage()) === -1 && keysAfterHiding(m) >= 0;
   });
 
+/**
+ * `withProto` boots a mutated page; this boots one in DEVELOPER MODE, so the mutated page can still
+ * reach the stress-fixture hook. SAME SIGNATURE AS withProto — it takes the MUTATOR that `swap`
+ * returns, not a source string and not an already-booted page. (Getting that wrong is why N11 first
+ * reported as survived: it was handed a booted page object and used it as source text.)
+ */
+function withProtoDev(mutate) {
+  return bootPage(function (kind, src) {
+    return kind === 'prototype' ? mutate(src) : src;
+  }, { devMode: true });
+}
+
 mut('N5 the band survives with one cap hidden, so a line runs from a price to nothing', function () {
   var m = withProto(swap(
     "      if (layerOn('floor') && layerOn('msrp') && n._min_c !== null && n._msrp_c !== null) {",
@@ -978,9 +1034,7 @@ mut('N5 the band survives with one cap hidden, so a line runs from a price to no
   function bandsAfterHidingMsrp(pg) {
     if (pg.thrown) return -1;
     var doc = pg.dom.document;
-    var chip = doc.querySelectorAll('#catBar .catbtn').filter(function (b) {
-      return b.getAttribute('data-category') === 'Silicone Spatula'; });
-    if (chip.length) chip[0].click();
+    H.pickCategory(pg, 'Silicone Spatula');
     openLayers(pg);
     var cb = doc.getElementById('layer-msrp');
     cb.checked = false;
@@ -1045,7 +1099,7 @@ mut('N9 the popovers stop closing on Escape', function () {
   function closesOnEsc(pg) {
     if (pg.thrown) return 'THREW';
     var doc = pg.dom.document;
-    doc.getElementById('info-site').click();
+    doc.getElementById('info-scope').click();
     if (doc.querySelectorAll('.info-pop').length !== 1) return 'DID_NOT_OPEN';
     doc.dispatchEvent(new pg.dom.Event('keydown', { key: 'Escape' }));
     return doc.querySelectorAll('.info-pop').length === 0;
@@ -1058,25 +1112,32 @@ mut('N10 the info control opens on hover only, so a keyboard cannot reach it', f
     "    var btn = el('span', 'info-btn', '?');"));
   function isButton(pg) {
     if (pg.thrown) return 'THREW';
-    var b = pg.dom.document.getElementById('info-site');
+    var b = pg.dom.document.getElementById('info-scope');
     return b ? String(b.localName).toLowerCase() : 'MISSING';
   }
   return isButton(chartPage()) === 'button' && isButton(m) === 'span';
 });
 
-mut('N11 the category chips grow without limit, so forty of them become the page', function () {
-  var m = withProto(swap('  var CATEGORY_CHIP_LIMIT = 6;', '  var CATEGORY_CHIP_LIMIT = 999;'));
-  function chipsUnderStress(pg) {
-    if (pg.thrown) return -1;
-    var doc = pg.dom.document;
-    doc.getElementById('advFiltersToggle').click();
-    var sw = doc.getElementById('fStress');
-    sw.checked = true;
-    sw.dispatchEvent(new pg.dom.Event('change', { bubbles: true }));
-    return doc.querySelectorAll('#catBar .catbtn').length;
-  }
-  return chipsUnderStress(bootPage(null)) <= 7 && chipsUnderStress(m) > 10;
-});
+mut('N11 the command bar asks for chips, so the category control grows until it pushes the chart off',
+  function () {
+    /* RE-AIMED IN P1-B4. This used to raise CATEGORY_CHIP_LIMIT to 999 and count chips; the command
+       bar now asks for the menu shape by name, so the limit has no effect on it and the mutation
+       changed nothing observable — a mutant neutralised by a design change, which is a green light
+       for a rule nobody checks.
+       The HARM is unchanged: a category control whose width grows with the option count pushes
+       everything else in a fixed-height bar onto extra rows (measured at 833px wide and three rows
+       of fields). That harm now comes from exactly one decision, so that is what this mutates. */
+    var mutate = swap("      { provenance: false, shape: 'menu' }));",
+      "      { provenance: false, shape: 'chips' }));");
+    function chipsUnderStress(pg) {
+      if (pg.thrown) return -1;
+      if (!H.useStressFixture(pg)) return -2;
+      return pg.dom.document.querySelectorAll('#catBar .catbtn').length;
+    }
+    var clean = chipsUnderStress(bootPage(null, { devMode: true }));
+    var dirty = chipsUnderStress(withProtoDev(mutate));
+    return clean <= 1 && dirty > 6;
+  });
 
 mut('N12 the plot stops being centred, so the slack collects on the right', function () {
   /* THE CENTRING MOVED INTO THE LAYOUT ENGINE IN P1-B2C, so the mutant follows it there. Capping

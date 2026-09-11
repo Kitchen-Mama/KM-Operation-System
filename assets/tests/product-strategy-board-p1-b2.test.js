@@ -561,22 +561,71 @@ console.log('\n=== §H  THE REAL PAGE, RENDERED AND DRIVEN HEADLESS ===');
   // P1-B2A renamed the container when the scope became three tiers on the Operation System's own
   // filter contract. The rule is unchanged: the site is the FIRST thing on the page.
   ok(!!doc.getElementById('scopeSite'), 'H5 the site is the first ring on the page');
-  eq(doc.getElementById('scope').childNodes[0].id, 'scopeSite',
-    'H5a and it is literally first — before the category, which it decides');
+  /* P1-B4 — THE RULE IS THE ORDER OF THE FIELDS, not the order of the containers.
+     This compared `#scope`'s first child, which was a proxy for "the site comes before the category"
+     while the scope was a stack of tiers. It is now one command bar, so the proxy names the bar and
+     the rule has to be asked of the ladder itself: company, country and marketplace, then category,
+     then series — because each one decides what the next can offer. */
+  eq(doc.getElementById('cmdBar').childNodes[0].id, 'scopeSite',
+    'H5a and the primary row is the first thing in the bar');
+  var order = doc.querySelectorAll('#scopeFields .cmd-field').map(function (f) {
+    var c = f.querySelector('select, .cmd-context-value, .catbtn.is-more');
+    return String((c && (c.id || c.getAttribute('data-context-for'))) || '')
+      .replace(/Context$/, '');
+  });
+  eq(order.slice(0, 3), ['fCompany', 'fCountry', 'fMarketplace'],
+    'H5b the site ladder is first, in company -> country -> marketplace order', order);
+  ok(order.indexOf('fSeries') === order.length - 1,
+    'H5c and Series is last — it narrows inside everything above it', order);
   eq(doc.getElementById('fCountry').disabled, false,
     'H6 and it is never disabled — the site cannot be chosen after the thing it decides');
   eq(doc.getElementById('siteState').getAttribute('data-site-state'), 'COMPLETE_SITE',
     'H7 the page opens on a complete site identity, not on an aggregate');
 
   // ---- the category menu on the page is the site's ----
+  /* P1-B4 — THE OPTIONS ARE MENU ROWS NOW. The command bar asks the category control for its menu
+     shape, so `#catBar` holds one trigger and the options are in `#catMenu`. Opening it is part of
+     reading them, and the menu is closed again so the assertion leaves the page as it found it. */
   function catButtons() {
-    return doc.querySelectorAll('#catBar .catbtn').map(function (b) {
+    var more = doc.getElementById('catMore');
+    var wasOpen = more && more.getAttribute('aria-expanded') === 'true';
+    if (more && !wasOpen) more.click();
+    var out = doc.querySelectorAll('#catMenu .catmenu-item').map(function (b) {
       return b.getAttribute('data-category');
     }).filter(function (c) { return c !== 'ALL'; });
+    var again = doc.getElementById('catMore');
+    if (again && !wasOpen && again.getAttribute('aria-expanded') === 'true') again.click();
+    return out;
   }
   var usCats = catButtons();
-  eq(usCats, catValues(board(site('US', 'Amazon'))),
-    'H8 the buttons on screen are exactly the pipeline\'s options for this site');
+  /* SET EQUALITY, AND THE ORDER IS A SEPARATE RULE. This compared the on-screen order against the
+     pipeline's alphabetical order, which happened to agree while the control was a row of chips. The
+     menu orders by SIZE — busiest first, P1-B2A's deliberate choice and the reason the control is
+     usable with forty categories — so comparing the two as sequences asserted alphabetical ordering
+     by accident. The claim here is that the OPTIONS are the site's; the order is its own assertion. */
+  eq(usCats.slice().sort(), catValues(board(site('US', 'Amazon'))).slice().sort(),
+    'H8 the options on screen are exactly the pipeline\'s options for this site');
+  function menuCountOf(cat) {
+    var more = doc.getElementById('catMore');
+    var wasOpen = more && more.getAttribute('aria-expanded') === 'true';
+    if (more && !wasOpen) more.click();
+    var hit = doc.querySelectorAll('#catMenu .catmenu-item').filter(function (n) {
+      return n.getAttribute('data-category') === cat;
+    })[0];
+    var txt = String((hit && hit.textContent) || '');
+    var again = doc.getElementById('catMore');
+    if (again && !wasOpen && again.getAttribute('aria-expanded') === 'true') again.click();
+    var m = /\((\d+)\)/.exec(txt);
+    return m ? Number(m[1]) : null;
+  }
+  var usCounts = usCats.map(menuCountOf);
+  ok(usCounts.every(function (n) { return n !== null; }),
+    'H8a every option carries its listing count, which is part of choosing one', usCounts);
+  var descending = true;
+  for (var ci = 1; ci < usCounts.length; ci++) {
+    if (usCounts[ci] > usCounts[ci - 1]) descending = false;
+  }
+  ok(descending, 'H8b and the menu is ordered busiest-first, not alphabetically', usCounts);
   ok(usCats.length !== 3, 'H9 and the number on screen is no longer three', usCats);
 
   // ---- CHANGE THE COUNTRY, AND NOTHING OF THE OLD SITE SURVIVES ----

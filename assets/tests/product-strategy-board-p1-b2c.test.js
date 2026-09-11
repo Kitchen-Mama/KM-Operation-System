@@ -52,6 +52,12 @@ function mut(label, f) {
 function withProto(mutate) {
   return bootPage(function (kind, src) { return kind === 'prototype' ? mutate(src) : src; });
 }
+/* THE SAME SHAPE AS withProto, in developer mode — the stress fixture is reachable only through the
+   hook now, and the hook exists only when developer mode was set BEFORE the scripts ran. */
+function withProtoDev(mutate) {
+  return bootPage(function (kind, src) { return kind === 'prototype' ? mutate(src) : src; },
+    { devMode: true });
+}
 function withLayout(mutate) {
   return bootPage(function (kind, src) { return kind === 'layout' ? mutate(src) : src; });
 }
@@ -75,10 +81,9 @@ var VIEWPORTS = [
 
 function toChart(p, category) {
   if (p.thrown) return p;
-  var chip = q(p, '#catBar .catbtn').filter(function (b) {
-    return b.getAttribute('data-category') === (category || 'Silicone Spatula');
-  });
-  if (chip.length) chip[0].click();
+  /* P1-B4 — ONE SHARED PICKER. The command bar asks the category control for its menu shape, so a
+     chip lookup finds only the trigger. `H.pickCategory` works with either shape. */
+  H.pickCategory(p, category || 'Silicone Spatula');
   return p;
 }
 function openLayers(p) {
@@ -104,17 +109,10 @@ function pageAt(w, h, category) {
 }
 /** The 44-product stress fixture, loaded the way the Advanced drawer loads it. */
 function stressPage(w, h) {
-  var p = bootPage(null);
+  var p = bootPage(null, { devMode: true });
   if (p.thrown) return p;
   if (w) p.dom.window.__viewport(w, h);
-  id(p, 'advFiltersToggle').click();
-  var sw = id(p, 'fStress');
-  sw.checked = true;
-  sw.dispatchEvent(new p.dom.Event('change', { bubbles: true }));
-  id(p, 'catMore').click();
-  var t = q(p, '.catmenu-item').filter(function (n) {
-    return n.getAttribute('data-category') === 'Electric Can Opener'; });
-  if (t.length) t[0].click();
+  H.stressChart(p, 'Electric Can Opener');
   if (w) p.dom.window.__viewport(w, h);
   return p;
 }
@@ -440,13 +438,14 @@ console.log('\n=== SECTION F  THE OBSERVER WATCHES THE CONTAINER ===');
   id(p2, 'scApply').click();
   var badgeBefore = id(p2, 'scenarioBadge').textContent;
   var countryBefore = id(p2, 'fCountry').value;
-  var catBefore = q(p2, '#catBar .catbtn.is-on')[0];
+  /* P1-B4 — the SELECTED category is named on the trigger now, not on a pressed chip. Same claim:
+     the choice a person made survives a resize. */
+  var catBefore = q(p2, '#catMore')[0].textContent;
   p2.dom.window.__place(0, 700);
   p2.dom.window.__viewport(1280, 720);
   eq(id(p2, 'scenarioBadge').textContent, badgeBefore, 'F10 a resize keeps the scenario');
   eq(id(p2, 'fCountry').value, countryBefore, 'F11 and the filters');
-  ok(q(p2, '#catBar .catbtn.is-on')[0].getAttribute('data-category')
-    === catBefore.getAttribute('data-category'), 'F12 and the category');
+  eq(q(p2, '#catMore')[0].textContent, catBefore, 'F12 and the category');
   eq(q(p2, '.cap-msrp').length, 0, 'F13 and the layers that were switched off');
   eq(chartOf(p2).getAttribute('data-mode'), 'auto', 'F14 and the mode');
   eq([p2.dom.window.scrollX, p2.dom.window.scrollY], [0, 700],
@@ -835,23 +834,16 @@ mut('M3 a resize clears the scenario', function () {
 });
 
 mut('M4 the forty-fourth product is cut off to make the chart fit', function () {
-  var m = withProto(swap('    var ns = panel.plotted;',
+  var m = withProtoDev(swap('    var ns = panel.plotted;',
     '    var ns = panel.plotted.slice(0, 40);'));
   function drawn(pg) {
     if (pg.thrown) return -1;
     var p2 = pg;
     p2.dom.window.__viewport(1920, 1080);
-    p2.dom.document.getElementById('advFiltersToggle').click();
-    var sw = p2.dom.document.getElementById('fStress');
-    sw.checked = true;
-    sw.dispatchEvent(new p2.dom.Event('change', { bubbles: true }));
-    p2.dom.document.getElementById('catMore').click();
-    var t = p2.dom.document.querySelectorAll('.catmenu-item').filter(function (n) {
-      return n.getAttribute('data-category') === 'Electric Can Opener'; });
-    if (t.length) t[0].click();
+    H.stressChart(p2, 'Electric Can Opener');
     return p2.dom.document.querySelectorAll('.col').length;
   }
-  return drawn(bootPage(null)) === 44 && drawn(m) === 40;
+  return drawn(bootPage(null, { devMode: true })) === 44 && drawn(m) === 40;
 });
 
 mut('M5 the label lane is folded back into the plot, so the axis loses its floor', function () {
@@ -978,44 +970,31 @@ mut('M11 a viewport change moves a price, not just its pixels', function () {
 });
 
 mut('M12 the axis stops following the reader when the chart scrolls sideways', function () {
-  var m = withProto(swap("        gAxis.setAttribute('transform', 'translate(' + dx + ',0)');",
+  var m = withProtoDev(swap("        gAxis.setAttribute('transform', 'translate(' + dx + ',0)');",
     "        gAxis.setAttribute('transform', 'translate(0,0)');"));
   function pinned(pg) {
     if (pg.thrown) return -1;
     pg.dom.window.__viewport(1280, 720);
-    pg.dom.document.getElementById('advFiltersToggle').click();
-    var sw = pg.dom.document.getElementById('fStress');
-    sw.checked = true;
-    sw.dispatchEvent(new pg.dom.Event('change', { bubbles: true }));
-    pg.dom.document.getElementById('catMore').click();
-    var t = pg.dom.document.querySelectorAll('.catmenu-item').filter(function (n) {
-      return n.getAttribute('data-category') === 'Electric Can Opener'; });
-    if (t.length) t[0].click();
+    H.stressChart(pg, 'Electric Can Opener');
     pg.dom.document.getElementById('mode-comfortable').click();
     var w = pg.dom.document.querySelectorAll('.chartwrap')[0];
     w.scrollLeft = 300;
     w.dispatchEvent(new pg.dom.Event('scroll', {}));
     return pg.dom.document.querySelectorAll('.axis-scale')[0].getAttribute('transform');
   }
-  return pinned(bootPage(null)) === 'translate(300,0)' && pinned(m) === 'translate(0,0)';
+  return pinned(bootPage(null, { devMode: true })) === 'translate(300,0)'
+    && pinned(m) === 'translate(0,0)';
 });
 
 mut('M13 the marker code stops shrinking with its plate, and forty-four of them smear',
   function () {
     // THE FIRST OF THE TWO DEFECTS A SCREENSHOT FOUND THIS ROUND.
-    var m = withProto(swap('      var codeChars = Math.floor((size - 6) / 5.6);',
+    var m = withProtoDev(swap('      var codeChars = Math.floor((size - 6) / 5.6);',
       '      var codeChars = 7;'));
     function codeWidth(pg) {
       if (pg.thrown) return -1;
       pg.dom.window.__viewport(1280, 720);
-      pg.dom.document.getElementById('advFiltersToggle').click();
-      var sw = pg.dom.document.getElementById('fStress');
-      sw.checked = true;
-      sw.dispatchEvent(new pg.dom.Event('change', { bubbles: true }));
-      pg.dom.document.getElementById('catMore').click();
-      var t = pg.dom.document.querySelectorAll('.catmenu-item').filter(function (n) {
-        return n.getAttribute('data-category') === 'Electric Can Opener'; });
-      if (t.length) t[0].click();
+      H.stressChart(pg, 'Electric Can Opener');
       pg.dom.window.__viewport(1280, 720);
       return pg.dom.document.querySelectorAll('.mk-fallback-text').length;
     }

@@ -106,6 +106,11 @@
      scenario needs one site, and a board that opens on an aggregate would have to refuse both on the
      first screen a person sees.
      ------------------------------------------------------------------------------------------------ */
+  /* P1-B4 §3.4 — THE DEFAULT, WRITTEN DOWN ONCE.
+     "Is this filter non-default?" is the whole question the `More filters · 1` count asks, and it
+     cannot be asked of a number that exists only as a literal in an initialiser. */
+  var DEFAULT_THRESHOLD_C = 800;
+
   var STATE = {
     view: 'overview',              // overview | category | risk | quality | workspace | advanced
     rail: false,                   // sidebar collapsed to an icon rail — a variable, never storage
@@ -114,7 +119,7 @@
     currency: 'ALL', series: 'ALL',
     search: '',
     includeInactive: false,
-    thresholdC: 800,
+    thresholdC: DEFAULT_THRESHOLD_C,
     selected: {},
     drawerOpen: false,
     advancedOpen: false,
@@ -141,7 +146,10 @@
     boxKey: '',                    // what the last layout was derived from; a resize that matches
                                    // it is not a resize, and redrawing on it is how a loop starts
     fsReturnScroll: 0,
-    advancedOpenFilters: false,
+    /* P1-B4 §3 — MORE FILTERS IS A POPOVER, NOT A SECTION. `advancedOpenFilters` expanded a
+       full-width band that pushed the chart down by its own height every time it opened; this holds
+       the same two settings in an absolutely-positioned panel that overlays instead of displacing. */
+    moreFiltersOpen: false,
     openPopover: null,             // the id of the one open info popover, or null
     catSearch: '',
     dqDetailOpen: false,
@@ -152,7 +160,11 @@
        click and it stays open for the rest of the session. */
     meetingOpen: false,
     catMenuOpen: false,
-    stress: false,                 // the stress fixture, off by default and never called real data
+    /* P1-B4 §4 — NO LONGER REACHABLE FROM THE UI, AND NOT A SETTING A PERSON CAN FIND.
+       The stress fixture is a density load test, not a product feature. It stays in the state
+       because the test harness and an explicit developer mode still switch adapters with it; what
+       is gone is the checkbox, and there is no URL parameter that could set it. */
+    stress: false,
     /* ---- the scenario, in memory and nowhere else ---- */
     overrides: {},                 // overrides[siteKey][series][priceField] = {mode, value}
     undoStack: [],                 // previous override objects; Undo pops one. Also in memory only.
@@ -2297,12 +2309,92 @@
   }
 
   /**
+   * P1-B4 §1.3 — THE OPTIONS OF ONE TIER, NARROWED BY THE TIERS ABOVE IT.
+   *
+   * `siteDimensionValues` reads the whole table, which is right for "what does this data contain"
+   * and wrong for "what can I pick next". Offering every country in the database under a chosen
+   * company is offering a journey that ends in an empty chart, and `narrowAfterSiteChange` only
+   * cleared the selection AFTER it had been made — a repair where a constraint belongs.
+   *
+   * The ladder is Company -> Country -> Marketplace. Each level filters on the levels above it and on
+   * nothing below, so choosing a marketplace never restricts the country list that produced it.
+   */
+  var SCOPE_LADDER = ['company', 'country', 'marketplace'];
+  function scopeDimensionValues(key) {
+    var idx = SCOPE_LADDER.indexOf(key);
+    var above = idx < 0 ? [] : SCOPE_LADDER.slice(0, idx);
+    var seen = {}, out = [];
+    CANON.rows.forEach(function (r) {
+      for (var i = 0; i < above.length; i++) {
+        var k = above[i];
+        if (STATE[k] !== 'ALL' && String(r[k]) !== String(STATE[k])) return;
+      }
+      var v = String(r[key] === null || r[key] === undefined ? '' : r[key]);
+      if (v === '' || seen[v]) return;
+      seen[v] = 1;
+      out.push(v);
+    });
+    return out.sort();
+  }
+
+  /**
    * CHANGING A RING INVALIDATES EVERYTHING TO ITS RIGHT, HERE, IN ONE PLACE.
    *
    * "切換 country 不殘留上一站點資料" is not a rendering concern; it is a state concern. A category that
    * the new site does not sell would otherwise stay selected and every downstream view would filter to
    * zero rows — a screen that looks like a site with no products instead of a stale selection.
    */
+  /**
+   * P1-B4 §4 — THE STRESS FIXTURE, REACHABLE ONLY DELIBERATELY.
+   *
+   * `Load generated stress fixture (density test)` was a checkbox in the filters. It is a generated
+   * load test — forty-four invented products — and a control that loads fake data sitting beside the
+   * controls that filter real data is one misclick from a meeting shown fiction.
+   *
+   * SO IT IS NOT IN THE UI AT ALL, AND THERE IS NO URL PARAMETER. §4.6 rules that out explicitly,
+   * and it is the right rule: a link is forwardable, so a query string is a way for one person's
+   * debugging to become another person's screenshot. The only two ways in are:
+   *
+   *   1. `window.__PSB_DEV_MODE__ = true` set BEFORE the scripts run — which only someone editing the
+   *      page or a harness can do, and which then also shows a labelled developer strip.
+   *   2. `window.__psbUseStressFixture(true)`, defined only in that mode, which is what the suites
+   *      call. Query-independent fixture injection, exactly as §4.3 asks.
+   *
+   * A production build defines neither, so there is nothing to find and nothing to toggle.
+   */
+  function devModeOn() {
+    return typeof window !== 'undefined' && window && window.__PSB_DEV_MODE__ === true;
+  }
+
+  function applyFixtureChoice(useStress) {
+    STATE.stress = !!useStress;
+    STATE.company = 'ALL'; STATE.country = 'ALL'; STATE.marketplace = 'ALL';
+    STATE.category = null; STATE.series = 'ALL'; STATE.currency = 'ALL';
+    STATE.overrides = {}; STATE.undoStack = []; STATE.scenarioSeries = '';
+    STATE.view = 'overview';
+    ADAPTER = STATE.stress ? PREVIEW.StressProductStrategyDataAdapter
+      : PREVIEW.PreviewProductStrategyDataAdapter;
+    reload();
+    var firstSite = CANON.rows[0];
+    if (firstSite) {
+      STATE.company = firstSite.company;
+      STATE.country = firstSite.country;
+      STATE.marketplace = firstSite.marketplace;
+    }
+    narrowAfterSiteChange();
+    render();
+  }
+
+  function exposeDevHooks() {
+    if (typeof window === 'undefined' || !window || !devModeOn()) return;
+    /* NAMED FOR WHAT IT IS. Anyone reading a stack trace or a console sees "stress fixture", not a
+       neutral verb that could be mistaken for loading the real thing. */
+    window.__psbUseStressFixture = function (on) { applyFixtureChoice(on !== false); };
+    window.__psbDevState = function () {
+      return { stress: STATE.stress, adapter: STATE.stress ? 'Stress' : 'Preview' };
+    };
+  }
+
   function narrowAfterSiteChange() {
     MODEL = buildModel();
     var cats = MODEL.categoryOptions.options.map(function (o) { return o.value; });
@@ -2355,6 +2447,29 @@
     return fl;
   }
 
+  /**
+   * ==============================================================================================
+   * P1-B4 §1/§2/§3 — ONE COMPACT COMMAND BAR
+   * ==============================================================================================
+   *
+   * WHAT WAS WRONG WAS NOT THE CONTROLS, IT WAS THAT EACH OF THEM HAD A CARD.
+   *
+   * Site, Analysis, Advanced and Price Scenario were four stacked blocks, each with its own heading,
+   * its own `?`, its own state line and its own border. MEASURED: 422px at 1920x1080, 1366x768 and
+   * 1024x768, and 458px at 768 — 43% of a 1080-high viewport, 63% of a 768-high one, with the first
+   * KPI at y=678. Four headings is not information architecture; it is four frames around five
+   * dropdowns.
+   *
+   * So there is one bar, and the hierarchy is carried by POSITION and WEIGHT rather than by
+   * furniture. Row one is the ladder a person walks in order — Company, Country, Marketplace,
+   * Category, Series — with the two secondary entrances pushed to the right. Row two is a quiet
+   * summary of where you are. Everything else is behind a popover or a drawer, which OVERLAY rather
+   * than displace: the old Advanced band pushed the chart down by its own height every time it
+   * opened, which is a layout that punishes you for looking.
+   *
+   * NO RED CAPITALS AS HIERARCHY (§1.8). The labels are 11px uppercase in the muted token; the values
+   * are 14px in the primary token. Emphasis is size and colour weight, not alarm.
+   */
   function renderScope() {
     var host = byId('scope');
     clear(host);
@@ -2364,114 +2479,306 @@
     var countBySite = {};
     opts.options.forEach(function (o) { countBySite[o.value] = o.siteSkuCount; });
 
-    /* ============================================================================================
-       TIER 1 — THE SITE. `.km-filter-bar` is the Operation System's own filter-bar contract, and the
-       control styling comes from its `--filter-*` tokens rather than from a second set of numbers
-       invented here. The suite holds every copied token to the value in assets/css/base.css, which is
-       what stops "aligned with the Operation System" from decaying into "looked similar once".
-       ============================================================================================ */
-    var bar1 = el('div', 'km-filter-bar scope-tier scope-tier-1');
-    bar1.id = 'scopeSite';
-    var t1h = el('div', 'tier-h');
-    t1h.appendChild(el('span', 'tier-label', 'Site'));
-    t1h.appendChild(infoIcon('site', 'Site scope', [
-      'A site is company + country + marketplace, all three. It is chosen first because it decides'
-        + ' which products exist at all: membership comes from the marketplace listing table, never'
-        + ' from the product master and never from a price that happens to be in your currency.',
-      'Everything below is rebuilt when this changes, including the category menu — so a category the'
-        + ' new site does not sell cannot stay selected.',
-      'Preview data. The countries, marketplaces, categories and series here are a demonstration'
-        + ' fixture and are NOT the live universe; that is measured in P1-B3 against the database.'
-    ]));
-    bar1.appendChild(t1h);
-    var grid1 = el('div', 'filter-row');
-    [['fCompany', 'Company', 'company'], ['fCountry', 'Country', 'country'],
-      ['fMarketplace', 'Marketplace', 'marketplace']].forEach(function (spec) {
-      var g = selectEl(spec[0], spec[1],
-        ['ALL'].concat(siteDimensionValues(spec[2])), STATE[spec[2]],
-        function (v) {
-          STATE[spec[2]] = v;
-          narrowAfterSiteChange();
-          render();
-        }, false);
-      g.className = 'filter-group';
-      grid1.appendChild(g);
+    var bar = el('div', 'cmdbar');
+    bar.id = 'cmdBar';
+
+    /* ---- ROW 1 · THE LADDER, IN ORDER, ALWAYS VISIBLE ----------------------------------------
+       `#scopeSite` keeps its id: the resize observer's identity contract (P1-B2C) is asserted
+       against this node surviving a redraw, and renaming it would quietly retire that assertion. */
+    var row1 = el('div', 'cmdbar-row cmdbar-primary');
+    row1.id = 'scopeSite';
+
+    var ladder = el('div', 'cmd-fields');
+    ladder.id = 'scopeFields';
+    SCOPE_LADDER.forEach(function (dim) {
+      ladder.appendChild(scopeField(dim));
     });
-    bar1.appendChild(grid1);
-    var st = el('p', 'scope-state', site.complete
-      ? site.key + '  ·  ' + MODEL.universe.counts.eligible + ' listings  ·  '
-        + MODEL.universe.counts.chartable + ' with a price to plot'
-      : 'Aggregate across ' + site.aggregate_dimensions.join(' and ')
-        + '  ·  prices are never pooled across currencies  ·  meeting mode is unavailable here');
-    st.id = 'siteState';
-    st.setAttribute('data-site-state', site.state);
-    bar1.appendChild(st);
-    host.appendChild(bar1);
+    /* Category and Series close the ladder. They narrow INSIDE the site and cannot widen it, which
+       is why they come after all three site dimensions and not between them. */
+    ladder.appendChild(categoryField(cats, countBySite, opts));
+    ladder.appendChild(seriesField());
+    row1.appendChild(ladder);
 
-    /* ============================================================================================
-       TIER 2 — THE ANALYSIS FILTERS, INSIDE THE SITE.
-       ============================================================================================ */
-    var bar2 = el('div', 'km-filter-bar scope-tier scope-tier-2');
-    bar2.id = 'scopeAnalysis';
-    var t2h = el('div', 'tier-h');
-    t2h.appendChild(el('span', 'tier-label', 'Analysis'));
-    t2h.appendChild(infoIcon('category', 'Category, series and currency', [
-      'The category list is this site’s, derived from the listings that survived membership and the'
-        + ' status gate — never a fixed list and never a list from another site.',
-      'Trim is the only normalization. Two values differing by case or spacing are kept apart and'
-        + ' reported for review, because merging two business categories is a decision an operator'
-        + ' owns. A blank category keeps its product, shows as "'
-        + SEL.UNMAPPED_LABEL + '", and is never renamed "Other".',
-      'There is no allowlist and no maximum: the number of categories is whatever the data has.'
-        + ' Counts are over the whole eligible universe of this site, never the visible page.',
-      'Source: sku_details.category and sku_details.series; the currency is pricing_list.currency.'
-    ]));
-    bar2.appendChild(t2h);
-    bar2.appendChild(renderCategoryControl(cats, countBySite, opts));
+    /* ---- ROW 1 RIGHT · THE TWO SECONDARY ENTRANCES ------------------------------------------- */
+    var tools = el('div', 'cmd-tools');
+    tools.id = 'cmdTools';
+    tools.appendChild(moreFiltersControl());
+    tools.appendChild(meetingScenarioControl());
+    row1.appendChild(tools);
+    bar.appendChild(row1);
 
-    var disabled = STATE.category === null;
+    /* ---- ROW 2 · WHERE YOU ARE, QUIETLY ------------------------------------------------------ */
+    bar.appendChild(scopeSummaryRow(site));
+
+    host.appendChild(bar);
+
+    /* The drawer is a SIBLING of the bar, not a child: it is position:fixed, so nesting it inside a
+       flex row would put a fixed element in a layout that believes it participates. */
+    renderScenarioDrawer(host);
+
+    if (devModeOn()) host.appendChild(devStrip());
+  }
+
+  /**
+   * §1.4 — ONE OPTION IS A FACT, NOT A CHOICE.
+   *
+   * A dropdown with a single item is a control that cannot do anything: it takes a click, opens, and
+   * offers you what you already have. Worse, it reads as a decision still to be made. So a dimension
+   * with exactly one value renders as READ-ONLY CONTEXT — the label and the value, no chevron, no
+   * focus stop — and the suite asserts there is no `<select>` there at all.
+   *
+   * `ALL` IS NOT AN OPTION WHEN THERE IS ONLY ONE VALUE EITHER. Offering "All" beside a single
+   * country is offering the same set twice under two names.
+   */
+  function scopeField(dim) {
+    var LABEL = { company: 'Company', country: 'Country', marketplace: 'Marketplace' };
+    var values = scopeDimensionValues(dim);
+    var id = 'f' + dim.charAt(0).toUpperCase() + dim.slice(1);
+
+    if (values.length === 1) {
+      /* THE SELECTION IS CORRECTED TO THE ONLY VALUE, so the state and the screen agree. A scope
+         reading 'ALL' while one value exists is the same scope described two ways, and the site key
+         downstream would say "aggregate" about a single site. */
+      if (STATE[dim] !== values[0]) {
+        STATE[dim] = values[0];
+        MODEL = buildModel();
+      }
+      return contextField(id, LABEL[dim], values[0], 'only one on this scope');
+    }
+    var g = selectEl(id, LABEL[dim], ['ALL'].concat(values), STATE[dim], function (v) {
+      STATE[dim] = v;
+      /* §1.5 — the tiers BELOW are cleared here, and the ones above are untouched. */
+      clearBelow(dim);
+      narrowAfterSiteChange();
+      render();
+    }, false);
+    g.className = 'filter-group cmd-field';
+    return g;
+  }
+
+  /** §1.5 — changing a tier invalidates the tiers below it, by position in the ladder. */
+  function clearBelow(dim) {
+    var idx = SCOPE_LADDER.indexOf(dim);
+    if (idx < 0) return;
+    for (var i = idx + 1; i < SCOPE_LADDER.length; i++) {
+      var k = SCOPE_LADDER[i];
+      var still = scopeDimensionValues(k);
+      /* Kept when it is still reachable, cleared when it is not. Clearing unconditionally would
+         throw away a valid choice every time somebody re-picked the same company. */
+      if (STATE[k] !== 'ALL' && still.indexOf(STATE[k]) < 0) STATE[k] = 'ALL';
+    }
+  }
+
+  /** Read-only context in the shape of a filter, so the row's rhythm survives. */
+  function contextField(id, label, value, why) {
+    var g = el('div', 'filter-group cmd-field cmd-field--context');
+    var lab = el('span', 'fl-label', label);
+    g.appendChild(lab);
+    var v = el('span', 'cmd-context-value', value);
+    v.id = id + 'Context';
+    v.setAttribute('data-context-for', id);
+    if (why) v.setAttribute('title', label + ': ' + value + ' — ' + why);
+    g.appendChild(v);
+    return g;
+  }
+
+  /** Category keeps its two shapes (chips / searchable menu) but loses its card and its heading. */
+  function categoryField(cats, countBySite, opts) {
+    var g = el('div', 'filter-group cmd-field cmd-field--category');
+    var lab = el('span', 'fl-label', 'Category');
+    g.appendChild(lab);
+    g.appendChild(renderCategoryControl(cats, countBySite, opts,
+      { provenance: false, shape: 'menu' }));
+    return g;
+  }
+
+  function seriesField() {
     var pool = STATE.category ? buildModel(STATE.category) : null;
     var serValues = pool
       ? pool.seriesOptions.options.map(function (o) { return o.value; })
       : MODEL.seriesOptions.options.map(function (o) { return o.value; });
-    var curValues = SEL.deriveDimensionValues((pool || MODEL).universe, 'currency');
-    var grid2 = el('div', 'filter-row');
-    var gs = selectEl('fSeries', 'Series', ['ALL'].concat(serValues), STATE.series,
-      function (v) { STATE.series = v; render(); }, disabled);
-    gs.className = 'filter-group';
-    grid2.appendChild(gs);
-    var gc = selectEl('fCurrency', 'Currency', ['ALL'].concat(curValues), STATE.currency,
-      function (v) { STATE.currency = v; render(); }, disabled);
-    gc.className = 'filter-group';
-    grid2.appendChild(gc);
-    bar2.appendChild(grid2);
-    host.appendChild(bar2);
+    if (STATE.category !== null && serValues.length === 1) {
+      return contextField('fSeries', 'Series', serValues[0], 'the only series in this category');
+    }
+    var g = selectEl('fSeries', 'Series', ['ALL'].concat(serValues), STATE.series,
+      function (v) { STATE.series = v; render(); }, STATE.category === null);
+    g.className = 'filter-group cmd-field';
+    return g;
+  }
 
-    /* ============================================================================================
-       TIER 3 — ADVANCED, COLLAPSED. Everything a person sets once and then forgets.
-       ============================================================================================ */
-    var adv = el('div', 'scope-tier scope-adv');
-    adv.id = 'scopeAdvanced';
-    /* `.filt-toggle`, NOT `.adv-toggle`. The Advanced Details PAGE already owns `.adv-toggle` for
-       its section header — a full-width flex row with 13px/20px padding — and two components sharing
-       a class name do not take turns: their declarations merge, and this small dashed control would
-       have quietly inherited half of a page header's box model. */
-    var advBtn = el('button', 'filt-toggle',
-      (STATE.advancedOpenFilters ? 'Hide' : 'Show') + ' advanced filters');
-    advBtn.id = 'advFiltersToggle';
-    advBtn.setAttribute('type', 'button');
-    advBtn.setAttribute('aria-expanded', STATE.advancedOpenFilters ? 'true' : 'false');
-    advBtn.setAttribute('aria-controls', 'advFiltersBody');
-    advBtn.addEventListener('click', function () {
-      STATE.advancedOpenFilters = !STATE.advancedOpenFilters;
+  /**
+   * §2 — THE SUMMARY, AND IT SHOWS VALUES RATHER THAN EXPLAINING ITSELF.
+   *
+   *     US  ·  Amazon  ·  Electric Can Opener  ·  All series  ·  USD
+   *
+   * No "Company:" prefixes and no internal keys: `KM|US|Amazon` is the site KEY and it belongs in the
+   * `?` popover with the rest of the mapping, not on a line a person reads twenty times an hour.
+   * Company appears ONLY when it is a real choice — with one company in scope it is not information,
+   * it is a word taking up the line every time.
+   *
+   * §6 — CURRENCY LIVES HERE. On a complete site it is derived, not chosen: P1-B3 proved the read
+   * refuses to pool currencies, so a single site has exactly one and a dropdown offering it is a
+   * decision that has already been made. It becomes a real control in More filters only when the
+   * scope is an aggregate and there is genuinely more than one.
+   */
+  function scopeSummaryRow(site) {
+    var row = el('div', 'cmdbar-row cmdbar-context');
+    row.id = 'scopeSummaryRow';
+    var sum = el('div', 'cmd-summary');
+    sum.id = 'scopeSummary';
+    sum.setAttribute('role', 'status');
+    sum.setAttribute('aria-live', 'polite');
+
+    var parts = [];
+    if (scopeDimensionValues('company').length > 1) {
+      parts.push({ k: 'company', t: STATE.company === 'ALL' ? 'All companies' : STATE.company });
+    }
+    parts.push({ k: 'country', t: STATE.country === 'ALL' ? 'All countries' : STATE.country });
+    parts.push({ k: 'marketplace',
+      t: STATE.marketplace === 'ALL' ? 'All marketplaces' : STATE.marketplace });
+    parts.push({ k: 'category', t: STATE.category === null ? 'No category selected' : STATE.category });
+    parts.push({ k: 'series', t: STATE.series === 'ALL' ? 'All series' : STATE.series });
+    var curs = SEL.deriveDimensionValues(MODEL.universe, 'currency');
+    parts.push({ k: 'currency',
+      t: STATE.currency !== 'ALL' ? STATE.currency
+        : (curs.length === 1 ? curs[0] : (curs.length === 0 ? 'No currency' : curs.length + ' currencies')) });
+
+    parts.forEach(function (p, i) {
+      if (i > 0) sum.appendChild(el('span', 'cmd-sep', '·'));
+      var c = el('span', 'cmd-sum-part', p.t);
+      c.setAttribute('data-part', p.k);
+      sum.appendChild(c);
+    });
+    row.appendChild(sum);
+    row.appendChild(scenarioStatusChip());
+
+    /* THE COUNT IS CONTEXT, NOT A HEADLINE. Two numbers, because "listings" and "listings that can
+       be plotted" are different and the gap between them is the Data Quality story. */
+    /* #siteState KEEPS ITS ID AND ITS data-site-state. This is the same line it always was — the
+       site's own state, in words — and it is the thing eleven assertions and the site-identity
+       contract identify by name. Renaming it because the container changed would retire those
+       checks silently, which is the one kind of change this project treats as a defect. */
+    var n = el('span', 'cmd-counts' + (site.complete ? '' : ' cmd-counts--agg'), site.complete
+      ? MODEL.universe.counts.eligible + ' listings · '
+        + MODEL.universe.counts.chartable + ' with a price to plot'
+      : 'Aggregate across ' + site.aggregate_dimensions.join(' and ')
+        + ' · prices are never pooled across currencies');
+    n.id = 'siteState';
+    n.setAttribute('data-site-state', site.state);
+    row.appendChild(n);
+
+    /* §2 — THE FULL MAPPING GOES IN THE `?`, and nowhere near the line above. */
+    var help = infoIcon('scope', 'Scope, eligibility and mapping', [
+      'A site is company + country + marketplace, all three. Membership comes from the marketplace'
+        + ' listing table — never from the product master, and never from a price that happens to be'
+        + ' in your currency. This scope resolves to the site key ' + site.key + '.',
+      'Category and Series narrow INSIDE the site and cannot widen it. The category list is this'
+        + ' site’s own, derived from the listings that survived membership and the status gate.'
+        + ' Trim is the only normalisation: two spellings differing by case are kept apart and'
+        + ' reported, because merging two business categories is a decision an operator owns.'
+        /* F10 CAUGHT THIS GOING MISSING. Merging the site and category help icons dropped the
+           blank-category rule out of the text, and the assertion that demanded it is the reason
+           that was visible rather than discovered later by a reader who could not find it. */
+        + ' A listing whose category cell is empty keeps its product, shows as “'
+        + SEL.UNMAPPED_LABEL + '”, and is never renamed “Other” — because'
+        + ' “Other” is a value an operator could then look for in the sheet and not find.'
+        + ' There is no allowlist and no maximum: the number of categories is whatever the data has.',
+      'A listing needs a price, a currency and a confirmed Regional Detail before it can be plotted.'
+        + ' One without a Regional Detail is not confirmed as sold on this site at all, so it stays'
+        + ' off the price axis and appears in Data Quality instead.',
+      'Sources: marketplace_skus for membership, sku_details.category and .series for the taxonomy,'
+        + ' pricing_list.currency for the currency. Preview data — the countries, marketplaces,'
+        + ' categories and series here are a demonstration fixture, not the live universe.'
+    ]);
+    help.id = 'scopeHelp';
+    row.appendChild(help);
+    return row;
+  }
+
+  /**
+   * §3 — MORE FILTERS. A POPOVER, AND THE NAME A PERSON CAN READ.
+   *
+   * "Advanced filters" is developer vocabulary for "the ones we put away", and §3.9 is right to
+   * refuse it: nothing behind this button is expert analysis, it is a threshold and a checkbox.
+   *
+   * THE COUNT IS ON THE BUTTON because a filter you cannot see is a filter you forget you set — the
+   * same argument as the Layers count in P1-B2C. `More filters · 1` means one non-default
+   * condition is active; no suffix means none is.
+   */
+  /** How many listings on screen currently carry a simulated price. PURE over MODEL. */
+  function simulatedListingCount() {
+    var rows = (MODEL && MODEL.rows) || [];
+    var n = 0;
+    rows.forEach(function (r) { if (r && r._scenario && r._scenario.active) n++; });
+    return n;
+  }
+
+  function moreFiltersCount() {
+    var n = 0;
+    if (STATE.thresholdC !== DEFAULT_THRESHOLD_C) n++;
+    if (STATE.includeInactive) n++;
+    if (STATE.currency !== 'ALL') n++;
+    return n;
+  }
+
+  function moreFiltersControl() {
+    var wrap = el('div', 'kmf cmd-more');
+    wrap.id = 'moreFilters';
+    var n = moreFiltersCount();
+    var btn = el('button', 'kmf-trigger cmd-trigger' + (n ? ' is-set' : ''));
+    btn.id = 'moreFiltersToggle';
+    btn.setAttribute('type', 'button');
+    btn.setAttribute('aria-expanded', STATE.moreFiltersOpen ? 'true' : 'false');
+    btn.setAttribute('aria-controls', 'moreFiltersPanel');
+    btn.setAttribute('aria-haspopup', 'dialog');
+    btn.setAttribute('data-active-count', String(n));
+    var lab = el('span', 'kmf-trigger__label', 'More filters');
+    btn.appendChild(lab);
+    if (n) {
+      var cnt = el('span', 'km-tab-rail__count cmd-count', String(n));
+      cnt.id = 'moreFiltersCount';
+      btn.appendChild(cnt);
+    }
+    btn.appendChild(el('span', 'kmf-trigger__icon', STATE.moreFiltersOpen ? '▴' : '▾'));
+    btn.addEventListener('click', function (ev) {
+      if (ev && ev.stopPropagation) ev.stopPropagation();
+      STATE.moreFiltersOpen = !STATE.moreFiltersOpen;
+      /* One popover at a time, the same rule the `?` icons already follow. */
+      STATE.openPopover = null;
+      STATE.catMenuOpen = false;
       render();
     });
-    adv.appendChild(advBtn);
-    var advBody = el('div', 'km-filter-bar adv-body-row');
-    advBody.id = 'advFiltersBody';
-    advBody.hidden = !STATE.advancedOpenFilters;
-    var gthr = el('div', 'filter-group');
-    var thrLab = el('label', 'fl-label', 'Gap threshold');
+    btn.addEventListener('keydown', function (ev) {
+      if (ev && ev.key === 'Escape' && STATE.moreFiltersOpen) {
+        STATE.moreFiltersOpen = false;
+        render();
+      }
+    });
+    wrap.appendChild(btn);
+    if (STATE.moreFiltersOpen) wrap.appendChild(moreFiltersPanel());
+    return wrap;
+  }
+
+  function moreFiltersPanel() {
+    var disabled = STATE.category === null;
+    /* `.kmf-panel` is the Operation System's own popover chrome — absolute, its own shadow, a
+       viewport clamp and a right-edge collision modifier. Using it means this panel cannot drift
+       from every other dropdown in the app, and it means opening it moves NOTHING. */
+    var panel = el('div', 'kmf-panel kmf-panel--right cmd-pop');
+    panel.id = 'moreFiltersPanel';
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-label', 'More filters');
+    /* The panel swallows clicks so the document handler does not read its own contents as "outside".
+       §3.8 — THE RULE IS ONE SENTENCE: changing a value never closes this panel. Only Escape, a click
+       outside, or the trigger again. A panel that closed on each change would make setting two
+       conditions two round trips, and a panel that closed on some changes and not others is a rule
+       nobody can learn. */
+    panel.addEventListener('click', function (ev) {
+      if (ev && ev.stopPropagation) ev.stopPropagation();
+    });
+
+    var gthr = el('div', 'filter-group cmd-pop-field');
+    var thrLab = el('label', 'fl-label', 'Price gap threshold');
     thrLab.setAttribute('for', 'fThreshold');
     gthr.appendChild(thrLab);
     var inp = document.createElement('input');
@@ -2486,9 +2793,11 @@
       render();
     });
     gthr.appendChild(inp);
-    advBody.appendChild(gthr);
+    gthr.appendChild(el('p', 'cmd-pop-hint',
+      'A gap wider than this is called out on the chart. Strictly greater than.'));
+    panel.appendChild(gthr);
 
-    var incl = el('div', 'filter-group filter-group--check');
+    var incl = el('div', 'filter-group filter-checkbox-item cmd-pop-field');
     var cbLab = el('label', 'chk');
     var cb = document.createElement('input');
     cb.id = 'fInactive';
@@ -2502,43 +2811,175 @@
     cbLab.appendChild(cb);
     cbLab.appendChild(el('span', 'chk-text', 'Include inactive and discontinued listings'));
     incl.appendChild(cbLab);
-    advBody.appendChild(incl);
+    panel.appendChild(incl);
 
-    /* THE STRESS FIXTURE. Visible, opt-in, and labelled for what it is — a generated load test, not
-       data from anywhere. It is here so the density work can be SEEN at scale rather than only
-       asserted headlessly. */
-    var stress = el('div', 'filter-group filter-group--check');
-    var sLab = el('label', 'chk');
-    var scb = document.createElement('input');
-    scb.id = 'fStress';
-    scb.setAttribute('type', 'checkbox');
-    scb.checked = !!STATE.stress;
-    scb.addEventListener('change', function () {
-      STATE.stress = !!scb.checked;
-      STATE.company = 'ALL'; STATE.country = 'ALL'; STATE.marketplace = 'ALL';
-      STATE.category = null; STATE.series = 'ALL'; STATE.currency = 'ALL';
-      STATE.overrides = {}; STATE.undoStack = []; STATE.scenarioSeries = '';
-      STATE.view = 'overview';
-      ADAPTER = STATE.stress ? PREVIEW.StressProductStrategyDataAdapter
-        : PREVIEW.PreviewProductStrategyDataAdapter;
-      reload();
-      var firstSite = CANON.rows[0];
-      if (firstSite) {
-        STATE.company = firstSite.company;
-        STATE.country = firstSite.country;
-        STATE.marketplace = firstSite.marketplace;
-      }
+    /* §6 — CURRENCY APPEARS HERE ONLY WHEN IT IS A REAL CHOICE. On a single site it is derived and
+       shown in the summary; an aggregate scope can hold more than one, and then pooling them would
+       be adding dollars to yen, so the choice has to exist. */
+    var curValues = SEL.deriveDimensionValues(MODEL.universe, 'currency');
+    if (curValues.length > 1) {
+      var gc = selectEl('fCurrency', 'Currency', ['ALL'].concat(curValues), STATE.currency,
+        function (v) { STATE.currency = v; render(); }, false);
+      gc.className = 'filter-group cmd-pop-field';
+      panel.appendChild(gc);
+    }
+
+    var tools = el('div', 'kmf-tools cmd-pop-tools');
+    var reset = el('button', 'kmf-link', 'Reset filters');
+    reset.id = 'moreFiltersReset';
+    reset.setAttribute('type', 'button');
+    reset.disabled = moreFiltersCount() === 0;
+    reset.addEventListener('click', function () {
+      STATE.thresholdC = DEFAULT_THRESHOLD_C;
+      STATE.includeInactive = false;
+      STATE.currency = 'ALL';
       narrowAfterSiteChange();
+      /* STAYS OPEN, by the same rule as any other value change — so the reader can see the row of
+         controls go back to their defaults instead of watching the panel vanish. */
       render();
     });
-    sLab.appendChild(scb);
-    sLab.appendChild(el('span', 'chk-text', 'Load the generated stress fixture (density test)'));
-    stress.appendChild(sLab);
-    advBody.appendChild(stress);
-    adv.appendChild(advBody);
-    host.appendChild(adv);
+    tools.appendChild(reset);
+    panel.appendChild(tools);
+    return panel;
+  }
 
-    renderScenarioPanel(host);
+  /**
+   * §5 — MEETING SCENARIO: A SECONDARY BUTTON, AND A STATUS CHIP WHEN IT IS LIVE.
+   *
+   * The scenario used to be a permanent block with a heading and a badge, open or closed, on every
+   * screen. It is a deliberate act somebody comes to the page to perform — not a thing the page is
+   * about — so it gets one button. When a scenario IS active that has to be impossible to miss and
+   * still quiet: a tinted chip with the count of listings it reaches, not a red banner.
+   */
+  function meetingScenarioControl() {
+    var wrap = el('div', 'cmd-scn');
+    wrap.id = 'meetingScenario';
+    var active = MODEL.scenario.active;
+    /* .btn-quiet, NOT .btn-secondary — AND THE SHARED CLASS IS THE PROBLEM, NOT THE CHOICE.
+       components.css's `.btn-secondary` is a SOLID GREEN FILLED button: background soft-green,
+       white text, no border, and its own literal `padding: 0.8rem 1.5rem` / `border-radius: 8px`
+       that override the `--btn-*` token contract `.btn` sets one line above it. So a class named
+       'secondary' renders as a saturated primary and breaks the height every other control shares.
+       Two green pills here is exactly the loud hierarchy S1.8 and S5 rule out. `.btn-quiet` is the
+       real quiet secondary this page already uses for Undo, and the shared layer's missing one is
+       recorded as a gap. */
+    var btn = el('button', 'btn btn-quiet cmd-trigger'
+      + (STATE.meetingOpen ? ' is-open' : '') + (active ? ' is-on' : ''));
+    btn.id = 'meetingToggle';
+    btn.setAttribute('type', 'button');
+    btn.setAttribute('aria-expanded', STATE.meetingOpen ? 'true' : 'false');
+    btn.setAttribute('aria-controls', 'scenarioDrawer');
+    btn.appendChild(el('span', 'cmd-scn-label', 'Meeting scenario'));
+    btn.addEventListener('click', function (ev) {
+      if (ev && ev.stopPropagation) ev.stopPropagation();
+      STATE.meetingOpen = !STATE.meetingOpen;
+      /* renderData() ONLY — not render(). Opening the drawer must not rebuild the controls or the
+         chart, and P1-B2B's contract is what makes that a guarantee rather than a hope. */
+      render();
+    });
+    wrap.appendChild(btn);
+
+    wrap.setAttribute('data-chip-id', 'scenarioChip');
+    return wrap;
+  }
+
+  /** The scenario status chip, for the CONTEXT row. */
+  function scenarioStatusChip() {
+    var active = MODEL.scenario.active;
+    var chip = el('span', 'cmd-chip' + (active ? ' cmd-chip--on' : ''), active
+      ? SEL.SCENARIO_UNSAVED_LABEL
+      : 'No scenario');
+    chip.id = 'scenarioChip';
+    chip.setAttribute('data-active', String(active));
+    chip.setAttribute('role', 'status');
+    if (active) {
+      var listings = simulatedListingCount();
+      var c = el('span', 'km-tab-rail__count cmd-count', String(listings));
+      c.id = 'scenarioChipCount';
+      c.setAttribute('data-listings', String(listings));
+      c.setAttribute('title', listings + ' listing' + (listings === 1 ? '' : 's')
+        + ' on this chart show a simulated price');
+      chip.appendChild(c);
+    }
+    return chip;
+  }
+
+  /**
+   * §5 — THE DRAWER, AND WHY IT IS BUILT HERE RATHER THAN REUSED.
+   *
+   * §5 asks for the Operation System's drawer component if one exists. IT DOES NOT. Three pages
+   * define their own — `.glm-drawer` (global logistics map), `.oow-drawer` (overseas ops) and one in
+   * sku-regional-details — every one of them page-prefixed and page-local. There is no shared drawer
+   * in components.css, and no `--drawer-*` token. So this is a fourth local drawer, and that is
+   * recorded as a real gap rather than presented as reuse: the thing to add to the shared layer
+   * before a fifth page needs one.
+   *
+   * What IS reused is everything that exists: the `--filter-*` and `--btn-*` token contract, `.btn`
+   * / `.btn-secondary` for the buttons, `.kmf-panel` chrome for the popover, and
+   * `.km-tab-rail__count` for the counts.
+   *
+   * POSITION:FIXED, AND THAT IS THE WHOLE GEOMETRY ARGUMENT. The drawer is taken out of flow, so the
+   * chart's container never changes width and the layout engine is never re-measured — opening it
+   * cannot move a price. The old inline panel was IN the flow, which is why every open and close
+   * pushed the chart down and back.
+   */
+  function renderScenarioDrawer(host) {
+    var d = el('aside', 'scn-drawer' + (STATE.meetingOpen ? ' is-open' : ''));
+    d.id = 'scenarioDrawer';
+    d.setAttribute('aria-label', 'Meeting scenario');
+    d.setAttribute('data-open', String(STATE.meetingOpen));
+    if (!STATE.meetingOpen) d.hidden = true;
+
+    var head = el('div', 'scn-drawer-head');
+    head.appendChild(el('h2', 'scn-drawer-title', 'Meeting scenario'));
+    var close = el('button', 'scn-drawer-close', '×');
+    close.id = 'scenarioDrawerClose';
+    close.setAttribute('type', 'button');
+    close.setAttribute('aria-label', 'Close meeting scenario');
+    close.addEventListener('click', function (ev) {
+      if (ev && ev.stopPropagation) ev.stopPropagation();
+      /* CLOSING IS NOT CLEARING (§5). The overrides stay exactly where they are, the chart keeps
+         showing them, and the command bar keeps its chip — because a person who closes a panel is
+         putting it away, not undoing their work. Only Reset clears, and only a reload forgets. */
+      STATE.meetingOpen = false;
+      render();
+    });
+    head.appendChild(close);
+    d.appendChild(head);
+
+    var body = el('div', 'scn-drawer-body');
+    body.id = 'scenarioDrawerBody';
+    d.appendChild(body);
+    host.appendChild(d);
+    /* The form is the SAME form, in its documented order: site context, series, price to simulate,
+       adjustment, amount, Apply, Undo/Reset, and the unsaved explanation. Re-housing it keeps every
+       refusal code and every status line that P1-B2/B2A proved. */
+    renderScenarioPanel(body);
+  }
+
+  /**
+   * §6 — THE DEVELOPER STRIP, AND IT ONLY EXISTS IN DEVELOPER MODE.
+   *
+   * Fixture switching, raw identity and self-test detail are developer-only information, and §6 says
+   * they may not sit in the normal operating flow. So they are not merely collapsed — in a normal
+   * load this function is never called, the hook is never defined, and there is nothing to discover.
+   */
+  function devStrip() {
+    var strip = el('div', 'dev-strip');
+    strip.id = 'devStrip';
+    strip.setAttribute('role', 'note');
+    strip.appendChild(el('span', 'dev-strip-tag', 'DEVELOPER MODE'));
+    strip.appendChild(el('span', 'dev-strip-text',
+      'Fixture switching is enabled on this load. ' + (STATE.stress
+        ? 'Showing the GENERATED STRESS FIXTURE — 44 invented products, not data from anywhere.'
+        : 'Showing the preview fixture.')));
+    var b = el('button', 'btn btn-quiet dev-strip-btn',
+      STATE.stress ? 'Back to preview fixture' : 'Load generated stress fixture');
+    b.id = 'devStressToggle';
+    b.setAttribute('type', 'button');
+    b.addEventListener('click', function () { applyFixtureChoice(!STATE.stress); });
+    strip.appendChild(b);
+    return strip;
   }
 
   /**
@@ -2554,10 +2995,20 @@
    * choosing it.
    */
   var CATEGORY_CHIP_LIMIT = 6;
-  function renderCategoryControl(cats, countBySite, opts) {
+  function renderCategoryControl(cats, countBySite, opts, view) {
+    /* `view.provenance === false` omits the counts paragraph. It is not dropped information: the
+       same facts (how many categories, how many blank, how many needing review) are in the scope
+       `?` popover, which §2 makes the home of the full mapping. In a command bar this paragraph was
+       the tallest element in the row. */
+    view = view || {};
+    /* THE SHAPE IS THE CALLER'S, because the right control depends on the container and not only on
+       the number of options. A card can host chips; a fixed-height command bar cannot host a control
+       whose width grows with the category count. Unset keeps the original count-based rule. */
+    var shape = view.shape === 'menu' || view.shape === 'chips' ? view.shape
+      : (cats.length > CATEGORY_CHIP_LIMIT ? 'menu' : 'chips');
     var wrap = el('div', 'catctl');
     wrap.id = 'categoryControl';
-    wrap.setAttribute('data-shape', cats.length > CATEGORY_CHIP_LIMIT ? 'menu' : 'chips');
+    wrap.setAttribute('data-shape', shape);
     wrap.setAttribute('data-count', String(cats.length));
 
     function chip(value, label, on, onClick) {
@@ -2571,23 +3022,29 @@
     }
     var bar = el('div', 'catbar');
     bar.id = 'catBar';
-    bar.appendChild(chip('ALL', 'All categories', STATE.category === null, function () {
+    function selectAll() {
       STATE.category = null;
       STATE.view = 'overview';
       STATE.catMenuOpen = false;
       render();
-    }));
+    }
+    /* IN MENU SHAPE THERE IS NO STANDING "All categories" CHIP. It is the first row of the menu
+       instead, which is where a select puts it — a chip beside the trigger would be a second control
+       for the same dimension, and 110px of bar for a choice that is already in the list. */
+    if (shape === 'chips') {
+      bar.appendChild(chip('ALL', 'All categories', STATE.category === null, selectAll));
+    }
 
     /* THE BUSIEST FIRST when the list is long — "common + More", not an arbitrary alphabetical five. */
     var ordered = cats.slice();
-    if (cats.length > CATEGORY_CHIP_LIMIT) {
+    if (shape === 'menu') {
       ordered.sort(function (a, b) {
         var d = (countBySite[b] || 0) - (countBySite[a] || 0);
         return d !== 0 ? d : (a < b ? -1 : 1);
       });
     }
-    var shown = cats.length > CATEGORY_CHIP_LIMIT
-      ? ordered.slice(0, CATEGORY_CHIP_LIMIT - 1) : ordered;
+    /* Menu shape shows NO chips: every category, including the busiest, is in the one menu. */
+    var shown = shape === 'menu' ? [] : ordered;
     shown.forEach(function (c) {
       bar.appendChild(chip(c, c + ' (' + countBySite[c] + ')', STATE.category === c, function () {
         STATE.category = c;
@@ -2597,13 +3054,15 @@
       }));
     });
 
-    if (cats.length > CATEGORY_CHIP_LIMIT) {
-      var rest = ordered.slice(CATEGORY_CHIP_LIMIT - 1);
-      var more = el('button', 'catbtn is-more'
-        + (STATE.category !== null && rest.indexOf(STATE.category) >= 0 ? ' is-on' : ''),
-        (STATE.category !== null && rest.indexOf(STATE.category) >= 0
+    if (shape === 'menu') {
+      var rest = ordered.slice(0);
+      /* THE TRIGGER READS LIKE A FILTER, so it names the current value rather than the menu. "More
+         (8)" is right when five chips are already showing and this is the overflow; as the ONLY
+         control for the dimension it has to say what is selected, the way a select does. */
+      var more = el('button', 'catbtn is-more' + (STATE.category !== null ? ' is-on' : ''),
+        (STATE.category !== null
           ? STATE.category + ' (' + countBySite[STATE.category] + ')'
-          : 'More (' + rest.length + ')'));
+          : 'All categories (' + rest.length + ')'));
       more.id = 'catMore';
       more.setAttribute('type', 'button');
       more.setAttribute('aria-expanded', STATE.catMenuOpen ? 'true' : 'false');
@@ -2632,6 +3091,18 @@
           return q === '' || c.toLowerCase().indexOf(q) >= 0;
         });
         var list = el('div', 'catmenu-list');
+        /* The reset row, first, and only in menu shape — in chip shape the standing chip is the
+           reset and two of them would be two controls for one choice. */
+        if (shape === 'menu' && q === '') {
+          var allRow = el('button', 'catmenu-item catmenu-item--all'
+            + (STATE.category === null ? ' is-on' : ''), 'All categories');
+          allRow.setAttribute('type', 'button');
+          allRow.setAttribute('role', 'option');
+          allRow.setAttribute('data-category', 'ALL');
+          allRow.setAttribute('aria-selected', STATE.category === null ? 'true' : 'false');
+          allRow.addEventListener('click', selectAll);
+          list.appendChild(allRow);
+        }
         if (!hits.length) {
           list.appendChild(el('p', 'catmenu-empty', 'No category on this site matches “'
             + STATE.catSearch + '”.'));
@@ -2677,7 +3148,7 @@
         + (opts.blank_count === 1 ? '' : 's') + ' with no category' : '')
       + (opts.normalization_review.length ? '  ·  ' + opts.normalization_review.length
         + ' needing review' : '')));
-    wrap.appendChild(prov);
+    if (view.provenance !== false) wrap.appendChild(prov);
     return wrap;
   }
 
@@ -3055,7 +3526,39 @@
    */
   function seriesChoiceValues() { return [''].concat(SEL.scenarioSeriesChoices(MODEL)); }
 
+  /**
+   * P1-B4 — THE CHIP IS STATE, AND IT LIVES OUTSIDE THE PANEL THAT KNOWS ABOUT IT.
+   *
+   * The scenario status chip is in the command bar's context row; Apply runs renderData(), which
+   * deliberately rebuilds no control. So the chip has to be written IN PLACE, for exactly the reason
+   * the badge below it is: a chart showing a simulated price beside a chip reading "No scenario" is
+   * the worst defect that could be on the screen. P1-B2A found this same shape on the badge and the
+   * fix is the same one — which is why it is worth naming rather than quietly repeating.
+   *
+   * It runs BEFORE the permitted check: a scope where a scenario is not permitted still needs its
+   * chip to say so, and an early return would leave the last site's state on the screen.
+   */
+  function updateScenarioChip() {
+    var chip = byId('scenarioChip');
+    if (!chip || !MODEL || !MODEL.scenario) return;
+    var active = MODEL.scenario.active === true;
+    chip.className = 'cmd-chip' + (active ? ' cmd-chip--on' : '');
+    chip.setAttribute('data-active', String(active));
+    setText(chip, active ? SEL.SCENARIO_UNSAVED_LABEL : 'No scenario');
+    if (!active) return;
+    /* The count is appended rather than written into the text, so the label and the number stay two
+       layers — the Operation System's own count-pill model, and the thing §9 of P1-B2C asked for. */
+    var n = simulatedListingCount();
+    var c = el('span', 'km-tab-rail__count cmd-count', String(n));
+    c.id = 'scenarioChipCount';
+    c.setAttribute('data-listings', String(n));
+    c.setAttribute('title', n + ' listing' + (n === 1 ? '' : 's')
+      + ' on this chart show a simulated price');
+    chip.appendChild(c);
+  }
+
   function updateScenarioForm() {
+    updateScenarioChip();
     var panel = byId('scenarioPanel');
     if (!panel || !MODEL || !MODEL.scenario || !MODEL.scenario.permitted) return;
 
@@ -4061,19 +4564,29 @@
        Escape anywhere, a click outside, or the control again. The document listeners are registered
        ONCE here rather than per popover: a handler added on every render is a handler removed on no
        render, and after a dozen re-renders one Escape would close the panel a dozen times over. */
-    document.addEventListener('keydown', function (ev) {
-      if (!ev || ev.key !== 'Escape') return;
-      if (STATE.openPopover === null && !STATE.catMenuOpen) return;
+    function anyPopoverOpen() {
+      return STATE.openPopover !== null || STATE.catMenuOpen || STATE.moreFiltersOpen;
+    }
+    function closeAllPopovers() {
       STATE.openPopover = null;
       STATE.catMenuOpen = false;
+      /* P1-B4 §3.6 — More filters closes the same three ways as everything else, from the same one
+         pair of listeners. A component that registered its own would be a second rule to keep in
+         step, and the drawer is deliberately NOT in this set: it is a workspace, not a popover, and
+         Escape inside a form a person is filling in should not throw the form away. */
+      STATE.moreFiltersOpen = false;
+    }
+    document.addEventListener('keydown', function (ev) {
+      if (!ev || ev.key !== 'Escape') return;
+      if (!anyPopoverOpen()) return;
+      closeAllPopovers();
       render();
     });
     document.addEventListener('click', function () {
       /* The buttons that OPEN these stop the event before it reaches the document, so arriving here
          means the click landed somewhere else. */
-      if (STATE.openPopover === null && !STATE.catMenuOpen) return;
-      STATE.openPopover = null;
-      STATE.catMenuOpen = false;
+      if (!anyPopoverOpen()) return;
+      closeAllPopovers();
       render();
     });
 
@@ -4084,6 +4597,7 @@
       toggleFullscreen();
     });
 
+    exposeDevHooks();
     remeasure();
     render();
     observeContainer();
