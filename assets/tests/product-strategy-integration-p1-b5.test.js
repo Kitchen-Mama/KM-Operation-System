@@ -655,7 +655,12 @@ console.log('\n=== §M  `scratchpad/dryrun/wrapper.gs` — the on-sight audit (�
       if (e.name === 'node_modules' || e.name === '.git') return;
       var full = path.join(dir, e.name);
       if (e.isDirectory()) { grep(full, depth + 1); return; }
-      if (!/\.(gs|js|json|md)$/.test(e.name)) return;
+      /* CODE ONLY, AND THAT IS THE RULE RATHER THAN A CONVENIENCE. What must not exist is something
+         that can CALL the wrapper — a .gs the project would load, a .js a page would run. The design
+         freeze names it in §40.11 on purpose: the audit's finding includes a removal plan for the
+         live Apps Script project, and a removal plan that cannot name the thing to remove is not a
+         plan. A name in prose calls nothing. */
+      if (!/\.(gs|js)$/.test(e.name)) return;
       /* EXCLUDING THE SEARCHER FROM ITS OWN SEARCH. This file carries the name because it is the
          thing being looked for; counting itself would make the audit permanently red for the one
          reason that is not a finding. */
