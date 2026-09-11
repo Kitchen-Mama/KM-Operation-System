@@ -78,6 +78,32 @@ function openMeeting(p) {
   if (t && t.getAttribute('aria-expanded') === 'false') t.click();
   return p;
 }
+/**
+ * THE LAYER SWITCHES MOVED BEHIND A BUTTON, SO A TEST HAS TO PRESS IT.
+ * P1-B2C folded six permanent checkboxes into a popover with a count on its face. Reaching into
+ * the DOM for `#layer-msrp` while the popover is shut would be driving a control nobody can see —
+ * and it would keep passing if the disclosure were broken, which is the same objection that made
+ * the meeting-mode helper necessary a round earlier.
+ */
+function openLayers(p) {
+  if (p.thrown) return p;
+  var t = p.dom.document.getElementById('layersToggle');
+  if (t && t.getAttribute('aria-expanded') === 'false') t.click();
+  return p;
+}
+/**
+ * THE SIZE BUTTONS ARE COMFORTABLE'S, AND ONLY COMFORTABLE'S.
+ * P1-B2C made Auto Fit the default and took the 100/125/150 buttons off it deliberately: Auto Fit
+ * means the engine chose the size, and a 125% button beside it would be a second, contradictory
+ * answer to the same question. A test that wants those buttons has to ask for the mode that has
+ * them — which is what a person does too.
+ */
+function comfortable(p) {
+  if (p.thrown) return p;
+  var b = p.dom.document.getElementById('mode-comfortable');
+  if (b && b.getAttribute('aria-pressed') === 'false') b.click();
+  return p;
+}
 function q(p, sel) { return p.dom.document.querySelectorAll(sel); }
 function id(p, x) { return p.dom.document.getElementById(x); }
 function fire(p, elId, value) {
@@ -194,6 +220,10 @@ console.log('\n=== SECTION C  READABILITY AND ZOOM ===');
   ok(xl && Number(xl[1]) >= 12, 'C6 the product label is at least 12px', xl && xl[1]);
   ok(xs2 && Number(xs2[1]) >= 11, 'C7 the price sub-label is at least 11px', xs2 && xs2[1]);
   ok(yt && Number(yt[1]) >= 11, 'C8 and the axis ticks are too', yt && yt[1]);
+  /* P1-B2C MOVED THE SIZE ONTO THE ELEMENT, because the density decides it. The stylesheet values
+     above are the spacious defaults; these are what the page actually drew at this viewport. */
+  var drawnLabel = Number(q(PG, '.xlabel')[0].getAttribute('font-size'));
+  ok(drawnLabel >= 10, 'C8a and the size the page actually drew is legible too', drawnLabel);
 
   // C9 HOVER AND FOCUS BOTH REACH THE FACTS.
   var col = q(PG, '.col')[0];
@@ -207,12 +237,16 @@ console.log('\n=== SECTION C  READABILITY AND ZOOM ===');
   eq(id(PG, 'tip').hidden, true, 'C13 and blur closes it');
 }());
 
-// ---- C14 THE FIVE ZOOM CONTROLS, AND THE PRICES THAT DO NOT MOVE ----
+// ---- C14 THE ZOOM CONTROLS, AND THE PRICES THAT DO NOT MOVE ----
 (function () {
   var p = chartPage();
   if (p.thrown) { ok(false, 'C14 boot', String(p.thrown)); return; }
+  /* AUTO FIT DOES NOT OFFER A ZOOM, AND THAT IS THE POINT. Two controls answering "how big" with
+     different numbers is worse than one control answering it. */
+  eq(id(p, 'zoom-1-5'), null, 'C14.0 Auto Fit shows no manual size buttons');
+  comfortable(p);
   ['zoom-fit', 'zoom-1', 'zoom-1-25', 'zoom-1-5', 'zoom-reset'].forEach(function (bid, i) {
-    ok(!!id(p, bid), 'C14.' + (i + 1) + ' the ' + bid + ' control exists');
+    ok(!!id(p, bid), 'C14.' + (i + 1) + ' the ' + bid + ' control exists in Comfortable');
   });
   function chart() { return q(p, '.chart')[0]; }
   function prices() {
@@ -225,7 +259,8 @@ console.log('\n=== SECTION C  READABILITY AND ZOOM ===');
   }
   var vb0 = chart().getAttribute('viewBox');
   var px0 = prices(), tk0 = ticks();
-  eq(chart().getAttribute('width'), '100%', 'C15 Fit paints the chart across the card');
+  eq(chart().getAttribute('width'), '100%',
+    'C15 a chart that fits the card is painted across it');
 
   id(p, 'zoom-1-5').click();
   var c = chart();
@@ -241,17 +276,21 @@ console.log('\n=== SECTION C  READABILITY AND ZOOM ===');
   eq(prices(), px0, 'C21 still the same prices');
 
   // C22 THE CONTAINER SCROLLS, the page does not, and the browser is never asked to zoom.
-  ok(/\.chartwrap\s*\{[^}]*overflow-x:\s*auto/.test(SRC.css),
+  ok(/\.chartwrap\[data-mode="comfortable"\]\s*\{[^}]*overflow-x:\s*auto/.test(SRC.css),
     'C22 the chart scrolls inside its own container');
   ok(bare(SRC.prototype).indexOf('document.body.style.zoom') < 0,
     'C23 and nothing zooms the page itself');
 
   // C24 RESET RESTORES THE WHOLE VIEW, not just the size.
+  openLayers(p);
   id(p, 'layer-msrp').checked = false;
   id(p, 'layer-msrp').dispatchEvent(new p.dom.Event('change', { bubbles: true }));
+  openLayers(p);
   eq(q(p, '.cap-msrp').length, 0, 'C24 a layer was switched off');
   id(p, 'zoom-reset').click();
-  eq(chart().getAttribute('width'), '100%', 'C25 Reset returns to Fit');
+  eq(chart().getAttribute('width'), '100%', 'C25 Reset returns to a chart that fits');
+  eq(id(p, 'mode-auto').getAttribute('aria-pressed'), 'true',
+    'C25a and to Auto Fit, because Reset restores the whole view');
   ok(q(p, '.cap-msrp').length > 0, 'C26 AND restores the layers — it is a view reset, not a second Fit');
 
   // C27 PRINT IS ALWAYS FIT.
@@ -265,7 +304,8 @@ console.log('\n=== SECTION D  LAYERS, CLEAN AND DETAIL ===');
   var p = chartPage();
   if (p.thrown) { ok(false, 'D0 boot', String(p.thrown)); return; }
   ['images', 'msrp', 'floor', 'promo', 'scenario', 'steps'].forEach(function (l, i) {
-    ok(!!id(p, 'layer-' + l), 'D1.' + (i + 1) + ' the ' + l + ' layer has a switch');
+    ok(!!id(openLayers(p), 'layer-' + l),
+      'D1.' + (i + 1) + ' the ' + l + ' layer has a switch');
   });
   // D2 ONE BAND LAYER, NOT TWO NAMES FOR ONE COLUMN.
   var labels = q(p, '.ctl-layers .chk-text').map(function (n) { return n.textContent; });
@@ -277,6 +317,7 @@ console.log('\n=== SECTION D  LAYERS, CLEAN AND DETAIL ===');
     'D4 there is no separate MSRP layer to disagree with it');
 
   function toggle(l, on) {
+    openLayers(p);
     var cb = id(p, 'layer-' + l);
     cb.checked = on;
     cb.dispatchEvent(new p.dom.Event('change', { bubbles: true }));
@@ -321,10 +362,11 @@ console.log('\n=== SECTION D  LAYERS, CLEAN AND DETAIL ===');
   ok(q(p, '.mk-img-plate').length > 0, 'D20 Clean keeps the product images and the everyday price');
   eq(q(p, '.cap-msrp').length + q(p, '.cap-floor').length + q(p, '.gapmark').length, 0,
     'D21 and drops the extra lines');
-  eq(id(p, 'layer-msrp').checked, false, 'D22 the shortcut SET the switches — it is not a third mode');
+  eq(id(openLayers(p), 'layer-msrp').checked, false,
+    'D22 the shortcut SET the switches — it is not a third mode');
   id(p, 'view-detail').click();
   ok(q(p, '.cap-msrp').length > 0 && q(p, '.gapmark').length > 0, 'D23 Detail brings them all back');
-  eq(id(p, 'layer-msrp').checked, true, 'D24 and the switches agree');
+  eq(id(openLayers(p), 'layer-msrp').checked, true, 'D24 and the switches agree');
 
   // D25 EDITING A LAYER LEAVES THE PRESET, rather than the badge lying about where you are.
   toggle('promo', false);
@@ -535,12 +577,14 @@ console.log('\n=== SECTION F  PROGRESSIVE DISCLOSURE ===');
   eq(q(p, '.info-pop').length, 0, 'F16 and Escape closes it — no mouse required');
 
   // F17 KEYBOARD REACHES IT WITHOUT A MOUSE AT ALL.
-  var btn = id(p, 'info-zoom');
+  /* P1-B2C renamed this popover: it explains all three MODES now, not just a zoom. */
+  var btn = id(p, 'info-viewsize');
   ok(!!btn && btn.localName === 'button',
     'F17 the control is a BUTTON, so Enter and Space already activate it');
   ok(String(btn.getAttribute('aria-label')).indexOf('About') === 0,
     'F18 with a label a screen reader can read', btn.getAttribute('aria-label'));
-  eq(btn.getAttribute('aria-controls'), 'infopanel-zoom', 'F19 pointing at the panel it owns');
+  eq(btn.getAttribute('aria-controls'), 'infopanel-viewsize',
+    'F19 pointing at the panel it owns');
   btn.dispatchEvent(new p.dom.Event('keydown', { key: 'Escape' }));
   eq(q(p, '.info-pop').length, 0, 'F20 and Escape on the control itself closes too');
 }());
@@ -692,7 +736,16 @@ console.log('\n=== SECTION H  DENSITY ===');
   eq(q(p, '.col').length, 44, 'H27 with 44 columns');
   var vbw = Number(chart.getAttribute('data-vb-w'));
   var colW = Number(chart.getAttribute('data-col-w'));
-  ok(colW >= 74, 'H28 each column keeps a readable minimum width', colW);
+  /* P1-B2C: 74px WAS THE SPACIOUS MINIMUM, AND IT IS STILL THE SPACIOUS MINIMUM. Forty-four
+     products do not get the spacious profile — they get the overview one, whose column minimum is
+     26px because a 24px thumbnail fits in it and a 50px photograph does not. Asserting 74 here
+     would be asserting that the density ladder does not work. What must hold is that the chart
+     never goes below the minimum OF THE PROFILE IT CHOSE. */
+  var density = chart.getAttribute('data-density');
+  var floorW = { spacious: 74, normal: 58, compact: 44, overview: 26 }[density];
+  ok(colW >= floorW, 'H28 each column keeps the minimum width of its own density profile',
+    { density: density, colW: colW, floor: floorW });
+  eq(density, 'overview', 'H28a and forty-four products get the overview profile');
   ok(vbw >= 44 * colW, 'H29 so the drawing grows and the CONTAINER scrolls', { vbw: vbw });
   /* P1-B2B REPLACED THE STAGGER WITH ONE BASELINE. Alternating labels between two rows was how
      narrow columns used to be survived; it made half the products look like a different kind of
@@ -765,7 +818,7 @@ console.log('\n=== SECTION J  WHAT ONLY A SCREENSHOT COULD SEE ===');
   var narrow = q(p, '.chart')[0];
   eq(narrow.getAttribute('width'), '100%',
     'J6 a chart that fits the card is painted across it');
-  eq(narrow.getAttribute('data-fit-floored'), null, 'J7 and is not floored');
+  eq(narrow.getAttribute('data-natural-width'), null, 'J7 and does not need its natural width');
 }());
 
 (function () {
@@ -780,15 +833,32 @@ console.log('\n=== SECTION J  WHAT ONLY A SCREENSHOT COULD SEE ===');
   var target = q(p, '.catmenu-item').filter(function (i2) {
     return i2.getAttribute('data-category') === 'Electric Can Opener'; });
   target[0].click();
+  /* THE FIT FLOOR IS GONE, AND ITS DEFECT IS GONE WITH IT.
+
+     P1-B2A found `width: 100%` painting a 3364px drawing at 0.42x inside a 1400px card and added
+     a floor: past a point, stop shrinking and let the container scroll. That was the right patch
+     for a layout that had already gone wrong upstream — the drawing should never have needed
+     3364px in a 1400px card. P1-B2C removes the cause instead: the engine picks a density whose
+     columns fit, and the same forty-four products now need 1252px rather than 3364px.
+
+     So what is checked is the promise, not the patch. Either the drawing fits and is painted
+     across the card, or it does not and the chart says so and takes its natural width. There is
+     no third state where it is silently shrunk into illegibility. */
   var wide = q(p, '.chart')[0];
   var vbw = Number(wide.getAttribute('data-vb-w'));
-  ok(vbw > 2000, 'J8 forty-four columns need far more than a card width', vbw);
-  eq(wide.getAttribute('data-fit-floored'), 'true',
-    'J9 SO FIT STOPS SHRINKING — a chart scaled to 0.42x is not fitted, it is unreadable');
-  eq(wide.getAttribute('width'), String(vbw),
-    'J10 it is painted at natural size and the container scrolls instead');
+  var fits = wide.getAttribute('data-fits-width') === 'true';
+  ok(vbw < 2000, 'J8 forty-four products need far less room than they used to', vbw);
+  if (fits) {
+    eq(wide.getAttribute('width'), '100%', 'J9 it fits, so it is painted across the card');
+  } else {
+    eq(wide.getAttribute('width'), String(vbw),
+      'J9 it does not fit, so it takes its natural width and the container scrolls');
+    eq(wide.getAttribute('data-natural-width'), 'true', 'J9a and says which of the two it is');
+  }
   eq(wide.getAttribute('viewBox'), '0 0 ' + vbw + ' ' + wide.getAttribute('data-vb-h'),
-    'J11 and the coordinate system is still untouched');
+    'J10 and the coordinate system matches the box it declares');
+  eq(wide.getAttribute('data-overflow'), fits ? 'none' : 'container-x',
+    'J11 with the overflow policy stated rather than discovered');
 }());
 
 console.log('\n=== MUTANTS ===');
@@ -860,24 +930,23 @@ mut('N2 the dot is hidden instead of removed, so it is still in the tree', funct
 });
 
 mut('N3 zoom scales the viewBox, so a price moves when somebody enlarges the chart', function () {
-  // The one thing a zoom must never do. Scaling the coordinate system LOOKS identical on screen and
-  // silently changes every coordinate a reader or a test would compare.
+  /* AIMED AT COMFORTABLE, which is where the manual sizes live since P1-B2C. Auto Fit has no
+     zoom at all, so a mutant aimed at it would be observed on a page with no control to drive —
+     agreement about an empty room rather than a verdict about a rule. */
   var m = withProto(swap(
-    "    var s = svg('svg', { viewBox: '0 0 ' + W + ' ' + H, 'class': 'chart',",
-    "    var s = svg('svg', { viewBox: '0 0 ' + (W * (STATE.zoom === 'fit' ? 1 : Number(STATE.zoom)))"
-      + " + ' ' + H, 'class': 'chart',"));
-  function vbAt(pg, zoomId) {
+    "      s.setAttribute('width', String(Math.round(W * Number(STATE.zoom))));",
+    "      s.setAttribute('viewBox', '0 0 ' + Math.round(W * Number(STATE.zoom)) + ' ' + H);\n"
+      + "      s.setAttribute('width', String(Math.round(W * Number(STATE.zoom))));"));
+  function vbAt150(pg) {
     if (pg.thrown) return 'THREW';
-    var doc = pg.dom.document;
-    var chip = doc.querySelectorAll('#catBar .catbtn').filter(function (b) {
-      return b.getAttribute('data-category') === 'Silicone Spatula'; });
-    if (chip.length) chip[0].click();
-    doc.getElementById(zoomId).click();
-    return doc.querySelectorAll('.chart')[0].getAttribute('viewBox');
+    toChart(pg);
+    comfortable(pg);
+    var before = pg.dom.document.querySelectorAll('.chart')[0].getAttribute('viewBox');
+    pg.dom.document.getElementById('zoom-1-5').click();
+    var after = pg.dom.document.querySelectorAll('.chart')[0].getAttribute('viewBox');
+    return before === after ? 'STABLE' : 'MOVED';
   }
-  var cleanFit = vbAt(chartPage(), 'zoom-fit'), cleanBig = vbAt(chartPage(), 'zoom-1-5');
-  var badFit = vbAt(m, 'zoom-fit'), badBig = vbAt(m, 'zoom-1-5');
-  return cleanFit === cleanBig && badFit !== badBig;
+  return vbAt150(bootPage(null)) === 'STABLE' && vbAt150(m) === 'MOVED';
 });
 
 mut('N4 a hidden layer keeps its legend key, so the chart claims something it does not show',
@@ -892,6 +961,7 @@ mut('N4 a hidden layer keeps its legend key, so the chart claims something it do
       var chip = doc.querySelectorAll('#catBar .catbtn').filter(function (b) {
         return b.getAttribute('data-category') === 'Silicone Spatula'; });
       if (chip.length) chip[0].click();
+      openLayers(pg);
       var cb = doc.getElementById('layer-promo');
       cb.checked = false;
       cb.dispatchEvent(new pg.dom.Event('change', { bubbles: true }));
@@ -911,6 +981,7 @@ mut('N5 the band survives with one cap hidden, so a line runs from a price to no
     var chip = doc.querySelectorAll('#catBar .catbtn').filter(function (b) {
       return b.getAttribute('data-category') === 'Silicone Spatula'; });
     if (chip.length) chip[0].click();
+    openLayers(pg);
     var cb = doc.getElementById('layer-msrp');
     cb.checked = false;
     cb.dispatchEvent(new pg.dom.Event('change', { bubbles: true }));
@@ -1008,26 +1079,29 @@ mut('N11 the category chips grow without limit, so forty of them become the page
 });
 
 mut('N12 the plot stops being centred, so the slack collects on the right', function () {
-  var m = withProto(swap(
-    '    var offset = plotW < avail ? PAD_L + (avail - plotW) / 2 : PAD_L;',
-    '    var offset = PAD_L;'));
+  /* THE CENTRING MOVED INTO THE LAYOUT ENGINE IN P1-B2C, so the mutant follows it there. Capping
+     the column width without centring is what left the large empty margin on the right that the
+     P1-B2A review objected to; the rule is the same one, it just lives in a pure function now. */
+  var m = bootPage(function (kind, src) {
+    if (kind !== 'layout') return src;
+    var a = "    var offset = plotW < c.availWidth ? L.PAD_L + (c.availWidth - plotW) / 2 : L.PAD_L;";
+    if (src.split(a).length - 1 !== 1) throw new Error('mutant anchor in chart-layout.js');
+    return src.replace(a, '    var offset = L.PAD_L;');
+  });
   function balance(pg) {
-    if (pg.thrown) return null;
+    if (pg.thrown) return 'THREW: ' + pg.thrown.message;
     toChart(pg);
-    var doc = pg.dom.document;
-    var chart = doc.querySelectorAll('.chart')[0];
-    if (!chart) return null;
-    var vbw = Number(chart.getAttribute('viewBox').split(' ')[2]);
-    var xs = doc.querySelectorAll('.xlabel').map(function (t) {
-      return Number(t.getAttribute('x')); });
-    return { diff: Math.abs(Math.min.apply(null, xs) - (vbw - Math.max.apply(null, xs))),
-      colW: Number(chart.getAttribute('data-col-w')) };
+    var ch = pg.dom.document.querySelectorAll('.chart')[0];
+    var cols = pg.dom.document.querySelectorAll('.mk-anchor');
+    if (!cols.length) return 'NONE';
+    var colW = Number(ch.getAttribute('data-col-w'));
+    var W = Number(ch.getAttribute('data-vb-w'));
+    var xs = cols.map(function (n) { return Number(n.getAttribute('data-cx')); });
+    var left = Math.min.apply(null, xs) - 78;
+    var right = W - 30 - Math.max.apply(null, xs);
+    return Math.abs(left - right) < colW / 2 ? 'CENTRED' : 'LOPSIDED';
   }
-  /* AIMED AT THE SAME PREDICATE C5 USES, so the mutant and the assertion cannot disagree about
-     what "centred" means. */
-  var clean = balance(chartPage()), bad = balance(toChart(m));
-  return clean !== null && bad !== null && clean.diff < clean.colW / 2
-    && bad.diff >= bad.colW / 2;
+  return balance(bootPage(null)) === 'CENTRED' && balance(m) === 'LOPSIDED';
 });
 
 mut('N13 the image shrinks back to the size the review objected to', function () {

@@ -128,7 +128,19 @@
        A reload restores the defaults because a reload builds this object again. */
     layers: { images: true, msrp: true, floor: true, promo: true, scenario: true, steps: true },
     viewMode: 'detail',            // detail | clean — a shortcut that SETS layers, not a third mode
-    zoom: 'fit',                   // fit | 1 | 1.25 | 1.5
+    zoom: 'fit',                   // fit | 1 | 1.25 | 1.5 — COMFORTABLE ONLY, see chartMode
+    /* ---- P1-B2C: HOW BIG, DECIDED BY THE ROOM THERE IS ----
+       `chartMode` is auto or comfortable, `fullscreen` is a separate flag rather than a third mode
+       because it composes with both: going fullscreen and coming back must not change which of the
+       two you were in. `box` is the last measurement, quantised — the only measured thing in the
+       state, and it is an INPUT to a pure function rather than a decision. */
+    chartMode: 'auto',             // auto | comfortable
+    fullscreen: false,
+    layersOpen: false,             // the Layers popover, so six checkboxes are not a permanent row
+    box: { w: null, h: null },
+    boxKey: '',                    // what the last layout was derived from; a resize that matches
+                                   // it is not a resize, and redrawing on it is how a loop starts
+    fsReturnScroll: 0,
     advancedOpenFilters: false,
     openPopover: null,             // the id of the one open info popover, or null
     catSearch: '',
@@ -230,44 +242,56 @@
      declared design width and the element is sized in CSS, so it fits whatever card holds it — and the
      ZOOM control changes the element's width while the viewBox stays byte-identical. That is what makes
      "zoom cannot move a price" provable rather than promised. */
-  var DESIGN_W = 1180;              // the content width of the Operation System card at 1440 and up
-  var PAD_L = 78, PAD_R = 30, PAD_T = 30;
-  var COL_MIN = 74, COL_MAX = 208;
-  var TICK_C = 500;                 // FIVE CURRENCY UNITS, in cents — the PREFERRED step, see priceAxis
-  var MK = 50, MK_HOVER = 66;       // image marker, and its hover size — P1-B2A: 36 -> 50 (brief: 46-54)
+  /* ---- P1-B2C: THE SIZES MOVED OUT ---------------------------------------------------------------
 
-  /* ---- P1-B2B: THE PLOT AND THE LABEL LANE ARE TWO BANDS, NOT ONE AREA WITH A MARGIN --------------
+     Every number that used to live here — the design width, the column bounds, the image size, the
+     gridline pitch, the lane height — now comes from `chart-layout.js`, which decides them from the
+     container, the viewport, the product count and the price domain. What is left below is what the
+     RENDERER owns: how much room to reserve around the page, how far a measurement has to move
+     before it is worth redrawing, and the fallbacks for a paint that happens before anything has
+     been measured.
 
-     The visual review found the product photographs touching the text beneath them. The cause was
-     that there was no lane: labels were drawn at `PLOT_H + 22` inside the same coordinate space the
-     prices use, so the bottom of the price scale and the top of the type were the same pixel, and a
-     50px plate centred on the lowest price hung 25px into the words. Widening LABEL_H could not fix
-     that — the plate was not overflowing the label area, it was overflowing the PLOT.
+     WHY THE MEASUREMENT IS ALLOWED NOW. P1-B2A wrote "no layout box is measured anywhere", and the
+     reasoning — a chart whose geometry depends on WHEN it was measured draws differently on a slow
+     load — is still right. It is an argument against a HIDDEN dependency. Measuring in one named
+     place and passing the result into a pure function as an argument is the opposite of hidden: the
+     layout is still deterministic given its inputs, a test can hand it 1366x768 with no browser at
+     all, and there is exactly one line in this file where a box is read.
+     ------------------------------------------------------------------------------------------------ */
+  var LAYOUT = (typeof PSB_CHART_LAYOUT !== 'undefined') ? PSB_CHART_LAYOUT : null;
+  var TICK_C = 500;                 // the preferred step; the ladder lives in chart-layout.js
+  /* READ FROM THE ENGINE, NOT RESTATED HERE. A second copy of a padding is a second padding the
+     day somebody changes one of them. */
+  var PAD_L = LAYOUT.PAD_L, PAD_R = LAYOUT.PAD_R, PAD_T = LAYOUT.PAD_T;
 
-     So the drawing is now three stacked bands with declared heights:
+  /* THE PAGE CHROME, DECLARED RATHER THAN MEASURED AT SCROLL TIME. The height available to the
+     chart is the viewport minus the furniture above and below it inside its own card. Deriving that
+     from the card's live top offset would make the layout depend on the SCROLL POSITION, so the
+     chart would re-lay-out as the reader scrolled past it — which is a worse defect than the one
+     this round is fixing. These are the card's own furniture, and they do not move. */
+  var CHROME_H = 232;               // banner + panel header + control bar + legend + card padding
+  var CARD_INSET = 44;              // the panel's horizontal padding and borders
+  var FS_CHROME_H = 132;            // the same, in fullscreen, where there is no page around it
+  var MEASURE_QUANT = 8;            // sub-pixel jitter must not churn the layout
+  var MK_HOVER_SCALE = 1.32;        // the hover growth, as a ratio of whatever the image size is
 
-         PAD_T          air above the top gridline
-         PLOT_PAD       the marker gutter — half a plate plus five, so nothing can cross a plot edge
-         PLOT_H         the price scale itself: gridline to gridline, and NOTHING else lives here
-         PLOT_PAD       the same gutter at the bottom
-         LANE_H         the label lane: sku, price, variants — and no price coordinate at all
+  /* ---- THE THREE BANDS SURVIVE P1-B2C; ONLY THEIR SIZES MOVED ------------------------------------
 
-     Every label sits on a baseline measured from the lane, never from a price, which is what makes
-     "all labels share one baseline" true by construction rather than by a lucky arrangement. */
-  var PLOT_PAD = 30;                // MK / 2 + 5: a plate centred on an end tick still clears the edge
-  var LANE_H = 52;                  // the label lane, fixed and independent of the scale
-  var LANE_ROW_1 = 20, LANE_ROW_2 = 38;   // 18px apart: ~6px of clear space at 12.5 / 11.5
+     P1-B2B found the product photographs touching the text beneath them, because labels were drawn
+     inside the same coordinate space the prices use: the bottom of the scale and the top of the
+     type were the same pixel, and an image centred on the lowest price hung half its height into
+     the words. The answer was three stacked bands, and that answer is unchanged:
 
-  /* ---- VERTICAL READABILITY IS A PIXEL FLOOR, NOT A HEIGHT CAP -----------------------------------
-     28px per 5 currency units put two 50px photographs 28px apart — they overlapped, and no label
-     avoidance can rescue a chart whose own markers collide. The gridline pitch is now 48px (the
-     brief's 44-52), and it is a FLOOR: when a range is so wide that 48px per five units would make an
-     absurd drawing, the TICK STEP grows (5 -> 10 -> 25 -> 50 ...) and the pitch is preserved. The
-     alternative — keeping the step and shrinking the pitch — is the defect this replaces. */
-  var PX_PER_TICK = 48;
-  var PX_PER_TICK_MIN = 44;         // asserted, so a future edit cannot quietly compress the scale
-  var PLOT_MIN_H = 300, PLOT_MAX_H = 960;
-  var STEP_LADDER_C = [500, 1000, 2500, 5000, 10000, 25000];
+         PAD_T      air above the top gridline
+         gutter     half an image plus five, so a marker on an end tick still clears the edge
+         plot       the price scale: gridline to gridline, and NOTHING else lives here
+         gutter     the same at the bottom
+         lane       sku, price, variants — and no price coordinate at all
+
+     What P1-B2C changes is that the gutter is now derived from the image size the layout engine
+     chose, rather than from a 50px image that was assumed. A smaller photograph gets a smaller
+     gutter and the guarantee is the same one: the gutter is always at least half an image.
+     ------------------------------------------------------------------------------------------------ */
 
   /* ---- THE CHART LAYERS ---------------------------------------------------------------------------
      SIX, AND THERE ARE SIX BECAUSE THE DATA HAS SIX THINGS TO SHOW — not because six boxes looked
@@ -343,30 +367,15 @@
      No "nice number" search, no magnitude rounding, no adaptive step. The only thing that varies
      with the range is the PIXEL distance between ticks, and it is clamped so a tall category
      compresses rather than dropping a tick. */
-  /**
-   * THE AXIS. Five currency units per gridline wherever five units fits, and the pitch is what is
-   * held constant — never the step. A step that stays at 5 while the pixels shrink is a scale that
-   * becomes unreadable exactly when it has the most to say.
-   */
-  function priceAxis(loC, hiC) {
-    if (loC === null || hiC === null) { loC = 0; hiC = TICK_C; }
-    for (var i = 0; i < STEP_LADDER_C.length; i++) {
-      var step = STEP_LADDER_C[i];
-      var lo = Math.floor(loC / step) * step;
-      var hi = Math.ceil(hiC / step) * step;
-      if (hi === lo) hi = lo + step;
-      var count = (hi - lo) / step + 1;
-      if ((count - 1) * PX_PER_TICK <= PLOT_MAX_H || i === STEP_LADDER_C.length - 1) {
-        var ticks = [];
-        for (var v = lo; v <= hi; v += step) ticks.push(v);
-        return { lo: lo, hi: hi, step: step, ticks: ticks };
-      }
-    }
-    return null;
-  }
-  function plotHeightFor(tickCount) {
-    return Math.max(PLOT_MIN_H, (tickCount - 1) * PX_PER_TICK);
-  }
+  /* ---- THE AXIS AND THE PLOT HEIGHT NOW COME FROM THE ENGINE -------------------------------------
+
+     `priceAxis` and `plotHeightFor` are gone. They encoded two decisions that turned out to be one
+     decision taken twice: which tick step to use, and how tall the plot should be. Those cannot be
+     settled independently — the step that fits depends on the height available, and the height that
+     works depends on how many ticks the step produces — which is why splitting them produced a 48px
+     floor that outranked being able to see the axis. `deriveResponsiveChartLayout` settles both at
+     once, against the room there actually is.
+     ------------------------------------------------------------------------------------------------ */
 
   /* ---- THE DOMAIN BELONGS TO THE SCOPE, NOT TO THE CHECKBOXES -------------------------------------
 
@@ -461,9 +470,10 @@
      (campaign-risk.css:440): grey plate, light border, small muted text. Never a broken image, never
      another sku's photograph, never a shape that could be mistaken for a product.
      ------------------------------------------------------------------------------------------------ */
-  function everydayMarker(g, cx, cy, n) {
+  function everydayMarker(g, cx, cy, n, lay) {
     var showImage = layerOn('images');
-    var size = showImage ? MK : Math.round(MK * 0.62);
+    var base = (lay && lay.imageSize) || 50;
+    var size = showImage ? base : Math.round(base * 0.62);
     var half = size / 2;
     var grp = svg('g', { 'class': 'mk-reg-group', 'data-cy': cy });
 
@@ -471,7 +481,8 @@
     grp.appendChild(svg('line', {
       x1: cx - half - 8, y1: cy, x2: cx + half + 8, y2: cy,
       'class': 'mk-anchor mk-reg', 'data-cx': cx, 'data-cy': cy,
-      'data-price-c': n._regular_c
+      'data-price-c': n._regular_c,
+      'data-frac': (lay && lay.frac !== undefined) ? lay.frac : ''
     }));
 
     grp.appendChild(svg('rect', { x: cx - half + 1, y: cy - half + 2, width: size, height: size,
@@ -488,25 +499,48 @@
       im.setAttribute('data-src', n.image);
       grp.appendChild(im);
     } else {
-      var t = svgText({ x: cx, y: cy + 3.5, 'class': 'mk-fallback-text',
-        'text-anchor': 'middle' }, shortCode(n.label));
-      t.appendChild(svg('title', {}));
-      /* IN WORDS. This string is VISIBLE text on the category page, and that page carries no
-         engineering vocabulary — the column it comes from is named in the layers popover instead,
-         which a reader opens deliberately. Progressive disclosure is the whole point: the fact is
-         available, it is simply not shouted at somebody who did not ask. */
-      t.childNodes[t.childNodes.length - 1].appendChild(document.createTextNode(
-        showImage
-          ? 'No product photograph is on record for this product.'
-          : 'Product images are switched off for this chart.'));
-      grp.appendChild(t);
+      /* ---- THE CODE HAS TO FIT THE PLATE IT IS WRITTEN ON ---------------------------------------
+
+         P1-B2C made the plate a variable size, and this text did not follow it: `shortCode` kept
+         returning up to seven characters, so at the overview density six characters of sku were
+         painted across a 24px marker and forty-four of them ran into each other. A screenshot
+         found it; every assertion about the plates was green, because none of them was about the
+         text inside one.
+
+         So the budget comes from the plate, and below four characters there is NO text at all. A
+         two-letter stump is not an identifier, it is noise on top of the one thing the marker is
+         for — and the sku is still on the column's hover panel, its focus panel, its aria-label
+         and the lane beneath it. */
+      var codeChars = Math.floor((size - 6) / 5.6);
+      var codeFont = Math.max(7.5, Math.min(10.5, Math.round(size * 0.22 * 10) / 10));
+      var missText = showImage
+        ? 'No product photograph is on record for this product.'
+        : 'Product images are switched off for this chart.';
+      if (codeChars >= 4) {
+        var t = svgText({ x: cx, y: cy + codeFont * 0.35, 'class': 'mk-fallback-text',
+          'font-size': codeFont, 'data-chars': codeChars,
+          'text-anchor': 'middle' }, shortCode(n.label, codeChars));
+        var mt = svg('title', {});
+        /* IN WORDS. This string is VISIBLE text on the category page, and that page carries no
+           engineering vocabulary — the column it comes from is named in the layers popover
+           instead, which a reader opens deliberately. */
+        mt.appendChild(document.createTextNode(missText));
+        t.appendChild(mt);
+        grp.appendChild(t);
+      } else {
+        /* THE PLATE ALONE IS THE MARKER, and it still has to say what it is. */
+        var pt = svg('title', {});
+        pt.appendChild(document.createTextNode(n.label + ' \u2014 ' + missText));
+        grp.childNodes[grp.childNodes.length - 1].appendChild(pt);
+      }
     }
     g.appendChild(grp);
     return grp;
   }
-  function shortCode(label) {
+  function shortCode(label, chars) {
     var s = String(label || '');
-    return s.length <= 7 ? s : s.slice(0, 7);
+    var n = chars === undefined ? 7 : Math.max(1, chars);
+    return s.length <= n ? s : s.slice(0, n);
   }
 
   /* ---- WHAT A PRICE GAP IS CALLED ----------------------------------------------------------------
@@ -543,23 +577,48 @@
     ];
   }
 
-  /* ---- COLUMN GEOMETRY ---------------------------------------------------------------------------
-     Columns fill the available width and are CENTRED in it. Centring is the part that matters: capping
-     the column width without centring is what leaves the large empty margin on the right that the
-     visual review objected to, because all the slack collects at one end. */
-  function chartGeometry(count) {
-    var avail = DESIGN_W - PAD_L - PAD_R;
-    var colW = Math.max(COL_MIN, Math.min(COL_MAX, count > 0 ? avail / count : avail));
-    var plotW = colW * count;
-    var W = Math.max(DESIGN_W, PAD_L + plotW + PAD_R);
-    var offset = plotW < avail ? PAD_L + (avail - plotW) / 2 : PAD_L;
-    /* NO STAGGER. Alternating labels between two rows was how narrow columns used to be survived,
-       and it breaks the one thing the lane is for: a shared baseline. Half the labels 18px lower
-       than the other half reads as two different kinds of product, and at 44 columns it read as
-       noise. Narrow columns are handled by TRUNCATION instead — the full text stays in the hover
-       panel, the focus panel and the aria-label, so nothing is lost, only shortened. */
-    return { colW: colW, plotW: plotW, W: W, offset: offset,
-      chars: Math.max(4, Math.floor((colW - 6) / 6.6)), avail: avail };
+  /* ---- THE MEASUREMENT, IN ONE PLACE -------------------------------------------------------------
+
+     THE ONE LINE IN THIS FILE THAT READS A LAYOUT BOX. `#view` is observed rather than the chart's
+     own container, and that is deliberate: `#view` is never replaced by a render, so an observer
+     attached to it survives every redraw, while an observer on a node the renderer recreates would
+     silently stop firing the first time the chart was drawn again.
+
+     The width is quantised before it is used. A container that reports 1281.6px and then 1281.4px
+     has not changed, and treating those as two layouts is how an observer turns into a loop.
+     ------------------------------------------------------------------------------------------------ */
+  function measureBox() {
+    var host = byId('view');
+    var w = host ? Number(host.clientWidth || 0) : 0;
+    var vw = (typeof window !== 'undefined' && window) ? Number(window.innerWidth || 0) : 0;
+    var vh = (typeof window !== 'undefined' && window) ? Number(window.innerHeight || 0) : 0;
+    function q(v) { return Math.round(v / MEASURE_QUANT) * MEASURE_QUANT; }
+    if (STATE.fullscreen) {
+      return {
+        w: vw > 0 ? q(vw - 48) : null,
+        h: vh > 0 ? q(vh - FS_CHROME_H) : null
+      };
+    }
+    return {
+      w: w > 0 ? q(w - CARD_INSET) : null,
+      h: vh > 0 ? q(vh - CHROME_H) : null
+    };
+  }
+  /** The string that decides whether a resize is worth a redraw. */
+  function boxKey(b) {
+    return [b.w, b.h, STATE.chartMode, STATE.fullscreen ? 'fs' : '-', STATE.zoom].join('|');
+  }
+
+  function layoutFor(ns, dom) {
+    var box = STATE.box || { w: null, h: null };
+    return LAYOUT.deriveResponsiveChartLayout({
+      containerWidth: box.w,
+      availableHeight: box.h,
+      productCount: ns.length,
+      domainLowC: dom.lo,
+      domainHighC: dom.hi,
+      mode: STATE.fullscreen ? 'fullscreen' : STATE.chartMode
+    });
   }
 
   function renderChart(panel, thrC, findings) {
@@ -573,76 +632,107 @@
     }
     /* THE AXIS RANGE FOLLOWS THE SCOPE, AND THE CHECKBOXES CANNOT REACH IT. See scopeDomain: the
        domain is the canonical envelope of these products, so a layer toggle moves nothing, and a
-       scenario can only ever push a bound outward. */
+       scenario can only ever push a bound outward. P1-B2C changes how many PIXELS that domain is
+       painted across; it does not touch which prices are in it. */
     var dom = scopeDomain(ns);
-    var t = priceAxis(dom.lo, dom.hi);
-    var PLOT_H = plotHeightFor(t.ticks.length);
-    var PLOT_TOP = PAD_T + PLOT_PAD;
-    var PLOT_BOT = PLOT_TOP + PLOT_H;
-    var LANE_TOP = PLOT_BOT + PLOT_PAD;
-    var geo = chartGeometry(ns.length);
-    var W = geo.W;
-    var H = LANE_TOP + LANE_H;
+    var lay = layoutFor(ns, dom);
+    var t = { lo: lay.axisLoC, hi: lay.axisHiC, step: lay.tickStepC, ticks: lay.ticks };
+    var PLOT_H = lay.plotH;
+    var PLOT_TOP = lay.plotTop;
+    var PLOT_BOT = lay.plotBottom;
+    var LANE_TOP = lay.laneTop;
+    var W = lay.viewBoxW;
+    var H = lay.viewBoxH;
+    wrap.setAttribute('data-mode', lay.mode);
+    wrap.setAttribute('data-density', lay.density);
+    wrap.setAttribute('data-overflow', lay.overflow);
+
     var s = svg('svg', { viewBox: '0 0 ' + W + ' ' + H, 'class': 'chart',
       preserveAspectRatio: 'xMidYMid meet',
       role: 'img', 'data-tick-step-c': t.step, 'data-axis-min-c': t.lo, 'data-axis-max-c': t.hi,
       'data-currency': panel.currency, 'data-category': (ns[0] || {}).category || '',
-      'data-vb-w': W, 'data-vb-h': H, 'data-col-w': geo.colW, 'data-zoom': STATE.zoom,
+      'data-vb-w': W, 'data-vb-h': H, 'data-col-w': lay.colW, 'data-zoom': STATE.zoom,
       /* PUBLISHED, SO THE CLAIM IS CHECKABLE RATHER THAN PROMISED. A reader — and the suite — can
          read what the domain was derived from, whether a scenario widened it, how many pixels a
-         gridline is worth, and where the label lane begins. */
+         gridline is worth, where the label lane begins, and now: which mode and density the engine
+         chose, what it measured to choose them, and what it could not make fit. */
       'data-domain-source': 'canonical-scope',
       'data-domain-lo-c': dom.canonical_lo === null ? '' : dom.canonical_lo,
       'data-domain-hi-c': dom.canonical_hi === null ? '' : dom.canonical_hi,
       'data-domain-expanded': String(dom.expanded_by_scenario),
       'data-plot-top': PLOT_TOP, 'data-plot-bottom': PLOT_BOT, 'data-plot-h': PLOT_H,
-      'data-tick-px': PLOT_H / Math.max(1, t.ticks.length - 1),
-      'data-lane-top': LANE_TOP, 'data-lane-h': LANE_H,
+      'data-tick-px': lay.pxPerTick,
+      'data-lane-top': LANE_TOP, 'data-lane-h': lay.laneH,
+      'data-mode': lay.mode, 'data-density': lay.density,
+      'data-image-size': lay.imageSize, 'data-gutter': lay.gutter,
+      'data-label-stride': lay.labelStride,
+      'data-fits-height': String(lay.fitsHeight), 'data-fits-width': String(lay.fitsWidth),
+      'data-overflow': lay.overflow,
+      'data-measured-w': lay.measured.containerWidth,
+      'data-measured-h': lay.measured.availableHeight,
       'aria-label': 'Price band by product, ' + panel.currency });
-    /* THE ZOOM IS A WIDTH, AND ONLY A WIDTH. The viewBox above is identical at every zoom, so every
-       price keeps the same coordinate inside it; what changes is how many screen pixels that box is
-       painted across. Print forces 100% width back on in the stylesheet, so a meeting's zoom never
-       reaches paper. */
-    /* FIT HAS A FLOOR, AND THE 44-PRODUCT CHART IS WHY.
 
-       `width: 100%` on a drawing that needs 3364px inside a ~1400px card paints it at 0.42x: every
-       label, tick and photograph becomes unreadable, which is the exact complaint this round exists
-       to answer. A screenshot found it; no assertion about coordinates could, because the
-       coordinates were perfect and the pixels were tiny.
+    /* ---- HOW WIDE IT IS PAINTED ---------------------------------------------------------------
 
-       So Fit means fit the card WHEN IT FITS. Once the columns need more room than the design width,
-       Fit paints at natural size and the container scrolls sideways - the same thing 100% does. A
-       chart you scroll is usable; a chart shrunk to illegibility is not, and calling it 'fitted'
-       does not make it readable. */
-    if (STATE.zoom === 'fit') {
-      if (W <= DESIGN_W) {
-        s.setAttribute('width', '100%');
-      } else {
-        s.setAttribute('width', String(W));
-        s.setAttribute('data-fit-floored', 'true');
-      }
-    } else {
+       AUTO FIT HAS NO FLOOR ANY MORE, BECAUSE IT NO LONGER NEEDS ONE. P1-B2A added a "fit floor"
+       after a screenshot showed `width: 100%` painting a 3364px drawing at 0.42x inside a 1400px
+       card: every coordinate correct and every pixel unreadable. That was the right diagnosis of a
+       layout that had already gone wrong upstream — the drawing should never have needed 3364px in
+       a 1400px card. Now it does not: the engine picks a density whose columns fit the container,
+       and when even the smallest legible column will not fit, it says so (`fitsWidth: false`) and
+       the container scrolls at natural size. Fit means fit; overflow is declared rather than
+       discovered.
+
+       COMFORTABLE KEEPS THE ZOOM BUTTONS, and there the zoom is still only a width over an
+       unchanged viewBox, which is what makes "zoom cannot move a price" provable. */
+    if (STATE.chartMode === 'comfortable' && !STATE.fullscreen && STATE.zoom !== 'fit') {
       s.setAttribute('width', String(Math.round(W * Number(STATE.zoom))));
+    } else if (lay.fitsWidth) {
+      s.setAttribute('width', '100%');
+    } else {
+      s.setAttribute('width', String(W));
+      s.setAttribute('data-natural-width', 'true');
     }
     s.setAttribute('height', String(H));
 
-    /* THE SCALE OCCUPIES PLOT_H AND NOTHING ELSE. PLOT_PAD above and below is the marker gutter:
-       it is not part of the scale, so a 50px plate centred on the top or bottom tick stays inside
-       the drawing without any price being nudged to make room. */
+    /* THE SCALE OCCUPIES PLOT_H AND NOTHING ELSE. The gutter above and below is for markers: it is
+       not part of the scale, so an image centred on the top or bottom tick stays inside the
+       drawing without any price being nudged to make room for it. */
     function y(c) { return PLOT_BOT - ((c - t.lo) / (t.hi - t.lo)) * PLOT_H; }
-    function x(i) { return geo.offset + i * geo.colW + geo.colW / 2; }
+    function frac(c) { return LAYOUT.frac(c, t.lo, t.hi); }
+    function x(i) { return lay.offset + i * lay.colW + lay.colW / 2; }
 
-    var gAxis = svg('g', { 'class': 'axis' });
+    /* THE GRIDLINES BELONG TO THE PLOT; THE SCALE BELONGS TO THE READER.
+
+       They are drawn as two groups because they behave differently the moment the drawing is wider
+       than its container. The lines scroll with the products they cross. The scale — the tick
+       numbers, the axis rule and the title — is pinned: `.axis-scale` is translated by the
+       container's scroll offset, so a chart you are reading at column forty still tells you what
+       the prices are. §三.2 asked whether a sticky axis was necessary; on a forty-four product
+       Comfortable chart, scrolling the numbers off the screen leaves a grid of markers with no
+       way to read any of them, so the answer is yes.
+
+       IT IS A TRANSLATE, AND ONLY A TRANSLATE, IN X. No price moves; the group slides sideways by
+       exactly as much as the container scrolled, which is how it stays still on screen. */
+    var gGrid = svg('g', { 'class': 'axis axis-grid' });
     t.ticks.forEach(function (v) {
       var yy = y(v);
-      gAxis.appendChild(svg('line', { x1: PAD_L - 8, y1: yy, x2: W - PAD_R, y2: yy,
+      gGrid.appendChild(svg('line', { x1: PAD_L - 8, y1: yy, x2: W - PAD_R, y2: yy,
         'class': 'grid' + ((v / t.step) % 2 === 0 ? ' is-major' : ''), 'data-tick-c': v }));
-      gAxis.appendChild(svgText({ x: PAD_L - 12, y: yy + 4, 'class': 'ytick',
-        'data-tick-c': v, 'text-anchor': 'end' }, fromCents(v)));
+    });
+    s.appendChild(gGrid);
+
+    var gAxis = svg('g', { 'class': 'axis axis-scale', 'data-sticky': 'x' });
+    gAxis.appendChild(svg('rect', { x: 0, y: 0, width: PAD_L - 6, height: H,
+      'class': 'axis-backing' }));
+    t.ticks.forEach(function (v) {
+      gAxis.appendChild(svgText({ x: PAD_L - 12, y: y(v) + 4, 'class': 'ytick',
+        'font-size': lay.tickPx, 'data-tick-c': v, 'text-anchor': 'end' }, fromCents(v)));
     });
     gAxis.appendChild(svg('line', { x1: PAD_L - 8, y1: PLOT_TOP, x2: PAD_L - 8, y2: PLOT_BOT,
       'class': 'axisline' }));
     gAxis.appendChild(svgText({ x: 16, y: PLOT_TOP + PLOT_H / 2, 'class': 'axtitle',
+      'font-size': Math.max(9.5, lay.tickPx - 1),
       transform: 'rotate(-90 16 ' + (PLOT_TOP + PLOT_H / 2) + ')', 'text-anchor': 'middle' },
       'Price (' + panel.currency + ')  ·  ' + plain(t.step) + ' ' + panel.currency
         + ' per gridline'));
@@ -651,7 +741,8 @@
     /* THE LABEL LANE, AS AN ELEMENT. It is declared before the columns draw into it so its height
        is a property of the drawing rather than a consequence of what the longest label happened to
        be, and so a test can assert that no plate ever reaches it. */
-    var lane = svg('g', { 'class': 'labellane', 'data-lane-top': LANE_TOP, 'data-lane-h': LANE_H });
+    var lane = svg('g', { 'class': 'labellane',
+      'data-lane-top': LANE_TOP, 'data-lane-h': lay.laneH });
     lane.appendChild(svg('line', { x1: PAD_L - 8, y1: LANE_TOP, x2: W - PAD_R, y2: LANE_TOP,
       'class': 'lane-rule' }));
     s.appendChild(lane);
@@ -689,13 +780,21 @@
            So the form is chosen by what fits: the full phrase, then the short one, then the
            amount alone. A shorter label is a small loss; a label lying across a price marker is a
            chart that shows two things in one place. */
-        var room = geo.colW / 2 - 12;
+        var room = lay.colW / 2 - 12;
         var CH = 6.4;                                   // 11.5px monospace, measured once
-        var full = gapText(f.distance_c, panel.currency, false);
-        var short = gapText(f.distance_c, panel.currency, true);
-        var bare = plain(f.distance_c);
-        var text = full.length * CH <= room ? full
-          : (short.length * CH <= room ? short : bare);
+        /* A NAKED NUMBER IS NOT A LABEL. The shortest form still names the currency, because
+           "10" beside a line on a price chart is the same ambiguity this round removed from the
+           word "open" — it could be a price, a count, a percentage or a rank. If not even that
+           fits, the label is omitted and the LINE carries the measurement, with the whole
+           sentence on hover, on focus and in the aria-label. */
+        var forms = [gapText(f.distance_c, panel.currency, false),
+          gapText(f.distance_c, panel.currency, true),
+          panel.currency + ' ' + plain(f.distance_c)];
+        var text = '';
+        for (var fi = 0; fi < forms.length; fi++) {
+          if (forms[fi].length * CH <= room) { text = forms[fi]; break; }
+        }
+        var full = forms[0];
         var tight = text !== full;
         var left = placed.some(function (q2) {
           return Math.abs(q2.y - my) < 22 && Math.abs(q2.x - mx) < 140;
@@ -735,11 +834,24 @@
     ns.forEach(function (n, i) {
       var cx = x(i);
       var scen = n._scenario && n._scenario.active;
+      /* THE FRACTION IS THE PRICE'S REAL COORDINATE, AND IT IS PUBLISHED.
+
+         `data-cy` is pixels and it is supposed to change: that is the whole point of a responsive
+         chart. `data-frac` is where the price sits in its own domain — a number between 0 and 1 —
+         and it must be identical at 1920 and at 768, in Auto Fit and in Comfortable, at every
+         density. Separating the two turns "resizing cannot move a price" from a promise in a
+         comment into two attributes a reader can compare across screenshots and a test can compare
+         across seven viewports. */
       var g = svg('g', { 'class': 'col' + (scen ? ' is-scenario' : ''), 'data-label': n.label,
         'data-currency': panel.currency, 'data-category': n.category,
-        'data-regular-c': n._regular_c, 'data-scenario': String(!!scen),
+        'data-regular-c': n._regular_c, 'data-regular-frac': frac(n._regular_c),
+        'data-scenario': String(!!scen),
         tabindex: '0', role: 'group',
         'aria-label': ariaFor(n, panel.currency) });
+      /* The cap's half-width follows the column, so a 26px column does not carry a 26px cap that
+         reaches into both of its neighbours. */
+      var capW = Math.max(6, Math.min(13, lay.colW * 0.28));
+      var dia = Math.max(4, Math.min(7, lay.colW * 0.16));
 
       /* THE BAND NEEDS BOTH ENDS. One cap hidden is not a shorter band; it is a line to nothing. */
       if (layerOn('floor') && layerOn('msrp') && n._min_c !== null && n._msrp_c !== null) {
@@ -747,22 +859,28 @@
           y2: y(n._msrp_c), 'class': 'band', 'data-layer': 'band' }));
       }
       if (layerOn('msrp') && n._msrp_c !== null) {
-        g.appendChild(svg('line', { x1: cx - 13, y1: y(n._msrp_c), x2: cx + 13, y2: y(n._msrp_c),
-          'class': 'cap cap-msrp', 'data-layer': 'msrp', 'data-price-c': n._msrp_c }));
+        g.appendChild(svg('line', { x1: cx - capW, y1: y(n._msrp_c),
+          x2: cx + capW, y2: y(n._msrp_c),
+          'class': 'cap cap-msrp', 'data-layer': 'msrp', 'data-price-c': n._msrp_c,
+          'data-frac': frac(n._msrp_c) }));
       }
       if (layerOn('floor') && n._min_c !== null) {
-        g.appendChild(svg('line', { x1: cx - 13, y1: y(n._min_c), x2: cx + 13, y2: y(n._min_c),
-          'class': 'cap cap-floor', 'data-layer': 'floor', 'data-price-c': n._min_c }));
+        g.appendChild(svg('line', { x1: cx - capW, y1: y(n._min_c),
+          x2: cx + capW, y2: y(n._min_c),
+          'class': 'cap cap-floor', 'data-layer': 'floor', 'data-price-c': n._min_c,
+          'data-frac': frac(n._min_c) }));
       }
       /* The deal markers are drawn BEFORE the everyday plate so the photograph never hides a
          promotion; and they keep their own shapes, so an image marker cannot be read as a deal. */
       if (layerOn('promo') && n._deal_live && n._deal_c !== null) {
-        g.appendChild(svg('polygon', { points: diamond(cx, y(n._deal_c), 7), 'class': 'mk-deal',
-          'data-layer': 'promo', 'data-price-c': n._deal_c }));
+        g.appendChild(svg('polygon', { points: diamond(cx, y(n._deal_c), dia),
+          'class': 'mk-deal', 'data-layer': 'promo', 'data-price-c': n._deal_c,
+          'data-frac': frac(n._deal_c) }));
       }
       if (layerOn('scenario') && n._proposed_c !== null) {
-        g.appendChild(svg('polygon', { points: diamond(cx, y(n._proposed_c), 7), 'class': 'mk-prop',
-          'data-layer': 'scenario', 'data-price-c': n._proposed_c }));
+        g.appendChild(svg('polygon', { points: diamond(cx, y(n._proposed_c), dia),
+          'class': 'mk-prop', 'data-layer': 'scenario', 'data-price-c': n._proposed_c,
+          'data-frac': frac(n._proposed_c) }));
       }
       /* THE ORIGINAL, BESIDE THE SIMULATION. When a scenario has moved this product's everyday price
          the canonical position is drawn as a hollow ghost with a connector, so the difference is a
@@ -775,7 +893,8 @@
         g.appendChild(svg('circle', { cx: cx, cy: yo, r: 5, 'class': 'scen-ghost',
           'data-layer': 'scenario', 'data-price-c': n._canonical.regular_c }));
       }
-      everydayMarker(g, cx, y(n._regular_c), n);
+      everydayMarker(g, cx, y(n._regular_c), n,
+        { imageSize: lay.imageSize, frac: frac(n._regular_c) });
 
       /* ---- THE LABEL LANE. ONE BASELINE FOR EVERY PRODUCT. ----
          Two rows, both measured from LANE_TOP and never from a price, so the lane is identical for
@@ -785,11 +904,21 @@
          THE SERIES IS NOT REPEATED HERE. It is already stated by the filter that selected it and
          by the panel heading; printing it a third time under every column would be the same fact
          occupying the space the sku and the price need. */
+      /* LABEL DENSITY IS THE FIRST THING TO GIVE WAY, and at forty-four columns it has to. A
+         label needs about 46px to say anything; below that the engine returns a STRIDE and the
+         lane prints one label every Nth column rather than a row of four-character stumps. Every
+         product keeps its marker, its hover panel, its focus panel and its aria-label — nothing is
+         lost, the printed text is thinned. */
+      var labelled = (lay.labelStride <= 1) || (i % lay.labelStride === 0);
       var full = String(n.label);
-      var shown = full.length > geo.chars ? full.slice(0, geo.chars - 1) + '\u2026' : full;
-      var lab = svgText({ x: cx, y: LANE_TOP + LANE_ROW_1, 'class': 'xlabel',
+      var shown = full.length > lay.labelChars
+        ? full.slice(0, lay.labelChars - 1) + '\u2026' : full;
+      if (!labelled) shown = '';
+      var lab = svgText({ x: cx, y: LANE_TOP + lay.laneRow1, 'class': 'xlabel',
+        'font-size': lay.labelPx,
         'data-row': 'a', 'data-full': full, 'data-shown': shown,
-        'data-truncated': String(shown !== full),
+        'data-truncated': String(labelled && shown !== full),
+        'data-printed': String(labelled),
         'text-anchor': 'middle' }, shown);
       /* TRUNCATED IS NOT LOST. The whole label is on the node, in a <title>, in the aria-label and
          in the hover panel — the column is simply too narrow to print it without running into its
@@ -798,15 +927,26 @@
          THE <title> IS ADDED ONLY WHEN IT IS NEEDED. An SVG <title> is not painted, but it IS part
          of the element's textContent, so attaching one to every label would make each label read as
          its own text twice to anything that reads text — including the assertions. */
-      if (shown !== full) {
+      /* A TITLE ONLY WHERE THERE IS TEXT TO EXPLAIN. A column the stride skipped prints nothing,
+         so there is nothing for a native tooltip to hang on — and attaching one anyway would put
+         a second copy of the label inside an element whose textContent is supposed to be empty.
+         The skipped column keeps everything it had: its marker, its hover panel, its focus panel
+         and its aria-label. */
+      if (labelled && shown !== full) {
         var ttl = svg('title', {});
         ttl.appendChild(document.createTextNode(full));
         lab.appendChild(ttl);
       }
       g.appendChild(lab);
-      g.appendChild(svgText({ x: cx, y: LANE_TOP + LANE_ROW_2, 'class': 'xsub',
-        'data-row': 'b', 'text-anchor': 'middle' }, fromCents(n._regular_c)
-        + (n.variant_count > 1 ? '  \u00b7  ' + n.variant_count + ' colours' : '')));
+      var subText = labelled
+        ? (fromCents(n._regular_c)
+          + (lay.density === 'spacious' && n.variant_count > 1
+            ? '  \u00b7  ' + n.variant_count + ' colours' : ''))
+        : '';
+      g.appendChild(svgText({ x: cx, y: LANE_TOP + lay.laneRow2, 'class': 'xsub',
+        'font-size': lay.subPx,
+        'data-row': 'b', 'data-printed': String(labelled),
+        'text-anchor': 'middle' }, subText));
 
       g.addEventListener('mouseenter', function (ev) { showTip(ev, n); });
       g.addEventListener('mousemove', moveTip);
@@ -817,6 +957,24 @@
       g.addEventListener('blur', hideTip);
       s.appendChild(g);
     });
+
+    /* ---- THE SCALE FOLLOWS THE READER SIDEWAYS ---------------------------------------------
+       §三.2 asked whether a sticky axis was necessary. On a forty-four product Comfortable chart
+       it is: scroll to column forty and the tick numbers have left the screen, so what remains is
+       a grid of markers with no way to read a single price off it.
+
+       It is a translate in X and nothing else. The group slides right by exactly as much as the
+       container scrolled left, so it stays still on screen while the plot moves under it. No
+       price coordinate is touched — the gridlines are a separate group and they scroll with the
+       products they cross, which is what makes the two legible together. */
+    if (lay.overflow === 'container-x' || lay.overflow === 'container-both') {
+      wrap.setAttribute('data-sticky-axis', 'true');
+      wrap.addEventListener('scroll', function () {
+        var dx = Number(wrap.scrollLeft) || 0;
+        gAxis.setAttribute('transform', 'translate(' + dx + ',0)');
+        gAxis.setAttribute('data-pinned-x', String(dx));
+      });
+    }
 
     wrap.appendChild(s);
     return wrap;
@@ -902,22 +1060,82 @@
   /* ================================================================================================
      THE CHART CONTROLS. What is drawn, and how large it is painted — never what the numbers are.
      ================================================================================================ */
-  function chartControls() {
+  /* ================================================================================================
+     THE CONTROL BAR. What is drawn, and how large it is painted — never what the numbers are.
+
+     P1-B2C REORGANISED IT AROUND WHAT IS ACTUALLY DECIDED. It had grown to six permanent
+     checkboxes, two mode buttons, four zoom buttons and a reset — thirteen controls in one row,
+     above a chart that was itself too tall to see. Most of them are settings a person touches once
+     a session; the one they touch constantly is how big it is. So:
+
+         View     Auto Fit · Comfortable · Fullscreen      the decision that matters
+         Detail   Clean · Detail                           the two presets
+         Layers   one button, a popover, and a count       the six, folded away
+         Size     100% · 125% · 150%                       COMFORTABLE ONLY, and see below
+
+     THE SIZE BUTTONS ARE HIDDEN IN AUTO FIT ON PURPOSE. Auto Fit means "the engine chose the size";
+     a 125% button sitting beside it would be a second, contradictory answer to the same question,
+     and whichever one won, the other would be lying.
+     ================================================================================================ */
+  function chartControls(lay) {
     var box = el('div', 'chartctl');
     box.id = 'chartControls';
 
-    /* ---- VIEW MODE ---- */
+    /* ---- VIEW: the size decision ---- */
+    var view = el('div', 'ctl-group');
+    view.setAttribute('data-group', 'view');
+    view.appendChild(el('span', 'ctl-label', 'View'));
+    [['auto', 'Auto Fit'], ['comfortable', 'Comfortable']].forEach(function (m) {
+      var b = el('button', 'segbtn' + (STATE.chartMode === m[0] && !STATE.fullscreen
+        ? ' is-on' : ''), m[1]);
+      b.id = 'mode-' + m[0];
+      b.setAttribute('type', 'button');
+      b.setAttribute('data-mode', m[0]);
+      b.setAttribute('aria-pressed', STATE.chartMode === m[0] && !STATE.fullscreen
+        ? 'true' : 'false');
+      b.addEventListener('click', function () {
+        STATE.chartMode = m[0];
+        if (m[0] === 'auto') STATE.zoom = 'fit';
+        remeasure();
+        renderData();
+      });
+      view.appendChild(b);
+    });
+    var fs = el('button', 'segbtn' + (STATE.fullscreen ? ' is-on' : ''),
+      STATE.fullscreen ? 'Exit fullscreen' : 'Fullscreen');
+    fs.id = 'mode-fullscreen';
+    fs.setAttribute('type', 'button');
+    fs.setAttribute('aria-pressed', STATE.fullscreen ? 'true' : 'false');
+    fs.addEventListener('click', function () { toggleFullscreen(); });
+    view.appendChild(fs);
+    view.appendChild(infoIcon('viewsize', 'How the chart is sized', [
+      'Auto Fit measures the card and the window and chooses the gridline step, the plot height,'
+        + ' the image size and the column width that let the whole chart — both axes, the labels'
+        + ' and the legend — sit inside the card without scrolling it.',
+      'Comfortable keeps the large product images and the generous gridline spacing for close'
+        + ' study. When that does not fit, the CHART scrolls inside its own card; the page never'
+        + ' scrolls sideways and you are never asked to zoom the browser.',
+      'Fullscreen gives the chart the whole window for a meeting, and keeps your site, filters,'
+        + ' layers and scenario exactly as they were. Escape leaves it and returns you to where'
+        + ' you were on the page.',
+      'None of the three changes a price. The drawing keeps one coordinate system: every marker'
+        + ' carries the fraction of the price range it sits at, and that number is identical in'
+        + ' every mode and at every window size.'
+    ]));
+    box.appendChild(view);
+
+    /* ---- DETAIL: the two presets ---- */
     var modes = el('div', 'ctl-group');
-    modes.setAttribute('data-group', 'view');
-    modes.appendChild(el('span', 'ctl-label', 'View'));
+    modes.setAttribute('data-group', 'detail');
+    modes.appendChild(el('span', 'ctl-label', 'Detail'));
     [['clean', 'Clean'], ['detail', 'Detail']].forEach(function (m) {
       var b = el('button', 'segbtn' + (STATE.viewMode === m[0] ? ' is-on' : ''), m[1]);
       b.id = 'view-' + m[0];
       b.setAttribute('type', 'button');
       b.setAttribute('aria-pressed', STATE.viewMode === m[0] ? 'true' : 'false');
-      /* A VIEW MODE DRAWS DIFFERENT ELEMENTS. It does not change which products exist, so it does
-         not rebuild one control — and because the domain no longer depends on the layers, it does
-         not change one coordinate or the height of the card either. */
+      /* A view mode draws different elements. It does not change which products exist, so it
+         rebuilds no control — and because the domain does not depend on the layers, it does not
+         change one coordinate or the height of the card either. */
       b.addEventListener('click', function () { applyViewMode(m[0]); renderData(); });
       modes.appendChild(b);
     });
@@ -930,71 +1148,157 @@
     ]));
     box.appendChild(modes);
 
-    /* ---- LAYERS ---- */
-    var lay = el('div', 'ctl-group ctl-layers');
-    lay.setAttribute('data-group', 'layers');
-    lay.appendChild(el('span', 'ctl-label', 'Show'));
-    LAYERS.forEach(function (l) {
-      var lab = el('label', 'chk');
-      lab.setAttribute('data-layer', l.id);
-      var cb = document.createElement('input');
-      cb.id = 'layer-' + l.id;
-      cb.setAttribute('type', 'checkbox');
-      cb.checked = layerOn(l.id);
-      cb.setAttribute('aria-label', l.label + '. ' + l.help);
-      cb.addEventListener('change', function () {
-        STATE.layers[l.id] = !!cb.checked;
-        /* THE MODE FOLLOWS THE SWITCHES, not the other way round: once a person edits a layer the
-           badge must stop claiming a preset they are no longer in. */
-        var isClean = LAYERS.every(function (x) { return STATE.layers[x.id] === x.clean; });
-        var isDetail = LAYERS.every(function (x) { return STATE.layers[x.id] === true; });
-        STATE.viewMode = isClean ? 'clean' : (isDetail ? 'detail' : 'custom');
+    /* ---- LAYERS: one button, a count, and a popover ---- */
+    var on = LAYERS.filter(function (l) { return layerOn(l.id); }).length;
+    var lay2 = el('div', 'ctl-group ctl-layers');
+    lay2.setAttribute('data-group', 'layers');
+    var lt = el('button', 'segbtn ctl-disclose' + (STATE.layersOpen ? ' is-open' : ''));
+    lt.id = 'layersToggle';
+    lt.setAttribute('type', 'button');
+    lt.setAttribute('aria-expanded', STATE.layersOpen ? 'true' : 'false');
+    lt.setAttribute('aria-controls', 'layersPanel');
+    lt.appendChild(document.createTextNode('Layers'));
+    /* THE COUNT IS THE STATE, AND IT STAYS VISIBLE WHEN THE LIST DOES NOT. Folding six switches
+       away is a density decision; folding away WHICH of them are on would be hiding the state. */
+    var cnt = el('span', 'ctl-count', on + '/' + LAYERS.length);
+    cnt.id = 'layersCount';
+    lt.appendChild(cnt);
+    lt.addEventListener('click', function (ev) {
+      if (ev && ev.stopPropagation) ev.stopPropagation();
+      STATE.layersOpen = !STATE.layersOpen;
+      renderData();
+    });
+    lay2.appendChild(lt);
+    if (STATE.layersOpen) {
+      var panel = el('div', 'ctl-pop');
+      panel.id = 'layersPanel';
+      panel.setAttribute('role', 'group');
+      panel.setAttribute('aria-label', 'Chart layers');
+      LAYERS.forEach(function (l) {
+        var lab = el('label', 'chk');
+        lab.setAttribute('data-layer', l.id);
+        var cb = document.createElement('input');
+        cb.id = 'layer-' + l.id;
+        cb.setAttribute('type', 'checkbox');
+        cb.checked = layerOn(l.id);
+        cb.setAttribute('aria-label', l.label + '. ' + l.help);
+        cb.addEventListener('change', function () {
+          STATE.layers[l.id] = !!cb.checked;
+          /* THE MODE FOLLOWS THE SWITCHES, not the other way round: once a person edits a layer the
+             badge must stop claiming a preset they are no longer in. */
+          var isClean = LAYERS.every(function (x) { return STATE.layers[x.id] === x.clean; });
+          var isDetail = LAYERS.every(function (x) { return STATE.layers[x.id] === true; });
+          STATE.viewMode = isClean ? 'clean' : (isDetail ? 'detail' : 'custom');
+          renderData();
+        });
+        lab.appendChild(cb);
+        lab.appendChild(el('span', 'chk-text', l.label));
+        panel.appendChild(lab);
+      });
+      var close = el('button', 'info-close', 'Close');
+      close.id = 'layersClose';
+      close.setAttribute('type', 'button');
+      close.addEventListener('click', function (ev) {
+        if (ev && ev.stopPropagation) ev.stopPropagation();
+        STATE.layersOpen = false;
         renderData();
       });
-      lab.appendChild(cb);
-      lab.appendChild(el('span', 'chk-text', l.label));
-      lay.appendChild(lab);
-    });
-    lay.appendChild(infoIcon('layers', 'Chart layers', LAYERS.map(function (l) {
+      panel.appendChild(close);
+      lay2.appendChild(panel);
+    }
+    lay2.appendChild(infoIcon('layers', 'Chart layers', LAYERS.map(function (l) {
       return l.label + ' — ' + l.help;
     })));
-    box.appendChild(lay);
+    box.appendChild(lay2);
 
-    /* ---- ZOOM ---- */
-    var z = el('div', 'ctl-group');
-    z.setAttribute('data-group', 'zoom');
-    z.appendChild(el('span', 'ctl-label', 'Size'));
-    ZOOMS.forEach(function (o) {
-      var b = el('button', 'segbtn' + (String(STATE.zoom) === o.id ? ' is-on' : ''), o.label);
-      b.id = 'zoom-' + o.id.replace('.', '-');
-      b.setAttribute('type', 'button');
-      b.setAttribute('data-zoom', o.id);
-      b.setAttribute('aria-pressed', String(STATE.zoom) === o.id ? 'true' : 'false');
-      b.addEventListener('click', function () { STATE.zoom = o.id; renderData(); });
-      z.appendChild(b);
-    });
+    /* ---- SIZE: comfortable only ---- */
+    if (STATE.chartMode === 'comfortable' && !STATE.fullscreen) {
+      var z = el('div', 'ctl-group');
+      z.setAttribute('data-group', 'zoom');
+      z.appendChild(el('span', 'ctl-label', 'Size'));
+      ZOOMS.forEach(function (o) {
+        var b = el('button', 'segbtn' + (String(STATE.zoom) === o.id ? ' is-on' : ''), o.label);
+        b.id = 'zoom-' + o.id.replace('.', '-');
+        b.setAttribute('type', 'button');
+        b.setAttribute('data-zoom', o.id);
+        b.setAttribute('aria-pressed', String(STATE.zoom) === o.id ? 'true' : 'false');
+        b.addEventListener('click', function () { STATE.zoom = o.id; renderData(); });
+        z.appendChild(b);
+      });
+      box.appendChild(z);
+    }
+
+    /* ---- RESET VIEW ---- */
+    var rgroup = el('div', 'ctl-group');
+    rgroup.setAttribute('data-group', 'reset');
     var reset = el('button', 'segbtn is-reset', 'Reset view');
     reset.id = 'zoom-reset';
     reset.setAttribute('type', 'button');
-    /* RESET IS NOT A SECOND "FIT". It restores the whole VIEW — the zoom AND the layer set — which is
-       the thing a person wants after ten minutes of a meeting and cannot reconstruct from memory. */
+    /* RESET IS NOT A SECOND "AUTO FIT". It restores the whole VIEW — the mode, the zoom and the
+       layer set — which is the thing a person wants after ten minutes of a meeting and cannot
+       reconstruct from memory. */
     reset.addEventListener('click', function () {
+      STATE.chartMode = 'auto';
       STATE.zoom = 'fit';
+      STATE.layersOpen = false;
       applyViewMode('detail');
+      remeasure();
       renderData();
     });
-    z.appendChild(reset);
-    z.appendChild(infoIcon('zoom', 'Chart size', [
-      'Fit paints the chart across the card. 100%, 125% and 150% paint it at a fixed width and the'
-        + ' chart scrolls sideways inside its own container — you never have to zoom the browser.',
-      'THE PRICES DO NOT MOVE. The drawing keeps one coordinate system at every size; only the number'
-        + ' of screen pixels it is painted across changes. The y axis and every value on it are'
-        + ' identical at 150% and at Fit.',
-      'Printing always uses Fit, so a size chosen for a room never reaches the paper. The size lives'
-        + ' in this page only and a reload returns to Fit.'
-    ]));
-    box.appendChild(z);
+    rgroup.appendChild(reset);
+    box.appendChild(rgroup);
+
+    /* ---- WHAT THE ENGINE HAD TO GIVE UP, SAID OUT LOUD ---------------------------------------
+       A chart that quietly shows a fraction of what you asked for is worse than one that says so.
+       When Auto Fit has stepped down to the overview density, the card says which mode to switch
+       to for the large images — because the reader's next question is always "can I see them
+       bigger", and the answer should not require them to guess. */
+    if (lay && lay.density === 'overview' && STATE.chartMode === 'auto') {
+      var note = el('p', 'ctl-note', 'Compact overview — switch to Comfortable for larger product'
+        + ' images. Every product and every price is on the chart; only the pictures and the'
+        + ' labels are smaller.');
+      note.id = 'densityNote';
+      note.setAttribute('data-density', lay.density);
+      box.appendChild(note);
+    } else if (lay && !lay.fitsWidth) {
+      var note2 = el('p', 'ctl-note', 'The chart is wider than the card, so it scrolls sideways'
+        + ' inside it. The page does not.');
+      note2.id = 'densityNote';
+      note2.setAttribute('data-density', lay.density);
+      box.appendChild(note2);
+    }
     return box;
+  }
+
+  /* ================================================================================================
+     FULLSCREEN — A CSS OVERLAY, NOT THE BROWSER'S FULLSCREEN API, AND THAT IS A CHOICE.
+
+     `Element.requestFullscreen` needs a trusted user gesture, is refused outright in a headless
+     render and in a print, cannot be entered by the page's own self-test, and hands the Escape key
+     to the browser so the page cannot tell the difference between leaving and a stray keypress. An
+     overlay gives the same thing — the whole window, the chart at the size the engine derives for
+     it — while staying testable, printable and ours to leave.
+
+     IT CARRIES THE STATE ACROSS. The scope, the layers, the scenario and the zoom are all in the
+     same object and none of them is touched; the only things recorded are where the reader was on
+     the page and the fact that they are in it, so leaving puts them back.
+     ================================================================================================ */
+  function toggleFullscreen() {
+    if (!STATE.fullscreen) {
+      STATE.fsReturnScroll = (typeof window !== 'undefined' && window)
+        ? (window.scrollY || window.pageYOffset || 0) : 0;
+      STATE.fullscreen = true;
+      STATE.layersOpen = false;
+      remeasure();
+      render();
+    } else {
+      STATE.fullscreen = false;
+      remeasure();
+      render();
+      if (typeof window !== 'undefined' && window && window.scrollTo) {
+        window.scrollTo(0, STATE.fsReturnScroll);
+      }
+    }
   }
 
   function legend() {
@@ -1368,12 +1672,39 @@
     btn.id = (idPrefix || '') + 'drawerToggle';
     btn.setAttribute('aria-expanded', STATE.drawerOpen ? 'true' : 'false');
     btn.appendChild(el('h2', null, 'Insight drawer'));
+    /* ---- THE SUMMARY PILLS ---------------------------------------------------------------------
+
+       ROOT CAUSE, AND IT IS ONE LINE OF CSS. These used to be `<span class="cls cls-RISK">`, and
+       the stylesheet gives `.cls-RISK` a background colour and nothing else — the padding, the
+       radius, the weight and the white text all live in `.fgroup-h .cls`, a DESCENDANT rule that
+       only matches inside a finding group's header. So the same class produced a proper pill in
+       one place and a bare saturated rectangle with default dark text in the other: four blocks of
+       colour jammed together, unreadable, and nothing like anything else in the Operation System.
+       A class that is only half-styled somewhere is two components wearing one name.
+
+       WHAT THEY ARE NOW. Label and count, the way the Operation System's own `.km-tab-rail__count`
+       does it (components.css:929) — the word is the label layer, the number is the emphasis
+       layer, in a 999px pill of its own. Colour comes from the semantic text tokens base.css
+       already declares (`--text-success`, `--text-warning`, `--text-error`, `--text-secondary`),
+       as a tinted surface with a matching border and dark-on-light text, never saturated fill
+       under black type.
+
+       THEY ARE NOT BUTTONS. Nothing in this round filters by clicking one, and a control that
+       looks pressable and does nothing costs a reader more than a plain label ever saves them. */
     var sum = el('div', 'dsum');
-    [[CLASS.OPP, 'OPPORTUNITY'], [CLASS.WATCH, 'WATCH'], [CLASS.RISK, 'RISK'],
-     [CLASS.DQ, 'DATA QUALITY']].forEach(function (p) {
+    sum.id = (idPrefix || '') + 'insightPills';
+    sum.setAttribute('role', 'list');
+    [[CLASS.OPP, 'Opportunities', 'opp'], [CLASS.WATCH, 'Watch', 'watch'],
+      [CLASS.RISK, 'Risks', 'risk'], [CLASS.DQ, 'Data quality', 'dq']].forEach(function (p) {
       var n = countBy(findings, p[0]);
       if (!n) return;
-      sum.appendChild(el('span', 'cls cls-' + p[1].replace(/\s/g, ''), n + ' ' + p[1]));
+      var pill = el('span', 'kpill kpill-' + p[2]);
+      pill.setAttribute('role', 'listitem');
+      pill.setAttribute('data-kind', p[2]);
+      pill.setAttribute('data-count', String(n));
+      pill.appendChild(el('span', 'kpill-label', p[1]));
+      pill.appendChild(el('span', 'kpill-count', String(n)));
+      sum.appendChild(pill);
     });
     btn.appendChild(sum);
     btn.addEventListener('click', function () { STATE.drawerOpen = !STATE.drawerOpen; render(); });
@@ -1470,7 +1801,20 @@
       h.appendChild(el('span', 'card-sub', p.plotted.length + ' product'
         + (p.plotted.length === 1 ? '' : 's') + ' on the axis'));
       panel.appendChild(h);
-      panel.appendChild(chartControls());
+      /* ONE DERIVATION, TWO READERS. The control bar needs to know what the engine decided (so it
+         can say "compact overview" rather than leaving the reader to wonder why the pictures got
+         small), and the chart needs to draw it. Deriving it twice would be two answers to one
+         question the moment anything about the derivation changed. */
+      var lay = LAYOUT.deriveResponsiveChartLayout({
+        containerWidth: (STATE.box || {}).w,
+        availableHeight: (STATE.box || {}).h,
+        productCount: p.plotted.length,
+        domainLowC: scopeDomain(p.plotted).lo,
+        domainHighC: scopeDomain(p.plotted).hi,
+        mode: STATE.fullscreen ? 'fullscreen' : STATE.chartMode
+      });
+      panel.setAttribute('data-density', lay.density);
+      panel.appendChild(chartControls(lay));
       panel.appendChild(renderChart(p, STATE.thresholdC, m.findings));
       panel.appendChild(legend());
       host.appendChild(panel);
@@ -2926,7 +3270,8 @@
       hideTip();
       reload();
       document.body.className = (STATE.presentation ? 'presenting' : '')
-        + (MODEL.scenario.active ? ' has-scenario' : '');
+        + (MODEL.scenario.active ? ' has-scenario' : '')
+        + (STATE.fullscreen ? ' is-fullscreen' : '');
       byId('shell').className = 'shell' + (STATE.rail ? ' is-rail' : '');
       var rb = byId('btnRail');
       rb.setAttribute('aria-expanded', STATE.rail ? 'false' : 'true');
@@ -2950,7 +3295,8 @@
       hideTip();
       reload();
       document.body.className = (STATE.presentation ? 'presenting' : '')
-        + (MODEL.scenario.active ? ' has-scenario' : '');
+        + (MODEL.scenario.active ? ' has-scenario' : '')
+        + (STATE.fullscreen ? ' is-fullscreen' : '');
       renderScenarioMark();
       paintView();
       /* INSIDE THE MEASUREMENT, not after it. The readouts are part of the redraw: measuring the
@@ -3131,19 +3477,27 @@
       'G8 and the last is axis_max');
     var grids = ch.querySelectorAll('.grid');
     eqv(grids.length, vals.length, 'G9 one gridline per tick, none unlabelled');
-    /* A TALL CATEGORY GROWS THE DRAWING, NEVER COMPRESSES THE PITCH. P1-B2B inverted this: the
-       pixels per gridline used to be what gave way, and two 50px photographs 28px apart overlap. */
-    var tall = priceAxis(1199, 8499);
-    eqv(tall.step, 500, 'G10 a wide range still keeps the 5-unit step while the pitch allows it');
-    eqv([tall.ticks[0], tall.ticks[tall.ticks.length - 1]], [1000, 8500], 'G11 rounded out to 5s');
-    ok(plotHeightFor(tall.ticks.length) / (tall.ticks.length - 1) >= PX_PER_TICK_MIN,
-      'G12 and the gridline pitch never drops below the readability floor',
-      plotHeightFor(tall.ticks.length) / (tall.ticks.length - 1));
-    /* AND WHEN EVEN THAT WOULD BE ABSURD, THE STEP GROWS AND THE PITCH SURVIVES. */
-    var huge = priceAxis(500, 500000);
-    ok(huge.step > 500, 'G12a an enormous range widens the step instead', huge.step);
-    ok(plotHeightFor(huge.ticks.length) / (huge.ticks.length - 1) >= PX_PER_TICK_MIN,
-      'G12b and the pitch is still above the floor');
+    /* THE LAYOUT IS DERIVED, AND IT IS DERIVED THE SAME WAY EVERY TIME.
+
+       P1-B2B asserted a fixed 48px pitch here. P1-B2C makes that a PREFERENCE, so what is checked
+       is what is actually promised: the same inputs give the same layout, a wide range widens the
+       tick step rather than producing an unreadable scale, and the gridline pitch stays above the
+       point where a tick label is worth drawing. */
+    var L1 = LAYOUT.deriveResponsiveChartLayout({ containerWidth: 1180, availableHeight: 520,
+      productCount: 7, domainLowC: 1199, domainHighC: 4299, mode: 'auto' });
+    var L2 = LAYOUT.deriveResponsiveChartLayout({ containerWidth: 1180, availableHeight: 520,
+      productCount: 7, domainLowC: 1199, domainHighC: 4299, mode: 'auto' });
+    eqv(JSON.stringify(L1), JSON.stringify(L2), 'G10 the layout engine is deterministic');
+    eqv(L1.tickStepC, 500, 'G11 an ordinary range keeps the five-unit step');
+    ok(L1.pxPerTick >= LAYOUT.MIN_PITCH_AUTO,
+      'G12 and the gridline pitch is above the point where a label is worth drawing', L1.pxPerTick);
+    var wide = LAYOUT.deriveResponsiveChartLayout({ containerWidth: 1180, availableHeight: 460,
+      productCount: 7, domainLowC: 500, domainHighC: 500000, mode: 'auto' });
+    ok(wide.tickStepC > 500, 'G12a an enormous range widens the step instead', wide.tickStepC);
+    ok(wide.pxPerTick >= LAYOUT.MIN_PITCH_AUTO, 'G12b and the pitch survives it', wide.pxPerTick);
+    /* AND AUTO FIT MEANS FIT: the whole drawing is inside the height it was given. */
+    ok(L1.viewBoxH <= 520, 'G12c Auto Fit keeps the whole drawing inside the room it has',
+      { h: L1.viewBoxH });
 
     /* ---- H  the image price markers ---- */
     var imgMarks = ch.querySelectorAll('image');
@@ -3430,8 +3784,14 @@
       'navigator.', 'KM.DB'].forEach(function (b, i4) {
       ok(src.indexOf(b) < 0, 'O1.' + (i4 + 1) + ' the renderer never reaches for ' + b);
     });
-    eqv(document.querySelectorAll('script[src]').length, 4,
-      'O2 four local scripts — the pipeline is the fourth — and no fifth');
+    /* FIVE NOW: the contract, the LAYOUT ENGINE, the pipeline, the fixture and this file. The
+       count is asserted rather than the names because the point is that nothing is loaded from
+       anywhere else — a fifth local file is a decision, a sixth remote one would be a defect. */
+    var scripts = [].slice.call(document.querySelectorAll('script[src]'))
+      .map(function (n) { return n.getAttribute('src'); });
+    eqv(scripts.length, 5, 'O2 five local scripts, and no sixth');
+    eqv(scripts.filter(function (u) { return /^https?:|^\/\//.test(u); }), [],
+      'O2a and not one of them is remote');
     eqv(document.querySelectorAll('link[rel="stylesheet"]').length, 1, 'O3 one local stylesheet');
     var pageText = visibleTextOf(document.body);
     ok(pageText.indexOf('margin') < 0, 'O4 no margin figure is shown, because there is no source');
@@ -3617,6 +3977,68 @@
   /* ================================================================================================
      BOOT.
      ================================================================================================ */
+  /* ================================================================================================
+     THE OBSERVER, AND WHY IT CANNOT BECOME A LOOP.
+
+     Three guards, and each one closes a different way a resize observer eats a page:
+
+       1. IT OBSERVES `#view`, WHICH THE RENDERER NEVER REPLACES. An observer attached to the chart's
+          own container would stop firing the first time the chart was redrawn, because the node it
+          was watching had been thrown away — the classic version of this bug, where resizing works
+          exactly once.
+       2. THE MEASUREMENT IS QUANTISED AND COMPARED. A container that reports 1281.6 and then 1281.4
+          has not changed. `boxKey` is the whole set of inputs the layout depends on; if it matches
+          the last one, nothing is redrawn, so even a genuine feedback path terminates after one
+          pass instead of running forever.
+       3. THE CALLBACK ONLY SCHEDULES. Work happens on the next animation frame, so a drag that
+          fires forty resize events produces one redraw.
+
+     The fallback for an environment with no ResizeObserver is a window resize listener, which is
+     strictly worse — it cannot see the sidebar collapse — and is why the observer is preferred
+     rather than the other way round.
+     ================================================================================================ */
+  var _resizeScheduled = false;
+  function remeasure() {
+    var b = measureBox();
+    STATE.box = b;
+    var k = boxKey(b);
+    var changed = k !== STATE.boxKey;
+    STATE.boxKey = k;
+    return changed;
+  }
+  function onContainerResize() {
+    if (_resizeScheduled) return;
+    _resizeScheduled = true;
+    var run = function () {
+      _resizeScheduled = false;
+      /* THE LAYOUT IS THE ONLY THING THAT CHANGED, so only the drawing is redrawn: renderData
+         leaves the filters, the scenario panel and every control node exactly where they are, and
+         holds the reader's place while it works. A resize must not cost somebody their scenario,
+         their filters or their position on the page. */
+      if (remeasure()) renderData();
+    };
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
+    else run();
+  }
+  function observeContainer() {
+    var host = byId('view');
+    if (!host) return;
+    if (typeof ResizeObserver === 'function') {
+      try {
+        var ro = new ResizeObserver(onContainerResize);
+        ro.observe(host);
+        STATE.observing = 'ResizeObserver';
+        return;
+      } catch (e) { /* fall through to the window listener */ }
+    }
+    if (typeof window !== 'undefined' && window && window.addEventListener) {
+      window.addEventListener('resize', onContainerResize);
+      STATE.observing = 'window-resize';
+    } else {
+      STATE.observing = 'none';
+    }
+  }
+
   function boot() {
     /* THE ONE PLACE AN ADAPTER IS CHOSEN. Everything above this line is adapter-agnostic; P1-B1
        replaces this single expression and touches no chart, no table and no rule. */
@@ -3655,7 +4077,16 @@
       render();
     });
 
+    /* ---- ESCAPE LEAVES FULLSCREEN, and it is checked before the popovers because it is the
+       bigger thing to be inside: a reader pressing Escape in a fullscreen chart means the chart. */
+    document.addEventListener('keydown', function (ev) {
+      if (!ev || ev.key !== 'Escape' || !STATE.fullscreen) return;
+      toggleFullscreen();
+    });
+
+    remeasure();
     render();
+    observeContainer();
     try { selfTest(); } catch (e) {
       ok(false, 'SELF-TEST THREW: ' + (e && e.message ? e.message : String(e)),
         String(e && e.stack || '').split('\n').slice(0, 3).join(' | '));

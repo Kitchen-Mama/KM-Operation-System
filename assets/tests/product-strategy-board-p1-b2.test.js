@@ -689,8 +689,11 @@ console.log('\n=== §H  THE REAL PAGE, RENDERED AND DRIVEN HEADLESS ===');
   var scripts = (SRC.index.match(/<script src="([^"]+)"><\/script>/g) || []).map(function (t) {
     return /src="([^"]+)"/.exec(t)[1];
   });
-  eq(scripts, ['data-contract.js', 'selectors.js', 'preview-fixture.js', 'prototype.js'],
-    'H31 four local siblings, in dependency order, and no fifth');
+  /* FIVE SINCE P1-B2C: the responsive layout engine is its own file, because a pure function
+     that decides every size on the chart is a different kind of thing from the renderer that
+     draws it, and keeping it separate is what lets a test hand it 1366x768 with no browser. */
+  eq(scripts, ['data-contract.js', 'chart-layout.js', 'selectors.js', 'preview-fixture.js',
+    'prototype.js'], 'H31 five local siblings, in dependency order, and no sixth');
   eq((SRC.index.match(/<link rel="stylesheet"/g) || []).length, 1, 'H32 one local stylesheet');
   ok(SRC.index.indexOf('http://') < 0 && SRC.index.indexOf('https://') < 0,
     'H33 and no remote host of any kind');

@@ -4508,3 +4508,376 @@ P1-B1-R1's four files are still the outstanding sync.
 All nine conditions of the P1-B2A brief's §十一 still stand. This round is fixture UI work and
 claims no live database connection. **Next:** P1-B3 — production readback once the user has synced
 P1-B1-R1's four Apps Script files.
+
+---
+
+## §37 — P1-B2C · RESPONSIVE CHART ENGINE · VIEWPORT-FIT MODE · INSIGHT DRAWER
+
+*(P worktree `feature/product-strategy-board-p0`; PRE `67c3f16`, POST `<this commit>`. Local commit
+only, never pushed. Fixture UI work; no live database connection is claimed.)*
+
+### §37.1 Root cause — a fixed floor is not a layout
+
+P1-B2B fixed a real collision by nailing three numbers down: **50px images, 48px per gridline, a
+78vh cap.** On 1280×720 an ordinary seven-product chart then stopped fitting in its own card — you
+had to scroll the chart to see its own axis.
+
+That is what a floor does. It is right for the one screen it was measured on and wrong everywhere
+else, and the worse part is **how quietly it fails**: a scrollbar appears, nothing is broken, no
+assertion goes red, and the reader simply cannot see the thing. The 78vh cap was the mechanism —
+it converted a layout failure into a scrollbar nobody had asked for.
+
+**P1-B2B ALSO REPEATED A CLAIM THAT WAS NOT TRUE, and it should be corrected in the record.** It
+justified the 48px floor with *"two 50px photographs 28px apart overlap"*. They do not: two
+products occupy two COLUMNS, so their markers are separated horizontally whatever the pitch is. The
+real reason to want a generous pitch is that a price scale whose labels you cannot read is not a
+scale. That is a preference about legibility — exactly the kind of thing that should yield when the
+alternative is not seeing the axis at all, and exactly the kind of thing a floor should never have
+been used for.
+
+So `48px` is now the **preferred** pitch: honoured wherever there is room, and the first thing to
+give way when there is not.
+
+### §37.2 The engine — one pure function, in its own file
+
+`docs/prototypes/product-strategy-board/chart-layout.js` · `PSB_CHART_LAYOUT` ·
+`deriveResponsiveChartLayout({ containerWidth, availableHeight, productCount, domainLowC,
+domainHighC, mode })`.
+
+No DOM, no window, no storage, no clock, no random — asserted item by item (§B2). Everything it
+needs arrives as an argument, so the suite hands it 1366×768 and gets a layout with **no browser in
+the call at all**, and the same inputs give byte-identical output (checked twenty times over).
+
+**WHY MEASURING IS NOW ALLOWED, AND WHY THAT IS NOT A REVERSAL.** P1-B2A wrote *"NO LAYOUT BOX IS
+MEASURED ANYWHERE"*, because a chart whose geometry depends on WHEN it was measured draws
+differently on a slow load. That reasoning is still right and it is an argument against a **hidden**
+dependency. A measurement that arrives as a named argument to a pure function is the opposite of
+hidden: the layout stays deterministic given its inputs, the moment of measurement is **one line**
+in the renderer (`measureBox`), and a test can supply any viewport without a browser.
+
+It returns everything the drawing needs and **what it could not make fit**: `density`,
+`tickStepC`, `ticks`, `pxPerTick`, `plotH/plotTop/plotBottom`, `gutter`, `laneTop/laneH/laneRow1/2`,
+`imageSize`, `colW`, `plotW`, `viewBoxW/H`, `offset`, `labelStride`, `labelChars`,
+`labelPx/subPx/tickPx`, `fitsHeight`, `fitsWidth`, `overflow`, `reasons[]`, `measured{}`. Every one
+of those is published on the SVG as a `data-` attribute, so the claim is checkable rather than
+promised.
+
+### §37.3 The algorithm — two ladders, and the first thing that fits wins
+
+```
+DENSITY   spacious 50px · normal 44px · compact 34px · overview 24px
+          col minimums 74 · 58 · 44 · 26   (an image has to fit inside its own column)
+COUNT     ≤12 spacious · 13-24 normal · ≥25 overview
+STEPS     5 · 10 · 20 · 25 · 50 · 100 · 250 · 500 currency units
+PITCH     preferred 48 · floor 22 (below that a tick label is not worth drawing)
+```
+
+The count band picks the **starting** density; the container decides whether it survives. For each
+density from there downward, and inside each the tick step from fine to coarse, the first
+combination that fits **both** dimensions wins — so the chart gives up the least it can: a coarser
+axis before a smaller photograph, and a smaller photograph before an axis you cannot see. Label
+DENSITY gives way before either, via `labelStride`.
+
+**WHEN NOTHING FITS, IT STILL CHOOSES, AND THE ORDERING IS ONE EXPRESSION** (`L.score`): fitting the
+height first, then the width, then overflowing by as little as possible. Without that last clause
+the walk kept the first near-miss it happened to meet — on a tablet that meant twenty-four 44px
+photographs and 776px of sideways scroll when stepping down one profile would have left eight.
+**Overflowing anyway is not a reason to overflow as much as possible.**
+
+The three modes: **auto** (the default) fits the card; **comfortable** keeps the spacious profile
+and the preferred pitch and gives the overflow to the CONTAINER; **fullscreen** is the auto
+algorithm with the whole window to spend. `fullscreen` is a separate flag rather than a third mode
+value, because it has to compose with the other two — going fullscreen and coming back must not
+change which mode you were in.
+
+### §37.4 The coordinate is not the pixel
+
+Every column publishes `data-regular-frac`, and every cap and diamond a `data-frac`: the price's
+place in its own domain, a number between 0 and 1. `data-cy` is pixels and is **supposed** to change
+— that is what responsive means. `data-frac` is not, and §D compares it across all seven target
+viewports while confirming the pixels really did move. That turns "resizing cannot move a price"
+from a comment into two attributes a reader can compare across screenshots.
+
+### §37.5 Measured, on the seven target viewports
+
+Seven products (Silicone Spatula, 4 plotted), Auto Fit:
+
+| viewport | container/room | density | image | step | pitch | column | viewBox | fits H | fits W |
+|---|---|---|---|---|---|---|---|---|---|
+| 1920×1080 | 1552/848 | spacious | 50 | 5 | 48 | 208 | 1552×478 | ✓ | ✓ |
+| 1600×900 | 1232/672 | spacious | 50 | 5 | 48 | 208 | 1232×478 | ✓ | ✓ |
+| 1440×900 | 1072/672 | spacious | 50 | 5 | 48 | 208 | 1072×478 | ✓ | ✓ |
+| 1366×768 | 1000/536 | spacious | 50 | 5 | 48 | 208 | 1000×478 | ✓ | ✓ |
+| 1280×720 | 912/488 | spacious | 50 | 5 | 48 | 201 | 912×478 | ✓ | ✓ |
+| 1024×768 | 656/536 | spacious | 50 | 5 | 48 | 137 | 656×478 | ✓ | ✓ |
+| 768×1024 | 648/792 | spacious | 50 | 5 | 48 | 135 | 648×478 | ✓ | ✓ |
+
+Forty-four products, Auto Fit:
+
+| viewport | density | image | step | pitch | column | stride | viewBox | fits W | overflow |
+|---|---|---|---|---|---|---|---|---|---|
+| 1920×1080 | overview | 24 | 5 | 37.2 | 32.8 | 2 | 1552×848 | ✓ | none |
+| 1440×900 | overview | 24 | 5 | 28.4 | 26 | 2 | 1252×672 | ✗ | container-x |
+| 1280×720 | overview | 24 | 10 | 34.9 | 26 | 2 | 1252×488 | ✗ | container-x |
+| 1024×768 | overview | 24 | 10 | 39.3 | 26 | 2 | 1252×536 | ✗ | container-x |
+
+**All forty-four products and all forty-four price points are on the chart at every one of those**
+— what changes is the picture size, the label density, and whether the card scrolls sideways. The
+card says so in words: *"Compact overview — switch to Comfortable for larger product images. Every
+product and every price is on the chart; only the pictures and the labels are smaller."*
+
+The height budget is `viewport − CHROME_H(232)`, declared rather than derived from the card's live
+top offset: **deriving it from the scroll position would make the chart re-lay-out as the reader
+scrolled past it**, which is a worse defect than the one this round fixes.
+
+### §37.6 The observer, and the three guards that stop it looping
+
+1. **It observes `#view`, which the renderer never replaces.** An observer on the chart's own
+   container would stop firing the first time the chart was redrawn — the classic version of this
+   bug, where resizing works exactly once.
+2. **The measurement is quantised to 8px and compared** (`boxKey`). A container reporting 1281.6
+   then 1281.4 has not changed, so even a genuine feedback path terminates after one pass.
+3. **The callback only schedules**, on an animation frame, so a drag that fires forty resize events
+   produces one redraw.
+
+It calls `renderData()`, which by the P1-B2B contract rebuilds no control and holds the reader's
+place — so a resize costs nothing: not the scenario, not the filters, not the layers, not the mode,
+not the scroll position. All six are asserted (§F10–F15), and `#scopeSite` is checked to be the
+same node afterwards (§F16). Fallback for an environment with no `ResizeObserver` is a window
+resize listener, which is strictly worse — it cannot see the sidebar collapse — and is why the
+observer is preferred rather than the reverse.
+
+### §37.7 A sticky scale, because §三.2 asked
+
+The axis is now two groups. `.axis-grid` holds the gridlines and scrolls with the products they
+cross; `.axis-scale` holds the tick numbers, the axis rule and the title, and is **translated in X
+by the container's scroll offset** so it stays still on screen. On a forty-four product Comfortable
+chart, scrolling the numbers off the screen leaves a grid of markers with no way to read a single
+price off it — so the answer to "is a sticky axis necessary" is yes. It is a translate and only a
+translate: no price coordinate is touched.
+
+### §37.8 The control bar
+
+It had grown to thirteen controls in one row above a chart that was itself too tall to see. Most of
+them are settings somebody touches once a session; the one they touch constantly is how big it is.
+
+```
+View     Auto Fit · Comfortable · Fullscreen     the decision that matters
+Detail   Clean · Detail                          the two presets
+Layers   one button, a popover, and "6/6"        the six, folded away
+Size     100% · 125% · 150%                      COMFORTABLE ONLY
+Reset view
+```
+
+**The size buttons are hidden in Auto Fit on purpose.** Auto Fit means the engine chose the size; a
+125% button beside it would be a second, contradictory answer to the same question, and whichever
+won, the other would be lying. **The layers count stays on the button's face** — folding away six
+switches is a density decision, folding away which of them are on would be hiding the state. The
+popover is absolutely positioned, so opening it does not move the thing you opened it to look at.
+
+**Fullscreen is a CSS overlay, not `requestFullscreen`.** That API needs a trusted user gesture, is
+refused outright in a headless render and in a print, cannot be entered by the page's own
+self-test, and hands Escape to the browser so the page cannot tell leaving from a stray keypress.
+An overlay gives the same thing while staying testable, printable and ours to leave. Escape and the
+button both leave it, and both restore the scroll position.
+
+### §37.9 The insight pills — root cause was one line of CSS
+
+The summary used `<span class="cls cls-RISK">`, and the stylesheet gives `.cls-RISK` **a background
+colour and nothing else**: the padding, the radius, the weight and the white text all live in
+`.fgroup-h .cls`, a descendant rule that only matches inside a finding group's header. So the same
+class produced a proper pill in one place and a bare saturated rectangle with default dark text in
+the other — four of them flush against each other, unreadable, and nothing like anything else in
+the Operation System. **A class that is only half-styled somewhere is two components wearing one
+name**, which is the third time this project has met that shape (`.adv-toggle`, `.scope`, and now
+`.cls`).
+
+Now: `Opportunities 3` — a label layer and a count layer, modelled on the Operation System's own
+count pill (`.km-tab-rail__count`, components.css:929), in a 999px capsule with a token gap,
+`flex-wrap` on both the pill row and the drawer header, and **dark text on a light tint with a
+matching border** — never saturated fill under black type, which is harder to read and, on paper, a
+quarter page of ink (print drops the tint).
+
+**They are not buttons.** Nothing filters by clicking one this round, and a control that looks
+pressable and does nothing costs a reader more than a plain label ever saves them. `role="list"` /
+`role="listitem"` instead.
+
+**A REAL GAP FOUND WHILE DOING THIS: the Operation System has no badge or status-token set.**
+base.css declares semantic *text* colours (`--text-success`, `--text-warning`, `--text-error`,
+`--text-link`), radii, spacing and a type scale, and components.css has exactly one count pill —
+but there is no `--badge-*` block, and no shared status-chip component. The six semantic tokens were
+copied into the prototype (and are therefore held to base.css by the existing G1/G2 assertions);
+the tints are local. **A semantic status-badge token set is the thing to add to base.css before a
+second page needs one.**
+
+### §37.10 The reusable contract (§十, recorded and not applied)
+
+`PSB_CHART_LAYOUT.CONTRACT`, published as data so the rules can be adopted rather than the code:
+
+```json
+{"id":"KM_RESPONSIVE_CHART_LAYOUT_V1","container_driven":true,
+ "reads_window_width_directly":false,"modes":["auto","comfortable","fullscreen"],
+ "density_profiles":["spacious","normal","compact","overview"],
+ "coordinates_are_separate_from_pixels":true,"layer_visibility_changes_layout":false,
+ "state_survives_resize":true,"print_uses_its_own_layout":true,
+ "applies_to":"product-strategy-board prototype only, until a page adopts it deliberately"}
+```
+
+The rules, for whoever adopts them next:
+
+1. **Container-driven, never page-specific.** Observe the element, not the window: a breakpoint
+   table cannot see a collapsing sidebar or a split view.
+2. **One pure layout function per component**, taking measurements as arguments. Deterministic,
+   testable at any viewport with no browser, and one named place where a box is read.
+3. **Three tiers**: fit the container · comfortable with container overflow · fullscreen.
+4. **Four density profiles**, each internally coherent (image, column minimum, lane, type), and a
+   ladder the layout walks rather than four independent choices.
+5. **Separate the mathematical coordinate from the visual size**, and publish both.
+6. **A minimum legible size and a declared overflow policy** — say which way it does not fit
+   rather than shrinking into illegibility.
+7. **State survives a resize.** A resize is not a navigation.
+8. **Tooltips and popovers work by mouse, keyboard and touch** — a button, not a hover.
+9. **Print gets its own layout**, and the room's mode never reaches paper.
+
+**§十 says record, not roll out. Nothing outside the prototype was touched** (§J9/J10), and the
+contract says so in its own `applies_to`.
+
+### §37.11 Two more defects only a screenshot could see
+
+Third round in a row this section has been needed, which is itself the finding: **what survives a
+green suite is what lives INSIDE the elements the suite checks, not the elements themselves.**
+
+1. **The fallback code did not shrink with its plate.** `shortCode` returned up to seven characters
+   whatever size the marker was, so at the overview density a six-character sku was painted across
+   a 24px plate — about 38px of type in 24px of room — and forty-four of them ran into each other
+   in a smear along the ladder. Every assertion was green: the plates were the right size, centred
+   on the right prices, inside the plot and clear of the lane. **Nothing measured the text inside
+   one.** The budget now comes from the plate, and below four characters there is no text at all —
+   a two-letter stump is not an identifier, it is noise on top of the one thing the marker is for.
+   The name stays on the plate's own `<title>`, the column's aria-label, the hover panel and the
+   lane.
+2. **The gap label degraded to a naked number.** When neither `USD 10 Price gap` nor `USD 10 gap`
+   fitted the gutter, it printed `10` — beside a line, on a price chart, which is exactly the
+   ambiguity this project spent a round removing from the word "open". There are three forms now,
+   the shortest still names the currency, and if even that will not fit there is **no label** and
+   the line carries the measurement.
+3. Also found: **the KPI strip sat half-visible behind the fullscreen card.** It was not hidden, so
+   it stayed in the flow and the fixed overlay covered most of it. A half-visible summary is worse
+   than no summary; it is hidden in fullscreen and restored in print.
+
+All three are assertions now (§K1–K13, §G21–G22) with mutants M13/M14 aimed at the first two.
+
+### §37.12 Tests
+
+```
+assets/tests/product-strategy-board-p1-b2c.test.js   NEW   157 passed / 0 failed / 14 mutants / 0 survived
+assets/tests/product-strategy-board-p1-b2b.test.js         142 / 0 / 16 / 0
+assets/tests/product-strategy-board-p1-b2a.test.js         227 / 0 / 14 / 0
+assets/tests/product-strategy-board-p1-b2.test.js          242 / 0 / 17 / 0
+the page's own DOM assertions                              238 / 238
+full sweep, 449 suites                                     only the four PRE-EXISTING red (3 / 1 / 7 / 2)
+```
+
+Sections: A boot · B the engine is pure · C seven products fit on every target viewport · D the
+coordinate is not the pixel · E density from one to forty-four · F the observer watches the
+container · G the modes · H the control bar · I the insight pills · J the reusable contract ·
+K what only a screenshot could see · 14 mutants.
+
+**FOUR EARLIER ASSERTIONS WERE SUPERSEDED RATHER THAN PATCHED, and each is worth recording:**
+
+- **P1-B2A H28** required `colW >= 74` on the 44-product chart. 74 was the SPACIOUS minimum and it
+  still is; forty-four products get the overview profile, whose minimum is 26 because a 24px
+  thumbnail fits in it and a 50px photograph does not. Asserting 74 would have been asserting that
+  the density ladder does not work. It now checks the minimum **of the profile the chart chose**.
+- **P1-B2A J8–J11** asserted the "fit floor" — past a point, stop shrinking and scroll. That was
+  the right patch for a layout that had already gone wrong upstream; the same forty-four products
+  now need 1252px rather than 3364px, so the cause is gone and the patch with it. What is checked
+  now is the promise: either it fits and is painted across the card, or it does not and says so
+  and takes its natural width. There is no third state where it is silently shrunk.
+- **P1-B2B D8–D10** grepped the renderer for `STEP_LADDER_C` and `PX_PER_TICK_MIN`. Both moved into
+  the engine, so the suite `require`s the module and reads the values.
+- **The zoom sections of both earlier suites** now enter Comfortable first, because Auto Fit
+  deliberately offers no manual size.
+
+**Two mutants had to be re-aimed after passing for the wrong reason** — the same two failure modes
+as last round, so they are worth naming again:
+
+- **M10** was first written to restrict the density-ladder walk and observed on forty-four
+  products, whose count band ALREADY starts at the last profile: the mutant was a no-op. The
+  second attempt broke the count band instead, and the ladder then did the band's work and reached
+  the same answer — a **defence being correct rather than a mutant being caught**. Twelve products
+  in a 660px card is where the two rules are distinguishable, and because the engine is pure the
+  whole thing is decided in two calls with no page at all.
+- **P1-B2B M5**'s anchor moved when the layer handler moved into the popover. A mutant whose anchor
+  no longer matches throws, and a throwing mutant is reported as caught — a green light for a rule
+  nobody checked.
+
+The shim gained a container width, a window size, a `ResizeObserver` that records what was
+observed, and an animation-frame queue a test can drain. `__viewport(w, h)` derives the content
+width the way the real page does, so a test names a viewport rather than keeping two numbers
+consistent by hand.
+
+### §37.13 Visual acceptance
+
+Headless Chrome against the local file, no network. Twenty-nine frames in
+`…/scratchpad/p1b2c/shots/`:
+
+```
+auto7-{1920x1080,1600x900,1440x900,1366x768,1280x720,1024x768,768x1024}
+full-auto7-{1920,1366,1280,1024,768}x2400+     whole page, so the card can be inspected
+comfortable7-1440x900 · full-comfortable7-1440x2400
+fullscreen7-1440x900
+layers-open-1280x720 · full-layers-1280x2400
+auto44-{1920x1080,1280x720} · full-auto44-{1920,1280}x2400
+comfortable44-1920x1080 · full-comfortable44-1920x2800
+drawer-open-{1920x1080,1280x720,1024x768,768x1024} · full-drawer-{1920,1024}x2600
+```
+
+Confirmed by eye across them: the whole chart inside the card at every target viewport; both axes
+and the lane visible without scrolling the chart; the control bar on one row at 1920 and wrapping
+cleanly at 1024 and 768; all 44 products and 44 price points present at every size; the pills as
+tinted capsules with counts, wrapping rather than squeezing; fullscreen filling the window with the
+mode and layers intact.
+
+**STILL NEEDS A PERSON — a DOM assertion is not a visual review:**
+
+1. **Print / PDF.** Not captured (no `--print-to-pdf` run). The print layout is verified by
+   assertion only: the fullscreen overlay goes static, the KPI strip returns, the chart goes back
+   to full width, the pills drop their tint, the layers popover is hidden.
+2. **Whether a 24px thumbnail is enough to judge a 44-product chart in a meeting.** The engine's
+   answer is "no, switch to Comfortable", and the card says so — but whether the overview is
+   *readable enough to decide from* is a judgement only the operator can make.
+3. **The sidebar collapse.** The observer watches `#view`, so collapsing the rail should re-fit the
+   chart without a window resize. Asserted through a synthetic container width; worth doing once
+   with a real mouse.
+4. Native `<select>`, focus rings, colour and weight at arm's length.
+5. The 44-product chart's upper band is sparse because the axis reaches the dearest product's list
+   price. Correct, but worth a judgement on whether that is the right shape of axis for that data.
+
+### §37.14 Isolation record
+
+```
+docs/prototypes/product-strategy-board/chart-layout.js     NEW — the pure layout engine
+docs/prototypes/product-strategy-board/prototype.js        measure · modes · fullscreen · control bar · pills
+docs/prototypes/product-strategy-board/prototype.css       pills · popover · overflow per mode · overlay · print
+docs/prototypes/product-strategy-board/index.html          the fifth script tag
+assets/tests/_psb-harness.js                               container width · viewport · ResizeObserver · frames
+assets/tests/product-strategy-board-p1-b2c.test.js         NEW
+assets/tests/product-strategy-board-p1-b2b.test.js         follows the modes and the engine
+assets/tests/product-strategy-board-p1-b2a.test.js         superseded assertions and two re-aimed mutants
+assets/tests/product-strategy-board-p1-b2.test.js          five scripts, not four
+docs/planning/PRODUCT_STRATEGY_BOARD_DESIGN_FREEZE.md      this section
+assets/specs/active/project-current-state.md               the round entry
+```
+
+Production DB writes 0 · Sheets 0 · Drive 0 · network 0 · Apps Script 0 · deployment 0 · main 0 ·
+S1 0 · S2–S5 0 · `assets/js/**` 0 · `assets/css/**` 0 · `assets/html/**` 0 · other production pages
+0 · km-lb 0 · merge 0 · push 0 · amend 0 · rebase 0 · force-push 0.
+`APPS_SCRIPT_SYNC_REQUIRED` this round: **none** — P1-B1-R1's four files are still the outstanding
+sync.
+
+### §37.15 The merge gate is unchanged
+
+All nine conditions of the P1-B2A brief's §十一 still stand. This round is fixture UI work and
+claims no live database connection. **Next:** P1-B3 — production readback once the user has synced
+P1-B1-R1's four Apps Script files.

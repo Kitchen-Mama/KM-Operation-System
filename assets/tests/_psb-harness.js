@@ -47,6 +47,7 @@ var SRC = {
   fixture: readProto('preview-fixture.js'),
   prototype: readProto('prototype.js'),
   index: readProto('index.html'),
+  layout: readProto('chart-layout.js'),
   css: readProto('prototype.css')
 };
 
@@ -188,6 +189,31 @@ function makeDom(skeleton) {
     var i = docOrderIndex(node);
     return i === null ? null : i * ROW_PX;
   }
+  /* ---- A CONTAINER WITH A WIDTH, AND A WINDOW WITH A SIZE ---------------------------------------
+
+     P1-B2C's whole point is that the chart asks the container how much room there is, so a shim
+     where every element is zero pixels wide would make every layout assertion a test of the
+     fallback path and nothing else.
+
+     THE MODEL IS DELIBERATELY CRUDE AND DELIBERATELY HONEST. There is one content width, set by the
+     test, and `clientWidth` returns it for the elements that are page-width containers (`#view`,
+     `.panel`, `.chartwrap`) and 0 for everything else — because 0 is what a shim that cannot lay
+     out an arbitrary element should say, rather than a number somebody might come to trust. The
+     suite sets the viewport with `__viewport(w, h)`, which is the same act as picking a window
+     size, and the page reads it through `window.innerWidth` / `innerHeight` exactly as it would in
+     a browser. */
+  var WIDE_IDS = { view: 1 };
+  var WIDE_CLASSES = { panel: 1, chartwrap: 1, card: 1 };
+  Object.defineProperty(Node.prototype, 'clientWidth', {
+    get: function () {
+      if (WIDE_IDS[this.id]) return win.__contentWidth;
+      var cls = String(this.className || '').split(/\s+/);
+      for (var i = 0; i < cls.length; i++) {
+        if (WIDE_CLASSES[cls[i]]) return win.__contentWidth;
+      }
+      return 0;
+    }
+  });
   Node.prototype.getBoundingClientRect = function () {
     var top = layoutTop(this);
     if (top === null) return { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 };
@@ -336,6 +362,34 @@ function makeDom(skeleton) {
       win.scrollY = win.pageYOffset = Math.max(0, Number(y) || 0);
     },
     print: function () { win.__printed++; },
+    innerWidth: 1920,
+    innerHeight: 1080,
+    __contentWidth: 1180,
+    __observers: [],
+    __frames: [],
+    /* SET THE WINDOW, THE WAY A PERSON SETS ONE. The content width is derived from the window the
+       way the real page derives it — a fixed sidebar and the card's own margins — so a test names
+       a viewport and gets the container width that viewport actually produces, rather than having
+       to know both numbers and keep them consistent by hand. */
+    __viewport: function (w, h) {
+      win.innerWidth = w;
+      win.innerHeight = h;
+      win.__contentWidth = Math.max(320, w - (w >= 1000 ? 246 : 0) - 76);
+      win.__observers.slice().forEach(function (o) {
+        try { o.cb([{ target: o.target }], o.ro); } catch (e) {}
+      });
+      win.__flush();
+    },
+    /* The page schedules its redraw on an animation frame; a test has to be able to let that run. */
+    __flush: function () {
+      var guard = 0;
+      while (win.__frames.length && guard++ < 50) {
+        var fns = win.__frames.slice();
+        win.__frames.length = 0;
+        fns.forEach(function (f) { try { f(); } catch (e) {} });
+      }
+      return guard;
+    },
     /* PUT THE READER SOMEWHERE. Positioning the page before an interaction is the test setting up,
        not the page scrolling, so it does not count toward __scrollCalls. */
     __place: function (x, y) {
@@ -487,10 +541,25 @@ function bootPage(mutateSrc) {
      scroll assertion would pass on nothing. These delegate to the single scroll position the shim
      owns, so a scrollTo from page code is visible to the suite and vice versa. */
   ctx.scrollTo = function (x, y) { dom.window.scrollTo(x, y); };
-  ['scrollX', 'scrollY', 'pageXOffset', 'pageYOffset'].forEach(function (k) {
-    Object.defineProperty(ctx, k, { get: function () { return dom.window[k]; } });
-  });
-  var order = ['contract', 'selectors', 'fixture', 'prototype'];
+  ['scrollX', 'scrollY', 'pageXOffset', 'pageYOffset', 'innerWidth', 'innerHeight']
+    .forEach(function (k) {
+      Object.defineProperty(ctx, k, { get: function () { return dom.window[k]; } });
+    });
+  /* THE OBSERVER THE PAGE ACTUALLY USES. It records what was observed so a test can check that the
+     page watched its CONTAINER rather than the window — the difference between a chart that adapts
+     to a collapsing sidebar and one that only notices when the whole browser changes. */
+  ctx.ResizeObserver = function (cb) {
+    var self = this;
+    this.observe = function (target) {
+      dom.window.__observers.push({ cb: cb, target: target, ro: self });
+    };
+    this.disconnect = function () { dom.window.__observers.length = 0; };
+  };
+  ctx.requestAnimationFrame = function (fn) {
+    dom.window.__frames.push(fn);
+    return dom.window.__frames.length;
+  };
+  var order = ['contract', 'layout', 'selectors', 'fixture', 'prototype'];
   var thrown = null;
   try {
     order.forEach(function (k) {

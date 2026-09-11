@@ -88,7 +88,25 @@ function openMeeting(p) {
   return p;
 }
 function chartPage() { return toChart(bootPage(null)); }
+/* P1-B2C FOLDED THE SIX SWITCHES INTO A POPOVER, so reaching one means opening it first — the
+   same path a person takes. Toggling a layer re-renders the control bar and keeps the popover
+   open, so the helper is idempotent. */
+function openLayers(p) {
+  if (p.thrown) return p;
+  var t = id(p, 'layersToggle');
+  if (t && t.getAttribute('aria-expanded') === 'false') t.click();
+  return p;
+}
+/* SINCE P1-B2C THE MANUAL SIZES BELONG TO COMFORTABLE. Auto Fit decides the size itself and does
+   not offer a contradicting control, so a test about zoom has to pick the mode that has one. */
+function comfortable(p) {
+  if (p.thrown) return p;
+  var b = id(p, 'mode-comfortable');
+  if (b && b.getAttribute('aria-pressed') === 'false') b.click();
+  return p;
+}
 function setLayer(p, layer, on) {
+  openLayers(p);
   var cb = id(p, 'layer-' + layer);
   cb.checked = !!on;
   cb.dispatchEvent(new p.dom.Event('change', { bubbles: true }));
@@ -284,14 +302,22 @@ console.log('\n=== SECTION D  VERTICAL READABILITY IS A PIXEL FLOOR ===');
 
   /* D8 A HUGE RANGE WIDENS THE STEP INSTEAD OF CRUSHING THE PITCH. Keeping a 5-unit step while the
      pixels shrink is the defect; two 50px photographs 28px apart overlap. */
-  eq(SRC.prototype.indexOf('var STEP_LADDER_C = [500, 1000, 2500, 5000, 10000, 25000];') >= 0, true,
-    'D8 the renderer carries a step ladder rather than one fixed step');
-  ok(/PX_PER_TICK_MIN\s*=\s*44/.test(SRC.prototype),
-    'D9 and a declared readability floor');
+  /* P1-B2C MOVED BOTH OF THESE INTO THE ENGINE, which is where a decision about sizes belongs.
+     The ladder and the pitch floor are now values on a pure module a test can call directly
+     rather than strings in a renderer a test has to grep for. */
+  var LE = require('../../docs/prototypes/product-strategy-board/chart-layout.js');
+  ok(LE.STEP_LADDER_C.length >= 5 && LE.STEP_LADDER_C[0] === 500,
+    'D8 the engine carries a step ladder rather than one fixed step', LE.STEP_LADDER_C);
+  ok(LE.MIN_PITCH_AUTO >= 18 && LE.PREFERRED_PITCH === 48,
+    'D9 with a preferred pitch and a declared floor below it',
+    [LE.PREFERRED_PITCH, LE.MIN_PITCH_AUTO]);
 
-  // D10 THE CONTAINER TAKES THE OVERFLOW, in both directions, and print undoes both.
-  ok(/\.chartwrap\s*\{[^}]*overflow-y:\s*auto/.test(SRC.css),
-    'D10 a drawing too tall for the card scrolls inside the card');
+  /* D10 THE OVERFLOW IS PER MODE. Comfortable scrolls inside its card; Auto Fit must not, because
+     a mode whose whole promise is "the chart is in the card" cannot answer with a scrollbar. */
+  ok(/\.chartwrap\[data-mode="comfortable"\]\s*\{[^}]*overflow-y:\s*auto/.test(SRC.css),
+    'D10 Comfortable scrolls inside its own card');
+  ok(/\.chartwrap\[data-mode="auto"\][^{]*\{[^}]*overflow-y:\s*hidden/.test(SRC.css),
+    'D10a and Auto Fit never scrolls vertically at all');
   ok(/@media print[\s\S]*\.chartwrap\s*\{[^}]*max-height:\s*none\s*!important/.test(SRC.css),
     'D11 and print lifts the cap so nothing is clipped on paper');
 }());
@@ -351,11 +377,18 @@ console.log('\n=== SECTION E  THE LABEL LANE ===');
   /* READ THE DRAWN STRING, NOT textContent. An SVG <title> is never painted but it IS part of its
      parent's textContent, so a truncated label would read as its short form followed by its long
      one — which is why the drawn text is published as an attribute of its own. */
+  /* A STRIDED LABEL MAY BE AS WIDE AS THE COLUMNS IT STANDS IN FOR. When the engine prints one
+     label every Nth column, that label's neighbours print nothing, so the room it has is N
+     columns wide — and holding it to one column would force four-character stumps in a lane with
+     plenty of space. What must never happen is a label running into a PRINTED one. */
+  var stride = Number(wide.getAttribute('data-label-stride')) || 1;
   var tooWide = wLabs.filter(function (n) {
-    return String(n.getAttribute('data-shown')).length * 6.6 > colW;
+    return String(n.getAttribute('data-shown')).length * 6.6 > colW * stride;
   });
-  eq(tooWide.length, 0, 'E12 and not one drawn label is wider than its own column',
+  eq(tooWide.length, 0, 'E12 and not one drawn label is wider than the room it was given',
     tooWide.map(function (n) { return n.getAttribute('data-shown'); }));
+  ok(stride >= 1, 'E12a the engine thinned the labels rather than shrinking them to stumps',
+    stride);
   var cut = wLabs.filter(function (n) { return n.getAttribute('data-truncated') === 'true'; });
   ok(cut.length > 0, 'E13 the long ones were shortened', cut.length);
   var lostText = cut.filter(function (n) {
@@ -364,7 +397,12 @@ console.log('\n=== SECTION E  THE LABEL LANE ===');
   eq(lostText.length, 0, 'E14 and none of them lost its full text');
   var kept = wLabs.filter(function (n) { return n.getAttribute('data-truncated') === 'false'; });
   eq(kept.filter(function (n) { return n.querySelectorAll('title').length; }).length, 0,
-    'E15 while a label that fits carries no second copy of itself');
+    'E15 while a label that fits — or was skipped entirely — carries no second copy of itself');
+  var skipped = wLabs.filter(function (n) { return n.getAttribute('data-printed') === 'false'; });
+  eq(skipped.filter(function (n) { return n.textContent !== ''; }).length, 0,
+    'E15a and a skipped column prints nothing at all');
+  eq(q(w, '.col').length - skipped.length, wLabs.length - skipped.length,
+    'E15b while every column still exists, labelled or not');
 
   // E16 ONE BASELINE SURVIVES THE DENSITY TEST TOO.
   var wy = wLabs.map(function (n) { return n.getAttribute('y'); });
@@ -404,7 +442,7 @@ console.log('\n=== SECTION F  NOTHING JUMPS WHEN A LAYER IS SWITCHED ===');
     'F2 the legend reserves its block so losing a key does not drag the page up');
 
   // F3 THE ZOOM SURVIVES. A person who chose 150% for a room did not ask to leave it.
-  var z = chartPage();
+  var z = comfortable(chartPage());
   id(z, 'zoom-1-5').click();
   var w150 = q(z, '.chart')[0].getAttribute('width');
   var vb150 = q(z, '.chart')[0].getAttribute('viewBox');
@@ -416,7 +454,7 @@ console.log('\n=== SECTION F  NOTHING JUMPS WHEN A LAYER IS SWITCHED ===');
   eq(id(z, 'zoom-1-5').getAttribute('aria-pressed'), 'true', 'F6 and the control still says so');
 
   // F7 THE SIDEWAYS POSITION SURVIVES. Redrawing the chart must not send the reader back to column 1.
-  var sc = chartPage();
+  var sc = comfortable(chartPage());
   id(sc, 'zoom-1-5').click();
   q(sc, '.chartwrap')[0].scrollLeft = 240;
   setLayer(sc, 'steps', false);
@@ -463,7 +501,9 @@ console.log('\n=== SECTION G  A PRICE GAP IS CALLED A PRICE GAP ===');
     'G2b while the whole sentence stays on the element, whichever form is painted');
 
   // G4 NOWHERE ELSE EITHER — the switch and the legend say the same three words.
-  var layerText = q(PG, '.ctl-layers .chk-text').map(function (n) { return n.textContent; });
+  /* The switches are behind a disclosure since P1-B2C, so read them the way a person does. */
+  var layerText = q(openLayers(PG), '.ctl-layers .chk-text')
+    .map(function (n) { return n.textContent; });
   ok(layerText.indexOf('Price gaps') >= 0, 'G4 the layer switch is called Price gaps', layerText);
   eq(layerText.filter(function (t) { return /open/i.test(t); }), [],
     'G5 and no layer is called "open" anything');
@@ -598,6 +638,7 @@ console.log('\n=== SECTION H  THE VIEWPORT DOES NOT MOVE ===');
   POSITIONS.forEach(function (pos) {
     var p = openMeeting(chartPage());
     if (p.thrown) { bad.push(pos[0] + ': threw'); return; }
+    comfortable(p);
     id(p, 'zoom-1-25').click();
     var wrap = q(p, '.chartwrap')[0];
     wrap.scrollLeft = 180;
@@ -700,8 +741,13 @@ console.log('\n=== SECTION H  THE VIEWPORT DOES NOT MOVE ===');
      it: the only scrollTo in the file is the anchor compensation, and it is conditional. */
   eq(SRC.prototype.split('scrollIntoView').length - 1, 0,
     'H19 nothing on the page scrolls an element into view');
-  eq(SRC.prototype.split('window.scrollTo(').length - 1, 1,
-    'H20 there is exactly one scrollTo, and it is the anchor compensation');
+  /* TWO SINCE P1-B2C, AND THE SECOND ONE IS THE ONE PLACE A SCROLL IS THE POINT. Leaving
+     fullscreen has to put the reader back where they were on the page they left, which is a
+     deliberate restore rather than a jump — and it is the only other one there is. */
+  eq(SRC.prototype.split('window.scrollTo(').length - 1, 2,
+    'H20 there are exactly two scrollTo calls in the whole renderer');
+  ok(SRC.prototype.indexOf('window.scrollTo(0, STATE.fsReturnScroll);') >= 0,
+    'H20a and the second is leaving fullscreen, putting the reader back where they were');
   ok(SRC.prototype.indexOf('if (before && topBefore !== null && topAfter !== null'
     + ' && topAfter !== topBefore') >= 0,
     'H21 which only runs when the anchor actually moved');
@@ -899,11 +945,15 @@ mut('M4 the gridline pitch is compressed again, so two photographs overlap', fun
 });
 
 mut('M5 a layer toggle resets the zoom the room is reading at', function () {
-  var m = withProto(swap("        STATE.viewMode = isClean ? 'clean' : (isDetail ? 'detail' : 'custom');\n        renderData();",
-    "        STATE.viewMode = isClean ? 'clean' : (isDetail ? 'detail' : 'custom');\n        STATE.zoom = 'fit';\n        renderData();"));
+  /* THE HANDLER MOVED INSIDE THE LAYERS POPOVER IN P1-B2C, and the anchor moved with it. A
+     mutant whose anchor no longer matches throws, and a throwing mutant is reported as caught —
+     which is a green light for a rule nobody checked. */
+  var m = withProto(swap("          STATE.viewMode = isClean ? 'clean' : (isDetail ? 'detail' : 'custom');\n          renderData();",
+    "          STATE.viewMode = isClean ? 'clean' : (isDetail ? 'detail' : 'custom');\n          STATE.zoom = 'fit';\n          renderData();"));
   function zoomAfterToggle(pg) {
     if (pg.thrown) return 'THREW';
     toChart(pg);
+    comfortable(pg);
     pg.dom.document.getElementById('zoom-1-5').click();
     setLayer(pg, 'promo', false);
     return q(pg, '.chart')[0].getAttribute('data-zoom');
@@ -916,6 +966,7 @@ mut('M6 a chart redraw sends the reader back to the first column', function () {
   function sidewaysAfterToggle(pg) {
     if (pg.thrown) return -1;
     toChart(pg);
+    comfortable(pg);
     pg.dom.document.getElementById('zoom-1-5').click();
     q(pg, '.chartwrap')[0].scrollLeft = 240;
     setLayer(pg, 'steps', false);
