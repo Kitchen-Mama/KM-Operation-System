@@ -224,9 +224,31 @@ button { font: inherit; color: inherit; }
   background: #fff;
 }
 .scenario.is-on .scenario-badge { border-color: #d9c9a8; color: #8a6a1e; background: #fdf8ec; }
-.scenario-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
-.scenario-row .fl { min-width: 130px; }
+/* THE FORM IS A GRID WITH DECLARED COLUMNS, and that is what stops a dropdown from moving the
+   chart. Switching Proposed to Everyday changes which ADJUSTMENTS are offered; it must not change
+   how many rows the form has, how wide a control is or how tall the panel is. A flex row that
+   wrapped differently for a longer option label did exactly that. */
+.scenario-row {
+  display: grid; gap: 10px; align-items: end;
+  grid-template-columns: minmax(150px, 1.2fr) minmax(140px, 1fr) minmax(170px, 1.3fr)
+    minmax(110px, .8fr) auto;
+}
+.scenario-row .fl { min-width: 0; }
+.scenario-row .fl select, .scenario-row .fl input { width: 100%; }
+@media (max-width: 1100px) {
+  .scenario-row { grid-template-columns: 1fr 1fr; }
+}
+/* SPACE RESERVED, NOT CLAIMED ON DEMAND. The validation line and the "Applied:" line used to be
+   created and destroyed, and each appearance shoved the chart down by its own height. The row is
+   always here; only its text changes. One line of quiet space is cheaper than losing your place. */
+.scenario-status { min-height: 34px; display: block; }
+.scenario-status-line { margin: 0; font-size: 12px; line-height: 1.5; min-height: 18px; }
 .scenario-resets { display: flex; gap: 8px; flex-wrap: wrap; }
+/* A DISABLED BUTTON IS THE SAME SIZE AS AN ENABLED ONE — opacity changes, geometry does not. */
+.scenario-resets .btn { min-width: 128px; justify-content: center; }
+/* Apply stays clickable even when the form is incomplete, so the refusal can explain itself; the
+   styling goes quiet instead of the control going away. */
+.btn-apply[data-ready="false"] { background: #a9bf98; }
 .scbtn {
   font: inherit; font-size: 12px; padding: 6px 12px; border-radius: 6px;
   border: 1px solid var(--line); background: #fff; color: var(--ink-1); cursor: pointer;
@@ -236,7 +258,8 @@ button { font: inherit; color: inherit; }
 .scenario-note, .scenario-refusal {
   margin: 0; font-size: 12px; color: var(--ink-3); max-width: 88ch; line-height: 1.5;
 }
-.scenario-refusal { color: #98261d; }.badge-scope {
+.scenario-refusal { color: #98261d; }
+.badge-scope {
   font-size: 11px; letter-spacing: .01em;
   border: 1px solid rgba(255, 255, 255, .35); border-radius: 4px; padding: 2px 8px;
   color: #eef2f7; background: rgba(255, 255, 255, .08);
@@ -330,7 +353,15 @@ button { font: inherit; color: inherit; }
 .mk-deal { fill: #b3392f; stroke: #fff; stroke-width: 1.5; }
 .mk-prop { fill: #fff; stroke: #7a5cc4; stroke-width: 2; stroke-dasharray: 3 2; }
 .gapline { stroke: #0f7b5f; stroke-width: 1.5; stroke-dasharray: 4 3; }
-.gaplabel { font: 600 10.5px var(--mono); fill: #0f7b5f; }
+.gapend { stroke: #0f7b5f; stroke-width: 1.5; }
+/* A HALO, SO THE WORDS SURVIVE A GRIDLINE UNDER THEM. paint-order puts the white stroke behind the
+   fill, which is the only way an SVG label stays readable over whatever it lands on. */
+.gaplabel {
+  font: 600 11.5px var(--mono); fill: #0f7b5f;
+  stroke: #fff; stroke-width: 3px; paint-order: stroke fill;
+}
+.gapmark:focus { outline: none; }
+.gapmark:focus .gapline, .gapmark:focus .gapend { stroke-width: 2.5; }
 .col { cursor: default; }
 
 /* THE IMAGE PRICE MARKER. The photograph sits ON the everyday price, and its CENTRE is the
@@ -343,8 +374,11 @@ button { font: inherit; color: inherit; }
 .col:hover .mk-img-plate { stroke: #14181f; stroke-width: 1.5; }
 .col:hover .mk-fallback { stroke: #14181f; }
 
+/* THE LEGEND HOLDS ITS BLOCK. Hiding a layer removes its key — a key for a line that is not
+   drawn is worse than the line — but the block itself keeps two rows' worth of height, so turning
+   four layers off does not drag the comparison table up the screen. */
 .legend { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 14px; padding-top: 12px;
-  border-top: 1px solid var(--line-2); }
+  border-top: 1px solid var(--line-2); min-height: 46px; align-content: flex-start; }
 .legend-item { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--ink-2); }
 .sw { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
 .sw-reg { border: 1.5px solid #c3cbd8; background: #fff; border-radius: 4px; }
@@ -524,7 +558,7 @@ table.grid-t { border-collapse: collapse; width: 100%; font-size: 13px; }
   .drawer-body { display: block !important; }
   /* P1-B2A — FIT, ALWAYS. A size chosen for a room in a meeting must not decide how a page prints. */
   .chart { width: 100% !important; height: auto !important; }
-  .chartwrap { overflow: visible !important; }
+  .chartwrap { overflow: visible !important; max-height: none !important; }
   .chartctl, .filt-toggle, .adv-body-row, .info, .catmenu { display: none !important; }
   .scenario-ctx { border: 1px solid #000; }
   .grid-t tbody tr { break-inside: avoid; page-break-inside: avoid; }
@@ -807,12 +841,18 @@ body.presenting .navbtn, body.presenting .act { justify-content: center; padding
 /* ---------------------------------------------------------------- the chart ---------------------- */
 /* THE ZOOM CONTAINER. At Fit the drawing is painted across the card; at a fixed size it overflows and
    THIS scrolls — the page never does, and the browser is never asked to zoom. */
-.chartwrap { overflow-x: auto; overflow-y: hidden; padding-bottom: 4px; }
+/* Vertical too, and only as a last resort: a very wide price range grows the drawing rather than
+   compressing the gridline pitch (see PX_PER_TICK), and a tall drawing scrolls inside its own card
+   instead of pushing the rest of the page down the screen. */
+.chartwrap { overflow-x: auto; overflow-y: auto; max-height: 78vh; padding-bottom: 4px; }
 .chart { display: block; max-width: none; }
 /* Only when the drawing actually fits. Beyond that the SVG carries its own natural width and the
    container scrolls - see the fit floor in prototype.js. */
 .chartwrap[data-zoom="fit"] .chart:not([data-fit-floored]) { width: 100%; height: auto; }
 /* READABLE AT ARM'S LENGTH. The review asked for larger text; these are the sizes, in one place. */
+/* THE LABEL LANE. Its rule is the line the plot may not cross, and it is drawn so that a reader
+   can see the separation the geometry guarantees. */
+.lane-rule { stroke: var(--line-2); stroke-width: 1; }
 .xlabel { font: 600 12.5px var(--sans); fill: var(--ink-1); }
 .xsub { font: 500 11.5px var(--mono); fill: var(--ink-3); }
 .ytick { font: 500 11.5px var(--mono); fill: var(--ink-3); }

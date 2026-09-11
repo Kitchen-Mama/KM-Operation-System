@@ -540,7 +540,12 @@
         category: cat,
         product_name: cat + ' ' + (idx % 90 + 10),
         series: seriesName,
-        variant_group: sku,
+        /* A THIRD OF THEM CARRY A LONG NAME ON PURPOSE. A density test whose every label is six
+           characters proves the columns fit and nothing about the text in them; a real catalogue
+           has names that do not fit, and the chart has to shorten those without letting one run
+           into the next. */
+        variant_group: (idx % 3 === 0)
+          ? (sku + ' ' + String(seriesName).replace(/\s+/g, '-')) : sku,
         variant_name: null,
         company: site.company, country: site.country, marketplace: site.marketplace,
         currency: site.currency,

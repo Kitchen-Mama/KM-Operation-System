@@ -1023,10 +1023,16 @@
       if (d > thrC) {
         out.push({ cls: CLASS.OPP, kind: 'PRICE_GAP', currency: cur, category: cat,
           a: ns[i - 1], b: ns[i], distance_c: d, threshold_c: thrC,
-          headline: 'Open price step of ' + money(d, cur) + ' between '
+          /* P1-B2B: THE WORDS, NOT THE KEYS. `kind`, `distance_c` and `threshold_c` are unchanged
+             — renaming a contract key is a migration. What changed is the sentence a person reads:
+             "open" could be heard as an open order, open stock or an opening price, and this is a
+             rung of the ladder nothing stands on. */
+          headline: 'Price gap of ' + money(d, cur) + ' between '
             + ns[i - 1].label + ' and ' + ns[i].label,
           detail: 'No product sits between ' + money(ns[i - 1]._regular_c, cur) + ' and '
-            + money(ns[i]._regular_c, cur) + '. Threshold in use: ' + money(thrC, cur) + '.',
+            + money(ns[i]._regular_c, cur) + '. It is an unoccupied price tier for review, not an'
+            + ' inventory shortage or an order status. Gap threshold in use: '
+            + money(thrC, cur) + ', and the comparison is strictly greater than it.',
           proposal_driven: false,
           scenario_driven: !!((ns[i - 1]._scenario && ns[i - 1]._scenario.active)
             || (ns[i]._scenario && ns[i]._scenario.active)) });

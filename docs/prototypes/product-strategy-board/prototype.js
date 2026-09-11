@@ -231,10 +231,43 @@
      ZOOM control changes the element's width while the viewBox stays byte-identical. That is what makes
      "zoom cannot move a price" provable rather than promised. */
   var DESIGN_W = 1180;              // the content width of the Operation System card at 1440 and up
-  var PAD_L = 78, PAD_R = 30, PAD_T = 30, LABEL_H = 78;
+  var PAD_L = 78, PAD_R = 30, PAD_T = 30;
   var COL_MIN = 74, COL_MAX = 208;
-  var TICK_C = 500;                 // FIVE CURRENCY UNITS, in cents. Not negotiable, not adaptive.
+  var TICK_C = 500;                 // FIVE CURRENCY UNITS, in cents — the PREFERRED step, see priceAxis
   var MK = 50, MK_HOVER = 66;       // image marker, and its hover size — P1-B2A: 36 -> 50 (brief: 46-54)
+
+  /* ---- P1-B2B: THE PLOT AND THE LABEL LANE ARE TWO BANDS, NOT ONE AREA WITH A MARGIN --------------
+
+     The visual review found the product photographs touching the text beneath them. The cause was
+     that there was no lane: labels were drawn at `PLOT_H + 22` inside the same coordinate space the
+     prices use, so the bottom of the price scale and the top of the type were the same pixel, and a
+     50px plate centred on the lowest price hung 25px into the words. Widening LABEL_H could not fix
+     that — the plate was not overflowing the label area, it was overflowing the PLOT.
+
+     So the drawing is now three stacked bands with declared heights:
+
+         PAD_T          air above the top gridline
+         PLOT_PAD       the marker gutter — half a plate plus five, so nothing can cross a plot edge
+         PLOT_H         the price scale itself: gridline to gridline, and NOTHING else lives here
+         PLOT_PAD       the same gutter at the bottom
+         LANE_H         the label lane: sku, price, variants — and no price coordinate at all
+
+     Every label sits on a baseline measured from the lane, never from a price, which is what makes
+     "all labels share one baseline" true by construction rather than by a lucky arrangement. */
+  var PLOT_PAD = 30;                // MK / 2 + 5: a plate centred on an end tick still clears the edge
+  var LANE_H = 52;                  // the label lane, fixed and independent of the scale
+  var LANE_ROW_1 = 20, LANE_ROW_2 = 38;   // 18px apart: ~6px of clear space at 12.5 / 11.5
+
+  /* ---- VERTICAL READABILITY IS A PIXEL FLOOR, NOT A HEIGHT CAP -----------------------------------
+     28px per 5 currency units put two 50px photographs 28px apart — they overlapped, and no label
+     avoidance can rescue a chart whose own markers collide. The gridline pitch is now 48px (the
+     brief's 44-52), and it is a FLOOR: when a range is so wide that 48px per five units would make an
+     absurd drawing, the TICK STEP grows (5 -> 10 -> 25 -> 50 ...) and the pitch is preserved. The
+     alternative — keeping the step and shrinking the pitch — is the defect this replaces. */
+  var PX_PER_TICK = 48;
+  var PX_PER_TICK_MIN = 44;         // asserted, so a future edit cannot quietly compress the scale
+  var PLOT_MIN_H = 300, PLOT_MAX_H = 960;
+  var STEP_LADDER_C = [500, 1000, 2500, 5000, 10000, 25000];
 
   /* ---- THE CHART LAYERS ---------------------------------------------------------------------------
      SIX, AND THERE ARE SIX BECAUSE THE DATA HAS SIX THINGS TO SHOW — not because six boxes looked
@@ -266,9 +299,10 @@
     { id: 'scenario', label: 'Proposed scenario', clean: false,
       help: 'The board-owned proposed price, including anything Meeting Mode is simulating. Never a'
         + ' price the company charges.' },
-    { id: 'steps', label: 'Open price steps', clean: false,
-      help: 'A gap between two neighbouring everyday prices wider than the threshold. Measured inside'
-        + ' one category and one currency; nothing is ever compared across two.' }
+    { id: 'steps', label: 'Price gaps', clean: false,
+      help: 'Difference between two adjacent everyday prices that exceeds the selected gap threshold. It indicates an unoccupied price tier for review; it is not an inventory shortage or an order status. Measured inside one category and one currency;'
+        + ' nothing is ever compared across two, and the comparison is strictly greater than the'
+        + ' threshold — a step exactly equal to it is not a gap.' }
   ];
   var ZOOMS = [
     { id: 'fit', label: 'Fit' },
@@ -309,17 +343,100 @@
      No "nice number" search, no magnitude rounding, no adaptive step. The only thing that varies
      with the range is the PIXEL distance between ticks, and it is clamped so a tall category
      compresses rather than dropping a tick. */
-  function fiveUnitAxis(loC, hiC) {
+  /**
+   * THE AXIS. Five currency units per gridline wherever five units fits, and the pitch is what is
+   * held constant — never the step. A step that stays at 5 while the pixels shrink is a scale that
+   * becomes unreadable exactly when it has the most to say.
+   */
+  function priceAxis(loC, hiC) {
     if (loC === null || hiC === null) { loC = 0; hiC = TICK_C; }
-    var lo = Math.floor(loC / TICK_C) * TICK_C;
-    var hi = Math.ceil(hiC / TICK_C) * TICK_C;
-    if (hi === lo) hi = lo + TICK_C;
-    var ticks = [];
-    for (var v = lo; v <= hi; v += TICK_C) ticks.push(v);
-    return { lo: lo, hi: hi, step: TICK_C, ticks: ticks };
+    for (var i = 0; i < STEP_LADDER_C.length; i++) {
+      var step = STEP_LADDER_C[i];
+      var lo = Math.floor(loC / step) * step;
+      var hi = Math.ceil(hiC / step) * step;
+      if (hi === lo) hi = lo + step;
+      var count = (hi - lo) / step + 1;
+      if ((count - 1) * PX_PER_TICK <= PLOT_MAX_H || i === STEP_LADDER_C.length - 1) {
+        var ticks = [];
+        for (var v = lo; v <= hi; v += step) ticks.push(v);
+        return { lo: lo, hi: hi, step: step, ticks: ticks };
+      }
+    }
+    return null;
   }
   function plotHeightFor(tickCount) {
-    return Math.max(300, Math.min(560, (tickCount - 1) * 28));
+    return Math.max(PLOT_MIN_H, (tickCount - 1) * PX_PER_TICK);
+  }
+
+  /* ---- THE DOMAIN BELONGS TO THE SCOPE, NOT TO THE CHECKBOXES -------------------------------------
+
+     P1-B2B ROOT CAUSE, and it was four lines. The axis extent used to be computed like this:
+
+         [n._regular_c,
+          layerOn('floor') ? n._min_c : null,
+          layerOn('msrp')  ? n._msrp_c : null, ...]
+
+     — the VISIBLE LAYERS decided the y domain. Switching off MSRP therefore removed the top of the
+     range, every gridline re-spaced, the tick count changed, plotHeightFor returned a shorter plot,
+     and so: the axis re-scaled, every product marker slid DOWN toward the labels, the photographs
+     closed on the text, and the whole card changed height and shoved the comparison table. One
+     checkbox, described as "show/hide a line", silently re-drew every coordinate on the chart.
+
+     The comment above it said the reason: "a hidden MSRP must not keep reserving the top of the
+     chart — the reason to switch it off is to get the space back". That is a real want, and it is
+     the wrong trade: a person hides a layer to read the REST of the chart more easily, and a chart
+     that moves everything else while they do it cannot be read at all. Reclaiming a few pixels is
+     not worth making two views of the same prices disagree about where those prices are.
+
+     So visibility and geometry are now two separate things:
+
+         visibility      decides whether an element is DRAWN            (the checkboxes)
+         domain          decides where every price SITS                 (the scope)
+
+     The domain is the canonical price envelope of the products currently in scope — company,
+     country, marketplace, category, series, currency. Not the whole database (a US ladder must not
+     be stretched by a European one), and not the visible layers. Changing a ring of the scope
+     re-derives it, which is right: those are different products. Ticking a box does not, which is
+     also right: those are the same products.
+
+     A SCENARIO CAN ONLY EVER EXPAND IT. The canonical values are always in the envelope, so a
+     simulated price inside the existing range changes nothing at all; one outside pushes the bound
+     out and the axis rounding supplies the padding. Resetting the scenario returns to exactly the
+     canonical domain, because the canonical envelope never depended on the scenario in the first
+     place. */
+  function scopeDomain(ns) {
+    var lo = null, hi = null, sLo = null, sHi = null;
+    function take(v) {
+      if (v === null || v === undefined) return;
+      if (lo === null || v < lo) lo = v;
+      if (hi === null || v > hi) hi = v;
+    }
+    function takeScenario(v) {
+      if (v === null || v === undefined) return;
+      if (sLo === null || v < sLo) sLo = v;
+      if (sHi === null || v > sHi) sHi = v;
+    }
+    ns.forEach(function (n) {
+      var c = n._canonical || {};
+      /* CANONICAL, AND EVERY FIELD OF IT — including the ones whose layer is switched off. */
+      take(c.regular_c === undefined ? n._regular_c : c.regular_c);
+      take(c.proposed_c === undefined ? n._proposed_c : c.proposed_c);
+      take(n._min_c);
+      take(n._msrp_c);
+      if (n._deal_live) take(n._deal_c);
+      /* WHAT THE SIMULATION IS SHOWING, separately, so "did the scenario move the axis" is a fact
+         the chart can publish rather than a thing a reader has to infer. */
+      takeScenario(n._regular_c);
+      takeScenario(n._proposed_c);
+    });
+    var expanded = (sLo !== null && lo !== null && sLo < lo)
+      || (sHi !== null && hi !== null && sHi > hi);
+    return {
+      canonical_lo: lo, canonical_hi: hi,
+      lo: (sLo !== null && (lo === null || sLo < lo)) ? sLo : lo,
+      hi: (sHi !== null && (hi === null || sHi > hi)) ? sHi : hi,
+      expanded_by_scenario: expanded
+    };
   }
 
   function diamond(cx, cy, r) {
@@ -392,6 +509,40 @@
     return s.length <= 7 ? s : s.slice(0, 7);
   }
 
+  /* ---- WHAT A PRICE GAP IS CALLED ----------------------------------------------------------------
+
+     The chart used to write `10.00 open` beside the line. "Open" on a page that also shows orders,
+     stock and promotions can be read as an open order, open stock, an opening price or an open
+     promotion — and the one thing it meant was none of those: a rung of the price ladder that no
+     product stands on. Every surface now says the same three words, in the panel's own currency.
+
+     THE INTERNAL CONTRACT IS UNCHANGED. `kind: 'PRICE_GAP'`, `distance_c` and `threshold_c` keep
+     their names in selectors.js and in every finding object, because renaming a key is a migration
+     and this round is about what a person reads. The vocabulary changed; the data did not.
+     ------------------------------------------------------------------------------------------- */
+  function plain(c) {
+    var v = fromCents(c);
+    return v === null ? '\u2014' : String(v).replace(/\.00$/, '');
+  }
+  function gapText(c, cur, short) {
+    return cur + ' ' + plain(c) + (short ? ' gap' : ' Price gap');
+  }
+  function gapAria(f, cur) {
+    return gapText(f.distance_c, cur, false) + ' between ' + f.a.label + ' at '
+      + money(f.a._regular_c, cur) + ' and ' + f.b.label + ' at ' + money(f.b._regular_c, cur)
+      + '. Threshold in force ' + money(f.threshold_c, cur) + '.';
+  }
+  function gapTipLines(f, cur) {
+    return [
+      { t: gapText(f.distance_c, cur, false), head: true },
+      { t: 'Lower  ' + f.b.label + '  ' + money(f.b._regular_c, cur) },
+      { t: 'Upper  ' + f.a.label + '  ' + money(f.a._regular_c, cur) },
+      { t: 'Gap  ' + money(f.distance_c, cur) },
+      { t: 'Gap threshold in force  ' + money(f.threshold_c, cur) },
+      { t: 'Difference between two adjacent everyday prices that exceeds the selected gap threshold. It indicates an unoccupied price tier for review; it is not an inventory shortage or an order status.' }
+    ];
+  }
+
   /* ---- COLUMN GEOMETRY ---------------------------------------------------------------------------
      Columns fill the available width and are CENTRED in it. Centring is the part that matters: capping
      the column width without centring is what leaves the large empty margin on the right that the
@@ -402,8 +553,13 @@
     var plotW = colW * count;
     var W = Math.max(DESIGN_W, PAD_L + plotW + PAD_R);
     var offset = plotW < avail ? PAD_L + (avail - plotW) / 2 : PAD_L;
+    /* NO STAGGER. Alternating labels between two rows was how narrow columns used to be survived,
+       and it breaks the one thing the lane is for: a shared baseline. Half the labels 18px lower
+       than the other half reads as two different kinds of product, and at 44 columns it read as
+       noise. Narrow columns are handled by TRUNCATION instead — the full text stays in the hover
+       panel, the focus panel and the aria-label, so nothing is lost, only shortened. */
     return { colW: colW, plotW: plotW, W: W, offset: offset,
-      stagger: colW < 104, avail: avail };
+      chars: Math.max(4, Math.floor((colW - 6) / 6.6)), avail: avail };
   }
 
   function renderChart(panel, thrC, findings) {
@@ -415,31 +571,33 @@
         + 'record, so no axis is drawn. Nothing is substituted.'));
       return wrap;
     }
-    /* THE AXIS RANGE FOLLOWS THE VISIBLE LAYERS. A hidden MSRP must not keep reserving the top of the
-       chart: the reason to switch it off is to get the space back. The everyday price is always in. */
-    var loC = null, hiC = null;
-    ns.forEach(function (n) {
-      [n._regular_c,
-        layerOn('floor') ? n._min_c : null,
-        layerOn('msrp') ? n._msrp_c : null,
-        (layerOn('promo') && n._deal_live) ? n._deal_c : null,
-        layerOn('scenario') ? n._proposed_c : null]
-        .forEach(function (v) {
-          if (v === null || v === undefined) return;
-          if (loC === null || v < loC) loC = v;
-          if (hiC === null || v > hiC) hiC = v;
-        });
-    });
-    var t = fiveUnitAxis(loC, hiC);
+    /* THE AXIS RANGE FOLLOWS THE SCOPE, AND THE CHECKBOXES CANNOT REACH IT. See scopeDomain: the
+       domain is the canonical envelope of these products, so a layer toggle moves nothing, and a
+       scenario can only ever push a bound outward. */
+    var dom = scopeDomain(ns);
+    var t = priceAxis(dom.lo, dom.hi);
     var PLOT_H = plotHeightFor(t.ticks.length);
+    var PLOT_TOP = PAD_T + PLOT_PAD;
+    var PLOT_BOT = PLOT_TOP + PLOT_H;
+    var LANE_TOP = PLOT_BOT + PLOT_PAD;
     var geo = chartGeometry(ns.length);
     var W = geo.W;
-    var H = PAD_T + PLOT_H + LABEL_H;
+    var H = LANE_TOP + LANE_H;
     var s = svg('svg', { viewBox: '0 0 ' + W + ' ' + H, 'class': 'chart',
       preserveAspectRatio: 'xMidYMid meet',
       role: 'img', 'data-tick-step-c': t.step, 'data-axis-min-c': t.lo, 'data-axis-max-c': t.hi,
       'data-currency': panel.currency, 'data-category': (ns[0] || {}).category || '',
       'data-vb-w': W, 'data-vb-h': H, 'data-col-w': geo.colW, 'data-zoom': STATE.zoom,
+      /* PUBLISHED, SO THE CLAIM IS CHECKABLE RATHER THAN PROMISED. A reader — and the suite — can
+         read what the domain was derived from, whether a scenario widened it, how many pixels a
+         gridline is worth, and where the label lane begins. */
+      'data-domain-source': 'canonical-scope',
+      'data-domain-lo-c': dom.canonical_lo === null ? '' : dom.canonical_lo,
+      'data-domain-hi-c': dom.canonical_hi === null ? '' : dom.canonical_hi,
+      'data-domain-expanded': String(dom.expanded_by_scenario),
+      'data-plot-top': PLOT_TOP, 'data-plot-bottom': PLOT_BOT, 'data-plot-h': PLOT_H,
+      'data-tick-px': PLOT_H / Math.max(1, t.ticks.length - 1),
+      'data-lane-top': LANE_TOP, 'data-lane-h': LANE_H,
       'aria-label': 'Price band by product, ' + panel.currency });
     /* THE ZOOM IS A WIDTH, AND ONLY A WIDTH. The viewBox above is identical at every zoom, so every
        price keeps the same coordinate inside it; what changes is how many screen pixels that box is
@@ -468,36 +626,108 @@
     }
     s.setAttribute('height', String(H));
 
-    function y(c) { return PAD_T + PLOT_H - ((c - t.lo) / (t.hi - t.lo)) * PLOT_H; }
+    /* THE SCALE OCCUPIES PLOT_H AND NOTHING ELSE. PLOT_PAD above and below is the marker gutter:
+       it is not part of the scale, so a 50px plate centred on the top or bottom tick stays inside
+       the drawing without any price being nudged to make room. */
+    function y(c) { return PLOT_BOT - ((c - t.lo) / (t.hi - t.lo)) * PLOT_H; }
     function x(i) { return geo.offset + i * geo.colW + geo.colW / 2; }
 
     var gAxis = svg('g', { 'class': 'axis' });
     t.ticks.forEach(function (v) {
       var yy = y(v);
       gAxis.appendChild(svg('line', { x1: PAD_L - 8, y1: yy, x2: W - PAD_R, y2: yy,
-        'class': 'grid' + ((v / TICK_C) % 2 === 0 ? ' is-major' : ''), 'data-tick-c': v }));
+        'class': 'grid' + ((v / t.step) % 2 === 0 ? ' is-major' : ''), 'data-tick-c': v }));
       gAxis.appendChild(svgText({ x: PAD_L - 12, y: yy + 4, 'class': 'ytick',
         'data-tick-c': v, 'text-anchor': 'end' }, fromCents(v)));
     });
-    gAxis.appendChild(svg('line', { x1: PAD_L - 8, y1: PAD_T, x2: PAD_L - 8, y2: PAD_T + PLOT_H,
+    gAxis.appendChild(svg('line', { x1: PAD_L - 8, y1: PLOT_TOP, x2: PAD_L - 8, y2: PLOT_BOT,
       'class': 'axisline' }));
-    gAxis.appendChild(svgText({ x: 16, y: PAD_T + PLOT_H / 2, 'class': 'axtitle',
-      transform: 'rotate(-90 16 ' + (PAD_T + PLOT_H / 2) + ')', 'text-anchor': 'middle' },
-      'Price (' + panel.currency + ')  ·  5 ' + panel.currency + ' per gridline'));
+    gAxis.appendChild(svgText({ x: 16, y: PLOT_TOP + PLOT_H / 2, 'class': 'axtitle',
+      transform: 'rotate(-90 16 ' + (PLOT_TOP + PLOT_H / 2) + ')', 'text-anchor': 'middle' },
+      'Price (' + panel.currency + ')  ·  ' + plain(t.step) + ' ' + panel.currency
+        + ' per gridline'));
     s.appendChild(gAxis);
 
+    /* THE LABEL LANE, AS AN ELEMENT. It is declared before the columns draw into it so its height
+       is a property of the drawing rather than a consequence of what the longest label happened to
+       be, and so a test can assert that no plate ever reaches it. */
+    var lane = svg('g', { 'class': 'labellane', 'data-lane-top': LANE_TOP, 'data-lane-h': LANE_H });
+    lane.appendChild(svg('line', { x1: PAD_L - 8, y1: LANE_TOP, x2: W - PAD_R, y2: LANE_TOP,
+      'class': 'lane-rule' }));
+    s.appendChild(lane);
+
+    /* ---- PRICE GAPS -----------------------------------------------------------------------------
+       "10.00 open" was three words short of a sentence and none of them said what it meant. Open
+       could be read as an open order, open stock, an opening price or an unfilled slot in a plan;
+       the thing it actually marks is a rung of the ladder that no product stands on. The label is
+       now the amount in the panel's own currency followed by "Price gap", the legend and the layer
+       switch say the same words, and the tooltip names both neighbours, the distance and the
+       threshold in force — so the reading cannot be guessed at.
+       --------------------------------------------------------------------------------------------- */
     if (layerOn('steps')) {
+      var placed = [];
       findings.filter(function (f) {
         return f.kind === 'PRICE_GAP' && f.currency === panel.currency;
       }).forEach(function (f) {
         var ia = ns.indexOf(f.a), ib = ns.indexOf(f.b);
         if (ia < 0 || ib < 0) return;
-        var g = svg('g', { 'class': 'gapmark', 'data-layer': 'steps' });
         var ya = y(f.a._regular_c), yb = y(f.b._regular_c);
         var mx = (x(ia) + x(ib)) / 2;
+        var my = (ya + yb) / 2;
+        /* A NARROW GAP GETS THE SHORT LABEL, and a label that would land on one already drawn goes
+           to the other side of its line. Neither ever moves a price: the LINE is the measurement
+           and it stays on the midpoint between the two columns, which is the gutter — half a
+           column is at least 37px and half a plate is 25px, so the text cannot reach a photograph. */
+        /* THE LABEL HAS TO FIT IN THE GUTTER IT IS DRAWN IN.
+
+           The line sits on the boundary between two columns, so the room beside it is half a
+           column — and "USD 10 Price gap" is about 100px of type. At four products in a 1180px
+           card that fitted; at a narrower column it ran past the next product's centre and landed
+           on its band and its promotion diamond. A screenshot found that; the assertion in place
+           checked the label against the PHOTOGRAPHS and the photographs were clear.
+
+           So the form is chosen by what fits: the full phrase, then the short one, then the
+           amount alone. A shorter label is a small loss; a label lying across a price marker is a
+           chart that shows two things in one place. */
+        var room = geo.colW / 2 - 12;
+        var CH = 6.4;                                   // 11.5px monospace, measured once
+        var full = gapText(f.distance_c, panel.currency, false);
+        var short = gapText(f.distance_c, panel.currency, true);
+        var bare = plain(f.distance_c);
+        var text = full.length * CH <= room ? full
+          : (short.length * CH <= room ? short : bare);
+        var tight = text !== full;
+        var left = placed.some(function (q2) {
+          return Math.abs(q2.y - my) < 22 && Math.abs(q2.x - mx) < 140;
+        });
+        placed.push({ x: mx, y: my });
+        var g = svg('g', { 'class': 'gapmark', 'data-layer': 'steps',
+          'data-gap-c': f.distance_c, 'data-threshold-c': f.threshold_c,
+          'data-lower-label': f.a.label, 'data-lower-c': f.a._regular_c,
+          'data-upper-label': f.b.label, 'data-upper-c': f.b._regular_c,
+          'data-side': left ? 'left' : 'right', 'data-short': String(tight),
+          'data-label-w': Math.round(text.length * CH), 'data-room': Math.round(room),
+          tabindex: '0', role: 'group', 'aria-label': gapAria(f, panel.currency) });
         g.appendChild(svg('line', { x1: mx, y1: ya, x2: mx, y2: yb, 'class': 'gapline' }));
-        g.appendChild(svgText({ x: mx, y: (ya + yb) / 2 - 6, 'class': 'gaplabel',
-          'text-anchor': 'middle' }, fromCents(f.distance_c) + ' open'));
+        g.appendChild(svg('line', { x1: mx - 5, y1: ya, x2: mx + 5, y2: ya, 'class': 'gapend' }));
+        g.appendChild(svg('line', { x1: mx - 5, y1: yb, x2: mx + 5, y2: yb, 'class': 'gapend' }));
+        var lt = svgText({ x: mx + (left ? -7 : 7), y: my + 4, 'class': 'gaplabel',
+          'data-gap-label': 'true', 'data-shown': text,
+          'text-anchor': left ? 'end' : 'start' }, text);
+        /* THE WHOLE SENTENCE IS ALWAYS REACHABLE, whichever form is painted. */
+        var gttl = svg('title', {});
+        gttl.appendChild(document.createTextNode(gapAria(f, panel.currency)));
+        lt.appendChild(gttl);
+        g.appendChild(lt);
+        g.addEventListener('mouseenter', function (ev) {
+          paintTip(gapTipLines(f, panel.currency), 'pointer'); moveTip(ev);
+        });
+        g.addEventListener('mousemove', moveTip);
+        g.addEventListener('mouseleave', hideTip);
+        g.addEventListener('focus', function () {
+          paintTip(gapTipLines(f, panel.currency), 'focus');
+        });
+        g.addEventListener('blur', hideTip);
         s.appendChild(g);
       });
     }
@@ -547,13 +777,36 @@
       }
       everydayMarker(g, cx, y(n._regular_c), n);
 
-      var rowB = geo.stagger && (i % 2 === 1);
-      var ly = PAD_T + PLOT_H + (rowB ? 40 : 22);
-      g.appendChild(svgText({ x: cx, y: ly, 'class': 'xlabel',
-        'data-row': rowB ? 'b' : 'a', 'text-anchor': 'middle' }, n.label));
-      g.appendChild(svgText({ x: cx, y: ly + 15, 'class': 'xsub',
-        'text-anchor': 'middle' }, fromCents(n._regular_c)
-        + (n.variant_count > 1 ? '  ·  ' + n.variant_count + ' colours' : '')));
+      /* ---- THE LABEL LANE. ONE BASELINE FOR EVERY PRODUCT. ----
+         Two rows, both measured from LANE_TOP and never from a price, so the lane is identical for
+         a product at the top of the range and one at the bottom. Row one is the sku; row two is
+         its everyday price and, where there is more than one, the variant count.
+
+         THE SERIES IS NOT REPEATED HERE. It is already stated by the filter that selected it and
+         by the panel heading; printing it a third time under every column would be the same fact
+         occupying the space the sku and the price need. */
+      var full = String(n.label);
+      var shown = full.length > geo.chars ? full.slice(0, geo.chars - 1) + '\u2026' : full;
+      var lab = svgText({ x: cx, y: LANE_TOP + LANE_ROW_1, 'class': 'xlabel',
+        'data-row': 'a', 'data-full': full, 'data-shown': shown,
+        'data-truncated': String(shown !== full),
+        'text-anchor': 'middle' }, shown);
+      /* TRUNCATED IS NOT LOST. The whole label is on the node, in a <title>, in the aria-label and
+         in the hover panel — the column is simply too narrow to print it without running into its
+         neighbour, and a label that overlaps the next one is less readable than a short one.
+
+         THE <title> IS ADDED ONLY WHEN IT IS NEEDED. An SVG <title> is not painted, but it IS part
+         of the element's textContent, so attaching one to every label would make each label read as
+         its own text twice to anything that reads text — including the assertions. */
+      if (shown !== full) {
+        var ttl = svg('title', {});
+        ttl.appendChild(document.createTextNode(full));
+        lab.appendChild(ttl);
+      }
+      g.appendChild(lab);
+      g.appendChild(svgText({ x: cx, y: LANE_TOP + LANE_ROW_2, 'class': 'xsub',
+        'data-row': 'b', 'text-anchor': 'middle' }, fromCents(n._regular_c)
+        + (n.variant_count > 1 ? '  \u00b7  ' + n.variant_count + ' colours' : '')));
 
       g.addEventListener('mouseenter', function (ev) { showTip(ev, n); });
       g.addEventListener('mousemove', moveTip);
@@ -662,7 +915,10 @@
       b.id = 'view-' + m[0];
       b.setAttribute('type', 'button');
       b.setAttribute('aria-pressed', STATE.viewMode === m[0] ? 'true' : 'false');
-      b.addEventListener('click', function () { applyViewMode(m[0]); render(); });
+      /* A VIEW MODE DRAWS DIFFERENT ELEMENTS. It does not change which products exist, so it does
+         not rebuild one control — and because the domain no longer depends on the layers, it does
+         not change one coordinate or the height of the card either. */
+      b.addEventListener('click', function () { applyViewMode(m[0]); renderData(); });
       modes.appendChild(b);
     });
     modes.appendChild(infoIcon('viewmode', 'Clean and Detail', [
@@ -693,7 +949,7 @@
         var isClean = LAYERS.every(function (x) { return STATE.layers[x.id] === x.clean; });
         var isDetail = LAYERS.every(function (x) { return STATE.layers[x.id] === true; });
         STATE.viewMode = isClean ? 'clean' : (isDetail ? 'detail' : 'custom');
-        render();
+        renderData();
       });
       lab.appendChild(cb);
       lab.appendChild(el('span', 'chk-text', l.label));
@@ -714,7 +970,7 @@
       b.setAttribute('type', 'button');
       b.setAttribute('data-zoom', o.id);
       b.setAttribute('aria-pressed', String(STATE.zoom) === o.id ? 'true' : 'false');
-      b.addEventListener('click', function () { STATE.zoom = o.id; render(); });
+      b.addEventListener('click', function () { STATE.zoom = o.id; renderData(); });
       z.appendChild(b);
     });
     var reset = el('button', 'segbtn is-reset', 'Reset view');
@@ -725,7 +981,7 @@
     reset.addEventListener('click', function () {
       STATE.zoom = 'fit';
       applyViewMode('detail');
-      render();
+      renderData();
     });
     z.appendChild(reset);
     z.appendChild(infoIcon('zoom', 'Chart size', [
@@ -755,7 +1011,7 @@
       { layer: 'band', sw: 'sw-band', text: 'Floor to list price' },
       { layer: 'msrp', sw: 'sw-msrp', text: 'MSRP / list price' },
       { layer: 'floor', sw: 'sw-floor', text: 'Lowest / floor price' },
-      { layer: 'steps', sw: 'sw-gap', text: 'Open price step' }
+      { layer: 'steps', sw: 'sw-gap', text: 'Price gap' }
     ];
     items.forEach(function (p) {
       if (p.layer === 'band' ? !(layerOn('floor') && layerOn('msrp'))
@@ -793,15 +1049,21 @@
     L.push({ t: 'Current selling price is not shown, and neither is margin: no source of record.' });
     return L;
   }
-  function showTip(ev, n) {
+  /** ONE PAINTER. A product and a price gap are two different things to explain in the same box. */
+  function paintTip(lines, anchor) {
     var t = byId('tip');
+    if (!t) return;
     clear(t);
-    tipLines(n).forEach(function (l) {
+    lines.forEach(function (l) {
       t.appendChild(el('div', 'tipline' + (l.head ? ' is-head' : '') + (l.miss ? ' is-miss' : ''),
         l.t));
     });
-    t.setAttribute('data-anchor', 'pointer');
+    t.setAttribute('data-anchor', anchor);
+    if (anchor === 'focus') { t.style.left = ''; t.style.top = ''; }
     t.hidden = false;
+  }
+  function showTip(ev, n) {
+    paintTip(tipLines(n), 'pointer');
     moveTip(ev);
   }
   function moveTip(ev) {
@@ -817,19 +1079,7 @@
    * layout box, so the panel is pinned to a corner of the viewport rather than guessed at. It carries
    * `data-anchor="focus"` so a test can tell the two routes apart.
    */
-  function focusTip(n) {
-    var t = byId('tip');
-    if (!t) return;
-    clear(t);
-    tipLines(n).forEach(function (l) {
-      t.appendChild(el('div', 'tipline' + (l.head ? ' is-head' : '') + (l.miss ? ' is-miss' : ''),
-        l.t));
-    });
-    t.setAttribute('data-anchor', 'focus');
-    t.style.left = '';
-    t.style.top = '';
-    t.hidden = false;
-  }
+  function focusTip(n) { paintTip(tipLines(n), 'focus'); }
 
   /* ================================================================================================
      7  THE VIEWS.
@@ -1173,10 +1423,13 @@
     var risk = m.findings.filter(function (f) { return f.cls === CLASS.RISK; });
     var dq = m.findings.filter(function (f) { return f.cls === CLASS.DQ; });
     if (opp.length) {
-      ul.appendChild(el('li', null, opp.length + ' open step'
+      /* THE LAST "open" ON THE PAGE, and it took a screenshot to find it: this round's searches
+         were all for "open price step", and this sentence says "open step". */
+      ul.appendChild(el('li', null, opp.length + ' price gap'
         + (opp.length === 1 ? '' : 's') + ' in the ladder — the widest is '
         + fromCents(Math.max.apply(null, opp.map(function (f) { return f.distance_c; })))
-        + '. A product placed there would not sit on top of an existing one.'));
+        + '. That is an unoccupied price tier: a product placed there would not sit on top of an'
+        + ' existing one. It is not an inventory shortage and not an order status.'));
     }
     if (risk.length) {
       ul.appendChild(el('li', null, risk.length + ' cannibalisation risk'
@@ -2166,32 +2419,50 @@
     body.appendChild(ctx);
 
     /* ---- 2..5. THE FORM ---- */
-    var choices = SEL.scenarioSeriesChoices(MODEL);
+    var choices = seriesChoiceValues();
     var adjustments = SEL.scenarioAdjustmentsFor(STATE.scenarioField);
     if (!adjustments.filter(function (a) { return a.id === STATE.scenarioAdjustment; }).length) {
       STATE.scenarioAdjustment = adjustments.length ? adjustments[0].id : '';
     }
     var adj = SEL.scenarioAdjustment(STATE.scenarioAdjustment);
 
-    var row = el('div', 'scenario-row');
+    /* THE ROW IS A FIXED GRID, and the grid is why switching the price field cannot shove the
+       chart. Proposed and Everyday offer different adjustments, so the OPTIONS inside the third
+       control change — but the control keeps its column, its width and its height, and no row is
+       ever added or removed. A form that changes shape while you read it is a form that moves the
+       thing you were reading. */
+    var row = el('div', 'scenario-row scenario-grid');
+    row.id = 'scenarioRow';
+    /* ---- EVERY DROPDOWN UPDATES THE FORM IN PLACE, AND NOTHING ELSE ----
+       These used to call render(). See the note on renderData: a change of dropdown is not a change
+       of data, and rebuilding the page around a control the person is still holding is what threw
+       the viewport. */
     row.appendChild(selectEl('scSeries', 'Series',
-      [''].concat(choices), STATE.scenarioSeries,
-      function (v) { STATE.scenarioSeries = v; STATE.scenarioRefusal = null; render(); },
+      choices, STATE.scenarioSeries,
+      function (v) {
+        STATE.scenarioSeries = v; STATE.scenarioRefusal = null; updateScenarioForm();
+      },
       false, 'Choose a Series…'));
     row.appendChild(selectEl('scField', 'Price to simulate',
       SEL.SCENARIO_FIELD_CHOICES.map(function (c) { return c.id; }), STATE.scenarioField,
       function (v) {
         STATE.scenarioField = v;
         var allowed = SEL.scenarioAdjustmentsFor(v);
+        /* THE OLD CHOICE SURVIVES IF THE NEW FIELD STILL ALLOWS IT; otherwise the first legal one
+           is taken. Everyday price does not offer "Set" at all — the flattening combination cannot
+           be expressed — so moving Proposed/Set to Everyday lands on a percentage, silently and
+           without the viewport moving a pixel. */
         if (!allowed.filter(function (a) { return a.id === STATE.scenarioAdjustment; }).length) {
           STATE.scenarioAdjustment = allowed.length ? allowed[0].id : '';
         }
         STATE.scenarioRefusal = null;
-        render();
+        updateScenarioForm();
       }, false, null, function (id) { return SEL.scenarioFieldLabel(id); }));
     row.appendChild(selectEl('scAdjust', 'Adjustment',
       adjustments.map(function (a) { return a.id; }), STATE.scenarioAdjustment,
-      function (v) { STATE.scenarioAdjustment = v; STATE.scenarioRefusal = null; render(); },
+      function (v) {
+        STATE.scenarioAdjustment = v; STATE.scenarioRefusal = null; updateScenarioForm();
+      },
       false, null, function (id) {
         var a = SEL.scenarioAdjustment(id);
         return a ? a.label : id;
@@ -2200,6 +2471,7 @@
     var fl = el('div', 'fl');
     var lbl = el('label', 'fl-label', adj ? (adj.unit === 'percent' ? 'Percentage'
       : (adj.unit === 'amount' ? 'Amount' : 'Price')) : 'Value');
+    lbl.id = 'scValueLabel';
     lbl.setAttribute('for', 'scValue');
     fl.appendChild(lbl);
     var input = document.createElement('input');
@@ -2212,8 +2484,12 @@
     input.addEventListener('change', function () {
       STATE.scenarioInput = input.value;
       STATE.scenarioRefusal = null;
+      updateScenarioReady();
     });
-    input.addEventListener('input', function () { STATE.scenarioInput = input.value; });
+    input.addEventListener('input', function () {
+      STATE.scenarioInput = input.value;
+      updateScenarioReady();
+    });
     fl.appendChild(input);
     row.appendChild(fl);
 
@@ -2229,7 +2505,10 @@
       if (!check.ok) {
         STATE.scenarioRefusal = check;
         STATE.scenarioNotice = null;
-        render();
+        /* A REFUSAL IS A SENTENCE, NOT A REDRAW. Nothing was applied, so nothing on the chart
+           changed; writing the message into the reserved status row leaves every other pixel and
+           the scroll position exactly where they were. */
+        updateScenarioForm();
         return;
       }
       var affected = SEL.scenarioAffected(MODEL.rows, STATE.scenarioSeries);
@@ -2247,41 +2526,28 @@
         value: STATE.scenarioInput,
         skus: affected.skus
       };
-      render();
+      /* APPLY REALLY DOES CHANGE THE DATA, so the chart, the comparison and the findings are drawn
+         again — and still no control is rebuilt and the anchor does not move. */
+      renderData();
     });
     row.appendChild(apply);
     body.appendChild(row);
 
-    /* ---- WHAT WOULD MOVE, BEFORE IT MOVES ---- */
-    var preview = SEL.scenarioAffected(MODEL.rows, STATE.scenarioSeries);
+    /* ---- TWO PERMANENT LINES, REWRITTEN IN PLACE -------------------------------------------------
+       The reach line and the status line used to be created and destroyed as the state changed, and
+       every appearance and disappearance changed the panel's height — which pushed the chart, the
+       comparison table and everything the reader was looking at. They are elements that always
+       exist now, with a reserved minimum height in the stylesheet, and their TEXT is what changes.
+       An empty status row costs one line of space; a status row that shoves the page costs the
+       reader their place. */
     var reach = el('p', 'scenario-reach');
     reach.id = 'scenarioReach';
-    reach.setAttribute('data-skus', String(preview.skus));
-    reach.appendChild(document.createTextNode(STATE.scenarioSeries
-      ? (preview.skus + ' listing' + (preview.skus === 1 ? '' : 's') + ' in "'
-        + STATE.scenarioSeries + '" would be simulated on this site'
-        + (STATE.scenarioField === 'proposed_scenario_price'
-          && STATE.scenarioAdjustment === 'set'
-          ? ' — all of them at the same figure, because a promotion is one price.' : '.'))
-      : 'Choose a Series to see how many listings a change would reach.'));
     body.appendChild(reach);
 
-    if (STATE.scenarioRefusal) {
-      var rr = el('p', 'scenario-refusal', STATE.scenarioRefusal.message);
-      rr.id = 'scenarioModeRefusal';
-      rr.setAttribute('data-code', STATE.scenarioRefusal.code);
-      rr.setAttribute('role', 'alert');
-      body.appendChild(rr);
-    } else if (STATE.scenarioNotice) {
-      var nn = el('p', 'scenario-applied', 'Applied: ' + STATE.scenarioNotice.field + ' · '
-        + STATE.scenarioNotice.adjustment + ' ' + STATE.scenarioNotice.value + ' · '
-        + STATE.scenarioNotice.series + ' · ' + STATE.scenarioNotice.skus + ' listing'
-        + (STATE.scenarioNotice.skus === 1 ? '' : 's')
-        + '. The original position stays on the chart as a hollow marker.');
-      nn.id = 'scenarioApplied';
-      nn.setAttribute('role', 'status');
-      body.appendChild(nn);
-    }
+    var status = el('div', 'scenario-status');
+    status.id = 'scenarioStatus';
+    status.setAttribute('data-state', 'idle');
+    body.appendChild(status);
 
     /* ---- UNDO AND THE THREE RESETS ---- */
     var resets = el('div', 'scenario-resets');
@@ -2294,7 +2560,7 @@
       STATE.overrides = STATE.undoStack.pop();
       STATE.scenarioNotice = null;
       STATE.scenarioRefusal = null;
-      render();
+      renderData();
     });
     resets.appendChild(undo);
     [['scResetSeries', 'Reset this Series', function () {
@@ -2315,7 +2581,7 @@
         spec[2]();
         STATE.scenarioNotice = null;
         STATE.scenarioRefusal = null;
-        render();
+        renderData();
       });
       resets.appendChild(b);
     });
@@ -2332,6 +2598,188 @@
       + ' · held in this page only, and cleared by a reload.'));
     body.appendChild(note);
     host.appendChild(box);
+    /* THE READOUTS ARE WRITTEN BY THE SAME CODE THAT LATER UPDATES THEM. One path, so a freshly
+       built panel and a panel that has been used for ten minutes cannot say different things. */
+    updateScenarioForm();
+  }
+
+  /* ================================================================================================
+     THE IN-PLACE UPDATE. Nothing below replaces a node the reader can be holding.
+
+     `fillOptions` rewrites the `<option>` children of a `<select>` and leaves the `<select>` itself
+     alone — so the element keeps its identity, its focus and its position, and a native dropdown
+     that has just closed is still the same element the browser was tracking. It also does nothing
+     at all when the option list is unchanged, which is the common case: changing the Series does
+     not change which adjustments exist.
+     ================================================================================================ */
+  function setText(node, text) {
+    if (!node) return;
+    clear(node);
+    node.appendChild(document.createTextNode(String(text)));
+  }
+  function sameOptions(sel, values) {
+    if (!sel || sel.childNodes.length !== values.length) return false;
+    for (var i = 0; i < values.length; i++) {
+      if (sel.childNodes[i].getAttribute('value') !== values[i]) return false;
+    }
+    return true;
+  }
+  function fillOptions(sel, values, labelFn, placeholder) {
+    if (!sel || sameOptions(sel, values)) return false;
+    var keep = sel.value;
+    clear(sel);
+    values.forEach(function (v) {
+      var o = document.createElement('option');
+      o.value = v;
+      o.setAttribute('value', v);
+      o.appendChild(document.createTextNode(
+        v === '' ? (placeholder || '') : (labelFn ? labelFn(v) : v)));
+      sel.appendChild(o);
+    });
+    sel.value = values.indexOf(keep) >= 0 ? keep : (values.length ? values[0] : '');
+    return true;
+  }
+
+  /** Just the Apply button's readiness — cheap enough to run on every keystroke. */
+  function updateScenarioReady() {
+    var apply = byId('scApply');
+    if (!apply) return;
+    /* THE BUTTON STAYS CLICKABLE ON PURPOSE. A disabled Apply would hide the refusal, and the
+       refusal is the only thing that says WHY — "choose a Series first" is more use than a control
+       that does nothing and explains nothing. Readiness is published as state instead, so the
+       styling can go quiet without the explanation going away. */
+    var ready = !!STATE.scenarioSeries && String(STATE.scenarioInput || '').trim() !== '';
+    apply.setAttribute('data-ready', String(ready));
+    apply.setAttribute('aria-disabled', String(!ready));
+  }
+
+  /**
+   * THE STATUS LINE IS ONE ELEMENT THAT NEVER LEAVES.
+   *
+   * Reserving its height in the stylesheet was half the answer. The other half is that nothing is
+   * added to or removed from the document when the state changes: the same `<p>` is here on an
+   * empty form, on a refusal and after an Apply, and what changes is its id, its class and its
+   * words. A row that exists only sometimes is a row that pushes the page sometimes, whatever the
+   * stylesheet reserves — and "sometimes" is precisely the shape of the defect this fixes.
+   */
+  function updateScenarioStatus() {
+    var box = byId('scenarioStatus');
+    if (!box) return;
+    /* FOUND BY CLASS, NOT BY ID — because its id is one of the things that changes. Looking it
+       up by the id it has when idle meant that after one refusal the lookup failed and a SECOND
+       line was appended: the panel then carried a stale refusal and a fresh one at the same time,
+       and `#scenarioModeRefusal` resolved to whichever came first. A node that renames itself
+       cannot also be addressed by its name. */
+    var line = box.querySelector('.scenario-status-line');
+    if (!line) {
+      line = el('p', 'scenario-status-line');
+      line.id = 'scenarioStatusLine';
+      box.appendChild(line);
+    }
+    var state = STATE.scenarioRefusal ? 'refused' : (STATE.scenarioNotice ? 'applied' : 'idle');
+    if (state === 'refused') {
+      line.className = 'scenario-status-line scenario-refusal';
+      line.setAttribute('role', 'alert');
+      line.setAttribute('data-code', STATE.scenarioRefusal.code);
+      line.id = 'scenarioModeRefusal';
+      setText(line, STATE.scenarioRefusal.message);
+    } else if (state === 'applied') {
+      line.className = 'scenario-status-line scenario-applied';
+      line.setAttribute('role', 'status');
+      line.setAttribute('data-code', '');
+      line.id = 'scenarioApplied';
+      setText(line, 'Applied: ' + STATE.scenarioNotice.field + ' · '
+        + STATE.scenarioNotice.adjustment + ' ' + STATE.scenarioNotice.value + ' · '
+        + STATE.scenarioNotice.series + ' · ' + STATE.scenarioNotice.skus + ' listing'
+        + (STATE.scenarioNotice.skus === 1 ? '' : 's')
+        + '. The original position stays on the chart as a hollow marker.');
+    } else {
+      line.className = 'scenario-status-line';
+      line.setAttribute('role', 'status');
+      line.setAttribute('data-code', '');
+      line.id = 'scenarioStatusLine';
+      setText(line, '');
+    }
+    box.setAttribute('data-state', state);
+  }
+
+  /**
+   * THE SERIES MENU, IN ONE PLACE. There is no "All" option and there is no path that could add
+   * one: the only entry that is not a series is the empty placeholder that reads "Choose a Series…".
+   * Both the builder and the updater call this, so a change of site cannot leave the two disagreeing
+   * about what is on offer.
+   */
+  function seriesChoiceValues() { return [''].concat(SEL.scenarioSeriesChoices(MODEL)); }
+
+  function updateScenarioForm() {
+    var panel = byId('scenarioPanel');
+    if (!panel || !MODEL || !MODEL.scenario || !MODEL.scenario.permitted) return;
+
+    /* THE BADGE IS STATE, NOT DECORATION. renderData() deliberately rebuilds no control, so the
+       one thing on this panel that must never be stale has to be written here — a page showing a
+       simulated price while its badge reads "No scenario" would be the worst defect on the screen. */
+    panel.className = 'scenario' + (MODEL.scenario.active ? ' is-on' : '');
+    panel.setAttribute('data-active', String(MODEL.scenario.active));
+    setText(byId('scenarioBadge'),
+      MODEL.scenario.active ? SEL.SCENARIO_UNSAVED_LABEL : 'No scenario');
+
+    var seriesSel = byId('scSeries');
+    if (seriesSel) {
+      var choices = seriesChoiceValues();
+      fillOptions(seriesSel, choices, null, 'Choose a Series…');
+      if (choices.indexOf(STATE.scenarioSeries) < 0) STATE.scenarioSeries = '';
+      seriesSel.value = STATE.scenarioSeries;
+    }
+
+    var allowed = SEL.scenarioAdjustmentsFor(STATE.scenarioField);
+    var ids = allowed.map(function (a) { return a.id; });
+    if (ids.indexOf(STATE.scenarioAdjustment) < 0) {
+      STATE.scenarioAdjustment = ids.length ? ids[0] : '';
+    }
+    var adjSel = byId('scAdjust');
+    if (adjSel) {
+      fillOptions(adjSel, ids, function (i2) {
+        var a = SEL.scenarioAdjustment(i2);
+        return a ? a.label : i2;
+      });
+      adjSel.value = STATE.scenarioAdjustment;
+    }
+    var fieldSel = byId('scField');
+    if (fieldSel) fieldSel.value = STATE.scenarioField;
+
+    var adj = SEL.scenarioAdjustment(STATE.scenarioAdjustment);
+    setText(byId('scValueLabel'), adj ? (adj.unit === 'percent' ? 'Percentage'
+      : (adj.unit === 'amount' ? 'Amount' : 'Price')) : 'Value');
+    var input = byId('scValue');
+    if (input) {
+      input.setAttribute('placeholder', adj ? adj.placeholder : '');
+      input.setAttribute('aria-label', (adj ? adj.label : 'Value') + '. ' + (adj ? adj.help : ''));
+    }
+
+    var reach = byId('scenarioReach');
+    if (reach) {
+      var preview = SEL.scenarioAffected(MODEL.rows, STATE.scenarioSeries);
+      reach.setAttribute('data-skus', String(preview.skus));
+      setText(reach, STATE.scenarioSeries
+        ? (preview.skus + ' listing' + (preview.skus === 1 ? '' : 's') + ' in "'
+          + STATE.scenarioSeries + '" would be simulated on this site'
+          + (STATE.scenarioField === 'proposed_scenario_price'
+            && STATE.scenarioAdjustment === 'set'
+            ? ' — all of them at the same figure, because a promotion is one price.' : '.'))
+        : 'Choose a Series to see how many listings a change would reach.');
+    }
+
+    var undo = byId('scUndo');
+    if (undo) undo.disabled = STATE.undoStack.length === 0;
+    var note = byId('scenarioNote');
+    if (note) {
+      setText(note, 'Active overrides: ' + MODEL.scenario.override_count
+        + (MODEL.architecture.scenario_nodes.length
+          ? ' · simulated on screen: ' + MODEL.architecture.scenario_nodes.join(' · ') : '')
+        + ' · held in this page only, and cleared by a reload.');
+    }
+    updateScenarioReady();
+    updateScenarioStatus();
   }
 
   /**
@@ -2365,20 +2813,43 @@
     banner.appendChild(mark);
   }
 
-  function render() {
-    hideTip();
-    reload();
-    document.body.className = (STATE.presentation ? 'presenting' : '')
-      + (MODEL.scenario.active ? ' has-scenario' : '');
-    byId('shell').className = 'shell' + (STATE.rail ? ' is-rail' : '');
-    var rb = byId('btnRail');
-    rb.setAttribute('aria-expanded', STATE.rail ? 'false' : 'true');
-    rb.setAttribute('title', STATE.rail ? 'Expand navigation' : 'Collapse navigation');
-    renderNav();
-    renderCrumbs();
-    renderScope();
-    renderScenarioMark();
+  /* ================================================================================================
+     P1-B2B — THREE REDRAWS, BECAUSE THERE ARE THREE SIZES OF CHANGE.
 
+     THE SCROLL JUMP HAD ONE CAUSE AND IT WAS THIS FUNCTION. Every control on the page called
+     `render()`, and `render()` rebuilt the nav, the crumbs, the WHOLE scope area — site filters,
+     analysis filters, the advanced drawer and the entire scenario panel — and then emptied and
+     refilled `#view`. Choosing a Series from the scenario's own dropdown therefore destroyed that
+     dropdown: the `<select>` the person had just used no longer existed when their change finished.
+
+     Three consequences followed, and together they are the jump the operator saw:
+
+       1. the focused element vanished, so the browser had nothing to keep in view and fell back to
+          whatever its scroll anchoring could find;
+       2. the panel's own height changed as the validation line and the "Applied:" line appeared and
+          disappeared, so content genuinely moved under the viewport;
+       3. because the rebuild happened ABOVE and AROUND the reading position, whether it jumped up,
+          jumped down, or happened to look still depended entirely on where the page was scrolled —
+          which is exactly the symptom: "if the operator is at one particular position it does not
+          jump, and the same action at another position does".
+
+     So the fix is not to save and restore a scroll offset around a rebuild that should not happen.
+     It is to stop rebuilding:
+
+         render()              everything. A site, a country, a marketplace, a category, a series or
+                               a currency changed — different products, so the menus below are
+                               genuinely different menus.
+         renderData()          the banner mark and `#view`. The data being drawn changed — Apply,
+                               Undo, a reset, a layer, a zoom — but every control is still valid, so
+                               no control is touched.
+         updateScenarioForm()  nothing is replaced at all. A dropdown changed; its dependent options,
+                               placeholder, reach count, readiness and status line are written in
+                               place, and every node keeps its identity, including the `<select>`
+                               that has focus.
+
+     And around the two that do rebuild, an ANCHOR, not a saved offset — see withViewport.
+     ================================================================================================ */
+  function paintView() {
     var host = byId('view');
     clear(host);
     if (STATE.view === 'overview') viewOverview(host);
@@ -2394,6 +2865,99 @@
         + 'value — an absent price stays absent and an unproven photograph is not shown.');
     } else if (STATE.view === 'workspace') viewWorkspace(host);
     else viewAdvanced(host);
+  }
+
+  /* ---- THE VIEWPORT CONTRACT ----------------------------------------------------------------------
+
+     A SAVED scrollY IS NOT A POSITION, IT IS A DISTANCE FROM THE TOP. Restoring it after a redraw
+     that changed the height of anything above the reading position puts the reader somewhere else
+     and calls it unchanged. So what is preserved here is an ANCHOR: `#view` is never replaced — only
+     its children are — so its distance from the top of the window is a measurement of the same piece
+     of content before and after, and the difference is exactly how far the page moved.
+
+     THE COMPENSATION ONLY FIRES WHEN THE ANCHOR ACTUALLY MOVED. If nothing above the reading
+     position changed height — which is the normal case, because `renderData()` touches nothing above
+     `#view` — the delta is zero and `scrollTo` is never called at all. This is deliberately not a
+     blind `scrollTo(savedX, savedY)` after every render: that would hide an unnecessary rebuild
+     instead of removing it, and it would be wrong in precisely the case it was added for.
+
+     MEASURING A BOX HERE IS NOT MEASURING ONE FOR GEOMETRY. The chart still reads no layout box: its
+     coordinates come from a declared design width, so it draws identically on a slow load. This
+     reads the live layout to answer a question only the live layout can answer — did the page move
+     under the reader — and it changes no coordinate, no price and nothing that is drawn. */
+  function viewportNow() {
+    if (typeof window === 'undefined' || !window) return null;
+    return { x: window.scrollX || window.pageXOffset || 0,
+      y: window.scrollY || window.pageYOffset || 0 };
+  }
+  function anchorTop() {
+    var a = byId('view');
+    if (!a || typeof a.getBoundingClientRect !== 'function') return null;
+    var r = a.getBoundingClientRect();
+    return r ? r.top : null;
+  }
+  /** The chart's own sideways position is the reader's too, and a redraw must not send it home. */
+  function chartScrolls() {
+    var out = [], wraps = document.querySelectorAll('.chartwrap');
+    for (var i = 0; i < wraps.length; i++) out.push(wraps[i].scrollLeft || 0);
+    return out;
+  }
+  function restoreChartScrolls(saved) {
+    var wraps = document.querySelectorAll('.chartwrap');
+    for (var i = 0; i < wraps.length && i < saved.length; i++) {
+      if (saved[i]) wraps[i].scrollLeft = saved[i];
+    }
+  }
+  function withViewport(fn) {
+    var before = viewportNow();
+    var topBefore = anchorTop();
+    var sideways = chartScrolls();
+    fn();
+    restoreChartScrolls(sideways);
+    var topAfter = anchorTop();
+    if (before && topBefore !== null && topAfter !== null && topAfter !== topBefore
+      && typeof window !== 'undefined' && window && typeof window.scrollTo === 'function') {
+      window.scrollTo(before.x, Math.max(0, before.y + (topAfter - topBefore)));
+    }
+  }
+
+  function render() {
+    withViewport(function () {
+      hideTip();
+      reload();
+      document.body.className = (STATE.presentation ? 'presenting' : '')
+        + (MODEL.scenario.active ? ' has-scenario' : '');
+      byId('shell').className = 'shell' + (STATE.rail ? ' is-rail' : '');
+      var rb = byId('btnRail');
+      rb.setAttribute('aria-expanded', STATE.rail ? 'false' : 'true');
+      rb.setAttribute('title', STATE.rail ? 'Expand navigation' : 'Collapse navigation');
+      renderNav();
+      renderCrumbs();
+      renderScope();
+      renderScenarioMark();
+      paintView();
+    });
+  }
+
+  /**
+   * THE DATA CHANGED; THE CONTROLS DID NOT. Apply, Undo, the three resets, every layer checkbox and
+   * every zoom button come here. Nothing above `#view` is rebuilt — not the filters, not the
+   * scenario panel, not one `<select>` — so the anchor cannot move and no focus is lost. The
+   * scenario panel's own readouts are written in place afterwards.
+   */
+  function renderData() {
+    withViewport(function () {
+      hideTip();
+      reload();
+      document.body.className = (STATE.presentation ? 'presenting' : '')
+        + (MODEL.scenario.active ? ' has-scenario' : '');
+      renderScenarioMark();
+      paintView();
+      /* INSIDE THE MEASUREMENT, not after it. The readouts are part of the redraw: measuring the
+         anchor before them and compensating for only half the change would leave the page moved by
+         exactly the half that was missed. */
+      updateScenarioForm();
+    });
   }
 
   /* ================================================================================================
@@ -2567,11 +3131,19 @@
       'G8 and the last is axis_max');
     var grids = ch.querySelectorAll('.grid');
     eqv(grids.length, vals.length, 'G9 one gridline per tick, none unlabelled');
-    /* A TALL CATEGORY COMPRESSES PIXELS, NEVER THE SCALE. */
-    var tallTicks = fiveUnitAxis(1199, 8499).ticks;
-    eqv(tallTicks.length, (8500 - 1000) / 500 + 1, 'G10 a wide range keeps every 5-unit tick');
-    eqv([tallTicks[0], tallTicks[tallTicks.length - 1]], [1000, 8500], 'G11 rounded out to 5s');
-    ok(plotHeightFor(tallTicks.length) <= 480, 'G12 and the pixels are what compress');
+    /* A TALL CATEGORY GROWS THE DRAWING, NEVER COMPRESSES THE PITCH. P1-B2B inverted this: the
+       pixels per gridline used to be what gave way, and two 50px photographs 28px apart overlap. */
+    var tall = priceAxis(1199, 8499);
+    eqv(tall.step, 500, 'G10 a wide range still keeps the 5-unit step while the pitch allows it');
+    eqv([tall.ticks[0], tall.ticks[tall.ticks.length - 1]], [1000, 8500], 'G11 rounded out to 5s');
+    ok(plotHeightFor(tall.ticks.length) / (tall.ticks.length - 1) >= PX_PER_TICK_MIN,
+      'G12 and the gridline pitch never drops below the readability floor',
+      plotHeightFor(tall.ticks.length) / (tall.ticks.length - 1));
+    /* AND WHEN EVEN THAT WOULD BE ABSURD, THE STEP GROWS AND THE PITCH SURVIVES. */
+    var huge = priceAxis(500, 500000);
+    ok(huge.step > 500, 'G12a an enormous range widens the step instead', huge.step);
+    ok(plotHeightFor(huge.ticks.length) / (huge.ticks.length - 1) >= PX_PER_TICK_MIN,
+      'G12b and the pitch is still above the floor');
 
     /* ---- H  the image price markers ---- */
     var imgMarks = ch.querySelectorAll('image');

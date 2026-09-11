@@ -5077,3 +5077,105 @@ shell integration, production page, `assets/js/**`, `assets/css/**`, apps-script
 main, km-lb, DB/Sheets/Drive writes, network, sync, deployment, `flag = true`, merge, push.
 `APPS_SCRIPT_SYNC_REQUIRED` this round: **none**. The nine merge conditions of the brief's §十一 are all still
 open. **NEXT:** P1-B3 — production readback once the user syncs P1-B1-R1's four Apps Script files.
+
+### `PRODUCT-STRATEGY-P1-B2B` — stable chart geometry, a label lane, price-gap terminology (P worktree, local commit only)
+
+**THREE COMPLAINTS, ONE MISTAKE TOLD THREE WAYS: something whose job was to DESCRIBE the drawing had
+been allowed to DERIVE it.**
+
+**(1) THE CHECKBOXES OWNED THE Y DOMAIN.** `layerOn('msrp') ? n._msrp_c : null` sat inside the axis
+extent loop, so hiding a line re-scaled the axis, changed the tick count, shortened the plot, slid
+every marker down toward the labels and changed the card's height — which shoved the comparison
+table. One checkbox described as "show or hide a line" silently redrew every coordinate. The comment
+above it argued the case honestly ("the reason to switch it off is to get the space back") and that
+is a real want traded the wrong way: **a person hides a layer to read the REST of the chart, and a
+chart that moves everything else while they do it cannot be read at all.** Visibility and geometry
+are now separate: `scopeDomain(ns)` is the **canonical price envelope of the products in scope** —
+company · country · marketplace · category · series · currency — every canonical field including the
+ones whose layer is off. Not the database's global range (a US ladder must not be stretched by a
+European one) and not the visible layers. **A scenario can only EXPAND it**, because the canonical
+values never leave the envelope, so reset returns to exactly the canonical domain.
+
+**(2) THERE WAS NO LABEL LANE.** Labels were drawn at `PLOT_H + 22` in the same space the prices
+use, so the bottom of the scale and the top of the type were the same pixel and a 50px plate centred
+on the lowest price hung 25px into the words. **Widening the label area could never have fixed it —
+the plate was overflowing the PLOT.** Three bands with declared heights now: `PAD_T 30 / PLOT_PAD 30
+/ PLOT_H / PLOT_PAD 30 / LANE_H 52`, the gutter being `MK/2 + 5` so a product ON an end tick still
+clears. The stagger is **gone** — two rows of labels read as two kinds of product, and at 44 columns
+as noise; narrow columns truncate instead, with the full text in `data-full`, in a `<title>` **only
+when truncated** (an SVG title is part of textContent, so one on every label would make each read
+twice) and in the hover panel. The Series is not repeated under every column: the filter and the
+heading already say it.
+
+**(3) EVERY CONTROL CALLED `render()`.** It rebuilt the nav, the crumbs, the whole scope area — both
+filter bars, the advanced drawer, the entire scenario panel — then emptied `#view`. **Choosing a
+Series destroyed the `<select>` being used.** Focus vanished, the panel's height changed as the
+validation and "Applied" lines came and went, and because the rebuild happened above and around the
+reading position, whether it jumped up, down, or looked still **depended on where the page was
+scrolled** — exactly the operator's report. Three redraws now: `render()` for a change of scope,
+`renderData()` for Apply/Undo/reset/layer/zoom (the banner mark and `#view`, no control touched),
+and `updateScenarioForm()` for a dropdown — **nothing replaced at all**, options rewritten inside
+the same `<select>`.
+
+**THE VIEWPORT CONTRACT IS AN ANCHOR, NOT A SAVED OFFSET.** A saved `scrollY` is a distance from the
+top, not a position: restoring it after upper content changed height puts the reader somewhere else
+and calls it unchanged. `#view` is never replaced, so its distance from the window top measures the
+same content before and after. **The compensation fires only when the anchor actually moved** — not
+a blind `scrollTo` masking a rebuild that should not happen. One `scrollTo` in the file, conditional;
+**no `scrollIntoView`, no `location.hash`, no `href="#"`.** Measured over six scroll positions × eight
+actions: the content the reader was looking at is unchanged in all 48, the raw offset in 42; Apply
+and Undo move it by exactly the height of the banner's UNSAVED SCENARIO line, which is content
+genuinely appearing above the reader, and a page already at the very top cannot compensate for
+content leaving above it — a browser's own anchoring does the same. Layout shift was removed at
+source: a grid form with declared columns, a status row that is **one `<p>` which never leaves**, a
+reserved `min-height`, and reset buttons with a `min-width` so disabling changes opacity not
+geometry. Apply stays clickable when incomplete, because a disabled button hides the refusal and the
+refusal is the only thing that says why.
+
+**READABILITY IS A PIXEL FLOOR AND THE STEP IS WHAT GIVES WAY.** 28px per 5 units put two 50px
+photographs 28px apart. `PX_PER_TICK = 48` (brief 44–52) is a floor; when a range is wide enough
+that 48px per five units would be absurd the **tick step** grows through `[500, 1000, 2500, 5000,
+10000, 25000]` and the pitch survives. Too tall scrolls inside the card; print lifts the cap.
+
+**`10.00 open` → `USD 10 Price gap`.** "Open" on a page that also shows orders, stock and promotions
+reads four ways, and meant none of them: a rung of the ladder no product stands on. Chart label,
+layer switch, legend, finding headline and the executive recommendation now say the same words, in
+the panel's currency, with the brief's definition on hover and focus. **THE BOUNDARY WAS CHECKED,
+NOT CHANGED:** the brief asked for `>=`; `selectors.js` already declares `>` with its reason
+("a step exactly equal to the threshold is not a gap") and §七.6 says to check the spec first —
+measured at 999 → one gap, 1000 → none. Reported, not altered. Internal keys (`PRICE_GAP`,
+`distance_c`, `threshold_c`) unchanged: renaming a key is a migration.
+
+**TWO MORE DEFECTS ONLY A SCREENSHOT COULD SEE, past three green suites.** (1) The recommendation
+still read "1 **open step** in the ladder" — every search this round had been for "open price step";
+**a rename driven by grep finds the places you remembered to grep for.** (2) `USD 10 Price gap` lay
+across the next product's band and its promotion diamond: the label is ~100px, the gutter is half a
+column, and the assertion in place checked the label against the **photographs**, which were clear.
+The form is now chosen by what fits (full → `USD 10 gap` → the amount), with the whole sentence in a
+title and the aria-label. Both are assertions in §J now.
+
+**THE SHIM GREW A SCROLL, A FOCUS AND A LAYOUT** — a shim with no scroll cannot fail a scroll
+assertion. `focus()` and `scrollIntoView()` move the window as a browser does; every element has a
+synthetic top (its index in document order), so inserting or removing nodes above something moves
+it. Elements with no page layout — `<option>`, `<title>`, `<defs>` — are excluded, or the model would
+report the correct fix as a jump. **Stated limit:** it counts nodes, not pixels, so it cannot model a
+reserved `min-height`; that is why the status row is a node that never leaves *as well as* a CSS
+reservation.
+
+**TESTS.** NEW `product-strategy-board-p1-b2b.test.js` **137 / 0 / 16 mutants / 0 survived**; B2A
+**222 / 0 / 14 / 0**; B2 **241 / 0 / 17 / 0**; page self-test **236/236**; full sweep 448 suites, only
+the four PRE-EXISTING red (3/1/7/2). **Four mutants re-aimed after passing for the wrong reason:**
+B2A's N6 became unobservable through a defence that is itself correct (the in-place updater drops a
+value the menu does not offer), so the "there is no All" rule now lives in one function and the
+mutant aims there; M15 had been written so a throwing mutant counted as caught; M2 and M3 were inert
+on this fixture and went after the rule instead of the instance. **SCREENSHOTS:** eight cases ×
+four frames, headless Chrome, local file, no network. **Print preview NOT captured** and the
+1280/1440 frames carry a headless compositing artefact — both need a person; checklist in design
+freeze §36.10.
+
+**NOT DONE:** live DB/API connection (fixture UI work, and it does not claim otherwise), Operation
+System shell integration, production page, `assets/js/**`, `assets/css/**`, apps-script, schema,
+migration, S1–S5, main, km-lb, DB/Sheets/Drive writes, network, sync, deployment, `flag = true`,
+merge, push. `APPS_SCRIPT_SYNC_REQUIRED` this round: **none**. The nine merge conditions are all
+still open. **NEXT:** P1-B3 — production readback once the user syncs P1-B1-R1's four Apps Script
+files.

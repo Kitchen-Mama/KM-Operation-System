@@ -4178,3 +4178,333 @@ Preview fallback off in production, the flag and permission key, shell integrati
 and regression + responsive + print acceptance.
 
 **Next:** P1-B3 — production readback once the user has synced P1-B1-R1's four Apps Script files.
+
+---
+
+## §36 — P1-B2B · STABLE CHART GEOMETRY · LABEL COLLISION · PRICE-GAP TERMINOLOGY
+
+*(P worktree `feature/product-strategy-board-p0`; PRE `c93f004`→`b1f60ff`, POST `<this commit>`.
+Local commit only, never pushed. Fixture UI work; no live database connection is claimed.)*
+
+Three complaints came out of the visual acceptance of P1-B2A, and all three turned out to be the
+same mistake told three different ways: **something whose job was to DESCRIBE the drawing had been
+allowed to DERIVE it.**
+
+### §36.1 Root cause 1 — the checkboxes owned the y domain
+
+`renderChart` computed the axis extent like this:
+
+```js
+[n._regular_c,
+ layerOn('floor')    ? n._min_c  : null,
+ layerOn('msrp')     ? n._msrp_c : null,
+ (layerOn('promo') && n._deal_live) ? n._deal_c : null,
+ layerOn('scenario') ? n._proposed_c : null]
+```
+
+The visible layers decided the range. Switching off **MSRP / list price** removed the top of the
+data, so:
+
+1. the axis re-scaled and every gridline re-spaced;
+2. the tick count fell, so `plotHeightFor` returned a **shorter plot**;
+3. every product marker slid **down** toward the labels — which is why the photographs closed on
+   the text the moment a layer was hidden;
+4. the SVG height changed, so the legend, the comparison table and everything below **jumped**.
+
+One checkbox, described to the reader as "show or hide a line", silently redrew every coordinate on
+the chart. The comment above it argued the case honestly — *"a hidden MSRP must not keep reserving
+the top of the chart: the reason to switch it off is to get the space back"* — and that is a real
+want traded the wrong way. **A person hides a layer to read the rest of the chart more easily; a
+chart that moves everything else while they do it cannot be read at all.** Reclaiming a few pixels
+is not worth making two views of the same prices disagree about where those prices are.
+
+**Visibility and geometry are now two separate things.**
+
+```
+visibility   decides whether an element is DRAWN      — the checkboxes
+domain       decides where every price SITS           — the scope
+```
+
+`scopeDomain(ns)` takes the **canonical price envelope of the products currently in scope** —
+company · country · marketplace · category · series · currency. Every canonical field of every row
+in scope, including the ones whose layer is switched off. Not the whole database (§三.7: a US
+ladder must not be stretched by a European one, and `M2` is aimed at exactly that), and not the
+visible layers. Changing a ring of the scope re-derives it, which is right — those are different
+products. Ticking a box does not, which is also right — those are the same products.
+
+**A scenario can only ever expand it.** The canonical values are always in the envelope, so a
+simulated price *inside* the existing range changes nothing at all; one *outside* pushes the bound
+out and the axis rounding supplies the padding. Reset returns to exactly the canonical domain,
+because the canonical envelope never depended on the scenario in the first place.
+
+Published on the chart so the claim is checkable rather than promised: `data-domain-source`,
+`data-domain-lo-c`, `data-domain-hi-c`, `data-domain-expanded`, `data-plot-top`,
+`data-plot-bottom`, `data-plot-h`, `data-tick-px`, `data-lane-top`, `data-lane-h`.
+
+### §36.2 Root cause 2 — there was no label lane
+
+Labels were drawn at `PAD_T + PLOT_H + 22`, inside the same coordinate space the prices use. The
+bottom of the price scale and the top of the type were therefore **the same pixel**, and a 50px
+plate centred on the lowest price hung 25px into the words. Widening `LABEL_H` could never have
+fixed it: the plate was not overflowing the label area, it was overflowing the **plot**.
+
+The drawing is now three stacked bands with declared heights:
+
+```
+PAD_T      30    air above the top gridline
+PLOT_PAD   30    the marker gutter — MK/2 + 5, so nothing can cross a plot edge
+PLOT_H     ...   the price scale: gridline to gridline, and NOTHING else lives here
+PLOT_PAD   30    the same gutter at the bottom
+LANE_H     52    the label lane: sku, price, variants — and no price coordinate at all
+```
+
+Lane rows at `LANE_TOP + 20` and `LANE_TOP + 38`. Every label sits on a baseline measured from the
+**lane**, never from a price, which is what makes "all labels share one baseline" true by
+construction rather than by a lucky arrangement.
+
+**The stagger is gone.** Alternating labels onto two rows was how narrow columns used to be
+survived, and it breaks the one thing the lane is for: half the labels 18px below the other half
+reads as two different kinds of product, and at 44 columns it read as noise. Narrow columns
+**truncate** instead — `data-shown`, `data-full`, `data-truncated`, and a `<title>` **only when
+truncated**, because an SVG `<title>` is part of its parent's `textContent` and attaching one to
+every label would make each label read as itself twice to anything that reads text.
+
+**The Series is not printed under every column.** The filter that selected it and the panel heading
+already say it; a third copy would occupy the space the sku and the price need.
+
+**The gutter is a guarantee, not a lucky fixture.** No product in the preview fixture happens to sit
+exactly on the bottom tick, so "no plate collides today" would pass on a chart that collides on the
+first dataset that does. `D7a`/`D7b` assert the invariant — at least half a plate of clearance at
+both ends — and `M3` is aimed at the gutter rather than at an instance.
+
+### §36.3 Vertical readability is a pixel FLOOR, and the step is what gives way
+
+28px per five currency units put two 50px photographs 28px apart: they overlapped, and no label
+avoidance can rescue a chart whose own markers collide. `PX_PER_TICK = 48` (the brief's 44–52), and
+it is a floor. When a range is so wide that 48px per five units would make an absurd drawing, the
+**tick step** grows — `STEP_LADDER_C = [500, 1000, 2500, 5000, 10000, 25000]` — and the pitch is
+preserved. Keeping the step and shrinking the pitch is the defect this replaces. `PLOT_MIN_H = 300`,
+`PLOT_MAX_H = 960`, `PX_PER_TICK_MIN = 44` asserted. A drawing too tall for its card scrolls inside
+the card (`.chartwrap { overflow-y: auto; max-height: 78vh }`), and print lifts the cap so nothing
+is clipped on paper.
+
+The axis title names the step it is actually using rather than the words "5 USD".
+
+### §36.4 Root cause 3 — every control called `render()`
+
+`render()` rebuilt the nav, the crumbs, the **whole** scope area — site filters, analysis filters,
+the advanced drawer and the entire scenario panel — and then emptied and refilled `#view`. Choosing
+a Series from the scenario's own dropdown therefore **destroyed that dropdown**: the `<select>` the
+person had just used no longer existed when their change finished. Three consequences, and together
+they are the jump the operator reported:
+
+1. the focused element vanished, so the browser had nothing to keep in view and fell back to
+   whatever its scroll anchoring could find;
+2. the panel's height changed as the validation line and the "Applied:" line appeared and
+   disappeared, so content genuinely moved under the viewport;
+3. because the rebuild happened **above and around** the reading position, whether it jumped up,
+   jumped down, or happened to look still depended entirely on where the page was scrolled — which
+   is precisely the operator's symptom: *"if you are at one particular position it does not jump,
+   and the same action at another position does."*
+
+**Three redraws now, because there are three sizes of change.**
+
+| | what it rebuilds | what calls it |
+|---|---|---|
+| `render()` | everything | site · country · marketplace · category · series · currency |
+| `renderData()` | the banner mark and `#view` | Apply · Undo · the three resets · every layer · every zoom |
+| `updateScenarioForm()` | **nothing is replaced at all** | Series · Price to simulate · Adjustment · the amount |
+
+`updateScenarioForm` writes the dependent options, the placeholder, the amount label, the reach
+count, the readiness state, the badge and the status line **in place**. `fillOptions` rewrites the
+`<option>` children of a `<select>` and leaves the `<select>` itself alone, so the element keeps its
+identity, its focus and its position — and it does nothing at all when the option list is unchanged,
+which is the common case.
+
+### §36.5 The viewport contract — an anchor, not a saved offset
+
+**A saved `scrollY` is not a position, it is a distance from the top.** Restoring it after a redraw
+that changed the height of anything above the reading position puts the reader somewhere else and
+calls it unchanged. So `withViewport(fn)` preserves an **anchor**: `#view` is never replaced — only
+its children are — so its distance from the top of the window measures the same piece of content
+before and after, and the difference is exactly how far the page moved.
+
+**The compensation only fires when the anchor actually moved.** This is deliberately not a blind
+`scrollTo(savedX, savedY)` after every render (§C.6): that would hide an unnecessary rebuild instead
+of removing it, and it would be wrong in exactly the case it was added for. There is **one**
+`window.scrollTo` in the file, it is conditional, and there is **no `scrollIntoView`, no
+`location.hash` and no `href="#"` anywhere**.
+
+Measuring a layout box here is not measuring one for geometry: the chart still reads no layout box,
+its coordinates come from a declared design width, and this reads the live layout only to answer a
+question the live layout alone can answer — did the page move under the reader.
+
+The chart's own sideways position is the reader's too, so `.chartwrap` scroll offsets are saved and
+restored across every redraw.
+
+**Measured, across six starting positions × eight actions:**
+
+| | result |
+|---|---|
+| the content the reader was looking at | **unchanged, all 48** |
+| the raw scroll offset | **unchanged, 42 of 48** |
+| Apply / Undo | the offset moves by exactly the height of the banner's UNSAVED SCENARIO line, which is content genuinely appearing above the reader. Holding the offset there would push the page; holding the content still is the contract. |
+| one further exception | a page **already at the very top** cannot compensate for content disappearing above it — there is nowhere further up to go. A browser's own scroll anchoring does the same. It is allowed exactly once, at exactly that position, in exactly that direction, and counted. |
+| focus · meeting mode · zoom · chart scrollLeft | unchanged, all 48 |
+
+**Layout shift removed at the source, not compensated for.** The form is a grid with declared
+columns, so switching Proposed↔Everyday changes which *adjustments* are offered without changing
+how many rows the form has or how wide a control is. The status row is **one `<p>` that never
+leaves** — present on an empty form, on a refusal and after an Apply, with its id, class and words
+changing — because a row that exists only sometimes pushes the page sometimes, whatever the
+stylesheet reserves. `.scenario-status` also carries a `min-height`, and the reset buttons carry a
+`min-width` so disabling one changes its opacity and not its geometry.
+
+Apply stays **clickable** when the form is incomplete: a disabled button hides the refusal, and the
+refusal is the only thing that says why. Readiness is published as `data-ready`/`aria-disabled` and
+the styling goes quiet instead.
+
+### §36.6 `10.00 open` → `USD 10 Price gap`
+
+"Open", on a page that also shows orders, stock and promotions, can be read as an open order, open
+stock, an opening price or an open promotion — and the one thing it meant was none of those: **a
+rung of the price ladder that no product stands on.** Every surface now says the same words, in the
+panel's own currency: the chart label, the layer switch (`Price gaps`), the legend (`Price gap`),
+the finding headline (`Price gap of …`) and the executive recommendation.
+
+Hover and keyboard focus give the lower product and its price, the upper product and its price, the
+gap amount, the threshold in force, and the definition the brief specified verbatim — *"Difference
+between two adjacent everyday prices that exceeds the selected gap threshold. It indicates an
+unoccupied price tier for review; it is not an inventory shortage or an order status."*
+
+**THE BOUNDARY WAS CHECKED, NOT CHANGED.** The brief asked for `>=`. `selectors.js` already declares
+the opposite, in a comment that gives its reason: *"gap — strictly greater than the threshold ( > )
+… A step exactly equal to the threshold is not a gap."* Measured: threshold 999 → one gap of 1000;
+threshold 1000 → none. §七.6 says to check the existing spec before changing it, so the spec stands
+and this is reported instead. Changing it is a one-line decision the user can make.
+
+**The internal contract is unchanged.** `kind: 'PRICE_GAP'`, `distance_c` and `threshold_c` keep
+their names in every finding object — renaming a key is a migration, and this round changed what a
+person reads.
+
+### §36.7 Two more defects only a screenshot could see
+
+Both got past three green suites and were found by rendering the page in headless Chrome and
+looking at it. Each is now an assertion in §J of the new suite.
+
+1. **The executive recommendation still read `1 open step in the ladder`.** Every search this round
+   had been for the phrase *"open price step"*; this sentence says *"open step"*. **A rename driven
+   by grep finds the places you remembered to grep for.** §J1/J2 now scan the whole visible page for
+   `open` beside `step|price|tier|gap` and for any amount followed by the word.
+2. **`USD 10 Price gap` lay across the next product's markers.** The label is drawn beside its line,
+   the line sits on the boundary between two columns, and the room beside it is half a column —
+   about 104px against roughly 100px of type. At four products it just fitted; at a narrower column
+   it ran past the next product's centre and landed on that product's band and its live-promotion
+   diamond. **The assertion in place checked the label against the PHOTOGRAPHS, and the photographs
+   were clear** — nothing checked it against the other markers. The form is now chosen by what
+   fits — the full phrase, then `USD 10 gap`, then the amount alone — the whole sentence stays in a
+   `<title>` and the aria-label whichever form is painted, and §J6/§J7 assert that no gap label
+   reaches another column's centre line, on the four-product chart and on the forty-four.
+
+### §36.8 The shim grew a scroll, a focus and a layout
+
+A shim with no scroll cannot fail a scroll assertion, and a test that cannot fail is not a test.
+`_psb-harness.js` now models the three browser behaviours the contract is about:
+
+- **`focus()`** moves the focus *and*, as a real browser does when the element is outside the
+  visible band, scrolls to bring it into view — so a handler that focuses a node it has just created
+  moves `scrollY` here exactly as it does on the page;
+- **`scrollIntoView()`** moves the window to the element;
+- **layout**: every element has a synthetic top — its index in document order times a fixed row
+  height. It is not a real layout and does not pretend to be one, but it has the property that
+  matters: *inserting or removing nodes above something moves it.*
+
+**Elements that occupy no page space are excluded** — `<option>`, `<title>`, `<defs>`. An `<option>`
+is painted by the operating system inside an open dropdown, not in the document flow, so rewriting a
+select's options changes no layout; a model that counted them would report the correct fix as a
+jump.
+
+**The stated limit:** the model counts nodes, not pixels, so it cannot model a CSS `min-height` that
+reserves space for a row that is sometimes empty. That is why the status row is implemented as a
+node that never leaves (a DOM fact the model can see) *as well as* a reserved height (a stylesheet
+fact asserted as one).
+
+### §36.9 Tests
+
+```
+assets/tests/product-strategy-board-p1-b2b.test.js   NEW   137 passed / 0 failed / 16 mutants / 0 survived
+assets/tests/product-strategy-board-p1-b2a.test.js         222 / 0 / 14 / 0
+assets/tests/product-strategy-board-p1-b2.test.js          241 / 0 / 17 / 0
+the page's own DOM assertions                              236 / 236
+full sweep, 448 suites                                     only the four PRE-EXISTING red (3 / 1 / 7 / 2)
+```
+
+Sections: A boot · B the domain belongs to the scope · C a scenario expands and never shrinks ·
+D vertical readability · E the label lane · F nothing jumps on a toggle · G a price gap is called a
+price gap · H the viewport does not move · I what keeps its identity · J what only a screenshot
+could see · 16 mutants.
+
+**Two mutants were re-aimed after they passed for the wrong reason**, which is worth recording
+because both failure modes recur:
+
+- **N6 (P1-B2A)** wrote `'ALL'` into `STATE.scenarioSeries` from `narrowAfterSiteChange`. The
+  in-place updater added this round drops any value the menu does not offer — so the mutant became
+  unobservable *through a defence that is itself correct*. The rule "there is no All" now lives in
+  one function, `seriesChoiceValues()`, and the mutant is aimed there.
+- **M15** was written so that a throwing mutant counted as caught (`m.thrown !== null || …`). That
+  is a mutant that passes when its own anchor is stale — the exact thing the CRLF round taught.
+
+Two more were re-aimed because they were inert on this fixture: the only layer whose absence moves
+this fixture's domain is MSRP, so **M2** went after the other half of the rule (the global range),
+and **M3** went after the gutter rather than a plate that happens not to collide.
+
+### §36.10 Visual acceptance
+
+Produced with headless Chrome against the local file, no network. Eight cases × four frames in
+`…/scratchpad/p1b2b/shots/`: `detail-all`, `no-msrp`, `no-floor`, `no-both`, `clean`, `scenario`,
+`zoom150`, `stress` — each at `top-1920x1080`, `top-1440x900`, `top-1280x720` and
+`full-1920x2600`.
+
+**Compared across the eight full-page frames and confirmed by eye:** identical y-axis min/max,
+identical everyday-marker y coordinates, identical SVG height, identical label baseline, the Product
+comparison card at the same y, and the legend block holding its height as keys come and go.
+
+**STILL NEEDS A PERSON — a DOM assertion is not a visual review:**
+
+1. **Print / PDF preview.** Not captured (no `--print-to-pdf` run). The print stylesheet is verified
+   by assertion only: Fit forced, `max-height` lifted, controls hidden, UNSAVED SCENARIO kept.
+2. The small-viewport captures (1280×720, 1440×900) show a **headless compositing artefact** — a
+   blank band above the sticky banner. The same page renders correctly in the 2600px frame, so this
+   is a capture quirk rather than a page defect, but the three real viewport sizes should be looked
+   at in a real window.
+3. Native `<select>` behaviour: open a dropdown, choose, close, and confirm the viewport shows the
+   same content before and after. The shim models a change event, not an OS dropdown.
+4. The 44-product chart's upper half is empty in the first screen because the expensive products are
+   off to the right and the axis reaches their list price. Correct, but worth a judgement call on
+   whether a 960px plot is the right ceiling for that shape of range.
+5. Colour, weight, focus rings, and the feel of the 48px pitch at arm's length.
+
+### §36.11 Isolation record
+
+```
+docs/prototypes/product-strategy-board/prototype.js        geometry · domain · lane · gaps · three redraws
+docs/prototypes/product-strategy-board/prototype.css       grid form · reserved rows · legend height · lane
+docs/prototypes/product-strategy-board/selectors.js        the gap finding's words (keys unchanged)
+docs/prototypes/product-strategy-board/preview-fixture.js  a third of the stress skus carry long names
+assets/tests/_psb-harness.js                               scroll · focus · synthetic layout
+assets/tests/product-strategy-board-p1-b2b.test.js         NEW
+assets/tests/product-strategy-board-p1-b2a.test.js         follows the one-baseline and no-All contracts
+docs/planning/PRODUCT_STRATEGY_BOARD_DESIGN_FREEZE.md      this section
+assets/specs/active/project-current-state.md               the round entry
+```
+
+Production DB writes 0 · Sheets 0 · Drive 0 · network 0 · Apps Script 0 · deployment 0 · main 0 ·
+S1 0 · S2–S5 0 · `assets/js/**` 0 · `assets/css/**` 0 · `assets/html/**` 0 · km-lb 0 · merge 0 ·
+push 0 · amend 0 · rebase 0 · force-push 0. `APPS_SCRIPT_SYNC_REQUIRED` this round: **none** —
+P1-B1-R1's four files are still the outstanding sync.
+
+### §36.12 The merge gate is unchanged
+
+All nine conditions of the P1-B2A brief's §十一 still stand. This round is fixture UI work and
+claims no live database connection. **Next:** P1-B3 — production readback once the user has synced
+P1-B1-R1's four Apps Script files.

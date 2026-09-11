@@ -308,7 +308,7 @@ console.log('\n=== SECTION D  LAYERS, CLEAN AND DETAIL ===');
   eq(legendKeys().indexOf('promo'), -1, 'D15 with their key');
   toggle('promo', true);
   toggle('steps', false);
-  eq(q(p, '.gapmark').length, 0, 'D16 and so can the open price steps');
+  eq(q(p, '.gapmark').length, 0, 'D16 and so can the price gaps');
   toggle('steps', true);
   toggle('images', false);
   eq(q(p, '.mk-img').length, 0, 'D17 images off means no photograph is drawn');
@@ -694,8 +694,16 @@ console.log('\n=== SECTION H  DENSITY ===');
   var colW = Number(chart.getAttribute('data-col-w'));
   ok(colW >= 74, 'H28 each column keeps a readable minimum width', colW);
   ok(vbw >= 44 * colW, 'H29 so the drawing grows and the CONTAINER scrolls', { vbw: vbw });
-  eq(q(p, '.xlabel[data-row="b"]').length > 0, true,
-    'H30 and the labels stagger onto two rows instead of overlapping');
+  /* P1-B2B REPLACED THE STAGGER WITH ONE BASELINE. Alternating labels between two rows was how
+     narrow columns used to be survived; it made half the products look like a different kind of
+     thing, and at 44 columns it read as noise. Narrow columns truncate instead, and the whole
+     label stays on the node, in its <title> and in the hover panel. */
+  eq(q(p, '.xlabel[data-row="b"]').length, 0, 'H30 no label is dropped onto a second row');
+  var rows44 = q(p, '.xlabel').map(function (n) { return n.getAttribute('y'); });
+  eq(rows44.filter(function (v, i2) { return rows44.indexOf(v) !== i2; }).length,
+    rows44.length - 1, 'H30a every one of the 44 labels shares a single baseline');
+  ok(q(p, '.xlabel[data-truncated="true"]').length > 0,
+    'H30b and the narrow ones are truncated rather than overlapped');
   eq(q(p, '.mk-img-plate').length, 44, 'H31 every product still has its marker');
 }());
 
@@ -911,29 +919,27 @@ mut('N5 the band survives with one cap hidden, so a line runs from a price to no
   return bandsAfterHidingMsrp(chartPage()) === 0 && bandsAfterHidingMsrp(m) > 0;
 });
 
-mut('N6 changing the site puts the Series box back to "All", hiding the reach of a change',
+mut('N6 the Series menu offers "All", so a change can reach further than anyone can see',
   function () {
-    // AIMED AT THE GUARD THAT RUNS, NOT THE INITIALISER. Mutating the initial value alone proves
-    // nothing: narrowAfterSiteChange rewrites it to empty on the first site change, and the page's
-    // own self-test performs one — so the mutant went green while the rule it targets was intact.
-    // This is the live path: choose a Series, move to a site that does not sell it, and look.
-    var m = withProto(swap("      STATE.scenarioSeries = '';\n    }",
-      "      STATE.scenarioSeries = 'ALL';\n    }"));
-    function afterSiteChange(pg) {
+    // RE-AIMED IN P1-B2B. The old mutant wrote 'ALL' into STATE from narrowAfterSiteChange, and the
+    // in-place updater added this round drops any value the menu does not offer — so the mutant
+    // became unobservable through a defence that is itself correct. The rule "there is no All" now
+    // lives in ONE function, and this aims at that function, because the menu is the only place an
+    // All option could ever appear.
+    var m = withProto(swap(
+      "  function seriesChoiceValues() { return [''].concat(SEL.scenarioSeriesChoices(MODEL)); }",
+      "  function seriesChoiceValues() { return ['ALL'].concat(SEL.scenarioSeriesChoices(MODEL)); }"
+    ));
+    function offered(pg) {
       if (pg.thrown) return 'THREW';
       toChart(pg);
       openMeeting(pg);
-      var doc = pg.dom.document;
-      var sel = doc.getElementById('scSeries');
-      sel.value = 'Spatula';
-      sel.dispatchEvent(new pg.dom.Event('change', { bubbles: true }));
-      var c = doc.getElementById('fCountry');
-      c.value = 'DE';
-      c.dispatchEvent(new pg.dom.Event('change', { bubbles: true }));
-      var after = doc.getElementById('scSeries');
-      return after ? after.value : 'NO_CONTROL';
+      var sel = pg.dom.document.getElementById('scSeries');
+      if (!sel) return 'NO_CONTROL';
+      return sel.childNodes.map(function (o) { return o.getAttribute('value'); }).join('|');
     }
-    return afterSiteChange(bootPage(null)) === '' && afterSiteChange(m) === 'ALL';
+    var clean = offered(bootPage(null)), dirty = offered(m);
+    return clean.indexOf('ALL') < 0 && dirty.indexOf('ALL') === 0;
   });
 
 mut('N7 the internal field name reaches the screen', function () {

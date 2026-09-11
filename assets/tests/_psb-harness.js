@@ -75,6 +75,8 @@ function makeDom(skeleton) {
     this.value = '';
     this.checked = false;
     this.disabled = false;
+    this.scrollLeft = 0;
+    this.scrollTop = 0;
   }
   Object.defineProperty(Node.prototype, 'className', {
     get: function () { return this.attributes['class'] || ''; },
@@ -145,6 +147,68 @@ function makeDom(skeleton) {
     return true;
   };
   Node.prototype.click = function () { this.dispatchEvent(new Ev('click', { bubbles: true })); };
+
+  /* ================================================================================================
+     P1-B2B — A SCROLL POSITION, A FOCUS, AND A LAYOUT THAT CAN MOVE.
+
+     A shim with no scroll cannot fail a scroll assertion, and a test that cannot fail is not a test.
+     So this models the three browser behaviours the viewport contract is actually about:
+
+       focus()          moves the focus AND, as a real browser does when the element is outside the
+                        visible band, scrolls to bring it into view. A handler that focuses a node it
+                        has just created therefore MOVES window.scrollY here, exactly as it does on
+                        the page — which is what makes "the handler must not re-focus a new node" a
+                        checkable claim rather than a hope.
+       scrollIntoView() moves the window to the element. Same reasoning.
+       layout           every element has a synthetic top: its index in document order times a fixed
+                        row height. It is not a real layout and does not pretend to be one — but it
+                        has the property that matters: INSERTING OR REMOVING NODES ABOVE SOMETHING
+                        MOVES IT. An anchor's viewport top therefore changes when, and only when,
+                        the content above it changes, which is the whole question the contract asks.
+
+     None of this is exact, and none of it needs to be. It distinguishes "the handler rebuilt the
+     page around the control" from "the handler wrote three strings", and that is the defect.
+     ================================================================================================ */
+  var ROW_PX = 24;                 // the synthetic height of one element
+  var VIEW_PX = 900;               // the synthetic viewport height
+  /* SOME ELEMENTS OCCUPY NO SPACE ON THE PAGE, and counting them would invent movement that a
+     browser never performs. An <option> is painted by the operating system inside an open dropdown,
+     not in the document flow, and an SVG <title> is never painted at all — so rewriting a select's
+     options changes no layout, and the model must agree or it would report the correct fix as a
+     jump. */
+  var NO_LAYOUT = { option: 1, title: 1, defs: 1 };
+  function docOrderIndex(node) {
+    var all = descendants(doc, []).filter(function (n) {
+      return !NO_LAYOUT[String(n.localName).toLowerCase()];
+    });
+    var i = all.indexOf(node);
+    return i < 0 ? null : i;
+  }
+  function layoutTop(node) {
+    var i = docOrderIndex(node);
+    return i === null ? null : i * ROW_PX;
+  }
+  Node.prototype.getBoundingClientRect = function () {
+    var top = layoutTop(this);
+    if (top === null) return { top: 0, bottom: 0, left: 0, right: 0, width: 0, height: 0 };
+    return { top: top - win.scrollY, bottom: top - win.scrollY + ROW_PX,
+      left: 0, right: 0, width: 0, height: ROW_PX };
+  };
+  Node.prototype.focus = function () {
+    documentRef.activeElement = this;
+    var top = layoutTop(this);
+    if (top === null) return;
+    /* THE BROWSER'S OWN BEHAVIOUR, AND THE REASON IT MATTERS. */
+    if (top < win.scrollY) win.scrollTo(win.scrollX, top);
+    else if (top > win.scrollY + VIEW_PX) win.scrollTo(win.scrollX, top - VIEW_PX + ROW_PX);
+  };
+  Node.prototype.blur = function () {
+    if (documentRef.activeElement === this) documentRef.activeElement = null;
+  };
+  Node.prototype.scrollIntoView = function () {
+    var top = layoutTop(this);
+    if (top !== null) win.scrollTo(win.scrollX, top);
+  };
 
   function Text(data) { this.nodeType = 3; this.data = String(data); this.parentNode = null;
     this.childNodes = []; }
@@ -260,6 +324,27 @@ function makeDom(skeleton) {
   doc.appendChild(head);
   doc.appendChild(body);
 
+  /* THE WINDOW, WITH A POSITION. `scrollTo` is a real assignment, so any code path that calls it —
+     directly, or through focus() or scrollIntoView() — shows up as a changed scrollY and fails the
+     contract. Nothing here silently absorbs a scroll. */
+  var win = {
+    scrollX: 0, scrollY: 0, pageXOffset: 0, pageYOffset: 0,
+    __scrollCalls: 0, __printed: 0,
+    scrollTo: function (x, y) {
+      win.__scrollCalls++;
+      win.scrollX = win.pageXOffset = Math.max(0, Number(x) || 0);
+      win.scrollY = win.pageYOffset = Math.max(0, Number(y) || 0);
+    },
+    print: function () { win.__printed++; },
+    /* PUT THE READER SOMEWHERE. Positioning the page before an interaction is the test setting up,
+       not the page scrolling, so it does not count toward __scrollCalls. */
+    __place: function (x, y) {
+      win.scrollX = win.pageXOffset = Math.max(0, Number(x) || 0);
+      win.scrollY = win.pageYOffset = Math.max(0, Number(y) || 0);
+      win.__scrollCalls = 0;
+    }
+  };
+
   var documentRef = null;
   var document = {
     listeners: {},
@@ -289,9 +374,9 @@ function makeDom(skeleton) {
     }
   };
   documentRef = document;
+  document.activeElement = null;
   skeleton(document, head, body, function (t) { return new Node(t, null); });
-  return { document: document, Event: Ev, body: body, head: head,
-    window: { print: function () { window.__printed = (window.__printed || 0) + 1; } } };
+  return { document: document, Event: Ev, body: body, head: head, window: win };
 }
 
 /**
@@ -397,6 +482,14 @@ function bootPage(mutateSrc) {
   ctx.Event = dom.Event;
   ctx.window = ctx;
   ctx.print = dom.window.print;
+  /* THE PAGE SEES ONE WINDOW AND THE TEST SEES THE SAME ONE. Inside the sandbox `window` is the vm
+     context itself, so `window.scrollY` would read an undefined property of the context and every
+     scroll assertion would pass on nothing. These delegate to the single scroll position the shim
+     owns, so a scrollTo from page code is visible to the suite and vice versa. */
+  ctx.scrollTo = function (x, y) { dom.window.scrollTo(x, y); };
+  ['scrollX', 'scrollY', 'pageXOffset', 'pageYOffset'].forEach(function (k) {
+    Object.defineProperty(ctx, k, { get: function () { return dom.window[k]; } });
+  });
   var order = ['contract', 'selectors', 'fixture', 'prototype'];
   var thrown = null;
   try {
