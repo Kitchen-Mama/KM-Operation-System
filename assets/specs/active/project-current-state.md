@@ -5568,3 +5568,108 @@ person still needs that, plus a judgement on the drawer covering the last KPI ce
 the deliberate cost of overlaying rather than resizing, because resizing would move every price.
 **NEXT:** the user syncs P1-B3's package and runs
 `RUN_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK()`; its verdict still decides what P1-B5 can connect.
+
+### `PRODUCT-STRATEGY-P1-B5` — live universe accepted, the board promoted to production (P worktree, local commit only)
+
+**THE READBACK RAN, AND IT RETURNED `READY`.** 2026-09-11, 9/9 chunks, report fingerprint
+`FP0d88b7eb`, build `F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R8`, `read_only true · writes 0 · writer_calls 0 ·
+sheets_created 0 · rows_modified 0 · feature_flag false · gate refusal FEATURE_DISABLED ·
+db_opened false`. **10 sites · 13 categories · 43 series · 495 marketplace_skus rows, all active · 0
+duplicate identities of any kind · 0 cross-currency sites · 6/16/9 missing regular/minimum/msrp · 61
+site SKUs with no Regional Detail, concentrated in ONE site · 0 alias candidates.** This round CITES
+those numbers and re-measures none of them: §2 forbids re-running the readback, so a test that
+measured production again would be a second authority for a number that already has one.
+
+**P1 IS `NOT_PROVABLE` AND STAYS THAT WAY.** P2–P7 PASS. P1 has no USD-priced population outside the
+US, so the claim has nothing to be tested against — *a proof with an empty population is not a proof
+that passed*, and recording it as PASS would hand a later round a guarantee nobody measured. It is
+not a blocker. The P1-B5 suite builds the at-risk population production lacks (MX/Amazon prices in
+USD, and so does US/Amazon) so the rule is tested even where production cannot test it.
+
+**THE SEAM WAS ALREADY THERE, WHICH IS WHY THIS IS A SWAP AND NOT A PORT.** `prototype.js` has said
+at `boot()` since P0: *"THE ONE PLACE AN ADAPTER IS CHOSEN. Everything above this line is
+adapter-agnostic."* It was true — nine references to the preview fixture in a 4,600-line renderer,
+eight of them inside the fixture's own self-test. And `PSB_CONTRACT.OperationDbProductStrategyData-
+Adapter` has existed since P0 as a DEFINED, DISABLED object returning `SOURCE_NOT_CONNECTED` with
+`requests_made: 0`. **P1-B5 is the enabled implementation of a seam reserved two rounds before it
+could be filled.**
+
+**THE PROMOTION — ONE COPY OF EVERY RULE.** `data-contract`, `selectors`, `chart-layout`,
+`prototype.js` and `prototype.css` moved out of `docs/prototypes/` into
+`assets/js/product-strategy/psb-*.js` and `assets/css/product-strategy-board.css`; git records all
+five as pure renames. **The prototype now owns exactly one script — its fixture** — and loads
+everything else from production. **1,127 assertions pass against the promoted files unchanged**,
+which is what distinguishes a promotion from a rewrite: had the files been re-typed, the suites
+would have been too, and their agreement would prove nothing.
+
+**FOUR SURGICAL EDITS TO THE BOARD.** `boot(opts)` takes the adapter as an argument;
+`PSB_BOARD.mount()` is exposed with auto-boot conditional on `PSB_BOARD_DEFER`; **the self-test runs
+only under the preview adapter** (it asserts the demonstration banner and demonstration prices —
+over live rows it would report that production data is not preview data, which is a suite measuring
+its own fixture's absence, so it is gated at the CALL SITE because guarding assertions individually
+means the one you miss is the one that goes red in production); and the chrome bindings tolerate
+absence, because *a renderer that throws over a missing navigation toggle is coupled to one host's
+chrome.*
+
+**EXACTLY ONE STATE YIELDS ROWS.** `km-product-strategy-live-adapter.js` maps the server's
+vocabulary onto the board's and decides whether a chart may be drawn: `OK` draws; `SOURCE_EMPTY`,
+`SOURCE_PARTIALLY_READABLE`, `STOP_DATA_INTEGRITY`, `SOURCE_NOT_CONNECTED`, `FEATURE_DISABLED`,
+`SCHEMA_CONTRACT_MISMATCH` and `CONTRACT_MISMATCH` all return zero rows. **Partially-readable is
+deliberately harsher than it needs to be**: the rows it saw are real, and showing them is a price
+comparison over part of a population where *the product that is missing is exactly the one nobody
+checks*. **The order of checks is itself a rule** — a structural stop outranks a source state read
+out of an unrecognised shape, because "the shape is wrong" can be acted on and "0 products" sends a
+reader hunting. `SCHEMA_CONTRACT_MISMATCH` is the live adapter's own addition: the pricing adapter
+REPORTS a version it was not written against and does not refuse, correctly, because *refusing is a
+decision about what a person may be shown and it belongs at the seam that feeds a chart.*
+
+**THE 61 MISSING REGIONAL DETAILS — THE CODE ALREADY DID THIS.** `psb-selectors.js` already puts
+them in `dataQuality.regional_details_missing` **by identity, not as a count**, keeps them out of
+`chartRows`, and publishes `regional_detail_decides_membership: false`. All 61 are eligible
+(membership is `marketplace_skus`; a missing Regional Detail does not un-list a SKU) and not one is
+chartable. P1-B5 recorded the evidence instead of writing it again, as §3 requires. The
+concentration is asserted too: 61 in one site points at one site's setup, not a systemic gap.
+
+**THE GAP THE REAL UNIVERSE EXPOSED — THE SITE LADDER HAS NO SOURCE.** The board derives
+Company → Country → Marketplace from the rows its adapter hands over, because the fixture hands over
+the CANONICAL universe. `productPricing.workspace.get` cannot and must not: it is site-scoped by
+construction, and its `filterOptions` carries categories and series **for the site already chosen**.
+No existing read owner publishes `marketplace_skus` membership across sites. **This is not a defect
+in P1-B4** — the board is correct for the adapter it was given — it is a gap between a renderer that
+assumed a canonical universe and a read that is scoped on purpose, invisible until there was a real
+read to scope. It fails closed as `SITE_UNIVERSE_NOT_AVAILABLE`; the scope is an INPUT;
+**no endpoint was invented**, because a second read authority for `marketplace_skus` is the one
+thing the adapter contract names as forbidden.
+
+**THE PRODUCTION PAGE IS NOT REACHABLE.** `assets/js/pages/product-strategy-board.js` +
+`assets/html/pages/product-strategy-board.html`: capability → scope → one read → mount, and no fifth
+step in which something is shown anyway. **No menu item, no `app.js` section entry, no script tag**,
+both asserted. The partial deliberately omits the demonstration banner — *a page that kept the
+element and emptied it would be one edit away from labelling live prices as a demonstration.*
+
+**`scratchpad/dryrun/wrapper.gs` — AUDITED AND DELETED (rule A, no commit).** It was NOT a leftover
+of the sync attempt, which is what §9 supposed: it was an **S1** factory-movement dry-run paste-block
+from 2026-09-10, in no worktree, never tracked, referenced by nothing. Two facts made deleting it
+safe rather than merely permitted: **S1 is COMPLETE** (`main`'s HEAD commit says so), and **the
+wrapper would refuse itself** — its preflight pins build `…R7-R6` while live is `…R7-R8`. Whether a
+copy sits in the live Apps Script project is **unprovable from here** (no credential — the same wall
+the P1-B3 sync hit); if one does, rule C applies and the removal plan is recorded in §40.11.
+
+**TESTS.** NEW `product-strategy-integration-p1-b5.test.js` **151 / 0 / 12 mutants / 0 survived**.
+B2 **249/0/17** · B2A **237/0/14** · B2B **142/0/16** · B2C **157/0/14** · B4 **252/0/12** ·
+B3 readback **332/0/17** · B1 **167/0/13**. Full sweep 452 suites; only the four PRE-EXISTING red,
+counts identical to PRE (3/1/7/2). **Three assertions restated**, each having measured a path where
+it meant a rule: b2's H31 (five local siblings → four promoted modules and one local fixture), b4's
+I4d ("does not reach into assets/css" → does not load `components.css` or `base.css`, which is what
+the rule always was — the board's own stylesheet now lives in assets/css, so naming the directory
+would forbid the promotion instead of the hazard), and four path reads in the B3 suite. **The full
+sweep caught the B3 one**, which my targeted search had missed.
+
+**NOT DONE:** the site ladder has no live source; no page loads any of this;
+`PRODUCT_STRATEGY_ENABLED_` still false; no live read performed this round; the board has not been
+rendered against live rows in a browser; **P1-B3's five Apps Script files are still unsynced** — the
+readback whose evidence this entry records was run by the user from a package still outstanding
+here; Print/PDF still asserted rather than photographed. No Apps Script source, DB, Sheet, schema,
+flag, navigation, deployment, S1–S5, main or km-lb touched. **NEXT:** a read owner for the site
+universe, then the shell merge (§8) — and only after that does turning the flag on become a
+question.

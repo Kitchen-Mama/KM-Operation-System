@@ -738,11 +738,24 @@ console.log('\n=== §H  THE REAL PAGE, RENDERED AND DRIVEN HEADLESS ===');
   var scripts = (SRC.index.match(/<script src="([^"]+)"><\/script>/g) || []).map(function (t) {
     return /src="([^"]+)"/.exec(t)[1];
   });
-  /* FIVE SINCE P1-B2C: the responsive layout engine is its own file, because a pure function
-     that decides every size on the chart is a different kind of thing from the renderer that
-     draws it, and keeping it separate is what lets a test hand it 1366x768 with no browser. */
-  eq(scripts, ['data-contract.js', 'chart-layout.js', 'selectors.js', 'preview-fixture.js',
-    'prototype.js'], 'H31 five local siblings, in dependency order, and no sixth');
+  /* FIVE SINCE P1-B2C, AND SINCE P1-B5 THREE OF THEM ARE NOT LOCAL — that is the promotion.
+     data-contract, chart-layout and selectors are production modules now, loaded by this page AND
+     by the production board from ONE copy. Asserting the path, not just the filename, is what makes
+     a silent fork visible: a prototype that quietly grew its own selectors.js beside index.html
+     would still satisfy a filename-only check while drifting from the rules production ships. */
+  eq(scripts, ['../../../assets/js/product-strategy/psb-data-contract.js',
+    '../../../assets/js/product-strategy/psb-chart-layout.js',
+    '../../../assets/js/product-strategy/psb-selectors.js',
+    'preview-fixture.js',
+    '../../../assets/js/product-strategy/psb-board-ui.js'],
+    'H31 four promoted production modules and one local fixture, in dependency order');
+  ok(scripts.filter(function (x) { return x.indexOf('assets/js/product-strategy/') >= 0; }).length === 4,
+    'H31a the contract, the engine, the selectors AND the board are loaded from production');
+  eq(scripts.filter(function (x) { return x.indexOf('/') < 0; }), ['preview-fixture.js'],
+    'H31b the ONLY file the prototype still owns is its fixture — everything else it shares');
+  ok(scripts.indexOf('selectors.js') < 0 && scripts.indexOf('data-contract.js') < 0
+    && scripts.indexOf('chart-layout.js') < 0 && scripts.indexOf('prototype.js') < 0,
+    'H31c and no local copy of a promoted module is loaded beside the promoted one');
   eq((SRC.index.match(/<link rel="stylesheet"/g) || []).length, 1, 'H32 one local stylesheet');
   ok(SRC.index.indexOf('http://') < 0 && SRC.index.indexOf('https://') < 0,
     'H33 and no remote host of any kind');

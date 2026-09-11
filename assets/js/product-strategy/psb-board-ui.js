@@ -4542,22 +4542,42 @@
     }
   }
 
-  function boot() {
-    /* THE ONE PLACE AN ADAPTER IS CHOSEN. Everything above this line is adapter-agnostic; P1-B1
-       replaces this single expression and touches no chart, no table and no rule. */
-    ADAPTER = PREVIEW.PreviewProductStrategyDataAdapter;
+  function boot(opts) {
+    /* THE ONE PLACE AN ADAPTER IS CHOSEN. Everything above this line is adapter-agnostic, and P1-B5
+       replaced this single expression and touched no chart, no table and no rule — which is the
+       whole reason the swap is believable: the renderer cannot tell live data from preview data,
+       so it cannot be rendering them differently.
 
-    byId('btnRail').addEventListener('click', function () { STATE.rail = !STATE.rail; render(); });
-    byId('btnPresent').addEventListener('click', function () {
+       The default is still the preview fixture, so opening index.html in a browser does exactly
+       what it did before. A caller that passes an adapter gets that one; a caller that passes
+       nothing in a page with no fixture loaded gets no board rather than an invented one. */
+    opts = opts || {};
+    ADAPTER = opts.adapter || (PREVIEW && PREVIEW.PreviewProductStrategyDataAdapter) || null;
+    if (!ADAPTER) {
+      throw new Error('psb-board-ui: no adapter. Pass one to PSB_BOARD.mount({adapter}) —'
+        + ' there is no fixture fallback.');
+    }
+
+    /* BIND WHAT IS THERE. The prototype supplies all four; the Operation System shell supplies the
+       navigation rail itself and has no self-test panel, and a board that threw over a missing
+       navigation toggle would be a board that only runs in one host. Presentation and Print are
+       board features (§8) and are bound wherever they exist. */
+    function on(id, ev, fn) {
+      var n = byId(id);
+      if (n) n.addEventListener(ev, fn);
+      return !!n;
+    }
+    on('btnRail', 'click', function () { STATE.rail = !STATE.rail; render(); });
+    on('btnPresent', 'click', function () {
       STATE.presentation = !STATE.presentation;
       render();
     });
-    byId('btnPrint').addEventListener('click', function () {
+    on('btnPrint', 'click', function () {
       try { window.print(); } catch (e) {}
     });
-    byId('btnStDetail').addEventListener('click', function () {
+    on('btnStDetail', 'click', function () {
       var s = byId('selftest');
-      s.hidden = !s.hidden;
+      if (s) s.hidden = !s.hidden;
     });
 
     /* ---- CLOSING A POPOVER, THE THREE WAYS A PERSON EXPECTS -------------------------------------
@@ -4601,12 +4621,39 @@
     remeasure();
     render();
     observeContainer();
-    try { selfTest(); } catch (e) {
-      ok(false, 'SELF-TEST THREW: ' + (e && e.message ? e.message : String(e)),
-        String(e && e.stack || '').split('\n').slice(0, 3).join(' | '));
+    /* THE SELF-TEST IS ABOUT THE PREVIEW FIXTURE, so it runs where the preview fixture is. It
+       asserts the demonstration banner, the demonstration prices and the disabled Operation DB
+       adapter — all true while the fixture is in use, none of them a statement about the board.
+       Over live rows they would report that production data is not preview data, which is a suite
+       measuring its own fixture's absence. */
+    if (ADAPTER && ADAPTER.id === 'PREVIEW') {
+      try { selfTest(); } catch (e) {
+        ok(false, 'SELF-TEST THREW: ' + (e && e.message ? e.message : String(e)),
+          String(e && e.stack || '').split('\n').slice(0, 3).join(' | '));
+      }
+      renderSelfTest();
     }
-    renderSelfTest();
   }
 
-  boot();
+  /* ------------------------------------------------------------------------------------------------
+     TWO WAYS IN, AND THE DEFAULT IS THE ONE THAT ALREADY EXISTED.
+
+     The prototype loads this file and the board appears, exactly as it has since P0 — no flag, no
+     call, nothing for it to get wrong. A host that needs to fetch before it can render sets
+     PSB_BOARD_DEFER first and calls mount() when its data has arrived, which is the ONLY way to
+     give this renderer live rows: `load()` is synchronous by contract, so the asynchrony has to
+     finish before mounting rather than during it.
+     ------------------------------------------------------------------------------------------------ */
+  var BOARD = {
+    mount: function (opts) { return boot(opts); },
+    /* Stated as data so a suite can assert the seam rather than grep for it. */
+    CONTRACT: {
+      adapter_is_an_argument: true,
+      default_adapter: 'PREVIEW (prototype only)',
+      fixture_fallback_when_an_adapter_is_given: false,
+      auto_mounts_unless: 'PSB_BOARD_DEFER === true'
+    }
+  };
+  this.PSB_BOARD = BOARD;
+  if (this.PSB_BOARD_DEFER !== true) boot();
 }).call(this);

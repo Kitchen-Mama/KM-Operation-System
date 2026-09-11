@@ -790,7 +790,7 @@ ok(Object.prototype.toString.call(g1.source_status) === '[object String]',
 // THE COLLISION IS REAL — the un-adapted shape would break every row. This is the assertion that says
 // the adapter is necessary rather than tidy.
 var selCtx = vm.createContext({ console: console });
-vm.runInContext(read('docs/prototypes/product-strategy-board/selectors.js'), selCtx);
+vm.runInContext(read('assets/js/product-strategy/psb-selectors.js'), selCtx);
 var S = selCtx.PSB_SELECTORS;
 eq(S.statusStateOf(liveRow({ source_status: ['X'] }), S.PERMITTED_STATUSES),
   'SITE_STATUS_SHAPE_UNEXPECTED',
@@ -876,7 +876,7 @@ eq(ADAPTER.adaptRow(liveRow({ product_image: 'https://img/x.jpg',
   'E5c with no master row there is no row the URL came from, so the mapping is not established');
 // THE RENDER RULE, asserted against the selectors' own expression rather than restated here.
 ok(/image_identity_status === 'VERIFIED_DB_MAPPING'/.test(read(
-  'docs/prototypes/product-strategy-board/selectors.js')),
+  'assets/js/product-strategy/psb-selectors.js')),
   'E5d the selectors render an image ONLY on the verified state');
 
 // --- gap 6: identity -------------------------------------------------------------------------
@@ -1174,11 +1174,11 @@ eq(canon[0], 'https://img/sp01.jpg', 'H4  the verified image renders');
 eq(canon[1], null, 'H4a the bare filename does NOT — the plate is drawn instead of a broken img');
 
 // H5 — §10: the scenario overlay is still front-end memory only. No write path exists.
-var protoSrc = read('docs/prototypes/product-strategy-board/prototype.js');
+var protoSrc = read('assets/js/product-strategy/psb-board-ui.js');
 ok(!/google\.script\.run/.test(bare(protoSrc)), 'H5  the prototype makes no server call');
 ok(!/scenario.*\.save\(|saveScenario|persistScenario/.test(bare(protoSrc)),
   'H5a and no scenario is persisted anywhere');
-ok(/SIMULATED_IN_MEMORY/.test(read('docs/prototypes/product-strategy-board/selectors.js')),
+ok(/SIMULATED_IN_MEMORY/.test(read('assets/js/product-strategy/psb-selectors.js')),
   'H5b the selectors label simulated values as in-memory');
 ok(!/scenario/i.test(bare(SRC72).replace(/proposed_scenario_price/g, '')),
   'H5c and 72_ has no scenario concept at all — there is nothing to write to');

@@ -1,0 +1,55 @@
+<!-- Product Strategy Board (PRODUCT-STRATEGY-P1-B5 §4).
+
+     NOT REACHABLE. This partial is not mounted by index.html, has no menu item and no entry in the
+     app.js section map, so KM.partialLoader never fetches it. §4 forbids enabling the navigation
+     entry and §11 forbids changing it — production visibility for this feature is zero by
+     construction, exactly as the accessor has been since P1-B1.
+
+     WHAT IS DELIBERATELY ABSENT, compared with the prototype's index.html:
+
+       · the demonstration banner. It reads "Preview data — not connected to Operation System
+         Database", which is the truest sentence on the prototype and a false one here. A production
+         page that inherited it would be labelling live prices as a demonstration; a production page
+         that kept the element and emptied it would be one edit away from doing so again.
+       · the sidebar, the rail toggle and the nav list. The Operation System shell owns navigation.
+         The board binds those handlers only where the elements exist (psb-board-ui.js `on`).
+       · the self-test panel. It asserts the preview banner, the preview prices and the disabled
+         Operation DB adapter — a prototype instrument measuring a prototype.
+
+     WHAT IS PRESENT: the scope ladder and the view, which ARE the board; Presentation and Print,
+     which §8 lists as board features; the tooltip layer the `?` popovers render into; and one state
+     host, which is where every answer that is not "here is the chart" is written. -->
+<section id="product-strategy-board-section" class="module-section psb-page">
+
+    <div class="psb-header">
+        <div class="psb-header__title">
+            <h2 class="page-title">Product Strategy Board</h2>
+            <p class="psb-sub">One site at a time — a company, a country and a marketplace. Prices from
+                two sites are never pooled on one axis.</p>
+        </div>
+        <div class="psb-header__actions">
+            <!-- Board features, not shell features. Bound by psb-board-ui.js where present. -->
+            <button class="btn btn-quiet" id="btnPresent" type="button" title="Presentation mode">Presentation</button>
+            <button class="btn btn-quiet" id="btnPrint" type="button" title="Print or save as PDF">Print / PDF</button>
+        </div>
+    </div>
+
+    <!-- EVERY ANSWER THAT IS NOT A CHART IS WRITTEN HERE, and the chart is never drawn beside one.
+         SOURCE_EMPTY, SOURCE_PARTIALLY_READABLE, STOP_DATA_INTEGRITY, SOURCE_NOT_CONNECTED,
+         FEATURE_DISABLED, SCHEMA_CONTRACT_MISMATCH, CONTRACT_MISMATCH and the page's own
+         SITE_UNIVERSE_NOT_AVAILABLE all land in this one element. There is no state in which a
+         fixture is loaded instead. -->
+    <div id="psb-state-host" class="psb-state-host"></div>
+
+    <!-- The compact command bar renders into #scope: Company -> Country -> Marketplace -> Category ->
+         Series, with More filters and Meeting scenario as the two secondary entrances (P1-B4 §1, §3, §5). -->
+    <section class="scope" id="scope" aria-label="Scope"></section>
+
+    <!-- The chart, the KPI row, the tables and the Insight drawer. -->
+    <section class="view" id="view"></section>
+
+    <p class="printhint" id="printHint">Print or save as PDF from the header. The findings drawer opens
+        in print.</p>
+
+    <div class="tip" id="tip" hidden></div>
+</section>

@@ -756,8 +756,16 @@ section('SECTION I  §8 WHAT IS REUSED, AND WHAT THE SHARED LAYER DOES NOT HAVE'
   /* SO THE PROTOTYPE DOES NOT LOAD THEM, and says why rather than pretending it is aligned. */
   var indexHtml = fs.readFileSync(path.join(H.PROTO, 'index.html'), 'utf8');
   eq((indexHtml.match(/<link[^>]+rel="stylesheet"/g) || []).length, 1,
-    'I4c the prototype loads exactly one stylesheet — its own');
-  ok(indexHtml.indexOf('assets/css') < 0, 'I4d and does not reach into the shared one');
+    'I4c the prototype loads exactly one stylesheet — the board\'s own');
+  ok(indexHtml.indexOf('assets/css/product-strategy-board.css') >= 0,
+    'I4d and it is the PROMOTED board stylesheet, the same one the production page loads');
+  /* THE RULE WAS NEVER ABOUT THE DIRECTORY. It is about these two files: components.css styles the
+     bare `button` element solid green, base.css sets `body { overflow: hidden }`, and either one
+     loaded beside a page that did not expect it breaks that page. P1-B5 moved the board's own
+     stylesheet into assets/css, so naming the directory would now forbid the promotion instead of
+     the hazard. */
+  ok(indexHtml.indexOf('components.css') < 0 && indexHtml.indexOf('base.css') < 0,
+    'I4e and it still does not load either shared sheet, which cannot be loaded a la carte');
 
   // I5 THERE IS NO SHARED DRAWER, AND NO SHARED STATUS CHIP. Recorded, not papered over.
   ok(comp.indexOf('.drawer') < 0 && !/--drawer-/.test(base + comp),

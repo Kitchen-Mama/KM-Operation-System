@@ -305,7 +305,7 @@ console.log('\n=== SECTION D  VERTICAL READABILITY IS A PIXEL FLOOR ===');
   /* P1-B2C MOVED BOTH OF THESE INTO THE ENGINE, which is where a decision about sizes belongs.
      The ladder and the pitch floor are now values on a pure module a test can call directly
      rather than strings in a renderer a test has to grep for. */
-  var LE = require('../../docs/prototypes/product-strategy-board/chart-layout.js');
+  var LE = require('../js/product-strategy/psb-chart-layout.js');
   ok(LE.STEP_LADDER_C.length >= 5 && LE.STEP_LADDER_C[0] === 500,
     'D8 the engine carries a step ladder rather than one fixed step', LE.STEP_LADDER_C);
   ok(LE.MIN_PITCH_AUTO >= 18 && LE.PREFERRED_PITCH === 48,

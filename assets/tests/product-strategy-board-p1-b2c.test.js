@@ -30,7 +30,7 @@
 'use strict';
 
 var H = require('./_psb-harness.js');
-var L = require('../../docs/prototypes/product-strategy-board/chart-layout.js');
+var L = require('../js/product-strategy/psb-chart-layout.js');
 var SRC = H.SRC, bootPage = H.bootPage;
 
 var pass = 0, fail = 0, mutCaught = 0, mutSurvived = 0;

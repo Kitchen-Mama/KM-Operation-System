@@ -19,6 +19,25 @@ var fs = require('fs'), path = require('path'), vm = require('vm');
 var ROOT = path.join(__dirname, '..', '..');
 var PROTO = path.join(ROOT, 'docs', 'prototypes', 'product-strategy-board');
 /**
+ * P1-B5 PROMOTED THE THREE PURE MODULES OUT OF THE PROTOTYPE AND INTO PRODUCTION.
+ *
+ * data-contract / selectors / chart-layout are now `assets/js/product-strategy/psb-*.js`, loaded by
+ * BOTH the prototype and the production page. There is exactly ONE copy of every derivation rule,
+ * which is the whole point: two implementations of the grouping rule agree on the day they are
+ * written and drift every day after.
+ *
+ * The suites keep asking for them by their prototype names through `SRC`, so this map is the only
+ * place that knows where a file actually lives. A promotion must not cost four hundred assertions.
+ */
+var PROMOTED = path.join(ROOT, 'assets', 'js', 'product-strategy');
+var WHERE = {
+  'data-contract.js': path.join(PROMOTED, 'psb-data-contract.js'),
+  'selectors.js': path.join(PROMOTED, 'psb-selectors.js'),
+  'chart-layout.js': path.join(PROMOTED, 'psb-chart-layout.js'),
+  'prototype.js': path.join(PROMOTED, 'psb-board-ui.js'),
+  'prototype.css': path.join(ROOT, 'assets', 'css', 'product-strategy-board.css')
+};
+/**
  * LINE ENDINGS ARE NORMALIZED ON READ, AND THIS IS LOAD-BEARING.
  *
  * The repository is configured `core.autocrlf=true`, so every checkout of these files lands CRLF in
@@ -32,7 +51,7 @@ var PROTO = path.join(ROOT, 'docs', 'prototypes', 'product-strategy-board');
  * changed by a byte. Normalizing here fixes it for every reader, including the next clone.
  */
 function readProto(f) {
-  return fs.readFileSync(path.join(PROTO, f), 'utf8').replace(/\r\n/g, '\n');
+  return fs.readFileSync(WHERE[f] || path.join(PROTO, f), 'utf8').replace(/\r\n/g, '\n');
 }
 /** Comments AND string literals out — a file's own prose names everything it promises not to do. */
 function bare(src) {

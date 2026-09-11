@@ -5489,3 +5489,296 @@ and drops the two entrances; that is checked in the stylesheet and has not been 
 A person still needs to confirm it, along with whether the drawer covering the last KPI cell at 1920
 is acceptable — it is the deliberate cost of overlaying rather than resizing, because resizing would
 move every price.
+
+
+## §40 — P1-B5 · LIVE UNIVERSE ACCEPTANCE · PRODUCTION INTEGRATION PACKAGE
+
+### 40.1  THE LIVE EVIDENCE, RECORDED ONCE AND NOT RE-MEASURED
+
+The production readback ran on **2026-09-11** and returned **READY**. This section is the record;
+§2 of the P1-B5 brief forbids re-running it and forbids overwriting it with a new measurement, so
+every number below is CITED from that run and nothing in this round re-derives one.
+
+```
+chunks 9/9 · report fingerprint FP0d88b7eb · report length 57493
+build / handler / deployment release   F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R8
+read_only true · writes 0 · writer_calls 0 · sheets_created 0 · rows_modified 0
+feature_flag false · gate refusal FEATURE_DISABLED · gate db_opened false
+verdict READY
+```
+
+| table | rows | columns | fingerprint |
+|---|---:|---:|---|
+| `sku_details` | 192 | 42 | `DF770684` |
+| `marketplace_skus` | 495 | 15 | `2AF82658` |
+| `sku_regional_details` | 495 | 16 | `12CB99B7` |
+| `pricing_list` | 495 | 29 | `9B0471B0` |
+| `campaigns` | 1 | 27 | `100DF154` |
+| `campaign_sku_lines` | 2 | 27 | `E9260A0C` |
+
+**The universe:** 10 sites · 13 categories · 43 series · every `marketplace_skus` row active ·
+0 duplicate master SKU · 0 duplicate marketplace identity · 0 duplicate regional canonical identity ·
+0 duplicate pricing identity · 0 orphan regional/pricing identity · 0 cross-currency site ·
+6 missing `regular_price` · 16 missing `minimum_price` · 9 missing `msrp` ·
+**61 site SKUs with no Regional Detail, concentrated in ONE site** · alias candidates 0 ·
+alias table changed false.
+
+**THE GATE PROOF IS THE STRONGEST LINE IN THE LOG.** `feature_flag false` with
+`gate refusal FEATURE_DISABLED` and `db_opened false` means the readback called the real endpoint,
+was refused, and never opened the database — then read the tables itself and handed them to the pure
+builder. A census taken around the gate would have measured a pipeline nobody ships.
+
+### 40.2  P1 IS `NOT_PROVABLE`, AND THAT IS AN ANSWER
+
+Proofs P2–P7 PASS. **P1 reports `NOT_PROVABLE`** — not FAIL — for a stated reason: outside the US
+there is no USD-priced population at risk, so the claim "a USD price does not drag a non-US SKU into
+the US site" has nothing to be tested against. The only evidence gap in the whole run is
+`PROOF_NOT_PROVABLE(P1)`.
+
+*A proof with an empty population is not a proof that passed.* Recording it as PASS would mean a
+later round inherits a guarantee nobody measured, and the day a USD price appears on a non-US site
+is exactly the day that guarantee matters. It is **not a blocker**: P2–P7 cover the leaks that do
+have populations, and the board refuses cross-site pooling structurally rather than on the strength
+of this proof.
+
+P1-B5's suite reproduces the at-risk population the live data lacks — **MX/Amazon prices in USD, and
+so does US/Amazon** — so the rule is tested even though production cannot yet test it (§E5–E9).
+
+### 40.3  THE ORDER OF EVENTS, RECORDED HONESTLY
+
+P1-B4 was built and committed BEFORE the readback ran. The readback's `next_action` of
+`PROCEED_TO_P1_B4` is therefore a **historical** next-action, already satisfied; it is not a
+re-instruction and P1-B4 is not re-implemented. What P1-B5 owes instead is a reconciliation: can the
+board P1-B4 built survive the universe the readback found?
+
+| measured | what the board does | evidence |
+|---|---|---|
+| 10 sites | the ladder narrows on the tiers ABOVE and nothing below | P1-B4 §39, b4 suite |
+| 13 categories | menu shape, not chips; no allowlist, no three-category limit | §B3, §B8 |
+| 43 series | derived per site/category from the response | §B4 |
+| 495 rows | one site at a time; the page grain is `normalizedRows` | §A2 |
+| 61 no Regional Detail | eligible, ledgered, **not plotted** | §C1–C7 |
+| 6/16/9 missing prices | stay `null`; never 0 | §D1–D9 |
+| 6 currencies | split before drawing; never pooled | §E1–E4 |
+| 0 cross-currency sites | currency is derived, not a scope | §E5–E9 |
+
+**Nothing was rewritten to move code.** The board needed no change to accept live rows, and the
+reason is recorded below.
+
+### 40.4  THE SEAM WAS ALREADY THERE — WHICH IS WHY THIS IS A SWAP, NOT A PORT
+
+`prototype.js` has said the same thing at `boot()` since P0:
+
+> THE ONE PLACE AN ADAPTER IS CHOSEN. Everything above this line is adapter-agnostic; P1-B1 replaces
+> this single expression and touches no chart, no table and no rule.
+
+It was true. There are **nine** references to the preview fixture in a 4,600-line renderer, and
+eight of them are the fixture's own self-test. `ADAPTER` is one module-level variable assigned at
+boot. P1-B5 made it an argument.
+
+`PSB_CONTRACT.OperationDbProductStrategyDataAdapter` has also existed since P0 as a DEFINED,
+DISABLED object returning `SOURCE_NOT_CONNECTED` with `requests_made: 0`, carrying a written reason
+(three of six source tables had no bounded read owner). **P1-B5 is the enabled implementation of a
+seam that was reserved two rounds before it could be filled**, and the reserved stub stays disabled
+because it is a definition, not a second adapter.
+
+*The renderer cannot tell live data from preview data, so it cannot be rendering them differently.*
+That is the argument the promotion rests on, and it is only available because the seam was honoured.
+
+### 40.5  THE PROMOTION — ONE COPY OF EVERY RULE
+
+| from | to |
+|---|---|
+| `docs/prototypes/…/data-contract.js` | `assets/js/product-strategy/psb-data-contract.js` |
+| `docs/prototypes/…/selectors.js` | `assets/js/product-strategy/psb-selectors.js` |
+| `docs/prototypes/…/chart-layout.js` | `assets/js/product-strategy/psb-chart-layout.js` |
+| `docs/prototypes/…/prototype.js` | `assets/js/product-strategy/psb-board-ui.js` |
+| `docs/prototypes/…/prototype.css` | `assets/css/product-strategy-board.css` |
+
+Git records all five as pure renames. **The prototype now owns exactly one script — its fixture** —
+and loads everything else from production, which is the only arrangement in which "the prototype
+proves the production board" is a true sentence rather than a hopeful one. §3's "no second UI, no
+second selector, no second adapter" is satisfied by there being one copy, not by a promise.
+
+**1,127 assertions pass against the promoted files unchanged.** That is the evidence that a
+promotion happened rather than a rewrite: had the files been re-typed, the suites would have needed
+re-typing too, and the agreement between them would prove nothing.
+
+### 40.6  FOUR SURGICAL EDITS TO THE BOARD, AND NO FIFTH
+
+1. **`boot(opts)` takes the adapter as an argument**, defaulting to the preview one, and throws
+   rather than inventing a board when a host passes neither.
+2. **`PSB_BOARD.mount()` is exposed and auto-boot becomes conditional** on `PSB_BOARD_DEFER`. The
+   prototype auto-boots exactly as before; a host that must fetch first mounts when its data lands.
+3. **The self-test runs only under the preview adapter.** It asserts the demonstration banner, the
+   demonstration prices and the disabled Operation DB adapter — every one true while the fixture is
+   in use and none of them a statement about the board. *Over live rows it would report that
+   production data is not preview data, which is a suite measuring its own fixture's absence.*
+   Gated at the CALL SITE, in one edit: guarding the assertions individually means finding all of
+   them, and the one that got missed is the one that goes red in production.
+4. **Chrome bindings tolerate absence.** `boot()` called `byId('btnRail').addEventListener`
+   directly. Inside the Operation System shell the navigation rail is the shell's and there is no
+   self-test panel. *A renderer that throws because the host did not supply a navigation toggle is a
+   renderer coupled to one host's chrome.* Presentation and Print stay bound wherever they exist,
+   because §8 lists them as board features.
+
+### 40.7  THE SOURCE-STATE MATRIX — EXACTLY ONE STATE YIELDS ROWS
+
+`km-product-strategy-live-adapter.js` owns the mapping from the server's vocabulary onto the board's,
+and the decision whether a chart may be drawn at all.
+
+| state | rows | analysis | why |
+|---|---:|---|---|
+| `OK` (server `READY`) | all | **yes** | the only one |
+| `SOURCE_EMPTY` | 0 | no — *info* | read, and empty. A measurement, not a failure |
+| `SOURCE_PARTIALLY_READABLE` | 0 | no — **stop** | see below |
+| `STOP_DATA_INTEGRITY` | 0 | no — **stop** | a join may have attached to the wrong product |
+| `SOURCE_NOT_CONNECTED` | 0 | no — **stop** | client-only; no server answered |
+| `FEATURE_DISABLED` | 0 | no — *info* | asked first, so no request is sent |
+| `SCHEMA_CONTRACT_MISMATCH` | 0 | no — **stop** | a shape this build never read |
+| `CONTRACT_MISMATCH` | 0 | no — **stop** | rows lack fields the board indexes into |
+
+**PARTIALLY-READABLE IS DELIBERATELY HARSHER THAN IT NEEDS TO BE.** The rows it did see are real.
+Showing them would be a price comparison drawn from part of a population with no way for a reader to
+know which part — *and the product that is missing is exactly the one nobody checks.* A partial
+answer to "which product is priced wrong" is not a partial answer; it is a confident wrong one.
+
+**THE ORDER OF CHECKS IS ITSELF A RULE.** A response can be `READY` and carry a contract version this
+build has never read. The structural stop is checked first, because a reader told "the shape is
+wrong" can act on it, where a reader told "0 products" goes looking for the products (mutant N10).
+
+**`SCHEMA_CONTRACT_MISMATCH` is the live adapter's own addition to the stop list.**
+`km-product-pricing-adapter` REPORTS a version it was not written against and does not refuse —
+correctly, because a pure adapter's job is to say what it saw. *Refusing is a decision about what a
+person is allowed to be shown, and it belongs at the seam that hands rows to a chart.*
+
+**A MISSING STATE IS NOT AN EMPTY SOURCE** (N4). "Nobody measured" and "measured, and it is empty"
+are different answers and only one of them tells a reader to move on. **A state nobody froze is a
+shape problem, not a state** (N5). **A server cannot honestly send `SOURCE_NOT_CONNECTED`** — a
+response carrying it is proof a server answered, which is the one thing it claims did not happen.
+
+### 40.8  THE 61 MISSING REGIONAL DETAILS — AND THE CODE ALREADY DID THIS
+
+§6 asks that the 61 be counted in Data Quality and kept off the price chart. **`psb-selectors.js`
+already does exactly that**, and P1-B5 recorded the evidence rather than writing it again:
+
+* `regionalStateOf` answers `REGIONAL_DETAILS_MISSING` when `row.regional` is null;
+* the identity goes into `dataQuality.regional_details_missing` — **named, not counted**, because a
+  count on its own cannot be acted on;
+* `chartRefusalsFor` keeps it out of `chartRows`;
+* `regional_detail_decides_membership: false` is published as data, so no view has to infer it.
+
+All 61 are **eligible** (membership is `marketplace_skus`, and a missing Regional Detail does not
+un-list a SKU), and **not one is chartable**. The concentration matters and is asserted: 61 in one
+site is a very different fact from 61 spread over ten — it points at one site's setup, not at a
+systemic gap. No DB was touched and no Regional Detail was created.
+
+### 40.9  THE GAP THE REAL UNIVERSE EXPOSED — THE SITE LADDER HAS NO SOURCE
+
+**This is the finding of the round.**
+
+The board derives Company → Country → Marketplace from the rows its adapter hands over, because the
+preview fixture hands over the CANONICAL universe: every site it knows about, unfiltered, narrowed
+afterwards in the selectors. That is correct for a fixture, and it is the only reason the ladder
+worked.
+
+`productPricing.workspace.get` **cannot** do that, and must not. It is site-scoped by construction —
+company, country and marketplace are required and the server refuses without them — and P1-B1 built
+it that way precisely so one site's rows can never appear under another site's heading. Its
+`filterOptions` carries categories and series **for the site already chosen**; it carries no site
+list, and there is nowhere honest for one to come from inside a site-scoped answer.
+
+So **the live universe cannot populate the top three rungs of the ladder**, and no existing read
+owner publishes `marketplace_skus` membership across sites.
+
+*This is not a defect in P1-B4 — the board is correct for the adapter it was given.* It is a gap
+between a renderer that assumed a canonical universe and a read that is scoped on purpose, and it
+was invisible until there was a real read to scope.
+
+**It is recorded, not closed.** The production page fails closed with `SITE_UNIVERSE_NOT_AVAILABLE`
+and takes the scope as an INPUT (`opts.scope`), with `opts.siteUniverse` reserved as the seam a
+later round wires. **No endpoint was invented**: a second read authority for `marketplace_skus` is
+the one thing the adapter contract names as forbidden, because two owners of one resource disagree —
+and adding a server action would require a sync and a deployment this round is not authorised to do.
+
+### 40.10  THE PRODUCTION PAGE — FOUR STEPS, AND NO FIFTH
+
+`assets/js/pages/product-strategy-board.js` + `assets/html/pages/product-strategy-board.html`.
+
+1. ask the capability mirror — the accessor owns it, and refuses locally with the same code the
+   server would send rather than spending a round trip to be told (N11: a mutant that asks the
+   server first is caught by the request counter moving);
+2. resolve the scope, checked locally, because two of three is not a narrower question — it is a
+   question the server cannot answer;
+3. one read through the accessor, handed to the live adapter;
+4. mount the board with that adapter, or render the state and mount nothing.
+
+**There is no fifth step in which something is shown anyway.**
+
+**NOT REGISTERED.** No menu item in `index.html`, no entry in the `app.js` section map, no script
+tag. `showSection` cannot reach it. §4 forbids enabling the navigation entry and §11 forbids
+changing it, so production visibility stays zero **by construction rather than by a hidden button** —
+the same discipline the accessor has carried since P1-B1, and the suite asserts both files.
+
+**WHAT THE PARTIAL DELIBERATELY OMITS:** the demonstration banner (it reads "Preview data — not
+connected to Operation System Database", the truest sentence on the prototype and a false one here;
+*a page that kept the element and emptied it would be one edit away from labelling live prices as a
+demonstration*), the sidebar and nav (the shell owns navigation), and the self-test panel.
+
+### 40.11  `scratchpad/dryrun/wrapper.gs` — THE ON-SIGHT AUDIT (§9)
+
+**Resolved to: Claude local scratchpad only. Rule A. Deleted.**
+
+It was **not** a leftover of the P1-B3 sync attempt, which is what §9 supposed. It was
+`TEMP_RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL_DRY_RUN`, dated **2026-09-10**, a one-shot
+paste-block wrapping an **S1** factory-stock-movement row removal with `execute:false`.
+
+| question | answer |
+|---|---|
+| in the Git repo? | **no** — untracked, and `git log --all --diff-filter=A` finds it was never added |
+| referenced by anything? | **no** — 0 hits repo-wide for either function name |
+| defines a public entry point? | yes, one — but inert as scratchpad text |
+| in any sync package / manifest / router? | **no** — P1-B3's manifest is five files and none is this |
+| the only still-needed dry-run guard? | **no** — the guard lives in the removal tool; this carried only a frozen baseline, itself reproducible from its siblings (`frozen.json`, `c1–c3.txt`, `rebuild.py`) |
+| in the live Apps Script project? | **unprovable from here** — no credential; see below |
+
+**Two facts made deletion safe rather than merely permitted.** First, **S1 is COMPLETE** — that is
+`main`'s HEAD commit (`c139943`, *"S1 is complete — the write path closes in the lifecycle, not in
+the database"*). Second, **the wrapper would refuse itself**: its own preflight pins
+`frozen.build === 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R6'` while the live build is now `…R7-R8`, so
+pasting it throws `WRAPPER_PREFLIGHT_FAILED: the baseline is for another build`.
+
+A stale paste-block for a finished project is a thing somebody can find and paste. **No Git commit
+was created for the deletion**, per rule A. The suite pins the finding (§M): if a `wrapper.gs` ever
+appears in the repository, or anything references the dry-run name, it goes red.
+
+**Residual, and it belongs to the user:** whether a copy was ever pasted into the live Apps Script
+project cannot be determined from here — there is no credential, which is the same wall the P1-B3
+sync hit. If one is there, rule C applies: **do not delete it this round**; the removal plan is to
+open the project, confirm no other file calls
+`TEMP_RUN_S1_FACTORY_MOVEMENT_LEGACY_TEST_ROW_REMOVAL_DRY_RUN`, delete that one file, and save.
+
+### 40.12  THE CAMPAIGN CONTRACT, UNCHANGED AND RE-ASSERTED (§7)
+
+`campaigns` had 1 row and `campaign_sku_lines` 2 in the live read, so the join is real but tiny —
+which is exactly when a contract matters, because nothing on screen would look wrong if it broke.
+Everything P1-B3 froze is still in force and untouched: promotion is a **join**, never a column;
+`asOf` is a **parameter**, so the same response on the same day gives the same rows and a campaign
+that expired at midnight is not a test that fails once a day; two simultaneously effective
+promotions are `AMBIGUOUS_EFFECTIVE_PROMOTION` with **nothing picked** — not the lowest, not the
+newest, not the sheet order, because picking one would be a coin toss reported as a fact;
+`source_status` is the status string and the codes keep `source_status_codes`; `variant_group` is
+`series` and `variant_name` stays `null`; an image is drawn only on `VERIFIED_DB_MAPPING`; identity
+is `MSKU:<marketplace_sku_id>` and the fixture form cannot survive the chain (§A8–A9). The scenario
+remains front-end memory only (§J).
+
+### 40.13  WHAT IS NOT DONE
+
+* **The site ladder has no live source** (§40.9) — the page takes a scope as input until one exists.
+* **No page loads any of this.** No navigation entry, no script tag, `PRODUCT_STRATEGY_ENABLED_`
+  still false, no deployment, no live read performed this round.
+* **The board has not been rendered against live rows in a browser.** The chain is proven to the
+  row contract and the selectors; the pixels are proven only for the preview fixture (P1-B4 §39.1).
+* **P1-B3's five Apps Script files are still unsynced**, and the readback whose evidence this
+  section records was run by the user from a package that is still outstanding in this repo.
+* **Print/PDF is still asserted rather than photographed**, unchanged from §39.

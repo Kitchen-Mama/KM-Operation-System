@@ -557,3 +557,126 @@ Notes:                       A CORRECTION SHIPPED WITH THIS PACKAGE. 72_'s `anal
 ```
 
 **STATUS: READ-ONLY READBACK PACKAGE PREPARED · NOT PUSHED · APPS SCRIPT NOT SYNCED · NO DEPLOYMENT VERSION · PRODUCT STRATEGY NOT ENABLED · NO LIVE READ PERFORMED.**
+
+
+=======================================================================================================
+## Entry — 2026-09-11 · PRODUCT-STRATEGY-P1-B5 (live evidence accepted · integration package built · nothing synced, nothing deployed)
+=======================================================================================================
+
+Ledger entry ID:             P1-B5-2026-09-11-live-universe-acceptance-and-integration-package
+Branch:                      feature/product-strategy-board-p0
+PRE HEAD:                    1d90618b5d356542df407b91bbf5efc59d65d426
+POST HEAD:                   (this commit)
+origin/feature/...-p0:       1d90618b5d356542df407b91bbf5efc59d65d426 — UNCHANGED, NOT PUSHED
+main:                        c139943 — untouched
+
+-------------------------------------------------------------------------------------------------------
+THE P1-B3 PACKAGE WAS SYNCED AND THE READBACK WAS RUN — BY THE USER, NOT BY THIS AGENT
+-------------------------------------------------------------------------------------------------------
+  The P1-B3 entry above says "APPS SCRIPT NOT SYNCED · NO LIVE READ PERFORMED". That was true when it
+  was written and it is NOT amended here: a ledger that edits its past to match the present cannot be
+  used to reconstruct what was known when a decision was made.
+
+  What has since happened, recorded as evidence rather than as an action of this round:
+
+      RUN_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK()   executed 2026-09-11
+      chunks 9/9 · report fingerprint FP0d88b7eb · report length 57493
+      build / handler / deployment release  F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R8
+      read_only true · writes 0 · writer_calls 0 · sheets_created 0 · rows_modified 0
+      feature_flag false · gate refusal FEATURE_DISABLED · gate db_opened false
+      VERDICT: READY
+
+  Apps Script version number and deployment ID were not supplied to this agent and are therefore NOT
+  recorded — an identifier nobody handed over is left blank rather than inferred from a release pin.
+
+  SOURCE TABLES (fingerprints are the run's, not re-measured here):
+      sku_details           192 rows · 42 cols · DF770684
+      marketplace_skus      495 rows · 15 cols · 2AF82658
+      sku_regional_details  495 rows · 16 cols · 12CB99B7
+      pricing_list          495 rows · 29 cols · 9B0471B0
+      campaigns               1 row  · 27 cols · 100DF154
+      campaign_sku_lines      2 rows · 27 cols · E9260A0C
+
+  UNIVERSE: 10 sites · 13 categories · 43 series · all marketplace_skus active · 0 duplicate master
+  SKU · 0 duplicate marketplace identity · 0 duplicate regional canonical identity · 0 duplicate
+  pricing identity · 0 orphan regional/pricing identity · 0 cross-currency site · 6 missing
+  regular_price · 16 missing minimum_price · 9 missing msrp · 61 site SKUs with no Regional Detail in
+  ONE site · alias candidates 0 · alias table changed false.
+
+  EVIDENCE GAP: PROOF_NOT_PROVABLE(P1) only. P2-P7 PASS. P1 is NOT_PROVABLE because there is no
+  USD-priced population outside the US to test against. It is NOT rewritten to PASS and is NOT a
+  blocker — a proof with an empty population is not a proof that passed, and the day a USD price
+  appears on a non-US site is exactly the day the guarantee would have mattered.
+
+-------------------------------------------------------------------------------------------------------
+APPS_SCRIPT_SYNC_REQUIRED:   NONE
+-------------------------------------------------------------------------------------------------------
+  No file under assets/specs/active/apps-script/ or assets/tools/apps-script-diagnostics/ changed in
+  this round. The server side is exactly what the readback ran against.
+
+-------------------------------------------------------------------------------------------------------
+FRONTEND_DEPLOY_REQUIRED:    NO
+-------------------------------------------------------------------------------------------------------
+  Nothing a REGISTERED page loads has changed. index.html and assets/js/app.js are untouched, so the
+  new page is unreachable and the promoted modules are loaded by no production page.
+
+  One dependency to carry, and it is already satisfied: the prototype's index.html now loads the
+  promoted modules by their production paths, so those files must travel with it. They are in this
+  same commit, so any future deploy of this branch takes them together.
+
+-------------------------------------------------------------------------------------------------------
+WHAT THIS ROUND CHANGED
+-------------------------------------------------------------------------------------------------------
+  PROMOTED (git records all five as pure renames — one copy of every rule, shared by the prototype
+  and the production page):
+      docs/prototypes/product-strategy-board/data-contract.js
+          -> assets/js/product-strategy/psb-data-contract.js
+      docs/prototypes/product-strategy-board/selectors.js
+          -> assets/js/product-strategy/psb-selectors.js
+      docs/prototypes/product-strategy-board/chart-layout.js
+          -> assets/js/product-strategy/psb-chart-layout.js
+      docs/prototypes/product-strategy-board/prototype.js
+          -> assets/js/product-strategy/psb-board-ui.js
+      docs/prototypes/product-strategy-board/prototype.css
+          -> assets/css/product-strategy-board.css
+
+  NEW:
+      assets/js/product-strategy/km-product-strategy-live-adapter.js   the OPERATION_DB adapter,
+                                   enabled — the implementation of a seam PSB_CONTRACT reserved at P0
+      assets/js/pages/product-strategy-board.js                        the page controller (unregistered)
+      assets/html/pages/product-strategy-board.html                    the partial (unmounted)
+      assets/tests/product-strategy-integration-p1-b5.test.js          151/0/12 mutants/0 survived
+
+  NOT CHANGED, AND CHECKED:
+      PRODUCT_STRATEGY_ENABLED_ = false · INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = false
+      index.html (no menu item, no mount, no script tag) · assets/js/app.js (no section map entry)
+      no DB write · no Sheet row or schema · no Drive · no network · no live endpoint call
+      no Apps Script source · no deployment · S1-S5 untouched · main untouched · km-lb untouched
+
+-------------------------------------------------------------------------------------------------------
+THE GAP THIS ROUND FOUND, AND DID NOT CLOSE
+-------------------------------------------------------------------------------------------------------
+  THE SITE LADDER HAS NO LIVE SOURCE. The board derives Company -> Country -> Marketplace from the
+  rows its adapter hands over, because the preview fixture hands over the canonical universe.
+  productPricing.workspace.get is site-scoped by construction and its filterOptions carries categories
+  and series FOR THE SITE ALREADY CHOSEN. No existing read owner publishes marketplace_skus membership
+  across sites.
+
+  It fails closed as SITE_UNIVERSE_NOT_AVAILABLE and the scope is an INPUT. NO ENDPOINT WAS INVENTED:
+  a second read authority for marketplace_skus is the one thing the adapter contract forbids, and a
+  new server action would need a sync and a deployment this round is not authorised to perform.
+
+  NEXT ROUND OWNS: a bounded read owner for the site universe, then the Operation System shell merge.
+
+-------------------------------------------------------------------------------------------------------
+ORDERING CONSTRAINT FOR THE NEXT RELEASE
+-------------------------------------------------------------------------------------------------------
+      1. git push                                      (USER — nothing here is pushed)
+      2. Apps Script sync                              NOT REQUIRED by this round
+      3. Pages redeploy                                NOT REQUIRED by this round
+      4. Navigation entry + app.js section map         DEFERRED — §4 forbids enabling it, and it must
+                                                       not be enabled before the site-universe owner
+                                                       exists, or the board opens with no way to
+                                                       choose a site.
+
+**STATUS: LIVE EVIDENCE RECORDED · INTEGRATION PACKAGE BUILT · NOT PUSHED · NO APPS SCRIPT CHANGE · NO DEPLOYMENT · PRODUCT STRATEGY NOT ENABLED · NAVIGATION NOT ENABLED.**
