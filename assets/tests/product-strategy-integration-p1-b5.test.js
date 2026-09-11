@@ -615,10 +615,19 @@ console.log('\n=== §L  THE PRODUCTION PAGE: four steps, and no fifth ===');
       eq(r.state, PAGE.SITE_UNIVERSE_NOT_AVAILABLE,
         'L6 an incomplete scope stops before the wire');
       eq(calls, 0, 'L7 and still no request — the scope is checked locally');
-      eq(PAGE.CONTRACT.site_universe_owner, null,
-        'L8 the page records that no read owner publishes the site list');
-      ok(/second authority/.test(PAGE.CONTRACT.site_universe_gap),
-        'L9 and why inventing one is forbidden rather than merely undone');
+      /* P1-B6 CLOSED THIS. L8 and L9 asserted that no owner existed and that inventing one was
+         forbidden; both were true, and an assertion that a gap exists is worth exactly as much as the
+         gap. What still matters is WHICH owner it is — L9's warning was about a SECOND authority for
+         marketplace_skus membership, and that warning is what these now check. */
+      eq(PAGE.CONTRACT.site_universe_owner, 'productPricing.siteUniverse.get',
+        'L8 the site universe has a named read owner');
+      eq(PAGE.CONTRACT.site_universe_gap, null, 'L8a and the recorded gap is closed');
+      ok(PAGE.CONTRACT.site_universe_owner.indexOf('productPricing.') === 0,
+        'L9 and it is the SAME Product Pricing owner — not a second marketplace_skus authority');
+      eq(PAGE.CONTRACT.reads_universe_before_workspace, true,
+        'L9a the universe is read before the workspace, never the other way round');
+      eq(PAGE.CONTRACT.derives_site_universe_from_workspace_response, false,
+        'L9b and the universe is never reverse-engineered from a site-scoped answer');
     });
 }());
 
@@ -781,25 +790,47 @@ mut('N10 the schema check runs AFTER the source state, so a bad shape reports a 
   });
 
 mut('N11 the page asks the server before it asks the capability mirror', PAGE_FILE,
-  "    if (!accessor || typeof accessor.isEnabled !== 'function' || accessor.isEnabled() !== true) {",
-  "    if (!accessor) {",
+  "      return !!accessor && typeof accessor.isEnabled === 'function' && accessor.isEnabled() === true;",
+  "      return !!accessor;",
   function (M) {
     /* SYNCHRONOUS ON PURPOSE. The capability branch runs before mount() returns its promise, so a
        mutant that drops it reaches the accessor during the call — and `probe` must answer with a
        boolean, not a promise, or it is comparing a Promise to `true` and always says "survived". */
+    /* SYNCHRONOUS ON PURPOSE — `probe` must answer with a boolean, not a promise, or it compares a
+       Promise to `true` and always reports "survived". A mutant that drops the capability test reaches
+       the site-universe read during the call, so the counter moves before mount() returns. */
     var calls = 0;
     M.mount({ accessor: { isEnabled: function () { return false; },
+      getSiteUniverse: function () { calls++; return Promise.resolve({}); },
       get: function () { calls++; return Promise.resolve({}); } },
+      siteUniverse: require(path.join(JS, 'product-strategy', 'km-product-strategy-site-universe.js')),
       scope: { company: 'K', country: 'US', marketplace: 'Amazon' } });
     return calls > 0;
   });
 
 mut('N12 an incomplete scope is sent anyway and the server is asked to refuse it', PAGE_FILE,
-  "    if (!P.scopeIsComplete(scope)) {",
-  "    if (false) {",
+  "      if (!C.narrowed.complete) {",
+  "      if (false) {",
   function (M) {
-    return M.scopeIsComplete({ company: 'K' }) === false
-      && bare(fs.readFileSync(path.join(JS, PAGE_FILE), 'utf8')).indexOf('if (false)') >= 0;
+    /* The mutant lets a two-of-three scope fall through to the workspace read. Driven through the
+       controller so this is about BEHAVIOUR, not about the text of a branch — and synchronously,
+       because `live.fetch` invokes `accessor.get` before it returns its promise, so the counter moves
+       during the call. A probe that returned a promise would compare a Promise to `true`. */
+    var wsCalls = 0;
+    var SU = require(path.join(JS, 'product-strategy', 'km-product-strategy-site-universe.js'));
+    var c = M.create({
+      accessor: { isEnabled: function () { return true; },
+        getSiteUniverse: function () { return Promise.resolve({}); },
+        get: function () { wsCalls++; return Promise.resolve({ success: false, errors: [] }); } },
+      siteUniverse: SU, liveAdapter: LIVE, board: { mount: function () {} }
+    });
+    // The universe is installed directly so the whole probe stays synchronous.
+    c.universe = { state: 'OK', sites: [], hierarchy: {
+      companies: ['ResTW'],
+      countries_by_company: { ResTW: ['AU', 'CA'] },
+      marketplaces_by_country: { 'ResTW|AU': ['Amazon'], 'ResTW|CA': ['Amazon'] } } };
+    c.select({ company: 'ResTW' });   // country still unchosen -> must NOT reach the wire
+    return wsCalls > 0;
   });
 
 // ===================================================================================================

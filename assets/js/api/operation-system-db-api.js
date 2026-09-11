@@ -4029,7 +4029,13 @@ function _kmWriterError_(json, fallbackMessage) {
 // deployment below 13 with DEPLOYMENT_CONTRACT_MISMATCH. Pages must therefore NOT be redeployed before
 // the Apps Script sync for this release - both are USER-owned steps and the release ledger records the
 // order.
-var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 13;      // the minimum deployed_action_contract_version this build needs
+// P1-B6: 13 -> 14. One router ACTION was added (productPricing.siteUniverse.get). The pin tracks the
+// deployed contract because a browser that cannot tell a deployment WITHOUT the new route from one
+// that has it would report a missing site menu as a transport fault. THE ORDERING CONSEQUENCE IS
+// BINDING AND IS RECORDED IN THE RELEASE LEDGER: this file is loaded by every page, so Apps Script
+// must be synced BEFORE the frontend is redeployed, or every page refuses the old deployment with
+// DEPLOYMENT_CONTRACT_MISMATCH.
+var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 14;      // the minimum deployed_action_contract_version this build needs
 var KM_EXPECTED_REGISTRY_PROJECTION_VERSION_ = 'FB-3.1';
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT AXIS. Deliberately NOT folded into the action-contract number.
 //

@@ -35,7 +35,7 @@
 // PRODUCT-STRATEGY-P1-B1-R1 - moved because P1-B1 added the productPricing.workspace.get dispatch (one GET
 // registry entry and one POST branch) and did not move it. A router one round behind answers every other
 // action normally and simply cannot route this one, which is exactly the state a stamp must make visible.
-var RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R7';
+var RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9';
 
 // =============================================================================================================
 // F1-7N-FB-4E-R4A1 §3 — READ ACTIONS ARE SERVED ON GET, AND THIS IS WHY.
@@ -83,6 +83,10 @@ function rtrGetReadHandlers_() {
     'inventoryReplenishment.workspace.get':        handleInventoryReplenishmentWorkspaceGet_,
     'overseasStock.workspace.get':                 handleOverseasStockWorkspaceGet_,
     'productPricing.workspace.get':                handleProductPricingWorkspaceGet_,
+    // P1-B6 — the SAME owner publishes the site universe. It is routed next to the workspace read
+    // on purpose: a separate owner for marketplace_skus membership would be a second authority for
+    // the one rule that decides which SKU is listed where, and two owners of one resource disagree.
+    'productPricing.siteUniverse.get':             handleProductPricingSiteUniverseGet_,
     'shipment.workspace.get':                      handleShipmentWorkspaceGet_,
     'recommendation.workspace.get':                handleRecommendationWorkspaceGet_,
     // Scoped gap / composer reads
@@ -586,6 +590,17 @@ function doPost(e) {
     // the site scope lives here precisely so the shared SKU-page owner did not have to grow one.
     if (action === 'productPricing.workspace.get') {
       return jsonResponse_(handleProductPricingWorkspaceGet_(body));
+    }
+
+    // API v1 · Product Pricing SITE UNIVERSE (PRODUCT-STRATEGY-P1-B6). The companion read to the scoped
+    // workspace above, and deliberately the same owner: 72_ already holds the site-membership authority,
+    // and publishing the list of sites from a second file would be a second place where "listed on this
+    // site" is decided. It takes NO scope — the universe is the universe — reads exactly ONE table
+    // (marketplace_skus), and returns identities and counts only: no price, no currency, no image, no
+    // URL, no spreadsheet id, no SKU rows. Read-only, no lock, no writer, never getOperationDb; gated on
+    // PRODUCT_STRATEGY_ENABLED_ before the spreadsheet is opened, exactly as the workspace read is.
+    if (action === 'productPricing.siteUniverse.get') {
+      return jsonResponse_(handleProductPricingSiteUniverseGet_(body));
     }
 
     // API v1 · Inventory Replenishment READ-ONLY Workspace (Phase F1-7I). A body-carrying READ (no write); owner =

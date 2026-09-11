@@ -5782,3 +5782,176 @@ remains front-end memory only (§J).
 * **P1-B3's five Apps Script files are still unsynced**, and the readback whose evidence this
   section records was run by the user from a package that is still outstanding in this repo.
 * **Print/PDF is still asserted rather than photographed**, unchanged from §39.
+
+
+## §41 — P1-B6 · SITE UNIVERSE READ OWNER · DYNAMIC ENTRY SCOPE
+
+### 41.1  THE GAP §40.9 RECORDED, AND WHY IT NEEDED AN OWNER RATHER THAN A WORKAROUND
+
+P1-B5 measured it and refused to close it by guessing: the board derives Company → Country →
+Marketplace from the rows its adapter hands over, because the preview fixture hands over the whole
+canonical universe. `productPricing.workspace.get` cannot do that **and must not** — it is site-scoped
+by construction, and that scoping is the single reason one site's rows can never appear under another
+site's heading.
+
+`productPricing.siteUniverse.get` is the answer, and the decisive design choice is where it lives:
+**the same 72_ owner, not a new file.** `ppwMembership_` already decides what "listed on this site"
+means. A second file holding that rule would agree with the first on the day it was written and drift
+every day after — *and the drift would be invisible, because each would look correct on its own.*
+The adapter contract has named this hazard since P0: a second read authority for `marketplace_skus`
+is the one thing it forbids.
+
+### 41.2  THE CONTRACT
+
+One table (`marketplace_skus`), no scope, no filters, no page. It publishes **identities and counts**:
+
+```
+per site   company · country · marketplace · membership_row_count
+           active / phasing_out / inactive / discontinued / unknown_status / blank_id counts
+           selectable · selectable_with_inactive · refusal_reasons · site_key
+whole      site_count · hierarchy{companies, countries_by_company, marketplaces_by_country}
+           excluded{blank per tier, blank listing ids, unknown status}
+           findings · refusals · completeness{rows_examined, capped, is_whole_universe}
+           schema{contract_version 1, build, action, read_at, table fingerprint}
+           publishes[] · does_not_publish[]
+```
+
+**It returns no price, no currency, no image, no URL, no spreadsheet id and no SKU row**, and says so
+as data so the claim is assertable rather than merely written. **Currency is absent on purpose:** a
+complete site is single-currency (P1-B3), so currency is a property of a site already chosen —
+publishing it here invites a menu keyed on it, which §4 forbids outright.
+
+**SELECTABILITY IS DERIVED FROM THE EXISTING PRODUCT RULE.** `PPW_DEFAULT_STATUSES_` is what the
+workspace read applies when a caller names no statuses, so a site with nothing in that gate opens to
+an empty chart by default: `selectable:false` with `ONLY_INACTIVE_OR_DISCONTINUED_LISTINGS` named,
+and `selectable_with_inactive:true` because `include_inactive` is a real and supported request. Two
+booleans, one existing rule, no new judgement.
+
+### 41.3  THE STATES, AND THE THREE THINGS THEY REFUSE TO CONFLATE
+
+| state | published | why |
+|---|---|---|
+| `READY` | the ten sites | the table was read whole |
+| `SOURCE_EMPTY` | nothing | read whole, and it holds no usable identity |
+| `SOURCE_PARTIALLY_READABLE` | nothing | missing sheet, missing column, or a capped read |
+| `STOP_DATA_INTEGRITY` | nothing | a duplicate listing id, or one site spelled two ways |
+| `null` | nothing | the gate refused; nothing was measured |
+
+**A MISSING TABLE IS NOT AN EMPTY ONE.** Empty is the one answer a caller responds to by moving on,
+and a table nobody could read has established nothing at all. **A CAPPED READ IS NOT A UNIVERSE** —
+a partial menu is indistinguishable from a short one, *and a site missing from a menu looks exactly
+like a site that does not exist.* **AND A BLANK IDENTITY IS NEVER AN OPTION**: it is counted per tier
+and excluded, because a blank choice is one a person can make that the server must then refuse.
+
+**A DUPLICATE LISTING ID STOPS EVERYTHING, INCLUDING THE NINE SITES THAT WERE FINE.** This endpoint
+performs no join — and detects it anyway, because the universe is what a person chooses FROM, and
+offering a site whose rows may attach to the wrong product is offering a wrong answer before it has
+been asked for.
+
+**THE SERVER NEVER SENDS `SOURCE_NOT_CONNECTED`**, asserted across every reachable path; a response
+carrying it is proof a server answered. The accessor rejects one anyway, and the client universe
+module is the second wall.
+
+### 41.4  THE TEN CANONICAL SITES, VERBATIM
+
+```
+KM/US/Shopify · KM/US/Target · KM/US/Walmart
+ResTW/AU/Amazon · ResTW/CA/Amazon · ResTW/EU/Amazon · ResTW/JP/Amazon · ResTW/UK/Amazon
+ResUS/US/Amazon · ResUS/US/Walmart
+```
+
+**`KM` is not rewritten to `Kitchen Mama` and `EU` is not split into member countries**, both
+asserted. *A canonical value that a display layer improved is a value no exact-match join will find
+again* — and this endpoint's output is precisely what the NEXT request is built from, so a friendly
+name here becomes a refused scope there. No canonical company/country master exists to map them, so
+that is recorded as a **display-name evidence gap** rather than closed by invention.
+
+Two shapes in that list are worth noticing: **KM sells on no Amazon marketplace at all**, and **KM
+and ResUS both sell in US** — so a menu keyed on country, or on currency, would merge two companies'
+listings. The hierarchy is keyed on `company|country`, and the suite asserts the two lists differ.
+
+### 41.5  THE CLIENT FLOW, AND THE TWO ASYNCHRONOUS HAZARDS
+
+```
+capability mirror → siteUniverse.get → [ Company → Country → Marketplace ] → workspace.get → adapter → selectors → chart
+```
+
+**THE WORKSPACE READ IS NEVER FIRST**, and the suite asserts the request COUNT rather than the
+intention. An incomplete scope is answered locally at zero cost: *two of three is not a narrower
+question, it is a question the server cannot answer.*
+
+**NARROWING IS A FUNCTION, NOT A RENDER-TIME FILTER.** P1-B4 found this defect in the prototype and
+fixed it there; here it has a sharper edge, because now an invalid journey ends in a REQUEST. An
+upstream change drops the downstream values the new value does not offer, and **names the tiers it
+cleared** — a renderer that knows Marketplace was cleared can say so, where one that only sees a
+blank field looks like it lost the value itself. It never revises upward: *a control that edits its
+own input is one nobody can predict.*
+
+**ONE OPTION IS A FACT, NOT A CHOICE.** A tier with exactly one value is resolved and reported as
+context — and `autoResolved` names where that happened, so "the only one" stays distinguishable from
+"the first of several". A mutant that changes `length === 1` to `length >= 1` is caught.
+
+**SINGLE FLIGHT** — one workspace request outstanding; a second selection supersedes rather than
+races, because two concurrent reads of two sites resolving in an order nobody controls is the exact
+mechanism this feature exists to prevent. **STALENESS** is a different problem and needs its own
+rule: the superseded request still resolves, so every request carries a token and a response whose
+token is not current is DROPPED and counted. *A slow answer to a question nobody is asking any more
+is not late data, it is wrong data* — and it arrives looking exactly like the right data, because the
+only thing wrong with it is when it came back.
+
+**A SITE SWITCH RE-MOUNTS THE BOARD** with the new adapter, which is what clears category, series and
+any scenario override. There is no partial-update path that could miss one.
+
+### 41.6  WHAT ADDING ONE ROUTER ACTION ACTUALLY COSTS
+
+This is the finding worth keeping, because almost none of it is about the feature:
+
+1. **The GET read table AND the doPost branch.** Assertion 4.4 requires both to reach the same
+   handler — *an action cannot be renamed for one verb and not the other.* I had registered GET only.
+2. **`SYS_DEPLOYED_ACTION_CONTRACT_VERSION_` 13 → 14**, which is exactly this constant's stated rule.
+3. **`KM_EXPECTED_ACTION_CONTRACT_VERSION_` 13 → 14.** I had reasoned it should stay, citing 63_'s own
+   comment that it "deliberately STAYS AT 12" for the workspace action. **That comment is stale** —
+   the pin was later raised to 13 — and two suites assert equality outright. The suites encode the
+   rule the repo follows. **The consequence is binding and is in the release order: this file is
+   loaded by every page, so Apps Script must be synced BEFORE the frontend is redeployed**, or every
+   page refuses the old deployment with `DEPLOYMENT_CONTRACT_MISMATCH`.
+4. **Three module stamps** (`SYS_BUILD_VERSION_`, `PPW_BUILD_VERSION_`, `RTR_BUILD_VERSION_`) → R9,
+   because three files changed. E4 catches a dirty file whose stamp did not move — it used to skip
+   dirty files as "the round's own edit in progress", which is exactly the window in which the rule
+   can be broken, and it was broken that way once. **It caught me for the reason it was rewritten.**
+5. **The manifest in 63_**, which declares the build each owner file should report. Moving a stamp
+   without its manifest entry reports a MIXED DEPLOYMENT — that was 31 red suites, and my first
+   instinct was wrong: I reverted the release, when the missing half was the manifest.
+6. **`SYS_DEPLOYMENT_RELEASE_` → R9 and the append-only ledger in `_release-order.js` gains R9.**
+7. **Three diagnostic build pins** that track the release (`TEMP_E3_CENSUS_BUILD_`,
+   `R6R7_ACTIVATION_BUILD_`, `S1_BUILD_`), because a lagging pin refuses a correctly synced project —
+   which those files say in as many words. **`P1B3_READBACK_BUILD_` deliberately does NOT move**: a
+   module stamp declares the round its own file belongs to, and the P1-B3 readback did not change.
+8. **A negative fixture with an expiry date nobody wrote down.** The S1 census used
+   `…R6-R7-R9` as its stand-in for "a build nobody measured on". P1-B6 shipped R9, so the fixture
+   silently stopped being unmeasured and the STOP it exists to prove stopped firing. Moved to
+   `…-NEVER`, a token the append-only ledger cannot mint. *A negative fixture that names the next
+   round's token is a trap set for the next round.*
+
+### 41.7  THE READBACK
+
+`RUN_P1_SITE_UNIVERSE_READBACK()` — no parameters, no router entry, no web entry point, filed with
+the other read-only censuses. It calls the **real endpoint** expecting `FEATURE_DISABLED` with
+`dbOpened false` and `tablesRead 0`, then reads the table through the **same fail-closed io helper**
+and hands it to the **shipped pure builder**. It never writes the flag: *a live refusal is stronger
+evidence than a census taken around the gate*, and a readback that flipped the flag would measure a
+pipeline nobody ships and leave a bypass behind. Zero-write is labelled **DECLARED** (no writer in
+the file, asserted against the source) versus **MEASURED** (`rows_modified`, a lastRow/lastColumn
+delta). It prints identities and counts, never rows.
+
+### 41.8  NOT DONE
+
+* **The readback has not been run.** This round builds the repo-side package only.
+* **No page loads any of this.** `PRODUCT_STRATEGY_ENABLED_` still false, navigation still not
+  enabled — and it must NOT be enabled before this action is deployed, or the board opens with a
+  site menu it cannot fill.
+* **No live read was performed**, and the ten identities are this round's fixture built to the
+  brief's specification, not a new measurement.
+* **Display names are an evidence gap**: no canonical company/country master exists, so `KM` and `EU`
+  are shown as themselves.
+* The board has still not been rendered against live rows in a browser.

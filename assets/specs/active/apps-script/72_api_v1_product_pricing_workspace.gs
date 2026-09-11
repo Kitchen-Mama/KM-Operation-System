@@ -56,7 +56,7 @@
 // source discriminator (§八), the per-table schema fingerprint and the read timestamp. Nothing was
 // synced at R7 either, so this supersedes a deployment candidate rather than an actual deployment -
 // but two DIFFERENT trees must never both claim one release id, which is the whole job of the id.
-var PPW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R8';
+var PPW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9';
 
 var PPW_ACTION_ = 'productPricing.workspace.get';
 // P1-B3 §8 — THE RESPONSE SHAPE'S OWN VERSION, separate from the module build and from the deployment
@@ -1146,6 +1146,333 @@ function handleProductPricingWorkspaceGet_(body, io) {
   } catch (e) {
     var code = (e && (e.safetyToken || e.apiCode || e.validationCode))
       || 'PRODUCT_PRICING_WORKSPACE_BUILD_FAILED';
+    return ppwEnvelope_(false, null,
+      [{ code: code, message: String((e && e.message) || e), details: (e && e.schemaDetail) || null }],
+      { requestId: reqId, serverDurationMs: (io.now() - t0), refused: true, refusalCode: code });
+  }
+}
+
+
+// ==========================================================================================================
+// §11  THE SITE UNIVERSE READ OWNER                                          (PRODUCT-STRATEGY-P1-B6)
+// ==========================================================================================================
+//
+// WHY THIS LIVES IN THIS FILE. P1-B5 measured the gap: the board derives Company -> Country -> Marketplace
+// from the rows its adapter hands over, because the preview fixture handed over every site it knew. The
+// workspace read cannot do that and must not — it is site-scoped by construction, and that scoping is the
+// single reason one site's rows can never appear under another site's heading.
+//
+// So a second read is needed, and the one thing it must NOT be is a second authority. `ppwMembership_`
+// already decides what "listed on this site" means: an exact company + country + marketplace match in
+// marketplace_skus, with blank ids excluded and counted. If that rule lived in two files they would agree
+// on the day they were written and drift every day after — and the drift would be invisible, because each
+// would look correct on its own. The universe below is therefore built by the SAME normalisation
+// (`ppwLower_`) over the SAME table, in the same file, and publishes the authority it used.
+//
+// WHAT IT DELIBERATELY DOES NOT RETURN, each one a way a site list could have become a data leak:
+// no price, no image URL, no product_url, no spreadsheet id, no sheet name, no SKU rows, no master SKU,
+// no category and no series. A menu needs identities and counts. Anything else on this endpoint would be
+// a second copy of data that already has an owner, reachable without a scope.
+//
+// CURRENCY IS NOT HERE EITHER, and that is not an omission. P1-B3 proved a complete site is single-currency
+// and P1-B5 asserts a USD price cannot drag a non-US SKU into the US: currency is a PROPERTY of a chosen
+// site, derived from pricing_list when that site is read. Publishing it here would invite a menu keyed on
+// it, which is the exact defect section 4 forbids.
+
+var PPW_SITE_UNIVERSE_ACTION_ = 'productPricing.siteUniverse.get';
+
+// Its own contract number, separate from PPW_SCHEMA_CONTRACT_VERSION_. Two responses with two shapes need
+// two version lines, or a client cannot say which one it was written against.
+var PPW_SITE_UNIVERSE_CONTRACT_VERSION_ = 1;
+
+// One table. Stated as a constant so the "this endpoint reads exactly one table" claim is checkable
+// against the code that does the reading rather than against a sentence about it.
+var PPW_SITE_UNIVERSE_TABLES_ = [
+  { name: 'marketplace_skus',
+    requiredCols: ['marketplace_sku_id', 'company', 'country', 'marketplace'] }
+];
+
+// A universe larger than this is not truncated into a shorter menu — it is reported as incomplete. A menu
+// that silently lost a site is worse than one that says it could not be counted, because a missing site
+// looks exactly like a site that does not exist.
+var PPW_SITE_UNIVERSE_MAX_ = 2000;
+
+/** The canonical site key. ppwLower_ is the SAME normalisation membership uses — not a second one. */
+function ppwSiteIdentity_(company, country, marketplace) {
+  return ppwLower_(company) + '|' + ppwLower_(country) + '|' + ppwLower_(marketplace);
+}
+
+/**
+ * PURE. rows in, universe out. No clock (readAt is a parameter), no Spreadsheet, no cache, no properties.
+ *
+ * `readAt` is an argument for the same reason the workspace builder takes one: a builder that read the
+ * clock would answer differently on two calls with identical input, and then the test that proves it
+ * deterministic is testing the clock.
+ */
+function ppwSiteUniverseBuild_(rows, readAt, capped) {
+  rows = rows || [];
+  var bySite = {}, order = [];
+  var blankCompany = 0, blankCountry = 0, blankMarketplace = 0, blankAny = 0;
+  var blankId = 0, unknownStatus = 0;
+  var seenSkuId = {}, duplicateSkuIds = {};
+  var rawByKey = {};          // canonical key -> the first raw triple seen, to detect conflicting spellings
+  var identityConflicts = [];
+
+  rows.forEach(function (r) {
+    var companyRaw = ppwStr_(r.company);
+    var countryRaw = ppwStr_(r.country);
+    var marketRaw = ppwStr_(r.marketplace);
+
+    // BLANK IDENTITY IS COUNTED AND EXCLUDED, NEVER OFFERED. A blank option in a site menu is a choice a
+    // person can make that cannot be answered — the request would be refused as SCOPE_INCOMPLETE after
+    // they had already chosen it.
+    if (companyRaw === '') blankCompany++;
+    if (countryRaw === '') blankCountry++;
+    if (marketRaw === '') blankMarketplace++;
+    if (companyRaw === '' || countryRaw === '' || marketRaw === '') { blankAny++; return; }
+
+    var id = ppwStr_(r.marketplace_sku_id);
+    if (id === '') { blankId++; }
+    else {
+      // A DUPLICATE ID IS A MIS-ATTRIBUTION RISK FOR EVERY JOIN DOWNSTREAM, so it is detected here even
+      // though this endpoint performs no join at all: the universe is what a person chooses FROM, and
+      // offering a site whose rows may attach to the wrong product is offering a wrong answer.
+      if (Object.prototype.hasOwnProperty.call(seenSkuId, id)) {
+        duplicateSkuIds[id] = (duplicateSkuIds[id] || 1) + 1;
+      }
+      seenSkuId[id] = true;
+    }
+
+    var key = ppwSiteIdentity_(companyRaw, countryRaw, marketRaw);
+    var rawTriple = companyRaw + '|' + countryRaw + '|' + marketRaw;
+    if (!Object.prototype.hasOwnProperty.call(rawByKey, key)) {
+      rawByKey[key] = rawTriple;
+    } else if (rawByKey[key] !== rawTriple) {
+      // TWO SPELLINGS OF ONE SITE. "KM " and "KM" normalise together but are written differently, so a
+      // reader cannot tell which one the data means and neither can a later exact-match join.
+      if (identityConflicts.indexOf(key) === -1) identityConflicts.push(key);
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(bySite, key)) {
+      bySite[key] = {
+        company: companyRaw, country: countryRaw, marketplace: marketRaw,
+        membership_row_count: 0,
+        active_count: 0, phasing_out_count: 0, inactive_count: 0, discontinued_count: 0,
+        unknown_status_count: 0, blank_id_count: 0,
+        refusal_reasons: []
+      };
+      order.push(key);
+    }
+    var site = bySite[key];
+    site.membership_row_count++;
+    if (id === '') site.blank_id_count++;
+
+    var status = ppwLower_(r.marketplace_sku_status);
+    if (status === 'active') site.active_count++;
+    else if (status === 'phasing_out') site.phasing_out_count++;
+    else if (status === 'inactive') site.inactive_count++;
+    else if (status === 'discontinued') site.discontinued_count++;
+    else {
+      // NAMED, NOT ASSUMED ACTIVE. Defaulting an unreadable status to sellable would put a listing in a
+      // menu on the strength of a blank cell.
+      site.unknown_status_count++;
+      unknownStatus++;
+    }
+  });
+
+  // DETERMINISTIC ORDER, so two identical reads produce two identical menus and a diff between them is a
+  // change in the data rather than in the sheet's row order.
+  order.sort();
+
+  var sites = order.map(function (k) {
+    var site = bySite[k];
+    // SELECTABLE IS DERIVED FROM THE EXISTING PRODUCT RULE, NOT INVENTED HERE. PPW_DEFAULT_STATUSES_ is
+    // what the workspace read applies when a caller names no statuses, so a site with nothing in that gate
+    // opens to an empty chart by default. It is reported as not selectable BY DEFAULT, with the reason
+    // named and the override stated — `include_inactive` is a real and supported request, so the second
+    // flag says the site is reachable that way rather than pretending it does not exist.
+    var defaultCount = site.active_count + site.phasing_out_count;
+    var inactiveCount = site.inactive_count + site.discontinued_count;
+    site.default_status_row_count = defaultCount;
+    site.selectable = defaultCount > 0;
+    site.selectable_with_inactive = (defaultCount + inactiveCount + site.unknown_status_count) > 0;
+    if (defaultCount === 0 && inactiveCount > 0) {
+      site.refusal_reasons.push('ONLY_INACTIVE_OR_DISCONTINUED_LISTINGS');
+    }
+    if (site.unknown_status_count > 0) site.refusal_reasons.push('UNKNOWN_STATUS_ROWS_PRESENT');
+    if (site.blank_id_count > 0) site.refusal_reasons.push('BLANK_MARKETPLACE_SKU_ID_ROWS');
+    site.site_key = k;
+    return site;
+  });
+
+  // THE HIERARCHY, built from the same site list rather than from a second pass over the rows — a second
+  // pass is a second chance to disagree with the first.
+  var companies = [], countriesByCompany = {}, marketplacesByCountry = {};
+  sites.forEach(function (site) {
+    if (companies.indexOf(site.company) === -1) companies.push(site.company);
+    if (!countriesByCompany[site.company]) countriesByCompany[site.company] = [];
+    if (countriesByCompany[site.company].indexOf(site.country) === -1) {
+      countriesByCompany[site.company].push(site.country);
+    }
+    var ck = site.company + '|' + site.country;
+    if (!marketplacesByCountry[ck]) marketplacesByCountry[ck] = [];
+    if (marketplacesByCountry[ck].indexOf(site.marketplace) === -1) {
+      marketplacesByCountry[ck].push(site.marketplace);
+    }
+  });
+  companies.sort();
+  Object.keys(countriesByCompany).forEach(function (k) { countriesByCompany[k].sort(); });
+  Object.keys(marketplacesByCountry).forEach(function (k) { marketplacesByCountry[k].sort(); });
+
+  var dupIdList = Object.keys(duplicateSkuIds).sort();
+  var findings = [];
+  if (dupIdList.length > 0) {
+    findings.push({ code: 'DUPLICATE_MARKETPLACE_SKU_ID', level: 'universe',
+      detail: 'the same marketplace_sku_id appears more than once, so a join may attach to the wrong'
+        + ' product', subject: dupIdList.slice(0, 50), count: dupIdList.length });
+  }
+  if (identityConflicts.length > 0) {
+    findings.push({ code: 'AMBIGUOUS_SITE_IDENTITY', level: 'universe',
+      detail: 'one canonical site is spelled more than one way in the source',
+      subject: identityConflicts.slice(0, 50), count: identityConflicts.length });
+  }
+
+  // ---- THE STATE. Order matters, and each branch refuses something the next one would have hidden. ----
+  var state, refusals = [];
+  if (findings.length > 0) {
+    // A STOP, NOT A WARNING. Every count below inherits an identity nobody can resolve.
+    state = 'STOP_DATA_INTEGRITY';
+    findings.forEach(function (f) {
+      refusals.push(ppwRefusal_(f.code, f.detail, f.subject));
+    });
+  } else if (capped === true) {
+    // CAPPED IS NOT COMPLETE, and it is not empty either. A partial read has not established what exists.
+    state = 'SOURCE_PARTIALLY_READABLE';
+    refusals.push(ppwRefusal_('SOURCE_ROW_CAP_REACHED',
+      'the membership table exceeded the read cap, so this is not the whole universe',
+      PPW_SITE_UNIVERSE_MAX_));
+  } else if (sites.length === 0) {
+    // MEASURED, AND EMPTY. Only reachable when the table was fully read and held no usable identity.
+    state = 'SOURCE_EMPTY';
+  } else {
+    state = 'READY';
+  }
+
+  return {
+    sourceState: state,
+    // THE SERVER NEVER SENDS THE CLIENT-ONLY STATE. A response carrying it would be proof a server
+    // answered, which is the one thing that state claims did not happen.
+    sites: state === 'READY' ? sites : [],
+    site_count: state === 'READY' ? sites.length : 0,
+    hierarchy: state === 'READY'
+      ? { companies: companies, countries_by_company: countriesByCompany,
+          marketplaces_by_country: marketplacesByCountry }
+      : null,
+    identity_authority: 'marketplace_skus (company + country + marketplace)',
+    identity_normalization: 'trim and case-fold for comparison; the RAW value is what is published',
+    excluded: {
+      blank_company_rows: blankCompany, blank_country_rows: blankCountry,
+      blank_marketplace_rows: blankMarketplace, blank_identity_rows: blankAny,
+      blank_marketplace_sku_id_rows: blankId, unknown_status_rows: unknownStatus
+    },
+    findings: findings,
+    refusals: refusals,
+    completeness: {
+      rows_examined: rows.length, capped: capped === true, cap: PPW_SITE_UNIVERSE_MAX_,
+      is_whole_universe: state === 'READY'
+    },
+    schema: {
+      contract_version: PPW_SITE_UNIVERSE_CONTRACT_VERSION_,
+      build: PPW_BUILD_VERSION_,
+      action: PPW_SITE_UNIVERSE_ACTION_,
+      read_at: readAt === undefined || readAt === null ? null : new Date(readAt).toISOString(),
+      read_at_is: 'WHEN_THE_SERVER_READ_THE_TABLE',
+      source_modified_at: null,
+      // The API name that could report this is kept OUT of the string and named in this comment only,
+      // because the final-output seam audit strips comments but not string literals: DriveApp.
+      source_modified_at_unavailable_because: 'the file-modification API is not in this deployment scope',
+      table: ppwSchemaFingerprint_(rows)
+    },
+    // STATED AS DATA so a suite asserts the property rather than trusting the prose above.
+    publishes: ['company', 'country', 'marketplace', 'counts', 'selectability'],
+    does_not_publish: ['price', 'currency', 'image_url', 'product_url', 'spreadsheet_id', 'sheet_name',
+      'sku_rows', 'master_sku', 'category', 'series']
+  };
+}
+
+/** The refused shape, so a caller has one branch for "no universe" regardless of why. */
+function ppwSiteUniverseRefused_(code, detail, subject) {
+  return {
+    sourceState: null,
+    sites: [], site_count: 0, hierarchy: null,
+    identity_authority: 'marketplace_skus (company + country + marketplace)',
+    identity_normalization: null,
+    excluded: null,
+    findings: [],
+    refusals: [ppwRefusal_(code, detail, subject === undefined ? null : subject)],
+    completeness: { rows_examined: 0, capped: false, cap: PPW_SITE_UNIVERSE_MAX_,
+      is_whole_universe: false },
+    schema: { contract_version: PPW_SITE_UNIVERSE_CONTRACT_VERSION_, build: PPW_BUILD_VERSION_,
+      action: PPW_SITE_UNIVERSE_ACTION_, read_at: null, read_at_is: null,
+      source_modified_at: null, source_modified_at_unavailable_because: null, table: null },
+    publishes: [], does_not_publish: []
+  };
+}
+
+/**
+ * THE ENTRY POINT. Same io helper as the workspace read — not a copy of it, the same object — so the flag
+ * resolver, the target assertion and the fail-closed table read are one implementation for both actions.
+ */
+function handleProductPricingSiteUniverseGet_(body, io) {
+  io = io || ppwDefaultIo_();
+  var t0 = io.now();
+  var seq = (io && typeof io.nextSeq === 'function') ? io.nextSeq() : 0;
+  var reqId = ppwStr_(body && body.requestId) || ('REQ-U' + ('000000' + seq).slice(-6));
+  try {
+    // ---- THE FLAG, BEFORE THE DOOR. Identical discipline to the workspace read, and for the identical
+    //      reason: there is no RBAC here, so this gate IS the access control, and a gate that runs after
+    //      the read has already failed at the only job it had.
+    if (io.flagEnabled() !== true) {
+      return ppwEnvelope_(true,
+        ppwSiteUniverseRefused_('FEATURE_DISABLED',
+          'PRODUCT_STRATEGY_ENABLED_ is false in the deployment that answered', null),
+        [], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: 0, dbOpened: false,
+          refused: true, refusalCode: 'FEATURE_DISABLED' });
+    }
+
+    // ---- NO REQUEST FIELDS AT ALL. This action takes no scope, no filter and no page: the universe is
+    //      the universe. A payload that tried to narrow it would be a way to ask a different question
+    //      than the one this endpoint's zero-write, zero-leak guarantees were written about.
+    var ss = io.openTarget();
+    var spec = PPW_SITE_UNIVERSE_TABLES_[0];
+    var rows;
+    try {
+      rows = io.readTable(ss, spec.name, spec.requiredCols);
+    } catch (schemaErr) {
+      // A MISSING OR MALFORMED TABLE IS NOT AN EMPTY ONE (section 5.1). Empty is the one answer a caller
+      // responds to by moving on, and a table nobody could read has established nothing at all.
+      return ppwEnvelope_(true,
+        (function () {
+          var d = ppwSiteUniverseRefused_('SOURCE_TABLE_UNREADABLE',
+            String((schemaErr && schemaErr.message) || schemaErr), spec.name);
+          d.sourceState = 'SOURCE_PARTIALLY_READABLE';
+          return d;
+        }()),
+        [], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: 0, dbOpened: true,
+          refused: true, refusalCode: 'SOURCE_TABLE_UNREADABLE' });
+    }
+
+    var capped = (rows || []).length > PPW_SITE_UNIVERSE_MAX_;
+    if (capped) rows = rows.slice(0, PPW_SITE_UNIVERSE_MAX_);
+
+    // THE CLOCK IS READ HERE AND PASSED IN, so the builder stays a pure function of its arguments.
+    var data = ppwSiteUniverseBuild_(rows, io.now(), capped);
+    return ppwEnvelope_(true, data, [], { requestId: reqId, serverDurationMs: (io.now() - t0),
+      tablesRead: 1, dbOpened: true, refused: data.refusals.length > 0,
+      refusalCode: data.refusals.length ? data.refusals[0].code : null });
+  } catch (e) {
+    var code = (e && (e.safetyToken || e.apiCode || e.validationCode))
+      || 'PRODUCT_PRICING_SITE_UNIVERSE_BUILD_FAILED';
     return ppwEnvelope_(false, null,
       [{ code: code, message: String((e && e.message) || e), details: (e && e.schemaDetail) || null }],
       { requestId: reqId, serverDurationMs: (io.now() - t0), refused: true, refusalCode: code });

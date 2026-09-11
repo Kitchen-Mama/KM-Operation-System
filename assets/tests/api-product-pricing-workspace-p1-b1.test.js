@@ -454,7 +454,13 @@ eq(ACCMOD.contract, { caches: false, stores: false, previewFallback: false,
   categoryVocabulary: null, categorySource: 'server', categoryLimit: null,
   derivesCategoriesFromMasterData: false,
   callerMayChooseAction: false,
-  failsClosedWithoutCapability: true }, '38a and declares that contract as data');
+  failsClosedWithoutCapability: true,
+  // P1-B6 — the module now owns TWO actions and says so. The list is compared exactly like everything
+  // else here: a third action appearing without a decision is precisely what this assertion is for.
+  actions: ['productPricing.workspace.get', 'productPricing.siteUniverse.get'],
+  siteUniverseTakesNoScope: true,
+  derivesSiteUniverseFromWorkspaceResponse: false },
+  '38a and declares that contract as data');
 eq(ACCMOD.isEnabled(), false, '38b the capability mirror defaults FALSE');
 eq(ACCMOD.setCapability({ product_strategy_enabled: 'yes' }), false,
   '38c only a literal true raises it');
@@ -640,7 +646,12 @@ mut('M9 a capped source is handed over as a complete, analytics-ready answer', f
 });
 
 mut('M10 the flag is checked after the read, so a disabled feature still touches the database', function () {
-  var s = swap("    if (io.flagEnabled() !== true) {", "    if (false) {");
+  // P1-B6 — the anchor takes the FOLLOWING line too, because `if (io.flagEnabled() !== true) {` now
+  // appears twice: the site-universe handler checks the flag with the identical line, which is the
+  // point rather than a problem. A two-match anchor makes swap throw and mut call it SURVIVED, so the
+  // suite would go red about the gate while the gate was being correctly copied.
+  var s = swap("    if (io.flagEnabled() !== true) {\n      var reqD = ppwValidateRequest_(payload);",
+    "    if (false) {\n      var reqD = ppwValidateRequest_(payload);");
   var bad = m(s, full(), { flag: false });
   var clean = run(full(), { flag: false });
   return clean.__log.opens === 0 && clean.__log.reads.length === 0

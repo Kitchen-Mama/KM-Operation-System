@@ -196,7 +196,8 @@ var readActions = gsCtx.rtrGetReadActionList_();
 // 21 -> 22: PRODUCT-STRATEGY-P1-B1 added `productPricing.workspace.get` to the GET read table. Only the
 // inventory COUNT moves. 1b.10 below is the actual guarantee — it EXECUTES every entry in the table — and
 // it now covers the new action too, so nothing this line was protecting has been weakened.
-eq(readActions.length, 22, '1b.9 the read table still has its 22 actions');
+eq(readActions.length, 23,
+  '1b.9 the read table has 23 actions — P1-B6 added productPricing.siteUniverse.get');
 var emptyAnswers = readActions.filter(function (a) {
   var txt = gsCtx.doGet({ parameter: { action: a, km_via: 'get' } }).getContent();
   return String(txt).replace(/\s/g, '') === '{}';

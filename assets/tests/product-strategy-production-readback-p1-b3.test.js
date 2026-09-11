@@ -261,8 +261,8 @@ ok(/var PRODUCT_STRATEGY_ENABLED_ = false;/.test(SRC00),
 ok(/'productPricing\.workspace\.get':\s+handleProductPricingWorkspaceGet_/.test(SRC01),
   'A10a the router dispatches the action to 72_ (so a partial sync is a named failure)');
 var expected = (SRC63.match(/KM_EXPECTED_ACTION_CONTRACT_VERSION_/) || []).length;
-ok(/SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 13;/.test(SRC63),
-  'A10b the deployment declares action contract 13');
+ok(/SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 14;/.test(SRC63),
+  'A10b the deployment declares action contract 14 — P1-B6 added productPricing.siteUniverse.get');
 // §2.9 — no PAGE calls it, so no unauthorised UI can appear from a flag that is false.
 var pages = fs.readdirSync(path.join(__dirname, '..', '..')).filter(function (f) { return /\.html$/.test(f); });
 var callers = pages.filter(function (f) {

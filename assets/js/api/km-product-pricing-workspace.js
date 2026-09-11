@@ -32,6 +32,10 @@
   'use strict';
 
   var ACTION = 'productPricing.workspace.get';
+  // P1-B6 — the companion read. Also a module constant: a caller cannot pass an action, override
+  // one, or reach the transport with a different one through this module.
+  var SITE_UNIVERSE_ACTION = 'productPricing.siteUniverse.get';
+  var SITE_UNIVERSE_CONTRACT_VERSION = 1;
   var BUILD = 'PRODUCT-STRATEGY-P1-B1';
   var STATUSES = ['active', 'phasing_out', 'inactive', 'discontinued'];
   var PAGE_MAX = 1000;
@@ -57,6 +61,21 @@
         analysis_permitted: false, provenance: { action: ACTION, build: BUILD, connected: false,
           read_only: true, preview_fallback: false } },
       meta: { action: ACTION, build: BUILD, refused: true, refusalCode: code, transport: 'none' },
+      errors: []
+    };
+  }
+
+  /** A local refusal in the SITE UNIVERSE shape, so that caller also has one branch and not two. */
+  function universeRefused(code, detail, subject) {
+    return {
+      success: true,
+      data: { sourceState: null, sites: [], site_count: 0, hierarchy: null,
+        refusals: [refusal(code, detail, subject)], findings: [],
+        completeness: { rows_examined: 0, capped: false, is_whole_universe: false },
+        schema: { contract_version: SITE_UNIVERSE_CONTRACT_VERSION, action: SITE_UNIVERSE_ACTION,
+          build: null, read_at: null, table: null } },
+      meta: { action: SITE_UNIVERSE_ACTION, build: BUILD, refused: true, refusalCode: code,
+        transport: 'none', requestsMade: 0 },
       errors: []
     };
   }
@@ -219,9 +238,74 @@
       });
   }
 
+  /**
+   * The SITE UNIVERSE response shape. Thinner than the workspace one because the answer is thinner —
+   * but it checks the one thing a server must never be believed about.
+   */
+  function validateUniverseResponse(env) {
+    if (!isObj(env)) return { ok: false, code: 'RESPONSE_NOT_AN_OBJECT' };
+    if (env.success !== true) return { ok: false, code: 'SERVER_REPORTED_FAILURE' };
+    var d = env.data;
+    if (!isObj(d)) return { ok: false, code: 'RESPONSE_MISSING_DATA' };
+    if (!(d.sites instanceof Array)) return { ok: false, code: 'RESPONSE_MISSING_SITES' };
+    if (!(d.refusals instanceof Array)) return { ok: false, code: 'RESPONSE_MISSING_REFUSALS' };
+    // A SERVER CANNOT HONESTLY SEND THE CLIENT-ONLY STATE. A response carrying it is proof a server
+    // answered, which is the one thing that state claims did not happen — so it is a contract breach
+    // and is reported as one rather than passed through to a page that would render "not connected"
+    // over an answer that arrived.
+    if (str(d.sourceState) === 'SOURCE_NOT_CONNECTED') {
+      return { ok: false, code: 'SERVER_SENT_A_CLIENT_ONLY_STATE' };
+    }
+    if (!isObj(env.meta) || env.meta.action !== SITE_UNIVERSE_ACTION) {
+      return { ok: false, code: 'RESPONSE_ACTION_MISMATCH' };
+    }
+    return { ok: true };
+  }
+
+  /**
+   * THE SITE UNIVERSE READ. No parameters: the universe takes no scope, which is the entire reason it
+   * exists — the workspace read cannot publish the set of sites to choose from because it requires one
+   * to have been chosen already.
+   *
+   * FAIL CLOSED ON THE CAPABILITY FIRST, so a disabled feature costs zero requests rather than one
+   * round trip to be told what this side already knows.
+   */
+  function getSiteUniverse(opts) {
+    opts = isObj(opts) ? opts : {};
+    if (!isEnabled()) {
+      return Promise.resolve(universeRefused('FEATURE_DISABLED',
+        'the client capability mirror is false; no request was sent', null));
+    }
+    var api = transportOf();
+    if (!api) {
+      return Promise.resolve(universeRefused('SOURCE_NOT_CONNECTED',
+        'the shared KM API transport is unavailable', null));
+    }
+    var dto = (typeof api.buildRequestEnvelope === 'function')
+      ? api.buildRequestEnvelope(SITE_UNIVERSE_ACTION, {},
+        { requestId: str(opts.requestId) || undefined })
+      : { action: SITE_UNIVERSE_ACTION, requestId: str(opts.requestId) || null, payload: {} };
+
+    return Promise.resolve(api.transport.post(dto, { signal: opts.signal }))
+      .then(function (resp) { return api.transport.safeReadJsonResponse(resp); })
+      .then(function (env) {
+        var r = validateUniverseResponse(env);
+        // NO FALLBACK. A failed read of the site list is a failed read, not a default set of sites.
+        if (!r.ok) return universeRefused('SOURCE_NOT_CONNECTED', r.code, null);
+        return env;
+      })
+      .catch(function (e) {
+        return universeRefused('SOURCE_NOT_CONNECTED', String((e && e.message) || e), null);
+      });
+  }
+
   var mod = {
     ACTION: ACTION, BUILD: BUILD, STATUSES: STATUSES.slice(), PAGE_MAX: PAGE_MAX,
-    get: get, isEnabled: isEnabled, setCapability: setCapability,
+    SITE_UNIVERSE_ACTION: SITE_UNIVERSE_ACTION,
+    SITE_UNIVERSE_CONTRACT_VERSION: SITE_UNIVERSE_CONTRACT_VERSION,
+    get: get, getSiteUniverse: getSiteUniverse,
+    validateUniverseResponse: validateUniverseResponse,
+    isEnabled: isEnabled, setCapability: setCapability,
     // exported for tests and for a caller that wants to check before it asks
     validateParams: validateParams, buildPayload: buildPayload, validateResponse: validateResponse,
     // stated as data so a test does not have to read the source to assert them
@@ -229,7 +313,11 @@
       // R1 §6 — the category universe is the server's to resolve and this file's to render.
       categoryVocabulary: null, categorySource: 'server', categoryLimit: null,
       derivesCategoriesFromMasterData: false, callerMayChooseAction: false,
-      failsClosedWithoutCapability: true }
+      failsClosedWithoutCapability: true,
+      // P1-B6 — two actions, ONE module, one capability mirror, one transport, one refusal shape.
+      actions: [ACTION, SITE_UNIVERSE_ACTION],
+      siteUniverseTakesNoScope: true,
+      derivesSiteUniverseFromWorkspaceResponse: false }
   };
 
   if (root) {

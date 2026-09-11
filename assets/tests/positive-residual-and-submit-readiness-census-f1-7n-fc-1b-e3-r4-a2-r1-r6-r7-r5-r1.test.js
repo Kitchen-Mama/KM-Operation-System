@@ -1927,8 +1927,13 @@ var STALE_DEP = { stamps: stampsWith_({
   mixed_deployment: true,
   verdict: 'MIXED_OR_PARTIAL_SYNC — at least one owner file is absent from, or older than, what this'
     + ' deployment expects. Re-copy the files listed and publish a NEW deployment version.' }) };
+/* A BUILD THAT CANNOT BECOME REAL. This fixture stands for "the deployment is a build nobody
+   measured on", and it named R9 — which P1-B6 then shipped, so the fixture quietly stopped being an
+   unmeasured build and the STOP it exists to prove stopped firing. A negative fixture that names the
+   NEXT round's token is a fixture with an expiry date nobody wrote down. `-NEVER` cannot be minted by
+   the append-only release ledger, so this one has no expiry. */
 var OTHER_BUILD = { stamps: stampsWith_({
-  deployment_build: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9' }) };
+  deployment_build: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-NEVER' }) };
 var YDAY = new Date(Date.now() + 8 * 3600 * 1000 - 86400000).toISOString().slice(0, 10);
 var STOPS = [
   ['the flag is already true', { flag: true }, null],
@@ -2659,7 +2664,7 @@ var XCASES = [
   ['C3 deployment_build is blank', { stamps: stampsWith_({ deployment_build: '   ' }) },
     'the_deployment_contract_is_readable', 'DEPLOYMENT_CONTRACT_WRONG_FIELD_TYPE'],
   ['D  the build is another release',
-    { stamps: stampsWith_({ deployment_build: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9' }) },
+    { stamps: stampsWith_({ deployment_build: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-NEVER' }) },
     'the_deployment_build_is_the_one_this_manifest_was_written_against',
     'DEPLOYMENT_BUILD_IS_NOT_THE_ONE_THIS_MANIFEST_WAS_WRITTEN_AGAINST'],
   ['E  mixed_deployment is true', { stamps: stampsWith_({ mixed_deployment: true }) },
@@ -2760,7 +2765,7 @@ var X4 = manifestP(pos({ stamps: stampsWith_({
   verdict: 'UNIFORM — every probed owner file declares the build its manifest entry expects',
   mixed_deployment: true,
   stale_modules: ['16_shipping_allocation_handlers.gs declares OLD, expected NEW'],
-  deployment_build: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9' }) }));
+  deployment_build: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-NEVER' }) }));
 eq(X4.res.verdict, 'STOP',
   'X4  a UNIFORM verdict does not rescue a mixed, stale, wrong-build deployment', failed(X4.res));
 ['the_deployment_is_not_mixed', 'no_owner_module_is_stale',
@@ -5913,7 +5918,7 @@ mut('N42 the deployment-build gate takes its expectation from the deployment it 
   // The build literal here was collateral damage from S1-R4A's section rename (R4->W4 etc. inside a string),
   // and the stub carried the invented `available` field. Both replaced by the real shape with ONE field moved.
   var spec = pos({ stamps: stampsWith_({
-    deployment_build: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9' }) });
+    deployment_build: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-NEVER' }) });
   var clean = manifestP(spec), bad = withMP(m, spec);
   var NM = 'the_deployment_build_is_the_one_this_manifest_was_written_against';
   return clean.res.verdict === 'STOP' && failed(clean.res).indexOf(NM) >= 0

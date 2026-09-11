@@ -5673,3 +5673,63 @@ here; Print/PDF still asserted rather than photographed. No Apps Script source, 
 flag, navigation, deployment, S1–S5, main or km-lb touched. **NEXT:** a read owner for the site
 universe, then the shell merge (§8) — and only after that does turning the flag on become a
 question.
+
+### `PRODUCT-STRATEGY-P1-B6` — the site universe read owner (P worktree, local commit only)
+
+**THE GAP P1-B5 RECORDED IS CLOSED, BY THE SAME OWNER.** `productPricing.siteUniverse.get` lives in
+72_ beside the workspace read, because `ppwMembership_` already decides what "listed on this site"
+means and **a second file holding that rule would agree on the day it was written and drift every day
+after** — invisibly, because each would look correct alone. The adapter contract has named a second
+`marketplace_skus` authority as forbidden since P0.
+
+**ONE TABLE, NO SCOPE, IDENTITIES AND COUNTS ONLY.** No price, no currency, no image, no URL, no
+spreadsheet id, no SKU row — stated as data (`does_not_publish`) so it is assertable. Currency is
+absent deliberately: a complete site is single-currency, so publishing it here invites a menu keyed
+on it. Selectability is derived from the EXISTING `PPW_DEFAULT_STATUSES_` gate, not a new rule.
+
+**THE TEN CANONICAL SITES, VERBATIM** — `KM/US/{Shopify,Target,Walmart}`,
+`ResTW/{AU,CA,EU,JP,UK}/Amazon`, `ResUS/US/{Amazon,Walmart}`. **`KM` is not rewritten to
+`Kitchen Mama`, `EU` is not split into countries**, both asserted: *a canonical value a display layer
+improved is one no exact-match join will find again*, and this output is what the next request is
+built from. Two shapes matter — KM sells on no Amazon marketplace, and KM and ResUS both sell in US,
+so a menu keyed on country or currency would merge two companies.
+
+**A MISSING TABLE IS NOT AN EMPTY ONE, A CAPPED READ IS NOT A UNIVERSE, A BLANK IDENTITY IS NEVER AN
+OPTION, AND A DUPLICATE LISTING ID STOPS ALL TEN SITES** — including the nine that were fine, because
+the universe is what a person chooses FROM. The server never emits `SOURCE_NOT_CONNECTED`; the
+accessor rejects one anyway and the client module is the second wall.
+
+**THE WORKSPACE READ IS NEVER FIRST**, asserted by request COUNT. Narrowing is a FUNCTION: an
+upstream change drops downstream values and NAMES the cleared tiers, and never revises upward. One
+option resolves to context, and `autoResolved` keeps "the only one" distinguishable from "the first
+of several". **Single flight** stops two sites racing; **staleness** is a separate rule with its own
+token, because the superseded request still resolves — *a slow answer to a question nobody is asking
+any more is not late data, it is wrong data.*
+
+**WHAT ADDING ONE ROUTER ACTION COST, which is mostly not about the feature:** the GET table AND the
+doPost branch (an action cannot be renamed for one verb and not the other); the deployed action
+contract 13→14; **the client pin 13→14 — I had reasoned it should stay, citing a comment in 63_ that
+is stale, and two suites assert equality**, which makes the release order binding: Apps Script must
+be synced BEFORE the frontend, or every page refuses the old deployment; three module stamps → R9;
+**the manifest in 63_ that declares each file's expected build — missing that was 31 red suites, and
+my first instinct was to revert the release when the missing half was the manifest**; the append-only
+ledger; and three diagnostic pins that track the release (`P1B3_READBACK_BUILD_` deliberately does
+NOT move — a stamp declares the round its own file belongs to). **And a negative fixture with an
+expiry date nobody wrote down**: the S1 census used R9 as "a build nobody measured on", P1-B6 shipped
+R9, and the STOP it proves stopped firing — moved to a token the ledger cannot mint.
+
+**TESTS.** NEW `api-product-pricing-site-universe-p1-b6.test.js` **165 / 0 / 12 mutants / 0
+survived**. B5 **154/0/12** · B4 **252/0/12** · B3 **332/0/17** · B2 **249/0/17** · B2A **237/0/14** ·
+B2B **142/0/16** · B2C **157/0/14** · B1 **167/0/13** · category contract **73/0/12**. Full sweep 453
+suites; only the four PRE-EXISTING red, counts identical to PRE (3/1/7/2). Three P1-B5 assertions
+restated (L8/L9 asserted a gap that is now closed — *an assertion that a gap exists is worth exactly
+as much as the gap* — and N11/N12 re-aimed after the controller rewrite), and B1's M10 anchor
+extended because `if (io.flagEnabled() !== true) {` now appears twice: **the site-universe handler
+checks the flag with the identical line, which is the point rather than a problem.**
+
+**NOT DONE:** the readback has not been run; no live read; no page loads any of this;
+`PRODUCT_STRATEGY_ENABLED_` still false; **navigation still not enabled, and it must not be enabled
+before this action is deployed or the board opens with a site menu it cannot fill**; display names
+are an evidence gap (no canonical company/country master, so `KM` and `EU` are shown as themselves);
+the board has still not been rendered against live rows in a browser. **NEXT:** the user syncs the
+package and runs `RUN_P1_SITE_UNIVERSE_READBACK()`.

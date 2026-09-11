@@ -596,7 +596,11 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // source discriminator (§8), the per-table schema fingerprint and the read timestamp, and the
   // read-only production readback is added as a TEMP diagnostic. R7 was never synced; an id may
   // still not name two trees.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R8'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R8',
+  // P1-B6 - productPricing.siteUniverse.get. A router ACTION was added, so 01_router.gs, 72_ and 63_
+  // all changed and all three module stamps rotate; the deployment release moves with them because a
+  // new action means a new Apps Script sync and a new Web App version. APPEND-ONLY, at the end.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

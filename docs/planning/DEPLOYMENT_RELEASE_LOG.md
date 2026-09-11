@@ -680,3 +680,83 @@ ORDERING CONSTRAINT FOR THE NEXT RELEASE
                                                        choose a site.
 
 **STATUS: LIVE EVIDENCE RECORDED · INTEGRATION PACKAGE BUILT · NOT PUSHED · NO APPS SCRIPT CHANGE · NO DEPLOYMENT · PRODUCT STRATEGY NOT ENABLED · NAVIGATION NOT ENABLED.**
+
+
+=======================================================================================================
+## Entry — 2026-09-11 · PRODUCT-STRATEGY-P1-B6 (site universe read owner — nothing synced, nothing deployed)
+=======================================================================================================
+
+Ledger entry ID:             P1-B6-2026-09-11-site-universe-read-owner
+Branch:                      feature/product-strategy-board-p0
+PRE HEAD:                    112425959212252b073fc8acad46775d19e9db1c
+POST HEAD:                   (this commit)
+origin/feature/...-p0:       112425959212252b073fc8acad46775d19e9db1c — UNCHANGED, NOT PUSHED
+main:                        c139943 — untouched
+
+DEPLOYMENT RELEASE:          F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R8  ->  F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9
+ACTION CONTRACT:             SYS_DEPLOYED_ACTION_CONTRACT_VERSION_  13 -> 14
+CLIENT PIN:                  KM_EXPECTED_ACTION_CONTRACT_VERSION_   13 -> 14
+Apps Script version:         NOT CREATED
+Apps Script deployment:      NOT CREATED
+Frontend deployment:         NOT REDEPLOYED
+
+-------------------------------------------------------------------------------------------------------
+APPS_SCRIPT_SYNC_REQUIRED — SEVEN FILES, IN THIS ORDER
+-------------------------------------------------------------------------------------------------------
+  The FOUR runtime files from P1-B3 that are already live are re-synced because three of them changed
+  and one (00_config.gs) did not — it is listed so the package is ONE paste, not two.
+
+  1. assets/specs/active/apps-script/00_config.gs                        UNCHANGED this round
+  2. assets/specs/active/apps-script/72_api_v1_product_pricing_workspace.gs   CHANGED (new owner + handler)
+  3. assets/specs/active/apps-script/63_api_v1_system_health.gs               CHANGED (contract 14, manifest, stamps)
+  4. assets/specs/active/apps-script/01_router.gs                             CHANGED (GET table + doPost branch)
+  5. assets/tools/apps-script-diagnostics/TEMP_P1_SITE_UNIVERSE_READBACK.gs   NEW
+  6. assets/tools/apps-script-diagnostics/TEMP_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK.gs  UNCHANGED
+  7. assets/tools/apps-script-diagnostics/TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3.gs  build pin only
+     assets/tools/apps-script-diagnostics/TEMP_S1_POSITIVE_RESIDUAL_READINESS_CENSUS.gs  build pin only
+
+  WHY THAT ORDER, unchanged in principle from P1-B3: 01_router.gs is LAST because it is the file that
+  makes the action reachable — paste it before 72_ holds the handler and the project routes a live
+  action to an undefined function for as long as the gap lasts. 00_config.gs stays FIRST because it
+  holds the flag, which must be in place before anything can be routed to it.
+
+  THE TWO CENSUS FILES carry a BUILD PIN ONLY. Their logic is untouched; the pin moves because those
+  files state in as many words that a lagging pin refuses a correctly synced project.
+  P1B3_READBACK_BUILD_ deliberately does NOT move: a module stamp declares the round its own file
+  belongs to, and that readback did not change.
+
+-------------------------------------------------------------------------------------------------------
+FRONTEND_DEPLOY_REQUIRED:    NO — AND THE ORDER IS NOW BINDING
+-------------------------------------------------------------------------------------------------------
+  Nothing a REGISTERED page loads has changed in behaviour: index.html and assets/js/app.js are
+  untouched and the Product Strategy page is unreachable.
+
+  BUT operation-system-db-api.js is loaded by EVERY page and its pin moved to 14. A browser carrying
+  this build refuses any deployment below 14 with DEPLOYMENT_CONTRACT_MISMATCH. THEREFORE:
+
+      APPS SCRIPT MUST BE SYNCED AND DEPLOYED **BEFORE** THE FRONTEND IS REDEPLOYED.
+
+  A frontend deploy first would break every page in the application, not only this feature.
+
+-------------------------------------------------------------------------------------------------------
+THE ONLY FUNCTION TO RUN AFTER SYNCING
+-------------------------------------------------------------------------------------------------------
+      RUN_P1_SITE_UNIVERSE_READBACK()
+
+  No parameters. Run from the editor. Expect:
+      read_only true · writes 0 · writer_calls 0 · sheets_created 0 · rows_modified 0
+      gate_proof.refusal_code FEATURE_DISABLED · gate_proof.db_opened false · tables_read 0
+  and verdict P1_B6_SITE_UNIVERSE_READY with ten sites, or STOP_SITE_UNIVERSE_DATA_INTEGRITY naming
+  the identity finding. DO NOT FLIP PRODUCT_STRATEGY_ENABLED_ TO RUN IT — the refusal IS the proof.
+
+-------------------------------------------------------------------------------------------------------
+ORDERING CONSTRAINT
+-------------------------------------------------------------------------------------------------------
+      1. git push                                              (USER)
+      2. Apps Script sync of the package + NEW Web App version (USER)
+      3. RUN_P1_SITE_UNIVERSE_READBACK()                       (USER)
+      4. Frontend redeploy — ONLY after step 2, never before   (USER, and not required by this round)
+      5. Navigation entry — DEFERRED, and it must not be enabled before step 2, or the board opens
+         with a site menu it cannot fill.
+
+**STATUS: SITE UNIVERSE OWNER BUILT · NOT PUSHED · APPS SCRIPT NOT SYNCED · NO DEPLOYMENT VERSION · PRODUCT STRATEGY NOT ENABLED · NAVIGATION NOT ENABLED · NO LIVE READ PERFORMED.**
