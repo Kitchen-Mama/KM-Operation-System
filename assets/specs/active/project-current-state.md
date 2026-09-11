@@ -4982,3 +4982,98 @@ print pagination) is still verified by a person opening `index.html`. `APPS_SCRI
 round: **none**. **NEXT:** P1-B3 — production readback once the four files are synced: DB-vs-UI counts per site,
 no cross-site contamination, the real category universe read off `filterOptions`, operator acceptance. Only then
 is `flag = true` a question that can be asked.
+
+### `PRODUCT-STRATEGY-P1-B2A` — UI alignment, chart readability, scenario UX (P worktree, local commit only)
+
+**THE BLACK DOT HAD ONE SOURCE.** `everydayMarker` appended `svg('circle', {cx, cy, r:2, class:'mk-anchor
+mk-reg'})` — fill `#14181f` — LAST, therefore on top of the photograph, at the plate's exact centre. Purpose
+honest (make the datum visible and provably independent of plate size), placement not: the one pixel that
+proves the coordinate sat on the one thing a person came to look at. Every other candidate checked and
+cleared (no pseudo-element on any chart element, no placeholder dot, no marker behind a transparent image,
+`.mk-prop` is a hollow diamond at a DIFFERENT price). **REMOVED, NOT HIDDEN** — a transparent dot is still in
+the tree, still hit-tested, still there to be rediscovered. The datum is now a crosshair drawn BEHIND the
+plate reaching 8px past it, so what shows are two stubs meeting the gridline: more readable than the dot and
+nowhere near the picture, and it keeps the class, coordinate and price so the centred-on-its-price assertions
+still have something to read. Semantic markers kept. No-image placeholder modelled on `.cr-img-placeholder`
+(campaign-risk.css:440) — NOTE the Operation System has TWO placeholder implementations today, not one.
+
+**READABILITY.** Image 36→**50px**; column 112 fixed → 74–208 computed and **CENTRED** (capping without
+centring is what parked all the slack on the right); labels 11.5→12.5, sub 10.5→11.5, ticks 11→11.5; plot
+260–480→300–560; labels stagger to two rows under 104px; every column `tabindex=0` with a full `aria-label`
+and focus opens the same panel the pointer does. **NO LAYOUT BOX IS MEASURED ANYWHERE** — a declared 1180
+design-width viewBox, sized in CSS; a chart whose geometry depends on when it was measured draws differently
+on a slow load. **ZOOM Fit/100/125/150/Reset view: the viewBox is BYTE-IDENTICAL at every size** and every
+price coordinate and axis tick with it — that is what makes "zoom cannot move a price" provable. **FIT HAS A
+LEGIBILITY FLOOR, and the 44-product chart is why:** `width:100%` on a 3364px drawing in a ~1400px card paints
+it at 0.42×, every coordinate correct and every pixel unreadable — the exact complaint this round answers. Fit
+now means fit the card WHEN IT FITS; beyond that natural size and the container scrolls. Print always Fit.
+Reset view restores zoom AND layers — not a second Fit.
+
+**ONE BAND, NOT TWO NAMES FOR ONE COLUMN.** `Floor to list price` runs from `pricing_list.minimum_price` to
+`pricing_list.msrp`, and **msrp IS the list price** — the only list-price column the schema has. An "MSRP"
+layer and a "List price" layer would be two switches over one field, which is how a reader comes to believe
+the board holds data it does not. One layer, named for both words. Six layers, each independent; **a hidden
+layer removes its element AND its legend key together**; the band needs BOTH caps (one cap hidden is not a
+shorter band, it is a line to nothing); the axis range follows the visible layers. Clean/Detail SET the
+switches rather than being a third state, and editing a layer drops the preset badge. `selectors.js` cannot
+see the layer state at all.
+
+**THE SCENARIO SPEAKS ENGLISH.** Site is read-only context (no control in it); **Series must be chosen — there
+is no All option at all**, because a change whose reach you cannot see is not a scenario you can discuss;
+`Proposed price`/`Everyday price`; `Set proposed price`/`by amount`/`by percentage`; with Everyday chosen
+`Set…` is **not offered** — the flattening combination cannot be expressed, which beats accepting and
+explaining. One validator gates Apply and reports in the same sentences (no Series / empty / not a number /
+negative price / out of range / percentage ≤ −100%); nothing half-applies. Reach shown before and after; the
+canonical position stays on the chart as a hollow ghost joined by a connector so the difference is a distance;
+affected products get a quiet dashed outline. **Undo last change** pops a stack of immutable override objects,
+beside the three resets. Still IN_MEMORY_ONLY (the token moved behind the `?`, the surface says it in words);
+reload restores canonical; the printed page keeps the UNSAVED SCENARIO mark. **Meeting mode starts collapsed**
+— with it open the chart began below the fold — and the BADGE stays outside the collapse, because hiding a
+control is a density choice and hiding the state would be a lie.
+
+**PROGRESSIVE DISCLOSURE.** One `?` component, a BUTTON not a hover tooltip (hover excludes keyboard and every
+touch device): click/Enter/Space toggles, Escape + outside-click + the control again close, `aria-expanded` /
+`aria-controls` / `role=note`, one open at a time, document listeners registered ONCE at boot. Moved behind
+it: category normalization, canonical/excluded explanations, scope order, the IN_MEMORY_ONLY name, the
+all-countries limits. **Column names are allowed INSIDE a popover and not on the default surface, and both
+halves are asserted.**
+
+**OPERATION SYSTEM CONTRACT, COPIED BY VALUE AND HELD TO IT.** base.css already declares `--filter-*` as its
+own documented "SINGLE SOURCE OF TRUTH for every filter control" plus `--btn-*`/spacing/radius/type, and
+components.css a shared `.km-filter-bar`. The prototype may not reach into `assets/**`, so **41 tokens are
+copied with identical names and the suite asserts every one against the real base.css** — a copy nobody checks
+becomes a second system the day somebody changes the original. Three tiers (Site → Analysis → Advanced,
+collapsed), meeting mode as its own panel, selection a green fill not red text, and **category has two
+shapes**: chips up to six, then the busiest five plus a searchable `More (N)` — forty chips is a paragraph,
+not a menu, and it pushes the chart below the fold.
+
+**STRESS FIXTURE** — generated, deterministic (**no Math.random**; every price is arithmetic on an index),
+`STRESS_FIXTURE_GENERATED` on every row, `is_database_data: false`, opt-in from Advanced so the density can be
+SEEN: **8 countries / 10 site identities / 12 categories / 15 series / 44 products on one chart / 401 rows**.
+
+**FOUR DEFECTS ONLY A SCREENSHOT COULD SEE — both suites were green for all of them.** (1) Two `.scope` rules
+MERGED and the survivor was `align-items: flex-end`: the whole filter area stacked into the right half of an
+empty band — CSS picks a winning DECLARATION, not a winning rule. (2) `.adv-body-row { display:flex }` beat the
+UA `[hidden]` rule, so the advanced drawer rendered fully open while its `hidden` property was true and its
+button said Show — the assertion read the property and the property was right. (3) Two legend keys had no
+swatch style and rendered as a label beside an empty box. (4) The Fit scaling above. Each is now an assertion
+(§J: no top-level selector declared twice, `[hidden]` forced to win, every legend key styled, the Fit floor).
+Also found: `.adv-toggle` was TWO components sharing a class name (Advanced Details page header + the new
+filter toggle); the new one is `.filt-toggle` — components do not take turns with a class, their declarations
+merge.
+
+**TESTS.** NEW `product-strategy-board-p1-b2a.test.js` **220 passed / 0 failed / 14 mutants / 0 survived**;
+`product-strategy-board-p1-b2.test.js` **241 / 0 / 17 / 0** (it follows the redesigned controls — same rules,
+new ids — and now opens meeting mode the way a person must). The DOM shim moved to NEW `_psb-harness.js`
+because a second copy of a model of a browser would mean two suites testing two browsers and neither saying
+so; it also gained real bubbling and `stopPropagation`, without which "click outside to close" would pass
+whether or not the page had it. Page self-test 234/234. Full sweep 447 suites: only the four PRE-EXISTING red
+ones (3/1/7/2). **SCREENSHOTS** produced with headless Chrome at 1920×1080, 1440×900, 1280×720 plus full-page
+and stress views; **print preview NOT captured** — the print stylesheet is verified by assertion only and
+still needs a person. Manual acceptance checklist in design freeze §35.10.
+
+**NOT DONE:** live DB/API connection (this is fixture UI work and does not claim otherwise), Operation System
+shell integration, production page, `assets/js/**`, `assets/css/**`, apps-script, schema, migration, S1–S5,
+main, km-lb, DB/Sheets/Drive writes, network, sync, deployment, `flag = true`, merge, push.
+`APPS_SCRIPT_SYNC_REQUIRED` this round: **none**. The nine merge conditions of the brief's §十一 are all still
+open. **NEXT:** P1-B3 — production readback once the user syncs P1-B1-R1's four Apps Script files.

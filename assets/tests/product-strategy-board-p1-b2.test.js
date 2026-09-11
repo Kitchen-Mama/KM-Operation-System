@@ -45,390 +45,9 @@ function mut(label, f) {
   if (caught) { mutCaught++; console.log('ok   ' + label + ' (caught)'); }
   else { mutSurvived++; fail++; console.error('FAIL ' + label + ' — MUTANT SURVIVED'); }
 }
-var ROOT = path.join(__dirname, '..', '..');
-var PROTO = path.join(ROOT, 'docs', 'prototypes', 'product-strategy-board');
-/**
- * LINE ENDINGS ARE NORMALIZED ON READ, AND THIS IS LOAD-BEARING.
- *
- * The repository is configured `core.autocrlf=true`, so every checkout of these files lands CRLF in
- * the working tree while the blob stays LF. Nothing this suite asserts is about a line ending — but a
- * mutant's anchor is a multi-line string, and an anchor that matches zero times makes `swap` throw,
- * which `mut` reports as MUTANT SURVIVED. That is the worst failure mode available: the suite goes red
- * with a message about a rule, when what actually happened is that git touched the file.
- *
- * It was not hypothetical. Six mutants — every one whose anchor spans more than a line — flipped to
- * SURVIVED the moment a `git stash pop` re-checked these files out, and the code they target had not
- * changed by a byte. Normalizing here fixes it for every reader, including the next clone.
- */
-function readProto(f) {
-  return fs.readFileSync(path.join(PROTO, f), 'utf8').replace(/\r\n/g, '\n');
-}
-/** Comments AND string literals out — a file's own prose names everything it promises not to do. */
-function bare(src) {
-  src = src.replace(/\/\*[\s\S]*?\*\//g, ' ');
-  src = src.split('\n').map(function (l) { return l.split('//')[0]; }).join('\n');
-  return src.replace(/'(?:\\.|[^'\\\n])*'/g, "''").replace(/"(?:\\.|[^"\\\n])*"/g, '""');
-}
-
-var SRC = {
-  contract: readProto('data-contract.js'),
-  selectors: readProto('selectors.js'),
-  fixture: readProto('preview-fixture.js'),
-  prototype: readProto('prototype.js'),
-  index: readProto('index.html'),
-  css: readProto('prototype.css')
-};
-
-// ===================================================================================================
-// THE DOM SHIM.
-//
-// Deliberately narrow: it implements the DOM surface prototype.js actually uses and nothing else, so
-// what it proves is what the page does rather than what a full browser might tolerate. The selector
-// engine handles the shapes the file uses — #id, .class, tag, [attr], [attr="v"], compounds of those,
-// descendant chains, and comma lists — and throws on anything it does not understand rather than
-// silently returning an empty list, because a selector engine that answers "no matches" to a syntax it
-// cannot parse would turn every DOM assertion into a passing one.
-// ===================================================================================================
-function makeDom(skeleton) {
-  function Node(tag, ns) {
-    this.nodeType = 1;
-    this.tagName = String(tag).toUpperCase();
-    this.localName = String(tag);
-    this.namespaceURI = ns || null;
-    this.attributes = {};
-    this.childNodes = [];
-    this.parentNode = null;
-    this.listeners = {};
-    this.hidden = false;
-    this.style = {};
-    this.value = '';
-    this.checked = false;
-    this.disabled = false;
-  }
-  Object.defineProperty(Node.prototype, 'className', {
-    get: function () { return this.attributes['class'] || ''; },
-    set: function (v) { this.attributes['class'] = String(v); }
-  });
-  Object.defineProperty(Node.prototype, 'id', {
-    get: function () { return this.attributes.id || ''; },
-    set: function (v) { this.attributes.id = String(v); }
-  });
-  Object.defineProperty(Node.prototype, 'firstChild', {
-    get: function () { return this.childNodes.length ? this.childNodes[0] : null; }
-  });
-  Object.defineProperty(Node.prototype, 'textContent', {
-    get: function () {
-      var out = '';
-      this.childNodes.forEach(function (k) {
-        out += k.nodeType === 3 ? k.data : k.textContent;
-      });
-      return out;
-    }
-  });
-  Node.prototype.appendChild = function (k) {
-    if (!k) throw new Error('appendChild(null)');
-    if (k.parentNode) k.parentNode.removeChild(k);
-    k.parentNode = this;
-    this.childNodes.push(k);
-    return k;
-  };
-  Node.prototype.removeChild = function (k) {
-    var i = this.childNodes.indexOf(k);
-    if (i < 0) throw new Error('removeChild: not a child');
-    this.childNodes.splice(i, 1);
-    k.parentNode = null;
-    return k;
-  };
-  Node.prototype.setAttribute = function (n, v) { this.attributes[n] = String(v); };
-  Node.prototype.getAttribute = function (n) {
-    return Object.prototype.hasOwnProperty.call(this.attributes, n) ? this.attributes[n] : null;
-  };
-  Node.prototype.hasAttribute = function (n) {
-    return Object.prototype.hasOwnProperty.call(this.attributes, n);
-  };
-  Node.prototype.addEventListener = function (t, f) {
-    (this.listeners[t] = this.listeners[t] || []).push(f);
-  };
-  Node.prototype.dispatchEvent = function (ev) {
-    var self = this;
-    (this.listeners[ev.type] || []).slice().forEach(function (f) { f.call(self, ev); });
-    return true;
-  };
-  Node.prototype.click = function () { this.dispatchEvent(new Ev('click', {})); };
-
-  function Text(data) { this.nodeType = 3; this.data = String(data); this.parentNode = null;
-    this.childNodes = []; }
-  Object.defineProperty(Text.prototype, 'textContent', {
-    get: function () { return this.data; }
-  });
-
-  function Ev(type, opts) { this.type = type; this.bubbles = !!(opts && opts.bubbles); }
-
-  // ---- the selector engine ----
-  function parseCompound(txt) {
-    var c = { tag: null, id: null, classes: [], attrs: [] };
-    var rest = txt;
-    while (rest.length) {
-      var m;
-      if ((m = /^#([A-Za-z0-9_-]+)/.exec(rest))) { c.id = m[1]; }
-      else if ((m = /^\.([A-Za-z0-9_-]+)/.exec(rest))) { c.classes.push(m[1]); }
-      else if ((m = /^\[([A-Za-z0-9_-]+)(?:=("([^"]*)"|'([^']*)'))?\]/.exec(rest))) {
-        c.attrs.push({ name: m[1],
-          value: m[2] === undefined ? undefined : (m[3] !== undefined ? m[3] : m[4]) });
-      } else if ((m = /^([A-Za-z][A-Za-z0-9-]*)/.exec(rest))) { c.tag = m[1].toLowerCase(); }
-      else { throw new Error('selector shim cannot parse: ' + txt); }
-      rest = rest.slice(m[0].length);
-    }
-    return c;
-  }
-  function matches(node, c) {
-    if (node.nodeType !== 1) return false;
-    if (c.tag !== null && node.localName.toLowerCase() !== c.tag) return false;
-    if (c.id !== null && node.id !== c.id) return false;
-    var cls = String(node.className || '').split(/\s+/);
-    for (var i = 0; i < c.classes.length; i++) {
-      if (cls.indexOf(c.classes[i]) < 0) return false;
-    }
-    for (var j = 0; j < c.attrs.length; j++) {
-      var a = c.attrs[j];
-      if (!node.hasAttribute(a.name)) return false;
-      if (a.value !== undefined && node.getAttribute(a.name) !== a.value) return false;
-    }
-    return true;
-  }
-  function descendants(node, out) {
-    node.childNodes.forEach(function (k) {
-      if (k.nodeType === 1) { out.push(k); descendants(k, out); }
-    });
-    return out;
-  }
-  /**
-   * SPLIT ON WHITESPACE, BUT NOT INSIDE A QUOTED ATTRIBUTE VALUE. Naive whitespace splitting broke
-   * `tr[data-category="Electric Can Opener"]` in half — and because the parser throws on what it
-   * cannot read, that showed up as an error instead of as a silently empty match list.
-   */
-  function splitTop(txt, mode) {
-    var out = [], buf = '', q = null;
-    function isSep(ch) {
-      return mode === 'comma' ? ch === ',' : (ch === ' ' || ch === '\t' || ch === '\n');
-    }
-    for (var i = 0; i < txt.length; i++) {
-      var ch = txt.charAt(i);
-      if (q) {
-        buf += ch;
-        if (ch === q) q = null;
-        continue;
-      }
-      if (ch === '"' || ch === "'") { q = ch; buf += ch; continue; }
-      if (isSep(ch)) {
-        if (buf.length) { out.push(buf); buf = ''; }
-        continue;
-      }
-      buf += ch;
-    }
-    if (buf.length) out.push(buf);
-    return out;
-  }
-  function qsaOn(root, sel) {
-    var seen = [], result = [];
-    splitTop(String(sel), 'comma').forEach(function (part) {
-      var chain = splitTop(part.trim(), 'space').map(parseCompound);
-      if (!chain.length) return;
-      var current = [root];
-      chain.forEach(function (c) {
-        var next = [];
-        current.forEach(function (n) {
-          descendants(n, []).forEach(function (k) {
-            if (matches(k, c) && next.indexOf(k) < 0) next.push(k);
-          });
-        });
-        current = next;
-      });
-      current.forEach(function (n) { if (seen.indexOf(n) < 0) { seen.push(n); } });
-    });
-    // document order
-    var all = descendants(root, []);
-    all.forEach(function (n) { if (seen.indexOf(n) >= 0) result.push(n); });
-    return result;
-  }
-  Node.prototype.querySelectorAll = function (sel) { return qsaOn(this, sel); };
-  Node.prototype.querySelector = function (sel) {
-    var r = qsaOn(this, sel);
-    return r.length ? r[0] : null;
-  };
-
-  var doc = new Node('html');
-  var head = new Node('head');
-  var body = new Node('body');
-  doc.appendChild(head);
-  doc.appendChild(body);
-
-  var document = {
-    documentElement: doc,
-    head: head,
-    body: body,
-    createElement: function (t) { return new Node(t, null); },
-    createElementNS: function (ns, t) { return new Node(t, ns); },
-    createTextNode: function (t) { return new Text(t); },
-    getElementById: function (id) {
-      var hit = null;
-      descendants(doc, []).forEach(function (n) { if (!hit && n.id === id) hit = n; });
-      return hit;
-    },
-    querySelectorAll: function (sel) { return qsaOn(doc, sel); },
-    querySelector: function (sel) {
-      var r = qsaOn(doc, sel);
-      return r.length ? r[0] : null;
-    }
-  };
-  skeleton(document, head, body, function (t) { return new Node(t, null); });
-  return { document: document, Event: Ev, body: body, head: head,
-    window: { print: function () { window.__printed = (window.__printed || 0) + 1; } } };
-}
-
-/**
- * THE PAGE SKELETON, AND IT IS HELD TO index.html RATHER THAN TRANSCRIBED FROM IT.
- *
- * Every id below is asserted to exist in the real file, and the script/link tags are extracted FROM the
- * real file, so this cannot drift into a shape the page does not have. A skeleton nobody checks is a
- * second page, and a suite that tests a second page proves nothing about the first.
- */
-var PAGE_IDS = ['banner', 'notice', 'shell', 'side', 'nav', 'btnRail', 'btnPresent', 'btnPrint',
-  'main', 'topbar', 'crumbs', 'stBadge', 'btnStDetail', 'scope', 'view', 'selftest', 'stList',
-  'printHint', 'tip'];
-/**
- * TEXT THE PAGE ASSERTS ON MUST COME FROM THE PAGE. The banner sentence is one of the things the
- * prototype checks by value ("the banner says it exactly"), so a skeleton that created an empty span
- * would have failed a real assertion for a reason that was the shim's fault. Both strings are lifted
- * out of index.html, which also means a change to the wording there cannot silently pass here.
- */
-function pageText(id) {
-  var re = new RegExp('id="' + id + '"[^>]*>([^<]*)<');
-  var m = re.exec(SRC.index);
-  if (!m) throw new Error('index.html has no text for #' + id);
-  return m[1].trim();
-}
-/**
- * ATTRIBUTES THE PAGE ASSERTS ON, ALSO TAKEN FROM THE PAGE. The prototype checks that the print button
- * "says what it does" by reading its title, so the skeleton must carry the real one. Returning null for
- * an id that has no title is deliberate: it makes a missing attribute look like a missing attribute
- * rather than like an empty string somebody chose.
- */
-function pageTitle(id) {
-  var block = new RegExp('id="' + id + '"[\\s\\S]{0,200}?>').exec(SRC.index);
-  if (!block) return null;
-  var m = /title="([^"]*)"/.exec(block[0]);
-  return m ? m[1] : null;
-}
-function pageClassText(cls) {
-  var re = new RegExp('class="' + cls + '"[^>]*>([^<]*)<');
-  var m = re.exec(SRC.index);
-  if (!m) throw new Error('index.html has no text for .' + cls);
-  return m[1].trim();
-}
-var PAGE_TREE = [
-  ['div', 'banner', 'banner', [
-    ['span', 'notice', 'notice', null, function () { return pageText('notice'); }],
-    ['span', null, 'badge-demo', null, function () { return pageClassText('badge-demo'); }]]],
-  ['div', 'shell', 'shell', [
-    ['nav', 'side', 'side', [
-      ['button', 'btnRail', 'railbtn'],
-      ['ul', 'nav', 'nav'],
-      ['button', 'btnPresent', 'act'],
-      ['button', 'btnPrint', 'act']]],
-    ['main', 'main', 'main', [
-      ['header', 'topbar', 'topbar', [
-        ['div', 'crumbs', 'crumbs'],
-        ['span', 'stBadge', 'stbadge'],
-        ['button', 'btnStDetail', 'linkbtn']]],
-      ['section', 'scope', 'scope'],
-      ['section', 'view', 'view'],
-      ['section', 'selftest', 'selftest', [['div', 'stList', 'stlist']]],
-      ['p', 'printHint', 'printhint']]]]],
-  ['div', 'tip', 'tip']
-];
-function buildSkeleton(document, head, body, mk) {
-  // the head, taken from the real index.html
-  var scripts = SRC.index.match(/<script src="([^"]+)"><\/script>/g) || [];
-  scripts.forEach(function (tag) {
-    var n = mk('script');
-    n.setAttribute('src', /src="([^"]+)"/.exec(tag)[1]);
-    head.appendChild(n);
-  });
-  var links = SRC.index.match(/<link rel="stylesheet" href="([^"]+)">/g) || [];
-  links.forEach(function (tag) {
-    var n = mk('link');
-    n.setAttribute('rel', 'stylesheet');
-    n.setAttribute('href', /href="([^"]+)"/.exec(tag)[1]);
-    head.appendChild(n);
-  });
-  (function place(spec, parent) {
-    spec.forEach(function (s) {
-      var n = mk(s[0]);
-      if (s[1]) n.id = s[1];
-      if (s[2]) n.className = s[2];
-      if (s[1] === 'selftest' || s[1] === 'tip') n.hidden = true;
-      parent.appendChild(n);
-      if (s[4]) n.appendChild(document.createTextNode(s[4]()));
-      if (s[1]) {
-        var t = pageTitle(s[1]);
-        if (t !== null) n.setAttribute('title', t);
-      }
-      if (s[3]) place(s[3], n);
-    });
-  }(PAGE_TREE, body));
-}
-
-/** Load the four files into one context and let boot() run, exactly as the browser would. */
-function bootPage(mutateSrc) {
-  var dom = makeDom(buildSkeleton);
-  var sandbox = { console: { log: function () {}, error: function () {}, warn: function () {} } };
-  var ctx = vm.createContext(sandbox);
-  vm.runInContext('var window = this;', ctx);
-  ctx.document = dom.document;
-  ctx.Event = dom.Event;
-  ctx.window = ctx;
-  ctx.print = dom.window.print;
-  var order = ['contract', 'selectors', 'fixture', 'prototype'];
-  var thrown = null;
-  try {
-    order.forEach(function (k) {
-      var src = SRC[k];
-      if (mutateSrc) src = mutateSrc(k, src);
-      vm.runInContext(src, ctx, { filename: k + '.js' });
-    });
-  } catch (e) { thrown = e; }
-  return { ctx: ctx, dom: dom, thrown: thrown };
-}
-
-/** The page's own self-test verdict, read off the page the way a person reads it. */
-function selfTestVerdict(p) {
-  var badge = p.dom.document.getElementById('stBadge');
-  var items = p.dom.document.getElementById('stList').childNodes.map(function (n) {
-    return { ok: String(n.className).indexOf('st-ok') >= 0, text: n.textContent };
-  });
-  return {
-    badge: badge ? badge.textContent : null,
-    ok: items.filter(function (i) { return i.ok; }).length,
-    bad: items.filter(function (i) { return !i.ok; }),
-    total: items.length
-  };
-}
-
-// ===================================================================================================
-// A HANDLE ON THE PIPELINE, WITHOUT THE PAGE. The selectors are pure, so most of this suite needs no
-// DOM at all — which is the whole reason they were moved out of the render file.
-// ===================================================================================================
-function pipeline() {
-  var ctx = vm.createContext({ console: console });
-  vm.runInContext(SRC.contract, ctx, { filename: 'data-contract.js' });
-  vm.runInContext(SRC.selectors, ctx, { filename: 'selectors.js' });
-  vm.runInContext(SRC.fixture, ctx, { filename: 'preview-fixture.js' });
-  var C = vm.runInContext('PSB_CONTRACT', ctx);
-  var F = vm.runInContext('PSB_PREVIEW', ctx);
-  var S = vm.runInContext('PSB_SELECTORS', ctx);
-  return { C: C, F: F, S: S, canon: F.PreviewProductStrategyDataAdapter.loadCanonical().rows };
-}
+var H = require('./_psb-harness.js');
+var ROOT = H.ROOT, SRC = H.SRC, bare = H.bare, bootPage = H.bootPage;
+var selfTestVerdict = H.selfTestVerdict, pipeline = H.pipeline, PAGE_IDS = H.PAGE_IDS;
 var P = pipeline();
 var S = P.S, C = P.C, CANON = P.canon;
 function site(country, marketplace, company) {
@@ -939,7 +558,11 @@ console.log('\n=== §H  THE REAL PAGE, RENDERED AND DRIVEN HEADLESS ===');
 
   var doc = p.dom.document;
   // ---- the site ring exists and is not gated behind the category ----
-  ok(!!doc.getElementById('siteBar'), 'H5 the site is the first ring on the page');
+  // P1-B2A renamed the container when the scope became three tiers on the Operation System's own
+  // filter contract. The rule is unchanged: the site is the FIRST thing on the page.
+  ok(!!doc.getElementById('scopeSite'), 'H5 the site is the first ring on the page');
+  eq(doc.getElementById('scope').childNodes[0].id, 'scopeSite',
+    'H5a and it is literally first — before the category, which it decides');
   eq(doc.getElementById('fCountry').disabled, false,
     'H6 and it is never disabled — the site cannot be chosen after the thing it decides');
   eq(doc.getElementById('siteState').getAttribute('data-site-state'), 'COMPLETE_SITE',
@@ -992,32 +615,47 @@ console.log('\n=== §H  THE REAL PAGE, RENDERED AND DRIVEN HEADLESS ===');
     return n;
   }
   ok(!!doc.getElementById('scenarioPanel'), 'H17 the scenario panel is on the page');
+  /* P1-B2A collapsed the form to keep the chart above the fold. Open it the way a person would
+     before driving it: a test that reaches controls nobody can see is testing a different page. */
+  if (doc.getElementById('meetingToggle').getAttribute('aria-expanded') === 'false') {
+    doc.getElementById('meetingToggle').click();
+  }
   eq(doc.getElementById('scenarioPanel').getAttribute('data-permitted'), 'true',
     'H18 and it is available on a complete site');
   eq(doc.getElementById('scenarioBadge').textContent, 'No scenario',
     'H19 with nothing simulated to begin with');
 
-  // pick the Spatula series, an everyday PERCENT scenario, and simulate
+  // pick the Spatula series, an everyday percentage scenario, and simulate.
+  // P1-B2A renamed the control: the mode enum is no longer on screen, an "Adjustment" sentence is.
   fire('scSeries', 'Spatula');
   fire('scField', 'everyday_scenario_price');
-  fire('scMode', 'PERCENT');
+  fire('scAdjust', 'by_percent');
   fire('scValue', '-15');
   doc.getElementById('scApply').click();
   eq(doc.getElementById('scenarioBadge').textContent, 'Scenario · Unsaved',
     'H20 the badge says the board is showing simulated values');
   eq(doc.getElementById('scenarioPanel').getAttribute('data-active'), 'true',
     'H21 and the panel marks itself active');
-  ok(doc.getElementById('scenarioNote').textContent.indexOf('IN_MEMORY_ONLY') > 0,
-    'H22 and says on screen where the value lives');
+  // P1-B2A moved the CONTRACT NAME behind the `?` and left the SENTENCE on the surface. The rule it
+  // was testing is unchanged — the page still says where a simulated value lives — but it now says it
+  // in words, because a person in a meeting should not have to read an identifier to learn that
+  // nothing is being saved.
+  ok(doc.getElementById('scenarioNote').textContent.indexOf('held in this page only') > 0,
+    'H22 and says on screen where the value lives',
+    doc.getElementById('scenarioNote').textContent);
+  ok(doc.getElementById('scenarioNote').textContent.indexOf('IN_MEMORY_ONLY') < 0,
+    'H22a without making a reader parse the contract name to find that out');
 
-  // the everyday-absolute combination is refused ON THE PAGE, not just in the pipeline
-  fire('scMode', 'ABSOLUTE');
-  fire('scValue', '9.99');
-  doc.getElementById('scApply').click();
-  ok(!!doc.getElementById('scenarioModeRefusal'),
-    'H23 flattening an everyday ladder is refused on the page, with the reason shown');
-  ok(doc.getElementById('scenarioModeRefusal').textContent
-    .indexOf('WOULD_FLATTEN_THE_LADDER') > 0, 'H24 and the reason is the named one');
+  // THE EVERYDAY-ABSOLUTE COMBINATION IS NOT EVEN OFFERED. P1-B2A removes it from the Adjustment
+  // menu for the everyday field rather than accepting it and refusing afterwards — a control that
+  // cannot express the mistake is better than one that explains it.
+  var adjOpts = doc.getElementById('scAdjust').childNodes.map(function (o) {
+    return o.getAttribute('value');
+  });
+  eq(adjOpts.indexOf('set'), -1,
+    'H23 "Set price" is not offered for the everyday ladder — the flattening combination is absent');
+  ok(adjOpts.indexOf('by_percent') >= 0 && adjOpts.indexOf('by_amount') >= 0,
+    'H24 while the two that preserve the ladder are', adjOpts);
 
   // reset all, and the badge goes back
   doc.getElementById('scResetAll').click();
@@ -1123,9 +761,12 @@ console.log('\n=== §I  THE DATA QUALITY LEDGER, AND WHAT A PRINTED PAGE SAYS ==
     if (value !== undefined) n.value = value;
     n.dispatchEvent(new p.dom.Event('change', { bubbles: true }));
   }
+  if (doc.getElementById('meetingToggle').getAttribute('aria-expanded') === 'false') {
+    doc.getElementById('meetingToggle').click();
+  }
   fire('scSeries', 'Spatula');
   fire('scField', 'proposed_scenario_price');
-  fire('scMode', 'ABSOLUTE');
+  fire('scAdjust', 'set');
   fire('scValue', '12.99');
   doc.getElementById('scApply').click();
 

@@ -484,5 +484,163 @@
     }
   };
 
+
+  /* ==================================================================================================
+     THE STRESS FIXTURE — A DENSITY TEST, AND IT SAYS SO ON EVERY ROW.
+
+     P1-B2A. The visual review was done on four sites and a handful of products, which is the shape
+     that makes a filter bar look fine and a chart look roomy. The layout questions this round is
+     answering — does the filter area still fit, do the category chips still make sense, does the chart
+     stay readable — only have answers at scale, so here is the scale:
+
+         8 countries · 10 site identities · 12 categories · 15 series · 44 products on one chart
+
+     IT IS GENERATED AND DETERMINISTIC. No Math.random anywhere: a fixture that differs between runs is
+     not a fixture, and an assertion about "40 products" would then be an assertion about luck. Every
+     price here is arithmetic on an index.
+
+     IT IS NOT DATA. `values_are: 'PREVIEW'`, `connected_to_db: false`, and every provenance block says
+     STRESS_FIXTURE_GENERATED. Nothing in it came from the Operation System database, and nothing in
+     this round claims otherwise — the live universe is measured in P1-B3.
+     ================================================================================================== */
+  var STRESS_SITES = [
+    { company: 'Kitchen Mama', country: 'US', marketplace: 'Amazon', currency: 'USD' },
+    { company: 'Kitchen Mama', country: 'US', marketplace: 'Walmart', currency: 'USD' },
+    { company: 'Kitchen Mama', country: 'CA', marketplace: 'Amazon', currency: 'CAD' },
+    { company: 'Kitchen Mama', country: 'UK', marketplace: 'Amazon', currency: 'GBP' },
+    { company: 'Kitchen Mama', country: 'DE', marketplace: 'Amazon', currency: 'EUR' },
+    { company: 'Kitchen Mama', country: 'FR', marketplace: 'Amazon', currency: 'EUR' },
+    { company: 'Kitchen Mama', country: 'IT', marketplace: 'Amazon', currency: 'EUR' },
+    { company: 'Kitchen Mama', country: 'ES', marketplace: 'Amazon', currency: 'EUR' },
+    { company: 'Kitchen Mama', country: 'JP', marketplace: 'Amazon', currency: 'JPY' },
+    { company: 'Kitchen Mama', country: 'JP', marketplace: 'Rakuten', currency: 'JPY' }
+  ];
+  var STRESS_CATEGORIES = ['Electric Can Opener', 'Manual Can Opener', 'Silicone Spatula',
+    'Electric Kettle', 'Kitchen Shears', 'Milk Frother', 'Cutting Board', 'Mixing Bowl',
+    'Measuring Set', 'Pepper Mill', 'Storage Container', 'Vegetable Peeler'];
+  var STRESS_SERIES = ['Can Opener', 'Spatula', 'Kettle', 'Shears', 'Frother', 'Board', 'Bowl',
+    'Measure', 'Mill', 'Storage', 'Peeler', 'Prep', 'Serve', 'Bake', 'Clean'];
+  /* THE WIDE ONE. 44 products in a single category on a single site, each at its own price, so the
+     chart has to place 44 columns and 44 labels on one axis. */
+  var STRESS_WIDE_CATEGORY = 'Electric Can Opener';
+  var STRESS_WIDE_COUNT = 44;
+
+  function stressRows() {
+    var rows = [];
+    function push(site, cat, seriesName, idx, priceC) {
+      var sku = 'ST' + String(1000 + idx);
+      var siteSku = site.marketplace === 'Walmart' ? ('WMT-' + sku)
+        : (site.marketplace === 'Rakuten' ? ('RKT-' + sku) : (sku + '-' + site.country));
+      var regular = (priceC / 100).toFixed(2);
+      rows.push({
+        identity: 'STR-' + site.country + '-' + site.marketplace.slice(0, 3).toUpperCase()
+          + '-' + sku,
+        master_sku: sku,
+        site_sku: siteSku,
+        category: cat,
+        product_name: cat + ' ' + (idx % 90 + 10),
+        series: seriesName,
+        variant_group: sku,
+        variant_name: null,
+        company: site.company, country: site.country, marketplace: site.marketplace,
+        currency: site.currency,
+        regular_price: regular,
+        minimum_price: (priceC * 0.8 / 100).toFixed(2),
+        msrp: (priceC * 1.2 / 100).toFixed(2),
+        official_deal_price: (idx % 7 === 0) ? (priceC * 0.75 / 100).toFixed(2) : null,
+        official_deal_start: (idx % 7 === 0) ? '2026-09-01' : null,
+        official_deal_end: (idx % 7 === 0) ? '2026-09-30' : null,
+        product_image: null,
+        lifecycle_status: 'Running in the Market',
+        source_status: 'active',
+        regional: {
+          regional_detail_id: 'RGD-ST-' + site.country + '-' + sku,
+          site_sku: siteSku, marketplace_product_id: 'MPID-' + sku,
+          product_url: null, packaging_regulation: null, language: null
+        },
+        missing_reasons: ['IMAGE_SOURCE_MISSING'],
+        image_identity_status: 'IMAGE_SOURCE_MISSING',
+        provenance: {
+          adapter: 'PREVIEW', values_are: 'PREVIEW', connected_to_db: false,
+          identity_source: 'STRESS_FIXTURE_GENERATED', price_source: 'STRESS_FIXTURE_GENERATED',
+          sku_code_basis: 'GENERATED for a density test — this code exists nowhere else',
+          category_basis: 'GENERATED', category_state: 'PRESENT',
+          site_membership_basis: 'GENERATED stress fixture membership',
+          regional_basis: 'GENERATED',
+          image_basis: 'NO_VERIFIED_DB_IMAGE_MAPPING_FOR_THIS_SKU',
+          representative_image_sku: null,
+          variant_group_basis: 'GENERATED — one product per group, so nothing is merged',
+          campaign_name: (idx % 7 === 0) ? 'Generated Event' : null,
+          proposed_scenario_price: (idx % 11 === 0) ? (priceC * 0.7 / 100).toFixed(2) : null,
+          proposed_is_board_owned: (idx % 11 === 0)
+        }
+      });
+    }
+
+    var n = 0;
+    STRESS_SITES.forEach(function (site, si) {
+      STRESS_CATEGORIES.forEach(function (cat, ci) {
+        /* The wide category on the home site carries the 44; everywhere else three products, which is
+           enough to keep every site, category and series reachable without a fixture nobody can load. */
+        var isWide = (si === 0 && cat === STRESS_WIDE_CATEGORY);
+        var count = isWide ? STRESS_WIDE_COUNT : 3;
+        for (var k = 0; k < count; k++) {
+          n++;
+          var seriesName = STRESS_SERIES[(ci + k) % STRESS_SERIES.length];
+          /* DISTINCT PRICES, SPREAD OVER A REAL RANGE, so 44 columns are 44 positions and the axis has
+             something to compress. Arithmetic on the index — never random. */
+          var priceC = 900 + ((ci * 7 + k * 5 + si * 3) % 120) * 65;
+          push(site, cat, seriesName, n, priceC);
+        }
+      });
+    });
+    return rows;
+  }
+
+  var STRESS_ROWS = stressRows();
+  F.STRESS_ROWS = STRESS_ROWS;
+  F.STRESS_SHAPE = {
+    countries: STRESS_SITES.filter(function (s, i, a) {
+      return a.map(function (x) { return x.country; }).indexOf(s.country) === i; }).length,
+    site_identities: STRESS_SITES.length,
+    categories: STRESS_CATEGORIES.length,
+    series: STRESS_SERIES.length,
+    widest_chart: STRESS_WIDE_COUNT,
+    rows: STRESS_ROWS.length,
+    generated: true,
+    is_database_data: false
+  };
+
+  /* Same interface, same refusals, same delegation to the one membership implementation. */
+  F.StressProductStrategyDataAdapter = {
+    id: 'STRESS',
+    enabled: true,
+    loadCanonical: function () {
+      return {
+        state: 'PARTIAL_DATA',
+        rows: STRESS_ROWS.slice(),
+        row_count: STRESS_ROWS.length,
+        fields: C.FIELD_NAMES.slice(),
+        capped: false,
+        notice: 'Generated stress fixture — a density test, not data from any database',
+        provenance: { adapter: 'STRESS', connected: false, connected_to_db: false,
+          requests_made: 0, values_are: 'PREVIEW',
+          identity_source: 'STRESS_FIXTURE_GENERATED', price_source: 'STRESS_FIXTURE_GENERATED',
+          membership_authority: 'the generated fixture', fx_applied: false, images_verified: 0 }
+      };
+    },
+    load: function (filters) {
+      var SEL = global.PSB_SELECTORS;
+      var u = SEL.getEligibleProductUniverse({ rows: STRESS_ROWS, site: filters || {},
+        includeInactive: (filters || {}).includeInactive === true });
+      var rows = SEL.applyDimensionFilters(u.rows, filters || {});
+      return { state: 'PARTIAL_DATA', rows: rows, row_count: rows.length,
+        fields: C.FIELD_NAMES.slice(), applied_filters: filters || {}, capped: false,
+        notice: 'Generated stress fixture', refusals: {},
+        provenance: { adapter: 'STRESS', connected: false, connected_to_db: false,
+          requests_made: 0, values_are: 'PREVIEW', images_verified: 0 } };
+    }
+  };
+
   global.PSB_PREVIEW = F;
 }(this));

@@ -630,6 +630,139 @@
     return next;
   };
 
+  /* ------------------------------------------------------------------------------------------------
+     5b  THE HUMAN VOCABULARY.
+
+     `proposed_scenario_price`, `ABSOLUTE`, `DELTA`, `PERCENT` are field names and enum members. They are
+     precise, they belong in the data, and a person in a meeting should never have to read one. The
+     mapping lives here rather than in the renderer so that the label a user picks and the mode the
+     pipeline applies cannot drift apart — and so a test can assert that no internal token reaches the
+     screen.
+     ------------------------------------------------------------------------------------------------ */
+  S.SCENARIO_FIELD_CHOICES = [
+    { id: 'proposed_scenario_price', label: 'Proposed price',
+      help: 'A price somebody is suggesting. It is board-owned: nothing downstream treats it as a price'
+        + ' the company charges, which is why it is the default.' },
+    { id: 'everyday_scenario_price', label: 'Everyday price',
+      help: 'The regular selling price. Simulating it moves the whole ladder, so it accepts a'
+        + ' percentage or an amount and not a single figure for every product.' }
+  ];
+  S.SCENARIO_ADJUSTMENTS = [
+    { id: 'set', label: 'Set proposed price', mode: 'ABSOLUTE', signed: false,
+      placeholder: 'e.g. 24.99', unit: 'price',
+      help: 'Every product in the Series is simulated AT this figure. Correct for a promotion, which'
+        + ' genuinely is one price.' },
+    { id: 'by_amount', label: 'Increase / decrease by amount', mode: 'DELTA', signed: true,
+      placeholder: 'e.g. -3.00', unit: 'amount',
+      help: 'Each product moves by this amount from its own price, so the ladder keeps its shape.' },
+    { id: 'by_percent', label: 'Increase / decrease by percentage', mode: 'PERCENT', signed: true,
+      placeholder: 'e.g. -15', unit: 'percent',
+      help: 'Each product moves by this percentage of its own price, so the ladder keeps its shape.' }
+  ];
+  S.scenarioFieldLabel = function (id) {
+    var hit = null;
+    S.SCENARIO_FIELD_CHOICES.forEach(function (c) { if (c.id === id) hit = c; });
+    return hit ? hit.label : id;
+  };
+  S.scenarioAdjustment = function (id) {
+    var hit = null;
+    S.SCENARIO_ADJUSTMENTS.forEach(function (a) { if (a.id === id) hit = a; });
+    return hit;
+  };
+  /** Which adjustments this field permits. The everyday ladder may not be set to one figure. */
+  S.scenarioAdjustmentsFor = function (field) {
+    return S.SCENARIO_ADJUSTMENTS.filter(function (a) {
+      return S.scenarioModeRefusal(field, a.mode) === null;
+    });
+  };
+
+  /**
+   * THE APPLY GATE. One function, returning a refusal CODE and a sentence a person can act on.
+   *
+   * Nothing is stored on a refusal and nothing is half-applied. The order matters: the scope questions
+   * come before the value questions, because "which Series?" is not answerable by typing a better
+   * number, and telling somebody their price is invalid when the real problem is that they picked no
+   * Series sends them to fix the wrong thing.
+   */
+  S.SCENARIO_MAX_PRICE = 1000000;      // 10,000.00 in cents is 1,000,000 — a ceiling, not a judgement
+  S.scenarioValidate = function (spec) {
+    spec = spec || {};
+    var site = (spec.site && spec.site.state) ? spec.site : S.deriveSiteIdentity(spec.site);
+    if (!site.complete) {
+      return { ok: false, code: 'SCENARIO_REQUIRES_A_COMPLETE_SITE_IDENTITY',
+        message: 'Choose one company, one country and one marketplace first. A simulated price belongs'
+          + ' to a site, because the currency does.' };
+    }
+    if (str(spec.series) === '' || str(spec.series) === S.ALL) {
+      return { ok: false, code: 'SCENARIO_SERIES_NOT_CHOSEN',
+        message: 'Choose the Series to simulate. There is no "all Series" here on purpose: a change'
+          + ' whose reach you cannot see is not a scenario you can discuss.' };
+    }
+    var adj = S.scenarioAdjustment(str(spec.adjustment));
+    if (!adj) {
+      return { ok: false, code: 'SCENARIO_ADJUSTMENT_NOT_CHOSEN',
+        message: 'Choose how to adjust the price.' };
+    }
+    var field = str(spec.field) || S.SCENARIO_DEFAULT_FIELD;
+    var modeRefusal = S.scenarioModeRefusal(field, adj.mode);
+    if (modeRefusal !== null) {
+      return { ok: false, code: modeRefusal,
+        message: 'Setting one figure for a whole Series would flatten the everyday ladder, and every'
+          + ' gap and risk this board measures would go to zero. Use a percentage or an amount.' };
+    }
+    var raw = spec.value;
+    if (raw === null || raw === undefined || str(raw) === '') {
+      return { ok: false, code: 'SCENARIO_VALUE_EMPTY', message: 'Enter a value.' };
+    }
+    if (!isFinite(Number(raw))) {
+      return { ok: false, code: 'SCENARIO_VALUE_NOT_A_NUMBER',
+        message: 'That is not a number. Use digits, and a minus sign for a decrease.' };
+    }
+    var num = Number(raw);
+    if (!adj.signed && num <= 0) {
+      return { ok: false, code: 'SCENARIO_PRICE_NOT_POSITIVE',
+        message: 'A price has to be above zero. To model a decrease, choose by amount or by'
+          + ' percentage instead.' };
+    }
+    if (adj.mode === 'ABSOLUTE' && S.cents(num) > S.SCENARIO_MAX_PRICE) {
+      return { ok: false, code: 'SCENARIO_PRICE_OUT_OF_RANGE',
+        message: 'That is far outside any price on this board. Check the figure.' };
+    }
+    if (adj.mode === 'PERCENT' && (num <= -100 || num > 1000)) {
+      return { ok: false, code: 'SCENARIO_PERCENT_OUT_OF_RANGE',
+        message: 'A percentage at or below -100% is not a price, and anything above +1000% is a typo.' };
+    }
+    return { ok: true, code: null, message: null, mode: adj.mode, field: field };
+  };
+
+  /**
+   * HOW MANY LISTINGS THIS WOULD MOVE, counted on the rows the board is actually showing. A reach the
+   * person cannot see is the thing the Series-is-required rule exists to prevent, so the number is
+   * computed from the same filtered set the chart draws rather than from the whole site.
+   */
+  S.scenarioAffected = function (rows, series) {
+    var want = str(series);
+    if (want === '' || want === S.ALL) return { skus: 0, products: [] };
+    var hits = (rows || []).filter(function (r) { return str(r.series) === want; });
+    return {
+      skus: hits.length,
+      products: hits.map(function (r) { return str(r.site_sku) || str(r.master_sku); })
+    };
+  };
+
+  /** The Series a scenario may target here: present in the current scope AND analysable. */
+  S.scenarioSeriesChoices = function (model) {
+    var seen = {}, out = [];
+    (model.rows || []).forEach(function (r) {
+      var v = str(r.series);
+      if (v === '' || seen[v]) return;
+      if (!r._plottable) return;         // a Series with no coordinate cannot show a simulated move
+      seen[v] = 1;
+      out.push(v);
+    });
+    return out.sort();
+  };
+
   S.scenarioCount = function (overrides) {
     var n = 0;
     Object.keys(overrides || {}).forEach(function (k) {

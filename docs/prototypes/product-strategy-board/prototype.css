@@ -173,13 +173,8 @@ button { font: inherit; color: inherit; }
 }
 
 /* ---------------------------------------------------------------- scope bar --------------------- */
-.scope {
-  display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap;
-  padding: 16px 18px; margin: 18px 0 0;
-  background: var(--paper); border: 1px solid var(--line); border-radius: var(--r);
-}
-.scope-lead { display: flex; flex-direction: column; gap: 5px; }
-.scope-lead .fl-label { color: var(--accent-2); }
+/* .scope is declared ONCE, with the three tiers, further down. `.scope-lead` went with the old
+   single-row ladder and has no element left to style. */
 .fl { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .fl-label {
   font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase;
@@ -194,19 +189,12 @@ button { font: inherit; color: inherit; }
 .scope-note {
   margin-left: auto; max-width: 320px; font-size: 11.5px; color: var(--ink-3); line-height: 1.45;
 }
-.catbar { display: flex; gap: 6px; flex-wrap: wrap; }
-.catbtn {
-  padding: 7px 13px; border-radius: 999px; cursor: pointer;
-  border: 1px solid var(--line); background: var(--paper); color: var(--ink-2); font-size: 13px;
-}
-.catbtn:hover { border-color: #c6cdd9; }
-.catbtn.is-on {
-  background: var(--ink); border-color: var(--ink); color: #fff; font-weight: 600;
-}
+/* P1-B2A — the chip row, the chip and the empty state are declared ONCE, further down, on the
+   Operation System's own --filter-* tokens. They used to be declared here as well: two rules for one
+   selector agree on the day they are written and drift afterwards, and the later one silently wins,
+   so the earlier one becomes a lie that still reads like the truth. `:disabled` is kept because
+   nothing below re-declares it. */
 .catbtn:disabled { color: var(--ink-4); background: var(--ground); cursor: not-allowed; }
-.scope-empty {
-  margin: 0; font-size: 12px; color: var(--ink-3); font-style: italic; max-width: 62ch;
-}
 
 /* ---------------------------------------------------------------- P1-B2  the site ring ---------- */
 .sitebar { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -221,7 +209,14 @@ button { font: inherit; color: inherit; }
 /* THE ONE STATE THAT MUST NEVER BE MISTAKEN FOR THE OTHER: a dashed amber frame, on screen and on
    paper, whenever a number anywhere on the page is simulated. */
 .scenario.is-on { border: 2px dashed #b8860b; background: #fffdf5; }
-.scenario-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.scenario-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.scenario-toggle {
+  font: inherit; font-size: 13px; font-weight: 700; cursor: pointer;
+  border: 0; background: none; padding: 0; color: var(--accent-2);
+}
+.scenario-toggle:hover { text-decoration: underline; }
+.scenario-toggle:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; }
+.scenario-body { display: flex; flex-direction: column; gap: 8px; }
 .scenario-title { font-size: 13px; font-weight: 700; color: var(--accent-2); }
 .scenario-badge {
   font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
@@ -241,7 +236,11 @@ button { font: inherit; color: inherit; }
 .scenario-note, .scenario-refusal {
   margin: 0; font-size: 12px; color: var(--ink-3); max-width: 88ch; line-height: 1.5;
 }
-.scenario-refusal { color: #98261d; }
+.scenario-refusal { color: #98261d; }.badge-scope {
+  font-size: 11px; letter-spacing: .01em;
+  border: 1px solid rgba(255, 255, 255, .35); border-radius: 4px; padding: 2px 8px;
+  color: #eef2f7; background: rgba(255, 255, 255, .08);
+}
 .badge-scenario {
   font-size: 11px; font-weight: 700; letter-spacing: .02em;
   border: 1px solid #b8860b; border-radius: 4px; padding: 2px 8px;
@@ -320,12 +319,11 @@ button { font: inherit; color: inherit; }
 .panel-h h3 { font-size: 14.5px; }
 .cur { font: 600 11.5px var(--mono); letter-spacing: .05em; padding: 2px 8px; border-radius: 999px;
   background: var(--ground); border: 1px solid var(--line); color: var(--ink-2); }
-.chartwrap { overflow-x: auto; padding-bottom: 4px; }
-.chart { display: block; }
+/* P1-B2A — .chartwrap and .chart are declared once, with the zoom container, further down. */
 .grid { stroke: #edeff4; stroke-width: 1; }
 .grid.is-major { stroke: #dfe3ea; }
 .axisline { stroke: #cfd5e0; stroke-width: 1; }
-.ytick { font: 11px var(--mono); fill: var(--ink-3); }
+/* .ytick, .xlabel and .xsub are sized once, in the P1-B2A readability block further down. */
 .axtitle { font: 600 11px var(--sans); fill: var(--ink-3); letter-spacing: .05em; }
 .band { stroke: #c9d3e2; stroke-width: 9; stroke-linecap: round; opacity: .55; }
 .cap { stroke: #93a1b6; stroke-width: 1.5; }
@@ -333,8 +331,6 @@ button { font: inherit; color: inherit; }
 .mk-prop { fill: #fff; stroke: #7a5cc4; stroke-width: 2; stroke-dasharray: 3 2; }
 .gapline { stroke: #0f7b5f; stroke-width: 1.5; stroke-dasharray: 4 3; }
 .gaplabel { font: 600 10.5px var(--mono); fill: #0f7b5f; }
-.xlabel { font: 600 11.5px var(--sans); fill: var(--ink-2); }
-.xsub { font: 10.5px var(--mono); fill: var(--ink-3); }
 .col { cursor: default; }
 
 /* THE IMAGE PRICE MARKER. The photograph sits ON the everyday price, and its CENTRE is the
@@ -343,7 +339,7 @@ button { font: inherit; color: inherit; }
 .mk-img-shadow { fill: rgba(20, 24, 31, .13); }
 .mk-fallback { fill: #fff; stroke: #98a3b3; stroke-width: 1.5; }
 .mk-fallback-text { font: 700 9px var(--mono); fill: var(--ink-2); }
-.mk-anchor { fill: #14181f; }
+/* .mk-anchor is a crosshair now, not a filled dot; it is declared with the P1-B2A chart block. */
 .col:hover .mk-img-plate { stroke: #14181f; stroke-width: 1.5; }
 .col:hover .mk-fallback { stroke: #14181f; }
 
@@ -357,6 +353,14 @@ button { font: inherit; color: inherit; }
 .sw-band { background: #c9d3e2; height: 4px; border-radius: 2px; }
 .sw-gap { border-top: 2px dashed #0f7b5f; height: 0; border-radius: 0; }
 .sw-miss { border: 1.5px solid #98a3b3; background: #fff; border-radius: 4px; }
+/* P1-B2A - THE TWO CAPS BECAME THEIR OWN LAYERS, SO THEY NEED THEIR OWN KEYS.
+   They were added to the legend without a swatch, which rendered as a label beside an empty 14px
+   box: a key that shows nothing is worse than no key, because a reader looks for the shape it
+   describes and finds one that does not exist. Both are the cap actually drawn on the chart - a
+   short horizontal rule, in the same colour. */
+.sw-msrp, .sw-floor {
+  height: 0; border-radius: 0; border-top: 2.5px solid #8593a7; align-self: center;
+}
 
 /* ---------------------------------------------------------------- table ------------------------- */
 .tablewrap { overflow-x: auto; }
@@ -495,6 +499,7 @@ table.grid-t { border-collapse: collapse; width: 100%; font-size: 13px; }
     border-bottom: 2px solid #000; padding: 0 0 6px; margin-bottom: 10px;
   }
   .badge-demo { background: #fff; color: #000; border: 1px solid #000; }
+  .badge-scope { background: #fff; color: #000; border: 1px solid #000; }
   .scope { border: 0; padding: 0; margin-bottom: 10px; }
   .fl select, .fl input { border: 0; padding: 0; font-weight: 700; }
   .catbtn { border: 0; padding: 0 8px 0 0; }
@@ -517,6 +522,11 @@ table.grid-t { border-collapse: collapse; width: 100%; font-size: 13px; }
     border: 1px solid #bbb; break-inside: avoid; page-break-inside: avoid;
   }
   .drawer-body { display: block !important; }
+  /* P1-B2A — FIT, ALWAYS. A size chosen for a room in a meeting must not decide how a page prints. */
+  .chart { width: 100% !important; height: auto !important; }
+  .chartwrap { overflow: visible !important; }
+  .chartctl, .filt-toggle, .adv-body-row, .info, .catmenu { display: none !important; }
+  .scenario-ctx { border: 1px solid #000; }
   .grid-t tbody tr { break-inside: avoid; page-break-inside: avoid; }
   a[href]:after { content: ""; }
 }
@@ -544,4 +554,312 @@ body.presenting .navbtn, body.presenting .act { justify-content: center; padding
   .navbtn, .act { justify-content: center; padding: 10px 0; }
   .ws { grid-template-columns: 1fr; }
   .main { padding: 0 16px 32px; }
+}
+
+/* ==================================================================================================
+   P1-B2A — THE OPERATION SYSTEM'S OWN CONTROL CONTRACT, COPIED BY VALUE AND HELD TO IT BY A TEST.
+
+   The review asked for filters that look like the rest of the Operation System rather than a second
+   visual language invented for this board. The Operation System already has the answer and it is
+   already declared as a single owner: assets/css/base.css carries a `--filter-*` block described in
+   its own comment as "SINGLE SOURCE OF TRUTH for every filter control", calibrated to the SKU Details
+   filter, plus `--btn-*`, spacing, radius and typography tokens.
+
+   WHY COPY RATHER THAN LINK. The prototype is a self-contained non-runtime page: it has exactly the
+   local subresources it declares and it may not reach into `assets/**` (nothing under assets
+   references it, and it references nothing there — that isolation is what makes it safe to open and
+   safe to delete). So the values are copied here, with the token NAMES kept identical, and the suite
+   asserts every one of them against the real base.css. A copy nobody checks becomes a second system
+   the first day somebody changes the original; a copy a test holds to the original is a mirror.
+   ================================================================================================== */
+:root {
+  /* --- copied verbatim from assets/css/base.css, asserted by product-strategy-board-p1-b2a.test.js */
+  --filter-height: 38px;
+  --filter-border-radius: 4px;
+  --filter-border-color: #e2e8f0;
+  --filter-padding-inline: 12px;
+  --filter-padding-block: 8px;
+  --filter-font-size: 14px;
+  --filter-text-color: #2d3748;
+  --filter-gap: 1rem;
+  --filter-focus-ring: #7FB069;
+  --filter-panel-bg: #ffffff;
+  --filter-panel-radius: 6px;
+  --filter-panel-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+  --filter-option-font-size: 13px;
+  --filter-option-padding: 6px 12px;
+  --filter-option-hover-bg: #f1f5f9;
+  --filter-option-selected-bg: #f8fafc;
+  --filter-search-font-size: 12px;
+  --filter-muted-color: #94a3b8;
+  --filter-label-font-size: 12px;
+  --filter-label-color: #64748b;
+  --btn-height: 36px;
+  --btn-radius: 4px;
+  --btn-padding-inline: 16px;
+  --btn-font-size: 14px;
+  --btn-font-weight: 500;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --border-light: #E2E8F0;
+  --border-medium: #CBD5E1;
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --text-primary: #2D3748;
+  --text-secondary: #64748B;
+  --text-muted: #94A3B8;
+  --font-size-body: 0.875rem;
+  --font-size-small: 0.75rem;
+}
+
+/* ---------------------------------------------------------------- the three scope tiers ---------- */
+/* THE SCOPE CONTAINER, AND THE ONE DECLARATION THERE IS OF IT.
+   It was two rules for a while, and a screenshot is what found that — because CSS does not pick a
+   winning RULE, it picks a winning DECLARATION. The old rule's `align-items: flex-end` survived into
+   the new `flex-direction: column`, which right-aligned every tier and shrank each to its content
+   width: the whole filter area ended up stacked in the right half of an empty band. Every assertion
+   in both suites passed while it looked like that, which is exactly the limit of a DOM test.
+   `align-items` is stated explicitly here so the next merge cannot inherit one silently. */
+/* ==================================================================================================
+   `hidden` MEANS HIDDEN.
+   The page hides eight things with the `hidden` property, and the browser's own `[hidden]` rule is a
+   user-agent `display: none` with almost no specificity — so ANY class that sets `display` beats it.
+   `.adv-body-row { display: flex }` did exactly that: the advanced filter drawer rendered fully open
+   while its `hidden` property was true and its button said "Show". Both suites passed, because a DOM
+   assertion reads the property and the property was correct; a screenshot is what found it.
+   One rule, at the top of the cascade, so no future `display` can win this argument again.
+   ================================================================================================== */
+[hidden] { display: none !important; }
+
+.scope {
+  display: flex; flex-direction: column; align-items: stretch;
+  gap: var(--space-xs); flex-wrap: nowrap;
+  padding: 12px 14px; margin: 14px 0 0;
+  background: var(--paper); border: 1px solid var(--line); border-radius: var(--r);
+}
+.scope-tier { display: flex; flex-direction: column; gap: 6px; }
+.scope-tier-1, .scope-tier-2 {
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--border-light); border-radius: var(--radius-md);
+  background: var(--filter-panel-bg);
+}
+.tier-h { display: flex; align-items: center; gap: 6px; }
+.tier-label {
+  font-size: var(--filter-label-font-size); color: var(--filter-label-color);
+  font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+}
+/* The Operation System filter row: controls side by side, wrapping, one gap token. */
+.filter-row { display: flex; flex-wrap: wrap; gap: var(--filter-gap); align-items: flex-end; }
+.filter-group { display: flex; flex-direction: column; min-width: 170px; flex: 0 1 210px; }
+.km-filter-bar .fl-label, .km-filter-bar .filter-group label {
+  font-size: var(--filter-label-font-size);
+  color: var(--filter-label-color);
+}
+/* The control box model, token for token, as components.css declares it. */
+.scope select, .scope input[type="text"],
+.scenario select, .scenario input[type="text"] {
+  padding: var(--filter-padding-block) var(--filter-padding-inline);
+  border: 1px solid var(--filter-border-color);
+  border-radius: var(--filter-border-radius);
+  font-size: var(--filter-font-size);
+  color: var(--filter-text-color);
+  background: #fff;
+  height: var(--filter-height);
+  box-sizing: border-box;
+  width: 100%;
+  margin: 4px 0;
+  line-height: 1;
+  font-family: inherit;
+}
+.scope select:hover, .scope input[type="text"]:hover,
+.scenario select:hover, .scenario input[type="text"]:hover {
+  border-color: #cbd5e0; background: #f7fafc;
+}
+.scope select:focus, .scope input[type="text"]:focus,
+.scenario select:focus, .scenario input[type="text"]:focus {
+  outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+.scope select:disabled, .scope input:disabled { background: #f8f9fa; color: var(--filter-muted-color); }
+/* ONE LINE OF STATE, NOT A PARAGRAPH. The detail lives behind the `?`. */
+.scope-state {
+  margin: 0; font-size: var(--filter-label-font-size); color: var(--filter-label-color);
+}
+.scope-empty { margin: 0; font-size: 12px; color: var(--text-muted); font-style: italic; }
+
+/* ---------------------------------------------------------------- category chips + menu --------- */
+.catctl { display: flex; flex-direction: column; gap: 5px; position: relative; }
+.catbar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; position: relative; }
+.catbtn {
+  font: inherit; font-size: var(--filter-option-font-size);
+  height: 30px; padding: 0 10px;
+  border: 1px solid var(--filter-border-color); border-radius: var(--radius-sm);
+  background: #fff; color: var(--filter-text-color); cursor: pointer;
+}
+.catbtn:hover { border-color: var(--border-medium); background: var(--filter-option-hover-bg); }
+/* SELECTION IS A FILL, NOT A SHOUT. The review asked for less red; a chosen scope is a state, and a
+   state that looks like an error teaches people to distrust the colour that means error. */
+.catbtn.is-on {
+  background: var(--filter-focus-ring); border-color: var(--filter-focus-ring); color: #fff;
+  font-weight: 600;
+}
+.catbtn:focus-visible { outline: 2px solid #3b82f6; outline-offset: 1px; }
+.catbtn.is-more { border-style: dashed; }
+.catmenu {
+  position: absolute; top: 34px; left: 0; z-index: 30; width: 320px; max-width: 90vw;
+  background: var(--filter-panel-bg); border: 1px solid var(--filter-border-color);
+  border-radius: var(--filter-panel-radius); box-shadow: var(--filter-panel-shadow);
+  padding: var(--space-xs); display: flex; flex-direction: column; gap: 6px;
+}
+.catmenu input[type="text"] {
+  font-size: var(--filter-search-font-size); height: 32px;
+  padding: 4px var(--filter-padding-inline);
+  border: 1px solid var(--filter-border-color); border-radius: var(--radius-sm);
+  box-sizing: border-box; width: 100%; font-family: inherit;
+}
+.catmenu-list { display: flex; flex-direction: column; max-height: 280px; overflow-y: auto; }
+.catmenu-item {
+  font: inherit; font-size: var(--filter-option-font-size); text-align: left;
+  padding: var(--filter-option-padding); border: 0; background: transparent;
+  color: var(--filter-text-color); cursor: pointer; border-radius: var(--radius-sm);
+}
+.catmenu-item:hover { background: var(--filter-option-hover-bg); }
+.catmenu-item.is-on { background: var(--filter-option-selected-bg); font-weight: 600; }
+.catmenu-empty { margin: 6px; font-size: 12px; color: var(--filter-muted-color); }
+
+/* ---------------------------------------------------------------- advanced filters -------------- */
+/* A DIFFERENT COMPONENT FROM `.adv-toggle`, and therefore a different class. */
+.filt-toggle {
+  align-self: flex-start; font: inherit; font-size: 12px;
+  height: 28px; padding: 0 10px; cursor: pointer;
+  border: 1px dashed var(--filter-border-color); border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-secondary);
+}
+.filt-toggle:hover { border-color: var(--border-medium); color: var(--text-primary); }
+.adv-body-row {
+  display: flex; flex-wrap: wrap; gap: var(--filter-gap); align-items: flex-end;
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--border-light); border-radius: var(--radius-md); background: #fff;
+}
+.filter-group--check { flex: 0 1 auto; min-width: 0; justify-content: flex-end; }
+
+/* ---------------------------------------------------------------- the `?` and its popover ------- */
+.h-row { display: flex; align-items: center; gap: 6px; }
+.info { position: relative; display: inline-flex; }
+.info-btn {
+  width: 18px; height: 18px; line-height: 1; padding: 0; cursor: pointer;
+  border: 1px solid var(--filter-border-color); border-radius: 50%;
+  background: #fff; color: var(--text-secondary); font: inherit; font-size: 11px;
+  font-weight: 700;
+}
+.info-btn:hover { border-color: var(--border-medium); color: var(--text-primary); }
+.info-btn:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; }
+.info-btn[aria-expanded="true"] {
+  background: var(--filter-focus-ring); border-color: var(--filter-focus-ring); color: #fff;
+}
+.info-pop {
+  position: absolute; top: 24px; left: 0; z-index: 40; width: 460px; max-width: 86vw;
+  background: var(--filter-panel-bg); border: 1px solid var(--filter-border-color);
+  border-radius: var(--filter-panel-radius); box-shadow: var(--filter-panel-shadow);
+  padding: 12px 14px; text-align: left;
+}
+.info-head { font-size: 13px; font-weight: 700; color: var(--text-primary); margin-bottom: 6px; }
+.info-p {
+  margin: 0 0 6px; font-size: 12px; line-height: 1.55; color: var(--text-secondary);
+}
+.info-close {
+  font: inherit; font-size: 12px; height: 26px; padding: 0 10px; cursor: pointer;
+  border: 1px solid var(--filter-border-color); border-radius: var(--radius-sm);
+  background: #fff; color: var(--text-secondary);
+}
+
+/* ---------------------------------------------------------------- chart controls ---------------- */
+.chartctl {
+  display: flex; flex-wrap: wrap; gap: var(--space-md); align-items: center;
+  padding: 6px 0 10px;
+}
+.ctl-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ctl-label {
+  font-size: var(--filter-label-font-size); color: var(--filter-label-color);
+  font-weight: 600; letter-spacing: .03em; text-transform: uppercase;
+}
+.segbtn {
+  font: inherit; font-size: 12px; height: 28px; padding: 0 10px; cursor: pointer;
+  border: 1px solid var(--filter-border-color); border-radius: var(--radius-sm);
+  background: #fff; color: var(--filter-text-color);
+}
+.segbtn:hover { border-color: var(--border-medium); background: var(--filter-option-hover-bg); }
+.segbtn.is-on {
+  background: var(--filter-focus-ring); border-color: var(--filter-focus-ring); color: #fff;
+  font-weight: 600;
+}
+.segbtn.is-reset { border-style: dashed; color: var(--text-secondary); }
+.segbtn:focus-visible { outline: 2px solid #3b82f6; outline-offset: 1px; }
+.chk { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.chk-text { font-size: 12px; color: var(--text-primary); }
+.ctl-layers .chk { padding: 2px 6px; border-radius: var(--radius-sm); }
+.ctl-layers .chk:hover { background: var(--filter-option-hover-bg); }
+
+/* ---------------------------------------------------------------- the chart ---------------------- */
+/* THE ZOOM CONTAINER. At Fit the drawing is painted across the card; at a fixed size it overflows and
+   THIS scrolls — the page never does, and the browser is never asked to zoom. */
+.chartwrap { overflow-x: auto; overflow-y: hidden; padding-bottom: 4px; }
+.chart { display: block; max-width: none; }
+/* Only when the drawing actually fits. Beyond that the SVG carries its own natural width and the
+   container scrolls - see the fit floor in prototype.js. */
+.chartwrap[data-zoom="fit"] .chart:not([data-fit-floored]) { width: 100%; height: auto; }
+/* READABLE AT ARM'S LENGTH. The review asked for larger text; these are the sizes, in one place. */
+.xlabel { font: 600 12.5px var(--sans); fill: var(--ink-1); }
+.xsub { font: 500 11.5px var(--mono); fill: var(--ink-3); }
+.ytick { font: 500 11.5px var(--mono); fill: var(--ink-3); }
+/* The datum: a crosshair BEHIND the plate, visible only where it reaches past it. */
+.mk-anchor { stroke: #5b6675; stroke-width: 1.25; }
+.cap-msrp { stroke: #8593a7; }
+.cap-floor { stroke: #8593a7; }
+/* The scenario: a quiet, consistent outline — a highlight, not an alarm. */
+.col.is-scenario .mk-img-plate { stroke: #b8860b; stroke-width: 2; stroke-dasharray: 4 2; }
+.scen-link { stroke: #b8860b; stroke-width: 1.25; stroke-dasharray: 3 3; }
+.scen-ghost { fill: #fff; stroke: #b8860b; stroke-width: 1.5; }
+
+/* ---------------------------------------------------------------- scenario panel ----------------- */
+.scenario-ctx {
+  display: flex; flex-wrap: wrap; gap: var(--space-md);
+  padding: 6px 10px; border-radius: var(--radius-sm); background: var(--filter-option-selected-bg);
+  border: 1px solid var(--border-light);
+}
+.ctx-item { display: flex; flex-direction: column; }
+.ctx-k {
+  font-size: 10px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--filter-label-color);
+}
+.ctx-v { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.scenario-reach, .scenario-applied {
+  margin: 0; font-size: 12px; color: var(--text-secondary);
+}
+.scenario-applied { color: #6b4f06; }
+.btn {
+  font: inherit; height: var(--btn-height); border-radius: var(--btn-radius);
+  padding: 0 var(--btn-padding-inline); font-size: var(--btn-font-size);
+  font-weight: var(--btn-font-weight); cursor: pointer; border: 1px solid transparent;
+}
+.btn-apply { background: var(--filter-focus-ring); color: #fff; align-self: flex-end; margin: 4px 0; }
+.btn-apply:hover { background: #6FA055; }
+.btn-quiet {
+  background: #fff; border-color: var(--filter-border-color); color: var(--text-secondary);
+}
+.btn-quiet:hover { border-color: var(--border-medium); color: var(--text-primary); }
+.btn-quiet:disabled { opacity: .5; cursor: not-allowed; }
+.btn:focus-visible { outline: 2px solid #3b82f6; outline-offset: 1px; }
+
+/* Everything P1-B2A needs at print time was added to the ONE @media print block earlier in this
+   file, rather than to a second block that would have to be kept in step with it. */
+
+/* ---------------------------------------------------------------- narrow ------------------------- */
+@media (max-width: 1100px) {
+  .filter-group { flex: 1 1 160px; min-width: 150px; }
+  .info-pop { width: 320px; }
 }

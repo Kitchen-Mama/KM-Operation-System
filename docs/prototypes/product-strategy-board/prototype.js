@@ -121,14 +121,44 @@
     presentation: false,
     elements: [],
     seq: 0,
+    /* ---- P1-B2A: what the chart DRAWS. UI state, and only UI state ----
+       Layers, the view mode and the zoom change what is painted and nothing else. None of them is
+       written to storage, none reaches the canonical rows, and none can move a price: the zoom is an
+       element width over an unchanged viewBox, and a hidden layer is an element that was not created.
+       A reload restores the defaults because a reload builds this object again. */
+    layers: { images: true, msrp: true, floor: true, promo: true, scenario: true, steps: true },
+    viewMode: 'detail',            // detail | clean — a shortcut that SETS layers, not a third mode
+    zoom: 'fit',                   // fit | 1 | 1.25 | 1.5
+    advancedOpenFilters: false,
+    openPopover: null,             // the id of the one open info popover, or null
+    catSearch: '',
+    dqDetailOpen: false,
+    /* MEETING MODE STARTS CLOSED, and that is a density decision rather than a preference. The
+       scenario is a deliberate act somebody comes to the page to perform; the price architecture is
+       what the page is FOR. With the panel open by default the chart began below the fold at
+       1920x1080 — measured on a screenshot, because no DOM assertion can see a fold. It opens in one
+       click and it stays open for the rest of the session. */
+    meetingOpen: false,
+    catMenuOpen: false,
+    stress: false,                 // the stress fixture, off by default and never called real data
     /* ---- the scenario, in memory and nowhere else ---- */
     overrides: {},                 // overrides[siteKey][series][priceField] = {mode, value}
-    scenarioSeries: 'ALL',
+    undoStack: [],                 // previous override objects; Undo pops one. Also in memory only.
+    scenarioSeries: '',            // NO default of 'ALL': a reach you cannot see is not a scenario
     scenarioField: SEL.SCENARIO_DEFAULT_FIELD,
-    scenarioMode: SEL.SCENARIO_MODE_DEFAULTS[SEL.SCENARIO_DEFAULT_FIELD],
+    scenarioAdjustment: 'set',
     scenarioInput: '',
-    scenarioRefusal: null
+    scenarioRefusal: null,
+    scenarioNotice: null
   };
+
+  /* THE TWO SHORTCUTS, AS LAYER SETS. Clean and Detail are not a third kind of state that the
+     individual checkboxes then have to agree with — they WRITE the checkboxes, which is why a person
+     can press Clean and then re-enable one layer without the mode fighting them. */
+  function applyViewMode(mode) {
+    STATE.viewMode = mode;
+    LAYERS.forEach(function (l) { STATE.layers[l.id] = (mode === 'clean') ? l.clean : true; });
+  }
 
   function siteSelection() {
     return { company: STATE.company, country: STATE.country, marketplace: STATE.marketplace };
@@ -192,9 +222,60 @@
      6  THE CHART. Hand-built inline SVG, no library.
      ================================================================================================ */
   var SVGNS = 'http://www.w3.org/2000/svg';
-  var COL_W = 112, PAD_L = 74, PAD_R = 28, PAD_T = 26, LABEL_H = 60;
+
+  /* ---- GEOMETRY -----------------------------------------------------------------------------------
+     THE DESIGN WIDTH IS DECLARED, NOT MEASURED. The prototype reads no layout box anywhere (no
+     getBoundingClientRect, no offsetWidth), because a chart whose geometry depends on when it is
+     measured is a chart that draws differently on a slow load. Instead the SVG carries a viewBox at a
+     declared design width and the element is sized in CSS, so it fits whatever card holds it — and the
+     ZOOM control changes the element's width while the viewBox stays byte-identical. That is what makes
+     "zoom cannot move a price" provable rather than promised. */
+  var DESIGN_W = 1180;              // the content width of the Operation System card at 1440 and up
+  var PAD_L = 78, PAD_R = 30, PAD_T = 30, LABEL_H = 78;
+  var COL_MIN = 74, COL_MAX = 208;
   var TICK_C = 500;                 // FIVE CURRENCY UNITS, in cents. Not negotiable, not adaptive.
-  var MK = 36, MK_HOVER = 48;       // image marker, and its hover size
+  var MK = 50, MK_HOVER = 66;       // image marker, and its hover size — P1-B2A: 36 -> 50 (brief: 46-54)
+
+  /* ---- THE CHART LAYERS ---------------------------------------------------------------------------
+     SIX, AND THERE ARE SIX BECAUSE THE DATA HAS SIX THINGS TO SHOW — not because six boxes looked
+     balanced. In particular there is ONE band layer and not two:
+
+         the legend's "Floor to list price" is a single band drawn from `minimum_price` to `msrp`, and
+         `msrp` IS the list price — `pricing_list.msrp` is the only list-price column the schema has.
+
+     An "MSRP" layer and a "List price" layer would therefore be two switches over one field: two names
+     for the same number, which is how a reader comes to believe the board holds data it does not have.
+     So the top cap is ONE layer, named for both words, and its tooltip says they are one column.
+
+     The band LINE between the caps needs both ends. With one cap hidden it is not a shortened band, it
+     is a line from a price to nothing, so it is not drawn at all.
+     ------------------------------------------------------------------------------------------------ */
+  var LAYERS = [
+    { id: 'images', label: 'Product images', clean: true,
+      help: 'The photograph on the everyday-price marker. Shown only where an authoritative record'
+        + ' names that exact file; otherwise a neutral placeholder, never another product’s picture.' },
+    { id: 'msrp', label: 'MSRP / list price', clean: false,
+      help: 'The upper cap, from pricing_list.msrp. MSRP and "list price" are the SAME column — there'
+        + ' is no second field — so this is one layer and not two.' },
+    { id: 'floor', label: 'Lowest / floor price', clean: false,
+      help: 'The lower cap, from pricing_list.minimum_price. With both caps shown the band between them'
+        + ' is drawn; with one hidden there is no band, because a band needs two ends.' },
+    { id: 'promo', label: 'Live promotion', clean: false,
+      help: 'A campaign price whose start and end dates cover today. A promotion with no dates is not'
+        + ' treated as live and carries no risk finding.' },
+    { id: 'scenario', label: 'Proposed scenario', clean: false,
+      help: 'The board-owned proposed price, including anything Meeting Mode is simulating. Never a'
+        + ' price the company charges.' },
+    { id: 'steps', label: 'Open price steps', clean: false,
+      help: 'A gap between two neighbouring everyday prices wider than the threshold. Measured inside'
+        + ' one category and one currency; nothing is ever compared across two.' }
+  ];
+  var ZOOMS = [
+    { id: 'fit', label: 'Fit' },
+    { id: '1', label: '100%' },
+    { id: '1.25', label: '125%' },
+    { id: '1.5', label: '150%' }
+  ];
 
   function el(tag, cls, text) {
     var n = document.createElement(tag);
@@ -221,6 +302,7 @@
     });
     return o;
   }
+  function layerOn(id) { return STATE.layers[id] === true; }
 
   /* ---- THE FIVE-UNIT AXIS -----------------------------------------------------------------------
      axis_min = floor(min / 5) * 5      axis_max = ceil(max / 5) * 5      every tick is +5.
@@ -237,61 +319,111 @@
     return { lo: lo, hi: hi, step: TICK_C, ticks: ticks };
   }
   function plotHeightFor(tickCount) {
-    return Math.max(260, Math.min(480, (tickCount - 1) * 26));
+    return Math.max(300, Math.min(560, (tickCount - 1) * 28));
   }
 
   function diamond(cx, cy, r) {
     return [cx, cy - r, cx + r, cy, cx, cy + r, cx - r, cy].join(',');
   }
 
-  /* ---- THE EVERYDAY-PRICE MARKER ----------------------------------------------------------------
-     Verified image  -> a rounded white plate carrying the photograph, CENTRED on the price.
-     No verified image -> a clean neutral plate carrying the model code. Never a broken image, never
-     another sku's photograph, never a shape that could be mistaken for a product.
+  /* ---- THE EVERYDAY-PRICE MARKER, AND THE BLACK DOT THAT IS NO LONGER ON IT ----------------------
+     P1-B2A ROOT CAUSE. There was exactly one source and it was here: a `<circle r="2">` of class
+     `mk-anchor`, fill #14181f, appended LAST inside this function — therefore on top of the
+     photograph, at the plate's exact centre. Its purpose was honest (make the datum visible and
+     provably independent of the plate size) and its placement was not: the one pixel that proves the
+     coordinate was sitting on the one thing a person came to look at.
 
-     In both cases a 2px anchor dot is drawn AT the exact coordinate, so the datum is visible and
-     provably independent of how large the plate is. */
+     THE FIX IS NOT TRANSPARENCY. A dot made invisible is still a dot, still hit-tested, and still
+     there for the next reader to rediscover. The circle is GONE. The datum is now a crosshair drawn
+     BEHIND the plate and extending past it on both sides, so what remains visible are two short stubs
+     that meet the gridline — more readable than the dot was, and nowhere near the picture. It keeps
+     the class, the exact coordinate and the price, so the assertions that prove the plate is centred
+     on its price still have something to read.
+
+     No image -> the neutral placeholder, modelled on the Operation System's `.cr-img-placeholder`
+     (campaign-risk.css:440): grey plate, light border, small muted text. Never a broken image, never
+     another sku's photograph, never a shape that could be mistaken for a product.
+     ------------------------------------------------------------------------------------------------ */
   function everydayMarker(g, cx, cy, n) {
-    var half = MK / 2;
+    var showImage = layerOn('images');
+    var size = showImage ? MK : Math.round(MK * 0.62);
+    var half = size / 2;
     var grp = svg('g', { 'class': 'mk-reg-group', 'data-cy': cy });
-    grp.appendChild(svg('rect', { x: cx - half + 1, y: cy - half + 2, width: MK, height: MK,
+
+    /* THE DATUM, FIRST, SO NOTHING OF IT LANDS ON THE PHOTOGRAPH. */
+    grp.appendChild(svg('line', {
+      x1: cx - half - 8, y1: cy, x2: cx + half + 8, y2: cy,
+      'class': 'mk-anchor mk-reg', 'data-cx': cx, 'data-cy': cy,
+      'data-price-c': n._regular_c
+    }));
+
+    grp.appendChild(svg('rect', { x: cx - half + 1, y: cy - half + 2, width: size, height: size,
       rx: 9, 'class': 'mk-img-shadow' }));
-    grp.appendChild(svg('rect', { x: cx - half, y: cy - half, width: MK, height: MK, rx: 9,
-      'class': 'mk-img-plate' + (n.image ? '' : ' mk-fallback'),
-      'data-role': n.image ? 'image-marker' : 'fallback-marker' }));
-    if (n.image) {
-      var im = svg('image', { x: cx - half + 3, y: cy - half + 3, width: MK - 6, height: MK - 6,
+    var hasImage = showImage && !!n.image;
+    grp.appendChild(svg('rect', { x: cx - half, y: cy - half, width: size, height: size, rx: 9,
+      'class': 'mk-img-plate' + (hasImage ? '' : ' mk-fallback'),
+      'data-role': hasImage ? 'image-marker' : 'fallback-marker' }));
+    if (hasImage) {
+      var im = svg('image', { x: cx - half + 3, y: cy - half + 3, width: size - 6, height: size - 6,
         preserveAspectRatio: 'xMidYMid meet', 'class': 'mk-img' });
       /* THE VALUE ON THE NODE, VERBATIM. No directory is prefixed and no extension appended here. */
       im.setAttribute('href', n.image);
       im.setAttribute('data-src', n.image);
       grp.appendChild(im);
     } else {
-      grp.appendChild(svgText({ x: cx, y: cy + 3.5, 'class': 'mk-fallback-text',
-        'text-anchor': 'middle' }, shortCode(n.label)));
+      var t = svgText({ x: cx, y: cy + 3.5, 'class': 'mk-fallback-text',
+        'text-anchor': 'middle' }, shortCode(n.label));
+      t.appendChild(svg('title', {}));
+      /* IN WORDS. This string is VISIBLE text on the category page, and that page carries no
+         engineering vocabulary — the column it comes from is named in the layers popover instead,
+         which a reader opens deliberately. Progressive disclosure is the whole point: the fact is
+         available, it is simply not shouted at somebody who did not ask. */
+      t.childNodes[t.childNodes.length - 1].appendChild(document.createTextNode(
+        showImage
+          ? 'No product photograph is on record for this product.'
+          : 'Product images are switched off for this chart.'));
+      grp.appendChild(t);
     }
-    /* THE DATUM ITSELF. Drawn last, at the exact coordinate, at 2px. */
-    grp.appendChild(svg('circle', { cx: cx, cy: cy, r: 2, 'class': 'mk-anchor mk-reg',
-      'data-price-c': n._regular_c }));
     g.appendChild(grp);
     return grp;
   }
   function shortCode(label) {
     var s = String(label || '');
-    return s.length <= 6 ? s : s.slice(0, 6);
+    return s.length <= 7 ? s : s.slice(0, 7);
+  }
+
+  /* ---- COLUMN GEOMETRY ---------------------------------------------------------------------------
+     Columns fill the available width and are CENTRED in it. Centring is the part that matters: capping
+     the column width without centring is what leaves the large empty margin on the right that the
+     visual review objected to, because all the slack collects at one end. */
+  function chartGeometry(count) {
+    var avail = DESIGN_W - PAD_L - PAD_R;
+    var colW = Math.max(COL_MIN, Math.min(COL_MAX, count > 0 ? avail / count : avail));
+    var plotW = colW * count;
+    var W = Math.max(DESIGN_W, PAD_L + plotW + PAD_R);
+    var offset = plotW < avail ? PAD_L + (avail - plotW) / 2 : PAD_L;
+    return { colW: colW, plotW: plotW, W: W, offset: offset,
+      stagger: colW < 104, avail: avail };
   }
 
   function renderChart(panel, thrC, findings) {
     var ns = panel.plotted;
     var wrap = el('div', 'chartwrap');
+    wrap.setAttribute('data-zoom', STATE.zoom);
     if (!ns.length) {
       wrap.appendChild(el('p', 'refusal', 'No product in this scope has an everyday price on '
         + 'record, so no axis is drawn. Nothing is substituted.'));
       return wrap;
     }
+    /* THE AXIS RANGE FOLLOWS THE VISIBLE LAYERS. A hidden MSRP must not keep reserving the top of the
+       chart: the reason to switch it off is to get the space back. The everyday price is always in. */
     var loC = null, hiC = null;
     ns.forEach(function (n) {
-      [n._min_c, n._msrp_c, n._regular_c, n._deal_live ? n._deal_c : null, n._proposed_c]
+      [n._regular_c,
+        layerOn('floor') ? n._min_c : null,
+        layerOn('msrp') ? n._msrp_c : null,
+        (layerOn('promo') && n._deal_live) ? n._deal_c : null,
+        layerOn('scenario') ? n._proposed_c : null]
         .forEach(function (v) {
           if (v === null || v === undefined) return;
           if (loC === null || v < loC) loC = v;
@@ -300,15 +432,44 @@
     });
     var t = fiveUnitAxis(loC, hiC);
     var PLOT_H = plotHeightFor(t.ticks.length);
-    var W = PAD_L + ns.length * COL_W + PAD_R;
+    var geo = chartGeometry(ns.length);
+    var W = geo.W;
     var H = PAD_T + PLOT_H + LABEL_H;
-    var s = svg('svg', { width: W, height: H, viewBox: '0 0 ' + W + ' ' + H, 'class': 'chart',
+    var s = svg('svg', { viewBox: '0 0 ' + W + ' ' + H, 'class': 'chart',
+      preserveAspectRatio: 'xMidYMid meet',
       role: 'img', 'data-tick-step-c': t.step, 'data-axis-min-c': t.lo, 'data-axis-max-c': t.hi,
       'data-currency': panel.currency, 'data-category': (ns[0] || {}).category || '',
+      'data-vb-w': W, 'data-vb-h': H, 'data-col-w': geo.colW, 'data-zoom': STATE.zoom,
       'aria-label': 'Price band by product, ' + panel.currency });
+    /* THE ZOOM IS A WIDTH, AND ONLY A WIDTH. The viewBox above is identical at every zoom, so every
+       price keeps the same coordinate inside it; what changes is how many screen pixels that box is
+       painted across. Print forces 100% width back on in the stylesheet, so a meeting's zoom never
+       reaches paper. */
+    /* FIT HAS A FLOOR, AND THE 44-PRODUCT CHART IS WHY.
+
+       `width: 100%` on a drawing that needs 3364px inside a ~1400px card paints it at 0.42x: every
+       label, tick and photograph becomes unreadable, which is the exact complaint this round exists
+       to answer. A screenshot found it; no assertion about coordinates could, because the
+       coordinates were perfect and the pixels were tiny.
+
+       So Fit means fit the card WHEN IT FITS. Once the columns need more room than the design width,
+       Fit paints at natural size and the container scrolls sideways - the same thing 100% does. A
+       chart you scroll is usable; a chart shrunk to illegibility is not, and calling it 'fitted'
+       does not make it readable. */
+    if (STATE.zoom === 'fit') {
+      if (W <= DESIGN_W) {
+        s.setAttribute('width', '100%');
+      } else {
+        s.setAttribute('width', String(W));
+        s.setAttribute('data-fit-floored', 'true');
+      }
+    } else {
+      s.setAttribute('width', String(Math.round(W * Number(STATE.zoom))));
+    }
+    s.setAttribute('height', String(H));
 
     function y(c) { return PAD_T + PLOT_H - ((c - t.lo) / (t.hi - t.lo)) * PLOT_H; }
-    function x(i) { return PAD_L + i * COL_W + COL_W / 2; }
+    function x(i) { return geo.offset + i * geo.colW + geo.colW / 2; }
 
     var gAxis = svg('g', { 'class': 'axis' });
     t.ticks.forEach(function (v) {
@@ -325,11 +486,13 @@
       'Price (' + panel.currency + ')  ·  5 ' + panel.currency + ' per gridline'));
     s.appendChild(gAxis);
 
-    findings.filter(function (f) { return f.kind === 'PRICE_GAP' && f.currency === panel.currency; })
-      .forEach(function (f) {
+    if (layerOn('steps')) {
+      findings.filter(function (f) {
+        return f.kind === 'PRICE_GAP' && f.currency === panel.currency;
+      }).forEach(function (f) {
         var ia = ns.indexOf(f.a), ib = ns.indexOf(f.b);
         if (ia < 0 || ib < 0) return;
-        var g = svg('g', { 'class': 'gapmark' });
+        var g = svg('g', { 'class': 'gapmark', 'data-layer': 'steps' });
         var ya = y(f.a._regular_c), yb = y(f.b._regular_c);
         var mx = (x(ia) + x(ib)) / 2;
         g.appendChild(svg('line', { x1: mx, y1: ya, x2: mx, y2: yb, 'class': 'gapline' }));
@@ -337,41 +500,68 @@
           'text-anchor': 'middle' }, fromCents(f.distance_c) + ' open'));
         s.appendChild(g);
       });
+    }
 
     ns.forEach(function (n, i) {
       var cx = x(i);
-      var g = svg('g', { 'class': 'col', 'data-label': n.label, 'data-currency': panel.currency,
-        'data-category': n.category, 'data-regular-c': n._regular_c });
+      var scen = n._scenario && n._scenario.active;
+      var g = svg('g', { 'class': 'col' + (scen ? ' is-scenario' : ''), 'data-label': n.label,
+        'data-currency': panel.currency, 'data-category': n.category,
+        'data-regular-c': n._regular_c, 'data-scenario': String(!!scen),
+        tabindex: '0', role: 'group',
+        'aria-label': ariaFor(n, panel.currency) });
 
-      if (n._min_c !== null && n._msrp_c !== null) {
-        g.appendChild(svg('line', { x1: cx, y1: y(n._min_c), x2: cx, y2: y(n._msrp_c),
-          'class': 'band' }));
-        g.appendChild(svg('line', { x1: cx - 12, y1: y(n._msrp_c), x2: cx + 12, y2: y(n._msrp_c),
-          'class': 'cap' }));
-        g.appendChild(svg('line', { x1: cx - 12, y1: y(n._min_c), x2: cx + 12, y2: y(n._min_c),
-          'class': 'cap' }));
+      /* THE BAND NEEDS BOTH ENDS. One cap hidden is not a shorter band; it is a line to nothing. */
+      if (layerOn('floor') && layerOn('msrp') && n._min_c !== null && n._msrp_c !== null) {
+        g.appendChild(svg('line', { x1: cx, y1: y(n._min_c), x2: cx,
+          y2: y(n._msrp_c), 'class': 'band', 'data-layer': 'band' }));
+      }
+      if (layerOn('msrp') && n._msrp_c !== null) {
+        g.appendChild(svg('line', { x1: cx - 13, y1: y(n._msrp_c), x2: cx + 13, y2: y(n._msrp_c),
+          'class': 'cap cap-msrp', 'data-layer': 'msrp', 'data-price-c': n._msrp_c }));
+      }
+      if (layerOn('floor') && n._min_c !== null) {
+        g.appendChild(svg('line', { x1: cx - 13, y1: y(n._min_c), x2: cx + 13, y2: y(n._min_c),
+          'class': 'cap cap-floor', 'data-layer': 'floor', 'data-price-c': n._min_c }));
       }
       /* The deal markers are drawn BEFORE the everyday plate so the photograph never hides a
          promotion; and they keep their own shapes, so an image marker cannot be read as a deal. */
-      if (n._deal_live && n._deal_c !== null) {
+      if (layerOn('promo') && n._deal_live && n._deal_c !== null) {
         g.appendChild(svg('polygon', { points: diamond(cx, y(n._deal_c), 7), 'class': 'mk-deal',
-          'data-price-c': n._deal_c }));
+          'data-layer': 'promo', 'data-price-c': n._deal_c }));
       }
-      if (n._proposed_c !== null) {
+      if (layerOn('scenario') && n._proposed_c !== null) {
         g.appendChild(svg('polygon', { points: diamond(cx, y(n._proposed_c), 7), 'class': 'mk-prop',
-          'data-price-c': n._proposed_c }));
+          'data-layer': 'scenario', 'data-price-c': n._proposed_c }));
+      }
+      /* THE ORIGINAL, BESIDE THE SIMULATION. When a scenario has moved this product's everyday price
+         the canonical position is drawn as a hollow ghost with a connector, so the difference is a
+         distance a person can see rather than a number they have to remember. */
+      if (scen && n._canonical && n._canonical.regular_c !== null
+        && n._canonical.regular_c !== n._regular_c) {
+        var yo = y(n._canonical.regular_c);
+        g.appendChild(svg('line', { x1: cx, y1: yo, x2: cx, y2: y(n._regular_c),
+          'class': 'scen-link', 'data-layer': 'scenario' }));
+        g.appendChild(svg('circle', { cx: cx, cy: yo, r: 5, 'class': 'scen-ghost',
+          'data-layer': 'scenario', 'data-price-c': n._canonical.regular_c }));
       }
       everydayMarker(g, cx, y(n._regular_c), n);
 
-      g.appendChild(svgText({ x: cx, y: PAD_T + PLOT_H + 22, 'class': 'xlabel',
-        'text-anchor': 'middle' }, n.label));
-      g.appendChild(svgText({ x: cx, y: PAD_T + PLOT_H + 38, 'class': 'xsub',
+      var rowB = geo.stagger && (i % 2 === 1);
+      var ly = PAD_T + PLOT_H + (rowB ? 40 : 22);
+      g.appendChild(svgText({ x: cx, y: ly, 'class': 'xlabel',
+        'data-row': rowB ? 'b' : 'a', 'text-anchor': 'middle' }, n.label));
+      g.appendChild(svgText({ x: cx, y: ly + 15, 'class': 'xsub',
         'text-anchor': 'middle' }, fromCents(n._regular_c)
         + (n.variant_count > 1 ? '  ·  ' + n.variant_count + ' colours' : '')));
 
       g.addEventListener('mouseenter', function (ev) { showTip(ev, n); });
       g.addEventListener('mousemove', moveTip);
       g.addEventListener('mouseleave', hideTip);
+      /* KEYBOARD REACHES THE SAME FACTS. A chart a person can only interrogate with a mouse is a chart
+         half the reviewers cannot interrogate at all. */
+      g.addEventListener('focus', function () { focusTip(n); });
+      g.addEventListener('blur', hideTip);
       s.appendChild(g);
     });
 
@@ -379,17 +569,201 @@
     return wrap;
   }
 
+  /** Everything the tooltip says, as one string, for a screen reader and for a focus ring. */
+  function ariaFor(n, cur) {
+    var bits = [n.label, 'everyday ' + money(n._regular_c, cur)];
+    if (n._msrp_c !== null) bits.push('list ' + money(n._msrp_c, cur));
+    if (n._min_c !== null) bits.push('floor ' + money(n._min_c, cur));
+    if (n._deal_live && n._deal_c !== null) bits.push('live promotion ' + money(n._deal_c, cur));
+    if (n._proposed_c !== null) bits.push('proposed ' + money(n._proposed_c, cur));
+    if (n.variant_count > 1) bits.push(n.variant_count + ' colours');
+    if (n._scenario && n._scenario.active) {
+      bits.push('SIMULATED, original ' + money(n._canonical.regular_c, cur));
+    }
+    return bits.join(', ');
+  }
+
+  /* ================================================================================================
+     PROGRESSIVE DISCLOSURE — ONE `?` AND ONE POPOVER COMPONENT, USED EVERYWHERE.
+
+     The screen carried a great deal of correct technical prose, permanently. Correct prose that nobody
+     can get past is not documentation, it is furniture: the review's complaint was density, not
+     accuracy, so nothing here is deleted — it moves behind a control, and the control is the same one
+     every time so a reader learns it once.
+
+     IT IS NOT A HOVER TOOLTIP. Hover alone excludes keyboard users and every touch device, so this is
+     a button: click or Enter/Space toggles, hover only previews, Escape closes, clicking outside
+     closes, and clicking it again closes. `aria-expanded` and `aria-controls` carry the state, and the
+     panel has role="note" so it is announced rather than merely painted.
+
+     ONE AT A TIME. `STATE.openPopover` holds an id, not a boolean per icon, so two panels can never be
+     open over each other — and closing is a single assignment rather than a sweep.
+     ================================================================================================ */
+  function infoIcon(id, heading, paras) {
+    var wrap = el('span', 'info');
+    wrap.setAttribute('data-info', id);
+    var btn = el('button', 'info-btn', '?');
+    btn.id = 'info-' + id;
+    btn.setAttribute('type', 'button');
+    btn.setAttribute('aria-label', 'About ' + heading);
+    btn.setAttribute('aria-expanded', STATE.openPopover === id ? 'true' : 'false');
+    btn.setAttribute('aria-controls', 'infopanel-' + id);
+    btn.addEventListener('click', function (ev) {
+      if (ev && ev.stopPropagation) ev.stopPropagation();
+      STATE.openPopover = (STATE.openPopover === id) ? null : id;
+      render();
+    });
+    btn.addEventListener('keydown', function (ev) {
+      if (!ev) return;
+      if (ev.key === 'Escape') { STATE.openPopover = null; render(); }
+    });
+    wrap.appendChild(btn);
+    if (STATE.openPopover === id) {
+      var pop = el('div', 'info-pop');
+      pop.id = 'infopanel-' + id;
+      pop.setAttribute('role', 'note');
+      pop.setAttribute('aria-label', heading);
+      pop.appendChild(el('div', 'info-head', heading));
+      (paras || []).forEach(function (t) { pop.appendChild(el('p', 'info-p', t)); });
+      var close = el('button', 'info-close', 'Close');
+      close.setAttribute('type', 'button');
+      close.addEventListener('click', function (ev) {
+        if (ev && ev.stopPropagation) ev.stopPropagation();
+        STATE.openPopover = null;
+        render();
+      });
+      pop.appendChild(close);
+      wrap.appendChild(pop);
+    }
+    return wrap;
+  }
+
+  /** A section heading with its `?` beside it — so every block discloses the same way. */
+  function headingWithInfo(tag, text, id, heading, paras) {
+    var h = el('div', 'h-row');
+    h.appendChild(el(tag, null, text));
+    h.appendChild(infoIcon(id, heading || text, paras));
+    return h;
+  }
+
+  /* ================================================================================================
+     THE CHART CONTROLS. What is drawn, and how large it is painted — never what the numbers are.
+     ================================================================================================ */
+  function chartControls() {
+    var box = el('div', 'chartctl');
+    box.id = 'chartControls';
+
+    /* ---- VIEW MODE ---- */
+    var modes = el('div', 'ctl-group');
+    modes.setAttribute('data-group', 'view');
+    modes.appendChild(el('span', 'ctl-label', 'View'));
+    [['clean', 'Clean'], ['detail', 'Detail']].forEach(function (m) {
+      var b = el('button', 'segbtn' + (STATE.viewMode === m[0] ? ' is-on' : ''), m[1]);
+      b.id = 'view-' + m[0];
+      b.setAttribute('type', 'button');
+      b.setAttribute('aria-pressed', STATE.viewMode === m[0] ? 'true' : 'false');
+      b.addEventListener('click', function () { applyViewMode(m[0]); render(); });
+      modes.appendChild(b);
+    });
+    modes.appendChild(infoIcon('viewmode', 'Clean and Detail', [
+      'Clean shows the product images and the everyday price only. Detail turns every layer on.',
+      'They are shortcuts that SET the layer switches beside them, not a separate mode — so you can'
+        + ' press Clean and then turn one layer back on without the two disagreeing.',
+      'Neither changes any data. A layer that is off is an element that was not drawn; the price it'
+        + ' represents is unchanged and comes back exactly when you switch it on.'
+    ]));
+    box.appendChild(modes);
+
+    /* ---- LAYERS ---- */
+    var lay = el('div', 'ctl-group ctl-layers');
+    lay.setAttribute('data-group', 'layers');
+    lay.appendChild(el('span', 'ctl-label', 'Show'));
+    LAYERS.forEach(function (l) {
+      var lab = el('label', 'chk');
+      lab.setAttribute('data-layer', l.id);
+      var cb = document.createElement('input');
+      cb.id = 'layer-' + l.id;
+      cb.setAttribute('type', 'checkbox');
+      cb.checked = layerOn(l.id);
+      cb.setAttribute('aria-label', l.label + '. ' + l.help);
+      cb.addEventListener('change', function () {
+        STATE.layers[l.id] = !!cb.checked;
+        /* THE MODE FOLLOWS THE SWITCHES, not the other way round: once a person edits a layer the
+           badge must stop claiming a preset they are no longer in. */
+        var isClean = LAYERS.every(function (x) { return STATE.layers[x.id] === x.clean; });
+        var isDetail = LAYERS.every(function (x) { return STATE.layers[x.id] === true; });
+        STATE.viewMode = isClean ? 'clean' : (isDetail ? 'detail' : 'custom');
+        render();
+      });
+      lab.appendChild(cb);
+      lab.appendChild(el('span', 'chk-text', l.label));
+      lay.appendChild(lab);
+    });
+    lay.appendChild(infoIcon('layers', 'Chart layers', LAYERS.map(function (l) {
+      return l.label + ' — ' + l.help;
+    })));
+    box.appendChild(lay);
+
+    /* ---- ZOOM ---- */
+    var z = el('div', 'ctl-group');
+    z.setAttribute('data-group', 'zoom');
+    z.appendChild(el('span', 'ctl-label', 'Size'));
+    ZOOMS.forEach(function (o) {
+      var b = el('button', 'segbtn' + (String(STATE.zoom) === o.id ? ' is-on' : ''), o.label);
+      b.id = 'zoom-' + o.id.replace('.', '-');
+      b.setAttribute('type', 'button');
+      b.setAttribute('data-zoom', o.id);
+      b.setAttribute('aria-pressed', String(STATE.zoom) === o.id ? 'true' : 'false');
+      b.addEventListener('click', function () { STATE.zoom = o.id; render(); });
+      z.appendChild(b);
+    });
+    var reset = el('button', 'segbtn is-reset', 'Reset view');
+    reset.id = 'zoom-reset';
+    reset.setAttribute('type', 'button');
+    /* RESET IS NOT A SECOND "FIT". It restores the whole VIEW — the zoom AND the layer set — which is
+       the thing a person wants after ten minutes of a meeting and cannot reconstruct from memory. */
+    reset.addEventListener('click', function () {
+      STATE.zoom = 'fit';
+      applyViewMode('detail');
+      render();
+    });
+    z.appendChild(reset);
+    z.appendChild(infoIcon('zoom', 'Chart size', [
+      'Fit paints the chart across the card. 100%, 125% and 150% paint it at a fixed width and the'
+        + ' chart scrolls sideways inside its own container — you never have to zoom the browser.',
+      'THE PRICES DO NOT MOVE. The drawing keeps one coordinate system at every size; only the number'
+        + ' of screen pixels it is painted across changes. The y axis and every value on it are'
+        + ' identical at 150% and at Fit.',
+      'Printing always uses Fit, so a size chosen for a room never reaches the paper. The size lives'
+        + ' in this page only and a reload returns to Fit.'
+    ]));
+    box.appendChild(z);
+    return box;
+  }
+
   function legend() {
     var box = el('div', 'legend');
-    [['sw-reg', 'Everyday price — product photograph'],
-     ['sw-miss', 'Everyday price — no verified photograph'],
-     ['sw-deal', 'Live promotion'],
-     ['sw-prop', 'Proposed scenario'],
-     ['sw-band', 'Floor to list price'],
-     ['sw-gap', 'Open price step']].forEach(function (p) {
+    box.id = 'chartLegend';
+    /* THE LEGEND IS BUILT FROM THE LAYER STATE, so an entry cannot outlive the thing it describes.
+       Hiding a line and leaving its key on screen is worse than showing the line: the reader is told
+       the chart contains something it does not. */
+    var items = [
+      { layer: 'images', sw: 'sw-reg', text: 'Everyday price — product photograph' },
+      { layer: null, sw: 'sw-miss', text: 'Everyday price — no verified photograph' },
+      { layer: 'promo', sw: 'sw-deal', text: 'Live promotion' },
+      { layer: 'scenario', sw: 'sw-prop', text: 'Proposed scenario' },
+      { layer: 'band', sw: 'sw-band', text: 'Floor to list price' },
+      { layer: 'msrp', sw: 'sw-msrp', text: 'MSRP / list price' },
+      { layer: 'floor', sw: 'sw-floor', text: 'Lowest / floor price' },
+      { layer: 'steps', sw: 'sw-gap', text: 'Open price step' }
+    ];
+    items.forEach(function (p) {
+      if (p.layer === 'band' ? !(layerOn('floor') && layerOn('msrp'))
+        : (p.layer !== null && !layerOn(p.layer))) return;
       var it = el('span', 'legend-item');
-      it.appendChild(el('i', 'sw ' + p[0]));
-      it.appendChild(el('span', 'lg-text', p[1]));
+      it.setAttribute('data-layer', p.layer === null ? 'always' : p.layer);
+      it.appendChild(el('i', 'sw ' + p.sw));
+      it.appendChild(el('span', 'lg-text', p.text));
       box.appendChild(it);
     });
     return box;
@@ -426,6 +800,7 @@
       t.appendChild(el('div', 'tipline' + (l.head ? ' is-head' : '') + (l.miss ? ' is-miss' : ''),
         l.t));
     });
+    t.setAttribute('data-anchor', 'pointer');
     t.hidden = false;
     moveTip(ev);
   }
@@ -436,6 +811,25 @@
     t.style.top = (ev.clientY + 16) + 'px';
   }
   function hideTip() { var t = byId('tip'); if (t) t.hidden = true; }
+
+  /**
+   * THE SAME FACTS, REACHED BY KEYBOARD. There is no pointer to follow, and this file measures no
+   * layout box, so the panel is pinned to a corner of the viewport rather than guessed at. It carries
+   * `data-anchor="focus"` so a test can tell the two routes apart.
+   */
+  function focusTip(n) {
+    var t = byId('tip');
+    if (!t) return;
+    clear(t);
+    tipLines(n).forEach(function (l) {
+      t.appendChild(el('div', 'tipline' + (l.head ? ' is-head' : '') + (l.miss ? ' is-miss' : ''),
+        l.t));
+    });
+    t.setAttribute('data-anchor', 'focus');
+    t.style.left = '';
+    t.style.top = '';
+    t.hidden = false;
+  }
 
   /* ================================================================================================
      7  THE VIEWS.
@@ -823,6 +1217,7 @@
       h.appendChild(el('span', 'card-sub', p.plotted.length + ' product'
         + (p.plotted.length === 1 ? '' : 's') + ' on the axis'));
       panel.appendChild(h);
+      panel.appendChild(chartControls());
       panel.appendChild(renderChart(p, STATE.thresholdC, m.findings));
       panel.appendChild(legend());
       host.appendChild(panel);
@@ -857,10 +1252,43 @@
     var h = el('div', 'card-h');
     h.appendChild(el('h2', null, 'Site eligibility and missing mappings'));
     h.appendChild(el('span', 'card-sub', site.complete ? site.key : 'aggregate scope'));
+    h.appendChild(infoIcon('eligibility', 'How this page decides what exists', [
+      'Order of operations: ' + u.order.join(' → ') + '.',
+      'Membership authority: ' + u.membership_authority + '. A product is on this site because a'
+        + ' listing row says so — never because the product master knows about it and never because'
+        + ' its price is in this site’s currency.',
+      'A listing with no regional record is KEPT, reported here, and kept off the price chart. Those'
+        + ' are three different outcomes on purpose: "we cannot describe this listing" must not look'
+        + ' like "it is not sold here" or like "everything is fine".'
+    ]));
     card.appendChild(h);
 
-    card.appendChild(el('p', 'card-note', 'Membership authority: ' + u.membership_authority
-      + '. Order: ' + u.order.join(' → ') + '.'));
+    /* §七.8 — THE DETAIL STAYS, COLLAPSED. This page is where the engineering vocabulary belongs, so
+       nothing here is shortened; it simply does not have to be the first thing on the screen. The
+       one-line summary above it is what a reader sees until they ask. */
+    var sum = el('p', 'card-note');
+    sum.id = 'dqSummary';
+    sum.appendChild(document.createTextNode(u.counts.eligible + ' listings on this site · '
+      + u.counts.chartable + ' can be plotted · ' + u.dataQuality.total
+      + ' data quality item' + (u.dataQuality.total === 1 ? '' : 's')));
+    card.appendChild(sum);
+    var dqBtn = el('button', 'filt-toggle',
+      (STATE.dqDetailOpen ? 'Hide' : 'Show') + ' the full eligibility ledger');
+    dqBtn.id = 'dqDetailToggle';
+    dqBtn.setAttribute('type', 'button');
+    dqBtn.setAttribute('aria-expanded', STATE.dqDetailOpen ? 'true' : 'false');
+    dqBtn.setAttribute('aria-controls', 'dqDetail');
+    dqBtn.addEventListener('click', function () {
+      STATE.dqDetailOpen = !STATE.dqDetailOpen;
+      render();
+    });
+    card.appendChild(dqBtn);
+    var detail = el('div', 'dq-detail');
+    detail.id = 'dqDetail';
+    detail.hidden = !STATE.dqDetailOpen;
+    card.appendChild(detail);
+    var card0 = card;
+    card = detail;
 
     var wrap = el('div', 'tablewrap');
     var t = el('table', 'grid-t');
@@ -923,7 +1351,7 @@
     card.appendChild(dq);
     card.appendChild(el('p', 'card-note', 'Total Data Quality items on this site: '
       + u.dataQuality.total + '. A count of zero here is a measurement, not an absence of checking.'));
-    host.appendChild(card);
+    host.appendChild(card0);
   }
 
   function viewFindings(host, cls, title, blurb) {
@@ -1289,15 +1717,30 @@
     if (STATE.series !== 'ALL' && ser.indexOf(STATE.series) < 0) STATE.series = 'ALL';
     var cur = SEL.deriveDimensionValues(MODEL.universe, 'currency');
     if (STATE.currency !== 'ALL' && cur.indexOf(STATE.currency) < 0) STATE.currency = 'ALL';
-    if (STATE.scenarioSeries !== 'ALL' && ser.indexOf(STATE.scenarioSeries) < 0) {
-      STATE.scenarioSeries = 'ALL';
+    /* AN UNMADE CHOICE STAYS UNMADE. This used to reset to 'ALL', which is precisely the silent
+       default P1-B2A removed: a Series box reading "All" tells a person their change has a reach they
+       cannot see. When the site changes and the chosen Series is not on the new one, the choice goes
+       back to EMPTY and the form asks again. */
+    if (STATE.scenarioSeries !== '' && ser.indexOf(STATE.scenarioSeries) < 0) {
+      STATE.scenarioSeries = '';
     }
     STATE.scenarioRefusal = null;
   }
 
-  function selectEl(id, label, values, current, onChange, disabled) {
+  /**
+   * ONE SELECT, BUILT ONE WAY.
+   *
+   * `placeholder` gives the empty value a caption ("Choose a Series…") so an unmade choice reads as
+   * unmade rather than as "All" — the brief's point that a default of All hides the reach of a change.
+   * `labelFn` maps a value to what a person should read, which is how the scenario form shows
+   * "Proposed price" while the state keeps `proposed_scenario_price`: one translation, at the edge,
+   * so no internal name can reach the screen by being forgotten about.
+   */
+  function selectEl(id, label, values, current, onChange, disabled, placeholder, labelFn) {
     var fl = el('div', 'fl');
-    fl.appendChild(el('span', 'fl-label', label));
+    var lab = el('label', 'fl-label', label);
+    lab.setAttribute('for', id);
+    fl.appendChild(lab);
     var sel = document.createElement('select');
     sel.id = id;
     sel.disabled = !!disabled;
@@ -1305,7 +1748,8 @@
       var o = document.createElement('option');
       o.value = v;
       o.setAttribute('value', v);
-      o.appendChild(document.createTextNode(v === 'ALL' ? 'All' : v));
+      var text = v === '' ? (placeholder || '') : (labelFn ? labelFn(v) : (v === 'ALL' ? 'All' : v));
+      o.appendChild(document.createTextNode(text));
       sel.appendChild(o);
     });
     sel.value = current;
@@ -1323,107 +1767,120 @@
     var countBySite = {};
     opts.options.forEach(function (o) { countBySite[o.value] = o.siteSkuCount; });
 
-    /* ---- RING 1. THE SITE. ---- */
-    var ring1 = el('div', 'scope-lead');
-    ring1.appendChild(el('span', 'fl-label', 'Site — the first scope'));
-    var sitebar = el('div', 'sitebar');
-    sitebar.id = 'siteBar';
+    /* ============================================================================================
+       TIER 1 — THE SITE. `.km-filter-bar` is the Operation System's own filter-bar contract, and the
+       control styling comes from its `--filter-*` tokens rather than from a second set of numbers
+       invented here. The suite holds every copied token to the value in assets/css/base.css, which is
+       what stops "aligned with the Operation System" from decaying into "looked similar once".
+       ============================================================================================ */
+    var bar1 = el('div', 'km-filter-bar scope-tier scope-tier-1');
+    bar1.id = 'scopeSite';
+    var t1h = el('div', 'tier-h');
+    t1h.appendChild(el('span', 'tier-label', 'Site'));
+    t1h.appendChild(infoIcon('site', 'Site scope', [
+      'A site is company + country + marketplace, all three. It is chosen first because it decides'
+        + ' which products exist at all: membership comes from the marketplace listing table, never'
+        + ' from the product master and never from a price that happens to be in your currency.',
+      'Everything below is rebuilt when this changes, including the category menu — so a category the'
+        + ' new site does not sell cannot stay selected.',
+      'Preview data. The countries, marketplaces, categories and series here are a demonstration'
+        + ' fixture and are NOT the live universe; that is measured in P1-B3 against the database.'
+    ]));
+    bar1.appendChild(t1h);
+    var grid1 = el('div', 'filter-row');
     [['fCompany', 'Company', 'company'], ['fCountry', 'Country', 'country'],
       ['fMarketplace', 'Marketplace', 'marketplace']].forEach(function (spec) {
-      sitebar.appendChild(selectEl(spec[0], spec[1],
+      var g = selectEl(spec[0], spec[1],
         ['ALL'].concat(siteDimensionValues(spec[2])), STATE[spec[2]],
         function (v) {
           STATE[spec[2]] = v;
           narrowAfterSiteChange();
           render();
-        }, false));
+        }, false);
+      g.className = 'filter-group';
+      grid1.appendChild(g);
     });
-    ring1.appendChild(sitebar);
-    var st = el('p', 'scope-note', site.complete
-      ? 'Complete site identity ' + site.key + '. Everything below is what this site sells: '
-        + MODEL.universe.counts.eligible + ' listings, '
-        + MODEL.universe.counts.chartable + ' with a price to plot, '
-        + MODEL.universe.counts.excluded + ' rows of the canonical set excluded.'
+    bar1.appendChild(grid1);
+    var st = el('p', 'scope-state', site.complete
+      ? site.key + '  ·  ' + MODEL.universe.counts.eligible + ' listings  ·  '
+        + MODEL.universe.counts.chartable + ' with a price to plot'
       : 'Aggregate across ' + site.aggregate_dimensions.join(' and ')
-        + '. Prices are never pooled across currencies and a scenario cannot be opened here — a'
-        + ' simulated price that is not attached to one site is a number in no currency.');
+        + '  ·  prices are never pooled across currencies  ·  meeting mode is unavailable here');
     st.id = 'siteState';
     st.setAttribute('data-site-state', site.state);
-    ring1.appendChild(st);
-    host.appendChild(ring1);
+    bar1.appendChild(st);
+    host.appendChild(bar1);
 
-    /* ---- RING 2. THE CATEGORY, DERIVED FROM RING 1. ---- */
-    var lead = el('div', 'scope-lead');
-    lead.appendChild(el('span', 'fl-label', 'Category — derived from this site, never a fixed list'));
-    var bar = el('div', 'catbar');
-    bar.id = 'catBar';
-    var allBtn = el('button', 'catbtn' + (STATE.category === null ? ' is-on' : ''),
-      'All categories');
-    allBtn.setAttribute('type', 'button');
-    allBtn.id = 'cat-ALL';
-    allBtn.setAttribute('data-category', 'ALL');
-    allBtn.addEventListener('click', function () {
-      STATE.category = null;
-      STATE.view = 'overview';
-      render();
-    });
-    bar.appendChild(allBtn);
-    cats.forEach(function (c) {
-      var b = el('button', 'catbtn' + (STATE.category === c ? ' is-on' : ''),
-        c + ' (' + countBySite[c] + ')');
-      b.setAttribute('type', 'button');
-      b.id = 'cat-' + c.replace(/\s+/g, '-');
-      b.setAttribute('data-category', c);
-      b.addEventListener('click', function () {
-        STATE.category = c;
-        if (STATE.view === 'overview') STATE.view = 'category';
-        render();
-      });
-      bar.appendChild(b);
-    });
-    /* A TRUE EMPTY STATE. Not three demonstration values, not a placeholder — the sentence a site with
-       no eligible listings has actually earned. */
-    if (cats.length === 0) {
-      var none = el('p', 'scope-empty',
-        'This site sells nothing that passed membership and the status gate, so there is no category'
-          + ' menu to show. That is an answer about the site, not a failure to load.');
-      none.id = 'catEmpty';
-      bar.appendChild(none);
-    }
-    lead.appendChild(bar);
-    var prov = el('p', 'scope-note',
-      'Source ' + opts.source + ' · normalization ' + opts.normalization
-        + ' · semantic merge ' + String(opts.semantic_merge)
-        + ' · allowlist ' + String(opts.allowlist)
-        + ' · maximum ' + String(opts.max_options)
-        + ' · blank kept off the menu ' + opts.blank_count
-        + (opts.normalization_review.length
-          ? ' · review required ' + opts.normalization_review.map(function (r) {
-            return r.variants.join(' vs '); }).join(' | ')
-          : ''));
-    prov.id = 'catProvenance';
-    prov.setAttribute('data-count', String(cats.length));
-    lead.appendChild(prov);
-    host.appendChild(lead);
+    /* ============================================================================================
+       TIER 2 — THE ANALYSIS FILTERS, INSIDE THE SITE.
+       ============================================================================================ */
+    var bar2 = el('div', 'km-filter-bar scope-tier scope-tier-2');
+    bar2.id = 'scopeAnalysis';
+    var t2h = el('div', 'tier-h');
+    t2h.appendChild(el('span', 'tier-label', 'Analysis'));
+    t2h.appendChild(infoIcon('category', 'Category, series and currency', [
+      'The category list is this site’s, derived from the listings that survived membership and the'
+        + ' status gate — never a fixed list and never a list from another site.',
+      'Trim is the only normalization. Two values differing by case or spacing are kept apart and'
+        + ' reported for review, because merging two business categories is a decision an operator'
+        + ' owns. A blank category keeps its product, shows as "'
+        + SEL.UNMAPPED_LABEL + '", and is never renamed "Other".',
+      'There is no allowlist and no maximum: the number of categories is whatever the data has.'
+        + ' Counts are over the whole eligible universe of this site, never the visible page.',
+      'Source: sku_details.category and sku_details.series; the currency is pricing_list.currency.'
+    ]));
+    bar2.appendChild(t2h);
+    bar2.appendChild(renderCategoryControl(cats, countBySite, opts));
 
-    /* ---- RING 3. INSIDE THE CATEGORY. ---- */
     var disabled = STATE.category === null;
     var pool = STATE.category ? buildModel(STATE.category) : null;
     var serValues = pool
       ? pool.seriesOptions.options.map(function (o) { return o.value; })
       : MODEL.seriesOptions.options.map(function (o) { return o.value; });
-    var curValues = SEL.deriveDimensionValues(
-      (pool || MODEL).universe, 'currency');
-    host.appendChild(selectEl('fCurrency', 'Currency', ['ALL'].concat(curValues), STATE.currency,
-      function (v) { STATE.currency = v; render(); }, disabled));
-    host.appendChild(selectEl('fSeries', 'Series', ['ALL'].concat(serValues), STATE.series,
-      function (v) { STATE.series = v; render(); }, disabled));
+    var curValues = SEL.deriveDimensionValues((pool || MODEL).universe, 'currency');
+    var grid2 = el('div', 'filter-row');
+    var gs = selectEl('fSeries', 'Series', ['ALL'].concat(serValues), STATE.series,
+      function (v) { STATE.series = v; render(); }, disabled);
+    gs.className = 'filter-group';
+    grid2.appendChild(gs);
+    var gc = selectEl('fCurrency', 'Currency', ['ALL'].concat(curValues), STATE.currency,
+      function (v) { STATE.currency = v; render(); }, disabled);
+    gc.className = 'filter-group';
+    grid2.appendChild(gc);
+    bar2.appendChild(grid2);
+    host.appendChild(bar2);
 
-    var fl2 = el('div', 'fl');
-    fl2.appendChild(el('span', 'fl-label', 'Gap threshold'));
+    /* ============================================================================================
+       TIER 3 — ADVANCED, COLLAPSED. Everything a person sets once and then forgets.
+       ============================================================================================ */
+    var adv = el('div', 'scope-tier scope-adv');
+    adv.id = 'scopeAdvanced';
+    /* `.filt-toggle`, NOT `.adv-toggle`. The Advanced Details PAGE already owns `.adv-toggle` for
+       its section header — a full-width flex row with 13px/20px padding — and two components sharing
+       a class name do not take turns: their declarations merge, and this small dashed control would
+       have quietly inherited half of a page header's box model. */
+    var advBtn = el('button', 'filt-toggle',
+      (STATE.advancedOpenFilters ? 'Hide' : 'Show') + ' advanced filters');
+    advBtn.id = 'advFiltersToggle';
+    advBtn.setAttribute('type', 'button');
+    advBtn.setAttribute('aria-expanded', STATE.advancedOpenFilters ? 'true' : 'false');
+    advBtn.setAttribute('aria-controls', 'advFiltersBody');
+    advBtn.addEventListener('click', function () {
+      STATE.advancedOpenFilters = !STATE.advancedOpenFilters;
+      render();
+    });
+    adv.appendChild(advBtn);
+    var advBody = el('div', 'km-filter-bar adv-body-row');
+    advBody.id = 'advFiltersBody';
+    advBody.hidden = !STATE.advancedOpenFilters;
+    var gthr = el('div', 'filter-group');
+    var thrLab = el('label', 'fl-label', 'Gap threshold');
+    thrLab.setAttribute('for', 'fThreshold');
+    gthr.appendChild(thrLab);
     var inp = document.createElement('input');
     inp.id = 'fThreshold';
     inp.setAttribute('type', 'text');
+    inp.setAttribute('inputmode', 'decimal');
     inp.value = fromCents(STATE.thresholdC);
     inp.disabled = disabled;
     inp.addEventListener('change', function () {
@@ -1431,11 +1888,11 @@
       if (c !== null && c > 0) STATE.thresholdC = c;
       render();
     });
-    fl2.appendChild(inp);
-    host.appendChild(fl2);
+    gthr.appendChild(inp);
+    advBody.appendChild(gthr);
 
-    var incl = el('div', 'fl');
-    incl.appendChild(el('span', 'fl-label', 'Include inactive'));
+    var incl = el('div', 'filter-group filter-group--check');
+    var cbLab = el('label', 'chk');
     var cb = document.createElement('input');
     cb.id = 'fInactive';
     cb.setAttribute('type', 'checkbox');
@@ -1445,22 +1902,200 @@
       narrowAfterSiteChange();
       render();
     });
-    incl.appendChild(cb);
-    host.appendChild(incl);
+    cbLab.appendChild(cb);
+    cbLab.appendChild(el('span', 'chk-text', 'Include inactive and discontinued listings'));
+    incl.appendChild(cbLab);
+    advBody.appendChild(incl);
 
-    host.appendChild(el('p', 'scope-note', disabled
-      ? 'Choose a category to narrow further. Two categories never share a price axis, so the '
-        + 'filters inside one only open once a category is chosen.'
-      : 'Scope order: company → country → marketplace → category → series → currency.'));
+    /* THE STRESS FIXTURE. Visible, opt-in, and labelled for what it is — a generated load test, not
+       data from anywhere. It is here so the density work can be SEEN at scale rather than only
+       asserted headlessly. */
+    var stress = el('div', 'filter-group filter-group--check');
+    var sLab = el('label', 'chk');
+    var scb = document.createElement('input');
+    scb.id = 'fStress';
+    scb.setAttribute('type', 'checkbox');
+    scb.checked = !!STATE.stress;
+    scb.addEventListener('change', function () {
+      STATE.stress = !!scb.checked;
+      STATE.company = 'ALL'; STATE.country = 'ALL'; STATE.marketplace = 'ALL';
+      STATE.category = null; STATE.series = 'ALL'; STATE.currency = 'ALL';
+      STATE.overrides = {}; STATE.undoStack = []; STATE.scenarioSeries = '';
+      STATE.view = 'overview';
+      ADAPTER = STATE.stress ? PREVIEW.StressProductStrategyDataAdapter
+        : PREVIEW.PreviewProductStrategyDataAdapter;
+      reload();
+      var firstSite = CANON.rows[0];
+      if (firstSite) {
+        STATE.company = firstSite.company;
+        STATE.country = firstSite.country;
+        STATE.marketplace = firstSite.marketplace;
+      }
+      narrowAfterSiteChange();
+      render();
+    });
+    sLab.appendChild(scb);
+    sLab.appendChild(el('span', 'chk-text', 'Load the generated stress fixture (density test)'));
+    stress.appendChild(sLab);
+    advBody.appendChild(stress);
+    adv.appendChild(advBody);
+    host.appendChild(adv);
 
     renderScenarioPanel(host);
   }
 
-  /* ================================================================================================
-     THE SCENARIO PANEL — A MEETING CONTROL, AND IT REACHES NOTHING.
+  /**
+   * THE CATEGORY CONTROL, AND WHY IT HAS TWO SHAPES.
+   *
+   * Chips are the right control for a handful of categories: every option is visible, one click, no
+   * menu to open. They are the wrong control for forty — a wall of chips is not a menu, it is a
+   * paragraph you have to read, and it pushes the chart below the fold, which is exactly the density
+   * complaint this round exists to answer.
+   *
+   * So above a threshold the same list becomes a searchable popover with the busiest categories kept
+   * out front. The COUNT stays on every option in both shapes, because a category's size is part of
+   * choosing it.
+   */
+  var CATEGORY_CHIP_LIMIT = 6;
+  function renderCategoryControl(cats, countBySite, opts) {
+    var wrap = el('div', 'catctl');
+    wrap.id = 'categoryControl';
+    wrap.setAttribute('data-shape', cats.length > CATEGORY_CHIP_LIMIT ? 'menu' : 'chips');
+    wrap.setAttribute('data-count', String(cats.length));
 
-     It writes to STATE.overrides and to nothing else. There is no save button because there is nothing
-     to save to: the panel's own note says so on screen, and a browser reload proves it.
+    function chip(value, label, on, onClick) {
+      var b = el('button', 'catbtn' + (on ? ' is-on' : ''), label);
+      b.setAttribute('type', 'button');
+      b.id = 'cat-' + String(value).replace(/\s+/g, '-');
+      b.setAttribute('data-category', value);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      b.addEventListener('click', onClick);
+      return b;
+    }
+    var bar = el('div', 'catbar');
+    bar.id = 'catBar';
+    bar.appendChild(chip('ALL', 'All categories', STATE.category === null, function () {
+      STATE.category = null;
+      STATE.view = 'overview';
+      STATE.catMenuOpen = false;
+      render();
+    }));
+
+    /* THE BUSIEST FIRST when the list is long — "common + More", not an arbitrary alphabetical five. */
+    var ordered = cats.slice();
+    if (cats.length > CATEGORY_CHIP_LIMIT) {
+      ordered.sort(function (a, b) {
+        var d = (countBySite[b] || 0) - (countBySite[a] || 0);
+        return d !== 0 ? d : (a < b ? -1 : 1);
+      });
+    }
+    var shown = cats.length > CATEGORY_CHIP_LIMIT
+      ? ordered.slice(0, CATEGORY_CHIP_LIMIT - 1) : ordered;
+    shown.forEach(function (c) {
+      bar.appendChild(chip(c, c + ' (' + countBySite[c] + ')', STATE.category === c, function () {
+        STATE.category = c;
+        STATE.catMenuOpen = false;
+        if (STATE.view === 'overview') STATE.view = 'category';
+        render();
+      }));
+    });
+
+    if (cats.length > CATEGORY_CHIP_LIMIT) {
+      var rest = ordered.slice(CATEGORY_CHIP_LIMIT - 1);
+      var more = el('button', 'catbtn is-more'
+        + (STATE.category !== null && rest.indexOf(STATE.category) >= 0 ? ' is-on' : ''),
+        (STATE.category !== null && rest.indexOf(STATE.category) >= 0
+          ? STATE.category + ' (' + countBySite[STATE.category] + ')'
+          : 'More (' + rest.length + ')'));
+      more.id = 'catMore';
+      more.setAttribute('type', 'button');
+      more.setAttribute('aria-expanded', STATE.catMenuOpen ? 'true' : 'false');
+      more.setAttribute('aria-controls', 'catMenu');
+      more.addEventListener('click', function (ev) {
+        if (ev && ev.stopPropagation) ev.stopPropagation();
+        STATE.catMenuOpen = !STATE.catMenuOpen;
+        render();
+      });
+      bar.appendChild(more);
+
+      if (STATE.catMenuOpen) {
+        var menu = el('div', 'catmenu');
+        menu.id = 'catMenu';
+        menu.setAttribute('role', 'listbox');
+        var sb = document.createElement('input');
+        sb.id = 'catSearch';
+        sb.setAttribute('type', 'text');
+        sb.setAttribute('placeholder', 'Search categories…');
+        sb.setAttribute('aria-label', 'Search categories');
+        sb.value = STATE.catSearch;
+        sb.addEventListener('input', function () { STATE.catSearch = sb.value; render(); });
+        menu.appendChild(sb);
+        var q = String(STATE.catSearch || '').toLowerCase();
+        var hits = ordered.filter(function (c) {
+          return q === '' || c.toLowerCase().indexOf(q) >= 0;
+        });
+        var list = el('div', 'catmenu-list');
+        if (!hits.length) {
+          list.appendChild(el('p', 'catmenu-empty', 'No category on this site matches “'
+            + STATE.catSearch + '”.'));
+        }
+        hits.forEach(function (c) {
+          var o = el('button', 'catmenu-item' + (STATE.category === c ? ' is-on' : ''),
+            c + '  (' + countBySite[c] + ')');
+          o.setAttribute('type', 'button');
+          o.setAttribute('role', 'option');
+          o.setAttribute('data-category', c);
+          o.setAttribute('aria-selected', STATE.category === c ? 'true' : 'false');
+          o.addEventListener('click', function () {
+            STATE.category = c;
+            STATE.catMenuOpen = false;
+            if (STATE.view === 'overview') STATE.view = 'category';
+            render();
+          });
+          list.appendChild(o);
+        });
+        menu.appendChild(list);
+        bar.appendChild(menu);
+      }
+    }
+
+    /* A TRUE EMPTY STATE. Not three demonstration values, not a placeholder — the sentence a site
+       with no eligible listings has actually earned. */
+    if (cats.length === 0) {
+      var none = el('p', 'scope-empty',
+        'This site sells nothing that passed membership and the status gate, so there is no category'
+          + ' menu to show. That is an answer about the site, not a failure to load.');
+      none.id = 'catEmpty';
+      bar.appendChild(none);
+    }
+    wrap.appendChild(bar);
+
+    /* THE PROVENANCE LINE — one line, and the detail is behind the `?` above. */
+    var prov = el('p', 'scope-state');
+    prov.id = 'catProvenance';
+    prov.setAttribute('data-count', String(cats.length));
+    prov.appendChild(document.createTextNode(cats.length + ' categor'
+      + (cats.length === 1 ? 'y' : 'ies') + ' on this site'
+      + (opts.blank_count ? '  ·  ' + opts.blank_count + ' listing'
+        + (opts.blank_count === 1 ? '' : 's') + ' with no category' : '')
+      + (opts.normalization_review.length ? '  ·  ' + opts.normalization_review.length
+        + ' needing review' : '')));
+    wrap.appendChild(prov);
+    return wrap;
+  }
+
+  /* ================================================================================================
+     MEETING MODE — one Series, on this site, right now.
+
+     REDESIGNED IN P1-B2A AROUND WHAT A PERSON IS ACTUALLY DOING. The first version exposed the data
+     model: a field called `proposed_scenario_price`, a mode called `PERCENT`, a Series box defaulting
+     to `All`. Those are precise names and they belong in the override object; nobody in a meeting
+     should have to read one, and `All` by default is worse than imprecise — it is a change whose reach
+     you cannot see.
+
+     So: the site is READ-ONLY CONTEXT (it is chosen upstairs, in the scope ladder, and a scenario
+     never gets to disagree with it), the Series must be chosen, the field and the adjustment are
+     sentences, and nothing applies until a validator that reports in those same sentences says it may.
      ================================================================================================ */
   function renderScenarioPanel(host) {
     var site = siteIdentity();
@@ -1470,103 +2105,232 @@
     box.setAttribute('data-active', String(MODEL.scenario.active));
 
     var head = el('div', 'scenario-head');
-    head.appendChild(el('span', 'scenario-title', 'Price scenario — meeting mode'));
+    var toggle = el('button', 'scenario-toggle',
+      (STATE.meetingOpen ? '\u2212' : '+') + '  Price scenario — meeting mode');
+    toggle.id = 'meetingToggle';
+    toggle.setAttribute('type', 'button');
+    toggle.setAttribute('aria-expanded', STATE.meetingOpen ? 'true' : 'false');
+    toggle.setAttribute('aria-controls', 'scenarioBody');
+    toggle.addEventListener('click', function () {
+      STATE.meetingOpen = !STATE.meetingOpen;
+      render();
+    });
+    head.appendChild(toggle);
     var badge = el('span', 'scenario-badge', MODEL.scenario.active
       ? SEL.SCENARIO_UNSAVED_LABEL : 'No scenario');
     badge.id = 'scenarioBadge';
     head.appendChild(badge);
+    head.appendChild(infoIcon('scenario', 'Price scenario', [
+      'A scenario changes what this page draws, for as long as this page is open. It is held in the'
+        + ' page’s memory and nowhere else.',
+      'It is never written to the database, a spreadsheet, an export, a saved view or browser storage,'
+        + ' and no Save or Submit path can reach it. Reloading restores every source value.',
+      'The contract name for that is ' + SEL.SCENARIO_STORAGE + ', and survives_reload is '
+        + String(SEL.SCENARIO_SURVIVES_RELOAD) + ' — both published by the pipeline so a reader can'
+        + ' check them rather than trust this sentence.',
+      'Anything simulated is labelled on screen and on paper: the banner carries an UNSAVED SCENARIO'
+        + ' mark whenever one is active, and the printed page keeps it.'
+    ]));
     box.appendChild(head);
 
+    /* THE BADGE AND THE BANNER MARK STAY OUTSIDE THE COLLAPSE. A scenario that is active while its
+       panel is shut must still be visible as active — hiding the control is a density choice, hiding
+       the STATE would be a lie. */
+    var body = el('div', 'scenario-body');
+    body.id = 'scenarioBody';
+    body.hidden = !STATE.meetingOpen;
+    box.appendChild(body);
+
     if (!MODEL.scenario.permitted) {
-      var r = el('p', 'scenario-refusal', 'Not available in this scope: ' + MODEL.scenario.refusal
-        + '. Choose one company, one country and one marketplace — a simulated price belongs to a'
-        + ' site, because the currency does.');
+      var r = el('p', 'scenario-refusal', 'Choose one company, one country and one marketplace to'
+        + ' open meeting mode. A simulated price belongs to a site, because the currency does.');
       r.id = 'scenarioRefusal';
-      box.appendChild(r);
+      body.appendChild(r);
       host.appendChild(box);
       return;
     }
 
-    var serOpts = MODEL.seriesOptions.options.map(function (o) { return o.value; });
+    /* ---- 1. THE SITE, AS CONTEXT AND NOT AS A CONTROL ---- */
+    var currencies = SEL.deriveDimensionValues(MODEL.universe, 'currency');
+    var ctx = el('div', 'scenario-ctx');
+    ctx.id = 'scenarioContext';
+    [['Company', site.company], ['Country', site.country], ['Marketplace', site.marketplace],
+      ['Currency', currencies.length === 1 ? currencies[0] : currencies.join(' / ') || '—']
+    ].forEach(function (pair) {
+      var c = el('span', 'ctx-item');
+      c.setAttribute('data-ctx', pair[0].toLowerCase());
+      c.appendChild(el('span', 'ctx-k', pair[0]));
+      c.appendChild(el('span', 'ctx-v', pair[1]));
+      ctx.appendChild(c);
+    });
+    body.appendChild(ctx);
+
+    /* ---- 2..5. THE FORM ---- */
+    var choices = SEL.scenarioSeriesChoices(MODEL);
+    var adjustments = SEL.scenarioAdjustmentsFor(STATE.scenarioField);
+    if (!adjustments.filter(function (a) { return a.id === STATE.scenarioAdjustment; }).length) {
+      STATE.scenarioAdjustment = adjustments.length ? adjustments[0].id : '';
+    }
+    var adj = SEL.scenarioAdjustment(STATE.scenarioAdjustment);
+
     var row = el('div', 'scenario-row');
-    row.appendChild(selectEl('scSeries', 'Series', ['ALL'].concat(serOpts), STATE.scenarioSeries,
-      function (v) { STATE.scenarioSeries = v; STATE.scenarioRefusal = null; render(); }, false));
-    row.appendChild(selectEl('scField', 'Price field', SEL.SCENARIO_FIELDS, STATE.scenarioField,
+    row.appendChild(selectEl('scSeries', 'Series',
+      [''].concat(choices), STATE.scenarioSeries,
+      function (v) { STATE.scenarioSeries = v; STATE.scenarioRefusal = null; render(); },
+      false, 'Choose a Series…'));
+    row.appendChild(selectEl('scField', 'Price to simulate',
+      SEL.SCENARIO_FIELD_CHOICES.map(function (c) { return c.id; }), STATE.scenarioField,
       function (v) {
         STATE.scenarioField = v;
-        STATE.scenarioMode = SEL.SCENARIO_MODE_DEFAULTS[v];
+        var allowed = SEL.scenarioAdjustmentsFor(v);
+        if (!allowed.filter(function (a) { return a.id === STATE.scenarioAdjustment; }).length) {
+          STATE.scenarioAdjustment = allowed.length ? allowed[0].id : '';
+        }
         STATE.scenarioRefusal = null;
         render();
-      }, false));
-    row.appendChild(selectEl('scMode', 'How', SEL.SCENARIO_MODES, STATE.scenarioMode,
-      function (v) { STATE.scenarioMode = v; STATE.scenarioRefusal = null; render(); }, false));
+      }, false, null, function (id) { return SEL.scenarioFieldLabel(id); }));
+    row.appendChild(selectEl('scAdjust', 'Adjustment',
+      adjustments.map(function (a) { return a.id; }), STATE.scenarioAdjustment,
+      function (v) { STATE.scenarioAdjustment = v; STATE.scenarioRefusal = null; render(); },
+      false, null, function (id) {
+        var a = SEL.scenarioAdjustment(id);
+        return a ? a.label : id;
+      }));
 
     var fl = el('div', 'fl');
-    fl.appendChild(el('span', 'fl-label', STATE.scenarioMode === 'PERCENT'
-      ? 'Percent (e.g. -15)' : (STATE.scenarioMode === 'DELTA' ? 'Amount (e.g. -3.00)' : 'Price')));
+    var lbl = el('label', 'fl-label', adj ? (adj.unit === 'percent' ? 'Percentage'
+      : (adj.unit === 'amount' ? 'Amount' : 'Price')) : 'Value');
+    lbl.setAttribute('for', 'scValue');
+    fl.appendChild(lbl);
     var input = document.createElement('input');
     input.id = 'scValue';
     input.setAttribute('type', 'text');
+    input.setAttribute('inputmode', 'decimal');
+    input.setAttribute('placeholder', adj ? adj.placeholder : '');
+    input.setAttribute('aria-label', (adj ? adj.label : 'Value') + '. ' + (adj ? adj.help : ''));
     input.value = STATE.scenarioInput;
-    input.addEventListener('change', function () { STATE.scenarioInput = input.value; });
+    input.addEventListener('change', function () {
+      STATE.scenarioInput = input.value;
+      STATE.scenarioRefusal = null;
+    });
+    input.addEventListener('input', function () { STATE.scenarioInput = input.value; });
     fl.appendChild(input);
     row.appendChild(fl);
 
-    var apply = el('button', 'scbtn', 'Simulate');
+    var apply = el('button', 'btn btn-apply', 'Apply to chart');
     apply.id = 'scApply';
     apply.setAttribute('type', 'button');
     apply.addEventListener('click', function () {
-      STATE.scenarioInput = byId('scValue').value;
-      var refusal = SEL.scenarioModeRefusal(STATE.scenarioField, STATE.scenarioMode);
-      if (refusal !== null) { STATE.scenarioRefusal = refusal; render(); return; }
-      var targets = STATE.scenarioSeries === 'ALL' ? serOpts : [STATE.scenarioSeries];
-      var next = STATE.overrides;
-      targets.forEach(function (sname) {
-        next = SEL.setScenarioOverride(next, { site: site, series: sname,
-          field: STATE.scenarioField, mode: STATE.scenarioMode, value: STATE.scenarioInput });
-      });
-      STATE.overrides = next;
+      var v = byId('scValue');
+      if (v) STATE.scenarioInput = v.value;
+      var check = SEL.scenarioValidate({ site: site, series: STATE.scenarioSeries,
+        field: STATE.scenarioField, adjustment: STATE.scenarioAdjustment,
+        value: STATE.scenarioInput });
+      if (!check.ok) {
+        STATE.scenarioRefusal = check;
+        STATE.scenarioNotice = null;
+        render();
+        return;
+      }
+      var affected = SEL.scenarioAffected(MODEL.rows, STATE.scenarioSeries);
+      /* UNDO IS A STACK OF PREVIOUS OBJECTS, pushed BEFORE the change. The overrides are immutable
+         values, so remembering one costs a reference and undoing is an assignment. */
+      STATE.undoStack.push(SEL.cloneScenarioOverrides(STATE.overrides));
+      STATE.overrides = SEL.setScenarioOverride(STATE.overrides, {
+        site: site, series: STATE.scenarioSeries, field: STATE.scenarioField,
+        mode: check.mode, value: STATE.scenarioInput });
       STATE.scenarioRefusal = null;
+      STATE.scenarioNotice = {
+        series: STATE.scenarioSeries,
+        field: SEL.scenarioFieldLabel(STATE.scenarioField),
+        adjustment: adj ? adj.label : '',
+        value: STATE.scenarioInput,
+        skus: affected.skus
+      };
       render();
     });
     row.appendChild(apply);
-    box.appendChild(row);
+    body.appendChild(row);
+
+    /* ---- WHAT WOULD MOVE, BEFORE IT MOVES ---- */
+    var preview = SEL.scenarioAffected(MODEL.rows, STATE.scenarioSeries);
+    var reach = el('p', 'scenario-reach');
+    reach.id = 'scenarioReach';
+    reach.setAttribute('data-skus', String(preview.skus));
+    reach.appendChild(document.createTextNode(STATE.scenarioSeries
+      ? (preview.skus + ' listing' + (preview.skus === 1 ? '' : 's') + ' in "'
+        + STATE.scenarioSeries + '" would be simulated on this site'
+        + (STATE.scenarioField === 'proposed_scenario_price'
+          && STATE.scenarioAdjustment === 'set'
+          ? ' — all of them at the same figure, because a promotion is one price.' : '.'))
+      : 'Choose a Series to see how many listings a change would reach.'));
+    body.appendChild(reach);
 
     if (STATE.scenarioRefusal) {
-      var rr = el('p', 'scenario-refusal', 'Refused: ' + STATE.scenarioRefusal
-        + '. An everyday ladder set to one number for a whole series is not a scenario — every gap and'
-        + ' every risk this board measures would go to zero. Use Percent or Amount instead.');
+      var rr = el('p', 'scenario-refusal', STATE.scenarioRefusal.message);
       rr.id = 'scenarioModeRefusal';
-      box.appendChild(rr);
+      rr.setAttribute('data-code', STATE.scenarioRefusal.code);
+      rr.setAttribute('role', 'alert');
+      body.appendChild(rr);
+    } else if (STATE.scenarioNotice) {
+      var nn = el('p', 'scenario-applied', 'Applied: ' + STATE.scenarioNotice.field + ' · '
+        + STATE.scenarioNotice.adjustment + ' ' + STATE.scenarioNotice.value + ' · '
+        + STATE.scenarioNotice.series + ' · ' + STATE.scenarioNotice.skus + ' listing'
+        + (STATE.scenarioNotice.skus === 1 ? '' : 's')
+        + '. The original position stays on the chart as a hollow marker.');
+      nn.id = 'scenarioApplied';
+      nn.setAttribute('role', 'status');
+      body.appendChild(nn);
     }
 
-    /* ---- THE THREE RESETS. Three different questions, three buttons. ---- */
+    /* ---- UNDO AND THE THREE RESETS ---- */
     var resets = el('div', 'scenario-resets');
+    var undo = el('button', 'btn btn-quiet', 'Undo last change');
+    undo.id = 'scUndo';
+    undo.setAttribute('type', 'button');
+    undo.disabled = STATE.undoStack.length === 0;
+    undo.addEventListener('click', function () {
+      if (!STATE.undoStack.length) return;
+      STATE.overrides = STATE.undoStack.pop();
+      STATE.scenarioNotice = null;
+      STATE.scenarioRefusal = null;
+      render();
+    });
+    resets.appendChild(undo);
     [['scResetSeries', 'Reset this Series', function () {
+      STATE.undoStack.push(SEL.cloneScenarioOverrides(STATE.overrides));
       STATE.overrides = SEL.resetScenarioOverrides(STATE.overrides,
-        { scope: 'series', site: site,
-          series: STATE.scenarioSeries === 'ALL' ? '' : STATE.scenarioSeries });
+        { scope: 'series', site: site, series: STATE.scenarioSeries });
     }], ['scResetSite', 'Reset current site', function () {
+      STATE.undoStack.push(SEL.cloneScenarioOverrides(STATE.overrides));
       STATE.overrides = SEL.resetScenarioOverrides(STATE.overrides, { scope: 'site', site: site });
     }], ['scResetAll', 'Reset all scenarios', function () {
+      STATE.undoStack.push(SEL.cloneScenarioOverrides(STATE.overrides));
       STATE.overrides = SEL.resetScenarioOverrides(STATE.overrides, { scope: 'all' });
     }]].forEach(function (spec) {
-      var b = el('button', 'scbtn is-reset', spec[1]);
+      var b = el('button', 'btn btn-quiet', spec[1]);
       b.id = spec[0];
       b.setAttribute('type', 'button');
-      b.addEventListener('click', function () { spec[2](); render(); });
+      b.addEventListener('click', function () {
+        spec[2]();
+        STATE.scenarioNotice = null;
+        STATE.scenarioRefusal = null;
+        render();
+      });
       resets.appendChild(b);
     });
-    box.appendChild(resets);
+    body.appendChild(resets);
 
-    var note = el('p', 'scenario-note',
-      'Simulated values live in this page only: ' + MODEL.scenario.storage
-        + '. They are never written to the database, a sheet, an export or browser storage, and a'
-        + ' reload restores the source values. Active overrides: ' + MODEL.scenario.override_count
-        + (MODEL.architecture.scenario_nodes.length
-          ? ' · simulated on screen: ' + MODEL.architecture.scenario_nodes.join(' · ') : ''));
+    var note = el('p', 'scenario-note');
     note.id = 'scenarioNote';
-    box.appendChild(note);
+    /* IN WORDS ON THE SURFACE, IN THE TOKEN BEHIND THE `?`. `IN_MEMORY_ONLY` is exact and it is
+       an identifier; the sentence says the same thing to somebody who has not read the contract. */
+    note.appendChild(document.createTextNode('Active overrides: '
+      + MODEL.scenario.override_count
+      + (MODEL.architecture.scenario_nodes.length
+        ? ' · simulated on screen: ' + MODEL.architecture.scenario_nodes.join(' · ') : '')
+      + ' · held in this page only, and cleared by a reload.'));
+    body.appendChild(note);
     host.appendChild(box);
   }
 
@@ -1819,23 +2583,50 @@
       if (src.indexOf('images/') === 0 && src.indexOf('..') < 0) srcOk++;
     }
     eqv(srcOk, imgMarks.length, 'H2 every one is a local sibling file');
-    /* THE COORDINATE IS THE ANCHOR, AND THE PLATE IS CENTRED ON IT. */
+    /* THE COORDINATE IS THE DATUM, THE PLATE IS CENTRED ON IT, AND NOTHING SITS ON THE PICTURE.
+
+       P1-B2A replaced the 2px centre dot with a crosshair drawn BEHIND the plate and extending past
+       it, so the datum is still visible and provable while the photograph is clear. These read the
+       crosshair's own coordinates rather than a circle's cx/cy. */
     var cols = ch.querySelectorAll('.col');
-    var bad = 0, checked = 0;
+    var bad = 0, checked = 0, notLine = 0, tooShort = 0;
     for (var h2 = 0; h2 < cols.length; h2++) {
       var anchor = cols[h2].querySelector('.mk-anchor');
       var plate = cols[h2].querySelector('.mk-img-plate');
       if (!anchor || !plate) continue;
       checked++;
-      var cy = Number(anchor.getAttribute('cy'));
+      if (String(anchor.localName || '').toLowerCase() !== 'line') notLine++;
+      var cy = Number(anchor.getAttribute('data-cy'));
       var py = Number(plate.getAttribute('y')), ph = Number(plate.getAttribute('height'));
       if (Math.abs((py + ph / 2) - cy) > 0.001) bad++;
-      var cx = Number(anchor.getAttribute('cx'));
+      var cx = Number(anchor.getAttribute('data-cx'));
       var px = Number(plate.getAttribute('x')), pw = Number(plate.getAttribute('width'));
       if (Math.abs((px + pw / 2) - cx) > 0.001) bad++;
+      /* IT REACHES PAST THE PLATE ON BOTH SIDES, which is the whole reason it is readable without
+         being on the picture: what a person sees are the two stubs meeting the gridline. */
+      var x1 = Number(anchor.getAttribute('x1')), x2 = Number(anchor.getAttribute('x2'));
+      if (!(x1 < px && x2 > px + pw)) tooShort++;
+      if (Number(anchor.getAttribute('y1')) !== cy
+        || Number(anchor.getAttribute('y2')) !== cy) bad++;
     }
     ok(checked >= 5, 'H3 every column was inspected', checked);
     eqv(bad, 0, 'H4 the marker CENTRE is the price coordinate, in both axes');
+    eqv(notLine, 0, 'H4a the datum is a crosshair, not a dot on the photograph');
+    eqv(tooShort, 0, 'H4b and it reaches past the plate on both sides, so it stays readable');
+    /* THE BLACK DOT IS GONE, NOT HIDDEN. A dot made transparent is still a dot: still in the tree,
+       still hit-tested, and still there for the next reader to rediscover. */
+    var plates = ch.querySelectorAll('.mk-img-plate');
+    var onPicture = 0;
+    var circles = ch.querySelectorAll('circle');
+    for (var h2b = 0; h2b < circles.length; h2b++) {
+      var ccx = Number(circles[h2b].getAttribute('cx')), ccy = Number(circles[h2b].getAttribute('cy'));
+      for (var h2c = 0; h2c < plates.length; h2c++) {
+        var qx = Number(plates[h2c].getAttribute('x')), qy = Number(plates[h2c].getAttribute('y'));
+        var qw = Number(plates[h2c].getAttribute('width')), qh = Number(plates[h2c].getAttribute('height'));
+        if (ccx > qx && ccx < qx + qw && ccy > qy && ccy < qy + qh) onPicture++;
+      }
+    }
+    eqv(onPicture, 0, 'H4c no circle of any kind sits inside a product-image plate');
     /* AND THE COORDINATE IS THE PRICE, not something the picture decided. */
     var mism = 0;
     for (var h3 = 0; h3 < cols.length; h3++) {
@@ -2270,6 +3061,26 @@
     byId('btnStDetail').addEventListener('click', function () {
       var s = byId('selftest');
       s.hidden = !s.hidden;
+    });
+
+    /* ---- CLOSING A POPOVER, THE THREE WAYS A PERSON EXPECTS -------------------------------------
+       Escape anywhere, a click outside, or the control again. The document listeners are registered
+       ONCE here rather than per popover: a handler added on every render is a handler removed on no
+       render, and after a dozen re-renders one Escape would close the panel a dozen times over. */
+    document.addEventListener('keydown', function (ev) {
+      if (!ev || ev.key !== 'Escape') return;
+      if (STATE.openPopover === null && !STATE.catMenuOpen) return;
+      STATE.openPopover = null;
+      STATE.catMenuOpen = false;
+      render();
+    });
+    document.addEventListener('click', function () {
+      /* The buttons that OPEN these stop the event before it reaches the document, so arriving here
+         means the click landed somewhere else. */
+      if (STATE.openPopover === null && !STATE.catMenuOpen) return;
+      STATE.openPopover = null;
+      STATE.catMenuOpen = false;
+      render();
     });
 
     render();

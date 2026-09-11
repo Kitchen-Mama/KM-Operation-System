@@ -1,4 +1,4 @@
-# Product Strategy Board — Design Freeze (P0 · updated by P0-R1, P0-R3, P0-R3-R1, P0-R3-R2, P1-B0, P1-B1, P1-B1-R1, P1-B2)
+# Product Strategy Board — Design Freeze (P0 · updated by P0-R1, P0-R3, P0-R3-R1, P0-R3-R2, P1-B0, P1-B1, P1-B1-R1, P1-B2, P1-B2A)
 
 **Rounds:** `PRODUCT-STRATEGY-BOARD-P0` — Discovery, Data Mapping and Design Freeze
 · `PRODUCT-STRATEGY-BOARD-P0-R1` — Design Closure and Non-Runtime Visual Prototype
@@ -3902,3 +3902,279 @@ layout, colour, print pagination — is still verified by a person opening `inde
 **Next:** P1-B3 — production readback against the live endpoint once the user has synced P1-B1-R1's four
 files: DB-vs-UI counts per site, no cross-site contamination, the real category universe read off
 `filterOptions`, and operator acceptance. Only then is `flag = true` a question that can be asked.
+
+---
+
+## §35 — P1-B2A: the black dot, the density, and a meeting control that speaks English
+
+This round came from a person looking at the screen, which changes what the work is. Nothing in §34
+was wrong — the P1-B2 suite was green before this round started and stayed green throughout — and the
+screen was still hard to use. Four of the defects fixed below were **invisible to every DOM assertion
+in the repository** and were found by rendering the page in a browser and looking at it.
+
+### §35.1 The black dot — one source, and the fix is not transparency
+
+**Root cause, exactly.** `prototype.js`, inside `everydayMarker`:
+
+```js
+grp.appendChild(svg('circle', { cx: cx, cy: cy, r: 2, 'class': 'mk-anchor mk-reg', … }));
+```
+
+a 2px circle filled `#14181f`, appended **last** — therefore on top of the photograph — at the plate's
+exact centre. Its purpose was honest (make the datum visible and provably independent of plate size);
+its placement was not: the one pixel that proves the coordinate sat on the one thing a person came to
+look at. Every other candidate the brief listed was checked and cleared:
+
+| candidate | verdict |
+|---|---|
+| SVG point / circle | **this one** — `.mk-anchor`, fill `#14181f`, `r=2`, drawn last |
+| everyday-price marker | the plate itself; it is the marker, and it is not a dot |
+| image placeholder | a plate plus a short code, never a dot |
+| pseudo-element | none on any chart element (`::before`/`::after` exist only on the sidebar nav) |
+| a marker behind a transparent image | no; the image is drawn after the plate and before nothing |
+| alt / fallback text | text, not a dot |
+| scenario marker | `.mk-prop`, a hollow diamond at the **proposed** price — a different y, and kept |
+
+**The fix removes it rather than hiding it.** A dot made transparent is still in the tree, still
+hit-tested, and still there for the next reader to rediscover. The datum is now a **crosshair drawn
+behind the plate** and extending 8px past it on both sides, so what remains visible are two short
+stubs meeting the gridline — more readable than the dot, and nowhere near the picture. It keeps the
+class, the exact coordinate and the price, so the assertions that prove the plate is centred on its
+price still have something to read.
+
+Assertions: `B1`–`B11` plus the page's own `H4a`/`H4b`/`H4c`; mutants `N1` (the dot returns) and `N2`
+(the dot is hidden instead of removed).
+
+**Semantic markers are kept** — live promotion and proposed scenario sit at their own prices, never
+on the photograph. **The no-image placeholder** is modelled on the Operation System's
+`.cr-img-placeholder` (`campaign-risk.css:440` — grey plate, light border, small muted text). Note for
+integration: the Operation System has **two** placeholder implementations today (`.cr-img-placeholder`
+and `.skuh-placeholder`), not one; a shared component should be extracted when this page moves in.
+
+### §35.2 Chart readability
+
+| | before | after |
+|---|---|---|
+| product image | 36px | **50px** (brief: 46–54), square, never cropped |
+| column width | fixed 112px | 74–208px, computed from the design width and **centred** |
+| product label | 11.5px | 12.5px |
+| price sub-label | 10.5px | 11.5px |
+| axis ticks | 11px | 11.5px |
+| plot height | 260–480px | 300–560px |
+
+**Centring is the part that mattered.** Capping the column width without centring is what left the
+large empty margin on the right, because all the slack collects at one end. The assertion is that
+`|leftGap − rightGap| < colW/2` — half a column, not a whole one: a full-column tolerance accepted the
+uncentred layout and let its mutant through (`N12`).
+
+**No layout box is ever measured.** There is no `getBoundingClientRect` and no `offsetWidth` anywhere
+in the prototype; the SVG carries a `viewBox` at a declared design width (1180) and the element is
+sized in CSS. A chart whose geometry depends on when it was measured draws differently on a slow load.
+
+**Labels stagger onto two rows** when the column falls under 104px, so 44 of them do not overlap.
+**Keyboard reaches the same facts**: every column is `tabindex="0"` with a full `aria-label`, and focus
+opens the same detail panel the pointer does (`data-anchor="focus"` distinguishes the route).
+
+### §35.3 Zoom — and why it cannot move a price
+
+`Fit · 100% · 125% · 150% · Reset view`. The **viewBox is identical at every size**; what changes is
+the width the element is painted across. That is what makes "zoom cannot move a price" provable rather
+than promised, and it is asserted directly: at 150% the viewBox string, every `data-price-c`/`data-cy`
+pair and every axis tick are byte-identical to Fit (`C16`–`C21`), and the mutant that scales the
+viewBox instead is caught (`N3`).
+
+**Fit has a legibility floor, and the 44-product chart is why.** `width: 100%` on a drawing that needs
+3364px inside a ~1400px card paints it at **0.42×** — every coordinate correct, every pixel unreadable,
+which is the exact complaint this round exists to answer. So Fit means *fit the card when it fits*;
+once the columns need more than the design width the chart is painted at natural size and the
+container scrolls. A chart you scroll is usable; a chart shrunk to illegibility is not, and calling it
+"fitted" does not make it readable. **The page never asks the browser to zoom**, and **print always
+uses Fit** (`@media print { .chart { width: 100% !important } }`), so a size chosen for a room never
+reaches the paper. Zoom lives in page memory only.
+
+**Reset view is not a second Fit.** It restores the zoom **and** the layer set — the thing a person
+wants after ten minutes of a meeting and cannot reconstruct from memory.
+
+### §35.4 Layers, Clean and Detail — and the one band that is not two
+
+**`Floor to list price` is a single band from `pricing_list.minimum_price` to `pricing_list.msrp`, and
+`msrp` IS the list price** — it is the only list-price column the schema has. An "MSRP" layer and a
+"List price" layer would therefore be two switches over one field: two names for the same number, which
+is how a reader comes to believe the board holds data it does not. So the top cap is **one** layer,
+named for both words (`MSRP / list price`), and its tooltip says they are one column. Asserted:
+"list price" appears in exactly one layer label, and there is no separate `MSRP` layer (`D2`–`D4`).
+
+Six layers — Product images · MSRP / list price · Lowest / floor price · Live promotion · Proposed
+scenario · Open price steps — each independently switchable. **A hidden layer removes its element AND
+its legend key together**; hiding a line and leaving its key is worse than showing the line, because
+the reader is told the chart contains something it does not (`D5`–`D16`, mutant `N4`).
+
+**The band needs both ends.** With one cap hidden it is not a shortened band, it is a line from a price
+to nothing, so it is not drawn (`D8`, `D13`, mutant `N5`). **The axis range follows the visible
+layers** — a hidden MSRP stops reserving the top of the chart, which is the reason to switch it off.
+
+**Clean and Detail set the switches** rather than being a third state, so a person can press Clean and
+then re-enable one layer without the two fighting; once a layer is edited the badge stops claiming a
+preset (`D19`–`D25`). No layer touches the data: `selectors.js` cannot even see the layer state (`D27`).
+
+### §35.5 The scenario, redesigned around what a person is doing
+
+The form used to expose the data model — a field called `proposed_scenario_price`, a mode called
+`PERCENT`, a Series box defaulting to `All`. Those are precise names that belong in the override
+object. Now:
+
+1. **The site is read-only context** — Company / Country / Marketplace / Currency, with nothing in it
+   to change. It is chosen upstairs in the scope ladder and a scenario never gets to disagree with it.
+2. **The Series must be chosen.** There is no `All` option at all, and the empty option reads
+   "Choose a Series…". A change whose reach you cannot see is not a scenario you can discuss. The list
+   is the analysable Series of *this* site and category.
+3. **Price to simulate**: `Proposed price` (default) or `Everyday price`.
+4. **Adjustment**: `Set proposed price` · `Increase / decrease by amount` · `Increase / decrease by
+   percentage`. With the everyday price chosen, `Set…` is **not offered** — the combination that would
+   flatten the ladder cannot be expressed, which is better than accepting it and explaining afterwards.
+5. **Apply to chart**, gated by one validator that reports in the same sentences: no Series, empty,
+   not a number, a negative price, a figure outside the board, a percentage at or below −100%. Nothing
+   is stored on a refusal and nothing half-applies (`E12`–`E18`, mutant `N8`).
+
+**The reach is shown before the change** — how many listings the chosen Series would move — and again
+after. **The original position stays on the chart** as a hollow ghost marker joined to the simulated
+one by a connector, so the difference is a distance rather than a number to remember. Affected products
+carry a quiet dashed outline: a highlight, not an alarm.
+
+**Undo last change** pops a stack of previous override objects (they are immutable values, so
+remembering one costs a reference), beside the three resets. Everything is still `IN_MEMORY_ONLY`; the
+contract name moved behind the `?` and the surface says it in words. A reload restores every canonical
+value (`E36`–`E39`), and the printed page carries the unsaved-scenario mark.
+
+**Meeting mode starts collapsed.** With the form open by default the chart began below the fold at
+1920×1080. The badge stays outside the collapse: hiding a control is a density choice, hiding the state
+would be a lie.
+
+### §35.6 Progressive disclosure
+
+One `?` component, used everywhere. It is a **button**, not a hover tooltip — hover alone excludes
+keyboard users and every touch device. Click or Enter/Space toggles; Escape, a click outside, or the
+control again closes it; `aria-expanded`, `aria-controls` and `role="note"` carry the state; one panel
+is open at a time. The document-level listeners are registered **once** at boot, not per render.
+
+Moved off the permanent surface and behind the `?`: category normalization detail, canonical/excluded
+row explanations, the scope order, the `IN_MEMORY_ONLY` contract name, and the all-countries
+aggregation limits. What remains visible is one line of state per block.
+
+**Column names are allowed inside a popover and not on the default surface**, and both halves are
+asserted: the category popover names `sku_details.category` (`F9`), while the category page's visible
+text carries no schema name at all (the page's own `R10`). The marker's own tooltip was rewritten into
+words for the same reason.
+
+### §35.7 The Operation System's control contract, copied by value and held to it
+
+`assets/css/base.css` already declares a `--filter-*` block described in its own comment as
+*"SINGLE SOURCE OF TRUTH for every filter control"*, calibrated to the SKU Details filter, plus
+`--btn-*`, spacing, radius and typography tokens, and a shared `.km-filter-bar` class in
+`components.css`.
+
+The prototype is a self-contained non-runtime page and may not reach into `assets/**`, so **41 tokens
+are copied here with their names kept identical, and the suite asserts every one against the real
+`base.css`** (`G1`–`G3`). A copy nobody checks becomes a second system the first day somebody changes
+the original; a copy a test holds to the original is a mirror.
+
+Three tiers, in the source's own order: **Site** (company · country · marketplace) → **Analysis**
+(category · series · currency) → **Advanced**, collapsed (gap threshold · include inactive · the stress
+fixture). **Meeting mode is its own panel**, not another row of filters. Selection is a green fill
+rather than red text. **Category has two shapes**: chips up to six, and above that the busiest five
+plus a searchable `More (N)` popover — a wall of forty chips is not a menu, it is a paragraph, and it
+pushes the chart below the fold. The count travels with every option in both shapes.
+
+### §35.8 Density — the stress fixture
+
+Generated, deterministic (**no `Math.random` anywhere**; every price is arithmetic on an index), and
+labelled `STRESS_FIXTURE_GENERATED` on every row with `is_database_data: false`:
+
+**8 countries · 10 site identities · 12 categories · 15 series · 44 products on one chart · 401 rows**
+
+It is opt-in from Advanced filters so the density can be *seen*, and the suite drives it directly
+(`H1`–`H31`). It is not data and this round does not claim otherwise.
+
+### §35.9 Four defects that only a screenshot could see
+
+The page was rendered in headless Chrome at 1920×1080, 1440×900 and 1280×720 and inspected. Both suites
+were green for every one of these:
+
+1. **Two `.scope` rules merged.** CSS picks a winning *declaration*, not a winning *rule*: the old
+   rule's `align-items: flex-end` survived into the new `flex-direction: column`, right-aligned every
+   tier and shrank each to content width — the whole filter area stacked into the right half of an
+   empty band.
+2. **`.adv-body-row { display: flex }` beat the browser's `[hidden]` rule**, so the advanced drawer
+   rendered fully open while its `hidden` property was `true` and its button said "Show". The
+   assertion read the property, and the property was correct.
+3. **Two legend keys had no swatch style** — `MSRP / list price` and `Lowest / floor price` rendered as
+   a label beside an empty box. A key that shows nothing sends a reader looking for a marker that does
+   not exist.
+4. **Fit painted the 44-product chart at 0.42×** (§35.3).
+
+Each is now an assertion (§J): no top-level selector declared twice, `[hidden]` forced to win, every
+legend key styled, and the Fit floor. `.adv-toggle` was additionally found to be **two different
+components sharing a class name** — the Advanced Details page header and the new filter toggle — and
+the new one was renamed `.filt-toggle`; components do not take turns with a class, their declarations
+merge.
+
+### §35.10 Visual acceptance
+
+**Screenshots produced** (headless Chrome, local file, no network), in the session scratchpad:
+
+| view | file |
+|---|---|
+| Executive Overview 1920×1080 | `shots/1920x1080.png` |
+| Category Analysis 1920×1080 · 1440×900 · 1280×720 | `shots/cat-1920x1080.png`, `cat-1440x900.png`, `cat-1280x720.png` |
+| Category Analysis, full page | `shots/cat-full.png` |
+| Stress fixture, 44 products | `shots/stress-fit.png`, `stress-full.png` |
+
+**Print preview was NOT captured** — headless `--print-to-pdf` was not run, so the print stylesheet is
+verified by assertion only (Fit forced, controls hidden, scenario mark kept) and needs a person.
+
+**Manual acceptance checklist — a person with a browser, `docs/prototypes/product-strategy-board/index.html`:**
+
+- [ ] 1920×1080, 1440×900, 1280×720: the filter area stays three compact rows and the price chart is visible without scrolling past a wall of controls.
+- [ ] No black dot on any product photograph, at any zoom, on any category.
+- [ ] Product images read clearly at arm's length; SKU, price and variant counts are legible.
+- [ ] Fit / 100% / 125% / 150% / Reset view: the y-axis values are identical at every setting.
+- [ ] Load the stress fixture, choose Electric Can Opener: 44 products, markers full size, the chart scrolls sideways and the page does not.
+- [ ] Clean and Detail: lines appear and disappear together with their legend keys.
+- [ ] Meeting mode: pick a Series, set a proposed price, Apply — the original position is visibly beside the simulated one; Undo and the three resets behave.
+- [ ] Reload the page: every simulated price is gone.
+- [ ] `?` icons: click, Escape, click-outside, and Tab + Enter all work.
+- [ ] **Print preview / Save as PDF**: the chart is at Fit, controls are gone, the preview banner and (with a scenario active) the UNSAVED SCENARIO mark are on the first page.
+- [ ] Colour and weight read as the Operation System, not as a second product.
+
+### §35.11 Isolation record
+
+**Changed** — 8 files, all inside the P worktree:
+
+| file | change |
+|---|---|
+| `docs/prototypes/product-strategy-board/prototype.js` | the chart, the controls, the scope tiers, the scenario form, the popovers |
+| `docs/prototypes/product-strategy-board/prototype.css` | the Operation System tokens, the new components, de-duplicated rules, `[hidden]` |
+| `docs/prototypes/product-strategy-board/preview-fixture.js` | the stress fixture and its adapter |
+| `docs/prototypes/product-strategy-board/selectors.js` | the human scenario vocabulary, validation, affected-SKU count |
+| `docs/prototypes/product-strategy-board/index.html` | the always-visible universe caveat |
+| `assets/tests/_psb-harness.js` | **NEW** — the shared DOM shim, extracted so two suites cannot test two browsers |
+| `assets/tests/product-strategy-board-p1-b2a.test.js` | **NEW** — 220 assertions, 14 mutants |
+| `assets/tests/product-strategy-board-p1-b2.test.js` | follows the redesigned controls; unchanged rules |
+
+**Not touched:** no production page, no `app.js`, no Operation System shell or navigation, no
+`assets/js/**`, no `assets/css/**`, no `assets/specs/active/apps-script/**`, no schema, no migration,
+no S1–S5, no `main`, no `C:/km-lb`.
+
+**Zero:** DB writes, Sheets writes, Drive writes, network requests, Apps Script sync, deployment,
+`flag = true`, merges, pushes. `APPS_SCRIPT_SYNC_REQUIRED` for this round: **none** (the outstanding
+sync is still P1-B1-R1's four files).
+
+### §35.12 The merge gate is unchanged, and none of it moved this round
+
+P1-B2A is UI acceptance on a fixture. It does **not** connect the live database and does not claim to.
+All nine conditions in the brief's §十一 still stand: P1-B2A visual acceptance, P1-B3 live readback, the
+real universe measured, regional eligibility verified on live data, the six adapter shape gaps closed,
+Preview fallback off in production, the flag and permission key, shell integration with its own tests,
+and regression + responsive + print acceptance.
+
+**Next:** P1-B3 — production readback once the user has synced P1-B1-R1's four Apps Script files.
