@@ -531,3 +531,34 @@ AI Integration (Stage 5)
 - ❌ Inventory Replenishment Country/Marketplace linked filters
 - ❌ Add SKU write to marketplace_skus
 - ❌ FC Summary: Auto-create FC Summary base row with Jan–Dec forecast initialized to 0.
+
+
+## Security track — SEC-A0 .. SEC-A5  (added 2026-09-12)
+
+**Full detail: `docs/planning/IDENTITY_AND_ACCESS_ARCHITECTURE_SEC_A0.md`.**
+
+P1-B7F found that Product Strategy could not be activated because production cannot tell who is
+calling. SEC-A0 found that this reaches the whole system: one anonymous Web App URL routes 138 actions,
+**76 of them unambiguous mutations**. The boundary is not a Product Strategy prerequisite - it is a
+system-wide one that Product Strategy walked into first.
+
+**RECOMMENDED: Option B** - keep the deployment open, add a server-verified Google ID token, and make
+Product Strategy its first tenant. Options A (`access: DOMAIN`) and C (a second restricted deployment)
+both begin by changing something 138 working actions depend on; Option B begins by adding something
+nothing depends on yet. **A new door with nobody behind it is the only place a lock can be fitted
+without locking anyone out.**
+
+| step | what it does | USER decision or action? |
+|---|---|---|
+| **SEC-A0** | inventory, three-option comparison, layering freeze, baseline suite | **YES** - answer EG-1/2/3/7, choose the option |
+| SEC-A1 | identity prototype on a **throwaway** deployment; settles EG-4/5/6 | **YES** - creates the throwaway |
+| SEC-A2 | verifier + fail-closed operator registry, **enforced nowhere** | **YES** - operator list, re-authorise the new scope, deploy |
+| SEC-A3 | action permission + site scope, **enforced on `productPricing.*` only** | deploy |
+| SEC-A4 | frontend sign-in; enforcement extended family by family, widest blast radius last | **YES** - family order, accept each cutover |
+| SEC-A5 | registry becomes mandatory; revocation drill **rehearsed before it is needed** | **YES** |
+| **P1-B8** | Product Strategy first live read-only render - needs SEC-A3 only | **YES** - authorises activation |
+| P2-A | full Login / RBAC UI; roles become data with an admin surface | |
+
+**Blocked until the user answers:** is the deploying account a Google Workspace account; are all users
+in that one domain; do any external Gmail / supplier / factory / 3PL people use the pages; is anyone
+relying on signed-out access. None of these may be guessed.

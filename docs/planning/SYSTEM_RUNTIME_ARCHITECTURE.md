@@ -727,3 +727,71 @@ Permanent, code-enforced boundary that makes Canonical production schema unbreak
 **Draft v1.5 — Runtime Architecture Specification. Architecture only. No code, Apps Script, API, SQL, DB, frontend, or existing-spec changes are implied by this document. B-1 Reserve Trigger resolved (the Ready to Ship transition (`draft → ready_to_ship`) = Formal Shipment Execution Commit; owner §8A.1) — decision only, Runtime / trigger / writer Not Started / Unverified. Domain specs remain authoritative for their domains.**
 
 **End of Document**
+
+
+## 15. Identity, Authorization and Audit  (SEC-A0, FROZEN 2026-09-12)
+
+**Full architecture, options and migration: `docs/planning/IDENTITY_AND_ACCESS_ARCHITECTURE_SEC_A0.md`.
+That document is the SSOT. This section states only what a runtime reader must not get wrong.**
+
+### 15.1 The position today
+
+One Web App, published `access: ANYONE_ANONYMOUS`, `executeAs: USER_DEPLOYING`, routing **138 actions**
+of which **76 are unambiguous mutations**. No runtime file calls `Session.getActiveUser()`. The router
+has no token, secret or session check, and **nothing stands between `doPost` entry and the first action
+dispatch**. `created_by` / `updated_by` are taken from the request body in twenty files, defaulting to a
+literal - they are the provenance of a claim, never of a person.
+
+`SYS_REQUIRED_ACTIONS_` lists 44 of the 138. **It is a partial-sync detector, not an authorization
+surface**, and the other 94 are not protected by being absent from it.
+
+### 15.2 The five layers are five different questions
+
+| layer | question | today |
+|---|---|---|
+| Authentication | who is this caller? | nothing |
+| Authorization | may this person run this action? | nothing |
+| Data scope | which company / country / marketplace? | partial (AI Plan scope allowlist) |
+| Feature lifecycle | is this feature on? | the global flags |
+| Audit identity | who did what? | client-asserted |
+
+**A feature flag is not authentication.** Neither is navigation visibility, nor `created_by`, nor a
+site allowlist, nor knowing the `/exec` URL. Each has been mistaken for it at least once.
+
+### 15.3 FROZEN execution order
+
+```
+1 authenticate  ->  2 authorize action  ->  3 check data scope  ->  4 check feature flag
+->  5 OPEN THE DATABASE  ->  6 read/write  ->  7 stamp audit from the SERVER-DERIVED identity
+```
+
+**Steps 1-4 all precede step 5.** A refusal measured after the spreadsheet is open has already spent
+the thing it was protecting. `NOT_AUTHENTICATED`, `NOT_AUTHORIZED`, `OUT_OF_SCOPE` and
+`FEATURE_DISABLED` never collapse into one code: a refused person and a disabled feature are different
+facts, and an operator who cannot tell them apart cannot act on either.
+
+### 15.4 Two runtime constraints that are easy to get wrong
+
+**`executeAs` must stay `USER_DEPLOYING`.** The script is container-bound
+(`SpreadsheetApp.getActiveSpreadsheet()`), five files write Drive documents, and the project holds a
+BigQuery scope. Under `USER_ACCESSING` every user would need all three. `access` and `executeAs` are
+independent knobs and only the first may move.
+
+**Restricting `access` alone breaks every page.** The frontend is a separate origin and the transport
+sends no `credentials`, so no Google cookie is attached. A restricted deployment would answer with a
+sign-in page, which `km-transport.js` already classifies as `AUTH_OR_ACCESS_HTML` and already treats as
+never-retryable, "because the fix is a human changing the access policy". All 138 actions would surface
+that one error at once.
+
+### 15.5 The fail-closed shape any future allowlist must inherit
+
+`INVENTORY_AI_PLAN_ACTIVATION_ALLOWLIST_` in `00_config.gs`: exact, case-sensitive, no wildcard, **empty
+means nobody**, an incomplete key never matches, `ALL`/`ALL_SITES` can never match, and the list is
+reportable without ids, urls or keys. Pinned by execution in
+`assets/tests/identity-boundary-baseline-sec-a0.test.js` **before** it is copied.
+
+### 15.6 Triggers are a separate authority
+
+Time-driven triggers (gap materialization, weekly recommendation, automation schedule, job
+continuations) do **not** go through `/exec`. A deployment access change does not touch them, and an
+identity boundary on `/exec` will never cover them. They already run as a named Google account.

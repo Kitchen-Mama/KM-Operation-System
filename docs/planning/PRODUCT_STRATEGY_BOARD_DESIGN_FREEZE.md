@@ -6518,3 +6518,56 @@ user has not approved is a design that has already begun.** In dependency order:
 
 **Steps 1 and 2 are USER decisions, not agent work.** Step 1 in particular changes who can reach the
 whole application, and nothing about Product Strategy justifies making that call on the user's behalf.
+
+
+## 45.  SEC-A0 — THE BOUNDARY IS SYSTEM-WIDE, AND PRODUCT STRATEGY IS NOT WHERE IT BROKE
+
+P1-B7F returned `STOP_P1_B8_ACTIVATION_REQUIRES_SERVER_IDENTITY_BOUNDARY`. SEC-A0 asked how far that
+reaches, and the answer reframes the whole activation question.
+
+**Architecture, options, evidence gaps and migration order:
+`docs/planning/IDENTITY_AND_ACCESS_ARCHITECTURE_SEC_A0.md`. Layering:
+`docs/planning/SYSTEM_RUNTIME_ARCHITECTURE.md` §15.** This section records only what it means for
+this board.
+
+### 45.1  What the inventory found
+
+One Web App URL, published `ANYONE_ANONYMOUS`, routes **138 actions**, of which **76 are unambiguous
+mutations** - purchase orders, shipment confirmation, allocation submission, inventory adjustment,
+batch imports, and the action that creates and deletes the project's own time-driven triggers. Nothing
+stands between `doPost` entry and the first dispatch. There are no webhooks, no external integrations,
+no HtmlService pages and no second backend: the entire external surface is that one URL.
+
+**PRODUCT STRATEGY IS THE SMALLEST THING BEHIND THAT DOOR, AND IT IS THE ONLY ONE THAT ASKED.** It is
+flag-disabled, read-only, has never written a cell and has never rendered a row. Every feature that
+already works is exposed more than it is.
+
+### 45.2  What that changes about P1-B8
+
+**Nothing about the board's design, and everything about the order.** P1-B7F's NO-GO stands, but the
+prerequisite is not "wait for a login page": it is **SEC-A3**, which enforces caller identity, action
+permission and data scope on `productPricing.*` alone. P1-B8 does not need SEC-A4 or SEC-A5; it needs
+its own two actions protected.
+
+And the board turns out to be the right first tenant **because nobody uses it**. A new boundary
+switched on for a feature whose current user count is zero cannot lock anyone out, and a mistake in the
+first version of security code reaches no one. That is a property worth spending, and it is the reason
+Option B is recommended over restricting the deployment: restricting access changes something 138
+working actions depend on, while this changes something nothing depends on yet.
+
+### 45.3  What must not be read into this
+
+**The anonymous posture is not a defect this feature introduced and it is not one this round created.**
+It is how every shipped page has always worked. What activation would change is the *content* behind
+that door - pricing and margin by site is a different sensitivity class - and that remains a business
+decision about disclosure, which is the user's.
+
+Equally: **SEC-A0 did not make the system less safe by writing the exposure down.** The 76 mutations
+were reachable before this document existed. What is new is that the number is now a number a migration
+plan can be checked against, recomputed from the router by
+`assets/tests/identity-boundary-baseline-sec-a0.test.js` rather than trusted from prose.
+
+### 45.4  Unchanged
+
+`PRODUCT_STRATEGY_ENABLED_` false. Navigation staged-disabled. R10 deployed and correct on the wire.
+No client file, no Apps Script file, no deployment and no flag was touched by SEC-A0.

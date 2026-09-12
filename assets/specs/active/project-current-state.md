@@ -5892,3 +5892,48 @@ deploy, no DB/Sheet/Drive write, no live workspace read. **NOT DONE:** the board
 rendered WITH ROWS in a browser; display names and `SOURCE_MODIFIED_AT` remain evidence gaps.
 **NEXT:** the user decides whether to give the Web App a real audience (a deployment change affecting
 every page) and names the operators. No activation work until then.
+
+
+## SEC-A0 — THE IDENTITY BOUNDARY IS MISSING SYSTEM-WIDE, NOT JUST FOR PRODUCT STRATEGY  (2026-09-12)
+
+**SSOT: `docs/planning/IDENTITY_AND_ACCESS_ARCHITECTURE_SEC_A0.md` · layering:
+`SYSTEM_RUNTIME_ARCHITECTURE.md` §15 · roadmap: `SYSTEM_ROADMAP.md` security track.**
+
+**WHAT WAS FOUND.** One Web App URL, `access: ANYONE_ANONYMOUS`, `executeAs: USER_DEPLOYING`, routing
+**138 actions** of which **76 are unambiguous mutations** - purchase orders, shipment confirmation,
+allocation submission, inventory adjustment, batch imports, and the action that creates and deletes the
+project's own triggers. **Nothing stands between `doPost` entry and the first dispatch.** No runtime
+file calls `Session.getActiveUser()`. `created_by` is taken from the request body in twenty files - the
+audit trail records what the payload said, not who acted. There are no webhooks, no external
+integrations, no HtmlService pages, no second backend and no outbound `UrlFetchApp`: the entire
+external surface is that one URL. Triggers are a separate authority and never pass through `/exec`.
+
+**THE OBVIOUS ANSWER DOES NOT DROP IN, AND THE CODEBASE ALREADY KNEW.** The frontend is a separate
+origin and the transport sends no `credentials`, so no Google cookie is attached. Restricting the
+audience would make every request unauthenticated, and `km-transport.js` already classifies that as
+`AUTH_OR_ACCESS_HTML` - already non-retryable, "because the fix is a human changing the access policy".
+All 138 actions would surface that one hard error at once. `executeAs` must also stay `USER_DEPLOYING`:
+the script is container-bound, writes Drive documents and holds a BigQuery scope.
+
+**RECOMMENDED: Option B** - keep the deployment open, add a server-verified Google ID token (no shared
+secret; Google signs, the server verifies), fail-closed operator registry, and make **Product Strategy
+the first tenant because nobody uses it**. *A new door with nobody behind it is the only place a lock
+can be fitted without locking anyone out.* Option A (`access: DOMAIN`) stays the better long-term answer
+**if the domain evidence comes back favourable**, and the registry, permission table and scope check are
+reusable under it unchanged - only the identity source would swap. Option C (second deployment) is
+rejected: it leaves the 76 mutations anonymous and duplicates the shell.
+
+**FROZEN ORDER:** authenticate -> authorize action -> check data scope -> check feature flag -> **only
+then open the database** -> read/write -> stamp the audit row from the server-derived identity. Four
+distinct refusal codes; they never collapse into one.
+
+**P1-B8's prerequisite is now precise:** SEC-A3, not a full login system - the board needs its own two
+actions protected, not the whole estate.
+
+**BLOCKED ON THE USER, and none of it may be guessed:** is the deploying account a Google Workspace
+account; are all users in that one domain; do external Gmail / supplier / factory / 3PL people use the
+pages; is anyone relying on signed-out access.
+
+**THIS ROUND CHANGED NO RUNTIME FILE.** Documentation and one new baseline suite
+(`identity-boundary-baseline-sec-a0.test.js`, 53 assertions / 11 mutants) that pins the current posture
+so the day production stops matching it is the day it goes red.
