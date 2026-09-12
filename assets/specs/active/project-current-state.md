@@ -5853,3 +5853,42 @@ errors, zero Product Strategy requests. Harness committed at `assets/tools/brows
 with the feature off); no live workspace read; display names and `SOURCE_MODIFIED_AT` remain evidence
 gaps. **NEXT:** sync 72_ and 63_, create an R10 Web App version, then re-verify by /exec — health at
 R10 with contract 14 and mixed false, and a site-universe refusal the accessor now digests.
+
+
+## P1-B7F — R10 IS DEPLOYED AND PROVED; P1-B8 IS BLOCKED ON SOMETHING OLDER  (2026-09-12)
+
+**R10 ANSWERS ON THE WIRE.** `system.health` on the production `/exec`: build, release and
+`build_version` all `F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R10`, action contract **14**, required list **12**,
+**44** actions, `missing_actions []`, `router_ready`, `doGet` + `doPost`, `mixed_deployment false`,
+verdict UNIFORM, environment production, every write counter **0**. Manifest rows: 63_ **R10**, 72_
+**R10**, `01_router.gs` **R9** - expected R9, declared R9, because no route changed. `workspace_module_build`
+reads R6-R5 and is bound to 60_, not 72_; the same field nearly produced the wrong conclusion in P1-B7D.
+
+**THE ENVELOPE IS FIXED IN PRODUCTION.** `productPricing.siteUniverse.get` returns `meta.action =
+productPricing.siteUniverse.get`, agreeing with `data.schema.action`, refused `FEATURE_DISABLED` with
+`dbOpened false` / `tablesRead 0` - the gate before the door, measured. **The proof is the pair**: the
+frozen R9 body and the new frozen R10 body through the **same unmodified accessor** give
+SOURCE_NOT_CONNECTED and FEATURE_DISABLED respectively, so what changed is the deployment, not the
+test. Neither capture is ever edited into agreement.
+
+**ZERO DRIFT, BY RECONSTRUCTION.** The R10 readback fingerprints CA0BB90F/7273 against P1-B6's
+D53C96CE/7272. Rolling back only the build stamp and the read timestamp reproduces **7272 and
+D53C96CE exactly** - not one byte of the universe moved; the entire difference is `R9` becoming `R10`.
+Ten sites, 495 rows, table fingerprint 2AF82658, verdict READY, all write counters 0, flag false and
+not written by the readback.
+
+**P1-B8: NO-GO - `STOP_P1_B8_ACTIVATION_REQUIRES_SERVER_IDENTITY_BOUNDARY`.** The Web App is published
+`executeAs USER_DEPLOYING` / `access ANYONE_ANONYMOUS`, no runtime `.gs` asks who is calling, and the
+router has no token or session check in front of any handler. **`PRODUCT_STRATEGY_ENABLED_` is one
+global boolean**: it answers *is this feature on*, never *may this caller use it*. Hidden navigation, a
+frontend button, `created_by`, `caller_probe` and knowing the URL are none of them boundaries. This is
+the standing posture of the whole application, not a hole this feature would open - what activation
+changes is the **content** behind an unlocked door, and pricing by site is a different sensitivity
+class. That is the user's call. The GO/NO-GO is now **asserted in a suite**, so the day the boundary
+appears is the day the suite goes red and the decision is re-made.
+
+**UNCHANGED BY THIS ROUND:** no Apps Script file, no flag, no navigation, no deployment, no frontend
+deploy, no DB/Sheet/Drive write, no live workspace read. **NOT DONE:** the board has still never
+rendered WITH ROWS in a browser; display names and `SOURCE_MODIFIED_AT` remain evidence gaps.
+**NEXT:** the user decides whether to give the Web App a real audience (a deployment change affecting
+every page) and names the operators. No activation work until then.

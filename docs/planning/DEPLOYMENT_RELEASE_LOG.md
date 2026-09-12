@@ -953,3 +953,69 @@ VERIFICATION AFTER THE NEXT SYNC  (five items)
       5. /exec system.health: build R10, contract 14, mixed_deployment false
 
 **STATUS: ENVELOPE CORRECTED · R10 PREPARED · NOT PUSHED · APPS SCRIPT NOT SYNCED · NO DEPLOYMENT VERSION · FRONTEND NOT DEPLOYED · PRODUCT STRATEGY NOT ENABLED · NAVIGATION NOT ENABLED.**
+
+
+=======================================================================================================
+P1-B7F  -  R10 VERIFIED DEPLOYED  (2026-09-12)                       NO SYNC - NO DEPLOY - NO NEW BUILD
+=======================================================================================================
+  This round changed NO Apps Script file, minted NO release identity and requires NO sync. It measured
+  the deployment the user created and recorded the result.
+
+-------------------------------------------------------------------------------------------------------
+THE FIVE POST-SYNC ITEMS P1-B7E LISTED  -  ALL FIVE CLOSED
+-------------------------------------------------------------------------------------------------------
+      1. contract still 14, both module stamps read R10            PASS  (by /exec, not by editor)
+      2. RUN_P1_SITE_UNIVERSE_READBACK() on R10                    PASS  fp CA0BB90F len 7273 chunks 2/2
+                                                                         verdict P1_B6_SITE_UNIVERSE_READY
+      3. /exec siteUniverse.get -> structured FEATURE_DISABLED
+         whose meta.action is productPricing.siteUniverse.get      PASS  schema.action agrees
+      4. that body through the production accessor -> FEATURE_DISABLED,
+         NOT SOURCE_NOT_CONNECTED                                  PASS  and the frozen R9 body, through
+                                                                         the SAME accessor, still gives
+                                                                         SOURCE_NOT_CONNECTED
+      5. /exec system.health: R10, contract 14, mixed false        PASS  UNIFORM, all counters 0
+
+  Item 4 is the one that matters, and only as a PAIR. One accessor, two wire bodies, two outcomes:
+  what changed is the deployment, not the test. Both captures are immutable evidence and neither is
+  ever edited into agreement with current code.
+
+-------------------------------------------------------------------------------------------------------
+DEPLOYED MANIFEST, AS REPORTED BY THE DEPLOYMENT ITSELF
+-------------------------------------------------------------------------------------------------------
+      63_api_v1_system_health.gs                expected R10   declared R10
+      72_api_v1_product_pricing_workspace.gs    expected R10   declared R10
+      01_router.gs                              expected  R9   declared  R9
+      00_config.gs                              expected  R7   declared  R7
+      mixed_deployment false - UNIFORM across 24 probed owner files, 0 absent, 0 stale
+
+  The router row is the interesting one: a release moved everything around it and it stayed at R9,
+  because the fix was inside the envelope builder and no action was added, renamed or removed.
+
+-------------------------------------------------------------------------------------------------------
+SITE UNIVERSE  -  ZERO DRIFT, PROVED BY RECONSTRUCTION
+-------------------------------------------------------------------------------------------------------
+  R10 readback  len 7273  fp CA0BB90F.  Roll back the endpoint build stamp and the read timestamp -
+  the only two fields a redeploy legitimately changes - and it is len 7272 fp D53C96CE: P1-B6 exactly.
+  The entire difference is one character, "R9" becoming "R10". 10 sites, 495 rows, table fingerprint
+  2AF82658, read_only true, writes/writer_calls/sheets_created/rows_modified all 0, flag false and not
+  written by the readback, SOURCE_MODIFIED_AT still an open evidence gap.
+
+-------------------------------------------------------------------------------------------------------
+APPS_SCRIPT_SYNC_REQUIRED  -  **NO**        FRONTEND_DEPLOY_REQUIRED  -  **NO**
+-------------------------------------------------------------------------------------------------------
+  No .gs changed. No client JS or CSS changed. The P1-B7 frontend package remains undeployed and its
+  ordering rule is still satisfied in advance: Apps Script first (R10 serves contract 14), frontend
+  second, whenever the user chooses to deploy it.
+
+-------------------------------------------------------------------------------------------------------
+P1-B8 ACTIVATION  -  NO-GO
+-------------------------------------------------------------------------------------------------------
+  STOP_P1_B8_ACTIVATION_REQUIRES_SERVER_IDENTITY_BOUNDARY
+
+  webapp.access ANYONE_ANONYMOUS, webapp.executeAs USER_DEPLOYING; no runtime .gs calls
+  Session.getActiveUser; no token, secret or session check in front of any handler. The feature flag is
+  one global boolean and answers a different question from "may this caller". This is the standing
+  posture of the whole application - see design freeze 44.5 for what activation would actually change,
+  and 44.7 for the minimum safe path, whose first two steps are USER decisions.
+
+**STATUS: R10 DEPLOYED AND VERIFIED - ENVELOPE CORRECT ON THE WIRE - FRONTEND NOT DEPLOYED - PRODUCT STRATEGY NOT ENABLED - NAVIGATION NOT ENABLED - P1-B8 ACTIVATION BLOCKED ON A SERVER IDENTITY BOUNDARY.**

@@ -6350,3 +6350,171 @@ a `.psb-page` subtree. The harness is committed at `assets/tools/browser-regress
 * **No live workspace read has been made.** Only the site-universe refusal and system.health.
 * Display names remain an evidence gap; `SOURCE_MODIFIED_AT` remains unmeasurable in this deployment
   scope.
+
+
+## 44.  P1-B7F — R10 VERIFIED ON THE WIRE, AND THE DOOR P1-B8 WOULD OPEN HAS NO LOCK
+
+R10 was synced and published by the user. This round measured it and then asked the question P1-B8
+turns on. **The deployment passed every check. The activation did not, and the reason has nothing to
+do with this feature.**
+
+### 44.1  R10, by HTTP, through the same 302 every Apps Script answer takes
+
+`system.health` and `productPricing.siteUniverse.get` were called on the production `/exec` using the
+endpoint the shipped transport uses and the GET shape it builds. Both answered 200 through one
+redirect hop.
+
+```
+build_id / deployment_release / build_version   F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R10
+deployed_action_contract_version 14   required_action_list_version 12   required_action_count 44
+router_ready true   entrypoints doGet true / doPost true   missing_actions []
+mixed_deployment false   environment_mode production
+deployment_uniformity_verdict  UNIFORM - every probed owner file declares the build its manifest expects
+read_only true   db_writes 0   drive_writes 0   status_transitions 0   emails 0   demo_mutations 0
+product_strategy_enabled false   inventory_ai_plan_db_generation_enabled false
+```
+
+Three manifest rows carry this round:
+
+| file | expected | declared | |
+|---|---|---|---|
+| `63_api_v1_system_health.gs` | R10 | R10 | the release owner |
+| `72_api_v1_product_pricing_workspace.gs` | R10 | R10 | the file the fix is in |
+| `01_router.gs` | **R9** | **R9** | no route changed, so its stamp did not |
+
+**THE ROUTER ROW IS THE ONE WORTH READING.** A release moved everything around it and it stayed where
+it was, because the fix was entirely inside the envelope builder. A manifest that expects R9 and gets
+R9 is the rule working. A router quietly marched to R10 to look tidy would be the rule being kept
+quiet, and `mixed_deployment` would have had nothing to say about it either way.
+
+`workspace_module_build` reads `...R6-R5` and **that is not 72_ four rounds behind**: the field is
+bound to `SIR_BUILD_VERSION_` in 60_ Inventory Replenishment. The same field nearly produced the wrong
+conclusion in P1-B7D and is recorded here for the same reason.
+
+### 44.2  The envelope, on the wire
+
+```
+meta.action          productPricing.siteUniverse.get      <- the fix, in production
+data.schema.action   productPricing.siteUniverse.get      <- and the two agree
+meta.build           F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R10
+meta.refused true    meta.refusalCode FEATURE_DISABLED    errors []
+meta.dbOpened false  meta.tablesRead 0  meta.read_only true  meta.db_writes 0
+data.refusals[0]     FEATURE_DISABLED  "PRODUCT_STRATEGY_ENABLED_ is false in the deployment that answered"
+```
+
+A **structured refusal** is the one answer that neither an unrouted action nor a missing handler can
+produce, so this is also the direct proof that the route is deployed. `dbOpened false` says the gate
+ran **before the door**, measured rather than argued.
+
+### 44.3  The pair is the evidence, and only the pair
+
+The R9 body is frozen at `assets/tests/_p1b7d-exec-capture.js`; the R10 body is now frozen beside it at
+`assets/tests/_p1b7f-exec-capture-r10.js`, generated programmatically from the captured response and
+de-identified by a check that runs rather than a comment that claims. Hand **both** to the **same
+unmodified** accessor:
+
+```
+R10 body  ->  FEATURE_DISABLED   (no SOURCE_NOT_CONNECTED, no RESPONSE_ACTION_MISMATCH)
+              site-universe module state FEATURE_DISABLED, a state the board can render
+R9  body  ->  SOURCE_NOT_CONNECTED, detail RESPONSE_ACTION_MISMATCH
+```
+
+**THE THING THAT CHANGED IS THE DEPLOYMENT, NOT THE TEST.** One accessor, one call, two wire bodies,
+two outcomes. That is the only form of evidence this round accepts for *fixed in production*, and it
+is why the R9 capture must never be edited into agreement: the contrast is the proof.
+
+The refusal that arrives is also demonstrably **the server's**. The client has a `FEATURE_DISABLED` of
+its own - the capability mirror refuses before sending, so a disabled feature costs zero requests - and
+it carries a different sentence on purpose. The sentence observed above exists nowhere in the client.
+
+### 44.4  The site universe did not drift, and that was proved by experiment
+
+The user's R10 readback reported `fp=CA0BB90F len=7273`; P1-B6 froze `fp=D53C96CE len=7272`. **Two
+different fingerprints is exactly what a drift question looks like**, and comparing ten row counts by
+eye is how one gets answered badly.
+
+So the report was frozen at `assets/tests/_p1b7f-readback-r10.js` and the only two fields a redeploy
+legitimately changes - the endpoint build stamp and the read timestamp - were rolled back to their
+P1-B6 values and the report re-serialised:
+
+```
+R10 as captured      len 7273   fp CA0BB90F
+rolled back to R9    len 7272   fp D53C96CE      <- P1-B6, exactly
+```
+
+**Not one byte of the universe moved across the envelope fix.** The whole difference is one character:
+`R9` became `R10`. This covers the fields nobody thought to check, which is the half that a field-by-
+field comparison always misses. Ten sites, 495 membership rows, table fingerprint `2AF82658`, verdict
+`P1_B6_SITE_UNIVERSE_READY`, `read_only true`, writes / writer_calls / sheets_created / rows_modified
+all 0, the flag false and **not written by the readback**, and `SOURCE_MODIFIED_AT` still recorded as
+an evidence gap rather than quietly retired.
+
+### 44.5  P1-B8 GO/NO-GO — `STOP_P1_B8_ACTIVATION_REQUIRES_SERVER_IDENTITY_BOUNDARY`
+
+The question is whether production can tell **who is calling**. It cannot, and the manifest settles it
+before any code is read:
+
+```json
+"webapp": { "executeAs": "USER_DEPLOYING", "access": "ANYONE_ANONYMOUS" }
+```
+
+Published to **anyone, anonymously**, executing as the **deploying owner**. Apps Script cannot name an
+anonymous caller, so `Session.getActiveUser()` would return an empty string even if something asked -
+and nothing does: **no runtime `.gs` file calls it**, the router has no token, bearer, shared secret or
+session check in front of any handler, and `00_config.gs` has recorded the position since P0 §13.1:
+*no RBAC, no server-side identity, `created_by` client-asserted, Login/RBAC scheduled for P2-A.*
+
+**WHAT MUST NOT BE MISTAKEN FOR AUTHORIZATION**, each checked:
+
+| looks like a boundary | what it actually is |
+|---|---|
+| hidden navigation | a UI decision; the staged registry is not reached by an HTTP caller |
+| `PRODUCT_STRATEGY_ENABLED_` | one **global** boolean: it answers *is this feature on*, never *may this caller use it* |
+| `created_by` in a payload | a string the client chose |
+| `caller_probe` in health | a **deployment** probe. It names an action list, never a user |
+| knowing the `/exec` URL | the URL is the access grant, which is the finding, not the control |
+| `localStorage` / a frontend button | in the browser, where the caller writes the rules |
+| the scope allowlist in `00_config.gs` | a control over **which data** a write may touch. Real, server-owned, and a different axis entirely - it constrains the blast radius of a caller it cannot identify |
+
+**THE HONEST FRAMING, BECAUSE IT CHANGES WHAT SHOULD BE DONE ABOUT IT.** This is not a hole P1-B8 would
+open; it is the standing posture of the whole Operation System, and every shipped feature already
+answers anonymously. What activation would change is the **content** behind that unlocked door: pricing
+and margin by site is a different sensitivity class from what is served today. That is a business
+decision about disclosure, and it is the user's to make - it is not a regression this round introduces
+and it must not be presented as one.
+
+**THE VERDICT IS NO-GO**, and the flag stays false.
+
+### 44.6  Why the GO/NO-GO is a test and not a paragraph
+
+`assets/tests/deployment-r10-activation-boundary-p1-b7f.test.js` §G asserts the boundary's **absence**,
+one named fact at a time, each message saying what to do when the assertion fails. Written as prose,
+the conclusion goes stale the first time somebody adds a login and forgets what it was blocking.
+Written as assertions, **the day it stops being true is the day the suite goes red** - which is the
+signal to re-run the GO/NO-GO, not a failure to be silenced. A mutant restricts the Web App audience
+and another adds a session lookup to the router; both are caught, so the section is reading production
+rather than remembering a conclusion.
+
+### 44.7  The minimum safe activation, for when it is authorised
+
+Not built this round, and deliberately not started: **a design whose first step is a deployment the
+user has not approved is a design that has already begun.** In dependency order:
+
+1. **A server-side identity that Apps Script itself asserts.** Republish the Web App as
+   `access: DOMAIN` (or `ANYONE` with sign-in) so `Session.getActiveUser().getEmail()` is non-empty.
+   This is a **deployment change and a user-owned decision**, and it affects **every existing page**,
+   so it is a scheduled change with its own verification, never a side effect of a feature round.
+2. **A server-owned operator allowlist**, in `00_config.gs`, beside the flag - exact addresses, no
+   wildcard, **empty means nobody**. Fail-closed is the only safe default for a list whose purpose is
+   to be narrow. This is the same shape as the AI Plan scope allowlist, which is the precedent worth
+   copying because it is already proven in this codebase.
+3. **Two conditions, not one**: the flag true **and** the caller on the list, checked in the handler
+   **before the spreadsheet is opened**, with a distinct refusal code (`NOT_AUTHORIZED`) so a refused
+   person and a disabled feature are never the same fact.
+4. **A test that proves an unauthorised caller is refused before `dbOpened`**, plus mutants for an
+   empty allowlist that lets everyone through, a check that runs after the read, and a refusal code
+   that collapses the two cases.
+5. Only then: controlled activation, live read-only acceptance, and an immediate off switch.
+
+**Steps 1 and 2 are USER decisions, not agent work.** Step 1 in particular changes who can reach the
+whole application, and nothing about Product Strategy justifies making that call on the user's behalf.
