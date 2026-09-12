@@ -586,9 +586,13 @@ function mutGs(label, from, to, probe) {
   else { mutSurvived++; console.log('  MUTANT SURVIVED — ' + label); }
 }
 
+/* P1-B7E — the anchor quotes the flag check together with the envelope call beneath it,
+   which is what makes it specific: `if (io.flagEnabled() !== true) {` appears twice in 72_,
+   once per handler, and that is the point. ppwEnvelope_ now takes the action it answers for
+   as its first argument, so the anchor moved with the call. The rule is unchanged. */
 mutGs('M1 the flag is checked after the table is read, so a disabled feature touches the database',
-  "    if (io.flagEnabled() !== true) {\n      return ppwEnvelope_(true,\n        ppwSiteUniverseRefused_('FEATURE_DISABLED',",
-  "    if (false) {\n      return ppwEnvelope_(true,\n        ppwSiteUniverseRefused_('FEATURE_DISABLED',",
+  "    if (io.flagEnabled() !== true) {\n      return ppwEnvelope_(PPW_SITE_UNIVERSE_ACTION_, true,\n        ppwSiteUniverseRefused_('FEATURE_DISABLED',",
+  "    if (false) {\n      return ppwEnvelope_(PPW_SITE_UNIVERSE_ACTION_, true,\n        ppwSiteUniverseRefused_('FEATURE_DISABLED',",
   function (ctx) { var r = runUniverse({ flag: false }, ctx); return r.__log.opens > 0; });
 
 mutGs('M2 a blank company becomes an offered option',

@@ -857,3 +857,99 @@ DEPLOYMENT ORDER — PROVED, NOT ASSERTED
   rollback reports one contract version rather than a list of missing actions.
 
 **STATUS: PAGE INSTALLED AND UNREACHABLE · NOT PUSHED · NO NEW APPS SCRIPT SOURCE · NO DEPLOYMENT VERSION CREATED · FRONTEND NOT DEPLOYED · PRODUCT STRATEGY NOT ENABLED · NAVIGATION NOT ENABLED.**
+
+
+---
+
+## Entry — 2026-09-12 · PRODUCT-STRATEGY-P1-B7E · R10 envelope action contract correction
+
+```
+Release ID:                  PSB-2026-09-12-p1-b7e-envelope-action
+Environment:                 (none — NOT DEPLOYED, NOT PUSHED)
+Git branch:                  feature/product-strategy-board-p0
+PRE  HEAD:                   42fb04c25b7679c2c6d879d2d0bceb8e0a5bff6e   (== origin at PRE)
+Apps Script sync:            REQUIRED — see package below. NOT PERFORMED by the agent.
+Web App deployment:          NOT CREATED
+Frontend deployment:         NOT PERFORMED
+Feature flag:                PRODUCT_STRATEGY_ENABLED_ = false          (unchanged)
+Navigation:                  NOT ENABLED (staged, enabled:false)
+Build/release pin:           F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R10          (was R9)
+Action contract:             14  (UNCHANGED — no action added, renamed or removed)
+Required action list:        12, 44 actions  (UNCHANGED)
+Router:                      01_router.gs UNCHANGED, stamp stays R9
+```
+
+### Deployed evidence accepted (P1-B7D — read from the production /exec, by HTTP)
+
+```
+transport   GET -> 302 -> script.googleusercontent.com/macros/echo -> 200
+            system.health 17,934 bytes · productPricing.siteUniverse.get 1,061 bytes
+build/deployment/router/health   F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9
+contract 14 · required list 12 · 44 actions · transport contract 1 · environment production
+router_ready true · doGet/doPost true · missing_actions [] · mixed_deployment false
+23 non-optional owners all matches_expected · verdict UNIFORM
+read_only true · db_writes 0 · drive_writes 0 · status_transitions 0 · emails 0 · demo_mutations 0
+siteUniverse.get ROUTED · FEATURE_DISABLED · dbOpened false · tablesRead 0
+UNKNOWN_ACTION 0 · handler undefined 0
+```
+
+**NOT the same evidence as the P1-B6 editor readback**, which called the handler directly and could
+prove neither the route nor the envelope the browser receives.
+
+### The defect this release corrects
+
+The deployed R9 answered `productPricing.siteUniverse.get` with `meta.action =
+productPricing.workspace.get`. The shipped accessor rejects that (`RESPONSE_ACTION_MISMATCH` →
+`SOURCE_NOT_CONNECTED`), so the site menu could never have loaded on any path. Captured, de-identified
+and frozen at `assets/tests/_p1b7d-exec-capture.js`; a suite asserts the capture still reproduces it.
+
+-------------------------------------------------------------------------------------------------------
+APPS_SCRIPT_SYNC_REQUIRED  —  **TWO FILES, IN THIS ORDER**
+-------------------------------------------------------------------------------------------------------
+      1. 72_api_v1_product_pricing_workspace.gs    ppwEnvelope_(action, …) + 8 call sites + R10 stamp
+      2. 63_api_v1_system_health.gs                release R10, own stamp R10, manifest rows for
+                                                   63_ and 72_ -> R10
+
+  Then create a NEW Web App VERSION.
+
+  DIAGNOSTIC PINS — these are NOT runtime and are only needed if that diagnostic is going to be run:
+      TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3.gs        two build pins -> R10
+      TEMP_S1_POSITIVE_RESIDUAL_READINESS_CENSUS.gs    one build pin  -> R10
+
+  DO NOT re-paste 00_config.gs (unchanged, R7), 01_router.gs (unchanged, R9) or either readback.
+  Re-pasting an unchanged file is not harmful and is not free: it is another chance to paste the wrong
+  one, and the manifest is what proves a sync, not the number of files touched.
+
+  ORDER: 72_ before 63_, because 63_'s manifest declares what 72_ must report. Between the two saves
+  the project is momentarily inconsistent — which is invisible to users, because a deployment serves
+  an IMMUTABLE VERSION and the version is created after both saves. That is the whole safety property
+  of this step: SYNCING IS NOT DEPLOYING.
+
+-------------------------------------------------------------------------------------------------------
+FRONTEND_DEPLOY_REQUIRED  —  **NO**
+-------------------------------------------------------------------------------------------------------
+  No client file changed behaviourally this round. The stylesheet lost five leaking rules inside media
+  queries — a fix to an unshipped page's sheet — and the P1-B7 frontend package has not been deployed
+  yet in any case. When it is deployed, the ordering rule from P1-B7 still holds and is still satisfied:
+  Apps Script first (the deployment already serves contract 14), frontend second.
+
+-------------------------------------------------------------------------------------------------------
+ROLLBACK
+-------------------------------------------------------------------------------------------------------
+  Apps Script: re-publish the previous Web App version (R9). Nothing in the browser pins R10 — the
+  action contract is still 14 — so a rollback to R9 breaks no page. It restores the envelope defect,
+  which only affects a feature that is switched off.
+  Repo: the commit before this one.
+
+-------------------------------------------------------------------------------------------------------
+VERIFICATION AFTER THE NEXT SYNC  (five items)
+-------------------------------------------------------------------------------------------------------
+      1. editor: the action contract is still 14 and the two module stamps read R10
+      2. RUN_P1_SITE_UNIVERSE_READBACK() — a new readback on R10
+      3. /exec: productPricing.siteUniverse.get returns a structured FEATURE_DISABLED whose
+         meta.action is productPricing.siteUniverse.get
+      4. that body, through the production accessor, must yield FEATURE_DISABLED — NOT
+         SOURCE_NOT_CONNECTED
+      5. /exec system.health: build R10, contract 14, mixed_deployment false
+
+**STATUS: ENVELOPE CORRECTED · R10 PREPARED · NOT PUSHED · APPS SCRIPT NOT SYNCED · NO DEPLOYMENT VERSION · FRONTEND NOT DEPLOYED · PRODUCT STRATEGY NOT ENABLED · NAVIGATION NOT ENABLED.**

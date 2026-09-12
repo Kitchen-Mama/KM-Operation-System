@@ -5799,3 +5799,57 @@ cheap proof is `system.health`; display names remain an evidence gap; navigation
 must not be enabled before the action is deployed. **NEXT:** push, sync + deploy Apps Script, then
 the P1-B8 acceptance matrix — items 3, 4 and 5 first, because they are the regression surface this
 round created and they need no activation.
+
+
+---
+
+## P1-B7D / P1-B7E — THE DEPLOYED /exec PROVED R9, AND PROVED THE FEATURE COULD NOT WORK  (2026-09-12)
+
+**THE PRODUCTION WEB APP WAS CALLED, TWICE, READ-ONLY.** `system.health` and
+`productPricing.siteUniverse.get`, by HTTPS through the 302 to the googleusercontent echo target every
+Apps Script answer takes. The deployment serves **R9**, action contract **14**, required list **12**,
+44 actions, `router_ready`, `doGet`/`doPost`, `missing_actions []`, **`mixed_deployment false` with 23
+non-optional owners all matching**, `environment production`, and every write counter zero. The new
+action **is routed**: structured `FEATURE_DISABLED`, `dbOpened false`, `tablesRead 0`, zero
+UNKNOWN_ACTION, zero undefined handlers. *This is a different thing from the P1-B6 editor readback,
+which called the handler directly and could not prove a route existed.*
+
+**AND THE SAME TWO REQUESTS FOUND A DEFECT NO SUITE COULD.** `ppwEnvelope_` hard-coded
+`action: PPW_ACTION_`, so every site-universe response — refusal, success and exception alike — said
+`meta.action = productPricing.workspace.get` while `data.schema.action` said siteUniverse. The shipped
+accessor requires those to agree: running the real captured body through the real accessor gives
+**RESPONSE_ACTION_MISMATCH → SOURCE_NOT_CONNECTED**. The board would have said "not connected" over a
+response that had arrived — the exact failure that validator exists to prevent, produced by the
+validator being right. **The P1-B6 suites passed throughout because their envelopes were hand-written
+and their `meta.action` was what I expected the server to send.** *A fixture encodes its author's
+assumption unless something pins it to what the server actually does.* The real body is now a frozen
+contract fixture, and a suite asserts it **still reproduces the old defect** — evidence quietly updated
+to agree with current code proves nothing.
+
+**THE FIX MAKES THE ACTION AN INPUT AND THEN REFUSES TO TRUST IT.** `ppwEnvelope_(action, …)`, first
+parameter, no default (a default is the same defect with a longer fuse); checked against the file's own
+two constants; stamped AFTER the caller's meta so a `{action:…}` cannot win. Eight call sites, four per
+handler — and `apiVersion` appears exactly once in 72_, which is the proof no other path builds a
+response. **The client validator was NOT relaxed and does NOT fall back to `schema.action`**: it is the
+instrument that caught this.
+
+**R9 → R10.** R9 is deployed and captured, so the correction may not wear its id. 72_, 63_, the release,
+two manifest rows, the append-only ledger and three diagnostic pins move. **`01_router.gs` deliberately
+stays R9** — no action was added — and so does the **action contract at 14**: a contract version counts
+actions, and bumping it would tell every browser its deployment was too old for a reason that is not
+about what the deployment can do.
+
+**A REAL BROWSER, AND IT EARNED ITS PLACE ON THE FIRST RUN.** Headless Chrome against the real shell
+over HTTP. P1-B7's scoping rewrote selectors at column zero; **five rules inside `@media` blocks were
+missed**, including `.filter-group` below 1100px and `.kmf-panel { display: none }` in `@media print`,
+which hid the shared popover on **every printed page in the application**. The source assertion passed;
+so did the browser's own CSSOM scan, because the Home page has no `.filter-group` — *a leak that only
+reaches other pages looks like no leak at all.* What worked was measuring the shell with the sheet on
+and off and requiring identity: no element need be present and no value known in advance — which
+mattered, because the value I first asserted was wrong. **25/25 at three viewports**, zero console
+errors, zero Product Strategy requests. Harness committed at `assets/tools/browser-regression/`.
+
+**NOT DONE:** the board has still never been rendered in a browser WITH ROWS (§7 verifies the shell
+with the feature off); no live workspace read; display names and `SOURCE_MODIFIED_AT` remain evidence
+gaps. **NEXT:** sync 72_ and 63_, create an R10 Web App version, then re-verify by /exec — health at
+R10 with contract 14 and mixed false, and a site-universe refusal the accessor now digests.

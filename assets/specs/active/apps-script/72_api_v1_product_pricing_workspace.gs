@@ -56,7 +56,11 @@
 // source discriminator (§八), the per-table schema fingerprint and the read timestamp. Nothing was
 // synced at R7 either, so this supersedes a deployment candidate rather than an actual deployment -
 // but two DIFFERENT trees must never both claim one release id, which is the whole job of the id.
-var PPW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9';
+// P1-B7E - R10. The envelope named ONE action while this file served two, so every
+// productPricing.siteUniverse.get response published meta.action = workspace.get and the shipped
+// accessor rejected all of them. R9 is deployed and its behaviour is captured as evidence, so the
+// correction gets its own id: an id may not name two trees.
+var PPW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R10';
 
 var PPW_ACTION_ = 'productPricing.workspace.get';
 // P1-B3 §8 — THE RESPONSE SHAPE'S OWN VERSION, separate from the module build and from the deployment
@@ -244,10 +248,45 @@ function ppwRefusal_(code, detail, subject) {
     subject: subject === undefined ? null : subject };
 }
 
-function ppwEnvelope_(ok, data, errors, meta) {
-  var m = { apiVersion: '1', source: 'workspace', action: PPW_ACTION_, workspace: 'productPricing',
+/**
+ * THE ACTIONS THIS FILE MAY CLAIM TO HAVE SERVED. Resolved at CALL time, not at load time:
+ * PPW_SITE_UNIVERSE_ACTION_ is declared nine hundred lines below, so a top-level array built here would
+ * capture undefined for it. A function body runs when a request arrives, by which point the whole file
+ * has been evaluated.
+ */
+function ppwEnvelopeActions_() { return [PPW_ACTION_, PPW_SITE_UNIVERSE_ACTION_]; }
+
+/**
+ * THE ONE ENVELOPE, AND IT NOW HAS TO BE TOLD WHICH ACTION IT IS ANSWERING FOR (P1-B7E §4).
+ *
+ * It used to hard-code `action: PPW_ACTION_`, which was true while this file served one action and
+ * became a lie the moment it served two: every productPricing.siteUniverse.get response — refusal,
+ * success and exception alike — published meta.action = 'productPricing.workspace.get' while
+ * data.schema.action said siteUniverse. The shipped accessor requires those to agree, so it rejected
+ * every one of them with RESPONSE_ACTION_MISMATCH and reported SOURCE_NOT_CONNECTED over an answer that
+ * had arrived. Measured on the deployed /exec, not inferred.
+ *
+ * `action` IS THE FIRST PARAMETER AND THERE IS NO DEFAULT. A default would be the same defect with a
+ * longer fuse — the one call site that forgot to pass it would be the one nobody tested.
+ *
+ * AND IT IS NOT TRUSTED. It must be one of this file's own constants, so no request body or query string
+ * can reach this field, and there is no third-action fallback for one to grow into. The allowlist is
+ * checked before anything is built, and the action is stamped AFTER the caller's meta is merged rather
+ * than before — otherwise a caller passing `{ action: … }` would quietly win and the allowlist would be
+ * advice rather than a rule.
+ */
+function ppwEnvelope_(action, ok, data, errors, meta) {
+  if (ppwEnvelopeActions_().indexOf(action) < 0) {
+    // A programming error, not a runtime condition: every call site passes a module constant. It is
+    // thrown rather than defaulted because an envelope that guessed its own action is what this
+    // function is being repaired for.
+    throw new Error('ppwEnvelope_: action must be one of this module\'s own constants, got '
+      + JSON.stringify(action === undefined ? null : action));
+  }
+  var m = { apiVersion: '1', source: 'workspace', workspace: 'productPricing',
     build: PPW_BUILD_VERSION_, read_only: true, db_writes: 0, cached: false };
   if (meta) { for (var k in meta) m[k] = meta[k]; }
+  m.action = action;          // LAST, so a caller's meta cannot rename the action it was served by
   return { success: !!ok, data: ok ? (data === undefined ? null : data) : null, meta: m,
     errors: ok ? [] : (errors || []) };
 }
@@ -1114,7 +1153,7 @@ function handleProductPricingWorkspaceGet_(body, io) {
     // control; a control that runs after the data has been read has already failed at the only job it had.
     if (io.flagEnabled() !== true) {
       var reqD = ppwValidateRequest_(payload);
-      return ppwEnvelope_(true,
+      return ppwEnvelope_(PPW_ACTION_, true,
         ppwRefusedData_(reqD, [ppwRefusal_('FEATURE_DISABLED',
           'PRODUCT_STRATEGY_ENABLED_ is false in the deployment that answered', null)]),
         [], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: 0, dbOpened: false,
@@ -1124,7 +1163,7 @@ function handleProductPricingWorkspaceGet_(body, io) {
     // ---- §2/§3 THE REQUEST AND THE COMPLETE SCOPE, BEFORE ANY TABLE IS TOUCHED. -------------------
     var req = ppwValidateRequest_(payload);
     if (!req.ok) {
-      return ppwEnvelope_(true, ppwRefusedData_(req, []),
+      return ppwEnvelope_(PPW_ACTION_, true, ppwRefusedData_(req, []),
         [], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: 0, dbOpened: false,
           refused: true, refusalCode: req.refusals[0].code });
     }
@@ -1140,13 +1179,13 @@ function handleProductPricingWorkspaceGet_(body, io) {
 
     // THE CLOCK IS READ HERE AND PASSED IN, so the builder stays a pure function of its arguments.
     var data = ppwWorkspaceBuild_(tables, req, io.now());
-    return ppwEnvelope_(true, data, [], { requestId: reqId, serverDurationMs: (io.now() - t0),
+    return ppwEnvelope_(PPW_ACTION_, true, data, [], { requestId: reqId, serverDurationMs: (io.now() - t0),
       tablesRead: readCount, dbOpened: true, refused: data.refusals.length > 0,
       refusalCode: data.refusals.length ? data.refusals[0].code : null });
   } catch (e) {
     var code = (e && (e.safetyToken || e.apiCode || e.validationCode))
       || 'PRODUCT_PRICING_WORKSPACE_BUILD_FAILED';
-    return ppwEnvelope_(false, null,
+    return ppwEnvelope_(PPW_ACTION_, false, null,
       [{ code: code, message: String((e && e.message) || e), details: (e && e.schemaDetail) || null }],
       { requestId: reqId, serverDurationMs: (io.now() - t0), refused: true, refusalCode: code });
   }
@@ -1433,7 +1472,7 @@ function handleProductPricingSiteUniverseGet_(body, io) {
     //      reason: there is no RBAC here, so this gate IS the access control, and a gate that runs after
     //      the read has already failed at the only job it had.
     if (io.flagEnabled() !== true) {
-      return ppwEnvelope_(true,
+      return ppwEnvelope_(PPW_SITE_UNIVERSE_ACTION_, true,
         ppwSiteUniverseRefused_('FEATURE_DISABLED',
           'PRODUCT_STRATEGY_ENABLED_ is false in the deployment that answered', null),
         [], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: 0, dbOpened: false,
@@ -1451,7 +1490,7 @@ function handleProductPricingSiteUniverseGet_(body, io) {
     } catch (schemaErr) {
       // A MISSING OR MALFORMED TABLE IS NOT AN EMPTY ONE (section 5.1). Empty is the one answer a caller
       // responds to by moving on, and a table nobody could read has established nothing at all.
-      return ppwEnvelope_(true,
+      return ppwEnvelope_(PPW_SITE_UNIVERSE_ACTION_, true,
         (function () {
           var d = ppwSiteUniverseRefused_('SOURCE_TABLE_UNREADABLE',
             String((schemaErr && schemaErr.message) || schemaErr), spec.name);
@@ -1467,13 +1506,13 @@ function handleProductPricingSiteUniverseGet_(body, io) {
 
     // THE CLOCK IS READ HERE AND PASSED IN, so the builder stays a pure function of its arguments.
     var data = ppwSiteUniverseBuild_(rows, io.now(), capped);
-    return ppwEnvelope_(true, data, [], { requestId: reqId, serverDurationMs: (io.now() - t0),
+    return ppwEnvelope_(PPW_SITE_UNIVERSE_ACTION_, true, data, [], { requestId: reqId, serverDurationMs: (io.now() - t0),
       tablesRead: 1, dbOpened: true, refused: data.refusals.length > 0,
       refusalCode: data.refusals.length ? data.refusals[0].code : null });
   } catch (e) {
     var code = (e && (e.safetyToken || e.apiCode || e.validationCode))
       || 'PRODUCT_PRICING_SITE_UNIVERSE_BUILD_FAILED';
-    return ppwEnvelope_(false, null,
+    return ppwEnvelope_(PPW_SITE_UNIVERSE_ACTION_, false, null,
       [{ code: code, message: String((e && e.message) || e), details: (e && e.schemaDetail) || null }],
       { requestId: reqId, serverDurationMs: (io.now() - t0), refused: true, refusalCode: code });
   }

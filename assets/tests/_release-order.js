@@ -600,7 +600,12 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // P1-B6 - productPricing.siteUniverse.get. A router ACTION was added, so 01_router.gs, 72_ and 63_
   // all changed and all three module stamps rotate; the deployment release moves with them because a
   // new action means a new Apps Script sync and a new Web App version. APPEND-ONLY, at the end.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9',
+  // P1-B7E - the deployed R9 answered the new action with meta.action = workspace.get, so the one
+  // accessor rejected every site-universe response it ever sent. The fix is inside 72_'s envelope
+  // builder: no action added, no router change, contract still 14. R9 is deployed and captured as
+  // evidence, so the correction may not wear its id. APPEND-ONLY, at the end.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R10'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

@@ -6186,3 +6186,167 @@ activation P1-B8 owns.
 
 **#3, #4 and #5 are the ones to run first and they need no activation at all.** They are the regression
 surface this round actually created: a stylesheet and nine scripts loaded by every page.
+
+
+---
+
+## 43.  P1-B7D / P1-B7E — THE DEPLOYED /exec, AND THE DEFECT ONLY IT COULD FIND
+
+### 43.1  The deployed evidence (P1-B7D §2) — a different thing from the editor readback
+
+**These are not the same evidence and the ledger keeps them apart.** The P1-B6 readback ran in the
+Apps Script editor and called `handleProductPricingSiteUniverseGet_` directly: it proves the handler
+exists and behaves. It cannot prove the route reaches it, and it never touches the envelope the browser
+receives. This is the first evidence taken through the production Web App.
+
+```
+endpoint          OP_DB_API_BASE_URL (assets/js/api/operation-system-db-api.js) — the same constant
+                  every production read uses. Masked here; never printed in full.
+transport         HTTPS GET -> 302 -> script.googleusercontent.com/macros/echo -> 200
+                  (the first hop's Location is the ECHO target, not accounts.google.com, so the
+                  deployment served this read without a login)
+system.health     17,934 bytes      productPricing.siteUniverse.get     1,061 bytes
+
+build_id / deployment_release / router_build / system_health_module_build
+                                    F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9
+deployed_action_contract_version    14        required_action_list_version   12
+required_action_count               44        transport_contract_version      1
+environment_mode                    production
+router_ready true · entrypoints { doGet: true, doPost: true } · missing_actions []
+mixed_deployment false · 23 non-optional owners all matches_expected
+  verdict: "UNIFORM — every probed owner file declares the build its manifest entry expects, AND the
+            writer and lifecycle resolve identically at every known schema generation"
+read_only true · db_writes 0 · drive_writes 0 · status_transitions 0 · emails 0 · demo_mutations 0
+product_strategy_enabled false — reported BY THE DEPLOYMENT, not read from the repository
+
+siteUniverse.get  routed · structured refusal FEATURE_DISABLED · dbOpened false · tablesRead 0
+                  UNKNOWN_ACTION 0 · handler undefined 0 · schema.contract_version 1
+```
+
+**A FIELD THAT ALMOST PRODUCED THE WRONG CONCLUSION, written down because the next reader will meet
+it too.** `system.health` reports `workspace_module_build: …R6-R5`, which reads like the Product
+Pricing workspace being four rounds behind. It is not: 63_ binds that field to `SIR_BUILD_VERSION_`,
+the **Inventory Replenishment** workspace, which is R5 in the repository and expects R5 in the
+manifest. 72_ declares R9 and matches. A reader chasing "the workspace module" during a Product
+Strategy verification lands on exactly the opposite conclusion.
+
+### 43.2  The defect: one envelope, two actions, one name (P1-B7E §3)
+
+`ppwEnvelope_` hard-coded `action: PPW_ACTION_`. True while 72_ served one action; a lie the moment it
+served two. Every `productPricing.siteUniverse.get` response — refusal, success and exception alike —
+published:
+
+```
+meta.action        = "productPricing.workspace.get"        <- the envelope's fixed idea
+data.schema.action = "productPricing.siteUniverse.get"     <- what actually answered
+```
+
+The shipped accessor requires those to agree. Running the **real captured body** through the **real
+accessor**:
+
+```
+RESPONSE_ACTION_MISMATCH  ->  SOURCE_NOT_CONNECTED  ->  site universe state SOURCE_NOT_CONNECTED
+```
+
+"Not connected", written over a response that had arrived — which is the exact failure that validator
+exists to prevent, produced by the validator being right.
+
+**WHY TWO ROUNDS OF GREEN SUITES DID NOT SEE IT.** The P1-B6 envelopes were written by hand, and their
+`meta.action` was set to what the author expected the server to send. Both sides agreed in the suite
+and disagreed in production. *A fixture encodes its author's assumption unless something pins it to
+what the server actually does.* So the assumption is now pinned: `assets/tests/_p1b7d-exec-capture.js`
+is the de-identified real body, and a suite asserts it **still reproduces the old defect**. An evidence
+file quietly updated to agree with the current code proves nothing at all.
+
+### 43.3  The fix, and the two things it refuses to do
+
+`ppwEnvelope_(action, ok, data, errors, meta)` — the action is the **first** parameter and has **no
+default**, because a default is the same defect with a longer fuse: the one call site that forgot would
+be the one nobody tested. Then it is not trusted:
+
+* it must be one of this file's own constants (`ppwEnvelopeActions_()`, resolved at call time because
+  `PPW_SITE_UNIVERSE_ACTION_` is declared nine hundred lines below the function);
+* it is stamped **after** the caller's meta is merged, so a caller passing `{ action: … }` cannot win —
+  otherwise the allowlist would be advice rather than a rule;
+* no handler reads an action from a request body, and a smuggled `payload.action` changes nothing.
+
+**Eight call sites, four per handler, and the proof that is all of them:** `apiVersion` — the
+envelope's signature field — appears exactly **once** in 72_, so nothing else assembles a response.
+Each handler's body contains exactly four `return ppwEnvelope_(` and no hand-built object.
+
+| | workspace.get | siteUniverse.get |
+|---|---|---|
+| flag refused | `PPW_ACTION_` | `PPW_SITE_UNIVERSE_ACTION_` |
+| second refusal | request invalid | table unreadable |
+| success | ✓ | ✓ |
+| exception | ✓ | ✓ |
+
+**TWO THINGS DELIBERATELY NOT DONE.** The client validator was not relaxed, and the client was not
+allowed to fall back to `data.schema.action`. The validator is the instrument that caught this;
+weakening it to make the symptom go away would spend the only thing that worked. Mutants for both.
+
+**An asymmetry left alone and stated instead of tidied:** the two data shapes name their action in
+different places — `provenance.action` for the workspace read, `schema.action` for the site universe.
+This round makes `meta` agree with each. Adding a `schema.action` to the workspace response for
+symmetry would change a shipped response shape for tidiness, which is a decision that deserves its own
+round.
+
+### 43.4  R9 -> R10, and what deliberately did not move
+
+R9 is deployed and measured, so the correction cannot wear its name: *an id may not name two trees.*
+
+| moves | why |
+|---|---|
+| `PPW_BUILD_VERSION_` | 72_ changed behaviourally |
+| `SYS_BUILD_VERSION_` | 63_ changed (the manifest) |
+| `SYS_DEPLOYMENT_RELEASE_` | a new sync and a new Web App version |
+| manifest rows for 63_ and 72_ | a stamp without its manifest entry reports a MIXED sync |
+| `_release-order.js` | append-only |
+| `TEMP_E3_CENSUS_BUILD_`, `R6R7_ACTIVATION_BUILD_` | held equal to the release by BP3/BP3a |
+| `S1_BUILD_` | the census refuses when its pin is not the release (M4a). One line, no logic |
+
+| stays | why |
+|---|---|
+| **`01_router.gs` — R9** | no action added, renamed or removed. The fix is inside the envelope builder. Its stamp and its manifest row both stay R9, which is the rule working rather than being kept quiet |
+| `00_config.gs` — R7 | unchanged |
+| **action contract — 14** | a contract version counts the ACTIONS a deployment serves. Bumping it would tell every browser its deployment was too old for a reason that is not about what the deployment can do — and would re-impose an ordering constraint this round does not need |
+| required action list — 12, count 44 | same |
+| the P1-B3 and P1-B6 readbacks | those files did not change |
+
+### 43.5  The browser found what the source search could not (P1-B7E §7)
+
+A real Chrome, headless, against the real shell served over HTTP — not the DOM shim. It earned its
+place on the first run.
+
+P1-B7 scoped the shared primitives by rewriting every selector that began a line at column zero. **Five
+rules live inside `@media` blocks, indented, and were missed**: `.filter-group` below 1100px (most
+laptops), `.kmf-panel` at 640 and 820, `.kmf-trigger` at 820, and `.kmf-panel { display: none }` in
+`@media print` — which hid the shared popover on **every printed page in the application**.
+
+The source assertion passed, because it searched for `\n.selector {`. The browser's own CSSOM scan
+**also** passed, for a reason worth keeping: it asks whether a selector matches anything in the
+document, and the Home page contains no `.filter-group` — *a leak that only reaches other pages looks
+like no leak at all.*
+
+**What worked: measure the shell, disable the stylesheet, measure again, require identity.** It needs
+no element present and no value known in advance — which mattered, because the value this round first
+asserted for `.filter-group` was simply wrong (160px; it is 140px at that viewport, from a rule nobody
+had read).
+
+Custom properties get their own rule, because a variable is not a style: the sheet may **add** a name
+the shell does not define and may not **redefine** one it does. Of 70 declared on `:root`, 22 are its
+own and 48 are the base.css mirror — identical in the live cascade, the same fact P1-B2A pins in
+source.
+
+**Result: 25/25 at 1280x900, 1000x800 and 760x900.** Zero console errors, zero unhandled rejections,
+zero Product Strategy requests, capability mirror false, `showSection('product-strategy')` changes
+nothing, the mount point present and empty, and no rule in the board's sheet reaching anything outside
+a `.psb-page` subtree. The harness is committed at `assets/tools/browser-regression/`.
+
+### 43.6  Still not proven
+
+* **The board has still never been rendered in a browser with rows.** §7 verifies the shell with the
+  feature OFF. Drawing the chart needs the controlled activation P1-B8 owns.
+* **No live workspace read has been made.** Only the site-universe refusal and system.health.
+* Display names remain an evidence gap; `SOURCE_MODIFIED_AT` remains unmeasurable in this deployment
+  scope.

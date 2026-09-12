@@ -72,7 +72,7 @@
  * ================================================================================================================
  */
 
-var S1_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9';   // the build this census was written against
+var S1_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R10';  // the build this census was written against
 var S1_CONTRACT_ = 'BATCH S1 — positive-residual + submit readiness, read only, zero writes';
 
 /** The scope axes are ALWAYS all four. A census that matched on three would report a candidate that the

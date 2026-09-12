@@ -74,7 +74,7 @@
 // the deployment identity it refuses to run against, and the manifest suite holds them equal to
 // SYS_DEPLOYMENT_RELEASE_ (BP3) and to each other (BP3a) precisely so a lagging pin cannot refuse a
 // correctly synced project.
-var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9';
+var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R10';
 
 /** Read-only row reader. The Sheet object stays inside this function — the caller gets values, never a writer. */
 // R6-R3 §2 — the OPTIONAL third argument is a metrics sink. §2 requires the diagnostic to report how many
@@ -7808,7 +7808,7 @@ function RUN_R6R7_CONTROLLED_NO_ACTION_ACTIVATION_MANIFEST() {
 // own scope gate, and that refusal is CORRECT - the controlled no-action activation it proves is
 // complete, and its scope is not one a generation may write any more. The pin follows the release so
 // that the refusal a reader sees names the SCOPE rather than a stale build.
-var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9';
+var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R10';
 
 // ================================================================================================================
 // THE BROWSER HALF. Run in the page console; nothing here writes, and nothing here is a substitute for the
