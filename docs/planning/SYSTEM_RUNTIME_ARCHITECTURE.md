@@ -795,3 +795,25 @@ reportable without ids, urls or keys. Pinned by execution in
 Time-driven triggers (gap materialization, weekly recommendation, automation schedule, job
 continuations) do **not** go through `/exec`. A deployment access change does not touch them, and an
 identity boundary on `/exec` will never cover them. They already run as a named Google account.
+
+
+### 15.7  SEC-A1 — four runtime limits that decide the architecture  (2026-09-12)
+
+**Evidence: `docs/planning/SEC_A1_IDENTITY_PROTOTYPE_EVIDENCE.md`.** All four are from Google's own
+documentation, and together they eliminate two whole designs.
+
+| # | limit | consequence |
+|---|---|---|
+| 1 | The `doGet(e)` / `doPost(e)` event object has **no HTTP headers** - its documented fields are `queryString`, `parameter`, `parameters`, `pathInfo`, `contextPath`, `contentLength`, `postData` | **`Authorization: Bearer` is unreadable.** A credential must travel in the POST body |
+| 2 | `TextOutput` has **no method that sets a response header** | Apps Script can never emit `Access-Control-Allow-Credentials`, so a cross-origin credentialed `fetch` is impossible - **measured, blocked in a real browser** |
+| 3 | A web app has only `doGet` and `doPost`, so it **cannot answer `OPTIONS`** | any non-simple request is blocked at the CORS preflight. This is why the transport sends `Content-Type: text/plain` - the trick that keeps a POST preflight-free |
+| 4 | `Utilities` signs with RSA and has **no RSA verification method**. HMAC **is** computable | a Google ID token cannot be verified in-process; an **HMAC-signed assertion from a trusted gateway can** |
+
+**Limit 4 is the hinge of the whole security design.** It is why the long-term answer is a verification
+gateway rather than verification inside Apps Script, and why the authentication prototype treats the
+signature step as a replaceable seam instead of a function.
+
+`Session.getActiveUser().getEmail()` under "execute as me" is documented as returning a blank string
+**except** that the restriction *"generally does not apply if the developer... belongs to the same
+Google Workspace domain as the user"*. Google's hedge is "generally", so this remains unmeasured and
+nothing may be built on it until it is.

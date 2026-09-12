@@ -5937,3 +5937,51 @@ pages; is anyone relying on signed-out access.
 **THIS ROUND CHANGED NO RUNTIME FILE.** Documentation and one new baseline suite
 (`identity-boundary-baseline-sec-a0.test.js`, 53 assertions / 11 mutants) that pins the current posture
 so the day production stops matching it is the day it goes red.
+
+
+## SEC-A1 — BOTH IDENTITY OPTIONS FAILED TESTING; A GATEWAY IS THE ANSWER  (2026-09-12)
+
+**Evidence: `docs/planning/SEC_A1_IDENTITY_PROTOTYPE_EVIDENCE.md`.**
+
+**FOUR OFFICIAL LIMITS DECIDE THE ARCHITECTURE.** (1) The `doGet`/`doPost` event object carries **no
+HTTP headers**, so `Authorization: Bearer` is unreadable and a credential must travel in the POST body.
+(2) `TextOutput` has **no method that sets a response header**, so Apps Script can never emit
+`Access-Control-Allow-Credentials`. (3) A web app has only `doGet`/`doPost` and cannot answer `OPTIONS`,
+which is why the transport sends `Content-Type: text/plain` to dodge the preflight. (4) `Utilities`
+signs with RSA and has **no RSA verification method** - though HMAC **is** computable, and that
+asymmetry is the hinge of everything.
+
+**OPTION A: `OPTION_A_NOT_COMPATIBLE_WITH_CURRENT_HOSTING` - MEASURED, NOT INFERRED.** A real headless
+Chrome against a server reproducing the Apps Script answer shape: `credentials: 'include'` **blocked**,
+POST with credentials **blocked**, `Authorization` header **blocked** at the preflight - while a control
+backend that can set its own headers answers all three. *The block is in the browser, not on Google's
+side of the wire*, which is why no disposable deployment was needed to find it. Option A also could
+never serve the external factory / warehouse / 3PL roles the user has confirmed are coming.
+
+**OPTION B IN APPS SCRIPT: `STOP_OPTION_B_SERVER_VERIFICATION_NOT_PROVEN`.** No RSA verify primitive, and
+Google documents the `tokeninfo` fallback as **"useful for debugging"**, warning it **"may be throttled"**.
+The requirement was **not** lowered to a domain-or-email check to make something pass.
+
+**RECOMMENDED - long term: Option D, a minimal verification gateway.** A small external service verifies
+the Google ID token with a real library and forwards the request with an **HMAC-signed principal
+assertion**, which Apps Script *can* verify in-process. It serves external identities, gives correct
+CORS, and leaves the 138 actions untouched until each opts in. **Cost, stated plainly: a component to
+deploy and keep alive, and a shared secret to own and rotate.** **Phase 1** for P1-B8 only:
+the same token verified via `tokeninfo`, for `productPricing.*` alone - conditional on SEC-A1b.
+**The path between them is one function**: the prototype takes an attestation source, so the swap
+changes nothing else.
+
+**BUILT AND ATTACKED THIS ROUND:** `assets/prototypes/sec-a1/sec-a1-auth-contract.js` - **not runtime,
+on no route** - with 105 assertions and 14 mutants, using real locally-generated RSA keys and genuinely
+signed JWTs. Three findings came out of the tests rather than the design: a **downed verifier needs its
+own code** (or an outage reads as a rejected caller); the **feature flag must be checked LAST** (checked
+first, `FEATURE_DISABLED` becomes a polite way of never exercising authentication); and **"known but not
+permitted" and "unknown account" must be byte-identical** to the caller, because the difference is a
+list of who works here.
+
+**WAITING ON USER:** a disposable Apps Script project and a test OAuth client (exact steps in the
+evidence doc), plus: are all phase-1 employees on `@shopkitchenmama.com`; is anyone using the system
+signed out; which external parties will need access.
+
+**ZERO RUNTIME CHANGE.** No Apps Script file, no client file, no deployment, no flag, no navigation, no
+DB/Sheets/Drive write, and no request to any Google service this round.

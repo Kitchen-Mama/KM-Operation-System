@@ -6571,3 +6571,31 @@ plan can be checked against, recomputed from the router by
 
 `PRODUCT_STRATEGY_ENABLED_` false. Navigation staged-disabled. R10 deployed and correct on the wire.
 No client file, no Apps Script file, no deployment and no flag was touched by SEC-A0.
+
+
+## 46.  SEC-A1 — P1-B8 NOW WAITS ON A COMPONENT, NOT A SETTING
+
+**Evidence: `docs/planning/SEC_A1_IDENTITY_PROTOTYPE_EVIDENCE.md`.**
+
+SEC-A0 left P1-B8 waiting for SEC-A3. SEC-A1 tested the two ways of getting there and **both pure
+options failed**, so the prerequisite has changed shape - not its size.
+
+**`access: DOMAIN` cannot reach this frontend at all.** Measured in a real headless browser: a
+cross-origin `fetch` with credentials to an Apps-Script-shaped response is blocked, because `TextOutput`
+has no method that sets `Access-Control-Allow-Credentials`. The board's own transport is the shared one,
+so this was never a Product Strategy question - it is every page's question.
+
+**A Google ID token cannot be verified inside Apps Script.** `Utilities` signs with RSA and never
+verifies. The remaining route, Google's `tokeninfo`, is documented as being for debugging.
+
+**So the long-term answer is a small verification gateway**, and the phase-1 answer for this board is
+the same Google ID token verified through `tokeninfo` for `productPricing.*` alone - two read-only
+actions, named operators, and a throttle that fails closed. Whether even that works is unmeasured.
+
+**What this does NOT change:** the board's design, its adapter contract, its shell integration, R10, or
+the fact that the flag stays false. **What it does change:** P1-B8's prerequisite is now a component
+somebody has to build and run, not a deployment checkbox - and that is a schedule fact the board's plan
+must carry honestly rather than discover later.
+
+The board remains the right first tenant for the same reason as before: **zero current users, so a first
+version of security code cannot lock anyone out.**

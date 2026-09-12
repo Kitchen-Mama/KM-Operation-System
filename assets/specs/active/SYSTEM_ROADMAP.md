@@ -562,3 +562,29 @@ without locking anyone out.**
 **Blocked until the user answers:** is the deploying account a Google Workspace account; are all users
 in that one domain; do any external Gmail / supplier / factory / 3PL people use the pages; is anyone
 relying on signed-out access. None of these may be guessed.
+
+
+### Security track update — SEC-A1 result  (2026-09-12)
+
+**Both pure options failed testing. Evidence: `docs/planning/SEC_A1_IDENTITY_PROTOTYPE_EVIDENCE.md`.**
+
+- **Option A (`access: DOMAIN`) - `OPTION_A_NOT_COMPATIBLE_WITH_CURRENT_HOSTING`.** Measured in a real
+  browser: a cross-origin credentialed `fetch` to an Apps-Script-shaped response is blocked, because
+  `TextOutput` has no method that sets `Access-Control-Allow-Credentials`. It also could never serve the
+  external factory / warehouse / 3PL roles the user has confirmed are coming.
+- **Option B inside Apps Script - `STOP_OPTION_B_SERVER_VERIFICATION_NOT_PROVEN`.** `Utilities` has no
+  RSA **verification** method, and Google documents the `tokeninfo` fallback as "useful for debugging",
+  warning it "may be throttled".
+- **NEW long-term answer: Option D, a minimal verification gateway.** Apps Script cannot verify RSA but
+  **can compute HMAC**, so a small external service verifies the Google ID token properly and hands the
+  script an HMAC-signed principal assertion it can check in-process. Serves external identities too.
+
+**Revised steps.** SEC-A1 (contract prototype + official limits + browser experiment) is **DONE**.
+SEC-A1b - measure the disposable Apps Script project: `Session.getActiveUser()` under DOMAIN, the real
+response to an unauthenticated cross-origin call, URL preservation on an access edit, and whether
+`tokeninfo` is usable at all. SEC-A2 onward are unchanged in shape; only the attestation source is
+now a decision rather than an assumption.
+
+**Blocked on USER:** a disposable Apps Script project, a test OAuth client, and three answers - are all
+phase-1 employees on `@shopkitchenmama.com`; is anyone using the system signed out; which external
+parties will need access.

@@ -374,3 +374,58 @@ not met does not start.**
 No flag changed. No navigation enabled. No deployment access or `executeAs` changed. No deployment
 created or updated. No frontend deployed. No token, secret or bypass added. No DB, Sheet or Drive
 write. No other page touched. **No runtime file of any kind was modified.**
+
+
+---
+
+# SEC-A1 ADDENDUM — BOTH OPTIONS FAILED TESTING; THE RECOMMENDATION HAS CHANGED  (2026-09-12)
+
+**Evidence: `docs/planning/SEC_A1_IDENTITY_PROTOTYPE_EVIDENCE.md`. Read that before acting on anything
+below in the original SEC-A0 text.**
+
+SEC-A0 recommended Option B and set Option A aside on the strength of a domain assumption. SEC-A1 tested
+both. **Neither survives in its pure form.** The sections above are left unedited as the record of what
+was believed on 2026-09-12; the corrections are here.
+
+## What SEC-A0 got wrong, stated plainly
+
+**EG-1 was overstated.** SEC-A0 recorded that `DOMAIN` "is not offered to consumer accounts". Google's
+manifest reference does not say that - it says only "Only users in the same domain as the deployer can
+run it". The user has since confirmed the deploying account IS a `@shopkitchenmama.com` Workspace
+account, so the question is moot for this system, but the source was misquoted and that is worth
+correcting rather than quietly dropping.
+
+**Option A's blocker is bigger than SEC-A0 described, and it was measured.** SEC-A0 inferred that a
+cross-origin credentialed fetch would fail. SEC-A1 ran it in a real headless browser against a server
+reproducing the Apps Script answer shape: `credentials: 'include'` is **BLOCKED**, POST with credentials
+is **BLOCKED**, an `Authorization` header is **BLOCKED** at the preflight - while a control backend that
+can set its own headers answers all three. The cause is `TextOutput` having no method that sets a
+response header **[OFFICIAL]**, so `Access-Control-Allow-Credentials` can never be emitted.
+Verdict: **`OPTION_A_NOT_COMPATIBLE_WITH_CURRENT_HOSTING`**.
+
+**Option B cannot be completed inside Apps Script.** `Utilities` signs with RSA and has **no method that
+verifies an RSA signature** **[OFFICIAL]**. That leaves hand-written crypto (which Google's own guidance
+warns against) or the `tokeninfo` endpoint, which Google documents as **"useful for debugging"**,
+recommends against for production, and says **"may be throttled or otherwise subject to intermittent
+errors"**. Verdict: **`STOP_OPTION_B_SERVER_VERIFICATION_NOT_PROVEN`**.
+
+**And Option A could never have been the long-term answer anyway**, for a reason that has nothing to do
+with CORS: the user has confirmed that factories, overseas warehouses and other external roles are
+coming, and they will not hold `@shopkitchenmama.com` accounts.
+
+## The revised recommendation
+
+**Long term: Option D - a minimal verification gateway.** A small external service verifies the Google
+ID token with a real library and forwards the request to `/exec` with an **HMAC-signed principal
+assertion**. Apps Script cannot verify RSA but it **can** compute HMAC, so this is the only design where
+the script verifies with a primitive it actually has. It also serves non-domain external identities and
+gives the browser correct CORS. Its cost is honest and the user's to accept: a component that must be
+deployed and kept alive, and a shared secret to own and rotate.
+
+**Phase 1: the same Google ID token, verified via `tokeninfo`, for `productPricing.*` only** - two
+read-only actions, named operators, zero current users, and a throttle that fails **closed**. Still
+conditional on SEC-A1b measuring `tokeninfo` from the disposable project.
+
+**The path between them is one function.** The prototype takes an *attestation source*; moving from
+phase 1 to the gateway swaps `tokeninfo` for `gateway` and changes nothing else - not the principal, the
+registry, the permission table, the scope check, the refusal codes or the ordering.
