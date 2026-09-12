@@ -6075,3 +6075,60 @@ question that still matters).
 
 **Unchanged:** 138 actions, no gate added to any of them; no Apps Script change; no deployment; no
 frontend release; no database, Sheets or Drive write; `PRODUCT_STRATEGY_ENABLED_` is `false`.
+
+---
+
+## P1-B8A — scope correction, security deferral, CSS containment
+
+**State:** Product Strategy is integrated into the Operation System and is **disabled**. The auth
+gateway is gone from the tree and deferred to P2-A.
+
+```
+AUTH_GATEWAY                          = DEFERRED_TO_P2_A
+AUTH_GATEWAY_IS_NOT_A_P1_BLOCKER      = true
+P1_USES_CURRENT_OPERATION_SYSTEM_TRANSPORT = true
+PRODUCT_STRATEGY_FLAG                 = false
+PRODUCT_STRATEGY_NAVIGATION           = disabled
+```
+
+**Removed** (forward commit, recoverable from history): `services/auth-gateway/` 18 files ·
+`auth-gateway-contract-sec-a2.test.js` · `auth-gateway-production-readiness-sec-a2r.test.js` ·
+`_sec-a2-harness.js` · `_sec-a2-local-e2e.js` · `_sec-a2r-prod-mode-proof.js` ·
+`SEC_A3_T_TEST_CLOUD_RUNBOOK.md`.
+
+**Kept, each carrying a `DEFERRED_TO_P2_A` banner:** `IDENTITY_AND_ACCESS_ARCHITECTURE_SEC_A0.md` ·
+`SEC_A1_IDENTITY_PROTOTYPE_EVIDENCE.md` · `SEC_A2R_PRODUCTION_READINESS_AND_COST_MODEL.md` ·
+`identity-boundary-baseline-sec-a0.test.js` · `identity-verifier-prototype-sec-a1.test.js` ·
+`assets/prototypes/sec-a1/`.
+
+**The CSS leak, which is the thing worth remembering.** The board stylesheet is loaded on every page,
+loads last, and carried 79 bare-class rules (`.card`, `.panel`, `.col`, `.grid`, `.nav`, `.main`,
+`.kpi`, `.shell`, `.banner`). A disabled page behind a false flag was styling the whole application.
+444 selectors are now scoped to `.psb-page`; only `body.presenting` and `body.is-fullscreen` remain at
+document level, both keyed on classes the board declares and owns. The fifty duplicated `base.css`
+tokens moved out of production into `docs/prototypes/product-strategy-board/prototype-tokens.css`.
+
+**Suites:**
+
+| | PRE | POST |
+|---|---|---|
+| `product-strategy-scope-correction-p1-b8a.test.js` | — | **87 / 0 / 16 / 0** (new) |
+| `product-strategy-board-p1-b2.test.js` | 249 / 0 / 17 / 0 | 252 / 0 / 17 / 0 |
+| `product-strategy-board-p1-b2a.test.js` | 237 / 0 / 14 / 0 | 241 / 0 / 14 / 0 |
+| `product-strategy-board-p1-b2b.test.js` | 142 / 0 / 16 / 0 | 142 / 0 / 16 / 0 |
+| `product-strategy-board-p1-b2c.test.js` | 157 / 0 / 14 / 0 | 157 / 0 / 14 / 0 |
+| `product-strategy-board-p1-b4.test.js` | 252 / 0 / 12 / 0 | 255 / 0 / 12 / 0 |
+| `product-strategy-integration-p1-b5.test.js` | 157 / 0 / 12 / 0 | 159 / 0 / 12 / 0 |
+| `product-strategy-production-readback-p1-b3.test.js` | 334 / 0 / 17 / 0 | 334 / 0 / 17 / 0 |
+| `product-strategy-shell-integration-p1-b7.test.js` | 167 / 0 / 12 / 0 | 168 / 0 / 12 / 0 |
+| `identity-boundary-baseline-sec-a0.test.js` | 53 / 0 / 11 / 0 | 53 / 0 / 11 / 0 |
+| `identity-verifier-prototype-sec-a1.test.js` | 105 / 0 / 14 / 0 | 105 / 0 / 14 / 0 |
+
+Several P1-B2A/B4/B7 assertions were **re-pointed rather than deleted**: they had been written to hold
+the token *copy* equal to `base.css`, and the copy moved. P1-B7's H6 was **inverted** — it asserted the
+copies were still present; it now asserts they are gone from production — because the reasoning that
+justified keeping them ("deleting would drop the pin") stopped holding once the pin had somewhere else
+to live.
+
+**Unchanged:** 138 actions · no Apps Script change · no deployment · no frontend release · no flag
+change · no navigation · no database, Sheets or Drive write.

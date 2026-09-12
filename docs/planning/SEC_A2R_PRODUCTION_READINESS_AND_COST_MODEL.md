@@ -1,5 +1,46 @@
 # SEC-A2R — Auth gateway production readiness, cost and abuse model
 
+> ## STATUS — P1-B8A
+>
+> ```
+> DEFERRED_TO_P2_A                       = true
+> NOT_A_P1_BLOCKER                       = true
+> NOT_DEPLOYED                           = true
+> NOT_PART_OF_PRODUCT_STRATEGY_RUNTIME   = true
+> ```
+>
+> **This document is research about the Operation System as a whole. It is not a Product Strategy
+> prerequisite and never should have become one.**
+>
+> The SEC track began as a genuine question — the Apps Script Web App is deployed `ANYONE_ANONYMOUS`,
+> and all 138 actions sit behind that — and then grew into a Cloud Run authentication gateway that had
+> to exist before a single read-only page could ship. That was scope drift, and the shape of it is
+> worth naming: **the missing lock was never on Product Strategy's door, and Product Strategy was not
+> the reason to fit it.** One disabled page behind a false flag does not change the building's posture
+> either way.
+>
+> P1-B8A removed the deployable gateway (`services/auth-gateway/`, its test suites, its harnesses and
+> the Cloud Run provisioning runbook). It is recoverable in full from git history — the removal is a
+> forward commit at P1-B8A, on top of `34edb5c`, and nothing was rewritten.
+>
+> **What survives is what is true regardless of which design is eventually chosen:** the current
+> anonymous posture, the consumer inventory, the AuthN/AuthZ layering, the measured platform limits,
+> and the threat and cost model. Product Strategy P1 uses the Operation System's existing transport,
+> its existing accessors, a server-owned feature flag and disabled navigation — the same controls
+> every other page uses today.
+>
+> **`AUTH_GATEWAY = DEFERRED_TO_P2_A`.** Anything here that reads as a plan is a *candidate* for P2-A,
+> not a commitment, and not a thing anyone is waiting on.
+
+> **The implementation this document describes no longer exists in the tree.** Sections 1-9
+> below describe `services/auth-gateway/` — its dependency lock, its container specification,
+> its configuration checks and its measured findings about `google-auth-library`. That code was
+> removed at P1-B8A. The **measurements** are still worth keeping, and are why the document is:
+> the real library fetches Google's certificates before parsing a token, accepts a token up to
+> 300 seconds past `exp`, and never checks `email_verified`. Any future design that verifies a
+> Google ID token anywhere has to know all three.
+
+
 **Status:** local only. No Google Cloud project, no Cloud Run service, no Artifact Registry image, no
 OAuth client, no Secret Manager secret, no HMAC key, no Apps Script change, no deployment, no frontend
 release, no flag change. `PRODUCT_STRATEGY_ENABLED_` is still `false`. Nothing in this document has

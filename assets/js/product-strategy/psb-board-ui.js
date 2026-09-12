@@ -4323,7 +4323,24 @@
     eqv(scripts.length, 5, 'O2 five local scripts, and no sixth');
     eqv(scripts.filter(function (u) { return /^https?:|^\/\//.test(u); }), [],
       'O2a and not one of them is remote');
-    eqv(document.querySelectorAll('link[rel="stylesheet"]').length, 1, 'O3 one local stylesheet');
+    /* P1-B8A — TWO, AND THE ORDER IS THE POINT. This was one: the board stylesheet carried its own
+       copy of fifty base.css tokens so this page could render without reaching further into
+       assets/**. The copy is gone, so the tokens now come from base.css — which means base.css must
+       load FIRST, because the board sheet overrides some of what it defines. A test that only
+       counted the links would pass with them the wrong way round and the page quietly wrong. */
+    var sheets = [].slice.call(document.querySelectorAll('link[rel="stylesheet"]'))
+      .map(function (n) { return n.getAttribute('href'); });
+    eqv(sheets.length, 2, 'O3 two local stylesheets');
+    /* THE SHIM FIRST, AND IT IS NOT base.css. This page cannot link base.css — that file sets
+       `body { overflow: hidden }` for the application shell and would kill scrolling here — so the
+       fifty tokens it needs come from a prototype-only shim held to base.css by test. Order matters:
+       the board sheet consumes these tokens and overrides some of them. */
+    ok(/prototype-tokens\.css$/.test(sheets[0] || ''), 'O3a the prototype token shim is first');
+    ok(/product-strategy-board\.css$/.test(sheets[1] || ''), 'O3b and the board sheet is second');
+    eqv(sheets.filter(function (u) { return /(^|\/)(base|components)\.css$/.test(u); }), [],
+      'O3d and neither shared sheet is loaded — they cannot be loaded a la carte');
+    eqv(sheets.filter(function (u) { return /^https?:|^\/\//.test(u); }), [],
+      'O3c and neither is remote');
     var pageText = visibleTextOf(document.body);
     ok(pageText.indexOf('margin') < 0, 'O4 no margin figure is shown, because there is no source');
     ok(pageText.indexOf('Current selling price') < 0

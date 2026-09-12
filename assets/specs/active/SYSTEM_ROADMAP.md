@@ -636,3 +636,38 @@ Then SEC-A3 (enforcement on `productPricing.*` only) → unauthorized-access tes
 rollback → **and only then** P1-B8.
 
 `PRODUCT_STRATEGY_ENABLED_` is still `false`.
+
+---
+
+## P1-B8A — scope correction and CSS containment (complete, nothing activated)
+
+**The auth gateway is deferred to P2-A and is not a P1 blocker.** Product Strategy integrates with the
+Operation System as it stands: existing transport, existing accessors, server-owned feature flag,
+disabled navigation, read-only actions, and a feature gate that refuses before any database opens.
+
+```
+AUTH_GATEWAY                          = DEFERRED_TO_P2_A
+AUTH_GATEWAY_IS_NOT_A_P1_BLOCKER      = true
+P1_USES_CURRENT_OPERATION_SYSTEM_TRANSPORT = true
+PRODUCT_STRATEGY_FLAG                 = false
+PRODUCT_STRATEGY_NAVIGATION           = disabled
+```
+
+Removed as a forward commit: `services/auth-gateway/` (18 files), two gateway suites, three harnesses,
+the Cloud Run runbook. Kept and marked deferred: the SEC-A0 architecture, SEC-A1 evidence, SEC-A2R
+threat/cost model, and the two self-contained suites that pin the current anonymous posture
+(53/0/11/0 and 105/0/14/0, both unchanged by the removal).
+
+**The round's real finding was a CSS leak, not a security one.** The board stylesheet is loaded on
+every page, last, and had 79 bare-class rules for names ten other partials and the shell itself use.
+444 selectors are now scoped to `.psb-page`; the fifty duplicated `base.css` tokens are gone from
+production and live only in a clearly-labelled prototype shim.
+
+`product-strategy-scope-correction-p1-b8a.test.js` — **87 assertions · 16 mutants · 0 survived**, with
+§C naming the specific victim pages so a regression reports a page rather than a statistic.
+
+### Next
+
+P1 completion is now about the page, not about identity: responsive/loading/empty/error/print states,
+then a controlled live read-only verification. **P1-B8 live render still requires the USER's explicit
+decision** — it is not unblocked by this round.

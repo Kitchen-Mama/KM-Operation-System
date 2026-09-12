@@ -756,7 +756,14 @@ console.log('\n=== §H  THE REAL PAGE, RENDERED AND DRIVEN HEADLESS ===');
   ok(scripts.indexOf('selectors.js') < 0 && scripts.indexOf('data-contract.js') < 0
     && scripts.indexOf('chart-layout.js') < 0 && scripts.indexOf('prototype.js') < 0,
     'H31c and no local copy of a promoted module is loaded beside the promoted one');
-  eq((SRC.index.match(/<link rel="stylesheet"/g) || []).length, 1, 'H32 one local stylesheet');
+  /* P1-B8A - two: the prototype-only token shim, then the board sheet. What matters is that both
+     are LOCAL and that neither is base.css or components.css, which this page cannot load. */
+  var protoSheets = SRC.index.match(/<link rel="stylesheet"[^>]*>/g) || [];
+  eq(protoSheets.length, 2, 'H32 two local stylesheets');
+  ok(/prototype-tokens\.css/.test(protoSheets[0] || ''), 'H32a the token shim first');
+  ok(/product-strategy-board\.css/.test(protoSheets[1] || ''), 'H32b the board sheet second');
+  ok(protoSheets.every(function (t) { return !/^https?:|\/\//.test((t.match(/href="([^"]+)"/) || [])[1] || ''); }),
+    'H32c and neither is remote');
   ok(SRC.index.indexOf('http://') < 0 && SRC.index.indexOf('https://') < 0,
     'H33 and no remote host of any kind');
 }());
@@ -856,9 +863,14 @@ console.log('\n=== §I  THE DATA QUALITY LEDGER, AND WHAT A PRINTED PAGE SAYS ==
   ok(!!printBlock, 'I25 the stylesheet has a print block');
   ok(printBlock[1].indexOf('.badge-scenario') > 0,
     'I26 which explicitly keeps the scenario mark visible');
-  ok(printBlock[1].indexOf('.scenario, .scenario-note, .badge-scenario { display: block !important; }')
-    > 0, 'I27 against its own hide-the-chrome rules');
-  ok(printBlock[1].indexOf('.scenario-row, .scenario-resets { display: none !important; }') > 0,
+  /* P1-B8A — THESE TWO NOW MATCH THE RULE, NOT THE SELECTOR TEXT. They used to compare a whole
+     selector list character for character, so scoping the stylesheet to `.psb-page` broke them while
+     the behaviour they exist to protect was completely untouched. A probe that a prefix can break is
+     a probe that will be "fixed" by whoever is in a hurry, by deleting it. What matters is that the
+     scenario mark is forced ON for print and its controls are forced OFF; the prefix is not. */
+  ok(/\.scenario,[^{]*\.badge-scenario\s*\{[^}]*display:\s*block\s*!important/.test(printBlock[1]),
+    'I27 against its own hide-the-chrome rules');
+  ok(/\.scenario-row,[^{]*\.scenario-resets\s*\{[^}]*display:\s*none\s*!important/.test(printBlock[1]),
     'I28 while the controls themselves do not print — a printed input is not an input');
 
   // reset, and the mark goes with it

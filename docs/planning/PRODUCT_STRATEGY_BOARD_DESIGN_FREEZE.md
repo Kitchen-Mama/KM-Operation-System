@@ -6660,3 +6660,62 @@ exists in `services/auth-gateway/` but is wired to nothing does not change what 
 signed-in stranger must be refused as a stranger **before** the feature flag is consulted. If a stranger
 ever sees `FEATURE_DISABLED`, the order is wrong and the round stops — that would make `FEATURE_DISABLED`
 a polite way of never exercising authentication at all.
+
+---
+
+## §49  P1-B8A — scope correction, and the leak it uncovered
+
+**The security track is no longer a Product Strategy prerequisite.** SEC-A0 asked a real question —
+the Apps Script Web App is deployed `ANYONE_ANONYMOUS` and all 138 actions sit behind that — and the
+answer grew into a Cloud Run authentication gateway that had to exist before one read-only page could
+ship. **The missing lock was never on Product Strategy's door.** One disabled page behind a false flag
+does not change the building's posture either way, and making it the reason to fit the lock delayed
+the page without making the building safer. The anonymous posture is recorded, still true, and now
+carried by P2-A.
+
+```
+AUTH_GATEWAY                          = DEFERRED_TO_P2_A
+AUTH_GATEWAY_IS_NOT_A_P1_BLOCKER      = true
+P1_USES_CURRENT_OPERATION_SYSTEM_TRANSPORT = true
+PRODUCT_STRATEGY_FLAG                 = false
+PRODUCT_STRATEGY_NAVIGATION           = disabled
+```
+
+Removed at P1-B8A as a forward commit (recoverable in full from history, nothing rewritten):
+`services/auth-gateway/` and its 18 files, two gateway test suites, three harnesses, and the Cloud Run
+provisioning runbook. Kept and banner-marked `DEFERRED_TO_P2_A` / `NOT_A_P1_BLOCKER` / `NOT_DEPLOYED` /
+`NOT_PART_OF_PRODUCT_STRATEGY_RUNTIME`: the SEC-A0 architecture, the SEC-A1 evidence, the SEC-A2R
+threat and cost model, and the two self-contained test suites that pin today's posture.
+
+### What the round actually found, which nobody was looking for
+
+`assets/css/product-strategy-board.css` is loaded by `index.html` **on every page**, loads **last** of
+all twenty-four stylesheets, and carried **79 rules whose selectors were bare class names** — `.card`,
+`.panel`, `.col`, `.grid`, `.nav`, `.main`, `.kpi`, `.banner`, `.shell`. `index.html`'s own shell uses
+`.card` seven times and `.grid` seven times. Ten other page partials use `.panel`; seven use `.col`.
+Last-loaded plus equal specificity means the board's rules won.
+
+> **The page whose production visibility is zero by construction — disabled, unreachable, behind a
+> flag that is false — was restyling the rest of the application on every screen a user could actually
+> open.** Nothing failed. There is no error state for "your borders came from somewhere else", which
+> is exactly why it survived four rounds of tests that all passed. A feature flag governs behaviour; it
+> has never governed a stylesheet, and a `<link>` in `index.html` is live the moment it is committed.
+
+**Fixed:** 444 selectors scoped to `.psb-page`. Two document-level modes remain — `body.presenting`
+and `body.is-fullscreen` — and both are keyed on classes the board itself declares and owns, which is
+asserted rather than assumed. The sheet now declares **no `:root` block, no `html` rule, no universal
+reset, and no `body` rule** beyond those two.
+
+**And the fifty copied tokens are gone from production.** They were copied out of `base.css` verbatim,
+names and values identical, with a test holding each one to the original. That was right while the
+sheet also had to render a prototype that cannot link `base.css` — that file sets
+`body { overflow: hidden }` for the application shell and would kill scrolling on a standalone page.
+It stopped being right once the sheet was linked into `index.html`, where `base.css` is loaded on
+`:root` **before** it: all fifty were being redefined to the value they already had, on every page.
+The copy did not disappear, it **moved** — into `docs/prototypes/product-strategy-board/prototype-tokens.css`,
+where the prototype is the only thing that needs it, and where the same test still holds every value to
+`base.css`. Production has one definition site; the prototype has a shim that is visibly a shim.
+
+**Nothing was activated.** `PRODUCT_STRATEGY_ENABLED_` is `false`, the staged section is
+`enabled: false`, there is no sidebar item (navigation is absent, not greyed out), the two actions are
+reads, and no write-shaped `productPricing.*` name exists anywhere in the API layer.

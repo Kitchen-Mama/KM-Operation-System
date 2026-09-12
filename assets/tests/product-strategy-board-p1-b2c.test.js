@@ -513,9 +513,11 @@ console.log('\n=== SECTION G  THE MODES ===');
      `requestFullscreen`, so a plain string search finds the explanation and calls it a defect. */
   eq(H.bare(SRC.prototype).indexOf('requestFullscreen'), -1,
     'G18 the page never calls requestFullscreen — only explains why not');
-  ok(/body\.is-fullscreen \.view\s*\{[^}]*position:\s*fixed/.test(SRC.css),
+  /* P1-B8A — `[^{]*` between the state class and the target absorbs the `.psb-page` scope the
+     stylesheet gained. The state class and the declaration are what these assert. */
+  ok(/body\.is-fullscreen[^{]*\.view\s*\{[^}]*position:\s*fixed/.test(SRC.css),
     'G19 it is a fixed overlay in the stylesheet');
-  ok(/@media print[\s\S]*body\.is-fullscreen \.view\s*\{[^}]*position:\s*static/.test(SRC.css),
+  ok(/@media print[\s\S]*body\.is-fullscreen[^{]*\.view\s*\{[^}]*position:\s*static/.test(SRC.css),
     'G20 and print has its own layout, so a meeting overlay never reaches paper');
 
   /* G21 IN FULLSCREEN THERE IS ONE THING ON THE PAGE. A screenshot found the KPI strip wedged
@@ -523,7 +525,7 @@ console.log('\n=== SECTION G  THE MODES ===');
      fixed overlay simply covered most of it. A half-visible summary is worse than no summary. */
   ok(/body\.is-fullscreen[^{]*\.kpis[^{]*\{[^}]*display:\s*none/.test(SRC.css),
     'G21 the KPI strip is hidden rather than covered');
-  ok(/@media print[\s\S]*body\.is-fullscreen \.view > \.kpis\s*\{[^}]*display:\s*grid/
+  ok(/@media print[\s\S]*body\.is-fullscreen[^{]*\.view > \.kpis\s*\{[^}]*display:\s*grid/
     .test(SRC.css), 'G22 and comes back on paper, where there is no overlay');
 }());
 

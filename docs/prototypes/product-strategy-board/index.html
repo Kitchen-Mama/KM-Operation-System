@@ -14,6 +14,13 @@
   The shell is deliberately thin. Everything below #app is built by prototype.js from whatever the
   adapter returned, so a screenshot of this file's source cannot be mistaken for the data.
 -->
+<!-- P1-B8A - the token shim FIRST, then the board sheet that consumes the tokens.
+     The shim is prototype-only and says so at length. It is not in assets/**, nothing in the
+     Operation System loads it, and the production page does not need it: index.html loads
+     base.css, which is where these fifty tokens actually live. This page cannot link base.css
+     itself - it sets `body { overflow: hidden }` for the application shell and would kill
+     scrolling here - which is the whole reason the shim exists. -->
+<link rel="stylesheet" href="prototype-tokens.css">
 <link rel="stylesheet" href="../../../assets/css/product-strategy-board.css">
 </head>
 <!-- P1-B7 — `psb-page` is the stylesheet's scope root. It was `body` until the sheet was linked

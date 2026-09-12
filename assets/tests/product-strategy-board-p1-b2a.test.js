@@ -608,8 +608,16 @@ console.log('\n=== SECTION G  THE OPERATION SYSTEM CONTRACT ===');
     var m = new RegExp('(?:^|\\n)\\s*' + name.replace(/-/g, '\\-') + ':\\s*([^;]+);').exec(css);
     return m ? m[1].trim() : null;
   }
-  /* EVERY TOKEN COPIED INTO THE PROTOTYPE IS HELD TO THE VALUE IN base.css. This is the assertion
-     that stops "aligned with the Operation System" decaying into "looked similar once". */
+  /* P1-B8A — THIS USED TO COMPARE TWO COPIES; NOW IT ASSERTS THERE IS ONLY ONE.
+     The board stylesheet carried its own `:root` copy of these tokens, names and values identical
+     to base.css, and G1/G2 held the copy to the original. That was the right guard while the sheet
+     also had to render a prototype that could not reach assets/**. But base.css is loaded on :root
+     in index.html BEFORE this sheet, so every one of those declarations was redefining a token to
+     the value it already had — and a test that holds a duplicate equal to its original is guarding
+     the duplicate rather than asking why it exists. The copy is gone and the prototype links
+     base.css itself. What replaces it is stronger and cannot decay into "looked similar once",
+     because there is no second value left to look similar TO: the tokens must exist in base.css,
+     this sheet must not redefine ANY of them, and it must actually consume them. */
   var tokens = ['--filter-height', '--filter-border-radius', '--filter-border-color',
     '--filter-padding-inline', '--filter-padding-block', '--filter-font-size',
     '--filter-text-color', '--filter-gap', '--filter-focus-ring', '--filter-panel-bg',
@@ -621,17 +629,35 @@ console.log('\n=== SECTION G  THE OPERATION SYSTEM CONTRACT ===');
     '--space-xs', '--space-sm', '--space-md', '--space-lg', '--border-light', '--border-medium',
     '--shadow-card', '--shadow-soft', '--text-primary', '--text-secondary', '--text-muted',
     '--font-size-body', '--font-size-small'];
-  var missing = [], drifted = [];
+  /* THE COPY MOVED; THE PIN MOVED WITH IT. The prototype cannot link base.css — it sets
+     `body { overflow: hidden }` for the application shell and would kill scrolling on a standalone
+     page — so the copy still has to exist somewhere. P1-B8A took it out of the PRODUCTION stylesheet,
+     where index.html already loads base.css and all fifty were redefining a value to itself, and put
+     it in the prototype directory as a visibly-labelled shim. So there are now two assertions where
+     there was one: the production sheet redefines NOTHING, and the prototype's shim is still held to
+     base.css value for value. Dropping the second when the copy moved would have been the easy half. */
+  var shim = fs.readFileSync(path.join(H.PROTO, 'prototype-tokens.css'), 'utf8');
+  var missing = [], drifted = [], redefined = [];
   tokens.forEach(function (t) {
     var real = tokenIn(base, t);
-    var mine = tokenIn(SRC.css, t);
     if (real === null) { missing.push(t + ' (absent from base.css)'); return; }
-    if (mine === null) { missing.push(t + ' (not adopted by the prototype)'); return; }
-    if (real !== mine) drifted.push(t + ': base=' + real + ' proto=' + mine);
+    var mine = tokenIn(shim, t);
+    if (mine === null) { missing.push(t + ' (not carried by the prototype shim)'); return; }
+    if (real !== mine) drifted.push(t + ': base=' + real + ' shim=' + mine);
+    /* A DEFINITION in the production sheet, not a use: `--x: value` rather than `var(--x)`. */
+    if (tokenIn(SRC.css, t) !== null) redefined.push(t);
   });
-  eq(missing, [], 'G1 every Operation System token this page uses exists in both files');
+  eq(missing, [], 'G1 every Operation System token this page uses exists in base.css and the shim');
   eq(drifted, [], 'G2 AND CARRIES THE SAME VALUE — the copy is held to the original');
   ok(tokens.length >= 40, 'G3 and it is a real set, not a token or two', tokens.length);
+  eq(redefined, [],
+    'G3a THE PRODUCTION SHEET REDEFINES NONE OF THEM — index.html loads base.css, so a copy there was redefining each value to itself');
+  /* One `:root {}` at the top undoes the whole scoping pass, and is exactly how the first copy
+     arrived. The shim is scoped too: a shim has no more business writing to the document root. */
+  ok(!/(^|\n)\s*:root\s*\{/.test(SRC.css),
+    'G3b and the production sheet declares no :root block at all');
+  ok(!/(^|\n)\s*:root\s*\{/.test(shim), 'G3c nor does the prototype shim — it is scoped to .psb-page');
+  ok(shim.indexOf('.psb-page') >= 0, 'G3d which is the class the prototype body carries');
 
   // G4 THE SHARED FILTER-BAR CLASS IS USED BY NAME.
   var p = chartPage();

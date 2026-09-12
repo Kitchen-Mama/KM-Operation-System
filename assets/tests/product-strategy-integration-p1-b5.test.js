@@ -585,11 +585,19 @@ console.log('\n=== §K  THE PROMOTION: one copy of every rule, and production ow
       ok(!fs.existsSync(path.join(proto, f)),
         'K2.' + (i + 1) + ' and no copy of ' + f + ' is left in the prototype');
     });
-  /* THE ONLY FILE THE PROTOTYPE STILL OWNS IS ITS FIXTURE, which is the correct division: the
-     fixture is the one thing production must never have. */
+  /* TWO FILES NOW, AND BOTH ARE THINGS PRODUCTION MUST NOT HAVE — which is the same division, not
+     a weakening of it. The fixture is demonstration data. The token shim is fifty declarations that
+     production gets from base.css and the prototype cannot, because base.css sets
+     `body { overflow: hidden }` for the application shell. Anything else appearing here is a copy of
+     something that belongs in assets/**, and that is what this assertion is for. */
   var left = fs.readdirSync(proto).filter(function (f) { return /\.(js|css)$/.test(f); });
-  eq(left.sort(), ['preview-fixture.js'],
-    'K3 the prototype owns exactly one script — the fixture production must never have');
+  eq(left.sort(), ['preview-fixture.js', 'prototype-tokens.css'],
+    'K3 the prototype owns exactly two files, and production must have neither');
+  var shimText = fs.readFileSync(path.join(proto, 'prototype-tokens.css'), 'utf8');
+  ok(/^\s*[^{]*\.psb-page\s*\{/m.test(shimText),
+    'K3a the shim is scoped to .psb-page rather than :root');
+  ok(shimText.indexOf('NOT LOADED BY THE OPERATION SYSTEM') >= 0,
+    'K3b and says so where somebody about to link it from index.html would read it');
 
   eq(LIVE.CONTRACT.replaces,
     'PSB_CONTRACT.OperationDbProductStrategyDataAdapter (defined and disabled since P0)',

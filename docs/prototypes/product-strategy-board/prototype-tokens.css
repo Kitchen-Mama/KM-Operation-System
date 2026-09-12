@@ -1,0 +1,91 @@
+/* ==================================================================================================
+   PROTOTYPE-ONLY TOKEN SHIM — docs/prototypes/product-strategy-board/                     P1-B8A
+   ==================================================================================================
+   NOT LOADED BY THE OPERATION SYSTEM. index.html does not reference this file, no page partial does,
+   and nothing under assets/** does. It exists so the prototype can open as a standalone document.
+
+   WHY THIS FILE EXISTS AT ALL, AND WHY IT IS NOT IN assets/css.
+
+   These fifty declarations used to live in a `:root` block inside assets/css/product-strategy-board.css
+   — the stylesheet the PRODUCTION page loads. There they were pure duplication: index.html loads
+   base.css on :root before the board sheet, so all fifty were being redefined to the value they
+   already had, on every page in the application. P1-B8A removed them from that file.
+
+   The prototype still needs them, and it CANNOT simply link base.css. base.css sets
+   `body { overflow: hidden }` for the application shell, which scrolls an inner container; the
+   prototype's own body IS its scroll container, so linking base.css silently kills scrolling on a
+   page whose whole purpose is to be scrolled and read. (components.css is worse: it styles the bare
+   `button` element solid green.) That hazard was found in P1-B4 and is the reason the prototype was
+   never allowed to load either shared sheet; it has not gone away.
+
+   So the copy did not disappear — it MOVED, out of the production stylesheet and into the prototype
+   directory, which is the only place it was ever needed. Production has one definition site; the
+   prototype has a shim that is visibly a shim.
+
+   EVERY VALUE HERE IS HELD TO assets/css/base.css BY TEST, name for name and value for value
+   (product-strategy-board-p1-b2a.test.js §G, product-strategy-board-p1-b4.test.js §I). A copy nobody
+   checks becomes a second system the first day somebody edits the original; a copy a test holds to
+   the original is a mirror. If that test is ever deleted, this file becomes the second system.
+
+   SCOPED TO `.psb-page`, NOT `:root` — the prototype's body carries that class, and a shim has no
+   more business writing to the document root than the stylesheet it was extracted from.
+   ================================================================================================== */
+.psb-page {
+  /* --- copied verbatim from assets/css/base.css, asserted by product-strategy-board-p1-b2a.test.js */
+  --filter-height: 38px;
+  --filter-border-radius: 4px;
+  --filter-border-color: #e2e8f0;
+  --filter-padding-inline: 12px;
+  --filter-padding-block: 8px;
+  --filter-font-size: 14px;
+  --filter-text-color: #2d3748;
+  --filter-gap: 1rem;
+  --filter-focus-ring: #7FB069;
+  --filter-panel-bg: #ffffff;
+  --filter-panel-radius: 6px;
+  --filter-panel-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+  --filter-option-font-size: 13px;
+  --filter-option-padding: 6px 12px;
+  --filter-option-hover-bg: #f1f5f9;
+  --filter-option-selected-bg: #f8fafc;
+  --filter-search-font-size: 12px;
+  /* P1-B4 — three more copied from assets/css/base.css, because the shared popover primitive this
+     round adopts (.kmf-trigger / .kmf-panel) routes its chevron and its stacking through them. The
+     suite holds each one to the value in base.css, the same way the rest of this block is held. */
+  --filter-chevron-size: 10px;
+  --filter-chevron-color: #64748b;
+  --filter-panel-z: 200;
+  --filter-muted-color: #94a3b8;
+  --filter-label-font-size: 12px;
+  --filter-label-color: #64748b;
+  /* P1-B2C — THE SEMANTIC TEXT COLOURS, because the insight pills needed a meaning and the
+     Operation System has no badge token set to take one from. See the design freeze: that absence
+     is a real gap, and inventing a private palette here would have widened it. */
+  --text-success: #10B981;
+  --text-warning: #F59E0B;
+  --text-error: #EF4444;
+  --text-link: #3B82F6;
+  --text-secondary: #64748B;
+  --text-muted: #94A3B8;
+  --btn-height: 36px;
+  --btn-radius: 4px;
+  --btn-padding-inline: 16px;
+  --btn-font-size: 14px;
+  --btn-font-weight: 500;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --border-light: #E2E8F0;
+  --border-medium: #CBD5E1;
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --text-primary: #2D3748;
+  --text-secondary: #64748B;
+  --text-muted: #94A3B8;
+  --font-size-body: 0.875rem;
+  --font-size-small: 0.75rem;
+}

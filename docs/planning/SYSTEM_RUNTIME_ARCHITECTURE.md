@@ -889,3 +889,45 @@ so **no image was built** and the specification is verified by reading, not by e
 
 **Still not wired to anything.** No router branch calls the verifier, none of the 138 actions changed,
 no deployment, no flag change.
+
+---
+
+## §15.10  P1-B8A — the auth gateway is removed; page CSS is contained
+
+`services/auth-gateway/` **no longer exists in the tree.** The Cloud Run gateway described in §15.8 and
+§15.9 was deferred to P2-A and removed as a forward commit; it is recoverable in full from git history
+at `34edb5c`. Product Strategy P1 uses the **existing Operation System runtime**: `KM.api` transport,
+the existing `productPricing.*` read accessors, `KM_STAGED_SECTIONS_` for registration, the server-owned
+`PRODUCT_STRATEGY_ENABLED_` flag, and navigation that is absent rather than merely disabled.
+
+```
+AUTH_GATEWAY                          = DEFERRED_TO_P2_A
+AUTH_GATEWAY_IS_NOT_A_P1_BLOCKER      = true
+P1_USES_CURRENT_OPERATION_SYSTEM_TRANSPORT = true
+PRODUCT_STRATEGY_FLAG                 = false
+PRODUCT_STRATEGY_NAVIGATION           = disabled
+```
+
+### A stylesheet is not governed by a feature flag
+
+`index.html` loads all twenty-four stylesheets on every page, unconditionally, and
+`product-strategy-board.css` loads **last**. It carried 79 rules whose selectors were bare class names
+that `index.html`'s own shell and ten page partials already use. Equal specificity, later in the
+cascade: the board won.
+
+> A feature flag governs what the **server** answers and what the **page controller** renders. It has
+> never governed a `<link>`. The moment a page stylesheet is added to the shell it is live on every
+> screen in the application, regardless of whether its page can be reached — and a rule that merely
+> changes a border produces no error, no log line and no failing test. This is the second time this
+> round that something was true on every page while being checked on one.
+
+**Containment:** 444 selectors scoped to `.psb-page`. The only rules left at document level are
+`body.presenting` and `body.is-fullscreen`, both keyed on classes `psb-board-ui.js` declares in
+`BODY_STATE_CLASSES` and sets itself — asserted, not assumed. No `:root`, no `html`, no `*`, no bare
+`body`. The fifty `base.css` tokens the sheet duplicated are gone from production; the prototype, which
+cannot link `base.css` because it sets `body { overflow: hidden }` for the shell, keeps them in its own
+labelled shim.
+
+**The rule this establishes for any future page stylesheet in this application:** it is loaded
+globally, so it must be scoped to its own page root, and it must take its tokens from `base.css`
+rather than restating them.

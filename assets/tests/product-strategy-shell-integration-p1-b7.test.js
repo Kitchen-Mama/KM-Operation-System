@@ -521,11 +521,18 @@ console.log('\n=== §H  THE STYLESHEET IS A COMPONENT, NOT A PAGE ===');
       'H5.' + (i + 1) + 'a and it IS declared under .psb-page');
   });
 
-  /* THE COPIES ARE STILL COPIES, WHICH IS WHY THEY WERE SCOPED RATHER THAN DELETED. P1-B2A holds
-     every one of these token values to base.css; removing the block would have dropped that pin
-     along with the leak. */
-  ok(/--filter-height: 38px;/.test(SRC.css) && /--btn-height: 36px;/.test(SRC.css),
-    'H6 the Operation System token copies are still present to be asserted against base.css');
+  /* P1-B8A INVERTED THIS ONE, AND THE INVERSION IS THE POINT.
+     P1-B7 scoped the leaking rules but KEPT the copied `:root` token block, reasoning that deleting
+     it would drop P1-B2A's pin to base.css along with the leak. That reasoning held only while the
+     copy had nowhere else to live. It does now: index.html loads base.css on :root before this
+     sheet, so in PRODUCTION every one of those fifty declarations was redefining a token to the
+     value it already had — and the prototype, which genuinely cannot link base.css, carries the copy
+     in its own directory where P1-B2A §G still holds every value to the original. So the pin did not
+     go; it moved to where the copy actually is. What must now be true here is the opposite of H6. */
+  ok(!/--filter-height:\s*38px;/.test(SRC.css) && !/--btn-height:\s*36px;/.test(SRC.css),
+    'H6 the Operation System token copies are GONE from the production sheet — base.css defines them');
+  ok(!/(^|\n)\s*:root\s*\{/.test(SRC.css),
+    'H6a and it declares no :root block, so it writes nothing to the document root');
 
   /* THE SCOPE ROOT EXISTS IN BOTH DOCUMENTS THAT USE THIS SHEET. */
   ok(/class="module-section psb-page"/.test(SRC.partial), 'H7 the production section carries it');
@@ -815,9 +822,11 @@ K.then(function () {
     function () { return !/var staged = KM_STAGED_SECTIONS_\[section\];/
       .test(reread('assets/js/app.js')); });
 
+  /* P1-B8A re-anchored: the ground declarations were merged into the one `.psb-page` block when
+     the scoped token block and the ground rule stopped being two rules for the same selector. */
   mut('L4 the page ground goes back to being a document rule',
-    'assets/css/product-strategy-board.css', "\n.psb-page {\n  background: var(--ground);",
-    "\nbody {\n  background: var(--ground);",
+    'assets/css/product-strategy-board.css', "\n  background: var(--ground); color: var(--ink);",
+    "\n}\nbody {\n  background: var(--ground); color: var(--ink);",
     function () { return /^body \{/m.test(reread('assets/css/product-strategy-board.css')); });
 
   mut('L5 the shared button token set escapes the board again',

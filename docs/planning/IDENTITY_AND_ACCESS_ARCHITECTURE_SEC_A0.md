@@ -1,5 +1,38 @@
 # Identity & Access Architecture — SEC-A0 discovery and design freeze
 
+> ## STATUS — P1-B8A
+>
+> ```
+> DEFERRED_TO_P2_A                       = true
+> NOT_A_P1_BLOCKER                       = true
+> NOT_DEPLOYED                           = true
+> NOT_PART_OF_PRODUCT_STRATEGY_RUNTIME   = true
+> ```
+>
+> **This document is research about the Operation System as a whole. It is not a Product Strategy
+> prerequisite and never should have become one.**
+>
+> The SEC track began as a genuine question — the Apps Script Web App is deployed `ANYONE_ANONYMOUS`,
+> and all 138 actions sit behind that — and then grew into a Cloud Run authentication gateway that had
+> to exist before a single read-only page could ship. That was scope drift, and the shape of it is
+> worth naming: **the missing lock was never on Product Strategy's door, and Product Strategy was not
+> the reason to fit it.** One disabled page behind a false flag does not change the building's posture
+> either way.
+>
+> P1-B8A removed the deployable gateway (`services/auth-gateway/`, its test suites, its harnesses and
+> the Cloud Run provisioning runbook). It is recoverable in full from git history — the removal is a
+> forward commit at P1-B8A, on top of `34edb5c`, and nothing was rewritten.
+>
+> **What survives is what is true regardless of which design is eventually chosen:** the current
+> anonymous posture, the consumer inventory, the AuthN/AuthZ layering, the measured platform limits,
+> and the threat and cost model. Product Strategy P1 uses the Operation System's existing transport,
+> its existing accessors, a server-owned feature flag and disabled navigation — the same controls
+> every other page uses today.
+>
+> **`AUTH_GATEWAY = DEFERRED_TO_P2_A`.** Anything here that reads as a plan is a *candidate* for P2-A,
+> not a commitment, and not a thing anyone is waiting on.
+
+
 **Status: FROZEN DESIGN · NO RUNTIME CHANGE · BLOCKED ON TWO USER DECISIONS**
 **Date: 2026-09-12 · Owner of this document: the AuthN/AuthZ SSOT for the Operation System**
 

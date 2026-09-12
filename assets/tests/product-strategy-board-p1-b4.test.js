@@ -712,6 +712,7 @@ section('SECTION I  §8 WHAT IS REUSED, AND WHAT THE SHARED LAYER DOES NOT HAVE'
   var comp = fs.readFileSync(path.join(H.ROOT, 'assets', 'css', 'components.css'), 'utf8');
 
   // I1 THE COPIED TOKENS STILL MATCH base.css, VALUE FOR VALUE — including the three added this round.
+  var protoTokens = fs.readFileSync(path.join(H.PROTO, 'prototype-tokens.css'), 'utf8');
   var mism = [];
   ['--filter-height', '--filter-border-radius', '--filter-border-color', '--filter-padding-inline',
     '--filter-padding-block', '--filter-font-size', '--filter-text-color', '--filter-gap',
@@ -719,7 +720,10 @@ section('SECTION I  §8 WHAT IS REUSED, AND WHAT THE SHARED LAYER DOES NOT HAVE'
     '--filter-search-font-size', '--filter-muted-color', '--filter-label-font-size',
     '--filter-label-color', '--filter-chevron-size', '--filter-chevron-color', '--filter-panel-z',
     '--btn-height', '--radius-sm', '--radius-md', '--radius-lg'].forEach(function (tok) {
-    var a = new RegExp(tok.replace(/-/g, '\\-') + ':\\s*([^;]+);').exec(SRC.css);
+    /* P1-B8A — read from the PROTOTYPE SHIM, which is where the copy lives now. It was in
+       assets/css/product-strategy-board.css until this round; there it was redefining tokens that
+       index.html already defines via base.css, on every page in the application. */
+    var a = new RegExp(tok.replace(/-/g, '\\-') + ':\\s*([^;]+);').exec(protoTokens);
     var b = new RegExp(tok.replace(/-/g, '\\-') + ':\\s*([^;]+);').exec(base);
     if (!a || !b) { mism.push(tok + ' MISSING'); return; }
     if (a[1].trim().split(/\s+\/\*/)[0].trim() !== b[1].trim().split(/\s+\/\*/)[0].trim()) {
@@ -727,6 +731,9 @@ section('SECTION I  §8 WHAT IS REUSED, AND WHAT THE SHARED LAYER DOES NOT HAVE'
     }
   });
   eq(mism, [], 'I1 every copied token equals the value in assets/css/base.css', mism);
+  /* AND THE PRODUCTION SHEET CARRIES NO COPY AT ALL. */
+  ok(!/(^|\n)\s*:root\s*\{/.test(SRC.css),
+    'I1a while the production stylesheet declares no :root block, so it redefines nothing');
 
   // I2 THE POPOVER PRIMITIVE IS THE SHARED ONE, copied rule for rule.
   ['.kmf {', '.kmf-trigger {', '.kmf-panel {', '.kmf-panel--right', '.kmf-tools', '.kmf-link']
@@ -755,8 +762,12 @@ section('SECTION I  §8 WHAT IS REUSED, AND WHAT THE SHARED LAYER DOES NOT HAVE'
     'I4b and base.css sets `body { overflow: hidden }`, which would kill page scrolling');
   /* SO THE PROTOTYPE DOES NOT LOAD THEM, and says why rather than pretending it is aligned. */
   var indexHtml = fs.readFileSync(path.join(H.PROTO, 'index.html'), 'utf8');
-  eq((indexHtml.match(/<link[^>]+rel="stylesheet"/g) || []).length, 1,
-    'I4c the prototype loads exactly one stylesheet — the board\'s own');
+  /* P1-B8A — TWO NOW: the prototype-only token shim, then the board's own sheet. The count matters
+     less than what is NOT in the list, which I4e still checks. */
+  eq((indexHtml.match(/<link[^>]+rel="stylesheet"/g) || []).length, 2,
+    'I4c the prototype loads two stylesheets — its token shim and the board\'s own');
+  ok(indexHtml.indexOf('prototype-tokens.css') >= 0,
+    'I4c1 the first is the prototype-only shim, which lives beside it and not in assets/css');
   ok(indexHtml.indexOf('assets/css/product-strategy-board.css') >= 0,
     'I4d and it is the PROMOTED board stylesheet, the same one the production page loads');
   /* THE RULE WAS NEVER ABOUT THE DIRECTORY. It is about these two files: components.css styles the
@@ -764,8 +775,19 @@ section('SECTION I  §8 WHAT IS REUSED, AND WHAT THE SHARED LAYER DOES NOT HAVE'
      loaded beside a page that did not expect it breaks that page. P1-B5 moved the board's own
      stylesheet into assets/css, so naming the directory would now forbid the promotion instead of
      the hazard. */
-  ok(indexHtml.indexOf('components.css') < 0 && indexHtml.indexOf('base.css') < 0,
+  /* READ THE LINKS, NOT THE PROSE. P1-B8A added a comment to the prototype's head explaining WHY
+     it cannot link base.css — and a bare string search for "base.css" found the explanation and
+     called it a defect. The same trap P1-B2C's G18 documents for `requestFullscreen`, sprung again
+     in a different file: a probe that greps the whole document cannot tell a link from a sentence
+     about a link. */
+  var protoHrefs = (indexHtml.match(/<link[^>]+rel="stylesheet"[^>]*>/g) || [])
+    .map(function (t) { return (t.match(/href="([^"]+)"/) || [])[1] || ''; });
+  eq(protoHrefs.filter(function (h) { return /(^|\/)(base|components)\.css$/.test(h); }), [],
     'I4e and it still does not load either shared sheet, which cannot be loaded a la carte');
+  /* AND THE SHIM MUST NOT BECOME A BACK DOOR FOR THEM. */
+  var shimSrc = fs.readFileSync(path.join(H.PROTO, 'prototype-tokens.css'), 'utf8');
+  ok(shimSrc.indexOf('@import') < 0,
+    'I4f nor does the shim @import them, which would reintroduce both hazards through the side door');
 
   // I5 THERE IS NO SHARED DRAWER, AND NO SHARED STATUS CHIP. Recorded, not papered over.
   ok(comp.indexOf('.drawer') < 0 && !/--drawer-/.test(base + comp),
