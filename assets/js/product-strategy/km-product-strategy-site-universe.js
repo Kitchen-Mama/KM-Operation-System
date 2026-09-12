@@ -58,6 +58,12 @@
   U.SERVER_STATES = ['READY', 'SOURCE_EMPTY', 'SOURCE_PARTIALLY_READABLE', 'STOP_DATA_INTEGRITY'];
 
   /** The states THIS module reports. `OK` is the only one that yields sites. */
+  /* P1-B8B §9 — see km-product-strategy-live-adapter.js `CLIENT_ONLY_REFUSALS`. The same four
+     transport answers, honoured here for the same reason: the site menu is the FIRST read a person
+     waits on, so it is where "no server answered" is most likely to be the wrong sentence. */
+  U.CLIENT_ONLY_REFUSALS = ['FEATURE_DISABLED', 'BROWSER_OFFLINE', 'SOURCE_TIMED_OUT',
+    'NOT_AUTHORIZED', 'RESPONSE_NOT_READABLE'];
+
   U.STATES = ['OK', 'SOURCE_EMPTY', 'SOURCE_PARTIALLY_READABLE', 'STOP_DATA_INTEGRITY',
     'SOURCE_NOT_CONNECTED', 'FEATURE_DISABLED', 'SCHEMA_CONTRACT_MISMATCH'];
 
@@ -81,6 +87,22 @@
     FEATURE_DISABLED: { may_choose: false, severity: 'info',
       headline: 'Product Strategy is not enabled yet.',
       detail: 'The capability is off, so no request was sent.' },
+    BROWSER_OFFLINE: { may_choose: false, severity: 'stop',
+      headline: 'This device has no network connection.',
+      detail: 'The site list was never requested, so no site can be offered yet. Nothing is shown in'
+        + ' place of it.' },
+    SOURCE_TIMED_OUT: { may_choose: false, severity: 'stop',
+      headline: 'The database did not answer in time.',
+      detail: 'The request for the site list reached the server and no answer came back within the'
+        + ' time it was given. Nothing was changed; asking again is safe.' },
+    NOT_AUTHORIZED: { may_choose: false, severity: 'stop',
+      headline: 'This account cannot read the site list.',
+      detail: 'A server answered with a sign-in or access page rather than the list. Asking again'
+        + ' will not change that.' },
+    RESPONSE_NOT_READABLE: { may_choose: false, severity: 'stop',
+      headline: 'The address answered, but not with a site list.',
+      detail: 'Something returned a web page where the API was expected, so no site menu was built'
+        + ' from it.' },
     SCHEMA_CONTRACT_MISMATCH: { may_choose: false, severity: 'stop',
       headline: 'The site list is a shape this build was not written against.',
       detail: 'Reading it anyway would mean trusting fields that may have moved.' }
@@ -117,7 +139,12 @@
     out.schema = d.schema === undefined ? null : d.schema;
 
     var first = out.refusals.length ? str(out.refusals[0].code) : '';
-    if (first === 'FEATURE_DISABLED') { out.state = 'FEATURE_DISABLED'; return out; }
+    var locallyRefused = !!(isObj(response.meta) && response.meta.refused === true);
+    if (U.CLIENT_ONLY_REFUSALS.indexOf(first) >= 0
+      && (first === 'FEATURE_DISABLED' || locallyRefused)) {
+      out.state = first;
+      return out;
+    }
 
     var seen = (isObj(d.schema) && d.schema.contract_version !== undefined)
       ? d.schema.contract_version : null;

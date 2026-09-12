@@ -323,6 +323,13 @@
       out.refusals = [{ code: 'RESPONSE_NOT_AN_OBJECT', detail: null, subject: null }];
       return out;
     }
+    /* P1-B8B - WHO WROTE THIS ANSWER, CARRIED FORWARD.
+       `meta.refused` is set by the accessor on a refusal IT built, and only there: an envelope that
+       came off the wire does not have it. Downstream that is the difference between a state this side
+       is entitled to report about the request - offline, timed out, refused for access - and the same
+       words arriving from a server, which would be a server claiming something only the client can
+       know. The live adapter checks it before honouring one of those codes. */
+    out.provenance.refused = !!(isObj(response.meta) && response.meta.refused === true);
     // An accessor refusal (its own shape) carries no `data`, and SOURCE_NOT_CONNECTED is the accessor's to
     // give. It is passed through: this adapter never invents that state and never overwrites a server one.
     var d = response.data;

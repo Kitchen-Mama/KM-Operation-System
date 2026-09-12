@@ -738,19 +738,25 @@ console.log('\n=== §H  THE REAL PAGE, RENDERED AND DRIVEN HEADLESS ===');
   var scripts = (SRC.index.match(/<script src="([^"]+)"><\/script>/g) || []).map(function (t) {
     return /src="([^"]+)"/.exec(t)[1];
   });
-  /* FIVE SINCE P1-B2C, AND SINCE P1-B5 THREE OF THEM ARE NOT LOCAL — that is the promotion.
-     data-contract, chart-layout and selectors are production modules now, loaded by this page AND
-     by the production board from ONE copy. Asserting the path, not just the filename, is what makes
-     a silent fork visible: a prototype that quietly grew its own selectors.js beside index.html
-     would still satisfy a filename-only check while drifting from the rules production ships. */
+  /* SIX SINCE P1-B8B, AND FIVE OF THEM ARE NOT LOCAL — that is the promotion, extended.
+     data-contract, chart-layout, selectors, THE VIEW REGISTRY and the board are production modules,
+     loaded by this page AND by the production board from ONE copy. Asserting the path, not just the
+     filename, is what makes a silent fork visible: a prototype that quietly grew its own
+     selectors.js beside index.html would still satisfy a filename-only check while drifting from the
+     rules production ships.
+
+     psb-views.js joined the list at P1-B8B and it is the same argument one layer up: the six view
+     names are rendered BOTH by this rail and by the Operation System sidebar, so they are declared
+     once and read twice rather than written twice. */
   eq(scripts, ['../../../assets/js/product-strategy/psb-data-contract.js',
     '../../../assets/js/product-strategy/psb-chart-layout.js',
     '../../../assets/js/product-strategy/psb-selectors.js',
+    '../../../assets/js/product-strategy/psb-views.js',
     'preview-fixture.js',
     '../../../assets/js/product-strategy/psb-board-ui.js'],
-    'H31 four promoted production modules and one local fixture, in dependency order');
-  ok(scripts.filter(function (x) { return x.indexOf('assets/js/product-strategy/') >= 0; }).length === 4,
-    'H31a the contract, the engine, the selectors AND the board are loaded from production');
+    'H31 five promoted production modules and one local fixture, in dependency order');
+  ok(scripts.filter(function (x) { return x.indexOf('assets/js/product-strategy/') >= 0; }).length === 5,
+    'H31a the contract, the engine, the selectors, the VIEW REGISTRY and the board are from production');
   eq(scripts.filter(function (x) { return x.indexOf('/') < 0; }), ['preview-fixture.js'],
     'H31b the ONLY file the prototype still owns is its fixture — everything else it shares');
   ok(scripts.indexOf('selectors.js') < 0 && scripts.indexOf('data-contract.js') < 0

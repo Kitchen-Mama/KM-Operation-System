@@ -100,28 +100,11 @@ function eq(a, b, label) {
  * is flat markup with no script, no style, no void elements and no attribute that matters beyond id,
  * class and hidden. Comments are stripped first, because a comment naming an id is not an element.
  */
-function partialSkeleton(document, head, body, mk) {
-  var src = SRC.partial.replace(/<!--[\s\S]*?-->/g, '');
-  var stack = [body];
-  var re = /<(\/?)([a-zA-Z][\w-]*)([^>]*?)(\/?)>|([^<]+)/g, m;
-  while ((m = re.exec(src))) {
-    if (m[5] !== undefined) {
-      if (m[5].trim() !== '') stack[stack.length - 1].appendChild(document.createTextNode(m[5].trim()));
-      continue;
-    }
-    if (m[1] === '/') { if (stack.length > 1) stack.pop(); continue; }
-    var n = mk(m[2]);
-    var a, ar = /([a-zA-Z-]+)(?:="([^"]*)")?/g, attrs = m[3] || '';
-    while ((a = ar.exec(attrs))) {
-      if (a[1] === 'id') n.id = a[2];
-      else if (a[1] === 'class') n.className = a[2];
-      else if (a[1] === 'hidden') n.hidden = true;
-      else if (a[2] !== undefined) n.setAttribute(a[1], a[2]);
-    }
-    stack[stack.length - 1].appendChild(n);
-    if (m[4] !== '/') stack.push(n);
-  }
-}
+/* P1-B8B — THE PARSER MOVED TO _psb-harness.js, WHERE THE DOM SHIM ALREADY LIVES.
+   P1-B8B needs the same production DOM, and a second copy of a parser is a second model of the same
+   document: they agree on the day the copy is made and drift the first time the partial grows an
+   attribute one of them handles. One reader kept it local; two make it shared. */
+var partialSkeleton = H.productionSkeleton(SRC.partial);
 
 // ===================================================================================================
 // THE UNIVERSE THE LIVE READBACK MEASURED  (P1-B7 §2)
@@ -275,6 +258,10 @@ console.log('\n=== §B  THE SCRIPT ORDER IS THE DEPENDENCY ORDER, MEASURED ===')
     'assets/js/product-strategy/km-product-strategy-live-adapter.js': ['KM_PRODUCT_STRATEGY_LIVE_ADAPTER'],
     'assets/js/product-strategy/psb-selectors.js': ['PSB_SELECTORS'],
     'assets/js/product-strategy/psb-chart-layout.js': ['PSB_CHART_LAYOUT'],
+    // P1-B8B - the view registry. Adding it here does not merely keep the count right: the graph
+    // below is derived from the sources, so this entry is what PROVES psb-views.js loads before
+    // psb-board-ui.js, which reads PSB_VIEWS at module scope and throws by name without it.
+    'assets/js/product-strategy/psb-views.js': ['PSB_VIEWS'],
     'assets/js/product-strategy/psb-board-ui.js': ['PSB_BOARD'],
     'assets/js/pages/product-strategy-board.js': ['KM.pages.productStrategyBoard']
   };
@@ -303,11 +290,11 @@ console.log('\n=== §B  THE SCRIPT ORDER IS THE DEPENDENCY ORDER, MEASURED ===')
     'B2 and the shared transport is created before the accessor that uses it');
   ok(/KM\.api/.test(bare(SRC.accessor)), 'B2a which the accessor does in fact use');
 
-  /* THE PAGE CONTROLLER IS LAST OF THE NINE. It names every other one. */
+  /* THE PAGE CONTROLLER IS LAST OF THE TEN. It names every other one. */
   var last = files.reduce(function (a, b) { return pos[a] > pos[b] ? a : b; });
   eq(last, 'assets/js/pages/product-strategy-board.js', 'B3 the page controller loads last');
 
-  /* AND THE NINE ARE CONTIGUOUS — no unrelated tag between them. A block is how an order stays
+  /* AND THE TEN ARE CONTIGUOUS — no unrelated tag between them. A block is how an order stays
      readable; an order spread through a file is one an edit breaks without looking wrong. */
   var first = files.reduce(function (a, b) { return pos[a] < pos[b] ? a : b; });
   var span = SRC.index.slice(pos[first], pos[last]);
@@ -315,7 +302,7 @@ console.log('\n=== §B  THE SCRIPT ORDER IS THE DEPENDENCY ORDER, MEASURED ===')
     return /src="([^"?]+)/.exec(t)[1];
   });
   eq(tags.filter(function (t) { return files.indexOf(t) < 0; }), [],
-    'B4 the nine tags are contiguous — nothing unrelated is loaded between them');
+    'B4 the ten tags are contiguous — nothing unrelated is loaded between them');
 
   /* THE BOARD ITSELF REFUSES A WRONG ORDER AT RUNTIME, which is what makes B1 a second line of
      defence rather than the only one. */
@@ -573,7 +560,13 @@ var MOUNTED = null;
   sandbox.setTimeout = setTimeout; sandbox.clearTimeout = clearTimeout;
   sandbox.requestAnimationFrame = function (f) { return setTimeout(f, 0); };
   vm.createContext(sandbox);
-  ['psb-data-contract.js', 'psb-chart-layout.js', 'psb-selectors.js', 'psb-board-ui.js']
+  /* P1-B8B — psb-views.js joins the load order, before the board. The board reads the six views from
+     it instead of declaring them, because the Operation System sidebar renders the same six as the
+     children of a `Product Strategy` parent and two lists of six labels would drift. The board throws
+     BY NAME when it is missing, which is how this list stays honest: a forgotten dependency is a
+     named error at load, not six empty tabs at render. */
+  ['psb-data-contract.js', 'psb-chart-layout.js', 'psb-selectors.js', 'psb-views.js',
+    'psb-board-ui.js']
     .forEach(function (f) {
       vm.runInContext(read(path.join(JS, 'product-strategy', f)), sandbox, { filename: f });
     });

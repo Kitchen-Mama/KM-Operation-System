@@ -292,11 +292,52 @@
     return C;
   };
 
-  /** The one-call entry point: build a controller and load the universe. */
+  /* ==============================================================================================
+     THE ROUTE (P1-B8B §2)
+
+     A view of this board has a canonical name — `product-strategy/<view>` — and psb-views.js owns the
+     six. These two functions are the ONLY place anything outside the board translates between that
+     name and what is on screen, which is what makes the identity real rather than decorative: the
+     sidebar child, the in-page tab, the controller and a test all say the same string.
+
+     WHAT IS NOT HERE IS A URL, and that is in psb-views.js's header at length. Briefly: this shell has
+     no router — no `location.hash`, no `pushState`, no `popstate` anywhere in assets/js — so a hash
+     written here could not be pasted, could not survive a reload, and would sit in the address bar
+     while the shell showed Home. Making it true means giving the whole application a router, and
+     P1-B8A is one round old: a disabled page does not get to change how every other page reloads.
+     ============================================================================================== */
+
+  /** Select a view on the mounted board. Returns the canonical route that is now showing, or null. */
+  P.applyRoute = function (route, board) {
+    var b = board || boardOf({});
+    if (!b || typeof b.showView !== 'function') return null;
+    b.showView(route);
+    return typeof b.currentRoute === 'function' ? b.currentRoute() : null;
+  };
+
+  /** Which view is showing, as a route. Null when no board is mounted. */
+  P.currentRoute = function (board) {
+    var b = board || boardOf({});
+    return (b && typeof b.currentRoute === 'function') ? b.currentRoute() : null;
+  };
+
+  /**
+   * The one-call entry point: build a controller and load the universe.
+   *
+   * A `route` is applied AFTER the load resolves and ONLY if the board actually mounted. Applying it
+   * first would select a view on a board that is about to be replaced; applying it when the load
+   * refused would be selecting a view of a page that is showing a refusal instead of a board.
+   */
   P.mount = function (opts) {
+    opts = isObj(opts) ? opts : {};
     var c = P.create(opts);
     P.lastController = c;
-    return c.loadUniverse();
+    return c.loadUniverse().then(function (res) {
+      if (res && res.mounted === true && str(opts.route) !== '') {
+        P.applyRoute(opts.route, boardOf(opts));
+      }
+      return res;
+    });
   };
 
   /* ==============================================================================================
@@ -341,7 +382,12 @@
       if (!ok) return null;
       var sec = doc.getElementById(P.SECTION_ID);
       if (sec && sec.classList) sec.classList.add('active');
-      return P.mount({});
+      /* The route the sidebar child asked for, consumed ONCE. Left in place it would re-select that
+         view on a later visit that asked for a different one — a stale intent is worse than none,
+         because it looks like a working restore. */
+      var wanted = (root.KM && root.KM.pendingRoute) || '';
+      if (root.KM) root.KM.pendingRoute = null;
+      return P.mount({ route: wanted });
     });
   };
 
@@ -377,6 +423,14 @@
     staged_section_key: 'product-strategy',
     loads_prototype_assets: false,
     reads_url_parameters: false,
+    // P1-B8B — the identity exists; the URL binding does not, and the distinction is the point.
+    // Every view has a canonical route, carried on the sidebar child and on the tab, applied on
+    // mount and readable at any time. Nothing writes it to `location`, because this shell has no
+    // router to read it back and a URL that cannot be pasted is worse than none.
+    views_have_canonical_routes: true,
+    route_base: 'product-strategy',
+    binds_route_to_url: false,
+    url_binding_owner: 'shell (not this page) — P1-B8C',
     writes_browser_storage: false,
     fixture_fallback: false,
     only_state_that_mounts: 'OK',

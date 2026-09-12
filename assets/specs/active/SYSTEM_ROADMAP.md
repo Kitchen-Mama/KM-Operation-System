@@ -671,3 +671,46 @@ production and live only in a clearly-labelled prototype shim.
 P1 completion is now about the page, not about identity: responsive/loading/empty/error/print states,
 then a controlled live read-only verification. **P1-B8 live render still requires the USER's explicit
 decision** — it is not unblocked by this round.
+
+---
+
+## P1-B8B — information architecture, sub-tabs, state matrix, responsive (complete, nothing activated)
+
+`Product Strategy` is a parent menu above **Pricing Center** (`data-menu-id="carrier"`) with the six
+views as children, built from `KM_STAGED_SECTIONS_` + `PSB_VIEWS` by `KM.nav.buildStagedMenu()` —
+which **nothing in production calls**. The production default has no entry point and no element to
+un-grey.
+
+```
+PRODUCT_STRATEGY_FLAG            = false
+PRODUCT_STRATEGY_NAVIGATION      = declared, not rendered
+SUBTAB_ROUTE_IDENTITY            = canonical
+SUBTAB_URL_BINDING               = none (shell has no router)
+VIEWPORTS_PASSING                = 6 of 7
+MOBILE_390                       = BLOCKED BY THE SHELL, not by this page
+```
+
+The six views are declared ONCE (`assets/js/product-strategy/psb-views.js`) and rendered twice — the
+sidebar submenu and the in-page tab rail — because two lists of six labels is the duplicate-definition
+mistake P1-B8A spent a round removing. Each carries a canonical route; none is a placeholder (all six
+renderers verified against `paintView`).
+
+**The in-page rail is now `.km-tab-rail`**, the component three other pages already share, instead of
+the second tab component P1-B7 wrote. `role="tablist"`, one tab stop, Arrow/Home/End.
+
+**Four new states** — `BROWSER_OFFLINE`, `SOURCE_TIMED_OUT`, `NOT_AUTHORIZED`,
+`RESPONSE_NOT_READABLE` — replace the single "no server answered" that every failure used to produce.
+
+`product-strategy-information-architecture-p1-b8b.test.js` — **234 assertions · 18 mutants · 0
+survived**. Full sweep 460 suites; only the four pre-existing red, counts identical (3/1/7/2).
+
+### Carried forward to P1-B8C
+
+1. **URL binding for the sub-tab routes** — a shell-level decision, not this page's: the application
+   has no router at all, and adding one changes Back and reload everywhere.
+2. **390x844** — `.sidebar` is a fixed 240px with no breakpoint in any stylesheet. Every page in the
+   application gets 86px of content on a phone. Not a Product Strategy defect and not a Product
+   Strategy fix.
+
+**P1-B8C is a controlled live read-only verification and still requires the USER's explicit
+authorisation.** Nothing in this round unblocks it.

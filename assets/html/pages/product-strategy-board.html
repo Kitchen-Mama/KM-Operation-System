@@ -43,15 +43,23 @@
          here. -->
     <div id="banner" class="psb-printbanner" role="status" aria-live="polite"></div>
 
-    <!-- P1-B7 — THE SIX VIEWS OF THIS BOARD, as an in-page rail. This is not application
-         navigation: the Operation System sidebar moves between PAGES, this moves between views of
-         one page, and §6 forbids a second sidebar. The prototype rendered the same six buttons down
-         a dark left rail; the markup and the `.navbtn` class are unchanged so psb-board-ui.js
-         renders into it without knowing the difference — only the direction and the colours differ,
-         and those are in the stylesheet. -->
-    <nav class="psb-viewnav" aria-label="Product Strategy views">
-        <ul class="nav" id="nav"></ul>
-    </nav>
+    <!-- THE SIX VIEWS OF THIS BOARD (P1-B8B §2/§5) — and as of this round they are the Operation
+         System's OWN tab component rather than a second one.
+
+         P1-B7 put the prototype's six `.navbtn`s here and restyled them in the page stylesheet:
+         its own hover, its own active underline, its own overflow behaviour. That is a second tab
+         component, which §5 forbids, and the application already has one — `.km-tab-rail` in
+         components.css, paired with assets/js/utils/tab-rail.js for wheel-to-horizontal scrolling
+         and focus-into-view, shared today by Campaign Risk, Inventory Replenishment and Order
+         Planning. The `km-tab-rail` class on the list is ALSO how psb-board-ui.js knows which host
+         it is rendering into: the prototype's list does not carry it and keeps the sidebar rendering.
+
+         `role="tablist"` rather than a `<nav>` landmark, deliberately. The Operation System sidebar
+         moves between PAGES and is the navigation; this moves between views of ONE page. The six
+         are one tab stop with Arrow-key movement, not six stops in front of the page's controls. -->
+    <div class="psb-viewnav">
+        <ul class="nav km-tab-rail" id="nav"></ul>
+    </div>
 
     <!-- Which of the six is showing, and the category inside it. Also the one line that tells a
          printed page what it is a picture of. -->

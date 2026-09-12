@@ -82,7 +82,23 @@
 
   /** The LoadResult states this adapter can return. `OK` is the contract's word for "analysable". */
   L.LOAD_STATES = ['OK', 'SOURCE_EMPTY', 'SOURCE_PARTIALLY_READABLE', 'STOP_DATA_INTEGRITY',
-    'SOURCE_NOT_CONNECTED', 'FEATURE_DISABLED', 'SCHEMA_CONTRACT_MISMATCH', 'CONTRACT_MISMATCH'];
+    'SOURCE_NOT_CONNECTED', 'FEATURE_DISABLED', 'SCHEMA_CONTRACT_MISMATCH', 'CONTRACT_MISMATCH',
+    'BROWSER_OFFLINE', 'SOURCE_TIMED_OUT', 'NOT_AUTHORIZED', 'RESPONSE_NOT_READABLE'];
+
+  /* P1-B8B §9 — THE CLIENT-ONLY REFUSALS, AND WHY THEY ARE A SET RATHER THAN ONE SPECIAL CASE.
+
+     FEATURE_DISABLED was already handled here by name: it is the accessor's own answer, it never
+     reached a server, and flattening it into "not connected" would send an operator to check a
+     network that is fine. That reasoning was never specific to the flag. P1-B8B made the accessor
+     say WHICH way a read failed — offline, timed out, refused for access, answered with a web page —
+     and every one of those is the same kind of fact for the same reason.
+
+     A SERVER CANNOT CLAIM ONE. These describe what happened to the REQUEST, not what the data says,
+     so they are believed only on a response the accessor built itself (`meta.refused === true`). A
+     response that arrived over the wire carrying one of these codes is a contract breach, not a
+     state, and it falls through to the checks below exactly as any other unexpected shape does. */
+  L.CLIENT_ONLY_REFUSALS = ['FEATURE_DISABLED', 'BROWSER_OFFLINE', 'SOURCE_TIMED_OUT',
+    'NOT_AUTHORIZED', 'RESPONSE_NOT_READABLE'];
 
   /**
    * THE UI MATRIX, AS DATA. §5 asks for one behaviour per state; stating it as a table means a test can
@@ -111,6 +127,22 @@
     FEATURE_DISABLED: { may_analyse: false, uses_fixture: false, severity: 'info',
       headline: 'Product Strategy is not enabled yet.',
       detail: 'The capability is off, so no request was sent.' },
+    BROWSER_OFFLINE: { may_analyse: false, uses_fixture: false, severity: 'stop',
+      headline: 'This device has no network connection.',
+      detail: 'The request was never sent, so nothing is known about the data yet. It will be, once'
+        + ' the connection is back — nothing here needs to be redone.' },
+    SOURCE_TIMED_OUT: { may_analyse: false, uses_fixture: false, severity: 'stop',
+      headline: 'The database did not answer in time.',
+      detail: 'The request reached the server and no answer came back within the time it was given.'
+        + ' This is a read, so nothing was changed and asking again is safe.' },
+    NOT_AUTHORIZED: { may_analyse: false, uses_fixture: false, severity: 'stop',
+      headline: 'This account cannot read Product Strategy data.',
+      detail: 'A server answered, and the answer was a sign-in or access page rather than the data.'
+        + ' Asking again will not change that — access has to be granted.' },
+    RESPONSE_NOT_READABLE: { may_analyse: false, uses_fixture: false, severity: 'stop',
+      headline: 'The address answered, but not with Operation System data.',
+      detail: 'Something returned a web page where the API was expected. Nothing was read from it,'
+        + ' because a page that is not the API cannot be partly believed.' },
     SCHEMA_CONTRACT_MISMATCH: { may_analyse: false, uses_fixture: false, severity: 'stop',
       headline: 'Analysis stopped — the response is a shape this build was not written against.',
       detail: 'Adapting it anyway would mean reading fields that may have moved, which is how a wrong'
@@ -168,8 +200,10 @@
     // 1. The accessor's own refusal, which never reached a server.
     var firstRefusal = (isArr(adapted.refusals) && adapted.refusals.length)
       ? str(adapted.refusals[0].code) : '';
-    if (firstRefusal === 'FEATURE_DISABLED') {
-      return { state: 'FEATURE_DISABLED', refusals: adapted.refusals.slice() };
+    var locallyRefused = !!(adapted.provenance && adapted.provenance.refused === true);
+    if (L.CLIENT_ONLY_REFUSALS.indexOf(firstRefusal) >= 0
+      && (firstRefusal === 'FEATURE_DISABLED' || locallyRefused)) {
+      return { state: firstRefusal, refusals: adapted.refusals.slice() };
     }
 
     // 2. A shape this build was not written against. Checked BEFORE the source state, because a state

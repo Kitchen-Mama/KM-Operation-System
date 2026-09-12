@@ -2225,20 +2225,18 @@
      Icons are inline SVG, 18px, stroked, currentColor. No emoji, no icon font, no CDN. They are UI
      glyphs; not one of them is ever used where a product photograph would go.
      ================================================================================================ */
-  var NAV = [
-    { id: 'overview', label: 'Executive Overview', icon: 'M3 10.5 10 4l7 6.5M5.5 9.5V16h9V9.5' },
-    { id: 'category', label: 'Category Analysis',
-      icon: 'M3.5 16V8M8 16V4.5M12.5 16v-5M17 16V6.5' },
-    { id: 'risk', label: 'Deal Risk',
-      icon: 'M10 3.5 17.5 16.5h-15zM10 8.5v3.5M10 14.2v.1' },
-    { id: 'quality', label: 'Data Quality',
-      icon: 'M4 5.5h12M4 10h12M4 14.5h7M14.2 13.4l1.6 1.6 2.6-3' },
-    { id: 'workspace', label: 'Strategy Workspace',
-      icon: 'M3 5.5h14v9H3zM3 8.5h14M7.5 8.5v6' },
-    { id: 'advanced', label: 'Advanced Details',
-      icon: 'M8 3.5h4l.4 2 1.8 1 1.9-.8 2 3.4-1.5 1.3v2.2l1.5 1.3-2 3.4-1.9-.8-1.8 1-.4 2H8'
-        + 'l-.4-2-1.8-1-1.9.8-2-3.4L3.4 12.7v-2.2L1.9 9.2l2-3.4 1.9.8 1.8-1z' }
-  ];
+  /* P1-B8B §2 — THE SIX ARE NOT DECLARED HERE ANY MORE.
+     They are `PSB_VIEWS.VIEWS`, because the Operation System sidebar now renders the same six as the
+     children of a `Product Strategy` parent, and two lists of six labels is precisely the second
+     definition site P1-B8A spent a round removing from the stylesheet. This is a DELEGATION, not a
+     copy: if psb-views.js did not load there are no views, and the rail renders nothing rather than
+     falling back to a hardcoded set that could drift from the sidebar's. */
+  var VIEWS = this.PSB_VIEWS;
+  if (!VIEWS) throw new Error('PSB_VIEWS is not loaded - psb-views.js must precede psb-board-ui.js');
+  var NAV = VIEWS.VIEWS;
+  /* The module's own global, captured at module scope. Every other dependency here is read off `this`
+     the same way; a nested function in strict mode has no `this` to read it from. */
+  var GLOBAL = this;
 
   function icon(d) {
     var s = svg('svg', { viewBox: '0 0 20 20', 'class': 'ic', 'aria-hidden': 'true' });
@@ -2246,32 +2244,110 @@
     return s;
   }
 
+  /**
+   * SELECT ONE VIEW. The one place the view changes, so the category rule below cannot be applied in
+   * one caller and forgotten in another.
+   */
+  function selectView(id) {
+    STATE.view = VIEWS.resolve(id);
+    /* Leaving the overview picks up a category; the overview itself has none, because it is the
+       only view allowed to look across them. */
+    if (STATE.view === 'overview') { STATE.category = null; }
+    else if (!STATE.category) { STATE.category = firstCategory(); }
+    render();
+  }
+
+  /**
+   * THE VIEW RAIL — ONE RENDERER, TWO HOSTS, AND THE HOST DECIDES WHICH IT IS   (P1-B8B §2/§5)
+   *
+   * The prototype draws these six down a dark left sidebar; the production partial draws them as a
+   * horizontal tab rail under the page title. Until P1-B8B the production rail was the prototype's
+   * `.navbtn` with its own hover, active, focus and overflow rules restated in the page stylesheet —
+   * A SECOND TAB COMPONENT, which is what §5 forbids and what the Operation System already owns one
+   * of: `.km-tab-rail` in components.css, with `assets/js/utils/tab-rail.js` for the wheel-to-
+   * horizontal-scroll and focus-into-view behaviour, shared today by three other pages.
+   *
+   * SO THE HOST CARRIES THE DECISION AND THE RENDERER READS IT. The production partial puts
+   * `km-tab-rail` on the `<ul>`; the prototype does not. One renderer, no fork, no flag to pass, and
+   * no way for the two to drift — the markup difference is a class on an element in a file, which a
+   * test can read.
+   *
+   * WHY TABS AND NOT LINKS. These are six views of ONE page, not six destinations, so the production
+   * host is a `role="tablist"` and each button is a `role="tab"` with `aria-selected` and
+   * `aria-controls="view"` — the element it actually swaps. The prototype keeps `aria-current`,
+   * because in the prototype this IS the application's navigation. `aria-current="page"` on a control
+   * that changes a panel rather than the page was wrong on the production side and is corrected here.
+   *
+   * KEYBOARD (§2, §10). A tablist is ONE tab stop, not six: the selected tab is the only one with
+   * `tabindex=0` and Arrow keys move between them (Home/End to the ends). Six separate tab stops in
+   * front of the page's real controls is the accessibility defect this pattern exists to avoid.
+   */
   function renderNav() {
     var ul = byId('nav');
     if (!ul) return;          /* P1-B7 — a host that is not there is a missing control, not a dead page */
+    var rail = (' ' + (ul.className || '') + ' ').indexOf(' km-tab-rail ') >= 0;
     clear(ul);
+    if (rail) {
+      ul.setAttribute('role', 'tablist');
+      ul.setAttribute('aria-label', 'Product Strategy views');
+    }
+    var buttons = [];
     NAV.forEach(function (item) {
       var li = document.createElement('li');
-      var b = el('button', 'navbtn' + (STATE.view === item.id ? ' is-active' : ''));
+      if (rail) li.setAttribute('role', 'presentation');
+      var on = STATE.view === item.id;
+      var b = el('button', 'navbtn' + (rail ? ' km-tab-rail__tab' : '') + (on ? ' is-active' : ''));
       b.setAttribute('type', 'button');
       b.id = 'nav-' + item.id;
       b.setAttribute('data-view', item.id);
+      /* THE ROUTE IS ON THE ELEMENT (§2). A tab whose only identity is an index into an array is the
+         "fake tab that exists only in memory" §2 names; this one can be read, logged and addressed
+         without being clicked, and it is the SAME string the sidebar child carries. */
+      b.setAttribute('data-route', VIEWS.routeOf(item.id));
       b.setAttribute('data-tip', item.label);
       b.setAttribute('title', item.label);
-      b.setAttribute('aria-current', STATE.view === item.id ? 'page' : 'false');
+      if (rail) {
+        b.setAttribute('role', 'tab');
+        b.setAttribute('aria-selected', on ? 'true' : 'false');
+        b.setAttribute('aria-controls', 'view');
+        b.setAttribute('tabindex', on ? '0' : '-1');
+      } else {
+        b.setAttribute('aria-current', on ? 'page' : 'false');
+      }
       b.appendChild(icon(item.icon));
       b.appendChild(el('span', 'nav-text', item.label));
-      b.addEventListener('click', function () {
-        STATE.view = item.id;
-        /* Leaving the overview picks up a category; the overview itself has none, because it is the
-           only view allowed to look across them. */
-        if (item.id === 'overview') { STATE.category = null; }
-        else if (!STATE.category) { STATE.category = firstCategory(); }
-        render();
-      });
+      b.addEventListener('click', function () { selectView(item.id); });
+      if (rail) {
+        b.addEventListener('keydown', function (ev) {
+          var k = ev && ev.key;
+          var i = buttons.indexOf(b), to = -1;
+          if (k === 'ArrowRight' || k === 'ArrowDown') to = (i + 1) % buttons.length;
+          else if (k === 'ArrowLeft' || k === 'ArrowUp') to = (i - 1 + buttons.length) % buttons.length;
+          else if (k === 'Home') to = 0;
+          else if (k === 'End') to = buttons.length - 1;
+          if (to < 0) return;
+          if (ev.preventDefault) ev.preventDefault();
+          /* SELECT, THEN FOCUS THE REBUILT NODE. `render()` replaces every button, so focusing `b`'s
+             neighbour from before the redraw would focus a node that is no longer in the document —
+             the focus would land on <body> and the next arrow key would do nothing. */
+          var nextId = NAV[to].id;
+          selectView(nextId);
+          var fresh = byId('nav-' + nextId);
+          if (fresh && typeof fresh.focus === 'function') fresh.focus();
+        });
+      }
+      buttons.push(b);
       li.appendChild(b);
       ul.appendChild(li);
     });
+    /* The shared rail behaviour, where the shared rail exists. Idempotent by its own contract, and it
+       never changes selection — only scroll and visibility. */
+    if (rail) {
+      var K = GLOBAL && GLOBAL.KM;
+      if (K && K.ui && K.ui.tabRail) {
+        try { K.ui.tabRail.enhance(ul); K.ui.tabRail.scrollActiveIntoView(ul); } catch (e) { /* never fatal */ }
+      }
+    }
   }
 
   /* ================================================================================================
@@ -3736,7 +3812,13 @@
         'Everything a source could not supply. Nothing on this page was substituted for a missing '
         + 'value — an absent price stays absent and an unproven photograph is not shown.');
     } else if (STATE.view === 'workspace') viewWorkspace(host);
-    else viewAdvanced(host);
+    else if (STATE.view === 'advanced') viewAdvanced(host);
+    /* P1-B8B — NO FALLTHROUGH. This was `else viewAdvanced(host)`, so any view id that was not one of
+       the five above silently rendered Advanced Details: a typo, a stale value, or a route that did
+       not parse all produced a real-looking page that was not the page anybody asked for. An unknown
+       view is not a view. `selectView` resolves through PSB_VIEWS so STATE.view can only ever hold one
+       of the six, and this branch is what makes that a checkable claim rather than a convention. */
+    else { STATE.view = VIEWS.DEFAULT_VIEW; viewOverview(host); }
   }
 
   /* ---- THE VIEWPORT CONTRACT ----------------------------------------------------------------------
@@ -4315,12 +4397,18 @@
       'navigator.', 'KM.DB'].forEach(function (b, i4) {
       ok(src.indexOf(b) < 0, 'O1.' + (i4 + 1) + ' the renderer never reaches for ' + b);
     });
-    /* FIVE NOW: the contract, the LAYOUT ENGINE, the pipeline, the fixture and this file. The
-       count is asserted rather than the names because the point is that nothing is loaded from
-       anywhere else — a fifth local file is a decision, a sixth remote one would be a defect. */
+    /* SIX SINCE P1-B8B: the contract, the LAYOUT ENGINE, the pipeline, THE VIEW REGISTRY, the
+       fixture and this file. The count is asserted rather than the names because the point is that
+       nothing is loaded from anywhere else — a sixth local file is a decision, a seventh remote one
+       would be a defect.
+
+       The new one is psb-views.js, and it is here rather than inside this file because the Operation
+       System sidebar now renders the same six views as the children of a `Product Strategy` parent.
+       Two lists of six labels would be the duplicate-definition mistake P1-B8A spent a round
+       removing from the stylesheet; one registry, read by both surfaces, is the fix. */
     var scripts = [].slice.call(document.querySelectorAll('script[src]'))
       .map(function (n) { return n.getAttribute('src'); });
-    eqv(scripts.length, 5, 'O2 five local scripts, and no sixth');
+    eqv(scripts.length, 6, 'O2 six local scripts, and no seventh');
     eqv(scripts.filter(function (u) { return /^https?:|^\/\//.test(u); }), [],
       'O2a and not one of them is remote');
     /* P1-B8A — TWO, AND THE ORDER IS THE POINT. This was one: the board stylesheet carried its own
@@ -4508,12 +4596,27 @@
     eqv(STATE.rail, start.rail, 'Z3 and the sidebar');
   }
 
+  /**
+   * P1-B8B — THE FOURTH UNGUARDED HOST, AND P1-B7 FIXED THE OTHER THREE.
+   *
+   * P1-B7 found that `renderNav`, `renderCrumbs` and `renderScenarioMark` appended into elements the
+   * production partial does not have, and gave each one an `if (!host) return`. This function is the
+   * same bug and that round could not see it: it runs ONLY when the adapter is the preview fixture,
+   * and P1-B7 mounted the live adapter, so the branch never executed.
+   *
+   * It is not reachable in production today — production loads no fixture, so `ADAPTER.id` is never
+   * `PREVIEW` — and that is a reason to guard it rather than a reason not to. The board is a renderer
+   * that several hosts mount; "this host happens to have the element" is the assumption that broke
+   * the page twice already. A host without a self-test panel has not misconfigured anything; it has
+   * mounted a board it is not running a self-test in.
+   */
   function renderSelfTest() {
     var badge = byId('stBadge');
+    var host = byId('stList');
+    if (!badge || !host) return;
     clear(badge);
     badge.appendChild(document.createTextNode('self-test ' + T.pass + '/' + (T.pass + T.fail)));
     badge.className = 'stbadge ' + (T.fail === 0 ? 'is-ok' : 'is-bad');
-    var host = byId('stList');
     clear(host);
     T.items.forEach(function (it) {
       host.appendChild(el('div', 'st ' + (it.ok ? 'st-ok' : 'st-bad'),
@@ -4691,6 +4794,14 @@
      ------------------------------------------------------------------------------------------------ */
   var BOARD = {
     mount: function (opts) { return boot(opts); },
+    /* P1-B8B §2 — THE ROUTE SEAM. `showView` is how anything outside this file selects one of the six
+       without knowing that `STATE` exists, and `currentRoute` is how it reads back which is showing.
+       Both speak in ROUTES rather than in internal ids, because the route is the name the sidebar
+       child, the tab and the controller all already use — an id that is only meaningful inside this
+       closure would put the translation in every caller. */
+    showView: function (idOrRoute) { selectView(VIEWS.resolve(idOrRoute)); return STATE.view; },
+    currentRoute: function () { return VIEWS.routeOf(STATE.view); },
+    VIEWS: VIEWS,
     /* Stated as data so a suite can assert the seam rather than grep for it. */
     CONTRACT: {
       adapter_is_an_argument: true,

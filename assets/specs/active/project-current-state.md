@@ -6132,3 +6132,72 @@ to live.
 
 **Unchanged:** 138 actions · no Apps Script change · no deployment · no frontend release · no flag
 change · no navigation · no database, Sheets or Drive write.
+
+---
+
+## P1-B8B — navigation, sub-tabs, states, responsive
+
+**State:** Product Strategy is integrated, has a complete and testable navigation structure, and is
+**disabled**. No menu item exists in `index.html`.
+
+```
+PRODUCT_STRATEGY_FLAG            = false
+PRODUCT_STRATEGY_NAVIGATION      = declared, not rendered
+SUBTAB_ROUTE_IDENTITY            = canonical
+SUBTAB_URL_BINDING               = none (shell has no router)
+VIEWPORTS_PASSING                = 6 of 7
+MOBILE_390                       = BLOCKED BY THE SHELL, not by this page
+```
+
+**Added:** `assets/js/product-strategy/psb-views.js` (the six views, once) ·
+`assets/tests/product-strategy-information-architecture-p1-b8b.test.js`.
+
+**Changed:** `app.js` (nav declaration + `KM.nav.buildStagedMenu` + `showProductStrategyView`) ·
+`psb-board-ui.js` (rail adopts `.km-tab-rail`, ARIA tabs, keyboard, no dispatch fallthrough,
+`renderSelfTest` guarded) · `product-strategy-board.html` (the list is a rail) ·
+`product-strategy-board.css` (sidebar rules scoped to `.side`, `.nav-count` removed, rail no longer
+restates the shared component) · `km-product-pricing-workspace.js` (transport-error classifier) ·
+`km-product-strategy-live-adapter.js` + `km-product-strategy-site-universe.js` (four new states) ·
+`km-product-pricing-adapter.js` (carries `meta.refused`) · `_psb-harness.js` (classList,
+querySelector, the production partial parser moved in from b7) · `index.html` (one script tag, eleven
+cache-busters).
+
+### Two defects this round found that nobody was looking for
+
+1. **The board stylesheet stripped the labels off the production tabs on every tablet and phone.**
+   `@media (max-width: 1000px)` and `body.presenting` hid `.nav-text` on anything inside `.psb-page`.
+   Those rules collapse the PROTOTYPE's 224px dark sidebar to a 64px icon rail, which is right for a
+   column. In the production partial there is no column — so at 1024x768, 768x1024 and 390x844 the six
+   labelled view tabs became six unlabelled glyphs. Scoped to `.side` now.
+
+2. **A fourth unguarded host, of the class P1-B7 fixed three of.** `renderSelfTest()` appended into
+   `#stBadge`/`#stList` unconditionally. P1-B7 could not see it: it runs only when the adapter is the
+   preview fixture, and P1-B7 mounted the live adapter. Unreachable in production today — and guarded
+   anyway, because "this host happens to have the element" is the assumption that broke the page
+   twice already.
+
+**Suites:**
+
+| | PRE | POST |
+|---|---|---|
+| `product-strategy-information-architecture-p1-b8b.test.js` | — | **234 / 0 / 18 / 0** (new) |
+| `product-strategy-board-p1-b2.test.js` | 252 / 0 / 17 / 0 | 253 / 0 / 17 / 0 |
+| `product-strategy-board-p1-b2a.test.js` | 241 / 0 / 14 / 0 | 241 / 0 / 14 / 0 |
+| `product-strategy-board-p1-b2b.test.js` | 142 / 0 / 16 / 0 | 142 / 0 / 16 / 0 |
+| `product-strategy-board-p1-b2c.test.js` | 157 / 0 / 14 / 0 | 157 / 0 / 14 / 0 |
+| `product-strategy-board-p1-b4.test.js` | 255 / 0 / 12 / 0 | 255 / 0 / 12 / 0 |
+| `product-strategy-integration-p1-b5.test.js` | 159 / 0 / 12 / 0 | 159 / 0 / 12 / 0 |
+| `product-strategy-production-readback-p1-b3.test.js` | 334 / 0 / 17 / 0 | 334 / 0 / 17 / 0 |
+| `product-strategy-shell-integration-p1-b7.test.js` | 168 / 0 / 12 / 0 | 168 / 0 / 12 / 0 |
+| `product-strategy-scope-correction-p1-b8a.test.js` | 87 / 0 / 16 / 0 | 87 / 0 / 16 / 0 |
+| `identity-boundary-baseline-sec-a0.test.js` | 53 / 0 / 11 / 0 | 53 / 0 / 11 / 0 |
+| `identity-verifier-prototype-sec-a1.test.js` | 105 / 0 / 14 / 0 | 105 / 0 / 14 / 0 |
+
+Five existing assertions were **re-pointed rather than deleted** when `psb-views.js` joined the load
+order: the prototype's own `O2` script count, b2's `H31`/`H31a` dependency list, and b7's `B3`/`B4`
+contiguity and its `DEFINES` graph — the last of which is what now PROVES the registry loads before
+the board rather than merely counting tags.
+
+**Unchanged:** 138 actions · two `productPricing.*` reads and no write-shaped name · no Apps Script
+change · no deployment · no flag change · no navigation rendered · no database, Sheets or Drive
+write.

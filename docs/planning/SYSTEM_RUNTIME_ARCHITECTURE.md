@@ -931,3 +931,76 @@ labelled shim.
 **The rule this establishes for any future page stylesheet in this application:** it is loaded
 globally, so it must be scoped to its own page root, and it must take its tokens from `base.css`
 rather than restating them.
+
+---
+
+## §15.11  P1-B8B — staged navigation, route identity, and the four answers a failed read can give
+
+### Navigation that exists as data
+
+`KM_STAGED_SECTIONS_['product-strategy'].nav` declares the placement (`insertBefore: 'carrier'` — the
+**Pricing Center** parent), the label and the icon; `PSB_VIEWS` declares the six children;
+`KM.nav.buildStagedMenu(key, doc)` returns the `.menu-parent` / `.menu-children` nodes and inserts
+nothing. **No production code path calls it.**
+
+> A DISABLED MENU ITEM AND AN ABSENT ONE ARE NOT THE SAME CONTROL. The Operation System has a
+> `menu-item--disabled` pattern and this deliberately does not use it: a greyed-out item is one class
+> deletion away from being live, which §3 names as a thing that must not be possible. Building the
+> menu in a harness proves the structure without creating the element.
+>
+> AND BUILDING IT IS NOT A BYPASS. DOM is not access. A child click calls `showProductStrategyView`,
+> which calls `showSection`, which refuses the staged id before touching the shell; the accessor's
+> capability mirror is false, so a directly-invoked controller answers FEATURE_DISABLED at zero
+> requests; and the server refuses on `PRODUCT_STRATEGY_ENABLED_` before opening a database. The menu
+> is the last of four things that would have to change, not the first.
+
+### Route identity without a URL
+
+Every view has a canonical route, `product-strategy/<view>`. It is on the sidebar child
+(`data-route`), on the tab (`data-route`), accepted by `P.mount({ route })` and readable from
+`P.currentRoute()`. `viewOfRoute()` returns **null** for anything that is not one of the six —
+`resolve()` is the separate function that substitutes the default, so substituting is a decision at a
+call site rather than a property of reading.
+
+**The URL is deliberately not written.** This shell has no router: `location.hash`, `pushState`,
+`popstate` and `hashchange` appear in no file under `assets/js`, and the suite re-measures that,
+because it is the premise the decision rests on. A hash written by this page could not be pasted and
+could not survive a reload — it would sit in the address bar while the shell showed Home. Making it
+true means installing a global router and changing Back and reload for every page in the application,
+for a feature that is switched off.
+
+### One page stylesheet, two hosts, and the class that decides
+
+`renderNav()` reads `km-tab-rail` off its host list. The production partial carries it; the prototype
+does not. One renderer, no fork, no flag to thread through — and the difference is a class on an
+element in a file, which a test can read. The rule P1-B8A established for page stylesheets now has a
+companion for shared components: **adopt the component, and let the host say which one it is.**
+
+### A failed read has four answers, and the transport already knew which
+
+`km-product-pricing-workspace.js` ended both reads with
+`.catch(e => refused('SOURCE_NOT_CONNECTED', String(e.message)))`. The shared transport had ALREADY
+classified the failure — `e.apiCode` carries `AUTH_OR_ACCESS_HTML`, `REQUEST_TIMEOUT`,
+`TRANSPORT_NON_JSON_RESPONSE`, `HTTP_NOT_FOUND_HTML` from a frozen vocabulary — and this layer
+replaced all of it with the message string.
+
+> "Not connected. No server answered" is FALSE on the sign-in-page path: a server answered, and it
+> answered "who are you". The reader was sent to check a connection that was working.
+
+The classifier is pure and exported, so the matrix is provable without a network. Its ORDER is
+load-bearing and both orderings are asserted: with no network a request does not fail fast, it fails
+when its bound elapses, so an offline read looks exactly like a slow server — and a sign-in page
+cannot be served to a machine that is offline, so `NOT_AUTHORIZED` outranks the offline flag rather
+than the reverse.
+
+`navigator.onLine === true` is not evidence of a route to the internet, so it may only ever make an
+already-failed read more specific; a host with no navigator returns `null`, not `false`, because a
+missing API must not silently decide a state.
+
+### The shell is not responsive, and that is now written down
+
+`.sidebar` is a fixed 240px and `.main-content` carries `margin-left: 240px`, with **no `@media` rule
+in any stylesheet touching either**. Every page in the application gets `viewport - 304px` of content;
+on a 390px phone that is 86px. The only narrowing available is the manual collapse button (64px). This
+is a shell-level fact recorded here because P1-B8B is the round that measured it, and a page-level
+stylesheet cannot fix it.

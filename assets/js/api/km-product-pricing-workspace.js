@@ -65,6 +65,98 @@
     };
   }
 
+  /* ================================================================================================
+     WHY A FAILED READ IS FOUR DIFFERENT ANSWERS AND NOT ONE   (P1-B8B §9)
+
+     Until P1-B8B both reads ended `.catch(e => refused('SOURCE_NOT_CONNECTED', String(e.message)))`,
+     so every way a read can fail arrived at the page as one sentence: "Not connected to the Operation
+     System database. No server answered."
+
+     ON AT LEAST ONE OF THOSE PATHS THAT SENTENCE IS SIMPLY FALSE. When Apps Script answers with its
+     sign-in page, A SERVER DID ANSWER — it answered "who are you" — and the reader is told to check
+     a connection that is working. §9 asks that different problems not all be shown as a connection
+     failure, and the reason they were is not that the information was unavailable: the shared
+     transport layer HAD ALREADY CLASSIFIED IT. `km-api-foundation.js` puts a name on the error in
+     `e.apiCode` from a frozen vocabulary — AUTH_OR_ACCESS_HTML, TRANSPORT_NON_JSON_RESPONSE,
+     HTTP_NOT_FOUND_HTML — and this layer replaced all of it with `e.message`.
+
+     THE FOUR ANSWERS ARE FOUR DIFFERENT NEXT ACTIONS, which is the only test worth applying to a
+     distinction:
+
+       BROWSER_OFFLINE       nothing left this machine. Retrying now fails again, for free.
+       SOURCE_TIMED_OUT      the request went; the bound elapsed before an answer did. The work may
+                             still be running at the far end. Retrying is reasonable; it costs another
+                             wait. NOTE the read is the only kind of request this accessor makes, so
+                             there is no indeterminate-write case to report here.
+       NOT_AUTHORIZED        a server answered, and the answer was a sign-in page. Retrying is
+                             pointless — this needs a person with access, not another attempt.
+       SOURCE_NOT_CONNECTED  nothing answered, and the browser believes it has a network.
+
+     `navigator.onLine` IS CONSULTED AS EVIDENCE, NOT AS AN ORACLE. `true` means very little — a
+     machine on a café wifi with no route to the internet reports `true` — so it is only ever read to
+     turn an already-failed read into the more specific answer. It can never turn a success into a
+     failure, and it is never consulted when the request did not fail.
+
+     PURE, AND EXPORTED, so the matrix is provable without a network: the classifier takes the error
+     and the online flag as arguments rather than reading the browser itself.
+     ================================================================================================ */
+
+  /** The states this side can reach WITHOUT a server having answered about the data. */
+  var CLIENT_TRANSPORT_STATES = ['SOURCE_NOT_CONNECTED', 'BROWSER_OFFLINE', 'SOURCE_TIMED_OUT',
+    'NOT_AUTHORIZED', 'RESPONSE_NOT_READABLE'];
+
+  function classifyTransportError(e, online) {
+    var code = str(e && e.apiCode);
+    var name = str(e && e.name);
+    var msg = str(e && e.message);
+    var status = (e && typeof e.transportStatus === 'number') ? e.transportStatus : null;
+
+    // 1. NOT AUTHORIZED FIRST, because it is the one case where a server DID answer, and answering
+    //    "who are you" while offline is not possible — so this cannot be a mislabelled offline.
+    if (code === 'AUTH_OR_ACCESS_HTML' || status === 401 || status === 403) return 'NOT_AUTHORIZED';
+
+    // 2. OFFLINE BEFORE TIMEOUT. With no network a request does not fail fast; it fails when whatever
+    //    bound it has elapses, so an offline read arrives here looking exactly like a slow server.
+    //    `online === false` is the only thing that tells the two apart, and it is decisive when set.
+    if (online === false) return 'BROWSER_OFFLINE';
+
+    if (code === 'REQUEST_TIMEOUT' || (e && e.kmTimeout === true)
+      || name === 'TimeoutError' || msg === 'REQUEST_TIMEOUT') return 'SOURCE_TIMED_OUT';
+
+    // 3. SOMETHING ANSWERED AND IT WAS NOT THE API. An HTML page that is not a sign-in page — a 404,
+    //    an error page, a proxy notice. "Not connected" is wrong for the same reason it is wrong for
+    //    a sign-in page, and the fix is a different one: this is a URL or a deployment, not a login.
+    if (code === 'TRANSPORT_NON_JSON_RESPONSE' || code === 'HTTP_NOT_FOUND_HTML'
+      || code === 'REDIRECT_TARGET_NOT_FOUND') return 'RESPONSE_NOT_READABLE';
+
+    return 'SOURCE_NOT_CONNECTED';
+  }
+
+  /**
+   * `navigator.onLine` when a navigator exists, and `null` when one does not.
+   *
+   * NULL RATHER THAN TRUE. In Node, in a test sandbox or in any host without a navigator there is no
+   * evidence either way, and defaulting to "online" would let a missing API silently decide a state.
+   * `null` is not `false`, so the classifier's offline branch simply does not fire.
+   */
+  function browserOnline() {
+    try {
+      var n = (typeof navigator !== 'undefined') ? navigator
+        : (root && root.navigator) ? root.navigator : null;
+      if (!n || typeof n.onLine !== 'boolean') return null;
+      return n.onLine;
+    } catch (e) { return null; }
+  }
+
+  /** The detail line for a refusal, which is what a reader is told to do next. */
+  var TRANSPORT_DETAIL = {
+    BROWSER_OFFLINE: 'the browser reports no network; the request was not sent to a server',
+    SOURCE_TIMED_OUT: 'the request was sent and no answer arrived within the time it was given',
+    NOT_AUTHORIZED: 'a server answered with a sign-in or access page rather than the API',
+    RESPONSE_NOT_READABLE: 'a server answered with something that is not the API envelope',
+    SOURCE_NOT_CONNECTED: 'no server answered'
+  };
+
   /** A local refusal in the SITE UNIVERSE shape, so that caller also has one branch and not two. */
   function universeRefused(code, detail, subject) {
     return {
@@ -234,7 +326,8 @@
         return env;
       })
       .catch(function (e) {
-        return refused('SOURCE_NOT_CONNECTED', String((e && e.message) || e), null);
+        var code = classifyTransportError(e, browserOnline());
+        return refused(code, TRANSPORT_DETAIL[code], null);
       });
   }
 
@@ -295,7 +388,8 @@
         return env;
       })
       .catch(function (e) {
-        return universeRefused('SOURCE_NOT_CONNECTED', String((e && e.message) || e), null);
+        var code = classifyTransportError(e, browserOnline());
+        return universeRefused(code, TRANSPORT_DETAIL[code], null);
       });
   }
 
@@ -305,6 +399,10 @@
     SITE_UNIVERSE_CONTRACT_VERSION: SITE_UNIVERSE_CONTRACT_VERSION,
     get: get, getSiteUniverse: getSiteUniverse,
     validateUniverseResponse: validateUniverseResponse,
+    // P1-B8B §9 — exported so the state matrix is provable without a network.
+    CLIENT_TRANSPORT_STATES: CLIENT_TRANSPORT_STATES.slice(),
+    TRANSPORT_DETAIL: TRANSPORT_DETAIL,
+    classifyTransportError: classifyTransportError,
     isEnabled: isEnabled, setCapability: setCapability,
     // exported for tests and for a caller that wants to check before it asks
     validateParams: validateParams, buildPayload: buildPayload, validateResponse: validateResponse,

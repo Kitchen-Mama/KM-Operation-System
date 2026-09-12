@@ -107,27 +107,38 @@
 }
 .psb-page .railbtn:hover { background: var(--side-2); border-color: #2f3949; color: var(--side-hi); }
 
-.psb-page .nav { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.psb-page .navbtn {
+/* P1-B8B — THE DARK COLUMN'S RULES NOW SAY SO, AND THAT IS A CORRECTION RATHER THAN A TIDY-UP.
+   These are written in --side-ink and --side-2: the ink of the prototype's dark left sidebar. They
+   were scoped to `.psb-page`, so in the PRODUCTION partial — where the same six buttons are a
+   horizontal tab rail on a white page — they were still the rules that won, and the production rail
+   had to restate hover, active and direction underneath them to look like anything. That is how the
+   board ended up with a SECOND tab component, which §5 forbids and which the Operation System
+   already owns one of.
+   Scoped to `.side`, they apply where they were written for and nowhere else. `.side` exists only in
+   the prototype; the production partial has no sidebar at all, which b7 §I12 asserts. */
+.psb-page .nav { list-style: none; margin: 0; padding: 0; }
+.psb-page .side .nav { display: flex; flex-direction: column; gap: 2px; }
+.psb-page .side .navbtn {
   width: 100%; display: flex; align-items: center; gap: 11px;
   padding: 9px 10px; border-radius: 7px; cursor: pointer;
   background: transparent; border: 1px solid transparent; color: var(--side-ink);
   font-size: 13.5px; text-align: left; position: relative;
 }
-.psb-page .navbtn:hover { background: var(--side-2); color: var(--side-hi); }
-.psb-page .navbtn.is-active {
+.psb-page .side .navbtn:hover { background: var(--side-2); color: var(--side-hi); }
+.psb-page .side .navbtn.is-active {
   background: var(--side-2); color: var(--side-hi); border-color: #333e52; font-weight: 600;
 }
-.psb-page .navbtn.is-active::before {
+.psb-page .side .navbtn.is-active::before {
   content: ""; position: absolute; left: -10px; top: 8px; bottom: 8px;
   width: 3px; border-radius: 0 3px 3px 0; background: var(--accent);
 }
 .psb-page .navbtn .ic { flex: 0 0 auto; }
 .psb-page .nav-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.psb-page .nav-count {
-  margin-left: auto; font: 11px var(--mono); color: var(--ink-4);
-  background: rgba(255, 255, 255, .06); border-radius: 999px; padding: 1px 7px;
-}
+/* P1-B8B — `.nav-count` is gone. It had four rules here and NOT ONE LINE OF CODE ANYWHERE CREATED
+   THE ELEMENT: no `nav-count` appears in psb-board-ui.js, in the production partial or in the
+   prototype's markup. It was a count badge for the view rail that was never built, and it survived
+   because dead CSS has no error state — it is simply a rule that never matches. Where the board does
+   show a count it already uses the Operation System's own `.km-tab-rail__count`. */
 
 .psb-page .side-foot { margin-top: auto; display: flex; flex-direction: column; gap: 4px; padding-top: 12px; }
 .psb-page .act {
@@ -146,7 +157,6 @@
 /* THE ICON RAIL. The label is hidden, so the accessible name moves to the tooltip and the title. */
 .psb-page .shell.is-rail .brand-text,
 .psb-page .shell.is-rail .nav-text,
-.psb-page .shell.is-rail .nav-count,
 .psb-page .shell.is-rail .act-text { display: none; }
 .psb-page .shell.is-rail .side { padding: 14px 8px; align-items: center; }
 .psb-page .shell.is-rail .side-head { padding-bottom: 12px; flex-direction: column; gap: 10px; }
@@ -575,33 +585,37 @@
 .psb-page .tipline.is-miss { color: #f2c9c4; }
 
 /* ================================================================================================
-   P1-B7 — THE IN-PAGE VIEW RAIL, AND THE SHELL BOUNDARY
+   THE IN-PAGE VIEW RAIL  (P1-B8B §5) — WHICH IS NOW THE OPERATION SYSTEM'S TAB COMPONENT
 
-   The Operation System owns the sidebar. This board owns the six views inside its own page, and in
-   production they are a horizontal rail under the header rather than a dark left column. The button
-   markup is identical — psb-board-ui.js `renderNav()` writes the same `.navbtn` it always did — so
-   what changes here is direction and ink, not structure. `.nav` and `.navbtn` themselves are left
-   exactly as the prototype needs them; every rule below is scoped to `.psb-viewnav`, which exists
-   only in the production partial.
+   P1-B7 wrote this rail's own hover, its own active state, its own padding, its own radius and its
+   own overflow behaviour. Every one of those already existed in components.css as `.km-tab-rail`,
+   shared by Campaign Risk, Inventory Replenishment and Order Planning — so the board had a second
+   tab component that looked ALMOST like the first, which is worse than an obviously different one
+   because nobody can see the drift until the two are side by side.
+
+   WHAT IS LEFT HERE IS ONLY WHAT THE SHARED COMPONENT DOES NOT OWN: where the rail sits on this
+   page, and the underline that marks the selected tab.
+
+   THE UNDERLINE IS NOT A RESTATEMENT. `.km-tab-rail__tab.is-active` fills the chip solid blue,
+   which is right for a FILTER — the rail's original job, where several chips may be set and the set
+   ones must read as a group. These six are a VIEW SELECTOR: exactly one is ever on, and a solid
+   fill on one of six makes the rail read as a filter that happens to have one value chosen. So the
+   fill is turned off and the selection is carried by weight and an underline, which is what the
+   prototype's left-edge bar said in a vertical list. The colours are still base.css tokens; nothing
+   here invents one.
    ================================================================================================ */
 .psb-page .psb-viewnav { border-bottom: 1px solid var(--line); margin-bottom: 12px; }
-.psb-page .psb-viewnav .nav {
-  flex-direction: row; flex-wrap: wrap; gap: 2px;
-  overflow-x: auto; -webkit-overflow-scrolling: touch;
+/* The tab keeps the shared metrics; only the glyph gap is the board's, because these tabs have an
+   18px icon and the shared rail's do not. */
+.psb-page .psb-viewnav .navbtn { gap: 8px; position: relative; }
+.psb-page .psb-viewnav .navbtn.is-active {
+  background: transparent; color: var(--ink); border-color: transparent; font-weight: 650;
 }
-.psb-page .psb-viewnav .navbtn {
-  width: auto; color: var(--ink-2); border-radius: 7px 7px 0 0;
-  padding: 9px 12px; white-space: nowrap;
-}
-.psb-page .psb-viewnav .navbtn:hover { background: var(--line-2); color: var(--ink); }
-.psb-page .psb-viewnav .navbtn.is-active { background: transparent; color: var(--ink); font-weight: 650; }
-/* The prototype marks the active destination with a bar down its LEFT edge, which is where an eye
-   looks in a vertical list. In a horizontal rail the same fact belongs under the label. */
 .psb-page .psb-viewnav .navbtn.is-active::before {
-  content: ''; position: absolute; left: 8px; right: 8px; top: auto; bottom: -1px;
-  width: auto; height: 2px; border-radius: 2px; background: var(--accent);
+  content: ''; position: absolute; left: 8px; right: 8px; bottom: -1px;
+  height: 2px; border-radius: 2px; background: var(--accent);
 }
-.psb-page .psb-viewnav .nav-count { margin-left: 6px; }
+.psb-page .psb-viewnav .navbtn.is-active .ic { color: var(--accent); }
 
 /* Empty until a scenario is applied — no height, no border, no reserved space, because a warning
    strip that is always present is one a reader has already learned to skip. */
@@ -683,19 +697,40 @@ body.presenting .psb-page .printhint,
 body.presenting .psb-page .advanced,
 body.presenting .psb-page .topright { display: none; }
 body.presenting .psb-page .rtitle { font-size: 30px; }
+/* P1-B8B — THESE COLLAPSE THE PROTOTYPE'S SIDEBAR TO ICONS, AND THEY SAY SO NOW.
+   Hiding `.nav-text` turns a labelled destination into an anonymous glyph, which is a reasonable
+   trade in a 64px-wide dark column that is still the only navigation on screen. Scoped to
+   `.psb-page` it also hit the PRODUCTION view rail, where it is not a trade at all: the rail is not
+   the navigation, it is six views of one page, and six unlabelled icons is six guesses. In
+   presentation mode the production rail is hidden outright instead — a projector audience is not
+   choosing a view. */
 body.presenting .psb-page .brand-text,
-body.presenting .psb-page .nav-text,
-body.presenting .psb-page .nav-count,
+body.presenting .psb-page .side .nav-text,
 body.presenting .psb-page .act-text { display: none; }
 body.presenting .psb-page .side { padding: 14px 8px; align-items: center; }
-body.presenting .psb-page .navbtn, body.presenting .psb-page .act { justify-content: center; padding: 10px 0; }
+body.presenting .psb-page .side .navbtn, body.presenting .psb-page .act { justify-content: center; padding: 10px 0; }
+body.presenting .psb-page .psb-viewnav { display: none; }
 
 /* ---------------------------------------------------------------- narrow ------------------------ */
+/* ---------------------------------------------------------------- narrow ------------------------
+   P1-B8B — THE SIDEBAR COLLAPSE IS THE PROTOTYPE'S, AND IT WAS REACHING THE PRODUCTION TAB RAIL.
+
+   At 1000px and below this hid `.nav-text` and `.nav-count` on anything inside `.psb-page`. In the
+   prototype that collapses a 224px dark column to a 64px icon rail, which is the right answer for a
+   column that is competing with the chart for width. In the production partial there is no column:
+   the same rule turned the six labelled view tabs into six identical-looking glyphs on EVERY device
+   in §7's matrix at or below 1024 — 1024x768, 768x1024 and 390x844, which is to say every tablet and
+   every phone.
+
+   Nothing needs to replace it there. `.km-tab-rail` already answers a rail that will not fit by
+   scrolling INSIDE itself while the labels stay readable, which is exactly §7's rule for the chart
+   applied to the tabs, and is why adopting the shared component rather than restating it was worth
+   doing. */
 @media (max-width: 1000px) {
   .psb-page .shell, .psb-page .shell.is-rail{ grid-template-columns: 64px 1fr; }
-  .psb-page .brand-text, .psb-page .nav-text, .psb-page .nav-count, .psb-page .act-text{ display: none; }
+  .psb-page .brand-text, .psb-page .side .nav-text, .psb-page .act-text{ display: none; }
   .psb-page .side{ padding: 14px 8px; align-items: center; }
-  .psb-page .navbtn, .psb-page .act{ justify-content: center; padding: 10px 0; }
+  .psb-page .side .navbtn, .psb-page .act{ justify-content: center; padding: 10px 0; }
   .psb-page .ws{ grid-template-columns: 1fr; }
   .psb-page .main{ padding: 0 16px 32px; }
 }

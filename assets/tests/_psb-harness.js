@@ -34,6 +34,7 @@ var WHERE = {
   'data-contract.js': path.join(PROMOTED, 'psb-data-contract.js'),
   'selectors.js': path.join(PROMOTED, 'psb-selectors.js'),
   'chart-layout.js': path.join(PROMOTED, 'psb-chart-layout.js'),
+  'views.js': path.join(PROMOTED, 'psb-views.js'),
   'prototype.js': path.join(PROMOTED, 'psb-board-ui.js'),
   'prototype.css': path.join(ROOT, 'assets', 'css', 'product-strategy-board.css')
 };
@@ -67,6 +68,7 @@ var SRC = {
   prototype: readProto('prototype.js'),
   index: readProto('index.html'),
   layout: readProto('chart-layout.js'),
+  views: readProto('views.js'),
   css: readProto('prototype.css')
 };
 
@@ -142,6 +144,40 @@ function makeDom(skeleton) {
     k.parentNode = null;
     return k;
   };
+  /* P1-B8B — classList, because the Operation System shell's own navigation uses it and P1-B8B is the
+     first round to run that navigation here. `toggleMenu` toggles `is-open` on a parent and its
+     children; `showSection` sweeps `.active`. Implemented over the SAME `class` attribute the
+     className accessor reads, so the two can never disagree — a shim with two independent notions of
+     an element's classes would make "the class was added" and "the class is visible to a selector"
+     different questions, and every rule below about active states is about exactly that. */
+  Object.defineProperty(Node.prototype, 'classList', {
+    get: function () {
+      var node = this;
+      function list() {
+        return String(node.attributes['class'] || '').split(/\s+/).filter(function (c) { return c !== ''; });
+      }
+      function write(a) { node.attributes['class'] = a.join(' '); }
+      return {
+        contains: function (c) { return list().indexOf(c) >= 0; },
+        add: function () {
+          var a = list();
+          [].slice.call(arguments).forEach(function (c) { if (a.indexOf(c) < 0) a.push(c); });
+          write(a);
+        },
+        remove: function () {
+          var drop = [].slice.call(arguments);
+          write(list().filter(function (c) { return drop.indexOf(c) < 0; }));
+        },
+        toggle: function (c, force) {
+          var has = list().indexOf(c) >= 0;
+          var on = (force === undefined) ? !has : !!force;
+          if (on) this.add(c); else this.remove(c);
+          return on;
+        },
+        get length() { return list().length; }
+      };
+    }
+  });
   Node.prototype.setAttribute = function (n, v) { this.attributes[n] = String(v); };
   Node.prototype.getAttribute = function (n) {
     return Object.prototype.hasOwnProperty.call(this.attributes, n) ? this.attributes[n] : null;
@@ -368,6 +404,12 @@ function makeDom(skeleton) {
     return result;
   }
   Node.prototype.querySelectorAll = function (sel) { return qsaOn(this, sel); };
+  /* The singular form, over the SAME engine. Writing a second matcher for "the first one" is how a
+     shim starts answering two different questions about one selector. */
+  Node.prototype.querySelector = function (sel) {
+    var all = qsaOn(this, sel);
+    return all.length ? all[0] : null;
+  };
   Node.prototype.querySelector = function (sel) {
     var r = qsaOn(this, sel);
     return r.length ? r[0] : null;
@@ -451,6 +493,7 @@ function makeDom(skeleton) {
       return hit;
     },
     querySelectorAll: function (sel) { return qsaOn(doc, sel); },
+    querySelector: function (sel) { var a = qsaOn(doc, sel); return a.length ? a[0] : null; },
     querySelector: function (sel) {
       var r = qsaOn(doc, sel);
       return r.length ? r[0] : null;
@@ -598,7 +641,9 @@ function bootPage(mutateSrc, opts) {
     return dom.window.__frames.length;
   };
   if (opts.devMode === true) ctx.__PSB_DEV_MODE__ = true;
-  var order = ['contract', 'layout', 'selectors', 'fixture', 'prototype'];
+  /* P1-B8B — `views` sits before `prototype` because psb-board-ui.js now reads the six views
+     from it rather than declaring them, and throws by name if it is missing. */
+  var order = ['contract', 'layout', 'selectors', 'views', 'fixture', 'prototype'];
   var thrown = null;
   try {
     order.forEach(function (k) {
@@ -738,8 +783,56 @@ function devHookPresent(pg) {
   return typeof pg.ctx.__psbUseStressFixture === 'function';
 }
 
+/**
+ * THE PRODUCTION PARTIAL, AS A SKELETON — MOVED HERE AT P1-B8B, AND FOR THE REASON THIS ROUND KEEPS
+ * MEETING.
+ *
+ * P1-B7 wrote this parser inside its own suite because it was the only reader. P1-B8B is the second,
+ * and a copied parser is a second model of the same document: the two would agree on the day the
+ * copy was made and disagree the first time the partial grew an attribute one of them handles. It is
+ * the same argument that moved the DOM shim into this file, that moved fifty design tokens out of the
+ * board stylesheet at P1-B8A, and that put the six view names in one registry this round.
+ *
+ * `buildSkeleton` models the PROTOTYPE's index.html; this models the PRODUCTION partial — which is
+ * precisely why the missing production chrome was invisible for two rounds. The board had only ever
+ * been rendered into a page that had all of it.
+ *
+ * A small parser, deliberately: the partial is flat markup with no script, no style, no void element
+ * and no attribute that matters beyond id, class and hidden. Comments are stripped first, because a
+ * comment naming an id is not an element — the P1-B2C G18 trap, which this round sprang three more
+ * times in three more files.
+ *
+ * @param {string} partialSrc the raw text of assets/html/pages/product-strategy-board.html
+ * @returns {function} a skeleton builder in the shape makeDom() expects
+ */
+function productionSkeleton(partialSrc) {
+  return function (document, head, body, mk) {
+    var src = String(partialSrc).replace(/<!--[\s\S]*?-->/g, '');
+    var stack = [body];
+    var re = /<(\/?)([a-zA-Z][\w-]*)([^>]*?)(\/?)>|([^<]+)/g, m;
+    while ((m = re.exec(src))) {
+      if (m[5] !== undefined) {
+        if (m[5].trim() !== '') stack[stack.length - 1].appendChild(document.createTextNode(m[5].trim()));
+        continue;
+      }
+      if (m[1] === '/') { if (stack.length > 1) stack.pop(); continue; }
+      var n = mk(m[2]);
+      var a, ar = /([a-zA-Z-]+)(?:="([^"]*)")?/g, attrs = m[3] || '';
+      while ((a = ar.exec(attrs))) {
+        if (a[1] === 'id') n.id = a[2];
+        else if (a[1] === 'class') n.className = a[2];
+        else if (a[1] === 'hidden') n.hidden = true;
+        else if (a[2] !== undefined) n.setAttribute(a[1], a[2]);
+      }
+      stack[stack.length - 1].appendChild(n);
+      if (m[4] !== '/') stack.push(n);
+    }
+  };
+}
+
 module.exports = {
   ROOT: ROOT, PROTO: PROTO, SRC: SRC, readProto: readProto, bare: bare,
+  productionSkeleton: productionSkeleton,
   makeDom: makeDom, buildSkeleton: buildSkeleton, bootPage: bootPage,
   selfTestVerdict: selfTestVerdict, pipeline: pipeline,
   PAGE_IDS: PAGE_IDS, PAGE_TREE: PAGE_TREE,

@@ -6719,3 +6719,96 @@ where the prototype is the only thing that needs it, and where the same test sti
 **Nothing was activated.** `PRODUCT_STRATEGY_ENABLED_` is `false`, the staged section is
 `enabled: false`, there is no sidebar item (navigation is absent, not greyed out), the two actions are
 reads, and no write-shaped `productPricing.*` name exists anywhere in the API layer.
+
+---
+
+## §50  P1-B8B — the menu, the six sub-tabs, the state matrix, and three things that could not be
+built as specified
+
+**The navigation is declared, not rendered.** `Product Strategy` is a `menu-parent` above **Pricing
+Center** with the six views as `menu-children`, using the Operation System's own
+`menu-parent`/`menu-children`/`toggleMenu` pattern — and `index.html` contains none of it. The
+placement, the label and the anchor live in `KM_STAGED_SECTIONS_`, and `KM.nav.buildStagedMenu()`
+turns them into DOM. **Nothing in production calls it.** That is the shape §3 asks for: markup that
+exists and is greyed out can be un-greyed by deleting a class, and an item that is not in the
+document cannot. Building the menu in a test still opens nothing — `showSection` refuses the staged
+id, the capability mirror is false, and the server refuses on its own flag before any database opens.
+
+```
+PRODUCT_STRATEGY_FLAG            = false
+PRODUCT_STRATEGY_NAVIGATION      = declared, not rendered
+SUBTAB_ROUTE_IDENTITY            = canonical
+SUBTAB_URL_BINDING               = none (shell has no router)
+VIEWPORTS_PASSING                = 6 of 7
+MOBILE_390                       = BLOCKED BY THE SHELL, not by this page
+```
+
+### Three things the brief asked for that the system could not give
+
+**1. There is no "Price Center".** The menu is called **Pricing Center** and its `data-menu-id` is the
+historical `carrier`. The anchor is pinned to the id, not to an ordinal, and the suite proves it
+resolves in `index.html` — a position expressed as "third from the bottom" is one the next menu
+addition silently invalidates.
+
+**2. There is no router in this shell.** `location.hash`, `history.pushState`, `popstate` and
+`hashchange` appear NOWHERE in `assets/js` — measured, and re-measured by the suite, because the
+decision below depends on it. Every page is reached by calling `showSection(...)`, a reload always
+returns to Home, and Back leaves the application.
+
+So §2's "back/forward consistent with the main system" and "reload restores the canonical route" are
+in tension: the main system creates no history entries at all. What P1-B8B built is the IDENTITY —
+one canonical string per view, `product-strategy/<view>`, carried on the sidebar child, on the tab,
+accepted by the controller and readable back from it. What it deliberately did not build is the URL.
+
+> A ROUTE THAT DOES NOT SURVIVE BEING PASTED IS NOT A ROUTE, IT IS A DECORATION THAT LIES. A hash
+> written here could not be pasted and could not survive a reload — it would sit in the address bar
+> while the shell displayed Home. Making it true means giving the whole application a router, which
+> changes Back and reload on all twenty-odd pages. P1-B8A is one round old and it was exactly that
+> mistake in the other direction: a stylesheet for a disabled page restyling every page a person
+> could actually open. **A disabled page does not get to change how the application reloads.**
+
+The binding is one call in one place (`KM.pages.productStrategyBoard.applyRoute`) and the decision is
+P1-B8C's.
+
+**3. 390x844 does not fit, and the cause is not this page.** `.sidebar` is a fixed 240px with **no
+breakpoint anywhere in `assets/css`**, and `.main-content` carries `margin-left: 240px`
+unconditionally. On a 390px phone that leaves 86px of content — for every page in the application.
+The board degrades honestly into it (overview density, the chart scrolling inside itself, no page
+overflow, and a printed reason) but 40px of chart is not a page. Six of the seven viewports pass;
+this one is recorded as **blocked by the shell**, because §2 forbids rewriting the sidebar for one
+page and fixing it touches all of them.
+
+### The sub-tabs are the Operation System's tab component now
+
+P1-B7 gave the production rail its own hover, active, padding, radius and overflow rules. All of
+those already existed as `.km-tab-rail` in `components.css`, shared by Campaign Risk, Inventory
+Replenishment and Order Planning — **a second tab component that looked almost like the first**, which
+is worse than an obviously different one because the drift is invisible until they are side by side.
+The production partial now carries `km-tab-rail` on the list, and that class is ALSO how
+`renderNav()` knows which host it is rendering into. One renderer, no fork, no flag: the prototype's
+list does not carry it and keeps the dark sidebar rendering.
+
+`role="tablist"` rather than a `<nav>` landmark, because these are six views of one page rather than
+six destinations; one tab stop with Arrow/Home/End rather than six in front of the page's controls;
+and `aria-current="page"` — wrong on a control that swaps a panel — is gone from the production side
+and kept in the prototype, where the rail really is the navigation.
+
+### The state matrix, and the sentence that was false
+
+§9 asks that different problems not all be shown as a connection failure. They were: both reads ended
+`.catch(e => refused('SOURCE_NOT_CONNECTED', e.message))`, so every failure arrived as *"Not connected
+to the Operation System database. No server answered."*
+
+> **On the sign-in-page path that sentence is simply false. A server DID answer — it answered "who
+> are you" — and the reader was sent to check a connection that is working.**
+
+The information was never missing. `km-api-foundation.js` names the error in `e.apiCode` from a frozen
+vocabulary — `AUTH_OR_ACCESS_HTML`, `REQUEST_TIMEOUT`, `TRANSPORT_NON_JSON_RESPONSE` — and this layer
+replaced all of it with `e.message`. Four states now, because they are four different next actions:
+`BROWSER_OFFLINE` (nothing left the machine), `SOURCE_TIMED_OUT` (it went; the bound elapsed; it is a
+read, so asking again is safe), `NOT_AUTHORIZED` (a server answered and the answer was no — asking
+again is pointless), `RESPONSE_NOT_READABLE` (something answered with a web page). `navigator.onLine`
+is read as evidence and never as an oracle: it can only make an already-failed read more specific.
+
+A server cannot claim one. They describe what happened to the REQUEST, so they are believed only on a
+response the accessor built itself.

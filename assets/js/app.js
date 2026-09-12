@@ -41,10 +41,146 @@ var KM_STAGED_SECTIONS_ = {
     'product-strategy': {
         sectionId: 'product-strategy-board-section',
         enabled: false,
-        reason: 'PRODUCT_STRATEGY_ENABLED_ is false and productPricing.siteUniverse.get is not yet deployed'
+        reason: 'PRODUCT_STRATEGY_ENABLED_ is false and productPricing.siteUniverse.get is not yet deployed',
+        // P1-B8B §2 — THE NAVIGATION PLACEMENT, AS DATA RATHER THAN AS MARKUP.
+        //
+        // index.html has NO Product Strategy menu item and gets none this round. What the round adds is
+        // the DECLARATION: where the item goes, what it is called, and which six children it has. The
+        // difference matters and it is the same argument this registry already makes about `enabled` —
+        // markup that exists and is greyed out can be un-greyed by deleting a class, and §3 forbids
+        // exactly that. An item that is not in the document cannot be revived by editing CSS.
+        //
+        // `insertBefore` is a MENU ID, not an index. The brief says "above Price Center"; the menu is
+        // actually called **Pricing Center** and its `data-menu-id` is the historical `carrier`
+        // (renamed at F1-SMALL-NAV-IA-R1, routing key preserved). An ordinal would silently move the
+        // item the next time anybody adds a menu above it; an anchor either finds `carrier` or fails
+        // loudly, and the suite asserts the anchor RESOLVES in index.html rather than trusting it.
+        //
+        // THE SIX CHILDREN ARE NOT LISTED HERE. They are `PSB_VIEWS.VIEWS`, read at build time, because
+        // the in-page tab rail renders the same six and two lists of six labels is the duplicate-
+        // definition mistake P1-B8A spent a round removing.
+        nav: {
+            parentId: 'product-strategy',
+            label: 'Product Strategy',
+            icon: '\ud83d\udcca',
+            insertBefore: 'carrier',
+            routeBase: 'product-strategy'
+        }
     }
 };
 if (window.KM) { window.KM.stagedSections = KM_STAGED_SECTIONS_; }
+
+// ========================================
+// STAGED NAVIGATION — BUILT ON DEMAND, BY NOBODY IN PRODUCTION  (P1-B8B §2/§3)
+// ========================================
+//
+// §3 asks for two things that sound contradictory and are not: the production default must offer NO
+// entry point, and the navigation structure must nevertheless be complete and verifiable by a test.
+//
+// They reconcile if the structure is a FUNCTION rather than a document. `buildStagedMenu` returns the
+// sidebar nodes for a staged section — the same `.menu-parent` / `.menu-children` / `.menu-item`
+// markup and the same `toggleMenu` interaction every other group uses — and NOTHING IN PRODUCTION
+// CALLS IT. index.html does not call it, no boot path calls it, no event calls it. The test harness
+// calls it, which is the "explicit test-only capability" §3 permits.
+//
+// AND IT IS NOT A BYPASS, WHICH IS THE PART WORTH BEING PRECISE ABOUT. Building the menu builds DOM;
+// it does not raise a flag, and every handler it attaches leads back into the same two refusals that
+// guard the feature today. Click the parent and it expands. Click a child and `showSection` refuses
+// the staged id before touching the shell; even if that gate were gone the accessor's capability
+// mirror is false, so the page answers FEATURE_DISABLED at zero requests; even if THAT were gone the
+// server refuses on `PRODUCT_STRATEGY_ENABLED_` before opening a database. The menu is the last of
+// four things that would have to change, not the first.
+window.KM = window.KM || {};
+window.KM.nav = window.KM.nav || {};
+
+/**
+ * The six children of a staged section, taken from the ONE registry that declares them.
+ * Returns [] when psb-views.js is not loaded — a missing module is a broken build, and inventing six
+ * labels here to keep a menu looking complete is how the second definition site gets created.
+ */
+window.KM.nav.stagedChildren = function (key) {
+    var entry = KM_STAGED_SECTIONS_[key];
+    if (!entry || !entry.nav) return [];
+    if (key !== 'product-strategy') return [];
+    var V = window.PSB_VIEWS;
+    if (!V || !(V.VIEWS instanceof Array)) return [];
+    return V.VIEWS.map(function (v) {
+        return { id: v.id, label: v.label, route: V.routeOf(v.id), maturity: v.maturity };
+    });
+};
+
+/**
+ * Build the sidebar nodes for a staged section and return them, in order, WITHOUT inserting them.
+ *
+ * Returning rather than inserting is deliberate: a builder that also mounted itself would be one
+ * accidental call away from putting a live menu in a production sidebar, and "nothing calls it" would
+ * stop being a property anybody could check. The caller decides where — and in production there is no
+ * caller.
+ *
+ * @param {string} key   a KM_STAGED_SECTIONS_ key
+ * @param {Document} [d] the document to build in (the suite passes its own)
+ * @returns {{parent: Element, children: Element, entries: Array}|null}
+ */
+window.KM.nav.buildStagedMenu = function (key, d) {
+    var doc = d || document;
+    var entry = KM_STAGED_SECTIONS_[key];
+    if (!entry || !entry.nav) return null;
+    var nav = entry.nav;
+    var kids = window.KM.nav.stagedChildren(key);
+
+    function span(cls, text) {
+        var n = doc.createElement('span');
+        n.className = cls;
+        n.textContent = text;
+        return n;
+    }
+
+    var parent = doc.createElement('div');
+    parent.className = 'menu-parent';
+    parent.setAttribute('data-menu-id', nav.parentId);
+    parent.setAttribute('data-staged', 'true');
+    parent.setAttribute('title', nav.label);
+    parent.appendChild(span('menu-icon', nav.icon));
+    parent.appendChild(span('menu-label', nav.label));
+    parent.addEventListener('click', function () { toggleMenu(nav.parentId); });
+
+    var children = doc.createElement('div');
+    children.className = 'menu-children';
+    children.setAttribute('data-parent', nav.parentId);
+
+    kids.forEach(function (k) {
+        var item = doc.createElement('div');
+        item.className = 'menu-item';
+        // THE ROUTE IS THE IDENTITY, and it is on the element rather than in a closure so that a test
+        // — and, later, a router — can read what this item means without calling it.
+        item.setAttribute('data-route', k.route);
+        item.setAttribute('data-view', k.id);
+        item.setAttribute('title', k.label);
+        item.appendChild(span('menu-label', k.label));
+        item.addEventListener('click', function () { showProductStrategyView(k.route); });
+        children.appendChild(item);
+    });
+
+    return { parent: parent, children: children, entries: kids };
+};
+
+/**
+ * Navigate to one view of the Product Strategy board.
+ *
+ * IT GOES THROUGH `showSection`, WHICH IS THE WHOLE POINT. A second entry point that reached the page
+ * another way would be a second gate to keep in step, and the one that got forgotten would be the one
+ * that opened. The view is recorded for the controller to pick up on mount; while the section is
+ * staged, `showSection` returns before anything is mounted and the recorded route is never read.
+ */
+function showProductStrategyView(route) {
+    var V = window.PSB_VIEWS;
+    window.KM = window.KM || {};
+    window.KM.pendingRoute = (V && typeof V.routeOf === 'function')
+        ? V.routeOf(V.resolve(route))
+        : null;
+    showSection('product-strategy');
+}
+window.showProductStrategyView = showProductStrategyView;
 
 // ========================================
 // Menu Toggle Function
