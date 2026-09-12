@@ -6297,6 +6297,16 @@ in production, so the board draws a fallback marker for every product and never 
 finding, recorded as an evidence gap against image *identity* verification, not repaired in the
 renderer. **No fixture could have produced it.**
 
+> **P1-B8C-R3 — RE-DIAGNOSED. IT WAS NOT A DATA GAP; IT WAS A SECOND RULE.** "Not an absolute URL"
+> was true and was the wrong conclusion. `sku_details.image_url` holds a **repo-relative path** —
+> the seven `verified_mappings` are operator-asserted live values and every one of them is relative —
+> and **SKU Details has always rendered exactly that**, because a browser resolves a relative path
+> against the page. The board refused it only because `imageStateOf` applied a rule of its own. Both
+> pages now ask one authority, `km-image-reference-policy.js`, and the parity is asserted in both
+> directions. R3 also closed the half nobody had reported: SKU Details validated **nothing**, so
+> `javascript:`, a Windows path, a UNC path and a bare Drive id all reached `<img src>` verbatim.
+> See DESIGN FREEZE §53.
+
 **What production cannot demonstrate.** All 495 rows are `Active`, so the excluded-by-status path is
 **DETERMINISTIC GAP COVERAGE** from the P1-B8C fixture and is reported in its own column, never
 merged into the live one.

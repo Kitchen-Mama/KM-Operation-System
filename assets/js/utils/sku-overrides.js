@@ -63,36 +63,59 @@ function getNormalizedSkuImage(item) {
 // read as `image`, survives buildSkuKnowledgeItems and survives getNormalizedSkuImage. Nothing in the pipeline
 // drops or renames it. So a page full of placeholders is not a lost field — it is a URL the browser refused.
 //
-// THE ONE REFUSAL THIS FUNCTION CAN ACTUALLY FIX, and it fits the report exactly ("images that PREVIOUSLY
-// appeared now show the placeholder"): an `http://` image on an `https://` page is MIXED CONTENT, and browsers
-// block it. Nothing has to change in the sheet for that to start happening — the page moving to https, or a
-// browser tightening its default, is enough. So an http:// image is upgraded to https:// when the page itself is
-// https. If the host does not serve https the image fails either way, and it fails the same way it already does,
-// with the failure now REPORTED rather than silently swapped for an icon.
+// P1-B8C-R3 — THE RULE MOVED OUT OF THIS FILE, AND NOTHING ELSE CHANGED ABOUT WHERE IT IS CALLED FROM.
 //
-// This changes no stored data and invents no URL: it rewrites the scheme of a value that is already on the row,
-// at render time only. Everything else is passed through untouched — a relative path stays relative, and a
-// protocol-relative `//host/x` already inherits the page scheme.
-function resolveSkuImageUrl(imageUrl) {
-    if (!imageUrl || !String(imageUrl).trim()) return '';
-    var url = String(imageUrl).trim();
-    if (url.indexOf('http://') === 0) {
-        var pageHttps = false;
-        try { pageHttps = (typeof window !== 'undefined' && window.location && window.location.protocol === 'https:'); }
-        catch (e) { pageHttps = false; }
-        if (pageHttps) return 'https://' + url.slice('http://'.length);
-    }
-    return url;
+// This function used to BE the policy: upgrade http:// to https:// on an https page, and pass everything else
+// through. Two things were wrong with that, and only the second one is new.
+//
+//   1. PASSING A VALUE THROUGH IS NOT THE SAME AS ACCEPTING IT. `javascript:alert(1)`, `C:\Users\...\x.jpg` and
+//      a bare Drive id all went into `<img src>` verbatim, because nothing here ever looked at them. The mixed
+//      content branch was the ONLY judgement this function made.
+//   2. PRODUCT STRATEGY WAS MAKING THE OPPOSITE JUDGEMENT ABOUT THE SAME COLUMN. km-product-pricing-adapter.js
+//      required an ABSOLUTE http(s) url before it would draw a photograph, and P1-B8C-R2 then measured what
+//      production actually holds: sixty live rows, zero absolute urls, because `sku_details.image_url` is a
+//      REPO-RELATIVE path. SKU Details drew the picture and the board drew a fallback marker, off one value.
+//
+// So the decision now lives in ONE place — assets/js/utils/km-image-reference-policy.js — and both pages ask it.
+// The http:// -> https:// upgrade is preserved there exactly; what is added is that a reference which is not an
+// image address is REFUSED rather than forwarded. This still changes no stored data and still invents no URL.
+//
+// FAIL CLOSED. If the policy file did not load, this returns '' rather than falling back to the old
+// pass-everything behaviour. A safety rule with a lenient fallback is not a safety rule — it is the lenient
+// behaviour with extra steps.
+function _skuImagePolicy() {
+    try {
+        if (typeof KM_IMAGE_REFERENCE_POLICY !== 'undefined' && KM_IMAGE_REFERENCE_POLICY) return KM_IMAGE_REFERENCE_POLICY;
+    } catch (e) { /* not defined in this scope */ }
+    try {
+        if (typeof window !== 'undefined' && window.KM_IMAGE_REFERENCE_POLICY) return window.KM_IMAGE_REFERENCE_POLICY;
+    } catch (e) { /* no window */ }
+    return null;
 }
+
+function resolveSkuImageUrl(imageUrl) {
+    var P = _skuImagePolicy();
+    if (!P) {
+        try { console.error('[SKU Overrides] km-image-reference-policy.js is not loaded; refusing to resolve an image reference.'); } catch (e) {}
+        return '';
+    }
+    return P.classify(imageUrl).url;
+}
+
 // Why a given SKU has no rendered image, as a value rather than as a look. `ABSENT` and `PRESENT` are decidable
 // here; whether a PRESENT url actually loads is only knowable in the browser, which is what the renderer reports.
+//
+// P1-B8C-R3 adds the third answer this function could not previously give: REFUSED, with the reason. "There is
+// no url on the row" and "the row carries something that is not an image address" are different facts with
+// different fixes, and reporting both as ABSENT sent an operator to look for a missing value that was there.
 function classifySkuImageSource(item) {
     var raw = (item && (getSkuImageOverride(item.sku) || item.image || item.imageUrl || item.image_url)) || '';
-    raw = String(raw).trim();
-    if (raw === '') return { state: 'ABSENT', reason: 'NO_IMAGE_URL_ON_RECORD', url: '' };
-    var resolved = resolveSkuImageUrl(raw);
-    var note = (raw.indexOf('http://') === 0 && resolved.indexOf('https://') === 0) ? 'UPGRADED_HTTP_TO_HTTPS' : null;
-    return { state: 'PRESENT', reason: null, url: resolved, note: note };
+    var P = _skuImagePolicy();
+    if (!P) return { state: 'REFUSED', reason: 'IMAGE_POLICY_NOT_LOADED', url: '', note: null };
+    var v = P.classify(raw);
+    if (v.kind === 'ABSENT') return { state: 'ABSENT', reason: 'NO_IMAGE_URL_ON_RECORD', url: '', note: null };
+    if (!v.accepted) return { state: 'REFUSED', reason: v.reason, url: '', note: null };
+    return { state: 'PRESENT', reason: null, url: v.url, note: v.note || null, kind: v.kind };
 }
 
 // Get all SKU data with overrides applied, grouped by lifecycle.
@@ -337,7 +360,6 @@ window.getNormalizedSkuStatus = getNormalizedSkuStatus;
 window.getNormalizedSkuImage = getNormalizedSkuImage;
 window.resolveSkuImageUrl = resolveSkuImageUrl;
 window.classifySkuImageSource = classifySkuImageSource;
-window.resolveSkuImageUrl = resolveSkuImageUrl;
 window.getAllSkuDataWithOverrides = getAllSkuDataWithOverrides;
 window.setSkuImageOverride = setSkuImageOverride;
 window.exportSkuStatusTemplate = exportSkuStatusTemplate;

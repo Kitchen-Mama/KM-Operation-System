@@ -56,9 +56,16 @@ var P1B8C_CAPTURE = (function () {
   C.NOT_A_FIXTURE = false;           // it IS a stand-in, and says so rather than implying otherwise
   C.NOT_LOADED_BY_PRODUCTION = true;
   C.READ_ONLY_CAPTURE = true;
-  /* The substitute address every row with an image carries. Local, relative, identifies nothing,
-     and is the same TYPE the server sends. See the note on `product_image` below. */
-  C.IMAGE_PLACEHOLDER = '_p1b8c-swatch.svg';
+  /* The substitute every row with an image carries. It identifies nothing and is the same TYPE the
+     server sends — a string.
+     P1-B8C-R3 REMOVED ITS EXTENSION, AND THAT IS THE POINT OF THE FIELD. It used to be
+     `_p1b8c-swatch.svg`, chosen when "not an absolute URL" was the whole of the unverified test. R3
+     made the shared policy the authority, and under it a relative path that names an image file IS a
+     drawable reference — which is the defect R3 exists to fix, and it would have made this
+     de-identified capture claim a photograph it does not have, then 404 against the page. A redaction
+     marker should look like a redaction marker: no extension, so the policy calls it what it is
+     (OPAQUE_REFERENCE), which is the same shape `_p1b8c-r2-live-derived.js` already uses. */
+  C.IMAGE_PLACEHOLDER = 'REDACTED_IMAGE_REFERENCE';
   C.IMAGE_CONTENT_IS_A_PLACEHOLDER = true;
   C.CONTRACT_VERSION = 2;            // the workspace schema version the accessor expects
   C.UNIVERSE_CONTRACT_VERSION = 1;

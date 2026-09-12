@@ -79,6 +79,13 @@ var FACC = 'assets/js/api/km-product-pricing-workspace.js';
 var SRC72 = read(F72), SRCRB = read(FRB), SRC00 = read(F00), SRC01 = read(F01), SRC63 = read(F63);
 var SRC29 = read(F29), SRCAD = read(FAD), SRCACC = read(FACC);
 var ADAPTER = require(path.join(__dirname, '..', '..', FAD));
+// P1-B8C-R3: the adapter's image rule is the shared policy. The module object is the one the
+// adapter itself resolves, so declaring a host here is the same declaration production would make.
+var IMG_POLICY = require(path.join(__dirname, '..', 'js/utils/km-image-reference-policy.js'));
+/* The fixture's image host, DECLARED ONCE AND BEFORE THE FIRST ROW IS ADAPTED. The policy ships with
+   an empty external allowlist, and `g1` is adapted at the top of §E — a declaration made further down
+   the file would arrive after the value it is supposed to govern. */
+IMG_POLICY.APPROVED_EXTERNAL_HOSTS = ['img'];
 
 console.log('=== PRODUCT-STRATEGY-P1-B3 — production readback · universe census · adapter freeze ===');
 
@@ -884,9 +891,22 @@ eq(S.groupNodes(twoUngrouped).length, 2,
   'E4e and two series-less products stay TWO nodes rather than merging into one');
 
 // --- gap 5: image evidence -------------------------------------------------------------------
+/* P1-B8C-R3 — THE FIXTURE'S HOST IS DECLARED, AND E5a NOW USES A REFERENCE THAT IS ACTUALLY REFUSED.
+   This section's rows carry `https://img/...`, and the shared policy ships with an EMPTY external
+   allowlist, so `img` has to be declared or E5 would fail for a reason that has nothing to do with
+   image evidence. And `sp02.jpg` is no longer the example of an unverifiable reference: P1-B8C-R2
+   measured that production's `sku_details.image_url` IS a relative path, which SKU Details renders,
+   so calling it unverified was the defect R3 fixed. The state still has to be reachable, so E5a now
+   uses what genuinely cannot be drawn — an opaque id with no filename in it. */
 eq(g1.image_identity_status, 'VERIFIED_DB_MAPPING', 'E5  an absolute URL on the SKU\'s own row is verified');
 eq(ADAPTER.adaptRow(liveRow({ product_image: 'sp02.jpg' }), ASOF).image_identity_status,
-  'UNVERIFIED_SOURCE_REFERENCE', 'E5a a bare filename is UNVERIFIED, not verified');
+  'VERIFIED_DB_MAPPING', 'E5a0 a same-origin asset path IS verified — R3, and what production holds');
+eq(ADAPTER.adaptRow(liveRow({ product_image: '1AbCdEfGhIjKlMnOpQrStUvWxYz0123456' }),
+  ASOF).image_identity_status,
+  'UNVERIFIED_SOURCE_REFERENCE', 'E5a an opaque id is UNVERIFIED, not verified');
+eq(ADAPTER.adaptRow(liveRow({ product_image: 'https://unapproved.example.com/x.jpg' }),
+  ASOF).image_identity_status,
+  'UNVERIFIED_SOURCE_REFERENCE', 'E5a1 and an absolute url on an undeclared host is too');
 eq(ADAPTER.adaptRow(liveRow({ product_image: '' }), ASOF).image_identity_status,
   'IMAGE_SOURCE_MISSING', 'E5b and nothing at all is MISSING — three states, not two');
 eq(ADAPTER.adaptRow(liveRow({ product_image: 'https://img/x.jpg',
@@ -1190,7 +1210,16 @@ var canon = AD.rows.map(function (r) {
   return (r.image_identity_status === 'VERIFIED_DB_MAPPING' && r.product_image) ? r.product_image : null;
 });
 eq(canon[0], 'https://img/sp01.jpg', 'H4  the verified image renders');
-eq(canon[1], null, 'H4a the bare filename does NOT — the plate is drawn instead of a broken img');
+/* P1-B8C-R3, VISIBLE AT THE EXACT BOUNDARY THAT USED TO DROP IT. MS2 carries `sp02.jpg`, the shape
+   production's `sku_details.image_url` actually holds, and this line is the selectors' own expression
+   for "which image may be drawn". It used to evaluate to null while SKU Details rendered the same
+   value; it now renders. THE PLATE IS STILL DRAWN FOR A ROW THAT HAS NO VERIFIED MAPPING — H4b keeps
+   that state covered, because a fix that made everything drawable would pass H4a too. */
+eq(canon[1], 'sp02.jpg', 'H4a and so does a same-origin asset path — the R3 correction, at the seam');
+var noMap = ADAPTER.adapt(envOf([liveRow({ marketplace_sku_id: 'MSX', identity: 'MSKU:MSX',
+  product_image: '1AbCdEfGhIjKlMnOpQrStUvWxYz0123456' })]), { asOf: ASOF }).rows[0];
+eq((noMap.image_identity_status === 'VERIFIED_DB_MAPPING' && noMap.product_image) || null, null,
+  'H4b while a reference with no verified mapping still draws the plate instead of a broken img');
 
 // H5 — §10: the scenario overlay is still front-end memory only. No write path exists.
 var protoSrc = read('assets/js/product-strategy/psb-board-ui.js');
@@ -1247,7 +1276,13 @@ function withSrc(which, a, b) {
 /** A mutated adapter, loaded fresh. */
 function withAdapter(a, b) {
   var src = swapIn(SRCAD, a, b);
-  var ctx = vm.createContext({ console: console, module: { exports: {} } });
+  /* P1-B8C-R3 — THE SANDBOX HAS TO CARRY THE POLICY, OR EVERY IMAGE MUTANT SURVIVES FOR FREE.
+     imageStateOf asks KM_IMAGE_REFERENCE_POLICY and FAILS CLOSED when it is absent. An empty context
+     has no global and no `require`, so the unmutated AND the mutated adapter would both answer
+     UNVERIFIED — the mutant would survive while proving only that this helper forgot a script tag.
+     index.html loads the policy before the adapter; so does this. */
+  var ctx = vm.createContext({ console: console, module: { exports: {} },
+    KM_IMAGE_REFERENCE_POLICY: IMG_POLICY });
   vm.runInContext(src, ctx);
   return ctx.KM_PRODUCT_PRICING_ADAPTER;
 }
@@ -1397,13 +1432,20 @@ mut('M10 two effective campaigns are resolved by taking the first', function () 
     && A2.adaptRow(liveRow({ campaigns: two }), ASOF).official_deal_price === 9.99;
 });
 
-mut('M11 a bare filename is called a verified image, and the chart paints a broken one', function () {
-  var A2 = withAdapter("    if (!/^https?:\\/\\//i.test(v)) return 'UNVERIFIED_SOURCE_REFERENCE';", "");
-  return ADAPTER.adaptRow(liveRow({ product_image: 'sp02.jpg' }), ASOF).image_identity_status
-    === 'UNVERIFIED_SOURCE_REFERENCE'
-    && A2.adaptRow(liveRow({ product_image: 'sp02.jpg' }), ASOF).image_identity_status
-    === 'VERIFIED_DB_MAPPING';
-});
+mut('M11 an unfetchable reference is called a verified image, and the chart paints a broken one',
+  function () {
+    /* THE ANCHOR MOVED BECAUSE THE RULE MOVED. This used to delete imageStateOf's own
+       `/^https?:\/\//` line; P1-B8C-R3 deleted that line for real and put the decision in the shared
+       policy, so the mutant now removes the CALL to it. The substitution is "accept whatever the row
+       carried", which is precisely what SKU Details did before R3 and what let a Drive id reach an
+       `<img src>`. */
+    var A2 = withAdapter("    if (!P.classify(v).accepted) return 'UNVERIFIED_SOURCE_REFERENCE';", "");
+    var OPAQUE = '1AbCdEfGhIjKlMnOpQrStUvWxYz0123456';
+    return ADAPTER.adaptRow(liveRow({ product_image: OPAQUE }), ASOF).image_identity_status
+      === 'UNVERIFIED_SOURCE_REFERENCE'
+      && A2.adaptRow(liveRow({ product_image: OPAQUE }), ASOF).image_identity_status
+      === 'VERIFIED_DB_MAPPING';
+  });
 
 mut('M12 a non-ISO campaign date is compared anyway, so a finished promotion looks live', function () {
   // '1/3/2026' < '2026-09-11' as a STRING, which is how the selectors compare these — so a loose parse

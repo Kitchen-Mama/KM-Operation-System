@@ -90,9 +90,16 @@ var CAPTURES = {
   deterministic: { file: '_p1b8c-capture.js', global: 'P1B8C_CAPTURE',
     kindField: 'CAPTURE_KIND', site: { company: 'Kitchen Mama', country: 'US', marketplace: 'Amazon' } },
   live: { file: '_p1b8c-r2-live-derived.js', global: 'P1B8C_R2_LIVE',
-    kindField: 'SOURCE_KIND', site: { company: 'KM', country: 'US', marketplace: 'Shopify' } }
+    kindField: 'SOURCE_KIND', site: { company: 'KM', country: 'US', marketplace: 'Shopify' } },
+  /* P1-B8C-R3 — THE ONE THAT CAN ACTUALLY DRAW A PHOTOGRAPH. The other two carry redaction markers
+     where an address used to be, which is correct of both and leaves R3's fix unphotographable. This
+     one wraps the deterministic capture and puts the operator-asserted paths on its rows, so it needs
+     BOTH files in the page, in order. */
+  assets: { files: ['_p1b8c-capture.js', '_p1b8c-r3-asset-capture.js'], global: 'P1B8C_R3_ASSETS',
+    kindField: 'CAPTURE_KIND', site: { company: 'Kitchen Mama', country: 'US', marketplace: 'Amazon' } }
 };
 function captureOf(opts) { return CAPTURES[(opts && opts.capture) || 'deterministic']; }
+function captureFiles(cap) { return cap.files || [cap.file]; }
 
 function buildPage(opts) {
   opts = opts || {};
@@ -101,28 +108,39 @@ function buildPage(opts) {
   var partial = read(path.join(ROOT, 'assets', 'html', 'pages', 'product-strategy-board.html'));
 
   /* EVERY STYLESHEET INDEX.HTML LOADS, IN ORDER. The cascade is the thing under test. */
+  /* THE PAGE DECLARES THE REPO ROOT AS ITS BASE, AND EVERY REFERENCE IS WRITTEN ROOT-RELATIVE.
+     P1-B8C-R3 needs this. The acceptance document is written into assets/tests/, so a row carrying
+     `assets/img/products/CO1100-R.jpg` — the shape production's image_url actually has — resolved to
+     assets/tests/assets/img/... and 404ed. EVERY IMAGE WOULD HAVE FAILED TO LOAD, the new onerror
+     would have caught all seven, and the run would have photographed R3's fallback working perfectly
+     while proving nothing about R3's fix. One <base> and no `../../` prefixes: the browser now
+     resolves a relative image exactly the way the deployed page does. */
   var links = (index.match(/<link rel="stylesheet" href="([^"]+)">/g) || [])
     .map(function (t) { return /href="([^"]+)"/.exec(t)[1]; })
-    .map(function (h) { return '<link rel="stylesheet" href="../../' + h + '">'; })
+    .map(function (h) { return '<link rel="stylesheet" href="' + h + '">'; })
     .join('\n  ');
 
   /* THE PAGE'S OWN SCRIPTS, from the same document, in the same order. Anything else index.html loads
      is shell machinery this page does not mount; loading all of it would pull in twenty pages'
      controllers and measure their boot, not this one's. */
-  var WANTED = /product-strategy|km-product-pricing|km-api-foundation|km-transport|utils\/tab-rail/;
+  /* P1-B8C-R3 added km-image-reference-policy.js, and it is NOT optional here. The adapter's
+     imageStateOf fails CLOSED without it, so a page that skipped it would photograph a board with no
+     photographs and report that as the measurement. */
+  var WANTED = /product-strategy|km-product-pricing|km-api-foundation|km-transport|utils\/tab-rail|km-image-reference-policy/;
   var scripts = (index.match(/<script src="([^"]+)"><\/script>/g) || [])
     .map(function (t) { return /src="([^"]+)"/.exec(t)[1]; })
     .filter(function (s) { return WANTED.test(s); })
-    .map(function (s) { return '<script src="../../' + s.split('?')[0] + '"></script>'; })
+    .map(function (s) { return '<script src="' + s.split('?')[0] + '"></script>'; })
     .join('\n  ');
 
-  var appJs = '<script src="../../assets/js/app.js"></script>';
+  var appJs = '<script src="assets/js/app.js"></script>';
 
   return [
     '<!DOCTYPE html>',
     '<html lang="en"><head>',
     '  <meta charset="UTF-8">',
     '  <meta name="viewport" content="width=device-width, initial-scale=1.0">',
+    '  <base href="../../">',
     '  <title>P1-B8C acceptance</title>',
     '  ' + links,
     '</head>',
@@ -152,8 +170,10 @@ function buildPage(opts) {
        runners that look almost alike is the failure mode this project already met with two tab
        components: the drift is invisible until they are side by side. One runner, one page builder,
        one measure script, and the capture module is an argument. */
-    '  <script src="' + cap.file + '"></script>',
-    '  <script src="_p1b8c-replay.js"></script>',
+    captureFiles(cap).map(function (f) {
+      return '  <script src="assets/tests/' + f + '"></script>';
+    }).join('\n'),
+    '  <script src="assets/tests/_p1b8c-replay.js"></script>',
     '  ' + appJs,
     '  <script>' + bootScript(opts) + '</script>',
     '</body></html>'
@@ -305,6 +325,24 @@ function measureScript(cap) {
     '    axisTickCount: axisTicks.length, gridLineCount: gridLines.length,',
     '    laneLabelCount: laneLabels.length, laneSubCount: laneSubs.length,',
     '    imageCount: images.length,',
+    /* P1-B8C-R3 — AN <img> IN THE DOM IS NOT A PICTURE ON THE SCREEN, AND THIS ROUND IS ENTIRELY
+       ABOUT THE DIFFERENCE. Counting elements would have scored a page of seven broken images
+       exactly the same as a page of seven photographs. `naturalWidth` is the browser telling us the
+       bytes arrived and decoded; nothing else in this measure script can distinguish the two. */
+    '    htmlImages: [].slice.call(document.images).length,',
+    '    htmlImagesLoaded: [].slice.call(document.images).filter(function (im) {',
+    '      return im.complete && im.naturalWidth > 0; }).length,',
+    '    htmlImagesBroken: [].slice.call(document.images).filter(function (im) {',
+    '      return im.complete && im.naturalWidth === 0; }).length,',
+    '    catfigImages: document.querySelectorAll(".catfig img.catfig-img").length,',
+    '    catfigLoaded: [].slice.call(document.querySelectorAll(".catfig img.catfig-img"))',
+    '      .filter(function (im) { return im.complete && im.naturalWidth > 0; }).length,',
+    '    catfigFailedNotices: [].slice.call(document.querySelectorAll(".catfig .tfig-miss"))',
+    '      .filter(function (e) { return /FAILED TO LOAD/.test(e.textContent || ""); }).length,',
+    '    catfigMissingNotices: [].slice.call(document.querySelectorAll(".catfig .tfig-miss"))',
+    '      .filter(function (e) { return /SOURCE MISSING/.test(e.textContent || ""); }).length,',
+    '    chartImageHrefs: images.map(function (im) {',
+    '      return im.getAttribute("data-src") || im.getAttribute("href") || ""; }),',
     '    imageMarkerCount: document.querySelectorAll(".psb-page .chart [data-role=\'image-marker\']").length,',
     '    fallbackMarkerCount: document.querySelectorAll(".psb-page .chart [data-role=\'fallback-marker\']").length,',
     /* THE TWO QUESTIONS §7 ACTUALLY ASKS: is the whole Y axis inside the chart box without the
@@ -441,9 +479,21 @@ function pdf(browser, pageFile, out, name) {
 function main() {
   /* argv[2] is the output directory, argv[3] the capture. R2 runs
      `node _p1b8c-visual-runner.js docs/evidence/p1-b8c-r2-live-acceptance live`. */
-  var which = process.argv[3] === 'live' ? 'live' : 'deterministic';
-  var out = process.argv[2] || path.join(ROOT, 'docs', 'evidence',
-    which === 'live' ? 'p1-b8c-r2-live-acceptance' : 'p1-b8c-acceptance');
+  /* THE NAME IS LOOKED UP RATHER THAN COMPARED. The first version tested `=== 'live'` and silently
+     fell back to `deterministic` for anything else, so P1-B8C-R3's first run asked for `assets`, got
+     the deterministic capture, and reported zero images as though that were the measurement. An
+     unrecognised capture is now a STOP, because a run that quietly photographs different data than it
+     was asked for is worse than one that does not start. */
+  var which = process.argv[3] || 'deterministic';
+  if (!Object.prototype.hasOwnProperty.call(CAPTURES, which)) {
+    console.log('STOP_UNKNOWN_CAPTURE: ' + which);
+    console.log('known captures: ' + Object.keys(CAPTURES).join(', '));
+    process.exitCode = 2;
+    return;
+  }
+  var DEFAULT_OUT = { live: 'p1-b8c-r2-live-acceptance', assets: 'p1-b8c-r3-image-acceptance',
+    deterministic: 'p1-b8c-acceptance' };
+  var out = process.argv[2] || path.join(ROOT, 'docs', 'evidence', DEFAULT_OUT[which]);
   var browser = findBrowser();
   if (!browser) {
     console.log('STOP_NO_BROWSER_AVAILABLE');
@@ -456,9 +506,10 @@ function main() {
   if (!fs.existsSync(out)) fs.mkdirSync(out, { recursive: true });
 
   var results = { browser: path.basename(browser), generated_at_utc_date: '2026-09-12',
-    capture: which, capture_module: CAPTURES[which].file, capture_global: CAPTURES[which].global,
+    capture: which, capture_module: captureFiles(CAPTURES[which]).join(' + '),
+    capture_global: CAPTURES[which].global,
     viewports: {}, views: {}, states: {}, print: null };
-  console.log('capture: ' + which + '  (' + CAPTURES[which].file + ')');
+  console.log('capture: ' + which + '  (' + captureFiles(CAPTURES[which]).join(' + ') + ')');
 
   /* THE PAGE FILE LIVES BESIDE THE CAPTURE, because its <script src> paths are relative to it. */
   var pageFile = path.join(__dirname, '_p1b8c-acceptance.html');

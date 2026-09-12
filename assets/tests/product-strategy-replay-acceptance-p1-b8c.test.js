@@ -1166,7 +1166,7 @@ console.log('\n=== §L  MUTANTS ===');
   /* AN ABSOLUTE URL IN THE CAPTURE MUST BE CAUGHT BY THE SHAPE SCAN. That is the whole
      de-identification promise for this field: a relative reference is a state, an address is a leak. */
   mut('L7 an image ADDRESS in the capture is caught as a leak', 'capture',
-    "C.IMAGE_PLACEHOLDER = '_p1b8c-swatch.svg';",
+    "C.IMAGE_PLACEHOLDER = 'REDACTED_IMAGE_REFERENCE';",
     "C.IMAGE_PLACEHOLDER = 'https://images.example.com/CO1100-R.jpg';", function (m) {
       var ctx = { module: { exports: {} } };
       vm.createContext(ctx);

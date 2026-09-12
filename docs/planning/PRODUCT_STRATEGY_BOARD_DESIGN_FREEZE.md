@@ -1941,13 +1941,21 @@ not used.
 | Column | `sku_details.image_url`, in the 43-column export schema (`sku-details.js:2369`) |
 | Editable | `03_master_data_handlers.gs:132` — `image_url` is in `SKU_DETAILS_UPSERT_FIELDS_` |
 | Client mapping | `operation-system-db-api.js:184` — `image: String(r.image_url || '')` |
-| Render contract | `sku-overrides.js` — `getNormalizedSkuImage`, `resolveSkuImageUrl`, and `classifySkuImageSource` returning `PRESENT` / `ABSENT` with reason `NO_IMAGE_URL_ON_RECORD` |
+| Render contract | **`km-image-reference-policy.js` (P1-B8C-R3)** — the single authority both pages ask. `sku-overrides.js` keeps `getNormalizedSkuImage` / `resolveSkuImageUrl` / `classifySkuImageSource` under the same names and delegates to it; `classifySkuImageSource` now returns `PRESENT` / `ABSENT` / **`REFUSED`** with a reason |
 | Reported as a data gap | `sku-handbook.js:502-506` counts `skus_with_image_url` / `skus_without_image_url` and calls the second *"a DATA gap — fill in sku_details.image_url"* |
 
 The format is a **URL string**, and the shipped resolver already knows one way it fails: an
 `http://` image on an `https://` page is mixed content and is upgraded at render time
-(`sku-overrides.js`, F1-7N-FB-4E-R3 §F). The board inherits that classification. It does **not**
-inherit the resolver's `localStorage` override branch. See §26 for the local-file question.
+(F1-7N-FB-4E-R3 §F, now inside `km-image-reference-policy.js`). The board inherits that
+classification. It does **not** inherit the resolver's `localStorage` override branch. See §26 for
+the local-file question.
+
+> **P1-B8C-R3 — "the board inherits that classification" WAS THE PLAN AND NOT THE CODE.** The board
+> had its own rule (`imageStateOf`: an absolute `http(s)` URL or nothing) while SKU Details had
+> another (pass everything through). A repo-relative `image_url` — **the shape production actually
+> holds**, per the seven operator-asserted `verified_mappings` and P1-B8C-R2's sixty live rows —
+> rendered on one page and was refused on the other. §53 records the correction. The format line
+> above is now enforced by one function rather than described in two places.
 
 **7 — Master SKU vs site SKU.** `sku_details.sku` is the master identity. `marketplace_skus.site_sku`
 is the listing code on that site, and `marketplace_sku_id` is the site identity. One master maps to
@@ -6999,3 +7007,71 @@ would have meant inventing rows.
 `PRODUCT_STRATEGY_ENABLED_` false, staged section `enabled: false`, no menu item in `index.html`, two
 `productPricing` actions and both reads, no Apps Script sync, no version, no deployment, no frontend
 deployment, zero database/Sheets/Drive writes. **No production file changed in this round.**
+
+## §53  P1-B8C-R3 — one column, two answers, and the page that validated nothing
+
+**THE REPORTED DEFECT.** SKU Details displays a product photograph; Product Strategy shows a
+fallback marker for the same SKU and reports `UNVERIFIED_SOURCE_REFERENCE`. One column
+(`sku_details.image_url`), one row, two answers.
+
+**THE CAUSE, AND IT IS NOT A TYPO.** Each page owned its own rule and neither consulted the other:
+
+| Page | Rule | `assets/img/products/CO1100-R.jpg` |
+|---|---|---|
+| SKU Details | `resolveSkuImageUrl` — upgrade `http://`→`https://` on an https page, **pass everything else through** | renders (a browser resolves a relative path against the page) |
+| Product Strategy | `imageStateOf` — `/^https?:\/\//` or `UNVERIFIED_SOURCE_REFERENCE` | refused |
+
+That path is not a hypothetical. `IMAGE_POLICY.verified_mappings` records seven `image_url` values
+the operator read off live `sku_details` rows, and **every one of them is repo-relative** — which is
+why P1-B8C-R2 measured `VERIFIED_DB_MAPPING` for **zero** of sixty live rows.
+
+**THE SECOND DEFECT, FOUND ON THE WAY, AND THE MORE SERIOUS ONE.** SKU Details validated **nothing**.
+`javascript:alert(1)`, `C:\Users\...\photo.jpg`, a bare Drive id and a `data:` URL all reached
+`<img src>` verbatim. **Passing a value through is not the same as accepting it.** The board was
+strict about the wrong thing; SKU Details was not strict about anything.
+
+**THE FIX — AN EXTRACTION, NOT A SECOND MAPPING.** `assets/js/utils/km-image-reference-policy.js`
+is the one authority, asked by both pages. The mixed-content upgrade moved across unchanged, every
+caller kept its name, and **nothing in it composes a path from a SKU** — P0-R3-R1's retraction
+stands. Verdicts:
+
+| Kind | Example | Result |
+|---|---|---|
+| `ABSENT` | `''` | no image, reason `NO_IMAGE_URL_ON_RECORD` |
+| `SAME_ORIGIN_ASSET` | `assets/img/products/CO1100-R.jpg` | renders |
+| `ABSOLUTE_APPROVED` | page-origin URL, or a host the operator declared | renders (http→https upgraded) |
+| `REJECTED` | `javascript:` · `C:\…` · UNC · `file:` · `..` · Drive/Sheet id · undeclared host · no image extension | refused, with the reason |
+
+**AN EXTENSION IS HOW A RELATIVE REFERENCE PROVES IT NAMES A FILE.** `CO1100-R.jpg` is a path a
+browser can fetch; `1AbCdEf…` is a Drive id that 404s against the page. The rule is the extension and
+**not the length** — a length rule would refuse a deeply-nested legitimate path and accept a short id.
+
+**THE ALLOWLIST SHIPS EMPTY, AND THAT IS A DECISION.** Nothing in this repository names an approved
+image host — no CSP, no `img-src`, no configuration — and R2 measured zero absolute URLs across sixty
+live rows. An allowlist invented here would be a hostname somebody guessed, enforced as policy. **The
+page's own origin is approved without being listed**, because that is not a guess. An external host
+is one line: `P.APPROVED_EXTERNAL_HOSTS = ['cdn.example.com']`.
+
+> **OPERATOR DECISION OUTSTANDING.** If any live `sku_details.image_url` points at an external
+> domain, it will now fall back until that host is declared. All 67 production data points available
+> to this round — R2's 60 live rows plus the 7 operator-asserted mappings — are relative paths, so
+> the **measured** impact is zero; the unmeasured remainder is the operator's to confirm.
+
+**THE BROKEN-IMAGE FALLBACK, WHICH THE BOARD NEVER HAD.** The policy decides whether an address may
+be *fetched*; only the browser learns whether it *was*. SKU Details has had an `onerror` since it
+shipped. `psb-board-ui.js` had **two** `<img>` elements and **neither** had one, so a 404 left an
+empty frame under a caption claiming a photograph. Both now fall back, and "IMAGE FAILED TO LOAD"
+stays a different message from "IMAGE SOURCE MISSING".
+
+**WHAT THE LIVE ROWS CANNOT PROVE, AND ARE NOT ASKED TO.** R2's diagnostic *removed* every image
+address before the log left the editor — correctly, an address is a locator — so the sixty live rows
+carry redaction markers and can demonstrate only that nothing regressed. The photographs are drawn
+from `_p1b8c-r3-asset-capture.js`, which reads the seven operator-asserted paths out of the contract
+(never a copy) and carries an eighth reference that **must** be refused, because a run in which
+everything draws cannot tell "the policy accepts good values" from "the policy accepts everything".
+
+**MEASURED IN A REAL BROWSER, BY `naturalWidth`.** Counting `<img>` elements would score seven broken
+images exactly like seven photographs. Across all seven viewports: every `<img>` present reported
+`naturalWidth > 0`, `htmlImagesBroken` = **0**, chart photograph markers > 0 **while fallback plates
+were still drawn** for rows with no mapping, and every chart `href` traced to an operator-asserted
+path. The deterministic capture's redaction marker lost its `.svg` extension so it stays undrawable.

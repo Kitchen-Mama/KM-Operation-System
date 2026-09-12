@@ -1023,11 +1023,26 @@ ok(sampleKeys.indexOf('missing_reasons') !== -1,
 var ADAPTER = require(path.join(__dirname, '..', '..', 'assets/js/api/km-product-pricing-adapter.js'));
 eq(ADAPTER.imageStateOf({ product_image: '', missing_reasons: [] }), 'IMAGE_SOURCE_MISSING',
   'F4e and the client rule those two booleans stand in for is the one shipped: blank -> missing');
+/* P1-B8C-R3 RE-POINTED F4f AND F4g, AND THE REASON IS THE WHOLE OF R3.
+   They asserted the rule imageStateOf used to apply on its own: an absolute url is verified, anything
+   else is not. P1-B8C-R2 then measured that rule against production — sixty live rows, VERIFIED_DB_MAPPING
+   reached ZERO times — because `sku_details.image_url` holds a REPO-RELATIVE path, which SKU Details has
+   always rendered. So `sp02.jpg` was never "not an address": it is an address this application serves, and
+   calling it unverified was the defect.
+   WHAT DID NOT CHANGE is what F4 is here to prove — that the two booleans the census publishes stand in
+   for the shipped client rule. They still do; the shipped rule is now the shared policy. */
 eq(ADAPTER.imageStateOf({ product_image: 'sp02.jpg', missing_reasons: [] }),
-  'UNVERIFIED_SOURCE_REFERENCE', 'F4f not-an-address -> unverified');
+  'VERIFIED_DB_MAPPING', 'F4f a same-origin asset path -> verified (R3: this is what production holds)');
+eq(ADAPTER.imageStateOf({ product_image: '1AbCdEfGhIjKlMnOpQrStUvWxYz0123456', missing_reasons: [] }),
+  'UNVERIFIED_SOURCE_REFERENCE', 'F4f2 an opaque id with no extension -> unverified');
 eq(ADAPTER.imageStateOf({ product_image: 'https://x/y.jpg', missing_reasons: [] }),
-  'VERIFIED_DB_MAPPING', 'F4g absolute -> verified');
-eq(ADAPTER.imageStateOf({ product_image: 'https://x/y.jpg',
+  'UNVERIFIED_SOURCE_REFERENCE',
+  'F4g an absolute url on an UNDECLARED host -> unverified (a scheme is not an approval)');
+/* F4h's input has to be one the policy ACCEPTS, or it proves nothing about missing_reasons: an
+   undeclared host is already refused a step earlier, and the assertion would pass for the wrong reason. */
+eq(ADAPTER.imageStateOf({ product_image: 'sp02.jpg', missing_reasons: [] }), 'VERIFIED_DB_MAPPING',
+  'F4h0 the same row without the missing reason IS verified — so F4h isolates one input');
+eq(ADAPTER.imageStateOf({ product_image: 'sp02.jpg',
   missing_reasons: ['MASTER_SKU_RECORD_MISSING'] }), 'UNVERIFIED_SOURCE_REFERENCE',
   'F4h and the third input is the one missing_reasons carries');
 

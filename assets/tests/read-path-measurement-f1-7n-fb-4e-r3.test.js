@@ -163,6 +163,8 @@ var DBAPI_SRC = read('assets/js/api/operation-system-db-api.js');
 var FOUND_SRC = read('assets/js/api/km-api-foundation.js');
 var SCOPEREG_SRC = read('assets/js/core/scope-registry.js');
 var OVERRIDES_SRC = read('assets/js/utils/sku-overrides.js');
+// P1-B8C-R3: the image rule moved into a policy file that index.html loads first. Same order here.
+var IMGPOLICY_SRC = read('assets/js/utils/km-image-reference-policy.js');
 
 function makeClient(opts) {
   opts = opts || {};
@@ -246,6 +248,10 @@ function makeClient(opts) {
   vm.runInContext(DBAPI_SRC, ctx, { filename: 'operation-system-db-api.js' });
   vm.runInContext(FOUND_SRC, ctx, { filename: 'km-api-foundation.js' });
   vm.runInContext(SCOPEREG_SRC, ctx, { filename: 'scope-registry.js' });
+  vm.runInContext(IMGPOLICY_SRC, ctx, { filename: 'km-image-reference-policy.js' });
+  // The fixture's remote host is DECLARED through the operator allowlist, because the policy
+  // ships empty and A4 is about the field surviving the read, not about host approval.
+  ctx.KM_IMAGE_REFERENCE_POLICY.APPROVED_EXTERNAL_HOSTS = ['cdn.example.com'];
   vm.runInContext(OVERRIDES_SRC, ctx, { filename: 'sku-overrides.js' });
   return { sb: sb, win: win, DB: win.KM.DB, log: log, dep: dep, store: store };
 }

@@ -1487,10 +1487,19 @@
     m.nodes.forEach(function (n) { if (!rep && n.image) rep = n; });
     var fig = el('div', 'catfig');
     if (rep) {
+      /* P1-B8C-R3 — A VERIFIED MAPPING IS NOT A PROMISE THAT THE FILE IS THERE. The policy decides
+         whether an address may be fetched; only the browser knows whether it WAS. SKU Details has had
+         this fallback since it shipped (`onerror` hides the img and shows its placeholder) and the
+         board had none, so a 404 left an empty frame with a caption claiming a photograph. The failure
+         is now the same shape on both pages, and it says which of the two things went wrong. */
       var im = document.createElement('img');
       im.setAttribute('src', rep.image);
       im.setAttribute('alt', cat + ' — ' + rep.representative_image_sku);
       im.className = 'catfig-img';
+      im.onerror = function () {
+        if (im.parentNode === fig) fig.removeChild(im);
+        fig.appendChild(el('span', 'tfig-miss', 'IMAGE FAILED TO LOAD'));
+      };
       fig.appendChild(im);
     } else {
       fig.appendChild(el('span', 'tfig-miss', 'IMAGE SOURCE MISSING'));
@@ -1628,10 +1637,21 @@
         var tdF = el('td');
         var fig = el('div', 'tfig');
         if (n.image) {
+          /* P1-B8C-R3 — THE SAME FALLBACK AS THE CATEGORY CARD, FOR THE SAME REASON. There were TWO
+             <img> elements in this file with no error handling, not one, and a fix applied to the
+             first would have left every row of this table showing a browser's broken-image glyph
+             where a product photograph belongs. "NO IMAGE" and "the file did not load" stay
+             different messages here too. */
           var im = document.createElement('img');
           im.setAttribute('src', n.image);
           im.setAttribute('alt', n.product_name + ' ' + n.label);
           im.className = 'tfig-img';
+          im.onerror = (function (imgEl, host) {
+            return function () {
+              if (imgEl.parentNode === host) host.removeChild(imgEl);
+              host.appendChild(el('span', 'tfig-miss', 'IMAGE FAILED TO LOAD'));
+            };
+          }(im, fig));
           fig.appendChild(im);
         } else {
           fig.appendChild(el('span', 'tfig-miss', 'NO IMAGE'));

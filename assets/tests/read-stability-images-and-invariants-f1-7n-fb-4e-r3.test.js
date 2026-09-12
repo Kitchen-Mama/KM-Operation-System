@@ -30,6 +30,10 @@ function read(p) { return fs.readFileSync(path.join(ROOT, p), 'utf8'); }
 
 var HANDBOOK = read('assets/js/pages/sku-handbook.js');
 var OVERRIDES = read('assets/js/utils/sku-overrides.js');
+/* P1-B8C-R3 — sku-overrides.js no longer OWNS the image rule; it asks
+   km-image-reference-policy.js, which index.html now loads immediately before it. This sandbox
+   models the browser, so it loads the same two files in the same order. */
+var IMGPOLICY = read('assets/js/utils/km-image-reference-policy.js');
 var OVERSEAS = read('assets/js/pages/overseas-stock.js');
 var DBAPI = read('assets/js/api/operation-system-db-api.js');
 var FOUND = read('assets/js/api/km-api-foundation.js');
@@ -71,6 +75,12 @@ function loadImageStack(protocol) {
   };
   sb.globalThis = sb; sb.self = sb;
   var ctx = vm.createContext(sb);
+  vm.runInContext(IMGPOLICY, ctx, { filename: 'km-image-reference-policy.js' });
+  /* THE FIXTURE HOST IS DECLARED, NOT ASSUMED. The policy ships with an EMPTY external allowlist,
+     so `cdn.example.com` is refused until somebody says otherwise — which is the rule under test.
+     Declaring it here exercises the operator mechanism; deleting the assertions instead would have
+     removed the only coverage the http:// -> https:// upgrade has. */
+  sb.KM_IMAGE_REFERENCE_POLICY.APPROVED_EXTERNAL_HOSTS = ['cdn.example.com', 'x'];
   vm.runInContext(OVERRIDES, ctx, { filename: 'sku-overrides.js' });
   // Only the image helpers are needed from the handbook, and it references page globals at load, so the helper
   // block is extracted rather than the whole file executed. Extracted from the SHIPPED source, not retyped.

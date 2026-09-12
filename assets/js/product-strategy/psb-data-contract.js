@@ -386,8 +386,17 @@
      ------------------------------------------------------------------------------------------------ */
   C.IMAGE_POLICY = {
     authority: 'sku_details.image_url',
-    order: ['1. sku_details.image_url — the authoritative column, classified PRESENT / ABSENT the way'
-      + ' sku-overrides.js classifySkuImageSource does, reason NO_IMAGE_URL_ON_RECORD.',
+    /* P1-B8C-R3 — "the way sku-overrides.js does" IS NOW LITERALLY THE SAME FUNCTION.
+       It used to be a description, and the board's imageStateOf quietly applied a different rule:
+       an absolute http(s) url or nothing. The seven verified_mappings below are all REPO-RELATIVE
+       paths read off live rows, so the board refused the exact shape production holds while SKU
+       Details rendered it. One authority now answers both. */
+    resolver: 'assets/js/utils/km-image-reference-policy.js (KM_IMAGE_REFERENCE_POLICY_V1)',
+    resolver_is_shared_with: 'SKU Details and SKU Handbook, via sku-overrides.js',
+    external_hosts_are_operator_declared: true,
+    order: ['1. sku_details.image_url — the authoritative column, classified by the shared'
+      + ' KM_IMAGE_REFERENCE_POLICY: ABSENT (reason NO_IMAGE_URL_ON_RECORD), SAME_ORIGIN_ASSET,'
+      + ' ABSOLUTE_APPROVED, or REJECTED with the reason.',
       '2. Nothing else.'],
     /* Kept on the record rather than deleted: a rule that was wrong is worth being able to find. */
     retracted_in_p0_r3_r1: {

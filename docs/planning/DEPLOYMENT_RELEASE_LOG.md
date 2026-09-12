@@ -1251,3 +1251,78 @@ WEB_APP_DEPLOYMENT_REQUIRED  -  **NO**          FRONTEND_DEPLOY_REQUIRED  -  **N
   be re-synced. The P1-B7/P1-B8B frontend package remains undeployed.
 
 **STATUS: LIVE REPLAY ACCEPTED - NOT SYNCED - NO VERSION - NO DEPLOYMENT - NOT PUSHED - PRODUCT STRATEGY STILL DISABLED - P1-B8D NOT STARTED.**
+
+=======================================================================================================
+P1-B8C-R3   SHARED IMAGE RESOLUTION - LOCAL COMMIT - NOT PUSHED - NOT DEPLOYED
+=======================================================================================================
+  SCOPE: make Product Strategy share SKU Details' canonical image resolution, so one
+  `sku_details.image_url` gets one answer. No DB, no Apps Script, no feature flag, no navigation,
+  no deployment, no Login/RBAC, no S2.
+
+-------------------------------------------------------------------------------------------------------
+THE DEFECT, AND THE ONE NOBODY REPORTED
+-------------------------------------------------------------------------------------------------------
+  REPORTED: SKU Details renders `assets/img/products/CO1100-R.jpg`; Product Strategy answers
+  UNVERIFIED_SOURCE_REFERENCE for the same row. Each page owned its own rule - SKU Details passed
+  everything through, the board demanded an absolute http(s) url - and the relative path is THE SHAPE
+  PRODUCTION HOLDS (seven operator-asserted verified_mappings; P1-B8C-R2 measured VERIFIED_DB_MAPPING
+  for ZERO of sixty live rows).
+
+  FOUND ON THE WAY: SKU Details validated NOTHING. javascript:, a Windows path, a UNC path, a bare
+  Drive id and a data: url all reached <img src> verbatim. PASSING A VALUE THROUGH IS NOT ACCEPTING IT.
+
+  ALSO FOUND: psb-board-ui.js has TWO <img> elements and NEITHER had an onerror fallback, so a 404
+  left an empty frame under a caption claiming a photograph.
+
+-------------------------------------------------------------------------------------------------------
+THE FIX
+-------------------------------------------------------------------------------------------------------
+  assets/js/utils/km-image-reference-policy.js  (NEW) - one authority, asked by both pages. An
+  EXTRACTION: the mixed-content upgrade moved across unchanged, every caller kept its name, and
+  nothing in it composes a path from a sku (P0-R3-R1 stays retracted). Fails CLOSED when absent.
+
+  ALLOWLIST SHIPS EMPTY, DELIBERATELY. Nothing in the repo names an approved image host, so one
+  invented here would be a guess enforced as policy. The page's OWN origin is approved without being
+  listed. OPERATOR DECISION OUTSTANDING: an external-domain image_url now falls back until its host
+  is declared - all 67 production data points available (60 live rows + 7 asserted mappings) are
+  relative paths, so the MEASURED impact is zero.
+
+-------------------------------------------------------------------------------------------------------
+EVIDENCE
+-------------------------------------------------------------------------------------------------------
+  docs/evidence/p1-b8c-r3-image-acceptance/assets/  - the render proof, seven viewports + six views
+  docs/evidence/p1-b8c-r3-image-acceptance/live/    - the live-sixty regression run
+  MEASURED BY naturalWidth, not by counting elements: htmlImagesBroken 0 at every viewport, chart
+  photograph markers > 0 WHILE fallback plates were still drawn, every chart href an operator-asserted
+  path, page horizontal overflow 0 including 390x844, zero console errors, flag still false.
+  The live sixty still resolve to refused/absent - BECAUSE R2's diagnostic removed the addresses,
+  which is recorded as the reason rather than reported as a regression.
+
+-------------------------------------------------------------------------------------------------------
+TESTS
+-------------------------------------------------------------------------------------------------------
+  product-strategy-image-resolution-p1-b8c-r3         334 / 0 · 20 mutants · 0 survived   (new)
+  product-strategy-production-readback-p1-b3          339 / 0 · 17 mutants · 0 survived   (re-pointed)
+  product-strategy-replay-acceptance-p1-b8c           396 / 0 ·  9 mutants · 0 survived
+  product-strategy-live-replay-acceptance-p1-b8c-r2   272 / 0 · 21 mutants · 0 survived
+  product-strategy-row-shape-sample-p1-b8c-r1         425 / 0 · 27 mutants · 0 survived   (re-pointed)
+  read-stability-images-and-invariants-f1-7n-fb-4e-r3 109 / 0                             (re-pointed)
+  read-path-measurement-f1-7n-fb-4e-r3                 56 / 0                             (re-pointed)
+  sku-lifecycle-override-cleanup-f1-s1                 19 / 0                             (re-pointed)
+  full sweep   PRE 463 suites / 4 red (3,1,7,2)   POST 464 suites / 4 red (3,1,7,2)   new failures 0
+
+  RE-POINTED, NOT RELAXED: the touched assertions encoded the rule R3 replaced (a bare filename is
+  unverified) or built a browser sandbox without the new script. Fixture hosts are DECLARED through
+  the operator allowlist, which exercises the mechanism instead of weakening the rule.
+
+-------------------------------------------------------------------------------------------------------
+APPS_SCRIPT_SYNC_REQUIRED  -  **NO**            APPS_SCRIPT_NEW_VERSION_REQUIRED  -  **NO**
+WEB_APP_DEPLOYMENT_REQUIRED  -  **NO**          FRONTEND_DEPLOY_REQUIRED  -  **NO** (until the user
+                                                deploys the standing P1-B7/P1-B8B frontend package)
+-------------------------------------------------------------------------------------------------------
+  No .gs changed. index.html gained EXACTLY ONE line - the policy script tag - and lost none. No
+  stylesheet, no page partial, no feature flag, no navigation, no Login/RBAC file changed.
+  NOTE: km-image-reference-policy.js and the two client files that now ask it are FRONTEND assets.
+  They ship with the next frontend deployment, which remains USER-owned and unscheduled.
+
+**STATUS: IMAGE RESOLUTION SHARED - NOT SYNCED - NO VERSION - NO DEPLOYMENT - NOT PUSHED - PRODUCT STRATEGY STILL DISABLED - P1-B8D NOT STARTED.**

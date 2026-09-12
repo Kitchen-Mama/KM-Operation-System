@@ -29,7 +29,13 @@ var localStorageStub = {
   setItem: function (k, v) { store[k] = String(v); },
   removeItem: function (k) { delete store[k]; }
 };
-var windowStub = {};
+/* P1-B8C-R3 — sku-overrides.js now asks km-image-reference-policy.js for every image verdict, so the
+   policy is part of the environment this module is executed in, exactly as index.html loads it first.
+   The fixture's host is DECLARED through the operator allowlist: §D is about the localStorage override
+   capability surviving, not about which hosts are approved, and the policy ships with none. */
+var IMG_POLICY = require(path.join(__dirname, '..', 'js/utils/km-image-reference-policy.js'));
+IMG_POLICY.APPROVED_EXTERNAL_HOSTS = ['example'];
+var windowStub = { KM_IMAGE_REFERENCE_POLICY: IMG_POLICY };
 var documentStub = { getElementById: function () { return null; }, createElement: function () { return {}; } };
 new Function('window', 'localStorage', 'document', OVR)(windowStub, localStorageStub, documentStub);
 

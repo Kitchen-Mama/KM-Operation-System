@@ -79,6 +79,17 @@
   A.CAMPAIGN_LIVE_STATUSES = ['active', 'running', 'live'];
   A.CAMPAIGN_DEAD_STATUSES = ['paused', 'ended', 'cancelled', 'draft', 'expired'];
 
+  /* THE ONE IMAGE AUTHORITY, REACHED THE SAME WAY IN A BROWSER AND IN NODE. In the browser
+     sku-overrides.js's policy file is loaded first and publishes the global; under Node the module is
+     required. Never re-implemented here — a copy of a rule is a second rule that has not drifted YET. */
+  function imagePolicy() {
+    if (root.KM_IMAGE_REFERENCE_POLICY) return root.KM_IMAGE_REFERENCE_POLICY;
+    if (typeof module !== 'undefined' && module.exports && typeof require === 'function') {
+      try { return require('../utils/km-image-reference-policy.js'); } catch (e) { return null; }
+    }
+    return null;
+  }
+
   function str(v) { return String(v === undefined || v === null ? '' : v).trim(); }
   function lower(v) { return str(v).toLowerCase(); }
   function isArr(v) { return Object.prototype.toString.call(v) === '[object Array]'; }
@@ -113,14 +124,33 @@
    * `sku_details` row, and it is an absolute http(s) URL a browser can fetch. It does NOT claim anybody
    * looked at the picture — which is why the state is named after the mapping and not after the image.
    */
+  /* P1-B8C-R3 — THE CANONICAL POLICY, NOT A SECOND OPINION ABOUT THE SAME COLUMN.
+     This used to read `/^https?:\/\//` and decide for itself. SKU Details, resolving the very same
+     `sku_details.image_url`, decided differently — it renders a repo-relative path, because a browser
+     resolves one against the page — and P1-B8C-R2 measured the result on production data: sixty live
+     rows, VERIFIED_DB_MAPPING reached ZERO times, every product a fallback marker, while the same rows
+     show their photograph on SKU Details. The board now asks what that page asks.
+     ONE CALLER-VISIBLE CONSEQUENCE, DELIBERATE: an absolute url on an UNAPPROVED host is no longer
+     VERIFIED_DB_MAPPING. `https://` proves a scheme, not a mapping the operator sanctioned. */
   A.imageStateOf = function (row) {
     var v = str(row && row.product_image);
     if (v === '') return 'IMAGE_SOURCE_MISSING';
-    if (!/^https?:\/\//i.test(v)) return 'UNVERIFIED_SOURCE_REFERENCE';
+    var P = imagePolicy();
+    // FAIL CLOSED. No policy means no established mapping; it must never mean "fall back to a regex".
+    if (!P) return 'UNVERIFIED_SOURCE_REFERENCE';
+    if (!P.classify(v).accepted) return 'UNVERIFIED_SOURCE_REFERENCE';
     // No master row means no row the URL could have come from, so the mapping is not established.
     var miss = (row && row.missing_reasons) || [];
     if (miss.indexOf('MASTER_SKU_RECORD_MISSING') !== -1) return 'UNVERIFIED_SOURCE_REFERENCE';
     return 'VERIFIED_DB_MAPPING';
+  };
+
+  /* The renderable address for a row whose mapping IS established — the policy's own output, so the
+     http:// -> https:// upgrade reaches the board instead of stopping at SKU Details. */
+  A.imageUrlOf = function (row) {
+    if (A.imageStateOf(row) !== 'VERIFIED_DB_MAPPING') return null;
+    var P = imagePolicy();
+    return (P && P.classify(str(row && row.product_image)).url) || null;
   };
 
   /**
@@ -263,8 +293,16 @@
       official_deal_start: promo.effective ? promo.effective.start_date : null,
       official_deal_end: promo.effective ? promo.effective.end_date : null,
 
-      // ---- the image, and why ----
-      product_image: str(live.product_image) || null,
+      /* ---- the image, and why ----
+         P1-B8C-R3: when the mapping IS established this carries the address the POLICY resolved, not
+         the raw cell. The only difference the policy can make to an accepted value is the http:// ->
+         https:// mixed-content upgrade, and psb-selectors puts this field straight into `<img src>` —
+         so carrying the raw cell here is what kept that upgrade stranded on SKU Details. A value that
+         was NOT accepted travels unchanged, because `image_identity_status` already refuses it and
+         the original is what an operator needs to see in order to fix the row. */
+      product_image: (imageState === 'VERIFIED_DB_MAPPING'
+        ? A.imageUrlOf(live)
+        : (str(live.product_image) || null)),
       image_identity_status: imageState,
 
       // ---- regional detail, passed through unchanged ----
@@ -288,6 +326,16 @@
         variant_name_source: variantName === null ? null : 'live column',
         image_source: str(live.product_image) === '' ? null : 'sku_details.image_url (master row)',
         image_state: imageState,
+        // The verdict in the policy's own vocabulary, so "why is there no picture" is answerable
+        // from the row rather than by re-running the classifier.
+        image_reference_kind: (function () {
+          var P = imagePolicy();
+          return P ? P.classify(str(live.product_image)).kind : 'IMAGE_POLICY_NOT_LOADED';
+        }()),
+        image_reference_reason: (function () {
+          var P = imagePolicy();
+          return P ? P.classify(str(live.product_image)).reason : 'IMAGE_POLICY_NOT_LOADED';
+        }()),
         promotion_source: 'campaigns[] + campaign_sku_lines, resolved against asOf',
         promotion_as_of: promo.asOf,
         promotion_candidates: promo.candidates,
@@ -411,6 +459,7 @@
     client_may_only_add: A.CLIENT_ONLY_SOURCE_STATE,
     closes_shape_gaps: ['source_status', 'promotion', 'variant_group', 'variant_name', 'image_identity',
       'identity'],
+    image_authority: 'KM_IMAGE_REFERENCE_POLICY_V1 — shared with SKU Details; this file owns no image rule',
     applies_to: 'productPricing.workspace.get responses; no page has adopted it yet'
   };
 
