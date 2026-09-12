@@ -6033,3 +6033,45 @@ with the flag still false, add one operator, rehearse the rollback.
 
 **ZERO PRODUCTION CHANGE.** No Apps Script file, no client runtime, no deployment, no cloud resource, no
 secret, no flag, no navigation, no DB/Sheets/Drive write, and no request to any Google service.
+
+---
+
+## SEC-A2R — auth gateway production readiness (local only, nothing deployed)
+
+**State:** `services/auth-gateway/` is now a deployable package. It is deployed nowhere, wired to
+nothing, and referenced by no router branch, no page and no sync bundle.
+
+**Dependency:** `google-auth-library` **11.0.2**, exact pin, `package-lock.json` committed,
+`node_modules` gitignored. `npm audit` 0 vulnerabilities including production-only. All licences
+permissive. Zero install-time hooks. Two clean installs from the lockfile produce a byte-identical
+426-file tree.
+
+**Suites:**
+
+| | |
+|---|---|
+| `auth-gateway-production-readiness-sec-a2r.test.js` | **194 / 0 / 33 mutants / 0 survived** (new) |
+| `auth-gateway-contract-sec-a2.test.js` | **200 / 0 / 20 / 0** |
+| `identity-verifier-prototype-sec-a1.test.js` | 105 / 0 / 14 / 0 |
+| `identity-boundary-baseline-sec-a0.test.js` | 53 / 0 / 11 / 0 |
+| `deployment-r10-activation-boundary-p1-b7f.test.js` | 100 / 0 / 7 / 0 |
+
+Two SEC-A2 assertions changed because this round changed the fact they pinned: **H1** (a complete
+production configuration now needs a named operator registry) and **K2** (which pinned that
+`node_modules` did not exist — now asks `git ls-files` whether any of it is **committed**, which is the
+question that still matters).
+
+**Known limits, recorded rather than glossed:**
+
+- **`REAL_GOOGLE_TOKEN_ACCEPTANCE = NOT_YET_PROVEN`.** Every token tested was signed by a key the test
+  process created. Needs a real OAuth client and a real sign-in — SEC-A3-T Phase 8.
+- **`STOP_LOCAL_CONTAINER_RUNTIME_UNAVAILABLE`.** No Docker/Podman/nerdctl/WSL on this machine, so **no
+  image was built**. The Dockerfile is verified by reading; the runtime behaviour was verified against
+  the real entry point as a real process instead.
+- **SIGTERM delivery** is unproven on Windows (there is no such signal); the handler itself drains,
+  closes cleanly and exits 0.
+- **Per-user edge rate limiting** deferred; the in-process guard is instance-local and best-effort, and
+  is named so that it cannot be quoted as a global limit. The hard bound on spend is `--max-instances`.
+
+**Unchanged:** 138 actions, no gate added to any of them; no Apps Script change; no deployment; no
+frontend release; no database, Sheets or Drive write; `PRODUCT_STRATEGY_ENABLED_` is `false`.

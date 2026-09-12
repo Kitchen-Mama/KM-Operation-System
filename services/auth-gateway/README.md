@@ -1,8 +1,17 @@
-# KM auth gateway — SEC-A2
+# KM auth gateway — SEC-A2 · SEC-A2R
 
-**NOT DEPLOYED. NOT BUILT. NO CLOUD RESOURCE EXISTS. NO SECRET EXISTS.**
+**NOT DEPLOYED. NO IMAGE WAS BUILT. NO CLOUD RESOURCE EXISTS. NO SECRET EXISTS.**
 Nothing in this directory is loaded by a page, routed by the Apps Script router, or included in any
 sync package. It is a complete local implementation with a deployment runbook, and that is all.
+
+**`STOP_LOCAL_CONTAINER_RUNTIME_UNAVAILABLE`** — the machine this was written on has no container
+runtime (no Docker, no Podman, no nerdctl, no WSL distribution), so the `Dockerfile` in this directory
+has **never been built or run**. It is a specification that has been checked by reading, not by
+executing. Everything the container would do that does NOT depend on being a container — refusing to
+start, answering, refusing, draining on a termination signal — was proved instead against the real
+entry point running as a real operating-system process in production mode; see
+`assets/tests/_sec-a2r-prod-mode-proof.js`. What remains unproved is the image itself: its layers, its
+size, and that the pinned base tag resolves.
 
 ```
 browser ──(1) Google ID token in the POST body──▶ GATEWAY ──(3) request + HMAC assertion──▶ /exec
@@ -36,17 +45,53 @@ cannot, and hands across a statement Apps Script can check in-process with a pri
 | `src/assertion.js` | the HMAC contract: canonical serialization, signing, verification, key rotation |
 | `src/http.js` | exact-origin CORS, correlation ids, the redacting logger, the upstream client |
 | `src/config.js` | configuration, and the refusal to start without it |
+| `src/guard.js` | the instance-local rate guard and the upstream circuit breaker — and, at length, what they may not be called |
 | `src/server.js` | four routes: `POST /v1/call`, its preflight, `/healthz`, `/readyz` |
 | `apps-script-verifier/*.gs` | the other half of the seam, in Apps Script primitives only |
 
 ## Run it locally
 
-Nothing to install. The end-to-end uses a key pair generated at start-up and thrown away at exit.
+```
+npm ci --omit=dev --ignore-scripts      # restores the exact tree recorded in package-lock.json
 
+node assets/tests/auth-gateway-contract-sec-a2.test.js                     # the contract and its attacks
+node assets/tests/auth-gateway-production-readiness-sec-a2r.test.js        # the real library, config, container spec
+node assets/tests/_sec-a2-local-e2e.js                                     # real Chrome -> gateway -> mock Apps Script
+node assets/tests/_sec-a2r-prod-mode-proof.js                              # production-mode PROCESS, started and killed
 ```
-node assets/tests/auth-gateway-contract-sec-a2.test.js    # 199 assertions, 20 mutants
-node assets/tests/_sec-a2-local-e2e.js                    # real Chrome -> gateway -> mock Apps Script
-```
+
+The end-to-end runs the **actual `.gs` file** under an Apps Script platform shim rather than a
+simplified stand-in. A mock that checked signatures its own way would only prove the gateway agrees
+with the mock, which is not a fact anyone needs.
+
+### The dependency
+
+`google-auth-library` is pinned **exactly** — no caret, no tilde — and `package-lock.json` is
+committed while `node_modules` is not. A caret plus a lockfile is reproducible for `npm ci` and **not**
+for a fresh `npm install`, and a Cloud Run source build runs in an environment we do not control; an
+exact pin makes the two agree and makes an upgrade a commit somebody reviewed rather than a side
+effect of building on a different day. Two independent clean installs from the lockfile alone produce
+a byte-identical 426-file tree. `npm audit` reports **0 vulnerabilities**, production-only included,
+and every licence in the tree is permissive.
+
+> The first install resolved `^9.15.0` to **9.15.1 — the `legacy-14` branch**, a maintenance line for
+> Node 14 that still carries a vulnerable `gaxios`→`uuid`. The caret looked current and was pointing at
+> an old support line. Moving to the current major cleared both advisories.
+
+### What the installed library actually does — measured, not assumed
+
+Three behaviours that only appeared once it was really executed, and all three shape the design:
+
+- **It fetches Google's certificates before it parses the token**, and wraps every failure of that
+  fetch — DNS, refused connection, a 500 from Google — in one message. Classifying that by inspecting
+  the cause reports **Google being down as a forged token**, which tells a real operator to sign in
+  again, forever. The wrapper is now matched first and unconditionally.
+- **It accepts a token up to 300 seconds past `exp`** — its own clock-skew allowance.
+- **It never looks at `email_verified`.**
+
+The last two are why the gateway keeps its own `checkClaims` instead of trusting the library to be
+complete. Deleting those checks as "already done upstream" would have bought a five-minute replay
+window and an unverified-email hole, with nothing to reveal either.
 
 The end-to-end runs the **actual `.gs` file** under an Apps Script platform shim rather than a
 simplified stand-in. A mock that checked signatures its own way would only prove the gateway agrees
@@ -71,6 +116,21 @@ wanted — and not asking for them removes a whole class of cross-site request f
 
 **The Google ID token is never forwarded upstream.** The upstream has no use for it, and every copy of
 a credential is a place it can leak from.
+
+**The rate guard is instance-local and must never be described as a global rate limit.** Cloud Run
+runs N instances; the counter lives in the memory of one of them. A caller refused by one is balanced
+onto another with a fresh bucket, so the real ceiling is `limit × instances` and it resets whenever an
+instance is replaced. That makes it a genuinely useful **cost and availability** control and a
+genuinely weak **security** control. **The hard bound on spend is `--max-instances`**, which is a
+deployment flag, not code.
+
+**The limiter on failed authentication attempts is deliberately invisible.** When it trips the caller
+receives the same `INVALID_TOKEN` they were already getting, byte for byte, and merely stops costing a
+signature verification. A limiter that announces itself on the authentication path is a progress bar
+for whoever is guessing.
+
+**Secrets are never environment variables and never `00_config.gs`.** A secret in a source file is a
+secret in every clone of the repository and every paste into the editor.
 
 ---
 

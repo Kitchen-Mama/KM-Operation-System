@@ -456,3 +456,35 @@ length differ and a careless implementation passes every ASCII test ever written
 
 **Still true, and still the boundary:** no cloud resource, no OAuth client, no secret, no deployment,
 and the Product Strategy flag is false.
+
+---
+
+## SEC-A2R — the gateway's dependency is installed, and the real library moved two decisions
+
+SEC-A2 proved the gateway against a tree with **nothing installed**: `google-auth-library` was declared
+and absent, so the production verifier was the one component that could not be executed. SEC-A2R
+installs it, runs it, and records what it actually does.
+
+**Three measurements, two of which changed the architecture's reasoning:**
+
+1. **It fetches Google's signing certificates BEFORE it parses the token**, and wraps every failure of
+   that fetch — DNS, refused connection, a 500 from Google — in one message. The SEC-A2 adapter
+   classified by inspecting the cause, so a cause without a transport-looking word was filed as a
+   **rejected token**. That reports Google being down as a forged sign-in, and tells a real operator to
+   sign in again, forever. Now the wrapper is matched first and unconditionally.
+2. **It accepts a token up to 300 seconds past `exp`** — its own clock-skew allowance.
+3. **It never checks `email_verified`.**
+
+Points 2 and 3 settle a question SEC-A0 left open in the five-layer freeze: whether the gateway's own
+claim checks are redundant once a real library is doing the verification. **They are not**, and deleting
+them as duplication would have bought a five-minute replay window and an unverified-email hole with
+nothing anywhere to reveal either. In SEC-A0 that layering was an argument. It is now a measurement.
+
+**The refusal contract is extended from eighteen codes to twenty**, declared rather than overloaded:
+`TOO_MANY_REQUESTS` (429, its own `throttle` kind) and `PAYLOAD_TOO_LARGE` (413). The second exists
+because the body limit had been answering `ACTION_MISMATCH` — *"The request was altered in transit"* —
+which sends somebody to hunt a network fault when the truth is that they sent too much.
+
+**Still true:** no cloud resource, no OAuth client, no secret, no image, no deployment, and
+`PRODUCT_STRATEGY_ENABLED_` is false. Full evidence:
+`docs/planning/SEC_A2R_PRODUCTION_READINESS_AND_COST_MODEL.md`.

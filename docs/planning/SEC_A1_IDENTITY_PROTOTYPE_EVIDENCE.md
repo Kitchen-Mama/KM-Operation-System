@@ -341,3 +341,33 @@ Three things SEC-A1 could not have known, which only building found:
 
 EG-8 (is `tokeninfo` usable from Apps Script?) is now **moot for the recommended path**: the gateway
 verifies with Google's own library and Apps Script never calls out at all.
+
+---
+
+## SEC-A2R — closing EG-4 and EG-5, and one gap that could not be closed
+
+SEC-A1 classified every claim about Google's libraries as [OFFICIAL], [MEASURED], [INFERRED] or [GAP].
+Installing `google-auth-library` converts several of those.
+
+| Was | Now |
+|---|---|
+| [OFFICIAL] Google recommends its own library over hand-written verification | **[MEASURED]** — loaded, executed, and it refuses malformed tokens, `alg:none`, unknown key ids, wrong signatures, wrong audiences, wrong issuers and tampered payloads |
+| [INFERRED] a transport failure and a forged token can be told apart | **[MEASURED, and the inference was wrong]** — see below |
+| [GAP] EG-4 does the adapter actually work | **closed** — `REAL_LIBRARY_LOADED_AND_FAIL_CLOSED = PROVEN` |
+| [GAP] EG-5 does the declared dependency install cleanly | **closed** — pinned exactly, locked, 0 vulnerabilities, all licences permissive, zero install hooks |
+| — | **`REAL_GOOGLE_TOKEN_ACCEPTANCE = NOT_YET_PROVEN`** and still open |
+
+**Where the inference was wrong.** SEC-A1 reasoned that a network failure and a rejected token could be
+separated by inspecting the error. The installed library fetches Google's certificates *before* it
+parses the token and wraps every failure of that fetch in one message — so the separation has to be made
+on the WRAPPER, not the cause. Classifying by cause reported an outage as a rejected caller.
+
+**Why `REAL_GOOGLE_TOKEN_ACCEPTANCE` cannot be closed here, stated plainly:** every token in every test
+was signed by a key the test process created, and handed to the library through a certificate set the
+test process served. The cryptography is genuine and the rejections are genuine; the *provenance* is
+ours. Proving acceptance needs a real OAuth client and a real sign-in, which SEC-A2R §2 forbids. It is
+the first thing SEC-A3-T does — see `docs/planning/SEC_A3_T_TEST_CLOUD_RUNBOOK.md` Phase 8.
+
+**A fourth thing that only building found**, alongside the three SEC-A1 listed: **the library's error
+messages are credentials.** `Invalid token signature:` is followed by the entire JWT. The adapter reads
+the message, classifies it and drops it; only the classification escapes.

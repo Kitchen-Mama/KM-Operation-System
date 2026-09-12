@@ -30,6 +30,11 @@
 
 var crypto = require('crypto');
 
+/* The exact wrapper google-auth-library puts around ANY failure to obtain Google's signing
+   certificates. Matched before the cause is inspected — see the classification note in
+   `googleVerifier` for why the order matters. */
+var CERT_FETCH_FAILURE = /Failed to retrieve verification certificates/i;
+
 /** Decode a JWT segment without trusting it. Used only AFTER a signature has been established. */
 function decodeSegment(seg) {
   return JSON.parse(Buffer.from(String(seg).replace(/-/g, '+').replace(/_/g, '/'), 'base64')
@@ -62,10 +67,24 @@ function googleVerifier(opts) {
         .catch(function (err) {
           /* A NETWORK FAILURE AND A FORGED TOKEN MUST NOT LOOK THE SAME. The library throws for both,
              so the distinction is drawn here: anything that smells of transport is an outage, and an
-             outage is still a refusal — just a differently named one. */
+             outage is still a refusal — just a differently named one.
+
+             SEC-A2R, MEASURED AGAINST THE INSTALLED LIBRARY: google-auth-library fetches Google's
+             signing certificates BEFORE it parses the token, and wraps every failure of that fetch —
+             DNS, refused connection, timeout, a 500 from Google, an unparseable cert document — in the
+             single message `Failed to retrieve verification certificates: <cause>`. Only some of those
+             causes contain a transport-looking word. Classifying by the cause text alone therefore
+             reports GOOGLE BEING DOWN as A FORGED TOKEN, which tells a real operator to sign in again
+             forever. The wrapper text is matched FIRST and unconditionally: a failure to obtain the
+             certificates is never a statement about the caller's token, because the token was never
+             looked at. */
           var m = String((err && err.message) || '');
-          var transport = /getaddrinfo|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|socket hang up|network|fetch failed|certificate/i.test(m);
+          if (CERT_FETCH_FAILURE.test(m)) return { ok: false, unavailable: true, reason: 'certificates' };
+          var transport = /getaddrinfo|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|socket hang up|network|fetch failed|certificate/i.test(m);
           if (transport) return { ok: false, unavailable: true, reason: 'transport' };
+          /* ONLY THE CLASSIFICATION ESCAPES, NEVER THE MESSAGE. The library embeds the WHOLE JWT in
+             `Invalid token signature: <token>` and the whole payload in `Token used too late: {...}`,
+             so `err.message` is a credential. It is read here, in memory, and dropped. */
           return { ok: false, reason: 'rejected' };
         });
     }

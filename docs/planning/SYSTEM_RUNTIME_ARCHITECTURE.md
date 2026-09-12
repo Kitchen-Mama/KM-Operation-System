@@ -846,3 +846,46 @@ the signature, so a valid assertion cannot be lifted onto a different call.
 
 **The Google ID token is never forwarded upstream**, and the secret lives in Script Properties - never
 in `00_config.gs`, because a secret in a source file is a secret in every clone of the repository.
+
+---
+
+## §15.9  Auth gateway — production readiness (SEC-A2R)
+
+The gateway described in §15.8 is unchanged in shape. This round made it deployable and measured what it
+does when it is really running.
+
+**Dependency.** `google-auth-library` **11.0.2**, pinned exactly, `package-lock.json` committed,
+`node_modules` not. Two clean installs from the lockfile alone produce a byte-identical 426-file tree.
+`npm audit` 0 vulnerabilities, production-only included. Zero install-time hooks in the tree.
+
+> The SEC-A2 caret `^9.15.0` resolved to 9.15.1, which npm's dist-tags identify as **`legacy-14`** — the
+> Node 14 maintenance line, carrying a vulnerable `gaxios`→`uuid`. A caret does not mean "current"; it
+> means "compatible with a number somebody wrote down once".
+
+**Runtime additions.** `src/guard.js` — an instance-local token-bucket rate guard and an upstream
+circuit breaker. Security headers and `Cache-Control: no-store` on **every** response including the 404.
+Socket timeouts against slowloris. A bounded upstream response. A redirect-destination allowlist, so a
+misconfigured or compromised upstream cannot point the next hop at a host of its choosing. Graceful
+shutdown: readiness flips, a pause, then the socket closes.
+
+> The pause exists because the measurement demanded it. Without it a readiness probe during the drain
+> got **no answer at all** rather than a 503 — the socket closed in the same tick, so nothing could ever
+> observe the flag. A flag no probe can see is a comment.
+
+**Configuration now refuses to start** on a wildcard origin, a loopback or plaintext origin in
+production, a plaintext upstream, an upstream host that merely contains or ends with `script.google.com`,
+an upstream that is not an `/exec` path, an unnamed operator registry in production, a misspelled
+`NODE_ENV`, an out-of-range TTL or clock skew, an upstream timeout that outlives the inbound request, or
+a secret that is empty, short, **long but non-random**, or still the runbook placeholder. All fifteen
+cases proved against a real child process: exit **78**, with a printed reason.
+
+**Container.** Specified as a two-stage build on a pinned `node:24.14.0-bookworm-slim`, non-root,
+exec-form `CMD`, `--ignore-scripts`, copying only the manifest, `node_modules` and `src/`.
+**`STOP_LOCAL_CONTAINER_RUNTIME_UNAVAILABLE`** — no container runtime exists on the development machine,
+so **no image was built** and the specification is verified by reading, not by executing.
+
+**Refusal contract: 18 → 20 codes**, declared. `TOO_MANY_REQUESTS` (429, `kind: 'throttle'`) and
+`PAYLOAD_TOO_LARGE` (413).
+
+**Still not wired to anything.** No router branch calls the verifier, none of the 138 actions changed,
+no deployment, no flag change.

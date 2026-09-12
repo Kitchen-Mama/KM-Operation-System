@@ -414,7 +414,10 @@ step(function () {
       ALLOWED_ORIGINS: 'https://example.github.io',
       APPS_SCRIPT_EXEC_URL: 'https://script.google.com/macros/s/PLACEHOLDER/exec',
       HMAC_ACTIVE_KEY_ID: 'k1', HMAC_ACTIVE_KEY_FILE: '/var/secrets/active',
-      ALLOWED_ACTIONS: 'productPricing.siteUniverse.get', AUTH_VERIFIER: 'google'
+      ALLOWED_ACTIONS: 'productPricing.siteUniverse.get', AUTH_VERIFIER: 'google',
+      /* SEC-A2R §5 made this part of a COMPLETE production configuration: an unset registry path is
+         indistinguishable from a mounted empty file until somebody is wrongly refused. */
+      OPERATOR_REGISTRY_FILE: '/var/run/operators.json'
     };
     for (var k in (over || {})) { if (over[k] === undefined) delete env[k]; else env[k] = over[k]; }
     return configLib.load(env).problems.join(' | ');
@@ -424,7 +427,8 @@ step(function () {
     ALLOWED_ORIGINS: 'https://example.github.io',
     APPS_SCRIPT_EXEC_URL: 'https://script.google.com/macros/s/PLACEHOLDER/exec',
     HMAC_ACTIVE_KEY_ID: 'k1', HMAC_ACTIVE_KEY_FILE: '/var/secrets/active',
-    ALLOWED_ACTIONS: 'productPricing.siteUniverse.get', AUTH_VERIFIER: 'google'
+    ALLOWED_ACTIONS: 'productPricing.siteUniverse.get', AUTH_VERIFIER: 'google',
+    OPERATOR_REGISTRY_FILE: '/var/run/operators.json'
   }).ok, true, 'H1 a complete configuration starts');
   ok(/ALLOWED_ORIGINS is empty/.test(probs({ ALLOWED_ORIGINS: undefined })), 'H2 no origins refuses to start');
   ok(/trailing slash/.test(probs({ ALLOWED_ORIGINS: 'https://example.github.io/' })), 'H3 a trailing slash is caught at startup');
@@ -535,8 +539,17 @@ step(function () {
     });
   })(path.join(ROOT, 'services', 'auth-gateway'));
   ok(files.length >= 12, 'K1 the gateway package exists (' + files.length + ' files)');
-  ok(!fs.existsSync(path.join(ROOT, 'services', 'auth-gateway', 'node_modules')),
-    'K2 no dependency was vendored into the repository');
+  /* SEC-A2R INSTALLED THE DEPENDENCY, SO THIS TEST CHANGED - DELIBERATELY, AND IT GOT STRONGER.
+     Until this round the gateway declared `google-auth-library` and did not install it, and `node_modules`
+     being absent was a fair proxy for "nothing was vendored". Section 3 of SEC-A2R required the library
+     to be really installed and really executed, so absence is no longer the fact to pin - and quietly
+     deleting the test would have removed the only guard against the tree being COMMITTED. The question
+     was therefore moved to the authority that can still answer it: git. A tracked file under
+     node_modules is the failure; an untracked one on disk is the point. */
+  var tracked = require('child_process')
+    .execFileSync('git', ['ls-files', '--', 'services/auth-gateway/node_modules'], { cwd: ROOT, encoding: 'utf8' })
+    .trim();
+  eq(tracked, '', 'K2 no dependency is COMMITTED to the repository (node_modules is untracked)');
 
   var blob = files.map(function (f) { return read(f); }).join('\n');
   [['AKfycb', 'a deployment id'], ['script.google.com/macros/s/1', 'a real deployment path'],

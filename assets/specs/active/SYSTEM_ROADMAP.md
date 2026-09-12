@@ -608,3 +608,31 @@ refusal ORDER with the flag still false, add one operator, and rehearse the roll
 OAuth Web client (client ID only, no secret), an HMAC secret generated off-machine, a Cloud Run
 deployment, and the Apps Script Script Properties. The runbook in the gateway README is the exact
 sequence.
+
+---
+
+## SEC-A2R — auth gateway production readiness (complete, local only)
+
+Closed the gaps SEC-A2 left: `google-auth-library` **11.0.2** really installed, pinned exactly and
+locked (0 vulnerabilities, all licences permissive, zero install hooks, byte-identical reproducible
+install); the real library really executed and failing closed; production configuration refusing to
+start on fifteen distinct mistakes; the container specified; graceful shutdown; an instance-local rate
+guard and an upstream circuit breaker; and the Cloud Run cost and abuse settings frozen with the Cloud
+Armor deferral written down as a decision with escalation triggers rather than left as a gap.
+
+**194 assertions · 33 mutants · 0 survived** (`auth-gateway-production-readiness-sec-a2r.test.js`),
+alongside SEC-A2's **200 · 20 · 0**.
+
+**Nothing was deployed and nothing exists in the cloud.** No project, no Cloud Run service, no image, no
+OAuth client, no secret, no Apps Script change, no flag change. No request reached any Google service.
+
+### Next: SEC-A3-T, and it is the USER's decision to start it
+
+`docs/planning/SEC_A3_T_TEST_CLOUD_RUNBOOK.md` — an **isolated, disposable** Google Cloud test project.
+The first real Google sign-in this work has ever had; the refusal order proved from a browser with the
+flag still false; key rotation and revision rollback rehearsed; then the project deleted entirely.
+
+Then SEC-A3 (enforcement on `productPricing.*` only) → unauthorized-access testing → a rehearsed
+rollback → **and only then** P1-B8.
+
+`PRODUCT_STRATEGY_ENABLED_` is still `false`.

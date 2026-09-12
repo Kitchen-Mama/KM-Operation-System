@@ -111,6 +111,15 @@ function handle(rawBody, correlationId, deps) {
   if (!v.ok) return deny(v.code, v.why);
 
   // ---- 1  AUTHENTICATE ---------------------------------------------------------------------------
+  /* If this address has already spent its failed-attempt budget, refuse WITHOUT verifying — and refuse
+     with the identical INVALID_TOKEN a real failure produces. The caller cannot distinguish "your
+     token is bad" from "we have stopped checking your tokens", which is the entire point. */
+  var attemptBudget = deps.guard ? deps.guard.peekAuthAttempt(deps.clientAddress) : { allowed: true };
+  if (!attemptBudget.allowed) {
+    deps.log.warn(correlationId, 'auth attempt budget exhausted; verification skipped', { scope: 'per-ip' });
+    return deny(CODES.INVALID_TOKEN, 'attempt budget exhausted');
+  }
+
   return Promise.resolve()
     .then(function () { return deps.verifier.verify(v.credential); })
     .catch(function () { return { ok: false, unavailable: true }; })
@@ -119,6 +128,10 @@ function handle(rawBody, correlationId, deps) {
         /* An unavailable verifier is an OUTAGE, not a rejected caller. Collapsing the two would tell
            a real operator they are not allowed, when the truth is that something is down. */
         if (att && att.unavailable === true) return deny(CODES.IDENTITY_PROVIDER_UNAVAILABLE, 'verifier down');
+        /* A FAILED ATTEMPT COSTS THE FLOODER SOMETHING. The bucket is charged only on failure, so a
+           legitimate caller never touches it, and its exhaustion changes NOTHING the caller can see —
+           it only stops the next signature verification from being performed. */
+        if (deps.guard) deps.guard.chargeFailedAuth(deps.clientAddress);
         return deny(CODES.INVALID_TOKEN, 'signature or format');
       }
       var claimCheck = checkClaims(att.claims, cfg, now);
@@ -142,6 +155,13 @@ function handle(rawBody, correlationId, deps) {
         return deny(CODES.OUT_OF_SCOPE, 'subject=' + principal.subject);
       }
 
+      /* A REAL OPERATOR'S OWN TRAFFIC IS ALSO BOUNDED, and only now, because bounding it earlier would
+         mean keying a bucket on something the caller asserts rather than on something we verified. */
+      if (deps.guard) {
+        var pAdmit = deps.guard.admitPrincipal(principal.identity_key);
+        if (!pAdmit.allowed) return deny(CODES.TOO_MANY_REQUESTS, 'per-principal budget');
+      }
+
       // ---- 4/5  SIGN AND FORWARD -------------------------------------------------------------------
       /* The upstream body is the CANONICAL action and payload — the Google token is not in it. */
       var upstreamBody = JSON.stringify({ action: v.action, payload: v.payload });
@@ -154,9 +174,29 @@ function handle(rawBody, correlationId, deps) {
         action: v.action, subject: principal.subject, key_id: signed.assertion.key_id
       });
 
+      /* THE BREAKER PROTECTS A SYSTEM THIS GATEWAY DOES NOT OWN. Apps Script has its own daily
+         quotas, and retrying a failing /exec spends them on nothing — potentially taking the other
+         138 actions down alongside the two this gateway serves. A tripped breaker is reported as
+         UPSTREAM_UNAVAILABLE, never as a refusal of the caller: telling every operator at once that
+         they had lost their permissions would be both false and the most alarming thing this system
+         could say. */
+      if (deps.breaker) {
+        var c = deps.breaker.admit();
+        if (!c.allowed) {
+          deps.log.warn(correlationId, 'upstream circuit is open; not calling', { state: c.state });
+          return deny(CODES.UPSTREAM_UNAVAILABLE, 'circuit ' + c.state);
+        }
+      }
+
       return deps.upstream({ action: v.action, payload: v.payload, km_assertion: signed.assertion })
         .then(function (r) {
-          if (!r || r.ok !== true) return deny(CODES.UPSTREAM_UNAVAILABLE, r && r.reason);
+          if (!r || r.ok !== true) {
+            /* ONLY A TRANSPORT FAILURE COUNTS. An upstream that answers FEATURE_DISABLED is working
+               perfectly; counting its correct refusals as failures would let it trip its own breaker. */
+            if (deps.breaker) deps.breaker.recordFailure();
+            return deny(CODES.UPSTREAM_UNAVAILABLE, r && r.reason);
+          }
+          if (deps.breaker) deps.breaker.recordSuccess();
           return { ok: true, status: 200, body: r.body, correlation_id: correlationId };
         });
     });

@@ -1,0 +1,17 @@
+# The dependency tree is RESTORED from package-lock.json, never committed.
+# `npm ci` reproduces it byte for byte; committing it would put 400+ files nobody reviews into every
+# diff, and a reviewed lockfile is a far better record of what will be installed than an unreviewed
+# tree of what once was.
+node_modules/
+
+# Never, under any circumstances, the real environment file. `.env.example` is committed and contains
+# only placeholders; `.env` is where a real client id and a real endpoint would end up.
+.env
+.env.*
+!.env.example
+
+# Secrets are MOUNTED at run time. Nothing key-shaped belongs in this directory at all.
+*.pem
+*.key
+secrets/
+npm-debug.log*

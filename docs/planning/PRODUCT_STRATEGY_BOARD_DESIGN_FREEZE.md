@@ -6625,3 +6625,38 @@ users, so the first version of security code cannot lock anyone out.**
 
 **Unchanged:** flag false, navigation disabled, R10 deployed, no Apps Script file touched, nothing
 deployed anywhere.
+
+---
+
+## §48  SEC-A2R — the gateway is production-ready; Product Strategy is still not enabled
+
+**`PRODUCT_STRATEGY_ENABLED_` remains `false`. P1-B8 has not begun and may not begin.**
+
+SEC-A2R closed the production-readiness gaps SEC-A2 left open: the Google verification library is really
+installed, pinned, locked and executed; production configuration refuses to start wrong; the container is
+specified; cost and abuse controls are decided rather than deferred. None of that enables anything.
+
+**What this round did NOT do, and what P1-B8 still waits on:** no gate has been added to any of the 138
+actions, no Apps Script change was made or deployed, no frontend was released, no navigation was enabled,
+no cloud resource exists, and no real Google sign-in has ever been performed against this system.
+
+**The sequence is unchanged and is not negotiable:**
+
+1. **SEC-A3-T** — an isolated, disposable Google Cloud test project; the first real sign-in;
+   the refusal order proved from a browser with the flag still false; rollback and key rotation
+   rehearsed; then the whole project deleted.
+2. **SEC-A3** — enforcement wired into `productPricing.*` **and nothing else**.
+3. **Unauthorized-access testing** against that enforcement.
+4. **A rehearsed rollback.**
+5. **Only then** P1-B8.
+
+**The P1-B7F NO-GO still stands and must be re-decided, not silently dropped.** Its tests assert the
+absence of an identity boundary and each carries "RE-RUN THE GO/NO-GO IF THIS CHANGES". A boundary that
+exists in `services/auth-gateway/` but is wired to nothing does not change what those tests assert — the
+138 actions are exactly as unprotected as they were. The NO-GO is re-decided when enforcement is
+**live**, not when the code to enforce it exists.
+
+**One ordering rule that SEC-A3-T tests explicitly, because getting it wrong would be invisible:** a
+signed-in stranger must be refused as a stranger **before** the feature flag is consulted. If a stranger
+ever sees `FEATURE_DISABLED`, the order is wrong and the round stops — that would make `FEATURE_DISABLED`
+a polite way of never exercising authentication at all.
