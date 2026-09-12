@@ -137,6 +137,31 @@ function makeDom(skeleton) {
     this.childNodes.push(k);
     return k;
   };
+  /* P1-B8D — insertBefore, WHICH THE SHIM DID NOT HAVE.
+     Every insertion this harness had ever been asked to model was an append, so the gap was
+     invisible until a round needed to put a menu ABOVE an existing one. "Above Pricing Center" is
+     a position, and a shim that can only append can only answer questions about the end of a list —
+     which would have forced the production code to use a different API in order to be testable, and
+     that is the tail wagging the dog.
+
+     `ref === null` appends, as the real DOM does. A `ref` that is not a child throws, rather than
+     silently appending: putting a navigation item in the wrong group is harder to notice than
+     failing to put it anywhere, and the whole point of the anchor is that it either resolves or the
+     insertion does not happen. */
+  Node.prototype.insertBefore = function (k, ref) {
+    if (!k) throw new Error('insertBefore(null)');
+    if (ref === null || ref === undefined) return this.appendChild(k);
+    var i = this.childNodes.indexOf(ref);
+    if (i < 0) throw new Error('insertBefore: reference node is not a child');
+    if (k.parentNode) {
+      /* Removing first can shift the reference's index, so it is re-read afterwards. */
+      k.parentNode.removeChild(k);
+      i = this.childNodes.indexOf(ref);
+    }
+    k.parentNode = this;
+    this.childNodes.splice(i, 0, k);
+    return k;
+  };
   Node.prototype.removeChild = function (k) {
     var i = this.childNodes.indexOf(k);
     if (i < 0) throw new Error('removeChild: not a child');
@@ -310,11 +335,19 @@ function makeDom(skeleton) {
   function Ev(type, opts) {
     this.type = type;
     this.bubbles = !!(opts && opts.bubbles);
+    this.cancelable = !(opts && opts.cancelable === false);
     this.key = (opts && opts.key) || undefined;
     this.__stopped = false;
+    this.defaultPrevented = false;
   }
   Ev.prototype.stopPropagation = function () { this.__stopped = true; };
-  Ev.prototype.preventDefault = function () {};
+  /* P1-B8D — preventDefault RECORDS now, because a no-op could not tell "the handler consumed this"
+     from "the handler ignored it". That distinction is the whole of keyboard activation: Space on a
+     menu item must open the item AND not scroll the page out from under it, and only the second half
+     lives in preventDefault. A shim that silently swallows it makes the assertion unwritable. */
+  Ev.prototype.preventDefault = function () {
+    if (this.cancelable) this.defaultPrevented = true;
+  };
 
   // ---- the selector engine ----
   function parseCompound(txt) {

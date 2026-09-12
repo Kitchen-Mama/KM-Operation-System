@@ -1245,8 +1245,16 @@ section('SECTION I  §7 ZERO WRITE, ZERO ROUTER, ZERO FLAG, ZERO PROTECTED-FILE 
 // ===================================================================================================
 
 // I1 — the protected runtime files are untouched in the ways that matter.
-ok(/var PRODUCT_STRATEGY_ENABLED_ = false;/.test(SRC00),
-  'I1  PRODUCT_STRATEGY_ENABLED_ is still false in the config of record');
+/* "ZERO FLAG" IS A CLAIM ABOUT THIS ROUND, so it is read across THIS ROUND'S RANGE. Reading the
+   working-tree value made it a claim that the flag may never change again, and P1-B8D - the round
+   whose entire purpose is to change it - is what made that visible. R1 did not touch 00_config.gs at
+   all, which is both stronger and permanently true. */
+var R1_PRE = '5c5861de892b3c8b88890071957778144ea2417d';
+var R1_COMMIT = '24de9f5';
+var r1ConfigDiff = require('child_process').execFileSync('git',
+  ['diff', '--name-only', R1_PRE, R1_COMMIT, '--', 'assets/specs/active/apps-script/00_config.gs'],
+  { cwd: path.join(__dirname, '..', '..'), encoding: 'utf8' }).trim();
+eq(r1ConfigDiff, '', 'I1  this round did not touch 00_config.gs at all', r1ConfigDiff);
 // THE SAME `===` MISTAKE A6 MADE. `/PRODUCT_STRATEGY_ENABLED_\s*=/` also matches the resolver's
 // `PRODUCT_STRATEGY_ENABLED_ === true`, so the config looked as though it declared the flag twice.
 var flagDecls = (SRC00.match(/PRODUCT_STRATEGY_ENABLED_\s*=[^=]/g) || []).length;

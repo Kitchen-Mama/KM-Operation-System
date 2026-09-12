@@ -715,15 +715,24 @@ CHAIN = CHAIN.then(function () {
   ok(sideRules === 0 || /\.psb-page\s+\.side/.test(SRC.css),
     'I1b the prototype sidebar rules stay scoped under .psb-page');
 
-  // I2 — the flag, the staged section, and the navigation are all where they were.
-  ok(/var PRODUCT_STRATEGY_ENABLED_ = false;/.test(SRC.config),
-    'I2  PRODUCT_STRATEGY_ENABLED_ is still false');
+  // I2 — the flag and the staged section are still ONE switch each, and neither moved in THIS round.
+  /* R2 WAS A REPLAY ROUND AND CHANGED NEITHER GATE. That is the claim, and reading the working-tree
+     VALUES turned it into a claim that neither gate may ever change - which P1-B8D, whose entire
+     purpose is to change both, then failed. Scoped to R2's own range it says what it meant, and it
+     keeps saying it forever. */
+  var cp = require('child_process');
+  var R2_PRE = 'fb31e2c', R2_COMMIT = '5c5861d';
+  ['assets/specs/active/apps-script/00_config.gs', 'assets/js/app.js'].forEach(function (f, i) {
+    var d = cp.execFileSync('git', ['diff', '--name-only', R2_PRE, R2_COMMIT, '--', f],
+      { cwd: ROOT, encoding: 'utf8' }).trim();
+    eq(d, '', 'I2.' + (i + 1) + ' this round did not touch ' + f.split('/').pop(), d);
+  });
   var stagedBlock = blockAfter(SRC.app, "'product-strategy': {");
   ok(!!stagedBlock, 'I2a the staged registry entry is found', stagedBlock === null);
-  ok(!!stagedBlock && /enabled:\s*false/.test(stagedBlock),
-    'I2a1 and it is still enabled:false');
-  ok(!!stagedBlock && !/enabled:\s*true/.test(stagedBlock),
-    'I2a2 with no enabled:true anywhere inside it');
+  ok(!!stagedBlock && /enabled:\s*(?:true|false)/.test(stagedBlock),
+    'I2a1 and it carries a literal boolean switch');
+  eq(!!stagedBlock && (stagedBlock.match(/enabled:\s*(?:true|false)/g) || []).length, 1,
+    'I2a2 exactly one of them — two would be a registry whose answer depends on which one you read');
   ok(SRC.index.indexOf("showSection('product-strategy") === -1,
     'I2b index.html still cannot switch to the section');
   var menuItems = (SRC.index.match(/data-menu-id="product-strategy"/g) || []).length;
@@ -926,13 +935,19 @@ CHAIN = CHAIN.then(function () {
     return (mutated.match(/data-menu-id="product-strategy"/g) || []).length > 0;
   });
 
-  mut('J15  the staged section is enabled — I2a1', function () {
+  /* J15 TURNED AROUND WHEN THE SECTION WAS ACTIVATED. It modelled "somebody flips enabled to true",
+     which stopped having an anchor the moment the shipped value WAS true - and an anchorless mutant
+     is scored as surviving, so it would have reported a gap while measuring nothing. I2a2 now says
+     there is exactly ONE switch in the entry; the defect to model is a SECOND one appearing beside
+     it, which is how a registry ends up with two answers and no owner. */
+  mut('J15  a second enabled switch appears in the staged entry — I2a2', function () {
     var live = blockAfter(SRC.app, "'product-strategy': {");
-    if (!live || live.indexOf('enabled: false') < 0) throw new Error('ANCHOR NOT FOUND');
-    var mutated = SRC.app.replace(live, live.replace('enabled: false', 'enabled: true'));
+    if (!live || !/enabled:\s*(?:true|false)/.test(live)) throw new Error('ANCHOR NOT FOUND');
+    var mutated = SRC.app.replace(live,
+      live.replace(/(enabled:\s*(?:true|false),)/, '$1\n        enabled: false,'));
     var block = blockAfter(mutated, "'product-strategy': {");
-    // I2a1'S OWN COMPARISON, run against the mutated source.
-    return !!block && /enabled:\s*true/.test(block) && !/enabled:\s*false/.test(block);
+    // I2a2'S OWN COMPARISON, run against the mutated source: exactly one switch, or this is caught.
+    return !!block && (block.match(/enabled:\s*(?:true|false)/g) || []).length !== 1;
   });
 
   mut('J16  a test-only branch enters the render path — C4', function () {

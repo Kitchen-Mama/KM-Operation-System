@@ -74,7 +74,11 @@
 // the deployment identity it refuses to run against, and the manifest suite holds them equal to
 // SYS_DEPLOYMENT_RELEASE_ (BP3) and to each other (BP3a) precisely so a lagging pin cannot refuse a
 // correctly synced project.
-var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R10';
+// PRODUCT-STRATEGY-P1-B8D - moved because SYS_DEPLOYMENT_RELEASE_ moved, and for a change in a
+// different feature entirely. This pin exists so that a census run against a correctly synced
+// deployment is never refused for its build; left at R10 it would have STOPped on the first
+// healthy R11 deployment and reported a mismatch that was the ledger working as designed.
+var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11';
 
 /** Read-only row reader. The Sheet object stays inside this function — the caller gets values, never a writer. */
 // R6-R3 §2 — the OPTIONAL third argument is a metrics sink. §2 requires the diagnostic to report how many
@@ -7808,7 +7812,19 @@ function RUN_R6R7_CONTROLLED_NO_ACTION_ACTIVATION_MANIFEST() {
 // own scope gate, and that refusal is CORRECT - the controlled no-action activation it proves is
 // complete, and its scope is not one a generation may write any more. The pin follows the release so
 // that the refusal a reader sees names the SCOPE rather than a stale build.
-var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R10';
+// PRODUCT-STRATEGY-P1-B8D - MOVED, AND FOR A CHANGE THAT HAS NOTHING TO DO WITH THE AI PLAN.
+// The rule this pin follows is stated above: it tracks SYS_DEPLOYMENT_RELEASE_, so that a census run
+// against a correctly synced deployment is never refused for its build. P1-B8D minted R11 for the
+// Product Strategy activation - a different feature, a different file, no AI Plan code touched - and
+// a pin left at R10 would have made this census STOP on the next healthy deployment, reporting a
+// build mismatch for a release that is exactly what the ledger says it should be.
+//
+// THAT IS THE COUPLING WORTH NAMING RATHER THAN JUST REPAIRING: a global release id means every pin
+// that tracks it is a downstream consumer of every round that moves it. Two suites caught this within
+// minutes, which is the system working; the cost is that "activate Product Strategy" is also always
+// "re-pin the AI Plan census", and a reader deserves to find that written down here rather than
+// inferred from a red suite.
+var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11';
 
 // ================================================================================================================
 // THE BROWSER HALF. Run in the page console; nothing here writes, and nothing here is a substitute for the

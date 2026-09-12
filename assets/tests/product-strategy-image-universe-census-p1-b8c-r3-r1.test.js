@@ -367,7 +367,12 @@ ok(/error\.safety_token|safety_token:/.test(SRC.gs),
   });
 ok(/REDACTION_FAILED/.test(CENSUS),
   'C7z  (and the verdict that tripped the unanchored version is still there)');
-var shippedChanged = cp.execFileSync('git', ['diff', '--name-only', R3_COMMIT, '--',
+/* SCOPED TO R3-R1'S OWN RANGE. "The census round shipped no Apps Script runtime file" is a claim
+   about THIS round: the diagnostic it added lives under assets/tools/, not under the deployed project.
+   Read to the working tree it became a claim about every later round, and P1-B8D — which flips
+   PRODUCT_STRATEGY_ENABLED_ in 00_config.gs and moves the release in 63_ — is the round that made
+   that visible. §A above was corrected the same way at R3-R2. */
+var shippedChanged = cp.execFileSync('git', ['diff', '--name-only', R3_COMMIT, R3R1_COMMIT, '--',
   'assets/specs/active/apps-script'], { cwd: ROOT, encoding: 'utf8' }).split('\n').filter(Boolean);
 eq(shippedChanged, [], 'C7a and no shipped Apps Script file changed', shippedChanged);
 

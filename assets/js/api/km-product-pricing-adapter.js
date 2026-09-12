@@ -288,6 +288,35 @@
       minimum_price: live.minimum_price === undefined ? null : live.minimum_price,
       msrp: live.msrp === undefined ? null : live.msrp,
 
+      /* ---- P1-B8D — THE PRICE ROW'S OWN STATUS, PROMOTED AND NOT TRANSLATED ----
+         72_ has always put `pricing_list.price_status` in the per-row provenance block, where it was
+         true, published and unreadable by anything that draws a price. Activation is what makes that
+         matter: PRICING_DATABASE_MAPPING §4 records this column's default as "draft or active —
+         default to be confirmed", so the board is about to show numbers whose status nobody has
+         decided, to people who will read them as the price the company charges.
+
+         SO IT IS CARRIED, AND THAT IS ALL THAT IS DONE TO IT. No mapping, no normalisation, no
+         lower-casing, no bucketing into final/provisional, and above all no default when the column
+         is absent — `null` means the pricing row did not carry a status, which is not the same as a
+         status that means nothing. The one thing a reader must never be able to do is mistake a
+         value this code INVENTED for a value the database HOLDS, and the way to guarantee that is to
+         invent none. The board discloses the distribution of these raw strings; deciding what they
+         mean is a data decision with an owner, and that owner is not the renderer. */
+      /* UNDEFINED AND NULL ARE TWO ANSWERS HERE, AND THE FIRST VERSION OF THIS GAVE ONE.
+         It mapped a missing key to `null`, which reads as "the pricing row carried no status" — and
+         a source that has never HEARD of price_status is a different fact from a row that has one
+         and left it blank. The browser acceptance is what showed it: the replay capture predates the
+         field entirely, and the board's chip announced "no price status on the row" about rows whose
+         source was never asked. That is a claim about the data made by the adapter's own gap.
+         `undefined` is preserved so the selector's `unsupported` bucket means what it says; 72_ always
+         emits the key on a live read, so `null` there is the real "no status on the row". */
+      price_status_raw: (function () {
+          var sp = live && live.provenance;
+          if (!sp || typeof sp !== 'object') return undefined;
+          if (!Object.prototype.hasOwnProperty.call(sp, 'price_status_raw')) return undefined;
+          return sp.price_status_raw;
+      }()),
+
       // ---- the derived promotion, in the three fields the selectors read ----
       official_deal_price: promo.effective ? promo.effective.promo_price : null,
       official_deal_start: promo.effective ? promo.effective.start_date : null,

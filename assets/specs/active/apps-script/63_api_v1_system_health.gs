@@ -116,7 +116,17 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 // STILL A CANDIDATE, STILL NOT A DEPLOYMENT. Nothing has been synced, no Web App version exists, and
 // PRODUCT_STRATEGY_ENABLED_ is false - so a project that DOES carry this release answers
 // FEATURE_DISABLED before it opens a spreadsheet. The ledger records that it has not happened.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R10';
+// P1-B8D - THE RELEASE MOVES, AND THIS ONE IS MEANT TO BE CUT. R10 was a candidate that was never
+// synced; every release since R7 has said "still a candidate, still not a deployment" because
+// PRODUCT_STRATEGY_ENABLED_ was false and a project carrying the release still answered FEATURE_DISABLED
+// before opening a spreadsheet. That sentence is no longer true. R11 carries the activation, so the
+// difference between R10 and R11 is not a shape of a response - it is whether the feature answers at all.
+//
+// R10 IS SUPERSEDED AS A CANDIDATE AND MAY NOT BE REUSED, for the reason the ledger has recorded every
+// time this has come up: R10's tree and this one differ, and an id that names two different trees cannot
+// answer the one question it exists for. Nothing ever deployed R10, so nothing is being replaced - it is
+// being withdrawn.
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11';
 // 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
 // R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
 // not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
@@ -126,7 +136,12 @@ var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R10';
 // this file's own rows moved, and the action-contract version was bumped for the new route.
 // P1-B3 - moved because THIS FILE changed again: the release above and 72_'s expected stamp. The action
 // contract does NOT move with it - no action was added this round, only the shape of one response.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R10';
+// P1-B8D - moved because THIS FILE changed: the release above, and 00_config's expected stamp below.
+// The ACTION CONTRACT does not move with it, and that is the load-bearing half of this round's release
+// identity: no action was added, no action was removed, no request or response shape changed. Activation
+// is a flag, and a flag is not a contract. Bumping the action-contract version here would tell every
+// deployed client that it must re-check a vocabulary that is byte-identical to the one it already has.
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -359,11 +374,11 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R10', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
   // F1-7N-FC-1B-E3 §E.9 — the CONFIG is an owner file too. It holds
   // INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_, so a project still running the previous copy of it writes no
   // allocation drafts while the repository says it should; without an entry here that difference had no name.
-  { file: '00_config.gs', symbol: 'CONFIG_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R7', owns: 'global constants + the feature flags of record (incl. Inventory AI Plan DB generation)' },
+  { file: '00_config.gs', symbol: 'CONFIG_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11', owns: 'global constants + the feature flags of record (incl. Inventory AI Plan DB generation)' },
   // F1-7N-FC-1B-E3-R1 — 61_ owns the harvest, the canonical readiness decision and the K2 generation, and
   // it carried no stamp at all: a deployment that answers HARVEST_NOT_READY with no issues and a deployment
   // that predates the typed-readiness fix were the same observation from outside. Now they are not.

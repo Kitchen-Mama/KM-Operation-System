@@ -525,8 +525,17 @@ eq((GS59.match(/var SKD_BUILD_VERSION_ = 'F1-7N-FB-4C-R1';/g) || []).length, 1,
   '40 and its build stamp did not move, because its behaviour did not');
 
 // ---- 41..43 FLAG, ROUTER AND WRITES ----------------------------------------------------------------
-eq((GS00.match(/var PRODUCT_STRATEGY_ENABLED_ = false;/g) || []).length, 1,
-  '41 00_config.gs declares the flag once, false');
+/* ONE DECLARATION. That was always what §41 was for - P0 had proposed two names for this feature and
+   B1 collapsed them - and the VALUE it happened to carry is not this suite's business. P1-B8D set it
+   true; the activation suite owns that fact, and this one keeps the property B1 established: the flag
+   is assigned in exactly one place, and the resolver COMPARES rather than copies it. (The `[^=]` is
+   the same care A6 needed: a bare `=` also matches the resolver's `=== true`.) */
+eq((GS00.match(/var PRODUCT_STRATEGY_ENABLED_ = (?:true|false);/g) || []).length, 1,
+  '41 00_config.gs declares the flag exactly once, as a literal boolean');
+eq((GS00.match(/PRODUCT_STRATEGY_ENABLED_\s*=[^=]/g) || []).length, 1,
+  '41a and assigns it in exactly one place');
+ok(/function productStrategyEnabled_\(\) \{ return PRODUCT_STRATEGY_ENABLED_ === true; \}/.test(GS00),
+  '41b with one resolver that compares it, so no caller can hold a copy');
 eq((GS00.match(/function productStrategyEnabled_\(\)/g) || []).length, 1, '41a with one resolver');
 // On REAL CODE: the comment names both superseded flags in the sentence explaining that they are
 // superseded, and a file's record of what it replaced is not a declaration of it.

@@ -25,10 +25,23 @@
  * `.main-content { margin-left: 240px }` really apply and the content width a chart is handed is the
  * width the application hands it.
  *
- * THE ONLY TEST-ONLY ACTS, both of which §3 and §5 permit and neither of which is a bypass:
+ * THE TEST-ONLY ACTS, none of which is a bypass:
  *   1. `KM.api.transport.post` answers from the capture (§5's one permitted substitution).
- *   2. `KM.nav.buildStagedMenu` is CALLED, which production never does, to render the declared menu.
- *      `KM_STAGED_SECTIONS_.enabled` stays false; the menu it builds still cannot open the page.
+ *   2. In the DEFAULT mode, `KM.nav.buildStagedMenu` is CALLED, which production never did, to render
+ *      the declared menu of a section that was switched off.
+ *
+ * P1-B8D — AND (2) IS RETIRED IN `activated` MODE, WHICH IS THE POINT OF THE MODE.
+ *
+ * The section is switched on now, so production mounts its own menu: `mountStagedMenus()` runs in the
+ * DOMContentLoaded block, reads the registry, and inserts before the `insertBefore` anchor. Calling
+ * the builder by hand would mean photographing a menu that production does not build — the runner
+ * would be measuring itself. So `opts.activated` calls the production function instead, and swaps the
+ * APPROXIMATED sidebar below for the real one, read out of index.html.
+ *
+ * The approximated sidebar was fine while the only question was "does the board fit beside 240px of
+ * chrome". It stops being fine the moment the question is "is the item above Pricing Center", because
+ * a hand-written sidebar is a second model of the document and the anchor would resolve against the
+ * model rather than against the page. Same argument as the six view labels, one layer out.
  *
  * USAGE
  *     node assets/tests/_p1b8c-visual-runner.js [outDir]
@@ -99,6 +112,23 @@ var CAPTURES = {
     kindField: 'CAPTURE_KIND', site: { company: 'Kitchen Mama', country: 'US', marketplace: 'Amazon' } }
 };
 function captureOf(opts) { return CAPTURES[(opts && opts.capture) || 'deterministic']; }
+
+/**
+ * P1-B8D — THE REAL SIDEBAR, CUT OUT OF index.html RATHER THAN RE-TYPED.
+ *
+ * The slice is delimited by the opening <nav> and the first </nav>, and it STOPS rather than falling
+ * back if either is missing: a runner that quietly produced a page with no sidebar would report a
+ * Product Strategy item that is not above Pricing Center as an item that is not there at all, and
+ * both read as "0" in a measurement.
+ */
+function realSidebar(index) {
+  var open = index.indexOf('<nav class="sidebar" id="appSidebar">');
+  if (open < 0) throw new Error('STOP_SIDEBAR_NOT_FOUND_IN_INDEX');
+  var rest = index.slice(open);
+  var close = rest.indexOf('</nav>');
+  if (close < 0) throw new Error('STOP_SIDEBAR_NOT_CLOSED_IN_INDEX');
+  return rest.slice(0, close + 6);
+}
 function captureFiles(cap) { return cap.files || [cap.file]; }
 
 function buildPage(opts) {
@@ -147,17 +177,19 @@ function buildPage(opts) {
     '<body>',
     '  <header class="top-header"><div class="header-title">Kitchen Mama Operation System</div></header>',
     '  <div class="app-layout">',
-    '    <nav class="sidebar" id="appSidebar">',
-    '      <div class="sidebar-toggle"><span class="menu-label sidebar-toggle-label">Menu</span></div>',
-    '      <div class="menu-item"><span class="menu-icon">&#127978;</span><span class="menu-label">Site Inventory</span></div>',
-    '      <div class="menu-parent" data-menu-id="sku-management"><span class="menu-icon">&#128221;</span><span class="menu-label">SKU Management</span></div>',
-    '      <div class="menu-children" data-parent="sku-management"></div>',
-    '      <div id="psb-nav-anchor"></div>',
-    '      <div class="menu-parent" data-menu-id="carrier"><span class="menu-icon">&#128176;</span><span class="menu-label">Pricing Center</span></div>',
-    '      <div class="menu-children" data-parent="carrier"></div>',
-    '      <div class="menu-parent" data-menu-id="training"><span class="menu-icon">&#127891;</span><span class="menu-label">Training Center</span></div>',
-    '      <div class="menu-children" data-parent="training"></div>',
-    '    </nav>',
+    opts.activated ? realSidebar(index) : [
+      '    <nav class="sidebar" id="appSidebar">',
+      '      <div class="sidebar-toggle"><span class="menu-label sidebar-toggle-label">Menu</span></div>',
+      '      <div class="menu-item"><span class="menu-icon">&#127978;</span><span class="menu-label">Site Inventory</span></div>',
+      '      <div class="menu-parent" data-menu-id="sku-management"><span class="menu-icon">&#128221;</span><span class="menu-label">SKU Management</span></div>',
+      '      <div class="menu-children" data-parent="sku-management"></div>',
+      '      <div id="psb-nav-anchor"></div>',
+      '      <div class="menu-parent" data-menu-id="carrier"><span class="menu-icon">&#128176;</span><span class="menu-label">Pricing Center</span></div>',
+      '      <div class="menu-children" data-parent="carrier"></div>',
+      '      <div class="menu-parent" data-menu-id="training"><span class="menu-icon">&#127891;</span><span class="menu-label">Training Center</span></div>',
+      '      <div class="menu-children" data-parent="training"></div>',
+      '    </nav>'
+    ].join('\n'),
     '    <div class="main-content"><main class="content-area">',
     '      <div id="product-strategy-board-mount">',
     partial,
@@ -192,11 +224,29 @@ function bootScript(opts) {
     '(function () {',
     '  window.__ready = false; window.__error = null;',
     '  try {',
-    /* 1. THE STAGED MENU, BUILT AND PLACED. Production never calls this. */
-    '    var m = KM.nav.buildStagedMenu("product-strategy", document);',
-    '    var anchor = document.getElementById("psb-nav-anchor");',
-    '    anchor.parentNode.insertBefore(m.parent, anchor);',
-    '    anchor.parentNode.insertBefore(m.children, anchor);',
+    /* 1. THE MENU.
+          DEFAULT: built by hand, because production never built it for a switched-off section.
+          ACTIVATED (P1-B8D): the PRODUCTION function, because production does build it now — and a
+          runner that hand-built it would be photographing its own arrangement rather than the
+          shipped one. If `mountStagedMenus` mounts nothing, that is a failure to record, not a
+          reason to reach for the builder underneath it. */
+    opts.activated
+      ? [
+        '    var mounted = KM.nav.mountStagedMenus(document);',
+        '    if (!mounted || mounted.indexOf("product-strategy") < 0) {',
+        '      throw new Error("STOP_PRODUCTION_MOUNT_BUILT_NO_MENU");',
+        '    }',
+        '    var m = {',
+        '      parent: document.querySelector(".menu-parent[data-menu-id=\'product-strategy\']"),',
+        '      children: document.querySelector(".menu-children[data-parent=\'product-strategy\']")',
+        '    };'
+      ].join('\n')
+      : [
+        '    var m = KM.nav.buildStagedMenu("product-strategy", document);',
+        '    var anchor = document.getElementById("psb-nav-anchor");',
+        '    anchor.parentNode.insertBefore(m.parent, anchor);',
+        '    anchor.parentNode.insertBefore(m.children, anchor);'
+      ].join('\n'),
     '    m.parent.classList.add("is-open"); m.children.classList.add("is-open");',
     '    m.parent.classList.add("active");',
     /* 2. THE CAPTURE AT THE SOCKET. The one substitution §5 permits. */
@@ -363,6 +413,26 @@ function measureScript(cap) {
     '    captureKind: window.' + cap.global + ' ? ' + cap.global + '.' + cap.kindField + ' : null,',
     '    captureGlobal: ' + JSON.stringify(cap.global) + ',',
     '    captureFingerprint: window.' + cap.global + ' ? ' + cap.global + '.fingerprint() : null,',
+    /* P1-B8D — THE PRICE STATUS CHIP, READ OUT OF THE LIVE DOM. §4 asks that no price be readable
+       as an official one without its data status beside it, and "the source contains a chip
+       function" is not that claim: the chip has to be PRESENT, on this view, with the values on it.
+       `title` carries the full disclosure, so it is measured too — an empty tooltip would be a
+       disclosure nobody can read. */
+    '    priceStatusChip: (function () {',
+    '      var c = document.getElementById("priceStatusChip");',
+    '      if (!c) return null;',
+    '      var r = c.getBoundingClientRect();',
+    '      return { text: c.textContent, state: c.getAttribute("data-price-status-state"),',
+    '        values: c.getAttribute("data-price-status-values"),',
+    '        titleLen: (c.getAttribute("title") || "").length,',
+    '        visible: r.width > 0 && r.height > 0, role: c.getAttribute("role") };',
+    '    }()),',
+    '    priceStatusDisclosure: (function () {',
+    '      var d = document.getElementById("priceStatusDisclosure");',
+    '      return d ? { present: true, chars: d.textContent.length,',
+    '        column: d.getAttribute("data-source-column") } : null;',
+    '    }()),',
+    '    stagedNavEnabled: KM.stagedSections["product-strategy"].enabled === true,',
     '    flagStillFalse: KM.stagedSections["product-strategy"].enabled === false',
     '  };',
     '}',
@@ -491,9 +561,24 @@ function main() {
     process.exitCode = 2;
     return;
   }
+  /* P1-B8D — the fourth argument, and it is a MODE rather than a second runner.
+     `node _p1b8c-visual-runner.js <out> <capture> activated` photographs the same matrix through the
+     production menu mount and against the real sidebar. Anything other than the literal word is
+     refused rather than treated as false, for the same reason an unknown capture is a STOP: a run
+     that quietly photographs the staged arrangement while its filename says `activated` is evidence
+     of the wrong thing, and nothing in the output would say so. */
+  var modeArg = process.argv[4];
+  if (modeArg !== undefined && modeArg !== 'activated' && modeArg !== 'staged') {
+    console.log('STOP_UNKNOWN_MODE: ' + modeArg);
+    console.log('known modes: staged (default), activated');
+    process.exitCode = 2;
+    return;
+  }
+  var activated = modeArg === 'activated';
   var DEFAULT_OUT = { live: 'p1-b8c-r2-live-acceptance', assets: 'p1-b8c-r3-image-acceptance',
     deterministic: 'p1-b8c-acceptance' };
-  var out = process.argv[2] || path.join(ROOT, 'docs', 'evidence', DEFAULT_OUT[which]);
+  var out = process.argv[2] || path.join(ROOT, 'docs', 'evidence',
+    activated ? 'p1-b8d-activation-acceptance' : DEFAULT_OUT[which]);
   var browser = findBrowser();
   if (!browser) {
     console.log('STOP_NO_BROWSER_AVAILABLE');
@@ -508,6 +593,9 @@ function main() {
   var results = { browser: path.basename(browser), generated_at_utc_date: '2026-09-12',
     capture: which, capture_module: captureFiles(CAPTURES[which]).join(' + '),
     capture_global: CAPTURES[which].global,
+    mode: activated ? 'activated' : 'staged',
+    menu_built_by: activated ? 'KM.nav.mountStagedMenus (production)' : 'KM.nav.buildStagedMenu (test-only)',
+    sidebar: activated ? 'index.html, verbatim' : 'approximated in the runner',
     viewports: {}, views: {}, states: {}, print: null };
   console.log('capture: ' + which + '  (' + captureFiles(CAPTURES[which]).join(' + ') + ')');
 
@@ -518,7 +606,7 @@ function main() {
   /* THE VIEWPORT MATRIX IS PHOTOGRAPHED ON CATEGORY ANALYSIS, because that is the view with the
      chart in it. Executive Overview is KPI cards and has no axis, so a responsive matrix taken
      there would have reported `ticks: 0` at every size and proved nothing about either axis. */
-  fs.writeFileSync(pageFile, buildPage({ view: 'category', capture: which }), 'utf8');
+  fs.writeFileSync(pageFile, buildPage({ view: 'category', capture: which, activated: activated }), 'utf8');
   VIEWPORTS.forEach(function (vp) {
     var r = shot(browser, pageFile, out, vp);
     results.viewports[vp.id] = r.measurements;
@@ -531,7 +619,7 @@ function main() {
 
   // 2. each of the six views at 1440x900
   ['overview', 'category', 'risk', 'quality', 'workspace', 'advanced'].forEach(function (v) {
-    fs.writeFileSync(pageFile, buildPage({ view: v, capture: which }), 'utf8');
+    fs.writeFileSync(pageFile, buildPage({ view: v, capture: which, activated: activated }), 'utf8');
     var r = shot(browser, pageFile, out, { id: 'view-' + v, w: 1440, h: 900 });
     results.views[v] = r.measurements || {};
     results.views[v].__png = r.png ? path.basename(r.png) : null;
@@ -549,7 +637,7 @@ function main() {
     { id: 'empty-site', opts: { site: { company: 'Cookware Co', country: 'UK', marketplace: 'Amazon' } } }
   ];
   STATES.forEach(function (s) {
-    fs.writeFileSync(pageFile, buildPage(Object.assign({ capture: which }, s.opts)), 'utf8');
+    fs.writeFileSync(pageFile, buildPage(Object.assign({ capture: which, activated: activated }, s.opts)), 'utf8');
     var r = shot(browser, pageFile, out, { id: 'state-' + s.id, w: 1440, h: 900 });
     results.states[s.id] = r.measurements || {};
     results.states[s.id].__png = r.png ? path.basename(r.png) : null;
@@ -557,7 +645,7 @@ function main() {
   });
 
   // 4. a scenario, then print
-  fs.writeFileSync(pageFile, buildPage({ view: 'category', scenario: true, capture: which }), 'utf8');
+  fs.writeFileSync(pageFile, buildPage({ view: 'category', scenario: true, capture: which, activated: activated }), 'utf8');
   var sc = shot(browser, pageFile, out, { id: 'scenario-active', w: 1440, h: 900 });
   results.states['scenario-active'] = sc.measurements || {};
   results.states['scenario-active'].__png = sc.png ? path.basename(sc.png) : null;
@@ -568,7 +656,7 @@ function main() {
   console.log('  print -> ' + (p ? path.basename(p.file) + ' (' + p.bytes + ' bytes)' : 'NO PDF'));
 
   // 5. a full-page desktop capture
-  fs.writeFileSync(pageFile, buildPage({ view: 'overview', capture: which }), 'utf8');
+  fs.writeFileSync(pageFile, buildPage({ view: 'overview', capture: which, activated: activated }), 'utf8');
   var full = shot(browser, pageFile, out, { id: 'fullpage-1920', w: 1920, h: 2400 });
   results.viewports['fullpage-1920x2400'] = full.measurements || {};
   results.viewports['fullpage-1920x2400'].__png = full.png ? path.basename(full.png) : null;

@@ -161,9 +161,21 @@ console.log('\n=== §B  THE SURFACE THAT SITS BEHIND IT, COUNTED FROM THE ROUTER
   ok(!/Session\.|token|allowlist|authoriz/i.test(preamble),
     'B6 nothing between doPost entry and the first dispatch performs any identity or permission check');
 
-  /* AND THE ONE CONTROL THAT DOES EXIST IS NOT ABOUT CALLERS. */
-  ok(/var PRODUCT_STRATEGY_ENABLED_ = false;/.test(SRC.config),
-    'B7 PRODUCT_STRATEGY_ENABLED_ is one global boolean, and it is false');
+  /* AND THE ONE CONTROL THAT DOES EXIST IS NOT ABOUT CALLERS — WHICH IS NOW THE WHOLE POINT.
+     P1-B8D set PRODUCT_STRATEGY_ENABLED_ to true. While it was false it was doing duty as a lock, and
+     B8 below says so in as many words. Switching it on does not weaken a lock; it retires a stand-in,
+     and what is left protecting the two Product Strategy reads is exactly what protects every other
+     action in this router: nothing about the caller. That is the baseline this file measures, it got
+     one feature worse today, and it is recorded rather than softened — Login/RBAC is P2-A, and this
+     is one of the facts that argues for it.
+
+     The assertion stays about SHAPE, because shape is what a file can check: one global boolean,
+     answering "is this feature on" and never "may THIS caller use it". */
+  ok(/var PRODUCT_STRATEGY_ENABLED_ = (?:true|false);/.test(SRC.config),
+    'B7 PRODUCT_STRATEGY_ENABLED_ is one global boolean — a feature switch, never a caller check');
+  var near = SRC.config.indexOf('var PRODUCT_STRATEGY_ENABLED_ = ');
+  ok(!/Session\.|getActiveUser|getEffectiveUser/i.test(SRC.config.slice(near, near + 400)),
+    'B7a and nothing near it consults an identity, because there is none to consult');
   ok(/THIS FLAG IS THE ACCESS CONTROL/.test(SRC.config),
     'B8 the file says outright that the flag IS the access control today — a feature switch standing in for a lock');
 }());
@@ -269,12 +281,22 @@ console.log('\n=== §E  THE FAIL-CLOSED SHAPE SEC-A2 MUST INHERIT, PINNED BY EXE
 }());
 
 // ===================================================================================================
-console.log('\n=== §F  NOTHING IS ACTIVATED, AND THE NO-GO CANNOT BE DELETED QUIETLY ===');
+console.log('\n=== §F  WHAT IS ACTIVATED, WHAT IS NOT, AND THE NO-GO THAT CANNOT BE DELETED QUIETLY ===');
 // ===================================================================================================
 (function () {
-  ok(/var PRODUCT_STRATEGY_ENABLED_ = false;/.test(SRC.config), 'F1 Product Strategy flag false');
-  ok(/var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = false;/.test(SRC.config), 'F2 AI Plan flag false');
-  ok(/'product-strategy':\s*\{[\s\S]{0,200}?enabled: false/.test(SRC.app), 'F3 staged navigation disabled');
+  /* THE HEADING CHANGED BECAUSE THE ANSWER DID. P1-B8D activated Product Strategy: server flag true,
+     staged navigation true. This section used to assert that nothing anywhere was on - a true
+     sentence about a moment rather than a rule, and one that would have had to be deleted the first
+     time anything shipped. What it is FOR is that activation is a deliberate, reviewable act with
+     nothing else riding on it. So what is asserted now is the BOUNDARY of what was switched on:
+     Product Strategy is two reads, the AI Plan WRITE flag did not travel with it, and the two gates
+     agree. One feature was activated, not a posture. */
+  ok(/var PRODUCT_STRATEGY_ENABLED_ = true;/.test(SRC.config),
+    'F1 Product Strategy is ACTIVATED — deliberately, and it is the only thing switched on');
+  ok(/var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = false;/.test(SRC.config),
+    'F2 the AI Plan DB GENERATION flag did NOT move with it — a write flag is not carried by a read activation');
+  ok(/'product-strategy':\s*\{[\s\S]{0,400}?enabled: true/.test(SRC.app),
+    'F3 staged navigation is activated to match — two gates that agree is the only safe pair');
   ok(!/km_force|debug_token|bypass|__enable/i.test(SRC.router + SRC.config),
     'F4 no bypass parameter, token or debug switch exists in the gate path');
 
@@ -372,13 +394,19 @@ mut('G7 the incomplete-key guard is dropped, so a typo in the allowlist becomes 
     return sb.inventoryAiPlanScopeEnabled_('ResUS', '', 'Amazon', 'SP0750-M') !== false;
   });
 
-mut('G8 the Product Strategy flag is flipped on', CFG,
-  'var PRODUCT_STRATEGY_ENABLED_ = false;', 'var PRODUCT_STRATEGY_ENABLED_ = true;',
-  function (s) { return !/var PRODUCT_STRATEGY_ENABLED_ = false;/.test(s); });
+/* G8 AND G9 BOTH TURNED AROUND AT P1-B8D, and neither could have stayed: a mutant that flips false
+   to true has no anchor once the value IS true, and an anchorless mutant scores as SURVIVED -
+   reporting an unguarded rule while measuring nothing. The defects worth modelling after an
+   activation are the two ways it goes wrong quietly: a WRITE flag carried along by a read
+   activation, and the two gates drifting out of agreement. */
+mut('G8 the AI Plan write flag is carried along by the read activation', CFG,
+  'var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = false;',
+  'var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = true;',
+  function (s) { return !/var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = false;/.test(s); });
 
-mut('G9 the staged navigation is quietly enabled', 'assets/js/app.js',
-  'enabled: false,', 'enabled: true,',
-  function (s) { return !/'product-strategy':\s*\{[\s\S]{0,200}?enabled: false/.test(s); });
+mut('G9 the navigation is switched off while the server stays on — the gates disagree',
+  'assets/js/app.js', 'enabled: true,', 'enabled: false,',
+  function (s) { return !/'product-strategy':\s*\{[\s\S]{0,400}?enabled: true/.test(s); });
 
 mut('G10 the P1-B7F NO-GO loses its re-decision instruction',
   'assets/tests/deployment-r10-activation-boundary-p1-b7f.test.js',

@@ -583,6 +583,41 @@
     }
   };
 
+  /* ------------------------------------------------------------------------------------------------
+     P1-B8D — THE PRICE STATUS DISCLOSURE, DECLARED ONCE.
+
+     WHY THIS IS NOT A `C.FIELDS` ENTRY. FIELDS is the contract of the canonical row, and
+     `validateRow` requires every one of them to be present on every row — so adding this there would
+     declare that a source without a price status produces an INVALID row, which is false. 72_ already
+     models it correctly as provenance: a fact about where the number came from, not a property of the
+     product. It is declared here, next to the fields, as the separate kind of thing it is.
+
+     THE VOCABULARY IS NOT PINNED AND THIS SAYS SO. `00_config.gs` pins the master lifecycle and the
+     marketplace status; it does not pin this one, and PRICING_DATABASE_MAPPING §4 records the default
+     as undecided. A board that mapped these strings would be making the decision by rendering it —
+     quietly, in a renderer, with no owner and no review. So: carried, counted, shown, never mapped.
+     ------------------------------------------------------------------------------------------------ */
+  C.PRICE_STATUS = {
+    source_table: 'pricing_list',
+    source_column: 'price_status',
+    carried_as: 'price_status_raw',
+    carried_by: 'km-product-pricing-adapter.js, from the server row provenance',
+    vocabulary_pinned: false,
+    vocabulary_authority: null,
+    filtered: false,
+    mapped: false,
+    final_value_exists: false,
+    absent_label: 'no price status on the row',
+    unsupported_label: 'this source carries no price status',
+    headline: 'Price status as the database holds it',
+    disclosure: 'Every price on this board is the pricing_list row exactly as it stands. The board'
+      + ' does not filter on price_status and does not translate it: a row marked draft is shown as'
+      + ' draft, and no value is treated as approved, live or final. The vocabulary of this column is'
+      + ' not pinned anywhere in config — PRICING_DATABASE_MAPPING §4 records its default as "draft'
+      + ' or active, to be confirmed" — so deciding what these values mean is a data decision that has'
+      + ' not been taken, and this page will not take it by rendering one.'
+  };
+
   C.adapterIsDisabled = function (a) {
     return !!a && a.enabled === false && a.load().state === 'SOURCE_NOT_CONNECTED'
       && a.load().rows.length === 0 && a.load().provenance.requests_made === 0;

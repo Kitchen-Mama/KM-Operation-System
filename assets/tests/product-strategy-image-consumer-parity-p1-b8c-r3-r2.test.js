@@ -71,6 +71,12 @@ var SRC = {
 };
 
 var R3R1_COMMIT = 'fe7b07c799266f9c33d5dbf0063a08a3a0e0a2b0';
+/* R3-R2'S OWN COMMIT. Every "what this round changed" assertion below reads R3R1..R3R2 rather than
+   R3R1..working-tree. The first version read to the working tree and began failing at P1-B8D, which
+   changed Apps Script and several client files on purpose — a correct later round that these
+   assertions had no opinion about. Naming both ends is the fix, and it is the third time this file's
+   family has needed it. */
+var R3R2_COMMIT = 'a3889c26dc25aaaa8e98e44829709a8230a5b0d1';
 
 // =============================================================================================
 section('§A  THE PRODUCTION CENSUS, FROZEN AS EVIDENCE');
@@ -199,19 +205,29 @@ var iHb = SRC.index.indexOf('pages/sku-handbook.js');
 ok(iPolicy > 0 && iPolicy < iOvr, 'B5  index.html loads the policy before sku-overrides.js');
 ok(iOvr < iCr, 'B5a and sku-overrides.js before campaign-risk.js');
 ok(iOvr < iHb, 'B5b and before sku-handbook.js');
-ok(/pages\/campaign-risk\.js\?v=imagepolicy-r3r2/.test(SRC.index),
-  'B5c campaign-risk.js carries a new cache-buster, because it changed');
-ok(/pages\/sku-handbook\.js\?v=imagepolicy-r3r2/.test(SRC.index),
-  'B5d and so does sku-handbook.js');
+/* THE CLAIM IS "IT ROTATED", NOT "IT IS ON R3-R2'S TOKEN". Pinning the literal token made this an
+   assertion that no later round may ever rotate the set again — and P1-B8D rotates it, correctly and
+   for a reason this file's own release-order entry argues for. What R3-R2 is entitled to say is that
+   these two files were NOT left behind on the token they had when the round started, and that they
+   sit on whatever the current co-deployed token is. Both survive every future rotation; neither
+   survives the defect they exist to catch. */
+var PRE_R3R2_TOKEN = 'fc1be3r4a2r1r6r7r5-factorystockguard-20260908';
+var CUR_TOKEN = require('./_release-order.js').currentAppToken();
+[['campaign-risk', 'B5c'], ['sku-handbook', 'B5d']].forEach(function (f) {
+  ok(SRC.index.indexOf('pages/' + f[0] + '.js?v=' + PRE_R3R2_TOKEN) < 0,
+    f[1] + ' ' + f[0] + '.js is not left behind on the token it had before R3-R2 changed it');
+  ok(SRC.index.indexOf('pages/' + f[0] + '.js?v=' + CUR_TOKEN) >= 0,
+    f[1] + '1 and it carries the current co-deployed token');
+});
 
 /* CAMPAIGN RISK'S LOOK IS UNTOUCHED. */
-var changed = cp.execFileSync('git', ['diff', '--name-only', R3R1_COMMIT, '--'],
+var changed = cp.execFileSync('git', ['diff', '--name-only', R3R1_COMMIT, R3R2_COMMIT, '--'],
   { cwd: ROOT, encoding: 'utf8' }).split('\n').filter(Boolean);
 eq(changed.filter(function (f) { return /\.css$/.test(f); }), [],
   'B6  no stylesheet changed in this round', changed);
 eq(changed.filter(function (f) { return /^assets\/html\//.test(f); }), [],
   'B6a and no page partial changed', changed);
-var crDiff = cp.execFileSync('git', ['diff', '--unified=0', R3R1_COMMIT, '--',
+var crDiff = cp.execFileSync('git', ['diff', '--unified=0', R3R1_COMMIT, R3R2_COMMIT, '--',
   'assets/js/pages/campaign-risk.js'], { cwd: ROOT, encoding: 'utf8' });
 ok(!/^[-+].*cr-cell--|^[-+].*cr-risk--|^[-+].*class="scroll-row"/m.test(crDiff),
   'B6b and no Campaign Risk layout class was touched');
@@ -611,7 +627,7 @@ mut('G14 the Product Strategy flag is enabled — F3', function () {
 });
 
 mut('G15 the Apps Script runtime is modified — F2', function () {
-  var shipped = cp.execFileSync('git', ['diff', '--name-only', R3R1_COMMIT, '--',
+  var shipped = cp.execFileSync('git', ['diff', '--name-only', R3R1_COMMIT, R3R2_COMMIT, '--',
     'assets/specs/active/apps-script'], { cwd: ROOT, encoding: 'utf8' }).split('\n').filter(Boolean);
   /* The mutant is a hypothetical change to that path; the detector is the same list that F2 reads. */
   var pretend = shipped.concat(['assets/specs/active/apps-script/01_router.gs']);

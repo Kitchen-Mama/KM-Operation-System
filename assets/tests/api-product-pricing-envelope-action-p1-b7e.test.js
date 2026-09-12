@@ -391,12 +391,22 @@ var I = H.then(function () {
   console.log('\n=== §I  R9 UNCHANGED · R10 RECORDED · CONTRACT STILL 14 ===');
 
   ok(SRC.ppw.indexOf("var PPW_BUILD_VERSION_ = '" + R10 + "'") > 0, 'I1 72_ declares R10');
-  ok(SRC.health.indexOf("var SYS_DEPLOYMENT_RELEASE_ = '" + R10 + "'") > 0, 'I2 the release is R10');
-  ok(SRC.health.indexOf("var SYS_BUILD_VERSION_ = '" + R10 + "'") > 0, 'I3 63_ moved with it');
+  /* THE RELEASE HAS MOVED PAST R10 AND 72_'s STAMP HAS NOT — which is the rule this section was
+     written to demonstrate, now visible in a single tree instead of across two rounds. I1 above still
+     reads R10 from 72_ because 72_ has not changed since; P1-B8D minted R11 for the activation, and
+     marching 72_'s stamp to it would have claimed a behaviour change that did not happen and put an
+     unchanged file on the sync list. "Which release is this deployment meant to be" and "which round
+     did THIS FILE last change" are two questions with two answers, and this is what that looks like. */
+  ok(SRC.health.indexOf("var SYS_DEPLOYMENT_RELEASE_ = '" + R10 + "'") < 0,
+    'I2 the release has moved past R10 — a later round minted its own');
+  ok(/var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11';/.test(SRC.health),
+    'I2a and it is R11, the activation release');
+  ok(SRC.health.indexOf("var SYS_BUILD_VERSION_ = '" + R10 + "'") < 0,
+    'I3 63_ moved with it, because the release lives in 63_ and changing it changes that file');
   ok(SRC.health.indexOf("symbol: 'PPW_BUILD_VERSION_', expected: '" + R10 + "'") > 0,
     'I4 and the manifest expects R10 from 72_ — a stamp without its manifest entry is a MIXED sync');
-  ok(SRC.health.indexOf("symbol: 'SYS_BUILD_VERSION_', expected: '" + R10 + "'") > 0,
-    'I5 and from 63_');
+  ok(SRC.health.indexOf("symbol: 'SYS_BUILD_VERSION_', expected: '" + R10 + "'") < 0,
+    'I5 while 63_\'s own manifest row moved with 63_ — the self-referential row tracks the file, not the release');
   ok(SRC.health.indexOf("symbol: 'RTR_BUILD_VERSION_', expected: '" + R9 + "'") > 0,
     'I6 WHILE 01_router STAYS AT R9 — it did not change, and a stamp names the round its own file belongs to');
 

@@ -6341,3 +6341,117 @@ committed is the reduced sixty rows, a metadata-only chunk manifest, the suite, 
 **Unchanged:** `PRODUCT_STRATEGY_ENABLED_` false · staged section `enabled: false` · no menu item ·
 two `productPricing` reads and no write-shaped name · no Apps Script change · no version · no
 deployment · no frontend deployment · zero database, Sheets or Drive writes. **P1-B8D not started.**
+
+---
+
+# P1-B8D — CONTROLLED ACTIVATION PACKAGE  ·  `F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11`
+
+**Product Strategy is ACTIVATED in the repository and deployed nowhere.** One forward local commit.
+Nothing synced, no Apps Script version, no Web App deployment, no frontend deployment, no push.
+
+## The two authorities
+
+```
+PRODUCT_STRATEGY_ENABLED_                        false -> true    00_config.gs
+KM_STAGED_SECTIONS_['product-strategy'].enabled  false -> true    assets/js/app.js
+```
+
+There is no third. No query parameter, no `localStorage`, no DOM class, no TEMP function, no route
+that skips a gate — asserted as absences, which outlive either value.
+
+`showSection` gained the section id in **both** maps (the lifecycle one that mounts it and the display
+one that reveals it; in only one it either mounts into a hidden shell or is revealed empty), and the
+registry is still consulted **before** either map is read, so no map entry bypasses the switch.
+
+## The menu is built, not written
+
+`mountStagedMenus()` — one caller, gated on `enabled === true`, inserting before the `carrier` anchor.
+**`index.html` has no Product Strategy markup and gets none.** Rolling the navigation back is an edit
+to one boolean, not the deletion of a `<div>`, and P1-B8B's four "no markup" assertions survive their
+own activation. The built nodes carry `role`, a tab stop, `aria-expanded`/`aria-controls` and
+Enter/Space activation; the rest of the sidebar remains mouse-only, which is the global shell gap
+Phase 1 closing QA owns.
+
+## Server boundary — unchanged, and that is the claim
+
+Two actions, both `.get`: `productPricing.siteUniverse.get`, `productPricing.workspace.get`. No
+write-shaped name, no writer symbol in `72_`, no `LockService`. The flag gate is evaluated **before**
+`io.openTarget()` in both handlers — which is what makes rollback a stop rather than a slower read.
+Database writes 0 · Sheets 0 · Drive 0 · schema changes 0 · status transitions 0.
+
+## Draft price disclosure
+
+`price_status_raw` is carried verbatim from `72_`'s provenance onto the row. `PSB_CONTRACT.PRICE_STATUS`
+declares it once (`mapped: false`, `filtered: false`, `vocabulary_pinned: false`,
+`final_value_exists: false`). The board shows the **distribution of the raw strings** on the context
+row above all six views and the full sentence in Advanced details, both from that one declaration. Two
+spellings stay two values. `undefined` / `null` / a value are three different facts and stay apart.
+
+## Release identity
+
+| File | Symbol | Was | Now |
+|---|---|---|---|
+| `63_api_v1_system_health.gs` | `SYS_DEPLOYMENT_RELEASE_` | R10 | **R11** |
+| `63_api_v1_system_health.gs` | `SYS_BUILD_VERSION_` | R10 | **R11** |
+| `00_config.gs` | `CONFIG_BUILD_VERSION_` | R7 | **R11** |
+| `72_…workspace.gs` | `PPW_BUILD_VERSION_` | R10 | **R10 — unchanged, so not on the sync list** |
+| `01_router.gs` | `RTR_BUILD_VERSION_` | R9 | **R9 — no route changed** |
+
+Action contract **not** bumped: a flag is not a contract. `appsscript.json` unchanged, no OAuth scope
+added. **Apps Script sync list = `00_config.gs` then `63_api_v1_system_health.gs`. Two files.**
+
+Three editor-run diagnostic pins track the release and moved with it (`R6R7_ACTIVATION_BUILD_`,
+`TEMP_E3_CENSUS_BUILD_`, `S1_BUILD_`). They live under `assets/tools/`, are not part of the deployed
+project, and matter the next time the USER runs either census.
+
+## Frontend co-deploy
+
+`activation-p1b8d-20260912` — **34 references, one token, `staleAppTokenRefs = []`**. The Product
+Strategy series folded into the policed set, which closed a live stale-cache defect: three files had
+changed bytes under a published token that was never in `ROUND_TOKENS`, so the guard could not see
+them and a returning browser held the pre-R3 `psb-board-ui.js`.
+
+## Tests
+
+| Suite | PRE | POST |
+|---|---|---|
+| `product-strategy-activation-p1-b8d.test.js` | — | **347 / 0 / 18 / 0** (new) |
+| `product-strategy-information-architecture-p1-b8b.test.js` | 234 / 0 / 18 / 0 | 234 / 0 / 18 / 0 |
+| `product-strategy-live-replay-acceptance-p1-b8c-r2.test.js` | 273 / 0 / 21 / 0 | 273 / 0 / 21 / 0 |
+| `identity-boundary-baseline-sec-a0.test.js` | pass | pass |
+| `deployment-r10-activation-boundary-p1-b7f.test.js` | pass | **102 / 0 / 7 / 0** |
+| full sweep | **466 suites, 4 red (3/1/7/2)** | **467 suites, 4 red (3/1/7/2)** |
+
+New failures: **0**. The four pre-existing failures are identical, PRE and POST, and were not touched.
+
+Thirteen suites were re-pointed because activation changed what is true. `"PRODUCT_STRATEGY_ENABLED_
+is false"` had been asserted in **nine** of them — true in all nine, load-bearing in none, each
+reaching for something else and using the value because it was cheap. Each now asserts what its own
+section is about (the gate's position, the round's own diff, the one-switch rule) and **the value has
+exactly one owner.**
+
+The shared harness gained `insertBefore` (every insertion it had modelled was an append, so "above
+Pricing Center" was unaskable) and a `preventDefault` that records (a no-op cannot distinguish a
+consumed key from an ignored one).
+
+## Browser acceptance — real Chrome, real sidebar, production mount
+
+7 viewports · 6 views · 7 states · scenario · print PDF · full-page.
+All seven viewports: page overflow **0**, Product Strategy immediately above Pricing Center, six
+sub-tabs in order, Y axis complete, **0 console errors**. Six views: each `aria-selected` itself and
+only itself, every label visible. Seven states: each states its own case with `#view` empty behind it,
+no two alike. Images: all loaded, **0 broken**.
+
+**390×844 X lane is not fully visible — recorded, not passed.** It scrolls inside the chart's own
+`overflow-x` box (`scrollW 264` over `clientW 76`) with page overflow still 0, byte-identical to the
+committed R3-R1 and R3-R2 evidence. Not this round's regression.
+
+## Not started, and deferred
+
+Login/RBAC and the `ANYONE_ANONYMOUS` posture → **P2-A** (and one feature more exposed than yesterday,
+because the flag had been standing in for a lock — recorded, not softened). Global responsive and the
+fixed 240px sidebar → **Phase 1 closing QA**. CSP, CDN, external image hosts, asset base → **Phase 2**.
+Sub-tab URL routing → unscheduled. **S2 not started.**
+
+**P1 final cleanup:** remove the TEMP diagnostics, remove any raw editor log still present, classify
+evidence as retained or removed, run the branch-to-main merge checklist, restart S2.

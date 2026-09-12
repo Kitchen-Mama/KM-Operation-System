@@ -298,7 +298,30 @@ var ROUND_TOKENS = [
   // policy shows NO IMAGES AT ALL rather than degrading. The policy file therefore joins the set, and
   // so does campaign-risk.js, which stopped being independent the moment it started asking
   // resolveSkuImageUrl. APPEND-ONLY, at the end.
-  'imagepolicy-r3r2-20260912'];
+  'imagepolicy-r3r2-20260912',
+  // PRODUCT-STRATEGY-P1-B8D - THE ACTIVATION RELEASE, and it rotates TWO sets into one because
+  // activation is the moment they stop being two.
+  //
+  // WHY A NEW TOKEN. a3889c2 is on origin/feature/product-strategy-board-p0, so the previous token's
+  // bytes have been published and by the rule recorded further up this list it can never be reused.
+  // app.js changed (the navigation authority, the two section maps and the one caller that mounts the
+  // menu), and app.js is a member of the co-deployed application set, so the whole set rotates.
+  //
+  // AND WHY THE PRODUCT STRATEGY SET JOINS IT, which is a defect being closed rather than a tidy-up.
+  // Those eleven references carried 'productstrategy-p1b8b-20260912', a token set at fb31e2c and
+  // PUBLISHED - and THREE of the files under it changed bytes afterwards without it moving:
+  // km-product-pricing-adapter.js and psb-board-ui.js at P1-B8C-R3, psb-data-contract.js with them.
+  // The stale-reference guard could not see it, because it only reports a reference left behind on a
+  // token it KNOWS, and that token was never in this list. So a returning browser held the pre-R3
+  // psb-board-ui.js - the copy with no <img> onerror fallback - and would have kept it through
+  // activation. Folding the set in fixes the three stale copies and, more durably, puts these eleven
+  // references under the guard that could not reach them.
+  //
+  // The two sets are also genuinely coupled from this round on: app.js's menu is built from
+  // PSB_VIEWS.VIEWS, and the board reads km-image-reference-policy.js through sku-overrides.js, which
+  // fails closed without it. A browser holding one set from each round has a menu whose six children
+  // come from a different build than the page they open. APPEND-ONLY, at the end.
+  'activation-p1b8d-20260912'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the
@@ -615,7 +638,12 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // accessor rejected every site-universe response it ever sent. The fix is inside 72_'s envelope
   // builder: no action added, no router change, contract still 14. R9 is deployed and captured as
   // evidence, so the correction may not wear its id. APPEND-ONLY, at the end.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R10'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R10',
+  // P1-B8D - the ACTIVATION release. 00_config.gs flips PRODUCT_STRATEGY_ENABLED_ to true and 63_
+  // carries the release plus 00_config's expected stamp. No action was added and no response shape
+  // changed, so the ACTION CONTRACT deliberately does not move with it - a flag is not a contract.
+  // R10 was a candidate that was never synced and is withdrawn rather than replaced.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

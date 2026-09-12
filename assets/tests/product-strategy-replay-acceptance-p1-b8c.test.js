@@ -220,10 +220,14 @@ var LIVE_CAPTURE = require(path.join(__dirname, '_p1b7f-exec-capture-r10.js'));
   eq(LIVE_CAPTURE.siteUniverse.meta.tablesRead, 0, 'A7 and no table read');
   eq(LIVE_CAPTURE.siteUniverse.data.site_count, 0, 'A8 and it carries no site');
 
-  /* SO THE WIRE CANNOT PRODUCE A POPULATED WORKSPACE while the flag is false, and §2 forbids
-     changing it. That is half of STOP_EXISTING_READBACK_INSUFFICIENT. */
-  ok(/PRODUCT_STRATEGY_ENABLED_\s*=\s*false/.test(SRC.config),
-    'A9 and the flag is still false in the config of record');
+  /* SO THE WIRE COULD NOT PRODUCE A POPULATED WORKSPACE, and the CAPTURE is what proves it. The
+     assertions above read the captured envelope: refused, zero tables, zero sites. That is a fact
+     about the deployment that answered on the day of the capture, and it stays true however the
+     repository's flag reads afterwards - which is the point of capturing it. Reading the constant
+     here added nothing and tied a frozen capture to a live value; P1-B8D flipped that value and the
+     capture did not change at all. */
+  eq(LIVE_CAPTURE.siteUniverse.meta.refused, true,
+    'A9 and the deployment that answered this capture refused the read');
 
   /* THE OTHER HALF: the editor readback reaches the builder and DISCARDS the rows. Both facts are
      read off the tool, not remembered. */
@@ -780,9 +784,16 @@ console.log('\n=== §J  ZERO WRITER REACHABILITY, AND THE CSS IS STILL CONTAINED
   });
   eq(leaks, [], 'J4 every board selector is still scoped to .psb-page');
 
-  /* NOTHING WAS ACTIVATED. */
-  eq(bare(SRC.app).indexOf('enabled: true'), -1, 'J5 no staged section was switched on');
-  ok(/PRODUCT_STRATEGY_ENABLED_\s*=\s*false/.test(SRC.config), 'J6 and the server flag is still false');
+  /* NOTHING WAS ACTIVATED *BY THIS ROUND*, which is a claim about P1-B8C's diff and was written as
+     a claim about the working tree. P1-B8D activated both gates deliberately, and both assertions
+     failed while describing a correct tree. Scoped to B8C's own range they say what they meant. */
+  var cp = require('child_process');
+  var B8C_PRE = '24de9f5', B8C_COMMIT = '5c5861d';
+  ['assets/js/app.js', 'assets/specs/active/apps-script/00_config.gs'].forEach(function (f, i) {
+    var d = cp.execFileSync('git', ['diff', '--name-only', B8C_PRE, B8C_COMMIT, '--', f],
+      { cwd: ROOT, encoding: 'utf8' }).trim();
+    eq(d, '', 'J' + (5 + i) + ' this round did not touch ' + f.split('/').pop(), d);
+  });
   return null;
 });
 

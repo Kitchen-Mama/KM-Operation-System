@@ -1467,3 +1467,192 @@ WEB_APP_DEPLOYMENT_REQUIRED  -  **NO**         FRONTEND_DEPLOY_REQUIRED  -  **YE
   not need re-syncing or re-running. The frontend assets ship WITH P1-B8D's, in one deployment.
 
 **STATUS: IMAGE GATE CLOSED - NOT SYNCED - NO VERSION - NO DEPLOYMENT - NOT PUSHED - PRODUCT STRATEGY STILL DISABLED - P1-B8D IS THE ONLY NEXT STEP.**
+
+=======================================================================================================
+P1-B8D  -  CONTROLLED ACTIVATION PACKAGE                                          (local commit only)
+=======================================================================================================
+RELEASE  F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11     supersedes the never-synced R10 candidate
+STATUS   PREPARED - NOT SYNCED - NO VERSION - NO DEPLOYMENT - NOT PUSHED
+
+-------------------------------------------------------------------------------------------------------
+WHAT ACTIVATION IS
+-------------------------------------------------------------------------------------------------------
+  Two booleans, and there is no third:
+
+    PRODUCT_STRATEGY_ENABLED_                        false -> true   00_config.gs
+    KM_STAGED_SECTIONS_['product-strategy'].enabled  false -> true   assets/js/app.js
+
+  No query parameter, no localStorage key, no DOM class, no TEMP function, no route that skips a gate.
+  The suite asserts the ABSENCE of each of those, which is a stronger claim than the two values.
+
+  THE MENU IS BUILT FROM THE REGISTRY, NOT WRITTEN INTO index.html. The activation note in app.js said
+  to "add the sidebar item to index.html"; that would have created a SECOND definition of the six
+  labels psb-views.js owns, a second definition of the placement `insertBefore` owns, and a menu that
+  `enabled: false` could no longer switch off. `mountStagedMenus` is the one caller of the builder and
+  refuses any section whose `enabled` is not exactly true. index.html still contains NO Product
+  Strategy markup - the four P1-B8B assertions that say so were written when the feature was OFF and
+  are still true with it ON, which is what makes the navigation rollback one boolean.
+
+-------------------------------------------------------------------------------------------------------
+APPS_SCRIPT_SYNC_REQUIRED  -  **YES, TWO FILES, IN THIS ORDER**
+-------------------------------------------------------------------------------------------------------
+  1. 00_config.gs                  PRODUCT_STRATEGY_ENABLED_ = true
+                                   CONFIG_BUILD_VERSION_     -> R11
+  2. 63_api_v1_system_health.gs    SYS_DEPLOYMENT_RELEASE_    -> R11
+                                   SYS_BUILD_VERSION_         -> R11
+                                   manifest rows for 00_config.gs and 63_ -> R11
+
+  Config first: 63_ declares what it EXPECTS 00_config to carry, so pasting 63_ first leaves a window
+  in which the deployment reports a mismatch against a file that has not arrived yet.
+
+  AND NOTHING ELSE. 72_ did not change - no action, no response shape, no gate position - so PPW_BUILD
+  stays R10 and 72_ must NOT be re-pasted; re-pasting an unchanged file is how an unrelated edit
+  reaches production by accident. 01_router.gs did not change either, and the ACTION CONTRACT VERSION
+  is deliberately not bumped: a flag is not a contract, and bumping it would tell every deployed client
+  to re-check a vocabulary that is byte-identical to the one it holds.
+  appsscript.json unchanged. No OAuth scope added.
+
+APPS_SCRIPT_NEW_VERSION_REQUIRED  -  **YES**
+WEB_APP_DEPLOYMENT_REQUIRED  -  **YES** (update the EXISTING deployment; never create a second, never
+                                         delete the current one)
+FRONTEND_DEPLOY_REQUIRED  -  **YES** (index.html + the 34 assets on the activation token)
+
+-------------------------------------------------------------------------------------------------------
+THE RELEASE ID HAS DOWNSTREAM CONSUMERS, AND THIS ROUND FOUND THEM
+-------------------------------------------------------------------------------------------------------
+  Three diagnostic pins TRACK SYS_DEPLOYMENT_RELEASE_ so that a census run against a correctly synced
+  deployment is never refused for its build. Moving the release for Product Strategy moved all three:
+
+    TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3.gs       R6R7_ACTIVATION_BUILD_  -> R11
+    TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3.gs       TEMP_E3_CENSUS_BUILD_   -> R11
+    TEMP_S1_POSITIVE_RESIDUAL_READINESS_CENSUS.gs   S1_BUILD_               -> R11
+
+  Left at R10 they would have STOPped on the first healthy R11 deployment and reported a build mismatch
+  that was the ledger working as designed. Two suites caught it within minutes - the system working -
+  and the cost is that "activate Product Strategy" is permanently also "re-pin the AI Plan censuses".
+  These are editor-run diagnostics under assets/tools/, NOT part of the deployed project, so they are
+  not on the sync list above; they matter the next time the USER runs either census.
+
+-------------------------------------------------------------------------------------------------------
+FRONTEND CO-DEPLOY - ONE TOKEN, AND A STALE-CACHE DEFECT CLOSED
+-------------------------------------------------------------------------------------------------------
+  activation-p1b8d-20260912, carried by 34 references. staleAppTokenRefs = []. misplaced = [].
+
+  TWO SETS BECAME ONE, AND THAT IS A DEFECT BEING CLOSED RATHER THAN A TIDY-UP. The eleven Product
+  Strategy references carried `productstrategy-p1b8b-20260912`, a token set at fb31e2c and PUBLISHED -
+  and THREE files under it changed bytes afterwards without it moving: km-product-pricing-adapter.js
+  and psb-board-ui.js at P1-B8C-R3, psb-data-contract.js with them. The stale-reference guard could not
+  see it, because it only reports a reference left behind on a token it KNOWS and that token was never
+  in ROUND_TOKENS. A returning browser therefore held the pre-R3 psb-board-ui.js - the copy with no
+  <img> onerror fallback - and would have carried it straight through activation. Folding the set in
+  fixes the three stale copies and puts those eleven references under the guard permanently.
+
+-------------------------------------------------------------------------------------------------------
+DRAFT PRICE DISCLOSURE
+-------------------------------------------------------------------------------------------------------
+  PRICING_DATABASE_MAPPING section 4 records pricing_list.price_status's default as "draft or active -
+  to be confirmed". Activation is when that stops being a footnote: the board is about to show numbers
+  whose status nobody has decided, to people who will read them as the price the company charges.
+
+  So the status is CARRIED and never translated. The adapter promotes 72_'s price_status_raw onto the
+  row verbatim - no casing, no trimming, no bucketing, and no default when the column is absent. The
+  contract declares it once (PSB_CONTRACT.PRICE_STATUS: mapped false, filtered false, vocabulary not
+  pinned, no final value exists). The board shows the DISTRIBUTION of the raw strings on the context
+  row above all six views, with the full sentence in Advanced details - both read from that one
+  declaration, so the short form and the long form cannot drift.
+
+  THREE OUTCOMES ARE KEPT APART, and the browser run is what forced that. The first version mapped a
+  missing key to null, so the chip announced "no price status on the row" about rows whose source had
+  never carried the column - a claim about the data made by the adapter's own gap. `undefined` (this
+  source does not carry it), `null` (the row carries it and it is empty) and a value are three facts.
+
+-------------------------------------------------------------------------------------------------------
+ROLLBACK  -  REHEARSED, NOT DESCRIBED
+-------------------------------------------------------------------------------------------------------
+  FASTEST STOP (server, no frontend deploy needed):
+    1. 00_config.gs: PRODUCT_STRATEGY_ENABLED_ = false
+    2. Save
+    3. Create a NEW Apps Script version   (an edited file that is not deployed changes nothing)
+    4. Update the EXISTING Web App deployment
+    5. Verify: system.health `product_strategy_enabled` false; a productPricing read answers
+       FEATURE_DISABLED with dbOpened false and tablesRead 0
+    6. LATER, and optional: app.js `enabled: false` + a frontend deploy removes the menu entirely
+
+  Section F of the activation suite EXECUTES steps 1 and 5: it rebuilds the sandbox from the real
+  00_config.gs with the constant set back to false, calls both handlers through the real resolver, and
+  measures that the spreadsheet was opened ZERO times. The gate sits before io.openTarget() in both
+  handlers, which is what makes this a stop rather than a slower read.
+
+  NEVER: delete a deployment, create a second one, roll back the whole Operation System, use git reset
+  or rewrite history, or make the rollback depend on a database mutation. The feature has never written
+  anything, so there is nothing to compensate - and a rollback that had to write would be a second way
+  to fail.
+
+-------------------------------------------------------------------------------------------------------
+SECURITY POSTURE - STATED, NOT SOFTENED
+-------------------------------------------------------------------------------------------------------
+  While PRODUCT_STRATEGY_ENABLED_ was false it was doing duty as a lock, and the identity baseline said
+  so in as many words. Switching it on does not weaken a lock; it RETIRES A STAND-IN. What now protects
+  the two Product Strategy reads is what protects the other actions behind this ANYONE_ANONYMOUS Web
+  App: nothing about the caller. That is one feature worse than yesterday, it is recorded in
+  identity-boundary-baseline-sec-a0 rather than smoothed over, and it is one of the facts that argues
+  for Login/RBAC in P2-A. The two actions are reads; no write path was created, because there is none
+  to create.
+
+-------------------------------------------------------------------------------------------------------
+TESTS
+-------------------------------------------------------------------------------------------------------
+  product-strategy-activation-p1-b8d                    347 / 0 - 18 mutants - 0 survived   (new)
+
+  Re-pointed because activation changed what is true, not because they were wrong:
+    api-product-pricing-workspace-p1-b1 - product-strategy-production-readback-p1-b3
+    product-strategy-row-shape-sample-p1-b8c-r1 - product-strategy-scope-correction-p1-b8a
+    product-strategy-integration-p1-b5 - product-strategy-shell-integration-p1-b7
+    product-strategy-information-architecture-p1-b8b - product-strategy-replay-acceptance-p1-b8c
+    product-strategy-live-replay-acceptance-p1-b8c-r2 - identity-boundary-baseline-sec-a0
+    deployment-r10-activation-boundary-p1-b7f - api-product-pricing-envelope-action-p1-b7e
+    controlled-no-action-activation-manifest-...-r6-r7-r3
+    positive-residual-and-submit-readiness-census-...-r5-r1
+    the three image suites (round-scoped ranges given both ends, again)
+
+  "PRODUCT_STRATEGY_ENABLED_ is false" was asserted in NINE suites. It was true in all nine and
+  load-bearing in none: each was reaching for something else and used the value because it was cheap.
+  Nine copies of one fact is nine edits the day it changes. Each is now repaired toward what its own
+  section is about - the gate's POSITION, the round's own diff, the one-switch rule - and the VALUE has
+  exactly one owner.
+
+  THE SHARED HARNESS GAINED TWO THINGS IT HAD ALWAYS LACKED. `insertBefore` (every insertion it had
+  ever modelled was an append, so "above Pricing Center" was unaskable) and a `preventDefault` that
+  RECORDS (a no-op cannot tell "the handler consumed this" from "the handler ignored it", which is
+  exactly the half of keyboard activation that keeps Space from scrolling the page).
+
+-------------------------------------------------------------------------------------------------------
+BROWSER ACCEPTANCE  (real Chrome, real sidebar, production menu mount)
+-------------------------------------------------------------------------------------------------------
+  7 viewports - 6 views - 7 states - scenario - print PDF - full-page 1920.
+  All seven viewports: page overflow 0 - Product Strategy immediately above Pricing Center - six
+  sub-tabs in order - Y axis complete - 0 console errors.
+  Six views: each aria-selected itself and only itself, every tab label visible, overflow 0.
+  Seven states: each states its own case, #view stays EMPTY behind every refusal, no two alike.
+  Images: every <img> loaded, 0 broken, 0 IMAGE FAILED TO LOAD notices.
+  390x844 X lane: NOT fully visible - recorded, not passed. It scrolls inside the chart's own
+  overflow-x box (scrollW 264 over clientW 76), page overflow still 0, byte-identical to the committed
+  R3-R1 and R3-R2 evidence. The fixed 240px sidebar beneath it is the global shell blocker, deferred.
+
+  THE RUNNER'S SECOND TEST-ONLY ACT IS RETIRED. It used to CALL buildStagedMenu, because production
+  never did. In `activated` mode it calls `mountStagedMenus` - the production function - and STOPs if
+  that mounts nothing, rather than reaching for the builder underneath. It also swaps its own
+  approximated sidebar for index.html's, because a hand-written sidebar is a second model of the
+  document and the placement anchor would have resolved against the model rather than the page.
+
+-------------------------------------------------------------------------------------------------------
+DEFERRED, AND NAMED
+-------------------------------------------------------------------------------------------------------
+  Login / RBAC and the ANYONE_ANONYMOUS posture      -> P2-A
+  Global responsive / the fixed 240px sidebar        -> Phase 1 closing QA
+  CSP, CDN, external image hosts, asset base         -> Phase 2
+  Sub-tab URL routing (the shell has no router)      -> unscheduled
+  P1 FINAL CLEANUP: remove the TEMP diagnostics, remove any raw editor log still present, classify
+  evidence as retained or removed, run the branch-to-main merge checklist, and pick S2 back up.
+
+**STATUS: ACTIVATION PACKAGE READY - NOT SYNCED - NO VERSION - NO DEPLOYMENT - NOT PUSHED.**

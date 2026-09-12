@@ -143,6 +143,11 @@ section('§A  THE REGRESSION, REPRODUCED AGAINST THE RULE THAT WAS ACTUALLY SHIP
    P1-B8C-R2 left behind — and executed. An assertion about a defect is worth what its subject is
    worth, and a retyped "old version" is a guess about what used to be there. */
 var PRE_R3_COMMIT = '5c5861de892b3c8b88890071957778144ea2417d';
+/* R3'S OWN COMMIT — the far end of every "what R3 did" range in this file. Declared HERE rather than
+   beside its first reader, because it now has two and `var` hoisting gives a declaration below the
+   use the value `undefined`, which git reports as `bad revision 'undefined'` rather than as a wrong
+   answer. One declaration, above both. */
+var R3_COMMIT = '3d7ef782d1b59712157fa3ab39ea1347b4cf9f34';
 var preSrc = null;
 try {
   preSrc = cp.execFileSync('git', ['show', PRE_R3_COMMIT + ':' + ADAPTER_FILE],
@@ -609,8 +614,13 @@ if (ML) {
 // =============================================================================================
 section('§I  CASE 9 — NO OTHER PAGE CHANGED ITS LOOK');
 // =============================================================================================
-/* R3 SHIPPED NO CSS. The cheapest proof that no page's style moved is that no stylesheet did. */
-var changed = cp.execFileSync('git', ['diff', '--name-only', PRE_R3_COMMIT, '--'],
+/* R3 SHIPPED NO CSS. The cheapest proof that no page's style moved is that no stylesheet did.
+   SCOPED TO R3'S OWN RANGE, for the third time in this file and for the same reason each time: this
+   is a claim about what R3 DID, and read from R3's parent to the working tree it silently becomes a
+   claim that no later round may ever ship a stylesheet or touch Apps Script. P1-B8D does touch Apps
+   Script — it is the activation — and I1b failed while describing a correct tree. A round-scoped
+   assertion has to name both ends of its round; §I2 below already learned this at R3-R2. */
+var changed = cp.execFileSync('git', ['diff', '--name-only', PRE_R3_COMMIT, R3_COMMIT, '--'],
   { cwd: ROOT, encoding: 'utf8' }).split('\n').filter(Boolean);
 eq(changed.filter(function (f) { return /\.css$/.test(f); }), [],
   'I1  not one stylesheet changed in this round', changed);
@@ -624,7 +634,6 @@ eq(changed.filter(function (f) { return /^assets\/specs\/active\/apps-script\//.
    moved. The first version compared PRE_R3_COMMIT..working-tree and began failing at P1-B8C-R3-R2,
    which rotated the co-deployed cache token across twenty-three references — a correct later change
    that this assertion had no opinion about and should never have been measuring. */
-var R3_COMMIT = '3d7ef782d1b59712157fa3ab39ea1347b4cf9f34';
 var idxDiff = cp.execFileSync('git', ['diff', '--unified=0', PRE_R3_COMMIT, R3_COMMIT, '--', 'index.html'],
   { cwd: ROOT, encoding: 'utf8' }).split('\n');
 var added = idxDiff.filter(function (l) { return /^\+[^+]/.test(l); });

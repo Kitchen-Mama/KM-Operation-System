@@ -363,11 +363,16 @@ console.log('\n=== §D  NAVIGATION IS INVISIBLE AND THE SECTION UNREACHABLE ==='
     'D3 no menu item, hidden or otherwise, refers to the section');
 
   ok(/var KM_STAGED_SECTIONS_ = \{/.test(SRC.app), 'D4 app.js declares the staged-section registry');
-  ok(/'product-strategy':\s*\{[\s\S]{0,300}?enabled:\s*false/.test(SRC.app),
-    'D5 and this section is in it with enabled false');
+  ok(/'product-strategy':\s*\{[\s\S]{0,300}?enabled:\s*(?:true|false)/.test(SRC.app),
+    'D5 and this section is in it with a literal boolean switch');
   ok(/reason:\s*'[^']+'/.test(SRC.app), 'D5a with the reason written down, not implied');
-  ok(SRC.app.indexOf("'product-strategy': 'product-strategy-board-section'") < 0,
-    'D6 and it is in NEITHER section map, so showSection cannot resolve it');
+  /* D6 INVERTED AT P1-B8D, AND THE INVERSION IS THE ROUND. "In neither map" was how B7 proved the
+     installed page was unreachable; the activation put it in both, and a section in only ONE of them
+     is the defect worth guarding now - in the lifecycle map alone it mounts into a shell that is
+     never revealed, in the display map alone it is revealed empty. Both, or the page is broken in a
+     way that looks like a slow load. */
+  eq((SRC.app.match(/'product-strategy': 'product-strategy-board-section'/g) || []).length, 2,
+    'D6 and it is in BOTH section maps — the lifecycle one and the display one');
 
   /* THE GUARD RUNS BEFORE THE SHELL IS TOUCHED. Returning after the `.active` sweep would leave no
      section visible at all — a blank page, which reads as a crash rather than as a feature that is
@@ -382,10 +387,15 @@ console.log('\n=== §D  NAVIGATION IS INVISIBLE AND THE SECTION UNREACHABLE ==='
   ok(!!body && /enabled !== true/.test(body[1]) && /return;/.test(body[1]),
     'D7a and it returns rather than falling through');
 
-  /* THE SERVER GATE IS THE OTHER ONE, AND IT IS THE ONE THAT MATTERS. */
-  ok(/var PRODUCT_STRATEGY_ENABLED_ = false;/.test(
+  /* THE SERVER GATE IS THE OTHER ONE, AND IT IS THE ONE THAT MATTERS — which is an argument about
+     where the gate SITS, not about what it currently answers. P1-B8D moved the answer and left the
+     position alone: one server-owned boolean, read through one resolver, checked before the door. */
+  var cfg72 = readRoot('assets/specs/active/apps-script/72_api_v1_product_pricing_workspace.gs');
+  ok(/var PRODUCT_STRATEGY_ENABLED_ = (?:true|false);/.test(
     readRoot('assets/specs/active/apps-script/00_config.gs')),
-    'D8 and the server flag is false in the config of record');
+    'D8 and the server flag is one literal boolean in the config of record');
+  ok(cfg72.indexOf('if (io.flagEnabled() !== true)') < cfg72.indexOf('var ss = io.openTarget();'),
+    'D8a which the workspace read consults BEFORE it opens the spreadsheet');
 }());
 
 // ===================================================================================================
@@ -801,10 +811,20 @@ function mutAsync(label, file, from, to, probe) {
 K.then(function () {
   console.log('\n=== §L  MUTANTS ===');
 
-  mut('L1 the staged section is switched on', 'assets/js/app.js',
-    "        enabled: false,", "        enabled: true,",
-    function () { return !/'product-strategy':\s*\{[\s\S]{0,300}?enabled:\s*false/
-      .test(reread('assets/js/app.js')); });
+  /* L1 TURNED AROUND WHEN THE SECTION WAS ACTIVATED, for the same reason R3-R1's G13 did one round
+     earlier: a mutant that flips `enabled: false` to `true` has no anchor once the value IS true, and
+     "anchor not found" scores as SURVIVED - a mutant measuring nothing while reporting a failure.
+     What D6 now guards is that the section is in BOTH section maps, so the defect to model is losing
+     ONE of them: the half-wired page that mounts into a shell nobody reveals, or is revealed empty.
+     The two entries differ only by indentation - eight spaces in the display map, twelve in the
+     lifecycle one - which is what lets this anchor name exactly one of them. */
+  mut('L1 the section is dropped from the display section map — D6', 'assets/js/app.js',
+    "\n        'product-strategy': 'product-strategy-board-section'",
+    "\n        'REMOVED-BY-MUTANT': 'product-strategy-board-section'",
+    function () {
+      var s = reread('assets/js/app.js');
+      return (s.match(/'product-strategy': 'product-strategy-board-section'/g) || []).length !== 2;
+    });
 
   mut('L2 the guard lets a staged section through', 'assets/js/app.js',
     "    if (staged && staged.enabled !== true) {", "    if (staged && staged.enabled === true) {",

@@ -262,9 +262,20 @@ ok(!/CacheService|PropertiesService/.test(bare(SRC72) + bare(SRCRB)),
   ok(!hit, 'A9.' + (i + 1) + ' ' + t + ' is not a table either file reads');
 });
 
-// A10 — §2.8/§2.9: the flag is false, and the router exposes no UI because of it.
-ok(/var PRODUCT_STRATEGY_ENABLED_ = false;/.test(SRC00),
-  'A10  PRODUCT_STRATEGY_ENABLED_ is false in the config of record');
+// A10 — §2.8/§2.9: THE GATE IS BEFORE THE DOOR, which is the part that does not depend on the value.
+/* This read the constant and called it "the router exposes no UI because of it". The value moved at
+   P1-B8D and the property did not: the refusal is still emitted before `openTarget` is called, still
+   reports `dbOpened: false`, and still names FEATURE_DISABLED. A gate that runs after the read has
+   already failed at the only job it has, and THAT is what §2.8 asked to be checked. */
+var gateIdx = SRC72.indexOf('if (io.flagEnabled() !== true)');
+var openIdx = SRC72.indexOf('var ss = io.openTarget();');
+ok(gateIdx > 0 && openIdx > 0 && gateIdx < openIdx,
+  'A10  the flag gate is evaluated BEFORE the spreadsheet is opened');
+ok(/dbOpened: false,\s*\n?\s*refused: true, refusalCode: 'FEATURE_DISABLED'/.test(
+    SRC72.slice(gateIdx, openIdx)) || /FEATURE_DISABLED/.test(SRC72.slice(gateIdx, openIdx)),
+  'A10a and the refusal it emits says FEATURE_DISABLED with no database opened');
+ok(/typeof productStrategyEnabled_ === 'function' && productStrategyEnabled_\(\) === true/.test(SRC72),
+  'A10b through the ONE resolver — not a copy of the constant, not a payload field');
 ok(/'productPricing\.workspace\.get':\s+handleProductPricingWorkspaceGet_/.test(SRC01),
   'A10a the router dispatches the action to 72_ (so a partial sync is a named failure)');
 var expected = (SRC63.match(/KM_EXPECTED_ACTION_CONTRACT_VERSION_/) || []).length;
@@ -1244,8 +1255,12 @@ eq(built.provenance.price_status_filtering, false, 'H5d nor does it filter on pr
 // staged with enabled false, and PRODUCT_STRATEGY_ENABLED_ is false, so the page is installed and
 // cannot be opened. Absence was never the rule; it was the cheapest available proxy for it.
 eq(callers, ['index.html'], 'H6  the adapter is loaded by the shell and by nothing else', callers);
-ok(/'product-strategy':\s*\{[^}]*enabled:\s*false/.test(read('assets/js/app.js')),
-  'H6a and the shell declares that section staged OFF, so no user can reach it');
+/* H6a WAS A REACHABILITY PROXY AND THE REACHABILITY CHANGED. P1-B8D activated the section, so
+   "no user can reach it" is simply no longer the claim to make. What H6 is actually about is that the
+   adapter has ONE loader; the companion fact worth keeping is that the section still has ONE switch -
+   the registry entry - rather than a second path that could open the page with the registry off. */
+ok(/'product-strategy':\s*\{[^}]*enabled:\s*(?:true|false)/.test(read('assets/js/app.js')),
+  'H6a the shell declares that section in the staged registry, with a literal boolean switch');
 eq(ADAPTER.CONTRACT.applies_to, 'productPricing.workspace.get responses; no page has adopted it yet',
   'H6a which the contract states in its own applies_to');
 

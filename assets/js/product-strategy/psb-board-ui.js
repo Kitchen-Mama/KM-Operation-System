@@ -2173,6 +2173,17 @@
     body.id = 'advBody';
     body.hidden = !STATE.advancedOpen;
 
+    /* P1-B8D — the whole sentence, where engineering detail belongs. The chip on the context row
+       carries the numbers; this carries the rule, and both read it from CONTRACT.PRICE_STATUS so the
+       short form and the long form cannot come to disagree. */
+    var psBox = el('div', 'card-note');
+    psBox.id = 'priceStatusDisclosure';
+    psBox.setAttribute('data-source-column',
+      CONTRACT.PRICE_STATUS.source_table + '.' + CONTRACT.PRICE_STATUS.source_column);
+    psBox.appendChild(el('strong', null, CONTRACT.PRICE_STATUS.headline + ' — '));
+    psBox.appendChild(document.createTextNode(CONTRACT.PRICE_STATUS.disclosure));
+    body.appendChild(psBox);
+
     var pv = LOAD.provenance || {};
     body.appendChild(el('p', 'mono', 'adapter ' + pv.adapter + '  ·  connected '
       + String(pv.connected) + '  ·  requests ' + pv.requests_made
@@ -2767,6 +2778,7 @@
     });
     row.appendChild(sum);
     row.appendChild(scenarioStatusChip());
+    row.appendChild(priceStatusChip());
 
     /* THE COUNT IS CONTEXT, NOT A HEADLINE. Two numbers, because "listings" and "listings that can
        be plotted" are different and the gap between them is the Data Quality story. */
@@ -2997,6 +3009,45 @@
 
     wrap.setAttribute('data-chip-id', 'scenarioChip');
     return wrap;
+  }
+
+  /**
+   * P1-B8D §4 — THE PRICE STATUS CHIP. On the context row, on every view, always.
+   *
+   * WHY IT IS STANDING CHROME RATHER THAN A BANNER ON THE PRICE VIEWS. The brief asks that every
+   * place a reader would take a number for an official price says what that number's status is. The
+   * price surfaces are the chart, the product table, the category cards and the KPI range — four
+   * places, and "four places" is how a disclosure ends up on three of them. The context row is above
+   * all four on all six views, it is already the line that says which site and how many listings, and
+   * it costs no analysis space because it is already there.
+   *
+   * IT REPORTS THE DISTRIBUTION, WHICH IS THE PART THAT IS NOT A PLATITUDE. "Prices may be draft" is
+   * a caveat a reader learns to skip. "178 draft" is a measurement of the scope actually on screen,
+   * it changes when the scope changes, and it is the number that makes the caveat true or irrelevant.
+   * `cmd-chip` is the component the scenario chip beside it uses — the same shape, so a data-state
+   * chip does not read as an alert.
+   */
+  function priceStatusChip() {
+    var d = SEL.derivePriceStatusCounts(MODEL.universe);
+    var PS = CONTRACT.PRICE_STATUS;
+    var label, state;
+    if (d.total === 0) { label = PS.headline; state = 'NO_ROWS'; }
+    else if (d.unsupported === d.total) { label = PS.unsupported_label; state = 'UNSUPPORTED'; }
+    else if (d.values.length === 0) { label = PS.absent_label; state = 'ABSENT'; }
+    else {
+      /* The raw strings, exactly as counted. No casing, no relabelling, no "n other". */
+      label = d.values.map(function (v) { return v.count + ' ' + v.value; }).join(' · ');
+      if (d.absent) label += ' · ' + d.absent + ' with no status';
+      state = 'REPORTED';
+    }
+    var chip = el('span', 'cmd-chip', label);
+    chip.id = 'priceStatusChip';
+    chip.setAttribute('role', 'status');
+    chip.setAttribute('data-price-status-state', state);
+    chip.setAttribute('data-price-status-values',
+      d.values.map(function (v) { return v.value; }).join('|'));
+    chip.setAttribute('title', PS.disclosure);
+    return chip;
   }
 
   /** The scenario status chip, for the CONTEXT row. */

@@ -571,3 +571,111 @@ REFUSED reference — an empty `src` resolves to the page's own URL, which is a 
 exactly where a placeholder belongs.
 
 **IMAGE GATE: CLOSED.** No further image architecture is in scope. **P1-B8D is the only next step.**
+
+---
+
+# §5  P1-B8D — THE ACTIVATION, AND THE RUNBOOK THE USER RUNS
+
+**Release `F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11`.** Prepared as a local commit. Nothing synced, no
+version cut, no deployment updated, nothing pushed.
+
+## 5.1  The two authorities, and the third that was not created
+
+| Authority | File | Before | After |
+|---|---|---|---|
+| Server | `00_config.gs` `PRODUCT_STRATEGY_ENABLED_` | `false` | **`true`** |
+| Navigation | `app.js` `KM_STAGED_SECTIONS_['product-strategy'].enabled` | `false` | **`true`** |
+
+No query parameter, no `localStorage` key, no DOM class, no TEMP function, no route that skips a
+gate. The suite asserts the **absence** of each of those, which is a stronger claim than the two
+values and survives the next flip in either direction.
+
+**The menu is built from the registry.** §A14's instruction in `app.js` said to *"add the sidebar item
+to index.html"* — and doing that would have created a second definition of the six labels
+`psb-views.js` owns, a second definition of the placement `insertBefore` owns, and a menu that
+`enabled: false` could no longer switch off. Instead `mountStagedMenus()` is the one caller of
+`buildStagedMenu`, it refuses any section whose `enabled` is not exactly `true`, and it inserts before
+the `carrier` anchor. **`index.html` still contains no Product Strategy markup** — the four P1-B8B
+assertions that say so were written when the feature was OFF and are still true with it ON.
+
+## 5.2  Apps Script sync list — two files, in this order
+
+1. **`00_config.gs`** — the flag, and `CONFIG_BUILD_VERSION_ → R11`.
+2. **`63_api_v1_system_health.gs`** — `SYS_DEPLOYMENT_RELEASE_ → R11`, `SYS_BUILD_VERSION_ → R11`, and
+   the manifest rows for `00_config.gs` and for itself.
+
+**Config first**, because `63_` declares what it *expects* `00_config` to carry: pasting `63_` first
+leaves a window where the deployment reports a mismatch against a file that has not arrived.
+
+**And nothing else, which is the other half of a sync list.** `72_` did not change — no action, no
+response shape, no gate position — so `PPW_BUILD_VERSION_` is still R10 and **72_ must not be
+re-pasted**; re-pasting an unchanged file is how an unrelated edit reaches production by accident.
+`01_router.gs` did not change, and the **action contract version is deliberately not bumped**: a flag
+is not a contract. `appsscript.json` unchanged, no OAuth scope added.
+
+## 5.3  Frontend deploy — `index.html` plus 34 assets on `activation-p1b8d-20260912`
+
+Two token series became one. The eleven Product Strategy references carried
+`productstrategy-p1b8b-20260912`, set at `fb31e2c` and **published** — while three files under it
+changed bytes afterwards without it moving (`km-product-pricing-adapter.js` and `psb-board-ui.js` at
+P1-B8C-R3, `psb-data-contract.js` with them). The stale-reference guard could not see it: it reports a
+reference left behind on a token it *knows*, and that token was never in `ROUND_TOKENS`. A returning
+browser held the pre-R3 `psb-board-ui.js` — the copy with no `<img>` `onerror` fallback — and would
+have carried it through activation. `staleAppTokenRefs` is now `[]` and those eleven are inside the
+guard permanently.
+
+## 5.4  Deployment order — the USER runs these, in this sequence
+
+1. Review the local commit; `git push origin feature/product-strategy-board-p0`.
+2. Open the Apps Script project. Paste **`00_config.gs`**, save.
+3. Paste **`63_api_v1_system_health.gs`**, save.
+4. **Create a new version.** Do not create a new deployment.
+5. **Update the existing Web App deployment** to that version.
+6. Verify before touching the frontend: `system.health` must report
+   `product_strategy_enabled: true`, `build_id: …-R11`, `config_build: …-R11`, `mixed_deployment:
+   false`.
+7. Deploy the frontend: `index.html` and every asset it references.
+8. Hard-reload with cache disabled and confirm the 34 assets return `200`, not `304`.
+
+**Steps 2–5 and 7 are user-owned and manual.** No `clasp`, no automated deploy.
+
+## 5.5  Smoke matrix — after step 7, by eye
+
+| # | Check |
+|---|---|
+| 1 | Product Strategy appears in the sidebar, **above Pricing Center** |
+| 2 | All six sub-tabs open: Executive Overview · Category Analysis · Deal Risk · Data Quality · Strategy Workspace · Advanced Details |
+| 3 | Company → Country → Marketplace narrows in that order; the workspace read fires only on a complete scope |
+| 4 | Advanced Filters collapsed by default; Price Scenario does not take the analysis view |
+| 5 | Chart Y axis complete; X axis complete at ordinary density; dense data scrolls **inside the chart**, never the page |
+| 6 | Product photographs load; no broken image; a missing one says so in words |
+| 7 | The price-status chip is on the context row on every view |
+| 8 | Other pages — Site Inventory, Order Planning, Carrier Rate Card, Shipment Overview — unchanged in border, radius, shadow and spacing |
+
+## 5.6  Rollback
+
+**Server first, and it needs no frontend deploy:** `PRODUCT_STRATEGY_ENABLED_ = false` → save → new
+version → update the existing deployment → confirm `product_strategy_enabled: false` and that a
+`productPricing` read answers `FEATURE_DISABLED` with `dbOpened: false`, `tablesRead: 0`. The
+navigation half (`enabled: false` + a frontend deploy) can follow later.
+
+§F of the activation suite **executes** that: it rebuilds the sandbox from the real `00_config.gs` with
+the constant set back to false, calls both handlers through the real resolver, and measures that the
+spreadsheet was opened **zero** times. The gate sits before `io.openTarget()` in both handlers, which
+is what makes it a stop rather than a slower read.
+
+**Never**: delete a deployment, create a second one, roll back the whole Operation System, `git reset`
+or rewrite history, or make rollback depend on a database mutation. The feature has never written
+anything.
+
+## 5.7  What activation still does not unblock
+
+- **The anonymous Web App posture.** Deferred to **P2-A**, unchanged by this page — and one feature
+  more exposed than yesterday, because the flag had been standing in for a lock. Recorded in
+  `identity-boundary-baseline-sec-a0`, not smoothed over.
+- **390×844.** The fixed 240px sidebar is a shell-wide blocker for **Phase 1 closing QA**. Product
+  Strategy adds no page-level overflow at that width; its chart scrolls inside its own container.
+- **Sub-tab URL routing.** The shell has no router. The six views have canonical routes and no address.
+- **CSP, CDN, external image hosts, asset base.** Phase 2.
+
+**ACTIVATION PACKAGE READY — NOT SYNCED — NO VERSION — NO DEPLOYMENT — NOT PUSHED.**

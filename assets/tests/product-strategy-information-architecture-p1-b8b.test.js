@@ -249,12 +249,27 @@ console.log('\n=== §B  THE PRODUCTION DEFAULT OFFERS NO ENTRY, AND THE MENU IS 
     'B3 nor the section entry point');
   ok(!/Product Strategy<\/span>/.test(SRC.index), 'B4 and the label appears in no menu item');
 
-  /* NOTHING IN PRODUCTION CALLS THE BUILDER. That is what makes "the DOM is not there by default"
-     a property rather than a hope. Checked on stripped source so the builder's own prose, which
+  /* B1-B4 SURVIVED THE ACTIVATION, AND THAT IS THE POINT OF THEM. P1-B8D switched this feature on
+     and index.html STILL has no Product Strategy markup: the menu is built from the registry, so
+     rolling the navigation back is an edit to one boolean rather than a deletion of markup, and §3's
+     rule - that the feature may not be opened by removing a CSS class - stays a property rather than
+     a promise. Had activation been done by writing a <div>, B1-B4 would have been deleted here and
+     nobody would have been able to tell that from the feature simply being on.
+
+     ONE CALLER NOW, AND IT IS GATED. The builder was called by nothing; it is called by exactly one
+     function, `mountStagedMenus`, which refuses any section whose `enabled` is not `true`. "Nothing
+     calls it" was never the real requirement - "no path reaches the menu without passing the switch"
+     was, and that is what is asserted. Checked on stripped source so the builder's own prose, which
      names it repeatedly, is not read as a call. */
   var callers = ['app.js', 'index.html'];
   var appCalls = bare(SRC.app).split('buildStagedMenu').length - 1;
-  eq(appCalls, 1, 'B5 app.js mentions buildStagedMenu exactly once — the definition, no call');
+  eq(appCalls, 2, 'B5 app.js names buildStagedMenu twice — the definition and its one caller');
+  var mountFn = bare(SRC.app).slice(bare(SRC.app).indexOf('window.KM.nav.mountStagedMenus = '));
+  mountFn = mountFn.slice(0, mountFn.indexOf('\n};'));
+  ok(mountFn.indexOf('buildStagedMenu') > 0,
+    'B5a and the caller is mountStagedMenus');
+  ok(mountFn.indexOf('entry.enabled !== true') < mountFn.indexOf('buildStagedMenu'),
+    'B5b which refuses a section whose enabled is not exactly true BEFORE it builds anything');
   eq(SRC.index.split('buildStagedMenu').length - 1, 0, 'B6 and index.html never calls it');
   var prodJs = fs.readdirSync(path.join(JS, 'pages')).filter(function (f) {
     return /\.js$/.test(f) && bare(read(path.join(JS, 'pages', f))).indexOf('buildStagedMenu') >= 0;
@@ -279,11 +294,25 @@ console.log('\n=== §B  THE PRODUCTION DEFAULT OFFERS NO ENTRY, AND THE MENU IS 
   section.className = 'module-section';
   s.dom.document.getElementById('appSidebar').parentNode.appendChild(section);
 
+  /* THE GATE IS DRIVEN IN BOTH POSITIONS NOW, WHICH IS A BETTER TEST THAN EITHER VALUE WAS.
+     B12 used to assert that clicking a built menu item does NOT open the section, and B13 pinned the
+     value it was refused by. P1-B8D switched that value, so the old pair would have had to be either
+     deleted or inverted - and inverting it would have left the same one-sided test pointing the other
+     way. Instead the registry is set to each value in turn inside the sandbox and the click is
+     re-issued: OFF must refuse, ON must open. That holds whatever the shipped value is, and it is
+     what "the registry is the switch" actually means. */
+  s.sb.KM_STAGED_SECTIONS_['product-strategy'].enabled = false;
   m.children.childNodes[0].click();
   ok(section.className.indexOf('active') < 0,
-    'B12 CLICKING A CHILD OF THE BUILT MENU DOES NOT ACTIVATE THE SECTION');
-  eq(s.sb.KM_STAGED_SECTIONS_['product-strategy'].enabled, false,
-    'B13 and the flag it was refused by is still false');
+    'B12 WITH THE REGISTRY OFF, clicking a child of the built menu does not activate the section');
+
+  s.sb.KM_STAGED_SECTIONS_['product-strategy'].enabled = true;
+  m.children.childNodes[0].click();
+  ok(section.className.indexOf('active') >= 0,
+    'B13 and WITH IT ON the same click does — so the refusal was the registry, not an accident');
+  section.className = 'module-section';
+  eq(s.sb.KM_STAGED_SECTIONS_['product-strategy'].enabled, true,
+    'B13a (left in the shipped position, which P1-B8D set to true)');
 
   /* THE PARENT STILL EXPANDS. A menu that cannot be opened at all would prove nothing about the
      navigation structure §3 asks to be verifiable. */
@@ -293,9 +322,13 @@ console.log('\n=== §B  THE PRODUCTION DEFAULT OFFERS NO ENTRY, AND THE MENU IS 
   m.parent.click();
   ok(m.parent.className.indexOf('is-open') < 0, 'B16 and closes again — one toggle, both halves');
 
-  /* THE SERVER FLAG IS UNTOUCHED. */
-  ok(/PRODUCT_STRATEGY_ENABLED_\s*[:=]\s*false/.test(SRC.config),
-    'B17 PRODUCT_STRATEGY_ENABLED_ is false in the config of record');
+  /* THE SERVER FLAG IS A SEPARATE GATE, AND IT STAYS SERVER-SIDE. Its VALUE has one owner (the
+     P1-B8D activation suite); what this suite cares about is that the browser cannot become a second
+     authority for it - no mirror that can be raised locally, no copy in the shell. */
+  ok(/var PRODUCT_STRATEGY_ENABLED_ = (?:true|false);/.test(SRC.config),
+    'B17 PRODUCT_STRATEGY_ENABLED_ is one literal boolean in the config of record');
+  ok(bare(SRC.app).indexOf('PRODUCT_STRATEGY_ENABLED_') < 0,
+    'B17a and the shell holds no copy of it — the navigation switch is a different gate');
 }());
 
 // ===================================================================================================
@@ -924,11 +957,18 @@ console.log('\n=== §K  NOTHING WAS ACTIVATED, AND NOTHING CAN WRITE ===');
   });
   eq(writers, [], 'K3 no write-shaped action name exists');
 
-  /* ON STRIPPED SOURCE. app.js's registry comment says "TO ACTIVATE ...: set `enabled: true` here",
-     which is the file explaining the gate it is enforcing — the raw text contains the string and the
-     code does not. A probe that reads prose cannot tell an instruction from an act. */
-  eq(bare(SRC.app).indexOf('enabled: true'), -1, 'K4 no staged section was switched on');
-  ok(/enabled: false/.test(bare(SRC.app)), 'K5 and this one is still off');
+  /* ON STRIPPED SOURCE, AND COUNTING RATHER THAN FORBIDDING. K4 used to assert that the string
+     `enabled: true` appears nowhere in the code - true while everything was staged, and meaningless
+     the moment one section is activated. What the pair was protecting is that a staged section has
+     exactly ONE switch: two `enabled:` keys in one entry is a registry where the answer depends on
+     which one a reader happens to find. So: one key per staged section, a literal boolean, and no
+     second switch smuggled in beside it. */
+  var reg = bare(SRC.app).slice(bare(SRC.app).indexOf('var KM_STAGED_SECTIONS_ = {'));
+  reg = reg.slice(0, reg.indexOf('\n};'));
+  eq((reg.match(/enabled:\s*(?:true|false)/g) || []).length, 1,
+    'K4 the staged registry declares exactly one enabled switch, as a literal boolean');
+  eq((reg.match(/enabled/g) || []).length, 1,
+    'K5 and the word appears nowhere else in the entry — no second switch beside it');
   var PAGE = require(path.join(JS, 'pages', 'product-strategy-board.js'));
   eq(PAGE.CONTRACT.registered_in_navigation, false, 'K6 the page still states it is not in navigation');
   eq(PAGE.CONTRACT.loads_prototype_assets, false, 'K7 and loads no prototype asset');

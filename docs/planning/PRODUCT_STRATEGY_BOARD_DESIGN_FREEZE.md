@@ -7179,3 +7179,74 @@ reason. 23 references, one token, no stale refs.
 and image-identity verification beyond the operator-asserted mappings.
 
 **IMAGE GATE: CLOSED.**
+
+---
+
+# P1-B8D — ACTIVATED, AND THE TWO DESIGN DECISIONS THE ACTIVATION FORCED
+
+## The navigation is data, and that is why the rollback is one boolean
+
+P1-B8B built the Product Strategy menu as a **registry entry** rather than as markup, and argued the
+case in terms of a greyed-out item: a class can be deleted, so a feature that can be opened by
+deleting a class is not gated. Activation is the second half of that argument, and it is the half
+that is easy to lose.
+
+The instruction left in `app.js` said to add the sidebar item to `index.html`. Doing that would have
+produced a working menu and destroyed three properties at once: the six labels would have had a
+second definition beside `psb-views.js`, the placement would have had a second definition beside
+`insertBefore`, and — worst — `enabled: false` would no longer have been able to switch the menu off.
+Withdrawing the navigation would have stopped being an edit to one boolean and become the deletion of
+markup, which is exactly how two gates drift apart.
+
+So the activation added **one caller**: `mountStagedMenus()` reads the registry, refuses any section
+whose `enabled` is not exactly `true`, and inserts before the anchor. `index.html` has no Product
+Strategy markup and gets none. The four P1-B8B assertions that say so were written when the feature
+was off and **are still true with it on**, which is the difference between a rule and a coincidence.
+
+Keyboard and ARIA were added to the nodes this builder creates — `role`, a tab stop, `aria-expanded`,
+`aria-controls`, and Enter/Space activation. The rest of the sidebar is plain divs with `onclick` and
+no tab stop; that is a global shell gap Phase 1 closing QA owns and this round must not rewrite. What
+it can do is not add to it.
+
+## §4 — the price status is carried, counted, and never translated
+
+`PRICING_DATABASE_MAPPING` §4 records `pricing_list.price_status`'s default as *"draft or active —
+default to be confirmed (system convention unclear)"*, and §23.x of this document already ruled that
+**B1 must not filter on it**: filtering on an undecided enum silently drops rows on a rule nobody
+agreed. That ruling stands and is now joined by its consequence.
+
+Activation is what makes the consequence matter. Until this round the board was unreachable, so an
+undecided status was a note in a document. Now the board shows numbers to people who will read them as
+the price the company charges, and **the status of those numbers has no owner**. A renderer that mapped
+`draft` to anything — "provisional", "not final", or by omission to "final" — would be taking that
+decision by rendering it: quietly, with no review, in the wrong layer.
+
+**The decision is therefore: carry it, show it, decide nothing.**
+
+- `km-product-pricing-adapter.js` promotes `72_`'s `price_status_raw` onto the row **verbatim** — no
+  lower-casing, no trimming, no bucketing, no default when the column is absent.
+- `PSB_CONTRACT.PRICE_STATUS` declares it once: `mapped: false`, `filtered: false`,
+  `vocabulary_pinned: false`, `final_value_exists: false`, plus the disclosure sentence.
+- The board shows the **distribution of the raw strings** on the context row, above all six views, and
+  the full sentence in Advanced details. Both read that one declaration, so the short form and the
+  long form cannot come to disagree.
+
+**Two spellings stay two values.** `Draft` and `draft` are not normalised together, because deciding
+they are the same value is a data decision and this is a renderer. A mutant guards it.
+
+**Three outcomes are kept apart**, and the browser acceptance is what forced that distinction. The
+first implementation mapped a missing key to `null`, so the chip announced *"no price status on the
+row"* about rows whose source had never carried the column — a claim about the data manufactured by
+the adapter's own gap. `undefined` (this source does not carry it), `null` (the row carries it and it
+is empty) and a value are three different facts, and a board that confuses the first two is telling an
+operator to go and fix a row that is fine.
+
+## What the price status still does not do
+
+It does not filter. It does not reorder. It does not gate the chart, the findings or the scenario. No
+value is treated as approved, live or final. When somebody with the authority decides what this column
+means, the decision belongs in config beside `VALID_LIFECYCLES_` and `VALID_MARKETPLACE_SKU_STATUSES_`
+— the two status vocabularies that **are** pinned — and this board will read it from there.
+
+**PRODUCT STRATEGY: ACTIVATED (package prepared, not deployed).**
+

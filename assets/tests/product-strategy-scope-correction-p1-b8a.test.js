@@ -309,8 +309,11 @@ console.log('\n=== §D  THE PAGE LIVES IN THE OPERATION SYSTEM, DISABLED ===');
 
   var app = read(path.join(ROOT, 'assets', 'js', 'app.js'));
   ok(/KM_STAGED_SECTIONS_/.test(app), 'D7 the page is registered in the STAGED section registry');
-  ok(/'product-strategy':\s*\{[^}]*enabled:\s*false/.test(app),
-    'D8 with enabled:false — the registry is the switch, and it is off');
+  /* THE REGISTRY IS THE SWITCH — which is what D8 was for, and remains true in both positions.
+     P1-B8D turned it on; what this suite cares about is that there is ONE of it and it is a literal
+     boolean, so the value is readable without running anything. */
+  ok(/'product-strategy':\s*\{[^}]*enabled:\s*(?:true|false)/.test(app),
+    'D8 the registry is the switch, and it is a literal boolean');
   ok(/product-strategy-board-section/.test(app), 'D9 naming the section it would mount');
 
   /* NAVIGATION IS DISABLED BY ABSENCE, which is stronger than disabled by attribute: there is no
@@ -371,10 +374,18 @@ console.log('\n=== §E  THE FIXTURE AND THE SHIM STAY OUT OF PRODUCTION ===');
 })();
 
 // ===================================================================================================
-console.log('\n=== §F  NOTHING IS ACTIVATED, AND NOTHING OPENS A DATABASE ===');
+console.log('\n=== §F  TWO READ ACTIONS, AND NOTHING OPENS A DATABASE BEFORE THE GATE ===');
 (function () {
   var cfg = read(path.join(ROOT, 'assets', 'specs', 'active', 'apps-script', '00_config.gs'));
-  ok(/var PRODUCT_STRATEGY_ENABLED_ = false;/.test(cfg), 'F1 PRODUCT_STRATEGY_ENABLED_ is false');
+  /* THE HEADING USED TO SAY "NOTHING IS ACTIVATED" AND SOMETHING IS NOW. The half of §F that was
+     doing the work is the half below - two actions, both reads, nothing write-shaped - and that is
+     untouched by activation. The flag's value has one owner now (the P1-B8D activation suite); what
+     belongs here is that the flag is still a single server-owned boolean with no second control
+     beside it, because "two read actions" only bounds the feature while nothing can widen it. */
+  ok(/var PRODUCT_STRATEGY_ENABLED_ = (?:true|false);/.test(cfg),
+    'F1 PRODUCT_STRATEGY_ENABLED_ is one server-owned boolean');
+  ok(!/km_force|debug_token|bypass|__enable|location\.search|URLSearchParams/i.test(cfg),
+    'F1a with no bypass, query parameter or debug switch beside it');
 
   /* THE TWO ACTIONS ARE READS, AND THEY ARE THE ONLY TWO. A third name appearing here is a scope
      change, whatever else it is called. */

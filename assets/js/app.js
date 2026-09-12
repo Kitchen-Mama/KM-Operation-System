@@ -34,14 +34,30 @@ const menuConfig = [
 // accessor's capability mirror, which starts false and can only be raised by a server capability
 // payload, is what keeps a directly-invoked controller at zero requests in the meantime.
 //
-// TO ACTIVATE (P1-B8, and not before the Apps Script action is deployed): set `enabled: true` here,
-// add the section id to the two maps in showSection, and add the sidebar item to index.html. Enabling
-// this alone opens a board onto a site menu it cannot fill.
+// P1-B8D - ACTIVATED, AND THE ACTIVATION INSTRUCTION ABOVE WAS TWO-THIRDS RIGHT.
+//
+// It said: set `enabled: true`, add the section id to the two maps in showSection, and ADD THE SIDEBAR
+// ITEM TO index.html. The first two are done below and they were correct. The third is not done, and
+// deliberately not, because doing it would have undone the thing this registry was built for.
+//
+// A hand-written menu item in index.html would be a SECOND definition of six labels that psb-views.js
+// already owns (P1-B8A spent a round removing exactly that duplicate), a SECOND definition of the
+// placement that `insertBefore` already owns, and - worst of the three - a menu that `enabled: false`
+// could no longer switch off. Rolling the navigation back would stop being an edit to this one boolean
+// and become an edit to markup, which is how the two gates drift apart. The registry is data precisely
+// so that activation is "call the builder", not "hand-copy the menu"; `mountStagedMenus` below is that
+// one caller, and it refuses any section whose `enabled` is not exactly true.
+//
+// SO THIS BOOLEAN IS STILL THE WHOLE NAVIGATION AUTHORITY. Set it back to false and the next page load
+// has no Product Strategy menu at all - not a greyed-out one, not a hidden one, none - because nothing
+// built it. That is the property a hardcoded <div> would have cost.
 var KM_STAGED_SECTIONS_ = {
     'product-strategy': {
         sectionId: 'product-strategy-board-section',
-        enabled: false,
-        reason: 'PRODUCT_STRATEGY_ENABLED_ is false and productPricing.siteUniverse.get is not yet deployed',
+        enabled: true,
+        reason: 'P1-B8D: PRODUCT_STRATEGY_ENABLED_ is true and both productPricing reads are deployed;'
+            + ' this section is ACTIVATED. Set to false to withdraw the navigation (the server flag in'
+            + ' 00_config.gs is the independent and faster emergency stop).',
         // P1-B8B §2 — THE NAVIGATION PLACEMENT, AS DATA RATHER THAN AS MARKUP.
         //
         // index.html has NO Product Strategy menu item and gets none this round. What the round adds is
@@ -135,22 +151,45 @@ window.KM.nav.buildStagedMenu = function (key, d) {
         return n;
     }
 
+    /* `data-staged` survives activation on purpose. It does not mean "switched off" - it means "this
+       node came from the registry rather than from index.html", which stays true and stays useful:
+       it is how a test tells a built menu from a written one without matching on a label. */
     var parent = doc.createElement('div');
     parent.className = 'menu-parent';
     parent.setAttribute('data-menu-id', nav.parentId);
     parent.setAttribute('data-staged', 'true');
     parent.setAttribute('title', nav.label);
+    /* KEYBOARD AND ARIA, ADDED HERE AND ONLY HERE. The rest of the sidebar is a set of plain divs with
+       onclick and no tab stop - a global shell gap that Phase 1 closing QA owns and that this round must
+       not rewrite. Fixing it for the nodes this function creates is additive: it cannot change any other
+       menu, and it means the page being activated is reachable without a mouse on the day it ships. */
+    parent.setAttribute('role', 'button');
+    parent.setAttribute('tabindex', '0');
+    parent.setAttribute('aria-expanded', 'false');
     parent.appendChild(span('menu-icon', nav.icon));
     parent.appendChild(span('menu-label', nav.label));
-    parent.addEventListener('click', function () { toggleMenu(nav.parentId); });
+    parent.setAttribute('aria-controls', 'menu-children-' + nav.parentId);
+    function openState() {
+        parent.setAttribute('aria-expanded', parent.classList.contains('is-open') ? 'true' : 'false');
+    }
+    parent.addEventListener('click', function () { toggleMenu(nav.parentId); openState(); });
+    parent.addEventListener('keydown', function (ev) {
+        if (ev.key !== 'Enter' && ev.key !== ' ' && ev.key !== 'Spacebar') return;
+        ev.preventDefault();                 // Space must not scroll the page out from under the menu
+        toggleMenu(nav.parentId);
+        openState();
+    });
 
     var children = doc.createElement('div');
     children.className = 'menu-children';
+    children.id = 'menu-children-' + nav.parentId;
     children.setAttribute('data-parent', nav.parentId);
 
     kids.forEach(function (k) {
         var item = doc.createElement('div');
         item.className = 'menu-item';
+        item.setAttribute('role', 'button');
+        item.setAttribute('tabindex', '0');
         // THE ROUTE IS THE IDENTITY, and it is on the element rather than in a closure so that a test
         // — and, later, a router — can read what this item means without calling it.
         item.setAttribute('data-route', k.route);
@@ -158,10 +197,57 @@ window.KM.nav.buildStagedMenu = function (key, d) {
         item.setAttribute('title', k.label);
         item.appendChild(span('menu-label', k.label));
         item.addEventListener('click', function () { showProductStrategyView(k.route); });
+        item.addEventListener('keydown', function (ev) {
+            if (ev.key !== 'Enter' && ev.key !== ' ' && ev.key !== 'Spacebar') return;
+            ev.preventDefault();
+            showProductStrategyView(k.route);
+        });
         children.appendChild(item);
     });
 
     return { parent: parent, children: children, entries: kids };
+};
+
+/**
+ * Mount the sidebar nodes of every ACTIVATED staged section, each in the place its own entry names.
+ *
+ * THE GATE IS HERE AND NOWHERE ELSE. `buildStagedMenu` still builds on request whatever it is asked for
+ * - that is what lets a suite inspect the menu of a section that is switched OFF, which is the case
+ * worth being able to inspect. This function is what production calls, and it refuses anything whose
+ * `enabled` is not exactly `true`. One authority, read in one place.
+ *
+ * THE ANCHOR EITHER RESOLVES OR NOTHING IS MOUNTED. `insertBefore` is a menu id, not an index, so the
+ * item lands above Pricing Center even after somebody inserts a group above it. If the anchor is not in
+ * the document the menu is NOT appended somewhere else as a consolation - a navigation item in the wrong
+ * group is harder to notice than a missing one, and a missing one is what the console message is for.
+ *
+ * IT IS IDEMPOTENT. A second call finds the parent already present and does nothing, so a boot path that
+ * runs twice cannot produce two Product Strategy menus.
+ *
+ * @param {Document} [d] the document to mount into (the suite passes its own)
+ * @returns {Array<string>} the keys actually mounted
+ */
+window.KM.nav.mountStagedMenus = function (d) {
+    var doc = d || document;
+    var mounted = [];
+    Object.keys(KM_STAGED_SECTIONS_).forEach(function (key) {
+        var entry = KM_STAGED_SECTIONS_[key];
+        if (!entry || entry.enabled !== true || !entry.nav) return;
+        var nav = entry.nav;
+        if (doc.querySelector('.menu-parent[data-menu-id="' + nav.parentId + '"]')) return;
+        var anchor = doc.querySelector('.menu-parent[data-menu-id="' + nav.insertBefore + '"]');
+        if (!anchor || !anchor.parentNode) {
+            console.error('[Nav] staged section "' + key + '" is enabled but its anchor menu "'
+                + nav.insertBefore + '" is not in the sidebar; no menu was mounted.');
+            return;
+        }
+        var built = window.KM.nav.buildStagedMenu(key, doc);
+        if (!built) return;
+        anchor.parentNode.insertBefore(built.parent, anchor);
+        anchor.parentNode.insertBefore(built.children, anchor);
+        mounted.push(key);
+    });
+    return mounted;
 };
 
 /**
@@ -283,7 +369,10 @@ function showSection(section) {
             'carrier-rate-card': 'carrier-rate-card-section',
             'sku-regional-details': 'sku-regional-details-section',
             'global-logistics-map': 'global-logistics-map-section',
-            'automation': 'automation-schedule-section'
+            'automation': 'automation-schedule-section',
+            // P1-B8D - the lifecycle half. This is the entry that makes the partial load and the board
+            // mount; without it the section below would be given `.active` and stay empty.
+            'product-strategy': 'product-strategy-board-section'
         };
         const targetSectionId = sectionMap[section];
         if (targetSectionId) {
@@ -314,7 +403,13 @@ function showSection(section) {
         'purchase-order-list': 'purchase-order-list-section',
         'carrier-rate-card': 'carrier-rate-card-section',
         'sku-regional-details': 'sku-regional-details-section',
-        'automation': 'automation-schedule-section'
+        'automation': 'automation-schedule-section',
+        // P1-B8D - the display half. BOTH maps, because they are not one map read twice: the lifecycle
+        // map decides what MOUNTS and this one decides what is VISIBLE, and a section in only one of them
+        // either mounts into a hidden shell or is revealed with nothing in it. (They already disagree by
+        // one entry - `global-logistics-map` is above and not here - which is a pre-existing difference
+        // this round leaves exactly as it found it.)
+        'product-strategy': 'product-strategy-board-section'
     };
 
     const targetSectionId = sectionMap[section];
@@ -597,6 +692,15 @@ window.addEventListener('DOMContentLoaded', () => {
     } else if (window.renderHomepage) {
         renderHomepage();
     }
+
+    // P1-B8D — mount the sidebar menus of any ACTIVATED staged section. Runs before the other inits
+    // and inside its own try, because a navigation item that fails to appear must not be able to take
+    // the homepage down with it; and after the shell exists, because it inserts into the sidebar.
+    try {
+        if (window.KM && window.KM.nav && window.KM.nav.mountStagedMenus) {
+            window.KM.nav.mountStagedMenus();
+        }
+    } catch (e) { console.error('[App] mountStagedMenus failed:', e); }
 
     // Remaining startup inits — each guarded so one failure can't abort the rest (or Home).
     try { renderRecords(); } catch (e) { console.error('[App] renderRecords failed:', e); }

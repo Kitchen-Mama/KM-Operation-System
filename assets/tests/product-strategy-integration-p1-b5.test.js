@@ -538,13 +538,23 @@ console.log('\n=== §I  THE STRESS FIXTURE IS UNREACHABLE FROM PRODUCTION ===');
     && SRC.index.indexOf('showSection("product-strategy') < 0,
     'I6a and nothing in index.html can show it: there is no menu item');
 
-  /* app.js may name the section EXACTLY ONCE — inside the staged registry, refused. A section map
-     entry is what `showSection` reads, so an entry there is reachability whatever else is written. */
+  /* THE SECTION IS NOW REACHABLE, AND THE SHAPE OF ITS REACHABILITY IS WHAT THIS CHECKS.
+     B5 asserted "named exactly once, in the registry, refused" - a fine reading of a staged page and
+     the wrong reading of an activated one. P1-B8D put the id in both section maps on purpose, so the
+     durable property is not that the name is absent but that every path to the section passes the
+     registry: `showSection` consults KM_STAGED_SECTIONS_ FIRST and returns before touching the shell,
+     so the two map entries are reachable only through the gate above them. Three mentions, and the
+     order of the first one is the whole guarantee. */
   ok(SRC.app.indexOf('KM_STAGED_SECTIONS_') > 0
-    && /'product-strategy':\s*\{[^}]*enabled:\s*false/.test(SRC.app),
-    'I7 app.js declares the section staged with enabled false');
-  ok(SRC.app.indexOf("'product-strategy': 'product-strategy-board-section'") < 0,
-    'I7a and it is in neither section map, so showSection cannot resolve it');
+    && /'product-strategy':\s*\{[^}]*enabled:\s*(?:true|false)/.test(SRC.app),
+    'I7 app.js declares the section in the staged registry with a literal boolean switch');
+  eq((SRC.app.match(/'product-strategy': 'product-strategy-board-section'/g) || []).length, 2,
+    'I7a and in BOTH section maps — the lifecycle one that mounts it and the display one that reveals it');
+  var showSec = SRC.app.slice(SRC.app.indexOf('function showSection(section)'));
+  var stagedCheck = showSec.indexOf('KM_STAGED_SECTIONS_[section]');
+  var firstMap = showSec.indexOf("'product-strategy': 'product-strategy-board-section'");
+  ok(stagedCheck > 0 && firstMap > stagedCheck,
+    'I7b with the registry consulted BEFORE either map is read, so no map entry bypasses the switch');
   eq(PAGE.CONTRACT.registered_in_navigation, false, 'I8 which the page states as its own contract');
   eq(PAGE.CONTRACT.installed_in_shell, true,
     'I8a and it states the other half too — installed is not activated');

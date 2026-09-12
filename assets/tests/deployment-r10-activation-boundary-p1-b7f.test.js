@@ -140,10 +140,18 @@ console.log('\n=== §B  THE THREE MANIFEST ROWS THIS ROUND IS ABOUT ===');
      files" a measured fact rather than a hope: the same two strings, read from the committed source. */
   ok(SRC.ppw.indexOf("PPW_BUILD_VERSION_ = '" + R10 + "'") >= 0,
     'B5 the committed 72_ declares the build the deployment reported');
-  ok(SRC.health.indexOf("SYS_BUILD_VERSION_ = '" + R10 + "'") >= 0,
-    'B6 the committed 63_ declares it too');
-  ok(SRC.health.indexOf("SYS_DEPLOYMENT_RELEASE_ = '" + R10 + "'") >= 0,
-    'B7 and the committed release identity is R10');
+  /* THE REPOSITORY HAS MOVED AHEAD OF THE DEPLOYMENT, AND THAT IS THE STATE THE RUNBOOK IS FOR.
+     B6/B7 used to assert that the committed 63_ still declared R10 — "the user synced the right
+     files", measured. P1-B8D minted R11 for the activation and synced nothing, so the two now
+     DISAGREE on purpose: the deployment that answered this capture carries R10, the repository
+     declares R11, and the gap between them is exactly the work the Apps Script sync list names. An
+     assertion that they match would have been a demand that no release ever be prepared. */
+  ok(SRC.health.indexOf("SYS_BUILD_VERSION_ = '" + R10 + "'") < 0,
+    'B6 the committed 63_ has moved past R10 — a newer release is prepared');
+  ok(/var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11';/.test(SRC.health),
+    'B7 and the committed release identity is R11, which is NOT what the capture answered');
+  eq(R10_CAPTURE.health.build_id, R10,
+    'B7a while the capture still says R10 — so an unsynced activation is visible, not inferred');
   ok(SRC.router.indexOf("RTR_BUILD_VERSION_ = '" + R9 + "'") >= 0,
     'B8 while the committed router is still R9 — repository and deployment tell the same story');
 }());
@@ -304,9 +312,11 @@ var J = clientChain(R10_CAPTURE.siteUniverse).then(function (r) {
     'G9 the navigation is hidden by a staged-section registry, which is a UI decision and not a boundary');
 
   /* THE FLAG IS THE ONLY CONTROL THAT EXISTS, AND IT IS GLOBAL. It answers "is this feature on",
-     never "may THIS caller use it" — which is precisely the question P1-B8 has to answer. */
-  ok(/var PRODUCT_STRATEGY_ENABLED_ = false;/.test(SRC.config),
-    'G10 PRODUCT_STRATEGY_ENABLED_ is still false — the one control, and it is one global boolean');
+     never "may THIS caller use it" — which is precisely the question P1-B8 had to answer, and did
+     not: P1-B8D switched the feature on and left the question to P2-A. The shape is what is checked;
+     the value has one owner now, and the consequence of the value is §G's whole subject. */
+  ok(/var PRODUCT_STRATEGY_ENABLED_ = (?:true|false);/.test(SRC.config),
+    'G10 PRODUCT_STRATEGY_ENABLED_ is one global boolean — the one control, and it is not about callers');
   ok(/THIS FLAG IS THE ACCESS CONTROL/.test(SRC.config),
     'G11 and the file says outright that the flag IS the access control today');
 
@@ -324,23 +334,34 @@ var J = clientChain(R10_CAPTURE.siteUniverse).then(function (r) {
 
 }).then(function () {
   // =================================================================================================
-  console.log('\n=== §H  NOTHING WAS ACTIVATED BY THIS ROUND ===');
+  console.log('\n=== §H  THE CAPTURED DEPLOYMENT IS PRE-ACTIVATION, AND THE REPOSITORY IS NOT ===');
   // =================================================================================================
-  ok(/var PRODUCT_STRATEGY_ENABLED_ = false;/.test(SRC.config), 'H1 Product Strategy flag false in source');
+  /* §H WAS "NOTHING WAS ACTIVATED BY THIS ROUND" — a claim about P1-B7F's own diff, written against
+     the working tree, so it quietly became a claim about every later round and failed at the round
+     that was supposed to activate. What survives, and is worth more, is the DIVERGENCE: this capture
+     is evidence of the live deployment BEFORE activation, and the repository now holds the after. A
+     rollback verification needs both halves, and this suite is where the first half is frozen. */
+  ok(/var PRODUCT_STRATEGY_ENABLED_ = true;/.test(SRC.config),
+    'H1 the repository has Product Strategy activated');
   ok(/var INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_ = false;/.test(SRC.config), 'H2 AI Plan flag false in source');
   eq(R10_CAPTURE.health.product_strategy_enabled, false, 'H3 and false in the deployment that answered');
-  ok(/'product-strategy':\s*\{[\s\S]{0,200}?enabled: false/.test(SRC.app),
-    'H4 the staged section is still disabled, so the menu entry cannot be reached');
+  ok(/'product-strategy':\s*\{[\s\S]{0,400}?enabled: true/.test(SRC.app),
+    'H4 and the staged section activated with it — the browser gate and the server gate agree');
 
   /* NO NEW WAY IN. A query parameter, header or debug token that bypassed the flag would be a hole
      opened by a verification round, which is the worst possible place to open one. */
   ok(!/km_force|debug_token|bypass|__enable/i.test(SRC.router + SRC.ppw + SRC.config),
     'H5 no bypass parameter, token or debug switch was added anywhere in the gate path');
 
-  /* AND THIS ROUND CHANGED NO APPS SCRIPT AT ALL, which is why it needs no sync and no new version. */
-  ok(SRC.ppw.indexOf("PPW_BUILD_VERSION_ = '" + R10 + "'") >= 0 &&
-     SRC.health.indexOf("SYS_DEPLOYMENT_RELEASE_ = '" + R10 + "'") >= 0,
-    'H6 the server stamps are still R10 — no new release identity was minted for a documentation round');
+  /* AND THE SYNC LIST IS DERIVABLE FROM THE STAMPS RATHER THAN ASSERTED IN PROSE. 72_ did NOT change
+     at P1-B8D - no action, no response shape, no gate position - so its stamp is still R10 and it is
+     NOT in the sync list. 63_ did, and is. A module stamp that moved is a file that must be pasted;
+     one that did not is a file that must not be, because re-pasting an unchanged file is how an
+     unrelated edit gets deployed by accident. */
+  ok(SRC.ppw.indexOf("PPW_BUILD_VERSION_ = '" + R10 + "'") >= 0,
+    'H6 72_ did not change at the activation — its stamp is still R10, so it needs no sync');
+  ok(SRC.health.indexOf("SYS_DEPLOYMENT_RELEASE_ = '" + R10 + "'") < 0,
+    'H6a while 63_ carries the new release identity, so it does');
 
 }).then(function () {
   // =================================================================================================
@@ -371,14 +392,25 @@ var J = clientChain(R10_CAPTURE.siteUniverse).then(function (r) {
     'function doGet(e) {', 'function doGet(e) {\n  var who = Session.getActiveUser().getEmail();',
     function (src) { return /Session\.get/.test(src); });
 
-  mut('I3 the Product Strategy flag is flipped on without an authorization round',
-    'assets/specs/active/apps-script/00_config.gs',
-    'var PRODUCT_STRATEGY_ENABLED_ = false;', 'var PRODUCT_STRATEGY_ENABLED_ = true;',
-    function (src) { return !/var PRODUCT_STRATEGY_ENABLED_ = false;/.test(src); });
+  /* I3 AND I4 MODELLED THE ACTIVATION, AND THE ACTIVATION HAPPENED. Both flipped false to true, so
+     both lost their anchor the moment P1-B8D shipped, and an anchorless mutant is scored as
+     SURVIVED — announcing an unguarded rule while measuring nothing. The unauthorised change to
+     model now is the one that would make a rollback stop working: the gate moved BELOW the
+     spreadsheet open, so a flag set back to false still reads the database before refusing. */
+  mut('I3 the flag gate is moved below the spreadsheet open — rollback stops being a stop',
+    'assets/specs/active/apps-script/72_api_v1_product_pricing_workspace.gs',
+    /* BOTH HANDLERS CARRY THIS GATE, and identically, so the anchor names the line AFTER it in
+       order to pick one. The detector counts instead of matching: two gates each at the top of
+       their handler, or something moved. */
+    '    if (io.flagEnabled() !== true) {\n      var reqD = ppwValidateRequest_(payload);',
+    '    var reqD = ppwValidateRequest_(payload);\n    if (false && io.flagEnabled() !== true) {',
+    function (src) {
+      return (src.match(/\n    if \(io\.flagEnabled\(\) !== true\) \{/g) || []).length !== 2;
+    });
 
-  mut('I4 the staged navigation is quietly enabled',
-    'assets/js/app.js', 'enabled: false,', 'enabled: true,',
-    function (src) { return !/'product-strategy':\s*\{[\s\S]{0,200}?enabled: false/.test(src); });
+  mut('I4 the navigation is switched off while the server stays on — the gates disagree',
+    'assets/js/app.js', 'enabled: true,', 'enabled: false,',
+    function (src) { return !/'product-strategy':\s*\{[\s\S]{0,400}?enabled: true/.test(src); });
 
   mut('I5 01_router.gs is marched to R10 although no route changed',
     'assets/specs/active/apps-script/01_router.gs',

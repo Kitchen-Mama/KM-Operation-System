@@ -110,7 +110,32 @@ function inventoryAiPlanDbGenerationEnabled_() { return INVENTORY_AI_PLAN_DB_GEN
 // `product_strategy_enabled` (63_), so "is it on over there" is a question with an answer rather than an
 // inference from behaviour.
 // ================================================================================================================
-var PRODUCT_STRATEGY_ENABLED_ = false;
+//
+// PRODUCT-STRATEGY-P1-B8D - ACTIVATED. This line is the whole activation on the server side, and it is
+// deliberately the ONLY one: no second flag, no scope allowlist, no per-user carve-out, no query
+// parameter. A feature whose "on" is one boolean in one server-owned file has exactly one thing to read
+// when somebody asks whether it is on, and exactly one thing to change when the answer must become no.
+//
+// WHAT TURNING THIS ON CAN AND CANNOT DO. It can do one thing: let the two productPricing `.get` handlers
+// open the spreadsheet and answer. It cannot create a write path, because there is none to create - the
+// whole feature is two read actions (01_router.gs:85,89) and neither has ever written a cell. So the blast
+// radius of this flag is the set of rows a reader may SEE, and that set was measured before the flag
+// moved: ten sites, 495 marketplace rows, 192 image references, every one of them replayed through the
+// production accessor -> adapter -> controller -> HTML chain.
+//
+// THE GATE IS STILL BEFORE THE DOOR. Setting this true does not move the check; it changes the check's
+// answer. `productStrategyEnabled_()` is still consulted before `getOperationDb()` in both handlers, which
+// is what makes the rollback below a real stop rather than a slower read: flip this back to false and the
+// refusal happens again at the same place it happens today, with no spreadsheet opened.
+//
+// TO ROLL BACK: set this to false, save, create a NEW Apps Script version, and update the EXISTING Web App
+// deployment. An edited file that is not deployed changes nothing - that is the same sentence the AI Plan
+// flag above carries, and it is true here for the same reason. No frontend change is needed for the
+// emergency stop: the browser mirror is fail-safe false and the server refusal does not depend on it.
+// Verify from system.health `product_strategy_enabled` in the deployment that is actually answering, and
+// from `dbOpened` being false on a refused read - the flag report and the refusal are two independent
+// observations of one fact, which is why both are published.
+var PRODUCT_STRATEGY_ENABLED_ = true;
 function productStrategyEnabled_() { return PRODUCT_STRATEGY_ENABLED_ === true; }
 
 // F1-7N-FC-1B-E3-R4-A2-R1 §9 — THE FLAG IS TOO BLUNT TO TURN ON.
@@ -228,4 +253,9 @@ function inventoryAiPlanActivationAllowlist_() {
 // PRODUCT-STRATEGY-P1-B1-R1 - moved because P1-B1 changed this file (PRODUCT_STRATEGY_ENABLED_ and
 // productStrategyEnabled_) and did not move it. A config one round behind answers the flag question with
 // the previous file's answer, which is the whole reason this file carries a stamp at all.
-var CONFIG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R7';
+// PRODUCT-STRATEGY-P1-B8D - moved because THIS FILE changed again, and for the one change that
+// matters most: PRODUCT_STRATEGY_ENABLED_ is now true. A deployment that carries the activation and a
+// deployment that does not are two different trees, and `config_build` in system.health is how a reader
+// tells them apart WITHOUT having to trust the flag report from the same file - if the stamp is R7 the
+// flag is false whatever else the payload says.
+var CONFIG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11';

@@ -414,6 +414,41 @@
     };
   };
 
+  /**
+   * P1-B8D — the distribution of `price_status_raw` across the eligible universe.
+   *
+   * THREE OUTCOMES, KEPT APART, BECAUSE THEY ARE THREE DIFFERENT FACTS. A row whose source does not
+   * carry the column at all (`undefined` — the preview fixture, and any adapter predating P1-B8D) is
+   * `unsupported`. A row whose source carries it and whose value is empty (`null` or '') is `absent`:
+   * the pricing row exists and has no status. A row with a value is counted under that value, byte
+   * for byte, with no casing or trimming applied — because two spellings that differ are two values
+   * until somebody with the authority to say otherwise says otherwise, and this is not that.
+   *
+   * Sorted by count descending, then by value, so the chip reads the same way twice.
+   */
+  S.derivePriceStatusCounts = function (universe) {
+    var rows = (universe && universe.rows) || [];
+    var counts = {}, values = [], unsupported = 0, absent = 0;
+    rows.forEach(function (r) {
+      var v = r ? r.price_status_raw : undefined;
+      if (v === undefined) { unsupported++; return; }
+      if (v === null || v === '') { absent++; return; }
+      var k = String(v);
+      if (!Object.prototype.hasOwnProperty.call(counts, k)) { counts[k] = 0; values.push(k); }
+      counts[k]++;
+    });
+    values.sort(function (a, c) {
+      if (counts[c] !== counts[a]) return counts[c] - counts[a];
+      return a < c ? -1 : (a > c ? 1 : 0);
+    });
+    return {
+      total: rows.length,
+      unsupported: unsupported,
+      absent: absent,
+      values: values.map(function (v) { return { value: v, count: counts[v] }; })
+    };
+  };
+
   /** Any simple dimension's values, over the eligible universe. Used for currency and marketplace. */
   S.deriveDimensionValues = function (universe, key) {
     var seen = {}, out = [];
