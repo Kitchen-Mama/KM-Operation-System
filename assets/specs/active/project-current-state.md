@@ -6257,3 +6257,67 @@ the partial and the stylesheet are byte-identical to P1-B8B.
 **Unchanged:** 138 actions · two `productPricing.*` reads and no write-shaped name · no Apps Script
 change · no deployment · no flag change · no navigation rendered · no database, Sheets or Drive
 write.
+
+
+---
+
+## PRODUCT-STRATEGY-P1-B8C-R2 — the live rows arrived, and the board drew them
+
+**The first round in which the Product Strategy Board rendered data out of the production Operation
+System Database.** The USER ran `RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE()` on 2026-09-12 and
+returned all thirty-five chunks: `FPe02df215`, 240,126 characters, `SAMPLE_TAKEN`, 495 rows over ten
+sites, sixty sampled, 435 omitted, every write counter zero and `redaction.passed true`.
+
+**Reassembly is byte-exact.** The export rewrote every LF as CRLF and merged two slices' own trailing
+newlines with its separator; restoring one newline at each of chunks 26 and 32 reproduces the
+declared fingerprint, and restoring spaces instead does not — which is how the hypothesis was decided
+rather than assumed. No header was edited to make anything agree.
+
+| site | universe rows | sampled | state |
+|---|---:|---:|---|
+| KM / US / Shopify | 101 | 27 | READY |
+| KM / US / Target | 19 | 2 | READY |
+| KM / US / Walmart | 64 | 5 | READY |
+| ResTW / AU / Amazon | 35 | 3 | READY |
+| ResTW / CA / Amazon | 51 | 4 | READY |
+| ResTW / EU / Amazon | 39 | 3 | READY |
+| ResTW / JP / Amazon | 26 | 3 | READY |
+| ResTW / UK / Amazon | 42 | 3 | READY |
+| ResUS / US / Amazon | 100 | 7 | READY |
+| ResUS / US / Walmart | 18 | 3 | READY |
+| **total** | **495** | **60** | |
+
+**The chain ran from the socket up on all ten sites.** All ten render `OK`; all six views render on
+every one of them, sixty renders, with no `NaN`, `undefined` or `[object Object]`. Eleven requests,
+all reads. An envelope with the wrong `meta.action` is still refused as `SOURCE_NOT_CONNECTED`.
+
+**The live finding: production holds no drawable product photograph.** `imageStateOf` reaches
+`VERIFIED_DB_MAPPING` for **zero** of the sixty rows — `sku_details.image_url` is not an absolute URL
+in production, so the board draws a fallback marker for every product and never a picture. A data
+finding, recorded as an evidence gap against image *identity* verification, not repaired in the
+renderer. **No fixture could have produced it.**
+
+**What production cannot demonstrate.** All 495 rows are `Active`, so the excluded-by-status path is
+**DETERMINISTIC GAP COVERAGE** from the P1-B8C fixture and is reported in its own column, never
+merged into the live one.
+
+**Browser acceptance on live data:** seven exact viewports, page horizontal overflow 0 at all seven
+including 390x844, Y axis 7/7, X lane 7/7, six tab labels visible at every viewport, zero console
+errors, board width non-zero everywhere, sidebar still 240px at 390x844 (the standing shell blocker).
+
+**Suites:**
+
+| | PRE | POST |
+|---|---|---|
+| `product-strategy-live-replay-acceptance-p1-b8c-r2.test.js` | — | **272 / 0 / 21 / 0** (new) |
+| `product-strategy-row-shape-sample-p1-b8c-r1.test.js` | 425 / 0 / 27 / 0 | 425 / 0 / 27 / 0 |
+| `product-strategy-replay-acceptance-p1-b8c.test.js` | 396 / 0 / 9 / 0 | 396 / 0 / 9 / 0 |
+| `product-strategy-production-readback-p1-b3.test.js` | 336 / 0 / 17 / 0 | 336 / 0 / 17 / 0 |
+| full sweep | 462 suites, 4 red (3/1/7/2) | 463 suites, 4 red (3/1/7/2) |
+
+**No production file changed.** The raw 240,126-character log is **not** in the repository; what is
+committed is the reduced sixty rows, a metadata-only chunk manifest, the suite, and the evidence.
+
+**Unchanged:** `PRODUCT_STRATEGY_ENABLED_` false · staged section `enabled: false` · no menu item ·
+two `productPricing` reads and no write-shaped name · no Apps Script change · no version · no
+deployment · no frontend deployment · zero database, Sheets or Drive writes. **P1-B8D not started.**

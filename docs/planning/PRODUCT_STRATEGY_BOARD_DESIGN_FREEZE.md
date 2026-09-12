@@ -6898,3 +6898,104 @@ is not a fetchable address) — and the fallback marker, one per labelled produc
 | menu order | `Product Strategy` y=232 above `Pricing Center` y=555, six children, in route order |
 | states photographed | 7, each with its own sentence; none says another's |
 | print | a PDF from a page with an active scenario, carrying the simulated-price warning |
+
+
+## §52  P1-B8C-R2 — the live rows arrived, and the board drew them
+
+P1-B8C stopped because the capture could not be taken. P1-B8C-R1/R1A built the one editor-only
+function that keeps the rows; the USER ran it against production and returned all thirty-five
+chunks. **This is the first round in which the Product Strategy Board has rendered data that came
+out of the production Operation System Database.**
+
+### What the live universe actually is
+
+| site | universe rows | sampled | state |
+|---|---:|---:|---|
+| KM / US / Shopify | 101 | 27 | READY |
+| KM / US / Target | 19 | 2 | READY |
+| KM / US / Walmart | 64 | 5 | READY |
+| ResTW / AU / Amazon | 35 | 3 | READY |
+| ResTW / CA / Amazon | 51 | 4 | READY |
+| ResTW / EU / Amazon | 39 | 3 | READY |
+| ResTW / JP / Amazon | 26 | 3 | READY |
+| ResTW / UK / Amazon | 42 | 3 | READY |
+| ResUS / US / Amazon | 100 | 7 | READY |
+| ResUS / US / Walmart | 18 | 3 | READY |
+| **total** | **495** | **60** | |
+
+Three companies, six countries, four marketplaces, six currencies, ten categories, twenty-seven
+series. The global sixty-row budget spread across all ten sites with none absent and the largest
+share 27 of 60.
+
+### The chain that was exercised, from the socket up
+
+```
+capture envelope -> KM.api.transport.post -> km-product-pricing-workspace.js (accessor + validator)
+ -> km-product-pricing-adapter.js -> km-product-strategy-live-adapter.js -> psb-selectors.js
+ -> psb-views.js -> psb-board-ui.js -> pages/product-strategy-board.js
+ -> assets/html/pages/product-strategy-board.html -> assets/css/product-strategy-board.css
+```
+
+**All ten sites rendered `OK`. All six views rendered on every one of them — sixty renders — and not
+one printed `NaN`, `undefined` or `[object Object]`.** Eleven transport requests: the universe once,
+then one workspace read per site, every one of them a `.get`. A write-shaped call still throws.
+
+**The accessor's validator stayed in the path, and live data did not soften it.** An envelope whose
+`meta.action` names the wrong action — P1-B7E's live defect exactly — is still refused as
+`SOURCE_NOT_CONNECTED`. The mutant that bypasses the accessor demonstrates why that matters: hand the
+same envelope's rows straight to the adapter and they come through perfectly, defect invisible.
+
+### The finding: production holds no drawable product photograph
+
+`A.imageStateOf` returns `VERIFIED_DB_MAPPING` only for an **absolute** `http(s)` URL, and only that
+state draws a picture. Over all sixty live rows the state histogram is:
+
+| state | rows |
+|---|---:|
+| `VERIFIED_DB_MAPPING` | **0** |
+| `UNVERIFIED_SOURCE_REFERENCE` | the rows that have an image reference |
+| `IMAGE_SOURCE_MISSING` | the rows that have none |
+
+`sku_details.image_url` in production is **not** an absolute URL, so the board draws a fallback
+marker for every product and never a photograph. The browser measured it independently:
+`imageMarkerCount 0`, `fallbackMarkerCount` equal to the labelled-product count.
+
+**This is a data finding, not a rendering defect, and no fixture could have produced it.** The
+deterministic capture supplied an absolute URL because that is what the contract describes; the live
+one supplies what the sheet holds. It is recorded as an evidence gap against image *identity*
+verification and left for an operator to decide, not fixed in the renderer.
+
+### What production cannot demonstrate, and where it is covered instead
+
+Every one of the 495 live rows is `Active`. **LIVE-DERIVED EVIDENCE** therefore cannot exercise the
+excluded-by-status path at all. It is covered by **DETERMINISTIC GAP COVERAGE** — the P1-B8C fixture,
+which does hold non-active listings — and the two columns are kept apart in the suite and in the
+report. Merging them would report as live something no live row supports.
+
+### What the browser measured, on live data
+
+Seven exact viewports plus a full-page desktop, Chrome headless, the production shell and the
+production partial:
+
+| measurement | result |
+|---|---|
+| page horizontal overflow | **0 at all seven**, including 390x844 |
+| Y axis fully inside the chart | **7 / 7** |
+| X lane fully visible | **7 / 7** |
+| six sub-tab labels visible | **6 / 6 at every viewport** |
+| console errors / boot errors | **0 at every viewport** |
+| board width | non-zero at every viewport — not a photograph of a `display:none` subtree |
+| sidebar at 390x844 | still 240px, content area 150px — the standing shell blocker, measured |
+| staged section while photographed | `enabled: false` at every shot |
+
+**The live charts are thin, and that is a property of the sample rather than of the layout.** Sixty
+rows spread over ten sites and ten categories leaves a handful of products per category, so the
+axis-fit result at "normal data volume" remains **DETERMINISTIC GAP COVERAGE** from the P1-B8C run,
+which measured a twenty-six-product chart at the same seven viewports. Making the live chart denser
+would have meant inventing rows.
+
+### Still not activated
+
+`PRODUCT_STRATEGY_ENABLED_` false, staged section `enabled: false`, no menu item in `index.html`, two
+`productPricing` actions and both reads, no Apps Script sync, no version, no deployment, no frontend
+deployment, zero database/Sheets/Drive writes. **No production file changed in this round.**

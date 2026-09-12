@@ -4,3 +4,10 @@
 # (docs/evidence/p1-b8c-acceptance/); the scratch page is not.
 assets/tests/_p1b8c-acceptance.html
 assets/tests/_p1b8c-frame-*.html
+
+# P1-B8C-R2: the USER's raw Apps Script editor export. 240,126 characters of production row data —
+# every price, every product name, every site listing. §4 of the round is explicit that the RAW log
+# must not be committed; what IS committed is assets/tests/_p1b8c-r2-live-derived.js, the reduced and
+# rehydrated sixty rows. The export is input evidence, kept outside version control.
+assets/tools/p1b8c-r1a-editor-log.txt
+assets/tools/p1b8c-r1a-editor-log.txt.txt

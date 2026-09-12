@@ -1173,3 +1173,81 @@ P1-B8D ACTIVATION  -  STILL NO-GO, AND THIS ROUND DID NOT MOVE IT
   round makes the live capture obtainable; it does not make the feature reachable.
 
 **STATUS: DIAGNOSTIC PREPARED - NOT SYNCED - NO VERSION - NO DEPLOYMENT - NOT PUSHED - AWAITING THE USER'S EDITOR RUN.**
+
+
+## Entry — 2026-09-12 · PRODUCT-STRATEGY-P1-B8C-R2 · live replay + render acceptance (NOTHING SYNCED, NOTHING DEPLOYED)
+
+-------------------------------------------------------------------------------------------------------
+THE INPUT: A REAL RUN AGAINST PRODUCTION, RETURNED BY THE USER
+-------------------------------------------------------------------------------------------------------
+      RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE()   executed 2026-09-12 18:39, Apps Script editor
+      35 / 35 chunks · fingerprint FPe02df215 · length 240,126 · verdict SAMPLE_TAKEN
+      universe 495 rows over 10 sites · sampled 60 · omitted 435 · capped true
+      read_only true · writes 0 · writer_calls 0 · rows_modified 0 · db_writes 0 · drive_writes 0
+      flag_read false · flag_modified false · deployment_created false · version_created false
+      redaction.passed true · violations [] · evidence_gaps []
+
+  REASSEMBLY IS BYTE-EXACT. The export converted every LF to CRLF (7,621, no bare LF) and merged two
+  slices' own trailing newlines with its separator. Restoring one newline at each of chunks 26 and 32
+  gives 240,126 characters and FPe02df215; restoring SPACES gives FP8d4dca95, which is how the
+  hypothesis was decided rather than assumed. No header was edited.
+
+-------------------------------------------------------------------------------------------------------
+WHAT CHANGED IN THE REPOSITORY
+-------------------------------------------------------------------------------------------------------
+      assets/tests/_p1b8c-r2-live-derived.js        NEW   the 60 rows, reduced and rehydrated
+      assets/tests/_p1b8c-r2-chunk-manifest.js      NEW   metadata only; no row value
+      assets/tests/product-strategy-live-replay-acceptance-p1-b8c-r2.test.js   NEW   272 / 0 / 21 / 0
+      assets/tests/_p1b8c-visual-runner.js          the capture is a parameter; the runner is not forked
+      assets/tests/product-strategy-row-shape-sample-p1-b8c-r1.test.js   I4 re-pointed, not relaxed
+      .gitignore                                    keeps the raw editor log out of version control
+      docs/evidence/p1-b8c-r2-live-acceptance/      22 PNG + 1 PDF + measurements.json (2.4 MB)
+
+  NO PRODUCTION FILE CHANGED. `git diff --name-only -- assets/specs/active/apps-script index.html
+  assets/js assets/css assets/html` is EMPTY. No live runtime incompatibility was found, so §9's
+  repair path was not entered.
+
+  THE RAW LOG IS NOT COMMITTED. 240,126 characters of production prices and product names stayed
+  outside the repository, which is what §4 requires.
+
+-------------------------------------------------------------------------------------------------------
+WHAT THE LIVE REPLAY PROVED
+-------------------------------------------------------------------------------------------------------
+  All ten live sites render OK through the shipped chain from KM.api.transport.post upward. All six
+  views render on every site — sixty renders — with no NaN, no undefined, no [object Object]. Eleven
+  requests, all reads; a write-shaped call throws. An envelope with the wrong meta.action is still
+  refused as SOURCE_NOT_CONNECTED, on live data as on fixture data.
+
+  THE LIVE FINDING: production holds no drawable product photograph. imageStateOf reaches
+  VERIFIED_DB_MAPPING for zero of the sixty rows, because sku_details.image_url is not an absolute
+  URL in production. A data finding, recorded, not repaired in the renderer.
+
+  WHAT PRODUCTION CANNOT SHOW: every one of the 495 rows is Active, so the excluded-by-status path is
+  DETERMINISTIC GAP COVERAGE from the P1-B8C fixture and is reported in its own column.
+
+-------------------------------------------------------------------------------------------------------
+BROWSER ACCEPTANCE, ON LIVE DATA
+-------------------------------------------------------------------------------------------------------
+  Seven exact viewports + full page, Chrome headless, production shell and production partial:
+  page horizontal overflow 0 at all seven including 390x844 · Y axis fully visible 7/7 · X lane 7/7 ·
+  six tab labels visible at every viewport · zero console errors · board width non-zero everywhere ·
+  sidebar still 240px at 390x844 (the standing shell blocker, measured not argued) · staged section
+  enabled:false in every shot.
+
+-------------------------------------------------------------------------------------------------------
+TESTS
+-------------------------------------------------------------------------------------------------------
+  product-strategy-live-replay-acceptance-p1-b8c-r2   272 / 0 · 21 mutants · 0 survived   (new)
+  product-strategy-row-shape-sample-p1-b8c-r1         425 / 0 · 27 mutants · 0 survived
+  product-strategy-replay-acceptance-p1-b8c           396 / 0 ·  9 mutants · 0 survived
+  product-strategy-production-readback-p1-b3          336 / 0 · 17 mutants · 0 survived
+  full sweep   PRE 462 suites / 4 red (3,1,7,2)   POST 463 suites / 4 red (3,1,7,2)   new failures 0
+
+-------------------------------------------------------------------------------------------------------
+APPS_SCRIPT_SYNC_REQUIRED  -  **NO**            APPS_SCRIPT_NEW_VERSION_REQUIRED  -  **NO**
+WEB_APP_DEPLOYMENT_REQUIRED  -  **NO**          FRONTEND_DEPLOY_REQUIRED  -  **NO**
+-------------------------------------------------------------------------------------------------------
+  No .gs changed and no client file changed. The diagnostic synced for R1A is unchanged and must not
+  be re-synced. The P1-B7/P1-B8B frontend package remains undeployed.
+
+**STATUS: LIVE REPLAY ACCEPTED - NOT SYNCED - NO VERSION - NO DEPLOYMENT - NOT PUSHED - PRODUCT STRATEGY STILL DISABLED - P1-B8D NOT STARTED.**

@@ -1262,15 +1262,20 @@ var sourceFiles = walk(path.join(ROOT, 'assets'), []).concat(
 var mentions = sourceFiles.filter(function (p) {
   return fs.readFileSync(p, 'utf8').indexOf(FN) !== -1;
 }).map(function (p) { return path.relative(ROOT, p).replace(/\\/g, '/'); }).sort();
-/* THE THREE SUITES THAT MAY NAME IT, AND NOTHING ELSE. This suite, because it is its fence; the
-   P1-B3 suite, because A11b enumerates every RUN_ entry point in the file; and the P1-B8C suite,
-   because its A16 records that the file grew a second contract. A FOURTH FILE NAMING IT IS A FAILURE —
-   in particular any file under assets/specs/active/apps-script/, assets/js/ or any page. */
+/* WHO MAY NAME IT, AND THE LIST IS NAMED RATHER THAN COUNTED. This suite, because it is its fence;
+   the P1-B3 suite, because A11b enumerates every RUN_ entry point in the file; the P1-B8C suite,
+   because its A16 records that the file grew a second contract; and — added at P1-B8C-R2 — the two
+   evidence files the USER's run produced, which record the function that produced them. Provenance
+   is exactly what those files are for, and a capture that could not say where it came from would be
+   a capture nobody can trace. A FILE OUTSIDE THIS LIST NAMING IT IS STILL A FAILURE, and I4a keeps
+   the rule that matters: not one of them is shipped source. */
 eq(mentions, [FRB,
   'assets/tests/product-strategy-row-shape-sample-p1-b8c-r1.test.js',
   'assets/tests/product-strategy-production-readback-p1-b3.test.js',
-  'assets/tests/product-strategy-replay-acceptance-p1-b8c.test.js'].sort(),
-  'I4  the sample is named by the diagnostic and by three suites, and by nothing else', mentions);
+  'assets/tests/product-strategy-replay-acceptance-p1-b8c.test.js',
+  'assets/tests/_p1b8c-r2-live-derived.js',
+  'assets/tests/_p1b8c-r2-chunk-manifest.js'].sort(),
+  'I4  the sample is named by the diagnostic, three suites and two evidence files', mentions);
 eq(mentions.filter(function (m) { return m.indexOf('assets/tests/') !== 0 && m !== FRB; }), [],
   'I4a and not one of them is shipped source', mentions);
 

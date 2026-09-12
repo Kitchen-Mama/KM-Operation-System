@@ -209,6 +209,73 @@ url, id, endpoint, email — is still dropped. **What is being relaxed is "no pr
 the acceptance on the deterministic capture permanently and accept the evidence gap; the manifest
 below does not depend on which is chosen.
 
+### 1.5 P1-B8C-R2 — the capture was taken, and it replayed
+
+**The USER ran `RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE()` against production on 2026-09-12 and
+returned all thirty-five chunks.** This section records what came back and what it proved.
+
+```
+sample     P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE     build P1-B8C-R1A
+verdict    SAMPLE_TAKEN                             capture_kind LIVE_READBACK · is_live true
+chunks     35 / 35                                  fingerprint FPe02df215 · length 240,126
+universe   495 rows across 10 sites                 sampled 60 · omitted 435 · capped true
+passes     site_representation 10 · rare_trait 20 · global_rank 30 · canonical_fill 0
+safety     read_only true · every write counter 0 · flag_read false · redaction.passed true
+gaps       evidence_gaps [] · coverage_gaps [STATE_ABSENT_FROM_PRODUCTION status=non_active]
+```
+
+| site | universe rows | sampled | state |
+|---|---:|---:|---|
+| KM / US / Shopify | 101 | 27 | READY |
+| KM / US / Target | 19 | 2 | READY |
+| KM / US / Walmart | 64 | 5 | READY |
+| ResTW / AU / Amazon | 35 | 3 | READY |
+| ResTW / CA / Amazon | 51 | 4 | READY |
+| ResTW / EU / Amazon | 39 | 3 | READY |
+| ResTW / JP / Amazon | 26 | 3 | READY |
+| ResTW / UK / Amazon | 42 | 3 | READY |
+| ResUS / US / Amazon | 100 | 7 | READY |
+| ResUS / US / Walmart | 18 | 3 | READY |
+| **total** | **495** | **60** | |
+
+**The export is not the report, and the difference was measured rather than waved at.** The Apps
+Script log prints `<time>\t<level>\t<text>`; the text export rewrote every LF as CRLF — 7,621 of
+them, not one bare LF left. Stripping both layers gave **240,124** characters, two short, and
+chunks 26 and 32 came back 6,999 against an emitter that slices at exactly 7,000.
+
+**The missing character in each is the slice's own trailing newline.** The exporter writes one
+newline before the next timestamp line, and where the slice already ended with one the two became
+one. It is recoverable without guessing: the next chunk begins with indentation, and
+`JSON.stringify(_, null, 2)` only ever produces indentation immediately after a newline.
+**The hypothesis was tested, not asserted** — restoring newlines gives 240,126 and `FPe02df215`;
+restoring *spaces* gives `FP8d4dca95`, which is how we know which it was. No header was edited.
+`EXPORT_NEWLINE_NORMALIZATION` is **ruled out**, not carried as a gap.
+
+**What was committed, and what was not.** The raw 240,126-character log carries every production
+price and product name and is **not in the repository** — `.gitignore` keeps it out. What is
+committed is `assets/tests/_p1b8c-r2-live-derived.js` (the sixty rows, reduced field by field,
+rehydrated to the wire shape, `SOURCE_KIND = LIVE_DERIVED_REDACTED`) and
+`assets/tests/_p1b8c-r2-chunk-manifest.js` (metadata only: 35 headers, each chunk's length and
+digest, so completeness stays re-checkable without the payload).
+
+**Two substitutions, named in the capture itself.** `product_image` — the live value is an address
+and the diagnostic removed it; the two booleans it published decide the renderer's image state and
+those are live. `regional.*` — the join is live, every field on it is a locator and is null.
+
+**AND THE ONE THING PRODUCTION ITSELF CANNOT SHOW.** All 495 live rows are `Active`. The
+excluded-by-status path therefore cannot be demonstrated from live data at all; it is covered by the
+deterministic fixture and reported in its own column as **DETERMINISTIC GAP COVERAGE**, never merged
+into the live one.
+
+**The live finding worth carrying forward: no product photograph is drawable from production data.**
+`imageStateOf` returns `VERIFIED_DB_MAPPING` only for an absolute `http(s)` URL, and only that state
+draws a picture. Measured over all sixty rows, **not one reaches it**: the rows with an image land in
+`UNVERIFIED_SOURCE_REFERENCE` and the rest in `IMAGE_SOURCE_MISSING`. That is a property of
+`sku_details.image_url` in production, not of this capture — the deterministic fixture would never
+have shown it, which is the entire reason a replay round exists.
+
+---
+
 ### 1.4 What this round did instead
 
 Built the machine that consumes the capture, and proved it end to end on data that says what it is.

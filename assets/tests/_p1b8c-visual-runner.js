@@ -85,8 +85,18 @@ var VIEWPORTS = [
  * `view` selects which of the six the board shows; `site` picks the replayed site; `state` forces one
  * of the refusal states instead of a board, so the state matrix can be photographed too.
  */
+/** Which capture the page replays. Deterministic by default; R2 passes the live-derived one. */
+var CAPTURES = {
+  deterministic: { file: '_p1b8c-capture.js', global: 'P1B8C_CAPTURE',
+    kindField: 'CAPTURE_KIND', site: { company: 'Kitchen Mama', country: 'US', marketplace: 'Amazon' } },
+  live: { file: '_p1b8c-r2-live-derived.js', global: 'P1B8C_R2_LIVE',
+    kindField: 'SOURCE_KIND', site: { company: 'KM', country: 'US', marketplace: 'Shopify' } }
+};
+function captureOf(opts) { return CAPTURES[(opts && opts.capture) || 'deterministic']; }
+
 function buildPage(opts) {
   opts = opts || {};
+  var cap = captureOf(opts);
   var index = read(path.join(ROOT, 'index.html'));
   var partial = read(path.join(ROOT, 'assets', 'html', 'pages', 'product-strategy-board.html'));
 
@@ -137,7 +147,12 @@ function buildPage(opts) {
     '    </main></div>',
     '  </div>',
     '  ' + scripts,
-    '  <script src="_p1b8c-capture.js"></script>',
+    /* THE CAPTURE IS A PARAMETER AT P1-B8C-R2, AND THE RUNNER IS NOT FORKED.
+       R2 photographs the LIVE-DERIVED rows; R1's acceptance photographed the deterministic ones. Two
+       runners that look almost alike is the failure mode this project already met with two tab
+       components: the drift is invisible until they are side by side. One runner, one page builder,
+       one measure script, and the capture module is an argument. */
+    '  <script src="' + cap.file + '"></script>',
     '  <script src="_p1b8c-replay.js"></script>',
     '  ' + appJs,
     '  <script>' + bootScript(opts) + '</script>',
@@ -151,7 +166,8 @@ function buildPage(opts) {
  * how small the test-only surface is.
  */
 function bootScript(opts) {
-  var site = opts.site || { company: 'Kitchen Mama', country: 'US', marketplace: 'Amazon' };
+  var cap = captureOf(opts);
+  var site = opts.site || cap.site;
   return [
     '(function () {',
     '  window.__ready = false; window.__error = null;',
@@ -164,7 +180,7 @@ function bootScript(opts) {
     '    m.parent.classList.add("is-open"); m.children.classList.add("is-open");',
     '    m.parent.classList.add("active");',
     /* 2. THE CAPTURE AT THE SOCKET. The one substitution §5 permits. */
-    '    var cap = P1B8C_REPLAY.captureOf(P1B8C_CAPTURE);',
+    '    var cap = P1B8C_REPLAY.captureOf(' + cap.global + ');',
     opts.fail ? '    var failWith = ' + JSON.stringify(opts.fail) + ';' : '    var failWith = null;',
     '    var t = P1B8C_REPLAY.install(window, KM.productPricingWorkspace, cap,',
     '      failWith ? { fail: failWith } : {});',
@@ -188,7 +204,7 @@ function bootScript(opts) {
     '      .catch(function (e) { window.__error = String(e && e.message || e); window.__ready = true; });',
     '  } catch (e) { window.__error = String(e && e.message || e); window.__ready = true; }',
     '}());',
-    measureScript()
+    measureScript(cap)
   ].join('\n');
 }
 
@@ -216,7 +232,7 @@ function scenarioScript() {
  * read from the LIVE DOM after layout: computed styles, bounding boxes, scroll extents. Written into
  * a <pre> so `--dump-dom` can carry them back out of the browser.
  */
-function measureScript() {
+function measureScript(cap) {
   return [
     'function __measure() {',
     '  function box(sel) {',
@@ -306,8 +322,9 @@ function measureScript() {
     '    badges: [].slice.call(document.querySelectorAll(".psb-page .badge, .psb-page .km-tab-rail__count"))',
     '      .map(function (b) { var cs = getComputedStyle(b);',
     '        return { text: b.textContent, bg: cs.backgroundColor, radius: cs.borderRadius }; }),',
-    '    captureKind: window.P1B8C_CAPTURE ? P1B8C_CAPTURE.CAPTURE_KIND : null,',
-    '    captureFingerprint: window.P1B8C_CAPTURE ? P1B8C_CAPTURE.fingerprint() : null,',
+    '    captureKind: window.' + cap.global + ' ? ' + cap.global + '.' + cap.kindField + ' : null,',
+    '    captureGlobal: ' + JSON.stringify(cap.global) + ',',
+    '    captureFingerprint: window.' + cap.global + ' ? ' + cap.global + '.fingerprint() : null,',
     '    flagStillFalse: KM.stagedSections["product-strategy"].enabled === false',
     '  };',
     '}',
@@ -422,7 +439,11 @@ function pdf(browser, pageFile, out, name) {
 
 // ---------------------------------------------------------------------------------------------- 5
 function main() {
-  var out = process.argv[2] || path.join(ROOT, 'docs', 'evidence', 'p1-b8c-acceptance');
+  /* argv[2] is the output directory, argv[3] the capture. R2 runs
+     `node _p1b8c-visual-runner.js docs/evidence/p1-b8c-r2-live-acceptance live`. */
+  var which = process.argv[3] === 'live' ? 'live' : 'deterministic';
+  var out = process.argv[2] || path.join(ROOT, 'docs', 'evidence',
+    which === 'live' ? 'p1-b8c-r2-live-acceptance' : 'p1-b8c-acceptance');
   var browser = findBrowser();
   if (!browser) {
     console.log('STOP_NO_BROWSER_AVAILABLE');
@@ -435,7 +456,9 @@ function main() {
   if (!fs.existsSync(out)) fs.mkdirSync(out, { recursive: true });
 
   var results = { browser: path.basename(browser), generated_at_utc_date: '2026-09-12',
+    capture: which, capture_module: CAPTURES[which].file, capture_global: CAPTURES[which].global,
     viewports: {}, views: {}, states: {}, print: null };
+  console.log('capture: ' + which + '  (' + CAPTURES[which].file + ')');
 
   /* THE PAGE FILE LIVES BESIDE THE CAPTURE, because its <script src> paths are relative to it. */
   var pageFile = path.join(__dirname, '_p1b8c-acceptance.html');
@@ -444,7 +467,7 @@ function main() {
   /* THE VIEWPORT MATRIX IS PHOTOGRAPHED ON CATEGORY ANALYSIS, because that is the view with the
      chart in it. Executive Overview is KPI cards and has no axis, so a responsive matrix taken
      there would have reported `ticks: 0` at every size and proved nothing about either axis. */
-  fs.writeFileSync(pageFile, buildPage({ view: 'category' }), 'utf8');
+  fs.writeFileSync(pageFile, buildPage({ view: 'category', capture: which }), 'utf8');
   VIEWPORTS.forEach(function (vp) {
     var r = shot(browser, pageFile, out, vp);
     results.viewports[vp.id] = r.measurements;
@@ -457,7 +480,7 @@ function main() {
 
   // 2. each of the six views at 1440x900
   ['overview', 'category', 'risk', 'quality', 'workspace', 'advanced'].forEach(function (v) {
-    fs.writeFileSync(pageFile, buildPage({ view: v }), 'utf8');
+    fs.writeFileSync(pageFile, buildPage({ view: v, capture: which }), 'utf8');
     var r = shot(browser, pageFile, out, { id: 'view-' + v, w: 1440, h: 900 });
     results.views[v] = r.measurements || {};
     results.views[v].__png = r.png ? path.basename(r.png) : null;
@@ -475,7 +498,7 @@ function main() {
     { id: 'empty-site', opts: { site: { company: 'Cookware Co', country: 'UK', marketplace: 'Amazon' } } }
   ];
   STATES.forEach(function (s) {
-    fs.writeFileSync(pageFile, buildPage(s.opts), 'utf8');
+    fs.writeFileSync(pageFile, buildPage(Object.assign({ capture: which }, s.opts)), 'utf8');
     var r = shot(browser, pageFile, out, { id: 'state-' + s.id, w: 1440, h: 900 });
     results.states[s.id] = r.measurements || {};
     results.states[s.id].__png = r.png ? path.basename(r.png) : null;
@@ -483,7 +506,7 @@ function main() {
   });
 
   // 4. a scenario, then print
-  fs.writeFileSync(pageFile, buildPage({ view: 'category', scenario: true }), 'utf8');
+  fs.writeFileSync(pageFile, buildPage({ view: 'category', scenario: true, capture: which }), 'utf8');
   var sc = shot(browser, pageFile, out, { id: 'scenario-active', w: 1440, h: 900 });
   results.states['scenario-active'] = sc.measurements || {};
   results.states['scenario-active'].__png = sc.png ? path.basename(sc.png) : null;
@@ -494,7 +517,7 @@ function main() {
   console.log('  print -> ' + (p ? path.basename(p.file) + ' (' + p.bytes + ' bytes)' : 'NO PDF'));
 
   // 5. a full-page desktop capture
-  fs.writeFileSync(pageFile, buildPage({ view: 'overview' }), 'utf8');
+  fs.writeFileSync(pageFile, buildPage({ view: 'overview', capture: which }), 'utf8');
   var full = shot(browser, pageFile, out, { id: 'fullpage-1920', w: 1920, h: 2400 });
   results.viewports['fullpage-1920x2400'] = full.measurements || {};
   results.viewports['fullpage-1920x2400'].__png = full.png ? path.basename(full.png) : null;
