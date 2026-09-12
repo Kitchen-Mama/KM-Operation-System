@@ -817,3 +817,32 @@ signature step as a replaceable seam instead of a function.
 **except** that the restriction *"generally does not apply if the developer... belongs to the same
 Google Workspace domain as the user"*. Google's hedge is "generally", so this remains unmeasured and
 nothing may be built on it until it is.
+
+
+### 15.8  SEC-A2 — the gateway seam, and what Apps Script verifies  (2026-09-12)
+
+**Implementation and runbook: `services/auth-gateway/`. Nothing is deployed.**
+
+Apps Script cannot verify RSA but **can** compute HMAC, so the trust boundary is drawn there:
+
+```
+browser --(Google ID token, POST body)--> GATEWAY --(request + HMAC assertion)--> /exec
+                                             verifies with google-auth-library
+```
+
+**`KMGA1` assertion, frozen.** Thirteen fields, fixed order, **length-prefixed**
+(`<utf8ByteLength>:<value>\n`) so escaping is not part of the problem; lowercase-hex body digest checked
+rather than normalised; short TTL with a bounded clock skew; a nonce; and the canonical action inside
+the signature, so a valid assertion cannot be lifted onto a different call.
+
+**Four rules a future implementer must not soften:**
+
+| rule | why |
+|---|---|
+| the signature is checked **before** the nonce is spent | otherwise noise can burn a real caller's nonce |
+| an unavailable replay store **refuses**, reads included | an availability failure is cheaper than an unbounded replay window |
+| the key id selects **one** key; unknown ids fail closed | trying every key makes a revoked one indistinguishable from a live one |
+| the comparison is **constant-time**, hand-written in Apps Script | `===` on a signature leaks how many leading bytes were right |
+
+**The Google ID token is never forwarded upstream**, and the secret lives in Script Properties - never
+in `00_config.gs`, because a secret in a source file is a secret in every clone of the repository.

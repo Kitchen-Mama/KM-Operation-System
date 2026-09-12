@@ -588,3 +588,23 @@ now a decision rather than an assumption.
 **Blocked on USER:** a disposable Apps Script project, a test OAuth client, and three answers - are all
 phase-1 employees on `@shopkitchenmama.com`; is anyone using the system signed out; which external
 parties will need access.
+
+
+### Security track update — SEC-A2 done, locally  (2026-09-12)
+
+**Cloud Run is confirmed** against Google's documentation (scale to zero by default, 32 MiB requests,
+Secret Manager as a re-read volume, immutable revisions with one-command rollback). **The gateway is
+implemented, attacked and proved end to end in a real browser** - and nothing is deployed.
+
+`services/auth-gateway/` - 199 assertions, 20 mutants, plus a browser end-to-end through a local mock
+Apps Script that runs the **actual** `.gs` verifier. The successful response was handed to the REAL
+shipped client accessor and digested: state `OK`, no `RESPONSE_ACTION_MISMATCH`, no
+`SOURCE_NOT_CONNECTED`.
+
+**SEC-A3 is now a small, bounded round:** wire the verifier into `productPricing.*` only, prove the
+refusal ORDER with the flag still false, add one operator, and rehearse the rollback.
+
+**BLOCKED ON USER - five creations, none of which an agent may perform:** a Google Cloud project, an
+OAuth Web client (client ID only, no secret), an HMAC secret generated off-machine, a Cloud Run
+deployment, and the Apps Script Script Properties. The runbook in the gateway README is the exact
+sequence.

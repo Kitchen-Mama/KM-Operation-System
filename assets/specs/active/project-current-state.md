@@ -5985,3 +5985,51 @@ signed out; which external parties will need access.
 
 **ZERO RUNTIME CHANGE.** No Apps Script file, no client file, no deployment, no flag, no navigation, no
 DB/Sheets/Drive write, and no request to any Google service this round.
+
+
+## SEC-A2 — THE AUTH GATEWAY IS BUILT AND ATTACKED, AND NOTHING IS DEPLOYED  (2026-09-12)
+
+**Code + runbook: `services/auth-gateway/`. Contract: `SYSTEM_RUNTIME_ARCHITECTURE.md` 15.8.**
+
+**CLOUD RUN CONFIRMED** against Google's documentation: scale to zero by default (min instances 0),
+32 MiB request ceiling, 1000 concurrent per instance, Secret Manager mountable **as a volume re-read on
+every read** - which is the only form that allows key rotation without a redeploy - and immutable
+revisions rolled back with one `update-traffic` command. Per-user rate limiting needs Cloud Armor in
+front of a load balancer, which is extra infrastructure and is recorded as a gap, not assumed.
+
+**BUILT:** entry point, config loader that refuses to start badly, three verifier adapters behind one
+interface, principal builder, fail-closed operator registry, action permission, site scope, HMAC signer,
+upstream client, exact-origin CORS, correlation ids, a redacting logger, `/healthz` + `/readyz`,
+Dockerfile, `.env.example` with placeholders only, and the **Apps Script half of the seam** written in
+primitives Apps Script actually has.
+
+**THE ASSERTION CONTRACT IS FROZEN AS `KMGA1`:** thirteen fields, fixed order, **length-prefixed** so
+escaping is not part of the problem, lowercase-hex digest **checked rather than normalised**, short TTL,
+nonce, and the action bound inside the signature so an assertion cannot be lifted onto another call.
+
+**199 assertions, 20 mutants, 0 survived**, plus a **real browser end-to-end** through a local gateway
+and a local mock Apps Script that runs the ACTUAL `.gs` verifier: not signed in -> `NOT_AUTHENTICATED`;
+forged token -> `INVALID_TOKEN`; signed in but unknown -> `NOT_AUTHORIZED`; wrong site -> `OUT_OF_SCOPE`;
+permitted -> 200 with a **server-derived audit identity**; flag off -> `FEATURE_DISABLED`. The token
+appeared in no URL, no localStorage, no sessionStorage and no cookie. **The successful response was then
+handed to the REAL shipped accessor and digested: state `OK`, no `RESPONSE_ACTION_MISMATCH`, no
+`SOURCE_NOT_CONNECTED`.**
+
+**THREE THINGS ONLY BUILDING FOUND.** UTF-8 byte length vs UTF-16 character length is the likeliest way
+for the two implementations to diverge and is invisible to every ASCII test. Apps Script has no
+`timingSafeEqual`, so constant-time comparison is a hand-written loop - `===` on a signature leaks how
+many leading bytes were right. And the signature must be checked **before** the nonce is spent, or
+anyone can burn a legitimate caller's nonce with noise.
+
+**FOUR OF THIS ROUND'S OWN MUTANTS SURVIVED AT FIRST AND ALL FOUR WERE THE PROBE.** The most useful:
+the registry-side `ALL_SITES` guard is unreachable while the request-side guard stands, so the mutant
+proved nothing - rewritten to remove the OUTER guard and require the INNER one to still refuse, which
+is what defence in depth actually means.
+
+**BLOCKED ON USER - five creations:** a Google Cloud project, an OAuth Web client (client ID only, no
+secret), an HMAC secret generated off-machine, a Cloud Run deployment, and Apps Script Script
+Properties. **NEXT: SEC-A3** - wire the verifier into `productPricing.*` only, prove the refusal order
+with the flag still false, add one operator, rehearse the rollback.
+
+**ZERO PRODUCTION CHANGE.** No Apps Script file, no client runtime, no deployment, no cloud resource, no
+secret, no flag, no navigation, no DB/Sheets/Drive write, and no request to any Google service.

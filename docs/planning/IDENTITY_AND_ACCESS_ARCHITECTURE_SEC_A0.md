@@ -429,3 +429,30 @@ conditional on SEC-A1b measuring `tokeninfo` from the disposable project.
 **The path between them is one function.** The prototype takes an *attestation source*; moving from
 phase 1 to the gateway swaps `tokeninfo` for `gateway` and changes nothing else - not the principal, the
 registry, the permission table, the scope check, the refusal codes or the ordering.
+
+
+---
+
+# SEC-A2 ADDENDUM — THE GATEWAY EXISTS, LOCALLY  (2026-09-12)
+
+**Implementation: `services/auth-gateway/` (not deployed). Runbook: its README. Tests:
+`assets/tests/auth-gateway-contract-sec-a2.test.js`.**
+
+Option D is built and attacked. Cloud Run is confirmed as the platform against Google's own
+documentation: 32 MiB request ceiling, up to 1000 concurrent per instance, 60-minute timeout ceiling,
+**minimum instances default 0 so it scales to zero**, Secret Manager mountable **as a volume that is
+re-read on every read** (which is what makes key rotation possible without a redeploy), and immutable
+revisions rolled back with one `update-traffic` command.
+
+**The HMAC assertion contract is frozen** at `KMGA1`: thirteen fields in a fixed order,
+**length-prefixed** (`<utf8ByteLength>:<value>\n`) so no value can contain a separator that changes the
+parse, a lowercase-hex body digest that is **checked rather than normalised**, a short TTL, a nonce, and
+the action bound inside the signature so an assertion cannot be lifted onto another call.
+
+**The one thing two implementations had to agree on is tested by making them agree.** The gateway signs
+in Node; the Apps Script verifier checks under a platform shim; the canonical strings are required to be
+identical character for character, including for an email with accents - where UTF-16 length and UTF-8
+length differ and a careless implementation passes every ASCII test ever written.
+
+**Still true, and still the boundary:** no cloud resource, no OAuth client, no secret, no deployment,
+and the Product Strategy flag is false.

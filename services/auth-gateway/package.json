@@ -1,0 +1,15 @@
+{
+  "name": "km-auth-gateway",
+  "version": "0.1.0-sec-a2",
+  "private": true,
+  "description": "SEC-A2 authentication gateway: verifies a Google ID token and forwards an HMAC-signed principal assertion to the Apps Script /exec. Not deployed.",
+  "main": "src/index.js",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/index.js",
+    "local": "node ../../assets/tests/_sec-a2-local-e2e.js"
+  },
+  "dependencies": {
+    "google-auth-library": "^9.15.0"
+  }
+}

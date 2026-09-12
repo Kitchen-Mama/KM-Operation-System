@@ -6599,3 +6599,29 @@ must carry honestly rather than discover later.
 
 The board remains the right first tenant for the same reason as before: **zero current users, so a first
 version of security code cannot lock anyone out.**
+
+
+## 47.  SEC-A2 — THE THING P1-B8 WAS WAITING FOR NOW EXISTS, AND IS NOT DEPLOYED
+
+**`services/auth-gateway/`, with its runbook. Contract: `SYSTEM_RUNTIME_ARCHITECTURE.md` 15.8.**
+
+SEC-A1 left P1-B8 waiting on a component somebody had to build. It is built, attacked with 199
+assertions and 20 mutants, and proved end to end in a real browser against a local mock Apps Script
+that runs the actual verifier file.
+
+**The part that matters to this board:** the successful gateway response was handed to the REAL shipped
+accessor and the site-universe module, unchanged, and came back `OK` with one site and no
+`RESPONSE_ACTION_MISMATCH`. *P1-B7E was precisely this seam breaking silently*, so the round did not end
+until the client that exists today could still digest what the new path produces.
+
+**The browser also showed the four states as four different things** - not signed in, signed in but not
+an operator, an operator on the wrong site, and the feature switched off - which is the whole point of
+keeping the refusal codes distinct. An operator who cannot tell those apart cannot act on any of them.
+
+**P1-B8's prerequisite is unchanged in size and now precise:** SEC-A3 wires the verifier into
+`productPricing.*` alone, proves the refusal order with the flag still false, adds one operator, and
+rehearses the rollback. The board is still the right first tenant for the same reason: **zero current
+users, so the first version of security code cannot lock anyone out.**
+
+**Unchanged:** flag false, navigation disabled, R10 deployed, no Apps Script file touched, nothing
+deployed anywhere.

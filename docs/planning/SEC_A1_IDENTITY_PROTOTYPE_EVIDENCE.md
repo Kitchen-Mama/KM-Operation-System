@@ -316,3 +316,28 @@ more misleading than no mutant at all.*
 
 EG-4, EG-5 and EG-6 no longer block the decision — §2 settled the compatibility question without them —
 but they belong in the record before any deployment setting is ever touched.
+
+
+---
+
+## 8. SEC-A2 RESULT — the seam closes  (2026-09-12)
+
+SEC-A1 predicted that the signature step would be a replaceable seam and built the contract around one.
+SEC-A2 built both sides and **the prediction held**: `assertion.js` signs in Node, the `.gs` verifier
+checks with `Utilities.computeHmacSha256Signature`, and 199 assertions with 20 mutants keep them honest.
+
+Three things SEC-A1 could not have known, which only building found:
+
+1. **UTF-8 byte length versus UTF-16 character length is the likeliest way for the two implementations
+   to diverge**, and it is invisible to every ASCII test. `kmgaUtf8Length_` exists as its own function
+   for exactly that reason, and the platform shim in the harness deliberately returns real UTF-8 bytes
+   so the test can fail.
+2. **Apps Script has no `timingSafeEqual`**, so the constant-time comparison had to be written as a
+   loop that accumulates a difference over the full length. That is not implementing cryptography; it
+   is refusing to leak while comparing - and `===` on a signature leaks, through timing, how many
+   leading bytes were right.
+3. **Signature must be checked BEFORE the nonce is spent.** Otherwise anyone can burn a legitimate
+   caller's nonce by replaying noise at the endpoint. There is a mutant for it.
+
+EG-8 (is `tokeninfo` usable from Apps Script?) is now **moot for the recommended path**: the gateway
+verifies with Google's own library and Apps Script never calls out at all.
