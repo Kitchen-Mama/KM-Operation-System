@@ -1396,3 +1396,74 @@ WEB_APP_DEPLOYMENT_REQUIRED  -  **NO**                  FRONTEND_DEPLOY_REQUIRED
   USER-owned; the census answers whether its allowlist needs an entry before it ships.
 
 **STATUS: GATE BUILT - CENSUS NOT YET RUN - NOT SYNCED - NO VERSION - NO DEPLOYMENT - NOT PUSHED - PRODUCT STRATEGY STILL DISABLED - P1-B8D NOT STARTED.**
+
+=======================================================================================================
+P1-B8C-R3-R2   IMAGE CONSUMER PARITY - IMAGE GATE CLOSED - LOCAL COMMIT - NOT PUSHED
+=======================================================================================================
+  SCOPE: close the image compatibility gate on the USER's full production census, and bring the one
+  remaining consumer into the shared resolver. No Apps Script runtime, no new diagnostic, no DB read,
+  no version, no deployment, no flag, no navigation, no CSP, no CDN, no external host, no Login/RBAC,
+  no S2, no P1-B8D.
+
+-------------------------------------------------------------------------------------------------------
+THE PRODUCTION CENSUS (USER Editor readback, frozen as test data)
+-------------------------------------------------------------------------------------------------------
+  P1_IMAGE_REFERENCE_UNIVERSE_CENSUS / P1-B8C-R3-R1 / 1 chunk / FPa6684fce / 2425 chars / CENSUS_TAKEN
+  total 192 · blank 14 · present 178 · relative_asset 178 · EVERY OTHER SHAPE 0 · external hosts NONE
+  old_displayed 178 -> new_displayed 178 · new_rejected 0 · depends_on_allowlist 0
+  old_rejected_new_displayed 0 · both_fallback 14 · allowlist_decision_required FALSE
+  writes 0 · rows_modified 0 · safety.passed true · refusals []
+
+  => THE SHARED POLICY IS 100% COMPATIBLE WITH THE PRODUCTION UNIVERSE.
+  => APPROVED_EXTERNAL_HOSTS STAYS EMPTY - now because 192 rows say so, not because nobody looked.
+
+-------------------------------------------------------------------------------------------------------
+WHAT CHANGED
+-------------------------------------------------------------------------------------------------------
+  campaign-risk.js   the fourth consumer joins the shared resolver. It had been putting r.image into
+                     <img src> with no judgement at all. Fails CLOSED (no `: r.image` fallback), keeps
+                     its original onerror and placeholder, composes no path from a sku, holds no rule
+                     of its own. No layout class touched.
+  sku-handbook.js    a REFUSED reference used to fall through to <img src="">, and an empty src
+                     resolves to the PAGE's own URL - a broken image drawn where the placeholder
+                     belongs. ABSENT and REFUSED now render apart and are counted apart.
+  index.html         the co-deployed cache token rotated across the whole set, plus the three
+                     image-coupled files. 23 refs, one token, no stale refs.
+  _release-order.js  the new round token appended. NEW rather than reused: fe7b07c is on origin, so
+                     the previous token's bytes have been published.
+
+-------------------------------------------------------------------------------------------------------
+FOUR-PAGE PARITY + BROWSER
+-------------------------------------------------------------------------------------------------------
+  SKU Details · SKU Handbook · Product Strategy · Campaign Risk, one corpus, each page's own shipped
+  expression: repo-relative path displays byte-identical on all four; blank falls back on all four;
+  THIRTEEN refusal shapes refused on all four. Parity asserted as a LOOP, both directions.
+  Real browser: 7 <img> per page, 7 loaded (naturalWidth > 0), 0 BROKEN, 10 placeholders, 0 errors,
+  and the four pages produced IDENTICAL src lists.
+  Product Strategy live capture: 7 viewports, page overflow 0, X/Y axes complete, six tabs, 0 errors.
+  The asset capture's 390x844 lane is wider than the chart and scrolls INSIDE the chart's own
+  overflow-x:auto box (page overflow still 0) - pre-existing, already in the committed R3-R1 evidence,
+  and asserted as a fact rather than averaged away.
+
+-------------------------------------------------------------------------------------------------------
+TESTS
+-------------------------------------------------------------------------------------------------------
+  product-strategy-image-consumer-parity-p1-b8c-r3-r2   185 / 0 · 16 mutants · 0 survived   (new)
+  product-strategy-image-universe-census-p1-b8c-r3-r1   160 / 0 · 15 mutants · 0 survived   (re-pointed)
+  product-strategy-image-resolution-p1-b8c-r3           336 / 0 · 20 mutants · 0 survived   (re-pointed)
+  read-stability-images-and-invariants-f1-7n-fb-4e-r3   109 / 0
+  single-row-mutation-isolation-...-r6-r6-r2            136 / 0 · 12 mutants · 0 survived
+  full sweep   PRE 465 suites / 4 red (3,1,7,2)   POST 466 suites / 4 red (3,1,7,2)   new failures 0
+
+  TWO TOKEN-COHERENCE GUARDS CAUGHT THE ROTATION AND WERE RIGHT TO. They are a deployment rule, not an
+  incidental assertion, and the rule was followed rather than the guards re-pointed.
+  R3-R1's G13 SURVIVED because the gap it modelled had been closed; it now guards the closure.
+
+-------------------------------------------------------------------------------------------------------
+APPS_SCRIPT_SYNC_REQUIRED  -  **NO**            APPS_SCRIPT_NEW_VERSION_REQUIRED  -  **NO**
+WEB_APP_DEPLOYMENT_REQUIRED  -  **NO**         FRONTEND_DEPLOY_REQUIRED  -  **YES** (with P1-B8D)
+-------------------------------------------------------------------------------------------------------
+  No .gs changed. The census function stays in the Apps Script project until the P1 cleanup; it does
+  not need re-syncing or re-running. The frontend assets ship WITH P1-B8D's, in one deployment.
+
+**STATUS: IMAGE GATE CLOSED - NOT SYNCED - NO VERSION - NO DEPLOYMENT - NOT PUSHED - PRODUCT STRATEGY STILL DISABLED - P1-B8D IS THE ONLY NEXT STEP.**

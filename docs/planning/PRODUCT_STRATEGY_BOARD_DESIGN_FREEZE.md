@@ -7133,3 +7133,49 @@ buckets must sum to the whole or the report stops. Absolute rows are scored **se
 **THE TWO CLASSIFIERS ARE PROVEN EQUIVALENT.** An Apps Script census and a browser policy deciding
 the same value differently is the exact defect §53 existed to fix, so the repository asserts
 agreement over a 35-value corpus that reaches **every branch of both**, in the same order.
+
+## §55  P1-B8C-R3-R2 — the gate closed on 192 rows, and the fourth consumer came in
+
+**THE CENSUS ANSWERED THE ONE QUESTION §54 REDUCED THE GATE TO.** 192 rows, 178 repo-relative, 14
+blank, and **zero of every other shape** — no absolute URL, no external host, nothing refused. So
+`old_displayed_new_rejected = 0`: not one row that displayed before is refused now, and
+`allowlist_decision_required` is `false`.
+
+**THE ALLOWLIST STAYS EMPTY BECAUSE THE DATA SAYS SO.** §53 shipped it empty because nothing could
+prove what production held; it stays empty because something now has. That is a different fact
+wearing the same value, and it is the difference between a default and a decision.
+
+**CAMPAIGN RISK, THE FOURTH CONSUMER.** §54 found it and recorded it rather than repairing a page it
+had not measured. It now resolves through the same `resolveSkuImageUrl` as SKU Details and SKU
+Handbook, **fails closed** when the policy is absent — no `: r.image` fallback, which would restore
+the old behaviour on the one path where the policy is known to be missing — and keeps its original
+`onerror` and placeholder markup. No layout class was touched and no stylesheet changed.
+
+**AND A DEFECT FOUND ON THE WAY, IN SKU HANDBOOK.** `_skuhImgHtml` only ever special-cased `ABSENT`,
+so a **REFUSED** reference fell through to the `<img>` branch with `cls.url === ''`. **An empty `src`
+resolves to the page's own URL**, so the browser drew a broken image exactly where the placeholder
+belonged. The refusal was working; the rendering of it was not. `ABSENT` and `REFUSED` now render
+apart and are counted apart (`skus_with_refused_image_reference`), because "no URL on the row" is a
+gap an operator *fills* and "a value that is not an address" is a gap an operator *corrects*.
+
+**FOUR-PAGE PARITY, AS A LOOP.** One corpus, each page's own shipped expression, and the assertion is
+that no value resolves differently on any of the four — in both directions. Measured in a real
+browser as well: every `<img>` reported `naturalWidth > 0`, **zero broken**, and the four pages
+produced **identical `src` lists**.
+
+**THE SECURITY CORPUS DID NOT SHRINK BECAUSE PRODUCTION IS CLEAN.** 178 of 178 rows are well-formed
+today, which makes every refusal assertion "unnecessary" by today's data. Deleting them would reason
+backwards from the data to the rule. Thirteen refusal shapes are kept, and a mutant guards the
+temptation.
+
+**THE CO-DEPLOYED TOKEN ROTATED, WHICH IS A RULE AND NOT A FORMALITY.** `sku-handbook.js` is a member
+of the set `index.html` versions together, so the **whole set** moved to one new appended token.
+`km-image-reference-policy.js` joined it: `sku-overrides.js` now fails closed without the policy, so
+a browser holding the new one and not the other shows **no images at all** — precisely the
+half-updated deployment the shared token exists to prevent. `campaign-risk.js` joined for the same
+reason. 23 references, one token, no stale refs.
+
+**DEFERRED TO PHASE 2, EXPLICITLY:** CSP / `img-src`, any CDN or external image host, an asset base,
+and image-identity verification beyond the operator-asserted mappings.
+
+**IMAGE GATE: CLOSED.**

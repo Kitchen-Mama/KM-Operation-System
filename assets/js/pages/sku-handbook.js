@@ -473,7 +473,7 @@ function renderSkuHandbookStats(data) {
 // The url and alt are also ESCAPED. These are live spreadsheet strings interpolated straight into HTML
 // attributes, and an unescaped quote in either one silently breaks the very tag that was supposed to show the
 // image — a value on the row that renders as no image at all.
-var _skuhImgStats = { absent: 0, present: 0, failed: 0, upgraded: 0 };
+var _skuhImgStats = { absent: 0, present: 0, failed: 0, upgraded: 0, refused: 0 };
 function _skuhAttr(v) {
     return String(v == null ? '' : v)
         .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
@@ -501,6 +501,9 @@ window._skuhImageDiagnostic_ = function () {
     return {
         skus_with_image_url: _skuhImgStats.present,
         skus_without_image_url: _skuhImgStats.absent,
+        // P1-B8C-R3-R2: a row that HAS a value which is not a usable image address. Counted apart
+        // from "without", because the two are different data gaps with different fixes.
+        skus_with_refused_image_reference: _skuhImgStats.refused,
         images_on_record_that_failed_to_load: _skuhImgStats.failed,
         http_urls_upgraded_to_https: _skuhImgStats.upgraded,
         note: 'skus_without_image_url is a DATA gap — fill in sku_details.image_url. '
@@ -508,6 +511,15 @@ window._skuhImageDiagnostic_ = function () {
             + 'They are different faults with different fixes, and they used to render identically.'
     };
 };
+/* P1-B8C-R3-R2 — THREE STATES, NOT TWO, AND THE THIRD USED TO PRODUCE `<img src="">`.
+   classifySkuImageSource gained a REFUSED state at P1-B8C-R3, for a row that carries something which
+   is not an image address. This function only ever special-cased ABSENT, so a refused reference fell
+   through to the <img> branch with `cls.url === ''` — and an empty `src` resolves to the PAGE's own
+   URL, which is a broken image drawn where a placeholder belongs. The refusal was working; the
+   rendering of it was not.
+   The two are kept APART rather than merged: "no url on the row" is a data gap an operator fills in,
+   and "the row holds something that is not an address" is a data gap an operator CORRECTS. The title
+   says which, because that is the only place the difference reaches a person. */
 function _skuhImgHtml(item, failGlyph, extraStyle) {
     var cls = window.classifySkuImageSource ? classifySkuImageSource(item)
         : { state: (item && item.image) ? 'PRESENT' : 'ABSENT', url: (item && item.image) || '', note: null };
@@ -515,6 +527,13 @@ function _skuhImgHtml(item, failGlyph, extraStyle) {
         _skuhImgStats.absent += 1;
         return '<div class="skuh-placeholder" data-skuh-img="absent"' + (extraStyle || '')
             + ' title="No image URL is on record for this SKU (sku_details.image_url is empty).">'
+            + (failGlyph || '📦') + '</div>';
+    }
+    if (cls.state !== 'PRESENT' || !cls.url) {
+        _skuhImgStats.refused += 1;
+        return '<div class="skuh-placeholder" data-skuh-img="refused"' + (extraStyle || '')
+            + ' title="sku_details.image_url holds a value that is not a usable image address ('
+            + _skuhAttr(cls.reason || 'REFUSED') + ').">'
             + (failGlyph || '📦') + '</div>';
     }
     _skuhImgStats.present += 1;

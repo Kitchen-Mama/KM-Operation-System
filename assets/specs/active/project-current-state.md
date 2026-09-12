@@ -6306,6 +6306,16 @@ renderer. **No fixture could have produced it.**
 > directions. R3 also closed the half nobody had reported: SKU Details validated **nothing**, so
 > `javascript:`, a Windows path, a UNC path and a bare Drive id all reached `<img src>` verbatim.
 > See DESIGN FREEZE §53.
+> **P1-B8C-R3-R2 — THE IMAGE GATE IS CLOSED.** The USER ran the full production census:
+> **192 rows, 178 repo-relative, 14 blank, and zero of every other shape — no absolute URL, no
+> external host.** `old_displayed 178 → new_displayed 178`, `new_rejected 0`,
+> `allowlist_decision_required false`: the shared policy is **100% compatible** with the production
+> universe, and `APPROVED_EXTERNAL_HOSTS` stays empty because 192 rows say so rather than because
+> nobody looked. **All four consumers** — SKU Details, SKU Handbook, Product Strategy and now
+> **Campaign Risk** — resolve through one function, asserted as a parity loop in both directions and
+> measured in a real browser (`naturalWidth > 0`, zero broken, identical `src` lists). SKU Handbook
+> also stopped rendering `<img src="">` for a refused reference. CSP, CDN and external image hosting
+> are **deferred to Phase 2**. **P1-B8D is the only next step.** See DESIGN FREEZE §55.
 
 **What production cannot demonstrate.** All 495 rows are `Active`, so the excluded-by-status path is
 **DETERMINISTIC GAP COVERAGE** from the P1-B8C fixture and is reported in its own column, never

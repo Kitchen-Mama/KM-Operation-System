@@ -530,3 +530,44 @@ application, with no error and no failing test.
 - **Sub-tab URL routing.** The shell has no router at all. The six views have canonical route
   identity; binding it to the address bar means giving the whole application a router and changing
   Back and reload on every page.
+
+## §5  THE IMAGE GATE IS CLOSED (P1-B8C-R3-R2)
+
+**The production census settled it.** `RUN_P1_IMAGE_REFERENCE_UNIVERSE_CENSUS()` read the whole
+`sku_details.image_url` column — no sampling, no cap — and returned `CENSUS_TAKEN`,
+`FPa6684fce`, 2,425 characters, one chunk, `writes 0`, `rows_modified 0`.
+
+| | rows |
+|---|---|
+| total | **192** |
+| blank | **14** |
+| present | **178** |
+| **repo-relative asset path** | **178** |
+| absolute https / http | **0 / 0** |
+| root-relative · filename-only | 0 · 0 |
+| Windows path · traversal · rejected scheme | 0 · 0 · 0 |
+| Drive/file id · extension missing · unknown | 0 · 0 · 0 |
+| **unique external hosts** | **[ ] — none** |
+
+**Compatibility, from the census's own numbers:** `old_displayed 178` → `new_displayed 178`,
+`new_rejected 0`, `depends_on_allowlist 0`, `old_rejected_new_displayed 0`, `both_fallback 14`,
+`allowlist_decision_required false`. **The shared policy is 100% compatible with the production
+universe.**
+
+**Decisions, recorded as policy:**
+
+1. `APPROVED_EXTERNAL_HOSTS` **stays empty** — and now because 192 rows say so, not because nobody
+   looked.
+2. No guessed host. No wildcard. No suffix matching.
+3. **A repo-relative path is the only image reference production uses in Phase 1.**
+4. The 14 blanks keep their existing fallback.
+5. CSP, CDN, external image hosting and wider security hardening are **deferred to Phase 2**.
+
+**All four consumers now share one resolver.** `campaign-risk.js` was the last one outside it; it
+put `r.image` into an `<img src>` with no judgement at all. It now calls the same
+`resolveSkuImageUrl` the other three reach, fails closed when the policy is absent, and keeps its
+original `onerror` and placeholder. `sku-handbook.js` also stopped rendering `<img src="">` for a
+REFUSED reference — an empty `src` resolves to the page's own URL, which is a broken image drawn
+exactly where a placeholder belongs.
+
+**IMAGE GATE: CLOSED.** No further image architecture is in scope. **P1-B8D is the only next step.**

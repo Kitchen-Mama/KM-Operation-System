@@ -442,7 +442,7 @@
    "captureFingerprint": "91815b06c83bb200",
    "flagStillFalse": true,
    "__png": "shot-1920x1080.png",
-   "__pngBytes": 104686
+   "__pngBytes": 104674
   },
   "1440x900": {
    "ready": true,
@@ -3076,7 +3076,7 @@
    "captureFingerprint": "91815b06c83bb200",
    "flagStillFalse": true,
    "__png": "shot-390x844.png",
-   "__pngBytes": 46966
+   "__pngBytes": 46746
   },
   "fullpage-1920x2400": {
    "ready": true,

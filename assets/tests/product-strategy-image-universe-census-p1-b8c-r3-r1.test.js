@@ -74,8 +74,13 @@ if (typeof global.location === 'undefined') {
 // =============================================================================================
 section('§A  SCOPE — THIS ROUND CHANGES NO RUNTIME BEHAVIOUR');
 // =============================================================================================
+/* SCOPED TO R3-R1'S OWN COMMIT RANGE. "This round changed no client runtime file" is a claim about
+   THIS round, and reading it from R3 to the working tree made it a claim about every later round too
+   — so it started failing at R3-R2, which deliberately changed two client files. A round-scoped
+   assertion has to name both ends of its round. */
 var R3_COMMIT = '3d7ef782d1b59712157fa3ab39ea1347b4cf9f34';
-var changed = cp.execFileSync('git', ['diff', '--name-only', R3_COMMIT, '--'],
+var R3R1_COMMIT = 'fe7b07c799266f9c33d5dbf0063a08a3a0e0a2b0';
+var changed = cp.execFileSync('git', ['diff', '--name-only', R3_COMMIT, R3R1_COMMIT, '--'],
   { cwd: ROOT, encoding: 'utf8' }).split('\n').filter(Boolean);
 eq(changed.filter(function (f) { return /^assets\/js\//.test(f); }), [],
   'A1  no client runtime file changed — this round measures, it does not repair', changed);
@@ -98,11 +103,15 @@ section('§B  THE REPOSITORY-SIDE CENSUS — EVERY CONSUMER, EVERY SHAPE, EVERY 
 ok(/image:\s*String\(r\.image_url\s*\|\|\s*''\)/.test(SRC.dbApi),
   'B1  operation-system-db-api.js is the single place image_url becomes `image`');
 
+/* ALL FOUR NOW, AND THE FOURTH IS THE POINT OF THE NEXT ROUND. R3-R1 recorded campaign-risk.js as
+   OUTSIDE the shared resolver, which was true when it was written; P1-B8C-R3-R2 brought it in. The
+   expectation is updated rather than the observation deleted — §B3 below still names the exact line
+   that used to be the gap, so the history stays readable. */
 var CONSUMERS = [
   ['sku-details.js', SRC.skuDetails, true],
   ['sku-handbook.js', SRC.skuHandbook, true],
   ['psb-board-ui.js (via the adapter)', SRC.boardUi, true],
-  ['campaign-risk.js', SRC.campaignRisk, false]
+  ['campaign-risk.js', SRC.campaignRisk, true]
 ];
 CONSUMERS.forEach(function (c, i) {
   var usesShared = /getNormalizedSkuImage|classifySkuImageSource/.test(c[1]);
@@ -120,10 +129,16 @@ CONSUMERS.forEach(function (c, i) {
    fixed in a round whose scope is measurement. */
 ok(/map\[d\.sku\]\s*=\s*\{[^}]*image:\s*d\.image/.test(SRC.campaignRisk),
   'B3  campaign-risk.js reads the same sku_details image column');
-ok(/<img class="cr-img" src="\$\{_crEsc\(r\.image\)\}"/.test(SRC.campaignRisk),
-  'B3a and renders it with NO resolver and NO validation — a fourth consumer R3 does not cover');
-ok(!/getNormalizedSkuImage|classifySkuImageSource|KM_IMAGE_REFERENCE_POLICY/.test(SRC.campaignRisk),
-  'B3b it calls none of the shared entry points');
+/* THE GAP THIS SECTION FOUND, AND WHAT CLOSED IT. R3-R1 measured `src="${_crEsc(r.image)}"` — the raw
+   cell, escaped for HTML but never judged. P1-B8C-R3-R2 replaced it with the shared resolver. Both
+   facts are asserted, because a finding that is silently deleted once it is fixed leaves nobody able
+   to tell a closed gap from one that was never there. */
+ok(!/<img class="cr-img" src="\$\{_crEsc\(r\.image\)\}"/.test(SRC.campaignRisk),
+  'B3a and the raw cell no longer reaches src — CLOSED by P1-B8C-R3-R2');
+ok(/const imgSrc = _crImageSrc\(r\.image\);/.test(SRC.campaignRisk),
+  'B3b it now resolves through the shared helper');
+ok(/window\.resolveSkuImageUrl\(value\)/.test(SRC.campaignRisk),
+  'B3b1 which calls the same entry point the other three pages use');
 ok(/onerror=/.test(SRC.campaignRisk),
   'B3c it does have its own broken-image fallback, so only VALIDATION is missing');
 
@@ -682,13 +697,17 @@ mut('G12 a partial redaction failure publishes the counts anyway — C5f', funct
   return /report\.counts = null;/.test(SRC.gs) && !/report\.counts = null;/.test(mutated);
 });
 
-mut('G13 the shared policy is bypassed by campaign-risk and nobody notices — B3', function () {
-  /* THE MUTANT IS THE SUITE'S OWN BLIND SPOT. If B3 were written as "campaign-risk uses the shared
-     resolver" it would be a failing assertion about a real gap, so it is written as a RECORD of the
-     gap — and this mutant proves the record is load-bearing: change the file to adopt the resolver
-     and B3b must notice. */
-  var mutated = swapIn(SRC.campaignRisk, '${_crEsc(r.image)}', '${_crEsc(getNormalizedSkuImage(r))}');
-  return !/getNormalizedSkuImage/.test(SRC.campaignRisk) && /getNormalizedSkuImage/.test(mutated);
+mut('G13 campaign-risk goes back to putting the raw cell in src — B3a', function () {
+  /* THE MUTANT TURNED AROUND WHEN THE GAP CLOSED, AND THAT IS THE WHOLE POINT OF IT.
+     While campaign-risk.js was OUTSIDE the shared policy, §B3 was a RECORD of the gap and this
+     mutant proved the record was load-bearing by adopting the resolver. P1-B8C-R3-R2 adopted it
+     for real, so the same mutant now has to guard the other direction: put the raw cell back and
+     B3a must notice. A mutant left pointing at the old world would have quietly measured nothing
+     — which is exactly how it surfaced, by surviving the round that fixed the thing it modelled. */
+  var mutated = swapIn(SRC.campaignRisk, 'const imgSrc = _crImageSrc(r.image);',
+    'const imgSrc = r.image;');
+  return /_crImageSrc\(r\.image\)/.test(SRC.campaignRisk)
+    && !/_crImageSrc\(r\.image\)/.test(mutated);
 });
 
 mut('G14 the equivalence corpus stops reaching a branch, so the claim becomes a sample — D1a',

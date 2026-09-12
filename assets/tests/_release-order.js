@@ -287,8 +287,18 @@ var ROUND_TOKENS = [
   // per-action write bound in the DB adapter). A browser holding the cached previous copies would keep the
   // old bounds and the fix would not reach it, so the co-deployed application set rotates.
   'fc1be3r4a2r1r6r7r4-aiplanlatency-20260908',
-  'fc1be3r4a2r1r6r7r5-factorystockguard-20260908'
-];
+  'fc1be3r4a2r1r6r7r5-factorystockguard-20260908',
+  // P1-B8C-R3-R2 - the image consumer parity round. THREE FACTS MAKE THIS A NEW TOKEN RATHER THAN
+  // A REUSE. First, fe7b07c is on origin/feature/product-strategy-board-p0, so the previous token's
+  // bytes have been published and by the rule recorded further up this list it can never be reused.
+  // Second, sku-handbook.js is a MEMBER of that co-deployed set and changed this round, so the whole
+  // set rotates together - a token that moves for one member and not the others can still ship a
+  // half-updated page. Third, and this is the coupling that is new: sku-overrides.js now FAILS CLOSED
+  // when km-image-reference-policy.js is absent, so a browser holding the new sku-overrides.js and no
+  // policy shows NO IMAGES AT ALL rather than degrading. The policy file therefore joins the set, and
+  // so does campaign-risk.js, which stopped being independent the moment it started asking
+  // resolveSkuImageUrl. APPEND-ONLY, at the end.
+  'imagepolicy-r3r2-20260912'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

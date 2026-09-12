@@ -619,8 +619,13 @@ eq(changed.filter(function (f) { return /^assets\/html\//.test(f); }), [],
 eq(changed.filter(function (f) { return /^assets\/specs\/active\/apps-script\//.test(f); }), [],
   'I1b and no Apps Script file changed');
 
-/* index.html gained ONE script tag and nothing else. */
-var idxDiff = cp.execFileSync('git', ['diff', '--unified=0', PRE_R3_COMMIT, '--', 'index.html'],
+/* index.html gained ONE script tag and nothing else — IN R3. This is a statement about what R3 did,
+   so it is read across R3'S OWN COMMIT RANGE rather than from R3's parent to wherever HEAD has since
+   moved. The first version compared PRE_R3_COMMIT..working-tree and began failing at P1-B8C-R3-R2,
+   which rotated the co-deployed cache token across twenty-three references — a correct later change
+   that this assertion had no opinion about and should never have been measuring. */
+var R3_COMMIT = '3d7ef782d1b59712157fa3ab39ea1347b4cf9f34';
+var idxDiff = cp.execFileSync('git', ['diff', '--unified=0', PRE_R3_COMMIT, R3_COMMIT, '--', 'index.html'],
   { cwd: ROOT, encoding: 'utf8' }).split('\n');
 var added = idxDiff.filter(function (l) { return /^\+[^+]/.test(l); });
 var removed = idxDiff.filter(function (l) { return /^-[^-]/.test(l); });

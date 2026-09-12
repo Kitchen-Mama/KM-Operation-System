@@ -53,6 +53,33 @@ function _crDB() {
 function crScopeReady() { var s = CampaignRiskState; return !!(s.country && s.marketplace && s.company); }
 function _crEsc(v) { return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 
+/* P1-B8C-R3-R2 — THE FOURTH CONSUMER OF sku_details.image_url ASKS THE SAME AUTHORITY AS THE OTHER THREE.
+ *
+ * This page joins sku_details for name/image/category/series and used to put `r.image` straight into an
+ * `<img src>`, escaped for HTML but not JUDGED: `javascript:alert(1)`, `C:\Users\...\x.jpg`, a UNC path
+ * and a bare Drive id all reached the attribute. P1-B8C-R3 built one policy for exactly this decision and
+ * wired SKU Details, SKU Handbook and Product Strategy to it; P1-B8C-R3-R1 found this page still outside,
+ * and recorded it rather than changing a page it had not measured. This is that change.
+ *
+ * WHY resolveSkuImageUrl AND NOT classifySkuImageSource. The latter also consults the per-browser
+ * localStorage image override, which this page has never done. Adopting it here would hand Campaign Risk
+ * a CAPABILITY it did not have, in a round whose scope is parity — so the value on the row goes to the
+ * shared resolver and nothing else changes.
+ *
+ * FAIL CLOSED, AND DELIBERATELY NO `: r.image` FALLBACK. If the policy did not load, this returns '' and
+ * the page shows its existing placeholder. A fallback to the raw value would restore the exact behaviour
+ * the policy exists to remove, on the one code path where the policy is known to be missing.
+ *
+ * THE 192-ROW PRODUCTION CENSUS (P1-B8C-R3-R1) MEASURED WHAT THIS CHANGES: 178 rows carry a repo-relative
+ * path and 14 are blank; zero absolute, zero of every refused shape. So for today's data the resolved
+ * string is byte-identical on every row and the rendered page is unchanged. The refusals are here for the
+ * value somebody pastes into the sheet tomorrow.
+ */
+function _crImageSrc(value) {
+    if (typeof window === 'undefined' || typeof window.resolveSkuImageUrl !== 'function') return '';
+    return window.resolveSkuImageUrl(value);
+}
+
 // --- User-added promotion overlay ---
 // Authoritative promotions come from campaigns + campaign_sku_lines (read-only join below). This overlay
 // holds promotions the user ADDS on this page, keyed by marketplace_sku_id, persisted locally until a real
@@ -434,8 +461,12 @@ function renderRiskTable() {
         const riskClass = r.riskLevel === 'Safe' ? 'cr-risk--safe'
             : r.riskLevel === 'Watch' ? 'cr-risk--watch'
             : r.riskLevel === 'Missing Data' ? 'cr-risk--missing' : 'cr-risk--high';
-        const img = r.image
-            ? `<img class="cr-img" src="${_crEsc(r.image)}" alt="" loading="lazy" onerror="this.style.display='none';this.parentNode.innerHTML='<div class=\\'cr-img-placeholder\\'>IMG</div>'">`
+        /* The resolved address, or '' — which covers BOTH "no image_url on the row" and "a value the
+           shared policy refuses". Both render the placeholder this page already had, and the onerror
+           below still covers the third case: an address that is allowed but does not load. */
+        const imgSrc = _crImageSrc(r.image);
+        const img = imgSrc
+            ? `<img class="cr-img" src="${_crEsc(imgSrc)}" alt="" loading="lazy" onerror="this.style.display='none';this.parentNode.innerHTML='<div class=\\'cr-img-placeholder\\'>IMG</div>'">`
             : `<div class="cr-img-placeholder">IMG</div>`;
         return `
         <div class="scroll-row" data-mid="${_crEsc(r.marketplaceSkuId)}">
