@@ -1021,7 +1021,58 @@ P1-B8 ACTIVATION  -  NO-GO
 **STATUS: R10 DEPLOYED AND VERIFIED - ENVELOPE CORRECT ON THE WIRE - FRONTEND NOT DEPLOYED - PRODUCT STRATEGY NOT ENABLED - NAVIGATION NOT ENABLED - P1-B8 ACTIVATION BLOCKED ON A SERVER IDENTITY BOUNDARY.**
 
 
+## Entry — 2026-09-12 · PRODUCT-STRATEGY-P1-B8C-R1A · GLOBAL 60-row cap correction (SUPERSEDES R1's BOUND)
+
+-------------------------------------------------------------------------------------------------------
+WHAT CHANGED, AND IT IS THE SAME ONE FILE
+-------------------------------------------------------------------------------------------------------
+      assets/tools/apps-script-diagnostics/TEMP_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK.gs
+
+  `P1B8C_ROW_SAMPLE_MAX_ = 60` was a cap PER SITE. On the production universe of ten sites that is a
+  six-hundred-row export wearing a sixty-row budget's name, and the authorisation was minimum
+  disclosure. A BOUND THAT MULTIPLIES BY A NUMBER NOBODY BOUNDED IS NOT A BOUND.
+
+  It is now one GLOBAL budget for the whole report, spent once by `p1b8cSelectGlobalSample_` over the
+  pooled universe of every site. Not a per-site cap that adds up; not a truncation applied afterwards,
+  which would discard whichever states the last sites happened to hold.
+
+      row_sample_cap 60 · row_sample_cap_scope GLOBAL_REPORT · per_site_cap null
+      selection_algorithm_version P1B8C-R1A-GLOBAL-BUDGET-1
+
+  MEASURED ON TEN SITES OF 105 ROWS: universe 1050, sampled 60, omitted 990, capped true, every one of
+  the ten sites represented, largest single site share 10 of 60, all sixty rows distinct.
+
+-------------------------------------------------------------------------------------------------------
+EVERYTHING R1 PROVED IS UNCHANGED AND STILL PROVED
+-------------------------------------------------------------------------------------------------------
+  Allowlist reducer · fail-closed redaction scan over the finished report · URL/email/token/file-id
+  refusal · image as two booleans and never an address · `error.safety_token` · the shipped
+  `ppwWorkspaceBuild_` · zero writer reachability by call closure · no router row, no action, no flag
+  read, no production runtime change. No file under assets/specs/active/apps-script/ changed; index.html,
+  assets/js, assets/css and assets/html are untouched.
+
+-------------------------------------------------------------------------------------------------------
+TESTS
+-------------------------------------------------------------------------------------------------------
+  product-strategy-row-shape-sample-p1-b8c-r1   419 / 0 · 27 mutants · 0 survived
+  Full sweep 462 suites, 458 green; the four pre-existing red unchanged at 3/1/7/2. New failures 0.
+
+  TWO MUTANTS SURVIVED FIRST AND BOTH WERE RIGHT TO. One showed the reordered-source test cannot see
+  the selector's own sort, because the shipped builder already sorts by marketplace_sku_id; the other
+  showed site representation is not load-bearing on ten EQUAL sites. Both assertions were re-pointed at
+  universes and seams where the rule they claim is the thing actually holding.
+
+APPS_SCRIPT_SYNC_REQUIRED = YES_DIAGNOSTIC_ONLY (the same one file, now at R1A)
+APPS_SCRIPT_NEW_VERSION_REQUIRED = NO · WEB_APP_DEPLOYMENT_REQUIRED = NO · FRONTEND_DEPLOY_REQUIRED = NO
+
+**STATUS: R1 IS SUPERSEDED BY R1A. SYNC AND RUN ONLY AFTER BOTH ARE PUSHED. NOT SYNCED - NO VERSION - NO DEPLOYMENT - NOT PUSHED.**
+
+-------------------------------------------------------------------------------------------------------
+
 ## Entry — 2026-09-12 · PRODUCT-STRATEGY-P1-B8C-R1 · minimal live row-shape readback (DIAGNOSTIC SYNC ONLY)
+
+> **SUPERSEDED BY P1-B8C-R1A (entry above).** Its bound was sixty rows PER SITE. Do not sync or run the
+> R1 version of the diagnostic; the file to paste is the R1A one.
 
 -------------------------------------------------------------------------------------------------------
 WHAT CHANGED, AND IT IS ONE FILE
@@ -1047,7 +1098,8 @@ WHY A SECOND ENTRY POINT EXISTS
 -------------------------------------------------------------------------------------------------------
 APPS_SCRIPT_SYNC_REQUIRED  -  **YES_DIAGNOSTIC_ONLY**
 -------------------------------------------------------------------------------------------------------
-  Paste ONE file into the Apps Script editor, replacing its whole contents:
+  Paste ONE file into the Apps Script editor, replacing its whole contents — **the R1A version, which
+  is what the repository holds after the correction commit**:
 
       TEMP_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK.gs
 

@@ -120,16 +120,42 @@ Plus, per site, the envelope fields the accessor validates: `sourceState`, `coun
 
 **Bound and safety, both stated as code rather than intention:**
 
-- `P1B8C_ROW_SAMPLE_MAX_ = 60` rows per site, and the cap is reported as a cap.
-- **Selection is deterministic and coverage-first, never the first sixty.** Rows are ordered by
-  `marketplace_sku_id` ascending — the row's own identity, so sorting the sheet cannot move the
-  sample. Pass 1 gives every distinct trait a representative row, **rarest trait first**, because with
-  a cap the common traits would otherwise crowd out the one inactive row or the one row with no MSRP,
-  and those are the entire reason a shape sample is being taken. Pass 2 fills the remaining slots at
-  even *rank* across the whole universe. Pass 3 sweeps in order and is reachable only once coverage
-  and spread are complete.
-- **A state production does not hold is an evidence gap, named in the output**
-  (`STATE_ABSENT_FROM_PRODUCTION`), never manufactured. The output says so in as many words and points
+- `P1B8C_ROW_SAMPLE_MAX_ = 60` rows **in the whole report**, across every site together, and the cap
+  is reported as a cap with `row_sample_cap_scope = GLOBAL_REPORT` beside it.
+
+  *P1-B8C-R1 shipped this as a cap **per site**, which on the production universe of ten sites is a
+  six-hundred-row export wearing a sixty-row budget's name. The authorisation was minimum disclosure,
+  and **a bound that multiplies by a number nobody bounded is not a bound.** P1-B8C-R1A made it one
+  global budget, spent once by one selector over the pooled universe of every site — not a per-site
+  cap that happens to add up, and not a truncation applied to a finished report, which would discard
+  whichever states the last sites happened to hold. The arithmetic is asserted in full:
+  `sampled_rows_total <= 60`, `sum(site rows) === sampled_rows_total`,
+  `omitted_rows === universe_total_rows - sampled_rows_total`, and
+  `capped === (universe_total_rows > sampled_rows_total)`.*
+- **Selection is deterministic, global and coverage-first, never the first sixty.** Rows are ordered
+  by **canonical identity** — `company||country||marketplace||marketplace_sku_id` — never by physical
+  row number, so sorting, inserting into or re-exporting the sheet cannot move the sample. Four
+  passes, over the pooled universe of every site:
+
+  1. **Site representation.** While the budget allows, every non-empty site claims one row, sites in
+     canonical order. *Without this pass the first site eats the budget.* On ten equal sites that is
+     invisible — rank sampling alone gives each about six seats — which is why the suite tests it on a
+     **skewed** universe of one site with 900 rows and nine with 5: there, rank sampling alone puts
+     almost every seat in the big site and the nine small ones disappear from the report entirely. The
+     seat a site claims is its own row whose rarest GLOBAL trait is rarest, so representation and
+     coverage pull the same way.
+  2. **Rare traits, counted across the whole universe**, rarest first — because with a bound the
+     common traits would otherwise crowd out the one inactive row or the one row with no MSRP, and
+     those are the entire reason a shape sample is being taken.
+  3. **Global rank** across the whole pooled universe.
+  4. **Canonical fill**, reachable only once the three above are complete.
+
+  An empty site consumes no budget: it contributes nothing to the pool, so it cannot claim a seat.
+- **A state production does not hold is a coverage gap, named in the output**
+  (`STATE_ABSENT_FROM_PRODUCTION` in `coverage_gaps`), never manufactured. `evidence_gaps` keeps only
+  what the SOURCE could not answer — an unreadable table, a site count past the bound — and
+  `coverage_gaps` keeps everything the BUDGET could not reach. **If sixty rows cannot cover every
+  trait, the uncovered ones are listed and the cap is not raised.** The output says so in as many words and points
   at the deterministic fixture as the labelled alternative.
 - **The redaction scan is fail-closed and runs on the finished report**, walking keys against
   `P1B8C_FORBIDDEN_KEYS_` and primitive values against `P1B8C_SECRET_SHAPES_` (absolute URL, `AKfyc…`
@@ -159,6 +185,20 @@ reached:
    looked correct because the order is an id sort rather than the sheet's. Ranking by
    `floor(k * n / remaining)` spans the range at any ratio; the suite now asserts the sample is **not**
    the head and **does** contain the last row of the universe.
+
+**And two more that P1-B8C-R1A's own assertions were wrong about before the code was.**
+
+4. **The reordered-source test passes for two reasons, and only one of them was mine.**
+   `ppwWorkspaceBuild_` sorts its in-scope ids ascending (72_ line 463) *before* normalising, so rows
+   reach the pool in identity order whatever the sheet did. A mutant that injected the pool position
+   into the canonical id therefore **survived** the end-to-end reorder test — that test cannot see the
+   selector's own sort at all. The sort is now proved where it lives: the same pool is handed to the
+   selector scrambled and sorted, and must select the same sixty rows.
+5. **Site representation looked load-bearing on a universe that did not need it.** Ten equal sites get
+   about six seats each from rank sampling alone, so deleting pass 1 changed nothing and that mutant
+   survived too. **A mutant that survives is telling you the assertion is passing for a reason other
+   than the one it claims.** The skewed universe in the paragraph above is the shape where the pass is
+   actually the thing keeping nine sites in the report.
 
 **Why prices are safe to emit here and were not before.** The rule this relaxes is P1-B3's, and its
 reason was that a census is pasted into a report. This output is pasted into ONE repository file that

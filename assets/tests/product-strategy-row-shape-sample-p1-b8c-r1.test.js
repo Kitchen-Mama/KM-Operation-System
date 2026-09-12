@@ -216,6 +216,44 @@ ok(SRCRB.indexOf('regionalConfirmed') === -1 && SRCRB.indexOf('pricingAmbiguous'
 
 // A7 — the row cap is a named constant, and it is 60.
 ok(/var P1B8C_ROW_SAMPLE_MAX_ = 60;/.test(SRCRB), 'A7  P1B8C_ROW_SAMPLE_MAX_ = 60');
+/* A7a — AND IT BOUNDS THE WHOLE REPORT, NOT ONE SITE. P1-B8C-R1 shipped it as a per-site cap, which on
+   a ten-site universe is a six-hundred-row export wearing a sixty-row budget's name. A BOUND THAT
+   MULTIPLIES BY A NUMBER NOBODY BOUNDED IS NOT A BOUND. */
+ok(/var P1B8C_ROW_SAMPLE_CAP_SCOPE_ = 'GLOBAL_REPORT';/.test(SRCRB),
+  'A7a and its scope is GLOBAL_REPORT, declared as a constant beside it');
+ok(/function p1b8cSelectGlobalSample_\(pool, cap\)/.test(SRCRB),
+  'A7b spent by ONE selector that takes the pooled universe, not a per-site one');
+ok(SRCRB.indexOf('function p1b8cSelectSample_') === -1,
+  'A7c and the per-site selector is gone, not merely unused');
+// A7d — THE BUDGET IS NOT RESET ANYWHERE. One call, at the top level of the run, outside every loop.
+eq((bare(SRCRB).match(/p1b8cSelectGlobalSample_\(/g) || []).length, 2,
+  'A7d the global selector is defined once and called once',
+  (bare(SRCRB).match(/p1b8cSelectGlobalSample_\(/g) || []));
+/* A7e ASKED THE WRONG QUESTION FIRST. It tested whether a `forEach` appears anywhere in the four
+   thousand characters before the call — which it does, because PHASE 1 builds the sites in a forEach
+   and the call comes after it. PROXIMITY IS NOT NESTING. The property that matters is BRACE DEPTH:
+   `ppwWorkspaceBuild_` really is inside the per-site loop, the global selector must not be, and the
+   two positions in the same file can simply be compared. */
+function depthAt(src, idx) {
+  var s = bare(src.slice(0, idx)), d = 0;
+  for (var i = 0; i < s.length; i++) {
+    if (s[i] === '{') d++;
+    else if (s[i] === '}') d--;
+  }
+  return d;
+}
+var bodyStart = SRCRB.indexOf('function ' + FN + '(');
+var buildAt = SRCRB.indexOf('ppwWorkspaceBuild_(tables, req, report.read_at)', bodyStart);
+var selectAt = SRCRB.indexOf('p1b8cSelectGlobalSample_(pool,', bodyStart);
+ok(buildAt > 0 && selectAt > 0, 'A7e the two call sites are found', { buildAt: buildAt, selectAt: selectAt });
+var dBuild = depthAt(SRCRB, buildAt), dSelect = depthAt(SRCRB, selectAt);
+ok(dSelect < dBuild,
+  'A7e1 the global selector sits SHALLOWER than the per-site builder — it is outside the loop',
+  { selector_depth: dSelect, builder_depth: dBuild });
+var poolAt = SRCRB.indexOf('var envelopes = [], pool = [];', bodyStart);
+eq(depthAt(SRCRB, selectAt), depthAt(SRCRB, poolAt),
+  'A7e2 at exactly the depth of the phase-1 declarations — one statement of the run, not of a loop',
+  { selector: depthAt(SRCRB, selectAt), phase1: depthAt(SRCRB, poolAt), builder: dBuild });
 var capUses = (bare(SRCRB).match(/P1B8C_ROW_SAMPLE_MAX_/g) || []).length;
 ok(capUses >= 2, 'A7a and the constant is what the code uses, not a repeated literal', capUses);
 
@@ -549,81 +587,278 @@ ok(JSON.stringify(R).indexOf('script.google.com') === -1,
   'C12f and no deployment URL is anywhere near it');
 
 // ===================================================================================================
-section('SECTION D  §6 DETERMINISTIC, COVERAGE-FIRST SELECTION — AND NOT THE FIRST SIXTY');
+section('SECTION D  §2/§3 ONE GLOBAL BUDGET OF SIXTY ROWS, SPENT ONCE ACROSS EVERY SITE');
 // ===================================================================================================
-
-var RB = runSample(bulkDB(100));
-function siteOf(rep, country) {
-  return rep.sites.filter(function (s) { return s.ok && s.site.country === country; })[0];
+/*
+ * THE DEFECT THIS SECTION EXISTS FOR. P1-B8C-R1 held each site to sixty rows, so ten sites could emit
+ * six hundred. The authorisation was minimum disclosure; per-site is not a bound on a report.
+ *
+ * The stress universe below is TEN sites of a hundred and five rows — 1050 rows — which is the shape
+ * that makes the difference visible: a per-site cap returns 600 and a global budget returns 60.
+ */
+var SITE_MATRIX = [
+  ['KM', 'US', 'Amazon', 'USD'], ['KM', 'US', 'Shopify', 'USD'], ['KM', 'CA', 'Amazon', 'CAD'],
+  ['KM', 'DE', 'Amazon', 'EUR'], ['KM', 'UK', 'Amazon', 'GBP'], ['KMJ', 'JP', 'Rakuten', 'JPY'],
+  ['KMJ', 'JP', 'Amazon', 'JPY'], ['CWC', 'US', 'Target', 'USD'], ['CWC', 'US', 'Amazon', 'USD'],
+  ['CWC', 'AU', 'Amazon', 'AUD']
+];
+/** `sites` sites of `per` rows each, every §6 state spread deterministically by modulus. */
+function matrixDB(siteCount, per, opts) {
+  opts = opts || {};
+  var d = { sku_details: [], marketplace_skus: [], sku_regional_details: [], pricing_list: [],
+    campaigns: [], campaign_sku_lines: [] };
+  var cats = ['Spatula', 'Can Opener', 'Whisk', 'Tongs'], sers = ['Pro', 'Classic', 'Mini'];
+  for (var s = 0; s < siteCount; s++) {
+    var site = SITE_MATRIX[s], tag = 'S' + s;
+    d.campaigns.push({ campaign_id: 'CMP-' + tag, campaign_name: 'Event ' + tag, status: 'active',
+      company: site[0], country: site[1], marketplace: site[2],
+      start_date: '2026-09-01', end_date: '2026-09-30' });
+    // AN EMPTY SITE: every one of its listings is `inactive`, which the default status filter excludes,
+    // so the builder returns no rows for it at all.
+    var dead = opts.deadSite === s;
+    for (var i = 0; i < per; i++) {
+      var n = tag + '-' + ('000' + i).slice(-3);
+      var sku = 'SK-' + n, msku = 'MS-' + n;
+      d.sku_details.push({ sku: sku, product_name: 'Product ' + n, category: cats[i % 4],
+        series: (i % 9 === 4) ? '' : sers[i % 3],
+        image_url: (i % 8 === 3) ? '' : ((i % 5 === 2) ? 'local' + i + '.jpg'
+          : 'https://images.example.com/' + n + '.jpg'),
+        lifecycle: 'Running in the Market' });
+      d.marketplace_skus.push({ marketplace_sku_id: msku, sku: sku, company: site[0],
+        country: site[1], marketplace: site[2], site_sku: 'B-' + n,
+        marketplace_sku_status: dead ? 'inactive' : ((i % 17 === 9) ? 'phasing_out' : 'active'),
+        currency: site[3] });
+      if (i % 11 !== 7) {
+        d.sku_regional_details.push({ regional_detail_id: 'RD-' + n, sku: sku, company: site[0],
+          country: site[1], marketplace: site[2], site_sku: 'B-' + n,
+          product_url: 'https://shop.example.com/p/' + n, marketplace_product_id: 'ASIN' + n,
+          language: 'en', status: 'complete' });
+      }
+      if (i % 13 !== 11) {
+        d.pricing_list.push({ pricing_id: 'PL-' + n, marketplace_sku_id: msku, currency: site[3],
+          regular_price: 10 + (i % 30), minimum_price: (i % 9 === 4) ? '' : 8 + (i % 20),
+          msrp: (i % 7 === 5) ? '' : 15 + (i % 25), price_status: 'approved' });
+      }
+      if (i % 6 === 2) {
+        d.campaign_sku_lines.push({ campaign_sku_line_id: 'CL-' + n, campaign_id: 'CMP-' + tag,
+          marketplace_sku_id: msku, promo_price: 8 + (i % 15), regular_price: 10 + (i % 30),
+          discount_percent: 20, price_units: site[3], line_status: 'active' });
+      }
+    }
+  }
+  return d;
 }
-var US = siteOf(RB, 'US');
-ok(!!US, 'D0  the large site is present');
-eq(US.cap, 60, 'D1  the site reports the cap it was held to');
-eq(US.sampled_rows, 60, 'D1a and it sampled exactly that many');
-eq(US.universe_rows, 105, 'D1b out of a universe it also reports');
-eq(US.omitted_rows, 45, 'D1c with the omitted count stated rather than implied');
-eq(US.capped, true, 'D1d and `capped` true — a window is never handed over as a whole');
-
-// D2 — THE DEFECT THIS SECTION EXISTS FOR. The sample must not be the head of the order.
-var ids = US.rows.map(function (r) { return r.marketplace_sku_id; });
-var universeIds = bulkDB(100).marketplace_skus
-  .filter(function (r) { return r.country === 'US'; })
-  .map(function (r) { return r.marketplace_sku_id; }).sort();
-eq(universeIds.length, 105, 'D2  the universe under test really is larger than the cap');
-ok(JSON.stringify(ids) !== JSON.stringify(universeIds.slice(0, 60)),
-  'D2a THE SAMPLE IS NOT THE FIRST SIXTY OF THE ORDER — the stride defect, asserted');
-ok(ids.indexOf(universeIds[universeIds.length - 1]) !== -1,
-  'D2b and the LAST row of the universe is in it, which a head never contains');
-/* D2c IS THE MEASUREMENT THAT SEPARATES A SPREAD FROM A HEAD, and it is a number rather than a
-   spot check. With the rank-based spread, 31 of the 60 sampled rows come from the second half of the
-   105-row universe. With the stride defect restored it is 8. A quarter is the line; anything at or
-   below it is a sample that lives in the front of the order. */
-var sampledIdx = ids.map(function (x) { return universeIds.indexOf(x); });
-var farHalf = sampledIdx.filter(function (i) { return i >= Math.floor(universeIds.length / 2); }).length;
-ok(farHalf >= Math.ceil(ids.length / 4),
-  'D2c at least a quarter of the sample comes from the FAR HALF of the universe',
-  { far_half: farHalf, sampled: ids.length, universe: universeIds.length });
-
-// D3 — deterministic: the same source gives the same sample, twice, byte for byte.
-var RB2 = runSample(bulkDB(100));
-eq(siteOf(RB2, 'US').rows.map(function (r) { return r.marketplace_sku_id; }), ids,
-  'D3  the selection is deterministic across runs');
-/* D3a FINGERPRINTED THE CLOCK. The report carries `read_at`, `duration_ms` and the builder's own
-   `schema.read_at`, all of which are a wall clock and none of which is the selection. Two runs a
-   millisecond apart fingerprint differently and always will. What determinism means here is that the
-   SELECTION and the MEASUREMENTS are identical, so those are what is compared. */
-function withoutClock(rep) {
-  var c = JSON.parse(JSON.stringify(rep));
-  delete c.read_at; delete c.duration_ms; delete c.emitted; delete c.__log; delete c.__logged;
-  (c.sites || []).forEach(function (s) { if (s.schema) delete s.schema.read_at; });
-  return c;
+/** Every sampled row in the report, in report order. */
+function allRows(rep) {
+  var out = [];
+  (rep.sites || []).forEach(function (s) { (s.rows || []).forEach(function (r) { out.push(r); }); });
+  return out;
 }
-eq(withoutClock(RB2), withoutClock(RB),
-  'D3a and the whole report — selection, coverage and counts — is identical once the clock is removed');
-ok(RB.read_at > 0 && RB.emitted.full_report_length > 0,
-  'D3a1 while the clock and the length are still reported, because a reader needs them');
-eq(R.selection_rule.random, false, 'D3b the rule declares itself not random');
-eq(R.selection_rule.first_n, false, 'D3c and not first-n');
-eq(R.selection_rule.deterministic, true, 'D3d and deterministic');
-eq(R.selection_rule.order, 'marketplace_sku_id ascending',
-  'D3e ordered by the row\'s own identity, so sorting the sheet cannot move it');
+function allIds(rep) { return allRows(rep).map(function (r) { return r.marketplace_sku_id; }); }
+function siteOf(rep, country, marketplace) {
+  return (rep.sites || []).filter(function (s) {
+    return s.ok && s.site.country === country
+      && (marketplace === undefined || s.site.marketplace === marketplace);
+  })[0];
+}
 
-// D4 — coverage runs FIRST, and the pass counts say so.
-ok(US.selected_by_pass.coverage > 0, 'D4  rows were taken by the coverage pass', US.selected_by_pass);
-eq(US.traits_not_sampled, [], 'D4a and no state on the site was left unrepresented', US.traits_not_sampled);
+var RM = runSample(matrixDB(10, 105));
+eq(RM.verdict, 'SAMPLE_TAKEN', 'D0  the ten-site universe samples cleanly', RM.error || RM.violations);
 
-// D5 — RAREST FIRST IS THE RULE, AND HERE IS WHY IT MATTERS. One hundred identical bulk rows crowd the
-// site; the four original rows carry every rare state. A cap-bounded sample that did not prefer rare
-// traits would drop them.
-['MS3', 'MS4', 'MS7'].forEach(function (id, i) {
-  ok(ids.indexOf(id) !== -1,
-    'D5.' + (i + 1) + ' the rare row ' + id + ' survived the cap — rarest-trait-first, working');
-});
+// D1 — THE HARD NUMBER. Ten sites, 105 rows each, and the report carries sixty rows.
+eq(RM.universe_total_rows, 1050, 'D1  the universe really is 1050 rows', RM.universe_total_rows);
+eq(RM.sampled_rows_total, 60, 'D1a AND THE WHOLE REPORT CARRIES SIXTY — not sixty per site');
+eq(allRows(RM).length, 60, 'D1b counted from the rows themselves rather than from the field');
+eq(RM.row_sample_cap, 60, 'D1c the cap is reported');
+eq(RM.row_sample_cap_scope, 'GLOBAL_REPORT', 'D1d WITH ITS SCOPE — the field the defect lacked');
+eq(RM.per_site_cap, null, 'D1e and there is no per-site cap to report');
+eq(RM.selection_algorithm_version, 'P1B8C-R1A-GLOBAL-BUDGET-1', 'D1f and the algorithm is versioned');
 
-// D6 — a site smaller than the cap is not capped, and says so.
-var CA = siteOf(R, 'CA');
-eq(CA.capped, false, 'D6  a small site reports capped = false');
-eq(CA.omitted_rows, 0, 'D6a and omits nothing');
+// D2 — THE ARITHMETIC §2 SPECIFIES, EVERY CLAUSE.
+ok(RM.sampled_rows_total <= 60, 'D2  sampled_rows_total <= 60');
+var siteSum = (RM.sites || []).reduce(function (a, s) { return a + ((s.rows || []).length); }, 0);
+eq(siteSum, RM.sampled_rows_total, 'D2a sum(site rows) === sampled_rows_total', siteSum);
+var declaredSum = (RM.sites || []).reduce(function (a, s) { return a + (s.sampled_rows || 0); }, 0);
+eq(declaredSum, RM.sampled_rows_total,
+  'D2b and each site\'s own declared count sums to the same number', declaredSum);
+ok(RM.sampled_rows_total <= RM.universe_total_rows, 'D2c sampled_rows_total <= universe_total_rows');
+eq(RM.omitted_rows, RM.universe_total_rows - RM.sampled_rows_total,
+  'D2d omitted_rows === universe_total_rows - sampled_rows_total', RM.omitted_rows);
+eq(RM.capped, RM.universe_total_rows > RM.sampled_rows_total,
+  'D2e capped === (universe_total_rows > sampled_rows_total)');
+eq(RM.capped, true, 'D2f which here is true');
+
+// D3 — NO ROW APPEARS TWICE. The per-site lists are a PARTITION of one selection.
+var ids = allIds(RM);
+var uniq = {};
+ids.forEach(function (i) { uniq[i] = 1; });
+eq(Object.keys(uniq).length, 60, 'D3  all sixty sampled rows are distinct', ids.length);
+
+// D4 — NO SITE MONOPOLISES THE BUDGET, and every site is in the report.
+eq(RM.sites_examined, 10, 'D4  ten sites were examined');
+eq(RM.sites_represented, 10, 'D4a and all ten have at least one row — pass 1 does its job');
+var shares = (RM.sites || []).map(function (s) { return (s.rows || []).length; });
+ok(Math.min.apply(null, shares) >= 1, 'D4b no site is absent from the sample', shares);
+/* D4c — THE FIRST SITE IN CANONICAL ORDER MUST NOT EAT THE BUDGET. Without pass 1, a rarity-driven
+   selection over a pool sorted by site can legitimately spend every seat inside the first site, and a
+   report that describes one site is not a report about the universe. A quarter of the budget is the
+   line; with ten equal sites an even split is six. */
+var firstSiteShare = shares[0];
+ok(firstSiteShare <= Math.ceil(60 / 4),
+  'D4c the first site in canonical order holds at most a quarter of the budget',
+  { first: firstSiteShare, all: shares });
+ok(Math.max.apply(null, shares) <= Math.ceil(60 / 4),
+  'D4d and so does every other one', shares);
+
+// D5 — COVERAGE STILL SURVIVES THE SMALLER BUDGET, and the pass counts say how.
+ok(RM.selected_by_pass.site_representation === 10,
+  'D5  ten seats went to site representation', RM.selected_by_pass);
+ok(RM.selected_by_pass.rare_trait >= 0 && RM.selected_by_pass.global_rank > 0,
+  'D5a the rest went to rare traits and global rank', RM.selected_by_pass);
+eq(RM.selected_by_pass.site_representation + RM.selected_by_pass.rare_trait
+  + RM.selected_by_pass.global_rank + RM.selected_by_pass.canonical_fill, 60,
+  'D5b and the four passes account for every seat', RM.selected_by_pass);
+
+// D6 — DETERMINISTIC, AND NOT ON THE PHYSICAL ROW NUMBER.
+var RM2 = runSample(matrixDB(10, 105));
+eq(allIds(RM2), ids, 'D6  the same source gives the same sixty rows');
+/* D6a — REVERSE EVERY SHEET. The data is identical and only the physical order changes, so a
+   selection keyed on canonical identity must not move by one row. A selection that used the row
+   number would come back completely different. */
+function reversedSheets(db) {
+  var d = JSON.parse(JSON.stringify(db));
+  Object.keys(d).forEach(function (k) { d[k] = d[k].slice().reverse(); });
+  return d;
+}
+var RR = runSample(reversedSheets(matrixDB(10, 105)));
+eq(RR.verdict, 'SAMPLE_TAKEN', 'D6a a reversed source still samples');
+eq(allIds(RR).slice().sort(), ids.slice().sort(),
+  'D6b AND SELECTS EXACTLY THE SAME SIXTY ROWS — the order is canonical identity, not row position');
+eq(RR.sampled_rows_total, 60, 'D6c with the same total');
+ok(/canonical identity/.test(RM.selection_rule.order),
+  'D6d and the rule says so in the output', RM.selection_rule.order);
+ok(/physical row number/.test(RM.selection_rule.order_is_not),
+  'D6e naming what it is NOT keyed on');
+
+/* D6f — AND D6b PASSES FOR TWO REASONS, WHICH IS ONE MORE THAN IT LOOKS.
+ *
+ * `ppwWorkspaceBuild_` sorts its in-scope ids ascending (72_ line 463) BEFORE it normalises, so rows
+ * reach the pool in identity order however the sheet was arranged. A reversed source therefore proves
+ * the pipeline is stable — it does NOT prove the selector's own sort is doing anything, because by the
+ * time the pool exists the physical order is already gone.
+ *
+ * MEASURED, NOT ASSUMED: a mutant that injects the pool position into the canonical id SURVIVES D6b for
+ * exactly this reason. So the selector's sort is proved where it lives, by handing the same pool in a
+ * scrambled order and requiring the same selection. The two assertions answer two different questions
+ * and neither substitutes for the other.
+ */
+var ctxSel = ctxFor(DB());
+var SEL_PROBE = 'var __pool = [];'
+  + ' ["km||us||amazon", "km||ca||amazon", "kmj||jp||rakuten"].forEach(function (k, si) {'
+  + '   for (var i = 0; i < 40; i++) {'
+  + '     var id = "MS-" + k.charAt(0) + si + "-" + ("00" + i).slice(-3);'
+  + '     __pool.push({ site_key: k, cid: k + "||" + id, row: {'
+  + '       marketplace_sku_id: id, company: k.split("||")[0], country: k.split("||")[1],'
+  + '       marketplace: k.split("||")[2], currency: ["USD","CAD","JPY"][si],'
+  + '       category: ["Spatula","Whisk","Tongs"][i % 3], series: (i % 7 === 2) ? null : "Pro",'
+  + '       regular_price: (i % 11 === 4) ? null : 10 + i, minimum_price: (i % 5 === 1) ? null : 8,'
+  + '       msrp: (i % 9 === 3) ? null : 20, product_image: (i % 8 === 6) ? "" : "https://x/" + i,'
+  + '       marketplace_sku_status: (i % 13 === 7) ? "phasing_out" : "active",'
+  + '       campaigns: (i % 6 === 2) ? [{ status: "active" }] : [], analysable: (i % 4 !== 3),'
+  + '       missing_reasons: (i % 10 === 5) ? ["PRICING_SOURCE_MISSING"] : [], findings: [] } });'
+  + '   }'
+  + ' });'
+  + ' function __ids(sel) { var o = []; Object.keys(sel.by_site).sort().forEach(function (k) {'
+  + '   sel.by_site[k].forEach(function (r) { o.push(r.marketplace_sku_id); }); }); return o.sort(); }'
+  + ' var __sorted = __pool.slice();'
+  // A DETERMINISTIC SCRAMBLE. Not random: the test must fail the same way every time it fails.
+  + ' var __scrambled = []; for (var s2 = 0; s2 < __sorted.length; s2++) {'
+  + '   __scrambled.push(__sorted[(s2 * 37 + 11) % __sorted.length]); }'
+  + ' JSON.parse(JSON.stringify({'
+  + '   pool: __pool.length,'
+  + '   scrambled_is_a_permutation: __scrambled.length === __sorted.length,'
+  + '   sorted: __ids(p1b8cSelectGlobalSample_(__sorted, 60)),'
+  + '   scrambled: __ids(p1b8cSelectGlobalSample_(__scrambled, 60))'
+  + ' }))';
+var SELP = vm.runInContext(SEL_PROBE, ctxSel);
+eq(SELP.pool, 120, 'D6f the selector probe builds a 120-row pool across three sites', SELP.pool);
+ok(SELP.scrambled_is_a_permutation, 'D6f1 and scrambles it into the same multiset');
+eq(SELP.scrambled, SELP.sorted,
+  'D6g THE SELECTOR SORTS ITS OWN POOL — a scrambled pool selects exactly the same sixty rows');
+eq(SELP.sorted.length, 60, 'D6h and the budget still bought sixty', SELP.sorted.length);
+
+/* D6i — THE SKEWED UNIVERSE, WHICH IS WHERE PASS 1 EARNS ITS PLACE.
+ *
+ * Ten equal sites do not need site representation: even rank sampling gives each of them about six
+ * seats on its own, so D4a would pass with pass 1 deleted — and a mutant proved exactly that. The
+ * shape that needs it is an UNEQUAL one: one site holding nine hundred rows and nine holding five
+ * each. Rank sampling over a pool sorted by site puts almost every seat inside the big site, and the
+ * nine small ones disappear from the report entirely.
+ */
+function skewedDB() {
+  var d = matrixDB(10, 5);
+  var big = matrixDB(1, 900);
+  ['sku_details', 'marketplace_skus', 'sku_regional_details', 'pricing_list',
+    'campaign_sku_lines'].forEach(function (t) {
+    // The big site is SITE_MATRIX[0]; matrixDB(10,5) already gave it five rows, so replace them.
+    d[t] = d[t].filter(function (r) {
+      var tag = String(r.sku || r.marketplace_sku_id || r.campaign_sku_line_id || '');
+      return tag.indexOf('S0-') === -1;
+    }).concat(big[t]);
+  });
+  return d;
+}
+var RS = runSample(skewedDB());
+eq(RS.verdict, 'SAMPLE_TAKEN', 'D6i the skewed universe samples', RS.error || RS.violations);
+eq(RS.universe_total_rows, 900 + 9 * 5, 'D6i1 one site of 900 and nine of 5', RS.universe_total_rows);
+eq(RS.sampled_rows_total, 60, 'D6i2 and the report still carries sixty rows');
+eq(RS.sites_represented, 10, 'D6j EVERY SITE IS STILL REPRESENTED, including the nine small ones');
+var skewShares = (RS.sites || []).map(function (s) { return (s.rows || []).length; });
+ok(Math.min.apply(null, skewShares) >= 1,
+  'D6j1 not one of them is absent from a universe that is 94% one site', skewShares);
+
+// D7 — THE BOUNDARY, THREE UNIVERSES WIDE.
+function trimmedTo(keep) {
+  var d = matrixDB(10, 105);
+  d.marketplace_skus = d.marketplace_skus.slice(0, keep);
+  var live = {};
+  d.marketplace_skus.forEach(function (r) { live[r.marketplace_sku_id] = r.sku; });
+  var skus = {};
+  Object.keys(live).forEach(function (k) { skus[live[k]] = 1; });
+  d.pricing_list = d.pricing_list.filter(function (r) { return !!live[r.marketplace_sku_id]; });
+  d.sku_regional_details = d.sku_regional_details.filter(function (r) { return !!skus[r.sku]; });
+  d.campaign_sku_lines = d.campaign_sku_lines.filter(function (r) { return !!live[r.marketplace_sku_id]; });
+  return d;
+}
+var R59 = runSample(trimmedTo(59));
+eq([R59.universe_total_rows, R59.sampled_rows_total, R59.omitted_rows, R59.capped], [59, 59, 0, false],
+  'D7  a universe of 59 is kept whole, and reports itself uncapped');
+var R60 = runSample(trimmedTo(60));
+eq([R60.universe_total_rows, R60.sampled_rows_total, R60.omitted_rows, R60.capped], [60, 60, 0, false],
+  'D7a a universe of exactly 60 is kept whole');
+var R61 = runSample(trimmedTo(61));
+eq([R61.universe_total_rows, R61.sampled_rows_total, R61.omitted_rows, R61.capped], [61, 60, 1, true],
+  'D7b and 61 gives 60 sampled, 1 omitted, capped');
+
+// D8 — AN EMPTY SITE CONSUMES NO BUDGET.
+var RD = runSample(matrixDB(10, 105, { deadSite: 3 }));
+var deadSite = (RD.sites || []).filter(function (s) { return s.ok && s.universe_rows === 0; });
+eq(deadSite.length, 1, 'D8  one site has no rows at all', (RD.sites || []).map(function (s) {
+  return s.site.country + '/' + s.site.marketplace + '=' + s.universe_rows; }));
+eq(deadSite[0].sampled_rows, 0, 'D8a and it sampled none');
+eq(RD.sampled_rows_total, 60, 'D8b while the budget still bought sixty rows elsewhere');
+eq(RD.sites_represented, 9, 'D8c and only the nine non-empty sites are counted as represented');
+eq(allRows(RD).length, 60, 'D8d counted from the rows themselves');
+
+// D9 — THE RULE DECLARES WHAT IT IS NOT, so a later reader cannot reintroduce the defect quietly.
+eq(RM.selection_rule.budget_reset_per_site, false, 'D9  the budget is not reset per site');
+eq(RM.selection_rule.budget_reset_per_builder_call, false, 'D9a nor per builder call');
+eq(RM.selection_rule.truncation_after_selection, false,
+  'D9b and the bound is not a truncation applied after selection');
+eq(RM.selection_rule.scope, 'GLOBAL_REPORT', 'D9c the rule carries the scope too');
+eq(RM.chunking.re_samples, false, 'D9d chunking does not re-sample');
+eq(RM.chunking.duplicates_rows, false, 'D9e nor duplicate rows');
+eq(RM.chunking.per_chunk_budget, null, 'D9f and there is no per-chunk budget');
 
 // ===================================================================================================
 section('SECTION E  §6 COVERAGE IS REPORTED, AND A STATE PRODUCTION LACKS IS A GAP, NEVER A FIXTURE');
@@ -652,11 +887,14 @@ var noPromo = DB();
 noPromo.campaigns = [];
 noPromo.campaign_sku_lines = [];
 var RNP = runSample(noPromo);
-var gap = RNP.evidence_gaps.filter(function (g) {
+/* §4 GAVE COVERAGE ITS OWN LIST. `evidence_gaps` now holds only what the SOURCE could not answer —
+   an unreadable table, a site count past the bound — and `coverage_gaps` holds everything the BUDGET
+   could not reach. Two questions, two lists, and neither is a subset of the other. */
+var gap = RNP.coverage_gaps.filter(function (g) {
   return g.code === 'STATE_ABSENT_FROM_PRODUCTION' && g.evidence.dimension === 'promotion';
 })[0];
 ok(!!gap, 'E5  a universe with no promotion at all reports STATE_ABSENT_FROM_PRODUCTION',
-  RNP.evidence_gaps.map(function (g) { return g.code + ':' + JSON.stringify(g.evidence); }));
+  RNP.coverage_gaps.map(function (g) { return g.code + ':' + JSON.stringify(g.evidence); }));
 eq(gap.evidence.values, ['present'], 'E5a naming which value is missing');
 ok(/NOTHING\n?\s*WAS MANUFACTURED|NOTHING WAS MANUFACTURED/.test(gap.detail.replace(/\s+/g, ' '))
   || /NOTHING WAS MANUFACTURED/.test(gap.detail),
@@ -667,7 +905,7 @@ var promoDim = RNP.coverage.binary.filter(function (b) { return b.dimension === 
 eq(promoDim.covered, false, 'E5d and the dimension is reported UNCOVERED rather than quietly passing');
 
 // E6 — a single-valued dimension is a gap too: a difference across it cannot be shown from live data.
-var oneMarket = R.evidence_gaps.filter(function (g) {
+var oneMarket = R.coverage_gaps.filter(function (g) {
   return g.code === 'DIMENSION_HAS_ONE_VALUE_IN_PRODUCTION';
 });
 eq(oneMarket, [], 'E6  this universe has more than one value on every categorical dimension', oneMarket);
@@ -675,25 +913,44 @@ var flat = DB();
 flat.marketplace_skus = flat.marketplace_skus.filter(function (r) { return r.company === 'KM'; });
 flat.marketplace_skus.forEach(function (r) { r.country = 'US'; r.marketplace = 'Amazon'; });
 var RF = runSample(flat);
-ok(RF.evidence_gaps.some(function (g) {
+ok(RF.coverage_gaps.some(function (g) {
   return g.code === 'DIMENSION_HAS_ONE_VALUE_IN_PRODUCTION' && g.evidence.dimension === 'country';
 }), 'E6a and a universe with one country says so, rather than reporting the dimension covered');
 
-// E7 — the universe totals are reported next to the sampled totals.
-ok(R.universe.total_rows_across_sampled_sites >= R.universe.total_rows_sampled,
-  'E7  the universe total is reported beside the sampled total', R.universe);
-eq(R.universe.omitted_rows,
-  R.universe.total_rows_across_sampled_sites - R.universe.total_rows_sampled,
-  'E7a and the omitted count is their difference, stated');
-eq(RB.universe.omitted_rows, 45, 'E7b which is non-zero when the cap bites', RB.universe);
+/* E7 — THE TOTALS ARE FLAT AND THERE IS ONE OF EACH. R1 nested them under `report.universe` while
+   the per-site objects carried their own, which is two definition sites for one number. §4 names the
+   flat fields, and `report.universe` is gone rather than kept in agreement. */
+ok(R.universe === undefined, 'E7  the old nested `universe` object is gone, not kept in parallel');
+['universe_total_rows', 'sampled_rows_total', 'omitted_rows', 'capped', 'sites_examined',
+  'sites_represented', 'coverage_counts', 'coverage_gaps', 'row_sample_cap', 'row_sample_cap_scope',
+  'selection_algorithm_version'].forEach(function (k, i) {
+  ok(R[k] !== undefined && R[k] !== null,
+    'E7.' + (i + 1) + ' §4 field ' + k + ' is present and populated', R[k]);
+});
+eq(R.omitted_rows, R.universe_total_rows - R.sampled_rows_total,
+  'E7a the omitted count is their difference, stated');
+
+// E7b — coverage_counts is the RAW pair every derived word above can be recomputed from.
+var ccKeys = Object.keys(R.coverage_counts);
+ok(ccKeys.length > 10, 'E7b coverage_counts carries every trait', ccKeys.length);
+ok(ccKeys.every(function (k) {
+  var c = R.coverage_counts[k];
+  return typeof c.universe === 'number' && typeof c.sampled === 'number' && c.sampled <= c.universe;
+}), 'E7c each as {universe, sampled} with sampled never exceeding universe');
+var promoUni = R.coverage_counts['promotion=present'];
+ok(promoUni && promoUni.universe > 0 && promoUni.sampled > 0,
+  'E7d and the numbers are real — promotion=present has rows in both', promoUni);
 
 // E8 — the per-site envelope the ACCESSOR validates travels with the rows.
+var ANY = siteOf(R, 'US', 'Amazon');
 ['sourceState', 'analysis_permitted', 'counts', 'membership', 'filtersApplied', 'filterOptions',
   'pagination', 'schema'].forEach(function (k, i) {
-  ok(Object.prototype.hasOwnProperty.call(US, k),
+  ok(Object.prototype.hasOwnProperty.call(ANY, k),
     'E8.' + (i + 1) + ' the site carries the envelope field ' + k);
 });
-ok(US.schema.contract_version === 2, 'E8a with the schema contract version the accessor checks');
+ok(ANY.schema.contract_version === 2, 'E8a with the schema contract version the accessor checks');
+ok(!Object.prototype.hasOwnProperty.call(ANY, 'cap'),
+  'E8b and NO per-site cap field, because there is no per-site cap');
 
 // ===================================================================================================
 section('SECTION F  §4 THE REDUCED ROW IS AN ALLOWLIST, AND THE NAMES ARE THE BUILDER\'S OWN');
@@ -714,7 +971,12 @@ var wireKeys = vm.runInContext(
   + 'JSON.parse(JSON.stringify(Object.keys(__d.normalizedRows[0]).sort()))', ctxW);
 ok(wireKeys.length > 20, 'F0  the shipped builder\'s row keys were read from a real build', wireKeys.length);
 
-var sampleKeys = Object.keys(US.rows[0]).sort();
+/* §F READS THE ROWS OUT OF THE REPORT rather than out of one site, because after R1A the rows are a
+   GLOBAL selection and no single site is the sample. `allRows` is the same flattening the arithmetic
+   in §D checks, so what §F inspects is exactly what a reader receives. */
+var F_ROWS = allRows(R);
+ok(F_ROWS.length > 0, 'F0a the report carries rows to inspect', F_ROWS.length);
+var sampleKeys = Object.keys(F_ROWS[0]).sort();
 var DROPPED = ['product_image', 'regional'];
 var DERIVED = ['product_image_present', 'product_image_is_absolute_url', 'regional_present',
   'regional_language', 'campaign_count'];
@@ -728,7 +990,7 @@ eq(sampleKeys, expectedKeys,
 // F2 — NO SECOND VOCABULARY. The two renames that read better and are forbidden.
 ok(sampleKeys.indexOf('msrp') !== -1 && sampleKeys.indexOf('list_price') === -1,
   'F2  `msrp` was not renamed to list_price');
-var camp = US.rows.filter(function (r) { return r.campaign_count > 0; })[0];
+var camp = F_ROWS.filter(function (r) { return r.campaign_count > 0; })[0];
 ok(!!camp, 'F2a a row with a campaign line is in the sample');
 ok(Object.prototype.hasOwnProperty.call(camp.campaigns[0], 'promo_price')
   && !Object.prototype.hasOwnProperty.call(camp.campaigns[0], 'official_deal_price'),
@@ -736,19 +998,19 @@ ok(Object.prototype.hasOwnProperty.call(camp.campaigns[0], 'promo_price')
   Object.keys(camp.campaigns[0]));
 
 // F3 — THE PRICES ARE THERE, because that is the entire authorised relaxation.
-var priced = US.rows.filter(function (r) { return r.regular_price !== null; });
+var priced = F_ROWS.filter(function (r) { return r.regular_price !== null; });
 ok(priced.length > 0, 'F3  prices are published — the one clause §0 relaxed');
 ok(typeof priced[0].regular_price === 'number', 'F3a as numbers, the builder\'s own type');
-ok(US.rows.some(function (r) { return r.minimum_price === null; }),
+ok(F_ROWS.some(function (r) { return r.minimum_price === null; }),
   'F3b and a missing minimum price is null, not absent and not zero');
-ok(US.rows.some(function (r) { return r.msrp === null; }), 'F3c likewise a missing msrp');
+ok(F_ROWS.some(function (r) { return r.msrp === null; }), 'F3c likewise a missing msrp');
 
 // F4 — THE IMAGE IS TWO FACTS AND NEVER AN ADDRESS.
 ok(sampleKeys.indexOf('product_image') === -1, 'F4  the image URL field is gone');
-var imgAbs = US.rows.filter(function (r) { return r.product_image_is_absolute_url === true; });
-var imgRel = US.rows.filter(function (r) {
+var imgAbs = F_ROWS.filter(function (r) { return r.product_image_is_absolute_url === true; });
+var imgRel = F_ROWS.filter(function (r) {
   return r.product_image_present === true && r.product_image_is_absolute_url === false; });
-var imgNone = US.rows.filter(function (r) { return r.product_image_present === false; });
+var imgNone = F_ROWS.filter(function (r) { return r.product_image_present === false; });
 ok(imgAbs.length > 0, 'F4a rows with an absolute-URL image are distinguishable');
 ok(imgRel.length > 0, 'F4b from rows whose image cell holds something that is not an address');
 ok(imgNone.length > 0, 'F4c from rows with no image at all');
@@ -771,13 +1033,13 @@ eq(ADAPTER.imageStateOf({ product_image: 'https://x/y.jpg',
 
 // F5 — THE REGIONAL JOIN IS A BOOLEAN. Every field on it is a locator or is not needed.
 ok(sampleKeys.indexOf('regional') === -1, 'F5  the regional sub-object is dropped whole');
-ok(US.rows.some(function (r) { return r.regional_present === true; })
-  && US.rows.some(function (r) { return r.regional_present === false; }),
+ok(F_ROWS.some(function (r) { return r.regional_present === true; })
+  && F_ROWS.some(function (r) { return r.regional_present === false; }),
   'F5a while both sides of the join are still distinguishable');
 
 // F6 — findings keep their code and their prose, and lose their evidence.
-var withFinding = [].concat.apply([], R.sites.map(function (s) { return s.ok ? s.rows : []; }))
-  .filter(function (r) { return r.findings.length > 0 || r.missing_reasons.length > 0; });
+var withFinding = F_ROWS.filter(function (r) {
+  return r.findings.length > 0 || r.missing_reasons.length > 0; });
 ok(withFinding.length > 0, 'F6  data-quality rows are in the sample');
 [].concat.apply([], withFinding.map(function (r) { return r.findings; })).forEach(function (f) {
   ok(!Object.prototype.hasOwnProperty.call(f, 'evidence'),
@@ -888,8 +1150,13 @@ ok(/refused this file's own first report/.test(SRCRB),
   'G7a and the file records WHY the first version of that rule was wrong');
 
 // G8 — the scan is the last thing before the emit, and it is not optional.
-var order = body.indexOf('p1b8cScan_');
-var emitAt = body.indexOf('p1b8cEmit_');
+/* G8 READ A COMMENT. The body now carries a paragraph naming `p1b8cEmit_` while describing what
+   chunking does NOT do, and it sits above the scan — so the raw indexOf found the emitter first and
+   reported the order as wrong. Comments and string literals are stripped before the two are located,
+   which is the same rule §A applies to every other source probe here. */
+var bareBody = bare(body);
+var order = bareBody.indexOf('p1b8cScan_');
+var emitAt = bareBody.indexOf('p1b8cEmit_');
 ok(order > 0 && emitAt > order,
   'G8  the scan runs BEFORE anything is emitted', { scan: order, emit: emitAt });
 ok(/report\.redaction\.passed = violations\.length === 0;/.test(body),
@@ -899,9 +1166,9 @@ ok(/report\.redaction\.passed = violations\.length === 0;/.test(body),
 section('SECTION H  §3 THE CHUNKED EMIT CARRIES ALL FOUR FIELDS ON EVERY CHUNK');
 // ===================================================================================================
 
-var chunks = RB.__logged;
+var chunks = RM.__logged;
 ok(chunks.length >= 2, 'H0  a large report is emitted in more than one chunk', chunks.length);
-eq(chunks.length, RB.emitted.chunk_count, 'H0a and the count it declares is the count it wrote');
+eq(chunks.length, RM.emitted.chunk_count, 'H0a and the count it declares is the count it wrote');
 var heads = chunks.map(function (c) { return String(c).split('\n')[0]; });
 heads.forEach(function (h, i) {
   ok(/chunk_index=\d+/.test(h), 'H1.' + (i + 1) + 'a chunk ' + (i + 1) + ' carries chunk_index');
@@ -925,8 +1192,28 @@ var reparsed = null;
 try { reparsed = JSON.parse(joined); } catch (e) { reparsed = null; }
 ok(reparsed !== null, 'H3a and they parse as JSON');
 eq(reparsed && reparsed.verdict, 'SAMPLE_TAKEN', 'H3b carrying the verdict');
-eq(reparsed && reparsed.universe.total_rows_sampled, RB.universe.total_rows_sampled,
+eq(reparsed && reparsed.sampled_rows_total, RM.sampled_rows_total,
   'H3c and the same numbers the return value has');
+/* H3d — §4: CHUNKING SPLITS A FINISHED REPORT AND NOTHING MORE. The reassembled report must hold the
+   SAME SIXTY ROWS, each exactly once. A chunker that re-ran the selection, or that let a row straddle
+   two chunks and be counted twice, would show up here and nowhere else. */
+var reIds = [];
+(reparsed.sites || []).forEach(function (s) {
+  (s.rows || []).forEach(function (r) { reIds.push(r.marketplace_sku_id); });
+});
+var reUniq = {};
+reIds.forEach(function (x) { reUniq[x] = 1; });
+eq(reIds.length, 60, 'H3d the reassembled report carries sixty rows');
+eq(Object.keys(reUniq).length, 60, 'H3e and every one of them is distinct');
+eq(reIds.slice().sort(), allIds(RM).slice().sort(),
+  'H3f and they are the same sixty rows the return value selected');
+ok(reIds.length <= RM.row_sample_cap,
+  'H3g so no chunk path can push the report past the global cap');
+// H3h — THE FINGERPRINT IS OVER THE BYTES THAT WERE ACTUALLY SENT, not over a second serialisation.
+var fpDeclared = /full_report_fingerprint=(FP[0-9a-f]{8})/.exec(heads[0])[1];
+var fpOfJoined = vm.runInContext('p1b3Hash_(' + JSON.stringify(joined) + ')', ctxFor(DB()));
+eq(fpOfJoined, fpDeclared,
+  'H3h and the fingerprint recomputed over the reassembled bytes matches the declared one');
 
 // H4 — the refusal path is chunked too, so a refusal cannot be half-pasted either.
 var refusalHead = String(RL.__logged[0]).split('\n')[0];
@@ -1018,6 +1305,21 @@ section('SECTION J  THE ROUND\'S DOCUMENTS SAY THE SAME THING THE CODE DOES');
 ok(/RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE/.test(SRCMAN),
   'J1  the manifest names the function the USER must run');
 ok(/P1B8C_ROW_SAMPLE_MAX_ = 60/.test(SRCMAN), 'J2  and the bound, matching the constant');
+/* J2a — AND ITS SCOPE, WHICH IS THE WHOLE OF R1A. A document that says "60" without saying "of what"
+   is the document that let the per-site reading through in the first place. */
+ok(/row_sample_cap_scope = GLOBAL_REPORT/.test(SRCMAN),
+  'J2a the manifest states the cap is GLOBAL_REPORT');
+ok(/in the whole report/.test(SRCMAN), 'J2b in words as well as in the field name');
+ok(/sum\(site rows\) === sampled_rows_total/.test(SRCMAN),
+  'J2c and carries the arithmetic §2 specifies');
+ok(/a bound that multiplies by a number nobody bounded is not a bound/i.test(SRCMAN),
+  'J2d with the reason the per-site reading was wrong');
+// J2e — THE TWO MUTANTS THAT SURVIVED FIRST ARE RECORDED, because a survivor that gets quietly
+// re-pointed is a lesson that leaves no trace.
+ok(/sorts its in-scope ids ascending/.test(SRCMAN),
+  'J2e the manifest records why the reorder test could not see the selector sort');
+ok(/skewed/.test(SRCMAN),
+  'J2f and why site representation had to be tested on a skewed universe');
 // J3 — THE PROPOSAL SAID {available, source, url}; THE CODE SHIPS TWO BOOLEANS. The document was
 // corrected rather than left to disagree quietly, which is how a manifest becomes fiction.
 /* J3 SPRANG THE SAME TRAP. The corrected manifest QUOTES the object it no longer proposes, in the
@@ -1059,51 +1361,149 @@ function swapIn(src, a, b) {
 }
 function withSrc(a, b) { return { src: swapIn(SRCRB, a, b) }; }
 
-mut('K1  the cap is raised — the sample stops reporting itself as capped', function () {
-  var m = runSample(bulkDB(100), withSrc('var P1B8C_ROW_SAMPLE_MAX_ = 60;',
+var MATRIX_10 = matrixDB(10, 105);
+
+mut('K1  the cap is raised — D1a sees more than sixty rows in the report', function () {
+  var m = runSample(MATRIX_10, withSrc('var P1B8C_ROW_SAMPLE_MAX_ = 60;',
     'var P1B8C_ROW_SAMPLE_MAX_ = 600;'));
-  var s = siteOf(m, 'US');
-  return s.cap !== 60 || s.sampled_rows !== 60 || s.capped !== true;
+  return m.sampled_rows_total !== 60 || allRows(m).length !== 60;
 });
 
-mut('K2  the spread pass goes back to stride — D2c sees the sample collapse to the front', function () {
-  var m = runSample(bulkDB(100), withSrc(
-    '      var at = Math.floor(k * n / remaining);',
-    '      var at = k;'));
-  var s = siteOf(m, 'US');
-  var got = s.rows.map(function (r) { return r.marketplace_sku_id; });
-  var uni = bulkDB(100).marketplace_skus.filter(function (r) { return r.country === 'US'; })
-    .map(function (r) { return r.marketplace_sku_id; }).sort();
-  /* THE FIRST VERSION OF THIS DETECTOR ASKED FOR EXACT EQUALITY WITH `uni.slice(0, 60)` AND SURVIVED.
-     The coverage pass runs first and its four rows are wherever the rare traits are, so the mutant's
-     sample is the front of the order PLUS those four — never exactly the head. The detector has to be
-     D2c's own measurement, which is the one that describes the defect rather than one instance of it. */
-  var idx = got.map(function (x) { return uni.indexOf(x); });
-  var far = idx.filter(function (i) { return i >= Math.floor(uni.length / 2); }).length;
-  return far < Math.ceil(got.length / 4);
+mut('K1a  the cap is 61 — an off-by-one is still a breach of the authorised bound', function () {
+  var m = runSample(MATRIX_10, withSrc('var P1B8C_ROW_SAMPLE_MAX_ = 60;',
+    'var P1B8C_ROW_SAMPLE_MAX_ = 61;'));
+  return allRows(m).length > 60 || m.row_sample_cap !== 60;
 });
 
-mut('K3  coverage stops running first — a rare row is crowded out by the cap', function () {
-  var m = runSample(bulkDB(100), withSrc(
-    '  traitNames.forEach(function (tr) {\n    if (count >= cap) return;',
-    '  traitNames.forEach(function (tr) {\n    if (count >= cap || true) return;'));
-  var s = siteOf(m, 'US');
-  var got = s.rows.map(function (r) { return r.marketplace_sku_id; });
-  return ['MS3', 'MS4', 'MS7'].some(function (id) { return got.indexOf(id) === -1; })
-    || s.traits_not_sampled.length > 0;
+mut('K1b  THE BUDGET GOES BACK TO PER-SITE — the defect this round exists to fix', function () {
+  /* The selector is called once with the pool; a per-site cap is what you get by calling it once per
+     site with a fresh budget. The mutant rebuilds exactly that, and D1a/D2a must both fail. */
+  var m = runSample(MATRIX_10, withSrc(
+    '    var sel = p1b8cSelectGlobalSample_(pool, P1B8C_ROW_SAMPLE_MAX_);',
+    '    var sel = (function () {\n'
+    + '      var merged = { by_site: {}, universe_by_site: {}, universe_total_rows: 0,\n'
+    + '        sampled_rows_total: 0, omitted_rows: 0, capped: false, cap: P1B8C_ROW_SAMPLE_MAX_,\n'
+    + '        cap_scope: P1B8C_ROW_SAMPLE_CAP_SCOPE_, selected_by_pass: { site_representation: 0,\n'
+    + '        rare_trait: 0, global_rank: 0, canonical_fill: 0 }, sites_with_rows: 0,\n'
+    + '        sites_represented: 0, sites_not_represented: [], universe_traits: {},\n'
+    + '        sampled_traits: {}, traits_not_sampled: [] };\n'
+    + '      var byKey = {};\n'
+    + '      pool.forEach(function (e) { (byKey[e.site_key] = byKey[e.site_key] || []).push(e); });\n'
+    + '      Object.keys(byKey).sort().forEach(function (k) {\n'
+    + '        var one = p1b8cSelectGlobalSample_(byKey[k], P1B8C_ROW_SAMPLE_MAX_);\n'
+    + '        merged.by_site[k] = one.by_site[k] || [];\n'
+    + '        merged.universe_by_site[k] = one.universe_total_rows;\n'
+    + '        merged.universe_total_rows += one.universe_total_rows;\n'
+    + '        merged.sampled_rows_total += one.sampled_rows_total;\n'
+    + '        merged.sites_with_rows++; merged.sites_represented++;\n'
+    + '        Object.keys(one.universe_traits).forEach(function (t) {\n'
+    + '          merged.universe_traits[t] = (merged.universe_traits[t] || 0) + one.universe_traits[t]; });\n'
+    + '        Object.keys(one.sampled_traits).forEach(function (t) {\n'
+    + '          merged.sampled_traits[t] = (merged.sampled_traits[t] || 0) + one.sampled_traits[t]; });\n'
+    + '      });\n'
+    + '      merged.omitted_rows = merged.universe_total_rows - merged.sampled_rows_total;\n'
+    + '      merged.capped = merged.universe_total_rows > merged.sampled_rows_total;\n'
+    + '      return merged;\n'
+    + '    }());'));
+  // D1a AND D2a'S OWN COMPARISONS: ten sites now emit six hundred rows.
+  return allRows(m).length > 60 && m.sampled_rows_total > 60;
 });
 
-mut('K4  rarest-first becomes commonest-first — coverage is no longer guaranteed', function () {
-  var m = runSample(bulkDB(100), withSrc(
+mut('K1c  the per-site budget is reset inside the selector — the same defect, one level down',
+  function () {
+    /* `take` is the single place the budget is spent. Making it forget the count whenever the site
+       changes is the smallest possible "reset per site", and it must break the total. */
+    var m = runSample(MATRIX_10, withSrc(
+      '  function take(i, which) {\n'
+      + '    if (i === null || i === undefined || picked[i] === 1 || count >= cap) return false;',
+      '  var __lastSite = null;\n'
+      + '  function take(i, which) {\n'
+      + '    if (i !== null && i !== undefined && order[i] && order[i].site_key !== __lastSite) {\n'
+      + '      __lastSite = order[i].site_key; count = 0;\n'
+      + '    }\n'
+      + '    if (i === null || i === undefined || picked[i] === 1 || count >= cap) return false;'));
+    return allRows(m).length > 60;
+  });
+
+mut('K1d  the report claims GLOBAL_REPORT while the code is per-site — the label alone is not the fix',
+  function () {
+    var m = runSample(MATRIX_10, withSrc(
+      "var P1B8C_ROW_SAMPLE_CAP_SCOPE_ = 'GLOBAL_REPORT';",
+      "var P1B8C_ROW_SAMPLE_CAP_SCOPE_ = 'PER_SITE';"));
+    // D1d'S OWN COMPARISON. The scope is checked as a value, so a code/label disagreement in EITHER
+    // direction is a failure rather than a matter of taste.
+    return m.row_sample_cap_scope !== 'GLOBAL_REPORT';
+  });
+
+mut('K2  the global-rank pass goes back to stride — D4d sees one site swallow the budget', function () {
+  var m = runSample(MATRIX_10, withSrc(
+    '      var at = Math.floor(k2 * n / remaining);',
+    '      var at = k2;'));
+  /* THE POOL IS SORTED BY SITE, so a rank pass that walks from index 0 spends its whole remainder
+     inside the first canonical site. D4c/D4d'S OWN COMPARISON: no site may hold more than a quarter
+     of the budget. */
+  var shares = (m.sites || []).map(function (s) { return (s.rows || []).length; });
+  return Math.max.apply(null, shares) > Math.ceil(60 / 4);
+});
+
+mut('K2a  PASS 1 IS REMOVED — on a skewed universe the small sites vanish', function () {
+  /* THE FIRST VERSION OF THIS MUTANT SURVIVED, AND IT WAS RIGHT TO. It ran against ten EQUAL sites,
+     where rank sampling alone already gives every site about six seats — so deleting site
+     representation changed nothing and the mutant proved that D4a was passing for a reason other than
+     the pass it claimed to test. D6i's skewed universe is the shape where the pass is load-bearing. */
+  var m = runSample(skewedDB(), withSrc(
+    "  siteKeys.forEach(function (k) {\n    if (count >= cap) return;\n    var best = null, bestPop = null;",
+    "  siteKeys.forEach(function (k) {\n    if (count >= cap || true) return;\n    var best = null, bestPop = null;"));
+  // D6j'S OWN COMPARISON: every non-empty site must have at least one row.
+  return m.sites_represented < 10
+    || (m.sites || []).some(function (s) { return s.ok && s.universe_rows > 0 && !(s.rows || []).length; });
+});
+
+mut('K3  the rare-trait pass stops running — E4 loses a covered state', function () {
+  var m = runSample(MATRIX_10, withSrc(
+    '  traitNames.forEach(function (tr) {\n    if (count >= cap) return;\n    var list = traitRows[tr];',
+    '  traitNames.forEach(function (tr) {\n    if (count >= cap || true) return;\n    var list = traitRows[tr];'));
+  // E4'S OWN COMPARISON, plus the gap list §3 requires when the budget cannot cover everything.
+  return (m.coverage.binary || []).some(function (d) { return !d.covered; })
+    || (m.coverage.categorical || []).some(function (d) { return !d.covered; })
+    || (m.coverage_gaps || []).length > 0;
+});
+
+mut('K4  rarest-first becomes commonest-first — the selection moves', function () {
+  var m = runSample(MATRIX_10, withSrc(
     '    var d = traitRows[a].length - traitRows[b].length;',
     '    var d = traitRows[b].length - traitRows[a].length;'));
-  var s = siteOf(m, 'US');
-  var before = siteOf(RB, 'US').rows.map(function (r) { return r.marketplace_sku_id; });
-  var after = s.rows.map(function (r) { return r.marketplace_sku_id; });
-  // D3's own comparison: the selection must have MOVED, and the pass counts must differ.
-  return JSON.stringify(before) !== JSON.stringify(after)
-    || s.selected_by_pass.coverage !== siteOf(RB, 'US').selected_by_pass.coverage;
+  // D6'S OWN COMPARISON: the same source must give the same sixty rows, and these are not them.
+  return JSON.stringify(allIds(m).slice().sort()) !== JSON.stringify(allIds(RM).slice().sort());
 });
+
+mut('K4a  THE SELECTOR STOPS SORTING ITS POOL — D6g sees a scrambled pool select differently',
+  function () {
+    /* THE FIRST VERSION OF THIS MUTANT SURVIVED, AND THE REASON IS WORTH KEEPING. It injected the pool
+       position into the canonical id and expected a reversed SOURCE to select differently — but
+       `ppwWorkspaceBuild_` sorts its in-scope ids before normalising (72_ line 463), so rows reach the
+       pool in identity order whatever the sheet did, and the injected positions came out identical.
+       The end-to-end reorder test cannot see the selector's sort at all. So the mutant is applied
+       where the rule lives: remove the comparator, and D6g's scrambled-pool comparison must break. */
+    var m = { src: swapIn(SRCRB,
+      "    return a.cid < b.cid ? -1 : (a.cid > b.cid ? 1 : 0);",
+      "    return 0;") };
+    var out = vm.runInContext(SEL_PROBE, ctxFor(DB(), m));
+    return JSON.stringify(out.scrambled) !== JSON.stringify(out.sorted);
+  });
+
+mut('K4b  the canonical id drops its site scope — two sites can no longer be told apart in the order',
+  function () {
+    var m = { src: swapIn(SRCRB,
+      "  return siteKey + '||' + p1b3Str_(row && row.marketplace_sku_id);",
+      "  return p1b3Str_(row && row.marketplace_sku_id);") };
+    var out = vm.runInContext(SEL_PROBE.replace(/cid: k \+ "\|\|" \+ id/,
+      'cid: p1b8cCanonicalId_(k, { marketplace_sku_id: id })'), ctxFor(DB(), m));
+    // With the scope gone the order is by bare id, which interleaves the sites — so the pool the probe
+    // builds and the pool the selector orders are no longer the same sequence.
+    return JSON.stringify(out.scrambled) !== JSON.stringify(out.sorted)
+      || JSON.stringify(out.sorted) !== JSON.stringify(SELP.sorted);
+  });
 
 mut('K5  the image URL is published again — G1a finds an absolute URL', function () {
   var m = runSample(DB(), withSrc(
@@ -1189,10 +1589,46 @@ mut('K12  the chunk header loses its fingerprint — H1c and H2', function () {
   return hs.some(function (h) { return !/full_report_fingerprint=FP[0-9a-f]{8}/.test(h); });
 });
 
-mut('K13  `capped` is hard-coded false — D1d', function () {
-  var m = runSample(bulkDB(100), withSrc(
-    '    capped: order.length > idx.length,', '    capped: false,'));
-  return siteOf(m, 'US').capped !== true;
+mut('K13  `capped` is hard-coded false — D2e', function () {
+  var m = runSample(MATRIX_10, withSrc(
+    '    capped: n > idx.length,', '    capped: false,'));
+  // D2E'S OWN COMPARISON: capped must equal (universe > sampled).
+  return m.capped !== (m.universe_total_rows > m.sampled_rows_total);
+});
+
+mut('K13a  omitted_rows stops being the difference — D2d', function () {
+  var m = runSample(MATRIX_10, withSrc(
+    '    omitted_rows: n - idx.length,', '    omitted_rows: 0,'));
+  return m.omitted_rows !== m.universe_total_rows - m.sampled_rows_total;
+});
+
+mut('K13b  THE PER-SITE LISTS STOP BEING A PARTITION — D2a sees the sum disagree', function () {
+  /* One selection laid out per site cannot disagree with its own total. A mutant that gives each site
+     a COPY of the whole selection is the shape that would: the total still says sixty while the
+     report carries six hundred rows, and D2a is the only assertion that looks at both. */
+  var m = runSample(MATRIX_10, withSrc(
+    '  idx.forEach(function (i) {\n    var k = order[i].site_key;\n'
+    + "    if (!bySite[k]) bySite[k] = [];\n    bySite[k].push(order[i].row);\n  });",
+    '  idx.forEach(function (i) {\n    siteKeys.forEach(function (k) {\n'
+    + '      if (!bySite[k]) bySite[k] = [];\n      bySite[k].push(order[i].row);\n    });\n  });'));
+  var sum = (m.sites || []).reduce(function (a, s) { return a + ((s.rows || []).length); }, 0);
+  return sum !== m.sampled_rows_total || allRows(m).length > 60;
+});
+
+mut('K13c  A CHUNK REPEATS ITS ROWS — H3e sees a duplicate after reassembly', function () {
+  /* Chunking may only split a finished report. The mutant overlaps the slices, which is what a
+     re-entrant or off-by-one chunker does, and the reassembled report then carries a row twice. */
+  var m = runSample(MATRIX_10, withSrc(
+    "      + json.slice(i * P1B3_CHUNK_CHARS_, (i + 1) * P1B3_CHUNK_CHARS_));",
+    "      + json.slice(i * P1B3_CHUNK_CHARS_, (i + 1) * P1B3_CHUNK_CHARS_)\n"
+    + "      + (i === 0 ? json.slice(0, P1B3_CHUNK_CHARS_) : ''));"));
+  var hs = m.__logged.map(function (c) { return String(c).split('\n')[0]; });
+  var joinedM = m.__logged.map(function (c) { return String(c).split('\n').slice(1).join('\n'); }).join('');
+  var declared = Number(/full_report_length=(\d+)/.exec(hs[0])[1]);
+  // H3'S OWN COMPARISONS: the reassembled bytes must be exactly the declared length AND must parse.
+  if (joinedM.length !== declared) return true;
+  try { JSON.parse(joinedM); } catch (e) { return true; }
+  return false;
 });
 
 mut('K14  a state absent from production is silently reported as covered — E5', function () {

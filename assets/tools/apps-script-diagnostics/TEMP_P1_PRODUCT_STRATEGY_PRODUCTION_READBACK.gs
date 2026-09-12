@@ -827,11 +827,23 @@ function RUN_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK() {
 // ============================================================================================================
 
 var P1B8C_SAMPLE_ID_ = 'P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE';
-var P1B8C_SAMPLE_BUILD_ = 'P1-B8C-R1';
+var P1B8C_SAMPLE_BUILD_ = 'P1-B8C-R1A';
 
-// THE BOUND, AND IT IS REPORTED AS A BOUND. Sixty rows per site is evidence of a shape; it is not an export,
-// and a reader must never be able to mistake a window for the whole.
+/**
+ * THE BOUND IS SIXTY ROWS IN THE WHOLE REPORT. NOT SIXTY PER SITE.
+ *
+ * P1-B8C-R1 built it as a per-site cap, and on a ten-site universe that is a six-hundred-row export
+ * wearing a sixty-row budget's name. The authorisation was minimum disclosure, and a bound that
+ * multiplies by a number nobody bounded is not a bound.
+ *
+ * THE BUDGET IS SPENT BY ONE AUTHORITY AT SELECTION TIME — `p1b8cSelectGlobalSample_`, once, over the
+ * pooled universe of every site. It is NOT a per-site cap that happens to add up, and it is NOT a
+ * truncation applied to a finished report: truncating afterwards would discard whichever states the
+ * last sites happened to hold, which is the opposite of coverage-first selection.
+ */
 var P1B8C_ROW_SAMPLE_MAX_ = 60;
+var P1B8C_ROW_SAMPLE_CAP_SCOPE_ = 'GLOBAL_REPORT';
+var P1B8C_SELECTION_ALGORITHM_VERSION_ = 'P1B8C-R1A-GLOBAL-BUDGET-1';
 
 /**
  * KEYS THAT MAY NOT APPEAR ANYWHERE IN THE REPORT.
@@ -929,30 +941,52 @@ function p1b8cTraitsOf_(row) {
 }
 
 /**
- * §6 — DETERMINISTIC, COVERAGE-FIRST SELECTION. NEVER "THE FIRST SIXTY".
+ * THE ROW'S CANONICAL IDENTITY, AND IT IS NEVER A ROW NUMBER.
  *
- * Three passes, in this order, and the order is the whole design:
- *
- *   1. COVERAGE. Every distinct trait in the site's universe claims one row, RAREST TRAIT FIRST. Rarest
- *      first is not a flourish: with a cap, the common traits would otherwise fill the sample and the one
- *      inactive row, or the one row with no MSRP, would be the row that got dropped — and that row is the
- *      entire reason a shape sample is being taken.
- *   2. SPREAD. Remaining slots are filled at an even stride across the whole ordered universe, so a large
- *      site contributes from its middle and its end rather than only its head.
- *   3. FILL. Only if slots are still open, which means coverage AND spread are already complete, the
- *      remainder is swept in order. This is a fill, not the selection rule.
- *
- * The order rows are considered in is `marketplace_sku_id` ascending — the row's own identity, so the
- * selection does not move when somebody sorts the sheet.
+ * Sorting by where a row happens to sit in a sheet makes the sample move when somebody sorts the sheet,
+ * inserts a row, or re-exports the table — three things that change nothing about the data and would
+ * change the evidence. Site scope plus `marketplace_sku_id` is the identity 72_ itself keys on.
  */
-function p1b8cSelectSample_(rows, cap) {
-  var order = (rows || []).slice().sort(function (a, b) {
-    var x = p1b3Str_(a && a.marketplace_sku_id), y = p1b3Str_(b && b.marketplace_sku_id);
-    return x < y ? -1 : (x > y ? 1 : 0);
+function p1b8cCanonicalId_(siteKey, row) {
+  return siteKey + '||' + p1b3Str_(row && row.marketplace_sku_id);
+}
+
+/**
+ * §2/§3 — ONE GLOBAL BUDGET, SPENT ONCE, ACROSS EVERY SITE AT THE SAME TIME.
+ *
+ * `pool` is every row of every site, each tagged with the site it came from. There is no per-site cap
+ * anywhere below, and there is no second place a budget could be reset: this function is the only
+ * authority that says which rows are in the report.
+ *
+ * FOUR PASSES, AND THE ORDER IS THE WHOLE DESIGN:
+ *
+ *   1. SITE REPRESENTATION. While the budget allows, every non-empty site claims one row, sites in
+ *      canonical order. WITHOUT THIS PASS THE FIRST SITE EATS THE BUDGET — with ten sites of a hundred
+ *      rows each, a purely rarity-driven selection can legitimately spend all sixty seats inside the
+ *      site that happens to hold the rarest traits, and a report that describes one site is not a
+ *      report about the universe. The seat each site claims is its own row whose RAREST GLOBAL TRAIT is
+ *      rarest, so representation and coverage pull the same way rather than against each other.
+ *   2. RARE TRAITS, COUNTED ACROSS THE WHOLE UNIVERSE. Rarest first: with a bound, the common traits
+ *      would otherwise fill the sample and the one inactive row, or the one row with no MSRP, would be
+ *      the row that got dropped — and that row is the entire reason a shape sample is being taken.
+ *   3. GLOBAL RANK. The remaining budget is placed at even rank across the whole ordered universe, so
+ *      the sample spans it instead of living in its front. (R1 computed a STRIDE here, which collapses
+ *      to 1 whenever the universe is under twice the cap and silently produced the head of the order.)
+ *   4. CANONICAL FILL. Only if seats are still open, which means the three passes above are complete.
+ *
+ * WHAT IT WILL NOT DO: raise the cap. If sixty rows cannot cover every trait, the uncovered ones are
+ * reported as coverage gaps and nothing is invented to fill them.
+ */
+function p1b8cSelectGlobalSample_(pool, cap) {
+  var order = (pool || []).slice().sort(function (a, b) {
+    return a.cid < b.cid ? -1 : (a.cid > b.cid ? 1 : 0);
   });
+  var n = order.length;
+
+  // ---- traits, over the WHOLE universe rather than one site's slice of it ----
   var traitRows = {}, traitNames = [];
-  order.forEach(function (r, i) {
-    p1b8cTraitsOf_(r).forEach(function (tr) {
+  order.forEach(function (e, i) {
+    p1b8cTraitsOf_(e.row).forEach(function (tr) {
       if (!Object.prototype.hasOwnProperty.call(traitRows, tr)) { traitRows[tr] = []; traitNames.push(tr); }
       traitRows[tr].push(i);
     });
@@ -963,69 +997,103 @@ function p1b8cSelectSample_(rows, cap) {
     if (d !== 0) return d;
     return a < b ? -1 : (a > b ? 1 : 0);
   });
+  var traitPop = {};
+  traitNames.forEach(function (tr) { traitPop[tr] = traitRows[tr].length; });
 
-  var picked = {}, count = 0, byPass = { coverage: 0, spread: 0, fill: 0 };
+  // ---- the pool, partitioned by site, each partition already in canonical order ----
+  var siteRows = {}, siteKeys = [];
+  order.forEach(function (e, i) {
+    if (!Object.prototype.hasOwnProperty.call(siteRows, e.site_key)) {
+      siteRows[e.site_key] = []; siteKeys.push(e.site_key);
+    }
+    siteRows[e.site_key].push(i);
+  });
+  siteKeys.sort();
+
+  var picked = {}, count = 0;
+  var byPass = { site_representation: 0, rare_trait: 0, global_rank: 0, canonical_fill: 0 };
   function take(i, which) {
-    if (picked[i] === 1 || count >= cap) return false;
+    if (i === null || i === undefined || picked[i] === 1 || count >= cap) return false;
     picked[i] = 1; count++; byPass[which]++;
     return true;
   }
 
+  // ---- PASS 1 — one seat per non-empty site, while the budget allows ----
+  siteKeys.forEach(function (k) {
+    if (count >= cap) return;
+    var best = null, bestPop = null;
+    siteRows[k].forEach(function (i) {
+      var rarest = null;
+      p1b8cTraitsOf_(order[i].row).forEach(function (tr) {
+        if (rarest === null || traitPop[tr] < rarest) rarest = traitPop[tr];
+      });
+      if (rarest === null) rarest = n + 1;
+      if (bestPop === null || rarest < bestPop) { bestPop = rarest; best = i; }
+    });
+    take(best, 'site_representation');
+  });
+
+  // ---- PASS 2 — rare traits across the whole universe ----
   traitNames.forEach(function (tr) {
     if (count >= cap) return;
     var list = traitRows[tr];
     for (var k = 0; k < list.length; k++) { if (picked[list[k]] === 1) return; }
-    take(list[0], 'coverage');
+    take(list[0], 'rare_trait');
   });
 
-  /* SPREAD BY RANK, NOT BY STRIDE, AND THE DIFFERENCE IS THE WHOLE RULE.
-     The first version computed `stride = floor(n / remaining)`. With 105 rows and 56 slots that is 1,
-     so the walk took indices 0..55 and stopped — THE SAMPLE WAS THE FIRST SIXTY OF THE ORDER, which is
-     exactly what §6 forbids, and it looked correct because the order is an id sort rather than the
-     sheet's. Measured, not reasoned about: the check is that the sample is NOT the head.
-
-     Ranking places pick k at floor(k * n / remaining), which spans the whole range for any ratio. A
-     position already claimed by the coverage pass probes forward (wrapping once), so the count is kept
-     without falling back to the head. */
+  // ---- PASS 3 — global rank across the whole universe ----
   var remaining = cap - count;
-  if (remaining > 0 && order.length > count) {
-    var n = order.length;
-    for (var k = 0; k < remaining && count < cap; k++) {
-      var at = Math.floor(k * n / remaining);
-      for (var probe = 0; probe < n; probe++) {
-        if (take((at + probe) % n, 'spread')) break;
-      }
+  if (remaining > 0 && n > count) {
+    for (var k2 = 0; k2 < remaining && count < cap; k2++) {
+      var at = Math.floor(k2 * n / remaining);
+      for (var probe = 0; probe < n; probe++) { if (take((at + probe) % n, 'global_rank')) break; }
     }
-    // Only reachable when the two passes above could not fill the cap, which means every remaining row
-    // is already selected. Kept so the bound is honoured rather than approximately honoured.
-    for (var j = 0; j < order.length && count < cap; j++) take(j, 'fill');
   }
 
+  // ---- PASS 4 — canonical fill ----
+  for (var j = 0; j < n && count < cap; j++) take(j, 'canonical_fill');
+
+  // ---- the selection, back in canonical order and partitioned by site ----
   var idx = [];
   Object.keys(picked).forEach(function (k) { idx.push(Number(k)); });
   idx.sort(function (a, b) { return a - b; });
 
-  // COVERAGE, MEASURED TWICE: what the universe holds, and what the sample kept.
+  // ONE PARTITION, SO THE TOTAL AND THE PER-SITE COUNTS CANNOT DISAGREE. The per-site lists below and
+  // `sampled_rows_total` are two views of the same array rather than two counts of the same thing.
+  var bySite = {}, universeBySite = {};
+  siteKeys.forEach(function (k) { bySite[k] = []; universeBySite[k] = siteRows[k].length; });
+  idx.forEach(function (i) {
+    var k = order[i].site_key;
+    if (!bySite[k]) bySite[k] = [];
+    bySite[k].push(order[i].row);
+  });
+  var represented = siteKeys.filter(function (k) { return bySite[k].length > 0; });
+  var notRepresented = siteKeys.filter(function (k) { return bySite[k].length === 0; });
+
+  // ---- coverage, measured twice: what the universe holds, and what the sample kept ----
   var universeTraits = {}, sampledTraits = {};
   traitNames.forEach(function (tr) { universeTraits[tr] = traitRows[tr].length; });
   idx.forEach(function (i) {
-    p1b8cTraitsOf_(order[i]).forEach(function (tr) {
+    p1b8cTraitsOf_(order[i].row).forEach(function (tr) {
       sampledTraits[tr] = (sampledTraits[tr] || 0) + 1;
     });
   });
 
   return {
-    selected: idx.map(function (i) { return order[i]; }),
-    universe_rows: order.length,
-    sampled_rows: idx.length,
-    omitted_rows: order.length - idx.length,
-    capped: order.length > idx.length,
+    by_site: bySite,
+    universe_by_site: universeBySite,
+    universe_total_rows: n,
+    sampled_rows_total: idx.length,
+    omitted_rows: n - idx.length,
+    capped: n > idx.length,
     cap: cap,
+    cap_scope: P1B8C_ROW_SAMPLE_CAP_SCOPE_,
     selected_by_pass: byPass,
+    sites_with_rows: siteKeys.length,
+    sites_represented: represented.length,
+    sites_not_represented: notRepresented,
     universe_traits: universeTraits,
     sampled_traits: sampledTraits,
-    // A TRAIT THE UNIVERSE HAS AND THE SAMPLE DOES NOT. After pass 1 this can only happen when the cap cut
-    // the coverage pass short, and when it does the reader is told which states are not represented.
     traits_not_sampled: traitNames.filter(function (tr) { return !sampledTraits[tr]; })
   };
 }
@@ -1231,25 +1299,54 @@ function RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE() {
     handler_build: PPW_BUILD_VERSION_,
     builder: 'ppwWorkspaceBuild_',
     builder_is_the_shipped_one: true,
-    row_sample_max: P1B8C_ROW_SAMPLE_MAX_,
+    /* §4 — THE BOUND AND ITS SCOPE, SIDE BY SIDE AND IN THE OUTPUT.
+       A cap reported without its scope is the defect this round exists to fix: sixty read as sixty per
+       site, and ten sites made it six hundred. The scope now travels with the number. */
+    row_sample_cap: P1B8C_ROW_SAMPLE_MAX_,
+    row_sample_cap_scope: P1B8C_ROW_SAMPLE_CAP_SCOPE_,
+    row_sample_cap_is: 'the maximum number of rows in THIS WHOLE REPORT, across every site together',
+    per_site_cap: null,
+    per_site_cap_is: 'there is none, by construction — one authority spends one budget at selection time',
+    selection_algorithm_version: P1B8C_SELECTION_ALGORITHM_VERSION_,
     site_max: P1B3_SITE_MAX_,
+    universe_total_rows: null,
+    sampled_rows_total: null,
+    omitted_rows: null,
+    capped: null,
+    sites_examined: null,
+    sites_represented: null,
+    selected_by_pass: null,
+    coverage_counts: null,
+    coverage_gaps: [],
     selection_rule: {
-      order: 'marketplace_sku_id ascending',
-      pass_1: 'one row per distinct trait, RAREST TRAIT FIRST',
-      pass_2: 'even stride across the ordered universe',
-      pass_3: 'in-order sweep, only if the cap is still not reached',
+      scope: P1B8C_ROW_SAMPLE_CAP_SCOPE_,
+      order: 'canonical identity: company||country||marketplace||marketplace_sku_id, ascending',
+      order_is_not: 'the physical row number, so sorting or re-exporting the sheet cannot move the sample',
+      pass_1: 'one row per non-empty SITE, while the budget allows, sites in canonical order',
+      pass_2: 'one row per distinct trait counted across the WHOLE universe, RAREST TRAIT FIRST',
+      pass_3: 'even RANK across the whole pooled universe',
+      pass_4: 'canonical-order fill, only if seats are still open',
+      budget_reset_per_site: false,
+      budget_reset_per_builder_call: false,
+      truncation_after_selection: false,
       deterministic: true,
       random: false,
       first_n: false,
       dimensions: P1B8C_CATEGORICAL_DIMENSIONS_.concat(
         P1B8C_BINARY_DIMENSIONS_.map(function (d) { return d.key; }))
     },
+    /* §4 — CHUNKING SPLITS A FINISHED REPORT AND DOES NOTHING ELSE. `p1b8cEmit_` slices the SERIALISED
+       JSON of the report that has already been built and scanned. There is no sampling inside it, no
+       per-chunk budget, and no path by which a row could appear in two chunks: a row is one substring
+       of one string, and the concatenation of the slices is that string. */
+    chunking: { splits: 'the serialised bytes of one finished report',
+      re_samples: false, duplicates_rows: false, per_chunk_budget: null,
+      reassembly_is: 'byte-identical to the report the fingerprint was taken over' },
     redaction: { forbidden_keys: P1B8C_FORBIDDEN_KEYS_.length,
       secret_shapes: P1B8C_SECRET_SHAPES_.map(function (s) { return s.code; }),
       scanned: false, violations: [], passed: false,
       fail_closed: 'a violation refuses the WHOLE report; nothing partial is emitted' },
     source_tables: {},
-    universe: null,
     sites: [],
     sites_capped: false,
     coverage: null,
@@ -1295,8 +1392,10 @@ function RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE() {
         evidence: { sites: siteOrder.length, sampled: P1B3_SITE_MAX_ } });
     }
 
-    var totalUniverse = 0, totalSampled = 0;
-    var globalUniverseTraits = {}, globalSampledTraits = {};
+    /* ---- PHASE 1 — BUILD EVERY SITE. NOTHING IS SAMPLED YET. ----
+       The budget cannot be spent site by site, so it cannot be spent while the sites are still being
+       built. Every site's envelope is computed first and every row goes into one pool. */
+    var envelopes = [], pool = [];
 
     siteOrder.slice(0, P1B3_SITE_MAX_).forEach(function (key) {
       var site = sites[key];
@@ -1310,22 +1409,43 @@ function RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE() {
       };
       var req = ppwValidateRequest_(payload);
       if (!req.ok) {
-        report.sites.push({ site: site, ok: false, refusals: p1b8cCodes_(req.refusals) });
+        envelopes.push({ key: key, site: site, ok: false, refusals: p1b8cCodes_(req.refusals) });
         return;
       }
       var data = ppwWorkspaceBuild_(tables, req, report.read_at);
-      var sel = p1b8cSelectSample_(data.normalizedRows || [], P1B8C_ROW_SAMPLE_MAX_);
-      totalUniverse += sel.universe_rows;
-      totalSampled += sel.sampled_rows;
-      Object.keys(sel.universe_traits).forEach(function (tr) {
-        globalUniverseTraits[tr] = (globalUniverseTraits[tr] || 0) + sel.universe_traits[tr];
+      envelopes.push({ key: key, site: site, ok: true, data: data });
+      // AN EMPTY SITE CONTRIBUTES NOTHING TO THE POOL, so it cannot consume a seat in pass 1 either.
+      (data.normalizedRows || []).forEach(function (row) {
+        pool.push({ site_key: key, row: row, cid: p1b8cCanonicalId_(key, row) });
       });
-      Object.keys(sel.sampled_traits).forEach(function (tr) {
-        globalSampledTraits[tr] = (globalSampledTraits[tr] || 0) + sel.sampled_traits[tr];
-      });
+    });
 
+    /* ---- PHASE 2 — SPEND THE WHOLE BUDGET, ONCE, ACROSS THE POOLED UNIVERSE ---- */
+    var sel = p1b8cSelectGlobalSample_(pool, P1B8C_ROW_SAMPLE_MAX_);
+
+    report.universe_total_rows = sel.universe_total_rows;
+    report.sampled_rows_total = sel.sampled_rows_total;
+    report.omitted_rows = sel.omitted_rows;
+    report.capped = sel.capped;
+    report.sites_examined = envelopes.length;
+    report.sites_represented = sel.sites_represented;
+    report.selected_by_pass = sel.selected_by_pass;
+
+    var globalUniverseTraits = sel.universe_traits, globalSampledTraits = sel.sampled_traits;
+
+    /* ---- PHASE 3 — LAY THE ONE SELECTION OUT PER SITE ----
+       `sel.by_site` is a PARTITION of the selected rows, so the per-site lists and `sampled_rows_total`
+       are two views of one array. They cannot drift, because there is nothing to drift from. */
+    envelopes.forEach(function (env) {
+      if (!env.ok) {
+        report.sites.push({ site: env.site, ok: false, refusals: env.refusals,
+          universe_rows: 0, sampled_rows: 0 });
+        return;
+      }
+      var data = env.data;
+      var mine = sel.by_site[env.key] || [];
       report.sites.push({
-        site: site,
+        site: env.site,
         ok: true,
         // THE ENVELOPE FIELDS THE ACCESSOR VALIDATES, so the sample proves the whole response shape and
         // not only the rows inside it.
@@ -1339,30 +1459,30 @@ function RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE() {
         schema: data.schema,
         site_findings: p1b8cCodes_(data.findings),
         site_refusals: p1b8cCodes_(data.refusals),
-        universe_rows: sel.universe_rows,
-        sampled_rows: sel.sampled_rows,
-        omitted_rows: sel.omitted_rows,
-        capped: sel.capped,
-        cap: sel.cap,
-        selected_by_pass: sel.selected_by_pass,
-        traits_not_sampled: sel.traits_not_sampled,
-        rows: sel.selected.map(function (r) { return p1b8cReduceRow_(r); })
+        universe_rows: (sel.universe_by_site[env.key] || 0),
+        // THIS SITE'S SHARE OF THE ONE GLOBAL BUDGET. It is not a cap of its own and there is no
+        // per-site cap to report, which is why no `cap` field appears here.
+        sampled_rows: mine.length,
+        rows: mine.map(function (r) { return p1b8cReduceRow_(r); })
       });
-      if (sel.traits_not_sampled.length) {
-        report.evidence_gaps.push({ code: 'TRAITS_CUT_BY_THE_ROW_CAP',
-          detail: 'the row cap was reached before every state on this site had a representative row',
-          evidence: { site: key, traits: sel.traits_not_sampled.slice(0, 20),
-            trait_total: sel.traits_not_sampled.length } });
-      }
     });
 
-    report.universe = { site_count: siteOrder.length,
-      sites_sampled: report.sites.length,
-      total_rows_across_sampled_sites: totalUniverse,
-      total_rows_sampled: totalSampled,
-      omitted_rows: totalUniverse - totalSampled };
+    // ---- §3/§6 COVERAGE, AND THE GAPS ARE NAMED RATHER THAN FILLED ----
+    if (sel.sites_not_represented.length) {
+      report.coverage_gaps.push({ code: 'SITES_NOT_REPRESENTED',
+        detail: 'the global row budget was spent before every non-empty site had a row; the cap is NOT'
+          + ' raised to fix this, and the sites below are absent from the sample rather than sampled thin',
+        evidence: { sites: sel.sites_not_represented.slice(0, 20),
+          site_total: sel.sites_not_represented.length } });
+    }
+    if (sel.traits_not_sampled.length) {
+      report.coverage_gaps.push({ code: 'TRAITS_CUT_BY_THE_GLOBAL_CAP',
+        detail: 'the global row budget was reached before every state in the universe had a'
+          + ' representative row; the cap is NOT raised and no data is manufactured',
+        evidence: { traits: sel.traits_not_sampled.slice(0, 20),
+          trait_total: sel.traits_not_sampled.length } });
+    }
 
-    // ---- §6 COVERAGE, AND THE GAPS ARE NAMED RATHER THAN FILLED ----
     var binary = [];
     P1B8C_BINARY_DIMENSIONS_.forEach(function (d) {
       var missingInUniverse = [], missingInSample = [];
@@ -1377,14 +1497,14 @@ function RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE() {
           return { value: v, rows: globalSampledTraits[d.key + '=' + v] || 0 }; }),
         covered: missingInUniverse.length === 0 && missingInSample.length === 0 });
       if (missingInUniverse.length) {
-        report.evidence_gaps.push({ code: 'STATE_ABSENT_FROM_PRODUCTION',
+        report.coverage_gaps.push({ code: 'STATE_ABSENT_FROM_PRODUCTION',
           detail: 'production holds no row in this state, so the sample cannot demonstrate it and NOTHING'
             + ' WAS MANUFACTURED; cover it with the existing deterministic fixture and label it as one',
           evidence: { dimension: d.key, values: missingInUniverse } });
       }
       if (missingInSample.length) {
-        report.evidence_gaps.push({ code: 'STATE_PRESENT_BUT_NOT_SAMPLED',
-          detail: 'production holds this state but the row cap kept it out of the sample',
+        report.coverage_gaps.push({ code: 'STATE_PRESENT_BUT_NOT_SAMPLED',
+          detail: 'production holds this state but the global row budget kept it out of the sample',
           evidence: { dimension: d.key, values: missingInSample } });
       }
     });
@@ -1397,19 +1517,25 @@ function RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE() {
     });
     categorical.forEach(function (c) {
       if (c.distinct_in_universe === 1) {
-        report.evidence_gaps.push({ code: 'DIMENSION_HAS_ONE_VALUE_IN_PRODUCTION',
+        report.coverage_gaps.push({ code: 'DIMENSION_HAS_ONE_VALUE_IN_PRODUCTION',
           detail: 'production holds a single value on this dimension, so a difference across it cannot be'
             + ' demonstrated from live data',
           evidence: { dimension: c.dimension } });
       }
       if (c.distinct_in_universe > c.distinct_in_sample) {
-        report.evidence_gaps.push({ code: 'DIMENSION_VALUES_CUT_BY_THE_ROW_CAP',
-          detail: 'the row cap kept some values of this dimension out of the sample',
+        report.coverage_gaps.push({ code: 'DIMENSION_VALUES_CUT_BY_THE_ROW_CAP',
+          detail: 'the global row budget kept some values of this dimension out of the sample',
           evidence: { dimension: c.dimension, in_universe: c.distinct_in_universe,
             in_sample: c.distinct_in_sample } });
       }
     });
     report.coverage = { binary: binary, categorical: categorical };
+    // §4 — THE RAW TRAIT COUNTS, universe beside sample, so every derived word above can be recomputed.
+    var counts = {};
+    Object.keys(globalUniverseTraits).sort().forEach(function (tr) {
+      counts[tr] = { universe: globalUniverseTraits[tr], sampled: globalSampledTraits[tr] || 0 };
+    });
+    report.coverage_counts = counts;
 
     names.forEach(function (n) {
       if (!read[n].readable) {
@@ -1438,7 +1564,7 @@ function RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE() {
     } else if (!siteOrder.length) {
       report.verdict = 'SOURCE_EMPTY';
       report.next_action = 'POPULATE_MARKETPLACE_SKUS_THEN_RERUN';
-    } else if (!totalSampled) {
+    } else if (!report.sampled_rows_total) {
       report.verdict = 'NO_ROWS_SURVIVED_MEMBERSHIP';
       report.next_action = 'READ_THE_PER_SITE_REFUSALS_AND_MEMBERSHIP_COUNTS';
     } else {
