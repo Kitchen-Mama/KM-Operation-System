@@ -457,8 +457,14 @@ eq(aRows.slice(0, 7).map(function (r) { return r.product_image; }),
 eq(aRows[7].product_image, ASSETS.REFUSED_REFERENCE,
   'E3a AND THE EIGHTH CARRIES ONE THAT MUST BE REFUSED — a run where everything draws proves nothing');
 eq(boardState(aRows[7].product_image), 'UNVERIFIED_SOURCE_REFERENCE', 'E3b and the board refuses it');
-ok(aRows.slice(8).every(function (r) { return r.product_image === null; }),
-  'E3c and the rest carry none, so all three states are on one page');
+/* P1-B8C-R3-R1 EXTENDED THE CAPTURE. Rows 8 and 9 now carry the FILENAME-ONLY and ROOT-RELATIVE
+   shapes, which the repository census found and R3's acceptance run had never rendered. */
+eq(aRows[8].product_image, ASSETS.FILENAME_ONLY_REFERENCE,
+  'E3c the ninth carries the legacy filename-only convention');
+eq(aRows[9].product_image, ASSETS.ROOT_RELATIVE_REFERENCE,
+  'E3c1 and the tenth the root-relative shape');
+ok(aRows.slice(10).every(function (r) { return r.product_image === null; }),
+  'E3c2 and the rest carry none, so every state is on one page');
 
 /* THE THREE CAPTURES CANNOT WEAR EACH OTHER'S LABELS. */
 var DET = require(path.join(ROOT, 'assets/tests/_p1b8c-capture.js'));
@@ -570,9 +576,13 @@ if (MA) {
   /* THE HREFS ARE THE OPERATOR'S PATHS, not something the renderer built. */
   var hrefs = MA.viewports['1920x1080'].chartImageHrefs || [];
   ok(hrefs.length > 0, 'H4  the chart\'s image markers carry hrefs', hrefs);
-  ok(hrefs.every(function (h) {
-    return Object.keys(MAPPINGS).some(function (k) { return MAPPINGS[k] === h; });
-  }), 'H4a AND EVERY ONE IS A PATH THE OPERATOR ASSERTED — none was composed', hrefs);
+  /* EVERY HREF IS A VALUE THE CAPTURE DECLARED — an operator-asserted mapping, or one of the two
+     shapes P1-B8C-R3-R1 added and named. The rule being enforced is that NOTHING WAS COMPOSED: the
+     renderer never builds an address, so every href must appear verbatim in the capture's own list. */
+  var DECLARED = Object.keys(MAPPINGS).map(function (k) { return MAPPINGS[k]; })
+    .concat([ASSETS.FILENAME_ONLY_REFERENCE, ASSETS.ROOT_RELATIVE_REFERENCE]);
+  ok(hrefs.every(function (h) { return DECLARED.indexOf(h) !== -1; }),
+    'H4a AND EVERY ONE IS A VALUE THE CAPTURE DECLARED — none was composed', hrefs);
   var ov = MA.views && MA.views.overview;
   if (ov) {
     ok(ov.catfigImages > 0, 'H5  the category cards drew photographs', ov.catfigImages);
@@ -637,8 +647,13 @@ ok(!/PRODUCT_STRATEGY_ENABLED_\s*[^=]=\s*true/.test(read('assets/js/app.js')),
   'I5  the feature flag is still false');
 ok(SRC.index.indexOf('data-menu-id="product-strategy"') === -1,
   'I5a index.html still renders no Product Strategy menu item');
-eq(changed.filter(function (f) { return /login|rbac|auth/i.test(f); }), [],
-  'I5b and nothing touching Login/RBAC changed', changed);
+/* AIMED AT SOURCE, NOT AT A FILENAME. The first version tested every changed path against
+   /login|rbac|auth/i and matched `shot-state-not-authorized.png` — a SCREENSHOT of the board's
+   not-authorized state, which is evidence that the state renders, not a change to Login or RBAC.
+   Same shape of error as `REDACTION_FAILED` matching a search for `ACTION_`. */
+eq(changed.filter(function (f) {
+  return /\.(js|gs|html|css|json)$/.test(f) && /login|rbac|auth/i.test(f);
+}), [], 'I5b and no Login/RBAC SOURCE file changed', changed);
 
 // =============================================================================================
 section('§J  MUTANTS');

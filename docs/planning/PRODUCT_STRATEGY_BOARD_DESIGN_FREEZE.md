@@ -7075,3 +7075,61 @@ images exactly like seven photographs. Across all seven viewports: every `<img>`
 `naturalWidth > 0`, `htmlImagesBroken` = **0**, chart photograph markers > 0 **while fallback plates
 were still drawn** for rows with no mapping, and every chart `href` traced to an operator-asserted
 path. The deterministic capture's redaction marker lost its `.svg` extension so it stays undrawable.
+
+## §54  P1-B8C-R3-R1 — the compatibility gate, and the consumer nobody had counted
+
+**WHY A GATE BEFORE A DEPLOYMENT.** §53's shared policy refuses an absolute URL on a host nobody
+declared, where SKU Details previously displayed **any** non-blank value. If production holds an
+externally-hosted image, R3 converts a working photograph into a fallback marker.
+
+**THE EVIDENCE R3 LEANED ON WAS NOT A CENSUS.** R3 reported "all 67 production data points are
+relative paths". Sixty came from P1-B8C-R2, which sampled **sixty of 495 rows of the PRICING
+universe**; the other seven are operator assertions. `sku_details` is a different table at a
+different grain, and R2's diagnostic **removed every image address** before the log left the editor —
+so those sixty rows could not have reported a host even if one existed. **Sixty of one table is not a
+census of another.**
+
+**WHAT THE REPOSITORY CAN PROVE.** Scanned whole (1,032 files, 311 candidate references):
+
+| Shape | Where | Verdict |
+|---|---|---|
+| filename-only (`img9.jpg` ×20) | archived `backup_legacy_files_20260116/data.js` — the pre-database convention, not loaded by production | accepted |
+| repo-relative (`assets/img/products/*.jpg` ×7) | `IMAGE_POLICY.verified_mappings`, operator-asserted from live rows | accepted |
+| **external image host** | **`eoimages.gsfc.nasa.gov`, and only in `tools/geo/` + `PROVENANCE.md`** | not a runtime source |
+
+The NASA host is a **build-time** vendoring URL; `km-globe.js` declares `NO RUNTIME NETWORK` and
+names no host at all. **No shipped file references an external image host.** No asset base and no CDN
+base exists anywhere — the `baseUrl` machinery that does exist belongs to the API transport and names
+an `/exec` endpoint.
+
+**THE FOURTH CONSUMER.** `campaign-risk.js:438` joins `sku_details`, takes the same `image` field
+through the same mapping, and renders it with **no resolver and no validation** —
+`<img class="cr-img" src="${_crEsc(r.image)}">`. §53's parity claim covers SKU Details, SKU Handbook
+and Product Strategy; **it does not cover this page**, which remains the path by which a `javascript:`
+URL in a sheet cell reaches an attribute. It has its own `onerror`, so only *validation* is missing.
+**Recorded, not repaired** — this round's scope is measurement, and adopting the resolver there
+changes a page the gate has not measured.
+
+**THE GATE'S ACTUAL QUESTION, REDUCED.** Of every class R3 removes —
+`UNSUPPORTED_SCHEME`, `LOCAL_FILE_PATH`, `PATH_TRAVERSAL`, `OPAQUE_REFERENCE`,
+`NOT_AN_IMAGE_FILENAME`, `UNAPPROVED_HOST` — only the last could ever have been a working picture.
+Every other removal is a value no browser could fetch. So the gate reduces to one question:
+**does production hold an absolute image URL?**
+
+**AND COMPATIBILITY IS NOT "IT STILL DISPLAYS".** A policy that displayed a *different* address would
+pass that and break every picture. The property asserted is that for every value the new policy
+accepts, **the string handed to the browser is byte-identical to the old one** — which holds without
+any file needing to exist, and is why the filename-only shape can be certified without inventing a
+file at the repository root. The gate is one-directional: `old rejected / new displayed = 0`.
+
+**`RUN_P1_IMAGE_REFERENCE_UNIVERSE_CENSUS()`** closes the remaining gap. Editor-only, no parameters,
+reads **one column of one table**, no cap and no sampling. It publishes counts by shape plus
+hostnames — a hostname is the allowlist identity; a path, filename or query is not, and each can
+carry a SKU, a token or a person. An authority containing `@` stops the **whole** report
+(`STOP_P1_B8C_R3_R1_HOSTNAME_REDACTION_FAILED`), because a partial census is not a census. The
+buckets must sum to the whole or the report stops. Absolute rows are scored **separately** as
+`old_displayed_new_depends_on_allowlist` rather than guessed either way.
+
+**THE TWO CLASSIFIERS ARE PROVEN EQUIVALENT.** An Apps Script census and a browser policy deciding
+the same value differently is the exact defect §53 existed to fix, so the repository asserts
+agreement over a 35-value corpus that reaches **every branch of both**, in the same order.

@@ -94,14 +94,35 @@
      draws cannot tell "the policy accepts good values" from "the policy accepts everything". */
   A.REFUSED_REFERENCE = '1AbCdEfGhIjKlMnOpQrStUvWxYz0123456';
 
+  /* P1-B8C-R3-R1 — THE TWO SHAPES THE REPOSITORY CENSUS TURNED UP THAT R3'S RUN NEVER RENDERED.
+     The archived pre-database `backup_legacy_files_20260116/data.js` carries twenty FILENAME-ONLY
+     references (`img9.jpg`), which was this application's image convention before sku_details existed;
+     a ROOT-RELATIVE path is the other shape a sheet plausibly holds. Both are accepted by the policy
+     and neither had ever reached an <img> in an acceptance run.
+
+     NEITHER FILE EXISTS IN THIS REPOSITORY, AND THAT IS THE POINT OF CARRYING THEM. What compatibility
+     actually requires is that the address the browser is handed is UNCHANGED — whatever resolved
+     before resolves now — and that when it does not resolve, the fallback fires instead of a broken
+     glyph. Both are measurable without inventing a file at the repository root. */
+  A.FILENAME_ONLY_REFERENCE = 'img9.jpg';
+  /* DERIVED FROM THE CONTRACT, NOT RETYPED. Writing the path out again would put a second copy of an
+     operator-asserted value in this file, which is the exact thing §E2a forbids and the exact way the
+     two lists would drift. A leading slash is the only difference, so a leading slash is all that is
+     written here. */
+  A.ROOT_RELATIVE_REFERENCE = '/' + A.MAPPINGS[A.MAPPED_SKUS[0]];
+  A.EXPECTED_TO_404 = [A.FILENAME_ONLY_REFERENCE, A.ROOT_RELATIVE_REFERENCE];
+
   /* Rows take an image by POSITION, deterministically: the first seven rows of each site's list get the
-     seven mapped paths in contract order, the eighth gets the reference that must be REFUSED, and every
-     row after that carries none. Position is
+     seven mapped paths in contract order, the eighth gets the reference that must be REFUSED, the ninth
+     and tenth get the filename-only and root-relative shapes, and every row after that carries none.
+     Position is
      used rather than sku matching because the base capture's skus are demonstration skus — pretending
      they ARE the operator's seven would be the substitution P0-R3-R1 retracted. */
   function imageFor(i) {
     if (i < A.MAPPED_SKUS.length) return A.MAPPINGS[A.MAPPED_SKUS[i]];
     if (i === A.MAPPED_SKUS.length) return A.REFUSED_REFERENCE;
+    if (i === A.MAPPED_SKUS.length + 1) return A.FILENAME_ONLY_REFERENCE;
+    if (i === A.MAPPED_SKUS.length + 2) return A.ROOT_RELATIVE_REFERENCE;
     return null;
   }
   A.imageFor = imageFor;
@@ -121,11 +142,22 @@
     return out;
   };
 
-  /** How many rows on one site are expected to draw, and how many are expected to refuse. */
+  /** How many rows on one site the POLICY accepts — which is not the same as how many load. */
   A.expectedDrawable = function (site) {
     var rows = B.workspaceEnvelope(site).data.normalizedRows.length;
     var n = 0;
     for (var i = 0; i < rows; i++) if (imageFor(i) !== null && imageFor(i) !== A.REFUSED_REFERENCE) n++;
+    return n;
+  };
+
+  /** Of those, how many name a file this repository actually contains. */
+  A.expectedToLoad = function (site) {
+    var rows = B.workspaceEnvelope(site).data.normalizedRows.length;
+    var n = 0;
+    for (var i = 0; i < rows; i++) {
+      var v = imageFor(i);
+      if (v !== null && v !== A.REFUSED_REFERENCE && A.EXPECTED_TO_404.indexOf(v) === -1) n++;
+    }
     return n;
   };
 

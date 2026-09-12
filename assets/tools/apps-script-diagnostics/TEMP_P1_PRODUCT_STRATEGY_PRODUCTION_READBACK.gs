@@ -1619,3 +1619,277 @@ function RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE() {
   report.emitted = p1b8cEmit_(report);
   return report;
 }
+
+/**
+ * ============================================================================================================
+ * P1-B8C-R3-R1 — THE IMAGE REFERENCE UNIVERSE CENSUS.
+ *
+ * WHY THIS EXISTS. P1-B8C-R3 made one shared policy decide whether a `sku_details.image_url` may reach an
+ * `<img src>`, and that policy refuses an absolute URL on a host nobody declared. SKU Details previously
+ * displayed ANY non-blank value, so if production holds an externally-hosted image, R3 turns a working
+ * picture into a fallback marker.
+ *
+ * WHAT THE REPOSITORY COULD AND COULD NOT SETTLE. The repo-side census (R3-R1 §2) found ZERO external image
+ * hosts in any runtime path, in any era: the archived pre-database `data.js` used filename-only references
+ * (`img9.jpg`), the seven operator-asserted mappings are repo-relative, and every absolute host in the tree
+ * belongs to an API, a geo build tool or a test. But P1-B8C-R2 sampled SIXTY of 495 PRICING rows, and
+ * `sku_details` is a different table at a different grain. SIXTY OF ONE TABLE IS NOT A CENSUS OF ANOTHER.
+ * A bound nobody measured is not a bound.
+ *
+ * SO THIS READS THE WHOLE COLUMN AND COUNTS SHAPES. No sampling, no cap, no selection: every row of
+ * `sku_details`, one bucket each.
+ *
+ * WHAT IT MUST NOT EMIT, and the reason the list is short rather than long. A path is a locator, a filename
+ * can carry a SKU, a query can carry a token, and a row id identifies a record. NONE of them is needed to
+ * decide an allowlist. A HOSTNAME IS, which is why it is the one identifying fragment this report keeps —
+ * and it is kept only after the authority is checked for user information, because `user:pass@host` is a
+ * credential wearing a hostname's shape. If any authority carries one, THE WHOLE REPORT IS REFUSED rather
+ * than filtered: a redaction that silently drops one row is a census that quietly stopped being one.
+ *
+ * READ-ONLY, and the zero is enforced by there being no writer in the path: no setValue, no appendRow, no
+ * getRange().setX, no DriveApp, no UrlFetchApp, no LockService, no PropertiesService, no CacheService, no
+ * trigger, no sheet creation. It reads ONE table and never the other three.
+ * ============================================================================================================
+ */
+
+var P1B8CR3_CENSUS_ID_ = 'P1_IMAGE_REFERENCE_UNIVERSE_CENSUS';
+var P1B8CR3_CENSUS_BUILD_ = 'P1-B8C-R3-R1';
+
+/* The shapes, in the ORDER they are tested. Exactly one bucket per present row, so the buckets sum to
+   `present_rows` — a classification whose parts do not add up to its whole is not a classification. */
+var P1B8CR3_SHAPES_ = ['windows_path_rows', 'rejected_scheme_rows', 'traversal_rows',
+  'absolute_https_rows', 'absolute_http_rows', 'root_relative_rows', 'relative_asset_rows',
+  'filename_only_rows', 'drive_or_file_id_rows', 'extension_missing_rows',
+  'classification_unknown_rows'];
+
+var P1B8CR3_IMAGE_EXT_ = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.avif', '.svg', '.bmp', '.ico'];
+
+/** THE SAME EXTENSION TEST THE CLIENT POLICY APPLIES. Query and fragment come off first, as they do there. */
+function p1b8cr3HasImageExt_(v) {
+  var s = String(v).toLowerCase().split('?')[0].split('#')[0];
+  for (var i = 0; i < P1B8CR3_IMAGE_EXT_.length; i++) {
+    if (s.slice(-P1B8CR3_IMAGE_EXT_[i].length) === P1B8CR3_IMAGE_EXT_[i]) return true;
+  }
+  return false;
+}
+
+/**
+ * ONE ROW, ONE SHAPE. The order matters and is the client policy's order: the dangerous shapes are decided
+ * BEFORE anything is allowed to look like a path, so a value cannot be counted as an asset because it also
+ * happens to end in `.jpg`.
+ */
+function p1b8cr3ShapeOf_(raw) {
+  var v = p1b3Str_(raw);
+  if (v === '') return null;                                    // counted as blank, not as a shape
+  /* THE ORDER IS THE CLIENT POLICY'S ORDER, LINE FOR LINE. Two classifiers that decide the same
+     value in a different sequence disagree about any value that matches two rules, and the census
+     would then be counting a universe the browser does not see. The repository ASSERTS the
+     equivalence over a corpus covering every branch rather than trusting this comment.
+
+     AND THE CHARACTER CLASS IS WRITTEN AS ESCAPES. It was first typed as `[ -<>"'`]`, which is a
+     RANGE and not a set: space through `<` covers the digits, the dot and the slash, so every path
+     in production would have been counted as a rejected scheme. */
+  if (v.indexOf('\\') !== -1) return 'windows_path_rows';
+  if (/[\u0000-\u001F\u007F<>"'`]/.test(v)) return 'rejected_scheme_rows';
+  if (/\s/.test(v)) return 'rejected_scheme_rows';
+  if (/^[A-Za-z]:\//.test(v)) return 'windows_path_rows';
+  if (/^file:/i.test(v)) return 'windows_path_rows';
+  if (v.indexOf('..') !== -1) return 'traversal_rows';
+  var m = /^(https?:)?\/\//i.exec(v);
+  if (m) return /^http:\/\//i.test(v) ? 'absolute_http_rows' : 'absolute_https_rows';
+  if (/^[A-Za-z][A-Za-z0-9+.\-]*:/.test(v)) return 'rejected_scheme_rows';
+  if (v.charAt(0) === '/') return 'root_relative_rows';
+  if (p1b8cr3HasImageExt_(v)) return v.indexOf('/') === -1 ? 'filename_only_rows' : 'relative_asset_rows';
+  /* No extension and no scheme. A Drive or Spreadsheet id is the shape that actually turns up in a sheet
+     when somebody pastes a share link's tail, so it is named rather than lumped into "unknown". */
+  if (/^[A-Za-z0-9_\-]{25,}$/.test(v)) return 'drive_or_file_id_rows';
+  return 'extension_missing_rows';
+}
+
+/**
+ * THE AUTHORITY OF AN ABSOLUTE REFERENCE, or a refusal.
+ *
+ * Returns { host: '...' } or { refuse: 'REASON' }. `user:pass@host` and `name@host` both carry information
+ * about a person or a secret in the one fragment this report is allowed to publish, so either one stops the
+ * report. A port is kept off the host: it is not part of an allowlist identity.
+ */
+function p1b8cr3HostOf_(raw) {
+  var v = p1b3Str_(raw);
+  var m = /^(?:https?:)?\/\/([^\/?#]+)/i.exec(v);
+  if (!m) return null;
+  var authority = m[1];
+  if (authority.indexOf('@') !== -1) return { refuse: 'AUTHORITY_CARRIES_USER_INFO' };
+  var host = authority.split(':')[0].toLowerCase();
+  if (host === '') return { refuse: 'AUTHORITY_EMPTY' };
+  if (/[^a-z0-9.\-]/.test(host)) return { refuse: 'AUTHORITY_NOT_A_PLAIN_HOSTNAME' };
+  return { host: host };
+}
+
+/**
+ * ============================================================================================================
+ * THE THIRD ENTRY POINT. No parameters — there is nothing for a caller to widen.
+ *
+ * It reads ONE column of ONE table and publishes COUNTS plus a list of hostnames. It emits no path, no
+ * filename, no query, no SKU, no row number and no id, and it refuses the whole report rather than emit an
+ * authority that carries user information.
+ * ============================================================================================================
+ */
+function RUN_P1_IMAGE_REFERENCE_UNIVERSE_CENSUS() {
+  var startedAt = Date.now();
+  var report = {
+    census_id: P1B8CR3_CENSUS_ID_,
+    build: P1B8CR3_CENSUS_BUILD_,
+    contract: {
+      reads: ['sku_details.image_url'],
+      reads_nothing_else: true,
+      is_a_sample: false,
+      row_cap: null,
+      emits_paths: false,
+      emits_filenames: false,
+      emits_skus: false,
+      emits_row_ids: false,
+      emits_urls: false,
+      emits_external_hostnames: true,
+      hostname_rationale: 'A hostname is the allowlist identity. A path, a query or a filename is not, and'
+        + ' each can carry a SKU, a token or a person.'
+    },
+    verdict: null,
+    rows_modified: 0,
+    writes: 0,
+    counts: null,
+    external_host_counts: null,
+    unique_external_hosts: null,
+    compatibility: null,
+    safety: { passed: false, refusals: [], emitted_field_names: [] },
+    read_at: null,
+    duration_ms: null
+  };
+
+  try {
+    var ss = p1b3OpenTarget_();
+    var t = p1b3ReadTable_(ss, 'sku_details');
+    report.read_at = new Date().toISOString();
+    if (!t.present) { report.verdict = 'STOP_SKU_DETAILS_NOT_PROVISIONED'; p1b8cr3Emit_(report); return report; }
+    if (!t.readable) { report.verdict = 'STOP_SKU_DETAILS_UNREADABLE'; p1b8cr3Emit_(report); return report; }
+
+    var rows = t.rows || [];
+    var counts = { total_rows: rows.length, blank_rows: 0, present_rows: 0 };
+    for (var s = 0; s < P1B8CR3_SHAPES_.length; s++) counts[P1B8CR3_SHAPES_[s]] = 0;
+
+    var hostCounts = {};
+    var refusals = [];
+
+    for (var i = 0; i < rows.length; i++) {
+      /* THE ONLY COLUMN THIS FUNCTION TOUCHES. Nothing else on the row is read, so nothing else can leak. */
+      var raw = rows[i] ? rows[i].image_url : '';
+      var shape = p1b8cr3ShapeOf_(raw);
+      if (shape === null) { counts.blank_rows++; continue; }
+      counts.present_rows++;
+      counts[shape]++;
+      if (shape === 'absolute_https_rows' || shape === 'absolute_http_rows') {
+        var h = p1b8cr3HostOf_(raw);
+        if (h && h.refuse) {
+          if (refusals.indexOf(h.refuse) === -1) refusals.push(h.refuse);
+        } else if (h && h.host) {
+          hostCounts[h.host] = (hostCounts[h.host] || 0) + 1;
+        }
+      }
+    }
+
+    /* FAIL CLOSED, AND ON THE WHOLE REPORT. An authority carrying user information is not filtered out and
+       the rest published: the counts would then describe a universe the reader cannot see all of. */
+    if (refusals.length > 0) {
+      report.verdict = 'STOP_P1_B8C_R3_R1_HOSTNAME_REDACTION_FAILED';
+      report.safety.refusals = refusals;
+      report.counts = null;
+      p1b8cr3Emit_(report);
+      return report;
+    }
+
+    /* THE BUCKETS MUST ADD UP TO THE WHOLE. Asserted here rather than assumed by the reader. */
+    var summed = 0;
+    for (var s2 = 0; s2 < P1B8CR3_SHAPES_.length; s2++) summed += counts[P1B8CR3_SHAPES_[s2]];
+    if (summed !== counts.present_rows || counts.blank_rows + counts.present_rows !== counts.total_rows) {
+      report.verdict = 'STOP_P1_B8C_R3_R1_CLASSIFICATION_DOES_NOT_SUM';
+      report.counts = counts;
+      p1b8cr3Emit_(report);
+      return report;
+    }
+
+    var hosts = Object.keys(hostCounts).sort();
+
+    /* ------------------------------------------------------------------------------------------------
+       THE COMPATIBILITY MATRIX, COMPUTED WHERE THE WHOLE UNIVERSE IS VISIBLE.
+
+       OLD (SKU Details before R3): displayed ANY non-blank value. That is not a paraphrase — the old
+       resolveSkuImageUrl upgraded http:// to https:// and returned everything else unchanged, and the page
+       rendered an <img> whenever the string was non-empty.
+
+       NEW (the shared policy): displays a same-origin asset, a root-relative path, a filename with an image
+       extension, or an absolute URL on an approved host. Approved hosts are NOT known to this script, so the
+       absolute rows are reported SEPARATELY as `new_rejected_unless_host_approved` rather than being scored
+       either way. A census that assumed the allowlist would be answering the question it was sent to ask.
+       ------------------------------------------------------------------------------------------------ */
+    var newDisplayed = counts.relative_asset_rows + counts.root_relative_rows + counts.filename_only_rows;
+    var absolute = counts.absolute_https_rows + counts.absolute_http_rows;
+    var newRejectedOutright = counts.windows_path_rows + counts.rejected_scheme_rows
+      + counts.traversal_rows + counts.drive_or_file_id_rows + counts.extension_missing_rows
+      + counts.classification_unknown_rows;
+
+    report.compatibility = {
+      old_behaviour: 'ANY_NON_BLANK_VALUE_RENDERED',
+      new_behaviour: 'KM_IMAGE_REFERENCE_POLICY_V1',
+      old_displayed_rows: counts.present_rows,
+      old_rejected_rows: counts.blank_rows,
+      old_displayed_new_displayed: newDisplayed,
+      old_displayed_new_rejected: newRejectedOutright,
+      old_displayed_new_depends_on_allowlist: absolute,
+      old_rejected_new_displayed: 0,
+      both_fallback: counts.blank_rows,
+      new_rejected_by_class: {
+        windows_path_rows: counts.windows_path_rows,
+        rejected_scheme_rows: counts.rejected_scheme_rows,
+        traversal_rows: counts.traversal_rows,
+        drive_or_file_id_rows: counts.drive_or_file_id_rows,
+        extension_missing_rows: counts.extension_missing_rows,
+        classification_unknown_rows: counts.classification_unknown_rows
+      },
+      external_hosts_affected: hosts.length,
+      allowlist_decision_required: absolute > 0
+    };
+
+    report.counts = counts;
+    report.external_host_counts = hostCounts;
+    report.unique_external_hosts = hosts;
+    report.verdict = 'CENSUS_TAKEN';
+    report.safety.passed = true;
+    report.safety.emitted_field_names = Object.keys(counts).concat(['unique_external_hosts',
+      'external_host_counts', 'compatibility']);
+  } catch (e) {
+    report.verdict = 'STOP_P1_B8C_R3_R1_CENSUS_FAILED';
+    /* `safety_token`, NOT `token`. P1-B8C-R1 learned this the expensive way: the forbidden-key list names
+       `token`, so an error object with a `token` field made every failure path report itself as a redaction
+       failure — the one path that exists to explain a failure was the one guaranteed to be refused. */
+    report.error = { safety_token: p1b3Str_((e && (e.safetyToken || e.message)) || e) || 'UNKNOWN' };
+  }
+
+  report.duration_ms = Date.now() - startedAt;
+  p1b8cr3Emit_(report);
+  return report;
+}
+
+/** The same chunked emitter the other two entry points use, so one reader handles all three. */
+function p1b8cr3Emit_(report) {
+  var json = JSON.stringify(report, null, 2);
+  var fp = p1b3Hash_(json);
+  var chunks = Math.ceil(json.length / P1B3_CHUNK_CHARS_) || 1;
+  for (var i = 0; i < chunks; i++) {
+    Logger.log('[' + P1B8CR3_CENSUS_ID_
+      + ' chunk_index=' + (i + 1)
+      + ' chunk_count=' + chunks
+      + ' full_report_fingerprint=' + fp
+      + ' full_report_length=' + json.length + ']\n'
+      + json.slice(i * P1B3_CHUNK_CHARS_, (i + 1) * P1B3_CHUNK_CHARS_));
+  }
+  return { fingerprint: fp, chunk_count: chunks, full_report_length: json.length };
+}

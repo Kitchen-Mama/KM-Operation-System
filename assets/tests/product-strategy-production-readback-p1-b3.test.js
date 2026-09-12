@@ -297,13 +297,20 @@ var rbFns = (SRCRB.match(/^function\s+([A-Za-z0-9_$]+)/gm) || []).map(function (
 /* A11b RESTATED AT P1-B8C-R1. It asserted `['RUN_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK']` — one
    entry point — which was the form of "every way into this file is accounted for" available while
    there was one. The USER authorised a second, RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE, and the
-   assertion NAMES BOTH rather than being relaxed to a count: a third appearing is still a failure,
-   and the rule it protects — no unenumerated entry point — is stronger with two than it was with one.
-   Neither is in a router table (A11), and neither defines a web entry point (A11a). */
+   assertion NAMES THEM rather than being relaxed to a count: an unnamed one appearing is still a
+   failure, and the rule it protects — no unenumerated entry point — gets stronger with each one.
+   None is in a router table (A11), and none defines a web entry point (A11a).
+
+   P1-B8C-R3-R1 ADDED THE THIRD, RUN_P1_IMAGE_REFERENCE_UNIVERSE_CENSUS. It is NAMED here, which is
+   the whole mechanism working: the guard failed the moment the function appeared, and the only way
+   past it is to declare the thing that was added. */
 eq(rbFns.filter(function (n) { return /^RUN_/.test(n); }).sort(),
-  ['RUN_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK', 'RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE'],
-  'A11b exactly two RUN_ entry points exist, and both are named here',
+  ['RUN_P1_IMAGE_REFERENCE_UNIVERSE_CENSUS', 'RUN_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK',
+    'RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE'],
+  'A11b exactly three RUN_ entry points exist, and all three are named here',
   rbFns.filter(function (n) { return /^RUN_/.test(n); }));
+ok(SRC01.indexOf('RUN_P1_IMAGE_REFERENCE_UNIVERSE_CENSUS') === -1,
+  'A11b0 and the third one is in no router table either');
 ok(SRC01.indexOf('RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE') === -1,
   'A11b1 and the second one is in no router table either');
 ok(/function RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE\(\)/.test(SRCRB),

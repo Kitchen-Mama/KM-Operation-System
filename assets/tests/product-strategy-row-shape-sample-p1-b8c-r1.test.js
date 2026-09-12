@@ -85,6 +85,8 @@ var SRCMAN = read(FMAN);
 
 var FN = 'RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE';
 var CENSUS = 'RUN_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK';
+// P1-B8C-R3-R1's read-only image census. Named here because A2 enumerates rather than counts.
+var IMAGE_CENSUS = 'RUN_P1_IMAGE_REFERENCE_UNIVERSE_CENSUS';
 
 var WRITERS = ['setValue', 'setValues', 'appendRow', 'insertRow', 'insertRows', 'insertSheet',
   'insertColumn', 'insertColumns', 'deleteRow', 'deleteRows', 'deleteColumn', 'deleteSheet',
@@ -155,14 +157,16 @@ ok(/function RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE\(\)/.test(SRCRB),
 var occurrences = (SRCRB.match(new RegExp('function\\s+' + FN + '\\s*\\(', 'g')) || []).length;
 eq(occurrences, 1, 'A1a and it is defined exactly once');
 
-// A2 — TWO ENTRY POINTS NOW, AND BOTH ARE NAMED. The old assertion said "exactly one"; it is re-pointed
-// rather than deleted, because the rule it protects is "every RUN_ in this file is accounted for", and
-// that rule is stronger with two than it was with one.
+// A2 — THREE ENTRY POINTS NOW, AND ALL THREE ARE NAMED. The assertion said "exactly one", then "exactly
+// two"; it is re-pointed rather than relaxed each time, because the rule it protects is "every RUN_ in
+// this file is accounted for", and that rule gets stronger with each one rather than weaker. It failed
+// the moment P1-B8C-R3-R1's census appeared, which is the guard doing its job.
 var rbFns = (SRCRB.match(/^function\s+([A-Za-z0-9_$]+)/gm) || []).map(function (m) {
   return m.replace(/^function\s+/, '');
 });
-eq(rbFns.filter(function (n) { return /^RUN_/.test(n); }).sort(), [FN, CENSUS].sort(),
-  'A2  exactly two RUN_ entry points exist, and both are named here',
+eq(rbFns.filter(function (n) { return /^RUN_/.test(n); }).sort(),
+  [FN, CENSUS, IMAGE_CENSUS].sort(),
+  'A2  exactly three RUN_ entry points exist, and all three are named here',
   rbFns.filter(function (n) { return /^RUN_/.test(n); }));
 
 ok(!/function\s+doGet|function\s+doPost/.test(SRCRB),

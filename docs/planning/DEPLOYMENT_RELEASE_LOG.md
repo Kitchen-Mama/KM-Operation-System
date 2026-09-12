@@ -1326,3 +1326,73 @@ WEB_APP_DEPLOYMENT_REQUIRED  -  **NO**          FRONTEND_DEPLOY_REQUIRED  -  **N
   They ship with the next frontend deployment, which remains USER-owned and unscheduled.
 
 **STATUS: IMAGE RESOLUTION SHARED - NOT SYNCED - NO VERSION - NO DEPLOYMENT - NOT PUSHED - PRODUCT STRATEGY STILL DISABLED - P1-B8D NOT STARTED.**
+
+=======================================================================================================
+P1-B8C-R3-R1   IMAGE REFERENCE UNIVERSE CENSUS - COMPATIBILITY GATE - LOCAL COMMIT - NOT PUSHED
+=======================================================================================================
+  SCOPE: before DEPLOYING R3, establish what production's sku_details.image_url universe actually
+  contains, so the shared policy's empty allowlist cannot silently break a working image. This is not
+  a revert of R3 and does not enable Product Strategy. No DB, no shipped Apps Script, no feature flag,
+  no navigation, no deployment, no Login/RBAC, no S2. NO CLIENT RUNTIME FILE CHANGED.
+
+-------------------------------------------------------------------------------------------------------
+WHY THE GATE
+-------------------------------------------------------------------------------------------------------
+  R3 said "all 67 production data points are relative paths". Sixty of those were P1-B8C-R2's sample of
+  SIXTY OF 495 PRICING rows, and R2's diagnostic had REMOVED every image address before the log left the
+  editor. sku_details is a different table at a different grain. Sixty of one is not a census of another.
+
+-------------------------------------------------------------------------------------------------------
+WHAT THE REPOSITORY PROVED (1,032 files, 311 candidate references)
+-------------------------------------------------------------------------------------------------------
+  filename-only  img1..img20.jpg   archived pre-database data.js, not loaded by production   ACCEPTED
+  repo-relative  assets/img/products/*.jpg x7   operator-asserted from live rows             ACCEPTED
+  external image host   eoimages.gsfc.nasa.gov  ONLY in tools/geo/ + PROVENANCE.md      NOT A RUNTIME SOURCE
+
+  NO SHIPPED FILE references an external image host. No asset base and no CDN base exists; the
+  `baseUrl` machinery that does exist is the API transport's /exec endpoint.
+
+  FOURTH CONSUMER FOUND: campaign-risk.js:438 renders the same sku_details image column with NO
+  resolver and NO validation. R3's parity claim does not cover it. RECORDED, NOT REPAIRED - this
+  round measures. It has its own onerror, so only validation is missing.
+
+-------------------------------------------------------------------------------------------------------
+THE GATE, REDUCED
+-------------------------------------------------------------------------------------------------------
+  Of every class R3 removes, only UNAPPROVED_HOST could ever have been a working picture; every other
+  removal is a value no browser could fetch. One question remains: does production hold an absolute
+  image URL? And compatibility is asserted as THE ADDRESS IS BYTE-IDENTICAL, not as "it still shows" -
+  a policy that displayed a different address would pass the weaker form and break every picture.
+  old rejected / new displayed = 0.
+
+-------------------------------------------------------------------------------------------------------
+THE DIAGNOSTIC
+-------------------------------------------------------------------------------------------------------
+  RUN_P1_IMAGE_REFERENCE_UNIVERSE_CENSUS()   editor-only, no parameters, read-only.
+  One column of one table. No cap, no sampling. Counts by shape + hostnames only; no path, filename,
+  SKU, row id or URL. An authority containing '@' stops the WHOLE report. Buckets must sum to the whole.
+  Absolute rows scored SEPARATELY as old_displayed_new_depends_on_allowlist.
+  Proven EQUIVALENT to km-image-reference-policy.js over a 35-value corpus reaching every branch of both.
+
+-------------------------------------------------------------------------------------------------------
+TESTS
+-------------------------------------------------------------------------------------------------------
+  product-strategy-image-universe-census-p1-b8c-r3-r1  159 / 0 · 15 mutants · 0 survived   (new)
+  product-strategy-image-resolution-p1-b8c-r3          336 / 0 · 20 mutants · 0 survived   (re-pointed)
+  product-strategy-production-readback-p1-b3           340 / 0 · 17 mutants · 0 survived   (re-pointed)
+  product-strategy-row-shape-sample-p1-b8c-r1          425 / 0 · 27 mutants · 0 survived   (re-pointed)
+  full sweep   PRE 464 suites / 4 red (3,1,7,2)   POST 465 suites / 4 red (3,1,7,2)   new failures 0
+
+  THE TWO ENTRY-POINT GUARDS FAILED THE MOMENT THE CENSUS APPEARED, which is the mechanism working:
+  they ENUMERATE rather than count, so the only way past is to declare what was added.
+
+-------------------------------------------------------------------------------------------------------
+APPS_SCRIPT_SYNC_REQUIRED  -  **YES_DIAGNOSTIC_ONLY**   NEW_VERSION_REQUIRED  -  **NO**
+WEB_APP_DEPLOYMENT_REQUIRED  -  **NO**                  FRONTEND_DEPLOY_REQUIRED  -  **NO**
+-------------------------------------------------------------------------------------------------------
+  Sync ONLY assets/tools/apps-script-diagnostics/TEMP_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK.gs into
+  the Apps Script editor and run RUN_P1_IMAGE_REFERENCE_UNIVERSE_CENSUS() from the editor. No shipped
+  .gs changed, so no version and no deployment. The R3 frontend package remains undeployed and
+  USER-owned; the census answers whether its allowlist needs an entry before it ships.
+
+**STATUS: GATE BUILT - CENSUS NOT YET RUN - NOT SYNCED - NO VERSION - NO DEPLOYMENT - NOT PUSHED - PRODUCT STRATEGY STILL DISABLED - P1-B8D NOT STARTED.**

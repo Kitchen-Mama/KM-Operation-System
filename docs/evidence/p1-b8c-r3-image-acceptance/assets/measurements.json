@@ -369,7 +369,7 @@
    "gridLineCount": 10,
    "laneLabelCount": 6,
    "laneSubCount": 6,
-   "imageCount": 2,
+   "imageCount": 3,
    "htmlImages": 2,
    "htmlImagesLoaded": 2,
    "htmlImagesBroken": 0,
@@ -379,10 +379,11 @@
    "catfigMissingNotices": 0,
    "chartImageHrefs": [
     "assets/img/products/SP3120-R.jpg",
-    "assets/img/products/CO1100-R.jpg"
+    "assets/img/products/CO1100-R.jpg",
+    "img9.jpg"
    ],
-   "imageMarkerCount": 2,
-   "fallbackMarkerCount": 4,
+   "imageMarkerCount": 3,
+   "fallbackMarkerCount": 3,
    "yAxisFullyVisible": true,
    "xLaneFullyVisible": true,
    "firstTickBox": {
@@ -460,6 +461,21 @@
      "fontWeight": "400",
      "scrollW": 0,
      "clientW": 0
+    },
+    {
+     "x": 1601,
+     "y": 905,
+     "w": 44,
+     "h": 44,
+     "display": "inline",
+     "visibility": "visible",
+     "overflowX": "hidden",
+     "color": "rgb(20, 24, 31)",
+     "bg": "rgba(0, 0, 0, 0)",
+     "fontSize": "14px",
+     "fontWeight": "400",
+     "scrollW": 0,
+     "clientW": 0
     }
    ],
    "tables": [
@@ -476,7 +492,7 @@
    "captureFingerprint": "b1dbe410f0b9f580",
    "flagStillFalse": true,
    "__png": "shot-1920x1080.png",
-   "__pngBytes": 113921
+   "__pngBytes": 115946
   },
   "1440x900": {
    "ready": true,
@@ -842,7 +858,7 @@
    "gridLineCount": 10,
    "laneLabelCount": 6,
    "laneSubCount": 6,
-   "imageCount": 2,
+   "imageCount": 3,
    "htmlImages": 2,
    "htmlImagesLoaded": 2,
    "htmlImagesBroken": 0,
@@ -852,10 +868,11 @@
    "catfigMissingNotices": 0,
    "chartImageHrefs": [
     "assets/img/products/SP3120-R.jpg",
-    "assets/img/products/CO1100-R.jpg"
+    "assets/img/products/CO1100-R.jpg",
+    "img9.jpg"
    ],
-   "imageMarkerCount": 2,
-   "fallbackMarkerCount": 4,
+   "imageMarkerCount": 3,
+   "fallbackMarkerCount": 3,
    "yAxisFullyVisible": true,
    "xLaneFullyVisible": true,
    "firstTickBox": {
@@ -922,6 +939,21 @@
     {
      "x": 1089,
      "y": 1095,
+     "w": 44,
+     "h": 44,
+     "display": "inline",
+     "visibility": "visible",
+     "overflowX": "hidden",
+     "color": "rgb(20, 24, 31)",
+     "bg": "rgba(0, 0, 0, 0)",
+     "fontSize": "14px",
+     "fontWeight": "400",
+     "scrollW": 0,
+     "clientW": 0
+    },
+    {
+     "x": 1253,
+     "y": 1011,
      "w": 44,
      "h": 44,
      "display": "inline",
@@ -1315,7 +1347,7 @@
    "gridLineCount": 10,
    "laneLabelCount": 6,
    "laneSubCount": 6,
-   "imageCount": 2,
+   "imageCount": 3,
    "htmlImages": 2,
    "htmlImagesLoaded": 2,
    "htmlImagesBroken": 0,
@@ -1325,10 +1357,11 @@
    "catfigMissingNotices": 0,
    "chartImageHrefs": [
     "assets/img/products/SP3120-R.jpg",
-    "assets/img/products/CO1100-R.jpg"
+    "assets/img/products/CO1100-R.jpg",
+    "img9.jpg"
    ],
-   "imageMarkerCount": 2,
-   "fallbackMarkerCount": 4,
+   "imageMarkerCount": 3,
+   "fallbackMarkerCount": 3,
    "yAxisFullyVisible": true,
    "xLaneFullyVisible": true,
    "firstTickBox": {
@@ -1395,6 +1428,21 @@
     {
      "x": 1033,
      "y": 1077,
+     "w": 44,
+     "h": 44,
+     "display": "inline",
+     "visibility": "visible",
+     "overflowX": "hidden",
+     "color": "rgb(20, 24, 31)",
+     "bg": "rgba(0, 0, 0, 0)",
+     "fontSize": "14px",
+     "fontWeight": "400",
+     "scrollW": 0,
+     "clientW": 0
+    },
+    {
+     "x": 1185,
+     "y": 1000,
      "w": 44,
      "h": 44,
      "display": "inline",
@@ -1788,7 +1836,7 @@
    "gridLineCount": 10,
    "laneLabelCount": 6,
    "laneSubCount": 6,
-   "imageCount": 2,
+   "imageCount": 3,
    "htmlImages": 2,
    "htmlImagesLoaded": 2,
    "htmlImagesBroken": 0,
@@ -1798,10 +1846,11 @@
    "catfigMissingNotices": 0,
    "chartImageHrefs": [
     "assets/img/products/SP3120-R.jpg",
-    "assets/img/products/CO1100-R.jpg"
+    "assets/img/products/CO1100-R.jpg",
+    "img9.jpg"
    ],
-   "imageMarkerCount": 2,
-   "fallbackMarkerCount": 4,
+   "imageMarkerCount": 3,
+   "fallbackMarkerCount": 3,
    "yAxisFullyVisible": true,
    "xLaneFullyVisible": true,
    "firstTickBox": {
@@ -1868,6 +1917,21 @@
     {
      "x": 975,
      "y": 1041,
+     "w": 44,
+     "h": 44,
+     "display": "inline",
+     "visibility": "visible",
+     "overflowX": "hidden",
+     "color": "rgb(20, 24, 31)",
+     "bg": "rgba(0, 0, 0, 0)",
+     "fontSize": "14px",
+     "fontWeight": "400",
+     "scrollW": 0,
+     "clientW": 0
+    },
+    {
+     "x": 1116,
+     "y": 973,
      "w": 44,
      "h": 44,
      "display": "inline",
@@ -2261,7 +2325,7 @@
    "gridLineCount": 10,
    "laneLabelCount": 6,
    "laneSubCount": 6,
-   "imageCount": 2,
+   "imageCount": 3,
    "htmlImages": 2,
    "htmlImagesLoaded": 2,
    "htmlImagesBroken": 0,
@@ -2271,10 +2335,11 @@
    "catfigMissingNotices": 0,
    "chartImageHrefs": [
     "assets/img/products/SP3120-R.jpg",
-    "assets/img/products/CO1100-R.jpg"
+    "assets/img/products/CO1100-R.jpg",
+    "img9.jpg"
    ],
-   "imageMarkerCount": 2,
-   "fallbackMarkerCount": 4,
+   "imageMarkerCount": 3,
+   "fallbackMarkerCount": 3,
    "yAxisFullyVisible": true,
    "xLaneFullyVisible": true,
    "firstTickBox": {
@@ -2341,6 +2406,21 @@
     {
      "x": 785,
      "y": 1264,
+     "w": 44,
+     "h": 44,
+     "display": "inline",
+     "visibility": "visible",
+     "overflowX": "hidden",
+     "color": "rgb(20, 24, 31)",
+     "bg": "rgba(0, 0, 0, 0)",
+     "fontSize": "14px",
+     "fontWeight": "400",
+     "scrollW": 0,
+     "clientW": 0
+    },
+    {
+     "x": 885,
+     "y": 1188,
      "w": 44,
      "h": 44,
      "display": "inline",
@@ -2734,7 +2814,7 @@
    "gridLineCount": 10,
    "laneLabelCount": 6,
    "laneSubCount": 6,
-   "imageCount": 2,
+   "imageCount": 3,
    "htmlImages": 2,
    "htmlImagesLoaded": 2,
    "htmlImagesBroken": 0,
@@ -2744,10 +2824,11 @@
    "catfigMissingNotices": 0,
    "chartImageHrefs": [
     "assets/img/products/SP3120-R.jpg",
-    "assets/img/products/CO1100-R.jpg"
+    "assets/img/products/CO1100-R.jpg",
+    "img9.jpg"
    ],
-   "imageMarkerCount": 2,
-   "fallbackMarkerCount": 4,
+   "imageMarkerCount": 3,
+   "fallbackMarkerCount": 3,
    "yAxisFullyVisible": true,
    "xLaneFullyVisible": true,
    "firstTickBox": {
@@ -2814,6 +2895,21 @@
     {
      "x": 596,
      "y": 1645,
+     "w": 38,
+     "h": 38,
+     "display": "inline",
+     "visibility": "visible",
+     "overflowX": "hidden",
+     "color": "rgb(20, 24, 31)",
+     "bg": "rgba(0, 0, 0, 0)",
+     "fontSize": "14px",
+     "fontWeight": "400",
+     "scrollW": 0,
+     "clientW": 0
+    },
+    {
+     "x": 653,
+     "y": 1562,
      "w": 38,
      "h": 38,
      "display": "inline",
@@ -2993,7 +3089,7 @@
      "selected": "false",
      "tabindex": "-1",
      "box": {
-      "x": 260,
+      "x": 257,
       "y": 418,
       "w": 170,
       "h": 33,
@@ -3016,7 +3112,7 @@
      "selected": "true",
      "tabindex": "0",
      "box": {
-      "x": 446,
+      "x": 443,
       "y": 418,
       "w": 170,
       "h": 33,
@@ -3039,7 +3135,7 @@
      "selected": "false",
      "tabindex": "-1",
      "box": {
-      "x": 632,
+      "x": 629,
       "y": 418,
       "w": 108,
       "h": 33,
@@ -3062,7 +3158,7 @@
      "selected": "false",
      "tabindex": "-1",
      "box": {
-      "x": 756,
+      "x": 753,
       "y": 418,
       "w": 129,
       "h": 33,
@@ -3085,7 +3181,7 @@
      "selected": "false",
      "tabindex": "-1",
      "box": {
-      "x": 901,
+      "x": 898,
       "y": 418,
       "w": 174,
       "h": 33,
@@ -3108,7 +3204,7 @@
      "selected": "false",
      "tabindex": "-1",
      "box": {
-      "x": 1091,
+      "x": 1088,
       "y": 418,
       "w": 159,
       "h": 33,
@@ -3207,7 +3303,7 @@
    "gridLineCount": 10,
    "laneLabelCount": 6,
    "laneSubCount": 6,
-   "imageCount": 2,
+   "imageCount": 3,
    "htmlImages": 2,
    "htmlImagesLoaded": 2,
    "htmlImagesBroken": 0,
@@ -3217,10 +3313,11 @@
    "catfigMissingNotices": 0,
    "chartImageHrefs": [
     "assets/img/products/SP3120-R.jpg",
-    "assets/img/products/CO1100-R.jpg"
+    "assets/img/products/CO1100-R.jpg",
+    "img9.jpg"
    ],
-   "imageMarkerCount": 2,
-   "fallbackMarkerCount": 4,
+   "imageMarkerCount": 3,
+   "fallbackMarkerCount": 3,
    "yAxisFullyVisible": true,
    "xLaneFullyVisible": false,
    "firstTickBox": {
@@ -3298,6 +3395,21 @@
      "fontWeight": "400",
      "scrollW": 0,
      "clientW": 0
+    },
+    {
+     "x": 489,
+     "y": 3354,
+     "w": 18,
+     "h": 18,
+     "display": "inline",
+     "visibility": "visible",
+     "overflowX": "hidden",
+     "color": "rgb(20, 24, 31)",
+     "bg": "rgba(0, 0, 0, 0)",
+     "fontSize": "14px",
+     "fontWeight": "400",
+     "scrollW": 0,
+     "clientW": 0
     }
    ],
    "tables": [
@@ -3314,7 +3426,7 @@
    "captureFingerprint": "b1dbe410f0b9f580",
    "flagStillFalse": true,
    "__png": "shot-390x844.png",
-   "__pngBytes": 48256
+   "__pngBytes": 48084
   },
   "fullpage-1920x2400": {
    "ready": true,
@@ -4418,7 +4530,7 @@
    "gridLineCount": 10,
    "laneLabelCount": 6,
    "laneSubCount": 6,
-   "imageCount": 2,
+   "imageCount": 3,
    "htmlImages": 2,
    "htmlImagesLoaded": 2,
    "htmlImagesBroken": 0,
@@ -4428,10 +4540,11 @@
    "catfigMissingNotices": 0,
    "chartImageHrefs": [
     "assets/img/products/SP3120-R.jpg",
-    "assets/img/products/CO1100-R.jpg"
+    "assets/img/products/CO1100-R.jpg",
+    "img9.jpg"
    ],
-   "imageMarkerCount": 2,
-   "fallbackMarkerCount": 4,
+   "imageMarkerCount": 3,
+   "fallbackMarkerCount": 3,
    "yAxisFullyVisible": true,
    "xLaneFullyVisible": true,
    "firstTickBox": {
@@ -4498,6 +4611,21 @@
     {
      "x": 1089,
      "y": 1095,
+     "w": 44,
+     "h": 44,
+     "display": "inline",
+     "visibility": "visible",
+     "overflowX": "hidden",
+     "color": "rgb(20, 24, 31)",
+     "bg": "rgba(0, 0, 0, 0)",
+     "fontSize": "14px",
+     "fontWeight": "400",
+     "scrollW": 0,
+     "clientW": 0
+    },
+    {
+     "x": 1253,
+     "y": 1011,
      "w": 44,
      "h": 44,
      "display": "inline",
@@ -7918,7 +8046,7 @@
    "gridLineCount": 10,
    "laneLabelCount": 6,
    "laneSubCount": 6,
-   "imageCount": 2,
+   "imageCount": 3,
    "htmlImages": 2,
    "htmlImagesLoaded": 2,
    "htmlImagesBroken": 0,
@@ -7928,10 +8056,11 @@
    "catfigMissingNotices": 0,
    "chartImageHrefs": [
     "assets/img/products/SP3120-R.jpg",
-    "assets/img/products/CO1100-R.jpg"
+    "assets/img/products/CO1100-R.jpg",
+    "img9.jpg"
    ],
-   "imageMarkerCount": 2,
-   "fallbackMarkerCount": 4,
+   "imageMarkerCount": 3,
+   "fallbackMarkerCount": 3,
    "yAxisFullyVisible": true,
    "xLaneFullyVisible": true,
    "firstTickBox": {
@@ -7998,6 +8127,21 @@
     {
      "x": 1089,
      "y": 1144,
+     "w": 44,
+     "h": 44,
+     "display": "inline",
+     "visibility": "visible",
+     "overflowX": "hidden",
+     "color": "rgb(20, 24, 31)",
+     "bg": "rgba(0, 0, 0, 0)",
+     "fontSize": "14px",
+     "fontWeight": "400",
+     "scrollW": 0,
+     "clientW": 0
+    },
+    {
+     "x": 1253,
+     "y": 1061,
      "w": 44,
      "h": 44,
      "display": "inline",
