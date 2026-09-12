@@ -1,0 +1,7533 @@
+{
+ "browser": "chrome.exe",
+ "generated_at_utc_date": "2026-09-12",
+ "viewports": {
+  "1920x1080": {
+   "ready": true,
+   "error": null,
+   "viewport": {
+    "w": 1920,
+    "h": 1080
+   },
+   "page": {
+    "scrollW": 1920,
+    "clientW": 1920,
+    "horizontalOverflow": 0
+   },
+   "mainContent": {
+    "x": 240,
+    "y": 56,
+    "w": 1680,
+    "h": 1024,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(255, 255, 255)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1680,
+    "clientW": 1680
+   },
+   "contentArea": {
+    "x": 240,
+    "y": 56,
+    "w": 1680,
+    "h": 2238,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1680,
+    "clientW": 1680
+   },
+   "sidebar": {
+    "x": 0,
+    "y": 56,
+    "w": 240,
+    "h": 1024,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(24, 24, 27)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 239,
+    "clientW": 239
+   },
+   "menuParents": [
+    {
+     "id": "sku-management",
+     "label": "SKU Management",
+     "y": 176
+    },
+    {
+     "id": "product-strategy",
+     "label": "Product Strategy",
+     "y": 232
+    },
+    {
+     "id": "carrier",
+     "label": "Pricing Center",
+     "y": 555
+    },
+    {
+     "id": "training",
+     "label": "Training Center",
+     "y": 611
+    }
+   ],
+   "psbChildren": [
+    {
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "visible": true
+    }
+   ],
+   "viewnav": {
+    "x": 272,
+    "y": 182,
+    "w": 1616,
+    "h": 42,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1616,
+    "clientW": 1616
+   },
+   "navList": {
+    "x": 272,
+    "y": 182,
+    "w": 1616,
+    "h": 41,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "auto",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1616,
+    "clientW": 1616
+   },
+   "tabs": [
+    {
+     "view": "overview",
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 276,
+      "y": 186,
+      "w": 170,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 168,
+      "clientW": 168
+     }
+    },
+    {
+     "view": "category",
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "labelVisible": true,
+     "selected": "true",
+     "tabindex": "0",
+     "box": {
+      "x": 462,
+      "y": 186,
+      "w": 170,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "650",
+      "scrollW": 168,
+      "clientW": 168
+     }
+    },
+    {
+     "view": "risk",
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 648,
+      "y": 186,
+      "w": 108,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 106,
+      "clientW": 106
+     }
+    },
+    {
+     "view": "quality",
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 772,
+      "y": 186,
+      "w": 129,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 127,
+      "clientW": 127
+     }
+    },
+    {
+     "view": "workspace",
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 917,
+      "y": 186,
+      "w": 174,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 172,
+      "clientW": 172
+     }
+    },
+    {
+     "view": "advanced",
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 1107,
+      "y": 186,
+      "w": 159,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 157,
+      "clientW": 157
+     }
+    }
+   ],
+   "stateHost": {
+    "x": 272,
+    "y": 274,
+    "w": 1616,
+    "h": 0,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1616,
+    "clientW": 1616
+   },
+   "stateText": "",
+   "crumbs": "Product Strategy/Category Analysis · Electric Can Opener",
+   "banner": "",
+   "scopeBar": {
+    "x": 272,
+    "y": 278,
+    "w": 1616,
+    "h": 121,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1616,
+    "clientW": 1616
+   },
+   "viewHost": {
+    "x": 272,
+    "y": 417,
+    "w": 1616,
+    "h": 1810,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1619,
+    "clientW": 1616
+   },
+   "chart": {
+    "x": 293,
+    "y": 741,
+    "w": 1574,
+    "h": 577,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1574,
+    "clientW": 1574
+   },
+   "svg": {
+    "x": 293,
+    "y": 741,
+    "w": 1574,
+    "h": 573,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1574,
+    "clientW": 1574
+   },
+   "chartInternalOverflow": 0,
+   "axisTickCount": 10,
+   "gridLineCount": 10,
+   "laneLabelCount": 6,
+   "laneSubCount": 6,
+   "imageCount": 0,
+   "imageMarkerCount": 0,
+   "fallbackMarkerCount": 6,
+   "yAxisFullyVisible": true,
+   "xLaneFullyVisible": true,
+   "firstTickBox": {
+    "x": 327,
+    "y": 1225,
+    "w": 32,
+    "h": 14,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "11.5px",
+    "fontWeight": "500",
+    "scrollW": 66,
+    "clientW": 66
+   },
+   "lastTickBox": {
+    "x": 327,
+    "y": 794,
+    "w": 32,
+    "h": 14,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "11.5px",
+    "fontWeight": "500",
+    "scrollW": 66,
+    "clientW": 66
+   },
+   "laneBox": {
+    "x": 363,
+    "y": 1262,
+    "w": 1474,
+    "h": 0,
+    "display": "inline",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 0,
+    "clientW": 0
+   },
+   "imageBoxes": [],
+   "tables": [
+    {
+     "scrollW": 1570,
+     "clientW": 1570,
+     "parentOverflowX": "auto"
+    }
+   ],
+   "drawerOpen": false,
+   "badges": [],
+   "captureKind": "DETERMINISTIC",
+   "captureFingerprint": "4523bc274ea37000",
+   "flagStillFalse": true,
+   "__png": "shot-1920x1080.png",
+   "__pngBytes": 112339
+  },
+  "1440x900": {
+   "ready": true,
+   "error": null,
+   "viewport": {
+    "w": 1440,
+    "h": 900
+   },
+   "page": {
+    "scrollW": 1440,
+    "clientW": 1440,
+    "horizontalOverflow": 0
+   },
+   "mainContent": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(255, 255, 255)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "contentArea": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 2845,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "sidebar": {
+    "x": 0,
+    "y": 56,
+    "w": 240,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(24, 24, 27)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 239,
+    "clientW": 239
+   },
+   "menuParents": [
+    {
+     "id": "sku-management",
+     "label": "SKU Management",
+     "y": 176
+    },
+    {
+     "id": "product-strategy",
+     "label": "Product Strategy",
+     "y": 232
+    },
+    {
+     "id": "carrier",
+     "label": "Pricing Center",
+     "y": 555
+    },
+    {
+     "id": "training",
+     "label": "Training Center",
+     "y": 611
+    }
+   ],
+   "psbChildren": [
+    {
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "visible": true
+    }
+   ],
+   "viewnav": {
+    "x": 272,
+    "y": 182,
+    "w": 1136,
+    "h": 42,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "navList": {
+    "x": 272,
+    "y": 182,
+    "w": 1136,
+    "h": 41,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "auto",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "tabs": [
+    {
+     "view": "overview",
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 276,
+      "y": 186,
+      "w": 170,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 168,
+      "clientW": 168
+     }
+    },
+    {
+     "view": "category",
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "labelVisible": true,
+     "selected": "true",
+     "tabindex": "0",
+     "box": {
+      "x": 462,
+      "y": 186,
+      "w": 170,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "650",
+      "scrollW": 168,
+      "clientW": 168
+     }
+    },
+    {
+     "view": "risk",
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 648,
+      "y": 186,
+      "w": 108,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 106,
+      "clientW": 106
+     }
+    },
+    {
+     "view": "quality",
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 772,
+      "y": 186,
+      "w": 129,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 127,
+      "clientW": 127
+     }
+    },
+    {
+     "view": "workspace",
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 917,
+      "y": 186,
+      "w": 174,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 172,
+      "clientW": 172
+     }
+    },
+    {
+     "view": "advanced",
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 1107,
+      "y": 186,
+      "w": 159,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 157,
+      "clientW": 157
+     }
+    }
+   ],
+   "stateHost": {
+    "x": 272,
+    "y": 274,
+    "w": 1136,
+    "h": 0,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "stateText": "",
+   "crumbs": "Product Strategy/Category Analysis · Electric Can Opener",
+   "banner": "",
+   "scopeBar": {
+    "x": 272,
+    "y": 278,
+    "w": 1136,
+    "h": 193,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "viewHost": {
+    "x": 272,
+    "y": 489,
+    "w": 1136,
+    "h": 2344,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1139,
+    "clientW": 1136
+   },
+   "chart": {
+    "x": 293,
+    "y": 846,
+    "w": 1094,
+    "h": 577,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1094,
+    "clientW": 1094
+   },
+   "svg": {
+    "x": 293,
+    "y": 846,
+    "w": 1094,
+    "h": 573,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1094,
+    "clientW": 1094
+   },
+   "chartInternalOverflow": 0,
+   "axisTickCount": 10,
+   "gridLineCount": 10,
+   "laneLabelCount": 6,
+   "laneSubCount": 6,
+   "imageCount": 0,
+   "imageMarkerCount": 0,
+   "fallbackMarkerCount": 6,
+   "yAxisFullyVisible": true,
+   "xLaneFullyVisible": true,
+   "firstTickBox": {
+    "x": 327,
+    "y": 1331,
+    "w": 32,
+    "h": 14,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "11.5px",
+    "fontWeight": "500",
+    "scrollW": 66,
+    "clientW": 66
+   },
+   "lastTickBox": {
+    "x": 327,
+    "y": 899,
+    "w": 32,
+    "h": 14,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "11.5px",
+    "fontWeight": "500",
+    "scrollW": 66,
+    "clientW": 66
+   },
+   "laneBox": {
+    "x": 363,
+    "y": 1368,
+    "w": 994,
+    "h": 0,
+    "display": "inline",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 0,
+    "clientW": 0
+   },
+   "imageBoxes": [],
+   "tables": [
+    {
+     "scrollW": 1090,
+     "clientW": 1090,
+     "parentOverflowX": "auto"
+    }
+   ],
+   "drawerOpen": false,
+   "badges": [],
+   "captureKind": "DETERMINISTIC",
+   "captureFingerprint": "4523bc274ea37000",
+   "flagStillFalse": true,
+   "__png": "shot-1440x900.png",
+   "__pngBytes": 96347
+  },
+  "1366x768": {
+   "ready": true,
+   "error": null,
+   "viewport": {
+    "w": 1366,
+    "h": 768
+   },
+   "page": {
+    "scrollW": 1366,
+    "clientW": 1366,
+    "horizontalOverflow": 0
+   },
+   "mainContent": {
+    "x": 240,
+    "y": 56,
+    "w": 1126,
+    "h": 712,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(255, 255, 255)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1126,
+    "clientW": 1126
+   },
+   "contentArea": {
+    "x": 240,
+    "y": 56,
+    "w": 1126,
+    "h": 2810,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1126,
+    "clientW": 1126
+   },
+   "sidebar": {
+    "x": 0,
+    "y": 56,
+    "w": 240,
+    "h": 712,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(24, 24, 27)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 239,
+    "clientW": 239
+   },
+   "menuParents": [
+    {
+     "id": "sku-management",
+     "label": "SKU Management",
+     "y": 176
+    },
+    {
+     "id": "product-strategy",
+     "label": "Product Strategy",
+     "y": 232
+    },
+    {
+     "id": "carrier",
+     "label": "Pricing Center",
+     "y": 555
+    },
+    {
+     "id": "training",
+     "label": "Training Center",
+     "y": 611
+    }
+   ],
+   "psbChildren": [
+    {
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "visible": true
+    }
+   ],
+   "viewnav": {
+    "x": 272,
+    "y": 182,
+    "w": 1062,
+    "h": 42,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1062,
+    "clientW": 1062
+   },
+   "navList": {
+    "x": 272,
+    "y": 182,
+    "w": 1062,
+    "h": 41,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "auto",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1062,
+    "clientW": 1062
+   },
+   "tabs": [
+    {
+     "view": "overview",
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 276,
+      "y": 186,
+      "w": 170,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 168,
+      "clientW": 168
+     }
+    },
+    {
+     "view": "category",
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "labelVisible": true,
+     "selected": "true",
+     "tabindex": "0",
+     "box": {
+      "x": 462,
+      "y": 186,
+      "w": 170,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "650",
+      "scrollW": 168,
+      "clientW": 168
+     }
+    },
+    {
+     "view": "risk",
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 648,
+      "y": 186,
+      "w": 108,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 106,
+      "clientW": 106
+     }
+    },
+    {
+     "view": "quality",
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 772,
+      "y": 186,
+      "w": 129,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 127,
+      "clientW": 127
+     }
+    },
+    {
+     "view": "workspace",
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 917,
+      "y": 186,
+      "w": 174,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 172,
+      "clientW": 172
+     }
+    },
+    {
+     "view": "advanced",
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 1107,
+      "y": 186,
+      "w": 159,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 157,
+      "clientW": 157
+     }
+    }
+   ],
+   "stateHost": {
+    "x": 272,
+    "y": 274,
+    "w": 1062,
+    "h": 0,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1062,
+    "clientW": 1062
+   },
+   "stateText": "",
+   "crumbs": "Product Strategy/Category Analysis · Electric Can Opener",
+   "banner": "",
+   "scopeBar": {
+    "x": 272,
+    "y": 278,
+    "w": 1062,
+    "h": 193,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1062,
+    "clientW": 1062
+   },
+   "viewHost": {
+    "x": 272,
+    "y": 489,
+    "w": 1062,
+    "h": 2309,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1065,
+    "clientW": 1062
+   },
+   "chart": {
+    "x": 293,
+    "y": 846,
+    "w": 1020,
+    "h": 542,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1020,
+    "clientW": 1020
+   },
+   "svg": {
+    "x": 293,
+    "y": 846,
+    "w": 1020,
+    "h": 538,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1020,
+    "clientW": 1020
+   },
+   "chartInternalOverflow": 0,
+   "axisTickCount": 10,
+   "gridLineCount": 10,
+   "laneLabelCount": 6,
+   "laneSubCount": 6,
+   "imageCount": 0,
+   "imageMarkerCount": 0,
+   "fallbackMarkerCount": 6,
+   "yAxisFullyVisible": true,
+   "xLaneFullyVisible": true,
+   "firstTickBox": {
+    "x": 328,
+    "y": 1295,
+    "w": 32,
+    "h": 14,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "11.5px",
+    "fontWeight": "500",
+    "scrollW": 66,
+    "clientW": 66
+   },
+   "lastTickBox": {
+    "x": 328,
+    "y": 900,
+    "w": 32,
+    "h": 14,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "11.5px",
+    "fontWeight": "500",
+    "scrollW": 66,
+    "clientW": 66
+   },
+   "laneBox": {
+    "x": 363,
+    "y": 1332,
+    "w": 920,
+    "h": 0,
+    "display": "inline",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 0,
+    "clientW": 0
+   },
+   "imageBoxes": [],
+   "tables": [
+    {
+     "scrollW": 1085,
+     "clientW": 1086,
+     "parentOverflowX": "auto"
+    }
+   ],
+   "drawerOpen": false,
+   "badges": [],
+   "captureKind": "DETERMINISTIC",
+   "captureFingerprint": "4523bc274ea37000",
+   "flagStillFalse": true,
+   "__png": "shot-1366x768.png",
+   "__pngBytes": 84764
+  },
+  "1280x720": {
+   "ready": true,
+   "error": null,
+   "viewport": {
+    "w": 1280,
+    "h": 720
+   },
+   "page": {
+    "scrollW": 1280,
+    "clientW": 1280,
+    "horizontalOverflow": 0
+   },
+   "mainContent": {
+    "x": 240,
+    "y": 56,
+    "w": 1040,
+    "h": 664,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(255, 255, 255)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1040,
+    "clientW": 1040
+   },
+   "contentArea": {
+    "x": 240,
+    "y": 56,
+    "w": 1040,
+    "h": 2735,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1040,
+    "clientW": 1040
+   },
+   "sidebar": {
+    "x": 0,
+    "y": 56,
+    "w": 240,
+    "h": 664,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(24, 24, 27)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 239,
+    "clientW": 239
+   },
+   "menuParents": [
+    {
+     "id": "sku-management",
+     "label": "SKU Management",
+     "y": 176
+    },
+    {
+     "id": "product-strategy",
+     "label": "Product Strategy",
+     "y": 232
+    },
+    {
+     "id": "carrier",
+     "label": "Pricing Center",
+     "y": 555
+    },
+    {
+     "id": "training",
+     "label": "Training Center",
+     "y": 611
+    }
+   ],
+   "psbChildren": [
+    {
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "visible": true
+    }
+   ],
+   "viewnav": {
+    "x": 260,
+    "y": 170,
+    "w": 1000,
+    "h": 42,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1000,
+    "clientW": 1000
+   },
+   "navList": {
+    "x": 260,
+    "y": 170,
+    "w": 1000,
+    "h": 41,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "auto",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1000,
+    "clientW": 1000
+   },
+   "tabs": [
+    {
+     "view": "overview",
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 264,
+      "y": 174,
+      "w": 170,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 168,
+      "clientW": 168
+     }
+    },
+    {
+     "view": "category",
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "labelVisible": true,
+     "selected": "true",
+     "tabindex": "0",
+     "box": {
+      "x": 450,
+      "y": 174,
+      "w": 170,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "650",
+      "scrollW": 168,
+      "clientW": 168
+     }
+    },
+    {
+     "view": "risk",
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 636,
+      "y": 174,
+      "w": 108,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 106,
+      "clientW": 106
+     }
+    },
+    {
+     "view": "quality",
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 760,
+      "y": 174,
+      "w": 129,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 127,
+      "clientW": 127
+     }
+    },
+    {
+     "view": "workspace",
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 905,
+      "y": 174,
+      "w": 174,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 172,
+      "clientW": 172
+     }
+    },
+    {
+     "view": "advanced",
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 1095,
+      "y": 174,
+      "w": 159,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 157,
+      "clientW": 157
+     }
+    }
+   ],
+   "stateHost": {
+    "x": 260,
+    "y": 262,
+    "w": 1000,
+    "h": 0,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1000,
+    "clientW": 1000
+   },
+   "stateText": "",
+   "crumbs": "Product Strategy/Category Analysis · Electric Can Opener",
+   "banner": "",
+   "scopeBar": {
+    "x": 260,
+    "y": 266,
+    "w": 1000,
+    "h": 193,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1000,
+    "clientW": 1000
+   },
+   "viewHost": {
+    "x": 260,
+    "y": 477,
+    "w": 1000,
+    "h": 2258,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1003,
+    "clientW": 1000
+   },
+   "chart": {
+    "x": 281,
+    "y": 834,
+    "w": 958,
+    "h": 491,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 958,
+    "clientW": 958
+   },
+   "svg": {
+    "x": 281,
+    "y": 834,
+    "w": 958,
+    "h": 487,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 958,
+    "clientW": 958
+   },
+   "chartInternalOverflow": 0,
+   "axisTickCount": 10,
+   "gridLineCount": 10,
+   "laneLabelCount": 6,
+   "laneSubCount": 6,
+   "imageCount": 0,
+   "imageMarkerCount": 0,
+   "fallbackMarkerCount": 6,
+   "yAxisFullyVisible": true,
+   "xLaneFullyVisible": true,
+   "firstTickBox": {
+    "x": 315,
+    "y": 1233,
+    "w": 32,
+    "h": 14,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "11.5px",
+    "fontWeight": "500",
+    "scrollW": 66,
+    "clientW": 66
+   },
+   "lastTickBox": {
+    "x": 315,
+    "y": 887,
+    "w": 32,
+    "h": 14,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "11.5px",
+    "fontWeight": "500",
+    "scrollW": 66,
+    "clientW": 66
+   },
+   "laneBox": {
+    "x": 351,
+    "y": 1270,
+    "w": 858,
+    "h": 0,
+    "display": "inline",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 0,
+    "clientW": 0
+   },
+   "imageBoxes": [],
+   "tables": [
+    {
+     "scrollW": 1085,
+     "clientW": 1086,
+     "parentOverflowX": "auto"
+    }
+   ],
+   "drawerOpen": false,
+   "badges": [],
+   "captureKind": "DETERMINISTIC",
+   "captureFingerprint": "4523bc274ea37000",
+   "flagStillFalse": true,
+   "__png": "shot-1280x720.png",
+   "__pngBytes": 82652
+  },
+  "1024x768": {
+   "ready": true,
+   "error": null,
+   "viewport": {
+    "w": 1024,
+    "h": 768
+   },
+   "page": {
+    "scrollW": 1024,
+    "clientW": 1024,
+    "horizontalOverflow": 0
+   },
+   "mainContent": {
+    "x": 240,
+    "y": 56,
+    "w": 784,
+    "h": 712,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(255, 255, 255)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 784,
+    "clientW": 784
+   },
+   "contentArea": {
+    "x": 240,
+    "y": 56,
+    "w": 784,
+    "h": 3021,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 784,
+    "clientW": 784
+   },
+   "sidebar": {
+    "x": 0,
+    "y": 56,
+    "w": 240,
+    "h": 712,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(24, 24, 27)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 239,
+    "clientW": 239
+   },
+   "menuParents": [
+    {
+     "id": "sku-management",
+     "label": "SKU Management",
+     "y": 176
+    },
+    {
+     "id": "product-strategy",
+     "label": "Product Strategy",
+     "y": 232
+    },
+    {
+     "id": "carrier",
+     "label": "Pricing Center",
+     "y": 555
+    },
+    {
+     "id": "training",
+     "label": "Training Center",
+     "y": 611
+    }
+   ],
+   "psbChildren": [
+    {
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "visible": true
+    }
+   ],
+   "viewnav": {
+    "x": 256,
+    "y": 166,
+    "w": 752,
+    "h": 42,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 752,
+    "clientW": 752
+   },
+   "navList": {
+    "x": 256,
+    "y": 166,
+    "w": 752,
+    "h": 41,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "auto",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 997,
+    "clientW": 752
+   },
+   "tabs": [
+    {
+     "view": "overview",
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 260,
+      "y": 170,
+      "w": 170,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 168,
+      "clientW": 168
+     }
+    },
+    {
+     "view": "category",
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "labelVisible": true,
+     "selected": "true",
+     "tabindex": "0",
+     "box": {
+      "x": 446,
+      "y": 170,
+      "w": 170,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "650",
+      "scrollW": 168,
+      "clientW": 168
+     }
+    },
+    {
+     "view": "risk",
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 632,
+      "y": 170,
+      "w": 108,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 106,
+      "clientW": 106
+     }
+    },
+    {
+     "view": "quality",
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 756,
+      "y": 170,
+      "w": 129,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 127,
+      "clientW": 127
+     }
+    },
+    {
+     "view": "workspace",
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 901,
+      "y": 170,
+      "w": 174,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 172,
+      "clientW": 172
+     }
+    },
+    {
+     "view": "advanced",
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 1091,
+      "y": 170,
+      "w": 159,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 157,
+      "clientW": 157
+     }
+    }
+   ],
+   "stateHost": {
+    "x": 256,
+    "y": 258,
+    "w": 752,
+    "h": 0,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 752,
+    "clientW": 752
+   },
+   "stateText": "",
+   "crumbs": "Product Strategy/Category Analysis · Electric Can Opener",
+   "banner": "",
+   "scopeBar": {
+    "x": 256,
+    "y": 262,
+    "w": 752,
+    "h": 266,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 752,
+    "clientW": 752
+   },
+   "viewHost": {
+    "x": 256,
+    "y": 546,
+    "w": 752,
+    "h": 2479,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 755,
+    "clientW": 752
+   },
+   "chart": {
+    "x": 277,
+    "y": 1035,
+    "w": 710,
+    "h": 538,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 710,
+    "clientW": 710
+   },
+   "svg": {
+    "x": 277,
+    "y": 1035,
+    "w": 710,
+    "h": 534,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 710,
+    "clientW": 710
+   },
+   "chartInternalOverflow": 0,
+   "axisTickCount": 10,
+   "gridLineCount": 10,
+   "laneLabelCount": 6,
+   "laneSubCount": 6,
+   "imageCount": 0,
+   "imageMarkerCount": 0,
+   "fallbackMarkerCount": 6,
+   "yAxisFullyVisible": true,
+   "xLaneFullyVisible": true,
+   "firstTickBox": {
+    "x": 311,
+    "y": 1481,
+    "w": 32,
+    "h": 14,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "11.5px",
+    "fontWeight": "500",
+    "scrollW": 66,
+    "clientW": 66
+   },
+   "lastTickBox": {
+    "x": 311,
+    "y": 1088,
+    "w": 32,
+    "h": 14,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "11.5px",
+    "fontWeight": "500",
+    "scrollW": 66,
+    "clientW": 66
+   },
+   "laneBox": {
+    "x": 347,
+    "y": 1517,
+    "w": 610,
+    "h": 0,
+    "display": "inline",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 0,
+    "clientW": 0
+   },
+   "imageBoxes": [],
+   "tables": [
+    {
+     "scrollW": 1085,
+     "clientW": 1086,
+     "parentOverflowX": "auto"
+    }
+   ],
+   "drawerOpen": false,
+   "badges": [],
+   "captureKind": "DETERMINISTIC",
+   "captureFingerprint": "4523bc274ea37000",
+   "flagStillFalse": true,
+   "__png": "shot-1024x768.png",
+   "__pngBytes": 78882
+  },
+  "768x1024": {
+   "ready": true,
+   "error": null,
+   "viewport": {
+    "w": 768,
+    "h": 1024
+   },
+   "page": {
+    "scrollW": 768,
+    "clientW": 768,
+    "horizontalOverflow": 0
+   },
+   "mainContent": {
+    "x": 240,
+    "y": 56,
+    "w": 528,
+    "h": 968,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(255, 255, 255)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 528,
+    "clientW": 528
+   },
+   "contentArea": {
+    "x": 240,
+    "y": 56,
+    "w": 528,
+    "h": 3554,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 528,
+    "clientW": 528
+   },
+   "sidebar": {
+    "x": 0,
+    "y": 56,
+    "w": 240,
+    "h": 968,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(24, 24, 27)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 239,
+    "clientW": 239
+   },
+   "menuParents": [
+    {
+     "id": "sku-management",
+     "label": "SKU Management",
+     "y": 176
+    },
+    {
+     "id": "product-strategy",
+     "label": "Product Strategy",
+     "y": 232
+    },
+    {
+     "id": "carrier",
+     "label": "Pricing Center",
+     "y": 555
+    },
+    {
+     "id": "training",
+     "label": "Training Center",
+     "y": 611
+    }
+   ],
+   "psbChildren": [
+    {
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "visible": true
+    }
+   ],
+   "viewnav": {
+    "x": 256,
+    "y": 187,
+    "w": 496,
+    "h": 42,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 496,
+    "clientW": 496
+   },
+   "navList": {
+    "x": 256,
+    "y": 187,
+    "w": 496,
+    "h": 41,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "auto",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 997,
+    "clientW": 496
+   },
+   "tabs": [
+    {
+     "view": "overview",
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 260,
+      "y": 191,
+      "w": 170,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 168,
+      "clientW": 168
+     }
+    },
+    {
+     "view": "category",
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "labelVisible": true,
+     "selected": "true",
+     "tabindex": "0",
+     "box": {
+      "x": 446,
+      "y": 191,
+      "w": 170,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "650",
+      "scrollW": 168,
+      "clientW": 168
+     }
+    },
+    {
+     "view": "risk",
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 632,
+      "y": 191,
+      "w": 108,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 106,
+      "clientW": 106
+     }
+    },
+    {
+     "view": "quality",
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 756,
+      "y": 191,
+      "w": 129,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 127,
+      "clientW": 127
+     }
+    },
+    {
+     "view": "workspace",
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 901,
+      "y": 191,
+      "w": 174,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 172,
+      "clientW": 172
+     }
+    },
+    {
+     "view": "advanced",
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 1091,
+      "y": 191,
+      "w": 159,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 157,
+      "clientW": 157
+     }
+    }
+   ],
+   "stateHost": {
+    "x": 256,
+    "y": 279,
+    "w": 496,
+    "h": 0,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 496,
+    "clientW": 496
+   },
+   "stateText": "",
+   "crumbs": "Product Strategy/Category Analysis · Electric Can Opener",
+   "banner": "",
+   "scopeBar": {
+    "x": 256,
+    "y": 283,
+    "w": 496,
+    "h": 476,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 496,
+    "clientW": 496
+   },
+   "viewHost": {
+    "x": 256,
+    "y": 778,
+    "w": 496,
+    "h": 2781,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 499,
+    "clientW": 496
+   },
+   "chart": {
+    "x": 277,
+    "y": 1398,
+    "w": 454,
+    "h": 566,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 454,
+    "clientW": 454
+   },
+   "svg": {
+    "x": 277,
+    "y": 1398,
+    "w": 454,
+    "h": 562,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 454,
+    "clientW": 454
+   },
+   "chartInternalOverflow": 0,
+   "axisTickCount": 10,
+   "gridLineCount": 10,
+   "laneLabelCount": 6,
+   "laneSubCount": 6,
+   "imageCount": 0,
+   "imageMarkerCount": 0,
+   "fallbackMarkerCount": 6,
+   "yAxisFullyVisible": true,
+   "xLaneFullyVisible": true,
+   "firstTickBox": {
+    "x": 311,
+    "y": 1878,
+    "w": 31,
+    "h": 14,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "11.5px",
+    "fontWeight": "500",
+    "scrollW": 66,
+    "clientW": 66
+   },
+   "lastTickBox": {
+    "x": 311,
+    "y": 1448,
+    "w": 31,
+    "h": 14,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "11.5px",
+    "fontWeight": "500",
+    "scrollW": 66,
+    "clientW": 66
+   },
+   "laneBox": {
+    "x": 347,
+    "y": 1912,
+    "w": 354,
+    "h": 0,
+    "display": "inline",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 0,
+    "clientW": 0
+   },
+   "imageBoxes": [],
+   "tables": [
+    {
+     "scrollW": 1085,
+     "clientW": 1086,
+     "parentOverflowX": "auto"
+    }
+   ],
+   "drawerOpen": false,
+   "badges": [],
+   "captureKind": "DETERMINISTIC",
+   "captureFingerprint": "4523bc274ea37000",
+   "flagStillFalse": true,
+   "__png": "shot-768x1024.png",
+   "__pngBytes": 77799
+  },
+  "390x844": {
+   "ready": true,
+   "error": null,
+   "viewport": {
+    "w": 390,
+    "h": 844
+   },
+   "page": {
+    "scrollW": 390,
+    "clientW": 390,
+    "horizontalOverflow": 0
+   },
+   "mainContent": {
+    "x": 240,
+    "y": 56,
+    "w": 150,
+    "h": 788,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(255, 255, 255)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 349,
+    "clientW": 150
+   },
+   "contentArea": {
+    "x": 240,
+    "y": 56,
+    "w": 150,
+    "h": 6795,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 349,
+    "clientW": 150
+   },
+   "sidebar": {
+    "x": 0,
+    "y": 56,
+    "w": 240,
+    "h": 788,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(24, 24, 27)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 239,
+    "clientW": 239
+   },
+   "menuParents": [
+    {
+     "id": "sku-management",
+     "label": "SKU Management",
+     "y": 176
+    },
+    {
+     "id": "product-strategy",
+     "label": "Product Strategy",
+     "y": 232
+    },
+    {
+     "id": "carrier",
+     "label": "Pricing Center",
+     "y": 555
+    },
+    {
+     "id": "training",
+     "label": "Training Center",
+     "y": 611
+    }
+   ],
+   "psbChildren": [
+    {
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "visible": true
+    }
+   ],
+   "viewnav": {
+    "x": 256,
+    "y": 414,
+    "w": 118,
+    "h": 42,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 118,
+    "clientW": 118
+   },
+   "navList": {
+    "x": 256,
+    "y": 414,
+    "w": 118,
+    "h": 41,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "auto",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 997,
+    "clientW": 118
+   },
+   "tabs": [
+    {
+     "view": "overview",
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 260,
+      "y": 418,
+      "w": 170,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 168,
+      "clientW": 168
+     }
+    },
+    {
+     "view": "category",
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "labelVisible": true,
+     "selected": "true",
+     "tabindex": "0",
+     "box": {
+      "x": 446,
+      "y": 418,
+      "w": 170,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "650",
+      "scrollW": 168,
+      "clientW": 168
+     }
+    },
+    {
+     "view": "risk",
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 632,
+      "y": 418,
+      "w": 108,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 106,
+      "clientW": 106
+     }
+    },
+    {
+     "view": "quality",
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 756,
+      "y": 418,
+      "w": 129,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 127,
+      "clientW": 127
+     }
+    },
+    {
+     "view": "workspace",
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 901,
+      "y": 418,
+      "w": 174,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 172,
+      "clientW": 172
+     }
+    },
+    {
+     "view": "advanced",
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 1091,
+      "y": 418,
+      "w": 159,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 157,
+      "clientW": 157
+     }
+    }
+   ],
+   "stateHost": {
+    "x": 256,
+    "y": 667,
+    "w": 118,
+    "h": 0,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 118,
+    "clientW": 118
+   },
+   "stateText": "",
+   "crumbs": "Product Strategy/Category Analysis · Electric Can Opener",
+   "banner": "",
+   "scopeBar": {
+    "x": 256,
+    "y": 671,
+    "w": 118,
+    "h": 622,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 333,
+    "clientW": 118
+   },
+   "viewHost": {
+    "x": 256,
+    "y": 1312,
+    "w": 118,
+    "h": 5437,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 209,
+    "clientW": 118
+   },
+   "chart": {
+    "x": 277,
+    "y": 3190,
+    "w": 76,
+    "h": 540,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "auto",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 264,
+    "clientW": 76
+   },
+   "svg": {
+    "x": 277,
+    "y": 3190,
+    "w": 264,
+    "h": 536,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 264,
+    "clientW": 264
+   },
+   "chartInternalOverflow": 188,
+   "axisTickCount": 10,
+   "gridLineCount": 10,
+   "laneLabelCount": 6,
+   "laneSubCount": 6,
+   "imageCount": 0,
+   "imageMarkerCount": 0,
+   "fallbackMarkerCount": 6,
+   "yAxisFullyVisible": true,
+   "xLaneFullyVisible": false,
+   "firstTickBox": {
+    "x": 311,
+    "y": 3662,
+    "w": 32,
+    "h": 14,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "11.5px",
+    "fontWeight": "500",
+    "scrollW": 66,
+    "clientW": 66
+   },
+   "lastTickBox": {
+    "x": 311,
+    "y": 3230,
+    "w": 32,
+    "h": 14,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "11.5px",
+    "fontWeight": "500",
+    "scrollW": 66,
+    "clientW": 66
+   },
+   "laneBox": {
+    "x": 347,
+    "y": 3686,
+    "w": 164,
+    "h": 0,
+    "display": "inline",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 0,
+    "clientW": 0
+   },
+   "imageBoxes": [],
+   "tables": [
+    {
+     "scrollW": 1085,
+     "clientW": 1086,
+     "parentOverflowX": "auto"
+    }
+   ],
+   "drawerOpen": false,
+   "badges": [],
+   "captureKind": "DETERMINISTIC",
+   "captureFingerprint": "4523bc274ea37000",
+   "flagStillFalse": true,
+   "__png": "shot-390x844.png",
+   "__pngBytes": 48057
+  },
+  "fullpage-1920x2400": {
+   "ready": true,
+   "error": null,
+   "viewport": {
+    "w": 1920,
+    "h": 2400
+   },
+   "page": {
+    "scrollW": 1920,
+    "clientW": 1920,
+    "horizontalOverflow": 0
+   },
+   "mainContent": {
+    "x": 240,
+    "y": 56,
+    "w": 1680,
+    "h": 2344,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(255, 255, 255)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1680,
+    "clientW": 1680
+   },
+   "contentArea": {
+    "x": 240,
+    "y": 56,
+    "w": 1680,
+    "h": 1213,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1680,
+    "clientW": 1680
+   },
+   "sidebar": {
+    "x": 0,
+    "y": 56,
+    "w": 240,
+    "h": 2344,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(24, 24, 27)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 239,
+    "clientW": 239
+   },
+   "menuParents": [
+    {
+     "id": "sku-management",
+     "label": "SKU Management",
+     "y": 176
+    },
+    {
+     "id": "product-strategy",
+     "label": "Product Strategy",
+     "y": 232
+    },
+    {
+     "id": "carrier",
+     "label": "Pricing Center",
+     "y": 555
+    },
+    {
+     "id": "training",
+     "label": "Training Center",
+     "y": 611
+    }
+   ],
+   "psbChildren": [
+    {
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "visible": true
+    }
+   ],
+   "viewnav": {
+    "x": 272,
+    "y": 182,
+    "w": 1616,
+    "h": 42,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1616,
+    "clientW": 1616
+   },
+   "navList": {
+    "x": 272,
+    "y": 182,
+    "w": 1616,
+    "h": 41,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "auto",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1616,
+    "clientW": 1616
+   },
+   "tabs": [
+    {
+     "view": "overview",
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "labelVisible": true,
+     "selected": "true",
+     "tabindex": "0",
+     "box": {
+      "x": 276,
+      "y": 186,
+      "w": 180,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "650",
+      "scrollW": 178,
+      "clientW": 178
+     }
+    },
+    {
+     "view": "category",
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 472,
+      "y": 186,
+      "w": 161,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 159,
+      "clientW": 159
+     }
+    },
+    {
+     "view": "risk",
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 649,
+      "y": 186,
+      "w": 108,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 106,
+      "clientW": 106
+     }
+    },
+    {
+     "view": "quality",
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 774,
+      "y": 186,
+      "w": 129,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 127,
+      "clientW": 127
+     }
+    },
+    {
+     "view": "workspace",
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 918,
+      "y": 186,
+      "w": 174,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 172,
+      "clientW": 172
+     }
+    },
+    {
+     "view": "advanced",
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 1108,
+      "y": 186,
+      "w": 159,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 157,
+      "clientW": 157
+     }
+    }
+   ],
+   "stateHost": {
+    "x": 272,
+    "y": 274,
+    "w": 1616,
+    "h": 0,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1616,
+    "clientW": 1616
+   },
+   "stateText": "",
+   "crumbs": "Product Strategy/Executive Overview",
+   "banner": "",
+   "scopeBar": {
+    "x": 272,
+    "y": 278,
+    "w": 1616,
+    "h": 121,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1616,
+    "clientW": 1616
+   },
+   "viewHost": {
+    "x": 272,
+    "y": 417,
+    "w": 1616,
+    "h": 785,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1616,
+    "clientW": 1616
+   },
+   "chart": null,
+   "svg": null,
+   "chartInternalOverflow": null,
+   "axisTickCount": 0,
+   "gridLineCount": 0,
+   "laneLabelCount": 0,
+   "laneSubCount": 0,
+   "imageCount": 0,
+   "imageMarkerCount": 0,
+   "fallbackMarkerCount": 0,
+   "yAxisFullyVisible": null,
+   "xLaneFullyVisible": null,
+   "firstTickBox": null,
+   "lastTickBox": null,
+   "laneBox": null,
+   "imageBoxes": [],
+   "tables": [
+    {
+     "scrollW": 1570,
+     "clientW": 1570,
+     "parentOverflowX": "auto"
+    }
+   ],
+   "drawerOpen": false,
+   "badges": [],
+   "captureKind": "DETERMINISTIC",
+   "captureFingerprint": "4523bc274ea37000",
+   "flagStillFalse": true,
+   "__png": "shot-fullpage-1920.png"
+  }
+ },
+ "views": {
+  "overview": {
+   "ready": true,
+   "error": null,
+   "viewport": {
+    "w": 1440,
+    "h": 900
+   },
+   "page": {
+    "scrollW": 1440,
+    "clientW": 1440,
+    "horizontalOverflow": 0
+   },
+   "mainContent": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(255, 255, 255)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "contentArea": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 1645,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "sidebar": {
+    "x": 0,
+    "y": 56,
+    "w": 240,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(24, 24, 27)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 239,
+    "clientW": 239
+   },
+   "menuParents": [
+    {
+     "id": "sku-management",
+     "label": "SKU Management",
+     "y": 176
+    },
+    {
+     "id": "product-strategy",
+     "label": "Product Strategy",
+     "y": 232
+    },
+    {
+     "id": "carrier",
+     "label": "Pricing Center",
+     "y": 555
+    },
+    {
+     "id": "training",
+     "label": "Training Center",
+     "y": 611
+    }
+   ],
+   "psbChildren": [
+    {
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "visible": true
+    }
+   ],
+   "viewnav": {
+    "x": 272,
+    "y": 182,
+    "w": 1136,
+    "h": 42,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "navList": {
+    "x": 272,
+    "y": 182,
+    "w": 1136,
+    "h": 41,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "auto",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "tabs": [
+    {
+     "view": "overview",
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "labelVisible": true,
+     "selected": "true",
+     "tabindex": "0",
+     "box": {
+      "x": 276,
+      "y": 186,
+      "w": 180,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "650",
+      "scrollW": 178,
+      "clientW": 178
+     }
+    },
+    {
+     "view": "category",
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 472,
+      "y": 186,
+      "w": 161,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 159,
+      "clientW": 159
+     }
+    },
+    {
+     "view": "risk",
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 649,
+      "y": 186,
+      "w": 108,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 106,
+      "clientW": 106
+     }
+    },
+    {
+     "view": "quality",
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 774,
+      "y": 186,
+      "w": 129,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 127,
+      "clientW": 127
+     }
+    },
+    {
+     "view": "workspace",
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 918,
+      "y": 186,
+      "w": 174,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 172,
+      "clientW": 172
+     }
+    },
+    {
+     "view": "advanced",
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 1108,
+      "y": 186,
+      "w": 159,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 157,
+      "clientW": 157
+     }
+    }
+   ],
+   "stateHost": {
+    "x": 272,
+    "y": 274,
+    "w": 1136,
+    "h": 0,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "stateText": "",
+   "crumbs": "Product Strategy/Executive Overview",
+   "banner": "",
+   "scopeBar": {
+    "x": 272,
+    "y": 278,
+    "w": 1136,
+    "h": 193,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "viewHost": {
+    "x": 272,
+    "y": 489,
+    "w": 1136,
+    "h": 1145,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "chart": null,
+   "svg": null,
+   "chartInternalOverflow": null,
+   "axisTickCount": 0,
+   "gridLineCount": 0,
+   "laneLabelCount": 0,
+   "laneSubCount": 0,
+   "imageCount": 0,
+   "imageMarkerCount": 0,
+   "fallbackMarkerCount": 0,
+   "yAxisFullyVisible": null,
+   "xLaneFullyVisible": null,
+   "firstTickBox": null,
+   "lastTickBox": null,
+   "laneBox": null,
+   "imageBoxes": [],
+   "tables": [
+    {
+     "scrollW": 1090,
+     "clientW": 1090,
+     "parentOverflowX": "auto"
+    }
+   ],
+   "drawerOpen": false,
+   "badges": [],
+   "captureKind": "DETERMINISTIC",
+   "captureFingerprint": "4523bc274ea37000",
+   "flagStillFalse": true,
+   "__png": "shot-view-overview.png"
+  },
+  "category": {
+   "ready": true,
+   "error": null,
+   "viewport": {
+    "w": 1440,
+    "h": 900
+   },
+   "page": {
+    "scrollW": 1440,
+    "clientW": 1440,
+    "horizontalOverflow": 0
+   },
+   "mainContent": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(255, 255, 255)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "contentArea": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 2845,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "sidebar": {
+    "x": 0,
+    "y": 56,
+    "w": 240,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(24, 24, 27)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 239,
+    "clientW": 239
+   },
+   "menuParents": [
+    {
+     "id": "sku-management",
+     "label": "SKU Management",
+     "y": 176
+    },
+    {
+     "id": "product-strategy",
+     "label": "Product Strategy",
+     "y": 232
+    },
+    {
+     "id": "carrier",
+     "label": "Pricing Center",
+     "y": 555
+    },
+    {
+     "id": "training",
+     "label": "Training Center",
+     "y": 611
+    }
+   ],
+   "psbChildren": [
+    {
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "visible": true
+    }
+   ],
+   "viewnav": {
+    "x": 272,
+    "y": 182,
+    "w": 1136,
+    "h": 42,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "navList": {
+    "x": 272,
+    "y": 182,
+    "w": 1136,
+    "h": 41,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "auto",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "tabs": [
+    {
+     "view": "overview",
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 276,
+      "y": 186,
+      "w": 170,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 168,
+      "clientW": 168
+     }
+    },
+    {
+     "view": "category",
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "labelVisible": true,
+     "selected": "true",
+     "tabindex": "0",
+     "box": {
+      "x": 462,
+      "y": 186,
+      "w": 170,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "650",
+      "scrollW": 168,
+      "clientW": 168
+     }
+    },
+    {
+     "view": "risk",
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 648,
+      "y": 186,
+      "w": 108,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 106,
+      "clientW": 106
+     }
+    },
+    {
+     "view": "quality",
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 772,
+      "y": 186,
+      "w": 129,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 127,
+      "clientW": 127
+     }
+    },
+    {
+     "view": "workspace",
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 917,
+      "y": 186,
+      "w": 174,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 172,
+      "clientW": 172
+     }
+    },
+    {
+     "view": "advanced",
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 1107,
+      "y": 186,
+      "w": 159,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 157,
+      "clientW": 157
+     }
+    }
+   ],
+   "stateHost": {
+    "x": 272,
+    "y": 274,
+    "w": 1136,
+    "h": 0,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "stateText": "",
+   "crumbs": "Product Strategy/Category Analysis · Electric Can Opener",
+   "banner": "",
+   "scopeBar": {
+    "x": 272,
+    "y": 278,
+    "w": 1136,
+    "h": 193,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "viewHost": {
+    "x": 272,
+    "y": 489,
+    "w": 1136,
+    "h": 2344,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1139,
+    "clientW": 1136
+   },
+   "chart": {
+    "x": 293,
+    "y": 846,
+    "w": 1094,
+    "h": 577,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1094,
+    "clientW": 1094
+   },
+   "svg": {
+    "x": 293,
+    "y": 846,
+    "w": 1094,
+    "h": 573,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1094,
+    "clientW": 1094
+   },
+   "chartInternalOverflow": 0,
+   "axisTickCount": 10,
+   "gridLineCount": 10,
+   "laneLabelCount": 6,
+   "laneSubCount": 6,
+   "imageCount": 0,
+   "imageMarkerCount": 0,
+   "fallbackMarkerCount": 6,
+   "yAxisFullyVisible": true,
+   "xLaneFullyVisible": true,
+   "firstTickBox": {
+    "x": 327,
+    "y": 1331,
+    "w": 32,
+    "h": 14,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "11.5px",
+    "fontWeight": "500",
+    "scrollW": 66,
+    "clientW": 66
+   },
+   "lastTickBox": {
+    "x": 327,
+    "y": 899,
+    "w": 32,
+    "h": 14,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "11.5px",
+    "fontWeight": "500",
+    "scrollW": 66,
+    "clientW": 66
+   },
+   "laneBox": {
+    "x": 363,
+    "y": 1368,
+    "w": 994,
+    "h": 0,
+    "display": "inline",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 0,
+    "clientW": 0
+   },
+   "imageBoxes": [],
+   "tables": [
+    {
+     "scrollW": 1090,
+     "clientW": 1090,
+     "parentOverflowX": "auto"
+    }
+   ],
+   "drawerOpen": false,
+   "badges": [],
+   "captureKind": "DETERMINISTIC",
+   "captureFingerprint": "4523bc274ea37000",
+   "flagStillFalse": true,
+   "__png": "shot-view-category.png"
+  },
+  "risk": {
+   "ready": true,
+   "error": null,
+   "viewport": {
+    "w": 1440,
+    "h": 900
+   },
+   "page": {
+    "scrollW": 1440,
+    "clientW": 1440,
+    "horizontalOverflow": 0
+   },
+   "mainContent": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(255, 255, 255)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "contentArea": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 759,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "sidebar": {
+    "x": 0,
+    "y": 56,
+    "w": 240,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(24, 24, 27)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 239,
+    "clientW": 239
+   },
+   "menuParents": [
+    {
+     "id": "sku-management",
+     "label": "SKU Management",
+     "y": 176
+    },
+    {
+     "id": "product-strategy",
+     "label": "Product Strategy",
+     "y": 232
+    },
+    {
+     "id": "carrier",
+     "label": "Pricing Center",
+     "y": 555
+    },
+    {
+     "id": "training",
+     "label": "Training Center",
+     "y": 611
+    }
+   ],
+   "psbChildren": [
+    {
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "visible": true
+    }
+   ],
+   "viewnav": {
+    "x": 272,
+    "y": 182,
+    "w": 1136,
+    "h": 42,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "navList": {
+    "x": 272,
+    "y": 182,
+    "w": 1136,
+    "h": 41,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "auto",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "tabs": [
+    {
+     "view": "overview",
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 276,
+      "y": 186,
+      "w": 170,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 168,
+      "clientW": 168
+     }
+    },
+    {
+     "view": "category",
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 462,
+      "y": 186,
+      "w": 161,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 159,
+      "clientW": 159
+     }
+    },
+    {
+     "view": "risk",
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "labelVisible": true,
+     "selected": "true",
+     "tabindex": "0",
+     "box": {
+      "x": 640,
+      "y": 186,
+      "w": 112,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "650",
+      "scrollW": 110,
+      "clientW": 110
+     }
+    },
+    {
+     "view": "quality",
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 768,
+      "y": 186,
+      "w": 129,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 127,
+      "clientW": 127
+     }
+    },
+    {
+     "view": "workspace",
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 912,
+      "y": 186,
+      "w": 174,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 172,
+      "clientW": 172
+     }
+    },
+    {
+     "view": "advanced",
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 1103,
+      "y": 186,
+      "w": 159,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 157,
+      "clientW": 157
+     }
+    }
+   ],
+   "stateHost": {
+    "x": 272,
+    "y": 274,
+    "w": 1136,
+    "h": 0,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "stateText": "",
+   "crumbs": "Product Strategy/Deal Risk · Electric Can Opener",
+   "banner": "",
+   "scopeBar": {
+    "x": 272,
+    "y": 278,
+    "w": 1136,
+    "h": 193,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "viewHost": {
+    "x": 272,
+    "y": 489,
+    "w": 1136,
+    "h": 258,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "chart": null,
+   "svg": null,
+   "chartInternalOverflow": null,
+   "axisTickCount": 0,
+   "gridLineCount": 0,
+   "laneLabelCount": 0,
+   "laneSubCount": 0,
+   "imageCount": 0,
+   "imageMarkerCount": 0,
+   "fallbackMarkerCount": 0,
+   "yAxisFullyVisible": null,
+   "xLaneFullyVisible": null,
+   "firstTickBox": null,
+   "lastTickBox": null,
+   "laneBox": null,
+   "imageBoxes": [],
+   "tables": [],
+   "drawerOpen": false,
+   "badges": [],
+   "captureKind": "DETERMINISTIC",
+   "captureFingerprint": "4523bc274ea37000",
+   "flagStillFalse": true,
+   "__png": "shot-view-risk.png"
+  },
+  "quality": {
+   "ready": true,
+   "error": null,
+   "viewport": {
+    "w": 1440,
+    "h": 900
+   },
+   "page": {
+    "scrollW": 1440,
+    "clientW": 1440,
+    "horizontalOverflow": 0
+   },
+   "mainContent": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(255, 255, 255)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "contentArea": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 1013,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "sidebar": {
+    "x": 0,
+    "y": 56,
+    "w": 240,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(24, 24, 27)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 239,
+    "clientW": 239
+   },
+   "menuParents": [
+    {
+     "id": "sku-management",
+     "label": "SKU Management",
+     "y": 176
+    },
+    {
+     "id": "product-strategy",
+     "label": "Product Strategy",
+     "y": 232
+    },
+    {
+     "id": "carrier",
+     "label": "Pricing Center",
+     "y": 555
+    },
+    {
+     "id": "training",
+     "label": "Training Center",
+     "y": 611
+    }
+   ],
+   "psbChildren": [
+    {
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "visible": true
+    }
+   ],
+   "viewnav": {
+    "x": 272,
+    "y": 182,
+    "w": 1136,
+    "h": 42,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "navList": {
+    "x": 272,
+    "y": 182,
+    "w": 1136,
+    "h": 41,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "auto",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "tabs": [
+    {
+     "view": "overview",
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 276,
+      "y": 186,
+      "w": 170,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 168,
+      "clientW": 168
+     }
+    },
+    {
+     "view": "category",
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 462,
+      "y": 186,
+      "w": 161,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 159,
+      "clientW": 159
+     }
+    },
+    {
+     "view": "risk",
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 640,
+      "y": 186,
+      "w": 108,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 106,
+      "clientW": 106
+     }
+    },
+    {
+     "view": "quality",
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "labelVisible": true,
+     "selected": "true",
+     "tabindex": "0",
+     "box": {
+      "x": 764,
+      "y": 186,
+      "w": 134,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "650",
+      "scrollW": 132,
+      "clientW": 132
+     }
+    },
+    {
+     "view": "workspace",
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 914,
+      "y": 186,
+      "w": 174,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 172,
+      "clientW": 172
+     }
+    },
+    {
+     "view": "advanced",
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 1104,
+      "y": 186,
+      "w": 159,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 157,
+      "clientW": 157
+     }
+    }
+   ],
+   "stateHost": {
+    "x": 272,
+    "y": 274,
+    "w": 1136,
+    "h": 0,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "stateText": "",
+   "crumbs": "Product Strategy/Data Quality · Electric Can Opener",
+   "banner": "",
+   "scopeBar": {
+    "x": 272,
+    "y": 278,
+    "w": 1136,
+    "h": 193,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "viewHost": {
+    "x": 272,
+    "y": 489,
+    "w": 1136,
+    "h": 512,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "chart": null,
+   "svg": null,
+   "chartInternalOverflow": null,
+   "axisTickCount": 0,
+   "gridLineCount": 0,
+   "laneLabelCount": 0,
+   "laneSubCount": 0,
+   "imageCount": 0,
+   "imageMarkerCount": 0,
+   "fallbackMarkerCount": 0,
+   "yAxisFullyVisible": null,
+   "xLaneFullyVisible": null,
+   "firstTickBox": null,
+   "lastTickBox": null,
+   "laneBox": null,
+   "imageBoxes": [],
+   "tables": [
+    {
+     "scrollW": 0,
+     "clientW": 0,
+     "parentOverflowX": "auto"
+    }
+   ],
+   "drawerOpen": false,
+   "badges": [],
+   "captureKind": "DETERMINISTIC",
+   "captureFingerprint": "4523bc274ea37000",
+   "flagStillFalse": true,
+   "__png": "shot-view-quality.png"
+  },
+  "workspace": {
+   "ready": true,
+   "error": null,
+   "viewport": {
+    "w": 1440,
+    "h": 900
+   },
+   "page": {
+    "scrollW": 1440,
+    "clientW": 1440,
+    "horizontalOverflow": 0
+   },
+   "mainContent": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(255, 255, 255)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "contentArea": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 1049,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "sidebar": {
+    "x": 0,
+    "y": 56,
+    "w": 240,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(24, 24, 27)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 239,
+    "clientW": 239
+   },
+   "menuParents": [
+    {
+     "id": "sku-management",
+     "label": "SKU Management",
+     "y": 176
+    },
+    {
+     "id": "product-strategy",
+     "label": "Product Strategy",
+     "y": 232
+    },
+    {
+     "id": "carrier",
+     "label": "Pricing Center",
+     "y": 555
+    },
+    {
+     "id": "training",
+     "label": "Training Center",
+     "y": 611
+    }
+   ],
+   "psbChildren": [
+    {
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "visible": true
+    }
+   ],
+   "viewnav": {
+    "x": 272,
+    "y": 182,
+    "w": 1136,
+    "h": 42,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "navList": {
+    "x": 272,
+    "y": 182,
+    "w": 1136,
+    "h": 41,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "auto",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "tabs": [
+    {
+     "view": "overview",
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 276,
+      "y": 186,
+      "w": 170,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 168,
+      "clientW": 168
+     }
+    },
+    {
+     "view": "category",
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 462,
+      "y": 186,
+      "w": 161,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 159,
+      "clientW": 159
+     }
+    },
+    {
+     "view": "risk",
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 640,
+      "y": 186,
+      "w": 108,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 106,
+      "clientW": 106
+     }
+    },
+    {
+     "view": "quality",
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 764,
+      "y": 186,
+      "w": 129,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 127,
+      "clientW": 127
+     }
+    },
+    {
+     "view": "workspace",
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "labelVisible": true,
+     "selected": "true",
+     "tabindex": "0",
+     "box": {
+      "x": 908,
+      "y": 186,
+      "w": 183,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "650",
+      "scrollW": 181,
+      "clientW": 181
+     }
+    },
+    {
+     "view": "advanced",
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 1107,
+      "y": 186,
+      "w": 159,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 157,
+      "clientW": 157
+     }
+    }
+   ],
+   "stateHost": {
+    "x": 272,
+    "y": 274,
+    "w": 1136,
+    "h": 0,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "stateText": "",
+   "crumbs": "Product Strategy/Strategy Workspace · Electric Can Opener",
+   "banner": "",
+   "scopeBar": {
+    "x": 272,
+    "y": 278,
+    "w": 1136,
+    "h": 193,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "viewHost": {
+    "x": 272,
+    "y": 489,
+    "w": 1136,
+    "h": 548,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "chart": null,
+   "svg": null,
+   "chartInternalOverflow": null,
+   "axisTickCount": 0,
+   "gridLineCount": 0,
+   "laneLabelCount": 0,
+   "laneSubCount": 0,
+   "imageCount": 0,
+   "imageMarkerCount": 0,
+   "fallbackMarkerCount": 0,
+   "yAxisFullyVisible": null,
+   "xLaneFullyVisible": null,
+   "firstTickBox": null,
+   "lastTickBox": null,
+   "laneBox": null,
+   "imageBoxes": [],
+   "tables": [],
+   "drawerOpen": false,
+   "badges": [],
+   "captureKind": "DETERMINISTIC",
+   "captureFingerprint": "4523bc274ea37000",
+   "flagStillFalse": true,
+   "__png": "shot-view-workspace.png"
+  },
+  "advanced": {
+   "ready": true,
+   "error": null,
+   "viewport": {
+    "w": 1440,
+    "h": 900
+   },
+   "page": {
+    "scrollW": 1440,
+    "clientW": 1440,
+    "horizontalOverflow": 0
+   },
+   "mainContent": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(255, 255, 255)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "contentArea": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 675,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "sidebar": {
+    "x": 0,
+    "y": 56,
+    "w": 240,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(24, 24, 27)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 239,
+    "clientW": 239
+   },
+   "menuParents": [
+    {
+     "id": "sku-management",
+     "label": "SKU Management",
+     "y": 176
+    },
+    {
+     "id": "product-strategy",
+     "label": "Product Strategy",
+     "y": 232
+    },
+    {
+     "id": "carrier",
+     "label": "Pricing Center",
+     "y": 555
+    },
+    {
+     "id": "training",
+     "label": "Training Center",
+     "y": 611
+    }
+   ],
+   "psbChildren": [
+    {
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "visible": true
+    }
+   ],
+   "viewnav": {
+    "x": 272,
+    "y": 182,
+    "w": 1136,
+    "h": 42,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "navList": {
+    "x": 272,
+    "y": 182,
+    "w": 1136,
+    "h": 41,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "auto",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "tabs": [
+    {
+     "view": "overview",
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 276,
+      "y": 186,
+      "w": 170,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 168,
+      "clientW": 168
+     }
+    },
+    {
+     "view": "category",
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 462,
+      "y": 186,
+      "w": 161,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 159,
+      "clientW": 159
+     }
+    },
+    {
+     "view": "risk",
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 640,
+      "y": 186,
+      "w": 108,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 106,
+      "clientW": 106
+     }
+    },
+    {
+     "view": "quality",
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 764,
+      "y": 186,
+      "w": 129,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 127,
+      "clientW": 127
+     }
+    },
+    {
+     "view": "workspace",
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 908,
+      "y": 186,
+      "w": 174,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 172,
+      "clientW": 172
+     }
+    },
+    {
+     "view": "advanced",
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "labelVisible": true,
+     "selected": "true",
+     "tabindex": "0",
+     "box": {
+      "x": 1098,
+      "y": 186,
+      "w": 166,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "650",
+      "scrollW": 164,
+      "clientW": 164
+     }
+    }
+   ],
+   "stateHost": {
+    "x": 272,
+    "y": 274,
+    "w": 1136,
+    "h": 0,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "stateText": "",
+   "crumbs": "Product Strategy/Advanced Details · Electric Can Opener",
+   "banner": "",
+   "scopeBar": {
+    "x": 272,
+    "y": 278,
+    "w": 1136,
+    "h": 193,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "viewHost": {
+    "x": 272,
+    "y": 489,
+    "w": 1136,
+    "h": 174,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1139,
+    "clientW": 1136
+   },
+   "chart": null,
+   "svg": null,
+   "chartInternalOverflow": null,
+   "axisTickCount": 0,
+   "gridLineCount": 0,
+   "laneLabelCount": 0,
+   "laneSubCount": 0,
+   "imageCount": 0,
+   "imageMarkerCount": 0,
+   "fallbackMarkerCount": 0,
+   "yAxisFullyVisible": null,
+   "xLaneFullyVisible": null,
+   "firstTickBox": null,
+   "lastTickBox": null,
+   "laneBox": null,
+   "imageBoxes": [],
+   "tables": [
+    {
+     "scrollW": 0,
+     "clientW": 0,
+     "parentOverflowX": "auto"
+    },
+    {
+     "scrollW": 0,
+     "clientW": 0,
+     "parentOverflowX": "auto"
+    }
+   ],
+   "drawerOpen": false,
+   "badges": [],
+   "captureKind": "DETERMINISTIC",
+   "captureFingerprint": "4523bc274ea37000",
+   "flagStillFalse": true,
+   "__png": "shot-view-advanced.png"
+  }
+ },
+ "states": {
+  "feature-disabled": {
+   "ready": true,
+   "error": null,
+   "viewport": {
+    "w": 1440,
+    "h": 900
+   },
+   "page": {
+    "scrollW": 1440,
+    "clientW": 1440,
+    "horizontalOverflow": 0
+   },
+   "mainContent": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(255, 255, 255)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "contentArea": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 297,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "sidebar": {
+    "x": 0,
+    "y": 56,
+    "w": 240,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(24, 24, 27)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 239,
+    "clientW": 239
+   },
+   "menuParents": [
+    {
+     "id": "sku-management",
+     "label": "SKU Management",
+     "y": 176
+    },
+    {
+     "id": "product-strategy",
+     "label": "Product Strategy",
+     "y": 232
+    },
+    {
+     "id": "carrier",
+     "label": "Pricing Center",
+     "y": 555
+    },
+    {
+     "id": "training",
+     "label": "Training Center",
+     "y": 611
+    }
+   ],
+   "psbChildren": [
+    {
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "visible": true
+    }
+   ],
+   "viewnav": {
+    "x": 272,
+    "y": 182,
+    "w": 1136,
+    "h": 1,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "navList": {
+    "x": 272,
+    "y": 182,
+    "w": 1136,
+    "h": 0,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "auto",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "tabs": [],
+   "stateHost": {
+    "x": 272,
+    "y": 205,
+    "w": 1136,
+    "h": 63,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "stateText": "Product Strategy is not enabled yet.The capability is off, so no request was sent.FEATURE_DISABLED",
+   "crumbs": "",
+   "banner": "",
+   "scopeBar": {
+    "x": 272,
+    "y": 282,
+    "w": 1136,
+    "h": 0,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "viewHost": {
+    "x": 272,
+    "y": 286,
+    "w": 1136,
+    "h": 0,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "chart": null,
+   "svg": null,
+   "chartInternalOverflow": null,
+   "axisTickCount": 0,
+   "gridLineCount": 0,
+   "laneLabelCount": 0,
+   "laneSubCount": 0,
+   "imageCount": 0,
+   "imageMarkerCount": 0,
+   "fallbackMarkerCount": 0,
+   "yAxisFullyVisible": null,
+   "xLaneFullyVisible": null,
+   "firstTickBox": null,
+   "lastTickBox": null,
+   "laneBox": null,
+   "imageBoxes": [],
+   "tables": [],
+   "drawerOpen": false,
+   "badges": [],
+   "captureKind": "DETERMINISTIC",
+   "captureFingerprint": "4523bc274ea37000",
+   "flagStillFalse": true,
+   "__png": "shot-state-feature-disabled.png"
+  },
+  "not-authorized": {
+   "ready": true,
+   "error": null,
+   "viewport": {
+    "w": 1440,
+    "h": 900
+   },
+   "page": {
+    "scrollW": 1440,
+    "clientW": 1440,
+    "horizontalOverflow": 0
+   },
+   "mainContent": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(255, 255, 255)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "contentArea": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 297,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "sidebar": {
+    "x": 0,
+    "y": 56,
+    "w": 240,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(24, 24, 27)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 239,
+    "clientW": 239
+   },
+   "menuParents": [
+    {
+     "id": "sku-management",
+     "label": "SKU Management",
+     "y": 176
+    },
+    {
+     "id": "product-strategy",
+     "label": "Product Strategy",
+     "y": 232
+    },
+    {
+     "id": "carrier",
+     "label": "Pricing Center",
+     "y": 555
+    },
+    {
+     "id": "training",
+     "label": "Training Center",
+     "y": 611
+    }
+   ],
+   "psbChildren": [
+    {
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "visible": true
+    }
+   ],
+   "viewnav": {
+    "x": 272,
+    "y": 182,
+    "w": 1136,
+    "h": 1,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "navList": {
+    "x": 272,
+    "y": 182,
+    "w": 1136,
+    "h": 0,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "auto",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "tabs": [],
+   "stateHost": {
+    "x": 272,
+    "y": 205,
+    "w": 1136,
+    "h": 63,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "stateText": "This account cannot read the site list.A server answered with a sign-in or access page rather than the list. Asking again will not change that.NOT_AUTHORIZED",
+   "crumbs": "",
+   "banner": "",
+   "scopeBar": {
+    "x": 272,
+    "y": 282,
+    "w": 1136,
+    "h": 0,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "viewHost": {
+    "x": 272,
+    "y": 286,
+    "w": 1136,
+    "h": 0,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "chart": null,
+   "svg": null,
+   "chartInternalOverflow": null,
+   "axisTickCount": 0,
+   "gridLineCount": 0,
+   "laneLabelCount": 0,
+   "laneSubCount": 0,
+   "imageCount": 0,
+   "imageMarkerCount": 0,
+   "fallbackMarkerCount": 0,
+   "yAxisFullyVisible": null,
+   "xLaneFullyVisible": null,
+   "firstTickBox": null,
+   "lastTickBox": null,
+   "laneBox": null,
+   "imageBoxes": [],
+   "tables": [],
+   "drawerOpen": false,
+   "badges": [],
+   "captureKind": "DETERMINISTIC",
+   "captureFingerprint": "4523bc274ea37000",
+   "flagStillFalse": true,
+   "__png": "shot-state-not-authorized.png"
+  },
+  "timeout": {
+   "ready": true,
+   "error": null,
+   "viewport": {
+    "w": 1440,
+    "h": 900
+   },
+   "page": {
+    "scrollW": 1440,
+    "clientW": 1440,
+    "horizontalOverflow": 0
+   },
+   "mainContent": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(255, 255, 255)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "contentArea": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 297,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "sidebar": {
+    "x": 0,
+    "y": 56,
+    "w": 240,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(24, 24, 27)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 239,
+    "clientW": 239
+   },
+   "menuParents": [
+    {
+     "id": "sku-management",
+     "label": "SKU Management",
+     "y": 176
+    },
+    {
+     "id": "product-strategy",
+     "label": "Product Strategy",
+     "y": 232
+    },
+    {
+     "id": "carrier",
+     "label": "Pricing Center",
+     "y": 555
+    },
+    {
+     "id": "training",
+     "label": "Training Center",
+     "y": 611
+    }
+   ],
+   "psbChildren": [
+    {
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "visible": true
+    }
+   ],
+   "viewnav": {
+    "x": 272,
+    "y": 182,
+    "w": 1136,
+    "h": 1,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "navList": {
+    "x": 272,
+    "y": 182,
+    "w": 1136,
+    "h": 0,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "auto",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "tabs": [],
+   "stateHost": {
+    "x": 272,
+    "y": 205,
+    "w": 1136,
+    "h": 63,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "stateText": "The database did not answer in time.The request for the site list reached the server and no answer came back within the time it was given. Nothing was changed; asking again is safe.SOURCE_TIMED_OUT",
+   "crumbs": "",
+   "banner": "",
+   "scopeBar": {
+    "x": 272,
+    "y": 282,
+    "w": 1136,
+    "h": 0,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "viewHost": {
+    "x": 272,
+    "y": 286,
+    "w": 1136,
+    "h": 0,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "chart": null,
+   "svg": null,
+   "chartInternalOverflow": null,
+   "axisTickCount": 0,
+   "gridLineCount": 0,
+   "laneLabelCount": 0,
+   "laneSubCount": 0,
+   "imageCount": 0,
+   "imageMarkerCount": 0,
+   "fallbackMarkerCount": 0,
+   "yAxisFullyVisible": null,
+   "xLaneFullyVisible": null,
+   "firstTickBox": null,
+   "lastTickBox": null,
+   "laneBox": null,
+   "imageBoxes": [],
+   "tables": [],
+   "drawerOpen": false,
+   "badges": [],
+   "captureKind": "DETERMINISTIC",
+   "captureFingerprint": "4523bc274ea37000",
+   "flagStillFalse": true,
+   "__png": "shot-state-timeout.png"
+  },
+  "non-json": {
+   "ready": true,
+   "error": null,
+   "viewport": {
+    "w": 1440,
+    "h": 900
+   },
+   "page": {
+    "scrollW": 1440,
+    "clientW": 1440,
+    "horizontalOverflow": 0
+   },
+   "mainContent": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(255, 255, 255)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "contentArea": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 297,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "sidebar": {
+    "x": 0,
+    "y": 56,
+    "w": 240,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(24, 24, 27)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 239,
+    "clientW": 239
+   },
+   "menuParents": [
+    {
+     "id": "sku-management",
+     "label": "SKU Management",
+     "y": 176
+    },
+    {
+     "id": "product-strategy",
+     "label": "Product Strategy",
+     "y": 232
+    },
+    {
+     "id": "carrier",
+     "label": "Pricing Center",
+     "y": 555
+    },
+    {
+     "id": "training",
+     "label": "Training Center",
+     "y": 611
+    }
+   ],
+   "psbChildren": [
+    {
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "visible": true
+    }
+   ],
+   "viewnav": {
+    "x": 272,
+    "y": 182,
+    "w": 1136,
+    "h": 1,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "navList": {
+    "x": 272,
+    "y": 182,
+    "w": 1136,
+    "h": 0,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "auto",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "tabs": [],
+   "stateHost": {
+    "x": 272,
+    "y": 205,
+    "w": 1136,
+    "h": 63,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "stateText": "The address answered, but not with a site list.Something returned a web page where the API was expected, so no site menu was built from it.RESPONSE_NOT_READABLE",
+   "crumbs": "",
+   "banner": "",
+   "scopeBar": {
+    "x": 272,
+    "y": 282,
+    "w": 1136,
+    "h": 0,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "viewHost": {
+    "x": 272,
+    "y": 286,
+    "w": 1136,
+    "h": 0,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "chart": null,
+   "svg": null,
+   "chartInternalOverflow": null,
+   "axisTickCount": 0,
+   "gridLineCount": 0,
+   "laneLabelCount": 0,
+   "laneSubCount": 0,
+   "imageCount": 0,
+   "imageMarkerCount": 0,
+   "fallbackMarkerCount": 0,
+   "yAxisFullyVisible": null,
+   "xLaneFullyVisible": null,
+   "firstTickBox": null,
+   "lastTickBox": null,
+   "laneBox": null,
+   "imageBoxes": [],
+   "tables": [],
+   "drawerOpen": false,
+   "badges": [],
+   "captureKind": "DETERMINISTIC",
+   "captureFingerprint": "4523bc274ea37000",
+   "flagStillFalse": true,
+   "__png": "shot-state-non-json.png"
+  },
+  "source-unavailable": {
+   "ready": true,
+   "error": null,
+   "viewport": {
+    "w": 1440,
+    "h": 900
+   },
+   "page": {
+    "scrollW": 1440,
+    "clientW": 1440,
+    "horizontalOverflow": 0
+   },
+   "mainContent": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(255, 255, 255)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "contentArea": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 297,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "sidebar": {
+    "x": 0,
+    "y": 56,
+    "w": 240,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(24, 24, 27)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 239,
+    "clientW": 239
+   },
+   "menuParents": [
+    {
+     "id": "sku-management",
+     "label": "SKU Management",
+     "y": 176
+    },
+    {
+     "id": "product-strategy",
+     "label": "Product Strategy",
+     "y": 232
+    },
+    {
+     "id": "carrier",
+     "label": "Pricing Center",
+     "y": 555
+    },
+    {
+     "id": "training",
+     "label": "Training Center",
+     "y": 611
+    }
+   ],
+   "psbChildren": [
+    {
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "visible": true
+    }
+   ],
+   "viewnav": {
+    "x": 272,
+    "y": 182,
+    "w": 1136,
+    "h": 1,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "navList": {
+    "x": 272,
+    "y": 182,
+    "w": 1136,
+    "h": 0,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "auto",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "tabs": [],
+   "stateHost": {
+    "x": 272,
+    "y": 205,
+    "w": 1136,
+    "h": 63,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "stateText": "Not connected to the Operation System database.No server answered. Nothing is shown in place of the list that was not read.SOURCE_NOT_CONNECTED",
+   "crumbs": "",
+   "banner": "",
+   "scopeBar": {
+    "x": 272,
+    "y": 282,
+    "w": 1136,
+    "h": 0,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "viewHost": {
+    "x": 272,
+    "y": 286,
+    "w": 1136,
+    "h": 0,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "chart": null,
+   "svg": null,
+   "chartInternalOverflow": null,
+   "axisTickCount": 0,
+   "gridLineCount": 0,
+   "laneLabelCount": 0,
+   "laneSubCount": 0,
+   "imageCount": 0,
+   "imageMarkerCount": 0,
+   "fallbackMarkerCount": 0,
+   "yAxisFullyVisible": null,
+   "xLaneFullyVisible": null,
+   "firstTickBox": null,
+   "lastTickBox": null,
+   "laneBox": null,
+   "imageBoxes": [],
+   "tables": [],
+   "drawerOpen": false,
+   "badges": [],
+   "captureKind": "DETERMINISTIC",
+   "captureFingerprint": "4523bc274ea37000",
+   "flagStillFalse": true,
+   "__png": "shot-state-source-unavailable.png"
+  },
+  "awaiting-site": {
+   "ready": true,
+   "error": null,
+   "viewport": {
+    "w": 1440,
+    "h": 900
+   },
+   "page": {
+    "scrollW": 1440,
+    "clientW": 1440,
+    "horizontalOverflow": 0
+   },
+   "mainContent": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(255, 255, 255)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "contentArea": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 276,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "sidebar": {
+    "x": 0,
+    "y": 56,
+    "w": 240,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(24, 24, 27)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 239,
+    "clientW": 239
+   },
+   "menuParents": [
+    {
+     "id": "sku-management",
+     "label": "SKU Management",
+     "y": 176
+    },
+    {
+     "id": "product-strategy",
+     "label": "Product Strategy",
+     "y": 232
+    },
+    {
+     "id": "carrier",
+     "label": "Pricing Center",
+     "y": 555
+    },
+    {
+     "id": "training",
+     "label": "Training Center",
+     "y": 611
+    }
+   ],
+   "psbChildren": [
+    {
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "visible": true
+    }
+   ],
+   "viewnav": {
+    "x": 272,
+    "y": 182,
+    "w": 1136,
+    "h": 1,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "navList": {
+    "x": 272,
+    "y": 182,
+    "w": 1136,
+    "h": 0,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "auto",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "tabs": [],
+   "stateHost": {
+    "x": 272,
+    "y": 205,
+    "w": 1136,
+    "h": 42,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "stateText": "Choose a site to analyse.This board reads one site at a time — a company, a country and a marketplace — because prices from two sites on one axis would compare products that do not compete.",
+   "crumbs": "",
+   "banner": "",
+   "scopeBar": {
+    "x": 272,
+    "y": 261,
+    "w": 1136,
+    "h": 0,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "viewHost": {
+    "x": 272,
+    "y": 265,
+    "w": 1136,
+    "h": 0,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "chart": null,
+   "svg": null,
+   "chartInternalOverflow": null,
+   "axisTickCount": 0,
+   "gridLineCount": 0,
+   "laneLabelCount": 0,
+   "laneSubCount": 0,
+   "imageCount": 0,
+   "imageMarkerCount": 0,
+   "fallbackMarkerCount": 0,
+   "yAxisFullyVisible": null,
+   "xLaneFullyVisible": null,
+   "firstTickBox": null,
+   "lastTickBox": null,
+   "laneBox": null,
+   "imageBoxes": [],
+   "tables": [],
+   "drawerOpen": false,
+   "badges": [],
+   "captureKind": "DETERMINISTIC",
+   "captureFingerprint": "4523bc274ea37000",
+   "flagStillFalse": true,
+   "__png": "shot-state-awaiting-site.png"
+  },
+  "empty-site": {
+   "ready": true,
+   "error": null,
+   "viewport": {
+    "w": 1440,
+    "h": 900
+   },
+   "page": {
+    "scrollW": 1440,
+    "clientW": 1440,
+    "horizontalOverflow": 0
+   },
+   "mainContent": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(255, 255, 255)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "contentArea": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 276,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "sidebar": {
+    "x": 0,
+    "y": 56,
+    "w": 240,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(24, 24, 27)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 239,
+    "clientW": 239
+   },
+   "menuParents": [
+    {
+     "id": "sku-management",
+     "label": "SKU Management",
+     "y": 176
+    },
+    {
+     "id": "product-strategy",
+     "label": "Product Strategy",
+     "y": 232
+    },
+    {
+     "id": "carrier",
+     "label": "Pricing Center",
+     "y": 555
+    },
+    {
+     "id": "training",
+     "label": "Training Center",
+     "y": 611
+    }
+   ],
+   "psbChildren": [
+    {
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "visible": true
+    }
+   ],
+   "viewnav": {
+    "x": 272,
+    "y": 182,
+    "w": 1136,
+    "h": 1,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "navList": {
+    "x": 272,
+    "y": 182,
+    "w": 1136,
+    "h": 0,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "auto",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "tabs": [],
+   "stateHost": {
+    "x": 272,
+    "y": 205,
+    "w": 1136,
+    "h": 42,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "stateText": "No products are listed for this scope.The source was read and this site has nothing in it. That is a measurement, not a failure.",
+   "crumbs": "",
+   "banner": "",
+   "scopeBar": {
+    "x": 272,
+    "y": 261,
+    "w": 1136,
+    "h": 0,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "viewHost": {
+    "x": 272,
+    "y": 265,
+    "w": 1136,
+    "h": 0,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "chart": null,
+   "svg": null,
+   "chartInternalOverflow": null,
+   "axisTickCount": 0,
+   "gridLineCount": 0,
+   "laneLabelCount": 0,
+   "laneSubCount": 0,
+   "imageCount": 0,
+   "imageMarkerCount": 0,
+   "fallbackMarkerCount": 0,
+   "yAxisFullyVisible": null,
+   "xLaneFullyVisible": null,
+   "firstTickBox": null,
+   "lastTickBox": null,
+   "laneBox": null,
+   "imageBoxes": [],
+   "tables": [],
+   "drawerOpen": false,
+   "badges": [],
+   "captureKind": "DETERMINISTIC",
+   "captureFingerprint": "4523bc274ea37000",
+   "flagStillFalse": true,
+   "__png": "shot-state-empty-site.png"
+  },
+  "scenario-active": {
+   "ready": true,
+   "error": null,
+   "viewport": {
+    "w": 1440,
+    "h": 900
+   },
+   "page": {
+    "scrollW": 1440,
+    "clientW": 1440,
+    "horizontalOverflow": 0
+   },
+   "mainContent": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(255, 255, 255)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "contentArea": {
+    "x": 240,
+    "y": 56,
+    "w": 1200,
+    "h": 2922,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 1200,
+    "clientW": 1200
+   },
+   "sidebar": {
+    "x": 0,
+    "y": 56,
+    "w": 240,
+    "h": 844,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(45, 55, 72)",
+    "bg": "rgb(24, 24, 27)",
+    "fontSize": "16px",
+    "fontWeight": "400",
+    "scrollW": 239,
+    "clientW": 239
+   },
+   "menuParents": [
+    {
+     "id": "sku-management",
+     "label": "SKU Management",
+     "y": 176
+    },
+    {
+     "id": "product-strategy",
+     "label": "Product Strategy",
+     "y": 232
+    },
+    {
+     "id": "carrier",
+     "label": "Pricing Center",
+     "y": 555
+    },
+    {
+     "id": "training",
+     "label": "Training Center",
+     "y": 611
+    }
+   ],
+   "psbChildren": [
+    {
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "visible": true
+    },
+    {
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "visible": true
+    }
+   ],
+   "viewnav": {
+    "x": 272,
+    "y": 232,
+    "w": 1136,
+    "h": 42,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "navList": {
+    "x": 272,
+    "y": 232,
+    "w": 1136,
+    "h": 41,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "auto",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "tabs": [
+    {
+     "view": "overview",
+     "route": "product-strategy/overview",
+     "label": "Executive Overview",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 276,
+      "y": 236,
+      "w": 170,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 168,
+      "clientW": 168
+     }
+    },
+    {
+     "view": "category",
+     "route": "product-strategy/category",
+     "label": "Category Analysis",
+     "labelVisible": true,
+     "selected": "true",
+     "tabindex": "0",
+     "box": {
+      "x": 462,
+      "y": 236,
+      "w": 170,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "650",
+      "scrollW": 168,
+      "clientW": 168
+     }
+    },
+    {
+     "view": "risk",
+     "route": "product-strategy/risk",
+     "label": "Deal Risk",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 648,
+      "y": 236,
+      "w": 108,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 106,
+      "clientW": 106
+     }
+    },
+    {
+     "view": "quality",
+     "route": "product-strategy/quality",
+     "label": "Data Quality",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 772,
+      "y": 236,
+      "w": 129,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 127,
+      "clientW": 127
+     }
+    },
+    {
+     "view": "workspace",
+     "route": "product-strategy/workspace",
+     "label": "Strategy Workspace",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 917,
+      "y": 236,
+      "w": 174,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 172,
+      "clientW": 172
+     }
+    },
+    {
+     "view": "advanced",
+     "route": "product-strategy/advanced",
+     "label": "Advanced Details",
+     "labelVisible": true,
+     "selected": "false",
+     "tabindex": "-1",
+     "box": {
+      "x": 1107,
+      "y": 236,
+      "w": 159,
+      "h": 33,
+      "display": "inline-flex",
+      "visibility": "visible",
+      "overflowX": "visible",
+      "color": "rgb(20, 24, 31)",
+      "bg": "rgba(0, 0, 0, 0)",
+      "fontSize": "14px",
+      "fontWeight": "400",
+      "scrollW": 157,
+      "clientW": 157
+     }
+    }
+   ],
+   "stateHost": {
+    "x": 272,
+    "y": 324,
+    "w": 1136,
+    "h": 0,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "stateText": "",
+   "crumbs": "Product Strategy/Category Analysis · Electric Can Opener",
+   "banner": "SCENARIO — 1 simulated price override on Kitchen Mama|US|Amazon. These are not prices the company charges, they are not saved anywhere, and they disappear when this page is reloaded.",
+   "scopeBar": {
+    "x": 272,
+    "y": 328,
+    "w": 1136,
+    "h": 193,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1136,
+    "clientW": 1136
+   },
+   "viewHost": {
+    "x": 272,
+    "y": 539,
+    "w": 1136,
+    "h": 2371,
+    "display": "flex",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1139,
+    "clientW": 1136
+   },
+   "chart": {
+    "x": 293,
+    "y": 896,
+    "w": 1094,
+    "h": 577,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1094,
+    "clientW": 1094
+   },
+   "svg": {
+    "x": 293,
+    "y": 896,
+    "w": 1094,
+    "h": 573,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "hidden",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 1094,
+    "clientW": 1094
+   },
+   "chartInternalOverflow": 0,
+   "axisTickCount": 10,
+   "gridLineCount": 10,
+   "laneLabelCount": 6,
+   "laneSubCount": 6,
+   "imageCount": 0,
+   "imageMarkerCount": 0,
+   "fallbackMarkerCount": 6,
+   "yAxisFullyVisible": true,
+   "xLaneFullyVisible": true,
+   "firstTickBox": {
+    "x": 327,
+    "y": 1381,
+    "w": 32,
+    "h": 14,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "11.5px",
+    "fontWeight": "500",
+    "scrollW": 66,
+    "clientW": 66
+   },
+   "lastTickBox": {
+    "x": 327,
+    "y": 949,
+    "w": 32,
+    "h": 14,
+    "display": "block",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "11.5px",
+    "fontWeight": "500",
+    "scrollW": 66,
+    "clientW": 66
+   },
+   "laneBox": {
+    "x": 363,
+    "y": 1417,
+    "w": 994,
+    "h": 0,
+    "display": "inline",
+    "visibility": "visible",
+    "overflowX": "visible",
+    "color": "rgb(20, 24, 31)",
+    "bg": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "400",
+    "scrollW": 0,
+    "clientW": 0
+   },
+   "imageBoxes": [],
+   "tables": [
+    {
+     "scrollW": 1192,
+     "clientW": 1193,
+     "parentOverflowX": "auto"
+    }
+   ],
+   "drawerOpen": false,
+   "badges": [
+    {
+     "text": "3",
+     "bg": "rgb(226, 232, 240)",
+     "radius": "999px"
+    }
+   ],
+   "captureKind": "DETERMINISTIC",
+   "captureFingerprint": "4523bc274ea37000",
+   "flagStillFalse": true,
+   "__png": "shot-scenario-active.png"
+  }
+ },
+ "print": {
+  "file": "print-scenario-active.pdf",
+  "bytes": 492407
+ }
+}

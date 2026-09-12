@@ -6812,3 +6812,89 @@ is read as evidence and never as an oracle: it can only make an already-failed r
 
 A server cannot claim one. They describe what happened to the REQUEST, so they are believed only on a
 response the accessor built itself.
+
+---
+
+## §51  P1-B8C — the capture that could not be taken, and the machine that is ready for it
+
+**STOP_EXISTING_READBACK_INSUFFICIENT.** §3 asked for a read-only capture of the production workspace
+response. It cannot be taken, for two reasons that compose and neither of which is a fault:
+
+1. **The wire cannot produce one.** `PRODUCT_STRATEGY_ENABLED_` is false — §2 forbids changing it — so
+   the deployed endpoint refuses before opening anything. Live proof, read by HTTPS on 2026-09-12 and
+   frozen in `_p1b7f-exec-capture-r10.js`: `refusalCode: FEATURE_DISABLED`, `dbOpened: false`,
+   `tablesRead: 0`, `db_writes: 0`. **The only thing the wire can return is a refusal, and that is the
+   gate working.**
+2. **The editor readback reaches the builder and discards the rows.**
+   `RUN_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK()` does the right thing — it calls the real endpoint,
+   asserts the refusal, reads the four tables read-only, and hands them to `ppwWorkspaceBuild_`, the
+   shipped builder. Then `p1b3SitePass_` tallies `data.normalizedRows` into class counts and **returns
+   none of them**. Its own header says why: *"It never reports a price, a cost, a margin, a URL, a
+   customer, or a spreadsheet id."*
+
+That rule was right for the question P1-B3 asked — *is there enough in the SSOT to draw a board* — and
+is the wrong shape for the question P1-B8C asks, which is *what exactly would be drawn*. **A renderer
+cannot draw a price axis from a count.** The minimum augmentation is specified in
+`P1_B8C_LIVE_READBACK_AND_ACTIVATION_MANIFEST.md` §1.3 — one new function in the existing file, a
+bounded per-site row sample reduced field by field — and is **proposed, not implemented**.
+
+```
+LIVE_WORKSPACE_CAPTURE    = STOP_EXISTING_READBACK_INSUFFICIENT
+CAPTURE_KIND              = DETERMINISTIC   (not live evidence)
+PRODUCT_STRATEGY_ENABLED_ = false
+NAVIGATION_RENDERED       = 0
+VIEWPORTS_MEASURED        = 7 of 7 in Chrome, exact
+ACTIVATION                = MANIFEST ONLY, NOT EXECUTED
+```
+
+### What was built instead
+
+The machine that consumes a capture, proven end to end on data that says what it is. A capture enters
+at `KM.api.transport.post` — the ONE substitution §5 permits — and everything above it is shipped
+code: the accessor and its response validator, the pricing adapter, the live adapter, the selectors,
+psb-views, the board, the production partial, the production stylesheet.
+
+**The seam is the socket and not the adapter, deliberately.** P1-B7E's live defect lived in the
+accessor's validator: the deployed envelope said `productPricing.workspace.get` for a siteUniverse
+response, was refused as `RESPONSE_ACTION_MISMATCH`, and every suite stayed green because every suite
+handed the *adapter* rows it had built itself. §D re-runs that exact defect through this harness and
+confirms it is still refused.
+
+### Three things the browser found that no amount of reading would have
+
+**1. Seven screenshots of a blank page.** The first run mounted with `create()` instead of `onMount()`,
+so `.module-section` never received `.active`, the board rendered into a `display: none` subtree, and
+seven valid PNGs of white were produced. Nothing failed. `viewHost.w === 0` is what caught it — which
+is the entire argument for measuring rather than photographing.
+
+**2. `--window-size=390` renders at 548.** Chrome clamps the window width on this platform, so the
+phone column was a desktop screenshot wearing a phone's name. Fixed by framing the page in an
+exact-sized iframe, and `viewport.w === 390` is now asserted so it cannot come back.
+
+**3. The capture's `product_image` was the wrong type.** `72_` publishes a URL **string** or null;
+the first capture invented `{available, source, url}`. The pricing adapter reads it with `str(...)`,
+so that object would have arrived downstream as the string `"[object Object]"` and been treated as an
+address. **A capture that is not the wire shape tests a contract nobody ships.**
+
+### The image gap, which is structural and worth stating
+
+`A.imageStateOf` returns `VERIFIED_DB_MAPPING` only for an **absolute http(s) URL**, and only that
+state draws a photograph — an unproven picture is not shown. §4 removes every URL. Therefore **no
+de-identified capture can ever render a product photograph, live or deterministic.** Recorded as an
+evidence gap rather than worked around. What IS exercised is both non-photograph states —
+`IMAGE_SOURCE_MISSING` (a blank cell) and `UNVERIFIED_SOURCE_REFERENCE` (a cell holding something that
+is not a fetchable address) — and the fallback marker, one per labelled product, measured in Chrome.
+
+### What a real browser measured
+
+| | |
+|---|---|
+| viewports | 7 of 7 at their exact sizes, plus a full-page desktop |
+| page horizontal overflow | **0 at every viewport, including 390×844** |
+| Y axis fully inside the chart | **7 of 7**, ten tick labels at every size |
+| X lane fully visible | 6 of 7; at 390×844 the **chart** scrolls internally (188px) and the page does not |
+| tab labels visible | **6 of 6 at every viewport** — the first browser confirmation of P1-B8B's `.side` scoping fix |
+| sidebar at 390×844 | still 240px; content area 150px — the shell blocker, measured |
+| menu order | `Product Strategy` y=232 above `Pricing Center` y=555, six children, in route order |
+| states photographed | 7, each with its own sentence; none says another's |
+| print | a PDF from a page with an active scenario, carrying the simulated-price warning |

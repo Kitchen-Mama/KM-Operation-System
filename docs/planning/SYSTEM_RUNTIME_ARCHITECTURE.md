@@ -1004,3 +1004,52 @@ in any stylesheet touching either**. Every page in the application gets `viewpor
 on a 390px phone that is 86px. The only narrowing available is the manual collapse button (64px). This
 is a shell-level fact recorded here because P1-B8B is the round that measured it, and a page-level
 stylesheet cannot fix it.
+
+---
+
+## §15.12  P1-B8C — the replay seam, and what a de-identified capture can and cannot prove
+
+### The one substitution
+
+```
+capture envelope
+  -> KM.api.transport.post            THE ONLY THING REPLACED
+  -> km-product-pricing-workspace.js   accessor + response validator
+  -> km-product-pricing-adapter.js     canonical rows
+  -> km-product-strategy-live-adapter  state machine + UI matrix
+  -> psb-selectors.js / psb-views.js / psb-board-ui.js
+  -> assets/html/pages/product-strategy-board.html + assets/css/product-strategy-board.css
+```
+
+> A HARNESS THAT STARTS BELOW THE VALIDATOR CANNOT FIND THE ONE CLASS OF DEFECT A REPLAY ROUND EXISTS
+> FOR. P1-B7E's live failure was an envelope whose `meta.action` named the wrong action; the accessor
+> refused it and the board reported "not connected" over a response that had arrived. Every suite was
+> green, because every suite handed the ADAPTER rows it had built itself.
+
+**Realms matter here.** `instanceof Array` is realm-scoped and the accessor's shape check is written
+with it, so a capture created in Node and validated inside a `vm` sandbox is refused by production
+code that would accept it in a browser. The capture is therefore loaded INTO the sandbox. Getting this
+wrong makes a harness fault look exactly like a contract failure.
+
+### What a de-identified capture cannot prove, by construction
+
+`A.imageStateOf` returns `VERIFIED_DB_MAPPING` only for an absolute `http(s)` URL, and only that state
+draws a photograph. §4 removes every URL. **So the photograph path is unreachable from any
+de-identified capture — this is not a gap in the capture, it is a property of the two rules together.**
+Both non-photograph states are exercised instead, and the fallback marker is measured one-per-product
+in a real browser.
+
+### Measuring, not photographing
+
+A picture cannot fail; a number can. The Chrome runner records computed styles, bounding boxes and
+scroll extents and the suite asserts them, which is what caught a run of seven screenshots of a
+`display: none` board and a "390px" column that Chrome had actually rendered at 548px. The rule this
+establishes: **every screenshot in this repository is accompanied by the measurement that would have
+failed if the screenshot were wrong.**
+
+### The shell blocker, now measured rather than argued
+
+At 390×844 the sidebar is still 240px and the content area is 150px — for every page in the
+application. Product Strategy degrades honestly into it: the chart scrolls inside itself by 188px and
+**the page horizontal overflow is 0**, which is the half that is this page's to get right. The other
+half is a shell breakpoint and belongs to the end-of-phase responsive task.

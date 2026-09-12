@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="placeholder product swatch">
+  <!-- P1-B8C: the substitute for a product photograph in a de-identified capture.
+       It is NOT a product and never stands in for one in evidence: it exists so that the image
+       RENDERING path (marker plate, sizing, placement on the price, distance from the label) can be
+       exercised at all. See _p1b8c-capture.js on `product_image`. -->
+  <rect width="64" height="64" rx="10" fill="#eef2f7"/>
+  <circle cx="32" cy="26" r="11" fill="#cfd9e6"/>
+  <rect x="14" y="40" width="36" height="8" rx="4" fill="#cfd9e6"/>
+</svg>

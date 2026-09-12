@@ -714,3 +714,42 @@ survived**. Full sweep 460 suites; only the four pre-existing red, counts identi
 
 **P1-B8C is a controlled live read-only verification and still requires the USER's explicit
 authorisation.** Nothing in this round unblocks it.
+
+---
+
+## P1-B8C — replay acceptance and the activation manifest (complete; nothing activated)
+
+**The live capture is blocked: `STOP_EXISTING_READBACK_INSUFFICIENT`.** The deployed endpoint can only
+answer `FEATURE_DISABLED` while the flag is false, and the editor readback computes the workspace with
+the shipped builder and then publishes only aggregates — no price, no identity, no image. The minimum
+augmentation (`RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE()`, one function, same file, bounded sample,
+field-by-field reduction) is **specified and not implemented**, per §3.
+
+```
+LIVE_WORKSPACE_CAPTURE    = STOP_EXISTING_READBACK_INSUFFICIENT
+CAPTURE_KIND              = DETERMINISTIC   (not live evidence)
+PRODUCT_STRATEGY_ENABLED_ = false
+NAVIGATION_RENDERED       = 0
+VIEWPORTS_MEASURED        = 7 of 7 in Chrome, exact
+ACTIVATION                = MANIFEST ONLY, NOT EXECUTED
+```
+
+Built instead: the replay chain, driven from the socket through the shipped accessor/adapters/
+selectors/renderer into the production partial, and a Chrome-based visual acceptance that MEASURES
+rather than merely photographs.
+
+`product-strategy-replay-acceptance-p1-b8c.test.js` — **394 assertions · 9 mutants · 0 survived**.
+Full sweep 461 suites; only the four pre-existing red, counts identical (3/1/7/2).
+
+### Carried into P1-B8D
+
+The activation manifest is `docs/planning/P1_B8C_LIVE_READBACK_AND_ACTIVATION_MANIFEST.md` §3, and it
+answers all fifteen questions §12 asks: what to push, what to deploy, whether Apps Script needs a
+sync and a new version, the ONE place the flag flips, the ONE place navigation is enabled, the order,
+the per-step verification, the rollback order, the fastest way back off, and how to prove zero writes,
+two reads, no fixture, a fresh cache-buster and no other page restyled.
+
+**Activation depends on no Google Cloud, no OAuth, no gateway, no query bypass and no temporary
+endpoint.** Security stays `DEFERRED_TO_P2_A`.
+
+**P1-B8D still requires the USER's explicit authorisation.** Nothing here unblocks it.

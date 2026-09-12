@@ -6201,3 +6201,59 @@ the board rather than merely counting tags.
 **Unchanged:** 138 actions · two `productPricing.*` reads and no write-shaped name · no Apps Script
 change · no deployment · no flag change · no navigation rendered · no database, Sheets or Drive
 write.
+
+---
+
+## P1-B8C — live readback STOP, replay acceptance, activation manifest
+
+**State:** Product Strategy renders correctly through the entire production chain over a replayed
+capture, has been measured in a real browser at seven exact viewports, and is **disabled**.
+
+```
+LIVE_WORKSPACE_CAPTURE    = STOP_EXISTING_READBACK_INSUFFICIENT
+CAPTURE_KIND              = DETERMINISTIC   (not live evidence)
+PRODUCT_STRATEGY_ENABLED_ = false
+NAVIGATION_RENDERED       = 0
+VIEWPORTS_MEASURED        = 7 of 7 in Chrome, exact
+ACTIVATION                = MANIFEST ONLY, NOT EXECUTED
+```
+
+**Added:** `assets/tests/_p1b8c-capture.js` (wire-shaped, `CAPTURE_KIND = DETERMINISTIC`) ·
+`_p1b8c-replay.js` (socket substitution + de-identification walk) · `_p1b8c-visual-runner.js` (Chrome)
+· `_p1b8c-swatch.svg` · `product-strategy-replay-acceptance-p1-b8c.test.js` ·
+`docs/planning/P1_B8C_LIVE_READBACK_AND_ACTIVATION_MANIFEST.md` ·
+`docs/evidence/p1-b8c-acceptance/` (22 screenshots, one print PDF, `measurements.json`).
+
+**Why the live capture is blocked:** the wire can only refuse while the flag is false, and the editor
+readback discards `normalizedRows` by design. Both halves are asserted in §A of the new suite against
+the actual files, so the finding cannot rot into a claim.
+
+**The de-identification rule, as code:** `P1B8C_REPLAY.leaks()` walks KEYS (not the serialised text —
+a substring scan finds the field names in the file's own de-identification note, which is the G18 trap
+this project has now sprung six times), and `secretShapes()` catches the same value smuggled under
+another name: an https URL, an Apps Script id, an email, a spreadsheet id, any 40-character opaque
+token. Both run over the whole capture and both return empty.
+
+**Suites:**
+
+| | PRE | POST |
+|---|---|---|
+| `product-strategy-replay-acceptance-p1-b8c.test.js` | — | **394 / 0 / 9 / 0** (new) |
+| `product-strategy-information-architecture-p1-b8b.test.js` | 234 / 0 / 18 / 0 | 234 / 0 / 18 / 0 |
+| `product-strategy-scope-correction-p1-b8a.test.js` | 87 / 0 / 16 / 0 | 87 / 0 / 16 / 0 |
+| `product-strategy-board-p1-b2.test.js` | 253 / 0 / 17 / 0 | 253 / 0 / 17 / 0 |
+| `product-strategy-board-p1-b2a.test.js` | 241 / 0 / 14 / 0 | 241 / 0 / 14 / 0 |
+| `product-strategy-board-p1-b2b.test.js` | 142 / 0 / 16 / 0 | 142 / 0 / 16 / 0 |
+| `product-strategy-board-p1-b2c.test.js` | 157 / 0 / 14 / 0 | 157 / 0 / 14 / 0 |
+| `product-strategy-board-p1-b4.test.js` | 255 / 0 / 12 / 0 | 255 / 0 / 12 / 0 |
+| `product-strategy-integration-p1-b5.test.js` | 159 / 0 / 12 / 0 | 159 / 0 / 12 / 0 |
+| `product-strategy-production-readback-p1-b3.test.js` | 334 / 0 / 17 / 0 | 334 / 0 / 17 / 0 |
+| `product-strategy-shell-integration-p1-b7.test.js` | 168 / 0 / 12 / 0 | 168 / 0 / 12 / 0 |
+
+**No production file changed.** The whole round is test harness, evidence and documentation: the only
+edits outside `assets/tests/` and `docs/` are none. `index.html`, `app.js`, every `assets/js/**` module,
+the partial and the stylesheet are byte-identical to P1-B8B.
+
+**Unchanged:** 138 actions · two `productPricing.*` reads and no write-shaped name · no Apps Script
+change · no deployment · no flag change · no navigation rendered · no database, Sheets or Drive
+write.
