@@ -57,10 +57,14 @@ That is deliberate and its own header says so:
 and it is the wrong shape for the question P1-B8C asks, which is *what exactly would be drawn*. A
 renderer cannot draw a price axis from a count.
 
-### 1.3 The minimum augmentation — proposed, NOT implemented
+### 1.3 The minimum augmentation — IMPLEMENTED AT P1-B8C-R1
 
-§3 says to propose the minimum diagnostic augmentation and not to build a live bypass. This is the
-whole proposal:
+*At P1-B8C this section read "proposed, NOT implemented". The USER authorised it on 2026-09-12 and
+it was built in that round, unchanged in scope: **one function in the existing file, nothing else —
+no action, no router entry, no parameter, no flag path.** The table below is the contract the code
+now keeps, and `assets/tests/product-strategy-row-shape-sample-p1-b8c-r1.test.js` holds it. The two
+places where the proposal and the code differ are marked inline; the document was corrected to the
+code rather than left to disagree quietly.*
 
 **Add one function to the existing file. Change nothing else. Add no action, no router entry, no
 parameter, no flag path.**
@@ -72,17 +76,44 @@ FILE       assets/tools/apps-script-diagnostics/
 RUN FROM   the Apps Script editor, by the USER. Admin only, no parameters.
 ```
 
-It reuses `p1b3ReadTables_` and `ppwWorkspaceBuild_` exactly as `p1b3SitePass_` does, and differs in
+It reuses `p1b3ReadTable_` and `ppwWorkspaceBuild_` exactly as `p1b3SitePass_` does, and differs in
 one respect: for each site it emits **a bounded sample of `normalizedRows`, reduced field by field**.
+
+*(The proposal wrote `p1b3ReadTables_`, plural. No such helper exists and never did — the file has
+`p1b3ReadTable_`, singular, called once per table, which is what the code reuses.)*
 
 | keep | reduce | drop entirely |
 |---|---|---|
-| `identity`, `marketplace_sku_id`, `master_sku`, `site_sku` | `product_image` → `{available:boolean, source:string, url:null}` | `regional.product_url` |
-| `category`, `series`, `variant_group`, `product_name` | `campaigns[]` → `{status, line_status, deal_price, start_date, end_date}` | `regional.regional_detail_id` |
-| `company`, `country`, `marketplace`, `currency` | `provenance` → keep the strings, they name tables not ids | `regional.marketplace_product_id` |
-| `regular_price`, `minimum_price`, `msrp` | | any spreadsheet id, script id, deployment id, endpoint, email, actor |
+| `identity`, `marketplace_sku_id`, `master_sku`, `site_sku` | `product_image` → `product_image_present` + `product_image_is_absolute_url` | `regional` — dropped WHOLE, keeping `regional_present` and `regional_language` |
+| `category`, `series`, `variant_group`, `variant_name`, `product_name` | `campaigns[]` → `{status, line_status, start_date, end_date, promo_price, regular_price_snapshot, price_units, discount_percent}` | `regional.product_url`, `regional.regional_detail_id`, `regional.marketplace_product_id` |
+| `company`, `country`, `marketplace`, `currency` | `provenance` → the named strings only; they name tables, not ids | `campaign_id`, `campaign_sku_line_id`, `campaign_name` |
+| `regular_price`, `minimum_price`, `msrp` | row `findings[]` → `{code, detail}`; **`evidence` dropped**, because that is where the row's own values live | any spreadsheet id, script id, deployment id, endpoint, email, actor |
 | `marketplace_sku_status`, `lifecycle`, `analysable` | | |
 | `missing_reasons[]`, `findings[]`, `source_status[]` | | |
+
+**Two corrections to the proposal, both made in the direction of the code.**
+
+**The image is two booleans, not an object.** The proposal wrote
+`{available:boolean, source:string, url:null}`. `72_` line 648 sends a **URL string or null**, and
+`km-product-pricing-adapter.js`'s `imageStateOf` picks between its three states from exactly three
+inputs: is the value blank, is it an absolute `http(s)` URL, and is `MASTER_SKU_RECORD_MISSING` among
+the missing reasons. The third already travels in `missing_reasons`, so
+`product_image_present` + `product_image_is_absolute_url` complete the set — **the renderer's state is
+derivable without the URL and without the diagnostic re-implementing a client function.** An invented
+object would have been a third vocabulary for a field that already has two.
+
+**`promo_price`, not `official_deal_price`.** The proposal used the readable name. §4 forbids a second
+vocabulary, and the builder's field is `promo_price`; the suite asserts the rename did not happen.
+
+**The reduction is an ALLOWLIST.** Every field is written out by name, so a new column appearing in
+`sku_details` tomorrow reaches `normalizedRows` and does **not** reach the report. A denylist would
+have published it and waited for somebody to notice.
+
+**The envelope is copied and SCANNED rather than allowlisted**, and the difference is deliberate: the
+accessor validates `sourceState`, `counts`, `membership`, `filtersApplied`, `filterOptions`,
+`pagination` and `schema` **by name and by shape**, so a reduced envelope would test a contract the
+accessor does not accept. What protects it is the fail-closed scan below, which walks the finished
+report rather than trusting the reducer.
 
 Plus, per site, the envelope fields the accessor validates: `sourceState`, `counts`,
 `filterOptions`, `pagination`, `membership`, `schema`, `analysis_permitted`, `refusals`, `findings`.
@@ -90,11 +121,44 @@ Plus, per site, the envelope fields the accessor validates: `sourceState`, `coun
 **Bound and safety, both stated as code rather than intention:**
 
 - `P1B8C_ROW_SAMPLE_MAX_ = 60` rows per site, and the cap is reported as a cap.
+- **Selection is deterministic and coverage-first, never the first sixty.** Rows are ordered by
+  `marketplace_sku_id` ascending — the row's own identity, so sorting the sheet cannot move the
+  sample. Pass 1 gives every distinct trait a representative row, **rarest trait first**, because with
+  a cap the common traits would otherwise crowd out the one inactive row or the one row with no MSRP,
+  and those are the entire reason a shape sample is being taken. Pass 2 fills the remaining slots at
+  even *rank* across the whole universe. Pass 3 sweeps in order and is reachable only once coverage
+  and spread are complete.
+- **A state production does not hold is an evidence gap, named in the output**
+  (`STATE_ABSENT_FROM_PRODUCTION`), never manufactured. The output says so in as many words and points
+  at the deterministic fixture as the labelled alternative.
+- **The redaction scan is fail-closed and runs on the finished report**, walking keys against
+  `P1B8C_FORBIDDEN_KEYS_` and primitive values against `P1B8C_SECRET_SHAPES_` (absolute URL, `AKfyc…`
+  exec id, email, Google file id, mixed-case opaque token). A violation **discards the whole report** —
+  not trims it — and the refusal carries the path and the rule and never the value.
 - It is `SpreadsheetApp.openById` + `getValues` only. No `setValue`, no `appendRow`, no writer, no
   `getOperationDb`, no `UrlFetch`, no `LockService`, no `PropertiesService`, no trigger.
 - It does **not** read or set `PRODUCT_STRATEGY_ENABLED_`. The flag gate lives in the handler; this
   calls the pure builder, which is the same thing `p1b3SitePass_` already does today.
 - `rows_modified` is measured before and after the same way P1-B3 measures it.
+
+**What the round found while building it.** Three defects, each of a kind that reading could not have
+reached:
+
+1. **The scan refused the report's own vocabulary.** `OPAQUE_TOKEN` was `/[A-Za-z0-9_-]{40,}/`, which
+   matched the verdict name `RETURN_EVERY_CHUNK_TO_THE_P1_B8C_R2_ROUND` and the kebab-case name of the
+   suite that proves the counters. Fail-closed is a safety property only while the thing it closes on
+   is real. The rule now also requires the run to be **mixed case**, which is what an OAuth token, a
+   Drive id or a base64 blob is and what SCREAMING_SNAKE and kebab-lowercase are not.
+2. **`error.token` collided with the forbidden key `token`.** The census's idiom for a *safety* token
+   is `error.token`; `token` is forbidden because that is what a credential is called. So **every
+   failure path reported itself as a redaction failure** and threw the real error away with the
+   report — the one path that exists to explain a failure was the one path guaranteed to be refused.
+   The field is now `error.safety_token`; `token` stays forbidden.
+3. **The spread pass was the first sixty rows.** It computed `stride = floor(n / remaining)`, which is
+   `1` whenever the universe is under twice the cap, so the walk took indices `0..59` and stopped. It
+   looked correct because the order is an id sort rather than the sheet's. Ranking by
+   `floor(k * n / remaining)` spans the range at any ratio; the suite now asserts the sample is **not**
+   the head and **does** contain the last row of the universe.
 
 **Why prices are safe to emit here and were not before.** The rule this relaxes is P1-B3's, and its
 reason was that a census is pasted into a report. This output is pasted into ONE repository file that

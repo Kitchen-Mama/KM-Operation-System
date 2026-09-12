@@ -1019,3 +1019,105 @@ P1-B8 ACTIVATION  -  NO-GO
   and 44.7 for the minimum safe path, whose first two steps are USER decisions.
 
 **STATUS: R10 DEPLOYED AND VERIFIED - ENVELOPE CORRECT ON THE WIRE - FRONTEND NOT DEPLOYED - PRODUCT STRATEGY NOT ENABLED - NAVIGATION NOT ENABLED - P1-B8 ACTIVATION BLOCKED ON A SERVER IDENTITY BOUNDARY.**
+
+
+## Entry — 2026-09-12 · PRODUCT-STRATEGY-P1-B8C-R1 · minimal live row-shape readback (DIAGNOSTIC SYNC ONLY)
+
+-------------------------------------------------------------------------------------------------------
+WHAT CHANGED, AND IT IS ONE FILE
+-------------------------------------------------------------------------------------------------------
+      assets/tools/apps-script-diagnostics/TEMP_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK.gs
+
+  One new editor-only entry point, `RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE()`, added to the existing
+  diagnostic. No action, no router row, no parameter, no HTTP path, no flag read, no writer, no second
+  builder. The census entry point and its contract are unchanged.
+
+  No file under assets/specs/active/apps-script/ changed. 00_config.gs, 01_router.gs,
+  72_api_v1_product_pricing_workspace.gs and appsscript.json are byte-identical to the previous commit.
+
+-------------------------------------------------------------------------------------------------------
+WHY A SECOND ENTRY POINT EXISTS
+-------------------------------------------------------------------------------------------------------
+  P1-B8C stopped with STOP_EXISTING_READBACK_INSUFFICIENT. The census reaches the shipped builder and
+  then discards every row, because P1-B3's contract is "counts, never values" — which is RIGHT for the
+  question P1-B3 asked and is the wrong shape for "what exactly would be drawn". A renderer cannot draw
+  a price axis from a count. The USER authorised the augmentation on 2026-09-12, unchanged in scope
+  from the proposal in P1_B8C_LIVE_READBACK_AND_ACTIVATION_MANIFEST.md §1.3.
+
+-------------------------------------------------------------------------------------------------------
+APPS_SCRIPT_SYNC_REQUIRED  -  **YES_DIAGNOSTIC_ONLY**
+-------------------------------------------------------------------------------------------------------
+  Paste ONE file into the Apps Script editor, replacing its whole contents:
+
+      TEMP_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK.gs
+
+  Sync nothing else. Then:
+
+      1. Save.
+      2. Do NOT create a version.               APPS_SCRIPT_NEW_VERSION_REQUIRED = NO
+      3. Do NOT update the deployment.          WEB_APP_DEPLOYMENT_REQUIRED      = NO
+      4. Run RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE() once, from the editor.
+      5. Return every chunk. Each carries chunk_index, chunk_count, full_report_fingerprint and
+         full_report_length, so a partial paste is detectable rather than silently short.
+
+  A diagnostic is not on the serving path. It is a function in the project that only an editor can
+  call, so saving it changes nothing about what the deployed /exec answers — which is why this row is
+  YES_DIAGNOSTIC_ONLY rather than a release.
+
+-------------------------------------------------------------------------------------------------------
+FRONTEND_DEPLOY_REQUIRED  -  **NO**
+-------------------------------------------------------------------------------------------------------
+  No client JS, CSS, HTML or index.html changed. The P1-B7/P1-B8B frontend package remains undeployed.
+
+-------------------------------------------------------------------------------------------------------
+ZERO WRITE, AND WHICH ZEROES ARE MEASURED
+-------------------------------------------------------------------------------------------------------
+  db_writes 0 · drive_writes 0 · sheets_created 0 · writer_calls 0 · rows_modified 0 · flag_read false
+  flag_modified false · deployment_created false · version_created false · http_endpoint_called false
+
+  MEASURED: rows_modified, from the lastRow/lastColumn delta observed across the run. The suite proves
+  it is a measurement by making a table GROW under the read and asserting the run stops
+  (STOP_SOURCE_SHAPE_CHANGED_DURING_READ) — without that, `rows_modified: 0` is a constant.
+
+  DECLARED, and proved in the repository by transitive CALL CLOSURE rather than by comment: nothing the
+  sample can reach calls productStrategyEnabled_, handleProductPricingWorkspaceGet_, getOperationDb,
+  either migration writer, or any Sheets writer, LockService, PropertiesService, CacheService, DriveApp,
+  UrlFetchApp or trigger API. The census still DOES reach the handler and the flag, which is what makes
+  that a real scope rather than a claim about a program with no handler in it.
+
+-------------------------------------------------------------------------------------------------------
+WHAT THE OUTPUT MAY AND MAY NOT CARRY
+-------------------------------------------------------------------------------------------------------
+  MAY  identity, marketplace_sku_id, master_sku, site_sku, product_name, category, series,
+       variant_group, company, country, marketplace, currency, marketplace_sku_status, lifecycle,
+       regular_price, minimum_price, msrp, campaign promo_price/window/status, analysable,
+       source_status, missing_reasons, finding codes and their prose, and the response envelope the
+       accessor validates.
+
+  MAY NOT  spreadsheet id, sheet id, script id, deployment id, endpoint or any absolute URL, product
+       URL, image URL, marketplace_product_id, regional_detail_id, campaign/campaign-line ids, email,
+       token, authorization, cost, margin, customer or supplier fields.
+
+  The image is reported as `product_image_present` + `product_image_is_absolute_url` — two booleans
+  that, with `missing_reasons`, let a reader derive which of imageStateOf's three states the renderer
+  would choose, without the URL and without the diagnostic re-implementing a client function.
+
+  ENFORCEMENT IS FAIL-CLOSED AND RUNS ON THE FINISHED REPORT. A forbidden key or a secret value shape
+  discards the WHOLE report — not trims it — with verdict STOP_P1_B8C_SAMPLE_REDACTION_FAILED, and the
+  refusal carries the path and the rule and never the value.
+
+-------------------------------------------------------------------------------------------------------
+TESTS
+-------------------------------------------------------------------------------------------------------
+  assets/tests/product-strategy-row-shape-sample-p1-b8c-r1.test.js   327 / 0 · 17 mutants · 0 survived
+  product-strategy-production-readback-p1-b3   336 / 0      product-strategy-replay-acceptance-p1-b8c   396 / 0
+  Full sweep 462 suites, 458 green; the four pre-existing red unchanged at 3/1/7/2. New failures 0.
+
+-------------------------------------------------------------------------------------------------------
+P1-B8D ACTIVATION  -  STILL NO-GO, AND THIS ROUND DID NOT MOVE IT
+-------------------------------------------------------------------------------------------------------
+  PRODUCT_STRATEGY_ENABLED_ is still false, the staged section is still enabled:false, index.html still
+  has no menu item, and the two productPricing actions are still the only two and both are reads. This
+  round makes the live capture obtainable; it does not make the feature reachable.
+
+**STATUS: DIAGNOSTIC PREPARED - NOT SYNCED - NO VERSION - NO DEPLOYMENT - NOT PUSHED - AWAITING THE USER'S EDITOR RUN.**

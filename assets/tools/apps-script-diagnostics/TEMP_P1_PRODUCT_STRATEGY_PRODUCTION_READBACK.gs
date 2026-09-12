@@ -55,9 +55,30 @@
  * repo-side call graph, and it is labelled as one, because a zero that looks measured and is not is the
  * thing this project keeps finding at the bottom of a false green.
  *
- * NO SENSITIVE DATA. It reports counts, distinct KEY values (company / country / marketplace / category /
- * series / currency) and header NAMES. It never reports a price, a cost, a margin, a URL, a customer, or a
- * spreadsheet id. Ledgers are capped and the cap is reported as a cap.
+ * NO SENSITIVE DATA — AND THAT RULE BELONGS TO THE CENSUS, NOT TO THE FILE.
+ *
+ * `RUN_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK` reports counts, distinct KEY values (company / country /
+ * marketplace / category / series / currency) and header NAMES. It never reports a price, a cost, a margin,
+ * a URL, a customer, or a spreadsheet id. Ledgers are capped and the cap is reported as a cap. That contract
+ * is unchanged and every assertion that holds it still holds it.
+ *
+ * ------------------------------------------------------------------------------------------------------------
+ * AND AT P1-B8C-R1 THIS FILE GREW A SECOND ENTRY POINT WITH A DIFFERENT, NARROWER CONTRACT:
+ *
+ *     RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE()
+ *
+ * It exists because the census is RIGHT and is the wrong shape for one question. The census answers "is
+ * there enough in the SSOT to draw a board" and answers it in counts; P1-B8C asks "what exactly would be
+ * drawn", and A RENDERER CANNOT DRAW A PRICE AXIS FROM A COUNT. So the sample publishes a bounded,
+ * field-reduced sample of the very rows the census tallies and throws away.
+ *
+ * THE RELAXATION IS NAMED PRECISELY, AND IT IS ONE CLAUSE WIDE: "no prices in a census" becomes "prices in
+ * an admin-only row-shape sample". IT IS NOT "no identifiers anywhere" — every locator that could reach
+ * outside the company is still dropped, and the drop is enforced by a scan that refuses the WHOLE report
+ * rather than by the care of whoever wrote the reducer. See P1B8C_FORBIDDEN_KEYS_ and P1B8C_SECRET_SHAPES_.
+ *
+ * The two entry points share the reader, the target check and the shipped builder. Neither reads the
+ * feature flag to get its data; the census reads it to REPORT it, and the sample does not read it at all.
  * ================================================================================================================
  */
 
@@ -793,5 +814,682 @@ function RUN_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK() {
   report.duration_ms = Date.now() - startedAt;
   var emitted = p1b3Emit_(report);
   report.emitted = emitted;
+  return report;
+}
+
+
+// ============================================================================================================
+// P1-B8C-R1 §3 — THE ROW SHAPE SAMPLE
+//
+// A SECOND ENTRY POINT IN THE SAME FILE, AND NOTHING ELSE: no action, no router row, no parameter, no HTTP
+// path, no flag read, no writer, no second builder. Everything below is p1b8c*-prefixed so it cannot collide
+// with either the census's p1b3* set or 72_'s ppw* set.
+// ============================================================================================================
+
+var P1B8C_SAMPLE_ID_ = 'P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE';
+var P1B8C_SAMPLE_BUILD_ = 'P1-B8C-R1';
+
+// THE BOUND, AND IT IS REPORTED AS A BOUND. Sixty rows per site is evidence of a shape; it is not an export,
+// and a reader must never be able to mistake a window for the whole.
+var P1B8C_ROW_SAMPLE_MAX_ = 60;
+
+/**
+ * KEYS THAT MAY NOT APPEAR ANYWHERE IN THE REPORT.
+ *
+ * These are LOCATORS AND CREDENTIALS — things that identify a Google resource, a person, or a way in. The
+ * logical TABLE names (sku_details, pricing_list, ...) are deliberately not on this list: they are public
+ * schema, already published in assets/specs and in the census this file has been running for rounds, and
+ * without them "which table was unreadable" and "which table's fingerprint is this" cannot be answered at
+ * all. What is withheld is the spreadsheet's identity, never the schema's vocabulary.
+ */
+var P1B8C_FORBIDDEN_KEYS_ = ['spreadsheet_id', 'spreadsheetid', 'spreadsheet', 'sheet_id', 'sheet_name',
+  'sheetname', 'script_id', 'scriptid', 'deployment_id', 'deploymentid', 'endpoint', 'endpoint_url',
+  'web_app_url', 'url', 'product_url', 'image_url', 'drive_url', 'file_id', 'folder_id',
+  'marketplace_product_id', 'regional_detail_id', 'email', 'user_email', 'actor', 'actor_email',
+  'token', 'access_token', 'authorization', 'auth', 'api_key', 'secret', 'password',
+  'cost', 'unit_cost', 'landed_cost', 'margin', 'gross_margin', 'customer', 'customer_name',
+  'supplier', 'supplier_name', 'vendor', 'vendor_name'];
+
+/**
+ * VALUE SHAPES THAT MAY NOT APPEAR ANYWHERE IN THE REPORT.
+ *
+ * A key list alone stops the value being called what it is; it does not stop the same value being carried
+ * under an innocent name. These catch the value itself, whatever it is called.
+ */
+var P1B8C_SECRET_SHAPES_ = [
+  { code: 'ABSOLUTE_URL', re: /https?:\/\// },
+  { code: 'APPS_SCRIPT_EXEC_ID', re: /AKfyc[A-Za-z0-9_\-]{10,}/ },
+  { code: 'EMAIL_ADDRESS', re: /[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}/ },
+  { code: 'GOOGLE_FILE_ID_SHAPE', re: /(^|[^A-Za-z0-9_\-])1[A-Za-z0-9_\-]{30,}([^A-Za-z0-9_\-]|$)/ },
+  { code: 'OPAQUE_TOKEN', fn: function (v) { return p1b8cHasOpaqueRun_(v); } }
+];
+
+/**
+ * A LONG RUN OF WORD CHARACTERS IS NOT YET A SECRET, AND THE FIRST VERSION OF THIS RULE SAID IT WAS.
+ *
+ * `/[A-Za-z0-9_-]{40,}/` refused this file's own first report, twice. It matched
+ * `RETURN_EVERY_CHUNK_TO_THE_P1_B8C_R2_ROUND`, which is a verdict name, and it matched the kebab-case
+ * name of the test file that proves the counters. Both are the report's OWN VOCABULARY, and a redaction
+ * rule that refuses the vocabulary refuses every run — fail-closed is a safety property only while the
+ * thing it closes on is real.
+ *
+ * What an opaque credential actually looks like is a long run that is ALSO MIXED CASE: an OAuth token, a
+ * Drive file id, a base64 blob. This project's own long strings are either SCREAMING_SNAKE (no lowercase)
+ * or kebab-lowercase (no uppercase), and neither survives the mixed-case test. The two highest-value real
+ * shapes, `AKfyc…` and the Google file id, have their own rules above and do not depend on this one.
+ */
+function p1b8cHasOpaqueRun_(v) {
+  var runs = String(v).match(/[A-Za-z0-9_\-]{40,}/g) || [];
+  for (var i = 0; i < runs.length; i++) {
+    if (/[a-z]/.test(runs[i]) && /[A-Z]/.test(runs[i])) return true;
+  }
+  return false;
+}
+
+// The §6 dimensions the sample is required to spread across, and for the binary ones the two values that
+// must BOTH be present before the dimension counts as covered. A dimension the production universe does not
+// contain is an EVIDENCE GAP, reported as one; it is never manufactured.
+var P1B8C_BINARY_DIMENSIONS_ = [
+  { key: 'regular_price', values: ['present', 'absent'] },
+  { key: 'minimum_price', values: ['present', 'absent'] },
+  { key: 'msrp', values: ['present', 'absent'] },
+  { key: 'product_image', values: ['present', 'absent'] },
+  { key: 'promotion', values: ['present', 'absent'] },
+  { key: 'analysable', values: ['yes', 'no'] },
+  { key: 'data_quality', values: ['finding', 'clean'] },
+  { key: 'status', values: ['active', 'non_active'] }
+];
+var P1B8C_CATEGORICAL_DIMENSIONS_ = ['company', 'country', 'marketplace', 'currency', 'category', 'series'];
+
+
+/**
+ * EVERY TRAIT ONE ROW CARRIES, as `dimension=value` strings. Selection is driven entirely by these, so
+ * "the sample covers different currencies" is a property of the selector rather than of the sheet order.
+ */
+function p1b8cTraitsOf_(row) {
+  var t = [];
+  function add(k, v) { t.push(k + '=' + v); }
+  add('company', p1b3Lower_(row.company) || '__blank');
+  add('country', p1b3Lower_(row.country) || '__blank');
+  add('marketplace', p1b3Lower_(row.marketplace) || '__blank');
+  add('currency', p1b3Lower_(row.currency) || '__none');
+  add('category', p1b3Lower_(row.category) || '__blank');
+  add('series', p1b3Lower_(row.series) || '__blank');
+  add('regular_price', row.regular_price === null || row.regular_price === undefined ? 'absent' : 'present');
+  add('minimum_price', row.minimum_price === null || row.minimum_price === undefined ? 'absent' : 'present');
+  add('msrp', row.msrp === null || row.msrp === undefined ? 'absent' : 'present');
+  add('product_image', p1b3Str_(row.product_image) === '' ? 'absent' : 'present');
+  add('promotion', (row.campaigns || []).length > 0 ? 'present' : 'absent');
+  var st = p1b3Lower_(row.marketplace_sku_status);
+  add('status', st === 'active' ? 'active' : (st === '' ? '__blank' : 'non_active'));
+  add('analysable', row.analysable === true ? 'yes' : 'no');
+  add('data_quality',
+    ((row.missing_reasons || []).length + (row.findings || []).length) > 0 ? 'finding' : 'clean');
+  return t;
+}
+
+/**
+ * §6 — DETERMINISTIC, COVERAGE-FIRST SELECTION. NEVER "THE FIRST SIXTY".
+ *
+ * Three passes, in this order, and the order is the whole design:
+ *
+ *   1. COVERAGE. Every distinct trait in the site's universe claims one row, RAREST TRAIT FIRST. Rarest
+ *      first is not a flourish: with a cap, the common traits would otherwise fill the sample and the one
+ *      inactive row, or the one row with no MSRP, would be the row that got dropped — and that row is the
+ *      entire reason a shape sample is being taken.
+ *   2. SPREAD. Remaining slots are filled at an even stride across the whole ordered universe, so a large
+ *      site contributes from its middle and its end rather than only its head.
+ *   3. FILL. Only if slots are still open, which means coverage AND spread are already complete, the
+ *      remainder is swept in order. This is a fill, not the selection rule.
+ *
+ * The order rows are considered in is `marketplace_sku_id` ascending — the row's own identity, so the
+ * selection does not move when somebody sorts the sheet.
+ */
+function p1b8cSelectSample_(rows, cap) {
+  var order = (rows || []).slice().sort(function (a, b) {
+    var x = p1b3Str_(a && a.marketplace_sku_id), y = p1b3Str_(b && b.marketplace_sku_id);
+    return x < y ? -1 : (x > y ? 1 : 0);
+  });
+  var traitRows = {}, traitNames = [];
+  order.forEach(function (r, i) {
+    p1b8cTraitsOf_(r).forEach(function (tr) {
+      if (!Object.prototype.hasOwnProperty.call(traitRows, tr)) { traitRows[tr] = []; traitNames.push(tr); }
+      traitRows[tr].push(i);
+    });
+  });
+  // RAREST FIRST, then by name so two equally rare traits resolve the same way every run.
+  traitNames.sort(function (a, b) {
+    var d = traitRows[a].length - traitRows[b].length;
+    if (d !== 0) return d;
+    return a < b ? -1 : (a > b ? 1 : 0);
+  });
+
+  var picked = {}, count = 0, byPass = { coverage: 0, spread: 0, fill: 0 };
+  function take(i, which) {
+    if (picked[i] === 1 || count >= cap) return false;
+    picked[i] = 1; count++; byPass[which]++;
+    return true;
+  }
+
+  traitNames.forEach(function (tr) {
+    if (count >= cap) return;
+    var list = traitRows[tr];
+    for (var k = 0; k < list.length; k++) { if (picked[list[k]] === 1) return; }
+    take(list[0], 'coverage');
+  });
+
+  /* SPREAD BY RANK, NOT BY STRIDE, AND THE DIFFERENCE IS THE WHOLE RULE.
+     The first version computed `stride = floor(n / remaining)`. With 105 rows and 56 slots that is 1,
+     so the walk took indices 0..55 and stopped — THE SAMPLE WAS THE FIRST SIXTY OF THE ORDER, which is
+     exactly what §6 forbids, and it looked correct because the order is an id sort rather than the
+     sheet's. Measured, not reasoned about: the check is that the sample is NOT the head.
+
+     Ranking places pick k at floor(k * n / remaining), which spans the whole range for any ratio. A
+     position already claimed by the coverage pass probes forward (wrapping once), so the count is kept
+     without falling back to the head. */
+  var remaining = cap - count;
+  if (remaining > 0 && order.length > count) {
+    var n = order.length;
+    for (var k = 0; k < remaining && count < cap; k++) {
+      var at = Math.floor(k * n / remaining);
+      for (var probe = 0; probe < n; probe++) {
+        if (take((at + probe) % n, 'spread')) break;
+      }
+    }
+    // Only reachable when the two passes above could not fill the cap, which means every remaining row
+    // is already selected. Kept so the bound is honoured rather than approximately honoured.
+    for (var j = 0; j < order.length && count < cap; j++) take(j, 'fill');
+  }
+
+  var idx = [];
+  Object.keys(picked).forEach(function (k) { idx.push(Number(k)); });
+  idx.sort(function (a, b) { return a - b; });
+
+  // COVERAGE, MEASURED TWICE: what the universe holds, and what the sample kept.
+  var universeTraits = {}, sampledTraits = {};
+  traitNames.forEach(function (tr) { universeTraits[tr] = traitRows[tr].length; });
+  idx.forEach(function (i) {
+    p1b8cTraitsOf_(order[i]).forEach(function (tr) {
+      sampledTraits[tr] = (sampledTraits[tr] || 0) + 1;
+    });
+  });
+
+  return {
+    selected: idx.map(function (i) { return order[i]; }),
+    universe_rows: order.length,
+    sampled_rows: idx.length,
+    omitted_rows: order.length - idx.length,
+    capped: order.length > idx.length,
+    cap: cap,
+    selected_by_pass: byPass,
+    universe_traits: universeTraits,
+    sampled_traits: sampledTraits,
+    // A TRAIT THE UNIVERSE HAS AND THE SAMPLE DOES NOT. After pass 1 this can only happen when the cap cut
+    // the coverage pass short, and when it does the reader is told which states are not represented.
+    traits_not_sampled: traitNames.filter(function (tr) { return !sampledTraits[tr]; })
+  };
+}
+
+/**
+ * §4/§5 — ONE ROW, REDUCED FIELD BY FIELD. AN ALLOWLIST, NOT A DENYLIST.
+ *
+ * Every field on the output below is written out by name. A new column appearing in `sku_details` tomorrow
+ * reaches `normalizedRows` and does NOT reach this report, because nothing here copies an object wholesale.
+ * A denylist would have published it and then waited for someone to notice.
+ *
+ * THE FIELD NAMES ARE THE BUILDER'S OWN. §4 forbids a second vocabulary, so `msrp` is not renamed to
+ * `list_price` and `promo_price` is not renamed to `official_deal_price`, however much those read better:
+ * a sample whose field names differ from the wire's is a sample of a contract nobody ships.
+ */
+function p1b8cReduceRow_(row) {
+  var img = p1b3Str_(row.product_image);
+  return {
+    identity: p1b3Str_(row.identity) || null,
+    marketplace_sku_id: p1b3Str_(row.marketplace_sku_id) || null,
+    master_sku: row.master_sku === undefined ? null : row.master_sku,
+    site_sku: row.site_sku === undefined ? null : row.site_sku,
+    product_name: row.product_name === undefined ? null : row.product_name,
+    category: row.category === undefined ? null : row.category,
+    series: row.series === undefined ? null : row.series,
+    variant_group: row.variant_group === undefined ? null : row.variant_group,
+    variant_name: row.variant_name === undefined ? null : row.variant_name,
+    company: row.company === undefined ? null : row.company,
+    country: row.country === undefined ? null : row.country,
+    marketplace: row.marketplace === undefined ? null : row.marketplace,
+    marketplace_sku_status: row.marketplace_sku_status === undefined ? null : row.marketplace_sku_status,
+    lifecycle: row.lifecycle === undefined ? null : row.lifecycle,
+    currency: row.currency === undefined ? null : row.currency,
+    regular_price: row.regular_price === undefined ? null : row.regular_price,
+    minimum_price: row.minimum_price === undefined ? null : row.minimum_price,
+    msrp: row.msrp === undefined ? null : row.msrp,
+
+    /* THE IMAGE IS REPORTED AS TWO FACTS AND NEVER AS AN ADDRESS.
+       km-product-pricing-adapter.js `imageStateOf` picks between three states using exactly three inputs:
+       is the value blank, is it an absolute http(s) URL, and is MASTER_SKU_RECORD_MISSING among the missing
+       reasons. The third is already in `missing_reasons` below, so these two booleans complete the set — a
+       reader can derive which state the renderer WOULD choose without this file re-implementing a client
+       function, and without the URL ever leaving the spreadsheet. */
+    product_image_present: img !== '',
+    product_image_is_absolute_url: /^https?:\/\//i.test(img),
+
+    // The join happened or it did not. `regional` itself is dropped whole: every field on it is a locator
+    // (product_url, marketplace_product_id, regional_detail_id) or is not needed to verify a mapping.
+    regional_present: row.regional !== null && row.regional !== undefined,
+    regional_language: row.regional ? (row.regional.language === undefined ? null : row.regional.language)
+      : null,
+
+    /* CAMPAIGNS KEEP THE NUMBERS AND LOSE THE NAMES. What the board draws from a campaign line is the
+       promo price, the window and the status; `campaign_id`, `campaign_sku_line_id` and `campaign_name`
+       identify a specific marketing record and none of the three is needed to verify the mapping. */
+    campaigns: (row.campaigns || []).map(function (c) {
+      return { status: c.status === undefined ? null : c.status,
+        line_status: c.line_status === undefined ? null : c.line_status,
+        start_date: c.start_date === undefined ? null : c.start_date,
+        end_date: c.end_date === undefined ? null : c.end_date,
+        promo_price: c.promo_price === undefined ? null : c.promo_price,
+        regular_price_snapshot: c.regular_price_snapshot === undefined ? null : c.regular_price_snapshot,
+        price_units: c.price_units === undefined ? null : c.price_units,
+        discount_percent: c.discount_percent === undefined ? null : c.discount_percent };
+    }),
+    campaign_count: (row.campaigns || []).length,
+
+    analysable: row.analysable === true,
+    source_status: (row.source_status || []).slice(),
+    missing_reasons: (row.missing_reasons || []).slice(),
+    // CODE AND DETAIL, NEVER EVIDENCE. `detail` is static prose written in 72_; `evidence` is where the
+    // row's own values live — pricing ids, for one — and it is the half that has to go.
+    findings: (row.findings || []).map(function (f) {
+      return { code: f.code === undefined ? null : f.code, detail: f.detail === undefined ? null : f.detail };
+    }),
+    provenance: row.provenance ? {
+      membership: row.provenance.membership === undefined ? null : row.provenance.membership,
+      master: row.provenance.master === undefined ? null : row.provenance.master,
+      regional: row.provenance.regional === undefined ? null : row.provenance.regional,
+      pricing: row.provenance.pricing === undefined ? null : row.provenance.pricing,
+      campaigns: row.provenance.campaigns === undefined ? null : row.provenance.campaigns,
+      currency_authority: row.provenance.currency_authority === undefined
+        ? null : row.provenance.currency_authority,
+      price_status_raw: row.provenance.price_status_raw === undefined ? null
+        : row.provenance.price_status_raw,
+      price_source_raw: row.provenance.price_source_raw === undefined ? null
+        : row.provenance.price_source_raw,
+      variant_group_source: row.provenance.variant_group_source === undefined ? null
+        : row.provenance.variant_group_source,
+      fx_applied: row.provenance.fx_applied === true
+    } : null
+  };
+}
+
+/** A refusal or finding, reduced to the two parts that are prose written in 72_. */
+function p1b8cCodes_(list) {
+  return (list || []).map(function (r) {
+    return { code: r.code === undefined ? null : r.code, detail: r.detail === undefined ? null : r.detail };
+  });
+}
+
+/**
+ * §5 — THE FAIL-CLOSED REDACTION SCAN.
+ *
+ * It walks the FINISHED report — keys against the forbidden list, primitive values against the secret
+ * shapes — and it runs BEFORE anything is emitted. A reducer that forgets a field is a mistake; a reducer
+ * whose mistakes are published is a different kind of event, and this is the difference between the two.
+ *
+ * IT REPORTS THE PATH AND THE RULE AND NEVER THE VALUE. A redaction failure that prints what leaked has
+ * leaked it into the log it was written to protect.
+ */
+function p1b8cScan_(value, path, out, seen) {
+  if (out.length >= 50) return out;
+  if (value === null || value === undefined) return out;
+  var t = typeof value;
+  if (t === 'string') {
+    for (var s = 0; s < P1B8C_SECRET_SHAPES_.length; s++) {
+      var rule = P1B8C_SECRET_SHAPES_[s];
+      var hit = rule.re ? rule.re.test(value) : rule.fn(value) === true;
+      if (hit) {
+        out.push({ path: path, rule: 'VALUE_SHAPE', code: rule.code, value_length: value.length });
+        break;
+      }
+    }
+    return out;
+  }
+  if (t === 'number' || t === 'boolean') return out;
+  if (t === 'function') { out.push({ path: path, rule: 'NON_DATA_NODE', code: 'FUNCTION' }); return out; }
+  if (seen.indexOf(value) !== -1) { out.push({ path: path, rule: 'NON_DATA_NODE', code: 'CYCLE' }); return out; }
+  seen.push(value);
+  if (value instanceof Array) {
+    for (var i = 0; i < value.length; i++) p1b8cScan_(value[i], path + '[' + i + ']', out, seen);
+    return out;
+  }
+  Object.keys(value).forEach(function (k) {
+    if (P1B8C_FORBIDDEN_KEYS_.indexOf(p1b3Lower_(k)) !== -1) {
+      out.push({ path: path + '.' + k, rule: 'FORBIDDEN_KEY', code: p1b3Lower_(k) });
+    }
+    p1b8cScan_(value[k], path + '.' + k, out, seen);
+  });
+  return out;
+}
+
+/** Chunked emit. Every chunk carries all four of §3's required fields, so a partial paste is detectable. */
+function p1b8cEmit_(report) {
+  var json = JSON.stringify(report, null, 2);
+  var fp = p1b3Hash_(json);
+  var chunks = Math.ceil(json.length / P1B3_CHUNK_CHARS_) || 1;
+  for (var i = 0; i < chunks; i++) {
+    Logger.log('[' + P1B8C_SAMPLE_ID_
+      + ' chunk_index=' + (i + 1)
+      + ' chunk_count=' + chunks
+      + ' full_report_fingerprint=' + fp
+      + ' full_report_length=' + json.length + ']\n'
+      + json.slice(i * P1B3_CHUNK_CHARS_, (i + 1) * P1B3_CHUNK_CHARS_));
+  }
+  return { fingerprint: fp, chunk_count: chunks, full_report_length: json.length,
+    chunk_chars: P1B3_CHUNK_CHARS_ };
+}
+
+/**
+ * ============================================================================================================
+ * THE SECOND ENTRY POINT. No parameters — there is nothing for a caller to widen.
+ *
+ * WHAT IT DOES NOT DO, and each of these is checked by the repository rather than promised here:
+ *   it does not read or write PRODUCT_STRATEGY_ENABLED_        it does not call the HTTP handler
+ *   it does not register an action or a router row             it does not create a version or deployment
+ *   it does not call a writer, LockService, PropertiesService, CacheService, DriveApp or UrlFetchApp
+ *   it does not create a sheet, modify a cell or alter a schema
+ *   it does not run Generate, Submit, the Gap Job, a Migration or a Backfill
+ * ============================================================================================================
+ */
+function RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE() {
+  var startedAt = Date.now();
+  var report = {
+    sample: P1B8C_SAMPLE_ID_,
+    build: P1B8C_SAMPLE_BUILD_,
+    round: 'P1-B8C-R1',
+    // WHAT THIS OUTPUT IS, said in the output, so a paste of it can never be mistaken for a fixture.
+    capture_kind: 'LIVE_READBACK',
+    is_live: true,
+    not_a_fixture: true,
+    read_only: true,
+    writes: 0,
+    writer_calls: 0,
+    sheets_created: 0,
+    rows_modified: null,
+    drive_writes: 0,
+    db_writes: 0,
+    flag_read: false,
+    flag_modified: false,
+    deployment_created: false,
+    version_created: false,
+    http_endpoint_called: false,
+    counters_that_are_declared: ['writer_calls', 'sheets_created', 'drive_writes', 'db_writes',
+      'flag_read', 'flag_modified', 'deployment_created', 'version_created', 'http_endpoint_called'],
+    counters_that_are_measured: ['rows_modified'],
+    counters_declared_proof: 'the repository proves these by call graph and by source scan —'
+      + ' assets/tests/product-strategy-row-shape-sample-p1-b8c-r1.test.js §A and §G',
+    // The ACTION NAME, which is a string in the contract. Never a URL, never a deployment id.
+    action: PPW_ACTION_,
+    schema_contract_version: PPW_SCHEMA_CONTRACT_VERSION_,
+    handler_build: PPW_BUILD_VERSION_,
+    builder: 'ppwWorkspaceBuild_',
+    builder_is_the_shipped_one: true,
+    row_sample_max: P1B8C_ROW_SAMPLE_MAX_,
+    site_max: P1B3_SITE_MAX_,
+    selection_rule: {
+      order: 'marketplace_sku_id ascending',
+      pass_1: 'one row per distinct trait, RAREST TRAIT FIRST',
+      pass_2: 'even stride across the ordered universe',
+      pass_3: 'in-order sweep, only if the cap is still not reached',
+      deterministic: true,
+      random: false,
+      first_n: false,
+      dimensions: P1B8C_CATEGORICAL_DIMENSIONS_.concat(
+        P1B8C_BINARY_DIMENSIONS_.map(function (d) { return d.key; }))
+    },
+    redaction: { forbidden_keys: P1B8C_FORBIDDEN_KEYS_.length,
+      secret_shapes: P1B8C_SECRET_SHAPES_.map(function (s) { return s.code; }),
+      scanned: false, violations: [], passed: false,
+      fail_closed: 'a violation refuses the WHOLE report; nothing partial is emitted' },
+    source_tables: {},
+    universe: null,
+    sites: [],
+    sites_capped: false,
+    coverage: null,
+    evidence_gaps: [],
+    verdict: null,
+    next_action: null,
+    read_at: null,
+    duration_ms: null
+  };
+
+  try {
+    // ---- the source, read once, through the census's own reader ----
+    var ss = p1b3OpenTarget_();
+    var names = P1B3_CORE_TABLES_.concat(P1B3_EXTRA_TABLES_);
+    var before = p1b3Shape_(ss, names);
+
+    var read = {}, tables = {};
+    names.forEach(function (n) {
+      var t = p1b3ReadTable_(ss, n);
+      read[n] = t;
+      tables[n] = t.rows;
+      report.source_tables[n] = { present: t.present, readable: t.readable, reason: t.reason,
+        row_count: t.row_count, columns: t.headers.length, headers: t.headers,
+        fingerprint: t.fingerprint };
+    });
+    report.read_at = Date.now();
+
+    // ---- the site universe, keyed exactly as 72_ keys it ----
+    var sites = {}, siteOrder = [];
+    (read.marketplace_skus.rows || []).forEach(function (r) {
+      var key = p1b3SiteKey_(r.company, r.country, r.marketplace);
+      if (!sites[key]) {
+        sites[key] = { company: p1b3Str_(r.company), country: p1b3Str_(r.country),
+          marketplace: p1b3Str_(r.marketplace) };
+        siteOrder.push(key);
+      }
+    });
+    siteOrder.sort();
+    report.sites_capped = siteOrder.length > P1B3_SITE_MAX_;
+    if (report.sites_capped) {
+      report.evidence_gaps.push({ code: 'SITE_PASS_CAPPED',
+        detail: 'more sites than the per-run bound; the ones not sampled are NOT represented',
+        evidence: { sites: siteOrder.length, sampled: P1B3_SITE_MAX_ } });
+    }
+
+    var totalUniverse = 0, totalSampled = 0;
+    var globalUniverseTraits = {}, globalSampledTraits = {};
+
+    siteOrder.slice(0, P1B3_SITE_MAX_).forEach(function (key) {
+      var site = sites[key];
+      // THE SAME REQUEST THE PAGE MAKES, and the same one the census makes. The status filter is left at
+      // its default on purpose: asking for all four statuses would make "non active" unreachable as a
+      // trait by construction, and §6 asks for it.
+      var payload = {
+        scope: { company: site.company, country: site.country, marketplace: site.marketplace },
+        include: { regional: true, pricing: true, campaigns: true },
+        page: { limit: PPW_PAGE_MAX_ }
+      };
+      var req = ppwValidateRequest_(payload);
+      if (!req.ok) {
+        report.sites.push({ site: site, ok: false, refusals: p1b8cCodes_(req.refusals) });
+        return;
+      }
+      var data = ppwWorkspaceBuild_(tables, req, report.read_at);
+      var sel = p1b8cSelectSample_(data.normalizedRows || [], P1B8C_ROW_SAMPLE_MAX_);
+      totalUniverse += sel.universe_rows;
+      totalSampled += sel.sampled_rows;
+      Object.keys(sel.universe_traits).forEach(function (tr) {
+        globalUniverseTraits[tr] = (globalUniverseTraits[tr] || 0) + sel.universe_traits[tr];
+      });
+      Object.keys(sel.sampled_traits).forEach(function (tr) {
+        globalSampledTraits[tr] = (globalSampledTraits[tr] || 0) + sel.sampled_traits[tr];
+      });
+
+      report.sites.push({
+        site: site,
+        ok: true,
+        // THE ENVELOPE FIELDS THE ACCESSOR VALIDATES, so the sample proves the whole response shape and
+        // not only the rows inside it.
+        sourceState: data.sourceState,
+        analysis_permitted: data.analysis_permitted,
+        counts: data.counts,
+        membership: data.membership,
+        filtersApplied: data.filtersApplied,
+        filterOptions: data.filterOptions,
+        pagination: data.pagination,
+        schema: data.schema,
+        site_findings: p1b8cCodes_(data.findings),
+        site_refusals: p1b8cCodes_(data.refusals),
+        universe_rows: sel.universe_rows,
+        sampled_rows: sel.sampled_rows,
+        omitted_rows: sel.omitted_rows,
+        capped: sel.capped,
+        cap: sel.cap,
+        selected_by_pass: sel.selected_by_pass,
+        traits_not_sampled: sel.traits_not_sampled,
+        rows: sel.selected.map(function (r) { return p1b8cReduceRow_(r); })
+      });
+      if (sel.traits_not_sampled.length) {
+        report.evidence_gaps.push({ code: 'TRAITS_CUT_BY_THE_ROW_CAP',
+          detail: 'the row cap was reached before every state on this site had a representative row',
+          evidence: { site: key, traits: sel.traits_not_sampled.slice(0, 20),
+            trait_total: sel.traits_not_sampled.length } });
+      }
+    });
+
+    report.universe = { site_count: siteOrder.length,
+      sites_sampled: report.sites.length,
+      total_rows_across_sampled_sites: totalUniverse,
+      total_rows_sampled: totalSampled,
+      omitted_rows: totalUniverse - totalSampled };
+
+    // ---- §6 COVERAGE, AND THE GAPS ARE NAMED RATHER THAN FILLED ----
+    var binary = [];
+    P1B8C_BINARY_DIMENSIONS_.forEach(function (d) {
+      var missingInUniverse = [], missingInSample = [];
+      d.values.forEach(function (v) {
+        if (!globalUniverseTraits[d.key + '=' + v]) missingInUniverse.push(v);
+        else if (!globalSampledTraits[d.key + '=' + v]) missingInSample.push(v);
+      });
+      binary.push({ dimension: d.key, expected: d.values,
+        universe_counts: d.values.map(function (v) {
+          return { value: v, rows: globalUniverseTraits[d.key + '=' + v] || 0 }; }),
+        sample_counts: d.values.map(function (v) {
+          return { value: v, rows: globalSampledTraits[d.key + '=' + v] || 0 }; }),
+        covered: missingInUniverse.length === 0 && missingInSample.length === 0 });
+      if (missingInUniverse.length) {
+        report.evidence_gaps.push({ code: 'STATE_ABSENT_FROM_PRODUCTION',
+          detail: 'production holds no row in this state, so the sample cannot demonstrate it and NOTHING'
+            + ' WAS MANUFACTURED; cover it with the existing deterministic fixture and label it as one',
+          evidence: { dimension: d.key, values: missingInUniverse } });
+      }
+      if (missingInSample.length) {
+        report.evidence_gaps.push({ code: 'STATE_PRESENT_BUT_NOT_SAMPLED',
+          detail: 'production holds this state but the row cap kept it out of the sample',
+          evidence: { dimension: d.key, values: missingInSample } });
+      }
+    });
+    var categorical = P1B8C_CATEGORICAL_DIMENSIONS_.map(function (k) {
+      var uni = 0, samp = 0;
+      Object.keys(globalUniverseTraits).forEach(function (tr) { if (tr.indexOf(k + '=') === 0) uni++; });
+      Object.keys(globalSampledTraits).forEach(function (tr) { if (tr.indexOf(k + '=') === 0) samp++; });
+      return { dimension: k, distinct_in_universe: uni, distinct_in_sample: samp,
+        covered: uni > 0 && samp === uni };
+    });
+    categorical.forEach(function (c) {
+      if (c.distinct_in_universe === 1) {
+        report.evidence_gaps.push({ code: 'DIMENSION_HAS_ONE_VALUE_IN_PRODUCTION',
+          detail: 'production holds a single value on this dimension, so a difference across it cannot be'
+            + ' demonstrated from live data',
+          evidence: { dimension: c.dimension } });
+      }
+      if (c.distinct_in_universe > c.distinct_in_sample) {
+        report.evidence_gaps.push({ code: 'DIMENSION_VALUES_CUT_BY_THE_ROW_CAP',
+          detail: 'the row cap kept some values of this dimension out of the sample',
+          evidence: { dimension: c.dimension, in_universe: c.distinct_in_universe,
+            in_sample: c.distinct_in_sample } });
+      }
+    });
+    report.coverage = { binary: binary, categorical: categorical };
+
+    names.forEach(function (n) {
+      if (!read[n].readable) {
+        report.evidence_gaps.push({ code: 'SOURCE_TABLE_NOT_READABLE',
+          detail: n + ': ' + p1b3Str_(read[n].reason), evidence: { table: n, present: read[n].present } });
+      }
+    });
+
+    // ---- rows_modified, MEASURED, the same way the census measures it ----
+    var after = p1b3Shape_(ss, names);
+    var moved = [];
+    names.forEach(function (n) {
+      var bShape = before[n], aShape = after[n];
+      if (!bShape && !aShape) return;
+      if (!bShape || !aShape || bShape.last_row !== aShape.last_row
+        || bShape.last_column !== aShape.last_column) {
+        moved.push({ table: n });
+      }
+    });
+    report.rows_modified = moved.length === 0 ? 0 : moved;
+
+    // ---- the verdict, before the scan, because the scan can overrule it ----
+    if (report.rows_modified !== 0) {
+      report.verdict = 'STOP_SOURCE_SHAPE_CHANGED_DURING_READ';
+      report.next_action = 'FIX_BEFORE_ANY_FURTHER_P1_WORK';
+    } else if (!siteOrder.length) {
+      report.verdict = 'SOURCE_EMPTY';
+      report.next_action = 'POPULATE_MARKETPLACE_SKUS_THEN_RERUN';
+    } else if (!totalSampled) {
+      report.verdict = 'NO_ROWS_SURVIVED_MEMBERSHIP';
+      report.next_action = 'READ_THE_PER_SITE_REFUSALS_AND_MEMBERSHIP_COUNTS';
+    } else {
+      report.verdict = 'SAMPLE_TAKEN';
+      report.next_action = 'RETURN_EVERY_CHUNK_TO_THE_P1_B8C_R2_ROUND';
+    }
+  } catch (e) {
+    /* THE FIELD IS `safety_token`, AND THE FIRST VERSION CALLED IT `token`.
+       The census's idiom is `error.token`, meaning a SAFETY token — WRONG_SPREADSHEET_TARGET and its
+       kin. `token` is also on P1B8C_FORBIDDEN_KEYS_, because that is what a credential is called. So
+       with the census's name, EVERY failure of this function reported itself as
+       STOP_P1_B8C_SAMPLE_REDACTION_FAILED and threw the real error away with the report: the one path
+       that exists to explain a failure was the one path guaranteed to be refused.
+
+       The collision is resolved in the SAMPLE, not in the list. `token` stays forbidden — a value
+       called `token` is exactly what the scan is for — and the census keeps `error.token`, which is its
+       published contract and which nothing scans. */
+    report.verdict = 'STOP_SAMPLE_FAILED';
+    report.next_action = 'READ_THE_SAFETY_TOKEN_BELOW';
+    report.error = { safety_token: p1b3Str_(e && (e.safetyToken || e.apiCode)) || null,
+      message: p1b3Str_((e && e.message) || e) };
+  }
+
+  report.duration_ms = Date.now() - startedAt;
+
+  // ---- §5 THE SCAN, AND IT IS THE LAST THING BEFORE ANYTHING IS EMITTED ----
+  var violations = p1b8cScan_(report, '$', [], []);
+  report.redaction.scanned = true;
+  report.redaction.violations = violations;
+  report.redaction.passed = violations.length === 0;
+  if (violations.length) {
+    // FAIL CLOSED. The measured report is DISCARDED — not trimmed, not partially emitted — and what is
+    // returned is the refusal plus the paths and rules, never the values.
+    var refused = {
+      sample: P1B8C_SAMPLE_ID_,
+      build: P1B8C_SAMPLE_BUILD_,
+      verdict: 'STOP_P1_B8C_SAMPLE_REDACTION_FAILED',
+      next_action: 'FIX_THE_REDUCER_AND_RERUN__DO_NOT_PASTE_ANY_PARTIAL_OUTPUT',
+      read_only: true, writes: 0,
+      violation_count: violations.length,
+      violations: violations,
+      violations_carry: 'the PATH and the RULE only — never the value that tripped them',
+      report_emitted: false
+    };
+    Logger.log('[' + P1B8C_SAMPLE_ID_ + ' chunk_index=1 chunk_count=1'
+      + ' full_report_fingerprint=' + p1b3Hash_(JSON.stringify(refused))
+      + ' full_report_length=' + JSON.stringify(refused).length + ']\n'
+      + JSON.stringify(refused, null, 2));
+    return refused;
+  }
+
+  report.emitted = p1b8cEmit_(report);
   return report;
 }

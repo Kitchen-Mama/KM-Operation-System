@@ -287,9 +287,20 @@ ok(!/function\s+doGet|function\s+doPost/.test(SRCRB),
 var rbFns = (SRCRB.match(/^function\s+([A-Za-z0-9_$]+)/gm) || []).map(function (m) {
   return m.replace(/^function\s+/, '');
 });
-eq(rbFns.filter(function (n) { return /^RUN_/.test(n); }),
-  ['RUN_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK'],
-  'A11b exactly one RUN_ entry point exists');
+/* A11b RESTATED AT P1-B8C-R1. It asserted `['RUN_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK']` — one
+   entry point — which was the form of "every way into this file is accounted for" available while
+   there was one. The USER authorised a second, RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE, and the
+   assertion NAMES BOTH rather than being relaxed to a count: a third appearing is still a failure,
+   and the rule it protects — no unenumerated entry point — is stronger with two than it was with one.
+   Neither is in a router table (A11), and neither defines a web entry point (A11a). */
+eq(rbFns.filter(function (n) { return /^RUN_/.test(n); }).sort(),
+  ['RUN_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK', 'RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE'],
+  'A11b exactly two RUN_ entry points exist, and both are named here',
+  rbFns.filter(function (n) { return /^RUN_/.test(n); }));
+ok(SRC01.indexOf('RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE') === -1,
+  'A11b1 and the second one is in no router table either');
+ok(/function RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE\(\)/.test(SRCRB),
+  'A11b2 and takes no parameters, the same way');
 // A11d — AND IT IS FILED WITH THE OTHER CENSUSES, NOT AMONG THE RUNTIME OWNERS. Every .gs in the
 // runtime mirror is audited as a named owner with the reason it was touched; a one-off admin census
 // owns no action, no table and no schema. It is still synced — this is where it is KEPT.

@@ -241,8 +241,24 @@ var LIVE_CAPTURE = require(path.join(__dirname, '_p1b7f-exec-capture-r10.js'));
     ok(sitePass[0].indexOf(f + ':') < 0,
       'A15.' + (i + 1) + ' and no ' + f + ' is published by the site pass');
   });
-  ok(/never reports a price, a cost, a margin, a URL, a customer/.test(SRC.readback),
-    'A16 which is the tool\'s own stated contract, not an oversight');
+  /* A16 RESTATED AT P1-B8C-R1, TWICE OVER.
+     It matched the sentence on one physical line. The header was re-flowed when the file grew a second
+     entry point, so `margin,` and `a URL` now sit on different lines and `.` does not cross a newline —
+     THE SENTENCE DID NOT CHANGE, THE WRAP DID, and a probe that cannot tell those apart reports a
+     contract as broken because a comment was re-flowed. Whitespace is normalised first.
+
+     And the claim is now scoped. The file has TWO contracts: the census still reports no price, and the
+     row-shape sample reports prices on purpose, under the USER's authorisation, with every locator
+     still dropped. A14/A15 above remain the load-bearing half — they read `p1b3SitePass_` itself. */
+  // THE COMMENT PREFIX IS PART OF THE WRAP. Collapsing whitespace alone leaves the ` * ` that starts
+  // each continuation line sitting in the middle of the sentence, so the leader is stripped first.
+  var flatRB = SRC.readback.replace(/^[ \t]*\*[ \t]?/gm, ' ').replace(/\s+/g, ' ');
+  ok(flatRB.indexOf('never reports a price, a cost, a margin, a URL, a customer') !== -1,
+    'A16 which is the CENSUS\'s own stated contract, not an oversight');
+  ok(/RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE/.test(SRC.readback),
+    'A16a and the file now carries the second entry point the USER authorised at P1-B8C-R1');
+  ok(flatRB.indexOf('A SECOND ENTRY POINT WITH A DIFFERENT, NARROWER CONTRACT') !== -1,
+    'A16b declared as a different contract rather than folded into the census\'s');
 
   /* THE VERDICT IS RECORDED AS A NAME, so the report and the code agree. */
   ok(/STOP_EXISTING_READBACK_INSUFFICIENT/.test(SRC.capture),
