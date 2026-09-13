@@ -329,7 +329,11 @@ var ROUND_TOKENS = [
   /* P1-B8D-R5 - the site chooser. Three shipped modules change: the page controller gains
      the chooser, the accessor's reset stops half-resetting, and app.js applies a sub-tab's
      route when the section is already showing. A returning browser holds all three. */
-  'sitechooser-p1b8dr5-20260913'];
+  'sitechooser-p1b8dr5-20260913',
+  /* P1-B8D-R6 - the visual integration. The page stylesheet changes, and so do the page
+     controller (the chooser now carries the shared filter-bar classes) and the partial.
+     A browser holding the old CSS against the new markup would style neither. */
+  'visualintegration-p1b8dr6-20260913'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

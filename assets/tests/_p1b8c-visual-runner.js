@@ -227,6 +227,10 @@ function bootScript(opts) {
        §7 asks the browser, not a Node probe, how many reads a page life costs and whether anything
        write-shaped went out. Both are answered from inside the page: `__wire` is the same log the
        fake transport keeps, and `__consoleErrors` is what a person would have seen in devtools. */
+    /* P1-B8D-R6 - OFFLINE IS A BROWSER FACT, so it is simulated as one. The accessor asks
+       `navigator.onLine` and treats `false` as decisive; nothing else can produce BROWSER_OFFLINE,
+       and faking the refusal code instead would photograph a state the classifier never chose. */
+    opts.offline ? '  try { Object.defineProperty(navigator, "onLine", { get: function () { return false; }, configurable: true }); } catch (e) {}' : '',
     '  window.__consoleErrors = [];',
     '  (function () { var e = console.error; console.error = function () {',
     '    try { window.__consoleErrors.push(Array.prototype.slice.call(arguments).join(" ")); } catch (x) {}',
@@ -265,7 +269,9 @@ function bootScript(opts) {
        way production meets it: the server says no. */
     '    var capOn = ' + (opts.capabilityOff ? 'false' : 'true') + ';',
     '    var t = P1B8C_REPLAY.install(window, KM.productPricingWorkspace, cap,',
-    '      Object.assign({ capability: capOn }, failWith ? { fail: failWith } : {}));',
+    '      Object.assign({ capability: capOn }, failWith ? { fail: failWith } : {},',
+    '        ' + JSON.stringify(Object.assign({}, opts.hang ? { hang: opts.hang } : {},
+      opts.emptyWorkspace ? { emptyWorkspace: true } : {})) + '));',
     '    window.__wire = t;',
     /* 3. MOUNT THROUGH `onMount`, WHICH IS THE PRODUCTION ENTRY POINT, NOT `create`.
           The first version of this called `create()` + `loadUniverse()` directly and photographed
@@ -287,9 +293,13 @@ function bootScript(opts) {
     '      .then(function () {',
     opts.view ? '        if (window.PSB_BOARD) PSB_BOARD.showView(' + JSON.stringify(opts.view) + ');' : '',
     opts.scenario ? scenarioScript() : '',
+    opts.presentation ? '        var bp = document.getElementById("btnPresent"); if (bp) bp.click();' : '',
     '        window.__ready = true;',
     '      })',
     '      .catch(function (e) { window.__error = String(e && e.message || e); window.__ready = true; });',
+    /* A HELD-OPEN READ NEVER RESOLVES, so the mount chain never sets __ready. The shot has to be
+       taken WHILE the request is outstanding, which is the whole point of a loading state. */
+    opts.hang ? '  setTimeout(function () { window.__ready = true; }, 400);' : '',
     '  } catch (e) { window.__error = String(e && e.message || e); window.__ready = true; }',
     '}());',
     measureScript(cap)
@@ -452,6 +462,87 @@ function measureScript(cap) {
     '      return d ? { present: true, chars: d.textContent.length,',
     '        column: d.getAttribute("data-source-column") } : null;',
     '    }()),',
+    /* P1-B8D-R6 - THE COMPUTED STYLES, because a visual round cannot be accepted on a DOM
+       assertion. "The label is not glued to the control" is a distance in pixels; "disabled is
+       recognisable" is a set of properties that differ; "the controls do not overlap" is a
+       comparison of rectangles. None of those can be read from markup. */
+    'visual: (function () {',
+    '  function el(s) { return document.querySelector(s); }',
+    '  function bx(s) { var e = el(s); if (!e) return null; var r = e.getBoundingClientRect();',
+    '    return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width),',
+    '      h: Math.round(r.height), bottom: Math.round(r.bottom), right: Math.round(r.right) }; }',
+    '  function cs(s) { var e = el(s); return e ? getComputedStyle(e) : null; }',
+    '  var fields = [].slice.call(document.querySelectorAll("#psb-site-host .psb-site__field"))',
+    '    .map(function (f) {',
+    '      var lab = f.querySelector("label");',
+    '      var ctl = f.querySelector("select") || f.querySelector(".psb-site__value");',
+    '      var lb = lab ? lab.getBoundingClientRect() : null;',
+    '      var cb = ctl ? ctl.getBoundingClientRect() : null;',
+    '      var s = ctl ? getComputedStyle(ctl) : null;',
+    '      var ls = lab ? getComputedStyle(lab) : null;',
+    '      return {',
+    '        dim: ctl ? (ctl.getAttribute("data-psb-site-dim") || ctl.getAttribute("data-psb-site-value")) : null,',
+    '        tag: ctl ? ctl.tagName : null,',
+    '        labelFor: lab ? lab.getAttribute("for") : null,',
+    '        labelFontSize: ls ? ls.fontSize : null,',
+    '        labelColor: ls ? ls.color : null,',
+    '        labelBottom: lb ? Math.round(lb.bottom) : null,',
+    '        gap: (lb && cb) ? Math.round(cb.top - lb.bottom) : null,',
+    '        controlH: cb ? Math.round(cb.height) : null,',
+    '        controlW: cb ? Math.round(cb.width) : null,',
+    '        top: cb ? Math.round(cb.top) : null,',
+    '        left: cb ? Math.round(cb.left) : null,',
+    '        right: cb ? Math.round(cb.right) : null,',
+    '        bottom: cb ? Math.round(cb.bottom) : null,',
+    '        disabled: ctl ? !!ctl.disabled : false,',
+    '        borderStyle: s ? s.borderTopStyle : null,',
+    '        borderColor: s ? s.borderTopColor : null,',
+    '        bg: s ? s.backgroundColor : null,',
+    '        color: s ? s.color : null,',
+    '        cursor: s ? s.cursor : null',
+    '      };',
+    '    });',
+    '  var sb = el(".psb-site");',
+    '  var stateBox = el(".psb-state");',
+    '  var sh = stateBox ? stateBox.querySelector(".psb-state__headline") : null;',
+    '  var sd = stateBox ? stateBox.querySelector(".psb-state__detail") : null;',
+    '  var hdr = cs(".psb-header");',
+    '  var act = cs(".psb-header__actions");',
+    '  var sub = cs(".psb-sub");',
+    '  var railEl = document.getElementById("nav");',
+    '  var railCs = railEl ? getComputedStyle(railEl) : null;',
+    '  var activeTab = document.querySelector("#nav .is-active");',
+    '  var actCs = activeTab ? getComputedStyle(activeTab) : null;',
+    '  return {',
+    '    siteHost: bx("#psb-site-host"),',
+    '    siteBar: sb ? (function () { var s = getComputedStyle(sb); return { box: bx(".psb-site"),',
+    '      display: s.display, flexWrap: s.flexWrap, bg: s.backgroundColor, radius: s.borderTopLeftRadius,',
+    '      shadow: s.boxShadow, padTop: s.paddingTop, padLeft: s.paddingLeft, gap: s.columnGap,',
+    '      cls: sb.className }; }()) : null,',
+    '    fields: fields,',
+    '    state: stateBox ? (function () { var s = getComputedStyle(stateBox); return {',
+    '      box: bx(".psb-state"), cls: stateBox.className, bg: s.backgroundColor,',
+    '      borderLeftWidth: s.borderLeftWidth, borderLeftStyle: s.borderLeftStyle,',
+    '      borderLeftColor: s.borderLeftColor, radius: s.borderTopLeftRadius, padTop: s.paddingTop,',
+    '      shadow: s.boxShadow,',
+    '      headlineFontSize: sh ? getComputedStyle(sh).fontSize : null,',
+    '      headlineWeight: sh ? getComputedStyle(sh).fontWeight : null,',
+    '      glyph: sh ? getComputedStyle(sh, "::before").content : null,',
+    '      detailColor: sd ? getComputedStyle(sd).color : null,',
+    '      detailSize: sd ? getComputedStyle(sd).fontSize : null }; }()) : null,',
+    '    header: hdr ? { display: hdr.display, justify: hdr.justifyContent, wrap: hdr.flexWrap,',
+    '      marginBottom: hdr.marginBottom,',
+    '      actions: act ? { display: act.display, gap: act.columnGap, align: act.alignItems } : null,',
+    '      sub: sub ? { fontSize: sub.fontSize, color: sub.color, margin: sub.marginTop } : null } : null,',
+    '    rail: railCs ? { cls: railEl.className, overflowX: railCs.overflowX, display: railCs.display,',
+    '      flexWrap: railCs.flexWrap,',
+    '      activeBg: actCs ? actCs.backgroundColor : null,',
+    '      activeWeight: actCs ? actCs.fontWeight : null,',
+    '      activePad: actCs ? actCs.paddingTop + " " + actCs.paddingLeft : null,',
+    '      tabCount: document.querySelectorAll("#nav .km-tab-rail__tab").length } : null,',
+    '    presenting: document.body.className.indexOf("presenting") >= 0',
+    '  };',
+    '}()),',
     '    stagedNavEnabled: KM.stagedSections["product-strategy"].enabled === true,',
     '    flagStillFalse: KM.stagedSections["product-strategy"].enabled === false',
     '  };',
@@ -654,7 +745,18 @@ function main() {
     { id: 'non-json', opts: { fail: { apiCode: 'TRANSPORT_NON_JSON_RESPONSE' }, noSite: true } },
     { id: 'source-unavailable', opts: { fail: { message: 'boom' }, noSite: true } },
     { id: 'awaiting-site', opts: { noSite: true } },
-    { id: 'empty-site', opts: { site: { company: 'Cookware Co', country: 'UK', marketplace: 'Amazon' } } }
+    /* A REAL SITE, CHOSEN THE REAL WAY, whose server answers with no rows. The previous version
+       passed a site outside the universe and therefore photographed the REFUSAL under the name
+       EMPTY — two different states wearing one label. */
+    { id: 'empty-site', opts: { emptyWorkspace: true } },
+    /* P1-B8D-R6 — the five §8 asks for that were never photographed. `ready` is the ordinary loaded
+       board at the state grid's own viewport, so the matrix carries its own baseline rather than
+       borrowing one from the viewport sweep. */
+    { id: 'ready', opts: {} },
+    { id: 'loading-universe', opts: { hang: 'universe', noSite: true } },
+    { id: 'loading-workspace', opts: { hang: 'workspace' } },
+    { id: 'offline', opts: { offline: true, fail: { message: 'network down' }, noSite: true } },
+    { id: 'presentation', opts: { presentation: true } }
   ];
   STATES.forEach(function (s) {
     fs.writeFileSync(pageFile, buildPage(Object.assign({ capture: which, activated: activated }, s.opts)), 'utf8');
@@ -692,4 +794,7 @@ function main() {
 }
 
 if (require.main === module) { main(); }
-module.exports = { buildPage: buildPage, VIEWPORTS: VIEWPORTS, findBrowser: findBrowser };
+/* `shot` is exported so a SUITE can take one measurement without driving the whole matrix: the
+   visual-integration suite needs computed styles at two or three widths, not twenty-four images. */
+module.exports = { buildPage: buildPage, VIEWPORTS: VIEWPORTS, findBrowser: findBrowser,
+  shot: shot, wrapperFor: wrapperFor };

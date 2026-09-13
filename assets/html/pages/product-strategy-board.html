@@ -65,13 +65,6 @@
          printed page what it is a picture of. -->
     <div class="crumbs psb-crumbs" id="crumbs"></div>
 
-    <!-- EVERY ANSWER THAT IS NOT A CHART IS WRITTEN HERE, and the chart is never drawn beside one.
-         SOURCE_EMPTY, SOURCE_PARTIALLY_READABLE, STOP_DATA_INTEGRITY, SOURCE_NOT_CONNECTED,
-         FEATURE_DISABLED, SCHEMA_CONTRACT_MISMATCH, CONTRACT_MISMATCH and the page's own
-         SITE_UNIVERSE_NOT_AVAILABLE all land in this one element. There is no state in which a
-         fixture is loaded instead. -->
-    <div id="psb-state-host" class="psb-state-host"></div>
-
     <!-- P1-B8D-R5 - THE SITE CHOOSER, AND IT IS NOT THE BAR BELOW.
 
          The live page read ten READY sites, rendered "Choose a site to analyse." and offered NO
@@ -87,6 +80,19 @@
          `productPricing.siteUniverse.get` - the only legal source of a site - and it stays put when
          the board mounts, because a board you cannot leave is the same dead end one step later. -->
     <div id="psb-site-host" class="psb-site-host"></div>
+
+    <!-- P1-B8D-R6 - THE CONTROLS COME BEFORE THE SENTENCE ABOUT THEM.
+         This host used to sit ABOVE the chooser, so the live page read "Choose a site to analyse."
+         and only then showed the thing to choose with. A message that asks for an action belongs
+         after the action, not in front of it; and every OTHER state written here is about what the
+         chooser above just did, which is the same argument a second time. -->
+    <!-- EVERY ANSWER THAT IS NOT A CHART IS WRITTEN HERE, and the chart is never drawn beside one.
+         SOURCE_EMPTY, SOURCE_PARTIALLY_READABLE, STOP_DATA_INTEGRITY, SOURCE_NOT_CONNECTED,
+         FEATURE_DISABLED, SCHEMA_CONTRACT_MISMATCH, CONTRACT_MISMATCH and the page's own
+         SITE_UNIVERSE_NOT_AVAILABLE all land in this one element. There is no state in which a
+         fixture is loaded instead. -->
+    <div id="psb-state-host" class="psb-state-host"></div>
+
 
     <!-- The compact command bar renders into #scope: Company -> Country -> Marketplace -> Category ->
          Series, with More filters and Meeting scenario as the two secondary entrances (P1-B4 §1, §3, §5). -->

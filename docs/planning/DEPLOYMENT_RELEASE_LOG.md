@@ -1906,3 +1906,91 @@ MEASURED, NOT FIXED
     reachable from the board and not caused by this round.
 
 **STATUS: LOCAL COMMIT - NOT PUSHED - FRONTEND REDEPLOY REQUIRED - NO APPS SCRIPT SYNC.**
+
+
+=======================================================================================================
+P1-B8D-R6  -  THE PAGE HAD NO STYLING TO BE INCONSISTENT WITH
+=======================================================================================================
+Date:                        2026-09-13
+Trigger:                     R5 shipped and the USER confirmed on live Pages that the chooser works,
+                             the workspace loads and the six views render. Seen beside the rest of the
+                             Operation System, the page did not look like it.
+Release identity:            UNCHANGED - F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11. No .gs file changed.
+APPS_SCRIPT_SYNC_REQUIRED:   NO      New deployment: NO    DB / Sheets / Drive writes: 0   flag change: 0
+FRONTEND_GITHUB_PAGES:       REQUIRED - the page stylesheet, the page controller and the partial all
+                             changed; the co-deployed set rotated onto
+                             visualintegration-p1b8dr6-20260913 (34 refs, 0 stale).
+
+WHAT WAS ACTUALLY WRONG
+-------------------------------------------------------------------------------------------------------
+  FOURTEEN CLASSES THE PAGE RENDERS ON EVERY VISIT HAD NOT ONE RULE - not in this page's stylesheet,
+  not in base / components / layout:
+
+    .psb-header  .psb-header__title  .psb-header__actions  .psb-sub
+    .psb-site-host  .psb-site  .psb-site__field  .psb-site__label  .psb-site__select  .psb-site__value
+    .psb-state-host  .psb-state  .psb-state__headline  .psb-state__detail
+
+  So the browser's defaults decided the page: "CountryUS" with the label welded to a native select,
+  a refusal set as two bare paragraphs, and header buttons floating on the global
+  `button { margin: 4px }`. The page was not styled inconsistently - it was not styled.
+
+WHAT WAS REUSED RATHER THAN INVENTED
+-------------------------------------------------------------------------------------------------------
+  Product Strategy element      Operation System owner                            Reused directly?
+  ----------------------------  ------------------------------------------------  ----------------
+  page header band              .cr-page-header contract (Promotion Risk Tracker)  pattern (cr-* is
+                                                                                   page-scoped)
+  page title                    base.css h2 / .page-title                          YES, already
+  subtitle                      --font-size-body + --text-secondary                tokens
+  header actions                .cr-page-actions contract                          pattern
+  Presentation / Print buttons  components.css .btn + --btn-* tokens               YES, already
+  label + select pair           .km-filter-bar .filter-group + --filter-* tokens   YES - ADOPTED
+                                (base.css: "SINGLE SOURCE OF TRUTH for every
+                                 filter control ... never hardcode these per page")
+  filter-bar label spec         --filter-label-size / --filter-label-color         YES via the above
+  standalone card frame         .km-category-card (white / 8px / shadow / 16 20)   values reused
+  six page tabs                 .km-tab-rail + .km-tab-rail__tab                   YES, already
+  tab count badge               .km-tab-rail__count                                YES, already
+  breakpoints                   --km-bp-* tiers (responsive-foundation.css)        tablet tier reused
+  loading / empty / error box   NO SHARED COMPONENT EXISTS - every page owns its   built scoped, from
+                                own .xx-empty-state                                 the same tokens
+
+  The chooser's markup now carries `km-filter-bar` and `filter-group`, so the LABEL SPEC AND THE
+  CONTROL SPEC ARE THE SHARED ONES instead of a copy that drifts. `psb-site__*` is left owning only
+  what is genuinely local: the card the row sits in, and the read-only tier.
+
+TWO STRUCTURAL CORRECTIONS, NOT REPAINTS
+-------------------------------------------------------------------------------------------------------
+  1. THE CONTROLS NOW COME BEFORE THE SENTENCE ABOUT THEM. `#psb-state-host` sat ABOVE the chooser,
+     so the page read "Choose a site to analyse." and only then showed the thing to choose with.
+  2. ONE SITE IS STATED ONCE LOUDLY. The board's command bar echoes Company / Country / Marketplace
+     as read-only context, and since R5 the chooser above is the CONTROL for those three. One site
+     was stated three times, with the least authoritative statement in the largest type. The
+     renderer and the fields are untouched (§5.4) - only the weight changed, so the eye lands on
+     Category and Series, which that bar actually owns.
+
+A DELIBERATE DIVERGENCE, RECORDED RATHER THAN SILENTLY KEPT
+-------------------------------------------------------------------------------------------------------
+  `.km-tab-rail__tab.is-active` fills the chip solid blue. This page turns the fill off and marks the
+  selected view with weight + an underline + the icon colour. That override PREDATES this round and
+  carries its own argument in the stylesheet: the shared rail's original job is a FILTER, where
+  several chips may be set and the set ones must read as a group; these six are a VIEW SELECTOR
+  where exactly one is ever on, and a solid fill on one of six makes the rail read as a filter that
+  happens to have one value chosen.
+
+  It is a one-property modifier on the shared component, not a second component: the metrics,
+  scrolling, hover, focus-visible, keyboard behaviour and count badge all still come from
+  `.km-tab-rail`, and this page declares no rail rule of its own (suite §C proves it). Kept this
+  round and flagged for the S-series brand pass to overrule if the system wants one active look.
+
+KNOWN AND NOT FIXED
+-------------------------------------------------------------------------------------------------------
+  · 390px: the shell's fixed 240px sidebar leaves a ~118px content column, so every control stacks
+    and the board is unusable at phone width. This is a SHELL layout fact, explicitly out of scope
+    (§6), and it is why the mobile mutant measures "does the control fit its card" rather than
+    "do the controls stack" - at 390 they stack whatever the rule says.
+  · Two console errors in the acceptance page (`renderHomepage`, `initSkuUnifiedScroll`) are
+    pre-existing and unrelated: both are defined in page modules the generated acceptance page does
+    not load, and app.js catches and logs them. Unchanged by this round: 2 before, 2 after.
+
+**STATUS: LOCAL COMMIT - NOT PUSHED - FRONTEND REDEPLOY REQUIRED - NO APPS SCRIPT SYNC.**

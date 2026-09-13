@@ -1383,3 +1383,205 @@ body.is-fullscreen .psb-page .view > .reco { display: none; }
   /* P1-B7E - scoped. Unscoped, printing ANY page hid every shared popover on it. */
   .psb-page .kmf-panel{ display: none; }
 }
+
+
+/* ==================================================================================================
+   P1-B8D-R6 — OPERATION SYSTEM VISUAL INTEGRATION
+   ==================================================================================================
+
+   FOURTEEN CLASSES WERE BEING RENDERED AND NONE OF THEM HAD A SINGLE RULE, here or in any shared
+   stylesheet: the page header block (4), the site chooser (6) and the state box (4). They were not
+   styled badly — they were not styled at all, so the browser's defaults decided the page: labels
+   glued to native selects ("CountryUS"), a refusal rendered as two bare paragraphs, and a header
+   whose buttons floated on the global `button { margin: 4px }`.
+
+   NOTHING HERE INVENTS A LOOK. Every value is a token or a measurement copied from the component
+   that already owns this job in the Operation System:
+
+     · the header band            → the Promotion Risk Tracker's `.cr-page-header` contract
+     · the label + control pair   → `.km-filter-bar .filter-group` + the `--filter-*` token family
+                                    (base.css calls these the SINGLE SOURCE OF TRUTH for every
+                                    filter control, and says never to hardcode them per page)
+     · the standalone card frame  → `.km-category-card` (white / 8px / --shadow-card / 16px 20px)
+     · the tab rail               → `.km-tab-rail`, which this page already used
+     · buttons                    → `.btn` + the `--btn-*` tokens, which this page already used
+
+   The markup now carries `km-filter-bar` and `filter-group`, so the LABEL SPEC AND THE CONTROL SPEC
+   ARE THE SHARED ONES rather than a copy. What is left below is only what the shared components do
+   not own: where these blocks sit on this page, the read-only tier, and the state box — for which
+   the Operation System has no shared component at all (every page has its own `.xx-empty-state`).
+
+   SCOPE. Every selector starts at `.psb-page`. Nothing here can reach another page, and no shared
+   class is redefined — where a shared class is adjusted it is adjusted INSIDE `.psb-page` only.
+   ================================================================================================== */
+
+/* ---- 1 · PAGE HEADER --------------------------------------------------------------------------
+   The Campaign Risk contract: title block left, actions right, both wrapping onto their own rows
+   when the width runs out, and one bottom baseline so a select and a button never sit at two
+   heights. */
+.psb-page .psb-header {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  flex-wrap: wrap; gap: 16px; margin-bottom: var(--space-lg, 1.5rem);
+}
+.psb-page .psb-header__title { min-width: 0; }
+/* `.page-title` already carries the system h2 spec from base.css; only its margin is local, because
+   the subtitle sits directly under it rather than a section of content. */
+.psb-page .psb-header__title .page-title { margin: 0 0 4px; }
+.psb-page .psb-sub {
+  margin: 0; max-width: 78ch;
+  font-size: var(--font-size-body, 0.875rem);
+  line-height: var(--line-height-normal, 1.5);
+  color: var(--text-secondary, #64748b);
+}
+.psb-page .psb-header__actions {
+  display: flex; align-items: flex-end; flex-wrap: wrap; gap: 10px;
+}
+/* components.css `button { margin: 4px }` is a global default for bare buttons. Inside a flex row
+   with its own gap it double-spaces the controls and breaks the baseline. */
+.psb-page .psb-header__actions .btn { margin: 0; }
+
+/* ---- 2 · SITE FILTER TOOLBAR -------------------------------------------------------------------
+   The chooser is the first thing a person uses on this page, so it gets the standalone card the
+   Operation System gives a filter bar (`.km-category-card`) rather than floating on the ground. */
+.psb-page .psb-site-host:empty { display: none; }
+.psb-page .psb-site {
+  display: flex; align-items: flex-end; flex-wrap: wrap;
+  gap: var(--filter-gap, 1rem);
+  background: var(--paper, #fff);
+  border-radius: var(--radius-lg, 8px);
+  box-shadow: var(--shadow-card, 0 1px 3px rgba(0, 0, 0, .1));
+  padding: 16px 20px;
+  margin: 0 0 var(--space-lg, 1.5rem);
+}
+/* The shared `.filter-group` is `flex: 0 0 160px`. Three of them plus the gap fit a desktop row and
+   wrap by themselves on a tablet — which is the behaviour §5 asks for — but a fixed basis cannot
+   give back space, so this lets them shrink to the same 160px floor instead of overflowing. */
+.psb-page .psb-site .filter-group { flex: 0 1 220px; min-width: 160px; }
+/* A TIER THE UNIVERSE RESOLVED IS A FACT, NOT A CHOICE, and it is rendered as text rather than as a
+   dropdown holding the value it already has. It keeps the control's box so the row does not move
+   when a tier resolves itself — a layout that jumps while you are reading it is a layout that
+   punishes you for choosing. */
+.psb-page .psb-site__value {
+  display: inline-flex; align-items: center;
+  height: var(--filter-height, 38px);
+  box-sizing: border-box; margin: 4px 0;
+  padding: var(--filter-padding-block, 8px) var(--filter-padding-inline, 12px);
+  border: 1px solid transparent;
+  border-radius: var(--filter-border-radius, 4px);
+  background: var(--line-2, #eef0f5);
+  font-size: var(--filter-font-size, 14px);
+  color: var(--filter-text-color, #2d3748);
+  font-weight: 600;
+}
+/* DISABLED IS NOT A COLOUR ALONE (§7): the background changes, the text greys, the cursor changes
+   and the border loses its weight — four channels, so it survives a monochrome screen. */
+.psb-page .psb-site select:disabled {
+  background: var(--ground, #f5f6f9);
+  color: var(--ink-4, #9aa3b0);
+  border-style: dashed;
+  cursor: not-allowed;
+}
+.psb-page .psb-site select:focus-visible {
+  outline: 2px solid var(--filter-focus-ring, #7FB069); outline-offset: 1px;
+}
+/* Mobile: one control per row. The tablet case needs no rule — the shared basis wraps on its own. */
+@media (max-width: 640px) {
+  .psb-page .psb-site { padding: 12px 14px; }
+  .psb-page .psb-site .filter-group { flex: 1 1 100%; min-width: 0; }
+}
+
+/* ---- 3 · THE STATE BOX -------------------------------------------------------------------------
+   Eleven of the thirteen states this page can be in are written here, and until now every one of
+   them rendered as unstyled paragraphs — including the two the operator photographed. There is no
+   shared state component to reuse (each page owns a `.xx-empty-state`), so this is built from the
+   same tokens those use.
+
+   THE SEVERITY IS NEVER CARRIED BY COLOUR ALONE (§7). Each variant differs in its left border
+   WIDTH and STYLE and carries its own glyph, so the three read apart in greyscale and to anyone who
+   does not see the hue. */
+.psb-page .psb-state-host:empty { display: none; }
+.psb-page .psb-state {
+  max-width: 78ch;
+  margin: 0 0 var(--space-lg, 1.5rem);
+  padding: 18px 22px;
+  background: var(--paper, #fff);
+  border: 1px solid var(--border-light, #e2e8f0);
+  border-left: 4px solid var(--ink-4, #9aa3b0);
+  border-radius: var(--radius-lg, 8px);
+  box-shadow: var(--shadow-card, 0 1px 3px rgba(0, 0, 0, .1));
+}
+.psb-page .psb-state__headline {
+  display: flex; align-items: baseline; gap: 8px;
+  margin: 0;
+  font-size: var(--font-size-h4, 1.125rem);
+  font-weight: var(--font-weight-semibold, 600);
+  line-height: var(--line-height-tight, 1.2);
+  color: var(--text-primary, #2d3748);
+}
+.psb-page .psb-state__headline::before {
+  content: '·'; flex: 0 0 auto; font-weight: 700; line-height: 1;
+}
+.psb-page .psb-state__detail {
+  margin: 8px 0 0;
+  font-size: var(--font-size-body, 0.875rem);
+  line-height: var(--line-height-relaxed, 1.6);
+  color: var(--text-secondary, #64748b);
+}
+/* The refusal codes stay machine-shaped, because a code a reader can quote is the point of them. */
+.psb-page .psb-state__codes {
+  margin: 12px 0 0; padding: 0; list-style: none;
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.psb-page .psb-state__codes li {
+  font-family: var(--mono);
+  font-size: 11.5px; line-height: 1.4;
+  padding: 3px 8px; border-radius: 999px;
+  background: var(--line-2, #eef0f5);
+  color: var(--ink-2, #444d5c);
+}
+/* INFO — a situation, not a fault. Thin border, neutral glyph. */
+.psb-page .psb-state--info { border-left-color: var(--filter-focus-ring, #7FB069); }
+.psb-page .psb-state--info .psb-state__headline::before {
+  content: 'i'; font-style: italic; color: var(--filter-focus-ring, #7FB069);
+}
+/* STOP — something could not be read. Heavier border, doubled, and a different glyph. */
+.psb-page .psb-state--stop { border-left-width: 6px; border-left-style: double; border-left-color: var(--accent, #b3392f); }
+.psb-page .psb-state--stop .psb-state__headline::before {
+  content: '!'; color: var(--accent, #b3392f);
+}
+/* NONE — a neutral measurement (an empty source is a fact about the data, not an error). */
+.psb-page .psb-state--none { border-left-color: var(--ink-4, #9aa3b0); }
+.psb-page .psb-state--none .psb-state__headline::before { content: '·'; color: var(--ink-4, #9aa3b0); }
+
+/* ---- 4 · WHERE THE BLOCKS SIT ------------------------------------------------------------------
+   The rail belonged to the content below it and read as part of the header; the crumb line then sat
+   on top of the board with no air. Spacing only — no component changes. */
+.psb-page .psb-viewnav { margin-top: 4px; }
+.psb-page .psb-crumbs { margin: 0 0 14px; }
+
+/* ---- 5 · PRINT AND PRESENTATION ----------------------------------------------------------------
+   The chooser is a control, and a control is not part of a printed page or of a presentation: both
+   are states in which nobody can act on it. The state box stays in both, because a printed page
+   that silently omits why it is empty is worse than one that says so. */
+@media print {
+  .psb-page .psb-site-host { display: none; }
+}
+body.presenting .psb-page .psb-site-host { display: none; }
+
+
+/* ---- 6 · ONE SITE, STATED ONCE LOUDLY (P1-B8D-R6) ----------------------------------------------
+   The board's own command bar echoes Company / Country / Marketplace as read-only context, and
+   since R5 the page's chooser above is the CONTROL for exactly those three. That left one site
+   stated three times on one screen — chooser, echo, summary line — with the echo set in the
+   largest type of the three, so the least authoritative statement had the most visual weight.
+
+   The renderer and the fields are untouched (§5.4): a reader who scrolled past the chooser can
+   still see which site the numbers belong to, and the printed page still carries it. Only the
+   WEIGHT changes, so the eye lands on Category and Series — the controls that bar actually owns. */
+.psb-page .cmd-field--context .cmd-context-value[data-context-for="fCompany"],
+.psb-page .cmd-field--context .cmd-context-value[data-context-for="fCountry"],
+.psb-page .cmd-field--context .cmd-context-value[data-context-for="fMarketplace"] {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-2, #444d5c);
+}

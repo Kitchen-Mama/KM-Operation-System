@@ -783,3 +783,51 @@ chooser living there would be erased by the answer to its own question.
 `PRODUCT_STRATEGY_ENABLED_ = false` → save → new version → update the existing deployment. The next
 page life derives `false` and sends zero pricing reads. **No frontend deploy is required to roll
 back.**
+
+
+---
+
+# §8  P1-B8D-R6 — THE VISUAL CONTRACT
+
+§7 made the board reachable. This section records what it is allowed to look like, so the next round
+does not re-derive it.
+
+## 8.1  Ownership
+
+| Concern | Owner | This page may |
+|---|---|---|
+| filter label + control spec | `--filter-*` tokens + `.km-filter-bar .filter-group` | **use**, never restate |
+| button spec | `.btn` + `--btn-*` | **use**, never restate |
+| tab rail structure, scroll, focus, keyboard | `.km-tab-rail` | **use**; one documented active-fill modifier |
+| card frame values | `.km-category-card` | reuse the values |
+| breakpoint tiers | `--km-bp-*` | reuse the tiers |
+| the state box | **nobody** — there is no shared component | own it, scoped |
+
+## 8.2  Rules that must keep holding
+
+- Every selector in `product-strategy-board.css` begins at `.psb-page` (the only exceptions are the
+  pre-existing `body.presenting` / `body.is-fullscreen` state hooks).
+- No shared class is redefined at the top level. A shared class may be adjusted **inside**
+  `.psb-page` and nowhere else.
+- No bare `select` / `button` / `.card` / `.btn` / `h1` / `.nav-text` selector.
+- No `!important` added without a line saying why.
+- Severity is never carried by colour alone — the state box differs in border width, border style
+  and glyph as well.
+- Disabled is never carried by colour alone — the border style and the cursor change too.
+- The site chooser is a control, so it is absent from print and from presentation.
+
+## 8.3  The thirteen states, all photographed
+
+`awaiting-site · loading-universe · loading-workspace · ready · empty · error · feature-disabled ·
+not-authorized · offline · timeout · response-not-readable · presentation · print/PDF`
+
+Two of these could not previously be reached by the runner and one was lying:
+
+- **offline** is now simulated as a browser fact (`navigator.onLine === false`), because that is the
+  only input that makes the accessor choose `BROWSER_OFFLINE`. Faking the refusal code would have
+  photographed a state the classifier never picked.
+- **loading-universe / loading-workspace** hold the read open. A loading state only exists while the
+  answer is outstanding; it cannot be reached by answering.
+- **empty** used to pass a site that is **not in the universe**, and since R5 enforces membership
+  that is REFUSED — so the grid's "empty" cell was photographing *"Choose a site to analyse."* under
+  the name EMPTY. It is now a real site whose server answers with no rows.

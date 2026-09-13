@@ -104,12 +104,37 @@
           if (e) return Promise.reject(e);
         }
 
+        /* P1-B8D-R6 - A READ THAT NEVER ANSWERS, so the LOADING states can be photographed.
+           §8 asks for "loading universe" and "loading workspace" as states in their own right, and
+           a loading state is not a scenario you can reach by answering quickly - it only exists
+           while the answer is outstanding. This holds the promise open for ever; the runner flips
+           its own readiness flag on a timer so the shot is taken mid-flight rather than never. */
+        if (opts.hang === 'universe' && action === 'productPricing.siteUniverse.get') {
+          return new Promise(function () {});
+        }
+        if (opts.hang === 'workspace' && action === 'productPricing.workspace.get') {
+          return new Promise(function () {});
+        }
+
         if (action === 'productPricing.siteUniverse.get') {
           return Promise.resolve(opts.universeOverride || capture.universe);
         }
         var env = capture.workspaces[keyOf(dto.payload)];
         if (!env) {
           throw new Error('P1B8C REPLAY HAS NO CAPTURE FOR SITE: ' + keyOf(dto.payload));
+        }
+        /* P1-B8D-R6 - AN EMPTY WORKSPACE FOR A REAL SITE.
+           The `empty-site` screenshot used to pass a site that is not in the universe, and since
+           P1-B8D-R5 enforces membership that is REFUSED - so the state grid's "empty" cell was
+           photographing "Choose a site to analyse." under the name EMPTY. None of the ten captured
+           sites is empty, so the only honest way to reach SOURCE_EMPTY is for the SERVER to answer
+           with no rows for a site that really exists. The envelope keeps the server's own shape;
+           only the rows and the state it reports are replaced. */
+        if (opts.emptyWorkspace === true) {
+          var d = env.data || {};
+          return Promise.resolve(Object.assign({}, env, {
+            data: Object.assign({}, d, { normalizedRows: [], sourceState: 'SOURCE_EMPTY' })
+          }));
         }
         return Promise.resolve(env);
       },

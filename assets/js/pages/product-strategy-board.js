@@ -462,18 +462,30 @@
     while (host.firstChild) host.removeChild(host.firstChild);
     if (!isObj(narrowed) || !isObj(narrowed.options) || !isObj(narrowed.scope)) return null;
 
+    /* P1-B8D-R6 — THE SHARED FILTER BAR, NOT A PRIVATE COPY OF ONE.
+       `km-filter-bar` + `filter-group` are the Operation System's own contract for a label above a
+       control: base.css calls the `--filter-*` tokens the single source of truth for every filter
+       and says never to hardcode them per page, and `.km-filter-bar .filter-group label` is the one
+       owner of the label spec. Carrying the classes means this page inherits both — the 38px
+       control height, the border, the radius, the focus ring and the 12px muted label — instead of
+       restating them and drifting. The `psb-site__*` classes stay for what is local: the card the
+       row sits in and the read-only tier. */
     var bar = doc.createElement('div');
-    bar.className = 'psb-site';
+    bar.className = 'psb-site km-filter-bar';
     bar.setAttribute('data-cy', 'psb-site');
 
     P.SITE_TIERS.forEach(function (dim, i) {
       var values = narrowed.options[dim] instanceof Array ? narrowed.options[dim] : [];
       var current = str(narrowed.scope[dim]);
 
+      var controlId = 'psbSite' + dim.charAt(0).toUpperCase() + dim.slice(1);
       var field = doc.createElement('div');
-      field.className = 'psb-site__field';
+      field.className = 'psb-site__field filter-group';
       var lab = doc.createElement('label');
       lab.className = 'psb-site__label';
+      /* The label names the control rather than sitting above it by coincidence: clicking it
+         focuses the select, and a screen reader reads the pair as one thing. */
+      lab.setAttribute('for', controlId);
       lab.textContent = P.SITE_LABELS[dim];
       field.appendChild(lab);
 
@@ -489,7 +501,7 @@
 
       var sel = doc.createElement('select');
       sel.className = 'psb-site__select';
-      sel.id = 'psbSite' + dim.charAt(0).toUpperCase() + dim.slice(1);
+      sel.id = controlId;
       sel.setAttribute('data-psb-site-dim', dim);
       sel.setAttribute('aria-label', P.SITE_LABELS[dim]);
 
