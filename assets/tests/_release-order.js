@@ -340,7 +340,8 @@ var ROUND_TOKENS = [
      its site, the renderer reads three new mount options, and the stylesheet flattens the
      two bars into one row. A browser holding any three of the four against the fourth would
      render a panel with no card, a card with two bars in it, or a chooser that rebuilds. */
-  'finalusability-p1b8dr7-20260913'];
+  'finalusability-p1b8dr7-20260913',
+  'lifecycle-p1b8dr8-20260913'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

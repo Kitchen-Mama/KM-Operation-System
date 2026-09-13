@@ -594,18 +594,24 @@ step(function () {
     return L.pick('company', 'KM')
       .then(function () { return L.pick('marketplace', 'Shopify'); })
       .then(function () {
+        /* P1-B8D-R8 - THIS ASSERTION IS INVERTED, AND ON PURPOSE.
+           Section 4 removes the whole View / Detail / Layers / Size / Reset row from the
+           PRODUCTION page, Fullscreen with it, and is explicit that what is removed must not be
+           reachable at all. So the honest statement here is that the control is ABSENT, and
+           absence is checked the way it is asked for - no node, no toolbar, and no empty container
+           left holding its place in the layout.
+
+           THE BEHAVIOUR IT USED TO DRIVE IS NOT GONE and is not untested. `toggleFullscreen`, the
+           Escape-leaves-fullscreen listener and the mode buttons are all still in the renderer and
+           still asserted by P1-B2C over the prototype, which is the host that still shows them.
+           This file drives the OPERATION SYSTEM page, and on that page the contract changed. */
         var doc = L.dom.document;
-        var fs = doc.getElementById('mode-fullscreen');
-        ok(!!fs, 'G7  the fullscreen control is on a loaded board');
-        if (!fs) return;
-        var before = String(doc.body.className || '');
-        fs.dispatchEvent(new L.dom.Event('click', { bubbles: true }));
-        ok(String(doc.body.className || '') !== before, 'G8  it enters fullscreen');
-        var ev = new L.dom.Event('keydown', { bubbles: true });
-        ev.key = 'Escape';
-        doc.dispatchEvent(ev);
-        eq(String(doc.body.className || ''), before,
-          'G9  and Escape leaves it, which is the contract this file already states');
+        ok(!doc.getElementById('mode-fullscreen'),
+          'G7  the fullscreen control is NOT on the production board (R8)');
+        ok(!doc.getElementById('chartControls'),
+          'G8  and neither is the toolbar row that held it');
+        eq(doc.querySelectorAll('.chartctl, .chartctl button').length, 0,
+          'G9  with no empty container left behind - not rendered, rather than hidden');
       });
   });
 });
@@ -770,9 +776,15 @@ step(function () {
     /* THE ANCHOR MOVED WITH P1-B8D-R7: `board.mount` now carries the three things this host
        declares about itself, so the single-line call this matched no longer exists. The mutant is
        unchanged in meaning — write a state over a board that has just mounted. */
-    return withMutant(PAGE_REL, '          C.mounted = true;',
-      '          C.mounted = true;\n'
-      + '          show(P.AWAITING_SITE_SELECTION, P.UX_PAGE.AWAITING_SITE_SELECTION, []);',
+    /* P1-B8D-R8 - RE-ANCHORED AGAIN, for the same kind of reason as last round: the mount
+       and the flag moved into `mountBoard()`, which is now the one place a board is put up
+       (a first load and a restored visit have to agree about what this host declares). The
+       mutant is unchanged in meaning - write a state over a board that has just mounted. */
+    var I8_ANCHOR = '      C.mounted = true;' + String.fromCharCode(10)
+      + '      showBoardNotices();';
+    return withMutant(PAGE_REL, I8_ANCHOR,
+      I8_ANCHOR + String.fromCharCode(10)
+      + '      show(P.AWAITING_SITE_SELECTION, P.UX_PAGE.AWAITING_SITE_SELECTION, []);',
       function () {
         return withLive({}, function (L) {
           return L.pick('company', 'KM')

@@ -653,6 +653,599 @@
     });
   };
 
+  /* ================================================================================================
+     P1-B8D-R8 — WHAT IS STILL ON SCREEN, AND WHO PUT IT THERE
+
+     Every act below asks the same question in a different place: when the page has decided it is no
+     longer showing a site, IS IT STILL SHOWING ONE? R7 answered that at the one moment a promise
+     settles. These answer it at the moments in between — while a read is outstanding, one animation
+     frame after a host was emptied, and across an unmount the renderer was never told about.
+     ============================================================================================== */
+
+  /** What the BOARD has drawn, measured rather than inferred from the controller. */
+  function boardPresence(doc) {
+    function txt(id) {
+      var n = doc.getElementById(id);
+      return n ? String(n.textContent || '').replace(/\s+/g, ' ').trim() : null;
+    }
+    var view = doc.getElementById('view');
+    var vb = view ? view.getBoundingClientRect() : null;
+    var sec = doc.getElementById('product-strategy-board-section');
+    return {
+      /* IS THE PAGE EVEN ON SCREEN? A host that has been hidden rather than emptied still holds a
+         board, and a renderer watching its size is told the moment it is hidden and the moment it
+         comes back - which is a redraw nobody asked for, at a moment nobody is watching. */
+      sectionActive: !!(sec && sec.classList && sec.classList.contains('active')),
+      sectionDisplay: sec ? root.getComputedStyle(sec).display : null,
+      viewW: vb ? Math.round(vb.width) : -1,
+      viewChildren: view ? view.children.length : -1,
+      viewH: vb ? Math.round(vb.height) : -1,
+      charts: doc.querySelectorAll('#view svg').length,
+      navTabs: doc.querySelectorAll('#nav li, #nav button').length,
+      crumbs: txt('crumbs'),
+      scopeChildren: (function () {
+        var n = doc.getElementById('scope');
+        return n ? n.children.length : -1;
+      }()),
+      /* THE BOARD'S OWN NAME FOR THE SITE IT IS DRAWING. When this disagrees with the chooser, the
+         label nearest the numbers is the one naming a site nobody selected. */
+      boardSite: (function () {
+        var out = [];
+        ['fCompany', 'fCountry', 'fMarketplace'].forEach(function (id) {
+          var c = doc.querySelector('[data-context-for="' + id + '"]');
+          var s = doc.getElementById(id);
+          if (c) out.push(String(c.textContent || '').trim());
+          else if (s) out.push(String(s.value || ''));
+        });
+        return out;
+      }()),
+      contextLine: (function () {
+        var n = doc.querySelector('.cmd-context, .cmdbar-context');
+        return n ? String(n.textContent || '').replace(/\s+/g, ' ').trim() : null;
+      }())
+    };
+  }
+  A.boardPresence = boardPresence;
+
+  /** Everything the chart toolbar row offers, and whether any of it can be reached. */
+  function toolbarPresence(doc) {
+    var SEL = '#chartControls button, .chartctl button, .chartctl .ctl-label';
+    var nodes = Array.prototype.slice.call(doc.querySelectorAll(SEL));
+    var focusable = nodes.filter(function (b) {
+      if (b.disabled) return false;
+      if (b.hasAttribute('hidden')) return false;
+      var cs = root.getComputedStyle(b);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+      var ti = b.getAttribute('tabindex');
+      if (ti !== null && Number(ti) < 0) return false;
+      return true;
+    });
+    var ids = {};
+    ['chartControls', 'mode-auto', 'mode-comfortable', 'mode-fullscreen', 'view-clean',
+      'view-detail', 'layersToggle', 'zoom-reset', 'densityNote']
+      .forEach(function (id) { ids[id] = !!doc.getElementById(id); });
+    return {
+      controls: nodes.length,
+      focusables: focusable.length,
+      labels: nodes.map(function (b) { return String(b.textContent || '').trim(); }),
+      ids: ids,
+      groups: doc.querySelectorAll('.chartctl .ctl-group').length,
+      emptyContainers: doc.querySelectorAll('.chartctl:empty, .ctl-group:empty').length
+    };
+  }
+  A.toolbarPresence = toolbarPresence;
+
+  /** The sentence that used to sit under Category, wherever it was written. */
+  function categoryHelperText(doc) {
+    var out = [];
+    Array.prototype.slice.call(doc.querySelectorAll(
+      '.psb-filters .scope-empty, .psb-filters .scope-state, .psb-filters .cmd-context,'
+      + ' .psb-filters > p, #catEmpty, #catProvenance, #scope p, .chartctl .ctl-note'))
+      .forEach(function (n) {
+        if (n.closest && n.closest('#scenarioDrawer')) return;
+        var t = String(n.textContent || '').replace(/\s+/g, ' ').trim();
+        var r = n.getBoundingClientRect();
+        /* ONLY WHAT IS ON THE SCREEN. A paragraph inside a closed drawer is not a sentence under
+           the Category control, and counting it would make the removal look incomplete. */
+        if (r.width === 0 && r.height === 0) return;
+        out.push({ id: n.id || null, cls: n.className, text: t.slice(0, 120),
+          w: Math.round(r.width), h: Math.round(r.height) });
+      });
+    return out;
+  }
+  A.categoryHelperText = categoryHelperText;
+
+  /** The scenario, in every place it shows. */
+  function scenarioPresence(doc) {
+    var chip = doc.getElementById('scenarioChip');
+    var banner = doc.getElementById('banner');
+    return {
+      chip: chip ? String(chip.textContent || '').trim() : null,
+      banner: banner ? String(banner.textContent || '').replace(/\s+/g, ' ').trim() : '',
+      bodyClass: String(doc.body.className || ''),
+      ghostRows: doc.querySelectorAll('#view [data-layer="scenario"]').length,
+      formValues: (function () {
+        var out = {};
+        ['scSeries', 'scField', 'scAdjust', 'scValue'].forEach(function (id) {
+          var n = doc.getElementById(id);
+          out[id] = n ? String(n.value || '') : null;
+        });
+        return out;
+      }()),
+      /* HOW MANY SIMULATIONS ARE BEING HELD, read off the drawer's own footer rather than out of
+         STATE. The count is what a person in a meeting sees; a private field is not. */
+      activeOverrides: (function () {
+        var n = doc.getElementById('scenarioNote');
+        var m = n ? /Active overrides:\s*(\d+)/.exec(String(n.textContent || '')) : null;
+        return m ? Number(m[1]) : null;
+      }()),
+      chipActive: (function () {
+        var c = doc.getElementById('scenarioChip');
+        return c ? c.getAttribute('data-active') : null;
+      }()),
+      simulatedMarkers: doc.querySelectorAll('#view [data-scenario="true"],'
+        + ' #view .marker-scenario, #view .mk-scenario').length,
+      overrideSiteKeys: (function () {
+        var d = root.__psbDevState ? root.__psbDevState() : null;
+        var o = d && d.overrides;
+        return o ? Object.keys(o) : null;
+      }())
+    };
+  }
+  A.scenarioPresence = scenarioPresence;
+
+  function r8step(doc, label) {
+    var s = step(doc, label);
+    s.board = boardPresence(doc);
+    s.toolbar = toolbarPresence(doc);
+    s.categoryHelper = categoryHelperText(doc);
+    s.scenario = scenarioPresence(doc);
+    return s;
+  }
+  A.r8step = r8step;
+
+  function loadSite(doc, S) {
+    return Promise.resolve().then(function () {
+      pick(doc, 'company', S.company); return tick();
+    }).then(function () {
+      pick(doc, 'country', S.country); return tick();
+    }).then(function () {
+      pick(doc, 'marketplace', S.marketplace); return tick(500);
+    });
+  }
+  A.loadSite = loadSite;
+
+  /**
+   * CHANGE THE VIEWPORT, the way a person changes a window.
+   *
+   * WHY IT HAS TO BE DONE ON PURPOSE HERE. The harness runs with `--hide-scrollbars`, so the page
+   * getting shorter never takes a scrollbar away and the content column never changes width. On a
+   * real machine it does: removing two thousand pixels of board removes the scrollbar and every
+   * column gets fifteen pixels wider. That is a size change nobody asked for, delivered to anything
+   * watching the host, one frame after the teardown - which is the difference between this harness
+   * and the operator's screen, and the reason a defect they can see was invisible here.
+   *
+   * The frame IS the viewport (see the runner's note on --window-size), so resizing it is a window
+   * resize and not a poke at the page: no class is added, no style is written on any element the
+   * product owns, and nothing inside the page is told.
+   */
+  function resizeViewport(px) {
+    var fe = null;
+    try { fe = root.frameElement; } catch (e) { fe = null; }
+    if (!fe) return false;
+    var cur = parseInt(String(fe.style.width || ''), 10);
+    if (!cur) cur = Math.round(fe.getBoundingClientRect().width);
+    fe.style.width = (cur + px) + 'px';
+    return true;
+  }
+  A.resizeViewport = resizeViewport;
+
+  /**
+   * §5 — THE OLD BOARD MUST BE GONE BEFORE THE NEW SITE'S ANSWER ARRIVES.
+   *
+   * `args.slow` is served late by the replay, so the in-flight window is a real one that can be
+   * measured from inside rather than a wait for a fix. Three readings: the synchronous instant
+   * after the change, one animation frame later — which is where a re-entrant renderer would put
+   * the board back — and after the answer lands.
+   */
+  ACTS['deferred-teardown'] = function (doc, args) {
+    var T = [];
+    var A1 = args.first, A2 = args.second;
+    return loadSite(doc, A1).then(function () {
+      T.push(r8step(doc, '1 site A loaded'));
+      /* THE SWITCH: one control, both sites complete, so there is no incomplete step in between. */
+      pick(doc, 'marketplace', A2.marketplace);
+      T.push(r8step(doc, '2 site B chosen — SAME TURN, nothing awaited'));
+      return tick(0);
+    }).then(function () {
+      T.push(r8step(doc, '3 one tick later, B still outstanding'));
+      return tick(120);
+    }).then(function () {
+      T.push(r8step(doc, '4 a frame later, B still outstanding'));
+      /* THE VIEWPORT MOVES WHILE B IS STILL OUTSTANDING. Nothing about the SITE has changed; only
+         the window has. A board that comes back here is a board redrawing itself for a site the
+         page has already stopped believing in. */
+      var resized = resizeViewport(-40);
+      return tick(250).then(function () { return resized; });
+    }).then(function (resized) {
+      var s4b = r8step(doc, '4b viewport changed while B is outstanding');
+      s4b.viewportResized = resized;
+      T.push(s4b);
+      return tick(900);
+    }).then(function () {
+      T.push(r8step(doc, '5 B answered'));
+      root.__trace = T;
+      return T;
+    });
+  };
+
+  /**
+   * §7 — LEAVE AND COME BACK, THROUGH THE LIFECYCLE THE SHELL ACTUALLY CALLS.
+   *
+   * `onUnmount()` then `onMount()` — the same two functions `KM.lifecycle` invokes when a person
+   * clicks another page and clicks back. Nothing here reaches into the controller.
+   */
+  ACTS['leave-return'] = function (doc, args) {
+    var T = [];
+    var P = page();
+    var S = args.first;
+    return loadSite(doc, S).then(function () {
+      T.push(r8step(doc, '1 site loaded, board up'));
+      P.onUnmount();
+      return tick(200);
+    }).then(function () {
+      T.push(r8step(doc, '2 unmounted (another page is showing)'));
+      /* A LIVE HANDLER ON A NODE THE UNMOUNT DOES NOT REMOVE.
+         `#btnPresent` lives in the PARTIAL, not in anything the board redraws, and the partial is
+         fetched once and stays in the document for the life of the page. `boot()` binds it once,
+         and its handler calls `render()`. So after an unmount there is still a live path from an
+         ordinary event into the renderer — and a renderer that has not been told to stop answers
+         it by repainting the whole board into hosts the page has just emptied.
+
+         THIS IS THE DETERMINISTIC ROUTE INTO THE SAME DEFECT the size observer produces. The
+         observer answers on an animation frame, and a headless browser under a virtual-time budget
+         does not deliver those reliably: the trace that FOUND this saw it three runs in six. A
+         click is delivered every time. */
+      var bp = doc.getElementById('btnPresent');
+      if (bp) bp.click();
+      return tick(200);
+    }).then(function () {
+      T.push(r8step(doc, '2b a live handler fires while the page is away'));
+      return tick(300);
+    }).then(function () {
+      T.push(r8step(doc, '3 still away, a frame or two later'));
+      var resized = resizeViewport(-40);
+      return tick(250).then(function () {
+        var s3b = r8step(doc, '3b viewport changed while away');
+        s3b.viewportResized = resized;
+        T.push(s3b);
+        return P.onMount();
+      });
+    }).then(function () {
+      return tick(600);
+    }).then(function () {
+      T.push(r8step(doc, '4 back on Product Strategy'));
+      return tick(400);
+    }).then(function () {
+      T.push(r8step(doc, '5 settled'));
+      root.__trace = T;
+      return T;
+    });
+  };
+
+  /**
+   * §8 — A SIMULATION BELONGS TO THE SITE IT WAS SIMULATED ON.
+   *
+   * Apply a scenario on A, then walk the three things that must NOT clear it (a view, a category,
+   * a leave-and-return) and the one that must (a different site).
+   */
+  ACTS['scenario-site-scope'] = function (doc, args) {
+    var T = [];
+    var A1 = args.first, A2 = args.second;
+    function applyScenario() {
+      var tg = doc.getElementById('meetingToggle');
+      if (tg) tg.click();
+      return tick(200).then(function () {
+        var ss = doc.getElementById('scSeries');
+        if (ss && ss.options.length > 1) {
+          ss.value = ss.options[1].value;
+          ss.dispatchEvent(new root.Event('change', { bubbles: true }));
+        }
+        var iv = doc.getElementById('scValue');
+        if (iv) { iv.value = '19.99'; iv.dispatchEvent(new root.Event('input', { bubbles: true })); }
+        return tick(120);
+      }).then(function () {
+        var ap = doc.getElementById('scApply');
+        if (ap) ap.click();
+        return tick(250);
+      });
+    }
+    return loadSite(doc, A1).then(applyScenario).then(function () {
+      T.push(r8step(doc, '1 scenario applied on site A'));
+      if (root.PSB_BOARD) root.PSB_BOARD.showView('product-strategy/risk');
+      return tick(200);
+    }).then(function () {
+      T.push(r8step(doc, '2 another VIEW of the same site — must keep it'));
+      if (root.PSB_BOARD) root.PSB_BOARD.showView('product-strategy/category');
+      return tick(200);
+    }).then(function () {
+      if (args.category) pickCategory(doc, args.category);
+      return tick(250);
+    }).then(function () {
+      T.push(r8step(doc, '3 a CATEGORY on the same site — must keep it'));
+      pick(doc, 'marketplace', A2.marketplace);
+      return tick(900);
+    }).then(function () {
+      T.push(r8step(doc, '4 a DIFFERENT SITE — must clear it'));
+      pick(doc, 'marketplace', A1.marketplace);
+      return tick(900);
+    }).then(function () {
+      T.push(r8step(doc, '5 back to site A — must NOT come back'));
+      root.__trace = T;
+      return T;
+    });
+  };
+
+  /**
+   * §6 — THE CLOSE CONTROL, MEASURED AS A THING ON A SCREEN.
+   *
+   * Not "is there a button in the DOM" — R7 answered that, and the operator still could not see one.
+   * Box, computed style, what is actually painted at its centre, and both ways of pressing it.
+   */
+  ACTS['drawer-visibility'] = function (doc, args) {
+    var T = [];
+    var S = args.first;
+    function closeBtnState(label) {
+      var d = doc.getElementById('scenarioDrawer');
+      var b = doc.getElementById('scenarioDrawerClose');
+      var r = b ? b.getBoundingClientRect() : null;
+      var cs = b ? root.getComputedStyle(b) : null;
+      var hdr = doc.querySelector('#scenarioDrawer .scn-drawer-head, #scenarioDrawer header');
+      var hr = hdr ? hdr.getBoundingClientRect() : null;
+      var cx = r ? Math.round(r.left + r.width / 2) : -1;
+      var cy = r ? Math.round(r.top + r.height / 2) : -1;
+      var hit = (r && r.width > 0) ? doc.elementFromPoint(cx, cy) : null;
+      return {
+        step: label,
+        drawerOpen: !!(d && !d.hidden),
+        count: doc.querySelectorAll('#scenarioDrawerClose').length,
+        present: !!b,
+        display: cs ? cs.display : null,
+        visibility: cs ? cs.visibility : null,
+        opacity: cs ? Number(cs.opacity) : null,
+        color: cs ? cs.color : null,
+        background: cs ? cs.backgroundColor : null,
+        borderColor: cs ? cs.borderTopColor : null,
+        zIndex: cs ? cs.zIndex : null,
+        text: b ? String(b.textContent || '').trim() : null,
+        codePoint: b && String(b.textContent || '').trim()
+          ? String(b.textContent || '').trim().codePointAt(0) : null,
+        ariaLabel: b ? b.getAttribute('aria-label') : null,
+        type: b ? b.getAttribute('type') : null,
+        /* IS IT IN THE TAB ORDER? Not "can it be focused" — `focus()` works on a node with
+           `tabindex="-1"`, so a probe that called it would report a control a keyboard user can
+           never reach as reachable. A native <button> is in the order unless something took it
+           out, and taking it out is exactly the half-working state §6 rules out: still clickable,
+           no longer reachable. */
+        inTabOrder: (function () {
+          if (!b) return false;
+          var ti = b.getAttribute('tabindex');
+          if (ti !== null && Number(ti) < 0) return false;
+          if (b.disabled) return false;
+          var rr = b.getBoundingClientRect();
+          return rr.width > 0 && rr.height > 0;
+        }()),
+        box: r ? { x: Math.round(r.left), y: Math.round(r.top),
+          w: Math.round(r.width), h: Math.round(r.height) } : null,
+        insideViewport: !!(r && r.top >= 0 && r.left >= 0
+          && r.bottom <= root.innerHeight && r.right <= root.innerWidth),
+        insideHeader: !!(r && hr && r.top >= hr.top - 1 && r.bottom <= hr.bottom + 1
+          && r.right <= hr.right + 1),
+        elementAtCentre: hit ? (hit.id || hit.className || hit.tagName) : null,
+        hitIsTheButton: !!(hit && b && (hit === b || b.contains(hit))),
+        focus: focusNow(doc),
+        scenarioApplied: doc.querySelectorAll('#view [data-layer="scenario"]').length,
+        chip: (function () {
+          var c = doc.getElementById('scenarioChip');
+          return c ? String(c.textContent || '').trim() : null;
+        }()),
+        activeOverrides: (function () {
+          var n2 = doc.getElementById('scenarioNote');
+          var mm = n2 ? /Active overrides:\s*(\d+)/.exec(String(n2.textContent || '')) : null;
+          return mm ? Number(mm[1]) : null;
+        }()),
+        chipActive: (function () {
+          var c = doc.getElementById('scenarioChip');
+          return c ? c.getAttribute('data-active') : null;
+        }()),
+        drawerBox: (function () {
+          if (!d) return null;
+          var dr = d.getBoundingClientRect();
+          return { w: Math.round(dr.width), h: Math.round(dr.height) };
+        }()),
+        drawerFocusablesWithABox: (function () {
+          if (!d) return 0;
+          var n = 0;
+          Array.prototype.slice.call(d.querySelectorAll('button, select, input, [tabindex]'))
+            .forEach(function (x) {
+              var xr = x.getBoundingClientRect();
+              if (xr.width > 0 && xr.height > 0) n++;
+            });
+          return n;
+        }())
+      };
+    }
+    return loadSite(doc, S).then(function () {
+      T.push(closeBtnState('1 loaded, drawer shut'));
+      var tg = doc.getElementById('meetingToggle');
+      if (tg) { if (tg.focus) tg.focus(); tg.click(); }
+      return tick(250);
+    }).then(function () {
+      /* A SIMULATION IS APPLIED BEFORE ANYTHING IS CLOSED, so "closing neither applies nor clears
+         it" is a statement about something rather than about an empty form. */
+      var ss = doc.getElementById('scSeries');
+      if (ss && ss.options.length > 1) {
+        ss.value = ss.options[1].value;
+        ss.dispatchEvent(new root.Event('change', { bubbles: true }));
+      }
+      var iv = doc.getElementById('scValue');
+      if (iv) { iv.value = '19.99'; iv.dispatchEvent(new root.Event('input', { bubbles: true })); }
+      return tick(150);
+    }).then(function () {
+      var ap = doc.getElementById('scApply');
+      if (ap) ap.click();
+      return tick(300);
+    }).then(function () {
+      T.push(closeBtnState('2 drawer open — the close control as painted'));
+      var b = doc.getElementById('scenarioDrawerClose');
+      if (b) b.click();
+      return tick(250);
+    }).then(function () {
+      T.push(closeBtnState('3 closed by POINTER'));
+      var tg = doc.getElementById('meetingToggle');
+      if (tg) tg.click();
+      return tick(250);
+    }).then(function () {
+      T.push(closeBtnState('4 reopened'));
+      /* KEYBOARD, and through the control rather than around it: focus it, then Enter. A real Enter
+         on a focused <button> also produces a click, which browsers do natively and a synthetic
+         keydown does not — both are sent, so this measures the control and not the harness. */
+      var b = doc.getElementById('scenarioDrawerClose');
+      if (b) {
+        if (b.focus) b.focus();
+        b.dispatchEvent(new root.KeyboardEvent('keydown',
+          { key: 'Enter', bubbles: true, cancelable: true }));
+        b.dispatchEvent(new root.KeyboardEvent('keyup',
+          { key: 'Enter', bubbles: true, cancelable: true }));
+        b.click();
+      }
+      return tick(250);
+    }).then(function () {
+      T.push(closeBtnState('5 closed by KEYBOARD'));
+      root.__trace = T;
+      return T;
+    });
+  };
+
+  /** §4 + §3 — the production chart with no toolbar above it, and no sentence under Category. */
+  ACTS['production-chrome'] = function (doc, args) {
+    var T = [];
+    return loadSite(doc, args.first).then(function () {
+      T.push(r8step(doc, '1 loaded (Executive Overview)'));
+      /* THE VIEW THAT HAS THE CHART. The toolbar under investigation is drawn above the Price
+         architecture chart, and the default view does not draw one — measuring the default only
+         would report zero controls and prove nothing. */
+      if (root.PSB_BOARD) root.PSB_BOARD.showView('product-strategy/category');
+      return tick(400);
+    }).then(function () {
+      T.push(r8step(doc, '2 Category Analysis — the chart and its toolbar'));
+      /* TAB THROUGH THE PANEL AND THE CHART. A control that is invisible and still in the tab order
+         is a control a keyboard reader meets; only walking the order can say so. */
+      var all = Array.prototype.slice.call(doc.querySelectorAll(
+        '#product-strategy-board-section button, #product-strategy-board-section select,'
+        + ' #product-strategy-board-section input, #product-strategy-board-section a[href],'
+        + ' #product-strategy-board-section [tabindex]'));
+      var reachable = all.filter(function (n) {
+        if (n.disabled) return false;
+        var ti = n.getAttribute('tabindex');
+        if (ti !== null && Number(ti) < 0) return false;
+        var cs = root.getComputedStyle(n);
+        if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+        var r = n.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      });
+      T.push({ step: '3 tab order',
+        tabbables: reachable.map(function (n) {
+          return (n.id || n.className || n.tagName) + ':'
+            + String(n.textContent || '').trim().slice(0, 24);
+        }),
+        toolbarTabbables: reachable.filter(function (n) {
+          return !!(n.closest && n.closest('.chartctl'));
+        }).length });
+      root.__trace = T;
+      return T;
+    });
+  };
+
+  /**
+   * §5 — A FAILED SITE B MUST NOT BRING SITE A'S BOARD BACK.
+   *
+   * "B 失敗時顯示 B 的 error，不能恢復 A board". The replay refuses only the workspace read, so the
+   * universe is still there and the chooser is still usable — which is what makes the retry a real
+   * one rather than a second refusal.
+   */
+  ACTS['teardown-failure'] = function (doc, args) {
+    var T = [];
+    var A1 = args.first, A2 = args.second;
+    var wire = root.__wire;
+    return loadSite(doc, A1).then(function () {
+      T.push(r8step(doc, '1 site A loaded'));
+      /* THE SERVER STARTS REFUSING NOW, not at the beginning: a run that could never load site A
+         cannot ask whether site A is still underneath site B's error. */
+      if (wire && typeof wire.startFailing === 'function') {
+        wire.startFailing(new Error('the site refused'), 'workspace');
+      }
+      pick(doc, 'marketplace', A2.marketplace);
+      return tick(700);
+    }).then(function () {
+      T.push(r8step(doc, '2 site B refused — A must not be underneath it'));
+      if (wire && typeof wire.stopFailing === 'function') wire.stopFailing();
+      /* THE SAME MARKETPLACE AGAIN. After a failure this has to be able to ask again — the
+         same-site guard is about a site already loaded or already coming, not about one that was
+         refused. */
+      pick(doc, 'marketplace', A2.marketplace);
+      return tick(900);
+    }).then(function () {
+      T.push(r8step(doc, '3 retried, and B is up'));
+      root.__trace = T;
+      return T;
+    });
+  };
+
+  /** §7 + §8 — leave and come back to the SAME site, with a simulation applied. */
+  ACTS['scenario-leave-return'] = function (doc, args) {
+    var T = [];
+    var P = page();
+    var S = args.first;
+    return loadSite(doc, S).then(function () {
+      var tg = doc.getElementById('meetingToggle');
+      if (tg) tg.click();
+      return tick(200);
+    }).then(function () {
+      var ss = doc.getElementById('scSeries');
+      if (ss && ss.options.length > 1) {
+        ss.value = ss.options[1].value;
+        ss.dispatchEvent(new root.Event('change', { bubbles: true }));
+      }
+      var iv = doc.getElementById('scValue');
+      if (iv) { iv.value = '19.99'; iv.dispatchEvent(new root.Event('input', { bubbles: true })); }
+      return tick(150);
+    }).then(function () {
+      var ap = doc.getElementById('scApply');
+      if (ap) ap.click();
+      return tick(300);
+    }).then(function () {
+      T.push(r8step(doc, '1 scenario applied'));
+      /* THE VIEW IS MOVED BEFORE LEAVING, so "the same page came back" means something more than
+         "a board came back". */
+      if (root.PSB_BOARD) root.PSB_BOARD.showView('product-strategy/quality');
+      return tick(250);
+    }).then(function () {
+      T.push(r8step(doc, '2 on Data Quality, about to leave'));
+      P.onUnmount();
+      return tick(300);
+    }).then(function () {
+      T.push(r8step(doc, '3 away'));
+      return P.onMount();
+    }).then(function () {
+      return tick(600);
+    }).then(function () {
+      T.push(r8step(doc, '4 back — same site, same view, same scenario, no new read'));
+      root.__trace = T;
+      return T;
+    });
+  };
+
   A.ACTS = ACTS;
   A.step = step;
   A.pick = pick;

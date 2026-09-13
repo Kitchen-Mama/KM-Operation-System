@@ -241,7 +241,17 @@
     }
     C.syncFiltersHost = syncFiltersHost;
 
+    /**
+     * P1-B8D-R8 — THE RENDERER IS TOLD TO STOP, AND ONLY THEN IS ITS OUTPUT REMOVED.
+     *
+     * MEASURED: this function did the second half and not the first, and in three runs out of six
+     * the board was back in `#view` two hundred milliseconds later. `psb-board-ui` keeps a size
+     * observer on `#view`; emptying it IS a size change, and the observer answers it by repainting
+     * the entire chart out of a STATE that nothing here can reach. Emptying somebody else's output
+     * is not the same as telling them to stop.
+     */
     function clearBoard() {
+      if (board && typeof board.unmount === 'function') board.unmount();
       if (!doc || typeof doc.getElementById !== 'function') return;
       P.BOARD_HOSTS.forEach(function (id) {
         var n = doc.getElementById(id);
@@ -251,6 +261,60 @@
       syncFiltersHost();
     }
     C.clearBoard = clearBoard;
+
+    /**
+     * P1-B8D-R8 — ONE PLACE THE BOARD IS MOUNTED, so a restore and a first load cannot drift.
+     *
+     * WHAT THIS HOST DECLARES, AND WHY EACH ONE IS A DECISION THE RENDERER CANNOT MAKE:
+     *
+     *   siteOwnedByPage             the chooser above is the site control  (R7)
+     *   inlineHelpIcons             the `?` row came off the screen        (R7)
+     *   axisPriceRow                the price is in the tooltip, not twice (R7)
+     *   chartToolbar                §4 — the whole View/Detail/Layers row  (R8)
+     *   inlineFilterNotes           §3 — no sentence hanging off a control (R8)
+     *   clearScenarioOnSiteChange   §8 — a simulation belongs to its site  (R8)
+     *   siteIdentity                the canonical key, which only this controller knows
+     *
+     * THE IDENTITY IS PASSED RATHER THAN DERIVED. The renderer can read a company off its rows, but
+     * "the site these rows are from" and "the site the operator has selected" are the same fact
+     * only while they agree — and the window in which they disagree is precisely the window §5 and
+     * §7 are about. The controller is the authority, so the controller says it.
+     */
+    function mountBoard(adapter) {
+      var sc = (C.narrowed && C.narrowed.scope) || {};
+      board.mount({
+        adapter: adapter,
+        siteOwnedByPage: true,
+        inlineHelpIcons: false,
+        axisPriceRow: false,
+        chartToolbar: false,
+        inlineFilterNotes: false,
+        clearScenarioOnSiteChange: true,
+        siteIdentity: [sc.company, sc.country, sc.marketplace].join('|')
+      });
+      C.mounted = true;
+      showBoardNotices();
+      return true;
+    }
+
+    /**
+     * §3 — THE SENTENCE MOVES; IT DOES NOT DISAPPEAR.
+     *
+     * A site whose listings carry no category still has to say so, and it says so HERE, in the one
+     * element every other answer is written into, rather than as a paragraph hanging off the
+     * Category button. The board is left exactly where it is: there are rows, they have prices and
+     * the chart is correct — this is a note about one control, not a refusal.
+     */
+    function showBoardNotices() {
+      if (!host) return;
+      while (host.firstChild) host.removeChild(host.firstChild);
+      var list = (board && typeof board.notices === 'function') ? board.notices() : [];
+      if (!list || !list.length) return;
+      var n = list[0];
+      P.renderState(host, { may_analyse: true, uses_fixture: false, severity: n.severity || 'info',
+        headline: n.headline, detail: n.detail }, [], doc);
+    }
+    C.showBoardNotices = showBoardNotices;
 
     function show(state, ux, refusals) {
       C.state = state;
@@ -434,6 +498,47 @@
       return C.loadWorkspace();
     };
 
+    C.paintChooser = paintChooser;
+
+    /**
+     * P1-B8D-R8 §7 — PUT THE SAME PAGE BACK, AND ASK THE SERVER NOTHING.
+     *
+     * THE REPORT WAS A SPLIT BRAIN: leave Product Strategy, come back, and the old board is still
+     * underneath while the chooser above has reset to "Select a company, country and marketplace".
+     * Half of that was the renderer repainting a host it had been told nothing about (fixed at
+     * `clearBoard`); the other half is this — the controller, with its universe, its scope and its
+     * loaded site, was thrown away on every unmount, so the only consistent page the next visit
+     * could build was an empty one.
+     *
+     * PRESERVE, NOT CLEAR, and §7 asks for the reason. Everything this restores was read during
+     * THIS page life and cannot have changed without a reload that would destroy it anyway: the
+     * universe, the capability and the workspace are all resolved once and never refreshed while
+     * the page is open, so a restored board is showing exactly what it would show if the operator
+     * had never left. What is NOT restored is anything the renderer has to re-derive — `boot()`
+     * rebuilds CANON from this same adapter and `narrowAfterSiteChange()` keeps only the category,
+     * series and currency those rows still offer, so the filters cannot come back naming something
+     * the board does not have. And because the identity is unchanged, §8's rule leaves the meeting
+     * scenario alone: coming back to your own site does not cost you your work.
+     *
+     * ZERO REQUESTS, and that is the test rather than the intention: the adapter is the answer that
+     * was already paid for, and mounting it again is a render, not a read.
+     */
+    C.restore = function () {
+      if (!C.universe || C.universe.state !== 'OK') return false;
+      if (!C.narrowed || !C.narrowed.complete) return false;
+      if (!C.adapter) return false;
+      if (!board || typeof board.mount !== 'function') return false;
+      /* THE HOSTS HAVE TO BE THERE. The partial is fetched once and stays, but a restore into a
+         document that no longer holds it would report a mounted board nobody can see. */
+      if (!doc || typeof doc.getElementById !== 'function') return false;
+      if (!doc.getElementById('view') || !siteHost) return false;
+      paintChooser();
+      if (host) { while (host.firstChild) host.removeChild(host.firstChild); }
+      mountBoard(C.adapter);
+      syncFiltersHost();
+      return true;
+    };
+
     /** STEP 4 + 5. One read, one board. Single-flight, and stale answers are dropped. */
     C.loadWorkspace = function () {
       var scope = C.narrowed.scope;
@@ -480,19 +585,18 @@
                 detail: 'psb-board-ui.js is not loaded.' }, [{ code: 'BOARD_UI_NOT_LOADED' }]);
           }
           if (host) { while (host.firstChild) host.removeChild(host.firstChild); }
+          /* P1-B8D-R8 §7 — KEPT SO A RETURN COSTS NOTHING. The adapter is the answer to the one
+             read this page makes; holding it is what lets `onMount` put the same board back
+             without asking the server the same question again. It is dropped the moment a
+             different site is chosen, because `loadWorkspace` overwrites it. */
+          C.adapter = adapter;
           /* P1-B8D-R7 — WHAT THIS HOST OWNS, SAID ONCE, AT MOUNT.
              The renderer's other host is the prototype, which loads a fixture of many sites and is
              a demonstration of the whole component. This page is not that: the site is already
              chosen upstairs by the chooser above, the shell supplies the page header, and the long
              help text lives behind one `i` in it. Each of the three is the host's decision rather
              than something the renderer could infer from rows that look identical either way. */
-          board.mount({
-            adapter: adapter,
-            siteOwnedByPage: true,
-            inlineHelpIcons: false,
-            axisPriceRow: false
-          });
-          C.mounted = true;
+          mountBoard(adapter);
           syncFiltersHost();
           return { state: snap.state, mounted: true, may_analyse: true,
             row_count: snap.row_count, refusals: [] };
@@ -1011,9 +1115,31 @@
          because it looks like a working restore. */
       var wanted = (root.KM && root.KM.pendingRoute) || '';
       if (root.KM) root.KM.pendingRoute = null;
+      /* P1-B8D-R8 §7 — THE SAME PAGE, NOT A NEW ONE. A controller parked by the last unmount is
+         taken back if it can still put its own board up; it is consumed either way, so a restore
+         that fails for any reason falls through to a completely ordinary first load rather than
+         leaving something half-restored behind it. */
+      var parked = P.parked;
+      P.parked = null;
+      if (parked && parked.restore() === true) {
+        P.lastController = parked;
+        if (str(wanted) !== '') P.applyRoute(wanted, boardOf({}));
+        return { state: parked.state, mounted: true, may_analyse: true, refusals: [],
+          restored: true };
+      }
       return P.mount({ route: wanted });
     });
   };
+
+  /**
+   * The controller the last unmount put down, or null.
+   *
+   * It is a MODULE field rather than something hung on the DOM, because what it holds — a universe,
+   * a narrowed scope and one workspace answer — is exactly as long-lived as this module: a reload
+   * destroys both together, which is what makes "nothing here can be stale" true by construction
+   * rather than by a freshness check nobody would run.
+   */
+  P.parked = null;
 
   /**
    * The lifecycle unmount. The MARKUP stays — the partial is fetched once and re-fetching it would be
@@ -1022,6 +1148,16 @@
    * one site's scope ends up above another site's rows.
    */
   P.onUnmount = function () {
+    /* P1-B8D-R8 §7 — PUT IT DOWN, DO NOT THROW IT AWAY. A controller that is showing a complete
+       site is kept for the next visit; anything less than that (no universe, no complete scope, no
+       loaded board) is not worth restoring and is dropped, so the next visit starts clean. The
+       comment above used to say carrying these across "is how one site's scope ends up above
+       another site's rows" — which is true of carrying HALF of them, and this carries all or
+       nothing. */
+    var prev = P.lastController;
+    P.parked = (prev && prev.universe && prev.universe.state === 'OK'
+      && prev.narrowed && prev.narrowed.complete === true
+      && prev.mounted === true && prev.adapter) ? prev : null;
     P.lastController = null;
     var doc = root.document;
     var sec = doc && doc.getElementById(P.SECTION_ID);
@@ -1033,8 +1169,12 @@
        set of sites nothing is listening to. */
     var sh = doc && doc.getElementById(P.SITE_HOST_ID);
     if (sh) { while (sh.firstChild) sh.removeChild(sh.firstChild); }
-    /* AND THE BOARD, for the same reason. It was drawn from one site's rows by a controller that is
-       being discarded; the next visit must not inherit a chart nothing is driving. */
+    /* AND THE BOARD — TOLD TO STOP FIRST, then emptied. It keeps a size observer on `#view`, and
+       the section going `display: none` is a size change it answers by repainting the whole chart
+       one frame later, into the host this loop has just emptied. Measured at three runs in six;
+       that repaint IS the old board the operator found underneath a reset chooser. */
+    var b = root.PSB_BOARD;
+    if (b && typeof b.unmount === 'function') b.unmount();
     P.BOARD_HOSTS.forEach(function (id) {
       var n = doc && doc.getElementById(id);
       while (n && n.firstChild) n.removeChild(n.firstChild);

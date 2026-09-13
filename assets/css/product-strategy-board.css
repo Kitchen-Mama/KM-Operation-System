@@ -1837,3 +1837,40 @@ body.is-fullscreen .psb-page .scn-drawer { display: none; }
   .psb-page .psb-help { position: static; }
   .psb-page .psb-help__panel { position: absolute; left: 12px; right: 12px; width: auto; }
 }
+
+/* ==================================================================================================
+   12 · P1-B8D-R8 — THE DRAWER WAS UNDER THE SHELL'S HEADER, AND SO WAS ITS CLOSE BUTTON
+   ==================================================================================================
+   MEASURED, IN THE COMMITTED TREE, IN A REAL BROWSER: open the Meeting scenario drawer and ask the
+   document what is painted at the centre of the close button. The answer was `top-header`.
+
+   R7 reported this control as present and correct and it WAS present and correct — one button, 30 x
+   30, in the header's top-right corner, the right glyph, the right accessible name. What R7 never
+   asked is what is on top of it. `.top-header` is `position: fixed; top: 0; z-index: 2000` and
+   fills `--header-height`; the drawer is `position: fixed; top: 0; z-index: 60`. So the drawer's
+   entire head row — the title and the x at y=12..42 — was painted BEHIND the application's header
+   bar. Invisible, and un-clickable at those coordinates.
+
+   A DOM ASSERTION CANNOT SEE THIS and neither can a count: every property of the button is right.
+   Only `elementFromPoint` at its own centre can say that something else is there, which is why §6
+   asks for exactly that and why it is now in the suite.
+
+   THE FIX IS THE OFFSET THE SHELL ALREADY OWNS. `--header-height` is declared once in base.css and
+   every other consumer derives from it (the header's own min-height, the app layout's margin, the
+   sidebar's top, the main column's height). Using it here makes this the fifth consumer of one
+   token rather than a fifth opinion about how tall the header is, and nothing global is touched:
+   the rule is `.psb-page`-scoped and the shell's z-index is left exactly where it is. Raising the
+   drawer ABOVE the header would have been the other option and it is the wrong one — it would put a
+   page's panel over the application's own navigation.
+   ================================================================================================== */
+.psb-page .scn-drawer { top: var(--header-height, 56px); }
+
+/* AND IT HAS TO READ AS A CONTROL. White on white with a hairline border is a button you find by
+   knowing it is there. The ground token is the same one the page's own filter chrome uses, so this
+   is the existing vocabulary rather than a new colour. */
+.psb-page .scn-drawer-close { background: var(--ground); }
+.psb-page .scn-drawer-close:hover { background: var(--paper); }
+
+/* PRINT AND FULLSCREEN ARE UNCHANGED BY THE OFFSET. Print already makes the drawer `position:
+   static`, where `top` does not apply; presentation and fullscreen already remove it entirely. This
+   restates neither — it is here to record that both were checked, not to add a rule. */

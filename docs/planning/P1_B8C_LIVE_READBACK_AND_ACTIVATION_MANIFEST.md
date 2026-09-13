@@ -872,3 +872,65 @@ using it, so the next round does not re-derive it.
 `focus after a pick` · `node identity across a repaint` · `whether a chart is still on screen under a
 notice` · `elementFromPoint over a closed drawer` · `one control height and one label gap across two
 renderers` · `the order the seven controls read in`.
+
+---
+
+# §10  P1-B8D-R8 — THE LIFECYCLE CONTRACT
+
+§9 recorded what the page must do while somebody is using it. This section records what it must do
+when they **stop** — because that is where every one of this round's six reports actually lived.
+
+## 10.1  Ownership, settled
+
+| Concern | Owner | Everyone else |
+|---|---|---|
+| when the board paints | `psb-board-ui`'s own `MOUNTED` flag | a host may ask it to stop; nobody else may gate a paint |
+| the size observer on `#view` | `psb-board-ui`, one at a time | connected at `boot()`, disconnected at `unmount()` |
+| the three body state classes | `psb-board-ui` | stripped on unmount; re-derived on the next mount |
+| whether a visit is restored | the page controller, via the parked controller | the renderer is handed an adapter and does not know it is a restore |
+| the canonical site identity | the page controller | passed to the board at mount as `siteIdentity` |
+| the chart toolbar | the host, via `chartToolbar` | the prototype still renders every control |
+| the sentences under a filter control | the host, via `inlineFilterNotes` | the counts are still computed either way |
+| a genuinely empty answer | the page's state host, from `BOARD.notices()` | never a paragraph hanging off a control |
+
+## 10.2  Rules that must keep holding
+
+- **A renderer that can be mounted can be unmounted, and clearing its output is not unmounting it.**
+  `PSB_BOARD.unmount()` sets `MOUNTED = false`, disconnects the observer, closes every popover and
+  fullscreen, strips the body state classes, and empties the five hosts.
+- **Nothing paints while the board is not mounted.** `render()`, `renderData()` and the resize
+  callback all check — the callback twice, once when it is scheduled and once on the frame it runs,
+  because the defect this round fixed was a callback scheduled while the board was up and delivered
+  after it came down.
+- **One observer per board, not one per mount.** `boot()` runs again on every site change;
+  `observeContainer()` disconnects its own before observing.
+- **The board comes down before the next site's read goes out**, in the same synchronous turn, and
+  stays down for the whole of it. A failed read shows that site's error over nothing, and must not
+  put the previous site's board back.
+- **Leaving the page and coming back is ONE consistent page.** Preserve-consistently: the same site,
+  the same view, the same category, the same simulation, and **zero new requests**. A controller is
+  parked only when it is complete, mounted and holding its adapter; anything less is dropped, so a
+  restore is all or nothing.
+- **A simulation belongs to a site.** Changing company, country or marketplace clears every
+  unpersisted override, the undo stack, the form and the chip. A view, a category, a series and a
+  leave-and-return of the same site all keep it. Nothing is written anywhere in either case.
+- **A control that is removed is not rendered**, never hidden. No empty container, no tab stop.
+- **A genuinely empty answer is still explained**, in the state host, beside a board that is still
+  correct — and never dressed up as a normal ready page.
+
+## 10.3  What a browser must measure, because markup cannot say it
+
+`what is PAINTED at a control's own centre` (the close button was present, correct and behind the
+shell header) · `#view one animation frame after a teardown` · `#view while a read is outstanding` ·
+`the tab order, not the visible control count` · `a live handler firing after an unmount` · `the
+override count across a site change, a view change and a category change`.
+
+## 10.4  Two things this harness cannot see, and how they were reached anyway
+
+- **`--hide-scrollbars`.** The acceptance browser never grows or loses a scrollbar, so the width
+  change that a real teardown produces on a real screen does not happen here. The sequences change
+  the viewport deliberately instead, and say so in the trace.
+- **Animation frames under a virtual-time budget.** The size observer answers on `rAF`, and headless
+  Chrome delivers those erratically — the trace that FOUND this defect saw it three runs in six. The
+  suite therefore drives the same defect through a deterministic route: `#btnPresent` lives in the
+  partial, survives the unmount, and its handler calls `render()`. Same property, every run.

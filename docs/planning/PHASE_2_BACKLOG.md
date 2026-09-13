@@ -44,17 +44,24 @@ Left deliberately untouched by R6:
 - Global typography and spacing unification.
 
 
-## B2-4 · A scenario override outlives its site
+## B2-4 · A scenario override outlives its site — CLOSED by P1-B8D-R8, with a correction
 
-Recorded by P1-B8D-R7. `STATE.overrides` is keyed by SKU. A site change re-derives Category, Series,
-currency and the scenario series against the new rows, but an override on a SKU that is listed on
-BOTH sites survives the switch — so a price simulated for one marketplace can still be drawn on
-another, which is the exact class of confusion this feature exists to prevent.
+**The R7 description of this item was wrong and is corrected here.** `STATE.overrides` is NOT keyed
+by SKU. It is keyed by `SEL.scenarioSiteKey(site)` → series → price field
+(`psb-selectors.js:607`), so an override made on one site was never APPLIED to another; a site with
+no entry under its own key has no simulation, whatever SKUs it lists.
 
-It is not in R7's scope (§6 forbids touching price calculation) and it is not reachable in the
-replayed universe, where no SKU is listed under two companies. The decision to make is whether an
-override belongs to the PRODUCT or to the SITE it was simulated on; the answer changes what Undo and
-Reset mean, which is why it is a Phase 2 item and not a patch.
+What WAS true, and what R8 fixes, is quieter: the overrides stayed in memory across a site change,
+stayed in the drawer footer count ("Active overrides: 3"), and came back in full the moment somebody
+returned to the first site. In a meeting that is a number on a chart whose origin nobody in the room
+can reconstruct.
+
+R8 adopts the conservative rule the USER agreed: **when the canonical site identity — company +
+country + marketplace — changes, every unpersisted override goes**, along with the undo stack, the
+series, the form input and the chip, and the drawer closes. A different VIEW, a different CATEGORY, a
+different SERIES and a leave-and-return of the same site all keep it. Nothing is written anywhere in
+either case. It is a mount argument (`clearScenarioOnSiteChange`) defaulting OFF, so the prototype —
+where the site ladder IS how you browse the fixture — is unchanged.
 
 ## B2-5 · Escape does not close the price-adjustment drawer
 
@@ -62,3 +69,16 @@ Deliberate and documented in `psb-board-ui.js`: the drawer is a workspace rather
 Escape inside a form a person is filling in should not throw the form away. P1-B8D-R7 left it alone
 and its §2.6 explicitly allows that. Worth revisiting alongside a shared drawer component — there is
 still no `.km-drawer` in `components.css` and four pages have now written their own.
+
+## B2-6 · A shared drawer component
+
+Four pages have now written their own — `.glm-drawer`, `.oow-drawer`, one in sku-regional-details and
+`.scn-drawer`. There is no `.km-drawer` in `components.css` and no `--drawer-*` token.
+
+P1-B8D-R8 supplies the argument for making one. `.scn-drawer` was `position: fixed; top: 0;
+z-index: 60` under a `.top-header` that is `position: fixed; top: 0; z-index: 2000` — so its entire
+head row, including the close button, was painted **underneath the application's header bar**. It was
+invisible for two rounds and it passed every test, because a synthetic `.click()` bypasses hit-testing
+and every assertion about the control was true. R8 fixed it with `top: var(--header-height, 56px)`,
+which is correct and is also the fourth place in this repository where a page works out for itself
+where the shell's chrome ends. A shared drawer would own that offset once.

@@ -2103,3 +2103,145 @@ KNOWN AND NOT FIXED
     sites. Out of scope this round; recorded as Phase 2 B2-4.
 
 **STATUS: LOCAL COMMIT - NOT PUSHED - FRONTEND REDEPLOY REQUIRED - NO APPS SCRIPT SYNC.**
+
+---
+
+## Entry — 2026-09-13 · PRODUCT-STRATEGY-P1-B8D-R8 (the renderer went on drawing a page nobody was on)
+
+```
+Release ID:                  F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11   (UNCHANGED — no .gs file changed)
+Ledger entry ID:             P1-B8D-R8-2026-09-13-lifecycle-and-simulation-scope
+Environment:                 (none — NOT DEPLOYED, NOT PUSHED)
+Git branch:                  feature/product-strategy-board-p0
+Git state:                   forward commit on d7a6061 (P1-B8D-R7, pushed by the USER; origin/feature,
+                             origin/main and local main were all at d7a6061 at the start of this round).
+                             Nothing amended, reset, rebased or merged.
+
+APPS_SCRIPT_SYNC_REQUIRED:   NO    (0 .gs files changed; action contract unchanged; flag unchanged)
+FRONTEND_DEPLOY_REQUIRED:    YES   (4 shipped browser files + index.html)
+DB / Sheets / Drive writes:  0
+Co-deployed cache token:     finalusability-p1b8dr7-20260913  ->  lifecycle-p1b8dr8-20260913
+                             34 refs in index.html, 0 stale; appended to _release-order.js (71 tokens).
+
+SIX REPORTS, THREE OF THEM ONE DEFECT
+-------------------------------------------------------------------------------------------------------
+  THE RENDERER HAD NO UNMOUNT, AND THE PAGE HAD BEEN EMPTYING ITS OUTPUT INSTEAD.
+
+  Measured through the shell's own lifecycle, before anything was changed: load a site, call
+  `onUnmount()` — which empties #nav, #crumbs, #banner, #scope and #view — and look at #view two
+  hundred milliseconds later. THREE RUNS IN SIX it held three children again. Nobody put them back.
+  `psb-board-ui` keeps a ResizeObserver on #view; the section going `display: none` IS a size change;
+  the observer answers it one animation frame later with `renderData()`, which repaints the chart and
+  the print banner out of a STATE nothing had cleared. `renderData()` deliberately leaves the nav and
+  the filters alone so that a resize cannot cost a reader their place — so the half that came back was
+  the BOARD and the half that stayed empty was the CHOOSER.
+
+  That is the split brain the USER reported (§7) word for word, and it is a RACE, which is why it
+  reads as "sometimes" and why every suite in this project was green. The same live renderer is why a
+  board can reappear during a load (§5): a board that can repaint itself on any frame can repaint
+  itself while the next site's read is outstanding, and on a real screen the teardown supplies its own
+  trigger — removing two thousand pixels of chart removes the scrollbar and every column gets wider.
+  The acceptance harness runs with `--hide-scrollbars`, which is exactly why this was invisible to
+  every run before this one.
+
+  Clearing somebody else's output is not the same as telling them to stop. `PSB_BOARD.unmount()` now
+  exists beside `mount()`: the flag goes false, the observer is disconnected, nothing paints while the
+  board is down, and `observeContainer()` replaces its own observer rather than adding one per site
+  change (`boot()` runs on every site change; each run had been leaving another live observer behind).
+
+  THE CLOSE BUTTON WAS BEHIND THE APPLICATION'S HEADER (§6). R7 reported it present and correct, and
+  every property R7 measured WAS correct: one button, 30x30, right corner, right glyph, right
+  accessible name. `elementFromPoint` at its own centre returned `top-header`. `.top-header` is
+  `position: fixed; top: 0; z-index: 2000` and fills `--header-height`; the drawer was `top: 0;
+  z-index: 60`, so its whole head row was painted underneath the shell's header bar — invisible, and
+  un-clickable at those coordinates. A synthetic `.click()` in a test bypasses hit-testing, which is
+  how it passed. The drawer now starts at `top: var(--header-height, 56px)`, making this the fifth
+  consumer of the one token base.css declares rather than a fifth opinion about the header's height.
+  Nothing global moved: raising the drawer ABOVE the header would have put a page's panel over the
+  application's own navigation.
+
+THE OTHER THREE
+-------------------------------------------------------------------------------------------------------
+  §3 THE SENTENCE UNDER CATEGORY   `#catEmpty` — "This site sells nothing that passed membership and
+                       the status gate…" — is 72px of paragraph hanging off a 38px control, and it
+                       renders only on a site whose listings carry no category. NONE of the ten
+                       captured sites is such a site, so the state the report is about could not be
+                       reached, photographed or asserted; the replay now empties one field on each row
+                       of a real site's real envelope, which reproduces it exactly (rows, prices and
+                       chart unchanged). Suppressed by `inlineFilterNotes: false`, and NOT deleted:
+                       the counts are still computed and `BOARD.notices()` reports the genuinely-empty
+                       case to the host, which writes it into the state host where every other answer
+                       is written. A site that HAS categories writes nothing at all — no empty box, no
+                       held height.
+  §4 THE CHART TOOLBAR  View (Auto Fit · Comfortable · Fullscreen), Detail (Clean · Detail), Layers,
+                       Reset view and the density note: 9 controls, 87px tall, 7 of them in the tab
+                       order. Removed by `chartToolbar: false` — the row is never built, so there is
+                       no empty `.chartctl` holding the space and nothing invisible left in the tab
+                       order. Production keeps Auto Fit, which is `STATE.chartMode`'s default and the
+                       one setting that measures the card and chooses the size itself.
+                       `toggleFullscreen`, `applyViewMode`, the zoom handlers and `chartControls()`
+                       itself are all retained, and the prototype still renders every one of them.
+  §8 THE SIMULATION'S SCOPE   `clearScenarioOnSiteChange: true`. When the canonical site identity
+                       (company + country + marketplace) changes, every unpersisted override goes —
+                       overrides, undo stack, series, input, notice, refusal, and the drawer closes.
+                       A view, a category, a series and a leave-and-return of the SAME site all keep
+                       it. CORRECTION TO THE R7 LEDGER ENTRY: overrides are keyed by
+                       `scenarioSiteKey(site)` + series + field, NOT by SKU. R7's note that one
+                       "survives a site change if the same SKU is listed on both sites" was wrong —
+                       site A's overrides were never APPLIED to site B. What was true, and what this
+                       round fixes, is that they stayed in memory, stayed in the "Active overrides: N"
+                       count, and came back the moment somebody returned to site A.
+
+§7 — WHICH STRATEGY, AND WHY
+-------------------------------------------------------------------------------------------------------
+  PRESERVE-CONSISTENTLY. Everything restored was read during THIS page life and cannot have changed
+  without a reload that would destroy it anyway: the universe, the capability and the workspace are
+  each resolved once and never refreshed while the page is open. `onUnmount` parks the controller only
+  when it is worth restoring — universe OK, scope complete, board mounted, adapter held — and drops it
+  otherwise, so a restore is all or nothing and can never produce the half-page it replaced.
+  `onMount` consumes the parked controller, repaints the chooser from canonical state and re-mounts
+  the SAME adapter. Measured: 0 extra workspace reads, 0 extra universe reads, the same view, the same
+  category and the same scenario. Because `boot()` re-derives through `narrowAfterSiteChange()`, the
+  filters cannot come back naming something the board does not have.
+
+ONE MORE, FOUND ON THE WAY
+-------------------------------------------------------------------------------------------------------
+  `body.presenting` and `body.is-fullscreen` are the only UNSCOPED rules in this stylesheet
+  (`background: #10131a`, `overflow: hidden`), and nothing took them off on unmount. Leaving Product
+  Strategy in presentation mode restyled whatever the operator navigated to next. `unmount()` now
+  strips all three body state classes; a restored visit re-derives them from the site it is showing.
+
+CHANGED FILES (14)
+-------------------------------------------------------------------------------------------------------
+  shipped       assets/js/product-strategy/psb-board-ui.js   unmount/notices/siteKey, MOUNTED, one
+                                                             observer, three new mount arguments,
+                                                             clearScenarioState, focus into the drawer
+                assets/js/pages/product-strategy-board.js    mountBoard, showBoardNotices, C.restore,
+                                                             the parked controller, teardown via the
+                                                             renderer, adapter retained
+                assets/css/product-strategy-board.css        section 12: the drawer header offset
+                index.html                                   34 token refs
+  harness       assets/tests/_p1b8c-interactions.js          6 new sequences + the R8 measurements
+                assets/tests/_p1b8c-replay.js                noCategories, startFailing
+                assets/tests/_p1b8c-visual-runner.js         the r8 measurement block, noCategories
+                assets/tests/_release-order.js               token appended
+  suites        assets/tests/product-strategy-lifecycle-p1-b8d-r8.test.js  NEW — 176/0, 18 mutants, 0 survived
+                assets/tests/product-strategy-board-p1-b2c.test.js         F4 re-anchored + F4a
+                assets/tests/product-strategy-site-selection-p1-b8d-r5.test.js  G7-G9 inverted, I8 re-anchored
+  docs          docs/planning/S_SERIES_FRONTEND_API_MIGRATION_INVENTORY.md  NEW (the §9 census)
+                docs/planning/DEPLOYMENT_RELEASE_LOG.md
+                docs/planning/P1_B8C_LIVE_READBACK_AND_ACTIVATION_MANIFEST.md
+                docs/planning/PHASE_2_BACKLOG.md
+
+KNOWN AND NOT FIXED
+-------------------------------------------------------------------------------------------------------
+  · 390px: the shell's fixed 240px sidebar still leaves a ~118px content column. Shell-level, out of
+    scope, Phase 2 B2-2. The drawer's close control IS correct at 390 (box x=346, 30x30, hit-tested).
+  · Two console errors in the generated acceptance page (`renderHomepage`, `initSkuUnifiedScroll`) are
+    pre-existing and unrelated — page modules the generated page does not load, caught by app.js.
+    2 before, 2 after.
+  · Escape still does not close the price-adjustment drawer. Existing contract with its reason written
+    in the source; §6 does not require it. Phase 2 B2-5.
+```
+
+**STATUS: LOCAL COMMIT — NOT PUSHED — FRONTEND REDEPLOY REQUIRED — NO APPS SCRIPT SYNC.**

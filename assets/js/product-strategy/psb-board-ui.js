@@ -373,7 +373,14 @@
   function setBodyState() {
     var b = document && document.body;
     if (!b) return;
-    var on = [STATE.presentation === true, MODEL.scenario.active === true, STATE.fullscreen === true];
+    /* MODEL IS NULL UNTIL THE FIRST MOUNT, and since P1-B8D-R8 this runs before one: `unmount()`
+       takes the body classes off, and the page controller tears the board down on every answer
+       that is not a chart — including the very first, which is written before any board has ever
+       existed. An unmounted board has no scenario, which is the correct reading of null here and
+       not a fallback. */
+    var on = [STATE.presentation === true,
+      !!(MODEL && MODEL.scenario && MODEL.scenario.active === true),
+      STATE.fullscreen === true];
     var keep = String(b.className || '').split(/\s+/).filter(function (t) {
       return t !== '' && BODY_STATE_CLASSES.indexOf(t) < 0;
     });
@@ -1069,6 +1076,9 @@
        siteOwnedByPage   the page's own chooser is the site control; do not draw a second ladder
        inlineHelpIcons   the `?` beside View, Detail, Layers, the scope row and the scenario head
        axisPriceRow      the everyday price printed under each column on the X axis
+       chartToolbar      the View / Detail / Layers / Size / Reset row above the chart   (P1-B8D-R8)
+       inlineFilterNotes the sentences the filter controls write underneath themselves  (P1-B8D-R8)
+       clearScenarioOnSiteChange   a simulation does not outlive the site it was made on (§8)
 
      THEY ARE ARGUMENTS RATHER THAN A DETECTED CONDITION. "One company in the data" is equally true
      of a page that narrowed to one site and of a fixture that only ever had one; guessing would
@@ -1077,6 +1087,40 @@
   var SITE_OWNED_BY_PAGE = false;
   var SHOW_INLINE_HELP_ICONS = true;
   var SHOW_AXIS_PRICE_ROW = true;
+  var SHOW_CHART_TOOLBAR = true;
+  var SHOW_INLINE_FILTER_NOTES = true;
+  var CLEAR_SCENARIO_ON_SITE_CHANGE = false;
+
+  /* ================================================================================================
+     P1-B8D-R8 — A RENDERER THAT CAN BE MOUNTED MUST BE ABLE TO BE UNMOUNTED.
+
+     MEASURED, THROUGH THE SHELL'S OWN LIFECYCLE: load a site, call `onUnmount()` — which empties
+     `#nav`, `#crumbs`, `#banner`, `#scope` and `#view` — and then look at `#view` two hundred
+     milliseconds later. In three runs out of six it holds THREE CHILDREN again. Nobody put them
+     back on purpose. `observeContainer()` watches `#view` for its size, the section going
+     `display: none` is a size change, and the observer answers it one animation frame later by
+     calling `renderData()`, which repaints the whole chart out of a STATE nothing has cleared.
+
+     THAT IS THE SPLIT BRAIN THE USER REPORTED: the old board underneath, the chooser reset above.
+     `renderData()` repaints `#view` and `#banner` ONLY — it deliberately leaves the filters and the
+     nav alone so a resize cannot cost somebody their place — so the half that comes back is exactly
+     the half the operator described, and the half that stays empty is exactly the other one.
+
+     AND IT IS THE SAME DEFECT DURING A LOAD. A board that can repaint itself on any frame can
+     repaint itself while the next site's read is outstanding; on a real screen the teardown itself
+     supplies the trigger, because removing two thousand pixels of chart removes the scrollbar and
+     every column gets wider. The acceptance harness runs with `--hide-scrollbars`, which is why
+     this was invisible to every run before this one.
+
+     SO THERE IS A `MOUNTED` FLAG AND THERE IS AN `unmount()`. Nothing paints while the board is
+     not mounted, the observer is disconnected rather than left watching a host that is not the
+     board's any more, and `observeContainer()` replaces its own observer instead of adding a
+     second — `boot()` runs again on every site change, and before this round each of those runs
+     left another live observer behind.
+     ================================================================================================ */
+  var MOUNTED = false;
+  var RESIZE_OBSERVER = null;
+  var RESIZE_LISTENER = null;
 
   /** Append an icon only if one was built. `addInfo(x, infoIcon(...))` reads as what it does. */
   function addInfo(parent, node) {
@@ -1170,6 +1214,20 @@
      and whichever one won, the other would be lying.
      ================================================================================================ */
   function chartControls(lay) {
+    /* P1-B8D-R8 — THE WHOLE ROW, OR NONE OF IT.
+       The USER's decision is about the row, not about Fullscreen: "不只是隱藏 Fullscreen 單一按鈕,
+       是正式頁面不再顯示這整列 control toolbar". So nothing is created — no box, no empty
+       `.chartctl` holding a gap open, no button that is invisible and still in the tab order. The
+       functions behind every one of them (`toggleFullscreen`, `applyViewMode`, the zoom handlers)
+       are untouched and still reachable from the prototype, which is what a mode contract is for.
+
+       WHAT PRODUCTION IS LEFT WITH IS AUTO FIT, which is `STATE.chartMode`'s default and the one
+       setting that measures the card and the window and chooses the size itself. The row's other
+       options are ways to overrule a measurement; removing them removes the overrule, not the
+       measurement. `#densityNote` goes with the row because it is advice about a control — "switch
+       to Comfortable for larger product images" — and advice to press a button that is not there
+       is worse than silence. */
+    if (!SHOW_CHART_TOOLBAR) return null;
     var box = el('div', 'chartctl');
     box.id = 'chartControls';
 
@@ -1926,7 +1984,7 @@
         mode: STATE.fullscreen ? 'fullscreen' : STATE.chartMode
       });
       panel.setAttribute('data-density', lay.density);
-      panel.appendChild(chartControls(lay));
+      addInfo(panel, chartControls(lay));
       panel.appendChild(renderChart(p, STATE.thresholdC, m.findings));
       panel.appendChild(legend());
       host.appendChild(panel);
@@ -2605,6 +2663,54 @@
     STATE.scenarioRefusal = null;
   }
 
+  /* ================================================================================================
+     P1-B8D-R8 §8 — A SIMULATION BELONGS TO THE SITE IT WAS SIMULATED ON.
+
+     `narrowAfterSiteChange()` above already drops a scenario SERIES the new site does not sell, and
+     that is not the same promise. The overrides themselves are keyed by site, so nothing from site A
+     is ever APPLIED to site B — but they are still there, still counted by "Active overrides: 3",
+     and they come back the instant somebody returns to A. In a meeting that is a number on a chart
+     whose origin nobody in the room can reconstruct.
+
+     THE RULE THE USER AGREED IS THE CONSERVATIVE ONE: when the canonical site identity changes,
+     every unpersisted override goes. Not on a view, not on a category, not on a series — those are
+     ways of looking at ONE site, and clearing a simulation because somebody opened a different tab
+     of the same board would be worse than keeping it. Only company + country + marketplace.
+
+     IT IS AN ARGUMENT, defaulting off, because the prototype's ladder IS its site control and
+     P1-B2A/B2B were written against a fixture where moving it is how you browse.
+     ================================================================================================ */
+  var LAST_SITE_KEY = null;
+
+  /** Everything a scenario is, and nothing else: no filter, no view, no layer. */
+  function clearScenarioState() {
+    STATE.overrides = {};
+    STATE.undoStack = [];
+    STATE.scenarioSeries = '';
+    STATE.scenarioInput = '';
+    STATE.scenarioNotice = null;
+    STATE.scenarioRefusal = null;
+    /* THE DRAWER CLOSES WITH IT. A form left open over a site it no longer describes invites
+       somebody to press Apply on the last site's numbers. */
+    STATE.meetingOpen = false;
+  }
+
+  /**
+   * Record which site is now mounted and clear the simulation if it is a different one.
+   *
+   * `key` comes from the HOST when the host owns the site, because the host is the only thing that
+   * knows the canonical identity before the rows arrive. A first mount never clears — there is
+   * nothing to carry over from.
+   */
+  function applyScenarioSiteScope(key) {
+    var k = (typeof key === 'string' && key !== '') ? key
+      : (function () { var id = siteIdentity(); return id && id.complete ? id.key : null; }());
+    var changed = LAST_SITE_KEY !== null && k !== null && k !== LAST_SITE_KEY;
+    if (k !== null) LAST_SITE_KEY = k;
+    if (changed && CLEAR_SCENARIO_ON_SITE_CHANGE) clearScenarioState();
+    return changed;
+  }
+
   /**
    * ONE SELECT, BUILT ONE WAY.
    *
@@ -3108,7 +3214,16 @@
       STATE.meetingOpen = !STATE.meetingOpen;
       /* renderData() ONLY — not render(). Opening the drawer must not rebuild the controls or the
          chart, and P1-B2B's contract is what makes that a guarantee rather than a hope. */
+      var opening = STATE.meetingOpen === true;
       render();
+      /* P1-B8D-R8 — OPENING PUTS THE FOCUS INSIDE, which is the other half of §6's keyboard
+         contract. Until this round the focus stayed on <body> after the drawer opened, so
+         "focus the close control and press Enter" meant tabbing forward through the whole page
+         first. Closing already returns the focus to this button; now the two are a pair. Looked
+         up after the render, because that render is what builds the drawer. */
+      if (!opening) return;
+      var first = byId('scenarioDrawerClose');
+      if (first && typeof first.focus === 'function') first.focus();
     });
     wrap.appendChild(btn);
 
@@ -3409,7 +3524,7 @@
 
     /* A TRUE EMPTY STATE. Not three demonstration values, not a placeholder — the sentence a site
        with no eligible listings has actually earned. */
-    if (cats.length === 0) {
+    if (cats.length === 0 && SHOW_INLINE_FILTER_NOTES) {
       var none = el('p', 'scope-empty',
         'This site sells nothing that passed membership and the status gate, so there is no category'
           + ' menu to show. That is an answer about the site, not a failure to load.');
@@ -3428,7 +3543,15 @@
         + (opts.blank_count === 1 ? '' : 's') + ' with no category' : '')
       + (opts.normalization_review.length ? '  ·  ' + opts.normalization_review.length
         + ' needing review' : '')));
-    if (view.provenance !== false) wrap.appendChild(prov);
+    /* P1-B8D-R8 — NOT UNDER THE CONTROL, IN PRODUCTION.
+       Both of these are sentences a control writes underneath itself and leaves there: the empty
+       note is seventy-two pixels of paragraph hanging off the Category button, which is what the
+       USER is pointing at, and the provenance line is the same shape one row down. They are
+       SUPPRESSED, not deleted — the counts are still computed, `data-count` still carries them,
+       and `BOARD.notices()` below reports the genuinely-empty case to the host so the page can say
+       it in the ONE place it says everything else. §3 is explicit that a real empty answer must
+       still be explained and must not be dressed up as a normal ready board. */
+    if (view.provenance !== false && SHOW_INLINE_FILTER_NOTES) wrap.appendChild(prov);
     return wrap;
   }
 
@@ -4060,6 +4183,9 @@
   }
 
   function render() {
+    /* NOT WHILE THE BOARD IS NOT MOUNTED. Every entry point into drawing passes through here or
+       through `renderData()`, so the two guards are the whole of it. */
+    if (!MOUNTED) return;
     withViewport(function () {
       hideTip();
       reload();
@@ -4090,6 +4216,7 @@
    * scenario panel's own readouts are written in place afterwards.
    */
   function renderData() {
+    if (!MOUNTED) return;
     withViewport(function () {
       hideTip();
       reload();
@@ -4842,10 +4969,14 @@
     return changed;
   }
   function onContainerResize() {
+    if (!MOUNTED) return;
     if (_resizeScheduled) return;
     _resizeScheduled = true;
     var run = function () {
       _resizeScheduled = false;
+      /* CHECKED AGAIN ON THE FRAME IT RUNS. The whole defect is a callback that was scheduled while
+         the board was up and delivered after it came down. */
+      if (!MOUNTED) return;
       /* THE LAYOUT IS THE ONLY THING THAT CHANGED, so only the drawing is redrawn: renderData
          leaves the filters, the scenario panel and every control node exactly where they are, and
          holds the reader's place while it works. A resize must not cost somebody their scenario,
@@ -4855,19 +4986,37 @@
     if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
     else run();
   }
+  /** Stop watching. Safe to call when nothing is being watched. */
+  function disconnectContainer() {
+    if (RESIZE_OBSERVER) {
+      try { RESIZE_OBSERVER.disconnect(); } catch (e) { /* already gone */ }
+      RESIZE_OBSERVER = null;
+    }
+    if (RESIZE_LISTENER && typeof window !== 'undefined' && window
+      && window.removeEventListener) {
+      window.removeEventListener('resize', RESIZE_LISTENER);
+    }
+    RESIZE_LISTENER = null;
+    STATE.observing = 'none';
+  }
+
   function observeContainer() {
+    /* ONE WATCHER, NOT ONE PER MOUNT. `boot()` runs again on every site change and this used to add
+       another observer each time, so after three switches one resize ran three redraws. */
+    disconnectContainer();
     var host = byId('view');
     if (!host) return;
     if (typeof ResizeObserver === 'function') {
       try {
-        var ro = new ResizeObserver(onContainerResize);
-        ro.observe(host);
+        RESIZE_OBSERVER = new ResizeObserver(onContainerResize);
+        RESIZE_OBSERVER.observe(host);
         STATE.observing = 'ResizeObserver';
         return;
-      } catch (e) { /* fall through to the window listener */ }
+      } catch (e) { RESIZE_OBSERVER = null; /* fall through to the window listener */ }
     }
     if (typeof window !== 'undefined' && window && window.addEventListener) {
-      window.addEventListener('resize', onContainerResize);
+      RESIZE_LISTENER = onContainerResize;
+      window.addEventListener('resize', RESIZE_LISTENER);
       STATE.observing = 'window-resize';
     } else {
       STATE.observing = 'none';
@@ -4893,6 +5042,9 @@
     SITE_OWNED_BY_PAGE = opts.siteOwnedByPage === true;
     SHOW_INLINE_HELP_ICONS = opts.inlineHelpIcons !== false;
     SHOW_AXIS_PRICE_ROW = opts.axisPriceRow !== false;
+    SHOW_CHART_TOOLBAR = opts.chartToolbar !== false;
+    SHOW_INLINE_FILTER_NOTES = opts.inlineFilterNotes !== false;
+    CLEAR_SCENARIO_ON_SITE_CHANGE = opts.clearScenarioOnSiteChange === true;
     ADAPTER = opts.adapter || (PREVIEW && PREVIEW.PreviewProductStrategyDataAdapter) || null;
     if (!ADAPTER) {
       throw new Error('psb-board-ui: no adapter. Pass one to PSB_BOARD.mount({adapter}) —'
@@ -4985,8 +5137,15 @@
 
        `reload()` first, because it is what rebuilds CANON from the new adapter and the narrowing
        is a question about those rows. */
+    /* MOUNTED BEFORE ANYTHING PAINTS, because `render()` and `renderData()` refuse to draw while it
+       is false — which is the whole point of the flag. */
+    MOUNTED = true;
     reload();
     narrowAfterSiteChange();
+    /* AFTER the rows are in and narrowed, so a cleared scenario is cleared against the site that is
+       actually loaded, and BEFORE the first paint, so no frame ever shows the old simulation over
+       the new site's prices. */
+    applyScenarioSiteScope(opts.siteIdentity);
     remeasure();
     render();
     observeContainer();
@@ -5013,8 +5172,82 @@
      give this renderer live rows: `load()` is synchronous by contract, so the asynchrony has to
      finish before mounting rather than during it.
      ------------------------------------------------------------------------------------------------ */
+  /**
+   * P1-B8D-R8 — TAKE THE BOARD DOWN, AND MEAN IT.
+   *
+   * The host was already emptying the five hosts itself, and that was never enough: the renderer
+   * kept a live size observer on `#view` and repainted the whole chart into it one frame later,
+   * three times in six runs. Clearing somebody else's output is not the same as telling them to
+   * stop, and only the renderer can stop the renderer.
+   *
+   * THE BODY CLASSES COME OFF TOO. `presenting`, `is-fullscreen` and `has-scenario` are written on
+   * `document.body`, which outlives this section by the entire application — leaving the page in
+   * presentation mode used to restyle whatever the operator navigated to next.
+   *
+   * WHAT IS DELIBERATELY NOT TOUCHED: the scenario, the category, the series and the view. Those
+   * belong to the SITE, not to the visit, and §7 keeps them so that coming back to the same site
+   * does not cost somebody their work. §8's rule is about a different site, and it is applied at
+   * `boot()` where the new site's identity is known.
+   */
+  function unmount() {
+    MOUNTED = false;
+    disconnectContainer();
+    hideTip();
+    STATE.openPopover = null;
+    STATE.catMenuOpen = false;
+    STATE.moreFiltersOpen = false;
+    STATE.layersOpen = false;
+    STATE.fullscreen = false;
+    STATE.presentation = false;
+    /* ALL THREE COME OFF, not just the two whose STATE was reset. `has-scenario` is derived from the
+       MODEL rather than from a flag, so `setBodyState()` would put it straight back — and it is a
+       statement about a page that is no longer on screen. `boot()` calls `setBodyState()` on its
+       first render, so a restored visit re-derives every one of them from the site it is showing.
+       `presenting` and `is-fullscreen` matter most: those two are the only UNSCOPED rules in this
+       stylesheet (`body.presenting { background: #10131a }`, `body.is-fullscreen { overflow:
+       hidden }`), so leaving either behind restyles whatever the operator navigated to next. */
+    var b = document && document.body;
+    if (b) {
+      b.className = String(b.className || '').split(/\s+/).filter(function (t) {
+        return t !== '' && BODY_STATE_CLASSES.indexOf(t) < 0;
+      }).join(' ');
+    }
+    ['nav', 'crumbs', 'banner', 'scope', 'view'].forEach(function (id) { clear(byId(id)); });
+    return true;
+  }
+
+  /**
+   * What this board would have said underneath a control, handed to the host instead.
+   *
+   * §3 removes the resident sentences from the filter row and is explicit that a genuinely empty
+   * answer must still be explained — in the state host, where every other answer is written, and
+   * never by quietly rendering a normal-looking board over missing data.
+   */
+  function notices() {
+    var out = [];
+    if (!MOUNTED || !MODEL) return out;
+    var cats = (MODEL.categoryOptions && MODEL.categoryOptions.options) || [];
+    if (cats.length === 0) {
+      out.push({
+        code: 'NO_CATEGORIES_ON_SITE',
+        severity: 'info',
+        headline: 'This site has no product categories.',
+        detail: 'Nothing on it passed membership and the status gate carrying a category, so the'
+          + ' Category menu has nothing to offer. Every listing and every price is still on the'
+          + ' board below. That is an answer about the site, not a failure to load.'
+      });
+    }
+    return out;
+  }
+
   var BOARD = {
     mount: function (opts) { return boot(opts); },
+    /* P1-B8D-R8 — THE OTHER HALF OF `mount`, which did not exist until this round. */
+    unmount: function () { return unmount(); },
+    isMounted: function () { return MOUNTED === true; },
+    notices: notices,
+    /* The site this board is currently drawing, as the key a scenario is filed under. */
+    siteKey: function () { return LAST_SITE_KEY; },
     /* P1-B8B §2 — THE ROUTE SEAM. `showView` is how anything outside this file selects one of the six
        without knowing that `STATE` exists, and `currentRoute` is how it reads back which is showing.
        Both speak in ROUTES rather than in internal ids, because the route is the name the sidebar
@@ -5036,6 +5269,24 @@
       axis_price_row_is_an_argument: 'mount({ axisPriceRow: false }) suppresses the price',
       axis_price_row_default: 'rendered',
       price_remains_in: 'tipLines() and ariaFor(), on every column, either way',
+      /* P1-B8D-R8 — the lifecycle, the two suppressions and the scenario's site scope. */
+      can_be_unmounted: true,
+      unmount_disconnects_the_size_observer: true,
+      unmount_clears_body_state_classes: true,
+      one_size_observer_per_board: true,
+      nothing_paints_while_unmounted: true,
+      chart_toolbar_is_an_argument: 'mount({ chartToolbar: false }) removes the whole row',
+      chart_toolbar_default: 'rendered',
+      chart_toolbar_leaves_no_empty_container: true,
+      chart_toolbar_functions_are_retained: 'toggleFullscreen, applyViewMode, zoom, reset',
+      chart_mode_without_a_toolbar: 'auto (Auto Fit) — the measured default',
+      inline_filter_notes_are_an_argument: 'mount({ inlineFilterNotes: false })',
+      inline_filter_notes_default: 'rendered',
+      empty_category_answer_is_reported_to_the_host: 'BOARD.notices()',
+      scenario_site_scope_is_an_argument: 'mount({ clearScenarioOnSiteChange: true })',
+      scenario_site_scope_default: 'kept (the prototype ladder is how you browse its fixture)',
+      scenario_identity: 'company + country + marketplace — never a view, a category or a series',
+      scenario_survives: 'a view, a category, a series, a filter and an unmount of the same site',
       default_adapter: 'PREVIEW (prototype only)',
       fixture_fallback_when_an_adapter_is_given: false,
       /* P1-B7 — WAS 'PSB_BOARD_DEFER === true', WHICH MADE EVERY OTHER HOST CARRY A GLOBAL. The

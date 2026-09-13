@@ -799,3 +799,54 @@ authority/formula/schema/idempotency/optimistic change; WRITE→SERVER-READBACK 
   NEW backend (bounded) alike.
 - Tests: new `api-bounded-backend-readback-endpoints-f1-7m-b2-r1` 46/0; 7c/7f workspace suites confirm filter-absent parity;
   full regression 236 pass / 4 known-baseline fail / 0 new. Next: F1-7M-E (backend algorithm cost) — await spec + this deploy.
+
+---
+
+## P1-B8D-R8 — FRONTEND DATA ACCESS ENTERS THE S MAINLINE (2026-09-13, HEAD `d7a6061`)
+
+**Read-only census. No page runtime outside Product Strategy was touched by the round that produced
+it.** Evidence and the per-module table are in
+[`S_SERIES_FRONTEND_API_MIGRATION_INVENTORY.md`](S_SERIES_FRONTEND_API_MIGRATION_INVENTORY.md); this
+section records only what the mainline now carries.
+
+### The rule
+
+> **Every new or modified production data feature defines its API contract first and wires the
+> runtime second. No new browser path may read a database, a Sheet or a fixture directly.**
+
+A rule about *new* work. Nothing is migrated by adopting it.
+
+### What the census found, in one paragraph
+
+Of the 78 scripts `index.html` loads: **5 `STANDARD_API`** (`KM.transport.post` with a named action),
+**19 `LEGACY_API_WRAPPER`** (`KM.DB.*` — the same endpoint and the same action vocabulary through its
+own `fetch`), **1 `DIRECT_EXTERNAL_FETCH`** (the partial loader, fetching this application's own
+markup), **5 `PRODUCTION_FIXTURE_OR_STATIC_DATA`** (map topology and place names, correctly compiled
+in), **8 `DOM_OR_LOCALSTORAGE_AS_DATA_SOURCE`**, and **40 with no data access**. Zero
+`google.script.run`, zero `XMLHttpRequest` calls, zero direct Sheets reads.
+
+This agrees with §1 of `API_CURRENT_TRANSPORT_ACTION_INVENTORY.md` and adds the per-page frontend
+half of it.
+
+### Two findings that change the sequence
+
+1. **`KM.DB` is a wrapper, not a bypass**, and the Apps Script server's own DB helpers are
+   server-side and not a browser data path at all. Neither may be counted as a frontend bypass — the
+   census says so in its own scope statement, and the R8 suite asserts it (mutant K17).
+2. **Browser storage as a source of truth is the real risk, and it is smaller and sharper than the
+   transport question.** Seven of the eight entries are caches, drafts or cross-page handoffs with a
+   server behind them. One is not: `campaign-risk`'s promotion records have no server side at all.
+   That is a **release-scope** decision rather than an engineering finding, and §6 of the inventory
+   states it as one.
+
+### Sequence adopted
+
+| Round | Work |
+|---|---|
+| **S2** | `campaign-risk` promotion contract + table; `sku-details` / `sku-regional-details` onto `skuDetails.workspace.get`; replace the Shipping Plan ↔ Inventory Replenishment `sessionStorage` handoff with a named contract |
+| **S3** | the eight pages whose target workspace action already exists — mechanical, independently verifiable |
+| **S4** | `factory-stock`, `carrier-rate-card`, `sku-handbook` — contracts have to be written first |
+| **S5** | retire `getOperationDb` / `getTable` once no caller needs them (it can only be last) |
+
+`getOperationDb` / `getTable` keep their existing `MERGE_INTO_WORKSPACE_API` disposition from §3.1 —
+this census counts their callers rather than reopening the decision.

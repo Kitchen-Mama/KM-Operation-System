@@ -396,8 +396,16 @@ console.log('\n=== SECTION F  THE OBSERVER WATCHES THE CONTAINER ===');
     'F2 and it is #view — a container, not the window, and not a node a redraw throws away');
   ok(SRC.prototype.indexOf('new ResizeObserver') >= 0,
     'F3 through a real ResizeObserver rather than a window resize listener');
-  ok(SRC.prototype.indexOf("window.addEventListener('resize', onContainerResize)") >= 0,
+  /* P1-B8D-R8 RE-ANCHORED, AND THE RULE IS UNCHANGED. The fallback listener is still registered
+     only inside the `catch`/`else` an absent ResizeObserver reaches, and it is still the same
+     callback; what changed is that the function is HELD in `RESIZE_LISTENER` so it can be handed
+     back to `removeEventListener` when the board is unmounted. An anonymous registration cannot be
+     undone, which is the whole reason this round had a renderer repainting a page it had left. */
+  ok(SRC.prototype.indexOf("RESIZE_LISTENER = onContainerResize;") >= 0
+    && SRC.prototype.indexOf("window.addEventListener('resize', RESIZE_LISTENER)") >= 0,
     'F4 with a window listener kept only as the fallback for环境 without one'.replace('环境', 'an environment'));
+  ok(SRC.prototype.indexOf("window.removeEventListener('resize', RESIZE_LISTENER)") >= 0,
+    'F4a and that fallback can be taken off again — it is held, not anonymous');
 
   // F5 A RESIZE RE-LAYS-OUT.
   var before = chartOf(p).getAttribute('data-vb-w');

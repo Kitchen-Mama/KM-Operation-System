@@ -173,6 +173,24 @@
            sites is empty, so the only honest way to reach SOURCE_EMPTY is for the SERVER to answer
            with no rows for a site that really exists. The envelope keeps the server's own shape;
            only the rows and the state it reports are replaced. */
+        /* P1-B8D-R8 - A REAL SITE WHOSE LISTINGS CARRY NO CATEGORY.
+           The USER quoted the sentence the Category control writes when nothing on the site has a
+           category, and NONE of the ten captured sites produces it: every one of them has
+           categories, so the state the report is about could not be reached, photographed or
+           asserted. It is not a refusal and not an empty site - there are rows, they have prices,
+           and the board draws a complete chart; it is a site the category MENU has nothing to
+           offer for. The server's own envelope is kept and one field is emptied on each row,
+           because that is the only difference between this site and the captured one. */
+        if (opts.noCategories === true) {
+          var dn = env.data || {};
+          return answer(Object.assign({}, env, {
+            data: Object.assign({}, dn, {
+              normalizedRows: (dn.normalizedRows || []).map(function (r) {
+                return Object.assign({}, r, { category: null });
+              })
+            })
+          }));
+        }
         if (opts.emptyWorkspace === true) {
           var d = env.data || {};
           return answer(Object.assign({}, env, {
@@ -198,6 +216,13 @@
          fail for ever can prove that a failure is SHOWN and can never prove that a person is able
          to get out of it; "retry" would be asserted as one more refusal. */
       stopFailing: function () { opts.fail = null; },
+      /* P1-B8D-R8 - AND THE SERVER CAN START FAILING PART WAY THROUGH, which is the only way to
+         ask "does a REFUSED site B leave site A's board on screen". A run that refuses from the
+         beginning never gets a site A to leave behind, so it answers a different question. */
+      startFailing: function (e, only) {
+        opts.fail = e || new Error('the site refused');
+        if (only !== undefined) opts.failOnly = only;
+      },
       writes: 0
     };
   };
