@@ -261,10 +261,25 @@ window.KM.nav.mountStagedMenus = function (d) {
 function showProductStrategyView(route) {
     var V = window.PSB_VIEWS;
     window.KM = window.KM || {};
-    window.KM.pendingRoute = (V && typeof V.routeOf === 'function')
-        ? V.routeOf(V.resolve(route))
-        : null;
+    var wanted = (V && typeof V.routeOf === 'function') ? V.routeOf(V.resolve(route)) : null;
+    window.KM.pendingRoute = wanted;
     showSection('product-strategy');
+
+    /* P1-B8D-R5 — AND THE SECOND CLICK HAS TO DO SOMETHING TOO.
+       `showSection` reaches `lifecycle.switchTo`, which returns immediately when the target is
+       already the current page — correctly: re-clicking the current page must not mount it twice.
+       But `pendingRoute` is read by `onMount` and by nothing else, so once the board was showing,
+       the other five sidebar children set a variable nobody reads. The first sub-tab worked and the
+       rest were inert.
+       The route is therefore applied HERE when the board is already mounted. `currentRoute()`
+       answers null when it is not, which is what keeps this from pretending: with no board there is
+       no view to select, and the pending route is left for the mount that will consume it. */
+    var page = window.KM.pages && window.KM.pages.productStrategyBoard;
+    if (wanted && page && typeof page.applyRoute === 'function'
+        && typeof page.currentRoute === 'function' && page.currentRoute() !== null) {
+        window.KM.pendingRoute = null;
+        page.applyRoute(wanted);
+    }
 }
 window.showProductStrategyView = showProductStrategyView;
 

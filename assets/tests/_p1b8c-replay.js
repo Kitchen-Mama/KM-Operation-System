@@ -154,6 +154,38 @@
     return t;
   };
 
+  /**
+   * OPERATE THE SITE CHOOSER THE WAY A PERSON DOES  (P1-B8D-R5).
+   *
+   * The visual runner used to reach past the screen and call `c.select({company, country,
+   * marketplace})`. That is the same defect as raising the capability mirror by hand, one layer
+   * out: it supplies an input production can only get from a control, so the run cannot fail for
+   * the reason production failed — and it did not. Seven viewports of a fully rendered board were
+   * photographed over a page whose live equivalent offered no way to choose anything.
+   *
+   * So this sets the value of each control that EXISTS and dispatches a real `change`. A tier the
+   * universe already resolved has no `<select>` — it renders as read-only context — and is skipped
+   * rather than forced, because forcing it would be inventing a control to use. The chooser is
+   * re-rendered after every pick, so each step re-queries rather than holding a stale node.
+   */
+  R.chooseSite = function (doc, site) {
+    var win = (doc && doc.defaultView) || (typeof window !== 'undefined' ? window : null);
+    var page = win && win.KM && win.KM.pages && win.KM.pages.productStrategyBoard;
+    var order = ['company', 'country', 'marketplace'];
+    function at(i) {
+      if (i >= order.length) return Promise.resolve(null);
+      var dim = order[i];
+      var host = doc.getElementById('psb-site-host');
+      var sel = host && host.querySelector('[data-psb-site-dim="' + dim + '"]');
+      if (!sel || sel.disabled) return at(i + 1);
+      if (String(sel.value) === String(site[dim])) return at(i + 1);
+      sel.value = site[dim];
+      sel.dispatchEvent(new win.Event('change', { bubbles: true }));
+      return Promise.resolve(page && page.lastSelection).then(function () { return at(i + 1); });
+    }
+    return at(0);
+  };
+
   /** The capture object the harness expects, from the capture module. */
   R.captureOf = function (CAP) {
     return { universe: CAP.universeEnvelope(), workspaces: CAP.workspaces() };

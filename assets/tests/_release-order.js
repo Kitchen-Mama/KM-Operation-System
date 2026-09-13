@@ -325,7 +325,11 @@ var ROUND_TOKENS = [
   /* P1-B8D-R4 - the capability mirror gained a producer, which changes two shipped modules a
      returning browser already has. Rotating the whole co-deployed set is the rule: a partial
      rotation is how a page ends up running a new controller against an old accessor. */
-  'capabilityderive-p1b8dr4-20260913'];
+  'capabilityderive-p1b8dr4-20260913',
+  /* P1-B8D-R5 - the site chooser. Three shipped modules change: the page controller gains
+     the chooser, the accessor's reset stops half-resetting, and app.js applies a sub-tab's
+     route when the section is already showing. A returning browser holds all three. */
+  'sitechooser-p1b8dr5-20260913'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

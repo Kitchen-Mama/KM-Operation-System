@@ -1806,3 +1806,103 @@ KNOWN, MEASURED, NOT FIXED THIS ROUND
   its own rather than folded into a capability fix.
 
 **STATUS: LOCAL COMMIT - NOT PUSHED - FRONTEND REDEPLOY REQUIRED - NO APPS SCRIPT SYNC.**
+
+
+=======================================================================================================
+P1-B8D-R5  -  THE UNIVERSE ARRIVED AND NOTHING COULD USE IT
+=======================================================================================================
+Date:                        2026-09-13
+Trigger:                     LIVE ACCEPTANCE FAILURE, second round. R4's capability derive shipped and
+                             worked - the page stopped saying FEATURE_DISABLED. It then said this on
+                             all six sub-tabs, permanently:
+                               "Choose a site to analyse."
+                               "This board reads one site at a time - a company, a country and a
+                                marketplace - because prices from two sites on one axis would compare
+                                products that do not compete."
+                             With NO CONTROL OF ANY KIND on the page. Zero <select> elements.
+Release identity:            UNCHANGED - F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11. No .gs file changed.
+APPS_SCRIPT_SYNC_REQUIRED:   NO        New deployment: NO       DB / Sheets / Drive writes: 0
+FRONTEND_GITHUB_PAGES:       REQUIRED - three shipped modules changed; the co-deployed set rotated onto
+                             sitechooser-p1b8dr5-20260913 (34 refs, 0 stale).
+
+ROOT CAUSE - A STATE WITH NO EXIT
+-------------------------------------------------------------------------------------------------------
+  `productPricing.siteUniverse.get` WAS sent, WAS answered, and WAS adapted: 10 READY sites across
+  three companies. `SU.narrow(universe, {})` computed the option list for every tier. The controller
+  then rendered AWAITING_SITE_SELECTION into `#psb-state-host` and stopped.
+
+  That state is left only by `C.select(scope)`. The ONLY production caller of `C.select` is the
+  initial `C.select({})` inside `loadUniverseResolved`, four lines above. Nothing a person can click
+  reaches it. Measured through the production entry: universe requests 1, workspace requests 0,
+  `#scope` children 0, `<select>` count 0, `btnPresent` listeners 0.
+
+WHY THE SELECTOR LOOKED PRESENT, AND WAS NOT
+-------------------------------------------------------------------------------------------------------
+  The partial has a `#scope` host and `psb-board-ui.js` has a Company -> Country -> Marketplace
+  ladder. They are not this ladder. `renderScope()` is reachable only from `render()`, only from
+  `boot()`, only from `board.mount({adapter})` - AFTER a workspace read has succeeded - and it
+  derives its three tiers from the LOADED ROWS of the one site in hand, so each holds exactly one
+  value and renders as read-only context.
+
+  THE CONTROL THAT LETS YOU CHOOSE A SITE ONLY EXISTED ONCE YOU HAD CHOSEN ONE.
+
+WHY EVERY SUITE PASSED, AGAIN
+-------------------------------------------------------------------------------------------------------
+  Every suite hands the controller a scope: `PAGE.mount({ scope: {company, country, marketplace} })`.
+  The visual runner did the same one layer out - `c.select({...})` - so the seven-viewport browser
+  acceptance photographed a fully rendered board over a page that could not be operated.
+  Production's only caller is `P.onMount`, which passes `{ route: wanted }` and NO SCOPE.
+
+  This is R4's sentence about a different input: a harness that supplies the one thing production
+  never supplies cannot fail for the one reason production fails.
+
+THE REPAIR
+-------------------------------------------------------------------------------------------------------
+  A PAGE-OWNED CHOOSER, FED BY THE UNIVERSE AND BY NOTHING ELSE. `P.renderSiteChooser` draws the
+  three tiers into `#psb-site-host` - a new host the board never touches, so it survives the mount it
+  causes and a different site can still be chosen afterwards. Options come from `narrowed.options`,
+  which comes from the universe response. There is no default site, no remembered site, no site in a
+  query string, and the first option is an empty placeholder that stays selected until a person acts.
+
+  INITIAL SITE POLICY: NONE, DELIBERATELY. §4 allowed a deterministic first-READY-site only if other
+  read-only workspaces in this system do that. They do not: the shell's own shared scope selector
+  (`assets/js/utils/scope-select-modal.js`) renders "Select country..." and refuses to confirm an
+  unchosen scope in as many words - "never auto-confirm All/unselected". A tier the universe has
+  already resolved to one value still resolves itself, which is the existing `narrow()` rule and the
+  same "one option is a fact, not a choice" the board applies to rows.
+
+  TWO SMALLER FINDINGS OF THE SAME FAMILY, both repaired:
+   1. SUB-TABS 2..6 WERE NO-OPS. `showProductStrategyView` records `KM.pendingRoute` and calls
+      `showSection` -> `lifecycle.switchTo`, which returns immediately when the section is already
+      current (correctly - it must not double-mount). `pendingRoute` is consumed only by `onMount`,
+      so the first sidebar child worked and the other five set a variable nobody read. The route is
+      now applied directly when a board is already mounted; `currentRoute() !== null` is what keeps
+      that from pretending when none is.
+   2. `setCapability({})` HALF-RESET. It lowered `_enabled` and left `_capabilityHeard` true, so the
+      next `refreshCapability()` answered from a cache that had been explicitly discarded. Invisible
+      in a browser (one page life asks once); in a test process it means the second scenario is
+      answered by the first one's server.
+
+CORRECTION TO THE P1-B8D-R4 REPORT
+-------------------------------------------------------------------------------------------------------
+  R4 reported its POST sweep as 468 suites / 4 known-red / 0 survived / 0 PROBE ERROR. That was
+  measured in a working tree whose files happened to be LF. On a FRESH CHECKOUT of eb39077 -
+  `core.autocrlf=true` writes CRLF - `product-strategy-live-activation-p1-b8d-r4.test.js` is RED:
+  four multi-line mutant anchors match zero times, scored as 4 PROBE ERRORs and 4 SURVIVED. The code
+  they target had not changed by a byte. `_psb-harness.js` has carried a note about this exact trap
+  since P1-B2; the R4 suite shipped without it. Fixed here by normalizing line endings on read, and
+  verified by forcing that file to CRLF and re-running: 63 passed / 0 failed / 9 mutants / 0 survived.
+  THE PRE SWEEP FOR THIS ROUND IS THEREFORE 5 RED, NOT 4, and this round returns it to 4.
+
+MEASURED, NOT FIXED
+-------------------------------------------------------------------------------------------------------
+  · THE CHOOSER HAS NO STYLING. `#psb-site-host` and `.psb-site*` have no CSS rules, exactly like the
+    `.psb-state*` classes recorded in R4. The controls are real `<select>`s and are fully operable
+    with browser-default styling; they are not laid out. §9 says to judge CSS only once real content
+    appears, so both belong to the same small UI correction - which must not rewrite the stylesheet.
+  · TWO CONSOLE ERRORS IN THE ACCEPTANCE PAGE, pre-existing and unrelated: `renderHomepage` and
+    `initSkuUnifiedScroll` are defined in `pages/home.js` and `pages/sku-details.js`, which are not
+    among the 18 scripts the generated acceptance page loads. `app.js` catches and logs both. Not
+    reachable from the board and not caused by this round.
+
+**STATUS: LOCAL COMMIT - NOT PUSHED - FRONTEND REDEPLOY REQUIRED - NO APPS SCRIPT SYNC.**

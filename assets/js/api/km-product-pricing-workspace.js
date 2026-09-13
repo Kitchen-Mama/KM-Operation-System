@@ -300,9 +300,16 @@
   }
 
   // ---- PUBLIC ----------------------------------------------------------------------------------
+  /* P1-B8D-R5 - A HALF RESET IS NOT A RESET. `setCapability({})` is how a caller puts the mirror
+     back to the production default, and it used to lower `_enabled` while leaving `_capabilityHeard`
+     true - so the next `refreshCapability()` answered from a cache that had been explicitly
+     discarded and never asked again. In a browser one page life asks once and this never showed; in
+     a process that lives through several scenarios it means the second one is answered by the
+     first one's server. What was heard is now part of what is set. */
   function setCapability(caps) {
     // Only a server capability payload may raise it, and anything unreadable leaves it false.
     _enabled = !!(isObj(caps) && caps.product_strategy_enabled === true);
+    _capabilityHeard = isObj(caps) && caps.product_strategy_enabled !== undefined;
     return _enabled;
   }
   function isEnabled() { return _enabled === true; }

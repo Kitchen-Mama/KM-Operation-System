@@ -732,3 +732,54 @@ later round moves the mirror onto that transport, it replaces this derive — it
    handler that refuses before it opens a spreadsheet.
 3. **No frontend deploy is required to roll back.** The navigation half (`enabled: false` plus a
    deploy) can follow later if the menu should also disappear.
+
+
+---
+
+# §7  P1-B8D-R5 — CHOOSING A SITE
+
+§6 corrected the authority list and was right about authority. It said nothing about reachability,
+and the next live acceptance failed on exactly that: the capability derived correctly, the universe
+read correctly, ten READY sites came back — and the page asked the operator to choose one while
+offering nothing to choose with.
+
+## 7.1  The two ladders, which are not the same ladder
+
+| | Owner | Source of its options | Runs when |
+|---|---|---|---|
+| **Site chooser** | `product-strategy-board.js` → `#psb-site-host` | `productPricing.siteUniverse.get` | as soon as the universe is OK |
+| **Scope bar** | `psb-board-ui.js renderScope()` → `#scope` | the **loaded rows** of one site | only after `workspace.get` succeeds |
+
+Only the first can change which site you are looking at. Before this round only the second existed,
+so the control that lets you choose a site appeared once you had already chosen one.
+
+**`#psb-site-host` belongs to the page controller.** The board redraws `#scope` on every mount; a
+chooser living there would be erased by the answer to its own question.
+
+## 7.2  The rules the chooser keeps
+
+- Options come from the universe response and from nothing else. No default, no `localStorage`, no
+  query string.
+- **The page never picks.** The placeholder stays selected until a person acts — the same position
+  the shell's shared scope modal takes ("never auto-confirm All/unselected").
+- A tier with exactly one value resolves itself and renders as read-only context. One option is a
+  fact, not a choice.
+- Changing a tier **drops every tier below it** and lets `narrow()` re-resolve them.
+- A complete scope reads the workspace **once**. Re-picking the same site reads **nothing** while
+  that site's answer is here or coming — a held-down control is not a queue of requests.
+- A stale answer is dropped, never rendered.
+- An unreadable universe offers **no controls at all**.
+
+## 7.3  Runbook — unchanged, with one more step to look for
+
+1. `PRODUCT_STRATEGY_ENABLED_ = true` → save → new version → update the existing deployment.
+2. `system.health` reports `product_strategy_enabled: true`.
+3. Deploy the frontend.
+4. Open the board. It shows **Company / Country / Marketplace** and asks you to choose. That is the
+   correct resting state — not an error. Pick a company; the ladder converges; the workspace loads.
+
+## 7.4  Rollback — unchanged
+
+`PRODUCT_STRATEGY_ENABLED_ = false` → save → new version → update the existing deployment. The next
+page life derives `false` and sends zero pricing reads. **No frontend deploy is required to roll
+back.**

@@ -223,6 +223,14 @@ function bootScript(opts) {
   return [
     '(function () {',
     '  window.__ready = false; window.__error = null;',
+    /* P1-B8D-R5 — THE RUN COUNTS ITS OWN REQUESTS AND HEARS ITS OWN CONSOLE.
+       §7 asks the browser, not a Node probe, how many reads a page life costs and whether anything
+       write-shaped went out. Both are answered from inside the page: `__wire` is the same log the
+       fake transport keeps, and `__consoleErrors` is what a person would have seen in devtools. */
+    '  window.__consoleErrors = [];',
+    '  (function () { var e = console.error; console.error = function () {',
+    '    try { window.__consoleErrors.push(Array.prototype.slice.call(arguments).join(" ")); } catch (x) {}',
+    '    return e.apply(console, arguments); }; }());',
     '  try {',
     /* 1. THE MENU.
           DEFAULT: built by hand, because production never built it for a switched-off section.
@@ -258,6 +266,7 @@ function bootScript(opts) {
     '    var capOn = ' + (opts.capabilityOff ? 'false' : 'true') + ';',
     '    var t = P1B8C_REPLAY.install(window, KM.productPricingWorkspace, cap,',
     '      Object.assign({ capability: capOn }, failWith ? { fail: failWith } : {}));',
+    '    window.__wire = t;',
     /* 3. MOUNT THROUGH `onMount`, WHICH IS THE PRODUCTION ENTRY POINT, NOT `create`.
           The first version of this called `create()` + `loadUniverse()` directly and photographed
           seven blank pages: `.module-section` is `display: none` until something adds `.active`, and
@@ -267,7 +276,13 @@ function bootScript(opts) {
     '    KM.pages.productStrategyBoard.onMount()',
     '      .then(function () {',
     '        var c = KM.pages.productStrategyBoard.lastController;',
-    '        return ' + (opts.noSite ? 'null' : 'c.select(' + JSON.stringify(site) + ')') + ';',
+    /* P1-B8D-R5 — THE SITE IS CHOSEN ON THE SCREEN. This line used to read
+       `c.select({company,country,marketplace})`, which reaches past the page into the controller and
+       hands it the one input a live operator had no way to give: the live board read ten sites,
+       asked for one, and rendered no control. `chooseSite` sets the real `<select>`s and dispatches
+       real `change` events, so what the seven viewports photograph is a board reached the way a
+       person reaches it. `c` is still read below for its request counts. */
+    '        return ' + (opts.noSite ? 'null' : 'P1B8C_REPLAY.chooseSite(document, ' + JSON.stringify(site) + ')') + ';',
     '      })',
     '      .then(function () {',
     opts.view ? '        if (window.PSB_BOARD) PSB_BOARD.showView(' + JSON.stringify(opts.view) + ');' : '',
@@ -361,6 +376,8 @@ function measureScript(cap) {
     '  var de = document.documentElement;',
     '  return {',
     '    ready: window.__ready, error: window.__error,',
+    '    consoleErrors: (window.__consoleErrors || []).slice(),',
+    '    requests: window.__wire ? window.__wire.actions() : null,',
     '    viewport: { w: window.innerWidth, h: window.innerHeight },',
     '    page: { scrollW: Math.round(de.scrollWidth), clientW: Math.round(de.clientWidth),',
     '      horizontalOverflow: de.scrollWidth - de.clientWidth },',

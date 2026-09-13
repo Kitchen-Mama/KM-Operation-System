@@ -1026,10 +1026,18 @@ console.log('\n=== §L  MUTANTS ===');
       return JSON.stringify(got) !== JSON.stringify(want);
     });
 
+  /* P1-B8D-R5 — RE-ANCHORED, NOT RELAXED. This used to anchor on the gate call being the LAST
+     statement of the function (`showSection('product-strategy');\n}`). R5 gave the function a second
+     job — applying the route when the section is already the current page, because `switchTo`
+     refuses to re-mount it and five of the six sidebar children were otherwise inert — so the brace
+     moved and the anchor matched zero times. An anchor that matches nothing is scored as SURVIVED
+     and announces an unguarded rule while measuring nothing. The RULE is unchanged and is about the
+     call, not about what follows it: a child click reaches the section through the staged gate, and
+     never by putting `.active` on it directly. */
   mut('L3 a child click really goes through the staged gate', 'app',
-    "  showSection('product-strategy');\n}",
-    "  var sec = document.getElementById('product-strategy-board-section');\n"
-    + "  if (sec) sec.classList.add('active');\n}", function (m) {
+    "    showSection('product-strategy');",
+    "    var sec = document.getElementById('product-strategy-board-section');\n"
+    + "    if (sec) sec.classList.add('active');", function (m) {
       var s = shell(function () { return m; });
       var mm = mountStagedMenu(s);
       var sec = s.dom.document.createElement('div');

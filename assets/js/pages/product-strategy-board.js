@@ -159,6 +159,12 @@
     var SU = universeOf(opts);
     var board = boardOf(opts);
 
+    /* THE CHOOSER'S HOST IS THE PAGE'S, NOT THE BOARD'S. `#scope` is redrawn by `board.mount`
+       from the rows of the site in hand; a chooser living there would be erased by the answer to
+       its own question, and there would be no way back to a different site. */
+    var siteHost = doc && typeof doc.getElementById === 'function'
+      ? doc.getElementById(P.SITE_HOST_ID) : null;
+
     var C = {
       universe: null,
       narrowed: null,
@@ -230,6 +236,8 @@
           var u = SU.adapt(env);
           C.universe = u;
           if (u.state !== 'OK') {
+            /* FAIL CLOSED: no list, no controls. */
+            if (siteHost) { while (siteHost.firstChild) siteHost.removeChild(siteHost.firstChild); }
             var ux = SU.UX[u.state] || SU.UX.SOURCE_NOT_CONNECTED;
             return show(u.state, { may_analyse: false, uses_fixture: false,
               severity: ux.severity, headline: ux.headline, detail: ux.detail }, u.refusals);
@@ -243,19 +251,73 @@
      * STEP 3. A person chooses. Downstream values the new upstream does not offer are cleared, and the
      * workspace read happens ONLY when all three tiers are resolved.
      */
+    /**
+     * Redraw the chooser from whatever the universe currently allows.
+     *
+     * CALLED AFTER EVERY NARROWING, because the narrowing is what changes the options: picking a
+     * company is the event that gives Country anything to offer. A universe that is not OK draws
+     * nothing at all.
+     */
+    function paintChooser() {
+      if (!siteHost) return;
+      if (!C.universe || C.universe.state !== 'OK') {
+        while (siteHost.firstChild) siteHost.removeChild(siteHost.firstChild);
+        return;
+      }
+      P.renderSiteChooser(siteHost, C.narrowed, onPick, doc);
+    }
+
+    /**
+     * A person used one of the three controls.
+     *
+     * TIERS BELOW THE ONE THAT CHANGED ARE DROPPED RATHER THAN KEPT AND VALIDATED. Choosing a new
+     * company while the old country is still in the desired scope asks `narrow` to reconcile two
+     * different sites, and the tie-break would decide which one a person meant. Only what is ABOVE
+     * the changed tier survives, and `narrow` re-resolves everything below it.
+     */
+    function onPick(dim, value) {
+      var scope = (C.narrowed && C.narrowed.scope) || {};
+      var next = {};
+      var reached = false;
+      P.SITE_TIERS.forEach(function (d) {
+        if (d === dim) { reached = true; if (str(value) !== '') next[d] = str(value); return; }
+        if (!reached && str(scope[d]) !== '') next[d] = str(scope[d]);
+      });
+      P.lastSelection = C.select(next);
+      return P.lastSelection;
+    }
+    C.pick = onPick;
+
     C.select = function (desired) {
       if (!C.universe || C.universe.state !== 'OK') {
         return Promise.resolve(show(P.SITE_UNIVERSE_NOT_AVAILABLE,
           P.UX_PAGE.SITE_UNIVERSE_NOT_AVAILABLE, [{ code: 'NO_UNIVERSE_LOADED' }]));
       }
       var previous = C.narrowed ? C.narrowed.scope : null;
-      C.narrowed = SU.narrow(C.universe, desired);
+      var next = SU.narrow(C.universe, desired);
+
+      /* THE SAME SITE IS NOT A NEW QUESTION (§4). A second click on the marketplace already showing
+         is not a narrower scope and not a refresh; re-reading for it is how a control that is held
+         down turns into an unbounded queue of identical requests. It is refused only while that
+         site's answer is already here or already coming - a re-pick after a failure must still be
+         able to try again. */
+      if (next.complete && previous && SU.sameSite(previous, next.scope)
+        && (C.inFlight === true || C.mounted === true)) {
+        C.narrowed = next;
+        paintChooser();
+        return Promise.resolve({ state: C.state, mounted: C.mounted,
+          may_analyse: C.mounted === true, refusals: [], unchanged: true });
+      }
+
+      C.narrowed = next;
 
       /* A SITE SWITCH INVALIDATES WHAT WAS DERIVED FROM THE OLD SITE (§8). Category, series and any
          scenario override belong to the site they were chosen on; carrying them across is how a
          simulated price for one marketplace ends up drawn on another. The board is re-mounted with the
          new adapter, which is what clears them — there is no partial-update path that could miss one. */
       if (previous && !SU.sameSite(previous, C.narrowed.scope)) C.siteChanged = true;
+
+      paintChooser();
 
       if (!C.narrowed.complete) {
         // NOT A REQUEST. An incomplete scope is answered here, at zero cost.
@@ -359,6 +421,109 @@
   };
 
   /* ==============================================================================================
+     THE SITE CHOOSER (P1-B8D-R5)
+
+     THE UNIVERSE ARRIVED AND NOTHING COULD USE IT. `siteUniverse.get` was sent, answered and
+     adapted - ten READY sites, three companies - `SU.narrow` computed the option list for every
+     tier, and the page rendered "Choose a site to analyse." above zero controls. The state was left
+     only by `C.select(scope)`, whose sole production caller was the initial `C.select({})` a few
+     lines above. It was a state with no exit.
+
+     WHAT IS AND IS NOT AN OPTION HERE. Every value comes from `narrowed.options`, which comes from
+     the universe response and from nothing else. There is no default site, no remembered site, no
+     site in a query string - a link is forwardable, so a query string is how one person's debugging
+     becomes another person's screenshot, and this file has said so since P1-B5.
+
+     ONE OPTION IS A FACT, NOT A CHOICE. A tier the universe has already resolved renders as
+     read-only context rather than as a dropdown holding the value it already has. `psb-board-ui.js`
+     makes the same distinction about the loaded rows; this is the same rule about the universe.
+
+     THE PAGE NEVER PICKS. The first option is an empty placeholder and stays selected until a
+     person acts. The shell's own scope modal takes the same position in as many words - "never
+     auto-confirm All/unselected" - and a board that chose a site for you would be a board that
+     reports one marketplace's prices under a heading nobody selected.
+     ============================================================================================== */
+
+  P.SITE_HOST_ID = 'psb-site-host';
+  P.SITE_TIERS = ['company', 'country', 'marketplace'];
+  P.SITE_LABELS = { company: 'Company', country: 'Country', marketplace: 'Marketplace' };
+
+  /**
+   * Render the three tiers into `host`. `onPick(dim, value)` is called with the raw value of the
+   * control that changed; the controller decides what that means.
+   *
+   * FAILS CLOSED. Without a narrowing there is nothing legal to offer, so the host is emptied and
+   * no control is drawn. An empty dropdown beside a "could not read the list" notice is the shape
+   * that reads as success, and this page has one of those already.
+   */
+  P.renderSiteChooser = function (host, narrowed, onPick, doc) {
+    doc = doc || (host && host.ownerDocument) || root.document;
+    if (!host) return null;
+    while (host.firstChild) host.removeChild(host.firstChild);
+    if (!isObj(narrowed) || !isObj(narrowed.options) || !isObj(narrowed.scope)) return null;
+
+    var bar = doc.createElement('div');
+    bar.className = 'psb-site';
+    bar.setAttribute('data-cy', 'psb-site');
+
+    P.SITE_TIERS.forEach(function (dim, i) {
+      var values = narrowed.options[dim] instanceof Array ? narrowed.options[dim] : [];
+      var current = str(narrowed.scope[dim]);
+
+      var field = doc.createElement('div');
+      field.className = 'psb-site__field';
+      var lab = doc.createElement('label');
+      lab.className = 'psb-site__label';
+      lab.textContent = P.SITE_LABELS[dim];
+      field.appendChild(lab);
+
+      if (values.length === 1 && current === values[0]) {
+        var v = doc.createElement('span');
+        v.className = 'psb-site__value';
+        v.setAttribute('data-psb-site-value', dim);
+        v.textContent = current;
+        field.appendChild(v);
+        bar.appendChild(field);
+        return;
+      }
+
+      var sel = doc.createElement('select');
+      sel.className = 'psb-site__select';
+      sel.id = 'psbSite' + dim.charAt(0).toUpperCase() + dim.slice(1);
+      sel.setAttribute('data-psb-site-dim', dim);
+      sel.setAttribute('aria-label', P.SITE_LABELS[dim]);
+
+      var ph = doc.createElement('option');
+      ph.setAttribute('value', '');
+      /* AN UNUSABLE TIER SAYS WHY. "Choose a country first" and "Choose a marketplace" are
+         different situations and a person can act on only one of them. */
+      ph.textContent = values.length > 0
+        ? ('Choose ' + P.SITE_LABELS[dim].toLowerCase())
+        : ('Choose ' + P.SITE_LABELS[P.SITE_TIERS[i > 0 ? i - 1 : 0]].toLowerCase() + ' first');
+      sel.appendChild(ph);
+
+      values.forEach(function (value) {
+        var o = doc.createElement('option');
+        o.setAttribute('value', value);
+        o.textContent = value;
+        if (value === current) o.setAttribute('selected', 'selected');
+        sel.appendChild(o);
+      });
+
+      sel.value = current;
+      sel.disabled = values.length === 0;
+      if (!sel.disabled && typeof onPick === 'function') {
+        sel.addEventListener('change', function () { onPick(dim, sel.value); });
+      }
+      field.appendChild(sel);
+      bar.appendChild(field);
+    });
+
+    host.appendChild(bar);
+    return bar;
+  };
+
+  /* ==============================================================================================
      THE SHELL SIDE (P1-B7 §4). Everything above this line is shell-agnostic and is driven directly by
      the suites; everything below knows about KM.lifecycle, KM.partialLoader and one mount point.
      ============================================================================================== */
@@ -422,6 +587,11 @@
     if (sec && sec.classList) sec.classList.remove('active');
     var host = doc && doc.getElementById('psb-state-host');
     if (host) { while (host.firstChild) host.removeChild(host.firstChild); }
+    /* THE CHOOSER GOES WITH THE CONTROLLER THAT OWNED IT. Its options came from one universe read
+       and its handlers close over one controller; leaving it on screen would offer the next visit a
+       set of sites nothing is listening to. */
+    var sh = doc && doc.getElementById(P.SITE_HOST_ID);
+    if (sh) { while (sh.firstChild) sh.removeChild(sh.firstChild); }
   };
 
   if (root.KM && root.KM.lifecycle && typeof root.KM.lifecycle.register === 'function') {
@@ -464,7 +634,15 @@
     workspace_requires_complete_scope: true,
     single_flight_workspace: true,
     drops_stale_responses: true,
-    derives_site_universe_from_workspace_response: false
+    derives_site_universe_from_workspace_response: false,
+    // P1-B8D-R5 — the universe is now REACHABLE. It was read, adapted and narrowed before this
+    // round too; what did not exist was any way for a person to act on it.
+    site_chooser_host: 'psb-site-host',
+    site_chooser_owner: 'this page controller (never psb-board-ui renderScope)',
+    site_options_source: 'productPricing.siteUniverse.get, via SU.narrow — and nothing else',
+    default_site: null,
+    auto_selects_a_site: false,
+    reselecting_the_same_site_reads_again: false
   };
 
   if (typeof module !== 'undefined' && module.exports) { module.exports = P; }

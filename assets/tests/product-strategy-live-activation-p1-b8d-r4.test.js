@@ -89,7 +89,22 @@ function mutP(label, f) {
 }
 
 var ROOT = path.join(__dirname, '..', '..');
-function read(rel) { return fs.readFileSync(path.join(ROOT, rel), 'utf8'); }
+/**
+ * LINE ENDINGS NORMALIZED ON READ  (P1-B8D-R5).
+ *
+ * This suite shipped in R4 without this and was RED ON EVERY FRESH CHECKOUT: `core.autocrlf=true`
+ * stores LF in the blob and writes CRLF into the working tree, so four mutant anchors that span
+ * more than one line matched zero times and `mut` reported them as PROBE ERROR / SURVIVED — four
+ * announcements of unguarded rules, about code that had not changed by a byte. It passed where it
+ * was written only because those files happened to be LF in that particular tree, which is the
+ * worst way for a test to pass.
+ *
+ * `_psb-harness.js` has carried this same note since P1-B2 and for the same reason. Every reader of
+ * these files needs it, including the next clone.
+ */
+function read(rel) {
+  return fs.readFileSync(path.join(ROOT, rel), 'utf8').replace(/\r\n/g, '\n');
+}
 var JS = path.join(ROOT, 'assets', 'js');
 var H = require(path.join(__dirname, '_psb-harness.js'));
 
