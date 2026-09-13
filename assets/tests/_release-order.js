@@ -342,7 +342,16 @@ var ROUND_TOKENS = [
      render a panel with no card, a card with two bars in it, or a chooser that rebuilds. */
   'finalusability-p1b8dr7-20260913',
   'lifecycle-p1b8dr8-20260913',
-  'imagetoolbar-p1b8dr9-20260913'];
+  'imagetoolbar-p1b8dr9-20260913',
+  /* P1-B8D-R10 - the read route. THREE shipped modules move together and the set is not optional.
+     The accessor stops using the foundation's private POST shim and reads through KM.transport, which
+     is where the endpoint classifier, the HTML fingerprint and the bounded recovery are; in doing so it
+     gains two new refusal states. The site-universe module and the live adapter carry the WORDS for
+     those states. A browser holding the new accessor against either old map would classify a 404
+     correctly and then render it as "No server answered" - the precise sentence this round exists to
+     remove - because both maps fall back to SOURCE_NOT_CONNECTED for a state they do not know, and do
+     so silently. The vocabulary and its words ship together or not at all. */
+  'readroute-p1b8dr10-20260913'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

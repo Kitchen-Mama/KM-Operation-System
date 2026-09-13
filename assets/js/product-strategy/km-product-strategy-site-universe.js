@@ -61,11 +61,35 @@
   /* P1-B8B §9 — see km-product-strategy-live-adapter.js `CLIENT_ONLY_REFUSALS`. The same four
      transport answers, honoured here for the same reason: the site menu is the FIRST read a person
      waits on, so it is where "no server answered" is most likely to be the wrong sentence. */
+  /* P1-B8D-R10 §5 — A WHITELIST THAT SILENTLY DEGRADES IS A WHITELIST THAT LIES.
+     A refusal code absent from this list does not fall through to nothing: it falls through to the
+     SOURCE_NOT_CONNECTED branch below, so every code added to the accessor and forgotten here is
+     reported to the operator as "no server answered". Both R10 codes are here for that reason. */
   U.CLIENT_ONLY_REFUSALS = ['FEATURE_DISABLED', 'BROWSER_OFFLINE', 'SOURCE_TIMED_OUT',
-    'NOT_AUTHORIZED', 'RESPONSE_NOT_READABLE'];
+    'NOT_AUTHORIZED', 'RESPONSE_NOT_READABLE', 'HTTP_NOT_FOUND', 'ACTION_MISMATCH'];
 
+  /* P1-B8D-R10 §5 — HTTP_NOT_FOUND and ACTION_MISMATCH join the vocabulary.
+
+     THE PAGE FALLS BACK TO `UX.SOURCE_NOT_CONNECTED` FOR A STATE IT DOES NOT KNOW
+     (`SU.UX[u.state] || SU.UX.SOURCE_NOT_CONNECTED`), so adding a state to the accessor without
+     adding it HERE would make the accessor more precise and the screen no better — every new
+     class would render as "No server answered", which is the exact sentence §5 forbids for these
+     two. The vocabulary and its words move together or not at all. */
+  /* P1-B8D-R10 §5 — AND FOUR STATES THAT WERE ALREADY REPORTED AND NEVER LISTED HERE.
+
+     BROWSER_OFFLINE, SOURCE_TIMED_OUT, NOT_AUTHORIZED and RESPONSE_NOT_READABLE have been in
+     `CLIENT_ONLY_REFUSALS` and in `UX` since P1-B8B, and this list — which calls itself "the states
+     THIS module reports" — did not have them. Nothing broke, because nothing read this list: it was
+     a declaration with no consumer, which is how it drifted without anyone noticing.
+
+     It has a consumer now. The R10 suite walks the accessor's CLIENT_TRANSPORT_STATES against this
+     list, CLIENT_ONLY_REFUSALS and both UX maps together, so the four maps can no longer disagree
+     quietly. That matters precisely because disagreement here is SILENT — the page renders an
+     unknown state as "No server answered" rather than failing. */
   U.STATES = ['OK', 'SOURCE_EMPTY', 'SOURCE_PARTIALLY_READABLE', 'STOP_DATA_INTEGRITY',
-    'SOURCE_NOT_CONNECTED', 'FEATURE_DISABLED', 'SCHEMA_CONTRACT_MISMATCH'];
+    'SOURCE_NOT_CONNECTED', 'FEATURE_DISABLED', 'SCHEMA_CONTRACT_MISMATCH',
+    'BROWSER_OFFLINE', 'SOURCE_TIMED_OUT', 'NOT_AUTHORIZED', 'RESPONSE_NOT_READABLE',
+    'HTTP_NOT_FOUND', 'ACTION_MISMATCH'];
 
   U.UX = {
     OK: { may_choose: true, severity: 'none', headline: 'Choose a site.' },
@@ -105,7 +129,22 @@
         + ' from it.' },
     SCHEMA_CONTRACT_MISMATCH: { may_choose: false, severity: 'stop',
       headline: 'The site list is a shape this build was not written against.',
-      detail: 'Reading it anyway would mean trusting fields that may have moved.' }
+      detail: 'Reading it anyway would mean trusting fields that may have moved.' },
+    /* P1-B8D-R10 §5 — A 404 IS NOT A DISCONNECTED DATABASE. Something answered, and what it said
+       was that there is nothing at that address. The next step is a deployment or an address, and
+       neither a network nor a sign-in would change it. The wording says which. */
+    HTTP_NOT_FOUND: { may_choose: false, severity: 'stop',
+      headline: 'The API address answered, and there is nothing there to read.',
+      detail: 'A server replied 404 rather than the site list. That is an address or a deployment,'
+        + ' not a missing network and not a sign-in — the request did arrive somewhere. Nothing is'
+        + ' shown in place of the list that was not read.' },
+    /* P1-B8D-R10 §5 — AN ANSWER TO A DIFFERENT QUESTION IS WORSE THAN NO ANSWER, because it is the
+       only failure that could have been drawn as data. Named so it is never quietly retried into
+       looking like a slow network. */
+    ACTION_MISMATCH: { may_choose: false, severity: 'stop',
+      headline: 'The answer belonged to a different request.',
+      detail: 'The deployment replied about another action, or about another request id, so the'
+        + ' answer was discarded rather than drawn. Nothing is shown in place of it.' }
   };
 
   function isObj(v) { return !!v && typeof v === 'object' && !(v instanceof Array); }

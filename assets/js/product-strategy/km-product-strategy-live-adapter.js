@@ -97,8 +97,11 @@
      so they are believed only on a response the accessor built itself (`meta.refused === true`). A
      response that arrived over the wire carrying one of these codes is a contract breach, not a
      state, and it falls through to the checks below exactly as any other unexpected shape does. */
+  /* P1-B8D-R10 §5 — THE SAME WHITELIST TRAP AS THE UNIVERSE MODULE'S. A code missing here does not
+     fall through to nothing; it falls through to SOURCE_NOT_CONNECTED, so the accessor becomes more
+     precise and the screen says "no server answered" anyway. */
   L.CLIENT_ONLY_REFUSALS = ['FEATURE_DISABLED', 'BROWSER_OFFLINE', 'SOURCE_TIMED_OUT',
-    'NOT_AUTHORIZED', 'RESPONSE_NOT_READABLE'];
+    'NOT_AUTHORIZED', 'RESPONSE_NOT_READABLE', 'HTTP_NOT_FOUND', 'ACTION_MISMATCH'];
 
   /**
    * THE UI MATRIX, AS DATA. §5 asks for one behaviour per state; stating it as a table means a test can
@@ -149,7 +152,21 @@
         + ' number reaches a price axis.' },
     CONTRACT_MISMATCH: { may_analyse: false, uses_fixture: false, severity: 'stop',
       headline: 'Analysis stopped — the rows do not have the shape the board requires.',
-      detail: 'Named fields are absent or null where the contract forbids it; the affected fields are listed.' }
+      detail: 'Named fields are absent or null where the contract forbids it; the affected fields are listed.' },
+    /* P1-B8D-R10 §5 — THIS MAP FALLS BACK TO SOURCE_NOT_CONNECTED FOR AN UNKNOWN STATE
+       (`L.UX[verdict.state] || L.UX.SOURCE_NOT_CONNECTED`, below). So a state the accessor can now
+       produce and this map does not know would render as "No server answered" — which is the exact
+       sentence §5 forbids for a 404 and for a misrouted answer. Both are named here. */
+    HTTP_NOT_FOUND: { may_analyse: false, uses_fixture: false, severity: 'stop',
+      headline: 'The API address answered, and there is nothing there to read.',
+      detail: 'A server replied 404 rather than the data. The request reached somewhere, so this is an'
+        + ' address or a deployment rather than a missing network or a sign-in. Nothing is shown in'
+        + ' place of the data that was not read.' },
+    ACTION_MISMATCH: { may_analyse: false, uses_fixture: false, severity: 'stop',
+      headline: 'The answer belonged to a different request.',
+      detail: 'The deployment replied about another action, or about another request id. It was'
+        + ' discarded rather than drawn, because an answer to a different question is the one failure'
+        + ' that could otherwise have reached the chart as data.' }
   };
 
   function isObj(v) { return !!v && typeof v === 'object' && !(v instanceof Array); }

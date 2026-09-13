@@ -317,6 +317,14 @@ function bootScript(opts) {
       opts.emptyWorkspace ? { emptyWorkspace: true } : {},
       opts.noCategories ? { noCategories: true } : {},
       opts.forceBadImage ? { forceBadImage: true } : {},
+      /* P1-B8D-R10 §8 — the network faults. These are applied by the fake `fetch` UNDER a real
+         transport, so what they exercise is production's own classification and recovery. */
+      opts.netFault ? { netFault: opts.netFault } : {},
+      opts.netFaultOnce ? { netFaultOnce: true } : {},
+      (typeof opts.netFaultFrom === 'number') ? { netFaultFrom: opts.netFaultFrom } : {},
+      opts.netFaultWhen ? { netFaultWhen: opts.netFaultWhen } : {},
+      (typeof opts.netFaultUntil === 'number') ? { netFaultUntil: opts.netFaultUntil } : {},
+      (typeof opts.netFaultSlowMs === 'number') ? { netFaultSlowMs: opts.netFaultSlowMs } : {},
       opts.delayMs ? { delayMs: opts.delayMs } : {},
       opts.failOnly ? { failOnly: opts.failOnly } : {},
       opts.slowSite ? { slowSite: opts.slowSite, slowMs: opts.slowMs || 300 } : {})) + '));',

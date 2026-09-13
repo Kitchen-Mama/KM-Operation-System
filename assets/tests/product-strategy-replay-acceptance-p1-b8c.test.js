@@ -454,7 +454,12 @@ var CHAIN = replaySite(P0, KM_US_AMZ).then(function (r) {
     t2.restore();
     ok(res2.state !== 'OK',
       'D11 AN ENVELOPE WITH THE WRONG meta.action IS STILL REFUSED — the validator is in the path');
-    eq(res2.state, 'SOURCE_NOT_CONNECTED', 'D12 exactly as the deployed accessor refused it at P1-B7E');
+    /* P1-B8D-R10 §5 — same change as D5a in the live-derived suite. D11 above is the assertion that
+       matters and it is untouched: the envelope is still refused and nothing is read from it. What
+       changed is the word: an answer that ARRIVED and named a different action is a routing fault,
+       and calling it "no server answered" is the sentence §5 forbids. */
+    eq(res2.state, 'ACTION_MISMATCH',
+      'D12 and it is named as the routing fault it is, not as a missing network (R10 §5)');
   });
 }).then(function () {
   /* THE SIX VIEWS EACH RENDER FROM THE SAME REPLAYED DATA. */

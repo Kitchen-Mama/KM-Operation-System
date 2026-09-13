@@ -1429,6 +1429,99 @@
     });
   };
 
+  /* ================================================================================================
+     P1-B8D-R10 §8 — THE PRODUCTION-LIKE TRANSPORT MATRIX.
+
+     Each of these drives the SHIPPED page through a named network fault and records what the
+     operator is told and how many physical requests it cost. The faults are injected at `fetch`,
+     beneath a REAL transport instance, so the classification and the bounded recovery under test
+     are production's.
+     ================================================================================================ */
+  function faultStep(doc, label) {
+    var s = r8step(doc, label);
+    var w = root.__wire;
+    s.physical = (w && w.physical) ? {
+      attempts: w.physical.attempts,
+      byAction: JSON.parse(JSON.stringify(w.physical.byAction)),
+      methods: w.physical.methods.slice(0, 8),
+      maxUrl: w.physical.urls
+    } : null;
+    return s;
+  }
+  A.faultStep = faultStep;
+
+  /** §8 — one fault, one site, and what the page says about it. */
+  ACTS['transport-fault'] = function (doc, args) {
+    var T = [];
+    return loadSite(doc, args.first).then(function () {
+      T.push(faultStep(doc, '1 the read under the injected fault'));
+      root.__trace = T;
+      return T;
+    });
+  };
+
+  /**
+   * §6/§8 — THE FIRST ATTEMPT FAILS AND THE SECOND SUCCEEDS, WHICH IS THE WHOLE POINT.
+   *
+   * §6 is explicit that the UI must stay in LOADING across the recovery — "retry期間UI維持 loading,
+   * 不先畫錯誤再跳回成功". So this records the state DURING the outstanding read as well as after it:
+   * a run that only looked at the end could not tell a clean recovery from an error that flashed.
+   */
+  ACTS['transport-recovery'] = function (doc, args) {
+    var T = [];
+    var S = args.first;
+    /* BUILT ON `loadSite`, WHICH IS THE PROVEN LADDER. An earlier version drove the three controls
+       by hand and recorded nothing at all: with the fault consuming the universe read there was no
+       marketplace control to pick, the chain settled early, and the run reported an empty trace —
+       which would have read as a passing measurement of nothing. */
+    T.push(faultStep(doc, '0 before any selection'));
+    return loadSite(doc, S).then(function () {
+      /* The FIRST snapshot after the ladder: if a recovery were being drawn as an error and then
+         replaced, this is where the error would still be on screen. */
+      T.push(faultStep(doc, '1 immediately after the site is complete'));
+      return tick(900);
+    }).then(function () {
+      T.push(faultStep(doc, '2 settled — the recovery has answered'));
+      root.__trace = T;
+      return T;
+    });
+  };
+
+  /**
+   * §6 — SITE A IS STILL FAILING WHEN SITE B IS CHOSEN, AND A'S ANSWER MUST NOT LAND.
+   *
+   * THE FIRST VERSION OF THIS ACT COULD NOT FAIL HONESTLY. It called `wire.stopFailing()`, which
+   * belongs to the OLD capture-level fault and does nothing to a network-level one — so site B's own
+   * read failed too, and "A's error is on the screen" was indistinguishable from "B legitimately
+   * refused". A test that cannot tell those apart is not evidence about superseding.
+   *
+   * It is driven by attempt COUNT now. Site A's read and its one bounded recovery are attempts 1 and
+   * 2 and both fail; site B's read is attempt 3 and succeeds. The faulted attempts are also SLOW, so
+   * B is genuinely chosen while A is still outstanding rather than after A has already settled —
+   * which is the only arrangement in which a stale answer has anything to overwrite.
+   */
+  ACTS['fault-site-switch'] = function (doc, args) {
+    var T = [];
+    var A1 = args.first, A2 = args.second;
+    return Promise.resolve().then(function () {
+      pick(doc, 'company', A1.company); return tick();
+    }).then(function () {
+      pick(doc, 'country', A1.country); return tick();
+    }).then(function () {
+      pick(doc, 'marketplace', A1.marketplace);
+      return tick(60);
+    }).then(function () {
+      /* A is in flight and failing RIGHT NOW. */
+      T.push(faultStep(doc, '1 site A outstanding under the fault'));
+      pick(doc, 'marketplace', A2.marketplace);
+      return tick(2500);
+    }).then(function () {
+      T.push(faultStep(doc, '2 site B chosen; A late answer must not land here'));
+      root.__trace = T;
+      return T;
+    });
+  };
+
   A.ACTS = ACTS;
   A.step = step;
   A.pick = pick;

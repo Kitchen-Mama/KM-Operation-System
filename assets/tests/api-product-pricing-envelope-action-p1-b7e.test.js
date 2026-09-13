@@ -345,12 +345,21 @@ var G = (function () {
 
   /* AND THE REAL BODY, THROUGH THE REAL ACCESSOR, STILL FAILS THE WAY IT FAILED IN PRODUCTION. */
   return clientChain(CAPTURE.siteUniverse).then(function (r) {
-    eq(r.out.meta.refusalCode, 'SOURCE_NOT_CONNECTED',
+    /* P1-B8D-R10 §5 — THE REFUSAL STANDS; THE NAME FOR IT CHANGED, AND G10a IS WHY.
+
+       G10a already asserted the DETAIL was RESPONSE_ACTION_MISMATCH while G10 and G11 asserted the
+       STATE was SOURCE_NOT_CONNECTED. The file was recording, in two adjacent lines, that this side
+       knew exactly what had happened and told the operator something else — and G11's own name says
+       so out loud: "would still have said not connected over a response that ARRIVED".
+
+       §5 forbids that sentence for this case. The body is still refused, nothing is read from it,
+       and the state now agrees with the detail that was always correct. */
+    eq(r.out.meta.refusalCode, 'ACTION_MISMATCH',
       'G10 the shipped accessor still rejects the R9 body');
     eq(r.out.data.refusals[0].detail, 'RESPONSE_ACTION_MISMATCH',
       'G10a naming the action mismatch as the reason');
-    eq(r.universe.state, 'SOURCE_NOT_CONNECTED',
-      'G11 and the board would still have said "not connected" over a response that arrived');
+    eq(r.universe.state, 'ACTION_MISMATCH',
+      'G11 and the board now says an answer arrived for a different request (R10 §5)');
   });
 }());
 

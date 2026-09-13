@@ -231,8 +231,150 @@
       configured: function () { return true; }
     };
 
+    /* ==============================================================================================
+       P1-B8D-R10 §8 — A FAKE NETWORK, NOT A FAKE TRANSPORT.
+
+       The accessor now reads through `KM.transport.request({kind:'read'})`, the same boundary every
+       other workspace read uses. That boundary is where the endpoint classifier, the HTML
+       fingerprint, the redirect-target classification and the BOUNDED ONE-SHOT RECOVERY live — and
+       those are exactly the behaviours §8 and §10 ask to be proven.
+
+       SO THE HARNESS MUST NOT REPLACE THAT LAYER. Stubbing `KM.transport.request` wholesale would
+       mean the retry under test is the STUB'S retry, and every mutant about "retry more than once"
+       or "retry without restarting from the stable /exec" would be asserting the harness against
+       itself. Instead a fake `fetch` is injected into a REAL transport instance built from the real
+       factory. Production's own policy runs; this decides only what the network says back.
+
+       THE FAULTS ARE THE ONES THE LIVE INCIDENT PRODUCED, shaped so the real fingerprinter
+       recognises them: an expired echo target is a 404 whose FINAL URL is on the usercontent host
+       and which reports `redirected`, because `codeForHtml` requires all three facts together.
+       ============================================================================================== */
+    var physical = { attempts: 0, byAction: {}, methods: [], urls: 0 };
+
+    function htmlBody(kind) {
+      if (kind === 'authHtml') {
+        return '<!DOCTYPE html><html><head><title>Sign in - Google Accounts</title></head>'
+          + '<body><div>Please sign in to continue to accounts.google.com</div></body></html>';
+      }
+      if (kind === 'redirect404') {
+        return '<!DOCTYPE html><html><head><title>Error 404 (Not Found)</title></head>'
+          + '<body><p>The requested URL was not found on this server.</p></body></html>';
+      }
+      return '<!DOCTYPE html><html><head><title>Error</title></head>'
+        + '<body><p>A temporary error occurred.</p></body></html>';
+    }
+
+    function respond(status, ctype, body, finalUrl, redirected) {
+      return {
+        ok: status >= 200 && status < 300,
+        status: status,
+        url: finalUrl,
+        redirected: redirected === true,
+        headers: { get: function (h) {
+          return String(h).toLowerCase() === 'content-type' ? ctype : null; } },
+        text: function () { return Promise.resolve(body); }
+      };
+    }
+
+    var ECHO = 'https://script.googleusercontent.com/macros/echo?redacted=1';
+
+    /* The fault that applies to THIS physical attempt, or null.
+
+       THREE SHAPES, AND EACH PROVES SOMETHING THE OTHERS CANNOT.
+
+       ALWAYS (the default) is the steady-state matrix: what is the operator told, and what does it
+       cost, when a fault is not going away.
+
+       ONCE is the recovery: attempt 1 fails, attempt 2 answers, and the operator sees one loading
+       state and then data — never an error that turns into a success.
+
+       UNTIL N is the SUPERSEDE case, and it needs its own shape because the other two cannot express
+       it. To prove that site A's late failure does not land on site B, site A must fail through its
+       whole bounded sequence (two attempts) while site B must SUCCEED — otherwise a passing run is
+       indistinguishable from one where B simply failed too, which is the flaw this replaced. */
+    function faultFor(n) {
+      var f = opts.netFault;
+      if (!f) return null;
+      /* FROM/UNTIL is not decoration. A page life is a SEQUENCE of reads — the site universe first,
+         then the workspace for whichever site is chosen — and a window that opens at attempt 1 lands
+         on the universe, which leaves the chooser empty and makes every later assertion about a site
+         unreachable. */
+      var from = (typeof opts.netFaultFrom === 'number') ? opts.netFaultFrom : 1;
+      var until = (typeof opts.netFaultUntil === 'number') ? opts.netFaultUntil
+        : (opts.netFaultOnce === true ? 1 : Infinity);
+      if (n < from || n > until) return null;
+      return f;
+    }
+    /* A faulted attempt can be made SLOW, so a second site can be chosen while the first is still
+       outstanding. Without this the switch always happens after the failure has already settled, and
+       'a stale answer must not overwrite a new site' is never actually exercised. */
+    function delayed(v) {
+      var ms = (typeof opts.netFaultSlowMs === 'number') ? opts.netFaultSlowMs : 0;
+      if (ms <= 0) return v;
+      return new Promise(function (res) { setTimeout(function () { res(v); }, ms); })
+        .then(function (x) { return x; });
+    }
+
+    function fakeFetch(url, init) {
+      var u = String(url || '');
+      var method = (init && init.method) || 'GET';
+      var n = ++physical.attempts;
+      physical.methods.push(method);
+      var action = (/[?&]action=([^&]+)/.exec(u) || [])[1];
+      action = action ? decodeURIComponent(action) : '';
+      physical.byAction[action] = (physical.byAction[action] || 0) + 1;
+      physical.urls = Math.max(physical.urls, u.length);
+
+      /* AND COUNTING ATTEMPTS IS NOT ENOUGH TO NAME A SITE, which cost one wrong measurement to see.
+         The supersede case wanted 'fail site A and its recovery, let site B through', so the window was
+         set to attempts 2-3. But site B is chosen while A is still in flight, so B's FIRST read was
+         attempt 3 and got the fault meant for A's recovery; B then recovered and the run still looked
+         right, for the wrong reason. Interleaving makes an attempt NUMBER an unreliable way to name a
+         request. `netFaultWhen` matches on the request itself instead, so a fault aimed at one site
+         hits that site however the reads happen to overlap. */
+      var fault = faultFor(n);
+      if (fault && opts.netFaultWhen) {
+        var decoded = u;
+        try { decoded = decodeURIComponent(u); } catch (e) { decoded = u; }
+        if (decoded.indexOf(opts.netFaultWhen) === -1) fault = null;
+      }
+      if (fault === 'offline' || fault === 'transportError') {
+        return delayed(1).then(function () {
+          return Promise.reject(new TypeError('Failed to fetch')); });
+      }
+      if (fault === 'timeout') return new Promise(function () {});
+      if (fault === 'redirect404') {
+        return delayed(respond(404, 'text/html; charset=utf-8',
+          htmlBody('redirect404'), ECHO, true));
+      }
+      if (fault === 'authHtml') {
+        return delayed(respond(200, 'text/html; charset=utf-8',
+          htmlBody('authHtml'), ECHO, true));
+      }
+      if (fault === 'genericHtml') {
+        return delayed(respond(500, 'text/html; charset=utf-8',
+          htmlBody('genericHtml'), ECHO, true));
+      }
+
+      /* NO FAULT: serve the capture through the SAME logic `post` uses, so one harness cannot
+         answer two different things depending on which door a read came in by. */
+      var bodyRaw = (/[?&]km_body=([^&]*)/.exec(u) || [])[1];
+      var dto;
+      try { dto = bodyRaw ? JSON.parse(decodeURIComponent(bodyRaw)) : {}; } catch (e) { dto = {}; }
+      if (!dto.action) dto.action = action;
+      return Promise.resolve(transport.post(dto)).then(function (env) {
+        return respond(200, 'application/json', JSON.stringify(env), ECHO, true);
+      }, function (err) {
+        /* A REJECTION FROM THE CAPTURE IS A NETWORK FAILURE HERE, which is what it looks like to a
+           browser: nothing readable came back. */
+        return Promise.reject(err instanceof Error ? err : new TypeError('Failed to fetch'));
+      });
+    }
+
     return {
       api: { transport: transport },
+      fetch: fakeFetch,
+      physical: physical,
       log: log,
       actions: function () { return log.map(function (r) { return r.action; }); },
       countOf: function (a) {
@@ -261,8 +403,28 @@
     var savedKM = g.KM;
     var t = R.makeTransport(capture, opts);
     g.KM = g.KM || {};
+    var savedTransport = g.KM.transport;
     g.KM.api = t.api;
     g.KM.productPricingWorkspace = accessor;
+    /* P1-B8D-R10 §8 — A REAL TRANSPORT OVER A FAKE NETWORK.
+
+       Built from the shipped factory, so the endpoint classifier, the HTML fingerprint, the typed
+       codes and the bounded one-shot recovery are PRODUCTION'S and not the harness's. Only `fetch`
+       is ours. `sleep` is collapsed because a test should not wait out a real backoff, and `baseUrl`
+       is a synthetic but WELL-FORMED stable /exec: the classifier refuses anything that is not one,
+       so a placeholder would be refused before dispatch and every read would fail for the wrong
+       reason. It contains no real deployment id.
+
+       If the factory is absent the accessor's own fallback keeps the suite working, which is the
+       same contract production has. */
+    if (g.KM.transportFactory && typeof g.KM.transportFactory.create === 'function') {
+      g.KM.transport = g.KM.transportFactory.create({
+        fetch: t.fetch,
+        baseUrl: 'https://script.google.com/macros/s/REPLAY_SYNTHETIC_DEPLOYMENT_ID_NOT_REAL/exec',
+        sleep: function () { return Promise.resolve(); },
+        random: function () { return 0.5; }
+      });
+    }
     /* P1-B8D-R4 — NOT RAISED HERE ANY MORE. The accessor derives the capability from the health read
        this transport serves, through the same call the browser makes. Raising it here was a SECOND
        ACTIVATION PATH that only tests could walk, and it hid a live defect for a whole round: the
@@ -272,6 +434,7 @@
     accessor.setCapability({});
     t.restore = function () {
       accessor.setCapability({});          // back to false, the production default
+      if (g.KM) g.KM.transport = savedTransport;
       g.KM = savedKM;
     };
     return t;

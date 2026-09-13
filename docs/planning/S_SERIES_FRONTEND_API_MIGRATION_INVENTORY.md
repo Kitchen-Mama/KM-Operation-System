@@ -87,32 +87,66 @@ would be reporting a test for a defect as the defect.)
 
 ## 2. `STANDARD_API` — the five that are already where everything should be
 
+> **CORRECTED AT P1-B8D-R10.** Every row of the Transport column below used to read
+> `KM.transport.post`. **There is no such function.** `KM.transport` exposes `request()`; the `post`
+> shim is a PRIVATE member of `km-api-foundation.js`, and the foundation's own comment calls it "a
+> fallback and not the path". One wrong namespace, repeated on four rows, is why this census read as
+> "everything is already where it should be" while Product Strategy was the one read in the
+> application still going out as a POST that an Apps Script 302 strips the body from.
+>
+> A census is only worth what its column headings mean. This one said the right thing about the wrong
+> name, and the page it was describing failed live for precisely the difference.
+
 | Module | Data source | R/W | Transport | Actions |
 |---|---|---|---|---|
 | `api/km-transport.js` | Apps Script Web App | R | itself (it IS the transport) | `system.health`, `methodRegistry.get`, `inventoryScope.registry.get` |
-| `api/km-api-foundation.js` | Apps Script Web App | R | `KM.transport.post` | 9 `*.workspace.get` |
-| `api/km-data-access.js` | via foundation | R | `KM.transport.post` | 6 `*.workspace.get` |
-| `api/km-product-pricing-workspace.js` | Apps Script Web App | R | `KM.transport.post` | `system.health`, `productPricing.siteUniverse.get`, `productPricing.workspace.get` |
-| `pages/product-strategy-board.js` | via the accessor above | R | `KM.transport.post` | the same three, and nothing else |
+| `api/km-api-foundation.js` | Apps Script Web App | R | `KM.transport.request({kind:'read'})`, with a private `post` shim retained as a fallback | 9 `*.workspace.get` |
+| `api/km-data-access.js` | via foundation | R | `KM.transport.request({kind:'read'})` | 6 `*.workspace.get` |
+| `api/km-product-pricing-workspace.js` | Apps Script Web App | R | `KM.transport.request({kind:'read'})` **since R10** — was the foundation's private `post` shim | `system.health`, `productPricing.siteUniverse.get`, `productPricing.workspace.get` |
+| `pages/product-strategy-board.js` | via the accessor above | R | as the accessor above | the same three, and nothing else |
 
 **Product Strategy is the only PAGE in this column**, and §9's proof for it is in §3 below.
+
+**Only `km-product-pricing-workspace.js` changed in CODE at R10.** The other three rows are the same
+modules they always were; what changed is that this document now names what they actually call.
 
 ---
 
 ## 3. Product Strategy — the call graph, proven
 
+**BEFORE R10** — what the page actually did, measured in real Chrome with `window.fetch` wrapped
+before any application file was allowed to load:
+
 ```
     the browser
       -> KM.pages.productStrategyBoard         assets/js/pages/product-strategy-board.js
       -> KM.productPricingWorkspace            assets/js/api/km-product-pricing-workspace.js
-      -> KM.transport.post(action, payload)    assets/js/api/km-transport.js
-      -> https://script.google.com/.../exec    one endpoint, POST, one action per call
+      -> KM.api.transport.post(dto)            assets/js/api/km-api-foundation.js   <-- PRIVATE SHIM
+      -> POST /exec  -> 302 -> GET echo        the body is dropped by the redirect, per the Fetch
+                                               specification; the echo target 404s some of the time
+```
+
+That path had no endpoint classifier, no HTML fingerprint, no redirect-target classification and
+**no retry** — none of which is a property of the accessor, all of which live in the transport it
+was not using.
+
+**AFTER R10** — the same boundary every other workspace read in the application has used since
+F1-7N-FB-4E-R4A1:
+
+```
+    the browser
+      -> KM.pages.productStrategyBoard         assets/js/pages/product-strategy-board.js
+      -> KM.productPricingWorkspace            assets/js/api/km-product-pricing-workspace.js
+      -> KM.transport.request({kind:'read'})   assets/js/api/km-transport.js
+      -> GET /exec?...&km_body=...             a GET has no body for a 302 to drop; one bounded
+                                               recovery, rebuilt from the stable /exec, on a
+                                               redirect-target 404 and on nothing else
 ```
 
 | §9 requirement | Evidence | Result |
 |---|---|---|
 | Reads only `system.health`, `productPricing.siteUniverse.get`, `productPricing.workspace.get` | the browser's own wire log across every acceptance run | **3 actions, no others** |
-| All through `KM.api` / `km-transport` | the accessor's only I/O call is `KM.transport.post` | **yes** |
+| All through `KM.api` / `km-transport` | **R10:** the accessor's read path is `KM.transport.request({kind:'read'})`, asserted at runtime by `readsThroughSharedTransport()` and on the wire by the R10 suite §D. Before R10 this row said "`KM.transport.post`" and was **true of no code** — the call was `KM.api.transport.post`, which is a different object. | **yes, and now by the right name** |
 | No direct Sheet read | no `docs.google.com` / `sheets.googleapis` anywhere in the chain | **yes** |
 | No direct DB read | no `KM.DB` reference in any of the 8 Product Strategy modules | **yes** |
 | Production reads no fixture or capture | `index.html` loads no fixture; `PSB_PREVIEW` is undefined in production, so the auto-boot condition is false and `mount()` without an adapter throws rather than inventing one | **yes** |

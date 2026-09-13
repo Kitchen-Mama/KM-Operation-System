@@ -217,11 +217,21 @@ var J = clientChain(R10_CAPTURE.siteUniverse).then(function (r) {
 }).then(function () {
   return clientChain(R9_CAPTURE.siteUniverse).then(function (r) {
     /* THE CONTRAST IS THE PROOF. Same accessor, same call, older body. */
-    eq(r.out.meta.refusalCode, 'SOURCE_NOT_CONNECTED',
+    /* P1-B8D-R10 §5 — THE REJECTION STANDS; THE NAME FOR IT CHANGED, AND E8 ALREADY KNEW.
+
+       This is the FOURTH suite in the repository to carry the same contradiction in adjacent lines:
+       E8, one line below, has always asserted that the refusal DETAIL is RESPONSE_ACTION_MISMATCH —
+       an envelope that arrived and answered a different question — while E7 and E9 reported the
+       STATE as SOURCE_NOT_CONNECTED, which says no server answered at all. Both cannot be true of
+       one response, and the one that was wrong is the one the operator reads.
+
+       The contrast E7-E9 exists to draw is untouched: the same accessor still refuses the older
+       body, and the difference between E1-E6 and E7-E9 is still the deployment rather than the test. */
+    eq(r.out.meta.refusalCode, 'ACTION_MISMATCH',
       'E7 the SAME accessor still rejects the R9 body');
     eq(r.out.data.refusals[0].detail, 'RESPONSE_ACTION_MISMATCH',
       'E8 still naming the action mismatch');
-    eq(r.universe.state, 'SOURCE_NOT_CONNECTED',
+    eq(r.universe.state, 'ACTION_MISMATCH',
       'E9 so the difference between E1-E6 and E7-E9 is the deployment, not the test');
   });
 

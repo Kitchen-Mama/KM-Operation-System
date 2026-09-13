@@ -112,14 +112,35 @@
      ================================================================================================ */
 
   /** The states this side can reach WITHOUT a server having answered about the data. */
-  var CLIENT_TRANSPORT_STATES = ['SOURCE_NOT_CONNECTED', 'BROWSER_OFFLINE', 'SOURCE_TIMED_OUT',
-    'NOT_AUTHORIZED', 'RESPONSE_NOT_READABLE'];
+  /* P1-B8D-R10 §5 — TWO CLASSES THIS FILE COULD NOT EXPRESS, AND ONE THAT WAS DOING TWO JOBS.
 
-  function classifyTransportError(e, online) {
-    var code = str(e && e.apiCode);
-    var name = str(e && e.name);
-    var msg = str(e && e.message);
-    var status = (e && typeof e.transportStatus === 'number') ? e.transportStatus : null;
+     HTTP_NOT_FOUND. A 404 was reaching the operator as "the address answered, but not with a site
+     list" at best and as "no server answered" at worst. Neither is what happened: something
+     answered, it answered 404, and the fix is an address or a deployment rather than a network or
+     a login. §5 names it as its own class and forbids describing it as a disconnected database.
+
+     ACTION_MISMATCH. The transport already refuses an envelope that answers a different action or
+     carries a different request id — the correlation checks that stop one read's answer being drawn
+     over another's. Collapsing that into "not connected" would send an operator to look at their
+     network for a defect in the deployment's routing.
+
+     SOURCE_NOT_CONNECTED goes back to meaning ONE thing: nothing answered. */
+  var CLIENT_TRANSPORT_STATES = ['SOURCE_NOT_CONNECTED', 'BROWSER_OFFLINE', 'SOURCE_TIMED_OUT',
+    'NOT_AUTHORIZED', 'RESPONSE_NOT_READABLE', 'HTTP_NOT_FOUND', 'ACTION_MISMATCH'];
+
+  /* P1-B8D-R10 §5 — ONE CLASSIFIER, TWO SHAPES OF FAILURE.
+
+     A failure reaches this file two ways and they used to be classified by two different amounts of
+     care. A THROWN error (the old private POST shim) went through the matrix below. A TYPED result
+     from the shared transport resolves rather than throws, and the branch that received it did not
+     classify at all — it wrote SOURCE_NOT_CONNECTED and put the real code in the DETAIL line, so a
+     404 and a login page and a malformed envelope all reached the operator as "no server answered".
+
+     So the matrix is keyed on the CODE, and both shapes are reduced to a code before they get here.
+     `status` is kept because 401/403 are decidable from the status alone. */
+  function classifyTransportCode(code, status, online) {
+    code = str(code);
+    status = (typeof status === 'number') ? status : null;
 
     // 1. NOT AUTHORIZED FIRST, because it is the one case where a server DID answer, and answering
     //    "who are you" while offline is not possible — so this cannot be a mislabelled offline.
@@ -130,16 +151,52 @@
     //    `online === false` is the only thing that tells the two apart, and it is decisive when set.
     if (online === false) return 'BROWSER_OFFLINE';
 
-    if (code === 'REQUEST_TIMEOUT' || (e && e.kmTimeout === true)
-      || name === 'TimeoutError' || msg === 'REQUEST_TIMEOUT') return 'SOURCE_TIMED_OUT';
+    if (code === 'REQUEST_TIMEOUT' || code === 'REQUEST_TIMEOUT_WRITE_INDETERMINATE') return 'SOURCE_TIMED_OUT';
 
-    // 3. SOMETHING ANSWERED AND IT WAS NOT THE API. An HTML page that is not a sign-in page — a 404,
-    //    an error page, a proxy notice. "Not connected" is wrong for the same reason it is wrong for
-    //    a sign-in page, and the fix is a different one: this is a URL or a deployment, not a login.
-    if (code === 'TRANSPORT_NON_JSON_RESPONSE' || code === 'HTTP_NOT_FOUND_HTML'
-      || code === 'REDIRECT_TARGET_NOT_FOUND') return 'RESPONSE_NOT_READABLE';
+    // 3. A 404 IS ITS OWN ANSWER. Something answered; it said the address is not there. That is a
+    //    deployment or a URL, and §5 forbids reporting it as a database that is not connected.
+    if (code === 'HTTP_NOT_FOUND_HTML' || code === 'REDIRECT_TARGET_NOT_FOUND'
+      || status === 404) return 'HTTP_NOT_FOUND';
 
+    // 4. THE ANSWER BELONGED TO A DIFFERENT QUESTION. Routing or correlation, never the network.
+    if (code === 'RESPONSE_ACTION_MISMATCH' || code === 'RESPONSE_REQUEST_ID_MISMATCH'
+      || code === 'RESPONSE_CORRELATION_UNPROVEN' || code === 'DEPLOYMENT_CONTRACT_MISMATCH') {
+      return 'ACTION_MISMATCH';
+    }
+
+    // 5. SOMETHING ANSWERED AND IT WAS NOT THE API — an error page, a proxy notice, a body that is
+    //    not the envelope. A URL or a deployment, not a login and not a missing network.
+    if (code === 'TRANSPORT_NON_JSON_RESPONSE' || code === 'API_ENDPOINT_CONFIGURATION_INVALID'
+      || code === 'REQUEST_METHOD_DOWNGRADED') return 'RESPONSE_NOT_READABLE';
+
+    // 6. NOTHING ANSWERED. The only meaning this state has left.
     return 'SOURCE_NOT_CONNECTED';
+  }
+
+  /* P1-B8D-R10 §5 — A VALIDATION FAILURE IS NOT ONE THING EITHER.
+
+     An envelope that ARRIVED and failed validation used to be reported as SOURCE_NOT_CONNECTED with
+     the real code demoted to the detail line. Replacing that with a blanket RESPONSE_NOT_READABLE
+     would be more honest and still too coarse: an envelope that answered a DIFFERENT ACTION is a
+     routing or correlation fault, and it is the only failure here that could otherwise have been
+     drawn on a chart as data. §5 names it separately, so it is separated. */
+  function stateForValidationCode(code) {
+    code = str(code);
+    if (code === 'RESPONSE_ACTION_MISMATCH' || code === 'RESPONSE_REQUEST_ID_MISMATCH') {
+      return 'ACTION_MISMATCH';
+    }
+    if (code === 'SERVER_SENT_A_CLIENT_ONLY_STATE') return 'ACTION_MISMATCH';
+    return 'RESPONSE_NOT_READABLE';
+  }
+
+  function classifyTransportError(e, online) {
+    var name = str(e && e.name);
+    var msg = str(e && e.message);
+    var code = str(e && e.apiCode);
+    var status = (e && typeof e.transportStatus === 'number') ? e.transportStatus : null;
+    if (code === '' && (e && e.kmTimeout === true || name === 'TimeoutError'
+      || msg === 'REQUEST_TIMEOUT')) code = 'REQUEST_TIMEOUT';
+    return classifyTransportCode(code, status, online);
   }
 
   /**
@@ -164,6 +221,8 @@
     SOURCE_TIMED_OUT: 'the request was sent and no answer arrived within the time it was given',
     NOT_AUTHORIZED: 'a server answered with a sign-in or access page rather than the API',
     RESPONSE_NOT_READABLE: 'a server answered with something that is not the API envelope',
+    HTTP_NOT_FOUND: 'a server answered 404 — the address was reached and holds nothing to read',
+    ACTION_MISMATCH: 'a server answered a different request than the one that was sent',
     SOURCE_NOT_CONNECTED: 'no server answered'
   };
 
@@ -299,6 +358,81 @@
     return (api && api.transport && typeof api.transport.post === 'function') ? api : null;
   }
 
+  /* ================================================================================================
+     P1-B8D-R10 §4/§6 — THE READ BOUNDARY, AND WHY THIS PAGE WAS THE ONLY ONE WITHOUT IT.
+
+     MEASURED IN A REAL BROWSER, WITH `window.fetch` WRAPPED BEFORE ANY APPLICATION FILE LOADED:
+
+       accessor getSiteUniverse   ->  POST  km_via=post   ... 404, redirected
+       accessor workspace.get     ->  POST  km_via=post
+       KM.transport.request       ->  GET   km_via=get
+
+     Every other workspace read in the application goes through `KM.transport.request({kind:'read'})`
+     — the foundation routes them there and calls its own POST path "a fallback and not the path".
+     This accessor called `api.transport.post()` DIRECTLY, so it was the one read still on the old
+     private shim, and it therefore had none of what that boundary owns:
+
+       · a GET from the stable /exec. An Apps Script /exec POST is answered with a 302, and per the
+         Fetch spec a 302 after a POST is re-issued as a GET WITH THE BODY DROPPED.
+       · the endpoint classifier, so a /dev URL or a consumed echo target is refused before dispatch.
+       · the HTML fingerprint, which is what tells a 404 page from a Google sign-in page from an
+         Apps Script error page. Without it all three arrive as one anonymous code.
+       · the bounded recovery: ONE fresh attempt, rebuilt from the stable /exec, with a NEW request
+         id — which is exactly the retry §6 asks for, already written and already tested.
+
+     SO NO SECOND RETRY WAS BUILT. §6 is satisfied by joining the boundary that owns the first one.
+     A second mechanism here would be a second policy to keep in step with the first, and the two
+     would disagree the first time either changed.
+
+     THE FALLBACK IS KEPT AND IS STILL A FALLBACK. A page that somehow loads this file without
+     `km-transport.js` keeps working exactly as it did, with its old failure modes, rather than
+     losing the read entirely.
+     ================================================================================================ */
+  function sharedTransport() {
+    try {
+      var t = root && root.KM && root.KM.transport;
+      return (t && typeof t.request === 'function') ? t : null;
+    } catch (e) { return null; }
+  }
+
+  /**
+   * One read. Resolves { env } when an envelope arrived, or { code, status } when none did.
+   * It never throws for a transport failure — the shared transport resolves with a typed code, and
+   * the fallback's throw is converted here so both callers have ONE shape to handle.
+   */
+  function readOnce(api, action, payload, requestId, signal) {
+    /* THE WHOLE ENVELOPE IS THE BODY, NOT THE PAYLOAD, and that distinction cost a measured
+       regression in this round. `km_body` is serialised verbatim into the read query and the router
+       reads `body.payload.scope` out of it, so handing it the inner payload produces a request that
+       reaches the server, returns 200, and is refused SCOPE_INCOMPLETE — a scope that WAS supplied,
+       reported as missing. The foundation passes its `dto` here for exactly this reason. */
+    var dto = (typeof api.buildRequestEnvelope === 'function')
+      ? api.buildRequestEnvelope(action, payload || {}, { requestId: requestId || undefined })
+      : { apiVersion: '1.0', action: action, requestId: requestId || null, payload: payload || {},
+          context: { actor: null, clientVersion: null } };
+    var tp = sharedTransport();
+    if (tp) {
+      return Promise.resolve(tp.request({ action: action, kind: 'read', payload: dto,
+        requestId: dto.requestId || requestId || undefined, signal: signal, owner: 'productStrategy' }))
+        .then(function (res) {
+          if (res && res.success === true && isObj(res.envelope)) return { env: res.envelope };
+          var d = (res && isObj(res.details)) ? res.details : {};
+          var st = (typeof d.http_status === 'number') ? d.http_status
+            : ((typeof d.status === 'number') ? d.status : null);
+          return { code: (res && res.code) || 'TRANSPORT_FAILED', status: st,
+            attempts: (typeof d.attempts === 'number') ? d.attempts : null };
+        });
+    }
+    return Promise.resolve(api.transport.post(dto, { signal: signal }))
+      .then(function (resp) { return api.transport.safeReadJsonResponse(resp); })
+      .then(function (env) { return { env: env }; })
+      .catch(function (e) {
+        return { code: str(e && e.apiCode) || 'TRANSPORT_FAILED',
+          status: (e && typeof e.transportStatus === 'number') ? e.transportStatus : null,
+          thrown: e };
+      });
+  }
+
   // ---- PUBLIC ----------------------------------------------------------------------------------
   /* P1-B8D-R5 - A HALF RESET IS NOT A RESET. `setCapability({})` is how a caller puts the mirror
      back to the production default, and it used to lower `_enabled` while leaving `_capabilityHeard`
@@ -381,19 +515,22 @@
       return Promise.resolve(refused('SOURCE_NOT_CONNECTED', 'the shared KM API transport is unavailable',
         null));
     }
-    var dto = (typeof api.buildRequestEnvelope === 'function')
-      ? api.buildRequestEnvelope(ACTION, buildPayload(params),
-        { requestId: str(params && params.requestId) || undefined })
-      : { action: ACTION, requestId: str(params && params.requestId) || null,
-          payload: buildPayload(params) };
-
-    return Promise.resolve(api.transport.post(dto, { signal: opts.signal }))
-      .then(function (resp) { return api.transport.safeReadJsonResponse(resp); })
-      .then(function (env) {
-        var r = validateResponse(env);
+    return readOnce(api, ACTION, buildPayload(params),
+      str(params && params.requestId) || undefined, opts.signal)
+      .then(function (r0) {
+        if (r0.code) {
+          var tc = classifyTransportCode(r0.code, r0.status, browserOnline());
+          return refused(tc, TRANSPORT_DETAIL[tc], null);
+        }
+        var r = validateResponse(r0.env);
         // NO FALLBACK, AND NO SUBSTITUTE. A failed read is reported as a failed read.
-        if (!r.ok) return refused('SOURCE_NOT_CONNECTED', r.code, null);
-        return env;
+        /* P1-B8D-R10 §5 — AND IT IS REPORTED AS THE FAILURE IT WAS. This branch used to answer
+           SOURCE_NOT_CONNECTED — "no server answered" — for an envelope that HAD arrived and then
+           failed validation, with the real code demoted to the detail line. A response whose status
+           and content-type are known must not lose them (§5), so the state now says what is true:
+           something answered, and it was not the envelope this build reads. */
+        if (!r.ok) return refused(stateForValidationCode(r.code), r.code, null);
+        return r0.env;
       })
       .catch(function (e) {
         var code = classifyTransportError(e, browserOnline());
@@ -444,18 +581,17 @@
       return Promise.resolve(universeRefused('SOURCE_NOT_CONNECTED',
         'the shared KM API transport is unavailable', null));
     }
-    var dto = (typeof api.buildRequestEnvelope === 'function')
-      ? api.buildRequestEnvelope(SITE_UNIVERSE_ACTION, {},
-        { requestId: str(opts.requestId) || undefined })
-      : { action: SITE_UNIVERSE_ACTION, requestId: str(opts.requestId) || null, payload: {} };
-
-    return Promise.resolve(api.transport.post(dto, { signal: opts.signal }))
-      .then(function (resp) { return api.transport.safeReadJsonResponse(resp); })
-      .then(function (env) {
-        var r = validateUniverseResponse(env);
+    return readOnce(api, SITE_UNIVERSE_ACTION, {}, str(opts.requestId) || undefined, opts.signal)
+      .then(function (r0) {
+        if (r0.code) {
+          var tc = classifyTransportCode(r0.code, r0.status, browserOnline());
+          return universeRefused(tc, TRANSPORT_DETAIL[tc], null);
+        }
+        var r = validateUniverseResponse(r0.env);
         // NO FALLBACK. A failed read of the site list is a failed read, not a default set of sites.
-        if (!r.ok) return universeRefused('SOURCE_NOT_CONNECTED', r.code, null);
-        return env;
+        // §5: an envelope that arrived and failed validation is not "no server answered".
+        if (!r.ok) return universeRefused(stateForValidationCode(r.code), r.code, null);
+        return r0.env;
       })
       .catch(function (e) {
         var code = classifyTransportError(e, browserOnline());
@@ -473,6 +609,9 @@
     CLIENT_TRANSPORT_STATES: CLIENT_TRANSPORT_STATES.slice(),
     TRANSPORT_DETAIL: TRANSPORT_DETAIL,
     classifyTransportError: classifyTransportError,
+    classifyTransportCode: classifyTransportCode,
+    stateForValidationCode: stateForValidationCode,
+    readsThroughSharedTransport: function () { return sharedTransport() !== null; },
     isEnabled: isEnabled, setCapability: setCapability,
     refreshCapability: refreshCapability, capabilityHeard: capabilityHeard,
     CAPABILITY_ACTION: CAPABILITY_ACTION,

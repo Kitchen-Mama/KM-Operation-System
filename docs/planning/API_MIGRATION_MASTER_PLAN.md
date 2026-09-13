@@ -886,3 +886,56 @@ contract-first rule, the first round's execution order, and the read-only image 
 P1 could identify but may not fix — [`IMAGE_REFERENCE_REMEDIATION_REPORT.md`](IMAGE_REFERENCE_REMEDIATION_REPORT.md).
 
 **S2 runtime has not been started and may not be started under a P1 round.**
+
+## P1-B8D-R10 — ONE PAGE JOINS THE TRANSPORT IT WAS ALREADY RECORDED AS USING (2026-09-13, HEAD `070c16b`)
+
+**The rule adopted at R8 stands verbatim and is not restated here.** R10 starts no S round,
+reclassifies no module, adds no action and changes no server file.
+
+### The one thing that moved
+
+`assets/js/api/km-product-pricing-workspace.js` dispatched its two business reads through
+`KM.api.transport.post()` — a PRIVATE member of `km-api-foundation.js`, described in that file's own
+comment as "a fallback and not the path". Every other workspace read in the application goes through
+`KM.transport.request({ kind: 'read' })`. Product Strategy was the last one that did not.
+
+It matters because of what an Apps Script `/exec` does to a POST. `/exec` answers **every** request
+with a 302 — 24 of 24 measured live — and per the Fetch specification a 302 after a POST is re-issued
+as a GET **with the body dropped**. The shared transport has dispatched reads as GET with the body in
+`km_body` since F1-7N-FB-4E-R4A1 for exactly that reason. The private shim never learned it, and
+neither did the one caller still using it.
+
+### What the page did not have, and now does
+
+| Capability | Where it lives | Product Strategy before R10 |
+|---|---|---|
+| endpoint classification (refuse a non-`/exec` address before dispatch) | `km-transport.js` | absent |
+| HTML fingerprint (sign-in page vs 404 page vs generic error) | `km-transport.js` | absent |
+| redirect-target classification (`REDIRECT_TARGET_NOT_FOUND`) | `km-transport.js` | absent |
+| bounded one-shot recovery for reads, zero for writes | `km-transport.js` | **absent** |
+| URL-size refusal before dispatch | `km-transport.js` | absent |
+
+**No retry was written this round.** The bound already existed, one layer down, and the work was to
+join it rather than to add a second policy beside it. A page-level retry would have been a second
+thing to keep correct, and the first thing to disagree with the first.
+
+### What the evidence eliminated
+
+Three plausible causes were measured and closed rather than argued:
+
+* **redirect reuse** — the `/exec` 302 carries `no-cache, no-store, max-age=0, must-revalidate`, and
+  every one of 24 live attempts received a **distinct** 354-character `user_content_key`. None was
+  shared across the three read actions.
+* **URL length** — real reads measure 164–290 characters against a 6000 ceiling.
+* **the deployment** — R11, `deployment_uniformity_verdict: UNIFORM`, `router_ready: true`,
+  `missing_actions: 0`, `product_strategy_enabled: true`, `read_only: true`, every write counter 0.
+
+The server was never the fault. The client was on the wrong verb.
+
+### Inventory consequence
+
+`S_SERIES_FRONTEND_API_MIGRATION_INVENTORY.md` §2 recorded this accessor's transport as
+`KM.transport.post`. **No such function exists** — `KM.transport` exposes `request()`. One wrong
+namespace, repeated on four rows, is why a census whose whole purpose is to say which page is on
+which transport described the failing page as already correct. The column is corrected there; only
+this accessor's code changed.

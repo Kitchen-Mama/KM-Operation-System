@@ -460,8 +460,16 @@ var CHAIN = C0.loadUniverse().then(function () {
     .then(function (res2) {
       ok(res2.state !== 'OK',
         'D5  AN ENVELOPE WITH THE WRONG meta.action IS STILL REFUSED, on live data too');
-      eq(res2.state, 'SOURCE_NOT_CONNECTED',
-        'D5a exactly as the deployed accessor refused it at P1-B7E');
+      /* P1-B8D-R10 §5 — THE STATE CHANGED AND THE REFUSAL DID NOT.
+
+         D5 is the assertion that matters and it is untouched: an envelope whose meta.action names a
+         different action is still REFUSED, and nothing is drawn from it. What changed is what the
+         operator is told. This used to say SOURCE_NOT_CONNECTED — "no server answered" — about a
+         response that had demonstrably arrived, which is the sentence §5 of R10 forbids by name for
+         exactly this case. An answer to a different question is a routing or correlation fault, and
+         it is the one failure that could otherwise have reached a price axis as data. */
+      eq(res2.state, 'ACTION_MISMATCH',
+        'D5a and it is named as the routing fault it is, not as a missing network (R10 §5)');
     });
 });
 

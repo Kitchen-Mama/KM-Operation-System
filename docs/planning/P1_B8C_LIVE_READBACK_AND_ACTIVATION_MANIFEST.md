@@ -1009,3 +1009,57 @@ site switch clear it; the sentence had not caught up.
 - **The chart marker has an error path at last**, with its own sentence: *"The record names a product
   photograph that did not load."* — which is a different fact from *"No product photograph is on
   record"* and sends an operator somewhere different.
+
+# 12 · P1-B8D-R10 — THE READ ROUTE, THE ERROR VOCABULARY, AND THE BOUNDED RECOVERY
+
+## 12.1  What the operator reported, and what it turned out to be
+
+Two different errors on one live page, in an incognito window, on GitHub Pages:
+
+1. `RESPONSE_NOT_READABLE` — "API 預期 JSON，卻收到 web page", over a console 404 on
+   `script.googleusercontent.com/macros/echo…`
+2. `SOURCE_NOT_CONNECTED` — "No server answered", with the chooser already holding ResUS / US / Amazon
+
+They are one defect seen at two moments. **Neither is a Google Login problem**; Google Login is not
+implemented, and nothing in this round implements it.
+
+## 12.2  The transport contract this page now sits behind
+
+| Property | Value | Who enforces it |
+|---|---|---|
+| read verb | `GET`, body in `km_body` | `km-transport.js` `readQuery()` |
+| auto-retry, reads | **at most 1**, and only for a redirect-target 404, a method downgrade, or a network failure with no response | `isAutoRetryable()` + `maxRetries` |
+| auto-retry, writes | **0**, unconditionally | `isAutoRetryable()` returns false for `kind: 'write'` |
+| where a recovery starts | the stable `/exec`, rebuilt from `endpoint()` | `urlFor()`; a `googleusercontent` target is never stored and never re-requested |
+| the recovery's identity | a **new** request id (`<rid>-R2`), validated against itself | `ridForAttempt()` |
+| cache | `cache: 'no-store'` on every attempt | `attempt()` |
+
+A sign-in page, a 404 from `/exec` itself, a business refusal, a superseded request, a timeout and an
+action mismatch are **never** retried. Asking a second time cannot create a session, move an address,
+or change a refusal — it can only delay telling the operator what is actually wrong.
+
+## 12.3  The error vocabulary, as activated
+
+Two states join the page's vocabulary, and both exist because the honest name for a failure was
+already being replaced by a less honest one:
+
+| State | When | What the operator is told |
+|---|---|---|
+| `HTTP_NOT_FOUND` | a 404 from the endpoint or from a redirect target | the address answered and holds nothing to read |
+| `ACTION_MISMATCH` | an envelope whose action or request id is not the one that was sent | the answer belonged to a different request |
+
+**Both had to be added in three places at once**, and that is the activation risk worth naming. The
+accessor produces the state; `km-product-strategy-site-universe.js` and
+`km-product-strategy-live-adapter.js` carry the words for it. Both maps resolve an unknown state as
+`UX[state] || UX.SOURCE_NOT_CONNECTED` — so a state added to the accessor and forgotten in a map does
+not throw, does not warn, and renders as **"No server answered"**: the exact sentence this round
+exists to stop being said about a server that answered. The three files carry one cache token for
+that reason.
+
+## 12.4  What this round did NOT change
+
+* no `.gs` file, no server behaviour, no deployment, no new action
+* no write of any kind, and no write-shaped action added
+* no feature flag moved; `product_strategy_enabled` was already true live
+* no Google Login, no S2 runtime
+* no other page's business logic

@@ -2397,3 +2397,237 @@ KNOWN AND NOT FIXED
 ```
 
 **STATUS: LOCAL COMMIT — NOT PUSHED — FRONTEND REDEPLOY REQUIRED — NO APPS SCRIPT SYNC.**
+
+## P1-B8D-R10 — THE ONE READ PATH THAT NEVER JOINED THE TRANSPORT
+
+**2026-09-13 · local commit on `feature/product-strategy-board-p0` · NOT PUSHED**
+
+```
+PRE  HEAD   070c16bc3a14f83c4b89146ee32022217d807aee   (R9, pushed by the USER)
+CACHE TOKEN imagetoolbar-p1b8dr9-20260913  ->  readroute-p1b8dr10-20260913   (35 refs, 0 stale)
+
+WHAT THE OPERATOR SAW, LIVE, ON GITHUB PAGES IN AN INCOGNITO WINDOW
+-------------------------------------------------------------------------------------------------------
+  1  RESPONSE_NOT_READABLE   "API 預期 JSON，卻收到 web page", over a console 404 on
+                             script.googleusercontent.com/macros/echo…
+  2  SOURCE_NOT_CONNECTED    "No server answered" — with the chooser already holding ResUS / US / Amazon
+
+  Two errors, one defect, seen at two moments. NOT a Google Login problem; Google Login is not
+  implemented and this round does not implement it.
+
+THE ROOT CAUSE, MEASURED RATHER THAN INFERRED
+-------------------------------------------------------------------------------------------------------
+  Real Chrome, with window.fetch wrapped BEFORE any application file was allowed to load:
+
+      accessor getSiteUniverse  ->  POST  km_via=post   … 404, redirected   <- the report, reproduced
+      accessor workspace.get    ->  POST  km_via=post
+      KM.transport.request      ->  GET   km_via=get                        <- every other page
+
+  Product Strategy was the LAST workspace read in the application still going out through
+  km-api-foundation's PRIVATE post shim — the one that file's own comment calls "a fallback and not
+  the path". An Apps Script /exec answers every request with a 302 (24 of 24 measured), and per the
+  Fetch specification a 302 after a POST is re-issued as a GET WITH THE BODY DROPPED. The shared
+  transport has dispatched reads as GET with the body in km_body since F1-7N-FB-4E-R4A1 for exactly
+  that reason.
+
+  Being on the wrong door cost this page FOUR capabilities it never had: the endpoint classifier, the
+  HTML fingerprint, redirect-target classification, and the bounded recovery.
+
+WHAT THE EVIDENCE ELIMINATED — closed by measurement, not by argument
+-------------------------------------------------------------------------------------------------------
+  redirect reuse   the /exec 302 carries no-cache, no-store, max-age=0, must-revalidate; 24 of 24 live
+                   attempts received a DISTINCT 354-character user_content_key; 0 shared across the
+                   three read actions
+  URL length       real reads are 164–290 characters against a 6000 ceiling
+  the deployment   R11 · UNIFORM · router_ready true · missing_actions 0 · product_strategy_enabled
+                   true · read_only true · every write counter 0
+  the server       never at fault. ~162 live requests produced 1 observed 404 (~0.6%).
+
+THE FIX — NO RETRY WAS WRITTEN THIS ROUND
+-------------------------------------------------------------------------------------------------------
+  The bound already existed one layer down: reads get at most ONE recovery, writes get zero, the
+  recovery is rebuilt from the stable /exec with a NEW request id, and cache: 'no-store' throughout.
+  The work was to JOIN that boundary rather than to add a second policy beside it — a page-level retry
+  would have been a second thing to keep correct and the first thing to disagree with the first.
+
+  ONE REGRESSION WAS INTRODUCED AND FIXED DURING THE ROUND. The first version passed the inner PAYLOAD
+  as km_body instead of the whole envelope. readQuery serialises what it is handed verbatim and the
+  router reads body.payload.scope out of it, so the request arrived, returned 200, and was refused
+  SCOPE_INCOMPLETE — a scope that WAS supplied, reported as missing. The DTO is built by
+  buildRequestEnvelope and passed whole, exactly as the foundation does.
+
+THE ERROR VOCABULARY (§5)
+-------------------------------------------------------------------------------------------------------
+  HTTP_NOT_FOUND    a 404 from the endpoint or from a redirect target — the address answered and holds
+                    nothing to read. It is NEVER "no server answered".
+  ACTION_MISMATCH   an envelope whose action or request id is not the one that was sent. A routing
+                    fault, not a missing network — and the one failure that could otherwise have put
+                    another request's numbers on a price axis.
+
+  Three hardcoded SOURCE_NOT_CONNECTED refusals were replaced by classified ones, and THREE WHITELISTS
+  that silently degrade were completed. Both UX maps resolve an unknown state as
+  `UX[state] || UX.SOURCE_NOT_CONNECTED` — so a state added to the accessor and forgotten in a map does
+  not throw, does not warn, and renders as the exact sentence this round exists to stop. The three
+  files carry one cache token for that reason.
+
+  U.STATES was also completed. It called itself "the states THIS module reports" and omitted four it
+  had reported since P1-B8B. Nothing broke because NOTHING READ IT — a declaration with no consumer,
+  which is how it drifted unnoticed. It has one now: the R10 suite walks all four maps together.
+
+LIVE MEASUREMENT (§8) — real Chrome, the shipped path, against the live deployment
+-------------------------------------------------------------------------------------------------------
+  BEFORE   wt-r10before @ 070c16b — the private POST shim      40 reads / 20 controller sequences
+           siteUniverse.get   19/20 clean    1x SOURCE_NOT_CONNECTED, detail SERVER_REPORTED_FAILURE
+           workspace.get      20/20 clean
+           transport          retries 0   recoveries 0
+           THE DEFECT REPRODUCED LIVE, AND NAMED WRONGLY. A server did answer. It answered 404.
+
+  AFTER    sample 1                                            40 reads / 20 controller sequences
+           siteUniverse.get   19/20 clean    1x HTTP_NOT_FOUND, "a server answered 404 — the address
+                                             was reached and holds nothing to read"
+           workspace.get      20/20 clean
+           transport          retries 4   recoveries 4
+           FOUR transient redirect-target 404s. THREE were absorbed and the operator saw nothing at
+           all; the fourth failed twice and surfaced under its correct name.
+
+  AFTER    sample 2                                            40 reads / 20 controller sequences
+           siteUniverse.get   20/20 clean
+           workspace.get      20/20 clean
+           transport          retries 1   recoveries 1
+           One transient 404, absorbed. Nothing was shown to the operator.
+
+  §8 IS NOT DECLARED PASSED, AND THAT IS DELIBERATE.
+  -------------------------------------------------------------------------------------------------
+  §8 accepts 20/20 and sample 1 is 19/20, so the correct report is that the bar was met in one of two
+  samples and not in the other. What the two samples show TOGETHER is the fact that matters: the live
+  echo target 404s at a rate that VARIES BY WINDOW — 5 occurrences in 80 reads here (~6%), against
+  1 in ~162 (~0.6%) measured earlier in this same round. At a ~10% per-attempt rate, one bounded
+  retry still leaves roughly 1% of reads failing twice. Sample 1 is that 1%.
+
+  THE RESIDUE IS NOT A CLIENT DEFECT, AND IT WAS NOT PAPERED OVER. §6 caps auto-retry at ONE and caps
+  a single user action at TWO physical requests. Raising the bound to manufacture a 20/20 would have
+  broken the rule that asked for the measurement, and would have hidden a live infrastructure fault
+  behind a client loop. What the client now guarantees is what a client can guarantee: a transient
+  redirect-target 404 is retried exactly once from the stable /exec, most are absorbed invisibly, and
+  any that survives is reported as the 404 it is rather than as "No server answered".
+
+  WHAT IS LEFT IS A DEPLOYMENT DECISION AND BELONGS TO THE USER. §11 forbids an agent from changing
+  the deployment, and §7 confirms the deployment is otherwise healthy (R11, UNIFORM, router_ready,
+  0 missing actions, read_only, every write counter 0 — re-verified at the close of this round).
+
+
+TESTS
+-------------------------------------------------------------------------------------------------------
+  NEW   product-strategy-transport-stability-p1-b8d-r10.test.js
+        152 passed / 0 failed / 17 mutants / 0 survived / 0 PROBE ERROR
+
+        §A the route · §B the forbidden sentences, by name · §C the retry bound against the REAL
+        transport over an injected network · §D the production-like fault matrix in a browser ·
+        §E the recovery does not flicker · §F a superseded read does not land · §G R8/R9 keeps
+
+  THREE MUTANTS FAILED TO KILL BEFORE THEY WERE WRITTEN CORRECTLY, and each taught something:
+    · removing AUTH_OR_ACCESS_HTML from NEVER_AUTO_RETRY_CODES changed nothing — isAutoRetryable is
+      an ALLOWLIST ending in `return false`, so the blocklist is a second lock on a shut door.
+      An auth refusal is guarded TWICE, independently; the mutant now removes both.
+    · aiming a fault at attempt numbers 2–3 hit site B's first read rather than site A's recovery,
+      because the two sites' reads INTERLEAVE. Faults are aimed by request content now.
+    · asserting `details.recovery_from` failed because that field is written onto the first attempt's
+      result and then discarded. Backlog B2-9; the property is proven harder by reading the URLs.
+
+  UPDATED because the contract deliberately changed:
+    live-replay-acceptance-p1-b8c-r2   D5a  SOURCE_NOT_CONNECTED -> ACTION_MISMATCH
+    envelope-action-p1-b7e             G10/G11 the same; G10a already asserted the DETAIL was
+                                       RESPONSE_ACTION_MISMATCH, so the file had been recording the
+                                       contradiction in adjacent lines
+    replay-acceptance-p1-b8c           D12  the same
+    deployment-r10-activation-boundary-p1-b7f  E7/E9 the same — found by the sweep rather than by
+                                       searching, which is why the sweep runs before the commit
+    lifecycle-p1-b8d-r8                A6 -> a ceiling plus A6a exact-when-settled (the dispatch moved
+                                       one microtask later and the teardown did not); B10 3 -> 4,
+                                       because the refused read now costs its ONE bounded recovery
+
+SWEEP
+-------------------------------------------------------------------------------------------------------
+  PRE  (wt-r10before @ 070c16b)   474 suites   4 flagged, all pre-existing and identical to R9's
+                                  recorded baseline: gap-job-done-notice-f1-small-r1 (3),
+                                  order-planning-monthly-projection-consumer-f1-4b-fm3d (1),
+                                  replen-header-toggle (7), supply-planning-route-inventory (2)
+  POST (the committed tree)       474 suites   same 4, same counts, nothing added
+
+  TWO SUITES WERE FLAGGED MID-ROUND AND BOTH WERE REAL:
+
+    deployment-r10-activation-boundary-p1-b7f  E7/E9 were the FOURTH place in this repository
+      asserting SOURCE_NOT_CONNECTED for a mismatched envelope. E8, one line below, had always
+      asserted the DETAIL was RESPONSE_ACTION_MISMATCH. The contradiction sat in adjacent lines and
+      passed every round until a state existed that could tell them apart. 102/0/7/0.
+
+    product-strategy-transport-stability-p1-b8d-r10  was flagged for a PROBE ERROR it did not have:
+      the section heading QUOTED the phrase the sweep detector greps for. A heading that names the
+      thing it forbids trips the detector that looks for it. Reworded; the suite was always 152/0.
+
+FILES
+-------------------------------------------------------------------------------------------------------
+  shipped       assets/js/api/km-product-pricing-workspace.js        the read route, the classifier,
+                                                                     3 hardcoded refusals replaced
+                assets/js/product-strategy/km-product-strategy-site-universe.js   2 states, 2 wordings,
+                                                                     U.STATES completed
+                assets/js/product-strategy/km-product-strategy-live-adapter.js    2 states, 2 wordings
+                index.html                                           35 token refs, 0 stale
+  harness       assets/tests/_p1b8c-replay.js       a fake NETWORK under a REAL transport; six named
+                                                    faults; netFaultOnce / From / Until / When / SlowMs
+                assets/tests/_p1b8c-interactions.js transport-fault, transport-recovery,
+                                                    fault-site-switch, faultStep
+                assets/tests/_p1b8c-visual-runner.js  the fault options
+                assets/tests/_release-order.js      token appended
+  docs          docs/planning/S_SERIES_FRONTEND_API_MIGRATION_INVENTORY.md
+                docs/planning/API_MIGRATION_MASTER_PLAN.md
+                docs/planning/P1_B8C_LIVE_READBACK_AND_ACTIVATION_MANIFEST.md
+                docs/planning/PHASE_2_BACKLOG.md
+                docs/planning/DEPLOYMENT_RELEASE_LOG.md
+
+A DOCUMENT THAT DESCRIBED THE FAILING PAGE AS CORRECT
+-------------------------------------------------------------------------------------------------------
+  S_SERIES_FRONTEND_API_MIGRATION_INVENTORY §2 recorded this accessor's transport as `KM.transport.post`
+  on four separate rows. THERE IS NO SUCH FUNCTION — KM.transport exposes request(); the post shim is a
+  private member of km-api-foundation. One wrong namespace is why a census whose entire purpose is to
+  say which page is on which transport described the one failing page as already migrated. Corrected
+  there; only the accessor's CODE changed.
+
+MISTAKES THIS ROUND MADE AND CORRECTED, WORTH RECORDING
+-------------------------------------------------------------------------------------------------------
+  · TWO DISCRIMINATORS LIED BEFORE THE RIGHT ONE WAS FOUND. KM.transport.metrics() cannot tell the two
+    paths apart (beginExternal -> recordExternal feeds the same counters), and `received_method` is
+    echoed by system.health but NOT by the workspace actions. Only wrapping window.fetch before any
+    application script loads answered the question.
+  · A PROBE READ THE OUTER success FLAG and reported a live 404 as universeOk: true. universeRefused()
+    returns success: true with the refusal nested in data.refusals.
+  · BROWSER PROBES WERE RUN CONCURRENTLY WITH A SUITE SWEEP. Both write the same generated acceptance
+    page, so one overwrote the other and the R9 suite reported 5 spurious PROBE ERRORs and a survived
+    mutant. Re-run serially it is 154/0/17/0. Probes get their own page file now.
+  · A STRANDED MUTANT survived a killed sweep in product-strategy-board.js (the R7 help-button
+    click -> mouseenter). It was found by checking the file against 070c16b rather than by trusting
+    git status, and it was the entire cause of 5 failures in the R7 suite.
+  · TWICE, "NO RESULT FROM CHROME" WAS A BROKEN PROBE WEARING THE COSTUME OF A FAILED MEASUREMENT:
+    once a virtual-time budget exhausted by 120 diagnostic requests that belonged to §3, once a bare
+    reference to a NODE variable from inside the page.
+
+DEPLOYMENT
+-------------------------------------------------------------------------------------------------------
+  APPS_SCRIPT_SYNC_REQUIRED   NO      .gs files changed: 0
+  FRONTEND_DEPLOY_REQUIRED    YES     four shipped files move together on one token
+  DB / Sheets / Drive writes  0       action contract unchanged · feature flag unchanged
+  Release identity            unchanged  F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11
+  Rollback                    unchanged: PRODUCT_STRATEGY_ENABLED_ = false, save, new version, update
+                              the existing deployment. Rollback needs no frontend deploy.
+
+KNOWN AND NOT FIXED
+-------------------------------------------------------------------------------------------------------
+  · B2-9 recovery_from is written onto a discarded object. No production effect; the recovery is
+    observable through metrics().recoveries and provable from the wire. Belongs to a transport round.
+  · The accessor retains api.transport.post as a FALLBACK for a page that loads without the transport.
+    It is unreachable while km-transport.js is in index.html, and the R10 suite asserts the shared
+    transport is tried first.
+  · Everything R9 listed under KNOWN AND NOT FIXED is unchanged.
+```
+
+**STATUS: LOCAL COMMIT — NOT PUSHED — FRONTEND REDEPLOY REQUIRED — NO APPS SCRIPT SYNC.**

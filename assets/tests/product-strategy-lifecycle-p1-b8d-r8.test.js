@@ -200,7 +200,22 @@ ok(tdA.mounted === true && tdA.board.viewChildren > 0 && tdA.board.navTabs > 0,
 var tdB = stepAt(TEARDOWN, 1);
 eq(tdB.canonical.marketplace, 'Walmart', 'A4  site B is canonical the instant the control changes');
 ok(tdB.inFlight === true, 'A5  and B\'s read is already outstanding', tdB.inFlight);
-eq(tdB.workspaceRequests, 2, 'A6  which is the SECOND workspace read and not a third');
+/* P1-B8D-R10 — THE DISPATCH MOVED ONE MICROTASK LATER, AND THE TEARDOWN DID NOT.
+
+   R10 routes this page's reads through `KM.transport.request`, which resolves the endpoint and
+   takes its dispatch marks before it calls `fetch`. So at the instant this step is measured the
+   second read is COMMITTED but not yet on the wire, and the count reads 1 rather than 2.
+
+   THE PROPERTY §5 ACTUALLY ASKS FOR IS UNCHANGED AND IS STILL ASSERTED BY A7: the old board is
+   already gone in this same synchronous turn. If anything the ordering is now stricter — the
+   teardown completes BEFORE the request leaves rather than in the same turn as it. What A6 exists
+   to catch is a DUPLICATE read, so it is stated as a ceiling here and as an exact count once the
+   sequence has settled, which is where 'exactly two' is a fact rather than a race. */
+ok(tdB.workspaceRequests <= 2, 'A6  no more than two workspace reads have been dispatched',
+  tdB.workspaceRequests);
+var tdSettled = boardSteps(TEARDOWN)[boardSteps(TEARDOWN).length - 1];
+eq(tdSettled.workspaceRequests, 2,
+  'A6a and when it settles it is exactly two — site A, then site B, and no third');
 eq(tdB.board.viewChildren, 0, 'A7  site A\'s chart is already gone — same turn, nothing awaited');
 eq([tdB.board.navTabs, tdB.board.scopeChildren], [0, 0],
   'A8  and so are its tabs and its own context row');
@@ -248,7 +263,19 @@ var f2 = stepAt(FAILRUN, 2);
 ok(f2.mounted === true && f2.canonical.marketplace === 'Walmart',
   'B9  and re-picking the same marketplace after a failure loads it',
   [f2.mounted, f2.canonical]);
-eq(f2.workspaceRequests, 3, 'B10 three reads: A, the refused B, the retried B');
+/* P1-B8D-R10 — FOUR PHYSICAL READS NOW, AND THE FOURTH IS THE FIX WORKING.
+
+   The refused B costs TWO physical attempts, not one: a read that fails with no response is
+   auto-retryable under the shared transport's policy, bounded to exactly one recovery, rebuilt from
+   the stable /exec with a fresh request id. So the sequence is A(1) + B refused(2) + B retried by
+   the OPERATOR(1) = 4.
+
+   This is the behaviour R10 §6 asks for and it is asserted as a bound rather than as a total, so a
+   second retry would fail here even if some other count happened to absorb it. */
+eq(f2.workspaceRequests, 4,
+  'B10 four physical reads: A, the refused B and its ONE bounded recovery, then B retried by hand');
+ok(f2.workspaceRequests <= 4,
+  'B10a and never more — one recovery per user action, never two', f2.workspaceRequests);
 
 // =================================================================================================
 section('C — LEAVE AND RETURN IS ONE CONSISTENT PAGE (§7)');

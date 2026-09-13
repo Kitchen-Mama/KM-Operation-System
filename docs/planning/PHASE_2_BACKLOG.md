@@ -126,3 +126,28 @@ column — and no rule automates it. Detail and method:
 [`IMAGE_REFERENCE_REMEDIATION_REPORT.md`](IMAGE_REFERENCE_REMEDIATION_REPORT.md) §7.
 
 **Not to be done by an agent, and not to be done by bulk update.**
+
+---
+
+## B2-9 · `recovery_from` is written onto an object that is then thrown away
+
+Found at P1-B8D-R10 while writing the assertion that was supposed to read it.
+
+When a read recovers, `km-transport.js` sets `res.details.recovery_from = 'STABLE_EXEC'` and
+`res.details.recovery_request_id` on the FIRST attempt's failure result — and then returns the
+RETRY's result instead. The fields are therefore unreachable by any caller: the object carrying them
+never leaves the function. A field that is written and never readable is a comment that costs a
+branch.
+
+**Nothing is wrong in production because of it.** The recovery is already observable two better ways:
+`metrics().recoveries` counts it, and the R10 suite proves where the recovery was actually sent by
+reading the URLs off the wire — a fact about the request rather than a self-report about it.
+
+**Why R10 did not fix it.** `km-transport.js` is shared by every page in the application, and R10 is
+a Product Strategy round that deliberately changed no shared transport code at all. Editing it for a
+cosmetic observability field would have put every other page inside this round's blast radius for no
+behavioural gain. The right home is a transport round.
+
+**The fix, when a transport round happens:** carry the recovery marks forward onto the result that is
+actually returned (or drop the two fields). Either is fine; the present state — set, then discarded —
+is the only one that is not.
