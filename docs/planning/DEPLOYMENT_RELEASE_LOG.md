@@ -1994,3 +1994,112 @@ KNOWN AND NOT FIXED
     not load, and app.js catches and logs them. Unchanged by this round: 2 before, 2 after.
 
 **STATUS: LOCAL COMMIT - NOT PUSHED - FRONTEND REDEPLOY REQUIRED - NO APPS SCRIPT SYNC.**
+
+
+=======================================================================================================
+P1-B8D-R7  -  THE PAGE KEPT A BOARD IT HAD STOPPED BELIEVING IN
+=======================================================================================================
+Date:                        2026-09-13
+Trigger:                     USER testing on live Pages. Seven reports, of which the load-bearing one
+                             was "I choose a site and it jumps back and asks me to choose again".
+Release identity:            UNCHANGED - F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11. No .gs file changed.
+APPS_SCRIPT_SYNC_REQUIRED:   NO      New deployment: NO    DB / Sheets / Drive writes: 0   flag change: 0
+FRONTEND_GITHUB_PAGES:       REQUIRED - the partial, the page controller, the renderer and the page
+                             stylesheet all changed; the co-deployed set rotated onto
+                             finalusability-p1b8dr7-20260913 (34 refs, 0 stale).
+
+THE REPORT, AND WHAT REPRODUCING IT FOUND
+-------------------------------------------------------------------------------------------------------
+  The report was reproduced before anything was changed, through the production lifecycle in a real
+  browser, with no site pre-selected - and it was not what it describes. Four separate facts:
+
+  1. THE CONTROLS NEVER LOST A VALUE. Across seven sequences the canonical scope and the three
+     controls agreed at every single step. The controller was never wrong.
+
+  2. THE CONTROL ITSELF WAS DESTROYED ON EVERY PICK. `paintChooser()` runs on every narrowing and
+     `renderSiteChooser` emptied its host and built three fresh <select>s. Measured: focus on the
+     control immediately before the change, `body` immediately after it, every time. To anyone using
+     a keyboard that is indistinguishable from the choice being thrown away.
+
+  3. THE PREVIOUS SITE'S WHOLE BOARD STAYED ON SCREEN. Load KM/US/Shopify, change Company to ResTW:
+     the controller is instantly right, writes "choose a site" into the state host - and the entire
+     KM board is still underneath it, INCLUDING the command bar's own read-only
+     Company/Country/Marketplace row still reading KM . US . Shopify. The page asked for a site while
+     showing a site, and the label nearest the numbers named the one just left.
+
+  4. A WITHDRAWN QUESTION WAS STILL ANSWERED. With a read outstanding, changing Company makes the
+     scope incomplete and starts no new read, so the request token never moved - the outstanding
+     answer was still "current" and it landed and mounted a board for a marketplace no longer chosen.
+
+  (3) and (4) are the same defect as the duplicated filter bars, which is why they were one round.
+
+THE REPAIRS
+-------------------------------------------------------------------------------------------------------
+  THE CHOOSER RECONCILES. A tier is rebuilt only when what it OFFERS changes - a different option
+  list, or a change between a dropdown and read-only context. When only the VALUE changed the
+  <select> keeps its identity, its listener and its focus. When a control must go, the focus is
+  PLACED on the next tier that can be acted on rather than dropped.
+
+  THE BOARD COMES DOWN WITH ITS SITE. `show()` is the one place every non-board answer is written,
+  so the teardown lives there: a state that renders a notice can never again leave a chart behind
+  it. `C.clearBoard()` empties #nav, #crumbs, #banner, #scope and #view. THE SELECTION IS NOT
+  TOUCHED - the chooser keeps every value a person has confirmed.
+
+  A WITHDRAWN SCOPE INVALIDATES ITS READ. `requestedScope` records which site the outstanding read
+  is for; a narrowing that is not that same complete site advances the token, so the answer is
+  dropped on arrival.
+
+  ONE FILTER PANEL. The board is told at mount that the page owns the site (`siteOwnedByPage`), so
+  it renders no site tiers at all; the stylesheet flattens both renderers' wrappers with
+  `display: contents` so the seven controls sit on one row in one card, in the order
+  Company - Country - Marketplace - Category - Series - More filters - Meeting scenario.
+
+  THE DERIVED FILTERS ARE RE-DERIVED. Found by the same trace: choose `Cutting Board` on
+  KM/US/Shopify, switch to ResTW/JP/Amazon, and the category menu offered three options with NONE
+  selected. The page controller's comment claimed a re-mount cleared them; `boot()` swapped the
+  adapter and rendered and every derived choice came through. `narrowAfterSiteChange()` has always
+  done exactly this work and simply had no caller on this path. `boot()` now calls it.
+
+  THE BOARD BINDS ITS BUTTONS ONCE. `boot()` runs again on every site change and these four ids live
+  in the partial, so each collected a new listener per mount. After two site switches one click on
+  Presentation toggled it twice and the button appeared dead.
+
+THE OTHER SIX REPORTS, EACH AS A MEASUREMENT
+-------------------------------------------------------------------------------------------------------
+  GREY HEADER          `.psb-page { background: var(--ground) }` put #f5f6f9 over the whole section
+                       while `.main-content` behind it is #ffffff. This was the only page in the
+                       Operation System sitting on grey, and the title band is where that grey has
+                       nothing on top of it. `.psb-page.module-section` is transparent now; the
+                       prototype, which is the sheet's other host, keeps its own ground.
+  CHART `?`            Four visible on Category Analysis. Suppressed by a mount argument
+                       (`inlineHelpIcons: false`), so every paragraph of help text stays in the file
+                       and nothing renders an empty placeholder.
+  X AXIS PRICE         Removed by `axisPriceRow: false`. The price is unchanged in the hover panel,
+                       the focus panel and the aria-label; the variant count stays, because "3
+                       colours" identifies the column rather than restating what the chart drew.
+                       The row is still emitted, so the lane geometry and the Y axis are untouched.
+  BASELINES            Measured at 1440 before: site selects top=325.3, board context values 436.9,
+                       Category 513.5, Series 517.5, Meeting scenario 36px tall where everything
+                       else was 38, label gaps of 8, 7 and 3 in one row. After: every control 38px
+                       on one row top, one 6px label gap.
+  DRAWER CLOSE         IT EXISTED AND DID NOT READ AS ONE. `components.css button { min-width: 60px }`
+                       outranks its own `width: 30px`, so a 30px square rendered 60x30. `min-width`
+                       was the declaration that was missing. Closing now returns the focus to
+                       `#meetingToggle`, and the drawer is hidden in presentation and fullscreen.
+  LONG EXPLANATION     Moved behind one `i` button in the page header. The state keeps one sentence
+                       that says what to do. Not a `?`, because six question marks came off the
+                       screen in the same round.
+
+KNOWN AND NOT FIXED
+-------------------------------------------------------------------------------------------------------
+  . 390px: the shell's fixed 240px sidebar still leaves a ~118px content column. Shell-level, out of
+    scope, already recorded as Phase 2 B2-2.
+  . Two console errors in the acceptance page (`renderHomepage`, `initSkuUnifiedScroll`) are
+    pre-existing and unrelated - page modules the generated page does not load, caught by app.js.
+  . Escape does NOT close the price-adjustment drawer, and that is the existing contract with its
+    reason written in the source: it is a workspace, not a popover, and Escape inside a form a
+    person is filling in should not throw the form away. Recorded rather than changed.
+  . A scenario override is keyed by SKU and survives a site change if the same SKU is listed on both
+    sites. Out of scope this round; recorded as Phase 2 B2-4.
+
+**STATUS: LOCAL COMMIT - NOT PUSHED - FRONTEND REDEPLOY REQUIRED - NO APPS SCRIPT SYNC.**

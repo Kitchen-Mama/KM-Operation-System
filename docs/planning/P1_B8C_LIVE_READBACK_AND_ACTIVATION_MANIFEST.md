@@ -831,3 +831,44 @@ Two of these could not previously be reached by the runner and one was lying:
 - **empty** used to pass a site that is **not in the universe**, and since R5 enforces membership
   that is REFUSED — so the grid's "empty" cell was photographing *"Choose a site to analyse."* under
   the name EMPTY. It is now a real site whose server answers with no rows.
+
+
+---
+
+# §9  P1-B8D-R7 — THE INTERACTION CONTRACT
+
+§8 recorded what the page may look like. This section records what it must DO while a person is
+using it, so the next round does not re-derive it.
+
+## 9.1  Ownership, settled
+
+| Concern | Owner | Everyone else |
+|---|---|---|
+| which site is loaded | the page controller, from `siteUniverse.get` | may read it; may not set it |
+| the three site controls | the page controller | the board renders none (`siteOwnedByPage`) |
+| Category / Series | the board, from the rows it has loaded | re-derived on every new adapter |
+| the long explanation | one `i` button in the page header | the state box says what to do, once |
+| the `?` popovers | built but not rendered (`inlineHelpIcons: false`) | the text stays in the file |
+| the price on the X axis | not rendered (`axisPriceRow: false`) | tooltip and aria-label still carry it |
+
+## 9.2  Rules that must keep holding
+
+- A repaint of the chooser **restores** the canonical scope into the controls that exist. A tier is
+  rebuilt only when its option list or its shape changes.
+- When a control is replaced, the focus is placed on the next tier that can be acted on. When it is
+  not replaced, nothing touches the focus.
+- **The board is on screen only while the current scope is complete and its read succeeded.** Every
+  other state clears `#nav`, `#crumbs`, `#banner`, `#scope` and `#view`.
+- **Clearing the board is never clearing the selection.** Loading, failing and refusing all keep
+  every value a person confirmed.
+- An outstanding read whose scope has been withdrawn is invalidated, not awaited.
+- Re-picking the site already loaded costs no request. Re-picking after a failure must.
+- A new adapter re-derives Category, Series, currency and the scenario series against the new rows.
+- The drawer closes to `hidden`, returns focus to its opener, and neither applies nor clears the
+  scenario. It is absent from presentation and fullscreen.
+
+## 9.3  What a browser must measure, because markup cannot say it
+
+`focus after a pick` · `node identity across a repaint` · `whether a chart is still on screen under a
+notice` · `elementFromPoint over a closed drawer` · `one control height and one label gap across two
+renderers` · `the order the seven controls read in`.

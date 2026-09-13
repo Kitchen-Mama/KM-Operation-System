@@ -206,6 +206,7 @@ function buildPage(opts) {
       return '  <script src="assets/tests/' + f + '"></script>';
     }).join('\n'),
     '  <script src="assets/tests/_p1b8c-replay.js"></script>',
+    '  <script src="assets/tests/_p1b8c-interactions.js"></script>',
     '  ' + appJs,
     '  <script>' + bootScript(opts) + '</script>',
     '</body></html>'
@@ -271,7 +272,10 @@ function bootScript(opts) {
     '    var t = P1B8C_REPLAY.install(window, KM.productPricingWorkspace, cap,',
     '      Object.assign({ capability: capOn }, failWith ? { fail: failWith } : {},',
     '        ' + JSON.stringify(Object.assign({}, opts.hang ? { hang: opts.hang } : {},
-      opts.emptyWorkspace ? { emptyWorkspace: true } : {})) + '));',
+      opts.emptyWorkspace ? { emptyWorkspace: true } : {},
+      opts.delayMs ? { delayMs: opts.delayMs } : {},
+      opts.failOnly ? { failOnly: opts.failOnly } : {},
+      opts.slowSite ? { slowSite: opts.slowSite, slowMs: opts.slowMs || 300 } : {})) + '));',
     '    window.__wire = t;',
     /* 3. MOUNT THROUGH `onMount`, WHICH IS THE PRODUCTION ENTRY POINT, NOT `create`.
           The first version of this called `create()` + `loadUniverse()` directly and photographed
@@ -288,10 +292,25 @@ function bootScript(opts) {
        asked for one, and rendered no control. `chooseSite` sets the real `<select>`s and dispatches
        real `change` events, so what the seven viewports photograph is a board reached the way a
        person reaches it. `c` is still read below for its request counts. */
-    '        return ' + (opts.noSite ? 'null' : 'P1B8C_REPLAY.chooseSite(document, ' + JSON.stringify(site) + ')') + ';',
+    /* P1-B8D-R7 - A SEQUENCE OF INTERACTIONS, NOT ONE. `opts.script` is a named routine in
+       `_p1b8c-interactions.js`, run through the same screen after the same production mount; it
+       records what it did into `window.__trace`, which the measurement below carries out. A
+       stability question is about the SECOND and THIRD act, and there was no way to perform one. */
+    '        return ' + (opts.script
+      ? 'P1B8C_ACTS.run(' + JSON.stringify(opts.script) + ', document, '
+        + JSON.stringify(opts.scriptArgs || {}) + ')'
+      : (opts.noSite ? 'null' : 'P1B8C_REPLAY.chooseSite(document, ' + JSON.stringify(site) + ')')) + ';',
     '      })',
     '      .then(function () {',
-    opts.view ? '        if (window.PSB_BOARD) PSB_BOARD.showView(' + JSON.stringify(opts.view) + ');' : '',
+    /* P1-B8D-R7 - ONLY ON A MOUNTED BOARD, which is the rule production already follows:
+       `P.mount` applies a route when `res.mounted === true` and not otherwise. Calling it
+       unconditionally threw inside the scenarios where no board mounted, and the run reported
+       the harness's own error beside the product's behaviour as if both were findings. */
+    /* ON A MOUNTED BOARD ONLY, and `currentRoute()` is not that test: it answers from STATE, which
+       has a default view whether or not anything was ever mounted. The CONTROLLER knows. */
+    opts.view ? '        if (window.PSB_BOARD && KM.pages.productStrategyBoard.lastController'
+      + ' && KM.pages.productStrategyBoard.lastController.mounted === true)'
+      + ' PSB_BOARD.showView(' + JSON.stringify(opts.view) + ');' : '',
     opts.scenario ? scenarioScript() : '',
     opts.presentation ? '        var bp = document.getElementById("btnPresent"); if (bp) bp.click();' : '',
     '        window.__ready = true;',
@@ -468,10 +487,104 @@ function measureScript(cap) {
        comparison of rectangles. None of those can be read from markup. */
     'visual: (function () {',
     '  function el(s) { return document.querySelector(s); }',
+    /* P1-B8D-R7 - WHAT THE SEVEN REPORTED PROBLEMS MEASURE AS. Each is read from the live DOM after
+       layout, because each of them is a fact about pixels, computed styles or reachability that no
+       amount of reading the source can settle. */
+    '  function all(s) { return [].slice.call(document.querySelectorAll(s)); }',
+    '  function r7() {',
+    '    var page = el(".psb-page"), head = el(".psb-header");',
+    /* NOT EVERY CONTROL UNDER #psb-filters IS IN THE PANEL. The scenario drawer is a CHILD of
+       `#scope` - deliberately, because it is `position: fixed` and nesting it in a flex row would
+       put a fixed element in a layout that believes it participates - so its three selects are
+       inside this subtree and are not on this row at all. Counting them reported a control of
+       height 0 and three more that "did not sit on their row", which is true and is about a
+       different panel. */
+    '    var ctrls = all("#psb-filters select, #psb-filters .psb-site__value,'
+    + ' #psb-filters .cmd-context-value, #psb-filters .catbtn.is-more,'
+    + ' #psb-filters .cmd-tools button")',
+    '    .filter(function (e) { return !e.closest(".scn-drawer"); })',
+    '    .map(function (e) {',
+    '      var r = e.getBoundingClientRect();',
+    '      var g = e.closest(".filter-group, .cmd-field");',
+    '      var lab = g ? g.querySelector("label, .fl-label, .psb-site__label") : null;',
+    '      var lr = lab ? lab.getBoundingClientRect() : null;',
+    '      return { id: e.id || e.className, h: Math.round(r.height),',
+    '        top: Math.round(r.top * 10) / 10, bottom: Math.round(r.bottom * 10) / 10,',
+    '        labelGap: lr ? Math.round(r.top - lr.bottom) : null };',
+    '    });',
+    /* THE ORDER A PERSON READS, taken from the rendered row rather than from the markup: with the
+       wrappers flattened, document order and visual order are the same thing again. */
+    '    var order = all("#psb-filters .filter-group, #psb-filters .cmd-field,'
+    + ' #psb-filters .cmd-more, #psb-filters .cmd-scn").map(function (g) {',
+    '      var lab = g.querySelector("label, .fl-label");',
+    '      var btn = g.querySelector("button");',
+    '      return lab ? String(lab.textContent || "").trim()',
+    '        : (btn ? String(btn.textContent || "").trim().split("▾")[0].trim() : "?");',
+    '    });',
+    /* THE PRICE: gone from the axis, still in the hover panel and still in the aria label. */
+    '    var xsub = all("#view .xsub").map(function (t) { return String(t.textContent || "").trim(); })',
+    '      .filter(function (v) { return v !== "" && /[0-9]/.test(v); });',
+    '    var money = /[0-9]+[.,][0-9]{2}/;',
+    '    var firstCol = el("#view g[tabindex], #view .node, #view g.node");',
+    '    var tipHas = null, ariaHas = null;',
+    '    try {',
+    '      var cols = all("#view svg g").filter(function (g) { return g.getAttribute("aria-label"); });',
+    '      if (cols.length) {',
+    '        ariaHas = money.test(cols[0].getAttribute("aria-label"));',
+    '        cols[0].dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));',
+    '        var tip = document.getElementById("tip");',
+    '        tipHas = !!(tip && !tip.hidden && money.test(String(tip.textContent || "")));',
+    '        cols[0].dispatchEvent(new MouseEvent("mouseleave", { bubbles: true }));',
+    '      }',
+    '    } catch (e) { /* recorded as null */ }',
+    /* THE HELP BUTTON, exercised by click, by Escape and by a real Enter keypress - because
+       "openable" and "openable without a mouse" are two different claims. */
+    '    var hb = document.getElementById("psbPageHelp");',
+    '    var help = { count: all(".psb-help__btn").length,',
+    '      label: hb ? hb.getAttribute("aria-label") : null,',
+    '      glyph: hb ? String(hb.textContent || "").trim() : null,',
+    '      expandedBefore: hb ? hb.getAttribute("aria-expanded") : null };',
+    '    if (hb) {',
+    '      hb.click();',
+    '      help.openedByClick = !!document.getElementById("psbPageHelpPanel");',
+    '      help.expandedAfter = hb.getAttribute("aria-expanded");',
+    '      var panel = document.getElementById("psbPageHelpPanel");',
+    '      help.text = panel ? String(panel.textContent || "") : "";',
+    '      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));',
+    '      help.closedByEscape = !document.getElementById("psbPageHelpPanel");',
+    /* A <button> is activated by Enter and Space natively, and `.click()` from a KEY handler is how
+       that reaches a listener; dispatching a bare keydown would prove nothing about either. */
+    '      hb.focus();',
+    '      hb.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));',
+    '      hb.click();',
+    '      help.openedByKeyboard = !!document.getElementById("psbPageHelpPanel")',
+    '        && document.activeElement === hb;',
+    '      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));',
+    '    }',
+    '    return {',
+    '      pageBg: page ? getComputedStyle(page).backgroundColor : null,',
+    '      headerBg: head ? getComputedStyle(head).backgroundColor : null,',
+    '      filterPanels: all(".psb-filters").length,',
+    /* PAINTED, not merely present. A card that is `display: none` is not a panel on the screen, and
+       a state with no controls must not draw one. */
+    '      filterPanelsPainted: all(".psb-filters").filter(function (n) {',
+    '        var r = n.getBoundingClientRect();',
+    '        return r.width > 0 && r.height > 0 && getComputedStyle(n).display !== "none";',
+    '      }).length,',
+    '      panelControls: ctrls, panelOrder: order,',
+    '      chartHelpIcons: all(".info-btn").length,',
+    '      pageHelpButtons: help.count,',
+    '      pageHelpGlyph: help.glyph,',
+    '      axisPriceRows: xsub,',
+    '      tooltipHasPrice: tipHas, ariaHasPrice: ariaHas,',
+    '      help: help',
+    '    };',
+    '  }',
     '  function bx(s) { var e = el(s); if (!e) return null; var r = e.getBoundingClientRect();',
     '    return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width),',
     '      h: Math.round(r.height), bottom: Math.round(r.bottom), right: Math.round(r.right) }; }',
     '  function cs(s) { var e = el(s); return e ? getComputedStyle(e) : null; }',
+    '  var pn = el("#psb-filters");',
     '  var fields = [].slice.call(document.querySelectorAll("#psb-site-host .psb-site__field"))',
     '    .map(function (f) {',
     '      var lab = f.querySelector("label");',
@@ -519,6 +632,14 @@ function measureScript(cap) {
     '      display: s.display, flexWrap: s.flexWrap, bg: s.backgroundColor, radius: s.borderTopLeftRadius,',
     '      shadow: s.boxShadow, padTop: s.paddingTop, padLeft: s.paddingLeft, gap: s.columnGap,',
     '      cls: sb.className }; }()) : null,',
+    /* P1-B8D-R7 - THE CARD MOVED, so the measurement follows it. `.psb-site` keeps its flex
+       behaviour and gives up its chrome to the panel that now holds it and the board's own
+       Category and Series; measuring the card on the bar would report a card that is correctly
+       absent as a card that is missing. */
+    '    panel: pn ? (function () { var s = getComputedStyle(pn); return { box: bx("#psb-filters"),',
+    '      display: s.display, flexWrap: s.flexWrap, bg: s.backgroundColor, radius: s.borderTopLeftRadius,',
+    '      shadow: s.boxShadow, padTop: s.paddingTop, padLeft: s.paddingLeft, gap: s.columnGap,',
+    '      cls: pn.className }; }()) : null,',
     '    fields: fields,',
     '    state: stateBox ? (function () { var s = getComputedStyle(stateBox); return {',
     '      box: bx(".psb-state"), cls: stateBox.className, bg: s.backgroundColor,',
@@ -540,9 +661,11 @@ function measureScript(cap) {
     '      activeWeight: actCs ? actCs.fontWeight : null,',
     '      activePad: actCs ? actCs.paddingTop + " " + actCs.paddingLeft : null,',
     '      tabCount: document.querySelectorAll("#nav .km-tab-rail__tab").length } : null,',
-    '    presenting: document.body.className.indexOf("presenting") >= 0',
+    '    presenting: document.body.className.indexOf("presenting") >= 0,',
+    '    r7: r7()',
     '  };',
     '}()),',
+    '    trace: window.__trace || null,',
     '    stagedNavEnabled: KM.stagedSections["product-strategy"].enabled === true,',
     '    flagStillFalse: KM.stagedSections["product-strategy"].enabled === false',
     '  };',

@@ -146,7 +146,7 @@ ok(/filter-group/.test(SRC.page),
   'A3  and the shared filter-group class, so the label and control specs are the system\'s');
 ok(/--filter-height/.test(SRC.css) || /filter-group select/.test(SRC.components),
   'A4  the control height comes from the --filter-* token family');
-ok(/lab\.setAttribute\('for', controlId\)/.test(SRC.page),
+ok(/lab\.setAttribute\('for', plan\.controlId\)/.test(SRC.page),
   'A5  the label names its control rather than sitting above it by coincidence');
 
 // =================================================================================================
@@ -230,7 +230,11 @@ if (otherPageCss !== '__git_unavailable__') {
    an `!important` added anywhere else in the round's work — including at the end, which is where a
    late fix goes. */
 function r6Block(css) { return css.split('P1-B8D-R6').slice(1).join('P1-B8D-R6'); }
-ok(!/!important/.test(r6Block(SRC.css)), 'B7  this round added no !important');
+/* DECLARATIONS, NOT PROSE. P1-B8D-R7 added a comment explaining why an `!important` was NOT needed
+   for the drawer's close button, and this scan found the word in that sentence - the same trap the
+   project has now sprung six times. Comments are stripped before counting. */
+ok(!/!important/.test(r6Block(SRC.css).replace(/\/\*[\s\S]*?\*\//g, '')),
+  'B7  this round added no !important');
 
 // =================================================================================================
 section('C — THE TAB RAIL IS THE SHARED ONE, NOT A SECOND COPY OF ONE');
@@ -258,16 +262,26 @@ if (BROWSER) {
 
   ok(!!v, 'D0  the probe returned computed styles');
 
-  /* THE SITE TOOLBAR IS A CARD, with the Operation System's own card values. */
-  ok(v.siteBar && v.siteBar.display === 'flex', 'D1  the site toolbar is a row', v.siteBar && v.siteBar.display);
-  ok(v.siteBar && v.siteBar.flexWrap === 'wrap', 'D1a that wraps rather than overflowing');
-  ok(v.siteBar && v.siteBar.bg === 'rgb(255, 255, 255)', 'D2  on the shared card ground',
-    v.siteBar && v.siteBar.bg);
-  eq(v.siteBar && v.siteBar.radius, '8px', 'D3  at the shared card radius');
-  ok(v.siteBar && v.siteBar.shadow !== 'none', 'D4  with the shared card shadow',
-    v.siteBar && v.siteBar.shadow);
-  ok(v.siteBar && /km-filter-bar/.test(v.siteBar.cls), 'D5  and it IS the shared filter bar',
+  /* THE FILTER PANEL IS A CARD, with the Operation System's own card values.
+     P1-B8D-R7 MOVED THE CARD, and these assertions moved with it rather than being dropped. In R6
+     the chooser was the page's only filter and it got a standalone card of its own; R7 merges it
+     with the board's Category and Series into ONE panel, so the card belongs to `.psb-filters` and
+     the bar inside it keeps only its flex behaviour. Same properties, same values, asserted of the
+     element that now carries them - which is what makes this a move and not a loss. */
+  ok(v.panel && v.panel.display === 'flex', 'D1  the filter panel is a row',
+    v.panel && v.panel.display);
+  ok(v.panel && v.panel.flexWrap === 'wrap', 'D1a that wraps rather than overflowing');
+  ok(v.panel && v.panel.bg === 'rgb(255, 255, 255)', 'D2  on the shared card ground',
+    v.panel && v.panel.bg);
+  eq(v.panel && v.panel.radius, '8px', 'D3  at the shared card radius');
+  ok(v.panel && v.panel.shadow !== 'none', 'D4  with the shared card shadow',
+    v.panel && v.panel.shadow);
+  ok(v.siteBar && /km-filter-bar/.test(v.siteBar.cls), 'D5  and the bar inside it IS the shared filter bar',
     v.siteBar && v.siteBar.cls);
+  /* AND THE BAR NO LONGER CARRIES A SECOND ONE. A card inside a card is the two-bars problem again,
+     drawn in borders. */
+  ok(v.siteBar && v.siteBar.shadow === 'none', 'D5a while the bar itself has no card of its own',
+    v.siteBar && v.siteBar.shadow);
 
   /* THE LABEL IS NOT GLUED TO THE CONTROL. This is the defect in the screenshot, as a number. */
   eq(v.fields.length, 3, 'D6  three tiers are on screen');
@@ -389,7 +403,9 @@ if (BROWSER) {
     'F6  and each one is on its own row', mRows);
   /* AND EACH ONE FITS INSIDE THE CARD. A control that stacks and still hangs off the right edge is
      not a mobile layout; it is the same overflow one row at a time. */
-  var mBar = M.siteBar && M.siteBar.box;
+  /* AGAINST THE CARD, WHICH IS THE PANEL SINCE P1-B8D-R7. `.psb-site` is `display: contents` now,
+     so it has no box at all and every field would measure as hanging off a card of width zero. */
+  var mBar = M.panel && M.panel.box;
   var escapes = M.fields.filter(function (f) { return mBar && f.right > mBar.right + 1; })
     .map(function (f) { return f.dim + ' right=' + f.right + ' > card right=' + mBar.right; });
   eq(escapes, [], 'F6a and none of them hangs out of the card', escapes);
@@ -459,8 +475,12 @@ if (BROWSER) {
 
   /* H2 — the label welds itself to the control again, which is the live screenshot. */
   mut('H2  the label is glued to the control', function () {
-    return withCss('.psb-page .psb-site .filter-group { flex: 0 1 220px; min-width: 160px; }',
-      '.psb-page .psb-site .filter-group { display: inline; flex: 0 1 220px; min-width: 160px; }',
+    /* THE RULE THAT NOW OWNS THE GAP. P1-B8D-R7 states the label-to-control distance ONCE for the
+       whole panel, later in the file and at equal specificity, so mutating the bar's own rule was
+       overridden and changed nothing on screen. Verified to move it: the three fields measure a
+       6px gap normally and 0 with this applied. */
+    return withCss('  gap: 6px;\n}',
+      '  gap: 0;\n}',
       function () {
         var m = measure({}, 1440, 900).visual;
         return m.fields.some(function (f) { return f.gap === null || f.gap < 2; });
@@ -515,11 +535,12 @@ if (BROWSER) {
      rule says. What the mobile rule actually buys is that a control FITS ITS CARD instead of
      hanging out of it, and that is what breaks when the fixed basis comes back. */
   mut('H6  a mobile control stops fitting its card', function () {
-    return withCss('  .psb-page .psb-site .filter-group { flex: 1 1 100%; min-width: 0; }',
-      '  .psb-page .psb-site .filter-group { flex: 0 0 220px; min-width: 220px; }',
+    /* SAME REASON AS H2: the panel's own mobile rule is later and wins, so the bar's was inert. */
+    return withCss('  .psb-page .psb-filters .cmd-field--category { flex: 1 1 100%; min-width: 0; }',
+      '  .psb-page .psb-filters .cmd-field--category { flex: 0 0 260px; min-width: 260px; }',
       function () {
         var m = measure({ noSite: true }, 390, 844).visual;
-        var bar = m.siteBar && m.siteBar.box;
+        var bar = m.panel && m.panel.box;
         if (!bar) return false;
         return m.fields.some(function (f) { return f.right > bar.right + 1; });
       });
@@ -530,8 +551,13 @@ if (BROWSER) {
     /* `height: auto` measured 38px anyway — 8px padding twice plus a 14px line box is the same
        number by coincidence, so the mutant changed nothing and was scored as surviving. A mutant
        that cannot move the measurement is not a mutant. */
-    return withCss('  height: var(--filter-height, 38px);\n  box-sizing: border-box; margin: 4px 0;',
-      '  height: 22px;\n  box-sizing: border-box; margin: 4px 0;',
+    /* AND P1-B8D-R7 MOVED THE HEIGHT TOO: one rule gives every control in the panel
+       `--filter-height`, so changing the read-only tier's own height no longer reaches the screen.
+       The mutant now ADDS a rule that gives that tier a height of its own, which is precisely the
+       defect it names — a resolved tier that changes the height of the row it is in. */
+    return withCss('.psb-page .psb-filters select { width: 100%; max-width: none; min-width: 0; }',
+      '.psb-page .psb-filters select { width: 100%; max-width: none; min-width: 0; }\n'
+      + '.psb-page .psb-filters .psb-site__value { height: 22px; }',
       function () {
         var m = measure({}, 1440, 900).visual;
         var r = m.fields.filter(function (f) { return f.tag === 'SPAN'; })[0];

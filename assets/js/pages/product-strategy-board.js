@@ -68,11 +68,29 @@
   P.LOADING_SITE_UNIVERSE = 'LOADING_SITE_UNIVERSE';
   P.LOADING_WORKSPACE = 'LOADING_WORKSPACE';
 
+  /* P1-B8D-R7 — THE REASON MOVED; IT WAS NOT DELETED.
+     The long paragraph is correct and it is the answer to a question a person asks ONCE. Standing
+     permanently above the controls, it was two lines of explanation in front of the three
+     dropdowns it was explaining, in the largest block on the page. It now lives behind the header's
+     info button, where a reader can get it on purpose; the state box keeps the one sentence that
+     tells them what to do next. */
+  P.HELP = {
+    heading: 'How this board reads a site',
+    paragraphs: [
+      'This board reads one site at a time — a company, a country and a marketplace — because prices'
+        + ' from two sites on one axis would compare products that do not compete.',
+      'The sites offered are the ones the server reports as readable. There is no default site and'
+        + ' none is remembered between visits: a board that chose for you would report one'
+        + ' marketplace\u2019s prices under a heading nobody selected.',
+      'Changing the company clears the country and the marketplace below it, because those values'
+        + ' belong to the company they were chosen under. Category and Series come from the site'
+        + ' that is loaded and are re-derived whenever the site changes.'
+    ]
+  };
+
   P.UX_PAGE = {
     AWAITING_SITE_SELECTION: { may_analyse: false, uses_fixture: false, severity: 'info',
-      headline: 'Choose a site to analyse.',
-      detail: 'This board reads one site at a time — a company, a country and a marketplace — because'
-        + ' prices from two sites on one axis would compare products that do not compete.' },
+      headline: 'Select a company, country and marketplace to begin.' },
     SITE_UNIVERSE_NOT_AVAILABLE: { may_analyse: false, uses_fixture: false, severity: 'stop',
       headline: 'The list of sites could not be read.',
       detail: 'No site can be chosen until it can, and nothing is shown in place of it.' },
@@ -171,6 +189,8 @@
       state: null,
       mounted: false,
       requests: { siteUniverse: 0, workspace: 0 },
+      /* The site the in-flight workspace read is for, or null. */
+      requestedScope: null,
       /* THE TOKEN. Incremented on every intent to read; a response carrying an old one is dropped.
          `inFlight` is the single-flight latch — a second selection supersedes rather than races. */
       token: 0,
@@ -178,10 +198,68 @@
       dropped: 0
     };
 
+    /**
+     * P1-B8D-R7 — THE BOARD COMES DOWN WITH THE SITE IT WAS DRAWN FOR.
+     *
+     * MEASURED, THROUGH THE PRODUCTION LADDER: load KM · US · Shopify, then change Company to
+     * ResTW. The controller is immediately and correctly right — its scope is ResTW with nothing
+     * below it — and it writes "select a company, country and marketplace" into the state host.
+     * And the ENTIRE KM board stays on screen underneath: the chart, the tables, and the command
+     * bar's own read-only Company / Country / Marketplace row, still reading KM · US · Shopify,
+     * sitting closer to the numbers than the chooser is.
+     *
+     * So the page asks you to choose a site while showing you a site, and the label next to the
+     * data still names the one you just left. *That* is what "my selection jumped back and it
+     * asked me to choose again" is: not a control losing its value — the trace shows the controls
+     * never lost one — but the page keeping a board it had already stopped believing in.
+     *
+     * `show()` is the one place every non-board answer is written, so the teardown belongs here
+     * rather than at each of its callers: a state that renders a notice can never again be a state
+     * that leaves the previous site's chart behind it.
+     */
+    /**
+     * P1-B8D-R7 — A PANEL WITH NOTHING IN IT IS NOT A PANEL.
+     *
+     * FOUND BY THE STATE SWEEP: on FEATURE_DISABLED and on an unreadable universe the page draws no
+     * chooser (correctly — fail closed) and no board, and the merged card rendered anyway: a white
+     * bar of controls with no controls in it, directly above the notice explaining that nothing
+     * could be read. That is the shape R5's own comment warns about, one layer out — "an empty
+     * dropdown beside a could-not-read notice is the shape that reads as success".
+     *
+     * THE PAGE SAYS SO RATHER THAN THE STYLESHEET GUESSING. `:empty` cannot see this: the card
+     * holds two element children that are themselves empty, and `:has()` would make a
+     * correctness rule depend on a selector the cascade may not support. The controller knows
+     * exactly when it has drawn a chooser and when it has cleared one.
+     */
+    function syncFiltersHost() {
+      if (!doc || typeof doc.getElementById !== 'function') return;
+      var panel = doc.getElementById(P.FILTERS_HOST_ID);
+      if (!panel) return;
+      var scopeEl = doc.getElementById('scope');
+      var hasControls = !!((siteHost && siteHost.firstChild) || (scopeEl && scopeEl.firstChild));
+      panel.setAttribute('data-psb-empty', hasControls ? 'false' : 'true');
+    }
+    C.syncFiltersHost = syncFiltersHost;
+
+    function clearBoard() {
+      if (!doc || typeof doc.getElementById !== 'function') return;
+      P.BOARD_HOSTS.forEach(function (id) {
+        var n = doc.getElementById(id);
+        while (n && n.firstChild) n.removeChild(n.firstChild);
+      });
+      C.mounted = false;
+      syncFiltersHost();
+    }
+    C.clearBoard = clearBoard;
+
     function show(state, ux, refusals) {
       C.state = state;
+      /* NOT A CHART BESIDE A NOTICE. The partial has said since P1-B5 that the chart is never drawn
+         beside a refusal; until this round that was true only of the FIRST answer, because nothing
+         removed a chart that had already been drawn. */
+      clearBoard();
       P.renderState(host, ux, refusals || [], doc);
-      return { state: state, mounted: C.mounted, may_analyse: false, refusals: refusals || [] };
+      return { state: state, mounted: false, may_analyse: false, refusals: refusals || [] };
     }
 
     function capabilityOk() {
@@ -262,9 +340,11 @@
       if (!siteHost) return;
       if (!C.universe || C.universe.state !== 'OK') {
         while (siteHost.firstChild) siteHost.removeChild(siteHost.firstChild);
+        syncFiltersHost();
         return;
       }
       P.renderSiteChooser(siteHost, C.narrowed, onPick, doc);
+      syncFiltersHost();
     }
 
     /**
@@ -305,16 +385,44 @@
         && (C.inFlight === true || C.mounted === true)) {
         C.narrowed = next;
         paintChooser();
+        /* NOTHING IS TORN DOWN HERE, deliberately: this is the SAME site, already on screen or
+           already coming, so the board that is up is the board this scope asks for. */
         return Promise.resolve({ state: C.state, mounted: C.mounted,
           may_analyse: C.mounted === true, refusals: [], unchanged: true });
       }
 
       C.narrowed = next;
 
-      /* A SITE SWITCH INVALIDATES WHAT WAS DERIVED FROM THE OLD SITE (§8). Category, series and any
-         scenario override belong to the site they were chosen on; carrying them across is how a
-         simulated price for one marketplace ends up drawn on another. The board is re-mounted with the
-         new adapter, which is what clears them — there is no partial-update path that could miss one. */
+      /* P1-B8D-R7 — A QUESTION THAT HAS BEEN WITHDRAWN MUST NOT BE ANSWERED.
+         FOUND BY THE STALE-RESPONSE TRACE, and it is a second kind of staleness from the one
+         `token` was built for. That one is a read SUPERSEDED by another read: two sites asked for,
+         the slow answer dropped because a newer token exists. This one is a read superseded by
+         NOTHING — a person with a load outstanding changes Company, the scope becomes incomplete,
+         no new read starts, so the token never moves and the outstanding answer is still "current".
+         It landed and mounted a board for a marketplace that was no longer selected, underneath a
+         notice asking for one.
+
+         Advancing the token is what withdraws the question. `requestedScope` is the site the
+         outstanding read is FOR, so re-picking the very same complete site while its own read is in
+         the air is left alone — that answer is still the answer. */
+      if (C.inFlight === true && !(C.narrowed.complete && C.requestedScope
+        && SU.sameSite(C.requestedScope, C.narrowed.scope))) {
+        C.token++;
+        C.inFlight = false;
+      }
+
+      /* A SITE SWITCH INVALIDATES WHAT WAS DERIVED FROM THE OLD SITE (§8). Category and series
+         belong to the site they were chosen on; carrying them across is how a filter names
+         something the new site does not have.
+
+         P1-B8D-R7 — THIS COMMENT USED TO SAY THE RE-MOUNT CLEARED THEM, AND IT DID NOT. A trace
+         through the production ladder chose `Cutting Board` on KM · US · Shopify, switched to
+         ResTW · JP · Amazon, and found the category menu offering three options with none of them
+         selected: `boot()` swapped the adapter and rendered, and every derived choice came through
+         untouched. The renderer has always had `narrowAfterSiteChange()` for exactly this, and it
+         simply had no caller on this path; `boot()` now calls it when a new adapter arrives. The
+         clearing is therefore the RENDERER's, at the one place a new adapter can enter it, rather
+         than a property of re-mounting that nothing implemented. */
       if (previous && !SU.sameSite(previous, C.narrowed.scope)) C.siteChanged = true;
 
       paintChooser();
@@ -329,9 +437,19 @@
     /** STEP 4 + 5. One read, one board. Single-flight, and stale answers are dropped. */
     C.loadWorkspace = function () {
       var scope = C.narrowed.scope;
+      /* WHICH SITE THE OUTSTANDING READ IS FOR. Copied rather than referenced: `C.narrowed` is
+         replaced by the next narrowing, so holding the object would mean comparing a scope with
+         itself and never finding a difference. */
+      C.requestedScope = { company: scope.company, country: scope.country,
+        marketplace: scope.marketplace };
       C.token++;
       var myToken = C.token;
       C.inFlight = true;
+      /* THE PREVIOUS SITE'S BOARD GOES BEFORE THE NEXT SITE'S READ, via `show`. Leaving it up
+         "until the new data arrives" is the same mistake one step earlier: for the length of the
+         read the page would show one site's prices under a heading that has already changed, and a
+         slow read is exactly when a person looks hardest. THE SELECTION IS NOT TOUCHED — the
+         chooser keeps every value a person has confirmed; it is the BOARD that is stale. */
       show(P.LOADING_WORKSPACE, P.UX_PAGE.LOADING_WORKSPACE, []);
       C.requests.workspace++;
 
@@ -362,8 +480,20 @@
                 detail: 'psb-board-ui.js is not loaded.' }, [{ code: 'BOARD_UI_NOT_LOADED' }]);
           }
           if (host) { while (host.firstChild) host.removeChild(host.firstChild); }
-          board.mount({ adapter: adapter });
+          /* P1-B8D-R7 — WHAT THIS HOST OWNS, SAID ONCE, AT MOUNT.
+             The renderer's other host is the prototype, which loads a fixture of many sites and is
+             a demonstration of the whole component. This page is not that: the site is already
+             chosen upstairs by the chooser above, the shell supplies the page header, and the long
+             help text lives behind one `i` in it. Each of the three is the host's decision rather
+             than something the renderer could infer from rows that look identical either way. */
+          board.mount({
+            adapter: adapter,
+            siteOwnedByPage: true,
+            inlineHelpIcons: false,
+            axisPriceRow: false
+          });
           C.mounted = true;
+          syncFiltersHost();
           return { state: snap.state, mounted: true, may_analyse: true,
             row_count: snap.row_count, refusals: [] };
         });
@@ -444,9 +574,179 @@
      reports one marketplace's prices under a heading nobody selected.
      ============================================================================================== */
 
+  /* EVERY HOST THE BOARD DRAWS INTO. Named here because the page has to be able to take the board
+     DOWN, and a teardown that knows four of five hosts leaves the fifth on screen — which is
+     exactly the shape of the defect this round is repairing. */
+  P.BOARD_HOSTS = ['nav', 'crumbs', 'banner', 'scope', 'view'];
+  P.FILTERS_HOST_ID = 'psb-filters';
   P.SITE_HOST_ID = 'psb-site-host';
+  P.HELP_BUTTON_ID = 'psbPageHelp';
+  P.HELP_PANEL_ID = 'psbPageHelpPanel';
+  P.HELP_HOST_ID = 'psb-help-host';
   P.SITE_TIERS = ['company', 'country', 'marketplace'];
   P.SITE_LABELS = { company: 'Company', country: 'Country', marketplace: 'Marketplace' };
+
+  /**
+   * Render the three tiers into `host`. `onPick(dim, value)` is called with the raw value of the
+   * control that changed; the controller decides what that means.
+   *
+   * FAILS CLOSED. Without a narrowing there is nothing legal to offer, so the host is emptied and
+   * no control is drawn. An empty dropdown beside a "could not read the list" notice is the shape
+   * that reads as success, and this page has one of those already.
+   */
+  /**
+   * P1-B8D-R7 — IT UPDATES; IT NO LONGER REBUILDS.
+   *
+   * THE MEASURED DEFECT. Every version of this function began by emptying the host and building
+   * three fresh controls, and `paintChooser()` runs on EVERY narrowing — so every single pick
+   * destroyed the control the person was using. A browser trace of the production ladder recorded
+   * `focus: body` after every step, including the step that focused the control immediately before
+   * changing it. The value in the control was always right; the CONTROL was always new. To a person
+   * that is the same experience as a value being thrown away: the thing they were operating is gone
+   * and the keyboard does nothing, so they go back and choose it again.
+   *
+   * SO THE CANONICAL STATE IS RESTORED INTO THE CONTROLS THAT EXIST. A tier is rebuilt only when
+   * what it OFFERS has changed — a different option list, or a change between a dropdown and
+   * read-only context. When only the chosen value changed, the `<select>` keeps its identity, its
+   * listener, its scroll position and its focus, and just carries the new value.
+   *
+   * AND WHEN A CONTROL MUST GO, THE FOCUS IS PLACED RATHER THAN DROPPED. If the tier that had focus
+   * still has a control, it kept focus by itself. If that tier became read-only, focus moves to the
+   * first tier below it that can still be acted on — which is where the person was going anyway.
+   */
+  function tierPlan(narrowed, dim, i) {
+    var values = narrowed.options[dim] instanceof Array ? narrowed.options[dim] : [];
+    var current = str(narrowed.scope[dim]);
+    return {
+      dim: dim,
+      values: values,
+      current: current,
+      /* ONE OPTION IS A FACT, NOT A CHOICE (§7). A tier the universe has already resolved renders
+         as read-only context rather than as a dropdown holding the value it already has. */
+      shape: (values.length === 1 && current === values[0]) ? 'context' : 'select',
+      disabled: values.length === 0,
+      controlId: 'psbSite' + dim.charAt(0).toUpperCase() + dim.slice(1),
+      /* AN UNUSABLE TIER SAYS WHY. "Choose a country first" and "Choose a marketplace" are
+         different situations and a person can act on only one of them. */
+      placeholder: values.length > 0
+        ? ('Choose ' + P.SITE_LABELS[dim].toLowerCase())
+        : ('Choose ' + P.SITE_LABELS[P.SITE_TIERS[i > 0 ? i - 1 : 0]].toLowerCase() + ' first')
+    };
+  }
+
+  /** Is the field on screen still the right SHAPE for this plan, offering exactly these options? */
+  function fieldMatches(field, plan) {
+    if (!field || field.getAttribute('data-psb-shape') !== plan.shape) return false;
+    if (plan.shape === 'context') return true;
+    var sel = field.querySelector('select');
+    if (!sel) return false;
+    if (String(sel.getAttribute('data-psb-options') || '') !== plan.values.join('\u001f')) return false;
+    return String(sel.getAttribute('data-psb-placeholder') || '') === plan.placeholder;
+  }
+
+  function buildField(plan, onPick, doc) {
+    var field = doc.createElement('div');
+    field.className = 'psb-site__field filter-group';
+    field.setAttribute('data-psb-site-field', plan.dim);
+    field.setAttribute('data-psb-shape', plan.shape);
+
+    var lab = doc.createElement('label');
+    lab.className = 'psb-site__label';
+    /* The label names the control rather than sitting above it by coincidence: clicking it
+       focuses the select, and a screen reader reads the pair as one thing. */
+    lab.setAttribute('for', plan.controlId);
+    lab.textContent = P.SITE_LABELS[plan.dim];
+    field.appendChild(lab);
+
+    if (plan.shape === 'context') {
+      var v = doc.createElement('span');
+      v.className = 'psb-site__value';
+      v.setAttribute('data-psb-site-value', plan.dim);
+      v.textContent = plan.current;
+      field.appendChild(v);
+      return field;
+    }
+
+    var sel = doc.createElement('select');
+    sel.className = 'psb-site__select';
+    sel.id = plan.controlId;
+    sel.setAttribute('data-psb-site-dim', plan.dim);
+    sel.setAttribute('aria-label', P.SITE_LABELS[plan.dim]);
+    /* WHAT THIS CONTROL CURRENTLY OFFERS, written on the control. It is how the next paint knows
+       whether this node is still the right one to keep — comparing the rendered <option>s would
+       read the placeholder as an option and rebuild on every pick, which is the defect. */
+    sel.setAttribute('data-psb-options', plan.values.join('\u001f'));
+    sel.setAttribute('data-psb-placeholder', plan.placeholder);
+
+    var ph = doc.createElement('option');
+    ph.setAttribute('value', '');
+    ph.textContent = plan.placeholder;
+    sel.appendChild(ph);
+
+    plan.values.forEach(function (value) {
+      var o = doc.createElement('option');
+      o.setAttribute('value', value);
+      o.textContent = value;
+      sel.appendChild(o);
+    });
+
+    sel.disabled = plan.disabled;
+    if (!plan.disabled && typeof onPick === 'function') {
+      /* THE HANDLER READS THE CONTROL IT IS ON, and the controller reads its own canonical scope.
+         Nothing about the previous narrowing is captured here, so a listener that outlives a
+         repaint cannot act on a scope that has since changed. */
+      sel.addEventListener('change', function () { onPick(plan.dim, sel.value); });
+    }
+    field.appendChild(sel);
+    return field;
+  }
+
+  /* THE LOWEST COMMON DENOMINATOR OF TWO DOCUMENTS. This renderer runs in a browser and against
+     the minimal document P1-B8D-R5's suite builds, where an element has children and attributes
+     and very little else. `children`, `select.options` and `replaceChild` are conveniences of the
+     full DOM; `childNodes`, `appendChild` and `removeChild` are what both have. */
+  function kidsOf(node) {
+    var out = [];
+    var kids = (node && node.childNodes) || [];
+    for (var i = 0; i < kids.length; i++) { if (kids[i]) out.push(kids[i]); }
+    return out;
+  }
+  function replaceInPlace(parent, oldNode, newNode) {
+    if (typeof parent.replaceChild === 'function') { parent.replaceChild(newNode, oldNode); return; }
+    parent.removeChild(oldNode);
+    parent.appendChild(newNode);
+  }
+
+  /** Put the canonical value into a field that is being kept. */
+  function applyValue(field, plan) {
+    if (plan.shape === 'context') {
+      var v = field.querySelector('[data-psb-site-value]');
+      if (v) v.textContent = plan.current;
+      return;
+    }
+    var sel = field.querySelector('select');
+    if (!sel) return;
+    if (String(sel.value) !== plan.current) sel.value = plan.current;
+    /* THE ATTRIBUTE FOLLOWS THE PROPERTY, so a serialised copy of the document shows what the
+       live one shows. Without it a print, a snapshot or a dumped DOM reports the placeholder.
+
+       THROUGH `childNodes`, NOT `select.options`. `HTMLSelectElement.options` is a convenience of
+       the full DOM and this function also runs against the minimal document P1-B8D-R5's suite
+       builds, where a <select> is an element with children and nothing more. Reading the children
+       is what both have, and it is what this function actually needs. */
+    var kids = sel.childNodes || [];
+    for (var i = 0; i < kids.length; i++) {
+      var opt = kids[i];
+      if (!opt || opt.tagName !== 'OPTION' || !opt.setAttribute) continue;
+      var val = opt.getAttribute ? String(opt.getAttribute('value')) : String(opt.value);
+      if (val === plan.current && plan.current !== '') {
+        opt.setAttribute('selected', 'selected');
+      } else if (opt.removeAttribute) {
+        opt.removeAttribute('selected');
+      }
+    }
+    sel.disabled = plan.disabled;
+  }
 
   /**
    * Render the three tiers into `host`. `onPick(dim, value)` is called with the raw value of the
@@ -459,8 +759,15 @@
   P.renderSiteChooser = function (host, narrowed, onPick, doc) {
     doc = doc || (host && host.ownerDocument) || root.document;
     if (!host) return null;
-    while (host.firstChild) host.removeChild(host.firstChild);
-    if (!isObj(narrowed) || !isObj(narrowed.options) || !isObj(narrowed.scope)) return null;
+    if (!isObj(narrowed) || !isObj(narrowed.options) || !isObj(narrowed.scope)) {
+      while (host.firstChild) host.removeChild(host.firstChild);
+      return null;
+    }
+
+    /* WHICH TIER THE PERSON IS ON, read BEFORE anything is replaced. */
+    var active = doc.activeElement;
+    var focusedDim = active && active.getAttribute
+      ? str(active.getAttribute('data-psb-site-dim')) : '';
 
     /* P1-B8D-R6 — THE SHARED FILTER BAR, NOT A PRIVATE COPY OF ONE.
        `km-filter-bar` + `filter-group` are the Operation System's own contract for a label above a
@@ -468,71 +775,190 @@
        and says never to hardcode them per page, and `.km-filter-bar .filter-group label` is the one
        owner of the label spec. Carrying the classes means this page inherits both — the 38px
        control height, the border, the radius, the focus ring and the 12px muted label — instead of
-       restating them and drifting. The `psb-site__*` classes stay for what is local: the card the
-       row sits in and the read-only tier. */
-    var bar = doc.createElement('div');
-    bar.className = 'psb-site km-filter-bar';
-    bar.setAttribute('data-cy', 'psb-site');
+       restating them and drifting. The `psb-site__*` classes stay for what is local: the read-only
+       tier, and the field's place in the consolidated panel. */
+    var bar = host.querySelector('.psb-site');
+    if (!bar) {
+      while (host.firstChild) host.removeChild(host.firstChild);
+      bar = doc.createElement('div');
+      bar.className = 'psb-site km-filter-bar';
+      bar.setAttribute('data-cy', 'psb-site');
+      host.appendChild(bar);
+    }
 
-    P.SITE_TIERS.forEach(function (dim, i) {
-      var values = narrowed.options[dim] instanceof Array ? narrowed.options[dim] : [];
-      var current = str(narrowed.scope[dim]);
+    var replaced = {};
+    var plans = P.SITE_TIERS.map(function (dim, i) { return tierPlan(narrowed, dim, i); });
 
-      var controlId = 'psbSite' + dim.charAt(0).toUpperCase() + dim.slice(1);
-      var field = doc.createElement('div');
-      field.className = 'psb-site__field filter-group';
-      var lab = doc.createElement('label');
-      lab.className = 'psb-site__label';
-      /* The label names the control rather than sitting above it by coincidence: clicking it
-         focuses the select, and a screen reader reads the pair as one thing. */
-      lab.setAttribute('for', controlId);
-      lab.textContent = P.SITE_LABELS[dim];
-      field.appendChild(lab);
-
-      if (values.length === 1 && current === values[0]) {
-        var v = doc.createElement('span');
-        v.className = 'psb-site__value';
-        v.setAttribute('data-psb-site-value', dim);
-        v.textContent = current;
-        field.appendChild(v);
-        bar.appendChild(field);
-        return;
+    plans.forEach(function (plan) {
+      var existing = bar.querySelector('[data-psb-site-field="' + plan.dim + '"]');
+      if (fieldMatches(existing, plan)) {
+        applyValue(existing, plan);
+      } else {
+        var field = buildField(plan, onPick, doc);
+        if (existing) { replaceInPlace(bar, existing, field); } else { bar.appendChild(field); }
+        applyValue(field, plan);
+        replaced[plan.dim] = true;
       }
-
-      var sel = doc.createElement('select');
-      sel.className = 'psb-site__select';
-      sel.id = controlId;
-      sel.setAttribute('data-psb-site-dim', dim);
-      sel.setAttribute('aria-label', P.SITE_LABELS[dim]);
-
-      var ph = doc.createElement('option');
-      ph.setAttribute('value', '');
-      /* AN UNUSABLE TIER SAYS WHY. "Choose a country first" and "Choose a marketplace" are
-         different situations and a person can act on only one of them. */
-      ph.textContent = values.length > 0
-        ? ('Choose ' + P.SITE_LABELS[dim].toLowerCase())
-        : ('Choose ' + P.SITE_LABELS[P.SITE_TIERS[i > 0 ? i - 1 : 0]].toLowerCase() + ' first');
-      sel.appendChild(ph);
-
-      values.forEach(function (value) {
-        var o = doc.createElement('option');
-        o.setAttribute('value', value);
-        o.textContent = value;
-        if (value === current) o.setAttribute('selected', 'selected');
-        sel.appendChild(o);
-      });
-
-      sel.value = current;
-      sel.disabled = values.length === 0;
-      if (!sel.disabled && typeof onPick === 'function') {
-        sel.addEventListener('change', function () { onPick(dim, sel.value); });
-      }
-      field.appendChild(sel);
-      bar.appendChild(field);
     });
 
-    host.appendChild(bar);
+    /* Anything that is not one of the three tiers does not belong in this bar. */
+    kidsOf(bar).forEach(function (n) {
+      if (!n.getAttribute || str(n.getAttribute('data-psb-site-field')) === '') bar.removeChild(n);
+    });
+
+    /* ORDER IS PART OF THE CONTRACT: Company, then Country, then Marketplace, left to right,
+       whatever was kept and whatever was rebuilt.
+
+       AND IT IS ONLY TOUCHED WHEN IT IS WRONG. Moving a node is a remove and an insert, and a
+       browser blurs whatever was focused inside one — so a reorder running on every paint would
+       undo, every time, the exact thing this rewrite exists to protect. The order can only change
+       when a field was rebuilt, and a rebuild is already placing the focus. */
+    var orderNow = kidsOf(bar).map(function (n) {
+      return n.getAttribute ? str(n.getAttribute('data-psb-site-field')) : '';
+    }).join(',');
+    if (orderNow !== P.SITE_TIERS.join(',')) {
+      P.SITE_TIERS.forEach(function (dim) {
+        var n2 = bar.querySelector('[data-psb-site-field="' + dim + '"]');
+        if (n2) bar.appendChild(n2);
+      });
+    }
+
+    /* THE FOCUS, PLACED RATHER THAN DROPPED — and only when this paint actually took it away. */
+    if (focusedDim !== '' && replaced[focusedDim] === true) {
+      var order = P.SITE_TIERS.indexOf(focusedDim);
+      var target = null;
+      for (var k = order; k < P.SITE_TIERS.length && !target; k++) {
+        var cand = bar.querySelector('[data-psb-site-dim="' + P.SITE_TIERS[k] + '"]');
+        if (cand && !cand.disabled) target = cand;
+      }
+      if (target && typeof target.focus === 'function') target.focus();
+    }
     return bar;
+  };
+
+  /* ==============================================================================================
+     THE PAGE HELP BUTTON  (P1-B8D-R7 §8)
+
+     WHAT IT REPLACES. The awaiting state used to carry a two-line paragraph explaining why a board
+     reads one site at a time — permanently, in the largest block on the page, above the three
+     controls it was explaining. It is a good paragraph and it answers a question a person asks
+     once. So it moves behind a control, and the control is the one the rest of this board already
+     uses for exactly this: click or Enter/Space toggles, Escape closes, a click outside closes,
+     the button carries `aria-expanded` and `aria-controls`, and the panel is a `role="note"`.
+
+     IT IS NOT A HOVER TOOLTIP, and it is not a bare `?`. Hover alone excludes keyboard users and
+     every touch device. The glyph is an `i`, because the chart's `?` controls are being taken off
+     the screen in the same round and a page that removed six question marks and added a seventh
+     would have moved one rather than made a decision.
+
+     THE PAGE OWNS IT, NOT THE BOARD. `psb-board-ui.js` re-renders its own header furniture on every
+     interaction and only exists once a workspace has loaded; this button has to be there before a
+     site is chosen, which is precisely when its paragraph is worth reading.
+     ============================================================================================== */
+
+  P.helpOpen = false;
+
+  P.closeHelp = function (doc) {
+    doc = doc || root.document;
+    P.helpOpen = false;
+    var panel = doc && doc.getElementById(P.HELP_PANEL_ID);
+    if (panel && panel.parentNode) panel.parentNode.removeChild(panel);
+    var btn = doc && doc.getElementById(P.HELP_BUTTON_ID);
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+  };
+
+  P.toggleHelp = function (doc, open) {
+    doc = doc || root.document;
+    var host = doc.getElementById(P.HELP_HOST_ID);
+    var btn = doc.getElementById(P.HELP_BUTTON_ID);
+    if (!host || !btn) return false;
+    var want = open === undefined ? !P.helpOpen : !!open;
+    if (!want) { P.closeHelp(doc); return false; }
+    if (P.helpOpen) return true;
+    var panel = doc.createElement('div');
+    panel.className = 'psb-help__panel';
+    panel.id = P.HELP_PANEL_ID;
+    panel.setAttribute('role', 'note');
+    panel.setAttribute('aria-label', P.HELP.heading);
+    var h = doc.createElement('div');
+    h.className = 'psb-help__head';
+    h.textContent = P.HELP.heading;
+    panel.appendChild(h);
+    P.HELP.paragraphs.forEach(function (t) {
+      var p = doc.createElement('p');
+      p.className = 'psb-help__p';
+      p.textContent = t;
+      panel.appendChild(p);
+    });
+    var close = doc.createElement('button');
+    close.className = 'psb-help__close';
+    close.setAttribute('type', 'button');
+    close.textContent = 'Close';
+    close.addEventListener('click', function (ev) {
+      if (ev && ev.stopPropagation) ev.stopPropagation();
+      P.closeHelp(doc);
+      if (typeof btn.focus === 'function') btn.focus();
+    });
+    panel.appendChild(close);
+    host.appendChild(panel);
+    btn.setAttribute('aria-expanded', 'true');
+    P.helpOpen = true;
+    return true;
+  };
+
+  /**
+   * Build the button once, into the header's action group. Idempotent: a second mount finds the
+   * button already there and leaves it, rather than adding a second one.
+   */
+  P.renderHeaderHelp = function (doc) {
+    doc = doc || root.document;
+    var host = doc.getElementById(P.HELP_HOST_ID);
+    if (!host) return null;
+    if (doc.getElementById(P.HELP_BUTTON_ID)) return doc.getElementById(P.HELP_BUTTON_ID);
+
+    var btn = doc.createElement('button');
+    btn.className = 'psb-help__btn';
+    btn.id = P.HELP_BUTTON_ID;
+    btn.setAttribute('type', 'button');
+    /* AN ACCESSIBLE NAME THAT SAYS WHAT IT OPENS. "More information" names the control's genre and
+       not its subject, which is no help at all in a page that will one day have two of them. */
+    btn.setAttribute('aria-label', 'About this board: ' + P.HELP.heading);
+    btn.setAttribute('aria-expanded', 'false');
+    btn.setAttribute('aria-controls', P.HELP_PANEL_ID);
+    btn.setAttribute('title', P.HELP.heading);
+    btn.textContent = 'i';
+    btn.addEventListener('click', function (ev) {
+      if (ev && ev.stopPropagation) ev.stopPropagation();
+      P.toggleHelp(doc);
+    });
+    btn.addEventListener('keydown', function (ev) {
+      if (!ev) return;
+      if (ev.key === 'Escape') { P.closeHelp(doc); return; }
+      /* Enter and Space already activate a <button>; they are not re-implemented here. */
+    });
+    host.appendChild(btn);
+
+    /* THE TWO WAYS OUT, REGISTERED ONCE FOR THE PAGE rather than once per open. A listener added
+       on every open is a listener removed on no close, and after a dozen opens one Escape would
+       fire a dozen times — the same argument psb-board-ui.js makes about its own popovers. */
+    if (!P.helpListenersBound) {
+      P.helpListenersBound = true;
+      doc.addEventListener('keydown', function (ev) {
+        if (!ev || ev.key !== 'Escape' || !P.helpOpen) return;
+        var b = doc.getElementById(P.HELP_BUTTON_ID);
+        P.closeHelp(doc);
+        if (b && typeof b.focus === 'function') b.focus();
+      });
+      doc.addEventListener('click', function (ev) {
+        if (!P.helpOpen) return;
+        var panel = doc.getElementById(P.HELP_PANEL_ID);
+        /* A CLICK INSIDE THE PANEL IS NOT A CLICK OUTSIDE IT. The button stops its own event; a
+           reader selecting the text of the paragraph must not close what they are reading. */
+        if (panel && ev && ev.target && panel.contains(ev.target)) return;
+        P.closeHelp(doc);
+      });
+    }
+    return btn;
   };
 
   /* ==============================================================================================
@@ -577,6 +1003,9 @@
       if (!ok) return null;
       var sec = doc.getElementById(P.SECTION_ID);
       if (sec && sec.classList) sec.classList.add('active');
+      /* BEFORE THE READ, not after it. Its paragraph explains why the page is asking for a site,
+         which is the state the page is in while the read is still outstanding. */
+      P.renderHeaderHelp(doc);
       /* The route the sidebar child asked for, consumed ONCE. Left in place it would re-select that
          view on a later visit that asked for a different one — a stale intent is worse than none,
          because it looks like a working restore. */
@@ -604,6 +1033,13 @@
        set of sites nothing is listening to. */
     var sh = doc && doc.getElementById(P.SITE_HOST_ID);
     if (sh) { while (sh.firstChild) sh.removeChild(sh.firstChild); }
+    /* AND THE BOARD, for the same reason. It was drawn from one site's rows by a controller that is
+       being discarded; the next visit must not inherit a chart nothing is driving. */
+    P.BOARD_HOSTS.forEach(function (id) {
+      var n = doc && doc.getElementById(id);
+      while (n && n.firstChild) n.removeChild(n.firstChild);
+    });
+    P.closeHelp(doc);
   };
 
   if (root.KM && root.KM.lifecycle && typeof root.KM.lifecycle.register === 'function') {
@@ -654,7 +1090,17 @@
     site_options_source: 'productPricing.siteUniverse.get, via SU.narrow — and nothing else',
     default_site: null,
     auto_selects_a_site: false,
-    reselecting_the_same_site_reads_again: false
+    reselecting_the_same_site_reads_again: false,
+    // P1-B8D-R7 — the selection survives a repaint, and the board does not survive its site.
+    chooser_rebuilds_on_every_pick: false,
+    chooser_restores_state_into_existing_controls: true,
+    board_is_torn_down_when_state_is_not_ok: true,
+    withdrawing_a_scope_invalidates_an_outstanding_read: true,
+    board_hosts: P.BOARD_HOSTS.join(','),
+    site_selectors_rendered_by_board: false,
+    long_explanation_is_behind: 'psbPageHelp (one page-level info button)',
+    page_help_button_glyph: 'i',
+    help_opens_on: 'click and keyboard; never hover alone'
   };
 
   if (typeof module !== 'undefined' && module.exports) { module.exports = P; }

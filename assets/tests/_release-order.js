@@ -333,7 +333,14 @@ var ROUND_TOKENS = [
   /* P1-B8D-R6 - the visual integration. The page stylesheet changes, and so do the page
      controller (the chooser now carries the shared filter-bar classes) and the partial.
      A browser holding the old CSS against the new markup would style neither. */
-  'visualintegration-p1b8dr6-20260913'];
+  'visualintegration-p1b8dr6-20260913',
+  /* P1-B8D-R7 - the final usability correction. FOUR shipped files move together and none
+     of them is optional: the partial gains the one filter panel and the help host, the page
+     controller reconciles the chooser instead of rebuilding it and takes the board down with
+     its site, the renderer reads three new mount options, and the stylesheet flattens the
+     two bars into one row. A browser holding any three of the four against the fourth would
+     render a panel with no card, a card with two bars in it, or a chooser that rebuilds. */
+  'finalusability-p1b8dr7-20260913'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

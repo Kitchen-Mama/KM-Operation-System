@@ -108,8 +108,14 @@ var SRC = {
 
 /* THE TWO SENTENCES OFF THE SCREENSHOT, spelled once. "Reproduced the live failure" has to mean the
    same characters, not a similar-looking state. */
-var LIVE_HEADLINE = 'Choose a site to analyse.';
-var LIVE_DETAIL_HEAD = 'This board reads one site at a time';
+/* P1-B8D-R7 MOVED THE EXPLANATION AND KEPT THE INSTRUCTION.
+   The state used to carry a headline and a two-line paragraph about why a board reads one site at
+   a time. The paragraph is correct and answers a question a person asks once; standing permanently
+   above the three controls it explained, it was the largest block on the page. It now lives behind
+   the header's `i` button, and what remains here is the one sentence that says what to do next —
+   which is why this constant is an instruction rather than a description. The paragraph is asserted
+   where it now is, by product-strategy-final-usability-p1-b8d-r7. */
+var LIVE_HEADLINE = 'Select a company, country and marketplace to begin.';
 
 /* ------------------------------------------------------------------------------------------------
    ONE REALM, GLOBAL SCOPE — and this is load-bearing rather than convenient.
@@ -301,9 +307,11 @@ step(function () {
     eq(C.narrowed.complete, false, 'A7  and three companies cannot narrow to one site on their own');
     var head = L.dom.document.querySelector('.psb-state__headline');
     eq(head && String(head.textContent), LIVE_HEADLINE, 'A8  the live headline, character for character');
+    /* AND NOTHING BELOW IT. A state that asks for an action is one sentence; the reasoning behind
+       the rule is a disclosure, not a standing notice (P1-B8D-R7 §8). */
     var det = L.dom.document.querySelector('.psb-state__detail');
-    ok(det && String(det.textContent).indexOf(LIVE_DETAIL_HEAD) === 0,
-      'A9  and the live detail', det && String(det.textContent).slice(0, 60));
+    eq(det, null, 'A9  and no standing paragraph under it',
+      det && String(det.textContent).slice(0, 60));
   });
 });
 
@@ -759,8 +767,12 @@ step(function () {
 /* I8 — the shared state host stays over the board. */
 step(function () {
   return mutP('I8  the state host is left covering the mounted board', function () {
-    return withMutant(PAGE_REL, 'board.mount({ adapter: adapter });',
-      'board.mount({ adapter: adapter }); show(P.AWAITING_SITE_SELECTION, P.UX_PAGE.AWAITING_SITE_SELECTION, []);',
+    /* THE ANCHOR MOVED WITH P1-B8D-R7: `board.mount` now carries the three things this host
+       declares about itself, so the single-line call this matched no longer exists. The mutant is
+       unchanged in meaning — write a state over a board that has just mounted. */
+    return withMutant(PAGE_REL, '          C.mounted = true;',
+      '          C.mounted = true;\n'
+      + '          show(P.AWAITING_SITE_SELECTION, P.UX_PAGE.AWAITING_SITE_SELECTION, []);',
       function () {
         return withLive({}, function (L) {
           return L.pick('company', 'KM')

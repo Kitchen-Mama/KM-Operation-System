@@ -42,3 +42,23 @@ Left deliberately untouched by R6:
 - The tab rail's active treatment: shared solid fill vs this page's underline (see the R6 ledger
   entry for the argument on both sides).
 - Global typography and spacing unification.
+
+
+## B2-4 · A scenario override outlives its site
+
+Recorded by P1-B8D-R7. `STATE.overrides` is keyed by SKU. A site change re-derives Category, Series,
+currency and the scenario series against the new rows, but an override on a SKU that is listed on
+BOTH sites survives the switch — so a price simulated for one marketplace can still be drawn on
+another, which is the exact class of confusion this feature exists to prevent.
+
+It is not in R7's scope (§6 forbids touching price calculation) and it is not reachable in the
+replayed universe, where no SKU is listed under two companies. The decision to make is whether an
+override belongs to the PRODUCT or to the SITE it was simulated on; the answer changes what Undo and
+Reset mean, which is why it is a Phase 2 item and not a patch.
+
+## B2-5 · Escape does not close the price-adjustment drawer
+
+Deliberate and documented in `psb-board-ui.js`: the drawer is a workspace rather than a popover, and
+Escape inside a form a person is filling in should not throw the form away. P1-B8D-R7 left it alone
+and its §2.6 explicitly allows that. Worth revisiting alongside a shared drawer component — there is
+still no `.km-drawer` in `components.css` and four pages have now written their own.

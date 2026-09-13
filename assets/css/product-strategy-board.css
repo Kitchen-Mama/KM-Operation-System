@@ -1440,18 +1440,16 @@ body.is-fullscreen .psb-page .view > .reco { display: none; }
    with its own gap it double-spaces the controls and breaks the baseline. */
 .psb-page .psb-header__actions .btn { margin: 0; }
 
-/* ---- 2 · SITE FILTER TOOLBAR -------------------------------------------------------------------
-   The chooser is the first thing a person uses on this page, so it gets the standalone card the
-   Operation System gives a filter bar (`.km-category-card`) rather than floating on the ground. */
+/* ---- 2 · THE SITE TIERS -------------------------------------------------------------------------
+   P1-B8D-R6 gave this bar a card of its own, because it was the only filter on the page and it was
+   floating on the ground. P1-B8D-R7 gives the CARD to the panel that now holds it and Category and
+   Series together (§8 below), so the bar keeps only its own flex behaviour: a second card inside a
+   card is the two-bars problem again, drawn in borders. */
 .psb-page .psb-site-host:empty { display: none; }
 .psb-page .psb-site {
   display: flex; align-items: flex-end; flex-wrap: wrap;
   gap: var(--filter-gap, 1rem);
-  background: var(--paper, #fff);
-  border-radius: var(--radius-lg, 8px);
-  box-shadow: var(--shadow-card, 0 1px 3px rgba(0, 0, 0, .1));
-  padding: 16px 20px;
-  margin: 0 0 var(--space-lg, 1.5rem);
+  margin: 0;
 }
 /* The shared `.filter-group` is `flex: 0 0 160px`. Three of them plus the gap fit a desktop row and
    wrap by themselves on a tablet — which is the behaviour §5 asks for — but a fixed basis cannot
@@ -1565,23 +1563,277 @@ body.is-fullscreen .psb-page .view > .reco { display: none; }
    that silently omits why it is empty is worse than one that says so. */
 @media print {
   .psb-page .psb-site-host { display: none; }
+  /* P1-B8D-R7 — and the panel stops being a card when it holds nothing a reader can act on. */
+  .psb-page .psb-filters { background: transparent; box-shadow: none; border: 0; padding: 0; }
+  /* THE FLOATING POPOVER IS NOT PRINTED. It is a disclosure a person opened on screen; on paper it
+     would land over whatever it happens to be above, and the reader cannot close it. */
+  .psb-page .psb-help { display: none; }
 }
 body.presenting .psb-page .psb-site-host { display: none; }
+body.presenting .psb-page .psb-help { display: none; }
 
 
-/* ---- 6 · ONE SITE, STATED ONCE LOUDLY (P1-B8D-R6) ----------------------------------------------
-   The board's own command bar echoes Company / Country / Marketplace as read-only context, and
-   since R5 the page's chooser above is the CONTROL for exactly those three. That left one site
-   stated three times on one screen — chooser, echo, summary line — with the echo set in the
-   largest type of the three, so the least authoritative statement had the most visual weight.
+/* ---- 6 · ONE SITE, STATED ONCE (P1-B8D-R6, SETTLED IN R7) --------------------------------------
+   R6 found one site stated three times on one screen — the chooser, the board's read-only echo of
+   the same three values, and the summary line — with the echo in the largest type of the three, so
+   the least authoritative statement carried the most weight. R6 could only quiet it, because the
+   renderer owned it and §5.4 of that round forbade touching the fields.
 
-   The renderer and the fields are untouched (§5.4): a reader who scrolled past the chooser can
-   still see which site the numbers belong to, and the printed page still carries it. Only the
-   WEIGHT changes, so the eye lands on Category and Series — the controls that bar actually owns. */
+   R7 REMOVED THE ECHO INSTEAD OF QUIETING IT. The board is now told at mount that the page owns the
+   site (`siteOwnedByPage`), so on this page it renders no site tiers at all and the summary row is
+   the one secondary restatement — which is exactly what §7 of this round asks for. The rule below
+   therefore matches nothing HERE any more, and it is kept because it still matches in the other
+   host: the prototype draws the full ladder, and a weight that was right there is still right. */
 .psb-page .cmd-field--context .cmd-context-value[data-context-for="fCompany"],
 .psb-page .cmd-field--context .cmd-context-value[data-context-for="fCountry"],
 .psb-page .cmd-field--context .cmd-context-value[data-context-for="fMarketplace"] {
   font-size: 13px;
   font-weight: 500;
   color: var(--ink-2, #444d5c);
+}
+
+/* ==================================================================================================
+   P1-B8D-R7 — FINAL USABILITY CORRECTION
+   ==================================================================================================
+
+   SEVEN THINGS THE USER MEASURED ON THE LIVE PAGE, and what each of them turned out to be.
+
+   §7  THE PAGE PAINTED ITS OWN GROUND. `.psb-page { background: var(--ground) }` puts #f5f6f9 over
+       the whole section while `.main-content` behind it is #ffffff — so this is the only page in
+       the Operation System that sits on grey, and the part of it a reader meets first is the title
+       band. It reads as a header banner because it is where the grey has nothing on top of it.
+
+   §8  TWO FILTER BARS FOR ONE DECISION. Measured: the site bar at y=283 and the command bar at
+       y=407, each with its own card, the upper one holding the CONTROLS for Company/Country/
+       Marketplace and the lower one repeating their VALUES beside the data. One panel now.
+
+   §9  NOTHING SHARED A BASELINE. Measured at 1440: the site selects at top=325.3, the board's
+       context values at 436.9, Category at 513.5, Series at 517.5 — four pixels below the control
+       beside it — and Meeting scenario 36px tall where everything else was 38. Label gaps of 8px,
+       7px and 3px in one row.
+
+   §10 THE DRAWER'S CLOSE BUTTON WAS 60px WIDE. It exists, it works, it carries an aria-label — and
+       `components.css button { min-width: 60px }` outranks its own `width: 30px`, so a `×` meant to
+       be a 30px square rendered as a squat rectangle twice as wide as it is tall, in the corner
+       where people look for a compact ×. A control that does not read as one is not one.
+
+   §11 THE PAGE HELP BUTTON, which is where §8's long paragraph went.
+
+   SCOPE, unchanged from R6: every selector below starts at `.psb-page`; no shared class is
+   redefined at the top level; no bare `select` / `button` / `.card` / `.btn` / `h1` / `.nav-text`.
+   ================================================================================================== */
+
+/* ---- 7 · THE PAGE STOPS PAINTING ITS OWN GROUND ------------------------------------------------
+   `.psb-page` is the board's root in BOTH documents that use this sheet: the production section and
+   the prototype's <body>. The prototype is a standalone demonstration and its grey ground is the
+   only thing behind it, so it keeps it. In the Operation System the shell already supplies a white
+   content ground, and a page that repaints it is a page that does not look like the application.
+
+   `.module-section` is only ever on a shell section, so this compound cannot match the prototype —
+   and it still begins at `.psb-page`, so it cannot reach another page either. Every block that used
+   to be separated by the grey is separated by its own border or shadow instead: `.card` carries
+   `1px solid var(--line)`, `.cmdbar` the same, the state box both. */
+.psb-page.module-section { background: transparent; }
+
+/* ---- 8 · ONE FILTER PANEL --------------------------------------------------------------------
+   THE CARD IS THE PANEL, and the two renderers inside it are flattened out of the layout.
+
+   `display: contents` removes a box from the flex layout while keeping its children — so
+   `#psb-site-host > .psb-site > .filter-group` and `#scope > .cmdbar > .cmdbar-row > .cmd-fields >
+   .cmd-field` all become direct children of this one row. That is the only way to get seven
+   controls from two independent renderers onto one line in one order without either renderer
+   learning about the other's DOM, which would put the seam back where the reader can see it.
+
+   IT IS SAFE TO LOSE THESE BOXES because none of them paints anything: they are wrappers with
+   flex behaviour and no background, border, padding or margin of their own once the card is here.
+   The one box that does paint — the drawer — is `position: fixed` and is not in this flow at all. */
+.psb-page .psb-filters {
+  display: flex; align-items: flex-end; flex-wrap: wrap;
+  gap: var(--filter-gap, 1rem);
+  background: var(--paper, #fff);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg, 8px);
+  box-shadow: var(--shadow-card, 0 1px 3px rgba(0, 0, 0, .1));
+  padding: 16px 20px;
+  margin: 0 0 var(--space-lg, 1.5rem);
+}
+/* A PANEL WITH NOTHING IN IT IS NOT A PANEL. `:empty` cannot see this - the card holds two element
+   children that are themselves empty - so the page controller states it, on the one element that
+   knows: `data-psb-empty` is set whenever the chooser is cleared or the board comes down. Without
+   it, FEATURE_DISABLED and an unreadable universe drew a white bar of controls with no controls in
+   it, directly above the notice saying nothing could be read. */
+.psb-page .psb-filters:empty,
+.psb-page .psb-filters[data-psb-empty="true"] { display: none; }
+.psb-page .psb-filters > .psb-site-host,
+.psb-page .psb-filters .psb-site,
+.psb-page .psb-filters > .scope,
+.psb-page .psb-filters .cmdbar,
+.psb-page .psb-filters .cmdbar-primary,
+.psb-page .psb-filters .cmd-fields { display: contents; }
+/* The cmdbar was the card; inside the panel it is not a box at all, so its own chrome goes with it.
+   Kept as declarations rather than deleted from §4's rule, because that rule is still the whole
+   truth in the prototype, where `#scope` is not inside a panel. */
+.psb-page .psb-filters .cmdbar {
+  background: transparent; border: 0; box-shadow: none; padding: 0; margin: 0;
+}
+/* Every field in the panel is a flex item of the SAME row, with one basis and one floor. The basis
+   is a preference rather than a fixed width: five fields and two buttons fit a desktop row, and on
+   a narrower one they give back space to the floor and then wrap, in order, still in this card. */
+.psb-page .psb-filters .filter-group,
+.psb-page .psb-filters .cmd-field { flex: 1 1 150px; min-width: 132px; max-width: 230px; }
+.psb-page .psb-filters .cmd-field--category { flex: 1 1 170px; max-width: 250px; }
+/* THE TOOLS STAY AT THE END OF THE ROW. `margin-left: auto` pushed them to the far right of a row
+   that used to hold five fields; with the fields wrapping it would strand them on a line of their
+   own, so they sit directly after Series and the row ends where the controls end. */
+.psb-page .psb-filters .cmd-tools { margin-left: 0; flex: 0 0 auto; }
+/* The quiet summary is the one restatement §7 allows, and it gets its own line under the controls. */
+.psb-page .psb-filters .cmdbar-context { flex: 1 0 100%; margin-top: 4px; }
+
+/* ---- 9 · ONE HEIGHT AND ONE BASELINE ------------------------------------------------------------
+   MEASURED BEFORE, at 1440 on the live page: the site selects at top=325.3, the board's context
+   values at 436.9, Category at 513.5, Series at 517.5 — four pixels below the control beside it —
+   and Meeting scenario 36px tall where everything else was 38. Label gaps of 8px, 7px and 3px in
+   one row. None of that was a decision; it is what happens when two renderers each carry their own
+   spacing and are then put side by side.
+
+   SO THE PANEL STATES THE SPACING ONCE. One column gap between a label and its control, one height
+   from `--filter-height`, and every margin inside a field zeroed — because a margin that survives is
+   a second opinion about the gap. base.css calls the `--filter-*` family the single source of truth
+   for every filter control, so nothing here invents a measurement; it applies the one that exists.
+
+   The rules the fields bring with them — `.cmd-field { gap: 3px }` and its `select { margin: 0 }`,
+   `.filter-group select { margin: 4px 0 }` — were each right in the bar they were written for. They
+   are overridden INSIDE `.psb-filters` only, so the command bar in the prototype and every filter
+   group elsewhere in the application keep exactly what they had. */
+.psb-page .psb-filters .filter-group,
+.psb-page .psb-filters .cmd-field {
+  display: flex; flex-direction: column; align-items: stretch;
+  gap: 6px;
+}
+.psb-page .psb-filters .filter-group > label,
+.psb-page .psb-filters .cmd-field > .fl-label,
+.psb-page .psb-filters .psb-site__label {
+  margin: 0; line-height: 1.2;
+}
+/* EVERY CONTROL IN THE ROW IS ONE HEIGHT, whatever element it happens to be: a native select, the
+   read-only tier, the board's context value, the Category menu trigger and the two tool buttons. */
+.psb-page .psb-filters select,
+.psb-page .psb-filters input[type="text"],
+.psb-page .psb-filters .psb-site__value,
+.psb-page .psb-filters .cmd-context-value,
+.psb-page .psb-filters .cmd-field--category .catbtn.is-more,
+.psb-page .psb-filters .cmd-tools button {
+  height: var(--filter-height, 38px);
+  box-sizing: border-box;
+  margin: 0;
+}
+/* `.btn` is `--btn-height: 36px`, and `components.css button { margin: 4px }` is a global default
+   for bare buttons — which is what put Meeting scenario two pixels short and four pixels low. Both
+   are corrected INSIDE this panel only; the shared button contract is untouched everywhere else. */
+.psb-page .psb-filters .cmd-tools { align-items: flex-end; }
+/* Each tool is wrapped in its own box (`.cmd-more`, `.cmd-scn`) that may also carry a status chip
+   below the button. The BUTTONS are what has to share the row's baseline, so the wrappers align to
+   the bottom and the chips hang under them rather than pushing one button four pixels down. */
+.psb-page .psb-filters .cmd-tools > * { display: flex; flex-direction: column; align-items: stretch; }
+.psb-page .psb-filters .cmd-tools .btn { height: var(--filter-height, 38px); margin: 0; }
+/* The Category trigger is a block inside its field so it fills the field's width like a select. */
+.psb-page .psb-filters .cmd-field--category .catctl,
+.psb-page .psb-filters .cmd-field--category .catbar { display: block; margin: 0; }
+.psb-page .psb-filters .cmd-field--category .catbtn.is-more { width: 100%; max-width: none; }
+.psb-page .psb-filters select { width: 100%; max-width: none; min-width: 0; }
+/* TWO READ-ONLY TIERS, ONE APPEARANCE. `.psb-site__value` (a tier the universe resolved) and
+   `.cmd-context-value` (a tier the loaded rows resolved) are the same statement about the same kind
+   of thing, and they arrived from two renderers wearing two looks - a filled box beside plain bold
+   text. In one row that reads as two different kinds of control rather than as one kind of fact. */
+.psb-page .psb-filters .cmd-context-value {
+  display: inline-flex; align-items: center;
+  padding: var(--filter-padding-block, 8px) var(--filter-padding-inline, 12px);
+  border: 1px solid transparent;
+  border-radius: var(--filter-border-radius, 4px);
+  background: var(--line-2, #eef0f5);
+  font-size: var(--filter-font-size, 14px);
+  color: var(--filter-text-color, #2d3748);
+  font-weight: 600;
+}
+
+/* Mobile: one control per row, and the tools too. */
+@media (max-width: 640px) {
+  .psb-page .psb-filters { padding: 12px 14px; }
+  .psb-page .psb-filters .filter-group,
+  .psb-page .psb-filters .cmd-field,
+  .psb-page .psb-filters .cmd-field--category { flex: 1 1 100%; min-width: 0; }
+  .psb-page .psb-filters .cmd-tools { width: 100%; }
+}
+
+/* ---- 10 · THE DRAWER'S CLOSE BUTTON READS AS ONE ------------------------------------------------
+   `components.css button { min-width: 60px }` is a global default for bare buttons and it OUTRANKS
+   this button's own `width: 30px` — a min-width always does. So the × sat in a 60×30 rectangle: the
+   right control, in the right corner, in the wrong shape. `min-width` is the declaration that was
+   missing, not a new size. No `!important` is needed: this selector is more specific than a bare
+   element rule, and the only reason it lost before is that it never named this property. */
+.psb-page .scn-drawer-close {
+  min-width: 30px; width: 30px; height: 30px; flex: 0 0 auto; padding: 0; margin: 0;
+}
+/* THE DRAWER IS AN OVERLAY, and presentation and fullscreen exist to show the chart underneath it.
+   `display: none` rather than a visual hide, so nothing inside it can take a click or a tab stop
+   while it is not there. `STATE.meetingOpen` is untouched: leaving presentation brings it back
+   exactly as it was, with every override still applied. */
+body.presenting .psb-page .scn-drawer,
+body.is-fullscreen .psb-page .scn-drawer { display: none; }
+
+/* ---- 11 · THE PAGE HELP BUTTON ------------------------------------------------------------------
+   ONE `i` IN THE HEADER, holding the paragraph the awaiting state used to carry permanently. It is
+   the page's, not the board's: it has to be there before a site is chosen, which is exactly when
+   its text is worth reading, and the board does not exist until a workspace has loaded.
+
+   IT IS A BUTTON, NOT A HOVER TARGET. Hover alone excludes keyboard users and every touch device,
+   so the panel opens on click and on Enter/Space, closes on Escape, on a click outside and on the
+   control again — the same three ways out the board's own popovers offer. */
+.psb-page .psb-help { position: relative; display: inline-flex; align-items: flex-end; }
+.psb-page .psb-help__btn {
+  min-width: 0; width: 26px; height: 26px; margin: 0; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line); border-radius: 999px;
+  background: var(--paper, #fff); color: var(--ink-2);
+  font-family: var(--serif, Georgia, 'Times New Roman', serif);
+  font-size: 14px; font-style: italic; font-weight: 700; line-height: 1;
+  cursor: pointer;
+}
+.psb-page .psb-help__btn:hover { border-color: #c6cdd9; color: var(--ink); background: var(--paper, #fff); }
+.psb-page .psb-help__btn:focus-visible {
+  outline: 2px solid var(--filter-focus-ring, #7FB069); outline-offset: 2px;
+}
+/* OPEN IS NOT A COLOUR ALONE: the ring is drawn and the border darkens. */
+.psb-page .psb-help__btn[aria-expanded="true"] {
+  border-color: var(--ink-2); box-shadow: 0 0 0 2px var(--line-2, #eef0f5);
+}
+.psb-page .psb-help__panel {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 70;
+  width: min(420px, 86vw);
+  padding: 14px 16px;
+  background: var(--paper, #fff);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg, 8px);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, .16);
+  text-align: left;
+}
+.psb-page .psb-help__head {
+  font-size: 13px; font-weight: 700; color: var(--ink); margin-bottom: 8px;
+}
+.psb-page .psb-help__p {
+  margin: 0 0 8px; font-size: 13px; line-height: 1.6; color: var(--ink-2);
+}
+.psb-page .psb-help__close {
+  min-width: 0; margin: 4px 0 0; padding: 5px 12px;
+  border: 1px solid var(--line); border-radius: var(--filter-border-radius, 4px);
+  background: var(--paper, #fff); color: var(--ink-2); font-size: 12.5px; cursor: pointer;
+}
+.psb-page .psb-help__close:hover { border-color: #c6cdd9; color: var(--ink); background: var(--paper, #fff); }
+.psb-page .psb-help__close:focus-visible {
+  outline: 2px solid var(--filter-focus-ring, #7FB069); outline-offset: 1px;
+}
+/* On a phone the popover is the width of the column rather than a 420px box hanging off the edge. */
+@media (max-width: 640px) {
+  .psb-page .psb-help { position: static; }
+  .psb-page .psb-help__panel { position: absolute; left: 12px; right: 12px; width: auto; }
 }

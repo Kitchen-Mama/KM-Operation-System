@@ -28,6 +28,17 @@
                 two sites are never pooled on one axis.</p>
         </div>
         <div class="psb-header__actions">
+            <!-- P1-B8D-R7 - THE LONG EXPLANATION LIVES HERE NOW.
+                 The awaiting state carried two lines about why a board reads one site at a time,
+                 permanently, above the three controls it was explaining. It is a good paragraph and
+                 it answers a question a person asks once, so it moved behind a control. The button
+                 is BUILT BY THE PAGE CONTROLLER rather than written here, because it owns the text
+                 and the popover's open/close contract; this is the empty host it lands in, first in
+                 the action group so it reads as belonging to the title rather than to Print.
+                 It is an `i`, not a `?`: the chart's question marks come off the screen in the same
+                 round, and a page that removed six and added a seventh would have moved one rather
+                 than made a decision. -->
+            <span class="psb-help" id="psb-help-host"></span>
             <!-- Board features, not shell features. Bound by psb-board-ui.js where present. -->
             <button class="btn btn-quiet" id="btnPresent" type="button" title="Presentation mode">Presentation</button>
             <button class="btn btn-quiet" id="btnPrint" type="button" title="Print or save as PDF">Print / PDF</button>
@@ -65,38 +76,48 @@
          printed page what it is a picture of. -->
     <div class="crumbs psb-crumbs" id="crumbs"></div>
 
-    <!-- P1-B8D-R5 - THE SITE CHOOSER, AND IT IS NOT THE BAR BELOW.
+    <!-- P1-B8D-R5 / R7 - ONE FILTER PANEL, IN THE ORDER A PERSON WALKS IT.
 
-         The live page read ten READY sites, rendered "Choose a site to analyse." and offered NO
-         CONTROL OF ANY KIND: zero selects on the document. `#scope` below looks like the missing
-         thing and is not it. That bar is drawn by `psb-board-ui.js renderScope()`, which runs from
-         `render()`, which runs from `boot()`, which runs from `board.mount({adapter})` - after a
-         workspace read has already succeeded. Its Company/Country/Marketplace are derived from the
-         LOADED ROWS of the one site in hand, so with a site loaded each has exactly one value and
-         renders as read-only context. The control that lets you choose a site only existed once you
-         had chosen one.
+         Company -> Country -> Marketplace -> Category -> Series -> More filters -> Meeting scenario.
 
-         So this host belongs to the PAGE CONTROLLER and to nothing else. It is filled from
-         `productPricing.siteUniverse.get` - the only legal source of a site - and it stays put when
-         the board mounts, because a board you cannot leave is the same dead end one step later. -->
-    <div id="psb-site-host" class="psb-site-host"></div>
+         TWO OWNERS, ONE PANEL, AND THE BOUNDARY IS NOT THE READER'S PROBLEM. The three site tiers
+         belong to the PAGE CONTROLLER: only `productPricing.siteUniverse.get` knows which sites
+         exist, and R5 exists because the live page read ten of them and offered no control at all.
+         Category and Series belong to the BOARD: they are derived from the rows of the one site it
+         has loaded and cannot be known before the read. That is a real seam in the code, and until
+         this round it was also a seam on the screen - two bars stacked, the upper one holding the
+         controls, the lower one repeating Company/Country/Marketplace beside the data. During a
+         site change the two disagreed, and the stale one was the one next to the numbers.
+
+         So the two hosts sit inside ONE card and the stylesheet flattens the wrappers with
+         `display: contents`, putting the seven controls on one row in that order. Neither renderer
+         had to learn about the other's DOM, and the board is told at mount that it is not the owner
+         of the site (`siteOwnedByPage`), so it no longer draws the second set at all. -->
+    <div class="psb-filters" id="psb-filters">
+        <div id="psb-site-host" class="psb-site-host"></div>
+        <!-- The compact command bar renders here. On this page it opens at Category -> Series,
+             because the three site tiers are the controls immediately to its left in the same row
+             (P1-B4 SS1/SS3/SS5). More filters and Meeting scenario stay as the two secondary
+             entrances at the end. -->
+        <section class="scope" id="scope" aria-label="Scope"></section>
+    </div>
 
     <!-- P1-B8D-R6 - THE CONTROLS COME BEFORE THE SENTENCE ABOUT THEM.
          This host used to sit ABOVE the chooser, so the live page read "Choose a site to analyse."
          and only then showed the thing to choose with. A message that asks for an action belongs
          after the action, not in front of it; and every OTHER state written here is about what the
-         chooser above just did, which is the same argument a second time. -->
+         panel above just did, which is the same argument a second time. -->
     <!-- EVERY ANSWER THAT IS NOT A CHART IS WRITTEN HERE, and the chart is never drawn beside one.
          SOURCE_EMPTY, SOURCE_PARTIALLY_READABLE, STOP_DATA_INTEGRITY, SOURCE_NOT_CONNECTED,
          FEATURE_DISABLED, SCHEMA_CONTRACT_MISMATCH, CONTRACT_MISMATCH and the page's own
          SITE_UNIVERSE_NOT_AVAILABLE all land in this one element. There is no state in which a
-         fixture is loaded instead. -->
+         fixture is loaded instead.
+         P1-B8D-R7 - AND THE BOARD IS TAKEN DOWN WHEN ONE OF THEM IS WRITTEN. Until this round that
+         sentence was true only of the FIRST answer: nothing removed a chart that had already been
+         drawn, so changing Company left the previous site's whole board on screen under a notice
+         asking you to choose a site. `C.clearBoard()` in the page controller empties #nav, #crumbs,
+         #banner, #scope and #view, which is every host the board draws into. -->
     <div id="psb-state-host" class="psb-state-host"></div>
-
-
-    <!-- The compact command bar renders into #scope: Company -> Country -> Marketplace -> Category ->
-         Series, with More filters and Meeting scenario as the two secondary entrances (P1-B4 §1, §3, §5). -->
-    <section class="scope" id="scope" aria-label="Scope"></section>
 
     <!-- The chart, the KPI row, the tables and the Insight drawer. -->
     <section class="view" id="view"></section>

@@ -74,6 +74,17 @@
     opts = opts || {};
     var log = [];
 
+    /* `delayMs` is a number for every read, or a map keyed by site so ONE site can be the slow one.
+       The stale-response case needs exactly that: site A slow, site B fast, both asked for. */
+    function delayFor(action) {
+      var d = opts.delayMs;
+      if (d === undefined || d === null) return 0;
+      if (typeof d === 'number') return d;
+      var k = action === 'productPricing.siteUniverse.get' ? 'universe' : 'workspace';
+      var v = d[k];
+      return typeof v === 'number' ? v : 0;
+    }
+
     function keyOf(payload) {
       var s = (payload && payload.scope) || {};
       return [s.company, s.country, s.marketplace].join('|');
@@ -99,7 +110,14 @@
             product_strategy_enabled: opts.capability !== false });
         }
 
-        if (opts.fail) {
+        /* P1-B8D-R7 - A FAILURE CAN BELONG TO ONE READ. Refusing every action refuses the
+           UNIVERSE too, and without a universe the page correctly draws no chooser - so a run
+           meant to ask "after a workspace failure, can a person still see their site and try
+           again" photographed a page with nothing to try again WITH. */
+        var failApplies = !opts.failOnly
+          || (opts.failOnly === 'workspace' && action === 'productPricing.workspace.get')
+          || (opts.failOnly === 'universe' && action === 'productPricing.siteUniverse.get');
+        if (opts.fail && failApplies) {
           var e = (typeof opts.fail === 'function') ? opts.fail(action, dto) : opts.fail;
           if (e) return Promise.reject(e);
         }
@@ -116,12 +134,37 @@
           return new Promise(function () {});
         }
 
-        if (action === 'productPricing.siteUniverse.get') {
-          return Promise.resolve(opts.universeOverride || capture.universe);
+        /* P1-B8D-R7 - A SLOW ANSWER, WHICH IS A DIFFERENT THING FROM NO ANSWER.
+           `delayMs` has been in this function's JSDoc since P1-B8C and nothing ever read it, so
+           every reply landed in the same microtask as its request and the ORDER of two outstanding
+           reads could not be staged. That order is the whole mechanism behind "I chose a site and
+           it went back": a person picks A, picks B before A has answered, and A lands last. A
+           harness that always answers instantly cannot produce it, and every suite was green.
+           Per-action, because the interesting case is a SLOW WORKSPACE under a fast universe. */
+        function answer(v) {
+          var ms = delayFor(action);
+          if (ms <= 0) return Promise.resolve(v);
+          return new Promise(function (res) { setTimeout(function () { res(v); }, ms); });
         }
-        var env = capture.workspaces[keyOf(dto.payload)];
+
+        if (action === 'productPricing.siteUniverse.get') {
+          return answer(opts.universeOverride || capture.universe);
+        }
+        var siteKey = keyOf(dto.payload);
+        /* THE SLOW SITE IS NAMED, so a test can make the FIRST choice the slow one and the second
+           fast. A uniform delay cannot produce an out-of-order pair; it just moves both later. */
+        if (opts.slowSite && typeof opts.slowSite === 'object'
+          && siteKey === [opts.slowSite.company, opts.slowSite.country,
+            opts.slowSite.marketplace].join('|')) {
+          var slowEnv = capture.workspaces[siteKey];
+          if (!slowEnv) throw new Error('P1B8C REPLAY HAS NO CAPTURE FOR SITE: ' + siteKey);
+          return new Promise(function (res) {
+            setTimeout(function () { res(slowEnv); }, opts.slowMs || 300);
+          });
+        }
+        var env = capture.workspaces[siteKey];
         if (!env) {
-          throw new Error('P1B8C REPLAY HAS NO CAPTURE FOR SITE: ' + keyOf(dto.payload));
+          throw new Error('P1B8C REPLAY HAS NO CAPTURE FOR SITE: ' + siteKey);
         }
         /* P1-B8D-R6 - AN EMPTY WORKSPACE FOR A REAL SITE.
            The `empty-site` screenshot used to pass a site that is not in the universe, and since
@@ -132,11 +175,11 @@
            only the rows and the state it reports are replaced. */
         if (opts.emptyWorkspace === true) {
           var d = env.data || {};
-          return Promise.resolve(Object.assign({}, env, {
+          return answer(Object.assign({}, env, {
             data: Object.assign({}, d, { normalizedRows: [], sourceState: 'SOURCE_EMPTY' })
           }));
         }
-        return Promise.resolve(env);
+        return answer(env);
       },
       /* The real one parses a Response; a plain object is already the parsed envelope, which is the
          branch km-api-foundation.js takes for "injected fetchers". Same function contract. */
@@ -151,6 +194,10 @@
       countOf: function (a) {
         return log.filter(function (r) { return r.action === a; }).length;
       },
+      /* P1-B8D-R7 - THE SERVER RECOVERS, which is half of what a retry means. A run that can only
+         fail for ever can prove that a failure is SHOWN and can never prove that a person is able
+         to get out of it; "retry" would be asserted as one more refusal. */
+      stopFailing: function () { opts.fail = null; },
       writes: 0
     };
   };

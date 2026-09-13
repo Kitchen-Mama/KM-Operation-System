@@ -968,11 +968,26 @@
         lab.appendChild(ttl);
       }
       g.appendChild(lab);
-      var subText = labelled
-        ? (fromCents(n._regular_c)
-          + (lay.density === 'spacious' && n.variant_count > 1
-            ? '  \u00b7  ' + n.variant_count + ' colours' : ''))
-        : '';
+      /* P1-B8D-R7 — THE PRICE COMES OFF THE AXIS WHERE THE HOST ASKS FOR THAT.
+         It was printed under every column AND carried by the hover panel, the focus panel and the
+         aria-label, so the axis held the one copy a reader could not act on: two numbers set in
+         10px type forty columns apart cannot be compared by reading them, which is exactly what
+         the MARKER's vertical position is for. Taking it off removes a duplicate, not a fact —
+         `tipLines()` and `ariaFor()` are untouched and both still lead with the price.
+
+         THE VARIANT COUNT IS NOT THE SAME KIND OF THING and it stays either way. "3 colours" says
+         this ONE column stands for three SKUs, which is why a single marker answers for more than
+         one product; it identifies the column rather than restating what the chart has drawn. It
+         appears where it always did — spacious density only.
+
+         THE ROW ITSELF IS ALWAYS EMITTED, empty or not, so `laneRow2` keeps its place and the Y
+         axis, the price range, the markers, the scenario ghosts and the print are untouched. */
+      var variantText = (lay.density === 'spacious' && n.variant_count > 1)
+        ? n.variant_count + ' colours' : '';
+      var subText = !labelled ? ''
+        : (SHOW_AXIS_PRICE_ROW
+          ? (fromCents(n._regular_c) + (variantText === '' ? '' : '  ·  ' + variantText))
+          : variantText);
       g.appendChild(svgText({ x: cx, y: LANE_TOP + lay.laneRow2, 'class': 'xsub',
         'font-size': lay.subPx,
         'data-row': 'b', 'data-printed': String(labelled),
@@ -1040,7 +1055,54 @@
      ONE AT A TIME. `STATE.openPopover` holds an id, not a boolean per icon, so two panels can never be
      open over each other — and closing is a single assignment rather than a sweep.
      ================================================================================================ */
+  /* ================================================================================================
+     WHAT THE HOST DECIDES  (P1-B8D-R7)
+
+     THREE THINGS THIS RENDERER CANNOT WORK OUT FROM ITS ROWS, because the same rows mean opposite
+     things in its two hosts. The PROTOTYPE loads a fixture holding many sites and is a
+     demonstration of the whole component; the OPERATION SYSTEM page hands over the rows of exactly
+     one site, already chosen upstairs, inside a shell that has its own page header and its own
+     filter panel. Every default below is the prototype's existing behaviour, unchanged, so a host
+     that says nothing gets exactly what it got before — and P1-B2A, P1-B2B and P1-B4 keep
+     asserting the contract they were written for, over the fixture they were written against.
+
+       siteOwnedByPage   the page's own chooser is the site control; do not draw a second ladder
+       inlineHelpIcons   the `?` beside View, Detail, Layers, the scope row and the scenario head
+       axisPriceRow      the everyday price printed under each column on the X axis
+
+     THEY ARE ARGUMENTS RATHER THAN A DETECTED CONDITION. "One company in the data" is equally true
+     of a page that narrowed to one site and of a fixture that only ever had one; guessing would
+     make the prototype's behaviour depend on how many sites its fixture happens to contain.
+     ================================================================================================ */
+  var SITE_OWNED_BY_PAGE = false;
+  var SHOW_INLINE_HELP_ICONS = true;
+  var SHOW_AXIS_PRICE_ROW = true;
+
+  /** Append an icon only if one was built. `addInfo(x, infoIcon(...))` reads as what it does. */
+  function addInfo(parent, node) {
+    if (node && parent) parent.appendChild(node);
+    return node;
+  }
+
   function infoIcon(id, heading, paras) {
+    /* P1-B8D-R7 — THE `?` CONTROLS COME OFF THE SCREEN THE HOST ASKED, AND THE HELP THEY
+       HOLD IS NOT DELETED.
+
+       The USER's judgement about the Operation System page: 目前選項已足夠清楚 — View, Detail
+       and Layers say what they are, and four question marks in one toolbar is a row of controls
+       answering questions nobody asked.
+
+       ONE GATE, AT THE SOURCE. Every paragraph of help text stays exactly where it is, in the
+       call that would have shown it, so this is reversible by one argument rather than by an
+       archaeology expedition — which is what 可保留資料／函式 asks for. And NOTHING EMPTY IS LEFT
+       BEHIND: the wrapper is never created and never appended, so there is no zero-width span
+       holding a gap open in a flex row. That is the difference between this and
+       `visibility: hidden`, and the reason the toolbar's spacing does not change.
+
+       THE PAGE-LEVEL BUTTON IS NOT ONE OF THESE. `product-strategy-board.js` owns exactly one `i`
+       button in the page header (§8). It is not built here, so switching these off cannot take
+       it with them. */
+    if (!SHOW_INLINE_HELP_ICONS) return null;
     var wrap = el('span', 'info');
     wrap.setAttribute('data-info', id);
     var btn = el('button', 'info-btn', '?');
@@ -1083,7 +1145,7 @@
   function headingWithInfo(tag, text, id, heading, paras) {
     var h = el('div', 'h-row');
     h.appendChild(el(tag, null, text));
-    h.appendChild(infoIcon(id, heading || text, paras));
+    addInfo(h, infoIcon(id, heading || text, paras));
     return h;
   }
 
@@ -1138,7 +1200,7 @@
     fs.setAttribute('aria-pressed', STATE.fullscreen ? 'true' : 'false');
     fs.addEventListener('click', function () { toggleFullscreen(); });
     view.appendChild(fs);
-    view.appendChild(infoIcon('viewsize', 'How the chart is sized', [
+    addInfo(view, infoIcon('viewsize', 'How the chart is sized', [
       'Auto Fit measures the card and the window and chooses the gridline step, the plot height,'
         + ' the image size and the column width that let the whole chart — both axes, the labels'
         + ' and the legend — sit inside the card without scrolling it.',
@@ -1169,7 +1231,7 @@
       b.addEventListener('click', function () { applyViewMode(m[0]); renderData(); });
       modes.appendChild(b);
     });
-    modes.appendChild(infoIcon('viewmode', 'Clean and Detail', [
+    addInfo(modes, infoIcon('viewmode', 'Clean and Detail', [
       'Clean shows the product images and the everyday price only. Detail turns every layer on.',
       'They are shortcuts that SET the layer switches beside them, not a separate mode — so you can'
         + ' press Clean and then turn one layer back on without the two disagreeing.',
@@ -1236,7 +1298,7 @@
       panel.appendChild(close);
       lay2.appendChild(panel);
     }
-    lay2.appendChild(infoIcon('layers', 'Chart layers', LAYERS.map(function (l) {
+    addInfo(lay2, infoIcon('layers', 'Chart layers', LAYERS.map(function (l) {
       return l.label + ' — ' + l.help;
     })));
     box.appendChild(lay2);
@@ -1899,7 +1961,7 @@
     var h = el('div', 'card-h');
     h.appendChild(el('h2', null, 'Site eligibility and missing mappings'));
     h.appendChild(el('span', 'card-sub', site.complete ? site.key : 'aggregate scope'));
-    h.appendChild(infoIcon('eligibility', 'How this page decides what exists', [
+    addInfo(h, infoIcon('eligibility', 'How this page decides what exists', [
       'Order of operations: ' + u.order.join(' → ') + '.',
       'Membership authority: ' + u.membership_authority + '. A product is on this site because a'
         + ' listing row says so — never because the product master knows about it and never because'
@@ -2617,11 +2679,31 @@
 
     var ladder = el('div', 'cmd-fields');
     ladder.id = 'scopeFields';
-    SCOPE_LADDER.forEach(function (dim) {
-      ladder.appendChild(scopeField(dim));
-    });
+    /* P1-B8D-R7 — ONE SET OF SITE CONTROLS ON THE OPERATION SYSTEM PAGE, AND THE STATE THEY
+       SET IS KEPT EITHER WAY.
+
+       Company, Country and Marketplace had two owners on one screen: the page's chooser, which
+       reads the SITE UNIVERSE and can actually change the site, and this ladder, which derives the
+       same three names from the rows of the site already loaded — and, with one site loaded,
+       could only ever render them as read-only context. Two rows of the same three values, the
+       authoritative one above and the powerless one beside the data; and during a site change the
+       two disagreed, with the stale one sitting closer to the numbers.
+
+       WHOSE LADDER IT IS, DECLARED BY THE HOST RATHER THAN GUESSED FROM THE DATA. The prototype
+       loads a fixture holding MANY sites, so there these three are real controls and P1-B4's
+       contract for them is unchanged. The Operation System page hands this renderer the rows of
+       exactly one site, already chosen upstairs, and says so at mount.
+
+       `reconcileSiteState()` runs in BOTH hosts, because that half was never about rendering:
+       correcting STATE to the one value the loaded rows carry is what the model and the site key
+       downstream depend on. */
+    reconcileSiteState();
+    if (!SITE_OWNED_BY_PAGE) {
+      SCOPE_LADDER.forEach(function (dim) { ladder.appendChild(scopeField(dim)); });
+    }
     /* Category and Series close the ladder. They narrow INSIDE the site and cannot widen it, which
-       is why they come after all three site dimensions and not between them. */
+       is why they come after all three site dimensions — which, on the Operation System page, are
+       now the three controls immediately above them in the same panel. */
     ladder.appendChild(categoryField(cats, countBySite, opts));
     ladder.appendChild(seriesField());
     row1.appendChild(ladder);
@@ -2657,6 +2739,27 @@
    * `ALL` IS NOT AN OPTION WHEN THERE IS ONLY ONE VALUE EITHER. Offering "All" beside a single
    * country is offering the same set twice under two names.
    */
+  /**
+   * P1-B8D-R7 — THE CORRECTION, WITHOUT THE SECOND CONTROL.
+   *
+   * `scopeField` did two jobs in one function: it RENDERED a site tier, and on a tier with exactly
+   * one value it also CORRECTED `STATE[dim]` to that value. Only the first job was duplicated. The
+   * second is load-bearing — a STATE reading 'ALL' beside a single value is the same scope
+   * described two ways, and the site key downstream would say "aggregate" about a single site — so
+   * it moves here and runs on every scope render, exactly as often as it did before.
+   */
+  function reconcileSiteState() {
+    var changed = false;
+    SCOPE_LADDER.forEach(function (dim) {
+      var values = scopeDimensionValues(dim);
+      if (values.length === 1 && STATE[dim] !== values[0]) {
+        STATE[dim] = values[0];
+        changed = true;
+      }
+    });
+    if (changed) MODEL = buildModel();
+  }
+
   function scopeField(dim) {
     var LABEL = { company: 'Company', country: 'Country', marketplace: 'Marketplace' };
     var values = scopeDimensionValues(dim);
@@ -2818,8 +2921,10 @@
         + ' pricing_list.currency for the currency. Preview data — the countries, marketplaces,'
         + ' categories and series here are a demonstration fixture, not the live universe.'
     ]);
-    help.id = 'scopeHelp';
-    row.appendChild(help);
+    if (help) {
+      help.id = 'scopeHelp';
+      row.appendChild(help);
+    }
     return row;
   }
 
@@ -3110,6 +3215,14 @@
          putting it away, not undoing their work. Only Reset clears, and only a reload forgets. */
       STATE.meetingOpen = false;
       render();
+      /* P1-B8D-R7 — THE FOCUS GOES BACK TO WHAT OPENED IT, AFTER the render that removes this
+         button from the document. Focusing before the render would be focusing a node that is
+         about to be replaced, and focus would land on <body> anyway — which is where it went
+         until this round: close the drawer with the keyboard and the next Tab started again at
+         the top of the page. `#meetingToggle` is rebuilt by that render, so it is looked up
+         again rather than captured. */
+      var opener = byId('meetingToggle');
+      if (opener && typeof opener.focus === 'function') opener.focus();
     });
     head.appendChild(close);
     d.appendChild(head);
@@ -3355,7 +3468,7 @@
       ? SEL.SCENARIO_UNSAVED_LABEL : 'No scenario');
     badge.id = 'scenarioBadge';
     head.appendChild(badge);
-    head.appendChild(infoIcon('scenario', 'Price scenario', [
+    addInfo(head, infoIcon('scenario', 'Price scenario', [
       'A scenario changes what this page draws, for as long as this page is open. It is held in the'
         + ' page’s memory and nowhere else.',
       'It is never written to the database, a spreadsheet, an export, a saved view or browser storage,'
@@ -4771,6 +4884,15 @@
        what it did before. A caller that passes an adapter gets that one; a caller that passes
        nothing in a page with no fixture loaded gets no board rather than an invented one. */
     opts = opts || {};
+    /* P1-B8D-R7 — THE HOST SAYS WHO OWNS THE SITE, and it says it once, here.
+       A renderer cannot work this out from its rows: "one company in the data" is equally true of a
+       page that narrowed to one site upstream and of a fixture that only ever had one, and those
+       two want opposite things on screen. So it is an ARGUMENT, it defaults to false, and the only
+       caller that passes it is the Operation System page controller — which is also the only
+       caller that has a site chooser of its own. */
+    SITE_OWNED_BY_PAGE = opts.siteOwnedByPage === true;
+    SHOW_INLINE_HELP_ICONS = opts.inlineHelpIcons !== false;
+    SHOW_AXIS_PRICE_ROW = opts.axisPriceRow !== false;
     ADAPTER = opts.adapter || (PREVIEW && PREVIEW.PreviewProductStrategyDataAdapter) || null;
     if (!ADAPTER) {
       throw new Error('psb-board-ui: no adapter. Pass one to PSB_BOARD.mount({adapter}) —'
@@ -4781,10 +4903,20 @@
        navigation rail itself and has no self-test panel, and a board that threw over a missing
        navigation toggle would be a board that only runs in one host. Presentation and Print are
        board features (§8) and are bound wherever they exist. */
+    /* P1-B8D-R7 — ONCE PER BUTTON, NOT ONCE PER MOUNT.
+       `boot()` runs again on every site change, and these four ids live in the PARTIAL rather than
+       in anything the board redraws — so the same node collected a new listener each time. After
+       two site switches, one click on Presentation toggled `STATE.presentation` twice and the
+       button appeared to do nothing at all; after three, Print opened three print dialogs. The
+       node is marked, so a re-mount finds its own work already done. */
     function on(id, ev, fn) {
       var n = byId(id);
-      if (n) n.addEventListener(ev, fn);
-      return !!n;
+      if (!n) return false;
+      var mark = 'data-psb-bound-' + ev;
+      if (n.getAttribute(mark) === 'true') return true;
+      n.setAttribute(mark, 'true');
+      n.addEventListener(ev, fn);
+      return true;
     }
     on('btnRail', 'click', function () { STATE.rail = !STATE.rail; render(); });
     on('btnPresent', 'click', function () {
@@ -4837,6 +4969,24 @@
     });
 
     exposeDevHooks();
+    /* P1-B8D-R7 — THE DERIVED FILTERS BELONG TO THE ROWS THAT ARE NOW LOADED.
+       FOUND BY THE LADDER TRACE: choose Cutting Board on KM · US · Shopify, switch to
+       ResTW · JP · Amazon, and the category menu offered three options with NONE of them
+       selected — because `STATE.category` still held a category that site does not have. The
+       page controller's own comment claimed a re-mount cleared this ("the board is re-mounted
+       with the new adapter, which is what clears them"); it did not. `boot()` swapped ADAPTER and
+       rendered, and every derived choice from the previous site came through untouched.
+
+       `narrowAfterSiteChange()` has always done exactly this work — it drops a category, a
+       series, a currency or a scenario series that the new rows do not offer, and keeps the ones
+       they do. It simply had no caller on this path: it runs when the BOARD's own site ladder
+       changes a tier, and on the Operation System page that ladder is not the thing that changes
+       the site. One call, at the one place a new adapter arrives.
+
+       `reload()` first, because it is what rebuilds CANON from the new adapter and the narrowing
+       is a question about those rows. */
+    reload();
+    narrowAfterSiteChange();
     remeasure();
     render();
     observeContainer();
@@ -4876,6 +5026,16 @@
     /* Stated as data so a suite can assert the seam rather than grep for it. */
     CONTRACT: {
       adapter_is_an_argument: true,
+      /* P1-B8D-R7 — stated as data so a suite can assert the seam rather than grep for it. */
+      site_ladder_is_an_argument: 'mount({ siteOwnedByPage: true }) suppresses it',
+      site_ladder_default: 'rendered (the prototype fixture holds many sites)',
+      site_state_is_reconciled_either_way: true,
+      inline_help_icons_are_an_argument: 'mount({ inlineHelpIcons: false }) suppresses them',
+      inline_help_icons_default: 'rendered',
+      inline_help_text_is_retained_when_suppressed: true,
+      axis_price_row_is_an_argument: 'mount({ axisPriceRow: false }) suppresses the price',
+      axis_price_row_default: 'rendered',
+      price_remains_in: 'tipLines() and ariaFor(), on every column, either way',
       default_adapter: 'PREVIEW (prototype only)',
       fixture_fallback_when_an_adapter_is_given: false,
       /* P1-B7 — WAS 'PSB_BOARD_DEFER === true', WHICH MADE EVERY OTHER HOST CARRY A GLOBAL. The

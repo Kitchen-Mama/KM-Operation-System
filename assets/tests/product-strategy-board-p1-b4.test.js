@@ -1054,10 +1054,11 @@ mut('M8 the drawer joins the layout, so opening a scenario moves every price', f
 
 mut('M9 closing the drawer clears the scenario, so putting a panel away undoes the work',
   function () {
-    var m = withProto(swap('      STATE.meetingOpen = false;\n      render();\n    });\n'
-      + '    head.appendChild(close);',
-      '      STATE.meetingOpen = false;\n      STATE.overrides = {};\n      render();\n    });\n'
-      + '    head.appendChild(close);'));
+    /* P1-B8D-R7 RE-ANCHORED. The close handler now returns the focus to the control that
+       opened the drawer, so the four lines this matched are no longer adjacent. The mutant is
+       unchanged in meaning: clear the overrides while closing. */
+    var m = withProto(swap('      STATE.meetingOpen = false;\n      render();',
+      '      STATE.meetingOpen = false;\n      STATE.overrides = {};\n      render();'));
     function activeAfterClose(pg) {
       if (pg.thrown) return 'THREW';
       H.pickCategory(pg, 'Silicone Spatula');
