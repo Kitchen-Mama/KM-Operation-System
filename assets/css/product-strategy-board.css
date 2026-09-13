@@ -32,6 +32,35 @@
   --risk:     #b3392f;
   --dq:       #5a6474;
 
+  /* ---- P1-B8D-R9 §3 — THE SIMULATION SEMANTIC ------------------------------------------------
+
+     A SCENARIO WAS BEING ANNOUNCED IN THE COLOUR OF A FAULT, and that was not a misreading by the
+     operator: it was literally true. `base.css` declares the Operation System's semantic palette,
+     and `--km-ui-warning` in it is `#e6a620`. Every surface that marked a simulation — the banner
+     (`#fff4ed / #f0c9b4 / #7a3a1c`), the chip (`#fff7ed / #fdba74 / #9a3412`), the panel frame and
+     the chart marks (`#b8860b`, darkgoldenrod) — sat in that family. The page also uses amber for a
+     genuine warning, `--watch`, the finding class that means look at this. So one hue carried two
+     opposite meanings: a thing that went wrong, and a thing the reader deliberately did.
+
+     SO THE COLOUR MOVES TO THE ONE THE SYSTEM ALREADY DECLARES FOR THIS. `--km-ui-utility` is
+     `#8e76a8` — Kitchen Mama's brand purple, declared in `base.css` and, before this, referenced by
+     nothing. It is not warning, it is not danger, and it is the purple the correction asked for.
+     Taking the existing token rather than inventing a sixth violet is the point: there are already
+     four unrelated purples in this repository.
+
+     THE TEXT COLOUR IS NOT THE TOKEN. `#8e76a8` on white is 3.9:1 — fine for a 1px rule, not enough
+     for a sentence. `--scn-ink` is the same hue carried down to 10.1:1 on white and 9.3:1 on the
+     tint, so the statement is readable and the identity is still the brand's.
+
+     COLOUR IS NEVER THE ONLY CARRIER (不得只靠顏色辨識). The banner keeps a SCENARIO tag word, the
+     panel keeps its dashed frame, the chart keeps its dashed stroke and the chip keeps its text. In
+     greyscale, and to a reader who separates no hues at all, every one of them still reads. */
+  --scn-ink:  #4b3a61;      /* the sentence            — 10.1:1 on paper */
+  --scn-mark: #7a5f96;      /* strokes on the chart    —  5.4:1 on paper */
+  --scn-line: #b9a8cd;      /* the frame */
+  --scn-tint: #f7f4fb;      /* the fill */
+  --scn-key:  var(--km-ui-utility, #8e76a8);   /* the system's own token, at full strength */
+
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 
@@ -226,9 +255,10 @@
   border: 1px solid var(--line); border-radius: 8px; background: var(--ground);
   display: flex; flex-direction: column; gap: 8px;
 }
-/* THE ONE STATE THAT MUST NEVER BE MISTAKEN FOR THE OTHER: a dashed amber frame, on screen and on
-   paper, whenever a number anywhere on the page is simulated. */
-.psb-page .scenario.is-on { border: 2px dashed #b8860b; background: #fffdf5; }
+/* THE ONE STATE THAT MUST NEVER BE MISTAKEN FOR THE OTHER: a DASHED frame, on screen and on paper,
+   whenever a number anywhere on the page is simulated. P1-B8D-R9 keeps the dash — which is the half
+   of this that survives greyscale and colour blindness — and moves the hue off amber. */
+.psb-page .scenario.is-on { border: 2px dashed var(--scn-key); background: var(--scn-tint); }
 .psb-page .scenario-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .psb-page .scenario-toggle {
   font: inherit; font-size: 13px; font-weight: 700; cursor: pointer;
@@ -243,7 +273,9 @@
   border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; color: var(--ink-3);
   background: #fff;
 }
-.psb-page .scenario.is-on .scenario-badge { border-color: #d9c9a8; color: #8a6a1e; background: #fdf8ec; }
+.psb-page .scenario.is-on .scenario-badge {
+  border-color: var(--scn-line); color: var(--scn-ink); background: var(--paper);
+}
 /* THE FORM IS A GRID WITH DECLARED COLUMNS, and that is what stops a dropdown from moving the
    chart. Switching Proposed to Everyday changes which ADJUSTMENTS are offered; it must not change
    how many rows the form has, how wide a control is or how tall the panel is. A flex row that
@@ -284,11 +316,21 @@
   border: 1px solid rgba(255, 255, 255, .35); border-radius: 4px; padding: 2px 8px;
   color: #eef2f7; background: rgba(255, 255, 255, .08);
 }
+/* P1-B8D-R9 §3 — THE STATEMENT IS A TAG PLUS A SENTENCE, so the state has a WORD and not only a
+   hue. The tag is the loud half and the sentence is the readable half; neither is decoration. */
 .psb-page .badge-scenario {
-  font-size: 11px; font-weight: 700; letter-spacing: .02em;
-  border: 1px solid #b8860b; border-radius: 4px; padding: 2px 8px;
-  color: #6b4f06; background: #fdf8ec;
+  display: inline-flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  font-size: 11.5px; font-weight: 500; letter-spacing: .01em; line-height: 1.45;
+  border: 0; border-radius: 4px; padding: 0;
+  color: var(--scn-ink); background: transparent;
 }
+.psb-page .badge-scenario-tag {
+  flex: 0 0 auto;
+  font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  padding: 2px 7px; border-radius: 3px;
+  color: var(--paper); background: var(--scn-key);
+}
+.psb-page .badge-scenario-text { flex: 1 1 auto; min-width: 0; }
 
 /* ---------------------------------------------------------------- P1-B2  the DQ ledger ---------- */
 .psb-page .dqlist { display: flex; flex-direction: column; gap: 8px; }
@@ -617,13 +659,21 @@
 }
 .psb-page .psb-viewnav .navbtn.is-active .ic { color: var(--accent); }
 
-/* Empty until a scenario is applied — no height, no border, no reserved space, because a warning
+/* Empty until a scenario is applied — no height, no border, no reserved space, because a notice
    strip that is always present is one a reader has already learned to skip. */
 .psb-page .psb-printbanner:empty { display: none; }
+/* P1-B8D-R9 §3 — THE SHAPE OF `.psb-state`, IN THE SIMULATION COLOUR.
+
+   It was an orange box, so it read as a fault the operator had caused. It is now built like every
+   other state block on this page — a quiet fill, a thin frame and a heavy LEFT BORDER carrying the
+   semantic — which is the difference between "here is something that happened" and "here is
+   something wrong". Deliberately NOT `--psb-state--stop`'s 6px double border: that shape is this
+   page's word for could not be read, and a successful simulation must never borrow it. */
 .psb-page .psb-printbanner {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   margin: 0 0 10px; padding: 8px 12px; border-radius: var(--r);
-  background: #fff4ed; border: 1px solid #f0c9b4; color: #7a3a1c;
+  background: var(--scn-tint); border: 1px solid var(--scn-line);
+  border-left: 4px solid var(--scn-key); color: var(--scn-ink);
   font-size: 12.5px; line-height: 1.45;
 }
 .psb-page .psb-crumbs { margin: 0 0 10px; }
@@ -654,8 +704,18 @@
     break-inside: avoid; page-break-inside: avoid;
   }
   .psb-page .scenario-row, .psb-page .scenario-resets{ display: none !important; }
+  /* P1-B8D-R9 §3 — ON PAPER IT IS BLACK ON WHITE AND IT STILL SAYS SO. The printed page is the
+     artefact that leaves the room, so the one statement that stops a simulated figure being read
+     as a price the company charges is forced to solid black — the tag inverted so it survives a
+     greyscale printer, and the sentence, which names the site and says nothing is saved, kept
+     whole. Colour is not available here at all, which is the reason the tag exists. */
   .psb-page .badge-scenario{
     border: 2px solid #000; color: #000; background: #fff; display: inline-block !important;
+    padding: 2px 8px;
+  }
+  .psb-page .badge-scenario-tag{ background: #000; color: #fff; }
+  .psb-page .psb-printbanner{
+    background: #fff; color: #000; border: 0; border-left: 4px solid #000; border-radius: 0;
   }
   body.has-scenario .psb-page .panel, body.has-scenario .psb-page .catcard, body.has-scenario .psb-page .card{
     border-color: #000;
@@ -1045,9 +1105,12 @@ body.is-fullscreen .psb-page .view > .reco { display: none; }
 .psb-page .cap-msrp { stroke: #8593a7; }
 .psb-page .cap-floor { stroke: #8593a7; }
 /* The scenario: a quiet, consistent outline — a highlight, not an alarm. */
-.psb-page .col.is-scenario .mk-img-plate { stroke: #b8860b; stroke-width: 2; stroke-dasharray: 4 2; }
-.psb-page .scen-link { stroke: #b8860b; stroke-width: 1.25; stroke-dasharray: 3 3; }
-.psb-page .scen-ghost { fill: #fff; stroke: #b8860b; stroke-width: 1.5; }
+/* P1-B8D-R9 §3 — the ghost, the link and the simulated column's plate move with the banner and the
+   chip. The DASH PATTERN is untouched: on the chart it is the only marking that survives a
+   greyscale print, and it is what separates a simulated marker from a real one at a glance. */
+.psb-page .col.is-scenario .mk-img-plate { stroke: var(--scn-mark); stroke-width: 2; stroke-dasharray: 4 2; }
+.psb-page .scen-link { stroke: var(--scn-mark); stroke-width: 1.25; stroke-dasharray: 3 3; }
+.psb-page .scen-ghost { fill: #fff; stroke: var(--scn-mark); stroke-width: 1.5; }
 
 /* ---------------------------------------------------------------- scenario panel ----------------- */
 .psb-page .scenario-ctx {
@@ -1064,7 +1127,7 @@ body.is-fullscreen .psb-page .view > .reco { display: none; }
 .psb-page .scenario-reach, .psb-page .scenario-applied {
   margin: 0; font-size: 12px; color: var(--text-secondary);
 }
-.psb-page .scenario-applied { color: #6b4f06; }
+.psb-page .scenario-applied { color: var(--scn-ink); }
 .psb-page .btn {
   font: inherit; height: var(--btn-height); border-radius: var(--btn-radius);
   padding: 0 var(--btn-padding-inline); font-size: var(--btn-font-size);
@@ -1210,8 +1273,10 @@ body.is-fullscreen .psb-page .view > .reco { display: none; }
   font-size: 11.5px; font-weight: 600; white-space: nowrap;
   background: #f1f5f9; border: 1px solid var(--line); color: var(--ink-3);
 }
+/* P1-B8D-R9 §3 — the chip, the banner and the chart now answer with one vocabulary. It used to be
+   Tailwind orange-50/300/800, which is the palette three other pages use for a warning. */
 .psb-page .cmd-chip--on {
-  background: #fff7ed; border-color: #fdba74; color: #9a3412;
+  background: var(--scn-tint); border-color: var(--scn-line); color: var(--scn-ink);
 }
 
 /* =================================================================================================

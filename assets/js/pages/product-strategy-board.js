@@ -270,10 +270,15 @@
      *   siteOwnedByPage             the chooser above is the site control  (R7)
      *   inlineHelpIcons             the `?` row came off the screen        (R7)
      *   axisPriceRow                the price is in the tooltip, not twice (R7)
-     *   chartToolbar                §4 — the whole View/Detail/Layers row  (R8)
      *   inlineFilterNotes           §3 — no sentence hanging off a control (R8)
      *   clearScenarioOnSiteChange   §8 — a simulation belongs to its site  (R8)
+     *   chartFullscreen             §4 — ONE button, not the row         (R9)
      *   siteIdentity                the canonical key, which only this controller knows
+     *
+     * R9 REVERSES R8 ON THE TOOLBAR AND KEEPS EVERY OTHER LINE. `chartToolbar` is absent from this
+     * call rather than set to `true`, because the renderer renders the row by default and a host
+     * that declares the default is a host asserting something it does not actually decide. What
+     * this page decides is the ONE control it will not show, and that is the line that is here.
      *
      * THE IDENTITY IS PASSED RATHER THAN DERIVED. The renderer can read a company off its rows, but
      * "the site these rows are from" and "the site the operator has selected" are the same fact
@@ -287,8 +292,8 @@
         siteOwnedByPage: true,
         inlineHelpIcons: false,
         axisPriceRow: false,
-        chartToolbar: false,
         inlineFilterNotes: false,
+        chartFullscreen: false,
         clearScenarioOnSiteChange: true,
         siteIdentity: [sc.company, sc.country, sc.marketplace].join('|')
       });

@@ -850,3 +850,39 @@ half of it.
 
 `getOperationDb` / `getTable` keep their existing `MERGE_INTO_WORKSPACE_API` disposition from §3.1 —
 this census counts their callers rather than reopening the decision.
+
+---
+
+## P1-B8D-R9 — THE MAINLINE IS UNCHANGED; ONE COUNT MOVED AND IS EXPLAINED (2026-09-13, HEAD `d3f7796`)
+
+**The rule adopted at R8 stands verbatim and is not restated here.** R9 changed no page's transport,
+reclassified no module, and started no S round.
+
+### What moved, and the diff that moved it
+
+`index.html` loads **79** scripts, not 78. The one that was added is
+`assets/js/utils/km-repo-asset-manifest.js` — a **generated directory listing** of every file under
+`assets/img`, consulted by the shared image policy so that a reference to a file the repository does
+not contain is refused **before** a request is issued rather than after a 404.
+
+It is classified **`NO_DATA_ACCESS`**, and the reasoning matters for the next person who adds a
+compiled-in file:
+
+> It is not `PRODUCTION_FIXTURE_OR_STATIC_DATA`, because that class is for **domain data** a page
+> renders — map topology, place names. This is a statement about the **repository**, not about the
+> business: it answers "is this file in the deployment", which is the same class of fact as a build
+> stamp. Counting it as a fixture would imply there is an API that ought to serve it, and there is
+> not.
+
+The count and the explanation are asserted together —
+`product-strategy-corrections-p1-b8d-r9.test.js` §F re-counts `index.html` and compares it to the
+number the inventory states, so a total cannot drift from the tree it describes.
+
+### The handoff
+
+The S-series kickoff package is now a document of its own:
+[`P1_TO_S2_HANDOFF.md`](P1_TO_S2_HANDOFF.md). It carries the S2-A / S2-B / S2-C specifications, the
+contract-first rule, the first round's execution order, and the read-only image remediation that
+P1 could identify but may not fix — [`IMAGE_REFERENCE_REMEDIATION_REPORT.md`](IMAGE_REFERENCE_REMEDIATION_REPORT.md).
+
+**S2 runtime has not been started and may not be started under a P1 round.**

@@ -859,7 +859,12 @@ mut('J16 the asset capture retypes the mappings instead of reading the contract 
 
 mut('J17 the visual runner drops the policy from its page, so every image silently vanishes — G3',
   function () {
-    var mutated = swapIn(SRC.runner, '|km-image-reference-policy/', '/');
+    /* P1-B8D-R9 RE-ANCHORED THIS, and the reason is worth keeping: the anchor was the TAIL of the
+       WANTED regex, so appending one more alternative to that regex broke a mutant about something
+       else entirely. R9 added `|km-repo-asset-manifest` for the 404 gate. The anchor is now the
+       alternative ITSELF, which is what the mutant is about and is stable against the next script
+       somebody adds. */
+    var mutated = swapIn(SRC.runner, 'km-image-reference-policy|', '');
     return /km-image-reference-policy/.test(SRC.runner)
       && !/WANTED = [^\n]*km-image-reference-policy/.test(mutated);
   });

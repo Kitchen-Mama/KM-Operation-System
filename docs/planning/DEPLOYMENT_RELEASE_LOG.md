@@ -2245,3 +2245,155 @@ KNOWN AND NOT FIXED
 ```
 
 **STATUS: LOCAL COMMIT — NOT PUSHED — FRONTEND REDEPLOY REQUIRED — NO APPS SCRIPT SYNC.**
+
+---
+
+## P1-B8D-R9 — A SUCCESS PAINTED AS A FAULT, A ROW REMOVED TOO WIDELY, AND A 404 NOBODY COULD SEE
+
+**2026-09-13 · local commit on `feature/product-strategy-board-p0` · NOT PUSHED**
+
+```
+PRE  HEAD   d3f779671d4561030df5716fb447329f777732df   (R8, live-accepted by the USER)
+CACHE TOKEN lifecycle-p1b8dr8-20260913  ->  imagetoolbar-p1b8dr9-20260913   (35 refs, 0 stale)
+
+WHAT CAME BACK FROM THE USER'S LIVE ACCEPTANCE OF R8
+-------------------------------------------------------------------------------------------------------
+  PASSED   A->B site switch · teardown before the next read · leave-and-return · scenario site scope
+           · the drawer close control · the Category sentence · six distinct views
+
+  Sec 3    "the banner after applying a Meeting scenario is an orange warning box"
+           IT LITERALLY WAS. base.css declares --km-ui-warning: #e6a620, and every surface marking a
+           simulation sat in that family: the banner #fff4ed/#f0c9b4/#7a3a1c, the chip Tailwind
+           orange-50/300/800, the panel frame and the chart strokes #b8860b. This page ALSO uses
+           amber for --watch, the finding class that means look at this. One hue, two opposite
+           meanings: a thing that went wrong, and a thing the reader deliberately did.
+           FIXED by adopting --km-ui-utility (#8e76a8) -- the Operation System's own brand purple,
+           declared in base.css and, before this, referenced by nothing. Not a sixth invented violet.
+           The text colour is NOT the token (#8e76a8 on white is 3.9:1, fine for a rule and not for a
+           sentence); --scn-ink carries the same hue to 10.1:1. Colour is never the only carrier: a
+           SCENARIO tag word, the dashed panel frame and the dashed chart stroke all survive
+           greyscale. And the sentence now says the OTHER way a simulation ends -- R8 made a site
+           change clear it and the notice still promised only a reload.
+
+  Sec 4    "only remove Fullscreen. Restore the other toolbar controls."
+           R8 READ THE PREVIOUS INSTRUCTION TOO WIDELY and removed nine. Reversed: Auto Fit,
+           Comfortable, Clean, Detail, Layers, Size and Reset view are back; Fullscreen is not, and
+           is NOT BUILT rather than hidden. Nothing was rewritten to bring them back -- R8 suppressed
+           the row at one `return null` and R9 restores it at the same line, so there is one builder
+           and no production-only variant.
+           WHY FULLSCREEN STAYS OUT: it is not a way of drawing the chart, it is a way of replacing
+           the PAGE -- a fixed overlay over the whole window with the application's own header
+           underneath it. R8 found what happens when this page paints over the shell's chrome.
+           NO SUITE HAD EVER PRESSED ONE OF THOSE CONTROLS. R8 removed nine and every assertion
+           stayed green, because they all counted elements. R9's section B clicks each one and
+           measures what moved.
+
+  Sec 5    "multiple product image GET 404 in devtools"
+           THE POLICY COULD ANSWER ONE QUESTION about a relative reference -- does it NAME a file, or
+           is it an opaque Drive id. `assets/img/products/CO9999-X.jpg` names one perfectly. Whether
+           it is IN THE REPOSITORY was left to the browser, which answers by making the request.
+           AND THE CHART MARKER HAD NO FALLBACK, because it is an SVG <image> and the onerror added
+           in P1-B8C-R3 was written for <img>. A 404 left a plate still classed image-marker with
+           nothing in it: an empty frame promising a photograph.
+           FIXED with a GENERATED directory listing (km-repo-asset-manifest.js, 145 files under
+           assets/img) that the shared policy consults, plus an error handler on the marker. One
+           policy, four consumers, so all four are fixed at once.
+
+THE DEFAULTS POINT IN OPPOSITE DIRECTIONS, DELIBERATELY
+-------------------------------------------------------------------------------------------------------
+  A MISSING POLICY fails CLOSED -- it is what stops `javascript:` reaching src.
+  A MISSING MANIFEST fails OPEN -- it only ever REMOVES images, so a page that loaded one and not the
+  other would otherwise lose every photograph in the application.
+
+WHAT THE LIVE DATA SAID ABOUT THE 404s, AND IT IS NOT WHAT THE REPORT GUESSED
+-------------------------------------------------------------------------------------------------------
+  The report suggested the 404s were discontinued SKUs. THE LIVE DATA DOES NOT SUPPORT THAT: all 60
+  rows of the 2026-09-12 production sample are `Active`, and the capture records that all 495 rows in
+  the universe are. Four are `Phasing Out` by LIFECYCLE, but they are Active listings and belong on
+  the board. INACTIVE_SKU_SHOULD_BE_EXCLUDED is an empty category on this evidence, and no SKU was
+  excluded. Of 51 distinct live SKUs, 45 have a repo file named for them and 6 do not -- all six
+  Active, classified ACTIVE_SKU_MISSING_IMAGE. Details:
+  docs/planning/IMAGE_REFERENCE_REMEDIATION_REPORT.md. The DB fix is S2; a P1 round may not write.
+
+BROWSER ACCEPTANCE (production lifecycle, activated, live-derived capture)
+-------------------------------------------------------------------------------------------------------
+  seven viewports   horizontalOverflow 0 everywhere INCLUDING 390 with the row restored
+                    toolbar 4 groups / 6 controls / 6 tabbable · fullscreen 0 by id AND by name
+                    chart 1 · `?` 0 · X-axis price 0 · tooltip carries the price
+                    at 390 the row scrolls inside its own box (24px) rather than widening the page
+  images            image resource failures 0 · other resource failures 0 · broken <img> 0
+                    failed chart markers 0 · manifest 145 files, loaded on the page
+  javascript        uncaught exceptions 0 · console.error 2 (renderHomepage, initSkuUnifiedScroll --
+                    pre-existing shell defects, 2 before and 2 after, NOT image failures)
+  six views         6 distinct SHA-256
+  thirteen states   photographed, including scenario-active
+  drawer            all 7 viewports: count 1, flex/visible/opacity 1, 30x30 at y=68, inside the
+                    drawer header, elementFromPoint hits the button itself, in the tab order
+  print             print-scenario-active.pdf, 937,865 bytes, the scenario statement in black on white
+
+TESTS
+-------------------------------------------------------------------------------------------------------
+  NEW   product-strategy-corrections-p1-b8d-r9.test.js   151 passed / 0 failed / 17 mutants / 0
+        survived, three consecutive stable runs
+  27 Product Strategy + product-pricing suites all exit 0, 0 survived
+  UPDATED because the contract deliberately changed:
+    lifecycle-p1-b8d-r8  section E inverted (the row is back, one button is not); K2/K3 re-aimed
+    site-selection-p1-b8d-r5  G8/G9 back to what they said before R8; G7 unchanged -- it was always
+                              the assertion that was about the defect
+    image-resolution-p1-b8c-r3  J17 re-anchored: its anchor was the TAIL of the runner's WANTED
+                              regex, so appending one alternative broke a mutant about something else
+    activation-p1-b8d  H5/H6: the manifest joins the co-deployed set, 34 -> 35 refs
+
+FILES
+-------------------------------------------------------------------------------------------------------
+  shipped       assets/js/product-strategy/psb-board-ui.js   SHOW_CHART_FULLSCREEN, the marker error
+                                                             path, the banner tag and wording
+                assets/js/pages/product-strategy-board.js    chartToolbar dropped, chartFullscreen: false
+                assets/css/product-strategy-board.css        the simulation semantic (4 tokens)
+                assets/js/utils/km-image-reference-policy.js the manifest gate, 2 new reasons
+                assets/js/utils/km-repo-asset-manifest.js    NEW -- generated
+                index.html                                   35 token refs, manifest before the policy
+  tooling       tools/assets/build-repo-asset-manifest.js    NEW -- the generator
+  harness       assets/tests/_p1b8c-interactions.js          chartShape, scenarioLook, r9step,
+                                                             toolbar-functions, scenario-appearance
+                assets/tests/_p1b8c-replay.js                forceBadImage
+                assets/tests/_p1b8c-visual-runner.js         the r9 block, the resource/JS error split
+                                                             in the page HEAD, manifest in WANTED
+                assets/tests/_release-order.js               token appended
+  docs          docs/planning/IMAGE_REFERENCE_REMEDIATION_REPORT.md   NEW
+                docs/planning/P1_TO_S2_HANDOFF.md                     NEW
+                docs/planning/S_SERIES_FRONTEND_API_MIGRATION_INVENTORY.md
+                docs/planning/API_MIGRATION_MASTER_PLAN.md
+                docs/planning/PHASE_2_BACKLOG.md
+                docs/planning/DEPLOYMENT_RELEASE_LOG.md
+
+A MISTAKE THIS ROUND MADE AND CORRECTED, WORTH RECORDING
+-------------------------------------------------------------------------------------------------------
+  The resource-error listener was first written into assets/tests/_p1b8c-acceptance.html. That file
+  is an ARTIFACT: buildPage() regenerates it on every measurement, so the edit survived exactly until
+  the next run and then reported zero for ever. Both counts passed VACUOUSLY. It lives in the page
+  BUILDER now. The page builder is the page.
+
+DEPLOYMENT
+-------------------------------------------------------------------------------------------------------
+  APPS_SCRIPT_SYNC_REQUIRED   NO      .gs files changed: 0
+  FRONTEND_DEPLOY_REQUIRED    YES     six shipped files move together on one token
+  DB / Sheets / Drive writes  0       action contract unchanged · feature flag unchanged
+  Release identity            unchanged  F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11
+  Rollback                    unchanged: PRODUCT_STRATEGY_ENABLED_ = false, save, new version, update
+                              the existing deployment. Rollback needs no frontend deploy.
+
+KNOWN AND NOT FIXED
+-------------------------------------------------------------------------------------------------------
+  · 390px: the shell's fixed 240px sidebar still leaves a ~118px content column. Shell-level, Phase 2
+    B2-2. The restored toolbar handles it correctly -- it scrolls inside its own box and the page
+    does not widen -- and the drawer's close control is correct at 390 (x=346, 30x30, hit-tested).
+  · Two console.error lines (renderHomepage, initSkuUnifiedScroll) are pre-existing and unrelated.
+    2 before, 2 after. They are NOT image failures and are now counted on a separate axis.
+  · Escape still does not close the price-adjustment drawer. Phase 2 B2-5.
+  · The live-derived capture's image addresses are REDACTED, so the acceptance run draws fallback
+    markers rather than photographs. A rendered photograph is proven by the R3 asset capture and its
+    suite instead, over the seven operator-asserted mappings. Recorded as an evidence boundary.
+```
+
+**STATUS: LOCAL COMMIT — NOT PUSHED — FRONTEND REDEPLOY REQUIRED — NO APPS SCRIPT SYNC.**

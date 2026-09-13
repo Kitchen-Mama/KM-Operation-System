@@ -2,7 +2,10 @@
 
 > **Round:** P1-B8D-R8 §9. **READ-ONLY CENSUS. No page runtime outside Product Strategy was modified.**
 > **Repo:** `Operation System` · **Branch:** `feature/product-strategy-board-p0` · **PRE HEAD:** `d7a6061`.
-> **Scope:** the 78 scripts `index.html` actually loads, in load order. A file nothing loads is not a
+> **Scope:** the scripts `index.html` actually loads, in load order — **LOADED_SCRIPTS: 79**
+> (78 when this census was taken at R8; the one that moved it is named in §1). That number is
+> re-counted from `index.html` by `product-strategy-corrections-p1-b8d-r9.test.js` §F, so it cannot
+> drift from the file it describes. A file nothing loads is not a
 > production data path, and counting one would inflate this inventory with code that cannot run.
 > **Method:** every source read with comments stripped before anything was counted, then each module
 > read by hand where the signal was ambiguous. Evidence is a file and a line, never an impression.
@@ -44,10 +47,33 @@ as a browser bypass, and they are not counted here: this census reads `assets/js
 | `DIRECT_EXTERNAL_FETCH` | **1** | A raw `fetch` that is not a data read (the partial loader; see §4) |
 | `PRODUCTION_FIXTURE_OR_STATIC_DATA` | **5** | Static reference data compiled into the bundle |
 | `DOM_OR_LOCALSTORAGE_AS_DATA_SOURCE` | **8** | Browser storage holding domain data rather than a UI preference |
-| `NO_DATA_ACCESS` | **40** | Renderers, utilities, layout, i18n |
+| `NO_DATA_ACCESS` | **41** | Renderers, utilities, layout, i18n (40 at R8, +1 at R9 — see below) |
 
 Totals exceed 78 because a module can be in two classes: `inventory-replenishment.js` is a
 `LEGACY_API_WRAPPER` **and** keeps allocation drafts in `sessionStorage`.
+
+### The one count that moved, and the diff that moved it (P1-B8D-R9)
+
+**79 scripts are loaded now, not 78, and this is the line that says so.** §7 of the R9 correction is
+explicit that a changed number must be explained by the round's actual diff and never adjusted
+quietly, so:
+
+| | |
+|---|---|
+| Added | `assets/js/utils/km-repo-asset-manifest.js` |
+| Class | `NO_DATA_ACCESS` |
+| Why | It is a **generated directory listing** — the repo-relative path of every file under `assets/img`, produced by `tools/assets/build-repo-asset-manifest.js`. It performs no I/O of any kind: no `fetch`, no transport, no storage, no DOM. It is read only by `km-image-reference-policy.js`. |
+| Why it is not `PRODUCTION_FIXTURE_OR_STATIC_DATA` | That class is for **domain data** compiled into the bundle — map topology, place names — data a page renders. This is a statement about the REPOSITORY, not about the business: it answers “is this file in the deployment”, which is the same class of fact as a build stamp. Counting it as a fixture would imply there is an API that ought to serve it, and there is not. |
+
+**No module was reclassified.** `STANDARD_API`, `LEGACY_API_WRAPPER`, `DIRECT_EXTERNAL_FETCH`,
+`PRODUCTION_FIXTURE_OR_STATIC_DATA` and `DOM_OR_LOCALSTORAGE_AS_DATA_SOURCE` are the same five
+numbers R8 measured. R9 changed one page's runtime (Product Strategy) and one shared utility
+(`km-image-reference-policy.js`, still `NO_DATA_ACCESS` — it classifies a string and fetches
+nothing), and added the file above.
+
+`product-strategy-corrections-p1-b8d-r9.test.js` §F asserts this document still names
+`km-repo-asset-manifest.js` and still reports 5 / 19, so a future edit cannot move a total without
+the explanation going with it.
 
 **Zero `google.script.run`. Zero `XMLHttpRequest` calls. Zero direct `docs.google.com` /
 `sheets.googleapis.com` reads.** Every backend byte in this application arrives over one HTTPS
@@ -215,7 +241,14 @@ one is a scope decision rather than an engineering finding.
 
 ---
 
-## 9. What this round actually changed
+## 9. What each round actually changed
 
-Nothing in this document, except Product Strategy's own row, describes code this round touched.
-§12 forbids modifying other pages' runtime and none was modified. This is a census and a plan.
+Nothing in this document, except Product Strategy's own row, describes code these rounds touched.
+Both R8 and R9 forbid modifying other pages' runtime and none was modified. This is a census and
+a plan.
+
+**P1-B8D-R9** added `km-repo-asset-manifest.js` (`NO_DATA_ACCESS`, §1) and gave
+`km-image-reference-policy.js` two new refusal reasons. Neither is a data path and neither changes
+any page's transport. The image remediation that follows from them is **read-only in P1** and is
+carried into S2 by [`IMAGE_REFERENCE_REMEDIATION_REPORT.md`](IMAGE_REFERENCE_REMEDIATION_REPORT.md)
+and [`P1_TO_S2_HANDOFF.md`](P1_TO_S2_HANDOFF.md) §6.

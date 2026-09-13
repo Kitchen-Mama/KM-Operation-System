@@ -156,7 +156,12 @@ function buildPage(opts) {
   /* P1-B8C-R3 added km-image-reference-policy.js, and it is NOT optional here. The adapter's
      imageStateOf fails CLOSED without it, so a page that skipped it would photograph a board with no
      photographs and report that as the measurement. */
-  var WANTED = /product-strategy|km-product-pricing|km-api-foundation|km-transport|utils\/tab-rail|km-image-reference-policy/;
+  /* P1-B8D-R9 §5 added km-repo-asset-manifest.js, and it is NOT optional here either — for the
+     OPPOSITE reason the policy is not. The policy fails CLOSED without its file, so omitting it
+     would photograph a board with no photographs. The manifest fails OPEN, so omitting IT would
+     photograph a board whose 404 gate is switched off while every assertion about the gate passes
+     against the Node copy. A harness that loads one and not the other measures neither. */
+  var WANTED = /product-strategy|km-product-pricing|km-api-foundation|km-transport|utils\/tab-rail|km-image-reference-policy|km-repo-asset-manifest/;
   var scripts = (index.match(/<script src="([^"]+)"><\/script>/g) || [])
     .map(function (t) { return /src="([^"]+)"/.exec(t)[1]; })
     .filter(function (s) { return WANTED.test(s); })
@@ -172,6 +177,43 @@ function buildPage(opts) {
     '  <meta name="viewport" content="width=device-width, initial-scale=1.0">',
     '  <base href="../../">',
     '  <title>P1-B8C acceptance</title>',
+    /* ============================================================================================
+       P1-B8D-R9 §5 — THREE FAILURES THAT LOOK ALIKE IN A CONSOLE AND ARE NOT ALIKE AT ALL.
+
+       §5 is explicit that a run must report a JavaScript exception, a network 404 and an expected
+       image fallback as three separate numbers. Chrome writes all three into the same devtools pane
+       in the same red, which is how a page full of 404s was read as "some console noise".
+
+       A RESOURCE FAILURE AND A SCRIPT FAILURE ARRIVE ON THE SAME EVENT and the only thing that
+       tells them apart is where it was aimed. A failed <img>, <script> or <link> fires `error` AT
+       THE ELEMENT, and it only reaches a window listener in the CAPTURE phase, because resource
+       errors do not bubble. A thrown exception fires at `window`. So: one listener with capture,
+       one without, split on `e.target`, and neither can count the other.
+
+       IT IS IN THE HEAD, BEFORE EVERY OTHER SCRIPT, and it is emitted HERE rather than written into
+       the generated file — which is the mistake this round made once already. `_p1b8c-acceptance.
+       html` is an ARTIFACT: every run overwrites it, so an edit to it survives exactly until the
+       next measurement and then reports zero for the rest of time. The page builder is the page.
+       ============================================================================================ */
+    '  <script>',
+    '    window.__resourceErrors = [];',
+    '    window.__jsErrors = [];',
+    '    window.addEventListener("error", function (e) {',
+    '      var t = e && e.target;',
+    '      if (!t || t === window || t === document) return;',
+    '      try {',
+    '        window.__resourceErrors.push({',
+    '          tag: String(t.tagName || "").toLowerCase(),',
+    '          src: t.currentSrc || t.src',
+    '            || (t.getAttribute && (t.getAttribute("href") || t.getAttribute("data-src"))) || ""',
+    '        });',
+    '      } catch (x) {}',
+    '    }, true);',
+    '    window.addEventListener("error", function (e) {',
+    '      if (e && e.target && e.target !== window && e.target !== document) return;',
+    '      try { window.__jsErrors.push(String((e && e.message) || e)); } catch (x) {}',
+    '    });',
+    '  </script>',
     '  ' + links,
     '</head>',
     '<body>',
@@ -274,6 +316,7 @@ function bootScript(opts) {
     '        ' + JSON.stringify(Object.assign({}, opts.hang ? { hang: opts.hang } : {},
       opts.emptyWorkspace ? { emptyWorkspace: true } : {},
       opts.noCategories ? { noCategories: true } : {},
+      opts.forceBadImage ? { forceBadImage: true } : {},
       opts.delayMs ? { delayMs: opts.delayMs } : {},
       opts.failOnly ? { failOnly: opts.failOnly } : {},
       opts.slowSite ? { slowSite: opts.slowSite, slowMs: opts.slowMs || 300 } : {})) + '));',
@@ -586,6 +629,100 @@ function measureScript(cap) {
        from the TAB ORDER and not merely from view, the sentence has to be gone from UNDER the
        control and present in the state host, and the close button has to be the thing PAINTED at
        its own centre - which it was not, at any viewport, before this round. */
+    /* ============================================================================================
+       P1-B8D-R9. Four questions this round added, none of which an earlier block could answer.
+
+       1. §4 THE ROW IS BACK AND ONE BUTTON IS NOT. `chartToolbarControls` alone cannot tell "the
+          toolbar returned" from "the toolbar returned WITH Fullscreen", so the groups are listed by
+          id and fullscreen is counted by three separate tests — the id, the accessible name and the
+          visible text — because a control renamed is a control still there.
+
+       2. §3 THE SCENARIO NOTICE IS NOT PAINTED LIKE A FAULT. Measured as COMPUTED COLOUR, not as a
+          class name: a stylesheet assertion proves what the rule says, and this round is about what
+          the operator SEES. The stop-state's own computed border is measured alongside it, so
+          "different from a refusal" is a comparison rather than a claim.
+
+       3. §5 THE THREE KINDS OF FAILURE, COUNTED APART. `__resourceErrors` is every <img>/<script>/
+          <link> that failed to load (a 404 on a server, ERR_FILE_NOT_FOUND under file://);
+          `__jsErrors` is every uncaught exception; the fallback counts are the page CORRECTLY
+          reporting a missing picture. A round that adds the first to the second and calls the total
+          "console noise" is how these survived.
+
+       4. §5 THE CHART'S OWN IMAGES. `document.images` does not include SVG <image>, so every
+          measurement of "broken images" this harness has ever made was blind to the markers on the
+          chart — which are the only product photographs on the default view. */
+    '  function r9() {',
+    '    var byId = function (i) { return document.getElementById(i); };',
+    '    var fsById = all("#mode-fullscreen").length;',
+    '    var fsByName = all("button, [role=button]").filter(function (b) {',
+    '      var t = ((b.getAttribute("aria-label") || "") + " " + (b.textContent || "")).toLowerCase();',
+    '      return t.indexOf("fullscreen") >= 0; }).length;',
+    '    var groups = all("#chartControls .ctl-group").map(function (g) {',
+    '      return (g.getAttribute("data-group") || "?") + ":"',
+    '        + [].slice.call(g.querySelectorAll("button")).map(function (b) { return b.id || "?"; }).join("+"); });',
+    '    var ctl = byId("chartControls");',
+    '    var ctlBox = ctl ? ctl.getBoundingClientRect() : null;',
+    /* THE TOOLBAR MUST WRAP INSIDE THE CARD RATHER THAN WIDEN THE PAGE. Its own scrollWidth against
+       its own clientWidth is the only measurement that separates "it wrapped" from "it pushed". */
+    '    var ctlOverflow = ctl ? Math.round(ctl.scrollWidth - ctl.clientWidth) : null;',
+    '    var ban = byId("banner");',
+    '    var bs = ban ? getComputedStyle(ban) : null;',
+    '    var tag = document.querySelector(".badge-scenario-tag");',
+    '    var tagS = tag ? getComputedStyle(tag) : null;',
+    '    var chipOn = document.querySelector(".cmd-chip--on");',
+    '    var chipS = chipOn ? getComputedStyle(chipOn) : null;',
+    '    var stop = document.querySelector(".psb-state--stop");',
+    '    var stopS = stop ? getComputedStyle(stop) : null;',
+    '    var svgImgs = all("#view svg image.mk-img");',
+    '    var plates = all("#view svg .mk-img-plate");',
+    '    return {',
+    '      fullscreenById: fsById,',
+    '      fullscreenByName: fsByName,',
+    '      toolbarGroups: groups,',
+    '      toolbarIds: all("#chartControls button").map(function (b) { return b.id || "?"; }),',
+    '      toolbarBox: ctlBox ? { w: Math.round(ctlBox.width), h: Math.round(ctlBox.height) } : null,',
+    '      toolbarInternalOverflow: ctlOverflow,',
+    '      densityNote: byId("densityNote") ? String(byId("densityNote").textContent || "").slice(0, 40) : null,',
+    /* P1-B8D-R9 — TWO BACKSLASHES, AND THE ONE THAT WAS MISSING ATE EVERY LETTER S.
+
+       This whole block is JAVASCRIPT INSIDE A JAVASCRIPT STRING. In a single-quoted literal an
+       unknown escape collapses to the character itself, so a single-escaped `\s` emitted a bare
+       `s`, and the regex the browser actually compiled was `/s+/g` — which replaces every run of
+       the letter s with a space. The measured banner came back as "1  imulated price override
+       ... The e are not price  the company charge ".
+
+       IT WAS IN R8'S `filterNotes` LINE TOO, and no assertion ever noticed, because both sides
+       compared against an EMPTY list: the text was only ever read back when the measurement was
+       expected to be empty. A probe that mangles what it reports is fine right up until somebody
+       reads it — which is what §3 asked for this round.
+
+       Both occurrences are fixed. There is no other single-escaped character class in this file. */
+    '      bannerText: ban ? String(ban.textContent || "").replace(/\\s+/g, " ").trim() : "",',
+    '      bannerTag: tag ? String(tag.textContent || "").trim() : null,',
+    '      bannerBg: bs ? bs.backgroundColor : null,',
+    '      bannerColor: bs ? bs.color : null,',
+    '      bannerBorderLeft: bs ? (bs.borderLeftWidth + " " + bs.borderLeftStyle + " " + bs.borderLeftColor) : null,',
+    '      bannerTagBg: tagS ? tagS.backgroundColor : null,',
+    '      chipBg: chipS ? chipS.backgroundColor : null,',
+    '      chipColor: chipS ? chipS.color : null,',
+    '      stopBorderLeft: stopS ? (stopS.borderLeftWidth + " " + stopS.borderLeftStyle + " " + stopS.borderLeftColor) : null,',
+    '      ghostStroke: (function () { var gh = document.querySelector(".scen-ghost");',
+    '        return gh ? getComputedStyle(gh).stroke : null; }()),',
+    '      svgImages: svgImgs.length,',
+    '      svgImagePlates: plates.length,',
+    '      svgImagesFailed: all("#view svg [data-image-failed=\'true\']").length,',
+    '      imageMarkers: all("#view svg [data-role=\'image-marker\']").length,',
+    '      fallbackMarkers: all("#view svg [data-role=\'fallback-marker\']").length,',
+    '      resourceErrors: (window.__resourceErrors || []).slice(),',
+    '      resourceErrorCount: (window.__resourceErrors || []).length,',
+    '      imageResourceErrors: (window.__resourceErrors || []).filter(function (r) {',
+    '        return r.tag === "img" || r.tag === "image"; }).length,',
+    '      jsErrors: (window.__jsErrors || []).slice(),',
+    '      jsErrorCount: (window.__jsErrors || []).length,',
+    '      manifestLoaded: !!window.KM_REPO_ASSET_MANIFEST,',
+    '      manifestCount: window.KM_REPO_ASSET_MANIFEST ? window.KM_REPO_ASSET_MANIFEST.count : null',
+    '    };',
+    '  }',
     '  function r8() {',
     '    var tools = all("#chartControls button, .chartctl button");',
     '    var tabbable = tools.filter(function (b) {',
@@ -603,7 +740,7 @@ function measureScript(cap) {
     '      var r = n.getBoundingClientRect();',
     '      return r.width > 0 || r.height > 0;',
     '    }).map(function (n) { return (n.id || n.className) + ": "',
-    '      + String(n.textContent || "").replace(/\s+/g, " ").trim().slice(0, 60); });',
+    '      + String(n.textContent || "").replace(/\\s+/g, " ").trim().slice(0, 60); });',
     '    var cb = document.getElementById("scenarioDrawerClose");',
     '    var drawerOpen = !!(document.getElementById("scenarioDrawer")',
     '      && !document.getElementById("scenarioDrawer").hidden);',
@@ -717,7 +854,8 @@ function measureScript(cap) {
     '      tabCount: document.querySelectorAll("#nav .km-tab-rail__tab").length } : null,',
     '    presenting: document.body.className.indexOf("presenting") >= 0,',
     '    r7: r7(),',
-    '    r8: r8()',
+    '    r8: r8(),',
+    '    r9: r9()',
     '  };',
     '}()),',
     '    trace: window.__trace || null,',

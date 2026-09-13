@@ -572,12 +572,17 @@ ok(SRC.index.indexOf('productstrategy-p1b8b-20260912') < 0,
  'assets/js/product-strategy/psb-data-contract.js', 'assets/js/product-strategy/psb-board-ui.js',
  'assets/js/product-strategy/psb-views.js', 'assets/js/pages/product-strategy-board.js',
  'assets/js/utils/km-image-reference-policy.js', 'assets/js/utils/sku-overrides.js',
+ /* P1-B8D-R9 §5 — the generated repo asset manifest joins the co-deployed set. It has to ship with
+    the policy that reads it: the policy fails OPEN without it, so a browser holding a cached page
+    that omits this line keeps every photograph and silently loses the 404 gate — which is exactly
+    the half-updated state this whole token mechanism exists to make impossible. */
+ 'assets/js/utils/km-repo-asset-manifest.js',
  'assets/js/app.js'].forEach(function (f, i) {
   ok(SRC.index.indexOf(f + '?v=' + REL.currentAppToken()) > 0,
     'H5.' + (i + 1) + ' ' + f.split('/').pop() + ' is on the current co-deployed token');
 });
-eq(REL.appTokenRefCount(SRC.index), 34,
-  'H6  thirty-four references share it — the application set and the Product Strategy set, now one');
+eq(REL.appTokenRefCount(SRC.index), 35,
+  'H6  thirty-five references share it — the application set and the Product Strategy set, now one');
 
 /* LOAD ORDER. The board reads the policy through sku-overrides, and app.js builds its menu from
    PSB_VIEWS; both must already be defined when their reader runs. */

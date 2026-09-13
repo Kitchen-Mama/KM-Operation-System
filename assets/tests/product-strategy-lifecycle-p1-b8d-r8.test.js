@@ -358,27 +358,45 @@ ok(/z-index:\s*2000/.test(SRC.layout),
   'D29 and the shell header keeps its own stacking order — nothing global moved');
 
 // =================================================================================================
-section('E — NO CHART TOOLBAR IN PRODUCTION (§4)');
+section('E — THE CHART TOOLBAR, MINUS FULLSCREEN (§4, AS CORRECTED BY R9)');
 // =================================================================================================
+
+/* P1-B8D-R9 REVERSED THIS SECTION AND THE REVERSAL IS RECORDED RATHER THAN QUIETLY APPLIED.
+
+   R8 removed the whole View / Detail / Layers / Size / Reset row. The correction is one sentence:
+   "只移除 Fullscreen 按鈕。其他工具列控制恢復。" Those controls decide how the chart is DRAWN — how
+   large the pictures are, which layers are on, what the card is scaled to — and removing them
+   removed the reader's ability to make the picture bigger, which on this page is most of what the
+   picture is for.
+
+   WHAT SURVIVES UNCHANGED FROM R8 IS THE SHAPE OF THE MEASUREMENT. Absence is still checked as
+   absence from the DOM and from the TAB ORDER rather than from view, because a control that is
+   merely invisible is still a control; the ids are still enumerated one by one; the empty-container
+   check still runs. Only the expected answers moved, and only for the row. */
 
 var c1 = stepAt(CHROME, 1);
 eq(CHROME.error, null, 'E1  the production-chrome sequence ran clean');
 ok(c1.board.charts > 0, 'E2  the Price architecture chart is drawn', c1.board.charts);
-eq(c1.toolbar.controls, 0, 'E3  and there is no control row above it');
-eq(c1.toolbar.focusables, 0, 'E4  nothing there to focus');
-eq(c1.toolbar.groups, 0, 'E5  no control groups');
-eq(c1.toolbar.emptyContainers, 0, 'E6  and no empty container holding the space open');
-eq(c1.toolbar.ids['chartControls'], false, 'E7  #chartControls is not in the document');
-['mode-auto', 'mode-comfortable', 'mode-fullscreen', 'view-clean', 'view-detail',
+ok(c1.toolbar.controls >= 6, 'E3  with its control row above it again', c1.toolbar.controls);
+ok(c1.toolbar.focusables >= 6, 'E4  and every one of them reachable', c1.toolbar.focusables);
+ok(c1.toolbar.groups >= 3, 'E5  in named groups', c1.toolbar.groups);
+eq(c1.toolbar.emptyContainers, 0, 'E6  and no empty container holding space open');
+eq(c1.toolbar.ids['chartControls'], true, 'E7  #chartControls is in the document');
+['mode-auto', 'mode-comfortable', 'view-clean', 'view-detail',
   'layersToggle', 'zoom-reset'].forEach(function (id, i) {
-  eq(c1.toolbar.ids[id], false, 'E8.' + (i + 1) + ' ' + id + ' is absent');
+  eq(c1.toolbar.ids[id], true, 'E8.' + (i + 1) + ' ' + id + ' is present');
 });
-eq(c1.toolbar.ids['densityNote'], false,
-  'E9  and so is the note advising a control that no longer exists');
+eq(c1.toolbar.ids['mode-fullscreen'], false,
+  'E9  and the ONE control R9 keeps out is out — no fullscreen button');
 
-/* E10 — THE TAB ORDER IS THE TEST §4 ACTUALLY ASKS FOR: "不得只用 CSS 隱藏仍可 tab-focus 的按鈕". */
+/* E10 — THE TAB ORDER IS THE TEST §4 ACTUALLY ASKS FOR: "不得只用 CSS 隱藏仍可 tab-focus 的按鈕".
+   It now has to answer BOTH halves: the restored controls are genuinely reachable, and the removed
+   one is genuinely not there to reach. */
 var tabStep = CHROME.steps[CHROME.steps.length - 1];
-eq(tabStep.toolbarTabbables, 0, 'E10 and no toolbar control is in the tab order');
+ok(tabStep.toolbarTabbables >= 6, 'E10 the toolbar controls are in the tab order',
+  tabStep.toolbarTabbables);
+eq(tabStep.tabbables.filter(function (t) { return /fullscreen/i.test(t); }).length, 0,
+  'E10a and nothing matching fullscreen is anywhere in it', tabStep.tabbables);
 ok(tabStep.tabbables.indexOf('btnPresent:Presentation') >= 0,
   'E11 while the page header\'s own Presentation button is untouched', tabStep.tabbables);
 
@@ -388,9 +406,18 @@ ok(SRC.board.indexOf('function toggleFullscreen()') >= 0,
   'E12 toggleFullscreen is still in the renderer');
 ok(SRC.board.indexOf('function chartControls(lay)') >= 0,
   'E13 and so is the row builder — it is not called, not deleted');
-ok(/chart_toolbar_is_an_argument/.test(SRC.board) && /chart_toolbar_default: 'rendered'/.test(SRC.board),
+ok(/chart_fullscreen_is_an_argument/.test(SRC.board)
+  && /chart_fullscreen_default: 'rendered'/.test(SRC.board),
   'E14 with the default stated as data: the prototype still gets it');
-ok(/chartToolbar: false/.test(SRC.page), 'E15 and this page is the one host that turns it off');
+ok(/chartFullscreen: false/.test(SRC.page),
+  'E15 and this page is the one host that turns it off');
+/* E16 — ONE RENDERER, NOT TWO. §4 is explicit that the restored controls must be the EXISTING
+   renderer and handlers ("使用 R7/R8 之前既有 renderer 與 handler，不另寫第二套"). A second builder
+   would show up as a second definition; there is one. */
+eq(SRC.board.split('function chartControls(').length - 1, 1,
+  'E16 the row has exactly one builder in the renderer');
+eq(SRC.page.indexOf('chartctl'), -1,
+  'E17 and the page did not grow a toolbar of its own');
 
 // =================================================================================================
 section('F — NO RESIDENT SENTENCE UNDER A FILTER CONTROL (§3)');
@@ -594,29 +621,22 @@ mut('K1  the Category helper text is rendered on the production page', function 
 /* K2 — the toolbar is hidden with CSS instead of not being built, so it is still in the tab order.
    THIS IS THE MUTANT §11 NAMES BY NAME, and the only probe that can catch it walks the tab order:
    every count of visible controls would read zero and pass. */
-mut('K2  the toolbar is CSS-hidden but still tabbable', function () {
-  return withBoard('    if (!SHOW_CHART_TOOLBAR) return null;',
-    "    if (!SHOW_CHART_TOOLBAR) { var h = el('div', 'chartctl'); h.id = 'chartControls';"
-    + " h.style.opacity = '0'; h.style.height = '0'; h.style.overflow = 'hidden';"
-    + " h.appendChild(el('button', 'segbtn', 'Fullscreen')); return h; }",
+mut('K2  the whole toolbar is removed again (the R8 over-reach)', function () {
+  /* P1-B8D-R9 RE-AIMED THIS MUTANT AT THE DEFECT THAT IS NOW LIVE. R8's version hid the row with
+     CSS and checked the tab order; with the row legitimately rendered, the regression worth
+     catching is the opposite one — somebody re-applying R8's reading and deleting all nine. */
+  return withPage('        chartFullscreen: false,', '        chartToolbar: false,',
     function () {
       var t = trace('production-chrome', { first: SITE_A });
-      return t.steps[t.steps.length - 1].toolbarTabbables > 0;
+      return stepAt(t, 1).toolbar.controls === 0;
     });
 });
 
-/* K3 — Fullscreen alone survives the removal. */
-mut('K3  the Fullscreen control is still rendered and triggerable', function () {
-  /* THE HALF-MEASURE SECTION 4 RULES OUT BY NAME. This mutant keeps the row and drops everything
-     except Fullscreen, which is what a reviewer would do reading the report as being about one
-     button rather than about the row. */
-  return withBoard('    if (!SHOW_CHART_TOOLBAR) return null;',
-    "    if (!SHOW_CHART_TOOLBAR) {\n"
-    + "      var only = el('div', 'chartctl'); only.id = 'chartControls';\n"
-    + "      var b1 = el('button', 'segbtn', 'Fullscreen'); b1.id = 'mode-fullscreen';\n"
-    + "      b1.setAttribute('type', 'button');\n"
-    + "      b1.addEventListener('click', function () { toggleFullscreen(); });\n"
-    + "      only.appendChild(b1); return only;\n    }",
+/* K3 — Fullscreen comes back with the rest of the row. */
+mut('K3  the Fullscreen control is rendered and triggerable again', function () {
+  /* THE ONE THING §4 STILL RULES OUT BY NAME, mutated at the gate that keeps it out rather than
+     at the row that no longer gates anything. */
+  return withBoard('    if (SHOW_CHART_FULLSCREEN) {', '    if (true) {',
     function () {
       var t = trace('production-chrome', { first: SITE_A });
       return stepAt(t, 1).toolbar.ids['mode-fullscreen'] === true;

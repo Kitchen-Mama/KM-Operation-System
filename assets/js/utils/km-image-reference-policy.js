@@ -54,9 +54,50 @@
 
   P.KINDS = ['ABSENT', 'SAME_ORIGIN_ASSET', 'ABSOLUTE_APPROVED', 'REJECTED'];
   P.REJECTION_REASONS = ['UNSUPPORTED_SCHEME', 'LOCAL_FILE_PATH', 'PATH_TRAVERSAL', 'OPAQUE_REFERENCE',
-    'NOT_AN_IMAGE_FILENAME', 'UNAPPROVED_HOST'];
+    'NOT_AN_IMAGE_FILENAME', 'UNAPPROVED_HOST',
+    /* P1-B8D-R9 §5 — the two verdicts that need a directory listing to reach. Both mean the address is
+       well-formed and the FILE is not there, which is a database defect rather than a value defect, so
+       they are named apart from the six above and apart from each other. */
+    'REPO_ASSET_NOT_FOUND', 'REPO_ASSET_CASE_MISMATCH'];
 
   function str(v) { return String(v === undefined || v === null ? '' : v).trim(); }
+
+  /* ================================================================================================================
+     P1-B8D-R9 §5 — THE DIRECTORY LISTING, AND WHY IT BELONGS IN THIS FILE RATHER THAN IN FOUR PAGES.
+
+     WHAT THE LIVE DEVTOOLS SHOWED. Repeated `GET .../assets/img/products/<sku>.jpg 404`. The addresses were
+     not malformed and nothing rejected them, because up to here the policy could answer only one question about
+     a relative reference: does it NAME a file (an extension) or is it an opaque id. `assets/img/products/
+     CO9999-X.jpg` names a file perfectly. Whether that file is IN THE REPOSITORY is a different question, and
+     it was left to the browser — which answers it by making the request and getting a 404.
+
+     WHY THIS IS NOT 'HIDING THE ERROR'. Nothing here writes to the database, invents a path, substitutes
+     another sku's photograph, or marks a stale row healthy. The row keeps its value; the classification simply
+     stops being a guess. `REPO_ASSET_NOT_FOUND` is a LOUDER answer than a 404 in a console nobody is reading:
+     it reaches `image_reference_reason` on the row, the SKU Details source line, and the remediation report.
+
+     ABSENCE IS ONLY PROVABLE WHERE SOMEBODY LOOKED. The manifest publishes the roots it enumerated and this
+     gate runs only inside them. A reference outside every root is classified exactly as it was before.
+
+     FAIL OPEN, DELIBERATELY, AND IT IS THE OPPOSITE CHOICE FROM `imagePolicy()`. A MISSING POLICY must fail
+     closed, because the policy is the thing that stops `javascript:` reaching `src`. A MISSING MANIFEST must
+     fail open, because the manifest only ever REMOVES images: a page that loaded the policy but not the
+     manifest would otherwise refuse every photograph in the application. The two defaults point in opposite
+     directions because the two files defend against opposite failures.
+     ================================================================================================================ */
+  function manifestOf(opts) {
+    if (opts && opts.assetManifest !== undefined) return opts.assetManifest || null;
+    try { if (root.KM_REPO_ASSET_MANIFEST) return root.KM_REPO_ASSET_MANIFEST; } catch (e) {}
+    try { if (root.window && root.window.KM_REPO_ASSET_MANIFEST) return root.window.KM_REPO_ASSET_MANIFEST; } catch (e) {}
+    return null;
+  }
+  P.manifestOf = manifestOf;
+
+  /* A leading `./` names the same file and is the one normalisation applied, because it is a spelling of the
+     path rather than a different path. A leading `/` is NOT normalised away: on a project Pages site it
+     resolves against the domain root instead of the application, so it is a genuinely different address and
+     the manifest has no business claiming to know whether it is there. */
+  function manifestKey(v) { return v.indexOf('./') === 0 ? v.slice(2) : v; }
 
   function hasImageExtension(pathPart) {
     var p = String(pathPart).toLowerCase().split('?')[0].split('#')[0];
@@ -159,6 +200,23 @@
        extension, which is why the extension is the test and the LENGTH of the id is not — a rule keyed on
        length would refuse a deeply-nested legitimate path and accept a short id. */
     if (!hasImageExtension(v)) return reject('OPAQUE_REFERENCE', v);
+
+    /* ---- and then: is it actually there? (P1-B8D-R9 §5) ---------------------------------------------- */
+    var man = manifestOf(opts);
+    var key = manifestKey(v);
+    if (man && typeof man.covers === 'function' && man.covers(key) && !man.has(key)) {
+      /* THE CASE VARIANT IS REPORTED AND NOT FOLLOWED. Rewriting `co1100-r.jpg` to `CO1100-R.jpg` would
+         put a photograph on the screen for a row that is wrong, which is the one outcome worse than no
+         photograph: the defect disappears from the page and stays in the database. So the reference is
+         still refused, and the note carries the exact path an operator should write into the row. */
+      var variant = (typeof man.caseVariantOf === 'function') ? man.caseVariantOf(key) : null;
+      if (variant) {
+        return { accepted: false, kind: 'REJECTED', reason: 'REPO_ASSET_CASE_MISMATCH', url: '', input: v,
+          note: 'REPO_HAS: ' + variant };
+      }
+      return reject('REPO_ASSET_NOT_FOUND', v);
+    }
+
     return { accepted: true, kind: 'SAME_ORIGIN_ASSET', reason: null, url: v, input: v, note: null };
   };
 
@@ -173,6 +231,11 @@
     composes_a_path_from_a_sku: false,
     page_origin_is_a_parameter: true,
     external_hosts_are_operator_declared: true,
+    /* P1-B8D-R9 §5 */
+    proves_absence_only_inside_manifest_roots: true,
+    manifest_absent_means_pass_through: true,
+    rewrites_a_case_mismatch_to_the_real_file: false,
+    composes_a_path_from_a_sku_when_the_file_is_missing: false,
     consumers: ['assets/js/utils/sku-overrides.js  (SKU Details, SKU Handbook)',
       'assets/js/api/km-product-pricing-adapter.js  (Product Strategy)']
   };

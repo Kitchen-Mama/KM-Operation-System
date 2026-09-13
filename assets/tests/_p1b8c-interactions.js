@@ -739,8 +739,14 @@
   function categoryHelperText(doc) {
     var out = [];
     Array.prototype.slice.call(doc.querySelectorAll(
+      /* P1-B8D-R9 — `.chartctl .ctl-note` LEAVES THIS SELECTOR. R8 put it here because the density
+         note was being removed along with the row it lives in; §4 restores that row, and the note
+         is advice about Comfortable sitting inside the chart toolbar rather than a sentence hanging
+         under the Category control. It is not dropped from the run: `toolbarPresence().ids` still
+         reports it by name, and the R9 block measures its text. Measuring it HERE would make every
+         future §3 check fail for a reason §3 is not about. */
       '.psb-filters .scope-empty, .psb-filters .scope-state, .psb-filters .cmd-context,'
-      + ' .psb-filters > p, #catEmpty, #catProvenance, #scope p, .chartctl .ctl-note'))
+      + ' .psb-filters > p, #catEmpty, #catProvenance, #scope p'))
       .forEach(function (n) {
         if (n.closest && n.closest('#scenarioDrawer')) return;
         var t = String(n.textContent || '').replace(/\s+/g, ' ').trim();
@@ -794,6 +800,87 @@
   }
   A.scenarioPresence = scenarioPresence;
 
+  /* ================================================================================================
+     P1-B8D-R9 §4 — WHAT A CONTROL ACTUALLY DID, not whether it is in the document.
+
+     "不接受「按鈕存在」作為功能驗收" is the whole requirement, and it is a fair one: R8 removed
+     nine controls and every suite stayed green, which means no suite had ever pressed one. This
+     reads the properties each control is supposed to move — the drawn size of the chart, which
+     layers are on, whether the Size group exists at all — so a button wired to nothing fails.
+     ================================================================================================ */
+  function chartShape(doc) {
+    var svg = doc.querySelector('#view svg');
+    var r = svg ? svg.getBoundingClientRect() : null;
+    var plate = doc.querySelector('#view svg .mk-img-plate');
+    var pr = plate ? plate.getBoundingClientRect() : null;
+    var lc = doc.getElementById('layersCount');
+    var pressed = {};
+    ['mode-auto', 'mode-comfortable', 'view-clean', 'view-detail'].forEach(function (id) {
+      var n = doc.getElementById(id);
+      pressed[id] = n ? n.getAttribute('aria-pressed') : null;
+    });
+    return {
+      svgW: r ? Math.round(r.width) : null,
+      svgH: r ? Math.round(r.height) : null,
+      /* THE PLATE IS THE ONE THING COMFORTABLE EXISTS TO CHANGE — "larger product images" is what
+         the note promises, so the plate's drawn box is what proves it happened. */
+      plateW: pr ? Math.round(pr.width) : null,
+      layersCount: lc ? String(lc.textContent || '').trim() : null,
+      layersPanel: doc.querySelectorAll('#layersPanel input[type=checkbox]').length,
+      layersExpanded: (function () {
+        var t = doc.getElementById('layersToggle');
+        return t ? t.getAttribute('aria-expanded') : null;
+      }()),
+      zoomButtons: doc.querySelectorAll('#chartControls [data-zoom]').length,
+      /* HOW MANY KINDS OF MARKER ARE DRAWN. Clean and Detail differ by which layers are painted,
+         and a count of element classes is the only thing that separates them from outside. */
+      propMarks: doc.querySelectorAll('#view svg .mk-prop').length,
+      dealMarks: doc.querySelectorAll('#view svg .mk-deal').length,
+      minMarks: doc.querySelectorAll('#view svg .mk-min').length,
+      msrpMarks: doc.querySelectorAll('#view svg .mk-msrp').length,
+      pressed: pressed,
+      densityNote: !!doc.getElementById('densityNote'),
+      pageOverflow: Math.round((doc.documentElement.scrollWidth || 0)
+        - (doc.documentElement.clientWidth || 0)),
+      toolbarOverflow: (function () {
+        var c = doc.getElementById('chartControls');
+        return c ? Math.round(c.scrollWidth - c.clientWidth) : null;
+      }())
+    };
+  }
+  A.chartShape = chartShape;
+
+  /* §3 — THE SCENARIO NOTICE AS PAINTED. Computed colour, because a class name proves what the
+     stylesheet says and this requirement is about what the operator sees. The stop-state's own
+     border is read in the same breath so "not styled like a refusal" is a comparison. */
+  function scenarioLook(doc) {
+    var ban = doc.getElementById('banner');
+    var cs = ban ? root.getComputedStyle(ban) : null;
+    var tag = doc.querySelector('.badge-scenario-tag');
+    var chip = doc.querySelector('.cmd-chip--on');
+    var stop = doc.querySelector('.psb-state--stop');
+    var stopCs = stop ? root.getComputedStyle(stop) : null;
+    var ghost = doc.querySelector('.scen-ghost');
+    return {
+      bannerText: ban ? String(ban.textContent || '').replace(/\s+/g, ' ').trim() : '',
+      tag: tag ? String(tag.textContent || '').trim() : null,
+      tagBg: tag ? root.getComputedStyle(tag).backgroundColor : null,
+      display: cs ? cs.display : null,
+      bg: cs ? cs.backgroundColor : null,
+      color: cs ? cs.color : null,
+      borderLeftWidth: cs ? cs.borderLeftWidth : null,
+      borderLeftStyle: cs ? cs.borderLeftStyle : null,
+      borderLeftColor: cs ? cs.borderLeftColor : null,
+      chipBg: chip ? root.getComputedStyle(chip).backgroundColor : null,
+      chipColor: chip ? root.getComputedStyle(chip).color : null,
+      ghostStroke: ghost ? root.getComputedStyle(ghost).stroke : null,
+      stopBorder: stopCs
+        ? (stopCs.borderLeftWidth + ' ' + stopCs.borderLeftStyle + ' ' + stopCs.borderLeftColor)
+        : null
+    };
+  }
+  A.scenarioLook = scenarioLook;
+
   function r8step(doc, label) {
     var s = step(doc, label);
     s.board = boardPresence(doc);
@@ -803,6 +890,15 @@
     return s;
   }
   A.r8step = r8step;
+
+  /** Every R8 measurement plus the two R9 added. */
+  function r9step(doc, label) {
+    var s = r8step(doc, label);
+    s.shape = chartShape(doc);
+    s.look = scenarioLook(doc);
+    return s;
+  }
+  A.r9step = r9step;
 
   function loadSite(doc, S) {
     return Promise.resolve().then(function () {
@@ -939,27 +1035,34 @@
    * Apply a scenario on A, then walk the three things that must NOT clear it (a view, a category,
    * a leave-and-return) and the one that must (a different site).
    */
+  /* P1-B8D-R9 — LIFTED OUT OF `scenario-site-scope` SO TWO ACTS APPLY THE SAME SIMULATION.
+     It was a local function; §3 needs to apply a scenario too, and two copies of "open the drawer,
+     pick a series, type a number, press Apply" would be two chances for the runs to diverge on what
+     `a scenario` even means. */
+  function applyScenarioOn(doc) {
+    var tg = doc.getElementById('meetingToggle');
+    if (tg) tg.click();
+    return tick(200).then(function () {
+      var ss = doc.getElementById('scSeries');
+      if (ss && ss.options.length > 1) {
+        ss.value = ss.options[1].value;
+        ss.dispatchEvent(new root.Event('change', { bubbles: true }));
+      }
+      var iv = doc.getElementById('scValue');
+      if (iv) { iv.value = '19.99'; iv.dispatchEvent(new root.Event('input', { bubbles: true })); }
+      return tick(120);
+    }).then(function () {
+      var ap = doc.getElementById('scApply');
+      if (ap) ap.click();
+      return tick(250);
+    });
+  }
+  A.applyScenarioOn = applyScenarioOn;
+
   ACTS['scenario-site-scope'] = function (doc, args) {
     var T = [];
     var A1 = args.first, A2 = args.second;
-    function applyScenario() {
-      var tg = doc.getElementById('meetingToggle');
-      if (tg) tg.click();
-      return tick(200).then(function () {
-        var ss = doc.getElementById('scSeries');
-        if (ss && ss.options.length > 1) {
-          ss.value = ss.options[1].value;
-          ss.dispatchEvent(new root.Event('change', { bubbles: true }));
-        }
-        var iv = doc.getElementById('scValue');
-        if (iv) { iv.value = '19.99'; iv.dispatchEvent(new root.Event('input', { bubbles: true })); }
-        return tick(120);
-      }).then(function () {
-        var ap = doc.getElementById('scApply');
-        if (ap) ap.click();
-        return tick(250);
-      });
-    }
+    var applyScenario = function () { return applyScenarioOn(doc); };
     return loadSite(doc, A1).then(applyScenario).then(function () {
       T.push(r8step(doc, '1 scenario applied on site A'));
       if (root.PSB_BOARD) root.PSB_BOARD.showView('product-strategy/risk');
@@ -1241,6 +1344,86 @@
       return tick(600);
     }).then(function () {
       T.push(r8step(doc, '4 back — same site, same view, same scenario, no new read'));
+      root.__trace = T;
+      return T;
+    });
+  };
+
+  /**
+   * P1-B8D-R9 §4 — PRESS EVERY RESTORED CONTROL AND MEASURE WHAT MOVED.
+   *
+   * One step per control, each recording the shape BEFORE and AFTER, so the suite asserts a
+   * DIFFERENCE rather than a presence. The order is the order a person would use them: make it
+   * bigger, change the detail, open the layers, scale it, put it back.
+   */
+  ACTS['toolbar-functions'] = function (doc, args) {
+    var T = [];
+    var hit = function (id) {
+      var n = doc.getElementById(id);
+      if (n) n.click();
+      return !!n;
+    };
+    return loadSite(doc, args.first).then(function () {
+      /* THE VIEW THAT HAS THE CHART. The default view draws none, so a toolbar run against it
+         would measure an empty row and call every control fine. */
+      if (root.PSB_BOARD) root.PSB_BOARD.showView('product-strategy/category');
+      return tick(400);
+    }).then(function () {
+      T.push(r9step(doc, '1 Category Analysis, Auto Fit (the default)'));
+      T.push({ step: '1a clicked', id: 'mode-comfortable', found: hit('mode-comfortable') });
+      return tick(350);
+    }).then(function () {
+      T.push(r9step(doc, '2 Comfortable — larger images, and a Size group that did not exist'));
+      T.push({ step: '2a clicked', id: 'zoom-1.25', found: hit('zoom-1-25') });
+      return tick(350);
+    }).then(function () {
+      T.push(r9step(doc, '3 Size 125%'));
+      T.push({ step: '3a clicked', id: 'view-clean', found: hit('view-clean') });
+      return tick(350);
+    }).then(function () {
+      T.push(r9step(doc, '4 Clean — fewer layers drawn'));
+      T.push({ step: '4a clicked', id: 'view-detail', found: hit('view-detail') });
+      return tick(350);
+    }).then(function () {
+      T.push(r9step(doc, '5 Detail — all of them back'));
+      T.push({ step: '5a clicked', id: 'layersToggle', found: hit('layersToggle') });
+      return tick(350);
+    }).then(function () {
+      T.push(r9step(doc, '6 Layers open — six switches'));
+      T.push({ step: '6a clicked', id: 'zoom-reset', found: hit('zoom-reset') });
+      return tick(400);
+    }).then(function () {
+      T.push(r9step(doc, '7 Reset view — back to Auto Fit, Detail, closed'));
+      root.__trace = T;
+      return T;
+    });
+  };
+
+  /**
+   * P1-B8D-R9 §3 — THE SCENARIO NOTICE, AND A REAL REFUSAL, MEASURED IN THE SAME RUN.
+   *
+   * Measuring the scenario alone could only ever say what colour it is. The requirement is that it
+   * is not the colour of a FAULT and that a real fault is not restyled to match it, and neither
+   * half is checkable without the other one on the screen in the same browser.
+   */
+  ACTS['scenario-appearance'] = function (doc, args) {
+    var T = [];
+    var wire = root.__wire;
+    return loadSite(doc, args.first).then(function () {
+      T.push(r9step(doc, '1 loaded, no scenario'));
+      applyScenarioOn(doc);
+      return tick(400);
+    }).then(function () {
+      T.push(r9step(doc, '2 a scenario is applied — an outcome, not a fault'));
+      /* AND NOW A GENUINE REFUSAL, on the same page, in the same run. */
+      if (wire && typeof wire.startFailing === 'function') {
+        wire.startFailing(new Error('the site refused'), 'workspace');
+      }
+      pick(doc, 'marketplace', args.second.marketplace);
+      return tick(700);
+    }).then(function () {
+      T.push(r9step(doc, '3 a real refusal — and it must not look like the scenario'));
+      if (wire && typeof wire.stopFailing === 'function') wire.stopFailing();
       root.__trace = T;
       return T;
     });

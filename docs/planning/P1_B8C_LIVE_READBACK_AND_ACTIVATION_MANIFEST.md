@@ -934,3 +934,78 @@ override count across a site change, a view change and a category change`.
   Chrome delivers those erratically — the trace that FOUND this defect saw it three runs in six. The
   suite therefore drives the same defect through a deterministic route: `#btnPresent` lives in the
   partial, survives the unmount, and its handler calls `render()`. Same property, every run.
+
+---
+
+# 11 · P1-B8D-R9 — THE THREE CORRECTIONS AFTER LIVE ACCEPTANCE
+
+## 11.1  The chart toolbar contract, as corrected
+
+R8 removed the whole row. **R9 removes one button.** The renderer now carries two independent
+arguments rather than one, and the production host sets only the narrower of them:
+
+| argument | default | Product Strategy | what it decides |
+|---|---|---|---|
+| `chartToolbar` | rendered | *(not set — takes the default)* | whether the row exists at all |
+| `chartFullscreen` | rendered | **`false`** | whether the row includes Fullscreen |
+
+**Production therefore shows:** View (Auto Fit · Comfortable) · Detail (Clean · Detail) · Layers ·
+Size (Fit / 100% / 125% / 150%, Comfortable only) · Reset view. **Six controls in four groups.**
+
+**Fullscreen is not built**, rather than hidden — no node, no box, nothing in the tab order, and
+nothing matching `fullscreen` by id, by accessible name or by visible text. `toggleFullscreen`, the
+Escape-leaves-fullscreen listener and the row builder are all retained, and the prototype still
+renders every one of them.
+
+**The host does not declare the default.** `chartToolbar` is absent from the mount call rather than
+set to `true`: a host that states the default is a host asserting something it does not decide.
+
+## 11.2  The simulation semantic
+
+`base.css` owns the palette. The page takes `--km-ui-utility` (`#8e76a8`) and derives three values
+from it rather than inventing a sixth purple:
+
+| token | value | used for | contrast |
+|---|---|---|---|
+| `--scn-key` | `var(--km-ui-utility, #8e76a8)` | the left border, the tag fill | — |
+| `--scn-ink` | `#4b3a61` | the sentence | 10.1:1 on paper, 9.3:1 on the tint |
+| `--scn-mark` | `#7a5f96` | chart strokes | 5.4:1 on paper |
+| `--scn-tint` | `#f7f4fb` | the fill | — |
+
+**Every scenario surface answers in this one vocabulary**: the banner, the chip, the panel frame, the
+panel badge, the chart ghost, the scenario link and the "Applied:" line.
+
+**Colour is never the only carrier.** The banner leads with a `SCENARIO` tag word; the panel keeps a
+dashed frame; the chart keeps a dashed stroke; the chip keeps its text. On paper the tag inverts to
+solid black and the sentence is kept whole.
+
+**And the shape is deliberately not a refusal's.** `.psb-state--stop` is `6px double` in the accent
+red; the scenario is `4px solid` in the brand purple. Both are measured, as computed style, in the
+same browser run.
+
+**The statement now names both ways a simulation ends** — a reload **or** a site switch. R8 made the
+site switch clear it; the sentence had not caught up.
+
+## 11.3  The image reference contract, extended
+
+```
+    sku_details.image_url
+      -> KM_IMAGE_REFERENCE_POLICY.classify()
+           scheme / traversal / local-path / extension rules   (unchanged)
+           -> KM_REPO_ASSET_MANIFEST                            (NEW)
+                covers(path)?  no  -> pass through, unjudged
+                has(path)?     yes -> SAME_ORIGIN_ASSET
+                caseVariantOf? yes -> REJECTED REPO_ASSET_CASE_MISMATCH  note: REPO_HAS: <exact path>
+                otherwise          -> REJECTED REPO_ASSET_NOT_FOUND
+      -> four consumers, none with a rule of its own
+```
+
+- **Absence is only claimed where somebody looked.** The manifest publishes its roots; a reference
+  outside them is classified exactly as it was before this round.
+- **A case mismatch is reported and NOT followed.** Rewriting it would put a photograph on the screen
+  for a row that is wrong — the defect would leave the page and stay in the database.
+- **The manifest is generated**, by `tools/assets/build-repo-asset-manifest.js`, and a suite re-reads
+  the directory and fails if the committed file has drifted.
+- **The chart marker has an error path at last**, with its own sentence: *"The record names a product
+  photograph that did not load."* — which is a different fact from *"No product photograph is on
+  record"* and sends an operator somewhere different.

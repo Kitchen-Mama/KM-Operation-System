@@ -181,6 +181,32 @@
            and the board draws a complete chart; it is a site the category MENU has nothing to
            offer for. The server's own envelope is kept and one field is emptied on each row,
            because that is the only difference between this site and the captured one. */
+        /* P1-B8D-R9 §5 — A ROW WHOSE IMAGE ADDRESS CANNOT RESOLVE, AND WHY IT POINTS WHERE IT DOES.
+
+           §5 asks for a NETWORK 404 count and for a fallback count, and neither can be measured on a
+           page where no image ever fails. The obvious way to force one — a missing file under
+           `assets/img/products/` — no longer works, because that is precisely what the manifest gate
+           now catches BEFORE a request is made. That is the fix doing its job, and it makes the
+           defect unreachable from inside the covered roots.
+
+           SO THE PATH POINTS OUTSIDE THEM. A reference the manifest does not cover is passed through
+           untouched — absence is only provable where somebody looked — so the browser really does
+           issue the request and really does fail, which is the only honest way to exercise the last
+           line of defence: the marker's own error handler.
+
+           IT IS ALSO THE HONEST SHAPE OF A RESIDUAL RISK. A row could point anywhere; the manifest
+           covers `assets/img`, and this is what the page does with everything else. */
+        if (opts.forceBadImage === true) {
+          var bi = env.data || {};
+          return answer(Object.assign({}, env, {
+            data: Object.assign({}, bi, {
+              normalizedRows: (bi.normalizedRows || []).map(function (r) {
+                return Object.assign({}, r,
+                  { product_image: 'vendor-assets/products/NOT-IN-THIS-REPOSITORY.jpg' });
+              })
+            })
+          }));
+        }
         if (opts.noCategories === true) {
           var dn = env.data || {};
           return answer(Object.assign({}, env, {

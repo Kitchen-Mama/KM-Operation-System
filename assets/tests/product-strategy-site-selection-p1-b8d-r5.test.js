@@ -594,24 +594,29 @@ step(function () {
     return L.pick('company', 'KM')
       .then(function () { return L.pick('marketplace', 'Shopify'); })
       .then(function () {
-        /* P1-B8D-R8 - THIS ASSERTION IS INVERTED, AND ON PURPOSE.
-           Section 4 removes the whole View / Detail / Layers / Size / Reset row from the
-           PRODUCTION page, Fullscreen with it, and is explicit that what is removed must not be
-           reachable at all. So the honest statement here is that the control is ABSENT, and
-           absence is checked the way it is asked for - no node, no toolbar, and no empty container
-           left holding its place in the layout.
+        /* P1-B8D-R9 - G7 STANDS; G8 AND G9 GO BACK TO WHAT THEY SAID BEFORE R8.
 
-           THE BEHAVIOUR IT USED TO DRIVE IS NOT GONE and is not untested. `toggleFullscreen`, the
-           Escape-leaves-fullscreen listener and the mode buttons are all still in the renderer and
-           still asserted by P1-B2C over the prototype, which is the host that still shows them.
-           This file drives the OPERATION SYSTEM page, and on that page the contract changed. */
+           R8 read `不只是隱藏 Fullscreen 單一按鈕` as a decision about the whole row and removed all
+           nine controls. R9 corrects it in one line - `只移除 Fullscreen 按鈕。其他工具列控制恢復。`
+           - so Auto Fit, Comfortable, Clean, Detail, Layers, Size and Reset view are on the
+           production board again and Fullscreen is not.
+
+           THE ASSERTION THAT WAS ACTUALLY ABOUT THE DEFECT IS THE ONE THAT DID NOT MOVE. G7 has
+           said the same thing through both readings, because in both of them the control that
+           replaces the PAGE - covering the shell's own header and navigation from inside a page -
+           is the one that does not belong on this board. The two that moved were statements about
+           how much went with it, and they follow the correction. */
         var doc = L.dom.document;
         ok(!doc.getElementById('mode-fullscreen'),
-          'G7  the fullscreen control is NOT on the production board (R8)');
-        ok(!doc.getElementById('chartControls'),
-          'G8  and neither is the toolbar row that held it');
-        eq(doc.querySelectorAll('.chartctl, .chartctl button').length, 0,
-          'G9  with no empty container left behind - not rendered, rather than hidden');
+          'G7  the fullscreen control is NOT on the production board (R8, kept by R9)');
+        ok(!!doc.getElementById('chartControls'),
+          'G8  but the row that held it is back (R9 §4)');
+        ok(doc.querySelectorAll('.chartctl button').length >= 6,
+          'G9  carrying the controls that size and layer the chart',
+          doc.querySelectorAll('.chartctl button').length);
+        eq([].slice.call(doc.querySelectorAll('.chartctl button')).filter(function (b) {
+          return /fullscreen/i.test((b.textContent || '') + (b.id || ''));
+        }).length, 0, 'G9a and not one of them is a fullscreen control');
       });
   });
 });

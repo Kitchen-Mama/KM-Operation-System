@@ -525,17 +525,25 @@
     grp.appendChild(svg('rect', { x: cx - half + 1, y: cy - half + 2, width: size, height: size,
       rx: 9, 'class': 'mk-img-shadow' }));
     var hasImage = showImage && !!n.image;
-    grp.appendChild(svg('rect', { x: cx - half, y: cy - half, width: size, height: size, rx: 9,
+    var plate = svg('rect', { x: cx - half, y: cy - half, width: size, height: size, rx: 9,
       'class': 'mk-img-plate' + (hasImage ? '' : ' mk-fallback'),
-      'data-role': hasImage ? 'image-marker' : 'fallback-marker' }));
-    if (hasImage) {
-      var im = svg('image', { x: cx - half + 3, y: cy - half + 3, width: size - 6, height: size - 6,
-        preserveAspectRatio: 'xMidYMid meet', 'class': 'mk-img' });
-      /* THE VALUE ON THE NODE, VERBATIM. No directory is prefixed and no extension appended here. */
-      im.setAttribute('href', n.image);
-      im.setAttribute('data-src', n.image);
-      grp.appendChild(im);
-    } else {
+      'data-role': hasImage ? 'image-marker' : 'fallback-marker' });
+    grp.appendChild(plate);
+
+    /* P1-B8D-R9 §5 — THE ONE `<img>` IN THIS APPLICATION THAT HAD NO ERROR PATH.
+
+       The category figure and the table figure have both had an `onerror` since P1-B8C-R3, and this
+       marker — the most looked-at image on the page — had none, because it is not an `<img>`: it is
+       an SVG `<image>`, and the fallback was written for the HTML element. A 404 therefore left a
+       plate still classed `image-marker`, with no picture in it and no code printed on it: an empty
+       frame that says a photograph is coming. That is the 破圖 the report is about.
+
+       THE MANIFEST GATE IN THE SHARED POLICY MEANS THIS SHOULD NOW BE UNREACHABLE for anything inside
+       the enumerated roots, and it is still here on purpose. It can only prove absence where it
+       looked; a reference outside its roots, or a file removed from the deployment after the manifest
+       was built, still has to degrade rather than lie. A last line that is never reached costs one
+       listener, and the first time it IS reached it is the difference between a fallback and a hole. */
+    function drawFallback() {
       /* ---- THE CODE HAS TO FIT THE PLATE IT IS WRITTEN ON ---------------------------------------
 
          P1-B2C made the plate a variable size, and this text did not follow it: `shortCode` kept
@@ -550,9 +558,16 @@
          and the lane beneath it. */
       var codeChars = Math.floor((size - 6) / 5.6);
       var codeFont = Math.max(7.5, Math.min(10.5, Math.round(size * 0.22 * 10) / 10));
-      var missText = showImage
-        ? 'No product photograph is on record for this product.'
-        : 'Product images are switched off for this chart.';
+      var failed = plate.getAttribute('data-image-failed') === 'true';
+      /* THREE DIFFERENT FACTS, THREE DIFFERENT SENTENCES. "Nobody recorded a photograph", "the row
+         names a file that is not there" and "you turned the pictures off" send an operator to three
+         different places, and answering all three with one grey plate is what made the 404s invisible
+         for as long as they were. */
+      var missText = failed
+        ? 'The record names a product photograph that did not load.'
+        : (showImage
+          ? 'No product photograph is on record for this product.'
+          : 'Product images are switched off for this chart.');
       if (codeChars >= 4) {
         var t = svgText({ x: cx, y: cy + codeFont * 0.35, 'class': 'mk-fallback-text',
           'font-size': codeFont, 'data-chars': codeChars,
@@ -568,9 +583,30 @@
         /* THE PLATE ALONE IS THE MARKER, and it still has to say what it is. */
         var pt = svg('title', {});
         pt.appendChild(document.createTextNode(n.label + ' \u2014 ' + missText));
-        grp.childNodes[grp.childNodes.length - 1].appendChild(pt);
+        plate.appendChild(pt);
       }
     }
+
+    if (hasImage) {
+      var im = svg('image', { x: cx - half + 3, y: cy - half + 3, width: size - 6, height: size - 6,
+        preserveAspectRatio: 'xMidYMid meet', 'class': 'mk-img' });
+      /* THE VALUE ON THE NODE, VERBATIM. No directory is prefixed and no extension appended here. */
+      im.setAttribute('href', n.image);
+      im.setAttribute('data-src', n.image);
+      im.addEventListener('error', function () {
+        if (im.parentNode) im.parentNode.removeChild(im);
+        plate.setAttribute('class', 'mk-img-plate mk-fallback');
+        plate.setAttribute('data-role', 'fallback-marker');
+        /* COUNTED, NOT JUST SURVIVED. A fallback that leaves no trace is indistinguishable from a row
+           that never had an image, and §5 asks for those two to be reported as different numbers. */
+        plate.setAttribute('data-image-failed', 'true');
+        drawFallback();
+      });
+      grp.appendChild(im);
+    } else {
+      drawFallback();
+    }
+
     g.appendChild(grp);
     return grp;
   }
@@ -1088,6 +1124,7 @@
   var SHOW_INLINE_HELP_ICONS = true;
   var SHOW_AXIS_PRICE_ROW = true;
   var SHOW_CHART_TOOLBAR = true;
+  var SHOW_CHART_FULLSCREEN = true;
   var SHOW_INLINE_FILTER_NOTES = true;
   var CLEAR_SCENARIO_ON_SITE_CHANGE = false;
 
@@ -1214,19 +1251,31 @@
      and whichever one won, the other would be lying.
      ================================================================================================ */
   function chartControls(lay) {
-    /* P1-B8D-R8 — THE WHOLE ROW, OR NONE OF IT.
-       The USER's decision is about the row, not about Fullscreen: "不只是隱藏 Fullscreen 單一按鈕,
-       是正式頁面不再顯示這整列 control toolbar". So nothing is created — no box, no empty
-       `.chartctl` holding a gap open, no button that is invisible and still in the tab order. The
-       functions behind every one of them (`toggleFullscreen`, `applyViewMode`, the zoom handlers)
-       are untouched and still reachable from the prototype, which is what a mode contract is for.
+    /* P1-B8D-R9 §4 — THE ROW COMES BACK. ONE BUTTON DOES NOT.
 
-       WHAT PRODUCTION IS LEFT WITH IS AUTO FIT, which is `STATE.chartMode`'s default and the one
-       setting that measures the card and the window and chooses the size itself. The row's other
-       options are ways to overrule a measurement; removing them removes the overrule, not the
-       measurement. `#densityNote` goes with the row because it is advice about a control — "switch
-       to Comfortable for larger product images" — and advice to press a button that is not there
-       is worse than silence. */
+       R8 READ THE PREVIOUS INSTRUCTION TOO WIDELY AND REMOVED THE WHOLE TOOLBAR. The correction is
+       explicit: "只移除 Fullscreen 按鈕。其他工具列控制恢復。" Auto Fit, Comfortable, Clean, Detail,
+       Layers, Size and Reset view are decisions about how the chart is DRAWN, and taking them away
+       took away the reader's ability to make the picture bigger — which on this page is most of what
+       the picture is for.
+
+       NOTHING WAS REWRITTEN TO BRING THEM BACK. Every control below is the renderer and the handler
+       that shipped before R8; R8 suppressed the row at one `return null` and this restores it at the
+       same line. There is no second toolbar, no production-only variant and no duplicated handler —
+       which is the whole reason the suppression was written as a gate rather than as a deletion.
+
+       WHY FULLSCREEN IS THE ONE THAT STAYS OUT. It is not a way of drawing the chart, it is a way of
+       replacing the PAGE: a fixed overlay over the whole window, with the application's own header and
+       navigation underneath it. That is the shell's territory rather than this page's, and P1-B8D-R8
+       found what happens when this page paints over the shell's chrome — the drawer's close button
+       spent two rounds invisible underneath `.top-header`. Auto Fit already gives the chart every
+       pixel of the card, and Presentation in the page header is the one control that legitimately
+       takes the whole window, because the shell knows about it.
+
+       IT IS SUPPRESSED THE SAME WAY THE ROW WAS, AND FOR THE SAME REASON: no hidden button, nothing
+       invisible left in the tab order, `toggleFullscreen` retained and still reachable from the
+       prototype. `#densityNote` comes back with the row, because it is advice about Comfortable and
+       Comfortable is a control again. */
     if (!SHOW_CHART_TOOLBAR) return null;
     var box = el('div', 'chartctl');
     box.id = 'chartControls';
@@ -1251,13 +1300,18 @@
       });
       view.appendChild(b);
     });
-    var fs = el('button', 'segbtn' + (STATE.fullscreen ? ' is-on' : ''),
-      STATE.fullscreen ? 'Exit fullscreen' : 'Fullscreen');
-    fs.id = 'mode-fullscreen';
-    fs.setAttribute('type', 'button');
-    fs.setAttribute('aria-pressed', STATE.fullscreen ? 'true' : 'false');
-    fs.addEventListener('click', function () { toggleFullscreen(); });
-    view.appendChild(fs);
+    /* P1-B8D-R9 §4 — NOT BUILT, rather than built and hidden. A `display: none` button is still in
+       the accessibility tree on some engines and a `visibility: hidden` one is still a box; neither
+       is what "production DOM 中這些控制項不得可聚焦或可觸發" asks for. */
+    if (SHOW_CHART_FULLSCREEN) {
+      var fs = el('button', 'segbtn' + (STATE.fullscreen ? ' is-on' : ''),
+        STATE.fullscreen ? 'Exit fullscreen' : 'Fullscreen');
+      fs.id = 'mode-fullscreen';
+      fs.setAttribute('type', 'button');
+      fs.setAttribute('aria-pressed', STATE.fullscreen ? 'true' : 'false');
+      fs.addEventListener('click', function () { toggleFullscreen(); });
+      view.appendChild(fs);
+    }
     addInfo(view, infoIcon('viewsize', 'How the chart is sized', [
       'Auto Fit measures the card and the window and chooses the gridline step, the plot height,'
         + ' the image size and the column width that let the whole chart — both axes, the labels'
@@ -4054,17 +4108,35 @@
        simulated, and a mark appended somewhere arbitrary is a warning nobody reads. The production
        partial provides `#banner` for exactly this. */
     if (!banner) return;
-    var text = 'SCENARIO — ' + MODEL.scenario.override_count
+    /* P1-B8D-R9 §3 — THE SAME STATEMENT, IN THE COLOUR OF THE THING IT IS ACTUALLY REPORTING.
+
+       Applying a scenario is a SUCCESS, and the page was announcing it in the palette it uses for
+       faults. The colours are moved in the stylesheet; what changes here is the wording and the
+       shape. A tag element carries the state as a WORD, so the meaning does not depend on the hue
+       — the requirement is explicit about that, and a reader who cannot separate amber from violet
+       is exactly the reader a colour-only signal fails.
+
+       AND IT NOW SAYS THE OTHER WAY IT ENDS. R8 made a site change clear every unpersisted override;
+       this sentence still promised only that a reload would. A notice that under-describes when a
+       number will vanish is the same defect as one that over-describes it. */
+    var text = 'Active — ' + MODEL.scenario.override_count
       + ' simulated price override' + (MODEL.scenario.override_count === 1 ? '' : 's')
-      + ' on ' + siteIdentity().key + '. These are not prices the company charges, they are not saved'
-      + ' anywhere, and they disappear when this page is reloaded.';
-    if (existing) {
-      clear(existing);
-      existing.appendChild(document.createTextNode(text));
-      return;
-    }
-    var mark = el('span', 'badge-scenario', text);
+      + ' on ' + siteIdentity().key + '. These are not prices the company charges and nothing is'
+      + ' saved: the simulation lives on this page only, and the numbers disappear when this page is'
+      + ' reloaded or you switch to another site.';
+    var fill = function (host) {
+      clear(host);
+      host.appendChild(el('span', 'badge-scenario-tag', 'SCENARIO'));
+      /* A SEPARATOR THAT IS TEXT, not a gap. The two spans are laid out with a flex gap, which a
+         reader sees and `textContent` does not — and `#banner` is an aria-live region, so the
+         string that gets announced is the concatenation. Without this it announces SCENARIOActive. */
+      host.appendChild(document.createTextNode(' '));
+      host.appendChild(el('span', 'badge-scenario-text', text));
+    };
+    if (existing) { fill(existing); return; }
+    var mark = el('span', 'badge-scenario');
     mark.id = 'scenarioPrintMark';
+    fill(mark);
     banner.appendChild(mark);
   }
 
@@ -5043,6 +5115,7 @@
     SHOW_INLINE_HELP_ICONS = opts.inlineHelpIcons !== false;
     SHOW_AXIS_PRICE_ROW = opts.axisPriceRow !== false;
     SHOW_CHART_TOOLBAR = opts.chartToolbar !== false;
+    SHOW_CHART_FULLSCREEN = opts.chartFullscreen !== false;
     SHOW_INLINE_FILTER_NOTES = opts.inlineFilterNotes !== false;
     CLEAR_SCENARIO_ON_SITE_CHANGE = opts.clearScenarioOnSiteChange === true;
     ADAPTER = opts.adapter || (PREVIEW && PREVIEW.PreviewProductStrategyDataAdapter) || null;
@@ -5279,6 +5352,18 @@
       chart_toolbar_default: 'rendered',
       chart_toolbar_leaves_no_empty_container: true,
       chart_toolbar_functions_are_retained: 'toggleFullscreen, applyViewMode, zoom, reset',
+      /* P1-B8D-R9 §4 */
+      chart_fullscreen_is_an_argument: true,
+      chart_fullscreen_default: 'rendered',
+      chart_fullscreen_is_suppressed_by_not_building_it: true,
+      chart_toolbar_without_fullscreen: 'Auto Fit, Comfortable, Clean, Detail, Layers, Size, Reset view',
+      /* P1-B8D-R9 §5 */
+      chart_marker_image_has_an_error_path: true,
+      chart_marker_failure_is_distinguished_from_no_record: 'data-image-failed',
+      /* P1-B8D-R9 §3 */
+      scenario_notice_is_not_a_fault: true,
+      scenario_notice_states_site_change_clears: true,
+      scenario_notice_carries_a_word_not_only_a_colour: 'badge-scenario-tag',
       chart_mode_without_a_toolbar: 'auto (Auto Fit) — the measured default',
       inline_filter_notes_are_an_argument: 'mount({ inlineFilterNotes: false })',
       inline_filter_notes_default: 'rendered',

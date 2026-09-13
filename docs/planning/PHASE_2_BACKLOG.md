@@ -82,3 +82,47 @@ invisible for two rounds and it passed every test, because a synthetic `.click()
 and every assertion about the control was true. R8 fixed it with `top: var(--header-height, 56px)`,
 which is correct and is also the fourth place in this repository where a page works out for itself
 where the shell's chrome ends. A shared drawer would own that offset once.
+
+---
+
+## B2-7 · The semantic palette is declared and almost unused
+
+`base.css` declares six UI semantic tokens — `--km-ui-success`, `--km-ui-danger`, `--km-ui-warning`,
+`--km-ui-info`, `--km-ui-utility`, `--km-ui-neutral`. Before P1-B8D-R9, **exactly one of them was
+referenced anywhere** (`--km-ui-danger`, once, in `components.css`).
+
+The consequence is not theoretical. Product Strategy marked a **simulation** — a thing the operator
+deliberately did — in `#fff4ed / #f0c9b4 / #7a3a1c` and `#b8860b`, which is the same amber family the
+same page uses for `--watch`, the finding class that means *look at this*. The USER read the banner as
+an error, and that reading was correct: the page was painting a success in the palette of a fault.
+
+R9 fixed it **on this page** by adopting `--km-ui-utility`. It did not audit the other pages, and
+should not have — that is a round of its own.
+
+**The work:** find every hard-coded semantic colour in `assets/css/pages/*`, decide which of the six
+tokens each one means, and move it. Where a page needs a shade of a token rather than the token, derive
+it once and name it, the way R9 derived `--scn-ink` / `--scn-mark` / `--scn-tint` from `--km-ui-utility`
+(a token at full strength is a fine 1px rule and a poor sentence — `#8e76a8` on white is 3.9:1).
+
+**One rule to carry:** severity must never be carried by colour alone. `.psb-state` already differs by
+left-border WIDTH and STYLE and by glyph; R9's scenario surfaces keep a tag word and a dash pattern.
+Whatever a palette round does, it must not reduce a distinction to hue.
+
+---
+
+## B2-8 · `sku_details.image_url` reconciliation (data, not code)
+
+P1-B8D-R9 made the UI safe: a reference to a file the repository does not hold is refused before the
+request, and the chart marker falls back instead of drawing an empty frame. **The data is still
+wrong**, and fixing it is a governance task rather than an engineering one.
+
+Measured on the 2026-09-12 production sample: of 51 distinct live SKUs, **45 have a repository file
+named for them and 6 do not** — `CO1101-R`, `CO1205-B`, `CO1205-R`, `CO2100-P`, `CO2100-R1`,
+`GM1100-P`, all `Active`.
+
+**This is a sample, not the list.** The full answer needs the live `image_url` column, which is an S2
+read. Per row the decision is a product judgement — add the asset, correct the path, or empty the
+column — and no rule automates it. Detail and method:
+[`IMAGE_REFERENCE_REMEDIATION_REPORT.md`](IMAGE_REFERENCE_REMEDIATION_REPORT.md) §7.
+
+**Not to be done by an agent, and not to be done by bulk update.**

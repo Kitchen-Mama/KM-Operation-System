@@ -1,0 +1,215 @@
+# P1 → S2 HANDOFF — THE FRONTEND API MIGRATION KICKOFF PACKAGE
+
+**Written by P1-B8D-R9 (2026-09-13). Planning only. No S2 runtime exists and none may be written
+under a P1 round.**
+
+This document is the starting instruction for the S series. It does not migrate anything, define a
+new action against a live server, or touch a page's runtime. Its job is to make the first S2 round
+executable by somebody who was not in any of the P1 rounds.
+
+> **The rule the S mainline now carries, adopted in P1-B8D-R8:**
+> **Every new or modified production data feature defines its API contract first and wires the
+> runtime second. No new browser path may read a database, a Sheet or a fixture directly.**
+
+---
+
+## 0 · WHERE P1 ACTUALLY ENDS
+
+P1 is **not** closed by this document. It is closed when the USER completes live acceptance of
+R9 on GitHub Pages. Until then, P1-B8D-R9 is a local commit on
+`feature/product-strategy-board-p0` and nothing else.
+
+**Product Strategy, as shipped at the end of P1:**
+
+| | |
+|---|---|
+| actions the browser reads | `system.health` · `productPricing.siteUniverse.get` · `productPricing.workspace.get` |
+| transport | `KM.transport.post` only, through `KM.productPricingWorkspace` |
+| write-shaped actions | **0** |
+| production fixture reads | **0** |
+| browser direct DB / Sheets | **0** |
+| `localStorage` as a data source | **none** |
+
+That is the shape every other page is being moved toward. It is the reference implementation, and
+the reason S2 starts from a census rather than from a rewrite.
+
+---
+
+## 1 · THE INVENTORY S2 STARTS FROM
+
+Unchanged from the P1-B8D-R8 census in
+[`S_SERIES_FRONTEND_API_MIGRATION_INVENTORY.md`](S_SERIES_FRONTEND_API_MIGRATION_INVENTORY.md).
+R9 added one loaded script (`km-repo-asset-manifest.js`, `NO_DATA_ACCESS`) and changed no
+classification; the inventory records that line rather than silently moving a total.
+
+| Class | Count | What it means for S2 |
+|---|---|---|
+| `STANDARD_API` | 5 | done — the target shape |
+| `LEGACY_API_WRAPPER` | 19 | `KM.DB.*` — the same endpoint and action vocabulary through a second transport. **Not a bypass.** Mechanical to move where the action already exists. |
+| `DIRECT_EXTERNAL_FETCH` | 1 | the partial loader, fetching this application's own markup. Not a data path. |
+| `PRODUCTION_FIXTURE_OR_STATIC_DATA` | 5 | map topology and place names, correctly compiled in. No work. |
+| `DOM_OR_LOCALSTORAGE_AS_DATA_SOURCE` | 8 | **the real risk.** Seven are caches, drafts or cross-page handoffs with a server behind them. One is not. |
+| `NO_DATA_ACCESS` | 41 | renderers, utils, layout, i18n (40 + the R9 manifest) |
+
+**`google.script.run` = 0 · `XMLHttpRequest` calls = 0 · direct Sheets reads = 0.**
+
+**Do not re-derive these numbers by eye.** If a count changes, the change must be explained by the
+diff of the round that changed it. `product-strategy-corrections-p1-b8d-r9.test.js` §F asserts this.
+
+---
+
+## 2 · S2-A — CAMPAIGN RISK PROMOTION RECORDS
+
+**The sharpest finding in the whole census, and it is not about transport.**
+
+Campaign Risk **does** have a server side for most of what it shows: `campaigns`,
+`campaign_sku_lines`, `marketplace_skus`, `sku_details` and `marketplaces` all arrive through
+`loadScopedTables` (`campaign-risk.js:654`). What has **no server side at all** is the
+operator-entered **promotion records** — `km_campaign_promotion_records_v3` in browser storage,
+every row stamped `source: 'overlay'`, empty by default.
+
+**Why that matters.** A shared operational tool whose records are not shared is a gap, not a design.
+Two operators looking at the same campaign see different promotion histories, and neither can tell.
+
+**Whether it blocks first go-live is a RELEASE-SCOPE decision, not an engineering one** — it depends
+on whether Campaign Risk is in the first published set. S2-A does not make that call; it makes the
+call possible by defining what the server side would be.
+
+### S2-A deliverable — a contract, not an implementation
+
+Define and document, without writing runtime:
+
+1. **Canonical schema** for a promotion record: identity, the campaign and SKU line it attaches to,
+   the promotion price and currency, the effective window, the status, and the audit fields
+   (`created_by`, `created_at`, `updated_by`, `updated_at`).
+2. **Identity and scope.** A promotion record belongs to a company + country + marketplace + SKU +
+   campaign. Decide whether the identity is server-minted or client-proposed, and say why.
+3. **Read action** — the shape that returns records for a scoped read, and how it joins the existing
+   `campaigns` read rather than duplicating it.
+4. **Write action** — create, update, retire. Retire rather than delete unless there is a stated
+   reason; an operational record that vanishes cannot be audited.
+5. **The migration question, answered explicitly:** what happens to the rows currently in an
+   operator's browser. They are not authoritative and were never shared, so the honest default is
+   that they are **not** migrated and the operator is told so. Do not silently promote local
+   overlay rows into the database.
+6. **Refusal vocabulary** — what the action says when the scope is incomplete, the campaign is not
+   live, or the caller may not write.
+
+**Explicitly out of scope for S2-A:** implementing the handler, deploying anything, or touching
+`campaign-risk.js`'s runtime.
+
+---
+
+## 3 · S2-B — SKU DETAILS / SKU REGIONAL DETAILS
+
+**Mostly a consolidation, and the smaller half of S2.**
+
+- Enumerate every `KM.DB.*` read and write these two pages make, by call site.
+- Map each to the workspace action that already exists — `skuDetails.workspace.get` is the target
+  for the primary read.
+- **Only where no action exists does a contract have to be written first**, and it must be, before
+  any wiring.
+- **Image behaviour does not change.** Both pages resolve `sku_details.image_url` through
+  `KM_IMAGE_REFERENCE_POLICY`, which as of P1-B8D-R9 also consults `KM_REPO_ASSET_MANIFEST`. S2-B
+  must keep asking the same authority. If the resolver changes, **all four consumers** — SKU
+  Details, SKU Handbook, Campaign Risk, Product Strategy — get their parity suites re-run.
+
+**Not implemented in this round.**
+
+---
+
+## 4 · S2-C — SESSIONSTORAGE AND DOM AS A HANDOFF
+
+- Find every place domain data crosses a page boundary through `sessionStorage` or the DOM. The
+  known one is the Shipping Plan ↔ Inventory Replenishment handoff.
+- Replace it with a **canonical API identity plus a reloadable read**: the receiving page should be
+  able to render from a URL alone, with no state the sender left behind.
+- **UI preference may stay in browser storage.** A remembered tab, a collapsed section, a chosen
+  density — none of those is domain data. The line is whether a second operator on a second machine
+  would need the same value to see the same page.
+
+**Not implemented in this round.**
+
+---
+
+## 5 · S3 – S5, UNCHANGED
+
+| Round | Work |
+|---|---|
+| **S3** | the eight pages whose target workspace action already exists — mechanical, independently verifiable |
+| **S4** | `factory-stock`, `carrier-rate-card`, `sku-handbook` — contracts have to be written first |
+| **S5** | retire `getOperationDb` / `getTable` once no caller needs them. It can only be last. |
+
+---
+
+## 6 · THE READ-ONLY IMAGE REMEDIATION CARRIED INTO S2
+
+P1-B8D-R9 made the UI safe and made the failure legible. It did **not** fix the database, because a
+P1 round may not write to it. What S2 inherits is in
+[`IMAGE_REFERENCE_REMEDIATION_REPORT.md`](IMAGE_REFERENCE_REMEDIATION_REPORT.md):
+
+- the classification each `sku_details.image_url` value now receives, and where it is reported
+  (`image_reference_kind`, `image_reference_reason` on every Product Strategy row);
+- the two verdicts that need a directory listing — `REPO_ASSET_NOT_FOUND` and
+  `REPO_ASSET_CASE_MISMATCH` — and what an operator should do about each;
+- why a case mismatch is **reported and not followed**.
+
+**The remediation itself is a data-governance task**: reading the live `image_url` column, listing
+the rows whose files are absent, and deciding per row whether the asset should be added to the
+repository or the row corrected. Neither half may be done from a P1 round.
+
+---
+
+## 7 · THE FIRST S2 ROUND — EXECUTION ORDER
+
+Hand this to the agent that starts S2-A.
+
+```
+S2-A — CAMPAIGN RISK PROMOTION RECORD CONTRACT (CONTRACT ONLY)
+
+BASE
+  branch   a new branch off main, after P1 is archived
+  base     the commit at which the USER completed P1-B8D-R9 live acceptance
+  verify   worktree clean including untracked; main not modified in the round
+
+SCOPE — WHAT THIS ROUND PRODUCES
+  A written API contract for campaign promotion records, in docs/planning/, covering:
+  canonical schema, identity, scope, status, audit fields, the read action, the write
+  actions, the refusal vocabulary, and the explicit decision about existing browser-local
+  overlay rows.
+
+FILES
+  docs/planning/  — new contract document, and updates to the API migration master plan
+                    and the S-series inventory
+  NO runtime file may be modified. NO .gs file may be modified.
+
+CONTRACT-FIRST
+  The contract is written and reviewed BEFORE any handler or any client call exists.
+  No action may be named in a runtime file in this round.
+
+TESTS
+  A suite that asserts the contract document states each required element, and that no
+  runtime file changed. Mutants: a missing audit field; an identity with no scope; a
+  write action with no refusal vocabulary; a runtime file edited under cover of the round.
+
+NO DEPLOYMENT
+  APPS_SCRIPT_SYNC_REQUIRED = NO. FRONTEND_DEPLOY_REQUIRED = NO. No new deployment.
+
+NO LIVE MUTATION
+  DB / Sheets / Drive writes = 0. No read of production data is required by this round.
+
+LOCAL COMMIT ONLY — DO NOT PUSH.
+```
+
+---
+
+## 8 · WHAT S2 MAY NOT DO
+
+Carried forward from every P1 round, because none of these has stopped being true:
+
+- No automatic remote write. A local commit is the maximum default action.
+- No Apps Script deployment from an agent.
+- No change to an existing action's contract without a round that says so in its own title.
+- No new browser path that reads a database, a Sheet or a fixture directly.
+- No feature flag moved as a side effect.
+- No global sidebar or navigation change inside a data-migration round.
