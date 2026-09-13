@@ -515,6 +515,25 @@ step(function () {
           ok(s.sig.nodes > 0, 'F4.' + (i + 1) + ' ' + ROUTES[i].split('/')[1] + ' rendered something',
             s.sig.nodes);
         });
+        /* THE HEADINGS, SEPARATELY FROM THE SHAPES. Two views could differ in node count while
+           presenting themselves under the same title, which is the version of this defect a reader
+           would actually meet: six tabs, six renders, one page. */
+        var heads = ROUTES.map(function (r) {
+          L.P.applyRoute(r, L.board);
+          var v = L.dom.document.getElementById('view');
+          /* H2 BEFORE H3, AND THE ORDER IS THE ASSERTION. `h3` is a product card — "Cutting Board"
+             is the first one in three of the six views — so reading it first compares the data
+             rather than the view and reports six distinct pages as duplicates. `h2` is the section
+             title, which is what "this view's own heading" means. */
+          var h = v && (v.querySelector('h2') || v.querySelector('h3') || v.querySelector('.card-title')
+            || v.querySelector('.kpi-label'));
+          return h ? String(h.textContent || '').replace(/\s+/g, ' ').trim() : '';
+        });
+        var distinctHeads = heads.filter(function (v, i) { return heads.indexOf(v) === i; });
+        ok(heads.every(function (h) { return h !== ''; }),
+          'F2a every view leads with a heading of its own', heads);
+        eq(distinctHeads.length, 6, 'F2b and the six headings are six different sentences');
+
         /* NOT A NUMBER THAT LEAKED OUT OF A CALCULATION. */
         var all = texts.join(' ');
         ok(all.indexOf('NaN') < 0, 'F5  no NaN on any of the six');
@@ -553,6 +572,32 @@ step(function () {
         btn.dispatchEvent(new L.dom.Event('click'));
         var after = String(L.dom.document.body.className || '');
         eq(after, before, 'G5  and the same control brings it back');
+      });
+  });
+});
+
+/* THE KEYBOARD CONTRACT AS IT ALREADY STANDS, not one invented here. psb-board-ui.js is explicit:
+   "ESCAPE LEAVES FULLSCREEN, and it is checked before the popovers because it is the bigger thing to
+   be inside". Presentation has no Escape binding and is left with the same control that entered it,
+   which G5 holds. Asserting an Escape-exits-Presentation rule would be writing a new contract in a
+   test and calling the existing behaviour a regression. */
+step(function () {
+  return withLive({}, function (L) {
+    return L.pick('company', 'KM')
+      .then(function () { return L.pick('marketplace', 'Shopify'); })
+      .then(function () {
+        var doc = L.dom.document;
+        var fs = doc.getElementById('mode-fullscreen');
+        ok(!!fs, 'G7  the fullscreen control is on a loaded board');
+        if (!fs) return;
+        var before = String(doc.body.className || '');
+        fs.dispatchEvent(new L.dom.Event('click', { bubbles: true }));
+        ok(String(doc.body.className || '') !== before, 'G8  it enters fullscreen');
+        var ev = new L.dom.Event('keydown', { bubbles: true });
+        ev.key = 'Escape';
+        doc.dispatchEvent(ev);
+        eq(String(doc.body.className || ''), before,
+          'G9  and Escape leaves it, which is the contract this file already states');
       });
   });
 });
