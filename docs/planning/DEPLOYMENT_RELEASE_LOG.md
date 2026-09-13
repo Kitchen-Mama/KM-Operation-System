@@ -1656,3 +1656,67 @@ DEFERRED, AND NAMED
   evidence as retained or removed, run the branch-to-main merge checklist, and pick S2 back up.
 
 **STATUS: ACTIVATION PACKAGE READY - NOT SYNCED - NO VERSION - NO DEPLOYMENT - NOT PUSHED.**
+
+
+=======================================================================================================
+P1-B8D-R3  -  MAIN MERGED INTO THE FEATURE BRANCH, AND THE TWO PINS THAT HAD COPIED A RELEASE
+=======================================================================================================
+Date:                        2026-09-13
+Merge:                       origin/main (c139943) into feature/product-strategy-board-p0 (968f9f8)
+                             --no-ff, normal forward merge commit. No squash, no rebase, no cherry-pick.
+Release identity:            UNCHANGED - F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11. No .gs owner file moved.
+APPS_SCRIPT_SYNC_REQUIRED:   NO       DB / Sheets / Drive writes: 0       New deployment: NO
+FRONTEND_GITHUB_PAGES:       unchanged by this round (the 34-asset set is byte-identical)
+
+WHAT GIT COULD NOT SEE
+-------------------------------------------------------------------------------------------------------
+  Two files were edited on both sides since the merge base and both auto-merged cleanly, because the
+  changes fell in different hunks:
+    assets/tools/apps-script-diagnostics/TEMP_S1_POSITIVE_RESIDUAL_READINESS_CENSUS.gs
+    assets/tests/positive-residual-and-submit-readiness-census-...-r6-r7-r5-r1.test.js
+
+  The feature branch moved S1_BUILD_ to R11 because SYS_DEPLOYMENT_RELEASE_ moved; main grew the S1-R5A
+  freeze block and its suite in the same file. Both landed. But TWO assertions in main's suite SPELLED
+  the previous release as a literal - AD7d and AD12k - and a literal is a claim about a world, not about
+  a rule. Merging a later release made them assert that the deployment had not moved, which is something
+  that suite was never asked to know. Textually clean, semantically red: 2 failures, no conflict marker.
+
+WHAT WAS REPAIRED, AND WHAT WAS DELIBERATELY NOT
+-------------------------------------------------------------------------------------------------------
+  AD7d / AD12k are CURRENT-STATE evidence - they drive the census as it is now - so they are asked
+  against the owner rather than against a copy:
+    S1_PIN_          one named reading of S1_BUILD_ from the file under test (three other assertions
+                     in the same suite already read it this way; these two had copied the value)
+    AD7d             the census reports its own pin
+    AD7d1            and that pin equals the release 63_ declares - a SECOND file, a second owner, so
+                     the value is still checked rather than allowed to be anything
+    AD12k0 / AD12k   the freeze recorded the file's pin, and the readback reports it unmoved
+
+  NOT repaired, because it is not broken: S1_MANIFEST_P_BEFORE_ still carries "build":"...-R7-R6". That
+  is a FROZEN baseline from a live run on that release. It is historical evidence and marching it to R11
+  would be editing a measurement to agree with today.
+
+  NOT repaired, because it was never failing: single-scope-allowlist-cutover-...-r7-r6 and
+  override-audit-...-r5-r1 read every file at THIS ROUND'S OWN COMMIT through atRound(), and F0 asserts
+  the range has both ends. They are round-scoped and they survive their own release moving - which is
+  the shape the two repaired assertions now have.
+
+MUTANTS
+-------------------------------------------------------------------------------------------------------
+  N221  the manifest reports the deployment build instead of its own pin. Driven in a world whose
+        deployment has DRIFTED from the pin, because against a correctly synced project the two answers
+        are identical and the mutant is invisible - the first version of this probe survived for exactly
+        that reason and reported nothing.
+  N222  the readback stops reporting the build, so "unmoved" has nothing left to compare.
+  N223  the pin lags the release, so the census would refuse a correctly synced project. Anchored on the
+        pin AS DECLARED, never on a spelled release: an anchor that names a value expires the next time
+        that value moves, which is the defect this whole entry is about.
+
+TESTS
+-------------------------------------------------------------------------------------------------------
+  PRE  (968f9f8, pre-merge)   467 suites, 4 red - the four known baselines - 0 survived, 0 PROBE ERROR
+  POST (merged + repaired)    467 suites, 4 red - the same four - 0 survived, 0 PROBE ERROR
+  positive-residual census    5136 passed / 0 failed / 226 mutants caught / 0 survived
+  No suite skipped, no assertion relaxed, no test deleted.
+
+**STATUS: LOCAL MERGE COMMIT - NOT PUSHED - NO APPS SCRIPT SYNC - NO DEPLOYMENT.**
