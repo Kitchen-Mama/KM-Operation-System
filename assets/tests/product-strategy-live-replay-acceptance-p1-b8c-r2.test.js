@@ -407,9 +407,18 @@ var CHAIN = C0.loadUniverse().then(function () {
 
   /* D3 — THE SUBSTITUTION IS THE SOCKET AND NOTHING ELSE. One universe read, then one workspace read
      per site, and every one of them a READ. */
-  var actions = T0.actions();
+/* P1-B8D-R4 — THE READ ORDER NOW HAS A QUESTION IN FRONT OF IT, and these assertions meant the
+   BUSINESS reads all along. The page asks the server once whether the feature is switched on
+   (`system.health`, the same action 63_ answers on the wire) and only then reads any pricing. So the
+   rule is stated in two halves that cannot be satisfied by accident: exactly one capability read,
+   FIRST; and the pricing reads unchanged in number and order behind it. Counting every action and
+   calling it two was the thing that made a correct page look wrong. */
+  var allActions = T0.actions();
+  var CAP_ACTION = RP.CAPABILITY_ACTION;
+  eq(allActions[0], CAP_ACTION, 'D3pre the capability is asked first', allActions.slice(0, 3));
+  var actions = allActions.filter(function (a) { return a !== CAP_ACTION; });
   eq(actions[0], 'productPricing.siteUniverse.get', 'D3  the universe is read first');
-  eq(actions.length, 11, 'D3a then one workspace read per site — eleven requests', actions.length);
+  eq(actions.length, 11, 'D3a then one workspace read per site — eleven pricing requests', actions.length);
   eq(actions.slice(1).filter(function (a) { return a !== 'productPricing.workspace.get'; }), [],
     'D3b and every one after the first is the workspace read');
   /* D3c — ZERO WRITES, AND IT IS A BEHAVIOUR RATHER THAN A COUNTER. `writes` is a declared 0 on
@@ -747,8 +756,12 @@ CHAIN = CHAIN.then(function () {
 
   // I4 — zero writes anywhere in this round's replay.
   eq(T0.writes, 0, 'I4  the whole replay issued zero write actions');
-  eq(T0.actions().filter(function (a) { return !/\.get$/.test(a); }), [],
-    'I4a and every action it issued ends in .get');
+  /* THE VOCABULARY IS NAMED, NOT PATTERN-MATCHED. "ends in .get" was a cheap stand-in for "is one of
+     the reads this page is allowed to make", and it stopped being true the moment the page asked a
+     question whose action is `system.health`. The allowed set is stated. */
+  var ALLOWED_READS = RP.READ_ACTIONS.concat([RP.CAPABILITY_ACTION]);
+  eq(T0.actions().filter(function (a) { return ALLOWED_READS.indexOf(a) < 0; }), [],
+    'I4a and every action it issued is one of the three reads this page may make');
 });
 
 // ===================================================================================================

@@ -252,9 +252,12 @@ function bootScript(opts) {
     /* 2. THE CAPTURE AT THE SOCKET. The one substitution §5 permits. */
     '    var cap = P1B8C_REPLAY.captureOf(' + cap.global + ');',
     opts.fail ? '    var failWith = ' + JSON.stringify(opts.fail) + ';' : '    var failWith = null;',
+    /* P1-B8D-R4 — capabilityOff is now a SERVER ANSWER, not a poke at the client. The page derives
+       its capability from the health read the replay serves, so "the feature is off" is modelled the
+       way production meets it: the server says no. */
+    '    var capOn = ' + (opts.capabilityOff ? 'false' : 'true') + ';',
     '    var t = P1B8C_REPLAY.install(window, KM.productPricingWorkspace, cap,',
-    '      failWith ? { fail: failWith } : {});',
-    opts.capabilityOff ? '    KM.productPricingWorkspace.setCapability({});' : '',
+    '      Object.assign({ capability: capOn }, failWith ? { fail: failWith } : {}));',
     /* 3. MOUNT THROUGH `onMount`, WHICH IS THE PRODUCTION ENTRY POINT, NOT `create`.
           The first version of this called `create()` + `loadUniverse()` directly and photographed
           seven blank pages: `.module-section` is `display: none` until something adds `.active`, and

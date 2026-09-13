@@ -35,6 +35,12 @@
   // P1-B6 — the companion read. Also a module constant: a caller cannot pass an action, override
   // one, or reach the transport with a different one through this module.
   var SITE_UNIVERSE_ACTION = 'productPricing.siteUniverse.get';
+  /* P1-B8D-R4 - WHERE THE CAPABILITY COMES FROM, now that it comes from somewhere.
+     `system.health` is already deployed, already read-only, already on the transport's
+     session-stable metadata allowlist (so concurrent asks coalesce into one), and 63_ already
+     publishes `product_strategy_enabled` on it. Deriving from it adds no server field, no action
+     and no fourth flag - it reads the server's own answer about its own flag. */
+  var CAPABILITY_ACTION = 'system.health';
   var SITE_UNIVERSE_CONTRACT_VERSION = 1;
   var BUILD = 'PRODUCT-STRATEGY-P1-B1';
   var STATUSES = ['active', 'phasing_out', 'inactive', 'discontinued'];
@@ -44,6 +50,10 @@
   // 00_config.gs names: if the capability transport cannot be read, the page must not offer what it cannot
   // confirm the server accepts.
   var _enabled = false;
+  /* Whether a server answer has been HEARD - not whether it said yes. A false mirror that has never
+     asked and a false mirror the server lowered are different situations, and only the first one is
+     worth another round trip. */
+  var _capabilityHeard = false;
 
   function str(v) { return String(v === undefined || v === null ? '' : v).trim(); }
   function isObj(v) { return !!v && typeof v === 'object' && !(v instanceof Array); }
@@ -297,6 +307,59 @@
   }
   function isEnabled() { return _enabled === true; }
 
+  /**
+   * P1-B8D-R4 - THE MIRROR HAD NO PRODUCER, WHICH IS WHY THE LIVE PAGE REFUSED ITSELF.
+   *
+   * `setCapability` existed, was exported, and was documented as the only way to raise the mirror -
+   * and nothing in `assets/js` or `index.html` ever called it. The boot bootstrap
+   * (app.js -> KM.DB.applyClientCapabilities -> getClientCapabilities -> KM.api) carries three
+   * backend-owned flags and has never heard of this module. So in a browser `_enabled` was false
+   * from load to unload, the controller answered FEATURE_DISABLED at zero requests, and the two
+   * authorities P1-B8D flipped could not be reached from the page they were flipped for.
+   *
+   * THIS IS A MIRROR AND NOT AN AUTHORITY. It does not decide anything: it repeats what the server
+   * says about its own flag, so that a disabled feature costs zero requests instead of one round
+   * trip to be told what could have been asked once. The server refuses on `PRODUCT_STRATEGY_ENABLED_`
+   * before it opens a database no matter what any client believes, which is why lowering this
+   * mirror is a saving and raising it is not a permission.
+   *
+   * FAIL CLOSED ON EVERY UNKNOWN. No transport, a refused read, a non-JSON answer, a missing field,
+   * a field that is not exactly `true` - all of them leave the mirror false. The asymmetry is the
+   * point: a page that cannot confirm the server accepts a read must not offer it.
+   */
+  function refreshCapability(opts) {
+    opts = isObj(opts) ? opts : {};
+    if (_capabilityHeard && opts.force !== true) return Promise.resolve(_enabled === true);
+    var api = transportOf();
+    if (!api) { _enabled = false; return Promise.resolve(false); }
+    var dto = (typeof api.buildRequestEnvelope === 'function')
+      ? api.buildRequestEnvelope(CAPABILITY_ACTION, {}, { requestId: str(opts.requestId) || undefined })
+      : { action: CAPABILITY_ACTION, requestId: str(opts.requestId) || null, payload: {} };
+    return Promise.resolve(api.transport.post(dto, { signal: opts.signal }))
+      .then(function (resp) {
+        return (api.transport && typeof api.transport.safeReadJsonResponse === 'function')
+          ? api.transport.safeReadJsonResponse(resp) : resp;
+      })
+      .then(function (env) {
+        /* THE HEALTH ENVELOPE IS FLAT. 63_ puts its identity block at the top level and nothing
+           under `data` - a fact this repository has already been bitten by once, where a reader
+           that assumed `data` read every identity field as undefined and called a correct
+           deployment stale. Top level is read first; `data` is accepted only as a defensive
+           second look, and both require the literal `true`. */
+        var top = isObj(env) ? env : null;
+        var nested = (top && isObj(top.data)) ? top.data : null;
+        var v = (top && top.product_strategy_enabled !== undefined)
+          ? top.product_strategy_enabled
+          : (nested ? nested.product_strategy_enabled : undefined);
+        _enabled = v === true;
+        _capabilityHeard = true;
+        return _enabled;
+      })
+      .catch(function () { _enabled = false; return false; });
+  }
+  /** For a caller that wants to know whether the answer is a server's or just the default. */
+  function capabilityHeard() { return _capabilityHeard === true; }
+
   function get(params, opts) {
     opts = isObj(opts) ? opts : {};
     if (!isEnabled()) {
@@ -404,6 +467,8 @@
     TRANSPORT_DETAIL: TRANSPORT_DETAIL,
     classifyTransportError: classifyTransportError,
     isEnabled: isEnabled, setCapability: setCapability,
+    refreshCapability: refreshCapability, capabilityHeard: capabilityHeard,
+    CAPABILITY_ACTION: CAPABILITY_ACTION,
     // exported for tests and for a caller that wants to check before it asks
     validateParams: validateParams, buildPayload: buildPayload, validateResponse: validateResponse,
     // stated as data so a test does not have to read the source to assert them

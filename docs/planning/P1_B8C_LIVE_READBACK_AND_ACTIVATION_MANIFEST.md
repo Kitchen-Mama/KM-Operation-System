@@ -679,3 +679,56 @@ anything.
 - **CSP, CDN, external image hosts, asset base.** Phase 2.
 
 **ACTIVATION PACKAGE READY — NOT SYNCED — NO VERSION — NO DEPLOYMENT — NOT PUSHED.**
+
+
+---
+
+# §6  P1-B8D-R4 — THE ACTIVATION AUTHORITY LIST, CORRECTED
+
+P1-B8D §5.1 said there were two authorities and that there was no third. That was true of everything
+it could see, and it was wrong about the page. There was a third gate — the accessor's client
+capability mirror — and it differed from the other two in the way that mattered: **it had no
+producer**. `setCapability` was exported, documented as the only way to raise it, and called by
+nothing in `assets/js` or `index.html`. A browser held `false` from load to unload.
+
+The activation therefore shipped, deployed, attested R11 on the wire — and the live page answered
+`FEATURE_DISABLED` at zero requests on all six sub-tabs.
+
+## 6.1  The list, as it now stands
+
+| # | Authority | Where | What it decides |
+|---|---|---|---|
+| 1 | **Server** | `00_config.gs` `PRODUCT_STRATEGY_ENABLED_` | whether the data may be read at all — the last gate, before `io.openTarget()` |
+| 2 | **Navigation** | `app.js` `KM_STAGED_SECTIONS_['product-strategy'].enabled` | whether the menu appears |
+
+**There is still no third.** The client capability is a **derived cache of authority 1**, read from
+`system.health` — a deployed, read-only action already on the transport's metadata allowlist, already
+publishing `product_strategy_enabled` from 63_. It decides nothing: it exists so that a switched-off
+feature costs zero business reads instead of one round trip to be told what could have been asked once.
+
+Adding `product_strategy_enabled` to `getClientCapabilities` would also have worked and was rejected
+for one reason: it needs an Apps Script change, and this round was not authorised to make one. If a
+later round moves the mirror onto that transport, it replaces this derive — it does not join it.
+
+## 6.2  What must never happen again
+
+- No client file may **declare** the capability. It may **ask**.
+- No harness may **supply** it. `_p1b8c-replay.js` now serves the health question and lets the shipped
+  accessor derive the answer; `capabilityOff` models a server that says no.
+- A suite that raises the mirror itself cannot fail for the reason production fails. That is how a
+  whole corpus stayed green over a page that refused itself.
+
+## 6.3  Runbook — activation
+
+1. `PRODUCT_STRATEGY_ENABLED_ = true` in `00_config.gs` → save → new version → update the existing
+   Web App deployment.
+2. Verify on the wire: `system.health` reports `product_strategy_enabled: true`.
+3. Deploy the frontend. **The client derives the rest.** There is no third switch to flip.
+
+## 6.4  Runbook — rollback
+
+1. `PRODUCT_STRATEGY_ENABLED_ = false` → save → new version → update the existing deployment.
+2. The next page life derives `false` and sends **zero** pricing reads. A page already open reaches a
+   handler that refuses before it opens a spreadsheet.
+3. **No frontend deploy is required to roll back.** The navigation half (`enabled: false` plus a
+   deploy) can follow later if the menu should also disappear.

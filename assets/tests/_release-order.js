@@ -321,7 +321,11 @@ var ROUND_TOKENS = [
   // PSB_VIEWS.VIEWS, and the board reads km-image-reference-policy.js through sku-overrides.js, which
   // fails closed without it. A browser holding one set from each round has a menu whose six children
   // come from a different build than the page they open. APPEND-ONLY, at the end.
-  'activation-p1b8d-20260912'];
+  'activation-p1b8d-20260912',
+  /* P1-B8D-R4 - the capability mirror gained a producer, which changes two shipped modules a
+     returning browser already has. Rotating the whole co-deployed set is the rule: a partial
+     rotation is how a page ends up running a new controller against an old accessor. */
+  'capabilityderive-p1b8dr4-20260913'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

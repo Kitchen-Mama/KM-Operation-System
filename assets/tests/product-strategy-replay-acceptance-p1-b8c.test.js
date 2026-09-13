@@ -419,8 +419,18 @@ var CHAIN = replaySite(P0, KM_US_AMZ).then(function (r) {
 
   /* THE SUBSTITUTION IS ONE FUNCTION AND IT IS THE SOCKET. Two requests, both reads, in the order
      the controller's contract promises: the universe first, the workspace only after a scope. */
-  eq(r.t.actions(), ['productPricing.siteUniverse.get', 'productPricing.workspace.get'],
-    'D4 exactly two requests, universe first — the read order is the shipped one');
+/* P1-B8D-R4 — THE READ ORDER NOW HAS A QUESTION IN FRONT OF IT, and these assertions meant the
+   BUSINESS reads all along. The page asks the server once whether the feature is switched on
+   (`system.health`, the same action 63_ answers on the wire) and only then reads any pricing. So the
+   rule is stated in two halves that cannot be satisfied by accident: exactly one capability read,
+   FIRST; and the pricing reads unchanged in number and order behind it. Counting every action and
+   calling it two was the thing that made a correct page look wrong. */
+  eq(r.t.actions()[0], P0.RP.CAPABILITY_ACTION,
+    'D4pre the capability is asked first, once, before any pricing read', r.t.actions());
+  eq(r.t.countOf(P0.RP.CAPABILITY_ACTION), 1, 'D4pre1 and exactly once');
+  eq(r.t.actions().filter(function (a) { return a !== P0.RP.CAPABILITY_ACTION; }),
+    ['productPricing.siteUniverse.get', 'productPricing.workspace.get'],
+    'D4 exactly two pricing requests, universe first — the read order is the shipped one');
   eq(r.c.requests, { siteUniverse: 1, workspace: 1 }, 'D5 and the controller counted both');
 
   /* EVERY LAYER REALLY RAN. Each of these is a fact only that layer can produce. */
@@ -615,9 +625,12 @@ console.log('\n=== §G  PRICE SCENARIO — IT CHANGES THE PICTURE AND WRITES NOT
     });
     /* AND NO WRITE LEFT THE PAGE: the replay transport throws on any non-read action, so a request
        count of two after a full scenario is the proof. */
-    eq(r.t.actions().filter(function (a) { return P0.RP.READ_ACTIONS.indexOf(a) < 0; }), [],
+    eq(r.t.actions().filter(function (a) {
+      return a !== P0.RP.CAPABILITY_ACTION && P0.RP.READ_ACTIONS.indexOf(a) < 0; }), [],
       'G12 and no non-read action was ever dispatched');
-    eq(r.t.actions().length, 2, 'G13 the scenario cost ZERO additional requests');
+    eq(r.t.actions().filter(function (a) {
+      return String(a).indexOf('productPricing.') === 0; }).length, 2,
+      'G13 the scenario cost ZERO additional pricing requests', r.t.actions());
 
     /* UNDO AND THE THREE RESETS EXIST AND CLEAR. */
     ['scUndo', 'scResetSeries', 'scResetSite', 'scResetAll'].forEach(function (b, i) {
@@ -662,8 +675,12 @@ console.log('\n=== §H  THE STATE MATRIX, THROUGH THE PRODUCTION CONTROLLER ==='
       var p = productionPage();
       if (cs.online === false) { p.sb.navigator = { onLine: false }; }
       var cap = p.RP.captureOf(p.CAP);
-      var t = p.RP.install(p.sb, p.ACC, cap, cs.fail ? { fail: cs.fail } : {});
-      if (cs.capability === false) { p.ACC.setCapability({}); }
+      /* P1-B8D-R4 — "the feature is off" is now a SERVER answer, which is how production meets it.
+         Poking the client mirror directly was the test-only door that hid the live defect for a
+         whole round; this case walks the same path the browser walks. */
+      var instOpts = cs.fail ? { fail: cs.fail } : {};
+      if (cs.capability === false) { instOpts.capability = false; }
+      var t = p.RP.install(p.sb, p.ACC, cap, instOpts);
       var c = p.PAGE.create({ document: p.doc });
       return c.loadUniverse().then(function (res) {
         var box = p.doc.getElementById('psb-state-host');
@@ -681,7 +698,7 @@ console.log('\n=== §H  THE STATE MATRIX, THROUGH THE PRODUCTION CONTROLLER ==='
       eq(seen[cs.name].state, cs.want, 'H1.' + (i + 1) + ' ' + cs.name + ' reports ' + cs.want);
     });
     eq(seen['feature disabled'].requests, 0,
-      'H2 A DISABLED FEATURE COSTS ZERO REQUESTS — it is refused before the wire');
+      'H2 A DISABLED FEATURE COSTS ZERO PRICING REQUESTS — refused before the business wire');
 
     /* THE FOUR CONFUSIONS §11 NAMES, EACH CHECKED ON THE RENDERED TEXT. */
     ok(!/time|timed out/i.test(seen.offline.text), 'H3 OFFLINE DOES NOT SAY TIMEOUT');
@@ -1111,8 +1128,13 @@ console.log('\n=== §L  MUTANTS ===');
       return R.leaks({ a: { product_url: 'https://example.com/x' } }, ['product_url']).length === 0;
     });
 
+  /* P1-B8D-R4 — THE ANCHOR MOVED BECAUSE THE GUARD DID. The capability read joined the allowed
+     vocabulary, so the condition gained a term; the old anchor matched nothing and this probe was
+     scored as "anchor 0x" — which reads in the summary as a surviving mutant announcing an unguarded
+     rule, while in fact it was measuring nothing at all. The rule is unchanged: a write-shaped action
+     is refused BY NAME. */
   mut('L3 the replay really refuses a non-read action', 'replay',
-    "        if (R.READ_ACTIONS.indexOf(action) < 0) {",
+    "        if (action !== R.CAPABILITY_ACTION && R.READ_ACTIONS.indexOf(action) < 0) {",
     "        if (false) {", function (m) {
       var ctx = { module: { exports: {} }, Promise: Promise };
       vm.createContext(ctx);

@@ -404,8 +404,21 @@ console.log('\n=== §E  A DIRECT CALL FAILS CLOSED, AT ZERO REQUESTS ===');
 (function () {
   eq(ACC.isEnabled(), false, 'E1 the capability mirror is false on load');
   ok(/var _enabled = false;/.test(SRC.accessor), 'E1a and that is its declared default');
+  /* P1-B8D-R4 - THE RULE IS "NEVER DECLARE", AND IT USED TO BE WRITTEN AS "NEVER MENTION".
+     While the feature was installed-but-not-activated those were the same sentence, because nothing
+     was allowed to raise the mirror at all. They stopped being the same sentence the day the feature
+     shipped: the mirror had no producer anywhere in production, so the deployed page refused itself
+     at zero requests while this assertion stood over it saying the arrangement was correct. What must
+     stay true is that no client file DECLARES the capability - the page may ask the server and must
+     never decide. */
   ok(SRC.index.indexOf('setCapability') < 0, 'E2 the shell never raises it');
-  ok(bare(SRC.page).indexOf('setCapability') < 0, 'E2a and neither does the page controller');
+  ok(bare(SRC.page).indexOf('setCapability') < 0,
+    'E2a and the page controller never DECLARES it either');
+  ok(/refreshCapability/.test(bare(SRC.page)),
+    'E2b but it does ASK - the mirror has a producer, which is what the live page was missing');
+  ok(/product_strategy_enabled/.test(SRC.accessor)
+    && bare(SRC.page).indexOf('product_strategy_enabled') < 0,
+    'E2c and the server-owned key is named in exactly one client file');
 
   /* THE CONTROLLER, DRIVEN THE WAY A DEVELOPER WOULD DRIVE IT: called directly, with the real
      accessor, in a document built from the real partial. */

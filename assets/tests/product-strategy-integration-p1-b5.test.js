@@ -747,6 +747,45 @@ function mut(label, file, from, to, probe) {
   else { mutSurvived++; console.log('  MUTANT SURVIVED — ' + label); }
 }
 
+/* P1-B8D-R4 — A MUTANT THAT HAS TO AWAIT THE PAGE.
+   `mut` above compares `probe(M) === true` and restores the file on the next line, so a probe that
+   needs a turn of the event loop cannot be expressed in it: a Promise is not `true`, and the mutant
+   scores as SURVIVED while measuring nothing. N11 became one of those the moment the controller
+   started resolving the capability before it read anything, so it gets a runner that waits — queued
+   to the very end, because two mutants editing the same file at once would each read the other's
+   text. */
+var ASYNC_MUTANTS = [];
+function mutAsync(label, file, from, to, probe) {
+  ASYNC_MUTANTS.push(function () {
+    var full = path.join(JS, file);
+    var original = fs.readFileSync(full, 'utf8');
+    var norm = original.replace(/\r\n/g, '\n');
+    var n = norm.split(from).length - 1;
+    if (n !== 1) {
+      mutSurvived++;
+      console.log('  MUTANT SURVIVED (anchor x' + n + ') ' + label);
+      return Promise.resolve();
+    }
+    fs.writeFileSync(full, norm.replace(from, to), 'utf8');
+    function restore() {
+      fs.writeFileSync(full, original, 'utf8');
+      delete require.cache[require.resolve(full)];
+      require(full);
+    }
+    var caught = false, why = '';
+    return Promise.resolve().then(function () {
+      delete require.cache[require.resolve(full)];
+      return probe(require(full));
+    }).then(function (v) { caught = v === true; },
+      function (e) { caught = true; why = 'threw: ' + e.message; })
+      .then(function () {
+        restore();
+        if (caught) { mutCaught++; console.log('  ok   ' + label + ' (caught' + (why ? ', ' + why : '') + ')'); }
+        else { mutSurvived++; console.log('  MUTANT SURVIVED — ' + label); }
+      });
+  });
+}
+
 var LIVE_FILE = path.join('product-strategy', 'km-product-strategy-live-adapter.js');
 var PAGE_FILE = path.join('pages', 'product-strategy-board.js');
 
@@ -824,23 +863,25 @@ mut('N10 the schema check runs AFTER the source state, so a bad shape reports a 
     return rowsNow(M, { version: 7, sourceState: 'SOURCE_EMPTY' }).state !== 'SCHEMA_CONTRACT_MISMATCH';
   });
 
-mut('N11 the page asks the server before it asks the capability mirror', PAGE_FILE,
+mutAsync('N11 the page asks the server before it asks the capability mirror', PAGE_FILE,
   "      return !!accessor && typeof accessor.isEnabled === 'function' && accessor.isEnabled() === true;",
   "      return !!accessor;",
   function (M) {
-    /* SYNCHRONOUS ON PURPOSE. The capability branch runs before mount() returns its promise, so a
-       mutant that drops it reaches the accessor during the call — and `probe` must answer with a
-       boolean, not a promise, or it is comparing a Promise to `true` and always says "survived". */
-    /* SYNCHRONOUS ON PURPOSE — `probe` must answer with a boolean, not a promise, or it compares a
-       Promise to `true` and always reports "survived". A mutant that drops the capability test reaches
-       the site-universe read during the call, so the counter moves before mount() returns. */
+    /* AWAITED, NOT SNATCHED. This used to read the counter during the synchronous part of mount(),
+       which worked only while the capability branch was synchronous. P1-B8D-R4 puts one question to
+       the server in front of it — the page now ASKS whether the feature is on instead of believing a
+       mirror nothing ever set — so the business read, if the mutant lets one through, lands a turn
+       later. The RULE is unchanged and is the one that matters: a page that cannot confirm the
+       capability must not reach the wire. The accessor half of it is guarded in the R4 suite. */
     var calls = 0;
-    M.mount({ accessor: { isEnabled: function () { return false; },
+    var accessor = { isEnabled: function () { return false; },
       getSiteUniverse: function () { calls++; return Promise.resolve({}); },
-      get: function () { calls++; return Promise.resolve({}); } },
+      get: function () { calls++; return Promise.resolve({}); } };
+    return Promise.resolve(M.mount({ accessor: accessor,
       siteUniverse: require(path.join(JS, 'product-strategy', 'km-product-strategy-site-universe.js')),
-      scope: { company: 'K', country: 'US', marketplace: 'Amazon' } });
-    return calls > 0;
+      scope: { company: 'K', country: 'US', marketplace: 'Amazon' } }))
+      .catch(function () { })
+      .then(function () { return calls > 0; });
   });
 
 mut('N12 an incomplete scope is sent anyway and the server is asked to refuse it', PAGE_FILE,
@@ -870,6 +911,10 @@ mut('N12 an incomplete scope is sent anyway and the server is asked to refuse it
 
 // ===================================================================================================
 PENDING.then(function () {
+  return ASYNC_MUTANTS.reduce(function (chain, run) {
+    return chain.then(run);
+  }, Promise.resolve());
+}).then(function () {
   console.log('\n' + '='.repeat(100));
   console.log('passed ' + pass + '  failed ' + fail
     + '  |  mutants caught ' + mutCaught + '  survived ' + mutSurvived);

@@ -29,11 +29,21 @@
  * it had built itself. A harness that starts below the validator cannot find that class of defect,
  * which is the only class a replay round exists to find.
  *
- * THE CAPABILITY IS RAISED THE WAY A SERVER RAISES IT. `setCapability({product_strategy_enabled:true})`
- * is the mirror's only entry point and it takes a server capability payload. The harness does not
- * write `_enabled`, does not touch `PRODUCT_STRATEGY_ENABLED_`, and does not patch the accessor: the
- * mirror is raised in the TEST PROCESS only, and `resetCapability()` puts it back. Production default
- * is false and no file in this repository changes that.
+ * THE CAPABILITY IS ANSWERED, NOT ASSIGNED  (P1-B8D-R4).
+ *
+ * This paragraph used to say that the harness raised the mirror "the way a server raises it", by
+ * calling `setCapability({product_strategy_enabled:true})` — and it ended with the sentence
+ * "production default is false and no file in this repository changes that", offered as a safety
+ * property. That sentence was true, and it was the defect: NOTHING in production raised the mirror
+ * either, so the deployed page answered FEATURE_DISABLED at zero requests on all six sub-tabs while
+ * every suite driven through this file rendered a complete board. The harness was supplying the one
+ * input production never gets, which is the one thing a harness must never do.
+ *
+ * So the capability is now ANSWERED on the wire: the fake transport serves `system.health` with the
+ * flat `product_strategy_enabled` 63_ publishes, and the shipped accessor derives the mirror from it
+ * through exactly the call a browser makes. `opts.capability === false` models a server that says no.
+ * The harness sets the mirror only to RESET it between scenarios, because a module singleton must not
+ * carry one scenario's server answer into the next.
  *
  * EVERY REQUEST IS COUNTED AND EVERY WRITE-SHAPED CALL IS A THROW. The fake transport records the
  * action, the payload and the order; a POST for anything but the two read actions raises rather than
@@ -47,6 +57,12 @@
   var R = {};
 
   R.READ_ACTIONS = ['productPricing.workspace.get', 'productPricing.siteUniverse.get'];
+  /* P1-B8D-R4 — THE CAPABILITY READ IS A READ, AND IT BELONGS ON THIS LIST.
+     `system.health` is how the shipped accessor learns whether the server has the feature switched
+     on. Before this round the harness skipped that question and answered it directly by calling
+     `setCapability` — which is exactly why every suite passed against a live page that refused
+     itself: the harness was supplying the one input production never gets. */
+  R.CAPABILITY_ACTION = 'system.health';
 
   /**
    * A transport that answers from a capture and refuses to be anything else.
@@ -72,8 +88,15 @@
         /* A WRITE-SHAPED CALL IS A THROW, NOT A REFUSAL. Returning an error would let a caller
            swallow it; raising makes an attempted write impossible to miss and impossible to count
            as zero. */
-        if (R.READ_ACTIONS.indexOf(action) < 0) {
+        if (action !== R.CAPABILITY_ACTION && R.READ_ACTIONS.indexOf(action) < 0) {
           throw new Error('P1B8C REPLAY REFUSED A NON-READ ACTION: ' + action);
+        }
+
+        /* THE SERVER'S ANSWER ABOUT ITS OWN FLAG, in the FLAT shape 63_ actually sends. The harness
+           answers the question; it does not answer FOR the page. */
+        if (action === R.CAPABILITY_ACTION) {
+          return Promise.resolve({ success: true, ok: true,
+            product_strategy_enabled: opts.capability !== false });
         }
 
         if (opts.fail) {
@@ -117,7 +140,13 @@
     g.KM = g.KM || {};
     g.KM.api = t.api;
     g.KM.productPricingWorkspace = accessor;
-    accessor.setCapability({ product_strategy_enabled: true });
+    /* P1-B8D-R4 — NOT RAISED HERE ANY MORE. The accessor derives the capability from the health read
+       this transport serves, through the same call the browser makes. Raising it here was a SECOND
+       ACTIVATION PATH that only tests could walk, and it hid a live defect for a whole round: the
+       mirror had no producer in production, so the deployed page answered FEATURE_DISABLED at zero
+       requests while every suite rendered a full board. The reset stays — a module singleton must not
+       carry one scenario's server answer into the next. */
+    accessor.setCapability({});
     t.restore = function () {
       accessor.setCapability({});          // back to false, the production default
       g.KM = savedKM;

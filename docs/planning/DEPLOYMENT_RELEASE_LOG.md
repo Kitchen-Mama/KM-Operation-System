@@ -1720,3 +1720,89 @@ TESTS
   No suite skipped, no assertion relaxed, no test deleted.
 
 **STATUS: LOCAL MERGE COMMIT - NOT PUSHED - NO APPS SCRIPT SYNC - NO DEPLOYMENT.**
+
+
+=======================================================================================================
+P1-B8D-R4  -  THE CAPABILITY MIRROR HAD NO PRODUCER, AND THE LIVE PAGE REFUSED ITSELF
+=======================================================================================================
+Date:                        2026-09-13
+Trigger:                     LIVE ACCEPTANCE FAILURE. With R11 deployed and product_strategy_enabled
+                             true on the wire, all six Product Strategy sub-tabs rendered:
+                               "Product Strategy is not enabled yet."
+                               "The capability is off, so no request was sent."   FEATURE_DISABLED
+Release identity:            UNCHANGED - F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11. No .gs file changed.
+APPS_SCRIPT_SYNC_REQUIRED:   NO        New deployment: NO       DB / Sheets / Drive writes: 0
+FRONTEND_GITHUB_PAGES:       REQUIRED - two shipped modules changed; the co-deployed set rotated onto
+                             capabilityderive-p1b8dr4-20260913 (34 refs, 0 stale, 0 misplaced).
+
+ROOT CAUSE - A THIRD AUTHORITY WITH NO INPUT
+-------------------------------------------------------------------------------------------------------
+  km-product-pricing-workspace.js keeps a capability mirror, `_enabled`, default false, raised only by
+  setCapability(caps). Its own header says "only a server capability payload can raise it".
+
+  setCapability had ZERO callers in assets/js and in index.html. The boot bootstrap
+  (app.js -> KM.DB.applyClientCapabilities -> getClientCapabilities -> KM.api) carries three
+  backend-owned flags - requestOrderDraftV2FlatCutover, requestOrderSiteConfirmRequired,
+  inventoryAiPlanDbGenerationEnabled - and has never heard of this accessor. 03_'s
+  handleGetClientCapabilities_ does not publish product_strategy_enabled at all.
+
+  So in a browser the mirror was false from load to unload. P1-B8D moved the two authorities it had
+  named and could not move this one, because nothing in the corpus could see it.
+
+WHY EVERY SUITE PASSED, INCLUDING THE BROWSER ACCEPTANCE
+-------------------------------------------------------------------------------------------------------
+  _p1b8c-replay.js install() called setCapability({product_strategy_enabled:true}) in the same call
+  that swapped the transport. Every replay-driven suite - and the seven-viewport activated runner -
+  therefore ran with the one input production never receives. Its header even stated the defect as a
+  virtue: "production default is false and no file in this repository changes that".
+
+  And shell-integration E2/E2a asserted that neither the shell nor the page controller mentions
+  setCapability. Correct while the feature was installed-not-activated; after activation it stood over
+  a page that refused itself and reported the arrangement as right.
+
+THE REPAIR - DERIVED, NOT DECLARED. STILL TWO AUTHORITIES.
+-------------------------------------------------------------------------------------------------------
+  ACTIVATION AUTHORITIES (unchanged in number, and this is the point):
+    1. SERVER      00_config.gs  PRODUCT_STRATEGY_ENABLED_          - access authority, last gate
+    2. NAVIGATION  app.js        KM_STAGED_SECTIONS_[...].enabled   - menu visibility authority
+
+  The client capability is NOT a third authority and must never become one. It is a DERIVED CACHE of
+  authority 1: the accessor reads `system.health` - already deployed, already read-only, already on the
+  transport's session-stable metadata allowlist - and takes 63_'s flat product_strategy_enabled. No new
+  server field, no new action, no fourth flag, no Apps Script change.
+
+  FAIL CLOSED ON EVERY UNKNOWN: no transport, a refused read, a non-JSON answer, a missing field, or a
+  value that is not literally true all leave the mirror false. 72_ still refuses on the server flag
+  before io.openTarget(), so lowering the mirror is a saving and raising it is never a permission.
+
+ROLLBACK - UNCHANGED, AND STILL SERVER-FIRST
+-------------------------------------------------------------------------------------------------------
+  PRODUCT_STRATEGY_ENABLED_ = false -> save -> new version -> update the existing deployment. The next
+  page life derives false from system.health and sends zero pricing reads; a page already open reaches
+  a handler that refuses before opening a spreadsheet. No frontend deploy is required to roll back.
+
+TESTS
+-------------------------------------------------------------------------------------------------------
+  NEW  product-strategy-live-activation-p1-b8d-r4  63 passed / 0 failed / 9 mutants / 0 survived
+       Reproduces the live screen through the production entry with the capability payload PARSED from
+       03_, and calls setCapability nowhere - a reproduction that supplies the missing input is not one.
+  RE-POINTED (each because the repair changed what is true, none relaxed):
+       _p1b8c-replay.js            serves the health read; no longer raises the mirror
+       _p1b8c-visual-runner.js     capabilityOff is a SERVER answer, not a poke at the client
+       shell-integration b7 E2/E2a "never mention" -> "never DECLARE"; the page may ASK
+       replay-acceptance b8c       counted all requests, meant PRICING requests; L3 re-anchored
+       live-replay b8c-r2          same; I4a names the read vocabulary instead of matching /\.get$/
+       integration b5 N11          rule unchanged; its SYNCHRONOUS assumption did not survive
+       activation b8d J3 / H1 / K12  three round-scoped assertions whose far end was "now"
+  Browser: 7 viewports, overflow 0, Product Strategy above Pricing Center, six sub-tabs, Y axis
+       complete, six view screenshots with six distinct hashes - through the PRODUCTION derive.
+
+KNOWN, MEASURED, NOT FIXED THIS ROUND
+-------------------------------------------------------------------------------------------------------
+  THE REFUSAL BOX HAS NO STYLING. product-strategy-board.css scopes all 482 of its rule blocks under
+  .psb-page and defines no rule for .psb-state, .psb-state__headline, .psb-state__detail or
+  .psb-state-host. Every refusal - including the one the operator photographed - renders as unstyled
+  paragraphs. It is legible and correct, and it is a real gap: measured here, left for a small round of
+  its own rather than folded into a capability fix.
+
+**STATUS: LOCAL COMMIT - NOT PUSHED - FRONTEND REDEPLOY REQUIRED - NO APPS SCRIPT SYNC.**

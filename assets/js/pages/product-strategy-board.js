@@ -181,9 +181,27 @@
     function capabilityOk() {
       return !!accessor && typeof accessor.isEnabled === 'function' && accessor.isEnabled() === true;
     }
+    /* P1-B8D-R4 - THE PAGE MAY ASK THE SERVER WHAT IT ALLOWS; IT MAY NEVER DECLARE IT.
+       The mirror is only ever as good as its producer, and until this round it had none: nothing in
+       the shipped frontend called `setCapability`, so a browser held `false` from load to unload and
+       this page reported a feature that was switched ON at both of its authorities. The derive is one
+       read of the server's own health, resolved once per page life, and it returns nothing - the
+       answer is read back through capabilityOk() above, so there is still exactly one mirror and no
+       second opinion. An accessor without the step (an older build, a test double) keeps whatever it
+       already had rather than being treated as an error. */
+    function capabilityResolved() {
+      if (capabilityOk()) return Promise.resolve(true);
+      if (!accessor || typeof accessor.refreshCapability !== 'function') return Promise.resolve(false);
+      return Promise.resolve(accessor.refreshCapability())
+        .then(function () { return capabilityOk(); }, function () { return false; });
+    }
 
     /** STEP 1 + 2. The capability, then the universe. Never the workspace. */
     C.loadUniverse = function () {
+      return capabilityResolved().then(loadUniverseResolved);
+    };
+
+    function loadUniverseResolved() {
       /* THE CAPABILITY IS ASKED FIRST — BEFORE EVEN CHECKING WHETHER THE MODULES LOADED.
          This ordering is the same discipline 72_ applies with "the flag, before the door", and it was
          wrong here first: a build with a missing script answered MODULE_NOT_LOADED to a person whose
@@ -219,7 +237,7 @@
           // The initial narrow resolves any tier that has exactly one value, and nothing else.
           return C.select(isObj(opts.scope) ? opts.scope : {});
         });
-    };
+    }
 
     /**
      * STEP 3. A person chooses. Downstream values the new upstream does not offer are cleared, and the

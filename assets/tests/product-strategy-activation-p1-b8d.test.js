@@ -542,11 +542,20 @@ ok(REL.BUILD_STAMP_RE.test(RELEASE), 'G7b and it matches the canonical stamp sha
 section('§H  THE CO-DEPLOYED FRONTEND TOKEN');
 // ==================================================================================================
 
-eq(REL.currentAppToken(), ACTIVATION_TOKEN, 'H1  the current application token is the activation token');
+/* P1-B8D-R4 — EQUALITY WITH NOW, ONE FIELD FURTHER OUT. This said "the activation token IS the
+   current token", which is a sentence only one round can ever satisfy: the next round to change a
+   shipped asset must rotate the set, and then this fails while describing a correct tree. It is the
+   same defect the release-order file was written to end, in the one place that still spelled it.
+   What P1-B8D actually owns is that ITS token was published, was never reused, and that the set it
+   covered rotates TOGETHER from here on. */
+ok(REL.ROUND_TOKENS.indexOf(ACTIVATION_TOKEN) !== -1,
+  'H1  the activation token is registered in the release order');
+ok(REL.tokenAtOrAfter(REL.currentAppToken(), ACTIVATION_TOKEN),
+  'H1a and the set has not moved BACKWARDS from it', REL.currentAppToken());
 eq(REL.staleAppTokenRefs(SRC.index), [], 'H2  no index.html reference is left behind on an older token');
 eq(REL.misplacedIndexTokens(SRC.index), [], 'H2a and no asset carries a token from another series');
-eq(REL.ROUND_TOKENS.indexOf(ACTIVATION_TOKEN), REL.ROUND_TOKENS.length - 1,
-  'H3  it is the LAST entry in the release order — append-only');
+eq(REL.ROUND_TOKENS.indexOf(REL.currentAppToken()), REL.ROUND_TOKENS.length - 1,
+  'H3  the CURRENT token is the last entry in the release order — append-only');
 eq(REL.ROUND_TOKENS.filter(function (t) { return t === ACTIVATION_TOKEN; }).length, 1,
   'H3a appearing exactly once — a published token may never be reused');
 
@@ -564,8 +573,8 @@ ok(SRC.index.indexOf('productstrategy-p1b8b-20260912') < 0,
  'assets/js/product-strategy/psb-views.js', 'assets/js/pages/product-strategy-board.js',
  'assets/js/utils/km-image-reference-policy.js', 'assets/js/utils/sku-overrides.js',
  'assets/js/app.js'].forEach(function (f, i) {
-  ok(SRC.index.indexOf(f + '?v=' + ACTIVATION_TOKEN) > 0,
-    'H5.' + (i + 1) + ' ' + f.split('/').pop() + ' is on the activation token');
+  ok(SRC.index.indexOf(f + '?v=' + REL.currentAppToken()) > 0,
+    'H5.' + (i + 1) + ' ' + f.split('/').pop() + ' is on the current co-deployed token');
 });
 eq(REL.appTokenRefCount(SRC.index), 34,
   'H6  thirty-four references share it — the application set and the Product Strategy set, now one');
@@ -658,7 +667,12 @@ section('§J  NOTHING ELSE MOVED');
 /* NO STYLESHEET CHANGED AT ALL, which is the cheapest possible proof that no other page was
    restyled — and the check P1-B8A exists because of. The board stylesheet is loaded by index.html on
    every page, so one bare-class rule in it restyles the whole application silently. */
-var changed = cp.execFileSync('git', ['diff', '--name-only', 'a3889c2', '--'],
+/* P1-B8D-R4 — THE RANGE NAMES BOTH ENDS. This read `a3889c2..<working tree>`, so it was not a
+   statement about P1-B8D at all: it was a statement about everything that has happened since, and
+   the first later round to touch a client runtime file made it fail while describing a correct tree.
+   A round-scoped assertion whose far end is "now" silently becomes a claim about every future round.
+   968f9f8 is this round's own commit. */
+var changed = cp.execFileSync('git', ['diff', '--name-only', 'a3889c2', '968f9f8', '--'],
   { cwd: ROOT, encoding: 'utf8' }).split('\n').filter(Boolean);
 eq(changed.filter(function (f) { return /\.css$/.test(f); }), [],
   'J1  not one stylesheet changed in this round');
@@ -902,7 +916,11 @@ mut('K11 the mount stops honouring `enabled` — D2b/F5a', function () {
 });
 
 mut('K12 a stale cache token is left on one asset — H2', function () {
-  var m = swapIn(SRC.index, 'assets/js/app.js?v=' + ACTIVATION_TOKEN,
+  /* P1-B8D-R4 - ANCHORED ON THE TOKEN INDEX.HTML ACTUALLY CARRIES, not on this round's. A mutant
+     that names a value expires the next time that value moves, and this one did: after the R4
+     rotation the anchor matched nothing, the probe found zero stale refs, and it scored as SURVIVED
+     while the guard underneath it was working perfectly. */
+  var m = swapIn(SRC.index, 'assets/js/app.js?v=' + REL.currentAppToken(),
     'assets/js/app.js?v=imagepolicy-r3r2-20260912');
   return REL.staleAppTokenRefs(m).length > 0;
 });
