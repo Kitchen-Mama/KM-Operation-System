@@ -161,7 +161,24 @@ function buildPage(opts) {
      would photograph a board with no photographs. The manifest fails OPEN, so omitting IT would
      photograph a board whose 404 gate is switched off while every assertion about the gate passes
      against the Node copy. A harness that loads one and not the other measures neither. */
-  var WANTED = /product-strategy|km-product-pricing|km-api-foundation|km-transport|utils\/tab-rail|km-image-reference-policy|km-repo-asset-manifest/;
+  /* P1-B8D-R10D §12 added `operation-system-db-api`, and it is the file this page was MISSING while
+     claiming to boot production.
+
+     `app.js` has always been loaded here, so the run has always executed the production boot. But
+     the one line of that boot this round is about — `KM.DB.applyClientCapabilities()` — is guarded
+     on `KM.DB` EXISTING, and `KM.DB` is defined in this file. With it absent the guard silently
+     failed and the bootstrap never ran: the page reported a production boot it had not performed.
+     A suite could then only raise the capability by calling the setter itself, which is precisely
+     the second activation path R4 removed for hiding a live defect for a whole round.
+
+     It is the shipped file, loaded as shipped bytes. Nothing from it is reimplemented or stubbed
+     here; the only substitution remains the fake `fetch` the replay installs BENEATH it.
+
+     `core/boot-read-arbiter` comes with it because `app.js` declares the capability read to the
+     arbiter and the page WAITS on that declaration. Without the arbiter the wait degrades to "read
+     whatever the mirror says right now", which is a different code path from the shipped one — and
+     the pending case is exactly what §10 asks this run to show. */
+  var WANTED = /product-strategy|km-product-pricing|km-api-foundation|km-transport|utils\/tab-rail|km-image-reference-policy|km-repo-asset-manifest|api\/operation-system-db-api|core\/boot-read-arbiter/;
   var scripts = (index.match(/<script src="([^"]+)"><\/script>/g) || [])
     .map(function (t) { return /src="([^"]+)"/.exec(t)[1]; })
     .filter(function (s) { return WANTED.test(s); })
@@ -337,6 +354,15 @@ function bootScript(opts) {
       opts.netFaultWhen ? { netFaultWhen: opts.netFaultWhen } : {},
       (typeof opts.netFaultUntil === 'number') ? { netFaultUntil: opts.netFaultUntil } : {},
       (typeof opts.netFaultSlowMs === 'number') ? { netFaultSlowMs: opts.netFaultSlowMs } : {},
+      /* P1-B8D-R10D §10 — THE TWO WAYS A BOOTSTRAP CAN ANSWER WITHOUT ANSWERING THIS QUESTION.
+         A deployment that predates the field omits it; a deployment that sends `1` or `"true"` sends
+         something this build must not read as a decision. Both fail closed and NEITHER is the server
+         saying "off", which is the distinction §10 exists to protect — so both have to be reachable
+         from a scenario, and a whitelist that silently dropped them was how the first run of this
+         matrix reported a fail-open as a pass. */
+      opts.bootstrapOmitsProductStrategy ? { bootstrapOmitsProductStrategy: true } : {},
+      (opts.bootstrapProductStrategyValue !== undefined)
+        ? { bootstrapProductStrategyValue: opts.bootstrapProductStrategyValue } : {},
       opts.delayMs ? { delayMs: opts.delayMs } : {},
       opts.failOnly ? { failOnly: opts.failOnly } : {},
       opts.slowSite ? { slowSite: opts.slowSite, slowMs: opts.slowMs || 300 } : {})) + '));',
@@ -347,6 +373,25 @@ function bootScript(opts) {
           the only thing that does is `onMount`. The board rendered perfectly into a subtree with no
           height, every screenshot was white, and nothing in the run said so. THE MEASUREMENTS SAID
           SO — `viewHost.w === 0` — which is the whole reason §10 asks for more than images. */
+    /* ============================================================================================
+       P1-B8D-R10D §12 — THE MOUNT NOW HAPPENS WHEN PRODUCTION'S MOUNTS HAPPEN: AFTER THE BOOT.
+
+       Everything above this line runs DURING PARSING, which is correct and must stay that way — the
+       fake network has to be in place before the application's boot can dispatch anything, or a
+       suite would send a real request to a real deployment. But the MOUNT was running there too,
+       and production has no such moment: a page is reached by navigating, which is always after
+       DOMContentLoaded, which is when `app.js` declares and fires the capability read.
+
+       Mounting before that inverted the order and the measurement showed it: the board asked the
+       boot arbiter to wait for a dependency `app.js` had not declared yet, the arbiter correctly
+       answered that an undeclared name does not block, and every scenario photographed the page
+       still waiting. The page was right, the arbiter was right, and the harness was staging an
+       order production cannot produce.
+
+       `app.js` registers its listener from a <script> ABOVE this one, and DOM listeners fire in
+       registration order, so the boot runs first and the mount runs after it — by the same rule
+       production relies on rather than by a timer. */
+    '    window.addEventListener("DOMContentLoaded", function () {',
     '    KM.pages.productStrategyBoard.onMount()',
     '      .then(function () {',
     '        var c = KM.pages.productStrategyBoard.lastController;',
@@ -380,6 +425,7 @@ function bootScript(opts) {
     '        window.__ready = true;',
     '      })',
     '      .catch(function (e) { window.__error = String(e && e.message || e); window.__ready = true; });',
+    '    });',
     /* A HELD-OPEN READ NEVER RESOLVES, so the mount chain never sets __ready. The shot has to be
        taken WHILE the request is outstanding, which is the whole point of a loading state. */
     opts.hang ? '  setTimeout(function () { window.__ready = true; }, 400);' : '',

@@ -419,9 +419,20 @@ var CHAIN = C0.loadUniverse().then(function () {
    rule is stated in two halves that cannot be satisfied by accident: exactly one capability read,
    FIRST; and the pricing reads unchanged in number and order behind it. Counting every action and
    calling it two was the thing that made a correct page look wrong. */
+  /* SUPERSEDED BY P1-B8D-R10D — THE QUESTION IN FRONT IS NO LONGER THIS PAGE'S TO ASK.
+
+     R4 put a capability read in front of the pricing reads and D3pre asserted it went first. R10D
+     removes it: the flag rides the application's shared bootstrap, which under Node is applied
+     through the production setter before the page mounts and never reaches this wire at all.
+
+     The stronger statement is therefore available, and it is the one R10D exists for: the page's
+     OWN traffic contains no capability request of any kind, and the pricing reads are unchanged in
+     number and order. An asserted absence is worth more here than the asserted position was. */
   var allActions = T0.actions();
-  var CAP_ACTION = RP.CAPABILITY_ACTION;
-  eq(allActions[0], CAP_ACTION, 'D3pre the capability is asked first', allActions.slice(0, 3));
+  var CAP_ACTION = RP.CAPABILITY_ACTION || 'system.health';
+  eq(allActions.filter(function (a) {
+    return a === CAP_ACTION || a === RP.BOOTSTRAP_ACTION;
+  }), [], 'D3pre SUPERSEDED (R10D): the page asks for no capability at all', allActions.slice(0, 3));
   var actions = allActions.filter(function (a) { return a !== CAP_ACTION; });
   eq(actions[0], 'productPricing.siteUniverse.get', 'D3  the universe is read first');
   eq(actions.length, 11, 'D3a then one workspace read per site — eleven pricing requests', actions.length);

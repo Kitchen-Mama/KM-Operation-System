@@ -433,17 +433,40 @@ if (BROWSER) {
     'G1  one universe read');
   eq(reqs.filter(function (a) { return a === 'productPricing.workspace.get'; }).length, 1,
     'G2  one workspace read');
-  eq(reqs.filter(function (a) { return !/\.get$/.test(a) && a !== 'system.health'; }), [],
-    'G3  and nothing write-shaped', reqs);
+  /* SUPERSEDED BY P1-B8D-R10D: the capability read that was excluded here by name is gone, and the
+     application's shared bootstrap is now visible to this page's request log. Neither is write-shaped;
+     the property — a styling round moves no write — is unchanged. */
+  eq(reqs.filter(function (a) {
+    return !/\.get$/.test(a) && a !== 'system.health' && a !== 'getClientCapabilities';
+  }), [], 'G3  and nothing write-shaped', reqs);
 }
 
 var pageCode = SRC.page.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
 ok(!/['"]Shopify['"]|['"]KM['"]/.test(pageCode), 'G4  no site was hard-coded by a styling round');
 ok(/PRODUCT_STRATEGY_ENABLED_/.test(read('assets/specs/active/apps-script/00_config.gs')),
   'G5  the server flag is untouched');
+/* ============================================================================================
+   SUPERSEDED BY P1-B8D-R10D — AND THE SUPERSESSION EXPOSES WHAT THIS ASSERTION ACTUALLY MEASURED.
+
+   G6 was written as "this visual round changed no server file", and it was read that way for four
+   rounds because it happened to be true. What it COMPUTES is `git diff R6_PRE -- <dir>` against
+   the working tree — cumulative drift since a fixed commit, not this round's diff. So it holds
+   until ANY later round touches a .gs, whoever they are and however legitimately, and then it
+   reports a defect in a round that finished long ago.
+
+   R10D is that round: it adds ONE field to `handleGetClientCapabilities_`. The guard is therefore
+   restated as what it can honestly answer from a moving baseline — the set of Apps Script files
+   changed since R6 is KNOWN AND NAMED, and anything outside it still fails. A visual round that
+   changed a handler would still be caught; a later round that changes one has to be written down
+   here, which is a better outcome than a guard that quietly becomes untrue. */
+var R6_KNOWN_GS_CHANGES = ['assets/specs/active/apps-script/03_master_data_handlers.gs'];
 var gsChanged = changedSince(R6_PRE, 'assets/specs/active/apps-script');
 if (gsChanged !== '__git_unavailable__') {
-  eq(gsChanged, '', 'G6  no Apps Script file changed', gsChanged);
+  var unexpectedGs = gsChanged.split('\n').map(function (x) { return x.trim(); })
+    .filter(function (x) { return x && R6_KNOWN_GS_CHANGES.indexOf(x) < 0; });
+  eq(unexpectedGs, [],
+    'G6  SUPERSEDED (R10D): no Apps Script file changed beyond the one this project has recorded',
+    gsChanged);
 }
 
 /* THE LEFT NAVIGATION IS NOT THIS ROUND'S TO TOUCH. */

@@ -67,6 +67,20 @@
   P.SITE_UNIVERSE_NOT_AVAILABLE = 'SITE_UNIVERSE_NOT_AVAILABLE';
   P.LOADING_SITE_UNIVERSE = 'LOADING_SITE_UNIVERSE';
   P.LOADING_WORKSPACE = 'LOADING_WORKSPACE';
+  /* P1-B8D-R10D §10 — TWO STATES THAT ONLY EXIST BECAUSE THE CAPABILITY MOVED TO BOOT.
+
+     While the page fetched its own capability on mount, the answer was always present by the time
+     anything was drawn: the read was the first thing the mount did. The capability now arrives on
+     the application's boot bootstrap, which means a mount can land BEFORE it has settled, and it
+     means a deployment can answer without carrying the field at all. Neither of those is "the
+     feature is switched off", and neither may be drawn as an empty board.
+
+     LOADING_CAPABILITY  the bootstrap is still outstanding. The page waits for the read that is
+                         ALREADY IN FLIGHT — it does not start one — and says so meanwhile.
+     CAPABILITY_NOT_REPORTED  a server answered and its answer carried no readable value for this
+                         flag. Fails closed exactly like a `false` and is never reported as one. */
+  P.LOADING_CAPABILITY = 'LOADING_CAPABILITY';
+  P.CAPABILITY_NOT_REPORTED = 'CAPABILITY_NOT_REPORTED';
 
   /* P1-B8D-R7 — THE REASON MOVED; IT WAS NOT DELETED.
      The long paragraph is correct and it is the answer to a question a person asks ONCE. Standing
@@ -97,7 +111,14 @@
     LOADING_SITE_UNIVERSE: { may_analyse: false, uses_fixture: false, severity: 'info',
       headline: 'Loading sites…' },
     LOADING_WORKSPACE: { may_analyse: false, uses_fixture: false, severity: 'info',
-      headline: 'Loading listings…' }
+      headline: 'Loading listings…' },
+    LOADING_CAPABILITY: { may_analyse: false, uses_fixture: false, severity: 'info',
+      headline: 'Checking whether this board is available…',
+      detail: 'The application asks the server once at startup; this is that answer, not a second request.' },
+    CAPABILITY_NOT_REPORTED: { may_analyse: false, uses_fixture: false, severity: 'stop',
+      headline: 'The server did not report whether this board is available.',
+      detail: 'Nothing is read until it does. This is not the same as the board being switched off —'
+        + ' no such decision was received, and none is assumed.' }
   };
 
   function isObj(v) { return !!v && typeof v === 'object' && !(v instanceof Array); }
@@ -334,19 +355,37 @@
     function capabilityOk() {
       return !!accessor && typeof accessor.isEnabled === 'function' && accessor.isEnabled() === true;
     }
-    /* P1-B8D-R4 - THE PAGE MAY ASK THE SERVER WHAT IT ALLOWS; IT MAY NEVER DECLARE IT.
-       The mirror is only ever as good as its producer, and until this round it had none: nothing in
-       the shipped frontend called `setCapability`, so a browser held `false` from load to unload and
-       this page reported a feature that was switched ON at both of its authorities. The derive is one
-       read of the server's own health, resolved once per page life, and it returns nothing - the
-       answer is read back through capabilityOk() above, so there is still exactly one mirror and no
-       second opinion. An accessor without the step (an older build, a test double) keeps whatever it
-       already had rather than being treated as an error. */
+    /* P1-B8D-R10D - THE PAGE NO LONGER ASKS. IT WAITS FOR THE ANSWER THE APPLICATION ALREADY ASKED FOR.
+     *
+     * R4 gave the mirror a producer by making this page ask on mount; R10D moved the question onto
+     * the boot bootstrap the application performs once anyway, because the flag lives in the config
+     * that bootstrap already reads and the action this page was using scanned seventeen shipping
+     * sheets to report it. So there is nothing to dispatch here, and dispatching anything would put
+     * back the request the round exists to remove.
+     *
+     * THE WAIT IS FOR A READ THAT IS ALREADY IN FLIGHT. `app.js` DECLARES the capability read to the
+     * boot arbiter the moment it fires it, and the arbiter resolves when that read settles either
+     * way. Waiting on it starts nothing, costs nothing, and cannot hang: a dependency nobody declared
+     * is UNKNOWN and does not block, and a declared one that never settles is released by the
+     * arbiter's own cap. A failed capability read releases its waiters exactly like a successful one.
+     *
+     * AND IT ONLY WAITS WHEN THERE IS SOMETHING TO WAIT FOR. Any settled state - true, false, an
+     * unreadable field, a transport fault - is an answer, and the page proceeds to say which. */
+    function capabilityState() {
+      return (accessor && typeof accessor.capabilityState === 'function')
+        ? accessor.capabilityState() : null;
+    }
+    function capabilityPending() { return capabilityState() === 'PENDING'; }
     function capabilityResolved() {
-      if (capabilityOk()) return Promise.resolve(true);
-      if (!accessor || typeof accessor.refreshCapability !== 'function') return Promise.resolve(false);
-      return Promise.resolve(accessor.refreshCapability())
-        .then(function () { return capabilityOk(); }, function () { return false; });
+      if (capabilityOk() || !capabilityPending()) return Promise.resolve(capabilityOk());
+      var arb = (root.KM && root.KM.bootArbiter) ? root.KM.bootArbiter : null;
+      if (!arb || typeof arb.whenReady !== 'function') return Promise.resolve(capabilityOk());
+      /* SAY SO WHILE WAITING. §10 forbids an empty board here: a mount that lands inside the
+         bootstrap window must report that it is still finding out, never a state that reads as a
+         product decision and never a board drawn from nothing. */
+      show(P.LOADING_CAPABILITY, P.UX_PAGE.LOADING_CAPABILITY, []);
+      return Promise.resolve(arb.whenReady(['capabilities']))
+        .then(function () { return capabilityOk(); }, function () { return capabilityOk(); });
     }
 
     /** STEP 1 + 2. The capability, then the universe. Never the workspace. */
@@ -380,6 +419,24 @@
             (live && live.UX && live.UX[capFail]) || P.UX_PAGE.SITE_UNIVERSE_NOT_AVAILABLE,
             [{ code: capFail,
               detail: 'the capability read could not be completed; no further request was sent' }]));
+        }
+        /* P1-B8D-R10D §10 — STILL WAITING IS NOT A DECISION.
+           `capabilityResolved` waits for the boot read before reaching here, so arriving in this
+           state means the wait was capped or no arbiter was present. Either way nothing has been
+           heard, and the honest answer is that the page is still finding out — not an empty board,
+           and not a claim about a switch nobody has touched. */
+        if (capabilityPending()) {
+          return Promise.resolve(show(P.LOADING_CAPABILITY, P.UX_PAGE.LOADING_CAPABILITY, []));
+        }
+        /* AND AN ANSWER THAT CARRIED NO VALUE IS NOT A `false`.
+           A deployment that predates the field answers the bootstrap perfectly well and simply says
+           nothing about this flag. Reporting that as FEATURE_DISABLED would be inventing a product
+           decision to fill a gap in a contract — the same class of statement R10A removed for
+           transport faults, arriving by the other door. Fails closed; says which. */
+        if (capabilityState() === 'FIELD_ABSENT') {
+          return Promise.resolve(show(P.CAPABILITY_NOT_REPORTED, P.UX_PAGE.CAPABILITY_NOT_REPORTED,
+            [{ code: P.CAPABILITY_NOT_REPORTED,
+              detail: 'the capability answer carried no readable value for this board; no request was sent' }]));
         }
         return Promise.resolve(show('FEATURE_DISABLED',
           (live && live.UX && live.UX.FEATURE_DISABLED) || P.UX_PAGE.SITE_UNIVERSE_NOT_AVAILABLE,

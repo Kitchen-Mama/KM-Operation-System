@@ -996,3 +996,56 @@ round looking for it in the transport.
 R10C's correction is in the renderer: a view change requested before the first canonical load
 dereferenced null. See the activation manifest §14 and
 `docs/planning/PRODUCT_STRATEGY_CAPABILITY_READ_COST_DESIGN.md` (design only).
+
+---
+
+## P1-B8D-R10D — THE CAPABILITY STOPS BEING A REQUEST OF ITS OWN (2026-09-14, PRE `dc3f6fd`)
+
+**The rule adopted at R8 stands verbatim.** R10D starts no S round, reclassifies no module, adds no
+action, changes no retry bound, no timeout and no router contract.
+
+**What it does is subtract.** R10A put this page's capability read on the shared transport and left
+it aimed at `system.health` — an action that scans about seventeen shipping sheets to report a
+deployment's condition, in order to deliver one boolean out of `00_config.gs`. R10D removes the read.
+The flag now rides `getClientCapabilities`, the configuration bootstrap the application already
+performs exactly once per page life through the shared single-flight latch.
+
+| | Before R10D | After |
+|---|---|---|
+| Product Strategy-owned business reads | 2 | **2** (unchanged) |
+| Product Strategy-owned capability read | 1 (`system.health`) | **0** |
+| Where the capability comes from | this page's own request | the shared `getClientCapabilities` bootstrap |
+| Who raises the mirror in shipped code | **nobody** until R4; then this page | `operation-system-db-api.js` `_kmApplyClientCapabilities_`, and only it |
+| `.gs` change | — | **one added field** on `handleGetClientCapabilities_` |
+| `system.health` | routed, with a Product Strategy caller | routed, **with no Product Strategy caller** |
+
+**The capability is a shared bootstrap concern and is not counted as a business read.** That is the
+line this document has to hold, because the alternative — counting it — would make "two reads" false
+while nothing about this page's traffic had changed.
+
+### The state vocabulary, which is the other half of the round
+
+`_enabled === false` was carrying four meanings. Moving the read to boot time makes two of them
+reachable that were not before — a mount can land inside the bootstrap window, and a deployment that
+predates the field answers the bootstrap perfectly well without mentioning it. So:
+
+| Input | What the operator is told |
+|---|---|
+| server literal `true` | the board loads |
+| server literal `false` | `FEATURE_DISABLED` — **and only this** |
+| field missing / not a boolean | `CAPABILITY_NOT_REPORTED` — fails closed, invents no decision |
+| bootstrap not yet settled | `LOADING_CAPABILITY` — waits on the read already in flight, starts none |
+| bootstrap failed | the transport classification R10A established |
+
+**`PRODUCT_STRATEGY_ENABLED_` remains the single authority.** No second flag, constant or property
+authority was created; the published field resolves through `productStrategyEnabled_()`, which is
+`PRODUCT_STRATEGY_ENABLED_ === true`.
+
+**PATH B2 is untouched and remains design-only.** No `system.health` census reduction, no cache, no
+`prodRequireSheet_` / `prodRequireColumns_` / `ppwRowsToObjects_` refactor. See
+`PRODUCT_STRATEGY_CAPABILITY_READ_COST_DESIGN.md` §7.
+
+**Deployment is SERVER-FIRST and has not happened.** A frontend that arrives before the server field
+fails closed — safe, but the board is unusable until the Apps Script version carrying the field is
+deployed. `P1_CLOSED = NO`, `S2_RUNTIME_ALLOWED = NO`, live reliability gate **not run** on R10D
+deployed bytes.

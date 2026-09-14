@@ -3015,3 +3015,205 @@ KNOWN AND NOT FIXED
 ```
 
 **STATUS: LOCAL COMMIT — NOT PUSHED — FRONTEND REDEPLOY REQUIRED — NO APPS SCRIPT SYNC.**
+
+---
+
+## P1-B8D-R10D — THE CAPABILITY STOPS BEING A REQUEST OF ITS OWN
+
+```
+PRE   dc3f6fd2260ee91bb844e9b81427619b7ad55218
+BRANCH  feature/product-strategy-board-p0  (DRAFT worktree; MAIN carries no product change)
+
+WHAT CHANGED
+-------------------------------------------------------------------------------------------------------
+  R10A put this page's capability read on the shared transport and left it aimed at `system.health` —
+  an action that scans about seventeen shipping sheets to report a deployment's condition, in order to
+  deliver ONE boolean out of 00_config.gs. R10D removes the read. The flag rides
+  `getClientCapabilities`, the configuration bootstrap the application already performs exactly once
+  per page life through the shared single-flight latch.
+
+  ONE ADDED SERVER FIELD, ONE ADDED CONSUMER OF AN ANSWER ALREADY READ, ONE FEWER REQUEST. No new
+  action. No new flag, constant or property authority. No retry, no timeout, no router or envelope
+  change. `system.health` is untouched and still serves its other callers; it simply has no Product
+  Strategy caller.
+
+  AND FOUR MEANINGS COME APART THAT USED TO BE ONE. `_enabled === false` was carrying "the server said
+  no", "the server said nothing", "nobody has asked yet" and "the ask failed". R10A separated the
+  failures out; moving the read to boot time makes the other two REACHABLE for the first time — a
+  mount can land inside the bootstrap window, and a deployment predating the field answers perfectly
+  well without mentioning it.
+
+    server literal true        -> the board loads
+    server literal false       -> FEATURE_DISABLED, and this is the ONLY input that produces it
+    field missing/not boolean  -> CAPABILITY_NOT_REPORTED   fails closed; invents no decision
+    bootstrap not yet settled  -> LOADING_CAPABILITY        waits on the read already in flight
+    bootstrap failed           -> the R10A transport classification
+
+  PRODUCT_STRATEGY_ENABLED_ REMAINS THE SINGLE AUTHORITY. Assigned in exactly one place, read through
+  productStrategyEnabled_(), which is `PRODUCT_STRATEGY_ENABLED_ === true`.
+
+FILES
+-------------------------------------------------------------------------------------------------------
+  .gs           assets/specs/active/apps-script/03_master_data_handlers.gs
+                  ONE added field on handleGetClientCapabilities_:
+                    product_strategy_enabled: (typeof productStrategyEnabled_ === 'function')
+                      ? (productStrategyEnabled_() === true) : false
+                  GUARDED rather than reading the variable directly: these files share one global
+                  scope, so an unguarded reference in a project carrying 03_ without 00_ would raise a
+                  ReferenceError and take the WHOLE capability response down — including the three
+                  flags that have nothing to do with Product Strategy. The guarded form is what the
+                  other three fields already use and what 63_ uses for this same flag.
+                  capabilitiesVersion DELIBERATELY NOT BUMPED. Nothing gates on it, and
+                  TEMP_migrate_request_order_draft_v2.gs DECLARES the current value as this action's
+                  release signature; moving it would desynchronise that declaration to no runtime
+                  effect. Recorded below as an open item rather than fixed in passing.
+
+  shipped       assets/js/api/operation-system-db-api.js    the bootstrap gains a second consumer of
+                                                            the same answer, placed AFTER the two
+                                                            supersede guards, so a stale or late
+                                                            response never reaches the mirror
+                assets/js/api/km-product-pricing-workspace.js  the capability read is gone; the mirror
+                                                            gains the five states and one refusal helper
+                assets/js/pages/product-strategy-board.js   waits on the capability read app.js has
+                                                            ALREADY declared to the boot arbiter
+                index.html                                  35 token refs rotated
+
+  harness       assets/tests/_p1b8c-visual-runner.js   loads the shipped operation-system-db-api.js and
+                                                       core/boot-read-arbiter.js, and moves the MOUNT to
+                                                       DOMContentLoaded — where production's mounts are
+                assets/tests/_p1b8c-replay.js          answers getClientCapabilities from ONE payload
+                                                       builder; installs the same fake fetch on the
+                                                       global so shipped db-api bytes reach it; the Node
+                                                       seam applies the scenario's own answer through
+                                                       the production setter
+                assets/tests/_release-order.js         token appended
+
+  docs          API_MIGRATION_MASTER_PLAN.md · P1_B8C_LIVE_READBACK_AND_ACTIVATION_MANIFEST.md
+                PRODUCT_STRATEGY_CAPABILITY_READ_COST_DESIGN.md
+                S_SERIES_FRONTEND_API_MIGRATION_INVENTORY.md · DEPLOYMENT_RELEASE_LOG.md
+
+THE HARNESS CHANGE, AND WHY IT WAS NOT OPTIONAL
+-------------------------------------------------------------------------------------------------------
+  THE ACCEPTANCE PAGE HAD BEEN REPORTING A PRODUCTION BOOT IT NEVER PERFORMED. `app.js` was loaded, so
+  its DOMContentLoaded ran — but the one line this round is about is guarded on `KM.DB` existing, and
+  `KM.DB` lives in `operation-system-db-api.js`, which the page's script filter excluded. The guard
+  failed silently and the bootstrap never ran. A suite could then only raise the capability by calling
+  the setter itself, which is exactly the second activation path R4 removed for hiding a live defect
+  for a whole round.
+
+  Loading the shipped file immediately raised the reason it had never been loaded: `_kmGapRead_`
+  dispatches through the GLOBAL `fetch`, against an endpoint constant with no setter, so an untouched
+  global would have sent a real request to a real deployment from every scenario. The same `fakeFetch`
+  the transport is built with is therefore installed on the global — ONE fake server, ONE request log,
+  so "exactly one capability request" is measurable rather than asserted. It is installed from the
+  page's inline boot script, which runs DURING PARSING, while `app.js`'s bootstrap runs on
+  DOMContentLoaded, which cannot fire until parsing has finished; and neither of the shipped file's
+  two top-level blocks issues a request at load time.
+
+  UNDER NODE THERE IS NO BOOTSTRAP TO RUN, and this is stated rather than blurred. No DOM, no app.js,
+  no browser db api. One seam in the shared harness hands the accessor the SCENARIO'S OWN server
+  answer — from the same payload builder the fake server answers with — through the production setter.
+  No `true` is written on that path; `capability:false`, a `1`, a `"true"` and an omitted field all
+  still fail closed, and a scenario that declares no answer injects nothing. Those Node suites DO NOT
+  verify the production bootstrap chain and are not recorded as doing so; the chain is verified in the
+  R10D browser matrix, on shipped bytes, where the setter is never called directly.
+
+TESTS
+-------------------------------------------------------------------------------------------------------
+  NEW   product-strategy-capability-bootstrap-p1-b8d-r10d.test.js
+        205 passed / 0 failed / 32 mutants / 0 survived / 0 broken probes
+
+        §A the census: system.health named ZERO times in executable text, no capability ACTION to
+           dispatch, no health fallback, two declared actions and one transport call site
+        §B the server: one added field from one authority, no spreadsheet/lock/cache/write, the three
+           pre-existing fields intact, the envelope unchanged, system.health still routed on both verbs
+        §C the production caller chain in shipped bytes, and the supersede guards proven POSITIONALLY
+           to run before the mirror is written
+        §D the five states driven: true / false / missing / null / "true" / 1 / six named faults /
+           no-payload-no-reason, and the refusal code each produces
+        §N the Node seam's own controls: no server answer yields no value, the scenario's literal
+           travels unnormalised, and the harness writes no hard-coded true anywhere
+        §E the browser matrix on the REAL boot: one bootstrap per page life, zero system.health,
+           two business reads, and every one of eleven runs GET-only
+
+  RED-BEFORE, on committed PRE bytes in a fresh detached worktree, using the FINAL suite and the final
+  harness, with production files untouched at dc3f6fd:
+        126 passed / 67 failed / 16 mutants caught / 16 survived
+  The suite ran to completion — the browser half executed — so every RED is a missing R10D behaviour
+  and none is a path, fixture, harness or parser fault. The 16 survivors are mutants whose target code
+  does not exist at PRE, which is the correct score for an anchor that matches nothing.
+
+  SUITES UPDATED, EVERY ONE FOR THE SAME REASON: they asserted a capability read this round removed.
+  Each assertion was SUPERSEDED AND REWRITTEN WITH ITS REASON ATTACHED, never deleted.
+        product-strategy-capability-route-p1-b8d-r10a        94/0/9/0
+        product-strategy-transport-stability-p1-b8d-r10     156/0/17/0
+        product-strategy-lifecycle-p1-b8d-r8               182/0/18/0
+        product-strategy-corrections-p1-b8d-r9             154/0/17/0
+        product-strategy-visual-integration-p1-b8d-r6      107/0/14/0
+        product-strategy-site-selection-p1-b8d-r5          100/0/11/0
+        product-strategy-live-activation-p1-b8d-r4          64/0/9/0
+        product-strategy-replay-acceptance-p1-b8c          398/0/9/0
+        product-strategy-live-replay-acceptance-p1-b8c-r2  274/0/21/0
+        action-registry-and-router-completeness-f1-7n-fb-4e-r2   199/0
+
+  R4 IS THE ONE WORTH READING. Its §A did not assert a rule — it RECORDED THE DEFECT R4 FOUND: the
+  deployed capability payload did not carry `product_strategy_enabled`, so applying the whole real
+  payload left the mirror false, so a live browser refused a feature switched on at both authorities.
+  R10D fixes that at the source, so those assertions INVERT, and their inversion is the proof.
+
+  KEPT GREEN, UNCHANGED: R7 184/0/21/0 · R10C 92/0/12/0 · B8C-R3 336/0/20/0 · b7f 102/0/7/0 ·
+  SEC-A0 54/0/11/0 · api-product-pricing B1 170/0/13/0 · B6 165/0/12/0 · B7E 103/0/8/0 ·
+  three-flag authority R6E1 85/0.
+
+SWEEP
+-------------------------------------------------------------------------------------------------------
+  PRE  (fresh detached worktree @ dc3f6fd, pristine)   476 suites   4 flagged   0 survived   0 PROBE ERROR
+
+  The four flagged suites are the recorded baseline and nothing else failed:
+    gap-job-done-notice-f1-small-r1 (3) · order-planning-monthly-projection-consumer-f1-4b-fm3d (1)
+    replen-header-toggle (7) · supply-planning-route-inventory (2)
+  THIRTEEN failing assertions across four suites. Earlier rounds recorded this as "17 lines compared",
+  which counts the four suite-name lines alongside the thirteen assertions; both numbers describe the
+  same baseline and the assertion count is thirteen.
+
+  POST — PROVISIONAL UNTIL MEASURED. The POST sweep runs against the commit this entry is part of and
+  therefore cannot be recorded inside it. Its result is reported in the round's completion report and
+  must be written here before this round is treated as closed. Nothing in this file may be read as a
+  POST result until that happens.
+
+CACHE TOKEN
+-------------------------------------------------------------------------------------------------------
+  capbootstrap-p1b8dr10d-20260914      35 refs      0 stale      0 misplaced
+
+DEPLOYMENT
+-------------------------------------------------------------------------------------------------------
+  APPS_SCRIPT_SYNC_REQUIRED   YES     .gs files changed: 1  (03_master_data_handlers.gs)
+  FRONTEND_DEPLOY_REQUIRED    YES     three shipped modules + index.html
+  BUNDLE_REBUILD_REQUIRED     NO      90_generated_supply_planning_bundle.gs untouched
+  DB / Sheets / Drive writes  0       the added field opens no spreadsheet and takes no lock
+  ORDER                       SERVER-FIRST, and this is not a preference.
+                              A frontend that reaches a browser before the Apps Script version carrying
+                              `product_strategy_enabled` FAILS CLOSED: no over-permission, but the board
+                              reports CAPABILITY_NOT_REPORTED and is unusable. Deploy the server
+                              contract first, verify the field read-only, then the frontend.
+  Rollback                    unchanged: PRODUCT_STRATEGY_ENABLED_ = false, save, new version, update
+                              the existing deployment. Needs no frontend deploy. The added field then
+                              publishes `false` and the board says FEATURE_DISABLED — the true sentence.
+
+LIVE RELIABILITY
+-------------------------------------------------------------------------------------------------------
+  NOT RUN ON R10D DEPLOYED BYTES, and cannot be: the bytes are not deployed. The R10B measurement
+  speaks for 7bd5af2 and for nothing after it. Nothing here may be recorded as a passed soak.
+
+KNOWN AND NOT FIXED
+-------------------------------------------------------------------------------------------------------
+  · `system.health` still pays its 17-table shipping-slice census for the callers that remain. PATH B2,
+    design only, deliberately untouched by this round.
+  · The ~4.7s non-handler cost per request. Unattributed; PATH C/D.
+  · `capabilitiesVersion` does not track the field set it describes. No runtime effect; see FILES.
+  · Two assertions in this project's suites were found to measure CUMULATIVE DRIFT from a fixed commit
+    while reading as "this round changed nothing" — R6's G6 and the router-completeness ownership list.
+    Both were restated to name what is known rather than to tolerate it silently; the pattern will
+    recur for the next round that touches a .gs.
+  · Everything R9, R10, R10A and R10C listed under KNOWN AND NOT FIXED is unchanged.
+```

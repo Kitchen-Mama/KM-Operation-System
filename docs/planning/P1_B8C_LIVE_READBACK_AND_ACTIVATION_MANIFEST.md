@@ -1157,3 +1157,62 @@ conflation; this is the same rule one step earlier.
 
 **No empty fixture, no swallowed exception, no `CANON || {rows:[]}`.** A refusal stays on screen and
 stays classified; no business read is dispatched from the NOT_LOADED path.
+
+---
+
+# 15 · P1-B8D-R10D — THE CAPABILITY BECOMES A SHARED BOOTSTRAP CONCERN
+
+**PRE `dc3f6fd`. Local commit only. Not pushed, not merged, not deployed.**
+
+## 15.1  What changed, in one sentence each
+
+| Layer | File | Change |
+|---|---|---|
+| Apps Script | `03_master_data_handlers.gs` | **one added field** on `handleGetClientCapabilities_`: `product_strategy_enabled`, resolved through `productStrategyEnabled_()` |
+| Shared bootstrap | `api/operation-system-db-api.js` | `_kmApplyClientCapabilities_` hands the SAME answer it already read to the Product Strategy mirror; no request, no retry, no timeout, no fallback |
+| Accessor | `api/km-product-pricing-workspace.js` | the `system.health` capability read is **removed**; the mirror gains the five-state vocabulary below |
+| Controller | `pages/product-strategy-board.js` | waits on the boot read already in flight; `FEATURE_DISABLED` now means exactly one thing |
+
+## 15.2  The authority, unchanged
+
+`PRODUCT_STRATEGY_ENABLED_` in `00_config.gs` is assigned in **exactly one place** and read through
+`productStrategyEnabled_()`, which is `PRODUCT_STRATEGY_ENABLED_ === true`. No second flag, constant,
+property authority or hard-coded value was introduced. `63_` still publishes the same flag on
+`system.health`; the two reports are two independent observations of one fact, exactly as `00_config`
+documents.
+
+## 15.3  Product Strategy-owned business reads = 2
+
+```
+productPricing.siteUniverse.get
+productPricing.workspace.get
+```
+
+The capability is **not** one of them. It is a shared bootstrap concern, delivered by a read the
+application performs whether or not this page is ever opened. `system.health` remains a routed
+action on both verbs with its other callers untouched — it simply has no Product Strategy caller.
+
+## 15.4  The five states, and the one sentence that may only mean one thing
+
+| Input | Mirror state | What is shown | Business reads |
+|---|---|---|---|
+| server literal `true` | `SERVER_TRUE` | the board loads | 2 |
+| server literal `false` | `SERVER_FALSE` | `FEATURE_DISABLED` | 0 |
+| field missing, `null`, `"true"`, `1` | `FIELD_ABSENT` | `CAPABILITY_NOT_REPORTED` | 0 |
+| bootstrap not yet settled | `PENDING` | `LOADING_CAPABILITY` — no empty board | 0 |
+| bootstrap failed | `FAILED` | the R10A transport classification | 0 |
+
+`FEATURE_DISABLED` is reachable from **one** input. A missing field is not a decision, and a
+transport fault is not a decision; neither is allowed to be reported as one.
+
+## 15.5  What has NOT been verified
+
+* **The live reliability gate has not run on R10D deployed bytes.** It cannot: the bytes are not
+  deployed.
+* **PATH B2 is not implemented.** `system.health` still performs its 17-table census for the callers
+  that remain; nothing about its cost was changed or measured this round.
+* **Deployment must be SERVER-FIRST.** A frontend that reaches a browser before the Apps Script
+  version carrying `product_strategy_enabled` fails **closed** — no over-permission, but the board is
+  unusable until the server contract is in place.
+
+`P1_CLOSED = NO` · `S2_RUNTIME_ALLOWED = NO`

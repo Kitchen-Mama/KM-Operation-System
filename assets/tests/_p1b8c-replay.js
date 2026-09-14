@@ -63,6 +63,14 @@
      `setCapability` — which is exactly why every suite passed against a live page that refused
      itself: the harness was supplying the one input production never gets. */
   R.CAPABILITY_ACTION = 'system.health';
+  /* P1-B8D-R10D — AND THE ACTION THE CAPABILITY ACTUALLY ARRIVES ON NOW.
+
+     `system.health` stays on this list because it is still a real routed read and other callers
+     still make it; what changed is that Product Strategy is no longer one of them. The flag now
+     rides the application's shared boot bootstrap, so the harness must be able to answer THAT —
+     otherwise the only way a suite could raise the mirror would be to call the setter itself, which
+     is the second activation path R4 removed for hiding a live defect for a whole round. */
+  R.BOOTSTRAP_ACTION = 'getClientCapabilities';
 
   /**
    * A transport that answers from a capture and refuses to be anything else.
@@ -90,6 +98,38 @@
       return [s.company, s.country, s.marketplace].join('|');
     }
 
+    /* ============================================================================================
+       P1-B8D-R10D — THE SCENARIO'S OWN SERVER ANSWER FOR THE SHARED BOOTSTRAP, DEFINED ONCE.
+
+       Two things read this: the fake server's `post`, and the Node seam in `install` below. One
+       definition, so the answer a Node suite is given and the answer a browser page fetches cannot
+       drift apart — which is the whole reason it is a function and not two literals.
+
+       IT IS THE SCENARIO'S ANSWER, NEVER THE HARNESS'S OPINION. `capability: false` lowers it,
+       `bootstrapProductStrategyValue` sends whatever literal a suite names — a `1`, a `"true"`, a
+       `null` — without the harness normalising it into a boolean on the way, and
+       `bootstrapOmitsProductStrategy` sends a deployment that predates the field. Every one of
+       those must fail closed, and proving that is the point of being able to send them.
+
+       THE THREE PRE-EXISTING FLAGS TRAVEL TOO. A harness that answered only the new field would let
+       a change that DROPPED one of the other three pass unnoticed.
+
+       `noBootstrapAnswer` means the scenario declares no server answer at all. It returns null, and
+       nothing downstream is allowed to turn that into a value — see the control in `install`. */
+    function bootstrapPayload() {
+      if (opts.noBootstrapAnswer === true) return null;
+      var out = {
+        capabilitiesVersion: 'replay-r10d',
+        requestOrderDraftV2FlatCutover: true,
+        requestOrderSiteConfirmRequired: true,
+        inventoryAiPlanDbGenerationEnabled: false
+      };
+      if (opts.bootstrapOmitsProductStrategy === true) return out;
+      out.product_strategy_enabled = (opts.bootstrapProductStrategyValue !== undefined)
+        ? opts.bootstrapProductStrategyValue : (opts.capability !== false);
+      return out;
+    }
+
     var transport = {
       /** The accessor calls this and then hands the result to safeReadJsonResponse. */
       post: function (dto) {
@@ -99,8 +139,31 @@
         /* A WRITE-SHAPED CALL IS A THROW, NOT A REFUSAL. Returning an error would let a caller
            swallow it; raising makes an attempted write impossible to miss and impossible to count
            as zero. */
-        if (action !== R.CAPABILITY_ACTION && R.READ_ACTIONS.indexOf(action) < 0) {
+        if (action !== R.CAPABILITY_ACTION && action !== R.BOOTSTRAP_ACTION
+          && R.READ_ACTIONS.indexOf(action) < 0) {
           throw new Error('P1B8C REPLAY REFUSED A NON-READ ACTION: ' + action);
+        }
+
+        /* P1-B8D-R10D — THE SHARED BOOTSTRAP'S ANSWER, IN THE SHAPE 03_ ACTUALLY SENDS.
+
+           NESTED under `data`, unlike `system.health` below, because that is the difference between
+           the two handlers and it has bitten this repository before: a reader that assumed the wrong
+           level read every field as undefined and called a correct deployment stale. The three
+           pre-existing flags are carried too — a harness that answered only the new field would let
+           a change that DROPPED one of them pass, and §8 forbids exactly that.
+
+           `capability` drives the Product Strategy field only. The other three keep their production
+           values, because a scenario about Product Strategy being switched off is not a scenario
+           about the Request Order cutover being switched off. */
+        if (action === R.BOOTSTRAP_ACTION) {
+          var bp = bootstrapPayload();
+          if (!bp) {
+            /* THE SCENARIO DECLARED NO SERVER ANSWER. The wire says so rather than the harness
+               inventing one — see the control in `install` below. */
+            return Promise.reject(Object.assign(new Error('no bootstrap answer'),
+              { apiCode: 'REDIRECT_TARGET_NOT_FOUND' }));
+          }
+          return Promise.resolve({ success: true, data: bp });
         }
 
         /* THE SERVER'S ANSWER ABOUT ITS OWN FLAG, in the FLAT shape 63_ actually sends. The harness
@@ -418,6 +481,8 @@
 
     return {
       api: { transport: transport, buildRequestEnvelope: buildRequestEnvelope },
+      /* Exposed so the Node seam in `install` hands the accessor the SAME answer the wire carries. */
+      bootstrapPayload: bootstrapPayload,
       fetch: fakeFetch,
       physical: physical,
       log: log,
@@ -515,9 +580,98 @@
        mirror had no producer in production, so the deployed page answered FEATURE_DISABLED at zero
        requests while every suite rendered a full board. The reset stays — a module singleton must not
        carry one scenario's server answer into the next. */
-    accessor.setCapability({});
+    /* P1-B8D-R10D — THE RESET IS FOR THE SINGLETON, AND ONLY THE SINGLETON HAS ONE.
+
+       A reset here used to be unconditional, and under R10D that quietly broke the thing this round
+       is about. `setCapability({})` means "a server answered and said nothing about this flag",
+       which is a SETTLED state — so a browser page whose mirror was reset at install never waited
+       for the boot bootstrap it was supposed to be driven by, and every scenario reported the
+       unreadable-field refusal before the bootstrap had landed. The measurement said so; nothing
+       else would have.
+
+       A BROWSER PAGE HAS NOTHING TO RESET. The module is loaded fresh in a new realm for every shot,
+       and its load-time state is already the correct one: nobody has said anything yet. Under Node
+       the module is a singleton shared across scenarios in one process, and there the reset is what
+       stops one scenario's server answer from answering the next one's question.
+
+       So the reset runs exactly where a previous scenario could have left something behind — which
+       is the same condition as "no shared bootstrap is present to set it". No production API is
+       added for the harness's benefit, and the browser path is left as production leaves it. */
+    /* ============================================================================================
+       P1-B8D-R10D — THE ONE NODE SEAM, AND AN HONEST STATEMENT OF WHAT IT IS AND IS NOT.
+
+       WHAT IT IS. Under Node there is no DOM, no `app.js` and no `operation-system-db-api.js` — that
+       file is browser-only from its first statement — so the application's boot bootstrap CANNOT
+       RUN. Before R10D these suites got their capability because the accessor asked for it itself
+       and this harness answered; R10D removed that ask, and with nothing to replace it the mirror
+       would sit at PENDING for the life of every Node scenario and every board would refuse.
+
+       So the seam hands the accessor the scenario's own server answer, through the accessor's own
+       production setter. Three properties make that honest rather than a shortcut:
+
+         · THE VALUE IS THE SERVER'S. It comes from `bootstrapPayload()` — the same function the
+           fake server answers `getClientCapabilities` with — so `capability: false` still disables,
+           a `1` or a `"true"` still fails closed, and an omitted field still fails closed. There is
+           no `true` written anywhere on this path.
+         · THE DECISION IS PRODUCTION'S. `setCapability` is the shipped function and it is called
+           unchanged. Not one line of its literal-true rule, its heard/unheard rule or its failure
+           classification is reproduced here.
+         · IT IS ONE SEAM. Every Node suite is served by this line; none adds a setter call of its own.
+
+       WHAT IT IS NOT, and this must not be blurred: these suites DO NOT verify the production
+       bootstrap chain. `KM.DB.getClientCapabilities` → `KM.DB.applyClientCapabilities` → the
+       production setter is verified ONLY by the R10D browser matrix, which runs the shipped bytes
+       and is forbidden from calling the setter directly. A green Node suite says the accessor and
+       the controller behave correctly GIVEN a capability; it says nothing about who delivered it.
+
+       THE CONTROL IS BUILT IN. A scenario that declares no server answer (`noBootstrapAnswer`) gets
+       `null` from `bootstrapPayload()`, and the branch below then resets the singleton WITHOUT a
+       value rather than inventing one — so "the harness quietly injects true" is a hypothesis a
+       suite can test, and the R10D suite does.
+
+       A BROWSER PAGE TAKES NONE OF THIS. It has a real bootstrap, a fresh module per realm and
+       nothing to reset, so the whole branch is skipped there. */
+    var hasSharedBootstrap = !!(g.KM && g.KM.DB && typeof g.KM.DB.applyClientCapabilities === 'function');
+    if (!hasSharedBootstrap) {
+      var bootAnswer = t.bootstrapPayload();
+      accessor.setCapability(bootAnswer ? bootAnswer : {});
+    }
+    /* ============================================================================================
+       P1-B8D-R10D — THE SAME FAKE NETWORK, ONE LAYER FURTHER DOWN, SO THE SHIPPED BOOTSTRAP CAN RUN.
+
+       R10D's whole claim is that the capability arrives on the application's own boot bootstrap. A
+       run that cannot EXECUTE that bootstrap cannot test the claim — and the acceptance page could
+       not, because `operation-system-db-api.js` was outside its script list, so `KM.DB` did not
+       exist and app.js's boot skipped the one line that matters. Loading the shipped file fixes
+       that and immediately raises the reason it was never loaded: `_kmGapRead_` dispatches through
+       the GLOBAL `fetch`, against an endpoint constant with no setter. Left alone it would send a
+       real request to a real deployment from every scenario in every suite.
+
+       So the fake goes where that code looks: on the global. It is the SAME `fakeFetch` the
+       transport was built with, which is what keeps this honest — one fake server, one request log,
+       one set of counts. Two fakes would mean the bootstrap's requests and the page's requests were
+       measured by different instruments, and "exactly one capability request" would be unprovable.
+
+       THIS IS BENEATH THE TRANSPORT, WHICH IS THE ONLY PLACE A FAKE IS ALLOWED. Nothing about
+       production's classification, bounded recovery, verb choice or timeout is replaced; the shipped
+       bytes run and this decides only what the network says back.
+
+       THE ORDERING IS WHAT MAKES IT SAFE, and it is a property of the page rather than a hope:
+       `install` is called from the acceptance page's inline boot script, which executes DURING
+       parsing, while `app.js`'s bootstrap runs on DOMContentLoaded, which cannot fire until parsing
+       has finished. The global is therefore already ours before the first byte of the bootstrap
+       runs, and neither of the shipped file's two top-level blocks issues a request at load time.
+
+       RESTORED EXACTLY, INCLUDING ITS ABSENCE. A host with no `fetch` (older Node sandboxes) must be
+       left with no `fetch`, not with an `undefined` property that now answers `'fetch' in g`. */
+    var hadFetch = Object.prototype.hasOwnProperty.call(g, 'fetch');
+    var savedFetch = g.fetch;
+    try { g.fetch = t.fetch; } catch (e) { /* a frozen global is not worth failing a suite over */ }
     t.restore = function () {
-      accessor.setCapability({});          // back to false, the production default
+      /* Lowered for the NEXT scenario in this process, WITHOUT a value — a reset must not be a
+         second way to raise the mirror. A browser realm has no next scenario. */
+      if (!hasSharedBootstrap) accessor.setCapability({});
+      try { if (hadFetch) { g.fetch = savedFetch; } else { delete g.fetch; } } catch (e) {}
       if (g.KM) g.KM.transport = savedTransport;
       g.KM = savedKM;
     };

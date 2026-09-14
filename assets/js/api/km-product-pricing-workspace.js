@@ -35,12 +35,22 @@
   // P1-B6 — the companion read. Also a module constant: a caller cannot pass an action, override
   // one, or reach the transport with a different one through this module.
   var SITE_UNIVERSE_ACTION = 'productPricing.siteUniverse.get';
-  /* P1-B8D-R4 - WHERE THE CAPABILITY COMES FROM, now that it comes from somewhere.
-     `system.health` is already deployed, already read-only, already on the transport's
-     session-stable metadata allowlist (so concurrent asks coalesce into one), and 63_ already
-     publishes `product_strategy_enabled` on it. Deriving from it adds no server field, no action
-     and no fourth flag - it reads the server's own answer about its own flag. */
-  var CAPABILITY_ACTION = 'system.health';
+  /* P1-B8D-R10D - THE CAPABILITY IS NO LONGER A READ THIS MODULE OWNS.
+
+     R10A moved the capability question onto the shared transport and left it as a REQUEST of its
+     own, aimed at `system.health`. That was the right shape for the wrong question. `system.health`
+     answers "is this deployment reachable and what does it carry" by scanning about seventeen
+     shipping sheets; Product Strategy needed one boolean out of 00_config.gs, which costs no sheet
+     at all. The page was paying a deployment-wide census to read a flag.
+
+     The flag now arrives on the bootstrap the whole application already performs once at boot -
+     `getClientCapabilities`, which opens no spreadsheet, takes no lock and writes nothing - and is
+     pushed into this mirror by that same bootstrap. So this module dispatches NOTHING for its
+     capability: there is no capability action here to name, no fallback to `system.health`, and the
+     two business reads below are the only requests this file can produce.
+
+     `system.health` still exists and is still routed; it simply has no Product Strategy caller. */
+  var CAPABILITY_SOURCE = 'shared-bootstrap:getClientCapabilities';
   var SITE_UNIVERSE_CONTRACT_VERSION = 1;
   var BUILD = 'PRODUCT-STRATEGY-P1-B1';
   var STATUSES = ['active', 'phasing_out', 'inactive', 'discontinued'];
@@ -54,15 +64,20 @@
      asked and a false mirror the server lowered are different situations, and only the first one is
      worth another round trip. */
   var _capabilityHeard = false;
-  /* P1-B8D-R10A §2 — WHICH CAPABILITY READ IS THE CURRENT ONE.
+  /* P1-B8D-R10A §2 / P1-B8D-R10D — WHICH CAPABILITY READ IS THE CURRENT ONE, AND WHY THE COUNTER IS
+     GONE FROM THIS FILE.
 
-     The capability read is now a REAL network read with a bounded recovery underneath it, so it can
-     be outstanding across a site change or a teardown — and two of them can be in flight at once if
-     something calls `force`. An answer that arrives after a newer read has started must not write
-     `_enabled` or `_capabilityHeard`: it would be deciding the page's capability from a question
-     nobody is waiting for. Under the old POST shim this could not happen, because the shim was
-     never retried and the mirror was read once at boot. */
-  var _capabilityGen = 0;
+     R10A needed a generation here because the capability was a read this module ISSUED: two of them
+     could be outstanding at once, and a late answer had to be stopped from writing a mirror a newer
+     question already owned. This module issues no capability read any more, so there is no sequence
+     of its own to guard - and a counter that can only ever hold one value is not a guard, it is a
+     variable that looks like one.
+
+     THE PROTECTION DID NOT DISAPPEAR; IT MOVED TO WHERE THE SEQUENCE IS. The shared bootstrap
+     already carries one (`_kmCapSeq_` / `_kmCapAppliedSeq_` in operation-system-db-api.js) and
+     already discards a superseded or late-failing answer BEFORE it applies anything - so a stale
+     bootstrap response never reaches `setCapability` at all, rather than reaching it and being
+     ignored. One sequence, owned by the thing that has a sequence. */
   /* P1-B8D-R10A §6 — WHY THE MIRROR IS FALSE, WHEN THE REASON WAS NOT AN ANSWER.
 
      `_enabled === false` has always had two completely different causes that the page could not
@@ -79,6 +94,33 @@
      null means the last capability read was ANSWERED. A state name means it was not, and that name
      is what the operator is shown instead of FEATURE_DISABLED. */
   var _capabilityFailure = null;
+  /* P1-B8D-R10D §10 — FIVE SITUATIONS, NOT TWO, AND ONLY ONE OF THEM IS "THE FEATURE IS OFF".
+
+     `_enabled === false` has been carrying four different meanings at once. R10A separated the
+     transport failures out; the two that remained were still indistinguishable, and moving the
+     capability onto a boot-time bootstrap makes both of them REACHABLE in a way they never were
+     while the page asked for itself on mount:
+
+       PENDING        the bootstrap has not answered yet. Nobody has said anything about this flag.
+                      A page mounted in this window must say it is still finding out - it must not
+                      announce a product decision the server has not made, and it must not draw an
+                      empty board as though it had read one.
+       SERVER_TRUE    the server sent the literal `true`.
+       SERVER_FALSE   the server sent the literal `false`. THIS, and only this, is FEATURE_DISABLED.
+       FIELD_ABSENT   the server answered, and the answer did not carry a readable value for this
+                      flag - missing, null, a string, a number. Fails closed exactly like a `false`
+                      and is NOT reported as one: a deployment that predates the field has not
+                      decided anything, and telling an operator it switched the feature off would be
+                      inventing a decision to explain a gap.
+       FAILED         the bootstrap could not be completed. `_capabilityFailure` carries which fault,
+                      classified by this module's own classifier from the wire facts the shared read
+                      already reports.
+
+     The state is a consequence of the setter's inputs and never an independent authority - every
+     branch below sets it beside `_enabled`, never instead of it. */
+  var CAP = { PENDING: 'PENDING', SERVER_TRUE: 'SERVER_TRUE', SERVER_FALSE: 'SERVER_FALSE',
+    FIELD_ABSENT: 'FIELD_ABSENT', FAILED: 'FAILED' };
+  var _capabilityState = CAP.PENDING;
 
   function str(v) { return String(v === undefined || v === null ? '' : v).trim(); }
   function isObj(v) { return !!v && typeof v === 'object' && !(v instanceof Array); }
@@ -489,10 +531,54 @@
      discarded and never asked again. In a browser one page life asks once and this never showed; in
      a process that lives through several scenarios it means the second one is answered by the
      first one's server. What was heard is now part of what is set. */
-  function setCapability(caps) {
+  /**
+   * P1-B8D-R10D — THE ONE WAY IN, AND IT NOW CARRIES WHY.
+   *
+   * @param {object|null} caps  the capability payload the shared bootstrap received, verbatim. The
+   *                            field read is `product_strategy_enabled` and nothing else.
+   * @param {object} [meta]     { failureCode, httpStatus } when the bootstrap could not be
+   *                            COMPLETED. Additive and optional: a caller that knows only the
+   *                            payload keeps the old two-outcome behaviour.
+   *
+   * THE FAILURE IS CLASSIFIED HERE AND NOT UPSTREAM. The shared bootstrap reports the wire facts it
+   * already has - a transport code and an HTTP status - and this module turns them into the same
+   * state names its own reads produce, through the same classifier. So a sign-in page on the
+   * bootstrap and a sign-in page on the universe read reach the operator as one sentence, and the
+   * shared bootstrap gains no knowledge of this page's vocabulary.
+   */
+  function setCapability(caps, meta) {
     // Only a server capability payload may raise it, and anything unreadable leaves it false.
-    _enabled = !!(isObj(caps) && caps.product_strategy_enabled === true);
-    _capabilityHeard = isObj(caps) && caps.product_strategy_enabled !== undefined;
+    /* A FAULT IS NOT AN ANSWER, and it is checked FIRST because a failed bootstrap may still hand
+       over a `caps` of null - which is indistinguishable, on its own, from a server that answered
+       with nothing. The reason is what tells them apart, so the reason decides. */
+    if (isObj(meta) && str(meta.failureCode) !== '') {
+      _enabled = false;
+      _capabilityHeard = false;      // closed, but NOT latched: nothing was heard, so nothing is settled
+      _capabilityFailure = classifyTransportCode(meta.failureCode,
+        (typeof meta.httpStatus === 'number') ? meta.httpStatus : null, browserOnline());
+      _capabilityState = CAP.FAILED;
+      return _enabled;
+    }
+    if (!isObj(caps)) {
+      /* No payload and no stated reason. Something went wrong that nobody named, which is still not
+         a server saying "off" - it is the absence of an answer, and it is reported as one. */
+      _enabled = false;
+      _capabilityHeard = false;
+      _capabilityFailure = 'SOURCE_NOT_CONNECTED';
+      _capabilityState = CAP.FAILED;
+      return _enabled;
+    }
+    var v = caps.product_strategy_enabled;
+    /* THE LITERAL, OR NOTHING. `true` raises it, `false` lowers it as a product fact, and everything
+       else - undefined, null, "true", 1 - is a value this build cannot read, which is a gap in the
+       answer and never a decision inside it. */
+    if (v === true) {
+      _enabled = true; _capabilityHeard = true; _capabilityState = CAP.SERVER_TRUE;
+    } else if (v === false) {
+      _enabled = false; _capabilityHeard = true; _capabilityState = CAP.SERVER_FALSE;
+    } else {
+      _enabled = false; _capabilityHeard = false; _capabilityState = CAP.FIELD_ABSENT;
+    }
     /* P1-B8D-R10A §6 — AND THE REASON GOES WITH IT. A capability set from the boot bootstrap is a
        fresh statement about the flag, so any transport failure remembered from an earlier read is
        now answering a question nobody asked. Leaving it would let a long-gone 404 keep speaking for
@@ -501,119 +587,65 @@
     return _enabled;
   }
   function isEnabled() { return _enabled === true; }
-
+  /** Which of the five situations the mirror is in. Read-only; never an authority of its own. */
+  function capabilityState() { return _capabilityState; }
   /**
-   * P1-B8D-R4 - THE MIRROR HAD NO PRODUCER, WHICH IS WHY THE LIVE PAGE REFUSED ITSELF.
+   * P1-B8D-R10D - THE PRODUCER IS THE BOOTSTRAP, SO THERE IS NOTHING LEFT TO REFRESH.
    *
-   * `setCapability` existed, was exported, and was documented as the only way to raise the mirror -
-   * and nothing in `assets/js` or `index.html` ever called it. The boot bootstrap
-   * (app.js -> KM.DB.applyClientCapabilities -> getClientCapabilities -> KM.api) carries three
-   * backend-owned flags and has never heard of this module. So in a browser `_enabled` was false
-   * from load to unload, the controller answered FEATURE_DISABLED at zero requests, and the two
-   * authorities P1-B8D flipped could not be reached from the page they were flipped for.
+   * R4 gave the mirror a producer by making this function ASK, and R10A gave that ask a real
+   * transport and a real classification. Both were fixing the same thing from the wrong end: the
+   * page was issuing a request for a value the application already fetches once at boot, and paying
+   * a seventeen-sheet deployment census for a one-line config flag.
    *
-   * THIS IS A MIRROR AND NOT AN AUTHORITY. It does not decide anything: it repeats what the server
-   * says about its own flag, so that a disabled feature costs zero requests instead of one round
-   * trip to be told what could have been asked once. The server refuses on `PRODUCT_STRATEGY_ENABLED_`
-   * before it opens a database no matter what any client believes, which is why lowering this
-   * mirror is a saving and raising it is not a permission.
+   * The capability now arrives through `setCapability`, pushed by the shared
+   * `getClientCapabilities` bootstrap. This function therefore dispatches NOTHING. It is kept
+   * because it is part of this module's published surface and callers exist, and because "ask
+   * again" must have a defined answer rather than silently becoming a second request: the answer
+   * is what is already known.
    *
-   * FAIL CLOSED ON EVERY UNKNOWN. No transport, a refused read, a non-JSON answer, a missing field,
-   * a field that is not exactly `true` - all of them leave the mirror false. The asymmetry is the
-   * point: a page that cannot confirm the server accepts a read must not offer it.
+   * `force` is accepted and ignored, deliberately. A caller that wants a fresh value wants a fresh
+   * BOOTSTRAP, which is not this module's to run, and honouring `force` by opening a second channel
+   * is precisely the duplicate this round removed.
    */
-  function refreshCapability(opts) {
-    opts = isObj(opts) ? opts : {};
-    if (_capabilityHeard && opts.force !== true) return Promise.resolve(_enabled === true);
-    var api = transportOf();
-    if (!api) { _enabled = false; return Promise.resolve(false); }
-
-    /* ============================================================================================
-       P1-B8D-R10A §2 — THE THIRD READ JOINS THE OTHER TWO.
-
-       R10 moved `productPricing.siteUniverse.get` and `productPricing.workspace.get` onto
-       `KM.transport.request` and left this one behind, so the round that existed to unify the page's
-       reads finished with TWO of THREE unified. This is the third.
-
-       IT IS THE WORST ONE TO HAVE LEFT, which is why it is worth saying plainly. This read decides
-       whether the page offers itself at all, and it FAILS CLOSED. On the private POST shim a single
-       transient echo 404 — the same fault R10 measured at 4 in 40 reads in one live window — made the
-       whole page answer FEATURE_DISABLED, with no classification, no recovery and nothing in the UI
-       to distinguish "the feature is off" from "one hop could not be read".
-
-       It uses `readOnce`, the SAME helper the other two use, so the envelope, the GET semantics, the
-       classification and the single bounded recovery are identical by construction rather than by
-       resemblance. No transport is added, no retry is written, no ceiling is raised.
-       ============================================================================================ */
-    var myGen = ++_capabilityGen;
-
-    return readOnce(api, CAPABILITY_ACTION, {}, str(opts.requestId) || undefined, opts.signal)
-      .then(function (r0) {
-        /* SUPERSEDED: a newer capability read has started. Answer with what is currently believed
-           and write nothing — see `_capabilityGen`. */
-        if (myGen !== _capabilityGen) return _enabled === true;
-
-        /* ------------------------------------------------------------------------------------
-           A TRANSPORT FAILURE IS NOT AN ANSWER, AND MUST NOT BE REMEMBERED AS ONE.
-
-           `_capabilityHeard` means "a server told us". Setting it here would turn one unreadable
-           hop into a permanent FEATURE_DISABLED for the life of the page, because the guard at the
-           top of this function would never let another read happen. The page would then be disabled
-           by a fault that has already gone away, and no amount of waiting would fix it.
-
-           So: fail CLOSED for this call — `_enabled` is false, exactly as §2 requires for a timeout,
-           a refusal, HTML, a schema mismatch or anything unknown — and leave `_capabilityHeard`
-           alone, so the next caller asks again. Closed, but not latched.
-           ------------------------------------------------------------------------------------ */
-        if (r0.code) {
-          _enabled = false;
-          _capabilityFailure = classifyTransportCode(r0.code, r0.status, browserOnline());
-          return false;
-        }
-
-        var env = r0.env;
-        return (function () {
-        /* THE HEALTH ENVELOPE IS FLAT. 63_ puts its identity block at the top level and nothing
-           under `data` - a fact this repository has already been bitten by once, where a reader
-           that assumed `data` read every identity field as undefined and called a correct
-           deployment stale. Top level is read first; `data` is accepted only as a defensive
-           second look, and both require the literal `true`. */
-        var top = isObj(env) ? env : null;
-        var nested = (top && isObj(top.data)) ? top.data : null;
-        var v = (top && top.product_strategy_enabled !== undefined)
-          ? top.product_strategy_enabled
-          : (nested ? nested.product_strategy_enabled : undefined);
-        /* A SERVER ANSWERED AND THIS BUILD COULD READ IT. That is what `_capabilityHeard` records,
-           and it is the only branch entitled to record it. The VALUE still has to be the literal
-           `true`: a missing field, a string, a 1, or anything else leaves the mirror false. */
-        _enabled = v === true;
-        _capabilityHeard = true;
-        /* A SERVER ANSWERED, so whatever it says is a product fact and not a transport one. */
-        _capabilityFailure = null;
-        return _enabled;
-        }());
-      })
-      .catch(function (e) {
-        if (myGen !== _capabilityGen) return _enabled === true;
-        /* Same rule as above: closed, but not latched. */
-        _enabled = false;
-        _capabilityFailure = classifyTransportError(e, browserOnline());
-        return false;
-      });
+  function refreshCapability() {
+    return Promise.resolve(_enabled === true);
   }
-  /** For a caller that wants to know whether the answer is a server's or just the default. */
   function capabilityHeard() { return _capabilityHeard === true; }
+
+  /* P1-B8D-R10D §10 — THE REFUSAL BOTH READS GIVE WHEN THE MIRROR IS DOWN, AND WHY IT IS ONE
+     FUNCTION RATHER THAN TWO COPIES.
+
+     Both reads refused with `FEATURE_DISABLED` for every reason the mirror could be false, which was
+     survivable only while there were two such reasons and one of them was already split out. There
+     are five now, and the sentence an operator is shown has to say which — a page that reports "this
+     board is switched off" because a bootstrap has not landed yet, or because a deployment does not
+     carry the field, is making a statement about a product decision nobody made.
+
+     THE CODES ARE DISTINCT AND NONE OF THEM OPENS A REQUEST. Whichever is returned, nothing is
+     dispatched: that is the saving this mirror exists for and it is unchanged. */
+  var CAPABILITY_REFUSAL = {
+    PENDING: ['CAPABILITY_NOT_ESTABLISHED',
+      'the capability has not been reported yet; no request was sent'],
+    FIELD_ABSENT: ['CAPABILITY_NOT_REPORTED',
+      'the capability answer carried no readable value for this feature; no request was sent'],
+    SERVER_FALSE: ['FEATURE_DISABLED',
+      'the client capability mirror is false; no request was sent']
+  };
+  function capabilityRefusal() {
+    /* A TRANSPORT FAULT FIRST, because it is the most specific thing known and it is what R10A
+       established: a read that could not be completed is never a product decision. */
+    if (_capabilityFailure) return [_capabilityFailure, TRANSPORT_DETAIL[_capabilityFailure]];
+    return CAPABILITY_REFUSAL[_capabilityState] || CAPABILITY_REFUSAL.SERVER_FALSE;
+  }
 
   function get(params, opts) {
     opts = isObj(opts) ? opts : {};
     if (!isEnabled()) {
-      /* P1-B8D-R10A §6 — OFF, OR UNREADABLE? They are different sentences and only one of them is
-         ever true. Either way NO REQUEST IS SENT, which is the saving this mirror exists for. */
-      if (_capabilityFailure) {
-        return Promise.resolve(refused(_capabilityFailure, TRANSPORT_DETAIL[_capabilityFailure], null));
-      }
-      return Promise.resolve(refused('FEATURE_DISABLED',
-        'the client capability mirror is false; no request was sent', null));
+      /* P1-B8D-R10A §6 / R10D §10 — OFF, UNREADABLE, UNREPORTED, OR NOT YET ASKED? Four different
+         sentences and only one of them is ever true. Either way NO REQUEST IS SENT, which is the
+         saving this mirror exists for. */
+      var cr = capabilityRefusal();
+      return Promise.resolve(refused(cr[0], cr[1], null));
     }
     var v = validateParams(params);
     if (!v.ok) return Promise.resolve(refused(v.code, 'refused before the request was sent', v.subject));
@@ -681,12 +713,9 @@
   function getSiteUniverse(opts) {
     opts = isObj(opts) ? opts : {};
     if (!isEnabled()) {
-      if (_capabilityFailure) {
-        return Promise.resolve(universeRefused(_capabilityFailure,
-          TRANSPORT_DETAIL[_capabilityFailure], null));
-      }
-      return Promise.resolve(universeRefused('FEATURE_DISABLED',
-        'the client capability mirror is false; no request was sent', null));
+      // Same four sentences, same silence on the wire — see capabilityRefusal().
+      var ucr = capabilityRefusal();
+      return Promise.resolve(universeRefused(ucr[0], ucr[1], null));
     }
     var api = transportOf();
     if (!api) {
@@ -730,7 +759,14 @@
        server answered (so `false` is a product fact); a state name means the read could not be
        completed, and that name is what the operator must be shown instead of FEATURE_DISABLED. */
     capabilityFailure: function () { return _capabilityFailure; },
-    CAPABILITY_ACTION: CAPABILITY_ACTION,
+    /* P1-B8D-R10D §10 — WHICH of the five situations, for a caller that must tell "nobody has said
+       anything yet" and "the answer carried no readable value" apart from "the server said no". */
+    capabilityState: capabilityState,
+    CAPABILITY_STATES: CAP,
+    /* There is no CAPABILITY_ACTION any more, and its absence is the point: this module cannot name
+       a capability request because it does not make one. The capability's provenance is stated
+       instead, so a reader is told where the value comes from without an action to dispatch. */
+    CAPABILITY_SOURCE: CAPABILITY_SOURCE,
     // exported for tests and for a caller that wants to check before it asks
     validateParams: validateParams, buildPayload: buildPayload, validateResponse: validateResponse,
     // stated as data so a test does not have to read the source to assert them

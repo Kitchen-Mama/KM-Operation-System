@@ -540,10 +540,15 @@ ok(/km-repo-asset-manifest/.test(SRC.census),
   'F4  naming the file that changed the count, rather than moving a number quietly');
 
 /* F5-F7 — PRODUCT STRATEGY'S OWN CALL GRAPH IS UNCHANGED BY THIS ROUND. */
+/* SUPERSEDED BY P1-B8D-R10D: the page's capability no longer travels on `system.health`, and it
+   is no longer a request this page makes at all — it arrives on the application's shared
+   `getClientCapabilities` bootstrap. The property is unchanged: these are the ONLY actions a
+   Product Strategy page life may speak, and two of them are now its whole business. */
 eq(CHROME.m.requests.filter(function (a) {
-  return ['system.health', 'productPricing.siteUniverse.get', 'productPricing.workspace.get']
+  return ['getClientCapabilities', 'productPricing.siteUniverse.get', 'productPricing.workspace.get']
     .indexOf(a) < 0;
-}), [], 'F5  the page still reads exactly three actions', CHROME.m.requests);
+}), [], 'F5  SUPERSEDED (R10D): two business reads behind one shared bootstrap, and nothing else',
+  CHROME.m.requests);
 eq(decomment(SRC.board + SRC.page).match(/KM\.DB\s*\./g) || [], [],
   'F6  with no KM.DB anywhere in the board or the page');
 eq(decomment(SRC.board + SRC.page).match(/localStorage\s*\.\s*(get|set|remove)Item/g) || [],

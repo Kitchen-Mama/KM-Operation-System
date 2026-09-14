@@ -431,9 +431,15 @@ var CHAIN = replaySite(P0, KM_US_AMZ).then(function (r) {
    rule is stated in two halves that cannot be satisfied by accident: exactly one capability read,
    FIRST; and the pricing reads unchanged in number and order behind it. Counting every action and
    calling it two was the thing that made a correct page look wrong. */
-  eq(r.t.actions()[0], P0.RP.CAPABILITY_ACTION,
-    'D4pre the capability is asked first, once, before any pricing read', r.t.actions());
-  eq(r.t.countOf(P0.RP.CAPABILITY_ACTION), 1, 'D4pre1 and exactly once');
+/* SUPERSEDED BY P1-B8D-R10D — THE QUESTION IN FRONT IS NO LONGER ASKED BY THIS PAGE.
+   R4's capability read is gone: the flag arrives on the application's shared bootstrap, applied
+   before the page mounts, so nothing about it reaches this page's wire. The two halves become one
+   stronger half — ZERO capability requests of any kind — and the pricing reads below are unchanged
+   in number and order, which is what these lines were always protecting. */
+  eq(r.t.countOf(P0.RP.CAPABILITY_ACTION || 'system.health'), 0,
+    'D4pre SUPERSEDED (R10D): the page makes NO capability request', r.t.actions());
+  eq(r.t.countOf(P0.RP.BOOTSTRAP_ACTION), 0,
+    'D4pre1 and does not reach for the shared bootstrap action either', r.t.actions());
   eq(r.t.actions().filter(function (a) { return a !== P0.RP.CAPABILITY_ACTION; }),
     ['productPricing.siteUniverse.get', 'productPricing.workspace.get'],
     'D4 exactly two pricing requests, universe first — the read order is the shipped one');
@@ -1144,8 +1150,13 @@ console.log('\n=== §L  MUTANTS ===');
      scored as "anchor 0x" — which reads in the summary as a surviving mutant announcing an unguarded
      rule, while in fact it was measuring nothing at all. The rule is unchanged: a write-shaped action
      is refused BY NAME. */
+  /* P1-B8D-R10D — AND IT MOVED AGAIN, FOR THE SAME REASON AND WITH THE SAME SYMPTOM. The shared
+     bootstrap action joined the allowed vocabulary, the condition gained a third term, and the R4
+     anchor matched nothing — reported once more as "anchor 0x", which reads in the summary as a
+     surviving mutant. An anchor that quotes a condition is a hostage to that condition; it is kept
+     here because the alternative is not asserting the rule at all, and the failure mode is loud. */
   mut('L3 the replay really refuses a non-read action', 'replay',
-    "        if (action !== R.CAPABILITY_ACTION && R.READ_ACTIONS.indexOf(action) < 0) {",
+    "        if (action !== R.CAPABILITY_ACTION && action !== R.BOOTSTRAP_ACTION\n          && R.READ_ACTIONS.indexOf(action) < 0) {",
     "        if (false) {", function (m) {
       var ctx = { module: { exports: {} }, Promise: Promise };
       vm.createContext(ctx);

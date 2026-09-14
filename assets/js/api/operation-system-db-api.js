@@ -5020,6 +5020,53 @@ async function _kmApplyClientCapabilities_() {
             applied = window.KM.api.applyClientCapabilities(caps);   // caps null → fail-safe defaults applied
         }
     } catch (e2) { /* apply never throws by contract; guard anyway */ }
+    /* =========================================================================================
+       PRODUCT-STRATEGY-P1-B8D-R10D — THE SECOND CONSUMER OF THE SAME ANSWER.
+
+       Product Strategy used to fetch its own capability, and the action it fetched — `system.health`
+       — scans about seventeen shipping sheets to report a deployment's condition. The value it
+       actually needed is a boolean out of 00_config.gs that costs no sheet at all, and this
+       bootstrap already reads exactly that class of fact, once per page life, through the shared
+       single-flight latch. So the page stops asking and this applies what was already received.
+
+       ONE READ, TWO CONSUMERS, NO SECOND REQUEST. Nothing is fetched here: `caps` is the response
+       that was read above. There is no new action, no retry, no timeout, no fallback to
+       `system.health` and no second channel — removing one request is the entire point, and adding
+       one here would put it back under a different name.
+
+       IT IS PLACED AFTER THE APPLY, WHICH IS WHERE THE GUARDS ALREADY ARE. The superseded branch
+       (§7.3) and the two out-of-order branches (§7.4) all RETURN before this line, so a stale or
+       late-failing bootstrap answer cannot reach the mirror at all — it is stopped by the sequence
+       that owns the sequence, rather than being handed over and ignored downstream.
+
+       A FAILURE IS HANDED OVER AS A FAILURE, NOT AS A `false`. `caps` is null both when a server
+       answered with nothing and when no server answered at all, so passing the payload alone would
+       let a sign-in page, a 404 or a dead network reach an operator as "this feature is switched
+       off" — a product decision invented to explain a transport fault. The wire facts the read
+       already reports are passed instead, and the Product Strategy module classifies them with its
+       own classifier, so the same fault reads identically whether it struck the bootstrap or one of
+       that page's own reads. This file gains no knowledge of that page's vocabulary.
+
+       GUARDED AND NEVER FATAL. An older build without the accessor, or without the two-argument
+       setter, simply does not receive the value and keeps failing closed — a capability bootstrap
+       must not be able to take the application's startup down with it.
+       ========================================================================================= */
+    try {
+        var _psAcc = (window.KM && window.KM.productPricingWorkspace) ? window.KM.productPricingWorkspace : null;
+        if (_psAcc && typeof _psAcc.setCapability === 'function') {
+            if (caps) {
+                _psAcc.setCapability(caps);
+            } else {
+                // The typed §C code is the transport authority; `code` is the preserved legacy alias.
+                var _t = (err && err.transport) ? err.transport : null;
+                var _d = (err && err.details) ? err.details : null;
+                _psAcc.setCapability(null, {
+                    failureCode: (_t && _t.code) || (err && err.code) || 'CAPABILITY_UNAVAILABLE',
+                    httpStatus: (_d && typeof _d.http_status === 'number') ? _d.http_status : null
+                });
+            }
+        }
+    } catch (e4) { /* never let a mirror update break the bootstrap */ }
     _kmCapAppliedSeq_ = mySeq;
     _kmCapAppliedFromBackend_ = !!caps;
     if (!caps) console.warn('[KM.capabilities] backend capability unavailable — applied fail-safe defaults', err);

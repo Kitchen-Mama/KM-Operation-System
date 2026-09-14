@@ -65,6 +65,14 @@ function read(rel) { return fs.readFileSync(path.join(ROOT, rel), 'utf8').replac
 function decomment(src) {
   return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
 }
+/* P1-B8D-R10D — a census of CODE must not be answered by prose that names what the code removed.
+   The accessor now carries several paragraphs explaining that the capability action is gone; a raw
+   search for `CAPABILITY_ACTION =` finds them and reports a constant that does not exist. */
+function destringForCensus(src) {
+  return decomment(src)
+    .replace(/'(?:[^'\\\n]|\\.)*'/g, "''")
+    .replace(/"(?:[^"\\\n]|\\.)*"/g, '""');
+}
 
 var ACC_REL = 'assets/js/api/km-product-pricing-workspace.js';
 var PAGE_REL = 'assets/js/pages/product-strategy-board.js';
@@ -94,21 +102,36 @@ ok(!/\bfetch\s*\(|XMLHttpRequest|WebSocket/.test(accCode),
 /* THE THREE READ ACTIONS, and the one dispatch helper all three go through. */
 eq(ACC.ACTION, 'productPricing.workspace.get', 'A4  the workspace action is unchanged');
 eq(ACC.SITE_UNIVERSE_ACTION, 'productPricing.siteUniverse.get', 'A5  the universe action is unchanged');
-ok(/CAPABILITY_ACTION\s*=\s*'system\.health'/.test(read(ACC_REL)),
-  'A6  and the capability action is system.health');
+/* ============================================================================================
+   SUPERSEDED BY P1-B8D-R10D — A6, A7, A9 AND A10, EACH WITH ITS REASON, NONE DELETED.
 
-/* ONE HELPER, THREE CALLERS. A second dispatch path is how the first gap happened, so the property
+   R10A's claim was "the capability read goes through the same door as the other two". R10D's is
+   stronger and makes R10A's unstateable: THERE IS NO CAPABILITY READ. The flag arrives on the
+   application's shared `getClientCapabilities` bootstrap, which runs once per page life whatever
+   Product Strategy does, so this module dispatches nothing for it at all.
+
+   The property each assertion was protecting is kept, aimed at what now carries it:
+     A6  was "the capability action is system.health"  → there is NO capability action to name.
+     A7  was "readOnce is called by all THREE reads"   → by both remaining reads; there are two.
+     A9  was "refreshCapability dispatches through readOnce" → it dispatches nothing.
+     A10 was "and builds no envelope beside it"        → still true, and now trivially so.
+   A8 is untouched: "exactly one way out of this file" was always the real property, and it holds. */
+ok(!/CAPABILITY_ACTION\s*=/.test(destringForCensus(read(ACC_REL))),
+  'A6  SUPERSEDED (R10D): there is no capability ACTION constant — the read is gone, not moved');
+
+/* ONE HELPER, TWO CALLERS. A second dispatch path is how the first gap happened, so the property
    asserted is not "the capability read is migrated" but "there is only one way out of this file". */
 var readOnceCalls = accCode.match(/readOnce\s*\(/g) || [];
-ok(readOnceCalls.length >= 4,
-  'A7  readOnce is defined once and called by all three reads', readOnceCalls.length);
+ok(readOnceCalls.length >= 3,
+  'A7  SUPERSEDED (R10D): readOnce is defined once and called by BOTH remaining reads',
+  readOnceCalls.length);
 var tpRequests = accCode.match(/tp\s*\.\s*request\s*\(/g) || [];
 eq(tpRequests.length, 1,
   'A8  and there is exactly ONE KM.transport.request call site in the whole accessor');
 
-/* The capability read must reach that helper rather than building its own request. */
-ok(/readOnce\(api,\s*CAPABILITY_ACTION/.test(accCode),
-  'A9  refreshCapability dispatches through readOnce — the same door as the other two');
+/* The capability must reach the mirror without a request of any kind. */
+ok(!/readOnce\(api,\s*CAPABILITY_ACTION/.test(accCode),
+  'A9  SUPERSEDED (R10D): refreshCapability dispatches nothing — not even through readOnce');
 ok(!/buildRequestEnvelope\(CAPABILITY_ACTION/.test(accCode),
   'A10 and no longer builds its own envelope beside it');
 
@@ -156,33 +179,51 @@ eq(A0.capabilityFailure(), null,
    whether the page ever asks again; recording a failure there would disable the feature for the life
    of the page over one unreadable hop that has since recovered. This is the property the mutant in
    §Z attacks, and it is stated here as source structure because the module's guard is private. */
+/* ============================================================================================
+   SUPERSEDED BY P1-B8D-R10D — B6 THROUGH B12, RE-AIMED AT THE FUNCTION THAT NOW DECIDES.
+
+   These asserted the branch structure of `refreshCapability`, because that is where the capability
+   was decided when R10A wrote them. R10D deletes that decision point: the value arrives through
+   `setCapability`, pushed by the shared bootstrap, and `refreshCapability` dispatches nothing.
+
+   Every property is kept and moved to where it now lives. R10A's job here is to prove the OLD
+   MECHANISM IS GONE and that its guarantees did not go with it; R10D's own suite drives the new
+   one. Two suites, one property each, neither restating the other. */
 var capSrc = read(ACC_REL);
-var capFn = capSrc.slice(capSrc.indexOf('function refreshCapability'));
-capFn = capFn.slice(0, capFn.indexOf('\n  function capabilityHeard'));
-var heardSets = capFn.match(/_capabilityHeard\s*=\s*true/g) || [];
-eq(heardSets.length, 1,
-  'B6  exactly ONE branch in refreshCapability may record that a server was heard');
-var failBranch = capFn.slice(capFn.indexOf('if (r0.code)'));
-failBranch = failBranch.slice(0, failBranch.indexOf('var env'));
-ok(failBranch.indexOf('_capabilityHeard') === -1,
-  'B7  and the transport-failure branch is not it — closed, but never latched');
+var setFn = capSrc.slice(capSrc.indexOf('function setCapability'));
+setFn = setFn.slice(0, setFn.indexOf('\n  function isEnabled'));
+
+ok(!/_capabilityGen/.test(destringForCensus(capSrc)),
+  'B6  SUPERSEDED (R10D): the accessor no longer runs a capability read, so it keeps no generation');
+var failBranch = setFn.slice(0, setFn.indexOf('if (!isObj(caps))'));
+ok(/_capabilityHeard\s*=\s*false/.test(failBranch),
+  'B7  the transport-failure branch records NOTHING as heard — closed, but never latched');
 ok(/_capabilityFailure\s*=\s*classifyTransportCode/.test(failBranch),
   'B8  that branch records the CLASSIFIED reason instead');
 
 /* And a server answer clears any remembered reason, so a recovered read cannot be described by a
    fault that is over. */
-ok(/_capabilityHeard\s*=\s*true;[\s\S]{0,400}?_capabilityFailure\s*=\s*null/.test(capFn),
-  'B9  a server answer clears the remembered reason');
-ok(/_capabilityFailure\s*=\s*null/.test(
-    capSrc.slice(capSrc.indexOf('function setCapability'), capSrc.indexOf('function isEnabled'))),
-  'B10 and so does a capability set from the boot bootstrap');
+var heardTrue = setFn.match(/_capabilityHeard\s*=\s*true/g) || [];
+eq(heardTrue.length, 2,
+  'B9  SUPERSEDED (R10D): exactly TWO branches may record that a server was heard — the literal '
+  + 'true and the literal false. Every other input leaves it unheard.');
+ok(/_capabilityFailure\s*=\s*null/.test(setFn),
+  'B10 and a capability set from the boot bootstrap clears any remembered reason');
 
-/* §5.11 — A SUPERSEDED CAPABILITY ANSWER WRITES NOTHING. */
-ok(/var myGen = \+\+_capabilityGen/.test(capFn),
-  'B11 each capability read takes a generation');
-var genGuards = capFn.match(/myGen\s*!==\s*_capabilityGen/g) || [];
-ok(genGuards.length >= 2,
-  'B12 and BOTH the resolve and the reject paths refuse to write when superseded', genGuards.length);
+/* §5.11 — A SUPERSEDED CAPABILITY ANSWER WRITES NOTHING, AND THE GUARD MOVED TO THE SEQUENCE.
+   The accessor no longer has a sequence of its own to guard, because it no longer issues the read.
+   The shared bootstrap does, and it DISCARDS a superseded answer before applying anything — so a
+   stale response never reaches the mirror rather than reaching it and being ignored. Asserted here
+   against the shipped db api, because that is where the property now lives. */
+var DB = decomment(fs.readFileSync(path.join(ROOT, 'assets/js/api/operation-system-db-api.js'), 'utf8')
+  .replace(/\r\n/g, '\n'));
+var bootFn = DB.slice(DB.indexOf('async function _kmApplyClientCapabilities_'),
+  DB.indexOf('window.KM.DB.applyClientCapabilities ='));
+ok(/var mySeq = \+\+_kmCapSeq_/.test(bootFn),
+  'B11 SUPERSEDED (R10D): the bootstrap takes the generation, because the bootstrap owns the read');
+ok(bootFn.indexOf('issuedIdentity !== nowIdentity') < bootFn.indexOf('setCapability')
+  && bootFn.indexOf('_kmCapAppliedSeq_ > mySeq') < bootFn.indexOf('setCapability'),
+  'B12 and BOTH supersede guards are evaluated before the mirror is written');
 
 /* §6 — the controller must consult the reason rather than asserting "off". */
 ok(/capabilityFailure/.test(pageCode),
@@ -227,13 +268,26 @@ eq(C('HTTP_TRANSPORT_ERROR', null, false), 'BROWSER_OFFLINE',
 
 
 // ==================================================================================================
-section('§E — THE STATE MACHINE, DRIVEN. Not inspected as text.');
+section('\u00a7E — THE STATE MACHINE, DRIVEN. Not inspected as text.');
 // ==================================================================================================
 
-/* §B asserted the SHAPE of refreshCapability because its guard is private. That is weaker than
-   driving it, so this drives it: a fake `window` is installed BEFORE the module is loaded, carrying a
-   foundation and a KM.transport whose answers this section chooses. Everything below is the shipped
-   module's own behaviour. */
+/* ============================================================================================
+   SUPERSEDED BY P1-B8D-R10D — THE WHOLE OF \u00a7E, AND FOR ONE REASON THAT COVERS ALL OF IT.
+
+   \u00a7E drove `refreshCapability` against a fake transport: a slow read superseded by a fast one, a
+   failure that must not latch, a late answer that must not overwrite a newer one. Every one of
+   those scenarios needed the accessor to ISSUE A CAPABILITY READ, and R10D removed that read —
+   the flag arrives on the application's shared bootstrap, which runs whatever this page does.
+
+   The scenarios did not become untrue; they moved. The supersede race now happens inside the
+   shared bootstrap, which guards it with its own sequence and DISCARDS a stale answer before
+   applying anything, and it is driven end to end by the R10D suite. What \u00a7E keeps, and what only
+   \u00a7E can say, is that the OLD MECHANISM IS ACTUALLY GONE rather than merely unused — proved by
+   driving it, not by reading the source, because "we removed the call" and "the call does nothing"
+   are different claims and only the second one survives a refactor.
+
+   E11/E11a below are unchanged in substance: the literal-true rule and the closed-but-not-latched
+   rule are properties of the mirror, they still hold, and they are still driven here. */
 function withWindow(transportImpl, body) {
   var saved = global.window;
   global.window = {
@@ -258,118 +312,74 @@ function withWindow(transportImpl, body) {
   }
 }
 
-function failing(code, status) {
-  return function () {
-    return Promise.resolve({ success: false, code: code,
-      details: { http_status: (status === undefined ? null : status) } });
-  };
-}
-function answering(value) {
-  return function (o) {
-    return Promise.resolve({ success: true, envelope: {
-      apiVersion: '1.0', success: true, action: o.action,
-      request_id: o.requestId || null, meta: { action: o.action, requestId: o.requestId || null },
-      product_strategy_enabled: value } });
-  };
-}
-
 var EJOBS = [];
 
-/* E1-E4 — A TRANSPORT FAILURE IS CLOSED BUT NOT LATCHED. This is §5.16 as behaviour: the page must
-   be able to ask again once the fault has passed, or one unreadable hop disables the feature for the
-   whole session. */
-EJOBS.push(withWindow(failing('REDIRECT_TARGET_NOT_FOUND', 404), function (m) {
-  return m.refreshCapability().then(function (enabled) {
-    eq(enabled, false, 'E1  a capability read that fails leaves the feature closed');
-    eq(m.capabilityHeard(), false,
-      'E2  and does NOT record that a server was heard — closed, but not latched');
-    eq(m.capabilityFailure(), 'HTTP_NOT_FOUND',
-      'E3  while remembering the classified reason, so the page can say what actually happened');
-    eq(m.isEnabled(), false, 'E4  and the mirror stays false');
-  });
-}));
-
-/* E5-E7 — AND THE NEXT CALL REALLY DOES ASK AGAIN. A latched failure would skip the read entirely,
-   so the proof is a COUNT of dispatches, not a return value. */
+/* E1-E5 SUPERSEDED: THE READ IS GONE, PROVED BY ASKING FOR IT.
+   A transport that COUNTS every request it is handed, and a `refreshCapability({ force: true })` —
+   the strongest form of the old ask. Zero dispatches is the assertion; anything else means the
+   request came back under a different name. */
 EJOBS.push((function () {
-  var calls = 0;
-  var flaky = function (o) {
-    calls++;
-    return (calls === 1)
-      ? Promise.resolve({ success: false, code: 'REDIRECT_TARGET_NOT_FOUND', details: { http_status: 404 } })
-      : answering(true)(o);
-  };
-  return withWindow(flaky, function (m) {
-    return m.refreshCapability().then(function (first) {
-      eq(first, false, 'E5  the first capability read fails and the feature is closed');
-      return m.refreshCapability();
-    }).then(function (second) {
-      eq(calls, 2, 'E6  the SECOND call issues a real read rather than reusing the failure');
-      eq(second, true, 'E7  and a server that answers true opens the feature');
+  var dispatched = [];
+  function counting(o) {
+    dispatched.push(o && o.action);
+    return Promise.resolve({ success: false, code: 'REDIRECT_TARGET_NOT_FOUND', details: {} });
+  }
+  return withWindow(counting, function (m) {
+    return Promise.resolve(m.refreshCapability({ force: true })).then(function (v) {
+      eq(dispatched, [], 'E1  SUPERSEDED (R10D): a forced refresh dispatches NOTHING');
+      eq(v, false, 'E2  and it answers from the mirror, which no one has raised');
+      eq(m.capabilityFailure(), null,
+        'E3  SUPERSEDED (R10D): it invents no transport fault, because it attempted no transport');
+      eq(m.capabilityHeard(), false, 'E4  and it records nothing as heard');
+      eq(m.capabilityState(), 'PENDING', 'E5  the mirror is still exactly where it started');
     });
   });
 }()));
 
-/* E8-E10 — A SERVER ANSWER CLEARS THE REMEMBERED REASON. Otherwise a fault that is over keeps
-   speaking for a capability that has since been answered. */
+/* E6-E10 SUPERSEDED: THE DECISION POINT MOVED, SO THE DRIVING MOVED WITH IT.
+   The properties are the ones \u00a7E always cared about, driven through the function that now decides:
+   closed but not latched on a fault, and a classified reason rather than a bare false. */
 EJOBS.push((function () {
-  var calls = 0;
-  var flaky = function (o) {
-    calls++;
-    return (calls === 1)
-      ? Promise.resolve({ success: false, code: 'AUTH_OR_ACCESS_HTML', details: {} })
-      : answering(true)(o);
-  };
-  return withWindow(flaky, function (m) {
-    return m.refreshCapability().then(function () {
-      eq(m.capabilityFailure(), 'NOT_AUTHORIZED', 'E8  a sign-in page is remembered as NOT_AUTHORIZED');
-      return m.refreshCapability();
-    }).then(function () {
-      eq(m.capabilityFailure(), null, 'E9  and a later real answer clears it');
-      eq(m.capabilityHeard(), true, 'E10 recording, only now, that a server was heard');
+  return withWindow(function () { return Promise.resolve({ success: false, code: 'X', details: {} }); },
+    function (m) {
+      m.setCapability(null, { failureCode: 'AUTH_OR_ACCESS_HTML' });
+      eq(m.isEnabled(), false, 'E6  SUPERSEDED (R10D): a sign-in page leaves the mirror closed');
+      eq(m.capabilityHeard(), false, 'E7  and NOT latched — nothing was heard, so nothing is settled');
+      eq(m.capabilityFailure(), 'NOT_AUTHORIZED',
+        'E8  a sign-in page is remembered as NOT_AUTHORIZED');
+      m.setCapability({ product_strategy_enabled: true });
+      eq(m.isEnabled(), true, 'E9  and a later server answer of true opens the feature');
+      eq(m.capabilityFailure(), null,
+        'E10 recording, only now, that a server was heard — the stale reason is cleared');
+      return Promise.resolve();
     });
-  });
 }()));
 
-/* E11-E13 — ONLY THE LITERAL true, through a real read rather than through setCapability. */
-[[true, true], [false, false], ['true', false], [undefined, false]].forEach(function (row, i) {
-  EJOBS.push(withWindow(answering(row[0]), function (m) {
-    return m.refreshCapability().then(function (v) {
-      eq(v, row[1], 'E11.' + i + ' a server answer of ' + JSON.stringify(row[0]) + ' -> ' + row[1]);
-      eq(m.capabilityHeard(), true,
-        'E12.' + i + ' and it counts as heard either way — a server DID answer');
-      eq(m.capabilityFailure(), null, 'E13.' + i + ' with no transport reason recorded');
-    });
-  }));
+/* E11 — ONLY THE LITERAL true, DRIVEN. Unchanged in substance from R10A. */
+[[true, true, 'true'], [false, false, 'false'], ['true', false, 'the STRING "true"'],
+  [1, false, 'the number 1']].forEach(function (row, i) {
+  EJOBS.push(withWindow(function () { return Promise.resolve({ success: true, envelope: {} }); },
+    function (m) {
+      m.setCapability({ product_strategy_enabled: row[0] });
+      eq(m.isEnabled(), row[1], 'E11.' + i + ' a server answer of ' + row[2] + ' -> ' + row[1]);
+      eq(m.capabilityHeard(), typeof row[0] === 'boolean',
+        'E12.' + i + ' and it counts as heard only when a BOOLEAN was actually read');
+      return Promise.resolve();
+    }));
 });
 
-/* E14-E15 — A SUPERSEDED CAPABILITY ANSWER WRITES NOTHING. Two reads are started; the first resolves
-   LAST and must not overwrite what the second established. */
-EJOBS.push((function () {
-  var n = 0, release = [];
-  var slowThenFast = function (o) {
-    n++;
-    if (n === 1) {
-      return new Promise(function (res) {
-        release.push(function () { res({ success: false, code: 'AUTH_OR_ACCESS_HTML', details: {} }); });
-      });
-    }
-    return answering(true)(o);
-  };
-  return withWindow(slowThenFast, function (m) {
-    var first = m.refreshCapability();
-    var second = m.refreshCapability({ force: true });
-    return second.then(function () {
-      eq(m.isEnabled(), true, 'E14 the newer capability read established the feature');
-      release.forEach(function (f) { f(); });
-      return first;
-    }).then(function () {
-      eq(m.isEnabled(), true,
-        'E15 and the older answer, arriving late, does not take it away again');
-      eq(m.capabilityFailure(), null, 'E15a nor leave its stale reason behind');
-    });
-  });
-}()));
+/* E14/E15 SUPERSEDED: the late-answer race belongs to the bootstrap now, and is asserted against it
+   in \u00a7B11/\u00a7B12 above and driven in the R10D suite. What is kept here is the one half of it that
+   is still this module's: a second set does not resurrect a reason the first one cleared. */
+EJOBS.push(withWindow(function () { return Promise.resolve({ success: true, envelope: {} }); },
+  function (m) {
+    m.setCapability(null, { failureCode: 'REDIRECT_TARGET_NOT_FOUND' });
+    m.setCapability({ product_strategy_enabled: true });
+    m.setCapability({ product_strategy_enabled: true });
+    eq(m.isEnabled(), true, 'E14 SUPERSEDED (R10D): repeated answers do not disturb the mirror');
+    eq(m.capabilityFailure(), null, 'E15 nor leave a stale reason behind');
+    return Promise.resolve();
+  }));
 
 // ==================================================================================================
 // THE BROWSER HALF — production index, real Chrome, real lifecycle, real KM.transport.
@@ -382,7 +392,13 @@ var OUT = fs.mkdtempSync(path.join(os.tmpdir(), 'psb-r10a-'));
 var PAGE_FILE = path.join(__dirname, '_p1b8c-acceptance.html');
 var SITE_A = { company: 'KM', country: 'US', marketplace: 'Shopify' };
 var SITE_B = { company: 'KM', country: 'US', marketplace: 'Walmart' };
-var HEALTH = 'system.health';
+/* P1-B8D-R10D — THE CAPABILITY READ IS STILL UNDER TEST HERE; IT IS A DIFFERENT REQUEST.
+   R10A aimed every fault in this section at `system.health`, because that is what the page asked
+   for its capability. R10D moved the question onto the application's shared bootstrap, so the
+   faults move with it. Nothing about what §D asserts changes: a capability read that could not be
+   completed must not reach an operator as a product decision, and it must stay inside the one
+   bounded recovery it always had. Only the action it happens to travel on is different. */
+var HEALTH = 'getClientCapabilities';
 
 function browserHalf(body) {
   if (!BROWSER) {
@@ -528,19 +544,31 @@ function accText() { return decomment(read(ACC_REL)); }
 
 var MUT = [];
 
-/* Z1 §5.15 — THE PRIVATE POST SHIM COMES BACK. This is the whole gap R10A closes, and the census in
-   §A is what catches it. */
-MUT.push(mutate('Z1  the capability read goes back to the private POST shim',
+/* ============================================================================================
+   SUPERSEDED BY P1-B8D-R10D — SEVEN OF THESE NINE MUTANTS ATTACKED CODE THAT NO LONGER EXISTS.
+
+   Every one of them aimed at `refreshCapability`'s dispatch: the POST shim it could regress to, the
+   generation it took, the failure it classified, the retry it could grow. R10D deleted that
+   dispatch, so each anchor matched zero times and each probe scored as a BROKEN PROBE — which is the
+   correct score for a check aimed at absent text, and the wrong outcome for the properties.
+
+   So each is re-aimed at the thing that now carries its property, and the two that were never about
+   the capability dispatch (Z2, and the controller's refusal to say "off" about a fault) are kept as
+   they were. The wording of each label says what it now attacks.
+   ============================================================================================ */
+
+/* Z1 SUPERSEDED — THE CAPABILITY DISPATCH COMES BACK. The gap R10A closed was a second door out of
+   this file; the gap R10D closed is the door existing at all. The census in §A is what catches it. */
+MUT.push(mutate('Z1  the accessor reacquires a capability dispatch of its own',
   ACC_REL,
-  '    return readOnce(api, CAPABILITY_ACTION, {}, str(opts.requestId) || undefined, opts.signal)',
-  '    return Promise.resolve(api.transport.post({ action: CAPABILITY_ACTION }))',
+  "  var CAPABILITY_SOURCE = 'shared-bootstrap:getClientCapabilities';",
+  "  var CAPABILITY_ACTION = 'system.health';\n  var CAPABILITY_SOURCE = 'shared-bootstrap:getClientCapabilities';",
   function () {
-    var calls = accText().match(/api\s*\.\s*transport\s*\.\s*post\s*\(/g) || [];
-    return calls.length > 0;
+    return !/^$/.test('x') && (decomment(read(ACC_REL)).match(/['"]system\.health['"]/g) || []).length > 0;
   }));
 
-/* Z2 — and the same thing one layer out: a POST fallback reinstated inside readOnce, which is how it
-   survived R10 in the first place. */
+/* Z2 — a POST fallback reinstated inside readOnce, which is how the original gap survived R10.
+   Untouched by R10D: `readOnce` still exists and still serves both business reads. */
 MUT.push(mutate('Z2  a POST fallback is reinstated inside readOnce',
   ACC_REL,
   "    return Promise.resolve({ code: 'API_ENDPOINT_CONFIGURATION_INVALID', status: null });",
@@ -550,35 +578,21 @@ MUT.push(mutate('Z2  a POST fallback is reinstated inside readOnce',
     return calls.length > 0;
   }));
 
-/* Z3 §5.16 — A TRANSIENT TRANSPORT FAILURE IS LATCHED AS A PERMANENT false. The mutant records that a
-   server was heard when none was, so the page never asks again and one unreadable hop disables the
-   feature for the whole session. Caught behaviourally: the second call stops issuing a read. */
+/* Z3 SUPERSEDED §5.16 — A TRANSPORT FAILURE LATCHED AS THOUGH A SERVER HAD ANSWERED. The property is
+   unchanged and the branch that can break it moved from `refreshCapability` to `setCapability`:
+   recording "heard" on a fault would settle the mirror on a fault that has since gone away. */
 MUT.push(mutate('Z3  a transport failure is remembered as though a server had answered',
   ACC_REL,
-  '        if (r0.code) {\n          _enabled = false;',
-  '        if (r0.code) {\n          _enabled = false;\n          _capabilityHeard = true;',
+  '      _capabilityHeard = false;      // closed, but NOT latched: nothing was heard, so nothing is settled',
+  '      _capabilityHeard = true;',
   function () {
-    var calls = 0;
-    var flaky = function (o) {
-      calls++;
-      return (calls === 1)
-        ? Promise.resolve({ success: false, code: 'REDIRECT_TARGET_NOT_FOUND', details: { http_status: 404 } })
-        : Promise.resolve({ success: true, envelope: { apiVersion: '1.0', success: true,
-          action: o.action, request_id: o.requestId || null,
-          meta: { action: o.action, requestId: o.requestId || null },
-          product_strategy_enabled: true } });
-    };
-    return withWindow(flaky, function (m) {
-      return m.refreshCapability()
-        .then(function () { return m.refreshCapability(); })
-        .then(function (second) {
-          /* Under the mutant the second call short-circuits: one dispatch, still false. */
-          return calls === 1 && second === false;
-        });
-    });
+    var m = fresh(ACC_REL);
+    m.setCapability(null, { failureCode: 'AUTH_OR_ACCESS_HTML' });
+    return m.capabilityHeard() === true;
   }));
 
-/* Z4 §6 — THE CONTROLLER GOES BACK TO SAYING "OFF" ABOUT A READ IT COULD NOT COMPLETE. */
+/* Z4 §6 — THE CONTROLLER GOES BACK TO SAYING "OFF" ABOUT A READ IT COULD NOT COMPLETE.
+   Unchanged in substance; the fault now travels on the bootstrap read, which is what HEALTH names. */
 MUT.push(mutate('Z4  a capability transport failure is rendered as FEATURE_DISABLED again',
   PAGE_REL,
   '        if (capFail) {',
@@ -589,79 +603,74 @@ MUT.push(mutate('Z4  a capability transport failure is rendered as FEATURE_DISAB
     return shows(m, 'FEATURE_DISABLED');
   }));
 
-/* Z5 — the accessor stops classifying the failure at all, so the controller has nothing to show. */
+/* Z5 SUPERSEDED — the accessor stops classifying the failure at all, so the controller has nothing
+   to show and every fault collapses back into one sentence. */
 MUT.push(mutate('Z5  the capability failure reason is never recorded',
   ACC_REL,
-  '          _capabilityFailure = classifyTransportCode(r0.code, r0.status, browserOnline());',
-  '          _capabilityFailure = null;',
+  '      _capabilityFailure = classifyTransportCode(meta.failureCode,\n'
+  + "        (typeof meta.httpStatus === 'number') ? meta.httpStatus : null, browserOnline());",
+  '      _capabilityFailure = null;',
   function () {
-    return withWindow(failing('AUTH_OR_ACCESS_HTML'), function (m) {
-      return m.refreshCapability().then(function () { return m.capabilityFailure() === null; });
-    });
+    var m = fresh(ACC_REL);
+    m.setCapability(null, { failureCode: 'AUTH_OR_ACCESS_HTML' });
+    return m.capabilityFailure() !== 'NOT_AUTHORIZED';
   }));
 
-/* Z6 §5.11 — THE GENERATION GUARD IS REMOVED, so a superseded capability answer lands. */
+/* Z6 SUPERSEDED §5.11 — THE SUPERSEDE GUARD IS DEFEATED, so a stale capability answer lands on a
+   newer one. The guard moved to the shared bootstrap with the read it guards, so the mutant moves
+   there too: writing the mirror BEFORE the guards is exactly the regression. */
 MUT.push(mutate('Z6  a superseded capability answer is allowed to write',
-  ACC_REL,
-  '        if (myGen !== _capabilityGen) return _enabled === true;\n\n        /* ---',
-  '        if (false) return _enabled === true;\n\n        /* ---',
+  'assets/js/api/operation-system-db-api.js',
+  '    var mySeq = ++_kmCapSeq_;',
+  '    var mySeq = ++_kmCapSeq_;\n    try { window.KM.productPricingWorkspace.setCapability({}); } catch (e0) {}',
   function () {
-    var n = 0, release = [];
-    var slowThenFast = function (o) {
-      n++;
-      if (n === 1) {
-        return new Promise(function (res) {
-          release.push(function () { res({ success: false, code: 'AUTH_OR_ACCESS_HTML', details: {} }); });
-        });
-      }
-      return Promise.resolve({ success: true, envelope: { apiVersion: '1.0', success: true,
-        action: o.action, request_id: o.requestId || null,
-        meta: { action: o.action, requestId: o.requestId || null },
-        product_strategy_enabled: true } });
-    };
-    return withWindow(slowThenFast, function (m) {
-      var first = m.refreshCapability();
-      return m.refreshCapability({ force: true }).then(function () {
-        release.forEach(function (f) { f(); });
-        return first;
-      }).then(function () {
-        /* Under the mutant the stale AUTH failure overwrites the newer success. */
-        return m.isEnabled() === false;
-      });
-    });
+    var d = decomment(read('assets/js/api/operation-system-db-api.js'));
+    var b = d.slice(d.indexOf('async function _kmApplyClientCapabilities_'),
+      d.indexOf('window.KM.DB.applyClientCapabilities ='));
+    return b.indexOf('setCapability') < b.indexOf('issuedIdentity !== nowIdentity');
   }));
 
-/* Z7 §5.10 — THE LITERAL true IS RELAXED TO TRUTHY, so the string "false" would enable the page. */
+/* Z7 SUPERSEDED §5.10 — THE MIRROR ACCEPTS ANY TRUTHY VALUE. The literal-true rule moved into
+   `setCapability` with the decision; a `1` on the wire must still open nothing. */
 MUT.push(mutate('Z7  the capability accepts any truthy value',
   ACC_REL,
-  '        _enabled = v === true;',
-  '        _enabled = !!v;',
+  '    if (v === true) {',
+  '    if (v) {',
   function () {
-    return withWindow(answering('false'), function (m) {
-      return m.refreshCapability().then(function (v) { return v === true; });
-    });
+    var m = fresh(ACC_REL);
+    m.setCapability({ product_strategy_enabled: 1 });
+    return m.isEnabled() === true;
   }));
 
-/* Z8 — setCapability stops clearing the remembered reason, so a long-gone fault keeps speaking for a
-   capability that has since been set directly. */
+/* Z8 — A STALE FAILURE REASON SURVIVES A LATER ANSWER, so a fault that is over keeps describing a
+   capability that has since been set. The line is still in `setCapability`; only the probe changed,
+   because there is no longer a read to drive it through. */
 MUT.push(mutate('Z8  a stale failure reason survives setCapability',
   ACC_REL,
-  '    _capabilityFailure = null;\n    return _enabled;',
-  '    return _enabled;',
+  '    _capabilityFailure = null;\n    return _enabled;\n  }\n  function isEnabled()',
+  '    return _enabled;\n  }\n  function isEnabled()',
   function () {
-    return withWindow(failing('AUTH_OR_ACCESS_HTML'), function (m) {
-      return m.refreshCapability().then(function () {
-        m.setCapability({ product_strategy_enabled: true });
-        return m.capabilityFailure() !== null;
-      });
-    });
+    var m = fresh(ACC_REL);
+    m.setCapability(null, { failureCode: 'AUTH_OR_ACCESS_HTML' });
+    m.setCapability({ product_strategy_enabled: true });
+    return m.capabilityFailure() !== null;
   }));
 
-/* Z9 §5.4/§5.13 — THE CAPABILITY READ ACQUIRES A SECOND RETRY, above the shared bound. */
+/* Z9 SUPERSEDED §5.4/§5.13 — THE CAPABILITY ACQUIRES A SECOND REQUEST above the shared bound. It
+   cannot grow one inside the accessor any more, so the place it can grow one is the bootstrap glue,
+   and the measurement is the same: more physical capability requests than the bound allows. */
 MUT.push(mutate('Z9  the capability read is given a retry of its own',
-  ACC_REL,
-  "    return readOnce(api, CAPABILITY_ACTION, {}, str(opts.requestId) || undefined, opts.signal)\n      .then(function (r0) {",
-  "    return readOnce(api, CAPABILITY_ACTION, {}, str(opts.requestId) || undefined, opts.signal)\n      .then(function (r0) { return r0.code ? readOnce(api, CAPABILITY_ACTION, {}, undefined, opts.signal) : r0; })\n      .then(function (r0) {",
+  'assets/js/api/operation-system-db-api.js',
+  /* TWO THINGS THIS MUTANT HAD TO LEARN, AND BOTH WERE REAL.
+     · NOT `KM.DB.getClientCapabilities()`: that name is single-flighted, so calling it twice adds no
+       PHYSICAL request and the mutant changed nothing measurable. The suite scored it as a survivor,
+       which was the correct answer to a mutant that did not mutate anything observable.
+     · NOT THE `caps` BRANCH: under an always-on fault the bootstrap never produces a payload, so a
+       line inside `if (caps)` is unreachable in the very scenario that measures the cost. It goes on
+       the glue's entry, which runs whatever the read did. */
+  '        var _psAcc = (window.KM && window.KM.productPricingWorkspace) ? window.KM.productPricingWorkspace : null;',
+  '        _kmGapRead_("getClientCapabilities", {});\n'
+  + '        var _psAcc = (window.KM && window.KM.productPricingWorkspace) ? window.KM.productPricingWorkspace : null;',
   function () {
     var m = trace('transport-fault', { first: SITE_A },
       { netFault: 'redirect404', netFaultWhen: HEALTH });

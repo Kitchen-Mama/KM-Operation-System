@@ -18,12 +18,37 @@
 // and FAILS CLOSED to the safe defaults (flat V2 = true / FLAT_V2 — never legacy against the 53-col canonical table;
 // site confirm = true; inventory DB generation = false) whenever this action is unavailable or the value is
 // indeterminate. A missing backend getter here also resolves to that same safe default (never an invented value).
+//
+// PRODUCT-STRATEGY-P1-B8D-R10D — THE FOURTH FLAG JOINS THE THREE, AND NO FOURTH AUTHORITY IS CREATED.
+//
+// Product Strategy used to learn whether it was switched on by reading `system.health`, which scans about
+// seventeen shipping sheets to answer a question that costs no sheet at all. The flag it actually needed is
+// `PRODUCT_STRATEGY_ENABLED_` in 00_config.gs and nothing else, and this action already exists to publish
+// exactly that kind of fact: a boolean the browser may not decide for itself, on a read that opens no
+// spreadsheet, takes no lock and writes nothing.
+//
+// IT IS PUBLISHED THROUGH `productStrategyEnabled_()`, WHICH IS `PRODUCT_STRATEGY_ENABLED_ === true`.
+// Reading the variable directly here would be the same sentence with one extra failure mode: these files
+// share one global scope, so a project that carried 03_ without 00_ would raise a ReferenceError and take the
+// WHOLE capability response down — including the three flags that have nothing to do with Product Strategy.
+// The guarded form is what the three fields above already use, what 63_ uses for this same flag, and it fails
+// closed to `false` rather than to an exception. The authority is unchanged and still lives in exactly one place.
+//
+// `=== true` AND NOT A COERCION. The mirror on the browser side raises only on the literal `true`, so a `1`,
+// a `"true"` or any other truthy value must never reach it wearing a boolean's clothes.
+//
+// `capabilitiesVersion` IS DELIBERATELY NOT BUMPED. Nothing gates on it — it is carried into the snapshot as a
+// diagnostic label and never compared — while `TEMP_migrate_request_order_draft_v2.gs` DECLARES the current
+// value as this action's release signature. Moving it would desynchronise that declaration to no runtime
+// effect, so the version stays where it is and the added field is the whole change. Recorded as an open item
+// rather than fixed in passing: whether this tag should track the field set is a question about the tag.
 function handleGetClientCapabilities_() {
   return jsonResponse_({ success: true, data: {
     capabilitiesVersion: 'r6e1-flags-shipping-20260822',
     requestOrderDraftV2FlatCutover: (typeof requestOrderDraftV2FlatCutoverEnabled_ === 'function') ? (requestOrderDraftV2FlatCutoverEnabled_() === true) : true,
     requestOrderSiteConfirmRequired: (typeof requestOrderSiteConfirmRequired_ === 'function') ? (requestOrderSiteConfirmRequired_() === true) : true,
-    inventoryAiPlanDbGenerationEnabled: (typeof inventoryAiPlanDbGenerationEnabled_ === 'function') ? (inventoryAiPlanDbGenerationEnabled_() === true) : false
+    inventoryAiPlanDbGenerationEnabled: (typeof inventoryAiPlanDbGenerationEnabled_ === 'function') ? (inventoryAiPlanDbGenerationEnabled_() === true) : false,
+    product_strategy_enabled: (typeof productStrategyEnabled_ === 'function') ? (productStrategyEnabled_() === true) : false
   } });
 }
 

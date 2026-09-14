@@ -515,9 +515,13 @@ eq(lr[2].scenario.bodyClass, '',
   'G23 while away, the body carries no state class from a page that is not showing');
 
 /* G24 — NOTHING WAS WRITTEN ANYWHERE. */
-eq(actionsOf(SCEN.m), ['system.health', 'productPricing.siteUniverse.get',
-  'productPricing.workspace.get'],
-  'G24 the whole sequence spoke three read actions and nothing else');
+/* SUPERSEDED BY P1-B8D-R10D: the page's capability no longer travels on `system.health`, and it
+   is no longer a request this page makes at all — it arrives on the application's shared
+   `getClientCapabilities` bootstrap. The property is unchanged: these are the ONLY actions a
+   Product Strategy page life may speak, and two of them are now its whole business. */
+eq(actionsOf(SCEN.m).filter(function (a) { return a !== 'getClientCapabilities'; }),
+  ['productPricing.siteUniverse.get', 'productPricing.workspace.get'],
+  'G24 SUPERSEDED (R10D): the whole sequence spoke TWO business reads and nothing else');
 
 // =================================================================================================
 section('H — THE RENDERER CAN BE TOLD TO STOP');
@@ -584,12 +588,22 @@ var offenders = psbFiles.filter(function (rel) {
 });
 eq(offenders, [], 'I4  and not one of its modules reads a socket, a DB helper or browser storage');
 
-eq(actionsOf(CHROME.m), ['system.health', 'productPricing.siteUniverse.get',
-  'productPricing.workspace.get'],
-  'I5  a whole page life speaks exactly three read actions');
-eq(actionsOf(TEARDOWN.m), ['system.health', 'productPricing.siteUniverse.get',
-  'productPricing.workspace.get'],
-  'I6  and a site switch adds no fourth');
+/* SUPERSEDED BY P1-B8D-R10D: the page's capability no longer travels on `system.health`, and it
+   is no longer a request this page makes at all — it arrives on the application's shared
+   `getClientCapabilities` bootstrap. The property is unchanged: these are the ONLY actions a
+   Product Strategy page life may speak, and two of them are now its whole business. */
+eq(actionsOf(CHROME.m).filter(function (a) { return a !== 'getClientCapabilities'; }),
+  ['productPricing.siteUniverse.get', 'productPricing.workspace.get'],
+  'I5  SUPERSEDED (R10D): a whole page life speaks exactly TWO business reads');
+eq(actionsOf(TEARDOWN.m).filter(function (a) { return a !== 'getClientCapabilities'; }),
+  ['productPricing.siteUniverse.get', 'productPricing.workspace.get'],
+  'I6  and a site switch adds no third');
+/* AND THE BOOTSTRAP IS ASKED ONCE, WHICH IS THE SAVING. A page life that asked for it twice, or
+   a site switch that asked again, would be the regression R10D exists to prevent. */
+eq(actionsOf(CHROME.m).filter(function (a) { return a === 'getClientCapabilities'; }).length, 1,
+  'I5a with exactly ONE shared capability bootstrap in front of them');
+eq(actionsOf(TEARDOWN.m).filter(function (a) { return a === 'getClientCapabilities'; }).length, 1,
+  'I6a and a site switch does not ask for it again');
 
 ok(/LEGACY_API_WRAPPER/.test(SRC.census) && /is NOT a bypass/.test(SRC.census),
   'I7  the census states that KM.DB is a wrapper and not a bypass');

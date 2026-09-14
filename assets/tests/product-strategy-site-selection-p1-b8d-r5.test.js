@@ -95,6 +95,19 @@ function read(rel) {
 }
 var H = require(path.join(__dirname, '_psb-harness.js'));
 var CAP = require(path.join(__dirname, '_p1b8c-r2-live-derived.js'));
+/* P1-B8D-R10D — THE CAPABILITY SEAM, BORROWED RATHER THAN REINVENTED.
+
+   This suite builds its own counting transport and never calls `RP.install`, so the shared Node
+   seam does not reach it. Before R10D that did not matter: the page asked for its capability and
+   this suite's transport answered. R10D removes the ask, and under Node there is no application
+   bootstrap to replace it — so without a seam every scenario here would refuse at zero requests.
+
+   It takes the payload from the SHARED definition rather than writing one, so there is one answer
+   to "what does the server say" across every Node suite, and no `true` is written here. */
+var RPLY = require(path.join(__dirname, '_p1b8c-replay.js'));
+function serverCapabilityPayload(opts) {
+  return RPLY.makeTransport({ universe: null, workspaces: {} }, opts || {}).bootstrapPayload();
+}
 
 var SRC = {
   page: read('assets/js/pages/product-strategy-board.js'),
@@ -232,7 +245,12 @@ function live(opts) {
   var dom = H.makeDom(partialSkeleton);
   var t = countingApi(opts);
   var ACC = global.KM.productPricingWorkspace;
-  ACC.setCapability({});                 // a module singleton must not carry the last scenario's server
+  /* P1-B8D-R10D — THE SCENARIO'S SERVER ANSWER, THROUGH THE PRODUCTION SETTER. Still a reset for
+     the singleton (nothing from the previous scenario survives it), and still not a declaration:
+     the value comes from the shared payload builder, so `capability: false` in a scenario lowers
+     it and a non-boolean still fails closed. See the seam note at the top of this file. */
+  var _capPayload = serverCapabilityPayload(opts);
+  ACC.setCapability(_capPayload ? _capPayload : {});
   var saved = { KM: global.KM, doc: global.document };
   global.document = dom.document;
   global.KM = { api: t.api, transport: t.transport, productPricingWorkspace: ACC,
@@ -902,8 +920,12 @@ section('J — THE RULES THIS ROUND DOES NOT OWN');
 
 ok(/PRODUCT_STRATEGY_ENABLED_/.test(read('assets/specs/active/apps-script/00_config.gs')),
   'J1  the server flag is still the last gate — activation suite §F');
-ok(/refreshCapability/.test(read('assets/js/api/km-product-pricing-workspace.js')),
-  'J2  the capability is still derived, not declared — R4 suite §E');
+/* SUPERSEDED BY P1-B8D-R10D: "derived, not declared" is still the rule and the deriver moved. The
+   accessor no longer asks for the capability; the application's shared bootstrap does, once, and
+   pushes it in. What must remain true — and is what this line was always defending — is that the
+   page never DECLARES it: the only way in is a server payload through `setCapability`. */
+ok(/function setCapability\(caps, meta\)/.test(read('assets/js/api/km-product-pricing-workspace.js')),
+  'J2  SUPERSEDED (R10D): the capability is still derived from a server payload, never declared');
 ok(/psb-state-host/.test(SRC.partial), 'J3  every refusal still has exactly one host');
 
 // =================================================================================================

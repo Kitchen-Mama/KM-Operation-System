@@ -238,7 +238,31 @@ function mountLive(opts) {
   var state = null, err = null;
   var c = PAGE.create({ document: dom.document, accessor: ACC,
     siteUniverse: UNI, liveAdapter: LIVE, board: null });
-  return Promise.resolve(ACC.refreshCapability({ force: true }))
+  /* ============================================================================================
+     SUPERSEDED BY P1-B8D-R10D — THE CAPABILITY IS APPLIED, NOT ASKED FOR.
+
+     R4's whole finding was that the mirror had no producer, and its repair was to make this page ASK
+     `system.health`. R10D removes the ask: the flag now rides the application's shared
+     `getClientCapabilities` bootstrap, which delivers it through `setCapability`.
+
+     So this harness stops driving a read that no longer exists and delivers the payload instead —
+     the SAME payload a deployment would send, parsed out of `03_master_data_handlers.gs` by
+     `deployedCapabilityPayload()` above, or overridden by a scenario. Nothing is hard-coded here: a
+     scenario that sends `false`, a non-boolean, or no field at all still fails closed, and
+     `capsFail` models a bootstrap that could not be completed at all.
+
+     THIS IS NOT THE PRODUCTION BOOTSTRAP CHAIN, and must not be reported as one. There is no DOM and
+     no shipped db api in this process, so `KM.DB.getClientCapabilities` -> `applyClientCapabilities`
+     -> the setter cannot run; that chain is verified in the R10D browser matrix, on shipped bytes.
+     What this harness proves is what it always proved: given what the deployment says, what does
+     this page do. */
+  if (opts.capsFail) {
+    ACC.setCapability(null, { failureCode: opts.capsFail,
+      httpStatus: (typeof opts.capsStatus === 'number') ? opts.capsStatus : null });
+  } else {
+    ACC.setCapability(opts.caps === undefined ? CAPS.payload : opts.caps);
+  }
+  return Promise.resolve()
     .then(function () { return c.loadUniverse(); })
     .then(function (r) { state = r; }, function (e) { err = e; })
     .then(function () {
@@ -273,27 +297,47 @@ eq(SRC.app.indexOf("'product-strategy'") >= 0
 
 /* THE CAPABILITY BOOTSTRAP RUNS, WITH THE REAL PAYLOAD, AT ITS MOST PERMISSIVE. */
 ok(CAPS.keys.length >= 3, 'A3  the deployed capability payload was parsed from 03_', CAPS.keys);
-eq(CAPS.keys.indexOf('product_strategy_enabled'), -1,
-  'A3a and it does NOT carry product_strategy_enabled — the key the accessor waits for');
-eq(ACC.setCapability(CAPS.payload), false,
-  'A3b so applying the whole real payload to the mirror leaves it FALSE');
+/* ============================================================================================
+   SUPERSEDED BY P1-B8D-R10D — AND THESE TWO WERE A BUG REPORT, NOT A RULE.
+
+   A3a and A3b RECORDED THE DEFECT R4 FOUND: the deployed capability payload did not carry
+   `product_strategy_enabled`, so applying the whole real payload left the mirror false, so a live
+   browser refused a feature that was switched on at both of its authorities. R4 could not repair it
+   from the payload — the field did not exist on the server — so it gave the page a `system.health`
+   read of its own instead.
+
+   R10D repairs it at the source: the field now exists on `handleGetClientCapabilities_`, and the
+   payload parsed from that SAME deployed source now carries it. So the two assertions invert, and
+   their inversion is the proof that the round did what it claims. */
+ok(CAPS.keys.indexOf('product_strategy_enabled') >= 0,
+  'A3a SUPERSEDED (R10D): the deployed payload NOW carries product_strategy_enabled', CAPS.keys);
+eq(ACC.setCapability(CAPS.payload), true,
+  'A3b so applying the whole real payload to the mirror RAISES it');
 
 var A = null;
 mountLive().then(function (r) {
   A = r;
 
-  eq(r.capability, false, 'A4  the client capability mirror is false after a production boot');
+  eq(r.capability, true,
+    'A4  SUPERSEDED (R10D): the mirror is TRUE after a boot that applies the deployed payload');
   /* ZERO PRICING REQUESTS is the rule, and it is not the same as zero requests. Before this round
      the page sent nothing at all because it had nothing to ask; the repair gives it one question to
      ask, and the rule that survives both worlds is that a feature it cannot confirm costs no
      business read. */
-  eq(r.pricingCalls, [], 'A5  and no productPricing read was sent', r.calls);
-  eq(r.state && r.state.state, LIVE_CODE, 'A6  the rendered state is FEATURE_DISABLED');
-  eq(r.headline, LIVE_HEADLINE, 'A6a with the headline off the screenshot');
-  eq(r.detail, LIVE_DETAIL, 'A6b and the detail off the screenshot');
-  ok(r.text !== null && r.text.indexOf(LIVE_CODE) >= 0,
-    'A6c and the refusal code is named on screen', r.text);
-  eq(r.state && r.state.may_analyse, false, 'A7  nothing may be analysed, so no board state exists');
+  /* AND THE SCREEN R4 PHOTOGRAPHED IS GONE. A5-A7 recorded what a live operator SAW: the refusal,
+     its headline, its detail, its code, and a page on which nothing could be analysed. All five are
+     superseded together, because the page they describe is the page this round repaired. */
+  eq(r.pricingCalls, ['productPricing.siteUniverse.get'],
+    'A5  SUPERSEDED (R10D): the site universe IS now requested', r.calls);
+  ok(!r.state || r.state.state !== LIVE_CODE,
+    'A6  SUPERSEDED (R10D): the rendered state is no longer FEATURE_DISABLED',
+    r.state && r.state.state);
+  ok(r.headline !== LIVE_HEADLINE,
+    'A6a the headline off the R4 screenshot is not what this page shows now', r.headline);
+  ok(r.detail !== LIVE_DETAIL, 'A6b nor its detail', r.detail);
+  ok(r.text === null || r.text.indexOf(LIVE_CODE) < 0,
+    'A6c and the refusal code is not named on screen', r.text);
+  ok(true, 'A7  SUPERSEDED (R10D): there is no refusal left for this state to describe');
 
   // ===============================================================================================
   section('B — THE SIX VIEWS ARE THE SAME SCREEN, WHICH IS WHAT THE SCREENSHOT SHOWED');
@@ -331,7 +375,13 @@ mountLive().then(function (r) {
     return /\.setCapability\s*\(/.test(s);
   }).map(function (p) { return path.relative(ROOT, p).split(path.sep).join('/'); });
 
-  eq(callers, [], 'C1  NOTHING in assets/js raises the capability mirror', callers);
+  /* SUPERSEDED BY P1-B8D-R10D — THE MIRROR HAS A PRODUCER, AND THERE IS EXACTLY ONE.
+     C1 measured the defect: no shipped file called the setter, so a browser held false from load to
+     unload. The repair is not "some file calls it" — that would be satisfied by any page raising it
+     for itself — but that the ONE caller is the shared capability bootstrap. */
+  eq(callers, ['assets/js/api/operation-system-db-api.js'],
+    'C1  SUPERSEDED (R10D): exactly ONE shipped file raises the mirror — the shared bootstrap',
+    callers);
   eq(SRC.index.indexOf('setCapability') >= 0, false, 'C1a and neither does index.html');
   ok(/var _enabled = false;/.test(SRC.accessor), 'C2  the mirror is declared false');
   ok(/only a server capability payload/i.test(SRC.accessor),
@@ -342,8 +392,14 @@ mountLive().then(function (r) {
     'C3  app.js runs the capability bootstrap at boot');
   ok(/applyClientCapabilities\(caps\)/.test(SRC.dbapi),
     'C3a which applies the backend envelope through KM.api');
-  ok(!/productPricingWorkspace/.test(SRC.dbapi) && !/productPricingWorkspace/.test(SRC.foundation),
-    'C3b and neither the bootstrap nor the foundation has ever heard of this accessor');
+  /* SUPERSEDED BY P1-B8D-R10D: the bootstrap HAS heard of this accessor now, deliberately and in
+     exactly one place. The FOUNDATION still has not, and must not — a second apply path is how two
+     mirrors start disagreeing. The half of C3b that was a defect inverts; the half that was a rule
+     stays exactly as it was. */
+  ok(/productPricingWorkspace/.test(SRC.dbapi),
+    'C3b SUPERSEDED (R10D): the bootstrap now delivers the same answer to this accessor');
+  ok(!/productPricingWorkspace/.test(SRC.foundation),
+    'C3c and the foundation still has not heard of it — one apply path, never two');
 
   // ===============================================================================================
   section('D — WHY THE HARNESS COULD NOT SEE IT: A SECOND, TEST-ONLY ACTIVATION PATH');
@@ -395,19 +451,21 @@ mountLive().then(function (r) {
   // ===============================================================================================
   section('F — THE REPAIRED CHAIN, DRIVEN FROM BOTH SERVER STATES');
   // ===============================================================================================
-  var HEALTH_ON = { success: true, ok: true, product_strategy_enabled: true };
-  var HEALTH_OFF = { success: true, ok: true, product_strategy_enabled: false };
+  /* SUPERSEDED BY P1-B8D-R10D: the server's two states arrive on the bootstrap payload, not on a
+     health envelope. Same two states, same two outcomes, delivered the way production delivers them. */
+  var HEALTH_ON = { product_strategy_enabled: true };
+  var HEALTH_OFF = { product_strategy_enabled: false };
 
-  return mountLive({ health: HEALTH_ON }).then(function (on) {
+  return mountLive({ caps: HEALTH_ON }).then(function (on) {
     eq(on.capability, true, 'F1  server says enabled -> the mirror rises');
-    eq(on.calls.filter(function (a) { return a === 'system.health'; }).length, 1,
-      'F1a from exactly one health read', on.calls);
+    eq(on.calls.filter(function (a) { return a === 'system.health'; }).length, 0,
+      'F1a SUPERSEDED (R10D): from ZERO health reads — the page asks for nothing', on.calls);
     eq(on.pricingCalls, ['productPricing.siteUniverse.get'],
       'F1b and the site universe is then actually requested', on.calls);
     ok(on.state && on.state.state !== LIVE_CODE,
       'F1c the page is no longer answering FEATURE_DISABLED', on.state && on.state.state);
 
-    return mountLive({ health: HEALTH_OFF });
+    return mountLive({ caps: HEALTH_OFF });
   }).then(function (off) {
     eq(off.capability, false, 'F2  server says disabled -> the mirror stays down');
     eq(off.pricingCalls, [], 'F2a and no productPricing read is sent', off.calls);
@@ -419,9 +477,10 @@ mountLive().then(function (r) {
        somehow still believed it was raised reaches a handler that refuses before it opens a
        spreadsheet. That ordering is owned by the activation suite and by b7 D8a; it is named here
        because a mirror is only ever a saving, never a permission. */
-    return mountLive({ healthThrows: true });
+    return mountLive({ capsFail: 'HTTP_TRANSPORT_ERROR' });
   }).then(function (dead) {
-    eq(dead.capability, false, 'F3  an unreadable health answer leaves the mirror FALSE');
+    eq(dead.capability, false,
+      'F3  SUPERSEDED (R10D): a bootstrap that could not be completed leaves the mirror FALSE');
     eq(dead.pricingCalls, [], 'F3a and still costs zero business reads', dead.calls);
     /* P1-B8D-R10A §6 — STILL CLOSED, AND NO LONGER MISNAMED.
 
@@ -436,12 +495,12 @@ mountLive().then(function (r) {
     eq(dead.state && dead.state.state, 'SOURCE_NOT_CONNECTED',
       'F3b failing closed, and named as the unanswered read it was rather than as a disabled feature');
 
-    return mountLive({ health: { success: true, ok: true } });
+    return mountLive({ caps: {} });
   }).then(function (noField) {
     eq(noField.capability, false, 'F4  a health answer with no capability field is not a yes');
     eq(noField.pricingCalls, [], 'F4a zero business reads', noField.calls);
 
-    return mountLive({ health: { success: true, product_strategy_enabled: 'true' } });
+    return mountLive({ caps: { product_strategy_enabled: 'true' } });
   }).then(function (stringy) {
     eq(stringy.capability, false, 'F5  and neither is the STRING "true"');
 
@@ -506,19 +565,26 @@ mountLive().then(function (r) {
     /* G2 — THE OPPOSITE MISTAKE, AND THE ONE THAT WOULD HAVE "FIXED" THE SCREENSHOT FASTEST. */
     mut('G2 the mirror is hard-coded true, so a rolled-back server still gets a business read',
       function () {
+        /* P1-B8D-R10D — THE CONTROL HALF HAD TO BE RESET. A3b now legitimately RAISES the shared
+           module singleton by applying the deployed payload, so `ACC.isEnabled() === false` was
+           reading that, not the unmutated default, and the probe failed while the rule held. */
+        ACC.setCapability({});
         var m = swapAcc('  var _enabled = false;\n', '  var _enabled = true;\n');
         var A2 = accessorFrom(m, null);
         return ACC.isEnabled() === false && A2.isEnabled() === true;
       });
 
     /* G3 — THE SERVER'S "NO" IS READ AS A "YES". */
-    var G3p = mutP('G3 any health answer raises the mirror, rather than the literal true', function () {
-      var m = swapAcc('        _enabled = v === true;', '        _enabled = v !== true;');
-      var t = countingApi({ health: HEALTH_OFF });
-      var A2 = accessorFrom(m, t);
-      A2.setCapability({});
-      return A2.refreshCapability({ force: true }).then(function (v) { return v === true; });
-    });
+    /* G3 SUPERSEDED BY P1-B8D-R10D — the literal-true rule moved out of the health reader and into
+       the setter with the decision. The mutant is the same defect at its new address: a server that
+       said `false` is read as a yes. */
+    var G3p = mutP('G3 any capability answer raises the mirror, rather than the literal true',
+      function () {
+        var m = swapAcc('    if (v === true) {', '    if (v !== true) {');
+        var A2 = accessorFrom(m, null);
+        A2.setCapability(HEALTH_OFF);
+        return Promise.resolve(A2.isEnabled() === true);
+      });
 
     /* G4 — FAIL OPEN INSTEAD OF FAIL CLOSED. */
     var G4p = mutP('G4 an unreadable health answer is treated as permission', function () {
@@ -526,39 +592,53 @@ mountLive().then(function (r) {
          `.catch`, because the POST shim reported a transport failure by throwing. The shared
          transport reports it as a typed CODE instead, so the branch that decides is the one that
          inspects `r0.code`. Mutating the old site would now mutate a path production cannot reach. */
-      var m = swapAcc('        if (r0.code) {\n          _enabled = false;',
-        '        if (r0.code) {\n          _enabled = true;');
-      var t = countingApi({ healthThrows: true });
-      var A2 = accessorFrom(m, t);
-      A2.setCapability({});
+      /* P1-B8D-R10D — THE RULE MOVED AGAIN, AND FOR THE THIRD TIME IT IS THE SAME RULE. Fail-closed
+         lived in the `.catch`, then in the branch that inspected `r0.code`, and now in the branch of
+         `setCapability` that receives a stated failure reason. Mutating either earlier site would
+         mutate a path production cannot reach. */
+      var m = swapAcc("      _enabled = false;\n      _capabilityHeard = false;      // closed, but NOT latched",
+        "      _enabled = true;\n      _capabilityHeard = false;      // closed, but NOT latched");
+      var A2 = accessorFrom(m, null);
       /* THE MIRROR, NOT THE RETURN VALUE. The fail-closed branch both lowers `_enabled` AND returns
-         false, so a mutant that raises the mirror still resolves false and would score as caught by a
-         probe that only read the resolved value — it did, on the first attempt at this. What must
+         false, so a mutant that raises the mirror still returns false and would score as caught by a
+         probe that only read the returned value — it did, on the first attempt at this. What must
          stay down is the mirror, because that is what every later caller reads. */
-      return A2.refreshCapability({ force: true }).then(function () { return A2.isEnabled() === true; });
+      A2.setCapability(null, { failureCode: 'HTTP_TRANSPORT_ERROR' });
+      return Promise.resolve(A2.isEnabled() === true);
     });
 
     /* G5 — THE CAPABILITY IS READ OFF THE WRONG ENVELOPE LEVEL. 63_'s health is FLAT; a reader that
        only looks under `data` finds undefined and disables a feature that is switched on. This
        repository has already been bitten by exactly that, on exactly this action. */
-    var G5p = mutP('G5 the health envelope is read as nested-only, so a flat answer disables the feature',
+    /* G5 SUPERSEDED BY P1-B8D-R10D — THE TWO-LEVEL READ IS GONE, AND SO IS THE DEFECT IT GUARDED.
+       63_'s health envelope is FLAT and 03_'s bootstrap envelope is NESTED under `data`; the accessor
+       used to straddle both and could read the wrong level. It no longer reads an envelope at all —
+       the shared bootstrap unwraps `data` and hands over the payload — so the equivalent mistake at
+       this address is reading the wrong KEY off that payload, which fails a switched-on server
+       closed in exactly the way the old one did. */
+    var G5p = mutP('G5 the capability is read off the wrong key, so a switched-on server is disabled',
       function () {
-        var m = swapAcc('        var v = (top && top.product_strategy_enabled !== undefined)\n'
-          + '          ? top.product_strategy_enabled\n'
-          + '          : (nested ? nested.product_strategy_enabled : undefined);',
-          '        var v = nested ? nested.product_strategy_enabled : undefined;');
-        var t = countingApi({ health: HEALTH_ON });
-        var A2 = accessorFrom(m, t);
-        A2.setCapability({});
-        return A2.refreshCapability({ force: true }).then(function (v) { return v === false; });
+        var m = swapAcc('    var v = caps.product_strategy_enabled;',
+          '    var v = caps.productStrategyEnabled;');
+        var A2 = accessorFrom(m, null);
+        A2.setCapability(HEALTH_ON);
+        return Promise.resolve(A2.isEnabled() === false);
       });
 
     /* G6 — THE BUSINESS READ IS SENT BEFORE THE ANSWER IS KNOWN. */
     var G6p = mutP('G6 the pricing read no longer waits behind the capability', function () {
       /* R10A — the gate now chooses between two sentences before refusing, so the anchor is the
-         gate itself rather than the gate welded to the FEATURE_DISABLED line under it. */
-      var m = swapAcc('    if (!isEnabled()) {\n      if (_capabilityFailure) {',
-        '    if (false) {\n      if (_capabilityFailure) {');
+         gate itself rather than the gate welded to the FEATURE_DISABLED line under it.
+         P1-B8D-R10D — it chooses between FOUR now, through one helper, so the line R10A quoted under
+         the gate is no longer written at this site. The anchor follows the gate; what it guards is
+         unchanged and is the whole reason the mirror exists: a page that cannot confirm the feature
+         sends no business read. */
+      /* AND IT IS THE UNIVERSE GATE, because that is the read this probe drives. There are two
+         gates — one per read — and mutating the workspace's while measuring the universe's proves
+         nothing: the shipped guard blocks the request either way and the mutant survives while the
+         defect is real. That is what the first R10D attempt at this did. */
+      var m = swapAcc('    if (!isEnabled()) {\n      // Same four sentences, same silence on the wire',
+        '    if (false) {\n      // Same four sentences, same silence on the wire');
       var t = countingApi({});
       var A2 = accessorFrom(m, t);
       A2.setCapability({});

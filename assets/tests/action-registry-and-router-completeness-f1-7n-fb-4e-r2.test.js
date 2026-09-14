@@ -651,8 +651,14 @@ GS_OWNED_SINCE_R1['71_api_v1_factory_stock_guard.gs'] = 'FC-1B-E3-R4-A2-R1-R6-R7
 // 63_'s deployment manifest. An unexpected file still fails: this list is named files with reasons,
 // never a pattern that would forgive the next one too.
 GS_OWNED_SINCE_R1['72_api_v1_product_pricing_workspace.gs'] = 'PRODUCT-STRATEGY-P1-B1 the site-scoped Product Pricing workspace read owner, routed as productPricing.workspace.get and REQUIRED in the deployment manifest from R6-R7-R7; it answers FEATURE_DISABLED while PRODUCT_STRATEGY_ENABLED_ is false';
-gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
-gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
+// PRODUCT-STRATEGY-P1-B8D-R10D — 03_ joins the owned set, and it is the smallest entry on this list.
+// R10D adds ONE field to handleGetClientCapabilities_ — `product_strategy_enabled`, resolved through
+// productStrategyEnabled_() — so that Product Strategy can learn whether it is switched on from the
+// configuration bootstrap the application already performs once per page life, instead of from
+// `system.health`, which scans about seventeen shipping sheets to report the same boolean. No action
+// was added, no flag, constant or property authority was created, no existing field was renamed or
+// removed, and the response envelope is unchanged. An unexpected file still fails.
+GS_OWNED_SINCE_R1['03_master_data_handlers.gs'] = 'PRODUCT-STRATEGY-P1-B8D-R10D one added capability field, product_strategy_enabled, published from the single authority PRODUCT_STRATEGY_ENABLED_ so the page stops paying a 17-table health census to read one flag';
 gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
 eq(gsUnexpected.join(','), '', "8. no Apps Script file outside this line's owned set changed since the R1 commit");
 

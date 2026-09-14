@@ -212,11 +212,43 @@ After the server sync and the frontend deploy, on real Pages: 20 board loads; as
 
 ## 7 · Status
 
+**Superseded in part by P1-B8D-R10D, 2026-09-14. B1 is implemented and committed locally; B2 is
+unchanged and remains design only.**
+
 ```
-IMPLEMENTED           NO — design only
-.gs CHANGED           0
-DEPLOYED              NO
-APPROVED              PENDING USER DECISION
-BLOCKS P1 CLOSURE     NO — P1 is open for other reasons
-S2                    NOT STARTED
+B1  capability endpoint decoupling
+    IMPLEMENTED         YES — P1-B8D-R10D (local commit; see DEPLOYMENT_RELEASE_LOG.md)
+    .gs CHANGED         1 — 03_master_data_handlers.gs, ONE added field
+    DEPLOYED            NO — server-first sync is the USER's, and has not happened
+    LIVE GATE           NOT RUN on R10D deployed bytes
+
+B2  the schema census inside system.health
+    IMPLEMENTED         NO — design only, and deliberately so
+    .gs CHANGED         0
+    RUNTIME CODE        none written
+    APPROVED            PENDING USER DECISION
+
+P1 CLOSED               NO
+S2 RUNTIME ALLOWED      NO
 ```
+
+### What R10D took from this document, and what it left
+
+Option **B1-a** is what shipped, in the shape §2 proposed and with nothing added to it: one field on
+`handleGetClientCapabilities_`, resolved from `productStrategyEnabled_()` — which is
+`PRODUCT_STRATEGY_ENABLED_ === true` — with no new action, no new flag, no new constant and no new
+property authority. The browser's capability now arrives on the bootstrap the application already
+performs once per page life, and Product Strategy dispatches nothing of its own for it.
+
+§3's reductions were **not** touched. No `SYS_SLICE_TABLES_` change, no caller-scoped census, no
+`CacheService`, no stale-cache policy, no `prodRequireSheet_` / `prodRequireColumns_` /
+`ppwRowsToObjects_` refactor, no header-read elimination, no per-request spreadsheet-identity change.
+`system.health` answers exactly what it answered before, to exactly the callers it had before, at
+exactly the cost it had before. What changed is that Product Strategy is no longer one of them.
+
+### The prediction in §5 is still a prediction
+
+§5 states an expected effect. R10D removes one `system.health` read per Product Strategy page life,
+which is the mechanism §5 names — but the measured p50 in §1 was taken on live GitHub Pages against a
+live deployment, and **no such measurement has been taken on R10D's bytes**, because they are not
+deployed. Nothing in §5 may be read as a result until the live reliability gate runs.

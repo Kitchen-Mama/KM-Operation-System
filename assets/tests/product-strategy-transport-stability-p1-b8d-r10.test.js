@@ -474,11 +474,37 @@ section('§D — THE PRODUCTION-LIKE MATRIX, in a browser, with the faults injec
 /* Each row drives the SHIPPED page through one named network fault and records two things: what the
    operator is told, and how many physical requests it cost. Nothing here stubs the classifier or the
    retry — a fake `fetch` sits BENEATH a real transport, so what is measured is production's policy. */
+/* P1-B8D-R10D — THE FAULT IS NOW AIMED, AND IT HAS TO BE.
+
+   §D is about THIS PAGE'S READS: what an operator is told when one of them meets a named fault,
+   and how many physical requests that costs under the shared bound. Until R10D the page's first
+   request WAS one of its own, so an unaimed fault could only land on it.
+
+   The application's shared capability bootstrap now goes first. An unaimed fault lands on THAT,
+   the page then refuses before issuing any read of its own, and `physical.attempts` reports the
+   bootstrap's recovery policy rather than the accessor's — two correct behaviours belonging to two
+   different layers, silently compared as though they were one. D8 and D10 caught it by disagreeing.
+
+   So the fault is aimed at `productPricing`, which is the subject of every assertion below. The
+   capability read is left to succeed, because §D was never asking about it. */
 function faultRun(name) {
-  var m = trace('transport-fault', { first: SITE_A }, { netFault: name });
+  var m = trace('transport-fault', { first: SITE_A },
+    { netFault: name, netFaultWhen: 'productPricing' });
   var last = m.trace[m.trace.length - 1];
-  return { text: tidy(m.stateText), attempts: last.physical ? last.physical.attempts : null,
-    methods: last.physical ? last.physical.methods : null, mounted: last.mounted, m: m };
+  var ph = last.physical || null;
+  /* P1-B8D-R10D — COUNTED PER ACTION, BECAUSE THE PAGE IS NO LONGER THE ONLY THING ON THE WIRE.
+     `physical.attempts` is the TOTAL for the page life. That equalled this read's attempts while the
+     page's own request was the first thing dispatched; the application's shared capability bootstrap
+     now goes first and succeeds, so the total carries its one attempt too and every count below was
+     one high. The subject of these assertions is the SITE UNIVERSE read, so that is what is counted
+     — and the methods list is narrowed to the same requests for the same reason. */
+  var UNIV = 'productPricing.siteUniverse.get';
+  var univAttempts = (ph && ph.byAction && typeof ph.byAction[UNIV] === 'number')
+    ? ph.byAction[UNIV] : 0;
+  return { text: tidy(m.stateText), attempts: univAttempts,
+    totalAttempts: ph ? ph.attempts : null,
+    methods: ph ? ph.methods.slice(ph.methods.length - univAttempts) : null,
+    mounted: last.mounted, m: m };
 }
 
 var D_404 = faultRun('redirect404');
@@ -940,7 +966,11 @@ MUT.push(mutate('Z16 the accessor goes back to the private POST shim',
   '      return (t && typeof t.request === \'function\') ? t : null;',
   '      return null;',
   function () {
-    var m = trace('transport-fault', { first: SITE_A }, { netFault: 'redirect404' });
+    /* AIMED AT THE PAGE'S OWN READ, for the reason faultRun is: an unaimed 404 now also strikes the
+       shared capability bootstrap, whose refusal reads as the SAME sentence — so the mutant's tell
+       was masked by a fault it did not cause, and it survived while the defect was real. */
+    var m = trace('transport-fault', { first: SITE_A },
+      { netFault: 'redirect404', netFaultWhen: 'productPricing' });
     return !/nothing there|nothing to read/i.test(tidy(m.stateText));
   }));
 

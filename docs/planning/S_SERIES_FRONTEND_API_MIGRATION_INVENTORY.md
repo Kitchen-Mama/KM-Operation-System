@@ -102,8 +102,19 @@ would be reporting a test for a defect as the defect.)
 | `api/km-transport.js` | Apps Script Web App | R | itself (it IS the transport) | `system.health`, `methodRegistry.get`, `inventoryScope.registry.get` |
 | `api/km-api-foundation.js` | Apps Script Web App | R | `KM.transport.request({kind:'read'})`, with a private `post` shim retained as a fallback | 9 `*.workspace.get` |
 | `api/km-data-access.js` | via foundation | R | `KM.transport.request({kind:'read'})` | 6 `*.workspace.get` |
-| `api/km-product-pricing-workspace.js` | Apps Script Web App | R | `KM.transport.request({kind:'read'})` for **all three** actions — two at R10, the third at **R10A** | `system.health`, `productPricing.siteUniverse.get`, `productPricing.workspace.get` |
-| `pages/product-strategy-board.js` | via the accessor above | R | as the accessor above | the same three, and nothing else |
+| `api/km-product-pricing-workspace.js` | Apps Script Web App | R | `KM.transport.request({kind:'read'})` for **both** business reads | `productPricing.siteUniverse.get`, `productPricing.workspace.get` |
+| `pages/product-strategy-board.js` | via the accessor above | R | as the accessor above | the same two, and nothing else |
+
+> **P1-B8D-R10D — THE THIRD READ IS NOT MIGRATED. IT IS GONE.** R10A moved `system.health` onto the
+> shared transport; R10D removes it from this page entirely. The capability is a **shared bootstrap
+> concern**: it arrives on `getClientCapabilities`, which the application already reads once per page
+> life, and is pushed into the accessor's mirror by that same bootstrap
+> (`operation-system-db-api.js` `_kmApplyClientCapabilities_`). It is **not** counted as a Product
+> Strategy-owned business read, and this page dispatches nothing for it.
+>
+> **Product Strategy-owned business reads = 2.** `productPricing.siteUniverse.get` and
+> `productPricing.workspace.get`. The `system.health` action still exists, is still routed on both
+> verbs, and still serves its other callers; what changed is that Product Strategy is not one of them.
 
 **Product Strategy is the only PAGE in this column**, and §9's proof for it is in §3 below.
 

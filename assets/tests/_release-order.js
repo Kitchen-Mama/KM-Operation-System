@@ -371,7 +371,12 @@ var ROUND_TOKENS = [
      exactly the state a slow or failed read leaves behind - so the stale copy is not merely old, it is
      the broken one this round exists to retire. R10B measured five of those throws on the deployed
      bytes of 7bd5af2. */
-  'nullcanonical-p1b8dr10c-20260914'];
+  'nullcanonical-p1b8dr10c-20260914',
+  /* PRODUCT-STRATEGY-P1-B8D-R10D — the capability moves onto the shared bootstrap. Three shipped
+     files changed: the accessor (its capability read is gone), the db api (the bootstrap gained a
+     second consumer of the same answer) and the board controller (four situations where there used
+     to be two). Appended, never edited in place — the series is the record of what was served. */
+  'capbootstrap-p1b8dr10d-20260914'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the
