@@ -135,6 +135,12 @@ function mutRun(label, file, anchor, replacement, detect) {
  * page.
  */
 var MODULES = [
+  /* P1-B8D-R10A — THE TRANSPORT IS PART OF THE PRODUCTION PAGE, and this list did not have it.
+     index.html loads km-transport.js before the accessor, and every Product Strategy read goes
+     through it. Omitting it here was invisible only because the accessor carried a POST fallback;
+     R10A removed that, and this sandbox went red — correctly, because it was modelling a page that
+     cannot exist. Loaded first, as index.html loads it. */
+  'api/km-transport.js',
   'api/km-product-pricing-workspace.js',
   'api/km-product-pricing-adapter.js',
   'product-strategy/psb-data-contract.js',

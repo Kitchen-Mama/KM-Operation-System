@@ -310,6 +310,18 @@ function bootScript(opts) {
     /* P1-B8D-R4 — capabilityOff is now a SERVER ANSWER, not a poke at the client. The page derives
        its capability from the health read the replay serves, so "the feature is off" is modelled the
        way production meets it: the server says no. */
+    /* P1-B8D-R10A §6 — A GENUINELY OFFLINE BROWSER, not merely a fetch that rejects.
+
+       BROWSER_OFFLINE is classified from `navigator.onLine`. A run that only makes fetch reject is
+       therefore testing SOURCE_NOT_CONNECTED under another name: the browser still believes it is
+       online, and the classifier is RIGHT to say so. What §6 asks about is what a person on a dead
+       network is told, and that needs the browser to agree it is offline.
+
+       Defined before any read is issued and left in place, so every attempt in the bounded sequence
+       sees the same world. */
+    '    var __off = ' + (opts.offline ? 'true' : 'false') + ';',
+    '    if (__off) { try { Object.defineProperty(window.navigator, "onLine", {',
+    '      get: function () { return false; }, configurable: true }); } catch (e) {} }',
     '    var capOn = ' + (opts.capabilityOff ? 'false' : 'true') + ';',
     '    var t = P1B8C_REPLAY.install(window, KM.productPricingWorkspace, cap,',
     '      Object.assign({ capability: capOn }, failWith ? { fail: failWith } : {},',

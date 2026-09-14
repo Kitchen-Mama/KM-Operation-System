@@ -672,11 +672,27 @@ var UNI = require(path.join(JS, 'product-strategy', 'km-product-strategy-site-un
     'H11 and a host with no navigator at all decides nothing');
 
   /* END TO END: the accessor really returns them, and the two adapters really carry them through. */
+  /* P1-B8D-R10A — THE FAILURE IS DELIVERED THROUGH THE DOOR THAT CLASSIFIES IT.
+
+     These cases name a transport CODE and assert the state the accessor derives from it. They used to
+     deliver that code by rejecting from the private POST shim, whose caller read `err.apiCode`
+     directly. R10A routes every Product Strategy read through `KM.transport.request`, which reports a
+     failure as a typed code rather than a rejection — so a thrown apiCode arrived as an anonymous
+     network failure and all six of these collapsed into one state.
+
+     The scenarios are unchanged. Only the door is. */
   function failingTransport(err) {
-    return { api: { transport: {
-      post: function () { return Promise.reject(err); },
-      safeReadJsonResponse: function (r) { return r; }
-    } } };
+    return {
+      api: { buildRequestEnvelope: function (action, payload, ctx) {
+        return { apiVersion: '1.0', action: action, requestId: (ctx && ctx.requestId) || null,
+          payload: payload || {}, context: { actor: null, clientVersion: null } };
+      } },
+      transport: { request: function () {
+        return Promise.resolve({ success: false, code: (err && err.apiCode) || 'TRANSPORT_FAILED',
+          details: (err && typeof err.transportStatus === 'number')
+            ? { http_status: err.transportStatus } : {} });
+      } }
+    };
   }
   var saved = global.KM;
   var results = {};

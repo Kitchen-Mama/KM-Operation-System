@@ -894,6 +894,11 @@ reclassifies no module, adds no action and changes no server file.
 
 ### The one thing that moved
 
+> **R10 MIGRATED TWO OF THIS PAGE'S THREE READS. R10A (`2026-09-14`) MIGRATED THE THIRD.** The
+> section below describes the two business reads; `system.health` stayed on the private shim until
+> R10A and is described under P1-B8D-R10A at the end of this document. Read the two together — this
+> one alone overstates what `a5bdfc2` delivered.
+
 `assets/js/api/km-product-pricing-workspace.js` dispatched its two business reads through
 `KM.api.transport.post()` — a PRIVATE member of `km-api-foundation.js`, described in that file's own
 comment as "a fallback and not the path". Every other workspace read in the application goes through
@@ -939,3 +944,38 @@ The server was never the fault. The client was on the wrong verb.
 namespace, repeated on four rows, is why a census whose whole purpose is to say which page is on
 which transport described the failing page as already correct. The column is corrected there; only
 this accessor's code changed.
+
+## P1-B8D-R10A — THE THIRD READ, AND A CENSUS THAT CAN NO LONGER DRIFT (2026-09-14, PRE `a5bdfc2`)
+
+**The rule adopted at R8 stands verbatim.** R10A starts no S round, reclassifies no module, adds no
+action, changes no server file and raises no retry ceiling.
+
+### What R10 left behind
+
+`refreshCapability()` — the `system.health` read that decides whether Product Strategy offers itself
+at all — was still calling `KM.api.transport.post`, the foundation's private shim. R10's documents
+said the page's reads were unified. Two of three were.
+
+It is the worst of the three to have left on that path, because it **fails closed**: the transient
+echo 404 that R10 measured at 4 in 40 live reads in one window made the whole page answer
+FEATURE_DISABLED — not "the server could not be reached", but "the feature is switched off", a
+statement about a product decision derived from a request that never got an answer.
+
+### What R10A changed
+
+| | Before R10A | After |
+|---|---|---|
+| `system.health` dispatch | `KM.api.transport.post` (POST, no classifier, no recovery) | `KM.transport.request({kind:'read'})` via the same `readOnce` helper as the other two |
+| a capability read that cannot be completed | rendered as `FEATURE_DISABLED` | rendered as the classified transport state (`HTTP_NOT_FOUND`, `NOT_AUTHORIZED`, `RESPONSE_NOT_READABLE`, `BROWSER_OFFLINE`, …) |
+| a transport failure's effect on the mirror | closed | closed, and **not latched** — `_capabilityHeard` is set only when a server actually answered, so the page can ask again |
+| the POST fallback inside `readOnce` | present | **removed**; a missing shared transport is a named refusal |
+
+`FEATURE_DISABLED` now means exactly one thing: a server answered, and what it said was `false`.
+
+### What it deliberately did not change
+
+No new transport, no new retry, no raised ceiling, no `.gs` file, no action, no write, no capability
+flag, no Google Login, no S2 runtime. And **no offline pre-dispatch short-circuit**: no transport
+specification in this repository requires one, so an offline read still ATTEMPTS within the existing
+bound. The four numbers are reported separately and must not be conflated — external attempts,
+requests that reached a server, retries, and the state the operator is shown.

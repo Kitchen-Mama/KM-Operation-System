@@ -365,14 +365,59 @@
       return Promise.resolve(transport.post(dto)).then(function (env) {
         return respond(200, 'application/json', JSON.stringify(env), ECHO, true);
       }, function (err) {
-        /* A REJECTION FROM THE CAPTURE IS A NETWORK FAILURE HERE, which is what it looks like to a
-           browser: nothing readable came back. */
+        /* P1-B8D-R10A — A TYPED FAILURE IS A NETWORK CONDITION, AND MUST BE SENT AS ONE.
+
+           Suites written against the old POST shim expressed transport failures by THROWING an error
+           carrying an `apiCode`, because the shim's caller read that field directly. Nothing reads it
+           any more: the shared transport derives its code from the WIRE — status, content-type, final
+           host, and an HTML fingerprint. A thrown apiCode therefore arrived as an anonymous network
+           failure and every one of those scenarios collapsed into SOURCE_NOT_CONNECTED.
+
+           The fix is not to teach the transport about apiCodes. It is to make the harness express the
+           scenario the way a network does, so production's classifier stays the ONLY classifier: each
+           code is mapped to the wire shape that genuinely produces it. Anything unrecognised stays a
+           real network failure, which is what an unlabelled throw actually means. */
+        var code = String((err && err.apiCode) || '');
+        if (code === 'AUTH_OR_ACCESS_HTML') {
+          return respond(200, 'text/html; charset=utf-8', htmlBody('authHtml'), ECHO, true);
+        }
+        if (code === 'TRANSPORT_NON_JSON_RESPONSE') {
+          return respond(200, 'text/html; charset=utf-8', htmlBody('genericHtml'), ECHO, true);
+        }
+        if (code === 'HTTP_NOT_FOUND_HTML') {
+          return respond(404, 'text/html; charset=utf-8', htmlBody('redirect404'), u, false);
+        }
+        if (code === 'REDIRECT_TARGET_NOT_FOUND') {
+          return respond(404, 'text/html; charset=utf-8', htmlBody('redirect404'), ECHO, true);
+        }
+        if (code === 'REQUEST_TIMEOUT') return new Promise(function () {});
         return Promise.reject(err instanceof Error ? err : new TypeError('Failed to fetch'));
       });
     }
 
+    /* P1-B8D-R10A — THE FOUNDATION STUB BUILDS THE ENVELOPE PRODUCTION BUILDS.
+
+       `readOnce` prefers `api.buildRequestEnvelope` and falls back to an equivalent literal, so a
+       stub without it still works — but then every test exercises the FALLBACK and the shape real
+       browsers send goes unexercised. This mirrors km-api-foundation's builder: same five fields,
+       same frozen envelope, same requestId passthrough. */
+    function buildRequestEnvelope(action, payload, context) {
+      var a = String(action == null ? '' : action).trim();
+      if (a === '') throw new Error('action is required');
+      return Object.freeze({
+        apiVersion: '1.0',
+        action: a,
+        requestId: (context && context.requestId) || null,
+        payload: (payload && typeof payload === 'object') ? payload : {},
+        context: Object.freeze({
+          actor: (context && context.actor) || null,
+          clientVersion: (context && context.clientVersion) || null
+        })
+      });
+    }
+
     return {
-      api: { transport: transport },
+      api: { transport: transport, buildRequestEnvelope: buildRequestEnvelope },
       fetch: fakeFetch,
       physical: physical,
       log: log,
@@ -417,12 +462,51 @@
 
        If the factory is absent the accessor's own fallback keeps the suite working, which is the
        same contract production has. */
-    if (g.KM.transportFactory && typeof g.KM.transportFactory.create === 'function') {
-      g.KM.transport = g.KM.transportFactory.create({
+    /* P1-B8D-R10A — AND IN NODE THE FACTORY HAS TO BE ASKED FOR.
+
+       `km-transport.js` publishes `KM.transportFactory` only onto a BROWSER window; under Node its
+       root is null, so nothing was ever installed here and every Node suite fell through to the
+       accessor's POST fallback. That was invisible while the fallback existed. R10A removed it, and
+       four suites went red at once — correctly: they were driving a door production no longer has.
+
+       Requiring the real factory keeps ONE arrangement everywhere: production's transport over this
+       harness's network, in the browser and in Node alike. */
+    var TF = g.KM.transportFactory;
+    if (!TF && typeof require === 'function') {
+      try { TF = require('../js/api/km-transport.js'); } catch (e) { TF = null; }
+    }
+    if (TF && typeof TF.create === 'function') {
+      g.KM.transport = TF.create({
         fetch: t.fetch,
         baseUrl: 'https://script.google.com/macros/s/REPLAY_SYNTHETIC_DEPLOYMENT_ID_NOT_REAL/exec',
         sleep: function () { return Promise.resolve(); },
-        random: function () { return 0.5; }
+        random: function () { return 0.5; },
+        /* P1-B8D-R10A — A REAL TIMEOUT, ON A CLOCK WITH A FLOOR AND A CEILING.
+
+           A timeout scenario is served by never answering, which is what a timeout IS. Production's
+           read budget is 60s, so an unanswered read outlived the measurement window and the page
+           returned nothing at all — a suite reporting 'no measurements came back' about a page that
+           was working correctly and simply still waiting.
+
+           Shortening the BUDGET is not the same as faking the outcome: the transport's own timeout
+           path runs, produces its own code, and production classifies it. Only the clock is ours, for
+           the same reason `sleep` is.
+
+           THE VALUE IS BOUNDED FROM BOTH SIDES, and the first attempt at this (250ms) broke the floor
+           and took a lifecycle suite down with it:
+
+             FLOOR    it must EXCEED every deliberate delay a scenario uses, or a slow answer that was
+                      meant to arrive is cut off instead. The largest today is `slowMs: 700`, the
+                      site-B delay the deferred-teardown trace is built on. At 250ms site B timed out
+                      and never mounted.
+             CEILING  it must fit inside the page's --virtual-time-budget (8000ms), or an unanswered
+                      read outlives the measurement again. A timeout is never auto-retried, so one
+                      budget is the whole cost.
+
+           2000ms sits clear of both. A scenario that ever needs a delay above ~1.5s must raise this
+           with it. */
+        readTimeoutMs: 2000,
+        writeTimeoutMs: 2000
       });
     }
     /* P1-B8D-R4 — NOT RAISED HERE ANY MORE. The accessor derives the capability from the health read

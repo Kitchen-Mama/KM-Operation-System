@@ -80,9 +80,23 @@ function clientChain(env) {
   var ACC = require(path.join(JS, 'api', 'km-product-pricing-workspace.js'));
   ACC.setCapability({ product_strategy_enabled: true });
   global.KM = global.KM || {};
-  global.KM.api = { transport: {
-    post: function () { return Promise.resolve({ __b: env }); },
-    safeReadJsonResponse: function (r) { return r.__b; } } };
+  /* P1-B8D-R10A — THIS HARNESS DROVE A DOOR THAT NO LONGER EXISTS.
+
+     It stubbed `KM.api.transport.post`, the foundation's private POST shim, because that is what the
+     accessor called. R10A removed the last Product Strategy caller of it: every read now goes through
+     `KM.transport.request`, and a missing shared transport is a NAMED refusal rather than a quiet
+     downgrade to the path whose 302-dropped body caused the live failure.
+
+     So the stub moves to the real door. The envelope under test is unchanged, and the suite now
+     exercises the boundary production actually uses — which is a better test than the one it
+     replaces, not merely a repaired one. */
+  global.KM.api = { buildRequestEnvelope: function (action, payload, ctx) {
+    return { apiVersion: '1.0', action: action, requestId: (ctx && ctx.requestId) || null,
+      payload: payload || {}, context: { actor: null, clientVersion: null } };
+  } };
+  global.KM.transport = { request: function () {
+    return Promise.resolve({ success: true, envelope: env });
+  } };
   return ACC.getSiteUniverse({}).then(function (out) {
     return { out: out, universe: UNI.adapt(out) };
   });

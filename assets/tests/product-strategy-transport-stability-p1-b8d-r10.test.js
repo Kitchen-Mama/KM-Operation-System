@@ -134,14 +134,23 @@ ok(/buildRequestEnvelope/.test(accCode),
   'A5  the request envelope is built by the foundation, so one shape crosses the wire');
 ok(/payload:\s*dto/.test(accCode),
   'A6  and the WHOLE envelope is what travels, not the inner payload (the SCOPE_INCOMPLETE lesson)');
+/* P1-B8D-R10A §3 — THE OLD DOOR IS GONE, NOT MERELY SECOND.
 
-/* THE OLD DOOR IS NOT SLAMMED, DELIBERATELY. `api.transport.post` survives as the fallback for a page
-   that somehow loads without the transport. What must not happen is a read reaching it FIRST. */
+   R10 kept `api.transport.post` as a fallback and this assertion checked only that it came AFTER the
+   shared transport. That was the right assertion for a round that left the door standing. R10A
+   removed it, because "keeps working with its old failure modes" describes the exact path whose
+   302-dropped body caused the live failure — falling back to it would reintroduce the defect at
+   precisely the moment something else is already wrong, and do it silently.
+
+   So the property is now absence, measured on decommented source so the historical paragraphs that
+   NAME the shim cannot satisfy or break it. */
 var primaryFirst = accCode.indexOf('tp.request(');
-var fallbackAt = accCode.indexOf('api.transport.post(');
-ok(primaryFirst > -1 && fallbackAt > primaryFirst,
-  'A7  the shared transport is the primary path and the POST shim is only reached after it',
-  { primaryFirst: primaryFirst, fallbackAt: fallbackAt });
+var shimCalls = (accCode.match(/api\s*\.\s*transport\s*\.\s*post\s*\(/g) || []);
+eq(shimCalls.length, 0,
+  'A7  the private POST shim has ZERO callers in the Product Strategy accessor');
+ok(primaryFirst > -1, 'A7a while the shared transport is dispatched from it', primaryFirst);
+ok(!/fetch\s*\(|XMLHttpRequest/.test(accCode),
+  'A7b and the accessor opens no socket of its own either');
 
 // ==================================================================================================
 section('§B — CLASSIFICATION: the sentences R10 §5 forbids, each asserted by name');
@@ -575,8 +584,18 @@ ok(settled.board && settled.board.viewChildren > 0,
 ok(rSteps[0].physical.attempts >= 2,
   'E6  the first attempt really did fail — this is a recovery, not a fault that missed',
   rSteps[0].physical.attempts);
-ok(settled.physical.attempts <= 3,
+/* P1-B8D-R10A — THE THIRD READ JOINS THE COUNT, AND THAT IS THE PROOF IT MOVED.
+
+   This bound was 3 and is now 4, for one reason: the capability read (`system.health`) used to go
+   out through the foundation's private POST shim, which this harness's fake `fetch` never saw. It
+   goes through KM.transport now, so it is COUNTED — capability + its one recovery + universe +
+   workspace. A count that did NOT move would have meant the migration had not taken effect, which is
+   why the increase is asserted as a floor as well as a ceiling. */
+ok(settled.physical.attempts <= 4,
   'E7  and the whole sequence stays bounded — no retry loop', settled.physical.attempts);
+ok(settled.physical.attempts >= 4,
+  'E7a and the capability read is one of the counted requests — it is on the shared transport now',
+  settled.physical.attempts);
 
 // ==================================================================================================
 section('§F — A RECOVERY FOR A SITE NOBODY IS ON MUST NOT LAND');
@@ -600,7 +619,10 @@ ok(swLast.mounted === true,
 ok(!refusalShown({ stateText: SW.stateText }),
   'F2  the failed recovery for site A does not paint its error over site B',
   tidy(SW.stateText).slice(0, 140));
-ok(swLast.physical.attempts <= 4,
+/* R10A — five, for the same reason E7 is four: capability(1) + universe(1) + site A(1) + A's one
+   bounded recovery(1) + site B(1). The fault is aimed at site A by name, so neither the capability
+   read nor site B is touched by it. */
+ok(swLast.physical.attempts <= 5,
   'F3  and the switch does not multiply requests — A bounded, then B', swLast.physical.attempts);
 ok(swFirst.physical.attempts >= 1,
   'F4  site A really was outstanding when B was chosen', swFirst.physical.attempts);

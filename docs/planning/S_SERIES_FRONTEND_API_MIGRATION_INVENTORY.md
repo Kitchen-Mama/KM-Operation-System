@@ -102,13 +102,23 @@ would be reporting a test for a defect as the defect.)
 | `api/km-transport.js` | Apps Script Web App | R | itself (it IS the transport) | `system.health`, `methodRegistry.get`, `inventoryScope.registry.get` |
 | `api/km-api-foundation.js` | Apps Script Web App | R | `KM.transport.request({kind:'read'})`, with a private `post` shim retained as a fallback | 9 `*.workspace.get` |
 | `api/km-data-access.js` | via foundation | R | `KM.transport.request({kind:'read'})` | 6 `*.workspace.get` |
-| `api/km-product-pricing-workspace.js` | Apps Script Web App | R | `KM.transport.request({kind:'read'})` **since R10** — was the foundation's private `post` shim | `system.health`, `productPricing.siteUniverse.get`, `productPricing.workspace.get` |
+| `api/km-product-pricing-workspace.js` | Apps Script Web App | R | `KM.transport.request({kind:'read'})` for **all three** actions — two at R10, the third at **R10A** | `system.health`, `productPricing.siteUniverse.get`, `productPricing.workspace.get` |
 | `pages/product-strategy-board.js` | via the accessor above | R | as the accessor above | the same three, and nothing else |
 
 **Product Strategy is the only PAGE in this column**, and §9's proof for it is in §3 below.
 
 **Only `km-product-pricing-workspace.js` changed in CODE at R10.** The other three rows are the same
 modules they always were; what changed is that this document now names what they actually call.
+
+> **AND R10 FINISHED TWO OF THREE.** `a5bdfc2` migrated `productPricing.siteUniverse.get` and
+> `productPricing.workspace.get`. It did **not** migrate `system.health`, and this row was written as
+> though it had — the same failure mode as the `KM.transport.post` error it was correcting, one round
+> later: a census describing an intention rather than a measurement.
+>
+> **R10A completed the third.** The claim is now enforced rather than asserted:
+> `product-strategy-capability-route-p1-b8d-r10a.test.js` §A counts the callers of the private POST
+> shim in the shipped accessor and requires **zero**, on decommented source. A census that can only
+> be kept true by hand is a census that will drift again.
 
 ---
 

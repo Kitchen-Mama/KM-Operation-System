@@ -193,6 +193,31 @@ function countingApi(scenario) {
           return Promise.resolve({ ok: false, error: { code: 'NOT_SERVED' } });
         }
       }
+    },
+    /* P1-B8D-R10A — THE SHARED TRANSPORT, WHICH IS THE DOOR THE ACCESSOR NOW USES.
+
+       R10A removed the last Product Strategy caller of `KM.api.transport.post`, so a socket that
+       only offers `post` records nothing and every scenario here measured an accessor that had
+       already refused before sending. Same counting, same scenarios, same envelopes — moved to the
+       boundary production dispatches through.
+
+       It resolves the { success, envelope } shape `KM.transport.request` resolves, including for a
+       thrown scenario: the shared transport reports transport failure as a typed CODE rather than a
+       rejection, and a harness that threw instead would be exercising a path production cannot
+       reach. */
+    transport: {
+      request: function (o) {
+        var action = o && o.action;
+        calls.push(action);
+        if (action === 'system.health') {
+          if (scenario.healthThrows) {
+            return Promise.resolve({ success: false, code: 'HTTP_TRANSPORT_ERROR', details: {} });
+          }
+          if (scenario.health === undefined) return Promise.resolve({ success: true, envelope: { success: true } });
+          return Promise.resolve({ success: true, envelope: scenario.health });
+        }
+        return Promise.resolve({ success: true, envelope: { ok: false, error: { code: 'NOT_SERVED' } } });
+      }
     }
   };
 }
@@ -207,7 +232,7 @@ function mountLive(opts) {
   ACC.setCapability({});
   var savedKM = global.KM, savedWin = global.window, savedDoc = global.document;
   global.window = global.window || {};
-  global.KM = { api: t.api, productPricingWorkspace: ACC };
+  global.KM = { api: t.api, transport: t.transport, productPricingWorkspace: ACC };
   global.window.KM = global.KM;
   global.document = dom.document;
   var state = null, err = null;
@@ -398,7 +423,18 @@ mountLive().then(function (r) {
   }).then(function (dead) {
     eq(dead.capability, false, 'F3  an unreadable health answer leaves the mirror FALSE');
     eq(dead.pricingCalls, [], 'F3a and still costs zero business reads', dead.calls);
-    eq(dead.state && dead.state.state, LIVE_CODE, 'F3b failing closed, not open');
+    /* P1-B8D-R10A §6 — STILL CLOSED, AND NO LONGER MISNAMED.
+
+       F3 and F3a are the assertions that matter and both are untouched: the mirror stays FALSE and
+       the run still costs ZERO business reads. What changed is the SENTENCE. This used to render as
+       FEATURE_DISABLED — "Product Strategy is not enabled yet" — for a health read that was never
+       completed, which states a product decision on the strength of a request that got no answer.
+
+       R10A put this read on the shared transport, so the failure now has a classification, and the
+       controller shows it. FEATURE_DISABLED from here on means exactly one thing: a server answered,
+       and what it said was false. */
+    eq(dead.state && dead.state.state, 'SOURCE_NOT_CONNECTED',
+      'F3b failing closed, and named as the unanswered read it was rather than as a disabled feature');
 
     return mountLive({ health: { success: true, ok: true } });
   }).then(function (noField) {
@@ -432,7 +468,15 @@ mountLive().then(function (r) {
       ctx.self = ctx; ctx.globalThis = ctx;
       vm.createContext(ctx);
       vm.runInContext(src, ctx, { filename: 'accessor' });
-      if (api) { win.KM = win.KM || {}; win.KM.api = api; }
+      if (api) {
+        win.KM = win.KM || {};
+        win.KM.api = api.api || api;
+        /* R10A — the mutants drive the shared transport too, or they measure a refusal that happened
+           before anything was sent, which is how three of them scored SURVIVED while measuring
+           nothing. `accessorFrom` accepts either a bare api (older callers) or the whole
+           countingApi result. */
+        if (api.transport) win.KM.transport = api.transport;
+      }
       return mod.exports;
     }
     function swapAcc(a, b) {
@@ -471,19 +515,27 @@ mountLive().then(function (r) {
     var G3p = mutP('G3 any health answer raises the mirror, rather than the literal true', function () {
       var m = swapAcc('        _enabled = v === true;', '        _enabled = v !== true;');
       var t = countingApi({ health: HEALTH_OFF });
-      var A2 = accessorFrom(m, t.api);
+      var A2 = accessorFrom(m, t);
       A2.setCapability({});
       return A2.refreshCapability({ force: true }).then(function (v) { return v === true; });
     });
 
     /* G4 — FAIL OPEN INSTEAD OF FAIL CLOSED. */
     var G4p = mutP('G4 an unreadable health answer is treated as permission', function () {
-      var m = swapAcc('      .catch(function () { _enabled = false; return false; });',
-        '      .catch(function () { _enabled = true; return true; });');
+      /* R10A — THE RULE MOVED, SO THE MUTANT MOVED WITH IT. Fail-closed used to live only in the
+         `.catch`, because the POST shim reported a transport failure by throwing. The shared
+         transport reports it as a typed CODE instead, so the branch that decides is the one that
+         inspects `r0.code`. Mutating the old site would now mutate a path production cannot reach. */
+      var m = swapAcc('        if (r0.code) {\n          _enabled = false;',
+        '        if (r0.code) {\n          _enabled = true;');
       var t = countingApi({ healthThrows: true });
-      var A2 = accessorFrom(m, t.api);
+      var A2 = accessorFrom(m, t);
       A2.setCapability({});
-      return A2.refreshCapability({ force: true }).then(function (v) { return v === true; });
+      /* THE MIRROR, NOT THE RETURN VALUE. The fail-closed branch both lowers `_enabled` AND returns
+         false, so a mutant that raises the mirror still resolves false and would score as caught by a
+         probe that only read the resolved value — it did, on the first attempt at this. What must
+         stay down is the mirror, because that is what every later caller reads. */
+      return A2.refreshCapability({ force: true }).then(function () { return A2.isEnabled() === true; });
     });
 
     /* G5 — THE CAPABILITY IS READ OFF THE WRONG ENVELOPE LEVEL. 63_'s health is FLAT; a reader that
@@ -496,17 +548,19 @@ mountLive().then(function (r) {
           + '          : (nested ? nested.product_strategy_enabled : undefined);',
           '        var v = nested ? nested.product_strategy_enabled : undefined;');
         var t = countingApi({ health: HEALTH_ON });
-        var A2 = accessorFrom(m, t.api);
+        var A2 = accessorFrom(m, t);
         A2.setCapability({});
         return A2.refreshCapability({ force: true }).then(function (v) { return v === false; });
       });
 
     /* G6 — THE BUSINESS READ IS SENT BEFORE THE ANSWER IS KNOWN. */
     var G6p = mutP('G6 the pricing read no longer waits behind the capability', function () {
-      var m = swapAcc("    if (!isEnabled()) {\n      return Promise.resolve(universeRefused('FEATURE_DISABLED',",
-        "    if (false) {\n      return Promise.resolve(universeRefused('FEATURE_DISABLED',");
+      /* R10A — the gate now chooses between two sentences before refusing, so the anchor is the
+         gate itself rather than the gate welded to the FEATURE_DISABLED line under it. */
+      var m = swapAcc('    if (!isEnabled()) {\n      if (_capabilityFailure) {',
+        '    if (false) {\n      if (_capabilityFailure) {');
       var t = countingApi({});
-      var A2 = accessorFrom(m, t.api);
+      var A2 = accessorFrom(m, t);
       A2.setCapability({});
       /* THE HONEST SIDE IS MEASURED TOO. "the mutant sent one" only means something beside "the
          shipped one sent none", or the probe is testing that a transport exists. */

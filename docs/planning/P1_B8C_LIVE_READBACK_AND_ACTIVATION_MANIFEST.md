@@ -1063,3 +1063,43 @@ that reason.
 * no feature flag moved; `product_strategy_enabled` was already true live
 * no Google Login, no S2 runtime
 * no other page's business logic
+
+# 13 · P1-B8D-R10A — THE CAPABILITY READ JOINS THE TRANSPORT
+
+## 13.1  Correction to §12
+
+§12 was written as though all three Product Strategy reads had moved to `KM.transport.request` at
+R10. **Two had.** `system.health` was migrated at R10A; `a5bdfc2` is a partial migration and must not
+be deployed as though it were the whole one.
+
+## 13.2  The activation risk this round carries
+
+Two shipped modules move together on one cache token, and neither half is useful alone:
+
+* `km-product-pricing-workspace.js` — routes `system.health` through the shared transport, and
+  publishes `capabilityFailure()`: `null` when a server answered, a state name when the read could
+  not be completed.
+* `pages/product-strategy-board.js` — shows that state instead of asserting FEATURE_DISABLED.
+
+A browser holding the **new controller against the old accessor** calls `capabilityFailure()` on a
+module that does not have it and falls back to the old sentence. A browser holding the **new accessor
+against the old controller** classifies the failure correctly and then renders it as "not enabled
+yet" — the exact conflation this round removes. Hence one token.
+
+## 13.3  What FEATURE_DISABLED means from here
+
+| Situation | State shown | Requests issued |
+|---|---|---|
+| server answers `product_strategy_enabled: true` | none — the board loads | universe, then workspace |
+| server answers `false` (or any non-`true` value) | `FEATURE_DISABLED` | **zero** business reads |
+| capability read 404s once, then answers | none — the board loads | capability ×2 (one bounded recovery), then the rest |
+| capability read returns a sign-in page | `NOT_AUTHORIZED` | capability ×1 — never retried |
+| capability read returns an unreadable body | `RESPONSE_NOT_READABLE` | capability ×1 — never retried |
+| browser is offline | `BROWSER_OFFLINE` | up to 2 ATTEMPTED, **0 reached a server** |
+
+## 13.4  Live reliability
+
+**No live soak has been run against the deployed bytes of this round, and none may be recorded as
+passed.** The R10 live measurement (39/40 and 40/40 across two AFTER samples) was taken against
+`a5bdfc2`'s predecessor state and does not speak for R10A. The recommended post-deployment gate is in
+the release ledger; it is a proposal, not a result.

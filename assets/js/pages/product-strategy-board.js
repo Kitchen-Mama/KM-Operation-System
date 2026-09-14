@@ -361,7 +361,26 @@
          real situation was that the feature is off. The less alarming and more accurate answer is the
          one that should win, and the capability is also the cheaper question. */
       if (!capabilityOk()) {
-        // ZERO REQUESTS. Asked before anything else, so a disabled feature never reaches the wire.
+        /* P1-B8D-R10A §6 — "OFF" AND "COULD NOT BE READ" ARE DIFFERENT ANSWERS.
+
+           This branch used to say FEATURE_DISABLED for both. That was tolerable only while the
+           capability read was a single un-retried POST whose failure mode nobody could classify; R10A
+           put that read on the shared transport, so the accessor now KNOWS whether it saw a sign-in
+           page, a 404, an unreadable body or nothing at all. Discarding that to tell an operator the
+           feature is switched off — a statement about a product decision, made from a request that
+           never got an answer — is the same defect R10 §5 removed one layer down, and it would have
+           been the LAST place in this page still doing it.
+
+           ZERO REQUESTS EITHER WAY, which is the saving this gate exists for: whichever sentence is
+           shown, no universe or workspace read is issued. */
+        var capFail = (typeof accessor.capabilityFailure === 'function')
+          ? accessor.capabilityFailure() : null;
+        if (capFail) {
+          return Promise.resolve(show(capFail,
+            (live && live.UX && live.UX[capFail]) || P.UX_PAGE.SITE_UNIVERSE_NOT_AVAILABLE,
+            [{ code: capFail,
+              detail: 'the capability read could not be completed; no further request was sent' }]));
+        }
         return Promise.resolve(show('FEATURE_DISABLED',
           (live && live.UX && live.UX.FEATURE_DISABLED) || P.UX_PAGE.SITE_UNIVERSE_NOT_AVAILABLE,
           [{ code: 'FEATURE_DISABLED',

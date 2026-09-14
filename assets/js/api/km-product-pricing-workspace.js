@@ -54,6 +54,31 @@
      asked and a false mirror the server lowered are different situations, and only the first one is
      worth another round trip. */
   var _capabilityHeard = false;
+  /* P1-B8D-R10A §2 — WHICH CAPABILITY READ IS THE CURRENT ONE.
+
+     The capability read is now a REAL network read with a bounded recovery underneath it, so it can
+     be outstanding across a site change or a teardown — and two of them can be in flight at once if
+     something calls `force`. An answer that arrives after a newer read has started must not write
+     `_enabled` or `_capabilityHeard`: it would be deciding the page's capability from a question
+     nobody is waiting for. Under the old POST shim this could not happen, because the shim was
+     never retried and the mirror was read once at boot. */
+  var _capabilityGen = 0;
+  /* P1-B8D-R10A §6 — WHY THE MIRROR IS FALSE, WHEN THE REASON WAS NOT AN ANSWER.
+
+     `_enabled === false` has always had two completely different causes that the page could not
+     tell apart: a server that SAID the feature is off, and a read that could not be completed. Both
+     rendered as "Product Strategy is not enabled yet" — a definite statement about a product
+     decision, made on the strength of a request that never got an answer.
+
+     That was survivable while the capability read was a single un-retried POST at boot, because the
+     page was equally broken in every other way at that point. It is not survivable now: R10A gives
+     this read a bounded recovery and real classification, so the transport KNOWS whether it saw a
+     sign-in page, a 404, an unreadable body or nothing at all — and throwing that away to say
+     "not enabled yet" would be the same class of lie R10 §5 removed from the other two reads.
+
+     null means the last capability read was ANSWERED. A state name means it was not, and that name
+     is what the operator is shown instead of FEATURE_DISABLED. */
+  var _capabilityFailure = null;
 
   function str(v) { return String(v === undefined || v === null ? '' : v).trim(); }
   function isObj(v) { return !!v && typeof v === 'object' && !(v instanceof Array); }
@@ -353,9 +378,25 @@
     return { ok: true };
   }
 
+  /**
+   * The FOUNDATION, which this file needs for ONE thing: `buildRequestEnvelope`. Every read is
+   * dispatched by `KM.transport`, not by the foundation.
+   *
+   * P1-B8D-R10A §3 — IT USED TO GATE ON `api.transport.post`, which is a function this file no
+   * longer calls. A readiness check for a capability nobody uses is worse than none: it would have
+   * refused a perfectly usable foundation if that private shim were ever removed, and it kept the
+   * shim's name alive in a caller census that is supposed to be able to reach zero.
+   *
+   * IT DOES NOT GATE ON `buildRequestEnvelope` EITHER, and the first attempt at this round did —
+   * which turned every acceptance run into FEATURE_DISABLED at zero requests, because the replay
+   * harness's foundation stub does not carry that member. The harness was not wrong to omit it:
+   * `readOnce` treats the builder as OPTIONAL and constructs an equivalent envelope when it is
+   * absent, so gating on it would refuse a foundation this file can demonstrably use. The honest
+   * precondition is the one the refusal actually names — is the shared KM API there at all.
+   */
   function transportOf() {
     var api = root && root.KM && root.KM.api;
-    return (api && api.transport && typeof api.transport.post === 'function') ? api : null;
+    return isObj(api) ? api : null;
   }
 
   /* ================================================================================================
@@ -384,9 +425,22 @@
      A second mechanism here would be a second policy to keep in step with the first, and the two
      would disagree the first time either changed.
 
-     THE FALLBACK IS KEPT AND IS STILL A FALLBACK. A page that somehow loads this file without
-     `km-transport.js` keeps working exactly as it did, with its old failure modes, rather than
-     losing the read entirely.
+     R10A — AND THE FALLBACK IS GONE, BECAUSE "ITS OLD FAILURE MODES" IS NOT A FEATURE.
+
+     R10 kept a POST fallback for a page that somehow loaded without `km-transport.js`, on the
+     reasoning that a degraded read beats no read. That reasoning does not survive knowing what the
+     degraded path DOES: it is the exact path whose 302-dropped body produced the live failure this
+     work exists to fix. A silent fall back to it would reintroduce the defect precisely when
+     something is already wrong, and would do it invisibly — the operator would see the old
+     unclassified errors again with no indication that a different code path had been taken.
+
+     There is also no real scenario behind it. `index.html` loads `km-transport.js` before this file
+     and both move on one cache token, so "this file without that one" is not a state a browser can
+     reach; it is a state a REFACTOR could reach, and a refactor should fail loudly.
+
+     So the missing transport is now a NAMED refusal instead of a quiet downgrade, and the private
+     POST shim has zero Product Strategy production callers. The shim itself is untouched — other
+     legacy consumers still use `km-api-foundation`, and this round removes callers, not APIs.
      ================================================================================================ */
   function sharedTransport() {
     try {
@@ -423,14 +477,9 @@
             attempts: (typeof d.attempts === 'number') ? d.attempts : null };
         });
     }
-    return Promise.resolve(api.transport.post(dto, { signal: signal }))
-      .then(function (resp) { return api.transport.safeReadJsonResponse(resp); })
-      .then(function (env) { return { env: env }; })
-      .catch(function (e) {
-        return { code: str(e && e.apiCode) || 'TRANSPORT_FAILED',
-          status: (e && typeof e.transportStatus === 'number') ? e.transportStatus : null,
-          thrown: e };
-      });
+    /* NO SHARED TRANSPORT, NO READ. Named, not downgraded — see the header. This resolves with the
+       same { code } shape every other failure uses, so no caller needs a second branch for it. */
+    return Promise.resolve({ code: 'API_ENDPOINT_CONFIGURATION_INVALID', status: null });
   }
 
   // ---- PUBLIC ----------------------------------------------------------------------------------
@@ -444,6 +493,11 @@
     // Only a server capability payload may raise it, and anything unreadable leaves it false.
     _enabled = !!(isObj(caps) && caps.product_strategy_enabled === true);
     _capabilityHeard = isObj(caps) && caps.product_strategy_enabled !== undefined;
+    /* P1-B8D-R10A §6 — AND THE REASON GOES WITH IT. A capability set from the boot bootstrap is a
+       fresh statement about the flag, so any transport failure remembered from an earlier read is
+       now answering a question nobody asked. Leaving it would let a long-gone 404 keep speaking for
+       a capability that has since been set directly. */
+    _capabilityFailure = null;
     return _enabled;
   }
   function isEnabled() { return _enabled === true; }
@@ -473,15 +527,52 @@
     if (_capabilityHeard && opts.force !== true) return Promise.resolve(_enabled === true);
     var api = transportOf();
     if (!api) { _enabled = false; return Promise.resolve(false); }
-    var dto = (typeof api.buildRequestEnvelope === 'function')
-      ? api.buildRequestEnvelope(CAPABILITY_ACTION, {}, { requestId: str(opts.requestId) || undefined })
-      : { action: CAPABILITY_ACTION, requestId: str(opts.requestId) || null, payload: {} };
-    return Promise.resolve(api.transport.post(dto, { signal: opts.signal }))
-      .then(function (resp) {
-        return (api.transport && typeof api.transport.safeReadJsonResponse === 'function')
-          ? api.transport.safeReadJsonResponse(resp) : resp;
-      })
-      .then(function (env) {
+
+    /* ============================================================================================
+       P1-B8D-R10A §2 — THE THIRD READ JOINS THE OTHER TWO.
+
+       R10 moved `productPricing.siteUniverse.get` and `productPricing.workspace.get` onto
+       `KM.transport.request` and left this one behind, so the round that existed to unify the page's
+       reads finished with TWO of THREE unified. This is the third.
+
+       IT IS THE WORST ONE TO HAVE LEFT, which is why it is worth saying plainly. This read decides
+       whether the page offers itself at all, and it FAILS CLOSED. On the private POST shim a single
+       transient echo 404 — the same fault R10 measured at 4 in 40 reads in one live window — made the
+       whole page answer FEATURE_DISABLED, with no classification, no recovery and nothing in the UI
+       to distinguish "the feature is off" from "one hop could not be read".
+
+       It uses `readOnce`, the SAME helper the other two use, so the envelope, the GET semantics, the
+       classification and the single bounded recovery are identical by construction rather than by
+       resemblance. No transport is added, no retry is written, no ceiling is raised.
+       ============================================================================================ */
+    var myGen = ++_capabilityGen;
+
+    return readOnce(api, CAPABILITY_ACTION, {}, str(opts.requestId) || undefined, opts.signal)
+      .then(function (r0) {
+        /* SUPERSEDED: a newer capability read has started. Answer with what is currently believed
+           and write nothing — see `_capabilityGen`. */
+        if (myGen !== _capabilityGen) return _enabled === true;
+
+        /* ------------------------------------------------------------------------------------
+           A TRANSPORT FAILURE IS NOT AN ANSWER, AND MUST NOT BE REMEMBERED AS ONE.
+
+           `_capabilityHeard` means "a server told us". Setting it here would turn one unreadable
+           hop into a permanent FEATURE_DISABLED for the life of the page, because the guard at the
+           top of this function would never let another read happen. The page would then be disabled
+           by a fault that has already gone away, and no amount of waiting would fix it.
+
+           So: fail CLOSED for this call — `_enabled` is false, exactly as §2 requires for a timeout,
+           a refusal, HTML, a schema mismatch or anything unknown — and leave `_capabilityHeard`
+           alone, so the next caller asks again. Closed, but not latched.
+           ------------------------------------------------------------------------------------ */
+        if (r0.code) {
+          _enabled = false;
+          _capabilityFailure = classifyTransportCode(r0.code, r0.status, browserOnline());
+          return false;
+        }
+
+        var env = r0.env;
+        return (function () {
         /* THE HEALTH ENVELOPE IS FLAT. 63_ puts its identity block at the top level and nothing
            under `data` - a fact this repository has already been bitten by once, where a reader
            that assumed `data` read every identity field as undefined and called a correct
@@ -492,11 +583,23 @@
         var v = (top && top.product_strategy_enabled !== undefined)
           ? top.product_strategy_enabled
           : (nested ? nested.product_strategy_enabled : undefined);
+        /* A SERVER ANSWERED AND THIS BUILD COULD READ IT. That is what `_capabilityHeard` records,
+           and it is the only branch entitled to record it. The VALUE still has to be the literal
+           `true`: a missing field, a string, a 1, or anything else leaves the mirror false. */
         _enabled = v === true;
         _capabilityHeard = true;
+        /* A SERVER ANSWERED, so whatever it says is a product fact and not a transport one. */
+        _capabilityFailure = null;
         return _enabled;
+        }());
       })
-      .catch(function () { _enabled = false; return false; });
+      .catch(function (e) {
+        if (myGen !== _capabilityGen) return _enabled === true;
+        /* Same rule as above: closed, but not latched. */
+        _enabled = false;
+        _capabilityFailure = classifyTransportError(e, browserOnline());
+        return false;
+      });
   }
   /** For a caller that wants to know whether the answer is a server's or just the default. */
   function capabilityHeard() { return _capabilityHeard === true; }
@@ -504,6 +607,11 @@
   function get(params, opts) {
     opts = isObj(opts) ? opts : {};
     if (!isEnabled()) {
+      /* P1-B8D-R10A §6 — OFF, OR UNREADABLE? They are different sentences and only one of them is
+         ever true. Either way NO REQUEST IS SENT, which is the saving this mirror exists for. */
+      if (_capabilityFailure) {
+        return Promise.resolve(refused(_capabilityFailure, TRANSPORT_DETAIL[_capabilityFailure], null));
+      }
       return Promise.resolve(refused('FEATURE_DISABLED',
         'the client capability mirror is false; no request was sent', null));
     }
@@ -573,6 +681,10 @@
   function getSiteUniverse(opts) {
     opts = isObj(opts) ? opts : {};
     if (!isEnabled()) {
+      if (_capabilityFailure) {
+        return Promise.resolve(universeRefused(_capabilityFailure,
+          TRANSPORT_DETAIL[_capabilityFailure], null));
+      }
       return Promise.resolve(universeRefused('FEATURE_DISABLED',
         'the client capability mirror is false; no request was sent', null));
     }
@@ -614,6 +726,10 @@
     readsThroughSharedTransport: function () { return sharedTransport() !== null; },
     isEnabled: isEnabled, setCapability: setCapability,
     refreshCapability: refreshCapability, capabilityHeard: capabilityHeard,
+    /* P1-B8D-R10A §6 — WHY the mirror is false, when the reason was not an answer. `null` means a
+       server answered (so `false` is a product fact); a state name means the read could not be
+       completed, and that name is what the operator must be shown instead of FEATURE_DISABLED. */
+    capabilityFailure: function () { return _capabilityFailure; },
     CAPABILITY_ACTION: CAPABILITY_ACTION,
     // exported for tests and for a caller that wants to check before it asks
     validateParams: validateParams, buildPayload: buildPayload, validateResponse: validateResponse,

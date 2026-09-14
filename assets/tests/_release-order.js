@@ -351,7 +351,16 @@ var ROUND_TOKENS = [
      correctly and then render it as "No server answered" - the precise sentence this round exists to
      remove - because both maps fall back to SOURCE_NOT_CONNECTED for a state they do not know, and do
      so silently. The vocabulary and its words ship together or not at all. */
-  'readroute-p1b8dr10-20260913'];
+  'readroute-p1b8dr10-20260913',
+  /* P1-B8D-R10A - the capability read. TWO shipped modules move together. The accessor routes
+     system.health through KM.transport.request (the third and last Product Strategy read still on
+     the foundation's private POST shim) and gains a classified reason for a capability read it could
+     not complete; the page controller reads that reason instead of asserting FEATURE_DISABLED. A
+     browser holding the new controller against the old accessor would call capabilityFailure() on a
+     module that does not have it and fall back to the old sentence; holding the new accessor against
+     the old controller would classify the failure correctly and then render it as "not enabled
+     yet" - the exact conflation this round removes. Neither half is useful alone. */
+  'capabilityroute-p1b8dr10a-20260914'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

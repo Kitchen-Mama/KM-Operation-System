@@ -139,9 +139,21 @@ function clientChain(env) {
   var ACC = require(path.join(JS, 'api', 'km-product-pricing-workspace.js'));
   ACC.setCapability({ product_strategy_enabled: true });
   global.KM = global.KM || {};
-  global.KM.api = { transport: {
-    post: function () { return Promise.resolve({ __b: env }); },
-    safeReadJsonResponse: function (r) { return r.__b; } } };
+  /* P1-B8D-R10A — THE STUB MOVES TO THE DOOR THE ACCESSOR ACTUALLY USES.
+
+     This stubbed `KM.api.transport.post`, the foundation's private POST shim. R10A removed the last
+     Product Strategy caller of it — all three reads go through `KM.transport.request` now — so a
+     harness offering only `post` exercises a path production cannot take, and every envelope
+     assertion below would have been measuring a refusal that happened before anything was sent.
+
+     The envelopes under test are unchanged. */
+  global.KM.api = { buildRequestEnvelope: function (action, payload, ctx) {
+    return { apiVersion: '1.0', action: action, requestId: (ctx && ctx.requestId) || null,
+      payload: payload || {}, context: { actor: null, clientVersion: null } };
+  } };
+  global.KM.transport = { request: function () {
+    return Promise.resolve({ success: true, envelope: env });
+  } };
   return ACC.getSiteUniverse({}).then(function (out) {
     return { out: out, universe: UNI.adapt(out), UNI: UNI };
   });

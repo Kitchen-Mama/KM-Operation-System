@@ -135,6 +135,12 @@ var MODULES = [
   'assets/js/product-strategy/km-product-strategy-site-universe.js',
   'assets/js/api/km-product-pricing-adapter.js',
   'assets/js/product-strategy/km-product-strategy-live-adapter.js',
+  /* P1-B8D-R10A — THE TRANSPORT IS PART OF THE PRODUCTION PAGE, and this list did not have it.
+     index.html loads km-transport.js before the accessor, and every Product Strategy read goes
+     through it. Omitting it here was invisible only because the accessor carried a POST fallback;
+     R10A removed that, and this sandbox went red — correctly, because it was modelling a page that
+     cannot exist. Loaded first, as index.html loads it. */
+  'assets/js/api/km-transport.js',
   'assets/js/api/km-product-pricing-workspace.js',
   'assets/js/pages/product-strategy-board.js'
 ];
@@ -190,8 +196,23 @@ function countingApi(opts) {
       configured: function () { return true; }
     }
   };
+  /* P1-B8D-R10A — THE DOOR THE ACCESSOR NOW USES.
+
+     R10A removed the last Product Strategy caller of `KM.api.transport.post`, so a socket offering
+     only `post` records nothing and the page refuses before sending. `request` serves the SAME
+     envelopes from the SAME capture — one source of answers, reached the way production reaches it.
+     A capture miss still rejects, because that is a harness error and should be loud. */
+  var transport = {
+    request: function (o) {
+      var dto = (o && o.payload) || {};
+      return Promise.resolve(api.transport.post({ action: o && o.action, payload: dto.payload || dto }))
+        .then(function (env) { return { success: true, envelope: env }; },
+          function (err) { return Promise.reject(err); });
+    }
+  };
   return {
     api: api,
+    transport: transport,
     calls: calls,
     countOf: function (a) { return calls.filter(function (c) { return c === a; }).length; },
     writeShaped: function () {
@@ -214,7 +235,7 @@ function live(opts) {
   ACC.setCapability({});                 // a module singleton must not carry the last scenario's server
   var saved = { KM: global.KM, doc: global.document };
   global.document = dom.document;
-  global.KM = { api: t.api, productPricingWorkspace: ACC,
+  global.KM = { api: t.api, transport: t.transport, productPricingWorkspace: ACC,
     pages: saved.KM && saved.KM.pages, lifecycle: saved.KM && saved.KM.lifecycle };
   var P = global.KM.pages.productStrategyBoard;
   var BOARD = global.PSB_BOARD;

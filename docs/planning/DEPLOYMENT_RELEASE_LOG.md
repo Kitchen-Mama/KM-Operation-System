@@ -2548,11 +2548,16 @@ TESTS
 
 SWEEP
 -------------------------------------------------------------------------------------------------------
-  PRE  (wt-r10before @ 070c16b)   474 suites   4 flagged, all pre-existing and identical to R9's
+  PRE  (wt-r10before @ 070c16b)   473 suites   4 flagged, all pre-existing and identical to R9's
                                   recorded baseline: gap-job-done-notice-f1-small-r1 (3),
                                   order-planning-monthly-projection-consumer-f1-4b-fm3d (1),
                                   replen-header-toggle (7), supply-planning-route-inventory (2)
   POST (the committed tree)       474 suites   same 4, same counts, nothing added
+
+  CORRECTED AT R10A. This block first said 474 for BOTH, because the PRE number was written from
+  expectation before the PRE sweep had run. It is 473: the R10 suite does not exist at 070c16b, so
+  the tree that predates it has exactly one suite fewer. The failing assertions are verbatim
+  identical in both directions; only the total differs, and it differs by the file this round added.
 
   TWO SUITES WERE FLAGGED MID-ROUND AND BOTH WERE REAL:
 
@@ -2628,6 +2633,197 @@ KNOWN AND NOT FIXED
     It is unreachable while km-transport.js is in index.html, and the R10 suite asserts the shared
     transport is tried first.
   · Everything R9 listed under KNOWN AND NOT FIXED is unchanged.
+```
+
+**STATUS: LOCAL COMMIT — NOT PUSHED — FRONTEND REDEPLOY REQUIRED — NO APPS SCRIPT SYNC.**
+
+## P1-B8D-R10A — THE THIRD READ, AND THE LAST SENTENCE THAT WAS NOT TRUE
+
+**2026-09-14 · local commit on `feature/product-strategy-board-p0` · NOT PUSHED**
+
+```
+PRE  HEAD   a5bdfc2e984e077bfc5a35b5f88f0d577b032e36   (R10, NOT pushed, NOT deployed)
+CACHE TOKEN readroute-p1b8dr10-20260913  ->  capabilityroute-p1b8dr10a-20260914   (35 refs, 0 stale)
+
+WHY THIS ROUND EXISTS
+-------------------------------------------------------------------------------------------------------
+  R10 set out to put this page's reads on ONE transport and finished with TWO OF THREE. `system.health`
+  -- the capability read, the one that decides whether the page offers itself at all -- was still
+  calling km-api-foundation's private POST shim, and R10's own documents were written as though it had
+  moved too. The gap was found by reading the committed code against the claim, not by a failing test,
+  because NO TEST ASSERTED THE CLAIM.
+
+  IT WAS THE WORST OF THE THREE TO LEAVE BEHIND, because it FAILS CLOSED. The transient echo 404 R10
+  measured at 4 in 40 live reads in one window made the whole page answer FEATURE_DISABLED: not "the
+  server could not be reached", but "the feature is switched off" -- a statement about a product
+  decision, derived from a request that never got an answer, with no retry and no classification.
+
+WHAT CHANGED
+-------------------------------------------------------------------------------------------------------
+  1  system.health now goes through KM.transport.request, via the SAME `readOnce` helper the other two
+     reads use -- so the envelope, the GET semantics, the classification and the single bounded
+     recovery are identical BY CONSTRUCTION rather than by resemblance.
+
+  2  A capability read that could not be COMPLETED is no longer rendered as a feature that is OFF. The
+     accessor records the classified reason (capabilityFailure()); the controller shows it. FEATURE_
+     DISABLED now means exactly one thing: a server answered, and what it said was false.
+
+  3  A transport failure is CLOSED BUT NOT LATCHED. `_capabilityHeard` -- the gate that decides whether
+     the page ever asks again -- is set only when a server actually answered. Recording a failure there
+     would disable the feature for the life of the page over one unreadable hop that has since
+     recovered.
+
+  4  A superseded capability answer writes nothing. The read now has a bounded recovery under it, so it
+     can be outstanding across a site change; a generation counter keeps a late answer from deciding
+     the page's capability from a question nobody is waiting for.
+
+  5  THE POST FALLBACK IN readOnce IS REMOVED. R10 kept it on the reasoning that a degraded read beats
+     no read. That does not survive knowing what the degraded path IS: the exact 302-dropped-body path
+     whose failure this work exists to fix. Falling back to it would reintroduce the defect precisely
+     when something else is already wrong, and do it silently. A missing shared transport is now a
+     NAMED refusal. The shim itself is untouched -- other legacy consumers still use the foundation;
+     this round removes CALLERS, not APIs.
+
+WHAT IT DELIBERATELY DID NOT DO
+-------------------------------------------------------------------------------------------------------
+  No new transport, no new retry, no raised ceiling, no .gs file, no action, no write, no capability
+  flag, no Google Login, no S2 runtime.
+
+  AND NO OFFLINE PRE-DISPATCH SHORT-CIRCUIT. R10's report noted that navigator.onLine=false still costs
+  attempted dispatches. No transport specification in this repository requires a short-circuit, and
+  R10A §4 forbids inventing one in a page round, so the shared transport was not touched. What is
+  asserted instead is the honest decomposition, and the four numbers are never conflated:
+
+      external ATTEMPTS        up to 2, inside the existing bounded contract
+      reached a server         0
+      retries                  within the shared bound
+      state shown              BROWSER_OFFLINE -- never FEATURE_DISABLED, never SOURCE_NOT_CONNECTED
+
+TESTS
+-------------------------------------------------------------------------------------------------------
+  NEW   product-strategy-capability-route-p1-b8d-r10a.test.js
+        99 passed / 0 failed / 9 mutants / 0 survived / 0 broken probes
+
+        §A the caller census that would have caught the original gap -- ZERO callers of the private
+           POST shim, measured on DECOMMENTED source so the paragraphs explaining the history cannot
+           satisfy or break it
+        §B what "false" means, and what it must not be allowed to mean
+        §C the capability read sits under the SAME bound as the other two
+        §D the browser matrix: recovery, answered-false, sign-in page, generic HTML, genuinely offline
+        §E the state machine DRIVEN rather than inspected -- not-latched, asks-again, clears-on-answer,
+           literal-true-only, superseded-writes-nothing
+
+  SIX SUITES WERE UPDATED, AND EVERY ONE FOR THE SAME REASON: they drove `KM.api.transport.post`, a
+  door production no longer has. Moving each to `KM.transport.request` makes them exercise the
+  boundary production dispatches through, which is a better test than the one it replaces:
+    api-product-pricing-envelope-action-p1-b7e      103/0/8/0
+    deployment-r10-activation-boundary-p1-b7f       102/0/7/0
+    product-strategy-information-architecture-p1-b8b 238/0/18/0
+    product-strategy-live-activation-p1-b8d-r4       63/0/9/0   (+ F3b restated, G4/G6 re-aimed)
+    product-strategy-site-selection-p1-b8d-r5       100/0/11/0
+    product-strategy-replay-acceptance-p1-b8c       398/0/9/0
+
+  AND THREE HARNESS DEFECTS THE FALLBACK HAD BEEN HIDING:
+    · `_p1b8c-replay.js` never installed a shared transport under Node, because km-transport.js
+      publishes its factory only onto a BROWSER window. Every Node suite had been falling through to
+      the POST fallback. It requires the real factory now, so ONE arrangement holds everywhere:
+      production's transport over the harness's network, in Chrome and in Node alike.
+    · Two replay sandboxes did not load km-transport.js at all, while calling themselves the
+      production page. They were modelling a page that cannot exist.
+    · Suites expressed transport failures by THROWING a typed apiCode, which the shared transport
+      never reads -- it derives its code from the WIRE. Those scenarios now send the network condition
+      that genuinely produces each code, so production's classifier stays the only classifier.
+
+  KEPT: R7 184/0/21/0 · R8 180/0/18/0 · R9 154/0/17/0 · R10 156/0/17/0
+
+SWEEP
+-------------------------------------------------------------------------------------------------------
+  PRE  (fresh worktree @ a5bdfc2)      474 suites   4 flagged
+  POST (fresh worktree @ the commit)   475 suites   4 flagged
+
+  The suite-count delta of 1 is this round's new file. The four flagged suites and EVERY failing
+  assertion inside them are verbatim identical in both directions (17 lines compared, diff empty):
+    gap-job-done-notice-f1-small-r1 (3) · order-planning-monthly-projection-consumer-f1-4b-fm3d (1)
+    replen-header-toggle (7) · supply-planning-route-inventory (2)
+  0 new failures · 0 survived mutants · 0 broken probes.
+
+  TWO NEW FAILURES APPEARED MID-ROUND AND BOTH WERE MINE. Recorded because each was caused by the
+  fix for the one before it, which is the shape of mistake that hides:
+
+    product-strategy-visual-integration-p1-b8d-r6  reported "no measurements came back from the
+      browser". A timeout scenario is served by NEVER ANSWERING, which is what a timeout is -- but
+      production's read budget is 60s, so the page was still correctly waiting when the measurement
+      window closed. A suite reporting nothing about a page that was working.
+
+    product-strategy-lifecycle-p1-b8d-r8  A16 "B answers and B mounts" then failed, because the
+      250ms budget chosen to fix R6 was SHORTER than the 700ms delay the deferred-teardown trace
+      deliberately puts on site B. A slow answer that was meant to arrive was cut off instead.
+
+  The value is bounded from both sides and only one side had been considered: it must exceed every
+  deliberate delay (max 700ms today) and fit inside the page's 8000ms virtual-time budget. 2000ms
+  clears both, and both constraints are now written where the value is set.
+
+FILES
+-------------------------------------------------------------------------------------------------------
+  shipped       assets/js/api/km-product-pricing-workspace.js   system.health through readOnce; the
+                                                                classified capability reason; the POST
+                                                                fallback removed; transportOf gated on
+                                                                what it uses
+                assets/js/pages/product-strategy-board.js       the capability gate shows the reason
+                index.html                                      35 token refs, 0 stale
+  harness       assets/tests/_p1b8c-replay.js                   a real transport under Node; typed
+                                                                failures sent as network conditions;
+                                                                a foundation stub that builds the real
+                                                                envelope
+                assets/tests/_p1b8c-visual-runner.js            a genuinely offline browser
+                assets/tests/_release-order.js                  token appended
+                six suites moved to the shared transport (listed above)
+  docs          docs/planning/S_SERIES_FRONTEND_API_MIGRATION_INVENTORY.md
+                docs/planning/API_MIGRATION_MASTER_PLAN.md
+                docs/planning/P1_B8C_LIVE_READBACK_AND_ACTIVATION_MANIFEST.md
+                docs/planning/DEPLOYMENT_RELEASE_LOG.md
+
+MISTAKES THIS ROUND MADE AND CORRECTED
+-------------------------------------------------------------------------------------------------------
+  · THE FIRST GATE CHANGE BROKE EVERY ACCEPTANCE RUN. `transportOf()` was re-pointed at
+    `buildRequestEnvelope`, which the replay's foundation stub does not carry -- so every run reported
+    FEATURE_DISABLED at zero requests. The stub was not wrong to omit it: `readOnce` treats the builder
+    as OPTIONAL. Gating on a member this file can work without would have refused a usable foundation.
+  · A MUTANT SCORED ITSELF. G4's probe read the value refreshCapability RESOLVES, but the fail-closed
+    branch both lowers the mirror and returns false -- so a mutant that raised the mirror still
+    resolved false and looked caught. It reads the mirror now, which is what every later caller reads.
+  · THREE R4 MUTANTS MEASURED NOTHING, for the second time in that file's history. They were handed a
+    socket offering only `post`, so the accessor refused before sending and the mutants "survived"
+    against a code path they never reached.
+
+DEPLOYMENT
+-------------------------------------------------------------------------------------------------------
+  APPS_SCRIPT_SYNC_REQUIRED   NO      .gs files changed: 0
+  FRONTEND_DEPLOY_REQUIRED    YES     two shipped files move together on one token
+  DB / Sheets / Drive writes  0       action contract unchanged; feature flag unchanged
+  Release identity            unchanged  F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11
+  a5bdfc2                     A PARTIAL MIGRATION. Not to be deployed on its own.
+  Rollback                    unchanged: PRODUCT_STRATEGY_ENABLED_ = false, save, new version, update
+                              the existing deployment. Rollback needs no frontend deploy.
+
+LIVE RELIABILITY
+-------------------------------------------------------------------------------------------------------
+  NOT RUN ON DEPLOYED BYTES. The R10 live measurement (39/40, then 40/40) was taken against the
+  pre-R10A state and does not speak for this round. Nothing here may be recorded as a passed soak.
+
+  RECOMMENDED POST-DEPLOYMENT GATE, as a proposal and not a result: after the frontend deploy, on real
+  GitHub Pages, 200 x siteUniverse.get + 200 x workspace.get + 200 x system.health, spread over at
+  least three windows >=2h apart. Record final success rate, metrics().recoveries, the per-attempt
+  redirect-404 rate, and the state name of every surfaced refusal. Suggested pass: 600/600 final
+  success with per-attempt redirect-404 <=1%. Recoveries > 0 with a clean final total is the bounded
+  recovery doing its job; a surfaced HTTP_NOT_FOUND that survives its one retry is a deployment-side
+  residue and is the USER's to act on.
+
+KNOWN AND NOT FIXED
+-------------------------------------------------------------------------------------------------------
+  · B2-9 recovery_from is written onto a discarded object. Unchanged; belongs to a transport round.
+  · navigator.onLine=false still costs up to two attempted dispatches. Deliberate -- see above.
+  · Everything R9 and R10 listed under KNOWN AND NOT FIXED is unchanged.
 ```
 
 **STATUS: LOCAL COMMIT — NOT PUSHED — FRONTEND REDEPLOY REQUIRED — NO APPS SCRIPT SYNC.**
