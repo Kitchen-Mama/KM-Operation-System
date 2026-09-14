@@ -944,6 +944,63 @@
    * after the change, one animation frame later — which is where a re-entrant renderer would put
    * the board back — and after the answer lands.
    */
+  /**
+   * P1-B8D-R10C — THE SIX VIEWS, CLICKED BEFORE ANY CANONICAL DATA EXISTS.
+   *
+   * NO SITE IS CHOSEN AND NONE IS WAITED FOR. That is the whole point: production loads the scripts,
+   * wires the view rail and leaves `CANON` null until a mount succeeds, so a refused or slow read
+   * leaves a live rail over a board that has no data. R10B measured five uncaught TypeErrors there,
+   * on the deployed bytes, while the page was showing a correct refusal.
+   *
+   * THE CLICK GOES THROUGH THE RAIL BUTTON, not through `PSB_BOARD.showView`. A throw inside a real
+   * click handler is an UNCAUGHT error and lands in `__jsErrors`; the same throw from a probe's own
+   * call would be caught by the probe and counted as nothing. The seam call is kept only as a
+   * fallback for a page whose rail has not been drawn, and it records that it used it.
+   */
+  ACTS['null-canonical-views'] = function (doc, args) {
+    var T = [];
+    var VIEWS = ['overview', 'category', 'risk', 'quality', 'workspace', 'advanced'];
+    function errCount() { try { return (root.__jsErrors || []).length; } catch (e) { return 0; } }
+    return tick(400).then(function () {
+      var s0 = step(doc, '0 loaded, no site chosen');
+      s0.jsErrors = errCount();
+      s0.mounted = !!(root.PSB_BOARD && root.PSB_BOARD.isMounted && root.PSB_BOARD.isMounted());
+      T.push(s0);
+      var i = 0;
+      function next() {
+        if (i >= VIEWS.length) return Promise.resolve();
+        var id = VIEWS[i];
+        i++;
+        var before = errCount();
+        var via = 'rail';
+        var btn = doc.getElementById('nav-' + id);
+        if (btn && typeof btn.click === 'function') { btn.click(); }
+        else {
+          via = 'seam';
+          try {
+            if (root.PSB_BOARD && typeof root.PSB_BOARD.showView === 'function') {
+              root.PSB_BOARD.showView('product-strategy/' + id);
+            } else { via = 'unavailable'; }
+          } catch (e) {
+            via = 'seam-threw';
+            try { root.__jsErrors.push(String((e && e.message) || e)); } catch (x) {}
+          }
+        }
+        return tick(140).then(function () {
+          var s = step(doc, i + ' view ' + id);
+          s.view = id;
+          s.via = via;
+          s.newJsErrors = errCount() - before;
+          s.mounted = !!(root.PSB_BOARD && root.PSB_BOARD.isMounted && root.PSB_BOARD.isMounted());
+          s.currentRoute = (root.PSB_BOARD && typeof root.PSB_BOARD.currentRoute === 'function')
+            ? root.PSB_BOARD.currentRoute() : null;
+          T.push(s);
+          return next();
+        });
+      }
+      return next();
+    }).then(function () { root.__trace = T; return T; });
+  };
   ACTS['deferred-teardown'] = function (doc, args) {
     var T = [];
     var A1 = args.first, A2 = args.second;

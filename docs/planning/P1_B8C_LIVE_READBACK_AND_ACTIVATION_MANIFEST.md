@@ -1103,3 +1103,57 @@ yet" — the exact conflation this round removes. Hence one token.
 passed.** The R10 live measurement (39/40 and 40/40 across two AFTER samples) was taken against
 `a5bdfc2`'s predecessor state and does not speak for R10A. The recommended post-deployment gate is in
 the release ledger; it is a proposal, not a result.
+
+# 14 · P1-B8D-R10B/R10C — THE STATE BEFORE THE DATA
+
+## 14.1  What R10B measured on the deployed bytes of `7bd5af2`
+
+Real Chrome, real GitHub Pages, the real shared transport, 60 serial reads plus a user-performed
+Apps Script execution-log correlation.
+
+* **61 expected `/exec` visits, 61 observed `doGet` executions, difference 0.** All Completed; no
+  failed and no timed-out execution. **A handler timeout is therefore disproved**, not merely
+  unobserved.
+* `server_ms` p50 5 102 ms across all three reads. The non-handler remainder is ~4 742 ms and is
+  **constant** across actions that differ by a factor of four in handler cost. What that remainder is
+  made of, this evidence cannot say, and it is not attributed further.
+* `system.health` is the most expensive of the three (`server_ms` p50 6 271 ms) and returns no rows.
+  Its cost is a 17-table schema census of the shipping slice. Design proposal:
+  `docs/planning/PRODUCT_STRATEGY_CAPABILITY_READ_COST_DESIGN.md` — **design only, not implemented**.
+* One echo → stable → echo redirect bounce was captured, 58.7 s end to end against a 60 s client
+  budget. It remains the strongest candidate for the surfaced timeouts and is **not** proven to be
+  their cause: the failures that were surfaced have no matching per-attempt server correlation.
+
+## 14.2  The defect R10B proved, and R10C corrected
+
+```
+Uncaught TypeError: Cannot read properties of null (reading 'rows')
+  at buildModel      psb-board-ui.js:207
+  at categoryValues  psb-board-ui.js:232
+  at firstCategory   psb-board-ui.js:241
+  at selectView      psb-board-ui.js:2461
+```
+
+`CANON` is null until the first successful load. Production ships no preview fixture, so the board
+does not auto-mount: the scripts load, **the view rail is live**, and CANON stays null until the page
+controller mounts with data. When the data refuses, the refusal is drawn and the rail stays live. One
+click on any view other than the one showing dereferenced null. Five throws were measured, one per
+view; the sixth was clean only because `overview` was already the current route.
+
+**The differential that settles it:** in a run where the board had loaded, the same six clicks threw
+nothing.
+
+## 14.3  The three states, and why the guard answers `null`
+
+| state | meaning | answer |
+|---|---|---|
+| `NOT_LOADED` | `CANON === null` — nothing has been read; a refusal or a loading state is on screen | `null` |
+| `LOADED_EMPTY` | a read succeeded and the site genuinely has nothing | `[]`, and `notices()` says `NO_CATEGORIES_ON_SITE` |
+| `LOADED_WITH_DATA` | the ordinary case | the categories |
+
+Returning `[]` for NOT_LOADED would have been the smaller edit and a false statement — it says the
+site was read and found empty. The renderer's own comment already forbids the neighbouring
+conflation; this is the same rule one step earlier.
+
+**No empty fixture, no swallowed exception, no `CANON || {rows:[]}`.** A refusal stays on screen and
+stays classified; no business read is dispatched from the NOT_LOADED path.

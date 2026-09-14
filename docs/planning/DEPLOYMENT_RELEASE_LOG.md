@@ -2827,3 +2827,191 @@ KNOWN AND NOT FIXED
 ```
 
 **STATUS: LOCAL COMMIT — NOT PUSHED — FRONTEND REDEPLOY REQUIRED — NO APPS SCRIPT SYNC.**
+
+## P1-B8D-R10C — THE STATE BEFORE THE DATA
+
+**2026-09-14 · local commit on `feature/product-strategy-board-p0` · NOT PUSHED**
+
+```
+PRE  HEAD   7bd5af20c5dc2e993db7b3ae109a34b0916c3856
+CACHE TOKEN capabilityroute-p1b8dr10a-20260914  ->  nullcanonical-p1b8dr10c-20260914  (35 refs, 0 stale)
+
+WHAT R10B PROVED, AND WHAT IT DID NOT
+-------------------------------------------------------------------------------------------------------
+  R10B changed no code. It attributed the live latency and, on the way, caught a crash that had
+  nothing to do with the transport.
+
+  ATTRIBUTION, from 60 serial reads on the deployed bytes plus a USER-performed execution-log check:
+    execution correlation   61 expected /exec visits, 61 observed doGet executions, difference 0
+                            all Completed; 0 Failed; 0 Timed out; UI duration 3.478s - 13.91s
+    server_ms               p50 5 102ms   p95 7 658ms   max 9 685ms
+    browser elapsed         p50 9 767ms   p95 14 429ms  max 30 717ms
+    the remainder           p50 4 742ms, and CONSTANT across actions whose handler cost differs
+                            fourfold (4 763 / 4 712 / 4 746). It contains Google ingress, queueing,
+                            the redirect response and the transfer, AND THIS EVIDENCE CANNOT SPLIT IT.
+
+  A HANDLER TIMEOUT IS DISPROVED, not merely unobserved: every one of the 61 executions completed.
+  `system.health` is nonetheless the most expensive of the three reads (server_ms p50 6 271ms) and
+  returns no rows at all; its cost is a 17-table schema census of the SHIPPING slice. Design proposal
+  for that is docs/planning/PRODUCT_STRATEGY_CAPABILITY_READ_COST_DESIGN.md -- DESIGN ONLY, 0 .gs
+  changed, nothing implemented, nothing deployed.
+
+  WHAT REMAINS UNEXPLAINED, AND IS RECORDED AS SUCH: three surfaced SOURCE_TIMED_OUT events across the
+  R10A and R10B windows. One echo -> stable -> echo redirect bounce was captured at 58.7s against a 60s
+  client budget and is the strongest candidate, but none of the three failures has a matching
+  per-attempt server correlation. It is not called solved.
+
+THE DEFECT THIS ROUND FIXES
+-------------------------------------------------------------------------------------------------------
+  Uncaught TypeError: Cannot read properties of null (reading 'rows')
+    at buildModel      psb-board-ui.js:207      rows: CANON.rows
+    at categoryValues  psb-board-ui.js:232      var m = MODEL || buildModel();
+    at firstCategory   psb-board-ui.js:241
+    at selectView      psb-board-ui.js:2461     else if (!STATE.category) { STATE.category = firstCategory(); }
+
+  `CANON` starts null and is assigned in ONE place, `reload()`, which runs inside `boot()`. Production
+  ships no preview fixture, so the board does not auto-mount: the scripts load, THE VIEW RAIL IS LIVE,
+  and CANON stays null until the page controller mounts with data. When the data refuses -- a timeout,
+  an offline browser, a capability that could not be read -- the mount never happens and the rail is
+  live over a board with no data. One click on any view other than the one showing dereferenced null.
+
+  FIVE throws were measured on the deployed bytes, one per view; the sixth was clean only because
+  `overview` was already the current route and `selectView` returns before the branch. THE DIFFERENTIAL
+  THAT SETTLES IT: in a second run where the board HAD loaded, the same six clicks threw nothing.
+
+THE FIX, AND THE SENTENCE IT REFUSES TO SAY
+-------------------------------------------------------------------------------------------------------
+  Two guards in the functions that OWN the data, and one caller taught to accept the answer:
+
+    categoryValues()      if (!CANON) return null;
+    categoryOptionRows()  if (!CANON) return null;
+    firstCategory()       return (v && v.length) ? v[0] : null;
+
+  IT RETURNS null AND NOT []. `[]` was the cheaper edit and it is a false statement -- it says the site
+  was read and found to have no categories. The file already legislates against the neighbouring
+  conflation one paragraph up its own source: "An empty menu and a menu of three demonstration values
+  are different answers and must look different." An empty menu and NO MENU YET are different answers
+  too. `notices()` already calls the genuine case NO_CATEGORIES_ON_SITE -- "an answer about the site,
+  not a failure to load", in its own words -- and that answer is left exactly as it was.
+
+  IT KEYS ON THE DATA, NOT ON `MOUNTED`. `boot()` raises the flag one line before it loads, so a load
+  that throws leaves the board flagged mounted with no canonical data. A guard asking `!MOUNTED` would
+  pass every ordinary mount and crash on exactly the page this round exists for. Z11 is that mutant.
+
+  WHY TWO FUNCTIONS ARE THE WHOLE FIX, asserted rather than assumed. Every other reader of the category
+  helpers -- viewCategory, viewFindings, renderScope -- is a RENDERING function, and all rendering
+  passes render(), which begins `if (!MOUNTED) return;` and then calls reload() before anything draws.
+  None can run with CANON null. `selectView` was the exception because it derives STATE BEFORE it
+  calls render(), outside the only guard there was. Z6 and Z11 hold that argument up; Z12 proves the
+  fix is not aimed at the one view that happened to crash.
+
+  NOT DONE: no empty fixture, no swallowed TypeError, no `CANON || {rows:[]}`, no optional-chaining
+  default, no change to transport, retry bound, timeout or capability semantics.
+
+TESTS
+-------------------------------------------------------------------------------------------------------
+  NEW   product-strategy-null-canonical-state-p1-b8d-r10c.test.js      92 / 0 / 12 mutants / 0 survived
+
+    RED BEFORE, GREEN AFTER, with the SAME final suite:
+      against committed 7bd5af2 (fresh worktree)   37 passed  19 failed   5 caught  7 probe-faulted
+      against the fix                              92 passed   0 failed  12 caught  0 survived
+    The Node run reproduced the live stack at the SAME line numbers -- buildModel:207, categoryValues:232.
+
+    §A the state production actually starts in (deferred boot, CANON null)
+    §B the R10B defect: six routes, each and in sequence
+    §C NOT_LOADED / LOADED_EMPTY / LOADED_WITH_DATA are three different answers
+    §D the caller census that makes "two guards are enough" a measurement
+    §E lifecycle: unmounted, refused-then-recovered, six refused clicks then a clean mount
+    §F NINE REAL-CHROME SCENARIOS through the repository's own visual runner -- production index,
+       production partial, production lifecycle, real transport, bounded fake network beneath it:
+       capability refused, every read fails, only the capability fails, a read still outstanding under
+       the clicks, slow + offline, genuinely offline, a site with no listings, a site with no
+       categories, and NOTHING WRONG AT ALL as the control. Every one: 0 null-canonical TypeErrors,
+       0 uncaught errors of any kind.
+
+  KEPT: R6 107/0/14/0 · R7 184/0/21/0 · R8 180/0/18/0 · R9 154/0/17/0 · R10 156/0/17/0
+        R10A 99/0/9/0 · b7f 102/0/7/0 · b8b 238/0/18/0 · b8c 398/0/9/0 · b8c-r2 274/0/21/0
+        activation 349/0/18/0 · b2 253/0/17/0 · b3 342/0/17/0 · b5 160/0/12/0 · b7 171/0/12/0
+        b8a 88/0/16/0 · r5 100/0/11/0 · image r3 336/0/20/0 · r3-r1 160/0/15/0 · r3-r2 187/0/16/0
+
+SWEEP
+-------------------------------------------------------------------------------------------------------
+  PRE  (fresh worktree @ 7bd5af2)   475 suites   4 flagged
+  POST (working tree, the same content this commit carries)   476 suites   4 flagged
+
+  The suite-count delta of 1 is this round's new file. The four flagged suites and EVERY failing
+  assertion inside them are verbatim identical in both directions (17 lines compared, diff empty):
+    gap-job-done-notice-f1-small-r1 (3) · order-planning-monthly-projection-consumer-f1-4b-fm3d (1)
+    replen-header-toggle (7) · supply-planning-route-inventory (2)
+  0 new failures · 0 survived mutants · 0 broken probes.
+
+  THE POST NUMBER ABOVE IS THE WORKING TREE, AND IT SAYS SO. The authoritative sweep runs in a fresh
+  detached worktree at the commit itself and is reported with the round; a number written here before
+  that run would be a prediction wearing a measurement's clothes, which is the exact habit R10A had to
+  disclose one round ago.
+
+FILES
+-------------------------------------------------------------------------------------------------------
+  shipped       assets/js/product-strategy/psb-board-ui.js    two guards and one tolerant caller
+                index.html                                    35 token refs, 0 stale
+  harness       assets/tests/_psb-harness.js                  bootPage learns the state production
+                                                              starts in (defer) and a read-only
+                                                              internals view for one section
+                assets/tests/_p1b8c-interactions.js           the six-view sequence, clicked through
+                                                              the production rail
+                assets/tests/_release-order.js                token appended
+  docs          docs/planning/PRODUCT_STRATEGY_CAPABILITY_READ_COST_DESIGN.md   NEW, design only
+                docs/planning/P1_B8C_LIVE_READBACK_AND_ACTIVATION_MANIFEST.md
+                docs/planning/API_MIGRATION_MASTER_PLAN.md
+                docs/planning/DEPLOYMENT_RELEASE_LOG.md
+
+MISTAKES THIS ROUND MADE AND CORRECTED
+-------------------------------------------------------------------------------------------------------
+  THREE OF THE FOUR WERE IN THE INSTRUMENT, AND ONE OF THEM INVALIDATED A WHOLE RUN BEFORE IT WAS SEEN.
+
+  · A BROWSER MATRIX BUILT ON A CDP RIG ENABLED Fetch INTERCEPTION ON `*` AT BOTH STAGES. An Apps
+    Script read is a 302 from the stable host to the echo host, and continuing a REDIRECT response
+    through the Fetch domain breaks the chain, so EVERY request failed -- including the scenarios that
+    were meant to inject nothing. The give-away was the control case failing exactly like the fault
+    cases: when `6-successful-board` reports SOURCE_NOT_CONNECTED, the fault is in the instrument.
+    The rig was abandoned for the repository's own visual runner, which already fakes the network
+    BENEATH the real transport and is the thing three other rounds are accepted on.
+  · Z6 WAS A NO-OP MUTANT. It inserted `if (MOUNTED === undefined) return;` -- a condition that is
+    never true -- and reported SURVIVED against a guard it had not removed.
+  · Z11 WAS AIMED AT A CONDITION THAT CANNOT OCCUR IN THE PROBE. It tried to CREATE the
+    `MOUNTED = true` before `reload()` ordering; with the board deferred neither line runs. The
+    ordering is already in boot(); what the fix must guarantee is that it does not matter. Re-aimed at
+    the property that does: the guard keys on the DATA, not on the FLAG.
+  · F4/F5 USED THE RUNNER'S `hang`, WHICH MARKS THE PAGE READY AFTER 400ms so a loading state can be
+    photographed -- mutually exclusive with running a script. The trace came back empty and the suite
+    reported "the six views were not exercised" about a page that was never asked to. Re-aimed at the
+    real condition: a read still OUTSTANDING while the rail is clicked.
+
+DEPLOYMENT
+-------------------------------------------------------------------------------------------------------
+  APPS_SCRIPT_SYNC_REQUIRED   NO      .gs files changed: 0
+  FRONTEND_DEPLOY_REQUIRED    YES     one shipped module + index.html
+  DB / Sheets / Drive writes  0       action contract unchanged; feature flag unchanged
+  Release identity            unchanged  F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11
+  Rollback                    unchanged: PRODUCT_STRATEGY_ENABLED_ = false, save, new version, update
+                              the existing deployment. Rollback needs no frontend deploy.
+
+LIVE RELIABILITY
+-------------------------------------------------------------------------------------------------------
+  NOT RE-RUN ON R10C DEPLOYED BYTES. The R10B measurement speaks for 7bd5af2 and for nothing after it.
+  The R10A smoke gate remains FAIL on its own stated threshold (60/60 with 0 surfaced errors; measured
+  98/100 with two SOURCE_TIMED_OUT). Nothing in this round changes that verdict and nothing here may
+  be recorded as a passed soak.
+
+KNOWN AND NOT FIXED
+-------------------------------------------------------------------------------------------------------
+  · The ~4.7s non-handler cost per request. Unattributed; PATH C/D.
+  · Three surfaced SOURCE_TIMED_OUT events without per-attempt server correlation.
+  · `system.health` pays a 17-table shipping-slice census on every call. PATH B, design only.
+  · `boot()` raises MOUNTED one line before it loads, so a throwing load leaves the flag up. The R10C
+    guards make it harmless for the category machinery; the ordering itself is untouched and belongs
+    to a round with its own evidence.
+  · Everything R9, R10 and R10A listed under KNOWN AND NOT FIXED is unchanged.
+```
+
+**STATUS: LOCAL COMMIT — NOT PUSHED — FRONTEND REDEPLOY REQUIRED — NO APPS SCRIPT SYNC.**

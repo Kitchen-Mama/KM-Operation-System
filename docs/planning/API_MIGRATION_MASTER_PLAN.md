@@ -979,3 +979,20 @@ flag, no Google Login, no S2 runtime. And **no offline pre-dispatch short-circui
 specification in this repository requires one, so an offline read still ATTEMPTS within the existing
 bound. The four numbers are reported separately and must not be conflated — external attempts,
 requests that reached a server, retries, and the state the operator is shown.
+
+## P1-B8D-R10B / R10C — LATENCY ATTRIBUTION, AND A CRASH THAT WAS NOT THE TRANSPORT'S
+
+**R10B changed no code.** It attributed the live latency and it found a client defect that has
+nothing to do with this document's subject — recorded here only so the next reader does not spend a
+round looking for it in the transport.
+
+* Execution correlation **61/61, difference 0**, all Completed — no missing executions, no duplicates,
+  no handler timeout.
+* Handler cost and a constant ~4.7 s non-handler remainder are **both** material. Neither is the whole
+  story and the remainder is not attributed further by this evidence.
+* The three Product Strategy reads remain 3/3 on `KM.transport.request`. **R10C changes nothing about
+  the transport, the retry bound, the timeout or the capability semantics.**
+
+R10C's correction is in the renderer: a view change requested before the first canonical load
+dereferenced null. See the activation manifest §14 and
+`docs/planning/PRODUCT_STRATEGY_CAPABILITY_READ_COST_DESIGN.md` (design only).

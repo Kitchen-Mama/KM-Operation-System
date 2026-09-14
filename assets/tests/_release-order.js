@@ -360,7 +360,18 @@ var ROUND_TOKENS = [
      module that does not have it and fall back to the old sentence; holding the new accessor against
      the old controller would classify the failure correctly and then render it as "not enabled
      yet" - the exact conflation this round removes. Neither half is useful alone. */
-  'capabilityroute-p1b8dr10a-20260914'];
+  'capabilityroute-p1b8dr10a-20260914',
+  /* P1-B8D-R10C - the state before the data. ONE shipped module moves: psb-board-ui.js. It is not
+     coupled to anything this round and the entry says so rather than leaving a reader to infer it -
+     the change is three private functions inside one closure, with no new export, no new option and
+     no contract any other module reads.
+
+     WHY IT STILL ROTATES THE APPLICATION TOKEN. A browser holding the old renderer throws an uncaught
+     TypeError the moment a person clicks a second view while the board is showing a refusal, which is
+     exactly the state a slow or failed read leaves behind - so the stale copy is not merely old, it is
+     the broken one this round exists to retire. R10B measured five of those throws on the deployed
+     bytes of 7bd5af2. */
+  'nullcanonical-p1b8dr10c-20260914'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

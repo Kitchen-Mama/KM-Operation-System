@@ -227,19 +227,41 @@
      THERE IS NO FALLBACK AND NO DEFAULT LIST. If a site sells nothing, the answer is an empty array
      and the screen shows a true empty state. An empty menu and a menu of three demonstration values
      are different answers and must look different.
+
+     P1-B8D-R10C — AND "NOT LOADED YET" IS A THIRD ANSWER, WHICH IS WHAT THESE TWO GUARDS ARE.
+
+     `CANON` is null until `reload()` runs inside `boot()`. Production ships no preview fixture, so
+     the board does not auto-mount: the scripts load, the view rail is live, and CANON stays null
+     until the page controller mounts with data. When the data refuses -- a timeout, an offline
+     browser, a capability that could not be read -- the mount never happens, and a click on any view
+     other than the one showing reached `firstCategory()` and dereferenced null. Measured on the
+     deployed bytes at R10B: five throws, one per view, while the page was showing a correct refusal.
+
+     THE GUARD RETURNS null, NOT []. `[]` is the cheaper edit and it is a false statement: it says the
+     site was read and found to have no categories. That is the very distinction the paragraph above
+     insists on, one step earlier -- an empty menu and NO MENU YET are different answers too. Callers
+     that must tell them apart now can; `firstCategory()` answers null to both, because there is
+     nothing to select either way, and that was always its contract.
+
+     IT KEYS ON THE DATA, NOT ON `MOUNTED`. `boot()` raises the flag one line before it loads, so a
+     load that throws leaves the board flagged mounted with no canonical data. A guard asking
+     `!MOUNTED` would pass every ordinary mount and crash on exactly that page.
      ------------------------------------------------------------------------------------------------ */
   function categoryValues() {
+    if (!CANON) return null;
     var m = MODEL || buildModel();
     return m.categoryOptions.options.map(function (o) { return o.value; });
   }
   function categoryOptionRows() {
+    if (!CANON) return null;
     var m = MODEL || buildModel();
     return m.categoryOptions;
   }
-  /** The first category of THIS site, or null. Never index [0] of a list from somewhere else. */
+  /** The first category of THIS site, or null. Never index [0] of a list from somewhere else, and
+   *  never index a list that does not exist yet. */
   function firstCategory() {
     var v = categoryValues();
-    return v.length ? v[0] : null;
+    return (v && v.length) ? v[0] : null;
   }
 
   /* ================================================================================================

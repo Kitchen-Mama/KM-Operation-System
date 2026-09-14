@@ -674,14 +674,36 @@ function bootPage(mutateSrc, opts) {
     return dom.window.__frames.length;
   };
   if (opts.devMode === true) ctx.__PSB_DEV_MODE__ = true;
+  /* P1-B8D-R10C — THE STATE BEFORE THE FIRST MOUNT, WHICH IS THE ONE PRODUCTION ACTUALLY STARTS IN.
+     The prototype auto-boots because its fixture is present, so every suite before this one met the
+     board with CANON already built. Production has no fixture: the scripts load, the rail is live,
+     and CANON stays null until the controller calls mount() with data that may never arrive. That
+     gap is where R10B's TypeError lived, and it was unreachable from this harness until now. */
+  if (opts.defer === true) ctx.PSB_BOARD_DEFER = true;
   /* P1-B8B — `views` sits before `prototype` because psb-board-ui.js now reads the six views
      from it rather than declaring them, and throws by name if it is missing. */
   var order = ['contract', 'layout', 'selectors', 'views', 'fixture', 'prototype'];
   var thrown = null;
+  /* P1-B8D-R10C — READ-ONLY INTERNALS, AND ONLY WHEN A SUITE ASKS.
+     `categoryValues`, `categoryOptionRows` and `firstCategory` are closure-private, and they should
+     stay that way: production reaches them only through `showView`, and adding a permanent export so
+     a test can watch them would make the test the reason the surface exists. This appends a reader
+     INSIDE the same closure, for the instrumented variant only — the default boot still runs the
+     shipped bytes unchanged, and every behavioural assertion is made against that one. */
+  function withInternals(src) {
+    var anchor = 'this.PSB_BOARD = BOARD;';
+    if (src.indexOf(anchor) < 0) throw new Error('R10C: internals anchor not found in psb-board-ui.js');
+    return src.replace(anchor, anchor + ' this.__PSB_INTERNALS__ = {'
+      + ' categoryValues: categoryValues,'
+      + ' categoryOptionRows: categoryOptionRows,'
+      + ' firstCategory: firstCategory,'
+      + ' canonIsNull: function () { return CANON === null; } };');
+  }
   try {
     order.forEach(function (k) {
       var src = SRC[k];
       if (mutateSrc) src = mutateSrc(k, src);
+      if (opts.internals === true && k === 'prototype') src = withInternals(src);
       vm.runInContext(src, ctx, { filename: k + '.js' });
     });
   } catch (e) { thrown = e; }
