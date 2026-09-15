@@ -414,28 +414,125 @@ console.log('\n=== §E  A DIRECT CALL FAILS CLOSED, AT ZERO REQUESTS ===');
   ok(SRC.index.indexOf('setCapability') < 0, 'E2 the shell never raises it');
   ok(bare(SRC.page).indexOf('setCapability') < 0,
     'E2a and the page controller never DECLARES it either');
-  ok(/refreshCapability/.test(bare(SRC.page)),
-    'E2b but it does ASK - the mirror has a producer, which is what the live page was missing');
+  /* ============================================================================================
+     SUPERSEDED BY P1-B8D-R10D — THE PRODUCER MOVED, SO "IT ASKS" IS NO LONGER THE PROPERTY.
+
+     R4 wrote E2b because the mirror had NO producer anywhere in production: nothing raised it, so a
+     deployed browser refused the feature at zero requests while this section stood over the
+     arrangement calling it correct. R4's repair was to make the PAGE ask `system.health`.
+
+     R10D repairs it one layer up and subtracts the request instead. The capability rides
+     `getClientCapabilities` — the configuration bootstrap the application already performs once per
+     page life — and is pushed into the mirror by that bootstrap. So the page no longer asks, and
+     asserting that it does would now be asserting the defect.
+
+     WHAT THE RULE ALWAYS WAS, and what is asserted here instead: a producer EXISTS, it is not this
+     page, and this page neither declares the capability nor reaches for it. Four separate facts,
+     because "the page does not call refreshCapability" alone would also be satisfied by a build
+     where nothing raises the mirror at all — which is precisely the state R4 found. */
+  ok(/_psAcc\.setCapability\s*\(/.test(bare(SRC.dbapi))
+    && /async function _kmApplyClientCapabilities_/.test(SRC.dbapi),
+    'E2b SUPERSEDED (R10D): the PRODUCER exists, and it is the shared capability bootstrap');
+  ok(/window\.KM\.DB\.applyClientCapabilities\(\)/.test(bare(SRC.app)),
+    'E2b1 which production runs at boot — a producer nothing calls is the defect R4 found');
+  eq((bare(SRC.page).match(/refreshCapability\s*\(/g) || []).length, 0,
+    'E2b2 and the page does NOT ask for it — the request this round removed stays removed');
+  eq((bare(SRC.page).match(/['"]system\.health['"]/g) || []).length
+    + (bare(SRC.accessor).match(/['"]system\.health['"]/g) || []).length, 0,
+    'E2b3 Product Strategy-owned system.health dispatch = 0, measured on executable text');
   ok(/product_strategy_enabled/.test(SRC.accessor)
     && bare(SRC.page).indexOf('product_strategy_enabled') < 0,
     'E2c and the server-owned key is named in exactly one client file');
 
   /* THE CONTROLLER, DRIVEN THE WAY A DEVELOPER WOULD DRIVE IT: called directly, with the real
      accessor, in a document built from the real partial. */
-  var dom = H.makeDom(partialSkeleton);
-  var c = PAGE.create({ document: dom.document, accessor: ACC,
-    siteUniverse: UNI, liveAdapter: LIVE, board: null });
-  var done = c.loadUniverse();
-  ok(done && typeof done.then === 'function', 'E3 loadUniverse answers a promise');
-  return done.then(function (r) {
-    eq(r.state, 'FEATURE_DISABLED', 'E4 a direct call answers FEATURE_DISABLED');
-    eq(c.requests.siteUniverse, 0, 'E5 and sent ZERO site-universe requests');
-    eq(c.requests.workspace, 0, 'E6 and ZERO workspace requests');
-    eq(r.may_analyse, false, 'E7 and nothing may be analysed');
-    var host = dom.document.getElementById('psb-state-host');
-    ok(host && host.textContent.length > 0, 'E8 and it wrote a state into the partial\'s state host');
-    ok(dom.document.getElementById('view').childNodes.length === 0,
-      'E9 while the chart host stays empty — no fixture was drawn in its place');
+  /* ============================================================================================
+     SUPERSEDED BY P1-B8D-R10D — AND THE OLD SHAPE WAS READING A STATE ANOTHER SECTION SET.
+
+     E4 drove the controller once and asserted FEATURE_DISABLED, on the strength of E1 having
+     observed the mirror false "on load". That held while `false` had one meaning. It has four now,
+     and the run that exposed this proved the assertion was never testing the one it named: this
+     section's promise had not resolved when §F below ran `ACC.setCapability({})` SYNCHRONOUSLY on
+     the same module singleton, so what E4 actually observed was §F's leftover — not a fresh mirror.
+
+     So each state is NAMED, SET, and driven on its own controller. The subject of the section is
+     unchanged and is asserted three times instead of once: a direct call FAILS CLOSED AT ZERO
+     REQUESTS, whatever the reason, and it never draws a board in place of one.
+
+       nobody has said anything yet        -> CAPABILITY_NOT_ESTABLISHED
+       a server answered with no value     -> CAPABILITY_NOT_REPORTED
+       a server answered false             -> FEATURE_DISABLED, and ONLY this
+
+     The third is what keeps the false-contract coverage this section used to carry by accident. */
+  function driveDirect(label, setUp, expected, n) {
+    setUp();
+    var dom = H.makeDom(partialSkeleton);
+    var c = PAGE.create({ document: dom.document, accessor: ACC,
+      siteUniverse: UNI, liveAdapter: LIVE, board: null });
+    var done = c.loadUniverse();
+    ok(done && typeof done.then === 'function', 'E3.' + n + ' loadUniverse answers a promise');
+    return done.then(function (r) {
+      eq(r.state, expected, 'E4.' + n + ' ' + label + ' -> ' + expected);
+      eq(c.requests.siteUniverse, 0, 'E5.' + n + ' and sent ZERO site-universe requests');
+      eq(c.requests.workspace, 0, 'E6.' + n + ' and ZERO workspace requests');
+      eq(r.may_analyse, false, 'E7.' + n + ' and nothing may be analysed');
+      var host = dom.document.getElementById('psb-state-host');
+      ok(host && host.textContent.length > 0,
+        'E8.' + n + ' and it wrote a state into the partial\'s state host');
+      ok(dom.document.getElementById('view').childNodes.length === 0,
+        'E9.' + n + ' while the chart host stays empty — no fixture was drawn in its place');
+    });
+  }
+
+  /* A MODULE NOBODY HAS SPOKEN TO. Required fresh, because the singleton this file shares has been
+     read by E1 and will be written by §F, and "nothing has been said yet" is a state no later
+     section can restore by setting a value. */
+  var FRESH = (function () {
+    var full = path.join(JS, 'api', 'km-product-pricing-workspace.js');
+    delete require.cache[require.resolve(full)];
+    var m = require(full);
+    delete require.cache[require.resolve(full)];
+    require(full);                       // put the shared singleton back for every later section
+    return m;
+  }());
+  eq(FRESH.capabilityState(), 'PENDING',
+    'E3a a module the bootstrap has not reached is PENDING, not disabled');
+
+  return (function () {
+    var dom0 = H.makeDom(partialSkeleton);
+    var c0 = PAGE.create({ document: dom0.document, accessor: FRESH,
+      siteUniverse: UNI, liveAdapter: LIVE, board: null });
+    return c0.loadUniverse().then(function (r) {
+      ok(r.state !== 'FEATURE_DISABLED',
+        'E4.0 nobody has spoken -> NOT reported as a switched-off feature', r.state);
+      eq(c0.requests.siteUniverse, 0, 'E5.0 and ZERO site-universe requests');
+      eq(c0.requests.workspace, 0, 'E6.0 and ZERO workspace requests');
+      eq(dom0.document.getElementById('view').childNodes.length, 0,
+        'E9.0 and no board was drawn from nothing');
+    });
+  }()).then(function () {
+    return driveDirect('a server answered with no readable value',
+      function () { ACC.setCapability({}); }, 'CAPABILITY_NOT_REPORTED', 1);
+  }).then(function () {
+    return driveDirect('a server answered false',
+      function () { ACC.setCapability({ product_strategy_enabled: false }); },
+      'FEATURE_DISABLED', 2);
+  }).then(function () {
+    /* AND THE FALSE CONTRACT, STATED AT THE ACCESSOR TOO, so the page is not the only witness. */
+    ACC.setCapability({ product_strategy_enabled: false });
+    return Promise.all([ACC.getSiteUniverse(), ACC.get({
+      scope: { company: 'KM', country: 'US', marketplace: 'Shopify' } })]);
+  }).then(function (envs) {
+    function code(e) {
+      return e && e.data && e.data.refusals && e.data.refusals[0]
+        ? e.data.refusals[0].code : null;
+    }
+    eq(code(envs[0]), 'FEATURE_DISABLED',
+      'E10 explicit false: the universe read refuses with FEATURE_DISABLED');
+    eq(code(envs[1]), 'FEATURE_DISABLED', 'E11 and so does the workspace read');
+    ok(!/kind:\s*'write'/.test(bare(SRC.accessor)),
+      'E12 and no write-shaped dispatch exists to have been sent');
+    ACC.setCapability({});               // leave the singleton where §F expects to find it
   });
 }());
 

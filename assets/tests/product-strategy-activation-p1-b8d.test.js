@@ -525,12 +525,55 @@ eq(manifestDiff, '', 'G5  appsscript.json is unchanged');
 ok(SRC.manifest.indexOf('oauthScopes') < 0 || /"oauthScopes"/.test(SRC.manifest),
   'G5a (and whatever scopes it declares, this round declared none of them)');
 
-/* EXACTLY TWO .gs FILES CHANGED. The sync list is this, and it is derived rather than typed. */
-var gsChanged = cp.execFileSync('git', ['diff', '--name-only', 'a3889c2', '--',
-  'assets/specs/active/apps-script'], { cwd: ROOT, encoding: 'utf8' })
-  .split('\n').filter(Boolean).map(function (f) { return f.split('/').pop(); }).sort();
-eq(gsChanged, ['00_config.gs', '63_api_v1_system_health.gs'],
-  'G6  exactly two Apps Script files changed — and that IS the sync list');
+/* ==================================================================================================
+   G6 — TWO EXACT SETS, TWO ROUNDS, TWO FIXED BOUNDARIES.   (split at P1-B8D-R10D)
+
+   THE DEFECT THIS SPLIT REPAIRS. G6 read "exactly two Apps Script files changed — and that IS the
+   sync list", and it computed `git diff a3889c2 -- <dir>` against the WORKING TREE. Those agreed on
+   the day activation shipped and could not keep agreeing: the left-hand side is a fixed commit and
+   the right-hand side moves, so the set is CUMULATIVE DRIFT SINCE a3889c2 while the sentence claims
+   to describe one round. R10D is the first later round to touch a .gs, and the assertion reported a
+   three-file "sync list" for a round that changed one file.
+
+   That is not a number to widen. A deployment sync list is only meaningful WITH ITS BASELINE, and
+   the two questions are different:
+
+     what did the ACTIVATION round change?   a3889c2 -> dc3f6fd   00_config.gs, 63_…system_health.gs
+     what did R10D change?                   dc3f6fd -> 2636d8d   03_master_data_handlers.gs
+
+   BOTH ENDS OF BOTH COMPARISONS ARE FIXED COMMITS. Neither reads HEAD, so no future round can make
+   either sentence false by touching a .gs — which is the whole failure mode being removed, and
+   removing it for the next round as well as this one is the point.
+
+   NEITHER IS RELAXED. Each is an exact set: not `contains`, not "at least", and an extra .gs in
+   either window still fails.
+   ================================================================================================== */
+function gsChangedBetween(fromRef, toRef) {
+  return cp.execFileSync('git', ['diff', '--name-only', fromRef, toRef, '--',
+    'assets/specs/active/apps-script'], { cwd: ROOT, encoding: 'utf8' })
+    .split('\n').filter(Boolean).map(function (f) { return f.split('/').pop(); }).sort();
+}
+var R10D_PRE = 'dc3f6fd2260ee91bb844e9b81427619b7ad55218';
+var R10D_IMPL = '2636d8d9fa5e1d905038b9a962171f820f61f893';
+
+/* G6a — THE ACTIVATION ROUND'S OWN SET, which is what this suite has always been about. Its
+   right-hand side is pinned to the commit activation completed at, so it states a fact about
+   history rather than a fact about whatever is checked out. */
+eq(gsChangedBetween('a3889c2', R10D_PRE), ['00_config.gs', '63_api_v1_system_health.gs'],
+  'G6a P1-B8D ACTIVATION changed exactly these two Apps Script files (a3889c2 -> dc3f6fd) — '
+  + 'the activation sync set, and not a claim about any later round');
+
+/* G6b — R10D'S OWN SET, measured from its own PRE. One file: the shared capability bootstrap's
+   handler, which is where `product_strategy_enabled` was added. `00_config.gs` and
+   `63_api_v1_system_health.gs` are NOT part of it — R10D did not touch either, and saying it did
+   would put two files a deployment does not need into an incremental sync list. */
+eq(gsChangedBetween(R10D_PRE, R10D_IMPL), ['03_master_data_handlers.gs'],
+  'G6b P1-B8D-R10D changed exactly ONE Apps Script file (dc3f6fd -> 2636d8d) — '
+  + 'the R10D incremental sync set');
+ok(cp.execFileSync('git', ['show', R10D_IMPL + ':assets/specs/active/apps-script/'
+  + '03_master_data_handlers.gs'], { cwd: ROOT, encoding: 'utf8' })
+  .indexOf('product_strategy_enabled:') > 0,
+  'G6c and that one file is the one carrying the added capability field');
 
 /* THE RELEASE IS IN THE SHARED ORDER, APPENDED. */
 ok(REL.OWNER_STAMPS.indexOf(RELEASE) === REL.OWNER_STAMPS.length - 1,
