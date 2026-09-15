@@ -3105,18 +3105,32 @@ TESTS
   inside the word "table" in a new comment; the comment was reworded. No other round's assertion was
   edited.
 
-SWEEP
+SWEEP — MEASURED
 -------------------------------------------------------------------------------------------------------
-  PRE  (fresh detached worktree @ 5c50baa)   477 suites   4 flagged   0 survived   0 PROBE ERROR
-       Baseline assertions verbatim identical to the R10D authoritative baseline.
+  PRE commit              5c50baa18ec56decaead34561eb8d9a670c59f2f
+  implementation commit   af16a8ab862160ab09cf004da485d0c265e3839f
 
-  POST — PROVISIONAL UNTIL MEASURED, for the reason it always is: the sweep runs against the commit
-  this entry is part of. Its result is reported in the round's completion report and must be written
-  here before this round is treated as closed.
+  Both sweeps ran in a fresh detached worktree, because the working tree is not the commit and the
+  CRLF-fragile suites pass falsely there.
+
+                                    PRE @ 5c50baa        POST @ af16a8a
+  suites                            477                  478
+  suite delta                       —                    +1   (the new R10E recovery suite)
+  flagged suites                    4                    4    (the same four, pre-existing)
+  new failures                      —                    0
+  survived mutants                  0                    0
+  PROBE ERROR                       0                    0
+
+  baseline assertion diff           IDENTICAL — 0 differences
+  R10E recovery suite               134 passed / 0 failed / 12 mutants / 0 survived
+
+  THE FOUR FLAGGED SUITES ARE THE SAME FOUR BEFORE AND AFTER. They are not new, not caused by this
+  round, and not silenced by it; they are carried forward exactly as R10D carried them.
 
 CACHE TOKEN
 -------------------------------------------------------------------------------------------------------
-  userretry-p1b8dr10e-20260915      refs / stale / misplaced: MEASURED, see the completion report.
+  userretry-p1b8dr10e-20260915      refs 35      stale 0      misplaced 0      — MEASURED on the
+                                    committed bytes, never pre-declared and then made to match.
 
   A CORRECTION WORTH RECORDING. The first attempt rotated only the three assets this round ships,
   on the reading that the series is a per-module stamp. The repo's own gate rejected it: 32 entries
@@ -3139,13 +3153,34 @@ DEPLOYMENT
                               is needed. The behaviour reverts to today's: still fail closed, still
                               classified, just without a button.
 
-LIVE RELIABILITY
+LIVE RELIABILITY — THE LOCAL RESULT DOES NOT TOUCH THE LIVE RESULT
 -------------------------------------------------------------------------------------------------------
-  R10D's FAIL STANDS AND IS NOT SUPERSEDED BY THIS ROUND. Stage 1 (56/60) and the cold-boot
-  diagnostic (19/20) were measured on the DEPLOYED bytes of 5c50baa, and local tests passing here
-  changes neither number. R10E does not make the redirect chain more reliable; it gives a person a
-  way out of the one failure in twenty. Whether it helps is a question for a measurement on the
-  bytes this round produces, once they are deployed.
+  LIVE_RELIABILITY_STAGE_1  = FAIL      56/60 official reads, measured on the DEPLOYED bytes of 5c50baa
+  COLD_BOOT_DIAGNOSTIC      = FAIL      19/20 fresh-session boots, same deployed bytes
+
+  THESE TWO STAY FAIL. They were measured against deployed bytes, and a local suite passing is not a
+  measurement of a deployment. Nothing in this round is permitted to turn either into a PASS.
+
+  R10E improves recoverability, not underlying redirect reliability.
+  R10E deployed-byte reliability and recovery gates have not yet run.
+
+  The three gates that will judge the bytes of this round are kept separate on purpose, because
+  merging them is how a recovery gets mistaken for a fix:
+
+    RAW_TRANSPORT_RELIABILITY   NOT RUN ON R10E BYTES   the result BEFORE any human retry — the
+                                                        transport measured as it actually behaves
+    RECOVERY_CONTRACT_GATE      NOT RUN ON R10E BYTES   controlled refusal injection: the control
+                                                        appears, one click is one logical read, five
+                                                        clicks are still one, refusal and loaded-empty
+                                                        stay apart, focus and keyboard hold, writes 0.
+                                                        A BEHAVIOUR CONTRACT — it is not live reliability
+                                                        and may not be reported as any.
+    COLD_BOOT_RECOVERY_GATE     NOT RUN ON R10E BYTES   fresh sessions; a natural first-boot failure is
+                                                        KEPT as a raw failure and a successful retry is
+                                                        recorded SEPARATELY. Recovery never erases the
+                                                        raw boot result.
+
+  Long soak is not considered until all three report cleanly and without being mixed.
 
 KNOWN AND NOT FIXED
 -------------------------------------------------------------------------------------------------------
