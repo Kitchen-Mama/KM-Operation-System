@@ -3018,6 +3018,145 @@ KNOWN AND NOT FIXED
 
 ---
 
+## P1-B8D-R10E — THE ONE READ A PERSON CAN ASK FOR
+
+```
+PRE   5c50baa18ec56decaead34561eb8d9a670c59f2f
+BRANCH  feature/product-strategy-board-p0  (DRAFT worktree)
+
+WHY THIS ROUND EXISTS
+-------------------------------------------------------------------------------------------------------
+  R10D's corrected reliability gate measured the DEPLOYED bytes and failed, twice over:
+
+      LIVE_RELIABILITY_STAGE_1   56/60      four site-universe reads produced refusal envelopes
+      COLD_BOOT_DIAGNOSTIC       19/20      one fresh-session boot settled the capability to FAILED
+
+  AND THE FAILURE WAS NOT THE SERVER REFUSING. Across 85 live logical reads, every one of the twelve
+  404s landed on the /exec REDIRECT TARGET and not one landed on the stable endpoint. Two reads that
+  hit one recovered on the very next attempt with a 200 and a JSON body — the answer existed and one
+  hop could not be read. A third shape was worse: one read bounced between the two hosts five times
+  with five 302s and NO response at all, until the production 60s budget aborted it.
+
+  THE COST OF ONE IN TWENTY IS A WHOLE PAGE LIFE. The bootstrap runs once; the mirror settles to a
+  classified failure; `refreshCapability()` dispatches nothing by design; route-away and return
+  re-read nothing. Each of those is correct on its own, and together they mean the board stays
+  unusable until somebody thinks to reload a page that never told them to.
+
+WHAT CHANGED
+-------------------------------------------------------------------------------------------------------
+  ONE MORE READ, ONLY WHEN A PERSON ASKS FOR IT. No timer, no second automatic bootstrap, no raised
+  retry ceiling, no longer timeout, no new action, no new socket, no new Apps Script file.
+
+  shipped   assets/js/api/operation-system-db-api.js
+              `KM.DB.retryClientCapabilities()` — a single-flighted re-entry into the bootstrap that
+              already existed. It reuses `_kmApplyClientCapabilities_` rather than re-implementing
+              it, which is what makes it safe: that function already carries a monotonic sequence, a
+              deployment-identity check and two supersede guards, so a retry cannot undo a good
+              answer that arrived while it was in the air, and its success reaches EVERY capability
+              consumer through the one apply chain. It never rejects — the caller re-reads the
+              mirror, exactly as boot does.
+
+              THE SEQUENCE GUARD IS NOT A SINGLE-FLIGHT, and the distinction is the round. `_kmCapSeq_`
+              decides which answer WINS; it does not stop a second being ISSUED. Five clicks would be
+              five executions billed to the deployment that is already failing. The in-flight promise
+              makes five clicks one read, and it is a PROMISE latch rather than a time window because
+              the measured failures took 45 to 60 seconds — a debounce would re-issue inside one.
+
+            assets/js/pages/product-strategy-board.js
+              Three refusals gained a control, and only the codes that can honestly change got one.
+              The split is not invented here: the accessor already writes down what each classified
+              failure means as a NEXT ACTION, and `P.RETRYABLE_CODES` is that judgement made
+              renderable. NOT_AUTHORIZED, FEATURE_DISABLED and SOURCE_EMPTY deliberately get nothing.
+
+            assets/css/product-strategy-board.css
+              The control, its disabled state and its focus ring.
+
+  index.html  cache token rotated across the co-deployed set.
+
+WHAT IT REFUSES TO DO
+-------------------------------------------------------------------------------------------------------
+  · No automatic retry of any kind. A controller left alone issues nothing; asserted as a number.
+  · FEATURE_DISABLED gets no "try again", because that would dress a PRODUCT DECISION as a
+    connection problem — the confusion R10A and R10D spent two rounds pulling apart.
+  · SOURCE_EMPTY gets no button either. A site list that was READ and is empty is a measurement.
+  · NOT_AUTHORIZED gets none: "retrying is pointless — this needs a person with access".
+  · No second generation. The workspace retry goes through `loadWorkspace` and inherits the token
+    guard that already drops an answer for a site nobody is looking at any more.
+
+TESTS
+-------------------------------------------------------------------------------------------------------
+  NEW   product-strategy-recovery-p1-b8d-r10e        134/0, 12 mutants, 0 survived
+        Behaviour and REQUEST COUNTS, never a source census standing in for one. Twelve mutants
+        include removing the single-flight, adding a timer, pointing the retry back at
+        `system.health`, raising the bounded recovery, extending the timeout, offering a button under
+        FEATURE_DISABLED and removing the unmounted-controller guard.
+
+  KEPT GREEN  R10D 205/0/32/0 · activation 351/0/18/0 · shell integration 180/0/12/0 ·
+              R10A 94/0/9/0 · R10C 92/0/12/0 · R8 182/0/18/0 · R9 154/0/17/0 · R10 156/0/17/0 ·
+              R6 107/0/14/0 · R5 100/0/11/0 · R4 64/0/9/0 · B8C 398/0/9/0 · B8C-R2 274/0/21/0 ·
+              B8B 238/0/18/0 · B5 160/0/12/0 · cache identity 74/0 · transport 364/0 · registry 199/0
+
+  FOUR EARLIER MUTANTS WERE BROKEN AND REPAIRED BY MOVING THIS ROUND'S CODE, NOT THEIRS. The retry
+  descriptor first arrived as a fifth argument to `renderState`, which changed two call sites that
+  R8, R9, R4 and B8C aim mutants at to prove the board is torn down before a refusal is drawn. Every
+  one of them reported PROBE ERROR rather than passing quietly — which is the probes working. The
+  descriptor now travels on the `ux` object and both call sites are byte-identical again, so four
+  live guards were kept rather than retired. One assertion in R4 also matched the letters "tab"
+  inside the word "table" in a new comment; the comment was reworded. No other round's assertion was
+  edited.
+
+SWEEP
+-------------------------------------------------------------------------------------------------------
+  PRE  (fresh detached worktree @ 5c50baa)   477 suites   4 flagged   0 survived   0 PROBE ERROR
+       Baseline assertions verbatim identical to the R10D authoritative baseline.
+
+  POST — PROVISIONAL UNTIL MEASURED, for the reason it always is: the sweep runs against the commit
+  this entry is part of. Its result is reported in the round's completion report and must be written
+  here before this round is treated as closed.
+
+CACHE TOKEN
+-------------------------------------------------------------------------------------------------------
+  userretry-p1b8dr10e-20260915      refs / stale / misplaced: MEASURED, see the completion report.
+
+  A CORRECTION WORTH RECORDING. The first attempt rotated only the three assets this round ships,
+  on the reading that the series is a per-module stamp. The repo's own gate rejected it: 32 entries
+  came back as "left behind". `staleAppTokenRefs` flags ANY entry carrying a known application token
+  that is neither the current one nor the original baseline — the co-deployed set rotates TOGETHER,
+  and the per-module stamp discipline belongs to the Apps Script build constants, not to index.html.
+
+DEPLOYMENT
+-------------------------------------------------------------------------------------------------------
+  APPS_SCRIPT_SYNC_REQUIRED   NO      0 .gs files changed; no server contract touched
+  FRONTEND_DEPLOY_REQUIRED    YES     3 shipped modules + index.html
+  BUNDLE_REBUILD_REQUIRED     NO
+  DB / Sheets / Drive writes  0       every path this round adds is a GET through the existing
+                                      transport; the three actions were re-proven read-only on
+                                      decommented source before a line was written
+  ORDER                       FRONTEND ONLY. There is no server-first constraint this round because
+                              there is no server change. The deployed Apps Script already publishes
+                              `product_strategy_enabled`; R10E only adds a way to ask again.
+  Rollback                    restore the four shipped files to 5c50baa. No server rollback exists or
+                              is needed. The behaviour reverts to today's: still fail closed, still
+                              classified, just without a button.
+
+LIVE RELIABILITY
+-------------------------------------------------------------------------------------------------------
+  R10D's FAIL STANDS AND IS NOT SUPERSEDED BY THIS ROUND. Stage 1 (56/60) and the cold-boot
+  diagnostic (19/20) were measured on the DEPLOYED bytes of 5c50baa, and local tests passing here
+  changes neither number. R10E does not make the redirect chain more reliable; it gives a person a
+  way out of the one failure in twenty. Whether it helps is a question for a measurement on the
+  bytes this round produces, once they are deployed.
+
+KNOWN AND NOT FIXED
+-------------------------------------------------------------------------------------------------------
+  · ROOT_CAUSE = NOT_ESTABLISHED. The failure layer is SUPPORTED as the redirect / result-retrieval
+    chain and the client side is cleared, but the Apps Script Executions evidence that would settle
+    whether the handler completed is still outstanding.
+  · Two comment blocks in index.html and app.js still describe Product Strategy as not activated.
+    Stale prose, no runtime effect, deliberately left for a separate round.
+  · Everything R10D listed under KNOWN AND NOT FIXED is unchanged.
+```
+
 ## P1-B8D-R10D — THE CAPABILITY STOPS BEING A REQUEST OF ITS OWN
 
 ```

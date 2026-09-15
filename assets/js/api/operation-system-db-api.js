@@ -5080,6 +5080,73 @@ async function _kmApplyClientCapabilities_() {
     return applied;
 }
 window.KM.DB.applyClientCapabilities = _kmApplyClientCapabilities_;
+
+/* ==================================================================================================
+   PRODUCT-STRATEGY-P1-B8D-R10E — ONE MORE READ, AND ONLY WHEN A PERSON ASKS FOR IT.
+
+   WHAT WAS MEASURED. On the deployed R10D bytes, twenty fresh cold boots settled the capability
+   nineteen times and FAILED once. The failure was not the server refusing: every one of the twelve
+   404s seen across eighty-five live reads landed on the /exec REDIRECT TARGET, never on /exec
+   itself, and two of the reads that hit one recovered on the very next attempt with a 200 and a
+   JSON body. The answer was there; one hop could not be read.
+
+   THE COST OF THAT ONE IN TWENTY IS A WHOLE PAGE LIFE. The bootstrap runs once. The mirror settles
+   to a classified failure, `refreshCapability()` dispatches nothing by design, and route-away and
+   return re-read nothing — all of which is correct, and all of which means the board stays
+   unusable until somebody thinks to reload a page that never told them to.
+
+   SO THE RECOVERY IS A SECOND READ A PERSON ASKS FOR, AND NOTHING ELSE. No timer, no automatic
+   second bootstrap, no raised retry ceiling, no longer timeout. The transport keeps the bounded
+   policy it already had (at most two external attempts, at most one retry, a 45s read budget), and
+   this adds exactly one logical read per click.
+
+   IT REUSES `_kmApplyClientCapabilities_` RATHER THAN RE-IMPLEMENTING IT, which is what makes the
+   retry safe rather than merely convenient. That function already carries the ordering guards a
+   second call needs: a monotonic `_kmCapSeq_`, a deployment-identity check that discards an answer
+   whose deployment changed mid-flight, and two supersede guards that stop a late FAILURE from
+   overwriting a newer backend SUCCESS. A retry therefore cannot undo a good answer that arrived
+   while it was in the air, and its own success reaches EVERY capability consumer — the three
+   request-order/inventory flags and the Product Strategy mirror — through the one apply chain that
+   already exists. Nothing here knows what a consumer is.
+
+   THE SEQUENCE GUARD IS NOT A SINGLE-FLIGHT, WHICH IS WHY THERE IS A SECOND LATCH BELOW.
+   `_kmCapSeq_` decides WHICH answer wins when two are in the air; it does not stop the second one
+   from being ISSUED. Five clicks would be five requests, all but one of them discarded on arrival —
+   five executions billed to a deployment that is already the thing failing. The in-flight promise
+   below is the part that makes five clicks one read, and it is a PROMISE latch rather than a time
+   window: a debounce would let a slow read be re-issued the moment the window closed, which is
+   precisely the case this exists for (the failures measured took 45 to 60 seconds).
+
+   IT CLEARS ON SETTLEMENT, EITHER WAY. A rejected latch left in place is the "reload fixes it" bug
+   that `singleFlight` documents one layer down: every later click would inherit the first failure
+   and issue nothing. Success and failure both release it, so the next click is a real read.
+   ================================================================================================== */
+var _kmCapRetryInFlight_ = null;                 // the open user-triggered retry, or null
+var _kmCapRetryCount_ = 0;                       // logical retries issued this page life (diagnostic)
+window.KM.DB.retryClientCapabilities = function () {
+    if (_kmCapRetryInFlight_) { return _kmCapRetryInFlight_; }
+    _kmCapRetryCount_ += 1;
+    /* IT NEVER REJECTS, AND THAT IS A CONTRACT RATHER THAN AN OBSERVATION. `applyClientCapabilities`
+       catches its own failures and resolves with a snapshot either way, so a rejection here would
+       mean something unforeseen — and the one place this is called from is a click handler, where an
+       unhandled rejection is a console error a person cannot act on and a button that never comes
+       back. Resolving with null keeps the ONLY authority on success where it already is: the caller
+       re-reads the capability mirror, exactly as it does at boot. */
+    var p;
+    try {
+      p = Promise.resolve(_kmApplyClientCapabilities_())
+        .then(function (r) { return r; }, function () { return null; });
+    } catch (e) { p = Promise.resolve(null); }
+    var release = function () { if (_kmCapRetryInFlight_ === p) _kmCapRetryInFlight_ = null; };
+    p.then(release, release);
+    _kmCapRetryInFlight_ = p;
+    return p;
+};
+/* Read-only accounting, so a suite can assert "one click, one logical read" as a NUMBER rather than
+   by reading the source. `inFlight` is what a caller renders a busy button from. */
+window.KM.DB.capabilityRetryState = function () {
+    return { inFlight: _kmCapRetryInFlight_ !== null, logicalRetries: _kmCapRetryCount_ };
+};
 // Read-only capability diagnostic (no secrets/ids/row data): the three EFFECTIVE values + provenance + verdict.
 window.__kmCapabilities = function() {
     var snap = (window.KM && window.KM.api && typeof window.KM.api.getClientCapabilitySnapshot === 'function')

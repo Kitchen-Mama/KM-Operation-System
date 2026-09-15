@@ -118,7 +118,62 @@
     CAPABILITY_NOT_REPORTED: { may_analyse: false, uses_fixture: false, severity: 'stop',
       headline: 'The server did not report whether this board is available.',
       detail: 'Nothing is read until it does. This is not the same as the board being switched off —'
-        + ' no such decision was received, and none is assumed.' }
+        + ' no such decision was received, and none is assumed.' },
+    /* P1-B8D-R10E — the states a retry ADDS, and they are deliberately not refusals. While a
+       user-triggered re-read is open the page is neither failed nor loaded, and leaving "still
+       failed" on screen for forty-five seconds is how a person ends up clicking again and again. */
+    RETRYING_CAPABILITY: { may_analyse: false, uses_fixture: false, severity: 'info',
+      headline: 'Asking the server again…',
+      detail: 'This is the same startup question, asked once more because you asked for it.' },
+    RETRYING_SITE_UNIVERSE: { may_analyse: false, uses_fixture: false, severity: 'info',
+      headline: 'Reading the list of sites again…' },
+    RETRYING_WORKSPACE: { may_analyse: false, uses_fixture: false, severity: 'info',
+      headline: 'Reading the listings again…' }
+  };
+
+  /* ================================================================================================
+     P1-B8D-R10E — WHICH REFUSALS A BUTTON MAY HONESTLY OFFER TO RETRY.
+
+     A retry button is a PROMISE that clicking might change the answer. Offering one under a refusal
+     that cannot change is worse than offering none: it teaches a person to click through a wall.
+
+     THE SPLIT IS NOT INVENTED HERE. km-product-pricing-workspace.js already writes down what each
+     classified failure means AS A NEXT ACTION, and this table is that judgement made renderable:
+
+       SOURCE_TIMED_OUT      the request went and the bound elapsed first; the work may still be
+                             running at the far end. "Retrying is reasonable; it costs another wait."
+       HTTP_NOT_FOUND        measured twelve times on live deployed bytes, ALWAYS on the redirect
+                             target and NEVER on the stable endpoint, and twice recovered on the very
+                             next attempt with a 200 and a JSON body. The answer existed; one hop
+                             could not be read.
+       SOURCE_NOT_CONNECTED  nothing answered and the browser believes it has a network.
+       RESPONSE_NOT_READABLE something answered and it was not this build's envelope. Every attempt
+                             is rebuilt from the stable endpoint, so a fresh read gets a fresh
+                             target rather than the same unreadable one.
+       BROWSER_OFFLINE       the accessor's note says retrying NOW fails again, for free — and that
+                             is a statement about an AUTOMATIC retry at the instant of failure. A
+                             person clicks after they have done something about it, and the failure
+                             is local and instant, so the button costs nothing and the person owns
+                             the timing. This is the one row that EXTENDS the accessor's table
+                             rather than restating it, and it is extended for that reason alone.
+
+     AND WHAT IS DELIBERATELY ABSENT IS THE POINT OF THE TABLE:
+
+       NOT_AUTHORIZED        "a server answered, and the answer was a sign-in page. Retrying is
+                             pointless — this needs a person with access, not another attempt."
+       FEATURE_DISABLED      a server answered and what it said was `false`. Offering "try again"
+                             would dress a PRODUCT DECISION up as a connection problem — the exact
+                             confusion R10A and R10D spent two rounds pulling apart.
+       SOURCE_EMPTY          the site list was read and it is empty. That is a MEASUREMENT, not a
+                             failure, and a retry button would tell a person their data is broken.
+       SOURCE_PARTIALLY_READABLE / STOP_DATA_INTEGRITY / SCHEMA_CONTRACT_MISMATCH / ACTION_MISMATCH
+                             a server answered; what came back is the problem. An identical request
+                             returns an identical answer.
+     ================================================================================================ */
+  P.RETRYABLE_CODES = ['SOURCE_TIMED_OUT', 'HTTP_NOT_FOUND', 'SOURCE_NOT_CONNECTED',
+    'RESPONSE_NOT_READABLE', 'BROWSER_OFFLINE'];
+  P.isRetryableCode = function (code) {
+    return P.RETRYABLE_CODES.indexOf(str(code)) !== -1;
   };
 
   function isObj(v) { return !!v && typeof v === 'object' && !(v instanceof Array); }
@@ -140,9 +195,24 @@
    * numbers a person came for are not available, and dressing that up with the chart's furniture would
    * suggest there is something to look at.
    */
+  /**
+   * P1-B8D-R10E — `action` is OPTIONAL and purely additive. Every existing caller passes four
+   * arguments and gets exactly the markup it got before; a caller that passes the fifth gets one
+   * real <button> inside the same box.
+   *
+   * IT IS A <button>, not a link and not a clickable div, because the keyboard contract — Enter,
+   * Space, the focus ring, `disabled` actually preventing activation — is the browser's to honour
+   * rather than this file's to re-implement badly. The suite asserts the TAG, not a class name.
+   *
+   * The descriptor arrives as `ux.action`, not as a fifth argument — see `show` for why the call
+   * site had to stay byte-identical.
+   *
+   * ux.action: {label:string, onActivate:function, busy:boolean, busyLabel:string}
+   */
   P.renderState = function (host, ux, refusals, doc) {
     doc = doc || (host && host.ownerDocument) || root.document;
     if (!host) return null;
+    var action = ux && ux.action;
     while (host.firstChild) host.removeChild(host.firstChild);
 
     var box = doc.createElement('div');
@@ -176,6 +246,33 @@
         ul.appendChild(li);
       });
       box.appendChild(ul);
+    }
+    /* P1-B8D-R10E — THE BUTTON IS BUILT LAST, so it follows the codes a person has just read.
+       The live region is a SIBLING rather than the button itself: a live region that is also the
+       control gets re-announced every time its own label changes, which turns one retry into two
+       announcements of the same thing. */
+    if (action && typeof action.onActivate === 'function') {
+      var btn = doc.createElement('button');
+      btn.type = 'button';
+      btn.className = 'psb-state__retry';
+      btn.setAttribute('data-cy', 'psb-state-retry');
+      btn.textContent = action.busy
+        ? str(action.busyLabel || 'Retrying…') : str(action.label || 'Try again');
+      if (action.busy) { btn.disabled = true; btn.setAttribute('aria-busy', 'true'); }
+      else { btn.setAttribute('aria-busy', 'false'); }
+      btn.addEventListener('click', function (ev) {
+        if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
+        if (btn.disabled) return;
+        action.onActivate();
+      });
+      box.appendChild(btn);
+
+      var live = doc.createElement('p');
+      live.className = 'psb-state__live';
+      live.setAttribute('aria-live', 'polite');
+      live.setAttribute('data-cy', 'psb-state-live');
+      live.textContent = action.busy ? str(action.busyLabel || 'Retrying…') : '';
+      box.appendChild(live);
     }
     host.appendChild(box);
     return box;
@@ -216,7 +313,20 @@
          `inFlight` is the single-flight latch — a second selection supersedes rather than races. */
       token: 0,
       inFlight: false,
-      dropped: 0
+      dropped: 0,
+      /* P1-B8D-R10E — THE RETRY LATCHES, AND WHY THERE ARE TWO RATHER THAN A THIRD GENERATION.
+         `token` already decides WHICH workspace answer wins when a person changes site mid-read, and
+         a retry is not a different question from the read it repeats — so a workspace retry goes
+         through `loadWorkspace`, takes the next token, and is dropped by the EXISTING guard if the
+         scope moved underneath it. What the token cannot do is stop a second request being ISSUED,
+         which is all these two latches are: one open promise per read, cleared on settlement. */
+      capabilityRetrying: false,
+      universeRetrying: false,
+      universeRetryInFlight: null,
+      retries: { capability: 0, siteUniverse: 0, workspace: 0 },
+      /* Set false by `unmount`. Every retry continuation checks it before touching the DOM, because
+         a read that takes forty-five seconds can easily outlive the page that asked for it. */
+      alive: true
     };
 
     /**
@@ -342,14 +452,130 @@
     }
     C.showBoardNotices = showBoardNotices;
 
-    function show(state, ux, refusals) {
+    function show(state, ux, refusals, action) {
       C.state = state;
+      /* P1-B8D-R10E — THE ACTION TRAVELS ON THE STATE DESCRIPTOR, which is where it belongs: `ux`
+         already carries everything renderState needs to draw one state, and a fifth positional
+         argument would have made the call site a different line of code. That matters here beyond
+         taste — four earlier rounds aim mutants at this exact pair of lines to prove the board is
+         torn down before a refusal is drawn, and a signature change would have silently retired
+         four live guards while every one of them still reported "ok". */
+      if (action) {
+        var withAction = { may_analyse: ux.may_analyse, uses_fixture: ux.uses_fixture,
+          severity: ux.severity, headline: ux.headline, detail: ux.detail, action: action };
+        ux = withAction;
+      }
       /* NOT A CHART BESIDE A NOTICE. The partial has said since P1-B5 that the chart is never drawn
          beside a refusal; until this round that was true only of the FIRST answer, because nothing
          removed a chart that had already been drawn. */
       clearBoard();
       P.renderState(host, ux, refusals || [], doc);
       return { state: state, mounted: false, may_analyse: false, refusals: refusals || [] };
+    }
+
+    /* ==========================================================================================
+       P1-B8D-R10E — THE THREE RECOVERIES, AND THE ONE RULE THEY SHARE.
+
+       Each is a SECOND ATTEMPT AT THE SAME READ, issued only because a person clicked, through the
+       same accessor and the same production transport the first attempt used. None of them adds an
+       action, a socket, a retry ceiling or a millisecond of timeout, and none of them is allowed to
+       make a failure look like an absence of data.
+
+       `focusAfter` carries the focus contract, which is not decoration: the box a person clicked
+       INSIDE is destroyed and rebuilt by `show`, so without this the focus ring lands back on
+       <body> and a keyboard user is dropped at the top of the document mid-task. On success focus
+       goes to the content that replaced the notice; on failure it returns to the rebuilt button,
+       which is where the person was and where the next attempt lives.
+       ========================================================================================== */
+    function focusAfter(selector) {
+      if (!C.alive || !doc || typeof doc.querySelector !== 'function') return;
+      var el = null;
+      try { el = host ? host.querySelector(selector) : null; } catch (e) { el = null; }
+      if (!el && selector !== '[data-cy="psb-state-retry"]') {
+        try { el = host ? host.querySelector('.psb-state__headline') : null; } catch (e2) { el = null; }
+      }
+      if (el && typeof el.focus === 'function') {
+        if (el.tagName !== 'BUTTON' && !el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1');
+        try { el.focus(); } catch (e3) { /* focus is a courtesy, never a failure */ }
+      }
+    }
+
+    /** The capability read, asked again. Owner is the SHARED bootstrap; this file only calls it. */
+    C.retryCapability = function () {
+      if (C.capabilityRetrying) return Promise.resolve(false);
+      var DB = (root.KM && root.KM.DB) ? root.KM.DB : null;
+      if (!DB || typeof DB.retryClientCapabilities !== 'function') {
+        return Promise.resolve(false);
+      }
+      C.capabilityRetrying = true;
+      C.retries.capability++;
+      show(P.RETRYING_CAPABILITY, P.UX_PAGE.RETRYING_CAPABILITY, [], busyAction(function () { C.retryCapability(); }));
+      return Promise.resolve(DB.retryClientCapabilities())
+        .then(function () { return true; }, function () { return false; })
+        .then(function () {
+          C.capabilityRetrying = false;
+          if (!C.alive) return false;
+          /* SUCCESS IS NOT ASSUMED FROM THE PROMISE RESOLVING. The bootstrap resolves either way;
+             the MIRROR is the authority, exactly as it is at boot. */
+          if (capabilityOk()) { return Promise.resolve(C.loadUniverse()).then(function () {
+            focusAfter('.psb-state__headline'); return true; }); }
+          return Promise.resolve(loadUniverseResolved()).then(function () {
+            focusAfter('[data-cy="psb-state-retry"]'); return false; });
+        });
+    };
+
+    /** The site list, read again. Nothing downstream runs until it succeeds. */
+    C.retryUniverse = function () {
+      if (C.universeRetryInFlight) return C.universeRetryInFlight;
+      C.retries.siteUniverse++;
+      show(P.RETRYING_SITE_UNIVERSE, P.UX_PAGE.RETRYING_SITE_UNIVERSE, [], busyAction(function () { C.retryUniverse(); }));
+      var p = Promise.resolve(loadUniverseResolved()).then(function (r) {
+        C.universeRetryInFlight = null;
+        if (!C.alive) return r;
+        focusAfter(C.universe && C.universe.state === 'OK'
+          ? '.psb-state__headline' : '[data-cy="psb-state-retry"]');
+        return r;
+      }, function (e) {
+        C.universeRetryInFlight = null;
+        throw e;
+      });
+      C.universeRetryInFlight = p;
+      return p;
+    };
+
+    /** The listings, read again, FOR THE SITE THAT IS SELECTED WHEN THE BUTTON IS PRESSED. */
+    C.retryWorkspace = function () {
+      /* `inFlight` is the existing single-flight latch; a retry does not get its own. */
+      if (C.inFlight) return Promise.resolve(null);
+      var sc = (C.narrowed && C.narrowed.scope) ? C.narrowed.scope : null;
+      /* FAIL CLOSED ON AN INCOMPLETE SCOPE, AT ZERO REQUESTS. A person can narrow away from a
+         complete site while a refusal is on screen; sending the old scope would read a site nobody
+         is looking at, and sending a partial one is the SCOPE_INCOMPLETE the accessor already
+         refuses locally. Neither is worth a request. */
+      if (!P.scopeIsComplete(sc)) {
+        return Promise.resolve(show(P.AWAITING_SITE_SELECTION, P.UX_PAGE.AWAITING_SITE_SELECTION,
+          [{ code: 'SCOPE_INCOMPLETE' }]));
+      }
+      C.retries.workspace++;
+      show(P.RETRYING_WORKSPACE, P.UX_PAGE.RETRYING_WORKSPACE, [], busyAction(function () { C.retryWorkspace(); }));
+      return Promise.resolve(C.loadWorkspace()).then(function (r) {
+        if (!C.alive) return r;
+        focusAfter(r && r.mounted ? '.psb-state__headline' : '[data-cy="psb-state-retry"]');
+        return r;
+      });
+    };
+
+    /** The action descriptor a refusal hands to `show`, or null when the code cannot be retried. */
+    function retryAction(code, onActivate, busy) {
+      if (!P.isRetryableCode(code)) return null;
+      return { label: 'Try again', busyLabel: 'Retrying…', busy: !!busy, onActivate: onActivate };
+    }
+    /* THE CONTROL DOES NOT VANISH WHILE ITS OWN READ IS OPEN. Replacing the box with a bare
+       "asking again" line removes the thing a person just pressed, which reads as the click having
+       been swallowed — and it takes the disabled state and `aria-busy` with it, so a screen reader
+       is told nothing at all. The button stays, disabled and busy, and returns to itself either way. */
+    function busyAction(onActivate) {
+      return { label: 'Try again', busyLabel: 'Retrying…', busy: true, onActivate: onActivate };
     }
 
     function capabilityOk() {
@@ -415,10 +641,15 @@
         var capFail = (typeof accessor.capabilityFailure === 'function')
           ? accessor.capabilityFailure() : null;
         if (capFail) {
+          /* P1-B8D-R10E — A BUTTON ONLY WHERE ONE CAN HONESTLY HELP. `capFail` is already the
+             CLASSIFIED reason, so the classification decides: a timed-out or unreadable hop gets
+             a retry, a sign-in page does not. The sentence shown is unchanged either way — it is an
+             addition to the refusal, never a replacement for it. */
           return Promise.resolve(show(capFail,
             (live && live.UX && live.UX[capFail]) || P.UX_PAGE.SITE_UNIVERSE_NOT_AVAILABLE,
             [{ code: capFail,
-              detail: 'the capability read could not be completed; no further request was sent' }]));
+              detail: 'the capability read could not be completed; no further request was sent' }],
+            retryAction(capFail, function () { C.retryCapability(); }, C.capabilityRetrying)));
         }
         /* P1-B8D-R10D §10 — STILL WAITING IS NOT A DECISION.
            `capabilityResolved` waits for the boot read before reaching here, so arriving in this
@@ -434,9 +665,17 @@
            decision to fill a gap in a contract — the same class of statement R10A removed for
            transport faults, arriving by the other door. Fails closed; says which. */
         if (capabilityState() === 'FIELD_ABSENT') {
+          /* P1-B8D-R10E — RETRYABLE, AND FOR A REASON THAT IS NOT "MAYBE IT WILL WORK". A server
+             answered and its answer carried no such field, which is what a deployment PREDATING the
+             field looks like from here. A second read is the only thing that can observe a newer
+             deployment, and a deployment being replaced mid-rollout is exactly when this state is
+             reachable. It is NOT offered as a connection problem: the sentence still says a server
+             answered and said nothing about this flag. */
           return Promise.resolve(show(P.CAPABILITY_NOT_REPORTED, P.UX_PAGE.CAPABILITY_NOT_REPORTED,
             [{ code: P.CAPABILITY_NOT_REPORTED,
-              detail: 'the capability answer carried no readable value for this board; no request was sent' }]));
+              detail: 'the capability answer carried no readable value for this board; no request was sent' }],
+            { label: 'Read the answer again', busyLabel: 'Retrying…',
+              busy: C.capabilityRetrying, onActivate: function () { C.retryCapability(); } }));
         }
         return Promise.resolve(show('FEATURE_DISABLED',
           (live && live.UX && live.UX.FEATURE_DISABLED) || P.UX_PAGE.SITE_UNIVERSE_NOT_AVAILABLE,
@@ -462,8 +701,14 @@
             /* FAIL CLOSED: no list, no controls. */
             if (siteHost) { while (siteHost.firstChild) siteHost.removeChild(siteHost.firstChild); }
             var ux = SU.UX[u.state] || SU.UX.SOURCE_NOT_CONNECTED;
+            /* P1-B8D-R10E — AND THE ONE STATE THAT MUST NOT GET A BUTTON IS THE ONE THAT LOOKS
+               MOST LIKE A FAILURE FROM HERE. `SOURCE_EMPTY` is a site list that WAS read and is
+               empty; the table refuses it, so an empty universe and an unread universe stay two
+               different sentences with two different affordances — which is the whole distinction
+               §7 asks to preserve, expressed as markup rather than as prose. */
             return show(u.state, { may_analyse: false, uses_fixture: false,
-              severity: ux.severity, headline: ux.headline, detail: ux.detail }, u.refusals);
+              severity: ux.severity, headline: ux.headline, detail: ux.detail }, u.refusals,
+              retryAction(u.state, function () { C.retryUniverse(); }, !!C.universeRetryInFlight));
           }
           // The initial narrow resolves any tier that has exactly one value, and nothing else.
           return C.select(isObj(opts.scope) ? opts.scope : {});
@@ -605,6 +850,10 @@
      * was already paid for, and mounting it again is a render, not a read.
      */
     C.restore = function () {
+      /* P1-B8D-R10E — A RESTORED CONTROLLER IS LIVE AGAIN. `alive` is what stops a retry that
+         outlived its page from writing into hosts the unmount emptied; a controller coming back
+         into a document that still holds its board is, by definition, allowed to touch it. */
+      C.alive = true;
       if (!C.universe || C.universe.state !== 'OK') return false;
       if (!C.narrowed || !C.narrowed.complete) return false;
       if (!C.adapter) return false;
@@ -657,6 +906,23 @@
           var snap = adapter.load();
           C.state = snap.state;
           if (snap.may_analyse !== true) {
+            /* P1-B8D-R10E — THE RETRY IS BOUND TO THE SITE THAT IS SELECTED WHEN IT IS PRESSED,
+               not to the one this refusal was produced for. `retryWorkspace` re-reads
+               `C.narrowed.scope` and goes through `loadWorkspace`, which takes the next token — so
+               if the person narrowed to a different site while the notice was up, the answer that
+               comes back is for the site they are looking at, and any older answer still in the air
+               is dropped by the guard that was already there. No second generation is introduced.
+
+               THE CONTROL IS ATTACHED TO `snap.ux` HERE, ABOVE THE TEARDOWN, so the two lines below
+               stay byte-identical: R8's K5 mutates exactly that pair to prove a refused site does
+               not bring the previous site's board back, and moving either line would retire a live
+               guard while it still reported "ok". */
+            var _wsRetry = retryAction(snap.state, function () { C.retryWorkspace(); }, C.inFlight);
+            if (_wsRetry) {
+              snap.ux = { may_analyse: snap.ux.may_analyse, uses_fixture: snap.ux.uses_fixture,
+                severity: snap.ux.severity, headline: snap.ux.headline, detail: snap.ux.detail,
+                action: _wsRetry };
+            }
             C.mounted = false;
             return show(snap.state, snap.ux, snap.refusals);
           }
@@ -1236,6 +1502,13 @@
        another site's rows" — which is true of carrying HALF of them, and this carries all or
        nothing. */
     var prev = P.lastController;
+    /* P1-B8D-R10E — THE OUTGOING CONTROLLER STOPS TOUCHING THE DOM, PARKED OR NOT. A user-triggered
+       retry can be open for forty-five seconds; the live measurements that motivated this round took
+       between twenty-four and sixty. That is long enough to outlive the visit that started it, and a
+       continuation that renders into hosts this function is about to empty would put a notice into a
+       section nobody is looking at — or, worse, restore focus out of the page a person moved to.
+       `restore()` sets it back to true, so parking stays lossless. */
+    if (prev) { prev.alive = false; }
     P.parked = (prev && prev.universe && prev.universe.state === 'OK'
       && prev.narrowed && prev.narrowed.complete === true
       && prev.mounted === true && prev.adapter) ? prev : null;

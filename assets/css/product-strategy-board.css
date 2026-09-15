@@ -1616,6 +1616,48 @@ body.is-fullscreen .psb-page .view > .reco { display: none; }
 .psb-page .psb-state--none { border-left-color: var(--ink-4, #9aa3b0); }
 .psb-page .psb-state--none .psb-state__headline::before { content: '·'; color: var(--ink-4, #9aa3b0); }
 
+/* P1-B8D-R10E — THE RETRY CONTROL, AND WHY IT IS STYLED AS A CONTROL RATHER THAN AS A LINK.
+   It sits inside a notice that has already told a person something is wrong, so it must read as
+   the one thing they can DO there: a real button, with a real focus ring, that visibly stops being
+   pressable while the read it started is open. The disabled state is not a lighter colour alone —
+   the cursor changes too, because a person who clicks a greyed button that still shows a pointer
+   assumes the click registered. */
+.psb-page .psb-state__retry {
+  margin: 10px 0 0;
+  align-self: flex-start;
+  padding: 7px 14px;
+  font: inherit;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--ink-1, #1f2733);
+  background: var(--surface-1, #fff);
+  border: 1px solid var(--ink-4, #9aa3b0);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.psb-page .psb-state__retry:hover:not(:disabled) {
+  border-color: var(--ink-2, #3d4757);
+  background: var(--surface-2, #f6f7f9);
+}
+.psb-page .psb-state__retry:focus-visible {
+  outline: 2px solid var(--filter-focus-ring, #7FB069);
+  outline-offset: 2px;
+}
+.psb-page .psb-state__retry:disabled {
+  color: var(--ink-4, #9aa3b0);
+  border-color: var(--ink-5, #c7ccd4);
+  background: var(--surface-2, #f6f7f9);
+  cursor: progress;
+}
+/* The live region carries the same sentence the busy button carries, for a reader who is not
+   looking at it. Empty while idle, so nothing is announced until something happens. */
+.psb-page .psb-state__live {
+  margin: 6px 0 0;
+  font-size: 0.85em;
+  color: var(--ink-3, #5b6675);
+}
+.psb-page .psb-state__live:empty { display: none; }
+
 /* ---- 4 · WHERE THE BLOCKS SIT ------------------------------------------------------------------
    The rail belonged to the content below it and read as part of the header; the crumb line then sat
    on top of the board with no air. Spacing only — no component changes. */

@@ -376,7 +376,13 @@ var ROUND_TOKENS = [
      files changed: the accessor (its capability read is gone), the db api (the bootstrap gained a
      second consumer of the same answer) and the board controller (four situations where there used
      to be two). Appended, never edited in place — the series is the record of what was served. */
-  'capbootstrap-p1b8dr10d-20260914'];
+  'capbootstrap-p1b8dr10d-20260914',
+  /* PRODUCT-STRATEGY-P1-B8D-R10E — the recovery a person can ask for. Three shipped files
+     changed: the db api (one shared, single-flighted re-entry into the bootstrap that already
+     existed), the board controller (three refusals gained a button, and only the codes that can
+     honestly change got one) and the board stylesheet. Appended, never edited in place — the
+     series is the record of what was served. */
+  'userretry-p1b8dr10e-20260915'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

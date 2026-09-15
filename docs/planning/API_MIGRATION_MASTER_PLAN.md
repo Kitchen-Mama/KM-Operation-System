@@ -999,6 +999,37 @@ dereferenced null. See the activation manifest §14 and
 
 ---
 
+## P1-B8D-R10E — THE ONE READ A PERSON CAN ASK FOR (2026-09-15, PRE `5c50baa`)
+
+**The rule adopted at R8 stands verbatim.** R10E starts no S round, reclassifies no module, adds no
+action, adds no `.gs` file and changes no server contract. It is a frontend-only round.
+
+R10D's corrected reliability gate measured the deployed bytes and failed: 56 of 60 official reads,
+and 19 of 20 fresh-session cold boots. The failures were not the server refusing — across 85 live
+logical reads every one of the twelve 404s landed on the `/exec` **redirect target** and none on the
+stable endpoint, and two of them recovered on the very next attempt with a 200 and a JSON body.
+
+| | Before R10E | After |
+|---|---|---|
+| a failed capability at boot | unusable for the whole page life; only a reload recovers | one read a person can ask for, through the bootstrap that already exists |
+| a refused site universe | a classified refusal and nothing to do about it | the same refusal, plus a control where one can honestly help |
+| a refused workspace | the same | the same, bound to the site selected when it is pressed |
+| automatic retries | at most one, inside the transport | **unchanged** — no timer, no second bootstrap, no raised ceiling |
+| retry ceiling / timeout | 2 attempts / 1 retry; 45s capability, 60s business | **unchanged, asserted** |
+| Product Strategy `system.health` | 0 | 0 |
+| direct fetch / XHR / POST shim | 0 | 0 |
+
+**What is deliberately NOT offered a retry**, because a button is a promise that clicking might
+change the answer: `FEATURE_DISABLED` (a server answered `false` — a product decision, not a
+connection problem), `NOT_AUTHORIZED` (needs a person with access), `SOURCE_EMPTY` (a list that was
+read and is empty — a measurement), and every contract-shape refusal an identical request would
+answer identically.
+
+**Root cause remains NOT_ESTABLISHED.** The failure layer is SUPPORTED as the redirect /
+result-retrieval chain and the client side is cleared; the Apps Script Executions evidence that
+would settle whether the handler completed is still outstanding. R10E does not claim to make the
+chain more reliable — it gives a person a way out of the one failure in twenty.
+
 ## P1-B8D-R10D — THE CAPABILITY STOPS BEING A REQUEST OF ITS OWN (2026-09-14, PRE `dc3f6fd`)
 
 **The rule adopted at R8 stands verbatim.** R10D starts no S round, reclassifies no module, adds no
