@@ -529,17 +529,45 @@
       if (C.universeRetryInFlight) return C.universeRetryInFlight;
       C.retries.siteUniverse++;
       show(P.RETRYING_SITE_UNIVERSE, P.UX_PAGE.RETRYING_SITE_UNIVERSE, [], busyAction(function () { C.retryUniverse(); }));
-      var p = Promise.resolve(loadUniverseResolved()).then(function (r) {
-        C.universeRetryInFlight = null;
+      /* THE LATCH IS CLEARED BEFORE THE BOX IS REDRAWN, AND THAT ORDER IS THE WHOLE FIX.
+         `loadUniverseResolved` renders the refusal itself, from inside the read — so on the retry
+         path it drew a control whose busy state was read while this promise was still pending, and
+         a second failure left a button disabled and `aria-busy` forever, about a read that had
+         already finished failing. The only way out was a reload: the exact condition R10E exists to
+         remove, reinstated one layer up.
+
+         So the settlement clears the latch first and then redraws the SAME refusal through the SAME
+         renderer, which now reads a latch that is honestly null. The control tells the truth at both
+         ends — busy while the request is open, usable once it is not — because it is reading the
+         request state rather than a flag kept alongside it. The redraw reads nothing: no accessor
+         call, no request, asserted as a delta of zero. */
+      var release = function () { if (C.universeRetryInFlight === p) C.universeRetryInFlight = null; };
+      /* AND THE LATCH IS SET BEFORE THE READ BEGINS — the same ordering bug, one level up.
+         `loadUniverseResolved()` ran SYNCHRONOUSLY from this line, drawing its own loading box while
+         `C.universeRetryInFlight` was still null, so no render inside the read could tell a retry
+         from a first load. The promise is therefore built from a deferred FIRST and the latch
+         assigned, and only then is the read started — still synchronously, because F11 counts the
+         read on the same tick as the click and a microtask hop would quietly break an assertion
+         that is doing its job. Nothing is scheduled, delayed or polled. */
+      var settle, fail;
+      var p = new Promise(function (res, rej) { settle = res; fail = rej; }).then(function (r) {
+        release();
         if (!C.alive) return r;
+        /* A REFUSAL STILL ON SCREEN IS REDRAWN; A SUCCESS IS LEFT ALONE. The success path has
+           already rendered the chooser, and drawing a refusal over it would be a lie in the other
+           direction. */
+        if (C.universe && C.universe.state !== 'OK') { renderUniverseRefusal(C.universe); }
         focusAfter(C.universe && C.universe.state === 'OK'
           ? '.psb-state__headline' : '[data-cy="psb-state-retry"]');
         return r;
       }, function (e) {
-        C.universeRetryInFlight = null;
+        release();
         throw e;
       });
       C.universeRetryInFlight = p;
+      var started;
+      try { started = loadUniverseResolved(); } catch (e) { fail(e); return p; }
+      Promise.resolve(started).then(settle, fail);
       return p;
     };
 
@@ -612,6 +640,26 @@
       show(P.LOADING_CAPABILITY, P.UX_PAGE.LOADING_CAPABILITY, []);
       return Promise.resolve(arb.whenReady(['capabilities']))
         .then(function () { return capabilityOk(); }, function () { return capabilityOk(); });
+    }
+
+    /* P1-B8D-R10E-F1 — ONE RENDERER FOR THE REFUSED UNIVERSE, so a settled retry can redraw the
+       SAME box without reading anything again. It reads `C.universeRetryInFlight` truthfully: the
+       busy state a person sees is the request state, never a UI-only flag kept beside it. Called
+       from the read's own failure branch, and once more from `retryUniverse` AFTER the latch is
+       cleared — which is the ordering this round exists to correct. It issues no request; that is
+       asserted as a number rather than described. */
+    function renderUniverseRefusal(u) {
+      /* FAIL CLOSED: no list, no controls. */
+      if (siteHost) { while (siteHost.firstChild) siteHost.removeChild(siteHost.firstChild); }
+      var ux = SU.UX[u.state] || SU.UX.SOURCE_NOT_CONNECTED;
+      /* P1-B8D-R10E — AND THE ONE STATE THAT MUST NOT GET A BUTTON IS THE ONE THAT LOOKS
+         MOST LIKE A FAILURE FROM HERE. `SOURCE_EMPTY` is a site list that WAS read and is
+         empty; the table refuses it, so an empty universe and an unread universe stay two
+         different sentences with two different affordances — which is the whole distinction
+         §7 asks to preserve, expressed as markup rather than as prose. */
+      return show(u.state, { may_analyse: false, uses_fixture: false,
+        severity: ux.severity, headline: ux.headline, detail: ux.detail }, u.refusals,
+        retryAction(u.state, function () { C.retryUniverse(); }, !!C.universeRetryInFlight));
     }
 
     /** STEP 1 + 2. The capability, then the universe. Never the workspace. */
@@ -691,24 +739,23 @@
           P.UX_PAGE.SITE_UNIVERSE_NOT_AVAILABLE, [{ code: 'ACCESSOR_HAS_NO_SITE_UNIVERSE_READ' }]));
       }
 
-      show(P.LOADING_SITE_UNIVERSE, P.UX_PAGE.LOADING_SITE_UNIVERSE, []);
+      /* P1-B8D-R10E-F1 — AND THE CONTROL DOES NOT VANISH WHILE ITS OWN READ IS OPEN EITHER.
+         `busyAction` says this in so many words a few hundred lines up, and the universe path was
+         the one place that did not honour it: `retryUniverse` drew the busy button and this line
+         replaced it a moment later with a bare "Loading sites…" that has no control at all. A
+         person who pressed it saw it disappear, which reads as the click having been swallowed,
+         and it takes the disabled state and `aria-busy` with it so a screen reader is told nothing.
+         The control is kept ONLY while a retry is genuinely in flight — a first load has no button
+         to keep, and the latch is the honest test for which of the two this is. */
+      show(P.LOADING_SITE_UNIVERSE, P.UX_PAGE.LOADING_SITE_UNIVERSE, [],
+        C.universeRetryInFlight ? busyAction(function () { C.retryUniverse(); }) : null);
       C.requests.siteUniverse++;
       return Promise.resolve(accessor.getSiteUniverse({ signal: opts.signal }))
         .then(function (env) {
           var u = SU.adapt(env);
           C.universe = u;
           if (u.state !== 'OK') {
-            /* FAIL CLOSED: no list, no controls. */
-            if (siteHost) { while (siteHost.firstChild) siteHost.removeChild(siteHost.firstChild); }
-            var ux = SU.UX[u.state] || SU.UX.SOURCE_NOT_CONNECTED;
-            /* P1-B8D-R10E — AND THE ONE STATE THAT MUST NOT GET A BUTTON IS THE ONE THAT LOOKS
-               MOST LIKE A FAILURE FROM HERE. `SOURCE_EMPTY` is a site list that WAS read and is
-               empty; the table refuses it, so an empty universe and an unread universe stay two
-               different sentences with two different affordances — which is the whole distinction
-               §7 asks to preserve, expressed as markup rather than as prose. */
-            return show(u.state, { may_analyse: false, uses_fixture: false,
-              severity: ux.severity, headline: ux.headline, detail: ux.detail }, u.refusals,
-              retryAction(u.state, function () { C.retryUniverse(); }, !!C.universeRetryInFlight));
+            return renderUniverseRefusal(u);
           }
           // The initial narrow resolves any tier that has exactly one value, and nothing else.
           return C.select(isObj(opts.scope) ? opts.scope : {});

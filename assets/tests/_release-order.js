@@ -382,7 +382,14 @@ var ROUND_TOKENS = [
      existed), the board controller (three refusals gained a button, and only the codes that can
      honestly change got one) and the board stylesheet. Appended, never edited in place — the
      series is the record of what was served. */
-  'userretry-p1b8dr10e-20260915'];
+  'userretry-p1b8dr10e-20260915',
+  /* PRODUCT-STRATEGY-P1-B8D-R10E-F1 — the universe retry settles before it is redrawn.
+     R10E gave the site-universe refusal a control; a live gate then found that a retry which
+     FAILED left that control disabled and aria-busy forever, about a read that had already
+     finished failing, because the latch was cleared in the continuation that ran after the
+     render. One shipped file changed: the board controller. Appended, never edited in place —
+     the series is the record of what was served. */
+  'universesettle-p1b8dr10ef1-20260915'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the
