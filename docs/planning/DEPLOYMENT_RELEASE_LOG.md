@@ -3176,10 +3176,53 @@ SWEEP
   which counts the four suite-name lines alongside the thirteen assertions; both numbers describe the
   same baseline and the assertion count is thirteen.
 
-  POST — PROVISIONAL UNTIL MEASURED. The POST sweep runs against the commit this entry is part of and
-  therefore cannot be recorded inside it. Its result is reported in the round's completion report and
-  must be written here before this round is treated as closed. Nothing in this file may be read as a
-  POST result until that happens.
+  POST  (fresh detached worktree @ 2635c56, sequential, all suites)
+                                                      477 suites   4 flagged   0 survived   0 PROBE ERROR
+
+  MEASURED, not projected, and measured on the commit bytes rather than on a working tree. The suite
+  count rose by one because this round ADDS one suite; the flagged set is the same four, and the
+  thirteen failing assertions inside them are VERBATIM IDENTICAL to PRE — extracted by running those
+  four suites with one identical command at each end and diffing the two captures:
+
+        diff  baseline @ dc3f6fd   baseline @ 2635c56    →  0 differences
+
+  NEW FAILURES: 0.  The three that appeared at 2636d8d — activation G6 and shell-integration E2b/E4 —
+  were assertions superseded at 2635c56 for the reason recorded under TESTS, not failures tolerated:
+
+        product-strategy-activation-p1-b8d              348/1  →  351/0/18/0
+        product-strategy-shell-integration-p1-b7        169/2  →  180/0/12/0
+        product-strategy-capability-bootstrap-p1-b8d-r10d      205/0/32/0   (green at both)
+
+  FINAL RECONCILED POST = NOT YET MEASURED. The commits below that reconcile this branch with the
+  tracked workspace commit on main, and this ledger edit itself, come AFTER the sweep above. The
+  figures on this page therefore speak for 2635c56 and for nothing later. They may not be read as a
+  result for the reconciled HEAD until that sweep is run and written here.
+
+RECONCILIATION
+-------------------------------------------------------------------------------------------------------
+  MAIN moved while this round was under test, by an operation outside it. The commit is accepted and
+  its content was verified before it was taken: it changes ONE file and adds FIVE lines.
+
+    2636d8d   PRODUCTION IMPLEMENTATION.    the added .gs field, the three shipped modules, index.html,
+                                            the new R10D suite, the docs, the cache token
+    2635c56   LEGACY GATE ALIGNMENT.        two test files only. Three assertions superseded and
+                                            rewritten with the reason attached; no production byte
+    147fc86   MAIN TRACKED WORKSPACE.       Oeration.code-workspace, +5 lines, authored outside this
+                                            round. 0 runtime, 0 tests, 0 docs, 0 .gs
+    merge     TOPOLOGY RECONCILIATION ONLY. --no-ff merge of origin/main into this branch, so that
+                                            147fc86 becomes an ancestor and MAIN can take this branch
+                                            by fast-forward. It carries nothing else: the merge diff
+                                            against 2635c56 is exactly those five workspace lines.
+
+  Oeration.code-workspace IS NOW TRACKED MULTI-ROOT WORKSPACE CONFIG. It was previously treated as
+  user-owned IDE configuration to be kept out of every commit; from 147fc86 it is a tracked file with
+  a committed value. Two roots, `name` + `path` only, no tasks/launch/settings/extensions block, no
+  absolute path, no third root, nothing sensitive. It is IDE configuration still: it is not shipped,
+  not read by any runtime, and NOT PART OF ANY DEPLOYMENT. THE APPS SCRIPT SYNC LIST IS UNAFFECTED —
+  the R10D .gs increment is still exactly one file, 03_master_data_handlers.gs.
+
+  P1 IS NOT CLOSED. S2 RUNTIME HAS NOT STARTED. LIVE RELIABILITY HAS NOT RUN ON R10D DEPLOYED BYTES,
+  because those bytes are not deployed. Reconciling the topology changes none of those three.
 
 CACHE TOKEN
 -------------------------------------------------------------------------------------------------------
