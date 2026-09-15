@@ -3193,10 +3193,29 @@ SWEEP
         product-strategy-shell-integration-p1-b7        169/2  →  180/0/12/0
         product-strategy-capability-bootstrap-p1-b8d-r10d      205/0/32/0   (green at both)
 
-  FINAL RECONCILED POST = NOT YET MEASURED. The commits below that reconcile this branch with the
-  tracked workspace commit on main, and this ledger edit itself, come AFTER the sweep above. The
-  figures on this page therefore speak for 2635c56 and for nothing later. They may not be read as a
-  result for the reconciled HEAD until that sweep is run and written here.
+  FINAL RECONCILED POST  (fresh detached worktree @ e1a2827, sequential, all suites)
+                                                      477 suites   4 flagged   0 survived   0 PROBE ERROR
+
+  RE-MEASURED ON THE RECONCILED BYTES, not carried over from 2635c56. The merge and the ledger edit
+  above it touch two files, neither of which any suite loads, so the expectation was that nothing
+  moves — but an expectation is not a measurement, and the sweep was run rather than assumed. It was
+  run in a worktree of its own (km-r10d-post-reconciled), never reusing the one that measured
+  2635c56, so a stale generated page could not answer for the new commit.
+
+        exit != 0             the same four baseline suites, and no others
+        new failures          0
+        baseline assertions   diff against dc3f6fd  →  0 differences
+                              diff against 2635c56  →  0 differences
+        activation            351/0/18/0
+        shell integration     180/0/12/0
+        capability bootstrap  205/0/32/0
+
+  Three independent sweeps now agree on the same baseline, word for word: dc3f6fd, 2635c56, e1a2827.
+
+  ONE COMMIT SITS ABOVE THE SWEPT ONE — the ledger commit recording these figures, which cannot be
+  inside the commit it describes. It changes this file and nothing else, and every product and test
+  byte in it is blob-identical to e1a2827. No suite was re-run for it beyond the documentation and
+  cache-identity gates.
 
 RECONCILIATION
 -------------------------------------------------------------------------------------------------------
