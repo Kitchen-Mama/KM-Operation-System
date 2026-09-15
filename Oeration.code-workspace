@@ -1,7 +1,12 @@
 {
 	"folders": [
 		{
+			"name": "MAIN — Operation System (Production)",
 			"path": "../Operation System"
+		},
+		{
+			"name": "SANDBOX — Product Strategy Draft",
+			"path": "../wt-product-strategy-board-p0"
 		}
 	]
 }
