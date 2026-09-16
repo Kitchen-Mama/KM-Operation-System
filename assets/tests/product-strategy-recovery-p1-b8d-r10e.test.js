@@ -1142,6 +1142,668 @@ function runRetryBlock(bootstrapImpl) {
       });
   })
 
+/* =============================================================================================
+   §L — DOM OWNERSHIP AFTER UNMOUNT (P1-B8D-R10E-F2).
+
+   MEASURED ON DEPLOYED F1 BYTES. A controlled gate held a universe retry open, routed away, and
+   watched the board for 140 seconds: at the read's own 60-second budget the settlement wrote a
+   disabled, aria-busy "Retrying..." control into a section that never became visible again, and
+   left it there. 0 requests, 0 throws -- and a DOM mutation into a page the controller no longer
+   owned. `C.alive` already existed and already meant exactly this; the three RETRY continuations
+   honoured it and the two READ continuations did not.
+
+   The unmount is simulated by setting `alive` false, which is what §H already does and what H4
+   pins `onUnmount` to actually do -- so the simulation cannot drift away from the lifecycle.
+   ============================================================================================= */
+  .then(function () {
+    section('SL - a settled read does not write into a page it no longer owns');
+
+    /* A SERIALISER THE TEST DOM ACTUALLY SUPPORTS. The first version of this section compared
+       `innerHTML`, which this lightweight DOM does not implement -- every snapshot was the string
+       "undefined", so every "unchanged" assertion compared undefined to undefined and passed no
+       matter what the page did. The fake supports tagName, attributes, textContent and childNodes,
+       so the tree is walked and written out from those. */
+    function serialize(n) {
+      if (!n) return '';
+      if (n.nodeType === 3 || (!n.tagName && typeof n.textContent === 'string')) {
+        return String(n.textContent || '');
+      }
+      var out = '<' + String(n.tagName || '?').toLowerCase();
+      ['data-cy', 'class', 'id', 'aria-busy', 'aria-live', 'disabled', 'type'].forEach(function (a) {
+        var v = (n.getAttribute && n.getAttribute(a));
+        if (v !== null && v !== undefined && v !== '') out += ' ' + a + '="' + v + '"';
+      });
+      if (n.disabled === true) out += ' [disabled]';
+      out += '>';
+      (n.childNodes || []).forEach(function (k) { out += serialize(k); });
+      return out + '</' + String(n.tagName || '?').toLowerCase() + '>';
+    }
+    /* THE BOARD HOSTS ARE PART OF THE PAGE'S DOM TOO, and they are what `clearBoard()` empties --
+       so a guard that runs one line too late is invisible unless they are in the snapshot. That is
+       exactly the mutant LM3 makes, and with only the two state hosts here it survived. */
+    function hostSnapshot(doc) {
+      var out = serialize(doc.getElementById('psb-state-host'))
+        + '||' + serialize(doc.getElementById('psb-site-host'))
+        + '||' + serialize(doc.getElementById('psb-filters'));
+      ['nav', 'crumbs', 'banner', 'scope', 'view'].forEach(function (id) {
+        out += '||' + serialize(doc.getElementById(id));
+      });
+      return out;
+    }
+    function domOf(m) { return hostSnapshot(m.dom.document); }
+    function deferredUni(firstRefusal) {
+      var acc = {
+        calls: { universe: 0, workspace: 0 }, release: null,
+        isEnabled: ACC.isEnabled, capabilityState: ACC.capabilityState,
+        capabilityFailure: ACC.capabilityFailure,
+        getSiteUniverse: function () {
+          acc.calls.universe++;
+          if (acc.calls.universe === 1) return Promise.resolve(universeRefusal(firstRefusal || 'HTTP_NOT_FOUND'));
+          return new Promise(function (res) { acc.release = res; });
+        },
+        get: function () { acc.calls.workspace++; return Promise.resolve(wsRefusal()); }
+      };
+      return acc;
+    }
+    function wsRefusal() {
+      return { success: true,
+        data: { normalizedRows: [], counts: null, refusals: [{ code: 'HTTP_NOT_FOUND' }],
+          analysis_permitted: false, filterOptions: null },
+        meta: { action: 'productPricing.workspace.get', refused: true,
+          refusalCode: 'HTTP_NOT_FOUND' }, errors: [] };
+    }
+    /* A GENUINELY ANALYSABLE ANSWER. The first cut of this helper sent zero rows, which the
+       adapter correctly reads as SOURCE_EMPTY -- `may_analyse` false, no board, nothing to park --
+       so L5 and L6 were failing on the fixture rather than on the page. The row shape is the one
+       the pricing contract validates; one row is enough to make the state OK. */
+    function wsRow() {
+      return {
+        identity: 'MSKU:L-1', marketplace_sku_id: 'L-1', master_sku: 'CO1000-R',
+        site_sku: 'B01', product_name: 'Product 1',
+        category: 'Openers', series: 'Classic', variant_group: 'Classic', variant_name: null,
+        company: SITE.company, country: SITE.country, marketplace: SITE.marketplace,
+        marketplace_sku_status: 'active', lifecycle: 'active', currency: 'USD',
+        regular_price: 29.99, minimum_price: 24.99, msrp: 34.99, product_image: null,
+        regional: { regional_detail_id: 'RGD-L-1', site_sku: 'B01',
+          marketplace_product_id: 'MPL-1', product_url: null,
+          packaging_regulation: null, language: 'en' },
+        campaigns: [], analysable: true, source_status: [], missing_reasons: [], findings: [],
+        provenance: { membership: 'marketplace_skus (company + country + marketplace)' }
+      };
+    }
+    function wsOk() {
+      var rows = [wsRow()];
+      return { success: true,
+        data: { normalizedRows: rows, refusals: [], findings: [], analysis_permitted: true,
+          counts: { siteSkuCount: rows.length },
+          filterOptions: { categories: [{ value: 'Openers' }], series: [{ value: 'Classic' }] },
+          pagination: null, scope: null, sourceState: 'READY',
+          schema: { contract_version: 2, read_at: '2026-09-11T02:14:07.000Z',
+            read_at_is: 'WHEN_THE_SERVER_READ_THE_TABLES', source_modified_at: null,
+            build: 'F2-TEST' } },
+        meta: { action: 'productPricing.workspace.get', build: 'test' }, errors: [] };
+    }
+
+    /* ---- L1: a FAILED universe settlement after unmount ---- */
+    capServerTrue();
+    var accL = deferredUni();
+    var mL = mount(accL);
+    var beforeL, readsL, wsL, btnAtUnmountL;
+
+    return mL.c.loadUniverse()
+      .then(function () {
+        retryBtn(mL.dom).click();
+        ok(!!mL.c.universeRetryInFlight, 'L1a the latch is held while the retry is open');
+        mL.c.alive = false;                       // what onUnmount does to the outgoing controller
+        beforeL = domOf(mL);
+        btnAtUnmountL = retryBtn(mL.dom);
+        readsL = accL.calls.universe;
+        wsL = accL.calls.workspace;
+        accL.release(universeRefusal('SOURCE_TIMED_OUT'));
+        return new Promise(function (r) { setTimeout(r, 40); });
+      })
+      .then(function () {
+        eq(domOf(mL), beforeL,
+          'L1b a FAILED settlement after unmount leaves the hosts byte-for-byte unchanged');
+        /* NOT "the button is gone" -- it was on screen when the page was unmounted, because
+           the retry had just been pressed, and leaving it exactly as it was IS the contract.
+           What must not happen is a REDRAW, and a redraw builds a new element: node identity
+           catches that where equal markup would not. `eq` cannot be used on a DOM node --
+           it stringifies, and a node is circular. */
+        ok(retryBtn(mL.dom) === btnAtUnmountL,
+          'L1c the control is the very node left at unmount, not a redrawn one');
+        eq(mL.c.universeRetryInFlight, null, 'L1d the latch is still released');
+        eq(accL.calls.universe - readsL, 0, 'L1e no request followed the unmount');
+        eq(accL.calls.workspace - wsL, 0, 'L1f and no workspace read either');
+      })
+
+      /* ---- L2: a SUCCESSFUL settlement -- the case a show()-only guard would have missed ---- */
+      .then(function () {
+        capServerTrue();
+        var accS = deferredUni();
+        var mS = mount(accS);
+        return mS.c.loadUniverse().then(function () {
+          retryBtn(mS.dom).click();
+          mS.c.alive = false;
+          var before = domOf(mS);
+          var reads = accS.calls.universe;
+          accS.release(universeOk([SITE]));                 // this retry SUCCEEDS
+          return new Promise(function (r) { setTimeout(r, 40); }).then(function () {
+            eq(domOf(mS), before,
+              'L2a a SUCCESSFUL settlement after unmount changes nothing in the hosts');
+            ok(mS.dom.document.getElementById('psbSiteCompany') === null,
+              'L2b the chooser is not rebuilt into a page nobody is on');
+            eq(accS.calls.workspace, 0,
+              'L2c and the resolved scope issues NO workspace read  [this guard stops a REQUEST]');
+            eq(accS.calls.universe - reads, 0, 'L2d and no further universe read');
+            eq(mS.c.universeRetryInFlight, null, 'L2e the latch is released either way');
+          });
+        });
+      })
+
+      /* ---- L3: the capability path ---- */
+      .then(function () {
+        var release = null, calls = 0;
+        global.KM.DB.retryClientCapabilities = function () {
+          calls++;
+          return new Promise(function (res) { release = res; });
+        };
+        capFailed('SOURCE_TIMED_OUT');
+        var accC = {
+          calls: { universe: 0, workspace: 0 },
+          isEnabled: ACC.isEnabled, capabilityState: ACC.capabilityState,
+          capabilityFailure: ACC.capabilityFailure,
+          getSiteUniverse: function () { accC.calls.universe++; return Promise.resolve(universeOk([SITE])); },
+          get: function () { accC.calls.workspace++; return Promise.resolve(wsRefusal()); }
+        };
+        var mC = mount(accC);
+        return mC.c.loadUniverse().then(function () {
+          var b = retryBtn(mC.dom);
+          ok(!!b, 'L3a a capability refusal offers a control');
+          b.click();
+          eq(calls, 1, 'L3b the click reached the shared bootstrap');
+          mC.c.alive = false;
+          var before = domOf(mC);
+          capServerTrue();                         // the shared mirror moves under its OWN owner
+          release({ ok: true });
+          return new Promise(function (r) { setTimeout(r, 40); }).then(function () {
+            eq(domOf(mC), before,
+              'L3c a capability settlement after unmount does not render into the page');
+            eq(ACC.capabilityState(), 'SERVER_TRUE',
+              'L3d while the shared mirror is still free to move under its own authority');
+            eq(mC.c.capabilityRetrying, false, 'L3e and the capability latch is released');
+          });
+        });
+      })
+
+      /* ---- L4: the workspace path, whose success branch bypasses show() entirely ---- */
+      .then(function () {
+        capServerTrue();
+        var released = null;
+        var accW = {
+          calls: { universe: 0, workspace: 0 },
+          isEnabled: ACC.isEnabled, capabilityState: ACC.capabilityState,
+          capabilityFailure: ACC.capabilityFailure,
+          getSiteUniverse: function () { accW.calls.universe++; return Promise.resolve(universeOk([SITE])); },
+          get: function () {
+            accW.calls.workspace++;
+            return new Promise(function (res) { released = res; });
+          }
+        };
+        var boardStub = { mount: function () { return true; }, unmount: function () {},
+          notices: function () { return []; } };
+        var mW = mount(accW, boardStub);
+        /* NOT AWAITED, DELIBERATELY. A single complete site auto-narrows, so `loadUniverse` runs
+           straight into the workspace read -- and this scenario is precisely the one where that
+           read is never answered until we say so. Awaiting the outer promise would therefore wait
+           on the very request the test is holding open, and the suite would hang rather than fail. */
+        mW.c.loadUniverse();
+        return new Promise(function (r) { setTimeout(r, 30); }).then(function () {
+          ok(accW.calls.workspace >= 1, 'L4a a workspace read is open');
+          ok(typeof released === 'function', 'L4b and it is genuinely unresolved');
+          mW.c.alive = false;
+          var before = domOf(mW);
+          released(wsOk());                        // it answers AFTER the page has gone
+          return new Promise(function (r) { setTimeout(r, 40); }).then(function () {
+            eq(domOf(mW), before,
+              'L4c a workspace settlement after unmount writes no rows, refusal, loading or focus');
+            eq(mW.c.inFlight, false, 'L4d the workspace latch is released');
+            eq(mW.c.mounted, false, 'L4e and no board is mounted into the dead page');
+          });
+        });
+      })
+
+      /* ---- L5: THE GUARD MUST NOT EAT A LEGITIMATE RENDER. Without this, every assertion above
+                 could be satisfied by a page that simply never draws anything. ---- */
+      .then(function () {
+        capServerTrue();
+        var accF = {
+          calls: { universe: 0, workspace: 0 },
+          isEnabled: ACC.isEnabled, capabilityState: ACC.capabilityState,
+          capabilityFailure: ACC.capabilityFailure,
+          getSiteUniverse: function () { accF.calls.universe++; return Promise.resolve(universeOk([SITE])); },
+          get: function () { accF.calls.workspace++; return Promise.resolve(wsOk()); }
+        };
+        var boardStub = { mount: function () { return true; }, unmount: function () {},
+          notices: function () { return []; } };
+        var mF = mount(accF, boardStub);
+        ok(mF.c.alive === true, 'L5a a freshly created controller is alive');
+        return mF.c.loadUniverse().then(function () {
+          eq(accF.calls.universe, 1, 'L5b the universe is read normally on a live controller');
+          ok(accF.calls.workspace >= 1, 'L5c and a resolved scope still reads the workspace');
+          ok(String(domOf(mF)).indexOf('psb-state-host') >= 0 || String(domOf(mF)).length > 4,
+             'L5d the hosts are present and serialise to real markup');
+          ok(mF.c.mounted === true, 'L5e and the board mounts on a live controller');
+        });
+      })
+
+      /* ---- L6: the route-return contract, BOTH branches. An always-0 or always-1 answer is
+                 wrong; which is right depends on whether a usable snapshot exists. ---- */
+      .then(function () {
+        capServerTrue();
+        var accR = {
+          calls: { universe: 0, workspace: 0 },
+          isEnabled: ACC.isEnabled, capabilityState: ACC.capabilityState,
+          capabilityFailure: ACC.capabilityFailure,
+          getSiteUniverse: function () { accR.calls.universe++; return Promise.resolve(universeRefusal('HTTP_NOT_FOUND')); },
+          get: function () { accR.calls.workspace++; return Promise.resolve(wsOk()); }
+        };
+        var mR = mount(accR);
+        return mR.c.loadUniverse().then(function () {
+          ok(!mR.c.universe || mR.c.universe.state !== 'OK', 'L6a the universe is unresolved');
+          mR.c.alive = false;
+          eq(mR.c.restore(), false,
+            'L6b an unresolved universe does not restore, so a return is a fresh mount');
+          var before = accR.calls.universe;
+          var m2 = mount(accR);                    // the fresh mount that a return performs
+          return m2.c.loadUniverse().then(function () {
+            eq(accR.calls.universe - before, 1,
+              'L6c route return with no usable snapshot performs exactly ONE fresh universe read');
+          });
+        });
+      })
+      .then(function () {
+        capServerTrue();
+        var accV = {
+          calls: { universe: 0, workspace: 0 },
+          isEnabled: ACC.isEnabled, capabilityState: ACC.capabilityState,
+          capabilityFailure: ACC.capabilityFailure,
+          getSiteUniverse: function () { accV.calls.universe++; return Promise.resolve(universeOk([SITE])); },
+          get: function () { accV.calls.workspace++; return Promise.resolve(wsOk()); }
+        };
+        var boardStub = { mount: function () { return true; }, unmount: function () {},
+          notices: function () { return []; } };
+        var mV = mount(accV, boardStub);
+        return mV.c.loadUniverse().then(function () {
+          var uBefore = accV.calls.universe, wBefore = accV.calls.workspace;
+          ok(mV.c.mounted === true, 'L6d a complete site leaves a mounted board to park');
+          mV.c.alive = false;                      // onUnmount
+          eq(mV.c.restore(), true, 'L6e a controller holding a complete site restores');
+          ok(mV.c.alive === true, 'L6f restore makes it live again, so the guard does not strand it');
+          eq(accV.calls.universe - uBefore, 0,
+            'L6g route return WITH a usable snapshot performs zero unnecessary rereads');
+          eq(accV.calls.workspace - wBefore, 0, 'L6h and no workspace reread either');
+          ok(String(domOf(mV)).length > 0, 'L6i and the restored page is drawn, not merely silent');
+        });
+      });
+  })
+
+/* =============================================================================================
+   §LMF — THE OWNERSHIP MUTANTS, ALL DRIVEN RATHER THAN READ.
+
+   No source regex separates a guard that runs before the first write from one that runs after it:
+   both spellings contain the same characters. Each mutant here mounts the mutated page, drives it
+   to the moment §L drives the real one to, and returns the exact value the paired assertion checks.
+   ============================================================================================= */
+  .then(function () {
+    section('SLMF - ownership-guard mutants, mounted and driven');
+
+    var SHOW_GUARD = "      if (!C.alive) {\n"
+      + "        return { state: state, mounted: false, may_analyse: false, refusals: refusals || [] };\n"
+      + "      }\n";
+    var REFUSAL_GUARD = "      if (!C.alive) {\n"
+      + "        return { state: u.state, mounted: false, may_analyse: false, refusals: u.refusals || [] };\n"
+      + "      }\n";
+    var READ_GUARD = "          if (!C.alive) {\n"
+      + "            return { state: u.state, mounted: false, may_analyse: false, refusals: u.refusals || [] };\n"
+      + "          }\n";
+
+    /* The same analysable answer §L uses, so a mutant and its paired assertion see one fixture. */
+    function readyWorkspace() {
+      var row = {
+        identity: 'MSKU:L-1', marketplace_sku_id: 'L-1', master_sku: 'CO1000-R',
+        site_sku: 'B01', product_name: 'Product 1',
+        category: 'Openers', series: 'Classic', variant_group: 'Classic', variant_name: null,
+        company: SITE.company, country: SITE.country, marketplace: SITE.marketplace,
+        marketplace_sku_status: 'active', lifecycle: 'active', currency: 'USD',
+        regular_price: 29.99, minimum_price: 24.99, msrp: 34.99, product_image: null,
+        regional: { regional_detail_id: 'RGD-L-1', site_sku: 'B01',
+          marketplace_product_id: 'MPL-1', product_url: null,
+          packaging_regulation: null, language: 'en' },
+        campaigns: [], analysable: true, source_status: [], missing_reasons: [], findings: [],
+        provenance: { membership: 'marketplace_skus (company + country + marketplace)' }
+      };
+      return { success: true,
+        data: { normalizedRows: [row], refusals: [], findings: [], analysis_permitted: true,
+          counts: { siteSkuCount: 1 },
+          filterOptions: { categories: [{ value: 'Openers' }], series: [{ value: 'Classic' }] },
+          pagination: null, scope: null, sourceState: 'READY',
+          schema: { contract_version: 2, read_at: '2026-09-11T02:14:07.000Z',
+            read_at_is: 'WHEN_THE_SERVER_READ_THE_TABLES', source_modified_at: null,
+            build: 'F2-TEST' } },
+        meta: { action: 'productPricing.workspace.get', build: 'test' }, errors: [] };
+    }
+    function pageFrom(src) {
+      var sandbox = { module: { exports: {} }, console: console, Promise: Promise,
+        setTimeout: setTimeout, clearTimeout: clearTimeout };
+      sandbox.globalThis = sandbox;
+      sandbox.exports = sandbox.module.exports;
+      vm.createContext(sandbox);
+      vm.runInContext(src, sandbox, { filename: 'psb-mutant-f2.js' });
+      return sandbox.module.exports;
+    }
+    function mountF(P2, accessor, board) {
+      var dom = H.makeDom(partialSkeleton);
+      return { dom: dom, c: P2.create({ document: dom.document, accessor: accessor,
+        siteUniverse: UNI, liveAdapter: LIVE, board: board || null }) };
+    }
+    /* A SERIALISER THE TEST DOM ACTUALLY SUPPORTS. The first version of this section compared
+       `innerHTML`, which this lightweight DOM does not implement -- every snapshot was the string
+       "undefined", so every "unchanged" assertion compared undefined to undefined and passed no
+       matter what the page did. The fake supports tagName, attributes, textContent and childNodes,
+       so the tree is walked and written out from those. */
+    function serialize(n) {
+      if (!n) return '';
+      if (n.nodeType === 3 || (!n.tagName && typeof n.textContent === 'string')) {
+        return String(n.textContent || '');
+      }
+      var out = '<' + String(n.tagName || '?').toLowerCase();
+      ['data-cy', 'class', 'id', 'aria-busy', 'aria-live', 'disabled', 'type'].forEach(function (a) {
+        var v = (n.getAttribute && n.getAttribute(a));
+        if (v !== null && v !== undefined && v !== '') out += ' ' + a + '="' + v + '"';
+      });
+      if (n.disabled === true) out += ' [disabled]';
+      out += '>';
+      (n.childNodes || []).forEach(function (k) { out += serialize(k); });
+      return out + '</' + String(n.tagName || '?').toLowerCase() + '>';
+    }
+    /* THE BOARD HOSTS ARE PART OF THE PAGE'S DOM TOO, and they are what `clearBoard()` empties --
+       so a guard that runs one line too late is invisible unless they are in the snapshot. That is
+       exactly the mutant LM3 makes, and with only the two state hosts here it survived. */
+    function hostSnapshot(doc) {
+      var out = serialize(doc.getElementById('psb-state-host'))
+        + '||' + serialize(doc.getElementById('psb-site-host'))
+        + '||' + serialize(doc.getElementById('psb-filters'));
+      ['nav', 'crumbs', 'banner', 'scope', 'view'].forEach(function (id) {
+        out += '||' + serialize(doc.getElementById(id));
+      });
+      return out;
+    }
+    function hostsOf(dom) { return hostSnapshot(dom.document); }
+    function deferredAcc(wsAnswer) {
+      var acc = {
+        calls: { universe: 0, workspace: 0 }, release: null,
+        isEnabled: ACC.isEnabled, capabilityState: ACC.capabilityState,
+        capabilityFailure: ACC.capabilityFailure,
+        getSiteUniverse: function () {
+          acc.calls.universe++;
+          if (acc.calls.universe === 1) return Promise.resolve(universeRefusal('HTTP_NOT_FOUND'));
+          return new Promise(function (res) { acc.release = res; });
+        },
+        get: function () { acc.calls.workspace++; return Promise.resolve(wsAnswer); }
+      };
+      return acc;
+    }
+    function mutateAsync2(label, from, to, probe) {
+      if (SRC.page.indexOf(from) < 0) {
+        mutSurvived++;
+        console.error('  FAIL ' + label + ' - PROBE ERROR: anchor not found');
+        return Promise.resolve();
+      }
+      return Promise.resolve()
+        .then(function () { return probe(SRC.page.replace(from, to)); })
+        .then(function (v) { return v === false; }, function () { return true; })
+        .then(function (caught) {
+          if (caught) { mutCaught++; console.log('  ok   ' + label + ' (caught)'); }
+          else { mutSurvived++; console.error('  FAIL ' + label + ' - MUTANT SURVIVED'); }
+        });
+    }
+    /* THE GUARDS ARE DEFENCE IN DEPTH, SO A MUTANT MUST BE AIMED WHERE ITS TARGET STANDS ALONE.
+       Removing the guard in `show()` changes nothing on the universe failure path, because the read
+       continuation refuses before `show` is ever reached -- that redundancy is the design working,
+       not a hole. `show()` IS the only guard on the CAPABILITY settlement, so that is where the
+       show()-guard mutants are driven. L3c is the paired assertion. */
+    function capabilityProbe(src) {
+      var release = null;
+      global.KM.DB.retryClientCapabilities = function () {
+        return new Promise(function (res) { release = res; });
+      };
+      capFailed('SOURCE_TIMED_OUT');
+      var acc = {
+        calls: { universe: 0, workspace: 0 },
+        isEnabled: ACC.isEnabled, capabilityState: ACC.capabilityState,
+        capabilityFailure: ACC.capabilityFailure,
+        getSiteUniverse: function () { acc.calls.universe++; return Promise.resolve(universeOk([SITE])); },
+        get: function () { acc.calls.workspace++; return Promise.resolve(readyWorkspace()); }
+      };
+      var m = mountF(pageFrom(src), acc);
+      return m.c.loadUniverse().then(function () {
+        var b = retryBtn(m.dom);
+        if (!b) return false;                            // no control: the probe never got started
+        b.click();
+        m.c.alive = false;
+        var before = hostsOf(m.dom);
+        capServerTrue();
+        if (typeof release === 'function') release({ ok: true });
+        return new Promise(function (r) { setTimeout(r, 40); }).then(function () {
+          return hostsOf(m.dom) === before;              // exactly what L3c asserts
+        });
+      });
+    }
+    /* A CHOOSER IS ON SCREEN WHEN THE PAGE DIES. `renderUniverseRefusal` empties `siteHost`
+       BEFORE it calls `show`, so that write is above `show`'s reach -- and it is only observable
+       when there is a chooser there to lose. Returns whether the chooser survived. */
+    function chooserProbe(src) {
+      capServerTrue();
+      var acc = {
+        calls: { universe: 0, workspace: 0 }, release: null,
+        isEnabled: ACC.isEnabled, capabilityState: ACC.capabilityState,
+        capabilityFailure: ACC.capabilityFailure,
+        getSiteUniverse: function () {
+          acc.calls.universe++;
+          if (acc.calls.universe === 1) return Promise.resolve(universeOk([SITE, SITE_B]));
+          return new Promise(function (res) { acc.release = res; });
+        },
+        get: function () { acc.calls.workspace++; return Promise.resolve(readyWorkspace()); }
+      };
+      var m = mountF(pageFrom(src), acc);
+      return m.c.loadUniverse().then(function () {
+        if (!m.dom.document.getElementById('psbSiteCompany')) return false;
+        m.c.loadUniverse();                       // a second read, which will fail
+        return new Promise(function (r) { setTimeout(r, 20); }).then(function () {
+          m.c.alive = false;
+          acc.release(universeRefusal('SOURCE_TIMED_OUT'));
+          return new Promise(function (r2) { setTimeout(r2, 40); }).then(function () {
+            return !!m.dom.document.getElementById('psbSiteCompany');
+          });
+        });
+      });
+    }
+    /* WHERE `show()`'s GUARD STANDS ALONE. On the universe failure path `renderUniverseRefusal`
+       refuses first, so removing the central guard changes nothing there -- correctly. The
+       WORKSPACE REFUSAL branch is deliberately left to fall through to `show`, so that is the path
+       on which the central guard is the only thing holding the line, and the only path where a
+       mutant against it means anything. L4c is the paired assertion. */
+    function workspaceRefusalProbe(src) {
+      capServerTrue();
+      var released = null;
+      var acc = {
+        calls: { universe: 0, workspace: 0 },
+        isEnabled: ACC.isEnabled, capabilityState: ACC.capabilityState,
+        capabilityFailure: ACC.capabilityFailure,
+        getSiteUniverse: function () { acc.calls.universe++; return Promise.resolve(universeOk([SITE])); },
+        get: function () {
+          acc.calls.workspace++;
+          return new Promise(function (res) { released = res; });
+        }
+      };
+      /* A BOARD THAT LEAVES SOMETHING BEHIND. `clearBoard()` empties `#view`, and a guard that
+         runs after it would be undetectable against an empty one. */
+      var doc0 = null;
+      var board = {
+        mount: function () {
+          var v = doc0 && doc0.getElementById('view');
+          if (v) { var n = doc0.createElement('div'); n.setAttribute('class', 'psb-board-output');
+            v.appendChild(n); }
+          return true;
+        },
+        unmount: function () {}, notices: function () { return []; }
+      };
+      var m = mountF(pageFrom(src), acc, board);
+      doc0 = m.dom.document;
+      m.c.loadUniverse();                         // not awaited: the workspace read is held open
+      return new Promise(function (r) { setTimeout(r, 30); }).then(function () {
+        if (typeof released !== 'function') return false;   // fixture never opened a read
+        m.c.alive = false;
+        var before = hostsOf(m.dom);
+        released({ success: true,
+          data: { normalizedRows: [], counts: null, refusals: [{ code: 'HTTP_NOT_FOUND' }],
+            analysis_permitted: false, filterOptions: null },
+          meta: { action: 'productPricing.workspace.get', refused: true,
+            refusalCode: 'HTTP_NOT_FOUND' }, errors: [] });
+        return new Promise(function (r2) { setTimeout(r2, 40); }).then(function () {
+          return hostsOf(m.dom) === before;       // exactly what L4c asserts
+        });
+      });
+    }
+    /* Drive a FAILED settlement onto an unmounted controller; report whether the hosts survived.
+       L1b is the paired assertion. */
+    function failureProbe(src) {
+      capServerTrue();
+      var acc = deferredAcc(null);
+      var m = mountF(pageFrom(src), acc);
+      return m.c.loadUniverse().then(function () {
+        retryBtn(m.dom).click();
+        m.c.alive = false;
+        var before = hostsOf(m.dom);
+        acc.release(universeRefusal('SOURCE_TIMED_OUT'));
+        return new Promise(function (r) { setTimeout(r, 40); }).then(function () {
+          return hostsOf(m.dom) === before;               // exactly what L1b asserts
+        });
+      });
+    }
+    /* And a SUCCESSFUL one; L2a + L2c are the pair. */
+    function successProbe(src) {
+      capServerTrue();
+      var acc = deferredAcc(readyWorkspace());
+      var m = mountF(pageFrom(src), acc);
+      return m.c.loadUniverse().then(function () {
+        retryBtn(m.dom).click();
+        m.c.alive = false;
+        var before = hostsOf(m.dom);
+        acc.release(universeOk([SITE]));
+        return new Promise(function (r) { setTimeout(r, 40); }).then(function () {
+          return hostsOf(m.dom) === before && acc.calls.workspace === 0;
+        });
+      });
+    }
+
+    return mutateAsync2('LM1 the show() ownership guard is removed', SHOW_GUARD, '', workspaceRefusalProbe)
+
+      .then(function () {
+        return mutateAsync2('LM2 the show() guard polarity is inverted',
+          '      if (!C.alive) {\n        return { state: state, mounted: false',
+          '      if (C.alive) {\n        return { state: state, mounted: false',
+          failureProbe);
+      })
+
+      /* LM3 - the guard survives but moves BELOW the first DOM mutation, which is the ordering
+         mistake this programme keeps finding. `clearBoard()` has already emptied the board hosts
+         by the time it runs. The original guard is removed first, or it would mask the moved one. */
+      .then(function () {
+        /* "THE GUARD RUNS AFTER THE FIRST DOM MUTATION", aimed where that is observable.
+           In `show()` it is NOT: the first mutation there is `clearBoard()`, and every read's own
+           loading render clears the board WHILE STILL ALIVE -- so by the time any settlement lands
+           the board hosts are already empty, and moving the guard past them changes nothing anyone
+           can see. In `renderUniverseRefusal` the first mutation is the CHOOSER clear, which is
+           still on screen when the settlement arrives. Same defect class, and measurable. */
+        var CLEAR_CHOOSER = '      /* FAIL CLOSED: no list, no controls. */\n      if (siteHost) { while (siteHost.firstChild) siteHost.removeChild(siteHost.firstChild); }';
+        return mutateAsync2('LM3 the ownership guard runs after the first DOM mutation',
+          REFUSAL_GUARD + CLEAR_CHOOSER,
+          CLEAR_CHOOSER + '\n' + REFUSAL_GUARD,
+          chooserProbe);
+      })
+
+      /* LM4 - the FAILURE path bypasses its own guard, so the chooser is wiped out of a dead page
+         even while show() refuses to draw. show()'s guard is removed too, or it would mask this. */
+      .then(function () {
+        /* WHAT THIS GUARD UNIQUELY PROTECTS IS THE CHOOSER. `renderUniverseRefusal` empties
+           `siteHost` BEFORE it calls `show`, so `show`'s guard cannot save it -- but only when
+           there is a chooser there to lose. The scenario therefore loads a HEALTHY universe first
+           (chooser drawn), then fails a retry, then dies mid-flight. `show`'s guard is left in
+           place: this mutant is about the one write that happens above it. */
+        return mutateAsync2('LM4 a dead controller empties the chooser before show() can refuse',
+          REFUSAL_GUARD, '', chooserProbe);
+      })
+
+      /* LM5 - the SUCCESS path bypasses its guard, so a universe arriving after the page is gone
+         resolves a scope and asks for a workspace nobody is waiting for. */
+      .then(function () {
+        return mutateAsync2('LM5 the success path bypasses the ownership guard', READ_GUARD, '',
+          successProbe);
+      })
+
+      /* LM6 / LM7 - the route-return contract broken in each direction, both driven through the
+         real park/restore decision rather than through a source match. */
+      .then(function () {
+        return mutateAsync2('LM6 route return never reuses a valid snapshot (always rereads)',
+          "      C.alive = true;\n      if (!C.universe || C.universe.state !== 'OK') return false;",
+          '      C.alive = true;\n      return false;',
+          function (src) {
+            capServerTrue();
+            var acc = {
+              calls: { universe: 0, workspace: 0 },
+              isEnabled: ACC.isEnabled, capabilityState: ACC.capabilityState,
+              capabilityFailure: ACC.capabilityFailure,
+              getSiteUniverse: function () { acc.calls.universe++; return Promise.resolve(universeOk([SITE])); },
+              get: function () { acc.calls.workspace++; return Promise.resolve(readyWorkspace()); }
+            };
+            var board = { mount: function () { return true; }, unmount: function () {},
+              notices: function () { return []; } };
+            var m = mountF(pageFrom(src), acc, board);
+            return m.c.loadUniverse().then(function () {
+              m.c.alive = false;
+              return m.c.restore() === true;               // exactly what L6e asserts
+            });
+          });
+      })
+      .then(function () {
+        return mutateAsync2('LM7 route return reuses a snapshot it does not have',
+          "      if (!C.universe || C.universe.state !== 'OK') return false;\n      if (!C.narrowed || !C.narrowed.complete) return false;\n      if (!C.adapter) return false;",
+          '      if (false) return false;\n      if (false) return false;\n      if (false) return false;',
+          function (src) {
+            capServerTrue();
+            var acc = {
+              calls: { universe: 0, workspace: 0 },
+              isEnabled: ACC.isEnabled, capabilityState: ACC.capabilityState,
+              capabilityFailure: ACC.capabilityFailure,
+              getSiteUniverse: function () { acc.calls.universe++; return Promise.resolve(universeRefusal('HTTP_NOT_FOUND')); },
+              get: function () { acc.calls.workspace++; return Promise.resolve(null); }
+            };
+            /* A BOARD STUB, or `restore()` refuses because `board.mount` is missing -- which has
+               nothing to do with the preconditions this mutant removes, and would have made it
+               survive for the wrong reason. */
+            var board = { mount: function () { return true; }, unmount: function () {},
+              notices: function () { return []; } };
+            var m = mountF(pageFrom(src), acc, board);
+            return m.c.loadUniverse().then(function () {
+              m.c.alive = false;
+              return m.c.restore() === false;              // exactly what L6b asserts
+            });
+          });
+      });
+  })
+
 /* ============================================================================================= */
   .then(function () {
     console.log('\n----------------------------------------');

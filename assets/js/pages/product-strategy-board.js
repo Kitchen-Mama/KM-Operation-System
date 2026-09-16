@@ -453,6 +453,16 @@
     C.showBoardNotices = showBoardNotices;
 
     function show(state, ux, refusals, action) {
+      /* P1-B8D-R10E-F2 — THE CENTRAL DOM OWNERSHIP INVARIANT. Every non-board answer this page
+         gives is written here, so this is where "the page I belong to is gone" has to be answered
+         once rather than at each of the callers. A read that takes sixty seconds outlives the visit
+         that started it often enough to have been measured doing so: a universe retry that timed
+         out after the operator had navigated away wrote a disabled, aria-busy "Retrying…" control
+         into a section nobody was looking at, and left it there. Nothing is drawn, and the caller
+         still gets the shape it expects so no continuation has to learn a new return type. */
+      if (!C.alive) {
+        return { state: state, mounted: false, may_analyse: false, refusals: refusals || [] };
+      }
       C.state = state;
       /* P1-B8D-R10E — THE ACTION TRAVELS ON THE STATE DESCRIPTOR, which is where it belongs: `ux`
          already carries everything renderState needs to draw one state, and a fifth positional
@@ -649,6 +659,12 @@
        cleared — which is the ordering this round exists to correct. It issues no request; that is
        asserted as a number rather than described. */
     function renderUniverseRefusal(u) {
+      /* F2 — BEFORE THE CHOOSER IS EMPTIED, not just before the box is drawn. This function clears
+         `siteHost` and only then calls `show`, so a guard living in `show` alone would still let a
+         dead controller wipe the chooser out from under the next visit. */
+      if (!C.alive) {
+        return { state: u.state, mounted: false, may_analyse: false, refusals: u.refusals || [] };
+      }
       /* FAIL CLOSED: no list, no controls. */
       if (siteHost) { while (siteHost.firstChild) siteHost.removeChild(siteHost.firstChild); }
       var ux = SU.UX[u.state] || SU.UX.SOURCE_NOT_CONNECTED;
@@ -755,7 +771,19 @@
           var u = SU.adapt(env);
           C.universe = u;
           if (u.state !== 'OK') {
+            /* The refusal renders through `show`, which carries the central guard -- so the
+               failure branch is deliberately NOT stopped here. Guarding it twice would make the
+               central invariant unkillable by any test, which is a comment rather than a
+               protection. */
             return renderUniverseRefusal(u);
+          }
+          /* F2 — THIS ONE STOPS A REQUEST, WHICH NO RENDER GUARD CAN. `C.select` resolves any tier
+             with a single value and, once all three are resolved, READS THE WORKSPACE. A universe
+             that succeeds after the page has gone would otherwise issue a fresh read for a page
+             nobody is on. The answer itself is kept -- `C.universe` is assigned above, so a restore
+             coming back to this controller still finds it. */
+          if (!C.alive) {
+            return { state: u.state, mounted: false, may_analyse: false, refusals: u.refusals || [] };
           }
           // The initial narrow resolves any tier that has exactly one value, and nothing else.
           return C.select(isObj(opts.scope) ? opts.scope : {});
@@ -977,6 +1005,16 @@
             return show('SOURCE_NOT_CONNECTED',
               { severity: 'stop', headline: 'The board could not start.',
                 detail: 'psb-board-ui.js is not loaded.' }, [{ code: 'BOARD_UI_NOT_LOADED' }]);
+          }
+          /* F2 — THE SUCCESS BRANCH IS THE ONE `show` CANNOT COVER: it empties the state host and
+             mounts a board directly, below `show`'s reach. The REFUSAL branch above is deliberately
+             left to fall through to `show`, because that is what makes the central guard the thing
+             actually holding the line on this path rather than a second opinion behind another
+             guard. The latch is released above either way -- settling is not what is suppressed,
+             drawing is. */
+          if (!C.alive) {
+            return { state: snap.state, mounted: false, may_analyse: false, refusals: [],
+              unmounted: true };
           }
           if (host) { while (host.firstChild) host.removeChild(host.firstChild); }
           /* P1-B8D-R8 §7 — KEPT SO A RETURN COSTS NOTHING. The adapter is the answer to the one

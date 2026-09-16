@@ -389,7 +389,16 @@ var ROUND_TOKENS = [
      finished failing, because the latch was cleared in the continuation that ran after the
      render. One shipped file changed: the board controller. Appended, never edited in place —
      the series is the record of what was served. */
-  'universesettle-p1b8dr10ef1-20260915'];
+  'universesettle-p1b8dr10ef1-20260915',
+  /* PRODUCT-STRATEGY-P1-B8D-R10E-F2 — a settled read no longer writes into a page it no
+     longer owns. The deployed F1 bytes were measured doing exactly that: a universe retry
+     that timed out after the operator had navigated away drew a disabled, aria-busy
+     "Retrying..." control into an unmounted section and left it there, 0 requests and 0
+     throws but a DOM mutation all the same. `C.alive` already meant this; the retry
+     continuations honoured it and the READ continuations did not. One shipped file changed:
+     the board controller. Appended, never edited in place — the series is the record of
+     what was served. */
+  'domownership-p1b8dr10ef2-20260916'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the
