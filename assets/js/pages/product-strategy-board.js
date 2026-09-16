@@ -640,6 +640,68 @@
         ? accessor.capabilityState() : null;
     }
     function capabilityPending() { return capabilityState() === 'PENDING'; }
+    /* ==============================================================================================
+       P1-B8D-R10E-F3-R4 §2 — WAITING FOR THE ANSWER, ON A PROMISE SOMEBODY ELSE ALREADY OWNS.
+
+       THE ARBITER IS A CAP, NOT AN ANSWER. It releases this page after eight seconds whether or not
+       the capability read has landed, and on the measured cold boots it usually had not: nineteen of
+       twenty sessions settled after the cap, one of them seventy-four seconds after it. The page then
+       read a mirror that still said PENDING, said so honestly, and had no second moment to look
+       again — so the answer arrived to nobody and the board stayed loading for the rest of the page
+       life. This is that second moment, and it is the only one.
+
+       NOTHING IS SCHEDULED AND NOTHING IS RE-ASKED. `clientCapabilitiesSettlement()` hands back the
+       promise the shared bootstrap is ALREADY running; asking for it dispatches no request, and one
+       continuation is attached to it per controller. There is no timer, no interval, no observer and
+       no second capability read anywhere on this path.
+
+       THE PROMISE IS NOT THE ANSWER. It resolves with nothing, deliberately, and this code re-reads
+       the capability mirror afterwards exactly as it does at mount. The mirror stays the one
+       authority; a payload trusted here would be a second one.
+
+       NO SIGNAL MEANS FAIL CLOSED. A build whose db api predates this — or any harness that drives the
+       mirror directly without a bootstrap — gets `null` here, waits for nothing, delegates nothing and
+       sends nothing. That is the behaviour this page has always had, kept as the default rather than
+       as a special case. */
+    function capabilitySettlement() {
+      var db = (root.KM && root.KM.DB) ? root.KM.DB : null;
+      if (!db || typeof db.clientCapabilitiesSettlement !== 'function') { return null; }
+      var p = null;
+      try { p = db.clientCapabilitiesSettlement(); } catch (e) { p = null; }
+      return (p && typeof p.then === 'function') ? p : null;
+    }
+    /* ONE CONTINUATION, AND ONLY WHILE THERE IS SOMETHING TO WAIT FOR. A settled mirror answers from
+       itself; a second call on the same controller attaches nothing further. */
+    function capabilityAwaitSettlement() {
+      if (!capabilityPending()) { return capabilityOk(); }
+      if (C.capabilitySettlementWaiting) { return capabilityOk(); }
+      var p = capabilitySettlement();
+      if (!p) { return capabilityOk(); }
+      C.capabilitySettlementWaiting = true;
+      return Promise.resolve(p).then(capabilitySettled, capabilitySettled);
+    }
+    function capabilitySettled() {
+      C.capabilitySettlementWaiting = false;
+      return capabilityOk();                       // the mirror is re-read; the promise said nothing
+    }
+    /* ==============================================================================================
+       P1-B8D-R10E-F3-R4 §3 — WHEN THE SERVER IS A BETTER AUTHORITY THAN THIS PAGE'S SILENCE.
+
+       BOTH HALVES OR NEITHER. The shared bootstrap has to exist — its settlement signal is the proof
+       that an application actually ran the capability read — AND the accessor has to put the mirror
+       in one of the two transient states it publishes. Neither half is this file's to decide: the
+       list of codes lives with the classifier that produces them, so there is one allowlist and not
+       a copy of it here that could drift.
+
+       IT GRANTS NOTHING AND ASSUMES NOTHING. `capabilityOk()` is still false; this only says one read
+       may go out so that the SERVER can answer. `productPricing.siteUniverse.get` refuses with
+       FEATURE_DISABLED before it opens any data source, so the flag is decided where it is defined, and
+       that refusal is rendered exactly as it is today. */
+    function serverAuthorityAllowed() {
+      if (!capabilitySettlement()) { return false; }
+      return !!(accessor && typeof accessor.capabilityFallbackEligible === 'function'
+        && accessor.capabilityFallbackEligible() === true);
+    }
     function capabilityResolved() {
       if (capabilityOk() || !capabilityPending()) return Promise.resolve(capabilityOk());
       var arb = (root.KM && root.KM.bootArbiter) ? root.KM.bootArbiter : null;
@@ -648,8 +710,11 @@
          bootstrap window must report that it is still finding out, never a state that reads as a
          product decision and never a board drawn from nothing. */
       show(P.LOADING_CAPABILITY, P.UX_PAGE.LOADING_CAPABILITY, []);
+      /* AND WHEN THE CAP FIRES FIRST, THE WAIT CONTINUES ON THE READ'S OWN SETTLEMENT rather than
+         ending on a mirror that has not been written yet. `capabilityAwaitSettlement` returns at once
+         for anything already settled, so the common boot pays nothing for this. */
       return Promise.resolve(arb.whenReady(['capabilities']))
-        .then(function () { return capabilityOk(); }, function () { return capabilityOk(); });
+        .then(capabilityAwaitSettlement, capabilityAwaitSettlement);
     }
 
     /* P1-B8D-R10E-F1 — ONE RENDERER FOR THE REFUSED UNIVERSE, so a settled retry can redraw the
@@ -690,6 +755,24 @@
          real situation was that the feature is off. The less alarming and more accurate answer is the
          one that should win, and the capability is also the cheaper question. */
       if (!capabilityOk()) {
+        /* P1-B8D-R10E-F3-R4 §3 — THE TWO FAULTS A SERVER IS STILL ALLOWED TO ANSWER FOR.
+
+           A read that timed out and a read whose echo hop answered 404 both mean the same thing: the
+           answer never arrived and NOTHING was learned about the flag. Every measured failure of that
+           shape had a healthy server behind it — the handler completed, the delivery hop did not — so
+           refusing here spends a whole page life protecting against a decision nobody made. The one
+           read below asks the authority that owns the flag, and that authority refuses before it
+           opens any data source, so the cost of being wrong is one refused request.
+
+           EVERY OTHER CODE KEEPS THE REFUSAL IT HAS. Offline, not authorized, a missing field, an
+           unreadable body, nothing-answered, and anything a later round adds are all still refused
+           right here at zero requests. `serverAuthorityAllowed` is a closed allowlist held by the
+           accessor, not an exception list held here.
+
+           AND A DEAD CONTROLLER DELEGATES NOTHING. A settlement that lands after the page is gone
+           must not put a request on the wire for a page nobody is on, so liveness is checked before
+           the read and not only before the render. */
+        if (C.alive && serverAuthorityAllowed()) { return readSiteUniverse(); }
         /* P1-B8D-R10A §6 — "OFF" AND "COULD NOT BE READ" ARE DIFFERENT ANSWERS.
 
            This branch used to say FEATURE_DISABLED for both. That was tolerable only while the
@@ -755,6 +838,18 @@
           P.UX_PAGE.SITE_UNIVERSE_NOT_AVAILABLE, [{ code: 'ACCESSOR_HAS_NO_SITE_UNIVERSE_READ' }]));
       }
 
+      return readSiteUniverse();
+    }
+
+    /* P1-B8D-R10E-F3-R4 §3 — THE SITE-UNIVERSE READ, WITH TWO CALLERS AND ONE IMPLEMENTATION.
+
+       Lifted out of `loadUniverseResolved` unchanged so that the delegated path issues the SAME read
+       as the enabled path — same action, same envelope, same adapter, same refusal renderer, same
+       liveness guards — rather than a second one written beside it that could drift. The only
+       difference is the opt-in the accessor requires, and it is recomputed here rather than
+       remembered, so a user-triggered retry of this read carries the same authority the first one
+       did and nothing has to be kept in sync. */
+    function readSiteUniverse() {
       /* P1-B8D-R10E-F1 — AND THE CONTROL DOES NOT VANISH WHILE ITS OWN READ IS OPEN EITHER.
          `busyAction` says this in so many words a few hundred lines up, and the universe path was
          the one place that did not honour it: `retryUniverse` drew the busy button and this line
@@ -766,7 +861,9 @@
       show(P.LOADING_SITE_UNIVERSE, P.UX_PAGE.LOADING_SITE_UNIVERSE, [],
         C.universeRetryInFlight ? busyAction(function () { C.retryUniverse(); }) : null);
       C.requests.siteUniverse++;
-      return Promise.resolve(accessor.getSiteUniverse({ signal: opts.signal }))
+      var readOpts = { signal: opts.signal };
+      if (serverAuthorityAllowed()) { readOpts.serverAuthoritativeFallback = true; }
+      return Promise.resolve(accessor.getSiteUniverse(readOpts))
         .then(function (env) {
           var u = SU.adapt(env);
           C.universe = u;

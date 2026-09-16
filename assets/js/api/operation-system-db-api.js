@@ -4986,8 +4986,54 @@ function _kmCapDeploymentIdentity_() {
             action_contract: d.deployed_action_contract_version, transport_contract: d.transport_contract_version });
     } catch (e) { return null; }
 }
+/* ==================================================================================================
+   PRODUCT-STRATEGY-P1-B8D-R10E-F3-R4 §2 — THE CAPABILITY SETTLEMENT SIGNAL.
+
+   WHAT IT IS FOR. The boot arbiter releases a waiter after eight seconds whether or not the
+   capability read has answered, and on the measured cold boots the read frequently had not: in
+   nineteen of twenty sessions the capability settled AFTER the cap, once as late as eighty-two
+   seconds. A page that waited on the arbiter alone therefore had no second moment to look again,
+   and the one that mattered -- the answer arriving -- reached nobody. That is the permanent
+   LOADING state this signal removes.
+
+   IT IS A SIGNAL, NOT A VALUE. It resolves with `null`, deliberately and always, so that no caller
+   can mistake it for an authority: the capability mirror is the only place the answer lives, and a
+   caller that has been woken must re-read the mirror. A payload here would be a second mirror
+   wearing a promise for a hat.
+
+   NO TIMER, NO POLL, NO SECOND READ. It is the promise the bootstrap is already running, captured
+   once, handed to anyone who asks. Asking for it dispatches nothing. There is exactly one of it per
+   page life: `_kmCapArmSettlement_` arms on the FIRST bootstrap call and refuses to re-arm, so the
+   user-triggered retry -- which calls the same function -- can neither replace it nor resolve it
+   early. That is the property the caller depends on: the promise it captured at mount is the same
+   object it would capture now.
+
+   IT RESOLVES ON EVERY EXIT, INCLUDING THE ONES THAT DISCARD THE ANSWER. The three supersede
+   branches return without writing the mirror, and a signal that stayed pending on those paths would
+   leave the waiter in exactly the state this exists to end. Success, failure and discard all
+   release it, and it never rejects.
+
+   ABSENT MEANS CLOSED. Before the first bootstrap call there is nothing to hand out, and the getter
+   answers `null` rather than a promise that will never settle. A caller with no signal must fail
+   closed and send nothing -- which is what a build without this bootstrap has always done.
+   ================================================================================================== */
+var _kmCapSettlement_ = null;                    // { promise, release } for the FIRST bootstrap call
+function _kmCapArmSettlement_() {
+    if (_kmCapSettlement_) { return null; }      // already armed: a retry is not the bootstrap
+    var d = { promise: null, release: null };
+    d.promise = new Promise(function (res) { d.release = res; });
+    _kmCapSettlement_ = d;
+    return d;
+}
+function _kmCapReleaseSettlement_(d) {
+    if (!d || typeof d.release !== 'function') { return; }
+    var r = d.release;
+    d.release = null;                            // released once; a second exit cannot re-resolve
+    try { r(null); } catch (e) {}
+}
 async function _kmApplyClientCapabilities_() {
     var mySeq = ++_kmCapSeq_;
+    var _capSettlement = _kmCapArmSettlement_();
     var issuedIdentity = _kmCapDeploymentIdentity_();
     var applied = null, caps = null, err = null;
     try {
@@ -5000,6 +5046,7 @@ async function _kmApplyClientCapabilities_() {
     var nowIdentity = _kmCapDeploymentIdentity_();
     if (issuedIdentity !== null && nowIdentity !== null && issuedIdentity !== nowIdentity) {
         console.warn('[KM.capabilities] discarded: the deployment identity changed while this request was in flight');
+        _kmCapReleaseSettlement_(_capSettlement);
         return (window.KM && window.KM.api && typeof window.KM.api.getClientCapabilitySnapshot === 'function')
             ? window.KM.api.getClientCapabilitySnapshot() : null;
     }
@@ -5007,11 +5054,13 @@ async function _kmApplyClientCapabilities_() {
     if (!caps && _kmCapAppliedFromBackend_ && _kmCapAppliedSeq_ > mySeq) {
         console.warn('[KM.capabilities] a late failure (seq ' + mySeq + ') was DISCARDED — a newer backend answer (seq '
             + _kmCapAppliedSeq_ + ') is already applied', err);
+        _kmCapReleaseSettlement_(_capSettlement);
         return (window.KM && window.KM.api && typeof window.KM.api.getClientCapabilitySnapshot === 'function')
             ? window.KM.api.getClientCapabilitySnapshot() : null;
     }
     // And an out-of-order SUCCESS never overwrites a newer one either.
     if (_kmCapAppliedSeq_ > mySeq && _kmCapAppliedFromBackend_) {
+        _kmCapReleaseSettlement_(_capSettlement);
         return (window.KM && window.KM.api && typeof window.KM.api.getClientCapabilitySnapshot === 'function')
             ? window.KM.api.getClientCapabilitySnapshot() : null;
     }
@@ -5077,9 +5126,16 @@ async function _kmApplyClientCapabilities_() {
         window.__kmCapabilityMeta = { seq: mySeq, fromBackend: !!caps, at: Date.now(),
             deploymentIdentity: nowIdentity, errorCode: (err && err.code) || null };
     } catch (e3) {}
+    _kmCapReleaseSettlement_(_capSettlement);
     return applied;
 }
 window.KM.DB.applyClientCapabilities = _kmApplyClientCapabilities_;
+/* P1-B8D-R10E-F3-R4 §2 — READ-ONLY, AND IT STARTS NOTHING. The same promise object every time it is
+   asked, `null` before the bootstrap has run. It resolves with nothing on purpose: a woken caller
+   re-reads the capability mirror, which is the only authority there is. */
+window.KM.DB.clientCapabilitiesSettlement = function () {
+    return _kmCapSettlement_ ? _kmCapSettlement_.promise : null;
+};
 
 /* ==================================================================================================
    PRODUCT-STRATEGY-P1-B8D-R10E — ONE MORE READ, AND ONLY WHEN A PERSON ASKS FOR IT.

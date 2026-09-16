@@ -631,6 +631,39 @@
     SERVER_FALSE: ['FEATURE_DISABLED',
       'the client capability mirror is false; no request was sent']
   };
+  /* ==============================================================================================
+     P1-B8D-R10E-F3-R4 §3 — THE TWO CODES A SERVER CAN STILL BE ASKED TO ANSWER FOR.
+
+     THIS IS A CLOSED ALLOWLIST AND NOT AN EXCEPTION LIST. Membership is tested by identity against
+     these two names; everything else -- every code below, every code this classifier does not
+     produce yet, and every code a later round adds -- keeps the fail-closed behaviour it has today.
+     A future state is refused by DEFAULT rather than by having been remembered here, which is the
+     only arrangement that stays correct when somebody adds a state and forgets this file.
+
+     WHY THESE TWO AND NOT THE OTHERS. Both mean the answer never arrived and nothing was learned
+     about WHY, so the feature flag remains genuinely unknown and the server's own gate -- which
+     refuses before it opens a database -- is a better authority than the browser's silence. The
+     ones left out are the ones where the browser already knows something definite:
+
+       BROWSER_OFFLINE     no request can leave; dispatching one is knowingly doomed
+       NOT_AUTHORIZED      a sign-in page means there is no session, and a read cannot make one
+       FIELD_ABSENT        a server ANSWERED and its answer carried no such flag
+       SOURCE_NOT_CONNECTED / RESPONSE_NOT_READABLE / ACTION_MISMATCH / everything else
+                           not established as recoverable by anything this round measured
+
+     IT IS NOT A CAPABILITY AND IT GRANTS NOTHING. `isEnabled()` stays false throughout; this only
+     says that ONE read may be dispatched so that the SERVER can decide. The server's answer is the
+     authority, and `FEATURE_DISABLED` coming back from it is honoured exactly as it is today.
+     ============================================================================================== */
+  var SERVER_AUTHORITATIVE_FALLBACK_CODES = ['SOURCE_TIMED_OUT', 'HTTP_NOT_FOUND'];
+  function capabilityFallbackEligible() {
+    if (_capabilityState !== CAP.FAILED) { return false; }   // only a read that could not complete
+    for (var i = 0; i < SERVER_AUTHORITATIVE_FALLBACK_CODES.length; i++) {
+      if (SERVER_AUTHORITATIVE_FALLBACK_CODES[i] === _capabilityFailure) { return true; }
+    }
+    return false;
+  }
+
   function capabilityRefusal() {
     /* A TRANSPORT FAULT FIRST, because it is the most specific thing known and it is what R10A
        established: a read that could not be completed is never a product decision. */
@@ -712,10 +745,24 @@
    */
   function getSiteUniverse(opts) {
     opts = isObj(opts) ? opts : {};
+    /* P1-B8D-R10E-F3-R4 §3 — THE ONE WAY PAST THE CLIENT GATE, AND THE CALLER MUST ASK FOR IT.
+       Opt-in, so nothing that exists today changes behaviour by being recompiled: a caller that
+       does not pass the flag meets the same gate it always met. And asking is not enough — the
+       mirror must independently be in one of the two transient states, so a caller cannot use this
+       to read under a server `false`, a missing field, an offline browser or a sign-in page.
+
+       IT IS NESTED UNDER THE GATE RATHER THAN WIDENING IT, and that is not a style choice. The gate
+       line and the comment beneath it are what the R4 activation suite mutates to prove this read
+       waits for the capability; an `&&` welded into the condition would have deleted that anchor and
+       retired a sealed assertion silently. The exemption belongs inside the branch anyway — it is a
+       reason not to refuse, not a reason not to check. */
+    var serverAuthority = (opts.serverAuthoritativeFallback === true) && capabilityFallbackEligible();
     if (!isEnabled()) {
       // Same four sentences, same silence on the wire — see capabilityRefusal().
-      var ucr = capabilityRefusal();
-      return Promise.resolve(universeRefused(ucr[0], ucr[1], null));
+      if (!serverAuthority) {
+        var ucr = capabilityRefusal();
+        return Promise.resolve(universeRefused(ucr[0], ucr[1], null));
+      }
     }
     var api = transportOf();
     if (!api) {
@@ -745,6 +792,10 @@
     SITE_UNIVERSE_ACTION: SITE_UNIVERSE_ACTION,
     SITE_UNIVERSE_CONTRACT_VERSION: SITE_UNIVERSE_CONTRACT_VERSION,
     get: get, getSiteUniverse: getSiteUniverse,
+    /* P1-B8D-R10E-F3-R4 §3 — exported so the allowlist is assertable as DATA and the eligibility
+       rule has exactly one implementation. A caller reads it; nobody else decides it. */
+    SERVER_AUTHORITATIVE_FALLBACK_CODES: SERVER_AUTHORITATIVE_FALLBACK_CODES.slice(),
+    capabilityFallbackEligible: capabilityFallbackEligible,
     validateUniverseResponse: validateUniverseResponse,
     // P1-B8B §9 — exported so the state matrix is provable without a network.
     CLIENT_TRANSPORT_STATES: CLIENT_TRANSPORT_STATES.slice(),
