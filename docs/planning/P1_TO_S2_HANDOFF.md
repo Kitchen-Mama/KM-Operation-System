@@ -19,6 +19,19 @@ P1 is **not** closed by this document. It is closed when the USER completes live
 R9 on GitHub Pages. Until then, P1-B8D-R9 is a local commit on
 `feature/product-strategy-board-p0` and nothing else.
 
+> **SUPERSEDED BY THE OUTCOME — 2026-09-17, P1-B8D-R10E-CLOSE.** The condition above was met and then
+> outrun: live acceptance did not stop at R9. R10 through R10E-F5 followed, the work was pushed, and
+> the deployed bytes were sealed at `82772eb`. **P1_CLOSED = YES_WITH_DOCUMENTED_RESIDUAL_RISK** and
+> **S2_RUNTIME_ALLOWED = YES_WITH_GATES**, under §9 below. The paragraph above is kept exactly as it
+> was written, because it records the CONDITION, not the outcome; the measurements that answered it
+> are in the `P1-B8D-R10E-CLOSE` entry of
+> [`DEPLOYMENT_RELEASE_LOG.md`](DEPLOYMENT_RELEASE_LOG.md).
+>
+> **What closing P1 does NOT mean.** Transport reliability is still **FAIL** — a residual failure
+> remains in the external Apps Script delivery path, and P1 closes with that risk documented rather
+> than removed. Long soak is **deferred, not waived**. S2 is **allowed with gates**, and S2 runtime
+> has still not started.
+
 **Product Strategy, as shipped at the end of P1:**
 
 | | |
@@ -213,3 +226,55 @@ Carried forward from every P1 round, because none of these has stopped being tru
 - No new browser path that reads a database, a Sheet or a fixture directly.
 - No feature flag moved as a side effect.
 - No global sidebar or navigation change inside a data-migration round.
+
+---
+
+## 9 · S2 ENTRY GATES — ADDED 2026-09-17 BY P1-B8D-R10E-CLOSE
+
+S2 may begin **without another P1 transport-tuning round.** It begins under gates, not in the clear.
+
+1. **Preserve the P1 read and lifecycle contracts.** Capability bootstrap and settlement, the
+   `siteUniverse.get` → `workspace.get` order, the exact transient fallback allowlist, bounded
+   single-flight retry, action-integrity fail-closed behaviour, and unmounted DOM and dispatch
+   ownership are sealed on deployed bytes. An S2 round may build beside them; it may not quietly
+   rewrite one.
+2. **Focused regression at each S2 batch boundary.** Do not repeat the whole P1 evidence matrix unless
+   a touched surface or a failed signal requires it.
+3. **Transport reliability stays an OBSERVED EXTERNAL RISK.** Do not raise a timeout, add a retry, or
+   introduce a proxy without a separate, measured design decision. The measured fault is delivery, not
+   slowness; more attempts against a quota'd backend re-enter the same lossy hop.
+4. `REQUEST_ORDER_SITE_CONFIRM_SERVER_GATE_GAP` = **OPEN.** The Site Confirm gate is enforced
+   frontend-side only; no server-side write gate exists.
+5. **That server-side write gate MUST be completed and verified** before any relevant Request Order
+   write-flow production acceptance.
+6. **Long soak is a separate observation gate** before final system-wide production acceptance. It is
+   deferred, **not waived**, and it is not a prerequisite for beginning S2.
+7. **Each S stage receives its own scoped acceptance.** The full two-trunk E2E and user acceptance
+   remain final-system gates, not stage gates.
+
+```
+REQUEST_ORDER_SITE_CONFIRM_SERVER_GATE_GAP                        OPEN
+MUST_BE_FIXED_BEFORE_RELEVANT_WRITE_FLOW_PRODUCTION_ACCEPTANCE    YES
+LONG_SOAK_REQUIRED_BEFORE_FINAL_SYSTEM_ACCEPTANCE                 YES
+```
+
+---
+
+## 10 · THE S2 EXECUTION RULE — SPEND EVIDENCE WHERE IT IS STILL VALID
+
+P1 proved a page by measuring it repeatedly. S2 covers far more surface, so the rule is to reuse what
+is still true rather than to re-measure what nothing touched.
+
+- **Reuse P1 evidence where the deployed bytes and the affected contracts are unchanged.**
+- **Run only the tests whose ownership surface intersects the current change.**
+- **Escalate to the full regression matrix only when:**
+  a) transport, boot, router, lifecycle, the shared API foundation or the shared DB adapter changes;
+  b) a focused gate fails;
+  c) the deployed bytes differ from the reviewed commit;
+  d) an observed failure crosses a module boundary.
+- **Never relax a sealed assertion merely to obtain green.** A contract conflict is escalated and
+  ruled on; it is not resolved by editing the assertion that noticed it.
+- **Separate product defects, external transport defects and instrument defects.** Three P1 rounds were
+  lost to measurements of the harness being read as measurements of the product.
+- **Do not rerun a natural failure merely to replace it with a passing sample.** A corrected instrument
+  may be re-run; a failure may not be re-rolled.

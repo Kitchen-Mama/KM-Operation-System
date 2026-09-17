@@ -3453,3 +3453,139 @@ KNOWN AND NOT FIXED
     recur for the next round that touches a .gs.
   · Everything R9, R10, R10A and R10C listed under KNOWN AND NOT FIXED is unchanged.
 ```
+
+## P1-B8D-R10E-CLOSE — P1 IS CLOSED WITH THE RISK NAMED, NOT WITH THE RISK GONE
+
+```
+HEAD    82772eb7eb389dc689b60ac11f2eeb19f712d374   the deployed authority; this round changes no byte of it
+BASE    1b4053781b2b7f7b37e74a7bec1dd5674fb6cb59
+BRANCH  feature/product-strategy-board-p0 = main = origin/main = 82772eb
+DATE    2026-09-17
+SCOPE   DOCUMENTATION ONLY. No runtime file, no test, no cache token, no .gs, no schema, no action, no
+        transport/timeout/retry policy. Nothing pushed, deployed or synced by this round.
+
+WHAT THIS ENTRY IS
+-------------------------------------------------------------------------------------------------------
+  A DECISION, RECORDED WHERE THE GATES WERE RECORDED, so the closure and the gates cannot drift apart.
+  It measures nothing new. Every number below was produced by a round already in this ledger or in its
+  evidence, against the bytes named above; none was re-derived here, and none was improved here.
+
+  The R10E entry left three gates open against "R10E bytes". Two have since been answered on the bytes
+  that are actually deployed, and they are answered in opposite directions:
+
+    the APPLICATION contract       PASS   proven statically and behaviourally on the served bytes
+    the DELIVERY layer beneath it  FAIL   unchanged, external, and not reachable from client code
+
+  P1 closes on the first of those, with the second written down rather than waited out.
+
+THE CLOSURE
+-------------------------------------------------------------------------------------------------------
+  P1_APPLICATION_CONTRACT                     PASS
+  P1_DEPLOYED_BYTES_IDENTITY                  PASS   3/3 full SHA-256, first poll, re-verified after
+                                                     all live work
+  P1_CAPABILITY_RECOVERY_CONTRACT             PASS
+  P1_ACTION_INTEGRITY                         PASS
+  P1_UNMOUNTED_DOM_OWNERSHIP                  PASS
+  P1_UNMOUNTED_DISPATCH_OWNERSHIP             PASS
+  P1_ROUTE_RETURN_FRESH_CONTROLLER            PASS
+  P1_PERMANENT_LOADING_COUNT                  0 / 20
+  P1_CONTROLLED_WRITES                        0
+  P1_CONTROLLED_NON_GET                       0
+
+  RAW_TRANSPORT_RELIABILITY                   FAIL
+  COLD_BOOT_RAW_INITIAL_SUCCESS               17 / 20
+  COLD_BOOT_FINAL_USABLE                      19 / 20
+  COLD_BOOT_RECOVERY_GATE                     FAIL   against the 20 / 20 acceptance threshold
+  LONG_SOAK_GATE                              NOT RUN
+  SERVER_HANDLER_TIMEOUT_SUPPORTED            NO
+  DELIVERY_LAYER_FAILURE_REMAINS_SUPPORTED    YES
+  EXACT_REQUEST_EXECUTION_CORRELATION         NO
+
+  P1_CLOSED                                   YES_WITH_DOCUMENTED_RESIDUAL_RISK
+  S2_RUNTIME_ALLOWED                          YES_WITH_GATES
+
+  NOTHING ABOVE IS PROMOTED BY BEING LISTED BESIDE SOMETHING THAT PASSED. The controlled-injection
+  results are contract results; they were never reliability, and the FAIL rows stay FAIL.
+
+RESIDUAL RISK — THE EXACT SENTENCE
+-------------------------------------------------------------------------------------------------------
+  Product Strategy Board application behaviour, failure classification, bounded recovery, route
+  lifecycle and unmounted ownership are sealed on deployed bytes. A residual failure remains in the
+  external Apps Script /exec to script.googleusercontent.com delivery path: a handler may complete
+  while the browser does not receive the response. In the authoritative 20-session cold sample, 17/20
+  were initially usable and 19/20 were finally usable; two user retry clicks occurred, and one session
+  remained unusable after bounded recovery was exhausted. This 20-session sample is acceptance
+  evidence, not a statistically valid long-term failure-rate estimate.
+
+  IT IS NOT "ONE IN TWENTY NEEDS A MANUAL RETRY." One session stayed unusable AFTER the retry. The
+  short form drops the only case that matters.
+
+WHAT P1 PROVES
+-------------------------------------------------------------------------------------------------------
+  · Product Strategy Board capability bootstrap and settlement
+  · productPricing.siteUniverse.get -> productPricing.workspace.get orchestration
+  · the exact transient fallback allowlist
+  · no capability/universe request overlap
+  · bounded single-flight retry
+  · action-integrity fail-closed behaviour
+  · local versus server FEATURE_DISABLED provenance
+  · route-away / route-return ownership
+  · zero new universe/workspace dispatch by a dead controller
+  · truthful error and refusal presentation
+
+WHAT P1 DOES NOT PROVE
+-------------------------------------------------------------------------------------------------------
+  · system-wide transport reliability
+  · that every application page is loading-stable
+  · either complete factory/shipment/order trunk
+  · write-path correctness
+  · login / RBAC correctness
+  · long-duration soak stability
+  · Control Tower readiness
+
+  ONE PAGE WAS SEALED, NOT A SYSTEM. This result may not be generalised to the whole KM OS.
+
+S2 ENTRY GATES
+-------------------------------------------------------------------------------------------------------
+  Owned in full by docs/planning/P1_TO_S2_HANDOFF.md §9. In short: preserve the P1 read and lifecycle
+  contracts; focused regression at each S2 batch boundary; transport reliability stays an OBSERVED
+  EXTERNAL RISK, and no timeout, retry or proxy may be added without its own measured design decision.
+
+  REQUEST_ORDER_SITE_CONFIRM_SERVER_GATE_GAP                        OPEN
+  MUST_BE_FIXED_BEFORE_RELEVANT_WRITE_FLOW_PRODUCTION_ACCEPTANCE    YES
+  LONG_SOAK_REQUIRED_BEFORE_FINAL_SYSTEM_ACCEPTANCE                 YES   deferred, NOT waived
+
+DEPLOYMENT
+-------------------------------------------------------------------------------------------------------
+  APPS_SCRIPT_SYNC_REQUIRED   NO      no .gs changed by this round
+  FRONTEND_DEPLOY_REQUIRED    NO      no shipped file changed by this round
+  BUNDLE_REBUILD_REQUIRED     NO
+  DB / Sheets / Drive writes  0
+  Rollback                    unchanged and still one switch: PRODUCT_STRATEGY_ENABLED_ = false, save,
+                              new version, update the existing deployment. Needs no frontend deploy.
+                              Closing P1 does not remove that switch or make it harder to reach.
+
+CACHE TOKEN
+-------------------------------------------------------------------------------------------------------
+  dispatchownership-p1b8dr10ef5-20260917      35 refs      0 stale      0 misplaced      (unchanged)
+
+LIVE RELIABILITY
+-------------------------------------------------------------------------------------------------------
+  NOT RE-RUN. Raw-60, the 20-session cold boot and the long soak were all explicitly out of scope for
+  this round and for the round that sealed the live contract. The rows above are carried forward from
+  the measurements that produced them, and are not re-stated as anything better.
+
+KNOWN AND NOT FIXED
+-------------------------------------------------------------------------------------------------------
+  · The delivery-layer failure itself. ROOT CAUSE remains outside this repository: the Executions
+    evidence shows handlers completing — visible maximum about 30.246 s, none over 45 s or 60 s — while
+    the browser receives nothing, and EXACT_REQUEST_EXECUTION_CORRELATION = NO, so no single execution
+    row can be tied to a single failed browser read.
+  · REQUEST_ORDER_SITE_CONFIRM_SERVER_GATE_GAP. The Site Confirm gate is enforced frontend-side only;
+    no server-side write gate exists. Untouched by every P1-B8D-R10E round, and still mandatory before
+    any relevant Request Order write-flow production acceptance.
+  · One live scenario — HTTP_NOT_FOUND settling after a route-away — is recorded NOT_STAGEABLE: no
+    injection primitive delivers a 404 after the route-away. Covered offline on these same bytes and
+    structurally in the static seal. RECORDED, NEVER CLAIMED AS A PASS.
+  · Everything R10E and R10D list under KNOWN AND NOT FIXED is unchanged.
+```
