@@ -399,7 +399,8 @@ var ROUND_TOKENS = [
      the board controller. Appended, never edited in place — the series is the record of
      what was served. */
   'domownership-p1b8dr10ef2-20260916',
-  'transientgate-p1b8dr10ef3r4-20260916'];
+  'transientgate-p1b8dr10ef3r4-20260916',
+  'actionintegrity-p1b8dr10ef4-20260917'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

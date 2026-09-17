@@ -4872,8 +4872,72 @@ function _kmMetadataSingleFlight_(key, fn) {
     } catch (e) { /* fall through — never let the optimisation break the read */ }
     return Promise.resolve().then(fn);
 }
+/* ============================================================================================
+   PRODUCT-STRATEGY-P1-B8D-R10E-F4 §2/§3 — AN ANSWER THAT NAMES A DIFFERENT QUESTION IS NOT AN
+   ANSWER TO THIS ONE.
+
+   WHY THIS IS NOT IN THE SHARED CLASSIFIER. `_kmClassifyAnswer_` is the obvious home for a rule
+   about answers and is the wrong one here, on two counts that the §1 census settled rather than
+   guessed. It never sees a parsed envelope — it is handed the raw text and decides only whether the
+   body is an envelope at all — so reading an action there means parsing the body a second time.
+   And it is shared with the WRITE runner, whose barriers key on its legacy codes; a new refusal
+   class arriving at them is a blast radius this repair has no reason to take on.
+
+   AND WHY THE RULE IS NOT `AN ACTION IS REQUIRED`. Of every response these read runners can
+   receive, only the two `productPricing.*` reads and two `system.*` diagnostics carry an action at
+   all. `handleGetClientCapabilities_` (03_) answers `{ success, data }` and stamps one nowhere —
+   not `meta.action`, not top level, not inside `data` — so a rule that DEMANDED one would fail
+   closed on every healthy capability read in the application. Missing is accepted because that is
+   the canonical contract, not as a concession to it: `KM.transport`'s own validator has read it
+   exactly this way since F1-7N-FB-4E, comparing only when the answer carries something to compare.
+
+   WHAT IT DOES CATCH is the case that is not hypothetical. A deployment whose routing hands this
+   read to `handleProductPricingWorkspaceGet_`, to the site-universe handler or to one of the two
+   diagnostics gets an envelope that DOES stamp an action — and whose `data` carries no
+   `product_strategy_enabled`. Passed through, the mirror reads the absence of a foreign field as a
+   product decision and publishes a confident `false`: the feature reported as switched off on the
+   strength of an answer to a different question. 72_ records that exact defect happening in
+   production once already, one layer down.
+
+   IT RUNS BEFORE `caps` EXISTS. `_kmApplyClientCapabilities_` derives `caps` from
+   `res.success && res.data` and only then touches its four consumers, so a refusal here takes the
+   same `!caps` road a transport fault already takes — fail-safe defaults to `KM.api`, a classified
+   failure to the Product Strategy mirror, `fromBackend = false` in the snapshot. Nothing is updated
+   and then corrected, because nothing is updated at all.
+   ============================================================================================ */
+var KM_CAPABILITY_ACTION_ = 'getClientCapabilities';
+// The two places an envelope may name the action it answered, read in the order `KM.transport`
+// reads them. `data` is DELIBERATELY not consulted: a payload field that happens to be called
+// `action` is the request's own echo or a row's column, and neither is the deployment speaking.
+function _kmCapServedAction_(env) {
+    if (!env || typeof env !== 'object') { return ''; }
+    var m = env.meta;
+    var a = (m && typeof m === 'object' && m.action !== undefined) ? m.action : env.attempted_action;
+    return String(a === undefined || a === null ? '' : a).trim();
+}
+function _kmCapVerifyServedAction_(res) {
+    // A FAILURE IS ALREADY FAILING CLOSED and keeps the code it earned; only a SUCCESS can reach a
+    // mirror, so only a success is examined. This adds no new outcome to any path that had one.
+    if (!res || res.success !== true) { return res; }
+    var served = _kmCapServedAction_(res.envelope);
+    if (served === '') { return res; }                                   // the canonical shape: no claim made
+    if (served.toLowerCase() === KM_CAPABILITY_ACTION_.toLowerCase()) { return res; }
+    return { success: false, error: {
+        code: 'RESPONSE_ACTION_MISMATCH',
+        message: 'The deployment answered a different action than the one requested (asked "'
+            + KM_CAPABILITY_ACTION_ + '", answered "' + served + '").',
+        /* `transport.code` is what the apply chain reads FIRST when it hands a failure to the
+           Product Strategy mirror, so the typed code is the one that reaches that classifier and
+           becomes ACTION_MISMATCH there — a routing fault named as one, never a generic unreadable
+           response and never a transient the site-universe read may be delegated under. */
+        transport: { code: 'RESPONSE_ACTION_MISMATCH', phase: 'CONTRACT_VALIDATE', retryable: false,
+            zero_write: true, action: KM_CAPABILITY_ACTION_, answered_action: served },
+        details: { action: KM_CAPABILITY_ACTION_, answered_action: served, zero_write: true }
+    } };
+}
 window.KM.DB.getClientCapabilities = function() {
-    return _kmMetadataSingleFlight_('getClientCapabilities', function () { return _kmGapRead_('getClientCapabilities', {}); });
+    return _kmMetadataSingleFlight_('getClientCapabilities', function () { return _kmGapRead_('getClientCapabilities', {}); })
+        .then(_kmCapVerifyServedAction_);
 };
 
 // F1-7N-FB-3 §C — SLIM SCOPE REGISTRY for the Site Inventory selectors (owner = 64_). ONE table, a six-column

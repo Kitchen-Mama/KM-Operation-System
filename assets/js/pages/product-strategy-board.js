@@ -723,6 +723,21 @@
        from the read's own failure branch, and once more from `retryUniverse` AFTER the latch is
        cleared — which is the ordering this round exists to correct. It issues no request; that is
        asserted as a number rather than described. */
+    /* P1-B8D-R10E-F4 §4 - A REFUSAL THAT TRAVELLED IS NOT A REFUSAL THAT DID NOT, AND THE
+       ENVELOPE ALREADY SAYS WHICH. `universeRefused` - the accessor's own local refusal, built
+       without touching the wire - stamps `transport: 'none'` and `requestsMade: 0`. A refusal the
+       SERVER sent is `ppwEnvelope_`'s, which stamps neither, and a completed read returns that
+       server envelope unchanged. Both markers predate this round; neither was added for it, and
+       nothing here is a second authority over what the state means.
+
+       READ FROM `env` AND KEPT ON `u`, NOT RECOMPUTED AT RENDER TIME. The refusal is drawn again
+       on a route return from `C.universe`, long after the read that produced it, and a mirror that
+       has since moved would make the same box describe a different journey. */
+    function universeRefusedWithoutRequest(env) {
+      var m = (env && typeof env === 'object') ? env.meta : null;
+      if (!m || typeof m !== 'object') { return false; }
+      return m.transport === 'none' || m.requestsMade === 0;
+    }
     function renderUniverseRefusal(u) {
       /* F2 — BEFORE THE CHOOSER IS EMPTIED, not just before the box is drawn. This function clears
          `siteHost` and only then calls `show`, so a guard living in `show` alone would still let a
@@ -733,13 +748,31 @@
       /* FAIL CLOSED: no list, no controls. */
       if (siteHost) { while (siteHost.firstChild) siteHost.removeChild(siteHost.firstChild); }
       var ux = SU.UX[u.state] || SU.UX.SOURCE_NOT_CONNECTED;
+      /* P1-B8D-R10E-F4 §4 - THE CODE IS RIGHT IN BOTH CASES; HALF THE SENTENCE IS NOT.
+         `SU.UX.FEATURE_DISABLED` reads "The capability is off, so no request was sent", and that
+         was true of every FEATURE_DISABLED this page could produce until F3-R4 gave a settled
+         transient mirror a way to let the SERVER decide. Since then the same code arrives by two
+         roads: the accessor refusing locally at zero requests, and a server answering a read that
+         was sent and reaching the same conclusion. The code stays - it is the same product fact,
+         and inventing a second one would split a state that is not split. Only the clause about
+         the request changes, and only on the road where it is false.
+
+         THE UX MODULE IS NOT EDITED. Its entry is correct for the road it was written for and is
+         read by callers that travel no other; the two provenances meet HERE, which is where they
+         can be told apart. And the substitution needs positive proof of a request: an envelope
+         that says nothing keeps the sentence it has today. */
+      var detail = ux.detail;
+      if (u.state === 'FEATURE_DISABLED' && u.refusedWithoutRequest === false) {
+        detail = 'The server was asked and answered that Product Strategy is switched off in the'
+          + ' deployment that replied.';
+      }
       /* P1-B8D-R10E — AND THE ONE STATE THAT MUST NOT GET A BUTTON IS THE ONE THAT LOOKS
          MOST LIKE A FAILURE FROM HERE. `SOURCE_EMPTY` is a site list that WAS read and is
          empty; the table refuses it, so an empty universe and an unread universe stay two
          different sentences with two different affordances — which is the whole distinction
          §7 asks to preserve, expressed as markup rather than as prose. */
       return show(u.state, { may_analyse: false, uses_fixture: false,
-        severity: ux.severity, headline: ux.headline, detail: ux.detail }, u.refusals,
+        severity: ux.severity, headline: ux.headline, detail: detail }, u.refusals,
         retryAction(u.state, function () { C.retryUniverse(); }, !!C.universeRetryInFlight));
     }
 
@@ -866,6 +899,9 @@
       return Promise.resolve(accessor.getSiteUniverse(readOpts))
         .then(function (env) {
           var u = SU.adapt(env);
+          /* P1-B8D-R10E-F4 §4 - which of the two refusals this is, taken from the envelope
+             that carried it, while it is still in hand. */
+          u.refusedWithoutRequest = universeRefusedWithoutRequest(env);
           C.universe = u;
           if (u.state !== 'OK') {
             /* The refusal renders through `show`, which carries the central guard -- so the
