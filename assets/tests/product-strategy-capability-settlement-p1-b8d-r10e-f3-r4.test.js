@@ -954,14 +954,30 @@ CHAIN = CHAIN.then(function () {
           }));
     })
     .then(function () {
-      /* M10 — THE LIVENESS GUARD ON THE DELEGATED DISPATCH. `show()` guards the RENDER; only this
-         guard stops the REQUEST, which no render guard can. */
-      return score('M10 the alive guard is removed from the delegated dispatch  [E1]',
+      /* M10 — THE LIVENESS GUARD ON THE REQUEST. `show()` guards the RENDER; only this guard stops
+         the REQUEST, which no render guard can.
+
+         RE-AIMED BY P1-B8D-R10E-F5, AND THE PROPERTY IS THE SAME ONE. This mutant used to remove
+         the liveness test from the DELEGATED branch, because at the time that branch was the only
+         place a dead controller was stopped. F5 replaced that with a single `abandonedDispatch`
+         answered at the last shared point every universe road funnels through — so the branch check
+         is no longer what makes the property true, and a mutant aimed at it changes nothing that
+         can be measured. Aiming at the branch that no longer decides would have left this suite
+         reporting a caught mutant for a guard it had stopped testing.
+
+         WHAT IT PROVES NOW IS STRICTLY MORE. F5's own reproduction showed the ORDINARY SERVER_TRUE
+         road was never guarded at all: the deployed baseline and F4 each put one site-universe read
+         on the wire for a page the lifecycle had already put down. That is the road this mutant
+         kills on, measured by mounting a page, settling the capability after the unmount and
+         counting what left the browser — 0 unmutated, 1 mutated. E1 is unchanged and still passes,
+         and the delegated road stays at zero either way because its own branch check still stands
+         beside the central one. */
+      return score('M10 the central request-ownership guard is disabled  [E1]',
         withMutant(PAGE_REL,
-          '        if (C.alive && serverAuthorityAllowed()) { return readSiteUniverse(); }',
-          '        if (serverAuthorityAllowed()) { return readSiteUniverse(); }',
+          '      if (C.alive === true) { return null; }',
+          '      return null;',
           function () {
-            return universeReadsFor('SOURCE_TIMED_OUT', { unmountBeforeSettle: true })
+            return universeReadsFor('SERVER_TRUE', { unmountBeforeSettle: true })
               .then(function (r) { return r.reads !== 0; });
           }));
     })

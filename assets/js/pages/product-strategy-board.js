@@ -452,6 +452,31 @@
     }
     C.showBoardNotices = showBoardNotices;
 
+    /* =========================================================================================
+       PRODUCT-STRATEGY-P1-B8D-R10E-F5 §1 - THE CENTRAL REQUEST OWNERSHIP INVARIANT.
+
+       F2 gave this page ONE place where "the page I belong to is gone" is answered for the DOM,
+       and it is the function directly below. This is the SAME SENTENCE FOR THE WIRE, and until now
+       it did not exist: liveness was checked on the delegated branch only, so a capability that
+       settled SERVER_TRUE after the visit had ended still put a site-universe read on the wire for
+       a page nobody was on. Measured on the deployed baseline and on F4 with one fixture - one
+       request each, from a controller the lifecycle had already put down.
+
+       WHY A RENDER GUARD COULD NEVER HAVE COVERED THIS. `show()` stops the ANSWER being drawn; it
+       cannot stop the QUESTION being asked. The request has already left by the time anything
+       would be rendered, and it is charged to a quota'd, contended backend either way.
+
+       IT ANSWERS WITH THE SHAPE EVERY CALLER ALREADY HANDLES - the same `{ state, mounted,
+       may_analyse, refusals }` `show()` gives a dead controller - so no continuation has to learn a
+       new return type and nothing downstream needs a second branch for it.
+
+       WHAT IT DELIBERATELY DOES NOT DO. It does not abort, cancel or re-generation anything that is
+       ALREADY in flight: that contract belongs to F2 and is untouched. It blocks one thing only - a
+       controller that is no longer the page's owner STARTING new external work. */
+    function abandonedDispatch(state) {
+      if (C.alive === true) { return null; }
+      return { state: state, mounted: false, may_analyse: false, refusals: [] };
+    }
     function show(state, ux, refusals, action) {
       /* P1-B8D-R10E-F2 — THE CENTRAL DOM OWNERSHIP INVARIANT. Every non-board answer this page
          gives is written here, so this is where "the page I belong to is gone" has to be answered
@@ -883,6 +908,14 @@
        remembered, so a user-triggered retry of this read carries the same authority the first one
        did and nothing has to be kept in sync. */
     function readSiteUniverse() {
+      /* P1-B8D-R10E-F5 §1 - THE LAST SHARED POINT BEFORE THE UNIVERSE LEAVES THE BROWSER, which
+         is why the invariant is answered HERE and not on any of the roads that arrive at it. Every
+         one of them - a capability that is already true, one that succeeded inside the boot cap, one
+         that settled after it, the F3-R4 transient delegation, a route return that finds no usable
+         universe, and a person pressing "Try again" - funnels through this function, so one check
+         covers all six and there is no seventh road left to forget. */
+      var gone = abandonedDispatch(C.state);
+      if (gone) { return Promise.resolve(gone); }
       /* P1-B8D-R10E-F1 — AND THE CONTROL DOES NOT VANISH WHILE ITS OWN READ IS OPEN EITHER.
          `busyAction` says this in so many words a few hundred lines up, and the universe path was
          the one place that did not honour it: `retryUniverse` drew the busy button and this line
@@ -1079,6 +1112,11 @@
 
     /** STEP 4 + 5. One read, one board. Single-flight, and stale answers are dropped. */
     C.loadWorkspace = function () {
+      /* P1-B8D-R10E-F5 §1 - THE SAME INVARIANT ON THE OTHER EXTERNAL READ, and above the
+         single-flight bookkeeping rather than below it: a dead controller must not take a token or
+         raise `inFlight` either, or the latch would be left describing a read that never started. */
+      var gone = abandonedDispatch(P.LOADING_WORKSPACE);
+      if (gone) { return Promise.resolve(gone); }
       var scope = C.narrowed.scope;
       /* WHICH SITE THE OUTSTANDING READ IS FOR. Copied rather than referenced: `C.narrowed` is
          replaced by the next narrowing, so holding the object would mean comparing a scope with
