@@ -466,7 +466,10 @@ ok(/PRODUCT_STRATEGY_ENABLED_/.test(read('assets/specs/active/apps-script/00_con
 // handler would still be caught.
 var R6_KNOWN_GS_CHANGES = ['assets/specs/active/apps-script/03_master_data_handlers.gs',
   'assets/specs/active/apps-script/14_fc_write_handlers.gs',
-  'assets/specs/active/apps-script/20_campaign_write_handlers.gs'];
+  'assets/specs/active/apps-script/20_campaign_write_handlers.gs',
+  // FC-SUMMARY-R2B-A2-R1 — the fc_target_rules additive header migration tool. Unrouted, USER-run, and
+  // unreachable from Product Strategy's read path.
+  'assets/specs/active/apps-script/TEMP_migrate_fc_target_rules_header_r2ba2.gs'];
 var gsChanged = changedSince(R6_PRE, 'assets/specs/active/apps-script');
 if (gsChanged !== '__git_unavailable__') {
   var unexpectedGs = gsChanged.split('\n').map(function (x) { return x.trim(); })

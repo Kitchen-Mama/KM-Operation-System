@@ -76,10 +76,19 @@ var FC_TARGET_RULES_HEADERS_ = [
 var FC_SCHEMA_ORDERED_ = 'ORDERED';
 var FC_SCHEMA_BY_NAME_ = 'REQUIRED_COLUMNS_BY_NAME';
 
-// The ONLY tables approved for REQUIRED_COLUMNS_BY_NAME. `fc_target_rules` is deliberately ABSENT: its live
-// sheet holds no data rows, so `getTable` returns [] and its real header row has never been observed. A header
-// is not something to infer from an empty read, so it keeps the ordered gate until someone reads row 1.
-var FC_SCHEMA_BY_NAME_TABLES_ = ['campaigns', 'campaign_sku_lines', 'fc_special_events'];
+// The ONLY tables approved for REQUIRED_COLUMNS_BY_NAME.
+//
+// `fc_target_rules` was excluded in R2B-A because its live header row had never been observed — the table has
+// no data rows, so every deployed read returns [] and says nothing about row 1. Row 1 has now been supplied,
+// and it is worse than merely reordered: three REQUIRED columns are genuinely absent (`scope_type`, `scope_id`,
+// `target_percentage`), which is why the live refusal was HEADER_MISSING and not HEADER_ORDER_MISMATCH.
+//
+// Order tolerance cannot conjure a column that is not there, so membership here does NOT by itself unblock the
+// write: `prodRequireColumns_` still refuses with MISSING_REQUIRED_HEADER until the additive migration in
+// TEMP_migrate_fc_target_rules_header_r2ba2.gs has actually appended those three columns. That ordering is
+// deliberate — the table can be listed safely BEFORE the migration runs, because the second lock is what holds
+// it shut, and the refusal it produces names the real cause instead of blaming column order.
+var FC_SCHEMA_BY_NAME_TABLES_ = ['campaigns', 'campaign_sku_lines', 'fc_special_events', 'fc_target_rules'];
 
 function fcWriteSchemaByNameApproved_(name, mode) {
   if (mode !== FC_SCHEMA_BY_NAME_) return false;              // no opt-in → ORDERED
@@ -193,10 +202,27 @@ function fcWriteUpsert_(ss, sheetName, headers, idCol, idValue, body, actor, mod
   return { id: String(idValue).trim(), created: false };
 }
 
-/** Generic hard-delete by id column. Returns { id, deleted }. */
-function fcWriteDelete_(ss, sheetName, idCol, idValue) {
-  var sheet = ss.getSheetByName(sheetName);
-  if (!sheet) return { id: idValue, deleted: false, reason: 'sheet_not_found' };
+/**
+ * Generic hard-delete by id column. Returns { id, deleted }.
+ *
+ * FC-SUMMARY-R2B-A2 — THIS WAS THE ONE WRITE IN THIS FILE THAT REACHED A STRUCTURAL MUTATION WITH NO SCHEMA
+ * VALIDATION AT ALL. It resolved the sheet with a bare `getSheetByName`, took whatever header row it found,
+ * and called `deleteRow` — so a drifted, blank-headed or duplicate-headed sheet would have had a row removed
+ * by position on the strength of an index resolved from a header nobody had checked. Deleting the wrong row is
+ * not recoverable by a retry, which makes an ungated delete strictly worse than an ungated append.
+ *
+ * It now passes through the SAME gate as every other write here, with the same two locks. A caller that omits
+ * `mode` still gets ORDERED; a caller that omits `headers` gets presence validation against an empty required
+ * set, which still enforces the spreadsheet target, the tab, blank headers and duplicate headers.
+ *
+ * An ABSENT TAB stays the soft `sheet_not_found` it has always been, because a delete against a table that does
+ * not exist has already achieved what it was asked to do and there is nothing to protect. Every other schema
+ * fault throws, and `not_found` remains a zero-write outcome.
+ */
+function fcWriteDelete_(ss, sheetName, idCol, idValue, headers, mode) {
+  if (!ss.getSheetByName(sheetName)) return { id: idValue, deleted: false, reason: 'sheet_not_found' };
+  var sheet = fcWriteEnsureSheet_(ss, sheetName, headers || [], mode);
+  if (headers && headers.length) fcWriteEnsureColumns_(sheet, headers);
   var s = fcWriteReadSheet_(sheet);
   var idColIdx = s.col(idCol);
   if (idColIdx === -1) return { id: idValue, deleted: false, reason: 'id_column_missing' };
@@ -371,8 +397,11 @@ function handleDeleteFcSpecialEvent_(body) {
   var id = String((body && (body.event_fc_id || body.event_id)) || '').trim();
   if (!id) return jsonResponse_({ success: false, error: 'Missing event_fc_id' });
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var res = fcWriteDelete_(ss, 'fc_special_events', 'event_fc_id', id);
-  if (!res.deleted && res.reason === 'not_found') res = fcWriteDelete_(ss, 'fc_special_events', 'event_id', id);   // legacy fallback
+  // FC-SUMMARY-R2B-A2 — the delete is now schema-gated like every other write on this table.
+  var res = fcWriteDelete_(ss, 'fc_special_events', 'event_fc_id', id, FC_SPECIAL_EVENTS_HEADERS_, FC_SCHEMA_BY_NAME_);
+  if (!res.deleted && res.reason === 'not_found') {   // legacy fallback: a row whose PK column is the old event_id
+    res = fcWriteDelete_(ss, 'fc_special_events', 'event_id', id, FC_SPECIAL_EVENTS_HEADERS_, FC_SCHEMA_BY_NAME_);
+  }
   return jsonResponse_({ success: true, data: res });
 }
 
@@ -488,8 +517,11 @@ function handleUpsertFcTargetRule_(body) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var result;
   try {
+    // FC-SUMMARY-R2B-A2 — explicit opt-in, exactly like the Campaign writers. The live header carries every
+    // canonical column in a different order plus three legacy extras (`scope`, `status`, `priority`), and the
+    // writer resolves every cell by live header NAME, so order is not a property this write depends on.
     result = fcWriteUpsert_(ss, 'fc_target_rules', FC_TARGET_RULES_HEADERS_, 'target_rule_id',
-      String(body.target_rule_id || '').trim(), body, actor);
+      String(body.target_rule_id || '').trim(), body, actor, FC_SCHEMA_BY_NAME_);
   } catch (e) {
     return jsonResponse_({ success: false, error: String(e && e.message ? e.message : e) });
   }
@@ -501,5 +533,13 @@ function handleDeleteFcTargetRule_(body) {
   var id = String((body && body.target_rule_id) || '').trim();
   if (!id) return jsonResponse_({ success: false, error: 'Missing target_rule_id' });
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  return jsonResponse_({ success: true, data: fcWriteDelete_(ss, 'fc_target_rules', 'target_rule_id', id) });
+  // FC-SUMMARY-R2B-A2 — same gate as the Target Rule write, so a delete can never be the laxer door, and the
+  // same envelope, so the two Target Rule writes refuse in the same shape instead of one returning a refusal
+  // and the other throwing past its handler into the router's catch.
+  try {
+    return jsonResponse_({ success: true, data: fcWriteDelete_(ss, 'fc_target_rules', 'target_rule_id', id,
+      FC_TARGET_RULES_HEADERS_, FC_SCHEMA_BY_NAME_) });
+  } catch (e) {
+    return jsonResponse_({ success: false, error: String(e && e.message ? e.message : e) });
+  }
 }

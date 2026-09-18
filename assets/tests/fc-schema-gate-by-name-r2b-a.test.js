@@ -487,10 +487,27 @@ section('G. SCOPE — every unapproved table keeps the ordered gate');
   token(function () { CTX.fcWriteEnsureSheet_(ss, 'factory_stock_movements', MOV, CTX.FC_SCHEMA_BY_NAME_); },
     'HEADER_ORDER_MISMATCH', 'G2 and it CANNOT opt itself in — the approved list is the second lock');
 })();
-eq(CTX.FC_SCHEMA_BY_NAME_TABLES_.slice().sort(), ['campaign_sku_lines', 'campaigns', 'fc_special_events'],
-  'G3 the approved set is exactly the three tables that must move together');
-ok(CTX.FC_SCHEMA_BY_NAME_TABLES_.indexOf('fc_target_rules') === -1,
-  'G4 fc_target_rules is NOT approved — its live header row has never been observed (the table is empty)');
+// FC-SUMMARY-R2B-A2 — the three Special Event tables must STILL be approved, together and unchanged. That is
+// this round's non-regression gate and it is the half of G3 that must never move.
+['campaigns', 'campaign_sku_lines', 'fc_special_events'].forEach(function (t) {
+  ok(CTX.FC_SCHEMA_BY_NAME_TABLES_.indexOf(t) > -1,
+    'G3 ' + t + ' remains approved — the Special Event contract is untouched by later rounds');
+});
+// G4 previously asserted that fc_target_rules was NOT approved, and gave the reason: its live header row had
+// never been observed, so a header could not be inferred from an empty read. That reason is spent — row 1 was
+// supplied, and it showed three genuinely MISSING required columns (scope_type, scope_id, target_percentage),
+// which is a different fault from the reordering this suite exists for. Membership alone cannot create a
+// column, so the assertion now requires membership AND the additive migration that makes it mean anything.
+// Full coverage of that repair lives in fc-target-rules-schema-repair-r2b-a2.test.js.
+ok(CTX.FC_SCHEMA_BY_NAME_TABLES_.indexOf('fc_target_rules') > -1,
+  'G4 fc_target_rules joined the approved set once its row 1 was actually observed');
+ok(fs.existsSync(path.join(__dirname, '..', 'specs', 'active', 'apps-script',
+    'TEMP_migrate_fc_target_rules_header_r2ba2.gs')),
+  'G4b and it joined together with the additive migration that appends the three columns it was missing —',
+  'membership without the migration would only change which token the refusal carries');
+eq(CTX.FC_SCHEMA_BY_NAME_TABLES_.slice().sort(),
+  ['campaign_sku_lines', 'campaigns', 'fc_special_events', 'fc_target_rules'],
+  'G4c the approved set is exactly these four tables and nothing else');
 eq(CTX.fcWriteSchemaByNameApproved_('campaigns', undefined), false,
   'G5 an approved table with no explicit opt-in still gets ORDERED — the default is never the relaxed mode');
 eq(CTX.fcWriteSchemaByNameApproved_('campaigns', CTX.FC_SCHEMA_ORDERED_), false,
