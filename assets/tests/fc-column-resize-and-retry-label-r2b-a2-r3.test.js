@@ -621,23 +621,29 @@ section('I. REDIRECT / RETRY REGRESSION — §8, with controlled responses');
 // The real _fcRefreshViewNow_ against a scripted _fcWorkspaceRefresh_. The delivery failure itself is NOT
 // reproduced — §8 forbids using an external outage as a pass gate, and an intermittent Google hop could
 // never be one. What is proven is what this page does WITH such a failure.
-var RETRY_VARS = ['FC_VIEW_', 'FC_MSG_', 'FC_RETRY_', 'FC_RETRY_LABEL_', '_fcViewState_',
+var RETRY_VARS = ['FC_VIEW_', 'FC_MSG_', 'FC_RETRY_', 'FC_RETRY_LABEL_',
+  // INCIDENT-BOOT-FC-R1 §4D — the stage vocabulary the refusal banner names.
+  'FC_STAGE_', 'FC_UNREADABLE_CODES_', '_fcViewState_',
   '_fcReadbackFlight_', '_fcReadbackLoads_', '_fcReadModel', '_fcMeta_'];
+// INCIDENT-BOOT-FC-R1 — Retry now runs the page's ONE hydration authority instead of re-rendering the
+// rows alone, so the authority has to be in the sandbox for _fcRefreshViewNow_ to resolve. What this
+// section asserts is unchanged: it is about the LABEL on the control, not about what hydration builds.
 var RETRY_FNS = ['_fcRetryLabel_', '_fcBannerHost_', '_fcClearBanner_', '_fcShowBanner_',
-  '_fcEpoch_', '_fcOwns_', '_fcRerenderTables_', '_fcRefreshViewNow_'];
+  '_fcEpoch_', '_fcOwns_', '_fcFailureStage_', '_fcStageText_',
+  '_fcRerenderTables_', '_fcHydrateFromModel_', '_fcRefreshViewNow_'];
 
 function buildRetry(opts) {
   opts = opts || {};
   var JS = read(JS_REL);
   var dom = makeDom();
   var banner = dom.El('div'); banner.id = 'fc-view-banner'; dom.document.body.appendChild(banner);
-  var reads = [], writes = [];
+  var reads = [], writes = [], hydrated = [];
   var ctx = {
     console: console, window: null, document: dom.document,
     localStorage: { getItem: function () { return null; }, setItem: function () {} },
     getComputedStyle: function () { return { position: 'static' }; },
     Date: Date, Promise: Promise, JSON: JSON, String: String, Number: Number, Object: Object,
-    __reads: reads, __writes: writes, __dom: dom
+    __reads: reads, __writes: writes, __hydrated: hydrated, __dom: dom
   };
   ctx.window = ctx;
   // THE REAL OWNERSHIP AUTHORITY. _fcOwns_ asks window.KM.lifecycle; with no lifecycle present it returns
@@ -656,6 +662,10 @@ function buildRetry(opts) {
   // Collaborators this section does not exercise, stubbed so the real functions above can run unchanged.
   pieces.push('var _fcPageEpoch_ = 1;');
   pieces.push('function _fcRegion_() { return null; }');
+  // The two populate functions the hydration authority drives. Recorded rather than real: their CONTENT
+  // is proven by fc-retry-canonical-hydration-boot-fc-r1, and this section has no filter markup to fill.
+  pieces.push('function _populateFcFilterOptionsFromDb() { __hydrated.push(\'filters\'); }');
+  pieces.push('function _populateFcYearFromDb() { __hydrated.push(\'year\'); }');
   pieces.push('var __script = ' + JSON.stringify(opts.script || ['ok']) + ';');
   pieces.push('var __step = 0;');
   pieces.push([

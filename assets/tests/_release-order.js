@@ -408,7 +408,10 @@ var ROUND_TOKENS = [
   'fcnamegate-r2ba-20260918',
   // FC-SUMMARY-R2B-A2-R3 — complete FC Summary column resize (all three tabs, per-table CSS scoping,
   // no blocking max-width) and a retry control whose label matches the sentence that names it.
-  'fcrescol-r2ba2r3-20260918'];
+  'fcrescol-r2ba2r3-20260918',
+  // INCIDENT-BOOT-FC-R1 — FC Summary retry now hydrates through one authority (Year options and filters
+  // recover with the table, and an unreadable payload stays a refusal). fc-summary.js only.
+  'fcboothyd-bootfcr1-20260918'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

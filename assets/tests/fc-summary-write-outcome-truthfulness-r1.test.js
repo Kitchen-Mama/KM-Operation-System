@@ -86,13 +86,18 @@ var VARS = ['FC_PREREQ_', 'FC_WRITE_', 'FC_VIEW_', 'FC_MSG_',
   // FC-SUMMARY-R2B-A2-R3 — the retry-state map. The banner's LABEL and the sentence that names it now
   // come from one place, so both must be in the sandbox for the functions below to resolve.
   'FC_RETRY_', 'FC_RETRY_LABEL_',
+  // INCIDENT-BOOT-FC-R1 §4D — the stage vocabulary the refusal banner names.
+  'FC_STAGE_', 'FC_UNREADABLE_CODES_',
   '_fcPrereqState_', '_fcPrereqFlight_',
   '_fcPrereqLoads_', '_fcPrereqTransition_', '_fcWriteState_', '_fcWriteFlight_', '_fcViewState_', '_fcReadbackFlight_',
   '_fcReadbackLoads_', '_fcLastReceipt_', '_fcMeta_', '_FC_SECONDARY_TABLES', '_fcSecondaryLoaded'];
 var FNS = ['_fcEpoch_', '_fcOwns_', '_fcNoteEnvMeta_', '_fcMetricsSnapshot_',
   // FC-SUMMARY-R2B-A2-R3 — _fcRetryLabel_ and _fcErrDetail_ are read by every banner path in this file.
-  '_fcRetryLabel_', '_fcErrDetail_', '_fcBannerHost_',
-  '_fcClearBanner_', '_fcShowBanner_', '_fcRerenderTables_', '_fcRefreshViewNow_', '_fcPrereqNeeded_',
+  '_fcRetryLabel_', '_fcErrDetail_', '_fcFailureStage_', '_fcStageText_', '_fcBannerHost_',
+  // INCIDENT-BOOT-FC-R1 — the readback paths now hydrate through one authority instead of re-rendering
+  // the rows alone. The write-outcome assertions below are untouched.
+  '_fcClearBanner_', '_fcShowBanner_', '_fcRerenderTables_', '_fcHydrateFromModel_',
+  '_fcRefreshViewNow_', '_fcPrereqNeeded_',
   '_fcLoadPrerequisites_', '_fcNextBtn_', '_fcSetNextBusy_', '_fcClearPrereqRefusal_',
   '_fcShowPrereqRefusal_', '_fcOpenBuilder_', '_fcWriteBegin_', '_fcWriteEnd_', '_fcClassifyWrite_',
   '_fcSummaryOf_', '_fcCountsLine_', '_fcReceipt_', '_fcRefusalText_', '_fcUnknownOutcome_',
@@ -195,6 +200,10 @@ function rig(opts) {
     _fcWorkspaceRefresh_: opts.workspaceRefresh || function () { seen.readbacks++; return Promise.resolve(); },
     _fcRenderError_: function () { seen.errorRedraws++; },
     renderFcRegularTable: function () { seen.renders++; },
+    // INCIDENT-BOOT-FC-R1 — driven by the hydration authority; counted so a readback that skipped
+    // hydration entirely would be visible here rather than passing quietly.
+    _populateFcFilterOptionsFromDb: function () { seen.hydrations = (seen.hydrations || 0) + 1; },
+    _populateFcYearFromDb: function () { seen.hydrations = (seen.hydrations || 0) + 1; },
     renderFcEventTable: function () { seen.renders++; },
     renderTargetRulesTable: function () { seen.renders++; },
     closeFcModal: function () { seen.closes++; },

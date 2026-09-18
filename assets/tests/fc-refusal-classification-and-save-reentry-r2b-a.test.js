@@ -83,12 +83,14 @@ var VARS = ['FC_PREREQ_', 'FC_WRITE_', 'FC_VIEW_', 'FC_MSG_',
   // FC-SUMMARY-R2B-A2-R3 — the retry-state map. The banner's LABEL and the sentence that names it now
   // come from one place, so both must be in the sandbox for the functions below to resolve.
   'FC_RETRY_', 'FC_RETRY_LABEL_',
+  // INCIDENT-BOOT-FC-R1 §4D — the stage vocabulary the refusal banner names.
+  'FC_STAGE_', 'FC_UNREADABLE_CODES_',
   '_fcPrereqState_', '_fcPrereqFlight_',
   '_fcPrereqLoads_', '_fcPrereqTransition_', '_fcWriteState_', '_fcWriteFlight_', '_fcViewState_',
   '_fcReadbackFlight_', '_fcReadbackLoads_', '_fcLastReceipt_', '_fcEbStage_', '_fcEbCommitted_', '_fcMeta_'];
 var FNS = ['_fcEpoch_', '_fcOwns_', '_fcMetricsSnapshot_',
   // FC-SUMMARY-R2B-A2-R3 — the label accessor the refusal and unknown-outcome banners now consult.
-  '_fcRetryLabel_', '_fcBannerHost_', '_fcClearBanner_',
+  '_fcRetryLabel_', '_fcFailureStage_', '_fcStageText_', '_fcBannerHost_', '_fcClearBanner_',
   '_fcShowBanner_', '_fcRerenderTables_', '_fcRefreshViewNow_', '_fcWriteBegin_', '_fcWriteEnd_',
   '_fcClassifyWrite_', '_fcSummaryOf_', '_fcCountsLine_', '_fcReceipt_', '_fcRefusalText_',
   '_fcUnknownOutcome_', '_fcSettleWrite_', '_fcZeroWriteProven_', '_fcCanonicalCode_',

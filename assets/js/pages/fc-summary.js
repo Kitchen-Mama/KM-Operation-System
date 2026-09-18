@@ -3502,6 +3502,7 @@ function _fcEffectiveWorkspace() {
     window.KM.api.workspaceApiActive('fcSummary'));
 }
 var _fcReadModel = null;   // workspace-sourced { fcRegularForecast, fcSpecialEvents, fcTargetRules, marketplaces } or null = Legacy
+var _fcCandidateYears_ = null;   // Year options derived from the candidate BEFORE it became the read model
 var _fcReadSeq = 0;
 
 // read-model-first accessors: Workspace mode reads the scoped DTO; Legacy reads the broad-cache getters unchanged.
@@ -3623,6 +3624,7 @@ function _fcErrDetail_(err, state) {
 }
 function _fcRenderError_(err) {
   _fcReadModel = null;   // fail closed — NEVER fall back to the broad cache for the primary render
+  _fcCandidateYears_ = null;   // the year list belongs to the model; a refusal must not outlive it
   var rg = _fcRegion_(); if (rg) rg.set(window.KM.loadState.STATES.ERROR);
   var code = (err && err.code) || 'FC_SUMMARY_READ_FAILED';
   var message = (err && err.message) || 'FC Summary read failed';
@@ -3653,8 +3655,23 @@ function _fcWorkspaceRefresh_() {
   return Promise.resolve(window.KM.api.getWorkspace('fcSummary', {})).then(function (env) {
     if (mySeq !== _fcReadSeq) return _fcReadModel;   // a newer read superseded this one
     _fcNoteEnvMeta_(env);   // FC-SUMMARY-R1: diagnostic only; absence stays unknown, never zero
-    if (env && env.success && env.data) {
-      _fcReadModel = window.KM.DB.adaptFcSummaryWorkspace(env.data);
+    if (env && env.success) {
+      // INCIDENT-BOOT-FC-R1 §4A — VALIDATE, THEN COMMIT. `_fcReadModel` used to be ASSIGNED the
+      // adapter's output and only then read for `.fcRegularForecast.length`, so a malformed result
+      // was already installed at the moment it threw: the catch reported a refusal over a poisoned
+      // model. Nothing below writes `_fcReadModel` until every check has passed.
+      if (!_fcValidWorkspaceData_(env.data)) {
+        throw { code: 'FC_SUMMARY_RESPONSE_UNREADABLE',
+          message: 'The server answered successfully but the FC Summary payload was not the canonical workspace shape. '
+            + 'No data was loaded and nothing was changed.' };
+      }
+      var candidate = window.KM.DB.adaptFcSummaryWorkspace(env.data);
+      if (!_fcValidReadModel_(candidate)) {
+        throw { code: 'FC_SUMMARY_MODEL_UNREADABLE',
+          message: 'The FC Summary payload could not be adapted into a read model. No data was loaded.' };
+      }
+      _fcCandidateYears_ = _fcYearsOf_(candidate.fcRegularForecast);   // derived off-screen, before the commit
+      _fcReadModel = candidate;                                        // the ONLY assignment
       if (rg) rg.set(_fcReadModel.fcRegularForecast.length ? window.KM.loadState.STATES.READY : window.KM.loadState.STATES.EMPTY);
       return _fcReadModel;
     }
@@ -3743,7 +3760,10 @@ var _fcEbStage_ = '';                      // Special Event Builder: the stage c
 var _fcEbCommitted_ = [];                  // Special Event Builder: stages the server already confirmed
 var _fcMeta_ = { prereqStart: null, prereqEnd: null, writeStart: null, writeEnd: null,
                  readbackStart: null, readbackEnd: null, serverDurationMs: null, attempts: null,
-                 action: null, requestId: null };
+                 action: null, requestId: null,
+                 // §4D — the stage the last failure reached, and the code that classified it. Bounded,
+                 // safe, already-held facts: no endpoint, no payload, no token.
+                 stage: null, classification: null };
 
 /* OWNERSHIP. The SHARED canonical lifecycle authority — the same commitGuard(epoch, sectionId)
    contract request-order.js already uses. Nothing is copied and no per-page lifecycle is invented.
@@ -3799,6 +3819,82 @@ function _fcShowBanner_(text, actionLabel, onAction) {
   h.hidden = false;
 }
 
+/* =============================================================================================
+   INCIDENT-BOOT-FC-R1 §3/§4A — WHY RETRY LEFT YEAR AT `----`.
+
+   The cold load ran `_fcWorkspaceRefresh_().then(afterLoad)`, and afterLoad is THREE things:
+   populate the filter options, populate the Year options, then render the tables. Retry ran
+   `_fcWorkspaceRefresh_().then(... _fcRerenderTables_())`, which is only the third. So after a
+   refusal the read model was installed correctly and the rows were re-rendered against it, but
+   the Year <select> still held the single `----` option built while the model was null — and a
+   table whose year filter is '' renders 'Please select a year to view data'. The banner had
+   already been cleared, so a page with no year choices and no rows looked like a recovery.
+
+   There is now ONE hydration authority and both paths call it. A second approximation of
+   'load succeeded' is exactly what caused this, so this function is the only definition of it.
+   ============================================================================================= */
+
+/* The canonical workspace payload. `adaptFcSummaryWorkspace` is total — it answers `data || {}`
+   and `(data.x || [])` — so ANY object-ish value adapts to four empty arrays without complaint,
+   and a wrong-shaped `success:true` body would install a silent empty model that is
+   indistinguishable from a genuinely empty database. Validation therefore happens HERE, before
+   the adapter can erase the difference. An empty workspace is valid; an unreadable one is not. */
+function _fcValidWorkspaceData_(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return false;
+  var keys = ['fcRegularForecast', 'fcSpecialEvents', 'fcTargetRules', 'marketplaces'], present = 0;
+  for (var i = 0; i < keys.length; i++) {
+    var v = data[keys[i]];
+    if (v === undefined || v === null) continue;   // absent is allowed — the shape below still has to hold
+    if (!Array.isArray(v)) return false;           // present but not an array = not the canonical contract
+    present++;
+  }
+  return present > 0;                              // {} carries no canonical table at all: unreadable, not empty
+}
+/* The adapted candidate, checked before it is allowed to become the read model. */
+function _fcValidReadModel_(m) {
+  return !!m && typeof m === 'object'
+    && Array.isArray(m.fcRegularForecast) && Array.isArray(m.fcSpecialEvents)
+    && Array.isArray(m.fcTargetRules) && Array.isArray(m.marketplaces);
+}
+/* The Year options, derived from the CANDIDATE and off-screen. Deriving before the commit is what
+   makes the commit atomic: if the rows cannot yield a year list, nothing has been replaced yet. */
+function _fcYearsOf_(rows) {
+  var years = [];
+  (rows || []).forEach(function (r) {
+    var y = String((r && r.year) || '').trim();
+    if (y && years.indexOf(y) === -1) years.push(y);
+  });
+  years.sort(function (a, b) { return Number(b) - Number(a); });
+  return years;
+}
+
+/* THE ONE HYDRATION AUTHORITY. Filters, Year options and rows come from the SAME read model in the
+   SAME order on the cold load, on Retry and after a write. It deliberately does NOT swallow
+   exceptions: a caller that cannot hydrate must keep its refusal, and a silent catch here is what
+   would let a half-built page be reported as current. */
+/* THE THREE STAGES A READ CAN FAIL AT. `stage` is what the page was DOING; the error code refines it.
+   These are not causes and must not be read as blame — TRANSPORT covers everything between this page
+   and the answer arriving, which includes Google's own delivery hop. */
+var FC_STAGE_ = { TRANSPORT: 'transport', RESPONSE: 'invalid response', HYDRATION: 'hydration' };
+var FC_UNREADABLE_CODES_ = ['FC_SUMMARY_RESPONSE_UNREADABLE', 'FC_SUMMARY_MODEL_UNREADABLE'];
+function _fcFailureStage_(stage, err) {
+  if (stage === FC_STAGE_.HYDRATION) return FC_STAGE_.HYDRATION;   // we had the data; the view is the fault
+  var code = String((err && err.code) || '');
+  return (FC_UNREADABLE_CODES_.indexOf(code) > -1) ? FC_STAGE_.RESPONSE : FC_STAGE_.TRANSPORT;
+}
+/* The one sentence the operator reads, with the stage named. */
+function _fcStageText_(text, stage, err) {
+  return String(text) + ' Stage: ' + _fcFailureStage_(stage, err) + '.';
+}
+
+function _fcHydrateFromModel_() {
+  _populateFcFilterOptionsFromDb();
+  _populateFcYearFromDb();
+  if (typeof renderFcRegularTable === 'function') renderFcRegularTable();
+  if (typeof renderFcEventTable === 'function') renderFcEventTable();
+  if (typeof renderTargetRulesTable === 'function') renderTargetRulesTable();
+}
+
 function _fcRerenderTables_() {
   try { if (typeof renderFcRegularTable === 'function') renderFcRegularTable(); } catch (e) {}
   try { if (typeof renderFcEventTable === 'function') renderFcEventTable(); } catch (e) {}
@@ -3817,19 +3913,32 @@ function _fcRefreshViewNow_(failText, state) {
   _fcMeta_.readbackStart = Date.now(); _fcMeta_.readbackEnd = null;
   var btn = (typeof document !== 'undefined') ? document.getElementById('fc-view-refresh-btn') : null;
   if (btn) { btn.disabled = true; btn.setAttribute('aria-busy', 'true'); }
+  // §4D — how far this attempt got. It advances to HYDRATION only once the data is in hand, so the
+  // catch below can tell a delivery failure from a view that could not be rebuilt from good data.
+  var stage = FC_STAGE_.TRANSPORT;
   return _fcWorkspaceRefresh_().then(function () {
     _fcMeta_.readbackEnd = Date.now(); _fcReadbackFlight_ = false;
     if (!_fcOwns_(epoch)) return;
+    // INCIDENT-BOOT-FC-R1 §4A — HYDRATE FIRST, DECLARE CURRENT SECOND, CLEAR THE BANNER LAST.
+    // This used to re-render the rows only, leaving the Year and filter controls as they were built
+    // while the model was null — and clear the banner regardless. A page with no year choices was
+    // presented as recovered. If hydration throws, the throw reaches the catch below and the
+    // refusal stays on screen, which is the whole point of doing it in this order.
+    stage = FC_STAGE_.HYDRATION;
+    _fcHydrateFromModel_();
     _fcViewState_ = FC_VIEW_.CURRENT;
     _fcClearBanner_();
-    _fcRerenderTables_();
   }).catch(function (err) {
     _fcMeta_.readbackEnd = Date.now(); _fcReadbackFlight_ = false;
     if (!_fcOwns_(epoch)) return;
     _fcViewState_ = _fcReadModel ? FC_VIEW_.STALE : FC_VIEW_.REFUSED;
+    _fcMeta_.stage = _fcFailureStage_(stage, err);
+    _fcMeta_.classification = String((err && err.code) || 'UNKNOWN');
     // The label follows the STATE this refresh was started in, not the call site's guess, and the retry it
-    // schedules carries the same state — so a repeated failure cannot silently change the wording.
-    _fcShowBanner_(stale, _fcRetryLabel_(_st), function () { _fcRefreshViewNow_(stale, _st); });
+    // schedules carries the same state — so a repeated failure cannot silently change the wording. The
+    // STAGE is appended for the operator; the retry it schedules re-derives its own stage from scratch.
+    _fcShowBanner_(_fcStageText_(stale, stage, err), _fcRetryLabel_(_st),
+      function () { _fcRefreshViewNow_(stale, _st); });
   });
 }
 
@@ -4053,9 +4162,11 @@ function _fcAfterWrite(cb) {
   _fcWorkspaceRefresh_().then(function () {
     _fcMeta_.readbackEnd = Date.now();
     if (!_fcOwns_(epoch)) return;                      // routed away → no DOM mutation
+    // Same authority as the cold load. A write that introduces a year the dropdown has never seen
+    // must put that year in the dropdown; re-rendering rows alone left it invisible until reload.
+    _fcHydrateFromModel_();
     _fcViewState_ = FC_VIEW_.CURRENT;
     _fcClearBanner_();
-    _fcRerenderTables_();
   }).catch(function (err) {
     _fcMeta_.readbackEnd = Date.now();
     if (!_fcOwns_(epoch)) return;
@@ -4167,9 +4278,10 @@ function _populateFcYearFromDb() {
     var sel = document.getElementById('fc-year-select');
     if (!sel) return;
     var rows = _fcGetRegularForecast();   // Workspace (scoped) → read-model; Legacy → getFcRegularForecast()
-    var years = [];
-    rows.forEach(function(r) { var y = String(r.year || '').trim(); if (y && years.indexOf(y) === -1) years.push(y); });
-    years.sort(function(a, b) { return Number(b) - Number(a); });
+    // In Workspace mode the options are the list derived from the CANDIDATE before it was committed —
+    // not a second derivation that could disagree with the model the rows were rendered from. Legacy
+    // mode has no candidate and derives from its own rows through the same function.
+    var years = (_fcReadModel && _fcCandidateYears_) ? _fcCandidateYears_ : _fcYearsOf_(rows);
     var prev = sel.value;
     // Always rebuild from DB distinct years (no static fallback). Empty DB -> only the default "----".
     sel.innerHTML = '<option value="">----</option>' +
@@ -4188,15 +4300,10 @@ function _fcSummaryEnsureDbAndRender() {
     _populateFcFilterOptionsFromDb();
     _populateFcYearFromDb();
 
-    var afterLoad = function() {
-        _populateFcFilterOptionsFromDb();
-        _populateFcYearFromDb();
-        // Render reflects current selection only: with no year selected this shows the
-        // "Please select a year" empty state — table does NOT auto-populate until user action.
-        renderFcRegularTable();
-        renderFcEventTable();
-        if (typeof renderTargetRulesTable === 'function') renderTargetRulesTable();  // live fc_target_rules
-    };
+    // INCIDENT-BOOT-FC-R1 §4A — the cold load and Retry now run the SAME function. Render still
+    // reflects the current selection only: with no year selected this shows the "Please select a
+    // year" empty state — the table does NOT auto-populate until user action.
+    var afterLoad = _fcHydrateFromModel_;
 
     // Canonical: scoped fcSummary workspace (NO broad Operation DB for the primary render). Fail-closed on error —
     // a bounded FC region error, never a silent legacy broad fallback (that path lives ONLY in the Legacy branch).
