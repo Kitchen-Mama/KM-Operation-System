@@ -666,6 +666,12 @@ function confirmFcEdit() {
   fcEditState.editRows = JSON.parse(JSON.stringify(filtered.slice(startIdx, endIdx)));
 
   _fcSetEditLock(true);
+  // FC-SUMMARY-R2B-A §5 — RE-ASK THE ONE AUTHORITY. `_fcSetEditLock` shows the Save control but never sets
+  // `disabled`, and a successful save left it disabled (`_fcSetSaveEnabled(false)`, never reversed on the
+  // success path). Re-entering edit mode therefore presented a visible, permanently dead Save until the
+  // operator happened to type in a cell. `_fcUpdateEditStatus` is already the single owner of that flag —
+  // enabled while editing with no invalid cell — so entry calls it rather than setting the flag a second way.
+  _fcUpdateEditStatus();
   renderFcRegularTableEditable();
 }
 
@@ -927,6 +933,7 @@ function enterEventEditMode() {
   var endIdx = startIdx + fcPaginationState.pageSize;
   fcEditState.editEventRows = JSON.parse(JSON.stringify(filtered.slice(startIdx, endIdx)));
   _fcEventSetEditLock(true);
+  _fcEventUpdateStatus();   // FC-SUMMARY-R2B-A §5 — see confirmFcEdit: identical defect, identical fix.
   renderFcEventTableEditable();
 }
 
@@ -3239,11 +3246,16 @@ async function saveEventUpdate() {
   var saveBtn = document.getElementById('fc-event-builder-save-btn')
     || document.querySelector('#fc-add-event-modal .fc-btn--primary');
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+  // FC-SUMMARY-R2B-A — the partial-write manifest. `_fcEbStage_` is the stage currently in flight and
+  // `_fcEbCommitted_` is what the server has already confirmed, so a refusal can state exactly what exists
+  // rather than leaving the operator to infer it.
+  _fcEbStage_ = 'stage 1 — campaigns'; _fcEbCommitted_ = [];
   try {
     // 1) campaign header (idempotent by campaign_id, else business key).
     var camp = await DB.upsertCampaign(campaignPayload);
     var campaignId = (camp && camp.campaign_id) || '';
     if (!campaignId) throw new Error('campaign_id was not returned by the campaigns writer.');
+    _fcEbCommitted_.push('campaigns'); _fcEbStage_ = 'stage 2 — campaign_sku_lines';
 
     // 2) campaign_sku_lines (idempotent per line).
     var linePayloads = lines.map(function(l){
@@ -3255,6 +3267,7 @@ async function saveEventUpdate() {
     var lineRes = await DB.upsertCampaignSkuLines({ campaign_id: campaignId, lines: linePayloads });
     var lineIdBySku = {};
     ((lineRes && lineRes.lines) || []).forEach(function(x){ if (x && x.sku) lineIdBySku[String(x.sku).toUpperCase()] = x.campaign_sku_line_id; });
+    _fcEbCommitted_.push('campaign_sku_lines'); _fcEbStage_ = 'stage 3 — fc_special_events';
 
     // 3) fc_special_events per line, linked by campaign_id + campaign_sku_line_id. The BACKEND owns
     //    event_fc_id (canonical PK) — the frontend does NOT fabricate it. Idempotency is the stable
@@ -3283,13 +3296,7 @@ async function saveEventUpdate() {
       alert(FC_MSG_.SAVED + ' campaigns: 1 (' + campaignId + ') · campaign_sku_lines: ' + linePayloads.length + ' · fc_special_events: ' + written + ' (linked by campaign_id / campaign_sku_line_id).');
     });
   } catch (e) {
-    // This writer is a 3-layer sequence, so a failure part-way leaves an UNKNOWN amount written.
-    // It has never been safe to replay blindly, and it is not replayed here.
-    _fcWriteEnd_('eventBuilder', FC_WRITE_.UNKNOWN);
-    if (_fcOwns_(_ebEpoch)) {
-      alert(FC_MSG_.UNKNOWN + '\n\nSpecial Event Save stopped at: ' + (e && e.message ? e.message : e));
-      _fcShowBanner_(FC_MSG_.UNKNOWN, 'Check latest data', function () { _fcRefreshViewNow_(FC_MSG_.READ_FAILED); });
-    }
+    _fcBuilderFailure_(e, _ebEpoch);
   } finally {
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
   }
@@ -3651,6 +3658,10 @@ var FC_MSG_ = {
   SAVED_STALE:  'Saved successfully, but the view could not refresh.',
   REFUSED:      'The server refused the save: ',
   UNKNOWN:      'The save result could not be confirmed. Do not submit again until the latest data has been checked.',
+  /* FC-SUMMARY-R2B-A — a refusal the server proved BEFORE touching a cell. Nothing was written, the inputs are
+     intact, and retrying changes nothing until the cause is fixed — three facts the UNKNOWN sentence gets
+     wrong in all three directions. */
+  REFUSED_ZERO: 'The server refused the save and wrote nothing. Your entries are unchanged. Retrying will not help until this is fixed: ',
   READ_FAILED:  'FC Summary data could not be loaded.',
   PREREQ_FAILED:'Prerequisite data could not be loaded.'
 };
@@ -3668,6 +3679,8 @@ var _fcViewState_ = FC_VIEW_.CURRENT;
 var _fcReadbackFlight_ = false;            // the Refresh-view control is single-flight too
 var _fcReadbackLoads_ = 0;
 var _fcLastReceipt_ = null;                // compact receipt of the most recent confirmed write
+var _fcEbStage_ = '';                      // Special Event Builder: the stage currently in flight
+var _fcEbCommitted_ = [];                  // Special Event Builder: stages the server already confirmed
 var _fcMeta_ = { prereqStart: null, prereqEnd: null, writeStart: null, writeEnd: null,
                  readbackStart: null, readbackEnd: null, serverDurationMs: null, attempts: null,
                  action: null, requestId: null };
@@ -3886,11 +3899,72 @@ function _fcSettleWrite_(res, opts) {
   if (typeof opts.onSuccess === 'function') opts.onSuccess(_fcSummaryOf_(res), res);
   return outcome;
 }
+/* FC-SUMMARY-R2B-A — A THROWN ERROR IS NOT AUTOMATICALLY AN UNKNOWN OUTCOME.
+ *
+ * The FC write adapters answer `!json.success` by throwing, so a server refusal and a dead socket arrive
+ * through the same `.catch`. Some of those refusals are PROVEN zero writes — the validate-only schema gate
+ * throws before it touches a cell, a documented pre-write refusal reports "zero rows written", and an
+ * unavailable lock never begins. The shared adapter already encodes exactly which strings carry that proof.
+ *
+ * This asks that authority; it does NOT restate it. If the adapter is an older cached build that has no such
+ * export, the answer is `false` and the outcome stays UNKNOWN — the safe direction, because the page then
+ * claims less than it knows rather than more. */
+function _fcZeroWriteProven_(err) {
+  var msg = (err && err.message) ? String(err.message) : String(err == null ? '' : err);
+  var DB = window.KM && window.KM.DB;
+  if (!DB || typeof DB.zeroWriteProven !== 'function') return false;
+  try { return DB.zeroWriteProven(msg) === true; } catch (e) { return false; }
+}
+/* The canonical token (`PRODUCTION_SAFETY:HEADER_ORDER_MISMATCH`), from the same shared authority, so the
+   operator is told WHICH refusal this is instead of being handed prose to interpret. */
+function _fcCanonicalCode_(err) {
+  var msg = (err && err.message) ? String(err.message) : String(err == null ? '' : err);
+  var DB = window.KM && window.KM.DB;
+  if (!DB || typeof DB.canonicalErrorCode !== 'function') return '';
+  try { return String(DB.canonicalErrorCode(msg) || ''); } catch (e) { return ''; }
+}
+/* The CONFIRMED-REFUSAL presentation: no success, no "unknown", inputs untouched, the control released, and
+   NO automatic replay — retrying is exactly what will not help. */
+function _fcZeroWriteRefusal_(ctl, err) {
+  var code = _fcCanonicalCode_(err);
+  alert(FC_MSG_.REFUSED_ZERO + (code || _fcErrDetail_(err)) + '.');
+  _fcShowBanner_(FC_MSG_.REFUSED_ZERO + (code || _fcErrDetail_(err)) + '.', 'Check latest data',
+    function () { _fcRefreshViewNow_(FC_MSG_.READ_FAILED); });
+}
+/* THE SPECIAL EVENT BUILDER'S FAILURE HANDLING, as a function rather than as twenty lines buried in the
+ * middle of a two-hundred-line async writer. A behaviour that cannot be driven is a behaviour that can only
+ * be checked by reading it, and reading is not evidence.
+ *
+ * THE SEQUENCE IS STILL NOT ATOMIC: campaigns then campaign_sku_lines then fc_special_events are three
+ * separate writes with no transaction and no rollback. Later stages stop after the first refusal, so a
+ * failure at stage 2 or 3 leaves stage 1 COMMITTED. Nothing here changes that, and nothing here replays
+ * anything: reconciliation is still required before any retry.
+ *
+ * But "not atomic" does not make every failure unknowable. A PROVEN zero-write refusal at a given stage
+ * means THAT stage wrote nothing, and because the sequence stops at the first refusal, no later stage ran
+ * either. `_fcEbCommitted_` carries what HAS already committed, so the operator is told exactly what exists
+ * instead of being handed "the result could not be confirmed" and left to guess. */
+function _fcBuilderFailure_(e, epoch) {
+  var proven = _fcZeroWriteProven_(e);
+  var stage = _fcEbStage_ || 'the campaign write';
+  _fcWriteEnd_('eventBuilder', proven ? FC_WRITE_.REFUSAL : FC_WRITE_.UNKNOWN);
+  if (!_fcOwns_(epoch)) { _fcWriteState_['eventBuilder'] = FC_WRITE_.UNMOUNTED; return; }
+  var committed = _fcEbCommitted_.length
+    ? ' The earlier stage(s) ' + _fcEbCommitted_.join(' + ') + ' were already committed and still need reconciling.'
+    : ' Nothing had been committed by an earlier stage.';
+  var msg = proven
+    ? (FC_MSG_.REFUSED_ZERO + (_fcCanonicalCode_(e) || _fcErrDetail_(e)) + ' - refused at ' + stage + '.' + committed)
+    : (FC_MSG_.UNKNOWN + '\n\nSpecial Event Save stopped at ' + stage + ': ' + _fcErrDetail_(e) + '.' + committed);
+  alert(msg);
+  _fcShowBanner_(msg, 'Check latest data', function () { _fcRefreshViewNow_(FC_MSG_.READ_FAILED); });
+}
 function _fcFailWrite_(err, opts) {
-  _fcWriteEnd_(opts.ctl, FC_WRITE_.UNKNOWN);
+  var proven = _fcZeroWriteProven_(err);
+  _fcWriteEnd_(opts.ctl, proven ? FC_WRITE_.REFUSAL : FC_WRITE_.UNKNOWN);
   if (!_fcOwns_(opts.epoch)) { _fcWriteState_[opts.ctl] = FC_WRITE_.UNMOUNTED; return; }
-  _fcUnknownOutcome_(opts.ctl, err);
-  if (opts.reenable) opts.reenable(true);
+  if (proven) _fcZeroWriteRefusal_(opts.ctl, err);
+  else _fcUnknownOutcome_(opts.ctl, err);
+  if (opts.reenable) opts.reenable(true);          // the modal stays open and every input is preserved
 }
 
 function _fcAfterWrite(cb) {
@@ -4396,10 +4470,13 @@ function runFcImport() {
                 }
             })
             .catch(function(err) {
-                _fcWriteEnd_('import', FC_WRITE_.UNKNOWN);
+                // FC-SUMMARY-R2B-A — the same four-way classification the other five controls use.
+                var _imProven = _fcZeroWriteProven_(err);
+                _fcWriteEnd_('import', _imProven ? FC_WRITE_.REFUSAL : FC_WRITE_.UNKNOWN);
                 if (!_fcOwns_(_imEpoch)) { _fcWriteState_['import'] = FC_WRITE_.UNMOUNTED; return; }
                 if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Import'; }
-                _fcUnknownOutcome_('import', err);
+                if (_imProven) _fcZeroWriteRefusal_('import', err);
+                else _fcUnknownOutcome_('import', err);
                 _fcRenderImportError(err && err.message ? err.message : 'Import request failed.');
             });
     };

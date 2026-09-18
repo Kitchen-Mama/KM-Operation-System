@@ -4548,6 +4548,16 @@ function _kmZeroWriteProven_(msg) {
     var s = String(msg == null ? '' : msg);
     return /^PRODUCTION_SAFETY:/.test(s.trim()) || /zero rows written/i.test(s) || /could not acquire lock/i.test(s);
 }
+// FC-SUMMARY-R2B-A — EXPOSED, not duplicated. `_kmZeroWriteProven_` and `_kmExtractCanonicalCode_` were
+// private to `_kmWeeklyCommand_`, so the pages that do NOT go through the weekly command runner — FC Summary's
+// campaign and forecast writers among them — had no way to ask whether a refusal was a proven zero write, and
+// reported a deterministic schema refusal as "the result could not be confirmed". Re-deriving the rule in a
+// page-local regex would create a second authority for the same sentence, which is precisely what the canonical
+// code list exists to prevent. These two lines publish the existing functions unchanged; no caller's behaviour
+// changes, and there is still exactly one place where the rule is written down.
+window.KM.DB.zeroWriteProven = function (msg) { return _kmZeroWriteProven_(msg); };
+window.KM.DB.canonicalErrorCode = function (msg) { return _kmExtractCanonicalCode_(msg); };
+
 function _kmCmdOk_(command, data) { return { success: true, data: Object.assign({ command: command, committed: true }, data || {}), error: null }; }
 function _kmCmdErr_(command, code, message, details) {
     return { success: false, data: null, error: { code: code || 'BUSINESS_COMMAND_ERROR', message: String(message == null ? code : message), details: (details == null ? { command: command } : Object.assign({ command: command }, details)) } };

@@ -31,6 +31,13 @@ function extractFn(src, name) {
   throw new Error('unbalanced braces extracting: ' + name);
 }
 function gs(rel) { return fs.readFileSync(path.join(__dirname, '..', 'specs', 'active', 'apps-script', rel), 'utf8'); }
+// A top-level `var NAME = ...;` statement, for the constants the extracted helpers close over.
+function extractVarStmt(src, name) {
+  var re = new RegExp('var\\s+' + name + '\\s*=\\s*[\\s\\S]*?;\\s*\\n');
+  var m = re.exec(src);
+  if (!m) throw new Error('source var not found: ' + name);
+  return m[0];
+}
 var ADAPTER = gs('29_production_safety_adapter.gs');
 var G11 = gs('11_shipping_plan_handlers.gs'), G12 = gs('12_shipment_handlers.gs');
 var G13 = gs('13_procurement_handlers.gs'), G14 = gs('14_fc_write_handlers.gs');
@@ -49,6 +56,14 @@ eval(extractFn(G13, 'procurementEnsureSheet_'));
 eval(extractFn(G11, 'shippingPlanEnsureSheet_'));
 eval(extractFn(G11, 'sheetEnsureColumns_'));
 eval(extractFn(G12, 'shipmentEnsureSheet_'));
+// FC-SUMMARY-R2B-A — fcWriteEnsureSheet_ consults an explicit approved-table predicate before falling
+// through to the unchanged ORDERED call. Every DOMAIN below passes three arguments (no mode), so they all
+// still take the ORDERED path and every assertion in this file is unchanged in meaning. The predicate and
+// its two mode constants are extracted so the real function can run instead of throwing a ReferenceError.
+eval(extractVarStmt(G14, 'FC_SCHEMA_ORDERED_'));
+eval(extractVarStmt(G14, 'FC_SCHEMA_BY_NAME_'));
+eval(extractVarStmt(G14, 'FC_SCHEMA_BY_NAME_TABLES_'));
+eval(extractFn(G14, 'fcWriteSchemaByNameApproved_'));
 eval(extractFn(G14, 'fcWriteEnsureSheet_'));
 eval(extractFn(G14, 'fcWriteEnsureColumns_'));
 

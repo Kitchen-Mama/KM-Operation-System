@@ -659,6 +659,16 @@ GS_OWNED_SINCE_R1['72_api_v1_product_pricing_workspace.gs'] = 'PRODUCT-STRATEGY-
 // was added, no flag, constant or property authority was created, no existing field was renamed or
 // removed, and the response envelope is unchanged. An unexpected file still fails.
 GS_OWNED_SINCE_R1['03_master_data_handlers.gs'] = 'PRODUCT-STRATEGY-P1-B8D-R10D one added capability field, product_strategy_enabled, published from the single authority PRODUCT_STRATEGY_ENABLED_ so the page stops paying a 17-table health census to read one flag';
+// FC-SUMMARY-R2B-A — 14_ and 20_ join the owned set, TOGETHER, and that pairing is the whole point of the
+// entry. Special Event saving was being refused outright by `PRODUCTION_SAFETY:HEADER_ORDER_MISMATCH
+// [campaigns]`: the S0.5 gate requires the canonical header array to be the live header row's leading
+// PREFIX, and the live rows satisfy every other requirement — every column present, unique, non-blank and
+// correctly spelled — but not that one, because the pre-S0.5 `fcWriteEnsureColumns_` appended each missing
+// column at the right edge. Dropping the ORDER check is safe for exactly these three tables because every
+// write in this path resolves the LIVE header by NAME; it is opt-in per call site AND restricted to a
+// declared table list, so no other table can reach it. An unexpected file still fails.
+GS_OWNED_SINCE_R1['14_fc_write_handlers.gs'] = 'FC-SUMMARY-R2B-A the explicit two-mode schema gate: ORDERED stays the default for all fourteen tables that share fcWriteEnsureSheet_, and REQUIRED_COLUMNS_BY_NAME is opt-in AND restricted to a declared approved set, because the live campaigns / campaign_sku_lines / fc_special_events headers hold every required column but not in the constants order - the layout this system produced itself by right-edge appends before S0.5 froze them';
+GS_OWNED_SINCE_R1['20_campaign_write_handlers.gs'] = 'FC-SUMMARY-R2B-A the four Campaign writer call sites opt into that mode, together, because repairing campaigns alone would let stage 1 commit and then refuse stage 2 - manufacturing the partial write the round exists to prevent';
 gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
 eq(gsUnexpected.join(','), '', "8. no Apps Script file outside this line's owned set changed since the R1 commit");
 

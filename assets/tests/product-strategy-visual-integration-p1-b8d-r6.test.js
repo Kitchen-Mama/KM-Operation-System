@@ -459,7 +459,14 @@ ok(/PRODUCT_STRATEGY_ENABLED_/.test(read('assets/specs/active/apps-script/00_con
    changed since R6 is KNOWN AND NAMED, and anything outside it still fails. A visual round that
    changed a handler would still be caught; a later round that changes one has to be written down
    here, which is a better outcome than a guard that quietly becomes untrue. */
-var R6_KNOWN_GS_CHANGES = ['assets/specs/active/apps-script/03_master_data_handlers.gs'];
+// FC-SUMMARY-R2B-A — written down here for exactly the reason the comment above gives: this guard measures
+// drift from a fixed commit rather than this visual round's own diff, so a later round that legitimately
+// edits a .gs has to be recorded or the guard quietly becomes untrue. R2B-A repairs the FC/Campaign schema
+// gate. Neither file is reachable from Product Strategy's read path, and a visual round that touched a
+// handler would still be caught.
+var R6_KNOWN_GS_CHANGES = ['assets/specs/active/apps-script/03_master_data_handlers.gs',
+  'assets/specs/active/apps-script/14_fc_write_handlers.gs',
+  'assets/specs/active/apps-script/20_campaign_write_handlers.gs'];
 var gsChanged = changedSince(R6_PRE, 'assets/specs/active/apps-script');
 if (gsChanged !== '__git_unavailable__') {
   var unexpectedGs = gsChanged.split('\n').map(function (x) { return x.trim(); })

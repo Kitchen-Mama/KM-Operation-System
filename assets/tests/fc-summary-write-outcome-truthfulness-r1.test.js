@@ -90,6 +90,11 @@ var FNS = ['_fcEpoch_', '_fcOwns_', '_fcNoteEnvMeta_', '_fcMetricsSnapshot_', '_
   '_fcLoadPrerequisites_', '_fcNextBtn_', '_fcSetNextBusy_', '_fcClearPrereqRefusal_',
   '_fcShowPrereqRefusal_', '_fcOpenBuilder_', '_fcWriteBegin_', '_fcWriteEnd_', '_fcClassifyWrite_',
   '_fcSummaryOf_', '_fcCountsLine_', '_fcReceipt_', '_fcRefusalText_', '_fcUnknownOutcome_',
+  // FC-SUMMARY-R2B-A — _fcFailWrite_ now classifies a PROVEN zero-write refusal apart from an unknown
+  // outcome, so its three collaborators join the sandbox. This rig publishes no KM.DB.zeroWriteProven, so
+  // the bridge answers false and every scenario below keeps the outcome it already asserted — which is the
+  // point: a transport failure must NOT become a claimed refusal just because the classifier now exists.
+  '_fcZeroWriteProven_', '_fcCanonicalCode_', '_fcZeroWriteRefusal_',
   '_fcSettleWrite_', '_fcFailWrite_', '_fcAfterWrite', '_fcEffectiveWorkspace', '_fcErrDetail_',
   'proceedToFcMode', '_fcSetTargetSaveEnabled_'];
 
@@ -615,7 +620,19 @@ function main() {
       ok(/_fcRenderImportResult/.test(imp), 'F4  while keeping its own per-row manifest');
       var eb = extractFn(FC, 'saveEventUpdate');
       ok(/_fcWriteBegin_\('eventBuilder'\)/.test(eb), 'F5  the Special Event Builder latches too');
-      ok(/FC_MSG_\.UNKNOWN/.test(eb), 'F6  and reports its 3-layer partial failure as an unknown outcome');
+      // FC-SUMMARY-R2B-A — the builder's failure handling moved out of the two-hundred-line async writer
+      // into the named `_fcBuilderFailure_`, so it can be DRIVEN instead of read. This assertion pinned the
+      // message constant inside saveEventUpdate; it now pins the guarantee where the guarantee lives, and
+      // strengthens it — an unreadable failure is STILL an unknown outcome, and a PROVEN zero-write refusal
+      // is no longer smeared into the same sentence. Driven coverage of both lives in
+      // fc-refusal-classification-and-save-reentry-r2b-a.test.js sections B and D.
+      ok(/_fcBuilderFailure_\(e, _ebEpoch\)/.test(eb),
+        'F6  the Special Event Builder routes every failure through ONE handler');
+      var bf = extractFn(FC, '_fcBuilderFailure_');
+      ok(/FC_MSG_\.UNKNOWN/.test(bf) && /FC_WRITE_\.UNKNOWN/.test(bf),
+        'F6b which still reports an unreadable 3-layer failure as an unknown outcome');
+      ok(/_fcZeroWriteProven_\(e\)/.test(bf) && /FC_WRITE_\.REFUSAL/.test(bf),
+        'F6c and separates a PROVEN zero-write refusal from it');
     })
 
     .then(function () {

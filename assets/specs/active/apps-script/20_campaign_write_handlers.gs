@@ -20,8 +20,12 @@
 //   are additive identity columns on campaigns; `marketplace_sku_id` is the canonical marketplace-SKU
 //   identity on campaign_sku_lines. `sku` is retained as the Master-SKU display snapshot.
 //
-// MIGRATION SAFETY: additive columns only. fcWriteEnsureColumns_ appends any missing header to the
-//   live sheet's header row; it never renames or drops a live column. No destructive migration.
+// MIGRATION SAFETY: additive columns only; no column is ever renamed, moved or dropped.
+//   HISTORICAL NOTE (corrected FC-SUMMARY-R2B-A): fcWriteEnsureColumns_ USED to append a missing header to
+//   the live sheet's right edge. Production Safety Round S0.5 made it validate-only, so it appends nothing
+//   today — but the appends it already performed are why the live `campaigns` header ends in company /
+//   event_flag / created_by / updated_by instead of carrying them at indexes 1, 8, 21, 23. Those writes were
+//   sanctioned when they ran; the schema gate is what changed underneath them. See 14_ FC_SCHEMA_BY_NAME_.
 // ============================================================
 
 // campaigns canonical header (existing columns + additive `company`, `marketplace_id`).
@@ -105,7 +109,8 @@ function handleUpsertCampaign_(body) {
   var name = String(body.campaign_name || body.event_name || '').trim();
   if (!name) return jsonResponse_({ success: false, error: 'Missing campaign_name' });
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = fcWriteEnsureSheet_(ss, 'campaigns', CAMPAIGNS_HEADERS_);
+  // FC-SUMMARY-R2B-A — see 14_: name-based required-column validation, order-tolerant, everything else strict.
+  var sheet = fcWriteEnsureSheet_(ss, 'campaigns', CAMPAIGNS_HEADERS_, FC_SCHEMA_BY_NAME_);
   fcWriteEnsureColumns_(sheet, CAMPAIGNS_HEADERS_);
 
   var id = String(body.campaign_id || '').trim();
@@ -120,7 +125,8 @@ function handleUpsertCampaign_(body) {
   body.campaign_name = name;
   var result;
   try {
-    result = fcWriteUpsert_(ss, 'campaigns', CAMPAIGNS_HEADERS_, 'campaign_id', id, body, actor);
+    result = fcWriteUpsert_(ss, 'campaigns', CAMPAIGNS_HEADERS_, 'campaign_id', id, body, actor,
+      FC_SCHEMA_BY_NAME_);
   } catch (e) {
     return jsonResponse_({ success: false, error: String(e && e.message ? e.message : e) });
   }
@@ -145,7 +151,9 @@ function handleUpsertCampaignSkuLines_(body) {
   if (!lines.length) return jsonResponse_({ success: false, error: 'No campaign_sku_lines to write' });
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = fcWriteEnsureSheet_(ss, 'campaign_sku_lines', CAMPAIGN_SKU_LINES_HEADERS_);
+  // FC-SUMMARY-R2B-A — stage 2 MUST move with stage 1. Repairing `campaigns` alone would let the campaign
+  // header commit and then refuse the lines, manufacturing the partial write this round exists to avoid.
+  var sheet = fcWriteEnsureSheet_(ss, 'campaign_sku_lines', CAMPAIGN_SKU_LINES_HEADERS_, FC_SCHEMA_BY_NAME_);
   fcWriteEnsureColumns_(sheet, CAMPAIGN_SKU_LINES_HEADERS_);
 
   var out = [], created = 0, updated = 0;
@@ -176,7 +184,7 @@ function handleUpsertCampaignSkuLines_(body) {
     var result;
     try {
       result = fcWriteUpsert_(ss, 'campaign_sku_lines', CAMPAIGN_SKU_LINES_HEADERS_,
-        'campaign_sku_line_id', lineId, payload, actor);
+        'campaign_sku_line_id', lineId, payload, actor, FC_SCHEMA_BY_NAME_);
     } catch (e) {
       return jsonResponse_({ success: false, error: 'Line ' + (i + 1) + ' (' + sku + '): ' +
         String(e && e.message ? e.message : e) });

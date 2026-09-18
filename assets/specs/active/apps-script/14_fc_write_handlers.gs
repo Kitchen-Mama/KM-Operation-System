@@ -45,6 +45,50 @@ var FC_TARGET_RULES_HEADERS_ = [
   'note', 'created_by', 'created_at', 'updated_by', 'updated_at'
 ];
 
+// ============================================================================================================
+// FC-SUMMARY-R2B-A — TWO SCHEMA MODES, AND WHY THE SECOND ONE EXISTS.
+//
+// `ORDERED` is the S0.5 gate: the canonical header array must be the live header row's leading prefix. It is
+// the DEFAULT and it is the only mode a table can get without being named below.
+//
+// `REQUIRED_COLUMNS_BY_NAME` validates the same facts EXCEPT position: wrong spreadsheet, missing tab, blank
+// header, duplicate header and missing required column all still fail closed with the same tokens. Only the
+// ORDER requirement is dropped.
+//
+// It exists because the ordered gate was refusing writes it had no reason to refuse. The live `campaigns`,
+// `campaign_sku_lines` and `fc_special_events` header rows contain every required column, unique and non-blank,
+// but NOT in the constant's order — because this system's OWN additive migration put them where they are:
+// `fcWriteEnsureColumns_` used to append a missing header at the right edge, so `company`, `event_flag`,
+// `created_by`, `updated_by` sit at the end of `campaigns` instead of at indexes 1, 8, 21, 23. The S0.5 round
+// then made that same helper validate-only and added an ORDER check that the earlier behaviour can never
+// satisfy. The result was `PRODUCTION_SAFETY:HEADER_ORDER_MISMATCH [campaigns]` on every Special Event save.
+//
+// Dropping the order check is SAFE for exactly these tables and no others, because every write in this file and
+// in 20_ resolves the LIVE header by NAME — `fcWriteAppendByHeader_` builds its row from the live header row and
+// `fcWriteUpsert_`'s setCell uses `s.col(name)`. There is no positional write to break. That is the same
+// reasoning, and the same resolution, already applied to `shipping_plan_lines` in 11_.
+//
+// SCOPE IS DELIBERATELY NARROW. `fcWriteEnsureSheet_` is shared by fourteen tables. A table gets the relaxed
+// mode only if it is named here AND its call site asks for it — two independent conditions, so neither a stray
+// flag nor a stray list entry can relax a table on its own. Anything else silently keeps ORDERED, which is the
+// STRICTER gate: falling back can only ever refuse more, never less.
+// ============================================================================================================
+var FC_SCHEMA_ORDERED_ = 'ORDERED';
+var FC_SCHEMA_BY_NAME_ = 'REQUIRED_COLUMNS_BY_NAME';
+
+// The ONLY tables approved for REQUIRED_COLUMNS_BY_NAME. `fc_target_rules` is deliberately ABSENT: its live
+// sheet holds no data rows, so `getTable` returns [] and its real header row has never been observed. A header
+// is not something to infer from an empty read, so it keeps the ordered gate until someone reads row 1.
+var FC_SCHEMA_BY_NAME_TABLES_ = ['campaigns', 'campaign_sku_lines', 'fc_special_events'];
+
+function fcWriteSchemaByNameApproved_(name, mode) {
+  if (mode !== FC_SCHEMA_BY_NAME_) return false;              // no opt-in → ORDERED
+  for (var i = 0; i < FC_SCHEMA_BY_NAME_TABLES_.length; i++) {
+    if (FC_SCHEMA_BY_NAME_TABLES_[i] === name) return true;   // opt-in AND approved
+  }
+  return false;                                               // opt-in on an unapproved table → still ORDERED
+}
+
 function fcWriteTimestamp_() {
   return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
 }
@@ -52,7 +96,16 @@ function fcWriteTimestamp_() {
 /** Get (or create with the documented header row) an FC write tab. */
 // Production Safety Round S0.5 (RULE S0-2/S0-5): VALIDATE-ONLY (no auto-create / no Header write). Delegates to the
 // shared safety adapter (29_); create is migration-only (prodMigrateCreateSheet_), unreachable from Runtime.
-function fcWriteEnsureSheet_(ss, name, headers) {
+function fcWriteEnsureSheet_(ss, name, headers, mode) {
+  // FC-SUMMARY-R2B-A — approved table + explicit opt-in: validate everything except column ORDER.
+  // prodRequireSheet_(ss, name, []) still enforces the spreadsheet target, the tab, blank headers and
+  // duplicate headers; prodRequireColumns_ still enforces every required column. Nothing is relaxed
+  // beyond position, and no sheet, header or column is created, renamed, moved or appended.
+  if (fcWriteSchemaByNameApproved_(name, mode)) {
+    var byName = prodRequireSheet_(ss, name, []);
+    prodRequireColumns_(byName, (headers || []).filter(function (h) { return !!h; }));
+    return byName;
+  }
   return prodRequireSheet_(ss, name, headers);
 }
 
@@ -95,8 +148,10 @@ function fcWriteAppendByHeader_(sheet, obj) {
  * present in body that are also sheet headers), else appends a new row. Stamps created/updated meta.
  * Returns { id, created }.
  */
-function fcWriteUpsert_(ss, sheetName, headers, idCol, idValue, body, actor) {
-  var sheet = fcWriteEnsureSheet_(ss, sheetName, headers);
+function fcWriteUpsert_(ss, sheetName, headers, idCol, idValue, body, actor, mode) {
+  // FC-SUMMARY-R2B-A — `mode` is threaded, never defaulted to the relaxed value. A caller that omits it
+  // gets ORDERED, which is what `fc_target_rules` (14_) still gets today.
+  var sheet = fcWriteEnsureSheet_(ss, sheetName, headers, mode);
   fcWriteEnsureColumns_(sheet, headers);   // ADDITIVE: back-fill any new columns onto a pre-existing sheet
   var s = fcWriteReadSheet_(sheet);
   var now = fcWriteTimestamp_();
@@ -204,7 +259,7 @@ function fcSpecialEventFindRowByKey_(s, body) {
  */
 function fcSpecialEventUpsert_(ss, body, actor) {
   var headers = FC_SPECIAL_EVENTS_HEADERS_;
-  var sheet = fcWriteEnsureSheet_(ss, 'fc_special_events', headers);
+  var sheet = fcWriteEnsureSheet_(ss, 'fc_special_events', headers, FC_SCHEMA_BY_NAME_);
   fcWriteEnsureColumns_(sheet, headers);
   var s = fcWriteReadSheet_(sheet);
   var now = fcWriteTimestamp_();
