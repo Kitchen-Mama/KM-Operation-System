@@ -111,6 +111,26 @@ Define and document, without writing runtime:
 **Explicitly out of scope for S2-A:** implementing the handler, deploying anything, or touching
 `campaign-risk.js`'s runtime.
 
+> **S2-A DELIVERED — 2026-09-18, S2-R1-R1.** The contract is
+> [`CAMPAIGN_PROMOTION_RECORD_CONTRACT.md`](CAMPAIGN_PROMOTION_RECORD_CONTRACT.md). One item above
+> was answered differently from how it was asked: deliverable 1 assumed a canonical schema for a new
+> entity, and the ruling is that **there is no new entity**. `CANONICAL_OWNERSHIP_MODEL = A` — a
+> promotion record is one `campaigns` header plus one or more `campaign_sku_lines` rows, on tables
+> that already carry `lps` and `special_condition` for this exact concept, through actions that are
+> already routed. `NEW_TABLE_REQUIRED = NO`, `NEW_ACTION_REQUIRED = NO`.
+>
+> Deliverables 2–6 are answered in full, and the migration question (5) is answered as
+> `PRESERVE_AND_EXPORT_FIRST` rather than "not migrated": the honest default turned out to be that
+> browser rows are **preserved**, exported before anything is written, and retired only after a
+> per-record server readback — never silently dropped.
+>
+> Two gates opened by the contract, both blocking any future write and neither part of S2-A:
+> `PROMOTION_WRITE_AUTHORIZATION_GATE = OPEN` (both campaign writers open the spreadsheet with no
+> caller check, and stamp `created_by` from the request payload), and
+> `DOWNSTREAM_QUALIFICATION_REPAIR_REQUIRED = YES` (the supply-planning contamination authority
+> treats a blank or draft campaign status as eligible, so a saved draft would move Avg Sales/day).
+> First release scope is `B_READ_ONLY`.
+
 ---
 
 ## 3 · S2-B — SKU DETAILS / SKU REGIONAL DETAILS

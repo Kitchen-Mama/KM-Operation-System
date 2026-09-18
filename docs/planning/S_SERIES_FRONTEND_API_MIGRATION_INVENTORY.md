@@ -261,6 +261,17 @@ Whether it BLOCKS depends on whether Campaign Risk is in the first release. If i
 table and a write contract before it ships. That is a release-scope decision, not an engineering
 finding, and this document does not take it.
 
+> **ANSWERED — 2026-09-18, S2-R1-R1.** Both halves were settled by ruling, and the first half was
+> wrong: **no table is needed.** A promotion record maps onto the `campaigns` + `campaign_sku_lines`
+> pair that already exists, written through the already-routed `upsertCampaign` /
+> `upsertCampaignSkuLines` — `CANONICAL_OWNERSHIP_MODEL = A`, and `campaign_promotion_records` must
+> not be created. The release-scope decision is `INITIAL_RELEASE_SCOPE = B_READ_ONLY`: Campaign Risk
+> ships reading server campaigns and lines, promotion entry stays browser-local and is labelled as
+> such, and **server promotion writes stay disabled** behind an open authorization gate and an
+> unrepaired downstream planning-qualification defect. Contract:
+> [`CAMPAIGN_PROMOTION_RECORD_CONTRACT.md`](CAMPAIGN_PROMOTION_RECORD_CONTRACT.md) — design
+> authority, not deployed state.
+
 Preferences, for completeness and so they are never mistaken for the list above: `utils/i18n.js`
 (language), `utils/resizable-columns.js` (widths), `core/state.js` (`km_state_*` view state),
 `global-logistics-map.js` (`km.map.labelMode.v1`), `sku-details.js` (`SKU_COLPREF_KEY_`).
