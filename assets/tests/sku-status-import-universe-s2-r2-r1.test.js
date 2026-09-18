@@ -132,7 +132,7 @@ function run(text, universe, rows) { return runWith(null, text, universe, rows);
 // -------------------------------------------------------------------------------------------------
 var window = { KM: { DB: {} } };          // module-scope stub the eval'd page fns close over
 var _skReadModel = null;
-eval(['_skEffectiveWorkspace', '_skGetSkuDetails', '_skImportUniverse_']
+eval(['_skEffectiveWorkspace', '_skGetSkuDetails', '_skStatusTemplateUniverse_']
   .map(function (n) { return extractFn(SK, n); }).join('\n'));
 
 function pageUniverse(workspaceActive, model, broadRows) {
@@ -141,7 +141,7 @@ function pageUniverse(workspaceActive, model, broadRows) {
     DB: { getSkuDetails: function () { return broadRows || []; } }
   };
   _skReadModel = model;
-  return _skImportUniverse_();
+  return _skStatusTemplateUniverse_();
 }
 
 var results = {};
@@ -293,8 +293,8 @@ function main() {
       ok(/importSkuStatusTemplate\(this\.files\[0\], universe\)/.test(SK),
         'E12 and it passes the universe');
       eq((SK.match(/_skWorkspaceRefresh_\(/g) || []).length > 0
-        && /_skImportUniverse_[\s\S]{0,400}_skWorkspaceRefresh_/.test(
-          SK.slice(SK.indexOf('function _skImportUniverse_'), SK.indexOf('function _skImportUniverse_') + 400)),
+        && /_skStatusTemplateUniverse_[\s\S]{0,400}_skWorkspaceRefresh_/.test(
+          SK.slice(SK.indexOf('function _skStatusTemplateUniverse_'), SK.indexOf('function _skStatusTemplateUniverse_') + 400)),
         false, 'E13 the import triggers NO second workspace read');
     })
 
@@ -480,7 +480,7 @@ function runMutants() {
       if (src === null) { score('M10 the page reports an unavailable universe as empty', false); return; }
       var fn = new Function('window', '_skReadModel',
         extractFn(src, '_skEffectiveWorkspace') + '\n' + extractFn(src, '_skGetSkuDetails') + '\n'
-        + extractFn(src, '_skImportUniverse_') + '\nreturn _skImportUniverse_();');
+        + extractFn(src, '_skStatusTemplateUniverse_') + '\nreturn _skStatusTemplateUniverse_();');
       var got = fn({ KM: { api: { workspaceApiActive: function () { return true; } },
         DB: { getSkuDetails: function () { return BROAD; } } } }, null);
       score('M10 the page reports an unavailable universe as empty',
@@ -493,7 +493,7 @@ function runMutants() {
       var live = [{ sku: 'GA0450' }];
       var fn = new Function('window', '_skReadModel',
         extractFn(src, '_skEffectiveWorkspace') + '\n' + extractFn(src, '_skGetSkuDetails') + '\n'
-        + extractFn(src, '_skImportUniverse_') + '\nreturn _skImportUniverse_();');
+        + extractFn(src, '_skStatusTemplateUniverse_') + '\nreturn _skStatusTemplateUniverse_();');
       var got = fn({ KM: { api: { workspaceApiActive: function () { return true; } }, DB: {} } },
         { skuDetails: live });
       score('M11 the page hands over the live model array, not a snapshot', got === live);

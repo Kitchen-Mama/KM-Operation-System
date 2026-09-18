@@ -457,33 +457,42 @@ function showSkuStatusToast(msg) {
     setTimeout(function() { toast.style.opacity = '0'; }, 2500);
 }
 
+var _SKU_EXPORT_UNAVAILABLE_ = 'SKU list is still loading — try the export again once the page has finished loading.';
+
 function handleExportStatusTemplate() {
-    if (window.exportSkuStatusTemplate) exportSkuStatusTemplate();
+    if (!window.exportSkuStatusTemplate) return;
+    // F1-S2-R2-R2 — one readiness rule for both template paths. An export the page cannot vouch for
+    // is not downgraded to an empty or stale file; it does not happen, and it says so.
+    var universe = _skStatusTemplateUniverse_();
+    if (!universe) { showSkuStatusToast(_SKU_EXPORT_UNAVAILABLE_); return; }
+    exportSkuStatusTemplate(universe);
 }
 
 var _SKU_IMPORT_UNAVAILABLE_ = 'SKU list is still loading — try the import again once the page has finished loading.';
 
-// F1-S2-R2-R1 — THE SAME PREDICATE THE RENDERER USES, FOR THE SAME REASON.
+// F1-S2-R2-R1 / R2-R2 — THE SAME PREDICATE THE RENDERER USES, FOR THE SAME REASON.
+// Owned by BOTH status-template paths. Import and export must not disagree about whether this page
+// knows its own SKUs, so there is one rule here and no second approximation of it anywhere.
 // `renderSkuDetailsTable` refuses to draw when the workspace is active and the read model is missing,
 // because a missing model means the scoped read has not succeeded and there is nothing legitimate to
 // show. The import needs exactly that distinction: a universe the page can vouch for — which may
 // legitimately be EMPTY — against one it cannot. Null is returned ONLY for the second case, so an
 // empty universe still classifies every valid row as new, and an unknown one classifies nothing.
-function _skImportUniverse_() {
+function _skStatusTemplateUniverse_() {
     if (_skEffectiveWorkspace() && !_skReadModel) return null;   // unavailable — NOT an empty universe
     return _skGetSkuDetails().slice();                           // stable snapshot; may legitimately be []
 }
 
 function handleImportStatusTemplate() {
     // Do not open a file picker this page cannot honour.
-    if (!_skImportUniverse_()) { showSkuStatusToast(_SKU_IMPORT_UNAVAILABLE_); return; }
+    if (!_skStatusTemplateUniverse_()) { showSkuStatusToast(_SKU_IMPORT_UNAVAILABLE_); return; }
     var input = document.createElement('input');
     input.type = 'file';
     input.accept = '.csv';
     input.onchange = function() {
         if (!this.files[0]) return;
         // Re-read at USE time: the snapshot that classifies the file is the one taken with it.
-        var universe = _skImportUniverse_();
+        var universe = _skStatusTemplateUniverse_();
         if (!universe) { showSkuStatusToast(_SKU_IMPORT_UNAVAILABLE_); return; }
         showSkuStatusToast('Validating...');
         importSkuStatusTemplate(this.files[0], universe).then(function(result) { showImportPreview(result); });

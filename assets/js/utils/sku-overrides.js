@@ -177,14 +177,26 @@ function getAllSkuDataWithOverrides(sourceItems) {
 }
 
 // CSV Export - Google Sheet sku_details schema
-function exportSkuStatusTemplate() {
-    // Use KM.DB as primary source
-    var items = (window.KM && window.KM.DB && window.KM.DB.getSkuDetails) ? window.KM.DB.getSkuDetails() : [];
-    if (items.length === 0) {
-        // Fallback to getAllSkuDataWithOverrides
-        var groups = getAllSkuDataWithOverrides();
-        Object.values(groups).forEach(function(arr) { items = items.concat(arr); });
-    }
+//
+// F1-S2-R2-R2 — THE EXPORT HAS THE SAME UNIVERSE AS THE IMPORT, AND THE SAME REFUSAL.
+//
+// The source used to be a three-step fallback chain, and in a canonical session every step of it
+// was wrong. `KM.DB.getSkuDetails()` is the broad Operation-DB cache, which nothing primes once the
+// SKU Details primary read went canonical, so it returned []. That emptiness then triggered
+// `getAllSkuDataWithOverrides()` with no argument, which read the SAME empty broad cache and fell
+// through to the hardcoded demo arrays in utils/data.js — 26 invented SKUs with invented UPCs,
+// prices and a PM named "Alice" — plus whatever sat in localStorage. The user then received a file
+// called sku_details_export_<date>.csv containing none of their data and no warning that it was
+// fabricated, which is a worse failure than the import miscount that led us here: a silent wrong
+// answer that leaves the building.
+//
+// So the page injects the universe it is itself displaying, there is NO FALLBACK of any kind, and an
+// absent or invalid universe produces NO FILE AT ALL. A universe that is positively known to be
+// empty is a real answer and still exports the header row, because "you have no SKUs" and "we do not
+// know what you have" are different facts and only the first one may be written to a file.
+function exportSkuStatusTemplate(skuUniverse) {
+    if (!Array.isArray(skuUniverse)) return;   // fail closed BEFORE any Blob, object URL or click
+    var items = skuUniverse;                   // read only; never mutated, never re-fetched
 
     var headers = ['sku','product_name','category','series','lifecycle','image_url','gs1_code','gs1_type','amz_asin','item_dimensions','item_weight','package_dimensions','package_weight','carton_dimensions','carton_weight','units_per_carton','hscode','declared_value','minimum_price','msrp','selling_price','pm','created_at','updated_at'];
     var rows = [headers];
