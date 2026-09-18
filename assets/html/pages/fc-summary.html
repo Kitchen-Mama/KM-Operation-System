@@ -71,6 +71,9 @@
                         <!-- Target Rules Buttons -->
                         <button class="fc-btn fc-btn--add fc-btn-target" onclick="openAddTargetRuleModal()" style="display:none;">+ Add Target Rule</button>
                     </div>
+                    <!-- FC-SUMMARY-R1: non-blocking outcome/stale banner. Never replaces the table. -->
+                    <div id="fc-view-banner" role="status" hidden
+                         style="margin:8px 0 0;padding:8px 12px;border-radius:6px;background:#FEF3C7;color:#92400E;font-size:0.85rem;"></div>
                 </div>
 
                 <!-- Tab Panels -->
@@ -268,9 +271,13 @@
                                 </label>
                             </div>
                         </div>
+                        <!-- FC-SUMMARY-R1: inline refusal host. Empty and hidden until a prerequisite
+                             load fails; the modal stays open so the mode choice is never lost. -->
+                        <div id="fc-mode-select-refusal" role="alert" hidden
+                             style="margin:8px 0 0;color:#B91C1C;text-align:left;overflow-wrap:break-word;"></div>
                         <div class="fc-modal-actions">
                             <button class="fc-btn fc-btn--cancel" onclick="closeFcModal()">Cancel</button>
-                            <button class="fc-btn fc-btn--primary" onclick="proceedToFcMode()">Next</button>
+                            <button class="fc-btn fc-btn--primary" id="fc-mode-next-btn" onclick="proceedToFcMode()">Next</button>
                         </div>
                     </div>
                 </div>
@@ -739,7 +746,7 @@
                         </div>
                         <div class="fc-modal-actions">
                             <button class="fc-btn fc-btn--cancel" onclick="closeFcModal()">Cancel</button>
-                            <button class="fc-btn fc-btn--primary" onclick="saveEventUpdate()">Save</button>
+                            <button class="fc-btn fc-btn--primary" id="fc-event-builder-save-btn" onclick="saveEventUpdate()">Save</button>
                         </div>
                     </div>
                 </div>
@@ -819,7 +826,7 @@
                         </div>
                         <div class="fc-modal-actions">
                             <button class="fc-btn fc-btn--cancel" onclick="closeFcModal()">Cancel</button>
-                            <button class="fc-btn fc-btn--primary" onclick="saveNewTargetRule()">Save</button>
+                            <button class="fc-btn fc-btn--primary" id="fc-target-save-btn" onclick="saveNewTargetRule()">Save</button>
                         </div>
                     </div>
                 </div>

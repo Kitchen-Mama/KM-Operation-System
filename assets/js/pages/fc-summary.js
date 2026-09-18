@@ -837,20 +837,21 @@ function saveFcChanges() {
   const useDb = (typeof _fcUseDb === 'function' && _fcUseDb());
   if (useDb) {
     if (!(window.KM && window.KM.DB && window.KM.DB.importFcRegularForecastBatch)) { alert('Regular forecast write API is not available.'); return; }
+    if (!_fcWriteBegin_('baseEdit')) return;       // FC-SUMMARY-R1: extra clicks add zero logical writes
     _fcSetSaveEnabled(false);
-    window.KM.DB.importFcRegularForecastBatch(toWrite, { forecastStatusDefault: 'draft', sourceDefault: 'fc_summary_base_edit' })
-      .then(function (res) {
-        if (res && res.success === false) { alert('Save failed: ' + (res.error || 'unknown error')); _fcSetSaveEnabled(true); return; }
-        // Success — reconcile the view. Workspace mode: scoped fcSummary re-read (the primary render ignores the broad
-        // cache the writer reloaded); Legacy: render-only from the reloaded cache. Then exit edit + confirm.
-        var s = (res && res.summary) || {};
+    var _beOpts = { ctl: 'baseEdit', op: 'Edit Base FC Save', rows: toWrite.length, epoch: _fcEpoch_(),
+      reenable: _fcSetSaveEnabled,
+      onSuccess: function (s) {
+        // The CONFIRMED write is reported here; the scoped re-read that follows is best effort.
         _fcAfterWrite(function () {
           exitEditMode();   // clears dirty, unlocks scope, re-renders from the scoped read-model / canonical cache
-          alert('Base Forecast saved — ' + toWrite.length + ' row(s), ' + counts.changed + ' cell(s) updated' +
-            (s.created != null ? ('.\nCreated: ' + s.created + '  Updated: ' + s.updated + '  Skipped: ' + s.skipped) : '.'));
+          alert(FC_MSG_.SAVED + ' Base Forecast — ' + toWrite.length + ' row(s), ' + counts.changed + ' cell(s) updated.'
+            + _fcCountsLine_(s));
         });
-      })
-      .catch(function (err) { alert('Save failed: ' + (err && err.message ? err.message : err)); _fcSetSaveEnabled(true); });
+      } };
+    window.KM.DB.importFcRegularForecastBatch(toWrite, { forecastStatusDefault: 'draft', sourceDefault: 'fc_summary_base_edit' })
+      .then(function (res) { _fcSettleWrite_(res, _beOpts); })
+      .catch(function (err) { _fcFailWrite_(err, _beOpts); });
     return;
   }
 
@@ -860,6 +861,11 @@ function saveFcChanges() {
 }
 
 function _fcSetSaveEnabled(on) { const b = document.getElementById('fc-save-btn'); if (b) b.disabled = !on; }
+// FC-SUMMARY-R1 — Target Rules had no id on its Save control and therefore no way to be guarded.
+function _fcSetTargetSaveEnabled_(on) {
+  var b = (typeof document === 'undefined') ? null : document.getElementById('fc-target-save-btn');
+  if (b) { b.disabled = !on; if (on) { b.removeAttribute('aria-busy'); } else { b.setAttribute('aria-busy', 'true'); } }
+}
 
 // Cancel edit — zero backend calls; restore originals by dropping the dirty overlay and re-rendering the view.
 function cancelFcEdit() {
@@ -1055,19 +1061,25 @@ function saveEventChanges() {
   const useDb = (typeof _fcUseDb === 'function' && _fcUseDb());
   if (useDb) {
     if (!(window.KM && window.KM.DB && window.KM.DB.importFcSpecialEventsBatch)) { alert('Special event write API is not available.'); return; }
+    if (!_fcWriteBegin_('event')) return;          // FC-SUMMARY-R1: extra clicks add zero logical writes
     _fcEventSetSaveEnabled(false);
-    window.KM.DB.importFcSpecialEventsBatch(toWrite, { source: 'fc_summary_event_edit' })
-      .then(function (res) {
-        if (res && res.success === false) { alert('Save failed: ' + (res.error || 'unknown error')); _fcEventSetSaveEnabled(true); return; }
-        var s = (res && res.data && res.data.summary) || (res && res.summary) || {};
-        if (s.skipped) { alert('Save failed for ' + s.skipped + ' of ' + toWrite.length + ' event(s) — see per-row reasons; edits preserved.'); _fcEventSetSaveEnabled(true); return; }
+    var _evOpts = { ctl: 'event', op: 'Special Event Save', rows: toWrite.length, epoch: _fcEpoch_(),
+      reenable: _fcEventSetSaveEnabled,
+      onSuccess: function (s) {
+        // Per-row refusal inside a confirmed envelope keeps its existing meaning: edits are preserved.
+        if (s && s.skipped) {
+          alert('Save failed for ' + s.skipped + ' of ' + toWrite.length + ' event(s) — see per-row reasons; edits preserved.');
+          _fcEventSetSaveEnabled(true); return;
+        }
         _fcAfterWrite(function () {
           exitEventEditMode();   // scoped fcSummary re-read (Workspace) / reloaded canonical cache (Legacy) → reconcile view
-          alert('Special Events saved — ' + toWrite.length + ' event(s), ' + counts.changed + ' updated.' +
-            (s.updated != null ? ('\nUpdated: ' + s.updated + '  Created: ' + s.created + '  Skipped: ' + s.skipped) : ''));
+          alert(FC_MSG_.SAVED + ' Special Events — ' + toWrite.length + ' event(s), ' + counts.changed + ' updated.'
+            + _fcCountsLine_(s));
         });
-      })
-      .catch(function (err) { alert('Save failed: ' + (err && err.message ? err.message : err)); _fcEventSetSaveEnabled(true); });
+      } };
+    window.KM.DB.importFcSpecialEventsBatch(toWrite, { source: 'fc_summary_event_edit' })
+      .then(function (res) { _fcSettleWrite_(res, _evOpts); })
+      .catch(function (err) { _fcFailWrite_(err, _evOpts); });
     return;
   }
 
@@ -1239,9 +1251,23 @@ function saveNewTargetRule() {
     };
     months.forEach(m => { payload[`${m}_pct`] = percentages[m]; });
     if (!window.KM.DB.upsertFcTargetRule) { alert('Target rule write API not available.'); return; }
+    // FC-SUMMARY-R1 — THE ONE CONTROL THAT COULD DUPLICATE. No id is sent for a new rule, so the
+    // server appends: a second click created a second identical rule. It is now single-flight, and
+    // the server contract is untouched — no target_rule_id is invented here.
+    if (!_fcWriteBegin_('targetRule')) return;
+    _fcSetTargetSaveEnabled_(false);
+    var _trOpts = { ctl: 'targetRule', op: 'Target Rule Save', rows: 1, epoch: _fcEpoch_(),
+      reenable: _fcSetTargetSaveEnabled_,
+      onSuccess: function () {
+        _fcAfterWrite(function () {
+          renderTargetRulesTable(); closeFcModal();
+          _fcSetTargetSaveEnabled_(true);        // the modal is closed; restore for the next open
+          alert(FC_MSG_.SAVED + ' Target rule saved.');
+        });
+      } };
     window.KM.DB.upsertFcTargetRule(payload)
-      .then(() => { _fcAfterWrite(function () { renderTargetRulesTable(); closeFcModal(); alert('Target rule saved to DB'); }); })
-      .catch(err => alert('Save failed: ' + (err && err.message ? err.message : err)));
+      .then(function (res) { _fcSettleWrite_(res, _trOpts); })
+      .catch(function (err) { _fcFailWrite_(err, _trOpts); });
     return;
   }
 
@@ -1339,9 +1365,12 @@ function deleteTargetRule(ruleId) {
   // Demo OFF → hard-delete fc_target_rules by id; Demo ON → local splice.
   if (_fcUseDb()) {
     if (!window.KM.DB.deleteFcTargetRule) { alert('Target rule delete API not available.'); return; }
+    if (!_fcWriteBegin_('targetRuleDelete')) return;   // FC-SUMMARY-R1: one logical delete per click
+    var _tdOpts = { ctl: 'targetRuleDelete', op: 'Target Rule Delete', rows: 1, epoch: _fcEpoch_(),
+      onSuccess: function () { _fcAfterWrite(function () { renderTargetRulesTable(); }); } };
     window.KM.DB.deleteFcTargetRule({ target_rule_id: ruleId })
-      .then(() => { _fcAfterWrite(function () { renderTargetRulesTable(); }); })
-      .catch(err => alert('Delete failed: ' + (err && err.message ? err.message : err)));
+      .then(function (res) { _fcSettleWrite_(res, _tdOpts); })
+      .catch(function (err) { _fcFailWrite_(err, _tdOpts); });
     return;
   }
 
@@ -1583,25 +1612,42 @@ function openAddEventModal() {
 }
 
 // Proceed to selected mode
+// FC-SUMMARY-R1 — the selection modal STAYS MOUNTED while prerequisites load, so the operator's
+// Regular/Special choice and the page scope survive a slow or failed load. Feedback is synchronous;
+// the load is single-flight; a failure refuses in place with a Retry instead of re-entering forever.
 function proceedToFcMode() {
-  const selectedMode = document.querySelector('input[name="fc-mode"]:checked').value;
-  
-  // Close mode selection modal
-  closeFcModal();
-  
-  // Open corresponding modal
-  if (selectedMode === 'regular') {
-    openRegularUpdateModal();
-  } else if (selectedMode === 'event') {
-    openEventModal();
-  }
+  var sel = document.querySelector('input[name="fc-mode"]:checked');
+  var selectedMode = sel ? sel.value : 'regular';
+  _fcClearPrereqRefusal_();
+
+  if (!_fcPrereqNeeded_()) { _fcPrereqState_ = FC_PREREQ_.READY; _fcOpenBuilder_(selectedMode); return; }
+
+  if (_fcPrereqTransition_) return;   // a transition is already pending: this click adds nothing at all
+  _fcPrereqTransition_ = true;
+
+  var epoch = _fcEpoch_();
+  _fcSetNextBusy_(true);        // disabled + aria-busy + "Loading…" in the SAME event loop as the click
+  _fcLoadPrerequisites_().then(function () {
+    _fcPrereqTransition_ = false;
+    if (!_fcOwns_(epoch)) { _fcPrereqState_ = FC_PREREQ_.UNMOUNTED; return; }   // dead page: no DOM
+    _fcSetNextBusy_(false);
+    _fcOpenBuilder_(selectedMode);                                              // exactly once
+  }).catch(function (err) {
+    _fcPrereqTransition_ = false;                                              // Retry is possible again
+    if (!_fcOwns_(epoch)) { _fcPrereqState_ = FC_PREREQ_.UNMOUNTED; return; }
+    _fcSetNextBusy_(false);
+    _fcShowPrereqRefusal_(err);   // modal stays open; no loop, no timer, no automatic retry
+  });
 }
 
 // Open Regular Forecast Builder modal.
 function openRegularUpdateModal() {
   // SECONDARY surface: the builder reads marketplace_skus / sku_details from the broad cache. In Workspace mode the
   // primary render never loads it, so lazy-load it here (once) before populating the builder, then re-open.
-  if (_fcEffectiveWorkspace() && !window._opDbCache) { _fcEnsureBroadCacheThen(openRegularUpdateModal); return; }
+  // FC-SUMMARY-R1 — prerequisites are the CALLER's responsibility (proceedToFcMode). A missing one
+  // refuses visibly and recoverably; it never silently re-enters this opener in a retry loop.
+  if (_fcPrereqNeeded_()) { showFcModal('fc-mode-select-modal');
+    _fcShowPrereqRefusal_({ code: 'FC_PREREQUISITES_MISSING', message: 'builder data is not loaded' }); return; }
   var now = new Date();
   document.getElementById('regular-target-year').value = fcTargetYear;
   document.getElementById('regular-base-year').value = fcTargetYear - 1;
@@ -2208,7 +2254,9 @@ var _evtGroups = [];   // batch-mode group cards: { category, series, regularPri
 function openEventModal() {
   // SECONDARY surface: the Special Event Builder reads campaigns / marketplace_skus / sku_details / pricing_list from
   // the broad cache. In Workspace mode the primary render never loads it, so lazy-load it here (once) before opening.
-  if (_fcEffectiveWorkspace() && !window._opDbCache) { _fcEnsureBroadCacheThen(openEventModal); return; }
+  // FC-SUMMARY-R1 — see openRegularUpdateModal: refuse visibly, never re-enter.
+  if (_fcPrereqNeeded_()) { showFcModal('fc-mode-select-modal');
+    _fcShowPrereqRefusal_({ code: 'FC_PREREQUISITES_MISSING', message: 'builder data is not loaded' }); return; }
   document.getElementById('event-target-year').value = fcTargetYear;
   var flagEl = document.getElementById('event-name-input'); if (flagEl) flagEl.value = 'Normal';
   var sdEl = document.getElementById('event-start-date'); if (sdEl) sdEl.value = '';
@@ -3185,7 +3233,11 @@ async function saveEventUpdate() {
     alert('Save failed: campaign writers are not available in this build (upsertCampaign / upsertCampaignSkuLines / upsertFcSpecialEvent). Nothing was written.');
     return;
   }
-  var saveBtn = document.querySelector('#fc-add-event-modal .fc-btn--primary');
+  // FC-SUMMARY-R1 — shared single-flight latch; the button guard it already had is kept.
+  if (!_fcWriteBegin_('eventBuilder')) return;
+  var _ebEpoch = _fcEpoch_();
+  var saveBtn = document.getElementById('fc-event-builder-save-btn')
+    || document.querySelector('#fc-add-event-modal .fc-btn--primary');
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
   try {
     // 1) campaign header (idempotent by campaign_id, else business key).
@@ -3222,14 +3274,22 @@ async function saveEventUpdate() {
       });
       written++;
     }
+    _fcWriteEnd_('eventBuilder', FC_WRITE_.SUCCESS);
+    _fcReceipt_('Special Event Builder Save', written, null);
+    if (!_fcOwns_(_ebEpoch)) { _fcWriteState_['eventBuilder'] = FC_WRITE_.UNMOUNTED; return; }
     _fcAfterWrite(function () {
       if (typeof renderFcEventTable === 'function') renderFcEventTable();
       closeFcModal();
-      alert('Saved. campaigns: 1 (' + campaignId + ') · campaign_sku_lines: ' + linePayloads.length + ' · fc_special_events: ' + written + ' (linked by campaign_id / campaign_sku_line_id).');
+      alert(FC_MSG_.SAVED + ' campaigns: 1 (' + campaignId + ') · campaign_sku_lines: ' + linePayloads.length + ' · fc_special_events: ' + written + ' (linked by campaign_id / campaign_sku_line_id).');
     });
   } catch (e) {
-    alert('Special Event Save failed — nothing further was written after the error:\n\n' + (e && e.message ? e.message : e) +
-      '\n\nIf the campaign writer actions are not deployed yet, redeploy the Apps Script Web App (source ready in 20_campaign_write_handlers.gs). No fake success is reported.');
+    // This writer is a 3-layer sequence, so a failure part-way leaves an UNKNOWN amount written.
+    // It has never been safe to replay blindly, and it is not replayed here.
+    _fcWriteEnd_('eventBuilder', FC_WRITE_.UNKNOWN);
+    if (_fcOwns_(_ebEpoch)) {
+      alert(FC_MSG_.UNKNOWN + '\n\nSpecial Event Save stopped at: ' + (e && e.message ? e.message : e));
+      _fcShowBanner_(FC_MSG_.UNKNOWN, 'Check latest data', function () { _fcRefreshViewNow_(FC_MSG_.READ_FAILED); });
+    }
   } finally {
     if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
   }
@@ -3290,20 +3350,21 @@ function saveRegularUpdate() {
   // ---- Live (Demo OFF): idempotent bulk upsert. ----
   if (typeof _fcUseDb === 'function' && _fcUseDb()) {
     if (!(window.KM && window.KM.DB && window.KM.DB.importFcRegularForecastBatch)) { alert('Regular forecast write API is not available.'); return; }
+    if (!_fcWriteBegin_('regular')) return;        // FC-SUMMARY-R1: extra clicks add zero logical writes
     _setRegularSaveEnabled(false);
-    window.KM.DB.importFcRegularForecastBatch(toWrite, { forecastStatusDefault: 'draft', sourceDefault: 'fc_summary_builder' })
-      .then(function(res){
-        if (res && res.success === false) { alert('Save failed: ' + (res.error || 'unknown error')); _setRegularSaveEnabled(true); return; }
-        var s = (res && res.summary) || {};
+    var _rgOpts = { ctl: 'regular', op: 'Regular Forecast Save', rows: toWrite.length, epoch: _fcEpoch_(),
+      reenable: _setRegularSaveEnabled,
+      onSuccess: function (s) {
         _fcAfterWrite(function () {
           renderFcRegularTable();
           closeFcModal();
-          alert('Regular Forecast saved — ' + monthLbl + ' ' + P.targetYear + ' (only this month updated).\n' +
-            'Rows written: ' + toWrite.length +
-            (s.created != null ? ('\nCreated: ' + s.created + '  Updated: ' + s.updated + '  Skipped: ' + s.skipped) : ''));
+          alert(FC_MSG_.SAVED + ' Regular Forecast — ' + monthLbl + ' ' + P.targetYear + ' (only this month updated).\n' +
+            'Rows written: ' + toWrite.length + _fcCountsLine_(s));
         });
-      })
-      .catch(function(err){ alert('Save failed: ' + (err && err.message ? err.message : err)); _setRegularSaveEnabled(true); });
+      } };
+    window.KM.DB.importFcRegularForecastBatch(toWrite, { forecastStatusDefault: 'draft', sourceDefault: 'fc_summary_builder' })
+      .then(function(res){ _fcSettleWrite_(res, _rgOpts); })
+      .catch(function(err){ _fcFailWrite_(err, _rgOpts); });
     return;
   }
 
@@ -3464,13 +3525,11 @@ function _fcGetMarketplaces() {
 var _FC_SECONDARY_TABLES = ['sku_details', 'marketplace_skus', 'campaigns', 'pricing_list', 'fc_regular_forecast', 'fc_special_events', 'marketplaces'];
 var _fcSecondaryLoaded = false;
 function _fcResetSecondaryCache() { _fcSecondaryLoaded = false; }
-function _fcEnsureBroadCacheThen(cb) {
-  var done = function () { if (typeof cb === 'function') cb(); };
-  if (_fcSecondaryLoaded) { done(); return; }
-  var rc = (window.KM && window.KM.DB && typeof window.KM.DB.refreshCacheTables === 'function') ? window.KM.DB.refreshCacheTables : null;
-  if (!rc) { done(); return; }   // unconfigured/legacy → getters degrade as before (no whole-DB reload)
-  rc(_FC_SECONDARY_TABLES).then(function () { _fcSecondaryLoaded = true; done(); }).catch(done);
-}
+// FC-SUMMARY-R1 — `_fcEnsureBroadCacheThen` was REMOVED, not kept beside its replacement. Its
+// `.catch(done)` swallowed the failure and re-entered the opener, which re-entered the loader, with
+// nothing on screen: a silent unbounded retry. `_fcLoadPrerequisites_` keeps the same seven-read
+// contract and the same `_fcSecondaryLoaded` latch, but it is single-flight and it REJECTS, so the
+// caller can refuse visibly. Leaving the old one here as dead code would only invite its return.
 
 // Bounded loading/error region for the primary FC tables (reuses KM.loadState — no new loading infra).
 var _fcRegionCtl = null;
@@ -3526,6 +3585,7 @@ function _fcWorkspaceRefresh_() {
   }
   return Promise.resolve(window.KM.api.getWorkspace('fcSummary', {})).then(function (env) {
     if (mySeq !== _fcReadSeq) return _fcReadModel;   // a newer read superseded this one
+    _fcNoteEnvMeta_(env);   // FC-SUMMARY-R1: diagnostic only; absence stays unknown, never zero
     if (env && env.success && env.data) {
       _fcReadModel = window.KM.DB.adaptFcSummaryWorkspace(env.data);
       if (rg) rg.set(_fcReadModel.fcRegularForecast.length ? window.KM.loadState.STATES.READY : window.KM.loadState.STATES.EMPTY);
@@ -3538,13 +3598,333 @@ function _fcWorkspaceRefresh_() {
 // Post-write reconcile: in Workspace mode re-read the scoped fcSummary workspace so the primary render reflects the write
 // (the broad cache the db-api writer reloaded is IGNORED by the primary render), THEN run cb (the page's own
 // exit-edit / close-modal / re-render). Legacy mode (or Demo): run cb immediately (the writer already reloaded the cache).
+// =====================================================================================================
+// FC-SUMMARY-R1 — WRITE OUTCOME TRUTHFULNESS, MODAL RECOVERY AND SINGLE-FLIGHT UX
+//
+// WHAT WAS WRONG. `_fcAfterWrite(cb)` ran the caller's callback — the one that closes the modal, exits
+// edit mode and says "saved" — ONLY if the post-write workspace re-read succeeded. So when a write
+// landed and the re-read timed out, the rows were in the database and the operator saw: a modal that
+// never closed, a Save button that stayed disabled, no success message, and a red "FC Summary read
+// error" painted into the table BEHIND the modal. A completed write was presented as a failed one,
+// and the only obvious response — press Save again — is the one action that must never be taken while
+// an outcome is unknown.
+//
+// THE RULE NOW. A confirmed write is reported the moment it is confirmed. The view refresh is a
+// separate, best-effort second stage: when it fails it downgrades the VIEW to stale, never the WRITE.
+// And the three things that used to be one outcome are now three — confirmed success, confirmed
+// server refusal, and "we do not know" — because only one of them may be answered with "try again".
+// =====================================================================================================
+
+/* THE STATE MODEL. Page-local constants, not a second framework: nothing here registers, subscribes,
+   polls or schedules. These are the only reachable transitions.
+
+   PREREQUISITE  IDLE --Next--> LOADING_PREREQUISITES --ok--> READY --open builder--> IDLE
+                                        |  \__ extra clicks: no transition, and NO second request
+                                        \__ error --> PREREQUISITE_REFUSED --Retry--> LOADING_PREREQUISITES
+                 any --route away--> UNMOUNTED  (terminal here: no DOM mutation, no new request)
+
+   WRITE         IDLE --Save--> WRITING --success------> CONFIRMED_SUCCESS --> IDLE (latch released)
+                                   |   |--success:false--> CONFIRMED_REFUSAL --> IDLE (inputs kept)
+                                   |   \--throw/unreadable-> OUTCOME_UNKNOWN --> IDLE (NO automatic retry)
+                                   \__ extra clicks while WRITING: zero extra logical writes
+                 any --route away--> UNMOUNTED  (an in-flight write may finish; it draws nothing)
+
+   VIEW          CURRENT --after CONFIRMED_SUCCESS--> REFRESHING --ok--> CURRENT
+                                                          \--error--> STALE_AFTER_CONFIRMED_WRITE
+                 STALE_AFTER_CONFIRMED_WRITE --Refresh view--> REFRESHING
+                 REFRESH_REFUSED is the terminal form of a refresh that failed with no prior data to keep.
+
+   The four outcomes that must never be collapsed into each other: confirmed success; confirmed server
+   refusal; network/parse failure with an UNKNOWN write outcome; and readback failure AFTER a confirmed
+   write. The last one is not a write failure and is never reported as one. */
+var FC_PREREQ_ = { IDLE: 'IDLE', LOADING: 'LOADING_PREREQUISITES', READY: 'READY',
+                   REFUSED: 'PREREQUISITE_REFUSED', UNMOUNTED: 'UNMOUNTED' };
+var FC_WRITE_  = { IDLE: 'IDLE', WRITING: 'WRITING', SUCCESS: 'CONFIRMED_SUCCESS',
+                   REFUSAL: 'CONFIRMED_REFUSAL', UNKNOWN: 'OUTCOME_UNKNOWN', UNMOUNTED: 'UNMOUNTED' };
+var FC_VIEW_   = { CURRENT: 'CURRENT', REFRESHING: 'REFRESHING',
+                   STALE: 'STALE_AFTER_CONFIRMED_WRITE', REFUSED: 'REFRESH_REFUSED' };
+
+/* The six messages the page may show. They exist as constants so that "saved", "saved but stale",
+   "refused", and "unknown" can never drift into each other. */
+var FC_MSG_ = {
+  SAVED:        'Saved successfully.',
+  SAVED_STALE:  'Saved successfully, but the view could not refresh.',
+  REFUSED:      'The server refused the save: ',
+  UNKNOWN:      'The save result could not be confirmed. Do not submit again until the latest data has been checked.',
+  READ_FAILED:  'FC Summary data could not be loaded.',
+  PREREQ_FAILED:'Prerequisite data could not be loaded.'
+};
+
+var _fcPrereqState_ = FC_PREREQ_.IDLE;
+var _fcPrereqFlight_ = null;               // the ONE in-flight prerequisite promise (single-flight latch)
+var _fcPrereqLoads_ = 0;                   // logical prerequisite loads issued, ever
+/* SINGLE-FLIGHT IS TWO THINGS, NOT ONE. The promise latch stops a second REQUEST; this stops a second
+   TRANSITION. Without it, five extra Next clicks each attached their own continuation to the one
+   shared promise and all six opened the builder when it landed — one request, six modals. */
+var _fcPrereqTransition_ = false;
+var _fcWriteState_ = {};                   // control id -> FC_WRITE_
+var _fcWriteFlight_ = {};                  // control id -> true while a logical write is in flight
+var _fcViewState_ = FC_VIEW_.CURRENT;
+var _fcReadbackFlight_ = false;            // the Refresh-view control is single-flight too
+var _fcReadbackLoads_ = 0;
+var _fcLastReceipt_ = null;                // compact receipt of the most recent confirmed write
+var _fcMeta_ = { prereqStart: null, prereqEnd: null, writeStart: null, writeEnd: null,
+                 readbackStart: null, readbackEnd: null, serverDurationMs: null, attempts: null,
+                 action: null, requestId: null };
+
+/* OWNERSHIP. The SHARED canonical lifecycle authority — the same commitGuard(epoch, sectionId)
+   contract request-order.js already uses. Nothing is copied and no per-page lifecycle is invented.
+   When the authority is absent this page cannot PROVE it was superseded, so it keeps ownership rather
+   than silently dropping a continuation it may still own. */
+function _fcEpoch_() {
+  try {
+    var lc = window.KM && window.KM.lifecycle;
+    return (lc && typeof lc.currentEpoch === 'function') ? lc.currentEpoch() : null;
+  } catch (e) { return null; }
+}
+function _fcOwns_(epoch) {
+  if (epoch == null) return true;
+  try {
+    var lc = window.KM && window.KM.lifecycle;
+    if (lc && typeof lc.commitGuard === 'function') return lc.commitGuard(epoch, 'fc-summary-section') === true;
+    if (lc && typeof lc.isCurrent === 'function') return lc.isCurrent(epoch) === true;
+  } catch (e) {}
+  return true;
+}
+
+/* METRICS. Diagnostic only, and ABSENCE STAYS UNKNOWN — a metric the envelope did not carry is never
+   reported as zero, because zero milliseconds is a claim and "unknown" is the truth. No server field is
+   added and no payload is logged. */
+function _fcNoteEnvMeta_(env) {
+  var m = env && env.meta;
+  if (!m || typeof m !== 'object') return;
+  if (typeof m.serverDurationMs === 'number') _fcMeta_.serverDurationMs = m.serverDurationMs;
+  if (typeof m.attempts === 'number') _fcMeta_.attempts = m.attempts;
+  if (m.requestId) _fcMeta_.requestId = String(m.requestId);
+}
+function _fcMetricsSnapshot_() {
+  var out = {};
+  for (var k in _fcMeta_) { if (Object.prototype.hasOwnProperty.call(_fcMeta_, k)) { out[k] = (_fcMeta_[k] == null) ? 'unknown' : _fcMeta_[k]; } }
+  return out;
+}
+
+/* THE NON-BLOCKING BANNER. It sits beside the table and never replaces it. */
+function _fcBannerHost_() { return (typeof document === 'undefined') ? null : document.getElementById('fc-view-banner'); }
+function _fcClearBanner_() { var h = _fcBannerHost_(); if (h) { h.innerHTML = ''; h.hidden = true; } }
+function _fcShowBanner_(text, actionLabel, onAction) {
+  var h = _fcBannerHost_(); if (!h) return;
+  h.innerHTML = '';
+  var span = (typeof document !== 'undefined') ? document.createElement('span') : null;
+  if (span) { span.textContent = text; h.appendChild(span); }
+  if (actionLabel && typeof onAction === 'function') {
+    var b = document.createElement('button');
+    b.type = 'button'; b.id = 'fc-view-refresh-btn'; b.className = 'fc-btn fc-btn--cancel';
+    b.textContent = actionLabel; b.style.marginLeft = '10px';
+    b.onclick = onAction;
+    h.appendChild(b);
+  }
+  h.hidden = false;
+}
+
+function _fcRerenderTables_() {
+  try { if (typeof renderFcRegularTable === 'function') renderFcRegularTable(); } catch (e) {}
+  try { if (typeof renderFcEventTable === 'function') renderFcEventTable(); } catch (e) {}
+  try { if (typeof renderTargetRulesTable === 'function') renderTargetRulesTable(); } catch (e) {}
+}
+
+/* THE REFRESH-VIEW CONTROL. One read request per activation, never two, and a failure here still does
+   not touch the recorded write outcome. */
+function _fcRefreshViewNow_(failText) {
+  if (_fcReadbackFlight_) return;
+  var epoch = _fcEpoch_();
+  var stale = failText || FC_MSG_.READ_FAILED;
+  _fcReadbackFlight_ = true; _fcReadbackLoads_++;
+  _fcViewState_ = FC_VIEW_.REFRESHING;
+  _fcMeta_.readbackStart = Date.now(); _fcMeta_.readbackEnd = null;
+  var btn = (typeof document !== 'undefined') ? document.getElementById('fc-view-refresh-btn') : null;
+  if (btn) { btn.disabled = true; btn.setAttribute('aria-busy', 'true'); }
+  return _fcWorkspaceRefresh_().then(function () {
+    _fcMeta_.readbackEnd = Date.now(); _fcReadbackFlight_ = false;
+    if (!_fcOwns_(epoch)) return;
+    _fcViewState_ = FC_VIEW_.CURRENT;
+    _fcClearBanner_();
+    _fcRerenderTables_();
+  }).catch(function (err) {
+    _fcMeta_.readbackEnd = Date.now(); _fcReadbackFlight_ = false;
+    if (!_fcOwns_(epoch)) return;
+    _fcViewState_ = _fcReadModel ? FC_VIEW_.STALE : FC_VIEW_.REFUSED;
+    _fcShowBanner_(stale, 'Refresh view', function () { _fcRefreshViewNow_(stale); });
+  });
+}
+
+/* PREREQUISITES. The seven-read contract is UNCHANGED in this round; this only makes it visible,
+   single-flight and refusable. The old shape swallowed the error into `.catch(done)` and re-entered the
+   opener, which on a persistent failure retried forever with nothing on screen. */
+function _fcPrereqNeeded_() { return !!(_fcEffectiveWorkspace() && !window._opDbCache); }
+function _fcLoadPrerequisites_() {
+  if (_fcPrereqFlight_) return _fcPrereqFlight_;          // extra clicks attach; they issue nothing
+  var rc = (window.KM && window.KM.DB && typeof window.KM.DB.refreshCacheTables === 'function')
+    ? window.KM.DB.refreshCacheTables : null;
+  if (!rc) return Promise.resolve();                       // legacy/unconfigured → getters degrade as before
+  _fcPrereqState_ = FC_PREREQ_.LOADING;
+  _fcPrereqLoads_++;
+  _fcMeta_.prereqStart = Date.now(); _fcMeta_.prereqEnd = null;
+  _fcPrereqFlight_ = Promise.resolve(rc(_FC_SECONDARY_TABLES)).then(function (v) {
+    _fcMeta_.prereqEnd = Date.now(); _fcPrereqFlight_ = null;
+    _fcSecondaryLoaded = true; _fcPrereqState_ = FC_PREREQ_.READY;
+    return v;
+  }, function (err) {
+    _fcMeta_.prereqEnd = Date.now(); _fcPrereqFlight_ = null;
+    _fcPrereqState_ = FC_PREREQ_.REFUSED;
+    throw err;                                             // never swallowed into a silent re-entry
+  });
+  return _fcPrereqFlight_;
+}
+function _fcNextBtn_() { return (typeof document === 'undefined') ? null : document.getElementById('fc-mode-next-btn'); }
+function _fcSetNextBusy_(on) {
+  var b = _fcNextBtn_(); if (!b) return;
+  b.disabled = !!on;
+  if (on) {
+    b.setAttribute('aria-busy', 'true');
+    if (b.dataset && !b.dataset.fcLabel) b.dataset.fcLabel = b.textContent;
+    b.textContent = 'Loading…';
+  } else {
+    b.removeAttribute('aria-busy');
+    if (b.dataset && b.dataset.fcLabel) { b.textContent = b.dataset.fcLabel; delete b.dataset.fcLabel; }
+  }
+}
+function _fcClearPrereqRefusal_() {
+  var h = (typeof document === 'undefined') ? null : document.getElementById('fc-mode-select-refusal');
+  if (h) { h.innerHTML = ''; h.hidden = true; }
+}
+function _fcShowPrereqRefusal_(err) {
+  var text = FC_MSG_.PREREQ_FAILED + ' ' + _fcErrDetail_(err);
+  var h = (typeof document === 'undefined') ? null : document.getElementById('fc-mode-select-refusal');
+  if (!h) { alert(text); return; }
+  h.innerHTML = '';
+  var p = document.createElement('div'); p.textContent = text; h.appendChild(p);
+  var b = document.createElement('button');
+  b.type = 'button'; b.id = 'fc-mode-retry-btn'; b.className = 'fc-btn fc-btn--cancel';
+  b.textContent = 'Retry'; b.style.marginTop = '8px';
+  b.onclick = function () { _fcClearPrereqRefusal_(); proceedToFcMode(); };   // exactly ONE new logical load
+  h.appendChild(b);
+  h.hidden = false;
+}
+function _fcOpenBuilder_(mode) {
+  closeFcModal();
+  if (mode === 'event') { if (typeof openEventModal === 'function') openEventModal(); }
+  else { if (typeof openRegularUpdateModal === 'function') openRegularUpdateModal(); }
+}
+
+/* THE WRITE MECHANISM — ONE of them, shared by all five controls. Each control keeps its own preview,
+   manifest and copy; only the latch, the outcome classification and the readback are shared. */
+function _fcWriteBegin_(ctl) {
+  if (_fcWriteFlight_[ctl]) return false;      // repeated clicks add ZERO logical writes
+  _fcWriteFlight_[ctl] = true;
+  _fcWriteState_[ctl] = FC_WRITE_.WRITING;
+  _fcMeta_.writeStart = Date.now(); _fcMeta_.writeEnd = null;
+  return true;
+}
+function _fcWriteEnd_(ctl, state) {
+  _fcWriteFlight_[ctl] = false;
+  _fcWriteState_[ctl] = state;
+  _fcMeta_.writeEnd = Date.now();
+}
+/* FOUR outcomes, never three. A null or non-object response is NOT a success: "we received nothing we
+   could read" and "the server said yes" are different sentences, and only one of them may close a modal. */
+function _fcClassifyWrite_(res) {
+  if (res && typeof res === 'object' && res.success === false) return FC_WRITE_.REFUSAL;
+  if (res && typeof res === 'object') return FC_WRITE_.SUCCESS;
+  return FC_WRITE_.UNKNOWN;
+}
+/* The canonical envelope location FIRST (`res.data.summary` — what the server actually sends), the
+   legacy one second, and ABSENT STAYS ABSENT. Regular and Base Edit read only `res.summary`, which is
+   always undefined, so every confirmation silently dropped its counts. */
+function _fcSummaryOf_(res) {
+  var d = res && res.data;
+  var s = (d && d.summary) || (res && res.summary) || null;
+  return (s && typeof s === 'object') ? s : null;
+}
+function _fcCountsLine_(s) {
+  if (!s) return '';                            // no manifest → say nothing; never invent a zero
+  var parts = [];
+  ['created', 'updated', 'skipped', 'error', 'failed'].forEach(function (k) {
+    if (typeof s[k] === 'number') parts.push(k.charAt(0).toUpperCase() + k.slice(1) + ': ' + s[k]);
+  });
+  return parts.length ? ('\n' + parts.join('  ')) : '';
+}
+function _fcReceipt_(op, rows, res) {
+  _fcLastReceipt_ = {
+    operation: op,
+    rows: (typeof rows === 'number') ? rows : null,
+    summary: _fcSummaryOf_(res),
+    at: Date.now(),
+    requestId: (res && res.meta && res.meta.requestId) || _fcMeta_.requestId || null,
+    metrics: _fcMetricsSnapshot_()
+  };
+  return _fcLastReceipt_;
+}
+function _fcRefusalText_(res) {
+  var r = (res && (res.error || (res.errors && res.errors[0] && res.errors[0].message))) || 'no reason given';
+  return FC_MSG_.REFUSED + String(r) + '.';
+}
+/* THE UNKNOWN OUTCOME. The busy state is released so the page is usable, but the remedy offered is a
+   READ, never another Save. No automatic replay happens here or anywhere else in this file. */
+function _fcUnknownOutcome_(ctl, err) {
+  var detail = err ? (' (' + _fcErrDetail_(err) + ')') : '';
+  alert(FC_MSG_.UNKNOWN + detail);
+  _fcShowBanner_(FC_MSG_.UNKNOWN, 'Check latest data', function () { _fcRefreshViewNow_(FC_MSG_.READ_FAILED); });
+}
+/* The shared settle. opts: { ctl, op, rows, epoch, reenable, onSuccess } */
+function _fcSettleWrite_(res, opts) {
+  var outcome = _fcClassifyWrite_(res);
+  if (outcome === FC_WRITE_.SUCCESS) _fcReceipt_(opts.op, opts.rows, res);
+  _fcWriteEnd_(opts.ctl, outcome);
+  if (!_fcOwns_(opts.epoch)) { _fcWriteState_[opts.ctl] = FC_WRITE_.UNMOUNTED; return outcome; }
+  if (outcome === FC_WRITE_.UNKNOWN) { _fcUnknownOutcome_(opts.ctl, null); if (opts.reenable) opts.reenable(true); return outcome; }
+  if (outcome === FC_WRITE_.REFUSAL) { alert(_fcRefusalText_(res)); if (opts.reenable) opts.reenable(true); return outcome; }
+  if (typeof opts.onSuccess === 'function') opts.onSuccess(_fcSummaryOf_(res), res);
+  return outcome;
+}
+function _fcFailWrite_(err, opts) {
+  _fcWriteEnd_(opts.ctl, FC_WRITE_.UNKNOWN);
+  if (!_fcOwns_(opts.epoch)) { _fcWriteState_[opts.ctl] = FC_WRITE_.UNMOUNTED; return; }
+  _fcUnknownOutcome_(opts.ctl, err);
+  if (opts.reenable) opts.reenable(true);
+}
+
 function _fcAfterWrite(cb) {
   // F1-7L: a FC write changed the underlying tables the secondary modals read; drop the bounded modal-cache flag
   // so the next builder/import/Event-Assist modal open re-reads fresh (bounded) rather than a stale slice.
   if (typeof _fcResetSecondaryCache === 'function') _fcResetSecondaryCache();
   var live = (typeof _fcUseDb !== 'function') || _fcUseDb();
-  if (!_fcEffectiveWorkspace() || !live) { if (typeof cb === 'function') cb(); return; }
-  _fcWorkspaceRefresh_().then(function () { if (typeof cb === 'function') cb(); }).catch(function (err) { _fcRenderError_(err); });
+  var epoch = _fcEpoch_();
+
+  // ---- STAGE A — THE CONFIRMED WRITE IS REPORTED NOW. ------------------------------------------
+  // cb closes the modal, exits edit mode and says "saved". It runs because the WRITE was confirmed,
+  // and nothing that happens to the following read can take that back. This one line is the repair.
+  if (typeof cb === 'function') { try { cb(); } catch (e) { /* a reporting fault must not hide the write */ } }
+
+  if (!_fcEffectiveWorkspace() || !live) { _fcViewState_ = FC_VIEW_.CURRENT; return; }
+
+  // ---- STAGE B — BEST EFFORT. A failure downgrades the VIEW, never the WRITE. ------------------
+  _fcViewState_ = FC_VIEW_.REFRESHING;
+  _fcMeta_.readbackStart = Date.now(); _fcMeta_.readbackEnd = null;
+  _fcWorkspaceRefresh_().then(function () {
+    _fcMeta_.readbackEnd = Date.now();
+    if (!_fcOwns_(epoch)) return;                      // routed away → no DOM mutation
+    _fcViewState_ = FC_VIEW_.CURRENT;
+    _fcClearBanner_();
+    _fcRerenderTables_();
+  }).catch(function (err) {
+    _fcMeta_.readbackEnd = Date.now();
+    if (!_fcOwns_(epoch)) return;
+    // THE LAST KNOWN TABLE IS KEPT. _fcRenderError_ is deliberately NOT called: it nulls the read
+    // model and replaces the rows with a red box, which is right on a cold load and wrong here,
+    // because those rows are real and the write that produced them succeeded.
+    _fcViewState_ = _fcReadModel ? FC_VIEW_.STALE : FC_VIEW_.REFUSED;
+    _fcShowBanner_(FC_MSG_.SAVED_STALE, 'Refresh view', function () { _fcRefreshViewNow_(FC_MSG_.SAVED_STALE); });
+  });
 }
 
 // Map fc_regular_forecast rows to the Regular Forecast render shape.
@@ -3976,10 +4356,19 @@ function runFcImport() {
         }
 
         if (runBtn) { runBtn.disabled = true; runBtn.textContent = 'Importing...'; }
+        if (!_fcWriteBegin_('import')) return;      // FC-SUMMARY-R1: the existing guard, now shared
+        var _imEpoch = _fcEpoch_();
         window.KM.DB.importFcRegularForecastBatch(rows, { forecastStatusDefault: 'draft', sourceDefault: 'import' })
             .then(function(result) {
+                var _imOutcome = _fcClassifyWrite_(result);
+                if (_imOutcome === FC_WRITE_.SUCCESS) _fcReceipt_('Import Forecast', rows.length, result);
+                _fcWriteEnd_('import', _imOutcome);
+                if (!_fcOwns_(_imEpoch)) { _fcWriteState_['import'] = FC_WRITE_.UNMOUNTED; return; }
                 if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Import'; }
-                if (!result || result.success === false) {
+                // An unreadable answer is NOT an import failure — it is an unknown outcome, and the
+                // remedy offered is a read, never a second import.
+                if (_imOutcome === FC_WRITE_.UNKNOWN) { _fcUnknownOutcome_('import', null); return; }
+                if (_imOutcome === FC_WRITE_.REFUSAL) {
                     _fcRenderImportError(result && result.error ? result.error : 'Import failed. API may not be configured.');
                     return;
                 }
@@ -4007,7 +4396,10 @@ function runFcImport() {
                 }
             })
             .catch(function(err) {
+                _fcWriteEnd_('import', FC_WRITE_.UNKNOWN);
+                if (!_fcOwns_(_imEpoch)) { _fcWriteState_['import'] = FC_WRITE_.UNMOUNTED; return; }
                 if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Import'; }
+                _fcUnknownOutcome_('import', err);
                 _fcRenderImportError(err && err.message ? err.message : 'Import request failed.');
             });
     };

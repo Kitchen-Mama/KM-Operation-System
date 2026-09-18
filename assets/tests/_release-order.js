@@ -403,7 +403,8 @@ var ROUND_TOKENS = [
   'actionintegrity-p1b8dr10ef4-20260917',
   'dispatchownership-p1b8dr10ef5-20260917',
   'skuimportuniverse-s2r2r1-20260918',
-  'skuexportuniverse-s2r2r2-20260918'];
+  'skuexportuniverse-s2r2r2-20260918',
+  'fcwriteoutcome-fcsr1-20260918'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

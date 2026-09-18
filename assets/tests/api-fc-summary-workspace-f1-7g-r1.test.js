@@ -182,8 +182,14 @@ ok(/_fcAfterWrite\(function \(\) \{\s*exitEditMode/.test(FC_JS), 'Base Forecast 
 ok(/_fcAfterWrite\(function \(\) \{\s*exitEventEditMode/.test(FC_JS), 'Special Event inline save → _fcAfterWrite');
 ok((FC_JS.match(/_fcAfterWrite\(/g) || []).length >= 7, 'all 7 live write success paths reconcile via _fcAfterWrite');
 // SECONDARY builder modals lazy-load the broad cache; primary render never depends on it
-ok(/function _fcEnsureBroadCacheThen/.test(FC_JS), 'fc-summary: SECONDARY builder modals lazy-load the broad cache');
-ok(/_fcEnsureBroadCacheThen\(openRegularUpdateModal\)/.test(FC_JS) && /_fcEnsureBroadCacheThen\(openEventModal\)/.test(FC_JS), 'Regular + Special-Event builders guard-lazy-load the broad cache on open');
+// FC-SUMMARY-R1 — the SECONDARY prerequisite load still exists and still fetches the same seven tables;
+// what changed is that it is single-flight and REFUSABLE. The two assertions below used to pin
+// `_fcEnsureBroadCacheThen(openRegularUpdateModal)`, i.e. the silent re-entry that retried forever on a
+// persistent failure. They now pin the contract that replaced it.
+ok(/function _fcLoadPrerequisites_/.test(FC_JS) && /rc\(_FC_SECONDARY_TABLES\)/.test(FC_JS), 'fc-summary: SECONDARY builder modals lazy-load the broad cache (same seven-read contract)');
+ok(/if \(_fcPrereqFlight_\) return _fcPrereqFlight_;/.test(FC_JS), 'the prerequisite load is single-flight — extra Next clicks issue no second request');
+ok(/_fcShowPrereqRefusal_\(err\)/.test(FC_JS) && FC_JS.indexOf('_fcEnsureBroadCacheThen(openRegularUpdateModal)') === -1,
+  'a prerequisite failure refuses in the open modal instead of silently re-entering the opener');
 // Event Assist WRITE authority UNCHANGED (deferred redesign) — still browser-computed + submitted verbatim
 ok(/function _evtApplyForecastAssist/.test(FC_JS) && /Math\.round\(b \* \(1 \+ growth \/ 100\)\)/.test(FC_JS), 'Event Assist compute is UNCHANGED (browser-computed growth — flagged EVENT_ASSIST_AUTHORITY_REDESIGN_REQUIRED, not touched)');
 ok(/upsertFcSpecialEvent/.test(FC_JS), 'Special Event WRITE path (upsertFcSpecialEvent) is unchanged');

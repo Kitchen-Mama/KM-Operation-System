@@ -73,7 +73,16 @@ ok(/fcEditState\.editRows/.test(renderSrc), 'W6 editable table renders the immut
 var saveSrc = extractFn(JS, 'saveFcChanges');
 ok(/importFcRegularForecastBatch/.test(saveSrc), 'W7 Save uses the canonical FC write authority (importFcRegularForecastBatch)');
 ok(!/Successfully saved/.test(saveSrc) && !/console\.log\('Saving changes'/.test(saveSrc), 'W8 NO hardcoded false-success (the P0 fake toast is gone from Regular Save)');
-ok(/res\.success === false|res && res\.success === false/.test(saveSrc) && /\.catch\(/.test(saveSrc), 'W9 honest error handling (checks success + catch), no optimistic success');
+// FC-SUMMARY-R1 — the success check moved into the ONE shared classifier, and got stricter there:
+// `success:false` is a REFUSAL, and an unreadable answer is an UNKNOWN OUTCOME rather than a success.
+// Asserting the literal `res.success === false` inside saveFcChanges would now pin the old shape, so
+// this checks the guarantee where it lives — plus that the save still routes every outcome through it.
+ok(/_fcSettleWrite_\(res, _beOpts\)/.test(saveSrc) && /\.catch\(/.test(saveSrc) && /_fcFailWrite_/.test(saveSrc),
+  'W9 honest error handling (every outcome routed through the shared classifier + catch), no optimistic success');
+var classify = extractFn(JS, '_fcClassifyWrite_');
+ok(/res\.success === false/.test(classify) && /return FC_WRITE_\.REFUSAL/.test(classify)
+  && /return FC_WRITE_\.UNKNOWN/.test(classify),
+  'W9b the classifier separates confirmed refusal from an unknown outcome — neither is a success');
 ok(/exitEditMode\(\)/.test(saveSrc) && /NOT written to DB/.test(saveSrc), 'W10 success reconciles + demo path is honestly labeled (never claims DB write)');
 ok(/counts\.invalid > 0/.test(saveSrc), 'W11 Save blocked while any cell is invalid');
 ok(/entries\.length === 0/.test(saveSrc), 'W12 Save with no changes performs no DB call');

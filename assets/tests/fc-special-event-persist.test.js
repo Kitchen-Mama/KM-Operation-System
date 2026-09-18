@@ -63,7 +63,11 @@ ok(/input type="number"/.test(renderSrc) && /aria-label=/.test(renderSrc) && /fc
 var saveSrc = extractFn(JS, 'saveEventChanges');
 ok(/importFcSpecialEventsBatch/.test(saveSrc), 'W4 Save uses the canonical batch authority (importFcSpecialEventsBatch)');
 ok(!/Successfully saved/.test(saveSrc) && !/console\.log\('Saving event changes'/.test(saveSrc), 'W5 NO hardcoded false-success (P0 fake toast gone from Special Event Save)');
-ok(/res\.success === false/.test(saveSrc) && /\.catch\(/.test(saveSrc), 'W6 honest error handling (success check + catch)');
+// FC-SUMMARY-R1 — see fc-base-edit-and-sidebar W9: the success check now lives in the shared classifier.
+ok(/_fcSettleWrite_\(res, _evOpts\)/.test(saveSrc) && /\.catch\(/.test(saveSrc) && /_fcFailWrite_/.test(saveSrc),
+  'W6 honest error handling (every outcome routed through the shared classifier + catch)');
+ok(/res\.success === false/.test(extractFn(JS, '_fcClassifyWrite_')),
+  'W6b and the classifier still treats an explicit success:false as a refusal');
 ok(/entries\.length === 0/.test(saveSrc) && /exitEventEditMode\(\)/.test(saveSrc), 'W7 no changes → no DB call');
 ok(/counts\.invalid > 0/.test(saveSrc), 'W8 invalid cells block save');
 ok(/event_fc_id[\s\S]*campaign_id[\s\S]*cannot be edited until backfilled/.test(saveSrc), 'W9 rows missing event_fc_id/campaign_id are blocked with a clear message (no silent skip/merge)');

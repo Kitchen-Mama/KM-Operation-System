@@ -101,7 +101,9 @@ ok(/_buildRequestOrderRowsFromDb/.test(reload), 'save-reload keeps the legacy br
 
 // ===================================================================================================================
 console.log('\n== §5/§6 FC Summary modals bounded; §14 Event Assist calc UNCHANGED ==');
-var fcEnsure = extractFn(FC, '_fcEnsureBroadCacheThen');
+// FC-SUMMARY-R1 — renamed to _fcLoadPrerequisites_ (single-flight + rejects instead of swallowing).
+// The property this asserts is unchanged: the bounded refreshCacheTables loader, never a whole-DB load.
+var fcEnsure = extractFn(FC, '_fcLoadPrerequisites_');
 ok(/refreshCacheTables/.test(fcEnsure) && /rc\(_FC_SECONDARY_TABLES\)/.test(fcEnsure) && fcEnsure.indexOf('loadOperationDb') === -1 && fcEnsure.indexOf('reloadOperationDb') === -1, '_fcEnsureBroadCacheThen uses the bounded refreshCacheTables loader (no whole-DB lazy load)');
 ok(/var _FC_SECONDARY_TABLES = \['sku_details', 'marketplace_skus', 'campaigns', 'pricing_list', 'fc_regular_forecast', 'fc_special_events', 'marketplaces'\];/.test(FC), '_FC_SECONDARY_TABLES = exactly the modal facts');
 ok(/function _fcResetSecondaryCache\(\) \{ _fcSecondaryLoaded = false; \}/.test(FC), '_fcResetSecondaryCache clears the bounded modal-cache flag');
