@@ -36,9 +36,43 @@
  *
  * RUN ORDER: DRY RUN -> (read the log) -> EXECUTE -> VALIDATE. Never jump straight to EXECUTE.
  *
+ * NO OAUTH SCOPE IS REQUIRED BEYOND WHAT THE PROJECT ALREADY HOLDS. This file calls no Session API: the
+ * migration actor is the reviewed constant TEMP_R2BA2_MIGRATION_ACTOR_ below, and it is printed in the
+ * DRY RUN, EXECUTE and VALIDATE logs so the evidence records who authorized the change.
+ *
  * IDEMPOTENT BY CONSTRUCTION: EXECUTE recomputes the missing set from the live header every time. A second run
  * finds nothing missing and returns NO_OP without calling the migrator at all, so it cannot duplicate a header.
  */
+
+// FC-SUMMARY-R2B-A2-R1-F1 — THE MIGRATION ACTOR, AND WHY IT IS A CONSTANT RATHER THAN A LOOKUP.
+//
+// The first live EXECUTE threw before it wrote anything:
+//
+//     Specified permissions are not sufficient to call Session.getActiveUser.
+//     Required permission: https://www.googleapis.com/auth/userinfo.email
+//
+// The DTO asked the platform who was running it. That was the wrong question to ask HERE. Answering it
+// needs the userinfo.email OAuth scope, and this project deliberately does not hold it: adding a scope to
+// appsscript.json re-prompts every user for consent on the NEXT deployment and widens what the whole web
+// app may do, permanently, so that a temporary helper could fill in one audit string. That is a production
+// authorization change bought to serve a throwaway file, and the trade is not close.
+//
+// Session.getEffectiveUser() is NOT used either. It is documented to require the same userinfo.email scope
+// for a bound script, so substituting it would be a guess dressed as a fix — and a guess that fails the
+// same way, at the same line, on the next run. No Session API is called anywhere in this file.
+//
+// WHAT THE DTO ACTUALLY NEEDS. `actor` is an audit field: it records who authorized this one schema change.
+// For a manually executed, unrouted, single-use migration the authorizing party is known BEFORE the run —
+// it is the person who reviewed the plan and pressed Run — so it is a reviewed constant, not something to
+// discover at runtime. This is the shape the repository already uses for exactly this situation:
+// DEMO4A_ACTOR_ (TEMP_demo_shipping_shipment_map_seed_v2.gs:39), S1_CG_ACTOR_ and R6R6R3_ACTOR_ are all
+// module-level fixed strings in USER-run TEMP files. No new pattern is invented here.
+//
+// IT IS NEVER SUPPLIED FROM OUTSIDE. Not from a request payload, not from a query string, not from
+// localStorage, not from the browser, and not from a function argument. Nothing routes to this file, so
+// there is no request for a value to arrive on; and because it is a `var` in this file alone, its blast
+// radius is this file alone. It is removed with the file when the helper is retired.
+var TEMP_R2BA2_MIGRATION_ACTOR_ = 'vic.zhou@shopkitchenmama.com';
 
 // The canonical required contract. Read from the single authority in 14_ rather than restated here — a second
 // copy of a header contract is how the original drift happened.
@@ -88,6 +122,9 @@ function TEMP_migrateFcTargetRulesHeader_(opts) {
   var report = {
     migrationId: 'FC-SUMMARY-R2B-A2-R1-fc_target_rules-additive-header',
     mode: execute ? 'EXECUTE' : 'DRY_RUN',
+    // FC-SUMMARY-R2B-A2-R1-F1 — printed on EVERY path, including every refusal, and NOT read from anywhere.
+    migrationActor: tgtR2ba2Str_(TEMP_R2BA2_MIGRATION_ACTOR_),
+    migrationActorSource: 'TEMP_R2BA2_MIGRATION_ACTOR_ (reviewed module constant in this file)',
     sheet: NAME,
     row1Verbatim: snap.actual.slice(),
     actualColumnCount: snap.actual.length,
@@ -146,6 +183,17 @@ function TEMP_migrateFcTargetRulesHeader_(opts) {
   }
 
   // ---- EXECUTE --------------------------------------------------------------------------------------------
+  // FC-SUMMARY-R2B-A2-R1-F1 — the authorizing actor is a REQUIRED field of the migration DTO. If the constant
+  // has been blanked, the migration is unauthorized and must stop here, before the re-read and before the
+  // mutation, rather than reaching the adapter and throwing past this report.
+  if (tgtR2ba2Str_(TEMP_R2BA2_MIGRATION_ACTOR_) === '') {
+    report.outcome = 'REFUSED_MIGRATION_ACTOR_MISSING — TEMP_R2BA2_MIGRATION_ACTOR_ is empty. `actor` is a '
+      + 'required field of the migration authorization DTO and records who authorized this schema change. '
+      + 'Set the reviewed constant at the top of this file. Nothing was written.';
+    Logger.log(JSON.stringify(report, null, 2));
+    return report;
+  }
+
   // This tool was designed against a table with ZERO data rows. A populated table is a different decision and
   // deserves a fresh one, so it is refused rather than assumed to be equivalent.
   if (snap.dataRows !== 0) {
@@ -167,7 +215,9 @@ function TEMP_migrateFcTargetRulesHeader_(opts) {
     backupReference: 'row1-verbatim-snapshot recorded in this report and in the FC-SUMMARY-R2B-A2-R1 release '
       + 'record; the table holds zero data rows, so row 1 IS the entire recoverable state',
     execute: true,
-    actor: Session.getActiveUser().getEmail() || 'fc-target-rules-migration'
+    // FC-SUMMARY-R2B-A2-R1-F1 — was `Session.getActiveUser().getEmail()`, which needs an OAuth scope this
+    // project does not hold and threw here before a single header cell was written. See the constant above.
+    actor: TEMP_R2BA2_MIGRATION_ACTOR_
   };
 
   // Re-read immediately before mutating and confirm the header has not moved under us since the snapshot.
@@ -217,6 +267,8 @@ function TEMP_validateFcTargetRulesHeader_() {
   var required = tgtR2ba2Required_(), snap = tgtR2ba2Snapshot_(sheet);
   var counts = {}; snap.actual.forEach(function (h) { counts[h] = (counts[h] || 0) + 1; });
   var out = {
+    migrationActor: tgtR2ba2Str_(TEMP_R2BA2_MIGRATION_ACTOR_),
+    migrationActorSource: 'TEMP_R2BA2_MIGRATION_ACTOR_ (reviewed module constant in this file)',
     row1: snap.actual, columnCount: snap.actual.length, dataRows: snap.dataRows,
     missingRequired: required.filter(function (h) { return !counts[h]; }),
     requiredAppearingMoreThanOnce: required.filter(function (h) { return counts[h] > 1; }),

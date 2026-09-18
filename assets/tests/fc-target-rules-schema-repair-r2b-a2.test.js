@@ -136,6 +136,10 @@ function build(mutate) {
   ADAPTER_FNS.forEach(function (n) { pieces.push(extractFn(A, n)); });
   G14_VARS.forEach(function (n) { pieces.push(extractVar(G14, n)); });
   G14_FNS.forEach(function (n) { pieces.push(extractFn(G14, n)); });
+  // FC-SUMMARY-R2B-A2-R1-F1 — the reviewed migration actor constant. It replaced a Session.getActiveUser()
+  // call that needed an OAuth scope this project does not hold, so it must be extracted alongside the
+  // functions that read it or they resolve against nothing.
+  pieces.push(extractVar(MIG, 'TEMP_R2BA2_MIGRATION_ACTOR_'));
   MIG_FNS.forEach(function (n) { pieces.push(extractFn(MIG, n)); });
 
   var uuid = 0;
@@ -145,8 +149,27 @@ function build(mutate) {
     Logger: { log: function () {} },
     Utilities: { getUuid: function () { uuid++; return ('abcdef01234567890000000000000000' + uuid).slice(-32); },
       formatDate: function () { return '2026-09-18 12:00:00'; } },
+    // FC-SUMMARY-R2B-A2-R1-F1 — THE STUB THAT MADE A REAL DEFECT UNTESTABLE, REPLACED BY A TRAP.
+    //
+    // This previously returned a working `getActiveUser`, and 105 assertions passed against a file whose
+    // live EXECUTE then threw on exactly that call:
+    //
+    //     Specified permissions are not sufficient to call Session.getActiveUser.
+    //     Required permission: https://www.googleapis.com/auth/userinfo.email
+    //
+    // The Apps Script project does not hold that OAuth scope and deliberately will not request it, so a
+    // stub that answered was asserting a capability the platform does not grant. getScriptTimeZone stays
+    // real because it genuinely needs no scope; the two identity calls now fail the way production fails.
+    // Full coverage of the repair lives in fc-target-rules-migration-actor-r2b-a2-f1.test.js.
     Session: { getScriptTimeZone: function () { return 'UTC'; },
-      getActiveUser: function () { return { getEmail: function () { return 'operator@test'; } }; } },
+      getActiveUser: function () {
+        throw new Error('Specified permissions are not sufficient to call Session.getActiveUser. '
+          + 'Required permission: https://www.googleapis.com/auth/userinfo.email');
+      },
+      getEffectiveUser: function () {
+        throw new Error('Specified permissions are not sufficient to call Session.getEffectiveUser. '
+          + 'Required permission: https://www.googleapis.com/auth/userinfo.email');
+      } },
     jsonResponse_: function (o) { return o; },
     SpreadsheetApp: {
       getActiveSpreadsheet: function () { return ctx.__ss; },
