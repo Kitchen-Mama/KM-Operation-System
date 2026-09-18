@@ -244,8 +244,26 @@ function saveSkuDataOverrides(overrides) {
     localStorage.setItem(SKU_DATA_OVERRIDE_KEY, JSON.stringify(overrides));
 }
 
-function importSkuStatusTemplate(file) {
+// F1-S2-R2-R1 — THE SKU UNIVERSE IS INJECTED BY THE PAGE, AND ITS ABSENCE IS NOT AN EMPTY UNIVERSE.
+//
+// This read used to be `KM.DB.getSkuDetails()`, the broad Operation-DB cache. Since the SKU Details
+// primary read went canonical and default-on, nothing primes that cache in an ordinary session —
+// every page that could load it sits behind its own kill switch — so the getter returned `[]`, the
+// "existing SKUs" set was empty, and EVERY ROW OF AN IMPORTED TEMPLATE WAS COUNTED NEW, including
+// SKUs that already exist. Wrong in the one direction nobody checks, and non-deterministic with it:
+// visit a kill-switch page first, the broad cache is primed, and the same file counts correctly.
+//
+// So the caller passes the universe it is itself displaying, and there is NO FALLBACK. An absent or
+// invalid argument REFUSES BEFORE THE FILE IS READ, because an unknown universe and an empty one are
+// different facts and only one of them may be answered with "everything here is new".
+function importSkuStatusTemplate(file, skuUniverse) {
     return new Promise(function(resolve) {
+        if (!Array.isArray(skuUniverse)) {
+            resolve({ total: 0, valid: 0, newCount: 0, updateCount: 0, preview: [], universeUnavailable: true,
+                errors: [{ row: 0, sku: '', field: 'universe',
+                    message: 'The SKU list has not loaded, so new and existing SKUs cannot be told apart. Nothing was validated.' }] });
+            return;
+        }
         var reader = new FileReader();
         reader.onload = function(e) {
             var text = e.target.result;
@@ -256,10 +274,9 @@ function importSkuStatusTemplate(file) {
             var skuIdx = header.indexOf('sku');
             if (skuIdx === -1) { resolve({ total: lines.length - 1, valid: 0, errors: [{ row: 1, sku: '', field: 'header', message: 'Missing sku column' }], newCount: 0, updateCount: 0, preview: [] }); return; }
 
-            // Get existing SKUs from KM.DB
+            // The injected canonical universe: read only, never mutated, never re-fetched.
             var existingSkus = new Set();
-            var dbItems = (window.KM && window.KM.DB && window.KM.DB.getSkuDetails) ? window.KM.DB.getSkuDetails() : [];
-            dbItems.forEach(function(i) { existingSkus.add(i.sku); });
+            skuUniverse.forEach(function(i) { if (i && i.sku) existingSkus.add(i.sku); });
 
             var errors = [];
             var preview = [];

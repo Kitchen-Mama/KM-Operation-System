@@ -401,7 +401,8 @@ var ROUND_TOKENS = [
   'domownership-p1b8dr10ef2-20260916',
   'transientgate-p1b8dr10ef3r4-20260916',
   'actionintegrity-p1b8dr10ef4-20260917',
-  'dispatchownership-p1b8dr10ef5-20260917'];
+  'dispatchownership-p1b8dr10ef5-20260917',
+  'skuimportuniverse-s2r2r1-20260918'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

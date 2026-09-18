@@ -461,19 +461,44 @@ function handleExportStatusTemplate() {
     if (window.exportSkuStatusTemplate) exportSkuStatusTemplate();
 }
 
+var _SKU_IMPORT_UNAVAILABLE_ = 'SKU list is still loading — try the import again once the page has finished loading.';
+
+// F1-S2-R2-R1 — THE SAME PREDICATE THE RENDERER USES, FOR THE SAME REASON.
+// `renderSkuDetailsTable` refuses to draw when the workspace is active and the read model is missing,
+// because a missing model means the scoped read has not succeeded and there is nothing legitimate to
+// show. The import needs exactly that distinction: a universe the page can vouch for — which may
+// legitimately be EMPTY — against one it cannot. Null is returned ONLY for the second case, so an
+// empty universe still classifies every valid row as new, and an unknown one classifies nothing.
+function _skImportUniverse_() {
+    if (_skEffectiveWorkspace() && !_skReadModel) return null;   // unavailable — NOT an empty universe
+    return _skGetSkuDetails().slice();                           // stable snapshot; may legitimately be []
+}
+
 function handleImportStatusTemplate() {
+    // Do not open a file picker this page cannot honour.
+    if (!_skImportUniverse_()) { showSkuStatusToast(_SKU_IMPORT_UNAVAILABLE_); return; }
     var input = document.createElement('input');
     input.type = 'file';
     input.accept = '.csv';
     input.onchange = function() {
         if (!this.files[0]) return;
+        // Re-read at USE time: the snapshot that classifies the file is the one taken with it.
+        var universe = _skImportUniverse_();
+        if (!universe) { showSkuStatusToast(_SKU_IMPORT_UNAVAILABLE_); return; }
         showSkuStatusToast('Validating...');
-        importSkuStatusTemplate(this.files[0]).then(function(result) { showImportPreview(result); });
+        importSkuStatusTemplate(this.files[0], universe).then(function(result) { showImportPreview(result); });
     };
     input.click();
 }
 
 function showImportPreview(result) {
+    // F1-S2-R2-R1 — a refusal is not a validation result with zeroes in it. No totals are shown,
+    // because "0 new, 0 update" from an unknown universe reads as a finding rather than a refusal.
+    if (result && result.universeUnavailable) {
+        alert((result.errors && result.errors[0] && result.errors[0].message) || _SKU_IMPORT_UNAVAILABLE_);
+        showSkuStatusToast(_SKU_IMPORT_UNAVAILABLE_);
+        return;
+    }
     var msg = 'Import Validation:\\nTotal: ' + result.total + ' | Valid: ' + result.valid + ' | Errors: ' + result.errors.length + '\\nNew: ' + result.newCount + ' | Update: ' + result.updateCount;
     if (result.errors.length > 0) { msg += '\\n\\nErrors (first 10):\\n'; result.errors.slice(0,10).forEach(function(e){msg+='Row '+e.row+' ['+e.field+']: '+e.message+'\\n';}); }
     msg += '\\n\\nCloud write-back for bulk import: next phase.';
