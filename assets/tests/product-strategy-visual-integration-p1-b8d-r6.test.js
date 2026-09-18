@@ -220,9 +220,36 @@ var R6_PRE = 'c9429e6';
   if (d === '__git_unavailable__') { ok(true, 'B5.' + (i + 1) + ' (git unavailable — skipped) ' + f); return; }
   eq(d, '', 'B5.' + (i + 1) + ' this round did not touch ' + f.split('/').pop(), d);
 });
+// A LATER ROUND MAY LEGITIMATELY EDIT A PAGE STYLESHEET, AND THIS GUARD'S BASELINE IS FIXED.
+//
+// `changedSince` accumulates: every round after c9429e6 that touches a page stylesheet appears here
+// forever, so without a written record the guard eventually reports honest work by another feature as a
+// Product Strategy leak. Relaxing the assertion would delete the only check that would notice a real leak,
+// so instead each such file is named WITH ITS REASON. Anything not on this list still fails, and
+// product-strategy-board.css may never appear on it — a leak into the page's OWN stylesheet is the one
+// thing this guard exists to catch and the list must never be able to excuse it.
+var PAGE_CSS_CHANGED_BY_LATER_ROUNDS = {
+  'assets/css/pages/fc-overview.css':
+    'FC-SUMMARY-R2B-A2-R3 - the FC Summary column width rules. They were scoped to ' +
+    '#fc-summary-section rather than to a table, so the Regular tab 20-column plan (including a ' +
+    '70px right-aligned rule written for month numbers) also governed the Special Event and ' +
+    'Target Rules tabs, and their :nth-child specificity out-ranked the resize engine injected ' +
+    'rule so only three columns could be dragged. The rules are now per table and carry no ' +
+    'max-width. Nothing in this file is scoped to .psb-page and no Product Strategy selector ' +
+    'was added, moved or removed.'
+};
 var otherPageCss = changedSince(R6_PRE, 'assets/css/pages');
 if (otherPageCss !== '__git_unavailable__') {
-  eq(otherPageCss, '', 'B6  and no other page\'s stylesheet', otherPageCss);
+  var unexplained = otherPageCss.split('\n').map(function (f) { return f.trim(); })
+    .filter(function (f) { return f && !Object.prototype.hasOwnProperty.call(PAGE_CSS_CHANGED_BY_LATER_ROUNDS, f); });
+  eq(unexplained, [], 'B6  no other page\'s stylesheet changed without a recorded reason', unexplained);
+  ok(!Object.prototype.hasOwnProperty.call(PAGE_CSS_CHANGED_BY_LATER_ROUNDS,
+    'assets/css/pages/product-strategy-board.css'),
+    'B6b the allow-list can never excuse a change to Product Strategy\'s own stylesheet');
+  Object.keys(PAGE_CSS_CHANGED_BY_LATER_ROUNDS).forEach(function (f) {
+    ok(String(PAGE_CSS_CHANGED_BY_LATER_ROUNDS[f]).length > 80,
+      'B6c ' + f.split('/').pop() + ' carries a real reason, not a bare exemption');
+  });
 }
 
 /* EVERYTHING AFTER THE FIRST MARKER, not the chunk between the first two. This file carries two

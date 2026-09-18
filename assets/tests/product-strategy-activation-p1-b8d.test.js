@@ -624,8 +624,13 @@ ok(SRC.index.indexOf('productstrategy-p1b8b-20260912') < 0,
   ok(SRC.index.indexOf(f + '?v=' + REL.currentAppToken()) > 0,
     'H5.' + (i + 1) + ' ' + f.split('/').pop() + ' is on the current co-deployed token');
 });
-eq(REL.appTokenRefCount(SRC.index), 35,
-  'H6  thirty-five references share it — the application set and the Product Strategy set, now one');
+// FC-SUMMARY-R2B-A2-R3 — 35 became 36. assets/css/pages/fc-overview.css joined the co-deployed set: it
+// had stood on the BASE token since the beginning, which staleAppTokenRefs exempts, so the round that
+// rewrote the FC Summary column rules could have shipped a page whose JavaScript was new and whose
+// stylesheet was cached. The pin moves rather than loosens — an exact count is what makes a
+// half-updated deployment visible at all.
+eq(REL.appTokenRefCount(SRC.index), 36,
+  'H6  thirty-six references share it — the application set, Product Strategy, and the FC Summary stylesheet, now one co-deployed set');
 
 /* LOAD ORDER. The board reads the policy through sku-overrides, and app.js builds its menu from
    PSB_VIEWS; both must already be defined when their reader runs. */

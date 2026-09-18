@@ -79,10 +79,16 @@ var ZERO_WRITE_SRC = extractFn(DBAPI, '_kmZeroWriteProven_');
 var CANON_SRC = extractFn(DBAPI, '_kmExtractCanonicalCode_');
 var CANON_LIST = extractVar(DBAPI, 'KM_CANONICAL_CODES');
 
-var VARS = ['FC_PREREQ_', 'FC_WRITE_', 'FC_VIEW_', 'FC_MSG_', '_fcPrereqState_', '_fcPrereqFlight_',
+var VARS = ['FC_PREREQ_', 'FC_WRITE_', 'FC_VIEW_', 'FC_MSG_',
+  // FC-SUMMARY-R2B-A2-R3 — the retry-state map. The banner's LABEL and the sentence that names it now
+  // come from one place, so both must be in the sandbox for the functions below to resolve.
+  'FC_RETRY_', 'FC_RETRY_LABEL_',
+  '_fcPrereqState_', '_fcPrereqFlight_',
   '_fcPrereqLoads_', '_fcPrereqTransition_', '_fcWriteState_', '_fcWriteFlight_', '_fcViewState_',
   '_fcReadbackFlight_', '_fcReadbackLoads_', '_fcLastReceipt_', '_fcEbStage_', '_fcEbCommitted_', '_fcMeta_'];
-var FNS = ['_fcEpoch_', '_fcOwns_', '_fcMetricsSnapshot_', '_fcBannerHost_', '_fcClearBanner_',
+var FNS = ['_fcEpoch_', '_fcOwns_', '_fcMetricsSnapshot_',
+  // FC-SUMMARY-R2B-A2-R3 — the label accessor the refusal and unknown-outcome banners now consult.
+  '_fcRetryLabel_', '_fcBannerHost_', '_fcClearBanner_',
   '_fcShowBanner_', '_fcRerenderTables_', '_fcRefreshViewNow_', '_fcWriteBegin_', '_fcWriteEnd_',
   '_fcClassifyWrite_', '_fcSummaryOf_', '_fcCountsLine_', '_fcReceipt_', '_fcRefusalText_',
   '_fcUnknownOutcome_', '_fcSettleWrite_', '_fcZeroWriteProven_', '_fcCanonicalCode_',
@@ -473,8 +479,11 @@ score('N5  the proven refusal borrows the unknown-outcome sentence',
     }));
 
 score('N6  the refusal offers another Save rather than a read',
-  withSrc(mutate(FC, "  _fcShowBanner_(FC_MSG_.REFUSED_ZERO + (code || _fcErrDetail_(err)) + '.', 'Check latest data',",
-    "  _fcShowBanner_(FC_MSG_.REFUSED_ZERO + (code || _fcErrDetail_(err)) + '.', 'Save again',"),
+  // FC-SUMMARY-R2B-A2-R3 — the anchor follows the source; the label is now read from the retry-state map.
+  // The assertion is untouched: a proven zero-write refusal must still offer a READ, never another Save.
+  withSrc(mutate(FC,
+    "    _fcRetryLabel_(FC_RETRY_.REFUSED_ZERO),",
+    "    'Save again',"),
   function (S) {
     S._fcWriteBegin_('baseEdit');
     S._fcFailWrite_(SCHEMA_ERR, { ctl: 'baseEdit', epoch: 1, reenable: function () {} });

@@ -82,10 +82,16 @@ function mutate(src, from, to) {
   return src.split(from).join(to);
 }
 
-var VARS = ['FC_PREREQ_', 'FC_WRITE_', 'FC_VIEW_', 'FC_MSG_', '_fcPrereqState_', '_fcPrereqFlight_',
+var VARS = ['FC_PREREQ_', 'FC_WRITE_', 'FC_VIEW_', 'FC_MSG_',
+  // FC-SUMMARY-R2B-A2-R3 — the retry-state map. The banner's LABEL and the sentence that names it now
+  // come from one place, so both must be in the sandbox for the functions below to resolve.
+  'FC_RETRY_', 'FC_RETRY_LABEL_',
+  '_fcPrereqState_', '_fcPrereqFlight_',
   '_fcPrereqLoads_', '_fcPrereqTransition_', '_fcWriteState_', '_fcWriteFlight_', '_fcViewState_', '_fcReadbackFlight_',
   '_fcReadbackLoads_', '_fcLastReceipt_', '_fcMeta_', '_FC_SECONDARY_TABLES', '_fcSecondaryLoaded'];
-var FNS = ['_fcEpoch_', '_fcOwns_', '_fcNoteEnvMeta_', '_fcMetricsSnapshot_', '_fcBannerHost_',
+var FNS = ['_fcEpoch_', '_fcOwns_', '_fcNoteEnvMeta_', '_fcMetricsSnapshot_',
+  // FC-SUMMARY-R2B-A2-R3 — _fcRetryLabel_ and _fcErrDetail_ are read by every banner path in this file.
+  '_fcRetryLabel_', '_fcErrDetail_', '_fcBannerHost_',
   '_fcClearBanner_', '_fcShowBanner_', '_fcRerenderTables_', '_fcRefreshViewNow_', '_fcPrereqNeeded_',
   '_fcLoadPrerequisites_', '_fcNextBtn_', '_fcSetNextBusy_', '_fcClearPrereqRefusal_',
   '_fcShowPrereqRefusal_', '_fcOpenBuilder_', '_fcWriteBegin_', '_fcWriteEnd_', '_fcClassifyWrite_',
@@ -711,10 +717,11 @@ function runMutants() {
     // M2 — a readback failure is reported as a write failure
     .then(function () {
       return m('M2  a readback failure is reported as a write failure',
-        '    _fcViewState_ = _fcReadModel ? FC_VIEW_.STALE : FC_VIEW_.REFUSED;\n'
-        + '    _fcShowBanner_(FC_MSG_.SAVED_STALE, \'Refresh view\', function () { _fcRefreshViewNow_(FC_MSG_.SAVED_STALE); });',
-        '    _fcViewState_ = FC_VIEW_.REFUSED;\n'
-        + '    alert(\'Save failed: \' + _fcErrDetail_(err));',
+        // FC-SUMMARY-R2B-A2-R3 — the anchor follows the source: the label now comes from the retry-state
+        // map rather than a literal, so the mutation target moved with it. The assertion is unchanged.
+        '    _fcShowBanner_(FC_MSG_.SAVED_STALE, _fcRetryLabel_(FC_RETRY_.STALE_AFTER_WRITE),\n'
+        + '      function () { _fcRefreshViewNow_(FC_MSG_.SAVED_STALE, FC_RETRY_.STALE_AFTER_WRITE); });',
+        '    alert(\'Save failed: \' + _fcErrDetail_(err));',
         /* The readback MUST actually fail here, or this mutant proves nothing. An earlier draft left the
            default resolving stub in place and scored "caught" whether or not the mutation applied — a
            mutant that cannot fail is not a test. The vacuity audit caught it; it is fixed, not deleted. */

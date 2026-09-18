@@ -3556,14 +3556,67 @@ function _fcRegion_() {
   });
   return _fcRegionCtl;
 }
+// FC-SUMMARY-R2B-A2-R3 §1 — THE CONTROL'S LABEL AND THE SENTENCE THAT NAMES IT COME FROM ONE PLACE.
+//
+// The shared formatter ends every retryable read error with "Press Retry. It issues exactly one new
+// request…". That sentence was true for the transport and false for this page: the control actually
+// rendered beside it says "Refresh view" or "Check latest data" depending on what failed, and the only
+// button in this file ever labelled "Retry" sits on the PREREQUISITE refusal surface, which is a
+// different screen. An operator was being told to press something that was not there.
+//
+// The three states are not cosmetic variants — they are three different situations with three different
+// remedies, and the label has to say which one you are in:
+//
+//   COLD_READ        nothing loaded. The remedy is to ask again.                    -> "Retry"
+//   STALE_AFTER_WRITE a write CONFIRMED, only the readback failed. The data on screen
+//                    is old, not wrong, and nothing needs re-sending.               -> "Refresh view"
+//   UNKNOWN_WRITE    the write outcome could not be classified. The remedy is to LOOK,
+//                    never to send again.                                           -> "Check latest data"
+//   REFUSED_ZERO     a proven zero-write refusal. Also a look, not a resend.        -> "Check latest data"
+//
+// Because one map owns both the button text and the sentence, they cannot drift apart again: there is no
+// second literal to forget.
+var FC_RETRY_ = { COLD_READ: 'COLD_READ', STALE_AFTER_WRITE: 'STALE_AFTER_WRITE',
+  UNKNOWN_WRITE: 'UNKNOWN_WRITE', REFUSED_ZERO: 'REFUSED_ZERO' };
+var FC_RETRY_LABEL_ = { COLD_READ: 'Retry', STALE_AFTER_WRITE: 'Refresh view',
+  UNKNOWN_WRITE: 'Check latest data', REFUSED_ZERO: 'Check latest data' };
+function _fcRetryLabel_(state) {
+  return Object.prototype.hasOwnProperty.call(FC_RETRY_LABEL_, state)
+    ? FC_RETRY_LABEL_[state] : FC_RETRY_LABEL_.COLD_READ;
+}
+
 // F1-7N-FB-4E §F — the safe error field set, from the ONE shared formatter (KM.transport.errorLine). The
 // banner previously showed "<message> [<code>]", which named neither the action, nor the request id, nor
 // whether retrying could possibly help. It degrades to the old two-field form if the transport module is
 // absent, so a load failure costs detail rather than the banner itself.
-function _fcErrDetail_(err) {
+function _fcErrDetail_(err, state) {
+    var label = _fcRetryLabel_(state);
     try {
-        if (window.KM && window.KM.transport && typeof window.KM.transport.errorLine === 'function') {
-            return window.KM.transport.errorLine(err);
+        var T = window.KM && window.KM.transport;
+        // The SAME structured fields the shared formatter uses, assembled here so the closing sentence can
+        // name the control this page actually renders. Every other field is reproduced unchanged; nothing
+        // about retry policy, endpoint selection or classification is touched.
+        if (T && typeof T.errorFields === 'function') {
+            var f = T.errorFields(err);
+            var bits = [f.message, 'Reason: ' + f.code];
+            if (f.action) bits.push('Action: ' + f.action);
+            if (f.request_id) bits.push('Request: ' + f.request_id);
+            if (f.http_status !== null && f.http_status !== undefined) bits.push('HTTP ' + f.http_status);
+            if (f.content_type) bits.push(f.content_type);
+            if (f.html_source) bits.push('Source: ' + f.html_source);
+            if (f.masked_endpoint) bits.push('Endpoint: ' + f.masked_endpoint);
+            bits.push(f.retryable ? 'Retryable: yes' : 'Retryable: no');
+            // Only the retryable sentence names a control. The non-retryable one says the opposite — that
+            // asking again cannot help — and must survive verbatim.
+            bits.push(f.retryable
+                ? ('Press ' + label + '. It issues exactly one new request; no reload or navigation is needed.')
+                : f.next_action);
+            return bits.join(' \u00b7 ');
+        }
+        // Degraded path: the formatter exists but not its field accessor. Correct the one sentence rather
+        // than lose the whole line — naming a missing control is the defect being repaired.
+        if (T && typeof T.errorLine === 'function') {
+            return String(T.errorLine(err)).split('Press Retry.').join('Press ' + label + '.');
         }
     } catch (e) {}
     return String((err && err.message) || 'failed') + ' [' + String((err && err.code) || 'READ_FAILED') + ']';
@@ -3574,12 +3627,19 @@ function _fcRenderError_(err) {
   var code = (err && err.code) || 'FC_SUMMARY_READ_FAILED';
   var message = (err && err.message) || 'FC Summary read failed';
   var html = '<div class="empty-row" role="alert" style="color:#B91C1C;text-align:left;overflow-wrap:break-word;word-break:break-word;">'
-    + 'FC Summary read error: ' + _fcEscapeHtml(_fcErrDetail_({ code: code, message: message, transport: (err && (err.transport || err.kmTransport)) || null }))
+    + 'FC Summary read error: ' + _fcEscapeHtml(_fcErrDetail_({ code: code, message: message,
+        transport: (err && (err.transport || err.kmTransport)) || null }, FC_RETRY_.COLD_READ))
     + '</div>';
   var reg = document.getElementById('fc-regular-scroll-body'); if (reg) reg.innerHTML = html;
   var evt = document.getElementById('fc-event-scroll-body'); if (evt) evt.innerHTML = html;
   var rf = document.getElementById('fc-regular-fixed-body'); if (rf) rf.innerHTML = '';
   var ef = document.getElementById('fc-event-fixed-body'); if (ef) ef.innerHTML = '';
+  // FC-SUMMARY-R2B-A2-R3 §1 — the cold-read surface previously rendered the sentence and no control at
+  // all, so "Press Retry" named nothing on the page. The banner supplies the button the sentence names.
+  // The message body stays where it is: a refusal must not be mistaken for an empty result, and the
+  // tables carry the error text rather than "No data found".
+  _fcShowBanner_(FC_MSG_.READ_FAILED, _fcRetryLabel_(FC_RETRY_.COLD_READ),
+    function () { _fcRefreshViewNow_(FC_MSG_.READ_FAILED, FC_RETRY_.COLD_READ); });
 }
 
 // Scoped read: Workspace (canonical) → getWorkspace('fcSummary') → adapt → _fcReadModel. Fail-closed (throws on error;
@@ -3747,8 +3807,9 @@ function _fcRerenderTables_() {
 
 /* THE REFRESH-VIEW CONTROL. One read request per activation, never two, and a failure here still does
    not touch the recorded write outcome. */
-function _fcRefreshViewNow_(failText) {
-  if (_fcReadbackFlight_) return;
+function _fcRefreshViewNow_(failText, state) {
+  if (_fcReadbackFlight_) return;                       // single-flight: extra clicks issue NOTHING
+  var _st = state || FC_RETRY_.COLD_READ;
   var epoch = _fcEpoch_();
   var stale = failText || FC_MSG_.READ_FAILED;
   _fcReadbackFlight_ = true; _fcReadbackLoads_++;
@@ -3766,7 +3827,9 @@ function _fcRefreshViewNow_(failText) {
     _fcMeta_.readbackEnd = Date.now(); _fcReadbackFlight_ = false;
     if (!_fcOwns_(epoch)) return;
     _fcViewState_ = _fcReadModel ? FC_VIEW_.STALE : FC_VIEW_.REFUSED;
-    _fcShowBanner_(stale, 'Refresh view', function () { _fcRefreshViewNow_(stale); });
+    // The label follows the STATE this refresh was started in, not the call site's guess, and the retry it
+    // schedules carries the same state — so a repeated failure cannot silently change the wording.
+    _fcShowBanner_(stale, _fcRetryLabel_(_st), function () { _fcRefreshViewNow_(stale, _st); });
   });
 }
 
@@ -3811,7 +3874,7 @@ function _fcClearPrereqRefusal_() {
   if (h) { h.innerHTML = ''; h.hidden = true; }
 }
 function _fcShowPrereqRefusal_(err) {
-  var text = FC_MSG_.PREREQ_FAILED + ' ' + _fcErrDetail_(err);
+  var text = FC_MSG_.PREREQ_FAILED + ' ' + _fcErrDetail_(err, FC_RETRY_.COLD_READ);
   var h = (typeof document === 'undefined') ? null : document.getElementById('fc-mode-select-refusal');
   if (!h) { alert(text); return; }
   h.innerHTML = '';
@@ -3884,9 +3947,10 @@ function _fcRefusalText_(res) {
 /* THE UNKNOWN OUTCOME. The busy state is released so the page is usable, but the remedy offered is a
    READ, never another Save. No automatic replay happens here or anywhere else in this file. */
 function _fcUnknownOutcome_(ctl, err) {
-  var detail = err ? (' (' + _fcErrDetail_(err) + ')') : '';
+  var detail = err ? (' (' + _fcErrDetail_(err, FC_RETRY_.UNKNOWN_WRITE) + ')') : '';
   alert(FC_MSG_.UNKNOWN + detail);
-  _fcShowBanner_(FC_MSG_.UNKNOWN, 'Check latest data', function () { _fcRefreshViewNow_(FC_MSG_.READ_FAILED); });
+  _fcShowBanner_(FC_MSG_.UNKNOWN, _fcRetryLabel_(FC_RETRY_.UNKNOWN_WRITE),
+    function () { _fcRefreshViewNow_(FC_MSG_.READ_FAILED, FC_RETRY_.UNKNOWN_WRITE); });
 }
 /* The shared settle. opts: { ctl, op, rows, epoch, reenable, onSuccess } */
 function _fcSettleWrite_(res, opts) {
@@ -3927,9 +3991,10 @@ function _fcCanonicalCode_(err) {
    NO automatic replay — retrying is exactly what will not help. */
 function _fcZeroWriteRefusal_(ctl, err) {
   var code = _fcCanonicalCode_(err);
-  alert(FC_MSG_.REFUSED_ZERO + (code || _fcErrDetail_(err)) + '.');
-  _fcShowBanner_(FC_MSG_.REFUSED_ZERO + (code || _fcErrDetail_(err)) + '.', 'Check latest data',
-    function () { _fcRefreshViewNow_(FC_MSG_.READ_FAILED); });
+  alert(FC_MSG_.REFUSED_ZERO + (code || _fcErrDetail_(err, FC_RETRY_.REFUSED_ZERO)) + '.');
+  _fcShowBanner_(FC_MSG_.REFUSED_ZERO + (code || _fcErrDetail_(err, FC_RETRY_.REFUSED_ZERO)) + '.',
+    _fcRetryLabel_(FC_RETRY_.REFUSED_ZERO),
+    function () { _fcRefreshViewNow_(FC_MSG_.READ_FAILED, FC_RETRY_.REFUSED_ZERO); });
 }
 /* THE SPECIAL EVENT BUILDER'S FAILURE HANDLING, as a function rather than as twenty lines buried in the
  * middle of a two-hundred-line async writer. A behaviour that cannot be driven is a behaviour that can only
@@ -3952,11 +4017,12 @@ function _fcBuilderFailure_(e, epoch) {
   var committed = _fcEbCommitted_.length
     ? ' The earlier stage(s) ' + _fcEbCommitted_.join(' + ') + ' were already committed and still need reconciling.'
     : ' Nothing had been committed by an earlier stage.';
+  var _st = proven ? FC_RETRY_.REFUSED_ZERO : FC_RETRY_.UNKNOWN_WRITE;
   var msg = proven
-    ? (FC_MSG_.REFUSED_ZERO + (_fcCanonicalCode_(e) || _fcErrDetail_(e)) + ' - refused at ' + stage + '.' + committed)
-    : (FC_MSG_.UNKNOWN + '\n\nSpecial Event Save stopped at ' + stage + ': ' + _fcErrDetail_(e) + '.' + committed);
+    ? (FC_MSG_.REFUSED_ZERO + (_fcCanonicalCode_(e) || _fcErrDetail_(e, _st)) + ' - refused at ' + stage + '.' + committed)
+    : (FC_MSG_.UNKNOWN + '\n\nSpecial Event Save stopped at ' + stage + ': ' + _fcErrDetail_(e, _st) + '.' + committed);
   alert(msg);
-  _fcShowBanner_(msg, 'Check latest data', function () { _fcRefreshViewNow_(FC_MSG_.READ_FAILED); });
+  _fcShowBanner_(msg, _fcRetryLabel_(_st), function () { _fcRefreshViewNow_(FC_MSG_.READ_FAILED, _st); });
 }
 function _fcFailWrite_(err, opts) {
   var proven = _fcZeroWriteProven_(err);
@@ -3997,7 +4063,9 @@ function _fcAfterWrite(cb) {
     // model and replaces the rows with a red box, which is right on a cold load and wrong here,
     // because those rows are real and the write that produced them succeeded.
     _fcViewState_ = _fcReadModel ? FC_VIEW_.STALE : FC_VIEW_.REFUSED;
-    _fcShowBanner_(FC_MSG_.SAVED_STALE, 'Refresh view', function () { _fcRefreshViewNow_(FC_MSG_.SAVED_STALE); });
+    // A CONFIRMED write whose readback failed: the table is old, not wrong, and nothing needs re-sending.
+    _fcShowBanner_(FC_MSG_.SAVED_STALE, _fcRetryLabel_(FC_RETRY_.STALE_AFTER_WRITE),
+      function () { _fcRefreshViewNow_(FC_MSG_.SAVED_STALE, FC_RETRY_.STALE_AFTER_WRITE); });
   });
 }
 
@@ -4147,21 +4215,171 @@ function _fcSummaryEnsureDbAndRender() {
     afterLoad();
 }
 
+// ============================================================================================================
+// FC-SUMMARY-R2B-A2-R3 §2/§3 — COLUMN RESIZE, ONE CONTROLLER PER TABLE.
+//
+// WHY THIS IS PAGE-OWNED RATHER THAN THE SHARED dualLayerResize ADAPTER. That adapter derives its columns
+// generically from the header cells and takes ONE min/max/def for the whole table. This page needs the
+// opposite: a per-column default map (a month column is 70px, Event Period is 190px), a per-table column
+// SET (Actions must get no handle at all), and three independent persistence groups. None of that can be
+// expressed through the adapter, so the page drives the SAME engine (KM.ui.resizableColumns) directly. No
+// second resize implementation exists; the adapter is simply not the right shape for three unlike tables.
+//
+// THE SPECIFICITY DEFECT THIS FIXES, AND WHY THE FIX IS IN THE SELECTOR RATHER THAN IN !important.
+// fc-overview.css used to supply every column width from rules scoped to `#fc-summary-section` — never to a
+// table — pinned with max-width through :nth-child. Those rules ranked (1,3,0) and (1,4,0); the engine's
+// injected rule ranked (1,2,0) and lost. Only columns 1, 4 and 6 escaped every :nth-child selector, which is
+// the entire reason Series appeared to be special-cased. It never was. Worse, for columns 2/3/5/19/20 the
+// BODY rule tied the engine's while the HEADER rule beat it, so dragging them moved the body and left the
+// header behind.
+//
+// The CSS is now scoped per table and carries no max-width, and the rule injected below names TWO ids. Two
+// ids outrank every single-id selector in the stylesheet whatever its class count, so the stored width wins
+// for header and body TOGETHER, by construction rather than by source order. Ties were the original defect;
+// this does not create another one.
+var FC_RESIZE_MAX_ = 720;
+var FC_RESIZE_MIN_ = 80;
+// A column may not have a minimum ABOVE its own shipped default, or its first drag would silently rewiden a
+// table this round was not asked to relayout. The twelve month/percent columns ship at 70px, so 70px is
+// their floor; every other column uses the 80px standard.
+function _fcResizeMin_(def) { return Math.min(FC_RESIZE_MIN_, def); }
+
+function _fcResizeCols_(w, label) { return { w: w, label: label }; }
+function _fcMonthCols_(names) { return names.map(function (n) { return _fcResizeCols_(70, n); }); }
+
+// Each table declares its own header root, body root, panel, persistence group, column defaults and the
+// 1-based positions that must NEVER receive a handle. Nothing here is shared between tables, so a width
+// stored for Regular column 7 cannot reach Event column 7.
+var FC_RESIZE_TABLES_ = [
+  { group: 'fc-regular', panel: 'fc-panel-regular',
+    header: 'fc-regular-scroll-header', body: 'fc-regular-scroll-body',
+    // sticky SKU lives outside the scroll header entirely, so it has no position here and gets no handle.
+    noResize: [],
+    cols: [_fcResizeCols_(100, 'Year'), _fcResizeCols_(120, 'Company'), _fcResizeCols_(120, 'Marketplace'),
+           _fcResizeCols_(100, 'Country'), _fcResizeCols_(120, 'Category'), _fcResizeCols_(100, 'Series')]
+      .concat(_fcMonthCols_(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']))
+      .concat([_fcResizeCols_(100, 'Total FC'), _fcResizeCols_(80, 'FC\u5360\u6bd4')]) },
+
+  { group: 'fc-event', panel: 'fc-panel-event',
+    header: 'fc-event-scroll-header', body: 'fc-event-scroll-body',
+    noResize: [],
+    cols: [_fcResizeCols_(100, 'Year'), _fcResizeCols_(120, 'Company'), _fcResizeCols_(120, 'Marketplace'),
+           _fcResizeCols_(100, 'Country'), _fcResizeCols_(120, 'Category'), _fcResizeCols_(100, 'Series'),
+           _fcResizeCols_(120, 'Event'),
+           // Event Period was previously caught by the Regular table's month rule and rendered at 70px,
+           // which cannot show 2026-11-19~2026-11-30. It is not a month cell and is no longer treated as one.
+           _fcResizeCols_(190, 'Event Period'),
+           _fcResizeCols_(90, 'FC Qty'), _fcResizeCols_(80, 'FC\u5360\u6bd4')] },
+
+  { group: 'fc-target', panel: 'fc-panel-target',
+    header: 'fc-target-scroll-header', body: 'fc-target-scroll-body',
+    // 18 = Actions: a control cell holding buttons. Widening it reveals nothing, so it carries no handle.
+    noResize: [18],
+    cols: [_fcResizeCols_(100, 'Year'), _fcResizeCols_(120, 'Marketplace'), _fcResizeCols_(120, 'Category'),
+           _fcResizeCols_(100, 'Series'), _fcResizeCols_(120, 'SKU')]
+      .concat(_fcMonthCols_(['Jan %', 'Feb %', 'Mar %', 'Apr %', 'May %', 'Jun %', 'Jul %', 'Aug %',
+                             'Sep %', 'Oct %', 'Nov %', 'Dec %']))
+      .concat([_fcResizeCols_(90, 'Actions')]) }
+];
+var _fcResizeCtl_ = {};        // group -> controller. One per table, torn down before any re-mount.
+
+/* The injected rule. TWO ids, deliberately — see the note above. Header and body are written in the SAME
+   rule so they can never be given different widths, which is the desynchronisation being repaired. */
+function _fcResizeCssRule_(spec, c, w) {
+  var wpx = w + 'px';
+  return '#fc-summary-section #' + spec.header + ' > .header-cell:nth-child(' + c.col + '), ' +
+         '#fc-summary-section #' + spec.body + ' .scroll-row > .scroll-cell:nth-child(' + c.col + ') ' +
+         '{ width:' + wpx + '; min-width:' + wpx + '; max-width:' + wpx + '; }';
+}
+
+/* One clear reset per table, hosted in that table's own panel. It calls the ENGINE's resetAll — there is no
+   second reset implementation, and no filter, page or row is touched. Zero API calls, zero writes. */
+function _fcResizeResetBar_(spec, ctl) {
+  if (typeof document === 'undefined') return null;
+  var panel = document.getElementById(spec.panel); if (!panel) return null;
+  var old = panel.querySelector('.fc-rescol-bar');
+  if (old && old.parentNode) old.parentNode.removeChild(old);      // idempotent across re-mounts
+  var bar = document.createElement('div');
+  bar.className = 'fc-rescol-bar';
+  var b = document.createElement('button');
+  b.type = 'button';
+  b.id = spec.group + '-reset-widths';
+  b.className = 'fc-btn fc-btn--cancel';
+  b.textContent = 'Reset column widths';
+  b.onclick = function () { if (ctl && typeof ctl.resetAll === 'function') ctl.resetAll(); };
+  bar.appendChild(b);
+  var table = panel.querySelector('.dual-layer-table');
+  if (table) panel.insertBefore(bar, table); else panel.appendChild(bar);
+  return bar;
+}
+
+function _fcResizeMount_(spec) {
+  var lib = window.KM && window.KM.ui && window.KM.ui.resizableColumns;
+  if (!lib || typeof document === 'undefined') return null;
+  // THE ROOT IS THIS TABLE'S OWN PANEL, NOT THE SECTION. The engine's destroy() removes every handle it
+  // finds under `root`, so three controllers sharing `#fc-summary-section` would each strip the other two
+  // tables' handles on a re-mount — and after one remount the first two tables had none left at all.
+  // Scoping the root to the panel is what makes "one controller per table" true of teardown as well as of
+  // setup. getHeaderCells and cssRule address elements by id, so neither is affected.
+  var root = document.getElementById(spec.panel); if (!root) return null;
+  var header = document.getElementById(spec.header); if (!header) return null;
+  var cells = header.querySelectorAll(':scope > .header-cell');
+  // SHAPE GATE. If the markup and this declaration disagree, wire NOTHING rather than attach handles to
+  // positions that no longer mean what they say — a resize that moves the wrong column is worse than none.
+  if (!cells.length || cells.length !== spec.cols.length) return null;
+
+  var columns = [];
+  spec.cols.forEach(function (c, i) {
+    var col = i + 1;
+    if (spec.noResize.indexOf(col) !== -1) return;                 // declared non-resizable: no handle at all
+    columns.push({ key: spec.group + '-c' + col, col: col, label: c.label,
+      min: _fcResizeMin_(c.w), max: FC_RESIZE_MAX_, def: c.w });
+  });
+
+  if (_fcResizeCtl_[spec.group]) {
+    try { _fcResizeCtl_[spec.group].destroy(); } catch (e) {}      // never stack handles on a re-mount
+    _fcResizeCtl_[spec.group] = null;
+  }
+  var ctl = lib.create({
+    root: root,
+    // page+group keep each tab's widths in their own subtree of one storage key, so resizing Regular
+    // cannot move Event and a reset cannot reach across tabs.
+    storage: { key: 'km.ui.tableWidths.v1', page: 'fc-summary', group: spec.group },
+    columns: columns,
+    getHeaderCells: function (c) {
+      var h = document.getElementById(spec.header); if (!h) return [];
+      var list = h.querySelectorAll(':scope > .header-cell');
+      var cell = list[c.col - 1];
+      return cell ? [cell] : [];
+    },
+    cssRule: function (c, w) { return _fcResizeCssRule_(spec, c, w); }
+  });
+  if (!ctl) return null;
+  _fcResizeCtl_[spec.group] = ctl;
+  ctl.init();
+  _fcResizeResetBar_(spec, ctl);
+  return ctl;
+}
+
+function _fcResizeInit_() {
+  var mounted = [];
+  FC_RESIZE_TABLES_.forEach(function (spec) {
+    var c = _fcResizeMount_(spec);
+    if (c) mounted.push(spec.group);
+  });
+  return mounted;
+}
+
 // Extend the (already demo-patched) initFcSummaryPage to also wire the DB connection.
 var _prevInitFcSummaryPage = window.initFcSummaryPage;
 window.initFcSummaryPage = function() {
     if (_prevInitFcSummaryPage) _prevInitFcSummaryPage();
     // Defer slightly so dropdown init (also deferred) has run; panel rebuild is order-independent.
     setTimeout(_fcSummaryEnsureDbAndRender, 60);
-    // Drag-to-resize on both FC Summary tables (Regular + Event) — reuses the SKU Details resize engine
-    // via the shared dual-layer adapter. Header cells are static, so this runs once per mount; the two
-    // tables use distinct storage groups so their widths never overwrite each other.
-    setTimeout(function () {
-        var dlr = window.KM && window.KM.ui && window.KM.ui.dualLayerResize;
-        if (!dlr) return;
-        dlr.init({ sectionId: 'fc-summary-section', scrollHeaderSel: '#fc-regular-scroll-header', scrollBodySel: '#fc-regular-scroll-body', page: 'fc-summary', group: 'fc-regular' });
-        dlr.init({ sectionId: 'fc-summary-section', scrollHeaderSel: '#fc-event-scroll-header', scrollBodySel: '#fc-event-scroll-body', page: 'fc-summary', group: 'fc-event' });
-    }, 120);
+    // FC-SUMMARY-R2B-A2-R3 §2 — all THREE tables, each with its own column map and persistence group.
+    // Header cells are static markup, so this runs once per mount and the handles survive body re-renders,
+    // filtering and pagination; a re-mount tears the previous controllers down before rebuilding.
+    setTimeout(_fcResizeInit_, 120);
 };
 
 // ========================================
