@@ -158,7 +158,19 @@ function git(c) {
   try { return cp.execSync('git ' + c, { cwd: path.join(__dirname, '..', '..'), encoding: 'utf8' }); }
   catch (e) { return null; }
 }
-var addedLines = git('diff c139943 -- ' + GS + ' ' + FAD);
+// R2B-A2-R5-F5 — SCOPED TO THE TWO SHARED FILES THIS SECTION NAMES, which is what the paragraph above
+// always said it was for. It diffed the WHOLE apps-script directory, so every later round's work fell
+// inside it: R12 gave 14_fc_write_handlers.gs a LockService and a single-range setValues, both required
+// by the round that authorised them, and both entirely outside this section's subject.
+//
+// IT DID NOT FAIL WHEN THAT LANDED, AND THAT IS THE PART WORTH RECORDING. `bare()` strips block
+// comments, an added line somewhere in the diff opened a `/*` it never closed, and the stripper ate the
+// region containing those two calls. So A2a and A2c passed by being blind rather than by being
+// satisfied — for two whole releases. Narrowing the diff to 01_router.gs, 63_ and the adapter restores
+// the stated claim AND removes the exposure: the text being scanned is now small and owned, instead of
+// an 18,000-line generated bundle whose comment characters decide what the guard can see.
+var A2_SHARED = GS + '01_router.gs ' + GS + '63_api_v1_system_health.gs';
+var addedLines = git('diff c139943 -- ' + A2_SHARED + ' ' + FAD);
 ok(addedLines !== null, 'A2  the round\'s own diff is MEASURED from git, not remembered');
 if (addedLines !== null) {
   var added = String(addedLines).split('\n').filter(function (l) {
@@ -166,7 +178,7 @@ if (addedLines !== null) {
   }).join('\n');
   var addedBare = bare(added);
   var badAdds = WRITERS.filter(function (w) { return new RegExp('\\.' + w + '\\s*\\(').test(addedBare); });
-  eq(badAdds, [], 'A2a and not one added line calls a writer method', badAdds);
+  eq(badAdds, [], 'A2a and not one added line calls a writer method in 01_router, 63_ or the adapter', badAdds);
   ok(!/getOperationDb/.test(addedBare), 'A2b nor getOperationDb');
   ok(!/LockService|CacheService|PropertiesService/.test(addedBare),
     'A2c nor a lock, a cache or a properties store');

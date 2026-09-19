@@ -1351,6 +1351,10 @@ function _trRebuild_(seed) {
     var dead = document.getElementById(_TR_CTL_[d]);
     if (dead) { while (dead.firstChild) dead.removeChild(dead.firstChild); dead.value = ''; }
   }
+  // R2B-A2-R5-F5 — the identity may have moved, so decide what rule this is and hydrate BEFORE the
+  // gate runs. Placed here rather than in _trOnChange_ because updateTargetScopeFields reaches the
+  // rebuild too, and a scope change moves the identity just as surely as a country change does.
+  _trSyncSession_();
   _trApplyGate_();
 }
 
@@ -1396,6 +1400,224 @@ function _trMonths_() {
   return { values: values, invalid: invalid };
 }
 
+// ==============================================================================================
+// R2B-A2-R5-F5 — THE EXISTING RULE. Until this round the modal had no idea one could exist.
+//
+// Every selector above is built from the FC REGULAR FORECAST universe, which is right for deciding
+// what may be selected and says nothing about what has already been WRITTEN. So choosing the
+// identity of a rule that exists produced a form full of the new-rule default 100, and saving it
+// overwrote real values — Jan 110, Feb 105, October 150 — with defaults the operator never typed.
+// The write path was correct throughout: it found the row by business key and updated it, exactly
+// as designed. What was missing is that the form never asked whether that row existed.
+//
+// The authority for that question is the canonical Target Rule array the page already holds. No
+// request is issued to open or re-classify the modal.
+// ==============================================================================================
+var _TR_FP_MONTHS_ = ['jan_pct', 'feb_pct', 'mar_pct', 'apr_pct', 'may_pct', 'jun_pct',
+  'jul_pct', 'aug_pct', 'sep_pct', 'oct_pct', 'nov_pct', 'dec_pct'];
+// MUST stay identical to FC_TR_FINGERPRINT_FIELDS_ in 14_fc_write_handlers.gs, in this order. The
+// two sides compute the same token over the same values, so the server can tell a stale save from a
+// current one without either side trusting a clock.
+var _TR_FP_FIELDS_ = ['year', 'company', 'country', 'marketplace', 'scope_type', 'scope_id',
+  'category', 'series', 'sku', 'target_percentage'].concat(_TR_FP_MONTHS_).concat(['note']);
+var _TR_FP_NUMERIC_ = ['year', 'target_percentage'].concat(_TR_FP_MONTHS_);
+
+function _trStrTok_(v) { return String(v === undefined || v === null ? '' : v).trim(); }
+function _trNumTok_(v) {
+  var t = _trStrTok_(v);
+  if (t === '') return '';
+  var n = Number(t);
+  return isFinite(n) ? String(n) : t;
+}
+/* The row's content fingerprint — the version token. Deliberately NOT updated_at: the server writes
+   that at second precision in the script timezone while the page reads it back as ISO UTC, so an
+   equality test on it can fail for a rounding or daylight-saving reason. A fingerprint of the values
+   asks the question actually being asked — has anyone changed this rule since I read it? */
+function _trFingerprint_(o) {
+  o = o || {};
+  var parts = [];
+  for (var i = 0; i < _TR_FP_FIELDS_.length; i++) {
+    var f = _TR_FP_FIELDS_[i];
+    parts.push(_TR_FP_NUMERIC_.indexOf(f) !== -1 ? _trNumTok_(o[f]) : _trStrTok_(o[f]));
+  }
+  return parts.join('|');
+}
+/* year|company|country|marketplace|scope_type|scope_id, uppercased — the same canonical business key
+   fcTrBusinessKey_ builds server-side and resolveTargetRule matches on. */
+function _trKeyOf_(o) {
+  function U(v) { return _trStrTok_(v).toUpperCase(); }
+  return [U(o.year), U(o.company), U(o.country), U(o.marketplace), U(o.scope_type), U(o.scope_id)].join('|');
+}
+
+/* The edit session. `key` is what the session is FOR: while it does not change, the operator's typing
+   is theirs to keep, and a rebuild must not overwrite it. When it changes, the session is over. */
+var _trSession_ = { key: '', mode: 'NEW', id: '', version: '', originalFp: '', row: null };
+
+/* The canonical Target Rule rows. DEMO mode keeps the pre-F5 behaviour deliberately: its mock rows
+   carry a `percentages` object rather than jan_pct..dec_pct, so matching them against a canonical
+   fingerprint would compare two different shapes and call every rule stale. */
+function _trExistingRules_() {
+  if (typeof _fcUseDb === 'function' && !_fcUseDb()) return null;   // null = matching not applicable
+  var rows = (typeof _getDbTargetRules === 'function') ? _getDbTargetRules() : null;
+  return Array.isArray(rows) ? rows : null;
+}
+
+/* The business key the CURRENT selection would write to. '' until the identity is complete. */
+function _trSelKey_(sel, company) {
+  var fields = _TR_SCOPE_FIELDS_[sel.scope];
+  if (!fields || !company) return '';
+  var scopeId = sel[fields[fields.length - 1]];
+  if (!sel.year || !sel.country || !sel.marketplace || !scopeId) return '';
+  return _trKeyOf_({ year: sel.year, company: company, country: sel.country,
+    marketplace: sel.marketplace, scope_type: sel.scope, scope_id: scopeId });
+}
+
+/* ZERO matches -> NEW. ONE -> EXISTING_UPDATE. TWO OR MORE -> DUPLICATE_REFUSAL.
+   Never the first match, never the last, never a match on Series/SKU alone. */
+function _trClassify_(sel, company) {
+  var key = _trSelKey_(sel, company);
+  if (!key) return { mode: 'INCOMPLETE', key: '', matches: [] };
+  var rules = _trExistingRules_();
+  if (rules === null) return { mode: 'NEW', key: key, matches: [] };   // demo, or no canonical array
+  var matches = rules.filter(function (r) { return _trKeyOf_(r) === key; });
+  if (matches.length === 0) return { mode: 'NEW', key: key, matches: [] };
+  if (matches.length === 1) return { mode: 'EXISTING_UPDATE', key: key, matches: matches, row: matches[0] };
+  return { mode: 'DUPLICATE_REFUSAL', key: key, matches: matches };
+}
+
+/* Apply-to-all shows the COMMON value when all twelve agree and BLANK when they differ. It must never
+   show 100 for a rule whose months are mixed: that is the reading that invites an operator to press
+   Save and flatten eleven real values. */
+function _trSetApplyAll_(monthValues) {
+  var el = document.getElementById('target-base-pct-input');
+  if (!el) return;
+  var common = _trCommonMonthlyPct_(monthValues);
+  el.value = (common === '') ? '' : String(common);
+  el.placeholder = (common === '') ? 'mixed' : '100';
+}
+
+/* Populate the twelve month controls from a stored row, BY COLUMN NAME. A stored 0 stays 0 and a
+   stored blank stays blank — neither becomes 100. */
+function _trHydrateFrom_(row) {
+  var vals = {};
+  for (var i = 0; i < _FC_MONTH_KEYS.length; i++) {
+    var m = _FC_MONTH_KEYS[i];
+    var v = row[m + '_pct'];
+    var txt = (v === undefined || v === null || v === '') ? '' : String(v);
+    var el = document.getElementById('target-' + m);
+    if (el) el.value = txt;
+    vals[m] = (txt === '') ? '' : Number(txt);
+  }
+  _trSetApplyAll_(vals);
+}
+
+/* The new-rule form: the documented 100 default, and an EMPTY apply-to-all (its placeholder says 100,
+   which is a suggestion; a value there would be a claim). */
+function _trResetToNew_() {
+  for (var i = 0; i < _FC_MONTH_KEYS.length; i++) {
+    var el = document.getElementById('target-' + _FC_MONTH_KEYS[i]);
+    if (el) el.value = 100;
+  }
+  var a = document.getElementById('target-base-pct-input');
+  if (a) { a.value = ''; a.placeholder = '100'; }
+}
+
+/* What the form is PROPOSING, fingerprinted the way the server will fingerprint it. Identity comes
+   from the stored row (an existing rule's identity is fixed), the months from the controls, and
+   target_percentage is derived exactly as the payload derives it. */
+function _trProposedFingerprint_(row, monthValues) {
+  var o = {};
+  for (var i = 0; i < _TR_FP_FIELDS_.length; i++) { o[_TR_FP_FIELDS_[i]] = row[_TR_FP_FIELDS_[i]]; }
+  for (var j = 0; j < _FC_MONTH_KEYS.length; j++) {
+    o[_FC_MONTH_KEYS[j] + '_pct'] = monthValues[_FC_MONTH_KEYS[j]];
+  }
+  o.target_percentage = _trCommonMonthlyPct_(monthValues);
+  return _trFingerprint_(o);
+}
+
+/* Called from _trRebuild_ — i.e. whenever the IDENTITY may have moved, and never on a month keystroke.
+   A session survives for as long as its key does, so editing months does not re-hydrate them away. */
+function _trSyncSession_() {
+  var sel = _trSel_();
+  var cr = _trCompanyResolution_();
+  var company = (cr.state === 'RESOLVED') ? cr.company : '';
+  var cls = _trClassify_(sel, company);
+  if (cls.key === _trSession_.key && _trSession_.key !== '') return cls;   // same rule, keep the edits
+
+  _trSession_ = { key: cls.key, mode: cls.mode, id: '', version: '', originalFp: '', row: null };
+  if (cls.mode === 'EXISTING_UPDATE') {
+    var row = cls.row;
+    _trSession_.id = _trStrTok_(row.target_rule_id);
+    _trSession_.version = _trFingerprint_(row);
+    _trSession_.originalFp = _trSession_.version;
+    _trSession_.row = row;
+    _trHydrateFrom_(row);
+  } else {
+    // NEW, INCOMPLETE and DUPLICATE_REFUSAL all clear the form. Leaving the previous rule's months
+    // on screen after the identity moved is how one rule's values get written onto another.
+    _trResetToNew_();
+  }
+  return cls;
+}
+
+/* The mode banner. It names the rule being edited, because 'this is an update' is only useful if the
+   operator can see WHICH row they are about to change. */
+function _trRenderMode_(cls) {
+  var el = document.getElementById('target-mode-note');
+  var btn = document.getElementById('target-load-latest-btn');
+  if (btn) btn.style.display = 'none';
+  if (!el) return;
+  if (!cls || cls.mode === 'INCOMPLETE') { el.textContent = ''; el.className = 'fc-target-mode-note'; return; }
+  if (cls.mode === 'EXISTING_UPDATE') {
+    el.textContent = 'Existing rule — Update  ·  ' + _trSession_.id;
+    el.className = 'fc-target-mode-note is-existing';
+  } else if (cls.mode === 'DUPLICATE_REFUSAL') {
+    el.textContent = 'DUPLICATE_TARGET_RULE_IDENTITY — ' + cls.matches.length
+      + ' rules share this identity (' + cls.matches.map(function (r) { return r.target_rule_id; }).join(', ')
+      + '). Resolve the duplicate before writing. Nothing will be written.';
+    el.className = 'fc-target-mode-note is-blocked';
+  } else {
+    el.textContent = 'New rule';
+    el.className = 'fc-target-mode-note is-new';
+  }
+}
+
+/* STALE recovery: ONE read, then re-hydrate from what came back. It deliberately does NOT re-apply the
+   operator's edits — reapplying them on top of somebody else's change is the silent overwrite this
+   whole round exists to prevent. The operator sees the current values and decides again. */
+function _trLoadLatest_() {
+  var btn = document.getElementById('target-load-latest-btn');
+  var note = document.getElementById('target-mode-note');
+  if (typeof _fcWorkspaceRefresh_ !== 'function') return;
+  if (btn) btn.disabled = true;
+  _fcWorkspaceRefresh_().then(function () {
+    _trSession_.key = '';                       // force a fresh classification and re-hydration
+    _trRebuild_();
+    if (typeof renderTargetRulesTable === 'function') renderTargetRulesTable();
+    if (note) { note.textContent = note.textContent + '  ·  reloaded'; }
+  }).catch(function () {
+    if (note) {
+      note.textContent = 'Could not reload the canonical data. Your entries are unchanged.';
+      note.className = 'fc-target-mode-note is-blocked';
+    }
+  }).then(function () { if (btn) btn.disabled = false; });
+}
+
+/* A confirmed server refusal that the operator can act on inside the modal. */
+function _trOnRefusal_(res) {
+  var code = '';
+  try { code = String((res && (res.error || (res.data && res.data.error))) || ''); } catch (e) { code = ''; }
+  if (code !== 'STALE_TARGET_RULE_VERSION') return;
+  var note = document.getElementById('target-mode-note');
+  var btn = document.getElementById('target-load-latest-btn');
+  if (note) {
+    note.textContent = 'STALE_TARGET_RULE_VERSION — this rule changed after it was loaded. Nothing was '
+      + 'written and your entries are still here. Load the latest data, then decide again.';
+    note.className = 'fc-target-mode-note is-blocked';
+  }
+  if (btn) btn.style.display = '';
+}
+
 // One gate, consulted by both the Save button state and the dispatch path, so what the button says and what
 // the click does cannot disagree.
 function _trGate_() {
@@ -1437,11 +1659,39 @@ function _trGate_() {
     return { ok: false, code: 'MONTH_INVALID',
       text: 'Enter a number of 0 or more for: ' + mo.invalid.join(', ').toUpperCase() + '.' };
   }
-  return { ok: true, code: 'OK', company: cr.company, sel: sel, active: active, months: mo.values };
+  // ---- R2B-A2-R5-F5 — WHICH RULE IS THIS? ------------------------------------------------------
+  var cls = _trClassify_(sel, cr.company);
+  if (cls.mode === 'DUPLICATE_REFUSAL') {
+    return { ok: false, code: 'DUPLICATE_TARGET_RULE_IDENTITY',
+      text: 'DUPLICATE_TARGET_RULE_IDENTITY — ' + cls.matches.length + ' rules already share this '
+        + 'identity (' + cls.matches.map(function (r) { return r.target_rule_id; }).join(', ')
+        + '). Resolve the duplicate before writing.', matches: cls.matches };
+  }
+  var base = { company: cr.company, sel: sel, active: active, months: mo.values,
+    mode: cls.mode, existing: cls.row || null };
+  if (cls.mode === 'EXISTING_UPDATE' && _trSession_.row) {
+    // UNCHANGED IS NOT A WRITE. The fingerprint is compared, not the raw strings, so '100' and 100
+    // are the same value and re-opening a rule without touching it dispatches nothing.
+    var proposed = _trProposedFingerprint_(_trSession_.row, mo.values);
+    if (proposed === _trSession_.originalFp) {
+      return { ok: false, code: 'UNCHANGED', mode: cls.mode,
+        text: 'Existing rule — Update  ·  no change yet. Edit a month to enable Save.' };
+    }
+    base.target_rule_id = _trSession_.id;
+    base.expected_row_version = _trSession_.version;
+  }
+  base.ok = true; base.code = 'OK';
+  return base;
 }
 
 function _trApplyGate_() {
   var g = _trGate_();
+  // The mode banner is driven from the same classification the gate used, so the label and the button
+  // state cannot describe two different rules.
+  try {
+    var _sel = _trSel_(), _cr = _trCompanyResolution_();
+    _trRenderMode_(_trClassify_(_sel, _cr.state === 'RESOLVED' ? _cr.company : ''));
+  } catch (e) { /* the banner is diagnostic; it may never block the gate */ }
   var note = document.getElementById('target-scope-note');
   if (note) {
     if (g.ok) {
@@ -1483,10 +1733,15 @@ function updateTargetScopeFields(seed) {
   _trRebuild_(seed);
 }
 
+/* DELIBERATE, NOT DERIVED. Typing into Apply-to-all writes that value into all twelve controls —
+   that is what the control is for. Clearing it does NOT reset the months to 100: blank means 'the
+   months differ', which is a description of them, not an instruction to flatten them. Before F5 a
+   blank here rewrote all twelve to 100, so simply focusing and clearing the field destroyed a rule. */
 function fillAllTargetMonths(value) {
+  if (value === '' || value == null) { _trApplyGate_(); return; }
   _FC_MONTH_KEYS.forEach(function (m) {
     var el = document.getElementById('target-' + m);
-    if (el) el.value = (value === '' || value == null) ? 100 : value;
+    if (el) el.value = value;
   });
   _trApplyGate_();
 }
@@ -1526,7 +1781,31 @@ function _trBuildPayload_(g) {
   // when all twelve months agree, BLANK when they differ. It used to be the January alias, and two
   // consumers read it in place of a named month, so a rule with Jan 91 / Mar 93 applied 91% to March.
   payload.target_percentage = _trCommonMonthlyPct_(g.months);
+  // R2B-A2-R5-F5 — an UPDATE names the row it is updating and the version it was composed against.
+  // A NEW rule carries neither, and the server refuses to apply a version-less body over an existing
+  // row, so a stale page cannot silently turn a create into an overwrite.
+  if (g.mode === 'EXISTING_UPDATE' && g.target_rule_id) {
+    payload.target_rule_id = g.target_rule_id;
+    payload.expected_row_version = g.expected_row_version;
+  }
   return payload;
+}
+
+/* Merge one confirmed saved row into the canonical read model, replacing any row with the same
+   target_rule_id. This is the ONLY place the page writes into _fcReadModel outside a canonical read,
+   and it is allowed for one reason: the row came back FROM the sheet, in the server's own receipt,
+   after the write was confirmed. A background refresh that later succeeds replaces the whole model
+   anyway; one that fails leaves this row standing, which is the correct outcome — the write happened. */
+function _trMergeReceipt_(row) {
+  if (!row || !_trStrTok_(row.target_rule_id)) return false;
+  if (typeof _fcReadModel === 'undefined' || !_fcReadModel || !Array.isArray(_fcReadModel.fcTargetRules)) return false;
+  var id = _trStrTok_(row.target_rule_id);
+  var list = _fcReadModel.fcTargetRules;
+  for (var i = 0; i < list.length; i++) {
+    if (_trStrTok_(list[i].target_rule_id) === id) { list[i] = row; return true; }
+  }
+  list.push(row);
+  return true;
 }
 
 function saveNewTargetRule() {
@@ -1556,15 +1835,25 @@ function saveNewTargetRule() {
   _fcSetTargetSaveEnabled_(false);
   var _trOpts = { ctl: 'targetRule', op: 'Target Rule Save', rows: 1, epoch: _fcEpoch_(),
     reenable: _fcSetTargetSaveEnabled_,
-    onSuccess: function () {
+    // R2B-A2-R5-F5 §5 — CONFIRMED-RECEIPT RECONCILIATION, not an optimistic update. Nothing is shown
+    // until the server has confirmed the write, and what is then shown is the row the SERVER read back
+    // from the sheet — not the payload that was sent. The full workspace refresh still runs behind it
+    // as reconciliation, but the rule no longer waits on a 222 KB read to become visible.
+    onSuccess: function (summary, res) {
+      var d = (res && res.data) || {};
+      if (d.row && typeof _trMergeReceipt_ === 'function') _trMergeReceipt_(d.row);
       _fcAfterWrite(function () {
         renderTargetRulesTable(); closeFcModal();
         _fcSetTargetSaveEnabled_(true);        // the modal is closed; restore for the next open
-        alert(FC_MSG_.SAVED + ' Target rule saved.');
+        alert(FC_MSG_.SAVED + ' Target rule '
+          + (d.unchanged ? 'unchanged — nothing was written.' : (d.created ? 'created.' : 'updated.')));
       });
     } };
   window.KM.DB.upsertFcTargetRule(payload)
-    .then(function (res) { _fcSettleWrite_(res, _trOpts); })
+    .then(function (res) {
+      var outcome = _fcSettleWrite_(res, _trOpts);
+      if (typeof FC_WRITE_ !== 'undefined' && outcome === FC_WRITE_.REFUSAL) _trOnRefusal_(res);
+    })
     .catch(function (err) { _fcFailWrite_(err, _trOpts); });
 }
 

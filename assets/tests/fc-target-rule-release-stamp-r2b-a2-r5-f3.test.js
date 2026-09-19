@@ -41,27 +41,45 @@ function read(rel) { return fs.readFileSync(path.join(REPO, rel), 'utf8'); }
 
 var RO = require('./_release-order.js');
 
-var RELEASE = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12';
-var PREV_RELEASE = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11';
+// R2B-A2-R5-F5 — DERIVED, NOT RESTATED. The first draft pinned R12 as a literal and listed the four
+// files that carried it. Both were true of R12 and neither is a rule: R13 repairs the Target Rule
+// WRITER and moves exactly TWO owners (14_ and 63_), because 13_ and 90_ did not change. A suite that
+// demands every owner share the release would have forced two unchanged files onto the sync list to
+// stay green — which is precisely the lie the module manifest exists to prevent.
+//
+// So the release is read from 63_, its predecessor is read from the shared ledger, and the owner set
+// is read from git. What is asserted is the RELATIONSHIP between them, which does not expire.
+var HEALTH_FOR_RELEASE = read(GS + '63_api_v1_system_health.gs');
+var RELEASE = (HEALTH_FOR_RELEASE.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)';/) || [])[1] || '';
+var _relIdx = RO.OWNER_STAMPS.indexOf(RELEASE);
+var PREV_RELEASE = _relIdx > 0 ? RO.OWNER_STAMPS[_relIdx - 1] : '';
+// The floor: R12 named the resolver unification and was cut. Nothing may go back below it.
+var RELEASE_FLOOR = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12';
 
 // THE TREE THIS RELEASE WAS PREPARED AGAINST. Three checks below ask "what did this release change?",
 // and the first draft asked it of HEAD — which is correct for exactly as long as the work is uncommitted
 // and becomes a comparison of the release against ITSELF the moment it is committed (it duly reported
 // that zero tokens were added and the manifest grew by zero rows). A commit id is the stable way to name
 // a tree, and this one never moves: cd3fd8f is F2, the consumer unification this release exists to name.
-var BASE = 'cd3fd8f';
+var BASE = '2c18d71';
 
-// The four files this release syncs, and the ONE reason each is on the list. A file on the sync list for no
-// stated reason is how an unrelated edit reaches production by accident.
+// The files THIS release syncs, and the ONE reason each is on the list. A file on the sync list for no
+// stated reason is how an unrelated edit reaches production by accident — so the set is declared here
+// and checked against git below, rather than being read off git and believed.
 var RELEASE_OWNERS = {
-  '13_procurement_handlers.gs':
-    'deleted its own Target Rule matcher and delegates to the shared resolver',
   '14_fc_write_handlers.gs':
-    'the Target Rule upsert gained a business key, a lock and its refusals',
-  '90_generated_supply_planning_bundle.gs':
-    'regenerated — it carries the one resolveTargetRule every server consumer calls',
+    'the Target Rule upsert gained the expected_row_version stale gate, the unchanged short-circuit '
+    + 'and the complete saved-row receipt',
   '63_api_v1_system_health.gs':
-    'the release identity and the manifest rows for the three above'
+    'the release identity and 14_\'s manifest row'
+};
+// Owners that carry an EARLIER release and must keep it. Each is here because it did not change, and
+// marching any of them to the current release would destroy the manifest's only useful signal.
+var RELEASE_UNMOVED = {
+  '13_procurement_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12',
+  '00_config.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11',
+  '01_router.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9',
+  '72_api_v1_product_pricing_workspace.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R10'
 };
 
 var HEALTH = read(GS + '63_api_v1_system_health.gs');
@@ -150,24 +168,29 @@ function runManifest(overrides) {
 // ================================================================================================
 section('A. THE RELEASE TOKEN IS DERIVED FROM THE LEDGER, NOT INVENTED');
 // ================================================================================================
-eq(declares(HEALTH, 'SYS_DEPLOYMENT_RELEASE_'), RELEASE, 'A1  63_ declares the R12 release');
+ok(RELEASE !== '', 'A1  63_ declares a release (' + RELEASE + ')');
+ok(RO.stampAtOrAfter(RELEASE, RELEASE_FLOOR),
+  'A1a and it is at or after R12, the resolver-unification release, which was cut');
 ok(RO.BUILD_STAMP_RE.test(RELEASE), 'A2  and it matches the canonical stamp shape');
 ok(RO.OWNER_STAMPS.indexOf(RELEASE) !== -1, 'A3  and it is in the shared owner-stamp order at all');
 eq(RO.OWNER_STAMPS[RO.OWNER_STAMPS.length - 1], RELEASE,
-  'A4  APPENDED — R12 is the newest release, so the end of the list is also its truthful position');
+  'A4  APPENDED — the declared release is the newest entry, so the end of the list is also its',
+  RO.OWNER_STAMPS.slice(-3));
 eq(RO.OWNER_STAMPS.indexOf(RELEASE), RO.OWNER_STAMPS.indexOf(PREV_RELEASE) + 1,
-  'A5  and it sits immediately after R11 — nothing was spliced in between');
+  'A5  and it sits immediately after its predecessor (' + PREV_RELEASE + ') — nothing spliced between');
 ok(RO.stampAtOrAfter(RELEASE, PREV_RELEASE), 'A6  so every floor written against R11 admits R12');
 ok(!RO.stampAtOrAfter(PREV_RELEASE, RELEASE), 'A6a while a floor written against R12 rejects R11');
 // The token is the next in ITS OWN series, not a new naming family invented for this round.
-eq(RELEASE, PREV_RELEASE.replace(/R11$/, 'R12'),
-  'A7  R12 is the next token in the R6-R7 series — the same family, mechanically continued');
+ok(/^F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R\d+$/.test(RELEASE) && /^F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R\d+$/.test(PREV_RELEASE)
+  && Number(RELEASE.split('-R').pop()) === Number(PREV_RELEASE.split('-R').pop()) + 1,
+  'A7  the release is the NEXT token in its own R6-R7 series — the same family, mechanically continued',
+  PREV_RELEASE + ' -> ' + RELEASE);
 
 // ================================================================================================
 section('B. EVERY OWNER THAT CHANGED DECLARES THE NEW ROUND');
 // ================================================================================================
-eq(declares(PROC, 'PROC_BUILD_VERSION_'), RELEASE,
-  'B1  13_ declares R12 — it deleted procurementTargetRuleResolver_ and now delegates');
+eq(declares(PROC, 'PROC_BUILD_VERSION_'), RELEASE_UNMOVED['13_procurement_handlers.gs'],
+  'B1  13_ still declares the round IT last changed in — it did not change in this release');
 // The DEFINITION, not any mention: the stamp comment above deliberately names the deleted function so a
 // reader can find out what happened, and a bare substring search reads that explanation as the thing.
 ok(!/function\s+procurementTargetRuleResolver_/.test(PROC),
@@ -175,9 +198,11 @@ ok(!/function\s+procurementTargetRuleResolver_/.test(PROC),
 ok(/KMPD\.resolveTargetRule/.test(PROC),
   'B1b and what replaced it is a call to the shared resolver, not a second private copy');
 eq(declares(WRITE, 'FCW_BUILD_VERSION_'), RELEASE,
-  'B2  14_ declares R12 through a stamp it did not have before');
+  'B2  14_ declares the release — it is the owner this release exists to ship');
 eq(declares(HEALTH, 'SYS_BUILD_VERSION_'), RELEASE,
   'B3  63_\'s own module stamp moved, because 63_ itself changed');
+ok(/expected_row_version/.test(WRITE),
+  'B3a and the change the stamp is claiming is really in the file — the stale-write gate');
 eq(declares(BUNDLE, 'KM_BUNDLE_CONTENT_HASH_'),
   (BUNDLE.match(/^\/\/ bundle_sha256 = ([0-9a-f]{64})$/m) || [])[1],
   'B4  90_\'s content hash is the hash the builder printed in its own header — one value, two places, derived');
@@ -205,17 +230,21 @@ section('C. EVERY OWNER THAT DID NOT CHANGE KEEPS ITS OLD STAMP');
 // ================================================================================================
 // This is the half that makes the manifest worth having. A stamp marched to the release to look current
 // destroys the only signal that can distinguish a synced file from an unsynced one.
-eq(declares(CONFIG, 'CONFIG_BUILD_VERSION_'), PREV_RELEASE,
-  'C1  00_config.gs stays at R11 — it did not change in R12');
+// PREV_RELEASE is the release BEFORE this one, which is not the same thing as the round a given
+// file last changed in — and conflating them is the very mistake this suite was rewritten to stop.
+eq(declares(CONFIG, 'CONFIG_BUILD_VERSION_'), RELEASE_UNMOVED['00_config.gs'],
+  'C1  00_config.gs stays on the round it last changed in, not on the latest release');
 eq(declares(ROUTER, 'RTR_BUILD_VERSION_'), 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9',
   'C2  01_router.gs stays at R9 — no action was added or removed');
 var atRelease = manifestRows(HEALTH).filter(function (r) { return r.expected === RELEASE; })
   .map(function (r) { return r.file; }).sort();
-eq(atRelease, Object.keys(RELEASE_OWNERS).filter(function (f) {
-  return f !== '90_generated_supply_planning_bundle.gs';
-}).sort(),
-  'C3  EXACTLY the three stamp-bearing owners of this release expect R12 — no unrelated file was marched '
-  + 'to it (90_ is identified by content hash, so it is legitimately not in this set)');
+eq(atRelease, Object.keys(RELEASE_OWNERS).sort(),
+  'C3  EXACTLY the owners this release changed expect the release — no unrelated file was marched to it');
+Object.keys(RELEASE_UNMOVED).forEach(function (f, i) {
+  var row = manifestRows(HEALTH).filter(function (r) { return r.file === f; })[0];
+  eq(row ? row.expected : '(no row)', RELEASE_UNMOVED[f],
+    'C3.' + (i + 1) + ' ' + f + ' stays on the round it last changed in');
+});
 
 // ================================================================================================
 section('D. THE MANIFEST EXPECTS WHAT EACH FILE DECLARES');
@@ -346,8 +375,8 @@ var priorHealth = cp.execFileSync('git', ['show', BASE + ':' + GS + '63_api_v1_s
 eq(cp.execFileSync('git', ['diff', '--name-only', BASE, '--', GS + '01_router.gs'],
   { cwd: REPO, encoding: 'utf8' }).trim(), '',
   'H4  01_router.gs is untouched by this release — no action was routed, none withdrawn');
-eq(manifestRows(priorHealth).length + 2, manifestRows(HEALTH).length,
-  'H5  the manifest grew by exactly two rows (14_ and 90_) and lost none');
+eq(manifestRows(priorHealth).length, manifestRows(HEALTH).length,
+  'H5  the manifest gained and lost no rows — this release moves expectations, not membership');
 
 // ================================================================================================
 section('I. THE SYNC LIST IS EXACTLY THESE FOUR FILES');
@@ -389,17 +418,26 @@ mutant('M5', 'a release that is not in the shared ledger at all', function () {
   return RO.OWNER_STAMPS.indexOf('F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R99') === -1
       && !RO.stampAtOrAfter('F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R99', PREV_RELEASE);
 });
+mutant('M5a', 'an unchanged owner marched to the current release', function () {
+  // 13_ did not change. If its manifest expectation were bumped to the release to look tidy, the
+  // manifest could no longer tell a project missing 13_ from one that has it.
+  var faked = HEALTH.replace(
+    "symbol: 'PROC_BUILD_VERSION_', expected: '" + RELEASE_UNMOVED['13_procurement_handlers.gs'] + "'",
+    "symbol: 'PROC_BUILD_VERSION_', expected: '" + RELEASE + "'");
+  if (faked === HEALTH) return false;
+  var row = manifestRows(faked).filter(function (r) { return r.file === '13_procurement_handlers.gs'; })[0];
+  return row && row.expected !== declares(PROC, 'PROC_BUILD_VERSION_');
+});
 mutant('M6', 'a malformed release string', function () {
   return !RO.BUILD_STAMP_RE.test('R12') && !RO.BUILD_STAMP_RE.test('F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-r12');
 });
 mutant('M7', 'the manifest expecting a build no file declares', function () {
-  var rows = manifestRows(HEALTH.replace(
+  var faked = HEALTH.replace(
     "symbol: 'FCW_BUILD_VERSION_', expected: '" + RELEASE + "'",
-    "symbol: 'FCW_BUILD_VERSION_', expected: '" + PREV_RELEASE + "'"));
-  return rows.some(function (r) {
-    if (r.symbol !== 'FCW_BUILD_VERSION_') return false;
-    return declares(WRITE, r.symbol) !== r.expected;
-  });
+    "symbol: 'FCW_BUILD_VERSION_', expected: '" + PREV_RELEASE + "'");
+  if (faked === HEALTH) return false;
+  var row = manifestRows(faked).filter(function (r) { return r.symbol === 'FCW_BUILD_VERSION_'; })[0];
+  return !!row && declares(WRITE, 'FCW_BUILD_VERSION_') !== row.expected;
 });
 mutant('M8', 'a double-quoted bundle hash, which makes every reader pass vacuously', function () {
   var faked = BUNDLE.replace(/var KM_BUNDLE_CONTENT_HASH_ = '([^']*)';/, 'var KM_BUNDLE_CONTENT_HASH_ = "$1";');
@@ -445,6 +483,8 @@ var vacuous = [];
  ['M8', function () { return declares(BUNDLE, 'KM_BUNDLE_CONTENT_HASH_') !== null; }],
  ['M9', function () { return declares(BUNDLE, 'KM_BUNDLE_CONTENT_HASH_')
      === (BUNDLE.match(/^\/\/ bundle_sha256 = ([0-9a-f]{64})$/m) || [])[1]; }],
+ ['M5a', function () { var row = manifestRows(HEALTH).filter(function (r) { return r.file === '13_procurement_handlers.gs'; })[0];
+     return !!row && row.expected === declares(PROC, 'PROC_BUILD_VERSION_'); }],
  ['M10', function () { return RO.OWNER_STAMPS[RO.OWNER_STAMPS.length - 1] === RELEASE
      && RO.stampAtOrAfter(RELEASE, PREV_RELEASE); }],
  ['M11', function () { return manifestRows(HEALTH).some(function (r) { return r.file === '14_fc_write_handlers.gs'; }); }],

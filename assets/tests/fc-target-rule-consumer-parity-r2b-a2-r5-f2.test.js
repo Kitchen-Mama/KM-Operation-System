@@ -339,6 +339,12 @@ function runUpsert(existingRows, body, opts) {
   var code = [extractVar(src, 'FC_TARGET_RULES_HEADERS_'), extractVar(src, 'FC_TR_SCOPE_TYPES_'),
     extractVar(src, 'FC_TR_RETIRED_IDENTITY_'), extractVar(src, 'FC_TR_KEY_FIELDS_'),
     extractVar(src, 'FC_TR_LOCK_MS_'),
+    // R2B-A2-R5-F5 — the write handler gained a version token and a read-back receipt, so its new
+    // helpers join the sandbox. A fixed extraction list is a dependency declaration: when the handler
+    // grows one, the list must say so, or the sandbox reports a ReferenceError as a product refusal.
+    extractVar(src, 'FC_TR_MONTH_KEYS_'), extractVar(src, 'FC_TR_FINGERPRINT_FIELDS_'),
+    extractVar(src, 'FC_TR_FINGERPRINT_NUMERIC_'),
+    extractFn(src, 'fcTrNum_'), extractFn(src, 'fcTrFingerprint_'), extractFn(src, 'fcTrReceiptFor_'),
     extractFn(src, 'fcTrStr_'), extractFn(src, 'fcTrUp_'), extractFn(src, 'fcTrScopeType_'),
     extractFn(src, 'fcTrIdentityUsable_'), extractFn(src, 'fcTrBusinessKey_'),
     extractFn(src, 'fcTrScopeDimension_'), extractFn(src, 'fcTrValidateBody_'),
@@ -359,6 +365,14 @@ function bodyOf(over) {
 }
 function rowObj(r, headers) { var o = {}; headers.forEach(function (h, i) { o[h] = r[i]; }); return o; }
 
+// The server's OWN version token, in its own sandbox, so a test can compose an honest update. The
+// handler's sandbox is built per call inside runUpsert and is not reachable from here.
+var FP = vm.createContext({});
+vm.runInContext([extractVar(WRITE, 'FC_TR_MONTH_KEYS_'), extractVar(WRITE, 'FC_TR_FINGERPRINT_FIELDS_'),
+  extractVar(WRITE, 'FC_TR_FINGERPRINT_NUMERIC_'), extractFn(WRITE, 'fcTrStr_'),
+  extractFn(WRITE, 'fcTrNum_'), extractFn(WRITE, 'fcTrFingerprint_')].join(String.fromCharCode(10)), FP);
+function versionOf(row) { return FP.fcTrFingerprint_(row); }
+
 var f25a = runUpsert([], bodyOf());
 ok(f25a.res.success, 'F1 a first save creates', f25a.res);
 eq(f25a.rows.length, 1, 'F1b one row');
@@ -366,10 +380,20 @@ var id1 = f25a.res.data.target_rule_id;
 ok(!!id1, 'F1c and returns its target_rule_id');
 eq(f25a.res.data.business_key, '2026|RESTW|US|AMAZON|SKU|CO1100-R', 'F1d and the canonical business key');
 
-// §6.25 — same canonical identity, saved again with NO id, must update the same row.
+// §6.25 — same canonical identity, saved again, must update the same row rather than append a twin.
+//
+// R2B-A2-R5-F5 CHANGED WHAT THAT SAVE MUST CARRY. An update now names the version it was composed
+// against, because the page that sends one without a version is by definition a page that never read
+// the stored row — and that is exactly the page which flattens Jan 110 to 100. The claim below is
+// unchanged (one row, same id); what moved is that it must be asked for honestly.
 var existing1 = rowObj(f25a.rows[0], f25a.headers);
-var f25b = runUpsert([existing1], bodyOf({ mar_pct: 77 }));
-ok(f25b.res.success, 'F2 §6.25 the same identity saved again succeeds');
+var ver1 = versionOf(existing1);
+var f25bNoVersion = runUpsert([existing1], bodyOf({ mar_pct: 77 }));
+eq(f25bNoVersion.res.success, false, 'F2pre a save with NO version over an existing row is REFUSED');
+eq(f25bNoVersion.res.error, 'STALE_TARGET_RULE_VERSION', 'F2pre1 as a stale write');
+eq(f25bNoVersion.rows.length, 1, 'F2pre2 and the stored row is untouched');
+var f25b = runUpsert([existing1], bodyOf({ mar_pct: 77, expected_row_version: ver1 }));
+ok(f25b.res.success, 'F2 §6.25 the same identity saved again, with its version, succeeds', f25b.res);
 eq(f25b.rows.length, 1, 'F2b still ONE row — the old writer appended a duplicate here');
 eq(f25b.res.data.target_rule_id, id1, 'F2c and keeps the same target_rule_id');
 eq(f25b.res.data.created, false, 'F2d reported as an update');

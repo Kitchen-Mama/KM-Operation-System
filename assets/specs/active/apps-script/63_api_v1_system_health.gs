@@ -136,7 +136,16 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 // R11 IS SUPERSEDED, NOT WITHDRAWN -- and that is the difference from every 'candidate' note above. R11 was
 // cut. An id that names two different trees cannot answer the one question it exists for, so the tree that
 // carries 13_/14_/90_/63_ as changed here gets its own id.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12';
+// R13 — ONE OWNER MOVED, AND THE RELEASE MOVES WITH IT. R12 unified the Target Rule RESOLVER; R13
+// repairs the Target Rule WRITER, which is a narrower change and a sharper one: the modal never asked
+// whether the rule it was about to write already existed, so saving a form full of new-rule defaults
+// would have replaced stored months with 100s. The page now rehydrates and carries a version, and the
+// handler refuses anything composed against a version it no longer holds.
+//
+// 13_ and 90_ do NOT move. Neither changed: reading a Target Rule is not writing one, and a release
+// that marched them along would put two unchanged files on the sync list and destroy the only signal
+// that says which files a project is actually missing.
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R13';
 // 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
 // R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
 // not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
@@ -157,7 +166,10 @@ var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12';
 // a different NUMBER through the same action is not a vocabulary change, and telling every deployed client
 // to re-check a byte-identical vocabulary would be a lie about what this release contains.
 // 00_config.gs is deliberately NOT rotated: it did not change, and its manifest row below still expects R11.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12';
+// R13 - moved because THIS FILE changed: the release above and 14_'s expected stamp below. Nothing
+// else in this file moved — no action was added or removed, no response shape changed, and the
+// transport contract is untouched. A write handler that refuses a stale body is not a new vocabulary.
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R13';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -390,7 +402,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R13', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
   // F1-7N-FC-1B-E3 §E.9 — the CONFIG is an owner file too. It holds
   // INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_, so a project still running the previous copy of it writes no
   // allocation drafts while the repository says it should; without an entry here that difference had no name.
@@ -468,7 +480,9 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // DUPLICATE, because its whole business key was target_rule_id and the FC modal sends none. Two rules for
   // one site then make the READ refuse (DUPLICATE_TARGET_RULE_IDENTITY) -- so a partial sync of this release
   // breaks the forecast through a file nobody was looking at, with the write path reporting success.
-  { file: '14_fc_write_handlers.gs', symbol: 'FCW_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12', owns: 'the FC Summary write path: fc_special_events upsert/delete + the fc_target_rules upsert keyed on the canonical business key, its script lock, its duplicate and identity-mismatch refusals, and the single-range row write' },
+  // R13 - the row now also covers the version contract. An old 14_ IGNORES expected_row_version, so it
+  // accepts every stale write the new one refuses, and answers success either way.
+  { file: '14_fc_write_handlers.gs', symbol: 'FCW_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R13', owns: 'the FC Summary write path: fc_special_events upsert/delete + the fc_target_rules upsert keyed on the canonical business key, its script lock, its duplicate and identity-mismatch refusals, the single-range row write, the expected_row_version stale-write gate, the unchanged-save short-circuit, and the complete saved-row receipt' },
   // R12 - THE GENERATED BUNDLE, IDENTIFIED BY CONTENT RATHER THAN BY A STAMP. 90_ is the only manifest owner
   // that is BUILT, not written, so a hand-typed build stamp would be the wrong instrument twice over: it
   // would have to be edited in the builder every round, and it could be edited to look current without the

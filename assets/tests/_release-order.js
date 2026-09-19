@@ -432,7 +432,12 @@ var ROUND_TOKENS = [
   // would leave exactly those users broken - the one population the fix exists for. The whole application
   // set rotates together, because a token that moves for one member and not the others can still ship a
   // half-updated page.
-  'fcroutemount-bootfcr2f1-20260919'];
+  'fcroutemount-bootfcr2f1-20260919',
+  // FC-SUMMARY-R2B-A2-R5-F5 - the Target Rule modal now rehydrates an existing rule and carries a
+  // version. A browser still holding the previous fc-summary.js opens the same modal with twelve
+  // default 100s and no version, which the new server refuses outright - so the stale cache would
+  // present a form that cannot save at all. The whole application set rotates together.
+  'tgtrehydrate-r2ba2r5f5-20260919'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the
@@ -758,7 +763,10 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // R12 - the Target Rule consumer unification. APPENDED, which is the only legal position: stampAtOrAfter
   // compares INDEXES, so a token placed anywhere but the end silently reorders every floor that was written
   // against the list. R12 is genuinely the newest release, so the end is also the truthful position.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12',
+  // R13 - the Target Rule write contract (rehydration + stale-write protection). APPENDED: R13 is the
+  // newest release, so the end of the list is also its truthful position.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R13'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

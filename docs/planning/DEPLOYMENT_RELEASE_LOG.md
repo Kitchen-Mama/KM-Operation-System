@@ -3801,3 +3801,142 @@ KNOWN AND NOT FIXED
   · The controlled Target Rule write (R2B-A2-R5-RELEASE section 9) never happened and is still pending.
   · TEMP migration helper retirement remains forbidden until that write and its readback pass.
 ```
+
+## FC-SUMMARY-R2B-A2-R5-F5 — RELEASE `F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R13` — THE MODAL DID NOT KNOW THE RULE EXISTED
+
+```
+BASE    2c18d71   release R12 plus the FC route-mount repair, both live
+DATE    2026-09-19
+SCOPE   The Target Rule WRITE path, both halves. Two .gs owners (14_, 63_), the FC Summary page,
+        its modal markup and stylesheet, two diagnostic census pins, one new suite and five
+        existing suites. No schema, no migration, no resolver, no DB write.
+
+THE DEFECT
+-------------------------------------------------------------------------------------------------------
+  Two rules existed in production - SERIES/CO1100 (Jan 110, Feb 105, Dec 110) and SKU/CO1100-R (those
+  plus October 150). Reopening Add Target Rule and selecting either identity showed twelve months of 100,
+  and Apply-to-all showed 100. Saving from that form would have replaced stored values with defaults
+  nobody typed.
+
+  THE WRITE PATH WAS NEVER WRONG. It found the row by canonical business key and updated it, exactly as
+  R12 designed it to. What was missing is that the FORM never asked whether that row existed: every
+  selector in the modal is built from the FC REGULAR FORECAST universe, which is the right authority for
+  what may be SELECTED and says nothing whatever about what has already been WRITTEN.
+
+WHAT THE PAGE DOES NOW
+-------------------------------------------------------------------------------------------------------
+  Completing an identity classifies it against the canonical Target Rule array the page already holds -
+  no request is issued to open or re-classify the modal:
+
+    zero matches   NEW               the documented 100 defaults, no id, no version
+    one match      EXISTING_UPDATE   the STORED months hydrate by column name; banner names the rule
+    two or more    DUPLICATE_REFUSAL Save disabled, both conflicting ids shown, zero writes
+
+  Apply-to-all shows the common value when all twelve agree and BLANK when they differ - it may never
+  show 100 for a mixed rule, because that is the reading that invites an operator to flatten eleven real
+  values. Clearing it no longer rewrites the months to 100 either: blank DESCRIBES the months, it does
+  not instruct anything.
+
+  An unchanged existing rule disables Save and dispatches nothing. A stored 0 hydrates as 0.
+
+THE VERSION TOKEN, AND WHY IT IS NOT updated_at
+-------------------------------------------------------------------------------------------------------
+  fcWriteTimestamp_ formats yyyy-MM-dd HH:mm:ss - SECOND precision, no milliseconds, in the SCRIPT
+  timezone - while the page reads the value back as an ISO-8601 UTC string. Two saves inside one second
+  are indistinguishable, and the script lock makes same-second writes MORE likely rather than less: the
+  loser resumes the instant the winner releases. A version check that can also fail for a timezone reason
+  is worse than none, because it teaches operators to click past it.
+
+  So expected_row_version is a FINGERPRINT OF THE ROW'S OWN VALUES, computed identically on both sides
+  and compared under the existing script lock. It needs no clock, no timezone and no precision assumption.
+  If another operator wrote IDENTICAL values the token matches and the write proceeds - correctly: the
+  hazard is losing somebody's change, and a change that changed nothing cannot be lost.
+
+  SERVER REFUSALS, all with zero writes:
+    STALE_TARGET_RULE_VERSION        the row changed after it was loaded
+    STALE_TARGET_RULE_VERSION        a NEW-mode body aimed at an identity that already exists -
+                                     the defect itself, refused at the server even if the page is stale
+    TARGET_RULE_VERSION_REQUIRED     an update carrying no version at all
+    DUPLICATE_TARGET_RULE_IDENTITY   unchanged from R12
+    TARGET_RULE_IDENTITY_MISMATCH    unchanged from R12
+
+CONFIRMED-RECEIPT RECONCILIATION
+-------------------------------------------------------------------------------------------------------
+  The success envelope now carries the COMPLETE saved row, read back FROM THE SHEET after the write - not
+  echoed from the request, which could only ever show what was asked for. The page merges that row into
+  the canonical model by target_rule_id and renders immediately; the full workspace refresh continues
+  behind it as reconciliation. A background failure keeps the confirmed row and downgrades only the VIEW.
+
+  This is not an optimistic update: nothing appears until the server has confirmed the write.
+
+  MEASURED, this round, read-only: the FC workspace read is 221.6 KB and ~9.7 s warm / ~25 s cold, of
+  which 97% is handler time and 3% delivery. fcTargetRules is 1.2 KB of that payload - 1%. So a Target
+  Rule no longer waits on 210 KB of regular forecast to become visible. Modal open and re-classification
+  cost ZERO requests.
+
+STAMP MOVEMENT
+-------------------------------------------------------------------------------------------------------
+  14_  FCW_BUILD_VERSION_        R12 -> R13     the write contract changed
+  63_  SYS_DEPLOYMENT_RELEASE_   R12 -> R13     the release
+  63_  SYS_BUILD_VERSION_        R12 -> R13     63_ changed (release + 14_'s expectation)
+
+  DELIBERATELY UNMOVED: 13_ stays R12, 90_ keeps its content hash, 00_config R11, 01_router R9, 72_ R10.
+  Reading a Target Rule is not writing one. A release that marched them would put unchanged files on the
+  sync list and destroy the only signal that says which files a project is actually missing.
+
+  An OLD 14_ beside the new page is the dangerous pairing and it is SILENT: the page sends
+  expected_row_version and the old handler IGNORES it, accepting every stale write it was added to refuse
+  while returning success. Only a declared build separates those two deployments.
+
+DEPLOYMENT — BACKEND FIRST
+-------------------------------------------------------------------------------------------------------
+  APPS_SCRIPT_SYNC_REQUIRED   YES   14_fc_write_handlers.gs and 63_api_v1_system_health.gs, together,
+                                    as ONE new deployment version, BEFORE the frontend. A new page
+                                    against an old handler is the silent-acceptance case above.
+  FRONTEND_DEPLOY_REQUIRED    YES   fc-summary.js, fc-summary.html, fc-overview.css, index.html
+  BUNDLE_REBUILD_REQUIRED     NO    90_ is untouched
+  DB / Sheets / Drive writes  0
+  Rollback                    re-copy the previous 14_/63_ and revert the frontend commit. The stored
+                              rows are untouched by this round, so a rollback loses no data.
+
+CACHE TOKEN
+-------------------------------------------------------------------------------------------------------
+  fcroutemount-bootfcr2f1-20260919  ->  tgtrehydrate-r2ba2r5f5-20260919    38 refs / 0 stale / 0 misplaced
+
+  A browser still holding the previous fc-summary.js opens the same modal with twelve default 100s and no
+  version, which the new handler refuses outright - so a stale cache would present a form that cannot save
+  at all. The whole application set rotates together.
+
+VERIFICATION
+-------------------------------------------------------------------------------------------------------
+  fc-target-rule-rehydration-r2b-a2-r5-f5   76 passed  0 failed  12 mutants  0 survived   NEW
+    - drives the REAL page functions against a DOM shim carrying the modal's own control ids, and the
+      REAL write handler against a fake sheet
+    - proves the two fingerprint implementations agree on the ACTUAL production rows
+  release-stamp F3 57/0 (13) - canonical-scope 115/0 (13) - consumer-parity 132/0 (21)
+  schema-repair 106/0 (10) - activation-manifest 512/0 (41) - positive-residual 5137/0 (227)
+  production-readback 342/0 (17) - E4 stamp gate 135/0 (15)
+
+  full sweep  497 suites - 16,442 assertions - 0 failed - 1,111 mutants - 0 survived - 0 probe errors
+              canonical FAIL hash f809dca8...76b1 = SEALED - 4 pre-existing non-zero exits only
+
+TWO SUITES WERE FOUND PASSING FOR THE WRONG REASON
+-------------------------------------------------------------------------------------------------------
+  · product-strategy-production-readback-p1-b3 §A2 diffed the WHOLE apps-script directory while its own
+    paragraph says it is scoped to two shared files. R12 legitimately added a LockService and a
+    single-range setValues to 14_, which fell inside that diff - and the check did not fail, because
+    bare() strips block comments and an unclosed /* in the diff text ate the region containing them. It
+    passed by being blind, for two releases. Now scoped to the files it names.
+  · The R12 release suite asserted that every stamp-bearing owner carries the release. True of R12 by
+    coincidence; false of R13, which moves two owners and leaves two alone. Rewritten to derive the
+    release from 63_ and the owner set from git, and to assert the RELATIONSHIP instead.
+
+KNOWN AND NOT FIXED
+-------------------------------------------------------------------------------------------------------
+  · POST-WRITE VISIBILITY of the FULL workspace is still ~9.7 s. This round removes the Target Rule's
+    dependence on it; it does not make the read faster. Backlog: R2B-B1 (Regular FC range write) and
+    R3 (scoped readback/reconciliation).
+  · A route whose page script throws still mounts blank with no error surface (recorded in R2-F1).
+  · TEMP migration helper retirement remains forbidden until this repair is deployed and a live write
+    is verified against it.
+```

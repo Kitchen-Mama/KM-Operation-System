@@ -23,7 +23,15 @@
 //
 // The SYMBOL is new in this round, so a copy of 14_ older than this one reports ABSENT rather than stale.
 // That is the stronger signal, and it is why the value is not backdated to the round the file first shipped.
-var FCW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12';
+// R13 — THE STAMP MOVES BECAUSE THIS FILE CHANGED, and the change is a WRITE CONTRACT change, which
+// is the kind this stamp exists for. handleUpsertFcTargetRule_ now demands expected_row_version on any
+// update, refuses a version-less body over an existing row, short-circuits an unchanged save to zero
+// writes, and returns the complete saved row as a receipt.
+//
+// An OLD 14_ beside the new page is the dangerous pairing, and it is silent: the page would send
+// expected_row_version and the old handler would IGNORE it — accepting every stale write it was added
+// to refuse, while returning success. Only a declared build separates those two deployments.
+var FCW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R13';
 
 // fc_special_events header. event_name / event_month / fc_qty are the task-defined columns;
 // event_period + year are additional UI-continuity columns (FC Summary Event table shows/filters them).
@@ -596,7 +604,57 @@ function fcTrValidateBody_(body) {
   return { ok: true, norm: norm, scopeType: st, key: fcTrBusinessKey_(norm) };
 }
 
-/** Every existing row as { rowNumber, id, key } — one read, used by both paths. */
+// ==============================================================================================
+// R2B-A2-R5-F5 §4 — THE VERSION TOKEN, AND WHY IT IS NOT updated_at.
+//
+// The obvious optimistic-concurrency token is the timestamp the modal saw when it hydrated. It is
+// not good enough here, and the round that asked for this said plainly not to pretend otherwise:
+//
+//   · fcWriteTimestamp_() formats 'yyyy-MM-dd HH:mm:ss' — SECOND precision, no milliseconds. Two
+//     saves inside one second are indistinguishable, and the script lock makes same-second writes
+//     MORE likely rather than less: the loser resumes the instant the winner releases.
+//   · it is written in the SCRIPT timezone while the client reads an ISO-8601 UTC string back out
+//     of the workspace payload, so the two sides must agree on a timezone conversion before they
+//     can agree on equality. A version check that can fail for a daylight-saving reason is worse
+//     than no version check, because it teaches operators to click past it.
+//
+// So the token is a FINGERPRINT OF THE ROW'S OWN DATA. It compares what the values ARE, which is
+// the question actually being asked: has anybody changed this rule since I read it? It needs no
+// clock, no timezone and no precision assumption, and it is computed identically from a sheet row
+// and from a workspace JSON row because it normalises both through the same two functions.
+//
+// A consequence worth stating: if another operator wrote the IDENTICAL values, the fingerprint
+// matches and the write proceeds. That is correct. The hazard being guarded is losing somebody's
+// change, and a change that changed nothing cannot be lost.
+// ==============================================================================================
+var FC_TR_MONTH_KEYS_ = ['jan_pct', 'feb_pct', 'mar_pct', 'apr_pct', 'may_pct', 'jun_pct',
+  'jul_pct', 'aug_pct', 'sep_pct', 'oct_pct', 'nov_pct', 'dec_pct'];
+// The fields a rule MEANS. target_rule_id is excluded (it identifies the row, it is not its content)
+// and so are the audit columns (they are set BY the write, so including them would make every token
+// stale the moment it was issued).
+var FC_TR_FINGERPRINT_FIELDS_ = ['year', 'company', 'country', 'marketplace', 'scope_type', 'scope_id',
+  'category', 'series', 'sku', 'target_percentage'].concat(FC_TR_MONTH_KEYS_).concat(['note']);
+var FC_TR_FINGERPRINT_NUMERIC_ = ['year', 'target_percentage'].concat(FC_TR_MONTH_KEYS_);
+
+/** Numeric normalisation: '' stays '', 110 and '110' and '110.0' all become '110'. */
+function fcTrNum_(v) {
+  var t = fcTrStr_(v);
+  if (t === '') return '';
+  var n = Number(t);
+  return isFinite(n) ? String(n) : t;
+}
+/** The row's content fingerprint. Identical for a sheet row and a workspace JSON row. */
+function fcTrFingerprint_(o) {
+  o = o || {};
+  var parts = [];
+  for (var i = 0; i < FC_TR_FINGERPRINT_FIELDS_.length; i++) {
+    var f = FC_TR_FINGERPRINT_FIELDS_[i];
+    parts.push(FC_TR_FINGERPRINT_NUMERIC_.indexOf(f) !== -1 ? fcTrNum_(o[f]) : fcTrStr_(o[f]));
+  }
+  return parts.join('|');
+}
+
+/** Every existing row as { rowNumber, id, key, fingerprint, updated_at } — one read, both paths. */
 function fcTrIndexRows_(s) {
   var iId = s.col('target_rule_id');
   var out = [];
@@ -604,13 +662,34 @@ function fcTrIndexRows_(s) {
     var r = s.rows[i];
     if (String(r.join('')).trim() === '') continue;
     function cell(name) { var c = s.col(name); return c === -1 ? '' : r[c]; }
+    var obj = {};
+    for (var h = 0; h < s.headers.length; h++) { if (s.headers[h]) obj[s.headers[h]] = r[h]; }
     out.push({
       rowNumber: i + 1,
       id: fcTrStr_(iId === -1 ? '' : r[iId]),
       key: fcTrBusinessKey_({ year: cell('year'), company: cell('company'), country: cell('country'),
-        marketplace: cell('marketplace'), scope_type: cell('scope_type'), scope_id: cell('scope_id') })
+        marketplace: cell('marketplace'), scope_type: cell('scope_type'), scope_id: cell('scope_id') }),
+      fingerprint: fcTrFingerprint_(obj),
+      updated_at: fcTrStr_(cell('updated_at')),
+      row: obj
     });
   }
+  return out;
+}
+
+/** The complete canonical row, read back FROM THE SHEET after the write — never composed from the
+    request, so the receipt cannot claim a value the sheet does not hold. */
+function fcTrReceiptFor_(sheet, ruleId) {
+  var s2 = fcWriteReadSheet_(sheet);
+  var hit = fcTrIndexRows_(s2).filter(function (r) { return r.id === ruleId; });
+  if (hit.length !== 1) return null;
+  var out = {};
+  FC_TARGET_RULES_HEADERS_.forEach(function (h) {
+    var v = hit[0].row[h];
+    out[h] = (v === undefined || v === null) ? '' : (v instanceof Date ? v.toISOString() : v);
+  });
+  out.row_version = hit[0].fingerprint;
+  out.business_key = hit[0].key;
   return out;
 }
 
@@ -647,7 +726,7 @@ function handleUpsertFcTargetRule_(body) {
     var suppliedId = fcTrStr_(body.target_rule_id);
     var byKey = index.filter(function (r) { return r.key === v.key; });
 
-    var targetRow = -1, ruleId = '', created = false;
+    var targetRow = -1, ruleId = '', created = false, matched = null;
 
     if (suppliedId) {
       // ---- UPDATE BY ID — the id may only ever address a row with the SAME canonical identity ----------
@@ -668,6 +747,7 @@ function handleUpsertFcTargetRule_(body) {
       }
       targetRow = byId[0].rowNumber;
       ruleId = suppliedId;
+      matched = byId[0];
     } else {
       // ---- BY BUSINESS KEY — the same rule updates itself instead of appending a twin -----------------
       if (byKey.length > 1) {
@@ -676,7 +756,54 @@ function handleUpsertFcTargetRule_(body) {
             + ' (rows ' + byKey.map(function (r) { return r.rowNumber; }).join(', ')
             + '). Resolve the duplicate before writing. Nothing was written.' });
       }
-      if (byKey.length === 1) { targetRow = byKey[0].rowNumber; ruleId = byKey[0].id; }
+      if (byKey.length === 1) {
+        // R2B-A2-R5-F5 — A NEW-RULE SAVE MAY NOT SILENTLY BECOME AN UPDATE. The client only offers
+        // New mode when its read model holds no match, so arriving here means the model was stale:
+        // somebody created this identity in between. Updating it would overwrite values the operator
+        // in front of this modal has never seen — which is the exact defect this round exists to fix,
+        // and it is defended HERE as well as in the page, because the page can always be a copy behind.
+        if (!fcTrStr_(body.expected_row_version)) {
+          return jsonResponse_({ success: false, error: 'STALE_TARGET_RULE_VERSION',
+            detail: 'A rule for ' + v.key + ' already exists (target_rule_id ' + byKey[0].id
+              + '). This save was composed as a NEW rule, so it carries no expected version and'
+              + ' cannot be applied over one. Load the latest data and re-enter the change.'
+              + ' Nothing was written.' });
+        }
+        targetRow = byKey[0].rowNumber; ruleId = byKey[0].id; matched = byKey[0];
+      }
+    }
+
+    // ---- THE VERSION GATE. Checked after the row is located and BEFORE anything is written. --------
+    if (matched) {
+      var expectedVersion = fcTrStr_(body.expected_row_version);
+      if (!expectedVersion) {
+        return jsonResponse_({ success: false, error: 'TARGET_RULE_VERSION_REQUIRED',
+          detail: 'Updating an existing rule requires expected_row_version, the fingerprint observed'
+            + ' when the modal was hydrated. Nothing was written.' });
+      }
+      if (expectedVersion !== matched.fingerprint) {
+        return jsonResponse_({ success: false, error: 'STALE_TARGET_RULE_VERSION',
+          detail: 'This rule changed after it was loaded. Load the latest data and re-enter the change.'
+            + ' Nothing was written.',
+          current_row_version: matched.fingerprint,
+          expected_row_version: expectedVersion,
+          current_updated_at: matched.updated_at,
+          current: fcTrReceiptFor_(sheet, ruleId) });
+      }
+      // ---- UNCHANGED. A save that would write the values already stored writes nothing. -----------
+      // The page suppresses this too, but only the server can be sure: it is the one holding the row.
+      var incoming = {};
+      FC_TR_FINGERPRINT_FIELDS_.forEach(function (f) {
+        incoming[f] = Object.prototype.hasOwnProperty.call(v.norm, f) ? v.norm[f] : matched.row[f];
+      });
+      if (fcTrFingerprint_(incoming) === matched.fingerprint) {
+        return jsonResponse_({ success: true, data: {
+          id: ruleId, target_rule_id: ruleId, created: false, unchanged: true,
+          business_key: v.key, scope_type: v.scopeType,
+          row: fcTrReceiptFor_(sheet, ruleId),
+          row_version: matched.fingerprint,
+          summary: 'unchanged ' + v.key + ' — nothing was written' } });
+      }
     }
 
     if (targetRow === -1) {
@@ -708,12 +835,21 @@ function handleUpsertFcTargetRule_(body) {
     }
     SpreadsheetApp.flush();
 
+    // R2B-A2-R5-F5 §5 — THE RECEIPT CARRIES THE WHOLE SAVED ROW, read back from the sheet rather
+    // than echoed from the request. The page renders the table from this directly, so a Target Rule
+    // becomes visible at write-acknowledgement speed instead of waiting for the 222 KB workspace read
+    // that follows it. A receipt composed from the request could not be trusted for that: it would
+    // show what was asked for, not what was stored.
+    var receipt = fcTrReceiptFor_(sheet, ruleId);
     return jsonResponse_({ success: true, data: {
       id: ruleId,
       target_rule_id: ruleId,
       created: created,
+      unchanged: false,
       business_key: v.key,
       scope_type: v.scopeType,
+      row: receipt,
+      row_version: receipt ? receipt.row_version : '',
       summary: (created ? 'created' : 'updated') + ' ' + v.key
     } });
   } catch (e) {

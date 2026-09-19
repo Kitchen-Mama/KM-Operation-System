@@ -143,7 +143,12 @@ ok(CODE.indexOf('upcomingSkuData') === -1 && CODE.indexOf('runningSkuData') === 
 // Scoped to the TARGET RULE code, not the whole page: the Special Event Builder and the CSV import are
 // documented (58_api_v1_fc_summary_workspace.gs) as still reading the broad cache lazily, and migrating
 // them is a separate follow-up. What §3 forbids is THIS modal reaching for it.
+// R2B-A2-R5-F5 — _trRebuild_ now classifies the identity and rehydrates an existing rule before the
+// gate runs, so the session helpers are part of its dependency closure.
 var TR_CODE = codeOnly(['_trRows_', '_trDataState_', '_trRowsFor_', '_trDistinct_', '_trRebuild_',
+  '_trStrTok_', '_trNumTok_', '_trFingerprint_', '_trKeyOf_', '_trSelKey_', '_trExistingRules_',
+  '_trSetApplyAll_', '_trHydrateFrom_', '_trResetToNew_', '_trProposedFingerprint_',
+  '_trClassify_', '_trSyncSession_', '_trRenderMode_', '_trMergeReceipt_',
   '_trOnChange_', '_trCompanyResolution_', '_trGate_', '_trApplyGate_', '_trBuildPayload_',
   'openAddTargetRuleModal', 'updateTargetScopeFields', 'saveNewTargetRule']
   .map(function (f) { return extractFn(JS, f); }).join('\n'));
@@ -236,10 +241,15 @@ function makeDom() {
 
 var TR_FNS = ['_trCanonScope_', '_trNorm_', '_trRows_', '_trDataState_', '_trDistinct_', '_trRowsFor_',
   '_trSel_', '_trActiveDims_', '_trFillSelect_', '_trRebuild_', '_trOnChange_', '_trCompanyResolution_',
+  '_trStrTok_', '_trNumTok_', '_trFingerprint_', '_trKeyOf_', '_trSelKey_', '_trExistingRules_',
+  '_trSetApplyAll_', '_trHydrateFrom_', '_trResetToNew_', '_trProposedFingerprint_',
+  '_trClassify_', '_trSyncSession_', '_trRenderMode_', '_trMergeReceipt_',
   '_trMonths_', '_trGate_', '_trApplyGate_', '_trBuildPayload_', '_trCommonMonthlyPct_',
   'openAddTargetRuleModal', 'updateTargetScopeFields', 'fillAllTargetMonths', 'saveNewTargetRule',
   '_fcWriteBegin_', '_fcWriteEnd_', '_fcSetTargetSaveEnabled_'];
 var TR_VARS = ['_TR_ORDER_', '_TR_CTL_', '_TR_LABEL_', '_TR_SCOPE_FIELDS_', '_TR_SCOPES_',
+  // R2B-A2-R5-F5 — the edit session and the version-token field lists.
+  '_TR_FP_MONTHS_', '_TR_FP_FIELDS_', '_TR_FP_NUMERIC_', '_trSession_',
   '_FC_MONTH_KEYS', 'FC_VIEW_', 'FC_WRITE_', 'FC_MSG_'];
 
 function build(opts) {

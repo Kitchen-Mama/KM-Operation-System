@@ -803,6 +803,16 @@
                                  more than one owner the save is refused rather than silently taking the
                                  first, and this line says so. -->
                             <div class="fc-target-scope-note" id="target-scope-note"></div>
+                            <!-- R2B-A2-R5-F5 — WHICH RULE AM I EDITING? The modal used to have no answer.
+                                 Selecting the identity of a rule that already exists produced a form full of
+                                 the new-rule default 100, and saving it overwrote the stored months. This line
+                                 says "New rule" or "Existing rule — Update" with the target_rule_id, and it is
+                                 driven by the same classification that decides whether Save is enabled. -->
+                            <div class="fc-target-mode-note" id="target-mode-note"></div>
+                            <!-- Shown only after a STALE_TARGET_RULE_VERSION refusal. One read, then rehydrate.
+                                 It never re-applies the operator's edits on top of somebody else's change. -->
+                            <button type="button" class="fc-btn-secondary" id="target-load-latest-btn"
+                                    style="display:none;" onclick="_trLoadLatest_()">Load latest data</button>
                             <div class="fc-form-row">
                                 <div class="fc-form-group">
                                     <label>Apply to all months (%)</label>

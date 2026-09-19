@@ -131,11 +131,15 @@ var ADAPTER_FNS = ['prodSafetyBundle_', 'prodExpectedDbId_', 'prodSchemaError_',
 // LockService, duplicate and identity-mismatch refusals), so its constants and helpers join the sandbox.
 var G14_VARS = ['FC_SPECIAL_EVENTS_HEADERS_', 'FC_TARGET_RULES_HEADERS_', 'FC_SCHEMA_ORDERED_',
   'FC_SCHEMA_BY_NAME_', 'FC_SCHEMA_BY_NAME_TABLES_',
-  'FC_TR_SCOPE_TYPES_', 'FC_TR_RETIRED_IDENTITY_', 'FC_TR_KEY_FIELDS_', 'FC_TR_LOCK_MS_'];
+  'FC_TR_SCOPE_TYPES_', 'FC_TR_RETIRED_IDENTITY_', 'FC_TR_KEY_FIELDS_', 'FC_TR_LOCK_MS_',
+  // R2B-A2-R5-F5 — the version token's field lists.
+  'FC_TR_MONTH_KEYS_', 'FC_TR_FINGERPRINT_FIELDS_', 'FC_TR_FINGERPRINT_NUMERIC_'];
 var G14_FNS = ['fcWriteSchemaByNameApproved_', 'fcWriteTimestamp_', 'fcWriteEnsureSheet_', 'fcWriteEnsureColumns_',
   'fcWriteReadSheet_', 'fcWriteAppendByHeader_', 'fcWriteUpsert_', 'fcWriteDelete_',
   'fcTrStr_', 'fcTrUp_', 'fcTrScopeType_', 'fcTrIdentityUsable_', 'fcTrBusinessKey_',
   'fcTrScopeDimension_', 'fcTrValidateBody_', 'fcTrIndexRows_',
+  // R2B-A2-R5-F5 — the stale-write gate and the saved-row receipt.
+  'fcTrNum_', 'fcTrFingerprint_', 'fcTrReceiptFor_',
   'handleUpsertFcTargetRule_', 'handleDeleteFcTargetRule_'];
 var MIG_FNS = ['tgtR2ba2Required_', 'tgtR2ba2Str_', 'tgtR2ba2Snapshot_', 'TEMP_migrateFcTargetRulesHeader_',
   'TEMP_validateFcTargetRulesHeader_'];
@@ -427,8 +431,15 @@ var MONTH_VALUES = [91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102];
   var id = first.data.id;
   var sheet = ss.__sheet('fc_target_rules');
   eq(sheet.__appended.length, 1, 'E23 the first save appends one row');
-  var second = CTX.handleUpsertFcTargetRule_(Object.assign({}, body, { target_rule_id: id, target_percentage: 77 }));
-  ok(second.success === true && second.data.created === false, 'E24 the same target_rule_id UPDATES in place');
+  // R2B-A2-R5-F5 — an update now carries the version it was composed against. The claim here is
+  // unchanged (same id updates in place, no duplicate); it simply has to be asked for honestly now.
+  var stored = CTX.fcTrIndexRows_(CTX.fcWriteReadSheet_(sheet)).filter(function (r) { return r.id === id; })[0];
+  var noVersion = CTX.handleUpsertFcTargetRule_(Object.assign({}, body, { target_rule_id: id, target_percentage: 55 }));
+  ok(noVersion.success === false && noVersion.error === 'TARGET_RULE_VERSION_REQUIRED',
+    'E23a an update with no expected version is refused outright', noVersion);
+  var second = CTX.handleUpsertFcTargetRule_(Object.assign({}, body,
+    { target_rule_id: id, target_percentage: 77, expected_row_version: stored.fingerprint }));
+  ok(second.success === true && second.data.created === false, 'E24 the same target_rule_id UPDATES in place', second);
   eq(sheet.__appended.length, 1, 'E25 no second row was appended — no duplicate');
   eq(sheet.__values[1][AFTER.indexOf('target_percentage')], 77, 'E26 and the value was actually updated');
   eq(sheet.__values[1][AFTER.indexOf('created_by')], 't', 'E27 created_by preserved on update');
