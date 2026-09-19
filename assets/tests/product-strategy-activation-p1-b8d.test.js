@@ -487,16 +487,34 @@ ok(!/delete|remove the deployment|git reset/i.test(cfgRollback),
 section('§G  RELEASE IDENTITY — WHAT MUST BE SYNCED, AND WHAT MUST NOT');
 // ==================================================================================================
 
-ok(SRC.health.indexOf("var SYS_DEPLOYMENT_RELEASE_ = '" + RELEASE + "'") > 0,
-  'G1  63_ declares the activation release R11');
-ok(SRC.health.indexOf("var SYS_BUILD_VERSION_ = '" + RELEASE + "'") > 0,
-  'G1a and 63_\'s own module stamp moved with it, because THIS FILE changed');
-ok(SRC.config.indexOf("var CONFIG_BUILD_VERSION_ = '" + RELEASE + "'") > 0,
-  'G2  00_config.gs\'s stamp moved, because THIS FILE changed');
-ok(SRC.health.indexOf("symbol: 'CONFIG_BUILD_VERSION_', expected: '" + RELEASE + "'") > 0,
-  'G2a and the manifest expects it — a stamp without its manifest row is a MIXED sync');
-ok(SRC.health.indexOf("symbol: 'SYS_BUILD_VERSION_', expected: '" + RELEASE + "'") > 0,
-  'G2b as does 63_\'s own row');
+/* FC-SUMMARY-R2B-A2-R5-F3 — THIS BLOCK ASSERTED THAT FOUR DIFFERENT THINGS ALL EQUAL R11, AND THREE OF
+   THEM ONLY EQUALLED IT BY COINCIDENCE. B8D changed 63_ and 00_config in the same round it cut the
+   release, so the release string, 63_'s module stamp, 00_config's module stamp and two manifest rows were
+   all the same characters — and the suite wrote that coincidence down as the rule.
+
+   R12 separates them, which is the architecture working rather than breaking: the Target Rule consumer
+   unification changes 63_ (so its own stamp moves with the release) and does NOT change 00_config (so its
+   stamp must STAY at R11). Marching 00_config to R12 to keep this block green would destroy the exact
+   property the manifest exists for — a stamp bumped to look current cannot detect a half-finished sync.
+
+   So each half is asserted as what it actually is: the RELEASE is a floor at the activation (R11 was cut
+   and may never be walked back), and every MANIFEST ROW is DERIVED from the file it describes rather than
+   restated from a constant — which is strictly stronger, because a restated pin passes when both sides are
+   wrong together. */
+var _g1Rel = (SRC.health.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)';/) || [])[1] || '';
+ok(REL.stampAtOrAfter(_g1Rel, RELEASE),
+  'G1  63_ declares a release at or after the activation release R11 (' + _g1Rel + ')');
+ok(REL.BUILD_STAMP_RE.test(_g1Rel), 'G1b and it is a well-formed release stamp, not merely non-empty');
+var _g1Sys = (SRC.health.match(/var SYS_BUILD_VERSION_ = '([^']+)';/) || [])[1] || '';
+ok(REL.stampAtOrAfter(_g1Sys, RELEASE),
+  'G1a and 63_\'s own module stamp is at or after it, because THIS FILE changed in the activation (' + _g1Sys + ')');
+var _g2Cfg = (SRC.config.match(/var CONFIG_BUILD_VERSION_ = '([^']+)';/) || [])[1] || '';
+ok(REL.stampAtOrAfter(_g2Cfg, RELEASE),
+  'G2  00_config.gs\'s stamp is at or after the round it last changed in, the activation (' + _g2Cfg + ')');
+eq((SRC.health.match(/symbol: 'CONFIG_BUILD_VERSION_', expected: '([^']+)'/) || [])[1], _g2Cfg,
+  'G2a and the manifest expects EXACTLY what 00_config declares — derived, never restated');
+eq((SRC.health.match(/symbol: 'SYS_BUILD_VERSION_', expected: '([^']+)'/) || [])[1], _g1Sys,
+  'G2b as does 63_\'s own self-referential row');
 
 /* AND NOTHING ELSE MOVED, WHICH IS THE OTHER HALF OF A SYNC LIST. Re-pasting an unchanged file is
    how an unrelated edit reaches production by accident, so a stamp that did NOT move is an

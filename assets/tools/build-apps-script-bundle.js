@@ -214,7 +214,17 @@ function buildBundleFromSources(sources) {
   });
   var tail = ['// ----- Apps Script global namespace exposure -----']
     .concat(GLOBALS.map(function (g) { return 'var ' + g[0] + ' = __kmModules[' + JSON.stringify(g[1]) + '];'; }))
-    .concat(['', '// KM_BUNDLE_INFO — introspectable manifest for load tests + deploy verification.',
+    .concat(['',
+      '// KM_BUNDLE_CONTENT_HASH_ -- the generated bundle DEPLOYMENT IDENTITY, for 63_ module manifest.',
+      '// A hand-typed build stamp is the wrong instrument for a GENERATED file: it would have to be edited',
+      '// in this builder every round, and a stamp that is typed can be typed to look current -- which is the',
+      '// one failure the manifest exists to prevent. This value is DERIVED from the module contents, so it',
+      '// cannot be advanced without the bytes changing, and it cannot fail to advance when they do.',
+      // SINGLE-quoted deliberately. 63_'s manifest and the standing stamp-rotation check both read a
+      // declaration as var NAME = '...' ; a double-quoted value makes that check find nothing and
+      // PASS VACUOUSLY, which is worse than not having the row at all.
+      "var KM_BUNDLE_CONTENT_HASH_ = '" + bundleHash + "';", '',
+      '// KM_BUNDLE_INFO — introspectable manifest for load tests + deploy verification.',
       'var KM_BUNDLE_INFO = ' + JSON.stringify({ bundleHash: bundleHash, modules: manifest }, null, 0) + ';', ''])
     .join('\n');
 

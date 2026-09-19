@@ -2343,7 +2343,15 @@ function handleUpdatePurchaseOrderLine_(body) {
 // Factory Stock handoff. Preserves the existing receive ceiling (recv ≤ ordered − completed).
 // F1-7N-FC-1A-R1 DEPLOYMENT STAMP. An old 13_ returns SUCCESS while silently clamping an over-receipt, so no
 // action list and no handler probe can see it. Registered in 63_'s module manifest.
-var PROC_BUILD_VERSION_ = 'F1-7N-FC-1A-R1';
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12 -- THE STAMP MOVES BECAUSE THIS FILE CHANGED, and the change is not in the PO receipt
+// path at all: procurementTargetRuleResolver_ was DELETED and this file now delegates every Target Rule
+// decision to KMPD.resolveTargetRule in the generated bundle. That is exactly the silent staleness this
+// manifest exists to name. An old 13_ still answers every action it ever answered, still returns SUCCESS,
+// and resolves target percentages by its OWN retired matcher -- which ignored year, company, country AND
+// marketplace and read target_percentage instead of the requested month's named column. A deployment
+// carrying the new 90_ beside an old 13_ produces a DIFFERENT forecast from one carrying both, with no
+// error anywhere. Only a declared build separates them.
+var PROC_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12';
 
 function poReceiptEvaluateLine_(inp) {
   inp = inp || {};

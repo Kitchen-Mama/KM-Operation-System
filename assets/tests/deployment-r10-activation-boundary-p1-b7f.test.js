@@ -162,8 +162,17 @@ console.log('\n=== §B  THE THREE MANIFEST ROWS THIS ROUND IS ABOUT ===');
      assertion that they match would have been a demand that no release ever be prepared. */
   ok(SRC.health.indexOf("SYS_BUILD_VERSION_ = '" + R10 + "'") < 0,
     'B6 the committed 63_ has moved past R10 — a newer release is prepared');
-  ok(/var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11';/.test(SRC.health),
-    'B7 and the committed release identity is R11, which is NOT what the capture answered');
+  /* F3 — RESTATED FROM A LITERAL TO A FLOOR, for the reason the paragraph above already gives. The point
+     is that the REPOSITORY has moved ahead of the capture and the gap is the sync list; pinning the exact
+     release turned that into a demand that exactly ONE release ever be prepared ahead of this deployment.
+     R12 prepares a second (the Target Rule consumer unification), the capture still answers R10, and the
+     observation is unchanged and in fact stronger: the gap is now two releases wide. */
+  var _ROB7F = require('./_release-order.js');
+  var _b7Rel = (SRC.health.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)';/) || [])[1] || '';
+  ok(_ROB7F.stampAtOrAfter(_b7Rel, 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11'),
+    'B7 and the committed release identity is at or after R11 (' + _b7Rel + '), which is NOT what the capture answered');
+  ok(_b7Rel !== R10 && _ROB7F.stampAtOrAfter(_b7Rel, R10),
+    'B7b and it is strictly ahead of the captured one — that gap IS the sync list');
   eq(R10_CAPTURE.health.build_id, R10,
     'B7a while the capture still says R10 — so an unsynced activation is visible, not inferred');
   ok(SRC.router.indexOf("RTR_BUILD_VERSION_ = '" + R9 + "'") >= 0,

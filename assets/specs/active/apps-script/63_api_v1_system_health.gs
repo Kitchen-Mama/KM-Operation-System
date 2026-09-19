@@ -126,7 +126,17 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 // time this has come up: R10's tree and this one differ, and an id that names two different trees cannot
 // answer the one question it exists for. Nothing ever deployed R10, so nothing is being replaced - it is
 // being withdrawn.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11';
+// R12 -- THE RELEASE MOVES BECAUSE THE BACKEND MOVED, and this one is a CONSUMER UNIFICATION rather than a
+// feature. Five live resolvers read fc_target_rules and no two implemented the same contract; three of them
+// are server-side (13_, and the shared module reached through 90_). They now resolve through ONE function.
+// That is a sync-visible backend change, which is precisely the condition for rotating this constant, and it
+// is the dangerous kind: every one of those files answers every action it ever answered, both before and
+// after. A half-copied sync of this release returns SUCCESS everywhere and a DIFFERENT forecast number.
+//
+// R11 IS SUPERSEDED, NOT WITHDRAWN -- and that is the difference from every 'candidate' note above. R11 was
+// cut. An id that names two different trees cannot answer the one question it exists for, so the tree that
+// carries 13_/14_/90_/63_ as changed here gets its own id.
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12';
 // 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
 // R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
 // not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
@@ -141,7 +151,13 @@ var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11';
 // identity: no action was added, no action was removed, no request or response shape changed. Activation
 // is a flag, and a flag is not a contract. Bumping the action-contract version here would tell every
 // deployed client that it must re-check a vocabulary that is byte-identical to the one it already has.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11';
+// R12 - moved because THIS FILE changed: the release above, 13_'s expected stamp, and two manifest rows
+// that did not exist (14_ and 90_). The ACTION CONTRACT does not move with it and neither does the transport
+// contract: no action was added, none removed, no request or response shape changed. A resolver that returns
+// a different NUMBER through the same action is not a vocabulary change, and telling every deployed client
+// to re-check a byte-identical vocabulary would be a lie about what this release contains.
+// 00_config.gs is deliberately NOT rotated: it did not change, and its manifest row below still expects R11.
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -374,7 +390,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
   // F1-7N-FC-1B-E3 §E.9 — the CONFIG is an owner file too. It holds
   // INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_, so a project still running the previous copy of it writes no
   // allocation drafts while the repository says it should; without an entry here that difference had no name.
@@ -443,7 +459,26 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // It silently CLAMPS an over-receipt: an operator entering 900 against a remaining 500 is told the receipt
   // succeeded and is never told the other 400 were discarded. Only a declared build separates that from a
   // deployment that refuses properly.
-  { file: '13_procurement_handlers.gs', symbol: 'PROC_BUILD_VERSION_', expected: 'F1-7N-FC-1A-R1', owns: 'PO receipt factory-stock handoff + the typed PO_RECEIPT_EXCEEDS_REMAINING_QTY refusal (no silent clamp)' },
+  // R12 - AND THE ROW NOW COVERS A SECOND, QUIETER OWNERSHIP. 13_ no longer carries a Target Rule matcher of
+  // its own; it reads the raw rows and delegates to KMPD.resolveTargetRule. An old 13_ still resolves, still
+  // succeeds, and answers with the retired matcher that ignored year, company, country and marketplace.
+  { file: '13_procurement_handlers.gs', symbol: 'PROC_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12', owns: 'PO receipt factory-stock handoff + the typed PO_RECEIPT_EXCEEDS_REMAINING_QTY refusal (no silent clamp) + the procurement forecast’s per-month Target Rule delegation to the shared KMPD resolver (no local matcher)' },
+  // R12 - THE FC WRITE OWNER, REGISTERED FOR THE REASON THIS MANIFEST EXISTS. 14_ owns the fc_target_rules
+  // upsert. An old copy answers the same action with the same payload and returns SUCCESS while APPENDING A
+  // DUPLICATE, because its whole business key was target_rule_id and the FC modal sends none. Two rules for
+  // one site then make the READ refuse (DUPLICATE_TARGET_RULE_IDENTITY) -- so a partial sync of this release
+  // breaks the forecast through a file nobody was looking at, with the write path reporting success.
+  { file: '14_fc_write_handlers.gs', symbol: 'FCW_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12', owns: 'the FC Summary write path: fc_special_events upsert/delete + the fc_target_rules upsert keyed on the canonical business key, its script lock, its duplicate and identity-mismatch refusals, and the single-range row write' },
+  // R12 - THE GENERATED BUNDLE, IDENTIFIED BY CONTENT RATHER THAN BY A STAMP. 90_ is the only manifest owner
+  // that is BUILT, not written, so a hand-typed build stamp would be the wrong instrument twice over: it
+  // would have to be edited in the builder every round, and it could be edited to look current without the
+  // bytes moving. KM_BUNDLE_CONTENT_HASH_ is derived from the module contents by the builder, so it cannot
+  // be advanced without a real change and cannot fail to advance when one happens.
+  //
+  // Its absence is NOT loud. 13_ guards on typeof KMPD.resolveTargetRule and returns null when it is missing,
+  // and a null target is a SKIPPED month, not an error: an old bundle makes the procurement forecast quietly
+  // drop months. An old-but-present bundle is worse still -- it resolves by the retired first-row-wins rule.
+  { file: '90_generated_supply_planning_bundle.gs', symbol: 'KM_BUNDLE_CONTENT_HASH_', expected: '830563effc604ba55a70424d8f7b95c627ae0bc4ce84aa981833fb75ac2ed64f', owns: 'the generated shared-core bundle (60 UMD modules) incl. KMPD.resolveTargetRule — the ONE Target Rule authority every server consumer delegates to; identified by content hash, never by a hand-typed stamp' },
   { file: '22_shipment_dispatch_handlers.gs', symbol: 'CSD_BUILD_VERSION_', expected: 'F1-7N-FC-1A-R1', owns: 'Confirm Shipment & Dispatch: deduction + reservation release through the shared authority + the cancelled-shipment dispatch refusal' },
   // F1-7N-FB-4E-R4B-R3 §1 - moved with the file. R4B-R2 changed the GET read dispatch; leaving the manifest at
   // R4A1 would have made a CORRECTLY synced router report as stale, and an UNSYNCED one report as current.

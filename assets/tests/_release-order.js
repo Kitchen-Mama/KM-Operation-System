@@ -747,7 +747,11 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // carries the release plus 00_config's expected stamp. No action was added and no response shape
   // changed, so the ACTION CONTRACT deliberately does not move with it - a flag is not a contract.
   // R10 was a candidate that was never synced and is withdrawn rather than replaced.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11',
+  // R12 - the Target Rule consumer unification. APPENDED, which is the only legal position: stampAtOrAfter
+  // compares INDEXES, so a token placed anywhere but the end silently reorders every floor that was written
+  // against the list. R12 is genuinely the newest release, so the end is also the truthful position.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

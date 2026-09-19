@@ -502,7 +502,13 @@ var R6_KNOWN_GS_CHANGES = ['assets/specs/active/apps-script/03_master_data_handl
   // 90_ is GENERATED from assets/js/core/ and was rebuilt by the approved builder, never hand-edited.
   // None of the three is reachable from Product Strategy's read path.
   'assets/specs/active/apps-script/13_procurement_handlers.gs',
-  'assets/specs/active/apps-script/90_generated_supply_planning_bundle.gs'];
+  'assets/specs/active/apps-script/90_generated_supply_planning_bundle.gs',
+  // FC-SUMMARY-R2B-A2-R5-F3 — the release that names that unification. 63_ carries SYS_DEPLOYMENT_RELEASE_
+  // and the module manifest, so rotating 13_'s stamp necessarily edits it. Nothing in Product Strategy's
+  // read path moved: no action was added or removed, no capability field changed, and the feature flag is
+  // untouched. This register is what keeps 'a server file changed' from being a silent event, so the file
+  // is DECLARED here rather than the check being loosened to let it through.
+  'assets/specs/active/apps-script/63_api_v1_system_health.gs'];
 var gsChanged = changedSince(R6_PRE, 'assets/specs/active/apps-script');
 if (gsChanged !== '__git_unavailable__') {
   var unexpectedGs = gsChanged.split('\n').map(function (x) { return x.trim(); })

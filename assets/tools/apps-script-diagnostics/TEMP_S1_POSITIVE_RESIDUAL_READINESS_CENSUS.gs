@@ -76,7 +76,10 @@
 // different feature entirely. This pin exists so that a census run against a correctly synced
 // deployment is never refused for its build; left at R10 it would have STOPped on the first
 // healthy R11 deployment and reported a mismatch that was the ledger working as designed.
-var S1_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11';  // the build this census was written against
+// R12 - re-pinned with the release. This census asserts the deployment build EQUALS this value and
+// answers STOP when it does not, so leaving it at R11 would have made a correctly synced R12 project
+// report NOT ready to authorize - a refusal produced by the diagnostic, not by the world it measures.
+var S1_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12';  // the build this census was written against
 var S1_CONTRACT_ = 'BATCH S1 — positive-residual + submit readiness, read only, zero writes';
 
 /** The scope axes are ALWAYS all four. A census that matched on three would report a candidate that the

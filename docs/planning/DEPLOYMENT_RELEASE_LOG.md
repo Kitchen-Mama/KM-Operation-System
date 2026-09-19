@@ -3589,3 +3589,121 @@ KNOWN AND NOT FIXED
     structurally in the static seal. RECORDED, NEVER CLAIMED AS A PASS.
   · Everything R10E and R10D list under KNOWN AND NOT FIXED is unchanged.
 ```
+
+## FC-SUMMARY-R2B-A2-R5-F3 — RELEASE `F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12` — THE TARGET RULE CONSUMER UNIFICATION
+
+```
+BASE    cd3fd8f   the F2 implementation: one resolver, five consumers unified
+BRANCH  feature/product-strategy-board-p0   main = origin/main = fa23471
+DATE    2026-09-19
+SCOPE   RELEASE IDENTITY ONLY. This round adds no behaviour. It mints the release that names the
+        change F2 already made, rotates the stamps that change required, registers two owners that
+        never had a manifest row, and repairs the suites that had pinned the previous release as a
+        literal. No handler, no action, no schema, no frontend file, no cache token.
+
+RELEASE ID                   F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12
+SUPERSEDES                   R11 (the P1-B8D activation release) — AS A CANDIDATE, NOT AS A DEPLOYMENT.
+                             R11 was CUT. R12 does not withdraw it; it follows it.
+STATUS                       PREPARED, NOT SYNCED. No Apps Script project carries it, no Web App
+                             version exists, and the ledger records that it has not happened.
+
+WHY A NEW RELEASE AND NOT A RIDE-ALONG
+-------------------------------------------------------------------------------------------------------
+  13_procurement_handlers.gs is a DEPLOYED MANIFEST OWNER and F2 changed it: procurementTargetRuleResolver_
+  was deleted and the file now delegates to the shared KMPD.resolveTargetRule. Leaving it on F1-7N-FC-1A-R1
+  would have been the exact defect the manifest exists to detect, and the standing E4 stamp-rotation check
+  said so — correctly — for the whole of F2.
+
+  Rotating it cascades, which is why F2 stopped and asked rather than doing it quietly:
+
+    13_ stamp moves  ->  63_ carries 13_ manifest row  ->  63_ is now an edited owner
+                     ->  SYS_BUILD_VERSION_ must move  ->  the release must move  ->  20 suites read it
+
+  A release id names a TREE. R11 names the activation tree; this one carries a different resolver in four
+  files. An id that names two different trees cannot answer the one question it exists for.
+
+WHAT MAKES THIS RELEASE DANGEROUS TO HALF-SYNC
+-------------------------------------------------------------------------------------------------------
+  Every file below answers every action it answered before, both before and after the change. Nothing is
+  added to the vocabulary and no response changes shape. A project that receives three of the four files
+  returns SUCCESS from every endpoint and a DIFFERENT FORECAST NUMBER. The module manifest is the only
+  instrument that can see it — which is why two of these files are being registered in it for the first
+  time, rather than merely re-copied.
+
+STAMP MOVEMENT — OLD -> NEW
+-------------------------------------------------------------------------------------------------------
+  63_  SYS_DEPLOYMENT_RELEASE_    R11                  -> R12        the RELEASE
+  63_  SYS_BUILD_VERSION_         R11                  -> R12        63_ own module stamp (63_ changed)
+  13_  PROC_BUILD_VERSION_        F1-7N-FC-1A-R1       -> R12        NINE rounds stale; the file changed
+  14_  FCW_BUILD_VERSION_         (none — no stamp)    -> R12        NEW SYMBOL, new manifest row
+  90_  KM_BUNDLE_CONTENT_HASH_    (none — no stamp)    -> 830563ef…  NEW SYMBOL, emitted by the builder
+
+  DELIBERATELY NOT MOVED — and this is the load-bearing half:
+  00_  CONFIG_BUILD_VERSION_      R11    unchanged     00_config.gs did not change in R12
+  01_  RTR_BUILD_VERSION_         R9     unchanged     no action added, none withdrawn
+  72_  PPW_BUILD_VERSION_         R10    unchanged     72_ did not change
+
+  A stamp marched to the release to look current destroys the only signal that distinguishes a synced file
+  from an unsynced one. Three suites had to be repaired precisely because they had written down the R11
+  COINCIDENCE — release, 63_ stamp and 00_config stamp all equal — as though it were the rule.
+
+WHY 90_ HAS A CONTENT HASH AND NOT A BUILD STAMP
+-------------------------------------------------------------------------------------------------------
+  90_generated_supply_planning_bundle.gs is BUILT, not written. A hand-typed stamp on it is wrong twice:
+  someone must remember to edit it in assets/tools/build-apps-script-bundle.js every round, and it can be
+  typed to look current without the bytes moving — the single failure the manifest exists to prevent.
+
+  KM_BUNDLE_CONTENT_HASH_ is emitted by the builder and derived from the 60 module contents. It cannot be
+  advanced without a real change, and it cannot fail to advance when one happens. It is single-quoted on
+  purpose: every manifest reader in this repository matches `var NAME = '...'`, and a double-quoted value
+  would make all of them find nothing and PASS VACUOUSLY.
+
+  Its absence is NOT loud, which is why it needs a row at all: 13_ guards on `typeof KMPD.resolveTargetRule`
+  and returns null when it is missing, and a null target is a SKIPPED MONTH, not an error.
+
+DEPLOYMENT
+-------------------------------------------------------------------------------------------------------
+  APPS_SCRIPT_SYNC_REQUIRED   YES   all four together, in this order, as ONE deployment version:
+                                      1. 13_procurement_handlers.gs
+                                      2. 14_fc_write_handlers.gs
+                                      3. 90_generated_supply_planning_bundle.gs
+                                      4. 63_api_v1_system_health.gs
+  FRONTEND_DEPLOY_REQUIRED    YES   but NOT FIRST, and not in this commit. The F2 commit (cd3fd8f) owns
+                                    the browser set; the Apps Script sync must land and be verified
+                                    through system.health BEFORE the modal reaches an operator.
+  BUNDLE_REBUILD_REQUIRED     YES   done, through the approved builder; --check reports up to date
+  DB / Sheets / Drive writes  0
+  Rollback                    re-copy the four previous files and publish a new version. No schema
+                              changed, no column was added or moved, and no row was written, so a
+                              rollback is a file copy and nothing else.
+
+CACHE TOKEN
+-------------------------------------------------------------------------------------------------------
+  trcontract-r2ba2r5f2-20260919      38 refs      0 stale      0 misplaced      (UNCHANGED)
+
+  NOT rotated by this round, and that is a decision rather than an omission: no browser-shipped file is in
+  this commit. Rotating a co-deployment token for a backend-only change would force every client to
+  re-download an identical set of assets and would make the token stop meaning what it means.
+
+VERIFICATION
+-------------------------------------------------------------------------------------------------------
+  fc-target-rule-release-stamp-r2b-a2-r5-f3   53 passed   0 failed   12 mutants   0 survived   NEW
+  ai-plan-advice-boundary (E4 stamp gate)     135 passed  0 failed   15 mutants   0 survived   REPAIRED
+  product-strategy-activation-p1-b8d          353 passed  0 failed   18 mutants   0 survived
+  api-product-pricing-envelope-action-p1-b7e  104 passed  0 failed    8 mutants   0 survived
+  deployment-r10-activation-boundary-p1-b7f   103 passed  0 failed    7 mutants   0 survived
+  action-registry-and-router-completeness     199 passed  0 failed
+  allocation-code-first-schema-compat-b3      213 passed  0 failed   14 caught    0 missed
+
+KNOWN AND NOT FIXED
+-------------------------------------------------------------------------------------------------------
+  · THE §0 DATA-DRIFT GATE WAS NOT PERFORMED. The canonical read of fc_target_rules (zero data rows, no
+    legacy blank/All identity) could not be executed from this environment: outbound network calls are
+    blocked here, so the endpoint configured in assets/js/api/operation-system-db-api.js is unreachable.
+    The zero-row claim remains OPERATOR EVIDENCE and it genuinely gates the live write, because retiring
+    `All` and blank-as-wildcard changes which existing rows match.
+  · TEMP_migrate_fc_target_rules_header_r2ba2.gs retirement remains FORBIDDEN. It becomes eligible only
+    after the live write, the named-column readback and consumer parity against the written row.
+  · Everything the R10E-CLOSE entry lists under KNOWN AND NOT FIXED is unchanged. This round measured no
+    transport reliability and improves none of it.
+```

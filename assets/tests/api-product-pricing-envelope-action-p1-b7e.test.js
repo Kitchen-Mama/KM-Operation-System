@@ -420,8 +420,17 @@ var I = H.then(function () {
      did THIS FILE last change" are two questions with two answers, and this is what that looks like. */
   ok(SRC.health.indexOf("var SYS_DEPLOYMENT_RELEASE_ = '" + R10 + "'") < 0,
     'I2 the release has moved past R10 — a later round minted its own');
-  ok(/var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11';/.test(SRC.health),
-    'I2a and it is R11, the activation release');
+  /* F3 — RESTATED FROM A LITERAL TO A FLOOR. This pinned R11 exactly, which is equality-with-now: it says
+     no release may ever follow the activation, and it fails while describing a perfectly correct tree. What
+     the section demonstrates is that the RELEASE moves while 72_'s stamp does not, and that survives R12
+     intact — R12 is the Target Rule consumer unification, and 72_ did not change in it either. The durable
+     claim is that the release is at or after the activation: R11 was CUT, so nothing may go back below it,
+     and the ordering comes from the shared ledger rather than from a string typed here. */
+  var _ROB7E = require('./_release-order.js');
+  var _i2aRel = (SRC.health.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)';/) || [])[1] || '';
+  ok(_ROB7E.stampAtOrAfter(_i2aRel, 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11'),
+    'I2a and it is at or after R11, the activation release (' + _i2aRel + ')');
+  ok(_ROB7E.BUILD_STAMP_RE.test(_i2aRel), 'I2b and it is a well-formed release stamp, not merely non-empty');
   ok(SRC.health.indexOf("var SYS_BUILD_VERSION_ = '" + R10 + "'") < 0,
     'I3 63_ moved with it, because the release lives in 63_ and changing it changes that file');
   ok(SRC.health.indexOf("symbol: 'PPW_BUILD_VERSION_', expected: '" + R10 + "'") > 0,

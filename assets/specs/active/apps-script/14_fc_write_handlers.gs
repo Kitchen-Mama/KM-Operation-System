@@ -12,6 +12,19 @@
 //             handleUpsertFcTargetRule_   / handleDeleteFcTargetRule_
 // ============================================================
 
+// F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12 -- 14_ BECOMES A MANIFEST OWNER, and it should have been one before now.
+// This round gave the Target Rule upsert a real identity: it resolves an existing rule by the canonical
+// business key (year|company|country|marketplace|scope_type|scope_id), refuses a duplicate and refuses an
+// id that points at a different site, takes a script lock, and writes the row in ONE range call.
+// An OLD 14_ answers the SAME action with the SAME payload and returns SUCCESS: it keys on target_rule_id
+// alone, so the FC modal -- which sends no id -- APPENDS A DUPLICATE ROW on every re-save, and two
+// concurrent creates both append. Nothing about that is visible from outside: no action is missing, no
+// handler is undefined, no response changes shape. It is the precise case the module manifest was built for.
+//
+// The SYMBOL is new in this round, so a copy of 14_ older than this one reports ABSENT rather than stale.
+// That is the stronger signal, and it is why the value is not backdated to the round the file first shipped.
+var FCW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12';
+
 // fc_special_events header. event_name / event_month / fc_qty are the task-defined columns;
 // event_period + year are additional UI-continuity columns (FC Summary Event table shows/filters them).
 // 2026-07-22 (ADDITIVE): campaign_id / campaign_sku_line_id link each event forecast back to its
