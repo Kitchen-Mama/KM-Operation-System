@@ -437,7 +437,8 @@ var ROUND_TOKENS = [
   // version. A browser still holding the previous fc-summary.js opens the same modal with twelve
   // default 100s and no version, which the new server refuses outright - so the stale cache would
   // present a form that cannot save at all. The whole application set rotates together.
-  'tgtrehydrate-r2ba2r5f5-20260919'];
+  'tgtrehydrate-r2ba2r5f5-20260919',
+  'trseamrepair-r2ba2r5f5f1-20260919'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

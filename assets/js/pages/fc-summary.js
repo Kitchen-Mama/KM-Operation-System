@@ -1453,13 +1453,50 @@ function _trKeyOf_(o) {
    is theirs to keep, and a rebuild must not overwrite it. When it changes, the session is over. */
 var _trSession_ = { key: '', mode: 'NEW', id: '', version: '', originalFp: '', row: null };
 
-/* The canonical Target Rule rows. DEMO mode keeps the pre-F5 behaviour deliberately: its mock rows
-   carry a `percentages` object rather than jan_pct..dec_pct, so matching them against a canonical
-   fingerprint would compare two different shapes and call every rule stale. */
+/* R2B-A2-R5-F5-F1 — THE SEAM THIS ROUND EXISTS TO REPAIR.
+
+   A Target Rule exists in this page in THREE shapes, and they are not interchangeable:
+
+     canonical   what the sheet stores and the server sends and receipts back:
+                 { target_rule_id, scope_type, scope_id, jan_pct..dec_pct, ... }
+     normalized  what normalizeFcTargetRuleRecord produces and the read model holds:
+                 { ruleId, scopeType, scopeId, targetPercentage, raw }   <- raw IS the canonical row
+     display     what _getDbTargetRules builds for the TABLE:
+                 { id, scope, year, ..., percentages }
+
+   Every function in the F5 rehydration set reads CANONICAL field names — _trKeyOf_ wants
+   scope_type/scope_id, _trHydrateFrom_ wants jan_pct..dec_pct, _trFingerprint_ wants the whole
+   canonical field list. This function used to hand them DISPLAY rows. On a display row scope_type
+   and scope_id are undefined, so BOTH production rules keyed to '2026|RESUS|US|AMAZON||', matched
+   nothing, and were classified NEW — the modal offering twelve 100s over a rule that already had
+   values. The fix belongs HERE, at the boundary, and not in _trKeyOf_: a key builder taught to
+   guess across three shapes is a key builder that can no longer say two rules are different.
+
+   THREE RETURN STATES, each with a different meaning, none collapsible into another:
+     null                 matching is NOT APPLICABLE (Demo mode). Its mock rows carry a
+                          `percentages` object, so fingerprinting them would compare two shapes
+                          and call every rule stale. Demo continues to classify as NEW.
+     _TR_UNAVAILABLE_     the canonical rows could NOT be read. This is NOT zero rules. An
+                          identity cannot be classified, so it must not be called NEW — that is
+                          precisely the reading that offers defaults over stored values.
+     array (may be empty) the canonical rows, including the legitimate empty case: no rule exists
+                          yet, and NEW is the correct and provable answer.
+
+   A row whose .raw is missing fails the WHOLE read rather than being skipped. A silently dropped
+   row is how an existing rule becomes a new one. */
+var _TR_UNAVAILABLE_ = { targetRuleRowsUnavailable: true };
+
 function _trExistingRules_() {
-  if (typeof _fcUseDb === 'function' && !_fcUseDb()) return null;   // null = matching not applicable
-  var rows = (typeof _getDbTargetRules === 'function') ? _getDbTargetRules() : null;
-  return Array.isArray(rows) ? rows : null;
+  if (typeof _fcUseDb === 'function' && !_fcUseDb()) return null;   // Demo: matching not applicable
+  var rows = (typeof _fcGetTargetRules === 'function') ? _fcGetTargetRules() : null;
+  if (!Array.isArray(rows)) return _TR_UNAVAILABLE_;
+  var out = [];
+  for (var i = 0; i < rows.length; i++) {
+    var raw = rows[i] ? rows[i].raw : null;
+    if (!raw || typeof raw !== 'object') return _TR_UNAVAILABLE_;
+    out.push(raw);
+  }
+  return out;
 }
 
 /* The business key the CURRENT selection would write to. '' until the identity is complete. */
@@ -1478,7 +1515,10 @@ function _trClassify_(sel, company) {
   var key = _trSelKey_(sel, company);
   if (!key) return { mode: 'INCOMPLETE', key: '', matches: [] };
   var rules = _trExistingRules_();
-  if (rules === null) return { mode: 'NEW', key: key, matches: [] };   // demo, or no canonical array
+  // UNAVAILABLE is answered before NEW on purpose. 'I could not read the rules' and 'there are no
+  // rules' are different facts, and only the second one licenses a new-rule form.
+  if (rules === _TR_UNAVAILABLE_) return { mode: 'DATA_UNAVAILABLE', key: key, matches: [] };
+  if (rules === null) return { mode: 'NEW', key: key, matches: [] };   // Demo: matching not applicable
   var matches = rules.filter(function (r) { return _trKeyOf_(r) === key; });
   if (matches.length === 0) return { mode: 'NEW', key: key, matches: [] };
   if (matches.length === 1) return { mode: 'EXISTING_UPDATE', key: key, matches: matches, row: matches[0] };
@@ -1509,6 +1549,17 @@ function _trHydrateFrom_(row) {
     vals[m] = (txt === '') ? '' : Number(txt);
   }
   _trSetApplyAll_(vals);
+}
+
+/* Clear the months to BLANK. Used when the rule set could not be read: the form must not show 100,
+   because 100 in a month box is a value someone could save, and this state knows nothing. */
+function _trBlankMonths_() {
+  for (var i = 0; i < _FC_MONTH_KEYS.length; i++) {
+    var el = document.getElementById('target-' + _FC_MONTH_KEYS[i]);
+    if (el) el.value = '';
+  }
+  var a = document.getElementById('target-base-pct-input');
+  if (a) { a.value = ''; a.placeholder = ''; }
 }
 
 /* The new-rule form: the documented 100 default, and an EMPTY apply-to-all (its placeholder says 100,
@@ -1552,6 +1603,9 @@ function _trSyncSession_() {
     _trSession_.originalFp = _trSession_.version;
     _trSession_.row = row;
     _trHydrateFrom_(row);
+  } else if (cls.mode === 'DATA_UNAVAILABLE') {
+    // NOT the new-rule form. The documented 100 defaults are an answer, and this state has none.
+    _trBlankMonths_();
   } else {
     // NEW, INCOMPLETE and DUPLICATE_REFUSAL all clear the form. Leaving the previous rule's months
     // on screen after the identity moved is how one rule's values get written onto another.
@@ -1571,6 +1625,10 @@ function _trRenderMode_(cls) {
   if (cls.mode === 'EXISTING_UPDATE') {
     el.textContent = 'Existing rule — Update  ·  ' + _trSession_.id;
     el.className = 'fc-target-mode-note is-existing';
+  } else if (cls.mode === 'DATA_UNAVAILABLE') {
+    el.textContent = 'TARGET_RULE_DATA_UNAVAILABLE — the existing rules could not be read. This '
+      + 'identity cannot be classified. Nothing will be written.';
+    el.className = 'fc-target-mode-note is-blocked';
   } else if (cls.mode === 'DUPLICATE_REFUSAL') {
     el.textContent = 'DUPLICATE_TARGET_RULE_IDENTITY — ' + cls.matches.length
       + ' rules share this identity (' + cls.matches.map(function (r) { return r.target_rule_id; }).join(', ')
@@ -1661,6 +1719,12 @@ function _trGate_() {
   }
   // ---- R2B-A2-R5-F5 — WHICH RULE IS THIS? ------------------------------------------------------
   var cls = _trClassify_(sel, cr.company);
+  if (cls.mode === 'DATA_UNAVAILABLE') {
+    return { ok: false, code: 'TARGET_RULE_DATA_UNAVAILABLE', mode: cls.mode,
+      text: 'TARGET_RULE_DATA_UNAVAILABLE — the canonical Target Rule rows could not be read, so this '
+        + 'identity cannot be classified as new or existing. Nothing will be written. Use Check latest '
+        + 'data, then reopen.' };
+  }
   if (cls.mode === 'DUPLICATE_REFUSAL') {
     return { ok: false, code: 'DUPLICATE_TARGET_RULE_IDENTITY',
       text: 'DUPLICATE_TARGET_RULE_IDENTITY — ' + cls.matches.length + ' rules already share this '
@@ -1791,20 +1855,40 @@ function _trBuildPayload_(g) {
   return payload;
 }
 
-/* Merge one confirmed saved row into the canonical read model, replacing any row with the same
-   target_rule_id. This is the ONLY place the page writes into _fcReadModel outside a canonical read,
-   and it is allowed for one reason: the row came back FROM the sheet, in the server's own receipt,
-   after the write was confirmed. A background refresh that later succeeds replaces the whole model
-   anyway; one that fails leaves this row standing, which is the correct outcome — the write happened. */
+/* The ONE normalization authority, borrowed rather than reimplemented. The read model is built by
+   normalizeFcTargetRuleRecord; a second normalizer here would be a second definition of what a
+   Target Rule is, and the two would drift. When the authority is not present the merge declines
+   instead of inventing one — the canonical refresh still delivers the row, just not instantly. */
+function _trNormalizeCanonical_(raw) {
+  if (typeof normalizeFcTargetRuleRecord !== 'function') return null;
+  try { return normalizeFcTargetRuleRecord(raw); } catch (e) { return null; }
+}
+
+/* Merge one confirmed saved row into the canonical read model. The row came back FROM the sheet, in
+   the server's own receipt, after the write was confirmed — which is why this is the only place the
+   page writes into _fcReadModel outside a canonical read.
+
+   R2B-A2-R5-F5-F1 — IT WAS COMPARING THE WRONG FIELD. The receipt is CANONICAL (target_rule_id);
+   _fcReadModel.fcTargetRules holds NORMALIZED records (ruleId). `list[i].target_rule_id` was
+   undefined on every row, so the loop never matched and every confirmed save APPENDED. Two rows
+   became three: the original, unchanged and still showing the old value, plus a canonical row that
+   _getDbTargetRules then rendered with an empty id and twelve 100s, because a canonical row carries
+   no .raw and no .ruleId for it to read. The operator's change looked like it had not applied, and
+   a phantom rule appeared beside it.
+
+   So: normalize first, match on the model's OWN identity, and keep the model one single shape. */
 function _trMergeReceipt_(row) {
   if (!row || !_trStrTok_(row.target_rule_id)) return false;
   if (typeof _fcReadModel === 'undefined' || !_fcReadModel || !Array.isArray(_fcReadModel.fcTargetRules)) return false;
-  var id = _trStrTok_(row.target_rule_id);
+  var rec = _trNormalizeCanonical_(row);
+  if (!rec) return false;
+  var id = _trStrTok_(rec.ruleId);
+  if (!id) return false;                       // never a blank-id row in the model
   var list = _fcReadModel.fcTargetRules;
   for (var i = 0; i < list.length; i++) {
-    if (_trStrTok_(list[i].target_rule_id) === id) { list[i] = row; return true; }
+    if (list[i] && _trStrTok_(list[i].ruleId) === id) { list[i] = rec; return true; }
   }
-  list.push(row);
+  list.push(rec);
   return true;
 }
 

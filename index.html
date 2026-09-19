@@ -15,10 +15,10 @@
     <link rel="stylesheet" href="assets/css/core/km-sticky-header.css?v=donenotice-20260811">
     <link rel="stylesheet" href="assets/css/pages/home.css?v=donenotice-20260811">
     <link rel="stylesheet" href="assets/css/pages/inventory-replenishment.css?v=ircompactrecon-20260905">
-    <link rel="stylesheet" href="assets/css/pages/factory-stock.css?v=tgtrehydrate-r2ba2r5f5-20260919">
+    <link rel="stylesheet" href="assets/css/pages/factory-stock.css?v=trseamrepair-r2ba2r5f5f1-20260919">
     <link rel="stylesheet" href="assets/css/pages/overseas-ops.css?v=donenotice-20260811">
     <link rel="stylesheet" href="assets/css/pages/overseas-stock.css?v=whmoreopts-20260820">
-    <link rel="stylesheet" href="assets/css/pages/fc-overview.css?v=tgtrehydrate-r2ba2r5f5-20260919">
+    <link rel="stylesheet" href="assets/css/pages/fc-overview.css?v=trseamrepair-r2ba2r5f5f1-20260919">
     <link rel="stylesheet" href="assets/css/pages/request-order.css?v=toolbarui-20260811">
     <link rel="stylesheet" href="assets/css/pages/sku-details.css?v=donenotice-20260811">
     <link rel="stylesheet" href="assets/css/pages/shipping-plan.css?v=donenotice-20260811">
@@ -38,7 +38,7 @@
          the board's own root. Before that, linking it here restyled every page in the
          application — the `font:` shorthand on `body` alone replaced the font family and the
          line-height everywhere. -->
-    <link rel="stylesheet" href="assets/css/product-strategy-board.css?v=tgtrehydrate-r2ba2r5f5-20260919">
+    <link rel="stylesheet" href="assets/css/product-strategy-board.css?v=trseamrepair-r2ba2r5f5f1-20260919">
     <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
     <!-- ExcelJS — client-side XLSX generation for formatted export templates (TEMPLATE_UI_STANDARD_SPEC). -->
     <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js" defer></script>
@@ -423,7 +423,7 @@
          world clock, and the clock is the thing that must not wait. Moving a provider EARLIER cannot
          break a consumer; the reverse would. home.js reads nothing from any later file at parse time
          (verified against the derived depth-0 graph), so this position is safe as well as useful. -->
-    <script src="assets/js/pages/home.js?v=tgtrehydrate-r2ba2r5f5-20260919"></script>
+    <script src="assets/js/pages/home.js?v=trseamrepair-r2ba2r5f5f1-20260919"></script>
 
     <script src="assets/js/core/sticky-header.js?v=donenotice-20260811" defer></script>
     
@@ -433,9 +433,9 @@
     <!-- P1-B8D-R9 §5 — THE MANIFEST LOADS FIRST because the policy consults it. It is a generated
          directory listing (node tools/assets/build-repo-asset-manifest.js); the policy fails OPEN
          without it, so a page that drops this line keeps every photograph and loses only the 404 gate. -->
-    <script src="assets/js/utils/km-repo-asset-manifest.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
-    <script src="assets/js/utils/km-image-reference-policy.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
-    <script src="assets/js/utils/sku-overrides.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
+    <script src="assets/js/utils/km-repo-asset-manifest.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
+    <script src="assets/js/utils/km-image-reference-policy.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
+    <script src="assets/js/utils/sku-overrides.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
     <script src="assets/js/utils/data.js?v=donenotice-20260811" defer></script>
     <script src="assets/js/utils/scroll-sync.js?v=donenotice-20260811" defer></script>
     <script src="assets/js/utils/template-export.js?v=donenotice-20260811" defer></script>
@@ -443,30 +443,30 @@
     <script src="assets/js/utils/dual-layer-resize.js?v=donenotice-20260811" defer></script>
     <script src="assets/js/utils/tab-rail.js?v=donenotice-20260811" defer></script>
     <script src="assets/js/utils/multi-select-filter.js?v=donenotice-20260811" defer></script>
-    <script src="assets/js/utils/inventory-compat.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
+    <script src="assets/js/utils/inventory-compat.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
     <!-- F1-4B-FM5-R4T: shared manual-recalc transport-recovery contract (Inventory + Order Planning) -->
     <script src="assets/js/utils/gap-recalc-transport.js?v=donenotice-20260811" defer></script>
     <!-- F1-7N-FB-4C - the ONE canonical Country/Marketplace scope registry. Must load BEFORE any consumer
          (the scope modal and the Site Inventory page both read window.KM.scopeRegistry). -->
-    <script src="assets/js/core/scope-registry.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
+    <script src="assets/js/core/scope-registry.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
     <!-- F1-7N-FB-4C - the scoped shipping-method registry (Execution Plan Method picker owner). -->
     <script src="assets/js/core/boot-read-arbiter.js?v=fc1be3r4a2r1r6r5-bootarbiter-20260905" defer></script>
     <script src="assets/js/core/method-registry.js?v=fc1be3r4a2r1r6r4-method-registry-20260905" defer></script>
     <!-- F1-7N-FC-1B-E3-R4-A2-R1-R6-R2 §2: KMARC, the ONE answer to "is this persisted allocation-draft header
          part of this station's current plan". The page and the read-only census both consume it, which is what
          makes their two totals comparable instead of two independent opinions. Must load before the page. -->
-    <script src="assets/js/core/supply-planning-active-route-classification.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
-    <script src="assets/js/utils/scope-select-modal.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
+    <script src="assets/js/core/supply-planning-active-route-classification.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
+    <script src="assets/js/utils/scope-select-modal.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
     <!-- F1-7N-FB-4E-R4B-R1 §1: canonical FACTORY SITE ALLOCATION (KMFSA). ONE projection for Site Inventory and
          Order Planning — a physical factory pool divided across its eligible receiver sites by the frozen rolling
          4-month FC share, never the whole pool shown under every scope. Loaded before both consuming pages. -->
-    <script src="assets/js/core/supply-planning-factory-site-allocation.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
+    <script src="assets/js/core/supply-planning-factory-site-allocation.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
     <!-- F1-4B-FM5-R1: canonical cartonization owner (KMCALC) — KMREC delegates the actionable-total carton rounding here -->
     <script src="assets/js/core/supply-planning-calculations.js?v=donenotice-20260811" defer></script>
     <!-- R2B-A2-R5-F2 — the canonical Target Rule authority (KM.core.planningDemand.resolveTargetRule).
          Request Order and Inventory Replenishment used to carry their own matchers; both now call this,
          and Apps Script runs the byte-identical copy generated into 90_. -->
-    <script src="assets/js/core/supply-planning-planning-demand.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
+    <script src="assets/js/core/supply-planning-planning-demand.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
     <!-- F1-7N-FB-4B: READ-ONLY recommendation/order-qty authority + cartonization audit. Computes no quantity and changes no rule. -->
     <script src="assets/js/core/supply-planning-recommendation-audit.js?v=fb4b-20260826" defer></script>
     <!-- F1-4B-FM6: canonical Phase-1 Recommendation generator (KMREC) — reads materialized gaps → decision DTOs -->
@@ -482,13 +482,13 @@
          DIAGNOSIS rather than function - but the order is what makes the diagnosis available at all.
          Same-origin, no CDN, no runtime fetch. km-data-access.js is the portable backend boundary (§G): it
          holds the resource->action map and the two adapters, and it depends on the transport above it. -->
-    <script src="assets/js/api/km-transport.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
-    <script src="assets/js/api/km-data-access.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
-    <script src="assets/js/api/operation-system-db-api.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
+    <script src="assets/js/api/km-transport.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
+    <script src="assets/js/api/km-data-access.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
+    <script src="assets/js/api/operation-system-db-api.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
     <!-- Shared loading-state contract (F1-7B) — transport/UI only; no business data -->
     <script src="assets/js/api/km-loading-state.js?v=sku-read-path-20260826" defer></script>
     <!-- API Foundation (Phase API-1) — weeklyShipping READ now canonical; wraps the legacy transport otherwise -->
-    <script src="assets/js/api/km-api-foundation.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
+    <script src="assets/js/api/km-api-foundation.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
 
     <!-- ============================================================================================
          PRODUCT STRATEGY BOARD (PRODUCT-STRATEGY-P1-B7) — INSTALLED, NOT ACTIVATED
@@ -509,38 +509,38 @@
          NOT FROM docs/prototypes. The prototype consumes these production modules; production
          consumes nothing of the prototype's, and its preview fixture is not loaded, not
          referenced and not reachable. -->
-    <script src="assets/js/api/km-product-pricing-workspace.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
-    <script src="assets/js/api/km-product-pricing-adapter.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
-    <script src="assets/js/product-strategy/psb-data-contract.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
-    <script src="assets/js/product-strategy/km-product-strategy-site-universe.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
-    <script src="assets/js/product-strategy/km-product-strategy-live-adapter.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
-    <script src="assets/js/product-strategy/psb-selectors.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
-    <script src="assets/js/product-strategy/psb-chart-layout.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
+    <script src="assets/js/api/km-product-pricing-workspace.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
+    <script src="assets/js/api/km-product-pricing-adapter.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
+    <script src="assets/js/product-strategy/psb-data-contract.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
+    <script src="assets/js/product-strategy/km-product-strategy-site-universe.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
+    <script src="assets/js/product-strategy/km-product-strategy-live-adapter.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
+    <script src="assets/js/product-strategy/psb-selectors.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
+    <script src="assets/js/product-strategy/psb-chart-layout.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
     <!-- P1-B8B: the six views, declared once. The Operation System sidebar renders them as the
          children of a Product Strategy parent and the in-page tab rail renders them as tabs;
          both read this file, so the two lists cannot drift. psb-board-ui.js throws by name if
          it has not run. -->
-    <script src="assets/js/product-strategy/psb-views.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
-    <script src="assets/js/product-strategy/psb-board-ui.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
-    <script src="assets/js/pages/product-strategy-board.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
+    <script src="assets/js/product-strategy/psb-views.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
+    <script src="assets/js/product-strategy/psb-board-ui.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
+    <script src="assets/js/pages/product-strategy-board.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
 
     <!-- Pages -->
-    <script src="assets/js/pages/inventory-replenishment.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
-    <script src="assets/js/pages/factory-stock.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
-    <script src="assets/js/pages/overseas-stock.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
+    <script src="assets/js/pages/inventory-replenishment.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
+    <script src="assets/js/pages/factory-stock.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
+    <script src="assets/js/pages/overseas-stock.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
     <script src="assets/js/pages/overseas-ops-preview.js?v=donenotice-20260811" defer></script>
     <script src="assets/js/pages/overseas-inbound.js?v=donenotice-20260811" defer></script>
     <script src="assets/js/pages/overseas-outbound.js?v=donenotice-20260811" defer></script>
-    <script src="assets/js/pages/fc-summary.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
+    <script src="assets/js/pages/fc-summary.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
     <script src="assets/js/pages/forecast.js?v=donenotice-20260811" defer></script>
-    <script src="assets/js/pages/request-order.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
-    <script src="assets/js/pages/sku-details.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
-    <script src="assets/js/pages/shipping-plan.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
-    <script src="assets/js/pages/shipping-history.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
+    <script src="assets/js/pages/request-order.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
+    <script src="assets/js/pages/sku-details.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
+    <script src="assets/js/pages/shipping-plan.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
+    <script src="assets/js/pages/shipping-history.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
     <script src="assets/js/pages/supplychain.js?v=donenotice-20260811" defer></script>
-    <script src="assets/js/pages/sku-handbook.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
+    <script src="assets/js/pages/sku-handbook.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
     <script src="assets/js/i18n/sku-handbook.js?v=donenotice-20260811" defer></script>
-    <script src="assets/js/pages/campaign-risk.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
+    <script src="assets/js/pages/campaign-risk.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
     <!-- Procurement Layer (Phase 1) -->
     <script src="assets/js/pages/request-order-draft.js?v=donenotice-20260811" defer></script>
     <script src="assets/js/pages/purchase-order-overview.js?v=donenotice-20260811" defer></script>
@@ -579,7 +579,7 @@
     <script src="assets/js/pages/automation-schedule.js?v=donenotice-20260811" defer></script>
 
     <!-- App (Global) -->
-    <script src="assets/js/app.js?v=tgtrehydrate-r2ba2r5f5-20260919" defer></script>
+    <script src="assets/js/app.js?v=trseamrepair-r2ba2r5f5f1-20260919" defer></script>
     
     <!-- Shared Date Picker Modal -->
     <div class="fr-date-backdrop" id="frDateBackdrop"></div>

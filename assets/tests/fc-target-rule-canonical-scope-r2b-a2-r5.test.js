@@ -148,6 +148,9 @@ ok(CODE.indexOf('upcomingSkuData') === -1 && CODE.indexOf('runningSkuData') === 
 var TR_CODE = codeOnly(['_trRows_', '_trDataState_', '_trRowsFor_', '_trDistinct_', '_trRebuild_',
   '_trStrTok_', '_trNumTok_', '_trFingerprint_', '_trKeyOf_', '_trSelKey_', '_trExistingRules_',
   '_trSetApplyAll_', '_trHydrateFrom_', '_trResetToNew_', '_trProposedFingerprint_',
+  // R2B-A2-R5-F5-F1 — the canonical row-shape seam: the blank-months state and the borrowed
+  // normalization authority the receipt merge now goes through.
+  '_trBlankMonths_', '_trNormalizeCanonical_', '_fcGetTargetRules', '_getDbTargetRules',
   '_trClassify_', '_trSyncSession_', '_trRenderMode_', '_trMergeReceipt_',
   '_trOnChange_', '_trCompanyResolution_', '_trGate_', '_trApplyGate_', '_trBuildPayload_',
   'openAddTargetRuleModal', 'updateTargetScopeFields', 'saveNewTargetRule']
@@ -243,6 +246,8 @@ var TR_FNS = ['_trCanonScope_', '_trNorm_', '_trRows_', '_trDataState_', '_trDis
   '_trSel_', '_trActiveDims_', '_trFillSelect_', '_trRebuild_', '_trOnChange_', '_trCompanyResolution_',
   '_trStrTok_', '_trNumTok_', '_trFingerprint_', '_trKeyOf_', '_trSelKey_', '_trExistingRules_',
   '_trSetApplyAll_', '_trHydrateFrom_', '_trResetToNew_', '_trProposedFingerprint_',
+  // R2B-A2-R5-F5-F1 — the canonical row-shape seam.
+  '_trBlankMonths_', '_trNormalizeCanonical_', '_fcGetTargetRules', '_getDbTargetRules',
   '_trClassify_', '_trSyncSession_', '_trRenderMode_', '_trMergeReceipt_',
   '_trMonths_', '_trGate_', '_trApplyGate_', '_trBuildPayload_', '_trCommonMonthlyPct_',
   'openAddTargetRuleModal', 'updateTargetScopeFields', 'fillAllTargetMonths', 'saveNewTargetRule',
@@ -250,6 +255,8 @@ var TR_FNS = ['_trCanonScope_', '_trNorm_', '_trRows_', '_trDataState_', '_trDis
 var TR_VARS = ['_TR_ORDER_', '_TR_CTL_', '_TR_LABEL_', '_TR_SCOPE_FIELDS_', '_TR_SCOPES_',
   // R2B-A2-R5-F5 — the edit session and the version-token field lists.
   '_TR_FP_MONTHS_', '_TR_FP_FIELDS_', '_TR_FP_NUMERIC_', '_trSession_',
+  // R2B-A2-R5-F5-F1 — the sentinel that distinguishes 'could not read the rules' from 'there are none'.
+  '_TR_UNAVAILABLE_',
   '_FC_MONTH_KEYS', 'FC_VIEW_', 'FC_WRITE_', 'FC_MSG_'];
 
 function build(opts) {
@@ -278,6 +285,10 @@ function build(opts) {
   S._fcWriteFlight_ = {}; S._fcWriteState_ = {}; S._fcMeta_ = {};
   S._getDbFcRegularData = function () { S.apiCalls.push('_getDbFcRegularData'); return rows; };
   S._getDemoFcRegularData = function () { return opts.demoRows || []; };
+  // R2B-A2-R5-F5-F1 — _trExistingRules_ now reads the read model through _fcGetTargetRules. This suite
+  // exercises the cascade, not rule matching, so the model is present and EMPTY: zero rules is a real
+  // state that classifies as NEW, which is the behaviour every case here was already written against.
+  S._fcReadModel = opts.readModel || { fcTargetRules: [] };
   // A deliberately DIFFERENT label from the value, so any assertion that passes only because the two are
   // the same string would fail here.
   S._fcMarketplaceLabel = function (k) { return k ? k + ' · Store' : ''; };

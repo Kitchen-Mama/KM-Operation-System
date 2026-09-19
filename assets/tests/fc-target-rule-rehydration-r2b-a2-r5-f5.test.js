@@ -30,6 +30,7 @@ var REPO = path.join(__dirname, '..', '..');
 function read(rel) { return fs.readFileSync(path.join(REPO, rel), 'utf8'); }
 
 var FCS = read('assets/js/pages/fc-summary.js');
+var API = read('assets/js/api/operation-system-db-api.js');
 var GS14 = read('assets/specs/active/apps-script/14_fc_write_handlers.gs');
 var HTML = read('assets/html/pages/fc-summary.html');
 
@@ -68,6 +69,18 @@ function varSrc(src, name) {
     else if (ch === ';' && depth === 0) return src.slice(start, i + 1);
   }
   throw new Error('unterminated var: ' + name);
+}
+
+// `window.KM.DB.NAME = function (...) {...};` — an assignment, which fnSrc does not match.
+function assignFnSrc(src, dotted) {
+  var start = src.indexOf(dotted + ' = function');
+  if (start < 0) throw new Error('assignment not found: ' + dotted);
+  var b = src.indexOf('{', src.indexOf(')', start)), d = 0;
+  for (var i = b; i < src.length; i++) {
+    if (src[i] === '{') d++;
+    else if (src[i] === '}') { d--; if (d === 0) return src.slice(start, i + 1) + ';'; }
+  }
+  throw new Error('unbalanced: ' + dotted);
 }
 
 // ================================================================================================
@@ -175,7 +188,21 @@ function pageWorld(rules, sel, months) {
     controls['target-' + m] = (months && months[m] !== undefined) ? months[m] : 100;
   });
   var dom = makeDom(controls);
-  var ctx = vm.createContext({ document: dom, console: console, window: {} });
+  var win = { KM: { DB: {} } };
+  var ctx = vm.createContext({ document: dom, console: console, window: win });
+  // The real adapter and the real normalizer, lifted from the shipped API file, build the read model
+  // exactly as the browser does — normalized records with `.raw`, not canonical rows.
+  vm.runInContext([
+    fnSrc(API, 'normalizeFcTargetRuleRecord'),
+    fnSrc(API, 'normalizeFcRegularForecastRecord'),
+    fnSrc(API, 'normalizeFcSpecialEventRecord'),
+    fnSrc(API, 'normalizeMarketplaceRecord'),
+    'window.KM = window.KM || {}; window.KM.DB = window.KM.DB || {};',
+    assignFnSrc(API, 'window.KM.DB.adaptFcSummaryWorkspace')
+  ].join('\n'), ctx);
+  ctx.__PAYLOAD__ = { fcRegularForecast: [], fcSpecialEvents: [], marketplaces: [],
+                      fcTargetRules: rules || [] };
+  vm.runInContext('var _fcReadModel = window.KM.DB.adaptFcSummaryWorkspace(__PAYLOAD__);', ctx);
   vm.runInContext([
     varSrc(FCS, '_TR_ORDER_'), varSrc(FCS, '_TR_CTL_'), varSrc(FCS, '_TR_LABEL_'),
     varSrc(FCS, '_TR_SCOPE_FIELDS_'), varSrc(FCS, '_TR_SCOPES_'),
@@ -187,12 +214,18 @@ function pageWorld(rules, sel, months) {
     fnSrc(FCS, '_trCommonMonthlyPct_'), fnSrc(FCS, '_trMonths_'),
     fnSrc(FCS, '_trSetApplyAll_'), fnSrc(FCS, '_trHydrateFrom_'), fnSrc(FCS, '_trResetToNew_'),
     fnSrc(FCS, '_trProposedFingerprint_'), fnSrc(FCS, '_trClassify_'), fnSrc(FCS, '_trSyncSession_'),
-    fnSrc(FCS, '_trMergeReceipt_'),
-    // Stubs for the two authorities this slice does not exercise; both are proven elsewhere.
-    'function _fcUseDb() { return true; }',
-    'var __RULES__ = ' + JSON.stringify(rules) + ';',
-    'function _getDbTargetRules() { return __RULES__; }',
-    'function _trExistingRules_() { return __RULES__; }',
+    fnSrc(FCS, '_trMergeReceipt_'), fnSrc(FCS, '_trNormalizeCanonical_'),
+    fnSrc(FCS, '_trBlankMonths_'), varSrc(FCS, '_TR_UNAVAILABLE_'),
+    // the real chain, no longer stubbed
+    fnSrc(FCS, '_fcGetTargetRules'), fnSrc(FCS, '_getDbTargetRules'),
+    fnSrc(FCS, '_trExistingRules_'), fnSrc(FCS, '_fcUseDb'),
+    // R2B-A2-R5-F5-F1 — _getDbTargetRules and _trExistingRules_ USED TO BE STUBBED HERE, returning the
+    // canonical fixtures directly. That is the seam the defect lived in: the runtime hands the classifier
+    // DISPLAY rows, which carry no scope_type and no jan_pct, so both production rules keyed to a shared
+    // blank-scope key, matched nothing and were classified NEW. Stubbing the boundary under test made
+    // these 76 assertions pass over a page that did not work. Now the rows go through the REAL adapter
+    // and the REAL page accessors, above, and only the company authority — a different question, proven
+    // in its own suite — is still supplied.
     'function _trCompanyResolution_() { return { state: "RESOLVED", company: "ResUS", companies: ["ResUS"] }; }'
   ].join('\n'), ctx);
   return { ctx: ctx, dom: dom };
@@ -257,7 +290,10 @@ eq(clsDup.matches.length, 2, 'C7a and both conflicting rows are named');
 
 // ---- 8: no canonical data ----------------------------------------------------------------------
 var wNone = pageWorld(RULES, { scope: 'SERIES' });
-vm.runInContext('__RULES__ = null; function _trExistingRules_() { return null; }', wNone.ctx);
+// Demo mode, through the REAL _trExistingRules_ and the page's own live-or-demo switch: matching
+// is not applicable, which is the contract the mock rows depend on. Previously this was a stub of
+// _trExistingRules_ itself — the seam that hid the defect.
+vm.runInContext('function _fcUseDb() { return false; }', wNone.ctx);
 vm.runInContext('_trSession_.key = "";', wNone.ctx);
 eq(vm.runInContext('_trClassify_(_trSel_(), "ResUS").mode', wNone.ctx), 'NEW',
   'C8  with no canonical array the modal does not invent an existing rule');
@@ -291,15 +327,18 @@ eq(proposedFp(wDirty), vm.runInContext('_trSession_.originalFp', wDirty.ctx),
 // ---- receipt merge -----------------------------------------------------------------------------
 (function () {
   var w = pageWorld(RULES, { scope: 'SERIES' });
-  vm.runInContext('var _fcReadModel = { fcTargetRules: ' + JSON.stringify(RULES) + ' };', w.ctx);
   var updated = JSON.parse(JSON.stringify(ROW_SKU)); updated.oct_pct = 175;
   vm.runInContext('_trMergeReceipt_(' + JSON.stringify(updated) + ')', w.ctx);
   eq(vm.runInContext('_fcReadModel.fcTargetRules.length', w.ctx), 2, 'C13 a confirmed receipt REPLACES its row, never appends a twin');
-  eq(vm.runInContext('_fcReadModel.fcTargetRules.filter(function(r){return r.target_rule_id==="fc_target_rules-0E0E2EFC-9FF";})[0].oct_pct', w.ctx),
+  eq(vm.runInContext('_fcReadModel.fcTargetRules.filter(function(r){return r.ruleId==="fc_target_rules-0E0E2EFC-9FF";})[0].raw.oct_pct', w.ctx),
     175, 'C13a and the table sees the saved value immediately');
+  eq(vm.runInContext('_fcReadModel.fcTargetRules.every(function(r){return !!r.ruleId && !!r.raw;})', w.ctx),
+    true, 'C13a1 and the model stays ONE shape — every row normalized, every row carrying its canonical raw');
   var created = JSON.parse(JSON.stringify(ROW_SKU)); created.target_rule_id = 'fc_target_rules-NEW';
   vm.runInContext('_trMergeReceipt_(' + JSON.stringify(created) + ')', w.ctx);
   eq(vm.runInContext('_fcReadModel.fcTargetRules.length', w.ctx), 3, 'C13b a created rule is appended');
+  eq(vm.runInContext('_fcReadModel.fcTargetRules[2].ruleId', w.ctx), 'fc_target_rules-NEW',
+    'C13c under its own id, not a blank one');
 })();
 
 // ================================================================================================

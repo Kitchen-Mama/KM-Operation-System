@@ -3940,3 +3940,157 @@ KNOWN AND NOT FIXED
   · TEMP migration helper retirement remains forbidden until this repair is deployed and a live write
     is verified against it.
 ```
+
+## FC-SUMMARY-R2B-A2-R5-F5-F1 — THE MODAL HELD THE RIGHT ROWS IN THE WRONG SHAPE
+
+```
+BASE    3249749   release F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R13, live on both layers
+DATE    2026-09-19
+SCOPE   FRONTEND ONLY. fc-summary.js, one appended cache token, one new suite, three suites repaired.
+        No .gs file. No schema. No action. No DB write. No Apps Script sync. Release R13 UNCHANGED.
+```
+
+### SYMPTOM
+
+R13 went out backend-first and passed every gate it was given. Then both existing Target Rules —
+`SERIES/CO1100` and `SKU/CO1100-R`, the two rows the whole round was built around — opened in the modal
+as **New rule**, twelve months of 100, over values that were already stored. The repair shipped in
+`3249749` did not work in production, while 76 assertions and twelve killed mutants said it did.
+
+### IDENTITY WAS NOT THE PROBLEM, AND WAS CHECKED FIRST
+
+```
+production /exec   build_id R13 · mixed_deployment false · absent [] · stale [] · missing []
+                   14_ R13 · 63_ R13 · 13_ R12 · 90_ 830563ef… · 00_ R11 · 01_ R9 · 72_ R10
+                   25 required manifest rows present and matching
+Pages              commit 3249749, token tgtrehydrate-r2ba2r5f5-20260919, 38 refs / 0 stale / 0 misplaced
+the DB             scope_type "SERIES"/"SKU", scope_id "CO1100"/"CO1100-R", company "ResUS",
+                   country "US", marketplace "Amazon" — no whitespace, no case drift, no aliases
+the payload        fcTargetRules = 2 rows, still 2 after the adapter, still 2 at the classifier's door
+```
+
+Both gates PASSED and the data was correct. The deployment was converged; the client was wrong.
+
+### ROOT CAUSE — THREE ROW SHAPES, AND CODE WRITTEN AGAINST THE WRONG ONE
+
+A Target Rule exists in the page in three representations:
+
+```
+canonical    { target_rule_id, scope_type, scope_id, jan_pct … dec_pct }   sheet · server · receipt
+  ↓ normalizeFcTargetRuleRecord                     operation-system-db-api.js:810
+normalized   { ruleId, scopeType, scopeId, targetPercentage, raw }         the read model
+  ↓ _getDbTargetRules                               fc-summary.js
+display      { id, scope, year, …, percentages }                           the table
+```
+
+Every function F5 added reads **canonical** field names. `_trExistingRules_` handed them **display**
+rows. On a display row `scope_type` and `scope_id` are `undefined`, so both production rules keyed to
+the same blank-scope string and matched nothing:
+
+```
+key the modal builds          "2026|RESUS|US|AMAZON|SERIES|CO1100"
+key from the row it IS given  "2026|RESUS|US|AMAZON||"        <- both rows, every scope type
+key from the canonical row    "2026|RESUS|US|AMAZON|SERIES|CO1100"
+```
+
+Zero matches → NEW → `_trResetToNew_()` → twelve 100s.
+
+Two further breaks followed from the same cause. `_trHydrateFrom_` reads `row[m + '_pct']`, absent on a
+display row, so even a correct match would have hydrated twelve blanks. And `_trMergeReceipt_` matched
+the canonical `target_rule_id` against normalized records keyed on `ruleId` — never equal, so every
+confirmed save **appended**: two rows became three, the operator's change appeared not to have applied,
+and a fourth shape (a canonical row with no `.raw`) rendered in the table with an empty id and twelve
+100s. No such row exists in production only because no Save was pressed.
+
+The R13 backend was not implicated and in fact held the line: a fingerprint computed from a display row
+differs from the stored one, so a Save from that state would have been refused `STALE_TARGET_RULE_VERSION`
+rather than overwriting. The stale-write gate defended against its own client.
+
+### WHY 76 PASSING ASSERTIONS DID NOT SEE IT
+
+The F5 suite stubbed the function that was broken:
+
+```js
+'function _trExistingRules_() { return __RULES__; }'      // line 195, canonical-shaped fixtures
+```
+
+Replacing the boundary under test with a working one leaves nothing that can fail for the reason the
+product does. This is the same error as the `getEffectiveFcSafe` census in R2-F1 one round earlier:
+verify the unit, assume the seam. Two rounds, two seams, one habit.
+
+### THE FIX
+
+`_trExistingRules_` returns the read model's own **canonical** rows (`.raw`), so `_trKeyOf_`,
+`_trHydrateFrom_` and `_trFingerprint_` all read the shape they were written for. The key builder is
+NOT taught to guess across shapes — one that can read three shapes can no longer say two rules differ.
+
+It now answers three distinct states, and the difference between the last two is the data-safety point:
+
+```
+null                 Demo: matching not applicable (mock rows carry `percentages`, not jan_pct)
+_TR_UNAVAILABLE_     the canonical rows could not be read — NOT zero rows
+array (may be empty) the rows; empty is a real answer and NEW is correct
+```
+
+A row whose `.raw` is missing fails the whole read rather than being skipped, because a silently dropped
+row is how an existing rule becomes a new one. `DATA_UNAVAILABLE` disables Save, carries its own typed
+refusal, and blanks the months — it does not show the documented 100 defaults, because those are an
+answer and this state has none.
+
+`_trMergeReceipt_` normalizes the receipt through the existing authority — borrowed, not reimplemented,
+since a second normalizer would be a second definition of what a Target Rule is — matches on the model's
+own `ruleId`, replaces in place, appends only a genuinely new id, and refuses a blank one.
+
+### THE TEST THAT COULD HAVE CAUGHT IT
+
+`fc-target-rule-canonical-row-shape-seam-r2b-a2-r5-f5-f1.test.js` stubs nothing between the server
+payload and the classifier. It runs the real `KM.DB.adaptFcSummaryWorkspace`, the real
+`normalizeFcTargetRuleRecord`, the real `_fcGetTargetRules` / `_getDbTargetRules` / `_trExistingRules_`,
+and the real classifier, hydration, gate and merge — over the two actual production rows.
+
+The F5 suite's stub is gone, and three of its assertions that encoded the read model as canonical rows
+were re-pointed at the normalized model rather than deleted: they were right about the behaviour and
+wrong about the shape.
+
+One mutant is worth naming. `M8` first refused to die, because the blank-id refusal is guarded twice —
+once on the canonical id at entry, once on the normalized id after normalization — so mutating either
+alone changes nothing. Rather than drop the mutant or pretend it bit, the mutation now removes both, and
+a separate assertion records that each guard holds the line on its own.
+
+### VERIFICATION
+
+```
+new suite      fc-target-rule-canonical-row-shape-seam-r2b-a2-r5-f5-f1   107/0  12 mutants  0 survived
+de-stubbed     fc-target-rule-rehydration-r2b-a2-r5-f5                    78/0  12 mutants  0 survived
+route mount    route-mount-registration-boot-fc-r2-f1                     26/0   8 mutants  0 survived
+canonical scope fc-target-rule-canonical-scope-r2b-a2-r5                 115/0  13 mutants  0 survived
+consumer parity fc-target-rule-consumer-parity-r2b-a2-r5-f2              132/0  21 mutants  0 survived
+release stamp  fc-target-rule-release-stamp-r2b-a2-r5-f3                  57/0  13 mutants  0 survived
+schema repair  fc-target-rules-schema-repair-r2b-a2                      106/0  10 mutants  0 survived
+
+FULL SWEEP     498 suites - 16,442 assertions - 0 failed - 1,111 mutants - 0 survived - 0 probe errors
+               canonical FAIL hash f809dca8...76b1 = SEALED, 13 lines, unchanged
+               4 pre-existing non-zero exits, the same four as the baseline
+               three-axis drift vs the 3249749 tree: 0, and one suite added
+
+cache token    trseamrepair-r2ba2r5f5f1-20260919   38 refs / 0 stale / 0 misplaced
+```
+
+A FIFTH non-zero exit appeared on the first post-repair sweep and was fixed rather than accepted:
+`demo-mode-retired-f1-small` D8 forbids any test file from naming the retired `KM.DemoData` runtime,
+and both of my suites named it to drive the Demo contract. The repair is not a dynamically spelled
+name that slips past the check — it drives `_fcUseDb()`, the page's own surviving live-or-demo switch
+and the only thing `_trExistingRules_` consults.
+
+### DEPLOYMENT
+
+```
+GS_FILES_CHANGED                NONE
+APPS_SCRIPT_SYNC_REQUIRED       NO
+APPS_SCRIPT_NEW_VERSION_REQUIRED NO
+PRODUCTION_BACKEND_RELEASE      F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R13, UNCHANGED
+DB_SCHEMA_CHANGE                NONE
+DB_WRITES                       0
+FRONTEND_DEPLOY_REQUIRED        YES
+GIT_PUSH_REQUIRED               YES - USER-owned, after review
+```
