@@ -425,7 +425,14 @@ var ROUND_TOKENS = [
   // fc-summary.js, request-order.js and inventory-replenishment.js all changed, and
   // supply-planning-planning-demand.js joins index.html for the first time (the browser had no copy of
   // the resolver the server was already running).
-  'trcontract-r2ba2r5f2-20260919'];
+  'trcontract-r2ba2r5f2-20260919',
+  // INCIDENT-BOOT-FC-R2-F1 - THE FIX HAS TO REACH A BROWSER THAT ALREADY CACHED THE BROKEN FILE.
+  // fc-summary.js threw at load under the token above, so every client that opened FC Summary during the
+  // incident holds a cached copy that can never register its route. Serving the repair under the SAME token
+  // would leave exactly those users broken - the one population the fix exists for. The whole application
+  // set rotates together, because a token that moves for one member and not the others can still ship a
+  // half-updated page.
+  'fcroutemount-bootfcr2f1-20260919'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

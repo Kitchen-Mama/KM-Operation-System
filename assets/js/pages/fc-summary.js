@@ -1756,7 +1756,10 @@ function exportFcDataForSync(year) {
 // Console helper for debugging
 window.fcDebug = {
   validateIntegrity: validateDataIntegrity,
-  getEffectiveFc: getEffectiveFcSafe,
+  // R2-F1 — getEffectiveFc REMOVED. It named getEffectiveFcSafe, the head of the dead four-function
+  // chain deleted in cd3fd8f. The function went; this reference did not, and a bare identifier in an
+  // object literal is evaluated like any other — so this line threw ReferenceError at load and took the
+  // remaining 3,300 lines of the file with it, including the lifecycle.register that draws the page.
   exportData: exportFcDataForSync,
   showData: () => ({
     regular: fcRegularMock,

@@ -3707,3 +3707,97 @@ KNOWN AND NOT FIXED
   · Everything the R10E-CLOSE entry lists under KNOWN AND NOT FIXED is unchanged. This round measured no
     transport reliability and improves none of it.
 ```
+
+## INCIDENT-BOOT-FC-R2-F1 — FC SUMMARY MOUNTED TO A WHITE PAGE, AND THE NETWORK TAB LOOKED PERFECT
+
+```
+BASE    3f90cd4   release F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12, already live on both layers
+DATE    2026-09-19
+SCOPE   FRONTEND ONLY. One line of fc-summary.js, one appended cache token, one new test suite.
+        No .gs file. No schema. No action. No DB write. No Apps Script sync.
+
+SYMPTOM
+-------------------------------------------------------------------------------------------------------
+  Sidebar rendered, FC Summary went active, and the entire main content area stayed white: no title, no
+  Loading, no Retry, no error surface, no table shell. Not a loaded-empty model - nothing mounted at all.
+
+IDENTITY WAS NOT THE PROBLEM, AND WAS CHECKED FIRST
+-------------------------------------------------------------------------------------------------------
+  production /exec   build_id R12 - mixed_deployment false - absent [] - stale []
+                     13_, 14_, 63_ at R12; 90_ at content hash 830563ef...
+                     00_config still R11, 01_router R9, 72_ R10 (correctly unmoved)
+  Pages              all seven shipped files HTTP 200 and byte-identical to their 3f90cd4 git blobs
+                     token 38 refs / 0 stale / 0 misplaced; resolver once, deferred, before consumers
+                     Home Phase 0 still five blocking scripts
+
+  Both gates PASSED. The deployment was converged; the code was wrong.
+
+ROOT CAUSE — ONE LINE, AND A CENSUS THAT ASKED THE WRONG QUESTION
+-------------------------------------------------------------------------------------------------------
+  cd3fd8f deleted a dead four-function chain from fc-summary.js. The census that authorised the deletion
+  proved getEffectiveFcSafe had zero CALL SITES - it searched for `getEffectiveFcSafe(`. It did not see:
+
+      window.fcDebug = { ..., getEffectiveFc: getEffectiveFcSafe, ... };
+
+  which NAMES the function without calling it. A bare identifier in an object literal is evaluated like
+  any other expression, so the line threw ReferenceError at load.
+
+  WHY A WHITE PAGE AND NOT AN ERROR. A classic <script> that throws at top level is ABORTED THERE:
+  everything above the throw exists, everything below never comes into being, the browser logs one
+  console error and loads the next script as if nothing happened. The throw was at line 1759 of 5065.
+  KM.lifecycle.register('fc-summary-section', ...) is at line 5044. The section was therefore never
+  registered, switchTo found no controller, and the route went active with no mount to run. The absence
+  of any error surface follows from the same fact: the failure happened during script load, long before
+  there was a mounted route to report it on.
+
+  Proven by execution, not inferred: the committed bytes were loaded in index.html order into one global
+  and the throw, its line, and the empty registration list were observed directly.
+
+THE FIX
+-------------------------------------------------------------------------------------------------------
+  The dangling key is REMOVED rather than repointed - getEffectiveFcSafe was the head of the dead chain,
+  so there is nothing correct left to point it at. fc-summary.js now evaluates to completion and
+  registers fc-summary-section.
+
+  NOT DONE, DELIBERATELY: the blank-route-on-evaluation-failure gap is real and is NOT closed by this
+  commit. A route whose page script dies still goes active with no error surface. That is a change to the
+  shared navigation/lifecycle contract, the incident round conditioned it on a readiness race, and no race
+  exists here - the defect is FC-owned and so is the correction. Recorded as the next round.
+
+CACHE TOKEN — ROTATED, AND THE ROTATION IS THE POINT
+-------------------------------------------------------------------------------------------------------
+  OLD  trcontract-r2ba2r5f2-20260919
+  NEW  fcroutemount-bootfcr2f1-20260919      38 refs / 0 stale / 0 misplaced
+
+  Every client that opened FC Summary during the incident holds a cached fc-summary.js that can never
+  register its route. Shipping the repair under the SAME token would leave exactly those users broken -
+  the one population the fix exists for. The whole application set rotates together, because a token that
+  moves for one member and not the others can still ship a half-updated page.
+
+DEPLOYMENT
+-------------------------------------------------------------------------------------------------------
+  APPS_SCRIPT_SYNC_REQUIRED   NO    no .gs file changed; the backend is correct and stays at R12
+  FRONTEND_DEPLOY_REQUIRED    YES   index.html + assets/js/pages/fc-summary.js
+  BUNDLE_REBUILD_REQUIRED     NO
+  DB / Sheets / Drive writes  0
+  Rollback                    revert this commit. It restores the blank route, so rolling back is only
+                              correct if the repair itself is shown to cause a worse fault.
+
+VERIFICATION
+-------------------------------------------------------------------------------------------------------
+  route-mount-registration-boot-fc-r2-f1   26 passed  0 failed  8 mutants  0 survived   NEW
+    - loads the real script graph in index.html order into one global, as a browser does
+    - every shipped script evaluates to completion
+    - every section app.js can switchTo is registered BY EXECUTION, which also covers the page that
+      registers through a variable and would defeat any search for a string literal
+    - M1 reconstructs this incident byte-for-byte and requires it to be caught
+
+  full sweep  496 suites - 16,441 assertions - 0 failed - 1,111 mutants - 0 survived - 0 probe errors
+              canonical FAIL hash f809dca8...76b1 = SEALED - 4 pre-existing non-zero exits only
+
+KNOWN AND NOT FIXED
+-------------------------------------------------------------------------------------------------------
+  · A page script that throws still produces a white route with no error surface. Named above; next round.
+  · The controlled Target Rule write (R2B-A2-R5-RELEASE section 9) never happened and is still pending.
+  · TEMP migration helper retirement remains forbidden until that write and its readback pass.
+```
