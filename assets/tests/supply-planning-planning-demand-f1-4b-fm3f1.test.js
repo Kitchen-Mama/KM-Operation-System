@@ -23,13 +23,22 @@ function fcRows() { return [{ company: 'KM', country: 'US', marketplace: 'AMAZON
 // =============================================================================
 section('E · Target % (frozen matching + fallback)');
 ok(KMPD.resolveTargetPct([], SKU_META, SCOPE, '2026-09') === 100, 'E1 no rules → 100 (frozen default)');
-ok(KMPD.resolveTargetPct([{ sku: 'CO1100-R', company: 'KM', country: 'US', marketplace: 'AMAZON_US', year: 2026, sep_pct: 80 }], SKU_META, SCOPE, '2026-09') === 80, 'E2 matching rule sep_pct=80 → 80');
-ok(KMPD.resolveTargetPct([{ scope_id: 'CO1100-R', target_percentage: 90 }], SKU_META, SCOPE, '2026-09') === 90, 'E3 scope_id match, target_percentage fallback → 90');
-ok(KMPD.resolveTargetPct([{ series: 'CO', target_percentage: 70 }], SKU_META, SCOPE, '2026-09') === 70, 'E4 series-scoped rule matches via skuMeta.series');
-ok(KMPD.resolveTargetPct([{ sku: 'CO1100-R', country: 'ALL', target_percentage: 60 }], SKU_META, SCOPE, '2026-09') === 60, 'E5 country=ALL wildcard matches');
-ok(KMPD.resolveTargetPct([{ sku: 'CO1100-R', company: 'OTHER', target_percentage: 50 }], SKU_META, SCOPE, '2026-09') === 100, 'E6 company mismatch → no match → 100');
-ok(KMPD.resolveTargetPct([{ sku: 'CO1100-R', year: 2025, target_percentage: 50 }], SKU_META, SCOPE, '2026-09') === 100, 'E7 year mismatch → no match → 100');
-var adj = KMPD.adjustedRegularFc(fcRows(), [{ sku: 'CO1100-R', company: 'KM', country: 'US', marketplace: 'AMAZON_US', year: 2026, sep_pct: 80 }], SKU_META, SCOPE, SKU, '2026-09');
+// R2B-A2-R5-F2 — the rule now carries scope_type + scope_id. A row without them names no scope, and the
+// canonical business key is year|company|country|marketplace|scope_type|scope_id.
+ok(KMPD.resolveTargetPct([{ scope_type: 'SKU', scope_id: 'CO1100-R', sku: 'CO1100-R', company: 'KM', country: 'US', marketplace: 'AMAZON_US', year: 2026, sep_pct: 80 }], SKU_META, SCOPE, '2026-09') === 80, 'E2 matching rule sep_pct=80 → 80');
+ok(KMPD.resolveTargetPct([{ sku: 'CO1100-R', company: 'KM', country: 'US', marketplace: 'AMAZON_US', year: 2026, sep_pct: 80 }], SKU_META, SCOPE, '2026-09') === 100, 'E2b a rule with NO scope_type names no scope and matches nothing');
+// target_percentage is an authoring SUMMARY now, never runtime authority: procurement and Inventory
+// Replenishment used to read it INSTEAD of the month, so a rule with Jan 91 / Sep 80 applied 91 to September.
+ok(KMPD.resolveTargetPct([{ scope_type: 'SKU', scope_id: 'CO1100-R', company: 'KM', country: 'US', marketplace: 'AMAZON_US', year: 2026, target_percentage: 90 }], SKU_META, SCOPE, '2026-09') === 100, 'E3 target_percentage alone is NOT a runtime value → 100');
+ok(KMPD.resolveTargetPct([{ scope_type: 'SERIES', scope_id: 'CO', series: 'CO', company: 'KM', country: 'US', marketplace: 'AMAZON_US', year: 2026, sep_pct: 70 }], SKU_META, SCOPE, '2026-09') === 70, 'E4 a SERIES-scoped rule matches skuMeta.series');
+ok(KMPD.resolveTargetPct([{ series: 'CO', target_percentage: 70 }], SKU_META, SCOPE, '2026-09') === 100, 'E4b but one with no site identity at all matches nothing — blank is not a wildcard (D3)');
+// D2 — `All` is retired. It is not a wildcard, not an identity value and not a fallback.
+ok(KMPD.resolveTargetPct([{ scope_type: 'SKU', scope_id: 'CO1100-R', company: 'KM', country: 'ALL', marketplace: 'AMAZON_US', year: 2026, sep_pct: 60 }], SKU_META, SCOPE, '2026-09') === 100, 'E5 country=ALL is NOT a wildcard → 100');
+ok(KMPD.resolveTargetPct([{ scope_type: 'SKU', scope_id: 'CO1100-R', sku: 'CO1100-R', company: 'OTHER', country: 'US', marketplace: 'AMAZON_US', year: 2026, sep_pct: 50 }], SKU_META, SCOPE, '2026-09') === 100, 'E6 company mismatch → no match → 100');
+ok(KMPD.resolveTargetPct([{ scope_type: 'SKU', scope_id: 'CO1100-R', sku: 'CO1100-R', company: 'KM', country: 'US', marketplace: 'AMAZON_US', year: 2025, sep_pct: 50 }], SKU_META, SCOPE, '2026-09') === 100, 'E7 year mismatch → no match → 100');
+// and a duplicate canonical identity is a refusal, surfaced as null rather than a plausible 100
+ok(KMPD.resolveTargetPct([{ scope_type: 'SKU', scope_id: 'CO1100-R', sku: 'CO1100-R', company: 'KM', country: 'US', marketplace: 'AMAZON_US', year: 2026, sep_pct: 80 }, { scope_type: 'SKU', scope_id: 'CO1100-R', sku: 'CO1100-R', company: 'KM', country: 'US', marketplace: 'AMAZON_US', year: 2026, sep_pct: 80 }], SKU_META, SCOPE, '2026-09') === null, 'E7b duplicate business identity → null refusal, never a number');
+var adj = KMPD.adjustedRegularFc(fcRows(), [{ scope_type: 'SKU', scope_id: 'CO1100-R', sku: 'CO1100-R', company: 'KM', country: 'US', marketplace: 'AMAZON_US', year: 2026, sep_pct: 80 }], SKU_META, SCOPE, SKU, '2026-09');
 ok(adj.base === 7000 && adj.targetPct === 80 && adj.adjusted === 5600, 'E8 adjusted Sep = round(7000 × 80%) = 5600');
 ok(KMPD.adjustedRegularFc(fcRows(), [], SKU_META, SCOPE, SKU, '2026-12').adjusted === 0, 'E9 explicit 0 base @ 100% → 0 (valid zero, not missing)');
 ok(KMPD.adjustedRegularFc(fcRows(), [], SKU_META, SCOPE, SKU, '2027-01') === null, 'E10 missing month FC → null (never fabricated 0)');
@@ -44,7 +53,7 @@ ok(KMPD.specialEventFcForMonth([{ sku: 'CO1100-R', event_start_date: '2026-10-01
 ok(KMPD.specialEventFcForMonth([{ sku: 'OTHER', event_start_date: '2026-10-01', fc_qty: 500, status: 'active' }], SCOPE, SKU, '2026-09') === 0, 'F6 other-SKU event excluded (no cross-SKU leak)');
 
 section('canonical demand by month = adjusted regular + special (100% on special)');
-var dm = KMPD.planningDemandByMonth({ fcRegularRows: fcRows(), fcTargetRuleRows: [{ sku: 'CO1100-R', company: 'KM', country: 'US', marketplace: 'AMAZON_US', year: 2026, sep_pct: 80 }], fcSpecialEventRows: evtSep, scope: SCOPE, sku: SKU, skuMeta: SKU_META, months: ['2026-09', '2026-10', '2026-11', '2026-12'] });
+var dm = KMPD.planningDemandByMonth({ fcRegularRows: fcRows(), fcTargetRuleRows: [{ scope_type: 'SKU', scope_id: 'CO1100-R', sku: 'CO1100-R', company: 'KM', country: 'US', marketplace: 'AMAZON_US', year: 2026, sep_pct: 80 }], fcSpecialEventRows: evtSep, scope: SCOPE, sku: SKU, skuMeta: SKU_META, months: ['2026-09', '2026-10', '2026-11', '2026-12'] });
 ok(dm['2026-09'].adjustedRegular === 5600 && dm['2026-09'].special === 500 && dm['2026-09'].demand === 6100, 'DM1 Sep demand = adjusted 5600 + special 500 = 6100 (special NOT target-adjusted)');
 ok(dm['2026-10'].demand === 4282 && dm['2026-10'].targetPct === 100, 'DM2 Oct = 4282 @ 100% (no rule matches Oct → default)');
 ok(!('2027-01' in dm), 'DM3 month without regular FC omitted (caller surfaces truthfully)');

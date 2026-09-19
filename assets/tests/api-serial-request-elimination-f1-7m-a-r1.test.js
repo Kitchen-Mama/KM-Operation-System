@@ -140,8 +140,19 @@ eval(extractFn(RO, '_opLoadFirstLayerComposer_'));
 
   // ===================================================================================================================
   console.log('\n== FC Special Event (BATCH_ENDPOINT_REQUIRED): unlocked appendRow writer; serial loop UNCHANGED ==');
-  // The FC layer-3 writer is UNLOCKED (no LockService in 14_fc_write_handlers.gs) and appends via sheet.appendRow.
-  ok(GS.indexOf('LockService') === -1, 'FC writer file 14_fc_write_handlers.gs uses NO LockService (unlocked writer)');
+  // FC-SUMMARY-R2B-A2-R5-F2 — THIS RECORDED A DEFECT, NOT A DESIGN, AND THE DEFECT IS NOW FIXED.
+  //
+  // The file was unlocked, so two concurrent Target Rule creates both read "no matching row" and both
+  // appended — and a duplicate canonical business identity now disables the rule in every resolver rather
+  // than merely disagreeing. §4 of R5-F2 requires a script lock on that write, so the Target Rule path takes
+  // one. The Special Event writer this section is about is UNCHANGED and still appends unlocked, which is
+  // what the batch-endpoint work will address; that is asserted directly below rather than through the
+  // absence of a string anywhere in the file.
+  ok(/handleUpsertFcTargetRule_[\s\S]*?LockService\.getScriptLock\(\)/.test(GS),
+    'FC Target Rule writer TAKES a script lock (R5-F2 §4 — two concurrent creates must not both append)');
+  var evtFn = GS.slice(GS.indexOf('function handleUpsertFcSpecialEvent_'), GS.indexOf('function handleDeleteFcSpecialEvent_'));
+  ok(evtFn.indexOf('LockService') === -1,
+    'FC Special Event writer is still UNLOCKED and appends via sheet.appendRow — unchanged by that round');
   ok(/sheet\.appendRow\(/.test(GS), 'FC writer creates rows via sheet.appendRow (concurrent appends can race without a lock)');
   // The router\'s only LockService is the recommendation bridge — it does NOT wrap the FC upsert.
   ok(/upsertFcSpecialEvent/.test(ROUTER) && /handleUpsertFcSpecialEvent_/.test(ROUTER), 'router dispatches upsertFcSpecialEvent → handleUpsertFcSpecialEvent_ (no per-write lock wrapper)');

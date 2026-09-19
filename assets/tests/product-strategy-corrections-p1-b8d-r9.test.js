@@ -789,8 +789,12 @@ mut('K16 an inventory number is changed with nothing to back it', function () {
      matters — the stated number stops agreeing with the tree it claims to describe. An earlier
      version of this mutant deleted a table row and asked whether a string was still somewhere in
      the file, which three other lines answered for it. It survived, correctly. */
+  /* FC-SUMMARY-R2B-A2-R5-F2 — 79 became 80. index.html gained one script:
+     assets/js/core/supply-planning-planning-demand.js, the canonical Target Rule resolver, which the
+     browser had never loaded even though Apps Script has always run it. The mutant's anchor moves with
+     the census it mutates — an anchor that stops matching is a mutant that silently stops biting. */
   return withSrc('docs/planning/S_SERIES_FRONTEND_API_MIGRATION_INVENTORY.md',
-    'LOADED_SCRIPTS: 79', 'LOADED_SCRIPTS: 78', function () {
+    'LOADED_SCRIPTS: 80', 'LOADED_SCRIPTS: 78', function () {
       var c = read('docs/planning/S_SERIES_FRONTEND_API_MIGRATION_INVENTORY.md');
       var n = /LOADED_SCRIPTS:\s*(\d+)/.exec(c);
       return !!n && Number(n[1]) !== scripts;

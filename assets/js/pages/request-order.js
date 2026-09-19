@@ -2013,7 +2013,8 @@ function renderExpandPanel(item) {
   var ffRows = next3.map(function (mo) {
     var fcQty = fcForMonth(mo);
     var baseDisp = (fcQty == null) ? '--' : _roFmt(fcQty);
-    var tgtDisp = (fcQty == null) ? '--' : (_roTargetPct(item, mo) + '%');
+    var _tp = (fcQty == null) ? null : _roTargetPct(item, mo);
+    var tgtDisp = (_tp === null) ? '--' : (_tp + '%');      // null = refused, never rendered as a number
     var evs = _roEventsForPrepMonth(scopedEvents, mo);
     var span = Math.max(1, evs.length);
     var lead = '<td class="ff-month" rowspan="' + span + '">' + _roEsc(mo.label) + '</td>' +
@@ -2086,7 +2087,8 @@ function renderExpandPanel(item) {
   // value, never a fake 0). T1=Month+1 … T4=Month+4 (T4 = planning visibility only, never a Request Bucket).
   function _roDemandForMonth(mo) {
     var fc = fcForMonth(mo);
-    var basic = (fc == null) ? null : Math.round(fc * (_roTargetPct(item, mo) / 100));
+    var _bp = (fc == null) ? null : _roTargetPct(item, mo);
+    var basic = (fc == null || _bp === null) ? null : Math.round(fc * (_bp / 100));
     var evs = _roEventsForPrepMonth(scopedEvents, mo);
     var special = evs.reduce(function (s, e) { return s + (e.qty > 0 ? e.qty : 0); }, 0);
     if (basic == null && !special) return null;
@@ -2257,29 +2259,33 @@ function renderExpandPanel(item) {
 // Target % for a Basic-FC month: best-available fc_target_rules match → its % (month-specific if the
 // rule carries jan_pct..dec_pct), else the rule's target_percentage, else 100 (placeholder). No complex
 // priority logic (guardrail). mo = { idx, year }.
-function _roTargetPct(item, mo) {
+// R2B-A2-R5-F2 §3 — Request Order no longer resolves Target Rules itself. What used to be here ignored
+// `scope_type` and OR'd scope_id across sku/series/category, so a SERIES rule whose scope_id equalled a SKU
+// string matched a SKU request; it honoured `All` for country and marketplace; it treated a blank company as
+// a wildcard; and it took the FIRST matching row, so a Category rule could outrank a SKU rule by sitting
+// higher in the sheet. The contract is FC_SUMMARY_SPEC §4.1 and the implementation is the canonical
+// authority — the same code the Apps Script bundle runs.
+//
+// Returns a percentage, or NULL when resolution refuses (duplicate business identity, unusable site
+// identity, authority not loaded). Callers render '--' for null rather than inventing 100.
+function _roTargetRules_() {
   var DB = (window.KM && window.KM.DB) || {};
   var rules = (DB.getFcTargetRules && DB.getFcTargetRules()) || [];
-  if (!rules.length) return 100;
-  var monKey = RO_MONTH_KEYS[mo.idx] + '_pct';
-  function u(v) { return _roUpper(v); }
-  var match = rules.filter(function(r) {
-    var raw = r.raw || {};
-    var scopeVal = r.scopeId || raw.sku || raw.series || raw.category || '';
-    var scopeHit = u(scopeVal) === u(item.sku) || u(scopeVal) === u(item.series) || u(scopeVal) === u(item.category) ||
-      u(raw.sku) === u(item.sku) || u(raw.series) === u(item.series) || u(raw.category) === u(item.category);
-    if (!scopeHit) return false;
-    if (r.company && item.company && u(r.company) !== u(item.company)) return false;
-    if (r.country && item.country && u(r.country) !== u(item.country) && u(r.country) !== 'ALL') return false;
-    if (r.marketplace && item.marketplace && _roLower(r.marketplace) !== _roLower(item.marketplace) && u(r.marketplace) !== 'ALL') return false;
-    if (raw.year && mo.year && String(raw.year) !== String(mo.year)) return false;
-    return true;
-  })[0];
-  if (!match) return 100;
-  var raw = match.raw || {};
-  if (raw[monKey] != null && raw[monKey] !== '') { var mp = parseFloat(raw[monKey]); if (!isNaN(mp)) return mp; }
-  if (match.targetPercentage != null && !isNaN(match.targetPercentage)) return match.targetPercentage;
-  return 100;
+  // the one adapter: this page holds NORMALISED records, the resolver reads raw snake_case rows
+  return rules.map(function (r) { return (r && r.raw) ? r.raw : r; });
+}
+function _roTargetAuthority_() {
+  var A = (window.KM && window.KM.core) ? window.KM.core.planningDemand : null;
+  return (A && typeof A.resolveTargetRule === 'function') ? A : null;
+}
+function _roTargetPct(item, mo) {
+  var A = _roTargetAuthority_();
+  if (!A) return null;
+  var res = A.resolveTargetRule(_roTargetRules_(), {
+    year: mo.year, company: item.company, country: item.country, marketplace: item.marketplace,
+    category: item.category, series: item.series, sku: item.sku, month: (mo.idx + 1)
+  });
+  return res.targetPct;
 }
 
 // Order Allocation local-state helpers (persisted on Send Request; see Part 3).
@@ -2971,6 +2977,19 @@ function _roBindEditModal(saveFn, changedTables) {
 // Canonical Target % write (per year in the N+1..N+3 window). Reuses upsertFcTargetRule. Round-trips the
 // existing SKU-scope rule's target_rule_id (dedupe), seeds the other 11 months from the current effective
 // target (no regression), overrides only the edited months. Scope = SKU + row marketplace + year.
+// The common monthly value when all twelve agree, else '' (blank). Shared shape with FC Summary's writer.
+function _roCommonMonthlyPct_(payload) {
+  var first = null;
+  for (var i = 0; i < RO_MONTH_KEYS.length; i++) {
+    var v = payload[RO_MONTH_KEYS[i] + '_pct'];
+    if (v === undefined || v === null || v === '') return '';
+    var n = Number(v);
+    if (!isFinite(n)) return '';
+    if (first === null) first = n; else if (n !== first) return '';
+  }
+  return first === null ? '' : first;
+}
+
 function _roSaveTargetPct(item, edits) {
   var DB = (window.KM && window.KM.DB) || {};
   if (!DB.upsertFcTargetRule) throw new Error('Target rule write API not available.');
@@ -2987,13 +3006,30 @@ function _roSaveTargetPct(item, edits) {
       var scopeVal = r.scopeId || raw.sku || '';
       if (_roUpper(scopeVal) !== _roUpper(item.sku) && _roUpper(raw.sku) !== _roUpper(item.sku)) return false;
       if (String(raw.year || '') !== String(yr)) return false;
-      return item.marketplace ? (_roLower(r.marketplace) === _roLower(item.marketplace)) : (!r.marketplace);
+      // FULL site identity. Matching on marketplace alone could find — and then UPDATE — a rule that
+      // belongs to another company or country, silently repointing it.
+      if (_roUpper(raw.company || r.company) !== _roUpper(item.company)) return false;
+      if (_roUpper(raw.country || r.country) !== _roUpper(item.country)) return false;
+      if (_roUpper(raw.marketplace || r.marketplace) !== _roUpper(item.marketplace)) return false;
+      return true;
     })[0];
-    var payload = { scope_type: 'SKU', scope_id: item.sku, year: parseInt(yr, 10), marketplace: item.marketplace || '', category: '', series: '', sku: item.sku, actor: 'request-order' };
+    // Canonical business key: year | company | country | marketplace | scope_type | scope_id. company and
+    // country were simply absent before, and a blank company is a WILDCARD to the resolver.
+    var payload = { scope_type: 'SKU', scope_id: item.sku, year: parseInt(yr, 10),
+      company: item.company || '', country: item.country || '', marketplace: item.marketplace || '',
+      category: item.category || '', series: item.series || '', sku: item.sku, actor: 'request-order' };
     if (existing && existing.ruleId) payload.target_rule_id = existing.ruleId;
-    RO_MONTH_KEYS.forEach(function(mk, idx) { payload[mk + '_pct'] = _roTargetPct(item, { idx: idx, year: parseInt(yr, 10) }); });
+    // Seeding the untouched months from the CURRENT effective target. A refusal seeds nothing rather than
+    // writing a fabricated 100 into eleven months.
+    RO_MONTH_KEYS.forEach(function(mk, idx) {
+      var seed = _roTargetPct(item, { idx: idx, year: parseInt(yr, 10) });
+      if (seed !== null) payload[mk + '_pct'] = seed;
+    });
     byYear[yr].forEach(function(e) { payload[RO_MONTH_KEYS[e.mo.idx] + '_pct'] = e.val; });
-    payload.target_percentage = payload.jan_pct;
+    // R2B-A2-R5-F2 — target_percentage is an authoring SUMMARY, never runtime authority: the common value
+    // when all twelve months agree, blank when they differ. It used to be the January alias, and two
+    // consumers read it in place of a month, so a rule with Jan 91 / Mar 93 applied 91% to March.
+    payload.target_percentage = _roCommonMonthlyPct_(payload);
     return payload;
   });
   return payloads.reduce(function(chain, pl) { return chain.then(function() { return DB.upsertFcTargetRule(pl); }); }, Promise.resolve());
@@ -3030,7 +3066,7 @@ function handleEditTargetPct(sku, country, marketplace) {
   var item = _roFindItem(sku, country, marketplace);
   var next3 = _roNextMonths(3);
   var rowsHtml = next3.map(function(mo, i) {
-    var cur = _roTargetPct(item, mo);
+    var cur = _roTargetPct(item, mo);   // null when the resolver refuses
     return '<tr><td>' + mo.label + '</td><td>' + cur + '%</td><td><input type="number" min="0" step="1" class="ro-edit-input" id="ro-tgt-new-' + i + '" value="' + cur + '" aria-label="New Target % for ' + _roEsc(mo.label) + '"></td></tr>';
   }).join('');
   var body =

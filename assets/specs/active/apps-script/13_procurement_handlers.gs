@@ -367,51 +367,46 @@ function procurementMarketplaceSkuMap_(ss) {
   return map;
 }
 
-/** fc_target_rules → a resolver fn(sku, series, category) => multiplier (priority SKU > Series > Category
- *  > default 1.0). target_percentage is normalized to a multiplier: >1 treated as percent (÷100), else
- *  as a fraction; blank/absent → 1.0 (100%). Missing-tab safe. */
-function procurementTargetRuleResolver_(ss) {
-  var bySku = {}, bySeries = {}, byCat = {};
+/** fc_target_rules → the RAW rows, for KMPD.resolveTargetRule. Missing-tab safe.
+ *
+ *  R2B-A2-R5-F2 §3 — this used to BE a resolver, and it was the most divergent of the five. It ignored
+ *  year, company, country and marketplace entirely, so a rule written for one site applied to every site
+ *  and every year. It never read a monthly column: it keyed on `target_percentage`, so a rule carrying
+ *  Jan 91 … Dec 102 applied 91% to every month here while supply planning applied 93% to March. And it
+ *  built a map keyed on scope_id, so a duplicate silently overwrote rather than refusing.
+ *
+ *  Resolution now happens in ONE place — KMPD.resolveTargetRule, the generated global from 90_, which is
+ *  byte-identical to assets/js/core/supply-planning-planning-demand.js. This function only reads rows. */
+function procurementTargetRuleRows_(ss) {
   var sh = ss.getSheetByName('fc_target_rules');
-  function toMult(v) {
-    if (v === '' || v == null) return null;
-    var n = parseFloat(v); if (isNaN(n)) return null;
-    return n > 1 ? (n / 100) : n;   // 80 -> 0.8 ; 0.8 -> 0.8 ; 100 -> 1.0
-  }
-  if (sh) {
-    var data = sh.getDataRange().getValues();
-    if (data.length >= 2) {
-      var h = data[0].map(function (x) { return String(x).trim().toLowerCase(); });
-      var cScope = h.indexOf('scope_type'); if (cScope === -1) cScope = h.indexOf('scope'); if (cScope === -1) cScope = h.indexOf('level');
-      var cScopeId = h.indexOf('scope_id');
-      var cSku = h.indexOf('sku'), cSeries = h.indexOf('series'), cCat = h.indexOf('category');
-      var cPct = h.indexOf('target_percentage'); if (cPct === -1) cPct = h.indexOf('target_rate'); if (cPct === -1) cPct = h.indexOf('target'); if (cPct === -1) cPct = h.indexOf('percentage');
-      for (var i = 1; i < data.length; i++) {
-        var mult = cPct !== -1 ? toMult(data[i][cPct]) : null;
-        if (mult == null) continue;
-        var scope = cScope !== -1 ? String(data[i][cScope]).trim().toLowerCase() : '';
-        var scopeId = cScopeId !== -1 ? procSrcNorm_(data[i][cScopeId]) : '';
-        // Resolve the target key: prefer explicit scope_type + scope_id; else infer from sku/series/category columns.
-        if (scope === 'sku' || (!scope && cSku !== -1 && procSrcNorm_(data[i][cSku]))) { bySku[(scopeId || procSrcNorm_(data[i][cSku])).toUpperCase()] = mult; }
-        else if (scope === 'series' || (!scope && cSeries !== -1 && procSrcNorm_(data[i][cSeries]))) { bySeries[(scopeId || procSrcNorm_(data[i][cSeries])).toUpperCase()] = mult; }
-        else if (scope === 'category' || (!scope && cCat !== -1 && procSrcNorm_(data[i][cCat]))) { byCat[(scopeId || procSrcNorm_(data[i][cCat])).toUpperCase()] = mult; }
-        else if (scopeId) { bySku[scopeId.toUpperCase()] = mult; }   // best-effort: bare scope_id treated as SKU
-      }
+  if (!sh) return [];
+  var data = sh.getDataRange().getValues();
+  if (!data || data.length < 2) return [];
+  var h = data[0].map(function (x) { return String(x).trim().toLowerCase(); });
+  var out = [];
+  for (var i = 1; i < data.length; i++) {
+    var blank = true, o = {};
+    for (var c = 0; c < h.length; c++) {
+      if (!h[c]) continue;
+      o[h[c]] = data[i][c];
+      if (String(data[i][c]).trim() !== '') blank = false;
     }
+    if (!blank) out.push(o);
   }
-  return function (sku, series, category) {
-    var s = String(sku || '').trim().toUpperCase(), se = String(series || '').trim().toUpperCase(), c = String(category || '').trim().toUpperCase();
-    if (s && bySku[s] != null) return bySku[s];
-    if (se && bySeries[se] != null) return bySeries[se];
-    if (c && byCat[c] != null) return byCat[c];
-    return 1.0;   // default 100%
-  };
+  return out;
+}
+
+/** The canonical percentage for one site + scope + month, or null when resolution refuses. */
+function procurementTargetPct_(ruleRows, req) {
+  if (typeof KMPD === 'undefined' || !KMPD || typeof KMPD.resolveTargetRule !== 'function') return null;
+  return KMPD.resolveTargetRule(ruleRows, req).targetPct;
 }
 
 /** fc_regular_forecast → map sku|company|country|marketplace -> summed next-3-month forecast with the
- *  target multiplier applied (SKU>Series>Category>100%). "Next 3 months" = the three calendar months
+ *  target percentage applied PER MONTH via KMPD.resolveTargetRule (SKU>Series>Category>100%, exact site
+ *  identity). "Next 3 months" = the three calendar months
  *  AFTER the current month (M+1, M+2, M+3), matched against each forecast row's `year`. Missing-tab safe. */
-function procurementForecastNext3Map_(ss, targetResolver) {
+function procurementForecastNext3Map_(ss, targetRuleRows) {
   var map = {};
   var sh = ss.getSheetByName('fc_regular_forecast');
   if (!sh) return map;
@@ -429,13 +424,29 @@ function procurementForecastNext3Map_(ss, targetResolver) {
   for (var k = 1; k <= 3; k++) { var mm = mNow + k; windows.push({ year: yNow + Math.floor(mm / 12), mi: ((mm % 12) + 12) % 12 }); }
   for (var i = 1; i < data.length; i++) {
     var rowYear = cYear !== -1 ? parseInt(String(data[i][cYear]).trim(), 10) : NaN;
-    var mult = targetResolver(cS !== -1 ? data[i][cS] : '', cSeries !== -1 ? data[i][cSeries] : '', cCat !== -1 ? data[i][cCat] : '');
     var add = 0;
     for (var w = 0; w < windows.length; w++) {
       // If the forecast rows carry a year, only add the month when the row's year matches the window's year.
       if (!isNaN(rowYear) && rowYear !== windows[w].year) continue;
       var mc = monthCol[windows[w].mi];
-      if (mc !== -1) add += (parseFloat(data[i][mc]) || 0) * mult;
+      if (mc === -1) continue;
+      // EACH month resolves its own percentage, against THIS row's full site identity. The old code
+      // resolved once per row, ignored the site entirely and used target_percentage for all three months.
+      var pct = procurementTargetPct_(targetRuleRows, {
+        year: String(windows[w].year),
+        company: cC !== -1 ? data[i][cC] : '',
+        country: cCo !== -1 ? data[i][cCo] : '',
+        marketplace: cM !== -1 ? data[i][cM] : '',
+        category: cCat !== -1 ? data[i][cCat] : '',
+        series: cSeries !== -1 ? data[i][cSeries] : '',
+        sku: cS !== -1 ? data[i][cS] : '',
+        month: windows[w].mi + 1
+      });
+      // A refusal contributes nothing rather than a number derived from a rule the system could not
+      // identify. Refusals are duplicate business identity or an unusable site identity — both are
+      // data faults a planner must fix, not conditions to paper over with 100%.
+      if (pct === null) continue;
+      add += (parseFloat(data[i][mc]) || 0) * (pct / 100);
     }
     if (!add) continue;
     var key = procSrcKey_(data[i][cS], cC !== -1 ? data[i][cC] : '', cCo !== -1 ? data[i][cCo] : '', cM !== -1 ? data[i][cM] : '');
@@ -751,8 +762,8 @@ function roCreateRequestOrderCore_(body, execKey) {
 
   // request_order_line_sources mapping inputs (built once; all missing-tab / missing-header safe).
   var mskuMap = procurementMarketplaceSkuMap_(ss);
-  var targetResolver = procurementTargetRuleResolver_(ss);
-  var forecastMap = procurementForecastNext3Map_(ss, targetResolver);
+  var targetRuleRows = procurementTargetRuleRows_(ss);
+  var forecastMap = procurementForecastNext3Map_(ss, targetRuleRows);
   var invMaps = procurementInventoryStockMaps_(ss);
   var otwMaps = procurementOnTheWayMaps_(ss);
 

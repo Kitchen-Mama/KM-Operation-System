@@ -65,7 +65,7 @@ var EXPECTED_EXTRA = ['scope', 'status', 'priority'];
 // FAKE SPREADSHEET — records writes, refuses anything structural that this round must never perform.
 // =================================================================================================
 function makeSheet(name, values) {
-  var appended = [], setCells = [], headerWrites = [];
+  var appended = [], setCells = [], headerWrites = [], rangeWrites = [];
   var s = {
     getName: function () { return name; },
     getLastRow: function () { return values.length === 1 && values[0].length === 0 ? 0 : values.length; },
@@ -87,10 +87,19 @@ function makeSheet(name, values) {
           values[r - 1][c - 1] = v;
         },
         setValues: function (vals) {
-          if (r !== 1) throw new Error('RANGE_SETVALUES_OUTSIDE_HEADER');
-          // the migration appends header cells to the RIGHT of the existing header, never over it
-          headerWrites.push({ startCol: c, values: vals[0].slice() });
-          for (var j = 0; j < vals[0].length; j++) values[0][(c - 1) + j] = vals[0][j];
+          if (r === 1) {
+            // the migration appends header cells to the RIGHT of the existing header, never over it
+            headerWrites.push({ startCol: c, values: vals[0].slice() });
+            for (var j = 0; j < vals[0].length; j++) values[0][(c - 1) + j] = vals[0][j];
+            return;
+          }
+          // R2B-A2-R5-F2 — a BODY-ROW range write. This used to throw, because the only setValues this file
+          // performed was the migration's header append. The Target Rule update now writes the whole row in
+          // ONE call instead of ~28 single-cell setValue calls, so an interruption cannot leave a row
+          // half-written with a new marketplace and an old percentage. The header rule above is unchanged.
+          rangeWrites.push({ row: r, startCol: c, values: vals[0].slice() });
+          while (values.length < r) values.push(new Array(values[0].length).fill(''));
+          for (var k = 0; k < vals[0].length; k++) values[r - 1][(c - 1) + k] = vals[0][k];
         }
       };
     },
@@ -98,7 +107,7 @@ function makeSheet(name, values) {
     deleteRow: function (i) { values.splice(i - 1, 1); s.__deleted.push(i); },
     insertColumnsAfter: function () { throw new Error('INSERT_COLUMNS_ATTEMPTED'); }
   };
-  s.__appended = appended; s.__setCells = setCells; s.__headerWrites = headerWrites;
+  s.__appended = appended; s.__setCells = setCells; s.__headerWrites = headerWrites; s.__rangeWrites = rangeWrites;
   s.__values = values; s.__deleted = [];
   return s;
 }
@@ -118,10 +127,15 @@ function makeSs(tables, id) {
 // =================================================================================================
 var ADAPTER_FNS = ['prodSafetyBundle_', 'prodExpectedDbId_', 'prodSchemaError_', 'prodAssertDbTarget_',
   'prodRequireSheet_', 'prodRequireColumns_', 'prodMigrateAppendColumns_'];
+// R2B-A2-R5-F2 — the Target Rule write got its own identity-aware handler (canonical business key,
+// LockService, duplicate and identity-mismatch refusals), so its constants and helpers join the sandbox.
 var G14_VARS = ['FC_SPECIAL_EVENTS_HEADERS_', 'FC_TARGET_RULES_HEADERS_', 'FC_SCHEMA_ORDERED_',
-  'FC_SCHEMA_BY_NAME_', 'FC_SCHEMA_BY_NAME_TABLES_'];
+  'FC_SCHEMA_BY_NAME_', 'FC_SCHEMA_BY_NAME_TABLES_',
+  'FC_TR_SCOPE_TYPES_', 'FC_TR_RETIRED_IDENTITY_', 'FC_TR_KEY_FIELDS_', 'FC_TR_LOCK_MS_'];
 var G14_FNS = ['fcWriteSchemaByNameApproved_', 'fcWriteTimestamp_', 'fcWriteEnsureSheet_', 'fcWriteEnsureColumns_',
   'fcWriteReadSheet_', 'fcWriteAppendByHeader_', 'fcWriteUpsert_', 'fcWriteDelete_',
+  'fcTrStr_', 'fcTrUp_', 'fcTrScopeType_', 'fcTrIdentityUsable_', 'fcTrBusinessKey_',
+  'fcTrScopeDimension_', 'fcTrValidateBody_', 'fcTrIndexRows_',
   'handleUpsertFcTargetRule_', 'handleDeleteFcTargetRule_'];
 var MIG_FNS = ['tgtR2ba2Required_', 'tgtR2ba2Str_', 'tgtR2ba2Snapshot_', 'TEMP_migrateFcTargetRulesHeader_',
   'TEMP_validateFcTargetRulesHeader_'];
@@ -147,6 +161,10 @@ function build(mutate) {
     KMSAFE: require(KMSAFE_PATH),
     PRODUCTION_DB_SPREADSHEET_ID_: 'SS-DB',
     Logger: { log: function () {} },
+    // The Target Rule write takes a script lock so two concurrent creates cannot both read "no match"
+    // and both append. The fake grants it; a suite that wants contention sets lockBusy.
+    LockService: { getScriptLock: function () { return {
+      tryLock: function () { return !ctx.__lockBusy; }, releaseLock: function () {} }; } },
     Utilities: { getUuid: function () { uuid++; return ('abcdef01234567890000000000000000' + uuid).slice(-32); },
       formatDate: function () { return '2026-09-18 12:00:00'; } },
     // FC-SUMMARY-R2B-A2-R1-F1 — THE STUB THAT MADE A REAL DEFECT UNTESTABLE, REPLACED BY A TRAP.
@@ -173,7 +191,8 @@ function build(mutate) {
     jsonResponse_: function (o) { return o; },
     SpreadsheetApp: {
       getActiveSpreadsheet: function () { return ctx.__ss; },
-      openById: function () { return ctx.__ss; }
+      openById: function () { return ctx.__ss; },
+      flush: function () {}
     },
     __ss: null, console: console
   };
@@ -236,7 +255,11 @@ token(function () { CTX.fcWriteEnsureSheet_(makeSs(db()), 'fc_target_rules', REQ
 // That refusal is the second lock: membership alone never opens the write.
 (function () {
   var ss = makeSs(db()); CTX.__use(ss);
-  var res = CTX.handleUpsertFcTargetRule_({ scope_type: 'sku', scope_id: 'CO1100-R', company: 'ResUS' });
+  // R2B-A2-R5-F2 — a COMPLETE identity, so the schema gate is what refuses. With an incomplete one the
+  // body validator refuses first (TARGET_RULE_IDENTITY_INCOMPLETE) and this assertion would be testing
+  // the validator rather than the header gate it is named for.
+  var res = CTX.handleUpsertFcTargetRule_({ scope_type: 'sku', scope_id: 'CO1100-R', sku: 'CO1100-R',
+    company: 'ResUS', country: 'US', marketplace: 'Amazon', year: 2026, jan_pct: 91 });
   ok(res && res.success === false && /MISSING_REQUIRED_HEADER/.test(String(res.error)),
     'B3 a Target Rule save is refused with the REAL cause named, not a misleading order complaint', res && res.error);
   eq(ss.__sheet('fc_target_rules').__appended.length, 0, 'B4 and it is a zero write');
@@ -375,7 +398,7 @@ var MONTH_VALUES = [91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102];
   eq(placed, want, 'E4 all TWELVE monthly percentages land under their own month columns');
 
   eq(row[AFTER.indexOf('target_percentage')], 88, 'E5 target_percentage lands in the NEWLY APPENDED column');
-  eq(row[AFTER.indexOf('scope_type')], 'series', 'E6 scope_type lands in its newly appended column');
+  eq(row[AFTER.indexOf('scope_type')], 'SERIES', 'E6 scope_type lands in its newly appended column, canonicalised UPPERCASE (R5-F2)');
   eq(row[AFTER.indexOf('scope_id')], 'CO1100', 'E7 scope_id likewise');
   eq(row[AFTER.indexOf('scope')], '', 'E8 the legacy `scope` column is left UNWRITTEN — one authority, not two');
   eq(row[AFTER.indexOf('status')], '', 'E9 the extra `status` column is not invented');
@@ -480,9 +503,16 @@ eq(CTX.fcWriteSchemaByNameApproved_('fc_target_rules', CTX.FC_SCHEMA_BY_NAME_), 
   function codeOnly(s) { return s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, ''); }
   var src = codeOnly(gs('14_fc_write_handlers.gs'));
   var writes = src.match(/getRange\([^)]*\)\s*\.\s*setValues?\s*\(/g) || [];
+  // R2B-A2-R5-F2 — a FULL-WIDTH row write is exempt, and only that. What G6 forbids is resolving a column
+  // from a literal OFFSET: `getRange(row, 5)` assumes column 5 holds some field. `getRange(row, 1, 1, width)`
+  // assumes nothing — it rewrites the entire row, and the values were placed into that array BY HEADER NAME
+  // beforehand. Writing the row in one call is what stops an interruption leaving it half-updated.
   var lit = writes.filter(function (w) {
     var args = w.slice(w.indexOf('(') + 1, w.indexOf(')')).split(',');
-    return args.length >= 2 && /^\s*\d+\s*$/.test(args[1]);
+    if (!(args.length >= 2 && /^\s*\d+\s*$/.test(args[1]))) return false;
+    var fullRow = args.length === 4 && /^\s*1\s*$/.test(args[1]) && /^\s*1\s*$/.test(args[2])
+      && !/^\s*\d+\s*$/.test(args[3]);
+    return !fullRow;
   });
   eq(lit, [], 'G6 no write in 14_ resolves its column from a literal index');
   ok(writes.length > 0, 'G7 and write sites exist, so G6 is not vacuous');

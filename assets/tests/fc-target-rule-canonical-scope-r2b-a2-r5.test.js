@@ -236,7 +236,7 @@ function makeDom() {
 
 var TR_FNS = ['_trCanonScope_', '_trNorm_', '_trRows_', '_trDataState_', '_trDistinct_', '_trRowsFor_',
   '_trSel_', '_trActiveDims_', '_trFillSelect_', '_trRebuild_', '_trOnChange_', '_trCompanyResolution_',
-  '_trMonths_', '_trGate_', '_trApplyGate_', '_trBuildPayload_',
+  '_trMonths_', '_trGate_', '_trApplyGate_', '_trBuildPayload_', '_trCommonMonthlyPct_',
   'openAddTargetRuleModal', 'updateTargetScopeFields', 'fillAllTargetMonths', 'saveNewTargetRule',
   '_fcWriteBegin_', '_fcWriteEnd_', '_fcSetTargetSaveEnabled_'];
 var TR_VARS = ['_TR_ORDER_', '_TR_CTL_', '_TR_LABEL_', '_TR_SCOPE_FIELDS_', '_TR_SCOPES_',
@@ -408,7 +408,7 @@ var d7 = months(selectUSAmazon(build(), 'Category'), 91);
 d7.saveNewTargetRule();
 eq(d7.writes.length, 1, 'D7a §7.7 a Category-scope save dispatches one write');
 var p7 = d7.writes[0];
-eq(p7.scope_type, 'Category', 'D7b scope_type is the canonical token');
+eq(p7.scope_type, 'CATEGORY', 'D7b scope_type is the canonical UPPERCASE token (R5-F2)');
 eq(p7.scope_id, 'Electric Can Opener', 'D7c scope_id is the category identity');
 eq([p7.series, p7.sku], ['', ''], 'D7d §7.7 Category scope sends NO series and NO sku');
 eq(p7.category, 'Electric Can Opener', 'D7e and it does send the category');
@@ -416,7 +416,7 @@ eq(p7.category, 'Electric Can Opener', 'D7e and it does send the category');
 var d8 = months(selectUSAmazon(build(), 'Series'), 91);
 d8.saveNewTargetRule();
 var p8 = d8.writes[0];
-eq(p8.scope_type, 'Series', 'D8a Series scope');
+eq(p8.scope_type, 'SERIES', 'D8a Series scope, canonical uppercase');
 eq(p8.scope_id, 'CO1100', 'D8b scope_id is the series identity');
 eq([p8.category, p8.series, p8.sku], ['Electric Can Opener', 'CO1100', ''],
   'D8c §7.8 Series scope sends category + series and NO sku');
@@ -424,7 +424,7 @@ eq([p8.category, p8.series, p8.sku], ['Electric Can Opener', 'CO1100', ''],
 var d9 = months(selectUSAmazon(build(), 'SKU'), 91);
 d9.saveNewTargetRule();
 var p9 = d9.writes[0];
-eq(p9.scope_type, 'SKU', 'D9a SKU scope');
+eq(p9.scope_type, 'SKU', 'D9a SKU scope, canonical uppercase');
 eq(p9.scope_id, 'CO1100-S', 'D9b scope_id is the SKU identity');
 eq([p9.category, p9.series, p9.sku], ['Electric Can Opener', 'CO1100', 'CO1100-S'],
   'D9c §7.9 SKU scope sends all three — the old code sent no category at all');
@@ -551,8 +551,15 @@ eq([P.jan_pct, P.feb_pct, P.mar_pct, P.apr_pct, P.may_pct, P.jun_pct,
     P.jul_pct, P.aug_pct, P.sep_pct, P.oct_pct, P.nov_pct, P.dec_pct],
    [91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102],
    'G19 §7.19 twelve distinct values land in twelve NAMED fields');
-eq(P.target_percentage, 91,
-  'G19b target_percentage mirrors January, matching request-order.js _roSaveTargetPct');
+// R5-F2 — twelve DIFFERENT months, so the authoring summary is BLANK. It used to be the January alias,
+// and procurement and Inventory Replenishment read it in place of a month, so 91 was applied to March.
+eq(P.target_percentage, '',
+  'G19b target_percentage is blank when the twelve months differ');
+var gFlat = selectUSAmazon(build(), 'Category');
+['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'].forEach(function (m) { gFlat.set('target-' + m, '80'); });
+gFlat._trApplyGate_(); gFlat.saveNewTargetRule();
+eq(gFlat.writes[0].target_percentage, 80,
+  'G19b2 and carries the common value when all twelve agree');
 eq(P.year, 2026, 'G19c year is a number, as the server contract expects');
 
 // A deliberate zero must survive. The old reader was `parseInt(v) || 100`.

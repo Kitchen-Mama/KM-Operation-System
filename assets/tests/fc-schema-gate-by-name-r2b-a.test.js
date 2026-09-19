@@ -531,9 +531,17 @@ eq(CTX.fcWriteSchemaByNameApproved_('campaigns', CTX.FC_SCHEMA_BY_NAME_), true,
     // Only WRITE sites matter. A 4-argument getRange(1, 1, 1, lastCol) is the header READ and is correct;
     // what must not exist is a getRange whose COLUMN is a literal and which is then written to.
     var writes = src.match(/getRange\([^)]*\)\s*\.\s*setValues?\s*\(/g) || [];
+    // R2B-A2-R5-F2 — a FULL-WIDTH row write is exempt, and only that. The prohibition is on resolving a
+    // column from a literal OFFSET: `getRange(row, 5)` assumes column 5 holds some field. By contrast
+    // `getRange(row, 1, 1, width)` assumes nothing — it rewrites the WHOLE row from an array whose values
+    // were placed by header NAME. The Target Rule update writes that way so an interruption cannot leave a
+    // row half-updated with a new marketplace and an old percentage; ~28 single-cell writes could.
     var literalCol = writes.filter(function (w) {
       var args = w.slice(w.indexOf('(') + 1, w.indexOf(')')).split(',');
-      return args.length >= 2 && /^\s*\d+\s*$/.test(args[1]);
+      if (!(args.length >= 2 && /^\s*\d+\s*$/.test(args[1]))) return false;
+      var fullRow = args.length === 4 && /^\s*1\s*$/.test(args[1]) && /^\s*1\s*$/.test(args[2])
+        && !/^\s*\d+\s*$/.test(args[3]);
+      return !fullRow;
     });
     eq(literalCol, [], 'G9 ' + f[0] + ': every write resolves its column from the LIVE header, never a literal index');
     // Anti-vacuity, stated per file rather than as one blanket rule: 14_ owns every cell write in this path

@@ -67,7 +67,9 @@ eq([T(lm, 'T4').demandQty, T(lm, 'T4').destinationGapQty], [0, 0], 'E7 T4: deman
 ok((lm.monthlyProjection || []).length === 4, 'E8 monthlyProjection stays 4 tiers (pre-T1 is not a writable tier)');
 
 section('E · Target% ≠ 100 changes T1 adjusted demand (via canonical owner, not page math)');
-var t80 = tables({ fc_target_rules: { headers: ['company', 'country', 'marketplace', 'scope_id', 'sku', 'year', 'sep_pct', 'target_percentage'], rows: [['KM', 'US', 'AMAZON_US', 'CO1100-R', 'CO1100-R', 2026, 80, '']] } });
+// R2B-A2-R5-F2 — the fixture gains scope_type. A row without it names no scope, and the canonical
+// business key is year|company|country|marketplace|scope_type|scope_id.
+var t80 = tables({ fc_target_rules: { headers: ['company', 'country', 'marketplace', 'scope_type', 'scope_id', 'sku', 'year', 'sep_pct', 'target_percentage'], rows: [['KM', 'US', 'AMAZON_US', 'SKU', 'CO1100-R', 'CO1100-R', 2026, 80, '']] } });
 var env80 = H.handle(body(), io('2026-08', '2026-08-07', makeSs(t80, {})));
 eq(T(env80.data.lines[0], 'T1').demandQty, 5600, 'E9 Sep @ 80% = round(7000×0.8) = 5600 (Target% applied by canonical KMPD owner)');
 

@@ -504,28 +504,210 @@ function handleBackfillFcSpecialEventIds_(body) {
 
 // ---- fc_target_rules ----
 
+// R2B-A2-R5-F2 §4 — THE TARGET RULE WRITE HAS ITS OWN IDENTITY NOW.
+//
+// It used to go through the shared fcWriteUpsert_, whose business key is `target_rule_id` ALONE. Three
+// consequences, all of them live:
+//   - the FC Summary modal never sends an id, so a second save of the SAME rule APPENDED a duplicate. The
+//     frontend single-flight guard stops a double-click; it does not stop a re-save, a reload, or a second
+//     operator. And a duplicate business identity is now a hard refusal in every resolver, so two rows do
+//     not merely disagree — they disable the rule.
+//   - with an id, every field was overwritten unguarded, so an id belonging to ResTW/US/Amazon could be
+//     repointed at KM-EU/DE/Amazon and the rule would silently change which site it governed.
+//   - no LockService anywhere, so two concurrent creates both read "no match" and both appended.
+//
+// The shared fcWriteUpsert_ is deliberately NOT changed — campaigns and special events keep their contract.
+var FC_TR_SCOPE_TYPES_ = ['CATEGORY', 'SERIES', 'SKU'];
+var FC_TR_RETIRED_IDENTITY_ = 'ALL';
+var FC_TR_KEY_FIELDS_ = ['year', 'company', 'country', 'marketplace'];
+var FC_TR_LOCK_MS_ = 30000;
+
+function fcTrStr_(v) { return String(v === undefined || v === null ? '' : v).trim(); }
+function fcTrUp_(v) { return fcTrStr_(v).toUpperCase(); }
+/** ONE mapping for however a scope is spelled; '' when it is not a supported scope. */
+function fcTrScopeType_(v) {
+  var u = fcTrUp_(v);
+  return FC_TR_SCOPE_TYPES_.indexOf(u) !== -1 ? u : '';
+}
+/** A usable identity value: non-blank and not the retired `All` sentinel. */
+function fcTrIdentityUsable_(v) {
+  var t = fcTrStr_(v);
+  return !!t && fcTrUp_(t) !== FC_TR_RETIRED_IDENTITY_;
+}
+/** year|company|country|marketplace|scope_type|scope_id — the canonical business key, uppercased. */
+function fcTrBusinessKey_(o) {
+  return [fcTrUp_(o.year), fcTrUp_(o.company), fcTrUp_(o.country), fcTrUp_(o.marketplace),
+    fcTrUp_(o.scope_type), fcTrUp_(o.scope_id)].join('|');
+}
+/** The dimension a scope_id must name, taken from the row's own columns. */
+function fcTrScopeDimension_(row, scopeType) {
+  if (scopeType === 'SKU') return fcTrStr_(row.sku);
+  if (scopeType === 'SERIES') return fcTrStr_(row.series);
+  return fcTrStr_(row.category);
+}
+
 /**
- * Create/update a target % rule. Body: { target_rule_id?, company?, country?, marketplace?, scope_type,
- * scope_id, year?, category?, series?, sku?, target_percentage?, jan_pct..dec_pct, note?, actor? }
+ * Validate a Target Rule body against the frozen contract. Returns { ok, error, detail, norm }.
+ * Nothing is written by a body that fails here.
+ */
+function fcTrValidateBody_(body) {
+  var b = body || {};
+  var missing = [];
+  for (var i = 0; i < FC_TR_KEY_FIELDS_.length; i++) {
+    if (!fcTrIdentityUsable_(b[FC_TR_KEY_FIELDS_[i]])) missing.push(FC_TR_KEY_FIELDS_[i]);
+  }
+  if (missing.length) {
+    return { ok: false, error: 'TARGET_RULE_IDENTITY_INCOMPLETE',
+      detail: 'Blank or `All` is not an identity: ' + missing.join(', ')
+        + '. Site identity is exact (FC_SUMMARY_SPEC §4.1).' };
+  }
+  var st = fcTrScopeType_(b.scope_type);
+  if (!st) {
+    return { ok: false, error: 'TARGET_RULE_SCOPE_TYPE_INVALID',
+      detail: 'scope_type must be one of ' + FC_TR_SCOPE_TYPES_.join(', ') + '; received "' + fcTrStr_(b.scope_type) + '".' };
+  }
+  if (!fcTrIdentityUsable_(b.scope_id)) {
+    return { ok: false, error: 'TARGET_RULE_SCOPE_ID_INVALID', detail: 'scope_id is blank or `All`.' };
+  }
+  // scope_id must agree with the dimension column it names, so a row cannot claim SKU scope while its
+  // sku column says something else.
+  var dim = fcTrScopeDimension_(b, st);
+  if (dim && fcTrUp_(dim) !== fcTrUp_(b.scope_id)) {
+    return { ok: false, error: 'TARGET_RULE_SCOPE_ID_MISMATCH',
+      detail: 'scope_type ' + st + ' has scope_id "' + fcTrStr_(b.scope_id) + '" but its own column says "' + dim + '".' };
+  }
+  var norm = {};
+  for (var k in b) { if (Object.prototype.hasOwnProperty.call(b, k)) norm[k] = b[k]; }
+  norm.scope_type = st;                                   // persisted uppercase, through the one mapping
+  norm.scope_id = fcTrStr_(b.scope_id);
+  return { ok: true, norm: norm, scopeType: st, key: fcTrBusinessKey_(norm) };
+}
+
+/** Every existing row as { rowNumber, id, key } — one read, used by both paths. */
+function fcTrIndexRows_(s) {
+  var iId = s.col('target_rule_id');
+  var out = [];
+  for (var i = 1; i < s.rows.length; i++) {
+    var r = s.rows[i];
+    if (String(r.join('')).trim() === '') continue;
+    function cell(name) { var c = s.col(name); return c === -1 ? '' : r[c]; }
+    out.push({
+      rowNumber: i + 1,
+      id: fcTrStr_(iId === -1 ? '' : r[iId]),
+      key: fcTrBusinessKey_({ year: cell('year'), company: cell('company'), country: cell('country'),
+        marketplace: cell('marketplace'), scope_type: cell('scope_type'), scope_id: cell('scope_id') })
+    });
+  }
+  return out;
+}
+
+/**
+ * Create/update a target % rule. Body: { target_rule_id?, company, country, marketplace, scope_type,
+ * scope_id, year, category?, series?, sku?, target_percentage?, jan_pct..dec_pct, note?, actor? }
+ *
+ * Identity is the canonical business key, not the id: the same key always updates the same row, a different
+ * key always creates a different rule, and an id whose stored key differs from the payload's refuses.
  */
 function handleUpsertFcTargetRule_(body) {
   body = body || {};
   var actor = String(body.updated_by || body.actor || 'fc-summary').trim();
-  if (!String(body.scope_type || '').trim()) {
-    return jsonResponse_({ success: false, error: 'Missing scope_type for target rule' });
-  }
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var result;
+
+  var v = fcTrValidateBody_(body);
+  if (!v.ok) return jsonResponse_({ success: false, error: v.error, detail: v.detail });
+
+  var lock = LockService.getScriptLock();
   try {
-    // FC-SUMMARY-R2B-A2 — explicit opt-in, exactly like the Campaign writers. The live header carries every
-    // canonical column in a different order plus three legacy extras (`scope`, `status`, `priority`), and the
-    // writer resolves every cell by live header NAME, so order is not a property this write depends on.
-    result = fcWriteUpsert_(ss, 'fc_target_rules', FC_TARGET_RULES_HEADERS_, 'target_rule_id',
-      String(body.target_rule_id || '').trim(), body, actor, FC_SCHEMA_BY_NAME_);
+    // Two concurrent creates must not both read "no match" and both append.
+    if (!lock.tryLock(FC_TR_LOCK_MS_)) {
+      return jsonResponse_({ success: false, error: 'TARGET_RULE_LOCK_TIMEOUT',
+        detail: 'Another Target Rule write is in progress. Nothing was written.' });
+    }
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = fcWriteEnsureSheet_(ss, 'fc_target_rules', FC_TARGET_RULES_HEADERS_, FC_SCHEMA_BY_NAME_);
+    fcWriteEnsureColumns_(sheet, FC_TARGET_RULES_HEADERS_);
+    var s = fcWriteReadSheet_(sheet);
+    if (s.col('target_rule_id') === -1) {
+      return jsonResponse_({ success: false, error: 'target_rule_id column not found in fc_target_rules' });
+    }
+    var index = fcTrIndexRows_(s);
+    var now = fcWriteTimestamp_();
+    var suppliedId = fcTrStr_(body.target_rule_id);
+    var byKey = index.filter(function (r) { return r.key === v.key; });
+
+    var targetRow = -1, ruleId = '', created = false;
+
+    if (suppliedId) {
+      // ---- UPDATE BY ID — the id may only ever address a row with the SAME canonical identity ----------
+      var byId = index.filter(function (r) { return r.id === suppliedId; });
+      if (byId.length === 0) {
+        return jsonResponse_({ success: false, error: 'TARGET_RULE_NOT_FOUND',
+          detail: 'No rule carries target_rule_id ' + suppliedId + '. Nothing was written.' });
+      }
+      if (byId.length > 1) {
+        return jsonResponse_({ success: false, error: 'DUPLICATE_TARGET_RULE_IDENTITY',
+          detail: byId.length + ' rows share target_rule_id ' + suppliedId
+            + ' (rows ' + byId.map(function (r) { return r.rowNumber; }).join(', ') + '). Nothing was written.' });
+      }
+      if (byId[0].key !== v.key) {
+        return jsonResponse_({ success: false, error: 'TARGET_RULE_IDENTITY_MISMATCH',
+          detail: 'target_rule_id ' + suppliedId + ' belongs to ' + byId[0].key + ', not ' + v.key
+            + '. A rule\'s site or scope is never silently repointed. Nothing was written.' });
+      }
+      targetRow = byId[0].rowNumber;
+      ruleId = suppliedId;
+    } else {
+      // ---- BY BUSINESS KEY — the same rule updates itself instead of appending a twin -----------------
+      if (byKey.length > 1) {
+        return jsonResponse_({ success: false, error: 'DUPLICATE_TARGET_RULE_IDENTITY',
+          detail: byKey.length + ' rows already carry the identity ' + v.key
+            + ' (rows ' + byKey.map(function (r) { return r.rowNumber; }).join(', ')
+            + '). Resolve the duplicate before writing. Nothing was written.' });
+      }
+      if (byKey.length === 1) { targetRow = byKey[0].rowNumber; ruleId = byKey[0].id; }
+    }
+
+    if (targetRow === -1) {
+      // CREATE
+      ruleId = 'fc_target_rules-' + Utilities.getUuid().substring(0, 12).toUpperCase();
+      var createObj = { target_rule_id: ruleId };
+      FC_TARGET_RULES_HEADERS_.forEach(function (h) {
+        if (h !== 'target_rule_id' && Object.prototype.hasOwnProperty.call(v.norm, h)) createObj[h] = v.norm[h];
+      });
+      createObj.created_by = actor; createObj.created_at = now;
+      createObj.updated_by = actor; createObj.updated_at = now;
+      fcWriteAppendByHeader_(sheet, createObj);
+      created = true;
+    } else {
+      // UPDATE — ONE range write for the whole row rather than ~28 single-cell calls, so an interruption
+      // cannot leave the row half-written with a new marketplace and an old percentage.
+      if (!ruleId) ruleId = 'fc_target_rules-' + Utilities.getUuid().substring(0, 12).toUpperCase();
+      var width = s.headers.length;
+      var existing = sheet.getRange(targetRow, 1, 1, width).getValues()[0];
+      for (var c = 0; c < width; c++) {
+        var h = s.headers[c];
+        if (!h || h === 'created_by' || h === 'created_at') continue;      // creation audit is preserved
+        if (h === 'target_rule_id') { existing[c] = ruleId; continue; }
+        if (h === 'updated_by') { existing[c] = actor; continue; }
+        if (h === 'updated_at') { existing[c] = now; continue; }
+        if (Object.prototype.hasOwnProperty.call(v.norm, h)) existing[c] = v.norm[h];
+      }
+      sheet.getRange(targetRow, 1, 1, width).setValues([existing]);
+    }
+    SpreadsheetApp.flush();
+
+    return jsonResponse_({ success: true, data: {
+      id: ruleId,
+      target_rule_id: ruleId,
+      created: created,
+      business_key: v.key,
+      scope_type: v.scopeType,
+      summary: (created ? 'created' : 'updated') + ' ' + v.key
+    } });
   } catch (e) {
     return jsonResponse_({ success: false, error: String(e && e.message ? e.message : e) });
+  } finally {
+    try { lock.releaseLock(); } catch (e2) {}
   }
-  return jsonResponse_({ success: true, data: result });
 }
 
 /** Delete a target rule by target_rule_id. Body: { target_rule_id }. */

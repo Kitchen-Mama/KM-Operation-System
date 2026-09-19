@@ -420,7 +420,12 @@ var ROUND_TOKENS = [
   // derivations of the canonical FC read model, and the Target table gained a Country column. Both
   // fc-summary.js and fc-overview.css were already on the previous token, so without a new one their
   // URLs would not change and a cached copy would survive the deployment.
-  'trscope-r2ba2r5-20260919'];
+  'trscope-r2ba2r5-20260919',
+  // FC-SUMMARY-R2B-A2-R5-F2 — five Target Rule resolvers collapsed into one canonical authority.
+  // fc-summary.js, request-order.js and inventory-replenishment.js all changed, and
+  // supply-planning-planning-demand.js joins index.html for the first time (the browser had no copy of
+  // the resolver the server was already running).
+  'trcontract-r2ba2r5f2-20260919'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

@@ -575,9 +575,15 @@ ok(cp.execFileSync('git', ['show', R10D_IMPL + ':assets/specs/active/apps-script
   .indexOf('product_strategy_enabled:') > 0,
   'G6c and that one file is the one carrying the added capability field');
 
-/* THE RELEASE IS IN THE SHARED ORDER, APPENDED. */
-ok(REL.OWNER_STAMPS.indexOf(RELEASE) === REL.OWNER_STAMPS.length - 1,
-  'G7  R11 is the LAST entry in the shared owner-stamp order — append-only');
+/* THE RELEASE IS IN THE SHARED ORDER, APPENDED.
+   FC-SUMMARY-R2B-A2-R5-F2 — this pinned R11 as the LAST entry, which is equality-with-now: it forbids any
+   later round from adding a release at all, and fails while describing a correct ledger. What it protects is
+   that THIS release was appended rather than spliced into history, and that is answerable without claiming
+   to be last. R12 was appended by the Target Rule consumer unification, which changed a deployed owner
+   (13_procurement_handlers.gs) and therefore had to declare a new build. */
+ok(REL.OWNER_STAMPS.indexOf(RELEASE) > REL.OWNER_STAMPS.indexOf(PREV_RELEASE),
+  'G7  R11 sits after its predecessor in the shared owner-stamp order — append-only, never spliced');
+ok(REL.OWNER_STAMPS.indexOf(RELEASE) !== -1, 'G7b and it is in that order at all');
 ok(REL.stampAtOrAfter(RELEASE, PREV_RELEASE), 'G7a and it sits after R10');
 ok(REL.BUILD_STAMP_RE.test(RELEASE), 'G7b and it matches the canonical stamp shape');
 
@@ -635,8 +641,12 @@ ok(SRC.index.indexOf('productstrategy-p1b8b-20260912') < 0,
 // itself with every guard reporting clean. Same shape as the fc-overview.css case above, one layer worse:
 // there the token was the exempt BASE, here it was never recorded. 20 further assets remain on unrecorded
 // tokens; they are reported, not silently adopted, because this round did not change them.
-eq(REL.appTokenRefCount(SRC.index), 37,
-  'H6  thirty-seven references share it — the application set, Product Strategy, the FC Summary stylesheet and the Home module, now one co-deployed set');
+// FC-SUMMARY-R2B-A2-R5-F2 — 37 became 38. assets/js/core/supply-planning-planning-demand.js joined
+// index.html for the first time: it is the canonical Target Rule resolver, which Apps Script has always had
+// as the KMPD global from the generated bundle while the browser had no copy at all — which is precisely why
+// Request Order and Inventory Replenishment each carried their own divergent matcher.
+eq(REL.appTokenRefCount(SRC.index), 38,
+  'H6  thirty-eight references share it — the application set, Product Strategy, the FC Summary stylesheet, the Home module and the canonical planning-demand resolver, now one co-deployed set');
 
 /* LOAD ORDER. The board reads the policy through sku-overrides, and app.js builds its menu from
    PSB_VIEWS; both must already be defined when their reader runs. */

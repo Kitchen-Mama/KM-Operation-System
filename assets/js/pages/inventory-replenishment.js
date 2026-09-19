@@ -436,25 +436,39 @@ window.IRMap = (function () {
     return Math.round((units / 7) * 10) / 10;
   }
 
-  // Resolve the single applicable Target Rule % (SKU > Series > Category). Default 100%.
-  function targetPct(rules, scope) {
-    if (!rules || !rules.length) return 100;
-    function inScope(r) {
-      if (r.company && scope.company && !eq(r.company, scope.company)) return false;
-      if (r.country && scope.country && !eq(r.country, scope.country)) return false;
-      if (r.marketplace && scope.marketplace && !eq(r.marketplace, scope.marketplace)) return false;
-      return true;
-    }
-    var levels = [['sku', scope.sku], ['series', scope.series], ['category', scope.category]];
-    for (var i = 0; i < levels.length; i++) {
-      var type = levels[i][0], id = levels[i][1];
-      if (!id) continue;
-      var hit = rules.find(function (r) {
-        return inScope(r) && r.scopeType === type && eq(r.scopeId, id) && r.targetPercentage != null;
-      });
-      if (hit) return num(hit.targetPercentage);
-    }
-    return 100;
+  // R2B-A2-R5-F2 §3 — Inventory Replenishment no longer resolves Target Rules itself. The matcher that
+  // used to live here ignored `year` completely, compared the literal string `All` (so an `All` rule
+  // matched NOTHING here while matching everything in supply planning), and read `targetPercentage`
+  // instead of the month column — one flat percentage across every forecast month. A rule carrying
+  // Jan 91 … Dec 102 therefore answered 91 for March here and 93 there.
+  //
+  // Resolution is now the canonical authority, `KM.core.planningDemand.resolveTargetRule`, the same code
+  // the Apps Script bundle runs. The only local work is the adapter: this page holds NORMALISED rule
+  // records, and the resolver reads raw snake_case rows, so `.raw` is unwrapped here and nowhere else.
+  function trRawRows(rules) {
+    return (rules || []).map(function (r) { return (r && r.raw) ? r.raw : r; });
+  }
+  function trAuthority() {
+    var A = (typeof window !== 'undefined' && window.KM && window.KM.core) ? window.KM.core.planningDemand : null;
+    return (A && typeof A.resolveTargetRule === 'function') ? A : null;
+  }
+  function trYm(monthOffsetFromNow) {
+    var now = new Date(), t = now.getMonth() + monthOffsetFromNow;
+    var y = now.getFullYear() + Math.floor(t / 12), mi = ((t % 12) + 12) % 12;
+    return y + '-' + ('0' + (mi + 1)).slice(-2);
+  }
+  // ym = 'YYYY-MM'. Returns a percentage, or NULL when resolution refuses (duplicate business identity,
+  // unusable site identity, missing authority). A caller must never turn that null into a number.
+  function targetPct(rules, scope, ym) {
+    var A = trAuthority();
+    if (!A) return null;
+    var m = /^(\d{4})-(\d{2})$/.exec(String(ym || ''));
+    if (!m) return null;
+    var res = A.resolveTargetRule(trRawRows(rules), {
+      year: m[1], company: scope.company, country: scope.country, marketplace: scope.marketplace,
+      category: scope.category, series: scope.series, sku: scope.sku, month: Number(m[2])
+    });
+    return res.targetPct;
   }
 
   // F1-4B-FM5-R4UI-R7 §0/§F — canonical "90 days FC" USER REFERENCE field (independent of Planning Model):
@@ -501,12 +515,20 @@ window.IRMap = (function () {
         && (!scope.marketplace || !r.marketplace || eq(r.marketplace, scope.marketplace));
     });
     if (!fc) return 0;
-    var cm = new Date().getMonth();
-    var pct = targetPct(rules, {
+    // Each month carries its OWN percentage. The single flat multiplier this used to apply is exactly the
+    // defect: jan_pct..dec_pct are twelve independent values, not twelve copies of one.
+    var sc = {
       company: scope.company, country: scope.country, marketplace: scope.marketplace,
       sku: scope.sku, series: fc.series || scope.series, category: fc.category || scope.category
-    }) / 100;
-    return Math.round((num(fc[MONTHS[(cm + 1) % 12]]) + num(fc[MONTHS[(cm + 2) % 12]])) * pct);
+    };
+    var total = 0;
+    for (var off = 1; off <= 2; off++) {
+      var t = new Date().getMonth() + off, mi = t % 12;
+      var p = targetPct(rules, sc, trYm(off));
+      if (p === null) return null;               // refusal — never a fabricated planning number
+      total += Math.round(num(fc[MONTHS[mi]]) * p / 100);
+    }
+    return total;
   }
 
   function parseEventMonth(ev) {
@@ -727,7 +749,9 @@ window.IRMap = (function () {
       var daily;
       if (demandMode === 'forecast_driven') {
         var fc60 = _irForecastPlanning2mo(ctx.fcRows, ctx.targetRules, siteScope);   // planning-only (NOT the UI 90-day reference)
-        daily = fc60 > 0 ? (fc60 / 60) : 0;
+        // null = the Target Rule resolver refused. `null > 0` is false, so this yields zero planning demand
+        // rather than a number derived from a rule the system could not identify.
+        daily = (fc60 !== null && fc60 > 0) ? (fc60 / 60) : 0;
       } else {
         daily = avgSalesPerDay(ctx.weeklyRows, siteScope);               // §22 canonical Avg Sales/Day
       }
@@ -11569,8 +11593,16 @@ function _getCloudReplenishmentData() {
             return eqv(r.sku, mp.sku) && (!r.company || eqv(r.company, mp.company)) &&
                 (!r.country || eqv(r.country, mp.country)) && (!r.marketplace || eqv(r.marketplace, mp.marketplace));
         });
-        var pct = IR.targetPct(targetRules, scope) / 100;
-        function fcMonth(off) { return fcRow ? Math.round((parseFloat(fcRow[MK[(cm + off) % 12]]) || 0) * pct) : 0; }
+        // Per-month, through the canonical authority. A refused resolution renders 0 rather than a number
+        // computed from a rule whose identity could not be established.
+        function fcMonth(off) {
+            if (!fcRow) return 0;
+            var t = cm + off, mi = t % 12;
+            var y = new Date().getFullYear() + Math.floor(t / 12);
+            var p = IR.targetPct(targetRules, scope, y + '-' + ('0' + (mi + 1)).slice(-2));
+            if (p === null) return 0;
+            return Math.round((parseFloat(fcRow[MK[mi]]) || 0) * p / 100);
+        }
 
         // Fulfillment model resolution — reuse the company-safe registry match resolved above.
         var ff = IR.resolveFulfillment(scopeMktReg, mp);

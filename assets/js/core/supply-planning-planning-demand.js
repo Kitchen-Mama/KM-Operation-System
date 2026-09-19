@@ -36,32 +36,154 @@
   function daysInMonth(y, m) { return [31, (isLeap(y) ? 29 : 28), 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1]; }
   function pad2(n) { return (n < 10 ? '0' : '') + n; }
 
-  // ---- E · Target % (replicates request-order.js _roTargetPct from RAW fc_target_rules rows) ----------------
-  //   targetRuleRows: raw fc_target_rules rows (snake_case). skuMeta: { sku, series, category, company }.
-  //   ym: 'YYYY-MM'. Returns a percentage number (100 default; no invented fallback).
+  // ---- E · Target % — THE ONE CANONICAL TARGET RULE RESOLVER -----------------------------------------------
+  //
+  // Every consumer of fc_target_rules resolves through this function. Before R2B-A2-R5-F2 there were five
+  // implementations and they disagreed about which fields even participate: this one ignored `scope_type` and
+  // returned the first matching row, so a Category rule outranked a SKU rule whenever it sat higher in the
+  // sheet; procurement ignored year, company, country AND marketplace; Inventory Replenishment ignored year and
+  // compared the literal string `All`. Two of the five never read a monthly column at all, so a rule carrying
+  // Jan 91 … Dec 102 answered 93 for March here and 91 everywhere in procurement.
+  //
+  // The contract is FC_SUMMARY_SPEC.md §4.1, authorised in R2B-A2-R5-F2:
+  //   business key   year | company | country | marketplace | scope_type | scope_id
+  //   site identity  EXACT — no field optional, no `All`, no blank-as-wildcard
+  //   precedence     SKU > SERIES > CATEGORY > default 100   (SUPPLY_PLANNING_CALCULATION_RULES §2D)
+  //   month value    the requested month's NAMED column, only; target_percentage is never a runtime source
+  //   duplicates     refused, never resolved by row order
+  var TR_SCOPE_TYPES_ = ['CATEGORY', 'SERIES', 'SKU'];
+  var TR_PRECEDENCE_ = ['SKU', 'SERIES', 'CATEGORY'];      // most specific first
+  var TR_RETIRED_IDENTITY_ = 'ALL';                        // D2 — not a wildcard, not a value
+  var TR_DEFAULT_PCT_ = 100;
+
+  // ONE mapping for however a scope is spelled. Comparison is case-insensitive; persistence is uppercase.
+  function trScopeType(v) {
+    var u = U(v);
+    return TR_SCOPE_TYPES_.indexOf(u) !== -1 ? u : '';
+  }
+  function trBusinessKey(o) {
+    return [U(o.year), U(o.company), U(o.country), U(o.marketplace), U(o.scopeType), U(o.scopeId)].join('|');
+  }
+  // 1..12, or 'jan'..'dec'. Anything else is an invalid month, not a silent default.
+  function trMonthIndex(v) {
+    var n = Number(v);
+    if (isFinite(n) && n >= 1 && n <= 12 && String(v).indexOf('.') === -1) return n - 1;
+    var i = MONTH_ABBR.indexOf(L(v).slice(0, 3));
+    return i;
+  }
+  function trIdentityUsable(v) {
+    var t = s(v);
+    return !!t && U(t) !== TR_RETIRED_IDENTITY_;
+  }
+
+  /**
+   * The canonical resolution. Returns structured provenance so a caller can report WHY, never a bare number
+   * that hides a refusal behind a plausible 100%.
+   *
+   * request: { year, company, country, marketplace, category, series, sku, month }
+   * returns: { matched, targetPct, targetRuleId, scopeType, scopeId, businessKey, sourceMonth, reason }
+   *   reason  OK | NO_RULES | NO_MATCH | INVALID_REQUEST_IDENTITY | INVALID_MONTH
+   *           | DUPLICATE_TARGET_RULE_IDENTITY
+   *   matched is true only for OK. NO_RULES / NO_MATCH carry the 100 default; the three refusals carry
+   *   targetPct null, because a refusal that answers 100 is indistinguishable from a rule that says 100.
+   */
+  function resolveTargetRule(ruleRows, request) {
+    var req = request || {};
+    function answer(reason, pct, hit) {
+      return {
+        matched: reason === 'OK',
+        targetPct: pct,
+        targetRuleId: hit ? s(hit.row.target_rule_id) : null,
+        scopeType: hit ? hit.scopeType : null,
+        scopeId: hit ? hit.scopeId : null,
+        businessKey: hit ? hit.key : null,
+        sourceMonth: hit ? hit.monthColumn : null,
+        reason: reason
+      };
+    }
+
+    // 1 — the REQUESTED site identity must itself be complete and canonical.
+    if (!trIdentityUsable(req.year) || !trIdentityUsable(req.company)
+      || !trIdentityUsable(req.country) || !trIdentityUsable(req.marketplace)) {
+      return answer('INVALID_REQUEST_IDENTITY', null, null);
+    }
+    // 2 — an invalid month is a refusal, not month zero.
+    var mi = trMonthIndex(req.month);
+    if (mi < 0 || mi > 11) return answer('INVALID_MONTH', null, null);
+    var monthColumn = MONTH_ABBR[mi] + '_pct';
+
+    var rules = Array.isArray(ruleRows) ? ruleRows : [];
+    if (!rules.length) return answer('NO_RULES', TR_DEFAULT_PCT_, null);
+
+    var wantDim = { SKU: s(req.sku), SERIES: s(req.series), CATEGORY: s(req.category) };
+
+    // 3-7 — collect the rules that actually apply to this site, scope and month.
+    var candidates = [];
+    for (var i = 0; i < rules.length; i++) {
+      var r = rules[i] || {};
+      // 3 — a rule with an incomplete or retired identity is not a wildcard; it simply does not apply.
+      if (!trIdentityUsable(r.year) || !trIdentityUsable(r.company)
+        || !trIdentityUsable(r.country) || !trIdentityUsable(r.marketplace)) continue;
+      // 4 — exact site match, all four fields.
+      if (U(r.year) !== U(req.year)) continue;
+      if (U(r.company) !== U(req.company)) continue;
+      if (U(r.country) !== U(req.country)) continue;
+      if (U(r.marketplace) !== U(req.marketplace)) continue;
+      // 5 — scope_type through the one mapping.
+      var st = trScopeType(r.scope_type);
+      if (!st) continue;
+      // 6 — scope_id must equal the requested value of ITS OWN dimension. A SERIES rule whose scope_id
+      //     happens to equal a category name does not match a category request.
+      var sid = s(r.scope_id);
+      if (!trIdentityUsable(sid)) continue;
+      var want = wantDim[st];
+      if (!want || U(sid) !== U(want)) continue;
+      // 7 — the named month must carry a usable value. A rule that says nothing about March is not a
+      //     March rule, and target_percentage may not stand in for it.
+      var raw = r[monthColumn];
+      var pct = num(raw);
+      if (pct === null) continue;                       // blank / non-numeric — 0 is NOT null and survives
+      candidates.push({ row: r, scopeType: st, scopeId: sid, pct: pct, monthColumn: monthColumn,
+        key: trBusinessKey({ year: r.year, company: r.company, country: r.country,
+          marketplace: r.marketplace, scopeType: st, scopeId: sid }) });
+    }
+
+    if (!candidates.length) return answer('NO_MATCH', TR_DEFAULT_PCT_, null);
+
+    // 8-9 — duplicate canonical identity is a refusal. Choosing between two rows that claim the same
+    //       identity is exactly the row-order dependence this contract exists to remove.
+    var seen = {};
+    for (var d = 0; d < candidates.length; d++) {
+      if (seen[candidates[d].key]) return answer('DUPLICATE_TARGET_RULE_IDENTITY', null, null);
+      seen[candidates[d].key] = 1;
+    }
+
+    // 10 — SKU beats SERIES beats CATEGORY. Order-independent: each tier now holds at most one rule.
+    for (var p = 0; p < TR_PRECEDENCE_.length; p++) {
+      for (var c = 0; c < candidates.length; c++) {
+        if (candidates[c].scopeType === TR_PRECEDENCE_[p]) {
+          return answer('OK', candidates[c].pct, candidates[c]);   // 12 — 0 is preserved verbatim
+        }
+      }
+    }
+    return answer('NO_MATCH', TR_DEFAULT_PCT_, null);
+  }
+
+  // Legacy numeric surface, kept so existing callers are unchanged in shape.
+  //   number → resolved or the 100 default
+  //   null   → a REFUSAL (duplicate identity, unusable request identity, invalid month). Null is this
+  //            module's existing "never fabricate" convention — baseRegularFc already answers null for a
+  //            missing or conflicting base rather than inventing 0, and a refusal answered as 100 would be
+  //            indistinguishable from a rule that genuinely says 100.
   function resolveTargetPct(targetRuleRows, skuMeta, scope, ym) {
-    var rules = Array.isArray(targetRuleRows) ? targetRuleRows : [];
-    if (!rules.length) return 100;
-    var m = /^(\d{4})-(\d{2})$/.exec(s(ym)); if (!m) return 100;
-    var year = m[1], monKey = MONTH_ABBR[(+m[2]) - 1] + '_pct';
+    var m = /^(\d{4})-(\d{2})$/.exec(s(ym));
+    if (!m) return TR_DEFAULT_PCT_;
     var meta = skuMeta || {}, sc = scope || {};
-    var match = rules.filter(function (r) {
-      r = r || {};
-      var scopeVal = s(r.scope_id) || s(r.sku) || s(r.series) || s(r.category);
-      var scopeHit = U(scopeVal) === U(meta.sku) || U(scopeVal) === U(meta.series) || U(scopeVal) === U(meta.category) ||
-        U(r.sku) === U(meta.sku) || U(r.series) === U(meta.series) || U(r.category) === U(meta.category);
-      if (!scopeHit) return false;
-      if (s(r.company) && s(sc.company) && U(r.company) !== U(sc.company)) return false;
-      if (s(r.country) && s(sc.country) && U(r.country) !== U(sc.country) && U(r.country) !== 'ALL') return false;
-      if (s(r.marketplace) && s(sc.marketplace) && L(r.marketplace) !== L(sc.marketplace) && U(r.marketplace) !== 'ALL') return false;
-      if (s(r.year) && year && s(r.year) !== year) return false;
-      return true;
-    })[0];
-    if (!match) return 100;
-    if (match[monKey] != null && match[monKey] !== '') { var mp = parseFloat(match[monKey]); if (!isNaN(mp)) return mp; }
-    var tp = (match.target_percentage != null && match.target_percentage !== '') ? parseFloat(match.target_percentage) : NaN;
-    if (!isNaN(tp)) return tp;
-    return 100;
+    var res = resolveTargetRule(targetRuleRows, {
+      year: m[1], company: sc.company, country: sc.country, marketplace: sc.marketplace,
+      category: meta.category, series: meta.series, sku: meta.sku, month: Number(m[2])
+    });
+    return res.targetPct;
   }
 
   // Base Regular FC for a month from raw fc_regular_forecast rows (scoped; single non-conflicting value or null).
@@ -77,10 +199,13 @@
     var keys = Object.keys(vals); return keys.length === 1 ? vals[keys[0]] : null;   // missing/conflicting → null (never fabricated 0)
   }
 
-  // Adjusted Regular FC(month) = round(base × pct/100). Returns null when base is missing (never 0).
+  // Adjusted Regular FC(month) = round(base × pct/100). Returns null when base is missing (never 0), and
+  // now also when the Target Rule resolution REFUSED — a duplicate business identity or an unusable site
+  // identity must not be multiplied through as if it were 100%.
   function adjustedRegularFc(fcRows, targetRuleRows, skuMeta, scope, sku, ym) {
     var base = baseRegularFc(fcRows, scope, sku, ym); if (base === null) return null;
     var pct = resolveTargetPct(targetRuleRows, skuMeta, scope, ym);
+    if (pct === null) return null;
     return { base: base, targetPct: pct, adjusted: Math.round(base * (pct / 100)) };
   }
 
@@ -187,7 +312,12 @@
   return {
     VERSION: 'kmpd-fm3f1-1',
     SPECIAL_EVENT_PREP_OFFSET_DAYS: SPECIAL_EVENT_PREP_OFFSET_DAYS,
-    resolveTargetPct: resolveTargetPct,
+    resolveTargetRule: resolveTargetRule,          // canonical: structured provenance
+    resolveTargetPct: resolveTargetPct,            // legacy numeric surface (null = refusal)
+    trScopeType: trScopeType,
+    trBusinessKey: trBusinessKey,
+    TR_SCOPE_TYPES: TR_SCOPE_TYPES_,
+    TR_PRECEDENCE: TR_PRECEDENCE_,
     scopedSpecialEventPreps: scopedSpecialEventPreps,
     baseRegularFc: baseRegularFc,
     adjustedRegularFc: adjustedRegularFc,

@@ -1216,8 +1216,8 @@ var _TR_LABEL_ = { year: 'Year', country: 'Country', marketplace: 'Marketplace',
 // Which dimensions each scope SENDS. The old code sent no category for SKU scope, so a SKU rule recorded no
 // category at all; resolveTargetPct reads r.category when scope_id is blank, so that omission was load-bearing.
 var _TR_SCOPE_FIELDS_ = {
-  Category: ['category'],
-  Series: ['category', 'series'],
+  CATEGORY: ['category'],
+  SERIES: ['category', 'series'],
   SKU: ['category', 'series', 'sku']
 };
 
@@ -1225,7 +1225,9 @@ var _TR_SCOPE_FIELDS_ = {
 // it differently — normalizeFcTargetRuleRecord lowercases, procurementTargetRuleResolver_ lowercases, and
 // the page's own getEffectiveTargetPct compares title-case — so the PERSISTED value must be title case and
 // every comparison must go through here rather than retyping a literal.
-var _TR_SCOPES_ = ['Category', 'Series', 'SKU'];
+// R2B-A2-R5-F2 — UPPERCASE is the canonical persisted vocabulary, matching the resolver's one mapping.
+// The <select> still offers Category/Series/SKU as display text; _trCanonScope_ is the only translation.
+var _TR_SCOPES_ = ['CATEGORY', 'SERIES', 'SKU'];
 function _trCanonScope_(v) {
   var s = String(v === undefined || v === null ? '' : v).trim().toLowerCase();
   for (var i = 0; i < _TR_SCOPES_.length; i++) {
@@ -1292,8 +1294,12 @@ function _trSel_() {
   return out;
 }
 
+// CATEGORY is the fallback when no scope is chosen yet — it is the narrowest set of controls, so nothing
+// downstream is offered before the operator has said what they are scoping. (The key is UPPERCASE: when
+// the vocabulary moved to uppercase, a stale `.Category` fallback silently returned undefined and the
+// Category control was never built at all.)
 function _trActiveDims_(scope) {
-  var fields = _TR_SCOPE_FIELDS_[_trCanonScope_(scope)] || _TR_SCOPE_FIELDS_.Category;
+  var fields = _TR_SCOPE_FIELDS_[_trCanonScope_(scope)] || _TR_SCOPE_FIELDS_.CATEGORY;
   return ['year', 'country', 'marketplace'].concat(fields);
 }
 
@@ -1462,10 +1468,13 @@ function openAddTargetRuleModal() {
 
 function updateTargetScopeFields(seed) {
   var scope = _trCanonScope_((document.getElementById('target-scope-input') || {}).value);
+  // One source for "which fields does this scope use", shared with _trActiveDims_ — the visible controls
+  // and the payload fields can then never disagree about what a scope means.
+  var fields = _TR_SCOPE_FIELDS_[scope] || _TR_SCOPE_FIELDS_.CATEGORY;
   var show = {
-    'target-category-group': _TR_SCOPE_FIELDS_[scope] ? _TR_SCOPE_FIELDS_[scope].indexOf('category') !== -1 : true,
-    'target-series-group': _TR_SCOPE_FIELDS_[scope] ? _TR_SCOPE_FIELDS_[scope].indexOf('series') !== -1 : false,
-    'target-sku-group': _TR_SCOPE_FIELDS_[scope] ? _TR_SCOPE_FIELDS_[scope].indexOf('sku') !== -1 : false
+    'target-category-group': fields.indexOf('category') !== -1,
+    'target-series-group': fields.indexOf('series') !== -1,
+    'target-sku-group': fields.indexOf('sku') !== -1
   };
   Object.keys(show).forEach(function (id) {
     var el = document.getElementById(id);
@@ -1480,6 +1489,18 @@ function fillAllTargetMonths(value) {
     if (el) el.value = (value === '' || value == null) ? 100 : value;
   });
   _trApplyGate_();
+}
+
+// The common monthly value when all twelve agree, else '' (blank). Same shape as request-order.js's writer.
+function _trCommonMonthlyPct_(months) {
+  var first = null;
+  for (var i = 0; i < _FC_MONTH_KEYS.length; i++) {
+    var v = months[_FC_MONTH_KEYS[i]];
+    if (v === undefined || v === null || v === '' || !isFinite(Number(v))) return '';
+    var n = Number(v);
+    if (first === null) first = n; else if (n !== first) return '';
+  }
+  return first === null ? '' : first;
 }
 
 // The dispatched body. Built once, from the gate's own resolved values, so what was validated is what is sent.
@@ -1501,9 +1522,10 @@ function _trBuildPayload_(g) {
     actor: 'fc-summary'
   };
   _FC_MONTH_KEYS.forEach(function (m) { payload[m + '_pct'] = g.months[m]; });
-  // target_percentage mirrors January, matching request-order.js _roSaveTargetPct so the two writers of this
-  // table agree. Both resolvers read the month column first and only fall back to this one.
-  payload.target_percentage = payload.jan_pct;
+  // R2B-A2-R5-F2 — target_percentage is an authoring SUMMARY, never runtime authority: the common value
+  // when all twelve months agree, BLANK when they differ. It used to be the January alias, and two
+  // consumers read it in place of a named month, so a rule with Jan 91 / Mar 93 applied 91% to March.
+  payload.target_percentage = _trCommonMonthlyPct_(g.months);
   return payload;
 }
 
@@ -1546,46 +1568,18 @@ function saveNewTargetRule() {
     .catch(function (err) { _fcFailWrite_(err, _trOpts); });
 }
 
-// Get effective target percentage
-function getEffectiveTargetPct({ sku, year, month, category, series, marketplace }) {
-  const targetRules = _getActiveTargetRules();   // live DB (Demo OFF) or local mock (Demo ON)
-  // 1. Check SKU level
-  const skuRule = targetRules.find(r =>
-    r.scope === 'SKU' && 
-    r.sku === sku && 
-    r.year === year &&
-    (r.marketplace === 'All' || r.marketplace === marketplace)
-  );
-  if (skuRule) return skuRule.percentages[month];
-  
-  // 2. Check Series level
-  const seriesRule = targetRules.find(r => 
-    r.scope === 'Series' && 
-    r.series === series && 
-    (r.category === 'All' || r.category === category) && 
-    r.year === year &&
-    (r.marketplace === 'All' || r.marketplace === marketplace)
-  );
-  if (seriesRule) return seriesRule.percentages[month];
-  
-  // 3. Check Category level
-  const categoryRule = targetRules.find(r => 
-    r.scope === 'Category' && 
-    (r.category === 'All' || r.category === category) && 
-    r.year === year &&
-    (r.marketplace === 'All' || r.marketplace === marketplace)
-  );
-  if (categoryRule) return categoryRule.percentages[month];
-  
-  // 4. Default 100%
-  return 100;
-}
 
-// Calculate effective FC
-function calculateEffectiveFC(baseFC, targetPct) {
-  return Math.round(baseFC * targetPct / 100);
-}
-
+// R2B-A2-R5-F2 §3 — THE DEAD EFFECTIVE-FC CHAIN WAS REMOVED HERE.
+//
+// getEffectiveFcSafe, getEffectiveTargetPct, calculateEffectiveFC and determineRuleSource formed a closed
+// island: getEffectiveFcSafe had ZERO callers anywhere in the repository, and it was the only caller of the
+// other three. They nonetheless encoded a SIXTH Target Rule contract — company and country ignored, `All`
+// honoured for marketplace and category, first match within each tier — which ran nowhere and contradicted
+// the one every live consumer now shares. 58_api_v1_fc_summary_workspace.gs already recorded this multiply
+// as "debug-only, unwired".
+//
+// If FC Summary ever needs an effective-FC preview again, it calls KM.core.planningDemand.resolveTargetRule
+// like every other consumer. It does not get its own matcher back.
 // Render Target Rules Table
 function renderTargetRulesTable() {
   const fixedBody = document.getElementById('fc-target-fixed-body');
@@ -1737,91 +1731,6 @@ function validateDataIntegrity() {
   return issues;
 }
 
-// Safe version of Effective FC calculation with error handling
-function getEffectiveFcSafe({ sku, year, month, category, series, marketplace }) {
-  // Step 1: Find Base FC
-  const baseFcItem = fcRegularMock.find(item => 
-    item.sku === sku && 
-    item.year === year &&
-    item.marketplace === marketplace
-  );
-  
-  if (!baseFcItem) {
-    console.warn(`No Base FC found for SKU: ${sku}, Year: ${year}, Marketplace: ${marketplace}`);
-    return {
-      sku,
-      year,
-      month,
-      baseFc: 0,
-      targetPct: 100,
-      effectiveFc: 0,
-      ruleSource: 'NONE',
-      warning: 'NO_BASE_FC'
-    };
-  }
-  
-  // Step 2: Get Target %
-  const targetPct = getEffectiveTargetPct({
-    sku,
-    year,
-    month,
-    category,
-    series,
-    marketplace
-  });
-  
-  // Step 3: Calculate Effective FC
-  const monthIndex = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'].indexOf(month);
-  const baseFc = baseFcItem.months[monthIndex];
-  const effectiveFc = calculateEffectiveFC(baseFc, targetPct);
-  
-  // Step 4: Determine rule source
-  const ruleSource = determineRuleSource({ sku, year, month, category, series, marketplace });
-  
-  return {
-    sku,
-    year,
-    month,
-    baseFc,
-    targetPct,
-    effectiveFc,
-    ruleSource,
-    warning: null
-  };
-}
-
-// Determine which rule was used (for debugging/display)
-function determineRuleSource({ sku, year, month, category, series, marketplace }) {
-  // Check SKU level
-  const skuRule = targetRules.find(r => 
-    r.scope === 'SKU' && 
-    r.sku === sku && 
-    r.year === year &&
-    (r.marketplace === 'All' || r.marketplace === marketplace)
-  );
-  if (skuRule) return 'SKU';
-  
-  // Check Series level
-  const seriesRule = targetRules.find(r => 
-    r.scope === 'Series' && 
-    r.series === series && 
-    (r.category === 'All' || r.category === category) && 
-    r.year === year &&
-    (r.marketplace === 'All' || r.marketplace === marketplace)
-  );
-  if (seriesRule) return 'SERIES';
-  
-  // Check Category level
-  const categoryRule = targetRules.find(r => 
-    r.scope === 'Category' && 
-    (r.category === 'All' || r.category === category) && 
-    r.year === year &&
-    (r.marketplace === 'All' || r.marketplace === marketplace)
-  );
-  if (categoryRule) return 'CATEGORY';
-  
-  return 'DEFAULT';
-}
 
 // Export data for API sync (future use)
 function exportFcDataForSync(year) {

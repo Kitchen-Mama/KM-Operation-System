@@ -496,7 +496,13 @@ var R6_KNOWN_GS_CHANGES = ['assets/specs/active/apps-script/03_master_data_handl
   'assets/specs/active/apps-script/20_campaign_write_handlers.gs',
   // FC-SUMMARY-R2B-A2-R1 — the fc_target_rules additive header migration tool. Unrouted, USER-run, and
   // unreachable from Product Strategy's read path.
-  'assets/specs/active/apps-script/TEMP_migrate_fc_target_rules_header_r2ba2.gs'];
+  'assets/specs/active/apps-script/TEMP_migrate_fc_target_rules_header_r2ba2.gs',
+  // FC-SUMMARY-R2B-A2-R5-F2 — the Target Rule consumer unification. Procurement stopped resolving Target
+  // Rules itself and now calls the canonical authority; 14_ gained business-key write identity and a lock;
+  // 90_ is GENERATED from assets/js/core/ and was rebuilt by the approved builder, never hand-edited.
+  // None of the three is reachable from Product Strategy's read path.
+  'assets/specs/active/apps-script/13_procurement_handlers.gs',
+  'assets/specs/active/apps-script/90_generated_supply_planning_bundle.gs'];
 var gsChanged = changedSince(R6_PRE, 'assets/specs/active/apps-script');
 if (gsChanged !== '__git_unavailable__') {
   var unexpectedGs = gsChanged.split('\n').map(function (x) { return x.trim(); })
