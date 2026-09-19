@@ -303,11 +303,21 @@ Supply-side inputs to projection:
 |-------|-------|------|
 | Regular Forecast | `fc_regular_forecast` | Can be adjusted by target rules |
 | Special Event Forecast | `fc_special_events` | Always 100%; not affected by target rules |
-| Target Rules | `fc_target_rules` | Adjust Regular FC only; default 100% |
+| Target Rules | `fc_target_rules` | Adjust Regular FC only; default 100%. Matched on the canonical business key `year \| company \| country \| marketplace \| scope_type \| scope_id` — site identity **exact**, no `All`, no blank wildcard; month value read by **name** |
 
 - **Regular FC** can be adjusted by target rules.
 - **Default target rule = 100%.**
 - **Special Event FC is always 100%** and **not affected by target rules**.
+- **Target Rule resolution is one shared contract (R2B-A2-R5-F2 — AUTHORISED).** §2D's priority line
+  `SKU > Series > Category > default 100%` is binding on every consumer. It was previously stated here and
+  implemented by only some of them: the supply-planning resolver ignored `scope_type` entirely and returned
+  the first matching row, so a Category rule could outrank a SKU rule purely by sitting higher in the sheet.
+  In addition: site identity (`year + company + country + marketplace`) must match **exactly**; the string
+  `All` is retired and is not a wildcard; a blank required field is a refusal, not a wildcard; a duplicate
+  business key is refused (`DUPLICATE_TARGET_RULE_IDENTITY`) and never resolved by row order; the monthly
+  percentage is read from the requested month's **named** column, with `target_percentage` an authoring
+  summary that no resolver may substitute for a month; and `0%` is a valid value that must remain `0`.
+  Full contract: [`FC_SUMMARY_SPEC.md` §4.1](./FC_SUMMARY_SPEC.md).
 
 ---
 

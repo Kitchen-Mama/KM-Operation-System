@@ -121,17 +121,49 @@ The `fc_special_events` fields expected by FC Summary are:
 | Column | Note |
 |---|---|
 | `target_rule_id` | PK (auto `fc_target_rules-<uuid>` when absent) |
-| `company` / `country` / `marketplace` | scope context (`marketplace` = `All` or specific) |
-| `scope_type` | `Category` / `Series` / `SKU` |
+| `company` / `country` / `marketplace` | **site identity — matched EXACTLY** (R2B-A2-R5-F2 D1). `All` is not a valid value (D2); blank is a refusal, not a wildcard (D3) |
+| `scope_type` | `CATEGORY` / `SERIES` / `SKU` — canonicalised through ONE mapping; comparison is case-insensitive, persistence is uppercase |
 | `scope_id` | the scoped value (category / series / sku by scope) |
-| `year` | rule year — **UI-continuity column** (resolver matches year) |
+| `year` | **site identity — matched EXACTLY.** Not a UI-continuity column: a rule for 2026 never applies to 2025 |
 | `category` / `series` / `sku` | round-trip fidelity — **UI-continuity columns** |
-| `target_percentage` | single-value fallback (= Jan %) |
-| `jan_pct … dec_pct` | per-month target % |
+| `target_percentage` | **authoring convenience / summary only — NEVER runtime authority.** Carries the common value when all twelve months are equal; **blank when they differ**. No resolver may read it in place of a named month |
+| `jan_pct … dec_pct` | per-month target % — **the ONLY runtime authority**, read by the requested month's NAME. `0` is a valid percentage and stays `0` |
 | `note` | free text |
 | `created_by` / `created_at` / `updated_by` / `updated_at` | audit meta |
 
-> Task-defined core columns: `target_rule_id, company, country, marketplace, scope_type, scope_id, target_percentage, jan_pct..dec_pct, created_by, created_at, updated_by, updated_at, note`. `year` + `category`/`series`/`sku` are additional columns so the Target table (shows year/category/series/sku) and the effective-rule resolver (matches on year + scope value) keep working. The resolver **logic is unchanged** — it now reads the live rows instead of the local array.
+> Task-defined core columns: `target_rule_id, company, country, marketplace, scope_type, scope_id, target_percentage, jan_pct..dec_pct, created_by, created_at, updated_by, updated_at, note`. `year` + `category`/`series`/`sku` are additional columns so the Target table (shows year/category/series/sku) and the effective-rule resolver keep working.
+
+### 4.1 Canonical Target Rule contract (R2B-A2-R5-F2 — AUTHORISED)
+
+Every consumer — FC Summary, Request Order, Inventory Replenishment, Supply Planning and Procurement —
+resolves a Target Rule through the SAME contract. Before this round each implemented its own, and the
+five disagreed on which fields even participate; the audit is recorded in `FC-SUMMARY-R2B-A2-R5-F1`.
+
+**Canonical business key**
+
+```
+year | company | country | marketplace | scope_type | scope_id
+```
+
+1. **Site identity is exact.** `year`, `company`, `country` and `marketplace` must all match the requested
+   site exactly. A rule for one site never applies to another.
+2. **Scope identity** is `scope_type` + `scope_id`. `scope_type` is one of `CATEGORY`, `SERIES`, `SKU`;
+   `scope_id` is the canonical category, series or SKU respectively.
+3. **Scope precedence** is `SKU > SERIES > CATEGORY > default 100%`, as
+   `SUPPLY_PLANNING_CALCULATION_RULES.md` §2D has always required.
+4. **`All` is retired.** It is not a wildcard, not a valid identity value and not a fallback. A future
+   global or multi-market rule needs a separately specified explicit scope model — never the string `All`.
+5. **Blank required identity is a refusal**, never a wildcard. A blank `company` used to widen a rule to
+   every company silently, because the comparison was skipped when the field was empty.
+6. **Runtime percentage comes only from the named month column** (`mar_pct` for March, and so on).
+   `target_percentage` is authoring convenience and is never substituted for a month.
+7. **`0%` is valid** and must survive as `0`. A reader of the form `parseInt(v) || 100` is defective.
+8. **Duplicate business identity is a deterministic refusal**, `DUPLICATE_TARGET_RULE_IDENTITY`. No
+   resolver may choose between duplicates, and none may depend on sheet row order.
+9. **A supplied `target_rule_id` may update only the row whose canonical business identity equals the
+   payload's.** A mismatch refuses with `TARGET_RULE_IDENTITY_MISMATCH` and writes nothing, so a rule's
+   site or scope can never be silently repointed.
+10. **No resolver may depend on row order** — reversing the rows must produce an identical answer.
 
 ---
 
