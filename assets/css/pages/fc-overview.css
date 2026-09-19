@@ -1743,46 +1743,100 @@
 /* R2B-A2-R5 — the modal's derived-identity line. It carries the resolved company when the selection is
    canonical, and the refusal reason (DATA_UNAVAILABLE / OWNERSHIP_SCOPE_AMBIGUOUS / a missing field)
    when it is not, so the disabled Save button always has a stated cause next to it. */
-.fc-target-scope-note {
-    margin: 4px 0 10px;
-    padding: 6px 10px;
-    border-radius: 4px;
+/* R2B-A2-R5-F6 — ONE TARGET RULE STATUS CARD.
+
+   It replaces .fc-target-scope-note and .fc-target-mode-note, which between them rendered two
+   stacked bars that said the same thing for the state that matters most. The card carries a title,
+   a state line and quiet metadata; the rule id is metadata, not the message.
+
+   THE EXISTING STATE IS NOT A WARNING. F5 painted it orange at weight 600 because "you are about to
+   overwrite a stored rule" felt like a caution. In practice the ordinary case — opening a rule that
+   exists — is the common one, and dressing it as a warning trains people to ignore the colour that
+   the duplicate and unverified states actually need. Loaded is a calm blue; only refusals are loud. */
+.fc-target-status {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 4px 0 12px;
+    padding: 10px 12px;
+    border: 1px solid transparent;
+    border-left-width: 3px;
+    border-radius: 6px;
     font-size: 12px;
     line-height: 1.45;
-    min-height: 18px;
 }
-.fc-target-scope-note.is-ok {
-    background: rgba(46, 125, 50, 0.08);
-    color: #2e7d32;
+.fc-target-status-icon {
+    flex: 0 0 auto;
+    font-size: 13px;
+    line-height: 1.35;
 }
-.fc-target-scope-note.is-blocked {
-    background: rgba(198, 40, 40, 0.08);
-    color: #c62828;
+/* min-width:0 lets a long rule id shrink and wrap INSIDE the card. Without it a flex item refuses to
+   go below its content width and a 30-character id widens the whole modal. */
+.fc-target-status-body {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.fc-target-status-title {
+    font-weight: 600;
+    font-size: 13px;
+}
+.fc-target-status-state {
+    margin-top: 2px;
+}
+.fc-target-status-state:empty {
+    margin-top: 0;
+}
+/* Low-emphasis by design: it is how you confirm WHICH row, not what the card is telling you. */
+.fc-target-status-meta {
+    margin-top: 4px;
+    font-size: 11px;
+    opacity: 0.75;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+.fc-target-status-meta:empty {
+    margin-top: 0;
 }
 
-/* R2B-A2-R5-F5 — the edit-mode banner. Three states, and they are visually distinct on purpose:
-   "Existing rule — Update" is the one an operator must not miss, because it is the state in which
-   pressing Save changes values that are already stored. */
-.fc-target-mode-note {
-    margin: 0 0 10px;
-    padding: 6px 10px;
-    border-radius: 4px;
-    font-size: 12px;
-    line-height: 1.45;
-    min-height: 18px;
+.fc-target-status.is-existing {
+    background: rgba(2, 119, 189, 0.07);
+    border-color: rgba(2, 119, 189, 0.25);
+    border-left-color: #0277bd;
+    color: #01466e;
 }
-.fc-target-mode-note.is-new {
-    background: rgba(2, 119, 189, 0.08);
-    color: #01579b;
+/* The dirty marker is the LEFT EDGE, not a colour change: the rule has not become a different rule,
+   and the title stays put so the card does not appear to change subject the moment someone types. */
+.fc-target-status.is-existing.is-dirty {
+    border-left-color: #ef6c00;
 }
-.fc-target-mode-note.is-existing {
-    background: rgba(239, 108, 0, 0.10);
-    color: #e65100;
+.fc-target-status.is-existing.is-dirty .fc-target-status-state {
+    color: #b35400;
     font-weight: 600;
 }
-.fc-target-mode-note.is-blocked {
-    background: rgba(198, 40, 40, 0.08);
-    color: #c62828;
+.fc-target-status.is-new {
+    background: rgba(69, 90, 100, 0.06);
+    border-color: rgba(69, 90, 100, 0.20);
+    border-left-color: #607d8b;
+    color: #37474f;
+}
+.fc-target-status.is-incomplete {
+    background: rgba(69, 90, 100, 0.05);
+    border-color: rgba(69, 90, 100, 0.18);
+    border-left-color: #90a4ae;
+    color: #455a64;
+}
+/* The two that must be impossible to mistake for a new-rule form. */
+.fc-target-status.is-duplicate {
+    background: rgba(198, 40, 40, 0.07);
+    border-color: rgba(198, 40, 40, 0.28);
+    border-left-color: #c62828;
+    color: #8e1d1d;
+}
+.fc-target-status.is-unavailable {
+    background: rgba(239, 108, 0, 0.08);
+    border-color: rgba(239, 108, 0, 0.28);
+    border-left-color: #ef6c00;
+    color: #8a4300;
 }
 #target-load-latest-btn {
     margin: 0 0 10px;

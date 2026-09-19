@@ -151,7 +151,9 @@ var TR_CODE = codeOnly(['_trRows_', '_trDataState_', '_trRowsFor_', '_trDistinct
   // R2B-A2-R5-F5-F1 — the canonical row-shape seam: the blank-months state and the borrowed
   // normalization authority the receipt merge now goes through.
   '_trBlankMonths_', '_trNormalizeCanonical_', '_fcGetTargetRules', '_getDbTargetRules',
-  '_trClassify_', '_trSyncSession_', '_trRenderMode_', '_trMergeReceipt_',
+  // R2B-A2-R5-F6 — the status card's own helpers.
+  '_trStatusIdentity_', '_trStatusMessage_',
+  '_trClassify_', '_trSyncSession_', '_trRenderStatus_', '_trMergeReceipt_',
   '_trOnChange_', '_trCompanyResolution_', '_trGate_', '_trApplyGate_', '_trBuildPayload_',
   'openAddTargetRuleModal', 'updateTargetScopeFields', 'saveNewTargetRule']
   .map(function (f) { return extractFn(JS, f); }).join('\n'));
@@ -248,7 +250,9 @@ var TR_FNS = ['_trCanonScope_', '_trNorm_', '_trRows_', '_trDataState_', '_trDis
   '_trSetApplyAll_', '_trHydrateFrom_', '_trResetToNew_', '_trProposedFingerprint_',
   // R2B-A2-R5-F5-F1 — the canonical row-shape seam.
   '_trBlankMonths_', '_trNormalizeCanonical_', '_fcGetTargetRules', '_getDbTargetRules',
-  '_trClassify_', '_trSyncSession_', '_trRenderMode_', '_trMergeReceipt_',
+  // R2B-A2-R5-F6 — the status card's own helpers.
+  '_trStatusIdentity_', '_trStatusMessage_',
+  '_trClassify_', '_trSyncSession_', '_trRenderStatus_', '_trMergeReceipt_',
   '_trMonths_', '_trGate_', '_trApplyGate_', '_trBuildPayload_', '_trCommonMonthlyPct_',
   'openAddTargetRuleModal', 'updateTargetScopeFields', 'fillAllTargetMonths', 'saveNewTargetRule',
   '_fcWriteBegin_', '_fcWriteEnd_', '_fcSetTargetSaveEnabled_'];
@@ -256,7 +260,7 @@ var TR_VARS = ['_TR_ORDER_', '_TR_CTL_', '_TR_LABEL_', '_TR_SCOPE_FIELDS_', '_TR
   // R2B-A2-R5-F5 — the edit session and the version-token field lists.
   '_TR_FP_MONTHS_', '_TR_FP_FIELDS_', '_TR_FP_NUMERIC_', '_trSession_',
   // R2B-A2-R5-F5-F1 — the sentinel that distinguishes 'could not read the rules' from 'there are none'.
-  '_TR_UNAVAILABLE_',
+  '_TR_UNAVAILABLE_', '_TR_STATUS_SCOPE_LABEL_',
   '_FC_MONTH_KEYS', 'FC_VIEW_', 'FC_WRITE_', 'FC_MSG_'];
 
 function build(opts) {
@@ -324,7 +328,9 @@ function build(opts) {
     return e ? e.options.map(function (o) { return String(o.textContent === undefined ? o.text : o.textContent); }) : null;
   };
   S.set = function (id, v) { var e = dom.byId[id]; if (e) e.value = v; return e ? e.value : null; };
-  S.note = function () { var e = dom.byId['target-scope-note']; return e ? e.textContent : ''; };
+  // R2B-A2-R5-F6 — one status card replaced the two message bars; the gate's refusal text is now the
+  // card's state line. Same text, same assertions, one element instead of two.
+  S.note = function () { var e = dom.byId['target-status-state']; return e ? e.textContent : ''; };
   return S;
 }
 

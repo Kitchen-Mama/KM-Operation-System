@@ -438,7 +438,8 @@ var ROUND_TOKENS = [
   // default 100s and no version, which the new server refuses outright - so the stale cache would
   // present a form that cannot save at all. The whole application set rotates together.
   'tgtrehydrate-r2ba2r5f5-20260919',
-  'trseamrepair-r2ba2r5f5f1-20260919'];
+  'trseamrepair-r2ba2r5f5f1-20260919',
+  'statuscard-r2ba2r5f6-20260919'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

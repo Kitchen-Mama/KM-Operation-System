@@ -86,11 +86,16 @@ function assignFnSrc(src, dotted) {
 // ================================================================================================
 section('A. THE MODAL CAN SAY WHICH RULE IT IS EDITING');
 // ================================================================================================
-ok(/id="target-mode-note"/.test(HTML), 'A1  the mode banner element exists in the modal markup');
+// R2B-A2-R5-F6 — the two message bars became one status card. What A1 and A4 are FOR is that the
+// modal can say which rule it is editing and that the state is visible rather than silent; both are
+// still asserted, against the component that now carries them.
+ok(/id="target-status-card"/.test(HTML), 'A1  the status card exists in the modal markup');
+ok(/id="target-status-title"/.test(HTML) && /id="target-status-state"/.test(HTML)
+  && /id="target-status-meta"/.test(HTML), 'A1a with a title, a state line and its metadata');
 ok(/id="target-load-latest-btn"/.test(HTML), 'A2  and the stale-recovery control');
 ok(/_trLoadLatest_\(\)/.test(HTML), 'A3  wired to the one-read rehydration handler');
-ok(/fc-target-mode-note\.is-existing/.test(read('assets/css/pages/fc-overview.css')),
-  'A4  and the "Existing rule — Update" state is visually distinct, not silent styling');
+ok(/\.fc-target-status\.is-existing/.test(read('assets/css/pages/fc-overview.css')),
+  'A4  and the loaded-existing state is visually distinct, not silent styling');
 
 // ================================================================================================
 section('B. THE VERSION TOKEN — two implementations, one value, on the real rows');

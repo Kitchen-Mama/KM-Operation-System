@@ -802,13 +802,28 @@
                                  marketplace. Read-only metadata (R2B-A2-R5 §2). When the canonical rows give
                                  more than one owner the save is refused rather than silently taking the
                                  first, and this line says so. -->
-                            <div class="fc-target-scope-note" id="target-scope-note"></div>
-                            <!-- R2B-A2-R5-F5 — WHICH RULE AM I EDITING? The modal used to have no answer.
-                                 Selecting the identity of a rule that already exists produced a form full of
-                                 the new-rule default 100, and saving it overwrote the stored months. This line
-                                 says "New rule" or "Existing rule — Update" with the target_rule_id, and it is
-                                 driven by the same classification that decides whether Save is enabled. -->
-                            <div class="fc-target-mode-note" id="target-mode-note"></div>
+                            <!-- R2B-A2-R5-F6 — ONE STATUS CARD, NOT TWO MESSAGE BARS.
+
+                                 R5 added a scope note and F5 added a mode note, and both ended up saying the
+                                 same thing in the same place: "Existing rule — Update · no change yet" sat
+                                 directly above "Existing rule — Update · fc_target_rules-B56D730F-138". Two
+                                 bars, one fact, and the rule id — a database key — was the loudest thing in
+                                 the modal. This is one component: what the rule IS, what state it is in, and
+                                 the identity as quiet metadata underneath.
+
+                                 The ids below are read by _trRenderStatus_, which is driven by the SAME
+                                 classification that decides whether Save is enabled, so the card and the
+                                 button can never describe two different rules. role="status" with a polite
+                                 live region means a screen reader hears the mode change without the focus
+                                 being stolen mid-edit. -->
+                            <div class="fc-target-status" id="target-status-card" role="status" aria-live="polite">
+                                <span class="fc-target-status-icon" id="target-status-icon" aria-hidden="true"></span>
+                                <div class="fc-target-status-body">
+                                    <div class="fc-target-status-title" id="target-status-title"></div>
+                                    <div class="fc-target-status-state" id="target-status-state"></div>
+                                    <div class="fc-target-status-meta" id="target-status-meta"></div>
+                                </div>
+                            </div>
                             <!-- Shown only after a STALE_TARGET_RULE_VERSION refusal. One read, then rehydrate.
                                  It never re-applies the operator's edits on top of somebody else's change. -->
                             <button type="button" class="fc-btn-secondary" id="target-load-latest-btn"

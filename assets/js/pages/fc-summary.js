@@ -1614,30 +1614,123 @@ function _trSyncSession_() {
   return cls;
 }
 
-/* The mode banner. It names the rule being edited, because 'this is an update' is only useful if the
-   operator can see WHICH row they are about to change. */
-function _trRenderMode_(cls) {
-  var el = document.getElementById('target-mode-note');
+/* R2B-A2-R5-F6 — ONE STATUS CARD.
+
+   There used to be two message bars. The scope note said what the gate thought, the mode note said
+   what the classifier thought, and for the state that matters most they said the same thing twice:
+
+       Existing rule — Update  ·  no change yet. Edit a month to enable Save.
+       Existing rule — Update  ·  fc_target_rules-B56D730F-138
+
+   Two bars for one fact, with a database key as the loudest text in the modal. This renders ONE card:
+   a title for what the rule is, a state line for what is true right now, and the identity as quiet
+   metadata. Both inputs still come from the same classification and the same gate, so the card and the
+   Save button cannot describe two different rules — that property is the reason the two were merged
+   rather than one of them deleted.
+
+   It decides NOTHING. Save enablement, classification, hydration and the write payload are untouched;
+   this function only reads what they concluded. */
+var _TR_STATUS_SCOPE_LABEL_ = { CATEGORY: 'CATEGORY', SERIES: 'SERIES', SKU: 'SKU' };
+
+function _trStatusIdentity_(sel) {
+  var fields = _TR_SCOPE_FIELDS_[sel.scope];
+  if (!fields) return '';
+  return _trNorm_(sel[fields[fields.length - 1]]);
+}
+
+function _trRenderStatus_(cls, g) {
+  var card = document.getElementById('target-status-card');
   var btn = document.getElementById('target-load-latest-btn');
   if (btn) btn.style.display = 'none';
-  if (!el) return;
-  if (!cls || cls.mode === 'INCOMPLETE') { el.textContent = ''; el.className = 'fc-target-mode-note'; return; }
-  if (cls.mode === 'EXISTING_UPDATE') {
-    el.textContent = 'Existing rule — Update  ·  ' + _trSession_.id;
-    el.className = 'fc-target-mode-note is-existing';
-  } else if (cls.mode === 'DATA_UNAVAILABLE') {
-    el.textContent = 'TARGET_RULE_DATA_UNAVAILABLE — the existing rules could not be read. This '
-      + 'identity cannot be classified. Nothing will be written.';
-    el.className = 'fc-target-mode-note is-blocked';
-  } else if (cls.mode === 'DUPLICATE_REFUSAL') {
-    el.textContent = 'DUPLICATE_TARGET_RULE_IDENTITY — ' + cls.matches.length
-      + ' rules share this identity (' + cls.matches.map(function (r) { return r.target_rule_id; }).join(', ')
-      + '). Resolve the duplicate before writing. Nothing will be written.';
-    el.className = 'fc-target-mode-note is-blocked';
-  } else {
-    el.textContent = 'New rule';
-    el.className = 'fc-target-mode-note is-new';
+  if (!card) return;
+  var icon = document.getElementById('target-status-icon');
+  var title = document.getElementById('target-status-title');
+  var state = document.getElementById('target-status-state');
+  var meta = document.getElementById('target-status-meta');
+  function put(el, t) { if (el) el.textContent = t; }
+
+  var mode = cls ? cls.mode : 'INCOMPLETE';
+  var gate = g || null;
+  var refused = gate && !gate.ok ? gate : null;
+
+  // An INCOMPLETE selection always has something to say — the gate names the dimension that is
+  // missing — so it renders like every other state. There is deliberately no hide-the-card path:
+  // the one this function started with could not be reached, because _trApplyGate_ always supplies
+  // a gate and an incomplete classification always carries a refusal. A branch that cannot run is a
+  // branch a later reader will trust anyway.
+
+  var sel = {};
+  try { sel = _trSel_(); } catch (e) { sel = {}; }
+  var scope = _TR_STATUS_SCOPE_LABEL_[sel.scope] || '';
+  var ident = _trStatusIdentity_(sel);
+  var bits = [];
+  if (scope) bits.push(scope);
+  if (ident) bits.push(ident);
+
+  if (mode === 'EXISTING_UPDATE') {
+    // Dirty is a STATE of the loaded rule, not a different rule. The title holds still so the card
+    // does not appear to change subject the moment someone types.
+    var dirty = !!(gate && gate.ok);
+    put(icon, dirty ? '\u270E' : '\u2713');
+    put(title, 'Existing rule loaded');
+    put(state, refused && refused.code !== 'UNCHANGED' ? refused.text
+      : (dirty ? 'Unsaved changes' : 'No changes yet. Edit a monthly value to enable Save.'));
+    if (_trSession_.id) bits.push(_trSession_.id);
+    put(meta, bits.join('  ·  '));
+    card.className = 'fc-target-status is-existing' + (dirty ? ' is-dirty' : '');
+    return;
   }
+  if (mode === 'DUPLICATE_REFUSAL') {
+    put(icon, '\u26A0');
+    put(title, 'Duplicate rules for this identity');
+    put(state, cls.matches.length + ' saved rules share this identity. Save is disabled until the '
+      + 'duplicate is resolved. Nothing will be written.');
+    put(meta, bits.concat([cls.matches.map(function (r) { return r.target_rule_id; }).join(', ')]).join('  ·  '));
+    card.className = 'fc-target-status is-duplicate';
+    return;
+  }
+  if (mode === 'DATA_UNAVAILABLE') {
+    // Deliberately NOT styled like NEW. Looking like a new-rule form is the reading that invites
+    // someone to fill it in and save, which is the whole hazard this state exists to prevent.
+    put(icon, '\u26A0');
+    put(title, 'Saved rules could not be verified');
+    put(state, 'Save is disabled and the monthly values are left blank, because this identity cannot '
+      + 'be classified as new or existing.');
+    put(meta, bits.join('  ·  '));
+    card.className = 'fc-target-status is-unavailable';
+    return;
+  }
+  if (mode === 'NEW') {
+    put(icon, '\u002B');
+    put(title, 'New rule');
+    put(state, refused ? refused.text
+      : 'No saved rule exists for this selection. Monthly values start at 100%.');
+    put(meta, bits.join('  ·  '));
+    card.className = 'fc-target-status is-new';
+    return;
+  }
+  // INCOMPLETE, but the gate has something actionable to say.
+  put(icon, '\u2139');
+  put(title, 'Select a rule scope');
+  put(state, refused ? refused.text : '');
+  put(meta, bits.join('  ·  '));
+  card.className = 'fc-target-status is-incomplete';
+}
+
+/* A server outcome shown in the card rather than in a message bar of its own. It overwrites the title
+   and state and leaves the metadata standing, because WHICH rule is being edited has not changed —
+   only what the server said about it. The next _trApplyGate_ re-renders from the classification. */
+function _trStatusMessage_(title, state) {
+  var card = document.getElementById('target-status-card');
+  if (!card) return;
+  card.style.display = '';
+  card.className = 'fc-target-status is-duplicate';
+  var i = document.getElementById('target-status-icon');
+  var t = document.getElementById('target-status-title');
+  var st = document.getElementById('target-status-state');
+  if (i) i.textContent = '\u26A0';
+  if (t) t.textContent = title;
+  if (st) st.textContent = state;
 }
 
 /* STALE recovery: ONE read, then re-hydrate from what came back. It deliberately does NOT re-apply the
@@ -1645,19 +1738,15 @@ function _trRenderMode_(cls) {
    whole round exists to prevent. The operator sees the current values and decides again. */
 function _trLoadLatest_() {
   var btn = document.getElementById('target-load-latest-btn');
-  var note = document.getElementById('target-mode-note');
   if (typeof _fcWorkspaceRefresh_ !== 'function') return;
   if (btn) btn.disabled = true;
   _fcWorkspaceRefresh_().then(function () {
     _trSession_.key = '';                       // force a fresh classification and re-hydration
-    _trRebuild_();
+    _trRebuild_();                              // which re-renders the card from the fresh rows
     if (typeof renderTargetRulesTable === 'function') renderTargetRulesTable();
-    if (note) { note.textContent = note.textContent + '  ·  reloaded'; }
   }).catch(function () {
-    if (note) {
-      note.textContent = 'Could not reload the canonical data. Your entries are unchanged.';
-      note.className = 'fc-target-mode-note is-blocked';
-    }
+    _trStatusMessage_('Could not reload the canonical data', 'Your entries are unchanged. The saved '
+      + 'rule shown here may be out of date.');
   }).then(function () { if (btn) btn.disabled = false; });
 }
 
@@ -1666,13 +1755,9 @@ function _trOnRefusal_(res) {
   var code = '';
   try { code = String((res && (res.error || (res.data && res.data.error))) || ''); } catch (e) { code = ''; }
   if (code !== 'STALE_TARGET_RULE_VERSION') return;
-  var note = document.getElementById('target-mode-note');
   var btn = document.getElementById('target-load-latest-btn');
-  if (note) {
-    note.textContent = 'STALE_TARGET_RULE_VERSION — this rule changed after it was loaded. Nothing was '
-      + 'written and your entries are still here. Load the latest data, then decide again.';
-    note.className = 'fc-target-mode-note is-blocked';
-  }
+  _trStatusMessage_('This rule changed after it was loaded',
+    'Nothing was written and your entries are still here. Load the latest data, then decide again.');
   if (btn) btn.style.display = '';
 }
 
@@ -1750,23 +1835,13 @@ function _trGate_() {
 
 function _trApplyGate_() {
   var g = _trGate_();
-  // The mode banner is driven from the same classification the gate used, so the label and the button
-  // state cannot describe two different rules.
+  // The card is driven from the SAME classification the gate used and from the gate itself, so the
+  // label, the state line and the button cannot describe two different rules. It is still diagnostic:
+  // a throw in rendering may never decide whether Save is enabled.
   try {
     var _sel = _trSel_(), _cr = _trCompanyResolution_();
-    _trRenderMode_(_trClassify_(_sel, _cr.state === 'RESOLVED' ? _cr.company : ''));
-  } catch (e) { /* the banner is diagnostic; it may never block the gate */ }
-  var note = document.getElementById('target-scope-note');
-  if (note) {
-    if (g.ok) {
-      note.textContent = 'Company ' + g.company + ' · ' + g.sel.country + ' · '
-        + _fcMarketplaceLabel(g.sel.marketplace, g.company, g.sel.country);
-      note.className = 'fc-target-scope-note is-ok';
-    } else {
-      note.textContent = g.text;
-      note.className = 'fc-target-scope-note is-blocked';
-    }
-  }
+    _trRenderStatus_(_trClassify_(_sel, _cr.state === 'RESOLVED' ? _cr.company : ''), g);
+  } catch (e) { /* the card is diagnostic; it may never block the gate */ }
   if (typeof _fcSetTargetSaveEnabled_ === 'function') _fcSetTargetSaveEnabled_(!!g.ok);
   return g;
 }
