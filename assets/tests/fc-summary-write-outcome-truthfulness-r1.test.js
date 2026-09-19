@@ -846,14 +846,21 @@ function runMutants() {
 
     // M8 — the Target Rule single-flight guard is removed
     .then(function () {
+      // R2B-A2-R5 — TWO leading spaces, not four. The guard moved out of `if (_fcUseDb()) { ... }` when the
+      // demo path became an early return, and an anchor that no longer matches is a mutant that silently
+      // stops biting. The mutated source is now checked for the REPLACEMENT, not merely for the absence of
+      // the original, so a no-op mutation cannot read as a successful one.
       return m('M8  the Target Rule single-flight guard is removed',
-        '    if (!_fcWriteBegin_(\'targetRule\')) return;',
-        '    _fcWriteBegin_(\'targetRule\');',
+        '  if (!_fcWriteBegin_(\'targetRule\')) return;',
+        '  _fcWriteBegin_(\'targetRule\');',
         function (S) {
           // observed on the source-driven latch: the control no longer refuses a second entry
-          var src = extractFn(mutate(FC, '    if (!_fcWriteBegin_(\'targetRule\')) return;',
-            '    _fcWriteBegin_(\'targetRule\');'), 'saveNewTargetRule');
-          return !/if \(!_fcWriteBegin_\('targetRule'\)\) return;/.test(src)
+          var mutated = mutate(FC, '  if (!_fcWriteBegin_(\'targetRule\')) return;',
+            '  _fcWriteBegin_(\'targetRule\');');
+          if (mutated === null) throw new Error('M8 mutation did not apply — the guard anchor has moved');
+          var src = extractFn(mutated, 'saveNewTargetRule');
+          return /_fcWriteBegin_\('targetRule'\);/.test(src)
+            && !/if \(!_fcWriteBegin_\('targetRule'\)\) return;/.test(src)
             && /upsertFcTargetRule\(payload\)/.test(src);
         });
     })

@@ -1182,108 +1182,368 @@ function saveNewSku() {
 // Target rules data
 const targetRules = [];
 
+// ============================================================================================================
+// FC-SUMMARY-R2B-A2-R5 — TARGET RULE CANONICAL SCOPE
+//
+// WHAT WAS HERE BEFORE. The modal's option lists were static HTML: Marketplace offered All/Amazon/Walmart,
+// Category offered All plus three product names, Series offered five codes, and SKU was a free-text box
+// validated against `upcomingSkuData`/`runningSkuData`/`phasingOutSkuData` — the demo arrays in
+// assets/js/utils/data.js. No code populated any of those lists, so they could not have reflected the
+// database. There was no Country control, and the payload carried neither `company` nor `country`, even
+// though handleUpsertFcTargetRule_ documents both and the live sheet has both columns.
+//
+// WHAT IT IS NOW. Every list is derived from the SAME canonical read model the page rendered its table and
+// filters from — `_getDbFcRegularData()`, whose rows carry year, company, country, marketplace, category,
+// series and sku. Opening the modal issues no request; it reads what is already loaded.
+//
+// WHY THE PAGE FILTERS ARE NON-CASCADING AND THIS IS. They answer different questions. A filter asks "hide
+// rows I don't want to look at", so narrowing its option set would hide data the user can legitimately ask
+// for. A scope selector asks "which real thing am I writing a rule against", and an option that does not
+// exist in the data is not a thing you can write a rule against. The non-cascading decision recorded in
+// FC_SUMMARY_SPEC §13 is about the FILTER BAR and is untouched.
+// ============================================================================================================
+
+// Cascade order. Every scope's active set is a PREFIX of this list, which is what makes "clear everything
+// downstream" a single slice rather than a per-dimension dependency table.
+var _TR_ORDER_ = ['year', 'country', 'marketplace', 'category', 'series', 'sku'];
+var _TR_CTL_ = {
+  year: 'target-year-input', country: 'target-country-input', marketplace: 'target-marketplace-input',
+  category: 'target-category-input', series: 'target-series-input', sku: 'target-sku-input'
+};
+var _TR_LABEL_ = { year: 'Year', country: 'Country', marketplace: 'Marketplace',
+  category: 'Category', series: 'Series', sku: 'SKU' };
+
+// Which dimensions each scope SENDS. The old code sent no category for SKU scope, so a SKU rule recorded no
+// category at all; resolveTargetPct reads r.category when scope_id is blank, so that omission was load-bearing.
+var _TR_SCOPE_FIELDS_ = {
+  Category: ['category'],
+  Series: ['category', 'series'],
+  SKU: ['category', 'series', 'sku']
+};
+
+// ONE mapping between however a scope is spelled and its canonical token, per §5. The three consumers spell
+// it differently — normalizeFcTargetRuleRecord lowercases, procurementTargetRuleResolver_ lowercases, and
+// the page's own getEffectiveTargetPct compares title-case — so the PERSISTED value must be title case and
+// every comparison must go through here rather than retyping a literal.
+var _TR_SCOPES_ = ['Category', 'Series', 'SKU'];
+function _trCanonScope_(v) {
+  var s = String(v === undefined || v === null ? '' : v).trim().toLowerCase();
+  for (var i = 0; i < _TR_SCOPES_.length; i++) {
+    if (_TR_SCOPES_[i].toLowerCase() === s) return _TR_SCOPES_[i];
+  }
+  return '';
+}
+
+function _trNorm_(v) { return String(v === undefined || v === null ? '' : v).trim(); }
+
+// The canonical universe — the active dataset, identical to the one the filters and table were built from.
+function _trRows_() {
+  var demoOn = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
+  var rows = demoOn ? _getDemoFcRegularData() : _getDbFcRegularData();
+  return Array.isArray(rows) ? rows : [];
+}
+
+// Rows still reachable once `dims` have been chosen. An UNSET upstream dimension matches nothing, which is
+// what makes "you cannot pick a marketplace before a country" fall out of the data instead of a rule.
+function _trRowsFor_(chosen, dims) {
+  return _trRows_().filter(function (r) {
+    for (var i = 0; i < dims.length; i++) {
+      var d = dims[i], want = _trNorm_(chosen[d]);
+      if (!want) return false;
+      if (_trNorm_(r[d]) !== want) return false;
+    }
+    return true;
+  });
+}
+
+// WHY AN UNREADABLE READ IS NOT AN EMPTY ONE. _trRows_() answers [] for a refused read, an in-flight read
+// and an empty table alike. Offering '— no data —' for the first two would tell the user their database is
+// empty when the page merely failed to ask it — the same false-empty the Year dropdown carried before R1.
+function _trDataState_() {
+  var refused = (typeof _fcViewState_ !== 'undefined') && (typeof FC_VIEW_ !== 'undefined')
+    && _fcViewState_ === FC_VIEW_.REFUSED;
+  if (refused) return 'UNREADABLE';
+  var loading = (typeof _fcViewState_ !== 'undefined') && (typeof FC_VIEW_ !== 'undefined')
+    && _fcViewState_ === FC_VIEW_.REFRESHING;
+  if (!_trRows_().length) return loading ? 'LOADING' : 'EMPTY';
+  return 'OK';
+}
+
+function _trDistinct_(rows, dim) {
+  var seen = {}, out = [];
+  for (var i = 0; i < rows.length; i++) {
+    var v = _trNorm_(rows[i][dim]);
+    if (v && !seen[v]) { seen[v] = 1; out.push(v); }
+  }
+  if (dim === 'year') return out.sort(function (a, b) { return Number(b) - Number(a); });
+  return out.sort();
+}
+
+// The DOM is the single source of selection truth — a parallel state object is one more thing that can
+// disagree with what the user is looking at.
+function _trSel_() {
+  var out = {};
+  for (var i = 0; i < _TR_ORDER_.length; i++) {
+    var el = document.getElementById(_TR_CTL_[_TR_ORDER_[i]]);
+    out[_TR_ORDER_[i]] = el ? _trNorm_(el.value) : '';
+  }
+  var se = document.getElementById('target-scope-input');
+  out.scope = _trCanonScope_(se ? se.value : '');
+  return out;
+}
+
+function _trActiveDims_(scope) {
+  var fields = _TR_SCOPE_FIELDS_[_trCanonScope_(scope)] || _TR_SCOPE_FIELDS_.Category;
+  return ['year', 'country', 'marketplace'].concat(fields);
+}
+
+// Values are canonical; only the visible text may be friendly (§4).
+function _trFillSelect_(el, opts, pick, labelFn) {
+  while (el.firstChild) el.removeChild(el.firstChild);
+  var ph = document.createElement('option');
+  ph.value = '';
+  ph.textContent = opts.length ? '— select —' : '— no data —';
+  el.appendChild(ph);
+  for (var i = 0; i < opts.length; i++) {
+    var o = document.createElement('option');
+    o.value = opts[i];
+    o.textContent = labelFn ? labelFn(opts[i]) : opts[i];
+    el.appendChild(o);
+  }
+  el.value = pick || '';
+  el.disabled = opts.length === 0;
+}
+
+// Rebuild every active list from the canonical rows, carrying forward only values that still exist. This is
+// the single place that decides what may be selected, so a downstream value cannot survive an upstream change.
+// `seed` carries values that are WANTED but cannot be set on the control yet, because a <select> silently
+// refuses a value none of its options offers. Applied here, while each list is being built, it lands.
+function _trRebuild_(seed) {
+  var sel = _trSel_();
+  var active = _trActiveDims_(sel.scope);
+  var chosen = {};
+  // Defined ONCE, reading chosen.country at call time — country is settled before marketplace is built.
+  // A closure created inside the loop would capture the loop's `var` and only be correct for as long as
+  // _trFillSelect_ stays synchronous, which is not a property worth depending on.
+  function marketplaceLabel(v) { return _fcMarketplaceLabel(v, '', chosen.country); }
+  for (var i = 0; i < active.length; i++) {
+    var dim = active[i];
+    var rows = _trRowsFor_(chosen, active.slice(0, i));
+    var opts = _trDistinct_(rows, dim);
+    var prev = sel[dim] || (seed && seed[dim] ? _trNorm_(seed[dim]) : '');
+    // A value that is still offered is kept; a single option may auto-select; anything else clears.
+    var pick = (opts.indexOf(prev) !== -1) ? prev : (opts.length === 1 ? opts[0] : '');
+    var el = document.getElementById(_TR_CTL_[dim]);
+    if (el) _trFillSelect_(el, opts, pick, dim === 'marketplace' ? marketplaceLabel : null);
+    chosen[dim] = pick;
+  }
+  // Inactive controls are emptied, not merely hidden: a hidden <select> still has a .value, and that value
+  // is exactly the "stale hidden field" §5 refuses to dispatch.
+  for (var j = 0; j < _TR_ORDER_.length; j++) {
+    var d = _TR_ORDER_[j];
+    if (active.indexOf(d) !== -1) continue;
+    var dead = document.getElementById(_TR_CTL_[d]);
+    if (dead) { while (dead.firstChild) dead.removeChild(dead.firstChild); dead.value = ''; }
+  }
+  _trApplyGate_();
+}
+
+function _trOnChange_(dim) {
+  // Clear everything downstream of the changed dimension before rebuilding, so a stale value can never be
+  // "carried forward" merely because it also happens to exist under the new parent.
+  var at = _TR_ORDER_.indexOf(dim);
+  if (at !== -1) {
+    for (var i = at + 1; i < _TR_ORDER_.length; i++) {
+      var el = document.getElementById(_TR_CTL_[_TR_ORDER_[i]]);
+      if (el) el.value = '';
+    }
+  }
+  _trRebuild_();
+}
+
+// COMPANY IS DERIVED, NEVER CHOSEN (§2). It is resolved from the rows the rule will actually apply to, so a
+// rule that would span two owners is refused instead of silently taking the first — a blank company cell is
+// a wildcard to resolveTargetPct, and the first-of-two is simply wrong.
+function _trCompanyResolution_() {
+  var sel = _trSel_();
+  var active = _trActiveDims_(sel.scope);
+  for (var i = 0; i < active.length; i++) { if (!sel[active[i]]) return { state: 'INCOMPLETE', companies: [] }; }
+  var rows = _trRowsFor_(sel, active);
+  if (!rows.length) return { state: 'DATA_UNAVAILABLE', companies: [] };
+  var comps = _trDistinct_(rows, 'company');
+  if (comps.length === 1) return { state: 'RESOLVED', companies: comps, company: comps[0] };
+  if (comps.length === 0) return { state: 'DATA_UNAVAILABLE', companies: [] };
+  return { state: 'AMBIGUOUS', companies: comps };
+}
+
+function _trMonths_() {
+  var values = {}, invalid = [];
+  for (var i = 0; i < _FC_MONTH_KEYS.length; i++) {
+    var m = _FC_MONTH_KEYS[i];
+    var el = document.getElementById('target-' + m);
+    var raw = el ? String(el.value).trim() : '';
+    var n = (raw === '') ? NaN : Number(raw);
+    // The old reader was `parseInt(v) || 100`, which turned both a typo AND a deliberate 0 into 100.
+    if (!isFinite(n) || n < 0) { invalid.push(m); continue; }
+    values[m] = n;
+  }
+  return { values: values, invalid: invalid };
+}
+
+// One gate, consulted by both the Save button state and the dispatch path, so what the button says and what
+// the click does cannot disagree.
+function _trGate_() {
+  // Before anything about the selection: is there a canonical universe to select FROM at all?
+  var state = _trDataState_();
+  if (state === 'UNREADABLE') {
+    return { ok: false, code: 'DATA_UNREADABLE',
+      text: 'DATA_UNREADABLE — the canonical forecast read was refused. This is not an empty database; '
+        + 'close this dialog, press Retry, and reopen once the table has loaded.' };
+  }
+  if (state === 'LOADING') {
+    return { ok: false, code: 'DATA_LOADING', text: 'Loading the canonical forecast\u2026' };
+  }
+  if (state === 'EMPTY') {
+    return { ok: false, code: 'DATA_UNAVAILABLE',
+      text: 'DATA_UNAVAILABLE — the canonical forecast has no rows, so there is no scope to write against.' };
+  }
+  var sel = _trSel_();
+  if (!sel.scope) return { ok: false, code: 'SCOPE_INVALID', text: 'Choose a scope.' };
+  var active = _trActiveDims_(sel.scope);
+  for (var i = 0; i < active.length; i++) {
+    if (!sel[active[i]]) return { ok: false, code: 'INCOMPLETE', text: 'Select ' + _TR_LABEL_[active[i]] + '.' };
+  }
+  var rows = _trRowsFor_(sel, active);
+  if (!rows.length) {
+    return { ok: false, code: 'DATA_UNAVAILABLE', text: 'DATA_UNAVAILABLE — this combination is not in the canonical forecast data.' };
+  }
+  var cr = _trCompanyResolution_();
+  if (cr.state === 'AMBIGUOUS') {
+    return { ok: false, code: 'OWNERSHIP_SCOPE_AMBIGUOUS',
+      text: 'OWNERSHIP_SCOPE_AMBIGUOUS — this scope spans ' + cr.companies.length + ' companies ('
+        + cr.companies.join(', ') + '). One rule cannot record two owners; narrow the scope.' };
+  }
+  if (cr.state !== 'RESOLVED') {
+    return { ok: false, code: 'DATA_UNAVAILABLE', text: 'DATA_UNAVAILABLE — no company owns this selection.' };
+  }
+  var mo = _trMonths_();
+  if (mo.invalid.length) {
+    return { ok: false, code: 'MONTH_INVALID',
+      text: 'Enter a number of 0 or more for: ' + mo.invalid.join(', ').toUpperCase() + '.' };
+  }
+  return { ok: true, code: 'OK', company: cr.company, sel: sel, active: active, months: mo.values };
+}
+
+function _trApplyGate_() {
+  var g = _trGate_();
+  var note = document.getElementById('target-scope-note');
+  if (note) {
+    if (g.ok) {
+      note.textContent = 'Company ' + g.company + ' · ' + g.sel.country + ' · '
+        + _fcMarketplaceLabel(g.sel.marketplace, g.company, g.sel.country);
+      note.className = 'fc-target-scope-note is-ok';
+    } else {
+      note.textContent = g.text;
+      note.className = 'fc-target-scope-note is-blocked';
+    }
+  }
+  if (typeof _fcSetTargetSaveEnabled_ === 'function') _fcSetTargetSaveEnabled_(!!g.ok);
+  return g;
+}
+
 function openAddTargetRuleModal() {
-  const yearSelect = document.getElementById('fc-year-select');
-  const currentYear = new Date().getFullYear();
-  
-  // Use selected year if available, otherwise use current year
-  document.getElementById('target-year-input').value = yearSelect.value || currentYear;
-  updateTargetScopeFields();
+  // Seed the year from the page's selection. It is handed to the rebuild rather than written onto the
+  // control: at this point the control has no options, so an assignment would be discarded.
+  var pageYear = document.getElementById('fc-year-select');
+  var seed = { year: pageYear ? _trNorm_(pageYear.value) : '' };
+  updateTargetScopeFields(seed);      // rebuilds from the CURRENT read model — no request is issued
   showFcModal('fc-add-target-modal');
 }
 
-function updateTargetScopeFields() {
-  const scope = document.getElementById('target-scope-input').value;
-  
-  document.getElementById('target-category-group').style.display = 
-    (scope === 'Category' || scope === 'Series') ? 'block' : 'none';
-  document.getElementById('target-series-group').style.display = 
-    (scope === 'Series' || scope === 'SKU') ? 'block' : 'none';
-  document.getElementById('target-sku-group').style.display = 
-    (scope === 'SKU') ? 'block' : 'none';
+function updateTargetScopeFields(seed) {
+  var scope = _trCanonScope_((document.getElementById('target-scope-input') || {}).value);
+  var show = {
+    'target-category-group': _TR_SCOPE_FIELDS_[scope] ? _TR_SCOPE_FIELDS_[scope].indexOf('category') !== -1 : true,
+    'target-series-group': _TR_SCOPE_FIELDS_[scope] ? _TR_SCOPE_FIELDS_[scope].indexOf('series') !== -1 : false,
+    'target-sku-group': _TR_SCOPE_FIELDS_[scope] ? _TR_SCOPE_FIELDS_[scope].indexOf('sku') !== -1 : false
+  };
+  Object.keys(show).forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = show[id] ? 'block' : 'none';
+  });
+  _trRebuild_(seed);
 }
 
 function fillAllTargetMonths(value) {
-  const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-  months.forEach(m => {
-    document.getElementById(`target-${m}`).value = value || 100;
+  _FC_MONTH_KEYS.forEach(function (m) {
+    var el = document.getElementById('target-' + m);
+    if (el) el.value = (value === '' || value == null) ? 100 : value;
   });
+  _trApplyGate_();
+}
+
+// The dispatched body. Built once, from the gate's own resolved values, so what was validated is what is sent.
+function _trBuildPayload_(g) {
+  var fields = _TR_SCOPE_FIELDS_[g.sel.scope];
+  var payload = {
+    scope_type: g.sel.scope,
+    // scope_id = the canonical identity of the scope's OWN dimension. Verified against all three consumers:
+    // procurementTargetRuleResolver_ keys bySku/bySeries/byCat on scope_id; resolveTargetPct reads scope_id
+    // first and falls back to sku/series/category; _roSaveTargetPct writes item.sku for SKU scope.
+    scope_id: g.sel[fields[fields.length - 1]],
+    year: parseInt(g.sel.year, 10),
+    company: g.company,
+    country: g.sel.country,
+    marketplace: g.sel.marketplace,
+    category: fields.indexOf('category') !== -1 ? g.sel.category : '',
+    series: fields.indexOf('series') !== -1 ? g.sel.series : '',
+    sku: fields.indexOf('sku') !== -1 ? g.sel.sku : '',
+    actor: 'fc-summary'
+  };
+  _FC_MONTH_KEYS.forEach(function (m) { payload[m + '_pct'] = g.months[m]; });
+  // target_percentage mirrors January, matching request-order.js _roSaveTargetPct so the two writers of this
+  // table agree. Both resolvers read the month column first and only fall back to this one.
+  payload.target_percentage = payload.jan_pct;
+  return payload;
 }
 
 function saveNewTargetRule() {
-  const scope = document.getElementById('target-scope-input').value;
-  const year = parseInt(document.getElementById('target-year-input').value);
-  const marketplace = document.getElementById('target-marketplace-input').value;
-  
-  // SKU validation for SKU scope
-  if (scope === 'SKU') {
-    const inputSku = document.getElementById('target-sku-input').value.trim();
-    if (!inputSku) {
-      alert('SKU is required for SKU scope');
-      return;
-    }
-    
-    // Check if SKU exists in SKU Details
-    const allSkus = [...upcomingSkuData, ...runningSkuData, ...phasingOutSkuData];
-    const skuExists = allSkus.some(item => item.sku === inputSku);
-    
-    if (!skuExists) {
-      alert('無此SKU，請確認SKU是否存在於SKU Details中');
-      return;
-    }
-  }
-  
-  const months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-  const percentages = {};
-  months.forEach(m => {
-    percentages[m] = parseInt(document.getElementById(`target-${m}`).value) || 100;
-  });
-  
-  const category = scope !== 'SKU' ? document.getElementById('target-category-input').value : null;
-  const series = (scope === 'Series' || scope === 'SKU') ? document.getElementById('target-series-input').value : null;
-  const sku = scope === 'SKU' ? document.getElementById('target-sku-input').value : null;
+  // A client refusal writes nothing and keeps every input, so the user can correct one field and retry.
+  var g = _trApplyGate_();
+  if (!g.ok) { alert(g.text); return; }
 
-  // Demo OFF → write fc_target_rules; Demo ON → keep local mock (no DB dependency in demo).
-  if (_fcUseDb()) {
-    const payload = {
-      scope_type: scope,
-      scope_id: scope === 'SKU' ? sku : (scope === 'Series' ? series : category),
-      year: year,
-      marketplace: marketplace,
-      category: category || '',
-      series: series || '',
-      sku: sku || '',
-      target_percentage: percentages.jan,
-      actor: 'fc-summary'
-    };
-    months.forEach(m => { payload[`${m}_pct`] = percentages[m]; });
-    if (!window.KM.DB.upsertFcTargetRule) { alert('Target rule write API not available.'); return; }
-    // FC-SUMMARY-R1 — THE ONE CONTROL THAT COULD DUPLICATE. No id is sent for a new rule, so the
-    // server appends: a second click created a second identical rule. It is now single-flight, and
-    // the server contract is untouched — no target_rule_id is invented here.
-    if (!_fcWriteBegin_('targetRule')) return;
-    _fcSetTargetSaveEnabled_(false);
-    var _trOpts = { ctl: 'targetRule', op: 'Target Rule Save', rows: 1, epoch: _fcEpoch_(),
-      reenable: _fcSetTargetSaveEnabled_,
-      onSuccess: function () {
-        _fcAfterWrite(function () {
-          renderTargetRulesTable(); closeFcModal();
-          _fcSetTargetSaveEnabled_(true);        // the modal is closed; restore for the next open
-          alert(FC_MSG_.SAVED + ' Target rule saved.');
-        });
-      } };
-    window.KM.DB.upsertFcTargetRule(payload)
-      .then(function (res) { _fcSettleWrite_(res, _trOpts); })
-      .catch(function (err) { _fcFailWrite_(err, _trOpts); });
+  if (!_fcUseDb()) {
+    targetRules.push({
+      id: 'rule-' + Date.now(), scope: g.sel.scope, year: parseInt(g.sel.year, 10),
+      company: g.company, country: g.sel.country, marketplace: g.sel.marketplace,
+      category: g.sel.category || null, series: g.sel.series || null, sku: g.sel.sku || null,
+      percentages: g.months
+    });
+    renderTargetRulesTable();
+    closeFcModal();
+    alert('Target rule added successfully');
     return;
   }
 
-  targetRules.push({
-    id: `rule-${Date.now()}`, scope, year, marketplace, category, series, sku, percentages
-  });
-  renderTargetRulesTable();
-  closeFcModal();
-  alert('Target rule added successfully');
+  var payload = _trBuildPayload_(g);
+  if (!window.KM.DB.upsertFcTargetRule) { alert('Target rule write API not available.'); return; }
+  // FC-SUMMARY-R1 — THE ONE CONTROL THAT COULD DUPLICATE. No id is sent for a new rule, so the
+  // server appends: a second click created a second identical rule. It is now single-flight, and
+  // the server contract is untouched — no target_rule_id is invented here.
+  if (!_fcWriteBegin_('targetRule')) return;
+  _fcSetTargetSaveEnabled_(false);
+  var _trOpts = { ctl: 'targetRule', op: 'Target Rule Save', rows: 1, epoch: _fcEpoch_(),
+    reenable: _fcSetTargetSaveEnabled_,
+    onSuccess: function () {
+      _fcAfterWrite(function () {
+        renderTargetRulesTable(); closeFcModal();
+        _fcSetTargetSaveEnabled_(true);        // the modal is closed; restore for the next open
+        alert(FC_MSG_.SAVED + ' Target rule saved.');
+      });
+    } };
+  window.KM.DB.upsertFcTargetRule(payload)
+    .then(function (res) { _fcSettleWrite_(res, _trOpts); })
+    .catch(function (err) { _fcFailWrite_(err, _trOpts); });
 }
 
 // Get effective target percentage
@@ -1351,7 +1611,8 @@ function renderTargetRulesTable() {
     return `
       <div class="scroll-row">
         <div class="scroll-cell">${rule.year}</div>
-        <div class="scroll-cell">${rule.marketplace || 'All'}</div>
+        <div class="scroll-cell">${rule.country || '-'}</div>
+        <div class="scroll-cell">${rule.marketplace || '-'}</div>
         <div class="scroll-cell">${rule.category || '-'}</div>
         <div class="scroll-cell">${rule.series || '-'}</div>
         <div class="scroll-cell">${rule.sku || '-'}</div>
@@ -4248,6 +4509,10 @@ function _getDbTargetRules() {
             id: r.ruleId || raw.target_rule_id || '',
             scope: scope,
             year: raw.year ? (parseInt(raw.year, 10) || raw.year) : '',
+            // R2B-A2-R5 — company and country were read by the normalizer and then discarded here, so
+            // the table could not show which market a rule applied to. Both are carried now.
+            company: r.company || raw.company || '',
+            country: r.country || raw.country || '',
             marketplace: r.marketplace || raw.marketplace || 'All',
             category: raw.category || (scope === 'Category' ? r.scopeId : null) || null,
             series: raw.series || (scope === 'Series' ? r.scopeId : null) || null,
@@ -4380,10 +4645,13 @@ var FC_RESIZE_TABLES_ = [
 
   { group: 'fc-target', panel: 'fc-panel-target',
     header: 'fc-target-scroll-header', body: 'fc-target-scroll-body',
-    // 18 = Actions: a control cell holding buttons. Widening it reveals nothing, so it carries no handle.
-    noResize: [18],
-    cols: [_fcResizeCols_(100, 'Year'), _fcResizeCols_(120, 'Marketplace'), _fcResizeCols_(120, 'Category'),
-           _fcResizeCols_(100, 'Series'), _fcResizeCols_(120, 'SKU')]
+    // 19 = Actions: a control cell holding buttons. Widening it reveals nothing, so it carries no handle.
+    // R2B-A2-R5 — Country was inserted at position 2, so Actions moved from 18 to 19 and every rule in
+    // fc-overview.css shifted with it. The shape gate (M11) is what makes this declaration and the markup
+    // provably the same table rather than two lists that happen to agree today.
+    noResize: [19],
+    cols: [_fcResizeCols_(100, 'Year'), _fcResizeCols_(100, 'Country'), _fcResizeCols_(120, 'Marketplace'),
+           _fcResizeCols_(120, 'Category'), _fcResizeCols_(100, 'Series'), _fcResizeCols_(120, 'SKU')]
       .concat(_fcMonthCols_(['Jan %', 'Feb %', 'Mar %', 'Apr %', 'May %', 'Jun %', 'Jul %', 'Aug %',
                              'Sep %', 'Oct %', 'Nov %', 'Dec %']))
       .concat([_fcResizeCols_(90, 'Actions')]) }

@@ -624,9 +624,17 @@ function atRev(rev, rel2) {
   try { return cp.execFileSync('git', ['-C', REPO, 'show', rev + ':' + rel2], { maxBuffer: 1 << 28 }).toString('utf8').replace(/\r\n/g, '\n'); }
   catch (e) { return '__git_unavailable__'; }
 }
+// STILL SEALED AGAINST THE WORKING TREE. These are the shared files this round was forbidden to touch and
+// no later round has needed to; comparing the live tree keeps catching an edit the moment it happens.
 var SEALED = ['assets/js/core/lifecycle.js', 'assets/js/api/km-transport.js', 'assets/js/api/km-api-foundation.js',
   'assets/js/api/operation-system-db-api.js', 'assets/js/utils/resizable-columns.js',
-  'assets/js/utils/dual-layer-resize.js', 'assets/css/pages/fc-overview.css'];
+  'assets/js/utils/dual-layer-resize.js'];
+// EVALUATED COMMIT-TO-COMMIT. 'the Home commit changed no FC behaviour' is a statement about fa23471, not
+// about whatever the tree holds today. Comparing the working tree made it a claim that every later round
+// must leave FC alone, which is not what it means — FC-SUMMARY-R2B-A2-R5 adds a Country column to the
+// Target table and correctly changes both of these files. Against the commit, the claim stays true, and it
+// still fails if fa23471 is ever rewritten to carry an FC change.
+var FC_OWNED = ['assets/css/pages/fc-overview.css', 'assets/js/pages/fc-summary.js'];
 var base = atRev('3b6d83f', SEALED[0]);
 if (base !== '__git_unavailable__') {
   SEALED.forEach(function (f) {
@@ -634,8 +642,10 @@ if (base !== '__git_unavailable__') {
       'H14 §5 byte-identical to the FC release commit: ' + f.split('/').pop());
   });
   // §8 — this commit must not have touched FC behaviour.
-  eq(read('assets/js/pages/fc-summary.js').replace(/\r\n/g, '\n'), atRev('3b6d83f', 'assets/js/pages/fc-summary.js'),
-    'H15 §8 fc-summary.js is byte-identical — the Home commit changed no FC behaviour');
+  FC_OWNED.forEach(function (f) {
+    eq(atRev('fa23471', f), atRev('3b6d83f', f),
+      'H15 §8 the Home commit changed no FC behaviour: ' + f.split('/').pop());
+  });
 } else {
   console.log('   (git unavailable — H14/H15 skipped)');
 }

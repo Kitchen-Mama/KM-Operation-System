@@ -168,6 +168,7 @@
                                 <div class="scroll-header-viewport">
                                     <div class="scroll-header" id="fc-target-scroll-header">
                                         <div class="header-cell">Year</div>
+                                        <div class="header-cell">Country</div>
                                         <div class="header-cell">Marketplace</div>
                                         <div class="header-cell">Category</div>
                                         <div class="header-cell">Series</div>
@@ -756,6 +757,25 @@
                     <div class="fc-modal-content fc-modal-content--large">
                         <h3>Add Target % Rule</h3>
                         <div class="fc-modal-body">
+                            <!-- FC-SUMMARY-R2B-A2-R5 — CANONICAL SCOPE. Every list below is EMPTY in the
+                                 markup and is filled by _trRebuild_() from the FC canonical read model the
+                                 page already rendered its table from. The previous markup hardcoded
+                                 Amazon/Walmart, three category names and five series codes, so the modal
+                                 offered choices that had no relationship to the database being written. -->
+                            <div class="fc-form-row">
+                                <div class="fc-form-group">
+                                    <label>Year *</label>
+                                    <select id="target-year-input" onchange="_trOnChange_('year')"></select>
+                                </div>
+                                <div class="fc-form-group">
+                                    <label>Country *</label>
+                                    <select id="target-country-input" onchange="_trOnChange_('country')"></select>
+                                </div>
+                                <div class="fc-form-group">
+                                    <label>Marketplace *</label>
+                                    <select id="target-marketplace-input" onchange="_trOnChange_('marketplace')"></select>
+                                </div>
+                            </div>
                             <div class="fc-form-row">
                                 <div class="fc-form-group">
                                     <label>Scope *</label>
@@ -765,44 +785,24 @@
                                         <option value="SKU">SKU</option>
                                     </select>
                                 </div>
-                                <div class="fc-form-group">
-                                    <label>Year *</label>
-                                    <input type="number" id="target-year-input" readonly>
-                                </div>
-                                <div class="fc-form-group">
-                                    <label>Marketplace</label>
-                                    <select id="target-marketplace-input">
-                                        <option value="All">All</option>
-                                        <option value="Amazon">Amazon</option>
-                                        <option value="Walmart">Walmart</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="fc-form-row">
                                 <div class="fc-form-group" id="target-category-group">
                                     <label>Category *</label>
-                                    <select id="target-category-input">
-                                        <option value="All">All</option>
-                                        <option value="Electric Can Opener">Electric Can Opener</option>
-                                        <option value="Silicone Product">Silicone Product</option>
-                                        <option value="Manual Opener">Manual Opener</option>
-                                    </select>
+                                    <select id="target-category-input" onchange="_trOnChange_('category')"></select>
                                 </div>
                                 <div class="fc-form-group" id="target-series-group" style="display:none;">
                                     <label>Series *</label>
-                                    <select id="target-series-input">
-                                        <option value="CO1100">CO1100</option>
-                                        <option value="CO1150">CO1150</option>
-                                        <option value="SP3120">SP3120</option>
-                                        <option value="SP3410">SP3410</option>
-                                        <option value="MO5600">MO5600</option>
-                                    </select>
+                                    <select id="target-series-input" onchange="_trOnChange_('series')"></select>
                                 </div>
                                 <div class="fc-form-group" id="target-sku-group" style="display:none;">
                                     <label>SKU *</label>
-                                    <input type="text" id="target-sku-input" placeholder="Search SKU...">
+                                    <select id="target-sku-input" onchange="_trOnChange_('sku')"></select>
                                 </div>
                             </div>
+                            <!-- Derived, never chosen: the company that owns the selected country +
+                                 marketplace. Read-only metadata (R2B-A2-R5 §2). When the canonical rows give
+                                 more than one owner the save is refused rather than silently taking the
+                                 first, and this line says so. -->
+                            <div class="fc-target-scope-note" id="target-scope-note"></div>
                             <div class="fc-form-row">
                                 <div class="fc-form-group">
                                     <label>Apply to all months (%)</label>

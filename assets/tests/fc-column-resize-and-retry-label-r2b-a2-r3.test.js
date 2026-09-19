@@ -300,10 +300,11 @@ section('A. THE SHIPPED MARKUP — the column sets these controllers must match'
 // =================================================================================================
 eq(REGULAR_LABELS.length, 20, 'A1 Regular Forecast ships 20 scroll columns');
 eq(EVENT_LABELS.length, 10, 'A2 Special Event ships 10 scroll columns');
-eq(TARGET_LABELS.length, 18, 'A3 Target % & Rules ships 18 scroll columns');
+eq(TARGET_LABELS.length, 19, 'A3 Target % & Rules ships 19 scroll columns');   // R2B-A2-R5 added Country
 eq(REGULAR_LABELS[5], 'Series', 'A4 Series is Regular column 6');
 eq(EVENT_LABELS[7], 'Event Period', 'A5 Event Period is Event column 8');
-eq(TARGET_LABELS[17], 'Actions', 'A6 Actions is Target column 18');
+eq(TARGET_LABELS[TARGET_LABELS.length - 1], 'Actions', 'A6 Actions is the LAST Target column');
+eq(TARGET_LABELS[1], 'Country', 'A6b Country is Target column 2 — a rule\'s market is readable in the table');
 
 var C = build();
 eq(C.FC_RESIZE_TABLES_.map(function (t) { return t.group; }), ['fc-regular', 'fc-event', 'fc-target'],
@@ -331,10 +332,13 @@ function handleCount(ctx, group) {
 }
 eq(handleCount(C, 'fc-regular'), 20, 'B2 §3 every Regular scroll column has a handle');
 eq(handleCount(C, 'fc-event'), 10, 'B3 §3 every Event scroll column has a handle');
-eq(handleCount(C, 'fc-target'), 17, 'B4 §3 Target has 17 handles — all but Actions');
+// ALL BUT ACTIONS, stated as that rather than as a number: an arity here forbids any round from adding a
+// Target column, and fails while describing a correct tree. R2B-A2-R5 added Country and this held.
+eq(handleCount(C, 'fc-target'), TARGET_LABELS.length - 1,
+  'B4 §3 every Target scroll column except Actions has a handle');
 
 var tHdr = C.document.getElementById('fc-target-scroll-header');
-ok(!tHdr.querySelectorAll(':scope > .header-cell')[17].querySelector('[data-rescol-handle]'),
+ok(!tHdr.querySelectorAll(':scope > .header-cell')[TARGET_LABELS.length - 1].querySelector('[data-rescol-handle]'),
   'B5 §7.2 the Actions column has NO handle');
 // §3 — the sticky identity column cannot receive a handle because it is not in the scroll header at all.
 // Read from the SHIPPED markup rather than asserted about the controller: the fixed-header cell sits in a
@@ -406,7 +410,8 @@ var cT = build(); buildSection(cT.__dom); cT._fcResizeInit_();
   ok(w.header !== null, 'C8 §7.7 Target col ' + col + ' resizes');
   eq(w.header, w.body, 'C8b Target col ' + col + ' header/body together');
 });
-eq(drag(cT, 'fc-target', 18, 30), null, 'C9 Target Actions cannot be dragged — there is no handle');
+eq(drag(cT, 'fc-target', TARGET_LABELS.length, 30), null,
+  'C9 Target Actions cannot be dragged — there is no handle');
 
 // §7.8 — only column N changes.
 var cN = build(); buildSection(cN.__dom); cN._fcResizeInit_();
@@ -457,10 +462,12 @@ eq(handleCount(cP, 'fc-regular'), 20, 'D11 and no duplicate handles were stacked
 section('E. RESET — §6, §7.12');
 // =================================================================================================
 var cR = build(); buildSection(cR.__dom); cR._fcResizeInit_();
-drag(cR, 'fc-regular', 6, 80); drag(cR, 'fc-event', 8, 60); drag(cR, 'fc-target', 5, 40);
+// Target col 6 = SKU (120px default). R2B-A2-R5 inserted Country at position 2, so what used to be
+// column 5 here is now column 6; the point of E3/E9 is per-table reset isolation, not this position.
+drag(cR, 'fc-regular', 6, 80); drag(cR, 'fc-event', 8, 60); drag(cR, 'fc-target', 6, 40);
 eq(injectedWidths(cR, 'fc-regular', 6).header, 180, 'E1 Regular changed');
 eq(injectedWidths(cR, 'fc-event', 8).header, 250, 'E2 Event changed');
-eq(injectedWidths(cR, 'fc-target', 5).header, 160, 'E3 Target changed');
+eq(injectedWidths(cR, 'fc-target', 6).header, 160, 'E3 Target changed');
 
 var btn = cR.document.getElementById('fc-regular-reset-widths');
 ok(!!btn, 'E4 §6 a reset control exists for the Regular table');
@@ -472,7 +479,7 @@ var before = cR.__apiCalls.length;
 btn.onclick();
 eq(injectedWidths(cR, 'fc-regular', 6).header, null, 'E7 §7.12 Regular returned to its declared default');
 eq(injectedWidths(cR, 'fc-event', 8).header, 250, 'E8 §7.12 Event was NOT reset');
-eq(injectedWidths(cR, 'fc-target', 5).header, 160, 'E9 §7.12 Target was NOT reset');
+eq(injectedWidths(cR, 'fc-target', 6).header, 160, 'E9 §7.12 Target was NOT reset');
 eq(cR.__apiCalls.length - before, 0, 'E10 §7.13 reset issued ZERO API calls');
 
 // §7.13 — resizing itself reads nothing and writes nothing.
@@ -760,7 +767,7 @@ var MUTANTS = [
     check: function () {
       var r = mountedGroups({ mutateJs: function (js) {
         return swapSrc(js, "  { group: 'fc-target', panel: 'fc-panel-target',", "  { group: 'fc-target-DISABLED', panel: 'nope',"); } });
-      return r.groups.indexOf('fc-target') > -1 && handleCount(r.ctx, 'fc-target') === 17;
+      return r.groups.indexOf('fc-target') > -1 && handleCount(r.ctx, 'fc-target') === TARGET_LABELS.length - 1;
     } },
 
   { id: 'M2', why: "Regular's rule leaks into Event — one selector stops naming its own table",
@@ -831,7 +838,7 @@ var MUTANTS = [
         return swapSrc(js, "    if (spec.noResize.indexOf(col) !== -1) return;",
           "    if (spec.noResize.indexOf(col) !== -1) return;\n    if (c.label !== 'Series') return;"); } });
       buildSection(ctx.__dom); ctx._fcResizeInit_();
-      return handleCount(ctx, 'fc-regular') === 20 && handleCount(ctx, 'fc-target') === 17;
+      return handleCount(ctx, 'fc-regular') === 20 && handleCount(ctx, 'fc-target') === TARGET_LABELS.length - 1;
     } },
 
   { id: 'M8', why: 'the handle is bound to the wrong column index, so dragging moves a neighbour',
@@ -893,7 +900,7 @@ var MUTANTS = [
       ctx._fcResizeInit_();
       ctx._fcResizeInit_();                       // the re-mount is where the defect shows
       return handleCount(ctx, 'fc-regular') === 20 && handleCount(ctx, 'fc-event') === 10
-        && handleCount(ctx, 'fc-target') === 17;
+        && handleCount(ctx, 'fc-target') === TARGET_LABELS.length - 1;
     } },
 
   { id: 'M12', why: 'the minimum is raised above a month column default, silently rewidening the table',

@@ -1740,27 +1740,49 @@
     justify-content: flex-end;
 }
 
-/* --- Target % & Rules: 18 scroll columns (18 = Actions, a control cell) --- */
+/* R2B-A2-R5 — the modal's derived-identity line. It carries the resolved company when the selection is
+   canonical, and the refusal reason (DATA_UNAVAILABLE / OWNERSHIP_SCOPE_AMBIGUOUS / a missing field)
+   when it is not, so the disabled Save button always has a stated cause next to it. */
+.fc-target-scope-note {
+    margin: 4px 0 10px;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    line-height: 1.45;
+    min-height: 18px;
+}
+.fc-target-scope-note.is-ok {
+    background: rgba(46, 125, 50, 0.08);
+    color: #2e7d32;
+}
+.fc-target-scope-note.is-blocked {
+    background: rgba(198, 40, 40, 0.08);
+    color: #c62828;
+}
+
+/* --- Target % & Rules: 19 scroll columns (19 = Actions, a control cell) ---
+   R2B-A2-R5 added Country at position 2, so a saved rule's market identity is readable in the table that
+   lists it. Every rule below shifted by one from Marketplace onward. */
 #fc-target-scroll-header > .header-cell:nth-child(1),
 #fc-target-scroll-body .scroll-row > .scroll-cell:nth-child(1),
-#fc-target-scroll-header > .header-cell:nth-child(4),
-#fc-target-scroll-body .scroll-row > .scroll-cell:nth-child(4) {
+#fc-target-scroll-header > .header-cell:nth-child(2),
+#fc-target-scroll-body .scroll-row > .scroll-cell:nth-child(2),
+#fc-target-scroll-header > .header-cell:nth-child(5),
+#fc-target-scroll-body .scroll-row > .scroll-cell:nth-child(5) {
     width: 100px;
     min-width: 100px;
 }
 
-#fc-target-scroll-header > .header-cell:nth-child(2),
-#fc-target-scroll-body .scroll-row > .scroll-cell:nth-child(2),
 #fc-target-scroll-header > .header-cell:nth-child(3),
 #fc-target-scroll-body .scroll-row > .scroll-cell:nth-child(3),
-#fc-target-scroll-header > .header-cell:nth-child(5),
-#fc-target-scroll-body .scroll-row > .scroll-cell:nth-child(5) {
+#fc-target-scroll-header > .header-cell:nth-child(4),
+#fc-target-scroll-body .scroll-row > .scroll-cell:nth-child(4),
+#fc-target-scroll-header > .header-cell:nth-child(6),
+#fc-target-scroll-body .scroll-row > .scroll-cell:nth-child(6) {
     width: 120px;
     min-width: 120px;
 }
 
-#fc-target-scroll-header > .header-cell:nth-child(6),
-#fc-target-scroll-body .scroll-row > .scroll-cell:nth-child(6),
 #fc-target-scroll-header > .header-cell:nth-child(7),
 #fc-target-scroll-body .scroll-row > .scroll-cell:nth-child(7),
 #fc-target-scroll-header > .header-cell:nth-child(8),
@@ -1782,15 +1804,17 @@
 #fc-target-scroll-header > .header-cell:nth-child(16),
 #fc-target-scroll-body .scroll-row > .scroll-cell:nth-child(16),
 #fc-target-scroll-header > .header-cell:nth-child(17),
-#fc-target-scroll-body .scroll-row > .scroll-cell:nth-child(17) {
+#fc-target-scroll-body .scroll-row > .scroll-cell:nth-child(17),
+#fc-target-scroll-header > .header-cell:nth-child(18),
+#fc-target-scroll-body .scroll-row > .scroll-cell:nth-child(18) {
     width: 70px;
     min-width: 70px;
     padding: 6px 10px;
     justify-content: flex-end;
 }
 
-#fc-target-scroll-header > .header-cell:nth-child(18),
-#fc-target-scroll-body .scroll-row > .scroll-cell:nth-child(18) {
+#fc-target-scroll-header > .header-cell:nth-child(19),
+#fc-target-scroll-body .scroll-row > .scroll-cell:nth-child(19) {
     width: 90px;
     min-width: 90px;
 }

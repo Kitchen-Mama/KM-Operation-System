@@ -415,7 +415,12 @@ var ROUND_TOKENS = [
   // INCIDENT-BOOT-FC-R2 — the Home critical path. 74 of 79 script tags defer; the world clock moves
   // from app.js's DOMContentLoaded handler to the Home mount, which now runs in Phase 0 behind 0.04 MB
   // instead of 5.23 MB. app.js, pages/home.js and index.html.
-  'homeboot-bootfcr2-20260919'];
+  'homeboot-bootfcr2-20260919',
+  // FC-SUMMARY-R2B-A2-R5 — the Target Rule modal's option lists stopped being static HTML and became
+  // derivations of the canonical FC read model, and the Target table gained a Country column. Both
+  // fc-summary.js and fc-overview.css were already on the previous token, so without a new one their
+  // URLs would not change and a cached copy would survive the deployment.
+  'trscope-r2ba2r5-20260919'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the
