@@ -31,6 +31,21 @@ var vm = require('vm');
 var KMSAFE_PATH = path.join(__dirname, '..', 'js', 'core', 'supply-planning-production-safety.js');
 function gs(rel) { return fs.readFileSync(path.join(__dirname, '..', 'specs', 'active', 'apps-script', rel), 'utf8'); }
 
+// FC-SUMMARY-R2B-A2-R6 — the migration helper is RETIRED from the active deployment. Its accepted
+// source is sealed as a fixture (SHA-256 pinned), so every assertion below still runs against the
+// exact bytes that ran in production, and none of them depends on a one-shot writer still being
+// deployed. Dry-run planning, additive-only append, header stability, idempotent NO_OP, the actor
+// source, zero fabricated rows, the old/new header hashes and append positions 28/29/30 are all
+// unchanged — only where the text comes from has changed.
+var MIG_FIXTURE = path.join(__dirname, 'fixtures', 'TEMP_migrate_fc_target_rules_header_r2ba2.retired.gs.txt');
+var MIG_SEAL = 'b2f9e0b628b58f455132bd9f501d4b5c72f0e7cf367d5ae655fbdfa973698a8d';
+function migSrc() {
+  var b = fs.readFileSync(MIG_FIXTURE);
+  var h = require('crypto').createHash('sha256').update(b).digest('hex');
+  if (h !== MIG_SEAL) throw new Error('sealed migration fixture has been altered: ' + h);
+  return b.toString('utf8');
+}
+
 function extractFn(src, name) {
   var start = src.indexOf('function ' + name + '(');
   if (start < 0) throw new Error('source function not found: ' + name);
@@ -147,7 +162,7 @@ var MIG_FNS = ['tgtR2ba2Required_', 'tgtR2ba2Str_', 'tgtR2ba2Snapshot_', 'TEMP_m
 function build(mutate) {
   var A = gs('29_production_safety_adapter.gs');
   var G14 = gs('14_fc_write_handlers.gs');
-  var MIG = gs('TEMP_migrate_fc_target_rules_header_r2ba2.gs');
+  var MIG = migSrc();
   if (typeof mutate === 'function') { var m = mutate({ a: A, g14: G14, mig: MIG }); A = m.a; G14 = m.g14; MIG = m.mig; }
 
   var pieces = [];
@@ -527,7 +542,7 @@ eq(CTX.fcWriteSchemaByNameApproved_('fc_target_rules', CTX.FC_SCHEMA_BY_NAME_), 
   });
   eq(lit, [], 'G6 no write in 14_ resolves its column from a literal index');
   ok(writes.length > 0, 'G7 and write sites exist, so G6 is not vacuous');
-  var mig = codeOnly(gs('TEMP_migrate_fc_target_rules_header_r2ba2.gs'));
+  var mig = codeOnly(migSrc());
   ok(!/insertSheet|deleteColumn|deleteRow|setName|moveTo/.test(mig),
     'G8 the migration tool contains no sheet create, column delete, row delete, rename or move');
   ok(!/action ===|router/i.test(mig), 'G9 and is not routed — the Run dropdown is the only way in');
@@ -650,7 +665,7 @@ var mutants = [
       mig: swap(s.mig, '    noPreExistingHeaderMoved: snap.actual.every(function (h, i) { return after.actual[i] === h; }),',
         '    noPreExistingHeaderMoved: true,') }; },
     check: function (c) {
-      var src = gs('TEMP_migrate_fc_target_rules_header_r2ba2.gs');
+      var src = migSrc();
       void src;
       var ss = makeSs(db()); c.__use(ss);
       var r = c.TEMP_migrateFcTargetRulesHeader_({ execute: true });

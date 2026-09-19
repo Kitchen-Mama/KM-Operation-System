@@ -382,12 +382,32 @@ eq(manifestRows(priorHealth).length, manifestRows(HEALTH).length,
 section('I. THE SYNC LIST IS EXACTLY THESE FOUR FILES');
 // ================================================================================================
 (function () {
-  var changed = cp.execFileSync('git', ['diff', '--name-only', BASE, '--', GS],
+  // FC-SUMMARY-R2B-A2-R6 — A DELETION IS NOT A COPY, AND THIS CHECK IS ABOUT THE COPY LIST.
+  //
+  // This asked git which Apps Script paths differ from the base and required the answer to be
+  // exactly the four release owners. R6 retires the one-shot fc_target_rules header migration by
+  // DELETING it, which makes a fifth path differ — and the check failed while describing a tree
+  // that is correct.
+  //
+  // Widening the expected set would have been the wrong repair: it would let a deleted file and a
+  // pasted file sit in one list, when the operator does two different things with them. The diff is
+  // partitioned by status instead. What must be COPIED is still exactly the four owners; what must
+  // be DELETED is named separately and just as strictly, because an unexplained deletion is as much
+  // of a ride-along as an unexplained edit.
+  var status = cp.execFileSync('git', ['diff', '--name-status', BASE, '--', GS],
     { cwd: REPO, encoding: 'utf8' }).trim().split('\n').filter(Boolean)
-    .map(function (p) { return p.replace(GS, ''); }).sort();
-  eq(changed, Object.keys(RELEASE_OWNERS).sort(),
-    'I1  exactly the four declared release owners differ from the tree this release was prepared '
-    + 'against — no Apps Script file rode along');
+    .map(function (l) { var p = l.split(/\s+/); return { st: p[0].charAt(0), file: p[p.length - 1].replace(GS, '') }; });
+  var copy = status.filter(function (r) { return r.st !== 'D'; }).map(function (r) { return r.file; }).sort();
+  var gone = status.filter(function (r) { return r.st === 'D'; }).map(function (r) { return r.file; }).sort();
+
+  eq(copy, Object.keys(RELEASE_OWNERS).sort(),
+    'I1  exactly the four declared release owners are to be COPIED — no Apps Script file rode along');
+  eq(gone, ['TEMP_migrate_fc_target_rules_header_r2ba2.gs'],
+    'I1a and exactly one file is to be DELETED: the retired one-shot header migration');
+  // The retired file carried no build stamp and owned no manifest row, which is why removing it
+  // moves no release identity. If it ever had, this would have to rotate the release too.
+  ok(Object.keys(RELEASE_OWNERS).indexOf('TEMP_migrate_fc_target_rules_header_r2ba2.gs') === -1,
+    'I1b the retired file is not a stamped release owner, so R13 does not move for its removal');
 })();
 
 // ================================================================================================

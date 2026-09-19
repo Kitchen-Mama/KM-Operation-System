@@ -501,10 +501,16 @@ section('G. SCOPE — every unapproved table keeps the ordered gate');
 // Full coverage of that repair lives in fc-target-rules-schema-repair-r2b-a2.test.js.
 ok(CTX.FC_SCHEMA_BY_NAME_TABLES_.indexOf('fc_target_rules') > -1,
   'G4 fc_target_rules joined the approved set once its row 1 was actually observed');
-ok(fs.existsSync(path.join(__dirname, '..', 'specs', 'active', 'apps-script',
+// FC-SUMMARY-R2B-A2-R6 — this used to require the migration FILE to exist. The migration has run,
+// the three columns are in the live sheet, and the helper is retired; requiring a one-shot writer to
+// stay deployed would only have kept a hazard alive. What must remain true is that the migration is
+// still PROVABLE, so the assertion moves to the sealed source its suites now read.
+ok(!fs.existsSync(path.join(__dirname, '..', 'specs', 'active', 'apps-script',
     'TEMP_migrate_fc_target_rules_header_r2ba2.gs')),
-  'G4b and it joined together with the additive migration that appends the three columns it was missing —',
-  'membership without the migration would only change which token the refusal carries');
+  'G4b the one-shot header migration is retired from the active deployment');
+ok(fs.existsSync(path.join(__dirname, 'fixtures',
+    'TEMP_migrate_fc_target_rules_header_r2ba2.retired.gs.txt')),
+  'G4b1 and its accepted source is sealed as historical evidence, so membership still means something');
 eq(CTX.FC_SCHEMA_BY_NAME_TABLES_.slice().sort(),
   ['campaign_sku_lines', 'campaigns', 'fc_special_events', 'fc_target_rules'],
   'G4c the approved set is exactly these four tables and nothing else');

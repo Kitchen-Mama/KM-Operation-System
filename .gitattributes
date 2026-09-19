@@ -44,3 +44,10 @@ tools/geo/data/** -text
 # same latent divergence, but none of them is pinned by content, so renormalizing them is a larger change than
 # R8's defect justifies. Whichever one is pinned next should be added to this line, not discovered again.
 assets/js/data/world-admin1-10m.js -text
+
+# FC-SUMMARY-R2B-A2-R6 — the RETIRED fc_target_rules header migration, frozen as the historical
+# evidence its suites now read instead of an active runtime file. It is pinned by SHA-256 for the
+# same reason as the entries above: the seal proves the accepted source has not been edited since
+# it ran in production, and an EOL rewrite on checkout would break that proof on a file nobody
+# touched. The .txt suffix keeps it out of every *.gs glob that scans active Apps Script sources.
+assets/tests/fixtures/TEMP_migrate_fc_target_rules_header_r2ba2.retired.gs.txt -text

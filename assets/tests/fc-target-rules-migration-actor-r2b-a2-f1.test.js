@@ -39,12 +39,30 @@ var cp = require('child_process');
 
 var REPO = path.join(__dirname, '..', '..');
 var ASD = path.join(__dirname, '..', 'specs', 'active', 'apps-script');
-var MIG_REL = 'assets/specs/active/apps-script/TEMP_migrate_fc_target_rules_header_r2ba2.gs';
+var MIG_REL = 'assets/specs/active/apps-script/TEMP_migrate_fc_target_rules_header_r2ba2.gs';   // the path it occupied until R6
 // The commit the live failure was produced from. Pinned by sha, not by HEAD: once the corrective commit
 // lands, HEAD is the FIXED file, and section H must keep testing the one that actually failed.
 var PRE_FIX_SHA = '5ec318a8c813afe16bcb69c6d61d649f296f360b';
 
 function gs(rel) { return fs.readFileSync(path.join(ASD, rel), 'utf8'); }
+
+// FC-SUMMARY-R2B-A2-R6 — THE HELPER IS RETIRED. It ran once, in production, and the columns it
+// appended are there; an unrouted one-shot writer left lying in the deployment is a hazard with no
+// remaining purpose. Its ACCEPTED SOURCE is frozen byte-for-byte as a fixture owned by this suite,
+// pinned by SHA-256 in .gitattributes so an EOL rewrite on checkout cannot quietly break the seal.
+//
+// Everything this suite proved about the migration it still proves, against the same bytes. What it
+// no longer does is REQUIRE the active runtime file to exist — which is the assertion that would have
+// blocked the retirement while proving nothing about the migration.
+var MIG_FIXTURE = path.join(__dirname, 'fixtures', 'TEMP_migrate_fc_target_rules_header_r2ba2.retired.gs.txt');
+var MIG_SEAL = 'b2f9e0b628b58f455132bd9f501d4b5c72f0e7cf367d5ae655fbdfa973698a8d';
+var MIG_ACTIVE = path.join(ASD, 'TEMP_migrate_fc_target_rules_header_r2ba2.gs');
+function migSrc() {
+  var b = fs.readFileSync(MIG_FIXTURE);
+  var h = require('crypto').createHash('sha256').update(b).digest('hex');
+  if (h !== MIG_SEAL) throw new Error('sealed migration fixture has been altered: ' + h);
+  return b.toString('utf8');
+}
 function gsAt(sha, rel) {
   return cp.execSync('git show ' + sha + ':' + rel, { cwd: REPO, encoding: 'utf8', maxBuffer: 1 << 26 });
 }
@@ -187,7 +205,7 @@ function build(opts) {
   opts = opts || {};
   var A = gs('29_production_safety_adapter.gs');
   var G14 = gs('14_fc_write_handlers.gs');
-  var MIG = opts.migSource || gs('TEMP_migrate_fc_target_rules_header_r2ba2.gs');
+  var MIG = opts.migSource || migSrc();
   if (typeof opts.mutate === 'function') MIG = opts.mutate(MIG);
   // IN-MEMORY ONLY. The adapter is forbidden scope for this round's repository change; mutating a copy of
   // its source inside the vm is how a mutant proves the adapter's floor is load-bearing without touching it.
@@ -243,7 +261,7 @@ function writesOf(ctx) { return ctx.__ss.__sheet('fc_target_rules').__headerWrit
 // =================================================================================================
 section('A. THE ACTOR IS A REVIEWED CONSTANT IN THIS FILE, AND COMES FROM NOWHERE ELSE');
 // =================================================================================================
-var MIG_SRC = gs('TEMP_migrate_fc_target_rules_header_r2ba2.gs');
+var MIG_SRC = migSrc();
 
 ok(/var TEMP_R2BA2_MIGRATION_ACTOR_ = '[^']+';/.test(MIG_SRC),
   'A1 the file declares one module-level actor constant with a non-empty literal value');
@@ -682,6 +700,64 @@ MUTANTS.forEach(function (m) {
   else { survived.push(m.id); console.error('FAIL ' + m.id + '  SURVIVED — ' + m.why); }
 });
 ok(survived.length === 0, 'I1 every mutant was caught', survived);
+
+
+// ================================================================================================
+section('R. RETIREMENT — the helper is gone from the deployment, and still provable');
+// ================================================================================================
+// A one-shot writer that has already run is not an asset. It cannot be needed again (its second run
+// is a documented NO_OP), it is unrouted so nothing calls it, and leaving it in the project keeps a
+// direct header-mutating entrypoint one menu click away from a live sheet for no remaining benefit.
+// What must survive is the PROOF, and the proof is the source — which is now sealed rather than live.
+
+ok(!fs.existsSync(MIG_ACTIVE), 'R1  the active runtime helper is deleted from assets/specs/active/apps-script');
+ok(fs.existsSync(MIG_FIXTURE), 'R2  its accepted source is frozen as a sealed fixture');
+eq(require('crypto').createHash('sha256').update(fs.readFileSync(MIG_FIXTURE)).digest('hex'), MIG_SEAL,
+  'R3  and the fixture is byte-for-byte the source that ran — the seal is the whole point of keeping it');
+
+// The fixture must be the bytes git recorded for the active file at the commit before it was removed.
+// Sealing a hash of whatever happens to be on disk would prove only that the file has not changed
+// since I copied it; this ties it to history.
+(function () {
+  // The last commit that TOUCHED this path is the one that DELETED it, so the bytes live in its
+  // parent. Written before the retirement was committed, this looked for them in the deletion commit
+  // itself and passed against a working tree where the file was merely staged — the difference between
+  // the tree and the commit, which is exactly what a sealed-history assertion must not be confused by.
+  //
+  // `~1` and not `^`: execSync goes through cmd.exe on Windows, where the caret is the ESCAPE
+  // character, so `<sha>^:path` arrives at git as `<sha>:path` — the very commit that has no file.
+  var last = cp.execSync('git log -n 1 --format=%H -- ' + JSON.stringify(MIG_REL), { cwd: REPO, encoding: 'utf8' }).trim();
+  var hist = null, at = '';
+  [last, last + '~1'].forEach(function (rev) {
+    if (hist) return;
+    try { hist = cp.execSync('git show ' + rev + ':' + MIG_REL, { cwd: REPO, encoding: 'buffer', maxBuffer: 1 << 26 }); at = rev; }
+    catch (e) { /* not present at this revision */ }
+  });
+  ok(hist !== null, 'R4  git still carries the historical source, at the deletion commit or its parent', at || last);
+  if (hist) {
+    eq(require('crypto').createHash('sha256').update(hist).digest('hex'), MIG_SEAL,
+      'R4a and the sealed fixture matches those committed bytes exactly');
+  }
+})();
+
+// Nothing that is still deployed may expose the three Run functions. This reads every active .gs,
+// not a list of them, so a copy of the helper under another name would be caught too.
+(function () {
+  var live = fs.readdirSync(ASD).filter(function (f) { return /\.gs$/.test(f); });
+  var exposing = live.filter(function (f) {
+    var src = fs.readFileSync(path.join(ASD, f), 'utf8');
+    return MIG_ENTRYPOINTS.some(function (e) { return new RegExp('function\\s+' + e + '\\s*\\(').test(src); });
+  });
+  eq(exposing, [], 'R5  no active Apps Script file declares any migration entrypoint', exposing);
+  ok(live.length > 0, 'R5a and the scan actually read the active sources', live.length + ' .gs files');
+})();
+
+// The entrypoints were never routed, and must not become routed by accident later.
+(function () {
+  var router = fs.readFileSync(path.join(ASD, '01_router.gs'), 'utf8');
+  var routed = MIG_ENTRYPOINTS.filter(function (e) { return router.indexOf(e) !== -1; });
+  eq(routed, [], 'R6  and the router exposes none of them', routed);
+})();
 
 console.log('\n' + new Array(101).join('=') );
 console.log('FC TARGET RULES MIGRATION ACTOR (R2B-A2-R1-F1) — passed ' + pass + '  failed ' + fail
