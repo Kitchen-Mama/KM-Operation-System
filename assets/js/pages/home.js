@@ -239,12 +239,82 @@ renderHomepage = function() {
 window.renderHomepage = renderHomepage;
 
 // ========================================
+// INCIDENT-BOOT-FC-R2 §3 — THE WORLD CLOCK, AND WHY IT LIVES HERE
+// ========================================
+//
+// Moved verbatim from app.js. The arithmetic is unchanged; what changed is WHO starts it and WHEN.
+// Previously app.js started it from DOMContentLoaded, which waits for every render-blocking script —
+// 38.2 s cold, measured. The clock needs none of that: the world-time bar is static markup in
+// index.html, already parsed before any script runs, and the computation is seven offsets and a Date.
+//
+// Ownership is the Home mount, so there is exactly one interval per mount and unmount disposes of it.
+// The guard is the TIMER HANDLE, not a boolean: a handle cannot claim an interval exists when it does
+// not, and it is the thing clearInterval needs anyway.
+var _homeClockTimer = null;
+
+function updateWorldTimes() {
+    const timezones = [
+        { id: 'AU', offset: 11, name: 'Australia' },
+        { id: 'JP', offset: 9, name: 'Japan' },
+        { id: 'DE', offset: 1, name: 'Germany' },
+        { id: 'UK', offset: 0, name: 'UK' },
+        { id: 'US-East', offset: -5, name: 'US East' },
+        { id: 'US-Middle', offset: -6, name: 'US Central' },
+        { id: 'US-West', offset: -8, name: 'US West' }
+    ];
+
+    const now = new Date();
+    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+
+    timezones.forEach(tz => {
+        const localTime = new Date(utc + (3600000 * tz.offset));
+        const card = document.getElementById(`card-${tz.id}`);
+
+        if (card) {
+            const dateStr = `${localTime.getMonth() + 1}/${localTime.getDate()}/${localTime.getFullYear().toString().slice(-2)}`;
+            const timeStr = localTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+            const offsetStr = `TP${tz.offset >= 0 ? '+' : ''}${tz.offset}`;
+
+            // Each card is null-guarded above; the three cells are guarded individually because a
+            // half-built card used to throw here, and the throw happened INSIDE initWorldTimes before
+            // setInterval was reached — so one malformed card stopped the clock permanently.
+            var d = card.querySelector('.local-date'); if (d) d.textContent = dateStr;
+            var t = card.querySelector('.local-time'); if (t) t.textContent = timeStr;
+            var o = card.querySelector('.timezone-offset'); if (o) o.textContent = offsetStr;
+        }
+    });
+}
+
+/* Start the clock. Idempotent: a second call while one is running is a no-op, so a remount, a stale
+   caller and app.js's old boot path cannot between them produce two intervals ticking the same cards. */
+function initWorldTimes() {
+    updateWorldTimes();                      // paint immediately — never show `--/--` for a whole second
+    if (_homeClockTimer !== null) return;
+    _homeClockTimer = setInterval(updateWorldTimes, 1000);
+}
+/* Stop it. Called on unmount so a route change cannot leave the interval running. */
+function stopWorldTimes() {
+    if (_homeClockTimer === null) return;
+    clearInterval(_homeClockTimer);
+    _homeClockTimer = null;
+}
+window.initWorldTimes = initWorldTimes;
+window.updateWorldTimes = updateWorldTimes;
+window.stopWorldTimes = stopWorldTimes;
+
+// ========================================
 // Lifecycle 註冊
 // ========================================
 if (window.KM && window.KM.lifecycle) {
     KM.lifecycle.register('home-section', {
         mount() {
             console.log('[Home] mount');
+            // PHASE 1 — THE LOCAL UI FIRST, SYNCHRONOUSLY.
+            // The world-time bar is static markup in index.html, so it is already in the DOM here. The
+            // clock therefore starts BEFORE the partial fetch below and without waiting for it, for the
+            // capability read, for Chart.js, for ExcelJS or for any route module. Nothing local should
+            // ever be queued behind something remote.
+            initWorldTimes();
             // Ensure partial markup is injected before rendering (Phase 1). renderHomepage is
             // itself null-guarded, so the worst case (load failure) is an empty home, not a crash.
             _ensureHomeMarkup().then(function() {
@@ -254,6 +324,20 @@ if (window.KM && window.KM.lifecycle) {
         },
         unmount() {
             console.log('[Home] unmount');
+            stopWorldTimes();   // an unmounted route must not keep a timer alive
         }
     });
+
+    // PHASE 0 -> PHASE 1 HANDOFF. Take the initial Home route NOW, while the remaining 5.2 MB is still
+    // arriving, instead of waiting for app.js's DOMContentLoaded handler at the end of the chain.
+    //
+    // This does NOT create a second router: it calls the one lifecycle authority, and app.js's boot still
+    // calls switchTo('home-section') exactly as before. That later call early-returns on `currentPage ===
+    // pageName`, so Home mounts once, there is one clock interval, and the boot sequence is unchanged for
+    // every other page. It is guarded because a deep link may name another section, and hijacking that
+    // would be a worse bug than a slow clock.
+    if (!location.hash || location.hash === '#' || location.hash === '#home-section') {
+        try { KM.lifecycle.switchTo('home-section'); }
+        catch (e) { console.error('[Home] early mount failed; app.js boot will retry:', e); }
+    }
 }

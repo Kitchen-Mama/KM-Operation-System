@@ -511,8 +511,13 @@ console.log('\n=== §G  MUTANTS ===');
        string it removed, so bumping the version made the replace a no-op and the mutant survived
        while looking fine. A mutant that stops applying when an unrelated string changes is a mutant
        that will be quietly dead for however long it takes somebody to notice. */
+    /* INCIDENT-BOOT-FC-R2 — AND IT HAPPENED AGAIN, EXACTLY AS THE NOTE ABOVE PREDICTED. The pattern
+       required `>` immediately after the closing quote, so when index.html gained `defer` the replace
+       became a no-op and this mutant SURVIVED while the suite still reported failed=0. Attributes are
+       now tolerated, and the mutation is VERIFIED to have applied rather than assumed. */
     var shuffled = INDEX.replace(
-      /<script src="assets\/js\/pages\/product-strategy-board\.js[^"]*"><\/script>/, '');
+      /<script[^>]*\ssrc="assets\/js\/pages\/product-strategy-board\.js[^"]*"[^>]*><\/script>/, '');
+    if (shuffled === INDEX) throw new Error('G15 mutation did not apply — the tag pattern no longer matches');
     return shuffled.indexOf('pages/product-strategy-board.js') < 0;
   });
   mutant('G16 the sheet stops being scoped but keeps its own tokens, so only §C would notice', function () {

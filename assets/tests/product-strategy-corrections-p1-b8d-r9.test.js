@@ -525,7 +525,11 @@ section('F — THE CENSUS STILL DESCRIBES THIS TREE (§7)');
 /* THE COUNT IS RE-DERIVED, NOT READ BACK. A census that states a total nobody recomputes is a
    number that drifts the first time somebody adds a script and forgets the document — which is
    precisely what §7 forbids ("不能靜默改表"). This counts `index.html` and compares. */
-var scripts = (SRC.index.match(/<script src="([^"]+)"><\/script>/g) || []).length;
+/* INCIDENT-BOOT-FC-R2 — count the tag however it is spelled. This matched `<script src="..."></script>`
+   with nothing between the closing quote and the bracket, so when index.html gained `defer` it counted 5
+   of 79 and reported the census as wrong about a tree it still describes exactly. The census number did
+   not change this round and must not: no script was added or removed, only how it is fetched. */
+var scripts = (SRC.index.match(/<script\s[^>]*\bsrc="([^"]+)"[^>]*><\/script>/g) || []).length;
 var claimed = /LOADED_SCRIPTS:\s*(\d+)/.exec(SRC.census);
 ok(!!claimed, 'F0  the census states the number of scripts it describes');
 eq(Number(claimed && claimed[1]), scripts,

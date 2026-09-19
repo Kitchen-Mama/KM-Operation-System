@@ -15,10 +15,10 @@
     <link rel="stylesheet" href="assets/css/core/km-sticky-header.css?v=donenotice-20260811">
     <link rel="stylesheet" href="assets/css/pages/home.css?v=donenotice-20260811">
     <link rel="stylesheet" href="assets/css/pages/inventory-replenishment.css?v=ircompactrecon-20260905">
-    <link rel="stylesheet" href="assets/css/pages/factory-stock.css?v=fcboothyd-bootfcr1-20260918">
+    <link rel="stylesheet" href="assets/css/pages/factory-stock.css?v=homeboot-bootfcr2-20260919">
     <link rel="stylesheet" href="assets/css/pages/overseas-ops.css?v=donenotice-20260811">
     <link rel="stylesheet" href="assets/css/pages/overseas-stock.css?v=whmoreopts-20260820">
-    <link rel="stylesheet" href="assets/css/pages/fc-overview.css?v=fcboothyd-bootfcr1-20260918">
+    <link rel="stylesheet" href="assets/css/pages/fc-overview.css?v=homeboot-bootfcr2-20260919">
     <link rel="stylesheet" href="assets/css/pages/request-order.css?v=toolbarui-20260811">
     <link rel="stylesheet" href="assets/css/pages/sku-details.css?v=donenotice-20260811">
     <link rel="stylesheet" href="assets/css/pages/shipping-plan.css?v=donenotice-20260811">
@@ -38,10 +38,10 @@
          the board's own root. Before that, linking it here restyled every page in the
          application — the `font:` shorthand on `body` alone replaced the font family and the
          line-height everywhere. -->
-    <link rel="stylesheet" href="assets/css/product-strategy-board.css?v=fcboothyd-bootfcr1-20260918">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="assets/css/product-strategy-board.css?v=homeboot-bootfcr2-20260919">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
     <!-- ExcelJS — client-side XLSX generation for formatted export templates (TEMPLATE_UI_STANDARD_SPEC). -->
-    <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js" defer></script>
 </head>
 <body>
     <!-- 新 Header 列 - Stage 1 結構宣告 -->
@@ -413,50 +413,62 @@
     <script src="assets/js/core/lifecycle.js?v=r6c-navlifecycle-20260822"></script>
     <script src="assets/js/core/state.js?v=donenotice-20260811"></script>
     <script src="assets/js/core/partial-loader.js?v=donenotice-20260811"></script>
-    <script src="assets/js/core/sticky-header.js?v=donenotice-20260811"></script>
+
+    <!-- INCIDENT-BOOT-FC-R2 §3 — PHASE 0 ENDS HERE. Everything above this line is parser-blocking and
+         totals ~0.03 MB: the namespace, the lifecycle authority, shared state, the partial loader, and
+         Home itself. Everything BELOW is deferred, so the parser reaches the shell without waiting for
+         5.2 MB of route modules, Chart.js or ExcelJS.
+    
+         home.js is here rather than down with the other page modules because the Home mount owns the
+         world clock, and the clock is the thing that must not wait. Moving a provider EARLIER cannot
+         break a consumer; the reverse would. home.js reads nothing from any later file at parse time
+         (verified against the derived depth-0 graph), so this position is safe as well as useful. -->
+    <script src="assets/js/pages/home.js?v=homeboot-bootfcr2-20260919"></script>
+
+    <script src="assets/js/core/sticky-header.js?v=donenotice-20260811" defer></script>
     
     <!-- Utils -->
-    <script src="assets/js/utils/forecast-engine.js?v=donenotice-20260811"></script>
-    <script src="assets/js/utils/i18n.js?v=donenotice-20260811"></script>
+    <script src="assets/js/utils/forecast-engine.js?v=donenotice-20260811" defer></script>
+    <script src="assets/js/utils/i18n.js?v=donenotice-20260811" defer></script>
     <!-- P1-B8D-R9 §5 — THE MANIFEST LOADS FIRST because the policy consults it. It is a generated
          directory listing (node tools/assets/build-repo-asset-manifest.js); the policy fails OPEN
          without it, so a page that drops this line keeps every photograph and loses only the 404 gate. -->
-    <script src="assets/js/utils/km-repo-asset-manifest.js?v=fcboothyd-bootfcr1-20260918"></script>
-    <script src="assets/js/utils/km-image-reference-policy.js?v=fcboothyd-bootfcr1-20260918"></script>
-    <script src="assets/js/utils/sku-overrides.js?v=fcboothyd-bootfcr1-20260918"></script>
-    <script src="assets/js/utils/data.js?v=donenotice-20260811"></script>
-    <script src="assets/js/utils/scroll-sync.js?v=donenotice-20260811"></script>
-    <script src="assets/js/utils/template-export.js?v=donenotice-20260811"></script>
-    <script src="assets/js/utils/resizable-columns.js?v=donenotice-20260811"></script>
-    <script src="assets/js/utils/dual-layer-resize.js?v=donenotice-20260811"></script>
-    <script src="assets/js/utils/tab-rail.js?v=donenotice-20260811"></script>
-    <script src="assets/js/utils/multi-select-filter.js?v=donenotice-20260811"></script>
-    <script src="assets/js/utils/inventory-compat.js?v=fcboothyd-bootfcr1-20260918"></script>
+    <script src="assets/js/utils/km-repo-asset-manifest.js?v=homeboot-bootfcr2-20260919" defer></script>
+    <script src="assets/js/utils/km-image-reference-policy.js?v=homeboot-bootfcr2-20260919" defer></script>
+    <script src="assets/js/utils/sku-overrides.js?v=homeboot-bootfcr2-20260919" defer></script>
+    <script src="assets/js/utils/data.js?v=donenotice-20260811" defer></script>
+    <script src="assets/js/utils/scroll-sync.js?v=donenotice-20260811" defer></script>
+    <script src="assets/js/utils/template-export.js?v=donenotice-20260811" defer></script>
+    <script src="assets/js/utils/resizable-columns.js?v=donenotice-20260811" defer></script>
+    <script src="assets/js/utils/dual-layer-resize.js?v=donenotice-20260811" defer></script>
+    <script src="assets/js/utils/tab-rail.js?v=donenotice-20260811" defer></script>
+    <script src="assets/js/utils/multi-select-filter.js?v=donenotice-20260811" defer></script>
+    <script src="assets/js/utils/inventory-compat.js?v=homeboot-bootfcr2-20260919" defer></script>
     <!-- F1-4B-FM5-R4T: shared manual-recalc transport-recovery contract (Inventory + Order Planning) -->
-    <script src="assets/js/utils/gap-recalc-transport.js?v=donenotice-20260811"></script>
+    <script src="assets/js/utils/gap-recalc-transport.js?v=donenotice-20260811" defer></script>
     <!-- F1-7N-FB-4C - the ONE canonical Country/Marketplace scope registry. Must load BEFORE any consumer
          (the scope modal and the Site Inventory page both read window.KM.scopeRegistry). -->
-    <script src="assets/js/core/scope-registry.js?v=fcboothyd-bootfcr1-20260918"></script>
+    <script src="assets/js/core/scope-registry.js?v=homeboot-bootfcr2-20260919" defer></script>
     <!-- F1-7N-FB-4C - the scoped shipping-method registry (Execution Plan Method picker owner). -->
-    <script src="assets/js/core/boot-read-arbiter.js?v=fc1be3r4a2r1r6r5-bootarbiter-20260905"></script>
-    <script src="assets/js/core/method-registry.js?v=fc1be3r4a2r1r6r4-method-registry-20260905"></script>
+    <script src="assets/js/core/boot-read-arbiter.js?v=fc1be3r4a2r1r6r5-bootarbiter-20260905" defer></script>
+    <script src="assets/js/core/method-registry.js?v=fc1be3r4a2r1r6r4-method-registry-20260905" defer></script>
     <!-- F1-7N-FC-1B-E3-R4-A2-R1-R6-R2 §2: KMARC, the ONE answer to "is this persisted allocation-draft header
          part of this station's current plan". The page and the read-only census both consume it, which is what
          makes their two totals comparable instead of two independent opinions. Must load before the page. -->
-    <script src="assets/js/core/supply-planning-active-route-classification.js?v=fcboothyd-bootfcr1-20260918"></script>
-    <script src="assets/js/utils/scope-select-modal.js?v=fcboothyd-bootfcr1-20260918"></script>
+    <script src="assets/js/core/supply-planning-active-route-classification.js?v=homeboot-bootfcr2-20260919" defer></script>
+    <script src="assets/js/utils/scope-select-modal.js?v=homeboot-bootfcr2-20260919" defer></script>
     <!-- F1-7N-FB-4E-R4B-R1 §1: canonical FACTORY SITE ALLOCATION (KMFSA). ONE projection for Site Inventory and
          Order Planning — a physical factory pool divided across its eligible receiver sites by the frozen rolling
          4-month FC share, never the whole pool shown under every scope. Loaded before both consuming pages. -->
-    <script src="assets/js/core/supply-planning-factory-site-allocation.js?v=fcboothyd-bootfcr1-20260918"></script>
+    <script src="assets/js/core/supply-planning-factory-site-allocation.js?v=homeboot-bootfcr2-20260919" defer></script>
     <!-- F1-4B-FM5-R1: canonical cartonization owner (KMCALC) — KMREC delegates the actionable-total carton rounding here -->
-    <script src="assets/js/core/supply-planning-calculations.js?v=donenotice-20260811"></script>
+    <script src="assets/js/core/supply-planning-calculations.js?v=donenotice-20260811" defer></script>
     <!-- F1-7N-FB-4B: READ-ONLY recommendation/order-qty authority + cartonization audit. Computes no quantity and changes no rule. -->
-    <script src="assets/js/core/supply-planning-recommendation-audit.js?v=fb4b-20260826"></script>
+    <script src="assets/js/core/supply-planning-recommendation-audit.js?v=fb4b-20260826" defer></script>
     <!-- F1-4B-FM6: canonical Phase-1 Recommendation generator (KMREC) — reads materialized gaps → decision DTOs -->
-    <script src="assets/js/core/supply-recommendation.js?v=donenotice-20260811"></script>
+    <script src="assets/js/core/supply-recommendation.js?v=donenotice-20260811" defer></script>
     <!-- F1-4B-FM6-R2: canonical Recommendation→Execution handoff (KMREX) — KMREC DTO + resolved availabilities → execution-draft DTO -->
-    <script src="assets/js/core/supply-execution-handoff.js?v=donenotice-20260811"></script>
+    <script src="assets/js/core/supply-execution-handoff.js?v=donenotice-20260811" defer></script>
 
     <!-- API Adapter -->
     <!-- F1-7N-FB-4E — THE SHARED TRANSPORT LOADS FIRST, AND THAT ORDER IS LOAD-BEARING.
@@ -466,13 +478,13 @@
          DIAGNOSIS rather than function - but the order is what makes the diagnosis available at all.
          Same-origin, no CDN, no runtime fetch. km-data-access.js is the portable backend boundary (§G): it
          holds the resource->action map and the two adapters, and it depends on the transport above it. -->
-    <script src="assets/js/api/km-transport.js?v=fcboothyd-bootfcr1-20260918"></script>
-    <script src="assets/js/api/km-data-access.js?v=fcboothyd-bootfcr1-20260918"></script>
-    <script src="assets/js/api/operation-system-db-api.js?v=fcboothyd-bootfcr1-20260918"></script>
+    <script src="assets/js/api/km-transport.js?v=homeboot-bootfcr2-20260919" defer></script>
+    <script src="assets/js/api/km-data-access.js?v=homeboot-bootfcr2-20260919" defer></script>
+    <script src="assets/js/api/operation-system-db-api.js?v=homeboot-bootfcr2-20260919" defer></script>
     <!-- Shared loading-state contract (F1-7B) — transport/UI only; no business data -->
-    <script src="assets/js/api/km-loading-state.js?v=sku-read-path-20260826"></script>
+    <script src="assets/js/api/km-loading-state.js?v=sku-read-path-20260826" defer></script>
     <!-- API Foundation (Phase API-1) — weeklyShipping READ now canonical; wraps the legacy transport otherwise -->
-    <script src="assets/js/api/km-api-foundation.js?v=fcboothyd-bootfcr1-20260918"></script>
+    <script src="assets/js/api/km-api-foundation.js?v=homeboot-bootfcr2-20260919" defer></script>
 
     <!-- ============================================================================================
          PRODUCT STRATEGY BOARD (PRODUCT-STRATEGY-P1-B7) — INSTALLED, NOT ACTIVATED
@@ -493,78 +505,77 @@
          NOT FROM docs/prototypes. The prototype consumes these production modules; production
          consumes nothing of the prototype's, and its preview fixture is not loaded, not
          referenced and not reachable. -->
-    <script src="assets/js/api/km-product-pricing-workspace.js?v=fcboothyd-bootfcr1-20260918"></script>
-    <script src="assets/js/api/km-product-pricing-adapter.js?v=fcboothyd-bootfcr1-20260918"></script>
-    <script src="assets/js/product-strategy/psb-data-contract.js?v=fcboothyd-bootfcr1-20260918"></script>
-    <script src="assets/js/product-strategy/km-product-strategy-site-universe.js?v=fcboothyd-bootfcr1-20260918"></script>
-    <script src="assets/js/product-strategy/km-product-strategy-live-adapter.js?v=fcboothyd-bootfcr1-20260918"></script>
-    <script src="assets/js/product-strategy/psb-selectors.js?v=fcboothyd-bootfcr1-20260918"></script>
-    <script src="assets/js/product-strategy/psb-chart-layout.js?v=fcboothyd-bootfcr1-20260918"></script>
+    <script src="assets/js/api/km-product-pricing-workspace.js?v=homeboot-bootfcr2-20260919" defer></script>
+    <script src="assets/js/api/km-product-pricing-adapter.js?v=homeboot-bootfcr2-20260919" defer></script>
+    <script src="assets/js/product-strategy/psb-data-contract.js?v=homeboot-bootfcr2-20260919" defer></script>
+    <script src="assets/js/product-strategy/km-product-strategy-site-universe.js?v=homeboot-bootfcr2-20260919" defer></script>
+    <script src="assets/js/product-strategy/km-product-strategy-live-adapter.js?v=homeboot-bootfcr2-20260919" defer></script>
+    <script src="assets/js/product-strategy/psb-selectors.js?v=homeboot-bootfcr2-20260919" defer></script>
+    <script src="assets/js/product-strategy/psb-chart-layout.js?v=homeboot-bootfcr2-20260919" defer></script>
     <!-- P1-B8B: the six views, declared once. The Operation System sidebar renders them as the
          children of a Product Strategy parent and the in-page tab rail renders them as tabs;
          both read this file, so the two lists cannot drift. psb-board-ui.js throws by name if
          it has not run. -->
-    <script src="assets/js/product-strategy/psb-views.js?v=fcboothyd-bootfcr1-20260918"></script>
-    <script src="assets/js/product-strategy/psb-board-ui.js?v=fcboothyd-bootfcr1-20260918"></script>
-    <script src="assets/js/pages/product-strategy-board.js?v=fcboothyd-bootfcr1-20260918"></script>
+    <script src="assets/js/product-strategy/psb-views.js?v=homeboot-bootfcr2-20260919" defer></script>
+    <script src="assets/js/product-strategy/psb-board-ui.js?v=homeboot-bootfcr2-20260919" defer></script>
+    <script src="assets/js/pages/product-strategy-board.js?v=homeboot-bootfcr2-20260919" defer></script>
 
     <!-- Pages -->
-    <script src="assets/js/pages/home.js?v=r6c-navlifecycle-20260822"></script>
-    <script src="assets/js/pages/inventory-replenishment.js?v=fcboothyd-bootfcr1-20260918"></script>
-    <script src="assets/js/pages/factory-stock.js?v=fcboothyd-bootfcr1-20260918"></script>
-    <script src="assets/js/pages/overseas-stock.js?v=fcboothyd-bootfcr1-20260918"></script>
-    <script src="assets/js/pages/overseas-ops-preview.js?v=donenotice-20260811"></script>
-    <script src="assets/js/pages/overseas-inbound.js?v=donenotice-20260811"></script>
-    <script src="assets/js/pages/overseas-outbound.js?v=donenotice-20260811"></script>
-    <script src="assets/js/pages/fc-summary.js?v=fcboothyd-bootfcr1-20260918"></script>
-    <script src="assets/js/pages/forecast.js?v=donenotice-20260811"></script>
-    <script src="assets/js/pages/request-order.js?v=fcboothyd-bootfcr1-20260918"></script>
-    <script src="assets/js/pages/sku-details.js?v=fcboothyd-bootfcr1-20260918"></script>
-    <script src="assets/js/pages/shipping-plan.js?v=fcboothyd-bootfcr1-20260918"></script>
-    <script src="assets/js/pages/shipping-history.js?v=fcboothyd-bootfcr1-20260918"></script>
-    <script src="assets/js/pages/supplychain.js?v=donenotice-20260811"></script>
-    <script src="assets/js/pages/sku-handbook.js?v=fcboothyd-bootfcr1-20260918"></script>
-    <script src="assets/js/i18n/sku-handbook.js?v=donenotice-20260811"></script>
-    <script src="assets/js/pages/campaign-risk.js?v=fcboothyd-bootfcr1-20260918"></script>
+    <script src="assets/js/pages/inventory-replenishment.js?v=homeboot-bootfcr2-20260919" defer></script>
+    <script src="assets/js/pages/factory-stock.js?v=homeboot-bootfcr2-20260919" defer></script>
+    <script src="assets/js/pages/overseas-stock.js?v=homeboot-bootfcr2-20260919" defer></script>
+    <script src="assets/js/pages/overseas-ops-preview.js?v=donenotice-20260811" defer></script>
+    <script src="assets/js/pages/overseas-inbound.js?v=donenotice-20260811" defer></script>
+    <script src="assets/js/pages/overseas-outbound.js?v=donenotice-20260811" defer></script>
+    <script src="assets/js/pages/fc-summary.js?v=homeboot-bootfcr2-20260919" defer></script>
+    <script src="assets/js/pages/forecast.js?v=donenotice-20260811" defer></script>
+    <script src="assets/js/pages/request-order.js?v=homeboot-bootfcr2-20260919" defer></script>
+    <script src="assets/js/pages/sku-details.js?v=homeboot-bootfcr2-20260919" defer></script>
+    <script src="assets/js/pages/shipping-plan.js?v=homeboot-bootfcr2-20260919" defer></script>
+    <script src="assets/js/pages/shipping-history.js?v=homeboot-bootfcr2-20260919" defer></script>
+    <script src="assets/js/pages/supplychain.js?v=donenotice-20260811" defer></script>
+    <script src="assets/js/pages/sku-handbook.js?v=homeboot-bootfcr2-20260919" defer></script>
+    <script src="assets/js/i18n/sku-handbook.js?v=donenotice-20260811" defer></script>
+    <script src="assets/js/pages/campaign-risk.js?v=homeboot-bootfcr2-20260919" defer></script>
     <!-- Procurement Layer (Phase 1) -->
-    <script src="assets/js/pages/request-order-draft.js?v=donenotice-20260811"></script>
-    <script src="assets/js/pages/purchase-order-overview.js?v=donenotice-20260811"></script>
-    <script src="assets/js/pages/purchase-order-list.js?v=donenotice-20260811"></script>
+    <script src="assets/js/pages/request-order-draft.js?v=donenotice-20260811" defer></script>
+    <script src="assets/js/pages/purchase-order-overview.js?v=donenotice-20260811" defer></script>
+    <script src="assets/js/pages/purchase-order-list.js?v=donenotice-20260811" defer></script>
     <!-- Carrier / Route master (Carrier Rate Card v1) -->
-    <script src="assets/js/pages/carrier-rate-card.js?v=donenotice-20260811"></script>
+    <script src="assets/js/pages/carrier-rate-card.js?v=donenotice-20260811" defer></script>
     <!-- SKU Regional Details (SKU Domain v2.0) -->
-    <script src="assets/js/pages/sku-regional-details.js?v=sku-read-path-20260826"></script>
+    <script src="assets/js/pages/sku-regional-details.js?v=sku-read-path-20260826" defer></script>
     <!-- Global Logistics Map (Carrier / Route) — 3D Earth globe engine + vendored land asset (self-contained, no CDN) -->
-    <script src="assets/js/data/world-land-110m.js?v=donenotice-20260811"></script>
+    <script src="assets/js/data/world-land-110m.js?v=donenotice-20260811" defer></script>
     <!-- F1-7N-MAP-COUNTRY-BOUNDARY-1: vendored public-domain Natural Earth country boundaries + ISO alpha-2 label
          points. Same-origin <script>, no CDN, no runtime fetch — identical loading pattern to the land outline. -->
-    <script src="assets/js/data/world-countries-110m.js?v=country-boundary-20260826"></script>
+    <script src="assets/js/data/world-countries-110m.js?v=country-boundary-20260826" defer></script>
     <!-- MAP-VISUAL-REAL-EARTH-TEXTURE-3 (localization authority): vendored Traditional Chinese (zh-Hant) geographic
          NAMES ONLY - no geometry, no coordinates, no label anchors. Country names come from Natural Earth v5.1.2
          NAME_ZHT (public domain, verified Traditional by measurement); ADM1 names from name_zht per division where
          verified; continents from a hand-reviewed 7-name list. Loaded EAGERLY because country labels are needed at
          LOD 0 - a lazy path would flash ISO codes before the Chinese names arrived. Same-origin <script>, no CDN,
          no runtime fetch, no runtime translation. -->
-    <script src="assets/js/data/geo-names-zh-hant.js?v=map-texture3-r4-20260827"></script>
+    <script src="assets/js/data/geo-names-zh-hant.js?v=map-texture3-r4-20260827" defer></script>
     <!-- The ONE geographic-name authority. Implements the deterministic per-class fallback order and reports WHICH
          level answered, so a silent regression to ISO codes cannot look like a successful zh-Hant render. -->
     <!-- TEXTURE-3-R3 §F — zh-TW MAP DISPLAY names, above the vendored formal names. Names only: no geometry,
          no coordinates, no anchors. Loaded BEFORE the resolver, which reads it as its top two authority levels. -->
-    <script src="assets/js/data/geo-display-aliases-zh-tw.js?v=map-texture3-r4-20260827"></script>
+    <script src="assets/js/data/geo-display-aliases-zh-tw.js?v=map-texture3-r4-20260827" defer></script>
     <!-- TEXTURE-3-R4 §B — zh-TW DIVISION (ADM1) display names, keyed by the stable adm1_code. Names only. The
          sources are the pinned Natural Earth name_zht field and a vendored, QID-joined Wikidata snapshot (CC0),
          each verified fully Traditional by the same two-source detector. CLDR publishes NO zh-Hant subdivision
          data at all; the vendored stub that proves it is a build input and is never served. Loaded before the
          resolver, which reads this as two of its division levels. -->
-    <script src="assets/js/data/geo-admin1-display-names-zh-tw.js?v=map-texture3-r4-20260827"></script>
-    <script src="assets/js/core/geo-name-resolver.js?v=map-texture3-r6-20260831"></script>
-    <script src="assets/js/lib/km-geo-topology.js?v=map-texture3-r4-20260827"></script>
-    <script src="assets/js/lib/km-globe.js?v=map-labelmode-r9-20260831"></script>
-    <script src="assets/js/pages/global-logistics-map.js?v=map-labelcopy-r9a-20260831"></script>
-    <script src="assets/js/pages/automation-schedule.js?v=donenotice-20260811"></script>
+    <script src="assets/js/data/geo-admin1-display-names-zh-tw.js?v=map-texture3-r4-20260827" defer></script>
+    <script src="assets/js/core/geo-name-resolver.js?v=map-texture3-r6-20260831" defer></script>
+    <script src="assets/js/lib/km-geo-topology.js?v=map-texture3-r4-20260827" defer></script>
+    <script src="assets/js/lib/km-globe.js?v=map-labelmode-r9-20260831" defer></script>
+    <script src="assets/js/pages/global-logistics-map.js?v=map-labelcopy-r9a-20260831" defer></script>
+    <script src="assets/js/pages/automation-schedule.js?v=donenotice-20260811" defer></script>
 
     <!-- App (Global) -->
-    <script src="assets/js/app.js?v=fcboothyd-bootfcr1-20260918"></script>
+    <script src="assets/js/app.js?v=homeboot-bootfcr2-20260919" defer></script>
     
     <!-- Shared Date Picker Modal -->
     <div class="fr-date-backdrop" id="frDateBackdrop"></div>

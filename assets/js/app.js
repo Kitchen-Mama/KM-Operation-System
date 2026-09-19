@@ -609,43 +609,18 @@ function renderRecords() {
 // 世界時間功能
 // ========================================
 
-function initWorldTimes() {
-    updateWorldTimes();
-    setInterval(updateWorldTimes, 1000);
-}
-
-function updateWorldTimes() {
-    const timezones = [
-        { id: 'AU', offset: 11, name: 'Australia' },
-        { id: 'JP', offset: 9, name: 'Japan' },
-        { id: 'DE', offset: 1, name: 'Germany' },
-        { id: 'UK', offset: 0, name: 'UK' },
-        { id: 'US-East', offset: -5, name: 'US East' },
-        { id: 'US-Middle', offset: -6, name: 'US Central' },
-        { id: 'US-West', offset: -8, name: 'US West' }
-    ];
-    
-    const now = new Date();
-    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-    
-    timezones.forEach(tz => {
-        const localTime = new Date(utc + (3600000 * tz.offset));
-        const card = document.getElementById(`card-${tz.id}`);
-        
-        if (card) {
-            const dateStr = `${localTime.getMonth() + 1}/${localTime.getDate()}/${localTime.getFullYear().toString().slice(-2)}`;
-            const timeStr = localTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-            const offsetStr = `TP${tz.offset >= 0 ? '+' : ''}${tz.offset}`;
-            
-            card.querySelector('.local-date').textContent = dateStr;
-            card.querySelector('.local-time').textContent = timeStr;
-            card.querySelector('.timezone-offset').textContent = offsetStr;
-        }
-    });
-}
-
-window.initWorldTimes = initWorldTimes;
-window.updateWorldTimes = updateWorldTimes;
+// INCIDENT-BOOT-FC-R2 §3 — THE WORLD CLOCK LIVES IN pages/home.js NOW.
+//
+// It used to live here and be started from the DOMContentLoaded handler at the bottom of this file. The
+// clock is pure local arithmetic — seven offsets and a Date, no request of any kind — but DOMContentLoaded
+// cannot fire until every render-blocking script has downloaded and executed, which measured 38.2 s cold
+// across 103 requests and 6.93 MB. So the cards sat at `--/--` for the whole of it, and the cause looked
+// like an API problem when no API was involved.
+//
+// It is now owned by the Home mount, which runs in Phase 0 while the rest of the application is still
+// arriving, and it is STOPPED on unmount so navigating away cannot leave an interval ticking. The
+// window.initWorldTimes / window.updateWorldTimes names still exist, exported from there, so no caller
+// had to change and no second implementation exists here to drift from it.
 
 // ========================================
 // Replenishment Charts
@@ -719,7 +694,8 @@ window.addEventListener('DOMContentLoaded', () => {
 
     // Remaining startup inits — each guarded so one failure can't abort the rest (or Home).
     try { renderRecords(); } catch (e) { console.error('[App] renderRecords failed:', e); }
-    try { initWorldTimes(); } catch (e) { console.error('[App] initWorldTimes failed:', e); }
+    // The world clock is NOT started here any more — the Home mount started it in Phase 0, long before
+    // this event could fire. Calling it again would be the second authority §4 forbids.
     try { renderHomepage(); } catch (e) { console.error('[App] renderHomepage failed:', e); }
     try { initSkuUnifiedScroll(); } catch (e) { console.error('[App] initSkuUnifiedScroll failed:', e); }
 });

@@ -82,7 +82,13 @@ section('G — §7 deployment closure: index.html assets are cache-versioned (de
 ok(/assets\/css\/components\.css\?v=/.test(INDEX) && /assets\/css\/pages\/inventory-replenishment\.css\?v=/.test(INDEX), 'G1 page/component CSS carry a ?v= cache-version');
 ok(/assets\/js\/pages\/inventory-replenishment\.js\?v=/.test(INDEX) && /assets\/js\/pages\/request-order\.js\?v=/.test(INDEX), 'G2 page JS carry a ?v= cache-version');
 ok((INDEX.match(/assets\/[^"?]+\.(?:css|js)\?v=/g) || []).length >= 60, 'G3 the version was applied broadly across local assets (not a single file)');
-ok(/cdn\.jsdelivr\.net\/npm\/chart\.js"><\/script>/.test(INDEX), 'G4 external CDN scripts were NOT versioned (only local assets)');
+// INCIDENT-BOOT-FC-R2 — the CDN tag now carries `defer` (moved off the Home critical path; URL and
+// version untouched), so the literal closing bracket no longer follows the quote. What G4 checks is
+// unchanged and is now stated directly: the CDN src carries no ?v= cache-version, because the project
+// versions only its own assets.
+var _cdnSrcs = (INDEX.match(/<script[^>]*\ssrc="(https:\/\/cdn\.jsdelivr\.net[^"]*)"/g) || []);
+ok(_cdnSrcs.length > 0 && _cdnSrcs.every(function (t) { return t.indexOf('?v=') === -1; }),
+  'G4 external CDN scripts were NOT versioned (only local assets)');
 
 console.log('\n----------------------------------------');
 console.log('AI SUPPORT MENU RUNTIME CLOSURE (F1-UI-R1): ' + pass + ' passed, ' + fail + ' failed');

@@ -556,7 +556,12 @@ section('§G — the seven negative tests: each guard is made to BITE');
     // The token is DERIVED (see _release-order.js currentAppToken); what N7 pins is that the TAG exists and
     // carries the APPLICATION family's token rather than a map one - which is what a bad merge would break.
     var _APP5 = require(path.join(ROOT, 'assets/tests/_release-order.js')).currentAppToken();
-    ok(INDEX.indexOf('<script src="assets/js/core/supply-planning-factory-site-allocation.js?v=' + _APP5 + '"></script>') !== -1,
+    // INCIDENT-BOOT-FC-R2 — the tag may now carry `defer`, so the literal stops at the closing quote and
+    // the attributes are matched separately. What N7 pins is unchanged: the tag EXISTS and carries the
+    // APPLICATION family's token rather than a map one.
+    var _kmfsa = new RegExp('<script\\s[^>]*src="assets/js/core/supply-planning-factory-site-allocation\\.js\\?v='
+        + _APP5.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '"[^>]*></script>');
+    ok(_kmfsa.test(INDEX),
         'N7 the KMFSA tag is present with main\'s token, exactly');
     // And it loads BEFORE its two consumers, which is the reason it is in index.html at all.
     function at(s) { for (var i = 0; i < TAGS.length; i++) { if (TAGS[i].src === s) return i; } return -1; }

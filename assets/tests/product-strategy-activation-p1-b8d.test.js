@@ -629,8 +629,14 @@ ok(SRC.index.indexOf('productstrategy-p1b8b-20260912') < 0,
 // rewrote the FC Summary column rules could have shipped a page whose JavaScript was new and whose
 // stylesheet was cached. The pin moves rather than loosens — an exact count is what makes a
 // half-updated deployment visible at all.
-eq(REL.appTokenRefCount(SRC.index), 36,
-  'H6  thirty-six references share it — the application set, Product Strategy, and the FC Summary stylesheet, now one co-deployed set');
+// INCIDENT-BOOT-FC-R2 — 36 became 37. assets/js/pages/home.js joined the co-deployed set: it had stood on
+// `r6c-navlifecycle-20260822`, a token that is not in ROUND_TOKENS at all, and staleAppTokenRefs skips
+// tokens it does not recognise — so a file that round rewrites could have shipped beside a cached copy of
+// itself with every guard reporting clean. Same shape as the fc-overview.css case above, one layer worse:
+// there the token was the exempt BASE, here it was never recorded. 20 further assets remain on unrecorded
+// tokens; they are reported, not silently adopted, because this round did not change them.
+eq(REL.appTokenRefCount(SRC.index), 37,
+  'H6  thirty-seven references share it — the application set, Product Strategy, the FC Summary stylesheet and the Home module, now one co-deployed set');
 
 /* LOAD ORDER. The board reads the policy through sku-overrides, and app.js builds its menu from
    PSB_VIEWS; both must already be defined when their reader runs. */

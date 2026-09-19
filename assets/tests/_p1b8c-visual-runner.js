@@ -179,7 +179,14 @@ function buildPage(opts) {
      whatever the mirror says right now", which is a different code path from the shipped one — and
      the pending case is exactly what §10 asks this run to show. */
   var WANTED = /product-strategy|km-product-pricing|km-api-foundation|km-transport|utils\/tab-rail|km-image-reference-policy|km-repo-asset-manifest|api\/operation-system-db-api|core\/boot-read-arbiter/;
-  var scripts = (index.match(/<script src="([^"]+)"><\/script>/g) || [])
+  /* INCIDENT-BOOT-FC-R2 — TOLERATE ATTRIBUTES ON THE SOURCE TAG.
+     This matched `<script src="..."></script>` with nothing between the quote and the bracket. When
+     index.html gained `defer`, it matched NOTHING, and the generated page was built with zero page
+     scripts — so every scenario reported "no measurements came back from the browser" about a page
+     that had never loaded the code under test. The tags are RE-EMITTED attribute-free two lines below,
+     which is what this harness needs and must keep: its own inline script has to run after app.js, and
+     an inline script cannot defer. Only the match changes. */
+  var scripts = (index.match(/<script\s[^>]*\bsrc="([^"]+)"[^>]*><\/script>/g) || [])
     .map(function (t) { return /src="([^"]+)"/.exec(t)[1]; })
     .filter(function (s) { return WANTED.test(s); })
     .map(function (s) { return '<script src="' + s.split('?')[0] + '"></script>'; })

@@ -647,16 +647,20 @@ section('E. §6.1-6.12 — THE REQUIRED MATRIX');
   }
 
   // =================================================================================================
-  section('I. THE HOME CENSUS — RECORDED, NOT REPAIRED (§5 contract expansion)');
+  section('I. THE HOME BOOT — the census this suite recorded, now asserted as REPAIRED');
   // =================================================================================================
-  // The Home half of this incident is NOT fixed in this round: the repair needs assets/js/app.js and the
-  // structure of index.html, both of which §5 places behind an explicit contract expansion. What is
-  // locked here is the census itself, so the eventual repair starts from a recorded before-state and so
-  // that nothing silently makes it WORSE in the meantime.
+  // BOOT-FC-R1 recorded this census as a DEFECT, because the repair needed app.js and the structure of
+  // index.html and neither was authorised yet. BOOT-FC-R2 authorised and made that repair, so the
+  // assertions below now check the same three facts from the other side.
+  //
+  // The full Home boot contract — Phase 0 executed for real, interval ownership, deep-link guard,
+  // defer order-safety — belongs to home-boot-critical-path-boot-fc-r2.test.js. What stays HERE is the
+  // part an FC change could plausibly break: the clock must never acquire a data dependency, and Home
+  // must never start issuing API requests.
   var APP = read(APP_REL), HOME = read(HOME_REL), INDEX = read('index.html');
 
-  // The world clock is pure-local arithmetic. It must never acquire a data dependency.
-  var uwt = extractFn(APP, 'updateWorldTimes');
+  // The world clock is pure-local arithmetic, and it now lives in home.js rather than app.js.
+  var uwt = extractFn(HOME, 'updateWorldTimes');
   ['KM.api', 'getWorkspace', 'fetch(', 'await ', '.then('].forEach(function (tok) {
     ok(uwt.indexOf(tok) === -1, 'I1 the world clock contains no "' + tok + '" — it is local arithmetic');
   });
@@ -664,19 +668,22 @@ section('E. §6.1-6.12 — THE REQUIRED MATRIX');
   ['KM.api.getWorkspace', 'executeCommand', 'loadOperationDb'].forEach(function (tok) {
     ok(codeOnly(HOME).indexOf(tok) === -1, 'I2 home.js issues no "' + tok + '"');
   });
-  // THE DEFECT, RECORDED. initWorldTimes is called from the DOMContentLoaded handler, which cannot run
-  // until every render-blocking script in index.html has downloaded and executed. Measured cold at
-  // concurrency 6: 103 requests, 6.93 MB, 38.2 s — that is the whole of the "--/--" window, and no API
-  // is involved in any of it.
+  // THE DEFECT, NOW REPAIRED. The clock used to be started from app.js's DOMContentLoaded handler, which
+  // cannot fire until every render-blocking script has downloaded and executed — measured cold at
+  // concurrency 6: 103 requests, 6.93 MB, 38.2 s. That was the whole of the "--/--" window, and no API
+  // was involved in any of it.
   var dcl = APP.slice(APP.indexOf("addEventListener('DOMContentLoaded'"));
-  ok(dcl.indexOf('initWorldTimes()') > -1,
-    'I3 RECORDED DEFECT: the local clock is started inside DOMContentLoaded');
+  ok(dcl.indexOf('initWorldTimes()') === -1,
+    'I3 REPAIRED: the local clock is no longer started from DOMContentLoaded');
+  ok(codeOnly(HOME).indexOf('function initWorldTimes') > -1,
+    'I3b REPAIRED: it is started by the Home mount instead, in Phase 0');
   var scripts = (INDEX.match(/<script src="/g) || []).length;
-  var deferred = (INDEX.match(/<script[^>]+(defer|async)/g) || []).length;
-  ok(scripts > 60, 'I4 RECORDED: index.html loads ' + scripts + ' scripts', scripts);
-  ok(deferred <= 1, 'I5 RECORDED: ' + deferred + ' of them is deferred or async — the rest block the clock', deferred);
-  ok(/<script src="https:\/\/cdn\.jsdelivr\.net/.test(INDEX),
-    'I6 RECORDED: third-party CDN scripts sit render-blocking in <head>, unpinned and unversioned');
+  var deferredTags = (INDEX.match(/<script[^>]+\bdefer\b/g) || []).length;
+  ok(scripts > 60, 'I4 index.html still loads ' + scripts + ' scripts — none was deleted', scripts);
+  ok(deferredTags > 60,
+    'I5 REPAIRED: ' + deferredTags + ' of them defer, so they no longer block the clock', deferredTags);
+  ok(/<script src="https:\/\/cdn\.jsdelivr\.net[^"]*" defer/.test(INDEX),
+    'I6 REPAIRED: the third-party CDN scripts are off the critical path (URL and version unchanged)');
   // The capability read, at least, is already fire-and-forget: Home does not wait on Apps Script.
   ok(/_capP\.then\(function \(\) \{ _capSettle\(true\); \}, function \(\) \{ _capSettle\(false\); \}\)/.test(APP),
     'I7 the one Home-boot API read is fire-and-forget and settles either way');

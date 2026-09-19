@@ -411,7 +411,11 @@ var ROUND_TOKENS = [
   'fcrescol-r2ba2r3-20260918',
   // INCIDENT-BOOT-FC-R1 — FC Summary retry now hydrates through one authority (Year options and filters
   // recover with the table, and an unreadable payload stays a refusal). fc-summary.js only.
-  'fcboothyd-bootfcr1-20260918'];
+  'fcboothyd-bootfcr1-20260918',
+  // INCIDENT-BOOT-FC-R2 — the Home critical path. 74 of 79 script tags defer; the world clock moves
+  // from app.js's DOMContentLoaded handler to the Home mount, which now runs in Phase 0 behind 0.04 MB
+  // instead of 5.23 MB. app.js, pages/home.js and index.html.
+  'homeboot-bootfcr2-20260919'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

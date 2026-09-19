@@ -312,7 +312,24 @@ ok(RO_.MAP_TOKEN_SERIES.indexOf(tok2[1]) >= RO_.MAP_TOKEN_SERIES.indexOf(tok[1])
   'G3 and the resolver is never deployed OLDER than the asset it reads');
 // eager, unlike the 538 KB ADM1 geometry which stays lazy
 ok(INDEX.indexOf('world-admin1-10m.js') === -1, 'G4 the ADM1 GEOMETRY stays lazy-loaded (absent from index.html)');
-ok(!/defer|async/.test(INDEX.slice(iData, iData + 120)), 'G5 the name asset is eager — country labels are needed at LOD 0');
+// INCIDENT-BOOT-FC-R2 — THIS ONE IS NOT A BRITTLE ANCHOR, SO IT IS WORTH SAYING WHAT CHANGED AND WHY.
+//
+// G5 forbade `defer|async` on the name asset because country labels are needed at LOD 0 and a LAZY path
+// would flash ISO codes before the Chinese names arrived. That requirement is intact; what changed is
+// that `defer` is not a lazy path. Deferred scripts execute in DOCUMENT ORDER, all of them before
+// DOMContentLoaded — so G2 above, which already pins data < resolver < km-globe, still governs
+// EXECUTION order and the names are defined before anything can draw a label. `async` is the attribute
+// that would genuinely break this, because it abandons order, and it remains forbidden.
+//
+// The check is therefore narrowed to `async` and widened to state the ordering it depends on. It is
+// stricter than before in one respect: the old slice-of-120-characters test could not have caught the
+// asset being MOVED after its consumers, and this does.
+ok(!/\basync\b/.test(INDEX.slice(iData - 80, iData + 120)),
+  'G5 the name asset is never `async` — that would abandon the load order the labels depend on');
+ok(iData < iRes && iRes < iGlobe,
+  'G5b and it executes before the resolver and the globe, which is what "eager" was protecting');
+ok(INDEX.indexOf('world-admin1-10m.js') === -1,
+  'G5c while the 538 KB ADM1 geometry is still genuinely lazy — absent from index.html entirely');
 // status() makes a missing asset a named fact rather than a silent regression to ISO codes
 var s = R.status();
 eq([s.loaded, s.countries, s.continents], [true, 175, 7], 'G6 status() reports what is loaded');

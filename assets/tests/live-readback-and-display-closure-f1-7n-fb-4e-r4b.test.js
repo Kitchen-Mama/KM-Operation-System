@@ -344,7 +344,9 @@ checks.push(Promise.resolve().then(function () {
 
   // DISPROVED: "the shared scope modal is never loaded, so window.KM.scopeModal is undefined".
   // It IS loaded, before both pages that use it. Pinned here so this hypothesis is not tried again.
-  var tag = /<script src="assets\/js\/utils\/scope-select-modal\.js\?v=([^"]+)"><\/script>/.exec(HTML);
+  // INCIDENT-BOOT-FC-R2 — the tag may now carry attributes (`defer`), so the pattern no longer requires
+  // `>` immediately after the closing quote. The hypothesis this pins is unchanged: the modal IS loaded.
+  var tag = /<script[^>]*\ssrc="assets\/js\/utils\/scope-select-modal\.js\?v=([^"]+)"[^>]*><\/script>/.exec(HTML);
   ok(!!tag, 'D1 DISPROVED HYPOTHESIS — the scope-select modal IS loaded by index.html');
   eq((HTML.match(/scope-select-modal\.js/g) || []).length, 1, 'D1 ... exactly once');
   var modalAt = HTML.indexOf('scope-select-modal.js');

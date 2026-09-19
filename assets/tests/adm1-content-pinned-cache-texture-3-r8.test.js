@@ -590,7 +590,15 @@ mutate('N5 stale element allowed to satisfy the versioned request',
 mutate('N6 loader script tag duplicated',
     function () { return indexOk(INDEX); },
     function () {
-        var tag = '<script src="' + MAP_PAGE_REL + '?v=' + RO.currentMapToken() + '"></script>';
+        // INCIDENT-BOOT-FC-R2 — the tag may now carry attributes (`defer`), so it is located in the real
+        // document rather than reconstructed. A reconstructed literal silently stopped matching, the
+        // duplication never happened, and the mutant reported SURVIVED while asserting nothing.
+        var _re = new RegExp('<script\\s[^>]*src="'
+            + (MAP_PAGE_REL + '?v=' + RO.currentMapToken()).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+            + '"[^>]*></script>');
+        var _m = _re.exec(INDEX);
+        if (!_m) throw new Error('N6 could not locate the loader tag to duplicate');
+        var tag = _m[0];
         return indexOk(INDEX.replace(tag, tag + '\n    ' + tag));
     });
 
