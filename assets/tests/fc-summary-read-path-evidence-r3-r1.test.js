@@ -141,10 +141,12 @@ function runServerCensus() {
   vm.runInContext('function prodSafetyBundle_() { return KMSAFE; }', sb);
   ['prodExpectedDbId_', 'prodSchemaError_', 'prodAssertDbTarget_', 'prodRequireSheet_', 'prodRequireColumns_']
     .forEach(function (f) { vm.runInContext(fnSrc(SAFE, f), sb); });
-  ['FCS_WORKSPACE_TABLES_', 'FCS_WS_ROW_MAX_'].forEach(function (v) { vm.runInContext(varSrc(WS, v), sb); });
+  ['FCSWS_BUILD_VERSION_', 'FCS_WORKSPACE_TABLES_', 'FCS_WS_ROW_MAX_', 'FCS_SLICE_SPECS_', 'FCS_EMIT_SOURCE_']
+    .forEach(function (v) { vm.runInContext(varSrc(WS, v), sb); });
   vm.runInContext('var FCS_WS_SEQ_ = 0;', sb);
-  ['fcsWsStr_', 'fcsBuildEnvelope_', 'fcsCap_', 'fcsDistinctYears_', 'fcsWorkspaceBuild_',
-   'fcsWsRowsToObjects_', 'fcsWorkspaceDefaultIo_', 'handleFcSummaryWorkspaceGet_']
+  ['fcsWsStr_', 'fcsBuildEnvelope_', 'fcsCap_', 'fcsDistinctYears_', 'fcsDistinctAsc_', 'fcsBuildFacets_',
+   'fcsWorkspaceBuild_', 'fcsResolveSlice_', 'fcsSliceBuild_', 'fcsWsRowsToObjects_', 'fcsRowsFromValues_',
+   'fcsValidateHeader_', 'fcsReadTableOnce_', 'fcsWorkspaceDefaultIo_', 'handleFcSummaryWorkspaceGet_']
     .forEach(function (f) { vm.runInContext(fnSrc(WS, f), sb); });
 
   var env = vm.runInContext('handleFcSummaryWorkspaceGet_({ action: "fcSummary.workspace.get" }, undefined)', sb);
@@ -170,23 +172,27 @@ console.log('    per sheet: ' + JSON.stringify(perSheet));
 le(census.calls.length, 30, 'A4  BASELINE service calls per logical request <= 30');
 le(cellReads.length, 10, 'A5  BASELINE cell-transferring reads <= 10');
 
-// The contract in §4 of the evidence document: each needed sheet read AT MOST ONCE per logical
-// request. Today two sheets are read three times. This is the defect stated as a measurement.
+// The contract in §4 of the evidence document: each needed sheet read AT MOST ONCE per logical request.
+// Commit A measured two sheets being read three times and said here that Commit B would invert this.
+// It has. The assertion is now the contract rather than the defect.
 var worst = Object.keys(perSheet).reduce(function (m, k) { return Math.max(m, perSheet[k]); }, 0);
-eq(worst, 3, 'A6  CHARACTERISATION today the worst sheet is read three times (Commit B: once)');
-var thrice = Object.keys(perSheet).filter(function (k) { return perSheet[k] === 3; }).sort();
-eq(thrice, ['fc_regular_forecast', 'marketplaces'],
-  'A7  and it is exactly the two tables with a non-empty requiredCols, which is the mechanism');
+eq(worst, 1, 'A6  every sheet is read AT MOST ONCE per logical request (was three)');
+var repeated = Object.keys(perSheet).filter(function (k) { return perSheet[k] > 1; }).sort();
+eq(repeated, [], 'A7  and no sheet is read twice — the requiredCols second header read is gone');
 
 // The redundancy is provable, not merely counted: getDataRange() returns the header row, so every
 // getRange(1,1,1,n) read is a second trip for bytes the handler is about to receive anyway.
 var headerReads = census.calls.filter(function (c) { return /getRange\.getValues/.test(c.op); }).length;
-eq(headerReads, 6, 'A8  CHARACTERISATION six header re-reads, each one already inside the full-sheet scan');
+eq(headerReads, 0, 'A8  no separate header reads at all — the full-sheet scan already carries the header');
 var fullScans = census.calls.filter(function (c) { return /getDataRange/.test(c.op); }).length;
 eq(fullScans, 4, 'A9  one full-sheet scan per table — and it already carries the header');
 
 var getIds = census.calls.filter(function (c) { return c.op === 'getId'; }).length;
-eq(getIds, 5, 'A10 CHARACTERISATION the spreadsheet id is re-asserted once per table (1 + 4)');
+eq(getIds, 1, 'A10 the spreadsheet id is asserted ONCE per request, not once per table (was five)');
+// Asserted once is not asserted less: the refusal itself is unchanged, and the slice suite drives every
+// WRONG_SPREADSHEET_TARGET path to prove it. Four proofs of one fact were four service calls, not four
+// safeguards.
+eq(census.calls.length, 10, 'A10a ten Sheets service calls in total, down from the thirty Commit A measured');
 
 // ==================================================================================================
 // B. THE CLIENT: HOW MANY LOGICAL REQUESTS DOES EACH OPERATOR ACTION ISSUE?

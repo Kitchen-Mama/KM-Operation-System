@@ -768,7 +768,14 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12',
   // R13 - the Target Rule write contract (rehydration + stale-write protection). APPENDED: R13 is the
   // newest release, so the end of the list is also its truthful position.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R13'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R13',
+  // R14 - FC-SUMMARY-R3-R1: the FC Summary READ owner. 58_ gains slices on the existing action, one
+  // Sheets read per sheet instead of two or three, server-derived filter facets, and its FIRST declared
+  // build stamp - so 63_ carries the release, 58_'s new REQUIRED manifest row, and its own identity.
+  // No action was added and no router change, but a new deployment version is still required: two files
+  // changed and a project holding either at R13 is a partial sync the manifest now names.
+  // APPENDED, which remains the only legal position - stampAtOrAfter compares INDEXES.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R14'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

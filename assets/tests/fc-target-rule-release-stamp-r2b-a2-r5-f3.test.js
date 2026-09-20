@@ -61,21 +61,29 @@ var RELEASE_FLOOR = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12';
 // and becomes a comparison of the release against ITSELF the moment it is committed (it duly reported
 // that zero tokens were added and the manifest grew by zero rows). A commit id is the stable way to name
 // a tree, and this one never moves: cd3fd8f is F2, the consumer unification this release exists to name.
-var BASE = '2c18d71';
+// R14 — FC-SUMMARY-R3-R1 moves the base to 07c23fd, the commit the R13 release was accepted at in
+// production. The base tracks the release this suite is describing, because "what did THIS release
+// change?" is meaningless against the tree of the release before last.
+var BASE = '07c23fd';
 
 // The files THIS release syncs, and the ONE reason each is on the list. A file on the sync list for no
 // stated reason is how an unrelated edit reaches production by accident — so the set is declared here
 // and checked against git below, rather than being read off git and believed.
 var RELEASE_OWNERS = {
-  '14_fc_write_handlers.gs':
-    'the Target Rule upsert gained the expected_row_version stale gate, the unchanged short-circuit '
-    + 'and the complete saved-row receipt',
+  '58_api_v1_fc_summary_workspace.gs':
+    'the FC Summary READ owner gained bootstrap/regular/events/rules slices on the existing action, '
+    + 'one Sheets read per sheet, server-derived filter facets, and its first declared build stamp',
   '63_api_v1_system_health.gs':
-    'the release identity and 14_\'s manifest row'
+    'the release identity and 58_\'s new REQUIRED manifest row'
 };
 // Owners that carry an EARLIER release and must keep it. Each is here because it did not change, and
 // marching any of them to the current release would destroy the manifest's only useful signal.
+//
+// 14_ JOINED THIS LIST AT R14, AND THAT IS THE POINT. It was R13's owner; reading a Target Rule is not
+// writing one, and the read owner changing gives nobody licence to march the write handler along. A file
+// that moves out of RELEASE_OWNERS and into RELEASE_UNMOVED is a release doing its job.
 var RELEASE_UNMOVED = {
+  '14_fc_write_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R13',
   '13_procurement_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12',
   '00_config.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11',
   '01_router.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9',
@@ -85,6 +93,7 @@ var RELEASE_UNMOVED = {
 var HEALTH = read(GS + '63_api_v1_system_health.gs');
 var PROC = read(GS + '13_procurement_handlers.gs');
 var WRITE = read(GS + '14_fc_write_handlers.gs');
+var WSREAD = read(GS + '58_api_v1_fc_summary_workspace.gs');
 var BUNDLE = read(GS + '90_generated_supply_planning_bundle.gs');
 var CONFIG = read(GS + '00_config.gs');
 var ROUTER = read(GS + '01_router.gs');
@@ -197,12 +206,18 @@ ok(!/function\s+procurementTargetRuleResolver_/.test(PROC),
   'B1a and the matcher it used to own really is gone, so the stamp is not decoration');
 ok(/KMPD\.resolveTargetRule/.test(PROC),
   'B1b and what replaced it is a call to the shared resolver, not a second private copy');
-eq(declares(WRITE, 'FCW_BUILD_VERSION_'), RELEASE,
-  'B2  14_ declares the release — it is the owner this release exists to ship');
+eq(declares(WSREAD, 'FCSWS_BUILD_VERSION_'), RELEASE,
+  'B2  58_ declares the release — it is the owner this release exists to ship');
+// The mirror image, and the reason B2 could be rewritten rather than deleted: the write handler is
+// untouched by a read-path release, so it must still declare the release it DID change in.
+eq(declares(WRITE, 'FCW_BUILD_VERSION_'), RELEASE_UNMOVED['14_fc_write_handlers.gs'],
+  'B2a 14_ keeps R13 — reading a Target Rule is not writing one, and a release may not march it along');
+ok(/FCS_SLICE_SPECS_/.test(WSREAD) && /fcsReadTableOnce_/.test(WSREAD),
+  'B2b and the change the stamp is claiming is really in the file — the slice specs and the one-read IO');
 eq(declares(HEALTH, 'SYS_BUILD_VERSION_'), RELEASE,
   'B3  63_\'s own module stamp moved, because 63_ itself changed');
 ok(/expected_row_version/.test(WRITE),
-  'B3a and the change the stamp is claiming is really in the file — the stale-write gate');
+  'B3a 14_\'s R13 stale-write gate is still in the file — an unmoved stamp must still be earned');
 eq(declares(BUNDLE, 'KM_BUNDLE_CONTENT_HASH_'),
   (BUNDLE.match(/^\/\/ bundle_sha256 = ([0-9a-f]{64})$/m) || [])[1],
   'B4  90_\'s content hash is the hash the builder printed in its own header — one value, two places, derived');
@@ -292,9 +307,15 @@ ok(oldProc.stale_modules.join('|').indexOf('13_procurement_handlers.gs') !== -1,
 ok(oldProc.stale_modules.join('|').indexOf('F1-7N-FC-1A-R1') !== -1,
   'F1a and the report names the build the project actually carries, not just that something is wrong');
 
-var oldWrite = runManifest({ FCW_BUILD_VERSION_: PREV_RELEASE });
-ok(oldWrite.stale_modules.join('|').indexOf('14_fc_write_handlers.gs') !== -1,
-  'F2  an OLD 14_ identity is rejected where this release requires the new one', oldWrite.stale_modules);
+var oldRead = runManifest({ FCSWS_BUILD_VERSION_: PREV_RELEASE });
+ok(oldRead.stale_modules.join('|').indexOf('58_api_v1_fc_summary_workspace.gs') !== -1,
+  'F2  an OLD 58_ identity is rejected where this release requires the new one', oldRead.stale_modules);
+// THE FAILURE MODE THIS ROW WAS ADDED FOR. Until R14, 58_ had no stamp at all: a project holding last
+// round's copy answered every FC Summary read with the wrong file and health reported a clean bill,
+// because neither the slice vocabulary nor the one-read IO adds or removes an action.
+var noRead = runManifest({ FCSWS_BUILD_VERSION_: null });
+eq(noRead.absent_modules, ['58_api_v1_fc_summary_workspace.gs'],
+  'F2a a project that never received 58_ reports it ABSENT — the signal that did not exist before R14');
 
 var noWrite = runManifest({ FCW_BUILD_VERSION_: null });
 eq(noWrite.absent_modules, ['14_fc_write_handlers.gs'],
@@ -375,11 +396,19 @@ var priorHealth = cp.execFileSync('git', ['show', BASE + ':' + GS + '63_api_v1_s
 eq(cp.execFileSync('git', ['diff', '--name-only', BASE, '--', GS + '01_router.gs'],
   { cwd: REPO, encoding: 'utf8' }).trim(), '',
   'H4  01_router.gs is untouched by this release — no action was routed, none withdrawn');
-eq(manifestRows(priorHealth).length, manifestRows(HEALTH).length,
-  'H5  the manifest gained and lost no rows — this release moves expectations, not membership');
+// R14 is the first release in this series to change manifest MEMBERSHIP, so the old assertion — that
+// membership never moves — is no longer true and is not the right thing to assert. What must hold is
+// that membership moved by EXACTLY the row this release declares, which is the stricter statement.
+var priorFiles = manifestRows(priorHealth).map(function (r) { return r.file; });
+var nowFiles = manifestRows(HEALTH).map(function (r) { return r.file; });
+eq(nowFiles.filter(function (f) { return priorFiles.indexOf(f) === -1; }),
+  ['58_api_v1_fc_summary_workspace.gs'],
+  'H5  the manifest gained EXACTLY one row: the FC Summary read owner');
+eq(priorFiles.filter(function (f) { return nowFiles.indexOf(f) === -1; }), [],
+  'H5a and lost none — a release adds an owner, it never quietly drops one');
 
 // ================================================================================================
-section('I. THE SYNC LIST IS EXACTLY THESE FOUR FILES');
+section('I. THE SYNC LIST IS EXACTLY THE DECLARED OWNERS');
 // ================================================================================================
 (function () {
   // FC-SUMMARY-R2B-A2-R6 — A DELETION IS NOT A COPY, AND THIS CHECK IS ABOUT THE COPY LIST.
@@ -401,13 +430,13 @@ section('I. THE SYNC LIST IS EXACTLY THESE FOUR FILES');
   var gone = status.filter(function (r) { return r.st === 'D'; }).map(function (r) { return r.file; }).sort();
 
   eq(copy, Object.keys(RELEASE_OWNERS).sort(),
-    'I1  exactly the four declared release owners are to be COPIED — no Apps Script file rode along');
-  eq(gone, ['TEMP_migrate_fc_target_rules_header_r2ba2.gs'],
-    'I1a and exactly one file is to be DELETED: the retired one-shot header migration');
+    'I1  exactly the declared release owners are to be COPIED — no Apps Script file rode along');
+  eq(gone, [],
+    'I1a and NOTHING is to be deleted — the one-shot helper was retired in R2B-A2-R6, before this base');
   // The retired file carried no build stamp and owned no manifest row, which is why removing it
   // moves no release identity. If it ever had, this would have to rotate the release too.
   ok(Object.keys(RELEASE_OWNERS).indexOf('TEMP_migrate_fc_target_rules_header_r2ba2.gs') === -1,
-    'I1b the retired file is not a stamped release owner, so R13 does not move for its removal');
+    'I1b the retired file is still not a release owner, and is no longer in the project at all');
 })();
 
 // ================================================================================================
@@ -451,13 +480,16 @@ mutant('M5a', 'an unchanged owner marched to the current release', function () {
 mutant('M6', 'a malformed release string', function () {
   return !RO.BUILD_STAMP_RE.test('R12') && !RO.BUILD_STAMP_RE.test('F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-r12');
 });
+// Aimed at the row THIS release moves. It used to aim at 14_, which worked only while 14_'s row carried
+// the release; at R14 it carries R13 by right, so the anchor vanished and the mutant reported a survival
+// that was really a missing premise. The vacuity audit caught it, which is what the audit is for.
 mutant('M7', 'the manifest expecting a build no file declares', function () {
   var faked = HEALTH.replace(
-    "symbol: 'FCW_BUILD_VERSION_', expected: '" + RELEASE + "'",
-    "symbol: 'FCW_BUILD_VERSION_', expected: '" + PREV_RELEASE + "'");
+    "symbol: 'FCSWS_BUILD_VERSION_', expected: '" + RELEASE + "'",
+    "symbol: 'FCSWS_BUILD_VERSION_', expected: '" + PREV_RELEASE + "'");
   if (faked === HEALTH) return false;
-  var row = manifestRows(faked).filter(function (r) { return r.symbol === 'FCW_BUILD_VERSION_'; })[0];
-  return !!row && declares(WRITE, 'FCW_BUILD_VERSION_') !== row.expected;
+  var row = manifestRows(faked).filter(function (r) { return r.symbol === 'FCSWS_BUILD_VERSION_'; })[0];
+  return !!row && declares(WSREAD, 'FCSWS_BUILD_VERSION_') !== row.expected;
 });
 mutant('M8', 'a double-quoted bundle hash, which makes every reader pass vacuously', function () {
   var faked = BUNDLE.replace(/var KM_BUNDLE_CONTENT_HASH_ = '([^']*)';/, 'var KM_BUNDLE_CONTENT_HASH_ = "$1";');
@@ -499,7 +531,7 @@ var vacuous = [];
  ['M4', function () { return runManifest().stale_modules.length === 0; }],
  ['M5', function () { return RO.stampAtOrAfter(RELEASE, PREV_RELEASE); }],
  ['M6', function () { return RO.BUILD_STAMP_RE.test(RELEASE); }],
- ['M7', function () { return declares(WRITE, 'FCW_BUILD_VERSION_') === RELEASE; }],
+ ['M7', function () { return declares(WSREAD, 'FCSWS_BUILD_VERSION_') === RELEASE; }],
  ['M8', function () { return declares(BUNDLE, 'KM_BUNDLE_CONTENT_HASH_') !== null; }],
  ['M9', function () { return declares(BUNDLE, 'KM_BUNDLE_CONTENT_HASH_')
      === (BUNDLE.match(/^\/\/ bundle_sha256 = ([0-9a-f]{64})$/m) || [])[1]; }],

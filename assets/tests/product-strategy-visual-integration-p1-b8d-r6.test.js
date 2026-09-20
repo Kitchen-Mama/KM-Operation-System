@@ -508,7 +508,13 @@ var R6_KNOWN_GS_CHANGES = ['assets/specs/active/apps-script/03_master_data_handl
   // read path moved: no action was added or removed, no capability field changed, and the feature flag is
   // untouched. This register is what keeps 'a server file changed' from being a silent event, so the file
   // is DECLARED here rather than the check being loosened to let it through.
-  'assets/specs/active/apps-script/63_api_v1_system_health.gs'];
+  'assets/specs/active/apps-script/63_api_v1_system_health.gs',
+  // FC-SUMMARY-R3-R1 — the FC Summary READ owner. 58_ gained slices on its existing action, one Sheets
+  // read per sheet, and its first build stamp; 63_ is already declared above and carries the R14 release
+  // plus 58_'s new manifest row. Product Strategy's read path is untouched: no action was added or
+  // removed, no capability field changed, the feature flag is untouched, and 72_ did not move. Declared
+  // here rather than loosening the check, which is the whole point of the register.
+  'assets/specs/active/apps-script/58_api_v1_fc_summary_workspace.gs'];
 var gsChanged = changedSince(R6_PRE, 'assets/specs/active/apps-script');
 if (gsChanged !== '__git_unavailable__') {
   var unexpectedGs = gsChanged.split('\n').map(function (x) { return x.trim(); })

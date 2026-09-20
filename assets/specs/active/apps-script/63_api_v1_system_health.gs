@@ -145,7 +145,13 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 // 13_ and 90_ do NOT move. Neither changed: reading a Target Rule is not writing one, and a release
 // that marched them along would put two unchanged files on the sync list and destroy the only signal
 // that says which files a project is actually missing.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R13';
+//
+// R14 — FC-SUMMARY-R3-R1 §B. The FC Summary read owner learned to answer SLICES and to read each sheet
+// once instead of two or three times, and it acquired its first build stamp. TWO files move: 58_ because
+// it changed, and this one because the release and the manifest live here. 14_ stays at R13 — no write
+// handler was touched — and 13_, 90_, 00_, 01_ and 72_ stay exactly where they were, for the same reason
+// as above: a sync list is only useful while it names the files that actually differ.
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R14';
 // 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
 // R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
 // not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
@@ -169,7 +175,10 @@ var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R13';
 // R13 - moved because THIS FILE changed: the release above and 14_'s expected stamp below. Nothing
 // else in this file moved — no action was added or removed, no response shape changed, and the
 // transport contract is untouched. A write handler that refuses a stale body is not a new vocabulary.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R13';
+// R14 - moved because THIS FILE changed: the release above, 58_'s new manifest row below, and 63_'s own
+// expected stamp. No action was added or removed and the transport contract is untouched; a read owner
+// that answers a narrower slice of the same action is not a new vocabulary either.
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R14';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -402,7 +411,16 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R13', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R14', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  // FC-SUMMARY-R3-R1 §B — THE FC SUMMARY READ OWNER HAD NO ROW, AND ITS ABSENCE WAS SILENT.
+  //
+  // 58_ answers every primary render of the FC Summary page, and until now a project holding last round's
+  // copy of it reported a completely clean bill of health: the action resolved, the handler existed, and the
+  // page was answered by the wrong file. The R3-R1 measurement made that concrete — the slice vocabulary and
+  // the one-read-per-sheet IO are both invisible to an action list, because neither adds or removes an action.
+  // A declared build is the only thing that can tell a half-finished sync from a finished one, so it now has
+  // one. The stamp VALUE is the round in which the file last changed behaviourally, as everywhere else here.
+  { file: '58_api_v1_fc_summary_workspace.gs', symbol: 'FCSWS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R14', owns: 'the FC Summary READ workspace: the four primary-render tables, the bootstrap/regular/events/rules slices on one action, the server-derived filter facets that keep the page\'s non-cascading universes intact, and one Sheets read per sheet per request' },
   // F1-7N-FC-1B-E3 §E.9 — the CONFIG is an owner file too. It holds
   // INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_, so a project still running the previous copy of it writes no
   // allocation drafts while the repository says it should; without an entry here that difference had no name.
