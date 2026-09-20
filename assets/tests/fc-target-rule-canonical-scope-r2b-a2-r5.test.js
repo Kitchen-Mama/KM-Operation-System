@@ -150,7 +150,8 @@ var TR_CODE = codeOnly(['_trRows_', '_trDataState_', '_trRowsFor_', '_trDistinct
   '_trSetApplyAll_', '_trHydrateFrom_', '_trResetToNew_', '_trProposedFingerprint_',
   // R2B-A2-R5-F5-F1 — the canonical row-shape seam: the blank-months state and the borrowed
   // normalization authority the receipt merge now goes through.
-  '_trBlankMonths_', '_trNormalizeCanonical_', '_fcGetTargetRules', '_getDbTargetRules',
+  '_trBlankMonths_', '_trNormalizeCanonical_', '_fcHas_', '_fcWorkspaceMode_', '_fcEffectiveWorkspace',
+  '_fcGetTargetRules', '_getDbTargetRules',
   // R2B-A2-R5-F6 — the status card's own helpers.
   '_trStatusIdentity_', '_trStatusMessage_',
   '_trClassify_', '_trSyncSession_', '_trRenderStatus_', '_trMergeReceipt_',
@@ -249,7 +250,8 @@ var TR_FNS = ['_trCanonScope_', '_trNorm_', '_trRows_', '_trDataState_', '_trDis
   '_trStrTok_', '_trNumTok_', '_trFingerprint_', '_trKeyOf_', '_trSelKey_', '_trExistingRules_',
   '_trSetApplyAll_', '_trHydrateFrom_', '_trResetToNew_', '_trProposedFingerprint_',
   // R2B-A2-R5-F5-F1 — the canonical row-shape seam.
-  '_trBlankMonths_', '_trNormalizeCanonical_', '_fcGetTargetRules', '_getDbTargetRules',
+  '_trBlankMonths_', '_trNormalizeCanonical_', '_fcHas_', '_fcWorkspaceMode_', '_fcEffectiveWorkspace',
+  '_fcGetTargetRules', '_getDbTargetRules',
   // R2B-A2-R5-F6 — the status card's own helpers.
   '_trStatusIdentity_', '_trStatusMessage_',
   '_trClassify_', '_trSyncSession_', '_trRenderStatus_', '_trMergeReceipt_',

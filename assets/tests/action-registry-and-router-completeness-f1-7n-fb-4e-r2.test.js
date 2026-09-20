@@ -675,6 +675,13 @@ GS_OWNED_SINCE_R1['14_fc_write_handlers.gs'] = 'FC-SUMMARY-R2B-A the explicit tw
 // change to this path, and deleting the row would erase the record of which round owned the file.
 GS_OWNED_SINCE_R1['TEMP_migrate_fc_target_rules_header_r2ba2.gs'] = 'FC-SUMMARY-R2B-A2-R1 the USER-run, UNROUTED additive header migration for fc_target_rules, RETIRED in R2B-A2-R6: the live sheet is missing three REQUIRED columns (scope_type, scope_id, target_percentage), which is why Target Rule saves were refused with HEADER_MISSING rather than HEADER_ORDER_MISMATCH. It appends only those three at the right edge under a migration authorization DTO with verified header hashes, moves no existing column, touches no data row, and is idempotent: a second run is a NO_OP';
 GS_OWNED_SINCE_R1['20_campaign_write_handlers.gs'] = 'FC-SUMMARY-R2B-A the four Campaign writer call sites opt into that mode, together, because repairing campaigns alone would let stage 1 commit and then refuse stage 2 - manufacturing the partial write the round exists to prevent';
+// FC-SUMMARY-R3-R1 — the FC Summary READ owner joins the owned set, and the entry is worth reading for
+// what it does NOT claim. No action was added or removed: the slices ride payload.include on the action
+// this file already answered, which is exactly why 01_router.gs is untouched and why an action list —
+// the instrument this suite is built on — could never have seen the change. That is also why the file
+// finally has a build stamp and a REQUIRED manifest row: until R14 a project holding last round's copy
+// answered every FC Summary read with the wrong file and reported a clean bill of health.
+GS_OWNED_SINCE_R1['58_api_v1_fc_summary_workspace.gs'] = 'FC-SUMMARY-R3-R1 the bootstrap/regular/events/rules slices on the EXISTING fcSummary.workspace.get action (no action added, no router change), one Sheets read per sheet instead of the measured two or three, the server-derived filter facets that keep the page\'s non-cascading universes intact while the rows stop crossing the wire, and this owner\'s first declared build stamp';
 gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
 eq(gsUnexpected.join(','), '', "8. no Apps Script file outside this line's owned set changed since the R1 commit");
 

@@ -628,14 +628,23 @@ section('I. REDIRECT / RETRY REGRESSION — §8, with controlled responses');
 // The real _fcRefreshViewNow_ against a scripted _fcWorkspaceRefresh_. The delivery failure itself is NOT
 // reproduced — §8 forbids using an external outage as a pass gate, and an intermittent Google hop could
 // never be one. What is proven is what this page does WITH such a failure.
-var RETRY_VARS = ['FC_VIEW_', 'FC_MSG_', 'FC_RETRY_', 'FC_RETRY_LABEL_',
+var RETRY_VARS = [
+  // FC-SUMMARY-R3-R1 — the read paths name a SLICE now instead of asking for the whole workspace,
+  // so the slice vocabulary has to be in the sandbox for them to resolve.
+  'FC_SLICE_', 'FC_FRESH_', '_FC_TAB_SLICE_', '_FC_SLICE_KEYS_', '_FC_MODEL_KEYS_', '_fcSliceState_',
+  'FC_VIEW_', 'FC_MSG_', 'FC_RETRY_', 'FC_RETRY_LABEL_',
   // INCIDENT-BOOT-FC-R1 §4D — the stage vocabulary the refusal banner names.
   'FC_STAGE_', 'FC_UNREADABLE_CODES_', '_fcViewState_',
   '_fcReadbackFlight_', '_fcReadbackLoads_', '_fcReadModel', '_fcMeta_'];
 // INCIDENT-BOOT-FC-R1 — Retry now runs the page's ONE hydration authority instead of re-rendering the
 // rows alone, so the authority has to be in the sandbox for _fcRefreshViewNow_ to resolve. What this
 // section asserts is unchanged: it is about the LABEL on the control, not about what hydration builds.
-var RETRY_FNS = ['_fcRetryLabel_', '_fcBannerHost_', '_fcClearBanner_', '_fcShowBanner_',
+var RETRY_FNS = [
+  '_fcSliceRec_', '_fcWorkspaceMode_', '_fcHas_', '_fcSliceHasData_', '_fcTabNow_',
+  // _fcSliceFetch_ is deliberately NOT lifted here: this sandbox FAKES it in order to count reads.
+  '_fcEffectiveWorkspace', '_fcMergeSlice_', '_fcFailedSlices_', '_fcYearsOf_',
+  '_fcValidWorkspaceData_', '_fcValidReadModel_',
+  '_fcRetryLabel_', '_fcBannerHost_', '_fcClearBanner_', '_fcShowBanner_',
   '_fcEpoch_', '_fcOwns_', '_fcFailureStage_', '_fcStageText_',
   '_fcRerenderTables_', '_fcHydrateFromModel_', '_fcRefreshViewNow_'];
 
@@ -675,8 +684,12 @@ function buildRetry(opts) {
   pieces.push('function _populateFcYearFromDb() { __hydrated.push(\'year\'); }');
   pieces.push('var __script = ' + JSON.stringify(opts.script || ['ok']) + ';');
   pieces.push('var __step = 0;');
+  // FC-SUMMARY-R3-R1 — the read boundary moved. _fcRefreshViewNow_ used to ask for the whole workspace
+  // through _fcWorkspaceRefresh_; it now names the active tab's SLICE through _fcSliceFetch_. The fake
+  // follows the boundary, with the same script semantics, so this section still asserts exactly what it
+  // always asserted: the LABEL on the offered control, and how many reads a retry issues.
   pieces.push([
-    'function _fcWorkspaceRefresh_() {',
+    'function _fcSliceFetch_(name) {',
     '  var mode = __script[Math.min(__step, __script.length - 1)]; __step++;',
     '  __reads.push(mode);',
     '  if (mode === \'ok\') { _fcReadModel = { rows: 1 }; return Promise.resolve(_fcReadModel); }',

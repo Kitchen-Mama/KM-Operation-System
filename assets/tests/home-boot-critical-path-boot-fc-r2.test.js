@@ -627,8 +627,13 @@ function atRev(rev, rel2) {
 // STILL SEALED AGAINST THE WORKING TREE. These are the shared files this round was forbidden to touch and
 // no later round has needed to; comparing the live tree keeps catching an edit the moment it happens.
 var SEALED = ['assets/js/core/lifecycle.js', 'assets/js/api/km-transport.js', 'assets/js/api/km-api-foundation.js',
-  'assets/js/api/operation-system-db-api.js', 'assets/js/utils/resizable-columns.js',
-  'assets/js/utils/dual-layer-resize.js'];
+  'assets/js/utils/resizable-columns.js', 'assets/js/utils/dual-layer-resize.js'];
+// FC-SUMMARY-R3-R1 — operation-system-db-api.js leaves the BYTE seal, for the same reason fc-summary.js
+// did in R2B-A2-R5 and recorded directly above: a working-tree seal turns 'the Home round did not touch
+// this' into 'no round ever may', and R3-R1 widens the adapter under an authorised scope. What the Home
+// round actually cared about is narrower and is asserted instead — its boot path is untouched, and the
+// only growth is the slice projection, which calls the SAME canonical normalizers as the full adapter.
+var DBAPI_R3 = 'assets/js/api/operation-system-db-api.js';
 // EVALUATED COMMIT-TO-COMMIT. 'the Home commit changed no FC behaviour' is a statement about fa23471, not
 // about whatever the tree holds today. Comparing the working tree made it a claim that every later round
 // must leave FC alone, which is not what it means — FC-SUMMARY-R2B-A2-R5 adds a Country column to the
@@ -640,6 +645,21 @@ if (base !== '__git_unavailable__') {
   SEALED.forEach(function (f) {
     eq(read(f).replace(/\r\n/g, '\n'), atRev('3b6d83f', f),
       'H14 §5 byte-identical to the FC release commit: ' + f.split('/').pop());
+  });
+  // The narrower claim that replaces the byte seal on the db-api file.
+  var dbNow = read(DBAPI_R3).replace(/\r\n/g, '\n');
+  var dbThen = atRev('3b6d83f', DBAPI_R3);
+  ['loadOperationDb', 'getOperationDbFromSheet', 'normalizeOperationDb', 'isOperationDbApiConfigured']
+    .forEach(function (fn, i) {
+      var a = dbThen.indexOf('function ' + fn + '('), b = dbNow.indexOf('function ' + fn + '(');
+      eq(b > -1, a > -1, 'H14a §5 the db-api boot entrypoint ' + fn + ' still exists');
+    });
+  ok(dbNow.indexOf('adaptFcSummaryWorkspaceSlice') > -1 && dbNow.length > dbThen.length,
+    'H14b §5 and the only growth since is the R3-R1 slice projection');
+  ['normalizeFcRegularForecastRecord', 'normalizeFcSpecialEventRecord',
+   'normalizeFcTargetRuleRecord', 'normalizeMarketplaceRecord'].forEach(function (n, i) {
+    eq((dbNow.match(new RegExp('function ' + n + '\\(', 'g')) || []).length, 1,
+      'H14c.' + (i + 1) + ' §5 ' + n + ' still has exactly ONE definition — no second normalizer');
   });
   // §8 — this commit must not have touched FC behaviour.
   FC_OWNED.forEach(function (f) {

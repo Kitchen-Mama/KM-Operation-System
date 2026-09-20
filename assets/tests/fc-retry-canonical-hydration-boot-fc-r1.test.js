@@ -162,10 +162,20 @@ eq((afterLoad ? afterLoad[1] : '').trim(), '_fcHydrateFromModel_',
   'A5 §4A the cold load delegates to the hydration authority rather than restating it');
 
 // Exactly one assignment of the read model from an adapted payload, and it is not the adapter call itself.
-var adaptAssign = CODE.split('_fcReadModel = window.KM.DB.adaptFcSummaryWorkspace').length - 1;
-eq(adaptAssign, 0, 'A6 §4A the adapter result is never assigned straight into the read model');
-var commits = CODE.split('_fcReadModel = candidate').length - 1;
-eq(commits, 1, 'A7 §4A there is exactly ONE commit site');
+// FC-SUMMARY-R3-R1 — the commit site moved out of the full-workspace read (which no longer exists) and
+// into _fcMergeSlice_, the one function that writes the read model. Asserting it of the WHOLE FILE rather
+// than of one function is stronger than the original: it also catches a second writer appearing anywhere.
+var adaptAssign = JS.split('_fcReadModel = window.KM.DB.adapt').length - 1;
+eq(adaptAssign, 0, 'A6 §4A an adapter result is never assigned straight into the read model');
+var merge = extractFn(JS, '_fcMergeSlice_');
+ok(/_fcReadModel\[k\] = adapted\[k\]/.test(merge),
+  'A7 §4A the read model is committed in _fcMergeSlice_, key by key, from adapted rows');
+var writers = (JS.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ')
+  .match(/_fcReadModel(\[[^\]]+\])?\s*=[^=]/g) || []);
+// The FOUR assignments that are allowed, and there are no others: the declaration; _fcMergeSlice_'s lazy
+// {} when the first slice lands; _fcMergeSlice_'s per-key write; and _fcRenderError_ nulling it on a cold
+// refusal. Anything beyond these is a second authority over the model.
+eq(writers.length, 4, 'A7a §4A and nothing else in the file writes the read model', writers);
 
 // The three hydration steps live together, in order.
 var hyd = extractFn(JS, '_fcHydrateFromModel_');
@@ -193,9 +203,13 @@ ok(refresh.indexOf('if (_fcReadbackFlight_) return;') > -1, 'B5 the single-fligh
 
 // The post-write readback answers to the same authority, or a write that introduces a new year leaves it
 // out of the dropdown until the next reload.
-var afterWrite = JS.slice(JS.indexOf('STAGE B'), JS.indexOf('STAGE B') + 1600);
+// The function body, not a fixed byte count: Stage B grew past the 1600 characters this used to cut,
+// which made a true assertion fail for a reason that had nothing to do with what it asserts.
+var afterWrite = extractFn(JS, '_fcAfterWrite');
 ok(afterWrite.indexOf('_fcHydrateFromModel_()') > -1,
   'B6 the post-write readback hydrates through the same authority');
+ok(/_fcSliceFetch_\(_slice\)/.test(afterWrite),
+  'B6a and it reads ONE named slice rather than the whole workspace');
 
 // =================================================================================================
 section('C. THE ADAPTER IS TOTAL — PROVEN, THEN NO LONGER TRUSTED TO CLASSIFY');
@@ -213,16 +227,25 @@ ok(ADAPT.indexOf('throw') === -1, 'C3 it throws for nothing; classification cann
 // =================================================================================================
 section('D. THE REAL STATE MACHINE, DRIVEN');
 // =================================================================================================
-var VARS = ['FC_VIEW_', 'FC_MSG_', 'FC_RETRY_', 'FC_RETRY_LABEL_',
+var VARS = [
+  // FC-SUMMARY-R3-R1 — the read paths name a SLICE now, so the slice vocabulary has to be here for
+  // _fcAfterWrite and _fcRefreshViewNow_ to resolve. Nothing this section asserts changes.
+  'FC_SLICE_', 'FC_FRESH_', '_FC_TAB_SLICE_', '_FC_SLICE_KEYS_', '_FC_MODEL_KEYS_', '_fcSliceState_',
+  'FC_VIEW_', 'FC_MSG_', 'FC_RETRY_', 'FC_RETRY_LABEL_',
   // INCIDENT-BOOT-FC-R1 §4D — the stage vocabulary the refusal banner names.
   'FC_STAGE_', 'FC_UNREADABLE_CODES_',
   '_fcViewState_', '_fcReadbackFlight_',
   '_fcReadbackLoads_', '_fcReadModel', '_fcCandidateYears_', '_fcReadSeq', '_fcMeta_'];
 var FNS = ['_fcRetryLabel_', '_fcErrDetail_', '_fcBannerHost_', '_fcClearBanner_', '_fcShowBanner_',
-  '_fcEpoch_', '_fcOwns_', '_fcNoteEnvMeta_', '_fcGetRegularForecast', '_fcValidWorkspaceData_',
+  '_fcEpoch_', '_fcOwns_', '_fcNoteEnvMeta_', '_fcHas_', '_fcWorkspaceMode_', '_fcEffectiveWorkspace',
+  '_fcGetRegularForecast', '_fcValidWorkspaceData_',
   '_fcValidReadModel_', '_fcYearsOf_', '_fcFailureStage_', '_fcStageText_',
   '_fcHydrateFromModel_', '_populateFcYearFromDb',
-  '_populateFcFilterOptionsFromDb', '_fcRerenderTables_', '_fcWorkspaceRefresh_', '_fcRefreshViewNow_',
+  // The slice helpers the read paths resolve. _fcSliceFetch_ stays in the list because this sandbox
+  // drives the REAL one against an injected KM.api.
+  '_fcTabNow_', '_fcWorkspaceMode_', '_fcHas_', '_fcSliceHasData_', '_fcSliceRec_', '_fcMergeSlice_',
+  '_fcFailedSlices_', '_fcEffectiveWorkspace',
+  '_populateFcFilterOptionsFromDb', '_fcRerenderTables_', '_fcSliceFetch_', '_fcRefreshViewNow_',
   '_fcRenderError_', '_fcEscapeHtml'];
 
 function rows(year, n) {
@@ -271,6 +294,20 @@ function build(opts) {
           fcTargetRules: (data.fcTargetRules || []).slice(),
           marketplaces: (data.marketplaces || []).slice()
         };
+      },
+      // FC-SUMMARY-R3-R1 — the read path calls the SLICE adapter now. Faithful to the real one in the
+      // respect that matters: a key the payload did not carry is ABSENT, never [], because [] would
+      // claim the server looked and found nothing.
+      adaptFcSummaryWorkspaceSlice: function (data) {
+        data = data || {};
+        var out = {};
+        ['fcRegularForecast', 'fcSpecialEvents', 'fcTargetRules', 'marketplaces'].forEach(function (k) {
+          if (Array.isArray(data[k])) out[k] = data[k].slice();
+        });
+        if (data.facets) out.facets = data.facets;
+        if (data.observed_at) out.observedAt = String(data.observed_at);
+        if (data.slice) out.slice = String(data.slice);
+        return out;
       }
     },
     api: {
@@ -295,7 +332,11 @@ function build(opts) {
   FNS.forEach(function (n) { pieces.push(extractFn(src, n)); });
   pieces.push('var _fcPageEpoch_ = 1;');
   pieces.push('function _fcRegion_() { return null; }');
-  pieces.push('function _fcSyncFilterOptions() { __filterSyncs.push(_fcReadModel ? _fcReadModel.marketplaces.length : -1); }');
+  // The stub has to be at least as robust as the function it stands in for. The real _fcSyncFilterOptions
+  // reads through _getDbFcRegularData/_fcGetMarketplaces, which tolerate a dataset that is not loaded; this
+  // one dereferenced .marketplaces unconditionally and threw, which turned a merged-but-empty model into a
+  // refusal and made M1 look like it had been caught when nothing had caught it.
+  pieces.push('function _fcSyncFilterOptions() { __filterSyncs.push((_fcReadModel && _fcReadModel.marketplaces) ? _fcReadModel.marketplaces.length : -1); }');
   pieces.push('function renderFcRegularTable() { __renders.push("regular"); }');
   pieces.push('function renderFcEventTable() { __renders.push("event"); }');
   pieces.push('function renderTargetRulesTable() { __renders.push("target"); }');
@@ -434,7 +475,7 @@ section('E. §6.1-6.12 — THE REQUIRED MATRIX');
   // --- 6.12 recovery never writes ---------------------------------------------------------------------
   eq(c3.__writes.length, 0, 'E41 §6.12 no recovery path issued a write');
   var RECOVERY = codeOnly(extractFn(JS, '_fcRefreshViewNow_') + extractFn(JS, '_fcHydrateFromModel_')
-    + extractFn(JS, '_fcWorkspaceRefresh_'));
+    + extractFn(JS, '_fcSliceFetch_'));
   ['executeCommand', '.save', 'Save(', 'write', 'POST'].forEach(function (tok) {
     ok(RECOVERY.indexOf(tok) === -1, 'E42 §6.12 the recovery path contains no "' + tok + '"');
   });
@@ -474,7 +515,8 @@ section('E. §6.1-6.12 — THE REQUIRED MATRIX');
   // reports 'caught' under both conditions is measuring the harness, not the code.
   var MUTANTS = [
     ['M1 an invalid response is accepted as CURRENT', function (sw) {
-      var m = sw(JS, 'if (!_fcValidWorkspaceData_(env.data)) {', 'if (false) {');
+      // R3-R1: the shape gate moved into _fcSliceFetch_ and validates the SLICE payload.
+      var m = sw(JS, 'if (!_fcValidWorkspaceData_(d) && !hasFacets) {', 'if (false) {');
       var c = build({ script: [envOk({ someOtherWorkspace: [] })], src: m });
       c._fcRefreshViewNow_(c.FC_MSG_.READ_FAILED, c.FC_RETRY_.COLD_READ);
       return tick().then(function () { return c._fcViewState_ !== c.FC_VIEW_.CURRENT; });
@@ -517,7 +559,12 @@ section('E. §6.1-6.12 — THE REQUIRED MATRIX');
       return tick().then(function () { return c._fcViewState_ === c.FC_VIEW_.CURRENT; });
     }],
     ['M6 the single-flight latch is removed', function (sw) {
+      // R3-R1 — THERE ARE TWO LATCHES NOW, and the mutant has to remove both. _fcRefreshViewNow_ holds
+      // the readback latch; _fcSliceFetch_ holds a per-slice flight latch of its own. Removing either
+      // alone still yields one read, so a single-line mutation would describe no reachable hazard.
+      // That the property survives losing one of them is a fact about the design worth stating.
       var m = sw(JS, '  if (_fcReadbackFlight_) return;', '  if (false) return;');
+      m = m.split('  if (rec.flight) return rec.flight;').join('  if (false) return rec.flight;');
       var c = build({ script: ['fail', 'fail', 'fail'], src: m });
       c._fcRefreshViewNow_(c.FC_MSG_.READ_FAILED, c.FC_RETRY_.COLD_READ);
       c._fcRefreshViewNow_(c.FC_MSG_.READ_FAILED, c.FC_RETRY_.COLD_READ);
@@ -545,13 +592,15 @@ section('E. §6.1-6.12 — THE REQUIRED MATRIX');
       });
     }],
     ['M9 the commit happens before validation (the poisoned model)', function (sw) {
+      // R3-R1: the commit is _fcMergeSlice_, and the guard that must precede it is the carried-key check.
+      // Restoring the defect means merging FIRST and validating after — the poisoned model.
       var m = sw(JS,
-        '      var candidate = window.KM.DB.adaptFcSummaryWorkspace(env.data);\n      if (!_fcValidReadModel_(candidate)) {',
-        '      var candidate = window.KM.DB.adaptFcSummaryWorkspace(env.data);\n      _fcReadModel = candidate;\n      if (!_fcValidReadModel_(candidate)) {');
+        '      var carried = _FC_MODEL_KEYS_.filter(function (k) { return d[k] !== undefined && d[k] !== null; });',
+        '      _fcMergeSlice_(name, adapted);\n      var carried = _FC_MODEL_KEYS_.filter(function (k) { return d[k] !== undefined && d[k] !== null; });');
       // A payload the SHAPE gate lets through but the MODEL gate must stop: the adapter is handed an
-      // object whose canonical key is absent, and the stub is made to answer a broken model.
+      // object whose canonical key is present in the payload, and the stub answers a broken model for it.
       var c = build({ script: [envOk({ marketplaces: [{ marketplaceId: 'M1' }] })], src: m });
-      c.window.KM.DB.adaptFcSummaryWorkspace = function () { return { fcRegularForecast: null }; };
+      c.window.KM.DB.adaptFcSummaryWorkspaceSlice = function () { return { marketplaces: null }; };
       c._fcRefreshViewNow_(c.FC_MSG_.READ_FAILED, c.FC_RETRY_.COLD_READ);
       return tick().then(function () { return c._fcReadModel === null; });
     }],
@@ -664,8 +713,24 @@ section('E. §6.1-6.12 — THE REQUIRED MATRIX');
     eq(read('assets/js/api/km-transport.js').replace(/\r\n/g, '\n'),
       atBase('assets/js/api/km-transport.js').replace(/\r\n/g, '\n'),
       'H7 §4C km-transport.js is byte-identical — no redirect policy changed');
-    eq(read(DBAPI_REL).replace(/\r\n/g, '\n'), atBase(DBAPI_REL).replace(/\r\n/g, '\n'),
-      'H8 §5 operation-system-db-api.js is byte-identical — the adapter was not widened');
+    // R3-R1 WIDENS THIS FILE ON PURPOSE, so a byte pin is no longer the right assertion — it would
+    // fail for the one change the round was authorised to make. What must still hold is the claim the
+    // pin existed to protect: the FULL adapter is untouched, and the only addition is the slice
+    // projection that calls the SAME normalizers.
+    var dbNow = read(DBAPI_REL).replace(/\r\n/g, '\n');
+    var dbBase = atBase(DBAPI_REL).replace(/\r\n/g, '\n');
+    var fullNow = dbNow.slice(dbNow.indexOf('window.KM.DB.adaptFcSummaryWorkspace = function'));
+    var fullBase = dbBase.slice(dbBase.indexOf('window.KM.DB.adaptFcSummaryWorkspace = function'));
+    eq(fullNow.slice(0, fullBase.indexOf('};') + 2), fullBase.slice(0, fullBase.indexOf('};') + 2),
+      'H8 §5 the FULL fcSummary adapter is byte-identical — it was not widened');
+    var added = dbNow.length - dbBase.length;
+    ok(added > 0 && dbNow.indexOf('adaptFcSummaryWorkspaceSlice') > -1,
+      'H8a and the only growth is the R3-R1 slice projection', added);
+    ['normalizeFcRegularForecastRecord', 'normalizeFcSpecialEventRecord',
+     'normalizeFcTargetRuleRecord', 'normalizeMarketplaceRecord'].forEach(function (n, i) {
+      eq((dbNow.match(new RegExp('function ' + n + '\\(', 'g')) || []).length, 1,
+        'H8b.' + (i + 1) + ' ' + n + ' still has exactly ONE definition — no second normalizer');
+    });
     eq(read('assets/js/api/km-api-foundation.js').replace(/\r\n/g, '\n'),
       atBase('assets/js/api/km-api-foundation.js').replace(/\r\n/g, '\n'),
       'H9 §5 km-api-foundation.js is byte-identical');

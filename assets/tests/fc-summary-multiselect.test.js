@@ -58,8 +58,18 @@ ok(!/function _fcCascadeFilters|function _rebuildFcPanelChecked/.test(js), 'C13:
 // _fcSyncFilterOptions derives each dimension from the FULL active dataset (regular/events), independent
 // of other selections — i.e., option universes do not depend on the current selection of another filter.
 ok(/function _fcSyncFilterOptions\(\)/.test(js), 'C14: _fcSyncFilterOptions builds option universes once per load');
-ok(/distinct\(\(regular \|\| \[\]\)\.map\(function \(r\) \{ return r\.company; \}\)\)/.test(js),
-   'C15: Company options = full distinct set of the dataset (not narrowed by other filters)');
+// FC-SUMMARY-R3-R1 — the universe is still the FULL one and is now derived from the complete table on
+// the server, because the page no longer ships all 496 Regular rows just to populate six dropdowns.
+// universe() prefers that facet and falls back to the page's own distinct() over the rows in hand, so
+// Demo, Legacy and a slice that carried no facets all behave exactly as before.
+ok(/function universe\(name, fromRows\)/.test(js),
+   'C15: the option universe goes through one resolver, not six spellings');
+ok(/\(F && Array\.isArray\(F\[name\]\)\) \? F\[name\]\.slice\(\) : distinct\(fromRows\)/.test(js),
+   'C15a: which prefers the server-derived complete set and falls back to distinct() over the rows');
+ok(/universe\('companies', \(regular \|\| \[\]\)\.map\(function \(r\) \{ return r\.company; \}\)\)/.test(js),
+   'C15b: Company options = full distinct set of the dataset (not narrowed by other filters)');
+ok(!/_fcReadModel\.facets[\s\S]{0,200}filters\./.test(js),
+   'C15c: and the facet is never intersected with the current selection — that would be cascading');
 
 console.log('\n-- C16..: EXECUTABLE predicate — filterFcRegular positive-inclusion OR/AND/none --');
 var filterFcRegular = extractFn(js, 'filterFcRegular');

@@ -173,6 +173,9 @@ function pageSource(mutate) {
     fnSrc(FCS, '_trStatusIdentity_'), varSrc(FCS, '_TR_STATUS_SCOPE_LABEL_'),
     fnSrc(FCS, '_trRenderStatus_'), fnSrc(FCS, '_trGate_'), fnSrc(FCS, '_trBuildPayload_'),
     fnSrc(FCS, '_trNormalizeCanonical_'), fnSrc(FCS, '_trMergeReceipt_'),
+    // R3-R1: the getters now ask _fcHas_ whether a dataset is actually loaded, and _fcWorkspaceMode_
+    // whether the workspace path is live. A lifted function cannot call what the list does not lift.
+    fnSrc(FCS, '_fcHas_'), fnSrc(FCS, '_fcWorkspaceMode_'), fnSrc(FCS, '_fcEffectiveWorkspace'),
     fnSrc(FCS, '_fcGetTargetRules'), fnSrc(FCS, '_fcGetRegularForecast'),
     fnSrc(FCS, '_getDbTargetRules'), fnSrc(FCS, '_getDbFcRegularData'),
     fnSrc(FCS, '_fcUseDb')

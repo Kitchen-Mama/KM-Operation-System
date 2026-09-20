@@ -55,7 +55,8 @@ eval(extractAssignedFn(DBAPI, 'window.KM.DB.adaptFcSummaryWorkspace = function')
 
 // eval the ACTUAL browser render getters + accessors + label resolver (they read _fcReadModel / window.KM.DB.getX)
 eval(slice(FC_JS, "var _FC_MONTH_KEYS =", "function _getDbTargetRules"));  // pulls in the _FC_MONTH_KEYS const region
-eval(['_fcGetRegularForecast', '_fcGetSpecialEvents', '_fcGetTargetRules', '_fcGetMarketplaces',
+eval(['_fcHas_', '_fcWorkspaceMode_', '_fcEffectiveWorkspace',
+      '_fcGetRegularForecast', '_fcGetSpecialEvents', '_fcGetTargetRules', '_fcGetMarketplaces',
       '_getDbFcRegularData', '_getDbFcEventData', '_getDbTargetRules', '_fcMarketplaceLabel']
   .map(function (n) { return extractFn(FC_JS, n); }).join('\n'));
 
@@ -170,17 +171,34 @@ ok(/KM\.DB\.adaptFcSummaryWorkspace = function/.test(DBAPI), 'db-api exposes ada
 console.log('\n== page: workspace primary read, no broad DB in the read path, fail-closed, deferred Event Assist ==');
 ok(/workspaceApiActive\('fcSummary'\)/.test(FC_JS), 'fc-summary: gates on canonical fcSummary workspace');
 ok(/getWorkspace\('fcSummary'/.test(FC_JS) && /adaptFcSummaryWorkspace/.test(FC_JS), 'fc-summary: primary read via scoped workspace + adapter');
-var refresh = extractFn(FC_JS, '_fcWorkspaceRefresh_');
+// FC-SUMMARY-R3-R1 — the scoped read is _fcSliceFetch_ now, and it is scoped harder than this suite
+// originally demanded: it names ONE slice rather than the four-table workspace.
+var refresh = extractFn(FC_JS, '_fcSliceFetch_');
 ok(!/getOperationDb|loadOperationDb|_opDbCache/.test(refresh), 'fc-summary: the scoped read path has NO getOperationDb/loadOperationDb/_opDbCache');
 ok(/FC_SUMMARY_READ_FAILED|WORKSPACE_UNAVAILABLE/.test(FC_JS), 'fc-summary: fail-closed bounded read error');
 var ensure = extractFn(FC_JS, '_fcSummaryEnsureDbAndRender');
 ok(/_fcEffectiveWorkspace\(\)/.test(ensure) && ensure.indexOf('loadOperationDb') > ensure.indexOf('Legacy'), 'fc-summary: broad load lives ONLY in the Legacy branch (no silent fallback in the Workspace branch)');
 ok(/KM\.loadState\.createRegion/.test(FC_JS), 'fc-summary: reuses KM.loadState (no new loading infra)');
-ok(/function _fcAfterWrite/.test(FC_JS) && /_fcWorkspaceRefresh_\(\)\.then/.test(FC_JS), 'fc-summary: post-write does a SCOPED re-read (never a broad reload for the primary render)');
+ok(/function _fcAfterWrite/.test(FC_JS) && /_fcSliceFetch_\(_slice\)\.then/.test(FC_JS),
+   'fc-summary: post-write does a SCOPED re-read of the affected entity (never a broad reload, and no longer the whole workspace)');
+ok(!/function _fcWorkspaceRefresh_/.test(FC_JS),
+   'fc-summary: and no function remains that can read the entire workspace');
 // scoped post-write is wired into the live write success paths (not left render-only)
-ok(/_fcAfterWrite\(function \(\) \{\s*exitEditMode/.test(FC_JS), 'Base Forecast save → _fcAfterWrite (scoped refresh)');
-ok(/_fcAfterWrite\(function \(\) \{\s*exitEventEditMode/.test(FC_JS), 'Special Event inline save → _fcAfterWrite');
-ok((FC_JS.match(/_fcAfterWrite\(/g) || []).length >= 7, 'all 7 live write success paths reconcile via _fcAfterWrite');
+// FC-SUMMARY-R3-R1 — every write path now NAMES the entity it changed, so the reconciliation can read
+// one slice instead of the four-table workspace. The scope leads the call because it is the short half
+// and a reader should see which table a write touched without reading to the end of the closure.
+ok(/_fcAfterWriteScoped_\(FC_SLICE_\.REGULAR, function \(\) \{\s*exitEditMode/.test(FC_JS),
+   'Base Forecast save → the REGULAR slice');
+ok(/_fcAfterWriteScoped_\(FC_SLICE_\.EVENTS, function \(\) \{\s*exitEventEditMode/.test(FC_JS),
+   'Special Event inline save → the EVENTS slice');
+var scoped = (FC_JS.match(/_fcAfterWriteScoped_\(/g) || []).length;
+ok(scoped >= 7, 'all 7 live write success paths reconcile through a NAMED scope', scoped);
+// The Target Rule save is the one path whose receipt is a complete canonical row, so it reconciles
+// with no request at all — the strongest form of 'never the whole workspace'.
+ok(/_fcAfterWriteScoped_\(\{ slice: FC_SLICE_\.RULES, merged: _merged \}/.test(FC_JS),
+   'Target Rule save → merged receipt, zero reconciliation requests');
+ok(!/_fcAfterWrite\(function/.test(FC_JS),
+   'and no write path is left without a declared scope');
 // SECONDARY builder modals lazy-load the broad cache; primary render never depends on it
 // FC-SUMMARY-R1 — the SECONDARY prerequisite load still exists and still fetches the same seven tables;
 // what changed is that it is single-flight and REFUSABLE. The two assertions below used to pin

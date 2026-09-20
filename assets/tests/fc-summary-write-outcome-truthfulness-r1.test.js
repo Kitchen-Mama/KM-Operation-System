@@ -82,7 +82,11 @@ function mutate(src, from, to) {
   return src.split(from).join(to);
 }
 
-var VARS = ['FC_PREREQ_', 'FC_WRITE_', 'FC_VIEW_', 'FC_MSG_',
+var VARS = [
+  // FC-SUMMARY-R3-R1 — the read paths name a SLICE now instead of asking for the whole workspace,
+  // so the slice vocabulary has to be in the sandbox for them to resolve.
+  'FC_SLICE_', 'FC_FRESH_', '_FC_TAB_SLICE_', '_FC_SLICE_KEYS_', '_FC_MODEL_KEYS_', '_fcSliceState_',
+  'FC_PREREQ_', 'FC_WRITE_', 'FC_VIEW_', 'FC_MSG_',
   // FC-SUMMARY-R2B-A2-R3 — the retry-state map. The banner's LABEL and the sentence that names it now
   // come from one place, so both must be in the sandbox for the functions below to resolve.
   'FC_RETRY_', 'FC_RETRY_LABEL_',
@@ -91,7 +95,12 @@ var VARS = ['FC_PREREQ_', 'FC_WRITE_', 'FC_VIEW_', 'FC_MSG_',
   '_fcPrereqState_', '_fcPrereqFlight_',
   '_fcPrereqLoads_', '_fcPrereqTransition_', '_fcWriteState_', '_fcWriteFlight_', '_fcViewState_', '_fcReadbackFlight_',
   '_fcReadbackLoads_', '_fcLastReceipt_', '_fcMeta_', '_FC_SECONDARY_TABLES', '_fcSecondaryLoaded'];
-var FNS = ['_fcEpoch_', '_fcOwns_', '_fcNoteEnvMeta_', '_fcMetricsSnapshot_',
+var FNS = [
+  '_fcSliceRec_', '_fcWorkspaceMode_', '_fcHas_', '_fcSliceHasData_', '_fcTabNow_',
+  // _fcSliceFetch_ is deliberately NOT lifted: this sandbox INJECTS it so readbacks can be counted.
+  '_fcEffectiveWorkspace', '_fcMergeSlice_', '_fcFailedSlices_', '_fcYearsOf_',
+  '_fcValidWorkspaceData_', '_fcValidReadModel_',
+  '_fcEpoch_', '_fcOwns_', '_fcNoteEnvMeta_', '_fcMetricsSnapshot_',
   // FC-SUMMARY-R2B-A2-R3 — _fcRetryLabel_ and _fcErrDetail_ are read by every banner path in this file.
   '_fcRetryLabel_', '_fcErrDetail_', '_fcFailureStage_', '_fcStageText_', '_fcBannerHost_',
   // INCIDENT-BOOT-FC-R1 — the readback paths now hydrate through one authority instead of re-rendering
@@ -197,7 +206,9 @@ function rig(opts) {
     _fcReadModel: opts.readModel === undefined ? { fcRegularForecast: [1] } : opts.readModel,
     _fcUseDb: function () { return opts.live !== false; },
     _fcResetSecondaryCache: function () { },
-    _fcWorkspaceRefresh_: opts.workspaceRefresh || function () { seen.readbacks++; return Promise.resolve(); },
+    // FC-SUMMARY-R3-R1 — the readback names a SLICE now; the injected fake follows the boundary and the
+    // readback count keeps meaning exactly what it meant.
+    _fcSliceFetch_: opts.workspaceRefresh || function () { seen.readbacks++; return Promise.resolve(); },
     _fcRenderError_: function () { seen.errorRedraws++; },
     renderFcRegularTable: function () { seen.renders++; },
     // INCIDENT-BOOT-FC-R1 — driven by the hydration authority; counted so a readback that skipped
@@ -735,7 +746,7 @@ function runMutants() {
            default resolving stub in place and scored "caught" whether or not the mutation applied — a
            mutant that cannot fail is not a test. The vacuity audit caught it; it is fixed, not deleted. */
         function (S) {
-          S._fcWorkspaceRefresh_ = function () { return Promise.reject({ code: 'REQUEST_TIMEOUT', message: 'x' }); };
+          S._fcSliceFetch_ = function () { return Promise.reject({ code: 'REQUEST_TIMEOUT', message: 'x' }); };
           S.__seen.alerts.length = 0;
           S._fcAfterWrite(function () { S.alert('Saved successfully.'); });
           return settle().then(function () {
@@ -836,7 +847,7 @@ function runMutants() {
         + '    // THE LAST KNOWN TABLE IS KEPT.',
         function (S) {
           var d = deferred();
-          S._fcWorkspaceRefresh_ = function () { return d.promise; };
+          S._fcSliceFetch_ = function () { return d.promise; };
           S._fcAfterWrite(function () { });
           S.__epoch.current = 77;                     // routed away
           d.reject({ code: 'REQUEST_TIMEOUT', message: 'late' });
@@ -903,7 +914,7 @@ function runMutants() {
         '    _fcRenderError_(err);\n'
         + '    _fcViewState_ = _fcReadModel ? FC_VIEW_.STALE : FC_VIEW_.REFUSED;',
         function (S) {
-          S._fcWorkspaceRefresh_ = function () { return Promise.reject({ code: 'REQUEST_TIMEOUT', message: 'x' }); };
+          S._fcSliceFetch_ = function () { return Promise.reject({ code: 'REQUEST_TIMEOUT', message: 'x' }); };
           S._fcAfterWrite(function () { });
           return settle().then(function () { return S.__seen.errorRedraws === 1; });
         });

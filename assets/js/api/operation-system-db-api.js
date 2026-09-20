@@ -2736,6 +2736,42 @@ window.KM.DB.adaptFcSummaryWorkspace = function(data) {
     return { fcRegularForecast: fcRegularForecast, fcSpecialEvents: fcSpecialEvents, fcTargetRules: fcTargetRules, marketplaces: marketplaces };
 };
 
+// FC-SUMMARY-R3-R1 §B/§C — THE SAME ADAPTER, PROJECTED ONTO WHAT A SLICE ACTUALLY CARRIES.
+//
+// This is NOT a second normalization authority and deliberately cannot become one: every array below
+// goes through the identical canonical normalizer and the identical per-array filter that
+// adaptFcSummaryWorkspace applies, and there is no branch in which a row is shaped any other way.
+//
+// What it adds is the one distinction a slice needs and the full adapter is unable to express. The full
+// adapter answers `[]` for a key that was read and found empty AND for a key nobody asked for, which is
+// correct when every key was read and is a lie when only one was. A slice OMITS the keys it does not own,
+// so this omits them too — an absent key here means 'unknown', and the page is required to treat it as
+// unknown rather than as none. That is the same confusion, in the same direction, as the one that let a
+// failed Target Rule read present itself as a proven-empty database.
+window.KM.DB.adaptFcSummaryWorkspaceSlice = function(data) {
+    data = data || {};
+    var out = {};
+    if (Array.isArray(data.fcRegularForecast)) {
+        out.fcRegularForecast = data.fcRegularForecast.map(normalizeFcRegularForecastRecord).filter(function(r) { return r.forecastId || r.sku; });
+    }
+    if (Array.isArray(data.fcSpecialEvents)) {
+        out.fcSpecialEvents = data.fcSpecialEvents.map(normalizeFcSpecialEventRecord).filter(function(r) { return r.event || r.sku || r.scopeId; });
+    }
+    if (Array.isArray(data.fcTargetRules)) {
+        out.fcTargetRules = data.fcTargetRules.map(normalizeFcTargetRuleRecord).filter(function(r) { return r.scopeId || r.ruleId; });
+    }
+    if (Array.isArray(data.marketplaces)) {
+        out.marketplaces = data.marketplaces.map(normalizeMarketplaceRecord).filter(function(r) { return r.marketplaceId || r.marketplace; });
+    }
+    // Server-derived filter universes, carried through untouched. They are the page's own distinct()
+    // applied to the complete tables before the rows were dropped, so the dropdowns are unchanged by a
+    // slice that no longer ships the rows they used to be built from.
+    if (data.facets && typeof data.facets === 'object') out.facets = data.facets;
+    if (data.observed_at) out.observedAt = String(data.observed_at);
+    if (data.slice) out.slice = String(data.slice);
+    if (data.counts && typeof data.counts === 'object') out.counts = data.counts;
+    return out;
+};
 // F1-7H: adapt the scoped SKU Details workspace View-Model to the SAME arrays the SKU pages consume from the broad cache —
 // each table run through its canonical normalizer with the SAME per-array filter normalizeOperationDb applies, so the
 // adapted arrays equal the legacy getters (getSkuDetails / getTaxReferralRates / getTaxRateComponents / getMarketplaceSkus

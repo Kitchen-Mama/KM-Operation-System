@@ -66,13 +66,28 @@ function _fcSyncFilterOptions() {
   var regular = demoOn ? _getDemoFcRegularData() : _getDbFcRegularData();
   var events = demoOn ? _getDemoFcEventData() : _getDbFcEventData();
   function distinct(arr) { var o = [], s = {}; (arr || []).forEach(function (v) { v = String(v == null ? '' : v).trim(); if (v && !s[v]) { s[v] = 1; o.push(v); } }); return o.sort(); }
-  _fcApplyFilter('company', 'Company', 'fc-f-company-mount', distinct((regular || []).map(function (r) { return r.company; })));
+  /* FC-SUMMARY-R3-R1 — THE UNIVERSE IS THE COMPLETE ONE, WHETHER OR NOT THE ROWS ARE HERE.
+
+     This page is deliberately non-cascading: every dimension keeps its FULL option set, and it used to
+     get that set by deriving it from all 496 Regular Forecast rows. Bootstrap no longer ships those
+     rows, so the server derives the same sets from the same complete tables and sends them as facets —
+     trim, drop blanks, default sort, identical rule. When a facet is present it IS the universe; when it
+     is not (Demo, Legacy, or a slice that carried none) the rows in hand derive it exactly as before.
+
+     Preferring the facet is not an optimisation, it is the correctness condition. Deriving from rows the
+     page happens to be holding would SHRINK the dropdowns the moment a slice was not loaded, which is a
+     user-visible change to what can be selected. */
+  var F = (!demoOn && _fcReadModel && _fcReadModel.facets) ? _fcReadModel.facets : null;
+  function universe(name, fromRows) {
+    return (F && Array.isArray(F[name])) ? F[name].slice() : distinct(fromRows);
+  }
+  _fcApplyFilter('company', 'Company', 'fc-f-company-mount', universe('companies', (regular || []).map(function (r) { return r.company; })));
   _fcApplyFilter('marketplace', 'Marketplace', 'fc-f-marketplace-mount',
-    distinct((regular || []).map(function (r) { return r.marketplace; })).map(function (mk) { return { value: mk, label: _fcMarketplaceLabel(mk) }; }));
-  _fcApplyFilter('country', 'Country', 'fc-f-country-mount', distinct((regular || []).map(function (r) { return r.country; })));
-  _fcApplyFilter('category', 'Category', 'fc-f-category-mount', distinct((regular || []).map(function (r) { return r.category; })));
-  _fcApplyFilter('series', 'Series', 'fc-f-series-mount', distinct((regular || []).map(function (r) { return r.series; })));
-  _fcApplyFilter('event', 'Event Type', 'fc-f-event-mount', distinct((events || []).map(function (e) { return e.event; })));
+    universe('marketplaces', (regular || []).map(function (r) { return r.marketplace; })).map(function (mk) { return { value: mk, label: _fcMarketplaceLabel(mk) }; }));
+  _fcApplyFilter('country', 'Country', 'fc-f-country-mount', universe('countries', (regular || []).map(function (r) { return r.country; })));
+  _fcApplyFilter('category', 'Category', 'fc-f-category-mount', universe('categories', (regular || []).map(function (r) { return r.category; })));
+  _fcApplyFilter('series', 'Series', 'fc-f-series-mount', universe('series', (regular || []).map(function (r) { return r.series; })));
+  _fcApplyFilter('event', 'Event Type', 'fc-f-event-mount', universe('events', (events || []).map(function (e) { return e.event; })));
 }
 
 // Filter Regular Forecast data.
@@ -453,6 +468,10 @@ function initFcTabs() {
       
       // Update action buttons based on tab
       updateActionButtons(targetTab);
+
+      // FC-SUMMARY-R3-R1 — the tab's own slice is fetched on FIRST activation and never on mount. A tab
+      // already in memory renders immediately and issues nothing.
+      if (typeof _fcEnsureTabSlice_ === 'function') _fcEnsureTabSlice_(targetTab);
 
       // Re-render the active tab so the shared pagination footer reflects it (reset to page 1).
       fcPaginationState.currentPage = 1;
@@ -849,7 +868,9 @@ function saveFcChanges() {
       reenable: _fcSetSaveEnabled,
       onSuccess: function (s) {
         // The CONFIRMED write is reported here; the scoped re-read that follows is best effort.
-        _fcAfterWrite(function () {
+        // Its receipt is a batch summary rather than saved rows, so the Regular slice is re-read — 197 KB
+        // and one request, not the 221.6 KB four-table workspace this used to ask for.
+        _fcAfterWriteScoped_(FC_SLICE_.REGULAR, function () {
           exitEditMode();   // clears dirty, unlocks scope, re-renders from the scoped read-model / canonical cache
           alert(FC_MSG_.SAVED + ' Base Forecast — ' + toWrite.length + ' row(s), ' + counts.changed + ' cell(s) updated.'
             + _fcCountsLine_(s));
@@ -1078,7 +1099,7 @@ function saveEventChanges() {
           alert('Save failed for ' + s.skipped + ' of ' + toWrite.length + ' event(s) — see per-row reasons; edits preserved.');
           _fcEventSetSaveEnabled(true); return;
         }
-        _fcAfterWrite(function () {
+        _fcAfterWriteScoped_(FC_SLICE_.EVENTS, function () {
           exitEventEditMode();   // scoped fcSummary re-read (Workspace) / reloaded canonical cache (Legacy) → reconcile view
           alert(FC_MSG_.SAVED + ' Special Events — ' + toWrite.length + ' event(s), ' + counts.changed + ' updated.'
             + _fcCountsLine_(s));
@@ -1738,9 +1759,10 @@ function _trStatusMessage_(title, state) {
    whole round exists to prevent. The operator sees the current values and decides again. */
 function _trLoadLatest_() {
   var btn = document.getElementById('target-load-latest-btn');
-  if (typeof _fcWorkspaceRefresh_ !== 'function') return;
+  if (typeof _fcSliceFetch_ !== 'function') return;
   if (btn) btn.disabled = true;
-  _fcWorkspaceRefresh_().then(function () {
+  // The Target Rules alone — about 1.2 KB. This used to re-read all four tables to refresh two rows.
+  _fcSliceFetch_(FC_SLICE_.RULES).then(function () {
     _trSession_.key = '';                       // force a fresh classification and re-hydration
     _trRebuild_();                              // which re-renders the card from the fresh rows
     if (typeof renderTargetRulesTable === 'function') renderTargetRulesTable();
@@ -2000,8 +2022,11 @@ function saveNewTargetRule() {
     // as reconciliation, but the rule no longer waits on a 222 KB read to become visible.
     onSuccess: function (summary, res) {
       var d = (res && res.data) || {};
-      if (d.row && typeof _trMergeReceipt_ === 'function') _trMergeReceipt_(d.row);
-      _fcAfterWrite(function () {
+      // THE ONLY WRITE PATH WHOSE RECEIPT IS A COMPLETE CANONICAL ROW, and the merge goes through the same
+      // normalizer the read model is built from. When it succeeds there is nothing left to ask the server,
+      // so the reconciliation request is not merely scoped — it does not happen.
+      var _merged = !!(d.row && typeof _trMergeReceipt_ === 'function' && _trMergeReceipt_(d.row));
+      _fcAfterWriteScoped_({ slice: FC_SLICE_.RULES, merged: _merged }, function () {
         renderTargetRulesTable(); closeFcModal();
         _fcSetTargetSaveEnabled_(true);        // the modal is closed; restore for the next open
         alert(FC_MSG_.SAVED + ' Target rule '
@@ -2077,7 +2102,7 @@ function deleteTargetRule(ruleId) {
     if (!window.KM.DB.deleteFcTargetRule) { alert('Target rule delete API not available.'); return; }
     if (!_fcWriteBegin_('targetRuleDelete')) return;   // FC-SUMMARY-R1: one logical delete per click
     var _tdOpts = { ctl: 'targetRuleDelete', op: 'Target Rule Delete', rows: 1, epoch: _fcEpoch_(),
-      onSuccess: function () { _fcAfterWrite(function () { renderTargetRulesTable(); }); } };
+      onSuccess: function () { _fcAfterWriteScoped_(FC_SLICE_.RULES, function () { renderTargetRulesTable(); }); } };
     window.KM.DB.deleteFcTargetRule({ target_rule_id: ruleId })
       .then(function (res) { _fcSettleWrite_(res, _tdOpts); })
       .catch(function (err) { _fcFailWrite_(err, _tdOpts); });
@@ -3911,7 +3936,7 @@ async function saveEventUpdate() {
     _fcWriteEnd_('eventBuilder', FC_WRITE_.SUCCESS);
     _fcReceipt_('Special Event Builder Save', written, null);
     if (!_fcOwns_(_ebEpoch)) { _fcWriteState_['eventBuilder'] = FC_WRITE_.UNMOUNTED; return; }
-    _fcAfterWrite(function () {
+    _fcAfterWriteScoped_(FC_SLICE_.EVENTS, function () {
       if (typeof renderFcEventTable === 'function') renderFcEventTable();
       closeFcModal();
       alert(FC_MSG_.SAVED + ' campaigns: 1 (' + campaignId + ') · campaign_sku_lines: ' + linePayloads.length + ' · fc_special_events: ' + written + ' (linked by campaign_id / campaign_sku_line_id).');
@@ -3983,7 +4008,7 @@ function saveRegularUpdate() {
     var _rgOpts = { ctl: 'regular', op: 'Regular Forecast Save', rows: toWrite.length, epoch: _fcEpoch_(),
       reenable: _setRegularSaveEnabled,
       onSuccess: function (s) {
-        _fcAfterWrite(function () {
+        _fcAfterWriteScoped_(FC_SLICE_.REGULAR, function () {
           renderFcRegularTable();
           closeFcModal();
           alert(FC_MSG_.SAVED + ' Regular Forecast — ' + monthLbl + ' ' + P.targetYear + ' (only this month updated).\n' +
@@ -4126,21 +4151,232 @@ var _fcReadModel = null;   // workspace-sourced { fcRegularForecast, fcSpecialEv
 var _fcCandidateYears_ = null;   // Year options derived from the candidate BEFORE it became the read model
 var _fcReadSeq = 0;
 
+/* ==============================================================================================
+   FC-SUMMARY-R3-R1 §C — SLICES, AND THE REQUESTS THAT STOPPED BEING ISSUED.
+
+   WHAT THE MEASUREMENT SAID, BECAUSE IT DECIDES THIS DESIGN. A production request that names no
+   action, opens no spreadsheet and returns 0.2 KB costs a median 6.3 seconds. Opening the database
+   and reading a two-row sheet adds 0.5 s. The 496-row table and its 197 KB add 1.2 s. The fixed cost
+   of ASKING is five times the cost of the largest table, so the lever is not a smaller payload — it is
+   fewer requests. Two measured facts follow from that and both are load-bearing here:
+
+     1. Two requests fired TOGETHER cost 4.5 s where two fired in sequence cost 10 s. Bootstrap and the
+        active tab are therefore issued in the same tick. A bootstrap followed by a lazy slice would pay
+        two platform floors and be slower than the single request it replaced.
+     2. Route re-entry used to re-read 221.6 KB although unmount() keeps the model and the page was
+        already holding every row it was about to ask for again. That read is simply gone.
+
+   FRESHNESS IS PER SLICE, NOT PER PAGE. A slice that failed must not erase a slice that succeeded, and
+   the page must be able to say which of the two it is showing. UNREAD / LOADING / CURRENT / STALE /
+   REFUSED are per slice, and STALE only ever means 'this data is real and older than we would like'. */
+var FC_SLICE_ = { BOOTSTRAP: 'bootstrap', REGULAR: 'regular', EVENTS: 'events', RULES: 'rules' };
+var FC_FRESH_ = { UNREAD: 'UNREAD', LOADING: 'LOADING', CURRENT: 'CURRENT', STALE: 'STALE', REFUSED: 'REFUSED' };
+var _FC_TAB_SLICE_ = { regular: FC_SLICE_.REGULAR, event: FC_SLICE_.EVENTS, target: FC_SLICE_.RULES };
+/* Which model keys a slice OWNS. bootstrap owns three, which is why activating the Target Rules tab on a
+   cold mount issues ONE request rather than two: the rules arrive with the bootstrap that had to happen
+   anyway, and they are small enough that not carrying them would be the odd choice. */
+var _FC_SLICE_KEYS_ = {
+  // Target Rules and marketplaces only. Special Events are deliberately NOT here and not in the server's
+  // bootstrap either: Target Rules gate a CONTROL — the modal may not assert NEW until an authoritative
+  // read has proved no matching rule exists — while Special Events gate nothing, and fetching a tab
+  // nobody has opened is the eager read this round exists to remove. The two lists have to agree; if this
+  // one claims a key bootstrap does not send, the model is never considered usable and every route
+  // re-entry re-fetches, which is the defect this round came to fix.
+  bootstrap: ['fcTargetRules', 'marketplaces'],
+  regular: ['fcRegularForecast'],
+  events: ['fcSpecialEvents'],
+  rules: ['fcTargetRules']
+};
+var _FC_MODEL_KEYS_ = ['fcRegularForecast', 'fcSpecialEvents', 'fcTargetRules', 'marketplaces'];
+var _fcSliceState_ = {};
+function _fcSliceRec_(n) {
+  if (!_fcSliceState_[n]) _fcSliceState_[n] = { state: FC_FRESH_.UNREAD, observedAt: null, flight: null, loads: 0, err: null };
+  return _fcSliceState_[n];
+}
+function _fcSliceStates_() {
+  var o = {}; Object.keys(_fcSliceState_).forEach(function (k) { o[k] = _fcSliceState_[k].state; }); return o;
+}
+/* Workspace mode AND live data. Legacy (kill switch off) and Demo keep every path they had. */
+function _fcWorkspaceMode_() {
+  var live = (typeof _fcUseDb !== 'function') || _fcUseDb();
+  return live && (typeof _fcEffectiveWorkspace === 'function') && _fcEffectiveWorkspace();
+}
+/* A model key is KNOWN only when it is actually an array on the model. Absent means unread, and the
+   whole point of the slice contract is that unread is not empty. */
+function _fcHas_(key) { return !!(_fcReadModel && Array.isArray(_fcReadModel[key])); }
+function _fcSliceHasData_(name) {
+  var keys = _FC_SLICE_KEYS_[name] || [];
+  for (var i = 0; i < keys.length; i++) { if (!_fcHas_(keys[i])) return false; }
+  return keys.length > 0;
+}
+/* Enough of the model to DRAW. The bootstrap keys plus whichever tab is active — not all four, because
+   demanding the Regular rows to render the Target Rules tab is how a page ends up waiting for 197 KB it
+   is not going to show. */
+function _fcModelUsable_(tab) {
+  if (!_fcReadModel) return false;
+  if (!_fcSliceHasData_(FC_SLICE_.BOOTSTRAP)) return false;
+  var want = _FC_TAB_SLICE_[tab || _fcTabNow_()] || FC_SLICE_.REGULAR;
+  return _fcSliceHasData_(want);
+}
+function _fcTabNow_() {
+  try { return (typeof _fcActiveTab === 'function') ? _fcActiveTab() : 'regular'; } catch (e) { return 'regular'; }
+}
+
+/* Merge a slice into the ONE model. Only keys the answer actually carried are written, so a slice can
+   never blank a dataset it does not own — the failure mode that would let opening the Special Event tab
+   erase the Regular rows. */
+function _fcMergeSlice_(name, adapted) {
+  if (!_fcReadModel) _fcReadModel = {};
+  var landed = [];
+  _FC_MODEL_KEYS_.forEach(function (k) {
+    if (Array.isArray(adapted[k])) { _fcReadModel[k] = adapted[k]; landed.push(k); }
+  });
+  if (adapted.facets) _fcReadModel.facets = adapted.facets;
+  if (adapted.counts) _fcReadModel.counts = adapted.counts;
+  /* The Year dropdown's options. Bootstrap carries the server-derived universe (computed from every
+     Regular row before the rows were dropped); a regular slice re-derives from the rows it just
+     brought. Both go through the page's own ordering, so the dropdown is unchanged either way. */
+  if (_fcReadModel.facets && Array.isArray(_fcReadModel.facets.years)) _fcCandidateYears_ = _fcReadModel.facets.years;
+  else if (Array.isArray(_fcReadModel.fcRegularForecast)) _fcCandidateYears_ = _fcYearsOf_(_fcReadModel.fcRegularForecast);
+  /* Every slice whose keys are now present is current — bootstrap satisfies events and rules too. */
+  Object.keys(_FC_SLICE_KEYS_).forEach(function (sl) {
+    if (_fcSliceHasData_(sl) && landed.length) {
+      var owns = _FC_SLICE_KEYS_[sl].every(function (k) { return landed.indexOf(k) !== -1; });
+      if (owns) { var r = _fcSliceRec_(sl); r.state = FC_FRESH_.CURRENT; r.err = null;
+                  if (adapted.observedAt) r.observedAt = adapted.observedAt; }
+    }
+  });
+  return landed;
+}
+
+/* ONE logical request per slice, ever, while one is in flight. Extra clicks and a tab switched twice
+   attach to the promise that already exists rather than issuing a second read. */
+function _fcSliceFetch_(name) {
+  var rec = _fcSliceRec_(name);
+  if (rec.flight) return rec.flight;
+  if (!(window.KM && window.KM.api && typeof window.KM.api.getWorkspace === 'function')) {
+    return Promise.reject({ code: 'WORKSPACE_UNAVAILABLE', message: 'FC Summary Workspace API unavailable.' });
+  }
+  var had = _fcSliceHasData_(name);
+  rec.state = FC_FRESH_.LOADING; rec.loads++; rec.err = null;
+  var p = Promise.resolve(window.KM.api.getWorkspace('fcSummary', { include: { slice: name } }))
+    .then(function (env) {
+      if (!env || !env.success) {
+        throw (env && env.errors && env.errors[0]) || { code: 'FC_SUMMARY_READ_FAILED', message: 'FC Summary workspace request failed.' };
+      }
+      var d = env.data || {};
+      /* ONE HAZARD, TESTED DIRECTLY: a response that identifies itself as a DIFFERENT slice must never be
+         installed as this one — that is tab A's answer becoming tab B's data.
+
+         A response carrying NO slice label is not that hazard. It is a server that does not speak slices:
+         the backend ships before the frontend, so an R14 page should never meet an R13 server, but a
+         rollback would produce exactly that, and an R13 server ignores include.slice and answers the full
+         workspace. Answering with more than was asked for is not a failure, so it is merged with whatever
+         canonical arrays it carries and the page degrades to slow rather than to broken. The
+         nothing-usable-came-back check below still catches a response that carried no arrays at all. */
+      if (d.slice && String(d.slice) !== name) {
+        throw { code: 'FC_SUMMARY_SLICE_MISMATCH',
+          message: 'The server answered the ' + String(d.slice) + ' slice for a ' + name + ' request.' };
+      }
+      if (!(window.KM.DB && typeof window.KM.DB.adaptFcSummaryWorkspaceSlice === 'function')) {
+        throw { code: 'FC_SUMMARY_ADAPTER_UNAVAILABLE', message: 'The FC Summary slice adapter is not loaded.' };
+      }
+
+      /* VALIDATE, THEN COMMIT — and in that order, because the order is the property. A bootstrap may
+         legitimately carry facets and no rows, so either a canonical array or a facet set makes the
+         answer readable; anything else is a successful response that cannot be read, which is a
+         different fact from a failed request and is reported as one. */
+      var hasFacets = !!(d.facets && typeof d.facets === 'object' && !Array.isArray(d.facets));
+      if (!_fcValidWorkspaceData_(d) && !hasFacets) {
+        throw { code: 'FC_SUMMARY_RESPONSE_UNREADABLE',
+          message: 'The server answered successfully but the FC Summary payload was not the canonical '
+            + 'workspace shape. No data was loaded and nothing was changed.' };
+      }
+      var adapted = window.KM.DB.adaptFcSummaryWorkspaceSlice(d);
+      /* Only the keys the answer CARRIED have to adapt into arrays — a slice omits the rest by design.
+         A carried key that did not survive adaptation is a model that cannot be trusted, and nothing has
+         been written yet, so refusing here leaves the previous model exactly as it was. */
+      var carried = _FC_MODEL_KEYS_.filter(function (k) { return d[k] !== undefined && d[k] !== null; });
+      for (var ci = 0; ci < carried.length; ci++) {
+        if (!Array.isArray(adapted[carried[ci]])) {
+          throw { code: 'FC_SUMMARY_MODEL_UNREADABLE',
+            message: 'The FC Summary payload could not be adapted into a read model. No data was loaded.' };
+        }
+      }
+      /* No second 'carried nothing' gate here: _fcValidWorkspaceData_ above already answers false for a
+         payload with no canonical table, and two gates over one fact make the first one impossible to
+         test — a mutation that removes it changes nothing, which reads as a missing assertion. */
+      _fcMergeSlice_(name, adapted);   // THE ONLY COMMIT, and every check above has passed
+      rec.state = FC_FRESH_.CURRENT; rec.err = null;
+      if (adapted.observedAt) rec.observedAt = adapted.observedAt;
+      return _fcReadModel;
+    })
+    .catch(function (err) {
+      /* A REFUSAL NEVER BLANKS WHAT IS ALREADY TRUE. Data already in hand becomes STALE — real, and
+         older than we would like. Only a slice with nothing behind it is REFUSED. */
+      rec.state = had ? FC_FRESH_.STALE : FC_FRESH_.REFUSED;
+      rec.err = err || null;
+      throw err;
+    });
+  rec.flight = p.then(function (v) { rec.flight = null; return v; },
+                      function (e) { rec.flight = null; throw e; });
+  return rec.flight;
+}
+
+/* The slices that are not CURRENT and have nothing behind them — what Retry must ask for, and only
+   that. Retrying the whole page after one slice failed is how a 10-second request comes back. */
+function _fcFailedSlices_() {
+  var out = [];
+  Object.keys(_fcSliceState_).forEach(function (k) {
+    var r = _fcSliceState_[k];
+    if (r.state === FC_FRESH_.REFUSED || r.state === FC_FRESH_.STALE) out.push(k);
+  });
+  return out;
+}
+
+
 // read-model-first accessors: Workspace mode reads the scoped DTO; Legacy reads the broad-cache getters unchanged.
 function _fcGetRegularForecast() {
-  if (_fcReadModel) return _fcReadModel.fcRegularForecast;
+  if (_fcHas_('fcRegularForecast')) return _fcReadModel.fcRegularForecast;
+  if (_fcWorkspaceMode_()) return [];   // unread: the region reports LOADING/REFUSED, the table draws nothing
   return (window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : [];
 }
 function _fcGetSpecialEvents() {
-  if (_fcReadModel) return _fcReadModel.fcSpecialEvents;
+  if (_fcHas_('fcSpecialEvents')) return _fcReadModel.fcSpecialEvents;
+  if (_fcWorkspaceMode_()) return [];
   return (window.KM && window.KM.DB && window.KM.DB.getFcSpecialEvents) ? window.KM.DB.getFcSpecialEvents() : [];
 }
+/* FC-SUMMARY-R3-R1 — THE FAIL-OPEN, AND THE ONE LINE THAT CLOSES IT.
+
+   A real state-machine test proved that three different states reached the classifier as the same value:
+   a successful read of a database with no matching rule, a read that FAILED, and a read that had not
+   happened yet. All three answered `[]`, and `[]` means 'I looked, there are none' — which is what
+   licenses NEW and twelve 100% defaults. The cause was here: when the read model was absent this fell
+   through to the broad cache, and the broad cache answers `[]` when it is empty rather than refusing.
+
+   _TR_UNAVAILABLE_ already existed and already failed closed. It was simply never reached on this path.
+   In workspace mode the canonical rules now come from an authoritative read or not at all; `null` makes
+   _trExistingRules_ return the unavailable sentinel, Save stays disabled and the months stay blank.
+   Legacy mode is untouched — it has no workspace read to be authoritative about.
+
+   NOTE WHAT DID NOT CHANGE. A SUCCESSFUL read that genuinely finds zero rules still returns [], still
+   classifies NEW, and still fills twelve 100s. That is a proven answer and it stays a proven answer.
+   Nothing in the classifier, the canonical key, hydration, the receipt merge, the fingerprint, dirty
+   tracking or the R13 stale-write gate moves. */
 function _fcGetTargetRules() {
-  if (_fcReadModel) return _fcReadModel.fcTargetRules;
+  if (_fcHas_('fcTargetRules')) return _fcReadModel.fcTargetRules;
+  // A model that EXISTS without this array is malformed or not yet filled: unknown either way, and it was
+  // unavailable before this round too. Falling through to the broad cache from here is how a read model
+  // that arrived without its rules used to classify NEW.
+  if (_fcReadModel) return null;
+  // No model at all. In workspace mode the canonical rules come from an authoritative read or not at all;
+  // Legacy has no workspace read to be authoritative about, so it keeps the broad cache it always used.
+  if (_fcWorkspaceMode_()) return null;
   return (window.KM && window.KM.DB && window.KM.DB.getFcTargetRules) ? window.KM.DB.getFcTargetRules() : [];
 }
 function _fcGetMarketplaces() {
-  if (_fcReadModel) return _fcReadModel.marketplaces;
+  if (_fcHas_('marketplaces')) return _fcReadModel.marketplaces;
+  if (_fcWorkspaceMode_()) return [];
   return (window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
 }
 
@@ -4265,39 +4501,130 @@ function _fcRenderError_(err) {
     function () { _fcRefreshViewNow_(FC_MSG_.READ_FAILED, FC_RETRY_.COLD_READ); });
 }
 
-// Scoped read: Workspace (canonical) → getWorkspace('fcSummary') → adapt → _fcReadModel. Fail-closed (throws on error;
-// NO silent legacy broad fallback). Returns a Promise. Also the scoped POST-WRITE refresh path.
-function _fcWorkspaceRefresh_() {
-  var mySeq = ++_fcReadSeq;
-  var rg = _fcRegion_(); if (rg) rg.beginLoad(!!_fcReadModel);
-  if (!(window.KM && window.KM.api && typeof window.KM.api.getWorkspace === 'function')) {
-    return Promise.reject({ code: 'WORKSPACE_UNAVAILABLE', message: 'FC Summary Workspace API unavailable.' });
-  }
-  return Promise.resolve(window.KM.api.getWorkspace('fcSummary', {})).then(function (env) {
-    if (mySeq !== _fcReadSeq) return _fcReadModel;   // a newer read superseded this one
-    _fcNoteEnvMeta_(env);   // FC-SUMMARY-R1: diagnostic only; absence stays unknown, never zero
-    if (env && env.success) {
-      // INCIDENT-BOOT-FC-R1 §4A — VALIDATE, THEN COMMIT. `_fcReadModel` used to be ASSIGNED the
-      // adapter's output and only then read for `.fcRegularForecast.length`, so a malformed result
-      // was already installed at the moment it threw: the catch reported a refusal over a poisoned
-      // model. Nothing below writes `_fcReadModel` until every check has passed.
-      if (!_fcValidWorkspaceData_(env.data)) {
-        throw { code: 'FC_SUMMARY_RESPONSE_UNREADABLE',
-          message: 'The server answered successfully but the FC Summary payload was not the canonical workspace shape. '
-            + 'No data was loaded and nothing was changed.' };
-      }
-      var candidate = window.KM.DB.adaptFcSummaryWorkspace(env.data);
-      if (!_fcValidReadModel_(candidate)) {
-        throw { code: 'FC_SUMMARY_MODEL_UNREADABLE',
-          message: 'The FC Summary payload could not be adapted into a read model. No data was loaded.' };
-      }
-      _fcCandidateYears_ = _fcYearsOf_(candidate.fcRegularForecast);   // derived off-screen, before the commit
-      _fcReadModel = candidate;                                        // the ONLY assignment
-      if (rg) rg.set(_fcReadModel.fcRegularForecast.length ? window.KM.loadState.STATES.READY : window.KM.loadState.STATES.EMPTY);
-      return _fcReadModel;
-    }
-    throw (env && env.errors && env.errors[0]) || { code: 'FC_SUMMARY_READ_FAILED', message: 'FC Summary workspace request failed.' };
+/* FC-SUMMARY-R3-R1 — _fcWorkspaceRefresh_ IS GONE, not superseded-in-place.
+
+   It read all four tables — 221.6 KB, about ten seconds — and every caller reached for it because it
+   was the only thing there: the cold mount, the Retry control, the post-write reconciliation and the
+   modal's Load latest all asked for the whole workspace to show one table, or one row. Each of those
+   now names the slice it actually needs.
+
+   Leaving it here as an unused convenience would be an invitation. A page whose slowest possible read
+   is still one function call away tends to acquire a caller again, and the caller is always reasonable
+   in isolation. _fcSliceFetch_ replaces it, and asking for everything now requires asking for each
+   slice by name — which is exactly the friction that belongs in front of a ten-second request. */
+
+/* ==============================================================================================
+   THE MOUNT. Two things happen here that did not happen before, and both remove a request rather
+   than shrink one.
+
+   ROUTE RE-ENTRY DRAWS FROM MEMORY. unmount() keeps the model — it always did — and the page used to
+   re-read 221.6 KB anyway, which is why the second and third visits were as slow as the first. If the
+   bootstrap and the active tab are both in hand, the tables are drawn NOW and no request is issued.
+
+   A COLD MOUNT FIRES BOTH SLICES IN THE SAME TICK. Measured: two requests fired together cost 4.5 s
+   where two fired in sequence cost 10 s. Sequential staging would pay two platform floors and be slower
+   than the single request it replaced, so the bootstrap and the active tab's slice go out together and
+   each draws as it lands. The Target Rules tab issues ONE request, because bootstrap carries its rows. */
+function _fcMountLoad_(afterLoad) {
+  var tab = _fcTabNow_();
+  var epoch = _fcEpoch_();
+  var draw = function () {
+    if (!_fcOwns_(epoch)) return;            // routed away mid-flight: draw nothing
+    try { afterLoad(); } catch (e) {}
+    _fcNoteFreshness_();
+  };
+
+  var want = _FC_TAB_SLICE_[tab] || FC_SLICE_.REGULAR;
+  /* bootstrap owns the rules and the marketplaces, so a tab whose keys it already carries needs no
+     second request. Only Regular and Special Event have rows of their own to fetch. */
+  var ridesBootstrap = (_FC_SLICE_KEYS_[want] || []).every(function (k) {
+    return _FC_SLICE_KEYS_[FC_SLICE_.BOOTSTRAP].indexOf(k) !== -1;
   });
+
+  /* WHICH SLICES ARE MISSING — not 'is the model complete'. Asking the coarser question made arriving
+     on a never-loaded tab re-fetch a bootstrap that was already in memory, which is the same wasted
+     six seconds this round exists to remove, just moved one case along. */
+  var need = [];
+  if (!_fcSliceHasData_(FC_SLICE_.BOOTSTRAP)) need.push(FC_SLICE_.BOOTSTRAP);
+  if (!ridesBootstrap && !_fcSliceHasData_(want)) need.push(want);
+
+  if (!need.length) {
+    draw();
+    return;                                   // ZERO logical requests. This is the whole win.
+  }
+
+  var rg = _fcRegion_(); if (rg) rg.beginLoad(!!_fcReadModel);
+  /* Draw what is already known BEFORE the missing slice is asked for. A page holding two of three
+     datasets should show two of three, not a blank frame until the third arrives. */
+  if (_fcReadModel) draw();
+  need.forEach(function (n) {
+    _fcSliceFetch_(n).then(draw).catch(function (err) { _fcSliceFailed_(n, err, epoch); });
+  });
+}
+
+/* A slice that failed. The page keeps everything it still knows and says which part it could not get;
+   only a page with NOTHING renders the full refusal, because that is the only case where a red box is
+   more honest than the rows behind it. */
+function _fcSliceFailed_(name, err, epoch) {
+  if (epoch !== undefined && !_fcOwns_(epoch)) return;
+  var rec = _fcSliceRec_(name);
+  if (rec.state === FC_FRESH_.STALE || _fcReadModel) {
+    _fcNoteFreshness_(name, err);
+    return;
+  }
+  _fcRenderError_(err);
+}
+
+/* Say which of CURRENT / REFRESHING / STALE is on screen, and never say 'current' about data that is
+   not. Uses the banner the page already has rather than inventing a second status surface. */
+function _fcNoteFreshness_(failedSlice, err) {
+  if (typeof _fcShowBanner_ !== 'function' || typeof _fcClearBanner_ !== 'function') return;
+  var bad = _fcFailedSlices_();
+  if (!bad.length) { _fcClearBanner_(); return; }
+  var names = { bootstrap: 'the selector data', regular: 'the Regular Forecast rows',
+                events: 'the Special Event rows', rules: 'the Target Rules' };
+  var stale = bad.filter(function (n) { return _fcSliceRec_(n).state === FC_FRESH_.STALE; });
+  var gone = bad.filter(function (n) { return _fcSliceRec_(n).state === FC_FRESH_.REFUSED; });
+  var parts = [];
+  if (stale.length) parts.push('Showing the last data that loaded for ' + stale.map(function (n) { return names[n] || n; }).join(' and ') + '.');
+  if (gone.length) parts.push(gone.map(function (n) { return names[n] || n; }).join(' and ') + ' could not be loaded.');
+  // The label comes from _fcRetryLabel_ so the control the sentence names and the control actually drawn
+  // cannot drift apart — a literal here is exactly what the shared retry-label guard exists to catch.
+  _fcShowBanner_(parts.join(' '), _fcRetryLabel_(FC_RETRY_.COLD_READ), function () { _fcRetryFailedSlices_(); });
+}
+
+/* Retry asks for the slices that failed, and only those. Re-reading the page because one part of it
+   did not arrive is how a ten-second request comes back for no reason. */
+function _fcRetryFailedSlices_() {
+  var epoch = _fcEpoch_();
+  var bad = _fcFailedSlices_();
+  if (!bad.length) bad = [_FC_TAB_SLICE_[_fcTabNow_()] || FC_SLICE_.REGULAR];
+  bad.forEach(function (n) {
+    _fcSliceFetch_(n)                          // single-flight: a second click while in flight adds nothing
+      .then(function () {
+        if (!_fcOwns_(epoch)) return;
+        _fcHydrateFromModel_();
+        _fcNoteFreshness_();
+      })
+      .catch(function (e) { _fcSliceFailed_(n, e, epoch); });
+  });
+}
+
+/* Activating a tab loads ITS slice, once, on first activation. An inactive tab costs nothing until
+   somebody looks at it, which is the difference between a lazy tab and a tab that was merely drawn last. */
+function _fcEnsureTabSlice_(tab) {
+  if (!_fcWorkspaceMode_()) return;
+  var name = _FC_TAB_SLICE_[tab];
+  if (!name) return;
+  if (_fcSliceHasData_(name)) return;          // already in memory — no request, no flicker
+  var epoch = _fcEpoch_();
+  _fcSliceFetch_(name)
+    .then(function () {
+      if (!_fcOwns_(epoch)) return;
+      _fcHydrateFromModel_();
+      _fcNoteFreshness_();
+    })
+    .catch(function (e) { _fcSliceFailed_(name, e, epoch); });
 }
 
 // Post-write reconcile: in Workspace mode re-read the scoped fcSummary workspace so the primary render reflects the write
@@ -4537,7 +4864,10 @@ function _fcRefreshViewNow_(failText, state) {
   // §4D — how far this attempt got. It advances to HYDRATION only once the data is in hand, so the
   // catch below can tell a delivery failure from a view that could not be rebuilt from good data.
   var stage = FC_STAGE_.TRANSPORT;
-  return _fcWorkspaceRefresh_().then(function () {
+  /* Refreshing the VIEW means refreshing what the view is showing — the active tab's slice and the
+     bootstrap that the selectors depend on — not four tables of which two are not on screen. */
+  var _vs = _FC_TAB_SLICE_[_fcTabNow_()] || FC_SLICE_.REGULAR;
+  return _fcSliceFetch_(_vs).then(function () {
     _fcMeta_.readbackEnd = Date.now(); _fcReadbackFlight_ = false;
     if (!_fcOwns_(epoch)) return;
     // INCIDENT-BOOT-FC-R1 §4A — HYDRATE FIRST, DECLARE CURRENT SECOND, CLEAR THE BANNER LAST.
@@ -4763,7 +5093,10 @@ function _fcFailWrite_(err, opts) {
   if (opts.reenable) opts.reenable(true);          // the modal stays open and every input is preserved
 }
 
-function _fcAfterWrite(cb) {
+/* (scope, cb) for callers: the scope is the short half and belongs where it can be read at a glance. */
+function _fcAfterWriteScoped_(scope, cb) { return _fcAfterWrite(cb, scope); }
+
+function _fcAfterWrite(cb, scope) {
   // F1-7L: a FC write changed the underlying tables the secondary modals read; drop the bounded modal-cache flag
   // so the next builder/import/Event-Assist modal open re-reads fresh (bounded) rather than a stale slice.
   if (typeof _fcResetSecondaryCache === 'function') _fcResetSecondaryCache();
@@ -4777,10 +5110,29 @@ function _fcAfterWrite(cb) {
 
   if (!_fcEffectiveWorkspace() || !live) { _fcViewState_ = FC_VIEW_.CURRENT; return; }
 
-  // ---- STAGE B — BEST EFFORT. A failure downgrades the VIEW, never the WRITE. ------------------
+  /* ---- STAGE B — SCOPED, AND SOMETIMES NOT NEEDED AT ALL. -------------------------------------
+
+     This used to re-read the ENTIRE four-table workspace — 221.6 KB and about ten seconds — to show one
+     saved row. The reconciliation each write path needs depends on what its receipt already proves:
+
+       Target Rule save      a COMPLETE canonical saved row, already merged through the canonical
+                             normalizer by _trMergeReceipt_. Nothing left to ask. ZERO requests.
+       Target Rule delete    the id is gone and that is the whole fact; the `rules` slice confirms it.
+       Base FC / Builder /   a batch summary, not rows, so the affected table is re-read — the `regular`
+       Import                slice, never the workspace.
+       Special Event save    likewise, the `events` slice.
+
+     A caller that knows better passes its scope; anything else falls back to the active tab's slice.
+     What no caller can do any more is ask for everything. */
+  var _sc = (typeof scope === 'string') ? { slice: scope } : (scope || {});
+  if (_sc.merged) {   // the receipt was complete and is already in the model
+    _fcViewState_ = FC_VIEW_.CURRENT;
+    return;
+  }
+  var _slice = _sc.slice || _FC_TAB_SLICE_[_fcTabNow_()] || FC_SLICE_.REGULAR;
   _fcViewState_ = FC_VIEW_.REFRESHING;
   _fcMeta_.readbackStart = Date.now(); _fcMeta_.readbackEnd = null;
-  _fcWorkspaceRefresh_().then(function () {
+  _fcSliceFetch_(_slice).then(function () {
     _fcMeta_.readbackEnd = Date.now();
     if (!_fcOwns_(epoch)) return;                      // routed away → no DOM mutation
     // Same authority as the cold load. A write that introduces a year the dropdown has never seen
@@ -4856,6 +5208,10 @@ function _getDbFcEventData() {
 var _FC_MONTH_KEYS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 function _getDbTargetRules() {
     var rows = _fcGetTargetRules();   // Workspace (scoped) → read-model; Legacy → getFcTargetRules()
+    // null = the canonical rules are unread or unreadable. The TABLE draws nothing; the MODAL refuses,
+    // which is _trExistingRules_'s job and not this one's. Rendering a guess here would put the fail-open
+    // back one layer up.
+    if (!Array.isArray(rows)) return [];
     return rows.map(function(r) {
         var raw = r.raw || {};
         var fallback = (r.targetPercentage != null) ? r.targetPercentage : 100;
@@ -4933,7 +5289,7 @@ function _fcSummaryEnsureDbAndRender() {
     // Canonical: scoped fcSummary workspace (NO broad Operation DB for the primary render). Fail-closed on error —
     // a bounded FC region error, never a silent legacy broad fallback (that path lives ONLY in the Legacy branch).
     if (_fcEffectiveWorkspace()) {
-        _fcWorkspaceRefresh_().then(afterLoad).catch(function (err) { _fcRenderError_(err); });
+        _fcMountLoad_(afterLoad);
         return;
     }
 
@@ -5413,7 +5769,7 @@ function runFcImport() {
                 // Re-render the Regular Forecast table. Workspace: scoped fcSummary re-read (the primary render ignores
                 // the broad cache the import wrapper reloaded); Legacy: render from the reloaded cache.
                 fcPaginationState.currentPage = 1;
-                _fcAfterWrite(function () { renderFcRegularTable(); });
+                _fcAfterWriteScoped_(FC_SLICE_.REGULAR, function () { renderFcRegularTable(); });
                 // Clean success (no errors) → switch the action button to "Done" (completion action).
                 // Any errors → keep it as "Import" so the user can fix and retry.
                 if (mergedSummary.error === 0 && runBtn) {

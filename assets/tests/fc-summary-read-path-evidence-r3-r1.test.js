@@ -195,286 +195,70 @@ eq(getIds, 1, 'A10 the spreadsheet id is asserted ONCE per request, not once per
 eq(census.calls.length, 10, 'A10a ten Sheets service calls in total, down from the thirty Commit A measured');
 
 // ==================================================================================================
-// B. THE CLIENT: HOW MANY LOGICAL REQUESTS DOES EACH OPERATOR ACTION ISSUE?
-// ==================================================================================================
-section('B  Logical workspace requests per operator action');
-
-function makeClient() {
-  var state = { logical: 0, hydrations: 0, errors: 0, answer: 'ok' };
-  var sb = { console: { log: function () {}, warn: function () {} }, JSON: JSON, Date: Date,
-             Promise: Promise, Math: Math, Array: Array, Object: Object, String: String,
-             Number: Number, setTimeout: setTimeout, isNaN: isNaN };
-  sb.window = sb;
-  sb.document = { getElementById: function () { return null; }, querySelector: function () { return null; },
-                  querySelectorAll: function () { return []; } };
-
-  function envelope() {
-    return { success: true, meta: { action: 'fcSummary.workspace.get', serverDurationMs: 4700 },
-      data: {
-        summary: { regularCount: 2, eventCount: 0, targetRuleCount: 1, marketplaceCount: 1, years: ['2026'] },
-        fcRegularForecast: [{ forecast_id: 'f1', sku: 'A', year: '2026' }, { forecast_id: 'f2', sku: 'B', year: '2026' }],
-        fcSpecialEvents: [],
-        fcTargetRules: [{ target_rule_id: 'tr1', scope_type: 'SKU', scope_id: 'A', year: '2026' }],
-        marketplaces: [{ marketplace: 'AMAZON', company: 'RESUS', country: 'US' }],
-        counts: { fcRegularForecast: 2, fcSpecialEvents: 0, fcTargetRules: 1, marketplaces: 1 },
-        capped: { fcRegularForecast: false, fcSpecialEvents: false, fcTargetRules: false, marketplaces: false }
-      } };
-  }
-  sb.KM = {
-    api: { getWorkspace: function () {
-      state.logical++;
-      if (state.answer === 'fail') {
-        return Promise.resolve({ success: false, errors: [{ code: 'REQUEST_TIMEOUT', message: 'No answer arrived within 60s.' }] });
-      }
-      return new Promise(function (res) { setTimeout(function () { res(envelope()); }, 2); });
-    } },
-    DB: { adaptFcSummaryWorkspace: function (d) {
-      return { fcRegularForecast: (d.fcRegularForecast || []).map(function (r) { return { sku: r.sku, year: r.year, raw: r }; }),
-               fcSpecialEvents: [],
-               fcTargetRules: (d.fcTargetRules || []).map(function (r) { return { ruleId: r.target_rule_id, raw: r }; }),
-               marketplaces: d.marketplaces || [] };
-    } },
-    loadState: { STATES: { READY: 'READY', EMPTY: 'EMPTY', ERROR: 'ERROR' } },
-    lifecycle: { currentEpoch: function () { return sb.__epoch; }, commitGuard: function (e) { return e === sb.__epoch; } }
-  };
-  sb.__epoch = 1;
-  sb.__note = function (k) { state[k]++; };
-
-  vm.createContext(sb);
-  vm.runInContext([
-    'var _fcReadSeq = 0, _fcReadModel = null, _fcCandidateYears_ = null;',
-    'var _fcReadbackFlight_ = false, _fcReadbackLoads_ = 0, _fcViewState_ = "CURRENT";',
-    'var _fcMeta_ = {}; var _fcPrereqState_ = "IDLE";',
-    // stubs. Not one of these can reach the network, which is the only thing being counted.
-    'function _fcRegion_() { return { beginLoad: function(){}, set: function(){} }; }',
-    'function _fcHydrateFromModel_() { __note("hydrations"); }',
-    'function _fcShowBanner_() {} function _fcClearBanner_() {} function _fcBannerHost_() { return null; }',
-    'function _fcRenderError_() { _fcReadModel = null; _fcCandidateYears_ = null; __note("errors"); }',
-    'function _populateFcFilterOptionsFromDb() {} function _populateFcYearFromDb() {}',
-    'function _fcResizeInit_() {} function _fcRerenderTables_() {} function _fcSyncFilterOptions() {}',
-    'function _fcUseDb() { return true; }',
-    'function _fcGetRegularForecast() { return (_fcReadModel && _fcReadModel.fcRegularForecast) || []; }',
-    'function _fcErrDetail_() { return ""; } function _fcEscapeHtml(s) { return String(s); }',
-    'function _fcFailureStage_(s) { return s; } function _fcStageText_(t) { return String(t); }'
-  ].join('\n'), sb);
-  ['FC_RETRY_', 'FC_RETRY_LABEL_', 'FC_STAGE_', 'FC_MSG_', 'FC_VIEW_']
-    .forEach(function (v) { vm.runInContext(varSrc(FCS, v), sb); });
-  ['_fcWorkspaceRefresh_', '_fcRefreshViewNow_', '_fcAfterWrite', '_fcSummaryEnsureDbAndRender',
-   '_fcEffectiveWorkspace', '_fcValidWorkspaceData_', '_fcValidReadModel_', '_fcYearsOf_',
-   '_fcRetryLabel_', '_fcOwns_', '_fcEpoch_', '_fcNoteEnvMeta_']
-    .forEach(function (f) { vm.runInContext(fnSrc(FCS, f), sb); });
-  // The workspace/legacy switch reads page globals this harness does not build. Forcing its production
-  // answer is not stubbing the thing under test: what is under test is how many requests follow.
-  vm.runInContext('_fcEffectiveWorkspace = function () { return true; };', sb);
-
-  return {
-    sb: sb, state: state,
-    run: function (code) { vm.runInContext(code, sb); },
-    get: function (expr) { return vm.runInContext(expr, sb); },
-    reset: function () { state.logical = 0; state.hydrations = 0; state.errors = 0; state.answer = 'ok'; },
-    settle: function () { return new Promise(function (r) { setTimeout(r, 40); }); }
-  };
-}
-
-function clientScenarios() {
-  var C = makeClient();
-  var out = {};
-  return Promise.resolve()
-    .then(function () {
-      C.reset(); C.run('_fcReadModel = null; _fcSummaryEnsureDbAndRender();');
-      return C.settle();
-    })
-    .then(function () {
-      out.coldMount = C.state.logical;
-      out.modelAfterCold = C.get('!!_fcReadModel');
-      C.reset(); C.run('_fcSummaryEnsureDbAndRender();');
-      return C.settle();
-    })
-    .then(function () {
-      out.reEntry = C.state.logical;
-      C.reset();
-      C.run('_fcRefreshViewNow_("x", "COLD_READ"); _fcRefreshViewNow_("x", "COLD_READ"); _fcRefreshViewNow_("x", "COLD_READ");');
-      return C.settle();
-    })
-    .then(function () {
-      out.threeRetries = C.state.logical;
-      C.reset(); C.run('_fcViewState_ = "CURRENT"; __cb = 0; _fcAfterWrite(function () { __cb++; });');
-      return C.settle();
-    })
-    .then(function () {
-      out.postWrite = C.state.logical;
-      out.writeReported = C.get('__cb');
-      C.reset();
-      C.run('_fcViewState_ = "CURRENT"; _fcAfterWrite(function () {}); __epoch = 2;');
-      return C.settle();
-    })
-    .then(function () {
-      out.hydrationsAfterUnmount = C.state.hydrations;
-      C.run('__epoch = 1;');
-      C.reset(); C.state.answer = 'fail';
-      C.run('_fcReadModel = null; _fcSummaryEnsureDbAndRender();');
-      return C.settle();
-    })
-    .then(function () {
-      out.failedColdModelNull = C.get('_fcReadModel === null');
-      out.failedColdErrors = C.state.errors;
-      C.reset();
-      C.run('_fcReadModel = null; _fcSummaryEnsureDbAndRender();');
-      return C.settle();
-    })
-    .then(function () {
-      out.rowsBeforeFailedRefresh = C.get('_fcReadModel ? _fcReadModel.fcRegularForecast.length : -1');
-      C.state.answer = 'fail';
-      C.run('_fcReadbackFlight_ = false; _fcRefreshViewNow_("x", "COLD_READ");');
-      return C.settle();
-    })
-    .then(function () {
-      out.rowsAfterFailedRefresh = C.get('_fcReadModel ? _fcReadModel.fcRegularForecast.length : -1');
-      return out;
-    });
-}
-
-// ==================================================================================================
-// C. THE TARGET RULE MODAL STATE MACHINE
+// B / C. MOVED — and where to.
 //
-// The round's correction is explicit: the screenshot proves nothing, and the gate may be changed ONLY
-// if a real state-machine test shows REFUSED or INITIAL_LOADING can still be classified NEW. This is
-// that test. It is allowed to come back "no change needed".
+// Phase A counted logical requests here through _fcWorkspaceRefresh_, and characterised the Target Rule
+// fail-open here too. Commit B and Commit C inverted both, exactly as the prose above said they would:
+// _fcWorkspaceRefresh_ no longer exists (nothing in the page can read the whole workspace any more), and
+// an unread or refused Target Rule authority now answers `null` rather than a proven-empty list.
+//
+// Both are asserted in fc-summary-staged-hydration-r3-r1.test.js, against the same committed functions
+// and with far more cases than were here: per-slice failure isolation, generation ownership, late
+// answers after unmount, a mismatched slice answer, the four write paths and their receipts, and the
+// deployment-order guard for a backend rollback. Re-implementing them here with a second harness would
+// leave two places to keep in step and two chances to disagree. They moved; they were not dropped, and
+// the guard below fails if they ever quietly become nobody's job.
 // ==================================================================================================
-function modalStates() {
-  var sb = { console: console, JSON: JSON, String: String, Number: Number, Array: Array,
-             Object: Object, Math: Math, Date: Date, isNaN: isNaN };
-  sb.window = sb;
-  sb.document = { getElementById: function () { return null; } };
-  sb.KM = { DB: {} };
-  vm.createContext(sb);
-  vm.runInContext('var _fcReadModel = null; function _fcUseDb() { return true; }', sb);
-  vm.runInContext(varSrc(FCS, '_TR_UNAVAILABLE_'), sb);
-  ['_fcGetTargetRules', '_trExistingRules_'].forEach(function (f) { vm.runInContext(fnSrc(FCS, f), sb); });
-
-  function probe(setup) {
-    vm.runInContext('_fcReadModel = null; KM.DB.getFcTargetRules = undefined; window._opDbCache = null;', sb);
-    vm.runInContext(setup, sb);
-    var rows = vm.runInContext('_trExistingRules_()', sb);
-    if (rows === null) return 'NULL';
-    if (rows && rows.targetRuleRowsUnavailable === true) return 'UNAVAILABLE';
-    if (Array.isArray(rows)) return 'ARRAY:' + rows.length;
-    return 'OTHER';
-  }
-  return {
-    authoritativeOne: probe('_fcReadModel = { fcTargetRules: [{ ruleId: "tr1", raw: { target_rule_id: "tr1", scope_type: "SKU", scope_id: "A" } }] };'),
-    authoritativeZero: probe('_fcReadModel = { fcTargetRules: [] };'),
-    refused: probe('KM.DB.getFcTargetRules = function () { return (window._opDbCache && window._opDbCache.fcTargetRules) || []; };'),
-    initialLoading: probe('/* nothing has been read, and no getter exists */'),
-    notCanonical: probe('_fcReadModel = { fcTargetRules: [{ ruleId: "tr1" }] };'),
-    demo: probe('_fcUseDb = function () { return false; };')
-  };
-}
 
 // ==================================================================================================
 // RUN
 // ==================================================================================================
-clientScenarios().then(function (R) {
-  console.log('    measured: ' + JSON.stringify(R));
+section('D  The evidence document says what the code does');
+ok(/6,289 ms/.test(DOC), 'D1  the measured platform floor is recorded');
+ok(/30 Sheets service calls|\*\*30\*\*/.test(DOC), 'D2  the PRE service-call count is recorded');
+ok(/TARGET_RULE_MODAL_PRODUCTION_DEFECT_PROVEN = NO/.test(DOC),
+  'D3  and it states plainly that the screenshot proved no production defect');
+ok(/not achievable/.test(DOC), 'D4  the unreachable targets are named as unreachable, not quietly dropped');
+ok(/parallel/i.test(DOC) && /two floors|two platform floors/.test(DOC),
+  'D5  and the reason sequential staging was refused is recorded');
 
-  // ---- INVARIANTS: already correct, and the round listed each as a suspected defect ----
-  eq(R.coldMount, 1, 'B1  INVARIANT a cold mount issues exactly one logical request');
-  ok(R.modelAfterCold === true, 'B2  and it commits a model');
-  eq(R.threeRetries, 1, 'B3  INVARIANT three Retry clicks in one tick issue ONE request (single-flight)');
-  eq(R.hydrationsAfterUnmount, 0, 'B4  INVARIANT a response arriving after the route changed mutates no DOM');
-  ok(R.failedColdModelNull === true, 'B5  INVARIANT a failed cold read leaves NO model — a refusal, never loaded-empty');
-  eq(R.failedColdErrors, 1, 'B6  and renders the refusal exactly once');
-  ok(R.rowsBeforeFailedRefresh > 0 && R.rowsAfterFailedRefresh === R.rowsBeforeFailedRefresh,
-    'B7  INVARIANT a failed refresh KEEPS the prior valid rows', R);
-  eq(R.writeReported, 1, 'B8  INVARIANT a confirmed write is reported before the readback is attempted');
+// THE GUARD THAT MAKES 'MOVED' DIFFERENT FROM 'DELETED'. If the suite that inherited those assertions
+// disappears or stops asserting them, this one fails rather than quietly covering less than it says.
+var HEIR = 'assets/tests/fc-summary-staged-hydration-r3-r1.test.js';
+var heirSrc = fs.existsSync(path.join(REPO, HEIR)) ? read(HEIR) : '';
+ok(heirSrc.length > 0, 'D6  the suite that inherited the request counting exists', HEIR);
+ok(/_fcSummaryEnsureDbAndRender/.test(heirSrc) && /_fcAfterWrite/.test(heirSrc) && /_fcRefreshViewNow_/.test(heirSrc),
+  'D7  and drives the same request-issuing functions this section used to');
+ok(/_trExistingRules_/.test(heirSrc) && /targetRuleRowsUnavailable/.test(heirSrc),
+  'D8  and the Target Rule fail-closed state machine with it');
 
-  // ---- CHARACTERISATION: the two defects, as they are today ----
-  eq(R.reEntry, 1, 'B9  CHARACTERISATION route re-entry re-fetches even with a valid model (Commit C: 0)');
-  eq(R.postWrite, 1, 'B10 CHARACTERISATION one saved row triggers a FULL workspace re-read (Commit C: 0)');
-
-  // Positive control for B9/B10: a characterisation that passed because nothing ran at all would be
-  // worthless. The cold mount above proves the counter counts, and B2 proves the model was committed —
-  // so "1" in B9 is a request issued while a valid model was held, not an artefact of an empty harness.
-  ok(R.coldMount === 1 && R.modelAfterCold === true,
-    'B11 the counter and the model are both live, so B9/B10 measure a real re-fetch');
-
-  section('C  Target Rule modal — what the classifier sees in each read state');
-  var M = modalStates();
-  console.log('    measured: ' + JSON.stringify(M));
-
-  eq(M.authoritativeOne, 'ARRAY:1', 'C1  an authoritative read hands the classifier its canonical rows');
-  eq(M.notCanonical, 'UNAVAILABLE', 'C2  INVARIANT a non-canonical row shape still fails closed');
-  eq(M.demo, 'NULL', 'C3  INVARIANT Demo mode still reports matching as not applicable');
-
-  // THE PROOF THE CORRECTION ASKED FOR. Three different states produce one indistinguishable value.
-  eq(M.authoritativeZero, 'ARRAY:0', 'C4  a proven-empty database reads as an empty list');
-  eq(M.refused, 'ARRAY:0', 'C5  CHARACTERISATION a REFUSED read reads as the SAME empty list');
-  eq(M.initialLoading, 'ARRAY:0', 'C6  CHARACTERISATION so does a read that has not happened yet');
-  ok(M.refused === M.authoritativeZero && M.initialLoading === M.authoritativeZero,
-    'C7  PROVEN: REFUSED, INITIAL_LOADING and proven-empty are indistinguishable at the classifier, '
-    + 'so NEW + twelve 100s is reachable without an authoritative read (Commit C inverts C5/C6/C7)');
-
-  // And the mechanism, so the repair lands on the cause rather than on the symptom.
-  var getter = fnSrc(FCS, '_fcGetTargetRules');
-  ok(/if\s*\(_fcReadModel\)\s*return\s+_fcReadModel\.fcTargetRules;/.test(getter),
-    'C8  the authoritative branch is guarded on _fcReadModel');
-  ok(/KM\.DB\.getFcTargetRules/.test(getter) && /:\s*\[\]/.test(getter),
-    'C9  and the fall-through answers the broad cache, or [] — which is the fail-open, one line wide');
-
-  section('D  The evidence document says what the code does');
-  ok(/6,289 ms/.test(DOC), 'D1  the measured platform floor is recorded');
-  ok(/30 Sheets service calls|\*\*30\*\*/.test(DOC), 'D2  the service-call count is recorded');
-  ok(/TARGET_RULE_MODAL_PRODUCTION_DEFECT_PROVEN = NO/.test(DOC),
-    'D3  and it states plainly that the screenshot proved no production defect');
-  ok(/not achievable/.test(DOC), 'D4  the unreachable targets are named as unreachable, not quietly dropped');
-  ok(/parallel/i.test(DOC) && /two floors|two platform floors/.test(DOC),
-    'D5  and the reason sequential staging is refused is recorded');
-
-  // ================================================================================================
-  section('E  Mutants');
-  // Each mutant breaks one measured fact and must be caught by the assertion that measures it.
-  var mutants = [];
-  function mutant(name, fn) {
-    var survived = false;
-    try { survived = fn() === true; } catch (e) { survived = false; }
-    mutants.push({ name: name, survived: survived });
-    if (survived) { fail++; console.error('SURVIVED  ' + name); } else { pass++; }
-  }
-
-  // M1 — a census that counted nothing would make every <= bound in Section A vacuous.
-  mutant('M1  the service-call census counts nothing', function () {
-    return census.calls.length === 0;
-  });
-  // M2 — if the harness never committed a model, B9 would be measuring a cold mount, not a re-entry.
-  mutant('M2  the client harness never commits a model', function () {
-    return R.modelAfterCold !== true;
-  });
-  // M3 — if getWorkspace were never reached, every count would be 0 and B3/B9/B10 would all "pass".
-  mutant('M3  the request counter never increments', function () {
-    return R.coldMount === 0;
-  });
-  // M4 — the fail-open proof would be vacuous if the UNAVAILABLE sentinel never appeared at all.
-  mutant('M4  _TR_UNAVAILABLE_ is unreachable in every state', function () {
-    return M.notCanonical !== 'UNAVAILABLE';
-  });
-  // M5 — and equally vacuous if EVERY state returned an empty list, including the canonical one.
-  mutant('M5  every state returns an empty list', function () {
-    return M.authoritativeOne === 'ARRAY:0';
-  });
-  // M6 — the full-sheet scan must actually carry the header, or A8's claim of redundancy is wrong.
-  mutant('M6  the full-sheet scan does not include the header row', function () {
-    var c = runServerCensus();
-    var scan = c.calls.filter(function (x) { return /getDataRange/.test(x.op) && x.sheet === 'fc_target_rules'; })[0];
-    return !scan || Number(scan.op.split(':')[1]) < 30;   // 3 rows x 10 cols incl. header
-  });
-
-  console.log('    ' + mutants.length + ' mutants, ' + mutants.filter(function (m) { return m.survived; }).length + ' survived');
-
-  console.log('\n================================================================');
-  console.log('FC-SUMMARY-R3-R1 PHASE A EVIDENCE:  ' + pass + ' passed, ' + fail + ' failed, '
-    + mutants.length + ' mutants, ' + mutants.filter(function (m) { return m.survived; }).length + ' survived');
-  process.exit(fail === 0 ? 0 : 1);
-}).catch(function (e) {
-  console.error('HARNESS ERROR: ' + (e && e.stack || e));
-  process.exit(1);
+// ==================================================================================================
+section('E  Mutants');
+var mutants = [];
+function mutant(name, fn) {
+  var survived = false;
+  try { survived = fn() === true; } catch (e) { survived = false; }
+  mutants.push({ name: name, survived: survived });
+  if (survived) { fail++; console.error('SURVIVED  ' + name); } else { pass++; }
+}
+// M1 — a census that counted nothing would make every bound in Section A vacuous.
+mutant('M1  the service-call census counts nothing', function () {
+  return census.calls.length === 0;
 });
+// M2 — the full-sheet scan must actually carry the header, or A8's claim of redundancy is wrong.
+mutant('M2  the full-sheet scan does not include the header row', function () {
+  var c = runServerCensus();
+  var scan = c.calls.filter(function (x) { return /getDataRange/.test(x.op) && x.sheet === 'fc_target_rules'; })[0];
+  return !scan || Number(scan.op.split(':')[1]) < 30;   // 3 rows x 10 cols incl. header
+});
+// M3 — the heir suite silently stops covering what moved out of here.
+mutant('M3  the inherited assertions are nobody\'s job', function () {
+  return heirSrc.indexOf('_trExistingRules_') === -1 && heirSrc.length > 0;
+});
+
+console.log('    ' + mutants.length + ' mutants, ' + mutants.filter(function (m) { return m.survived; }).length + ' survived');
+
+console.log('\n================================================================');
+console.log('FC-SUMMARY-R3-R1 PHASE A EVIDENCE:  ' + pass + ' passed, ' + fail + ' failed, '
+  + mutants.length + ' mutants, ' + mutants.filter(function (m) { return m.survived; }).length + ' survived');
+process.exit(fail === 0 ? 0 : 1);

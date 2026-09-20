@@ -439,7 +439,13 @@ var ROUND_TOKENS = [
   // present a form that cannot save at all. The whole application set rotates together.
   'tgtrehydrate-r2ba2r5f5-20260919',
   'trseamrepair-r2ba2r5f5f1-20260919',
-  'statuscard-r2ba2r5f6-20260919'];
+  'statuscard-r2ba2r5f6-20260919',
+  // FC-SUMMARY-R3-R1 - staged hydration. fc-summary.js stops reading the whole workspace and asks for
+  // named slices; operation-system-db-api.js gains the slice adapter it calls. A browser holding the
+  // previous fc-summary.js beside the new api file would call an adapter it does not know about, and a
+  // browser holding the previous api file beside the new page would have its every slice refused with
+  // FC_SUMMARY_ADAPTER_UNAVAILABLE. The two ship together, so the whole application set rotates together.
+  'stagedhydration-r3r1-20260920'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

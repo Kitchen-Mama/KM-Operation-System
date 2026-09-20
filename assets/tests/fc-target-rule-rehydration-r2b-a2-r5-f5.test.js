@@ -222,6 +222,7 @@ function pageWorld(rules, sel, months) {
     fnSrc(FCS, '_trMergeReceipt_'), fnSrc(FCS, '_trNormalizeCanonical_'),
     fnSrc(FCS, '_trBlankMonths_'), varSrc(FCS, '_TR_UNAVAILABLE_'),
     // the real chain, no longer stubbed
+    fnSrc(FCS, '_fcHas_'), fnSrc(FCS, '_fcWorkspaceMode_'), fnSrc(FCS, '_fcEffectiveWorkspace'),
     fnSrc(FCS, '_fcGetTargetRules'), fnSrc(FCS, '_getDbTargetRules'),
     fnSrc(FCS, '_trExistingRules_'), fnSrc(FCS, '_fcUseDb'),
     // R2B-A2-R5-F5-F1 — _getDbTargetRules and _trExistingRules_ USED TO BE STUBBED HERE, returning the
@@ -577,7 +578,7 @@ mutant('M9', 'the receipt withheld until the full refresh', function () {
 mutant('M10', 'a background failure revoking confirmed success', function () {
   // Stage A runs the success callback BEFORE the refresh, and the refresh's catch must not undo it.
   var after = fnSrc(FCS, '_fcAfterWrite');
-  var cbBeforeRefresh = after.indexOf('cb()') < after.indexOf('_fcWorkspaceRefresh_');
+  var cbBeforeRefresh = after.indexOf('cb()') < after.indexOf('_fcSliceFetch_');
   var keepsRows = after.indexOf('_fcRenderError_ is deliberately NOT called') !== -1;
   return cbBeforeRefresh && keepsRows;
 });
