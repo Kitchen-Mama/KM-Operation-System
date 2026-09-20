@@ -4580,8 +4580,30 @@ function _kmExtractCanonicalCode_(msg) {
 }
 // A refusal by the validate-only schema gate, a documented pre-write gate, or an unavailable lock proves that
 // ZERO rows were written. Exposed so the page can state zero-write truthfully instead of guessing.
+// FC-SUMMARY-R2B-A3-R1 — THE TYPED IDENTITY AND VERSION REFUSALS ARE PROVEN ZERO WRITES, AND SAYING SO
+// IS THE WHOLE POINT OF ISSUING THEM. Each is returned by a handler that checked BEFORE writing and
+// then returned without touching a cell; reporting one as "the result could not be confirmed" would
+// tell an operator to go and reconcile a row nothing happened to, and would withhold the one action
+// that does help — reload and re-enter. The list is here, in the shared authority, and not in a
+// page-local regex, for the reason the comment below already gives: one place where the rule is
+// written down. A token is added here ONLY when the handler that emits it provably wrote nothing.
+// The list lives INSIDE the function, not beside it. Five suites lift this function by name into a
+// vm context; a sibling `var` does not travel with it, and a lookup that throws classifies every
+// proven zero-write refusal as an UNKNOWN outcome — the one classification that tells an operator
+// not to retry something that is safe to retry. One authority, in a place that cannot be separated
+// from its use.
 function _kmZeroWriteProven_(msg) {
     var s = String(msg == null ? '' : msg);
+    // Typed, PRE-WRITE refusals: each is returned by a handler that checked before writing and then
+    // returned without touching a cell. A token is added here ONLY when its handler provably wrote
+    // nothing — saying so is the whole point of issuing it, because the useful answer is "reload and
+    // re-enter", not "go and reconcile a row nothing happened to".
+    var ZERO_WRITE_TOKENS = ['STALE_TARGET_RULE_VERSION', 'TARGET_RULE_VERSION_REQUIRED',
+        'TARGET_RULE_NOT_FOUND', 'TARGET_RULE_IDENTITY_MISMATCH', 'DUPLICATE_TARGET_RULE_IDENTITY',
+        'TARGET_RULE_LOCK_TIMEOUT', 'STALE_CAMPAIGN_VERSION', 'CAMPAIGN_NOT_FOUND',
+        'CAMPAIGN_IDENTITY_MISMATCH', 'DUPLICATE_CAMPAIGN_IDENTITY', 'CAMPAIGN_LOCK_TIMEOUT',
+        'STALE_SPECIAL_EVENT_VERSION', 'SPECIAL_EVENT_NOT_FOUND'];
+    if (ZERO_WRITE_TOKENS.indexOf(s.trim()) !== -1) return true;
     return /^PRODUCTION_SAFETY:/.test(s.trim()) || /zero rows written/i.test(s) || /could not acquire lock/i.test(s);
 }
 // FC-SUMMARY-R2B-A — EXPOSED, not duplicated. `_kmZeroWriteProven_` and `_kmExtractCanonicalCode_` were

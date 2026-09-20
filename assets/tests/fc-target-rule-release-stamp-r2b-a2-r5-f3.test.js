@@ -64,17 +64,23 @@ var RELEASE_FLOOR = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12';
 // R14 — FC-SUMMARY-R3-R1 moves the base to 07c23fd, the commit the R13 release was accepted at in
 // production. The base tracks the release this suite is describing, because "what did THIS release
 // change?" is meaningless against the tree of the release before last.
-var BASE = '07c23fd';
+// R15 — FC-SUMMARY-R2B-A3-R1 moves the base to 74aca0b, the commit the R14 release was accepted at in
+// production (58_ and 63_ synced, 131/131 backend gate, Pages converged on the same sha).
+var BASE = '74aca0b';
 
 // The files THIS release syncs, and the ONE reason each is on the list. A file on the sync list for no
 // stated reason is how an unrelated edit reaches production by accident — so the set is declared here
 // and checked against git below, rather than being read off git and believed.
 var RELEASE_OWNERS = {
-  '58_api_v1_fc_summary_workspace.gs':
-    'the FC Summary READ owner gained bootstrap/regular/events/rules slices on the existing action, '
-    + 'one Sheets read per sheet, server-derived filter facets, and its first declared build stamp',
+  '14_fc_write_handlers.gs':
+    'fc_special_events gained its own expected_row_version gate, its unchanged-save short-circuit and '
+    + 'the typed zero-write refusals the batch path now reports per row',
+  '20_campaign_write_handlers.gs':
+    'the campaign business key moved from company|country|marketplace|NAME|year to the event WINDOW, '
+    + 'and the file gained the script lock, the version gate, the per-line unchanged short-circuit and '
+    + 'its first declared build stamp',
   '63_api_v1_system_health.gs':
-    'the release identity and 58_\'s new REQUIRED manifest row'
+    'the release identity, 20_\'s new REQUIRED manifest row and 14_\'s expected stamp'
 };
 // Owners that carry an EARLIER release and must keep it. Each is here because it did not change, and
 // marching any of them to the current release would destroy the manifest's only useful signal.
@@ -82,8 +88,11 @@ var RELEASE_OWNERS = {
 // 14_ JOINED THIS LIST AT R14, AND THAT IS THE POINT. It was R13's owner; reading a Target Rule is not
 // writing one, and the read owner changing gives nobody licence to march the write handler along. A file
 // that moves out of RELEASE_OWNERS and into RELEASE_UNMOVED is a release doing its job.
+// 58_ JOINED THIS LIST AT R15, and 14_ left it — the exact swap R14's comment predicted. Reading an
+// event is not writing one, so the read owner keeps the release it changed in while the two write
+// handlers move.
 var RELEASE_UNMOVED = {
-  '14_fc_write_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R13',
+  '58_api_v1_fc_summary_workspace.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R14',
   '13_procurement_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12',
   '00_config.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11',
   '01_router.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9',
@@ -94,6 +103,7 @@ var HEALTH = read(GS + '63_api_v1_system_health.gs');
 var PROC = read(GS + '13_procurement_handlers.gs');
 var WRITE = read(GS + '14_fc_write_handlers.gs');
 var WSREAD = read(GS + '58_api_v1_fc_summary_workspace.gs');
+var CAMPWRITE = read(GS + '20_campaign_write_handlers.gs');
 var BUNDLE = read(GS + '90_generated_supply_planning_bundle.gs');
 var CONFIG = read(GS + '00_config.gs');
 var ROUTER = read(GS + '01_router.gs');
@@ -206,14 +216,20 @@ ok(!/function\s+procurementTargetRuleResolver_/.test(PROC),
   'B1a and the matcher it used to own really is gone, so the stamp is not decoration');
 ok(/KMPD\.resolveTargetRule/.test(PROC),
   'B1b and what replaced it is a call to the shared resolver, not a second private copy');
-eq(declares(WSREAD, 'FCSWS_BUILD_VERSION_'), RELEASE,
-  'B2  58_ declares the release — it is the owner this release exists to ship');
-// The mirror image, and the reason B2 could be rewritten rather than deleted: the write handler is
-// untouched by a read-path release, so it must still declare the release it DID change in.
-eq(declares(WRITE, 'FCW_BUILD_VERSION_'), RELEASE_UNMOVED['14_fc_write_handlers.gs'],
-  'B2a 14_ keeps R13 — reading a Target Rule is not writing one, and a release may not march it along');
+eq(declares(WRITE, 'FCW_BUILD_VERSION_'), RELEASE,
+  'B2  14_ declares the release — it is one of the two write owners this release exists to ship');
+eq(declares(CAMPWRITE, 'CAMPAIGN_BUILD_VERSION_'), RELEASE,
+  'B2-2 and so does 20_, whose first build stamp this release is');
+// The mirror image, and the reason B2 could be rewritten rather than deleted: the READ owner is
+// untouched by a write-path release, so it must still declare the release it DID change in.
+eq(declares(WSREAD, 'FCSWS_BUILD_VERSION_'), RELEASE_UNMOVED['58_api_v1_fc_summary_workspace.gs'],
+  'B2a 58_ keeps R14 — writing an event is not reading one, and a release may not march it along');
+ok(/FC_SE_FINGERPRINT_FIELDS_/.test(WRITE) && /STALE_SPECIAL_EVENT_VERSION/.test(WRITE),
+  'B2b and the change 14_\'s stamp claims is really in the file — the event token and its refusal');
+ok(/CAMPAIGN_KEY_FIELDS_/.test(CAMPWRITE) && /start_date/.test(CAMPWRITE),
+  'B2c and 20_\'s — the window-based campaign key');
 ok(/FCS_SLICE_SPECS_/.test(WSREAD) && /fcsReadTableOnce_/.test(WSREAD),
-  'B2b and the change the stamp is claiming is really in the file — the slice specs and the one-read IO');
+  'B2d while R14\'s change is still in 58_, so its unmoved stamp is still earned');
 eq(declares(HEALTH, 'SYS_BUILD_VERSION_'), RELEASE,
   'B3  63_\'s own module stamp moved, because 63_ itself changed');
 ok(/expected_row_version/.test(WRITE),
@@ -307,15 +323,15 @@ ok(oldProc.stale_modules.join('|').indexOf('13_procurement_handlers.gs') !== -1,
 ok(oldProc.stale_modules.join('|').indexOf('F1-7N-FC-1A-R1') !== -1,
   'F1a and the report names the build the project actually carries, not just that something is wrong');
 
-var oldRead = runManifest({ FCSWS_BUILD_VERSION_: PREV_RELEASE });
-ok(oldRead.stale_modules.join('|').indexOf('58_api_v1_fc_summary_workspace.gs') !== -1,
-  'F2  an OLD 58_ identity is rejected where this release requires the new one', oldRead.stale_modules);
-// THE FAILURE MODE THIS ROW WAS ADDED FOR. Until R14, 58_ had no stamp at all: a project holding last
-// round's copy answered every FC Summary read with the wrong file and health reported a clean bill,
-// because neither the slice vocabulary nor the one-read IO adds or removes an action.
-var noRead = runManifest({ FCSWS_BUILD_VERSION_: null });
-eq(noRead.absent_modules, ['58_api_v1_fc_summary_workspace.gs'],
-  'F2a a project that never received 58_ reports it ABSENT — the signal that did not exist before R14');
+var oldCamp = runManifest({ CAMPAIGN_BUILD_VERSION_: PREV_RELEASE });
+ok(oldCamp.stale_modules.join('|').indexOf('20_campaign_write_handlers.gs') !== -1,
+  'F2  an OLD 20_ identity is rejected where this release requires the new one', oldCamp.stale_modules);
+// THE FAILURE MODE THIS ROW WAS ADDED FOR. Until R15, 20_ had no stamp at all: a project holding last
+// round's copy keys campaigns by NAME, so two event windows in one year merge into a single row and
+// the earlier one is overwritten — and health reported a clean bill, because no action was added.
+var noCamp = runManifest({ CAMPAIGN_BUILD_VERSION_: null });
+eq(noCamp.absent_modules, ['20_campaign_write_handlers.gs'],
+  'F2a a project that never received 20_ reports it ABSENT — the signal that did not exist before R15');
 
 var noWrite = runManifest({ FCW_BUILD_VERSION_: null });
 eq(noWrite.absent_modules, ['14_fc_write_handlers.gs'],
@@ -402,8 +418,8 @@ eq(cp.execFileSync('git', ['diff', '--name-only', BASE, '--', GS + '01_router.gs
 var priorFiles = manifestRows(priorHealth).map(function (r) { return r.file; });
 var nowFiles = manifestRows(HEALTH).map(function (r) { return r.file; });
 eq(nowFiles.filter(function (f) { return priorFiles.indexOf(f) === -1; }),
-  ['58_api_v1_fc_summary_workspace.gs'],
-  'H5  the manifest gained EXACTLY one row: the FC Summary read owner');
+  ['20_campaign_write_handlers.gs'],
+  'H5  the manifest gained EXACTLY one row: the campaign write owner');
 eq(priorFiles.filter(function (f) { return nowFiles.indexOf(f) === -1; }), [],
   'H5a and lost none — a release adds an owner, it never quietly drops one');
 
@@ -485,11 +501,11 @@ mutant('M6', 'a malformed release string', function () {
 // that was really a missing premise. The vacuity audit caught it, which is what the audit is for.
 mutant('M7', 'the manifest expecting a build no file declares', function () {
   var faked = HEALTH.replace(
-    "symbol: 'FCSWS_BUILD_VERSION_', expected: '" + RELEASE + "'",
-    "symbol: 'FCSWS_BUILD_VERSION_', expected: '" + PREV_RELEASE + "'");
+    "symbol: 'CAMPAIGN_BUILD_VERSION_', expected: '" + RELEASE + "'",
+    "symbol: 'CAMPAIGN_BUILD_VERSION_', expected: '" + PREV_RELEASE + "'");
   if (faked === HEALTH) return false;
-  var row = manifestRows(faked).filter(function (r) { return r.symbol === 'FCSWS_BUILD_VERSION_'; })[0];
-  return !!row && declares(WSREAD, 'FCSWS_BUILD_VERSION_') !== row.expected;
+  var row = manifestRows(faked).filter(function (r) { return r.symbol === 'CAMPAIGN_BUILD_VERSION_'; })[0];
+  return !!row && declares(CAMPWRITE, 'CAMPAIGN_BUILD_VERSION_') !== row.expected;
 });
 mutant('M8', 'a double-quoted bundle hash, which makes every reader pass vacuously', function () {
   var faked = BUNDLE.replace(/var KM_BUNDLE_CONTENT_HASH_ = '([^']*)';/, 'var KM_BUNDLE_CONTENT_HASH_ = "$1";');
@@ -531,7 +547,7 @@ var vacuous = [];
  ['M4', function () { return runManifest().stale_modules.length === 0; }],
  ['M5', function () { return RO.stampAtOrAfter(RELEASE, PREV_RELEASE); }],
  ['M6', function () { return RO.BUILD_STAMP_RE.test(RELEASE); }],
- ['M7', function () { return declares(WSREAD, 'FCSWS_BUILD_VERSION_') === RELEASE; }],
+ ['M7', function () { return declares(CAMPWRITE, 'CAMPAIGN_BUILD_VERSION_') === RELEASE; }],
  ['M8', function () { return declares(BUNDLE, 'KM_BUNDLE_CONTENT_HASH_') !== null; }],
  ['M9', function () { return declares(BUNDLE, 'KM_BUNDLE_CONTENT_HASH_')
      === (BUNDLE.match(/^\/\/ bundle_sha256 = ([0-9a-f]{64})$/m) || [])[1]; }],

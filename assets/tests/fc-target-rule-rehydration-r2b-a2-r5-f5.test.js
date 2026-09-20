@@ -622,8 +622,22 @@ ok(!/expected_row_version/.test(read('assets/specs/active/apps-script/13_procure
 ok(!/expected_row_version/.test(read('assets/js/core/supply-planning-planning-demand.js')),
   'F2  and so is the shared resolver — reading a rule is not writing one');
 ok(/fcWriteUpsert_/.test(GS14), 'F3  the shared special-event writer is still present');
-ok(!/expected_row_version/.test(fnSrc(GS14, 'fcSpecialEventUpsert_') || ''),
-  'F4  and the Special Event path did not inherit the Target Rule version gate');
+// FC-SUMMARY-R2B-A3-R1 — F4 USED TO ASSERT THE OPPOSITE, AND IT WAS RIGHT AT THE TIME. R5-F5 gave the
+// version gate to Target Rules only, and this line guarded against it leaking sideways into a path
+// nobody had designed it for. A3-R1 designed it for that path deliberately, so the assertion inverts:
+// what must hold now is that the Special Event gate is its OWN contract over its OWN fields, and that
+// the Target Rule one did not change to accommodate it.
+ok(/expected_row_version/.test(fnSrc(GS14, 'fcSpecialEventUpsert_') || ''),
+  'F4  the Special Event path now carries its own expected_row_version gate (A3-R1 §5)');
+ok(/FC_SE_FINGERPRINT_FIELDS_/.test(fnSrc(GS14, 'fcSeFingerprint_') || ''),
+  'F4a  and it fingerprints the SPECIAL EVENT fields, not the rule fields');
+(function () {
+  var se = (/var FC_SE_FINGERPRINT_FIELDS_ = ([\s\S]*?);/.exec(GS14) || [])[1] || '';
+  ok(se.indexOf('event_start_date') === -1 && se.indexOf('event_end_date') === -1,
+    'F4b  the two Date-typed columns stay OUT of the token — a check that fails for a timezone reason is worse than none');
+  ok(/target_percentage/.test((/var FC_TR_FINGERPRINT_FIELDS_ = ([\s\S]*?);/.exec(GS14) || [])[1] || ''),
+    'F4c  and the Target Rule token is untouched by any of it');
+})();
 
 console.log('\n' + new Array(101).join('='));
 console.log((fail === 0 && survived.length === 0 ? 'PASS' : 'FAIL') + '  ' + pass + ' passed, ' + fail + ' failed, '

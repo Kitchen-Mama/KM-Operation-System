@@ -47,6 +47,17 @@ function section(n) { console.log('\n-- ' + n + ' ' + new Array(Math.max(2, 96 -
 
 var R14 = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R14';
 var R13 = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R13';
+// R2B-A3-R1 — THE RELEASE MOVED PAST THIS ROUND, AND THAT IS NOT A FAILURE OF THIS ROUND.
+//
+// E2/E3 asserted that the CURRENT release is R14. That was this suite's own release, so the assertion
+// was an identity check against now: it could only ever hold until the next release, and it stopped a
+// later round from shipping while describing nothing wrong. What R3-R1 actually owns is that 58_ still
+// declares R14 (E1, unchanged — it is the file this round shipped) and that the release is R14 OR
+// LATER. The ordering helper is the authority for "or later"; a literal cannot be.
+var RO = require('./_release-order.js');
+var RELEASE_NOW = (require('fs').readFileSync(require('path').join(__dirname, '..', 'specs', 'active',
+  'apps-script', '63_api_v1_system_health.gs'), 'utf8')
+  .match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1] || '';
 
 // ------------------------------------------------------------------ extraction ------------------
 function scanTo(s, from, semicolon) {
@@ -358,8 +369,9 @@ eq(regEnv.data.capped, { fcRegularForecast: false }, 'D14 and its own capped fla
 section('E  Release identity and the manifest');
 // ==================================================================================================
 ok(new RegExp("var FCSWS_BUILD_VERSION_ = '" + R14 + "'").test(WS), 'E1  58_ declares R14');
-ok(new RegExp("var SYS_BUILD_VERSION_ = '" + R14 + "'").test(HEALTH), 'E2  63_ declares R14');
-ok(new RegExp("var SYS_DEPLOYMENT_RELEASE_ = '" + R14 + "'").test(HEALTH), 'E3  the release is R14');
+ok(RO.stampAtOrAfter(RELEASE_NOW, R14), 'E3  the release is R14 or later', RELEASE_NOW);
+ok(new RegExp("var SYS_BUILD_VERSION_ = '" + RELEASE_NOW.replace(/[-]/g, '[-]') + "'").test(HEALTH),
+   'E2  and 63_ declares whatever release it is carrying — the two never disagree');
 
 var row58 = /\{ file: '58_api_v1_fc_summary_workspace\.gs', symbol: '([A-Z_]+)', expected: '([^']+)'/.exec(HEALTH);
 ok(!!row58, 'E4  58_ now has a manifest row');
@@ -372,7 +384,10 @@ ok(!/optional: true/.test(row58 ? HEALTH.slice(row58.index, HEALTH.indexOf('}', 
 
 // The files that must not have moved. A release that marched an unchanged file would put it on the sync
 // list and destroy the signal that says which files a project is actually missing.
-[['14_fc_write_handlers.gs', R13], ['13_procurement_handlers.gs', 'R6-R7-R12'],
+// 14_ LEFT THIS LIST AT R15: the Special Event write path changed, so its stamp moved with it. It is
+// asserted at RELEASE_NOW rather than removed, because "the write handler moved" is still a claim
+// worth checking — it just is no longer the claim that it did not.
+[['14_fc_write_handlers.gs', RELEASE_NOW], ['13_procurement_handlers.gs', 'R6-R7-R12'],
  ['00_config.gs', 'R6-R7-R11'], ['01_router.gs', 'R6-R7-R9'],
  ['72_api_v1_product_pricing_workspace.gs', 'R6-R7-R10']].forEach(function (p, i) {
   var m = new RegExp("\\{ file: '" + p[0].replace(/\./g, '\\.') + "', symbol: '[A-Z_]+', expected: '([^']+)'").exec(HEALTH);

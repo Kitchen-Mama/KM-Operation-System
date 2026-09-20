@@ -925,6 +925,66 @@ function _fcEventEditSource() {
   return _getDbFcEventData();
 }
 
+// ==============================================================================================
+// FC-SUMMARY-R2B-A3-R1 §5 — THE SPECIAL EVENT VERSION TOKEN, PAGE SIDE.
+//
+// The mirror of FC_SE_FINGERPRINT_FIELDS_ / fcSeFingerprint_ in 14_fc_write_handlers.gs, in this
+// order and with this normalisation. The two sides compute the same token over the same values, so
+// the server can tell a stale save from a current one without either side trusting a clock.
+//
+// The two window columns are absent on purpose and the omission is load-bearing, not an oversight:
+// a sheet Date read server-side as the local calendar day reaches this page as an ISO instant eight
+// hours earlier, and a version check that can fail for a timezone reason teaches operators to click
+// past it. The window is the CAMPAIGN's identity and cannot be edited here in any case.
+// ==============================================================================================
+var _SE_FP_FIELDS_ = ['campaign_id', 'campaign_sku_line_id', 'company', 'country',
+  'marketplace', 'marketplace_id', 'scope_type', 'scope_id', 'sku', 'series', 'category',
+  'event_name', 'event_period', 'event_month', 'year', 'fc_qty', 'note'];
+var _SE_FP_NUMERIC_ = ['event_month', 'year', 'fc_qty'];
+
+/* The row's content fingerprint, computed from the CANONICAL row (the `raw` the read model carries),
+   never from the display shape — the display shape renames and rounds, and a token built from it
+   would disagree with the sheet for reasons that have nothing to do with anybody editing anything. */
+function _seFingerprint_(raw) {
+  raw = raw || {};
+  var parts = [];
+  for (var i = 0; i < _SE_FP_FIELDS_.length; i++) {
+    var f = _SE_FP_FIELDS_[i];
+    parts.push(_SE_FP_NUMERIC_.indexOf(f) !== -1 ? _trNumTok_(raw[f]) : _trStrTok_(raw[f]));
+  }
+  return parts.join('|');
+}
+
+// The mirror of CAMPAIGN_FINGERPRINT_FIELDS_ in 20_campaign_write_handlers.gs. The key fields —
+// HEADER_IDENTITY_KEY: company|country|marketplace|promotion_type|event_flag|start_date|end_date —
+// are deliberately NOT here: they are identity, so changing one names a different campaign rather
+// than editing this one.
+var _CMP_FP_FIELDS_ = ['campaign_name', 'marketplace_id', 'major_event_flag',
+  'year', 'duration', 'status'];
+var _CMP_FP_NUMERIC_ = ['year', 'duration'];
+function _cmpFingerprint_(raw) {
+  raw = raw || {};
+  var parts = [];
+  for (var i = 0; i < _CMP_FP_FIELDS_.length; i++) {
+    var f = _CMP_FP_FIELDS_[i];
+    parts.push(_CMP_FP_NUMERIC_.indexOf(f) !== -1 ? _trNumTok_(raw[f]) : _trStrTok_(raw[f]));
+  }
+  return parts.join('|');
+}
+
+/* THE CANONICAL EVENT IDENTITY, PAGE SIDE — campaign (which is the WINDOW) + the campaign SKU line.
+   Not the campaign NAME: the same name recurs every year and twice within one, and two events that
+   share a name are still two events. Mirrors fcSpecialEventFindRowByKey_'s primary key. */
+function fcEventCanonicalKey(row) {
+  row = row || {};
+  var raw = row.raw || row;
+  var cmp = _trStrTok_(row.campaignId || raw.campaign_id).toUpperCase();
+  var line = _trStrTok_(row.campaignSkuLineId || raw.campaign_sku_line_id).toUpperCase();
+  if (cmp && line) return 'CL:' + cmp + '|' + line;
+  if (cmp) return 'CS:' + cmp + '|' + _trStrTok_(row.sku || raw.sku).toUpperCase();
+  return '';
+}
+
 // PURE — dedup key for a Special-Event row. Canonical PK is event_fc_id; fall back to a company-safe composite
 // ONLY for legacy rows with a blank id (those still fail closed on save without a campaign_id — never merged).
 function fcEventIdentityKey(row) {
@@ -936,10 +996,18 @@ function fcEventIdentityKey(row) {
 
 // PURE — build the canonical Special-Event write payload (only changed rows). Each row carries the FULL identity the
 // write authority requires (event_fc_id for exact targeting + campaign_id + event_name + sku) plus the edited fc_qty.
+//
+// R2B-A3-R1 §5 — and `expected_row_version`, the fingerprint of the row AS THE OPERATOR SAW IT. Without
+// it two people editing the same event both succeeded and the second silently erased the first. The
+// server refuses a versionless update outright, so a row whose version could not be computed is sent
+// with an empty one and is REFUSED rather than written blind: failing closed is the point.
 function fcBuildEventWriteRows(dirtyEntries) {
   return (dirtyEntries || []).map(function (e) {
     var id = e.identity || {};
-    return { event_fc_id: id.eventId || '', campaign_id: id.campaignId || '', event_name: id.eventName || '', sku: id.sku || '', fc_qty: e.qty };
+    return { event_fc_id: id.eventId || '', campaign_id: id.campaignId || '',
+      campaign_sku_line_id: id.campaignSkuLineId || '',
+      event_name: id.eventName || '', sku: id.sku || '', fc_qty: e.qty,
+      expected_row_version: id.rowVersion || '' };
   });
 }
 
@@ -1023,7 +1091,9 @@ function updateEventFcQty(inputEl) {
   if (!base) return;
   const v = fcValidateMonthRaw(inputEl.value);   // fc_qty rule = non-negative integer (same as Base FC month)
   const baseVal = Number(base.fcQty) || 0;
-  let entry = fcEditState.dirtyEvent.get(key) || { identity: { eventId: base.eventId, campaignId: base.campaignId, eventName: base.eventName, sku: base.sku }, base: { fcQty: baseVal }, qty: null, invalid: false };
+  let entry = fcEditState.dirtyEvent.get(key) || { identity: { eventId: base.eventId, campaignId: base.campaignId,
+    campaignSkuLineId: base.campaignSkuLineId, rowVersion: base.rowVersion,
+    eventName: base.eventName, sku: base.sku }, base: { fcQty: baseVal }, qty: null, invalid: false };
   if (!v.valid) {
     entry.invalid = true; entry.qty = null;
     inputEl.classList.add('fc-cell-invalid'); inputEl.setAttribute('aria-invalid', 'true');
@@ -2273,14 +2343,15 @@ function proceedToFcMode() {
   var selectedMode = sel ? sel.value : 'regular';
   _fcClearPrereqRefusal_();
 
-  if (!_fcPrereqNeeded_()) { _fcPrereqState_ = FC_PREREQ_.READY; _fcOpenBuilder_(selectedMode); return; }
+  if (!_fcPrereqNeeded_(selectedMode)) { _fcPrereqState_ = FC_PREREQ_.READY; _fcOpenBuilder_(selectedMode); return; }
 
   if (_fcPrereqTransition_) return;   // a transition is already pending: this click adds nothing at all
   _fcPrereqTransition_ = true;
 
   var epoch = _fcEpoch_();
   _fcSetNextBusy_(true);        // disabled + aria-busy + "Loading…" in the SAME event loop as the click
-  _fcLoadPrerequisites_().then(function () {
+  // §7 — when the card selection already started this path's load, THIS is the promise it started.
+  _fcLoadPrerequisites_(selectedMode).then(function () {
     _fcPrereqTransition_ = false;
     if (!_fcOwns_(epoch)) { _fcPrereqState_ = FC_PREREQ_.UNMOUNTED; return; }   // dead page: no DOM
     _fcSetNextBusy_(false);
@@ -2299,7 +2370,7 @@ function openRegularUpdateModal() {
   // primary render never loads it, so lazy-load it here (once) before populating the builder, then re-open.
   // FC-SUMMARY-R1 — prerequisites are the CALLER's responsibility (proceedToFcMode). A missing one
   // refuses visibly and recoverably; it never silently re-enters this opener in a retry loop.
-  if (_fcPrereqNeeded_()) { showFcModal('fc-mode-select-modal');
+  if (_fcPrereqNeeded_('regular')) { showFcModal('fc-mode-select-modal');
     _fcShowPrereqRefusal_({ code: 'FC_PREREQUISITES_MISSING', message: 'builder data is not loaded' }); return; }
   var now = new Date();
   document.getElementById('regular-target-year').value = fcTargetYear;
@@ -2899,6 +2970,240 @@ function _regularOnManualInput() {
   if (cnt) cnt.textContent = affected + ' of ' + _regularPreview.rows.length + ' SKU(s) will be written';
 }
 
+// ==============================================================================================
+// FC-SUMMARY-R2B-A3-R1 §2 — AN EXISTING EVENT IS AN EXISTING RECORD, NOT A BLANK FORM.
+//
+// openEventModal cleared every field on every open. There was no path in this builder that could
+// load a persisted event, so an operator revisiting BFCM 2027 saw an empty form, retyped what they
+// remembered, and saved — and because the old campaign key was company|country|marketplace|NAME|year,
+// that save landed on the row they thought they were creating. Blank fields overwrote real ones and
+// the response said "Saved successfully".
+//
+// THE SELECTOR IS OVER CAMPAIGNS, NOT NAMES. One campaign_id is one event window, so two BFCM windows
+// in 2027 are two entries and stay two entries even though they share a label — which is scenario B
+// and scenario C of the round, and neither is expressible in a list keyed by name. The label shown
+// carries the window precisely so the operator can tell them apart.
+//
+// UNAVAILABLE IS NOT EMPTY. If the event rows cannot be read, the selector says so and offers nothing.
+// An empty picker would read as "there are no existing events", which is the sentence that licenses
+// creating a duplicate.
+// ==============================================================================================
+
+/* The edit session. Null = composing a NEW event, which is the default and the only state that may
+   send a versionless save. When it is set, every id in it is carried through the save unchanged. */
+var _evtEditing_ = null;
+
+function _evtEditingActive_() { return !!(_evtEditing_ && _evtEditing_.campaignId); }
+
+/* The event rows the BUILDER may reason about. The workspace read model first; otherwise the tables
+   the Special Event path's prerequisites loaded. `null` means unavailable and never means none. */
+function _evtBuilderEventRows_() {
+  if (typeof _fcHas_ === 'function' && _fcHas_('fcSpecialEvents')) return _fcReadModel.fcSpecialEvents;
+  if (!_fcPrereqLoadedPaths_ || !_fcPrereqLoadedPaths_.event) return null;
+  var DB = window.KM && window.KM.DB;
+  return (DB && DB.getFcSpecialEvents) ? DB.getFcSpecialEvents() : null;
+}
+
+function _evtCampaignRows_() {
+  var DB = window.KM && window.KM.DB;
+  return (DB && DB.getCampaigns) ? (DB.getCampaigns() || []) : [];
+}
+function _evtCampaignLineRows_() {
+  var DB = window.KM && window.KM.DB;
+  return (DB && DB.getCampaignSkuLines) ? (DB.getCampaignSkuLines() || []) : [];
+}
+
+/* Persisted events in the selected scope + year, grouped by campaign — one entry per WINDOW.
+   Returns null when the underlying rows are unavailable. */
+function _evtExistingEvents_() {
+  var rows = _evtBuilderEventRows_();
+  if (!Array.isArray(rows)) return null;
+  var site = _evtSelectedSite();
+  var mkey = _fcResolveMarketplaceKey(site.marketplace);
+  var year = _trStrTok_((document.getElementById('event-target-year') || {}).value);
+  function U(v) { return _trStrTok_(v).toUpperCase(); }
+  var byCampaign = {};
+  rows.forEach(function (r) {
+    var raw = r.raw || {};
+    var cid = _trStrTok_(r.campaignId || raw.campaign_id);
+    if (!cid) return;   // an event with no campaign cannot be addressed by this builder at all
+    if (U(raw.company || r.company) !== U(site.company)) return;
+    if (U(raw.country || r.country) !== U(site.country)) return;
+    if (U(_fcResolveMarketplaceKey(raw.marketplace || r.marketplace)) !== U(mkey)) return;
+    if (year && _trNumTok_(raw.year || r.year) !== _trNumTok_(year)) return;
+    var g = byCampaign[cid];
+    if (!g) {
+      g = byCampaign[cid] = { campaignId: cid, eventName: _trStrTok_(raw.event_name || r.event),
+        startDate: _trStrTok_(raw.event_start_date || r.eventStartDate),
+        endDate: _trStrTok_(raw.event_end_date || r.eventEndDate),
+        year: _trStrTok_(raw.year || r.year), rows: [] };
+    }
+    g.rows.push(r);
+  });
+  return Object.keys(byCampaign).map(function (k) { return byCampaign[k]; })
+    .sort(function (a, b) { return String(a.startDate).localeCompare(String(b.startDate)); });
+}
+
+/* The label an operator distinguishes two same-named windows by. The window IS the difference, so the
+   window is in the label — a list of three identical "BFCM" lines is not a chooser. */
+function _evtExistingLabel_(g) {
+  var win = (g.startDate || '?') + ' → ' + (g.endDate || '?');
+  return (g.eventName || '(unnamed)') + '  ·  ' + win + '  ·  ' + g.rows.length + ' SKU'
+    + (g.rows.length === 1 ? '' : 's');
+}
+
+function _evtPopulateExistingSelect() {
+  var sel = document.getElementById('event-existing-select');
+  var note = document.getElementById('event-existing-note');
+  if (!sel) return;
+  var groups = _evtExistingEvents_();
+  var prev = sel.value;
+  if (groups === null) {
+    sel.innerHTML = '<option value="">— existing events could not be read —</option>';
+    sel.disabled = true;
+    if (note) { note.textContent = 'The persisted events for this scope are not loaded, so this builder cannot tell a new event from an existing one. Close and reopen once the data has loaded.'; note.hidden = false; }
+    return;
+  }
+  sel.disabled = false;
+  var opts = ['<option value="">+ New event</option>'];
+  groups.forEach(function (g) {
+    opts.push('<option value="' + String(g.campaignId).replace(/"/g, '&quot;') + '">'
+      + _evtExistingLabel_(g).replace(/</g, '&lt;') + '</option>');
+  });
+  sel.innerHTML = opts.join('');
+  if (prev && groups.some(function (g) { return g.campaignId === prev; })) sel.value = prev;
+  else if (prev) { sel.value = ''; _evtClearEditing_(); }
+  if (note) {
+    note.hidden = groups.length > 0 ? false : true;
+    note.textContent = groups.length
+      ? (groups.length + ' existing event window' + (groups.length === 1 ? '' : 's') + ' in this scope and year. Selecting one loads its saved values; the same SKU may have more than one window.')
+      : '';
+  }
+}
+
+function _evtOnExistingChange() {
+  var sel = document.getElementById('event-existing-select');
+  var id = sel ? sel.value : '';
+  if (!id) { _evtClearEditing_(); return; }
+  _evtHydrateExisting_(id);
+}
+
+/* Back to composing a NEW event. The window and rows are cleared because they belonged to the event
+   that is no longer selected — leaving them would be the blank-form defect in reverse. */
+function _evtClearEditing_() {
+  _evtEditing_ = null;
+  var sd = document.getElementById('event-start-date'); if (sd) sd.value = '';
+  var ed = document.getElementById('event-end-date'); if (ed) ed.value = '';
+  var rows = document.getElementById('event-sku-rows'); if (rows) rows.innerHTML = '';
+  _evtAddSingleRow();
+  _evtSetEditingChrome_();
+}
+
+/* The modal says which of the two things it is doing. A form that looks identical whether it will
+   create or overwrite is how an operator overwrites without meaning to. */
+function _evtSetEditingChrome_() {
+  var on = _evtEditingActive_();
+  var banner = document.getElementById('event-editing-banner');
+  if (banner) {
+    banner.hidden = !on;
+    banner.textContent = on
+      ? ('Editing the saved event ' + (_evtEditing_.eventName || '') + ' (' + (_evtEditing_.startDate || '?')
+         + ' → ' + (_evtEditing_.endDate || '?') + '). Its campaign and forecast ids are preserved; the window and scope cannot be changed here — a different window is a different event.')
+      : '';
+  }
+  // The window and scope ARE the identity of the event being edited, so they are read-only while one
+  // is loaded. Changing them would ask the server to repoint a campaign, which it refuses anyway.
+  ['event-start-date', 'event-end-date', 'event-country', 'event-marketplace', 'event-target-year',
+   'event-name-input'].forEach(function (id) {
+    var el = document.getElementById(id); if (el) { el.disabled = on; }
+  });
+}
+
+/* Load one persisted event into the form: its window, its label, and one row per saved SKU carrying
+   the saved deal price, discount and forecast quantity — plus the three canonical ids and the version
+   token each row's save must quote. */
+function _evtHydrateExisting_(campaignId) {
+  var groups = _evtExistingEvents_();
+  if (!Array.isArray(groups)) { _evtClearEditing_(); return; }
+  var g = groups.filter(function (x) { return x.campaignId === campaignId; })[0];
+  if (!g) { _evtClearEditing_(); return; }
+
+  var camp = _evtCampaignRows_().filter(function (c) {
+    return _trStrTok_(c.campaignId || (c.raw && c.raw.campaign_id) || c.campaign_id) === campaignId;
+  })[0] || null;
+  var campRaw = (camp && (camp.raw || camp)) || null;
+  var lines = _evtCampaignLineRows_().filter(function (l) {
+    var lr = l.raw || l;
+    return _trStrTok_(lr.campaign_id || l.campaignId) === campaignId;
+  });
+  function lineById(id) {
+    return lines.filter(function (l) {
+      var lr = l.raw || l;
+      return _trStrTok_(lr.campaign_sku_line_id || l.campaignSkuLineId) === _trStrTok_(id);
+    })[0] || null;
+  }
+
+  _evtEditing_ = {
+    campaignId: campaignId,
+    campaignVersion: campRaw ? _cmpFingerprint_(campRaw) : '',
+    campaignKnown: !!campRaw,
+    eventName: g.eventName, startDate: g.startDate, endDate: g.endDate, year: g.year,
+    lines: {}
+  };
+
+  var flagEl = document.getElementById('event-name-input');
+  if (flagEl && g.eventName) {
+    var has = Array.prototype.slice.call(flagEl.options).some(function (o) { return o.value === g.eventName; });
+    if (!has) { var o = document.createElement('option'); o.value = g.eventName; o.textContent = g.eventName; flagEl.appendChild(o); }
+    flagEl.value = g.eventName;
+  }
+  var sd = document.getElementById('event-start-date'); if (sd) sd.value = String(g.startDate || '').slice(0, 10);
+  var ed = document.getElementById('event-end-date'); if (ed) ed.value = String(g.endDate || '').slice(0, 10);
+  var yr = document.getElementById('event-target-year'); if (yr && g.year) yr.value = g.year;
+  _evtClearPeriodError();
+
+  // Single-SKU rows are the shape that can carry per-SKU saved values; batch cards cannot.
+  var single = document.querySelector('input[name="event-mode"][value="single"]');
+  if (single) { single.checked = true; _evtSwitchMode(); }
+  var wrap = document.getElementById('event-sku-rows');
+  if (wrap) wrap.innerHTML = '';
+
+  g.rows.forEach(function (r) {
+    var raw = r.raw || {};
+    _evtAddSingleRow();
+    var row = wrap ? wrap.lastElementChild : null;
+    if (!row) return;
+    var sku = _trStrTok_(raw.sku || r.sku);
+    var skuEl = row.querySelector('.evt-sku'); if (skuEl) skuEl.value = sku;
+    _evtApplyRowPricing(row);                       // regular price + currency from pricing_list, as always
+    var lineId = _trStrTok_(raw.campaign_sku_line_id || r.campaignSkuLineId);
+    var line = lineId ? lineById(lineId) : null;
+    var lr = line ? (line.raw || line) : null;
+    if (lr) {
+      var deal = lr.promo_price != null && lr.promo_price !== '' ? lr.promo_price : lr.deal_price;
+      var dEl = row.querySelector('.evt-deal'); if (dEl && deal !== undefined && deal !== null && deal !== '') dEl.value = deal;
+      var pEl = row.querySelector('.evt-disc');
+      if (pEl && lr.discount_percent !== undefined && lr.discount_percent !== null && lr.discount_percent !== '') pEl.value = lr.discount_percent;
+    }
+    // A PERSISTED ZERO IS A VALUE. `|| ''` would blank it and the row would then read as new.
+    var qtyRaw = raw.fc_qty;
+    var qty = (qtyRaw === undefined || qtyRaw === null || qtyRaw === '') ? r.fcQty : qtyRaw;
+    var qEl = row.querySelector('.evt-fc');
+    if (qEl && qty !== undefined && qty !== null && qty !== '') qEl.value = _trNumTok_(qty);
+    row.dataset.eventFcId = _trStrTok_(raw.event_fc_id || r.eventId);
+    row.dataset.campaignSkuLineId = lineId;
+    row.dataset.rowVersion = _seFingerprint_(raw);
+    _evtEditing_.lines[String(sku).toUpperCase()] = {
+      eventFcId: row.dataset.eventFcId,
+      campaignSkuLineId: lineId,
+      rowVersion: row.dataset.rowVersion
+    };
+  });
+  if (wrap && !wrap.children.length) _evtAddSingleRow();
+  _evtUpdateAddRowBtn();
+  _evtSetEditingChrome_();
+}
+
 // ===== Special Event Builder v2 (Single SKU rows / Category-Series group cards) =====
 var EVT_MAX_ROWS = 8;
 var _evtGroups = [];   // batch-mode group cards: { category, series, regularPrice, skus[], dealPrice, fcQty }
@@ -2908,7 +3213,7 @@ function openEventModal() {
   // SECONDARY surface: the Special Event Builder reads campaigns / marketplace_skus / sku_details / pricing_list from
   // the broad cache. In Workspace mode the primary render never loads it, so lazy-load it here (once) before opening.
   // FC-SUMMARY-R1 — see openRegularUpdateModal: refuse visibly, never re-enter.
-  if (_fcPrereqNeeded_()) { showFcModal('fc-mode-select-modal');
+  if (_fcPrereqNeeded_('event')) { showFcModal('fc-mode-select-modal');
     _fcShowPrereqRefusal_({ code: 'FC_PREREQUISITES_MISSING', message: 'builder data is not loaded' }); return; }
   document.getElementById('event-target-year').value = fcTargetYear;
   var flagEl = document.getElementById('event-name-input'); if (flagEl) flagEl.value = 'Normal';
@@ -2939,6 +3244,11 @@ function openEventModal() {
   toggleEventFlagFields();
   _evtBindMsGlobalClose();   // outside-click / Escape closers (bound once)
   _evtCloseAllMs();          // never reopen a stale-open panel
+  // §2 — every open starts as NEW, and the picker is what changes that. The reset above cleared the
+  // form; this clears the SESSION, so a second open can never inherit the previous event's ids.
+  _evtEditing_ = null;
+  _evtSetEditingChrome_();
+  _evtPopulateExistingSelect();
   showFcModal('fc-add-event-modal');
 }
 
@@ -2948,6 +3258,10 @@ function _evtOnScopeChange() {
   _evtPopulateSkuDatalist();
   _evtRefreshSingleRowPrices();
   if (_evtGroups.length) _evtBuildGroups();
+  // A different scope is a different set of existing events. The selection cannot survive it: a
+  // campaign_id from the old scope would be applied to the new one.
+  if (_evtEditingActive_()) _evtClearEditing_();
+  _evtPopulateExistingSelect();
 }
 // Country changed → rebuild the Marketplace(site) options for that country, then re-scope.
 function _evtOnCountryChange() {
@@ -3505,7 +3819,13 @@ function _evtReadSingleRows() {
       regularPrice: (regRaw === '' || regRaw == null) ? null : (parseFloat(regRaw) || 0),
       discountPercent: parseFloat((row.querySelector('.evt-disc') || {}).value),
       dealPrice: parseFloat((row.querySelector('.evt-deal') || {}).value),
-      fcQty: parseInt((row.querySelector('.evt-fc') || {}).value, 10)
+      fcQty: parseInt((row.querySelector('.evt-fc') || {}).value, 10),
+      // §6 — a rehydrated row carries the ids it was loaded WITH, so an edit updates that row rather
+      // than minting a new lineage beside it. A row the operator added by hand carries none, and is
+      // a create.
+      eventFcId: row.dataset.eventFcId || '',
+      campaignSkuLineId: row.dataset.campaignSkuLineId || '',
+      rowVersion: row.dataset.rowVersion || ''
     };
   }).filter(function(r){ return r.sku; });
 }
@@ -3830,7 +4150,8 @@ async function saveEventUpdate() {
       var meta = _fcDeriveSkuMeta(r.sku);
       var disc = isNaN(r.discountPercent) ? (r.regularPrice > 0 ? Math.round((1 - r.dealPrice / r.regularPrice) * 1000) / 10 : 0) : r.discountPercent;
       lines.push({ sku: r.sku, marketplaceSkuId: r.marketplaceSkuId, category: meta.category, series: meta.series,
-        regularPrice: r.regularPrice, dealPrice: r.dealPrice, discountPercent: disc, currency: r.currency, fcQty: r.fcQty });
+        regularPrice: r.regularPrice, dealPrice: r.dealPrice, discountPercent: disc, currency: r.currency, fcQty: r.fcQty,
+        eventFcId: r.eventFcId, campaignSkuLineId: r.campaignSkuLineId, rowVersion: r.rowVersion });
     }
   } else {
     if (!_evtGroups.length) { alert('Build the group cards first.'); return; }
@@ -3866,6 +4187,13 @@ async function saveEventUpdate() {
     major_event_flag: eventFlag, year: targetYear, start_date: eventStartDate, end_date: eventEndDate,
     event_period: eventPeriod, status: 'active', source: 'fc_summary_builder'
   };
+  // §5/§6 — EDITING names the campaign and quotes the version it was loaded at. A NEW save quotes
+  // nothing, which is exactly what makes the server able to refuse it if the window already exists:
+  // a versionless save can never land on a row the operator has not seen.
+  if (_evtEditingActive_()) {
+    campaignPayload.campaign_id = _evtEditing_.campaignId;
+    campaignPayload.expected_row_version = _evtEditing_.campaignVersion;
+  }
 
   // ---- Demo ON → in-memory illustration only ----
   if (demoOn) {
@@ -3906,7 +4234,8 @@ async function saveEventUpdate() {
     // 2) campaign_sku_lines (idempotent per line).
     var linePayloads = lines.map(function(l){
       // price_units = the SAME pricing_list row's currency snapshot (never re-guessed from country at save).
-      return { marketplace_sku_id: l.marketplaceSkuId, sku: l.sku, regular_price: l.regularPrice,
+      return { campaign_sku_line_id: l.campaignSkuLineId || '',
+        marketplace_sku_id: l.marketplaceSkuId, sku: l.sku, regular_price: l.regularPrice,
         deal_price: l.dealPrice, discount_percent: l.discountPercent, price_units: l.currency,
         line_status: 'active', source: 'fc_summary_builder' };
     });
@@ -3919,27 +4248,45 @@ async function saveEventUpdate() {
     //    event_fc_id (canonical PK) — the frontend does NOT fabricate it. Idempotency is the stable
     //    business key campaign_id + campaign_sku_line_id, so a double-click / retry updates the SAME
     //    row (no duplicate) and preserves its event_fc_id.
-    var written = 0;
+    var written = 0, unchangedCount = 0;
     for (var k = 0; k < lines.length; k++) {
       var l = lines[k];
-      var lineId = lineIdBySku[String(l.sku).toUpperCase()] || '';
-      await DB.upsertFcSpecialEvent({
+      var lineId = lineIdBySku[String(l.sku).toUpperCase()] || l.campaignSkuLineId || '';
+      var evPayload = {
         campaign_id: campaignId, campaign_sku_line_id: lineId,
         company: company, country: country, marketplace: mkey, marketplace_id: marketplaceId,
         scope_type: 'sku', scope_id: l.sku, sku: l.sku, series: l.series, category: l.category,
         event_name: eventFlag, event_period: eventPeriod, event_start_date: eventStartDate,
         event_end_date: eventEndDate, event_month: eventMonth, year: targetYear, fc_qty: l.fcQty,
         source: 'campaign_sync', note: 'FC Summary Special Event Builder'
-      });
-      written++;
+      };
+      // §6 — the canonical PK travels with the edit. Omitting it here is what let a re-save of an
+      // existing event reach the create branch on any sheet whose business key had drifted.
+      if (l.eventFcId) evPayload.event_fc_id = l.eventFcId;
+      if (l.rowVersion) evPayload.expected_row_version = l.rowVersion;
+      var evRes = await DB.upsertFcSpecialEvent(evPayload);
+      var evData = (evRes && evRes.data) || evRes || {};
+      if (evData.unchanged) unchangedCount++; else written++;
     }
     _fcWriteEnd_('eventBuilder', FC_WRITE_.SUCCESS);
     _fcReceipt_('Special Event Builder Save', written, null);
     if (!_fcOwns_(_ebEpoch)) { _fcWriteState_['eventBuilder'] = FC_WRITE_.UNMOUNTED; return; }
+    // §3 — A SAVE THAT WROTE NOTHING SAYS SO. Reporting "3 events saved" for three rows the server
+    // recognised as identical is a small lie that makes the zero-write guarantee unverifiable from
+    // the outside, which is most of what makes it worth having.
+    var zeroWrite = (written === 0 && unchangedCount > 0);
     _fcAfterWriteScoped_(FC_SLICE_.EVENTS, function () {
       if (typeof renderFcEventTable === 'function') renderFcEventTable();
       closeFcModal();
-      alert(FC_MSG_.SAVED + ' campaigns: 1 (' + campaignId + ') · campaign_sku_lines: ' + linePayloads.length + ' · fc_special_events: ' + written + ' (linked by campaign_id / campaign_sku_line_id).');
+      if (zeroWrite) {
+        alert('Nothing to save — every value already matches what is stored. '
+          + unchangedCount + ' event(s) unchanged; no rows were written.');
+        return;
+      }
+      alert(FC_MSG_.SAVED + ' campaigns: 1 (' + campaignId + ') · campaign_sku_lines: ' + linePayloads.length
+        + ' · fc_special_events: ' + written
+        + (unchangedCount ? (' (' + unchangedCount + ' unchanged, not written)') : '')
+        + ' (linked by campaign_id / campaign_sku_line_id).');
     });
   } catch (e) {
     _fcBuilderFailure_(e, _ebEpoch);
@@ -4387,9 +4734,29 @@ function _fcGetMarketplaces() {
 // normalizer the broad getters use → every modal fact + the Event Assist calc inputs stay BEFORE==AFTER. The
 // PRIMARY render never depends on this. Loaded once per page; _fcResetSecondaryCache() (called on any FC write)
 // forces the next modal open to re-read fresh. Legacy/unconfigured → the getters degrade exactly as before.
-var _FC_SECONDARY_TABLES = ['sku_details', 'marketplace_skus', 'campaigns', 'pricing_list', 'fc_regular_forecast', 'fc_special_events', 'marketplaces'];
+// FC-SUMMARY-R2B-A3-R1 §7 — THE TWO BUILDERS DO NOT NEED THE SAME SEVEN TABLES.
+//
+// One list served both paths, so choosing Regular Forecast read `campaigns`, `pricing_list` and
+// `fc_special_events` that the Regular builder never opens, and choosing Special Events read
+// `fc_regular_forecast` that it does not either. Splitting the list is what makes the prefetch
+// honest: the round asked for the SELECTED path's prerequisites, not for both under one name.
+//
+// campaign_sku_lines is new here and is not an optimisation: rehydrating an existing event needs the
+// per-line deal price and discount, and that table is where they live. It rides the Special Event
+// path only. The Regular path's list got shorter, not longer.
+var _FC_PREREQ_TABLES_ = {
+  regular: ['sku_details', 'marketplace_skus', 'marketplaces', 'fc_regular_forecast'],
+  event: ['sku_details', 'marketplace_skus', 'marketplaces', 'campaigns', 'campaign_sku_lines',
+          'pricing_list', 'fc_special_events']
+};
+// The union, kept as the reset surface and as the CSV-import/Event-Assist fallback list. Nothing
+// loads it as a unit any more.
+var _FC_SECONDARY_TABLES = ['sku_details', 'marketplace_skus', 'campaigns', 'campaign_sku_lines', 'pricing_list', 'fc_regular_forecast', 'fc_special_events', 'marketplaces'];
 var _fcSecondaryLoaded = false;
-function _fcResetSecondaryCache() { _fcSecondaryLoaded = false; }
+/* Which BUILDER PATHS this page has loaded prerequisites for, in this session. Page-local on purpose:
+   it answers "did I load this", which is the only question the latch can answer honestly. */
+var _fcPrereqLoadedPaths_ = {};
+function _fcResetSecondaryCache() { _fcSecondaryLoaded = false; _fcPrereqLoadedPaths_ = {}; }
 // FC-SUMMARY-R1 — `_fcEnsureBroadCacheThen` was REMOVED, not kept beside its replacement. Its
 // `.catch(done)` swallowed the failure and re-entered the opener, which re-entered the loader, with
 // nothing on screen: a silent unbounded retry. `_fcLoadPrerequisites_` keeps the same seven-read
@@ -4896,25 +5263,52 @@ function _fcRefreshViewNow_(failText, state) {
 /* PREREQUISITES. The seven-read contract is UNCHANGED in this round; this only makes it visible,
    single-flight and refusable. The old shape swallowed the error into `.catch(done)` and re-entered the
    opener, which on a persistent failure retried forever with nothing on screen. */
-function _fcPrereqNeeded_() { return !!(_fcEffectiveWorkspace() && !window._opDbCache); }
-function _fcLoadPrerequisites_() {
-  if (_fcPrereqFlight_) return _fcPrereqFlight_;          // extra clicks attach; they issue nothing
+function _fcPrereqPath_(mode) { return mode === 'event' ? 'event' : 'regular'; }
+function _fcPrereqNeeded_(mode) {
+  if (!_fcEffectiveWorkspace()) return false;
+  return !_fcPrereqLoadedPaths_[_fcPrereqPath_(mode)];
+}
+/* ONE in-flight promise PER PATH. Per-path rather than global because the two lists differ: a
+   Regular load that is already in flight does not satisfy a Special Event open, and attaching the
+   second to the first would have the builder open over tables nobody fetched. Within a path the
+   latch is exactly what it was — extra clicks attach and issue nothing. */
+var _fcPrereqFlightByPath_ = {};
+function _fcLoadPrerequisites_(mode) {
+  var p = _fcPrereqPath_(mode);
+  if (_fcPrereqFlightByPath_[p]) return _fcPrereqFlightByPath_[p];
+  if (_fcPrereqLoadedPaths_[p]) return Promise.resolve();  // already in memory and still valid
   var rc = (window.KM && window.KM.DB && typeof window.KM.DB.refreshCacheTables === 'function')
     ? window.KM.DB.refreshCacheTables : null;
   if (!rc) return Promise.resolve();                       // legacy/unconfigured → getters degrade as before
   _fcPrereqState_ = FC_PREREQ_.LOADING;
   _fcPrereqLoads_++;
   _fcMeta_.prereqStart = Date.now(); _fcMeta_.prereqEnd = null;
-  _fcPrereqFlight_ = Promise.resolve(rc(_FC_SECONDARY_TABLES)).then(function (v) {
-    _fcMeta_.prereqEnd = Date.now(); _fcPrereqFlight_ = null;
+  var flight = Promise.resolve(rc(_FC_PREREQ_TABLES_[p])).then(function (v) {
+    _fcMeta_.prereqEnd = Date.now(); _fcPrereqFlightByPath_[p] = null; _fcPrereqFlight_ = null;
+    _fcPrereqLoadedPaths_[p] = true;
     _fcSecondaryLoaded = true; _fcPrereqState_ = FC_PREREQ_.READY;
     return v;
   }, function (err) {
-    _fcMeta_.prereqEnd = Date.now(); _fcPrereqFlight_ = null;
+    // The latch is released on failure, so Retry issues a NEW request instead of re-awaiting a
+    // promise that has already rejected. Nothing is swallowed into a silent re-entry.
+    _fcMeta_.prereqEnd = Date.now(); _fcPrereqFlightByPath_[p] = null; _fcPrereqFlight_ = null;
     _fcPrereqState_ = FC_PREREQ_.REFUSED;
-    throw err;                                             // never swallowed into a silent re-entry
+    throw err;
   });
-  return _fcPrereqFlight_;
+  _fcPrereqFlightByPath_[p] = flight;
+  _fcPrereqFlight_ = flight;      // kept for the existing diagnostics that read the single latch
+  return flight;
+}
+
+/* §7 — THE PREFETCH. It starts when the operator chooses a card, and it is the SAME single-flight the
+   first Next then attaches to, so Next issues no second request. It draws nothing, blocks nothing and
+   schedules nothing: a failure here is recorded by the loader and surfaced only when Next asks, which
+   is the first moment an operator is waiting on an answer. A prefetch that nobody awaits must not
+   raise an unhandled rejection either, hence the terminal no-op catch. */
+function _fcOnModeSelected_(mode) {
+  var p = _fcPrereqPath_(mode);
+  if (!_fcPrereqNeeded_(p)) return;
+  try { _fcLoadPrerequisites_(p).catch(function () {}); } catch (e) {}
 }
 function _fcNextBtn_() { return (typeof document === 'undefined') ? null : document.getElementById('fc-mode-next-btn'); }
 function _fcSetNextBusy_(on) {
@@ -5069,6 +5463,26 @@ function _fcZeroWriteRefusal_(ctl, err) {
  * means THAT stage wrote nothing, and because the sequence stops at the first refusal, no later stage ran
  * either. `_fcEbCommitted_` carries what HAS already committed, so the operator is told exactly what exists
  * instead of being handed "the result could not be confirmed" and left to guess. */
+/* §4/§5 — the two refusals an operator can actually act on, and the action is not "try again". A
+   versionless save that landed on an existing window means the event is already there: the answer is
+   to select it in the picker, which loads what is stored. A version mismatch means somebody else
+   saved first: the answer is to reload. Both are proven zero-writes, so nothing needs reconciling. */
+function _fcEventRefusalAdvice_(code) {
+  if (code === 'STALE_CAMPAIGN_VERSION' || code === 'STALE_SPECIAL_EVENT_VERSION') {
+    return '\n\nThis event already exists, or it changed after this form was loaded. Nothing was'
+      + ' written and your entries are intact. Close this dialog, reopen it, and pick the event from'
+      + ' "New or existing event" — that loads the values that are actually stored.';
+  }
+  if (code === 'DUPLICATE_CAMPAIGN_IDENTITY' || code === 'DUPLICATE_TARGET_RULE_IDENTITY') {
+    return '\n\nTwo stored rows already share this identity, so no save can tell them apart. Nothing'
+      + ' was written. The duplicate has to be resolved in the data before this event can be saved.';
+  }
+  if (code === 'CAMPAIGN_IDENTITY_MISMATCH') {
+    return '\n\nA campaign\'s scope, year and event window are its identity and are never repointed.'
+      + ' Nothing was written. To move an event to a different window, create it as its own event.';
+  }
+  return '';
+}
 function _fcBuilderFailure_(e, epoch) {
   var proven = _fcZeroWriteProven_(e);
   var stage = _fcEbStage_ || 'the campaign write';
@@ -5078,8 +5492,10 @@ function _fcBuilderFailure_(e, epoch) {
     ? ' The earlier stage(s) ' + _fcEbCommitted_.join(' + ') + ' were already committed and still need reconciling.'
     : ' Nothing had been committed by an earlier stage.';
   var _st = proven ? FC_RETRY_.REFUSED_ZERO : FC_RETRY_.UNKNOWN_WRITE;
+  var rawCode = (e && e.message) ? String(e.message).trim() : '';
   var msg = proven
-    ? (FC_MSG_.REFUSED_ZERO + (_fcCanonicalCode_(e) || _fcErrDetail_(e, _st)) + ' - refused at ' + stage + '.' + committed)
+    ? (FC_MSG_.REFUSED_ZERO + (_fcCanonicalCode_(e) || _fcErrDetail_(e, _st)) + ' - refused at ' + stage + '.'
+       + committed + _fcEventRefusalAdvice_(rawCode))
     : (FC_MSG_.UNKNOWN + '\n\nSpecial Event Save stopped at ' + stage + ': ' + _fcErrDetail_(e, _st) + '.' + committed);
   alert(msg);
   _fcShowBanner_(msg, _fcRetryLabel_(_st), function () { _fcRefreshViewNow_(FC_MSG_.READ_FAILED, _st); });
@@ -5188,6 +5604,19 @@ function _getDbFcEventData() {
         return {
             eventId: r.eventId || raw.event_fc_id || raw.event_id || '',   // canonical PK (event_fc_id)
             campaignId: r.campaignId || raw.campaign_id || '',             // REQUIRED by the write authority
+            // R2B-A3-R1 — the campaign SKU line is the OTHER half of the canonical identity, and the
+            // window is what distinguishes two events that share a name in one year. Both were being
+            // dropped here, which is why the page could only ever key an event by its label.
+            campaignSkuLineId: raw.campaign_sku_line_id || '',
+            marketplaceId: raw.marketplace_id || '',
+            startDate: raw.event_start_date || '',
+            endDate: raw.event_end_date || '',
+            eventMonth: raw.event_month || '',
+            scopeType: raw.scope_type || '',
+            scopeId: raw.scope_id || '',
+            note: raw.note || '',
+            rowVersion: _seFingerprint_(raw),   // §5 — the token this row's next save must carry
+            raw: raw,
             sku: r.sku,
             year: raw.year || r.year || '',
             company: r.company,

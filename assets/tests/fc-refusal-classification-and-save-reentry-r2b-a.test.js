@@ -75,6 +75,9 @@ function mutate(src, from, to) {
 // ---- THE SHARED AUTHORITY, taken from the adapter source rather than re-typed here -----------------
 // If this page's idea of a proven zero write and the adapter's ever diverge, that divergence is the bug
 // this suite must see. So the suite runs the adapter's REAL function as the page's collaborator.
+// R2B-A3-R1 — the rule now recognises the typed zero-write tokens as well as the PRODUCTION_SAFETY
+// prefix, and the list lives INSIDE the function precisely so that lifting the function by name,
+// the way this suite does, still gets the whole rule.
 var ZERO_WRITE_SRC = extractFn(DBAPI, '_kmZeroWriteProven_');
 var CANON_SRC = extractFn(DBAPI, '_kmExtractCanonicalCode_');
 var CANON_LIST = extractVar(DBAPI, 'KM_CANONICAL_CODES');
@@ -85,7 +88,8 @@ var VARS = ['FC_PREREQ_', 'FC_WRITE_', 'FC_VIEW_', 'FC_MSG_',
   'FC_RETRY_', 'FC_RETRY_LABEL_',
   // INCIDENT-BOOT-FC-R1 §4D — the stage vocabulary the refusal banner names.
   'FC_STAGE_', 'FC_UNREADABLE_CODES_',
-  '_fcPrereqState_', '_fcPrereqFlight_',
+  '_fcPrereqState_', '_fcPrereqFlight_', '_FC_PREREQ_TABLES_', '_fcPrereqLoadedPaths_',
+  '_fcPrereqFlightByPath_',
   '_fcPrereqLoads_', '_fcPrereqTransition_', '_fcWriteState_', '_fcWriteFlight_', '_fcViewState_',
   '_fcReadbackFlight_', '_fcReadbackLoads_', '_fcLastReceipt_', '_fcEbStage_', '_fcEbCommitted_', '_fcMeta_'];
 var FNS = ['_fcEpoch_', '_fcOwns_', '_fcMetricsSnapshot_',
@@ -94,7 +98,8 @@ var FNS = ['_fcEpoch_', '_fcOwns_', '_fcMetricsSnapshot_',
   '_fcShowBanner_', '_fcRerenderTables_', '_fcRefreshViewNow_', '_fcWriteBegin_', '_fcWriteEnd_',
   '_fcClassifyWrite_', '_fcSummaryOf_', '_fcCountsLine_', '_fcReceipt_', '_fcRefusalText_',
   '_fcUnknownOutcome_', '_fcSettleWrite_', '_fcZeroWriteProven_', '_fcCanonicalCode_',
-  '_fcZeroWriteRefusal_', '_fcBuilderFailure_', '_fcFailWrite_', '_fcErrDetail_', '_fcEffectiveWorkspace',
+  '_fcZeroWriteRefusal_', '_fcEventRefusalAdvice_', '_fcBuilderFailure_', '_fcFailWrite_',
+  '_fcErrDetail_', '_fcEffectiveWorkspace',
   // §5 — the edit-mode entry/exit pair for both tables
   '_fcEditCounts', '_fcUpdateEditStatus', '_fcSetEditLock', '_fcSetSaveEnabled', 'confirmFcEdit',
   'exitEditMode', '_fcEventCounts', '_fcEventUpdateStatus', '_fcEventSetEditLock',

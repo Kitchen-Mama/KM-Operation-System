@@ -48,11 +48,16 @@ function extractVar(src, name) {
 var ADAPTER_FNS = ['prodSafetyBundle_', 'prodExpectedDbId_', 'prodSchemaError_', 'prodAssertDbTarget_',
   'prodRequireSheet_', 'prodRequireColumns_'];
 var G14_VARS = ['FC_SPECIAL_EVENTS_HEADERS_', 'FC_SCHEMA_ORDERED_', 'FC_SCHEMA_BY_NAME_', 'FC_SCHEMA_BY_NAME_TABLES_'];
+var G14_VARS_A3 = ['FC_SE_FINGERPRINT_FIELDS_', 'FC_SE_FINGERPRINT_NUMERIC_'];
 var G14_FNS = ['fcWriteSchemaByNameApproved_', 'fcWriteTimestamp_', 'fcWriteEnsureSheet_', 'fcWriteEnsureColumns_',
   'fcWriteReadSheet_', 'fcWriteAppendByHeader_', 'fcWriteUpsert_', 'fcEvtUp_', 'fcSpecialEventFindRowByKey_',
-  'fcSpecialEventUpsert_'];
-var G20_VARS = ['CAMPAIGNS_HEADERS_', 'CAMPAIGN_SKU_LINES_HEADERS_'];
-var G20_FNS = ['campaignUpper_', 'campaignFindByKey_', 'campaignLineFindByKey_',
+  'fcSeNum_', 'fcSeFingerprint_', 'fcSeRowAt_', 'fcSeReceiptFor_', 'fcSpecialEventUpsert_'];
+var G20_VARS = ['CAMPAIGNS_HEADERS_', 'CAMPAIGN_SKU_LINES_HEADERS_', 'CAMPAIGN_KEY_FIELDS_',
+  'CAMPAIGN_LOCK_MS_', 'CAMPAIGN_FINGERPRINT_FIELDS_', 'CAMPAIGN_FINGERPRINT_NUMERIC_',
+  'CAMPAIGN_LINE_FINGERPRINT_FIELDS_', 'CAMPAIGN_LINE_FINGERPRINT_NUMERIC_'];
+var G20_FNS = ['campaignUpper_', 'campaignDateKey_', 'campaignNum_', 'campaignKeyOf_',
+  'campaignFingerprint_', 'campaignIndexRows_', 'campaignReceiptFor_', 'campaignFindByKey_',
+  'campaignLineFindByKey_', 'campaignLineIndexRows_', 'campaignLineFingerprint_',
   'handleUpsertCampaign_', 'handleUpsertCampaignSkuLines_'];
 
 // =================================================================================================
@@ -159,6 +164,7 @@ function build(mutate) {
   var pieces = [];
   ADAPTER_FNS.forEach(function (n) { pieces.push(extractFn(srcAdapter, n)); });
   G14_VARS.forEach(function (n) { pieces.push(extractVar(src14, n)); });
+  G14_VARS_A3.forEach(function (n) { pieces.push(extractVar(src14, n)); });
   G14_FNS.forEach(function (n) { pieces.push(extractFn(src14, n)); });
   G20_VARS.forEach(function (n) { pieces.push(extractVar(src20, n)); });
   G20_FNS.forEach(function (n) { pieces.push(extractFn(src20, n)); });
@@ -173,6 +179,8 @@ function build(mutate) {
       formatDate: function () { return '2026-09-18 12:00:00'; }
     },
     Session: { getScriptTimeZone: function () { return 'UTC'; } },
+    LockService: { getScriptLock: function () { return { tryLock: function () { return true; },
+      releaseLock: function () {} }; } },
     jsonResponse_: function (o) { return o; },
     SpreadsheetApp: { getActiveSpreadsheet: function () { return ctx.__ss; } },
     __ss: null,
@@ -367,11 +375,20 @@ section('D. NO EXISTING DATA IS MOVED OR REINTERPRETED');
   eq(sheet.__setCells.length, 0, 'D3 a CREATE touched no existing cell');
 })();
 
-// An UPDATE must rewrite only the named columns of the matched row, and never the header.
+// R2B-A3-R1 — AN UPDATE NOW CARRIES THE VERSION IT WAS COMPOSED AGAINST. This block used to prove
+// that an id-addressed save rewrites the row it names; it still does, but a save that names a row
+// WITHOUT saying which version of it the operator saw is exactly the blind overwrite §5 removes, so
+// the payload carries expected_row_version and the refusal is asserted right after.
+function campaignVersionOf(ss, id) {
+  var sheet = ss.__sheet('campaigns');
+  var hit = CTX.campaignIndexRows_(CTX.fcWriteReadSheet_(sheet)).filter(function (r) { return r.id === id; });
+  return hit.length === 1 ? hit[0].fingerprint : null;
+}
 (function () {
   var ss = makeSs(liveDb()); CTX.__use(ss);
   var res = CTX.handleUpsertCampaign_({ campaign_id: 'CMP-EXISTING1', campaign_name: 'BFCM 2026',
-    status: 'closed', actor: 'r2ba-test' });
+    status: 'closed', actor: 'r2ba-test',
+    expected_row_version: campaignVersionOf(ss, 'CMP-EXISTING1') });
   var sheet = ss.__sheet('campaigns');
   ok(res.success === true && res.data.created === false, 'D4 an existing campaign_id updates in place, no duplicate');
   eq(sheet.__appended.length, 0, 'D5 nothing was appended');
@@ -383,6 +400,43 @@ section('D. NO EXISTING DATA IS MOVED OR REINTERPRETED');
     'D8 `company` at live index 23 still reads ResUS — no shear');
   eq(sheet.__values[1][LIVE.campaigns.indexOf('created_by')], 'fc-summary',
     'D9 created_by is never overwritten on an update');
+})();
+
+// R2B-A3-R1 §5 — the same save with NO version is refused, and refused BEFORE it writes anything.
+(function () {
+  var ss = makeSs(liveDb()); CTX.__use(ss);
+  var res = CTX.handleUpsertCampaign_({ campaign_id: 'CMP-EXISTING1', campaign_name: 'BFCM 2026',
+    status: 'closed', actor: 'r2ba-test' });
+  var sheet = ss.__sheet('campaigns');
+  ok(res.success === false && res.error === 'STALE_CAMPAIGN_VERSION',
+    'D10 an update carrying no expected_row_version is refused with a typed token');
+  eq(sheet.__setCells.length, 0, 'D11 and the refusal is a PROVEN zero-write — not one cell was touched');
+  eq(sheet.__appended.length, 0, 'D12 nor was a second row appended beside it');
+})();
+
+// A version that does not match the stored row is the concurrent-edit case, and it loses.
+(function () {
+  var ss = makeSs(liveDb()); CTX.__use(ss);
+  var res = CTX.handleUpsertCampaign_({ campaign_id: 'CMP-EXISTING1', campaign_name: 'RENAMED',
+    actor: 'r2ba-test', expected_row_version: 'a-version-that-was-never-issued' });
+  var sheet = ss.__sheet('campaigns');
+  ok(res.success === false && res.error === 'STALE_CAMPAIGN_VERSION',
+    'D13 a stale expected_row_version is refused');
+  ok(res.current_row_version === campaignVersionOf(ss, 'CMP-EXISTING1'),
+    'D14 and the refusal hands back the CURRENT version, so the page can reload rather than guess');
+  eq(sheet.__setCells.length, 0, 'D15 zero cells written');
+})();
+
+// §3 — re-saving the values the row already holds writes nothing at all, not even updated_at.
+(function () {
+  var ss = makeSs(liveDb()); CTX.__use(ss);
+  var res = CTX.handleUpsertCampaign_({ campaign_id: 'CMP-EXISTING1', campaign_name: 'BFCM 2026',
+    status: 'active', actor: 'r2ba-test',
+    expected_row_version: campaignVersionOf(ss, 'CMP-EXISTING1') });
+  var sheet = ss.__sheet('campaigns');
+  ok(res.success === true && res.data.unchanged === true,
+    'D16 an unchanged re-save reports unchanged, not a write');
+  eq(sheet.__setCells.length, 0, 'D17 and updated_at is NOT touched — the row keeps its real history');
 })();
 
 // =================================================================================================

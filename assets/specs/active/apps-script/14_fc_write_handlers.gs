@@ -31,7 +31,7 @@
 // An OLD 14_ beside the new page is the dangerous pairing, and it is silent: the page would send
 // expected_row_version and the old handler would IGNORE it — accepting every stale write it was added
 // to refuse, while returning success. Only a declared build separates those two deployments.
-var FCW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R13';
+var FCW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R15';
 
 // fc_special_events header. event_name / event_month / fc_qty are the task-defined columns;
 // event_period + year are additional UI-continuity columns (FC Summary Event table shows/filters them).
@@ -294,6 +294,89 @@ function fcSpecialEventFindRowByKey_(s, body) {
   return -1;
 }
 
+// ==============================================================================================
+// FC-SUMMARY-R2B-A3-R1 §5 — THE SPECIAL EVENT VERSION TOKEN.
+//
+// fc_target_rules has carried an optimistic-concurrency token since R2B-A2-R5-F5 and fc_special_events
+// has not, so two operators editing the same event's fc_qty resolved last-write-wins and the loser's
+// number vanished with a success message. The mechanism is not re-invented here: it is the SAME
+// content fingerprint, for the same reasons set out at FC_TR_FINGERPRINT_FIELDS_ — no clock, no
+// timezone, no precision assumption, and computed identically from a sheet row and from a workspace
+// JSON row.
+//
+// WHAT IS IN IT, AND WHAT IS DELIBERATELY NOT.
+//
+//   · event_fc_id is excluded: it identifies the row, it does not describe it.
+//   · the audit columns are excluded: they are set BY the write, so a token carrying them would be
+//     stale the moment it was issued.
+//   · event_start_date and event_end_date are excluded, and this is the one exclusion that is not
+//     obvious. They are a snapshot of the campaign's window, which is the CAMPAIGN's identity (see
+//     20_ CAMPAIGN_KEY_FIELDS_): an operator cannot edit them here, because changing the window names
+//     a different campaign. They are also the two columns that cannot survive the round trip — a
+//     sheet Date read server-side as the local calendar day 2027-11-24 reaches the client as the ISO
+//     instant 2027-11-23T16:00:00Z, and a version check that fails for a timezone reason is worse
+//     than no version check at all, because it teaches operators to click past it.
+// ==============================================================================================
+var FC_SE_FINGERPRINT_FIELDS_ = ['campaign_id', 'campaign_sku_line_id', 'company', 'country',
+  'marketplace', 'marketplace_id', 'scope_type', 'scope_id', 'sku', 'series', 'category',
+  'event_name', 'event_period', 'event_month', 'year', 'fc_qty', 'note'];
+var FC_SE_FINGERPRINT_NUMERIC_ = ['event_month', 'year', 'fc_qty'];
+
+/** Numeric normalisation: '' stays '', 3000 and '3000' and '3000.0' all become '3000'. */
+function fcSeNum_(v) {
+  var t = String(v == null ? '' : v).trim();
+  if (t === '') return '';
+  var n = Number(t);
+  return isFinite(n) ? String(n) : t;
+}
+
+/** The row's content fingerprint. Identical for a sheet row and a workspace JSON row. */
+function fcSeFingerprint_(o) {
+  o = o || {};
+  var parts = [];
+  for (var i = 0; i < FC_SE_FINGERPRINT_FIELDS_.length; i++) {
+    var f = FC_SE_FINGERPRINT_FIELDS_[i];
+    parts.push(FC_SE_FINGERPRINT_NUMERIC_.indexOf(f) !== -1 ? fcSeNum_(o[f]) : String(o[f] == null ? '' : o[f]).trim());
+  }
+  return parts.join('|');
+}
+
+/** One existing row as { rowNumber, id, fingerprint, updated_at, row }. */
+function fcSeRowAt_(s, rowNumber) {
+  var r = s.rows[rowNumber - 1];
+  if (!r) return null;
+  var obj = {};
+  for (var h = 0; h < s.headers.length; h++) { if (s.headers[h]) obj[s.headers[h]] = r[h]; }
+  var iId = s.col('event_fc_id');
+  return {
+    rowNumber: rowNumber,
+    id: String(iId === -1 ? '' : (r[iId] == null ? '' : r[iId])).trim(),
+    fingerprint: fcSeFingerprint_(obj),
+    updated_at: String(obj.updated_at == null ? '' : obj.updated_at).trim(),
+    row: obj
+  };
+}
+
+/** The complete canonical row, read back FROM THE SHEET after the write — never composed from the
+    request, so the receipt cannot claim a value the sheet does not hold. */
+function fcSeReceiptFor_(sheet, eventFcId) {
+  var s2 = fcWriteReadSheet_(sheet);
+  var iId = s2.col('event_fc_id');
+  if (iId === -1) return null;
+  for (var i = 1; i < s2.rows.length; i++) {
+    if (fcEvtUp_(s2.rows[i][iId]) !== fcEvtUp_(eventFcId)) continue;
+    var hit = fcSeRowAt_(s2, i + 1);
+    var out = {};
+    FC_SPECIAL_EVENTS_HEADERS_.forEach(function (h) {
+      var v = hit.row[h];
+      out[h] = (v === undefined || v === null) ? '' : (v instanceof Date ? v.toISOString() : v);
+    });
+    out.row_version = hit.fingerprint;
+    return out;
+  }
+  return null;
+}
+
 /**
  * Upsert one fc_special_events row keyed on the canonical `event_fc_id` PK. Resolution order:
  *   1. explicit body.event_fc_id → that row;
@@ -301,8 +384,14 @@ function fcSpecialEventFindRowByKey_(s, body) {
  *   3. else CREATE a new row.
  * On CREATE, and on UPDATE of a row whose event_fc_id is blank (legacy), a NEW backend id
  * `EFC-<12-hex>` is generated and written (inline per-row — this is the row being saved, not a batch
- * backfill). On UPDATE, an existing non-blank event_fc_id is PRESERVED (never regenerated). Returns
- * { event_fc_id, created }.
+ * backfill). On UPDATE, an existing non-blank event_fc_id is PRESERVED (never regenerated).
+ *
+ * R2B-A3-R1 — an UPDATE additionally requires body.expected_row_version, the fingerprint observed when
+ * the row was read. A save composed as a NEW event carries none and therefore cannot land on a row the
+ * operator has never seen; a save whose values already equal the stored ones writes NOTHING.
+ *
+ * Returns { event_fc_id, created, unchanged, row_version, row } on success, or { refusal: {error,
+ * detail, ...} } — a typed, zero-write refusal the callers turn into success:false.
  */
 function fcSpecialEventUpsert_(ss, body, actor) {
   var headers = FC_SPECIAL_EVENTS_HEADERS_;
@@ -318,6 +407,12 @@ function fcSpecialEventUpsert_(ss, body, actor) {
   if (explicitId) {
     for (var i = 1; i < s.rows.length; i++) { if (fcEvtUp_(s.rows[i][iId]) === fcEvtUp_(explicitId)) { targetRow = i + 1; break; } }
   }
+  if (explicitId && targetRow === -1) {
+    // An id that names no row is not a create request. Minting a second row under the id the caller
+    // believed it was updating is how one event becomes two.
+    return { refusal: { error: 'SPECIAL_EVENT_NOT_FOUND',
+      detail: 'No special event carries event_fc_id ' + explicitId + '. Nothing was written.' } };
+  }
   if (targetRow === -1) targetRow = fcSpecialEventFindRowByKey_(s, body);
 
   function genId() { return 'EFC-' + Utilities.getUuid().substring(0, 12).toUpperCase(); }
@@ -330,8 +425,45 @@ function fcSpecialEventUpsert_(ss, body, actor) {
     headers.forEach(function (h) { if (body.hasOwnProperty(h) && h !== 'event_fc_id') createObj[h] = body[h]; });
     createObj.created_by = actor; createObj.created_at = now; createObj.updated_by = actor; createObj.updated_at = now;
     fcWriteAppendByHeader_(sheet, createObj);
-    return { event_fc_id: id, created: true };
+    return { event_fc_id: id, created: true, unchanged: false,
+      row_version: fcSeFingerprint_(createObj), row: fcSeReceiptFor_(sheet, id) };
   }
+
+  // ---- THE VERSION GATE. After the row is located, before anything is written. -------------------
+  var prior = fcSeRowAt_(s, targetRow);
+  var expectedVersion = String(body.expected_row_version == null ? '' : body.expected_row_version).trim();
+  if (!expectedVersion) {
+    // A NEW-EVENT SAVE MAY NOT SILENTLY BECOME AN UPDATE — the same rule, and the same sentence, that
+    // handleUpsertFcTargetRule_ already applies to a rule. The builder composes a versionless save
+    // only when
+    // its read model held no match, so arriving here means the model was stale.
+    return { refusal: { error: 'STALE_SPECIAL_EVENT_VERSION',
+      detail: 'A special event already exists for this campaign line (event_fc_id ' + (prior.id || '(blank)')
+        + '). This save carries no expected version and cannot be applied over one. Load the latest data and re-enter the change. Nothing was written.',
+      event_fc_id: prior.id,
+      current_row_version: prior.fingerprint } };
+  }
+  if (expectedVersion !== prior.fingerprint) {
+    return { refusal: { error: 'STALE_SPECIAL_EVENT_VERSION',
+      detail: 'This special event changed after it was loaded. Load the latest data and re-enter the change. Nothing was written.',
+      event_fc_id: prior.id,
+      current_row_version: prior.fingerprint,
+      expected_row_version: expectedVersion,
+      current_updated_at: prior.updated_at,
+      current: fcSeReceiptFor_(sheet, prior.id) } };
+  }
+
+  // ---- UNCHANGED. A save that would write the values already stored writes nothing — not even
+  // updated_at. Opening an event and pressing Save must not rewrite its history. -------------------
+  var incoming = {};
+  FC_SE_FINGERPRINT_FIELDS_.forEach(function (f) {
+    incoming[f] = Object.prototype.hasOwnProperty.call(body, f) ? body[f] : prior.row[f];
+  });
+  if (prior.id && fcSeFingerprint_(incoming) === prior.fingerprint) {
+    return { event_fc_id: prior.id, created: false, unchanged: true,
+      row_version: prior.fingerprint, row: fcSeReceiptFor_(sheet, prior.id) };
+  }
+
   // UPDATE — preserve existing id; backfill inline only if blank.
   var existing = String(s.rows[targetRow - 1][iId] || '').trim();
   var finalId = existing || explicitId || genId();
@@ -342,7 +474,9 @@ function fcSpecialEventUpsert_(ss, body, actor) {
   });
   setCell(targetRow, 'updated_by', actor);
   setCell(targetRow, 'updated_at', now);
-  return { event_fc_id: finalId, created: false };
+  var after = fcSeReceiptFor_(sheet, finalId);
+  return { event_fc_id: finalId, created: false, unchanged: false,
+    row_version: after ? after.row_version : '', row: after };
 }
 
 /**
@@ -377,6 +511,15 @@ function handleUpsertFcSpecialEvent_(body) {
   } catch (e) {
     return jsonResponse_({ success: false, error: String(e && e.message ? e.message : e) });
   }
+  // A typed refusal is a PROVEN ZERO-WRITE, and it is reported as one: success:false carrying the
+  // token, so the page can tell it from a transport failure whose outcome is genuinely unknown.
+  if (result && result.refusal) {
+    var ref = result.refusal;
+    return jsonResponse_({ success: false, error: ref.error, detail: ref.detail,
+      event_fc_id: ref.event_fc_id, current_row_version: ref.current_row_version,
+      expected_row_version: ref.expected_row_version, current_updated_at: ref.current_updated_at,
+      current: ref.current, wrote: 0 });
+  }
   return jsonResponse_({ success: true, data: result });
 }
 
@@ -393,7 +536,7 @@ function handleImportFcSpecialEventsBatch_(body) {
   var actor = String(body.updated_by || body.actor || 'fc-summary').trim();
   if (!rows.length) return jsonResponse_({ success: false, error: 'No rows to save' });
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var results = [], created = 0, updated = 0, skipped = 0;
+  var results = [], created = 0, updated = 0, skipped = 0, unchanged = 0;
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i] || {};
     var reason = '';
@@ -404,13 +547,26 @@ function handleImportFcSpecialEventsBatch_(body) {
     if (reason) { skipped++; results.push({ index: i, event_fc_id: r.event_fc_id || '', skipped: true, reason: reason }); continue; }
     try {
       var res = fcSpecialEventUpsert_(ss, r, actor);   // canonical row upsert (event_fc_id exact, else business key)
-      if (res && res.created) created++; else updated++;
-      results.push({ index: i, event_fc_id: res && res.event_fc_id, created: !!(res && res.created) });
+      // R2B-A3-R1 — a stale or unlocatable row is REFUSED PER ROW, with its token, and the rest of the
+      // batch still runs. It is counted as skipped because that is what it is: zero cells written.
+      if (res && res.refusal) {
+        skipped++;
+        results.push({ index: i, event_fc_id: res.refusal.event_fc_id || r.event_fc_id || '', skipped: true,
+          reason: res.refusal.error, detail: res.refusal.detail,
+          current_row_version: res.refusal.current_row_version });
+        continue;
+      }
+      if (res && res.created) created++;
+      else if (res && res.unchanged) unchanged++;
+      else updated++;
+      results.push({ index: i, event_fc_id: res && res.event_fc_id, created: !!(res && res.created),
+        unchanged: !!(res && res.unchanged), row_version: (res && res.row_version) || '' });
     } catch (e) {
       skipped++; results.push({ index: i, event_fc_id: r.event_fc_id || '', skipped: true, reason: String(e && e.message ? e.message : e) });
     }
   }
-  return jsonResponse_({ success: true, data: { summary: { created: created, updated: updated, skipped: skipped, total: rows.length }, results: results } });
+  return jsonResponse_({ success: true, data: { summary: { created: created, updated: updated,
+    unchanged: unchanged, skipped: skipped, total: rows.length }, results: results } });
 }
 
 /** Delete a special event by event_fc_id (accepts legacy event_id). Body: { event_fc_id? | event_id? }. */

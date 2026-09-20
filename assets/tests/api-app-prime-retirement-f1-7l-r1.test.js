@@ -104,9 +104,25 @@ console.log('\n== §5/§6 FC Summary modals bounded; §14 Event Assist calc UNCH
 // FC-SUMMARY-R1 — renamed to _fcLoadPrerequisites_ (single-flight + rejects instead of swallowing).
 // The property this asserts is unchanged: the bounded refreshCacheTables loader, never a whole-DB load.
 var fcEnsure = extractFn(FC, '_fcLoadPrerequisites_');
-ok(/refreshCacheTables/.test(fcEnsure) && /rc\(_FC_SECONDARY_TABLES\)/.test(fcEnsure) && fcEnsure.indexOf('loadOperationDb') === -1 && fcEnsure.indexOf('reloadOperationDb') === -1, '_fcEnsureBroadCacheThen uses the bounded refreshCacheTables loader (no whole-DB lazy load)');
-ok(/var _FC_SECONDARY_TABLES = \['sku_details', 'marketplace_skus', 'campaigns', 'pricing_list', 'fc_regular_forecast', 'fc_special_events', 'marketplaces'\];/.test(FC), '_FC_SECONDARY_TABLES = exactly the modal facts');
-ok(/function _fcResetSecondaryCache\(\) \{ _fcSecondaryLoaded = false; \}/.test(FC), '_fcResetSecondaryCache clears the bounded modal-cache flag');
+// FC-SUMMARY-R2B-A3-R1 — the bounded loader now takes the SELECTED builder path's table list rather
+// than one union list. The property under test is the same one: a bounded getTable read, never a
+// whole-DB load.
+ok(/refreshCacheTables/.test(fcEnsure) && /rc\(_FC_PREREQ_TABLES_\[p\]\)/.test(fcEnsure) && fcEnsure.indexOf('loadOperationDb') === -1 && fcEnsure.indexOf('reloadOperationDb') === -1, '_fcEnsureBroadCacheThen uses the bounded refreshCacheTables loader (no whole-DB lazy load)');
+// EVERY table the modals read is still named, and still ONLY those. Asserted as a SET over the two
+// path lists rather than as one literal array: the literal could only ever describe the shape the
+// code had on the day it was written, and what this line is for is that the list stays closed.
+(function () {
+  var decl = (/var _FC_PREREQ_TABLES_ = \{[\s\S]*?\};/.exec(FC) || [''])[0];
+  var named = (decl.match(/'[a-z_]+'/g) || []).map(function (x) { return x.replace(/'/g, ''); });
+  var uniq = named.filter(function (x, i) { return named.indexOf(x) === i; }).sort();
+  var expected = ['campaign_sku_lines', 'campaigns', 'fc_regular_forecast', 'fc_special_events',
+    'marketplace_skus', 'marketplaces', 'pricing_list', 'sku_details'].sort();
+  ok(JSON.stringify(uniq) === JSON.stringify(expected),
+    '_FC_SECONDARY_TABLES = exactly the modal facts (per-path union, closed set)');
+  ok(decl.indexOf('campaigns') !== -1 && (/regular: \[[^\]]*\]/.exec(decl) || [''])[0].indexOf('campaigns') === -1,
+    'and the Regular path does not pull the Special Event path\'s tables');
+})();
+ok(/function _fcResetSecondaryCache\(\) \{ _fcSecondaryLoaded = false; _fcPrereqLoadedPaths_ = \{\}; \}/.test(FC), '_fcResetSecondaryCache clears the bounded modal-cache flag');
 ok(/_fcResetSecondaryCache\(\)/.test(extractFn(FC, '_fcAfterWrite')), '_fcAfterWrite resets the modal cache so the next modal open re-reads fresh after a FC write');
 // Event Assist calculation transport unchanged (still the SAME base getters; only the tables are now bounded-loaded).
 ok(/getFcRegularForecast/.test(extractFn(FC, '_evtBaseFcForSku')), 'Event Assist ADJUST base still reads fc_regular_forecast (calc unchanged)');

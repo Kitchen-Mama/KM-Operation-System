@@ -445,7 +445,14 @@ var ROUND_TOKENS = [
   // previous fc-summary.js beside the new api file would call an adapter it does not know about, and a
   // browser holding the previous api file beside the new page would have its every slice refused with
   // FC_SUMMARY_ADAPTER_UNAVAILABLE. The two ship together, so the whole application set rotates together.
-  'stagedhydration-r3r1-20260920'];
+  'stagedhydration-r3r1-20260920',
+  // FC-SUMMARY-R2B-A3-R1 - Special Event identity. fc-summary.js now sends expected_row_version on every
+  // event and campaign write, and operation-system-db-api.js is what classifies the refusal that comes
+  // back when it is missing or stale. A browser holding the previous page beside the new server would
+  // send no version and have every event update refused; one holding the previous api file would report
+  // a proven zero-write refusal as an UNKNOWN outcome, which is the one classification that tells an
+  // operator not to retry something that is safe to retry. The whole application set rotates together.
+  'speventidentity-r2ba3r1-20260920'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the
@@ -781,7 +788,12 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // No action was added and no router change, but a new deployment version is still required: two files
   // changed and a project holding either at R13 is a partial sync the manifest now names.
   // APPENDED, which remains the only legal position - stampAtOrAfter compares INDEXES.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R14'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R14',
+  // FC-SUMMARY-R2B-A3-R1 - the Special Event write path: 20_ (canonical window identity + its first
+  // build stamp), 14_ (the fc_special_events version gate) and 63_ (the release, 20_'s new manifest row,
+  // 14_'s expected stamp). A new deployment version is required because two write handlers changed.
+  // APPEND-ONLY, at the end.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R15'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

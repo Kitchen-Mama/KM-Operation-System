@@ -110,11 +110,24 @@ HEADER_GROUPED_BY_NAME_ALONE = NO
 - `campaign_name` is carried as a **display label** on the header; when records merge into one
   header and disagree on the name, the operator is asked, and the write refuses rather than picking.
 
-The existing writer already resolves identity by `campaign_id` if supplied, else by the business key
-`company | country | marketplace | campaign_name | year` (`20_:52`). **That business key is weaker
-than `HEADER_IDENTITY_KEY`** — it can merge two different date windows that share a name and a year.
-A future implementation must pass an explicit `campaign_id` resolved from `HEADER_IDENTITY_KEY`
-rather than relying on the writer's fallback. This is recorded here, not fixed here.
+**FIXED — FC-SUMMARY-R2B-A3-R1 (release R15).** The writer resolved identity by `campaign_id` if
+supplied, else by `company | country | marketplace | campaign_name | year`, which was weaker than
+`HEADER_IDENTITY_KEY`: it merged two date windows that shared a name and a year, and the Special
+Event Builder composes the name as `<event flag> <year>`, so every window in a year shared one. The
+second window overwrote the first and the save reported success.
+
+`20_campaign_write_handlers.gs` now implements `HEADER_IDENTITY_KEY` as `CAMPAIGN_KEY_FIELDS_`, field
+for field, and the A3-R1 suite asserts the writer's array against the declaration ABOVE rather than
+against a copy of it, so the two cannot drift apart again. Both shapes a date cell can hold — text
+and a real `Date` — reduce to one calendar day before comparison, because a key that never matches
+appends a new campaign on every save. A row written before the window was identity carries no window
+at all; it is adopted once, by name, and only when exactly one candidate matches, so adoption can
+never merge two rows.
+
+An update now also requires `expected_row_version` (a content fingerprint over the fields the key does
+NOT carry). A save composed as a new event quotes no version and therefore cannot land on a row the
+operator has not seen — which is the duplicate guard and the stale-write guard in one — and a save
+whose values already match the stored row writes nothing at all.
 
 ### 1.3 Identity minting
 

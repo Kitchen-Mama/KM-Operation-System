@@ -602,9 +602,13 @@ function world(opts) {
     // assets rotate on their own rounds. Asserting 'exactly one token in the file' would assert
     // something that was never true and would fail on every round that is not this one. What this
     // round owns is the APPLICATION set, which has been 38 references for several rounds running.
-    var APP = 'stagedhydration-r3r1-20260920';
+    // R2B-A3-R1 — DERIVED, not restated. This literal is precisely the equality-with-now that
+    // _release-order.js exists to end: it was correct for exactly one round and then described the
+    // token of the round before. The ledger is the single place a round appends to.
+    var APP = require('./_release-order.js').currentAppToken();
     eq(toks[APP], 38, 'J1  the application token is on all 38 references', toks);
-    ['statuscard-r2ba2r5f6-20260919', 'trseamrepair-r2ba2r5f5f1-20260919',
+    ['stagedhydration-r3r1-20260920', 'statuscard-r2ba2r5f6-20260919',
+     'trseamrepair-r2ba2r5f5f1-20260919',
      'tgtrehydrate-r2ba2r5f5-20260919', 'fcroutemount-bootfcr2f1-20260919'].forEach(function (t, i2) {
       eq(toks[t], undefined, 'J2.' + (i2 + 1) + '  nothing left behind on ' + t);
     });

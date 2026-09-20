@@ -109,7 +109,14 @@ section('G. Persistence — price_units snapshot from the same pricing_list curr
   ok(/price_units: l\.currency/.test(js), 'G1 campaign_sku_lines payload writes price_units = pricing_list currency');
   ok(/currency: r\.currency/.test(js) && /currency: gr\.currency/.test(js), 'G2 both single + group line objects carry the pricing_list currency');
   ok(/'price_units'/.test(gs) && /price_units:\s*\(l\.price_units/.test(gs), 'G3 .gs campaign_sku_lines header + handler map price_units (additive, single currency column)');
-  ok((gs.match(/'price_units'/g) || []).length === 1, 'G4 exactly one price_units column (no duplicate currency column)');
+  // R2B-A3-R1 — SCOPED TO THE HEADER ARRAY, WHICH IS WHAT "COLUMN" MEANS. Counting the whole file
+  // made the assertion true only while nothing else in 20_ ever named the column: the per-line
+  // content fingerprint now lists it, and a currency snapshot appearing in a version token is not a
+  // duplicate column. The claim that matters — one price_units in the canonical header — is stricter
+  // when it is asked of the header.
+  var lineHdr = (gs.match(/var CAMPAIGN_SKU_LINES_HEADERS_ = \[[\s\S]*?\];/) || [''])[0];
+  ok((lineHdr.match(/'price_units'/g) || []).length === 1,
+    'G4 exactly one price_units column in the canonical header (no duplicate currency column)');
 })();
 
 section('H. Missing fail-closed + currency UI wiring (source-scan)');

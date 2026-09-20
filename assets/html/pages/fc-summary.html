@@ -255,16 +255,23 @@
                     <div class="fc-modal-content fc-modal-content--large">
                         <h3>New FC Update</h3>
                         <div class="fc-modal-body">
+                            <!-- FC-SUMMARY-R2B-A3-R1 §7: choosing a card starts THAT path's
+                                 prerequisite load. `onclick` rather than `onchange` so that clicking
+                                 the already-checked Regular card counts as a choice too — `change`
+                                 never fires for it, and that is the commonest path of all. The load
+                                 is single-flight, so Next attaches to it instead of issuing a second. -->
                             <div class="fc-mode-options fc-mode-options--cards">
                                 <label class="fc-mode-option">
-                                    <input type="radio" name="fc-mode" value="regular" checked>
+                                    <input type="radio" name="fc-mode" value="regular" checked
+                                           onclick="_fcOnModeSelected_('regular')">
                                     <div class="fc-mode-card">
                                         <div class="fc-mode-title">Regular Forecast</div>
                                         <div class="fc-mode-desc">Create or update monthly base forecast for selected Country / Marketplace / SKU.</div>
                                     </div>
                                 </label>
                                 <label class="fc-mode-option">
-                                    <input type="radio" name="fc-mode" value="event">
+                                    <input type="radio" name="fc-mode" value="event"
+                                           onclick="_fcOnModeSelected_('event')">
                                     <div class="fc-mode-card">
                                         <div class="fc-mode-title">Special Events</div>
                                         <div class="fc-mode-desc">Create special event forecast that will be added on top of regular FC.</div>
@@ -563,6 +570,23 @@
                                     <select id="event-marketplace" onchange="_evtOnScopeChange()"></select>
                                 </div>
                             </div>
+
+                            <!-- FC-SUMMARY-R2B-A3-R1 §2: new or existing. One entry per persisted
+                                 event WINDOW, because the window is what distinguishes two events
+                                 that share a name in the same year. Selecting one loads its saved
+                                 values and preserves its canonical ids. -->
+                            <div class="fc-form-section-label">Event</div>
+                            <div class="fc-form-row">
+                                <div class="fc-form-group fc-form-group--wide">
+                                    <label for="event-existing-select">New or existing event</label>
+                                    <select id="event-existing-select" onchange="_evtOnExistingChange()">
+                                        <option value="">+ New event</option>
+                                    </select>
+                                    <p class="fc-manual-help" id="event-existing-note" hidden></p>
+                                </div>
+                            </div>
+                            <div id="event-editing-banner" role="status" aria-live="polite" hidden
+                                 style="margin:8px 0 0;padding:8px 10px;border-radius:6px;background:#FEF3C7;color:#92400E;text-align:left;overflow-wrap:break-word;"></div>
 
                             <!-- 2. Event Info -->
                             <div class="fc-form-section-label">Event Info</div>

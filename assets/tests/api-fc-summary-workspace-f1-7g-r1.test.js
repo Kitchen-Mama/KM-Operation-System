@@ -55,7 +55,12 @@ eval(extractAssignedFn(DBAPI, 'window.KM.DB.adaptFcSummaryWorkspace = function')
 
 // eval the ACTUAL browser render getters + accessors + label resolver (they read _fcReadModel / window.KM.DB.getX)
 eval(slice(FC_JS, "var _FC_MONTH_KEYS =", "function _getDbTargetRules"));  // pulls in the _FC_MONTH_KEYS const region
-eval(['_fcHas_', '_fcWorkspaceMode_', '_fcEffectiveWorkspace',
+// R2B-A3-R1 — _getDbFcEventData now stamps each event row with the version token its next save must
+// quote, so the token's fields and normalisers come with it. Without them the getter throws and the
+// BEFORE==AFTER parity this suite exists to prove would be unrunnable rather than false.
+eval(slice(FC_JS, 'var _SE_FP_FIELDS_', 'function _seFingerprint_'));
+eval(['_trStrTok_', '_trNumTok_', '_seFingerprint_',
+      '_fcHas_', '_fcWorkspaceMode_', '_fcEffectiveWorkspace',
       '_fcGetRegularForecast', '_fcGetSpecialEvents', '_fcGetTargetRules', '_fcGetMarketplaces',
       '_getDbFcRegularData', '_getDbFcEventData', '_getDbTargetRules', '_fcMarketplaceLabel']
   .map(function (n) { return extractFn(FC_JS, n); }).join('\n'));
@@ -204,8 +209,13 @@ ok(!/_fcAfterWrite\(function/.test(FC_JS),
 // what changed is that it is single-flight and REFUSABLE. The two assertions below used to pin
 // `_fcEnsureBroadCacheThen(openRegularUpdateModal)`, i.e. the silent re-entry that retried forever on a
 // persistent failure. They now pin the contract that replaced it.
-ok(/function _fcLoadPrerequisites_/.test(FC_JS) && /rc\(_FC_SECONDARY_TABLES\)/.test(FC_JS), 'fc-summary: SECONDARY builder modals lazy-load the broad cache (same seven-read contract)');
-ok(/if \(_fcPrereqFlight_\) return _fcPrereqFlight_;/.test(FC_JS), 'the prerequisite load is single-flight — extra Next clicks issue no second request');
+// FC-SUMMARY-R2B-A3-R1 — the seven-table list became TWO lists, one per builder path, because the
+// Regular builder never opens campaigns or pricing_list and the Special Event builder never opens the
+// regular forecast. The contract these two lines exist to pin is unchanged — the SECONDARY surface
+// lazy-loads, and the load is single-flight — so they are re-pointed at the per-path form rather than
+// at the union that no longer has a single loader.
+ok(/function _fcLoadPrerequisites_/.test(FC_JS) && /rc\(_FC_PREREQ_TABLES_\[p\]\)/.test(FC_JS), 'fc-summary: SECONDARY builder modals lazy-load the broad cache (per-path bounded read)');
+ok(/if \(_fcPrereqFlightByPath_\[p\]\) return _fcPrereqFlightByPath_\[p\];/.test(FC_JS), 'the prerequisite load is single-flight — extra Next clicks issue no second request');
 ok(/_fcShowPrereqRefusal_\(err\)/.test(FC_JS) && FC_JS.indexOf('_fcEnsureBroadCacheThen(openRegularUpdateModal)') === -1,
   'a prerequisite failure refuses in the open modal instead of silently re-entering the opener');
 // Event Assist WRITE authority UNCHANGED (deferred redesign) — still browser-computed + submitted verbatim

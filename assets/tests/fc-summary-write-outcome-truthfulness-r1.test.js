@@ -94,7 +94,10 @@ var VARS = [
   'FC_STAGE_', 'FC_UNREADABLE_CODES_',
   '_fcPrereqState_', '_fcPrereqFlight_',
   '_fcPrereqLoads_', '_fcPrereqTransition_', '_fcWriteState_', '_fcWriteFlight_', '_fcViewState_', '_fcReadbackFlight_',
-  '_fcReadbackLoads_', '_fcLastReceipt_', '_fcMeta_', '_FC_SECONDARY_TABLES', '_fcSecondaryLoaded'];
+  '_fcReadbackLoads_', '_fcLastReceipt_', '_fcMeta_', '_FC_SECONDARY_TABLES', '_fcSecondaryLoaded',
+  // R2B-A3-R1 — prerequisites are now per BUILDER PATH: the table lists, the loaded-path latch and the
+  // per-path in-flight map. The single `_fcPrereqFlight_` above is kept — the diagnostics still read it.
+  '_FC_PREREQ_TABLES_', '_fcPrereqLoadedPaths_', '_fcPrereqFlightByPath_'];
 var FNS = [
   '_fcSliceRec_', '_fcWorkspaceMode_', '_fcHas_', '_fcSliceHasData_', '_fcTabNow_',
   // _fcSliceFetch_ is deliberately NOT lifted: this sandbox INJECTS it so readbacks can be counted.
@@ -106,8 +109,9 @@ var FNS = [
   // INCIDENT-BOOT-FC-R1 — the readback paths now hydrate through one authority instead of re-rendering
   // the rows alone. The write-outcome assertions below are untouched.
   '_fcClearBanner_', '_fcShowBanner_', '_fcRerenderTables_', '_fcHydrateFromModel_',
-  '_fcRefreshViewNow_', '_fcPrereqNeeded_',
-  '_fcLoadPrerequisites_', '_fcNextBtn_', '_fcSetNextBusy_', '_fcClearPrereqRefusal_',
+  '_fcRefreshViewNow_', '_fcPrereqPath_', '_fcPrereqNeeded_',
+  '_fcLoadPrerequisites_', '_fcOnModeSelected_', '_fcResetSecondaryCache',
+  '_fcNextBtn_', '_fcSetNextBusy_', '_fcClearPrereqRefusal_',
   '_fcShowPrereqRefusal_', '_fcOpenBuilder_', '_fcWriteBegin_', '_fcWriteEnd_', '_fcClassifyWrite_',
   '_fcSummaryOf_', '_fcCountsLine_', '_fcReceipt_', '_fcRefusalText_', '_fcUnknownOutcome_',
   // FC-SUMMARY-R2B-A — _fcFailWrite_ now classifies a PROVEN zero-write refusal apart from an unknown
@@ -335,12 +339,31 @@ function main() {
     })
 
     .then(function () {
-      // prerequisites already present → no load at all
+      // R2B-A3-R1 — "ALREADY PRESENT" IS NOW A CLAIM ABOUT A PATH, NOT ABOUT AN OBJECT EXISTING.
+      //
+      // This block used to assert readiness by handing the rig an `_opDbCache` with a single table in
+      // it, because the old test was `!window._opDbCache` — the mere EXISTENCE of the cache object.
+      // That was a fail-open: another page loading skuDetails alone satisfied it, and the Special
+      // Event builder then opened with no campaigns and no pricing_list, showing empty datalists over
+      // tables nobody had fetched. Readiness is now per builder path and page-local, so the rig says
+      // which PATH is loaded. What A25 and A26 assert is unchanged: a ready path issues no request
+      // and opens the builder in the same tick.
       var calls = 0;
       var S = rig({ opDbCache: { skuDetails: [] }, refreshCacheTables: function () { calls++; return Promise.resolve(); } });
+      S._fcPrereqLoadedPaths_.regular = true;
       S.proceedToFcMode();
       eq(calls, 0, 'A25 with prerequisites already loaded, Next issues no request at all');
       eq(S.__seen.opened, ['regular'], 'A26 and opens the builder synchronously');
+    })
+
+    .then(function () {
+      // And the fail-open it replaced: a cache object that exists but holds none of THIS path's
+      // tables no longer counts as ready.
+      var calls = 0;
+      var S = rig({ opDbCache: { skuDetails: [] }, refreshCacheTables: function () { calls++; return Promise.resolve(); } });
+      S.proceedToFcMode();
+      eq(calls, 1, 'A25a a populated-by-someone-else cache is NOT this path being loaded');
+      eq(S.__seen.opened, [], 'A25b so the builder does not open over tables nobody fetched');
     })
 
     // =============================================================================================
@@ -773,7 +796,7 @@ function runMutants() {
     // M4 — the request latch
     .then(function () {
       return m('M4  the prerequisite request latch is removed (a second logical load is issued)',
-        '  if (_fcPrereqFlight_) return _fcPrereqFlight_;          // extra clicks attach; they issue nothing',
+        '  if (_fcPrereqFlightByPath_[p]) return _fcPrereqFlightByPath_[p];',
         '  // latch removed',
         function (S) {
           var calls = 0;
