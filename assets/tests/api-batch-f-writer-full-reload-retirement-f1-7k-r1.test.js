@@ -171,7 +171,13 @@ var ACTIONS = {
 };
 Object.keys(ACTIONS).forEach(function (name) {
   var b = bodies[name] || extractAssignedFn(DBAPI, 'window.KM.DB.' + name + ' = async function');
-  ok(b.indexOf("action: '" + ACTIONS[name] + "'") !== -1, name + " still POSTs action:'" + ACTIONS[name] + "' (payload authority unchanged)");
+  // FC-SUMMARY-R2B-A3-R2 — two spellings, ONE canonical action. A writer either builds the body itself
+  // (`action: 'x'`) or hands the action to the canonical transport dispatch (`_kmCanonicalWrite_('x', …)`).
+  // The action NAME is what this section guards, and it is still compared exactly: a writer that changed
+  // which action it sends fails in either form.
+  var sentAction = b.indexOf("action: '" + ACTIONS[name] + "'") !== -1
+    || b.indexOf("_kmCanonicalWrite_('" + ACTIONS[name] + "'") !== -1;
+  ok(sentAction, name + " still POSTs action:'" + ACTIONS[name] + "' (payload authority unchanged)");
 });
 
 // ===================================================================================================================

@@ -5902,6 +5902,74 @@ window.KM.DB.receivePurchaseOrderLines = async function(payload) {
     return json.data;
 };
 
+// ==========================================================================================================
+// FC-SUMMARY-R2B-A3-R2 - THE SPECIAL EVENT / CAMPAIGN WRITE CHAIN DISPATCHES THROUGH THE CANONICAL TRANSPORT.
+//
+// THE LIVE DEFECT THIS REPAIRS. These accessors used a raw fetch() that carried the action ONLY in the
+// request body. An Apps Script /exec POST is always answered with a 302 to script.googleusercontent.com, and
+// per the Fetch spec a 302 following a POST is re-issued as a GET WITH THE BODY DROPPED. When that chain
+// resolves back to /exec - a cold or re-authorising session - the request reaches doGet carrying NOTHING, and
+// doGet answers with its terminal "Missing or invalid action parameter. Use: getOperationDb, getTable,
+// system.health or inventoryScope.registry.get". The page then reported that router prose verbatim as
+// "Special Event Save stopped at stage 1 - campaigns". The action was built correctly; the TRANSPORT lost it.
+//
+// This is the SAME fault km-api-foundation F1-7N-FB-4C-R1 §E already fixed for READS, and that reads already
+// carry through _kmReadUrl_. The writes simply never adopted it.
+//
+// WHAT THIS IS NOT. It is not a second writer, and it is not a query-string shim: it is km-transport
+// request({ kind: "write" }) - the same dispatch km-data-access already uses for every command. The write
+// stays a POST with its payload in the BODY; only the action and request id also travel in the query, for
+// CORRELATION ONLY, which is what lets the router answer POST_ONLY_ACTION_ON_GET instead of an anonymous
+// missing parameter, and lets the classifier PROVE zero_write rather than guess at it.
+//
+// THE ONE RETRY, AND WHY IT IS NOT A REPLAY. A write is never auto-retried by the transport (maxRetries is 0
+// for kind:"write", and isAutoRetryable is false for every downgrade code). A second attempt is made HERE, at
+// most once, and ONLY when the transport PROVED the request never executed - zero_write === true AND a
+// code from the allowlist below. That is not an unknown outcome being replayed: it is a request that
+// provably never reached a handler. An ACK_UNKNOWN is never retried; it is returned so the caller reconciles first, which is
+// the existing partial-write contract and stays unchanged. Every stage of this chain is idempotent by its
+// canonical identity (FC-SUMMARY-R2B-A3-R1), so the second attempt can only resolve to the same row.
+//
+// FAILS CLOSED. If the shared transport is not loaded there is no fallback to the raw fetch - falling back
+// would reinstate exactly the defect this repairs.
+// ==========================================================================================================
+var _KM_WRITE_RID_SEQ_ = 0;
+function _kmNextWriteRequestId_() { _KM_WRITE_RID_SEQ_++; return 'REQ-W' + ('000000' + _KM_WRITE_RID_SEQ_).slice(-6); }
+
+// Returns the router envelope { success, data, error } so every caller below keeps its existing contract.
+async function _kmCanonicalWrite_(action, payload) {
+    var tp = _kmSharedTransport_();
+    if (!tp || typeof tp.request !== 'function') {
+        throw new Error(action + ' was not sent: the shared transport is not loaded, so the action could not be'
+            + ' carried where a redirect cannot drop it. Nothing was written.');
+    }
+    var res = null;
+    for (var attempt = 1; attempt <= 2; attempt++) {
+        res = await tp.request({ action: action, kind: 'write',
+            requestId: _kmNextWriteRequestId_(), payload: payload || {} });
+        if (res && res.success) return { success: true, data: res.data, error: null };
+        var det = (res && res.details) || {};
+        // A SECOND attempt only when the transport PROVED the request never reached a handler, and only once.
+        // The gate is an ALLOWLIST of the two transport codes that carry that proof, not merely `zero_write`:
+        // a server BUSINESS refusal (a duplicate identity, a stale row version) is also a zero write, but it
+        // is deterministic and re-sending it would only ask the same question twice. The refusal tokens are
+        // NOT named here: they have exactly one authority in this file and a copy in prose is still a copy.
+        var RETRY_ONLY_ON_ = ['REQUEST_METHOD_DOWNGRADED', 'RESPONSE_CORRELATION_UNPROVEN'];
+        var provenNeverRan = det.zero_write === true && res && RETRY_ONLY_ON_.indexOf(res.code) !== -1;
+        if (!provenNeverRan || attempt >= 2) break;
+    }
+    // CARRY THE PROOF ACROSS THE THROW. Every caller below answers a failure with `throw new Error(error)`,
+    // so a STRING is all that reaches the page's outcome classifier. The transport's zero_write is a
+    // structured fact; without it restated here a proved never-executed request arrived at the page as
+    // ACK_UNKNOWN and sent the operator to reconcile a row that provably does not exist. This appends the
+    // marker the CANONICAL authority (_kmZeroWriteProven_) already recognises — no second rule is written,
+    // and the marker is derived from the structured fact, never from the transport's prose.
+    var _msg = (res && (res.message || res.code)) || (action + ' failed');
+    if (((res && res.details) || {}).zero_write === true) _msg += ' — zero rows written.';
+    return { success: false, data: null, error: _msg,
+        transport: (res && { code: res.code, phase: res.phase, details: res.details }) || null };
+}
+
 // ========================================
 // FC Summary write path (Phase 1) — Special Events + Target % Rules.
 // upsert = create when id missing, update when id present. delete = hard delete by id.
@@ -5919,12 +5987,7 @@ window.KM.DB.upsertCampaign = async function(payload) {
         console.warn('[KM.DB] API not configured, upsertCampaign skipped');
         return { success: false, error: 'API not configured' };
     }
-    var resp = await fetch(OP_DB_API_BASE_URL, {
-        method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify(Object.assign({ action: 'upsertCampaign' }, payload))
-    });
-    if (!resp.ok) throw new Error('API returned ' + resp.status);
-    var json = await resp.json();
+    var json = await _kmCanonicalWrite_('upsertCampaign', payload);
     if (!json.success) throw new Error(json.error || 'Upsert campaign failed');
     await _kmWriterPostWrite_();
     return json.data;
@@ -5937,12 +6000,7 @@ window.KM.DB.upsertCampaignSkuLines = async function(payload) {
         console.warn('[KM.DB] API not configured, upsertCampaignSkuLines skipped');
         return { success: false, error: 'API not configured' };
     }
-    var resp = await fetch(OP_DB_API_BASE_URL, {
-        method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify(Object.assign({ action: 'upsertCampaignSkuLines' }, payload))
-    });
-    if (!resp.ok) throw new Error('API returned ' + resp.status);
-    var json = await resp.json();
+    var json = await _kmCanonicalWrite_('upsertCampaignSkuLines', payload);
     if (!json.success) throw new Error(json.error || 'Upsert campaign_sku_lines failed');
     await _kmWriterPostWrite_();
     return json.data;
@@ -5953,14 +6011,7 @@ window.KM.DB.upsertFcSpecialEvent = async function(payload) {
         console.warn('[KM.DB] API not configured, upsertFcSpecialEvent skipped');
         return { success: false, error: 'API not configured' };
     }
-    var resp = await fetch(OP_DB_API_BASE_URL, {
-        method: 'POST',
-        cache: 'no-store',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify(Object.assign({ action: 'upsertFcSpecialEvent' }, payload))
-    });
-    if (!resp.ok) throw new Error('API returned ' + resp.status);
-    var json = await resp.json();
+    var json = await _kmCanonicalWrite_('upsertFcSpecialEvent', payload);
     if (!json.success) throw new Error(json.error || 'Upsert special event failed');
     await _kmWriterPostWrite_();
     return json.data;
@@ -5973,14 +6024,7 @@ window.KM.DB.importFcSpecialEventsBatch = async function(rows, options) {
         console.warn('[KM.DB] API not configured, importFcSpecialEventsBatch skipped');
         return { success: false, error: 'API not configured' };
     }
-    var resp = await fetch(OP_DB_API_BASE_URL, {
-        method: 'POST',
-        cache: 'no-store',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({ action: 'importFcSpecialEventsBatch', rows: rows || [], options: options || {} })
-    });
-    if (!resp.ok) throw new Error('API returned ' + resp.status);
-    var json = await resp.json();
+    var json = await _kmCanonicalWrite_('importFcSpecialEventsBatch', { rows: rows || [], options: options || {} });
     if (json && json.success) { await _kmWriterPostWrite_(); }
     return json;
 };
@@ -5991,14 +6035,7 @@ window.KM.DB.deleteFcSpecialEvent = async function(payload) {
         console.warn('[KM.DB] API not configured, deleteFcSpecialEvent skipped');
         return { success: false, error: 'API not configured' };
     }
-    var resp = await fetch(OP_DB_API_BASE_URL, {
-        method: 'POST',
-        cache: 'no-store',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify(Object.assign({ action: 'deleteFcSpecialEvent' }, payload))
-    });
-    if (!resp.ok) throw new Error('API returned ' + resp.status);
-    var json = await resp.json();
+    var json = await _kmCanonicalWrite_('deleteFcSpecialEvent', payload);
     if (!json.success) throw new Error(json.error || 'Delete special event failed');
     await _kmWriterPostWrite_();
     return json.data;
