@@ -3126,6 +3126,8 @@ function _evtOnExistingChange() {
    that is no longer selected — leaving them would be the blank-form defect in reverse. */
 function _evtClearEditing_() {
   _evtEditing_ = null;
+  _evtWindowChangeAck_ = null;          // §6 — an acknowledgement belongs to ONE loaded event
+  if (typeof _evtClearWindowChangeNotice_ === 'function') _evtClearWindowChangeNotice_();
   var sd = document.getElementById('event-start-date'); if (sd) sd.value = '';
   var ed = document.getElementById('event-end-date'); if (ed) ed.value = '';
   var rows = document.getElementById('event-sku-rows'); if (rows) rows.innerHTML = '';
@@ -3989,6 +3991,71 @@ function _evtEventBaseFcForSku(sku) {
    CURRENT EVENT FC and is labelled as such on that control. It must never arrive in this column,
    because 'what this event is forecast to sell' and 'what we are computing that from' are different
    facts, and one of them is already committed. */
+/* ==============================================================================================
+   FC-SUMMARY-R2B-A3-R7 §2/§4/§5 — THE GROUP BUILDER NEVER ASKED WHETHER THE EVENT ALREADY EXISTED.
+
+   TWO LIVE FAILURES, ONE CAUSE. Saving an edit from the Category/Series cards answered
+   STALE_SPECIAL_EVENT_VERSION at stage 3, and the cards showed no sign that a persisted event FC
+   existed at all — while fc_special_events plainly held one.
+
+   _evtBuildGroups composed each row from sku_details and pricing_list and nothing else. It carried
+   no event_fc_id, no campaign_sku_line_id and no row_version, so the save composed a VERSIONLESS
+   payload for a row the server could still resolve by business key. 14_'s gate then did exactly what
+   it is written to do: a save that would change a stored event while quoting no version is refused,
+   because 'the builder composes a versionless save only when its read model held no match'. On the
+   single-row path that premise holds — _evtHydrateExisting_ puts the ids on the row's dataset. On the
+   group path it never did, so the premise was false and every group-card edit looked like a stale
+   writer to a server that was right to refuse it.
+
+   So the group builder now resolves the same persisted event the picker already resolves, through the
+   same owner. _evtExistingEvents_() is that owner: it groups fc_special_events by campaign for the
+   selected site and target year, and it matches on scope and window — never on campaign name. No new
+   key is invented here.
+
+   BASE EVENT FC IS NOT BASE FC. Base FC is a computational baseline chosen by the assist method
+   (another campaign's event FC, or a Regular forecast month). Base Event FC is the value THIS event
+   already has stored. They are different questions with different answers, and now different
+   columns: a Growth baseline of 7000 and a persisted current FC of 4200 are both true at once. */
+function _evtBaseEventGroup_() {
+  var groups = _evtExistingEvents_();
+  if (!Array.isArray(groups)) return null;              // unread is not empty
+  if (_evtEditingActive_()) {
+    return groups.filter(function (g) { return g.campaignId === _evtEditing_.campaignId; })[0] || null;
+  }
+  // Composing a new event: the persisted match is the one whose WINDOW this form is describing.
+  var sd = _trStrTok_((document.getElementById('event-start-date') || {}).value);
+  var ed = _trStrTok_((document.getElementById('event-end-date') || {}).value);
+  if (!sd || !ed) return null;
+  var nm = _trStrTok_((document.getElementById('event-name-input') || {}).value).toUpperCase();
+  return groups.filter(function (g) {
+    if (_trStrTok_(g.startDate) !== sd || _trStrTok_(g.endDate) !== ed) return false;
+    return !nm || _trStrTok_(g.eventName).toUpperCase() === nm;
+  })[0] || null;
+}
+/* The persisted event for one SKU inside that window, with the ids and the version its next save must
+   carry. null when this SKU has no persisted event — a different fact from a stored 0. */
+function _evtBaseEventForSku(sku) {
+  var g = _evtBaseEventGroup_();
+  if (!g) return null;
+  var want = _trStrTok_(sku).toUpperCase();
+  var r = (g.rows || []).filter(function (x) {
+    var raw0 = x.raw || {};
+    return _trStrTok_(raw0.sku || x.sku).toUpperCase() === want;
+  })[0];
+  if (!r) return null;
+  var raw = r.raw || {};
+  // A PERSISTED ZERO IS A VALUE. The normalizer's fcQty is parseFloat(...)||0, which cannot tell a
+  // stored 0 from a blank cell, so the raw cell decides and the normalized value is only a fallback.
+  var q = raw.fc_qty;
+  var qty = (q === undefined || q === null || q === '') ? null : Number(q);
+  if (qty != null && isNaN(qty)) qty = null;
+  return {
+    eventFcId: _trStrTok_(raw.event_fc_id || r.eventFcId),
+    campaignSkuLineId: _trStrTok_(raw.campaign_sku_line_id || r.campaignSkuLineId),
+    rowVersion: _seFingerprint_(raw),
+    baseEventFc: qty
+  };
+}
 function _evtBaselineKind_() {
   var m = _evtAssistMethod();
   return (m === 'growth' || m === 'adjust') ? m : 'manual';
@@ -4043,6 +4110,7 @@ function _evtBuildGroups() {
     if (!byKey[key]) byKey[key] = { category: r.category, series: r.series, discountPct: NaN, rows: [] };
     if (byKey[key].rows.some(function(x){ return String(x.sku).toUpperCase() === String(r.sku).toUpperCase(); })) return;
     var p = prev[key + '::' + String(r.sku).toUpperCase()];
+    var be = _evtBaseEventForSku(r.sku);
     byKey[key].rows.push({
       sku: r.sku, marketplaceSkuId: r.marketplaceSkuId, regularPrice: r.regularPrice, currency: r.currency,
       discountPct: p ? p.discountPct : NaN,
@@ -4051,6 +4119,13 @@ function _evtBuildGroups() {
       // Preview & Pre-fill); otherwise resolve the event month's Regular FC. `== null` and not `||`,
       // because a stored Base FC of 0 is a value and must not be re-resolved as if it were missing.
       baseFc: (p && p.baseFc != null) ? p.baseFc : _evtBuildBaselineForSku(r.sku),
+      // §2/§11 — SERVER TRUTH IS RE-RESOLVED, NEVER INHERITED. A previously typed New Event FC is the
+      // operator's and is preserved above; the ids and the version belong to the sheet, so a rebuild
+      // takes them again rather than carrying a token that may already have been superseded.
+      baseEventFc: be ? be.baseEventFc : null,
+      eventFcId: be ? be.eventFcId : '',
+      campaignSkuLineId: be ? be.campaignSkuLineId : '',
+      rowVersion: be ? be.rowVersion : '',
       newFc: p ? p.newFc : NaN
     });
   });
@@ -4085,7 +4160,8 @@ function _evtRenderGroupCards() {
         '<button type="button" class="fc-evt-row-remove" title="Remove group" onclick="_evtRemoveGroup(' + i + ')">×</button>' +
       '</div>';
     var colHead = '<div class="fc-evt-line fc-evt-line--head"><span>SKU</span><span>Regular</span><span>Disc %</span><span>Deal</span><span>'
-      + _evtBaselineLabel_() + '</span><span>New Event FC</span><span>Diff</span><span></span></div>';
+      + _evtBaselineLabel_() + '</span><span title="The value this event already has stored in fc_special_events">Base Event FC</span>'
+      + '<span>New Event FC</span><span>Diff</span><span></span></div>';
     var baseKind = _evtBaselineKind_(), baseNote = _evtBaselineMissingInput_();
     var body = g.rows.map(function(r, ri){
       // Regular + Deal share the SAME pricing_list currency; shown as an auxiliary suffix (never a cross-country substitute).
@@ -4106,6 +4182,10 @@ function _evtRenderGroupCards() {
         '<span' + (baseNote ? (' class="fc-evt-warn" title="' + baseNote + '"') : '') + '>'
           + (base != null ? base.toLocaleString() : (baseNote ? 'set input' : (baseKind === 'manual' ? 'n/a' : '—')))
           + '</span>' +
+        // §4 — the persisted current value, distinct from both the computational baseline and the
+        // proposed new one. A stored 0 prints 0; no persisted event prints an em dash.
+        '<span class="evt-line-ro" title="Currently stored for this event">'
+          + (r.baseEventFc == null ? '—' : r.baseEventFc.toLocaleString()) + '</span>' +
         newCell +
         '<span style="color:' + diffColor + '">' + diffTxt + '</span>' +
         '<span></span>' +
@@ -4270,6 +4350,97 @@ function _evtApplyForecastAssist() {
   }
 }
 
+/* ==============================================================================================
+   FC-SUMMARY-R2B-A3-R7 §6/§7 — THE WINDOW IS THE IDENTITY, SO CHANGING IT IS NOT AN EDIT.
+
+   A campaign's window is a SHARED HEADER. campaigns holds start_date/end_date once, and many
+   campaign_sku_lines and many fc_special_events link to that one campaign_id — campaign_sku_lines
+   carries no dates of its own at all. So moving one SKU's event to a different window by editing the
+   dates on the loaded event would ask to repoint a header that other SKUs are sitting on.
+
+   The server already refuses that: a save quoting campaign_id with a changed window is answered
+   CAMPAIGN_IDENTITY_MISMATCH, with 'a campaign's site, type or event window is never silently
+   repointed — create the new window as its own campaign'. What the operator got was that refusal
+   after a round trip, with no statement of which window they had changed it from.
+
+   So the first Save after a window change writes NOTHING and says so here, before any stage runs,
+   showing both windows. The two offered actions are the two the current contracts define: put the
+   saved window back, or detach from the loaded event and save the new window as its own event.
+
+   WHAT IS DELIBERATELY NOT OFFERED is the third thing — moving the existing line and event to a new
+   campaign while preserving their lineage. That is a real product operation and no canonical spec
+   defines it: nothing says whether the event keeps its event_fc_id, whether the old campaign is left
+   empty, or what happens to unrelated SKUs. It is reported as a decision, not guessed at. */
+var _evtWindowChangeAck_ = null;
+function _evtWindowKey_(s, e) { return _trStrTok_(s) + ' → ' + _trStrTok_(e); }
+function _evtWindowChangeGate_(startDate, endDate) {
+  if (!_evtEditingActive_()) return { blocked: false, code: '' };
+  var o = _evtEditing_ || {};
+  var oldKey = _evtWindowKey_(o.startDate, o.endDate);
+  var newKey = _evtWindowKey_(startDate, endDate);
+  if (!_trStrTok_(o.startDate) && !_trStrTok_(o.endDate)) return { blocked: false, code: '' };
+  if (oldKey === newKey) return { blocked: false, code: '' };
+  var ack = _evtWindowChangeAck_;
+  if (ack && ack.from === oldKey && ack.to === newKey) return { blocked: false, code: 'ACKNOWLEDGED' };
+  return { blocked: true, code: 'EVENT_WINDOW_CHANGE_REQUIRES_CONFIRMATION',
+    oldStart: _trStrTok_(o.startDate), oldEnd: _trStrTok_(o.endDate),
+    newStart: _trStrTok_(startDate), newEnd: _trStrTok_(endDate),
+    from: oldKey, to: newKey, campaignId: _trStrTok_(o.campaignId) };
+}
+/* Put the saved window back — the loaded event is unchanged and the next Save is an ordinary edit. */
+function _evtRestoreLoadedWindow_() {
+  var o = _evtEditing_ || {};
+  var sd = document.getElementById('event-start-date'); if (sd) sd.value = _trStrTok_(o.startDate);
+  var ed = document.getElementById('event-end-date'); if (ed) ed.value = _trStrTok_(o.endDate);
+  _evtWindowChangeAck_ = null;
+  _evtClearWindowChangeNotice_();
+  if (typeof _evtBuildGroups === 'function' && _evtGroups.length) _evtBuildGroups();
+}
+/* Keep the typed window and stop editing the loaded event. The next Save composes a NEW event for the
+   new window, which is what 20_ prescribes; the loaded event and every other SKU on its campaign are
+   left exactly as they are, because nothing addresses them any more. */
+function _evtDetachAsNewEvent_() {
+  var sd = _trStrTok_((document.getElementById('event-start-date') || {}).value);
+  var ed = _trStrTok_((document.getElementById('event-end-date') || {}).value);
+  var o = _evtEditing_ || {};
+  _evtWindowChangeAck_ = { from: _evtWindowKey_(o.startDate, o.endDate), to: _evtWindowKey_(sd, ed) };
+  _evtEditing_ = null;                       // no campaign_id, no version: the save is a create
+  var sel = document.getElementById('event-existing-select'); if (sel) sel.value = '';
+  var rows = document.getElementById('event-sku-rows');
+  if (rows) { for (var i = 0; i < rows.children.length; i++) {
+    var c = rows.children[i];
+    if (c.dataset) { c.dataset.eventFcId = ''; c.dataset.campaignSkuLineId = ''; c.dataset.rowVersion = ''; }
+  } }
+  _evtSetEditingChrome_();
+  _evtClearWindowChangeNotice_();
+  if (typeof _evtBuildGroups === 'function' && _evtGroups.length) _evtBuildGroups();
+}
+function _evtClearWindowChangeNotice_() {
+  var h = (typeof document === 'undefined') ? null : document.getElementById('event-window-change-notice');
+  if (h) { h.innerHTML = ''; h.hidden = true; }
+}
+function _evtShowWindowChangeNotice_(gate) {
+  var h = (typeof document === 'undefined') ? null : document.getElementById('event-window-change-notice');
+  var text = 'Nothing was written. This event is loaded from the window '
+    + gate.from + ', and the form now says ' + gate.to + '. The window IS the event\'s identity, and'
+    + ' the campaign header that carries it is shared with every other SKU in the same window, so it'
+    + ' cannot be repointed here. Put the saved window back, or save the new window as its own event.';
+  if (!h) { alert(text); return; }
+  h.innerHTML = '';
+  var p = document.createElement('div'); p.textContent = text; h.appendChild(p);
+  var b1 = document.createElement('button');
+  b1.type = 'button'; b1.className = 'fc-btn fc-btn--cancel'; b1.style.marginTop = '8px';
+  b1.textContent = 'Restore ' + gate.from;
+  b1.onclick = function () { _evtRestoreLoadedWindow_(); };
+  h.appendChild(b1);
+  var b2 = document.createElement('button');
+  b2.type = 'button'; b2.className = 'fc-btn fc-btn--secondary'; b2.style.marginTop = '8px';
+  b2.style.marginLeft = '8px';
+  b2.textContent = 'Save ' + gate.to + ' as a new event';
+  b2.onclick = function () { _evtDetachAsNewEvent_(); };
+  h.appendChild(b2);
+  h.hidden = false;
+}
 // ================= Save (campaigns → campaign_sku_lines → fc_special_events) =================
 // Complete idempotent 3-layer transaction. On live: writes campaigns → campaign_sku_lines →
 // fc_special_events in order; if any step fails, stops and reports the real error (never fake
@@ -4300,6 +4471,12 @@ async function saveEventUpdate() {
   if (!_evtValidatePeriod()) { alert('Event Start Date must be on or before Event End Date.'); return; }
   var targetYear = parseInt(eventStartDate.slice(0, 4), 10) || parseInt((document.getElementById('event-target-year') || {}).value, 10);
   if (!targetYear) { alert('Target Year is required.'); return; }
+
+  // §6 — BEFORE ANY STAGE RUNS. A window change on a loaded event is an identity change, not an edit,
+  // and the first Save after one writes nothing at all — not the campaign, not a line, not an event.
+  var _winGate = _evtWindowChangeGate_(eventStartDate, eventEndDate);
+  if (_winGate.blocked) { _evtShowWindowChangeNotice_(_winGate); return; }
+  _evtClearWindowChangeNotice_();
 
   // ---- Collect + validate SKU lines from the active mode ----
   // line: { sku, marketplaceSkuId, category, series, regularPrice, dealPrice, discountPercent, fcQty }
@@ -4340,7 +4517,12 @@ async function saveEventUpdate() {
         var meta2 = _fcDeriveSkuMeta(gr.sku);
         var disc2 = isNaN(gr.discountPct) ? (gr.regularPrice > 0 ? Math.round((1 - gr.dealPrice / gr.regularPrice) * 1000) / 10 : 0) : gr.discountPct;
         lines.push({ sku: gr.sku, marketplaceSkuId: gr.marketplaceSkuId, category: meta2.category, series: meta2.series,
-          regularPrice: gr.regularPrice, dealPrice: gr.dealPrice, discountPercent: disc2, currency: gr.currency, fcQty: gr.newFc });
+          regularPrice: gr.regularPrice, dealPrice: gr.dealPrice, discountPercent: disc2, currency: gr.currency, fcQty: gr.newFc,
+          // §2 — THE THREE FIELDS THAT WERE MISSING. Without them the stage-3 payload quoted no version
+          // for a row the server could still resolve, and 14_'s gate refused it as stale. They are the
+          // same three the single-row path has always sent.
+          eventFcId: gr.eventFcId || '', campaignSkuLineId: gr.campaignSkuLineId || '',
+          rowVersion: gr.rowVersion || '' });
       }
     }
     if (!lines.length) { alert('No SKU lines to save — every card row is blank / has no base forecast (all skipped).'); return; }

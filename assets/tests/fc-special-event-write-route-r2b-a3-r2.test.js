@@ -387,7 +387,10 @@ function drain() { return new Promise(function (r) { setImmediate(function () { 
   score('M6 retry loop unbounded', await (async function () {
     var mutated = mutate(SRC_CANONICAL_WRITE, 'for (var attempt = 1; attempt <= 2; attempt++) {',
       'for (var attempt = 1; attempt <= 9; attempt++) {', 'M6');
-    mutated = mutate(mutated, 'if (!provenNeverRan || attempt >= 2) break;', 'if (!provenNeverRan) break;', 'M6b');
+    // A3-R7 - the gate gained a second, separately-argued reason to retry (a lost delivery hop on an
+    // idempotent action). The LIMITER is unchanged and is still what this mutant is pointed at.
+    mutated = mutate(mutated, 'if (!(provenNeverRan || lostDelivery) || attempt >= 2) break;',
+      'if (!(provenNeverRan || lostDelivery)) break;', 'M6b');
     var B = null, calls = 0;
     function stubFetch() {
       calls++;

@@ -494,7 +494,20 @@ var ROUND_TOKENS = [
   // showing a Regular forecast under a Base Campaign FC heading, keep reporting a timed-out
   // prerequisite as a bare 'Action: getTable', and keep offering a baseline where Manual has none.
   // The whole application set rotates together.
-  'campaignlock-r2ba3r6-20260921'];
+  'campaignlock-r2ba3r6-20260921',
+  // FC-SUMMARY-R2B-A3-R7 - the base-event and window-guard round. fc-summary.js: the group-card
+  // builder now resolves the persisted fc_special_events row for each SKU and carries its
+  // event_fc_id, campaign_sku_line_id and row_version into the save (without them every group-card
+  // edit was refused STALE_SPECIAL_EVENT_VERSION), shows that stored value as its own Base Event FC
+  // column, and refuses to write anything on the first Save after the window of a LOADED event
+  // changes. operation-system-db-api.js: one fresh attempt after an expired delivery hop, for the
+  // idempotent save actions only. fc-summary.html gains the window-change notice host and
+  // fc-overview.css the ninth card column. The token above HAS been published - 2836d2a is on
+  // origin/main and Pages served it under 38 assets - so by the rule recorded earlier it cannot be
+  // reused. A browser holding the previous bytes would keep failing every existing-event update,
+  // keep hiding the persisted event FC, and keep sending a window change straight at the server.
+  // The whole application set rotates together.
+  'baseeventfc-r2ba3r7-20260921'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

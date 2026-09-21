@@ -686,6 +686,14 @@ section('E. §6.1-6.12 — THE REQUIRED MATRIX');
     // of the Target section to the shared fixed-column rules that follow it.
     function cssOutsideTarget(src) {
       var t = src.replace(/\r\n/g, '\n');
+      // FC-SUMMARY-R2B-A3-R7 — the Special Event card gained a ninth column (Base Event FC, the value
+      // the event already has stored, beside the computational baseline rather than replacing it), so
+      // its grid template is the one declaration OUTSIDE the Target block that this round moves. It is
+      // normalised to a placeholder rather than excised: the column count may change, and every other
+      // byte of the stylesheet — this declaration's neighbours included — is still compared against the
+      // sealed commit. The rule this assertion exists for is unchanged, and is still that a round may
+      // not disturb styling it has not declared.
+      t = t.replace(/grid-template-columns: minmax\(90px,1\.6fr\)[^;]*;/, 'grid-template-columns: <fc-evt-line>;');
       var a = t.indexOf('/* R2B-A2-R5');
       if (a === -1) a = t.indexOf('/* --- Target % & Rules:');
       var b = t.indexOf('/* Fixed column');

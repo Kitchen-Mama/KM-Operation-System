@@ -1348,7 +1348,7 @@
 .fc-evt-card-disc input { width: 70px; padding: 4px 6px; border: 1px solid #E2E8F0; border-radius: 4px; font-size: 12px; box-sizing: border-box; }
 .fc-evt-card-lines { display: flex; flex-direction: column; gap: 2px; }
 /* SKU · Regular · Disc% · Deal · Base FC · New Event FC · Diff · spacer */
-.fc-evt-line { display: grid; grid-template-columns: minmax(90px,1.6fr) 0.8fr 0.7fr 0.9fr 0.9fr 1fr 0.8fr 12px; gap: 8px; align-items: center; box-sizing: border-box; padding: 3px 0; }
+.fc-evt-line { display: grid; grid-template-columns: minmax(90px,1.6fr) 0.8fr 0.7fr 0.9fr 0.9fr 0.9fr 1fr 0.8fr 12px; gap: 8px; align-items: center; box-sizing: border-box; padding: 3px 0; }
 .fc-evt-line > * { min-width: 0; }
 .fc-evt-line--head { font-size: 10px; font-weight: 700; color: #64748B; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid #E2E8F0; padding-bottom: 4px; }
 .fc-evt-line span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: #334155; }

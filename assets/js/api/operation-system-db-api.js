@@ -5971,7 +5971,29 @@ async function _kmCanonicalWrite_(action, payload) {
         // NOT named here: they have exactly one authority in this file and a copy in prose is still a copy.
         var RETRY_ONLY_ON_ = ['REQUEST_METHOD_DOWNGRADED', 'RESPONSE_CORRELATION_UNPROVEN'];
         var provenNeverRan = det.zero_write === true && res && RETRY_ONLY_ON_.indexOf(res.code) !== -1;
-        if (!provenNeverRan || attempt >= 2) break;
+        // FC-SUMMARY-R2B-A3-R7 §8/§9 — THE EXPIRED DELIVERY HOP, AND WHY IT IS A SEPARATE GATE.
+        //
+        // Apps Script answers every /exec POST with a 302 to script.googleusercontent.com/macros/echo,
+        // and that echo target is single-use and expires. When it 404s the operator is handed an HTML
+        // page where data belonged — live, at stage 2 of a three-stage save, with stage 1 already
+        // committed. The shared transport already tells this apart from a business 404
+        // (REDIRECT_TARGET_NOT_FOUND) and already refuses to store a googleusercontent URL as an
+        // endpoint, so any fresh attempt necessarily restarts from the stable /exec and gets a NEW
+        // delivery hop. What was missing is that a WRITE may never replay: A3-R2 banned that outright,
+        // and rightly, so the typed classification had nowhere to go.
+        //
+        // IT IS NOT ADDED TO THE GATE ABOVE, and the distinction is the whole safety argument. A dead
+        // echo target is INDETERMINATE, not a proven zero write: the handler may well have run before
+        // delivery failed. So one replay is allowed only for actions whose handlers are idempotent by a
+        // stable key the CLIENT already supplies — the campaign's window identity, the
+        // campaign_sku_line business key, event_fc_id or campaign+line — where a replay of a request
+        // that DID land updates the same row instead of minting a second one. Any other action still
+        // fails typed on the first delivery fault, and no business refusal is ever replayed.
+        var REPLAY_SAFE_ON_LOST_DELIVERY_ = ['upsertCampaign', 'upsertCampaignSkuLines',
+            'upsertFcSpecialEvent', 'importFcSpecialEventsBatch'];
+        var lostDelivery = !!res && res.code === 'REDIRECT_TARGET_NOT_FOUND'
+            && REPLAY_SAFE_ON_LOST_DELIVERY_.indexOf(action) !== -1;
+        if (!(provenNeverRan || lostDelivery) || attempt >= 2) break;
     }
     // CARRY THE PROOF ACROSS THE THROW. Every caller below answers a failure with `throw new Error(error)`,
     // so a STRING is all that reaches the page's outcome classifier. The transport's zero_write is a
