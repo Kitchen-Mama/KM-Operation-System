@@ -834,7 +834,17 @@ eq(RELEASE, 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R15', 'G9  the release moved, because
 eq(/var CAMPAIGN_BUILD_VERSION_ = '([^']+)'/.exec(GS20)[1], RELEASE, 'G9a and 20_ carries it');
 eq(/var FCW_BUILD_VERSION_ = '([^']+)'/.exec(GS14)[1], RELEASE, 'G9b and so does 14_');
 var RO = require(path.join(REPO, 'assets/tests/_release-order.js'));
-eq(RO.currentAppToken(), 'speventidentity-r2ba3r1-20260920', 'G10 the application cache token rotated');
+// FC-SUMMARY-R2B-A3-R3 — DERIVED, not pinned. This asserted `currentAppToken() === <this round's
+// literal>`, which is the equality-with-now _release-order.js exists to end: it forbade any LATER round
+// from rotating the token, and A3-R3 legitimately did. What G10 is FOR is that A3-R1 rotated the token
+// rather than shipping its bytes under a published one — and that is answerable from the append-only
+// series, which keeps the answer true no matter how many rounds follow.
+ok(RO.ROUND_TOKENS.indexOf('speventidentity-r2ba3r1-20260920') > -1,
+  'G10 A3-R1 rotated the application cache token, and its token remains in the append-only history');
+// Append-only means no entry is ever reused: a repeated token is a published token being served again,
+// which is the one thing this series exists to prevent.
+eq(RO.ROUND_TOKENS.length, new Set(RO.ROUND_TOKENS).size,
+  'G10a and no token appears twice in the series — a reused token re-serves published bytes');
 eq(RO.staleAppTokenRefs ? RO.staleAppTokenRefs(read('index.html')) : [], [],
   'G11 and no reference to a previous application token survives in index.html');
 

@@ -452,7 +452,19 @@ var ROUND_TOKENS = [
   // send no version and have every event update refused; one holding the previous api file would report
   // a proven zero-write refusal as an UNKNOWN outcome, which is the one classification that tells an
   // operator not to retry something that is safe to retry. The whole application set rotates together.
-  'speventidentity-r2ba3r1-20260920'];
+  'speventidentity-r2ba3r1-20260920',
+  // FC-SUMMARY-R2B-A3-R2 + A3-R3 - the Special Event write route, and the picker that feeds it.
+  // A3-R2 changed operation-system-db-api.js: the five FC/Campaign write accessors stopped carrying their
+  // action in the request body alone and now dispatch through the canonical write transport, which is the
+  // only reason a 302-downgraded POST can be named instead of answered anonymously. A3-R3 changed
+  // fc-summary.html: the Target Year control now refreshes the existing-event picker.
+  //
+  // The token above HAS been published - a91cb8e is on origin/main and GitHub Pages served its bytes - so by
+  // the rule recorded earlier in this series it cannot be reused. A browser still holding the previous
+  // operation-system-db-api.js would keep reporting the router prose verbatim on every Special Event save,
+  // which is the exact population this repair exists for; one holding the previous fc-summary.html would
+  // keep composing a new event over a window that already exists. The whole application set rotates together.
+  'speventwritefix-r2ba3r3-20260921'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the
