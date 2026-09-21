@@ -175,6 +175,9 @@ var SRV_NAMES_20_VARS = ['CAMPAIGNS_HEADERS_', 'CAMPAIGN_SKU_LINES_HEADERS_', 'C
 var SRV_NAMES_20_FNS = ['campaignUpper_', 'campaignDateKey_', 'campaignNum_', 'campaignKeyOf_',
   'campaignFingerprint_', 'campaignIndexRows_', 'campaignReceiptFor_', 'campaignFindByKey_',
   'campaignLineFindByKey_', 'campaignLineIndexRows_', 'campaignLineFingerprint_',
+  // A3-R6 §2 — the resolve/classify half of the campaign handler is its own function now, called
+  // once outside the lock and again under it; the readiness probe gates the unlocked pass.
+  'campaignSheetReady_', 'campaignResolveOrTerminal_',
   'handleUpsertCampaign_', 'handleUpsertCampaignSkuLines_'];
 var ADAPTER_FNS = ['prodSafetyBundle_', 'prodExpectedDbId_', 'prodSchemaError_', 'prodAssertDbTarget_',
   'prodRequireSheet_', 'prodRequireColumns_'];
@@ -555,6 +558,8 @@ function pageWorld(events, campaigns, lines, opts) {
     'function _evtUpdateAddRowBtn() {}',
     'function _evtApplyRowPricing() {}',
     'var _evtAddedRows = [];',
+    // A3-R6 §7 — a single row labels its Qty control Current Event FC while an event is loaded.
+    'function _evtApplyCurrentFcLabel_() {}',
     'function _evtAddSingleRow() {',
     '  var host = document.getElementById("event-sku-rows");',
     // `.value` is a DOMString in every browser: `el.value = 24.99` stores the STRING "24.99". A shim
@@ -960,10 +965,15 @@ mutant('M6  the stale-version check is removed', function () {}, function () {
 });
 
 mutant('M7  the campaign version gate is removed', function () {}, function () {
+  // A3-R6 §2 — the version gate moved into campaignResolveOrTerminal_ and lost two spaces of
+  // indentation with it. The anchor is re-pointed AND guarded: a replace() that silently matches
+  // nothing injects no fault, and a mutant that injects no fault cannot fail. That is exactly how
+  // this one survived the restructure without anything else going red.
   var M = mutServer(function (s) {
+    var FROM = "    var expectedVersion = String(body.expected_row_version == null ? '' : body.expected_row_version).trim();";
+    if (s.g20.indexOf(FROM) === -1) throw new Error('M7 anchor drifted');
     return { a: s.a, g14: s.g14,
-      g20: s.g20.replace("      var expectedVersion = String(body.expected_row_version == null ? '' : body.expected_row_version).trim();",
-        "      var expectedVersion = matched.fingerprint;") };
+      g20: s.g20.split(FROM).join('    var expectedVersion = matched.fingerprint;') };
   });
   var ss = makeSs(seededDb()); M.__use(ss);
   var res = M.handleUpsertCampaign_({ campaign_name: 'RENAMED', company: 'ResUS', country: 'US',

@@ -58,6 +58,9 @@ var G20_VARS = ['CAMPAIGNS_HEADERS_', 'CAMPAIGN_SKU_LINES_HEADERS_', 'CAMPAIGN_K
 var G20_FNS = ['campaignUpper_', 'campaignDateKey_', 'campaignNum_', 'campaignKeyOf_',
   'campaignFingerprint_', 'campaignIndexRows_', 'campaignReceiptFor_', 'campaignFindByKey_',
   'campaignLineFindByKey_', 'campaignLineIndexRows_', 'campaignLineFingerprint_',
+  // A3-R6 §2 — the campaign handler's resolve/classify half is its own function now (called once
+  // unlocked and again under the lock), gated by a readiness probe.
+  'campaignSheetReady_', 'campaignResolveOrTerminal_',
   'handleUpsertCampaign_', 'handleUpsertCampaignSkuLines_'];
 
 // =================================================================================================

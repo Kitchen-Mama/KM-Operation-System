@@ -49,6 +49,7 @@ var API = read('assets/js/api/operation-system-db-api.js');
 var GS20 = read('assets/specs/active/apps-script/20_campaign_write_handlers.gs');
 var GS14 = read('assets/specs/active/apps-script/14_fc_write_handlers.gs');
 var GS63 = read('assets/specs/active/apps-script/63_api_v1_system_health.gs');
+var RO = require('./_release-order.js');   // the append-only release ledger, for order questions
 
 function fnSrc(src, name) {
   var sig = 'function ' + name + '(', i = src.indexOf(sig);
@@ -91,13 +92,19 @@ function serverWorld(rows, overrides) {
   }
   var writes = [];
   var responses = [];
+  var lockTries = [], lockReleases = [];
   var sheet = { __grid: grid };
   var sb = {
     console: console, JSON: JSON, String: String, Number: Number, Object: Object, Array: Array,
     Math: Math, Date: Date, isNaN: isNaN, parseInt: parseInt, parseFloat: parseFloat, RegExp: RegExp,
     CAMPAIGNS_HEADERS_: HEADERS, FC_SCHEMA_BY_NAME_: {},
-    LockService: { getScriptLock: function () { return { tryLock: function () { return true; }, releaseLock: function () {} }; } },
-    SpreadsheetApp: { getActiveSpreadsheet: function () { return { __ss: true }; } },
+    LockService: { getScriptLock: function () {
+      return { tryLock: function () { lockTries.push(Date.now()); return true; },
+               releaseLock: function () { lockReleases.push(Date.now()); } };
+    } },
+    SpreadsheetApp: { getActiveSpreadsheet: function () {
+      return { __ss: true, getSheetByName: function (n) { return n === 'campaigns' ? sheet : null; } };
+    } },
     Utilities: { getUuid: function () { return 'NEWUUID0123456789'; } },
     jsonResponse_: function (o) { responses.push(o); return o; },
     fcWriteEnsureSheet_: function () { return sheet; },
@@ -119,6 +126,8 @@ function serverWorld(rows, overrides) {
       return { id: id, created: true };
     },
     __writes: function () { return writes; },
+    __lockTries: function () { return lockTries.length; },
+    __lockReleases: function () { return lockReleases.length; },
     __rows: function () { return rowObjects(); },
     __last: function () { return responses[responses.length - 1]; }
   };
@@ -129,6 +138,10 @@ function serverWorld(rows, overrides) {
     fnSrc(GS20, 'campaignDateKey_'), fnSrc(GS20, 'campaignUpper_'), fnSrc(GS20, 'campaignNum_'),
     fnSrc(GS20, 'campaignKeyOf_'), fnSrc(GS20, 'campaignFingerprint_'), fnSrc(GS20, 'campaignIndexRows_'),
     fnSrc(GS20, 'campaignReceiptFor_'), fnSrc(GS20, 'campaignFindByKey_'),
+    // A3-R6 — the classifier is now its own function, called by both passes, and the readiness probe
+    // decides whether the unlocked pass may run at all.
+    fnSrc(GS20, 'campaignSheetReady_'),
+    (overrides && overrides.resolver) || fnSrc(GS20, 'campaignResolveOrTerminal_'),
     (overrides && overrides.handler) || fnSrc(GS20, 'handleUpsertCampaign_')
   ];
   vm.runInContext(parts.join('\n'), sb, { filename: 'gs20.js' });
@@ -255,7 +268,11 @@ ok(/'READ_FAILED'/.test(FCS), 'C6  the READ_FAILED fallback still exists for gen
 
 section('D. BASE FC AT BUILD TIME');
 ok(/function _evtEventBaseFcForSku\(/.test(FCS), 'D0  the single event-month Base FC owner exists');
-ok(/baseFc: \(p && p\.baseFc != null\) \? p\.baseFc : _evtEventBaseFcForSku\(r\.sku\)/.test(FCS),
+// A3-R6 §7 — Build now resolves through the METHOD-AWARE owner, because the three assist methods
+// do not share a baseline: Growth's is another campaign's event FC, Adjust's is a Regular forecast
+// month, Manual has none. The rule pinned here is unchanged — Build RESOLVES rather than merely
+// inheriting a previous row's value.
+ok(/baseFc: \(p && p\.baseFc != null\) \? p\.baseFc : _evtBuildBaselineForSku\(r\.sku\)/.test(FCS),
   'D1  Build RESOLVES Base FC instead of only inheriting a previous row');
 ok(/_evtBaseFcForSku\(sku, monthIdx, year\)/.test(fnSrc(FCS, '_evtEventBaseFcForSku')),
   'D2  and it delegates to the EXISTING canonical fc_regular_forecast reader — no second formula');
@@ -439,37 +456,46 @@ ok(/id="event-target-year" onchange="_evtPopulateExistingSelect\(\)"/.test(read(
 ok(/CAMPAIGN_KEY_FIELDS_\s*=\s*\['company', 'country', 'marketplace', 'promotion_type', 'event_flag',\n\s*'start_date', 'end_date'\]/.test(GS20),
   'I7  HEADER_IDENTITY_KEY unchanged');
 ok(GS14.indexOf('STALE_SPECIAL_EVENT_VERSION') > -1, 'I8  the special-event stale guard is untouched');
-eq((/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/.exec(GS63) || [])[1], 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R16',
-  'I9  the release is R16');
-eq((/var CAMPAIGN_BUILD_VERSION_ = '([^']+)'/.exec(GS20) || [])[1], 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R16',
-  'I10 and 20_ carries it');
+// A3-R6 — these pinned the release as the LITERAL R16, which is the one thing a release is guaranteed
+// to change: R17 moved it for the campaign-lock repair. What A3-R4 needed to know is that ITS OWN
+// change shipped, i.e. that the release is at or after R16 and that 20_ — the file A3-R4 changed — is
+// stamped with the current release rather than lagging it. Both are asked of the ledger now, so a
+// later round moves them without editing this line.
+var _rel = (/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/.exec(GS63) || [])[1];
+var _c20 = (/var CAMPAIGN_BUILD_VERSION_ = '([^']+)'/.exec(GS20) || [])[1];
+ok(RO.stampAtOrAfter(_rel, 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R16'),
+  'I9  the release is at or after R16, the round this campaign-reuse contract shipped in', _rel);
+eq(_c20, _rel, 'I10 and 20_ carries the current release — it has changed in every round since');
 eq((/var FCW_BUILD_VERSION_ = '([^']+)'/.exec(GS14) || [])[1], 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R15',
   'I11 while 14_ stays at the round it last changed');
 
 section('J. MUTANTS');
 
+var RESOLVER_SRC = fnSrc(GS20, 'campaignResolveOrTerminal_');
+function faultResolver(from, to) {
+  var out = (from instanceof RegExp) ? RESOLVER_SRC.replace(from, to) : RESOLVER_SRC.split(from).join(to);
+  if (out === RESOLVER_SRC) throw new Error('mutant anchor drifted: ' + from);
+  return out;
+}
+
 mutant('M1 version gate moved back in front of the reuse comparison', (function () {
   // the A3-R1 order: refuse a versionless save the moment a row is resolved
-  var faulted = fnSrc(GS20, 'handleUpsertCampaign_')
-    .replace('if (headerIdentical) {', 'if (false) {');
-  var S = serverWorld([CAMPAIGN_ROW], { handler: faulted });
+  var S = serverWorld([CAMPAIGN_ROW], { resolver: faultResolver('if (headerIdentical) {', 'if (false) {') });
   var r = S.handleUpsertCampaign_(payloadFor());
   return r.success === false && r.error === 'STALE_CAMPAIGN_VERSION';
 })());
 
 mutant('M2 header mutation allowed without a version', (function () {
-  var faulted = fnSrc(GS20, 'handleUpsertCampaign_')
-    .replace('var headerIdentical = campaignFingerprint_(incoming) === matched.fingerprint;',
-             'var headerIdentical = true;');
-  var S = serverWorld([CAMPAIGN_ROW], { handler: faulted });
+  var S = serverWorld([CAMPAIGN_ROW], { resolver: faultResolver(
+    'var headerIdentical = campaignFingerprint_(incoming) === matched.fingerprint;',
+    'var headerIdentical = true;') });
   var r = S.handleUpsertCampaign_(payloadFor({ campaign_name: 'RENAMED' }));
   return r.success === true;        // caught: a mutation slipped through with no version
 })());
 
 mutant('M3 reuse writes the row anyway', (function () {
-  var faulted = fnSrc(GS20, 'handleUpsertCampaign_')
-    .replace(/      if \(headerIdentical\) \{[\s\S]*?      \}\n\n/, '');
-  var S = serverWorld([CAMPAIGN_ROW], { handler: faulted });
+  var S = serverWorld([CAMPAIGN_ROW], { resolver: faultResolver(
+    /    if \(headerIdentical\) \{[\s\S]*?\n    \}\n/, '') });
   S.handleUpsertCampaign_(payloadFor());
   return S.__writes().length > 0 || (S.__last() && S.__last().success === false);
 })());
@@ -561,9 +587,8 @@ mutant('M10 warm Next always shows Loading', (function () {
 
 mutant('M11 campaign existence treated as event duplicate', (function () {
   // reuse must return success; a mutant that answers DUPLICATE for a resolvable header is caught
-  var faulted = fnSrc(GS20, 'handleUpsertCampaign_')
-    .replace("      if (headerIdentical) {", "      if (headerIdentical) {\n        return jsonResponse_({ success: false, error: 'DUPLICATE_CAMPAIGN_IDENTITY' });\n      }\n      if (false) {");
-  var S = serverWorld([CAMPAIGN_ROW], { handler: faulted });
+  var S = serverWorld([CAMPAIGN_ROW], { resolver: faultResolver('    if (headerIdentical) {',
+    "    if (headerIdentical) {\n      return { terminal: true, response: jsonResponse_({ success: false, error: 'DUPLICATE_CAMPAIGN_IDENTITY' }) };\n    }\n    if (false) {") });
   var r = S.handleUpsertCampaign_(payloadFor());
   return r.success === false;
 })());

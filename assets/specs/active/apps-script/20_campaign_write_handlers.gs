@@ -32,7 +32,7 @@
 // sync of this file was invisible to system.health: an old 20_ still keys campaigns by NAME and
 // ignores expected_row_version, so it answers success to every save the new one refuses, and quietly
 // merges two event windows into one row. That is precisely the failure a manifest row exists to name.
-var CAMPAIGN_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R16';
+var CAMPAIGN_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R17';
 
 // campaigns canonical header (existing columns + additive `company`, `marketplace_id`).
 var CAMPAIGNS_HEADERS_ = [
@@ -296,13 +296,60 @@ function campaignLineFingerprint_(o) {
  * hydrated. A save composed as NEW carries none, so it can never land on a row the operator has not
  * seen. A save whose values already match the stored row writes NOTHING and says so.
  */
+/**
+ * FC-SUMMARY-R2B-A3-R6 §1/§2 — RESOLVE OUTSIDE THE LOCK; LOCK ONLY WHAT WRITES.
+ *
+ * WHAT THE OPERATOR SAW. Stage 1 of a Special Event save intermittently answered
+ * CAMPAIGN_LOCK_TIMEOUT — for a save that, on the commonest path of all, writes nothing at all.
+ *
+ * WHY. `LockService.getScriptLock()` is ONE lock for the WHOLE Apps Script project, not one per
+ * sheet and not one per handler: nineteen other handlers across eleven files take the same lock.
+ * This handler took it as its first act and held it for its entire body — including the full
+ * `getDataRange().getValues()` of the campaigns sheet, a second full read for the legacy key
+ * fallback, and a third for the receipt — and then, on the REUSE path, returned "nothing was
+ * written". So the zero-write case queued behind every other writer in the project, for the
+ * duration of two to three whole-sheet reads, and failed at the 30 s bound.
+ *
+ * WHAT THE LOCK IS ACTUALLY FOR. Its own comment says it: "two concurrent creates must not both
+ * read 'no match' and both append". That is a property of the RESOLVE-THEN-WRITE pair, and of
+ * nothing else. Reading, resolving and classifying are pure; a refusal writes nothing; a reuse
+ * writes nothing. None of those needs a project-wide lock, and none of them should be able to
+ * time out behind a shipment import.
+ *
+ * SO THE HANDLER RUNS THE SAME CLASSIFICATION TWICE, AND `campaignResolveOrTerminal_` IS THE ONLY
+ * COPY OF IT. Pass 1 runs unlocked and may answer any terminal outcome — reuse, or any of the five
+ * refusals — without ever calling tryLock. Pass 2 runs locked and REDOES the resolve from a fresh
+ * read before writing, so a classification made outside the lock is a hint and never the decision.
+ * That second resolve is what keeps the create race closed: two concurrent creates of one identity
+ * both see "no match" outside the lock, and inside it the second one now FINDS the row the first
+ * just appended and reuses it. One canonical campaign, exactly as before.
+ *
+ * NOTHING ABOUT THE CONTRACT MOVES. The reuse branch is still zero-write, a header mutation still
+ * requires a fresh version, a missing version is still refused, and the refusal tokens and their
+ * details are byte-identical — because both passes call one function to produce them. What changed
+ * is only WHEN the lock is held: around the write, and no longer around the reading.
+ */
 function handleUpsertCampaign_(body) {
   body = body || {};
   var actor = String(body.updated_by || body.actor || 'fc-summary').trim();
   var name = String(body.campaign_name || body.event_name || '').trim();
   var suppliedId = String(body.campaign_id || '').trim();
   if (!name && !suppliedId) return jsonResponse_({ success: false, error: 'Missing campaign_name' });
+  if (name) body.campaign_name = name;
 
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // ---- PASS 1: READ-ONLY, NO LOCK. Only when the sheet is already structurally sound — creating a
+  // sheet or appending a column IS a write, and structural repair belongs under the lock with the
+  // other writes. An unready sheet simply falls through; it costs one read on a path that is taken
+  // once in the life of the spreadsheet.
+  var pre = ss.getSheetByName('campaigns');
+  if (pre && campaignSheetReady_(pre)) {
+    var early = campaignResolveOrTerminal_(pre, body, name, suppliedId);
+    if (early.terminal) return early.response;
+  }
+
+  // ---- PASS 2: THE RACE-SENSITIVE SECTION. Everything that can write is inside this lock.
   var lock = LockService.getScriptLock();
   try {
     // Two concurrent creates must not both read "no match" and both append.
@@ -310,132 +357,19 @@ function handleUpsertCampaign_(body) {
       return jsonResponse_({ success: false, error: 'CAMPAIGN_LOCK_TIMEOUT',
         detail: 'Another campaign write is in progress. Nothing was written.' });
     }
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
     // FC-SUMMARY-R2B-A — see 14_: name-based required-column validation, order-tolerant, everything else strict.
     var sheet = fcWriteEnsureSheet_(ss, 'campaigns', CAMPAIGNS_HEADERS_, FC_SCHEMA_BY_NAME_);
     fcWriteEnsureColumns_(sheet, CAMPAIGNS_HEADERS_);
-    var s = fcWriteReadSheet_(sheet);
-    if (s.col('campaign_id') === -1) {
+    if (fcWriteReadSheet_(sheet).col('campaign_id') === -1) {
       return jsonResponse_({ success: false, error: 'campaign_id column not found in campaigns' });
     }
-    var index = campaignIndexRows_(s);
-    if (name) body.campaign_name = name;
 
-    var id = '', matched = null;
+    // THE RESOLVE IS REDONE HERE, from a read taken under the lock. This is the line that keeps the
+    // create race closed and makes pass 1 safe to be a hint.
+    var r = campaignResolveOrTerminal_(sheet, body, name, suppliedId);
+    if (r.terminal) return r.response;
 
-    if (suppliedId) {
-      // ---- UPDATE BY ID — the id may only ever address a row whose identity the body does not contradict.
-      var byId = index.filter(function (r) { return r.id === suppliedId; });
-      if (byId.length === 0) {
-        return jsonResponse_({ success: false, error: 'CAMPAIGN_NOT_FOUND',
-          detail: 'No campaign carries campaign_id ' + suppliedId + '. Nothing was written.' });
-      }
-      if (byId.length > 1) {
-        return jsonResponse_({ success: false, error: 'DUPLICATE_CAMPAIGN_IDENTITY',
-          detail: byId.length + ' rows share campaign_id ' + suppliedId
-            + ' (rows ' + byId.map(function (r) { return r.rowNumber; }).join(', ') + '). Nothing was written.' });
-      }
-      // A PARTIAL update is legitimate — closing a campaign sends status and nothing else — so an
-      // ABSENT key field means "unchanged", never "blank". Only a field the body actually supplies can
-      // contradict the stored row, and when one does the campaign is never silently repointed.
-      var conflict = '';
-      CAMPAIGN_KEY_FIELDS_.forEach(function (f) {
-        if (conflict) return;
-        if (!Object.prototype.hasOwnProperty.call(body, f)) return;
-        if (String(body[f] == null ? '' : body[f]).trim() === '') return;
-        var want = (f === 'start_date' || f === 'end_date') ? campaignDateKey_(body[f]) : campaignUpper_(body[f]);
-        var have = (f === 'start_date' || f === 'end_date') ? campaignDateKey_(byId[0].row[f]) : campaignUpper_(byId[0].row[f]);
-        if (want !== have) conflict = f + ' (' + have + ' -> ' + want + ')';
-      });
-      if (conflict) {
-        return jsonResponse_({ success: false, error: 'CAMPAIGN_IDENTITY_MISMATCH',
-          detail: 'campaign_id ' + suppliedId + ' belongs to ' + byId[0].key + '; this save changes '
-            + conflict + '. A campaign\'s site, type or event window is never silently repointed — create the new window as its own campaign. Nothing was written.' });
-      }
-      id = suppliedId; matched = byId[0];
-    } else {
-      // ---- BY BUSINESS KEY — the same window updates itself instead of appending a twin -------------
-      var want = campaignKeyOf_(body);
-      var byKey = index.filter(function (r) { return r.id && r.key === want; });
-      if (byKey.length > 1) {
-        return jsonResponse_({ success: false, error: 'DUPLICATE_CAMPAIGN_IDENTITY',
-          detail: byKey.length + ' rows already carry the identity ' + want
-            + ' (rows ' + byKey.map(function (r) { return r.rowNumber; }).join(', ')
-            + '). Resolve the duplicate before writing. Nothing was written.' });
-      }
-      var resolved = byKey.length === 1 ? byKey[0].id : campaignFindByKey_(sheet, {
-        company: body.company, country: body.country, marketplace: body.marketplace,
-        promotion_type: body.promotion_type, event_flag: body.event_flag,
-        campaign_name: name, year: body.year, start_date: body.start_date, end_date: body.end_date
-      });
-      if (resolved) {
-        matched = index.filter(function (r) { return r.id === resolved; })[0] || null;
-        id = resolved;
-      }
-    }
-
-    // ---- RESOLVE-OR-UPDATE. Classified BEFORE the version gate, and BEFORE anything is written. ---
-    //
-    // FC-SUMMARY-R2B-A3-R4 — A CAMPAIGN THAT ALREADY EXISTS IS NOT AN EVENT THAT ALREADY EXISTS.
-    //
-    // A3-R1 put the version gate FIRST, so any save that resolved to an existing campaign and carried
-    // no version was refused as stale. That is correct for an UPDATE and wrong for the commonest
-    // legitimate operation there is: adding another SKU to a window that already exists. One campaign
-    // header owns many campaign_sku_lines and many fc_special_events, so the operator who adds CO1150
-    // to the BFCM window the CO1100 family already uses is not editing the header at all - and was
-    // told 'STALE_CAMPAIGN_VERSION ... refused at stage 1 - campaigns' for a save that would have
-    // written nothing to this sheet.
-    //
-    // So the row is classified first. IDENTICAL HEADER means there is nothing to overwrite, and a
-    // version cannot protect a write that does not happen: the id is resolved, the stored version is
-    // returned, and stage 2 proceeds. HEADER MUTATION is a real update and keeps the full optimistic
-    // concurrency gate - a missing version still refuses, a stale version still refuses, and neither
-    // touches a cell. The exemption is granted by the COMPARISON, never by the absence of a version.
-    if (matched) {
-      // The comparison uses the SAME normalisation the stored fingerprint was built with, so a value
-      // that merely round-trips through the sheet cannot read as a mutation. An ABSENT field means
-      // 'unchanged' (a partial update is legitimate), so only a field the body actually supplies can
-      // make this a mutation.
-      var incoming = {};
-      CAMPAIGN_FINGERPRINT_FIELDS_.forEach(function (f) {
-        incoming[f] = Object.prototype.hasOwnProperty.call(body, f) ? body[f] : matched.row[f];
-      });
-      var headerIdentical = campaignFingerprint_(incoming) === matched.fingerprint;
-
-      if (headerIdentical) {
-        // REUSE. created=false, unchanged=true, zero writes, and updated_at/row_version untouched
-        // because nothing is written - the receipt is read back from the row as it already stands.
-        return jsonResponse_({ success: true, data: { campaign_id: matched.id, created: false,
-          updated: false, unchanged: true, reused: true,
-          business_key: matched.key, row_version: matched.fingerprint,
-          row: campaignReceiptFor_(sheet, matched.id),
-          summary: 'reused ' + matched.key + ' — the header already stores these values, nothing was written' } });
-      }
-
-      // ---- HEADER MUTATION. The version gate is unchanged and still authoritative. ---------------
-      var expectedVersion = String(body.expected_row_version == null ? '' : body.expected_row_version).trim();
-      if (!expectedVersion) {
-        // R2B-A3-R1 — A NEW-EVENT SAVE MAY NOT SILENTLY BECOME AN UPDATE. Reaching here means the
-        // save WOULD change a stored header field while quoting no version, so the read model behind
-        // it is stale: applying it would overwrite values the operator has never seen.
-        return jsonResponse_({ success: false, error: 'STALE_CAMPAIGN_VERSION',
-          detail: 'A campaign already exists for ' + matched.key + ' (campaign_id ' + matched.id
-            + ') and this save would CHANGE its stored header. It carries no expected version and cannot be applied over one. Load the latest data and re-enter the change. Nothing was written.',
-          campaign_id: matched.id,
-          current_row_version: matched.fingerprint });
-      }
-      if (expectedVersion !== matched.fingerprint) {
-        return jsonResponse_({ success: false, error: 'STALE_CAMPAIGN_VERSION',
-          detail: 'This campaign changed after it was loaded. Load the latest data and re-enter the change. Nothing was written.',
-          campaign_id: matched.id,
-          current_row_version: matched.fingerprint,
-          expected_row_version: expectedVersion,
-          current_updated_at: matched.updated_at,
-          current: campaignReceiptFor_(sheet, matched.id) });
-      }
-    }
-
-    if (!id) id = 'CMP-' + Utilities.getUuid().substring(0, 10).toUpperCase();
+    var id = r.id || ('CMP-' + Utilities.getUuid().substring(0, 10).toUpperCase());
 
     var result;
     try {
@@ -451,6 +385,148 @@ function handleUpsertCampaign_(body) {
   } finally {
     try { lock.releaseLock(); } catch (e) {}
   }
+}
+
+/** Structurally sound enough to classify against without repairing anything (a repair is a write). */
+function campaignSheetReady_(sheet) {
+  try {
+    var s = fcWriteReadSheet_(sheet);
+    if (s.col('campaign_id') === -1) return false;
+    for (var i = 0; i < CAMPAIGNS_HEADERS_.length; i++) {
+      if (s.col(CAMPAIGNS_HEADERS_[i]) === -1) return false;
+    }
+    return true;
+  } catch (e) { return false; }
+}
+
+/**
+ * THE ONE CLASSIFIER. Pure with respect to the sheet: it reads and decides, and never writes.
+ *
+ * Returns { terminal: true, response } for every outcome that writes nothing — the REUSE receipt and
+ * all five refusals — or { terminal: false, id, matched } for a save that must go on to write, where
+ * `id` is '' for a create and the resolved campaign_id for an update.
+ *
+ * Both passes call this, which is what makes "classified outside the lock" and "classified under the
+ * lock" the same sentence rather than two implementations that can drift apart.
+ */
+function campaignResolveOrTerminal_(sheet, body, name, suppliedId) {
+  var s = fcWriteReadSheet_(sheet);
+  var index = campaignIndexRows_(s);
+  var id = '', matched = null;
+
+  if (suppliedId) {
+    // ---- UPDATE BY ID — the id may only ever address a row whose identity the body does not contradict.
+    var byId = index.filter(function (r) { return r.id === suppliedId; });
+    if (byId.length === 0) {
+      return { terminal: true, response: jsonResponse_({ success: false, error: 'CAMPAIGN_NOT_FOUND',
+        detail: 'No campaign carries campaign_id ' + suppliedId + '. Nothing was written.' }) };
+    }
+    if (byId.length > 1) {
+      return { terminal: true, response: jsonResponse_({ success: false, error: 'DUPLICATE_CAMPAIGN_IDENTITY',
+        detail: byId.length + ' rows share campaign_id ' + suppliedId
+          + ' (rows ' + byId.map(function (r) { return r.rowNumber; }).join(', ') + '). Nothing was written.' }) };
+    }
+    // A PARTIAL update is legitimate — closing a campaign sends status and nothing else — so an
+    // ABSENT key field means "unchanged", never "blank". Only a field the body actually supplies can
+    // contradict the stored row, and when one does the campaign is never silently repointed.
+    var conflict = '';
+    CAMPAIGN_KEY_FIELDS_.forEach(function (f) {
+      if (conflict) return;
+      if (!Object.prototype.hasOwnProperty.call(body, f)) return;
+      if (String(body[f] == null ? '' : body[f]).trim() === '') return;
+      var want = (f === 'start_date' || f === 'end_date') ? campaignDateKey_(body[f]) : campaignUpper_(body[f]);
+      var have = (f === 'start_date' || f === 'end_date') ? campaignDateKey_(byId[0].row[f]) : campaignUpper_(byId[0].row[f]);
+      if (want !== have) conflict = f + ' (' + have + ' -> ' + want + ')';
+    });
+    if (conflict) {
+      return { terminal: true, response: jsonResponse_({ success: false, error: 'CAMPAIGN_IDENTITY_MISMATCH',
+        detail: 'campaign_id ' + suppliedId + ' belongs to ' + byId[0].key + '; this save changes '
+          + conflict + '. A campaign\'s site, type or event window is never silently repointed — create the new window as its own campaign. Nothing was written.' }) };
+    }
+    id = suppliedId; matched = byId[0];
+  } else {
+    // ---- BY BUSINESS KEY — the same window updates itself instead of appending a twin -------------
+    var want2 = campaignKeyOf_(body);
+    var byKey = index.filter(function (r) { return r.id && r.key === want2; });
+    if (byKey.length > 1) {
+      return { terminal: true, response: jsonResponse_({ success: false, error: 'DUPLICATE_CAMPAIGN_IDENTITY',
+        detail: byKey.length + ' rows already carry the identity ' + want2
+          + ' (rows ' + byKey.map(function (r) { return r.rowNumber; }).join(', ')
+          + '). Resolve the duplicate before writing. Nothing was written.' }) };
+    }
+    var resolved = byKey.length === 1 ? byKey[0].id : campaignFindByKey_(sheet, {
+      company: body.company, country: body.country, marketplace: body.marketplace,
+      promotion_type: body.promotion_type, event_flag: body.event_flag,
+      campaign_name: name, year: body.year, start_date: body.start_date, end_date: body.end_date
+    });
+    if (resolved) {
+      matched = index.filter(function (r) { return r.id === resolved; })[0] || null;
+      id = resolved;
+    }
+  }
+
+  // ---- RESOLVE-OR-UPDATE. Classified BEFORE the version gate, and BEFORE anything is written. ---
+  //
+  // FC-SUMMARY-R2B-A3-R4 — A CAMPAIGN THAT ALREADY EXISTS IS NOT AN EVENT THAT ALREADY EXISTS.
+  //
+  // A3-R1 put the version gate FIRST, so any save that resolved to an existing campaign and carried
+  // no version was refused as stale. That is correct for an UPDATE and wrong for the commonest
+  // legitimate operation there is: adding another SKU to a window that already exists. One campaign
+  // header owns many campaign_sku_lines and many fc_special_events, so the operator who adds CO1150
+  // to the BFCM window the CO1100 family already uses is not editing the header at all - and was
+  // told 'STALE_CAMPAIGN_VERSION ... refused at stage 1 - campaigns' for a save that would have
+  // written nothing to this sheet.
+  //
+  // So the row is classified first. IDENTICAL HEADER means there is nothing to overwrite, and a
+  // version cannot protect a write that does not happen: the id is resolved, the stored version is
+  // returned, and stage 2 proceeds. HEADER MUTATION is a real update and keeps the full optimistic
+  // concurrency gate - a missing version still refuses, a stale version still refuses, and neither
+  // touches a cell. The exemption is granted by the COMPARISON, never by the absence of a version.
+  if (matched) {
+    // The comparison uses the SAME normalisation the stored fingerprint was built with, so a value
+    // that merely round-trips through the sheet cannot read as a mutation. An ABSENT field means
+    // 'unchanged' (a partial update is legitimate), so only a field the body actually supplies can
+    // make this a mutation.
+    var incoming = {};
+    CAMPAIGN_FINGERPRINT_FIELDS_.forEach(function (f) {
+      incoming[f] = Object.prototype.hasOwnProperty.call(body, f) ? body[f] : matched.row[f];
+    });
+    var headerIdentical = campaignFingerprint_(incoming) === matched.fingerprint;
+
+    if (headerIdentical) {
+      // REUSE. created=false, unchanged=true, zero writes, and updated_at/row_version untouched
+      // because nothing is written - the receipt is read back from the row as it already stands.
+      return { terminal: true, response: jsonResponse_({ success: true, data: { campaign_id: matched.id,
+        created: false, updated: false, unchanged: true, reused: true,
+        business_key: matched.key, row_version: matched.fingerprint,
+        row: campaignReceiptFor_(sheet, matched.id),
+        summary: 'reused ' + matched.key + ' — the header already stores these values, nothing was written' } }) };
+    }
+
+    // ---- HEADER MUTATION. The version gate is unchanged and still authoritative. ---------------
+    var expectedVersion = String(body.expected_row_version == null ? '' : body.expected_row_version).trim();
+    if (!expectedVersion) {
+      // R2B-A3-R1 — A NEW-EVENT SAVE MAY NOT SILENTLY BECOME AN UPDATE. Reaching here means the
+      // save WOULD change a stored header field while quoting no version, so the read model behind
+      // it is stale: applying it would overwrite values the operator has never seen.
+      return { terminal: true, response: jsonResponse_({ success: false, error: 'STALE_CAMPAIGN_VERSION',
+        detail: 'A campaign already exists for ' + matched.key + ' (campaign_id ' + matched.id
+          + ') and this save would CHANGE its stored header. It carries no expected version and cannot be applied over one. Load the latest data and re-enter the change. Nothing was written.',
+        campaign_id: matched.id,
+        current_row_version: matched.fingerprint }) };
+    }
+    if (expectedVersion !== matched.fingerprint) {
+      return { terminal: true, response: jsonResponse_({ success: false, error: 'STALE_CAMPAIGN_VERSION',
+        detail: 'This campaign changed after it was loaded. Load the latest data and re-enter the change. Nothing was written.',
+        campaign_id: matched.id,
+        current_row_version: matched.fingerprint,
+        expected_row_version: expectedVersion,
+        current_updated_at: matched.updated_at,
+        current: campaignReceiptFor_(sheet, matched.id) }) };
+    }
+  }
+
+  return { terminal: false, id: id, matched: matched };
 }
 
 // ---- campaign_sku_lines ----

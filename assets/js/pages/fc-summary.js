@@ -3135,8 +3135,27 @@ function _evtClearEditing_() {
 
 /* The modal says which of the two things it is doing. A form that looks identical whether it will
    create or overwrite is how an operator overwrites without meaning to. */
+/* FC-SUMMARY-R2B-A3-R6 §7/§9 — THE FOURTH MEANING, NAMED.
+ *
+ * A persisted event rehydrates into Single SKU mode, and the Forecast Qty box it lands in is the
+ * event's own committed fc_qty — the CURRENT EVENT FC. It is not a baseline and must never read as
+ * one: the Growth baseline is some OTHER campaign's event FC and the Adjust baseline is a Regular
+ * forecast month, and both may legitimately differ from this. Single-SKU rows carry no baseline
+ * column, so the two can never share a cell; what was missing was only the name. */
+function _evtApplyCurrentFcLabel_(scope) {
+  var on = _evtEditingActive_();
+  var host = scope || document;
+  var els = host.querySelectorAll ? host.querySelectorAll('.evt-fc') : [];
+  for (var i = 0; i < els.length; i++) {
+    els[i].placeholder = on ? 'Current Event FC' : 'Qty';
+    els[i].title = on
+      ? 'Current Event FC — the value stored for this event. Editing it is what the save will change.'
+      : 'Forecast quantity for this event.';
+  }
+}
 function _evtSetEditingChrome_() {
   var on = _evtEditingActive_();
+  _evtApplyCurrentFcLabel_();
   var banner = document.getElementById('event-editing-banner');
   if (banner) {
     banner.hidden = !on;
@@ -3791,6 +3810,7 @@ function _evtAddSingleRow() {
     '<span class="evt-cur" title="pricing_list currency (applies to Regular + Deal)">—</span>' +
     '<button type="button" class="fc-evt-row-remove" title="Remove" onclick="_evtRemoveSingleRow(this)">×</button>';
   wrap.appendChild(row);
+  _evtApplyCurrentFcLabel_(row);      // a row added while an event is loaded is labelled like the rest
   _evtUpdateAddRowBtn();
 }
 function _evtRemoveSingleRow(btn) {
@@ -3945,6 +3965,72 @@ function _evtEventBaseFcForSku(sku) {
 // same card as separate rows — never split by price). Each row: {sku, marketplaceSkuId, regularPrice,
 // discountPct, dealPrice, baseFc, newFc}. Preserves any values the user already typed for the same
 // (category||series, sku).
+/* ==============================================================================================
+   FC-SUMMARY-R2B-A3-R6 §6/§7 — FOUR MEANINGS, ONE COLUMN, AND WHY THAT WAS WRONG.
+
+   A3-R5 taught the Build step to resolve a baseline, which fixed an always-empty column and
+   introduced a subtler fault: it resolved the SAME quantity — fc_regular_forecast at the event's own
+   month — whatever assist method was selected. The three methods do not share a baseline:
+
+     Apply Growth Rate      baseline = Σ fc_special_events.fc_qty for the selected Base Campaign.
+                            A Regular-forecast figure in that column is not a weaker answer, it is a
+                            different quantity wearing the right column's name.
+     Adjust from Base FC    baseline = fc_regular_forecast at the operator's Base Year + Base Month,
+                            which they may deliberately set away from the event's own month.
+     Manual                 there is no computational baseline. Showing one invites the operator to
+                            read a number they are not editing against.
+
+   Preview & Pre-fill has always dispatched correctly on the method; only Build did not, so the cards
+   disagreed with the preview that followed them. This is the same dispatch, moved to the one place
+   both steps can share, and the column is named for whichever quantity it is currently holding.
+
+   The fourth meaning — a persisted event's own fc_qty — is deliberately NOT here. An existing event
+   rehydrates into Single SKU mode, whose rows have no baseline column at all; its stored value is the
+   CURRENT EVENT FC and is labelled as such on that control. It must never arrive in this column,
+   because 'what this event is forecast to sell' and 'what we are computing that from' are different
+   facts, and one of them is already committed. */
+function _evtBaselineKind_() {
+  var m = _evtAssistMethod();
+  return (m === 'growth' || m === 'adjust') ? m : 'manual';
+}
+function _evtBaselineLabel_() {
+  var k = _evtBaselineKind_();
+  if (k === 'growth') return 'Base Campaign FC';
+  if (k === 'adjust') return 'Base Forecast';
+  return 'Base (n/a)';
+}
+/* §8 — 'YOU HAVE NOT TOLD ME YET' IS NOT 'THERE IS NONE'.
+   Returns '' when the baseline is resolvable, or the sentence naming the input still missing. Kept
+   apart from the lookup on purpose: a missing Event Period and an absent forecast row both used to
+   render an identical '—', which is the state the operator read as "the data is not there". */
+function _evtBaselineMissingInput_() {
+  var k = _evtBaselineKind_();
+  if (k === 'manual') return '';
+  if (k === 'growth') {
+    return ((document.getElementById('event-assist-base-campaign') || {}).value || '')
+      ? '' : 'Select a Base Campaign to resolve Base Campaign FC.';
+  }
+  // ADJUST — an explicit Base Year + Base Month answers on its own and needs no event window.
+  var by = parseInt((document.getElementById('event-assist-base-year') || {}).value, 10);
+  var bm = parseInt((document.getElementById('event-assist-base-month') || {}).value, 10);
+  if (by && !isNaN(bm)) return '';
+  return (_evtEventMonthIdx() == null)
+    ? 'Set Event Period, or a Base Year and Base Month, to resolve Base Forecast.' : '';
+}
+/* The ONE baseline reader the Build step uses. Each branch delegates to the existing canonical owner
+   for that quantity — no third copy of either lookup is created here. */
+function _evtBuildBaselineForSku(sku) {
+  var k = _evtBaselineKind_();
+  if (k === 'manual') return null;
+  if (_evtBaselineMissingInput_()) return null;
+  if (k === 'growth') {
+    return _evtGrowthBaseForSku((document.getElementById('event-assist-base-campaign') || {}).value || '', sku);
+  }
+  var by = parseInt((document.getElementById('event-assist-base-year') || {}).value, 10);
+  var bm = parseInt((document.getElementById('event-assist-base-month') || {}).value, 10);
+  if (by && !isNaN(bm)) return _evtBaseFcForSku(sku, bm, by);
+  return _evtEventBaseFcForSku(sku);          // the event's own month, as A3-R5 resolved it
+}
 function _evtBuildGroups() {
   _evtCloseAllMs();
   var rows = _evtCandidateRows();
@@ -3964,7 +4050,7 @@ function _evtBuildGroups() {
       // A previously previewed value wins (the operator may have chosen a different baseline in
       // Preview & Pre-fill); otherwise resolve the event month's Regular FC. `== null` and not `||`,
       // because a stored Base FC of 0 is a value and must not be re-resolved as if it were missing.
-      baseFc: (p && p.baseFc != null) ? p.baseFc : _evtEventBaseFcForSku(r.sku),
+      baseFc: (p && p.baseFc != null) ? p.baseFc : _evtBuildBaselineForSku(r.sku),
       newFc: p ? p.newFc : NaN
     });
   });
@@ -3998,7 +4084,9 @@ function _evtRenderGroupCards() {
         '<label class="fc-evt-card-disc">Discount % <input type="number" min="0" max="100" step="0.1" value="' + (isNaN(g.discountPct) ? '' : g.discountPct) + '" onchange="_evtCardDiscount(' + i + ',this.value)"></label>' +
         '<button type="button" class="fc-evt-row-remove" title="Remove group" onclick="_evtRemoveGroup(' + i + ')">×</button>' +
       '</div>';
-    var colHead = '<div class="fc-evt-line fc-evt-line--head"><span>SKU</span><span>Regular</span><span>Disc %</span><span>Deal</span><span>Base FC</span><span>New Event FC</span><span>Diff</span><span></span></div>';
+    var colHead = '<div class="fc-evt-line fc-evt-line--head"><span>SKU</span><span>Regular</span><span>Disc %</span><span>Deal</span><span>'
+      + _evtBaselineLabel_() + '</span><span>New Event FC</span><span>Diff</span><span></span></div>';
+    var baseKind = _evtBaselineKind_(), baseNote = _evtBaselineMissingInput_();
     var body = g.rows.map(function(r, ri){
       // Regular + Deal share the SAME pricing_list currency; shown as an auxiliary suffix (never a cross-country substitute).
       var cur = r.currency ? (' <small class="fc-evt-cur">' + r.currency + '</small>') : '';
@@ -4015,7 +4103,9 @@ function _evtRenderGroupCards() {
         '<span>' + regTxt + '</span>' +
         '<input type="number" min="0" max="100" step="0.1" class="evt-line-disc" value="' + (isNaN(r.discountPct) ? '' : r.discountPct) + '" onchange="_evtLineField(' + i + ',' + ri + ',\'discountPct\',this.value)">' +
         '<input type="number" step="0.01" class="evt-line-deal" value="' + (isNaN(r.dealPrice) ? '' : r.dealPrice) + '" onchange="_evtLineField(' + i + ',' + ri + ',\'dealPrice\',this.value)">' +
-        '<span>' + (base == null ? '—' : base.toLocaleString()) + '</span>' +
+        '<span' + (baseNote ? (' class="fc-evt-warn" title="' + baseNote + '"') : '') + '>'
+          + (base != null ? base.toLocaleString() : (baseNote ? 'set input' : (baseKind === 'manual' ? 'n/a' : '—')))
+          + '</span>' +
         newCell +
         '<span style="color:' + diffColor + '">' + diffTxt + '</span>' +
         '<span></span>' +
@@ -4951,6 +5041,11 @@ function _fcRetryLabel_(state) {
 // banner previously showed "<message> [<code>]", which named neither the action, nor the request id, nor
 // whether retrying could possibly help. It degrades to the old two-field form if the transport module is
 // absent, so a load failure costs detail rather than the banner itself.
+/* The table a failed table read was reading, '' when the error is not about one. */
+function _fcErrTable_(err) {
+  var t = (err && (err.kmTransport || err.transport)) || {};
+  return String((t.table || (err && err.table) || '')).trim();
+}
 function _fcErrDetail_(err, state) {
     var label = _fcRetryLabel_(state);
     try {
@@ -4962,6 +5057,13 @@ function _fcErrDetail_(err, state) {
             var f = T.errorFields(err);
             var bits = [f.message, 'Reason: ' + f.code];
             if (f.action) bits.push('Action: ' + f.action);
+            // FC-SUMMARY-R2B-A3-R6 §3 — WHICH TABLE. A prerequisite load asks for up to seven, and a
+            // timeout reached the operator as 'Action: getTable', which is true and unusable: it names
+            // the verb and not the noun. getOperationDbTableFromSheet already attaches the table to
+            // every typed error it throws; the shared formatter simply does not carry the field, so it
+            // is read from the error here rather than guessed or re-derived.
+            var _tbl = _fcErrTable_(err);
+            if (_tbl) bits.push('Table: ' + _tbl);
             if (f.request_id) bits.push('Request: ' + f.request_id);
             if (f.http_status !== null && f.http_status !== undefined) bits.push('HTTP ' + f.http_status);
             if (f.content_type) bits.push(f.content_type);

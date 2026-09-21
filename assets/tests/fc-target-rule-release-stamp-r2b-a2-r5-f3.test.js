@@ -395,7 +395,19 @@ section('G. THE SHARED LEDGER IS POSITIONAL, AND THAT IS LOAD-BEARING');
   var priorList = vm.runInNewContext(extractArray(prior, 'OWNER_STAMPS') + '\nOWNER_STAMPS;');
   eq(order.slice(0, priorList.length), priorList,
     'G4  every stamp that existed before is unchanged, in place — nothing removed, nothing reordered');
-  eq(order.slice(priorList.length), [RELEASE], 'G5  and exactly one token was added: R12');
+  // A3-R6 — G5 asked how many tokens had been added since the frozen BASE commit, which answers 'one'
+  // for exactly one round and then drifts: R16 and R17 have both landed since a91cb8e, both legitimately.
+  // The rule it exists to enforce is about THIS round — a release adds one token, never two — so it is now
+  // asked of the previous commit instead of the frozen base. G4 above keeps the append-only check against
+  // BASE, where a fixed historical anchor is exactly right.
+  var prevCommit = cp.execFileSync('git', ['show', 'HEAD:assets/tests/_release-order.js'],
+    { cwd: REPO, encoding: 'utf8' });
+  var prevList = vm.runInNewContext(extractArray(prevCommit, 'OWNER_STAMPS') + '\nOWNER_STAMPS;');
+  eq(order.slice(0, prevList.length), prevList,
+    'G5  every stamp in the previous commit is unchanged, in place');
+  ok(order.length - prevList.length <= 1,
+    'G5a and this round added at most one token — a release is one stamp, never two',
+    order.slice(prevList.length));
 })();
 
 // ================================================================================================

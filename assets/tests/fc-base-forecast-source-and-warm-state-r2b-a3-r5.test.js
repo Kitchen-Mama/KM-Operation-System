@@ -308,10 +308,17 @@ function baseWorld(opts) {
   // 13/14 — Single SKU, Build and Preview must not have three answers. They do not: all three reach
   // the same reader, and the group builder is pinned to it here.
   var BUILD = fnSrc(FCS, '_evtBuildGroups');
-  ok(/baseFc: \(p && p\.baseFc != null\) \? p\.baseFc : _evtEventBaseFcForSku\(r\.sku\)/.test(BUILD),
+  // A3-R6 §7 — the wrapper Build calls is now the METHOD-AWARE owner: the three assist methods do not
+  // share a baseline, and resolving the Regular forecast for all of them put a Base Campaign figure's
+  // name over a Regular forecast's number. The rule this pinned is unchanged and still pinned: Build
+  // resolves through ONE owner, and `!= null` keeps a previewed 0 from being re-resolved.
+  ok(/baseFc: \(p && p\.baseFc != null\) \? p\.baseFc : _evtBuildBaselineForSku\(r\.sku\)/.test(BUILD),
     'C8  Build resolves through the one wrapper, and `!= null` keeps a previewed 0 from being re-resolved');
-  var calls = (FCS.match(/_evtBaseFcForSku\(/g) || []).length;
-  ok(calls >= 2 && calls <= 4, 'C8a the lookup formula has ONE implementation and a small number of callers', calls);
+  var defs = (FCS.match(/function _evtBaseFcForSku\(/g) || []).length;
+  eq(defs, 1, 'C8a the Regular-forecast lookup formula has exactly ONE implementation');
+  var callers = (FCS.match(/[^n] _evtBaseFcForSku\(|return _evtBaseFcForSku\(/g) || []).length;
+  ok(callers >= 2 && callers <= 5,
+    'C8b and a small, named set of callers — no fourth copy of the filter', callers);
   var WRAP = fnSrc(FCS, '_evtEventBaseFcForSku');
   ok(/_evtEventMonthIdx\(\)/.test(WRAP) && /event-target-year/.test(WRAP),
     'C9  and the wrapper derives month and year the way the SAVE does — start date, then Target Year');

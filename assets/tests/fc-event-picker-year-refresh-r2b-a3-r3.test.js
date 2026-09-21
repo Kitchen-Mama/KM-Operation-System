@@ -175,6 +175,8 @@ function pageWorld(events, opts) {
     'function _evtRefreshSingleRowPrices() {}',
     'function _evtBuildGroups() {}',
     'var _evtAddedRows = [];',
+    // A3-R6 §7 — a new single row inherits the Current Event FC label when an event is loaded.
+    'function _evtApplyCurrentFcLabel_() {}',
     'function _evtAddSingleRow() {',
     '  var host = document.getElementById("event-sku-rows");',
     '  function cell() { var c = { _v: "" }; Object.defineProperty(c, "value", {',

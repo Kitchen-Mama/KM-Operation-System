@@ -483,7 +483,18 @@ var ROUND_TOKENS = [
   // reused. A browser holding the previous fc-summary.js would keep showing an empty Base FC
   // column, keep opening the Target Rule modal in a false Saving state, and keep paying a
   // seven-request reload after every event save. The whole application set rotates together.
-  'basefcsource-r2ba3r5-20260921'];
+  'basefcsource-r2ba3r5-20260921',
+  // FC-SUMMARY-R2B-A3-R6 - the campaign-lock and baseline-semantics round. fc-summary.js changes on
+  // three counts: a prerequisite timeout now names the TABLE it was reading rather than only the
+  // action, the Build card resolves the baseline the SELECTED assist method actually means (Growth
+  // reads the Base Campaign's event FC, Adjust the Regular forecast, Manual none) and names the
+  // column for it, and a saved event's own fc_qty is labelled Current Event FC. The token above HAS
+  // been published - 27e70ee is on origin/main and Pages served it under 38 assets - so by the rule
+  // recorded earlier it cannot be reused. A browser holding the previous fc-summary.js would keep
+  // showing a Regular forecast under a Base Campaign FC heading, keep reporting a timed-out
+  // prerequisite as a bare 'Action: getTable', and keep offering a baseline where Manual has none.
+  // The whole application set rotates together.
+  'campaignlock-r2ba3r6-20260921'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the
@@ -832,7 +843,18 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // and its stamp records the round it last changed. A new deployment version is required because a
   // project holding the R15 copy of 20_ still refuses the new-SKU save this release exists to allow.
   // APPEND-ONLY, at the end - stampAtOrAfter compares INDEXES.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R16'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R16',
+  // R17 - FC-SUMMARY-R2B-A3-R6: the campaign lock stops covering the reading. LockService.getScriptLock()
+  // is ONE lock for the whole project - nineteen other handlers take the same one - and 20_ held it for its
+  // entire body, including two to three full getDataRange() reads of the campaigns sheet, then returned
+  // 'nothing was written' on the reuse path. Stage 1 of a Special Event save was therefore queuing behind
+  // every other writer in the project and failing at the 30s bound with CAMPAIGN_LOCK_TIMEOUT. Resolve and
+  // classify now run unlocked in one shared function, every zero-write outcome answers without touching the
+  // lock, and the write path re-resolves UNDER the lock so the concurrent-create race stays closed. 63_
+  // carries the release, 20_'s stamp and 20_'s ownership row. 14_ does NOT move - nothing in it changed.
+  // A new deployment version is required: a project holding the R16 copy of 20_ keeps taking the global
+  // lock to answer a read. APPEND-ONLY, at the end - stampAtOrAfter compares INDEXES.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R17'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));
