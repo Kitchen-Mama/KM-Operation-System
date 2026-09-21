@@ -161,8 +161,9 @@ var SAVE = fnSrc(FCS, 'saveEventUpdate');
 ok(/eventFcId: gr\.eventFcId \|\| '', campaignSkuLineId: gr\.campaignSkuLineId \|\| '',/.test(SAVE),
   'A3  the GROUP-card save now carries the ids it resolved');
 ok(/rowVersion: gr\.rowVersion \|\| ''/.test(SAVE), 'A3a and the row_version');
-ok(/eventFcId: r\.eventFcId, campaignSkuLineId: r\.campaignSkuLineId, rowVersion: r\.rowVersion/.test(SAVE),
-  'A3b the single-row path is unchanged — it always did');
+ok(/var rid = _evtSingleRowIdentity_\(r\);/.test(SAVE)
+  && /eventFcId: rid\.eventFcId, campaignSkuLineId: rid\.campaignSkuLineId, rowVersion: rid\.rowVersion/.test(SAVE),
+  'A3b the single-row path carries one too — A3-R8 §3 re-resolves it against the stated window');
 ok(/if \(l\.eventFcId\) evPayload\.event_fc_id = l\.eventFcId;/.test(SAVE)
   && /if \(l\.rowVersion\) evPayload\.expected_row_version = l\.rowVersion;/.test(SAVE),
   'A4  and both reach the stage-3 payload through the one existing line');

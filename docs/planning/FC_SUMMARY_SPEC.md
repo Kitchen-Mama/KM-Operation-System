@@ -325,6 +325,78 @@ Event Flag enum: **Normal / Spring Deal / Prime Day / Fall Prime / BFCM / Mother
 
 ---
 
+### 10.1 Event window change — FROZEN (FC-SUMMARY-R2B-A3-R8, 2026-09-21)
+
+**The event window is part of an event's identity, not a field on it.** This section is the canonical
+owner of what happens when an operator changes the dates of an event that is already persisted. It
+does not restate Campaign header identity, which belongs to
+[`CAMPAIGN_PROMOTION_RECORD_CONTRACT.md` §1.2](./CAMPAIGN_PROMOTION_RECORD_CONTRACT.md) —
+`HEADER_IDENTITY_KEY` already carries `start_date` and `end_date`, and already rules that a different
+date window is a different campaign whatever it is called.
+
+```window-policy
+WINDOW_CHANGE_SEMANTICS         = CREATE_NEW_IDENTITY_NOT_MOVE
+EVENT_FC_ID_POLICY              = NEW_WINDOW_GETS_ITS_OWN_EVENT_IDENTITY
+OLD_EVENT_POLICY                = PRESERVE
+OLD_CAMPAIGN_POLICY             = PRESERVE
+EMPTY_CAMPAIGN_AUTO_DELETE      = NO
+PER_SKU_SHARED_HEADER_MUTATION  = FORBIDDEN
+```
+
+**A · The window is unchanged** — an ordinary edit. The campaign, the line and the event keep their
+ids, `event_fc_id` is preserved, and optimistic concurrency is unchanged: an update quotes the
+`expected_row_version` it was loaded at, a stale one is refused, and a save whose values already match
+the stored row writes nothing.
+
+**B · `event_start_date` or `event_end_date` changed** — this is **not** an in-place edit. The first
+Save after the change writes **nothing at all** — not the campaign, not a line, not an event — and
+returns `EVENT_WINDOW_CHANGE_REQUIRES_CONFIRMATION`, stating the old window and the new one. The
+operator then chooses between exactly two actions.
+
+| | OPTION 1 — RESTORE SAVED WINDOW | OPTION 2 — SAVE AS NEW EVENT WINDOW |
+|---|---|---|
+| the form's dates | restored to the saved window | kept as typed |
+| the loaded event | stays loaded | no longer addressed by this form |
+| `campaign_id` / `campaign_sku_line_id` / `event_fc_id` | all retained | not carried to the new window |
+| `row_version` | the current authoritative one | re-resolved for whatever the new window holds |
+| the next Save | an ordinary edit (case A) | canonical resolution at the new identity |
+
+Option 2 is a **detach from the edit operation, not a migration of lineage.** The old campaign, the
+old `campaign_sku_lines` row, the old `fc_special_events` row and its `event_fc_id` are all left
+exactly as they are, because nothing addresses them any more. The save that follows is an ordinary
+canonical save at the new identity:
+
+1. resolve or create the `campaigns` header for the new `HEADER_IDENTITY_KEY` — an existing header
+   whose stored values already match is **reused**, zero writes;
+2. resolve or create the `campaign_sku_lines` row by its business key;
+3. resolve or create the `fc_special_events` row for that campaign / SKU / window.
+
+**If the new identity already exists, it is resolved, never duplicated and never overwritten blindly.**
+The save becomes an update of that event under the same version rules as case A. This is why the ids a
+row carries must be re-resolved against the window the form states rather than inherited: an id kept
+from the window the operator has just left would rewrite *that* event's dates, and no id at all would
+be refused as stale over an event that plainly exists.
+
+**Not implemented, and deliberately so.** There is no `MOVE_EXISTING_EVENT_WINDOW_PRESERVE_LINEAGE`
+operation in FC Summary. Nothing may preserve an `event_fc_id` while changing its window identity,
+relink a `campaign_sku_lines` row or an `fc_special_events` row to a different campaign, mutate a
+shared campaign header on one SKU's behalf, delete an emptied campaign, or cascade a date change to
+sibling SKUs. A campaign header is shared by every SKU in its window and `campaign_sku_lines` carries
+no dates of its own, so a per-SKU move is not expressible in the current schema. Moving an **entire**
+campaign window is a Campaign-level lifecycle operation and needs its own spec before it may exist.
+
+**Where this is enforced.** Client: `_evtWindowChangeGate_` before stage 1, `_evtRestoreLoadedWindow_`
+/ `_evtDetachAsNewEvent_` for the two options, and `_evtSingleRowIdentity_` / `_evtBaseEventForSku`
+for the re-resolution (`assets/js/pages/fc-summary.js`). Server: `campaignResolveOrTerminal_` refuses
+`CAMPAIGN_IDENTITY_MISMATCH` when a save quoting a `campaign_id` would change that header's window
+— *"a campaign's site, type or event window is never silently repointed"* —
+(`20_campaign_write_handlers.gs`), and `fcSpecialEventUpsert_` keeps the
+`STALE_SPECIAL_EVENT_VERSION` gate (`14_fc_write_handlers.gs`). The client guard exists because the
+server refusals are correct but arrive after the operator has already asked for something the product
+does not do.
+
+---
+
 ## 11. Marketplace display label rule (UI display vs DB key)
 
 The `marketplaces` table carries both a **canonical key** (`marketplace`, e.g. `Walmart`) and a human **display name** (`marketplace_display_name`, e.g. `KM Walmart`). The normalizer already exposes `marketplaceDisplayName` on each marketplace record.

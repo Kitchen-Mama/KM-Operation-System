@@ -4056,6 +4056,29 @@ function _evtBaseEventForSku(sku) {
     baseEventFc: qty
   };
 }
+/* A3-R8 §3 — WHICH PERSISTED EVENT DOES THIS SINGLE ROW ADDRESS?
+
+   While an event is LOADED the answer is the row it was hydrated from: the window cannot have moved,
+   because _evtWindowChangeGate_ refuses to save one that has. Once it is NOT loaded — a fresh
+   '+ New Event', or the detach half of the window-change decision — the answer is whatever the
+   window the form now states already holds, resolved through the same owner the group cards use.
+
+   Both directions matter. Resolving finds the event that already exists at the new window, so the
+   save UPDATES it under the ordinary version rules rather than being refused as stale for quoting
+   no version. Discarding finds nothing when the window holds nothing, so a leftover id from the
+   window the operator has just left can never travel with a payload that would rewrite that other
+   event's dates. Neither half is optional: the ids and the window are one fact. */
+function _evtSingleRowIdentity_(r) {
+  r = r || {};
+  if (_evtEditingActive_()) {
+    return { eventFcId: r.eventFcId || '', campaignSkuLineId: r.campaignSkuLineId || '',
+      rowVersion: r.rowVersion || '' };
+  }
+  var be = (typeof _evtBaseEventForSku === 'function') ? _evtBaseEventForSku(r.sku) : null;
+  if (!be) return { eventFcId: '', campaignSkuLineId: '', rowVersion: '' };
+  return { eventFcId: be.eventFcId || '', campaignSkuLineId: be.campaignSkuLineId || '',
+    rowVersion: be.rowVersion || '' };
+}
 function _evtBaselineKind_() {
   var m = _evtAssistMethod();
   return (m === 'growth' || m === 'adjust') ? m : 'manual';
@@ -4404,13 +4427,12 @@ function _evtDetachAsNewEvent_() {
   var ed = _trStrTok_((document.getElementById('event-end-date') || {}).value);
   var o = _evtEditing_ || {};
   _evtWindowChangeAck_ = { from: _evtWindowKey_(o.startDate, o.endDate), to: _evtWindowKey_(sd, ed) };
-  _evtEditing_ = null;                       // no campaign_id, no version: the save is a create
+  _evtEditing_ = null;                       // the old event is no longer addressed by this form
   var sel = document.getElementById('event-existing-select'); if (sel) sel.value = '';
-  var rows = document.getElementById('event-sku-rows');
-  if (rows) { for (var i = 0; i < rows.children.length; i++) {
-    var c = rows.children[i];
-    if (c.dataset) { c.dataset.eventFcId = ''; c.dataset.campaignSkuLineId = ''; c.dataset.rowVersion = ''; }
-  } }
+  // A3-R8 §3 — the dataset is NOT blanked here. _evtSingleRowIdentity_ owns the question now and
+  // asks it of the new window at save time: blanking would force a create even where the new window
+  // already holds this SKU's event, and leaving it would repoint the old one. Either constant is
+  // the wrong answer to a question only the new window can settle.
   _evtSetEditingChrome_();
   _evtClearWindowChangeNotice_();
   if (typeof _evtBuildGroups === 'function' && _evtGroups.length) _evtBuildGroups();
@@ -4495,9 +4517,12 @@ async function saveEventUpdate() {
       if (isNaN(r.fcQty) || r.fcQty <= 0) { alert('Row ' + (i + 1) + ' (' + r.sku + '): Forecast Qty is required (> 0).'); return; }
       var meta = _fcDeriveSkuMeta(r.sku);
       var disc = isNaN(r.discountPercent) ? (r.regularPrice > 0 ? Math.round((1 - r.dealPrice / r.regularPrice) * 1000) / 10 : 0) : r.discountPercent;
+      // A3-R8 §3 — the row's identity is re-resolved against the window this form states, never
+      // inherited from a window the operator has left.
+      var rid = _evtSingleRowIdentity_(r);
       lines.push({ sku: r.sku, marketplaceSkuId: r.marketplaceSkuId, category: meta.category, series: meta.series,
         regularPrice: r.regularPrice, dealPrice: r.dealPrice, discountPercent: disc, currency: r.currency, fcQty: r.fcQty,
-        eventFcId: r.eventFcId, campaignSkuLineId: r.campaignSkuLineId, rowVersion: r.rowVersion });
+        eventFcId: rid.eventFcId, campaignSkuLineId: rid.campaignSkuLineId, rowVersion: rid.rowVersion });
     }
   } else {
     if (!_evtGroups.length) { alert('Build the group cards first.'); return; }
