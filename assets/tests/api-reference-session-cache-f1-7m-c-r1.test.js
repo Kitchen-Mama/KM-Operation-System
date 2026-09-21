@@ -155,7 +155,7 @@ ok(RC && typeof RC.get === 'function' && typeof RC.invalidate === 'function' && 
       ok(calls.n === 1, 'C6: IR carrier once-guard present (unchanged) — a second load issues NO request');
     });
   })();
-  ok(/var _fcSecondaryLoaded = false;/.test(read('js/pages/fc-summary.js')) && /function _fcResetSecondaryCache\(\)/.test(read('js/pages/fc-summary.js')), 'C6: FC secondary once-guard + reset present (unchanged)');
+  ok(/var _fcSecondaryLoaded = false;/.test(read('js/pages/fc-summary.js')) && /function _fcResetSecondaryCache\(scope\)/.test(read('js/pages/fc-summary.js')), 'C6: FC secondary once-guard + reset present (unchanged)');
   ok(/var _roL2Ready = false;/.test(read('js/pages/request-order.js')), 'C6: RO L2 once-guard present (unchanged)');
 
   // ===================================================================================================================

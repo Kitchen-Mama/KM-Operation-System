@@ -122,8 +122,16 @@ ok(/refreshCacheTables/.test(fcEnsure) && /rc\(_FC_PREREQ_TABLES_\[p\]\)/.test(f
   ok(decl.indexOf('campaigns') !== -1 && (/regular: \[[^\]]*\]/.exec(decl) || [''])[0].indexOf('campaigns') === -1,
     'and the Regular path does not pull the Special Event path\'s tables');
 })();
-ok(/function _fcResetSecondaryCache\(\) \{ _fcSecondaryLoaded = false; _fcPrereqLoadedPaths_ = \{\}; \}/.test(FC), '_fcResetSecondaryCache clears the bounded modal-cache flag');
-ok(/_fcResetSecondaryCache\(\)/.test(extractFn(FC, '_fcAfterWrite')), '_fcAfterWrite resets the modal cache so the next modal open re-reads fresh after a FC write');
+// A3-R4 — the reset now takes the write SCOPE and clears only the builder paths that write could have
+// staled; the one-line body this pinned would forbid that outright. What this section is FOR is
+// unchanged and is still asserted: the seam exists, it drops the bounded modal-cache flag, it still
+// clears an affected prerequisite path, and _fcAfterWrite still calls it on every FC write.
+ok(/function _fcResetSecondaryCache\(scope\) \{/.test(FC)
+  && /_fcSecondaryLoaded = false;/.test(extractFn(FC, '_fcResetSecondaryCache')),
+  '_fcResetSecondaryCache clears the bounded modal-cache flag');
+ok(/delete _fcPrereqLoadedPaths_\[p\]/.test(extractFn(FC, '_fcResetSecondaryCache')),
+  'and still drops a prerequisite path the write could have staled');
+ok(/_fcResetSecondaryCache\(scope\)/.test(extractFn(FC, '_fcAfterWrite')), '_fcAfterWrite resets the modal cache after a FC write — now passing the scope, so an unaffected path stays warm');
 // Event Assist calculation transport unchanged (still the SAME base getters; only the tables are now bounded-loaded).
 ok(/getFcRegularForecast/.test(extractFn(FC, '_evtBaseFcForSku')), 'Event Assist ADJUST base still reads fc_regular_forecast (calc unchanged)');
 ok(/getFcSpecialEvents/.test(extractFn(FC, '_evtGrowthBaseForSku')), 'Event Assist GROWTH base still reads fc_special_events (calc unchanged)');

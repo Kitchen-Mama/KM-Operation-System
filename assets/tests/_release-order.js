@@ -464,7 +464,15 @@ var ROUND_TOKENS = [
   // operation-system-db-api.js would keep reporting the router prose verbatim on every Special Event save,
   // which is the exact population this repair exists for; one holding the previous fc-summary.html would
   // keep composing a new event over a window that already exists. The whole application set rotates together.
-  'speventwritefix-r2ba3r3-20260921'];
+  'speventwritefix-r2ba3r3-20260921',
+  // FC-SUMMARY-R2B-A3-R4 - the campaign reuse round. fc-summary.js changes (Base FC resolved at Build,
+  // scoped prerequisite invalidation, the Saving... label) and operation-system-db-api.js changes (the
+  // A3 typed refusal codes). The token above HAS been published - 118f63f is on origin/main and Pages
+  // served it under 38 assets - so by the rule recorded earlier it cannot be reused. A browser holding
+  // the previous fc-summary.js would keep showing an empty Base FC column and keep reloading both
+  // builder paths after every save; one holding the previous api file would keep reporting a typed
+  // write refusal as READ_FAILED. The whole application set rotates together.
+  'campaignreuse-r2ba3r4-20260921'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the
@@ -805,7 +813,15 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // build stamp), 14_ (the fc_special_events version gate) and 63_ (the release, 20_'s new manifest row,
   // 14_'s expected stamp). A new deployment version is required because two write handlers changed.
   // APPEND-ONLY, at the end.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R15'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R15',
+  // R16 - FC-SUMMARY-R2B-A3-R4: the campaign REUSE contract. 20_ now classifies a resolved row as
+  // IDENTICAL HEADER or HEADER MUTATION BEFORE consulting the version, so adding a new SKU to a window
+  // that already exists reuses the header with zero writes instead of answering STALE_CAMPAIGN_VERSION;
+  // 63_ carries the release and 20_s expected stamp. 14_ does NOT move - no handler in it was touched,
+  // and its stamp records the round it last changed. A new deployment version is required because a
+  // project holding the R15 copy of 20_ still refuses the new-SKU save this release exists to allow.
+  // APPEND-ONLY, at the end - stampAtOrAfter compares INDEXES.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R16'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

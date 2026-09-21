@@ -66,21 +66,20 @@ var RELEASE_FLOOR = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12';
 // change?" is meaningless against the tree of the release before last.
 // R15 — FC-SUMMARY-R2B-A3-R1 moves the base to 74aca0b, the commit the R14 release was accepted at in
 // production (58_ and 63_ synced, 131/131 backend gate, Pages converged on the same sha).
-var BASE = '74aca0b';
+// R16 — FC-SUMMARY-R2B-A3-R4 moves the base to a91cb8e, the commit the R15 release was accepted at in
+// production (14_, 20_ and 63_ synced by the user, live health reported R15 uniform).
+var BASE = 'a91cb8e';
 
 // The files THIS release syncs, and the ONE reason each is on the list. A file on the sync list for no
 // stated reason is how an unrelated edit reaches production by accident — so the set is declared here
 // and checked against git below, rather than being read off git and believed.
 var RELEASE_OWNERS = {
-  '14_fc_write_handlers.gs':
-    'fc_special_events gained its own expected_row_version gate, its unchanged-save short-circuit and '
-    + 'the typed zero-write refusals the batch path now reports per row',
   '20_campaign_write_handlers.gs':
-    'the campaign business key moved from company|country|marketplace|NAME|year to the event WINDOW, '
-    + 'and the file gained the script lock, the version gate, the per-line unchanged short-circuit and '
-    + 'its first declared build stamp',
+    'a resolved campaign row is now classified as IDENTICAL HEADER or HEADER MUTATION BEFORE the '
+    + 'version is consulted, so adding a new SKU to an existing window reuses the header with zero '
+    + 'writes instead of being refused STALE_CAMPAIGN_VERSION',
   '63_api_v1_system_health.gs':
-    'the release identity, 20_\'s new REQUIRED manifest row and 14_\'s expected stamp'
+    'the R16 release identity and 20\'s expected stamp'
 };
 // Owners that carry an EARLIER release and must keep it. Each is here because it did not change, and
 // marching any of them to the current release would destroy the manifest's only useful signal.
@@ -91,7 +90,11 @@ var RELEASE_OWNERS = {
 // 58_ JOINED THIS LIST AT R15, and 14_ left it — the exact swap R14's comment predicted. Reading an
 // event is not writing one, so the read owner keeps the release it changed in while the two write
 // handlers move.
+// 14_ JOINED THIS LIST AT R16. It was an R15 owner; R16 changes only how the CAMPAIGN handler classifies
+// a resolved row, and no fc_special_events or fc_target_rules handler was touched. Marching 14_ to R16
+// would erase the one fact its stamp carries: the round in which it last actually changed.
 var RELEASE_UNMOVED = {
+  '14_fc_write_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R15',
   '58_api_v1_fc_summary_workspace.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R14',
   '13_procurement_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12',
   '00_config.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11',
@@ -216,8 +219,11 @@ ok(!/function\s+procurementTargetRuleResolver_/.test(PROC),
   'B1a and the matcher it used to own really is gone, so the stamp is not decoration');
 ok(/KMPD\.resolveTargetRule/.test(PROC),
   'B1b and what replaced it is a call to the shared resolver, not a second private copy');
-eq(declares(WRITE, 'FCW_BUILD_VERSION_'), RELEASE,
-  'B2  14_ declares the release — it is one of the two write owners this release exists to ship');
+// R16 — 14_ KEEPS ITS OWN ROUND. It was an R15 owner; R16 changes only how 20_ classifies a resolved
+// campaign row, and no handler in 14_ was touched. Asserting it declares the RELEASE would march a stamp
+// that exists precisely to record the round its file last changed.
+eq(declares(WRITE, 'FCW_BUILD_VERSION_'), RELEASE_UNMOVED['14_fc_write_handlers.gs'],
+  'B2  14_ keeps the release it last changed in — this one touched no handler inside it');
 eq(declares(CAMPWRITE, 'CAMPAIGN_BUILD_VERSION_'), RELEASE,
   'B2-2 and so does 20_, whose first build stamp this release is');
 // The mirror image, and the reason B2 could be rewritten rather than deleted: the READ owner is
@@ -417,9 +423,10 @@ eq(cp.execFileSync('git', ['diff', '--name-only', BASE, '--', GS + '01_router.gs
 // that membership moved by EXACTLY the row this release declares, which is the stricter statement.
 var priorFiles = manifestRows(priorHealth).map(function (r) { return r.file; });
 var nowFiles = manifestRows(HEALTH).map(function (r) { return r.file; });
-eq(nowFiles.filter(function (f) { return priorFiles.indexOf(f) === -1; }),
-  ['20_campaign_write_handlers.gs'],
-  'H5  the manifest gained EXACTLY one row: the campaign write owner');
+// R16 adds no OWNER — 20_ already joined the manifest at R15, and this release changes what it does,
+// not which files are probed. Membership must therefore move by exactly nothing.
+eq(nowFiles.filter(function (f) { return priorFiles.indexOf(f) === -1; }), [],
+  'H5  the manifest gained no row — R16 changes an existing owner, it does not add one');
 eq(priorFiles.filter(function (f) { return nowFiles.indexOf(f) === -1; }), [],
   'H5a and lost none — a release adds an owner, it never quietly drops one');
 

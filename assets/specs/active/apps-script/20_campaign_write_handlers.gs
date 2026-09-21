@@ -32,7 +32,7 @@
 // sync of this file was invisible to system.health: an old 20_ still keys campaigns by NAME and
 // ignores expected_row_version, so it answers success to every save the new one refuses, and quietly
 // merges two event windows into one row. That is precisely the failure a manifest row exists to name.
-var CAMPAIGN_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R15';
+var CAMPAIGN_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R16';
 
 // campaigns canonical header (existing columns + additive `company`, `marketplace_id`).
 var CAMPAIGNS_HEADERS_ = [
@@ -374,17 +374,53 @@ function handleUpsertCampaign_(body) {
       }
     }
 
-    // ---- THE VERSION GATE. Checked after the row is located and BEFORE anything is written. --------
+    // ---- RESOLVE-OR-UPDATE. Classified BEFORE the version gate, and BEFORE anything is written. ---
+    //
+    // FC-SUMMARY-R2B-A3-R4 — A CAMPAIGN THAT ALREADY EXISTS IS NOT AN EVENT THAT ALREADY EXISTS.
+    //
+    // A3-R1 put the version gate FIRST, so any save that resolved to an existing campaign and carried
+    // no version was refused as stale. That is correct for an UPDATE and wrong for the commonest
+    // legitimate operation there is: adding another SKU to a window that already exists. One campaign
+    // header owns many campaign_sku_lines and many fc_special_events, so the operator who adds CO1150
+    // to the BFCM window the CO1100 family already uses is not editing the header at all - and was
+    // told 'STALE_CAMPAIGN_VERSION ... refused at stage 1 - campaigns' for a save that would have
+    // written nothing to this sheet.
+    //
+    // So the row is classified first. IDENTICAL HEADER means there is nothing to overwrite, and a
+    // version cannot protect a write that does not happen: the id is resolved, the stored version is
+    // returned, and stage 2 proceeds. HEADER MUTATION is a real update and keeps the full optimistic
+    // concurrency gate - a missing version still refuses, a stale version still refuses, and neither
+    // touches a cell. The exemption is granted by the COMPARISON, never by the absence of a version.
     if (matched) {
+      // The comparison uses the SAME normalisation the stored fingerprint was built with, so a value
+      // that merely round-trips through the sheet cannot read as a mutation. An ABSENT field means
+      // 'unchanged' (a partial update is legitimate), so only a field the body actually supplies can
+      // make this a mutation.
+      var incoming = {};
+      CAMPAIGN_FINGERPRINT_FIELDS_.forEach(function (f) {
+        incoming[f] = Object.prototype.hasOwnProperty.call(body, f) ? body[f] : matched.row[f];
+      });
+      var headerIdentical = campaignFingerprint_(incoming) === matched.fingerprint;
+
+      if (headerIdentical) {
+        // REUSE. created=false, unchanged=true, zero writes, and updated_at/row_version untouched
+        // because nothing is written - the receipt is read back from the row as it already stands.
+        return jsonResponse_({ success: true, data: { campaign_id: matched.id, created: false,
+          updated: false, unchanged: true, reused: true,
+          business_key: matched.key, row_version: matched.fingerprint,
+          row: campaignReceiptFor_(sheet, matched.id),
+          summary: 'reused ' + matched.key + ' — the header already stores these values, nothing was written' } });
+      }
+
+      // ---- HEADER MUTATION. The version gate is unchanged and still authoritative. ---------------
       var expectedVersion = String(body.expected_row_version == null ? '' : body.expected_row_version).trim();
       if (!expectedVersion) {
-        // R2B-A3-R1 — A NEW-EVENT SAVE MAY NOT SILENTLY BECOME AN UPDATE. The builder only composes a
-        // save with no version when its read model held no match, so arriving here means the model was
-        // stale: somebody created this window in between. Applying it would overwrite values the
-        // operator in front of this modal has never seen.
+        // R2B-A3-R1 — A NEW-EVENT SAVE MAY NOT SILENTLY BECOME AN UPDATE. Reaching here means the
+        // save WOULD change a stored header field while quoting no version, so the read model behind
+        // it is stale: applying it would overwrite values the operator has never seen.
         return jsonResponse_({ success: false, error: 'STALE_CAMPAIGN_VERSION',
           detail: 'A campaign already exists for ' + matched.key + ' (campaign_id ' + matched.id
-            + '). This save carries no expected version and cannot be applied over one. Load the latest data and re-enter the change. Nothing was written.',
+            + ') and this save would CHANGE its stored header. It carries no expected version and cannot be applied over one. Load the latest data and re-enter the change. Nothing was written.',
           campaign_id: matched.id,
           current_row_version: matched.fingerprint });
       }
@@ -396,18 +432,6 @@ function handleUpsertCampaign_(body) {
           expected_row_version: expectedVersion,
           current_updated_at: matched.updated_at,
           current: campaignReceiptFor_(sheet, matched.id) });
-      }
-      // ---- UNCHANGED. A save that would write the values already stored writes nothing. -----------
-      // The page suppresses this too, but only the server can be sure: it is the one holding the row.
-      var incoming = {};
-      CAMPAIGN_FINGERPRINT_FIELDS_.forEach(function (f) {
-        incoming[f] = Object.prototype.hasOwnProperty.call(body, f) ? body[f] : matched.row[f];
-      });
-      if (campaignFingerprint_(incoming) === matched.fingerprint) {
-        return jsonResponse_({ success: true, data: { campaign_id: matched.id, created: false,
-          unchanged: true, business_key: matched.key, row_version: matched.fingerprint,
-          row: campaignReceiptFor_(sheet, matched.id),
-          summary: 'unchanged ' + matched.key + ' — nothing was written' } });
       }
     }
 

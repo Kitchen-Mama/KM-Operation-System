@@ -382,8 +382,15 @@ var TOK = RO.currentAppToken();
 ok(/^[a-z0-9]+-[a-z0-9]+-\d{8}$/.test(TOK), 'G1  the current application token matches the series shape', TOK);
 ok(TOK !== 'speventidentity-r2ba3r1-20260920',
   'G2  and it is NOT the A3-R1 token, whose bytes were already published');
-eq(RO.ROUND_TOKENS[RO.ROUND_TOKENS.length - 2], 'speventidentity-r2ba3r1-20260920',
-  'G3  the previous token remains immediately before it — the series is append-only');
+// FC-SUMMARY-R2B-A3-R4 — DERIVED FROM THIS ROUND'S OWN TOKEN, not from the end of the list. This read
+// ROUND_TOKENS[length - 2], which says 'A3-R3's token is the newest' — true only until the next round
+// appends, which A3-R4 duly did. What G3 is FOR is that A3-R3 APPENDED rather than rewrote, and that is
+// answerable from where its own token sits, for as many rounds as follow.
+var R3_TOKEN = 'speventwritefix-r2ba3r3-20260921';
+var r3At = RO.ROUND_TOKENS.indexOf(R3_TOKEN);
+ok(r3At > 0, 'G3  the A3-R3 token is in the series', r3At);
+eq(RO.ROUND_TOKENS[r3At - 1], 'speventidentity-r2ba3r1-20260920',
+  'G3a and the token it superseded sits immediately before it — the series is append-only');
 eq(RO.ROUND_TOKENS.length, new Set(RO.ROUND_TOKENS).size, 'G4  and no token is ever reused');
 
 var idxRefs = (INDEX.match(new RegExp(TOK, 'g')) || []).length;
@@ -473,10 +480,13 @@ mutant('M6 server request issued on a year change', (function () {
 })());
 
 // H7 — the old application token is restored
+// Roll the series back one entry, so a token whose bytes were already published becomes 'current'.
+// index.html carries the REAL current token, so under the rolled-back series it no longer matches —
+// which is exactly the half-updated deployment the series exists to prevent.
 mutant('M7 old app token restored', (function () {
-  var series = RO.ROUND_TOKENS.slice(0, -1);
-  var restored = series[series.length - 1];
-  return restored === 'speventidentity-r2ba3r1-20260920' && RO.currentAppToken() !== restored;
+  var truncated = RO.ROUND_TOKENS.slice(0, -1);
+  var nowCurrent = truncated[truncated.length - 1];
+  return nowCurrent !== RO.currentAppToken() && INDEX.indexOf(nowCurrent) === -1;
 })());
 
 // H8 — one stale token reference left behind in index.html

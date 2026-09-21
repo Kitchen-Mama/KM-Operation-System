@@ -4560,7 +4560,22 @@ var KM_CANONICAL_CODES = ['BLOCKED_CONFLICT', 'MULTIPLE_ROUTE_CONTEXTS_UNSUPPORT
     'ROUTE_CREATE_IDEMPOTENCY_NOT_PERSISTABLE', 'ROUTE_IDENTITY_MINT_FAILED', 'ROUTE_IDENTITY_CONTRACT_NOT_LOADED',
     'ALLOCATION_DRAFT_NOT_FOUND', 'ALLOCATION_DRAFT_SCHEMA_COLUMN_ABSENT', 'APPLIED_SCOPE_MISMATCH',
     'STALE_OPTIMISTIC_TOKEN', 'MIXED_SITE_PAYLOAD', 'LOCK_ERROR',
-    'ROUTE_DESTINATION_MISSING', 'ROUTE_DESTINATION_AMBIGUOUS', 'ROUTE_DESTINATION_UNRESOLVED'];
+    'ROUTE_DESTINATION_MISSING', 'ROUTE_DESTINATION_AMBIGUOUS', 'ROUTE_DESTINATION_UNRESOLVED',
+    // FC-SUMMARY-R2B-A3-R4 — THE FC/CAMPAIGN WRITE REFUSALS, WHICH WERE TYPED EVERYWHERE BUT HERE.
+    //
+    // A3-R1 added these tokens to _kmZeroWriteProven_ so the page could say a refusal wrote nothing,
+    // but never added them HERE — so _kmExtractCanonicalCode_ returned '' for every one of them, the
+    // page fell through to _fcErrDetail_, and that stamps the generic READ_FAILED code. An operator
+    // refused a campaign save read "STALE_CAMPAIGN_VERSION ... Reason: READ_FAILED": a WRITE refusal
+    // wearing a READ failure's label. The list below is a census of what 20_ and 14_ actually emit,
+    // not a guess; each is a typed, server-authoritative, proven zero write.
+    'STALE_CAMPAIGN_VERSION', 'CAMPAIGN_NOT_FOUND', 'CAMPAIGN_IDENTITY_MISMATCH',
+    'DUPLICATE_CAMPAIGN_IDENTITY', 'CAMPAIGN_LOCK_TIMEOUT',
+    'STALE_SPECIAL_EVENT_VERSION', 'SPECIAL_EVENT_NOT_FOUND',
+    'STALE_TARGET_RULE_VERSION', 'TARGET_RULE_VERSION_REQUIRED', 'TARGET_RULE_NOT_FOUND',
+    'TARGET_RULE_IDENTITY_MISMATCH', 'DUPLICATE_TARGET_RULE_IDENTITY', 'TARGET_RULE_LOCK_TIMEOUT',
+    'TARGET_RULE_IDENTITY_INCOMPLETE', 'TARGET_RULE_SCOPE_ID_INVALID',
+    'TARGET_RULE_SCOPE_ID_MISMATCH', 'TARGET_RULE_SCOPE_TYPE_INVALID'];
 // F1-7N-FB-4G-A2-R3-R1 §D — the handler's OWN typed code, when it published one. Accepted only in the
 // canonical SCREAMING_SNAKE shape (optionally PREFIX:TOKEN) so a handler that happens to put a sentence or an
 // id in `code` cannot be mistaken for a classification.

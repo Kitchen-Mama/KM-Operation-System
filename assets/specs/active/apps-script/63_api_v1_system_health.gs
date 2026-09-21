@@ -162,7 +162,21 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 // THIS RELEASE IS NOT OPTIONAL TO SYNC TOGETHER. An old 20_ beside a new 14_ keys campaigns by name and
 // ignores the version it is sent, so the pair would refuse stale event writes while still merging two
 // windows into one campaign — half a repair, and the half that is missing is the one that loses data.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R15';
+//
+// R16 — FC-SUMMARY-R2B-A3-R4. The campaign REUSE contract. TWO files move: 20_, because it now
+// classifies a resolved row as IDENTICAL HEADER or HEADER MUTATION before consulting the version, and
+// this one, because the release and 20_'s expected stamp live here. 14_ stays at R15 — no handler in it
+// was touched — and 58_, 13_, 90_, 00_, 01_ and 72_ stay where they were.
+//
+// WHAT R15 GOT WRONG, AND WHY IT HAD TO BE THE SERVER THAT FIXED IT. R15 refused every versionless save
+// that resolved to an existing campaign. That is right for an update and wrong for the commonest
+// legitimate operation in the Builder: adding another SKU to a window that already exists. One campaign
+// header owns many campaign_sku_lines and many fc_special_events, and an operator adding CO1150 to the
+// BFCM window the CO1100 family already uses is not editing the header at all — yet stage 1 answered
+// STALE_CAMPAIGN_VERSION. Only the server holds the stored row, so only the server can say whether a
+// save would change it; the exemption is granted by that comparison, never by the absence of a version.
+// An old 20_ beside this release still refuses the new-SKU save, so the two must be synced together.
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R16';
 // 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
 // R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
 // not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
@@ -189,7 +203,7 @@ var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R15';
 // R14 - moved because THIS FILE changed: the release above, 58_'s new manifest row below, and 63_'s own
 // expected stamp. No action was added or removed and the transport contract is untouched; a read owner
 // that answers a narrower slice of the same action is not a new vocabulary either.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R15';
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R16';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -422,7 +436,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R15', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R16', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
   // FC-SUMMARY-R3-R1 §B — THE FC SUMMARY READ OWNER HAD NO ROW, AND ITS ABSENCE WAS SILENT.
   //
   // 58_ answers every primary render of the FC Summary page, and until now a project holding last round's
@@ -519,7 +533,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // identity: an old copy keys on campaign_name, so two BFCM windows in one year resolve to one row and
   // the earlier event is overwritten by the later one with a success message. Nothing else in the
   // deployment report would say so, which is exactly why the row is required rather than optional.
-  { file: '20_campaign_write_handlers.gs', symbol: 'CAMPAIGN_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R15', owns: 'the campaigns + campaign_sku_lines write path: the canonical window-based campaign identity (company|country|marketplace|year|start_date|end_date), the one-time legacy adoption of a window-less row, the script lock, the duplicate-identity and identity-mismatch refusals, the expected_row_version stale-write gate, and the per-line unchanged short-circuit' },
+  { file: '20_campaign_write_handlers.gs', symbol: 'CAMPAIGN_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R16', owns: 'the campaigns + campaign_sku_lines write path: the canonical window-based campaign identity (company|country|marketplace|year|start_date|end_date), the one-time legacy adoption of a window-less row, the script lock, the duplicate-identity and identity-mismatch refusals, the expected_row_version stale-write gate applied ONLY to a real header mutation, the resolve-and-reuse branch for an identical header, and the per-line unchanged short-circuit' },
   // R12 - THE GENERATED BUNDLE, IDENTIFIED BY CONTENT RATHER THAN BY A STAMP. 90_ is the only manifest owner
   // that is BUILT, not written, so a hand-typed build stamp would be the wrong instrument twice over: it
   // would have to be edited in the builder every round, and it could be edited to look current without the

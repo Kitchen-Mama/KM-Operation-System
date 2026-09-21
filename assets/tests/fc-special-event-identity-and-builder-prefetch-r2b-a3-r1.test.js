@@ -822,17 +822,39 @@ ok(/'STALE_CAMPAIGN_VERSION'/.test(API) && /'STALE_SPECIAL_EVENT_VERSION'/.test(
   var fn = fnSrc(API, '_kmZeroWriteProven_');
   ok(/STALE_CAMPAIGN_VERSION/.test(fn) && /STALE_SPECIAL_EVENT_VERSION/.test(fn),
     'G7a the tokens live INSIDE the rule, so lifting the rule gets all of it');
-  ok(!/STALE_CAMPAIGN_VERSION/.test(API.replace(fn, '')),
-    'G7b and appear nowhere else in the api file — one authority, not two');
+  // FC-SUMMARY-R2B-A3-R4 — TWO LISTS, TWO QUESTIONS, AND NOW A CHECKED AGREEMENT.
+  // A3-R4 registered these same tokens in KM_CANONICAL_CODES, which answers a DIFFERENT question:
+  // _kmZeroWriteProven_ says "did this refusal write?", KM_CANONICAL_CODES says "what is its code?".
+  // Without the second list a typed write refusal was reported under the generic READ_FAILED. The
+  // harness constraint above forbids merging them — the rule must travel with its function — so the
+  // duplication is forced, and the honest response is to CHECK it rather than to forbid or ignore it.
+  var codes = (/var KM_CANONICAL_CODES = \[[\s\S]*?\];/.exec(API) || [])[0];
+  ok(!!codes, 'G7b the canonical code registry is present');
+  ok(!/STALE_CAMPAIGN_VERSION/.test(API.replace(fn, '').replace(codes, '')),
+    'G7b1 and the tokens appear in those two authorities and NOWHERE else in the api file');
+  ['STALE_CAMPAIGN_VERSION', 'CAMPAIGN_NOT_FOUND', 'CAMPAIGN_IDENTITY_MISMATCH',
+   'DUPLICATE_CAMPAIGN_IDENTITY', 'CAMPAIGN_LOCK_TIMEOUT', 'STALE_SPECIAL_EVENT_VERSION',
+   'SPECIAL_EVENT_NOT_FOUND'].forEach(function (t, i) {
+    ok(fn.indexOf(t) > -1 && codes.indexOf(t) > -1,
+      'G7b2.' + i + ' ' + t + ' is in BOTH authorities — a token in one and not the other is the drift');
+  });
   ok(!/'STALE_CAMPAIGN_VERSION'\s*[,\]]/.test(FCS),
     'G7c and the page does not keep a copy of the list it consults');
 })();
 ok(/CAMPAIGN_BUILD_VERSION_/.test(GS63) && /20_campaign_write_handlers\.gs/.test(GS63),
   'G8  20_ has a REQUIRED manifest row — a partial sync of it is otherwise invisible');
 var RELEASE = /var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/.exec(GS63)[1];
-eq(RELEASE, 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R15', 'G9  the release moved, because two write handlers changed');
-eq(/var CAMPAIGN_BUILD_VERSION_ = '([^']+)'/.exec(GS20)[1], RELEASE, 'G9a and 20_ carries it');
-eq(/var FCW_BUILD_VERSION_ = '([^']+)'/.exec(GS14)[1], RELEASE, 'G9b and so does 14_');
+// FC-SUMMARY-R2B-A3-R4 — DERIVED, not pinned. This asserted the release EQUALS R15 and that both write
+// handlers carry it, which forbade any later release from existing and contradicted the project's own
+// module-stamp rule: a stamp records the round its file last CHANGED and is never marched to the
+// release. R16 changes 20_ and not 14_. What G9 is FOR is that A3-R1's two write handlers each got a
+// stamp at least as new as the release that shipped them, so that is what is asserted.
+function relNum(s) { var m = /-R(\d+)$/.exec(String(s || '')); return m ? parseInt(m[1], 10) : -1; }
+ok(relNum(RELEASE) >= 15, 'G9  the release is at or after R15, the release A3-R1 cut', RELEASE);
+ok(relNum(/var CAMPAIGN_BUILD_VERSION_ = '([^']+)'/.exec(GS20)[1]) >= 15,
+  'G9a and 20_ carries a stamp at or after it — the campaign writer shipped in R15 and has changed since');
+ok(relNum(/var FCW_BUILD_VERSION_ = '([^']+)'/.exec(GS14)[1]) >= 15,
+  'G9b and so does 14_, whose stamp stays at the round it last changed');
 var RO = require(path.join(REPO, 'assets/tests/_release-order.js'));
 // FC-SUMMARY-R2B-A3-R3 — DERIVED, not pinned. This asserted `currentAppToken() === <this round's
 // literal>`, which is the equality-with-now _release-order.js exists to end: it forbade any LATER round

@@ -387,7 +387,10 @@ ok(!/optional: true/.test(row58 ? HEALTH.slice(row58.index, HEALTH.indexOf('}', 
 // 14_ LEFT THIS LIST AT R15: the Special Event write path changed, so its stamp moved with it. It is
 // asserted at RELEASE_NOW rather than removed, because "the write handler moved" is still a claim
 // worth checking — it just is no longer the claim that it did not.
-[['14_fc_write_handlers.gs', RELEASE_NOW], ['13_procurement_handlers.gs', 'R6-R7-R12'],
+// 14_ REJOINED IT AT R16: that release changes only how 20_ classifies a resolved campaign row, and no
+// handler inside 14_ was touched. Asserting RELEASE_NOW for it would have marched the one fact its
+// stamp carries — the round in which its own file last changed — to a release it had no part in.
+[['14_fc_write_handlers.gs', 'R6-R7-R15'], ['13_procurement_handlers.gs', 'R6-R7-R12'],
  ['00_config.gs', 'R6-R7-R11'], ['01_router.gs', 'R6-R7-R9'],
  ['72_api_v1_product_pricing_workspace.gs', 'R6-R7-R10']].forEach(function (p, i) {
   var m = new RegExp("\\{ file: '" + p[0].replace(/\./g, '\\.') + "', symbol: '[A-Z_]+', expected: '([^']+)'").exec(HEALTH);

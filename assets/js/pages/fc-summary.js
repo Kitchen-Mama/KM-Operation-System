@@ -889,9 +889,28 @@ function saveFcChanges() {
 
 function _fcSetSaveEnabled(on) { const b = document.getElementById('fc-save-btn'); if (b) b.disabled = !on; }
 // FC-SUMMARY-R1 — Target Rules had no id on its Save control and therefore no way to be guarded.
+/* FC-SUMMARY-R2B-A3-R4 §6 — SAY IT, DO NOT ONLY DISABLE IT.
+ *
+ * The button was already disabled and already carried aria-busy, and `_fcWriteBegin_('targetRule')`
+ * already made a second click a no-op — so a duplicate write was never possible. What was missing was
+ * the only part a sighted operator can see during a five-to-twenty-second call: the label never
+ * changed, so a slow save looked like a dead button. The Special Event builder has said 'Saving…'
+ * since R1; this is the same two lines, on the control that lacked them.
+ *
+ * The original label is captured from the button itself on the way down and restored on the way up,
+ * so there is no second copy of the word 'Save' here to drift from the markup. */
 function _fcSetTargetSaveEnabled_(on) {
   var b = (typeof document === 'undefined') ? null : document.getElementById('fc-target-save-btn');
-  if (b) { b.disabled = !on; if (on) { b.removeAttribute('aria-busy'); } else { b.setAttribute('aria-busy', 'true'); } }
+  if (!b) return;
+  b.disabled = !on;
+  if (on) {
+    b.removeAttribute('aria-busy');
+    if (b.dataset && b.dataset.fcLabel) { b.textContent = b.dataset.fcLabel; delete b.dataset.fcLabel; }
+  } else {
+    b.setAttribute('aria-busy', 'true');
+    if (b.dataset && !b.dataset.fcLabel) b.dataset.fcLabel = b.textContent;
+    b.textContent = 'Saving…';
+  }
 }
 
 // Cancel edit — zero backend calls; restore originals by dropping the dirty overlay and re-rendering the view.
@@ -3865,6 +3884,30 @@ function _evtCandidateRows() {
   });
 }
 
+/* FC-SUMMARY-R2B-A3-R4 §2 — THE EVENT-MONTH BASE FC, AND THE ONE PLACE IT IS RESOLVED.
+ *
+ * The card has a Base FC column and a Diff column that subtracts from it, but `_evtBuildGroups()`
+ * only ever carried a PREVIOUS row's value forward (`p ? p.baseFc : null`). On a fresh Build there is
+ * no previous row, so every card rendered '—' and every Preview row read 'No Base FC' — while the same
+ * SKUs plainly showed a Regular FC on the FC Summary table behind the modal.
+ *
+ * Nothing new is computed here. `_evtBaseFcForSku()` is the existing canonical reader of
+ * fc_regular_forecast, and the event's own month and year are the ones the SAVE already derives:
+ * `_evtEventMonthIdx()` from the event start date, and the year from that same date, falling back to
+ * Target Year exactly as `saveEventUpdate` does. This wrapper exists so Build, Single SKU and Preview
+ * cannot drift into three answers for one question.
+ *
+ * Returns a number (0 included — a stored zero is a value), or null when fc_regular_forecast genuinely
+ * has no row or no figure for that month. Reads memory only; never writes. */
+function _evtEventBaseFcForSku(sku) {
+  var monthIdx = _evtEventMonthIdx();
+  if (monthIdx == null) return null;
+  var sd = ((document.getElementById('event-start-date') || {}).value || '').trim();
+  var year = parseInt(sd.slice(0, 4), 10) || parseInt((document.getElementById('event-target-year') || {}).value, 10);
+  if (!year) return null;
+  return _evtBaseFcForSku(sku, monthIdx, year);
+}
+
 // Build group cards keyed by category + series ONLY (SKUs with different regular prices stay in the
 // same card as separate rows — never split by price). Each row: {sku, marketplaceSkuId, regularPrice,
 // discountPct, dealPrice, baseFc, newFc}. Preserves any values the user already typed for the same
@@ -3885,7 +3928,10 @@ function _evtBuildGroups() {
       sku: r.sku, marketplaceSkuId: r.marketplaceSkuId, regularPrice: r.regularPrice, currency: r.currency,
       discountPct: p ? p.discountPct : NaN,
       dealPrice: p ? p.dealPrice : NaN,
-      baseFc: p ? p.baseFc : null,
+      // A previously previewed value wins (the operator may have chosen a different baseline in
+      // Preview & Pre-fill); otherwise resolve the event month's Regular FC. `== null` and not `||`,
+      // because a stored Base FC of 0 is a value and must not be re-resolved as if it were missing.
+      baseFc: (p && p.baseFc != null) ? p.baseFc : _evtEventBaseFcForSku(r.sku),
       newFc: p ? p.newFc : NaN
     });
   });
@@ -4756,7 +4802,42 @@ var _fcSecondaryLoaded = false;
 /* Which BUILDER PATHS this page has loaded prerequisites for, in this session. Page-local on purpose:
    it answers "did I load this", which is the only question the latch can answer honestly. */
 var _fcPrereqLoadedPaths_ = {};
-function _fcResetSecondaryCache() { _fcSecondaryLoaded = false; _fcPrereqLoadedPaths_ = {}; }
+/* FC-SUMMARY-R2B-A3-R4 §7 — INVALIDATE THE PATH THE WRITE COULD HAVE STALED, AND ONLY THAT PATH.
+ *
+ * This cleared BOTH builder paths after EVERY successful FC write. Saving a Target % Rule therefore
+ * threw away the seven tables the Special Event builder had just loaded — tables a fc_target_rules
+ * write cannot touch — so the operator testing saves saw 'Loading…' on every single Next, and paid
+ * four or seven server reads for it. The scope was already being threaded through
+ * `_fcAfterWriteScoped_` and simply discarded here.
+ *
+ * The affected paths are DERIVED from `_FC_PREREQ_TABLES_`, which is the existing declaration of what
+ * each path holds — no second list, and a path that later gains a table is covered without editing
+ * this function. An unrecognised or absent scope clears everything, because 'I do not know what this
+ * write touched' must never be answered by keeping data warm. */
+/* WHICH TABLES EACH WRITE SCOPE CHANGES. Derived from what the writers behind each slice actually
+ * touch, and intersected below with _FC_PREREQ_TABLES_ to decide which builder paths can be stale.
+ *   regular  fc_regular_forecast          -> only the Regular path holds it
+ *   events   campaigns + campaign_sku_lines + fc_special_events -> only the Special path holds them
+ *   rules    fc_target_rules              -> NEITHER path holds it, so a Target Rule save keeps both warm */
+var _FC_SLICE_PREREQ_TABLES_ = {
+  regular: ['fc_regular_forecast'],
+  events: ['campaigns', 'campaign_sku_lines', 'fc_special_events'],
+  rules: ['fc_target_rules']
+};
+function _fcSliceTables_(slice) {
+  if (Object.prototype.hasOwnProperty.call(_FC_SLICE_PREREQ_TABLES_, slice)) return _FC_SLICE_PREREQ_TABLES_[slice];
+  return null;
+}
+function _fcResetSecondaryCache(scope) {
+  _fcSecondaryLoaded = false;
+  var slice = (scope && typeof scope === 'object') ? scope.slice : scope;
+  var tables = (typeof slice === 'string') ? _fcSliceTables_(slice) : null;
+  if (!tables) { _fcPrereqLoadedPaths_ = {}; return; }        // unknown scope → assume everything
+  Object.keys(_FC_PREREQ_TABLES_).forEach(function (p) {
+    var holds = _FC_PREREQ_TABLES_[p].some(function (t) { return tables.indexOf(t) !== -1; });
+    if (holds) delete _fcPrereqLoadedPaths_[p];
+  });
+}
 // FC-SUMMARY-R1 — `_fcEnsureBroadCacheThen` was REMOVED, not kept beside its replacement. Its
 // `.catch(done)` swallowed the failure and re-entered the opener, which re-entered the loader, with
 // nothing on screen: a silent unbounded retry. `_fcLoadPrerequisites_` keeps the same seven-read
@@ -5515,7 +5596,7 @@ function _fcAfterWriteScoped_(scope, cb) { return _fcAfterWrite(cb, scope); }
 function _fcAfterWrite(cb, scope) {
   // F1-7L: a FC write changed the underlying tables the secondary modals read; drop the bounded modal-cache flag
   // so the next builder/import/Event-Assist modal open re-reads fresh (bounded) rather than a stale slice.
-  if (typeof _fcResetSecondaryCache === 'function') _fcResetSecondaryCache();
+  if (typeof _fcResetSecondaryCache === 'function') _fcResetSecondaryCache(scope);
   var live = (typeof _fcUseDb !== 'function') || _fcUseDb();
   var epoch = _fcEpoch_();
 
