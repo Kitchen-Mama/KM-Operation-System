@@ -472,7 +472,18 @@ var ROUND_TOKENS = [
   // the previous fc-summary.js would keep showing an empty Base FC column and keep reloading both
   // builder paths after every save; one holding the previous api file would keep reporting a typed
   // write refusal as READ_FAILED. The whole application set rotates together.
-  'campaignreuse-r2ba3r4-20260921'];
+  'campaignreuse-r2ba3r4-20260921',
+  // FC-SUMMARY-R2B-A3-R5 - the Base FC source round. fc-summary.js changes on three counts: the
+  // Special Event Builder now reads the page's read-model-first forecast accessor instead of a
+  // broad cache that path never fills (the live all-'-' Base FC column), the Target Rule Save
+  // button keeps validity and in-flight apart (the modal opened saying 'Saving...'), and builder
+  // prerequisite freshness is recorded per table so a Special save no longer discards the four
+  // reference tables it cannot change. The token above HAS been published - 5cbdd26 is on
+  // origin/main and Pages served it under 38 assets - so by the rule recorded earlier it cannot be
+  // reused. A browser holding the previous fc-summary.js would keep showing an empty Base FC
+  // column, keep opening the Target Rule modal in a false Saving state, and keep paying a
+  // seven-request reload after every event save. The whole application set rotates together.
+  'basefcsource-r2ba3r5-20260921'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

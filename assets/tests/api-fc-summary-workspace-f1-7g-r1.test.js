@@ -214,7 +214,11 @@ ok(!/_fcAfterWrite\(function/.test(FC_JS),
 // regular forecast. The contract these two lines exist to pin is unchanged — the SECONDARY surface
 // lazy-loads, and the load is single-flight — so they are re-pointed at the per-path form rather than
 // at the union that no longer has a single loader.
-ok(/function _fcLoadPrerequisites_/.test(FC_JS) && /rc\(_FC_PREREQ_TABLES_\[p\]\)/.test(FC_JS), 'fc-summary: SECONDARY builder modals lazy-load the broad cache (per-path bounded read)');
+// A3-R5 §5 — same re-expression as api-app-prime: the read is still per path and still bounded, but
+// the argument is now that path's NOT-YET-WARM tables rather than all of them. Both halves are pinned.
+ok(/function _fcLoadPrerequisites_/.test(FC_JS) && /rc\(need\)/.test(FC_JS)
+  && /function _fcPrereqMissing_\(p\) \{[\s\S]*?_FC_PREREQ_TABLES_\[p\]/.test(FC_JS),
+  'fc-summary: SECONDARY builder modals lazy-load the broad cache (per-path bounded read)');
 ok(/if \(_fcPrereqFlightByPath_\[p\]\) return _fcPrereqFlightByPath_\[p\];/.test(FC_JS), 'the prerequisite load is single-flight — extra Next clicks issue no second request');
 ok(/_fcShowPrereqRefusal_\(err\)/.test(FC_JS) && FC_JS.indexOf('_fcEnsureBroadCacheThen(openRegularUpdateModal)') === -1,
   'a prerequisite failure refuses in the open modal instead of silently re-entering the opener');

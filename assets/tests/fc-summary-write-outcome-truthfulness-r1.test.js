@@ -97,7 +97,8 @@ var VARS = [
   '_fcReadbackLoads_', '_fcLastReceipt_', '_fcMeta_', '_FC_SECONDARY_TABLES', '_fcSecondaryLoaded',
   // R2B-A3-R1 — prerequisites are now per BUILDER PATH: the table lists, the loaded-path latch and the
   // per-path in-flight map. The single `_fcPrereqFlight_` above is kept — the diagnostics still read it.
-  '_FC_PREREQ_TABLES_', '_fcPrereqLoadedPaths_', '_fcPrereqFlightByPath_'];
+  // R2B-A3-R5 — and per TABLE, which is what the loader now consults to decide what to fetch.
+  '_FC_PREREQ_TABLES_', '_fcPrereqLoadedPaths_', '_fcPrereqLoadedTables_', '_fcPrereqFlightByPath_'];
 var FNS = [
   '_fcSliceRec_', '_fcWorkspaceMode_', '_fcHas_', '_fcSliceHasData_', '_fcTabNow_',
   // _fcSliceFetch_ is deliberately NOT lifted: this sandbox INJECTS it so readbacks can be counted.
@@ -109,7 +110,10 @@ var FNS = [
   // INCIDENT-BOOT-FC-R1 — the readback paths now hydrate through one authority instead of re-rendering
   // the rows alone. The write-outcome assertions below are untouched.
   '_fcClearBanner_', '_fcShowBanner_', '_fcRerenderTables_', '_fcHydrateFromModel_',
-  '_fcRefreshViewNow_', '_fcPrereqPath_', '_fcPrereqNeeded_',
+  '_fcRefreshViewNow_', '_fcPrereqPath_', '_fcPrereqNeeded_', '_fcPrereqMissing_',
+  // R2B-A3-R5 — opening a builder settles TWO owners: the broad-cache tables and, for the Special
+  // path, the forecast slice its Base FC column reads. proceedToFcMode awaits both through here.
+  '_fcBaseFcSourceMissing_', '_fcEnsureBaseFcSource_', '_fcPrereqAndSources_',
   '_fcLoadPrerequisites_', '_fcOnModeSelected_', '_fcResetSecondaryCache',
   '_fcNextBtn_', '_fcSetNextBusy_', '_fcClearPrereqRefusal_',
   '_fcShowPrereqRefusal_', '_fcOpenBuilder_', '_fcWriteBegin_', '_fcWriteEnd_', '_fcClassifyWrite_',

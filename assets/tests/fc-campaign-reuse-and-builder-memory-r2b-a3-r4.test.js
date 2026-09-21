@@ -310,6 +310,9 @@ ok(/function _fcResetSecondaryCache\(scope\)/.test(RESET), 'E0  the reset now re
   vm.runInContext([
     varSrc(FCS, '_FC_PREREQ_TABLES_'), varSrc(FCS, '_FC_SLICE_PREREQ_TABLES_'),
     'var _fcSecondaryLoaded = true;', 'var _fcPrereqLoadedPaths_ = {};',
+    // A3-R5 §5 — the reset now also drops the CHANGED TABLES, so the record it drops them from has to
+    // travel into the sandbox with it. A sibling var does not come along with fnSrc.
+    'var _fcPrereqLoadedTables_ = {};',
     fnSrc(FCS, '_fcSliceTables_'), RESET
   ].join('\n'), sb);
   function warm() { vm.runInContext('_fcPrereqLoadedPaths_ = { regular: true, event: true };', sb); }
@@ -334,7 +337,12 @@ ok(/_FC_PREREQ_TABLES_\[p\]\.some/.test(RESET),
 
 section('F. WARM NEXT ISSUES NO REQUEST, AND SHOWS NO LOADING');
 var PROCEED = fnSrc(FCS, 'proceedToFcMode');
-ok(/if \(!_fcPrereqNeeded_\(selectedMode\)\) \{[^}]*_fcOpenBuilder_\(selectedMode\); return; \}/.test(PROCEED),
+// A3-R5 §3 — the warm test gained a second question. 'Warm' used to mean only that the builder's
+// broad-cache tables were loaded; the Special builder also reads fc_regular_forecast for its Base FC
+// column, and a session that never opened the Regular tab holds no such rows. Opening 'warm' on that
+// state is what produced an all-'—' Base FC column in production. The RULE is unchanged and is what
+// is pinned: a path with nothing left to fetch opens directly, before any busy state is set.
+ok(/if \(!_fcPrereqNeeded_\(selectedMode\) && !_fcBaseFcSourceMissing_\(selectedMode\)\) \{[\s\S]*?_fcOpenBuilder_\(selectedMode\); return;/.test(PROCEED),
   'F1  a warm path opens the builder directly — before any busy state is set');
 var busyAt = PROCEED.indexOf('_fcSetNextBusy_(true)');
 var warmAt = PROCEED.indexOf('_fcOpenBuilder_(selectedMode); return;');
@@ -355,27 +363,59 @@ ok(warmAt > -1 && busyAt > warmAt, 'F2  and the Loading state is set AFTER that 
 ok(/if \(_fcPrereqLoadedPaths_\[p\]\) return Promise\.resolve\(\);/.test(fnSrc(FCS, '_fcLoadPrerequisites_')),
   'F6  and the loader itself short-circuits a warm path without a request');
 
-section('G. TARGET RULE SAVE FEEDBACK');
-var TSAVE = fnSrc(FCS, '_fcSetTargetSaveEnabled_');
-ok(/b\.textContent = 'Saving…';/.test(TSAVE), 'G1  the button says Saving… while the write is in flight');
-ok(/b\.disabled = !on;/.test(TSAVE), 'G2  and is disabled');
-ok(/dataset\.fcLabel = b\.textContent/.test(TSAVE),
+section('G. TARGET RULE SAVE FEEDBACK — AND WHAT IT IS ALLOWED TO SAY');
+/* A3-R5 §1 — RE-EXPRESSED, AND STRICTLY STRONGER THAN WHAT IT REPLACES.
+ *
+ * A3-R4 hung this feedback on the one signal the helper carried, `disabled`, and these assertions
+ * pinned that spelling. Production then showed what the spelling cost: the validation gate disables
+ * Save on every modal open and every scope change, so the Target Rule modal OPENED saying 'Saving…'
+ * with no write anywhere near it. The rule these were written to protect — an operator can see that a
+ * slow save is running — is kept exactly, and the live defect adds its converse: ONLY a write in
+ * flight may say so. Nothing here has been relaxed; a state that was previously unasserted is now
+ * asserted. */
+var TRENDER = fnSrc(FCS, '_fcRenderTargetSave_');
+var TVALID = fnSrc(FCS, '_fcSetTargetSaveEnabled_');
+var TBUSY = fnSrc(FCS, '_fcSetTargetSaveBusy_');
+ok(/b\.textContent = 'Saving…';/.test(TRENDER), 'G1  the button says Saving… while the write is in flight');
+ok(/b\.disabled = _fcTargetSave_\.busy \|\| !_fcTargetSave_\.valid;/.test(TRENDER),
+  'G2  and is disabled — by the write OR by an invalid form, which are now two separate reasons');
+ok(/dataset\.fcIdleLabel = b\.textContent/.test(TRENDER),
   'G3  the original label is captured FROM THE BUTTON — no second copy of the word to drift');
-ok(/b\.textContent = b\.dataset\.fcLabel/.test(TSAVE), 'G4  and restored on the way back up');
+ok(/b\.textContent = \(b\.dataset && b\.dataset\.fcIdleLabel\) \|\| 'Save'/.test(TRENDER),
+  'G4  and restored on the way back up');
+ok(/_fcTargetSave_\.valid = !!on/.test(TVALID) && TVALID.indexOf('Saving…') === -1,
+  'G4a the VALIDITY setter cannot write the busy label — this is the A3-R4 defect, closed at the source');
+ok(/_fcTargetSave_\.busy = !!on/.test(TBUSY), 'G4b and the BUSY setter is the only one that can');
 ok(/_fcWriteBegin_\('targetRule'\)/.test(FCS), 'G5  the single-flight latch that makes a duplicate write impossible is kept');
-(function () {
+function tgtWorld() {
   var btn = { textContent: 'Save', disabled: false, dataset: {}, _attrs: {},
     setAttribute: function (k, v) { this._attrs[k] = v; }, removeAttribute: function (k) { delete this._attrs[k]; } };
   var sb = { document: { getElementById: function () { return btn; } } };
   vm.createContext(sb);
-  vm.runInContext(TSAVE, sb);
-  sb._fcSetTargetSaveEnabled_(false);
-  eq([btn.textContent, btn.disabled, btn._attrs['aria-busy']], ['Saving…', true, 'true'],
-    'G6  in flight: Saving… + disabled + aria-busy');
-  sb._fcSetTargetSaveEnabled_(false);        // a repeated click must not capture "Saving…" as the label
-  sb._fcSetTargetSaveEnabled_(true);
-  eq([btn.textContent, btn.disabled], ['Save', false],
+  vm.runInContext([varSrc(FCS, '_fcTargetSave_'), TRENDER, TVALID, TBUSY].join('\n'), sb);
+  return { btn: btn, sb: sb };
+}
+(function () {
+  var w = tgtWorld();
+  // THE OPERATOR'S LIVE REPORT, DIRECTLY: the modal opens on a form that is incomplete by definition.
+  w.sb._fcSetTargetSaveEnabled_(false);
+  eq([w.btn.textContent, w.btn.disabled, w.btn._attrs['aria-busy'] || null], ['Save', true, null],
+    'G6  modal open / invalid: closed, but the label still reads Save and nothing claims to be busy');
+  w.sb._fcSetTargetSaveEnabled_(true);
+  eq([w.btn.textContent, w.btn.disabled], ['Save', false], 'G6a valid and idle: Save, open');
+  w.sb._fcSetTargetSaveBusy_(true);
+  eq([w.btn.textContent, w.btn.disabled, w.btn._attrs['aria-busy']], ['Saving…', true, 'true'],
+    'G6b in flight: Saving… + disabled + aria-busy');
+  w.sb._fcSetTargetSaveBusy_(true);        // a repeated click must not capture "Saving…" as the label
+  w.sb._fcSetTargetSaveBusy_(false);
+  eq([w.btn.textContent, w.btn.disabled], ['Save', false],
     'G7  restored to the ORIGINAL label even after a repeated in-flight call');
+  var w2 = tgtWorld();
+  w2.sb._fcSetTargetSaveEnabled_(false);
+  w2.sb._fcSetTargetSaveBusy_(true);
+  w2.sb._fcSetTargetSaveBusy_(false);      // the refusal path: settle hands the control back
+  eq([w2.btn.textContent, w2.btn.disabled], ['Save', true],
+    'G7a a failure returns it to IDLE — the label, but not a validity it never checked');
 })();
 
 section('H. SELECTOR RETRY IS HEALTHY RECOVERY (no change, asserted so it stays true)');
@@ -482,25 +522,39 @@ mutant('M8 an AFFECTED path kept warm', (function () {
   vm.createContext(sb);
   vm.runInContext([varSrc(FCS, '_FC_PREREQ_TABLES_'), varSrc(FCS, '_FC_SLICE_PREREQ_TABLES_'),
     'var _fcSecondaryLoaded = true;', 'var _fcPrereqLoadedPaths_ = { regular: true, event: true };',
+    'var _fcPrereqLoadedTables_ = {};',
     fnSrc(FCS, '_fcSliceTables_'), faulted].join('\n'), sb);
   sb._fcResetSecondaryCache('events');
   return Object.keys(vm.runInContext('_fcPrereqLoadedPaths_', sb)).indexOf('event') !== -1;
 })());
 
 mutant('M9 Saving… state removed', (function () {
-  var faulted = TSAVE.replace("b.textContent = 'Saving…';", '');
+  var faulted = TRENDER.replace("b.textContent = 'Saving…';", '');
+  if (faulted === TRENDER) throw new Error('M9 anchor drifted');
   var btn = { textContent: 'Save', disabled: false, dataset: {}, _attrs: {},
     setAttribute: function (k, v) { this._attrs[k] = v; }, removeAttribute: function (k) { delete this._attrs[k]; } };
   var sb = { document: { getElementById: function () { return btn; } } };
   vm.createContext(sb);
-  vm.runInContext(faulted, sb);
-  sb._fcSetTargetSaveEnabled_(false);
+  vm.runInContext([varSrc(FCS, '_fcTargetSave_'), faulted, TVALID, TBUSY].join('\n'), sb);
+  sb._fcSetTargetSaveBusy_(true);
   return btn.textContent !== 'Saving…';
+})());
+
+mutant('M9a Saving… shown whenever the control is disabled (the A3-R4 live defect)', (function () {
+  var faulted = TRENDER.replace('if (_fcTargetSave_.busy) {', 'if (b.disabled) {');
+  if (faulted === TRENDER) throw new Error('M9a anchor drifted');
+  var btn = { textContent: 'Save', disabled: false, dataset: {}, _attrs: {},
+    setAttribute: function (k, v) { this._attrs[k] = v; }, removeAttribute: function (k) { delete this._attrs[k]; } };
+  var sb = { document: { getElementById: function () { return btn; } } };
+  vm.createContext(sb);
+  vm.runInContext([varSrc(FCS, '_fcTargetSave_'), faulted, TVALID, TBUSY].join('\n'), sb);
+  sb._fcSetTargetSaveEnabled_(false);      // invalid form, no write anywhere
+  return btn.textContent === 'Saving…';    // the faulted build claims a save is running: caught
 })());
 
 mutant('M10 warm Next always shows Loading', (function () {
   var faulted = PROCEED.replace(
-    'if (!_fcPrereqNeeded_(selectedMode)) { _fcPrereqState_ = FC_PREREQ_.READY; _fcOpenBuilder_(selectedMode); return; }', '');
+    /if \(!_fcPrereqNeeded_\(selectedMode\) && !_fcBaseFcSourceMissing_\(selectedMode\)\) \{[\s\S]*?_fcOpenBuilder_\(selectedMode\); return;\s*\}/, '');
   if (faulted === PROCEED) throw new Error('M10 anchor drifted');
   return faulted.indexOf('_fcOpenBuilder_(selectedMode); return;') === -1;
 })());

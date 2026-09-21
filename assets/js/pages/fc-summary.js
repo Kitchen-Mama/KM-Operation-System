@@ -889,29 +889,39 @@ function saveFcChanges() {
 
 function _fcSetSaveEnabled(on) { const b = document.getElementById('fc-save-btn'); if (b) b.disabled = !on; }
 // FC-SUMMARY-R1 — Target Rules had no id on its Save control and therefore no way to be guarded.
-/* FC-SUMMARY-R2B-A3-R4 §6 — SAY IT, DO NOT ONLY DISABLE IT.
+/* FC-SUMMARY-R2B-A3-R5 §1 — TWO QUESTIONS, NOT ONE.
  *
- * The button was already disabled and already carried aria-busy, and `_fcWriteBegin_('targetRule')`
- * already made a second click a no-op — so a duplicate write was never possible. What was missing was
- * the only part a sighted operator can see during a five-to-twenty-second call: the label never
- * changed, so a slow save looked like a dead button. The Special Event builder has said 'Saving…'
- * since R1; this is the same two lines, on the control that lacked them.
+ * A3-R4 added the 'Saving…' label this control had always lacked, and hung it on the only signal the
+ * helper carried: `disabled`. That was the defect. `disabled` answers CAN this be saved, and it is
+ * driven by the validation gate, which runs on every modal open and every scope change. So opening
+ * the Target Rule modal — incomplete by definition, Save correctly disabled — rendered 'Saving…'
+ * before the operator had touched anything, and the word stopped meaning that a write was happening.
  *
- * The original label is captured from the button itself on the way down and restored on the way up,
- * so there is no second copy of the word 'Save' here to drift from the markup. */
-function _fcSetTargetSaveEnabled_(on) {
+ * The two facts are now stored apart and rendered together. `valid` is the gate's answer and may
+ * close the control; `busy` is the write token's answer and is the ONLY thing permitted to change
+ * the label. The disabled attribute is the OR of the two, so nothing that was previously unclickable
+ * has become clickable — only the sentence the button was saying has been corrected.
+ *
+ * The idle label is still read from the markup rather than spelled here, but it is captured ONCE and
+ * only while idle, so it can no longer be the word this function itself wrote a moment earlier. */
+var _fcTargetSave_ = { valid: false, busy: false };
+function _fcRenderTargetSave_() {
   var b = (typeof document === 'undefined') ? null : document.getElementById('fc-target-save-btn');
   if (!b) return;
-  b.disabled = !on;
-  if (on) {
-    b.removeAttribute('aria-busy');
-    if (b.dataset && b.dataset.fcLabel) { b.textContent = b.dataset.fcLabel; delete b.dataset.fcLabel; }
-  } else {
+  if (!_fcTargetSave_.busy && b.dataset && !b.dataset.fcIdleLabel) b.dataset.fcIdleLabel = b.textContent;
+  b.disabled = _fcTargetSave_.busy || !_fcTargetSave_.valid;
+  if (_fcTargetSave_.busy) {
     b.setAttribute('aria-busy', 'true');
-    if (b.dataset && !b.dataset.fcLabel) b.dataset.fcLabel = b.textContent;
     b.textContent = 'Saving…';
+  } else {
+    b.removeAttribute('aria-busy');
+    b.textContent = (b.dataset && b.dataset.fcIdleLabel) || 'Save';
   }
 }
+/* CAN it be saved — the validation gate's answer. It may disable; it may never say 'Saving…'. */
+function _fcSetTargetSaveEnabled_(on) { _fcTargetSave_.valid = !!on; _fcRenderTargetSave_(); }
+/* IS it being saved — the write token's answer, and the only writer of the busy label. */
+function _fcSetTargetSaveBusy_(on) { _fcTargetSave_.busy = !!on; _fcRenderTargetSave_(); }
 
 // Cancel edit — zero backend calls; restore originals by dropping the dirty overlay and re-rendering the view.
 function cancelFcEdit() {
@@ -2102,9 +2112,12 @@ function saveNewTargetRule() {
   // server appends: a second click created a second identical rule. It is now single-flight, and
   // the server contract is untouched — no target_rule_id is invented here.
   if (!_fcWriteBegin_('targetRule')) return;
-  _fcSetTargetSaveEnabled_(false);
+  _fcSetTargetSaveBusy_(true);
   var _trOpts = { ctl: 'targetRule', op: 'Target Rule Save', rows: 1, epoch: _fcEpoch_(),
-    reenable: _fcSetTargetSaveEnabled_,
+    // The shared settle calls this to hand the control back, and what it hands back is the IDLE
+    // state. Whether Save is then clickable is the validation gate's standing answer, not this
+    // callback's — which is why it no longer asserts `true` onto a form it has not looked at.
+    reenable: function () { _fcSetTargetSaveBusy_(false); },
     // R2B-A2-R5-F5 §5 — CONFIRMED-RECEIPT RECONCILIATION, not an optimistic update. Nothing is shown
     // until the server has confirmed the write, and what is then shown is the row the SERVER read back
     // from the sheet — not the payload that was sent. The full workspace refresh still runs behind it
@@ -2117,7 +2130,7 @@ function saveNewTargetRule() {
       var _merged = !!(d.row && typeof _trMergeReceipt_ === 'function' && _trMergeReceipt_(d.row));
       _fcAfterWriteScoped_({ slice: FC_SLICE_.RULES, merged: _merged }, function () {
         renderTargetRulesTable(); closeFcModal();
-        _fcSetTargetSaveEnabled_(true);        // the modal is closed; restore for the next open
+        _fcSetTargetSaveBusy_(false);          // the write is over; the next open re-runs the gate
         alert(FC_MSG_.SAVED + ' Target rule '
           + (d.unchanged ? 'unchanged — nothing was written.' : (d.created ? 'created.' : 'updated.')));
       });
@@ -2362,7 +2375,9 @@ function proceedToFcMode() {
   var selectedMode = sel ? sel.value : 'regular';
   _fcClearPrereqRefusal_();
 
-  if (!_fcPrereqNeeded_(selectedMode)) { _fcPrereqState_ = FC_PREREQ_.READY; _fcOpenBuilder_(selectedMode); return; }
+  if (!_fcPrereqNeeded_(selectedMode) && !_fcBaseFcSourceMissing_(selectedMode)) {
+    _fcPrereqState_ = FC_PREREQ_.READY; _fcOpenBuilder_(selectedMode); return;
+  }
 
   if (_fcPrereqTransition_) return;   // a transition is already pending: this click adds nothing at all
   _fcPrereqTransition_ = true;
@@ -2370,7 +2385,7 @@ function proceedToFcMode() {
   var epoch = _fcEpoch_();
   _fcSetNextBusy_(true);        // disabled + aria-busy + "Loading…" in the SAME event loop as the click
   // §7 — when the card selection already started this path's load, THIS is the promise it started.
-  _fcLoadPrerequisites_(selectedMode).then(function () {
+  _fcPrereqAndSources_(selectedMode).then(function () {
     _fcPrereqTransition_ = false;
     if (!_fcOwns_(epoch)) { _fcPrereqState_ = FC_PREREQ_.UNMOUNTED; return; }   // dead page: no DOM
     _fcSetNextBusy_(false);
@@ -3648,13 +3663,31 @@ function _evtResolveMarketplaceId(site) {
 // ADJUST base: fc_regular_forecast[baseYear][baseMonthIdx] for a SKU in the selected scope
 // (company + country + marketplace). Returns a number, or null when there is no scoped row/month
 // (→ "No Base Forecast", SKU skipped, never fabricated 0).
+//
+// FC-SUMMARY-R2B-A3-R5 §2/§3 — WHICH STORE, NOT WHICH SHAPE.
+//
+// A3-R4 taught the Builder to resolve a Base FC and proved it against synthetic rows. In production
+// every card still read '—', because the rows this function asked for are not where it was asking.
+// R3-R1 moved the FC Summary PRIMARY render onto the scoped fcSummary workspace and explicitly stopped
+// loading the broad Operation DB for it; the SECONDARY builder tables are lazily fetched into the broad
+// cache when a builder opens, and that list — sku_details, marketplace_skus, marketplaces, campaigns,
+// campaign_sku_lines, pricing_list, fc_special_events — has never contained fc_regular_forecast, by
+// design. So the table BEHIND the modal showed a Regular FC out of the read model while
+// `KM.DB.getFcRegularForecast()` in front of it answered [] out of a cache nobody had filled.
+//
+// The shape was never the problem and is not adjusted here: both stores run the identical
+// `normalizeFcRegularForecastRecord` and the identical filter, so a row from either is the same row.
+// The correction is to ask the page's own read-model-first accessor — the one the Regular table itself
+// renders from — which returns the workspace rows in Workspace mode and the broad-cache rows in Legacy.
+// There is now exactly one answer to "what is this SKU's Regular FC" on this page.
 function _evtBaseFcForSku(sku, monthIdx, baseYear) {
   var site = _evtSelectedSite();
   function up(v){ return String(v==null?'':v).trim().toUpperCase(); }
   function lo(v){ return String(v==null?'':v).trim().toLowerCase(); }
   if (!baseYear) baseYear = parseInt((document.getElementById('event-assist-base-year') || {}).value, 10);
   if (monthIdx == null || monthIdx < 0 || !baseYear) return null;
-  var rows = (window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : [];
+  var rows = (typeof _fcGetRegularForecast === 'function') ? _fcGetRegularForecast()
+    : ((window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : []);
   var mkey = _fcResolveMarketplaceKey(site.marketplace);
   var row = rows.filter(function(r){
     return up(r.sku) === up(sku) && String(r.year) === String(baseYear) &&
@@ -4802,6 +4835,27 @@ var _fcSecondaryLoaded = false;
 /* Which BUILDER PATHS this page has loaded prerequisites for, in this session. Page-local on purpose:
    it answers "did I load this", which is the only question the latch can answer honestly. */
 var _fcPrereqLoadedPaths_ = {};
+/* FC-SUMMARY-R2B-A3-R5 §4/§5 — THE GRANULARITY THE INVALIDATION ALWAYS NEEDED.
+ *
+ * A3-R4 stopped a Target Rule save from throwing away the Special builder's tables, which was the
+ * coarse-to-less-coarse step. What it could not fix is that a path is still all-or-nothing: a Special
+ * Event save legitimately invalidates campaigns, campaign_sku_lines and fc_special_events, and because
+ * the Special PATH was the unit of freshness, the four tables the save cannot touch — sku_details,
+ * marketplace_skus, marketplaces, pricing_list — were discarded with them and re-read. That is the
+ * seven-request 'Loading…' the operator still saw after every successful event save.
+ *
+ * The census is what licenses this, not an assumption: of the Special path's seven tables, a Special
+ * Event write reaches exactly three. The other four are reference data that this write has no handler
+ * for and cannot change.
+ *
+ * So freshness is recorded per table here, and the path map above is kept as the derived answer to
+ * 'is this whole path warm'. Nothing is ever kept warm that a write could have changed, and nothing is
+ * refetched merely because it shares a path with something that did change. The rows themselves are
+ * still owned by the one broad cache — this records only which of them are known current. */
+var _fcPrereqLoadedTables_ = {};
+function _fcPrereqMissing_(p) {
+  return (_FC_PREREQ_TABLES_[p] || []).filter(function (t) { return !_fcPrereqLoadedTables_[t]; });
+}
 /* FC-SUMMARY-R2B-A3-R4 §7 — INVALIDATE THE PATH THE WRITE COULD HAVE STALED, AND ONLY THAT PATH.
  *
  * This cleared BOTH builder paths after EVERY successful FC write. Saving a Target % Rule therefore
@@ -4832,7 +4886,9 @@ function _fcResetSecondaryCache(scope) {
   _fcSecondaryLoaded = false;
   var slice = (scope && typeof scope === 'object') ? scope.slice : scope;
   var tables = (typeof slice === 'string') ? _fcSliceTables_(slice) : null;
-  if (!tables) { _fcPrereqLoadedPaths_ = {}; return; }        // unknown scope → assume everything
+  // unknown scope → assume everything; 'I do not know what this write touched' may never keep data warm
+  if (!tables) { _fcPrereqLoadedPaths_ = {}; _fcPrereqLoadedTables_ = {}; return; }
+  tables.forEach(function (t) { delete _fcPrereqLoadedTables_[t]; });
   Object.keys(_FC_PREREQ_TABLES_).forEach(function (p) {
     var holds = _FC_PREREQ_TABLES_[p].some(function (t) { return tables.indexOf(t) !== -1; });
     if (holds) delete _fcPrereqLoadedPaths_[p];
@@ -5345,6 +5401,32 @@ function _fcRefreshViewNow_(failText, state) {
    single-flight and refusable. The old shape swallowed the error into `.catch(done)` and re-entered the
    opener, which on a persistent failure retried forever with nothing on screen. */
 function _fcPrereqPath_(mode) { return mode === 'event' ? 'event' : 'regular'; }
+/* FC-SUMMARY-R2B-A3-R5 §3 — THE SPECIAL BUILDER'S BASE FC SOURCE.
+ *
+ * Reading the right store is only half of it: in Workspace mode that store is a SLICE model, and an
+ * absent key there means unread, not empty. The regular slice is fetched at mount for the default tab,
+ * which is why the operator's own session had the rows on screen — but a session that opened straight
+ * onto the Event tab would hold fcSpecialEvents and no fcRegularForecast, and the Builder would again
+ * resolve every Base FC to null with nothing on screen to say why.
+ *
+ * So the Special path declares what it reads. This is NOT a new table on the broad-cache prerequisite
+ * list — that list is the Builder's own lazily-loaded set and deliberately does not carry this table —
+ * it is the existing slice owner, asked for the slice the Builder depends on, and only when the read
+ * model does not already hold it. In Legacy mode there is no workspace to be authoritative about and
+ * the broad cache answers as it always did, so this is inert there. */
+function _fcBaseFcSourceMissing_(mode) {
+  if (_fcPrereqPath_(mode) !== 'event') return false;
+  return _fcWorkspaceMode_() && !_fcHas_('fcRegularForecast');
+}
+function _fcEnsureBaseFcSource_(mode) {
+  if (!_fcBaseFcSourceMissing_(mode)) return Promise.resolve();
+  return _fcSliceFetch_(FC_SLICE_.REGULAR);
+}
+/* Both prerequisites of an OPEN, settled together: the builder's broad-cache tables and, for the
+   Special path, the forecast slice its Base FC column reads. Neither owner is duplicated here. */
+function _fcPrereqAndSources_(mode) {
+  return Promise.all([_fcLoadPrerequisites_(mode), _fcEnsureBaseFcSource_(mode)]).then(function () {});
+}
 function _fcPrereqNeeded_(mode) {
   if (!_fcEffectiveWorkspace()) return false;
   return !_fcPrereqLoadedPaths_[_fcPrereqPath_(mode)];
@@ -5361,11 +5443,20 @@ function _fcLoadPrerequisites_(mode) {
   var rc = (window.KM && window.KM.DB && typeof window.KM.DB.refreshCacheTables === 'function')
     ? window.KM.DB.refreshCacheTables : null;
   if (!rc) return Promise.resolve();                       // legacy/unconfigured → getters degrade as before
+  // Only the tables this path is missing. On a cold open that is every one of them and this is the
+  // request it always was; after a scoped invalidation it is the changed ones alone. A path whose
+  // tables are all warm — because the other path already read the ones they share — issues nothing.
+  var need = _fcPrereqMissing_(p);
+  if (!need.length) {
+    _fcPrereqLoadedPaths_[p] = true; _fcSecondaryLoaded = true; _fcPrereqState_ = FC_PREREQ_.READY;
+    return Promise.resolve();
+  }
   _fcPrereqState_ = FC_PREREQ_.LOADING;
   _fcPrereqLoads_++;
   _fcMeta_.prereqStart = Date.now(); _fcMeta_.prereqEnd = null;
-  var flight = Promise.resolve(rc(_FC_PREREQ_TABLES_[p])).then(function (v) {
+  var flight = Promise.resolve(rc(need)).then(function (v) {
     _fcMeta_.prereqEnd = Date.now(); _fcPrereqFlightByPath_[p] = null; _fcPrereqFlight_ = null;
+    need.forEach(function (t) { _fcPrereqLoadedTables_[t] = true; });
     _fcPrereqLoadedPaths_[p] = true;
     _fcSecondaryLoaded = true; _fcPrereqState_ = FC_PREREQ_.READY;
     return v;

@@ -107,7 +107,17 @@ var fcEnsure = extractFn(FC, '_fcLoadPrerequisites_');
 // FC-SUMMARY-R2B-A3-R1 — the bounded loader now takes the SELECTED builder path's table list rather
 // than one union list. The property under test is the same one: a bounded getTable read, never a
 // whole-DB load.
-ok(/refreshCacheTables/.test(fcEnsure) && /rc\(_FC_PREREQ_TABLES_\[p\]\)/.test(fcEnsure) && fcEnsure.indexOf('loadOperationDb') === -1 && fcEnsure.indexOf('reloadOperationDb') === -1, '_fcEnsureBroadCacheThen uses the bounded refreshCacheTables loader (no whole-DB lazy load)');
+// A3-R5 §5 — this pinned the loader's ARGUMENT as the literal `_FC_PREREQ_TABLES_[p]`, which was only
+// ever the then-current spelling of the rule it exists to enforce: the builder's tables are lazily
+// loaded through the bounded refreshCacheTables loader and never by pulling the whole database. The
+// loader now asks for the subset of that path's tables which is not already warm, so the rule is
+// restated against what it was protecting — the list is still DERIVED from _FC_PREREQ_TABLES_ (via
+// _fcPrereqMissing_, which is the only producer of the argument), and no whole-DB loader appears.
+ok(/refreshCacheTables/.test(fcEnsure) && /rc\(need\)/.test(fcEnsure)
+  && /var need = _fcPrereqMissing_\(p\)/.test(fcEnsure)
+  && /_FC_PREREQ_TABLES_\[p\]/.test(extractFn(FC, '_fcPrereqMissing_'))
+  && fcEnsure.indexOf('loadOperationDb') === -1 && fcEnsure.indexOf('reloadOperationDb') === -1,
+  '_fcEnsureBroadCacheThen uses the bounded refreshCacheTables loader (no whole-DB lazy load)');
 // EVERY table the modals read is still named, and still ONLY those. Asserted as a SET over the two
 // path lists rather than as one literal array: the literal could only ever describe the shape the
 // code had on the day it was written, and what this line is for is that the list stays closed.

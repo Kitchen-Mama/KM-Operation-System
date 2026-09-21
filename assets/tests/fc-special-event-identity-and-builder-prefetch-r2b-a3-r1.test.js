@@ -721,6 +721,9 @@ function prereqWorld() {
     varSrc(FCS, '_FC_PREREQ_TABLES_'), varSrc(FCS, '_FC_SECONDARY_TABLES'),
     'var _fcSecondaryLoaded = false;',
     varSrc(FCS, '_fcPrereqLoadedPaths_'),
+    // A3-R5 §5 — freshness is recorded per TABLE as well as per path; the loader reads the finer
+    // record to decide what to ask for, so both it and its reader join the world.
+    varSrc(FCS, '_fcPrereqLoadedTables_'), fnSrc(FCS, '_fcPrereqMissing_'),
     fnSrc(FCS, '_fcResetSecondaryCache'),
     'var FC_PREREQ_ = { IDLE: "IDLE", LOADING: "LOADING_PREREQUISITES", READY: "READY", REFUSED: "PREREQUISITE_REFUSED", UNMOUNTED: "UNMOUNTED" };',
     'var _fcPrereqState_ = FC_PREREQ_.IDLE; var _fcPrereqFlight_ = null; var _fcPrereqLoads_ = 0;',

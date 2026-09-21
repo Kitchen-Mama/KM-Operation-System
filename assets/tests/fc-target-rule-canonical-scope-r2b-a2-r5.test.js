@@ -257,12 +257,16 @@ var TR_FNS = ['_trCanonScope_', '_trNorm_', '_trRows_', '_trDataState_', '_trDis
   '_trClassify_', '_trSyncSession_', '_trRenderStatus_', '_trMergeReceipt_',
   '_trMonths_', '_trGate_', '_trApplyGate_', '_trBuildPayload_', '_trCommonMonthlyPct_',
   'openAddTargetRuleModal', 'updateTargetScopeFields', 'fillAllTargetMonths', 'saveNewTargetRule',
-  '_fcWriteBegin_', '_fcWriteEnd_', '_fcSetTargetSaveEnabled_'];
+  // R2B-A3-R5 — the Save control keeps two independent facts (valid / busy) behind one renderer, so
+  // the validity setter this suite drives no longer carries the DOM work on its own.
+  '_fcWriteBegin_', '_fcWriteEnd_', '_fcSetTargetSaveEnabled_', '_fcSetTargetSaveBusy_', '_fcRenderTargetSave_'];
 var TR_VARS = ['_TR_ORDER_', '_TR_CTL_', '_TR_LABEL_', '_TR_SCOPE_FIELDS_', '_TR_SCOPES_',
   // R2B-A2-R5-F5 — the edit session and the version-token field lists.
   '_TR_FP_MONTHS_', '_TR_FP_FIELDS_', '_TR_FP_NUMERIC_', '_trSession_',
   // R2B-A2-R5-F5-F1 — the sentinel that distinguishes 'could not read the rules' from 'there are none'.
   '_TR_UNAVAILABLE_', '_TR_STATUS_SCOPE_LABEL_',
+  // R2B-A3-R5 — the Save control keeps two independent facts (valid / busy) behind one renderer.
+  '_fcTargetSave_',
   '_FC_MONTH_KEYS', 'FC_VIEW_', 'FC_WRITE_', 'FC_MSG_'];
 
 function build(opts) {
