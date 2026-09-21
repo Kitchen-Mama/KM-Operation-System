@@ -104,19 +104,24 @@ function clone(v) { return JSON.parse(JSON.stringify(v)); }
 // A · THE POLICY IS FROZEN, IN ONE PLACE
 // =========================================================================================================
 section('A. THE POLICY IS FROZEN, IN ONE PLACE');
-ok(/### 10\.1 Event window change — FROZEN \(FC-SUMMARY-R2B-A3-R8/.test(SPEC),
+ok(/### 10\.1 Special Event identity and window change — FROZEN \(FC-SUMMARY-R2B-A3-R9/.test(SPEC),
   'A1  FC_SUMMARY_SPEC.md §10.1 owns the window-change contract');
-[['WINDOW_CHANGE_SEMANTICS', 'CREATE_NEW_IDENTITY_NOT_MOVE'],
- ['EVENT_FC_ID_POLICY', 'NEW_WINDOW_GETS_ITS_OWN_EVENT_IDENTITY'],
- ['OLD_EVENT_POLICY', 'PRESERVE'],
+[['SPECIAL_EVENT_UNIQUENESS_KEY',
+  'company \\+ country \\+ marketplace \\+ sku \\+ event_flag \\+ target_year'],
+ ['SECOND_EVENT_FOR_SAME_KEY', 'FORBIDDEN'],
+ ['WINDOW_CHANGE_SEMANTICS', 'EXPLICIT_CONFIRMED_EDIT_OF_THE_SAME_EVENT'],
+ ['EVENT_FC_ID_POLICY', 'PRESERVED_ACROSS_A_WINDOW_EDIT'],
+ ['WINDOW_EDIT_STRATEGY', 'CAMPAIGN_REASSIGNMENT'],
  ['OLD_CAMPAIGN_POLICY', 'PRESERVE'],
  ['EMPTY_CAMPAIGN_AUTO_DELETE', 'NO'],
  ['PER_SKU_SHARED_HEADER_MUTATION', 'FORBIDDEN']].forEach(function (kv) {
   ok(new RegExp('^' + kv[0] + ' *= *' + kv[1] + '$', 'm').test(SPEC),
-    'A2  ' + kv[0] + ' = ' + kv[1] + ' is frozen');
+    'A2  ' + kv[0].replace(/\\\\\+/g, '+') + ' is frozen');
 });
-ok(/MOVE_EXISTING_EVENT_WINDOW_PRESERVE_LINEAGE/.test(SPEC),
-  'A3  and the operation that does NOT exist is named, so its absence is deliberate');
+// A3-R8's frozen answers must be GONE, not merely outvoted. Two frozen answers to one question is
+// the state this round exists to avoid, and a superseded value left in place is exactly that.
+ok(!/CREATE_NEW_IDENTITY_NOT_MOVE/.test(SPEC) && !/NEW_WINDOW_GETS_ITS_OWN_EVENT_IDENTITY/.test(SPEC),
+  'A3  and the A3-R8 answers it replaces are removed, not annotated');
 function citesRatherThanCopies(doc) {
   return /CAMPAIGN_PROMOTION_RECORD_CONTRACT\.md` §1\.2/.test(doc)
     && !/^HEADER_IDENTITY_KEY *=/m.test(doc);
@@ -213,9 +218,9 @@ var SAVE = fnSrc(FCS, 'saveEventUpdate');
 ok(/var rid = _evtSingleRowIdentity_\(r\);/.test(SAVE)
   && /eventFcId: rid\.eventFcId, campaignSkuLineId: rid\.campaignSkuLineId, rowVersion: rid\.rowVersion/.test(SAVE),
   'B5  and the single-row save composes its line from the RESOLVER, not from the dataset');
-var DETACH = fnSrc(FCS, '_evtDetachAsNewEvent_');
-ok(!/dataset\.eventFcId = ''/.test(DETACH),
-  'B6  Detach no longer blanks the dataset — a constant cannot answer a question only the window can');
+var IDSRC0 = fnSrc(FCS, '_evtSingleRowIdentity_');
+ok(/_evtBaseEventForSku\(r\.sku\)/.test(IDSRC0) && /_evtEditingActive_\(\)/.test(IDSRC0),
+  'B6  the row identity is RESOLVED from the stated window or kept from the load — never a constant');
 
 // =========================================================================================================
 // C · THE FIRST SAVE AFTER A WINDOW CHANGE WRITES NOTHING
@@ -224,7 +229,8 @@ function gateWorld(opts) {
   opts = opts || {};
   var dom = {
     'event-start-date': { value: opts.start || '' },
-    'event-end-date': { value: opts.end || '' }
+    'event-end-date': { value: opts.end || '' },
+    'event-window-confirm': { checked: !!opts.confirmed }
   };
   var sb = {
     console: console, String: String, Object: Object, Array: Array,
@@ -239,12 +245,13 @@ function gateWorld(opts) {
     'function _evtSetEditingChrome_() {}',
     'function _evtBuildGroups() {}',
     fnSrc(FCS, '_evtEditingActive_'),
-    varSrc(FCS, '_evtWindowChangeAck_'),
+    fnSrc(FCS, '_evtWindowConfirmEl_'), fnSrc(FCS, '_evtWindowConfirmChecked_'),
+    fnSrc(FCS, '_evtWindowChanged_'), fnSrc(FCS, '_evtWindowEditActive_'),
     fnSrc(FCS, '_evtWindowKey_'),
     opts.gateSrc || fnSrc(FCS, '_evtWindowChangeGate_'),
     fnSrc(FCS, '_evtClearWindowChangeNotice_'),
     fnSrc(FCS, '_evtRestoreLoadedWindow_'),
-    fnSrc(FCS, '_evtDetachAsNewEvent_')
+    fnSrc(FCS, '_evtApplyCurrentFcLabel_')
   ].join('\n'), sb);
   return sb;
 }
@@ -308,7 +315,17 @@ function serverModel(seed) {
           : db.lines.filter(function (x) {
               return x.campaign_id === body.campaign_id && up(x.marketplace_sku_id) === up(l.marketplace_sku_id);
             })[0];
-        if (m) return { sku: l.sku, campaign_sku_line_id: m.campaign_sku_line_id };
+        if (m) {
+          // The handler writes campaign_id from the BODY onto the row it resolved by id, so quoting an
+          // existing line under a different campaign REPARENTS it. That is the whole mechanism behind
+          // WINDOW_EDIT_STRATEGY = CAMPAIGN_REASSIGNMENT, and a model that silently kept the old parent
+          // would report a working move as broken.
+          if (m.campaign_id !== body.campaign_id) {
+            m.campaign_id = body.campaign_id;
+            writes.push({ table: 'campaign_sku_lines', id: m.campaign_sku_line_id, reparented: true });
+          }
+          return { sku: l.sku, campaign_sku_line_id: m.campaign_sku_line_id };
+        }
         var id = 'CSL-NEW' + (++minted);
         db.lines.push({ campaign_sku_line_id: id, campaign_id: body.campaign_id,
           marketplace_sku_id: l.marketplace_sku_id, sku: l.sku });
@@ -371,6 +388,12 @@ ok(/STALE_SPECIAL_EVENT_VERSION[\s\S]{0,600}carries no expected version and cann
   'C0d 14_ really does refuse a versionless save over an existing event');
 ok(/fcSpecialEventFindRowByKey_/.test(GS14) && /primary key: campaign_id \+ campaign_sku_line_id/.test(GS14),
   'C0e and really does resolve by campaign_id + campaign_sku_line_id');
+ok(/campaign_id: campaignId,/.test(GS20) && /fcWriteUpsert_\(ss, 'campaign_sku_lines'/.test(GS20),
+  'C0f 20_ really does write the BODY\'s campaign_id onto a line it resolved by id — the reparent');
+ok(/if \(body\.hasOwnProperty\(h\)\) setCell\(targetRow, h, body\[h\]\);/.test(GS14),
+  'C0g and 14_ really does write every supplied header onto the located event, campaign_id included');
+ok(/FC_SE_UNIQUENESS_FIELDS_/.test(GS14) && /DUPLICATE_SPECIAL_EVENT_IDENTITY/.test(GS14),
+  'C0h and the authoritative uniqueness refusal is in the handler, not only in the browser');
 
 // =========================================================================================================
 // THE SAVE WORLD — the real saveEventUpdate over the model
@@ -403,6 +426,7 @@ function saveWorld(opts) {
     'event-name-input': { value: 'BFCM' },
     'event-target-year': { value: '2026' },
     'event-country': { value: 'US' },
+    'event-window-confirm': { checked: !!opts.confirmed },
     'fc-event-builder-save-btn': { disabled: false, textContent: 'Save' }
   };
   var sb = {
@@ -439,6 +463,9 @@ function saveWorld(opts) {
     // The persisted version token is the MODEL's, so the whole chain speaks one dialect.
     'function _seFingerprint_(row) { return __srv.eventVersion(row); }',
     'var EVT_MAX_ROWS = 8;',
+    // A3-R9 §5 — the authoring cap is mode-aware now: an EXISTING event may hold more rows than
+    // a person may compose by hand, and truncating one to 8 would silently drop what it stores.
+    fnSrc(FCS, '_evtRowCap_'),
     'function _fcResolveMarketplaceKey(v) { return String(v == null ? "" : v).trim(); }',
     'function _evtSelectedSite() { return { company: "ResUS", country: "US", marketplace: "Amazon" }; }',
     'function _evtResolveMarketplaceId() { return "MKT-1"; }',
@@ -483,8 +510,12 @@ function saveWorld(opts) {
     fnSrc(FCS, '_evtExistingEvents_'),
     fnSrc(FCS, '_evtBaseEventGroup_'),
     fnSrc(FCS, '_evtBaseEventForSku'),
-    fnSrc(FCS, '_evtWindowKey_'),
+    fnSrc(FCS, '_evtWindowConfirmEl_'), fnSrc(FCS, '_evtWindowConfirmChecked_'),
+    fnSrc(FCS, '_evtWindowKey_'), fnSrc(FCS, '_evtWindowChanged_'),
+    fnSrc(FCS, '_evtWindowEditActive_'),
     fnSrc(FCS, '_evtWindowChangeGate_'),
+    fnSrc(FCS, '_evtUniquenessKey_'), fnSrc(FCS, '_evtDuplicateConflicts_'),
+    fnSrc(FCS, '_evtDuplicateRefusalText_'),
     opts.identitySrc || fnSrc(FCS, '_evtSingleRowIdentity_'),
     opts.saveSrc || fnSrc(FCS, 'saveEventUpdate')
   ].join('\n'), sb);
@@ -552,52 +583,57 @@ async function main() {
       'E1a and the form stays attached to the loaded event — campaign_id retained');
     eq(W._evtWindowChangeGate_('2026-11-19', '2026-11-30').blocked, false,
       'E1b so the next Save is an ordinary edit');
-    eq(vm.runInContext('_evtWindowChangeAck_', W), null,
-      'E1c with no acknowledgement left standing');
+    eq(W.document.getElementById('event-window-confirm').checked, false,
+      'E1c with no confirmation left ticked behind the abandoned change');
   })();
 
   // -------------------------------------------------------------------------------------------------
-  section('F. SAVE AS NEW EVENT WINDOW — option 2, a detach and not a migration');
+  section('F. A CONFIRMED PERIOD CHANGE MOVES THE SAME EVENT');
   // -------------------------------------------------------------------------------------------------
+  // A3-R8 proved a DETACH: the loaded event was abandoned and a second one created for the new window.
+  // A3-R9 forbids that second event, so the same set of guarantees is now delivered by a REASSIGNMENT —
+  // and the guarantees are asserted here unchanged, because they are what the operator actually relies
+  // on. The two that INVERT are named as inversions rather than quietly dropped: the old line and the
+  // old event no longer stay put, they travel, and they travel WITH their ids.
   (function () {
-    var W = gateWorld({ editing: LOADED, start: '2027-01-05', end: '2027-01-09' });
-    W._evtDetachAsNewEvent_();
-    eq(vm.runInContext('_evtEditing_', W), null,
-      'F1  Detach stops addressing the loaded event — no campaign_id, no header version');
+    var W = gateWorld({ editing: LOADED, start: '2027-01-05', end: '2027-01-09', confirmed: true });
+    eq(vm.runInContext('_evtEditing_ && _evtEditing_.campaignId', W), 'CMP-BFCM26',
+      'F1  a confirmed change KEEPS the loaded event — its lineage is what moves');
     eq([W.document.getElementById('event-start-date').value,
         W.document.getElementById('event-end-date').value], ['2027-01-05', '2027-01-09'],
-      'F1a keeping the window the operator typed');
+      'F1a keeping the period the operator typed');
     eq(W._evtWindowChangeGate_('2027-01-05', '2027-01-09').blocked, false,
       'F1b so the confirmed save proceeds');
+    eq(W._evtWindowEditActive_('2027-01-05', '2027-01-09'), true,
+      'F1c and the save is told to resolve the header for the NEW period');
   })();
 
   await (async function () {
-    // tests 7, 8, 9, 10, 11, 14, 15, 16, 17 — a NEW window nothing else occupies.
-    var W = saveWorld({ editing: null, start: '2027-01-05', end: '2027-01-09',
-      ack: { from: '2026-11-19 → 2026-11-30', to: '2027-01-05 → 2027-01-09' } });
+    // tests 7, 8, 9, 10, 11, 14, 15, 16, 17 — a period nothing else occupies.
+    var W = saveWorld({ editing: LOADED, start: '2027-01-05', end: '2027-01-09', confirmed: true });
     var before = clone(W.__srv.db);
     await W.saveEventUpdate();
-    eq(failureOf(W), '', 'F2  the detached save succeeds');
-    var oldC = W.__srv.db.campaigns.filter(function (c) { return c.campaign_id === 'CMP-BFCM26'; })[0];
-    eq(oldC, before.campaigns.filter(function (c) { return c.campaign_id === 'CMP-BFCM26'; })[0],
-      'F3  the OLD campaign header is byte-for-byte unchanged');
-    eq(W.__srv.db.lines.filter(function (l) { return l.campaign_sku_line_id === 'CSL-1100'; })[0],
-      before.lines.filter(function (l) { return l.campaign_sku_line_id === 'CSL-1100'; })[0],
-      'F4  the OLD campaign_sku_line is unchanged');
-    eq(W.__srv.db.events.filter(function (e) { return e.event_fc_id === 'EFC-1100'; })[0],
-      before.events.filter(function (e) { return e.event_fc_id === 'EFC-1100'; })[0],
-      'F5  the OLD fc_special_event is unchanged — its window, its fc_qty, everything');
-    ok(W.__srv.db.events.some(function (e) { return e.event_fc_id === 'EFC-1100'; }),
-      'F6  and its event_fc_id still names it — nothing was repurposed');
-    var created = W.__srv.writes.filter(function (w) { return w.created; });
-    eq(created.map(function (w) { return w.table; }),
-      ['campaigns', 'campaign_sku_lines', 'fc_special_events'],
-      'F7  the new window resolves canonically: campaign, then line, then event');
-    var newEv = W.__srv.db.events.filter(function (e) { return e.event_start_date === '2027-01-05'; })[0];
-    ok(!!newEv && newEv.event_fc_id !== 'EFC-1100',
-      'F8  the new window gets its OWN event identity');
+    eq(failureOf(W), '', 'F2  the confirmed move succeeds');
+    eq(W.__srv.db.campaigns.filter(function (c) { return c.campaign_id === 'CMP-BFCM26'; })[0],
+      before.campaigns.filter(function (c) { return c.campaign_id === 'CMP-BFCM26'; })[0],
+      'F3  the OLD campaign header is byte-for-byte unchanged — it is shared, so it is never repointed');
+    // INVERTED FROM A3-R8, DELIBERATELY. The line and the event used to stay behind; now they move,
+    // and what must be preserved is their IDENTITY rather than their parent.
+    var line = W.__srv.db.lines.filter(function (l) { return l.campaign_sku_line_id === 'CSL-1100'; })[0];
+    ok(!!line && line.campaign_id !== 'CMP-BFCM26',
+      'F4  the campaign_sku_line keeps its id and changes parent — reassigned, not re-created');
+    var ev = W.__srv.db.events.filter(function (e) { return e.event_fc_id === 'EFC-1100'; })[0];
+    ok(!!ev && ev.event_start_date === '2027-01-05' && ev.event_end_date === '2027-01-09',
+      'F5  the SAME fc_special_event now carries the new period');
+    eq(ev.event_fc_id, 'EFC-1100', 'F6  and its event_fc_id is preserved — the lineage moved with it');
+    eq(W.__srv.db.events.length, before.events.length,
+      'F7  no second event was created for this SKU, flag and year');
+    ok(W.__srv.db.campaigns.some(function (c) { return c.start_date === '2027-01-05'; }),
+      'F8  a campaign for the new period exists — resolved or created, never mutated into being');
     eq(W.__srv.db.events.filter(function (e) { return e.sku === 'CO1150-B'; })[0].fc_qty, 800,
       'F9  the sibling SKU on the old campaign is untouched');
+    eq(W.__srv.db.events.filter(function (e) { return e.sku === 'CO1150-B'; })[0].campaign_id,
+      'CMP-BFCM26', 'F9a and still points at the old campaign — siblings do not travel');
     eq(W.__srv.db.campaigns.filter(function (c) { return c.campaign_id === 'CMP-BFCM26'; }).length, 1,
       'F10 and no campaign was deleted — an emptied header is never swept');
     eq(W.__srv.writes.filter(function (w) { return w.table === 'campaigns' && !w.created; }), [],
@@ -605,20 +641,22 @@ async function main() {
   })();
 
   await (async function () {
-    // tests 12, 13 — the new window ALREADY exists: reuse the header, update the event, no twin.
-    var W = saveWorld({ editing: null, start: '2026-07-15', end: '2026-07-16',
-      ack: { from: '2026-11-19 → 2026-11-30', to: '2026-07-15 → 2026-07-16' } });
-    var nEvents = W.__srv.db.events.length, nCampaigns = W.__srv.db.campaigns.length;
+    // tests 12, 13 — the period the event moves to ALREADY has a campaign header: reuse it, write nothing
+    // to it, and still move only this event.
+    var W = saveWorld({ editing: LOADED, start: '2026-07-15', end: '2026-07-16', confirmed: true,
+      events: [EV_BFCM_1100, EV_BFCM_1150] });
+    var nCampaigns = W.__srv.db.campaigns.length;
     await W.saveEventUpdate();
-    eq(failureOf(W), '', 'F12 detaching onto an OCCUPIED window is not refused as stale');
+    eq(failureOf(W), '', 'F12 moving onto a period whose campaign exists is not refused');
     eq(W.__srv.db.campaigns.length, nCampaigns, 'F13 the existing target campaign is REUSED, not twinned');
     eq(W.__srv.writes.filter(function (w) { return w.table === 'campaigns'; }), [],
       'F13a and reusing it writes nothing at all');
-    eq(W.__srv.db.events.length, nEvents, 'F14 and no duplicate event is created');
-    eq(W.__srv.db.events.filter(function (e) { return e.event_fc_id === 'EFC-1100P'; })[0].fc_qty, 5000,
-      'F15 the event that already existed there is UPDATED — resolved, not overwritten blindly');
-    eq(W.__srv.db.events.filter(function (e) { return e.event_fc_id === 'EFC-1100'; })[0].fc_qty, 4200,
-      'F16 while the event the operator left keeps its own forecast');
+    eq(W.__srv.db.events.length, 2, 'F14 and no duplicate event is created');
+    var moved = W.__srv.db.events.filter(function (e) { return e.event_fc_id === 'EFC-1100'; })[0];
+    eq(moved.campaign_id, 'CMP-PRIME26', 'F15 the moved event now belongs to the target campaign');
+    eq(moved.fc_qty, 5000, 'F15a carrying the forecast the operator typed');
+    eq(W.__srv.db.events.filter(function (e) { return e.event_fc_id === 'EFC-1150'; })[0].campaign_id,
+      'CMP-BFCM26', 'F16 while the sibling stays exactly where it was');
   })();
 
   // -------------------------------------------------------------------------------------------------
@@ -650,24 +688,28 @@ async function main() {
   // -------------------------------------------------------------------------------------------------
   var IDSRC = fnSrc(FCS, '_evtSingleRowIdentity_');
 
-  mutant('M1  a detached row keeping the ids it was loaded with', await (async function () {
-    var f = faulted(IDSRC, '  if (_evtEditingActive_()) {', '  if (true) {', 'M1');
-    var W = saveWorld({ editing: null, start: '2026-07-15', end: '2026-07-16', identitySrc: f,
-      ack: { from: 'x', to: 'y' } });
+  mutant('M1  a confirmed move quoting the loaded campaign_id anyway', await (async function () {
+    // The header for the OLD period is shared. Quoting it during a move asks the server to repoint it,
+    // which moves every sibling SKU's event with it — the one outcome §4 exists to make impossible.
+    var S = fnSrc(FCS, 'saveEventUpdate');
+    var fa = faulted(S, '  if (_evtEditingActive_() && !_winEdit) {', '  if (_evtEditingActive_()) {', 'M1');
+    var W = saveWorld({ editing: LOADED, start: '2027-01-05', end: '2027-01-09', confirmed: true,
+      saveSrc: fa });
     await W.saveEventUpdate();
-    // EFC-1100 is the BFCM event; addressed from a July form it would rewrite that event's window.
-    var bfcm = W.__srv.db.events.filter(function (e) { return e.event_fc_id === 'EFC-1100'; })[0];
-    return failureOf(W) !== '' || bfcm.event_start_date !== '2026-11-19';
+    return /CAMPAIGN_IDENTITY_MISMATCH/.test(failureOf(W));
   })() === true);
 
-  mutant('M2  a detached row resolving nothing, so an occupied window is refused as stale',
+  mutant('M2  a move that drops the loaded lineage, creating a second event',
     await (async function () {
-      var f = faulted(IDSRC, '  var be = (typeof _evtBaseEventForSku === \'function\') ? _evtBaseEventForSku(r.sku) : null;',
-        '  var be = null;', 'M2');
-      var W = saveWorld({ editing: null, start: '2026-07-15', end: '2026-07-16', identitySrc: f,
-        ack: { from: 'x', to: 'y' } });
+      var fa = faulted(IDSRC, '    return { eventFcId: r.eventFcId || \'\', campaignSkuLineId: r.campaignSkuLineId || \'\',',
+        '    return { eventFcId: \'\', campaignSkuLineId: \'\',', 'M2');
+      var W = saveWorld({ editing: LOADED, start: '2027-01-05', end: '2027-01-09', confirmed: true,
+        identitySrc: fa });
+      var n = W.__srv.db.events.length;
       await W.saveEventUpdate();
-      return failureOf(W) === 'STALE_SPECIAL_EVENT_VERSION' || W.__srv.db.events.length !== 3;
+      // Either a second event appears for this SKU/flag/year, or the old one stops carrying the period.
+      var old = W.__srv.db.events.filter(function (e) { return e.event_fc_id === 'EFC-1100'; })[0];
+      return W.__srv.db.events.length !== n || !old || old.event_start_date !== '2027-01-05';
     })() === true);
 
   mutant('M3  the resolver dropping the version while keeping the ids', (function () {
@@ -687,13 +729,13 @@ async function main() {
     return W.__srv.writes.length > 0 || failureOf(W) !== '';
   })() === true);
 
-  mutant('M5  Detach going back to blanking the dataset ids', (function () {
-    // The runtime proof is B6; this is its behavioural twin — a blanked row cannot resolve, so the
-    // occupied-window save reverts to the refusal A3-R8 exists to remove.
-    var f = faulted(IDSRC, '  var be = (typeof _evtBaseEventForSku === \'function\') ? _evtBaseEventForSku(r.sku) : null;\n  if (!be) return { eventFcId: \'\', campaignSkuLineId: \'\', rowVersion: \'\' };',
-      '  return { eventFcId: \'\', campaignSkuLineId: \'\', rowVersion: \'\' };\n  var be = null;', 'M5');
-    var W = resolverWorld({ editing: null, start: '2026-07-15', end: '2026-07-16', identitySrc: f });
-    return W._evtSingleRowIdentity_(LOADED_ROW).eventFcId === '';
+  mutant('M5  the create preflight letting a duplicate through', (function () {
+    // The client half of the uniqueness rule. It is not the authority — 14_ is — but an operator who
+    // reaches a server refusal the browser could have named first has been failed by this gate.
+    var S = fnSrc(FCS, 'saveEventUpdate');
+    var fa = faulted(S, '    if (_dupHits && _dupHits.length) { alert(_evtDuplicateRefusalText_(_dupHits, _dupCtx)); return; }',
+      '    if (false) { return; }', 'M5');
+    return !/_dupHits && _dupHits\.length/.test(fa);
   })() === true);
 
   mutant('M6  the resolver matching on SKU alone, ignoring the window', (function () {
@@ -715,15 +757,15 @@ async function main() {
     })) === false;
   })() === true);
 
-  mutant('M8  the spec freezing a MOVE instead of a CREATE', (function () {
-    var f = faulted(SPEC, 'WINDOW_CHANGE_SEMANTICS         = CREATE_NEW_IDENTITY_NOT_MOVE',
-      'WINDOW_CHANGE_SEMANTICS         = MOVE_PRESERVE_LINEAGE', 'M8');
-    return !/^WINDOW_CHANGE_SEMANTICS *= *CREATE_NEW_IDENTITY_NOT_MOVE$/m.test(f);
+  mutant('M8  the spec allowing a SILENT period edit', (function () {
+    var f = faulted(SPEC, 'WINDOW_CHANGE_SEMANTICS        = EXPLICIT_CONFIRMED_EDIT_OF_THE_SAME_EVENT',
+      'WINDOW_CHANGE_SEMANTICS        = SILENT_EDIT_OF_THE_SAME_EVENT', 'M8');
+    return !/^WINDOW_CHANGE_SEMANTICS *= *EXPLICIT_CONFIRMED_EDIT_OF_THE_SAME_EVENT$/m.test(f);
   })() === true);
 
   mutant('M9  the spec permitting an emptied campaign to be swept', (function () {
-    var f = faulted(SPEC, 'EMPTY_CAMPAIGN_AUTO_DELETE      = NO',
-      'EMPTY_CAMPAIGN_AUTO_DELETE      = YES', 'M9');
+    var f = faulted(SPEC, 'EMPTY_CAMPAIGN_AUTO_DELETE     = NO',
+      'EMPTY_CAMPAIGN_AUTO_DELETE     = YES', 'M9');
     return !/^EMPTY_CAMPAIGN_AUTO_DELETE *= *NO$/m.test(f);
   })() === true);
 
@@ -734,13 +776,11 @@ async function main() {
       + ' | marketplace | promotion_type | event_flag | start_date | end_date\n```\n') === false;
   })() === true);
 
-  mutant('M11 the stale-version gate being relaxed for a detached save', await (async function () {
-    var W = saveWorld({ editing: null, start: '2026-07-15', end: '2026-07-16',
-      ack: { from: 'x', to: 'y' },
+  mutant('M11 the stale-version gate being relaxed during a move', await (async function () {
+    var W = saveWorld({ editing: LOADED, start: '2027-01-05', end: '2027-01-09', confirmed: true,
       rows: [{ sku: 'CO1100-R', marketplaceSkuId: 'MS-1100', priceState: '', currency: 'USD',
         regularPrice: 100, discountPercent: 20, dealPrice: 80, fcQty: 5000,
-        eventFcId: '', campaignSkuLineId: '', rowVersion: '' }],
-      identitySrc: faulted(IDSRC, 'rowVersion: be.rowVersion || \'\'', 'rowVersion: \'\'', 'M11') });
+        eventFcId: 'EFC-1100', campaignSkuLineId: 'CSL-1100', rowVersion: 'STALE-TOKEN' }] });
     await W.saveEventUpdate();
     return failureOf(W) === 'STALE_SPECIAL_EVENT_VERSION';
   })() === true);
@@ -755,10 +795,14 @@ async function main() {
   section('H. VACUITY — the unfaulted tree behaves as the mutants assume');
   // -------------------------------------------------------------------------------------------------
   await (async function () {
-    var W = saveWorld({ editing: null, start: '2026-07-15', end: '2026-07-16', ack: { from: 'x', to: 'y' } });
+    // M1 and M2 both fault the CONFIRMED MOVE, so the unfaulted move is what has to behave.
+    var W = saveWorld({ editing: LOADED, start: '2027-01-05', end: '2027-01-09', confirmed: true });
+    var n = W.__srv.db.events.length;
     await W.saveEventUpdate();
-    ok(failureOf(W) === '' && W.__srv.db.events.length === 3,
-      'H1  the real detached save onto an occupied window really does succeed without duplicating, so M1/M2 can fail');
+    var moved = W.__srv.db.events.filter(function (e) { return e.event_fc_id === 'EFC-1100'; })[0];
+    ok(failureOf(W) === '' && W.__srv.db.events.length === n
+      && !!moved && moved.event_start_date === '2027-01-05',
+      'H1  the real move really does succeed, keep its id and create no twin, so M1/M2 can fail');
   })();
   (function () {
     var W = resolverWorld({ editing: null, start: '2027-01-05', end: '2027-01-09' });

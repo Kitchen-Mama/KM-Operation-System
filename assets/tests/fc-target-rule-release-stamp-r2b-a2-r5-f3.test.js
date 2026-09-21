@@ -68,18 +68,24 @@ var RELEASE_FLOOR = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12';
 // production (58_ and 63_ synced, 131/131 backend gate, Pages converged on the same sha).
 // R16 — FC-SUMMARY-R2B-A3-R4 moves the base to a91cb8e, the commit the R15 release was accepted at in
 // production (14_, 20_ and 63_ synced by the user, live health reported R15 uniform).
-var BASE = 'a91cb8e';
+// R18 — FC-SUMMARY-R2B-A3-R9 moves the base to 2836d2a. NOTE THE WORDING CHANGE, because the claim is
+// weaker than the ones above and saying so is the point: 2836d2a is the commit R17's source landed at
+// and the current tip of origin/main; this suite has NO evidence that R17 was accepted in production,
+// and does not assert it. What makes 2836d2a the right base anyway is a property of the two rounds
+// between it and here: A3-R7 and A3-R8 changed NO .gs file at all, so the Apps Script diff from this
+// base is exactly and only what R18 changed — which is the one thing the base is for.
+var BASE = '2836d2a';
 
 // The files THIS release syncs, and the ONE reason each is on the list. A file on the sync list for no
 // stated reason is how an unrelated edit reaches production by accident — so the set is declared here
 // and checked against git below, rather than being read off git and believed.
 var RELEASE_OWNERS = {
-  '20_campaign_write_handlers.gs':
-    'a resolved campaign row is now classified as IDENTICAL HEADER or HEADER MUTATION BEFORE the '
-    + 'version is consulted, so adding a new SKU to an existing window reuses the header with zero '
-    + 'writes instead of being refused STALE_CAMPAIGN_VERSION',
+  '14_fc_write_handlers.gs':
+    'fcSpecialEventUpsert_ now scans company|country|marketplace|sku|event_name|year before the create '
+    + 'branch and refuses DUPLICATE_SPECIAL_EVENT_IDENTITY, excluding its own row so an update is '
+    + 'unaffected — one event flag in one target year is one event for a scoped SKU, whatever its dates',
   '63_api_v1_system_health.gs':
-    'the R16 release identity and 20\'s expected stamp'
+    'the R18 release identity and 14\'s expected stamp'
 };
 // Owners that carry an EARLIER release and must keep it. Each is here because it did not change, and
 // marching any of them to the current release would destroy the manifest's only useful signal.
@@ -93,8 +99,11 @@ var RELEASE_OWNERS = {
 // 14_ JOINED THIS LIST AT R16. It was an R15 owner; R16 changes only how the CAMPAIGN handler classifies
 // a resolved row, and no fc_special_events or fc_target_rules handler was touched. Marching 14_ to R16
 // would erase the one fact its stamp carries: the round in which it last actually changed.
+// 14_ LEFT AGAIN AT R18 AND 20_ TOOK ITS PLACE — the third such swap this suite has recorded, and each
+// one is the ledger working. R18 adds the authoritative uniqueness refusal inside 14_ and touches no
+// campaign handler, so 20_ keeps R17, the round IT last changed.
 var RELEASE_UNMOVED = {
-  '14_fc_write_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R15',
+  '20_campaign_write_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R17',
   '58_api_v1_fc_summary_workspace.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R14',
   '13_procurement_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12',
   '00_config.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11',
@@ -222,10 +231,12 @@ ok(/KMPD\.resolveTargetRule/.test(PROC),
 // R16 — 14_ KEEPS ITS OWN ROUND. It was an R15 owner; R16 changes only how 20_ classifies a resolved
 // campaign row, and no handler in 14_ was touched. Asserting it declares the RELEASE would march a stamp
 // that exists precisely to record the round its file last changed.
-eq(declares(WRITE, 'FCW_BUILD_VERSION_'), RELEASE_UNMOVED['14_fc_write_handlers.gs'],
-  'B2  14_ keeps the release it last changed in — this one touched no handler inside it');
-eq(declares(CAMPWRITE, 'CAMPAIGN_BUILD_VERSION_'), RELEASE,
-  'B2-2 and so does 20_, whose first build stamp this release is');
+eq(declares(WRITE, 'FCW_BUILD_VERSION_'), RELEASE,
+  'B2  14_ IS the release — R18 added the uniqueness refusal inside it');
+eq(declares(CAMPWRITE, 'CAMPAIGN_BUILD_VERSION_'), RELEASE_UNMOVED['20_campaign_write_handlers.gs'],
+  'B2-2 while 20_ keeps R17, the round IT last changed — no campaign handler was touched');
+ok(/FC_SE_UNIQUENESS_FIELDS_/.test(WRITE) && /DUPLICATE_SPECIAL_EVENT_IDENTITY/.test(WRITE),
+  'B2-3 and the change 14_\'s stamp claims is really in the file, so the stamp is not decoration');
 // The mirror image, and the reason B2 could be rewritten rather than deleted: the READ owner is
 // untouched by a write-path release, so it must still declare the release it DID change in.
 eq(declares(WSREAD, 'FCSWS_BUILD_VERSION_'), RELEASE_UNMOVED['58_api_v1_fc_summary_workspace.gs'],
@@ -329,9 +340,14 @@ ok(oldProc.stale_modules.join('|').indexOf('13_procurement_handlers.gs') !== -1,
 ok(oldProc.stale_modules.join('|').indexOf('F1-7N-FC-1A-R1') !== -1,
   'F1a and the report names the build the project actually carries, not just that something is wrong');
 
-var oldCamp = runManifest({ CAMPAIGN_BUILD_VERSION_: PREV_RELEASE });
-ok(oldCamp.stale_modules.join('|').indexOf('20_campaign_write_handlers.gs') !== -1,
-  'F2  an OLD 20_ identity is rejected where this release requires the new one', oldCamp.stale_modules);
+// R18 — the file whose OLD copy must be rejected is the one this release changed, which is now 14_.
+// PREV_RELEASE is R17, and R17 is 20_'s CORRECT stamp, so asking the question of 20_ would assert that
+// a correctly-synced project is stale. The rule is unchanged: a project holding the previous release's
+// copy of the file this release changed is reported STALE, and here that project keeps accepting the
+// duplicate event R18 exists to refuse.
+var oldCamp = runManifest({ FCW_BUILD_VERSION_: PREV_RELEASE });
+ok(oldCamp.stale_modules.join('|').indexOf('14_fc_write_handlers.gs') !== -1,
+  'F2  an OLD 14_ identity is rejected where this release requires the new one', oldCamp.stale_modules);
 // THE FAILURE MODE THIS ROW WAS ADDED FOR. Until R15, 20_ had no stamp at all: a project holding last
 // round's copy keys campaigns by NAME, so two event windows in one year merge into a single row and
 // the earlier one is overwritten — and health reported a clean bill, because no action was added.
@@ -520,11 +536,11 @@ mutant('M6', 'a malformed release string', function () {
 // that was really a missing premise. The vacuity audit caught it, which is what the audit is for.
 mutant('M7', 'the manifest expecting a build no file declares', function () {
   var faked = HEALTH.replace(
-    "symbol: 'CAMPAIGN_BUILD_VERSION_', expected: '" + RELEASE + "'",
-    "symbol: 'CAMPAIGN_BUILD_VERSION_', expected: '" + PREV_RELEASE + "'");
-  if (faked === HEALTH) return false;
-  var row = manifestRows(faked).filter(function (r) { return r.symbol === 'CAMPAIGN_BUILD_VERSION_'; })[0];
-  return !!row && declares(CAMPWRITE, 'CAMPAIGN_BUILD_VERSION_') !== row.expected;
+    "symbol: 'FCW_BUILD_VERSION_', expected: '" + RELEASE + "'",
+    "symbol: 'FCW_BUILD_VERSION_', expected: '" + PREV_RELEASE + "'");
+  if (faked === HEALTH) throw new Error('M7 anchor drifted — the mutant would inject no fault');
+  var row = manifestRows(faked).filter(function (r) { return r.symbol === 'FCW_BUILD_VERSION_'; })[0];
+  return !!row && declares(WRITE, 'FCW_BUILD_VERSION_') !== row.expected;
 });
 mutant('M8', 'a double-quoted bundle hash, which makes every reader pass vacuously', function () {
   var faked = BUNDLE.replace(/var KM_BUNDLE_CONTENT_HASH_ = '([^']*)';/, 'var KM_BUNDLE_CONTENT_HASH_ = "$1";');
@@ -566,7 +582,7 @@ var vacuous = [];
  ['M4', function () { return runManifest().stale_modules.length === 0; }],
  ['M5', function () { return RO.stampAtOrAfter(RELEASE, PREV_RELEASE); }],
  ['M6', function () { return RO.BUILD_STAMP_RE.test(RELEASE); }],
- ['M7', function () { return declares(CAMPWRITE, 'CAMPAIGN_BUILD_VERSION_') === RELEASE; }],
+ ['M7', function () { return declares(WRITE, 'FCW_BUILD_VERSION_') === RELEASE; }],
  ['M8', function () { return declares(BUNDLE, 'KM_BUNDLE_CONTENT_HASH_') !== null; }],
  ['M9', function () { return declares(BUNDLE, 'KM_BUNDLE_CONTENT_HASH_')
      === (BUNDLE.match(/^\/\/ bundle_sha256 = ([0-9a-f]{64})$/m) || [])[1]; }],

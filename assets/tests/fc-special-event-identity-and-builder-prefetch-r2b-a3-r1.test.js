@@ -164,10 +164,12 @@ function rowOf(table, obj) {
 
 // The server world: the REAL handlers, nothing re-implemented.
 var SRV_NAMES_14_VARS = ['FC_SPECIAL_EVENTS_HEADERS_', 'FC_TARGET_RULES_HEADERS_', 'FC_SCHEMA_ORDERED_',
-  'FC_SCHEMA_BY_NAME_', 'FC_SCHEMA_BY_NAME_TABLES_', 'FC_SE_FINGERPRINT_FIELDS_', 'FC_SE_FINGERPRINT_NUMERIC_'];
+  'FC_SCHEMA_BY_NAME_', 'FC_SCHEMA_BY_NAME_TABLES_', 'FC_SE_FINGERPRINT_FIELDS_', 'FC_SE_FINGERPRINT_NUMERIC_',
+  'FC_SE_UNIQUENESS_FIELDS_'];
 var SRV_NAMES_14_FNS = ['fcWriteSchemaByNameApproved_', 'fcWriteTimestamp_', 'fcWriteEnsureSheet_',
   'fcWriteEnsureColumns_', 'fcWriteReadSheet_', 'fcWriteAppendByHeader_', 'fcWriteUpsert_', 'fcEvtUp_',
-  'fcSpecialEventFindRowByKey_', 'fcSeNum_', 'fcSeFingerprint_', 'fcSeRowAt_', 'fcSeReceiptFor_',
+  'fcSpecialEventFindRowByKey_', 'fcSeUniquenessKey_', 'fcSeUniquenessConflict_',
+  'fcSeNum_', 'fcSeFingerprint_', 'fcSeRowAt_', 'fcSeReceiptFor_',
   'fcSpecialEventUpsert_', 'handleUpsertFcSpecialEvent_', 'handleImportFcSpecialEventsBatch_'];
 var SRV_NAMES_20_VARS = ['CAMPAIGNS_HEADERS_', 'CAMPAIGN_SKU_LINES_HEADERS_', 'CAMPAIGN_KEY_FIELDS_',
   'CAMPAIGN_LOCK_MS_', 'CAMPAIGN_FINGERPRINT_FIELDS_', 'CAMPAIGN_FINGERPRINT_NUMERIC_',
@@ -576,6 +578,8 @@ function pageWorld(events, campaigns, lines, opts) {
     fnSrc(FCS, '_evtCampaignRows_'), fnSrc(FCS, '_evtCampaignLineRows_'),
     fnSrc(FCS, '_evtExistingEvents_'), fnSrc(FCS, '_evtExistingLabel_'),
     fnSrc(FCS, '_evtPopulateExistingSelect'), fnSrc(FCS, '_evtOnExistingChange'),
+    // A3-R9 — _evtClearEditing_ and the chrome now disarm the period-change confirmation.
+    fnSrc(FCS, '_evtWindowConfirmEl_'),
     fnSrc(FCS, '_evtClearEditing_'), fnSrc(FCS, '_evtSetEditingChrome_'),
     fnSrc(FCS, '_evtHydrateExisting_'),
     'var _evtEditing_ = null;'
@@ -677,12 +681,19 @@ var LINES = [
     'D15 and "+ New event" clears the ids AND the window it belonged to');
 })();
 
-// D16 — while an event is loaded, its identity fields are not editable.
+// D16 — while an event is loaded, its IDENTITY fields are not editable. A3-R9 moved the period out of
+// that set and into the event's attributes: one event flag in one target year is one event for a
+// scoped SKU, whatever its dates, so the period is edited HERE (behind an explicit confirmation) and
+// is no longer a second event's name. Scope, flag and year are still locked, and that is the whole of
+// what D16 was ever protecting — changing one of those does not edit this event, it addresses another.
 (function () {
   var W = pageWorld([evRec({})], CAMPS, LINES);
   W._evtHydrateExisting_('CMP-BFCM27');
-  eq([W.__els['event-start-date'].disabled, W.__els['event-country'].disabled],
-    [true, true], 'D16 the window and scope are read-only while editing (they ARE the identity)');
+  eq([W.__els['event-country'].disabled, W.__els['event-name-input'].disabled,
+      W.__els['event-target-year'].disabled],
+    [true, true, true], 'D16 scope, event flag and target year are read-only while editing');
+  eq(W.__els['event-start-date'].disabled, false,
+    'D16a while the PERIOD is editable — it is this event\'s attribute, not another event\'s name');
   ok(W.__els['event-editing-banner'].hidden === false,
     'D17 and the modal says it is editing a saved event rather than creating one');
 })();

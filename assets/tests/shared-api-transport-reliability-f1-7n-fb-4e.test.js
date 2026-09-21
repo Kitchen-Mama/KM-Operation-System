@@ -518,11 +518,19 @@ section('§A — the getTable reader: bounded, text-first, and it no longer blin
 // This is the path Factory Inventory, Overseas Inventory, FC Summary and Shipment Draft mount on, and it had
 // none of the protections the workspace path already had.
 ok(/getOperationDbTableFromSheet/.test(DBAPIC), 'E1 the per-table reader exists');
-var gtSrc = extractFn(code(DBAPI), 'getOperationDbTableFromSheet');
+// The reader is a WRAPPER plus the attempt it delegates to; both halves are read, because a wrapper
+// that quietly opened its own fetch would satisfy an assertion made about the attempt alone.
+var gtWrap = extractFn(code(DBAPI), 'getOperationDbTableFromSheet');
+var gtOnce = extractFn(code(DBAPI), '_kmGetTableOnce_');
+var gtSrc = gtWrap + '\n' + gtOnce;
+ok(/_kmGetTableOnce_\(tableName\)/.test(gtWrap) && !/_kmFetchBounded_/.test(gtWrap),
+  'E0 the reader delegates its request — the wrapper opens no path of its own');
 ok(/_kmFetchBounded_/.test(gtSrc), 'E1 it is now BOUNDED (an unanswered read cannot hold the mount open forever)');
 ok(/_kmClassifyAnswer_/.test(gtSrc), 'E1 and classified through the ONE shared classifier');
 ok(!/await resp\.json\(\)/.test(gtSrc), 'E1 the blind resp.json() is gone — no more opaque "Unexpected token \'<\'"');
 ok(/kmTransport/.test(gtSrc), 'E1 and the typed reason rides on the thrown error so a page can render it');
+ok(/if \(code !== 'REDIRECT_TARGET_NOT_FOUND'\) throw e;/.test(gtWrap),
+  'E1a and the one recovery it adds is confined to that single typed code — a timeout is rethrown');
 var gdbSrc = extractFn(code(DBAPI), 'getOperationDbFromSheet');
 ok(/_kmFetchBounded_/.test(gdbSrc) && /_kmClassifyAnswer_/.test(gdbSrc) && !/await resp\.json\(\)/.test(gdbSrc),
   'E2 the whole-DB reader received the same three fixes');

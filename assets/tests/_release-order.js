@@ -507,7 +507,22 @@ var ROUND_TOKENS = [
   // reused. A browser holding the previous bytes would keep failing every existing-event update,
   // keep hiding the persisted event FC, and keep sending a window change straight at the server.
   // The whole application set rotates together.
-  'baseeventfc-r2ba3r7-20260921'];
+  'baseeventfc-r2ba3r7-20260921',
+  // FC-SUMMARY-R2B-A3-R9 - the Special Event uniqueness round. THE TOKEN ABOVE IS NOW PUBLISHED, and
+  // that changed DURING this round: A3-R7 and A3-R8 were unpushed when it began, so reuse was
+  // legitimate and was taken twice; the user then pushed, origin/main moved 2836d2a -> 9d9e43e ->
+  // f1635f9, and Pages has served those bytes under `?v=baseeventfc-r2ba3r7-20260921`. By the rule
+  // recorded above - a token may only be reused while nothing carrying it has been published - it
+  // cannot be reused again, and a third reuse would pin every one of those browsers to the A3-R8
+  // copy of fc-summary.js permanently.
+  //
+  // The refetch is load-bearing on its own terms. A browser left on the previous bytes would keep
+  // offering to create a second Special Event for a SKU that already has one (and now be refused by
+  // a server it cannot explain), would keep the event period disabled so the only way to correct one
+  // is that refused create, would truncate an existing 13- or 20-SKU event to 8, and would keep
+  // surfacing an expired getTable redirect as a dead Builder. fc-summary.js, the api layer and
+  // fc-summary.html all change together, so the whole application set rotates together.
+  'eventuniqueness-r2ba3r9-20260921'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the
@@ -867,7 +882,20 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // carries the release, 20_'s stamp and 20_'s ownership row. 14_ does NOT move - nothing in it changed.
   // A new deployment version is required: a project holding the R16 copy of 20_ keeps taking the global
   // lock to answer a read. APPEND-ONLY, at the end - stampAtOrAfter compares INDEXES.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R17'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R17',
+  // R18 - FC-SUMMARY-R2B-A3-R9: the authoritative Special Event uniqueness refusal. The product rule is
+  // that one event flag in one target year is ONE event for a scoped SKU, whatever its dates, and the
+  // existing business-key resolution cannot enforce it: it keys on campaign_id + line, so an event
+  // authored under a DIFFERENT campaign - which is exactly what a different window produces - resolved
+  // to no row and appended a second event. 14_ now scans company|country|marketplace|sku|event_name|year
+  // before the create branch and refuses DUPLICATE_SPECIAL_EVENT_IDENTITY, excluding its own row so an
+  // update is unaffected. 63_ carries the release and 14_'s expected stamp. 20_ does NOT move - nothing
+  // in it changed, and its stamp records the round it last changed. A new deployment version is required
+  // because a project holding the R17 copy of 14_ still accepts the duplicate this release exists to
+  // refuse, and the client preflight in front of it is not an authority - a second tab, a stale read
+  // model and a direct API caller all go straight past it. APPEND-ONLY, at the end - stampAtOrAfter
+  // compares INDEXES.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R18'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

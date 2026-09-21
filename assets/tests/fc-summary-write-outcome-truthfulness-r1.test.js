@@ -87,6 +87,8 @@ var VARS = [
   // so the slice vocabulary has to be in the sandbox for them to resolve.
   'FC_SLICE_', 'FC_FRESH_', '_FC_TAB_SLICE_', '_FC_SLICE_KEYS_', '_FC_MODEL_KEYS_', '_fcSliceState_',
   'FC_PREREQ_', 'FC_WRITE_', 'FC_VIEW_', 'FC_MSG_',
+  // A3-R9 §8 — the non-retryable code set _fcPrereqRetryable_ consults.
+  '_FC_NONRETRYABLE_PREREQ_', '_fcPrereqLastError_',
   // FC-SUMMARY-R2B-A2-R3 — the retry-state map. The banner's LABEL and the sentence that names it now
   // come from one place, so both must be in the sandbox for the functions below to resolve.
   'FC_RETRY_', 'FC_RETRY_LABEL_',
@@ -111,6 +113,8 @@ var FNS = [
   // the rows alone. The write-outcome assertions below are untouched.
   '_fcClearBanner_', '_fcShowBanner_', '_fcRerenderTables_', '_fcHydrateFromModel_',
   '_fcRefreshViewNow_', '_fcPrereqPath_', '_fcPrereqNeeded_', '_fcPrereqMissing_',
+  // A3-R9 §8 — the loader now classifies a failure as retryable or not before setting the state.
+  '_fcPrereqRetryable_',
   // R2B-A3-R5 — opening a builder settles TWO owners: the broad-cache tables and, for the Special
   // path, the forecast slice its Base FC column reads. proceedToFcMode awaits both through here.
   '_fcBaseFcSourceMissing_', '_fcEnsureBaseFcSource_', '_fcPrereqAndSources_',

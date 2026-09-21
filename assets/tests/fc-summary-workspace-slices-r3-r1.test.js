@@ -390,7 +390,18 @@ ok(!/optional: true/.test(row58 ? HEALTH.slice(row58.index, HEALTH.indexOf('}', 
 // 14_ REJOINED IT AT R16: that release changes only how 20_ classifies a resolved campaign row, and no
 // handler inside 14_ was touched. Asserting RELEASE_NOW for it would have marched the one fact its
 // stamp carries — the round in which its own file last changed — to a release it had no part in.
-[['14_fc_write_handlers.gs', 'R6-R7-R15'], ['13_procurement_handlers.gs', 'R6-R7-R12'],
+// 14_ LEFT IT AGAIN AT R18 (FC-SUMMARY-R2B-A3-R9): fcSpecialEventUpsert_ gained the authoritative
+// one-event-per-scoped-SKU-flag-year refusal, so its own file changed and its stamp moves with it.
+// 20_ takes its place on the unmoved list — the campaign handler was not touched this round. The
+// membership of this list swaps every time a release changes a different owner, and that swapping IS
+// the signal; what may never happen is a file appearing at RELEASE_NOW without a change behind it.
+ok(new RegExp("\\{ file: '14_fc_write_handlers\\.gs', symbol: '[A-Z_]+', expected: '"
+  + RELEASE_NOW.replace(/[-]/g, '[-]') + "'").test(HEALTH),
+  'E7c 14_ is AT the release — R18 changed a handler inside it');
+ok(/FC_SE_UNIQUENESS_FIELDS_/.test(require('fs').readFileSync(require('path').join(__dirname, '..',
+  'specs', 'active', 'apps-script', '14_fc_write_handlers.gs'), 'utf8')),
+  'E7d and the change its stamp claims is really in the file, so the stamp is not decoration');
+[['20_campaign_write_handlers.gs', 'R6-R7-R17'], ['13_procurement_handlers.gs', 'R6-R7-R12'],
  ['00_config.gs', 'R6-R7-R11'], ['01_router.gs', 'R6-R7-R9'],
  ['72_api_v1_product_pricing_workspace.gs', 'R6-R7-R10']].forEach(function (p, i) {
   var m = new RegExp("\\{ file: '" + p[0].replace(/\./g, '\\.') + "', symbol: '[A-Z_]+', expected: '([^']+)'").exec(HEALTH);

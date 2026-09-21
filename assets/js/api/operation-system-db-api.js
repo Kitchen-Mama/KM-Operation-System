@@ -111,7 +111,38 @@ async function getOperationDbFromSheet() {
 // The thrown-Error shape is preserved (callers catch and read `.message`), with the typed facts attached as
 // properties so a page can render a real reason instead of an empty table.
 // ============================================================================================================
+/* FC-SUMMARY-R2B-A3-R9 §6 — THE EXPIRED DELIVERY HOP, ON THE READ SIDE.
+
+   Live: `Action: getTable · Table: campaign_sku_lines · REDIRECT_TARGET_NOT_FOUND ·
+   EXPIRED_USERCONTENT_REDIRECT`. Apps Script answers /exec with a 302 to a single-use
+   script.googleusercontent.com echo target; that target expires, and a request that arrives after it
+   has is answered with an HTML 404 page instead of data.
+
+   The parts that already worked: km-transport.js types this exactly (REDIRECT_TARGET_NOT_FOUND, told
+   apart from a business 404), refuses to store a googleusercontent host as an endpoint, and lists the
+   code as auto-retryable for reads with maxRetries defaulting to 1.
+
+   THE ROOT CAUSE IS THAT NONE OF THAT IS ON THIS PATH. getTable does not go through KM.transport.post —
+   it is a bounded fetch plus the shared classifier — so the read-side recovery that exists was never
+   reachable from the one read that needed it. The fix is the recovery itself, here, at the narrowest
+   scope: ONE fresh attempt, for this typed code alone.
+
+   It is safe in a way the write side had to argue for: a read has no side effect, so a second attempt
+   cannot double anything. It never retries the expired target — there is nothing to retry, because the
+   URL is rebuilt from OP_DB_API_BASE_URL every time and the dead host was never stored. Exactly one
+   extra attempt, and a typed failure if that one fails too; a timeout is NOT retried here (the bound
+   already elapsed, so asking again only doubles the wait — that is the operator's explicit Retry). */
 async function getOperationDbTableFromSheet(tableName) {
+    try { return await _kmGetTableOnce_(tableName); }
+    catch (e) {
+        var code = (e && e.kmTransport && e.kmTransport.code) || e && e.code;
+        if (code !== 'REDIRECT_TARGET_NOT_FOUND') throw e;
+        try { if (typeof _kmReportSample_ === 'function') _kmReportSample_('getTable', 'read', Date.now(), 'REDIRECT_TARGET_RECOVERED', 'RECOVERY', 0); } catch (e2) {}
+        // From the STABLE /exec, rebuilt — never from the target that just expired.
+        return await _kmGetTableOnce_(tableName);
+    }
+}
+async function _kmGetTableOnce_(tableName) {
     if (!isOperationDbApiConfigured()) {
         var eCfg = new Error('Operation DB API not configured');
         eCfg.kmTransport = { code: 'API_ENDPOINT_CONFIGURATION_INVALID', phase: 'BUILD', retryable: false, action: 'getTable' };
@@ -4571,7 +4602,8 @@ var KM_CANONICAL_CODES = ['BLOCKED_CONFLICT', 'MULTIPLE_ROUTE_CONTEXTS_UNSUPPORT
     // not a guess; each is a typed, server-authoritative, proven zero write.
     'STALE_CAMPAIGN_VERSION', 'CAMPAIGN_NOT_FOUND', 'CAMPAIGN_IDENTITY_MISMATCH',
     'DUPLICATE_CAMPAIGN_IDENTITY', 'CAMPAIGN_LOCK_TIMEOUT',
-    'STALE_SPECIAL_EVENT_VERSION', 'SPECIAL_EVENT_NOT_FOUND',
+    // A3-R9 — one event flag, one target year, one scoped SKU = one event. 14_ refuses the second.
+    'STALE_SPECIAL_EVENT_VERSION', 'SPECIAL_EVENT_NOT_FOUND', 'DUPLICATE_SPECIAL_EVENT_IDENTITY',
     'STALE_TARGET_RULE_VERSION', 'TARGET_RULE_VERSION_REQUIRED', 'TARGET_RULE_NOT_FOUND',
     'TARGET_RULE_IDENTITY_MISMATCH', 'DUPLICATE_TARGET_RULE_IDENTITY', 'TARGET_RULE_LOCK_TIMEOUT',
     'TARGET_RULE_IDENTITY_INCOMPLETE', 'TARGET_RULE_SCOPE_ID_INVALID',
@@ -4617,7 +4649,8 @@ function _kmZeroWriteProven_(msg) {
         'TARGET_RULE_NOT_FOUND', 'TARGET_RULE_IDENTITY_MISMATCH', 'DUPLICATE_TARGET_RULE_IDENTITY',
         'TARGET_RULE_LOCK_TIMEOUT', 'STALE_CAMPAIGN_VERSION', 'CAMPAIGN_NOT_FOUND',
         'CAMPAIGN_IDENTITY_MISMATCH', 'DUPLICATE_CAMPAIGN_IDENTITY', 'CAMPAIGN_LOCK_TIMEOUT',
-        'STALE_SPECIAL_EVENT_VERSION', 'SPECIAL_EVENT_NOT_FOUND'];
+        'STALE_SPECIAL_EVENT_VERSION', 'SPECIAL_EVENT_NOT_FOUND',
+        'DUPLICATE_SPECIAL_EVENT_IDENTITY'];
     if (ZERO_WRITE_TOKENS.indexOf(s.trim()) !== -1) return true;
     return /^PRODUCTION_SAFETY:/.test(s.trim()) || /zero rows written/i.test(s) || /could not acquire lock/i.test(s);
 }

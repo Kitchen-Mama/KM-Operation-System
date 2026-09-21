@@ -48,9 +48,11 @@ function extractVar(src, name) {
 var ADAPTER_FNS = ['prodSafetyBundle_', 'prodExpectedDbId_', 'prodSchemaError_', 'prodAssertDbTarget_',
   'prodRequireSheet_', 'prodRequireColumns_'];
 var G14_VARS = ['FC_SPECIAL_EVENTS_HEADERS_', 'FC_SCHEMA_ORDERED_', 'FC_SCHEMA_BY_NAME_', 'FC_SCHEMA_BY_NAME_TABLES_'];
-var G14_VARS_A3 = ['FC_SE_FINGERPRINT_FIELDS_', 'FC_SE_FINGERPRINT_NUMERIC_'];
+var G14_VARS_A3 = ['FC_SE_FINGERPRINT_FIELDS_', 'FC_SE_FINGERPRINT_NUMERIC_',
+  'FC_SE_UNIQUENESS_FIELDS_'];
 var G14_FNS = ['fcWriteSchemaByNameApproved_', 'fcWriteTimestamp_', 'fcWriteEnsureSheet_', 'fcWriteEnsureColumns_',
   'fcWriteReadSheet_', 'fcWriteAppendByHeader_', 'fcWriteUpsert_', 'fcEvtUp_', 'fcSpecialEventFindRowByKey_',
+  'fcSeUniquenessKey_', 'fcSeUniquenessConflict_',
   'fcSeNum_', 'fcSeFingerprint_', 'fcSeRowAt_', 'fcSeReceiptFor_', 'fcSpecialEventUpsert_'];
 var G20_VARS = ['CAMPAIGNS_HEADERS_', 'CAMPAIGN_SKU_LINES_HEADERS_', 'CAMPAIGN_KEY_FIELDS_',
   'CAMPAIGN_LOCK_MS_', 'CAMPAIGN_FINGERPRINT_FIELDS_', 'CAMPAIGN_FINGERPRINT_NUMERIC_',

@@ -465,9 +465,20 @@ var _rel = (/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/.exec(GS63) || [])[1];
 var _c20 = (/var CAMPAIGN_BUILD_VERSION_ = '([^']+)'/.exec(GS20) || [])[1];
 ok(RO.stampAtOrAfter(_rel, 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R16'),
   'I9  the release is at or after R16, the round this campaign-reuse contract shipped in', _rel);
-eq(_c20, _rel, 'I10 and 20_ carries the current release — it has changed in every round since');
-eq((/var FCW_BUILD_VERSION_ = '([^']+)'/.exec(GS14) || [])[1], 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R15',
-  'I11 while 14_ stays at the round it last changed');
+// R18 ends the run this line assumed: A3-R9 changes 14_ and not 20_, so 20_ no longer equals the
+// current release and SHOULD not — its stamp records the round it last changed, which is R17. What
+// A3-R4 needs to know is unchanged: that the file IT changed carries a stamp at or after the release
+// its own contract shipped in. Asked of the ledger, so no later round has to edit this line again.
+ok(RO.stampAtOrAfter(_c20, 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R16'),
+  'I10 and 20_ — the file this contract changed — is stamped at or after R16', _c20);
+// I11 pinned 14_ to R15 to say 'an unrelated file was not marched along'. R18 changed 14_ for a real
+// reason, so the pin is now a claim about a file this round legitimately moved. The RULE survives as
+// the one thing that was ever being checked: 14_'s stamp is a KNOWN release, never ahead of the
+// declared one, so it can neither be invented nor marched past the release that would carry it.
+var _c14 = (/var FCW_BUILD_VERSION_ = '([^']+)'/.exec(GS14) || [])[1];
+ok(RO.OWNER_STAMPS.indexOf(_c14) !== -1, 'I11 while 14_ carries a KNOWN release stamp', _c14);
+ok(RO.stampAtOrAfter(_rel, _c14),
+  'I11b and never one AHEAD of the declared release — a stamp cannot outrun the release that ships it');
 
 section('J. MUTANTS');
 

@@ -260,7 +260,8 @@ function gateWorld(opts) {
   opts = opts || {};
   var dom = {
     'event-start-date': { value: opts.start || '' },
-    'event-end-date': { value: opts.end || '' }
+    'event-end-date': { value: opts.end || '' },
+    'event-window-confirm': { checked: !!opts.confirmed }
   };
   var shown = [];
   var sb = {
@@ -277,13 +278,14 @@ function gateWorld(opts) {
     'function _evtSetEditingChrome_() {}',
     'function _evtBuildGroups() {}',
     fnSrc(FCS, '_evtEditingActive_'),
-    varSrc(FCS, '_evtWindowChangeAck_'),
+    fnSrc(FCS, '_evtWindowConfirmEl_'), fnSrc(FCS, '_evtWindowConfirmChecked_'),
+    fnSrc(FCS, '_evtWindowChanged_'), fnSrc(FCS, '_evtWindowEditActive_'),
     fnSrc(FCS, '_evtWindowKey_'),
     opts.gateSrc || fnSrc(FCS, '_evtWindowChangeGate_'),
     fnSrc(FCS, '_evtClearWindowChangeNotice_'),
     fnSrc(FCS, '_evtShowWindowChangeNotice_'),
     fnSrc(FCS, '_evtRestoreLoadedWindow_'),
-    fnSrc(FCS, '_evtDetachAsNewEvent_')
+    fnSrc(FCS, '_evtRestoreLoadedWindow_')
   ].join('\n'), sb);
   return sb;
 }
@@ -331,27 +333,34 @@ ok(SAVE.indexOf('_winGate.blocked') < SAVE.indexOf('DB.upsertFcSpecialEvent('),
     ['2026-11-19', '2026-11-30'], 'C5  Restore puts the SAVED window back');
   eq(W._evtWindowChangeGate_('2026-11-19', '2026-11-30').blocked, false, 'C5a and the save is ordinary again');
 
-  var D = gateWorld({ editing: LOADED, start: '2026-11-20', end: '2026-11-30' });
-  D._evtDetachAsNewEvent_();
-  eq(vm.runInContext('_evtEditing_', D), null,
-    'C6  Detach drops the loaded event — the next save quotes no campaign_id and no version');
+  // A3-R9: the second action is no longer 'detach and create a second event' — that event may not
+  // exist — it is the confirmation that lets THIS event move. The loaded event is KEPT, which is the
+  // whole difference: its ids travel with it.
+  var D = gateWorld({ editing: LOADED, start: '2026-11-20', end: '2026-11-30', confirmed: true });
   eq(D._evtWindowChangeGate_('2026-11-20', '2026-11-30').blocked, false,
-    'C6a so the second, confirmed save proceeds');
-  eq([D.document.getElementById('event-start-date').value, D.document.getElementById('event-end-date').value],
-    ['2026-11-20', '2026-11-30'], 'C6b keeping the window the operator typed');
+    'C6  a CONFIRMED period change proceeds');
+  eq(vm.runInContext('_evtEditing_ && _evtEditing_.campaignId', D), 'CMP-BFCM26',
+    'C6a and the loaded event is KEPT — the same event moves, a second one is never created');
+  eq(D._evtWindowEditActive_('2026-11-20', '2026-11-30'), true,
+    'C6b which is what tells stage 1 to resolve the header for the NEW window instead of repointing');
+  eq(D._evtWindowEditActive_('2026-11-19', '2026-11-30'), false,
+    'C6c while an unchanged window is an ordinary edit, confirmation or not');
 })();
 
 (function () {
   // the acknowledgement is for ONE change, not a standing permission
-  var W = gateWorld({ editing: LOADED, start: '2026-11-20', end: '2026-11-30' });
-  vm.runInContext("_evtWindowChangeAck_ = { from: '2026-11-19 → 2026-11-30', to: '2026-11-20 → 2026-11-30' };", W);
+  var W = gateWorld({ editing: LOADED, start: '2026-11-20', end: '2026-11-30', confirmed: true });
   eq(W._evtWindowChangeGate_('2026-11-20', '2026-11-30').blocked, false,
-    'C7  the acknowledged change proceeds');
-  eq(W._evtWindowChangeGate_('2026-12-01', '2026-12-05').blocked, true,
-    'C7a but a DIFFERENT window change blocks again — it is not a standing permission');
+    'C7  the confirmed change proceeds');
+  W.document.getElementById('event-window-confirm').checked = false;
+  eq(W._evtWindowChangeGate_('2026-11-20', '2026-11-30').blocked, true,
+    'C7a and blocks again the moment the confirmation is withdrawn — it is not standing permission');
   var CLR = fnSrc(FCS, '_evtClearEditing_');
-  ok(/_evtWindowChangeAck_ = null;/.test(CLR),
+  ok(/_evtWindowConfirmEl_\(\); if \(_wcb\) _wcb\.checked = false;/.test(CLR),
     'C7b and loading or clearing an event drops it');
+  var RST = fnSrc(FCS, '_evtRestoreLoadedWindow_');
+  ok(/cb\.checked = false/.test(RST),
+    'C7c as does restoring the saved period — no tick is left armed behind an abandoned change');
 })();
 
 // §14.19 — the move itself is NOT implemented, and the schema says why.
@@ -364,9 +373,13 @@ ok(varSrc(GS14, 'FC_SPECIAL_EVENTS_HEADERS_').indexOf('event_start_date') !== -1
   'C8b the event row does carry its own window, which is why a per-SKU move LOOKS possible');
 ok(/never silently repointed/.test(GS20),
   'C9  and the server already refuses to repoint a campaign\'s window — CAMPAIGN_IDENTITY_MISMATCH');
-var DETACH = fnSrc(FCS, '_evtDetachAsNewEvent_');
-ok(!/campaign_id|relink|move/.test(DETACH) || /_evtEditing_ = null/.test(DETACH),
-  'C10 the client offers no lineage-preserving MOVE — that decision is reported, not guessed');
+// A3-R9 — the decision C10 reported has been taken, and the answer is reassignment. What C10 was
+// really guarding is unchanged and is asserted directly: the move must never quote the loaded
+// campaign_id, because that header is the OLD window's and may be shared.
+ok(/if \(_evtEditingActive_\(\) && !_winEdit\) \{/.test(SAVE),
+  'C10 a confirmed period change does NOT quote the loaded campaign_id — the shared header is never repointed');
+ok(/campaignPayload\.campaign_id = _evtEditing_\.campaignId;/.test(SAVE),
+  'C10a while an ordinary edit still names it, so the reuse contract is untouched');
 ok(/event-window-change-notice/.test(HTML), 'C11 the notice has a host in the markup');
 
 // =========================================================================================================
@@ -497,7 +510,7 @@ mutant('M6 server truth inherited from the previous card instead of re-resolved'
 
 mutant('M7 a changed window no longer blocks', (function () {
   var G = fnSrc(FCS, '_evtWindowChangeGate_');
-  var faulted = G.replace("  if (oldKey === newKey) return { blocked: false, code: '' };",
+  var faulted = G.replace("  if (!_evtWindowChanged_(startDate, endDate)) return { blocked: false, code: '' };",
     "  return { blocked: false, code: '' };");
   if (faulted === G) throw new Error('M7 anchor drifted');
   var W = gateWorld({ editing: LOADED, gateSrc: faulted });
@@ -510,13 +523,15 @@ mutant('M8 the gate runs after stage 1', (function () {
   return faulted.indexOf('_winGate.blocked') === -1;
 })());
 
-mutant('M9 the acknowledgement becomes a standing permission', (function () {
+mutant('M9 the confirmation becomes a standing permission', (function () {
+  // The A3-R7 fault was an acknowledgement that outlived its one change. Its A3-R9 equivalent is a
+  // gate that stops asking the control at all — then every changed period proceeds unconfirmed,
+  // which is the same defect through the same hole.
   var G = fnSrc(FCS, '_evtWindowChangeGate_');
-  var faulted = G.replace("  if (ack && ack.from === oldKey && ack.to === newKey) return { blocked: false, code: 'ACKNOWLEDGED' };",
-    "  if (ack) return { blocked: false, code: 'ACKNOWLEDGED' };");
+  var faulted = G.replace("  if (_evtWindowConfirmChecked_()) return { blocked: false, code: 'CONFIRMED' };",
+    "  return { blocked: false, code: 'CONFIRMED' };");
   if (faulted === G) throw new Error('M9 anchor drifted');
-  var W = gateWorld({ editing: LOADED, gateSrc: faulted });
-  vm.runInContext("_evtWindowChangeAck_ = { from: 'x', to: 'y' };", W);
+  var W = gateWorld({ editing: LOADED, gateSrc: faulted, confirmed: false });
   return W._evtWindowChangeGate_('2026-12-01', '2026-12-05').blocked === false;
 })());
 

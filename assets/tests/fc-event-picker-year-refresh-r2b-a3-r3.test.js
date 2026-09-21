@@ -193,6 +193,8 @@ function pageWorld(events, opts) {
     fnSrc(FCS, '_evtExistingLabel_'),
     (opts.populate || fnSrc(FCS, '_evtPopulateExistingSelect')),
     fnSrc(FCS, '_evtOnExistingChange'),
+    // A3-R9 — _evtClearEditing_ and the chrome now disarm the period-change confirmation.
+    fnSrc(FCS, '_evtWindowConfirmEl_'),
     fnSrc(FCS, '_evtClearEditing_'), fnSrc(FCS, '_evtSetEditingChrome_'),
     fnSrc(FCS, '_evtHydrateExisting_'), fnSrc(FCS, '_evtOnScopeChange'),
     'var _evtEditing_ = null;'

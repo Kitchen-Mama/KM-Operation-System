@@ -621,6 +621,17 @@
                                     <input type="date" id="event-end-date" onchange="_evtValidatePeriod()" aria-describedby="event-period-error">
                                 </div>
                             </div>
+                            <!-- FC-SUMMARY-R2B-A3-R9 §4 — a saved event's period IS editable, but never
+                                 silently: the tick is the confirmation, and it is shown only while an
+                                 existing event is loaded. -->
+                            <div class="fc-form-row" id="event-window-confirm-row" hidden>
+                                <div class="fc-form-group">
+                                    <label style="font-weight:400;display:flex;align-items:flex-start;gap:8px;">
+                                        <input type="checkbox" id="event-window-confirm" style="margin-top:3px;">
+                                        <span>Confirm event period change &mdash; the saved event keeps its forecast id and moves to the campaign for the new period. The old campaign and every other SKU on it are unchanged.</span>
+                                    </label>
+                                </div>
+                            </div>
                             <div class="fc-form-row" id="event-period-error-row" style="display:none;">
                                 <p class="fc-manual-help" id="event-period-error" role="alert" style="color:#dc2626;"></p>
                             </div>

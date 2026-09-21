@@ -187,7 +187,7 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 // UNDER the lock from a fresh read - which is what keeps two concurrent creates of one identity from both
 // appending. A project holding the R16 copy of 20_ still takes the global lock to answer a read, so the two
 // files must be synced together and a new deployment version cut.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R17';
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R18';
 // 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
 // R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
 // not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
@@ -216,7 +216,7 @@ var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R17';
 // that answers a narrower slice of the same action is not a new vocabulary either.
 // R17 - moved because THIS FILE changed: the release above, and 20_'s expected stamp and ownership row
 // below. No action was added or removed and the transport contract is untouched.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R17';
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R18';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -449,7 +449,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R17', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R18', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
   // FC-SUMMARY-R3-R1 §B — THE FC SUMMARY READ OWNER HAD NO ROW, AND ITS ABSENCE WAS SILENT.
   //
   // 58_ answers every primary render of the FC Summary page, and until now a project holding last round's
@@ -541,7 +541,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // R15 - the row now also covers fc_special_events. An old 14_ accepts a versionless event update and
   // rewrites updated_at on a save that changed nothing, so the two guarantees this round adds would be
   // silently absent on a project that took 20_ and left this file behind.
-  { file: '14_fc_write_handlers.gs', symbol: 'FCW_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R15', owns: 'the FC Summary write path: fc_special_events upsert/delete with its own expected_row_version gate and unchanged short-circuit + the fc_target_rules upsert keyed on the canonical business key, its script lock, its duplicate and identity-mismatch refusals, the single-range row write, and the complete saved-row receipt' },
+  { file: '14_fc_write_handlers.gs', symbol: 'FCW_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R18', owns: 'the FC Summary write path: fc_special_events upsert/delete with its expected_row_version gate, its one-event-per-SKU-flag-year uniqueness refusal and unchanged short-circuit + the fc_target_rules upsert on the canonical business key, its script lock, its duplicate and identity-mismatch refusals, the single-range row write, and the saved-row receipt' },
   // R15 - THE CAMPAIGN WRITER'S FIRST REQUIRED ROW. The campaign business key IS the Special Event's
   // identity: an old copy keys on campaign_name, so two BFCM windows in one year resolve to one row and
   // the earlier event is overwritten by the later one with a success message. Nothing else in the

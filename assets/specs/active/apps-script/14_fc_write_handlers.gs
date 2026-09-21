@@ -31,7 +31,7 @@
 // An OLD 14_ beside the new page is the dangerous pairing, and it is silent: the page would send
 // expected_row_version and the old handler would IGNORE it — accepting every stale write it was added
 // to refuse, while returning success. Only a declared build separates those two deployments.
-var FCW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R15';
+var FCW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R18';
 
 // fc_special_events header. event_name / event_month / fc_qty are the task-defined columns;
 // event_period + year are additional UI-continuity columns (FC Summary Event table shows/filters them).
@@ -261,6 +261,49 @@ function fcWriteDelete_(ss, sheetName, idCol, idValue, headers, mode) {
 // Uppercase-trim compare helper for fc_special_events business-key matching.
 function fcEvtUp_(v) { return String(v == null ? '' : v).trim().toUpperCase(); }
 
+// FC-SUMMARY-R2B-A3-R9 §3 — ONE EVENT FLAG, ONE TARGET YEAR, ONE SCOPED SKU = ONE EVENT.
+//
+// The product rule frozen in FC_SUMMARY_SPEC.md §10.1: a different start/end date does NOT authorise a
+// second logical event for the same scoped SKU. The window belongs to the CAMPAIGN's identity, not the
+// event's, so two events differing only by window are one event stored twice.
+//
+// The client preflights this, and the client cannot be the authority. A stale read model, a second tab,
+// two concurrent New Event saves, a direct API caller and a replayed request all compose a create the
+// browser believes is legitimate. The existing business-key resolution cannot catch them either: it keys
+// on campaign_id + line (or campaign_id + sku + month + year), so an event authored under a DIFFERENT
+// campaign - which is exactly what a different window produces - resolves to no row and appends.
+//
+// This is deliberately a scan and not a schema constraint. fc_special_events has no unique index and
+// adding one is a migration; under the script lock the campaign writer already holds for stage 1, and
+// with this read happening inside the same invocation as the append, the remaining race is two requests
+// that both pass the scan before either appends. That window is real and is reported rather than hidden:
+// it is narrower than the one it replaces (which had no check at all) and closing it fully requires the
+// migration this round is not authorised to make.
+var FC_SE_UNIQUENESS_FIELDS_ = ['company', 'country', 'marketplace', 'sku', 'event_name', 'year'];
+function fcSeUniquenessKey_(get) {
+  return FC_SE_UNIQUENESS_FIELDS_.map(function (fld) { return fcEvtUp_(get(fld)); }).join('|');
+}
+// Returns the conflicting row {event_fc_id, event_start_date, event_end_date} or null. `selfRow` is the
+// 1-based sheet row this write already owns, so an UPDATE never conflicts with itself.
+function fcSeUniquenessConflict_(s, body, selfRow) {
+  var iId = s.col('event_fc_id');
+  var want = fcSeUniquenessKey_(function (fld) { return body[fld]; });
+  // An incomplete key cannot identify anything, so it cannot prove a conflict either.
+  if (want.split('|').some(function (p) { return p === ''; })) return null;
+  for (var i = 1; i < s.rows.length; i++) {
+    var rowNo = i + 1;
+    if (selfRow > 0 && rowNo === selfRow) continue;
+    var r = s.rows[i];
+    var have = fcSeUniquenessKey_(function (fld) { var c = s.col(fld); return c === -1 ? '' : r[c]; });
+    if (have !== want) continue;
+    function cell(n) { var c = s.col(n); return c === -1 ? '' : String(r[c] == null ? '' : r[c]).trim(); }
+    return { event_fc_id: iId === -1 ? '' : String(r[iId] == null ? '' : r[iId]).trim(),
+      event_start_date: cell('event_start_date'), event_end_date: cell('event_end_date'),
+      campaign_id: cell('campaign_id'), key: want };
+  }
+  return null;
+}
+
 /**
  * Locate the sheet row (1-based) for a special event by its STABLE BUSINESS KEY, so a re-save /
  * double-click / retry updates the SAME row instead of creating a duplicate — even when the row's
@@ -417,6 +460,21 @@ function fcSpecialEventUpsert_(ss, body, actor) {
 
   function genId() { return 'EFC-' + Utilities.getUuid().substring(0, 12).toUpperCase(); }
   function setCell(row, name, value) { var c = s.col(name); if (c !== -1) sheet.getRange(row, c + 1).setValue(value); }
+
+  // §3 — THE UNIQUENESS GATE. Before the create branch, and before any cell is written. An UPDATE is
+  // checked too and excludes its own row, so a save that RENAMES an event onto another one's key is
+  // refused rather than producing the duplicate by the back door.
+  var seConflict = fcSeUniquenessConflict_(s, body, targetRow);
+  if (seConflict) {
+    return { refusal: { error: 'DUPLICATE_SPECIAL_EVENT_IDENTITY',
+      detail: 'A special event already exists for ' + fcEvtUp_(body.sku) + ' / '
+        + fcEvtUp_(body.event_name) + ' / ' + fcEvtUp_(body.year) + ' in this marketplace (event_fc_id '
+        + (seConflict.event_fc_id || '(blank)') + ', window ' + (seConflict.event_start_date || '?')
+        + ' to ' + (seConflict.event_end_date || '?')
+        + '). One event flag in one target year is one event, whatever its dates — edit the existing event instead of creating a second. Nothing was written.',
+      event_fc_id: seConflict.event_fc_id,
+      conflict: seConflict } };
+  }
 
   if (targetRow === -1) {
     // CREATE

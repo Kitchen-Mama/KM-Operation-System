@@ -3038,6 +3038,57 @@ function _evtBuilderEventRows_() {
   return (DB && DB.getFcSpecialEvents) ? DB.getFcSpecialEvents() : null;
 }
 
+/* FC-SUMMARY-R2B-A3-R9 §1/§2 — THE CANONICAL UNIQUENESS KEY.
+
+   FC_SUMMARY_SPEC §10.1: for one scoped SKU, one event flag in one target year is ONE event, whatever
+   its dates. The window belongs to the CAMPAIGN's identity, not the event's — which is why two events
+   differing only by window are not two events at all, they are one event stored twice.
+
+   This is the client half. It exists so the operator is told BEFORE anything is attempted, and it is
+   never the authority: a stale read model, a second tab and a concurrent save are all outside what a
+   browser can know. 14_'s fcSeUniquenessConflict_ is the authority. */
+function _evtUniquenessKey_(company, country, marketplace, sku, eventFlag, year) {
+  function U(v) { return _trStrTok_(v).toUpperCase(); }
+  return [U(company), U(country), U(_fcResolveMarketplaceKey(marketplace)), U(sku), U(eventFlag),
+    _trNumTok_(year)].join('|');
+}
+/* Every authored SKU that already has an event under this flag+year, with the window it occupies.
+   null = the read model is unavailable, which is NOT the same as no conflicts and must not be
+   reported as a clean preflight. */
+function _evtDuplicateConflicts_(skus, ctx) {
+  var rows = _evtBuilderEventRows_();
+  if (!Array.isArray(rows)) return null;
+  var want = {};
+  (skus || []).forEach(function (s) {
+    var k = _evtUniquenessKey_(ctx.company, ctx.country, ctx.marketplace, s, ctx.eventFlag, ctx.year);
+    want[k] = _trStrTok_(s);
+  });
+  var hits = [];
+  rows.forEach(function (r) {
+    var raw = r.raw || {};
+    var k = _evtUniquenessKey_(raw.company || r.company, raw.country || r.country,
+      raw.marketplace || r.marketplace, raw.sku || r.sku, raw.event_name || r.event,
+      raw.year || r.year);
+    if (!Object.prototype.hasOwnProperty.call(want, k)) return;
+    hits.push({ sku: want[k],
+      eventFcId: _trStrTok_(raw.event_fc_id || r.eventFcId),
+      campaignId: _trStrTok_(raw.campaign_id || r.campaignId),
+      startDate: _trStrTok_(raw.event_start_date || r.eventStartDate),
+      endDate: _trStrTok_(raw.event_end_date || r.eventEndDate) });
+  });
+  return hits;
+}
+function _evtDuplicateRefusalText_(hits, ctx) {
+  var lines = hits.map(function (h) {
+    return '  \u2022 ' + h.sku + ' \u2014 already has a ' + ctx.eventFlag + ' ' + ctx.year
+      + ' event for ' + (h.startDate || '?') + ' → ' + (h.endDate || '?');
+  });
+  return 'Nothing was written. ' + (hits.length === 1 ? 'This SKU already has' : 'These '
+    + hits.length + ' SKUs already have') + ' a ' + ctx.eventFlag + ' event in ' + ctx.year + ':'
+    + '\n\n' + lines.join('\n')
+    + '\n\nOne event flag in one target year is one event, whatever its dates. Open the existing event'
+    + ' and edit it \u2014 its forecast, its deal price and its event period can all be changed there.';
+}
 function _evtCampaignRows_() {
   var DB = window.KM && window.KM.DB;
   return (DB && DB.getCampaigns) ? (DB.getCampaigns() || []) : [];
@@ -3126,7 +3177,7 @@ function _evtOnExistingChange() {
    that is no longer selected — leaving them would be the blank-form defect in reverse. */
 function _evtClearEditing_() {
   _evtEditing_ = null;
-  _evtWindowChangeAck_ = null;          // §6 — an acknowledgement belongs to ONE loaded event
+  var _wcb = _evtWindowConfirmEl_(); if (_wcb) _wcb.checked = false;   // a confirmation belongs to ONE loaded event
   if (typeof _evtClearWindowChangeNotice_ === 'function') _evtClearWindowChangeNotice_();
   var sd = document.getElementById('event-start-date'); if (sd) sd.value = '';
   var ed = document.getElementById('event-end-date'); if (ed) ed.value = '';
@@ -3163,15 +3214,27 @@ function _evtSetEditingChrome_() {
     banner.hidden = !on;
     banner.textContent = on
       ? ('Editing the saved event ' + (_evtEditing_.eventName || '') + ' (' + (_evtEditing_.startDate || '?')
-         + ' → ' + (_evtEditing_.endDate || '?') + '). Its campaign and forecast ids are preserved; the window and scope cannot be changed here — a different window is a different event.')
+         + ' → ' + (_evtEditing_.endDate || '?') + '). Its campaign, line and forecast ids are preserved.'
+         + ' The event period can be changed here with an explicit confirmation; the site scope, the event'
+         + ' flag and the target year cannot — those ARE this event\'s identity.')
       : '';
   }
-  // The window and scope ARE the identity of the event being edited, so they are read-only while one
-  // is loaded. Changing them would ask the server to repoint a campaign, which it refuses anyway.
-  ['event-start-date', 'event-end-date', 'event-country', 'event-marketplace', 'event-target-year',
-   'event-name-input'].forEach(function (id) {
+  // A3-R9 §4 — THE DATES ARE NO LONGER DISABLED. One event flag in one target year is one event, so the
+  // period is an attribute of this event rather than a second event's name, and the canonical way to
+  // change it is here. The rest of the uniqueness key stays read-only while an event is loaded: editing
+  // scope, flag or year would not change THIS event, it would address a different one.
+  ['event-country', 'event-marketplace', 'event-target-year', 'event-name-input'].forEach(function (id) {
     var el = document.getElementById(id); if (el) { el.disabled = on; }
   });
+  ['event-start-date', 'event-end-date'].forEach(function (id) {
+    var el = document.getElementById(id); if (el) { el.disabled = false; }
+  });
+  var row = document.getElementById('event-window-confirm-row');
+  if (row) row.hidden = !on;
+  var cb = _evtWindowConfirmEl_();
+  if (cb && !on) cb.checked = false;
+  var addBtn = document.getElementById('evt-add-row-btn');
+  if (addBtn && on) { addBtn.disabled = false; addBtn.style.opacity = ''; }
 }
 
 /* Load one persisted event into the form: its window, its label, and one row per saved SKU carrying
@@ -3261,6 +3324,13 @@ function _evtHydrateExisting_(campaignId) {
 
 // ===== Special Event Builder v2 (Single SKU rows / Category-Series group cards) =====
 var EVT_MAX_ROWS = 8;
+/* FC-SUMMARY-R2B-A3-R9 §5 — THE CAP IS AN AUTHORING LIMIT, NOT A STORAGE LIMIT.
+   EVT_MAX_ROWS bounds how many SKUs one person may compose by hand in a NEW event. An EXISTING event
+   was authored under whatever limit applied then, or by the Category/Series path which has no such
+   cap at all, so a persisted 13- or 20-SKU event is ordinary. Applying the authoring cap to it would
+   refuse the save of an event the operator can see in full, or worse, hydrate 8 of 20 rows and save
+   that as the whole event. */
+function _evtRowCap_() { return _evtEditingActive_() ? Infinity : EVT_MAX_ROWS; }
 var _evtGroups = [];   // batch-mode group cards: { category, series, regularPrice, skus[], dealPrice, fcQty }
 
 // Open Event Modal (Scope → Event Info → Mode → Single-SKU rows OR Category/Series group cards).
@@ -3800,7 +3870,7 @@ function _evtEventMonthIdx() {
 function _evtAddSingleRow() {
   var wrap = document.getElementById('event-sku-rows');
   if (!wrap) return;
-  if (wrap.children.length >= EVT_MAX_ROWS) { alert('Maximum ' + EVT_MAX_ROWS + ' SKU rows.'); return; }
+  if (wrap.children.length >= _evtRowCap_()) { alert('Maximum ' + EVT_MAX_ROWS + ' SKU rows.'); return; }
   var row = document.createElement('div');
   row.className = 'fc-evt-row fc-evt-row--single';
   row.innerHTML =
@@ -3825,7 +3895,7 @@ function _evtRemoveSingleRow(btn) {
 function _evtUpdateAddRowBtn() {
   var wrap = document.getElementById('event-sku-rows');
   var btn = document.getElementById('event-add-row-btn');
-  if (wrap && btn) { var full = wrap.children.length >= EVT_MAX_ROWS; btn.disabled = full; btn.style.opacity = full ? '0.5' : ''; }
+  if (wrap && btn) { var full = wrap.children.length >= _evtRowCap_(); btn.disabled = full; btn.style.opacity = full ? '0.5' : ''; }
 }
 // Apply a row's Regular Price + scope/missing-price state from the scoped pricing lookup.
 function _evtApplyRowPricing(row) {
@@ -4394,46 +4464,52 @@ function _evtApplyForecastAssist() {
    campaign while preserving their lineage. That is a real product operation and no canonical spec
    defines it: nothing says whether the event keeps its event_fc_id, whether the old campaign is left
    empty, or what happens to unrelated SKUs. It is reported as a decision, not guessed at. */
-var _evtWindowChangeAck_ = null;
+/* FC-SUMMARY-R2B-A3-R9 §4 — THE WINDOW IS EDITABLE, BEHIND AN EXPLICIT CONFIRMATION.
+
+   A3-R8 blocked a window change outright and offered to save the new window as a SECOND event. Under
+   the uniqueness rule frozen in §10.1 that second event may not exist, so the offer is withdrawn and
+   the dates become editable instead. The checkbox is the confirmation: unchanged dates never need it,
+   a changed window without it writes nothing at all, and with it the SAME logical event moves.
+
+   It moves by REASSIGNMENT, never by mutating the campaign header. A header can be shared by many SKU
+   lines and its window is its identity, so editing it in place would silently move every sibling SKU's
+   event - which is why the server refuses it outright. Instead stage 1 resolves the header for the NEW
+   window (quoting no campaign_id, so an existing one is reused with zero writes), and stages 2 and 3
+   carry the EXISTING campaign_sku_line_id and event_fc_id across to it. The lineage moves with the
+   event; the old header and every sibling on it are untouched, including when it is left empty. */
+function _evtWindowConfirmEl_() {
+  return (typeof document === 'undefined') ? null : document.getElementById('event-window-confirm');
+}
+function _evtWindowConfirmChecked_() { var el = _evtWindowConfirmEl_(); return !!(el && el.checked); }
 function _evtWindowKey_(s, e) { return _trStrTok_(s) + ' → ' + _trStrTok_(e); }
-function _evtWindowChangeGate_(startDate, endDate) {
-  if (!_evtEditingActive_()) return { blocked: false, code: '' };
+/* Has the operator changed the window of a LOADED event? Independent of whether they confirmed it. */
+function _evtWindowChanged_(startDate, endDate) {
+  if (!_evtEditingActive_()) return false;
   var o = _evtEditing_ || {};
-  var oldKey = _evtWindowKey_(o.startDate, o.endDate);
-  var newKey = _evtWindowKey_(startDate, endDate);
-  if (!_trStrTok_(o.startDate) && !_trStrTok_(o.endDate)) return { blocked: false, code: '' };
-  if (oldKey === newKey) return { blocked: false, code: '' };
-  var ack = _evtWindowChangeAck_;
-  if (ack && ack.from === oldKey && ack.to === newKey) return { blocked: false, code: 'ACKNOWLEDGED' };
+  if (!_trStrTok_(o.startDate) && !_trStrTok_(o.endDate)) return false;
+  return _evtWindowKey_(o.startDate, o.endDate) !== _evtWindowKey_(startDate, endDate);
+}
+/* A confirmed move is in flight: stage 1 must NOT quote the loaded campaign_id, because the header it
+   names is the OLD window's and quoting it asks the server to repoint that header. */
+function _evtWindowEditActive_(startDate, endDate) {
+  return _evtWindowChanged_(startDate, endDate) && _evtWindowConfirmChecked_();
+}
+function _evtWindowChangeGate_(startDate, endDate) {
+  if (!_evtWindowChanged_(startDate, endDate)) return { blocked: false, code: '' };
+  if (_evtWindowConfirmChecked_()) return { blocked: false, code: 'CONFIRMED' };
+  var o = _evtEditing_ || {};
   return { blocked: true, code: 'EVENT_WINDOW_CHANGE_REQUIRES_CONFIRMATION',
     oldStart: _trStrTok_(o.startDate), oldEnd: _trStrTok_(o.endDate),
     newStart: _trStrTok_(startDate), newEnd: _trStrTok_(endDate),
-    from: oldKey, to: newKey, campaignId: _trStrTok_(o.campaignId) };
+    from: _evtWindowKey_(o.startDate, o.endDate), to: _evtWindowKey_(startDate, endDate),
+    campaignId: _trStrTok_(o.campaignId) };
 }
 /* Put the saved window back — the loaded event is unchanged and the next Save is an ordinary edit. */
 function _evtRestoreLoadedWindow_() {
   var o = _evtEditing_ || {};
   var sd = document.getElementById('event-start-date'); if (sd) sd.value = _trStrTok_(o.startDate);
   var ed = document.getElementById('event-end-date'); if (ed) ed.value = _trStrTok_(o.endDate);
-  _evtWindowChangeAck_ = null;
-  _evtClearWindowChangeNotice_();
-  if (typeof _evtBuildGroups === 'function' && _evtGroups.length) _evtBuildGroups();
-}
-/* Keep the typed window and stop editing the loaded event. The next Save composes a NEW event for the
-   new window, which is what 20_ prescribes; the loaded event and every other SKU on its campaign are
-   left exactly as they are, because nothing addresses them any more. */
-function _evtDetachAsNewEvent_() {
-  var sd = _trStrTok_((document.getElementById('event-start-date') || {}).value);
-  var ed = _trStrTok_((document.getElementById('event-end-date') || {}).value);
-  var o = _evtEditing_ || {};
-  _evtWindowChangeAck_ = { from: _evtWindowKey_(o.startDate, o.endDate), to: _evtWindowKey_(sd, ed) };
-  _evtEditing_ = null;                       // the old event is no longer addressed by this form
-  var sel = document.getElementById('event-existing-select'); if (sel) sel.value = '';
-  // A3-R8 §3 — the dataset is NOT blanked here. _evtSingleRowIdentity_ owns the question now and
-  // asks it of the new window at save time: blanking would force a create even where the new window
-  // already holds this SKU's event, and leaving it would repoint the old one. Either constant is
-  // the wrong answer to a question only the new window can settle.
-  _evtSetEditingChrome_();
+  var cb = _evtWindowConfirmEl_(); if (cb) cb.checked = false;
   _evtClearWindowChangeNotice_();
   if (typeof _evtBuildGroups === 'function' && _evtGroups.length) _evtBuildGroups();
 }
@@ -4443,10 +4519,11 @@ function _evtClearWindowChangeNotice_() {
 }
 function _evtShowWindowChangeNotice_(gate) {
   var h = (typeof document === 'undefined') ? null : document.getElementById('event-window-change-notice');
-  var text = 'Nothing was written. This event is loaded from the window '
-    + gate.from + ', and the form now says ' + gate.to + '. The window IS the event\'s identity, and'
-    + ' the campaign header that carries it is shared with every other SKU in the same window, so it'
-    + ' cannot be repointed here. Put the saved window back, or save the new window as its own event.';
+  var text = 'Nothing was written. This event is saved for ' + gate.from + ' and the form now says '
+    + gate.to + '. Changing a saved event\'s period is allowed, but it is never silent: tick'
+    + ' \u201cConfirm event period change\u201d and save again. The event keeps its identity and its'
+    + ' forecast id and moves to the campaign for the new window; the old campaign and every other SKU'
+    + ' on it are left exactly as they are. To abandon the change, put the saved period back.';
   if (!h) { alert(text); return; }
   h.innerHTML = '';
   var p = document.createElement('div'); p.textContent = text; h.appendChild(p);
@@ -4455,12 +4532,6 @@ function _evtShowWindowChangeNotice_(gate) {
   b1.textContent = 'Restore ' + gate.from;
   b1.onclick = function () { _evtRestoreLoadedWindow_(); };
   h.appendChild(b1);
-  var b2 = document.createElement('button');
-  b2.type = 'button'; b2.className = 'fc-btn fc-btn--secondary'; b2.style.marginTop = '8px';
-  b2.style.marginLeft = '8px';
-  b2.textContent = 'Save ' + gate.to + ' as a new event';
-  b2.onclick = function () { _evtDetachAsNewEvent_(); };
-  h.appendChild(b2);
   h.hidden = false;
 }
 // ================= Save (campaigns → campaign_sku_lines → fc_special_events) =================
@@ -4494,11 +4565,13 @@ async function saveEventUpdate() {
   var targetYear = parseInt(eventStartDate.slice(0, 4), 10) || parseInt((document.getElementById('event-target-year') || {}).value, 10);
   if (!targetYear) { alert('Target Year is required.'); return; }
 
-  // §6 — BEFORE ANY STAGE RUNS. A window change on a loaded event is an identity change, not an edit,
-  // and the first Save after one writes nothing at all — not the campaign, not a line, not an event.
+  // A3-R9 §4 — BEFORE ANY STAGE RUNS. A period change on a loaded event is allowed but never silent:
+  // without the explicit confirmation this writes nothing at all — not the campaign, not a line, not
+  // an event — and states both windows.
   var _winGate = _evtWindowChangeGate_(eventStartDate, eventEndDate);
   if (_winGate.blocked) { _evtShowWindowChangeNotice_(_winGate); return; }
   _evtClearWindowChangeNotice_();
+  var _winEdit = _evtWindowEditActive_(eventStartDate, eventEndDate);
 
   // ---- Collect + validate SKU lines from the active mode ----
   // line: { sku, marketplaceSkuId, category, series, regularPrice, dealPrice, discountPercent, fcQty }
@@ -4506,7 +4579,7 @@ async function saveEventUpdate() {
   if (mode === 'single') {
     var rows = _evtReadSingleRows();
     if (!rows.length) { alert('Add at least one SKU row.'); return; }
-    if (rows.length > EVT_MAX_ROWS) { alert('Maximum ' + EVT_MAX_ROWS + ' SKU rows.'); return; }
+    if (rows.length > _evtRowCap_()) { alert('Maximum ' + EVT_MAX_ROWS + ' SKU rows.'); return; }
     for (var i = 0; i < rows.length; i++) {
       var r = rows[i];
       if (!r.sku) { alert('Row ' + (i + 1) + ': SKU is required.'); return; }
@@ -4554,6 +4627,19 @@ async function saveEventUpdate() {
     if (skipped && !confirm(skipped + ' SKU(s) have no New Event FC and will be SKIPPED. Save the remaining ' + lines.length + ' SKU(s)?')) return;
   }
 
+  // A3-R9 §2 — THE CREATE PREFLIGHT. One event flag, one target year, one scoped SKU = one event, so a
+  // NEW event may only author SKUs that have none. Conflicting rows are never skipped so the rest can
+  // save: a partial save of an authored set is a silently different set. One refusal, every conflict
+  // named, and not a single stage begun. An EXISTING event is exempt — it addresses the row it loaded.
+  if (!_evtEditingActive_()) {
+    var _dupCtx = { company: company, country: country, marketplace: mkey, eventFlag: eventFlag,
+      year: targetYear };
+    var _dupHits = _evtDuplicateConflicts_(lines.map(function (l) { return l.sku; }), _dupCtx);
+    // null = the read model is unavailable. That is not a clean preflight, and it is not a refusal
+    // either: the server's own guard is the authority and will answer with the rows it can see.
+    if (_dupHits && _dupHits.length) { alert(_evtDuplicateRefusalText_(_dupHits, _dupCtx)); return; }
+  }
+
   var marketplaceId = _evtResolveMarketplaceId(site);
   var eventMonth = (monthIdx == null) ? '' : (monthIdx + 1);   // fc_special_events.event_month (1–12)
 
@@ -4566,7 +4652,14 @@ async function saveEventUpdate() {
   // §5/§6 — EDITING names the campaign and quotes the version it was loaded at. A NEW save quotes
   // nothing, which is exactly what makes the server able to refuse it if the window already exists:
   // a versionless save can never land on a row the operator has not seen.
-  if (_evtEditingActive_()) {
+  //
+  // A3-R9 §4 — EXCEPT DURING A CONFIRMED PERIOD CHANGE. The loaded campaign_id names the header for
+  // the OLD window, and that header may be shared with other SKUs; quoting it here would ask the
+  // server to repoint it, which it refuses (CAMPAIGN_IDENTITY_MISMATCH) and which would move every
+  // sibling's event if it did not. Quoting nothing instead makes stage 1 resolve the header for the
+  // NEW window by HEADER_IDENTITY_KEY — reused with zero writes if it exists, created if it does not —
+  // and stages 2 and 3 then carry this event's own ids across to it.
+  if (_evtEditingActive_() && !_winEdit) {
     campaignPayload.campaign_id = _evtEditing_.campaignId;
     campaignPayload.expected_row_version = _evtEditing_.campaignVersion;
   }
@@ -5482,8 +5575,29 @@ function _fcEnsureTabSlice_(tab) {
    The four outcomes that must never be collapsed into each other: confirmed success; confirmed server
    refusal; network/parse failure with an UNKNOWN write outcome; and readback failure AFTER a confirmed
    write. The last one is not a write failure and is never reported as one. */
+/* FC-SUMMARY-R2B-A3-R9 §8 — A TRANSIENT FAILURE MUST NOT BE A PERMANENT ONE.
+
+   One state said REFUSED for both 'the read timed out, press Retry' and 'this deployment does not
+   have that action', so nothing downstream could tell a Builder that is one click from working from
+   one that is not. The two are now distinct, classified from the typed transport error rather than
+   from its wording, and REFUSED is kept as the retryable one's value so no existing reader changes
+   meaning. _fcPrereqLastError_ is cleared the moment a load succeeds, which is what stops a reopened
+   Builder showing an error over data that has since arrived. */
 var FC_PREREQ_ = { IDLE: 'IDLE', LOADING: 'LOADING_PREREQUISITES', READY: 'READY',
-                   REFUSED: 'PREREQUISITE_REFUSED', UNMOUNTED: 'UNMOUNTED' };
+                   REFUSED: 'PREREQUISITE_REFUSED',
+                   FAILED_PERMANENT: 'PREREQUISITE_NONRETRYABLE', UNMOUNTED: 'UNMOUNTED' };
+var _fcPrereqLastError_ = null;
+/* Retryable by the SAME rule the shared read classifier uses, and never by string matching: a timeout
+   and a transport error are worth one more request, a contract or configuration fault is not. */
+var _FC_NONRETRYABLE_PREREQ_ = { DEPLOYMENT_CONTRACT_MISMATCH: 1, BACKEND_BUSINESS_REJECTION: 1,
+  API_ENDPOINT_CONFIGURATION_INVALID: 1, TRANSPORT_NON_JSON_RESPONSE: 1 };
+function _fcPrereqRetryable_(err) {
+  var t = (err && err.kmTransport) || {};
+  var code = String(t.code || (err && err.code) || '');
+  if (_FC_NONRETRYABLE_PREREQ_[code]) return false;
+  if (typeof t.retryable === 'boolean') return t.retryable;
+  return true;   // an unclassified failure is treated as worth one operator-driven retry
+}
 var FC_WRITE_  = { IDLE: 'IDLE', WRITING: 'WRITING', SUCCESS: 'CONFIRMED_SUCCESS',
                    REFUSAL: 'CONFIRMED_REFUSAL', UNKNOWN: 'OUTCOME_UNKNOWN', UNMOUNTED: 'UNMOUNTED' };
 var FC_VIEW_   = { CURRENT: 'CURRENT', REFRESHING: 'REFRESHING',
@@ -5758,6 +5872,7 @@ function _fcLoadPrerequisites_(mode) {
   var need = _fcPrereqMissing_(p);
   if (!need.length) {
     _fcPrereqLoadedPaths_[p] = true; _fcSecondaryLoaded = true; _fcPrereqState_ = FC_PREREQ_.READY;
+    _fcPrereqLastError_ = null;   // §8 — every table is warm; there is nothing left to have failed
     return Promise.resolve();
   }
   _fcPrereqState_ = FC_PREREQ_.LOADING;
@@ -5767,13 +5882,17 @@ function _fcLoadPrerequisites_(mode) {
     _fcMeta_.prereqEnd = Date.now(); _fcPrereqFlightByPath_[p] = null; _fcPrereqFlight_ = null;
     need.forEach(function (t) { _fcPrereqLoadedTables_[t] = true; });
     _fcPrereqLoadedPaths_[p] = true;
+    // §8 — SUCCESS CLEARS THE PREVIOUS FAILURE. Data that has arrived outranks an error that
+    // described its absence, and reopening the Builder must not resurrect the older of the two.
+    _fcPrereqLastError_ = null;
     _fcSecondaryLoaded = true; _fcPrereqState_ = FC_PREREQ_.READY;
     return v;
   }, function (err) {
     // The latch is released on failure, so Retry issues a NEW request instead of re-awaiting a
     // promise that has already rejected. Nothing is swallowed into a silent re-entry.
     _fcMeta_.prereqEnd = Date.now(); _fcPrereqFlightByPath_[p] = null; _fcPrereqFlight_ = null;
-    _fcPrereqState_ = FC_PREREQ_.REFUSED;
+    _fcPrereqLastError_ = err || null;
+    _fcPrereqState_ = _fcPrereqRetryable_(err) ? FC_PREREQ_.REFUSED : FC_PREREQ_.FAILED_PERMANENT;
     throw err;
   });
   _fcPrereqFlightByPath_[p] = flight;

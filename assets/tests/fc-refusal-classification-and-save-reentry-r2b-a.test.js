@@ -88,6 +88,10 @@ var VARS = ['FC_PREREQ_', 'FC_WRITE_', 'FC_VIEW_', 'FC_MSG_',
   'FC_RETRY_', 'FC_RETRY_LABEL_',
   // INCIDENT-BOOT-FC-R1 §4D — the stage vocabulary the refusal banner names.
   'FC_STAGE_', 'FC_UNREADABLE_CODES_',
+  // A3-R9 — the slice vocabulary _fcRefreshViewNow_ resolves. Its absence made the banner's
+  // 'Check latest data' handler THROW, so C5 never ran and the suite's exit code became a race
+  // between the unhandled rejection and its own 60 ms summary timer.
+  'FC_SLICE_', 'FC_FRESH_', '_FC_TAB_SLICE_', '_FC_SLICE_KEYS_', '_fcSliceState_',
   '_fcPrereqState_', '_fcPrereqFlight_', '_FC_PREREQ_TABLES_', '_fcPrereqLoadedPaths_',
   '_fcPrereqFlightByPath_',
   '_fcPrereqLoads_', '_fcPrereqTransition_', '_fcWriteState_', '_fcWriteFlight_', '_fcViewState_',
@@ -95,7 +99,10 @@ var VARS = ['FC_PREREQ_', 'FC_WRITE_', 'FC_VIEW_', 'FC_MSG_',
 var FNS = ['_fcEpoch_', '_fcOwns_', '_fcMetricsSnapshot_',
   // FC-SUMMARY-R2B-A2-R3 — the label accessor the refusal and unknown-outcome banners now consult.
   '_fcRetryLabel_', '_fcFailureStage_', '_fcStageText_', '_fcBannerHost_', '_fcClearBanner_',
-  '_fcShowBanner_', '_fcRerenderTables_', '_fcRefreshViewNow_', '_fcWriteBegin_', '_fcWriteEnd_',
+  '_fcShowBanner_', '_fcRerenderTables_',
+  // A3-R9 — _fcRefreshViewNow_ resolves the ACTIVE TAB before it names a slice to re-read.
+  '_fcSliceRec_',
+  '_fcTabNow_', '_fcRefreshViewNow_', '_fcWriteBegin_', '_fcWriteEnd_',
   '_fcClassifyWrite_', '_fcSummaryOf_', '_fcCountsLine_', '_fcReceipt_', '_fcRefusalText_',
   '_fcUnknownOutcome_', '_fcSettleWrite_', '_fcZeroWriteProven_', '_fcCanonicalCode_',
   '_fcZeroWriteRefusal_', '_fcEventRefusalAdvice_', '_fcBuilderFailure_', '_fcFailWrite_',
@@ -174,6 +181,9 @@ function rig(opts) {
     _fcUseDb: function () { return opts.live !== false; },
     _fcResetSecondaryCache: function () {},
     _fcWorkspaceRefresh_: function () { seen.readbacks++; return Promise.resolve(); },
+    // A3-R9 — the seam _fcRefreshViewNow_ REALLY calls since R3-R1 put the view on slices.
+    _fcSliceFetch_: function () { seen.readbacks++; return Promise.resolve(); },
+    _fcHydrateFromModel_: function () { seen.renders++; },
     _fcRenderError_: function () { seen.errorRedraws++; },
     renderFcRegularTable: function () { seen.renders++; },
     renderFcEventTable: function () { seen.renders++; },
@@ -284,7 +294,7 @@ CONTROLS.forEach(function (ctl) {
 // =================================================================================================
 section('C — NO AUTOMATIC RETRY, AND THE REMEDY OFFERED IS A READ');
 // =================================================================================================
-(function () {
+var __asyncC = (function () {
   var S = rig();
   S._fcWriteBegin_('baseEdit');
   S._fcFailWrite_(SCHEMA_ERR, { ctl: 'baseEdit', epoch: 1, reenable: function () {} });
@@ -549,10 +559,12 @@ score('N12 ownership is dropped, so a dead page draws a refusal over whatever re
     }));
 
 // =================================================================================================
-setTimeout(function () {
+// The summary waits for the WORK, not for a clock. __asyncC is section C's own promise chain, so
+// this resolves the instant its last assertion has run and never before it.
+Promise.resolve(__asyncC).then(function () {
   console.log('\n' + new Array(101).join('='));
   console.log('FC REFUSAL CLASSIFICATION + SAVE RE-ENTRY (R2B-A) — passed ' + pass + '  failed ' + fail +
     '  |  mutants caught ' + neg.caught + '  survived ' + neg.missed);
   console.log(new Array(101).join('='));
   process.exit((fail === 0 && neg.missed === 0) ? 0 : 1);
-}, 60);
+}, function (e) { console.error(e && e.stack || e); process.exit(1); });
