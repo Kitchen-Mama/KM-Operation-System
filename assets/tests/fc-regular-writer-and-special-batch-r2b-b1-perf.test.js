@@ -653,8 +653,12 @@ section('L. NON-REGRESSION — EVERY A3 CONTRACT STILL STANDS (§1)');
     'L12 04_ has a manifest row for the first time');
   ok(/var FCREG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R19';/.test(GS),
     'L12a and declares the stamp that row expects');
-  ok(/var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R19';/.test(HEALTH),
-    'L13 the release moved once');
+  // STAGE2-LARGE-BATCH — the release has since moved to R20 for a DIFFERENT file (20_). What B1-PERF
+  // owns is 04_'s stamp, and the property worth keeping here is that 04_ still declares R19 — the round
+  // it last changed — rather than being marched along with the release. L12a above asserts exactly that,
+  // so this line asserts the other half: the release is AT or AFTER R19, and 04_ is not it any more.
+  ok(/var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R(19|2[0-9])';/.test(HEALTH),
+    'L13 the release moved once, and has not moved backwards since');
 })();
 
 // =========================================================================================================

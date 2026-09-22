@@ -5055,7 +5055,31 @@ async function saveEventUpdate() {
     var lineRes = await DB.upsertCampaignSkuLines({ campaign_id: campaignId, lines: linePayloads });
     var lineIdBySku = {};
     ((lineRes && lineRes.lines) || []).forEach(function(x){ if (x && x.sku) lineIdBySku[String(x.sku).toUpperCase()] = x.campaign_sku_line_id; });
-    _fcEbCommitted_.push('campaign_sku_lines'); _fcEbStage_ = 'stage 3 — fc_special_events';
+    _fcEbCommitted_.push('campaign_sku_lines');
+    /* STAGE2-LARGE-BATCH §3.G — STAGE 3 MAY NOT RUN ON A LINE NOTHING RESOLVED.
+
+       Every fc_special_events row is addressed by campaign_id + campaign_sku_line_id, and the id comes
+       from stage 2's receipt. The fallback below it was `l.campaignSkuLineId || ''` — so a SKU the stage-2
+       response did not mention would have gone to stage 3 carrying an EMPTY id, and been written against
+       a line that does not exist. That is the one thing a partial-commit recovery can never repair
+       afterwards, because the orphan looks exactly like a legitimate row.
+
+       The handler emits one receipt per input line, so this should never fire. It is here because
+       'should never' is not the same as 'cannot', and the cost of being wrong is an orphan row. It
+       refuses through the SAME staged-failure surface every other stage uses — `_fcEbCommitted_` already
+       says campaigns and campaign_sku_lines are committed, so the operator is told exactly what exists
+       and gets the existing reconcile action rather than a second recovery workflow. No request is
+       issued here and nothing is retried. */
+    var _unresolved = lines.filter(function (l) {
+      return !(lineIdBySku[String(l.sku).toUpperCase()] || l.campaignSkuLineId);
+    }).map(function (l) { return l.sku; });
+    if (_unresolved.length) {
+      throw new Error('stage 2 acknowledged the write but returned no campaign_sku_line_id for '
+        + _unresolved.length + ' SKU(s): ' + _unresolved.slice(0, 8).join(', ')
+        + (_unresolved.length > 8 ? ', …' : '')
+        + '. Stage 3 was NOT started, so no event row was written against a line that may not exist.');
+    }
+    _fcEbStage_ = 'stage 3 — fc_special_events';
 
     // 3) fc_special_events per line, linked by campaign_id + campaign_sku_line_id. The BACKEND owns
     //    event_fc_id (canonical PK) — the frontend does NOT fabricate it. Idempotency is the stable

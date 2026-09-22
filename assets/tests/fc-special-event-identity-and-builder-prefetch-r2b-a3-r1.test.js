@@ -177,6 +177,7 @@ var SRV_NAMES_20_VARS = ['CAMPAIGNS_HEADERS_', 'CAMPAIGN_SKU_LINES_HEADERS_', 'C
 var SRV_NAMES_20_FNS = ['campaignUpper_', 'campaignDateKey_', 'campaignNum_', 'campaignKeyOf_',
   'campaignFingerprint_', 'campaignIndexRows_', 'campaignReceiptFor_', 'campaignFindByKey_',
   'campaignLineFindByKey_', 'campaignLineIndexRows_', 'campaignLineFingerprint_',
+  'campaignLineKeyMap_', 'campaignLineKeyLookup_', 'campaignLineRegisterKey_',
   // A3-R6 §2 — the resolve/classify half of the campaign handler is its own function now, called
   // once outside the lock and again under it; the readiness probe gates the unlocked pass.
   'campaignSheetReady_', 'campaignResolveOrTerminal_',

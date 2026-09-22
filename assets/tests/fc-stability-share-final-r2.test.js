@@ -408,8 +408,11 @@ ok(/var receipt = campaignReceiptFor_\(sheet, result\.id\);/.test(GS20) &&
    /row_version: receipt \? receipt\.row_version : '', row: receipt/.test(GS20),
   'C1 §3 campaigns: the writer returns the COMPLETE canonical row, read back after the write');
 
-ok(/out\.push\(\{ campaign_sku_line_id: result\.id, sku: sku, created: result\.created, unchanged: false,/.test(GS20) &&
-   !/campaign_sku_line[\s\S]{0,400}row: /.test(GS20.slice(GS20.indexOf('out.push({ campaign_sku_line_id'), GS20.indexOf('out.push({ campaign_sku_line_id') + 400)),
+// STAGE2-LARGE-BATCH §5 — the receipt SHAPE is what §3 depends on and it is unchanged: id + sku +
+// created + unchanged + row_version, and still NO row. The id now comes from the batch's resolved
+// `lineId` rather than from a per-line fcWriteUpsert_ result, which is the repair, not a contract change.
+ok(/out\.push\(\{ campaign_sku_line_id: lineId, sku: sku, created: isNew, unchanged: false, row_version: fp \}\);/.test(GS20) &&
+   !/row: /.test(GS20.slice(GS20.indexOf('out.push({ campaign_sku_line_id: lineId'), GS20.indexOf('out.push({ campaign_sku_line_id: lineId') + 300)),
   'C2 §3 campaign_sku_lines: the per-line receipt carries id + sku + version and NO row');
 
 // fc_special_events is the interesting one: the row EXISTS server-side and the batch envelope drops it.

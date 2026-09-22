@@ -32,7 +32,7 @@
 // sync of this file was invisible to system.health: an old 20_ still keys campaigns by NAME and
 // ignores expected_row_version, so it answers success to every save the new one refuses, and quietly
 // merges two event windows into one row. That is precisely the failure a manifest row exists to name.
-var CAMPAIGN_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R17';
+var CAMPAIGN_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R20';
 
 // campaigns canonical header (existing columns + additive `company`, `marketplace_id`).
 var CAMPAIGNS_HEADERS_ = [
@@ -231,22 +231,44 @@ function campaignFindByKey_(sheet, key) {
  * Resolve an existing campaign_sku_line_id for a campaign line. Prefers marketplace_sku_id (canonical
  * identity); falls back to sku when the line has no marketplace_sku_id. Returns '' if none.
  */
+/* The business key a campaign SKU line is resolved by when the caller supplies no id, as a MAP built
+   once from a snapshot. The precedence is unchanged and stated in exactly one place: a
+   marketplace_sku_id, when the caller gives one, is the key — and a line that names a DIFFERENT
+   marketplace_sku_id is never matched on its bare sku instead. */
+function campaignLineKeyMap_(index) {
+  var m = { byMsku: {}, bySku: {} };
+  (index || []).forEach(function (r) {
+    var id = String(r.id || '').trim(); if (!id) return;
+    var c = campaignUpper_(r.row.campaign_id);
+    var msku = campaignUpper_(r.row.marketplace_sku_id);
+    var sku = campaignUpper_(r.row.sku);
+    if (msku && !m.byMsku[c + '|' + msku]) m.byMsku[c + '|' + msku] = id;
+    if (sku && !m.bySku[c + '|' + sku]) m.bySku[c + '|' + sku] = id;
+  });
+  return m;
+}
+/* Add a line the CURRENT batch has just staged, so a later line in the same batch resolves to it.
+   Only fills a key that is not already taken, which is the same first-wins rule campaignLineKeyMap_
+   applies to the rows already on the sheet. */
+function campaignLineRegisterKey_(map, campaignId, marketplaceSkuId, sku, lineId) {
+  var c = campaignUpper_(campaignId);
+  var msku = campaignUpper_(marketplaceSkuId);
+  var sk = campaignUpper_(sku);
+  if (msku && !map.byMsku[c + '|' + msku]) map.byMsku[c + '|' + msku] = lineId;
+  if (sk && !map.bySku[c + '|' + sk]) map.bySku[c + '|' + sk] = lineId;
+}
+function campaignLineKeyLookup_(map, campaignId, marketplaceSkuId, sku) {
+  var c = campaignUpper_(campaignId);
+  var wantMsku = campaignUpper_(marketplaceSkuId);
+  if (wantMsku) return map.byMsku[c + '|' + wantMsku] || '';
+  var wantSku = campaignUpper_(sku);
+  return wantSku ? (map.bySku[c + '|' + wantSku] || '') : '';
+}
+/* The single-lookup form, unchanged in behaviour and now expressed through the map above so the
+   key rule has ONE owner. The batch handler builds the map once instead of calling this per line. */
 function campaignLineFindByKey_(sheet, campaignId, marketplaceSkuId, sku) {
-  var s = fcWriteReadSheet_(sheet);
-  var iId = s.col('campaign_sku_line_id');
-  if (iId === -1) return '';
-  var iCmp = s.col('campaign_id'), iMsku = s.col('marketplace_sku_id'), iSku = s.col('sku');
-  var wantMsku = campaignUpper_(marketplaceSkuId), wantSku = campaignUpper_(sku);
-  for (var i = 1; i < s.rows.length; i++) {
-    var r = s.rows[i];
-    if (iCmp !== -1 && campaignUpper_(r[iCmp]) !== campaignUpper_(campaignId)) continue;
-    if (wantMsku) {
-      if (iMsku !== -1 && campaignUpper_(r[iMsku]) === wantMsku) { var a = String(r[iId] || '').trim(); if (a) return a; }
-      continue;
-    }
-    if (iSku !== -1 && campaignUpper_(r[iSku]) === wantSku) { var b = String(r[iId] || '').trim(); if (b) return b; }
-  }
-  return '';
+  var index = campaignLineIndexRows_(fcWriteReadSheet_(sheet));
+  return campaignLineKeyLookup_(campaignLineKeyMap_(index), campaignId, marketplaceSkuId, sku);
 }
 
 // The fields a campaign SKU LINE means — the per-line price/promotion configuration the builder owns.
@@ -538,6 +560,35 @@ function campaignResolveOrTerminal_(sheet, body, name, suppliedId) {
  * Idempotent per line by campaign_sku_line_id, else campaign_id + marketplace_sku_id (or + sku).
  * Returns { campaign_id, upserted, created, updated, lines: [ { campaign_sku_line_id, sku, created } ] }.
  */
+/* FC-SUMMARY-SPECIAL-STAGE2-LARGE-BATCH §5 — STAGE 2 WAS A SEQUENTIAL PHYSICAL WRITER, AND THAT IS
+ * WHY A 90-SKU EVENT COULD NOT BE SAVED.
+ *
+ * The operator's report named an expired googleusercontent redirect at stage 2 with stage 1 already
+ * committed. The redirect was the SYMPTOM. Measured against the real handler with a counting
+ * spreadsheet, the cost of this function was:
+ *
+ *     N=1    4 full-sheet reads,   7 getRange,   1 appendRow      12 physical ops
+ *     N=8   25                    35             8                68
+ *     N=20  61                    83            20               164
+ *     N=50 151                   203            50               404
+ *     N=100 301                   403           100               804
+ *
+ * Three full `getDataRange().getValues()` per line, plus one per line inside `fcWriteUpsert_`, plus a
+ * WHOLE-SHEET RE-READ PER LINE purely to compute that line's `row_version` for the receipt. 3N+1 full
+ * reads of a sheet that is itself growing. Apps Script ran long past the single-use echo target's
+ * lifetime, the delivery hop 404'd, and because the cost is deterministic the transport's one licensed
+ * replay did exactly the same work and died exactly the same way. Payload SIZE was never the problem.
+ *
+ * It is now ONE read, in-memory resolution, and range writes: constant reads, one appended block, and
+ * one whole-row write per genuinely changed row. Every semantic below is the one that was here before —
+ * the refusals, the business-key precedence, the unchanged rule, the fingerprints, the counts and the
+ * per-index receipts — and stage 3 is untouched, as is `campaigns`.
+ *
+ * ONE THING IS STRICTLY SAFER RATHER THAN MERELY FASTER. The old loop validated line i only when it
+ * reached it, so a bad line at index 60 refused AFTER 59 lines had already been written — the partial
+ * commit this round exists to remove. The whole batch is validated before a single cell is touched,
+ * which is the rule stage 3 already follows.
+ */
 function handleUpsertCampaignSkuLines_(body) {
   body = body || {};
   var actor = String(body.updated_by || body.actor || 'fc-summary').trim();
@@ -552,17 +603,38 @@ function handleUpsertCampaignSkuLines_(body) {
   var sheet = fcWriteEnsureSheet_(ss, 'campaign_sku_lines', CAMPAIGN_SKU_LINES_HEADERS_, FC_SCHEMA_BY_NAME_);
   fcWriteEnsureColumns_(sheet, CAMPAIGN_SKU_LINES_HEADERS_);
 
-  // §3 — ONE read of the existing lines, so an unchanged line can be recognised without writing it.
-  var existingLines = campaignLineIndexRows_(fcWriteReadSheet_(sheet));
+  // ---- STEP 1: VALIDATE THE WHOLE BATCH BEFORE TOUCHING A CELL ---------------------------------
+  for (var vi = 0; vi < lines.length; vi++) {
+    var vl = lines[vi] || {};
+    if (!String(vl.sku || '').trim() && !String(vl.marketplace_sku_id || '').trim()) {
+      return jsonResponse_({ success: false, error: 'Line ' + (vi + 1) + ': missing sku / marketplace_sku_id' });
+    }
+  }
+
+  // ---- STEP 2: ONE AUTHORITATIVE READ ----------------------------------------------------------
+  var s = fcWriteReadSheet_(sheet);
+  var width = s.headers.length;
+  var iId = s.col('campaign_sku_line_id');
+  if (iId === -1) return jsonResponse_({ success: false, error: 'campaign_sku_line_id column not found in campaign_sku_lines' });
+  var index = campaignLineIndexRows_(s);
+  var keyMap = campaignLineKeyMap_(index);
+  var byId = {};
+  index.forEach(function (r) { if (r.id) byId[r.id] = r; });
+  var now = fcWriteTimestamp_();
+
+  // ---- STEP 3: RESOLVE AND STAGE, IN MEMORY ----------------------------------------------------
+  // `staged` is what makes a batch that names the same line twice behave like the sequential loop did:
+  // the second mention sees the first one's result, so it updates that row instead of minting a second.
+  var staged = {};
+  var updates = [];        // { rowNumber, values }
+  var appends = [];        // values
   var out = [], created = 0, updated = 0, unchanged = 0;
+
   for (var i = 0; i < lines.length; i++) {
     var l = lines[i] || {};
     var sku = String(l.sku || '').trim();
-    if (!sku && !String(l.marketplace_sku_id || '').trim()) {
-      return jsonResponse_({ success: false, error: 'Line ' + (i + 1) + ': missing sku / marketplace_sku_id' });
-    }
     var lineId = String(l.campaign_sku_line_id || '').trim();
-    if (!lineId) lineId = campaignLineFindByKey_(sheet, campaignId, l.marketplace_sku_id, sku);
+    if (!lineId) lineId = campaignLineKeyLookup_(keyMap, campaignId, l.marketplace_sku_id, sku);
     if (!lineId) lineId = 'CSL-' + Utilities.getUuid().substring(0, 10).toUpperCase();
 
     var payload = {
@@ -579,35 +651,104 @@ function handleUpsertCampaignSkuLines_(body) {
       line_status: String(l.line_status || 'active').trim(),
       source: String(l.source || 'fc_summary_builder').trim()
     };
+
+    var prior = staged[lineId] || byId[lineId] || null;
+
     // §3 — UNCHANGED WRITES NOTHING. Re-saving an event nobody edited must not touch a single cell,
     // and must not advance updated_at: an audit column that moves when nothing changed is a lie about
     // the row's history, and it is the page's own re-save that would tell it.
-    var priorLine = existingLines.filter(function (r) { return r.id === lineId; })[0] || null;
-    if (priorLine) {
+    if (prior) {
       var incomingLine = {};
       CAMPAIGN_LINE_FINGERPRINT_FIELDS_.forEach(function (f) {
-        incomingLine[f] = Object.prototype.hasOwnProperty.call(payload, f) ? payload[f] : priorLine.row[f];
+        incomingLine[f] = Object.prototype.hasOwnProperty.call(payload, f) ? payload[f] : prior.row[f];
       });
-      if (campaignLineFingerprint_(incomingLine) === priorLine.fingerprint) {
+      if (campaignLineFingerprint_(incomingLine) === prior.fingerprint) {
         unchanged++;
         out.push({ campaign_sku_line_id: lineId, sku: sku, created: false, unchanged: true,
-          row_version: priorLine.fingerprint });
+          row_version: prior.fingerprint });
         continue;
       }
     }
-    var result;
-    try {
-      result = fcWriteUpsert_(ss, 'campaign_sku_lines', CAMPAIGN_SKU_LINES_HEADERS_,
-        'campaign_sku_line_id', lineId, payload, actor, FC_SCHEMA_BY_NAME_);
-    } catch (e) {
-      return jsonResponse_({ success: false, error: 'Line ' + (i + 1) + ' (' + sku + '): ' +
-        String(e && e.message ? e.message : e) });
+
+    // Build the WHOLE row, from the row that is there when there is one. The creation audit is
+    // preserved exactly as fcWriteUpsert_ preserved it; everything else is the incoming value.
+    var isNew = !prior;
+    var values = isNew ? new Array(width) : (prior.values ? prior.values.slice() : s.rows[prior.rowNumber - 1].slice());
+    if (isNew) { for (var z = 0; z < width; z++) values[z] = ''; }
+    for (var c = 0; c < width; c++) {
+      var h = s.headers[c];
+      if (!h) continue;
+      if (h === 'campaign_sku_line_id') { values[c] = lineId; continue; }
+      if (h === 'created_by') { if (isNew) values[c] = actor; continue; }
+      if (h === 'created_at') { if (isNew) values[c] = now; continue; }
+      if (h === 'updated_by') { values[c] = actor; continue; }
+      if (h === 'updated_at') { values[c] = now; continue; }
+      if (!Object.prototype.hasOwnProperty.call(payload, h)) continue;
+      // A CREATE SKIPS null/undefined so the cell stays blank, exactly as fcWriteAppendByHeader_ did;
+      // an UPDATE writes the value it was given, exactly as fcWriteUpsert_'s setCell did. The two
+      // paths differed before this round and they still differ, because changing that would silently
+      // alter what a re-save does to a column the caller omitted.
+      if (isNew && (payload[h] === undefined || payload[h] === null)) continue;
+      values[c] = payload[h];
     }
-    if (result.created) created++; else updated++;
-    var after = campaignLineIndexRows_(fcWriteReadSheet_(sheet)).filter(function (r) { return r.id === result.id; })[0];
-    out.push({ campaign_sku_line_id: result.id, sku: sku, created: result.created, unchanged: false,
-      row_version: after ? after.fingerprint : '' });
+
+    // The row AS IT WILL STAND, which is what the receipt's row_version has to describe.
+    var obj = {};
+    for (var hh = 0; hh < width; hh++) { if (s.headers[hh]) obj[s.headers[hh]] = values[hh]; }
+    var fp = campaignLineFingerprint_(obj);
+
+    if (prior && prior.slot) {
+      // A row this same batch already staged — rewrite that slot rather than adding a second one.
+      prior.slot.values = values;
+      staged[lineId] = { id: lineId, row: obj, fingerprint: fp, values: values, slot: prior.slot,
+        rowNumber: prior.rowNumber, wasNew: prior.wasNew };
+      // The sequential writer counted this as an UPDATE, because by the time it reached the second
+      // mention the row existed. `created` was already counted once for the first mention, and counting
+      // it again would report two rows where the sheet holds one.
+      updated++;
+    } else if (isNew) {
+      var slotA = { values: values };
+      appends.push(slotA);
+      created++;
+      staged[lineId] = { id: lineId, row: obj, fingerprint: fp, values: values, slot: slotA, wasNew: true };
+      // THE SAME BATCH MAY NAME THIS LINE AGAIN. The sequential writer found it because it re-read the
+      // sheet and saw the row it had just appended; reading once means the batch has to remember. The
+      // key goes into the SAME map the lookup uses, so the second mention resolves to this id and
+      // updates this row rather than minting a second one for the same SKU.
+      campaignLineRegisterKey_(keyMap, campaignId, payload.marketplace_sku_id, sku, lineId);
+    } else {
+      var slotU = { rowNumber: prior.rowNumber, values: values };
+      updates.push(slotU);
+      updated++;
+      staged[lineId] = { id: lineId, row: obj, fingerprint: fp, values: values, slot: slotU,
+        rowNumber: prior.rowNumber, wasNew: false };
+    }
+
+    out.push({ campaign_sku_line_id: lineId, sku: sku, created: isNew, unchanged: false, row_version: fp });
   }
+
+  // ---- STEP 4: THE FIRST MUTATION --------------------------------------------------------------
+  // Updates are coalesced into contiguous runs, so a re-save of an existing event writes one range
+  // rather than one range per row; appends go in a SINGLE block after the last row.
+  updates.sort(function (x, y) { return x.rowNumber - y.rowNumber; });
+  var run = [];
+  function flushRun() {
+    if (!run.length) return;
+    sheet.getRange(run[0].rowNumber, 1, run.length, width)
+      .setValues(run.map(function (u) { return u.values; }));
+    run = [];
+  }
+  for (var u = 0; u < updates.length; u++) {
+    if (run.length && updates[u].rowNumber !== run[run.length - 1].rowNumber + 1) flushRun();
+    run.push(updates[u]);
+  }
+  flushRun();
+
+  if (appends.length) {
+    sheet.getRange(s.rows.length + 1, 1, appends.length, width)
+      .setValues(appends.map(function (ap) { return ap.values; }));
+  }
+
   return jsonResponse_({ success: true, data: { campaign_id: campaignId, upserted: out.length,
     created: created, updated: updated, unchanged: unchanged, lines: out } });
 }

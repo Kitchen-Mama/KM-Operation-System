@@ -60,6 +60,10 @@ var G20_VARS = ['CAMPAIGNS_HEADERS_', 'CAMPAIGN_SKU_LINES_HEADERS_', 'CAMPAIGN_K
 var G20_FNS = ['campaignUpper_', 'campaignDateKey_', 'campaignNum_', 'campaignKeyOf_',
   'campaignFingerprint_', 'campaignIndexRows_', 'campaignReceiptFor_', 'campaignFindByKey_',
   'campaignLineFindByKey_', 'campaignLineIndexRows_', 'campaignLineFingerprint_',
+  // STAGE2-LARGE-BATCH §5 — the business-key rule expressed once as a MAP, so the batch can resolve
+  // every line from one snapshot instead of re-reading the sheet per line. campaignLineFindByKey_
+  // keeps its name and its contract and is now expressed through these.
+  'campaignLineKeyMap_', 'campaignLineKeyLookup_', 'campaignLineRegisterKey_',
   // A3-R6 §2 — the campaign handler's resolve/classify half is its own function now (called once
   // unlocked and again under the lock), gated by a readiness probe.
   'campaignSheetReady_', 'campaignResolveOrTerminal_',
@@ -99,6 +103,7 @@ function existingCampaignRow() {
 // =================================================================================================
 function makeSheet(name, values) {
   var appended = [], setCells = [];
+  var setRanges = [];
   var s = {
     getName: function () { return name; },
     getLastRow: function () { return values.length; },
@@ -125,13 +130,21 @@ function makeSheet(name, values) {
           while (values.length < r) values.push(new Array(values[0].length).fill(''));
           values[r - 1][c - 1] = v;
         },
-        setValues: function () { throw new Error('RANGE_SETVALUES_ATTEMPTED'); }
+        setValues: function (vals) {
+          if (r === 1) throw new Error('HEADER_WRITE_ATTEMPTED');   // row 1 is never writable, by EITHER path
+          setRanges.push({ row: r, col: c, nr: vals.length, nc: (vals[0] || []).length });
+          for (var i = 0; i < vals.length; i++) {
+            var t = r - 1 + i;
+            while (values.length <= t) values.push(new Array(values[0].length).fill(''));
+            for (var j = 0; j < vals[i].length; j++) values[t][c - 1 + j] = vals[i][j];
+          }
+        }
       };
     },
     appendRow: function (row) { appended.push(row.slice()); values.push(row.slice()); },
     deleteRow: function () { throw new Error('DELETE_ROW_ATTEMPTED'); }
   };
-  s.__appended = appended; s.__setCells = setCells; s.__values = values;
+  s.__appended = appended; s.__setCells = setCells; s.__setRanges = setRanges; s.__values = values;
   return s;
 }
 function makeSs(tables, id) {
@@ -337,7 +350,11 @@ section('C. EVERY PRODUCED VALUE LANDS UNDER ITS INTENDED NAMED COLUMN');
       line_status: 'active', source: 'fc_summary_builder' }]
   });
   var sheet = ss.__sheet('campaign_sku_lines');
-  var row = sheet.__appended[0];
+  // STAGE2-LARGE-BATCH §5 — this read sheet.__appended[0], which measured the WRITE MECHANISM rather
+  // than the rule. The rule is which COLUMN each value lands in against the LIVE header, and it is the
+  // same rule whether the row arrived by appendRow or by a range write. Read the stored row instead, so
+  // the transposition check survives the mechanism and cannot be satisfied by changing it.
+  var row = sheet.__values[sheet.__values.length - 1];
   eq(row[LIVE.campaign_sku_lines.indexOf('sku')], 'SP3320-T',
     'C6 the Master SKU lands in `sku` (live index 2), not in the constant\'s index 3');
   eq(row[LIVE.campaign_sku_lines.indexOf('marketplace_sku_id')], 'MPSKU-US-AMA-SP3320-T-24b783',
@@ -601,22 +618,28 @@ eq(CTX.fcWriteSchemaByNameApproved_('campaigns', CTX.FC_SCHEMA_BY_NAME_), true,
     // `getRange(row, 1, 1, width)` assumes nothing — it rewrites the WHOLE row from an array whose values
     // were placed by header NAME. The Target Rule update writes that way so an interruption cannot leave a
     // row half-updated with a new marketplace and an old percentage; ~28 single-cell writes could.
+    // STAGE2-LARGE-BATCH §5 — the exemption now covers a full-width BLOCK as well as a full-width row.
+    // `getRange(firstRow, 1, n, width)` assumes nothing about which column holds which field, exactly as
+    // `getRange(row, 1, 1, width)` assumes nothing; the row count is not part of the column-safety rule.
+    // What stays forbidden is unchanged and is what actually breaks on a header change: a getRange whose
+    // COLUMN is a literal offset, like getRange(row, 5).
     var literalCol = writes.filter(function (w) {
       var args = w.slice(w.indexOf('(') + 1, w.indexOf(')')).split(',');
       if (!(args.length >= 2 && /^\s*\d+\s*$/.test(args[1]))) return false;
-      var fullRow = args.length === 4 && /^\s*1\s*$/.test(args[1]) && /^\s*1\s*$/.test(args[2])
-        && !/^\s*\d+\s*$/.test(args[3]);
-      return !fullRow;
+      var fullWidth = args.length === 4 && /^\s*1\s*$/.test(args[1]) && !/^\s*\d+\s*$/.test(args[3]);
+      return !fullWidth;
     });
     eq(literalCol, [], 'G9 ' + f[0] + ': every write resolves its column from the LIVE header, never a literal index');
-    // Anti-vacuity, stated per file rather than as one blanket rule: 14_ owns every cell write in this path
-    // and must therefore HAVE write sites for the check above to mean anything, while 20_ owns none at all —
-    // it delegates all writing to 14_, which is itself the property worth pinning.
-    if (f[0] === '14_fc_write_handlers.gs') {
-      ok(writes.length > 0, 'G9b ' + f[0] + ': write sites exist, so G9 is not vacuous');
-    } else {
-      eq(writes, [], 'G9b ' + f[0] + ': performs no direct cell write — it delegates to the 14_ helpers');
-    }
+    // Anti-vacuity, stated per file: each of these owns write sites, so G9 above is never a check against
+    // an empty list.
+    //
+    // 20_ USED TO OWN NONE — it delegated every cell write to 14_'s fcWriteUpsert_, and that was the
+    // property pinned here. STAGE2-LARGE-BATCH changed it deliberately and with measurement: going through
+    // fcWriteUpsert_ per line cost 3N+1 FULL sheet reads and made a 90-SKU Special Event unsaveable, so
+    // stage 2 now owns its own bounded batch write. What replaces the old assertion is the property that
+    // actually protects the table: every write 20_ owns is a FULL-WIDTH, column-1 range write, so it can
+    // never place a value by guessing an offset. G9 above enforces exactly that for both files.
+    ok(writes.length > 0, 'G9b ' + f[0] + ': write sites exist, so G9 is not vacuous');
   });
 })();
 

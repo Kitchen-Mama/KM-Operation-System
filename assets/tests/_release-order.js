@@ -997,7 +997,22 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // FC-SUMMARY-R2B-B1-PERF - the Regular writer hardening + Special stage-3 batch round. 04_ changes
   // (validate-then-lock-then-block-write) and ENTERS the manifest for the first time, so 63_ moves
   // with it. 14_ did not change and keeps R18; 20_ did not change and keeps R17.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R19'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R19',
+  // R20 - FC-SUMMARY-SPECIAL-STAGE2-LARGE-BATCH: stage 2 stops being a sequential physical writer.
+  // handleUpsertCampaignSkuLines_ cost 3N+1 FULL sheet reads — three per line plus one whole-sheet
+  // re-read per line purely to compute that line's row_version for the receipt. Measured against the
+  // real handler: N=100 took 301 getDataRange + 403 getRange + 100 appendRow = 804 physical calls, on
+  // a sheet that grows as it writes. Apps Script ran past the single-use echo target's lifetime, the
+  // delivery hop 404'd, and because the cost is DETERMINISTIC the transport's one licensed replay did
+  // the same work and died the same way — which is why the operator saw it twice, not once.
+  //
+  // It is now ONE read and range writes: 6 physical calls at every N from 1 to 100. Fourteen
+  // differential cases prove the resulting SHEET and RESPONSE are byte-identical to the old handler's,
+  // so this is a cost change and not a behaviour change.
+  //
+  // A PROJECT HOLDING THE R17 COPY OF 20_ STILL CANNOT SAVE A 90-SKU EVENT, so the sync is not
+  // optional. 14_ did not change and keeps R18; 04_ did not change and keeps R19.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R20'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

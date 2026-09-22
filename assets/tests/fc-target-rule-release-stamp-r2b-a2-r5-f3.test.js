@@ -79,19 +79,21 @@ var RELEASE_FLOOR = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12';
 // evidence about what production accepted, it asserts only what the Apps Script diff from this base
 // contains. What makes 2d84a68 right is that A3-R10 changed NO .gs file, so the diff from here is
 // exactly and only what B1-PERF changed.
-var BASE = '2d84a68';
+var BASE = 'de305f5';   // R20 starts here: the tree after the base-event-FC readiness repair
 
 // The files THIS release syncs, and the ONE reason each is on the list. A file on the sync list for no
 // stated reason is how an unrelated edit reaches production by accident — so the set is declared here
 // and checked against git below, rather than being read off git and believed.
 var RELEASE_OWNERS = {
-  '04_marketplace_forecast_import.gs':
-    'handleImportFcRegularForecastBatch_ now validates the WHOLE batch before the first mutation, takes '
-    + 'a script lock around the authoritative read and the writes only, and writes column-bounded '
-    + 'setValues blocks plus ONE append block instead of 17-18 setValue calls per row and an appendRow '
-    + 'per insert — and it declares a build stamp for the first time',
+  '20_campaign_write_handlers.gs':
+    'handleUpsertCampaignSkuLines_ stops being a sequential physical writer. It cost 3N+1 FULL sheet '
+    + 'reads — three per line plus a whole-sheet re-read per line purely to compute that line\'s '
+    + 'row_version — which measured 804 physical calls at N=100 and made a 90-SKU Special Event '
+    + 'unsaveable: Apps Script ran past the single-use echo target and the delivery hop 404\'d. It is '
+    + 'now ONE read, in-memory resolution and full-width range writes, at 6 calls for every N, with the '
+    + 'whole batch validated before the first cell is touched',
   '63_api_v1_system_health.gs':
-    'the R19 release identity, its own stamp, and the FIRST manifest row 04_ has ever had'
+    'the R20 release identity, its own stamp, and 20_\'s manifest row'
 };
 // Owners that carry an EARLIER release and must keep it. Each is here because it did not change, and
 // marching any of them to the current release would destroy the manifest's only useful signal.
@@ -112,8 +114,13 @@ var RELEASE_UNMOVED = {
   // 14_ LEFT AGAIN AT R19, and this time nothing took its place — 04_ JOINED. B1-PERF hardens the
   // REGULAR forecast writer, which lives in 04_; no fc_special_events or fc_target_rules handler was
   // touched, so 14_ keeps R18, the round its uniqueness refusal landed in.
+  //
+  // 04_ JOINED THIS LIST AT R20 AND 20_ LEFT IT — the fourth such swap the ledger has recorded, and the
+  // symmetry is exact: R19 batched the REGULAR forecast writer in 04_ and left the campaign line writer
+  // alone; R20 batches the campaign line writer in 20_ and touches no regular-forecast handler. Marching
+  // 04_ to R20 would erase the one fact its stamp carries.
+  '04_marketplace_forecast_import.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R19',
   '14_fc_write_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R18',
-  '20_campaign_write_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R17',
   '58_api_v1_fc_summary_workspace.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R14',
   '13_procurement_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12',
   '00_config.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11',
@@ -242,10 +249,9 @@ ok(/KMPD\.resolveTargetRule/.test(PROC),
 // R16 — 14_ KEEPS ITS OWN ROUND. It was an R15 owner; R16 changes only how 20_ classifies a resolved
 // campaign row, and no handler in 14_ was touched. Asserting it declares the RELEASE would march a stamp
 // that exists precisely to record the round its file last changed.
-// R19 — 04_ IS the release. It changed, and it declares a stamp for the FIRST time: until this round
-// a project running a stale copy of the Regular Forecast writer was invisible to health entirely.
-eq(declares(REGWRITE, 'FCREG_BUILD_VERSION_'), RELEASE,
-  'B2  04_ IS the release — R19 hardened the Regular Forecast writer inside it');
+// R20 — 20_ IS the release. It changed, and 04_ — which WAS R19's owner — keeps R19.
+eq(declares(REGWRITE, 'FCREG_BUILD_VERSION_'), RELEASE_UNMOVED['04_marketplace_forecast_import.gs'],
+  'B2  04_ keeps R19, the round IT last changed — R20 touched no regular-forecast handler');
 eq(declares(WRITE, 'FCW_BUILD_VERSION_'), RELEASE_UNMOVED['14_fc_write_handlers.gs'],
   'B2-0 while 14_ keeps R18, the round IT last changed — no event or rule handler was touched');
 ok(/LockService\.getScriptLock\(\)/.test(REGWRITE) && /fcRegContiguousRuns_/.test(REGWRITE),
@@ -257,8 +263,16 @@ var REGHANDLER = REGWRITE.slice(REGWRITE.indexOf('function handleImportFcRegular
 ok(REGHANDLER.length > 500, 'B2-0b0 the Regular handler is locatable inside 04_');
 ok(!/\.setValue\(/.test(REGHANDLER) && !/\.appendRow\(/.test(REGHANDLER),
   'B2-0b with the per-cell and per-row mutations it replaced gone from THAT handler');
-eq(declares(CAMPWRITE, 'CAMPAIGN_BUILD_VERSION_'), RELEASE_UNMOVED['20_campaign_write_handlers.gs'],
-  'B2-2 while 20_ keeps R17, the round IT last changed — no campaign handler was touched');
+eq(declares(CAMPWRITE, 'CAMPAIGN_BUILD_VERSION_'), RELEASE,
+  'B2-2 while 20_ IS the release — R20 batched the campaign_sku_lines writer inside it');
+// And the change its stamp claims is really in the file, on the same test B2-0a/B2-0b apply to 04_:
+// the per-line whole-sheet re-read is gone and a full-width range write is there in its place.
+var CAMPHANDLER = CAMPWRITE.slice(CAMPWRITE.indexOf('function handleUpsertCampaignSkuLines_'));
+ok(CAMPHANDLER.length > 500, 'B2-2a the campaign line handler is locatable inside 20_');
+ok(!/campaignLineIndexRows_\(fcWriteReadSheet_\(sheet\)\)/.test(CAMPHANDLER),
+  'B2-2b with the per-line whole-sheet re-read gone from THAT handler');
+ok(!/fcWriteUpsert_\(/.test(CAMPHANDLER) && /\.setValues\(/.test(CAMPHANDLER),
+  'B2-2c and the per-line upsert replaced by range writes');
 ok(/FC_SE_UNIQUENESS_FIELDS_/.test(WRITE) && /DUPLICATE_SPECIAL_EVENT_IDENTITY/.test(WRITE),
   'B2-3 and R18\'s change is still in 14_, so the stamp it KEEPS is not decoration either');
 // The mirror image, and the reason B2 could be rewritten rather than deleted: the READ owner is
@@ -369,16 +383,22 @@ ok(oldProc.stale_modules.join('|').indexOf('F1-7N-FC-1A-R1') !== -1,
 // a correctly-synced project is stale. The rule is unchanged: a project holding the previous release's
 // copy of the file this release changed is reported STALE, and here that project keeps accepting the
 // duplicate event R18 exists to refuse.
-// R19 — the file whose OLD copy must be rejected is 04_. PREV_RELEASE is R18, which is 14_'s CORRECT
-// stamp, so asking the question of 14_ would assert that a correctly-synced project is stale.
-var oldReg = runManifest({ FCREG_BUILD_VERSION_: PREV_RELEASE });
-ok(oldReg.stale_modules.join('|').indexOf('04_marketplace_forecast_import.gs') !== -1,
-  'F2  an OLD 04_ identity is rejected where this release requires the new one', oldReg.stale_modules);
-// And the case that could not be asked before this round: a project with NO 04_ stamp at all. Until
-// R19 that was every project, and health reported it as healthy.
-var noReg = runManifest({ FCREG_BUILD_VERSION_: null });
-ok((noReg.stale_modules.join('|') + noReg.absent_modules.join('|')).indexOf('04_marketplace_forecast_import.gs') !== -1,
-  'F2a and a project carrying NO 04_ stamp is reported too — the gap this release closes', noReg);
+// R20 — the file whose OLD copy must be rejected is 20_. PREV_RELEASE is R19, which is 04_'s CORRECT
+// stamp, so asking the question of 04_ would assert that a correctly-synced project is stale. This is
+// the same rotation the R18 and R19 comments above record, and it matters more here than usual: a
+// project still holding the R17 copy of 20_ cannot save a 90-SKU Special Event at all, so 'stale' is
+// the difference between a working page and a stage-2 failure.
+var oldCamp = runManifest({ CAMPAIGN_BUILD_VERSION_: PREV_RELEASE });
+ok(oldCamp.stale_modules.join('|').indexOf('20_campaign_write_handlers.gs') !== -1,
+  'F2  an OLD 20_ identity is rejected where this release requires the new one', oldCamp.stale_modules);
+var noCamp = runManifest({ CAMPAIGN_BUILD_VERSION_: null });
+ok((noCamp.stale_modules.join('|') + noCamp.absent_modules.join('|')).indexOf('20_campaign_write_handlers.gs') !== -1,
+  'F2a and a project carrying NO 20_ stamp is reported too', noCamp);
+// And the mirror: 04_ carrying R19 is CORRECT now, not stale, which is the half that stops a release
+// from reporting a properly-synced project as broken.
+var okReg = runManifest({ FCREG_BUILD_VERSION_: RELEASE_UNMOVED['04_marketplace_forecast_import.gs'] });
+ok(okReg.stale_modules.join('|').indexOf('04_marketplace_forecast_import.gs') === -1,
+  'F2b while 04_ at R19 is correct — the round it last changed, not the latest release', okReg.stale_modules);
 // THE FAILURE MODE THIS ROW WAS ADDED FOR. Until R15, 20_ had no stamp at all: a project holding last
 // round's copy keys campaigns by NAME, so two event windows in one year merge into a single row and
 // the earlier one is overwritten — and health reported a clean bill, because no action was added.
@@ -484,12 +504,12 @@ var priorFiles = manifestRows(priorHealth).map(function (r) { return r.file; });
 var nowFiles = manifestRows(HEALTH).map(function (r) { return r.file; });
 // R16 adds no OWNER — 20_ already joined the manifest at R15, and this release changes what it does,
 // not which files are probed. Membership must therefore move by exactly nothing.
-// R19 ADDS AN OWNER, and it is the first time this suite has asserted that direction. 04_ had no row
-// and no stamp, so the manifest could not tell a synced Regular writer from a stale one. Membership
-// must move by EXACTLY that row — an addition is legitimate, an unexplained one is not.
-eq(nowFiles.filter(function (f) { return priorFiles.indexOf(f) === -1; }),
-  ['04_marketplace_forecast_import.gs'],
-  'H5  the manifest gained EXACTLY the row this release declares');
+// R19 ADDED AN OWNER — 04_ had no row and no stamp, so the manifest could not tell a synced Regular
+// writer from a stale one. R20 adds NONE: 20_ has held a manifest row since R15, and this release
+// changes what that file does, not which files are probed. Membership must move by exactly nothing,
+// which is the same assertion in the other direction and is still the strict one.
+eq(nowFiles.filter(function (f) { return priorFiles.indexOf(f) === -1; }), [],
+  'H5  the manifest gained EXACTLY the row this release declares — and R20 declares none');
 eq(priorFiles.filter(function (f) { return nowFiles.indexOf(f) === -1; }), [],
   'H5a and lost none — a release adds an owner, it never quietly drops one');
 
@@ -570,12 +590,14 @@ mutant('M6', 'a malformed release string', function () {
 // the release; at R14 it carries R13 by right, so the anchor vanished and the mutant reported a survival
 // that was really a missing premise. The vacuity audit caught it, which is what the audit is for.
 mutant('M7', 'the manifest expecting a build no file declares', function () {
+  // Re-anchored at R20 onto CAMPAIGN_BUILD_VERSION_, for the reason this mutant's own comment gives:
+  // the anchor has to be a row that EXPECTS THE RELEASE, and at R20 that is 20_'s row, not 04_'s.
   var faked = HEALTH.replace(
-    "symbol: 'FCREG_BUILD_VERSION_', expected: '" + RELEASE + "'",
-    "symbol: 'FCREG_BUILD_VERSION_', expected: '" + PREV_RELEASE + "'");
+    "symbol: 'CAMPAIGN_BUILD_VERSION_', expected: '" + RELEASE + "'",
+    "symbol: 'CAMPAIGN_BUILD_VERSION_', expected: '" + PREV_RELEASE + "'");
   if (faked === HEALTH) throw new Error('M7 anchor drifted — the mutant would inject no fault');
-  var row = manifestRows(faked).filter(function (r) { return r.symbol === 'FCREG_BUILD_VERSION_'; })[0];
-  return !!row && declares(REGWRITE, 'FCREG_BUILD_VERSION_') !== row.expected;
+  var row = manifestRows(faked).filter(function (r) { return r.symbol === 'CAMPAIGN_BUILD_VERSION_'; })[0];
+  return !!row && declares(CAMPWRITE, 'CAMPAIGN_BUILD_VERSION_') !== row.expected;
 });
 mutant('M8', 'a double-quoted bundle hash, which makes every reader pass vacuously', function () {
   var faked = BUNDLE.replace(/var KM_BUNDLE_CONTENT_HASH_ = '([^']*)';/, 'var KM_BUNDLE_CONTENT_HASH_ = "$1";');
@@ -617,7 +639,7 @@ var vacuous = [];
  ['M4', function () { return runManifest().stale_modules.length === 0; }],
  ['M5', function () { return RO.stampAtOrAfter(RELEASE, PREV_RELEASE); }],
  ['M6', function () { return RO.BUILD_STAMP_RE.test(RELEASE); }],
- ['M7', function () { return declares(REGWRITE, 'FCREG_BUILD_VERSION_') === RELEASE; }],
+ ['M7', function () { return declares(CAMPWRITE, 'CAMPAIGN_BUILD_VERSION_') === RELEASE; }],
  ['M8', function () { return declares(BUNDLE, 'KM_BUNDLE_CONTENT_HASH_') !== null; }],
  ['M9', function () { return declares(BUNDLE, 'KM_BUNDLE_CONTENT_HASH_')
      === (BUNDLE.match(/^\/\/ bundle_sha256 = ([0-9a-f]{64})$/m) || [])[1]; }],

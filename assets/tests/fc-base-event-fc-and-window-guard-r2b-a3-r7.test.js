@@ -436,8 +436,13 @@ ok(/if \(!campaignId\) throw new Error\('campaign_id was not returned by the cam
   'D10 and a stage-1 answer without an id stops the sequence rather than inventing one');
 ok(/if \(headerIdentical\) \{/.test(GS20),
   'D11 §14.25 a re-run of stage 1 REUSES the campaign — a retry cannot duplicate the header');
-ok(/if \(!lineId\) lineId = campaignLineFindByKey_\(sheet, campaignId, l\.marketplace_sku_id, sku\);/.test(GS20),
+// STAGE2-LARGE-BATCH §5 — re-expressed against the RULE. The resolution is now done from a map built
+// once per batch instead of a sheet read per line, which is the whole repair; what must stay true is
+// that a line with no supplied id is still resolved by its BUSINESS KEY before one is minted.
+ok(/if \(!lineId\) lineId = campaignLineKeyLookup_\(keyMap, campaignId, l\.marketplace_sku_id, sku\);/.test(GS20),
   'D12 and stage 2 resolves an existing line by its business key — a retry cannot duplicate a line');
+ok(/if \(!lineId\) lineId = 'CSL-'/.test(GS20),
+  'D12a and only mints a new id when that lookup found nothing');
 ok(/if \(targetRow === -1\) targetRow = fcSpecialEventFindRowByKey_\(s, body\);/.test(GS14),
   'D13 as does stage 3 — which is what makes ONE replay of a lost delivery safe at all');
 

@@ -398,15 +398,20 @@ ok(!/optional: true/.test(row58 ? HEALTH.slice(row58.index, HEALTH.indexOf('}', 
 // B1-PERF — THE SWAP HAPPENED AGAIN, and this time the file arriving at the release had never been
 // in the manifest at all. 04_ hardens the Regular Forecast writer; 14_ was not touched and keeps
 // R18. The assertion follows the owner rather than naming one file for ever.
-ok(new RegExp("\\{ file: '04_marketplace_forecast_import\\.gs', symbol: '[A-Z_]+', expected: '"
+// STAGE2-LARGE-BATCH — the owner rotated. R20 batches the campaign_sku_lines writer in 20_, so 20_ is
+// AT the release and 04_ keeps R19, the round IT last changed. The assertion follows the owner rather
+// than naming one file for ever, which is what the comment above it already promised.
+ok(new RegExp("\\{ file: '20_campaign_write_handlers\\.gs', symbol: '[A-Z_]+', expected: '"
   + RELEASE_NOW.replace(/[-]/g, '[-]') + "'").test(HEALTH),
-  'E7c 04_ is AT the release — R19 hardened the Regular Forecast writer inside it');
+  'E7c 20_ is AT the release — R20 batched the campaign_sku_lines writer inside it');
+ok(/\{ file: '04_marketplace_forecast_import\.gs', symbol: '[A-Z_]+', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R19'/.test(HEALTH),
+  'E7c0 while 04_ keeps R19, the round IT last changed');
 ok(/\{ file: '14_fc_write_handlers\.gs', symbol: '[A-Z_]+', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R18'/.test(HEALTH),
   'E7c1 while 14_ keeps R18, the round IT last changed');
 ok(/FC_SE_UNIQUENESS_FIELDS_/.test(require('fs').readFileSync(require('path').join(__dirname, '..',
   'specs', 'active', 'apps-script', '14_fc_write_handlers.gs'), 'utf8')),
   'E7d and the change its stamp claims is really in the file, so the stamp is not decoration');
-[['20_campaign_write_handlers.gs', 'R6-R7-R17'], ['13_procurement_handlers.gs', 'R6-R7-R12'],
+[['13_procurement_handlers.gs', 'R6-R7-R12'],
  ['00_config.gs', 'R6-R7-R11'], ['01_router.gs', 'R6-R7-R9'],
  ['72_api_v1_product_pricing_workspace.gs', 'R6-R7-R10']].forEach(function (p, i) {
   var m = new RegExp("\\{ file: '" + p[0].replace(/\./g, '\\.') + "', symbol: '[A-Z_]+', expected: '([^']+)'").exec(HEALTH);

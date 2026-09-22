@@ -391,7 +391,12 @@ ok(/STALE_SPECIAL_EVENT_VERSION[\s\S]{0,600}carries no expected version and cann
   'C0d 14_ really does refuse a versionless save over an existing event');
 ok(/fcSpecialEventFindRowByKey_/.test(GS14) && /primary key: campaign_id \+ campaign_sku_line_id/.test(GS14),
   'C0e and really does resolve by campaign_id + campaign_sku_line_id');
-ok(/campaign_id: campaignId,/.test(GS20) && /fcWriteUpsert_\(ss, 'campaign_sku_lines'/.test(GS20),
+// STAGE2-LARGE-BATCH §5 — the reparent is unchanged; only the mechanism moved. The body's campaign_id
+// still goes into the payload, and the payload is still what lands in the row — now through the
+// header-name loop and a range write rather than through fcWriteUpsert_.
+ok(/campaign_id: campaignId,/.test(GS20) &&
+   /if \(!Object\.prototype\.hasOwnProperty\.call\(payload, h\)\) continue;/.test(GS20) &&
+   /\.setValues\(/.test(GS20),
   'C0f 20_ really does write the BODY\'s campaign_id onto a line it resolved by id — the reparent');
 ok(/if \(body\.hasOwnProperty\(h\)\) setCell\(targetRow, h, body\[h\]\);/.test(GS14),
   'C0g and 14_ really does write every supplied header onto the located event, campaign_id included');
