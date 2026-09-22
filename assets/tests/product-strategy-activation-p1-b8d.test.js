@@ -663,8 +663,13 @@ ok(SRC.index.indexOf('productstrategy-p1b8b-20260912') < 0,
 // index.html for the first time: it is the canonical Target Rule resolver, which Apps Script has always had
 // as the KMPD global from the generated bundle while the browser had no copy at all — which is precisely why
 // Request Order and Inventory Replenishment each carried their own divergent matcher.
-eq(REL.appTokenRefCount(SRC.index), 38,
-  'H6  thirty-eight references share it — the application set, Product Strategy, the FC Summary stylesheet, the Home module and the canonical planning-demand resolver, now one co-deployed set');
+// FC-SHARE-DUAL-MODEL-R1 — 38 became 39. assets/js/core/supply-planning-forecast-share.js (KMFCS) joined
+// index.html as the ONE forecast-share normalizer. It must be co-deployed rather than merely added: the
+// FC Summary page in this same set stops carrying its own share formula and calls KMFCS instead, so a
+// browser that fetched the new fc-summary.js beside a cache with no KMFCS at all would render both share
+// columns as an em dash for the wrong reason — runtime absent, not anchor unavailable.
+eq(REL.appTokenRefCount(SRC.index), 39,
+  'H6  thirty-nine references share it — the application set, Product Strategy, the FC Summary stylesheet, the Home module, the canonical planning-demand resolver and the forecast-share normalizer, now one co-deployed set');
 
 /* LOAD ORDER. The board reads the policy through sku-overrides, and app.js builds its menu from
    PSB_VIEWS; both must already be defined when their reader runs. */

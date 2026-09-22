@@ -671,23 +671,43 @@ section('E. §6.1-6.12 — THE REQUIRED MATRIX');
     // The ORIGINAL sealed span, with exactly one thing excised: the fc-target column declaration. Everything
     // else — every helper, the mount, the drag maths, the persistence, the Regular and Event declarations —
     // must still be byte-identical to 90d705c.
+    // FC-SHARE-DUAL-MODEL-R1 — the split widens from the Target declaration to ALL THREE column
+    // declarations, for the reason the note above already gives. `FC占比` was one heading carrying two
+    // denominators; it became `Company FC Share` + `Site FC Share`, and the Event table's share column
+    // was removed rather than recomputed. Both are shape changes to the markup, so both by construction
+    // change the declaration that mirrors it.
+    //
+    // The seal still proves exactly what it exists to prove: the ENGINE is untouched — every helper, the
+    // mount, the drag maths, the persistence and the injected-rule construction are byte-identical to
+    // 90d705c. The column LIST is data about the markup, and is proven where it belongs, by the A8/A8b
+    // shape gate in fc-column-resize-and-retry-label-r2b-a2-r3.test.js, which derives the expected
+    // columns FROM the shipped header instead of restating them.
     function resizeBlockSansTarget(src) {
       var a = src.indexOf('var FC_RESIZE_MAX_');
       var b = src.indexOf('function _fcResizeInit_');
       var end = src.indexOf('}', src.indexOf('return mounted;', b));
       var whole = src.slice(a, end + 1).replace(/\r\n/g, '\n');
-      var ta = whole.indexOf("{ group: 'fc-target'");
+      var ta = whole.indexOf('var FC_RESIZE_TABLES_ = [');
       var tb = whole.indexOf('];', ta);
-      if (ta === -1 || tb === -1) throw new Error('fc-target declaration not located in the resize block');
+      if (ta === -1 || tb === -1) throw new Error('FC_RESIZE_TABLES_ not located in the resize block');
       return whole.slice(0, ta) + whole.slice(tb);
     }
     ok(resizeBlockSansTarget(JS).length > 500, 'H1 the resize block was located');
     eq(resizeBlockSansTarget(JS), resizeBlockSansTarget(BASE_JS),
-      'H2 §6.21-6.23 the resize block is byte-identical to the sealed commit apart from the Target columns');
+      'H2 §6.21-6.23 the resize ENGINE is byte-identical to the sealed commit; only the column declarations moved');
     // and the Target declaration is the ONLY thing that moved: it still declares one entry, still names the
     // same roots, and Actions is still the single no-handle position.
-    ok(/\{ group: 'fc-target', panel: 'fc-panel-target',/.test(JS.replace(/\r\n/g, '\n')),
+    // All three declarations now sit outside the seal, so all three are named here: the tables and
+    // their roots are still the same tables, whatever their column lists now say.
+    var JS_LF = JS.replace(/\r\n/g, '\n');
+    ok(/\{ group: 'fc-target', panel: 'fc-panel-target',/.test(JS_LF),
       'H2b the Target table still declares the same group and panel');
+    ok(/\{ group: 'fc-regular', panel: 'fc-panel-regular',/.test(JS_LF),
+      'H2b1 ... and so does Regular');
+    ok(/\{ group: 'fc-event', panel: 'fc-panel-event',/.test(JS_LF),
+      'H2b2 ... and Event');
+    ok(/_fcResizeCols_\(110, 'Company FC Share'\)/.test(JS_LF) && /_fcResizeCols_\(110, 'Site FC Share'\)/.test(JS_LF),
+      'H2b3 the two share columns are declared, which is the change the seal was widened for');
     // The stylesheet, everything outside the Target table's own rules. The excised span runs from the start
     // of the Target section to the shared fixed-column rules that follow it.
     function cssOutsideTarget(src) {
@@ -714,6 +734,35 @@ section('E. §6.1-6.12 — THE REQUIRED MATRIX');
         while (t.charAt(c2) === '\n') c2++;
         t = t.slice(0, c0) + t.slice(c2);
       }
+      // FC-SHARE-DUAL-MODEL-R1 — the share COLUMN WIDTH rules, on both sides of the comparison.
+      // `FC占比` was one 80px column in each of the Regular and Event tables. It became TWO 110px
+      // columns in Regular (the headings now name their denominators, which does not fit in 80px) and
+      // NO column at all in Event (a share of Special Event fc_qty is not a share anything consumes).
+      // Both are styling this round declares, so both are cut — from the sealed bytes too, which is
+      // what makes the comparison symmetric rather than an exemption for whatever is there now.
+      // Every other byte of the stylesheet is still compared, and the rule this assertion exists for
+      // is unchanged: a round may not disturb styling it has not declared.
+      t = t.replace(/Special Event: \d+ scroll columns/, 'Special Event: <n> scroll columns');
+      ['#fc-regular-scroll-header > .header-cell:nth-child(20)',
+       '#fc-event-scroll-header > .header-cell:nth-child(10)'].forEach(function (sel) {
+        var i = t.indexOf(sel);
+        while (i !== -1) {
+          // The rule begins after the previous block closes, so any comment introducing it goes too.
+          var s0 = t.lastIndexOf('}', i);
+          s0 = (s0 === -1) ? 0 : s0 + 1;
+          var open = t.indexOf('{', i);
+          var s1 = open === -1 ? -1 : t.indexOf('}', open);
+          if (s1 === -1) throw new Error('fc-overview.css share-column rule not located: ' + sel);
+          // Stop at the brace. Trailing newlines belong to the SEAM, which is levelled once below
+          // for both sides rather than consumed differently by each.
+          t = t.slice(0, s0) + t.slice(s1 + 1);
+          i = t.indexOf(sel);
+        }
+      });
+      // A run of blank lines is not styling. Levelling it on BOTH sides is what lets a rule be
+      // removed from the sealed bytes and from the file by different mechanisms and still compare
+      // equal; every non-blank byte outside the excisions is still compared exactly.
+      t = t.replace(/\n{2,}/g, '\n\n');
       var a = t.indexOf('/* R2B-A2-R5');
       if (a === -1) a = t.indexOf('/* --- Target % & Rules:');
       var b = t.indexOf('/* Fixed column');

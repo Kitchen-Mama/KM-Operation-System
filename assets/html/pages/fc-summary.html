@@ -107,7 +107,10 @@
                                         <div class="header-cell">Nov</div>
                                         <div class="header-cell">Dec</div>
                                         <div class="header-cell">Total FC</div>
-                                        <div class="header-cell">FC占比</div>
+                                        <!-- FC-SHARE-DUAL-MODEL-R1 — one heading cannot carry two denominators. `FC占比` was
+                                             computed per company+SKU but keyed without country, so it was neither of these. -->
+                                        <div class="header-cell" title="Share of this SKU's forecast within the same company, over the M+1..M+4 planning window.">Company FC Share</div>
+                                        <div class="header-cell" title="Share of this SKU's forecast across all sites, over the M+1..M+4 planning window. Diagnostic — factory allocation is constrained by source policy and stays with KMFSA.">Site FC Share</div>
                                     </div>
                                 </div>
                             </div>
@@ -142,7 +145,6 @@
                                         <div class="header-cell">Event</div>
                                         <div class="header-cell">Event Period</div>
                                         <div class="header-cell">FC Qty</div>
-                                        <div class="header-cell">FC占比</div>
                                     </div>
                                 </div>
                             </div>

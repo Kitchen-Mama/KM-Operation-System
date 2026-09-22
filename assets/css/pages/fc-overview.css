@@ -1724,14 +1724,18 @@
     font-weight: 600;
 }
 
+/* FC-SHARE-DUAL-MODEL-R1 — two share columns replace the one `FC占比` cell. 110px rather
+   than 80px because the headings name their denominators, which is the point of them. */
 #fc-regular-scroll-header > .header-cell:nth-child(20),
-#fc-regular-scroll-body .scroll-row > .scroll-cell:nth-child(20) {
-    width: 80px;
-    min-width: 80px;
+#fc-regular-scroll-body .scroll-row > .scroll-cell:nth-child(20),
+#fc-regular-scroll-header > .header-cell:nth-child(21),
+#fc-regular-scroll-body .scroll-row > .scroll-cell:nth-child(21) {
+    width: 110px;
+    min-width: 110px;
     justify-content: flex-end;
 }
 
-/* --- Special Event: 10 scroll columns (Event Period is NOT a month cell) --- */
+/* --- Special Event: 9 scroll columns (Event Period is NOT a month cell) --- */
 #fc-event-scroll-header > .header-cell:nth-child(1),
 #fc-event-scroll-body .scroll-row > .scroll-cell:nth-child(1),
 #fc-event-scroll-header > .header-cell:nth-child(4),
@@ -1767,12 +1771,6 @@
     justify-content: flex-end;
 }
 
-#fc-event-scroll-header > .header-cell:nth-child(10),
-#fc-event-scroll-body .scroll-row > .scroll-cell:nth-child(10) {
-    width: 80px;
-    min-width: 80px;
-    justify-content: flex-end;
-}
 
 /* R2B-A2-R5 — the modal's derived-identity line. It carries the resolved company when the selection is
    canonical, and the refusal reason (DATA_UNAVAILABLE / OWNERSHIP_SCOPE_AMBIGUOUS / a missing field)

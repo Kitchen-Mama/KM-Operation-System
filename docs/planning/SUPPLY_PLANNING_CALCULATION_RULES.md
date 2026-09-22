@@ -374,6 +374,54 @@ SKU FC Share = Marketplace SKU FC ÷ Company Total FC
 | Shopify US | 200 | 20% | 100 |
 | **Total** | **1000** | **100%** | **500** |
 
+### 7.1 Two shares, two denominators — FROZEN (FC-SHARE-DUAL-MODEL-R1, 2026-09-22)
+
+> The line `SKU FC Share = Marketplace SKU FC ÷ Company Total FC` above is **retained verbatim** and is
+> still the within-company rule. What follows does not replace it; it names the two distinct shares that
+> were both being called "FC Share", and settles the doc/code divergence in the denominator.
+
+The **runtime owner of every normalization is `assets/js/core/supply-planning-forecast-share.js` (KMFCS).**
+No page may compute a share. The basis is unchanged and is not re-authored here:
+
+```
+BASIS = KMPCX.forecastShareQty = Σ RAW Regular FC over M+1..M+4
+EXCLUDED = Target % Rules · Special Event FC · effective demand · safety demand
+ANCHOR   = injected calculation month. NEVER a clock, NEVER an annual Total FC substitute.
+```
+
+| Share | Denominator | Sums to 1 over | Who may use it |
+|---|---|---|---|
+| **Company Forecast Share** | Σ basis of **all eligible sites of the SAME COMPANY** | company + master SKU + window | KMOOP A2 (already conforms) |
+| **Eligible Receiver Forecast Share** | Σ basis of the sites eligible to receive **a named factory source** | source + master SKU + window | KMFSA only |
+| **All-Site Forecast Share** | Σ basis of **every eligible site, all companies** | master SKU + window | **DIAGNOSTIC / DISPLAY ONLY** |
+
+**COMPANY DENOMINATOR — the divergence, resolved.** Company Forecast Share is **company-wide, NOT
+`company + country`.** The share exists to split a company-constrained quantity among that company's own
+sites, and those sites are in different countries; a country-scoped denominator would answer a question
+nobody asked. `KMOOP` mode A2 already normalizes over same-company/all-countries and is **unchanged**.
+
+`KMAF`'s `basis_i ÷ Σ_group` (§7/§24.5, allocation-facts.js) is **a third thing and stays as it is**: its
+group is one scoped *replenishment run* (company + country), not the Company Forecast Share. It is named
+here so the next reader does not "fix" one into the other. Three denominators exist on purpose; what was
+wrong was that they shared one name.
+
+**"GLOBAL" IS NOT A SHARE THIS SYSTEM HAS.** A factory pool is apportioned over the eligible receiver set
+of its **source** — CN shared cross-company, TW ResUS-only, an unauthorized country fails closed (§13,
+KMFSA). A single all-companies weight would hand a TW pool to KM and ResTW, which the authorized policy
+gives exactly none of. All-Site Forecast Share therefore carries a name that is not an allocation name,
+and **no allocator may read it**.
+
+**ZERO / MISSING / ROUNDING — unchanged, and now shared.** A zero denominator yields **no share** (never
+an equal split, never 100%). A site with no FC row for any window month contributes 0 **and is reported**:
+missing is not zero. KMFSA keeps largest-remainder integer allocation; KMOOP keeps FLOOR + retained
+residual (§43). Display may round to 1 decimal; the 100% invariant is asserted on **decimals at 1e-9**,
+never on the rounded strings, which legitimately read 33.3 + 33.3 + 33.3 = 99.9.
+
+**`fc_regular_forecast.fc_share` is a LEGACY column.** It is written `''` on create, untouched on update,
+read by nothing, and is **not the source of truth for any share**. It is retained for compatibility only —
+the B1 Regular writer requires the header to be present — and must not be renamed, dropped, populated or
+given a formula. `fc_special_events` has no `fc_share` column and must not gain one.
+
 ---
 
 ## 8. Current Month Projection Logic

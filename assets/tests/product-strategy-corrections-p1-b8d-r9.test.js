@@ -793,8 +793,11 @@ mut('K16 an inventory number is changed with nothing to back it', function () {
      assets/js/core/supply-planning-planning-demand.js, the canonical Target Rule resolver, which the
      browser had never loaded even though Apps Script has always run it. The mutant's anchor moves with
      the census it mutates — an anchor that stops matching is a mutant that silently stops biting. */
+  /* FC-SHARE-DUAL-MODEL-R1 — 80 became 81. index.html gained
+     assets/js/core/supply-planning-forecast-share.js (KMFCS), the ONE forecast-share normalizer,
+     replacing a page-local formula in fc-summary.js. Anchor moved for the reason stated above. */
   return withSrc('docs/planning/S_SERIES_FRONTEND_API_MIGRATION_INVENTORY.md',
-    'LOADED_SCRIPTS: 80', 'LOADED_SCRIPTS: 78', function () {
+    'LOADED_SCRIPTS: 81', 'LOADED_SCRIPTS: 78', function () {
       var c = read('docs/planning/S_SERIES_FRONTEND_API_MIGRATION_INVENTORY.md');
       var n = /LOADED_SCRIPTS:\s*(\d+)/.exec(c);
       return !!n && Number(n[1]) !== scripts;

@@ -714,3 +714,78 @@ Every A3 contract stands: the Special Event uniqueness key and its server guard,
 edit and its campaign reassignment, the stale-version gates, the MAX-8 authoring cap and the absence of
 a storage cap, the Base Event FC semantics, and every A3-R10 read-recovery property. No DB migration,
 no schema change, no new routed action, and no client timeout was enlarged.
+
+---
+
+## 16. FC Share — what the two columns mean — FROZEN (FC-SHARE-DUAL-MODEL-R1, 2026-09-22)
+
+> Formula authority is `SUPPLY_PLANNING_CALCULATION_RULES.md` §7/§7.1 and the runtime owner is KMFCS
+> (`assets/js/core/supply-planning-forecast-share.js`). This section owns only what FC Summary DISPLAYS.
+
+### 16.1 The defect this closes
+
+The `FC占比` column was produced by a page-local function with no spec owner and no test. Measured by
+running the shipped function over three real sites:
+
+```
+KM/US/Amazon/CO1100-R   Σ=1200   displayed 14.3%   (correct: 57.1%)
+KM/CA/Amazon/CO1100-R   Σ= 600   displayed 14.3%   (correct: 28.6%)
+KM/JP/Amazon/CO1100-R   Σ= 300   displayed 14.3%   (correct: 14.3%)
+SUM ON SCREEN = 42.9%
+```
+
+Its entry key was `company-sku-marketplace`, which drops **country** — three sites the page's own
+`fcRowIdentityKey` calls distinct collapsed onto one entry and the last write won. Four further causes:
+the denominator was the **filtered** set; it was computed over the filtered set but displayed **25 rows at
+a time**; the numerator was twelve individually ceiled months of **one calendar year** rather than the
+canonical rolling basis; and it rounded per row then validated the **unrounded** sum, so 33.3×3 = 99.9
+never warned. Demo mode hard-codes a single company, which is why this was invisible there.
+
+### 16.2 What the columns are
+
+```
+COLUMN  Company FC Share   = site basis ÷ Σ basis of all sites of the SAME COMPANY
+COLUMN  Site FC Share      = site basis ÷ Σ basis of ALL sites (diagnostic; NOT an allocation weight)
+BASIS                      = Σ RAW Regular FC over M+1..M+4  (never annual Total FC)
+KEY                        = KMFSA canonical site identity — marketplace_id, else company|country|marketplace
+DENOMINATOR SOURCE         = the AUTHORITATIVE UNFILTERED row set, never the filtered or paginated view
+EVENT TAB SHARE COLUMN     = REMOVED (§B10) — never computed from fc_special_events.fc_qty
+```
+
+### 16.3 Why both columns currently read "—"
+
+A rolling-window share needs a **calculation month**, and FC Summary has no canonical planning anchor:
+
+| Candidate | Why it is not an anchor |
+|---|---|
+| `58_` workspace `observed_at` | a read timestamp; carries no calculation month or planning cycle |
+| `km-api-foundation` `lastCalculationMonth` | a diagnostic of the last **recommendation** request; FC Summary issues none |
+| IR `validateCalculationMonth` | **operator-entered** on that page, persisted to that page's state — an input, not an authority |
+| Site Inventory `new Date()` | the browser clock (`inventory-replenishment.js:11484`) — the precedent not to copy |
+
+There is no `planning_cycles` table and no global anchor owner in the repository. So the anchor is typed
+**ANCHOR_UNAVAILABLE**, both columns render an em dash, and the cell `title` says why.
+
+This is deliberate. The browser clock would make a planning figure a property of the viewer's system
+date — two operators comparing screens on the 31st and the 1st would see different shares of the same
+forecast. The selected year's annual total would answer a **different question under the same heading**,
+which is exactly how the old column came to be trusted while being wrong. **A number nobody can act on
+beats a number everybody acts on wrongly.**
+
+```
+SITE_ALLOCATION_SHARE_UI_CONTEXT = UNAVAILABLE   (FC Summary has no factory-source context either,
+                                                  so the eligible-receiver share is never displayed
+                                                  here and allocation stays with KMFSA)
+MISSING_OWNER                    = a canonical planning-anchor owner. Supplying one value to
+                                   `_FC_SHARE_ANCHOR_` lights both columns up; no formula moves.
+```
+
+### 16.4 The legacy column
+
+```
+fc_regular_forecast.fc_share   LEGACY · empty · never written with a value · read by nothing
+B1 Regular writer              create -> ''   ·   update -> untouched      (UNCHANGED this round)
+DO NOT                         rename · drop · populate · add a formula
+fc_special_events              has NO fc_share column and must not gain one
+DB MIGRATION                   NONE. No column was added, altered or removed.
+```

@@ -2,7 +2,7 @@
 
 > **Round:** P1-B8D-R8 §9. **READ-ONLY CENSUS. No page runtime outside Product Strategy was modified.**
 > **Repo:** `Operation System` · **Branch:** `feature/product-strategy-board-p0` · **PRE HEAD:** `d7a6061`.
-> **Scope:** the scripts `index.html` actually loads, in load order — **LOADED_SCRIPTS: 80**
+> **Scope:** the scripts `index.html` actually loads, in load order — **LOADED_SCRIPTS: 81**
 > (78 when this census was taken at R8; the one that moved it is named in §1). That number is
 > re-counted from `index.html` by `product-strategy-corrections-p1-b8d-r9.test.js` §F, so it cannot
 > drift from the file it describes. A file nothing loads is not a
@@ -47,7 +47,7 @@ as a browser bypass, and they are not counted here: this census reads `assets/js
 | `DIRECT_EXTERNAL_FETCH` | **1** | A raw `fetch` that is not a data read (the partial loader; see §4) |
 | `PRODUCTION_FIXTURE_OR_STATIC_DATA` | **5** | Static reference data compiled into the bundle |
 | `DOM_OR_LOCALSTORAGE_AS_DATA_SOURCE` | **8** | Browser storage holding domain data rather than a UI preference |
-| `NO_DATA_ACCESS` | **41** | Renderers, utilities, layout, i18n (40 at R8, +1 at R9 — see below) |
+| `NO_DATA_ACCESS` | **42** | Renderers, utilities, layout, i18n (40 at R8, +1 at R9, +1 at FC-SHARE-DUAL-MODEL-R1 — see below) |
 
 Totals exceed 78 because a module can be in two classes: `inventory-replenishment.js` is a
 `LEGACY_API_WRAPPER` **and** keeps allocation drafts in `sessionStorage`.
@@ -70,6 +70,23 @@ quietly, so:
 numbers R8 measured. R9 changed one page's runtime (Product Strategy) and one shared utility
 (`km-image-reference-policy.js`, still `NO_DATA_ACCESS` — it classifies a string and fetches
 nothing), and added the file above.
+
+### The count that moved again, and the diff that moved it (FC-SHARE-DUAL-MODEL-R1)
+
+**81 scripts are loaded now, not 80.** Same rule, same accounting:
+
+| | |
+|---|---|
+| Added | `assets/js/core/supply-planning-forecast-share.js` (KMFCS) |
+| Class | `NO_DATA_ACCESS` |
+| Why | It is a **pure normalizer**: rows in, shares out. No `fetch`, no transport, no storage, no DOM, no clock, no RNG. It is the ONE owner of forecast-share arithmetic, replacing a page-local formula in `fc-summary.js` that had no spec owner and no test. |
+| Why it is not `PRODUCTION_FIXTURE_OR_STATIC_DATA` | It carries no data at all. It is arithmetic over rows its caller already holds — the FC Summary read model — so there is nothing here an API could serve. |
+| Why it is not `STANDARD_API` | It reaches no endpoint. The read that feeds it is the FC Summary workspace read, which is already classified under `fc-summary.js` and did not change. |
+
+**No module was reclassified and no data path moved.** `STANDARD_API` is still 5 and
+`LEGACY_API_WRAPPER` still 19 — this round added no request, removed none, and changed no
+transport. `fc-summary.js` stays exactly where it was; it now calls a pure module instead of
+computing a share itself.
 
 `product-strategy-corrections-p1-b8d-r9.test.js` §F asserts this document still names
 `km-repo-asset-manifest.js` and still reports 5 / 19, so a future edit cannot move a total without

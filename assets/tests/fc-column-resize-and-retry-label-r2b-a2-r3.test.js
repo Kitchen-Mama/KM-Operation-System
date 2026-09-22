@@ -90,7 +90,9 @@ function headerLabels(id) {
   var block = rest.slice(0, rest.indexOf('</div>', rest.lastIndexOf('header-cell', rest.indexOf('scroll-header-viewport') > -1 ? rest.length : rest.length)));
   // Simpler and safer: take every header-cell up to the closing of this scroll-header container.
   var seg = rest.slice(0, rest.indexOf('</div>' + '\r\n', rest.indexOf('header-cell')) + 1);
-  var labels = [], re = /<div class="header-cell">([^<]*)<\/div>/g, m;
+  // The heading may carry attributes (FC-SHARE-DUAL-MODEL-R1 put a denominator explanation in a
+  // `title`), so the tag is matched up to its own `>` rather than assumed bare.
+  var labels = [], re = /<div class="header-cell"[^>]*>([^<]*)<\/div>/g, m;
   var scope = rest.slice(0, rest.indexOf('scroll-header-viewport', 1) > -1 ? rest.indexOf('</div>\r\n                                </div>') : rest.length);
   while ((m = re.exec(scope))) labels.push(m[1].trim());
   return labels;
@@ -298,8 +300,18 @@ function injectedWidths(ctx, group, col) {
 // =================================================================================================
 section('A. THE SHIPPED MARKUP — the column sets these controllers must match');
 // =================================================================================================
-eq(REGULAR_LABELS.length, 20, 'A1 Regular Forecast ships 20 scroll columns');
-eq(EVENT_LABELS.length, 10, 'A2 Special Event ships 10 scroll columns');
+// FC-SHARE-DUAL-MODEL-R1 — `FC占比` became TWO columns, because one heading cannot carry two
+// denominators. Company FC Share is normalized within a company; Site FC Share across all sites.
+eq(REGULAR_LABELS.length, 21, 'A1 Regular Forecast ships 21 scroll columns');
+eq(REGULAR_LABELS[19], 'Company FC Share', 'A1b ... and each share column names its denominator');
+eq(REGULAR_LABELS[20], 'Site FC Share', 'A1c ... so neither can be read as the other');
+// FC-SHARE-DUAL-MODEL-R1 §B10 — the Event share column is GONE rather than recomputed. It divided
+// one event's fc_qty by that event's total across marketplaces, which is a share of SPECIAL EVENT
+// demand; no allocator consumes that, and Special Event FC is explicitly never folded into the
+// Regular-FC weight basis. Beside a Regular share under one heading it read as the same thing.
+eq(EVENT_LABELS.length, 9, 'A2 Special Event ships 9 scroll columns');
+ok(EVENT_LABELS.indexOf('FC占比') === -1 && EVENT_LABELS.indexOf('Site FC Share') === -1,
+  'A2b ... and the Event table offers no forecast-share column at all');
 eq(TARGET_LABELS.length, 19, 'A3 Target % & Rules ships 19 scroll columns');   // R2B-A2-R5 added Country
 eq(REGULAR_LABELS[5], 'Series', 'A4 Series is Regular column 6');
 eq(EVENT_LABELS[7], 'Event Period', 'A5 Event Period is Event column 8');
@@ -330,8 +342,10 @@ function handleCount(ctx, group) {
     return !!c.querySelector('[data-rescol-handle]');
   }).length;
 }
-eq(handleCount(C, 'fc-regular'), 20, 'B2 §3 every Regular scroll column has a handle');
-eq(handleCount(C, 'fc-event'), 10, 'B3 §3 every Event scroll column has a handle');
+// Stated as the RULE rather than as a number, for the reason B4 below already records: an arity
+// here forbids any round from changing the table and fails while describing a correct tree.
+eq(handleCount(C, 'fc-regular'), REGULAR_LABELS.length, 'B2 §3 every Regular scroll column has a handle');
+eq(handleCount(C, 'fc-event'), EVENT_LABELS.length, 'B3 §3 every Event scroll column has a handle');
 // ALL BUT ACTIONS, stated as that rather than as a number: an arity here forbids any round from adding a
 // Target column, and fails while describing a correct tree. R2B-A2-R5 added Country and this held.
 eq(handleCount(C, 'fc-target'), TARGET_LABELS.length - 1,
@@ -456,7 +470,7 @@ drag(cP, 'fc-regular', 6, 80);
 eq(injectedWidths(cP, 'fc-regular', 6).header, 180, 'D9 Series widened to 180');
 cP._fcResizeInit_();                                     // re-mount, same context/storage
 eq(injectedWidths(cP, 'fc-regular', 6).header, 180, 'D10 §7.11 the width survived a re-mount');
-eq(handleCount(cP, 'fc-regular'), 20, 'D11 and no duplicate handles were stacked');
+eq(handleCount(cP, 'fc-regular'), REGULAR_LABELS.length, 'D11 and no duplicate handles were stacked');
 
 // =================================================================================================
 section('E. RESET — §6, §7.12');

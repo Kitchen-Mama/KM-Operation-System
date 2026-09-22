@@ -607,12 +607,14 @@ function world(opts) {
     // THE DOCUMENT CARRIES SEVERAL TOKEN FAMILIES AND ALWAYS HAS — map, toolbar and sku-read-path
     // assets rotate on their own rounds. Asserting 'exactly one token in the file' would assert
     // something that was never true and would fail on every round that is not this one. What this
-    // round owns is the APPLICATION set, which has been 38 references for several rounds running.
+    // round owns is the APPLICATION set, which is 39 references as of FC-SHARE-DUAL-MODEL-R1.
     // R2B-A3-R1 — DERIVED, not restated. This literal is precisely the equality-with-now that
     // _release-order.js exists to end: it was correct for exactly one round and then described the
     // token of the round before. The ledger is the single place a round appends to.
     var APP = require('./_release-order.js').currentAppToken();
-    eq(toks[APP], 38, 'J1  the application token is on all 38 references', toks);
+    // FC-SHARE-DUAL-MODEL-R1 — 38 became 39: supply-planning-forecast-share.js (KMFCS) joined the
+    // set as the ONE forecast-share normalizer, replacing a page-local formula.
+    eq(toks[APP], 39, 'J1  the application token is on all 39 references', toks);
     ['stagedhydration-r3r1-20260920', 'statuscard-r2ba2r5f6-20260919',
      'trseamrepair-r2ba2r5f5f1-20260919',
      'tgtrehydrate-r2ba2r5f5-20260919', 'fcroutemount-bootfcr2f1-20260919'].forEach(function (t, i2) {

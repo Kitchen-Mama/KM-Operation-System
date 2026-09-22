@@ -122,6 +122,127 @@ function filterFcEvent(data, filters) {
   });
 }
 
+/* ── FC SHARE — ONE OWNER, AND IT IS NOT THIS PAGE (FC-SHARE-DUAL-MODEL-R1) ────────────────────
+
+   What used to live here was `calculateFcPercentages`, a page-local formula with no spec owner and
+   no test, and it was wrong in five independent ways. The one that produced the operator report:
+   its entry key was `company-sku-marketplace`, which DROPS COUNTRY. Measured by running the shipped
+   function over KM/US/Amazon 1200, KM/CA/Amazon 600, KM/JP/Amazon 300 — three sites the page's OWN
+   `fcRowIdentityKey` calls distinct — all three collapsed onto one entry, the last write won, and
+   every row displayed 14.3%. Total on screen: 42.9%. The correct shares are 57.1 / 28.6 / 14.3.
+
+   The other four: the denominator was the FILTERED set (unchecking a marketplace moved every other
+   row); it was computed over the filtered set but displayed 25 rows at a time; its numerator was
+   twelve individually ceiled months of one CALENDAR YEAR rather than the canonical rolling basis;
+   and it rounded per row to 1dp then validated the UNROUNDED sum, so 33.3×3 = 99.9 never warned.
+
+   The math now lives in KMFCS (assets/js/core/supply-planning-forecast-share.js), which borrows its
+   site identity, its window definition and its factory-source policy from KMFSA rather than
+   restating them. This file owns only WHICH ROWS to hand it and HOW TO RENDER the answer.
+
+   THE ANCHOR, AND WHY BOTH COLUMNS CURRENTLY READ "—".
+
+   The canonical basis is Σ RAW Regular FC over M+1..M+4, anchored on a calculation month. FC Summary
+   has no such anchor and cannot invent one:
+
+     · `58_api_v1_fc_summary_workspace.gs` returns `observed_at` — a read timestamp, not a planning
+       anchor. It carries no calculation month and no planning cycle.
+     · `km-api-foundation.js` records `lastCalculationMonth`, but that is a DIAGNOSTIC of the last
+       recommendation request. FC Summary never issues one, so it is always null here.
+     · Inventory Replenishment has `validateCalculationMonth`, but the value is OPERATOR-ENTERED on
+       that page and persisted to that page's own stored state. It is an input, not an authority.
+     · Site Inventory injects `new Date()` (inventory-replenishment.js:11484). KMFSA never reads a
+       clock; the PAGE does. That is the one precedent, and it is the thing not to copy.
+
+   There is no `planning_cycles` table and no global anchor owner anywhere in the repository.
+
+   So the anchor is reported UNAVAILABLE and both columns render an em dash. That is deliberate and
+   it is the whole point: the two substitutes on offer are worse than silence. The browser clock
+   would make a planning figure a property of the viewer's system date — two operators comparing
+   screens on the 31st and the 1st would see different shares of the same forecast. The selected
+   year's annual total would answer a DIFFERENT QUESTION under the same heading, which is exactly
+   how the column came to be trusted while being wrong. A number nobody can act on beats a number
+   everybody acts on wrongly.
+
+   KMFCS is complete and tested against fixtures, so the day an anchor owner exists these columns
+   light up by supplying one value here — no formula moves. */
+
+var _FC_SHARE_ANCHOR_ = '';   // no canonical planning-anchor owner exists yet — see the note above.
+var _FC_SHARE_DASH_ = '\u2014';
+
+function _fcShareRuntime_() {
+  return (typeof window !== 'undefined' && window.KM && window.KM.forecastShare) ||
+         (typeof KMFCS !== 'undefined' ? KMFCS : null);
+}
+function _fcShareAnchor_() { return _FC_SHARE_ANCHOR_; }
+
+/* Why the share is asked of the RAW read-model rows and not of the rows being rendered: the render
+   shape ceils each month for whole-unit display, and a ceiling applied twelve times is a display
+   convenience, not a forecast. It must never become an allocation basis. The raw rows are also the
+   complete set — the render list is about to be filtered and paginated, and a share computed from
+   either of those is a share of the view rather than of the data. */
+var _FC_SHARE_MONTHS_ = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+function _fcShareRowShape_(r) {
+  if (!r) return null;
+  var out = { company: r.company, country: r.country, marketplace: r.marketplace, sku: r.sku, year: r.year };
+  var i;
+  if (Object.prototype.toString.call(r.months) === '[object Array]') {
+    for (i = 0; i < 12; i++) out[_FC_SHARE_MONTHS_[i]] = Number(r.months[i]) || 0;
+  } else {
+    for (i = 0; i < 12; i++) out[_FC_SHARE_MONTHS_[i]] = Number(r[_FC_SHARE_MONTHS_[i]]) || 0;
+  }
+  return out;
+}
+function _fcShareSourceRows_(fallbackRows) {
+  if (_fcUseDb()) {
+    try { var rawRows = _fcGetRegularForecast(); if (rawRows && rawRows.length) return rawRows; } catch (e) {}
+  }
+  return fallbackRows || [];
+}
+
+/* ONE projection per master SKU over the COMPLETE row set. `rows` must be the authoritative
+   unfiltered set; passing the filtered or paginated list is the defect this replaced. */
+function _fcShareProjections_(rows, anchor) {
+  var K = _fcShareRuntime_();
+  if (!K) return { available: false, reason: 'FC_SHARE_RUNTIME_ABSENT', bySku: {} };
+  var a = K.resolveAnchor(anchor);
+  if (a.state !== K.ANCHOR_VALID) return { available: false, reason: a.state, bySku: {} };
+  var bySku = {};
+  (rows || []).forEach(function (r) {
+    var shaped = _fcShareRowShape_(r);
+    if (!shaped) return;
+    var s = String(shaped.sku || '').toUpperCase();
+    if (!s) return;
+    (bySku[s] = bySku[s] || []).push(shaped);
+  });
+  var proj = {};
+  Object.keys(bySku).forEach(function (s) {
+    proj[s] = K.project({ sku: bySku[s][0].sku, forecastRows: bySku[s], calculationMonth: anchor });
+  });
+  return { available: true, reason: '', bySku: proj };
+}
+
+/* The two displayed cells. `site` is the ALL-SITE diagnostic share, NOT the source-constrained
+   allocation weight: FC Summary has no factory-source context, so the eligible-receiver share is
+   not computed here and allocation stays with KMFSA. A null share renders as an em dash, never as
+   0.0% — "no share is defined" and "this site's share is nothing" are different facts. */
+function _fcShareCells_(projections, item) {
+  var K = _fcShareRuntime_();
+  if (!K || !projections || !projections.available) return { company: _FC_SHARE_DASH_, site: _FC_SHARE_DASH_ };
+  var p = projections.bySku[String((item && item.sku) || '').toUpperCase()];
+  if (!p) return { company: _FC_SHARE_DASH_, site: _FC_SHARE_DASH_ };
+  var s = K.siteShares(p, item);
+  return { company: K.formatShare(s.companyForecastShare), site: K.formatShare(s.allSiteForecastShare) };
+}
+
+/* Why the cell carries a title: an em dash with no explanation reads as a bug. This names the
+   missing owner at the point of use rather than in a console nobody opens. */
+function _fcShareUnavailableTitle_(projections) {
+  if (projections && projections.available) return '';
+  return 'No canonical planning anchor is available, so the M+1..M+4 forecast share cannot be ' +
+         'calculated. This is not an annual Total FC ratio and is deliberately not substituted with one.';
+}
+
 // Render Regular Forecast Table
 function renderFcRegularTable() {
   const fixedBody = document.getElementById('fc-regular-fixed-body');
@@ -158,8 +279,10 @@ function renderFcRegularTable() {
     return;
   }
 
-  // Calculate FC占比 for each item
-  const fcPercentages = calculateFcPercentages(filteredData);
+  // FC Share — from the AUTHORITATIVE UNFILTERED set. Never filteredData (the denominator would
+  // follow the filter) and never paginatedData (the visible column could not sum to 100).
+  const fcShareProj = _fcShareProjections_(_fcShareSourceRows_(_fcRegularSource), _fcShareAnchor_());
+  const fcShareTitle = _fcShareUnavailableTitle_(fcShareProj);
 
   // Render fixed column (SKU)
   fixedBody.innerHTML = paginatedData.map(item => `
@@ -171,8 +294,7 @@ function renderFcRegularTable() {
   // Render scrollable columns
   scrollBody.innerHTML = paginatedData.map(item => {
     const total = item.months.reduce((sum, val) => sum + val, 0);
-    const key = `${item.company}-${item.sku}-${item.marketplace}`;
-    const percentage = fcPercentages[key] || 0;
+    const share = _fcShareCells_(fcShareProj, item);
     return `
       <div class="scroll-row">
         <div class="scroll-cell">${item.year}</div>
@@ -183,59 +305,14 @@ function renderFcRegularTable() {
         <div class="scroll-cell">${item.series}</div>
         ${item.months.map(m => `<div class="scroll-cell cell-month">${m.toLocaleString()}</div>`).join('')}
         <div class="scroll-cell cell-total">${total.toLocaleString()}</div>
-        <div class="scroll-cell cell-percentage">${percentage.toFixed(1)}%</div>
+        <div class="scroll-cell cell-percentage" title="${fcShareTitle}">${share.company}</div>
+        <div class="scroll-cell cell-percentage" title="${fcShareTitle}">${share.site}</div>
       </div>
     `;
   }).join('');
 
   updatePaginationInfo(filteredData.length);
   syncFcScroll('regular');
-}
-
-// Calculate FC占比 by Company + SKU
-function calculateFcPercentages(data) {
-  const percentages = {};
-  
-  // Group by Company + SKU
-  const groups = {};
-  data.forEach(item => {
-    const groupKey = `${item.company}-${item.sku}`;
-    if (!groups[groupKey]) {
-      groups[groupKey] = [];
-    }
-    groups[groupKey].push(item);
-  });
-  
-  // Calculate percentage for each marketplace within the group
-  Object.keys(groups).forEach(groupKey => {
-    const items = groups[groupKey];
-    const totals = items.map(item => {
-      const total = item.months.reduce((sum, val) => sum + (val || 0), 0);
-      return { item, total };
-    });
-    
-    const grandTotal = totals.reduce((sum, t) => sum + t.total, 0);
-    
-    totals.forEach(({ item, total }) => {
-      const key = `${item.company}-${item.sku}-${item.marketplace}`;
-      percentages[key] = grandTotal > 0 ? (total / grandTotal) * 100 : 0;
-    });
-  });
-  
-  // Validate: Check if sum equals 100% for each group
-  Object.keys(groups).forEach(groupKey => {
-    const items = groups[groupKey];
-    const sum = items.reduce((acc, item) => {
-      const key = `${item.company}-${item.sku}-${item.marketplace}`;
-      return acc + (percentages[key] || 0);
-    }, 0);
-    
-    if (Math.abs(sum - 100) > 0.1 && sum > 0) {
-      console.warn(`FC占比總和不等於100%: ${groupKey}, sum=${sum.toFixed(2)}%`);
-    }
-  });
-  
-  return percentages;
 }
 
 // Render Event Forecast Table
@@ -275,7 +352,12 @@ function renderFcEventTable() {
   }
 
   // Calculate FC占比 for Event
-  const eventFcPercentages = calculateEventFcPercentages(filteredData);
+  /* FC-SHARE-DUAL-MODEL-R1 §B10 — the Event share column is GONE. It divided one event's fc_qty by
+     the same event's total across marketplaces, which is a share of Special Event demand. No
+     allocator anywhere consumes that: the canonical weight is RAW REGULAR FC over M+1..M+4, and
+     Special Event FC is explicitly "NEVER folded in" (KMPCX:13, KMFSA:26, rules §7). Showing it
+     beside a Regular FC share under the same heading invited exactly the reading that it was one.
+     fc_special_events has no fc_share column and must not gain one. */
 
   // Render fixed column (SKU)
   fixedBody.innerHTML = paginatedData.map(item => `
@@ -286,8 +368,6 @@ function renderFcEventTable() {
 
   // Render scrollable columns
   scrollBody.innerHTML = paginatedData.map(item => {
-    const key = `${item.company}-${item.sku}-${item.event}-${item.marketplace}`;
-    const percentage = eventFcPercentages[key] || 0;
     return `
       <div class="scroll-row">
         <div class="scroll-cell">${item.year}</div>
@@ -299,7 +379,6 @@ function renderFcEventTable() {
         <div class="scroll-cell">${item.event}</div>
         <div class="scroll-cell">${item.eventPeriod}</div>
         <div class="scroll-cell cell-qty">${item.fcQty.toLocaleString()}</div>
-        <div class="scroll-cell cell-percentage">${percentage.toFixed(1)}%</div>
       </div>
     `;
   }).join('');
@@ -308,51 +387,6 @@ function renderFcEventTable() {
   syncFcScroll('event');
 }
 
-// Calculate Event FC占比 by Company + SKU + Event
-function calculateEventFcPercentages(data) {
-  const percentages = {};
-  
-  // Group by Company + SKU + Event
-  const groups = {};
-  data.forEach(item => {
-    const groupKey = `${item.company}-${item.sku}-${item.event}`;
-    if (!groups[groupKey]) {
-      groups[groupKey] = [];
-    }
-    groups[groupKey].push(item);
-  });
-  
-  // Calculate percentage for each marketplace within the group
-  Object.keys(groups).forEach(groupKey => {
-    const items = groups[groupKey];
-    const totals = items.map(item => ({
-      item,
-      total: item.fcQty || 0
-    }));
-    
-    const grandTotal = totals.reduce((sum, t) => sum + t.total, 0);
-    
-    totals.forEach(({ item, total }) => {
-      const key = `${item.company}-${item.sku}-${item.event}-${item.marketplace}`;
-      percentages[key] = grandTotal > 0 ? (total / grandTotal) * 100 : 0;
-    });
-  });
-  
-  // Validate: Check if sum equals 100% for each group
-  Object.keys(groups).forEach(groupKey => {
-    const items = groups[groupKey];
-    const sum = items.reduce((acc, item) => {
-      const key = `${item.company}-${item.sku}-${item.event}-${item.marketplace}`;
-      return acc + (percentages[key] || 0);
-    }, 0);
-    
-    if (Math.abs(sum - 100) > 0.1 && sum > 0) {
-      console.warn(`Event FC占比總和不等於100%: ${groupKey}, sum=${sum.toFixed(2)}%`);
-    }
-  });
-  
-  return percentages;
-}
 
 // Which FC Summary tab is active (regular / event / target).
 function _fcActiveTab() {
@@ -709,7 +743,11 @@ function renderFcRegularTableEditable() {
     return;
   }
 
-  const fcPercentages = calculateFcPercentages(rows);
+  /* The EDIT table shares the page denominator, and for the same reason: an edit list is a scope,
+     not the world. It also used to compute the share from the UNEDITED months while displaying a
+     total from the edited ones, so the share visibly refused to move while the operator typed. */
+  const fcShareProj = _fcShareProjections_(_fcShareSourceRows_(rows), _fcShareAnchor_());
+  const fcShareTitle = _fcShareUnavailableTitle_(fcShareProj);
 
   fixedBody.innerHTML = rows.map(item => `
     <div class="fixed-row">
@@ -722,8 +760,7 @@ function renderFcRegularTableEditable() {
     const entry = fcEditState.dirty.get(key);
     const effMonths = item.months.map((m, i) => (entry && entry.months && Object.prototype.hasOwnProperty.call(entry.months, i)) ? entry.months[i] : m);
     const total = effMonths.reduce((sum, val) => sum + (Number(val) || 0), 0);
-    const pctKey = `${item.company}-${item.sku}-${item.marketplace}`;
-    const percentage = fcPercentages[pctKey] || 0;
+    const share = _fcShareCells_(fcShareProj, item);
     return `
       <div class="scroll-row" data-row-idx="${idx}" data-fckey="${key}">
         <div class="scroll-cell fc-cell-readonly">${item.year}</div>
@@ -748,7 +785,8 @@ function renderFcRegularTableEditable() {
           </div>`;
         }).join('')}
         <div class="scroll-cell cell-total">${total.toLocaleString()}</div>
-        <div class="scroll-cell cell-percentage">${percentage.toFixed(1)}%</div>
+        <div class="scroll-cell cell-percentage" title="${fcShareTitle}">${share.company}</div>
+        <div class="scroll-cell cell-percentage" title="${fcShareTitle}">${share.site}</div>
       </div>
     `;
   }).join('');
@@ -1068,7 +1106,6 @@ function renderFcEventTableEditable() {
     return;
   }
 
-  const eventFcPercentages = calculateEventFcPercentages(rows);
 
   fixedBody.innerHTML = rows.map(item => `
     <div class="fixed-row">
@@ -1081,8 +1118,6 @@ function renderFcEventTableEditable() {
     const entry = fcEditState.dirtyEvent.get(key);
     const shown = (entry && entry.qty != null) ? entry.qty : item.fcQty;
     const invalid = entry && entry.invalid;
-    const pctKey = `${item.company}-${item.sku}-${item.event}-${item.marketplace}`;
-    const percentage = eventFcPercentages[pctKey] || 0;
     const noId = !String(item.eventId || '').trim() || !String(item.campaignId || '').trim();
     return `
       <div class="scroll-row" data-row-idx="${idx}" data-fckey="${key}">
@@ -1104,7 +1139,6 @@ function renderFcEventTableEditable() {
                  title="${noId ? 'This legacy event is missing event_fc_id / campaign_id — editing it will fail closed until it is backfilled.' : ''}"
                  oninput="updateEventFcQty(this)">
         </div>
-        <div class="scroll-cell cell-percentage">${percentage.toFixed(1)}%</div>
       </div>
     `;
   }).join('');
@@ -6763,7 +6797,8 @@ var FC_RESIZE_TABLES_ = [
     cols: [_fcResizeCols_(100, 'Year'), _fcResizeCols_(120, 'Company'), _fcResizeCols_(120, 'Marketplace'),
            _fcResizeCols_(100, 'Country'), _fcResizeCols_(120, 'Category'), _fcResizeCols_(100, 'Series')]
       .concat(_fcMonthCols_(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']))
-      .concat([_fcResizeCols_(100, 'Total FC'), _fcResizeCols_(80, 'FC\u5360\u6bd4')]) },
+      .concat([_fcResizeCols_(100, 'Total FC'),
+               _fcResizeCols_(110, 'Company FC Share'), _fcResizeCols_(110, 'Site FC Share')]) },
 
   { group: 'fc-event', panel: 'fc-panel-event',
     header: 'fc-event-scroll-header', body: 'fc-event-scroll-body',
@@ -6774,7 +6809,7 @@ var FC_RESIZE_TABLES_ = [
            // Event Period was previously caught by the Regular table's month rule and rendered at 70px,
            // which cannot show 2026-11-19~2026-11-30. It is not a month cell and is no longer treated as one.
            _fcResizeCols_(190, 'Event Period'),
-           _fcResizeCols_(90, 'FC Qty'), _fcResizeCols_(80, 'FC\u5360\u6bd4')] },
+           _fcResizeCols_(90, 'FC Qty')] },
 
   { group: 'fc-target', panel: 'fc-panel-target',
     header: 'fc-target-scroll-header', body: 'fc-target-scroll-body',

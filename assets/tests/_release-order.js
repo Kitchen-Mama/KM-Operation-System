@@ -557,7 +557,23 @@ var ROUND_TOKENS = [
   //
   // fc-summary.js, the api layer, fc-summary.html and fc-overview.css all change together, so the
   // whole application set rotates together.
-  'writerhardening-r2bb1perf-20260922'];
+  'writerhardening-r2bb1perf-20260922',
+  // FC-SHARE-DUAL-MODEL-R1 - the forecast-share correction. The token above IS PUBLISHED: origin/main
+  // reached 86e7135 and the live deployment reports R19 uniform with 04_ present in the manifest, so
+  // the B1 bytes have been served under `?v=writerhardening-r2bb1perf-20260922` and the reuse rule closes.
+  //
+  // The refetch is load-bearing, and the reason is a WRONG NUMBER an operator is currently acting on.
+  // A browser left on the previous bytes keeps rendering the page-local `FC占比`, whose entry key drops
+  // COUNTRY: measured over KM/US, KM/CA and KM/JP Amazon rows for one SKU, all three cells display the
+  // LAST row's share and the column sums to 42.9%. The same bytes recompute the denominator from the
+  // FILTERED set, so unchecking a marketplace silently moves every other row. New bytes replace that
+  // single column with two that name their denominators, and show an em dash until a canonical
+  // planning anchor exists rather than substituting an annual ratio.
+  //
+  // A NEW FILE also enters the application set: assets/js/core/supply-planning-forecast-share.js.
+  // index.html, fc-summary.js, fc-summary.html and fc-overview.css all change together, so the whole
+  // application set rotates together.
+  'fcsharedual-r1-20260922'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the
