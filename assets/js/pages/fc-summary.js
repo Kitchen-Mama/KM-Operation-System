@@ -3095,6 +3095,18 @@ function _evtBuilderEventRows_() {
   return (DB && DB.getFcSpecialEvents) ? DB.getFcSpecialEvents() : null;
 }
 
+/* BASE-EVENT-FC-READINESS §C — 'I COULD NOT READ THE EVENTS' IS NOT 'THIS SKU HAS NONE'.
+ *
+ * `_evtBuilderEventRows_` has always answered null for unavailable and an array for read, and the
+ * comment above it says so. What was missing is that NOTHING DOWNSTREAM ASKED. The group-card build
+ * stored `baseEventFc: be ? be.baseEventFc : null` and the cell printed `null` as an em dash under the
+ * comment 'no persisted event prints an em dash' — so a model that could not be read printed, for
+ * every SKU at once, the one glyph that means the opposite of what had happened.
+ *
+ * The same distinction this page already draws everywhere else: unread is not empty.
+ */
+function _evtEventModelAvailable_() { return Array.isArray(_evtBuilderEventRows_()); }
+
 /* FC-SUMMARY-R2B-A3-R9 §1/§2 — THE CANONICAL UNIQUENESS KEY.
 
    FC_SUMMARY_SPEC §10.1: for one scoped SKU, one event flag in one target year is ONE event, whatever
@@ -4286,6 +4298,9 @@ function _evtBuildGroups() {
   var prev = {};
   _evtGroups.forEach(function(g){ (g.rows || []).forEach(function(r){ prev[g.category+'||'+g.series+'::'+String(r.sku).toUpperCase()] = r; }); });
   var byKey = {};
+  // Resolved ONCE for the whole build: every row in one build shares one answer about the model, and
+  // asking per row would let a mid-build change split the cards into two truths.
+  var _evtModelAvail = _evtEventModelAvailable_();
   rows.forEach(function(r){
     var key = r.category + '||' + r.series;
     if (!byKey[key]) byKey[key] = { category: r.category, series: r.series, discountPct: NaN, rows: [] };
@@ -4304,6 +4319,9 @@ function _evtBuildGroups() {
       // operator's and is preserved above; the ids and the version belong to the sheet, so a rebuild
       // takes them again rather than carrying a token that may already have been superseded.
       baseEventFc: be ? be.baseEventFc : null,
+      // Carried per row so the cell never has to re-derive it, and so a row built while the model was
+      // readable keeps saying so if a later rebuild finds it is not.
+      baseEventFcUnknown: !_evtModelAvail,
       eventFcId: be ? be.eventFcId : '',
       campaignSkuLineId: be ? be.campaignSkuLineId : '',
       rowVersion: be ? be.rowVersion : '',
@@ -4364,9 +4382,12 @@ function _evtRenderGroupCards() {
           + (base != null ? base.toLocaleString() : (baseNote ? 'set input' : (baseKind === 'manual' ? 'n/a' : '—')))
           + '</span>' +
         // §4 — the persisted current value, distinct from both the computational baseline and the
-        // proposed new one. A stored 0 prints 0; no persisted event prints an em dash.
-        '<span class="evt-line-ro" title="Currently stored for this event">'
-          + (r.baseEventFc == null ? '—' : r.baseEventFc.toLocaleString()) + '</span>' +
+        // proposed new one. A stored 0 prints 0; no persisted event prints an em dash; and a model that
+        // could not be read prints NEITHER, because both of those are claims about the data.
+        (r.baseEventFcUnknown
+          ? '<span class="evt-line-ro fc-evt-warn" title="The stored event forecast could not be read, so this is not known to be empty. Nothing has been changed.">?</span>'
+          : '<span class="evt-line-ro" title="Currently stored for this event">'
+            + (r.baseEventFc == null ? '—' : r.baseEventFc.toLocaleString()) + '</span>') +
         newCell +
         '<span style="color:' + diffColor + '">' + diffTxt + '</span>' +
         '<span></span>' +
@@ -4937,9 +4958,27 @@ async function saveEventUpdate() {
     var _dupCtx = { company: company, country: country, marketplace: mkey, eventFlag: eventFlag,
       year: targetYear };
     var _dupHits = _evtDuplicateConflicts_(lines.map(function (l) { return l.sku; }), _dupCtx);
-    // null = the read model is unavailable. That is not a clean preflight, and it is not a refusal
-    // either: the server's own guard is the authority and will answer with the rows it can see.
-    if (_dupHits && _dupHits.length) { alert(_evtDuplicateRefusalText_(_dupHits, _dupCtx)); return; }
+    // BASE-EVENT-FC-READINESS §C/§E — null = THE READ MODEL IS UNAVAILABLE, AND THAT NOW REFUSES HERE.
+    //
+    // It used to fall through deliberately, on the reasoning that the server's guard is the authority and
+    // would answer with the rows it can see. That reasoning is still true and nothing below weakens it —
+    // 14_'s fcSeUniquenessConflict_ remains the authority and is untouched. What it got wrong is the
+    // OUTCOME it left the operator with: every Base Event FC on screen had already printed as though
+    // those SKUs had no stored event, so the save it allowed was one the operator had been shown false
+    // grounds for, and its only possible ending was a stage-1 refusal that reads as a server fault.
+    //
+    // Refusing here is not a second uniqueness rule. It is the page declining to send a payload it knows
+    // it could not preflight, naming why, and writing nothing. The existing Retry path reloads the one
+    // authoritative read that is missing; no request is issued from here.
+    if (_dupHits === null) {
+      alert('Nothing was written.' + String.fromCharCode(10) + String.fromCharCode(10) +
+        'The existing Special Events could not be read, so this save cannot be checked against them' +
+        ' — the "Currently stored" column is showing ? rather than a value for that reason.' +
+        String.fromCharCode(10) + String.fromCharCode(10) +
+        'Close the builder and open it again to reload them, then retry. Nothing has been changed.');
+      return;
+    }
+    if (_dupHits.length) { alert(_evtDuplicateRefusalText_(_dupHits, _dupCtx)); return; }
   }
 
   var marketplaceId = _evtResolveMarketplaceId(site);

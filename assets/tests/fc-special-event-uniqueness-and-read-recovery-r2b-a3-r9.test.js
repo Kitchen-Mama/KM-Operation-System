@@ -162,8 +162,15 @@ var CTX = { company: 'ResUS', country: 'US', marketplace: 'Amazon', eventFlag: '
     'B9a and the refusal names each one with the window it already occupies', txt);
   ok(/Nothing was written/.test(txt), 'B9b and states plainly that nothing was written');
   var SAVE = fnSrc(FCS, 'saveEventUpdate');
-  ok(/if \(_dupHits && _dupHits\.length\) \{ alert\(_evtDuplicateRefusalText_\(_dupHits, _dupCtx\)\); return; \}/.test(SAVE),
+  ok(/if \(_dupHits\.length\) \{ alert\(_evtDuplicateRefusalText_\(_dupHits, _dupCtx\)\); return; \}/.test(SAVE),
     'B9c the save returns on ANY conflict — conflicting rows are never skipped so the rest can save');
+  ok(!/_dupHits\s*\.\s*filter|_dupHits\s*\.\s*slice/.test(SAVE),
+    'B9c1 and it never narrows the conflict set — a partial save of an authored set is a different set');
+  // BASE-EVENT-FC-READINESS §C/§E — the third outcome, which used to fall through to the server.
+  ok(/if \(_dupHits === null\) \{/.test(SAVE),
+    'B9c2 an UNREADABLE event model refuses HERE, rather than walking into a predictable stage-1 refusal');
+  ok(SAVE.indexOf('_dupHits === null') < SAVE.indexOf('_dupHits.length'),
+    'B9c3 and it is decided BEFORE the conflict count, because null has no length to read');
   ok(SAVE.indexOf('_evtDuplicateConflicts_') < SAVE.indexOf('DB.upsertCampaign'),
     'B9d and it runs BEFORE stage 1, so a blocked save writes nothing at any table');
   ok(/if \(!_evtEditingActive_\(\)\) \{/.test(SAVE.slice(SAVE.indexOf('A3-R9 §2'))),

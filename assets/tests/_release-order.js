@@ -613,6 +613,13 @@ var ROUND_TOKENS = [
   //
   // No new file enters the application set. index.html, inventory-compat.js and
   // inventory-replenishment.js change together, so the whole application set rotates together.
+  //
+  // BASE-EVENT-FC-READINESS RIDES THIS SAME TOKEN, and that is the reuse rule rather than an
+  // oversight: `s2r3-dbunknown-20260922` has NOT been served in production — it is a local commit and
+  // the deployed page still reports `stabilityshare-r2-20260922`. A token may be reused until the
+  // bytes it names have actually been served, because no browser can be holding the earlier version
+  // of them. fc-summary.js joins index.html, inventory-compat.js and inventory-replenishment.js under
+  // this one entry; the whole application set still rotates together.
   's2r3-dbunknown-20260922'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same

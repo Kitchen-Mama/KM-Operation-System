@@ -768,9 +768,9 @@ async function main() {
     // The client half of the uniqueness rule. It is not the authority — 14_ is — but an operator who
     // reaches a server refusal the browser could have named first has been failed by this gate.
     var S = fnSrc(FCS, 'saveEventUpdate');
-    var fa = faulted(S, '    if (_dupHits && _dupHits.length) { alert(_evtDuplicateRefusalText_(_dupHits, _dupCtx)); return; }',
+    var fa = faulted(S, '    if (_dupHits.length) { alert(_evtDuplicateRefusalText_(_dupHits, _dupCtx)); return; }',
       '    if (false) { return; }', 'M5');
-    return !/_dupHits && _dupHits\.length/.test(fa);
+    return !/_dupHits\.length/.test(fa);
   })() === true);
 
   mutant('M6  the resolver matching on SKU alone, ignoring the window', (function () {
