@@ -2575,7 +2575,7 @@ function _populateRegularScopeSelects() {
   // Demo ON → demo dataset only; Demo OFF (live) → live sources only (never mix demo into live,
   // which previously produced duplicate marketplaces e.g. two "Amazon").
   var demoOn = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
-  var mkts = (!demoOn && window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+  var mkts = demoOn ? [] : _fcGetMarketplaces();   // §14.4 — the page's one marketplaces owner
   var fcRows = (!demoOn && window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : [];
   function distinct(arr) { var o = [], s = {}; arr.forEach(function(v){ v = String(v||'').trim(); if (v && !s[v]) { s[v]=1; o.push(v); } }); return o.sort(); }
   var srcCountries = demoOn
@@ -2728,7 +2728,7 @@ function _fcRegularSiteOptions(country) {
   // Demo ON → demo dataset only; Demo OFF (live) → live registry + live fc_regular_forecast only.
   // (Mixing the demo dataset into live is what produced duplicate marketplaces like two "Amazon".)
   var demoOn = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
-  var mkts = (!demoOn && window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+  var mkts = demoOn ? [] : _fcGetMarketplaces();   // §14.4 — the page's one marketplaces owner
   var fcRows = (!demoOn && window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : [];
   function tr(v){ return String(v==null?'':v).trim(); }
   function up(v){ return tr(v).toUpperCase(); }
@@ -3160,8 +3160,12 @@ function _evtPopulateExistingSelect() {
   else if (prev) { sel.value = ''; _evtClearEditing_(); }
   if (note) {
     note.hidden = groups.length > 0 ? false : true;
+    /* §10.1 — "the same SKU may have more than one window" was true under A3-R8 and is now exactly
+       what the uniqueness rule forbids: one event flag in one target year is ONE event for a scoped
+       SKU. Leaving the sentence there would advertise, on the picker itself, the create the server
+       refuses. The count is per EVENT, which is what the list actually holds. */
     note.textContent = groups.length
-      ? (groups.length + ' existing event window' + (groups.length === 1 ? '' : 's') + ' in this scope and year. Selecting one loads its saved values; the same SKU may have more than one window.')
+      ? (groups.length + ' saved event' + (groups.length === 1 ? '' : 's') + ' in this scope and year. Selecting one loads its saved values for editing.')
       : '';
   }
 }
@@ -3209,15 +3213,28 @@ function _evtApplyCurrentFcLabel_(scope) {
 function _evtSetEditingChrome_() {
   var on = _evtEditingActive_();
   _evtApplyCurrentFcLabel_();
+  /* §9 — THE BANNER DESCRIBES THE EVENT, NOT THE TABLES UNDER IT.
+
+     It used to name the campaign, the line and the forecast ids and call them "this event\'s
+     identity". Every one of those is a storage fact an operator has no way to act on, and the two
+     sentences spent on them crowded out the four facts that ARE actionable: which event is open, when
+     it runs, how big it is, and what can be changed from here. Two short lines, and no vocabulary
+     from the write path. */
   var banner = document.getElementById('event-editing-banner');
   if (banner) {
     banner.hidden = !on;
-    banner.textContent = on
-      ? ('Editing the saved event ' + (_evtEditing_.eventName || '') + ' (' + (_evtEditing_.startDate || '?')
-         + ' → ' + (_evtEditing_.endDate || '?') + '). Its campaign, line and forecast ids are preserved.'
-         + ' The event period can be changed here with an explicit confirmation; the site scope, the event'
-         + ' flag and the target year cannot — those ARE this event\'s identity.')
-      : '';
+    banner.innerHTML = '';
+    if (on) {
+      var n = _evtEditing_.skuCount;
+      var l1 = document.createElement('div');
+      l1.textContent = 'Editing ' + (_evtEditing_.eventName || 'this event')
+        + ' · ' + _evtSavedWindowText_()
+        + (n ? (' · ' + n + ' SKU' + (n === 1 ? '' : 's')) : '');
+      var l2 = document.createElement('div');
+      l2.textContent = 'Forecast quantities and prices can be edited here. '
+        + 'To move the dates, tick “Change the event period”.';
+      banner.appendChild(l1); banner.appendChild(l2);
+    }
   }
   // A3-R9 §4 — THE DATES ARE NO LONGER DISABLED. One event flag in one target year is one event, so the
   // period is an attribute of this event rather than a second event's name, and the canonical way to
@@ -3229,10 +3246,9 @@ function _evtSetEditingChrome_() {
   ['event-start-date', 'event-end-date'].forEach(function (id) {
     var el = document.getElementById(id); if (el) { el.disabled = false; }
   });
-  var row = document.getElementById('event-window-confirm-row');
-  if (row) row.hidden = !on;
   var cb = _evtWindowConfirmEl_();
   if (cb && !on) cb.checked = false;
+  _evtSyncPeriodUi_();   // §10.2 — the ONE owner of both period rows, called after the tick is settled
   var addBtn = document.getElementById('evt-add-row-btn');
   if (addBtn && on) { addBtn.disabled = false; addBtn.style.opacity = ''; }
 }
@@ -3266,6 +3282,9 @@ function _evtHydrateExisting_(campaignId) {
     campaignVersion: campRaw ? _cmpFingerprint_(campRaw) : '',
     campaignKnown: !!campRaw,
     eventName: g.eventName, startDate: g.startDate, endDate: g.endDate, year: g.year,
+    // §9 — how many SKUs the SAVED event holds. Counted here rather than from the form, which the
+    // operator may already have added a row to; the banner reports what is stored.
+    skuCount: (g.rows || []).length,
     lines: {}
   };
 
@@ -3448,7 +3467,7 @@ function _evtMode() {
 // ResUS Amazon are separate scopes. Company is derived from the selected site, never guessed.
 function _populateEventScopeSelects() {
   var demoOn = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
-  var mkts = (!demoOn && window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+  var mkts = demoOn ? [] : _fcGetMarketplaces();   // §14.4 — the page's one marketplaces owner
   var fcRows = (!demoOn && window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : [];
   function distinct(arr) { var o = [], s = {}; arr.forEach(function(v){ v = String(v||'').trim(); if (v && !s[v]) { s[v]=1; o.push(v); } }); return o.sort(); }
   var srcCountries = demoOn
@@ -3587,13 +3606,26 @@ function _evtUpdateDiscountRow() {
 }
 
 // Toggle Event Flag behaviour.
-//   Normal    → NOT a special event; Event Period hidden, Save creates nothing.
-//   != Normal → Event Period shown/required; Forecast Qty required per SKU row / group card.
+//   Normal    → NOT a special event; Save creates nothing.
+//   != Normal → Forecast Qty required per SKU row / group card.
+//
+// FC-SUMMARY-R2B-A3-R10 §10.2 — THIS NO LONGER DECIDES WHETHER THE DATE CONTROLS EXIST.
+//
+// It was the ONLY owner of `event-period-row`, and it was keyed on the event flag alone. Two things
+// then set that flag WITHOUT firing its change handler: `openEventModal` forces it to 'Normal', and
+// `_evtHydrateExisting_` assigns the saved event's flag programmatically. A programmatic assignment
+// raises no change event, so the row kept whatever visibility the last OPEN had left it with — hidden.
+// A saved event therefore offered a "confirm the period change" tick above a period it was not
+// showing, and A3-R9 had just made those dates load-bearing for the save. The two halves of one
+// feature were owned by different functions and only one of them ran.
+//
+// The flag still decides whether a period is MEANINGFUL — 'Normal' writes no event at all, and the
+// description below still says so. Visibility belongs to `_evtSyncPeriodUi_`, which derives it from
+// the mode the builder is actually in.
 function toggleEventFlagFields() {
   var flag = (document.getElementById('event-name-input') || {}).value || 'Normal';
   var isNormal = flag === 'Normal';
-  var periodRow = document.getElementById('event-period-row');
-  if (periodRow) periodRow.style.display = isNormal ? 'none' : '';
+  _evtSyncPeriodUi_();
   var desc = document.getElementById('event-method-description');
   if (desc) {
     desc.innerHTML = isNormal
@@ -3742,7 +3774,7 @@ function _evtResolveMarketplaceId(site) {
   function up(v){ return String(v==null?'':v).trim().toUpperCase(); }
   function lo(v){ return String(v==null?'':v).trim().toLowerCase(); }
   var mkey = _fcResolveMarketplaceKey(site.marketplace);
-  var mkts = (window.KM && window.KM.DB && window.KM.DB.getMarketplaces) ? window.KM.DB.getMarketplaces() : [];
+  var mkts = _fcGetMarketplaces();                 // §14.4 — the page's one marketplaces owner
   var m = mkts.filter(function(x){
     return (!site.company || up(x.company) === up(site.company)) &&
       (!site.country || up(x.country) === up(site.country)) &&
@@ -4504,6 +4536,71 @@ function _evtWindowChangeGate_(startDate, endDate) {
     from: _evtWindowKey_(o.startDate, o.endDate), to: _evtWindowKey_(startDate, endDate),
     campaignId: _trStrTok_(o.campaignId) };
 }
+/* FC-SUMMARY-R2B-A3-R10 §10.2 — ONE FUNCTION OWNS THE PERIOD CONTROLS.
+
+   Derived from the two facts that actually decide it — is a saved event loaded, and has its period
+   change been confirmed — and from nothing else. Every entry point that can change either fact calls
+   this; no other function writes to these elements. That is the property, and it is what makes "the
+   dates cannot be hidden by choosing a country, a mode or an assist method" true by construction
+   rather than by six coincidences.
+
+     NEW EVENT       dates always visible and required; no confirmation tick, because there is no
+                     saved period to confirm a change to.
+     EXISTING, OFF   dates hidden; the saved period is stated in words; an ordinary forecast edit
+                     needs none of it, and a hidden control carries no authority over the save.
+     EXISTING, ON    dates visible, PREFILLED with the saved window, and labelled as new ones. */
+function _evtFmtDay_(v) {
+  var s = _trStrTok_(v).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s.split('-').join('/') : (s || '—');
+}
+function _evtSavedWindowText_() {
+  var o = _evtEditing_ || {};
+  return _evtFmtDay_(o.startDate) + ' → ' + _evtFmtDay_(o.endDate);
+}
+function _evtSyncPeriodUi_() {
+  if (typeof document === 'undefined') return;
+  var editing = _evtEditingActive_();
+  var confirmed = editing && _evtWindowConfirmChecked_();
+  var showDates = !editing || confirmed;
+
+  var periodRow = document.getElementById('event-period-row');
+  if (periodRow) periodRow.style.display = showDates ? '' : 'none';
+
+  var confirmRow = document.getElementById('event-window-confirm-row');
+  if (confirmRow) confirmRow.hidden = !editing;
+
+  var help = document.getElementById('event-window-confirm-help');
+  if (help) {
+    help.textContent = editing
+      ? (confirmed
+          ? ('Saved period ' + _evtSavedWindowText_() + '. Enter the new dates below.')
+          : ('Saved period ' + _evtSavedWindowText_() + '. Tick to change it.'))
+      : '';
+  }
+  /* The labels say which dates these are. On a saved event they are the NEW ones, and saying so is
+     what stops the prefilled saved window reading as a field the operator has already filled in. */
+  var sl = document.getElementById('event-start-date-label');
+  if (sl) sl.textContent = confirmed ? 'New Start Date *' : 'Event Start Date *';
+  var el = document.getElementById('event-end-date-label');
+  if (el) el.textContent = confirmed ? 'New End Date *' : 'Event End Date *';
+}
+
+/* Ticking reveals the saved window to edit; UNTICKING is an abandon, not merely a hidden field. A
+   period left half-typed behind an unticked box would otherwise be refused by the save gate for a
+   change the operator had already decided against. */
+function _evtOnWindowConfirmToggle_() {
+  if (!_evtWindowConfirmChecked_()) {
+    var o = _evtEditing_ || {};
+    var sd = document.getElementById('event-start-date'); if (sd) sd.value = _trStrTok_(o.startDate);
+    var ed = document.getElementById('event-end-date'); if (ed) ed.value = _trStrTok_(o.endDate);
+    _evtClearWindowChangeNotice_();
+    _evtClearPeriodError();
+  }
+  _evtSyncPeriodUi_();
+}
+// the inline handler the markup names
+function _evtOnWindowConfirmToggle() { _evtOnWindowConfirmToggle_(); }
+
 /* Put the saved window back — the loaded event is unchanged and the next Save is an ordinary edit. */
 function _evtRestoreLoadedWindow_() {
   var o = _evtEditing_ || {};
@@ -4511,6 +4608,7 @@ function _evtRestoreLoadedWindow_() {
   var ed = document.getElementById('event-end-date'); if (ed) ed.value = _trStrTok_(o.endDate);
   var cb = _evtWindowConfirmEl_(); if (cb) cb.checked = false;
   _evtClearWindowChangeNotice_();
+  _evtSyncPeriodUi_();   // the tick was just cleared; the controls follow it
   if (typeof _evtBuildGroups === 'function' && _evtGroups.length) _evtBuildGroups();
 }
 function _evtClearWindowChangeNotice_() {
@@ -4519,17 +4617,17 @@ function _evtClearWindowChangeNotice_() {
 }
 function _evtShowWindowChangeNotice_(gate) {
   var h = (typeof document === 'undefined') ? null : document.getElementById('event-window-change-notice');
-  var text = 'Nothing was written. This event is saved for ' + gate.from + ' and the form now says '
-    + gate.to + '. Changing a saved event\'s period is allowed, but it is never silent: tick'
-    + ' \u201cConfirm event period change\u201d and save again. The event keeps its identity and its'
-    + ' forecast id and moves to the campaign for the new window; the old campaign and every other SKU'
-    + ' on it are left exactly as they are. To abandon the change, put the saved period back.';
+  /* §9 — what was written, what to do, and nothing about where the rows live. The old wording spent
+     two of its four sentences on identity, forecast ids and campaigns. */
+  var text = 'Nothing was saved. This event runs ' + gate.from + ' and the form now says ' + gate.to
+    + '. To move it, tick \u201cChange the event period\u201d and save again — only this event moves,'
+    + ' and every other SKU keeps its own dates.';
   if (!h) { alert(text); return; }
   h.innerHTML = '';
   var p = document.createElement('div'); p.textContent = text; h.appendChild(p);
   var b1 = document.createElement('button');
   b1.type = 'button'; b1.className = 'fc-btn fc-btn--cancel'; b1.style.marginTop = '8px';
-  b1.textContent = 'Restore ' + gate.from;
+  b1.textContent = 'Keep ' + gate.from;
   b1.onclick = function () { _evtRestoreLoadedWindow_(); };
   h.appendChild(b1);
   h.hidden = false;
@@ -4546,6 +4644,18 @@ async function saveEventUpdate() {
   var eventFlag = (document.getElementById('event-name-input') || {}).value || 'Normal';
   var eventStartDate = ((document.getElementById('event-start-date') || {}).value || '').trim();
   var eventEndDate = ((document.getElementById('event-end-date') || {}).value || '').trim();
+  /* FC-SUMMARY-R2B-A3-R10 §10.2 — THE FORM IS STILL READ HERE, DELIBERATELY.
+
+     It is tempting to substitute the saved window whenever the tick is off, since the inputs are then
+     hidden. That would SWALLOW a changed period instead of refusing it, and A3-R9 §8 requires the
+     refusal: a changed window without the confirmation writes nothing at all and states both windows.
+     Silently saving under the old dates is the worse of the two failures, because the operator is told
+     the save succeeded.
+
+     What keeps a hidden field from carrying a stale edit is `_evtOnWindowConfirmToggle_`, which puts
+     the saved window back the moment the tick is cleared — so an unticked form does not HOLD a
+     different window. If the two ever diverge anyway, that is a real state and the gate below is
+     exactly what it is for. */
   var eventPeriod = _evtComposePeriod(eventStartDate, eventEndDate);
   var monthIdx = _evtEventMonthIdx();
   var mode = _evtMode();
@@ -5005,6 +5115,34 @@ var _FC_SLICE_KEYS_ = {
 };
 var _FC_MODEL_KEYS_ = ['fcRegularForecast', 'fcSpecialEvents', 'fcTargetRules', 'marketplaces'];
 var _fcSliceState_ = {};
+/* FC-SUMMARY-R2B-A3-R10 §14.1/§14.2 — THE MODEL AND THE LEDGER ARE ONE FACT, SO THEY ARE RESET
+   TOGETHER.
+
+   `_fcReadModel` holds the data and `_fcSliceState_` describes it, and a refusal used to write only
+   the first. The consequence was reproducible and silent: Regular lands, bootstrap times out, the
+   refusal nulls the model, and the Regular record is left saying CURRENT about rows that no longer
+   exist. Retry asks only for what the ledger calls failed, so it fetched bootstrap alone, the banner
+   cleared, and the Regular table drew EMPTY with no error at all — the one thing the slice contract
+   exists to forbid, since unread is not empty. Only navigating away and back recovered it.
+
+   Two writes that must be kept in step are a bug waiting for the next caller to forget one. This is
+   the single operation instead, and `_fcRenderError_` is its only caller.
+
+   THE GENERATION is the other half. A merge is a COMMIT into shared state, and the page checked
+   ownership at the DRAW, one step too late — a request issued before the reset could still write its
+   answer into the model the reset had just emptied. The generation is captured at dispatch and
+   checked immediately before the commit, so a superseded answer is dropped rather than merged. */
+var _fcModelGen_ = 0;
+function _fcModelGenNow_() { return _fcModelGen_; }
+function _fcInvalidateModel_(reason) {
+  _fcReadModel = null;          // fail closed — NEVER fall back to the broad cache for the primary render
+  _fcCandidateYears_ = null;    // the year list belongs to the model; a refusal must not outlive it
+  _fcSliceState_ = {};          // and nothing may still claim to describe what was just discarded
+  _fcModelGen_++;               // answers already in flight belong to the model that no longer exists
+  _fcInvalidateReason_ = String(reason || 'READ_REFUSED');
+  return _fcModelGen_;
+}
+var _fcInvalidateReason_ = '';
 function _fcSliceRec_(n) {
   if (!_fcSliceState_[n]) _fcSliceState_[n] = { state: FC_FRESH_.UNREAD, observedAt: null, flight: null, loads: 0, err: null };
   return _fcSliceState_[n];
@@ -5070,6 +5208,7 @@ function _fcMergeSlice_(name, adapted) {
 function _fcSliceFetch_(name) {
   var rec = _fcSliceRec_(name);
   if (rec.flight) return rec.flight;
+  var gen = _fcModelGenNow_();     // §14.2 — the model this answer will be committed into
   if (!(window.KM && window.KM.api && typeof window.KM.api.getWorkspace === 'function')) {
     return Promise.reject({ code: 'WORKSPACE_UNAVAILABLE', message: 'FC Summary Workspace API unavailable.' });
   }
@@ -5122,6 +5261,13 @@ function _fcSliceFetch_(name) {
       /* No second 'carried nothing' gate here: _fcValidWorkspaceData_ above already answers false for a
          payload with no canonical table, and two gates over one fact make the first one impossible to
          test — a mutation that removes it changes nothing, which reads as a missing assertion. */
+      /* §14.2 — SUPERSEDED. The model this answer was asked for has since been discarded, so
+         committing it would repopulate a model the page has already reported as gone and leave the
+         ledger describing a mixture of two. Dropped, and said so, rather than merged. */
+      if (_fcModelGenNow_() !== gen) {
+        throw { code: 'FC_SUMMARY_READ_SUPERSEDED', superseded: true,
+          message: 'A newer FC Summary read replaced this one; the older answer was discarded.' };
+      }
       _fcMergeSlice_(name, adapted);   // THE ONLY COMMIT, and every check above has passed
       rec.state = FC_FRESH_.CURRENT; rec.err = null;
       if (adapted.observedAt) rec.observedAt = adapted.observedAt;
@@ -5130,8 +5276,12 @@ function _fcSliceFetch_(name) {
     .catch(function (err) {
       /* A REFUSAL NEVER BLANKS WHAT IS ALREADY TRUE. Data already in hand becomes STALE — real, and
          older than we would like. Only a slice with nothing behind it is REFUSED. */
-      rec.state = had ? FC_FRESH_.STALE : FC_FRESH_.REFUSED;
-      rec.err = err || null;
+      /* §14.2 — a record belonging to a discarded model describes nothing the page is showing. Marking
+         it REFUSED would put a failure in the banner for a slice nobody is currently reading. */
+      if (_fcModelGenNow_() === gen) {
+        rec.state = had ? FC_FRESH_.STALE : FC_FRESH_.REFUSED;
+        rec.err = err || null;
+      }
       throw err;
     });
   rec.flight = p.then(function (v) { rec.flight = null; return v; },
@@ -5213,9 +5363,25 @@ function _fcGetMarketplaces() {
 // campaign_sku_lines is new here and is not an optimisation: rehydrating an existing event needs the
 // per-line deal price and discount, and that table is where they live. It rides the Special Event
 // path only. The Regular path's list got shorter, not longer.
+/* FC-SUMMARY-R2B-A3-R10 §14.4 — `marketplaces` IS NOT A PREREQUISITE, BECAUSE AN AUTHORITATIVE READ
+   HAS ALREADY BROUGHT IT.
+
+   It is emitted by the bootstrap slice, which every mount performs, and both stores run the SAME
+   `normalizeMarketplaceRecord` with the SAME filter `normalizeOperationDb` applies — so the workspace
+   array and the broad-cache array are the same rows in the same shape. Fetching it again was a second
+   physical `getTable` for rows already in memory, and in production that read is what failed:
+   HTTP_TRANSPORT_ERROR / getTable / marketplaces, which presented as a dead Builder on the first Next.
+
+   The remedy is ownership, not a retry: the four Builder call sites now ask the page accessor
+   `_fcGetMarketplaces()`, the same one the table itself renders from, so there is ONE answer to "what
+   marketplaces are there" on this page. No second cache authority is created — the accessor reads the
+   read model in Workspace mode and the broad cache in Legacy, exactly as it already did.
+
+   `marketplace_skus` STAYS. It is not in the workspace, so nothing has read it; the difference is
+   which rows an authoritative read already brought, not a preference for one path over the other. */
 var _FC_PREREQ_TABLES_ = {
-  regular: ['sku_details', 'marketplace_skus', 'marketplaces', 'fc_regular_forecast'],
-  event: ['sku_details', 'marketplace_skus', 'marketplaces', 'campaigns', 'campaign_sku_lines',
+  regular: ['sku_details', 'marketplace_skus', 'fc_regular_forecast'],
+  event: ['sku_details', 'marketplace_skus', 'campaigns', 'campaign_sku_lines',
           'pricing_list', 'fc_special_events']
 };
 // The union, kept as the reset surface and as the CSV-import/Event-Assist fallback list. Nothing
@@ -5386,8 +5552,9 @@ function _fcErrDetail_(err, state) {
     return String((err && err.message) || 'failed') + ' [' + String((err && err.code) || 'READ_FAILED') + ']';
 }
 function _fcRenderError_(err) {
-  _fcReadModel = null;   // fail closed — NEVER fall back to the broad cache for the primary render
-  _fcCandidateYears_ = null;   // the year list belongs to the model; a refusal must not outlive it
+  /* §14.1 — ONE operation, not two assignments a later reader can forget to keep in step. The ledger
+     goes with the model it describes, so Retry asks for everything the page actually needs. */
+  _fcInvalidateModel_((err && err.code) || 'FC_SUMMARY_READ_FAILED');
   var rg = _fcRegion_(); if (rg) rg.set(window.KM.loadState.STATES.ERROR);
   var code = (err && err.code) || 'FC_SUMMARY_READ_FAILED';
   var message = (err && err.message) || 'FC Summary read failed';
@@ -5463,9 +5630,44 @@ function _fcMountLoad_(afterLoad) {
   /* Draw what is already known BEFORE the missing slice is asked for. A page holding two of three
      datasets should show two of three, not a blank frame until the third arrives. */
   if (_fcReadModel) draw();
-  need.forEach(function (n) {
-    _fcSliceFetch_(n).then(draw).catch(function (err) { _fcSliceFailed_(n, err, epoch); });
+  _fcDispatchWhenBootClear_(function () {
+    if (!_fcOwns_(epoch)) return;      // routed away while the boot read was still open
+    need.forEach(function (n) {
+      _fcSliceFetch_(n).then(draw).catch(function (err) { _fcSliceFailed_(n, err, epoch); });
+    });
   });
+}
+
+/* FC-SUMMARY-R2B-A3-R10 §14.3 — WHY A COLD MOUNT WAITS FOR THE BOOT READ, AND WHY THAT IS NOT A DELAY.
+
+   The 60 s bound is the transport's and it is NOT touched here. What was wrong is when the clock
+   starts: it starts at DISPATCH, so every millisecond this read spends waiting for a backend slot is
+   charged to its own budget rather than to its own execution. A hard reload followed immediately by
+   FC Summary put these two slices on the wire beside `getClientCapabilities`, and the arithmetic —
+   not a claim about the backend scheduler — says the share of 60 s left for the read's own work can
+   only go down. R6-R5 measured exactly this on Site Inventory: queue 6 480 ms + exec 55 000 ms timed
+   out where the identical work alone succeeded.
+
+   So the mechanism already exists and this page simply was not using it. Nothing new is invented, no
+   second coordinator appears, and the wait is bounded three ways: only a dependency that is actually
+   PENDING is waited for, a FAILED capability read releases its waiters exactly like a successful one,
+   and `whenReady`'s cap can only make the read start SOONER. When the arbiter is absent — a test rig,
+   a page loaded without the core module — the callback runs SYNCHRONOUSLY, which is the behaviour
+   this replaces, so nothing acquires a dependency on the arbiter being present.
+
+   The two slices still go out TOGETHER once the lane is clear. Two parallel requests were measured at
+   4.5 s against 10 s sequential, and this round does not reverse a measurement it did not retake. */
+var _FC_BOOT_DEPS_ = ['capabilities'];
+function _fcDispatchWhenBootClear_(go) {
+  var ba = null;
+  try { ba = (typeof window !== 'undefined' && window.KM && window.KM.bootArbiter) ? window.KM.bootArbiter : null; } catch (e) { ba = null; }
+  if (!ba || typeof ba.whenReady !== 'function' || typeof ba.dependencyState !== 'function') { go(); return; }
+  var pending = _FC_BOOT_DEPS_.filter(function (n) {
+    try { return ba.dependencyState(n) === 'PENDING'; } catch (e) { return false; }
+  });
+  if (!pending.length) { go(); return; }   // nothing open to queue behind: dispatch now, as before
+  try { if (typeof ba.noteIntent === 'function') ba.noteIntent('fc-summary-primary-read'); } catch (e) {}
+  Promise.resolve(ba.whenReady(pending)).then(go, go);   // FAILED releases exactly like SETTLED
 }
 
 /* A slice that failed. The page keeps everything it still knows and says which part it could not get;
@@ -5501,9 +5703,30 @@ function _fcNoteFreshness_(failedSlice, err) {
 
 /* Retry asks for the slices that failed, and only those. Re-reading the page because one part of it
    did not arrive is how a ten-second request comes back for no reason. */
+/* Which slices this tab cannot draw without. After an invalidation the ledger is empty rather than
+   failed, so asking only for FAILED slices would ask for nothing at all — the page would present a
+   Retry that issues no request. Derived from the same two declarations the mount uses. */
+function _fcSlicesNeededNow_() {
+  var want = _FC_TAB_SLICE_[_fcTabNow_()] || FC_SLICE_.REGULAR;
+  var need = [];
+  if (!_fcSliceHasData_(FC_SLICE_.BOOTSTRAP)) need.push(FC_SLICE_.BOOTSTRAP);
+  var ridesBootstrap = (_FC_SLICE_KEYS_[want] || []).every(function (k) {
+    return _FC_SLICE_KEYS_[FC_SLICE_.BOOTSTRAP].indexOf(k) !== -1;
+  });
+  if (!ridesBootstrap && !_fcSliceHasData_(want)) need.push(want);
+  return need;
+}
 function _fcRetryFailedSlices_() {
   var epoch = _fcEpoch_();
+  /* The region is still ERROR from the refusal that drew the red box. The mount announces a load
+     here and Retry did not, so the one surface that records "what is on screen" kept describing a
+     refusal the page was already recovering from. */
+  var rg = _fcRegion_(); if (rg) rg.beginLoad(!!_fcReadModel);
+  /* §14.1 — the UNION of what failed and what this tab is missing. A slice can be missing without
+     being marked failed (its record went with the model), and a slice can be marked failed while
+     another tab owns it; asking for either alone is how Retry came back with an empty table. */
   var bad = _fcFailedSlices_();
+  _fcSlicesNeededNow_().forEach(function (n) { if (bad.indexOf(n) === -1) bad.push(n); });
   if (!bad.length) bad = [_FC_TAB_SLICE_[_fcTabNow_()] || FC_SLICE_.REGULAR];
   bad.forEach(function (n) {
     _fcSliceFetch_(n)                          // single-flight: a second click while in flight adds nothing

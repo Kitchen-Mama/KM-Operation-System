@@ -12,7 +12,7 @@
 //      case was queuing behind every other writer in the project and failing at the 30 s bound.
 //
 //   B  A prerequisite load could fail with REQUEST_TIMEOUT / "Action: getTable". True, and unusable:
-//      the Special path asks for seven tables and the message names the verb, not the noun. The
+//      the Special path asks for six tables and the message names the verb, not the noun. The
 //      transport had the answer the whole time — getOperationDbTableFromSheet attaches `table` to
 //      every typed error it throws — and the shared formatter simply did not carry the field.
 //
@@ -344,30 +344,37 @@ function prereqWorld(resetSrc) {
   };
   return sb;
 }
-var EVENT_TABLES = ['sku_details', 'marketplace_skus', 'marketplaces', 'campaigns',
+// A3-R10 §14.4 — `marketplaces` is no longer a prerequisite on either path: the fcSummary bootstrap
+// slice emits it, adapted through the same normalizer and filter as the broad cache, so the Builder
+// reads it from the page model and issues no physical getTable for it.
+var EVENT_TABLES = ['sku_details', 'marketplace_skus', 'campaigns',
   'campaign_sku_lines', 'pricing_list', 'fc_special_events'];
-var REGULAR_TABLES = ['sku_details', 'marketplace_skus', 'marketplaces', 'fc_regular_forecast'];
-var SHARED = ['sku_details', 'marketplace_skus', 'marketplaces'];
+var REGULAR_TABLES = ['sku_details', 'marketplace_skus', 'fc_regular_forecast'];
+var SHARED = ['sku_details', 'marketplace_skus'];
 
 (function () {
   var W = prereqWorld();
   eq(W._FC_PREREQ_TABLES_.regular.slice().sort(), REGULAR_TABLES.slice().sort(), 'C0  the Regular path\'s tables');
   eq(W._FC_PREREQ_TABLES_.event.slice().sort(), EVENT_TABLES.slice().sort(), 'C0a the Special path\'s tables');
-  var shared = REGULAR_TABLES.filter(function (t) { return EVENT_TABLES.indexOf(t) !== -1; });
-  eq(shared.sort(), SHARED.slice().sort(), 'C0b and the three they share');
+  // Derived from the SOURCE declarations, not from the two constants above — intersecting this file's
+  // own lists asserted nothing about the page and would have survived either list moving.
+  var shared = W._FC_PREREQ_TABLES_.regular.filter(function (t) {
+    return W._FC_PREREQ_TABLES_.event.indexOf(t) !== -1;
+  });
+  eq(shared.sort(), SHARED.slice().sort(), 'C0b and the two they share');
 })();
 
 (function () {
   // §12.8/§12.9 — A: cold Regular, then Regular again.
   var W = prereqWorld();
-  eq(W.__load('regular').sort(), REGULAR_TABLES.slice().sort(), 'C1  cold Regular fetches its four tables');
+  eq(W.__load('regular').sort(), REGULAR_TABLES.slice().sort(), 'C1  cold Regular fetches its three tables');
   eq(W.__load('regular'), [], 'C2  warm Regular fetches NOTHING — 0 physical requests');
 })();
 
 (function () {
   // §12.10/§12.11 — B: cold Special, then Special again.
   var W = prereqWorld();
-  eq(W.__load('event').sort(), EVENT_TABLES.slice().sort(), 'C3  cold Special fetches its seven tables');
+  eq(W.__load('event').sort(), EVENT_TABLES.slice().sort(), 'C3  cold Special fetches its six tables');
   eq(W.__load('event'), [], 'C4  warm Special fetches NOTHING — 0 physical requests');
 })();
 

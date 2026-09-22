@@ -76,7 +76,9 @@ function assignFnSrc(src, dotted) {
 }
 
 var PAGE_VARS = ['FC_SLICE_', 'FC_FRESH_', '_FC_TAB_SLICE_', '_FC_SLICE_KEYS_', '_FC_MODEL_KEYS_',
-                 'FC_RETRY_', 'FC_RETRY_LABEL_', 'FC_STAGE_', 'FC_MSG_', 'FC_VIEW_', '_TR_UNAVAILABLE_'];
+                 'FC_RETRY_', 'FC_RETRY_LABEL_', 'FC_STAGE_', 'FC_MSG_', 'FC_VIEW_', '_TR_UNAVAILABLE_',
+                 // A3-R10 §14.1/§14.2 — the model generation and the boot-dependency list.
+                 '_fcSliceState_', '_fcModelGen_', '_fcInvalidateReason_', '_FC_BOOT_DEPS_'];
 var PAGE_FNS = ['_fcSliceRec_', '_fcSliceStates_', '_fcWorkspaceMode_', '_fcHas_', '_fcSliceHasData_',
                 '_fcModelUsable_', '_fcTabNow_', '_fcMergeSlice_', '_fcSliceFetch_', '_fcFailedSlices_',
                 '_fcMountLoad_', '_fcSliceFailed_', '_fcNoteFreshness_', '_fcRetryFailedSlices_',
@@ -86,7 +88,11 @@ var PAGE_FNS = ['_fcSliceRec_', '_fcSliceStates_', '_fcWorkspaceMode_', '_fcHas_
                 // validator travels with it. A gate that is not lifted is a gate that throws.
                 '_fcValidWorkspaceData_',
                 '_fcYearsOf_', '_fcRetryLabel_', '_fcNoteEnvMeta_', '_fcGetRegularForecast',
-                '_fcGetSpecialEvents', '_fcGetTargetRules', '_fcGetMarketplaces', '_trExistingRules_'];
+                '_fcGetSpecialEvents', '_fcGetTargetRules', '_fcGetMarketplaces', '_trExistingRules_',
+                // A3-R10 — _fcRenderError_ delegates the reset, _fcMountLoad_ defers dispatch, and
+                // _fcRetryFailedSlices_ asks what the tab needs. All three are already driven here.
+                '_fcModelGenNow_', '_fcInvalidateModel_', '_fcDispatchWhenBootClear_',
+                '_fcSlicesNeededNow_'];
 
 // ------------------------------------------------------------------ the world ------------------
 function ROWS() {

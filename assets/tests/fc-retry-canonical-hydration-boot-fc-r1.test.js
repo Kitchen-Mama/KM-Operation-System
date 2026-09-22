@@ -232,6 +232,8 @@ var VARS = [
   // _fcAfterWrite and _fcRefreshViewNow_ to resolve. Nothing this section asserts changes.
   'FC_SLICE_', 'FC_FRESH_', '_FC_TAB_SLICE_', '_FC_SLICE_KEYS_', '_FC_MODEL_KEYS_', '_fcSliceState_',
   'FC_VIEW_', 'FC_MSG_', 'FC_RETRY_', 'FC_RETRY_LABEL_',
+  // A3-R10 §14.2 — _fcSliceFetch_ checks the model generation at its commit point.
+  '_fcModelGen_', '_fcInvalidateReason_',
   // INCIDENT-BOOT-FC-R1 §4D — the stage vocabulary the refusal banner names.
   'FC_STAGE_', 'FC_UNREADABLE_CODES_',
   '_fcViewState_', '_fcReadbackFlight_',
@@ -246,7 +248,8 @@ var FNS = ['_fcRetryLabel_', '_fcErrDetail_', '_fcBannerHost_', '_fcClearBanner_
   '_fcTabNow_', '_fcWorkspaceMode_', '_fcHas_', '_fcSliceHasData_', '_fcSliceRec_', '_fcMergeSlice_',
   '_fcFailedSlices_', '_fcEffectiveWorkspace',
   '_populateFcFilterOptionsFromDb', '_fcRerenderTables_', '_fcSliceFetch_', '_fcRefreshViewNow_',
-  '_fcRenderError_', '_fcEscapeHtml'];
+  '_fcRenderError_', '_fcEscapeHtml',
+  '_fcModelGenNow_', '_fcInvalidateModel_'];
 
 function rows(year, n) {
   var out = [];
@@ -615,7 +618,10 @@ section('E. §6.1-6.12 — THE REQUIRED MATRIX');
       return tick().then(function () { return /Stage: hydration\.$/.test(c.__bannerText()); });
     }],
     ['M10 the year list outlives the model it came from', function (sw) {
-      var m = sw(JS, '  _fcCandidateYears_ = null;   // the year list belongs to the model', '  // the year list belongs to the model');
+      // A3-R10 §14.1 — the nulling moved into _fcInvalidateModel_, the ONE operation that discards
+      // the model and the ledger together; _fcRenderError_ now delegates to it. Same rule, named
+      // where it now lives — not loosened, and still driven through _fcRenderError_ below.
+      var m = sw(JS, '  _fcCandidateYears_ = null;    // the year list belongs to the model', '  // the year list belongs to the model');
       var c = build({ script: [envOk({ fcRegularForecast: rows(2026, 3), marketplaces: [] })], src: m });
       c._fcRefreshViewNow_(c.FC_MSG_.READ_FAILED, c.FC_RETRY_.COLD_READ);
       return tick().then(function () {

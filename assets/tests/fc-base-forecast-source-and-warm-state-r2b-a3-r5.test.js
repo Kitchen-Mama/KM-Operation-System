@@ -14,14 +14,16 @@
 //      A3-R4's unit proof was sound and its helper works; it reads a store nobody fills on that path.
 //      R3-R1 moved the FC Summary primary render onto the scoped fcSummary workspace and explicitly
 //      stopped loading the broad Operation DB for it, while the Builder's lazily-loaded broad-cache
-//      table list — sku_details, marketplace_skus, marketplaces, campaigns, campaign_sku_lines,
+//      table list — sku_details, marketplace_skus, campaigns, campaign_sku_lines,
 //      pricing_list, fc_special_events — has never contained fc_regular_forecast, by design. The row
 //      SHAPE was never the problem: both stores run the identical normalizer. The store was.
 //
 //   3  "Loading…" still returned on the first Special Next after a successful Special Event save.
 //      A3-R4 made invalidation per PATH, which is correct and too coarse: a Special save reaches
-//      campaigns, campaign_sku_lines and fc_special_events, and the four reference tables on that
-//      path — sku_details, marketplace_skus, marketplaces, pricing_list — were discarded with them.
+//      campaigns, campaign_sku_lines and fc_special_events, and the reference tables on that
+//      path — sku_details, marketplace_skus, pricing_list — were discarded with them.
+//      (A3-R10 §14.4 later removed `marketplaces` from this list entirely: the bootstrap slice
+//      owns those rows, so the Builder reads them from the page model and issues no getTable.)
 //
 // WHAT THIS SUITE IS FOR. §3 requires a fixture in the ACTUAL production read-model shape rather than
 // simplified synthetic rows, and requires it to FAIL at 5cbdd26 and pass after the repair. Section C
@@ -155,7 +157,15 @@ ok(PREREQ.indexOf('fc_regular_forecast') !== -1, 'B0  the Regular path does load
   vm.runInContext(PREREQ, sb);
   eq(sb._FC_PREREQ_TABLES_.event.indexOf('fc_regular_forecast'), -1,
     'B1  the SPECIAL path does not, and still must not — the Builder\'s broad-cache list is unchanged');
-  ok(sb._FC_PREREQ_TABLES_.event.length === 7, 'B1a it is still the seven-table contract');
+  // A3-R10 §14.4 — SIX, not seven. `marketplaces` is emitted by the bootstrap slice and adapted
+  // through the same normalizer and filter as the broad cache, so fetching it again was a second
+  // physical read for rows already in memory — and in production that read is the one that failed.
+  // Asserted as MEMBERSHIP rather than a count: a length alone cannot say WHICH table left.
+  eq(sb._FC_PREREQ_TABLES_.event.indexOf('marketplaces'), -1,
+    'B1a  marketplaces is NOT a prerequisite — an authoritative read already owns it');
+  ok(sb._FC_PREREQ_TABLES_.event.indexOf('marketplace_skus') !== -1,
+    'B1b  but marketplace_skus IS, because no workspace read carries it');
+  ok(sb._FC_PREREQ_TABLES_.event.length === 6, 'B1c  which leaves six');
 })();
 var GETREG = fnSrc(FCS, '_evtBaseFcForSku');
 ok(/_fcGetRegularForecast\(\)/.test(GETREG),
@@ -368,23 +378,23 @@ function resetWorld(resetSrc) {
   return sb;
 }
 
-var EVENT_TABLES = ['sku_details', 'marketplace_skus', 'marketplaces', 'campaigns',
+var EVENT_TABLES = ['sku_details', 'marketplace_skus', 'campaigns',
   'campaign_sku_lines', 'pricing_list', 'fc_special_events'];
 var CHANGED_BY_SPECIAL = ['campaigns', 'campaign_sku_lines', 'fc_special_events'];
-var UNCHANGED_BY_SPECIAL = ['sku_details', 'marketplace_skus', 'marketplaces', 'pricing_list'];
+var UNCHANGED_BY_SPECIAL = ['sku_details', 'marketplace_skus', 'pricing_list'];
 
 (function () {
   var W = resetWorld();
   eq(W._FC_SLICE_PREREQ_TABLES_.events.slice().sort(), CHANGED_BY_SPECIAL.slice().sort(),
     'D1  the census: a Special Event save reaches exactly these three tables');
   eq(W._FC_PREREQ_TABLES_.event.slice().sort(), EVENT_TABLES.slice().sort(),
-    'D1a and the Special path holds these seven');
+    'D1a and the Special path holds these six');
   // 16 — the four it cannot touch stay warm
   W.__warmAll();
   W._fcResetSecondaryCache('events');
   var warm = W.__warm();
   eq(UNCHANGED_BY_SPECIAL.filter(function (t) { return warm.indexOf(t) === -1; }), [],
-    'D2  after a Special save the four reference tables it cannot change are STILL warm');
+    'D2  after a Special save the three reference tables it cannot change are STILL warm');
   eq(CHANGED_BY_SPECIAL.filter(function (t) { return warm.indexOf(t) !== -1; }), [],
     'D3  and the three it can change are not — nothing stale is presented as fresh');
 })();
@@ -396,7 +406,7 @@ var UNCHANGED_BY_SPECIAL = ['sku_details', 'marketplace_skus', 'marketplaces', '
   eq(W._fcPrereqMissing_('event'), [], 'D4  a warm Special path asks for nothing');
   W._fcResetSecondaryCache('events');
   eq(W._fcPrereqMissing_('event').sort(), CHANGED_BY_SPECIAL.slice().sort(),
-    'D5  after a Special save it asks for THREE tables, not seven');
+    'D5  after a Special save it asks for THREE tables, not all six');
   eq(W._fcPrereqMissing_('regular'), [],
     'D6  and the Regular builder, which holds none of them, still asks for nothing');
 })();
@@ -524,7 +534,9 @@ mutant('M6 all seven prerequisites cleared after a Special write', (function () 
   var W = resetWorld(faulted);
   W.__warmAll();
   W._fcResetSecondaryCache('events');
-  return W._fcPrereqMissing_('event').length === 7;      // the coarse reload the operator still saw
+  // Derived from the declaration, not a literal: the claim is ALL of them, and a count written by hand
+  // is exactly what stopped this mutant firing when the list lost a member.
+  return W._fcPrereqMissing_('event').length === W._FC_PREREQ_TABLES_.event.length;
 })());
 
 mutant('M7 the CHANGED tables kept warm after a Special write', (function () {

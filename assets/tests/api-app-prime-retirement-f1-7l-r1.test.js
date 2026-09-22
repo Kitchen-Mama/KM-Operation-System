@@ -125,8 +125,13 @@ ok(/refreshCacheTables/.test(fcEnsure) && /rc\(need\)/.test(fcEnsure)
   var decl = (/var _FC_PREREQ_TABLES_ = \{[\s\S]*?\};/.exec(FC) || [''])[0];
   var named = (decl.match(/'[a-z_]+'/g) || []).map(function (x) { return x.replace(/'/g, ''); });
   var uniq = named.filter(function (x, i) { return named.indexOf(x) === i; }).sort();
+  // A3-R10 §14.4 — `marketplaces` LEFT this set. It is emitted by the fcSummary bootstrap slice and
+  // adapted through the same normalizer and filter as the broad cache, so the Builder reads those
+  // rows from the page model and issues no getTable for them. A member leaving is the direction
+  // this assertion exists to allow; what it guards — that the list may not quietly GROW, and that
+  // no whole-DB loader appears — is unchanged and still checked above and below.
   var expected = ['campaign_sku_lines', 'campaigns', 'fc_regular_forecast', 'fc_special_events',
-    'marketplace_skus', 'marketplaces', 'pricing_list', 'sku_details'].sort();
+    'marketplace_skus', 'pricing_list', 'sku_details'].sort();
   ok(JSON.stringify(uniq) === JSON.stringify(expected),
     '_FC_SECONDARY_TABLES = exactly the modal facts (per-path union, closed set)');
   ok(decl.indexOf('campaigns') !== -1 && (/regular: \[[^\]]*\]/.exec(decl) || [''])[0].indexOf('campaigns') === -1,

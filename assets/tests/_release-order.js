@@ -522,7 +522,24 @@ var ROUND_TOKENS = [
   // is that refused create, would truncate an existing 13- or 20-SKU event to 8, and would keep
   // surfacing an expired getTable redirect as a dead Builder. fc-summary.js, the api layer and
   // fc-summary.html all change together, so the whole application set rotates together.
-  'eventuniqueness-r2ba3r9-20260921'];
+  'eventuniqueness-r2ba3r9-20260921',
+  // FC-SUMMARY-R2B-A3-R10 - the read-recovery and period-UX round. The token above IS PUBLISHED:
+  // origin/main reached cbf95df before this round began, so Pages has served the A3-R9 bytes under
+  // `?v=eventuniqueness-r2ba3r9-20260921` and reuse is closed by the rule recorded above.
+  //
+  // The refetch is load-bearing on its own terms, and each reason is a defect an operator hit at R18.
+  // A browser left on the previous bytes would keep losing its Regular rows to a silent EMPTY table
+  // after any Retry that followed a refused bootstrap - the read model and the slice ledger were two
+  // authorities over one fact, so a refusal discarded the rows while the ledger went on calling them
+  // CURRENT, and only navigating away and back recovered it. It would keep spending part of its own
+  // 60s budget queueing behind the boot capability read. It would keep issuing a second physical
+  // getTable for `marketplaces` that the bootstrap slice had already delivered - the read that
+  // actually failed in production, presenting as a dead Builder on the first Next. And it would keep
+  // showing a saved event a 'confirm the period change' tick above dates it was not displaying.
+  //
+  // fc-summary.js and fc-summary.html change together - the period controls are markup and owner -
+  // so the whole application set rotates together.
+  'readrecovery-r2ba3r10-20260922'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

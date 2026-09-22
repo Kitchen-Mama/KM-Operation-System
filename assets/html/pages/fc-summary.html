@@ -611,25 +611,28 @@
                                     <input type="number" id="event-target-year" onchange="_evtPopulateExistingSelect()">
                                 </div>
                             </div>
+                            <!-- FC-SUMMARY-R2B-A3-R10 §10.2 — THE TICK COMES FIRST, BECAUSE IT GOVERNS
+                                 WHAT FOLLOWS. Shown only while a saved event is loaded; a new event
+                                 never sees it. Visibility of BOTH rows is owned by _evtSyncPeriodUi_,
+                                 never by the event flag, which is what let a form hide a date it would
+                                 later refuse to save without. -->
+                            <div class="fc-form-row" id="event-window-confirm-row" hidden>
+                                <div class="fc-form-group fc-form-group--wide">
+                                    <label style="font-weight:400;display:flex;align-items:center;gap:8px;margin-bottom:2px;">
+                                        <input type="checkbox" id="event-window-confirm" onchange="_evtOnWindowConfirmToggle()">
+                                        <span>Change the event period</span>
+                                    </label>
+                                    <p class="fc-manual-help" id="event-window-confirm-help" style="margin:0;"></p>
+                                </div>
+                            </div>
                             <div class="fc-form-row" id="event-period-row">
                                 <div class="fc-form-group">
-                                    <label>Event Start Date *</label>
+                                    <label id="event-start-date-label">Event Start Date *</label>
                                     <input type="date" id="event-start-date" onchange="_evtValidatePeriod()" aria-describedby="event-period-error">
                                 </div>
                                 <div class="fc-form-group">
-                                    <label>Event End Date *</label>
+                                    <label id="event-end-date-label">Event End Date *</label>
                                     <input type="date" id="event-end-date" onchange="_evtValidatePeriod()" aria-describedby="event-period-error">
-                                </div>
-                            </div>
-                            <!-- FC-SUMMARY-R2B-A3-R9 §4 — a saved event's period IS editable, but never
-                                 silently: the tick is the confirmation, and it is shown only while an
-                                 existing event is loaded. -->
-                            <div class="fc-form-row" id="event-window-confirm-row" hidden>
-                                <div class="fc-form-group">
-                                    <label style="font-weight:400;display:flex;align-items:flex-start;gap:8px;">
-                                        <input type="checkbox" id="event-window-confirm" style="margin-top:3px;">
-                                        <span>Confirm event period change &mdash; the saved event keeps its forecast id and moves to the campaign for the new period. The old campaign and every other SKU on it are unchanged.</span>
-                                    </label>
                                 </div>
                             </div>
                             <div class="fc-form-row" id="event-period-error-row" style="display:none;">

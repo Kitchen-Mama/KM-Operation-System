@@ -273,8 +273,17 @@ ok(/\['event-country', 'event-marketplace', 'event-target-year', 'event-name-inp
   'E2  scope, flag and year stay disabled while editing — they ARE the uniqueness key');
 ok(/\['event-start-date', 'event-end-date'\]\.forEach\(function \(id\) \{\n    var el = document\.getElementById\(id\); if \(el\) \{ el\.disabled = false; \}/.test(CHROME),
   'E2a while the period is explicitly ENABLED — §0 FAIL E, closed');
-ok(/if \(row\) row\.hidden = !on;/.test(CHROME),
+// A3-R10 §10.2 — the chrome no longer owns this. Both period rows are owned by _evtSyncPeriodUi_,
+// derived from (editing, confirmed), which is what stopped a saved event offering a tick above
+// dates it was not showing. Same rule, asserted where it now lives.
+var PERIODUI = fnSrc(FCS, '_evtSyncPeriodUi_');
+ok(/confirmRow\.hidden = !editing;/.test(PERIODUI),
   'E2b and the confirmation is shown only while an event is loaded');
+ok(/periodRow\.style\.display = showDates \? '' : 'none';/.test(PERIODUI)
+   && /var showDates = !editing \|\| confirmed;/.test(PERIODUI),
+  'E2b1 and the dates follow the mode: always on a new event, only when confirmed on a saved one');
+ok(/_evtSyncPeriodUi_\(\);/.test(CHROME),
+  'E2b2 with the chrome delegating to that one owner rather than keeping a second copy');
 ok(/if \(cb && !on\) cb\.checked = false;/.test(CHROME),
   'E2c and cleared when none is');
 
@@ -299,9 +308,21 @@ ok(/if \(_evtEditingActive_\(\)\) \{[\s\S]{0,200}eventFcId: r\.eventFcId/.test(I
 ok(!/_evtDetachAsNewEvent_/.test(FCS),
   'E9  §10.21 — "save the new window as a second event" is GONE, not merely unreachable');
 var NOTICE = fnSrc(FCS, '_evtShowWindowChangeNotice_');
-ok(/Confirm event period change/.test(NOTICE) && !/as its own event/.test(NOTICE),
-  'E9a and the notice points at the confirmation instead of offering that second event');
-ok(/Restore /.test(NOTICE), 'E9b while abandoning the change is still one click');
+// A3-R10 §9 — the notice names the control BY ITS ACTUAL LABEL, read out of the markup rather than
+// repeated here. A literal in this file would let the button and the sentence describing it drift,
+// which is the same defect the shared retry-label guard exists to catch.
+var CBLABEL = (/<input type="checkbox" id="event-window-confirm"[^>]*>\s*<span>([^<]+)<\/span>/
+  .exec(HTML) || [])[1];
+ok(!!CBLABEL, 'E9a0 the confirmation control carries a visible label');
+ok(NOTICE.indexOf(CBLABEL) !== -1 && !/as its own event/.test(NOTICE),
+  'E9a and the notice points at that control instead of offering that second event');
+ok(/Keep /.test(NOTICE), 'E9b while abandoning the change is still one click');
+// THE COPY, NOT THE COMMENTARY. The rule is about what the OPERATOR reads, and a comment recording
+// why the old wording was wrong necessarily names the words it removed — which is not a violation.
+// Comments are stripped so the assertion tests the sentence rather than the file around it.
+var NOTICE_COPY = NOTICE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+ok(!/campaign|forecast id|identity/i.test(NOTICE_COPY),
+  'E9c and it says none of that in write-path vocabulary');
 
 // =========================================================================================================
 section('F. READ TRANSPORT — THE EXPIRED DELIVERY HOP (§10.23-10.26)');
@@ -374,15 +395,19 @@ ok(/_fcPrereqFlightByPath_\[p\] = null;/.test(LOADER),
     'G6  §10.31 — marketplace_skus is NOT in the fcSummary workspace, so the Builder read is REQUIRED');
   var PRE = varSrc(FCS, '_FC_PREREQ_TABLES_');
   ok(/marketplace_skus/.test(PRE), 'G6a and the prerequisite list still asks for it');
-  // marketplaces IS in the workspace — and is still read again, deliberately. Four builder call
-  // sites read the BROAD cache directly rather than through _fcGetMarketplaces(), so the
-  // prerequisite read is what fills the store they read. Converting those four is a read-owner
-  // change and belongs to B1, not to a correctness round; recording the duplicate here is what
-  // stops it being rediscovered as a surprise.
-  ok(MODEL_KEYS.indexOf('marketplaces') !== -1 && /marketplaces/.test(PRE),
-    'G7  marketplaces is read twice, and that is a KNOWN B1 item rather than an accident');
-  ok((FCS.match(/window\.KM\.DB\.getMarketplaces\(\)/g) || []).length >= 4,
-    'G7a because four builder call sites still read the broad cache directly');
+  // A3-R10 §14.4 — THIS ITEM IS CLOSED, and the assertion is inverted rather than removed: the
+  // duplicate it recorded is now the thing forbidden. `marketplaces` is emitted by the bootstrap
+  // slice and adapted through the same normalizer and filter as the broad cache, so a second
+  // physical getTable for it read rows already in memory — and in production that read is the one
+  // that failed, presenting as a dead Builder on the first Next.
+  ok(MODEL_KEYS.indexOf('marketplaces') !== -1, 'G7  marketplaces IS in the workspace model');
+  ok(!/'marketplaces'/.test(PRE),
+    'G7a so it is NOT a builder prerequisite — zero physical getTable reads for it');
+  // ONE remaining direct call, inside _fcGetMarketplaces itself, which is the Legacy fallback.
+  eq((FCS.match(/window\.KM\.DB\.getMarketplaces\(\)/g) || []).length, 1,
+    'G7b because every builder call site now asks the page accessor instead');
+  ok(/function _fcGetMarketplaces\(\) \{\n  if \(_fcHas_\('marketplaces'\)\)/.test(FCS),
+    'G7c and that accessor is read-model-first, so no second cache authority was created');
 })();
 
 // =========================================================================================================

@@ -250,6 +250,9 @@ function gateWorld(opts) {
     fnSrc(FCS, '_evtWindowKey_'),
     opts.gateSrc || fnSrc(FCS, '_evtWindowChangeGate_'),
     fnSrc(FCS, '_evtClearWindowChangeNotice_'),
+    // A3-R10 §10.2 — _evtRestoreLoadedWindow_ clears the tick, so it now resyncs the period
+    // controls through their one owner. The owner and the helper it reads travel with it.
+    fnSrc(FCS, '_evtFmtDay_'), fnSrc(FCS, '_evtSavedWindowText_'), fnSrc(FCS, '_evtSyncPeriodUi_'),
     fnSrc(FCS, '_evtRestoreLoadedWindow_'),
     fnSrc(FCS, '_evtApplyCurrentFcLabel_')
   ].join('\n'), sb);

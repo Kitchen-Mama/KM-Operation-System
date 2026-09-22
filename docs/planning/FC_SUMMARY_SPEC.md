@@ -368,7 +368,7 @@ outside the client's knowledge.
 
 The existing event is the canonical path for changing **forecast quantity, deal/discount data and the
 event period**. Start and end dates are editable in existing-event mode, behind an explicit
-**Confirm event period change** checkbox:
+**Change the event period** checkbox (§10.2 owns what that control looks like and when it appears):
 
 | dates | checkbox | outcome |
 |---|---|---|
@@ -411,6 +411,45 @@ all in `assets/js/pages/fc-summary.js`. Server — `fcSpecialEventUpsert_` refus
 `DUPLICATE_SPECIAL_EVENT_IDENTITY` for a second event on one uniqueness key and keeps the
 `STALE_SPECIAL_EVENT_VERSION` gate (`14_fc_write_handlers.gs`); `campaignResolveOrTerminal_` keeps
 refusing a repointed header (`20_campaign_write_handlers.gs`).
+
+### 10.2 Event period — what the operator sees — FROZEN (FC-SUMMARY-R2B-A3-R10, 2026-09-22)
+
+§10.1 froze what a window change MEANS. This freezes what it LOOKS LIKE, because live smoke found the
+two had come apart: an existing event offered a confirmation tick for dates it was not showing, and a
+new event asked for a period it had hidden. The period controls had exactly one owner —
+`toggleEventFlagFields`, keyed on the event flag alone — and nothing re-ran it when hydration set the
+flag programmatically, so the visible form did not follow the mode it was in.
+
+```
+PERIOD_UI_AUTHORITY            = ONE function, derived from (builder mode, confirmation state)
+NEW_EVENT_DATES                = ALWAYS VISIBLE, ALWAYS REQUIRED
+NEW_EVENT_PERIOD_CONFIRM       = NEVER SHOWN
+EXISTING_EVENT_DATES_DEFAULT   = HIDDEN
+EXISTING_EVENT_PERIOD_CONFIRM  = ALWAYS SHOWN while an event is loaded
+EXISTING_EVENT_DATES_CONFIRMED = VISIBLE, PREFILLED WITH THE SAVED WINDOW, REQUIRED
+SAVED_WINDOW_DISPLAY           = shown whenever an event is loaded, edited or not
+```
+
+The flag still decides whether a period is MEANINGFUL — `Normal` writes no event at all — but it no
+longer decides whether the controls exist. A form that hides a field it will later refuse to save
+without is the defect this replaces.
+
+| mode | dates | confirm tick | validation |
+|---|---|---|---|
+| New event | visible, empty | hidden | both dates required |
+| Existing, unconfirmed | hidden | shown, unticked | **dates not required, and never demanded** |
+| Existing, confirmed | visible, prefilled with the saved window | shown, ticked | both dates required |
+
+Ticking the box is not itself a change. Confirmed **with the saved dates unaltered** is an ordinary
+existing-event save: no reassignment, no campaign resolution for a window nobody moved. The
+reassignment in §10.1 C runs only when the confirmation and a genuinely different window are both
+present.
+
+**Operator-facing language.** The Builder describes the EVENT, never the storage that holds it.
+`campaign_id`, `event_fc_id`, `campaign_sku_line_id`, "identity", "scope" and "reassignment" are
+implementation vocabulary and do not appear in it. The banner carries at most two short lines: which
+saved event is open, its saved window, how many SKUs it holds, that the forecast values can be edited,
+and that the period changes through the tick.
 
 ---
 
@@ -467,3 +506,68 @@ FC Summary dropdown filters — **Company / Marketplace / Country / Category / S
 **Table filtering (Part 4):** `filterFcRegular` / `filterFcEvent` include a row only when its value is among the checked values for each dimension (marketplace compared by the internal canonical key); the table **displays** `_fcMarketplaceLabel(...)`. A dimension with **no** value checked shows nothing. No change to FC calculation.
 
 **Data source note:** options are built from live `fc_regular_forecast`; `marketplace_display_name` is resolved from the normalized `marketplaces` registry (`_fcMarketplaceLabel`). If registry display data is missing, the label falls back to the canonical `marketplace` value.
+
+---
+
+## 14. FC Summary initial read — recovery and single authority — FROZEN (FC-SUMMARY-R2B-A3-R10, 2026-09-22)
+
+### 14.1 One authority for "which slices are in hand"
+
+The page held **two**: `_fcReadModel` (the data) and `_fcSliceState_` (the ledger describing it). A
+refusal nulled the model — correctly, so the primary render can never fall back to the broad cache —
+and left the ledger untouched. A slice that had already landed therefore stayed `CURRENT` over a model
+that no longer contained it, and Retry, which asks only for what the ledger calls failed, never asked
+for it again.
+
+Reproduced: Regular lands, bootstrap times out, the refusal nulls the model, Retry fetches bootstrap
+only, the banner clears, and the Regular table renders **empty with no error** — recoverable only by
+navigating away and back.
+
+```
+MODEL_AND_LEDGER_INVALIDATION  = ONE OPERATION, never two writes to be kept in step
+REFUSAL_THAT_NULLS_THE_MODEL   = MUST reset every slice record that described it
+RETRY_SCOPE                    = every slice the active tab needs and does not have
+SILENT_EMPTY_TABLE             = FORBIDDEN — unread is not empty, and must never render as empty
+```
+
+### 14.2 Generations — a late answer may not overwrite a newer one
+
+A slice merge is a commit into shared state. It is guarded by a generation captured at dispatch and
+checked at the commit point, not at the draw point: an answer whose generation has been superseded is
+dropped rather than merged. Invalidating the model advances the generation, so a request issued before
+the reset cannot repopulate the model it was reset out of.
+
+### 14.3 The cold mount is arbitrated, not re-timed
+
+A client timeout starts at **dispatch**, so a read dispatched beside the boot capability read spends
+part of its own 60 s budget queueing for a backend slot. That is arithmetic about when the clock
+starts, not a claim about the backend scheduler, and it is why the remedy is never a longer timeout.
+
+FC Summary's cold mount waits on the **existing** boot arbiter (`KM.bootArbiter`, R6-R5) for the
+`capabilities` dependency, by settlement and under a cap that can only make the read start sooner. No
+second coordinator is introduced. The bootstrap and active-tab slices still go out **together** — two
+parallel requests were measured at 4.5 s against 10 s sequential, and that measurement is not reversed
+here.
+
+```
+READ_TIMEOUT_MS                = 60000, UNCHANGED — enlarging it is not a fix for contention
+COLD_MOUNT_DEPENDENCY          = capabilities (settlement, capped)
+COLD_MOUNT_PARALLELISM         = bootstrap + active slice together, unchanged
+AUTOMATIC_RETRY_ON_TIMEOUT     = NO — the bound already elapsed; Retry is the operator's
+```
+
+### 14.4 `marketplaces` has one owner
+
+`marketplaces` is carried by the **bootstrap slice** and adapted through `normalizeMarketplaceRecord`
+with the same filter `normalizeOperationDb` applies — so the workspace array and the broad-cache array
+are the same rows in the same shape. The Special Event and Regular builders therefore read it from the
+page read model, and it is **not** a builder prerequisite: no `getTable('marketplaces')` is issued.
+
+```
+MARKETPLACES_OWNER             = fcSummary bootstrap slice -> _fcReadModel.marketplaces
+MARKETPLACES_BUILDER_ACCESSOR  = _fcGetMarketplaces()
+MARKETPLACES_PHYSICAL_GETTABLE = 0
+```
+
+`marketplace_skus` is **not** in the workspace and stays a prerequisite read. The difference is which
+rows an authoritative read already brought, not a preference for one path.

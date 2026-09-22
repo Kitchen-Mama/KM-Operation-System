@@ -194,7 +194,10 @@ function pageWorld(events, opts) {
     (opts.populate || fnSrc(FCS, '_evtPopulateExistingSelect')),
     fnSrc(FCS, '_evtOnExistingChange'),
     // A3-R9 — _evtClearEditing_ and the chrome now disarm the period-change confirmation.
-    fnSrc(FCS, '_evtWindowConfirmEl_'),
+    fnSrc(FCS, '_evtWindowConfirmEl_'), fnSrc(FCS, '_evtWindowConfirmChecked_'),
+    // A3-R10 §10.2 — _evtSetEditingChrome_ and _evtClearEditing_ now delegate the period controls
+    // to one owner, so that owner and the two helpers it reads travel with them.
+    fnSrc(FCS, '_evtFmtDay_'), fnSrc(FCS, '_evtSavedWindowText_'), fnSrc(FCS, '_evtSyncPeriodUi_'),
     fnSrc(FCS, '_evtClearEditing_'), fnSrc(FCS, '_evtSetEditingChrome_'),
     fnSrc(FCS, '_evtHydrateExisting_'), fnSrc(FCS, '_evtOnScopeChange'),
     'var _evtEditing_ = null;'

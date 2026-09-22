@@ -279,6 +279,9 @@ function gateWorld(opts) {
     'function _evtBuildGroups() {}',
     fnSrc(FCS, '_evtEditingActive_'),
     fnSrc(FCS, '_evtWindowConfirmEl_'), fnSrc(FCS, '_evtWindowConfirmChecked_'),
+    // A3-R10 §10.2 — _evtSetEditingChrome_ and _evtClearEditing_ now delegate the period controls
+    // to one owner, so that owner and the two helpers it reads travel with them.
+    fnSrc(FCS, '_evtFmtDay_'), fnSrc(FCS, '_evtSavedWindowText_'), fnSrc(FCS, '_evtSyncPeriodUi_'),
     fnSrc(FCS, '_evtWindowChanged_'), fnSrc(FCS, '_evtWindowEditActive_'),
     fnSrc(FCS, '_evtWindowKey_'),
     opts.gateSrc || fnSrc(FCS, '_evtWindowChangeGate_'),
