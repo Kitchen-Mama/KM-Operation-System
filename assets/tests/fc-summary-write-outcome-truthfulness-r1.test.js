@@ -127,6 +127,12 @@ var FNS = [
   // the bridge answers false and every scenario below keeps the outcome it already asserted — which is the
   // point: a transport failure must NOT become a claimed refusal just because the classifier now exists.
   '_fcZeroWriteProven_', '_fcCanonicalCode_', '_fcZeroWriteRefusal_',
+  // R2-STABILITY §4 — `_fcAfterWrite` now starts a post-write warm-up beside the readback, and the
+  // reset it calls first consults the write receipts. Both travel with it, along with the two lookups
+  // they read. This rig publishes neither `refreshCacheTables` nor `reconcileCacheRow`, so the warm-up
+  // issues nothing and the reconcile keeps nothing — every outcome asserted below is unchanged, which
+  // is the point: a post-write optimisation must not change what the operator is TOLD happened.
+  '_fcReconcileFromReceipts_', '_fcPostWriteWarm_', '_fcPrereqMissing_', '_fcSliceTables_',
   '_fcSettleWrite_', '_fcFailWrite_', '_fcAfterWrite', '_fcEffectiveWorkspace', '_fcErrDetail_',
   'proceedToFcMode', '_fcSetTargetSaveEnabled_'];
 

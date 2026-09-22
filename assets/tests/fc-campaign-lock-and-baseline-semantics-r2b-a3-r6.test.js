@@ -334,6 +334,10 @@ function prereqWorld(resetSrc) {
     PREREQ, SLICETBL, 'var _fcSecondaryLoaded = true;',
     'var _fcPrereqLoadedPaths_ = {};', 'var _fcPrereqLoadedTables_ = {};',
     fnSrc(FCS, '_fcSliceTables_'), fnSrc(FCS, '_fcPrereqMissing_'),
+    // R2-STABILITY §4 — `_fcResetSecondaryCache` now consults the receipts before invalidating, so
+    // its callee is lifted too. With no `KM.DB.reconcileCacheRow` in this sandbox it reconciles
+    // nothing, which is the pre-round behaviour and is exactly what the assertions below expect.
+    fnSrc(FCS, '_fcReconcileFromReceipts_'),
     resetSrc || fnSrc(FCS, '_fcResetSecondaryCache')
   ].join('\n'), sb);
   sb.__load = function (p) {
@@ -349,7 +353,13 @@ function prereqWorld(resetSrc) {
 // reads it from the page model and issues no physical getTable for it.
 var EVENT_TABLES = ['sku_details', 'marketplace_skus', 'campaigns',
   'campaign_sku_lines', 'pricing_list', 'fc_special_events'];
-var REGULAR_TABLES = ['sku_details', 'marketplace_skus', 'fc_regular_forecast'];
+// R2-STABILITY §1/§2 — `fc_regular_forecast` left this list. It was fetched once and read never: in
+// Workspace mode `_fcGetRegularForecast()` answers from the read model and does not fall through to
+// the broad cache, so the six Builder call sites that were asking `KM.DB.getFcRegularForecast()`
+// directly now ask the page accessor and the broad read serves nobody. Same correction as §14.4 above,
+// one table further down. C1 and C6 below move with it — and C6 in particular becomes the strongest
+// statement in this section: Special -> Regular now fetches NOTHING AT ALL.
+var REGULAR_TABLES = ['sku_details', 'marketplace_skus'];
 var SHARED = ['sku_details', 'marketplace_skus'];
 
 (function () {
@@ -367,7 +377,7 @@ var SHARED = ['sku_details', 'marketplace_skus'];
 (function () {
   // §12.8/§12.9 — A: cold Regular, then Regular again.
   var W = prereqWorld();
-  eq(W.__load('regular').sort(), REGULAR_TABLES.slice().sort(), 'C1  cold Regular fetches its three tables');
+  eq(W.__load('regular').sort(), REGULAR_TABLES.slice().sort(), 'C1  cold Regular fetches its two tables');
   eq(W.__load('regular'), [], 'C2  warm Regular fetches NOTHING — 0 physical requests');
 })();
 
@@ -394,7 +404,9 @@ var SHARED = ['sku_details', 'marketplace_skus'];
   var W = prereqWorld();
   W.__load('event');
   var second = W.__load('regular');
-  eq(second, ['fc_regular_forecast'], 'C6  Special → Regular fetches only the forecast table');
+  // The Special path already holds both of the Regular path's tables, and the Regular path no longer
+  // wants a third. So this sequence costs the operator nothing at all.
+  eq(second, [], 'C6  Special → Regular fetches NOTHING — every table it needs is already warm');
 })();
 
 (function () {

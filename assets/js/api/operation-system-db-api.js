@@ -3155,6 +3155,51 @@ async function _kmRefreshCacheTables_(tableNames) {
 // Fetches ONLY the named tables (getTable) and patches their slices into _opDbCache. NEVER a whole-DB reload.
 window.KM.DB.refreshCacheTables = _kmRefreshCacheTables_;
 
+/* R2B-B1-R2-STABILITY §4 — PATCH ONE ROW FROM A WRITE RECEIPT, INSTEAD OF RE-READING ITS TABLE.
+ *
+ * A confirmed write whose receipt carries the COMPLETE canonical row has already told the client
+ * everything a re-read of that table would. Discarding it and then paying a physical getTable for the
+ * same fact is what made the operator wait fifteen seconds after a save that had already succeeded.
+ *
+ * This is deliberately NOT a general cache-patch API:
+ *   · the row is normalized by `normalizeOperationDb` over a one-row database — the IDENTICAL call the
+ *     broad load makes — so a patched row and a re-read row are the same object by construction, and
+ *     no second normalizer can drift away from the first;
+ *   · a row the normalizer REJECTS (its filter drops rows with no primary key) patches NOTHING and
+ *     returns false, so the caller must fall back to the read rather than mark a hole CURRENT;
+ *   · it refuses a table it has no cache key for, and refuses to create the cache. If the broad cache
+ *     does not exist there is nothing to keep fresh, and manufacturing a one-row cache would make an
+ *     EMPTY table look like a table containing exactly this row.
+ *
+ * Returns true only when the row is in the cache under its primary key. The caller may treat only a
+ * `true` as reconciled — anything else means the table still needs an authoritative read. */
+var _KM_TABLE_CACHE_PK_ = {
+    campaigns: 'campaignId',
+    campaign_sku_lines: 'campaignSkuLineId',
+    fc_special_events: 'eventFcId'
+};
+function _kmReconcileCacheRow_(tableName, rawRow) {
+    if (!rawRow || typeof rawRow !== 'object') return false;
+    var key = _KM_TABLE_CACHE_KEY_[tableName];
+    var pk = _KM_TABLE_CACHE_PK_[tableName];
+    if (!key || !pk) return false;
+    if (!window._opDbCache || !Array.isArray(window._opDbCache[key])) return false;
+    var one = {}; one[tableName] = [rawRow];
+    var norm = normalizeOperationDb(one);
+    var rows = norm[key];
+    if (!Array.isArray(rows) || rows.length !== 1) return false;   // the normalizer dropped it
+    var row = rows[0];
+    var id = String(row[pk] == null ? '' : row[pk]).trim();
+    if (!id) return false;
+    var list = window._opDbCache[key];
+    for (var i = 0; i < list.length; i++) {
+        if (String(list[i] && list[i][pk] == null ? '' : list[i][pk]).trim() === id) { list[i] = row; return true; }
+    }
+    list.push(row);
+    return true;
+}
+window.KM.DB.reconcileCacheRow = _kmReconcileCacheRow_;
+
 window.KM.DB.updateSkuLifecycle = async function(sku, lifecycle) {
     if (window.KM.DB.isCloudWriteEnabled()) {
         // Cloud mode: sku_details.lifecycle is the SINGLE authority — write the sheet, then re-read fresh.

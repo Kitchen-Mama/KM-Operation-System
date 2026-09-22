@@ -1724,14 +1724,17 @@
     font-weight: 600;
 }
 
-/* FC-SHARE-DUAL-MODEL-R1 — two share columns replace the one `FC占比` cell. 110px rather
-   than 80px because the headings name their denominators, which is the point of them. */
+/* FC-SHARE-DUAL-MODEL-R1 — two share columns replace the one `FC占比` cell, because one heading
+   cannot carry two denominators. R2-STABILITY-SHARE-FINAL §9 widened them 110px -> 150px: these
+   cells say "nowrap" and "ellipsis", and at 110px "Company Annual FC Share" truncates to
+   "Company Annual FC…" — losing, of all words, the one that stops the number being read as an
+   allocation weight. */
 #fc-regular-scroll-header > .header-cell:nth-child(20),
 #fc-regular-scroll-body .scroll-row > .scroll-cell:nth-child(20),
 #fc-regular-scroll-header > .header-cell:nth-child(21),
 #fc-regular-scroll-body .scroll-row > .scroll-cell:nth-child(21) {
-    width: 110px;
-    min-width: 110px;
+    width: 150px;
+    min-width: 150px;
     justify-content: flex-end;
 }
 

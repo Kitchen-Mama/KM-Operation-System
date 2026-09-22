@@ -301,10 +301,18 @@ function injectedWidths(ctx, group, col) {
 section('A. THE SHIPPED MARKUP — the column sets these controllers must match');
 // =================================================================================================
 // FC-SHARE-DUAL-MODEL-R1 — `FC占比` became TWO columns, because one heading cannot carry two
-// denominators. Company FC Share is normalized within a company; Site FC Share across all sites.
+// denominators. One is normalized within a company; the other across all sites.
+//
+// R2-STABILITY-SHARE-FINAL §9 — both gained the word ANNUAL. The grain became explicit when these
+// columns were settled as SELECTED-YEAR diagnostics, and that word is the only thing standing between
+// them and being read as the allocation weights KMOOP and KMFSA use. The rule these two assertions
+// enforce is unchanged and now holds against a wider confusion: each heading names its own denominator
+// AND its own time grain, so neither can be read as the other OR as a planning weight.
 eq(REGULAR_LABELS.length, 21, 'A1 Regular Forecast ships 21 scroll columns');
-eq(REGULAR_LABELS[19], 'Company FC Share', 'A1b ... and each share column names its denominator');
-eq(REGULAR_LABELS[20], 'Site FC Share', 'A1c ... so neither can be read as the other');
+eq(REGULAR_LABELS[19], 'Company Annual FC Share', 'A1b ... and each share column names its denominator');
+eq(REGULAR_LABELS[20], 'All-Site Annual FC Share', 'A1c ... so neither can be read as the other');
+ok(REGULAR_LABELS[19].indexOf('Annual') > -1 && REGULAR_LABELS[20].indexOf('Annual') > -1,
+  'A1d ... and both name their TIME GRAIN, so neither can be read as an allocation weight');
 // FC-SHARE-DUAL-MODEL-R1 §B10 — the Event share column is GONE rather than recomputed. It divided
 // one event's fc_qty by that event's total across marketplaces, which is a share of SPECIAL EVENT
 // demand; no allocator consumes that, and Special Event FC is explicitly never folded into the

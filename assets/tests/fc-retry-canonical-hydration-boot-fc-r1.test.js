@@ -706,8 +706,20 @@ section('E. §6.1-6.12 — THE REQUIRED MATRIX');
       'H2b1 ... and so does Regular');
     ok(/\{ group: 'fc-event', panel: 'fc-panel-event',/.test(JS_LF),
       'H2b2 ... and Event');
-    ok(/_fcResizeCols_\(110, 'Company FC Share'\)/.test(JS_LF) && /_fcResizeCols_\(110, 'Site FC Share'\)/.test(JS_LF),
-      'H2b3 the two share columns are declared, which is the change the seal was widened for');
+    /* R2-STABILITY-SHARE-FINAL — the two share columns are still declared outside the seal, and both
+       their width and their labels moved this round. Rather than re-pin literals the next round will
+       move again, this asserts what H2b3 was always for: the declaration names the SAME two columns
+       the markup ships. Their names are READ from the header rather than restated here, so this
+       cannot pass while the declaration and the markup have silently drifted apart. */
+    var SHARE_HTML = read('assets/html/pages/fc-summary.html');
+    var _shareHeads = [];
+    SHARE_HTML.replace(/<div class="header-cell"[^>]*>([^<]*FC Share)<\/div>/g,
+      function (m, label) { _shareHeads.push(label); return m; });
+    eq(_shareHeads.length, 2, 'H2b3 the markup ships exactly two share columns');
+    ok(_shareHeads.length === 2 && _shareHeads.every(function (label) {
+      return new RegExp("_fcResizeCols_\\(\\d+, '"
+        + label.replace(/[-\\^$*+?.()|[\]{}]/g, "\\$&") + "'\\)").test(JS_LF);
+    }), 'H2b3b ... and the resize declaration names the SAME two, whatever they are called', _shareHeads);
     // The stylesheet, everything outside the Target table's own rules. The excised span runs from the start
     // of the Target section to the shared fixed-column rules that follow it.
     function cssOutsideTarget(src) {

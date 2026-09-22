@@ -743,6 +743,12 @@ never warned. Demo mode hard-codes a single company, which is why this was invis
 
 ### 16.2 What the columns are
 
+**Superseded in part by §17.** The two denominators, the site key, the unfiltered-denominator rule and
+the removed Event column are unchanged and still binding. The TIME GRAIN of what FC Summary displays
+moved from the rolling planning window to the selected year — see §17 for the decision and why it is
+not the substitution §16.3 refused. The rolling projection described here still exists, is still owned
+by KMFCS, and is still what KMOOP and KMFSA weight allocations with; FC Summary simply does not display it.
+
 ```
 COLUMN  Company FC Share   = site basis ÷ Σ basis of all sites of the SAME COMPANY
 COLUMN  Site FC Share      = site basis ÷ Σ basis of ALL sites (diagnostic; NOT an allocation weight)
@@ -752,7 +758,7 @@ DENOMINATOR SOURCE         = the AUTHORITATIVE UNFILTERED row set, never the fil
 EVENT TAB SHARE COLUMN     = REMOVED (§B10) — never computed from fc_special_events.fc_qty
 ```
 
-### 16.3 Why both columns currently read "—"
+### 16.3 Why both columns read "—" at R1 — HISTORICAL, settled by §17
 
 A rolling-window share needs a **calculation month**, and FC Summary has no canonical planning anchor:
 
@@ -776,9 +782,86 @@ beats a number everybody acts on wrongly.**
 SITE_ALLOCATION_SHARE_UI_CONTEXT = UNAVAILABLE   (FC Summary has no factory-source context either,
                                                   so the eligible-receiver share is never displayed
                                                   here and allocation stays with KMFSA)
-MISSING_OWNER                    = a canonical planning-anchor owner. Supplying one value to
-                                   `_FC_SHARE_ANCHOR_` lights both columns up; no formula moves.
+MISSING_OWNER                    = a canonical planning-anchor owner.
 ```
+
+**Every word above is still true of the ROLLING share, and there is still no planning-anchor owner.**
+What changed is that FC Summary stopped asking for one — see §17.
+
+---
+
+## 17. FC Share — the SELECTED-YEAR diagnostic — FROZEN (R2B-B1-R2-STABILITY-SHARE-FINAL, 2026-09-22)
+
+### 17.1 The decision
+
+The two FC Summary share columns are **DIAGNOSTIC / REVIEW metrics**, not allocation weights. They
+therefore describe the **YEAR THE OPERATOR HAS SELECTED**, which is the year every other column in
+the row already describes.
+
+```
+FC_SUMMARY_SHARE_TIME_GRAIN   = SELECTED_YEAR
+PLANNING_MONTH_CONTROL_ADDED  = NO
+BROWSER CLOCK                 = STILL REFUSED, in the page and in KMFCS
+```
+
+### 17.2 The two formulas
+
+```
+COLUMN  Company Annual FC Share   = site annual Regular FC
+                                    ÷ Σ annual Regular FC of ALL active eligible sites
+                                      of the SAME COMPANY, same master SKU, selected year
+
+COLUMN  All-Site Annual FC Share  = the SAME numerator
+                                    ÷ Σ over ALL active eligible sites, ALL COMPANIES
+
+NUMERATOR OWNER  = Σ RAW jan..dec of the selected year, from fc_regular_forecast
+                   NOT the render shape, whose months are individually Math.ceil-ed for display
+ROUNDING BEFORE SHARE = NO. Full precision in; one decimal out; the 100% invariant is checked on
+                   the DECIMALS at 1e-9, never on the formatted strings (33.3×3 = 99.9 is correct)
+KEY              = KMFSA canonical site identity — unchanged from §16
+DENOMINATOR      = the AUTHORITATIVE UNFILTERED row set — unchanged from §16
+EXCLUDED         = Target % rules · Special Event FC · effective demand · safety demand
+ZERO DENOMINATOR = "—". Never an equal split, never 100%, never NaN/Infinity/negative
+NO YEAR SELECTED = "—", typed ANNUAL_SHARE_YEAR_UNAVAILABLE
+EVENT TAB        = still NO share column (§16.2). No annual share is computed from fc_special_events
+```
+
+### 17.3 Why this is not the substitution §16.3 refused
+
+§16.3 refused to answer **"what is this site's rolling planning-window share"** with an annual number
+under a heading that promised the rolling one. That is the original defect of this column restated:
+the heading and the formula disagreed.
+
+Here the heading says **Annual** and the annual number is what is computed. The column and its formula
+agree, which is the whole of what §16.3 was protecting.
+
+The browser clock stays refused for the reason §16.3 gives and that reason has not weakened: it is
+invisible, it is the viewer's own machine, and two operators comparing screens across midnight would
+see different shares of the same forecast. The **selected year is the opposite of that** — operator-
+chosen, visible in the control above the table, and already governing every other column in the row.
+
+### 17.4 The grains must stay apart
+
+```
+FC SUMMARY   Company Annual FC Share / All-Site Annual FC Share  → DIAGNOSTIC ONLY
+KMOOP        company allocation share   → planning cycle, rolling M+1..M+4   UNCHANGED
+KMFSA        eligible-receiver share    → planning cycle, rolling M+1..M+4,
+                                          constrained by factory source policy  UNCHANGED
+
+FC_SUMMARY_ANNUAL_SHARE_USED_BY_KMOOP = NO
+FC_SUMMARY_ANNUAL_SHARE_USED_BY_KMFSA = NO
+```
+
+KMFCS keeps **two entry points, not one with a mode**: `project()` / `siteShares()` for the rolling
+allocation basis, `projectAnnual()` / `annualSiteShares()` for the annual diagnostic. Their result
+FIELDS are named differently too — `companyAnnualShare` is not `companyForecastShare` — so a consumer
+that reaches for the wrong projection reads `undefined` and fails loudly rather than allocating stock
+on a calendar year. Every result carries `grain`, which states the same guarantee as data.
+
+**There is no eligible-receiver ANNUAL share and there will not be one.** Eligible-receiver means "who
+may receive THIS factory source", which is a question about a shipment, and a shipment is never
+apportioned on a calendar year. `sourceCountry` is not an input to `projectAnnual` — not ignored,
+absent — so the function's shape cannot express the thing it must not compute.
 
 ### 16.4 The legacy column
 

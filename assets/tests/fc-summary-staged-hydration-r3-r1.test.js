@@ -78,7 +78,12 @@ function assignFnSrc(src, dotted) {
 var PAGE_VARS = ['FC_SLICE_', 'FC_FRESH_', '_FC_TAB_SLICE_', '_FC_SLICE_KEYS_', '_FC_MODEL_KEYS_',
                  'FC_RETRY_', 'FC_RETRY_LABEL_', 'FC_STAGE_', 'FC_MSG_', 'FC_VIEW_', '_TR_UNAVAILABLE_',
                  // A3-R10 §14.1/§14.2 — the model generation and the boot-dependency list.
-                 '_fcSliceState_', '_fcModelGen_', '_fcInvalidateReason_', '_FC_BOOT_DEPS_'];
+                 '_fcSliceState_', '_fcModelGen_', '_fcInvalidateReason_', '_FC_BOOT_DEPS_',
+                 // R2-STABILITY §4 — the post-write warm-up reads the prerequisite census and the
+                 // per-slice table map. Lifted rather than stubbed so this suite counts its real
+                 // requests against the real lists.
+                 '_FC_PREREQ_TABLES_', '_FC_SLICE_PREREQ_TABLES_', '_fcPrereqLoadedTables_',
+                 '_fcPrereqLoadedPaths_', '_fcMeta_'];
 var PAGE_FNS = ['_fcSliceRec_', '_fcSliceStates_', '_fcWorkspaceMode_', '_fcHas_', '_fcSliceHasData_',
                 '_fcModelUsable_', '_fcTabNow_', '_fcMergeSlice_', '_fcSliceFetch_', '_fcFailedSlices_',
                 '_fcMountLoad_', '_fcSliceFailed_', '_fcNoteFreshness_', '_fcRetryFailedSlices_',
@@ -87,6 +92,10 @@ var PAGE_FNS = ['_fcSliceRec_', '_fcSliceStates_', '_fcWorkspaceMode_', '_fcHas_
                 // _fcSliceFetch_ validates the payload shape before it commits anything, so the
                 // validator travels with it. A gate that is not lifted is a gate that throws.
                 '_fcValidWorkspaceData_',
+                // R2-STABILITY §4 — `_fcAfterWrite` now starts a post-write warm-up beside the readback,
+                // and the same rule applies: a callee that is not lifted is a callee that throws. It is
+                // lifted WITH its dependencies rather than stubbed, so this suite counts its requests too.
+                '_fcPostWriteWarm_', '_fcPrereqMissing_', '_fcSliceTables_', '_fcReconcileFromReceipts_',
                 '_fcYearsOf_', '_fcRetryLabel_', '_fcNoteEnvMeta_', '_fcGetRegularForecast',
                 '_fcGetSpecialEvents', '_fcGetTargetRules', '_fcGetMarketplaces', '_trExistingRules_',
                 // A3-R10 — _fcRenderError_ delegates the reset, _fcMountLoad_ defers dispatch, and

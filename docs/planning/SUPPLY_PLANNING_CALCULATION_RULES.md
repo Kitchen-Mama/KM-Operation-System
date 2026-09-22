@@ -376,6 +376,16 @@ SKU FC Share = Marketplace SKU FC ÷ Company Total FC
 
 ### 7.1 Two shares, two denominators — FROZEN (FC-SHARE-DUAL-MODEL-R1, 2026-09-22)
 
+> **R2B-B1-R2-STABILITY-SHARE-FINAL (2026-09-22) — A THIRD SHARE EXISTS AND IT IS NOT AN ALLOCATION
+> WEIGHT.** FC Summary displays `Company Annual FC Share` and `All-Site Annual FC Share`, computed over
+> the **operator-selected YEAR** rather than the rolling M+1..M+4 window. They are review metrics for a
+> page an operator is reading, and **no allocator may consume them** — `FC_SUMMARY_ANNUAL_SHARE_USED_BY_KMOOP
+> = NO`, `FC_SUMMARY_ANNUAL_SHARE_USED_BY_KMFSA = NO`. Everything below, and every formula in §7, is
+> about the ROLLING basis and is unchanged. KMFCS keeps the two apart by construction: separate entry
+> points (`project` vs `projectAnnual`), separate result field names, and a `grain` on every result.
+> See `FC_SUMMARY_SPEC.md` §17. There is STILL no canonical planning-anchor owner in this repository;
+> FC Summary stopped needing one, KMOOP and KMFSA still have their own.
+
 > The line `SKU FC Share = Marketplace SKU FC ÷ Company Total FC` above is **retained verbatim** and is
 > still the within-company rule. What follows does not replace it; it names the two distinct shares that
 > were both being called "FC Share", and settles the doc/code divergence in the denominator.

@@ -140,41 +140,49 @@ function filterFcEvent(data, filters) {
    site identity, its window definition and its factory-source policy from KMFSA rather than
    restating them. This file owns only WHICH ROWS to hand it and HOW TO RENDER the answer.
 
-   THE ANCHOR, AND WHY BOTH COLUMNS CURRENTLY READ "—".
+   THE GRAIN: THE SELECTED YEAR, AND WHY THAT IS NOT THE SUBSTITUTION R1 REFUSED.
 
-   The canonical basis is Σ RAW Regular FC over M+1..M+4, anchored on a calculation month. FC Summary
-   has no such anchor and cannot invent one:
+   R1 shipped these columns reading "—". The canonical ALLOCATION basis is Σ RAW Regular FC over
+   M+1..M+4, anchored on a calculation month, and FC Summary has no such anchor: 58_ returns a read
+   timestamp, `km-api-foundation.js`'s `lastCalculationMonth` is a diagnostic of a recommendation
+   request this page never issues, IR's month is operator-entered on that page, and Site Inventory
+   injects `new Date()` — KMFSA never reads a clock, the PAGE does. There is still no `planning_cycles`
+   table and still no global anchor owner. None of that has changed.
 
-     · `58_api_v1_fc_summary_workspace.gs` returns `observed_at` — a read timestamp, not a planning
-       anchor. It carries no calculation month and no planning cycle.
-     · `km-api-foundation.js` records `lastCalculationMonth`, but that is a DIAGNOSTIC of the last
-       recommendation request. FC Summary never issues one, so it is always null here.
-     · Inventory Replenishment has `validateCalculationMonth`, but the value is OPERATOR-ENTERED on
-       that page and persisted to that page's own stored state. It is an input, not an authority.
-     · Site Inventory injects `new Date()` (inventory-replenishment.js:11484). KMFSA never reads a
-       clock; the PAGE does. That is the one precedent, and it is the thing not to copy.
+   WHAT CHANGED IS THE QUESTION THESE TWO COLUMNS ASK. They are DIAGNOSTIC / REVIEW metrics, not
+   allocation weights, and the operator decided they should describe the year that is on screen. So
+   the basis is the SELECTED YEAR's Regular Forecast, and the headings say "Annual" so that nobody
+   can read them as the thing they are not.
 
-   There is no `planning_cycles` table and no global anchor owner anywhere in the repository.
+   This is NOT the substitution R1 refused, and the difference is exactly the one R1 named. R1 refused
+   to answer "what is this site's rolling planning-window share" with an annual number under a heading
+   that promised the rolling one. Here the heading promises the annual number and the annual number is
+   what is computed — the column and its formula agree, which is the whole of the original defect. The
+   browser clock is still refused outright: it is invisible, it is the viewer's own machine, and two
+   operators comparing screens across midnight would see different shares of the same forecast. The
+   selected year is the opposite of that — it is operator-chosen, it is visible in the control above
+   the table, and it already governs every other column in this row.
 
-   So the anchor is reported UNAVAILABLE and both columns render an em dash. That is deliberate and
-   it is the whole point: the two substitutes on offer are worse than silence. The browser clock
-   would make a planning figure a property of the viewer's system date — two operators comparing
-   screens on the 31st and the 1st would see different shares of the same forecast. The selected
-   year's annual total would answer a DIFFERENT QUESTION under the same heading, which is exactly
-   how the column came to be trusted while being wrong. A number nobody can act on beats a number
-   everybody acts on wrongly.
+   NO PLANNING MONTH CONTROL IS ADDED (§7). The rolling projection KMFCS still owns — `project()` /
+   `siteShares()` — is untouched and unread by this page. KMOOP and KMFSA keep their own planning-cycle
+   anchors and their own formulas; nothing here is a weight and nothing downstream reads it. */
 
-   KMFCS is complete and tested against fixtures, so the day an anchor owner exists these columns
-   light up by supplying one value here — no formula moves. */
-
-var _FC_SHARE_ANCHOR_ = '';   // no canonical planning-anchor owner exists yet — see the note above.
 var _FC_SHARE_DASH_ = '\u2014';
 
 function _fcShareRuntime_() {
   return (typeof window !== 'undefined' && window.KM && window.KM.forecastShare) ||
          (typeof KMFCS !== 'undefined' ? KMFCS : null);
 }
-function _fcShareAnchor_() { return _FC_SHARE_ANCHOR_; }
+/* The selected year, taken from the SAME filter state the table itself draws from. Asking
+   `getFcFilters()` rather than reading the <select> keeps one answer to "which year is this table
+   showing": a share computed from a different year than the rows beside it would be the original
+   defect wearing a new hat. */
+function _fcShareYear_() {
+  try {
+    var f = (typeof getFcFilters === 'function') ? getFcFilters() : null;
+    return (f && f.year) ? String(f.year) : '';
+  } catch (e) { return ''; }
+}
 
 /* Why the share is asked of the RAW read-model rows and not of the rows being rendered: the render
    shape ceils each month for whole-unit display, and a ceiling applied twelve times is a display
@@ -201,12 +209,17 @@ function _fcShareSourceRows_(fallbackRows) {
 }
 
 /* ONE projection per master SKU over the COMPLETE row set. `rows` must be the authoritative
-   unfiltered set; passing the filtered or paginated list is the defect this replaced. */
-function _fcShareProjections_(rows, anchor) {
+   UNFILTERED set: passing the filtered or paginated list is the defect this replaced, and §12 says
+   so in as many words. Every row of every year is handed over — `projectAnnual` selects the year
+   itself, because a share whose denominator was pre-filtered by its caller is a share of whatever
+   the caller felt like including. */
+function _fcAnnualShareProjections_(rows, year) {
   var K = _fcShareRuntime_();
-  if (!K) return { available: false, reason: 'FC_SHARE_RUNTIME_ABSENT', bySku: {} };
-  var a = K.resolveAnchor(anchor);
-  if (a.state !== K.ANCHOR_VALID) return { available: false, reason: a.state, bySku: {} };
+  if (!K || typeof K.projectAnnual !== 'function') {
+    return { available: false, reason: 'FC_SHARE_RUNTIME_ABSENT', bySku: {} };
+  }
+  var y = K.resolveYear(year);
+  if (y.state !== K.YEAR_VALID) return { available: false, reason: y.state, bySku: {} };
   var bySku = {};
   (rows || []).forEach(function (r) {
     var shaped = _fcShareRowShape_(r);
@@ -217,30 +230,33 @@ function _fcShareProjections_(rows, anchor) {
   });
   var proj = {};
   Object.keys(bySku).forEach(function (s) {
-    proj[s] = K.project({ sku: bySku[s][0].sku, forecastRows: bySku[s], calculationMonth: anchor });
+    proj[s] = K.projectAnnual({ sku: bySku[s][0].sku, forecastRows: bySku[s], year: y.year });
   });
   return { available: true, reason: '', bySku: proj };
 }
 
-/* The two displayed cells. `site` is the ALL-SITE diagnostic share, NOT the source-constrained
-   allocation weight: FC Summary has no factory-source context, so the eligible-receiver share is
-   not computed here and allocation stays with KMFSA. A null share renders as an em dash, never as
-   0.0% — "no share is defined" and "this site's share is nothing" are different facts. */
+/* The two displayed cells. BOTH are diagnostics over the selected year. There is deliberately no
+   eligible-receiver cell: that share answers "who may receive THIS factory source", FC Summary has
+   no factory-source context, and the annual projection does not compute one at all (§8). A null
+   share renders as an em dash, never 0.0% — "no share is defined" and "this site's share is
+   nothing" are different facts, and conflating them is how the old column lied quietly. */
 function _fcShareCells_(projections, item) {
   var K = _fcShareRuntime_();
   if (!K || !projections || !projections.available) return { company: _FC_SHARE_DASH_, site: _FC_SHARE_DASH_ };
   var p = projections.bySku[String((item && item.sku) || '').toUpperCase()];
   if (!p) return { company: _FC_SHARE_DASH_, site: _FC_SHARE_DASH_ };
-  var s = K.siteShares(p, item);
-  return { company: K.formatShare(s.companyForecastShare), site: K.formatShare(s.allSiteForecastShare) };
+  var s = K.annualSiteShares(p, item);
+  return { company: K.formatShare(s.companyAnnualShare), site: K.formatShare(s.allSiteAnnualShare) };
 }
 
-/* Why the cell carries a title: an em dash with no explanation reads as a bug. This names the
-   missing owner at the point of use rather than in a console nobody opens. */
+/* Why the cell carries a title: an em dash with no explanation reads as a bug. The AVAILABLE title is
+   the one §9 requires on every share cell — the column heading is short for width, so the sentence
+   that says what the number is has to be reachable from the number itself. */
+var _FC_SHARE_TITLE_ = 'Selected-year Regular Forecast share; diagnostic only.';
 function _fcShareUnavailableTitle_(projections) {
-  if (projections && projections.available) return '';
-  return 'No canonical planning anchor is available, so the M+1..M+4 forecast share cannot be ' +
-         'calculated. This is not an annual Total FC ratio and is deliberately not substituted with one.';
+  if (projections && projections.available) return _FC_SHARE_TITLE_;
+  return _FC_SHARE_TITLE_ + ' No year is selected, so no annual share can be calculated. ' +
+         'This is never substituted with a planning-window share or with a browser-clock month.';
 }
 
 // Render Regular Forecast Table
@@ -281,7 +297,7 @@ function renderFcRegularTable() {
 
   // FC Share — from the AUTHORITATIVE UNFILTERED set. Never filteredData (the denominator would
   // follow the filter) and never paginatedData (the visible column could not sum to 100).
-  const fcShareProj = _fcShareProjections_(_fcShareSourceRows_(_fcRegularSource), _fcShareAnchor_());
+  const fcShareProj = _fcAnnualShareProjections_(_fcShareSourceRows_(_fcRegularSource), _fcShareYear_());
   const fcShareTitle = _fcShareUnavailableTitle_(fcShareProj);
 
   // Render fixed column (SKU)
@@ -746,7 +762,7 @@ function renderFcRegularTableEditable() {
   /* The EDIT table shares the page denominator, and for the same reason: an edit list is a scope,
      not the world. It also used to compute the share from the UNEDITED months while displaying a
      total from the edited ones, so the share visibly refused to move while the operator typed. */
-  const fcShareProj = _fcShareProjections_(_fcShareSourceRows_(rows), _fcShareAnchor_());
+  const fcShareProj = _fcAnnualShareProjections_(_fcShareSourceRows_(rows), _fcShareYear_());
   const fcShareTitle = _fcShareUnavailableTitle_(fcShareProj);
 
   fixedBody.innerHTML = rows.map(item => `
@@ -2544,10 +2560,15 @@ function _regularPrefillManual() {
   function up(v){ return String(v==null?'':v).trim().toUpperCase(); }
   function lo(v){ return String(v==null?'':v).trim().toLowerCase(); }
 
-  // Loading guard: in live mode, if the DB cache has not loaded yet, do NOT prefill (would read an
+  // Loading guard: in live mode, if the forecast is not loaded yet, do NOT prefill (would read an
   // empty set and could mislead). Disable Save until it is ready.
+  //
+  // R2-STABILITY §2 — it asks the PAGE, not `window._opDbCache`. That flag belongs to the broad
+  // cache, which in Workspace mode is never filled and never read; guarding on it meant the grid
+  // could be blocked while the rows were on screen behind the modal, and unblocked by a read whose
+  // result this function does not consult.
   var demoOn = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
-  if (!demoOn && !window._opDbCache) {
+  if (!demoOn && !_fcRegularSourceReady_()) {
     _setRegularSaveEnabled(false);
     _setRegularManualHelp('Loading existing forecast… please wait.', '#b45309');
     return;
@@ -2565,7 +2586,9 @@ function _regularPrefillManual() {
     jan: r.months && r.months[0], feb: r.months && r.months[1], mar: r.months && r.months[2], apr: r.months && r.months[3],
     may: r.months && r.months[4], jun: r.months && r.months[5], jul: r.months && r.months[6], aug: r.months && r.months[7],
     sep: r.months && r.months[8], oct: r.months && r.months[9], nov: r.months && r.months[10], dec: r.months && r.months[11] }; }) : null;
-  var rows = demoSrc || ((window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : []);
+  // R2-STABILITY §2 — the page's one Regular-forecast owner. In Workspace mode this is the read
+  // model the table behind the modal is drawn from; in Legacy it is the broad cache, exactly as before.
+  var rows = demoSrc || _fcGetRegularForecast();
   var match = rows.filter(function(r){
     return up(r.sku) === up(sku) && String(r.year) === String(year) &&
       up(r.company) === up(company) &&
@@ -2610,7 +2633,7 @@ function _populateRegularScopeSelects() {
   // which previously produced duplicate marketplaces e.g. two "Amazon").
   var demoOn = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
   var mkts = demoOn ? [] : _fcGetMarketplaces();   // §14.4 — the page's one marketplaces owner
-  var fcRows = (!demoOn && window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : [];
+  var fcRows = demoOn ? [] : _fcGetRegularForecast();   // §2 — and the page's one forecast owner
   function distinct(arr) { var o = [], s = {}; arr.forEach(function(v){ v = String(v||'').trim(); if (v && !s[v]) { s[v]=1; o.push(v); } }); return o.sort(); }
   var srcCountries = demoOn
     ? (fcRegularMock || []).map(function(r){ return r.country; })
@@ -2763,7 +2786,7 @@ function _fcRegularSiteOptions(country) {
   // (Mixing the demo dataset into live is what produced duplicate marketplaces like two "Amazon".)
   var demoOn = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
   var mkts = demoOn ? [] : _fcGetMarketplaces();   // §14.4 — the page's one marketplaces owner
-  var fcRows = (!demoOn && window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : [];
+  var fcRows = demoOn ? [] : _fcGetRegularForecast();   // §2 — and the page's one forecast owner
   function tr(v){ return String(v==null?'':v).trim(); }
   function up(v){ return tr(v).toUpperCase(); }
   var map = {};
@@ -2884,7 +2907,7 @@ function _regularFcRows() {
       return o;
     });
   }
-  return (window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : [];
+  return _fcGetRegularForecast();   // §2 — the page's one Regular-forecast owner
 }
 
 // Find the fc row for a full site identity + SKU + year (case-insensitive).
@@ -3502,7 +3525,7 @@ function _evtMode() {
 function _populateEventScopeSelects() {
   var demoOn = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
   var mkts = demoOn ? [] : _fcGetMarketplaces();   // §14.4 — the page's one marketplaces owner
-  var fcRows = (!demoOn && window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : [];
+  var fcRows = demoOn ? [] : _fcGetRegularForecast();   // §2 — and the page's one forecast owner
   function distinct(arr) { var o = [], s = {}; arr.forEach(function(v){ v = String(v||'').trim(); if (v && !s[v]) { s[v]=1; o.push(v); } }); return o.sort(); }
   var srcCountries = demoOn
     ? (fcRegularMock || []).map(function(r){ return r.country; })
@@ -3843,8 +3866,7 @@ function _evtBaseFcForSku(sku, monthIdx, baseYear) {
   function lo(v){ return String(v==null?'':v).trim().toLowerCase(); }
   if (!baseYear) baseYear = parseInt((document.getElementById('event-assist-base-year') || {}).value, 10);
   if (monthIdx == null || monthIdx < 0 || !baseYear) return null;
-  var rows = (typeof _fcGetRegularForecast === 'function') ? _fcGetRegularForecast()
-    : ((window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : []);
+  var rows = _fcGetRegularForecast();
   var mkey = _fcResolveMarketplaceKey(site.marketplace);
   var row = rows.filter(function(r){
     return up(r.sku) === up(sku) && String(r.year) === String(baseYear) &&
@@ -5045,7 +5067,12 @@ async function saveEventUpdate() {
     // recognised as identical is a small lie that makes the zero-write guarantee unverifiable from
     // the outside, which is most of what makes it worth having.
     var zeroWrite = evCls.zeroWrite;
-    _fcAfterWriteScoped_(FC_SLICE_.EVENTS, function () {
+    /* §4 — stage 1's receipt is the COMPLETE canonical campaigns row, read back from the sheet after
+       the write by `campaignReceiptFor_`. Handing it over means the campaigns table is reconciled
+       rather than re-read: it is current because it was updated. The other two tables carry no such
+       row and are named to nobody, so they are refreshed once, inside this save. */
+    _fcAfterWriteScoped_({ slice: FC_SLICE_.EVENTS,
+                           receiptRows: { campaigns: (camp && camp.row) ? [camp.row] : null } }, function () {
       if (typeof renderFcEventTable === 'function') renderFcEventTable();
       /* §11 — A PARTIAL RESULT KEEPS THE FORM OPEN. Closing it would discard the inputs of exactly
          the rows that still need attention, and the operator would have nothing to act on but a
@@ -5506,6 +5533,13 @@ function _fcGetRegularForecast() {
   if (_fcWorkspaceMode_()) return [];   // unread: the region reports LOADING/REFUSED, the table draws nothing
   return (window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : [];
 }
+/* R2-STABILITY §2 — "does this page have the Regular forecast yet". ONE answer, asked of whichever
+   store is authoritative in this mode. Workspace: the slice has landed. Legacy: the broad cache has
+   been built. A modal that gates on anything else is gating on a fact about a store it does not read. */
+function _fcRegularSourceReady_() {
+  if (_fcWorkspaceMode_()) return _fcHas_('fcRegularForecast');
+  return !!(typeof window !== 'undefined' && window._opDbCache);
+}
 function _fcGetSpecialEvents() {
   if (_fcHas_('fcSpecialEvents')) return _fcReadModel.fcSpecialEvents;
   if (_fcWorkspaceMode_()) return [];
@@ -5578,8 +5612,23 @@ function _fcGetMarketplaces() {
 
    `marketplace_skus` STAYS. It is not in the workspace, so nothing has read it; the difference is
    which rows an authoritative read already brought, not a preference for one path over the other. */
+/* FC-SUMMARY-R2B-B1-R2-STABILITY §1/§2 — `fc_regular_forecast` IS NOT A PREREQUISITE EITHER, AND FOR
+   THE SAME REASON, ONE LAYER DOWN.
+
+   `marketplaces` was fetched twice and used once. This was fetched once and used NEVER: in Workspace
+   mode `_fcGetRegularForecast()` returns the read model and does not fall through to the broad cache,
+   so the rows this read brought were dropped into a store the Builder does not consult. The six call
+   sites that did consult it were asking `KM.DB.getFcRegularForecast()` directly — the exact pattern
+   A3-R5 §3 corrected for the Special builder's Base FC, left in place here — and they now ask the
+   page accessor, so there is ONE answer to "what is this SKU's Regular FC" on this page.
+
+   This is the REQUEST_TIMEOUT / getTable / fc_regular_forecast on Regular -> Next. The request was
+   never needed, so it is removed rather than retried or given a longer budget (§6).
+
+   `sku_details` and `marketplace_skus` STAY, by the same test that removed this one: no authoritative
+   read brings them, nothing else holds them, and the Builder genuinely reads them. */
 var _FC_PREREQ_TABLES_ = {
-  regular: ['sku_details', 'marketplace_skus', 'fc_regular_forecast'],
+  regular: ['sku_details', 'marketplace_skus'],
   event: ['sku_details', 'marketplace_skus', 'campaigns', 'campaign_sku_lines',
           'pricing_list', 'fc_special_events']
 };
@@ -5637,16 +5686,117 @@ function _fcSliceTables_(slice) {
   if (Object.prototype.hasOwnProperty.call(_FC_SLICE_PREREQ_TABLES_, slice)) return _FC_SLICE_PREREQ_TABLES_[slice];
   return null;
 }
+/* FC-SUMMARY-R2B-B1-R2-STABILITY §3/§4 — THE CENSUS OF WHAT A SPECIAL SAVE ACTUALLY PROVES.
+ *
+ * Invalidating the three tables a Special Event save touches is correct — those rows really did
+ * change. What was wrong is that invalidation was the END of the story: the operator then paid for
+ * the truth a SECOND time, on the next Builder open, in an Apps Script round trip that had nothing
+ * to do with the save they had already waited for. That is the ~15 s block and the REQUEST_TIMEOUT /
+ * getTable / campaign_sku_lines.
+ *
+ * Read against the writers, the three receipts are NOT equally informative:
+ *
+ *   campaigns            AUTHORITATIVE. `handleUpsertCampaign_` returns `row: campaignReceiptFor_(...)`
+ *                        — the complete canonical row, read back from the sheet AFTER the write. Nothing
+ *                        a re-read could add. Reconciled from the receipt; ZERO reads.
+ *
+ *   campaign_sku_lines   PARTIAL. Each line receipt carries campaign_sku_line_id + sku + created +
+ *                        row_version, and no row. The page knows what it SENT, but created_at/by and
+ *                        updated_at/by are server-owned and were never returned, so a row assembled
+ *                        here would be a row with invented provenance.
+ *
+ *   fc_special_events    PARTIAL IN THE ENVELOPE. `fcSpecialEventUpsert_` computes the full row on
+ *                        every branch (`row: fcSeReceiptFor_(sheet, id)`) and
+ *                        `handleImportFcSpecialEventsBatch_` then pushes only {index, event_fc_id,
+ *                        created, unchanged, row_version} and DROPS it. The truth exists server-side
+ *                        and does not reach the client. Recorded here because it is the one change
+ *                        that would take the post-write refresh below to zero reads as well — and it
+ *                        is a server change, so it is named rather than assumed.
+ *
+ * So: reconcile what is proven, and REFRESH THE REST WHERE THE OPERATOR IS ALREADY WAITING (§4) —
+ * inside the save flow, concurrently with the readback the save already performs. The operator waits
+ * once, at Save, which is the moment they expect to. The next open waits for nothing.
+ *
+ * NOTHING INCOMPLETE IS EVER MARKED CURRENT. A table is re-latched only after an authoritative read
+ * of it RESOLVED, or after a complete receipt was accepted by the store that owns the rows. A refresh
+ * that fails leaves its table unlatched, and the next Builder open reads it exactly as it does today. */
+function _fcReconcileFromReceipts_(scope) {
+  var done = [];
+  if (!scope || typeof scope !== 'object') return done;
+  var rows = scope.receiptRows;
+  if (!rows) return done;
+  var rc = (window.KM && window.KM.DB && typeof window.KM.DB.reconcileCacheRow === 'function')
+    ? window.KM.DB.reconcileCacheRow : null;
+  if (!rc) return done;
+  Object.keys(rows).forEach(function (table) {
+    var list = rows[table];
+    if (!list || !list.length) return;
+    // ALL OR NOTHING PER TABLE. One row patched and one rejected leaves the table neither stale nor
+    // current, and calling that current is the one thing §4 forbids by name.
+    var ok = true;
+    for (var i = 0; i < list.length; i++) { if (!rc(table, list[i])) { ok = false; break; } }
+    if (ok) done.push(table);
+  });
+  return done;
+}
 function _fcResetSecondaryCache(scope) {
   _fcSecondaryLoaded = false;
   var slice = (scope && typeof scope === 'object') ? scope.slice : scope;
   var tables = (typeof slice === 'string') ? _fcSliceTables_(slice) : null;
   // unknown scope → assume everything; 'I do not know what this write touched' may never keep data warm
   if (!tables) { _fcPrereqLoadedPaths_ = {}; _fcPrereqLoadedTables_ = {}; return; }
-  tables.forEach(function (t) { delete _fcPrereqLoadedTables_[t]; });
+  // Tables whose COMPLETE canonical row the receipt carried, and which the owning store accepted.
+  // They are current because they were updated, not because they were spared.
+  var reconciled = _fcReconcileFromReceipts_(scope);
+  tables.forEach(function (t) { if (reconciled.indexOf(t) === -1) delete _fcPrereqLoadedTables_[t]; });
   Object.keys(_FC_PREREQ_TABLES_).forEach(function (p) {
-    var holds = _FC_PREREQ_TABLES_[p].some(function (t) { return tables.indexOf(t) !== -1; });
+    var holds = _FC_PREREQ_TABLES_[p].some(function (t) { return !_fcPrereqLoadedTables_[t] && tables.indexOf(t) !== -1; });
     if (holds) delete _fcPrereqLoadedPaths_[p];
+  });
+  return reconciled;
+}
+
+/* §4 — THE ONE IMMEDIATE SCOPED REFRESH, PAID INSIDE THE SAVE FLOW.
+ *
+ * Only the tables this write invalidated AND the receipts could not prove. It runs concurrently with
+ * the slice readback the save already performs, so it costs the operator the slower of the two rather
+ * than the sum. On success the tables are latched CURRENT and the next Builder open issues nothing;
+ * on failure NOTHING is latched, no banner is raised, and the next open behaves exactly as it does
+ * today — a refresh that could not run must never be able to make things worse than not running. */
+function _fcPostWriteWarm_(scope) {
+  var slice = (scope && typeof scope === 'object') ? scope.slice : scope;
+  var tables = (typeof slice === 'string') ? _fcSliceTables_(slice) : null;
+  if (!tables || !tables.length) return Promise.resolve([]);
+  // Only tables a Builder path actually holds: warming a table no Builder reads would be a request
+  // bought for nobody.
+  var held = {};
+  Object.keys(_FC_PREREQ_TABLES_).forEach(function (p) {
+    _FC_PREREQ_TABLES_[p].forEach(function (t) { held[t] = 1; });
+  });
+  var need = tables.filter(function (t) { return held[t] && !_fcPrereqLoadedTables_[t]; });
+  if (!need.length) return Promise.resolve([]);
+  var rc = (window.KM && window.KM.DB && typeof window.KM.DB.refreshCacheTables === 'function')
+    ? window.KM.DB.refreshCacheTables : null;
+  if (!rc) return Promise.resolve([]);
+  _fcMeta_.postWriteWarmStart = Date.now(); _fcMeta_.postWriteWarmEnd = null;
+  _fcMeta_.postWriteWarmTables = need.slice();
+  return Promise.resolve(rc(need)).then(function () {
+    _fcMeta_.postWriteWarmEnd = Date.now();
+    need.forEach(function (t) { _fcPrereqLoadedTables_[t] = true; });
+    _fcSecondaryLoaded = true;
+    // A PATH is warm only when every table it holds is warm. Derived, never asserted: the path latch
+    // exists to answer "is this whole path warm", and answering it from anything but the tables is how
+    // a Builder opens over a table nobody fetched.
+    Object.keys(_FC_PREREQ_TABLES_).forEach(function (p) {
+      if (!_fcPrereqMissing_(p).length) _fcPrereqLoadedPaths_[p] = true;
+    });
+    return need;
+  }, function () {
+    _fcMeta_.postWriteWarmEnd = Date.now();
+    // Deliberately silent and deliberately empty-handed. The WRITE succeeded and has already been
+    // reported; a warm-up failure is not news the operator can act on, and latching nothing means the
+    // next open asks for the table properly, with its own visible refusal surface if it fails again.
+    return [];
   });
 }
 // FC-SUMMARY-R1 — `_fcEnsureBroadCacheThen` was REMOVED, not kept beside its replacement. Its
@@ -6246,7 +6396,7 @@ function _fcRefreshViewNow_(failText, state) {
    single-flight and refusable. The old shape swallowed the error into `.catch(done)` and re-entered the
    opener, which on a persistent failure retried forever with nothing on screen. */
 function _fcPrereqPath_(mode) { return mode === 'event' ? 'event' : 'regular'; }
-/* FC-SUMMARY-R2B-A3-R5 §3 — THE SPECIAL BUILDER'S BASE FC SOURCE.
+/* FC-SUMMARY-R2B-A3-R5 §3 — THE BUILDERS' REGULAR-FORECAST SOURCE.
  *
  * Reading the right store is only half of it: in Workspace mode that store is a SLICE model, and an
  * absent key there means unread, not empty. The regular slice is fetched at mount for the default tab,
@@ -6254,13 +6404,20 @@ function _fcPrereqPath_(mode) { return mode === 'event' ? 'event' : 'regular'; }
  * onto the Event tab would hold fcSpecialEvents and no fcRegularForecast, and the Builder would again
  * resolve every Base FC to null with nothing on screen to say why.
  *
- * So the Special path declares what it reads. This is NOT a new table on the broad-cache prerequisite
- * list — that list is the Builder's own lazily-loaded set and deliberately does not carry this table —
- * it is the existing slice owner, asked for the slice the Builder depends on, and only when the read
- * model does not already hold it. In Legacy mode there is no workspace to be authoritative about and
- * the broad cache answers as it always did, so this is inert there. */
+ * So the path declares what it reads. This is NOT a table on the broad-cache prerequisite list — that
+ * list is the Builder's own lazily-loaded set and deliberately does not carry this table — it is the
+ * existing slice owner, asked for the slice the Builder depends on, and only when the read model does
+ * not already hold it. In Legacy mode there is no workspace to be authoritative about and the broad
+ * cache answers as it always did, so this is inert there.
+ *
+ * R2-STABILITY §2 — IT IS NO LONGER THE SPECIAL PATH'S GUARD. Removing `fc_regular_forecast` from the
+ * Regular path's broad-cache prerequisites did not remove the Regular Builder's need for the forecast;
+ * it moved that need onto the same slice the Special path already declared. Leaving the guard keyed to
+ * 'event' would have traded a REQUEST_TIMEOUT — which says so, and offers Retry — for a permanent
+ * "Loading existing forecast… please wait." on a Regular Builder opened from the Event tab, which says
+ * nothing at all. The guard describes the DEPENDENCY, and both builders now have it. */
 function _fcBaseFcSourceMissing_(mode) {
-  if (_fcPrereqPath_(mode) !== 'event') return false;
+  if (!_fcPrereqPath_(mode)) return false;
   return _fcWorkspaceMode_() && !_fcHas_('fcRegularForecast');
 }
 function _fcEnsureBaseFcSource_(mode) {
@@ -6570,6 +6727,11 @@ function _fcAfterWrite(cb, scope) {
   var _slice = _sc.slice || _FC_TAB_SLICE_[_fcTabNow_()] || FC_SLICE_.REGULAR;
   _fcViewState_ = FC_VIEW_.REFRESHING;
   _fcMeta_.readbackStart = Date.now(); _fcMeta_.readbackEnd = null;
+  /* §4 — started HERE, beside the readback, not awaited with it. The readback owns what is drawn and
+     therefore owns the banner and the view state; the warm-up owns only whether the NEXT Builder open
+     has to ask. Chaining them would let a warm-up failure take down a readback that succeeded, and
+     awaiting them together would make the operator wait for a request they are not looking at. */
+  _fcPostWriteWarm_(_sc);
   _fcSliceFetch_(_slice).then(function () {
     _fcMeta_.readbackEnd = Date.now();
     if (!_fcOwns_(epoch)) return;                      // routed away → no DOM mutation
@@ -6798,7 +6960,7 @@ var FC_RESIZE_TABLES_ = [
            _fcResizeCols_(100, 'Country'), _fcResizeCols_(120, 'Category'), _fcResizeCols_(100, 'Series')]
       .concat(_fcMonthCols_(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']))
       .concat([_fcResizeCols_(100, 'Total FC'),
-               _fcResizeCols_(110, 'Company FC Share'), _fcResizeCols_(110, 'Site FC Share')]) },
+               _fcResizeCols_(150, 'Company Annual FC Share'), _fcResizeCols_(150, 'All-Site Annual FC Share')]) },
 
   { group: 'fc-event', panel: 'fc-panel-event',
     header: 'fc-event-scroll-header', body: 'fc-event-scroll-body',

@@ -358,38 +358,64 @@ ok(!/\(total \/ grandTotal\)|\* 100;/.test(pageCode), 'F3c ... and the percent a
 ok(/_fcShareRuntime_[\s\S]*window\.KM\.forecastShare/.test(FCS),
   'F4 the page reaches the ONE runtime owner');
 
-// The page's own anchor is UNAVAILABLE and is not a clock and not the year filter.
-ok(/var _FC_SHARE_ANCHOR_ = '';/.test(FCS), 'F5 the page anchor is empty — typed unavailable');
+/* R2-STABILITY-SHARE-FINAL §7 — F5/F7 RESTATED, BECAUSE ONE OF THEM NOW CONTRADICTS WHAT SHIPS.
+
+   F5 checked that the page's planning anchor was EMPTY. The rule behind it — the page does not invent
+   a planning anchor — holds more strongly now: there is no page anchor at all. FC Summary's two
+   columns were settled as SELECTED-YEAR diagnostics, so they ask for no planning window.
+
+   F7 said the page "does not substitute the selected year". That was right while the heading promised
+   a rolling-window share, and it is the wrong claim now that the heading says Annual: the year is the
+   DECLARED basis, named in both headings and in both tooltips. What R1 actually refused is the
+   BROWSER CLOCK — an invisible input that would make a planning figure a property of the viewer's
+   system date — and that refusal is unchanged, so F7 now states it directly instead of by proxy. */
+ok(FCS.indexOf('_FC_SHARE_ANCHOR_') === -1, 'F5 the page declares no planning anchor of its own');
 var shareSeam = FCS.slice(FCS.indexOf('function _fcShareRuntime_'), FCS.indexOf('function renderFcRegularTable'));
 ok(!/new Date|Date\.now/.test(shareSeam), 'F6 §B2 the page does not substitute a browser clock');
-ok(!/filters\.year|item\.year/.test(shareSeam), 'F7 ... and does not substitute the selected year');
+// Comments stripped first: KMFCS's header note QUOTES `new Date()` in order to say the module must
+// not contain one, and an assertion a comment can fail is an assertion about prose, not about code.
+var SHARE_CODE_ = SHARE.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+ok(!/new Date|Date\.now/.test(SHARE_CODE_), 'F7 ... and neither does the owner it delegates to');
+ok(/getFcFilters\(\)/.test(shareSeam) && /Selected-year/.test(HTML),
+  'F7b the basis it DOES use is the operator-selected year, and the heading says so');
 
 // §B12 cases 9 + 10 — the denominator comes from the AUTHORITATIVE UNFILTERED set.
 var regRender = fnSrc(FCS, 'renderFcRegularTable');
-ok(/_fcShareProjections_\(_fcShareSourceRows_\(_fcRegularSource\)/.test(regRender),
+/* The projection FUNCTION was renamed when its grain became explicit. The rule has not moved: whatever
+   it is called, it is handed the pre-filter source. Matching the SUFFIX keeps this true across that
+   rename and the next one, without weakening what is being asserted. */
+ok(/ShareProjections_\(_fcShareSourceRows_\(_fcRegularSource\)/.test(regRender),
   'F8 §B12-9/10 the renderer projects over the unfiltered source');
-ok(!/_fcShareProjections_\(filteredData|_fcShareProjections_\(paginatedData/.test(regRender),
+ok(!/ShareProjections_\(filteredData|ShareProjections_\(paginatedData/.test(regRender),
   'F9 ... never over filteredData or paginatedData');
 // The contract is the ARGUMENT, not the line number: `_fcRegularSource` is assigned from the whole
 // data source before any filter runs, and that is the value handed to the projection.
 var srcIdx = regRender.indexOf('_fcRegularSource = ');
-var projIdx = regRender.indexOf('_fcShareProjections_');
+var projIdx = regRender.indexOf('ShareProjections_');
 ok(srcIdx > -1 && projIdx > srcIdx, 'F10 the projection consumes the pre-filter assignment');
 ok(/const filteredData = filterFcRegular\(_fcRegularSource, filters\);/.test(regRender),
   'F10b ... and filtering is a SEPARATE derivation from the same source, applied to the view only');
 
 // Driven: the page seam, executed. Filtering and paging must not move a share.
+//
+// R2-STABILITY-SHARE-FINAL — re-pointed at the seam that ships. The basis is the SELECTED YEAR now,
+// so the sandbox supplies the filter state the page reads instead of an anchor constant. Every
+// assertion below is the one R1 wrote, against the same fixture and the same numbers.
 var sandbox = {
   console: console, window: { KM: { forecastShare: KMFCS } }, KMFCS: KMFCS,
-  _fcUseDb: function () { return false; }, _fcGetRegularForecast: function () { return []; }
+  _fcUseDb: function () { return false; }, _fcGetRegularForecast: function () { return []; },
+  getFcFilters: function () { return sandbox.__filters; },
+  __filters: { year: '2026', companies: ['KM'], marketplaces: ['Amazon', 'Walmart', 'Shopify'],
+               countries: ['US'], categories: ['Can Opener'], series: ['CO'], sku: '' }
 };
 vm.createContext(sandbox);
-['_fcShareRowShape_', '_fcShareProjections_', '_fcShareCells_', '_fcShareSourceRows_',
- '_fcShareUnavailableTitle_', '_fcShareRuntime_', '_fcShareAnchor_', 'filterFcRegular']
+['_fcShareRowShape_', '_fcAnnualShareProjections_', '_fcShareCells_', '_fcShareSourceRows_',
+ '_fcShareUnavailableTitle_', '_fcShareRuntime_', '_fcShareYear_', 'filterFcRegular']
   .forEach(function (n) { vm.runInContext(fnSrc(FCS, n), sandbox); });
 vm.runInContext("var _FC_SHARE_MONTHS_ = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];", sandbox);
 vm.runInContext("var _FC_SHARE_DASH_ = '\\u2014';", sandbox);
-vm.runInContext("var _FC_SHARE_ANCHOR_ = '';", sandbox);
+vm.runInContext(FCS.slice(FCS.indexOf("var _FC_SHARE_TITLE_ = "),
+  FCS.indexOf("\n", FCS.indexOf("var _FC_SHARE_TITLE_ = "))), sandbox);
 
 var VIEW_ROWS = [
   { sku: 'GA0450', year: '2026', company: 'KM', country: 'US', marketplace: 'Amazon',
@@ -403,7 +429,7 @@ sandbox.VIEW_ROWS = VIEW_ROWS; sandbox.ANCHOR = ANCHOR;
 function cellFor(rowsPassed, item) {
   sandbox.__rows = rowsPassed; sandbox.__item = item;
   return vm.runInContext(
-    'JSON.stringify(_fcShareCells_(_fcShareProjections_(__rows, ANCHOR), __item))', sandbox);
+    'JSON.stringify(_fcShareCells_(_fcAnnualShareProjections_(__rows, _fcShareYear_()), __item))', sandbox);
 }
 var fullCell = cellFor(VIEW_ROWS, VIEW_ROWS[0]);
 eq(JSON.parse(fullCell).company, '80.0%', 'F11 driven: Amazon is 80.0% of the full set');
@@ -419,16 +445,22 @@ eq(JSON.parse(cellFor(filteredTwo, VIEW_ROWS[0])).company, '84.2%',
 eq(JSON.parse(cellFor(VIEW_ROWS.slice(0, 2), VIEW_ROWS[0])).company, '84.2%',
   'F15 §B12-10 likewise a page slice would change it — which is why the slice is never passed');
 
-// Unavailable anchor -> em dash on BOTH columns, and a stated reason.
+// Unavailable basis -> em dash on BOTH columns, and a stated reason. R1 reached this state through
+// an absent anchor; the shipped page reaches it through an unselected year, which is the same rule —
+// a basis this page cannot establish is displayed as unavailable and NEVER substituted.
 sandbox.__rows = VIEW_ROWS;
+var _savedFilters = sandbox.__filters;
+sandbox.__filters = { year: '', companies: ['KM'], marketplaces: ['Amazon', 'Walmart', 'Shopify'],
+                      countries: ['US'], categories: ['Can Opener'], series: ['CO'], sku: '' };
 var dashCells = JSON.parse(vm.runInContext(
-  'JSON.stringify(_fcShareCells_(_fcShareProjections_(__rows, _fcShareAnchor_()), __rows[0]))', sandbox));
-eq(dashCells, { company: '—', site: '—' }, 'F16 with no anchor both columns are an em dash');
-var title = vm.runInContext('_fcShareUnavailableTitle_(_fcShareProjections_(__rows, _fcShareAnchor_()))', sandbox);
-ok(/No canonical planning anchor/.test(title) && /not an annual Total FC ratio/.test(title),
+  'JSON.stringify(_fcShareCells_(_fcAnnualShareProjections_(__rows, _fcShareYear_()), __rows[0]))', sandbox));
+eq(dashCells, { company: '—', site: '—' }, 'F16 with no basis both columns are an em dash');
+var title = vm.runInContext('_fcShareUnavailableTitle_(_fcAnnualShareProjections_(__rows, _fcShareYear_()))', sandbox);
+ok(/No year is selected/.test(title) && /never substituted/.test(title),
   'F17 ... and the cell says why, naming what was deliberately NOT substituted');
-eq(vm.runInContext('_fcShareUnavailableTitle_({ available: true })', sandbox), '',
-  'F18 ... and carries no title when the share is real');
+ok(/diagnostic only/.test(vm.runInContext('_fcShareUnavailableTitle_({ available: true })', sandbox)),
+  'F18 ... and a REAL share still carries the sentence saying what kind of number it is');
+sandbox.__filters = _savedFilters;
 
 // The render shape ceils; the raw shape does not. The basis must prefer raw.
 eq(vm.runInContext('_fcShareRowShape_({ sku: "X", months: [1,2,3,4,5,6,7,8,9,10,11,12] }).mar', sandbox), 3,
@@ -441,14 +473,24 @@ ok(/_fcGetRegularForecast/.test(fnSrc(FCS, '_fcShareSourceRows_')),
 // =======================================================================================================
 section('G — MARKUP, EVENT TABLE, AND THE LEGACY COLUMN.');
 // =======================================================================================================
-ok(/>Company FC Share</.test(HTML), 'G1 the Regular table names the company denominator');
-ok(/>Site FC Share</.test(HTML), 'G2 ... and the all-site one');
+/* R2-STABILITY-SHARE-FINAL §9 — the two headings gained the word ANNUAL when the grain was settled.
+   G1 and G2 assert the SAME rule and it is satisfied more completely: each heading names its own
+   denominator, and now its own time grain too. G5 is the one that had to change meaning rather than
+   wording — the headings used to promise a planning-window share and no longer do, because these two
+   columns are selected-year diagnostics and the heading must say what the number IS. The refusal G5
+   was really guarding is that a heading may not promise a grain the formula does not compute; that is
+   now asserted directly, in both directions. */
+ok(/>Company Annual FC Share</.test(HTML), 'G1 the Regular table names the company denominator');
+ok(/>All-Site Annual FC Share</.test(HTML), 'G2 ... and the all-site one');
 ok(!/<div class="header-cell">FC占比<\/div>/.test(HTML),
   'G3 the ambiguous single heading is gone from every table');
 var evtHdr = HTML.slice(HTML.indexOf('id="fc-event-scroll-header"'));
 evtHdr = evtHdr.slice(0, evtHdr.indexOf('table-body-bar'));
 ok(!/Share|占比/.test(evtHdr), 'G4 §B10 the Event table offers no share column at all');
-ok(/planning window/.test(HTML), 'G5 the headings say these are planning-window shares');
+ok(!/planning window|M\+1\.\.M\+4/.test(HTML),
+  'G5 no heading promises a planning-window share, because none of them computes one');
+ok(/Selected-year Regular Forecast share; diagnostic only\./.test(HTML),
+  'G5b ... and both say what they ARE: a selected-year diagnostic');
 
 // §B12 case 23 + 24 — the B1 writer's relationship with the legacy column did not move.
 var regHandler = GS.slice(GS.indexOf('function handleImportFcRegularForecastBatch_'));
@@ -614,10 +656,10 @@ var SHARE_RAW = read('assets/js/core/supply-planning-forecast-share.js');
 // M12 — §B12 case 26: the renderer is pointed back at the filtered set.
 (function () {
   var faultedRender = fnSrc(FCS, 'renderFcRegularTable')
-    .split('_fcShareProjections_(_fcShareSourceRows_(_fcRegularSource)')
-    .join('_fcShareProjections_(_fcShareSourceRows_(filteredData)');
-  var caught = /_fcShareProjections_\(_fcShareSourceRows_\(filteredData\)/.test(faultedRender)
-    && !/_fcShareProjections_\(_fcShareSourceRows_\(_fcRegularSource\)/.test(faultedRender);
+    .split('ShareProjections_(_fcShareSourceRows_(_fcRegularSource)')
+    .join('ShareProjections_(_fcShareSourceRows_(filteredData)');
+  var caught = /ShareProjections_\(_fcShareSourceRows_\(filteredData\)/.test(faultedRender)
+    && !/ShareProjections_\(_fcShareSourceRows_\(_fcRegularSource\)/.test(faultedRender);
   // Prove it is a REAL behaviour change, not just different text.
   var a = JSON.parse(cellFor(VIEW_ROWS, VIEW_ROWS[0])).company;
   var b = JSON.parse(cellFor(VIEW_ROWS.slice(0, 2), VIEW_ROWS[0])).company;

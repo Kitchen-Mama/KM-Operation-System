@@ -296,6 +296,10 @@ ok(/_evtEventMonthIdx\(\)/.test(fnSrc(FCS, '_evtEventBaseFcForSku')),
       varSrc(FCS, 'REG_MONTH_KEYS'),
       'function _fcResolveMarketplaceKey(v) { return String(v == null ? "" : v).trim(); }',
       'function _evtSelectedSite() { return { company: "ResUS", country: "US", marketplace: "Amazon" }; }',
+      // R2-STABILITY §2 — the reader lost its broad-cache fallback and asks the page's one forecast
+      // owner. Wired here to the SAME rows the rig already publishes, so every assertion below is
+      // about the lookup, exactly as before, and not about which store answered.
+      'function _fcGetRegularForecast() { return window.KM.DB.getFcRegularForecast(); }',
       fnSrc(FCS, '_evtEventMonthIdx'), fnSrc(FCS, '_evtBaseFcForSku'), fnSrc(FCS, '_evtEventBaseFcForSku')
     ].join('\n'), sb);
     return sb;
@@ -330,7 +334,11 @@ ok(/function _fcResetSecondaryCache\(scope\)/.test(RESET), 'E0  the reset now re
     // A3-R5 §5 — the reset now also drops the CHANGED TABLES, so the record it drops them from has to
     // travel into the sandbox with it. A sibling var does not come along with fnSrc.
     'var _fcPrereqLoadedTables_ = {};',
-    fnSrc(FCS, '_fcSliceTables_'), RESET
+    // R2-STABILITY §4 — and it now consults the write receipts before invalidating anything, so that
+    // callee travels too. With no `KM.DB.reconcileCacheRow` published here it reconciles nothing,
+    // which is the pre-round behaviour every case below already asserts.
+    fnSrc(FCS, '_fcReconcileFromReceipts_'),
+    fnSrc(FCS, '_fcSliceTables_'), fnSrc(FCS, '_fcPrereqMissing_'), RESET
   ].join('\n'), sb);
   function warm() { vm.runInContext('_fcPrereqLoadedPaths_ = { regular: true, event: true };', sb); }
   function paths() { return Object.keys(vm.runInContext('_fcPrereqLoadedPaths_', sb)).sort(); }
@@ -340,7 +348,13 @@ ok(/function _fcResetSecondaryCache\(scope\)/.test(RESET), 'E0  the reset now re
   warm(); sb._fcResetSecondaryCache({ slice: 'rules', merged: true });
   eq(paths(), ['event', 'regular'], 'E2  and so does the object form the rule path actually passes');
   warm(); sb._fcResetSecondaryCache('regular');
-  eq(paths(), ['event'], 'E3  a REGULAR write clears only the Regular path');
+  /* R2-STABILITY §1/§2 — `fc_regular_forecast` is no longer a prerequisite of either builder, so a
+     Regular write cools NEITHER path. The rule is the one E3 always enforced — a write invalidates
+     only what it could have changed — and the set it could have changed is now empty. The forecast
+     the Regular Builder reads is refreshed by the SLICE readback, which is a different owner. */
+  eq(paths(), ['event', 'regular'], 'E3  a REGULAR write cools neither path — it holds no prerequisite');
+  eq(sb._FC_PREREQ_TABLES_.regular.indexOf('fc_regular_forecast'), -1,
+    'E3a  because the forecast table is not a prerequisite of the Regular path any more');
   warm(); sb._fcResetSecondaryCache('events');
   eq(paths(), ['regular'], 'E4  an EVENTS write clears only the Special path');
   warm(); sb._fcResetSecondaryCache(undefined);
@@ -529,6 +543,8 @@ mutant('M5 a valid Base FC of zero turned into null', (function () {
   vm.runInContext([varSrc(FCS, 'REG_MONTH_KEYS'),
     'function _fcResolveMarketplaceKey(v) { return String(v == null ? "" : v).trim(); }',
     'function _evtSelectedSite() { return { company: "ResUS", country: "US", marketplace: "Amazon" }; }',
+    // R2-STABILITY §2 — the reader asks the page's one forecast owner; wired to the rig's own rows.
+    'function _fcGetRegularForecast() { return window.KM.DB.getFcRegularForecast(); }',
     fnSrc(FCS, '_evtEventMonthIdx'), faulted, fnSrc(FCS, '_evtEventBaseFcForSku')].join('\n'), sb);
   return sb._evtEventBaseFcForSku('CO1150-R') !== 0;
 })());
@@ -560,6 +576,10 @@ mutant('M8 an AFFECTED path kept warm', (function () {
   vm.runInContext([varSrc(FCS, '_FC_PREREQ_TABLES_'), varSrc(FCS, '_FC_SLICE_PREREQ_TABLES_'),
     'var _fcSecondaryLoaded = true;', 'var _fcPrereqLoadedPaths_ = { regular: true, event: true };',
     'var _fcPrereqLoadedTables_ = {};',
+    // R2-STABILITY §4 — the reset consults the write receipts first and derives the path latch from
+    // the tables. Both callees are lifted; with no reconciler published here nothing is reconciled,
+    // which is the behaviour this mutant assumes.
+    fnSrc(FCS, '_fcReconcileFromReceipts_'), fnSrc(FCS, '_fcPrereqMissing_'),
     fnSrc(FCS, '_fcSliceTables_'), faulted].join('\n'), sb);
   sb._fcResetSecondaryCache('events');
   return Object.keys(vm.runInContext('_fcPrereqLoadedPaths_', sb)).indexOf('event') !== -1;

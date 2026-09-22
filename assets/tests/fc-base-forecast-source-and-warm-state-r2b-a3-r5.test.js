@@ -151,7 +151,21 @@ ok(/_fcWriteBegin_\('targetRule'\)/.test(FCS), 'A9  the single-flight latch is u
 section('B. WHERE THE ROWS ACTUALLY LIVE — the store census that explains the live "—"');
 // =========================================================================================================
 var PREREQ = varSrc(FCS, '_FC_PREREQ_TABLES_');
-ok(PREREQ.indexOf('fc_regular_forecast') !== -1, 'B0  the Regular path does load the forecast table');
+/* R2-STABILITY §1/§2 — B0 INVERTS, AND THIS SUITE IS WHY IT COULD.
+
+   A3-R5 taught the SPECIAL builder to read the forecast from the page accessor instead of the broad
+   cache. It left the REGULAR builder asking `KM.DB.getFcRegularForecast()` directly, and so the broad
+   prerequisite had to stay to serve it. Once those six call sites ask the page accessor too — which is
+   this round — the broad read serves nobody: in Workspace mode the accessor returns the read model and
+   never falls through, so the fetched rows went into a store nothing consults. That unused request is
+   the REQUEST_TIMEOUT / getTable / fc_regular_forecast an operator hit on Regular -> Next.
+
+   So B0 now asserts the opposite MEMBERSHIP for the opposite reason, and B0a keeps the claim that
+   actually protects the operator: the rows are still reachable, from the one owner. */
+ok(PREREQ.indexOf('fc_regular_forecast') === -1,
+  'B0  the Regular path no longer loads the forecast table — nothing read what it fetched');
+ok(/_fcGetRegularForecast\(\)/.test(fnSrc(FCS, '_regularPrefillManual')),
+  'B0a  because the Regular Builder asks the page accessor, exactly as the Special one does');
 (function () {
   var sb = { console: console }; vm.createContext(sb);
   vm.runInContext(PREREQ, sb);
@@ -180,7 +194,13 @@ ok(/normalizeFcRegularForecastRecord/.test(API.split('adaptFcSummaryWorkspace')[
 
 // the open path now settles the Base FC source as well as the tables
 var BFSM = fnSrc(FCS, '_fcBaseFcSourceMissing_');
-ok(/_fcPrereqPath_\(mode\) !== 'event'/.test(BFSM), 'B5  only the Special path declares this dependency');
+/* B5 INVERTS for the same reason, one layer down. Removing the broad read did not remove the Regular
+   Builder's NEED for the forecast — it moved that need onto the regular slice, which is where the
+   Special path's need already lived. Had this guard stayed keyed to 'event', a Regular Builder opened
+   from the Event tab would have prefilled nothing and sat on "Loading existing forecast… please wait."
+   forever: a worse failure than the timeout this round removed, because it offers nothing to act on. */
+ok(BFSM.indexOf("!== 'event'") === -1,
+  'B5  BOTH builders declare this dependency now — the guard describes the dependency, not one path');
 ok(/_fcWorkspaceMode_\(\) && !_fcHas_\('fcRegularForecast'\)/.test(BFSM),
   'B5a missing means "workspace mode and the read model does not hold it" — absent is unread, not empty');
 var ENSURE = fnSrc(FCS, '_fcEnsureBaseFcSource_');
@@ -202,10 +222,15 @@ ok(PROCEED.indexOf('_fcPrereqAndSources_(selectedMode)') !== -1,
     'function _fcSliceFetch_(n) { __sliced.push(n); return Promise.resolve(); }',
     fnSrc(FCS, '_fcPrereqPath_'), BFSM, ENSURE
   ].join('\n'), sb);
-  eq(sb._fcBaseFcSourceMissing_('regular'), false, 'B8  the Regular path never triggers this');
+  eq(sb._fcBaseFcSourceMissing_('regular'), true,
+    'B8  a Regular open with no forecast rows triggers this too, now that it reads the slice');
   eq(sb._fcBaseFcSourceMissing_('event'), true, 'B8a a Special open with no forecast rows does');
   vm.runInContext('__has = true;', sb);
   eq(sb._fcBaseFcSourceMissing_('event'), false, 'B8b and stops once the read model holds them');
+  eq(sb._fcBaseFcSourceMissing_('regular'), false, 'B8c ... and so does the Regular path');
+  vm.runInContext('__has = false; __ws = false;', sb);
+  eq(sb._fcBaseFcSourceMissing_('regular'), false,
+    'B8d LEGACY mode is inert — there is no workspace there to be authoritative about');
   vm.runInContext('__has = false; __ws = false;', sb);
   eq(sb._fcBaseFcSourceMissing_('event'), false,
     'B8c Legacy mode is inert here — it has no workspace to be authoritative about');
@@ -363,6 +388,10 @@ function resetWorld(resetSrc) {
     'var _fcPrereqLoadedTables_ = {};',
     fnSrc(FCS, '_fcSliceTables_'),
     fnSrc(FCS, '_fcPrereqMissing_'),
+    // R2-STABILITY §4 — `_fcResetSecondaryCache` now consults the receipts before invalidating, so
+    // its callee is lifted too. With no `KM.DB.reconcileCacheRow` in this sandbox it reconciles
+    // nothing, which is the pre-round behaviour and is exactly what the assertions below expect.
+    fnSrc(FCS, '_fcReconcileFromReceipts_'),
     resetSrc || fnSrc(FCS, '_fcResetSecondaryCache')
   ].join('\n'), sb);
   sb.__warmAll = function () {
@@ -422,9 +451,17 @@ var UNCHANGED_BY_SPECIAL = ['sku_details', 'marketplace_skus', 'pricing_list'];
   var W2 = resetWorld();
   W2.__warmAll();
   W2._fcResetSecondaryCache('regular');
-  eq(W2._fcPrereqMissing_('regular'), ['fc_regular_forecast'],
-    'D8  a REGULAR save invalidates the forecast table alone');
-  eq(W2._fcPrereqMissing_('event'), [], 'D8a and leaves the Special builder untouched');
+  /* R2-STABILITY §1/§2 — a Regular save now invalidates NO builder prerequisite, because the forecast
+     table is not one any more. That is not data going stale: the Regular Builder reads the forecast
+     from the READ MODEL, and `_fcAfterWrite` re-fetches the regular SLICE after every Regular write.
+     The freshness the operator depends on is owned by the slice; the broad-cache latch that used to
+     stand in for it is simply no longer in the path. D8b states the thing that now carries the
+     guarantee, so this pair cannot pass while the real refresh disappears. */
+  eq(W2._fcPrereqMissing_('regular'), [],
+    'D8  a REGULAR save leaves both builders warm — it invalidates no prerequisite of either');
+  eq(W2._fcPrereqMissing_('event'), [], 'D8a and the Special builder likewise');
+  ok(/_fcSliceFetch_\(_slice\)/.test(fnSrc(FCS, '_fcAfterWrite')),
+    'D8b  and the forecast the Regular Builder actually reads is refreshed by the SLICE readback');
 
   var W3 = resetWorld();
   W3.__warmAll();
@@ -506,8 +543,10 @@ mutant('M2 the busy label removed entirely', (function () {
 })());
 
 mutant('M3 the Builder reads the broad cache again (production-shape conversion removed)', (function () {
+  // R2-STABILITY §2 — the reader lost its dead broad-cache fallback, so the anchor moves with it. The
+  // FAULT is exactly what it was: the Builder asks the broad cache, which on this path is empty.
   var faulted = GETREG.replace(
-    /var rows = \(typeof _fcGetRegularForecast === 'function'\)[\s\S]*?: \[\]\);/,
+    'var rows = _fcGetRegularForecast();',
     'var rows = (window.KM && window.KM.DB && window.KM.DB.getFcRegularForecast) ? window.KM.DB.getFcRegularForecast() : [];');
   if (faulted === GETREG) throw new Error('M3 anchor drifted');
   var W = baseWorld({ baseFcSrc: faulted });
@@ -541,7 +580,10 @@ mutant('M6 all seven prerequisites cleared after a Special write', (function () 
 
 mutant('M7 the CHANGED tables kept warm after a Special write', (function () {
   var RESET = fnSrc(FCS, '_fcResetSecondaryCache');
-  var faulted = RESET.replace('tables.forEach(function (t) { delete _fcPrereqLoadedTables_[t]; });', '');
+  // The invalidation line gained a receipt check, so the anchor follows it. The FAULT is identical:
+  // the changed tables are never dropped, and a Special write leaves stale rows warm.
+  var faulted = RESET.replace(
+    'tables.forEach(function (t) { if (reconciled.indexOf(t) === -1) delete _fcPrereqLoadedTables_[t]; });', '');
   if (faulted === RESET) throw new Error('M7 anchor drifted');
   var W = resetWorld(faulted);
   W.__warmAll();

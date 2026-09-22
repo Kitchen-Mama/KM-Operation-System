@@ -541,7 +541,10 @@ function cacheWorld() {
   vm.createContext(sb);
   [varSrc(FCS, '_FC_PREREQ_TABLES_'), varSrc(FCS, '_FC_SLICE_PREREQ_TABLES_'),
    'var _fcPrereqLoadedPaths_ = {}; var _fcPrereqLoadedTables_ = {}; var _fcSecondaryLoaded = false;',
-   fnSrc(FCS, '_fcPrereqMissing_'), fnSrc(FCS, '_fcSliceTables_'), fnSrc(FCS, '_fcResetSecondaryCache')
+   fnSrc(FCS, '_fcPrereqMissing_'), fnSrc(FCS, '_fcSliceTables_'),
+   // R2-STABILITY §4 — the reset consults the receipts first; its callee travels with it. With no
+   // `KM.DB.reconcileCacheRow` here it reconciles nothing, which is the behaviour these cases assume.
+   fnSrc(FCS, '_fcReconcileFromReceipts_'), fnSrc(FCS, '_fcResetSecondaryCache')
   ].forEach(function (s) { vm.runInContext(s, sb); });
   vm.runInContext("['regular','event'].forEach(function(p){ _FC_PREREQ_TABLES_[p].forEach(function(t){ _fcPrereqLoadedTables_[t]=true; }); _fcPrereqLoadedPaths_[p]=true; });", sb);
   return sb;
@@ -563,7 +566,11 @@ function afterWrite(scope) {
 })();
 (function () {
   var r = afterWrite('regular');
-  eq(r.regular, ['fc_regular_forecast'], 'J4  after a REGULAR write only the forecast table is re-read');
+  /* R2-STABILITY §1/§2 — the forecast table left the Regular prerequisites (it was fetched into a
+     store the Builder does not consult), so a Regular write now cools NOTHING. The freshness that
+     matters is unchanged and is owned elsewhere: `_fcAfterWrite` re-reads the regular SLICE, which is
+     what `_fcGetRegularForecast()` actually answers from. */
+  eq(r.regular, [], 'J4  after a REGULAR write no builder prerequisite is cooled at all');
   eq(r.event, [], 'J5  and the Special path is not cooled at all');
 })();
 (function () {
@@ -573,8 +580,12 @@ function afterWrite(scope) {
 })();
 (function () {
   var r = afterWrite(undefined);
-  eq(r.regular.length + r.event.length, 9,
+  // EIGHT, not nine: the Regular path declares two prerequisites now instead of three. The rule is
+  // untouched and is what this asserts — an unrecognised scope discards EVERY table on EVERY path.
+  eq(r.regular.length + r.event.length, 8,
     'J8  an UNKNOWN scope still invalidates everything — "I do not know" may never keep data warm');
+  eq(r.regular.length, 2, 'J8a  the whole Regular path');
+  eq(r.event.length, 6, 'J8b  and the whole Special path');
 })();
 (function () {
   var W = cacheWorld();
@@ -582,7 +593,7 @@ function afterWrite(scope) {
   var cold = cacheWorld();
   vm.runInContext('_fcPrereqLoadedTables_ = {};', cold);
   eq(vm.runInContext("_fcPrereqMissing_('event').length", cold), 6, 'J10 while a cold one reads six');
-  eq(vm.runInContext("_fcPrereqMissing_('regular').length", cold), 3, 'J10a and three');
+  eq(vm.runInContext("_fcPrereqMissing_('regular').length", cold), 2, 'J10a and two');
 })();
 (function () {
   eq((FCS.match(/_fcAfterWriteScoped_\(/g) || []).length,
@@ -723,8 +734,10 @@ section('M. MUTANTS — each injects a real fault and must be caught (§18)');
 })();
 (function () {
   var RESET = fnSrc(FCS, '_fcResetSecondaryCache');
+  // The anchor moves with the line it mutates; the injected fault is identical — one write clears
+  // every secondary cache instead of only the tables it could have changed.
   var f = faulted(RESET,
-    '  tables.forEach(function (t) { delete _fcPrereqLoadedTables_[t]; });',
+    '  tables.forEach(function (t) { if (reconciled.indexOf(t) === -1) delete _fcPrereqLoadedTables_[t]; });',
     '  _fcPrereqLoadedTables_ = {};', 'M10');
   var W = cacheWorld();
   vm.runInContext(f, W);

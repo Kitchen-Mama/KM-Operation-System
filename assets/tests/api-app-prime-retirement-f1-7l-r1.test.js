@@ -130,7 +130,13 @@ ok(/refreshCacheTables/.test(fcEnsure) && /rc\(need\)/.test(fcEnsure)
   // rows from the page model and issues no getTable for them. A member leaving is the direction
   // this assertion exists to allow; what it guards — that the list may not quietly GROW, and that
   // no whole-DB loader appears — is unchanged and still checked above and below.
-  var expected = ['campaign_sku_lines', 'campaigns', 'fc_regular_forecast', 'fc_special_events',
+  // R2-STABILITY §1/§2 — `fc_regular_forecast` LEFT this set too, and for a sharper version of the
+  // same reason. `marketplaces` was fetched twice and used once; this was fetched once and used
+  // NEVER — in Workspace mode `_fcGetRegularForecast()` answers from the read model and does not
+  // fall through to the broad cache, so the rows this read brought landed in a store the Builder
+  // does not consult. The six call sites that did consult it now ask the page accessor. A member
+  // leaving is still the direction this assertion allows.
+  var expected = ['campaign_sku_lines', 'campaigns', 'fc_special_events',
     'marketplace_skus', 'pricing_list', 'sku_details'].sort();
   ok(JSON.stringify(uniq) === JSON.stringify(expected),
     '_FC_SECONDARY_TABLES = exactly the modal facts (per-path union, closed set)');
@@ -148,7 +154,19 @@ ok(/delete _fcPrereqLoadedPaths_\[p\]/.test(extractFn(FC, '_fcResetSecondaryCach
   'and still drops a prerequisite path the write could have staled');
 ok(/_fcResetSecondaryCache\(scope\)/.test(extractFn(FC, '_fcAfterWrite')), '_fcAfterWrite resets the modal cache after a FC write — now passing the scope, so an unaffected path stays warm');
 // Event Assist calculation transport unchanged (still the SAME base getters; only the tables are now bounded-loaded).
-ok(/getFcRegularForecast/.test(extractFn(FC, '_evtBaseFcForSku')), 'Event Assist ADJUST base still reads fc_regular_forecast (calc unchanged)');
+// R2-STABILITY §2 — the ADJUST base still reads fc_regular_forecast; it now asks the page's ONE
+// owner for it instead of the broad cache directly, which is the whole point of the round. Pinning
+// the broad getter by name asserted WHICH STORE answered, not that the calculation was unchanged —
+// and it could now be satisfied only by restoring the dead fallback this round deleted. So the
+// calculation is what is asserted: the same rows, the same site scope, the same month key.
+var _adjBase = extractFn(FC, '_evtBaseFcForSku');
+ok(/_fcGetRegularForecast\(\)/.test(_adjBase)
+  && /_fcHas_\('fcRegularForecast'\)/.test(extractFn(FC, '_fcGetRegularForecast'))
+  && /window\.KM\.DB\.getFcRegularForecast/.test(extractFn(FC, '_fcGetRegularForecast')),
+  'Event Assist ADJUST base still reads fc_regular_forecast — through the page owner, workspace-first with the broad cache behind it (calc unchanged)');
+ok(/REG_MONTH_KEYS\[monthIdx\]/.test(_adjBase) && /String\(r\.year\) === String\(baseYear\)/.test(_adjBase)
+  && /up\(r\.company\) === up\(site\.company\)/.test(_adjBase),
+  '... and resolves it by the same month key, base year and full site scope it always did');
 ok(/getFcSpecialEvents/.test(extractFn(FC, '_evtGrowthBaseForSku')), 'Event Assist GROWTH base still reads fc_special_events (calc unchanged)');
 ok(/function _evtApplyForecastAssist/.test(FC), 'Event Assist calc _evtApplyForecastAssist present (business logic untouched — EVENT_ASSIST_AUTHORITY_REDESIGN stays DEFERRED)');
 

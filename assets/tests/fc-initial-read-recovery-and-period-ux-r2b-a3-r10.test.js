@@ -318,8 +318,13 @@ section('D. MARKETPLACES HAS ONE OWNER (§14.4)');
   ok(/'marketplace_skus'/.test(PRE),
     'D2  while marketplace_skus still is — no workspace read carries it');
   var sb = { console: console }; vm.createContext(sb); vm.runInContext(PRE, sb);
-  eq(sb._FC_PREREQ_TABLES_.regular.slice().sort(), ['fc_regular_forecast', 'marketplace_skus', 'sku_details'],
-    'D3  the Regular path is three tables');
+  // R2-STABILITY §1/§2 — TWO, not three. `fc_regular_forecast` left for the reason §14.4 gives above,
+  // applied one table further down: the Builder reads it from the page accessor, so the broad read
+  // landed rows in a store nothing consults. Membership, not a count, for the same reason D1/D2 are.
+  eq(sb._FC_PREREQ_TABLES_.regular.slice().sort(), ['marketplace_skus', 'sku_details'],
+    'D3  the Regular path is two tables');
+  eq(sb._FC_PREREQ_TABLES_.regular.indexOf('fc_regular_forecast'), -1,
+    'D3a  and the forecast table is not one of them — an authoritative read already owns it');
   eq(sb._FC_PREREQ_TABLES_.event.slice().sort(),
     ['campaign_sku_lines', 'campaigns', 'fc_special_events', 'marketplace_skus', 'pricing_list', 'sku_details'],
     'D4  and the Special path six');
@@ -680,8 +685,8 @@ await (async function () {
   // M6 marketplaces is re-added as a prerequisite — the duplicate physical read returns
   var sb = { console: console }; vm.createContext(sb);
   vm.runInContext(faulted(varSrc(FCS, '_FC_PREREQ_TABLES_'),
-    "  regular: ['sku_details', 'marketplace_skus', 'fc_regular_forecast'],",
-    "  regular: ['sku_details', 'marketplace_skus', 'marketplaces', 'fc_regular_forecast'],", 'M6'), sb);
+    "  regular: ['sku_details', 'marketplace_skus'],",
+    "  regular: ['sku_details', 'marketplace_skus', 'marketplaces'],", 'M6'), sb);
   mutant('M6 marketplaces is fetched again although the bootstrap slice carries it',
     sb._FC_PREREQ_TABLES_.regular.indexOf('marketplaces') !== -1);
 })();

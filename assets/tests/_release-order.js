@@ -573,7 +573,30 @@ var ROUND_TOKENS = [
   // A NEW FILE also enters the application set: assets/js/core/supply-planning-forecast-share.js.
   // index.html, fc-summary.js, fc-summary.html and fc-overview.css all change together, so the whole
   // application set rotates together.
-  'fcsharedual-r1-20260922'];
+  'fcsharedual-r1-20260922',
+
+  // FC-SUMMARY-R2B-B1-R2-STABILITY-SHARE-FINAL — the previous token reached production and the live
+  // deployment reports R19, so the R1 bytes have been served under `?v=fcsharedual-r1-20260922` and
+  // the reuse rule closes.
+  //
+  // THE REFETCH IS LOAD-BEARING TWICE OVER, and neither reason is cosmetic.
+  //
+  // A browser left on the previous bytes still carries the Regular Builder that asks for
+  // `fc_regular_forecast` on its first Next — a physical getTable whose rows land in a store the
+  // Builder does not consult, and which in production times out. It also still carries the Special
+  // save that invalidates three tables and then makes the operator buy the same truth again on the
+  // next open, ~15 s later, with REQUEST_TIMEOUT / getTable / campaign_sku_lines as the failure mode.
+  // Both are REQUESTS REMOVED, not budgets raised, so old bytes keep both faults in full.
+  //
+  // And the two share columns stop reading "—". R1 shipped them unavailable because FC Summary had no
+  // canonical planning anchor; they are now SELECTED-YEAR diagnostics and show real numbers under
+  // headings that say "Annual". A browser on the old bytes shows an em dash where the new one shows a
+  // share — the more visible half of the rotation, and the one an operator will notice first.
+  //
+  // No new file enters the application set this round. index.html, fc-summary.js, fc-summary.html,
+  // fc-overview.css, operation-system-db-api.js and supply-planning-forecast-share.js all change
+  // together, so the whole application set rotates together, as it always does.
+  'stabilityshare-r2-20260922'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the
