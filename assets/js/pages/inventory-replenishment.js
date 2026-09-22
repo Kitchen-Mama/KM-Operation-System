@@ -3548,6 +3548,46 @@ window._irDuplicateLineIdentities_ = _irDuplicateLineIdentities_;
 window._irHasDuplicateCorruption_ = _irHasDuplicateCorruption_;
 window._irDuplicateCorruptedSkus_ = _irDuplicateCorruptedSkus_;
 window._irRenderDuplicateCorruptionBanner_ = _irRenderDuplicateCorruptionBanner_;
+// ================================================================================================================
+// S2-R3 §4/§5 — WHAT IS ON SCREEN, AND WHETHER THE DATABASE HAS BEEN ASKED ABOUT IT.
+// ----------------------------------------------------------------------------------------------------------------
+// ONE owner. This reads the draft controller's own state rather than keeping a second copy of the answer beside
+// it, because a duplicated session truth is the defect this round exists to remove, not a tool for removing it.
+// The controller is the only thing that knows whether its last read answered; the page's job is to say so and to
+// refuse to submit on top of it.
+//
+// It reports UNVERIFIED only when a local buffer is actually standing in for the database. A read that did not
+// answer with nothing on screen is a page with no plan on it — honest already, and not something to block.
+function _irDraftStateUnverified_() {
+    try {
+        var ws = (typeof _getAllocWorkspace === 'function') ? _getAllocWorkspace() : null;
+        if (!ws || typeof ws.getState !== 'function') return '';
+        var st = ws.getState() || {};
+        if (String(st.state) !== 'DB_UNKNOWN') return '';
+        if (String(st.source) !== 'LOCAL_UNVERIFIED') return '';
+        return String(st.code || 'READ_DID_NOT_ANSWER');
+    } catch (e) { return ''; }
+}
+// Disclosure, in the same shape as the unsaved and duplicate banners: it states the fact, says what is and is not
+// known, and never removes or rewrites a row. Nothing here decides anything — the refusal is the preflight's.
+function _irRenderDbUnknownBanner_() {
+    var host = _irStateHost_(); if (!host) return;
+    var existing = host.querySelector('.replen-dbunknown-banner');
+    if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+    var why = _irDraftStateUnverified_();
+    if (!why) { if (!host.innerHTML) { host.style.display = 'none'; } return; }
+    var html = '<div class="replen-dbunknown-banner" role="alert" style="background:#FFFBEB;border-left:3px solid #D97706;color:#92400E;padding:8px 10px;margin:0 0 8px;font-size:12px;">' +
+        '<strong>The database could not be read, so this plan is UNVERIFIED.</strong> ' +
+        'The routes below were restored from this browser\u2019s local recovery buffer (' + _irEsc_(why) + '). ' +
+        'They are shown so nothing you entered is lost, but they have NOT been checked against the database \u2014 ' +
+        'it may hold newer routes, or this draft may already have been submitted or cancelled elsewhere. ' +
+        'Submit Plan is blocked until a read succeeds. Nothing has been written or discarded.' +
+        '</div>';
+    host.insertAdjacentHTML('afterbegin', html);
+    host.style.display = '';
+}
+window._irDraftStateUnverified_ = _irDraftStateUnverified_;
+window._irRenderDbUnknownBanner_ = _irRenderDbUnknownBanner_;
 window._irUnsavedRoutes_ = function () { return _irUnsavedRoutes; };
 window._irHasUnsavedRoutes_ = _irHasUnsavedRoutes_;
 window._irSaveAcknowledged_ = _irSaveAcknowledged_;
@@ -3983,6 +4023,9 @@ function _irSubmitStateSnapshot_() {
         // refused while this stands, because the station's stored plan is not known to be the plan on screen.
         aiPlanUnreconciled: (window._irAiPlanUnreconciled && window._irAiPlanUnreconciled.reason)
             ? String(window._irAiPlanUnreconciled.reason) : '',
+        // S2-R3 §4 — read from the controller at snapshot time, never cached here. A page that remembered this
+        // separately would be able to go on refusing after a read had already succeeded.
+        draftStateUnverified: (typeof _irDraftStateUnverified_ === 'function') ? _irDraftStateUnverified_() : '',
         // The page does not know how many ACTIVE headers the station holds with zero lines - the hydrate
         // produces routes, not a header inventory. That count belongs to the read-only census
         // (TEMP_SHIPPING_ALLOCATION_SUBMIT_PLAN_A2_SUMMARY), and is reported there rather than guessed here.
@@ -6260,7 +6303,9 @@ function _getAllocWorkspace() {
     return _allocWorkspace;
 }
 function _allocStateLabel(state) {
-    var map = { NOT_SAVED: 'Not Saved', SAVING: 'Saving…', SAVED: 'Saved to DB', SAVE_FAILED: 'Save Failed', CONFLICT: 'Conflict', CANCELLED: 'Cancelled', SUBMITTED: 'Submitted' };
+    // S2-R3 §4 — 'Database Unreachable' rather than 'Save Failed': nothing was being saved. The label names the
+    // READ that did not answer, because that is the fact the operator has to act on.
+    var map = { NOT_SAVED: 'Not Saved', SAVING: 'Saving…', SAVED: 'Saved to DB', SAVE_FAILED: 'Save Failed', CONFLICT: 'Conflict', CANCELLED: 'Cancelled', SUBMITTED: 'Submitted', DB_UNKNOWN: 'Database Unreachable' };
     return '● ' + (map[state] || state);   // glyph + text (non-color indicator, accessibility)
 }
 // Migration: remove ONLY a body-level panel wrongly attached by previously-loaded code (never a page-local one).
@@ -6291,11 +6336,19 @@ function _ensureAllocDraftPanel() {
 }
 // Truthful persistence panel — renders from the controller state snapshot only (never from toast text).
 function _renderAllocDraftPanel(s) {
+    // S2-R3 §4 — the disclosure is driven by the SAME state change that drives the panel, so the two can never
+    // disagree about whether the last read answered.
+    try { if (typeof _irRenderDbUnknownBanner_ === 'function') _irRenderDbUnknownBanner_(); } catch (e) {}
     var el = _ensureAllocDraftPanel(); if (!el) return;
     var draftId = (s.draft && (s.draft.allocation_draft_id || s.draft.allocationDraftId)) || '—';
     var version = (s.draft && (s.draft.draft_version || s.draft.draftVersion)) || '—';
     var when = s.savedAt || '—';
-    var source = s.source === 'DB' ? 'Database' : 'Local Recovery';
+    // S2-R3 §4 — three sources, not two. 'Local Recovery' after a read that ANSWERED 'no active draft' is an
+    // honest unsaved buffer. The same words after a read that did not answer would be a claim the page cannot
+    // make, so that case says so.
+    var source = s.source === 'DB' ? 'Database'
+        : (s.source === 'LOCAL_UNVERIFIED' ? 'Local Recovery — UNVERIFIED against the database'
+        : (s.source === 'UNKNOWN' ? 'Unknown — the database could not be read' : 'Local Recovery'));
     var conflict = (s.conflictIds && s.conflictIds.length) ? (' [' + s.conflictIds.join(', ') + ']') : '';
     var issues = (s.issues && s.issues.length) ? s.issues.map(function (i) { return String(i.code) + (i.missing ? (': ' + i.missing.join('/')) : (i.routeContexts ? (': ' + i.routeContexts.length + ' routes') : '')); }).join('; ') : '';
     el.setAttribute('data-alloc-state', s.state);
@@ -6358,13 +6411,26 @@ async function _restoreAllocationDraftFromSession() {
             // F1-7N-FB-4G-A0 §D.4 — Workspace mode reads the scoped read model, which this mount does not own
             // and must not trigger a read for (§B: only a confirmed Search loads inventory). Legacy mode keeps
             // the bounded broad-cache load exactly as before.
+            // S2-R3 §7 — LEFT EXACTLY AS IT WAS, AND THE REASON IS RECORDED RATHER THAN ACTED ON.
+            //
+            // Neither of these two table names is in `validTabs` in 03_master_data_handlers.gs, so the deployed
+            // server answers 'Invalid table name' to BOTH: in Legacy mode this call can only ever throw, be
+            // swallowed by its own catch, and leave the cache slice exactly as it found it.
+            //
+            // S2-R3 does NOT remove it. The SAME call stands at two sibling sites (the Search hydrate and the AI
+            // Plan readback), where F1-7N-FB-4G-A0 §D.4 examined this very fact and deliberately kept the Legacy
+            // call while short-circuiting Workspace mode. Removing it at one of the three would leave the page
+            // holding two treatments of one decision, which is a worse state than either of the consistent ones,
+            // and removing all three is a request-graph change with its own blast radius rather than part of this
+            // round's correctness repair. Registered as S2_LEGACY_REFUSED_DRAFT_TABLE_READ, owned by a scoped
+            // follow-up that can treat all three together.
             try {
                 if (!(typeof _irEffectiveWorkspace === 'function' && _irEffectiveWorkspace()) &&
                     window.KM && window.KM.DB && typeof window.KM.DB.refreshCacheTables === 'function' &&
                     typeof isOperationDbApiConfigured === 'function' && isOperationDbApiConfigured()) {
                     await window.KM.DB.refreshCacheTables(['shipping_allocation_drafts', 'shipping_allocation_draft_lines']);
                 }
-            } catch (e) { /* bounded load failed → fall through to the sessionStorage recovery cache below (as before) */ }
+            } catch (e) { /* bounded load failed → the hydrate below reads _irWsGet either way */ }
             if (_hydrateAllocationDraftFromDb(ctx)) {
                 // F1-7N-FB-2A §D — the DB is the SSOT: what it returns IS the persisted truth, so any prior
                 // UNSAVED mark is void (a route that failed to save simply is not in these rows, and correctly

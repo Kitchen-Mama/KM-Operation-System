@@ -755,7 +755,17 @@
   // Pure, DOM-free and deps-injected so the exact workflow is deterministically unit-testable in Node. The page
   // wires real deps (adapters + a render callback); tests inject fakes. This controller NEVER calls
   // loadOperationDb / getOperationDb — reads go ONLY through deps.readback (getShippingAllocationDraftWorkspace).
-  var IR_DRAFT_STATES = ['NOT_SAVED', 'SAVING', 'SAVED', 'SAVE_FAILED', 'CONFLICT', 'CANCELLED', 'SUBMITTED'];
+  // S2-R3 §4 — DB_UNKNOWN is the state this machine was missing, and its absence is why sessionStorage
+  // could become the authority without anyone deciding that it should. A readback that DID NOT ANSWER was
+  // mapped to SAVE_FAILED — a WRITE outcome, for a read, when nothing was being saved — and its `source`
+  // was set to LOCAL on exactly the same rule as NO_ACTIVE_DRAFT. So 'the database says this station has
+  // no draft' and 'the database could not be asked' arrived downstream as the same sentence, and the local
+  // recovery buffer was presented as the plan in both cases.
+  //
+  // It is the distinction this codebase has already ruled on twice, in S2-R2-R1 and S2-R2-R2: an EMPTY
+  // answer and an UNKNOWN answer are not the same fact. An empty one is a real answer about the data. An
+  // unknown one is a sentence about the reader.
+  var IR_DRAFT_STATES = ['NOT_SAVED', 'SAVING', 'SAVED', 'SAVE_FAILED', 'CONFLICT', 'CANCELLED', 'SUBMITTED', 'DB_UNKNOWN'];
 
   // Map a canonical error code out of a structured adapter/command result (never message-string parsing when a code exists).
   function draftErrorCode(res) {
@@ -858,6 +868,18 @@
       try { rb = await deps.readback(scope); } catch (e) { rb = { success: false, error: { code: 'HTTP_TRANSPORT_ERROR' } }; }
       if (mySeq !== loadSeq) return { stale: true };
       var hasLocal = !!(deps.getLocalBuffer && deps.getLocalBuffer());
+      // S2-R3 §4/§5 — THE READ EITHER ANSWERED OR IT DID NOT, AND THAT IS DECIDED BEFORE ANYTHING IS RENDERED.
+      //
+      // `draftStateFromReadback` is left exactly as it was, because save() and cancel() reach it under their own
+      // contracts and neither of them can put a local buffer on screen. This is the only path that can, so this is
+      // the only place the distinction has to be made. An unanswered read yields NO draft and NO lines — never the
+      // previous ones, which would be the stale commit this guard exists to stop — and says whether a local buffer
+      // exists, because that is what decides whether anything unverified is on screen at all.
+      if (!rb || rb.success === false) {
+        set({ state: 'DB_UNKNOWN', code: draftErrorCode(rb), draft: null, lines: [], conflictIds: [], issues: [],
+              source: hasLocal ? 'LOCAL_UNVERIFIED' : 'UNKNOWN', savedAt: null, transient: null });
+        return { stale: false, state: 'DB_UNKNOWN', unverified: hasLocal };
+      }
       var m = draftStateFromReadback(rb, hasLocal);
       set({ state: m.state, draft: m.draft, lines: m.lines || [], conflictIds: m.conflictIds || [], code: m.code || null, source: m.source || (m.draft ? 'DB' : 'LOCAL'), savedAt: (m.draft && (m.draft.updated_at || m.draft.updatedAt)) || null, transient: null });
       return { stale: false, state: state.state };
@@ -1166,7 +1188,18 @@
     // after the request had already been sent. Submitting on top of that would build a shipping plan from a
     // draft nobody has established the shape of, so it is refused until a run reconciles. It clears itself:
     // the next generation that does reconcile drops it.
-    EXECUTION_PLAN_AI_UNRECONCILED: 'EXECUTION_PLAN_AI_UNRECONCILED'
+    EXECUTION_PLAN_AI_UNRECONCILED: 'EXECUTION_PLAN_AI_UNRECONCILED',
+    // S2-R3 §4 — THE DATABASE STATE IS UNKNOWN AND THE SCREEN CAME FROM THE LOCAL BUFFER.
+    //
+    // Like EXECUTION_PLAN_AI_UNRECONCILED above, this is not a statement about any route: every route on
+    // screen may be complete, saved and perfectly well formed. What is unknown is whether they are what the
+    // DATABASE holds, because the read that would have said so did not answer and the rows being displayed
+    // came out of the sessionStorage recovery buffer instead.
+    //
+    // Submitting here would build a durable shipping plan out of a picture nobody has confirmed — including
+    // the case where another session has since cancelled or submitted the same draft, which the local buffer
+    // cannot know. It clears itself: the next read that ANSWERS drops it, whatever the answer is.
+    EXECUTION_PLAN_DB_STATE_UNKNOWN: 'EXECUTION_PLAN_DB_STATE_UNKNOWN'
   };
 
   // ===========================================================================================================
@@ -1747,6 +1780,19 @@
     // F1-7N-FC-1B-E3 §G.14. This runs before every route-shaped judgement because it is not about the
     // routes: it says the station's stored plan is not known to match what is being submitted. Advising on
     // the rows in that state would be advice about the wrong thing.
+    // ---- -0.6. THE DATABASE STATE IS UNKNOWN --------------------------------------------------------
+    //
+    // S2-R3 §4. This runs before the AI gate and before every route-shaped judgement for the same reason that
+    // one does, only more so: if the database could not be read, nothing below is known to be about the stored
+    // plan at all. Advising the operator to finish or save a route would be advice about rows whose relationship
+    // to the database has not been established.
+    var _dbUnknown = sstr(input.draftStateUnverified);
+    if (_dbUnknown) {
+      out.code = C.EXECUTION_PLAN_DB_STATE_UNKNOWN;
+      out.blocking.reasons.push({ sku: '', reason: 'DB_STATE_UNKNOWN:' + _dbUnknown });
+      return out;
+    }
+
     var _aiUnrec = sstr(input.aiPlanUnreconciled);
     if (_aiUnrec) {
       out.code = C.EXECUTION_PLAN_AI_UNRECONCILED;

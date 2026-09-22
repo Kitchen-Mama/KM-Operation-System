@@ -289,6 +289,18 @@ finding, and this document does not take it.
 > [`CAMPAIGN_PROMOTION_RECORD_CONTRACT.md`](CAMPAIGN_PROMOTION_RECORD_CONTRACT.md) — design
 > authority, not deployed state.
 
+> **PARTLY ANSWERED — 2026-09-22, S2-R3.** The `inventory-replenishment` row's **cross-page handoff** half is
+> closed and was closed before this round: Submit fails closed without the canonical API, and the
+> `allShippingPlans` write is dev-host-only. Its **`REPLEN_ALLOC_DRAFT_KEY`** half was the live one — not
+> because the key is authoritative by design (the frozen contract has always called it an unsaved buffer), but
+> because a readback that did not answer was indistinguishable from one that answered “no active draft”, so
+> the buffer became authoritative **on failure** without anyone choosing that. `DB_UNKNOWN` +
+> `LOCAL_UNVERIFIED` + `EXECUTION_PLAN_DB_STATE_UNKNOWN` now separate the two. `_IR_RECO_CACHE_KEY` is
+> untouched and remains a session cache with a server behind it.
+>
+> The `sku-overrides`, `utils/data.js`, `supplychain-canvas` and `shippingHistory` rows are **unchanged and
+> still open.**
+
 Preferences, for completeness and so they are never mistaken for the list above: `utils/i18n.js`
 (language), `utils/resizable-columns.js` (widths), `core/state.js` (`km_state_*` view state),
 `global-logistics-map.js` (`km.map.labelMode.v1`), `sku-details.js` (`SKU_COLPREF_KEY_`).

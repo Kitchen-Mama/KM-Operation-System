@@ -596,7 +596,24 @@ var ROUND_TOKENS = [
   // No new file enters the application set this round. index.html, fc-summary.js, fc-summary.html,
   // fc-overview.css, operation-system-db-api.js and supply-planning-forecast-share.js all change
   // together, so the whole application set rotates together, as it always does.
-  'stabilityshare-r2-20260922'];
+  'stabilityshare-r2-20260922',
+
+  // S2-R3 — the previous token is SERVING IN PRODUCTION (the FC-SUMMARY-FINAL-SEAL read the deployed
+  // page and counted 39 refs at `?v=stabilityshare-r2-20260922`), so the reuse rule closes and this
+  // round rotates.
+  //
+  // WHAT A BROWSER ON THE OLD BYTES STILL DOES, and it is not cosmetic. Its draft controller maps a
+  // readback that DID NOT ANSWER onto SAVE_FAILED with `source: 'LOCAL'` — the same pair it produces
+  // for a database that answered NO_ACTIVE_DRAFT. So on a transport failure the sessionStorage recovery
+  // buffer is presented as the station's plan, with no disclosure, and Submit Plan stays OPEN over it.
+  // The old bytes will happily build a durable shipping plan out of a picture nothing has confirmed,
+  // including the case where another session has already submitted or cancelled that same draft.
+  //
+  // That is a WRITE-SAFETY difference, not a rendering one, so a stale tab cannot be left on it.
+  //
+  // No new file enters the application set. index.html, inventory-compat.js and
+  // inventory-replenishment.js change together, so the whole application set rotates together.
+  's2r3-dbunknown-20260922'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

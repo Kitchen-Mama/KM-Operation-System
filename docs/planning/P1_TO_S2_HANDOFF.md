@@ -163,6 +163,27 @@ Define and document, without writing runtime:
 
 **Not implemented in this round.**
 
+> **S2-C PARTIALLY DELIVERED — 2026-09-22, S2-R3.** The named exemplar was re-traced before anything was
+> written, and it is **not where the live defect was**. The `allShippingPlans` cross-page handoff is already
+> closed at both ends: Inventory Replenishment's Submit fails **closed** unless the canonical API is available
+> (the sessionStorage branch is dev-host + explicit opt-in and unreachable in production), and Shipping Plan
+> renders from the DB / `weeklyShipping.workspace.get` with a stale-response guard and an explicit read-error
+> state, falling to the sessionStorage renderer only in Demo. No repair was needed there and none was made.
+>
+> What S2-R3 **did** repair is the same principle one layer in, where it was still live: the Shipping
+> Allocation Working Draft. `IRDraftWorkspace.load()` classified a readback that **did not answer** as
+> `SAVE_FAILED` with `source: 'LOCAL'` — the identical pair it produces for a database that answered
+> `NO_ACTIVE_DRAFT` — so on any transport failure the sessionStorage recovery buffer silently became the
+> authority on the station's plan, with Submit still open over it. That is precisely the line this section
+> draws (“would a second operator on a second machine need the same value”), and it was being crossed
+> invisibly. The repair adds the `DB_UNKNOWN` state, the `LOCAL_UNVERIFIED` source, a disclosure banner and a
+> Submit refusal; the canonical owner is unchanged and no storage moved.
+>
+> **Still open under S2-C**, and deliberately not taken in this round: `utils/sku-overrides.js`
+> (`km_sku_data_overrides_v1` and its two siblings), `utils/data.js` (`weeklyShippingPlans`),
+> `pages/supplychain.js` (`supplychain-canvas`), and the `shippingHistory` pair. Each is a separate owner with
+> a separate contract question, and none of them is the allocation draft.
+
 ---
 
 ## 5 · S3 – S5, UNCHANGED
