@@ -574,10 +574,16 @@ section('H. NON-REGRESSION');
     'H8  with §10.2 and §14 frozen beside it');
   // the B1 preflight must survive this round
   ok(/importFcRegularForecastBatch/.test(read('assets/js/api/operation-system-db-api.js')),
-    'H9  the Regular batch writer is untouched — B1 owns it');
+    'H9  the Regular batch writer still exists — B1 hardened it in place');
   var SAVE = fnSrc(FCS, 'saveEventUpdate');
-  ok(/for \(var k = 0; k < lines\.length; k\+\+\)/.test(SAVE),
-    'H10 and Special stage 3 is still the per-SKU loop B1 will convert');
+// B1-PERF converted it, which is what A3-R10 recorded this line in anticipation of. Inverted rather
+// than deleted: the loop must not come back, and the batch must be the ONE request that replaced it.
+ok(!/for \(var k = 0; k < lines\.length; k\+\+\)/.test(SAVE),
+  'H10 Special stage 3 is no longer a per-SKU loop');
+ok(/DB\.importFcSpecialEventsBatch\(evRows/.test(SAVE),
+  'H10a it is one batch request over the action that already existed');
+ok(!/await DB\.upsertFcSpecialEvent\(/.test(SAVE),
+  'H10b and the per-SKU writer is not called from the builder save at all');
 })();
 
 // =========================================================================================================

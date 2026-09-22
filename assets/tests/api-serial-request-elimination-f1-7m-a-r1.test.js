@@ -156,9 +156,14 @@ eval(extractFn(RO, '_opLoadFirstLayerComposer_'));
   ok(/sheet\.appendRow\(/.test(GS), 'FC writer creates rows via sheet.appendRow (concurrent appends can race without a lock)');
   // The router\'s only LockService is the recommendation bridge — it does NOT wrap the FC upsert.
   ok(/upsertFcSpecialEvent/.test(ROUTER) && /handleUpsertFcSpecialEvent_/.test(ROUTER), 'router dispatches upsertFcSpecialEvent → handleUpsertFcSpecialEvent_ (no per-write lock wrapper)');
-  // Runtime UNCHANGED: the save still writes fc_special_events serially, one await per SKU.
-  ok(/for \(var k = 0; k < lines\.length; k\+\+\) \{[\s\S]*?await DB\.upsertFcSpecialEvent\(/.test(FC),
-    'FC saveFcEvent STILL writes special events serially (await per SKU) — unchanged, batch deferred to F1-7M-A2-FC-SPECIAL-EVENT-BATCH-R1');
+  // THE DEFERRAL RECORDED HERE HAS BEEN PAID. F1-7M-A named the batch it was not going to build and
+  // pinned the serial loop so the debt could not be forgotten; FC-SUMMARY-R2B-B1-PERF §15.6 built it,
+  // over the action and the server core that already existed. Inverted rather than deleted, because
+  // the loop coming back is exactly what this line was watching for.
+  ok(!/for \(var k = 0; k < lines\.length; k\+\+\) \{[\s\S]*?await DB\.upsertFcSpecialEvent\(/.test(FC),
+    'FC saveEventUpdate no longer writes special events serially — the F1-7M-A deferral is discharged');
+  ok(/await DB\.importFcSpecialEventsBatch\(evRows/.test(FC),
+    'and stage 3 is ONE batch request: 2 + N logical writes became 3, for any N');
 
   // ===================================================================================================================
   console.log('\n== Frozen invariants re-checked (must not regress) ==');

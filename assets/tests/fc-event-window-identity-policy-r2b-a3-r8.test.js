@@ -443,7 +443,28 @@ function saveWorld(opts) {
     window: { KM: { DB: {
       upsertCampaign: function (b) { return Promise.resolve(srv.upsertCampaign(b)); },
       upsertCampaignSkuLines: function (b) { return Promise.resolve(srv.upsertCampaignSkuLines(b)); },
-      upsertFcSpecialEvent: function (b) { return Promise.resolve(srv.upsertFcSpecialEvent(b)); }
+      upsertFcSpecialEvent: function (b) { return Promise.resolve(srv.upsertFcSpecialEvent(b)); },
+      // B1-PERF §15.6 — stage 3's writer. Mirrors handleImportFcSpecialEventsBatch_ exactly: same
+      // per-row core, per-row try/catch, positional `index`, and a `skipped` result where the
+      // single-row action would have thrown. success:true means THE BATCH RAN.
+      importFcSpecialEventsBatch: function (rows, options) {
+        var results = [], created = 0, updated = 0, unchanged = 0, skipped = 0;
+        (rows || []).forEach(function (r, i) {
+          try {
+            var res = srv.upsertFcSpecialEvent(r);
+            var d = (res && res.data) || res || {};
+            if (d.created) created++; else if (d.unchanged) unchanged++; else updated++;
+            results.push({ index: i, event_fc_id: d.event_fc_id, created: !!d.created,
+              unchanged: !!d.unchanged, row_version: d.row_version || '' });
+          } catch (e) {
+            skipped++;
+            results.push({ index: i, event_fc_id: r.event_fc_id || '', skipped: true,
+              reason: String(e && e.message ? e.message : e) });
+          }
+        });
+        return Promise.resolve({ success: true, data: { summary: { created: created, updated: updated,
+          unchanged: unchanged, skipped: skipped, total: (rows || []).length }, results: results } });
+      }
     } } },
     __srv: srv, __alerts: alerts, __notices: notices
   };
@@ -496,6 +517,10 @@ function saveWorld(opts) {
     'function _fcAfterWriteScoped_(slice, fn) { fn(); }',
     'function _fcBuilderFailure_(e) { __failure = String(e && e.message || e); }',
     'var __failure = "";',
+    // B1-PERF §15.6/§10 — the batch result classifier and the receipt write-back the save now uses.
+    varSrc(FCS, 'EVT_ROW_'), varSrc(FCS, 'EVT_REFUSAL_KIND_'),
+    fnSrc(FCS, '_evtRefusalKind_'), fnSrc(FCS, '_evtClassifyBatch_'),
+    fnSrc(FCS, '_evtApplyBatchReceipts_'), fnSrc(FCS, '_evtPartialText_'),
     'function renderFcEventTable() {}',
     'function closeFcModal() {}',
     'function _evtShowWindowChangeNotice_(g) { __notices.push(g); }',
@@ -559,6 +584,10 @@ async function main() {
       'D2a the shared campaign header is not written — adding a forecast is not editing the header');
   })();
 
+  /* B1-PERF §15.6 — a per-ROW refusal is reported per row. The token must still reach the operator
+     and it must still name the SKU it belongs to, which is strictly more than the thrown failure
+     said: that one named the save. */
+  function rowRefusalText(W) { return (W.__alerts || []).join(' | '); }
   await (async function () {
     // test 18 — stale-version protection is untouched by any of this.
     var W = saveWorld({ editing: LOADED,
@@ -566,8 +595,11 @@ async function main() {
         regularPrice: 100, discountPercent: 20, dealPrice: 80, fcQty: 5000,
         eventFcId: 'EFC-1100', campaignSkuLineId: 'CSL-1100', rowVersion: 'STALE-TOKEN' }] });
     await W.saveEventUpdate();
-    eq(failureOf(W), 'STALE_SPECIAL_EVENT_VERSION',
-      'D3  a stale version is still refused — the round weakened nothing');
+    var _d3 = rowRefusalText(W);
+    ok(_d3.indexOf('STALE_SPECIAL_EVENT_VERSION') !== -1,
+      'D3  a stale version is still refused — the round weakened nothing', _d3);
+    ok(_d3.indexOf('CO1100-R') !== -1,
+      'D3-1 and the refusal names the SKU it belongs to, which the thrown failure never did');
     eq(W.__srv.writes.filter(function (w) { return w.table === 'fc_special_events'; }), [],
       'D3a and nothing was written');
   })();
@@ -785,7 +817,7 @@ async function main() {
         regularPrice: 100, discountPercent: 20, dealPrice: 80, fcQty: 5000,
         eventFcId: 'EFC-1100', campaignSkuLineId: 'CSL-1100', rowVersion: 'STALE-TOKEN' }] });
     await W.saveEventUpdate();
-    return failureOf(W) === 'STALE_SPECIAL_EVENT_VERSION';
+    return (W.__alerts || []).join(' | ').indexOf('STALE_SPECIAL_EVENT_VERSION') !== -1;
   })() === true);
 
   mutant('M12 the guard moving to AFTER stage 1', (function () {

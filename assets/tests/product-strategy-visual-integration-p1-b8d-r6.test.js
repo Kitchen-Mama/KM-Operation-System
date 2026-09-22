@@ -514,7 +514,14 @@ var R6_KNOWN_GS_CHANGES = ['assets/specs/active/apps-script/03_master_data_handl
   // plus 58_'s new manifest row. Product Strategy's read path is untouched: no action was added or
   // removed, no capability field changed, the feature flag is untouched, and 72_ did not move. Declared
   // here rather than loosening the check, which is the whole point of the register.
-  'assets/specs/active/apps-script/58_api_v1_fc_summary_workspace.gs'];
+  'assets/specs/active/apps-script/58_api_v1_fc_summary_workspace.gs',
+  // FC-SUMMARY-R2B-B1-PERF - the Regular Forecast WRITER. 04_ gained validate-all-before-the-first-
+  // mutation, a script lock over the authoritative read and the writes, column-bounded setValues
+  // blocks and one append block, plus its first build stamp; 63_ is already declared above and
+  // carries the R19 release and 04_'s first manifest row. Product Strategy's read path is untouched:
+  // no action was added or removed, no capability field changed, the feature flag is untouched, and
+  // 72_ did not move. Declared here rather than loosening the check.
+  'assets/specs/active/apps-script/04_marketplace_forecast_import.gs'];
 var gsChanged = changedSince(R6_PRE, 'assets/specs/active/apps-script');
 if (gsChanged !== '__git_unavailable__') {
   var unexpectedGs = gsChanged.split('\n').map(function (x) { return x.trim(); })

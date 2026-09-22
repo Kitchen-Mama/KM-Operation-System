@@ -395,9 +395,14 @@ ok(!/optional: true/.test(row58 ? HEALTH.slice(row58.index, HEALTH.indexOf('}', 
 // 20_ takes its place on the unmoved list — the campaign handler was not touched this round. The
 // membership of this list swaps every time a release changes a different owner, and that swapping IS
 // the signal; what may never happen is a file appearing at RELEASE_NOW without a change behind it.
-ok(new RegExp("\\{ file: '14_fc_write_handlers\\.gs', symbol: '[A-Z_]+', expected: '"
+// B1-PERF — THE SWAP HAPPENED AGAIN, and this time the file arriving at the release had never been
+// in the manifest at all. 04_ hardens the Regular Forecast writer; 14_ was not touched and keeps
+// R18. The assertion follows the owner rather than naming one file for ever.
+ok(new RegExp("\\{ file: '04_marketplace_forecast_import\\.gs', symbol: '[A-Z_]+', expected: '"
   + RELEASE_NOW.replace(/[-]/g, '[-]') + "'").test(HEALTH),
-  'E7c 14_ is AT the release — R18 changed a handler inside it');
+  'E7c 04_ is AT the release — R19 hardened the Regular Forecast writer inside it');
+ok(/\{ file: '14_fc_write_handlers\.gs', symbol: '[A-Z_]+', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R18'/.test(HEALTH),
+  'E7c1 while 14_ keeps R18, the round IT last changed');
 ok(/FC_SE_UNIQUENESS_FIELDS_/.test(require('fs').readFileSync(require('path').join(__dirname, '..',
   'specs', 'active', 'apps-script', '14_fc_write_handlers.gs'), 'utf8')),
   'E7d and the change its stamp claims is really in the file, so the stamp is not decoration');

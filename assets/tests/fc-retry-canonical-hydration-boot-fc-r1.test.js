@@ -700,6 +700,20 @@ section('E. §6.1-6.12 — THE REQUIRED MATRIX');
       // sealed commit. The rule this assertion exists for is unchanged, and is still that a round may
       // not disturb styling it has not declared.
       t = t.replace(/grid-template-columns: minmax\(90px,1\.6fr\)[^;]*;/, 'grid-template-columns: <fc-evt-line>;');
+      // FC-SUMMARY-R2B-B1-PERF §2 — the ONE block this round declares: `.fc-inline-check`, which
+      // stops `.fc-form-group input { width: 100% }` stretching the period-change checkbox across
+      // its column. Excised, not normalised, because it is new text rather than a moved value.
+      var c0 = t.indexOf('/* FC-SUMMARY-R2B-B1-PERF \u00a72');
+      if (c0 !== -1) {
+        var helpAt = t.indexOf('.fc-inline-check-help', c0);
+        var c1 = helpAt === -1 ? -1 : t.indexOf('}', helpAt);
+        if (c1 === -1) throw new Error('fc-overview.css B1 inline-check block not located');
+        // The prefix already ends with the blank line that separated the block from its neighbour,
+        // so the cut is the block AND the newlines after it — not any of the prefix's.
+        var c2 = c1 + 1;
+        while (t.charAt(c2) === '\n') c2++;
+        t = t.slice(0, c0) + t.slice(c2);
+      }
       var a = t.indexOf('/* R2B-A2-R5');
       if (a === -1) a = t.indexOf('/* --- Target % & Rules:');
       var b = t.indexOf('/* Fixed column');

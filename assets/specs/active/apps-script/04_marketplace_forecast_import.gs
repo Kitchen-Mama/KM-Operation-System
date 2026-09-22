@@ -470,6 +470,54 @@ function handleImportMarketplaceSkusBatch_(body) {
 // ========================================
 // FC Regular Forecast Batch Import Handler
 // ========================================
+//
+// FC-SUMMARY-R2B-B1-PERF §15.1-§15.4 — THIS HANDLER USED TO VALIDATE ROW 1, WRITE ROW 1, THEN
+// VALIDATE ROW 2.
+//
+// Three faults followed from that one shape, and all three are closed here.
+//
+//   ATOMICITY. A bad row 5 left rows 1-4 committed and row 5 half-written — half, because a row was
+//   itself written CELL BY CELL. Validation now completes for the whole batch before the first cell
+//   is touched, so an invalid batch writes nothing at all.
+//
+//   CONCURRENCY. There was no lock anywhere in this file. Two concurrent batches touching one row
+//   interleaved PER CELL, so the surviving row could be a mixture of both; two batches creating the
+//   same business key each read "no match" and each appended, leaving two rows under one key. The
+//   script lock now covers the authoritative read, the race-sensitive validation and the writes.
+//   It covers NOTHING else: parsing, the pure rules and the sku_details reference read all happen
+//   before it is taken, because the lock is project-wide and contended, and A3-R6 established that
+//   the remedy for contention is to hold it over less rather than to wait for it longer.
+//
+//   COST. 17 or 18 setValue calls per updated row and one appendRow per inserted row became, for a
+//   40-row import, well over 700 Spreadsheet mutations. Owned columns are now written as bounded
+//   contiguous BLOCKS and every insert joins ONE append block.
+//
+// WHAT IS DELIBERATELY NOT DONE: a full-width row write. The columns this writer owns are NOT
+// contiguous — `fc_share` sits between `total_fc` and `forecast_status`, and `created_at` between
+// `source` and `updated_at`. Writing the whole row would destroy a runtime-calculated column this
+// writer does not own and an audit stamp it must never touch. The runs below are computed from the
+// SHEET HEADER at runtime, so a reordered sheet changes the blocks rather than corrupting a column.
+
+var FC_REG_LOCK_MS_ = 30000;   // matches the campaign and target-rule writers
+var FCREG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R19';
+
+/**
+ * Group {c: zeroBasedCol, v: value} pairs into MAXIMAL CONTIGUOUS runs.
+ *
+ * This is what keeps "only the owned columns are written" and "as few calls as possible" from being
+ * in tension: a run is emitted only over columns that are actually owned AND adjacent, so an
+ * unowned column between two owned ones ends the run instead of being swallowed by it.
+ */
+function fcRegContiguousRuns_(pairs) {
+  var sorted = pairs.slice().sort(function (a, b) { return a.c - b.c; });
+  var runs = [], cur = null;
+  for (var i = 0; i < sorted.length; i++) {
+    if (cur && sorted[i].c === cur.start + cur.values.length) { cur.values.push(sorted[i].v); continue; }
+    cur = { start: sorted[i].c, values: [sorted[i].v] };
+    runs.push(cur);
+  }
+  return runs;
+}
 
 /**
  * Batch import / upsert fc_regular_forecast rows.
@@ -483,6 +531,7 @@ function handleImportMarketplaceSkusBatch_(body) {
  * Header-validated before any write. Does NOT touch fc_special_events / fc_target_rules.
  */
 function handleImportFcRegularForecastBatch_(body) {
+  body = body || {};
   var rows = body.rows;
   if (!rows || !rows.length) {
     return jsonResponse_({ success: false, error: 'No rows provided' });
@@ -501,26 +550,19 @@ function handleImportFcRegularForecastBatch_(body) {
 
   var months = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
-  var fcData = fcSheet.getDataRange().getValues();
-  var fcHeaders = fcData[0].map(function(h) { return String(h).trim().toLowerCase(); });
-  var fcCol = function(n) { return fcHeaders.indexOf(n); };
-
+  // ============================================================================================
+  // STEPS 1-4 — OUTSIDE THE LOCK. Nothing here can change fc_regular_forecast, and none of it needs
+  // to be serialized. sku_details is REFERENCE data this write has no handler for, so reading it
+  // under the lock would only lengthen the critical section for no safety at all.
+  // ============================================================================================
   var skuData = skuSheet.getDataRange().getValues();
-  var skuHeaders = skuData[0].map(function(h) { return String(h).trim().toLowerCase(); });
-
-  // --- Required-header validation (before any writes) ---
-  var requiredFc = ['forecast_id', 'year', 'company', 'country', 'marketplace', 'sku', 'category', 'series']
-    .concat(months)
-    .concat(['total_fc', 'fc_share', 'forecast_status', 'source', 'created_at', 'updated_at']);
+  var skuHeaders = skuData[0].map(function (h) { return String(h).trim().toLowerCase(); });
   var requiredSku = ['sku', 'category', 'series'];
   var missingHeaders = [];
-  requiredFc.forEach(function(h) { if (fcHeaders.indexOf(h) === -1) missingHeaders.push('fc_regular_forecast.' + h); });
-  requiredSku.forEach(function(h) { if (skuHeaders.indexOf(h) === -1) missingHeaders.push('sku_details.' + h); });
+  requiredSku.forEach(function (h) { if (skuHeaders.indexOf(h) === -1) missingHeaders.push('sku_details.' + h); });
   if (missingHeaders.length) {
     return jsonResponse_({ success: false, error: 'Missing required header(s): ' + missingHeaders.join(', ') });
   }
-
-  // --- sku_details: sku -> {category, series} ---
   var sd_sku = skuHeaders.indexOf('sku'), sd_cat = skuHeaders.indexOf('category'), sd_ser = skuHeaders.indexOf('series');
   var skuMap = {};
   for (var i = 1; i < skuData.length; i++) {
@@ -528,41 +570,24 @@ function handleImportFcRegularForecastBatch_(body) {
     if (s) skuMap[s] = { category: String(skuData[i][sd_cat] || '').trim(), series: String(skuData[i][sd_ser] || '').trim() };
   }
 
-  // --- existing fc_regular_forecast business-key map ---
-  var bk = function(y, co, cn, mp, sk) { return [y, co, cn, mp, sk].join('|'); };
-  var bkToRow = {};
-  for (var r = 1; r < fcData.length; r++) {
-    var rsku = String(fcData[r][fcCol('sku')] || '').trim();
-    if (!rsku) continue;
-    var key0 = bk(
-      String(fcData[r][fcCol('year')] || '').trim(),
-      String(fcData[r][fcCol('company')] || '').trim(),
-      String(fcData[r][fcCol('country')] || '').trim(),
-      String(fcData[r][fcCol('marketplace')] || '').trim(),
-      rsku
-    );
-    bkToRow[key0] = {
-      row: r + 1,
-      forecastId: String(fcData[r][fcCol('forecast_id')] || '').trim(),
-      status: String(fcData[r][fcCol('forecast_status')] || '').trim()
-    };
-  }
-
-  var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
   var currentYear = String(new Date().getFullYear());
-  var results = [];
-  var batchSeen = {};
+  var bk = function (y, co, cn, mp, sk) { return [y, co, cn, mp, sk].join('|'); };
 
+  // Normalise + validate EVERY row before anything is written. `plan[i]` is null for a row that will
+  // not be written; `results[i]` always exists and always describes row i.
+  var results = new Array(rows.length);
+  var plan = new Array(rows.length);
+  var batchSeen = {};
+  var invalid = [];
   for (var idx = 0; idx < rows.length; idx++) {
     var row = rows[idx] || {};
-    var rowIndex = idx + 1;
     var year = String(row.year || '').trim() || currentYear;
     var company = String(row.company || '').trim();
     var country = String(row.country || '').trim();
     var marketplace = String(row.marketplace || '').trim();
     var sku = String(row.sku || '').trim();
-
-    var baseResult = { rowIndex: rowIndex, year: year, company: company, country: country, marketplace: marketplace, sku: sku };
+    var baseResult = { rowIndex: idx + 1, year: year, company: company, country: country,
+                       marketplace: marketplace, sku: sku };
 
     var miss = [];
     if (!year) miss.push('year');
@@ -571,69 +596,176 @@ function handleImportFcRegularForecastBatch_(body) {
     if (!marketplace) miss.push('marketplace');
     if (!sku) miss.push('sku');
     if (miss.length) {
-      results.push(Object.assign({}, baseResult, { status: 'error', message: 'Missing required: ' + miss.join(', '), forecast_id: '' }));
+      results[idx] = Object.assign({}, baseResult, { status: 'error', message: 'Missing required: ' + miss.join(', '), forecast_id: '' });
+      invalid.push('row ' + (idx + 1) + ': missing ' + miss.join(', '));
       continue;
     }
-
     if (!skuMap[sku]) {
-      results.push(Object.assign({}, baseResult, { status: 'error', message: 'SKU not found in sku_details', forecast_id: '' }));
+      results[idx] = Object.assign({}, baseResult, { status: 'error', message: 'SKU not found in sku_details', forecast_id: '' });
+      invalid.push('row ' + (idx + 1) + ': SKU ' + sku + ' not found in sku_details');
       continue;
     }
 
     var key = bk(year, company, country, marketplace, sku);
+    // A duplicate WITHIN the batch is not an invalid batch — it is one row asked for twice, and the
+    // established answer is to write the first and skip the rest. Unchanged from before.
     if (batchSeen[key]) {
-      results.push(Object.assign({}, baseResult, { status: 'skipped', message: 'Duplicate row in batch', forecast_id: '' }));
+      results[idx] = Object.assign({}, baseResult, { status: 'skipped', message: 'Duplicate row in batch', forecast_id: '' });
       continue;
     }
     batchSeen[key] = true;
 
-    var monthVals = months.map(function(m) { var v = parseFloat(row[m]); return isNaN(v) ? 0 : v; });
-    var totalFc = monthVals.reduce(function(a, b) { return a + b; }, 0);
-    var meta = skuMap[sku];
-
-    var existing = bkToRow[key];
-    if (existing && existing.row !== -1) {
-      var tr = existing.row;
-      for (var mi = 0; mi < months.length; mi++) {
-        if (fcCol(months[mi]) !== -1) fcSheet.getRange(tr, fcCol(months[mi]) + 1).setValue(monthVals[mi]);
-      }
-      if (fcCol('category') !== -1) fcSheet.getRange(tr, fcCol('category') + 1).setValue(meta.category);
-      if (fcCol('series') !== -1) fcSheet.getRange(tr, fcCol('series') + 1).setValue(meta.series);
-      if (fcCol('total_fc') !== -1) fcSheet.getRange(tr, fcCol('total_fc') + 1).setValue(totalFc);
-      if (fcCol('source') !== -1) fcSheet.getRange(tr, fcCol('source') + 1).setValue(sourceDefault);
-      if (fcCol('forecast_status') !== -1 && (!existing.status || overwriteStatus)) {
-        fcSheet.getRange(tr, fcCol('forecast_status') + 1).setValue(forecastStatusDefault);
-      }
-      if (fcCol('updated_at') !== -1) fcSheet.getRange(tr, fcCol('updated_at') + 1).setValue(now);
-      results.push(Object.assign({}, baseResult, { status: 'updated', message: 'Updated existing forecast', forecast_id: existing.forecastId }));
-    } else {
-      var fid = 'FC-' + year + '-' + Utilities.getUuid().replace(/-/g, '').substring(0, 8);
-      var newRow = new Array(fcHeaders.length).fill('');
-      if (fcCol('forecast_id') !== -1) newRow[fcCol('forecast_id')] = fid;
-      if (fcCol('year') !== -1) newRow[fcCol('year')] = year;
-      if (fcCol('company') !== -1) newRow[fcCol('company')] = company;
-      if (fcCol('country') !== -1) newRow[fcCol('country')] = country;
-      if (fcCol('marketplace') !== -1) newRow[fcCol('marketplace')] = marketplace;
-      if (fcCol('sku') !== -1) newRow[fcCol('sku')] = sku;
-      if (fcCol('category') !== -1) newRow[fcCol('category')] = meta.category;
-      if (fcCol('series') !== -1) newRow[fcCol('series')] = meta.series;
-      for (var mj = 0; mj < months.length; mj++) {
-        if (fcCol(months[mj]) !== -1) newRow[fcCol(months[mj])] = monthVals[mj];
-      }
-      if (fcCol('total_fc') !== -1) newRow[fcCol('total_fc')] = totalFc;
-      if (fcCol('fc_share') !== -1) newRow[fcCol('fc_share')] = '';
-      if (fcCol('forecast_status') !== -1) newRow[fcCol('forecast_status')] = forecastStatusDefault;
-      if (fcCol('source') !== -1) newRow[fcCol('source')] = sourceDefault;
-      if (fcCol('created_at') !== -1) newRow[fcCol('created_at')] = now;
-      if (fcCol('updated_at') !== -1) newRow[fcCol('updated_at')] = now;
-      fcSheet.appendRow(newRow);
-      bkToRow[key] = { row: -1, forecastId: fid, status: forecastStatusDefault };
-      results.push(Object.assign({}, baseResult, { status: 'created', message: 'Created new forecast', forecast_id: fid }));
-    }
+    var monthVals = months.map(function (m) { var v = parseFloat(row[m]); return isNaN(v) ? 0 : v; });
+    var totalFc = monthVals.reduce(function (a, b) { return a + b; }, 0);
+    plan[idx] = { key: key, base: baseResult, meta: skuMap[sku], monthVals: monthVals, totalFc: totalFc,
+                  year: year, company: company, country: country, marketplace: marketplace, sku: sku };
   }
 
-  var summary = { total: rows.length, created: 0, updated: 0, skipped: 0, error: 0 };
-  results.forEach(function(x) { if (summary[x.status] !== undefined) summary[x.status]++; });
-  return jsonResponse_({ success: true, data: { summary: summary, results: results } });
-}
+  // §15.1 — ONE INVALID ROW MEANS THE BATCH WRITES NOTHING.
+  //
+  // This is a deliberate CHANGE from the previous behaviour, which imported the good rows and reported
+  // the bad ones. Partial import is the harder failure to recover from: the operator cannot tell, from
+  // a summary, which half of a re-submitted file will be an update and which a create, and the file
+  // they fix and re-upload replays the rows that already landed. Refusing the whole batch keeps the
+  // sheet exactly as it was and makes the fix-and-resubmit loop total.
+  if (invalid.length) {
+    var summaryI = { total: rows.length, created: 0, updated: 0, skipped: 0, error: 0 };
+    results.forEach(function (x) { if (x && summaryI[x.status] !== undefined) summaryI[x.status]++; });
+    return jsonResponse_({ success: false, error: 'REGULAR_FORECAST_BATCH_INVALID',
+      detail: invalid.length + ' of ' + rows.length + ' row(s) are invalid, so nothing was written. '
+        + invalid.slice(0, 5).join('; ') + (invalid.length > 5 ? '; …' : ''),
+      zero_write: true,
+      // `results` is SPARSE — only classified rows have an entry — and Array.prototype.map skips
+      // holes rather than visiting them, so mapping it dropped every valid row from the receipt.
+      data: { summary: summaryI, results: (function () {
+        var out = [];
+        for (var z = 0; z < rows.length; z++) {
+          out.push(results[z] || { rowIndex: z + 1, status: 'skipped',
+            message: 'Not written — the batch was refused', forecast_id: '' });
+        }
+        return out;
+      })() } });
+  }
 
+  // ============================================================================================
+  // STEPS 5-9 — UNDER THE LOCK. Authoritative read, race-sensitive resolution, plan, write, release.
+  // No network call and no reference read happens in here.
+  // ============================================================================================
+  var lock = LockService.getScriptLock();
+  try {
+    if (!lock.tryLock(FC_REG_LOCK_MS_)) {
+      return jsonResponse_({ success: false, error: 'REGULAR_FORECAST_LOCK_TIMEOUT',
+        detail: 'Another Regular Forecast write is in progress. Nothing was written.', zero_write: true });
+    }
+
+    var fcData = fcSheet.getDataRange().getValues();
+    var fcHeaders = fcData[0].map(function (h) { return String(h).trim().toLowerCase(); });
+    var fcCol = function (n) { return fcHeaders.indexOf(n); };
+
+    var requiredFc = ['forecast_id', 'year', 'company', 'country', 'marketplace', 'sku', 'category', 'series']
+      .concat(months)
+      .concat(['total_fc', 'fc_share', 'forecast_status', 'source', 'created_at', 'updated_at']);
+    var missingFc = [];
+    requiredFc.forEach(function (h) { if (fcHeaders.indexOf(h) === -1) missingFc.push('fc_regular_forecast.' + h); });
+    if (missingFc.length) {
+      return jsonResponse_({ success: false, error: 'Missing required header(s): ' + missingFc.join(', '), zero_write: true });
+    }
+
+    // --- existing fc_regular_forecast business-key map (race-sensitive: read under the lock) ---
+    var bkToRow = {};
+    for (var r = 1; r < fcData.length; r++) {
+      var rsku = String(fcData[r][fcCol('sku')] || '').trim();
+      if (!rsku) continue;
+      var key0 = bk(
+        String(fcData[r][fcCol('year')] || '').trim(),
+        String(fcData[r][fcCol('company')] || '').trim(),
+        String(fcData[r][fcCol('country')] || '').trim(),
+        String(fcData[r][fcCol('marketplace')] || '').trim(),
+        rsku
+      );
+      bkToRow[key0] = {
+        row: r + 1,
+        forecastId: String(fcData[r][fcCol('forecast_id')] || '').trim(),
+        status: String(fcData[r][fcCol('forecast_status')] || '').trim()
+      };
+    }
+
+    var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+
+    // --- STEP 7: the whole write plan, in memory. Still zero mutations at this point. -----------
+    var updateOps = [];   // { row, runs: [{start, values}] }
+    var insertRows = [];  // full-width arrays for ONE append block
+    for (var p = 0; p < plan.length; p++) {
+      var it = plan[p];
+      if (!it) continue;                                   // a skipped duplicate: no write, result already set
+      var existing = bkToRow[it.key];
+
+      if (existing && existing.row !== -1) {
+        // UPDATE — only the columns this writer owns. fc_share and created_at are absent by
+        // construction: they are never added to `pairs`, so no run can span them.
+        var pairs = [];
+        if (fcCol('category') !== -1) pairs.push({ c: fcCol('category'), v: it.meta.category });
+        if (fcCol('series') !== -1) pairs.push({ c: fcCol('series'), v: it.meta.series });
+        for (var mi = 0; mi < months.length; mi++) {
+          if (fcCol(months[mi]) !== -1) pairs.push({ c: fcCol(months[mi]), v: it.monthVals[mi] });
+        }
+        if (fcCol('total_fc') !== -1) pairs.push({ c: fcCol('total_fc'), v: it.totalFc });
+        if (fcCol('source') !== -1) pairs.push({ c: fcCol('source'), v: sourceDefault });
+        if (fcCol('forecast_status') !== -1 && (!existing.status || overwriteStatus)) {
+          pairs.push({ c: fcCol('forecast_status'), v: forecastStatusDefault });
+        }
+        if (fcCol('updated_at') !== -1) pairs.push({ c: fcCol('updated_at'), v: now });
+        updateOps.push({ row: existing.row, runs: fcRegContiguousRuns_(pairs) });
+        results[p] = Object.assign({}, it.base, { status: 'updated', message: 'Updated existing forecast', forecast_id: existing.forecastId });
+      } else {
+        var fid = 'FC-' + it.year + '-' + Utilities.getUuid().replace(/-/g, '').substring(0, 8);
+        var newRow = new Array(fcHeaders.length).fill('');
+        if (fcCol('forecast_id') !== -1) newRow[fcCol('forecast_id')] = fid;
+        if (fcCol('year') !== -1) newRow[fcCol('year')] = it.year;
+        if (fcCol('company') !== -1) newRow[fcCol('company')] = it.company;
+        if (fcCol('country') !== -1) newRow[fcCol('country')] = it.country;
+        if (fcCol('marketplace') !== -1) newRow[fcCol('marketplace')] = it.marketplace;
+        if (fcCol('sku') !== -1) newRow[fcCol('sku')] = it.sku;
+        if (fcCol('category') !== -1) newRow[fcCol('category')] = it.meta.category;
+        if (fcCol('series') !== -1) newRow[fcCol('series')] = it.meta.series;
+        for (var mj = 0; mj < months.length; mj++) {
+          if (fcCol(months[mj]) !== -1) newRow[fcCol(months[mj])] = it.monthVals[mj];
+        }
+        if (fcCol('total_fc') !== -1) newRow[fcCol('total_fc')] = it.totalFc;
+        if (fcCol('fc_share') !== -1) newRow[fcCol('fc_share')] = '';
+        if (fcCol('forecast_status') !== -1) newRow[fcCol('forecast_status')] = forecastStatusDefault;
+        if (fcCol('source') !== -1) newRow[fcCol('source')] = sourceDefault;
+        if (fcCol('created_at') !== -1) newRow[fcCol('created_at')] = now;
+        if (fcCol('updated_at') !== -1) newRow[fcCol('updated_at')] = now;
+        insertRows.push(newRow);
+        bkToRow[it.key] = { row: -1, forecastId: fid, status: forecastStatusDefault };
+        results[p] = Object.assign({}, it.base, { status: 'created', message: 'Created new forecast', forecast_id: fid });
+      }
+    }
+
+    // --- STEP 8: THE FIRST MUTATION. Everything above this line is memory. ----------------------
+    for (var u = 0; u < updateOps.length; u++) {
+      var op = updateOps[u];
+      for (var q = 0; q < op.runs.length; q++) {
+        var run = op.runs[q];
+        fcSheet.getRange(op.row, run.start + 1, 1, run.values.length).setValues([run.values]);
+      }
+    }
+    if (insertRows.length) {
+      // ONE block for every insert, appended past the last row the locked snapshot saw.
+      fcSheet.getRange(fcSheet.getLastRow() + 1, 1, insertRows.length, fcHeaders.length).setValues(insertRows);
+    }
+
+    var summary = { total: rows.length, created: 0, updated: 0, skipped: 0, error: 0 };
+    results.forEach(function (x) { if (x && summary[x.status] !== undefined) summary[x.status]++; });
+    return jsonResponse_({ success: true, data: { summary: summary, results: results,
+      write_plan: { updated_rows: updateOps.length, inserted_rows: insertRows.length,
+                    set_values_calls: updateOps.reduce(function (n, o) { return n + o.runs.length; }, 0)
+                      + (insertRows.length ? 1 : 0),
+                    append_row_calls: 0, set_value_calls: 0 } } });
+  } catch (e) {
+    return jsonResponse_({ success: false, error: String(e && e.message ? e.message : e) });
+  } finally {
+    try { lock.releaseLock(); } catch (e2) {}
+  }
+}

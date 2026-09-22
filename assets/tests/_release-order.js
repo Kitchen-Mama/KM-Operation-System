@@ -539,7 +539,25 @@ var ROUND_TOKENS = [
   //
   // fc-summary.js and fc-summary.html change together - the period controls are markup and owner -
   // so the whole application set rotates together.
-  'readrecovery-r2ba3r10-20260922'];
+  'readrecovery-r2ba3r10-20260922',
+  // FC-SUMMARY-R2B-B1-PERF - the writer hardening round. The token above IS PUBLISHED: origin/main
+  // reached 2d84a68 before this round began and the live deployment reports R18 uniform, so the
+  // A3-R10 bytes have been served under `?v=readrecovery-r2ba3r10-20260922` and the reuse rule
+  // recorded at the top closes.
+  //
+  // The refetch is load-bearing, and every reason is a behaviour change an operator will act on. A
+  // browser left on the previous bytes would keep issuing ONE SPECIAL-EVENT WRITE PER SKU - 22
+  // requests for a 20-SKU event where the new bytes send 3 - and, worse, would keep reading a batch
+  // result it cannot interpret: the classifier that tells a partial save from a complete one lives
+  // in these bytes, so old code paired with the new server would report a save that refused three of
+  // five rows as an unqualified success. It would keep sending the Regular import over a raw fetch
+  // with no request id and no proven-zero-write, so a lost write would send the operator to
+  // reconcile rows that may not exist. And it would keep showing the period-change tick stretched
+  // across its column with the words far to the right.
+  //
+  // fc-summary.js, the api layer, fc-summary.html and fc-overview.css all change together, so the
+  // whole application set rotates together.
+  'writerhardening-r2bb1perf-20260922'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the
@@ -912,7 +930,11 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // refuse, and the client preflight in front of it is not an authority - a second tab, a stale read
   // model and a direct API caller all go straight past it. APPEND-ONLY, at the end - stampAtOrAfter
   // compares INDEXES.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R18'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R18',
+  // FC-SUMMARY-R2B-B1-PERF - the Regular writer hardening + Special stage-3 batch round. 04_ changes
+  // (validate-then-lock-then-block-write) and ENTERS the manifest for the first time, so 63_ moves
+  // with it. 14_ did not change and keeps R18; 20_ did not change and keeps R17.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R19'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

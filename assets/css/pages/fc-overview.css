@@ -1419,6 +1419,40 @@
 .fc-ms-item > span, .fc-ms-item > strong { flex: 1 1 auto; min-width: 0; }
 .fc-ms-options { border-top: 1px solid #EEF2F6; margin-top: 4px; padding-top: 4px; }
 
+/* FC-SUMMARY-R2B-B1-PERF §2 — THE PERIOD-CHANGE CONTROL IS ONE INLINE ROW.
+
+   The operator saw the tick sitting in the middle of the modal with its words pushed to the far
+   right, reading as two unrelated things. The cause is three rules above: `.fc-form-group input`
+   sets `width: 100%` so that a <select> fills its column, and a checkbox is an input — so the box
+   itself was stretched across the whole group and the <span> beside it started wherever that ended.
+
+   This is the SAME fault `.fc-ms-item input` already had to neutralise, and it is fixed the same way
+   rather than with a second set of inline styles on the element: a checkbox has a checkbox's size.
+   Nothing about when the control appears, or what ticking it does, is touched by this. */
+.fc-inline-check {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    font-weight: 400;
+    color: #334155;
+    cursor: pointer;
+}
+.fc-inline-check input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    flex: none;
+    margin: 0;
+    padding: 0;
+}
+/* The helper sentence belongs to the control above it, so it sits directly under it and keeps the
+   checkbox's left edge rather than the text's. */
+.fc-inline-check-help {
+    margin: 2px 0 0;
+    font-size: 12px;
+    color: #64748B;
+}
+
 /* Empty row placeholder */
 .empty-row {
     padding: 40px;

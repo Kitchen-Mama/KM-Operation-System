@@ -6022,8 +6022,13 @@ async function _kmCanonicalWrite_(action, payload) {
         // campaign_sku_line business key, event_fc_id or campaign+line — where a replay of a request
         // that DID land updates the same row instead of minting a second one. Any other action still
         // fails typed on the first delivery fault, and no business refusal is ever replayed.
+        // B1-PERF §15.5 — importFcRegularForecastBatch joins the class, on the same test the other four
+        // pass: the handler resolves every row by a stable key the CLIENT supplies
+        // (year|company|country|marketplace|sku) and de-duplicates within the batch, so a replay of a
+        // request that DID land updates the same rows rather than appending second ones. It is the
+        // idempotency that licenses the replay, not the fact that the action is a batch.
         var REPLAY_SAFE_ON_LOST_DELIVERY_ = ['upsertCampaign', 'upsertCampaignSkuLines',
-            'upsertFcSpecialEvent', 'importFcSpecialEventsBatch'];
+            'upsertFcSpecialEvent', 'importFcSpecialEventsBatch', 'importFcRegularForecastBatch'];
         var lostDelivery = !!res && res.code === 'REDIRECT_TARGET_NOT_FOUND'
             && REPLAY_SAFE_ON_LOST_DELIVERY_.indexOf(action) !== -1;
         if (!(provenNeverRan || lostDelivery) || attempt >= 2) break;
@@ -6174,28 +6179,31 @@ window.KM.DB.importMarketplaceSkusBatch = async function(rows, options) {
     return json;
 };
 
+// FC-SUMMARY-R2B-B1-PERF §15.5 — THE LAST FC WRITER LEAVES THE RAW FETCH.
+//
+// Every other FC write already went through `_kmCanonicalWrite_`; this one still issued its own POST,
+// so it alone had no request id, no write timeout bound, no typed classification and no way to say
+// "the request provably never ran". A page that lost this write could not tell a proven zero-write
+// from a genuine unknown, and sent the operator to reconcile rows that might not exist.
+//
+// The shape is copied from importFcSpecialEventsBatch rather than invented: same transport, same
+// success test, same post-write seam. `_kmWriterPostWrite_()` gated on `json.success` is an OWNED
+// contract (api-batch-f-writer-full-reload-retirement-f1-7k-r1 asserts this exact shape for BOTH
+// writers) and is a posture-gated fail-safe rather than a duplicate read: when every canonical
+// workspace is active it is a no-op, and when one is not it is the only thing that refreshes the
+// broad cache the degraded page is reading from. It stays.
+//
+// The option defaults stay HERE, not in the transport: they are this action's contract with its
+// handler, and the handler applies the same two defaults independently, so a caller that omits them
+// gets identical behaviour from either side.
 window.KM.DB.importFcRegularForecastBatch = async function(rows, options) {
     if (!isOperationDbApiConfigured()) {
         console.warn('[KM.DB] API not configured, importFcRegularForecastBatch skipped');
         return { success: false, error: 'API not configured' };
     }
     var opts = Object.assign({ forecastStatusDefault: 'draft', sourceDefault: 'import' }, options || {});
-    var resp = await fetch(OP_DB_API_BASE_URL, {
-        method: 'POST',
-        cache: 'no-store',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({
-            action: 'importFcRegularForecastBatch',
-            rows: rows || [],
-            options: opts
-        })
-    });
-    if (!resp.ok) throw new Error('API returned ' + resp.status);
-    var json = await resp.json();
-    // Reload DB only after a successful import; return the full API result either way.
-    if (json && json.success) {
-        await _kmWriterPostWrite_();
-    }
+    var json = await _kmCanonicalWrite_('importFcRegularForecastBatch', { rows: rows || [], options: opts });
+    if (json && json.success) { await _kmWriterPostWrite_(); }
     return json;
 };
 

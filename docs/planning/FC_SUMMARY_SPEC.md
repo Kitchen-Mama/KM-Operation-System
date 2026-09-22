@@ -571,3 +571,146 @@ MARKETPLACES_PHYSICAL_GETTABLE = 0
 
 `marketplace_skus` is **not** in the workspace and stays a prerequisite read. The difference is which
 rows an authoritative read already brought, not a preference for one path.
+
+---
+
+## 15. FC write performance and atomicity — FROZEN (FC-SUMMARY-R2B-B1-PERF, 2026-09-22)
+
+A3 froze what the writes MEAN. This freezes what they COST and what they may leave behind when they
+fail. Nothing here changes a business rule; every A3 guard is carried forward unmodified.
+
+### 15.1 Regular forecast — the write is one transaction, not a row-by-row walk
+
+The handler validated row 1, wrote row 1, then validated row 2. A bad row 5 therefore left rows 1-4
+committed and row 5 half-written, because a row was itself written cell by cell. The order is now
+fixed, and the first mutation is the eighth step rather than the third:
+
+```
+1 parse            the whole batch                       no sheet access
+2 normalise        the whole batch                       no sheet access
+3 validate PURE    every row                             no sheet access, no lock
+4 read reference   sku_details                           OUTSIDE the lock — this write cannot change it
+5 acquire lock     LockService.getScriptLock()
+6 read authority   fc_regular_forecast + build the key index
+7 validate RACE-SENSITIVE and build the whole write plan IN MEMORY
+8 FIRST MUTATION   bounded setValues blocks + ONE append block
+9 release          in a finally
+```
+
+```
+REGULAR_INVALID_BATCH_WRITES   = 0 — one bad row and the batch writes nothing at all
+REGULAR_FIRST_WRITE_AFTER_ALL_VALIDATION = YES
+REGULAR_PER_CELL_SETVALUE      = FORBIDDEN
+REGULAR_PER_ROW_APPENDROW      = FORBIDDEN
+NETWORK_INSIDE_LOCK            = FORBIDDEN
+```
+
+### 15.2 Column ownership — the writer owns a subset, and writes only that
+
+The canonical order is declared in `04_marketplace_forecast_import.gs`. The owned columns are **not
+contiguous**: `fc_share` sits between `total_fc` and `forecast_status`, and `created_at` between
+`source` and `updated_at`. A full-width row write is therefore FORBIDDEN — it would destroy both.
+
+| column | on create | on update |
+|---|---|---|
+| `forecast_id`, `year`, `company`, `country`, `marketplace`, `sku` | written | **never touched** (identity) |
+| `category`, `series`, `jan`..`dec`, `total_fc` | written | written |
+| `fc_share` | `''` | **never touched** — runtime-calculated, §3.1; not this writer's column |
+| `forecast_status` | written | only when blank, or `options.overwriteStatus === true` |
+| `source`, `updated_at` | written | written |
+| `created_at` | written | **never touched** |
+
+Column positions are resolved at runtime from the sheet header, never from a constant, so a reordered
+sheet cannot silently shift a span.
+
+### 15.3 Range write — bounded blocks, not cells
+
+An update writes the two owned spans plus `updated_at`; an insert joins ONE append block. Physical
+Spreadsheet mutation calls, for N updates and M inserts:
+
+```
+BEFORE   17N..18N setValue  +  M appendRow
+AFTER    <= 3N   setValues  +  (M ? 1 : 0) setValues
+```
+
+Adjacent owned spans are merged where the header makes them contiguous, so the bound is an upper one.
+The count is independent of the number of months.
+
+### 15.4 Lock — the smallest boundary that makes the race safe
+
+There was no lock. Two concurrent batches could interleave per CELL on one row, and two batches
+creating the same business key could each append, leaving two rows under one key. The lock covers the
+authoritative read, the race-sensitive validation and the writes — and nothing else.
+
+```
+REGULAR_LOCK              = LockService.getScriptLock()
+REGULAR_LOCK_WAIT_MS      = 30000, matching the campaign writer
+REGULAR_LOCK_REFUSAL      = REGULAR_FORECAST_LOCK_TIMEOUT, zero_write: true
+REGULAR_LOCK_RELEASE      = finally, on every path
+OUTSIDE THE LOCK          = parse, normalise, every pure rule, the sku_details read, the response
+```
+
+The script lock is project-wide and contended. Enlarging its timeout is NOT the remedy for contention —
+A3-R6 established that the remedy is to hold it over less. That is why the reference read sits outside.
+
+### 15.5 Regular delivery — the canonical write transport
+
+`importFcRegularForecastBatch` was the last FC writer on a raw `fetch`: no request id, no timeout bound,
+no typed classification, no proven-zero-write. It moves onto `_kmCanonicalWrite_`, the path every other
+FC writer already uses. The handler is idempotent by `year|company|country|marketplace|sku` and
+de-duplicates within a batch, so the action joins `REPLAY_SAFE_ON_LOST_DELIVERY_`: a replay of a request
+that did land updates the same rows instead of minting new ones.
+
+The `if (json && json.success) { await _kmWriterPostWrite_(); }` seam is PRESERVED verbatim. It is a
+posture-gated fail-safe, not a duplicate read: in a healthy session every canonical workspace is active
+and it is a no-op.
+
+### 15.6 Special Event — stage 3 is one request
+
+Stage 3 looped `upsertFcSpecialEvent` once per SKU. It now calls the batch action that already exists,
+over the same server core, so every A3 guard is inherited by construction rather than re-implemented.
+
+```
+BEFORE   2 + N logical writes     N=1 -> 3   N=4 -> 6   N=8 -> 10   N=20 -> 22
+AFTER    3 logical writes         N=1 -> 3   N=4 -> 3   N=8 -> 3    N=20 -> 3
+ACTION   importFcSpecialEventsBatch — EXISTING; no new action is introduced
+CORE     fcSpecialEventUpsert_ — the same one the single path calls
+```
+
+**The failure semantics invert, and the UI must say so.** The loop stopped at the first refusal; the
+batch commits the rest and reports per row. `success: true` therefore means "the batch ran", NEVER
+"everything committed". A result carrying any skipped row is reported as PARTIAL, naming each SKU, its
+reason and its current row version, and saying plainly which rows did commit.
+
+Results are positional: `results[i]` belongs to `lines[i]`. The classifier maps them by index and
+carries `event_fc_id`, `campaign_sku_line_id`, `row_version` and `fc_qty` per row.
+
+### 15.7 Post-write cache — a write invalidates what it can change, and nothing else
+
+The builder prerequisites are recorded per TABLE. A write drops only the tables it can touch:
+
+```
+regular write   -> fc_regular_forecast
+special write   -> campaigns, campaign_sku_lines, fc_special_events
+target write    -> fc_target_rules   (held by NEITHER builder path, so both stay warm)
+never dropped by any of them: sku_details, marketplace_skus, pricing_list
+```
+
+So after a successful Special save, reopening the Builder re-reads the three tables that write could
+have staled and reuses the rest:
+
+```
+POST_SPECIAL_WRITE_WARM_NEXT_PREREQ_READS = 3, never 6
+POST_REGULAR_WRITE_SPECIAL_PATH           = stays warm
+POST_TARGET_WRITE_BOTH_PATHS              = stay warm
+```
+
+Precision, not preservation: the three tables a Special write CAN change are always dropped. Keeping
+them would present stale campaign data as fresh.
+
+### 15.8 What B1 did not touch
+
+Every A3 contract stands: the Special Event uniqueness key and its server guard, the confirmed window
+edit and its campaign reassignment, the stale-version gates, the MAX-8 authoring cap and the absence of
+a storage cap, the Base Event FC semantics, and every A3-R10 read-recovery property. No DB migration,
+no schema change, no new routed action, and no client timeout was enlarged.

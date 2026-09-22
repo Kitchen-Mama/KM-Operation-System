@@ -854,17 +854,29 @@ function runAssertions() {
     // ==========================================================================================================
     section('§C (F1-7N-FC-1B-E3-R2-R3) — 495 ROWS: the writer is NOT atomic, so the RUNNER is what is safe');
     // ==========================================================================================================
-    // AUDITED FROM THE PRODUCTION SOURCE. The live plan is 495 rows and the official writer creates them with
-    // ONE appendRow PER ROW in a plain loop: no LockService, no try/catch, no flush, and the response is built
-    // only after the last row. So it can partially succeed, and a run killed by the Apps Script execution limit
-    // returns NOTHING — not a partial answer. The runner has to be the thing that is safe.
+    // AUDITED FROM THE PRODUCTION SOURCE. The live plan is 495 rows.
+    //
+    // FC-SUMMARY-R2B-B1-PERF REPAIRED THE WRITER, so the three premises recorded here are no longer
+    // true and are inverted rather than deleted: the writer now validates the whole batch before its
+    // first mutation, holds a script lock over the authoritative read and the writes, and appends
+    // every insert as ONE block inside a try/finally.
+    //
+    // THE CONCLUSION IS UNCHANGED, and that is the point of keeping the section. The runner still has
+    // to be the safe thing, because the reason that survives has nothing to do with atomicity: a
+    // 495-row run killed by the Apps Script EXECUTION LIMIT returns nothing at all — not a partial
+    // answer — and no amount of write-side atomicity inside one execution can answer for an execution
+    // that never returned.
     var writerFn = code(extractFn(IMPORT04, 'handleImportFcRegularForecastBatch_'));
-    eq((writerFn.match(/appendRow/g) || []).length, 1,
-      'C1  §C.3 the official writer appends ONE ROW AT A TIME inside its loop');
-    eq(/LockService|getScriptLock/.test(writerFn), false,
-      'C1a §C.3 it takes no lock, so it is not serialised against any other writer');
-    eq(/try \{/.test(writerFn), false,
-      'C1b and has no try/catch: the first throw leaves every earlier row already written');
+    eq((writerFn.match(/appendRow/g) || []).length, 0,
+      'C1  §C.3 the writer no longer appends one row at a time');
+    eq(/getRange\(fcSheet\.getLastRow\(\) \+ 1, 1, insertRows\.length/.test(writerFn), true,
+      'C1-1 every insert goes out as ONE block');
+    eq(/LockService|getScriptLock/.test(writerFn), true,
+      'C1a §C.3 it now takes a script lock, so it IS serialised against another writer');
+    eq(/\} finally \{/.test(writerFn), true,
+      'C1b and releases it in a finally, so a throw cannot strand it');
+    eq(/if \(invalid\.length\) \{/.test(writerFn), true,
+      'C1c with the whole batch validated before the first mutation');
     // The writer has EARLY error returns (missing headers, missing sheets) that sit before the loop, so the
     // first `return jsonResponse_` is one of those. The claim is about the SUCCESS response, which is the one a
     // killed execution never reaches.
@@ -920,8 +932,25 @@ function runAssertions() {
             }
             this._rows.push(r.slice()); if (kill) kill.appends = (kill.appends || 0) + 1;
           },
-          getRange: function (row, col) { var self = this;
-            return { setValue: function (v) { self._rows[row - 1][col - 1] = v; if (kill) kill.sets = (kill.sets || 0) + 1; },
+          getRange: function (row, col, nr, nc) { var self = this;
+            return {
+              setValue: function (v) { self._rows[row - 1][col - 1] = v; if (kill) kill.sets = (kill.sets || 0) + 1; },
+              /* B1-PERF — THE WRITER IS ATOMIC PER BATCH NOW, and the kill model has to be too. A
+                 block that does not fit the remaining execution budget writes NOTHING and throws;
+                 it can no longer leave half its rows behind. `rowsWritten` counts what really
+                 landed, which `appends` used to count. */
+              setValues: function (vals) {
+                if (kill && kill.remaining !== undefined) {
+                  if (kill.remaining < vals.length) throw new Error('Exceeded maximum execution time');
+                  kill.remaining -= vals.length;
+                }
+                for (var i = 0; i < vals.length; i++) {
+                  var t = row - 1 + i;
+                  while (self._rows.length <= t) self._rows.push(new Array((self._rows[0] || []).length).fill(''));
+                  for (var j = 0; j < vals[i].length; j++) self._rows[t][col - 1 + j] = vals[i][j];
+                }
+                if (kill) { kill.blocks = (kill.blocks || 0) + 1; kill.rowsWritten = (kill.rowsWritten || 0) + vals.length; }
+              },
               getValues: function () { return []; } }; } };
       }
       function ctxFor(data, kill) {
@@ -934,6 +963,10 @@ function runAssertions() {
           Logger: { log: function () {} },
           Utilities: { getUuid: function () { uid++; return ('0000000' + uid).slice(-8) + '-z'; }, formatDate: function () { return '2026-09-04'; } },
           Session: { getScriptTimeZone: function () { return 'Asia/Taipei'; } },
+          // B1-PERF — the writer takes a script lock now. Always granted here: what this section
+          // tests is the RUNNER's behaviour when the execution is killed, not lock contention.
+          LockService: { getScriptLock: function () { return {
+            tryLock: function () { return true; }, releaseLock: function () {} }; } },
           SpreadsheetApp: { getActiveSpreadsheet: function () { return { getSheetByName: function (n) { return SH[n] || null; } }; } },
           ContentService: { createTextOutput: function (t) { return { setMimeType: function () { return this; }, getContent: function () { return t; } }; },
             MimeType: { JSON: 'application/json' } },
@@ -978,9 +1011,23 @@ function runAssertions() {
       var pB = vm.runInContext('RUN_FC_2027_ROLLOVER_DRY_RUN()', cB);
       var rB = vm.runInContext('COMMIT_FC_2027_ROLLOVER_AFTER_REVIEW(' + JSON.stringify(pB.commit_token) + ', ' + CY + ')', cB);
       eq(rB.verdict, 'STOP', 'C9  §C.4 killed mid-run: the runner STOPS');
-      eq(rB.stopped_because, 'OFFICIAL_WRITER_THREW', 'C9a naming the writer, not guessing a cause');
-      eq(kB.appends, 137, 'C9b the sheet really did receive 137 rows before the kill');
-      eq(rB.created, 125, 'C9c 125 are ACCOUNTED FOR as created (five whole batches)');
+      /* B1-PERF — the writer answers rather than throws. It has a try/catch now, so the simulated
+         failure comes back as a typed refusal and the runner names it OFFICIAL_WRITER_REFUSED.
+         The runner still STOPS and still names the WRITER rather than guessing a cause, which is
+         what this line is for.
+
+         WHAT THIS DOES NOT MODEL, and the section's conclusion still rests on: a real Apps Script
+         execution-limit kill does not run the catch, or anything else — it returns NOTHING. No
+         verdict of any kind comes back, which is why the RUNNER's resume path, not this verdict,
+         is what makes a 495-row run safe. */
+      eq(rB.stopped_because, 'OFFICIAL_WRITER_REFUSED', 'C9a naming the writer, not guessing a cause');
+      // 137 rows of budget, batches of 25: FIVE whole batches fit (125) and the sixth does not fit
+      // at all. Under the old per-row writer 12 of its rows would have landed; under an atomic block
+      // none do, which is the improvement and is why the number moved.
+      eq(kB.appends, 0, 'C9b the sheet received no per-row appends at all');
+      eq(kB.rowsWritten, 125, 'C9b1 it received 125 rows, as five whole atomic blocks');
+      eq(kB.blocks, 5, 'C9b2 in exactly five block writes');
+      eq(rB.created, 125, 'C9c and 125 are ACCOUNTED FOR as created (five whole batches)');
       var lastB = rB.batches[rB.batches.length - 1];
       eq(lastB.outcome_unknown, true, 'C9d the dying batch is marked OUTCOME UNKNOWN, never "failed"');
       eq(lastB.readback.verified + lastB.readback.missing.length, 25,
@@ -993,12 +1040,14 @@ function runAssertions() {
       // --- REPLAY is the recovery, and nothing is remembered between runs ----------------------------------
       kB.remaining = undefined;
       var pB2 = vm.runInContext('RUN_FC_2027_ROLLOVER_DRY_RUN()', cB);
-      eq(pB2.would_create.length, 495 - 137,
-        'C11 §C.4 the REPLAY re-derives exactly the remainder from the table (' + (495 - 137) + ')');
+      eq(pB2.would_create.length, 495 - 125,
+        'C11 §C.4 the REPLAY re-derives exactly the remainder from the table (' + (495 - 125) + ')');
       var rB2 = vm.runInContext('COMMIT_FC_2027_ROLLOVER_AFTER_REVIEW(' + JSON.stringify(pB2.commit_token) + ', ' + CY + ')', cB);
       eq(rB2.verdict, 'COMMITTED_AND_VERIFIED', 'C11a and completes');
       eq(rB2.updated, 0, 'C11b with ZERO updates — nothing already present was resent to the upsert');
-      eq(kB.appends, 495, 'C11c total appends across BOTH runs is exactly 495 — no row written twice');
+      eq(kB.rowsWritten, 495,
+        'C11c total ROWS written across BOTH runs is exactly 495 — no row written twice');
+      eq(kB.appends, 0, 'C11c1 and not one of them went out as a per-row append');
       eq(count(dB, '2027'), 495, 'C11d 495 rows for 2027');
       eq(dups(dB), 0, 'C11e zero duplicate business keys');
       eq(rB2.readback.ok, true, 'C11f and the per-key readback passes');

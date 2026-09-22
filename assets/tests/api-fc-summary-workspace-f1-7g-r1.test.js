@@ -11,6 +11,8 @@
 //   - fcSummary activated CANONICAL; router dispatch present; the page sources its primary read from the workspace (no
 //     getOperationDb/loadOperationDb/_opDbCache in the primary read path), fail-closed on error; SECONDARY builder modals
 //     lazy-load the broad cache; the Special Event WRITE path (Event Assist) is UNCHANGED (deferred redesign).
+//     [B1-PERF, 2026-09-22: stage 3 of that write path later became importFcSpecialEventsBatch. This round
+//      still owns none of it — the line below now asserts the write path is CANONICAL, not that it is frozen.]
 // Run: node assets/tests/api-fc-summary-workspace-f1-7g-r1.test.js
 // NOTE: no 'use strict' — extracted pure builders + browser fns are eval'd into module scope.
 
@@ -224,7 +226,13 @@ ok(/_fcShowPrereqRefusal_\(err\)/.test(FC_JS) && FC_JS.indexOf('_fcEnsureBroadCa
   'a prerequisite failure refuses in the open modal instead of silently re-entering the opener');
 // Event Assist WRITE authority UNCHANGED (deferred redesign) — still browser-computed + submitted verbatim
 ok(/function _evtApplyForecastAssist/.test(FC_JS) && /Math\.round\(b \* \(1 \+ growth \/ 100\)\)/.test(FC_JS), 'Event Assist compute is UNCHANGED (browser-computed growth — flagged EVENT_ASSIST_AUTHORITY_REDESIGN_REQUIRED, not touched)');
-ok(/upsertFcSpecialEvent/.test(FC_JS), 'Special Event WRITE path (upsertFcSpecialEvent) is unchanged');
+// B1-PERF §15.6 — the builder's stage 3 is now importFcSpecialEventsBatch, which runs over the SAME
+// server core (fcSpecialEventUpsert_) as the single-row writer. This read round still owns nothing
+// on the write path; what it asserts is that the write path is the canonical one.
+ok(/importFcSpecialEventsBatch/.test(FC_JS),
+  'Special Event WRITE path goes through the canonical batch writer');
+ok(!/upsertFcSpecialEvent/.test(FC_JS),
+  'and the page itself no longer names the per-SKU writer at all');
 
 console.log('\n----------------------------------------');
 console.log('API FC SUMMARY WORKSPACE (F1-7G-R1): ' + pass + ' passed, ' + fail + ' failed');

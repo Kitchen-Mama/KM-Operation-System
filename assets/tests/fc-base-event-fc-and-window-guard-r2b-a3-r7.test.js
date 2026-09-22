@@ -325,7 +325,11 @@ ok(SAVE.indexOf('_winGate.blocked') < SAVE.indexOf('DB.upsertCampaign('),
   'C4  BEFORE stage 1 — no campaign, no line and no event write can precede the confirmation');
 ok(SAVE.indexOf('_winGate.blocked') < SAVE.indexOf('DB.upsertCampaignSkuLines('),
   'C4a and before stage 2');
-ok(SAVE.indexOf('_winGate.blocked') < SAVE.indexOf('DB.upsertFcSpecialEvent('),
+// B1-PERF §15.6 — stage 3 is now ONE batch call. An indexOf that returns -1 would make this
+// comparison true for the wrong reason, so the anchor is proven present before it is ordered.
+ok(SAVE.indexOf('DB.importFcSpecialEventsBatch(') !== -1,
+  'C4b0 stage 3 is the batch writer');
+ok(SAVE.indexOf('_winGate.blocked') < SAVE.indexOf('DB.importFcSpecialEventsBatch('),
   'C4b and before stage 3');
 
 (function () {
@@ -410,8 +414,12 @@ ok(/REPLAY_SAFE_ON_LOST_DELIVERY_ = \['upsertCampaign', 'upsertCampaignSkuLines'
 (function () {
   var m = /REPLAY_SAFE_ON_LOST_DELIVERY_ = \[([\s\S]*?)\]/.exec(CW);
   var list = (m ? m[1] : '').split(',').map(function (s) { return s.trim().replace(/'/g, ''); }).filter(Boolean);
-  eq(list.sort(), ['importFcSpecialEventsBatch', 'upsertCampaign', 'upsertCampaignSkuLines', 'upsertFcSpecialEvent'],
-    'D6a exactly the three save stages and the batch form of stage 3');
+  // B1-PERF — importFcRegularForecastBatch joins on the SAME test the others pass: its handler
+  // resolves every row by year|company|country|marketplace|sku, a key the client supplies, so a
+  // replay of a request that landed updates the same rows rather than appending new ones.
+  eq(list.sort(), ['importFcRegularForecastBatch', 'importFcSpecialEventsBatch', 'upsertCampaign',
+                   'upsertCampaignSkuLines', 'upsertFcSpecialEvent'],
+    'D6a the three Special save stages, the batch form of stage 3, and the Regular batch');
   eq(list.indexOf('deleteFcSpecialEvent'), -1, 'D6b a DELETE is deliberately not replayed');
 })();
 ok(!/STALE|DUPLICATE|NOT_FOUND'|business/.test((/var REPLAY_SAFE_ON_LOST_DELIVERY_[\s\S]*?break;/.exec(CW) || [''])[0].replace('REDIRECT_TARGET_NOT_FOUND', '')),
@@ -420,8 +428,10 @@ ok(!/STALE|DUPLICATE|NOT_FOUND'|business/.test((/var REPLAY_SAFE_ON_LOST_DELIVER
 // §14.25 / §14.26 — partial commit. The three stages are sequenced and idempotent by design.
 ok(/_fcEbCommitted_\.push\('campaigns'\)/.test(SAVE) && /_fcEbStage_ = 'stage 2/.test(SAVE),
   'D8  §14.25 the save records what stage 1 committed before stage 2 runs');
-ok(SAVE.indexOf("_fcEbCommitted_.push('campaign_sku_lines')") < SAVE.indexOf('DB.upsertFcSpecialEvent('),
+ok(SAVE.indexOf("_fcEbCommitted_.push('campaign_sku_lines')") < SAVE.indexOf('DB.importFcSpecialEventsBatch('),
   'D9  §14.10/§14.26 stage 3 never runs before stage 2 has returned');
+ok(!/await DB\.upsertFcSpecialEvent\(/.test(SAVE),
+  'D9a and the per-SKU writer it replaced is not called from the save at all');
 ok(/if \(!campaignId\) throw new Error\('campaign_id was not returned by the campaigns writer\.'\)/.test(SAVE),
   'D10 and a stage-1 answer without an id stops the sequence rather than inventing one');
 ok(/if \(headerIdentical\) \{/.test(GS20),

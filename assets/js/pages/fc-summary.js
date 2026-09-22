@@ -4632,6 +4632,142 @@ function _evtShowWindowChangeNotice_(gate) {
   h.appendChild(b1);
   h.hidden = false;
 }
+/* FC-SUMMARY-R2B-B1-PERF §15.6 / §10 — THE BATCH RESULT CLASSIFIER.
+
+   THE ONE THING THAT MUST NOT BE READ NAIVELY: the batch answers `success: true` when it RAN, not
+   when everything committed. A row can be refused individually — a stale version, an unlocatable
+   row, a duplicate identity, a validation fault — while its neighbours commit. The per-SKU loop this
+   replaces stopped at the first refusal, so "it returned" and "it all saved" used to be the same
+   fact. They are not any more, and reporting the top-level flag as success would turn a partial save
+   into a silent one, which is strictly worse than the slow loop it replaces.
+
+   Results are POSITIONAL: `results[i]` belongs to `rows[i]` belongs to `lines[i]`. The server sends
+   `index` as well, and where it does that is preferred over position — but a result whose index
+   disagrees with its slot is not quietly trusted, because attributing one SKU's outcome to another
+   is how an operator is told the wrong row failed. */
+var EVT_ROW_ = { CREATED: 'created', UPDATED: 'updated', UNCHANGED: 'unchanged', REFUSED: 'refused' };
+/* The typed reasons the server can refuse ONE row with. Mapped to a stable vocabulary so the UI never
+   matches on server prose, and so an unrecognised reason is reported as itself rather than as a
+   guess. */
+var EVT_REFUSAL_KIND_ = {
+  STALE_SPECIAL_EVENT_VERSION: 'stale',
+  SPECIAL_EVENT_NOT_FOUND: 'not_found',
+  DUPLICATE_SPECIAL_EVENT_IDENTITY: 'duplicate',
+  missing_campaign_id: 'validation',
+  missing_sku_or_scope_id: 'validation',
+  missing_event_name: 'validation',
+  invalid_fc_qty: 'validation'
+};
+function _evtRefusalKind_(reason) {
+  var r = _trStrTok_(reason);
+  return Object.prototype.hasOwnProperty.call(EVT_REFUSAL_KIND_, r) ? EVT_REFUSAL_KIND_[r] : 'other';
+}
+function _evtClassifyBatch_(env, lines) {
+  var out = { ok: false, transport: false, created: 0, updated: 0, unchanged: 0, refused: 0,
+              written: 0, rows: [], refusedRows: [], zeroWrite: false, partial: false,
+              indexMismatch: false };
+  if (!env || typeof env !== 'object') return out;                 // nothing readable came back
+  if (env.success === false) { out.error = env.error || ''; return out; }
+  out.transport = true;
+  var data = env.data || {};
+  var results = Array.isArray(data.results) ? data.results : [];
+  for (var i = 0; i < lines.length; i++) {
+    var l = lines[i] || {};
+    /* Prefer the server's own index; fall back to position ONLY when it is absent. A result that
+       claims a different slot is recorded as a mismatch rather than applied to this row. */
+    var r = null;
+    for (var j = 0; j < results.length; j++) {
+      if (results[j] && results[j].index === i) { r = results[j]; break; }
+    }
+    if (!r) {
+      r = results[i] || null;
+      if (r && r.index !== undefined && r.index !== i) { out.indexMismatch = true; r = null; }
+    }
+    var rec = { index: i, sku: l.sku, fcQty: l.fcQty,
+                campaignSkuLineId: l.campaignSkuLineId || '',
+                eventFcId: (r && r.event_fc_id) || l.eventFcId || '',
+                rowVersion: (r && r.row_version) || '' };
+    if (!r) {
+      rec.state = EVT_ROW_.REFUSED; rec.kind = 'no_result';
+      rec.reason = 'NO_RESULT_FOR_ROW';
+      rec.detail = 'The server returned no result for this SKU.';
+    } else if (r.skipped) {
+      rec.state = EVT_ROW_.REFUSED;
+      rec.reason = _trStrTok_(r.reason);
+      rec.kind = _evtRefusalKind_(r.reason);
+      rec.detail = _trStrTok_(r.detail);
+      rec.currentRowVersion = _trStrTok_(r.current_row_version);
+    } else if (r.created) { rec.state = EVT_ROW_.CREATED; }
+    else if (r.unchanged) { rec.state = EVT_ROW_.UNCHANGED; }
+    else { rec.state = EVT_ROW_.UPDATED; }
+    if (rec.state === EVT_ROW_.CREATED) out.created++;
+    else if (rec.state === EVT_ROW_.UPDATED) out.updated++;
+    else if (rec.state === EVT_ROW_.UNCHANGED) out.unchanged++;
+    else { out.refused++; out.refusedRows.push(rec); }
+    out.rows.push(rec);
+  }
+  out.written = out.created + out.updated;
+  out.partial = out.refused > 0 && (out.written > 0 || out.unchanged > 0);
+  out.zeroWrite = out.written === 0 && out.refused === 0 && out.unchanged > 0;
+  out.ok = out.refused === 0;
+  return out;
+}
+/* What the operator is told when some rows committed and some did not. It names every refused SKU
+   and says plainly what DID land, because "save failed" over a batch that wrote four of five rows is
+   the sentence that makes the next action wrong. */
+/* §11 — CARRY EACH COMMITTED ROW’S NEW IDENTITY BACK INTO THE FORM.
+
+   `event_fc_id` and `row_version` are what the NEXT save must quote. After a partial result the
+   operator is looking at a form where some rows are saved and some are not, and the saved ones now
+   hold versions the server has moved on from. Without this, saving again refuses every row that just
+   succeeded with STALE_SPECIAL_EVENT_VERSION — a refusal this page would have manufactured itself.
+
+   Only server-supplied values are written back. A row the server refused keeps exactly what it had,
+   because inventing an id for it is the one thing that would let a refused row look saved. */
+function _evtApplyBatchReceipts_(cls) {
+  if (!cls || !cls.rows || typeof document === 'undefined') return 0;
+  var wrap = document.getElementById('event-sku-rows');
+  var domRows = wrap ? Array.prototype.slice.call(wrap.children) : [];
+  var n = 0;
+  cls.rows.forEach(function (r) {
+    if (r.state === EVT_ROW_.REFUSED) return;
+    var el = domRows[r.index];
+    if (!el || !el.dataset) return;
+    if (r.eventFcId) { el.dataset.eventFcId = r.eventFcId; n++; }
+    if (r.rowVersion) el.dataset.rowVersion = r.rowVersion;
+    if (r.campaignSkuLineId) el.dataset.campaignSkuLineId = r.campaignSkuLineId;
+    /* The loaded-event session is the other holder of this identity, and the two must not diverge:
+       _evtSingleRowIdentity_ prefers the hydrated session while editing. */
+    if (_evtEditingActive_() && _evtEditing_ && _evtEditing_.lines) {
+      var key = String(r.sku || '').toUpperCase();
+      if (_evtEditing_.lines[key]) {
+        if (r.eventFcId) _evtEditing_.lines[key].eventFcId = r.eventFcId;
+        if (r.rowVersion) _evtEditing_.lines[key].rowVersion = r.rowVersion;
+      }
+    }
+  });
+  return n;
+}
+function _evtPartialText_(cls) {
+  var lines2 = [];
+  lines2.push('Saved ' + cls.written + ' of ' + cls.rows.length + ' SKU(s).'
+    + (cls.unchanged ? (' ' + cls.unchanged + ' already matched what is stored.') : ''));
+  lines2.push('');
+  lines2.push(cls.refused + ' SKU(s) were NOT saved:');
+  cls.refusedRows.forEach(function (r) {
+    var why = r.kind === 'stale' ? 'changed since this form was opened'
+      : r.kind === 'not_found' ? 'no longer exists'
+      : r.kind === 'duplicate' ? 'already has an event for this flag and year'
+      : r.kind === 'validation' ? 'was rejected as incomplete'
+      : 'was refused';
+    lines2.push('  • ' + r.sku + ' — ' + why + ' (' + (r.reason || 'no reason given') + ')');
+  });
+  lines2.push('');
+  lines2.push('The rows above are still in the form. Check the latest data before saving them again '
+    + '— do not re-save the whole set, the rows that landed would be written twice.');
+  return lines2.join('\n');
+}
+
 // ================= Save (campaigns → campaign_sku_lines → fc_special_events) =================
 // Complete idempotent 3-layer transaction. On live: writes campaigns → campaign_sku_lines →
 // fc_special_events in order; if any step fails, stops and reports the real error (never fake
@@ -4789,8 +4925,11 @@ async function saveEventUpdate() {
 
   // ---- Live → complete idempotent 3-layer write. Any failure stops + reports honestly. ----
   var DB = window.KM && window.KM.DB;
-  if (!DB || !DB.upsertCampaign || !DB.upsertCampaignSkuLines || !DB.upsertFcSpecialEvent) {
-    alert('Save failed: campaign writers are not available in this build (upsertCampaign / upsertCampaignSkuLines / upsertFcSpecialEvent). Nothing was written.');
+  // B1-PERF §15.6 — stage 3 now calls the BATCH writer, so that is the one whose absence must stop
+  // the save. Naming a function this path no longer uses would let a build without the batch writer
+  // pass the guard and fail at stage 3, with stages 1 and 2 already committed.
+  if (!DB || !DB.upsertCampaign || !DB.upsertCampaignSkuLines || !DB.importFcSpecialEventsBatch) {
+    alert('Save failed: campaign writers are not available in this build (upsertCampaign / upsertCampaignSkuLines / importFcSpecialEventsBatch). Nothing was written.');
     return;
   }
   // FC-SUMMARY-R1 — shared single-flight latch; the button guard it already had is kept.
@@ -4827,9 +4966,18 @@ async function saveEventUpdate() {
     //    event_fc_id (canonical PK) — the frontend does NOT fabricate it. Idempotency is the stable
     //    business key campaign_id + campaign_sku_line_id, so a double-click / retry updates the SAME
     //    row (no duplicate) and preserves its event_fc_id.
-    var written = 0, unchangedCount = 0;
-    for (var k = 0; k < lines.length; k++) {
-      var l = lines[k];
+    /* B1-PERF §15.6 — ONE REQUEST, NOT N.
+
+       This loop issued one logical write per SKU: a 20-SKU event cost 22 requests and the operator
+       watched them go one at a time. `importFcSpecialEventsBatch` already existed, already ran on the
+       canonical write transport, and already delegated to `fcSpecialEventUpsert_` — the SAME core the
+       single-row action calls. So every A3 guard (the uniqueness refusal, the expected_row_version
+       gate, the unchanged short-circuit, the event_fc_id preservation) is inherited by construction
+       rather than re-implemented here, and no new routed action is introduced.
+
+       THE PAYLOAD PER ROW IS UNCHANGED, deliberately: the batch handler passes each row straight to
+       the same upsert, so anything different here would be a second dialect of one contract. */
+    var evRows = lines.map(function (l) {
       var lineId = lineIdBySku[String(l.sku).toUpperCase()] || l.campaignSkuLineId || '';
       var evPayload = {
         campaign_id: campaignId, campaign_sku_line_id: lineId,
@@ -4843,19 +4991,36 @@ async function saveEventUpdate() {
       // existing event reach the create branch on any sheet whose business key had drifted.
       if (l.eventFcId) evPayload.event_fc_id = l.eventFcId;
       if (l.rowVersion) evPayload.expected_row_version = l.rowVersion;
-      var evRes = await DB.upsertFcSpecialEvent(evPayload);
-      var evData = (evRes && evRes.data) || evRes || {};
-      if (evData.unchanged) unchangedCount++; else written++;
+      return evPayload;
+    });
+    var evEnv = await DB.importFcSpecialEventsBatch(evRows, { actor: 'fc_summary_builder' });
+    var evCls = _evtClassifyBatch_(evEnv, lines);
+    if (!evCls.transport) {
+      throw new Error((evEnv && evEnv.error) || 'The special-event batch write did not complete.');
     }
+    /* §11 — THE COMMITTED ROWS’ NEW IDENTITY IS WRITTEN BACK BEFORE ANYTHING ELSE HAPPENS.
+       A row that just committed has a NEW row_version, and the form still holds the old one. If the
+       operator saves again after a partial result, every previously-committed row would be refused
+       STALE_SPECIAL_EVENT_VERSION — a refusal manufactured by this page, not by the data. */
+    _evtApplyBatchReceipts_(evCls);
+    var written = evCls.written, unchangedCount = evCls.unchanged;
     _fcWriteEnd_('eventBuilder', FC_WRITE_.SUCCESS);
     _fcReceipt_('Special Event Builder Save', written, null);
     if (!_fcOwns_(_ebEpoch)) { _fcWriteState_['eventBuilder'] = FC_WRITE_.UNMOUNTED; return; }
     // §3 — A SAVE THAT WROTE NOTHING SAYS SO. Reporting "3 events saved" for three rows the server
     // recognised as identical is a small lie that makes the zero-write guarantee unverifiable from
     // the outside, which is most of what makes it worth having.
-    var zeroWrite = (written === 0 && unchangedCount > 0);
+    var zeroWrite = evCls.zeroWrite;
     _fcAfterWriteScoped_(FC_SLICE_.EVENTS, function () {
       if (typeof renderFcEventTable === 'function') renderFcEventTable();
+      /* §11 — A PARTIAL RESULT KEEPS THE FORM OPEN. Closing it would discard the inputs of exactly
+         the rows that still need attention, and the operator would have nothing to act on but a
+         sentence. The committed rows now carry their new versions, so the refused ones can be saved
+         again on their own without re-writing the rows that landed. */
+      if (evCls.partial || (evCls.refused > 0 && evCls.written === 0 && evCls.unchanged === 0)) {
+        alert(_evtPartialText_(evCls));
+        return;
+      }
       closeFcModal();
       if (zeroWrite) {
         alert('Nothing to save — every value already matches what is stored. '
