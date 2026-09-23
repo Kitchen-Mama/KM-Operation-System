@@ -236,8 +236,14 @@ that produced it. One mismatch refuses the entire run.
 ### Provisioning
 
 Under RULE S0-2 the writer VALIDATES and fails closed; it never creates a sheet and never appends a column.
-The three flag columns and `pricing_change_log.change_type` are an **operator migration**. Until they exist,
-`pricing.update` and `pricing.fxReconcile` both refuse with `MISSING_REQUIRED_HEADER` having written nothing.
+The three flag columns are an **operator migration**. Until they exist, `pricing.update` and
+`pricing.fxReconcile` both refuse with `MISSING_REQUIRED_HEADER` having written nothing.
+
+Provisioning alone is **not enough**, and that was measured on the live sheet rather than assumed:
+`prodRequireSheet_` compares the first `expected.length` positions **in order**, so a sheet holding every
+required column can still refuse every write with `HEADER_ORDER_MISMATCH`. Both pricing tables are in that
+state today. The repair is `TEMP_PRICING_R2_SCHEMA_RECONCILE.gs`, which fixes the order and provisions in
+one reviewed operation, for both tables, with a PRE snapshot pair and a rollback.
 
 ---
 
@@ -254,6 +260,25 @@ old_value, new_value,
 change_type,
 changed_by, changed_at, change_reason
 ```
+
+### Live shape (measured 2026-09-23, not specified)
+
+The production sheet carries **15 columns**: the 9 canonical ones plus six contextual extensions, and its
+primary key is spelled `pricing_log_id`. It holds **0 rows** — nothing has ever been written to it, because
+`prodRequireSheet_` has refused the sheet on every attempt.
+
+| Live column | Status |
+|---|---|
+| `pricing_log_id` | **renamed to `log_id`** by the R2 order reconciliation — see below |
+| `sku`, `country`, `marketplace`, `old_currency`, `new_currency`, `source` | **extensions**, preserved to the RIGHT of the canonical 9 |
+| the other 8 | canonical, reordered into canonical positions |
+
+`pricing_log_id` → `log_id` is a **declared** rename, audited before it was written down: the live name
+appears nowhere in this repository — no writer, no reader, no test, no spec — while every consumer of this
+table's key reads `log_id` **by name** (`02_core_sheet_db.gs` filters on `r.log_id`, the browser normalizer
+reads `r.log_id`, and `73_` **mints** `log_id`). With 0 rows there is no value whose meaning could be
+re-assigned. The six extensions are read by nothing and are kept anyway: a column nobody reads is still a
+column somebody made.
 
 `change_type` (PRICING-R2) is one of:
 
