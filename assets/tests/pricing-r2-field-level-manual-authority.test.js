@@ -689,7 +689,13 @@ section('K · §10 THE CENSUS — counting only, one implementation, zero ambigu
 section('L · THE WIRING — route, registry, manifest, contract versions, pin, release order, cache token');
 // =============================================================================================================
 {
+  // PRICING-R3 — R21 BECOMES A FLOOR WHERE IT WAS AN EQUALITY. R3 moved 73_, 01_ and 63_ to R22, and this
+  // section was never really about the number: it is about PRICING-R2's wiring still being present and
+  // still being honestly declared. A stamp may only move FORWARD, so "at or after R21" is the claim that
+  // survives a later round without letting one quietly roll a stamp back.
   var R21 = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R21';
+  function declaredIn(src, sym) { return (src.match(new RegExp("var " + sym + " = '([^']+)'")) || [])[1]; }
+  function manifestAgrees(sym, value) { return GS63.indexOf("symbol: '" + sym + "', expected: '" + value + "'") > 0; }
 
   ok(/if \(action === 'pricing\.update'\) \{\s*\n\s*return jsonResponse_\(handlePricingUpdate_\(body\)\);/.test(GS01),
     'L1  the router dispatches pricing.update to the handler');
@@ -707,27 +713,57 @@ section('L · THE WIRING — route, registry, manifest, contract versions, pin, 
   ok(!/'pricing\.update':/.test(GS01), 'L2a it is not in the GET read table');
 
   ok(/\{ action: 'pricing\.update', handler: 'handlePricingUpdate_'/.test(GS63), 'L3  it is in SYS_REQUIRED_ACTIONS_');
-  ok(new RegExp("file: '73_api_v1_pricing_write\\.gs', symbol: 'PRW_BUILD_VERSION_', expected: '" + R21 + "'").test(GS63),
+  ok(GS63.indexOf("file: '73_api_v1_pricing_write.gs', symbol: 'PRW_BUILD_VERSION_'") > 0,
     'L4  73_ is a REQUIRED manifest owner from its first release');
+  ok(RELORD.stampAtOrAfter((/symbol: 'PRW_BUILD_VERSION_', expected: '([^']+)'/.exec(GS63) || [])[1], R21),
+    'L4a and the round it is expected at is R21 or later — a stamp never moves backwards');
   ok(!/73_api_v1_pricing_write\.gs'[^}]*optional: true/.test(GS63), 'L5  and deliberately not optional');
-  ok(new RegExp("var PRW_BUILD_VERSION_ = '" + R21 + "'").test(GS73), 'L6  the file declares the stamp the manifest expects');
+  // THE PROPERTY A STAMP EXISTS FOR: the file and the manifest tell the same story, so a half-finished
+  // sync stays visible. That is what "declares the stamp the manifest expects" always meant; the R21
+  // literal was only how it happened to be spelled in the round that introduced the file.
+  var _prw = declaredIn(GS73, 'PRW_BUILD_VERSION_');
+  ok(!!_prw && manifestAgrees('PRW_BUILD_VERSION_', _prw),
+    'L6  73_ declares exactly what the manifest expects (' + _prw + ')');
+  ok(RELORD.stampAtOrAfter(_prw, R21), 'L6a at or after the round that created it');
 
   var contract = Number(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(GS63)[1]);
   var listVer = Number(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+)/.exec(GS63)[1]);
   var pin = Number(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(DBAPI)[1]);
-  eq(contract, 15, 'L7  the action contract moved, because an action was genuinely added');
-  eq(listVer, 13, 'L8  and so did the required-action list version');
-  eq(pin, contract, 'L9  the client pin AGREES with the deployment contract');
-  ok(pin > 14, 'L10 and was RAISED, never lowered');
+  // A FLOOR, because the contract may only RISE. PRICING-R2's claim was that it moved for a real reason —
+  // pricing.update was genuinely new vocabulary — and the evidence for that is the action sitting in the
+  // registry at a contract of at least 15, not the contract being exactly 15 forever.
+  ok(contract >= 15, 'L7  the action contract is at or above the version that introduced pricing.update', contract);
+  ok(GS63.indexOf("{ action: 'pricing.update', handler: 'handlePricingUpdate_'") > 0,
+    'L7a because the action it was raised for is still in the registry');
+  eq(listVer, 13, 'L8  and the required-action list version is the one pricing.update was added at');
 
-  ok(new RegExp("var SYS_DEPLOYMENT_RELEASE_ = '" + R21 + "'").test(GS63), 'L11 the release moved to R21');
-  ok(new RegExp("var SYS_BUILD_VERSION_ = '" + R21 + "'").test(GS63), 'L12 63_\'s own stamp moved with it');
-  eq(RELORD.OWNER_STAMPS[RELORD.OWNER_STAMPS.length - 1], R21, 'L13 and R21 is APPENDED at the end of the release order');
+  // L9 IS UNCHANGED, AND DELIBERATELY SO. PRICING-R3 tested this line: it added a backend action no page
+  // calls, and leaving the pin behind looked reasonable. It is not how this repository works — eight suites
+  // assert these two are EQUAL, one of them in the words "neither side may drift alone" — so the pin moved
+  // with the contract and this assertion stands exactly as PRICING-R2 wrote it.
+  eq(pin, contract, 'L9  the client pin AGREES with the deployment contract');
+  ok(pin > 14, 'L10 and was RAISED from the pre-PRICING-R2 pin, never lowered');
+
+  var _rel = declaredIn(GS63, 'SYS_DEPLOYMENT_RELEASE_');
+  ok(RELORD.stampAtOrAfter(_rel, R21), 'L11 the release is R21 or later', _rel);
+  var _sys = declaredIn(GS63, 'SYS_BUILD_VERSION_');
+  ok(RELORD.stampAtOrAfter(_sys, R21) && manifestAgrees('SYS_BUILD_VERSION_', _sys),
+    'L12 63_\'s own stamp moved with it and still agrees with its manifest row', _sys);
+  // APPEND-ONLY is the property, not "last". R21 keeps its place while later rounds are added after it,
+  // and stampAtOrAfter compares INDEXES — so a reordering would silently change what every floor in this
+  // repository means.
+  ok(RELORD.OWNER_STAMPS.indexOf(R21) !== -1, 'L13 R21 is still IN the release order');
   ok(RELORD.OWNER_STAMPS.indexOf(R21) === RELORD.OWNER_STAMPS.lastIndexOf(R21), 'L14 exactly once');
+  ok(RELORD.OWNER_STAMPS.indexOf(_rel) >= RELORD.OWNER_STAMPS.indexOf(R21),
+    'L14a and the current release sorts at or after it — the order is appended to, never rewritten');
 
   // 59_ moved because it changed. A read owner that gained a table is a partial-sync an action list cannot see.
-  ok(new RegExp("var SKD_BUILD_VERSION_ = '" + R21 + "'").test(GS59), 'L15 59_ moved with its new include');
-  ok(new RegExp("symbol: 'SKD_BUILD_VERSION_', expected: '" + R21 + "'").test(GS63), 'L16 and the manifest expects it');
+  // 59_ genuinely did NOT move in PRICING-R3 — it gained nothing — so its stamp legitimately stays at R21,
+  // and this equality is worth KEEPING rather than converting. A module stamp records the round its file
+  // last CHANGED; marching it to the current release is the exact defect this repository already names.
+  var _skd = declaredIn(GS59, 'SKD_BUILD_VERSION_');
+  eq(_skd, R21, 'L15 59_ still records R21 — the round it last changed, not the current release');
+  ok(manifestAgrees('SKD_BUILD_VERSION_', _skd), 'L16 and the manifest expects exactly that');
   ok(/\{ name: 'pricing_list', requiredCols: \[\], optional: true, include: 'pricing' \}/.test(GS59),
     'L17 pricing_list is include-gated and missing-safe — un-requested it costs nothing');
 

@@ -1047,7 +1047,24 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // row, its own stamp and the action contract). 72_ does NOT move: the read owner is untouched and still
   // publishes the same effective prices. 04_ does NOT move: it still creates a pricing row exactly as it
   // did. APPEND-ONLY, at the end - stampAtOrAfter compares INDEXES.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R21'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R21',
+  // R22 - PRICING-R3: the FX reconciliation. NO new owner file — pricing.fxReconcile is a second action in
+  // 73_, because PRICING-R2 §7 made that the one write path into pricing_list and a second writer would mean
+  // two locks over one table. It still moves the ACTION CONTRACT (15 -> 16), because a route was added, and
+  // deliberately does NOT move SYS_REQUIRED_ACTION_LIST_VERSION_, because no PAGE depends on it.
+  //
+  // What it closes: auto_* had no owner. 04_ seeded it once at row creation with fx_rate = 1 and a note
+  // saying FX review was required, and nothing has recomputed it since — so on any site whose currency
+  // differs from its base currency, the system reference value is the base number wearing the local
+  // currency's label. R3 rebuilds it from base_* at supplied rates, and follows the effective price ONLY
+  // where that field's own flag explicitly says AUTO: MANUAL is a person's price and BLANK is nobody's
+  // statement, and neither is touched.
+  //
+  // 01_ moves with it (the dispatch) and 63_ moves with it (the release, the registry entry, three manifest
+  // rows, its own stamp and the action contract). 72_ does NOT move: the read owner publishes the same
+  // FIELDS, and R3 changed what those fields contain rather than which one is read. 04_ does NOT move.
+  // APPEND-ONLY, at the end - stampAtOrAfter compares INDEXES.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R22'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

@@ -84,12 +84,29 @@ function surface() {
     var a = s.slice(12, -1); if (getOnly.indexOf(a) < 0) getOnly.push(a);
   });
   var MUT = /^(upsert|update|create|delete|import|submit|cancel|confirm|adjust|backfill|seed|retire|generate|receive|sync|append|complete|finalize|audit|run|weeklyAiPlan)|\.(save|update|advance|generate|retry|commit|job\.(start|cancel|continue))$|Batch$|Locked$/;
+  /* PRICING-R3 — THE HEURISTIC CLASSIFIES BY NAME, AND A NAME CANNOT ALWAYS ANSWER THIS.
+     pricing.fxReconcile matched nothing above, so the single most consequential write on the anonymous
+     surface — one call rebuilds auto_* across every row of pricing_list and appends to the change log —
+     was counted as a non-mutation. Widening the pattern to catch "Reconcile" was the obvious fix and it
+     is the wrong one: system.requestOrderSendReconcile has the same name shape, and its handler writes
+     nothing and takes no lock (65_ says so in prose, and it contains zero setValue/setValues/appendRow).
+     Broadening would have inflated the mutation count with a read-only diagnostic, which is the opposite
+     of the mistake being corrected.
+     So the general rule stays a name heuristic and the actions its shape cannot classify are NAMED, one
+     line each, with the reason. A list that has to be added to deliberately is the point: an action whose
+     name does not reveal that it writes should cost somebody a sentence. */
+  var MUT_NAMED = {
+    'pricing.fxReconcile': 'writes auto_* and, where a field explicitly says AUTO, the effective price, '
+      + 'across every row of pricing_list, plus pricing_change_log (owner 73_)'
+  };
+  function isMutation(a) { return MUT.test(a) || Object.prototype.hasOwnProperty.call(MUT_NAMED, a); }
   var all = {};
   readTable.concat(post, getOnly).forEach(function (a) { all[a] = true; });
   return {
     readTable: readTable, post: post, getOnly: getOnly,
     all: Object.keys(all),
-    mutations: post.filter(function (a) { return MUT.test(a); })
+    mutations: post.filter(isMutation),
+    mutationsByName: post.filter(function (a) { return Object.prototype.hasOwnProperty.call(MUT_NAMED, a); })
   };
 }
 
@@ -145,12 +162,23 @@ console.log('\n=== §B  THE SURFACE THAT SITS BEHIND IT, COUNTED FROM THE ROUTER
   // unambiguous MUTATION, so the anonymous mutation surface genuinely grew by one and saying so is the
   // job of this census. It is the first WRITE added since SEC-A0 measured the baseline, and it writes
   // prices — which is worth the sentence it gets in the inventory rather than a silently bumped total.
-  eq(s.all.length, 139, 'B1 139 actions are routed — the whole anonymous surface');
+  // PRICING-R3 — 139 -> 140, 137 -> 138, 77 -> 78. pricing.fxReconcile is the second, and it is a bigger
+  // one than the first: pricing.update is capped at 500 lines and addresses rows one identity at a time,
+  // while ONE fxReconcile call rewrites auto_* across the entire table. It is dry-run by default and it
+  // refuses to touch a manual or unclaimed price — but neither of those is an identity check, and this
+  // census counts what is REACHABLE without one.
+  eq(s.all.length, 140, 'B1 140 actions are routed — the whole anonymous surface');
   eq(s.readTable.length, 23, 'B2 23 of them on the GET read table');
-  eq(s.post.length, 137, 'B3 137 dispatched by doPost');
-  eq(s.mutations.length, 77, 'B4 and 77 are unambiguous MUTATIONS, every one reachable without identity');
+  eq(s.post.length, 138, 'B3 138 dispatched by doPost');
+  eq(s.mutations.length, 78, 'B4 and 78 are unambiguous MUTATIONS, every one reachable without identity');
   ok(s.mutations.indexOf('pricing.update') !== -1,
     'B4a including pricing.update — PRICING-R2 added the first WRITE since this baseline was measured');
+  ok(s.mutations.indexOf('pricing.fxReconcile') !== -1,
+    'B4b and pricing.fxReconcile, which one call can apply to every pricing row there is');
+  // The named list must stay SMALL and stay JUSTIFIED. If it grows, someone is routing writes whose names
+  // do not say so, and that is worth noticing on its own.
+  eq(s.mutationsByName, ['pricing.fxReconcile'],
+    'B4c and exactly one action needs naming because its name does not reveal that it writes');
 
   /* THE NAMED ONES, because a list of 76 is easy to discount and these are not. */
   ['createPurchaseOrderFromRequest', 'confirmShipmentAndDispatch', 'submitAllocationDraftsToShippingPlans',

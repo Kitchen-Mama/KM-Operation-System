@@ -4268,7 +4268,12 @@ function _kmWriterError_(json, fallbackMessage) {
 // THE ORDERING CONSEQUENCE IS BINDING AND BELONGS IN THE RELEASE LEDGER: this file is loaded by every
 // page, so Apps Script must be synced BEFORE the frontend is redeployed, or every page refuses the old
 // deployment with DEPLOYMENT_CONTRACT_MISMATCH.
-var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 15;      // the minimum deployed_action_contract_version this build needs
+// PRICING-R3: 15 -> 16. The frontend calls NO new action this round — pricing.fxReconcile is an operator
+// reconciliation, not a page save — and the pin moves anyway, because in this repository the pin and the
+// deployed contract are a MATCHED PAIR rather than a minimum: eight suites assert they are equal, in the
+// words "neither side may drift alone". Pinning below the contract would make a frontend and a backend
+// that shipped together indistinguishable from two that did not.
+var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 16;      // the minimum deployed_action_contract_version this build needs
 var KM_EXPECTED_REGISTRY_PROJECTION_VERSION_ = 'FB-3.1';
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT AXIS. Deliberately NOT folded into the action-contract number.
 //

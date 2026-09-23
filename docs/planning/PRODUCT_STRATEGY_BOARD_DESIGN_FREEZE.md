@@ -6544,7 +6544,16 @@ this board.
      pricing_list + pricing_change_log. It is the first WRITE added to this surface since SEC-A0 measured
      the baseline, and it is recorded here rather than silently absorbed: the posture did not change, the
      surface did. -->
-One Web App URL, published `ANYONE_ANONYMOUS`, routes **139 actions**, of which **77 are unambiguous
+<!-- PRICING-R3 (2026-09-23): 139 -> 140 and 77 -> 78. `pricing.fxReconcile` is the second write added
+     since the baseline and the broader of the two: `pricing.update` is capped at 500 lines and addresses
+     one identity at a time, while ONE fxReconcile call rebuilds auto_* across every row of pricing_list.
+     It is dry-run by default and refuses to touch a manual or unclaimed price, but neither of those is an
+     identity check, and this inventory counts what is reachable without one.
+     It also exposed a gap in how this surface is counted: the classifier reads NAMES, and "fxReconcile"
+     matched no write-shaped pattern, so the most consequential action on the surface was being counted as
+     a non-mutation. It is now named explicitly rather than caught by a widened pattern — the widened
+     pattern would also have swept in `system.requestOrderSendReconcile`, which writes nothing. -->
+One Web App URL, published `ANYONE_ANONYMOUS`, routes **140 actions**, of which **78 are unambiguous
 mutations** - purchase orders, shipment confirmation, allocation submission, inventory adjustment,
 batch imports, and the action that creates and deletes the project's own time-driven triggers. Nothing
 stands between `doPost` entry and the first dispatch. There are no webhooks, no external integrations,

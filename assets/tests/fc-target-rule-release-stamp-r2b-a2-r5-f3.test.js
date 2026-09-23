@@ -84,31 +84,33 @@ var RELEASE_FLOOR = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12';
 // has no evidence about what production accepted, it asserts only what the Apps Script diff from this
 // base contains. What makes b280b8d right is that S2-R4B changed NO .gs file at all, so the diff from
 // here is exactly and only what R21 changed.
-var BASE = 'b280b8d';   // R21 starts here: the tree after the shipping-history / FC warm-race round
+// PRICING-R3 — the base moves to fa73717, the tip this round starts from. The same caveat every entry
+// above carries applies: this suite has no evidence about what production accepted, only what the Apps
+// Script diff from this base contains. What makes fa73717 right is the same property that made b280b8d
+// right — it changed NO .gs file (it is a test-only correction to the load-surface audit), so the diff
+// from here is exactly and only what R22 changed.
+var BASE = 'fa73717';   // R22 starts here: the tree after PRICING-R2 and its load-surface follow-up
 
 // The files THIS release syncs, and the ONE reason each is on the list. A file on the sync list for no
 // stated reason is how an unrelated edit reaches production by accident — so the set is declared here
 // and checked against git below, rather than being read off git and believed.
 var RELEASE_OWNERS = {
   '73_api_v1_pricing_write.gs':
-    'NEW FILE. The canonical pricing write — the only writer of pricing_list and the only writer of '
-    + 'pricing_change_log. It adds the field-level manual price authority the schema could not express: '
-    + 'price_source is ONE value for a WHOLE ROW, so a row whose Regular was negotiated and whose MSRP '
-    + 'has only ever been the converted base price had no honest value to put there. The three '
-    + '*_is_manual flags answer it per field, and a BLANK flag is a third state (UNKNOWN) rather than '
-    + 'false — every row alive today has one, and reading those as false would classify the entire '
-    + 'price book as overwritable in a single deployment with no operator ever asked',
+    'THE SAME FILE, A SECOND ACTION. R21 made it the canonical pricing write; R22 gives auto_* an owner. '
+    + 'pricing.fxReconcile rebuilds auto_regular_price / auto_minimum_price / auto_msrp from the base '
+    + 'prices at rates supplied with the request, and it follows the EFFECTIVE price only where that '
+    + 'field\'s own flag explicitly says AUTO — a MANUAL flag is a person\'s price and a BLANK one is '
+    + 'nobody\'s statement, so neither is touched and no flag is ever written by a reconciliation. It '
+    + 'belongs in this file rather than a new one because pricing_list keeps ONE writer: two owners would '
+    + 'hold two locks over one table and the field-level flags would stop being checkable by reading a '
+    + 'single writer',
   '01_router.gs':
-    'the pricing.update dispatch. A project holding the R9 copy answers every action it knows and '
-    + 'simply does not route this one, so every price save returns an invalid-action refusal while '
-    + '73_ sits present and healthy beside it',
-  '59_api_v1_sku_details_workspace.gs':
-    'pricing_list joins the INCLUDE-GATED tables as include.pricing, so the SKU Regional price panel is '
-    + 'served by the read that page already performs rather than by a second request or by the broad '
-    + 'Operation DB cache it deliberately stopped using. Un-requested the table costs a caller nothing',
+    'the pricing.fxReconcile dispatch. A project holding the R21 copy has the R22 handler sitting present '
+    + 'and healthy in 73_ and no way to reach it, which is the one partial sync this release can produce',
   '63_api_v1_system_health.gs':
-    'the R21 release identity, its own stamp, 73_\'s new manifest row, 59_\'s and 01_\'s expected '
-    + 'stamps, the pricing.update registry entry, and the action-contract bump that entry requires'
+    'the R22 release identity, its own stamp, and the expected stamps for 73_ and 01_, plus the '
+    + 'action-contract bump the new route requires. SYS_REQUIRED_ACTIONS_ deliberately does NOT gain a '
+    + 'row: that list is the actions PAGES depend on, and a reconciliation is run by an operator'
 };
 // Owners that carry an EARLIER release and must keep it. Each is here because it did not change, and
 // marching any of them to the current release would destroy the manifest's only useful signal.
@@ -139,6 +141,12 @@ var RELEASE_UNMOVED = {
   // touches no campaign handler. Marching 20_ to R21 would erase the one fact its stamp carries, and a
   // project holding the R17 copy of it still cannot save a 90-SKU Special Event — which is exactly what
   // its stamp must keep saying.
+  // 59_ JOINS THIS LIST AT R22 AND NOTHING TOOK ITS PLACE — the sixth swap this ledger has recorded, and
+  // this one is a file LEAVING the owners set without a replacement, which is the shape of a round that
+  // deepens an existing surface instead of widening it. R21 gave 59_ the include.pricing gate; R22 changes
+  // what the auto_* values CONTAIN and not which table any reader asks for, so 59_ keeps R21 — the round
+  // it last actually changed — and marching it to R22 would erase that.
+  '59_api_v1_sku_details_workspace.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R21',
   '20_campaign_write_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R20',
   '04_marketplace_forecast_import.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R19',
   '14_fc_write_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R18',
@@ -147,6 +155,9 @@ var RELEASE_UNMOVED = {
   '00_config.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11',
   // 72_ is the pricing READ owner and does NOT move: R21 adds a WRITER, and a writer is not a reader.
   // Its response still publishes the same effective prices from the same three fields.
+  // R22 does not move it either, and the reason is sharper: the reconciliation changes what those three
+  // fields CONTAIN, not which field is read. A read owner that publishes the same field over new values
+  // has not changed, and giving it R22 would claim it needs syncing when it does not.
   '72_api_v1_product_pricing_workspace.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R10'
 };
 
@@ -527,14 +538,22 @@ eq(num(HEALTH, 'SYS_TRANSPORT_CONTRACT_VERSION_'), num(priorHealth, 'SYS_TRANSPO
 eq(Number(num(HEALTH, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_'))
    - Number(num(priorHealth, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_')), 1,
   'H2  SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ moved by exactly one — one action was added');
-eq(Number(num(HEALTH, 'SYS_REQUIRED_ACTION_LIST_VERSION_'))
-   - Number(num(priorHealth, 'SYS_REQUIRED_ACTION_LIST_VERSION_')), 1,
-  'H3  SYS_REQUIRED_ACTION_LIST_VERSION_ moved by exactly one — the registry gained one entry');
-// And the registry really did grow by that one row, so the number describes the list rather than being
-// a number somebody typed.
+// R22 — INVERTED AGAIN, AND IN THE OPPOSITE DIRECTION FROM R21. R21 was the first release in this series
+// to add a route AND a page dependency, so both numbers moved together. R22 adds a route that NO PAGE
+// CALLS: pricing.fxReconcile is an operator reconciliation. So the two numbers must now DISAGREE, and that
+// disagreement is the assertion — the action contract moves because a route was added, and the required
+// -action list does not, because that list is the actions pages depend on and no page gained one.
+//
+// The pair is checked together on purpose. Moving the list version without growing the list would be a
+// number somebody typed; growing the list without moving the version would break 63_'s own stated rule.
 function regCount(src) { return ((/var SYS_REQUIRED_ACTIONS_ = \[[\s\S]*?\n\];/.exec(src) || [''])[0]
   .match(/action: '/g) || []).length; }
-eq(regCount(HEALTH) - regCount(priorHealth), 1, 'H3a and SYS_REQUIRED_ACTIONS_ itself grew by exactly one row');
+var _listMoved = Number(num(HEALTH, 'SYS_REQUIRED_ACTION_LIST_VERSION_'))
+   - Number(num(priorHealth, 'SYS_REQUIRED_ACTION_LIST_VERSION_'));
+var _listGrew = regCount(HEALTH) - regCount(priorHealth);
+eq(_listMoved, _listGrew,
+  'H3  SYS_REQUIRED_ACTION_LIST_VERSION_ moves exactly as far as SYS_REQUIRED_ACTIONS_ grows — neither is a number somebody typed');
+eq(_listGrew, 0, 'H3a and this release grew it by ZERO: the route it added is one no page calls');
 ok(/\{ action: 'pricing\.update', handler: 'handlePricingUpdate_'/.test(HEALTH), 'H3b which is pricing.update');
 // ASKED OF GIT, not by comparing bytes. The stored blob is line-ending normalised and the working copy
 // is not, so a direct byte compare reports a difference that does not exist. `git diff --name-only`
@@ -561,8 +580,14 @@ var nowFiles = manifestRows(HEALTH).map(function (r) { return r.file; });
 // R21 DECLARES ONE: 73_ is a new owner file, and a routed WRITE action whose handler file is not in
 // the manifest is the worst partial sync there is — the save appears to do nothing and no probe can say
 // why. Membership must move by exactly that row and no other.
-eq(nowFiles.filter(function (f) { return priorFiles.indexOf(f) === -1; }), ['73_api_v1_pricing_write.gs'],
-  'H5  the manifest gained EXACTLY the row this release declares');
+// R22 DECLARES NONE, and that is the assertion rather than a weaker version of it. 73_ has held a manifest
+// row since R21; this release gives that same file a SECOND ACTION, which changes what the file does and
+// not which files are probed. Membership must move by exactly nothing — the same strict statement in the
+// other direction, and the one that would catch a new owner file arriving undeclared.
+eq(nowFiles.filter(function (f) { return priorFiles.indexOf(f) === -1; }), [],
+  'H5  the manifest gained EXACTLY the rows this release declares — none');
+eq(priorFiles.filter(function (f) { return nowFiles.indexOf(f) === -1; }), [],
+  'H5a and lost none either — a probe silently dropped is a partial sync nobody can see');
 eq(priorFiles.filter(function (f) { return nowFiles.indexOf(f) === -1; }), [],
   'H5a and lost none — a release adds an owner, it never quietly drops one');
 

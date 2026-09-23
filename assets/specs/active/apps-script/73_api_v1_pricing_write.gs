@@ -52,10 +52,13 @@
  * MISSING_REQUIRED_HEADER having written nothing. A writer that quietly grows the schema it depends on is
  * how a migration becomes invisible.
  *
- * NOT IN THIS FILE, ON PURPOSE: no FX rate fetching, no FX conversion, no auto_* computation, no bulk
- * reconciliation, no legacy classification. PRICING_FX_DECIMALS_ below is the FROZEN storage-precision
- * contract that PRICING-R3 will convert against; this round uses it only to refuse a manual price the
- * currency cannot represent, and never to round one.
+ * PRICING-R3 ADDED THE FX RECONCILIATION BELOW, and left everything above it exactly as it was. The
+ * reconciliation rebuilds auto_* from the base prices at a supplied rate; it may refresh an effective price
+ * ONLY where that field's own flag explicitly says AUTO, it never writes an ownership flag, and it never
+ * fetches a rate. What is STILL not in this file: no FX provider, no rate stored anywhere but on the row it
+ * was applied to, and no legacy classification. PRICING_FX_DECIMALS_ below is the FROZEN storage-precision
+ * contract — the reconciliation rounds a CONVERTED value with it, and it is still never used to round a
+ * price a person typed, which is refused instead.
  *
  * Testability: every decision is a pure `function` declaration (extract+eval friendly) taking plain values,
  * so the whole contract runs against fixtures with ZERO SpreadsheetApp.
@@ -65,7 +68,11 @@
 // PRICING-R2 - first release. Registered as a REQUIRED owner in 63_ from this release, because
 // 01_router.gs dispatches pricing.update to handlePricingUpdate_ and a deployment carrying the router
 // without this file routes a live WRITE action to an undefined handler.
-var PRW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R21';
+// PRICING-R3 (R22) - gained the FX reconciliation: a SECOND action, pricing.fxReconcile, in the SAME file.
+// It belongs here rather than in a new owner because PRICING-R2 §7 made this the one write path into
+// pricing_list; two files writing one table would hold two locks and the field-level flags would stop
+// being checkable by reading a single writer.
+var PRW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R22';
 
 var PRW_ACTION_ = 'pricing.update';
 // The response SHAPE's own version, separate from the module build. A caller pins the shape, not the round.
@@ -575,4 +582,627 @@ function handlePricingUpdate_(body) {
 
   return prwEnvelope_(true, { dry_run: false, written: written, logged: logged, validated: lines.length,
     changed_rows: plan.changed_rows, unchanged_rows: plan.unchanged_rows, rows: receipt, errors: [] });
+}
+
+// =========================================================================================================
+// PRICING-R3 — FX RECONCILIATION. The auto_* reference values, rebuilt from the canonical base prices.
+//
+// WHY THIS LIVES IN 73_ AND NOT IN A NEW FILE. PRICING-R2 §7 made this the ONE write path into pricing_list
+// and the ONE writer of pricing_change_log. A reconciliation is a pricing write; putting it in a second
+// file would mean two owners of the same table holding two different locks, and the invariant that makes
+// the field-level flags trustworthy — that nothing else writes a price — would stop being checkable.
+//
+// THE DIRECTION IS FROZEN, because a reciprocal is the one arithmetic error that produces a plausible
+// number rather than an obvious one:
+//
+//     LOCAL = BASE x FX_RATE          FX_RATE means: 1 unit of base_currency buys X units of local currency.
+//
+// USD -> CAD at 1.35 means USD 1 = CAD 1.35. Inverting it turns a $29.99 product into $22.21 and nothing
+// about the result looks wrong. pricingFxRateFor_ is the only place a rate is chosen and it never inverts.
+//
+// WHAT AN FX RUN MAY AND MAY NOT TOUCH — this is PRICING-R2 §1 restated as a write rule, and it is the
+// whole safety argument:
+//
+//   auto_regular_price / auto_minimum_price / auto_msrp   ALWAYS refreshable. They are the SYSTEM REFERENCE
+//        value — what the base price converts to today — and they carry no ownership claim. R3 refreshes
+//        them even for a field a person owns, because an operator comparing their negotiated price against
+//        a stale reference is comparing against nothing.
+//
+//   regular_price / minimum_price / msrp                  ONLY when that field's own flag explicitly says
+//        AUTO. A flag reading MANUAL is a person's price. A flag reading BLANK is nobody's statement, and
+//        PRICING-R2 §10 forbids turning it into one. Both are left exactly as found.
+//
+// AUTO_REFERENCE_REFRESH IS NOT AUTHORITY_CLASSIFICATION. This file never writes an ownership flag during a
+// reconciliation — not TRUE, not FALSE, and above all not FALSE over a blank. Refreshing what the system
+// thinks a price WOULD be says nothing about who owns what it IS, and a run that quietly wrote FALSE into
+// every blank flag would silently classify the entire price book, which is the exact outcome R2 was built
+// to prevent.
+//
+// A MISSING BASE PRICE WRITES NOTHING, and this is a decision rather than an oversight. Converting a blank
+// must produce null and never zero (§5), and this file does that. What it then does with the null is leave
+// the field alone: blanking an auto_* would, for a field whose flag says AUTO, delete the live price that
+// field is currently serving. An empty cell is not an instruction to delete a price — that is the same
+// reading of blank that PRICING-R2 refused everywhere else — so the field is skipped and counted as
+// BASE_MISSING rather than acted on.
+//
+// FAIL CLOSED PER ROW, NOT PER BATCH. A row whose currency is unknown to the frozen precision contract, or
+// whose currency pair has no supplied rate, is SKIPPED with a reason and nothing about it is written. It
+// does not stop the rows that can be converted, because a reconciliation that refuses everything because
+// one site has an unpriced currency is a reconciliation nobody can run. But a row that is skipped is
+// skipped ENTIRELY: there is no half-converted row.
+//
+// THE RATES ARE AN INPUT, NEVER A CONSTANT. There is no FX provider in this repository and no FX rate
+// table in the database (PRICING_DATABASE_MAPPING §10 — "No separate FX DB table for MVP"), so the rates
+// for a run arrive WITH the request, carrying their own source and as-of date, and are recorded on every
+// row and every log line they touch. A rate hard-coded into a source file would be a business fact frozen
+// into a deployment, correct on the day it was written and wrong every day after.
+// =========================================================================================================
+
+var PRICING_FX_ACTION_ = 'pricing.fxReconcile';
+// A whole-table reconciliation has no page-sized ceiling, but it does need a runaway guard: this bounds the
+// range writes below, and a table larger than it is a data problem worth stopping on.
+var PRW_FX_MAX_ROWS_ = 20000;
+
+// The columns a reconciliation reads and writes, beyond PRICING-R2's three flags. Validated, never created.
+var PRICING_FX_COLUMNS_ = [
+  'currency', 'base_currency',
+  'base_regular_price', 'base_minimum_price', 'base_msrp',
+  'fx_rate', 'fx_rate_date',
+  'auto_regular_price', 'auto_minimum_price', 'auto_msrp'
+];
+
+/** The pair key. Direction is part of the identity: USD>CAD and CAD>USD are different rates, never one. */
+function pricingFxPairKey_(base, quote) {
+  return pricingStr_(base).toUpperCase() + '>' + pricingStr_(quote).toUpperCase();
+}
+
+/**
+ * Validate and index the rate table supplied with the request. Every entry must carry its own provenance,
+ * because a rate without a source and a date is a number somebody typed.
+ *
+ *   [ { base_currency, quote_currency, rate, source, as_of } ]
+ */
+function pricingBuildRateTable_(entries) {
+  var out = { ok: true, errors: [], byPair: {}, pairs: [] };
+  var list = (entries && entries.length !== undefined) ? entries : [];
+  if (!list.length) {
+    out.ok = false;
+    out.errors.push({ code: 'FX_RATES_REQUIRED',
+      detail: 'No FX rates were supplied. This action never invents, estimates or re-uses a previous rate.' });
+    return out;
+  }
+  list.forEach(function (e, i) {
+    var n = i + 1;
+    e = e || {};
+    var base = pricingStr_(e.base_currency).toUpperCase();
+    var quote = pricingStr_(e.quote_currency).toUpperCase();
+    var source = pricingStr_(e.source);
+    var asOf = pricingStr_(e.as_of);
+    if (!base || !quote) {
+      out.ok = false;
+      out.errors.push({ entry: n, code: 'FX_PAIR_INCOMPLETE', detail: 'base_currency and quote_currency are both required.' });
+      return;
+    }
+    if (!source) {
+      out.ok = false;
+      out.errors.push({ entry: n, code: 'FX_SOURCE_REQUIRED', pair: pricingFxPairKey_(base, quote),
+        detail: 'A rate with no named source cannot be audited or reproduced.' });
+      return;
+    }
+    if (!asOf) {
+      out.ok = false;
+      out.errors.push({ entry: n, code: 'FX_AS_OF_REQUIRED', pair: pricingFxPairKey_(base, quote),
+        detail: 'A rate with no as-of date cannot be told from a stale one.' });
+      return;
+    }
+    var r = pricingReadNumber_(e.rate);
+    if (r.invalid || !r.present) {
+      out.ok = false;
+      out.errors.push({ entry: n, code: 'FX_RATE_NOT_NUMERIC', pair: pricingFxPairKey_(base, quote),
+        detail: 'rate must be a number; got ' + JSON.stringify(pricingStr_(e.rate)) + '.' });
+      return;
+    }
+    if (!(r.value > 0)) {
+      // Zero would convert every price to nothing and a negative one is not a rate.
+      out.ok = false;
+      out.errors.push({ entry: n, code: 'FX_RATE_NOT_POSITIVE', pair: pricingFxPairKey_(base, quote),
+        detail: 'A rate must be greater than zero; got ' + r.value + '.' });
+      return;
+    }
+    if (base === quote && r.value !== 1) {
+      // Same currency is an identity, not a conversion. A supplied 1.02 here is a data error, and applying
+      // it would silently reprice a whole domestic site.
+      out.ok = false;
+      out.errors.push({ entry: n, code: 'FX_IDENTITY_RATE_INVALID', pair: pricingFxPairKey_(base, quote),
+        detail: base + ' to ' + quote + ' is the same currency; the only valid rate is 1, not ' + r.value + '.' });
+      return;
+    }
+    var key = pricingFxPairKey_(base, quote);
+    if (Object.prototype.hasOwnProperty.call(out.byPair, key)) {
+      out.ok = false;
+      out.errors.push({ entry: n, code: 'FX_PAIR_DUPLICATED', pair: key,
+        detail: 'Supplied more than once. Two rates for one pair cannot both be the rate for this run.' });
+      return;
+    }
+    out.byPair[key] = { pair: key, base_currency: base, quote_currency: quote,
+      rate: r.value, source: source, as_of: asOf };
+    out.pairs.push(key);
+  });
+  if (!out.ok) { out.byPair = {}; out.pairs = []; }
+  return out;
+}
+
+/**
+ * The rate for one row's conversion. SAME CURRENCY IS RESOLVED HERE AND NEVER LOOKED UP (§4): a site whose
+ * base and local currency agree needs no rate, no provider and no network, and requiring one would make a
+ * domestic site un-reconcilable on a day nobody fetched its own currency against itself.
+ */
+function pricingFxRateFor_(table, baseCurrency, localCurrency) {
+  var b = pricingStr_(baseCurrency).toUpperCase();
+  var q = pricingStr_(localCurrency).toUpperCase();
+  if (!b || !q) return null;
+  if (b === q) return { pair: pricingFxPairKey_(b, q), base_currency: b, quote_currency: q,
+    rate: 1, source: 'IDENTITY', as_of: null, identity: true };
+  var hit = (table && table.byPair) ? table.byPair[pricingFxPairKey_(b, q)] : null;
+  return hit ? hit : null;
+}
+
+/**
+ * Convert ONE base value. Returns the raw product and the stored value separately, so §6's
+ * FX_RAW_VALUE / FX_ROUNDED_VALUE are both reportable and the rounding is inspectable rather than implied.
+ *
+ *   absent base  -> { present: false }            nothing to convert, and nothing is written
+ *   invalid base -> { present: false, invalid }   a typo is not a price
+ */
+function pricingFxConvert_(baseCell, rate, localCurrency) {
+  var b = pricingReadNumber_(baseCell);
+  if (b.invalid) return { present: false, invalid: true, raw: null, value: null };
+  if (!b.present) return { present: false, invalid: false, na: b.na, raw: null, value: null };
+  if (b.value < 0) return { present: false, invalid: true, negative: true, raw: null, value: null };
+  var raw = b.value * rate;
+  var rounded = pricingRoundFx_(raw, localCurrency);
+  if (rounded === null) return { present: false, invalid: false, unsupported: true, raw: raw, value: null };
+  return { present: true, invalid: false, base: b.value, raw: raw, value: rounded };
+}
+
+/**
+ * THE CANONICAL EFFECTIVE-PRICE RESOLVER (PRICING-R3 §8), server side.
+ *
+ * It exists so that no caller ever writes `manual || auto`, which cannot tell the four cases apart: a price
+ * of 0, a price nobody has set, a price the system maintains, and a price whose owner has never been
+ * recorded. PRICING-R2 froze the rule and this reuses it verbatim — the EFFECTIVE value is the stored
+ * field, always. auto_* is shown beside it, never resolved from it.
+ *
+ *   MANUAL   a person's price. writable_by_fx = false.
+ *   AUTO     the system's price. It must equal auto_*, so an FX run that moves auto_* moves it too.
+ *   UNKNOWN  nobody has said. The stored value stands; FX may not touch it, and MUST NOT resolve it to
+ *            auto_* for display either, because showing a legacy price as its newly-converted value is
+ *            reclassification carried out through the screen instead of through the schema.
+ */
+function pricingResolveEffective_(row, spec) {
+  var stored = pricingReadNumber_(row ? row[spec.field] : null);
+  var auto = pricingReadNumber_(row ? row[spec.auto] : null);
+  var authority = pricingReadFlag_(row ? row[spec.flag] : null);
+  var value = stored.present ? stored.value : null;
+  var source = stored.present ? 'STORED' : (stored.na ? 'NA' : 'UNAVAILABLE');
+  // The one substitution, and it is not a fallback: a field the flag says the system owns is DEFINED to
+  // equal auto_*, so when the stored cell has not caught up yet the auto value is not a guess about it.
+  if (!stored.present && !stored.na && authority === PRICING_OWNER_AUTO_ && auto.present) {
+    value = auto.value;
+    source = 'AUTO_REFERENCE';
+  }
+  return {
+    field: spec.field, value: value, source: source, authority: authority,
+    auto: auto.present ? auto.value : null,
+    writable_by_fx: authority === PRICING_OWNER_AUTO_
+  };
+}
+
+/**
+ * Plan the FX refresh for ONE row. Pure. Returns what would be written and why each field was or was not.
+ * Fields are planned INDEPENDENTLY (§5, §7): a missing base minimum never stops regular or msrp.
+ */
+function pricingPlanFxRow_(row, table) {
+  var res = { ok: true, skip: null, changed: false, cells: {}, logs: [], fields: {},
+    rate: null, converted: false };
+
+  var localCurrency = pricingStr_(row.currency).toUpperCase();
+  var baseCurrency = pricingStr_(row.base_currency).toUpperCase();
+
+  if (!localCurrency) { res.ok = false; res.skip = 'MISSING_LOCAL_CURRENCY'; return res; }
+  if (!baseCurrency) { res.ok = false; res.skip = 'MISSING_BASE_CURRENCY'; return res; }
+  if (pricingDecimalsFor_(localCurrency) === null) {
+    // §4 — fail closed for the row. The frozen precision contract does not know how many decimals this
+    // currency stores, and a converted price written at the wrong precision is a wrong price.
+    res.ok = false; res.skip = 'UNSUPPORTED_CURRENCY'; res.currency = localCurrency; return res;
+  }
+
+  var rate = pricingFxRateFor_(table, baseCurrency, localCurrency);
+  if (!rate) { res.ok = false; res.skip = 'MISSING_FX_RATE'; res.pair = pricingFxPairKey_(baseCurrency, localCurrency); return res; }
+  res.rate = rate;
+  res.identity = !!rate.identity;
+
+  PRICING_FIELDS_.forEach(function (spec) {
+    var eff = pricingResolveEffective_(row, spec);
+    var conv = pricingFxConvert_(row[spec.base], rate.rate, localCurrency);
+    var view = { authority: eff.authority, auto_changed: false, effective_changed: false, reason: null,
+      raw: conv.raw, value: conv.value };
+
+    if (!conv.present) {
+      view.reason = conv.invalid ? (conv.negative ? 'BASE_NEGATIVE' : 'BASE_INVALID')
+        : (conv.unsupported ? 'UNSUPPORTED_CURRENCY' : (conv.na ? 'BASE_NA' : 'BASE_MISSING'));
+      res.fields[spec.field] = view;
+      return;
+    }
+
+    var storedAuto = pricingReadNumber_(row[spec.auto]);
+    var autoMoved = !storedAuto.present || storedAuto.value !== conv.value;
+    if (autoMoved) {
+      view.auto_changed = true;
+      res.cells[spec.auto] = conv.value;
+      res.logs.push({ field_name: spec.auto, change_type: 'AUTO_FX_REFRESH',
+        old_value: pricingStr_(row[spec.auto]), new_value: String(conv.value) });
+    } else {
+      view.reason = 'AUTO_ALREADY_CURRENT';
+    }
+
+    // The effective field follows ONLY an explicit AUTO flag. MANUAL and UNKNOWN are both left alone, and
+    // they are left alone for different reasons: one is owned, the other is unclaimed.
+    if (eff.writable_by_fx) {
+      var storedEff = pricingReadNumber_(row[spec.field]);
+      if (!storedEff.present || storedEff.value !== conv.value) {
+        view.effective_changed = true;
+        res.cells[spec.field] = conv.value;
+        res.logs.push({ field_name: spec.field, change_type: 'AUTO_FX_REFRESH',
+          old_value: pricingStr_(row[spec.field]), new_value: String(conv.value) });
+      }
+    }
+    res.fields[spec.field] = view;
+  });
+
+  res.converted = true;
+  // The rate is recorded on every converted row, even one whose prices did not move: "this row was
+  // reconciled on this date at this rate" is the fact an auditor needs, and it is not the same fact as
+  // "this row's price changed".
+  res.cells.fx_rate = rate.rate;
+  res.cells.fx_rate_date = rate.identity ? pricingStr_(table && table.runDate) : rate.as_of;
+  res.changed = Object.keys(res.cells).length > 0;
+  return res;
+}
+
+/**
+ * Plan the WHOLE table and produce §11's census in the same pass, so the counts describe exactly the plan
+ * that would be applied rather than a second walk that could disagree with it.
+ */
+function pricingPlanFxBatch_(rows, table) {
+  var c = {
+    PRICING_ROWS_TOTAL: 0, SAME_CURRENCY_ROWS: 0, FX_CONVERTIBLE_ROWS: 0,
+    BASE_REGULAR_PRESENT: 0, BASE_MINIMUM_PRESENT: 0, BASE_MSRP_PRESENT: 0,
+    AUTO_REGULAR_WOULD_UPDATE: 0, AUTO_MINIMUM_WOULD_UPDATE: 0, AUTO_MSRP_WOULD_UPDATE: 0,
+    EFFECTIVE_REGULAR_WOULD_FOLLOW: 0, EFFECTIVE_MINIMUM_WOULD_FOLLOW: 0, EFFECTIVE_MSRP_WOULD_FOLLOW: 0,
+    MANUAL_REGULAR_PRESERVED: 0, MANUAL_MINIMUM_PRESERVED: 0, MANUAL_MSRP_PRESERVED: 0,
+    UNKNOWN_AUTHORITY_FIELDS: 0, UNKNOWN_AUTHORITY_ROWS: 0,
+    UNSUPPORTED_CURRENCY_ROWS: 0, MISSING_BASE_CURRENCY_ROWS: 0, MISSING_LOCAL_CURRENCY_ROWS: 0,
+    MISSING_FX_RATE_ROWS: 0, DUPLICATE_IDENTITY_ROWS: 0, IDENTITY_MISSING_ROWS: 0
+  };
+  var out = { ok: true, errors: [], plans: [], skipped: [], census: c, pairsUsed: {} };
+
+  if (!rows || !rows.length) {
+    out.ok = false;
+    out.errors.push({ code: 'NO_PRICING_ROWS', detail: 'pricing_list carried no data rows.' });
+    return out;
+  }
+  if (rows.length > PRW_FX_MAX_ROWS_) {
+    out.ok = false;
+    out.errors.push({ code: 'TABLE_TOO_LARGE', detail: rows.length + ' rows exceeds the ' + PRW_FX_MAX_ROWS_ + '-row guard.' });
+    return out;
+  }
+
+  var seen = {};
+  var MANUAL_KEY = { regular_price: 'MANUAL_REGULAR_PRESERVED', minimum_price: 'MANUAL_MINIMUM_PRESERVED', msrp: 'MANUAL_MSRP_PRESERVED' };
+  var AUTO_KEY = { regular_price: 'AUTO_REGULAR_WOULD_UPDATE', minimum_price: 'AUTO_MINIMUM_WOULD_UPDATE', msrp: 'AUTO_MSRP_WOULD_UPDATE' };
+  var EFF_KEY = { regular_price: 'EFFECTIVE_REGULAR_WOULD_FOLLOW', minimum_price: 'EFFECTIVE_MINIMUM_WOULD_FOLLOW', msrp: 'EFFECTIVE_MSRP_WOULD_FOLLOW' };
+  var BASE_KEY = { base_regular_price: 'BASE_REGULAR_PRESENT', base_minimum_price: 'BASE_MINIMUM_PRESENT', base_msrp: 'BASE_MSRP_PRESENT' };
+
+  rows.forEach(function (r) {
+    c.PRICING_ROWS_TOTAL++;
+    var v = r.values;
+    var id = pricingStr_(v.marketplace_sku_id);
+
+    PRICING_FIELDS_.forEach(function (spec) {
+      if (pricingReadNumber_(v[spec.base]).present) c[BASE_KEY[spec.base]]++;
+    });
+
+    // THE AUTHORITY CENSUS DESCRIBES THE TABLE, NOT THE PLAN, so it is taken before the guards below and
+    // counts rows this run cannot act on. "How much of the price book has no recorded owner" is the number
+    // an operator reads to decide whether reconciling is safe at all, and a duplicated or unidentified row
+    // is still part of the price book. What those guards decide is only whether the row can be WRITTEN.
+    var rowUnknown = false;
+    PRICING_FIELDS_.forEach(function (spec) {
+      var a = pricingReadFlag_(v[spec.flag]);
+      if (a === PRICING_OWNER_UNKNOWN_) { c.UNKNOWN_AUTHORITY_FIELDS++; rowUnknown = true; }
+      else if (a === PRICING_OWNER_MANUAL_) c[MANUAL_KEY[spec.field]]++;
+    });
+    if (rowUnknown) c.UNKNOWN_AUTHORITY_ROWS++;
+
+    if (!id) { c.IDENTITY_MISSING_ROWS++; out.skipped.push({ rowNumber: r.rowNumber, reason: 'IDENTITY_MISSING' }); return; }
+    if (seen[id]) {
+      // pricing_list is one row per marketplace_sku_id. Two rows for one id means no rule picks a winner,
+      // so BOTH are skipped: converting the first would make the duplicate invisible.
+      c.DUPLICATE_IDENTITY_ROWS++;
+      out.skipped.push({ rowNumber: r.rowNumber, marketplace_sku_id: id, reason: 'DUPLICATE_IDENTITY', first_seen_row: seen[id] });
+      return;
+    }
+    seen[id] = r.rowNumber;
+
+    var plan = pricingPlanFxRow_(v, table);
+    plan.rowNumber = r.rowNumber;
+    plan.marketplace_sku_id = id;
+    plan.pricing_id = pricingStr_(v.pricing_id);
+
+    if (!plan.ok) {
+      if (plan.skip === 'UNSUPPORTED_CURRENCY') c.UNSUPPORTED_CURRENCY_ROWS++;
+      else if (plan.skip === 'MISSING_BASE_CURRENCY') c.MISSING_BASE_CURRENCY_ROWS++;
+      else if (plan.skip === 'MISSING_LOCAL_CURRENCY') c.MISSING_LOCAL_CURRENCY_ROWS++;
+      else if (plan.skip === 'MISSING_FX_RATE') c.MISSING_FX_RATE_ROWS++;
+      out.skipped.push({ rowNumber: r.rowNumber, marketplace_sku_id: id, reason: plan.skip,
+        currency: plan.currency || null, pair: plan.pair || null });
+      return;
+    }
+
+    if (plan.identity) c.SAME_CURRENCY_ROWS++; else c.FX_CONVERTIBLE_ROWS++;
+    if (plan.rate) out.pairsUsed[plan.rate.pair] = plan.rate;
+
+    PRICING_FIELDS_.forEach(function (spec) {
+      var f = plan.fields[spec.field];
+      if (!f) return;
+      if (f.auto_changed) c[AUTO_KEY[spec.field]]++;
+      if (f.effective_changed) c[EFF_KEY[spec.field]]++;
+    });
+
+    out.plans.push(plan);
+  });
+
+  return out;
+}
+
+/**
+ * BUILD THE PHYSICAL WRITES, AND PROVE THEM BEFORE MAKING THEM.
+ *
+ * §14 — one range write per COLUMN, not one per row and never one per cell. Every column this run touches
+ * is written once over the whole data span, so the number of spreadsheet calls scales with the number of
+ * columns (a constant) rather than with the number of SKUs.
+ *
+ * That speed is bought with a risk, and this function is where the risk is paid for: writing a whole column
+ * means writing back every row the run did NOT change, so a defect in building the array would overwrite a
+ * manual price with an auto one and leave no trace of what it replaced. So the array is not trusted.
+ * Before anything is sent, every cell of the three EFFECTIVE columns is re-checked against the flag as it
+ * stands in the sheet — not against the plan that produced it — and any row whose flag does not explicitly
+ * say AUTO must be byte-identical to what was read. One mismatch refuses the entire run.
+ *
+ * It is a second opinion rather than a restatement: the planner decides from pricingResolveEffective_, the
+ * audit decides from the raw flag cell, and a bug would have to occur identically in both to pass.
+ */
+function pricingFxBuildColumns_(sheetState, plans) {
+  var byRow = {};
+  plans.forEach(function (p) { if (p.changed) byRow[p.rowNumber] = p; });
+
+  var touched = {};
+  plans.forEach(function (p) { if (p.changed) Object.keys(p.cells).forEach(function (k) { touched[k] = 1; }); });
+
+  var columns = [];
+  var violations = [];
+  var effectiveNames = {};
+  PRICING_FIELDS_.forEach(function (s) { effectiveNames[s.field] = s; });
+
+  Object.keys(touched).forEach(function (name) {
+    var idx = sheetState.col(name);
+    if (idx === -1) return;            // a column this sheet does not carry is not created here
+    var values = [];
+    sheetState.rows.forEach(function (r) {
+      var p = byRow[r.rowNumber];
+      var original = r.values[name];
+      var next = (p && Object.prototype.hasOwnProperty.call(p.cells, name)) ? p.cells[name] : original;
+
+      if (Object.prototype.hasOwnProperty.call(effectiveNames, name)) {
+        var spec = effectiveNames[name];
+        var flagNow = pricingReadFlag_(r.values[spec.flag]);
+        var identical = String(next) === String(original);
+        if (flagNow !== PRICING_OWNER_AUTO_ && !identical) {
+          violations.push({ rowNumber: r.rowNumber, field: name, authority: flagNow,
+            was: pricingStr_(original), would_be: pricingStr_(next) });
+        }
+      }
+      values.push([next]);
+    });
+    columns.push({ name: name, columnIndex: idx + 1, values: values });
+  });
+
+  return { columns: columns, violations: violations, rowCount: sheetState.rows.length };
+}
+
+/** The rate-input template an operator fills in for a run. One row per pair actually needed by the table. */
+function pricingFxRequiredPairs_(rows) {
+  var need = {};
+  (rows || []).forEach(function (r) {
+    var b = pricingStr_(r.values.base_currency).toUpperCase();
+    var q = pricingStr_(r.values.currency).toUpperCase();
+    if (!b || !q || b === q) return;           // identity pairs need no supplied rate
+    need[pricingFxPairKey_(b, q)] = { base_currency: b, quote_currency: q, rate: '', source: '', as_of: '' };
+  });
+  return Object.keys(need).sort().map(function (k) { return need[k]; });
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// handlePricingFxReconcile_ — the FX run. DRY RUN IS THE DEFAULT.
+// ---------------------------------------------------------------------------------------------------------
+/**
+ * Body:
+ *   {
+ *     action: 'pricing.fxReconcile',
+ *     dry_run: true,                 // ANY value other than an explicit false is a dry run
+ *     changed_by: '<operator>',
+ *     run_date: 'YYYY-MM-DD',        // the execution date; supplied, never taken from a browser clock
+ *     rates: [ { base_currency, quote_currency, rate, source, as_of } ]
+ *   }
+ *
+ * DRY RUN IS THE DEFAULT AND IT IS DELIBERATE. `dry_run: false` has to be written out in full to write
+ * anything. A reconciliation is the one action in this file that can touch every row in the table, so the
+ * failure mode of a forgotten parameter must be "counted nothing" and never "repriced everything".
+ */
+function handlePricingFxReconcile_(body) {
+  body = body || {};
+  var wantsWrite = body.dry_run === false || pricingStr_(body.dry_run).toLowerCase() === 'false';
+  var dryRun = !wantsWrite;
+  var actor = pricingStr_(body.changed_by) || 'fx-reconciliation';
+  var runDate = pricingStr_(body.run_date);
+
+  var ss, priceSheet, logSheet;
+  try {
+    ss = SpreadsheetApp.getActiveSpreadsheet();
+    // RULE S0-2 — validate, never provision, exactly as pricing.update does. The flags are PRICING-R2's
+    // migration and the FX columns are pre-existing; either missing means this refuses having written none.
+    priceSheet = prodRequireSheet_(ss, 'pricing_list', PRICING_LIST_HEADERS_);
+    prodRequireColumns_(priceSheet, PRICING_MANUAL_FLAG_COLUMNS_);
+    prodRequireColumns_(priceSheet, PRICING_FX_COLUMNS_);
+    logSheet = prodRequireSheet_(ss, 'pricing_change_log', PRICING_CHANGE_LOG_HEADERS_);
+    prodRequireColumns_(logSheet, ['change_type']);
+  } catch (e) {
+    return prwEnvelope_(false, { written: 0, rows_written: 0 },
+      { code: e && e.safetyToken ? e.safetyToken : 'SCHEMA_UNAVAILABLE',
+        detail: (e && e.message ? e.message : String(e)) + ' — nothing was written.' });
+  }
+
+  var sheetState = prwReadSheet_(priceSheet);
+
+  if (!runDate) {
+    return prwEnvelope_(false, { written: 0, required_pairs: pricingFxRequiredPairs_(sheetState.rows) },
+      { code: 'RUN_DATE_REQUIRED',
+        detail: 'run_date is the execution date of this reconciliation and is recorded on every row it '
+          + 'touches. It is supplied, never defaulted, so a run can never be dated by whichever clock '
+          + 'happened to answer.' });
+  }
+
+  var table = pricingBuildRateTable_(body.rates);
+  table.runDate = runDate;
+  if (!table.ok) {
+    // The refusal carries the template: the pairs this table actually needs, so the operator's next step
+    // is filling a list rather than guessing which currencies are live.
+    return prwEnvelope_(false, { written: 0, errors: table.errors,
+      required_pairs: pricingFxRequiredPairs_(sheetState.rows) },
+      { code: 'FX_RATES_INVALID', detail: table.errors.length + ' problem(s) with the supplied rates. ZERO rows were written.' });
+  }
+
+  var batch = pricingPlanFxBatch_(sheetState.rows, table);
+  if (!batch.ok) {
+    return prwEnvelope_(false, { written: 0, errors: batch.errors },
+      { code: 'FX_PLAN_FAILED', detail: batch.errors.map(function (e) { return e.code; }).join(', ') });
+  }
+
+  var build = pricingFxBuildColumns_(sheetState, batch.plans);
+  if (build.violations.length) {
+    // Unreachable by design, and checked anyway. If it ever fires, a manual price was one write away from
+    // being replaced by a converted one, and the only safe response is to write nothing at all.
+    return prwEnvelope_(false, { written: 0, violations: build.violations.slice(0, 20),
+      violation_count: build.violations.length, census: batch.census },
+      { code: 'MANUAL_PRICE_WOULD_BE_OVERWRITTEN',
+        detail: build.violations.length + ' field(s) not owned by the system would have changed. '
+          + 'The entire run was refused and nothing was written.' });
+  }
+
+  var pairsUsed = Object.keys(batch.pairsUsed).sort().map(function (k) {
+    var p = batch.pairsUsed[k];
+    return { pair: p.pair, rate: p.rate, source: p.source, as_of: p.as_of, identity: !!p.identity };
+  });
+  var logCount = batch.plans.reduce(function (n, p) { return n + p.logs.length; }, 0);
+
+  var summary = {
+    run_date: runDate,
+    fx_direction: 'LOCAL = BASE x FX_RATE (1 base_currency = rate local_currency)',
+    pairs_used: pairsUsed,
+    census: batch.census,
+    rows_planned: batch.plans.length,
+    rows_changed: batch.plans.filter(function (p) { return p.changed; }).length,
+    skipped: batch.skipped.slice(0, 200),
+    skipped_count: batch.skipped.length,
+    log_rows: logCount,
+    manual_fields_overwritten: 0,
+    columns_to_write: build.columns.map(function (c) { return c.name; })
+  };
+
+  if (dryRun) {
+    return prwEnvelope_(true, prwMerge_({ dry_run: true, written: 0, rows_written: 0,
+      physical_range_writes: 0 }, summary));
+  }
+
+  var lock = LockService.getScriptLock();
+  var rangeWrites = 0, rowsWritten = 0, logged = 0;
+  try {
+    if (!lock.tryLock(PRW_LOCK_MS_)) {
+      return prwEnvelope_(false, { written: 0 },
+        { code: 'PRICING_LOCK_TIMEOUT', detail: 'Another pricing write is in progress. Nothing was written.' });
+    }
+    var now = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd HH:mm:ss');
+
+    // updated_by / updated_at travel with the prices, as columns, for the rows that actually changed.
+    var changedRows = {};
+    batch.plans.forEach(function (p) { if (p.changed) changedRows[p.rowNumber] = 1; });
+    rowsWritten = Object.keys(changedRows).length;
+
+    ['updated_by', 'updated_at'].forEach(function (name) {
+      var idx = sheetState.col(name);
+      if (idx === -1) return;
+      var v = [];
+      sheetState.rows.forEach(function (r) {
+        v.push([changedRows[r.rowNumber] ? (name === 'updated_by' ? actor : now) : r.values[name]]);
+      });
+      build.columns.push({ name: name, columnIndex: idx + 1, values: v });
+    });
+
+    if (build.rowCount > 0) {
+      build.columns.forEach(function (c) {
+        priceSheet.getRange(2, c.columnIndex, build.rowCount, 1).setValues(c.values);
+        rangeWrites++;
+      });
+    }
+
+    var logHeaders = logSheet.getRange(1, 1, 1, logSheet.getLastColumn()).getValues()[0]
+      .map(function (h) { return pricingStr_(h); });
+    var logRows = [];
+    batch.plans.forEach(function (p) {
+      if (!p.logs.length) return;
+      // §13 — enough metadata to reconstruct the run without joining anything: date, source, pair, rate.
+      var reason = 'FX ' + runDate + ' ' + p.rate.pair + ' @' + p.rate.rate
+        + ' src=' + p.rate.source + (p.rate.as_of ? ' as_of=' + p.rate.as_of : '');
+      p.logs.forEach(function (entry) {
+        var rec = {
+          log_id: 'PCL-' + Utilities.getUuid().substring(0, 10).toUpperCase(),
+          pricing_id: p.pricing_id, field_name: entry.field_name,
+          old_value: entry.old_value, new_value: entry.new_value,
+          change_type: entry.change_type, changed_by: actor, changed_at: now, change_reason: reason
+        };
+        logRows.push(logHeaders.map(function (h) { return Object.prototype.hasOwnProperty.call(rec, h) ? rec[h] : ''; }));
+      });
+    });
+    if (logRows.length) {
+      logSheet.getRange(logSheet.getLastRow() + 1, 1, logRows.length, logHeaders.length).setValues(logRows);
+      logged = logRows.length;
+      rangeWrites++;
+    }
+    SpreadsheetApp.flush();
+  } catch (e) {
+    return prwEnvelope_(false, { written: rowsWritten, logged: logged, physical_range_writes: rangeWrites },
+      { code: 'PRICING_WRITE_FAILED', detail: (e && e.message ? e.message : String(e)) });
+  } finally {
+    try { lock.releaseLock(); } catch (e2) {}
+  }
+
+  return prwEnvelope_(true, prwMerge_({ dry_run: false, written: rowsWritten, rows_written: rowsWritten,
+    logged: logged, physical_range_writes: rangeWrites }, summary));
+}
+
+/** Shallow merge, so the dry run and the real run report the SAME summary shape from the same builder. */
+function prwMerge_(target, extra) {
+  Object.keys(extra || {}).forEach(function (k) { target[k] = extra[k]; });
+  return target;
 }
