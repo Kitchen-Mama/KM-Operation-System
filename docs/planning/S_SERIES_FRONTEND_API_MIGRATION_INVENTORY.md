@@ -298,8 +298,31 @@ finding, and this document does not take it.
 > `LOCAL_UNVERIFIED` + `EXECUTION_PLAN_DB_STATE_UNKNOWN` now separate the two. `_IR_RECO_CACHE_KEY` is
 > untouched and remains a session cache with a server behind it.
 >
-> The `sku-overrides`, `utils/data.js`, `supplychain-canvas` and `shippingHistory` rows are **unchanged and
-> still open.**
+> The `supplychain-canvas` and `shippingHistory` rows are **unchanged and still open.**
+
+> **ANSWERED — 2026-09-23, S2-R4A.** The `sku-overrides` and `utils/data.js` rows are **closed**, and the
+> census that closed them found the situation milder than the table implies: **every writer was already
+> dead.** `setSkuImageOverride` has no caller in the reachable history of any page, and
+> `saveSkuDataOverrides` has none anywhere, so neither key could still be filled by the product. What they
+> could still do was OUTRANK the server — `getNormalizedSkuImage` consulted the browser value FIRST, and
+> `getAllSkuDataWithOverrides` INJECTED whole SKU rows the server never returned. Both are retired;
+> `sku_details.image_url` (read) + `upsertSkuDetail` (write) is the owner, and the row set itself decides
+> which SKUs exist. **No table, no schema change and no new action were needed.** The keys are IGNORED
+> rather than deleted — an imported-SKU row may be the only copy of something a person typed — and
+> nothing is migrated into the database automatically.
+>
+> `weeklyShippingPlans` was the same shape and simpler: all four `DataRepo` methods had **zero callers**,
+> and the only `updateShippingPlanStatus` any page reaches is the canonical `KM.DB` one. Removed, with no
+> replacement storage and no change to the canonical Weekly Shipping Plan API. `personalTodos` stays — it
+> is a genuine personal preference, which this round does not touch.
+>
+> Proof: `assets/tests/s2-r4a-browser-business-authority-retirement.test.js`.
+>
+> **ONE THING ON THE SAME PATH WAS DELIBERATELY NOT FIXED.** `getAllSkuDataWithOverrides` still falls back
+> to the demo arrays in `utils/data.js` when the base set is empty. That is a static fixture rather than
+> browser storage, so it is outside S2-C's five categories, and the canonical SKU Details page already
+> guards it (F1-7N-FB-4D §D3 returns before rendering when the read model is missing). `sku-handbook.js`
+> does not guard it. Recorded here rather than repaired inside an authority-retirement round.
 
 Preferences, for completeness and so they are never mistaken for the list above: `utils/i18n.js`
 (language), `utils/resizable-columns.js` (widths), `core/state.js` (`km_state_*` view state),

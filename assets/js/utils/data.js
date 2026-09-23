@@ -39,8 +39,19 @@ const factoryInventory = [
 // 出貨方式資料
 const shippingMethods = ["海運", "空運", "陸運"];
 
-// Weekly Shipping Plans 資料 - 從 localStorage 載入
-let weeklyShippingPlans = JSON.parse(localStorage.getItem('weeklyShippingPlans')) || [];
+// S2-R4A — THE LEGACY WEEKLY SHIPPING PLAN STORE IS GONE.
+//
+// `weeklyShippingPlans` was a localStorage array with four DataRepo methods over it — save,
+// get-by-status, updateShippingPlanStatus and remove. A census of the whole repository found ZERO
+// callers of any of the four, and the only reference to the name `updateShippingPlanStatus` outside
+// this file is the CANONICAL one: window.KM.DB.updateShippingPlanStatus, which shipping-plan.js
+// already uses at five call sites and which reaches shipping_plans through weeklyShipping.workspace.get
+// and the routed write actions.
+//
+// So two implementations shared a method name, one of them owned the data and the other owned nothing.
+// The dead one is removed rather than left as a name a future reader could bind to by accident, and
+// rather than left as a localStorage array that a stale profile could still be holding plans in.
+// NOTHING REPLACES IT: no new storage, and the canonical Weekly Shipping Plan API is untouched.
 
 // 站點 SKU 資料
 const siteSkus = [
@@ -198,41 +209,6 @@ const DataRepo = {
     
     getShippingMethods() {
         return shippingMethods;
-    },
-    
-    saveWeeklyShippingPlan(plan) {
-        weeklyShippingPlans.unshift(plan);
-        localStorage.setItem('weeklyShippingPlans', JSON.stringify(weeklyShippingPlans));
-    },
-    
-    getWeeklyShippingPlans(status) {
-        return weeklyShippingPlans.filter(plan => plan.status === status);
-    },
-    
-    updateShippingPlanStatus(planId, newStatus) {
-        console.log('Looking for planId:', planId, 'type:', typeof planId);
-        console.log('Available plans:', weeklyShippingPlans.map(p => ({id: p.id, type: typeof p.id})));
-        
-        const plan = weeklyShippingPlans.find(p => p.id == planId);
-        if (plan) {
-            console.log('Found plan, updating status to:', newStatus);
-            plan.status = newStatus;
-            localStorage.setItem('weeklyShippingPlans', JSON.stringify(weeklyShippingPlans));
-        } else {
-            console.log('Plan not found!');
-        }
-    },
-    
-    removeShippingPlan(planId) {
-        console.log('Removing planId:', planId);
-        const index = weeklyShippingPlans.findIndex(p => p.id == planId);
-        if (index !== -1) {
-            weeklyShippingPlans.splice(index, 1);
-            localStorage.setItem('weeklyShippingPlans', JSON.stringify(weeklyShippingPlans));
-            console.log('Plan removed successfully');
-        } else {
-            console.log('Plan not found for removal!');
-        }
     },
     
     getSkus() {

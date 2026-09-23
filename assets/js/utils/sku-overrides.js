@@ -15,8 +15,36 @@ const VALID_LIFECYCLES = [
 // F1-S1: SKU lifecycle override authority REMOVED. Lifecycle now comes ONLY from sku_details.lifecycle.
 // getSkuLifecycleOverrides / getSkuLifecycleOverride / setSkuLifecycleOverride were deleted. The stale
 // browser key (km_sku_lifecycle_overrides_v1) is purged once on load (see _skuPurgeLegacyLifecycleOverride).
-// Image overrides (km_sku_image_overrides_v1) and imported-SKU data overrides (km_sku_data_overrides_v1)
-// are UNCHANGED — this round removes lifecycle authority only.
+//
+// S2-R4A — AND NOW THE OTHER TWO. F1-S1 left them alone and said so; that sentence was a statement about
+// F1-S1's scope, not a contract, and this is the round that closes it.
+//
+// WHAT WAS ACTUALLY TRUE WHEN WE LOOKED. Both keys had already lost their writers:
+//
+//   setSkuImageOverride   0 callers — and 'git log -S' finds none in the reachable history of any page,
+//                         so no shipped UI has ever written km_sku_image_overrides_v1.
+//   saveSkuDataOverrides  0 callers anywhere, source or test.
+//
+// So neither key could still be FILLED by the product. What they could still do is OUTRANK the server,
+// and that is what a stale key is dangerous for:
+//
+//   1. getNormalizedSkuImage put the browser value FIRST — 'override || item.image || …' — so one machine
+//      showed a different photograph for a SKU than every other machine, off a value nothing had written
+//      since before the canonical read existed.
+//   2. getAllSkuDataWithOverrides INJECTED WHOLE SKU ROWS the server did not return. A row that exists in
+//      one browser profile and nowhere else is not a SKU; it is a rumour with a product name.
+//
+// Both are gone. sku_details is the owner: 'image_url' for the picture (canonical read →
+// KM.DB.upsertSkuDetail for the write), and the row set itself for which SKUs exist.
+//
+// THE KEYS ARE IGNORED, NOT DELETED, and that is deliberate. A lifecycle override duplicated a server
+// field, so purging it on load destroyed nothing. An imported-SKU override may be the ONLY copy of
+// something a person typed. Retiring an authority is not a licence to destroy the evidence, so the keys
+// stay readable — debugLegacySkuOverrides() still reports them — and resetSkuHandbookOverrides() still
+// clears them when an operator ASKS. What no longer happens is either key reaching a rendered value.
+//
+// AND NOTHING IS MIGRATED. A stale browser row is not a write the operator authorised, and promoting one
+// into sku_details automatically would invent a canonical fact out of residue.
 
 function getSkuImageOverrides() {
     try { return JSON.parse(localStorage.getItem(SKU_IMAGE_KEY)) || {}; }
@@ -26,13 +54,6 @@ function getSkuImageOverrides() {
 function getSkuImageOverride(sku) {
     const overrides = getSkuImageOverrides();
     return overrides[sku] ? overrides[sku].image : null;
-}
-
-function setSkuImageOverride(sku, imageUrl) {
-    const overrides = getSkuImageOverrides();
-    overrides[sku] = { image: imageUrl, updatedAt: new Date().toISOString() };
-    localStorage.setItem(SKU_IMAGE_KEY, JSON.stringify(overrides));
-    return true;
 }
 
 // Map original status to normalized lifecycle
@@ -51,9 +72,13 @@ function getNormalizedSkuStatus(item) {
     return mapStatusToLifecycle((item && (item.status || item.lifecycle)) || '');
 }
 
+// S2-R4A — THE ROW OWNS THE PICTURE. The browser override used to be consulted FIRST, which meant a value
+// no shipped code has ever written could outrank sku_details.image_url on one machine and nowhere else.
+// The three spellings that remain are all the same canonical field arriving under different read paths
+// (scoped workspace → `image`, broad cache / raw row → `imageUrl` / `image_url`); none of them is browser
+// state. An absent value is still absent — resolveSkuImageUrl decides what that renders as.
 function getNormalizedSkuImage(item) {
-    const override = getSkuImageOverride(item.sku);
-    var raw = override || item.image || item.imageUrl || item.image_url || '';
+    var raw = (item && (item.image || item.imageUrl || item.image_url)) || '';
     return resolveSkuImageUrl(raw);
 }
 
@@ -109,7 +134,10 @@ function resolveSkuImageUrl(imageUrl) {
 // no url on the row" and "the row carries something that is not an image address" are different facts with
 // different fixes, and reporting both as ABSENT sent an operator to look for a missing value that was there.
 function classifySkuImageSource(item) {
-    var raw = (item && (getSkuImageOverride(item.sku) || item.image || item.imageUrl || item.image_url)) || '';
+    // S2-R4A — reads exactly what getNormalizedSkuImage reads. A classifier that consulted the retired
+    // browser override would answer PRESENT about a picture the renderer does not draw, which is worse
+    // than no diagnosis: it sends the operator to look for a rendering bug that is not there.
+    var raw = (item && (item.image || item.imageUrl || item.image_url)) || '';
     var P = _skuImagePolicy();
     if (!P) return { state: 'REFUSED', reason: 'IMAGE_POLICY_NOT_LOADED', url: '', note: null };
     var v = P.classify(raw);
@@ -139,18 +167,18 @@ function getAllSkuDataWithOverrides(sourceItems) {
         ];
     }
 
+    // S2-R4A — WHICH SKUs EXIST IS THE SERVER'S ANSWER, NOT THIS BROWSER'S.
+    //
+    // A block here used to read km_sku_data_overrides_v1 and PUSH any key the base set did not contain,
+    // as a full row, into 'Running in the Market'. It called itself "restore", which is the word you use
+    // when the store you are reading from is a copy of something. It was not a copy: the writer that
+    // filled it has no callers, so anything still in that key predates the canonical read and exists on
+    // exactly one machine. The row then flowed on into the handbook, the table and the export as though
+    // the server had returned it.
+    //
+    // Nothing is injected now. The key is not deleted — see the ruling at the top of this file — it is
+    // simply not an authority, and it is not migrated anywhere either.
     var allRaw = baseItems;
-
-    const dataOverrides = getSkuDataOverrides();
-    const existingSkus = new Set(allRaw.map(i => i.sku));
-
-    // Restore imported SKUs from localStorage that don't exist in base data
-    Object.entries(dataOverrides).forEach(([sku, override]) => {
-        if (!existingSkus.has(sku) && override.productName) {
-            allRaw.push({ ...override, sku, _originalGroup: 'Running in the Market' });
-            existingSkus.add(sku);
-        }
-    });
 
     const groups = {
         'Upcoming SKU': [],
@@ -161,10 +189,9 @@ function getAllSkuDataWithOverrides(sourceItems) {
 
     allRaw.forEach(item => {
         // F1-S1: lifecycle is NEVER overridden from the browser — it comes only from sku_details.lifecycle.
-        // Apply ONLY the image override from localStorage (lifecycle override authority removed).
-        const imgOverride = getSkuImageOverride(item.sku);
+        // S2-R4A: neither is the image. The copy is kept because the grouping below reads it and callers
+        // hand us their own read model; what is no longer done to it is a browser merge.
         const merged = Object.assign({}, item);
-        if (imgOverride) merged.image = imgOverride;
         const lifecycle = getNormalizedSkuStatus(merged);
         if (groups[lifecycle]) {
             groups[lifecycle].push(merged);
@@ -250,10 +277,6 @@ var IMPORT_NUMBER_FIELDS = ['item_weight', 'package_weight', 'carton_weight', 'u
 function getSkuDataOverrides() {
     try { return JSON.parse(localStorage.getItem(SKU_DATA_OVERRIDE_KEY)) || {}; }
     catch(e) { return {}; }
-}
-
-function saveSkuDataOverrides(overrides) {
-    localStorage.setItem(SKU_DATA_OVERRIDE_KEY, JSON.stringify(overrides));
 }
 
 // F1-S2-R2-R1 — THE SKU UNIVERSE IS INJECTED BY THE PAGE, AND ITS ABSENCE IS NOT AN EMPTY UNIVERSE.
@@ -390,7 +413,6 @@ window.getNormalizedSkuImage = getNormalizedSkuImage;
 window.resolveSkuImageUrl = resolveSkuImageUrl;
 window.classifySkuImageSource = classifySkuImageSource;
 window.getAllSkuDataWithOverrides = getAllSkuDataWithOverrides;
-window.setSkuImageOverride = setSkuImageOverride;
 window.exportSkuStatusTemplate = exportSkuStatusTemplate;
 window.importSkuStatusTemplate = importSkuStatusTemplate;
 window.resetSkuHandbookOverrides = resetSkuHandbookOverrides;

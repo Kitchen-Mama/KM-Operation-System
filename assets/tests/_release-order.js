@@ -620,7 +620,25 @@ var ROUND_TOKENS = [
   // bytes it names have actually been served, because no browser can be holding the earlier version
   // of them. fc-summary.js joins index.html, inventory-compat.js and inventory-replenishment.js under
   // this one entry; the whole application set still rotates together.
-  's2r3-dbunknown-20260922'];
+  's2r3-dbunknown-20260922',
+  // S2-R4A — A NEW TOKEN, AND THE REASON IS THAT THE REUSE RULE NEEDS EVIDENCE WE NO LONGER HAVE.
+  //
+  // The entry above reused its predecessor on a stated observation: the deployed page still reported
+  // the older token, so nothing could be holding the newer bytes. That observation is now out of date.
+  // origin/main has since moved to a7e489a, and a push is exactly the event that can serve the token —
+  // so `s2r3-dbunknown-20260922` may or may not be in browsers, and the rule permits reuse only
+  // while it provably is not. Unverifiable is not the same as false, and a token is the one place where
+  // guessing wrong is silent: the page updates and the script does not.
+  //
+  // TWO OF THE THREE FILES THIS ROUND CHANGES ARE ALREADY ON THE PREVIOUS TOKEN — sku-overrides.js and
+  // operation-system-db-api.js — so reusing it would pin changed bytes under a name a returning browser
+  // may already have cached. That browser would keep an image path that still consults a retired
+  // localStorage override and a grouping helper that still injects SKU rows the server never returned,
+  // which is the exact business-authority this round exists to retire. Minting costs one rotation.
+  //
+  // utils/data.js joins the application set for the first time: it sat on `donenotice-20260811`, a token
+  // that is not in this series at all and therefore would never have rotated with anything.
+  's2r4a-skuoverride-20260923'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

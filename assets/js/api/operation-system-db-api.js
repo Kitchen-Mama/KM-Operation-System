@@ -6439,8 +6439,13 @@ window.debugSkuById = function(sku) {
     if (!dbItem) { console.log('=== End Debug SKU ==='); return; }
     // F1-S1: lifecycle authority = sku_details.lifecycle (no browser override).
     console.log('2. Lifecycle (sku_details authority):', dbItem.lifecycle || 'none');
+    // S2-R4A — still reported, because residue an operator cannot see is residue they cannot clear;
+    // but labelled INERT, because as of this round nothing renders from it. Printing
+    // "Image override: <url>" beside a picture that came from sku_details would describe an authority
+    // this key no longer has.
     var imgOverrides = getSkuImageOverrides();
-    console.log('3. Image override:', imgOverrides[sku] || 'none');
+    console.log('3. Image override (INERT — retired S2-R4A; sku_details.image_url is the owner):',
+        imgOverrides[sku] || 'none');
     console.log('4. Final lifecycle:', getNormalizedSkuStatus(dbItem));
     console.log('5. Final image:', getNormalizedSkuImage(dbItem));
     // Product feature match

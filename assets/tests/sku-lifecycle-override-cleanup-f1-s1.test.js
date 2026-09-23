@@ -63,16 +63,48 @@ ok(inGroup('Upcoming SKU', 'NEW-1') && inGroup('Phasing Out', 'OLD-1'), 'C2 othe
 var co = (groups['Running in the Market'] || []).filter(function (r) { return r.sku === 'CO5600-RB'; })[0];
 ok(co && co.lifecycle === 'Running in the Market', 'C3 the merged row lifecycle is the sheet value (never rewritten by an override)');
 
-section('D. unrelated override capability preserved (image + imported-SKU data)');
+// S2-R4A — THE OTHER TWO OVERRIDES ARE NOW RETIRED TOO, so D asks the opposite question and asks it
+// harder. The property F1-S1 actually established here is that the LIFECYCLE key cannot reach a
+// rendered value; S2-R4A extends the same property to the image key and the imported-SKU key.
+// "Ignored" is not "deleted", and both halves are asserted, because the ruling in sku-overrides.js
+// says the keys stay readable so an operator can still see and clear their own residue.
+section('D. image + imported-SKU override authority RETIRED (S2-R4A) — ignored, not deleted');
 store[IMG_KEY] = JSON.stringify({ 'CO5600-RB': { image: 'http://example/x.png' } });
-ok(windowStub.getNormalizedSkuImage({ sku: 'CO5600-RB' }) === 'http://example/x.png', 'D1 image override still applied (image capability untouched)');
+ok(windowStub.getNormalizedSkuImage({ sku: 'CO5600-RB' }) !== 'http://example/x.png',
+  'D1 a stale image override no longer reaches the rendered image');
+ok(windowStub.getNormalizedSkuImage({ sku: 'CO5600-RB', image: 'https://example/canonical.png' })
+     === 'https://example/canonical.png',
+  'D1a and the canonical row value is what is rendered instead');
+ok(windowStub.getNormalizedSkuImage({ sku: 'CO5600-RB' }) === '',
+  'D1b with no canonical value the answer is empty — the override is not a fallback either');
 store[DATA_KEY] = JSON.stringify({ 'IMP-1': { productName: 'Imported' } });
-ok(windowStub.getSkuDataOverrides()['IMP-1'] && windowStub.getSkuDataOverrides()['IMP-1'].productName === 'Imported', 'D2 imported-SKU data override still readable (km_sku_data_overrides_v1 kept)');
+ok(windowStub.getSkuDataOverrides()['IMP-1'] && windowStub.getSkuDataOverrides()['IMP-1'].productName === 'Imported',
+  'D2 the imported-SKU key is still READABLE — retirement ignores it, it does not destroy it');
+var _s2r4aGroups = windowStub.getAllSkuDataWithOverrides();
+ok(!Object.keys(_s2r4aGroups).some(function (g) {
+    return (_s2r4aGroups[g] || []).some(function (r) { return r.sku === 'IMP-1'; }); }),
+  'D2a but it is no longer INJECTED — a row the server did not return is not a SKU');
 
-section('E. source scans — override authority removed, image/data kept');
+section('E. source scans — lifecycle authority removed (F1-S1); image/data authority removed (S2-R4A)');
 ok(!/function getSkuLifecycleOverride\b/.test(OVR) && !/function setSkuLifecycleOverride\b/.test(OVR) && !/function getSkuLifecycleOverrides\b/.test(OVR), 'E1 lifecycle override get/set functions deleted');
 ok(/function getNormalizedSkuStatus/.test(OVR) && !/getSkuLifecycleOverride\(/.test(OVR), 'E2 getNormalizedSkuStatus no longer calls a lifecycle override');
-ok(/function getSkuImageOverride/.test(OVR) && /function setSkuImageOverride/.test(OVR) && /function getSkuDataOverrides/.test(OVR), 'E3 image + data override functions preserved');
+// S2-R4A — the READERS survive (debugLegacySkuOverrides and resetSkuHandbookOverrides need them, and
+// so does an operator who wants to see what is in their own browser); the WRITERS are deleted, because
+// a writer for a store nothing may read is only an invitation to refill it. Both halves are asserted,
+// so neither "kept everything" nor "deleted everything" can pass.
+ok(/function getSkuImageOverrides/.test(OVR) && /function getSkuDataOverrides/.test(OVR),
+  'E3 the residue READERS are preserved');
+ok(!/function setSkuImageOverride\b/.test(OVR) && !/function saveSkuDataOverrides\b/.test(OVR),
+  'E3a and both WRITERS are deleted — no browser path can create a new override');
+ok(!/window\.setSkuImageOverride/.test(OVR),
+  'E3b including the global, so a console call cannot reach it either');
+// The singular reader SURVIVES as a console affordance — window.getSkuImageOverride('SKU') is how an
+// operator asks what their own browser still holds — so the rule is not that it cannot exist. The rule
+// is that nothing CALLS it: after S2-R4A its only occurrence in the file is its own declaration.
+var _s2r4aHits = ((OVR.replace(/^\s*\/\/.*$/gm, '')).match(/getSkuImageOverride\(/g) || []).length;
+ok(_s2r4aHits === 1 && /function getSkuImageOverride\(sku\)/.test(OVR),
+  'E3c the image-override reader has exactly one occurrence left — its own declaration, called by nothing',
+  _s2r4aHits);
 ok(/_skuPurgeLegacyLifecycleOverride/.test(OVR) && /localStorage\.removeItem\(SKU_LIFECYCLE_KEY\)/.test(OVR), 'E4 one-time purge of the legacy lifecycle key present');
 var updFn = ADAPTER.slice(ADAPTER.indexOf('window.KM.DB.updateSkuLifecycle = async function'), ADAPTER.indexOf('async function updateSkuLifecycleInSheet'));
 ok(updFn.length > 0 && !/setSkuLifecycleOverride/.test(updFn) && !/localStorage\.setItem/.test(updFn), 'E5 updateSkuLifecycle no longer writes any browser lifecycle persistence');

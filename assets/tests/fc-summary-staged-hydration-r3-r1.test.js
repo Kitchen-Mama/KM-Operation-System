@@ -623,7 +623,14 @@ function world(opts) {
     var APP = require('./_release-order.js').currentAppToken();
     // FC-SHARE-DUAL-MODEL-R1 — 38 became 39: supply-planning-forecast-share.js (KMFCS) joined the
     // set as the ONE forecast-share normalizer, replacing a page-local formula.
-    eq(toks[APP], 39, 'J1  the application token is on all 39 references', toks);
+    // S2-R4A — 39 became 40. assets/js/utils/data.js joined the co-deployed set. It is the SAME SHAPE as
+    // the home.js case two entries above: it stood on `donenotice-20260811`, a token that is not in
+    // ROUND_TOKENS at all, so staleAppTokenRefs skipped it and it could have shipped cached indefinitely
+    // while every guard reported clean. This round deletes the legacy weeklyShippingPlans store and the
+    // four DataRepo methods over it, one of which was named updateShippingPlanStatus — the same name as
+    // the CANONICAL writer. A browser left on the old copy keeps a DataRepo that still answers to that
+    // name over localStorage, which is the one residue this round exists to remove.
+    eq(toks[APP], 40, 'J1  the application token is on all 40 references', toks);
     ['stagedhydration-r3r1-20260920', 'statuscard-r2ba2r5f6-20260919',
      'trseamrepair-r2ba2r5f5f1-20260919',
      'tgtrehydrate-r2ba2r5f5-20260919', 'fcroutemount-bootfcr2f1-20260919'].forEach(function (t, i2) {

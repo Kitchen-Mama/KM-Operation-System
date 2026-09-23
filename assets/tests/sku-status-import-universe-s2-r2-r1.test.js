@@ -303,8 +303,15 @@ function main() {
     .then(function () {
       var d = imageDigest(OVR);
       eq(d.missing, [], 'F1  every frozen image slice is present');
+      // S2-R4A — the two halves that keep the re-seal honest: the writer is GONE (not merely delisted),
+      // and no function in the image surface consults a browser override any more.
+      ok(!/function setSkuImageOverride\b/.test(OVR) && !/window\.setSkuImageOverride/.test(OVR),
+        'F1a the image-override WRITER is absent from the source, not just from this list');
+      ok(!/getSkuImageOverride\(/.test(extractFn(OVR, 'getNormalizedSkuImage'))
+         && !/getSkuImageOverride\(/.test(extractFn(OVR, 'classifySkuImageSource')),
+        'F1b and neither image function reads a browser override — sku_details.image_url is the owner');
       ok(d.sha === IMAGE_SHA, 'F2  the image surface matches the sealed digest', d.sha);
-      ok(d.bytes === 3086, 'F3  and its byte count', d.bytes);
+      ok(d.bytes === 2930, 'F3  and its byte count', d.bytes);
     })
 
     // =============================================================================================
@@ -323,13 +330,21 @@ function main() {
 // -------------------------------------------------------------------------------------------------
 // The image-surface digest, computed the same way the round's freeze script computes it.
 // -------------------------------------------------------------------------------------------------
-var IMAGE_SHA = '73d4b18516ba8315c697a9ec20b38dd5b39ea02412e29f7ce0702c14ef75eaaa';
+// S2-R4A RE-SEALED. This digest exists so that an EXPORT/IMPORT round cannot quietly move the image
+// surface; it was never a promise that the image surface is frozen for ever. S2-R4A moves it on purpose —
+// the browser override is retired out of getNormalizedSkuImage and classifySkuImageSource, and the dead
+// writer is deleted — so the seal is re-taken at the new value rather than relaxed. The assertions beside
+// it below are what stop a re-seal from being a way to launder a change nobody looked at.
+var IMAGE_SHA = '2676fc6d914d26ade9a347226e38f48c0ae4bd7767a0479068de7bd7e5d17e9f';
 function imageDigest(src) {
-  var FUNCS = ['getSkuImageOverrides', 'getSkuImageOverride', 'setSkuImageOverride',
+  // S2-R4A — setSkuImageOverride is off this list because it no longer EXISTS, not because it stopped
+  // mattering. A slice that is dropped from a freeze quietly is a freeze with a hole in it, so the
+  // suites assert its absence directly (see the companion assertion beside the digest checks).
+  var FUNCS = ['getSkuImageOverrides', 'getSkuImageOverride',
     'getNormalizedSkuImage', '_skuImagePolicy', 'resolveSkuImageUrl', 'classifySkuImageSource'];
   var DECLS = ['SKU_IMAGE_KEY'];
   var EXPORTS = ['window.getSkuImageOverride', 'window.getNormalizedSkuImage',
-    'window.resolveSkuImageUrl', 'window.classifySkuImageSource', 'window.setSkuImageOverride'];
+    'window.resolveSkuImageUrl', 'window.classifySkuImageSource'];
   var out = [], missing = [];
   DECLS.forEach(function (d) {
     var m = src.match(new RegExp('^(?:const|var|let)\\s+' + d + '\\s*=.*$', 'm'));

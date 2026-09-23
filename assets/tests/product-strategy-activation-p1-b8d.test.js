@@ -668,8 +668,15 @@ ok(SRC.index.indexOf('productstrategy-p1b8b-20260912') < 0,
 // FC Summary page in this same set stops carrying its own share formula and calls KMFCS instead, so a
 // browser that fetched the new fc-summary.js beside a cache with no KMFCS at all would render both share
 // columns as an em dash for the wrong reason — runtime absent, not anchor unavailable.
-eq(REL.appTokenRefCount(SRC.index), 39,
-  'H6  thirty-nine references share it — the application set, Product Strategy, the FC Summary stylesheet, the Home module, the canonical planning-demand resolver and the forecast-share normalizer, now one co-deployed set');
+// S2-R4A — 39 became 40. assets/js/utils/data.js joined the co-deployed set. It is the SAME SHAPE as
+// the home.js case two entries above: it stood on `donenotice-20260811`, a token that is not in
+// ROUND_TOKENS at all, so staleAppTokenRefs skipped it and it could have shipped cached indefinitely
+// while every guard reported clean. This round deletes the legacy weeklyShippingPlans store and the
+// four DataRepo methods over it, one of which was named updateShippingPlanStatus — the same name as
+// the CANONICAL writer. A browser left on the old copy keeps a DataRepo that still answers to that
+// name over localStorage, which is the one residue this round exists to remove.
+eq(REL.appTokenRefCount(SRC.index), 40,
+  'H6  forty references share it — the application set, Product Strategy, the FC Summary stylesheet, the Home module, the canonical planning-demand resolver, the forecast-share normalizer and the shared data module, now one co-deployed set');
 
 /* LOAD ORDER. The board reads the policy through sku-overrides, and app.js builds its menu from
    PSB_VIEWS; both must already be defined when their reader runs. */
