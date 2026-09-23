@@ -141,10 +141,16 @@ console.log('\n=== §B  THE SURFACE THAT SITS BEHIND IT, COUNTED FROM THE ROUTER
   var s = surface();
   /* These exact numbers are the SEC-A0 inventory. A diff here is not a number to bump: it means the
      anonymous surface moved and the inventory in the design freeze has to move with it. */
-  eq(s.all.length, 138, 'B1 138 actions are routed — the whole anonymous surface');
+  // PRICING-R2 — 138 -> 139, 136 -> 137, 76 -> 77. pricing.update is routed on doPost and is an
+  // unambiguous MUTATION, so the anonymous mutation surface genuinely grew by one and saying so is the
+  // job of this census. It is the first WRITE added since SEC-A0 measured the baseline, and it writes
+  // prices — which is worth the sentence it gets in the inventory rather than a silently bumped total.
+  eq(s.all.length, 139, 'B1 139 actions are routed — the whole anonymous surface');
   eq(s.readTable.length, 23, 'B2 23 of them on the GET read table');
-  eq(s.post.length, 136, 'B3 136 dispatched by doPost');
-  eq(s.mutations.length, 76, 'B4 and 76 are unambiguous MUTATIONS, every one reachable without identity');
+  eq(s.post.length, 137, 'B3 137 dispatched by doPost');
+  eq(s.mutations.length, 77, 'B4 and 77 are unambiguous MUTATIONS, every one reachable without identity');
+  ok(s.mutations.indexOf('pricing.update') !== -1,
+    'B4a including pricing.update — PRICING-R2 added the first WRITE since this baseline was measured');
 
   /* THE NAMED ONES, because a list of 76 is easy to discount and these are not. */
   ['createPurchaseOrderFromRequest', 'confirmShipmentAndDispatch', 'submitAllocationDraftsToShippingPlans',

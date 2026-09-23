@@ -48,7 +48,7 @@ var localStorage = { getItem: function () { return null; }, setItem: function ()
 // eval the WHOLE 59_ (pure builders + impure orchestrator; prod helpers referenced only inside the default io, never called here)
 eval(GS59);
 // eval the ACTUAL db-api normalizers (adapter + legacy getters both use these)
-eval(['normalizeSkuDetailsRecord', 'normalizeTaxReferralRateRecord', 'normalizeTaxRateComponentRecord', 'normalizeMarketplaceSkuRecord', 'normalizeSkuRegionalDetailRecord']
+eval(['normalizeSkuDetailsRecord', 'normalizeTaxReferralRateRecord', 'normalizeTaxRateComponentRecord', 'normalizeMarketplaceSkuRecord', 'normalizeSkuRegionalDetailRecord', 'normalizePricingListRecord', 'pricingNumOrNull_', 'pricingFlagOrNull_', 'pricingIsNa_']
   .map(function (n) { return extractFn(DBAPI, n); }).join('\n'));
 // eval the ACTUAL adapter (assigns window.KM.DB.adaptSkuDetailsWorkspace)
 eval(extractAssignedFn(DBAPI, 'window.KM.DB.adaptSkuDetailsWorkspace = function') + ';');

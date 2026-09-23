@@ -62,7 +62,7 @@ Behind that one URL:
 
 | | count | |
 |---|---:|---|
-| actions routed by `01_router.gs` | **138** | the whole anonymous surface |
+| actions routed by `01_router.gs` | **139** | the whole anonymous surface |
 | on the `doGet` read table | 23 | reads, survive the 302 as a GET |
 | dispatched by `doPost` | 136 | |
 | **unambiguous mutations** | **76** | every one reachable without identity |

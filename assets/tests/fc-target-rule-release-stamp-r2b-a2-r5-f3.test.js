@@ -79,21 +79,36 @@ var RELEASE_FLOOR = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12';
 // evidence about what production accepted, it asserts only what the Apps Script diff from this base
 // contains. What makes 2d84a68 right is that A3-R10 changed NO .gs file, so the diff from here is
 // exactly and only what B1-PERF changed.
-var BASE = 'de305f5';   // R20 starts here: the tree after the base-event-FC readiness repair
+// PRICING-R2 — the base moves to b280b8d, the commit S2-R4B landed at and the current tip of this
+// branch. The same wording caveat every entry above carries applies and is worth repeating: this suite
+// has no evidence about what production accepted, it asserts only what the Apps Script diff from this
+// base contains. What makes b280b8d right is that S2-R4B changed NO .gs file at all, so the diff from
+// here is exactly and only what R21 changed.
+var BASE = 'b280b8d';   // R21 starts here: the tree after the shipping-history / FC warm-race round
 
 // The files THIS release syncs, and the ONE reason each is on the list. A file on the sync list for no
 // stated reason is how an unrelated edit reaches production by accident — so the set is declared here
 // and checked against git below, rather than being read off git and believed.
 var RELEASE_OWNERS = {
-  '20_campaign_write_handlers.gs':
-    'handleUpsertCampaignSkuLines_ stops being a sequential physical writer. It cost 3N+1 FULL sheet '
-    + 'reads — three per line plus a whole-sheet re-read per line purely to compute that line\'s '
-    + 'row_version — which measured 804 physical calls at N=100 and made a 90-SKU Special Event '
-    + 'unsaveable: Apps Script ran past the single-use echo target and the delivery hop 404\'d. It is '
-    + 'now ONE read, in-memory resolution and full-width range writes, at 6 calls for every N, with the '
-    + 'whole batch validated before the first cell is touched',
+  '73_api_v1_pricing_write.gs':
+    'NEW FILE. The canonical pricing write — the only writer of pricing_list and the only writer of '
+    + 'pricing_change_log. It adds the field-level manual price authority the schema could not express: '
+    + 'price_source is ONE value for a WHOLE ROW, so a row whose Regular was negotiated and whose MSRP '
+    + 'has only ever been the converted base price had no honest value to put there. The three '
+    + '*_is_manual flags answer it per field, and a BLANK flag is a third state (UNKNOWN) rather than '
+    + 'false — every row alive today has one, and reading those as false would classify the entire '
+    + 'price book as overwritable in a single deployment with no operator ever asked',
+  '01_router.gs':
+    'the pricing.update dispatch. A project holding the R9 copy answers every action it knows and '
+    + 'simply does not route this one, so every price save returns an invalid-action refusal while '
+    + '73_ sits present and healthy beside it',
+  '59_api_v1_sku_details_workspace.gs':
+    'pricing_list joins the INCLUDE-GATED tables as include.pricing, so the SKU Regional price panel is '
+    + 'served by the read that page already performs rather than by a second request or by the broad '
+    + 'Operation DB cache it deliberately stopped using. Un-requested the table costs a caller nothing',
   '63_api_v1_system_health.gs':
-    'the R20 release identity, its own stamp, and 20_\'s manifest row'
+    'the R21 release identity, its own stamp, 73_\'s new manifest row, 59_\'s and 01_\'s expected '
+    + 'stamps, the pricing.update registry entry, and the action-contract bump that entry requires'
 };
 // Owners that carry an EARLIER release and must keep it. Each is here because it did not change, and
 // marching any of them to the current release would destroy the manifest's only useful signal.
@@ -119,12 +134,19 @@ var RELEASE_UNMOVED = {
   // symmetry is exact: R19 batched the REGULAR forecast writer in 04_ and left the campaign line writer
   // alone; R20 batches the campaign line writer in 20_ and touches no regular-forecast handler. Marching
   // 04_ to R20 would erase the one fact its stamp carries.
+  // 20_ JOINS THIS LIST AT R21 AND 01_ LEAVES IT — the fifth such swap the ledger has recorded. R20
+  // batched the campaign line writer in 20_ and routed nothing; R21 routes a new action in 01_ and
+  // touches no campaign handler. Marching 20_ to R21 would erase the one fact its stamp carries, and a
+  // project holding the R17 copy of it still cannot save a 90-SKU Special Event — which is exactly what
+  // its stamp must keep saying.
+  '20_campaign_write_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R20',
   '04_marketplace_forecast_import.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R19',
   '14_fc_write_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R18',
   '58_api_v1_fc_summary_workspace.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R14',
   '13_procurement_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12',
   '00_config.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11',
-  '01_router.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9',
+  // 72_ is the pricing READ owner and does NOT move: R21 adds a WRITER, and a writer is not a reader.
+  // Its response still publishes the same effective prices from the same three fields.
   '72_api_v1_product_pricing_workspace.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R10'
 };
 
@@ -263,8 +285,10 @@ var REGHANDLER = REGWRITE.slice(REGWRITE.indexOf('function handleImportFcRegular
 ok(REGHANDLER.length > 500, 'B2-0b0 the Regular handler is locatable inside 04_');
 ok(!/\.setValue\(/.test(REGHANDLER) && !/\.appendRow\(/.test(REGHANDLER),
   'B2-0b with the per-cell and per-row mutations it replaced gone from THAT handler');
-eq(declares(CAMPWRITE, 'CAMPAIGN_BUILD_VERSION_'), RELEASE,
-  'B2-2 while 20_ IS the release — R20 batched the campaign_sku_lines writer inside it');
+// PRICING-R2 — 20_ LEAVES THE RELEASE and keeps R20, the round it last changed. Its batched-writer
+// properties below stay exactly as they are: they are what R20 bought, and they must keep holding.
+eq(declares(CAMPWRITE, 'CAMPAIGN_BUILD_VERSION_'), RELEASE_UNMOVED['20_campaign_write_handlers.gs'],
+  'B2-2 while 20_ stays on R20, the round its batched campaign_sku_lines writer landed in');
 // And the change its stamp claims is really in the file, on the same test B2-0a/B2-0b apply to 04_:
 // the per-line whole-sheet re-read is gone and a full-width range write is there in its place.
 var CAMPHANDLER = CAMPWRITE.slice(CAMPWRITE.indexOf('function handleUpsertCampaignSkuLines_'));
@@ -320,8 +344,11 @@ section('C. EVERY OWNER THAT DID NOT CHANGE KEEPS ITS OLD STAMP');
 // file last changed in — and conflating them is the very mistake this suite was rewritten to stop.
 eq(declares(CONFIG, 'CONFIG_BUILD_VERSION_'), RELEASE_UNMOVED['00_config.gs'],
   'C1  00_config.gs stays on the round it last changed in, not on the latest release');
-eq(declares(ROUTER, 'RTR_BUILD_VERSION_'), 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9',
-  'C2  01_router.gs stays at R9 — no action was added or removed');
+// PRICING-R2 — R21 IS a vocabulary round, so this inverts: the router MOVED, because pricing.update
+// was routed. A router that gained an action and kept its stamp is the one partial sync the manifest
+// could not otherwise report — the deployment answers every action it knows and silently lacks one.
+eq(declares(ROUTER, 'RTR_BUILD_VERSION_'), RELEASE,
+  'C2  01_router.gs IS the release — an action was routed, so its stamp moved with it');
 var atRelease = manifestRows(HEALTH).filter(function (r) { return r.expected === RELEASE; })
   .map(function (r) { return r.file; }).sort();
 eq(atRelease, Object.keys(RELEASE_OWNERS).sort(),
@@ -388,9 +415,14 @@ ok(oldProc.stale_modules.join('|').indexOf('F1-7N-FC-1A-R1') !== -1,
 // the same rotation the R18 and R19 comments above record, and it matters more here than usual: a
 // project still holding the R17 copy of 20_ cannot save a 90-SKU Special Event at all, so 'stale' is
 // the difference between a working page and a stage-2 failure.
-var oldCamp = runManifest({ CAMPAIGN_BUILD_VERSION_: PREV_RELEASE });
-ok(oldCamp.stale_modules.join('|').indexOf('20_campaign_write_handlers.gs') !== -1,
-  'F2  an OLD 20_ identity is rejected where this release requires the new one', oldCamp.stale_modules);
+// R21 — the file whose OLD copy must be rejected is 01_. 73_ is a NEW file, so there is no old copy of
+// it to present and its absence is caught by the manifest's missing-owner path instead; the router is
+// the one R21 owner that a project can hold a WORKING earlier version of. That is the dangerous case:
+// an R9 router answers everything it knew and routes nothing new, so a price save fails with an
+// invalid-action refusal while every other probe reports a healthy deployment.
+var oldRouter = runManifest({ RTR_BUILD_VERSION_: PREV_RELEASE });
+ok(oldRouter.stale_modules.join('|').indexOf('01_router.gs') !== -1,
+  'F2  an OLD 01_ identity is rejected where this release requires the new one', oldRouter.stale_modules);
 var noCamp = runManifest({ CAMPAIGN_BUILD_VERSION_: null });
 ok((noCamp.stale_modules.join('|') + noCamp.absent_modules.join('|')).indexOf('20_campaign_write_handlers.gs') !== -1,
   'F2a and a project carrying NO 20_ stamp is reported too', noCamp);
@@ -478,25 +510,43 @@ section('G. THE SHARED LEDGER IS POSITIONAL, AND THAT IS LOAD-BEARING');
 })();
 
 // ================================================================================================
-section('H. THE ROUND CHANGED A NUMBER, NOT A VOCABULARY');
+section('H. THIS ROUND CHANGED THE VOCABULARY, AND SAYS SO IN EXACTLY THE RIGHT PLACES');
 // ================================================================================================
-// A resolver that returns a different NUMBER through the same action is not a contract change. Bumping
-// these would tell every deployed client to re-check a vocabulary that is byte-identical to the one it
-// already holds — a lie about what this release contains, and a forced re-boot for every project.
+// PRICING-R2 — INVERTED, and the inversion is the point. Every release in this series until now changed
+// a NUMBER through an action that already existed, and bumping the contract would have told every
+// deployed client to re-check a vocabulary byte-identical to the one it already held. R21 is the first
+// that genuinely adds one: pricing.update did not exist, a project that predates it cannot serve it at
+// all, and the SKU Regional price editor fails closed against it rather than writing through some other
+// path. So the two action numbers MUST move — by exactly one each, which is what "one action was added"
+// looks like — while the TRANSPORT contract must still not move, because no envelope field changed.
 function num(src, sym) { return (src.match(new RegExp('var ' + sym + ' = (\\d+);')) || [])[1]; }
 var priorHealth = cp.execFileSync('git', ['show', BASE + ':' + GS + '63_api_v1_system_health.gs'],
   { cwd: REPO, encoding: 'utf8' });
-['SYS_TRANSPORT_CONTRACT_VERSION_', 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_',
- 'SYS_REQUIRED_ACTION_LIST_VERSION_'].forEach(function (sym, i) {
-  eq(num(HEALTH, sym), num(priorHealth, sym),
-    'H' + (i + 1) + '  ' + sym + ' is untouched by this release');
-});
+eq(num(HEALTH, 'SYS_TRANSPORT_CONTRACT_VERSION_'), num(priorHealth, 'SYS_TRANSPORT_CONTRACT_VERSION_'),
+  'H1  SYS_TRANSPORT_CONTRACT_VERSION_ is untouched — no envelope field moved');
+eq(Number(num(HEALTH, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_'))
+   - Number(num(priorHealth, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_')), 1,
+  'H2  SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ moved by exactly one — one action was added');
+eq(Number(num(HEALTH, 'SYS_REQUIRED_ACTION_LIST_VERSION_'))
+   - Number(num(priorHealth, 'SYS_REQUIRED_ACTION_LIST_VERSION_')), 1,
+  'H3  SYS_REQUIRED_ACTION_LIST_VERSION_ moved by exactly one — the registry gained one entry');
+// And the registry really did grow by that one row, so the number describes the list rather than being
+// a number somebody typed.
+function regCount(src) { return ((/var SYS_REQUIRED_ACTIONS_ = \[[\s\S]*?\n\];/.exec(src) || [''])[0]
+  .match(/action: '/g) || []).length; }
+eq(regCount(HEALTH) - regCount(priorHealth), 1, 'H3a and SYS_REQUIRED_ACTIONS_ itself grew by exactly one row');
+ok(/\{ action: 'pricing\.update', handler: 'handlePricingUpdate_'/.test(HEALTH), 'H3b which is pricing.update');
 // ASKED OF GIT, not by comparing bytes. The stored blob is line-ending normalised and the working copy
 // is not, so a direct byte compare reports a difference that does not exist. `git diff --name-only`
 // answers the actual question and prints nothing when the answer is no.
-eq(cp.execFileSync('git', ['diff', '--name-only', BASE, '--', GS + '01_router.gs'],
-  { cwd: REPO, encoding: 'utf8' }).trim(), '',
-  'H4  01_router.gs is untouched by this release — no action was routed, none withdrawn');
+// R21 — ALSO INVERTED. The router MUST differ from the base, because an action was routed; and it must
+// be a DECLARED owner, because an undeclared router change is how an action reaches production without
+// anyone putting the file on a sync list.
+ok(cp.execFileSync('git', ['diff', '--name-only', BASE, '--', GS + '01_router.gs'],
+  { cwd: REPO, encoding: 'utf8' }).trim() !== '',
+  'H4  01_router.gs DID change this release — an action was routed');
+ok(Object.keys(RELEASE_OWNERS).indexOf('01_router.gs') !== -1,
+  'H4a and it is a declared release owner, so it reaches the operator\'s sync list');
 // R14 is the first release in this series to change manifest MEMBERSHIP, so the old assertion — that
 // membership never moves — is no longer true and is not the right thing to assert. What must hold is
 // that membership moved by EXACTLY the row this release declares, which is the stricter statement.
@@ -508,8 +558,11 @@ var nowFiles = manifestRows(HEALTH).map(function (r) { return r.file; });
 // writer from a stale one. R20 adds NONE: 20_ has held a manifest row since R15, and this release
 // changes what that file does, not which files are probed. Membership must move by exactly nothing,
 // which is the same assertion in the other direction and is still the strict one.
-eq(nowFiles.filter(function (f) { return priorFiles.indexOf(f) === -1; }), [],
-  'H5  the manifest gained EXACTLY the row this release declares — and R20 declares none');
+// R21 DECLARES ONE: 73_ is a new owner file, and a routed WRITE action whose handler file is not in
+// the manifest is the worst partial sync there is — the save appears to do nothing and no probe can say
+// why. Membership must move by exactly that row and no other.
+eq(nowFiles.filter(function (f) { return priorFiles.indexOf(f) === -1; }), ['73_api_v1_pricing_write.gs'],
+  'H5  the manifest gained EXACTLY the row this release declares');
 eq(priorFiles.filter(function (f) { return nowFiles.indexOf(f) === -1; }), [],
   'H5a and lost none — a release adds an owner, it never quietly drops one');
 
@@ -590,14 +643,18 @@ mutant('M6', 'a malformed release string', function () {
 // the release; at R14 it carries R13 by right, so the anchor vanished and the mutant reported a survival
 // that was really a missing premise. The vacuity audit caught it, which is what the audit is for.
 mutant('M7', 'the manifest expecting a build no file declares', function () {
-  // Re-anchored at R20 onto CAMPAIGN_BUILD_VERSION_, for the reason this mutant's own comment gives:
-  // the anchor has to be a row that EXPECTS THE RELEASE, and at R20 that is 20_'s row, not 04_'s.
+  // Re-anchored at R21 onto RTR_BUILD_VERSION_, for the reason this mutant's own comment has given at
+  // every previous rotation: the anchor has to be a row that EXPECTS THE RELEASE, and at R21 that is
+  // 01_'s row — 20_ has gone back to holding R20, the round it last changed. An anchor left on a row
+  // that no longer expects the release matches nothing and injects nothing, which is the one
+  // mutation-testing failure that reports the wrong colour; the drift guard below is what turns a
+  // missed rotation into an error instead of a green tick.
   var faked = HEALTH.replace(
-    "symbol: 'CAMPAIGN_BUILD_VERSION_', expected: '" + RELEASE + "'",
-    "symbol: 'CAMPAIGN_BUILD_VERSION_', expected: '" + PREV_RELEASE + "'");
+    "symbol: 'RTR_BUILD_VERSION_', expected: '" + RELEASE + "'",
+    "symbol: 'RTR_BUILD_VERSION_', expected: '" + PREV_RELEASE + "'");
   if (faked === HEALTH) throw new Error('M7 anchor drifted — the mutant would inject no fault');
-  var row = manifestRows(faked).filter(function (r) { return r.symbol === 'CAMPAIGN_BUILD_VERSION_'; })[0];
-  return !!row && declares(CAMPWRITE, 'CAMPAIGN_BUILD_VERSION_') !== row.expected;
+  var row = manifestRows(faked).filter(function (r) { return r.symbol === 'RTR_BUILD_VERSION_'; })[0];
+  return !!row && declares(ROUTER, 'RTR_BUILD_VERSION_') !== row.expected;
 });
 mutant('M8', 'a double-quoted bundle hash, which makes every reader pass vacuously', function () {
   var faked = BUNDLE.replace(/var KM_BUNDLE_CONTENT_HASH_ = '([^']*)';/, 'var KM_BUNDLE_CONTENT_HASH_ = "$1";');
@@ -626,9 +683,23 @@ mutant('M11', 'a changed owner with no manifest row anywhere', function () {
   var stripped = HEALTH.replace(/\n[^\n]*\{ file: '14_fc_write_handlers\.gs'[^\n]*\n/, '\n');
   return !manifestRows(stripped).some(function (r) { return r.file === '14_fc_write_handlers.gs'; });
 });
-mutant('M12', 'the action contract bumped for a round that added no action', function () {
-  return num(HEALTH, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_')
-      === num(priorHealth, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_');
+// PRICING-R2 — INVERTED WITH THE ROUND, AND MADE INTO AN ACTUAL MUTANT. It read the tree and returned
+// true when the contract had NOT moved, which was the fault worth catching while every release in this
+// series changed a number rather than a vocabulary. R21 adds pricing.update, so the contract MUST move
+// and the old predicate reported a correct release as a survivor.
+//
+// The fault now is the opposite and is worse: a release that adds an action and FORGETS to bump the
+// contract. Every deployed browser then accepts a deployment that cannot serve the action it is about
+// to call, and the failure surfaces as a save that silently does nothing rather than as a version
+// refusal. So the mutant SIMULATES that — it reverts the number to the base's value — and the rule H2
+// states is what rejects it.
+mutant('M12', 'a release that adds an action and forgets to bump the action contract', function () {
+  var prior = num(priorHealth, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_');
+  var faked = HEALTH.replace(
+    'var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = ' + num(HEALTH, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_') + ';',
+    'var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = ' + prior + ';');
+  if (faked === HEALTH) throw new Error('M12 anchor drifted — the mutant would inject no fault');
+  return Number(num(faked, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_')) - Number(prior) !== 1;
 });
 
 // Vacuity — every mutant predicate must be FALSE against the unmutated tree, or it proves nothing.
@@ -639,7 +710,7 @@ var vacuous = [];
  ['M4', function () { return runManifest().stale_modules.length === 0; }],
  ['M5', function () { return RO.stampAtOrAfter(RELEASE, PREV_RELEASE); }],
  ['M6', function () { return RO.BUILD_STAMP_RE.test(RELEASE); }],
- ['M7', function () { return declares(CAMPWRITE, 'CAMPAIGN_BUILD_VERSION_') === RELEASE; }],
+ ['M7', function () { return declares(ROUTER, 'RTR_BUILD_VERSION_') === RELEASE; }],
  ['M8', function () { return declares(BUNDLE, 'KM_BUNDLE_CONTENT_HASH_') !== null; }],
  ['M9', function () { return declares(BUNDLE, 'KM_BUNDLE_CONTENT_HASH_')
      === (BUNDLE.match(/^\/\/ bundle_sha256 = ([0-9a-f]{64})$/m) || [])[1]; }],
@@ -648,7 +719,11 @@ var vacuous = [];
  ['M10', function () { return RO.OWNER_STAMPS[RO.OWNER_STAMPS.length - 1] === RELEASE
      && RO.stampAtOrAfter(RELEASE, PREV_RELEASE); }],
  ['M11', function () { return manifestRows(HEALTH).some(function (r) { return r.file === '14_fc_write_handlers.gs'; }); }],
- ['M12', function () { return manifestRows(HEALTH).length > 0; }]
+ // M12's predicate must be FALSE against the unmutated tree: the real contract DID move by one.
+ ['M12', function () {
+   return Number(num(HEALTH, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_'))
+        - Number(num(priorHealth, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_')) === 1;
+ }]
 ].forEach(function (p) {
   var held; try { held = !!p[1](); } catch (e) { held = false; }
   if (!held) vacuous.push(p[0]);

@@ -97,7 +97,13 @@ var SKU_ACTION = 'skuDetails.workspace.get';
 section('§B — the traced call path and the exact expected action');
 // ================================================================================================================
 // page → loader → API client method → shared runner → HTTP → endpoint → action → router → handler → classifier → state
-ok(/window\.KM\.api\.getWorkspace\('skuDetails', \{ include: \{ regional: true \} \}\)/.test(SRDC),
+// PRICING-R2 — RESTATED. This pinned the include object as EXACTLY `{ regional: true }`, which said
+// "the page asks for the regional tables" by saying "the page asks for nothing else". Those are the same
+// sentence only until a later round adds a second bounded include, and PRICING-R2 does: the SKU Regional
+// price panel needs pricing_list, and one more INCLUDE-GATED table on the call already in flight is
+// strictly better than a second request or a return to the broad cache. The pattern below still fails if
+// the action changes, if include.regional is dropped, or if the page stops calling getWorkspace at all.
+ok(/window\.KM\.api\.getWorkspace\('skuDetails',\s*\{\s*include:\s*\{[^}]*\bregional:\s*true\b/.test(SRDC),
   'B1 SKU Regional Details loader calls getWorkspace(skuDetails, include.regional)');
 ok(/window\.KM\.api\.getWorkspace\('skuDetails', params\)/.test(SKDC),
   'B1 SKU Details loader calls getWorkspace(skuDetails)');

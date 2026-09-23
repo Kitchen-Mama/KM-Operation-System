@@ -38,7 +38,12 @@
 // F1-7N-FB-4D §E — deployment build stamp for the SKU WORKSPACE OWNER. FB-4D changed nothing in this file:
 // the SKU Details repair this round is entirely client-side, and this stamp is what lets the website PROVE
 // that rather than assume it. Last behavioural change was F1-7N-FB-4C-R1 (the echoed action + requestId).
-var SKD_BUILD_VERSION_ = 'F1-7N-FB-4C-R1';
+// PRICING-R2 — moved because this file changed: pricing_list joins the INCLUDE-GATED tables as
+// include.pricing. SKU Regional Details becomes the primary site-price UI in this round and needs the
+// prices on the read it already performs; giving it a second request, or sending it to the broad
+// Operation DB cache this page deliberately stopped using, would both be worse than one more table on
+// the call that is already in flight. Un-requested it costs NOTHING — the reader skips the sheet.
+var SKD_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R21';
 
 var SKD_WS_SEQ_ = 0;   // API diagnostic-layer server correlation counter (not business runtime)
 
@@ -48,7 +53,12 @@ var SKD_WORKSPACE_TABLES_ = [
   { name: 'tax_referral_rates',   requiredCols: [] },
   { name: 'tax_rate_components',  requiredCols: [] },
   { name: 'marketplace_skus',     requiredCols: [], optional: true, include: 'regional' },
-  { name: 'sku_regional_details', requiredCols: [], optional: true, include: 'regional' }
+  { name: 'sku_regional_details', requiredCols: [], optional: true, include: 'regional' },
+  // PRICING-R2 — the site prices, include-gated and missing-safe like the two above. 72_ remains the
+  // SITE-SCOPED pricing read owner and is untouched; this include exists because the SKU-shaped page asks a
+  // SKU-shaped question ("what does this one master SKU cost everywhere?") that a site-scoped read cannot
+  // answer without one request per site.
+  { name: 'pricing_list', requiredCols: [], optional: true, include: 'pricing' }
 ];
 
 // Generous safety backstop. In real data the SKU master/reference tables are well under this; the cap only guards against
@@ -113,6 +123,16 @@ function skdWorkspaceBuild_(tables, payload) {
     out.counts.marketplaceSkus = mktSkus.total;
     out.counts.skuRegionalDetails = regional.total;
     if (out.summary) { out.summary.marketplaceSkuCount = mktSkus.total; out.summary.skuRegionalDetailCount = regional.total; }
+  }
+  // PRICING-R2 — the pricing rows, on the same bounded-include rule. RAW passthrough, exactly like every
+  // other array here: the page re-normalizes with normalizePricingListRecord, so what it holds is what the
+  // broad cache would have given it.
+  if (include.pricing) {
+    var pricing = skdCap_(tables.pricing_list || []);
+    out.pricingList = pricing.rows;
+    out.capped.pricingList = pricing.capped;
+    out.counts.pricingList = pricing.total;
+    if (out.summary) out.summary.pricingListCount = pricing.total;
   }
   return out;
 }

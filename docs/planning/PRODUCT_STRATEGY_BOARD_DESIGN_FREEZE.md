@@ -6540,7 +6540,11 @@ this board.
 
 ### 45.1  What the inventory found
 
-One Web App URL, published `ANYONE_ANONYMOUS`, routes **138 actions**, of which **76 are unambiguous
+<!-- PRICING-R2 (2026-09-23): 138 -> 139 and 76 -> 77. `pricing.update` is routed on doPost and writes
+     pricing_list + pricing_change_log. It is the first WRITE added to this surface since SEC-A0 measured
+     the baseline, and it is recorded here rather than silently absorbed: the posture did not change, the
+     surface did. -->
+One Web App URL, published `ANYONE_ANONYMOUS`, routes **139 actions**, of which **77 are unambiguous
 mutations** - purchase orders, shipment confirmation, allocation submission, inventory adjustment,
 batch imports, and the action that creates and deletes the project's own time-driven triggers. Nothing
 stands between `doPost` entry and the first dispatch. There are no webhooks, no external integrations,

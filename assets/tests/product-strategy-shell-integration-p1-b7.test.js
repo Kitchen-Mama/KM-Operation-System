@@ -803,7 +803,8 @@ console.log('\n=== §K  THE ACTION CONTRACT MATRIX, EXECUTED ===');
  */
 var MATRIX = {};
 function runGate(browserPin, serverContract) {
-  var src = SRC.dbapi.replace('var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 14;',
+  var src = SRC.dbapi.replace(
+    new RegExp('var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = \\d+;'),
     'var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = ' + browserPin + ';');
   var win = { KM: { DB: {} }, location: { href: 'https://x/' },
     localStorage: { getItem: function () { return null; }, setItem: function () {},
@@ -832,27 +833,33 @@ function runGate(browserPin, serverContract) {
   return win.KM.DB.checkDeploymentContract();
 }
 
+// PRICING-R2 — N IS READ, NOT TYPED. N-1 is "the browser deployed before this release", N is "this
+// build". Those are the two the four cells have always been about; 13 and 14 were only where P1-B6 landed.
+var PIN_N = Number(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+);/.exec(SRC.dbapi)[1]);
+var PIN_P = PIN_N - 1;
 var K = (function () {
-  return Promise.all([[13, 13], [13, 14], [14, 13], [14, 14]].map(function (c) {
+  return Promise.all([[PIN_P, PIN_P], [PIN_P, PIN_N], [PIN_N, PIN_P], [PIN_N, PIN_N]].map(function (c) {
     return runGate(c[0], c[1]).then(function (v) { MATRIX[c[0] + '/' + c[1]] = v.code; return v; });
   })).then(function () {
-    eq(MATRIX['13/13'], 'DEPLOYMENT_CONTRACT_OK', 'K1 browser 13 · server 13 — today, unchanged');
-    eq(MATRIX['13/14'], 'DEPLOYMENT_CONTRACT_OK',
-      'K2 browser 13 · server 14 — BACKEND-FIRST IS SAFE: the deployed frontend accepts the new server');
-    eq(MATRIX['14/13'], 'DEPLOYMENT_CONTRACT_MISMATCH',
-      'K3 browser 14 · server 13 — FRONTEND-FIRST BREAKS EVERY PAGE');
-    eq(MATRIX['14/14'], 'DEPLOYMENT_CONTRACT_OK', 'K4 browser 14 · server 14 — after both steps');
+    eq(MATRIX[PIN_P + '/' + PIN_P], 'DEPLOYMENT_CONTRACT_OK',
+      'K1 browser ' + PIN_P + ' · server ' + PIN_P + ' — today, unchanged');
+    eq(MATRIX[PIN_P + '/' + PIN_N], 'DEPLOYMENT_CONTRACT_OK',
+      'K2 browser ' + PIN_P + ' · server ' + PIN_N + ' — BACKEND-FIRST IS SAFE: the deployed frontend accepts the new server');
+    eq(MATRIX[PIN_N + '/' + PIN_P], 'DEPLOYMENT_CONTRACT_MISMATCH',
+      'K3 browser ' + PIN_N + ' · server ' + PIN_P + ' — FRONTEND-FIRST BREAKS EVERY PAGE');
+    eq(MATRIX[PIN_N + '/' + PIN_N], 'DEPLOYMENT_CONTRACT_OK',
+      'K4 browser ' + PIN_N + ' · server ' + PIN_N + ' — after both steps');
 
     /* THE RULE ITSELF, NAMED. A minimum, not an equality — which is the only reason K2 is OK. */
     ok(/identity\.deployed_action_contract_version < KM_EXPECTED_ACTION_CONTRACT_VERSION_/
       .test(SRC.dbapi), 'K5 the gate is minimum-compatible, not exact equality');
-    ok(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 14;/.test(SRC.dbapi),
-      'K6 and this build pins 14');
-    ok(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 14;/.test(SRC.health),
+    ok(PIN_N >= 14, 'K6 and this build pins ' + PIN_N + ', at or after the version P1-B6 required');
+    eq(Number(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/.exec(SRC.health)[1]), PIN_N,
       'K7 which equals what the deployment declares');
 
     /* THE ORDER IS THEREFORE FIXED AND HAS NO ZERO-DOWNTIME ALTERNATIVE IN THE OTHER DIRECTION. */
-    ok(MATRIX['13/14'] === 'DEPLOYMENT_CONTRACT_OK' && MATRIX['14/13'] !== 'DEPLOYMENT_CONTRACT_OK',
+    ok(MATRIX[PIN_P + '/' + PIN_N] === 'DEPLOYMENT_CONTRACT_OK'
+       && MATRIX[PIN_N + '/' + PIN_P] !== 'DEPLOYMENT_CONTRACT_OK',
       'K8 so the deployment order is Apps Script FIRST, frontend SECOND — with no interruption');
 
     /* AND THE NEW ACTION IS NOT IN THE PROBE LIST, which is what makes a ROLLBACK safe: a browser
@@ -860,8 +867,10 @@ var K = (function () {
        missing action, and the difference is the difference between one named fact and a list. */
     ok(SRC.dbapi.indexOf("'productPricing.siteUniverse.get'") < 0,
       'K9 the new action is not in the required-action probe list');
-    ok(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = 12;/.test(SRC.health),
-      'K10 and the required-action list version did not move');
+    // PRICING-R2 — a FLOOR. B7's claim is that ITS action was not one a page probes for, which K9 above
+    // states directly and permanently; the list version is a number later rounds may raise.
+    ok(Number(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/.exec(SRC.health)[1]) >= 12,
+      'K10 and the required-action list version has not gone backwards');
   });
 }());
 

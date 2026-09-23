@@ -67,6 +67,9 @@ var GS63 = read('assets/specs/active/apps-script/63_api_v1_system_health.gs');
 var ACC = read('assets/js/api/km-product-pricing-workspace.js');
 var INDEX = read('index.html');
 var BARE72 = bare(GS72), BARE_ACC = bare(ACC);
+// PRICING-R2 — #40 below reads the manifest and the shared owner-stamp ORDER instead of a frozen literal.
+var GS63_B1 = GS63;
+var RELEASE_ORDER_B1 = require('./_release-order.js');
 
 // ===================================================================================================
 // FIXTURE — one site, plus every neighbour that must NOT leak into it.
@@ -521,8 +524,22 @@ eq(bare(GS59).indexOf('payload.scope'), -1, '39c 59_ real code never reads paylo
 eq(bare(GS59).indexOf('productStrategyEnabled_'), -1, '39d and is not gated on the new flag');
 eq((GS59.match(/var SKD_WS_ROW_MAX_ = 50000;/g) || []).length, 1, '39e its cap is untouched');
 eq((GS59.match(/var SKD_WORKSPACE_TABLES_ = \[/g) || []).length, 1, '39f its table list is untouched');
-eq((GS59.match(/var SKD_BUILD_VERSION_ = 'F1-7N-FB-4C-R1';/g) || []).length, 1,
-  '40 and its build stamp did not move, because its behaviour did not');
+// PRICING-R2 — this was pinned to the literal FB-4C-R1, which said "B1 did not touch 59_" by saying "59_ has
+// never been touched". Those are the same sentence only until some round is licensed to touch it, and this is
+// that round: SKU Regional Details becomes the primary site-price UI and needs pricing_list on the read it
+// already performs. The property that must survive is not the value — it is that 59_ never changes SILENTLY.
+// So: whatever the file declares, the deployment manifest expects exactly that, and the stamp is a real owner
+// stamp at or after FB-4C-R1. A half-synced deployment is still a named fact from either direction, and a
+// stamp rolled backwards still fails. What B1 itself asserts about 59_ — no scope, no flag gate, the same cap
+// and the same regional pair — is 39a-39f above and is untouched.
+var _skd = /var SKD_BUILD_VERSION_ = '([^']+)';/.exec(GS59)[1];
+// FB-4C-R1 predates the shared owner-stamp sequence, so 'at or after' is not answerable for it — an
+// ordering check against a stamp the order does not contain would pass by accident in both directions.
+// What IS answerable is that the declared stamp is a well-formed owner stamp rather than a placeholder.
+ok(RELEASE_ORDER_B1.BUILD_STAMP_RE.test(_skd),
+  '40 59_ declares a well-formed owner build stamp (' + _skd + ')');
+ok(new RegExp("symbol: 'SKD_BUILD_VERSION_', expected: '" + _skd + "'").test(GS63_B1),
+  '40a and the deployment manifest expects exactly what the file declares — a change is always DECLARED');
 
 // ---- 41..43 FLAG, ROUTER AND WRITES ----------------------------------------------------------------
 /* ONE DECLARATION. That was always what §41 was for - P0 had proposed two names for this feature and

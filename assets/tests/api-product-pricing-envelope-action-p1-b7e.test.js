@@ -308,8 +308,18 @@ console.log('\n=== §E  THE ROUTER STILL REFUSES WHAT IT DOES NOT KNOW ===');
   ['Invalid POST action', 'Missing or invalid action parameter'].forEach(function (m, i) {
     ok(SRC.router.indexOf(m) > 0, 'E5.' + (i + 1) + ' the router still says "' + m + '"');
   });
-  ok(SRC.router.indexOf('RTR_BUILD_VERSION_ = \'' + R9 + '\'') > 0,
-    'E6 AND THE ROUTER DID NOT CHANGE THIS ROUND — its stamp is still R9, because no action was added');
+  // PRICING-R2 — RESTATED. This named the R9 literal, which said "THIS round added no action" by saying
+  // "the router has never changed". They diverge the moment some round routes something, and R21 routes
+  // pricing.update. What this round actually claims is that IT added none, and that is answerable from
+  // the router itself and permanently: no productPricing action is dispatched by a branch this round
+  // introduced, and the router still declares exactly what the manifest expects — which is the property
+  // a stamp exists for in the first place.
+  var _e6Decl = (SRC.router.match(/var RTR_BUILD_VERSION_ = '([^']+)'/) || [])[1];
+  ok(!!_e6Decl && SRC.health.indexOf("symbol: 'RTR_BUILD_VERSION_', expected: '" + _e6Decl + "'") > 0,
+    'E6 THE ROUTER DECLARES EXACTLY WHAT ITS MANIFEST ROW EXPECTS (' + _e6Decl + ') — a partial sync stays visible');
+  ok(SRC.router.indexOf("action === 'productPricing.workspace.get'") > 0
+     && SRC.router.indexOf("action === 'productPricing.siteUniverse.get'") > 0,
+    'E6a and both productPricing actions were routed BEFORE this round — R10 corrected an envelope, not a route');
 }());
 
 // ===================================================================================================
@@ -437,8 +447,11 @@ var I = H.then(function () {
     'I4 and the manifest expects R10 from 72_ — a stamp without its manifest entry is a MIXED sync');
   ok(SRC.health.indexOf("symbol: 'SYS_BUILD_VERSION_', expected: '" + R10 + "'") < 0,
     'I5 while 63_\'s own manifest row moved with 63_ — the self-referential row tracks the file, not the release');
-  ok(SRC.health.indexOf("symbol: 'RTR_BUILD_VERSION_', expected: '" + R9 + "'") > 0,
-    'I6 WHILE 01_router STAYS AT R9 — it did not change, and a stamp names the round its own file belongs to');
+  // PRICING-R2 — see E6. The claim "01_ did not change IN THIS ROUND" survives as the agreement between
+  // what the router declares and what the manifest expects; the R9 literal did not.
+  var _i6Decl = (SRC.router.match(/var RTR_BUILD_VERSION_ = '([^']+)'/) || [])[1];
+  ok(!!_i6Decl && SRC.health.indexOf("symbol: 'RTR_BUILD_VERSION_', expected: '" + _i6Decl + "'") > 0,
+    'I6 WHILE 01_router declares exactly what the manifest expects (' + _i6Decl + ') — a stamp names the round its own file belongs to');
 
   var order = SRC.releaseOrder;
   ok(order.indexOf("'" + R9 + "'") > 0 && order.indexOf("'" + R10 + "'") > 0,
@@ -446,21 +459,41 @@ var I = H.then(function () {
   ok(order.indexOf("'" + R9 + "'") < order.indexOf("'" + R10 + "'"),
     'I7a with R10 after R9, appended rather than inserted');
 
-  /* THE ACTION CONTRACT COUNTS ACTIONS, AND NO ACTION CHANGED. Bumping it would tell every browser its
-     deployment was too old for a reason that is not about what the deployment can do. */
-  ok(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 14;/.test(SRC.health),
-    'I8 the deployed action contract is still 14');
-  ok(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 14;/
-    .test(read(path.join(JS, 'api', 'operation-system-db-api.js'))),
-    'I8a and the client pin still 14, so no page is told to republish');
-  ok(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = 12;/.test(SRC.health),
-    'I9 the required-action list version is still 12');
+  /* THE ACTION CONTRACT COUNTS ACTIONS, AND NO ACTION CHANGED — restated so that it says that about THIS
+     ROUND rather than about the world.
+
+     PRICING-R2 — these four lines were `= 14`, `= 14`, `= 12` and `=== 44`, and all four went red the
+     moment a LATER round legitimately added pricing.update. They were describing a deployment that is
+     exactly right. The property B7E actually defends is not any of those numbers: it is that a correction
+     to a RESPONSE SHAPE must not be reported to browsers as a vocabulary change, because a browser told its
+     deployment is too old for a reason that is not about what the deployment can DO will be re-published for
+     nothing.
+
+     That is answerable without freezing anything, in three parts that a later round cannot make wrong while
+     still being correct:
+       (a) B7E ADDED NO REGISTRY ROW — and it could not have, because no page depends on a productPricing
+           action. The registry is the list of actions PAGES depend on; the absence of every productPricing
+           action from it IS the statement "this round added no action", and it stays true forever.
+       (b) the numbers may only ever go UP. A round that lowers one is lying about what it contains.
+       (c) the client pin AGREES with the deployed contract — which is the invariant the two numbers exist
+           to express, and the one thing that must hold at every release rather than only at this one. */
+  var DBAPI_B7E = read(path.join(JS, 'api', 'operation-system-db-api.js'));
+  var _contract = Number(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(SRC.health)[1]);
+  var _listVer = Number(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+)/.exec(SRC.health)[1]);
+  var _pin = Number(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(DBAPI_B7E)[1]);
   var reqList = /var SYS_REQUIRED_ACTIONS_ = \[[\s\S]*?\n\];/.exec(SRC.health)[0];
+  eq((reqList.match(/action: 'productPricing\./g) || []).length, 0,
+    'I8 NO productPricing action is in SYS_REQUIRED_ACTIONS_ — this round added none, and no page depends on one');
+  ok(_contract >= 14, 'I8a the deployed action contract is at B7E\'s level or later (v' + _contract + '), never lowered');
+  eq(_pin, _contract, 'I8b and the client pin AGREES with it — which is what the two numbers are for');
+  ok(_listVer >= 12, 'I9 the required-action list version is at B7E\'s level or later (v' + _listVer + ')');
   /* `action:` specifically — each entry carries an action AND a handler, so counting bare strings
-     counts every row twice and would agree with 88 as readily as with 44. */
-  eq((reqList.match(/action: '/g) || []).length, CAPTURE.health.required_action_count,
-    'I10 and it still holds the ' + CAPTURE.health.required_action_count
-    + ' actions the deployment counted');
+     counts every row twice and would agree with 88 as readily as with 44. The registry may GROW; it may
+     never shrink below what the captured deployment counted, because that would drop an action a shipped
+     page depends on. */
+  ok((reqList.match(/action: '/g) || []).length >= CAPTURE.health.required_action_count,
+    'I10 and it still holds at least the ' + CAPTURE.health.required_action_count
+    + ' actions the captured deployment counted — the registry may grow, never shrink');
 
   /* THE CAPTURE STILL DESCRIBES R9 — it is evidence of a build that is now superseded, and it must not
      have been dragged forward with the release. */
@@ -575,11 +608,27 @@ J.then(function () {
         .test(read(path.join(JS, 'api', 'km-product-pricing-workspace.js')));
     });
 
-  mut('K8 the action contract is bumped for a change that adds no action',
+  /* PRICING-R2 — REPOINTED, AND IT WAS NEVER REALLY A MUTANT BEFORE. It rewrote 14 to 15 and then probed
+     the mutated source for 14, so it was asking whether its own edit had happened; nothing about the
+     deployment could have made it survive. It also froze the literal, so a later round that legitimately
+     took the contract to 15 left the anchor matching nothing — which is how it is failing now, reported as
+     a survivor against source it never touched.
+
+     The fault it describes is real and has a real detector: a contract bumped ALONE. The two numbers exist
+     to be compared, and a deployment whose contract moves while the client pin does not is one that every
+     shipped page refuses with DEPLOYMENT_CONTRACT_MISMATCH — for a release that added nothing it needed.
+     So the mutant moves the deployment number off whatever it currently is, and the probe is the AGREEMENT
+     guard at I8b. */
+  var _k8Contract = Number(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(SRC.health)[1]);
+  var _k8Pin = Number(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(read(path.join(JS, 'api', 'operation-system-db-api.js')))[1]);
+  mut('K8 the action contract is bumped without the client pin that must move with it',
     'assets/specs/active/apps-script/63_api_v1_system_health.gs',
-    'var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 14;',
-    'var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 15;',
-    function (src) { return !/SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 14;/.test(src); });
+    'var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = ' + _k8Contract + ';',
+    'var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = ' + (_k8Contract + 1) + ';',
+    function (src) {
+      var bumped = Number(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(src)[1]);
+      return bumped !== _k8Pin;   // the pin no longer agrees — I8b is what catches this
+    });
 }).then(function () {
   console.log('\n' + new Array(101).join('='));
   console.log('passed ' + pass + '  failed ' + fail

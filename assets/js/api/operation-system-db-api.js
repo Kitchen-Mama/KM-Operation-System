@@ -507,6 +507,53 @@ function normalizeMarketplaceRecord(raw) {
     };
 }
 
+/* PRICING-R2 §12 — MISSING IS NOT ZERO, AND NA IS NOT ZERO.
+ *
+ * Every price and FX field below used to read `parseFloat(x) || 0`, which turns four different facts into
+ * the number 0: a blank cell (nobody has set one), the literal NA (someone said there deliberately is
+ * none), a real zero, and a typo. That is survivable only while nothing important reads the result — and
+ * the ONE existing consumer, fc-summary.js:3814, already routes AROUND this normalizer to `row.raw` for
+ * exactly this reason, with a comment saying so. The hazard was known; the normalizer was just left.
+ *
+ * It cannot be left now. PRICING-R3 reconciles auto_* by FX, and a reconciliation that cannot tell "no
+ * auto value yet" from "the auto value is 0" will publish a free product. So: number, or null.
+ *
+ * NA is preserved as a FACT rather than flattened into null, because "deliberately none" and "not filled
+ * in" lead to different next actions — one is finished, the other is a gap.
+ */
+function pricingNumOrNull_(v) {
+    if (v === null || v === undefined) return null;
+    var s = String(v).trim();
+    if (s === '') return null;
+    if (s.toUpperCase() === 'NA' || s.toUpperCase() === 'N/A') return null;
+    var n = Number(s);
+    return isFinite(n) ? n : null;
+}
+function pricingIsNa_(v) {
+    var s = String(v === null || v === undefined ? '' : v).trim().toUpperCase();
+    return s === 'NA' || s === 'N/A';
+}
+/* PRICING-R2 §1 — OWNERSHIP IS THREE-STATE, and the third state is the one that matters.
+ *
+ *   true   the operator owns this field; FX must preserve it
+ *   false  the system owns it; it must equal the current auto value
+ *   null   NOBODY HAS SAID
+ *
+ * Every pricing_list row that exists today returns null, because the column did not exist until this
+ * round. Reading null as false would declare the entire price book system-owned and overwritable, in one
+ * deployment, with no operator ever asked — which is the bulk classification §10 forbids, arriving
+ * disguised as a default. The server (73_) reads the same three states and refuses to guess the third.
+ */
+function pricingFlagOrNull_(v) {
+    if (v === true) return true;
+    if (v === false) return false;
+    var s = String(v === null || v === undefined ? '' : v).trim().toUpperCase();
+    if (s === '') return null;
+    if (s === 'TRUE' || s === '1' || s === 'YES' || s === 'Y' || s === 'MANUAL') return true;
+    if (s === 'FALSE' || s === '0' || s === 'NO' || s === 'N' || s === 'AUTO') return false;
+    return null;
+}
+
 function normalizePricingListRecord(raw) {
     var r = raw || {};
     return {
@@ -523,17 +570,28 @@ function normalizePricingListRecord(raw) {
         asin: String(r.asin || '').trim(),   // legacy read-only alias (do not write)
         currency: String(r.currency || '').trim(),
         baseCurrency: String(r.base_currency || '').trim(),
-        baseRegularPrice: parseFloat(r.base_regular_price) || 0,
-        baseMinimumPrice: parseFloat(r.base_minimum_price) || 0,
-        baseMsrp: parseFloat(r.base_msrp) || 0,
-        fxRate: parseFloat(r.fx_rate) || 0,
+        // PRICING-R2 §12 — number or null. Never 0 for a value nobody wrote.
+        baseRegularPrice: pricingNumOrNull_(r.base_regular_price),
+        baseMinimumPrice: pricingNumOrNull_(r.base_minimum_price),
+        baseMsrp: pricingNumOrNull_(r.base_msrp),
+        fxRate: pricingNumOrNull_(r.fx_rate),
         fxRateDate: String(r.fx_rate_date || '').trim(),
-        autoRegularPrice: parseFloat(r.auto_regular_price) || 0,
-        autoMinimumPrice: parseFloat(r.auto_minimum_price) || 0,
-        autoMsrp: parseFloat(r.auto_msrp) || 0,
-        regularPrice: parseFloat(r.regular_price) || 0,
-        minimumPrice: parseFloat(r.minimum_price) || 0,
-        msrp: parseFloat(r.msrp) || 0,
+        autoRegularPrice: pricingNumOrNull_(r.auto_regular_price),
+        autoMinimumPrice: pricingNumOrNull_(r.auto_minimum_price),
+        autoMsrp: pricingNumOrNull_(r.auto_msrp),
+        regularPrice: pricingNumOrNull_(r.regular_price),
+        minimumPrice: pricingNumOrNull_(r.minimum_price),
+        msrp: pricingNumOrNull_(r.msrp),
+        // NA is carried as its own fact: "deliberately none" is finished, "blank" is a gap.
+        regularPriceIsNa: pricingIsNa_(r.regular_price),
+        minimumPriceIsNa: pricingIsNa_(r.minimum_price),
+        msrpIsNa: pricingIsNa_(r.msrp),
+        // PRICING-R2 §1 — FIELD-LEVEL ownership, three-state. null = nobody has said.
+        regularPriceIsManual: pricingFlagOrNull_(r.regular_price_is_manual),
+        minimumPriceIsManual: pricingFlagOrNull_(r.minimum_price_is_manual),
+        msrpIsManual: pricingFlagOrNull_(r.msrp_is_manual),
+        // LEGACY and DESCRIPTIVE ONLY. price_source is one value for a whole row; it is never consulted to
+        // decide who owns a field, and PRICING-R2 §1 forbids it standing in for the three flags above.
         priceSource: String(r.price_source || '').trim(),
         priceStatus: String(r.price_status || '').trim(),
         createdBy: String(r.created_by || '').trim(),
@@ -553,6 +611,10 @@ function normalizePricingChangeLogRecord(raw) {
         fieldName: String(r.field_name || '').trim(),
         oldValue: String(r.old_value || '').trim(),
         newValue: String(r.new_value || '').trim(),
+        // PRICING-R2 §3 — the TYPED change. change_reason is free text and free text cannot be counted,
+        // filtered or relied on by a later round; change_type can. It is audit history either way: nothing
+        // at runtime infers ownership by scanning this log.
+        changeType: String(r.change_type || '').trim(),
         changedBy: String(r.changed_by || '').trim(),
         changedAt: String(r.changed_at || '').trim(),
         changeReason: String(r.change_reason || '').trim(),
@@ -2508,6 +2570,54 @@ window.KM.DB.getPricingChangeLog = function() {
     return window._opDbCache.pricingChangeLog || [];
 };
 
+/* PRICING-R2 §7 — THE ONE CANONICAL PRICING WRITE, and the only way a page may change a price.
+ *
+ * There was no pricing writer at all before this: 04_'s import sets prices once, at row creation, and is
+ * explicitly forbidden from touching them again, so every later price change happened in the spreadsheet
+ * by hand and nothing recorded which. A page writing directly would have been a second authority; this is
+ * the transport every other write in this file already uses, and pages call THIS, never fetch.
+ *
+ * payload = {
+ *   dry_run: true,                // PREVIEW: same validation, same plan, ZERO writes (§9)
+ *   changed_by, change_reason,
+ *   lines: [{ marketplace_sku_id, currency?,
+ *             regular_price_mode, regular_price?,     // NO_CHANGE | MANUAL | AUTO
+ *             minimum_price_mode, minimum_price?,
+ *             msrp_mode, msrp? }]
+ * }
+ *
+ * The row is addressed by marketplace_sku_id ONLY. A master SKU is priced on many sites, so a master-keyed
+ * write would land on whichever of them the sheet listed first.
+ *
+ * NO FAKE SUCCESS: this resolves only when the handler reports one, and the receipt it returns is the plan
+ * that was actually applied rather than an echo of the request. A failed batch writes NOTHING — validation
+ * runs over every line before the first cell is touched — so a rejection is safe to retry unchanged.
+ */
+window.KM.DB.updatePricing = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, updatePricing skipped');
+        return { success: false, error: 'API not configured' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ action: 'pricing.update' }, payload))
+    });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) {
+        var e = new Error(json.detail || json.error || 'Pricing update failed');
+        e.error_code = json.error || 'PRICING_WRITE_FAILED';
+        // The per-line problems, so the page can point at the row instead of restating the message.
+        e.errors = (json.data && json.data.errors) || [];
+        throw e;
+    }
+    // A dry run changed nothing, so nothing downstream is stale and the broad reload is skipped.
+    if (!(payload && payload.dry_run)) await _kmWriterPostWrite_();
+    return json.data;
+};
+
 window.KM.DB.getFcRegularForecast = function() {
     if (!window._opDbCache) return [];
     return window._opDbCache.fcRegularForecast || [];
@@ -2818,6 +2928,10 @@ window.KM.DB.adaptSkuDetailsWorkspace = function(data) {
     // 'regional' arrays (sku-regional-details.js) — same normalizers + filters as normalizeOperationDb; present only when include.regional.
     out.marketplaceSkus = (data.marketplaceSkus || []).map(normalizeMarketplaceSkuRecord).filter(function(r) { return r.sku; });
     out.skuRegionalDetails = (data.skuRegionalDetails || []).map(normalizeSkuRegionalDetailRecord).filter(function(r) { return r.regionalDetailId || r.sku; });
+    // PRICING-R2 — the site prices, present only when the workspace was called with include.pricing. Same
+    // normalizer and same filter as normalizeOperationDb applies, so this array equals getPricingList()
+    // exactly — including the preserved .raw passthrough the price editor reads.
+    out.pricingList = (data.pricingList || []).map(normalizePricingListRecord).filter(function(r) { return r.pricingId || r.marketplaceSkuId || r.sku; });
     return out;
 };
 
@@ -4147,7 +4261,14 @@ function _kmWriterError_(json, fallbackMessage) {
 // BINDING AND IS RECORDED IN THE RELEASE LEDGER: this file is loaded by every page, so Apps Script
 // must be synced BEFORE the frontend is redeployed, or every page refuses the old deployment with
 // DEPLOYMENT_CONTRACT_MISMATCH.
-var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 14;      // the minimum deployed_action_contract_version this build needs
+// PRICING-R2: 14 -> 15. One router ACTION was added (pricing.update) and the SKU Regional Details price
+// editor depends on it. The pin tracks the deployed contract for the reason it always has: a browser that
+// could not tell a deployment WITHOUT the pricing writer from one that has it would report every refused
+// price save as a transport fault, and send someone to debug the network instead of publishing a version.
+// THE ORDERING CONSEQUENCE IS BINDING AND BELONGS IN THE RELEASE LEDGER: this file is loaded by every
+// page, so Apps Script must be synced BEFORE the frontend is redeployed, or every page refuses the old
+// deployment with DEPLOYMENT_CONTRACT_MISMATCH.
+var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 15;      // the minimum deployed_action_contract_version this build needs
 var KM_EXPECTED_REGISTRY_PROJECTION_VERSION_ = 'FB-3.1';
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT AXIS. Deliberately NOT folded into the action-contract number.
 //

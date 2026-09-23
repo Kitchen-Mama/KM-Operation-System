@@ -185,3 +185,40 @@
 #sku-regional-details-section .srd-comp td,
 #sku-regional-details-section .srd-secnote,
 #sku-regional-details-section .srd-cov       { font-size: clamp(0.75rem, 0.72rem + 0.1vw, 0.8125rem); }
+
+/* ---- PRICING-R2 · site pricing panel, per-field editor, and the template import dialog ----
+   THE OWNERSHIP BADGE HAS THREE COLOURS BECAUSE OWNERSHIP HAS THREE STATES. "Not set" is deliberately
+   NOT styled like "Auto": a field nobody has claimed must not read as a field the system maintains,
+   which is the whole distinction this round exists to keep. It is grey and quiet — a gap, not an alarm. */
+#sku-regional-details-section .srd-pricing { margin-top: 8px; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden; }
+#sku-regional-details-section .srd-pr__head { display: flex; flex-wrap: wrap; gap: 14px; padding: 8px 10px; background: #F8FAFC; border-bottom: 1px solid #E2E8F0; font-size: 11px; color: #64748B; }
+#sku-regional-details-section .srd-pr__head strong { color: #0F172A; font-weight: 600; }
+#sku-regional-details-section .srd-pr__row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; padding: 8px 10px; border-bottom: 1px solid #F1F5F9; }
+#sku-regional-details-section .srd-pr__row:last-child { border-bottom: 0; }
+#sku-regional-details-section .srd-pr__lbl { font-size: 12px; color: #334155; display: flex; align-items: center; gap: 6px; }
+#sku-regional-details-section .srd-pr__val { display: flex; align-items: baseline; gap: 10px; }
+#sku-regional-details-section .srd-pr__eff { font-size: 13px; font-weight: 600; color: #0F172A; }
+#sku-regional-details-section .srd-pr__auto { font-size: 11px; color: #94A3B8; }
+#sku-regional-details-section .srd-pr__note { flex-basis: 100%; font-size: 11px; color: #92400E; }
+#sku-regional-details-section .srd-own { font-size: 10px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; border-radius: 999px; padding: 1px 7px; border: 1px solid transparent; }
+#sku-regional-details-section .srd-own--manual { background: #EFF6FF; color: #1D4ED8; border-color: #BFDBFE; }
+#sku-regional-details-section .srd-own--auto { background: #F0FDF4; color: #15803D; border-color: #BBF7D0; }
+#sku-regional-details-section .srd-own--unknown { background: #F8FAFC; color: #94A3B8; border-color: #E2E8F0; }
+
+#sku-regional-details-section .srd-modal__sec { grid-column: 1 / -1; font-size: 12px; font-weight: 700; color: #0F172A; margin: 10px 0 2px; border-bottom: 1px solid #E2E8F0; padding-bottom: 4px; }
+#sku-regional-details-section .srd-pe { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 8px; }
+#sku-regional-details-section .srd-pe__ctx { font-size: 11px; color: #64748B; }
+#sku-regional-details-section .srd-pe__row { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(120px, 1fr) minmax(100px, 1fr); gap: 8px; align-items: center; }
+#sku-regional-details-section .srd-pe__lbl { font-size: 12px; color: #334155; display: flex; align-items: center; gap: 6px; }
+#sku-regional-details-section .srd-pe__row select,
+#sku-regional-details-section .srd-pe__row input { font-size: 12px; padding: 5px 7px; border: 1px solid #CBD5E1; border-radius: 6px; background: #fff; color: #0F172A; min-width: 0; }
+#sku-regional-details-section .srd-pe__row input:disabled { background: #F8FAFC; color: #94A3B8; }
+
+#sku-regional-details-section .srd-errs { margin: 8px 0 0; padding-left: 18px; font-size: 11px; color: #334155; }
+#sku-regional-details-section .srd-errs li { margin-bottom: 3px; }
+#sku-regional-details-section #srd-price-preview { max-height: 34vh; overflow: auto; }
+
+@media (max-width: 720px) {
+  #sku-regional-details-section .srd-pe__row { grid-template-columns: 1fr; }
+  #sku-regional-details-section .srd-pr__row { flex-direction: column; align-items: flex-start; }
+}

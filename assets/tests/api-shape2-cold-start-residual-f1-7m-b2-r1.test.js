@@ -69,7 +69,13 @@ ok(/if \(!_roUseDb\(\)\) return \[\];/.test(buildRows) && /getMarketplaceSkus\(\
 // ===================================================================================================================
 console.log('\n== Phase 4 — SKU Regional f13a0b6 contract preserved (regression guard) ==');
 ok(/isScopedReadEligible\(\)/.test(extractFn(SRD, 'useDb')), 'SKU Regional useDb still cache-independent (f13a0b6 intact)');
-ok(/getWorkspace\('skuDetails', \{ include: \{ regional: true \} \}\)/.test(SRD), "SKU Regional still reads getWorkspace('skuDetails',{include:{regional:true}})");
+// PRICING-R2 — RESTATED. This pinned the include object as EXACTLY `{ regional: true }`, which said
+// "the page asks for the regional tables" by saying "the page asks for nothing else". Those are the same
+// sentence only until a later round adds a second bounded include, and PRICING-R2 does: the SKU Regional
+// price panel needs pricing_list, and one more INCLUDE-GATED table on the call already in flight is
+// strictly better than a second request or a return to the broad cache. The pattern below still fails if
+// the action changes, if include.regional is dropped, or if the page stops calling getWorkspace at all.
+ok(/getWorkspace\('skuDetails',\s*\{\s*include:\s*\{[^}]*\bregional:\s*true\b/.test(SRD), "SKU Regional still reads getWorkspace('skuDetails', include.regional)");
 
 // ===================================================================================================================
 console.log('\n== Phase 5 — no ACTIVE canonical cache-dependent read-eligibility predicate remains ==');

@@ -401,9 +401,19 @@ ok(!/optional: true/.test(row58 ? HEALTH.slice(row58.index, HEALTH.indexOf('}', 
 // STAGE2-LARGE-BATCH — the owner rotated. R20 batches the campaign_sku_lines writer in 20_, so 20_ is
 // AT the release and 04_ keeps R19, the round IT last changed. The assertion follows the owner rather
 // than naming one file for ever, which is what the comment above it already promised.
-ok(new RegExp("\\{ file: '20_campaign_write_handlers\\.gs', symbol: '[A-Z_]+', expected: '"
-  + RELEASE_NOW.replace(/[-]/g, '[-]') + "'").test(HEALTH),
-  'E7c 20_ is AT the release — R20 batched the campaign_sku_lines writer inside it');
+// PRICING-R2 — 20_ LEFT THE RELEASE AGAIN, exactly as the comment above predicted the owner would
+// rotate: R21 routes a pricing write and touches no campaign handler, so 20_ goes back to R20, the round
+// its batched writer landed in. "AT the release" was the right claim for R20 and is a value, not a rule.
+// The rule — which has never changed — is that a file's manifest row must expect exactly what the file
+// itself declares, because that disagreement is what a partial Apps Script sync looks like.
+(function () {
+  var _campD = (/var CAMPAIGN_BUILD_VERSION_ = '([^']+)'/.exec(
+    require('fs').readFileSync(require('path').join(__dirname, '..', 'specs', 'active', 'apps-script',
+      '20_campaign_write_handlers.gs'), 'utf8')) || [])[1];
+  var _campE = (/\{ file: '20_campaign_write_handlers\.gs', symbol: '[A-Z_]+', expected: '([^']+)'/.exec(HEALTH) || [])[1];
+  ok(!!_campD && _campD === _campE,
+    'E7c 20_ declares exactly what the manifest expects (' + _campD + ') — the round its batched campaign_sku_lines writer landed in');
+})();
 ok(/\{ file: '04_marketplace_forecast_import\.gs', symbol: '[A-Z_]+', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R19'/.test(HEALTH),
   'E7c0 while 04_ keeps R19, the round IT last changed');
 ok(/\{ file: '14_fc_write_handlers\.gs', symbol: '[A-Z_]+', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R18'/.test(HEALTH),
@@ -412,11 +422,23 @@ ok(/FC_SE_UNIQUENESS_FIELDS_/.test(require('fs').readFileSync(require('path').jo
   'specs', 'active', 'apps-script', '14_fc_write_handlers.gs'), 'utf8')),
   'E7d and the change its stamp claims is really in the file, so the stamp is not decoration');
 [['13_procurement_handlers.gs', 'R6-R7-R12'],
- ['00_config.gs', 'R6-R7-R11'], ['01_router.gs', 'R6-R7-R9'],
+ ['00_config.gs', 'R6-R7-R11'],
  ['72_api_v1_product_pricing_workspace.gs', 'R6-R7-R10']].forEach(function (p, i) {
   var m = new RegExp("\\{ file: '" + p[0].replace(/\./g, '\\.') + "', symbol: '[A-Z_]+', expected: '([^']+)'").exec(HEALTH);
   ok(!!m && m[1].indexOf(p[1]) !== -1, 'E8.' + (i + 1) + '  ' + p[0] + ' still expects ' + p[1], m && m[1]);
 });
+// PRICING-R2 — 01_ leaves the literal list above, for the reason E7c gives: R21 routed pricing.update,
+// so the router's stamp MOVED, and a router that gained an action while keeping its stamp is the one
+// partial sync the manifest cannot otherwise report. The property that list defends is asserted here in
+// the form that survives the router changing again.
+(function () {
+  var _rtrD = (/var RTR_BUILD_VERSION_ = '([^']+)'/.exec(
+    require('fs').readFileSync(require('path').join(__dirname, '..', 'specs', 'active', 'apps-script',
+      '01_router.gs'), 'utf8')) || [])[1];
+  var _rtrE = (/\{ file: '01_router\.gs', symbol: 'RTR_BUILD_VERSION_', expected: '([^']+)'/.exec(HEALTH) || [])[1];
+  ok(!!_rtrD && _rtrD === _rtrE,
+    'E8.3  01_router.gs declares exactly what the manifest expects (' + _rtrD + ') — a partial sync stays visible');
+})();
 ok(/KM_BUNDLE_CONTENT_HASH_', expected: '830563effc604ba55a70424d8f7b95c627ae0bc4ce84aa981833fb75ac2ed64f'/.test(HEALTH),
    'E9  the generated bundle hash is untouched — no rebuild');
 ok(!/R6-R7-R14/.test(ROUTER), 'E10 01_router.gs is not part of this release');

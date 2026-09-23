@@ -175,8 +175,12 @@ console.log('\n=== §B  THE THREE MANIFEST ROWS THIS ROUND IS ABOUT ===');
     'B7b and it is strictly ahead of the captured one — that gap IS the sync list');
   eq(R10_CAPTURE.health.build_id, R10,
     'B7a while the capture still says R10 — so an unsynced activation is visible, not inferred');
-  ok(SRC.router.indexOf("RTR_BUILD_VERSION_ = '" + R9 + "'") >= 0,
-    'B8 while the committed router is still R9 — repository and deployment tell the same story');
+  // PRICING-R2 — RESTATED. "still R9" said "R10 did not touch the router" by saying "nothing ever has",
+  // and R21 routed pricing.update. What B7F needs is that the repository and the deployment tell the SAME
+  // story about the router, which is the agreement between its declaration and its manifest row.
+  var _b8Decl = (SRC.router.match(/var RTR_BUILD_VERSION_ = '([^']+)'/) || [])[1];
+  ok(!!_b8Decl && SRC.health.indexOf("symbol: 'RTR_BUILD_VERSION_', expected: '" + _b8Decl + "'") > 0,
+    'B8 while the committed router declares exactly what the manifest expects (' + _b8Decl + ') — repository and deployment tell the same story');
 }());
 
 // ===================================================================================================
@@ -445,10 +449,19 @@ var J = clientChain(R10_CAPTURE.siteUniverse).then(function (r) {
     'assets/js/app.js', 'enabled: true,', 'enabled: false,',
     function (src) { return !/'product-strategy':\s*\{[\s\S]{0,400}?enabled: true/.test(src); });
 
-  mut('I5 01_router.gs is marched to R10 although no route changed',
+  /* PRICING-R2 — REPOINTED, and it had to be: the anchor was the R9 literal, so once R21 moved the
+     router this mutant matched nothing, injected nothing and was reported as a survivor against source
+     it never touched. The fault B8 now defends against is the router's DECLARATION drifting away from
+     the manifest row that names it — a deployment where the two disagree is one where a half-finished
+     sync cannot be told from a finished one. */
+  mut('I5 01_router.gs declares a build its own manifest row does not expect',
     'assets/specs/active/apps-script/01_router.gs',
-    "RTR_BUILD_VERSION_ = '" + R9 + "'", "RTR_BUILD_VERSION_ = '" + R10 + "'",
-    function (src) { return src.indexOf("RTR_BUILD_VERSION_ = '" + R9 + "'") < 0; });
+    "var RTR_BUILD_VERSION_ = '" + (SRC.router.match(/var RTR_BUILD_VERSION_ = '([^']+)'/) || [])[1] + "'",
+    "var RTR_BUILD_VERSION_ = 'SOMETHING-ELSE'",
+    function (src) {
+      var d = (src.match(/var RTR_BUILD_VERSION_ = '([^']+)'/) || [])[1];
+      return SRC.health.indexOf("symbol: 'RTR_BUILD_VERSION_', expected: '" + d + "'") < 0;
+    });
 
   mut('I6 the client validator is relaxed, which would make §E pass for the wrong reason',
     'assets/js/api/km-product-pricing-workspace.js',

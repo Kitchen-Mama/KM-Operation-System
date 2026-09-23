@@ -1214,8 +1214,10 @@ section('§L — CONTRACT VERSIONS AND REACHABILITY');
   eq(Number((DBAPI.match(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]),
     Number((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);/) || [])[1]),
     'N2  §L and the frontend pinned minimum equals the deployed contract, in the same commit');
-  eq(Number((G63.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1]), 12,
-    'N3  §L SYS_REQUIRED_ACTION_LIST_VERSION_ 11 -> 12 (the registry gained an entry)');
+  // PRICING-R2 — a FLOOR. FC-1A took this 11 -> 12 because ITS round added a registry entry, which is
+  // still true and is still what this line is about; a later round adding another one does not unmake it.
+  ok(Number((G63.match(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = (\d+);/) || [])[1]) >= 12,
+    'N3  §L SYS_REQUIRED_ACTION_LIST_VERSION_ is at or after 12 (FC-1A took it 11 -> 12)');
   eq(Number((G63.match(/var SYS_TRANSPORT_CONTRACT_VERSION_ = (\d+);/) || [])[1]), 1,
     'N4  §L the TRANSPORT contract does NOT move — the envelope shape is unchanged');
 

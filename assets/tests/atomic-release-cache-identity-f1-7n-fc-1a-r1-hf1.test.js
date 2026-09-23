@@ -211,7 +211,9 @@ var CLIENT_TRANSPORT_PIN = Number((/var KM_EXPECTED_TRANSPORT_CONTRACT_VERSION_ 
 // factoryStockGuard.get) does not break cache identity, and reporting it as if it did would bury the one
 // assertion here that matters. The client-pin-equals-deployed-version check below stays EXACT.
 ok(ACTION_CONTRACT >= 11, 'B3  deployed_action_contract_version is not below 11');
-eq(LIST_VERSION, 12, 'B3a required_action_list_version is 12');
+// PRICING-R2 — a FLOOR, for the reason B3 above already gives about the action contract: this suite's
+// subject is CACHE IDENTITY, and a later round that adds a registry entry does not break it.
+ok(LIST_VERSION >= 12, 'B3a required_action_list_version is not below 12 (v' + LIST_VERSION + ')');
 eq(TRANSPORT, 1, 'B3b transport_contract_version is UNCHANGED at 1 — no envelope field moved in this hotfix');
 eq(CLIENT_PIN, ACTION_CONTRACT, 'B3c the client pin AGREES with the deployment, derived rather than restated');
 eq(CLIENT_TRANSPORT_PIN, TRANSPORT, 'B3d and so does the transport pin');
@@ -288,7 +290,7 @@ var DEP = makeDeployment();
 var H = health(DEP);
 ok(H.deployed_action_contract_version >= 11,
   'D1  EXECUTED: deployed_action_contract_version is not below 11');
-eq(H.required_action_list_version, 12, 'D2  EXECUTED: required_action_list_version = 12');
+ok(H.required_action_list_version >= 12, 'D2  EXECUTED: required_action_list_version is not below 12');
 eq(H.transport_contract_version, 1, 'D3  EXECUTED: transport_contract_version = 1 (unmoved)');
 eq(H.missing_actions, [], 'D4  EXECUTED: missing_actions = []');
 eq(H.mixed_deployment, false, 'D5  EXECUTED: mixed_deployment = false');

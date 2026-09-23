@@ -210,8 +210,20 @@ eq(/var EPC_BUILD_VERSION_ = '([^']+)'/.exec(G68)[1], 'F1-7N-FB-4E-R2', '1. 68_ 
 var _r2SysExpect = ((G63.match(/\{ file: '63_api_v1_system_health\.gs',[^}]*expected: '([^']+)'/) || [])[1]) || '(none)';
 ok(_r2SysExpect !== '(none)' && new RegExp("var SYS_BUILD_VERSION_ = '" + _r2SysExpect + "'").test(G63),
   '1. 63_ declares exactly the build its own manifest expects (' + _r2SysExpect + ')');
-// 31_ and 59_ were NOT changed, so their stamps must NOT move — a stamp that moves without a change is noise.
-ok(/SKD_BUILD_VERSION_', expected: 'F1-7N-FB-4C-R1'/.test(G63), '1. 59_ is unchanged this round and keeps its FB-4C-R1 stamp');
+// 31_ and 59_ were NOT changed BY THIS ROUND, so R2 must not have moved their stamps — a stamp that moves
+// without a change is noise.
+//
+// PRICING-R2 — the 59_ half was written as the literal FB-4C-R1, which stated "R2 did not touch it" by
+// stating "nothing has ever touched it". Those diverge the moment a later round is licensed to, and
+// PRICING-R2 is that round: 59_ gained the include.pricing table so the SKU Regional price panel could be
+// served by the read the page already performs. This is the THIRD file to make this conversion here (16_ at
+// A0-R1, 11_ at FC-1A) and it takes the same stronger pair: whatever 59_ declares, the manifest expects
+// exactly that, so a change is always DECLARED and a half-synced deployment is a named fact from either
+// direction. The line below it — that R2 did not bump the stamp to ITS OWN round to look current — is the
+// half that was really about R2, and it is unchanged.
+var _skdDeclared = (/var SKD_BUILD_VERSION_ = '([^']+)'/.exec(read('assets/specs/active/apps-script/59_api_v1_sku_details_workspace.gs')) || [])[1];
+ok(!!_skdDeclared && new RegExp("SKD_BUILD_VERSION_', expected: '" + _skdDeclared + "'").test(G63),
+  '1. 59_ declares exactly the build its own manifest expects (' + _skdDeclared + ')');
 ok(!/SKD_BUILD_VERSION_ = 'F1-7N-FB-4E-R2'/.test(GS_ALL), '1. and nothing bumped it just to look current');
 ok(!/var SHIP.*BUILD_VERSION_/.test(read('assets/specs/active/apps-script/31_shipment_receipt_route_handlers.gs')),
   '1. 31_ carries no build stamp at all — 63_ says so, and its currency is proven by the SYMBOL probe instead');
@@ -539,8 +551,28 @@ var R1_REF = 'c5048fd';
 //   (b) shippingPlanRouteGroupKey_ carries no allocation_draft_id, so the frozen Option A grouping stands and
 //       no persisted shipping plan can regroup.
 // Both are asserted below. The other two business files keep the original unchanged-since-R1 rule exactly.
-[['31_shipment_receipt_route_handlers.gs', 'shipment ETA + route-advance writers'],
- ['59_api_v1_sku_details_workspace.gs', 'SKU Details / SKU Regional workspace read']].forEach(function (p) {
+// PRICING-R2 — 59_ LEAVES THIS LIST, for the reason 16_ and 11_ left it above and by the same replacement.
+// "UNCHANGED since R1" was the right protection for 59_ through every round up to S2-R4B, and it did its job.
+// PRICING-R2 is the round whose purpose requires touching it: SKU Regional Details becomes the primary
+// site-price UI, and a second request for the prices — or a return to the broad Operation DB cache this page
+// deliberately stopped using — would both be worse than one more include-gated table on the call already in
+// flight. A guard that forbids the one round licensed to act is only postponing the edit.
+//
+// The property becomes "it never changes SILENTLY, and what it already served never moves":
+//   (a) whatever 59_ declares, the manifest expects exactly that — asserted at §1 above;
+//   (b) its BASE tables are unchanged and every added table is INCLUDE-GATED, so a caller that does not ask
+//       for pricing reads exactly the sheets it read before and pays exactly what it paid before.
+// Both are asserted; 31_ keeps the original unchanged-since-R1 rule exactly.
+var _g59 = read('assets/specs/active/apps-script/59_api_v1_sku_details_workspace.gs');
+var _tbl = /var SKD_WORKSPACE_TABLES_ = \[([\s\S]*?)\n\];/.exec(_g59)[1];
+var _base = _tbl.split(String.fromCharCode(10)).filter(function (l) { return /\{ name: '/.test(l) && !/include: '/.test(l); })
+  .map(function (l) { return /name: '([^']+)'/.exec(l)[1]; });
+eq(_base.join(','), 'sku_details,tax_referral_rates,tax_rate_components',
+  '8. 59_\'s un-gated BASE tables are exactly the three it has always read');
+ok(/\{ name: 'pricing_list',[^}]*include: 'pricing' \}/.test(_tbl),
+  '8. and pricing_list is INCLUDE-GATED — un-requested it costs a caller nothing');
+
+[['31_shipment_receipt_route_handlers.gs', 'shipment ETA + route-advance writers']].forEach(function (p) {
   var rel = 'assets/specs/active/apps-script/' + p[0];
   var changed = '?';
   try { changed = cp.execSync('git diff --name-only ' + R1_REF + ' -- "' + rel + '"', { cwd: ROOT, encoding: 'utf8' }).trim(); }
@@ -566,6 +598,10 @@ var gsList = gsChanged ? gsChanged.split(String.fromCharCode(10))
 // The set is therefore a SUBSET check against an allowlist that names the owning round — an unexpected file
 // still fails, which is the property that mattered, while a later round adding its own file does not.
 var GS_OWNED_SINCE_R1 = {
+  // PRICING-R2 — the canonical pricing writer and the one read owner it needed. 73_ is a NEW FILE, which is
+  // exactly the case the R4A restatement above converted this assertion for.
+  '73_api_v1_pricing_write.gs': 'PRICING-R2 canonical pricing write owner (new file)',
+  '59_api_v1_sku_details_workspace.gs': 'PRICING-R2 include.pricing on the SKU Regional read already in flight',
   '01_router.gs': 'FB-4E-R2 dispatch + FB-4E-R3 overseas action',
   '63_api_v1_system_health.gs': 'FB-4E-R2 registry entries + FB-4E-R3 contract 9',
   '68_api_v1_execution_plan_conflict_diagnostic.gs': 'FB-4E-R2 routed-path scope guard',

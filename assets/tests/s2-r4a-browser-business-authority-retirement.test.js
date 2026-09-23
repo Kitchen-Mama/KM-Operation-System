@@ -320,8 +320,14 @@ section('H · §6 — no new request, timeout, retry or listener');
       kmdb: (src.match(/KM\.DB\.[a-zA-Z]+\s*\(/g) || []).length
     };
   }
-  var FILES = ['assets/js/utils/sku-overrides.js', 'assets/js/utils/data.js',
-    'assets/js/api/operation-system-db-api.js'];
+  // The two files this round RETIRED: compared live, forever. Re-adding a request to either is a
+  // regression of the retirement itself, whoever does it and whenever.
+  var FILES = ['assets/js/utils/sku-overrides.js', 'assets/js/utils/data.js'];
+  // The SHARED module: compared at the retirement commit. S2-R4A's claim was that ITS edit to the
+  // db-api — a label change marking the image override inert — added nothing; that stays checkable
+  // forever against e6efd1f, and does not become false when a later round adds a writer to the same file.
+  var SHARED = 'assets/js/api/operation-system-db-api.js';
+  var SHARED_AT = 'e6efd1f';
   var gitOK = true, pre = {};
   FILES.forEach(function (f) {
     try {
@@ -340,6 +346,14 @@ section('H · §6 — no new request, timeout, retry or listener');
         if (b[k] > a[k]) drift.push(f.split('/').pop() + '.' + k + ': ' + a[k] + ' -> ' + b[k]);
       });
     });
+    try {
+      var sa = countIn(pre[SHARED]);
+      var sb = countIn(cp.execFileSync('git', ['-C', REPO, 'show', SHARED_AT + ':' + SHARED],
+        { maxBuffer: 1 << 26 }).toString('utf8'));
+      Object.keys(sa).forEach(function (k) {
+        if (sb[k] > sa[k]) drift.push(SHARED.split('/').pop() + '@' + SHARED_AT + '.' + k + ': ' + sa[k] + ' -> ' + sb[k]);
+      });
+    } catch (e) { console.log('   (the retirement commit is unreachable — the shared-module half is skipped)'); }
     eq(drift, [], 'H1  no changed file gained a request, timeout, interval, listener or DB call', drift);
 
     // Anti-vacuity: the counter must actually be looking at something.

@@ -562,11 +562,17 @@ ok(/'productPricing\.siteUniverse\.get':\s+handleProductPricingSiteUniverseGet_/
   'K1 the action is in the GET read table');
 ok(/action === 'productPricing\.siteUniverse\.get'[\s\S]{0,400}?handleProductPricingSiteUniverseGet_/
   .test(ROUTER), 'K2 and dispatches to the SAME handler on doPost — one contract, not two');
-eq(Number(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(HEALTH)[1]), 14,
-  'K3 the deployed action contract moved, because a router ACTION was added');
-eq(Number(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+)/
-  .exec(read('assets/js/api/operation-system-db-api.js'))[1]), 14,
-  'K4 and the client pin moved with it, so an un-synced deployment fails closed BY VERSION');
+// PRICING-R2 — these two were `=== 14`, and both went red when a later round added pricing.update and took
+// the contract to 15. What B6 asserts is not the number 14: it is that adding a router ACTION MOVES the
+// contract (13 -> 14 here), and that the client pin moves WITH it so an un-synced deployment fails closed by
+// version rather than by a confusing runtime error. Both halves survive a later bump; the literal did not.
+var _b6Contract = Number(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(HEALTH)[1]);
+var _b6Pin = Number(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+)/
+  .exec(read('assets/js/api/operation-system-db-api.js'))[1]);
+ok(_b6Contract >= 14,
+  'K3 the deployed action contract moved when this round added a router ACTION, and has never gone back (v' + _b6Contract + ')');
+eq(_b6Pin, _b6Contract,
+  'K4 and the client pin moves WITH it, so an un-synced deployment fails closed BY VERSION');
 eq(ACC.SITE_UNIVERSE_ACTION, 'productPricing.siteUniverse.get', 'K5 the accessor names the same action');
 eq(ACC.contract.actions.length, 2, 'K6 ONE accessor module owns both actions');
 ok(bare(ACC_SRC).indexOf('google.script.run') < 0, 'K7 and still never touches google.script.run');

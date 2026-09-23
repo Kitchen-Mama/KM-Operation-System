@@ -630,7 +630,15 @@ function world(opts) {
     // four DataRepo methods over it, one of which was named updateShippingPlanStatus — the same name as
     // the CANONICAL writer. A browser left on the old copy keeps a DataRepo that still answers to that
     // name over localStorage, which is the one residue this round exists to remove.
-    eq(toks[APP], 40, 'J1  the application token is on all 40 references', toks);
+    // PRICING-R2 — the COUNT goes, and _release-order.js says why in its own words: appTokenRefCount is
+    // "Reported, never pinned — a round that adds an asset moves this number, and that is not a defect."
+    // R21 adds sku-regional-pricing.js and rotates the SKU Regional page and its stylesheet, so the count
+    // moved again. What must hold is that NO member of the set was left behind on an older application
+    // token, which is answerable and is what this line now asks. The specific members this suite cares
+    // about are asserted by name immediately below, where leaving one behind still fails.
+    eq(require('./_release-order.js').staleAppTokenRefs(INDEX), [],
+      'J1  no asset is left behind on an older application token', toks);
+    ok(toks[APP] >= 40, 'J1a and the co-deployed set has not shrunk (' + toks[APP] + ' references)');
     ['stagedhydration-r3r1-20260920', 'statuscard-r2ba2r5f6-20260919',
      'trseamrepair-r2ba2r5f5f1-20260919',
      'tgtrehydrate-r2ba2r5f5-20260919', 'fcroutemount-bootfcr2f1-20260919'].forEach(function (t, i2) {

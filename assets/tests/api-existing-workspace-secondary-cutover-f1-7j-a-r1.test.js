@@ -85,7 +85,7 @@ var rawTables = {
 };
 
 // eval the ACTUAL db-api normalizers (adapter + legacy getters both use these) + helper deps.
-eval(['_whBool', 'normalizeSkuDetailsRecord', 'normalizeTaxReferralRateRecord', 'normalizeTaxRateComponentRecord', 'normalizeMarketplaceSkuRecord', 'normalizeSkuRegionalDetailRecord',
+eval(['_whBool', 'normalizeSkuDetailsRecord', 'normalizeTaxReferralRateRecord', 'normalizeTaxRateComponentRecord', 'normalizeMarketplaceSkuRecord', 'normalizeSkuRegionalDetailRecord', 'normalizePricingListRecord', 'pricingNumOrNull_', 'pricingFlagOrNull_', 'pricingIsNa_',
   'normalizePurchaseOrderRecord', 'normalizePurchaseOrderLineRecord', 'normalizeWarehouseRecord', 'normalizeMarketplaceRecord']
   .map(function (n) { return extractFn(DBAPI, n); }).join('\n'));
 // eval the ACTUAL adapters (assign window.KM.DB.adapt*Workspace)
@@ -164,7 +164,13 @@ ok(mlWs.length === 2 && mlWs.map(function (e) { return e.sku; }).sort().join(','
 ok(taxWs.row && taxWs.row.taxRateId === 'T1' && compsWs.length === 1, 'F: tax resolves T1 (Pro→US) with 1 component — join intact');
 
 console.log('\n== F · SKU Regional source: canonical uses workspace + include.regional; fail-closed; write unchanged ==');
-ok(/getWorkspace\('skuDetails',\s*\{\s*include:\s*\{\s*regional:\s*true\s*\}\s*\}\)/.test(SRD_JS), 'F: canonical read calls getWorkspace(skuDetails,{include:{regional:true}})');
+// PRICING-R2 — RESTATED. This pinned the include object as EXACTLY `{ regional: true }`, which said
+// "the page asks for the regional tables" by saying "the page asks for nothing else". Those are the same
+// sentence only until a later round adds a second bounded include, and PRICING-R2 does: the SKU Regional
+// price panel needs pricing_list, and one more INCLUDE-GATED table on the call already in flight is
+// strictly better than a second request or a return to the broad cache. The pattern below still fails if
+// the action changes, if include.regional is dropped, or if the page stops calling getWorkspace at all.
+ok(/getWorkspace\('skuDetails',\s*\{\s*include:\s*\{[^}]*\bregional:\s*true\b/.test(SRD_JS), 'F: canonical read calls getWorkspace(skuDetails, include.regional)');
 ok(/_srdEffectiveWorkspace/.test(SRD_JS) && /workspaceApiActive\('skuDetails'\)/.test(SRD_JS), 'F: gated on workspaceApiActive(skuDetails)');
 ok(/_srdRenderError_/.test(SRD_JS) && /NEVER fall back to the broad cache/.test(SRD_JS), 'F: fail-closed error path present (no silent broad fallback)');
 ok(/upsertSkuRegionalDetail\(payload\)/.test(SRD_JS), 'K: write path (upsertSkuRegionalDetail) UNCHANGED');

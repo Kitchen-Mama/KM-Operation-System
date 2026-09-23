@@ -2,7 +2,7 @@
 
 > **Round:** P1-B8D-R8 §9. **READ-ONLY CENSUS. No page runtime outside Product Strategy was modified.**
 > **Repo:** `Operation System` · **Branch:** `feature/product-strategy-board-p0` · **PRE HEAD:** `d7a6061`.
-> **Scope:** the scripts `index.html` actually loads, in load order — **LOADED_SCRIPTS: 81**
+> **Scope:** the scripts `index.html` actually loads, in load order — **LOADED_SCRIPTS: 82**
 > (78 when this census was taken at R8; the one that moved it is named in §1). That number is
 > re-counted from `index.html` by `product-strategy-corrections-p1-b8d-r9.test.js` §F, so it cannot
 > drift from the file it describes. A file nothing loads is not a

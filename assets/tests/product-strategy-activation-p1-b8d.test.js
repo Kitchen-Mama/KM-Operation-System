@@ -519,13 +519,26 @@ eq((SRC.health.match(/symbol: 'SYS_BUILD_VERSION_', expected: '([^']+)'/) || [])
 /* AND NOTHING ELSE MOVED, WHICH IS THE OTHER HALF OF A SYNC LIST. Re-pasting an unchanged file is
    how an unrelated edit reaches production by accident, so a stamp that did NOT move is an
    instruction too. */
-[['72_api_v1_product_pricing_workspace.gs', 'PPW_BUILD_VERSION_', PREV_RELEASE],
- ['01_router.gs', 'RTR_BUILD_VERSION_', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9']].forEach(function (m, i) {
-  ok(SRC.health.indexOf("symbol: '" + m[1] + "', expected: '" + m[2] + "'") > 0,
-    'G3.' + (i + 1) + ' ' + m[0] + ' did not change, so its stamp stayed at ' + m[2].slice(-3));
-});
-ok(SRC.router.indexOf("RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9'") > 0,
-  'G3a the router is NOT marched to the release — no action contract changed, and a flag is not a contract');
+// PRICING-R2 — 72_ keeps its literal, because the pricing READ owner really has not moved since: R21
+// adds a WRITER, and a writer is not a reader. 01_ loses its literal, because R21 routed pricing.update
+// and a router that gains an action MUST move its stamp — a router that gained one and kept its stamp is
+// the one partial sync the manifest cannot otherwise report.
+ok(SRC.health.indexOf("symbol: 'PPW_BUILD_VERSION_', expected: '" + PREV_RELEASE + "'") > 0,
+  'G3.1 72_api_v1_product_pricing_workspace.gs did not change, so its stamp stayed at ' + PREV_RELEASE.slice(-3));
+var _b8dRtr = (SRC.router.match(/var RTR_BUILD_VERSION_ = '([^']+)'/) || [])[1];
+ok(!!_b8dRtr && SRC.health.indexOf("symbol: 'RTR_BUILD_VERSION_', expected: '" + _b8dRtr + "'") > 0,
+  'G3.2 01_router.gs declares exactly the build its manifest expects (' + _b8dRtr + ')');
+/* G3a — RESTATED AS THE RULE IT NAMES: "a flag is not a contract". That was expressed as the router
+   still sitting on R9, which said it by saying the router had never changed at all — true until a round
+   routed something, which PRICING-R2 did. The durable statement is that ACTIVATION itself touched no
+   route: the feature flag lives in 00_config and the router does not mention it, so no amount of
+   flipping it can add or remove an action. */
+ok(bare(SRC.router).indexOf('PRODUCT_STRATEGY_ENABLED_') < 0,
+  'G3a the router never READS the activation flag — a flag cannot add or remove a route');
+ok(SRC.router.indexOf('PRODUCT_STRATEGY_ENABLED_') > 0,
+  'G3a0 (it names it only in prose, explaining which handler is gated on it — measured with comments out)');
+ok(SRC.config.indexOf('PRODUCT_STRATEGY_ENABLED_') > 0,
+  'G3a1 the flag lives in 00_config, which is where activation happens');
 
 /* THE ACTION CONTRACT DID NOT MOVE. Bumping it would tell every deployed client to re-check a
    vocabulary that is byte-identical to the one it already has. */
@@ -533,8 +546,14 @@ var contractDiff = cp.execFileSync('git', ['diff', '--unified=0', 'a3889c2', '--
   'assets/specs/active/apps-script/63_api_v1_system_health.gs'], { cwd: ROOT, encoding: 'utf8' });
 ok(!/^[+-].*SYS_ACTION_CONTRACT_VERSION_/m.test(contractDiff),
   'G4  the action contract version is untouched by this round');
-ok(!/^[+-].*SYS_REQUIRED_ACTION/m.test(contractDiff),
-  'G4a and so is the required-action list');
+/* G4a — RESTATED. It diffed 63_ against B8D's own base and required no SYS_REQUIRED_ACTION line to have
+   moved, which measures every round since rather than this one. What B8D claims is that ACTIVATION adds
+   no action a page depends on — and that is answerable from the registry itself, permanently: the
+   registry is the list of actions PAGES depend on, and no productPricing action is in it, because
+   activation gave no page a new call to make. */
+var _b8dReg = (/var SYS_REQUIRED_ACTIONS_ = \[[\s\S]*?\n\];/.exec(SRC.health) || [''])[0];
+eq((_b8dReg.match(/action: 'productPricing\./g) || []).length, 0,
+  'G4a and the required-action list gained nothing from activation — no page depends on a productPricing action');
 
 /* THE MANIFEST AND THE SCOPES. Activation must not widen what the deployment may do. */
 var manifestDiff = cp.execFileSync('git', ['diff', '--name-only', 'a3889c2', '--',
@@ -675,8 +694,14 @@ ok(SRC.index.indexOf('productstrategy-p1b8b-20260912') < 0,
 // four DataRepo methods over it, one of which was named updateShippingPlanStatus — the same name as
 // the CANONICAL writer. A browser left on the old copy keeps a DataRepo that still answers to that
 // name over localStorage, which is the one residue this round exists to remove.
-eq(REL.appTokenRefCount(SRC.index), 40,
-  'H6  forty references share it — the application set, Product Strategy, the FC Summary stylesheet, the Home module, the canonical planning-demand resolver, the forecast-share normalizer and the shared data module, now one co-deployed set');
+// PRICING-R2 — the COUNT goes, and _release-order.js says why in its own words: appTokenRefCount is
+// "Reported, never pinned — a round that adds an asset moves this number, and that is not a defect."
+// R21 adds sku-regional-pricing.js and rotates the SKU Regional page and its stylesheet onto the set.
+// The rule is that no member was LEFT BEHIND, which is what staleAppTokenRefs answers and what H6 now asks.
+eq(REL.staleAppTokenRefs(SRC.index), [],
+  'H6  no member of the co-deployed set is left behind on an older application token');
+ok(REL.appTokenRefCount(SRC.index) >= 40,
+  'H6a and the set has not shrunk (' + REL.appTokenRefCount(SRC.index) + ' references)');
 
 /* LOAD ORDER. The board reads the policy through sku-overrides, and app.js builds its menu from
    PSB_VIEWS; both must already be defined when their reader runs. */
@@ -1036,10 +1061,16 @@ mut('K14 appsscript.json gains an OAuth scope — G5', function () {
   return m.indexOf('auth/drive') > 0 && SRC.manifest.indexOf('auth/drive') < 0;
 });
 
-mut('K15 the router is marched to the release although no route changed — G3a', function () {
-  var m = swapIn(SRC.router, "RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9'",
-    "RTR_BUILD_VERSION_ = '" + RELEASE + "'");
-  return m.indexOf("RTR_BUILD_VERSION_ = '" + RELEASE + "'") > 0;
+/* K15 — REPOINTED WITH G3a, and it needed to be: its anchor was the R9 literal, so once PRICING-R2
+   moved the router the mutant matched nothing and injected nothing — the one mutation-testing failure
+   that reports the wrong colour. The fault G3a now defends against is the flag reaching the router at
+   all, which is what would make activation able to change the routed surface. */
+mut('K15 the activation flag is consulted inside the router — G3a', function () {
+  var m = swapIn(SRC.router, 'function doPost(e) {',
+    'function doPost(e) {\n  if (!PRODUCT_STRATEGY_ENABLED_) return;');
+  if (m === SRC.router) throw new Error('K15 anchor drifted — the mutant would inject nothing');
+  return bare(m).indexOf('PRODUCT_STRATEGY_ENABLED_') >= 0
+      && bare(SRC.router).indexOf('PRODUCT_STRATEGY_ENABLED_') < 0;
 });
 
 mut('K16 an external image host is added to the allowlist — the image gate reopens', function () {

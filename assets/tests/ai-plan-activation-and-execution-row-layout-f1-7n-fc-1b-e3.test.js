@@ -993,8 +993,12 @@ ok(new RegExp("\\{ file: '63_api_v1_system_health\\.gs', symbol: 'SYS_BUILD_VERS
   // "E3 adds no action", which was true of E3; the two versions that must still be UNCHANGED by anything
   // are the required-action LIST (the frontend's pinned set) and the TRANSPORT envelope.
   ok(Number(act) >= 11, 'E10 the deployed action contract is not below the version E3 required');
-  eq([lst, tr], ['12', '1'],
-    'E10-r and the required-action list and transport contract are UNCHANGED (§E.8)');
+  // PRICING-R2 — SPLIT. The two were asserted together as UNCHANGED, which was one claim about E3 and
+  // has become two different claims about the world. The TRANSPORT envelope really has not moved and the
+  // exact check stays; the required-action LIST is the frontend's pinned set, which a later round may add
+  // to — R21 routes pricing.update — and E3's claim about it survives as a floor.
+  ok(Number(lst) >= 12, 'E10-r the required-action list is not below the version E3 required (v' + lst + ')');
+  eq(tr, '1', 'E10-r2 and the TRANSPORT contract is UNCHANGED (§E.8) — no envelope field moved');
   ok(/weeklyAiPlan\.generate/.test(read('assets/specs/active/apps-script/01_router.gs')),
     'E10a because the action it activates has been routed since R6D1');
 })();

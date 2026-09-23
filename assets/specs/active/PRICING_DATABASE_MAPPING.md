@@ -4,7 +4,7 @@
 **Maintained By:** Development Team
 **Document Purpose:** Focused data-mapping spec for the Inventory Replenishment **Add SKU / Import SKU** flow — defining how a `marketplace_skus` row creates or updates `pricing_list`, `pricing_change_log`, and `fc_regular_forecast`.
 
-**Status:** Specification / Planning (not yet implemented)
+**Status:** Specification / Planning for the Add / Import flow; the **write and audit half is IMPLEMENTED** as of PRICING-R2 (see §4A / §5).
 **Source of Truth (architecture):** `SKU_MASTER_FLOW.md`
 
 ---
@@ -74,6 +74,7 @@ base_currency, base_regular_price, base_minimum_price, base_msrp,
 fx_rate, fx_rate_date,
 auto_regular_price, auto_minimum_price, auto_msrp,
 regular_price, minimum_price, msrp,
+regular_price_is_manual, minimum_price_is_manual, msrp_is_manual,
 price_source, price_status,
 created_by, created_at, updated_by, updated_at, note
 ```
@@ -94,9 +95,81 @@ created_by, created_at, updated_by, updated_at, note
 | `fx_rate`, `fx_rate_date` | Stored if FX conversion is used. |
 | `auto_regular_price`, `auto_minimum_price`, `auto_msrp` | System-calculated = `base_*` × `fx_rate`. |
 | `regular_price`, `minimum_price`, `msrp` | Final effective values. |
-| `price_source` | `auto_fx` (FX-generated) / `manual_override` (user-entered final) / `import` (imported directly). |
+| `regular_price_is_manual`, `minimum_price_is_manual`, `msrp_is_manual` | **PRICING-R2 §4A.** Field-level ownership. `TRUE` = the operator owns it and FX must preserve it; `FALSE` = the system owns it and it must equal the current auto value; **BLANK = nobody has said**, which is not `FALSE`. |
+| `price_source` | **LEGACY / DESCRIPTIVE ONLY since PRICING-R2.** `auto_fx` / `manual_override` / `import`. Kept in step by the writer, never consulted to decide who owns a field. |
 | `price_status` | Default `draft` or `active` — **default to be confirmed** (system convention unclear). |
 | `created_by`, `created_at`, `updated_by`, `updated_at`, `note` | Audit / freeform. |
+
+---
+
+## 4A. Field-Level Manual Price Authority (PRICING-R2)
+
+**Owner:** `73_api_v1_pricing_write.gs` · **Action:** `pricing.update` · **UI:** SKU Regional Details.
+
+### Why it is per FIELD
+
+`price_source` is ONE value for a WHOLE ROW. A row whose Regular was negotiated by a person and whose MSRP
+has never been anything but the converted base price has no honest value to put in it: pick
+`manual_override` and FX can never refresh the MSRP; pick `auto_fx` and the next refresh silently destroys
+the negotiated Regular. A row-level answer to a field-level question loses data either way. The three flags
+are **independent** — `regular_price_is_manual = TRUE` with `msrp_is_manual = FALSE` is valid and expected.
+
+### Three states, and the third one is the point
+
+| Flag | Meaning | FX reconciliation may… |
+|------|---------|------------------------|
+| `TRUE` | the operator owns this field | **never** touch it |
+| `FALSE` | the system owns it; it must equal the current auto value | refresh it |
+| *blank* | **NOBODY HAS SAID** | **never** touch it |
+
+Every `pricing_list` row alive today has blank flags, because the columns did not exist before PRICING-R2.
+Reading blank as `FALSE` would declare, in one deployment and with no operator ever asked, that the entire
+price book is system-owned and overwritable. That is the bulk classification PRICING-R2 §10 forbids, arriving
+disguised as a default — so blank is `UNKNOWN`, and it is counted rather than guessed.
+
+### The effective-price contract is UNCHANGED
+
+`regular_price` / `minimum_price` / `msrp` remain the values every consumer reads — FC Summary, Pricing
+Center, Product Strategy, the campaign snapshot. **No consumer reads `auto_*`, no consumer gains a fallback,
+and no consumer was cut over.** The flags decide who MAINTAINS the final three fields; they never sit between
+a reader and a price. The writer maintains the invariant:
+
+```
+if <field>_is_manual == FALSE:  <field> = auto_<field>
+if <field>_is_manual == TRUE :  <field> is preserved
+if <field>_is_manual is blank:  nothing is written
+```
+
+### Per-field modes accepted by `pricing.update` and by the template
+
+| Mode | Effect |
+|------|--------|
+| `NO_CHANGE` | nothing. **A blank mode cell is NO_CHANGE** — blank never means delete and never means AUTO. |
+| `MANUAL` | requires a finite, non-negative number. Sets the effective field and `*_is_manual = TRUE`. |
+| `AUTO` | **ignores any supplied value.** Sets `*_is_manual = FALSE` and restores the effective field from `auto_*`. |
+
+**Refused rather than guessed**, each refusal failing the ENTIRE batch before a cell is written: `MANUAL`
+with a blank or `NA` price; `AUTO` when `auto_*` is blank or `NA` (a value that does not exist cannot be
+restored, and writing 0 there would be a price); a manual price carrying more decimals than §11 allows its
+currency; a currency disagreeing with the row's own; an unknown `marketplace_sku_id`; the same identity
+twice in one file.
+
+### FX storage precision (frozen; applied by PRICING-R3, never used to round an operator's number)
+
+| Currency | Decimals |
+|----------|----------|
+| USD, CAD, EUR, GBP, AUD | 2 |
+| JPY, KRW, TWD | 0 |
+
+Mathematical precision only. **No .99 / .95 psychological pricing in FX conversion** — a price point is a
+commercial decision made per marketplace by a person, and burying one in a conversion would make every
+converted price a commercial claim nobody approved.
+
+### Provisioning
+
+Under RULE S0-2 the writer VALIDATES and fails closed; it never creates a sheet and never appends a column.
+The three flag columns and `pricing_change_log.change_type` are an **operator migration**. Until they exist,
+`pricing.update` refuses with `MISSING_REQUIRED_HEADER` having written nothing.
 
 ---
 
@@ -110,8 +183,21 @@ created_by, created_at, updated_by, updated_at, note
 ```
 log_id, pricing_id, field_name,
 old_value, new_value,
+change_type,
 changed_by, changed_at, change_reason
 ```
+
+`change_type` (PRICING-R2) is one of:
+
+| Value | Written when |
+|-------|--------------|
+| `MANUAL_SET` | a person set the field and took ownership of it |
+| `RETURN_TO_AUTO` | a person handed the field back to the system and it was restored from `auto_*` |
+| `AUTO_FX_REFRESH` | an FX reconciliation refreshed a system-owned field (PRICING-R3) |
+
+`change_reason` stays free text. Free text cannot be counted, filtered or relied on by a later round;
+`change_type` can. **This log is audit history, never runtime authority** — nothing infers ownership by
+scanning it, and the three flags on the row remain the only thing that decides who owns a field.
 
 ---
 

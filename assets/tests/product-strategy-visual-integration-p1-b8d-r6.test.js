@@ -229,6 +229,13 @@ var R6_PRE = 'c9429e6';
 // product-strategy-board.css may never appear on it — a leak into the page's OWN stylesheet is the one
 // thing this guard exists to catch and the list must never be able to excuse it.
 var PAGE_CSS_CHANGED_BY_LATER_ROUNDS = {
+  'assets/css/pages/sku-regional-details.css':
+    'PRICING-R2 - the site-pricing panel, the per-field price editor and the template-import dialog. ' +
+    'Rules APPENDED only, every one scoped to #sku-regional-details-section exactly as the rest of the ' +
+    'file is; nothing existing was edited. The three ownership badges (.srd-own--manual / --auto / ' +
+    '--unknown) are deliberately three different looks, because "nobody has said who owns this price" ' +
+    'must not read like "the system maintains it". Nothing here is scoped to .psb-page and no Product ' +
+    'Strategy selector was added, moved or removed.',
   'assets/css/pages/fc-overview.css':
     'FC-SUMMARY-R2B-A2-R3 - the FC Summary column width rules. They were scoped to ' +
     '#fc-summary-section rather than to a table, so the Regular tab 20-column plan (including a ' +
@@ -521,7 +528,16 @@ var R6_KNOWN_GS_CHANGES = ['assets/specs/active/apps-script/03_master_data_handl
   // carries the R19 release and 04_'s first manifest row. Product Strategy's read path is untouched:
   // no action was added or removed, no capability field changed, the feature flag is untouched, and
   // 72_ did not move. Declared here rather than loosening the check.
-  'assets/specs/active/apps-script/04_marketplace_forecast_import.gs'];
+  'assets/specs/active/apps-script/04_marketplace_forecast_import.gs',
+  // PRICING-R2 - the canonical pricing WRITE owner (new file), the router dispatch that reaches it, and
+  // one more include-gated table on the SKU Regional read. 63_ is already declared above and carries the
+  // R21 release, 73_'s manifest row and the action-contract bump a new action requires. Product
+  // Strategy's read path is untouched: 72_ did not move, no capability field changed, the feature flag is
+  // untouched, and no productPricing action was added or removed. Declared here rather than loosening
+  // the check, which is the whole point of the register.
+  'assets/specs/active/apps-script/73_api_v1_pricing_write.gs',
+  'assets/specs/active/apps-script/01_router.gs',
+  'assets/specs/active/apps-script/59_api_v1_sku_details_workspace.gs'];
 var gsChanged = changedSince(R6_PRE, 'assets/specs/active/apps-script');
 if (gsChanged !== '__git_unavailable__') {
   var unexpectedGs = gsChanged.split('\n').map(function (x) { return x.trim(); })

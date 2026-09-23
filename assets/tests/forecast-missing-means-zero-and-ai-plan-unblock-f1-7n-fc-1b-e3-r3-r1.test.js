@@ -428,7 +428,9 @@ section('§7 — EXECUTED: the health handler, with every .gs in one context');
   // subject is the forecast-normalization gate rather than the size of the action registry.
   ok(h.deployed_action_contract_version >= 11,
     'H7  §7 deployed_action_contract_version is not below 11');
-  eq(h.required_action_list_version, 12, 'H7a required_action_list_version = 12');
+  // PRICING-R2 — a FLOOR, for the reason H7 above gives: this suite's subject is the forecast
+  // normalization gate rather than the size of the action registry.
+  ok(h.required_action_list_version >= 12, 'H7a required_action_list_version is not below 12');
   eq(h.transport_contract_version, 1, 'H7b transport_contract_version = 1');
   eq(h.build_id, sys, 'H8  and the deployment build is 63_\'s own stamp');
   // KMFCN really is reachable from the Apps Script global scope.

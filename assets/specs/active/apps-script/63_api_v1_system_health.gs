@@ -187,7 +187,12 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 // UNDER the lock from a fresh read - which is what keeps two concurrent creates of one identity from both
 // appending. A project holding the R16 copy of 20_ still takes the global lock to answer a read, so the two
 // files must be synced together and a new deployment version cut.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R20';
+// R21 - PRICING-R2: the field-level manual price authority, its canonical writer, and the audit log. A NEW
+// FILE (73_) and a NEW ACTION, so a project holding R20 cannot serve pricing.update at all — and, because
+// R20 and R21 are two DIFFERENT trees, they may not both answer to one release id. That is the whole job of
+// the id. 04_ does NOT move: it still creates a pricing row exactly as it did, and its stamp records the
+// round it last changed rather than the round it was last correct in.
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R21';
 // 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
 // R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
 // not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
@@ -216,7 +221,10 @@ var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R20';
 // that answers a narrower slice of the same action is not a new vocabulary either.
 // R17 - moved because THIS FILE changed: the release above, and 20_'s expected stamp and ownership row
 // below. No action was added or removed and the transport contract is untouched.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R20';
+// R21 - moved because THIS FILE changed: the release above, 73_'s new manifest row and registry entry
+// below, this file's own expected stamp, and the ACTION CONTRACT — which moves this time, unlike the last
+// several rounds, because an action was genuinely added to the vocabulary.
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R21';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -274,7 +282,11 @@ var SYS_TRANSPORT_CONTRACT_VERSION_ = 1;
 // move either: SYS_REQUIRED_ACTIONS_ is the list of actions PAGES depend on, and no page depends on
 // this one yet - the same reason productPricing.workspace.get waited, and createShipmentFromPlan
 // before it.
-var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 14;
+// PRICING-R2: 14 -> 15. SYS_REQUIRED_ACTIONS_ gained pricing.update, which is a genuinely NEW vocabulary
+// entry rather than a changed response shape: a deployment that predates it cannot serve the action at all,
+// and the SKU Regional Details price editor fails closed against it rather than writing through some other
+// path. This is the case the number exists for.
+var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 15;
 // Incremented when SYS_REQUIRED_ACTIONS_ changes, so a caller can tell a "nothing missing" answer from an
 // OLD list apart from a "nothing missing" answer from the CURRENT list.
 // F1-7N-FB-4E-R2: 7 -> 8. SYS_REQUIRED_ACTIONS_ gained four entries, and the whole purpose of this number is
@@ -296,7 +308,8 @@ var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 14;
 // Execution Commit failed, and a deployment missing it must be a named deployment fact rather than a Retry
 // button that does nothing.
 // F1-7N-FC-1A-R1: 11 -> 12. SYS_REQUIRED_ACTIONS_ gained cancelShipmentDraft.
-var SYS_REQUIRED_ACTION_LIST_VERSION_ = 12;
+// PRICING-R2: 12 -> 13. SYS_REQUIRED_ACTIONS_ gained pricing.update.
+var SYS_REQUIRED_ACTION_LIST_VERSION_ = 13;
 
 // The router actions the affected pages depend on. A partial Apps Script sync is the one failure mode that
 // looks like a transport fault from the browser, so availability is reported per action by probing the handler
@@ -392,7 +405,14 @@ var SYS_REQUIRED_ACTIONS_ = [
   // F1-7N-FB-4E-R3 §C — the Overseas Stock scoped read. Registered in the SAME change that routes it, because
   // R2 exists precisely because an action was routed without being registered and the probe then reported a
   // deployment missing something it was serving.
-  { action: 'overseasStock.workspace.get', handler: 'handleOverseasStockWorkspaceGet_', used_by: 'Overseas Inventory scoped read (owner = 70_)' }
+  { action: 'overseasStock.workspace.get', handler: 'handleOverseasStockWorkspaceGet_', used_by: 'Overseas Inventory scoped read (owner = 70_)' },
+  // PRICING-R2 — THE CANONICAL PRICING WRITE. SKU Regional Details is the primary site-price UI and every
+  // price edit and every template import it performs goes through this one action, so a deployment that
+  // carries the R21 router but not 73_ turns each of them into a save that appears to do nothing. That is
+  // exactly the partial sync this registry exists to name, and it is worse for a WRITE than for a read: a
+  // read that fails is visibly empty, whereas a price that did not save looks identical to one that did
+  // until someone reloads the page.
+  { action: 'pricing.update', handler: 'handlePricingUpdate_', used_by: 'SKU Regional Details — per-field price editor + price template import (owner = 73_)' }
 ];
 
 // The tables the Submit-to-Map vertical slice reads or writes. Reported as present/row-count only.
@@ -449,7 +469,15 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R20', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R21', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  // PRICING-R2 — 73_ IS REQUIRED FROM ITS FIRST RELEASE, AND DELIBERATELY NOT OPTIONAL, for the reason a
+  // WRITE owner is always the worst partial sync: 01_router.gs dispatches pricing.update to
+  // handlePricingUpdate_, so a deployment carrying the router without this file routes a live price write
+  // to an undefined handler. There is no flag axis to soften it — this action has no feature flag, because
+  // its real gate is physical: the three ownership columns are an operator migration, and until they exist
+  // the handler refuses with MISSING_REQUIRED_HEADER having written nothing. A missing COLUMN is recoverable
+  // by provisioning it; a missing FILE needs a sync, and only this manifest can tell the operator which.
+  { file: '73_api_v1_pricing_write.gs', symbol: 'PRW_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R21', owns: 'the canonical pricing write: field-level manual ownership (three-state, blank = UNKNOWN), the per-field MANUAL / USE AUTO / NO_CHANGE contract, batch validation with zero writes until every line passes, the pricing_change_log audit writer with typed change_type, and the frozen FX storage-precision table' },
   // FC-SUMMARY-R3-R1 §B — THE FC SUMMARY READ OWNER HAD NO ROW, AND ITS ABSENCE WAS SILENT.
   //
   // 58_ answers every primary render of the FC Summary page, and until now a project holding last round's
@@ -564,7 +592,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   { file: '22_shipment_dispatch_handlers.gs', symbol: 'CSD_BUILD_VERSION_', expected: 'F1-7N-FC-1A-R1', owns: 'Confirm Shipment & Dispatch: deduction + reservation release through the shared authority + the cancelled-shipment dispatch refusal' },
   // F1-7N-FB-4E-R4B-R3 §1 - moved with the file. R4B-R2 changed the GET read dispatch; leaving the manifest at
   // R4A1 would have made a CORRECTLY synced router report as stale, and an UNSYNCED one report as current.
-  { file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R9', owns: 'doGet/doPost action routing (incl. the GET read table + cancelShipmentDraft) + typed handler/method response identity + the R6-R5 per-execution entry stamp handlers report as server evidence' },
+  { file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R21', owns: 'doGet/doPost action routing (incl. the GET read table + cancelShipmentDraft) + typed handler/method response identity + the R6-R5 per-execution entry stamp handlers report as server evidence' },
   // F1-7N-FB-4E-R4B-R3 §1 - THE TWO OWNERS THAT CHANGED IN R4B AND HAD NO STAMP AT ALL. Both answer every one of
   // their actions when a round behind, so a resolvable action list can never see a partial sync of them; only a
   // declared build can. The stamp VALUE names the round in which each last changed BEHAVIOURALLY; the SYMBOL was
@@ -572,7 +600,10 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // weaker one, and the reason the value is not bumped to R3 just to look current.
   { file: '47_api_v1_recommendation_generation.gs', symbol: 'RECGEN_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R4B-R2', owns: 'recommendation generation + the bounded multi-scope order-draft readback' },
   { file: '56_api_v1_ai_plan_first_layer.gs', symbol: 'APL_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R4B-R1', owns: 'Order Planning AI Plan first layer + the KMFSA factory site-allocation share' },
-  { file: '59_api_v1_sku_details_workspace.gs', symbol: 'SKD_BUILD_VERSION_', expected: 'F1-7N-FB-4C-R1', owns: 'SKU Details / SKU Regional scoped read workspace' },
+  // PRICING-R2 — 59_ moves because it gained the include.pricing table. A deployment holding the FB-4C-R1
+  // copy answers skuDetails.workspace.get perfectly and returns no prices, so the SKU Regional price panel
+  // renders empty with nothing anywhere saying why. An action list cannot see this: no action was added.
+  { file: '59_api_v1_sku_details_workspace.gs', symbol: 'SKD_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R21', owns: 'SKU Details / SKU Regional scoped read workspace, incl. the include.pricing site-price table' },
   // F1-7N-FB-4G-A2-R4 SS.J - the Request Order Send diagnostic STATUS ACTION is required in production, so its
   // owner may not be a file whose whole contract is that it gets deleted. It moved into 66_, and the manifest
   // follows it: a deployment is now complete WITHOUT the TEMP diagnostics file, which is what makes

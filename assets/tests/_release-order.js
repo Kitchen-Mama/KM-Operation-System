@@ -1030,7 +1030,24 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   //
   // A PROJECT HOLDING THE R17 COPY OF 20_ STILL CANNOT SAVE A 90-SKU EVENT, so the sync is not
   // optional. 14_ did not change and keeps R18; 04_ did not change and keeps R19.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R20'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R20',
+  // R21 - PRICING-R2: the field-level manual price authority. A NEW OWNER FILE (73_) and a NEW ACTION
+  // (pricing.update), which is why this one moves the ACTION CONTRACT as well as the release — the last
+  // several rounds deliberately did not, because none of them changed the vocabulary.
+  //
+  // The defect it closes is a schema one rather than a missing endpoint. pricing_list could say who owned
+  // a ROW (price_source) and never who owned a FIELD, so a row whose Regular was negotiated and whose MSRP
+  // has only ever been the converted base price had no honest value to put there: pick manual_override and
+  // FX can never refresh the MSRP, pick auto_fx and the next refresh destroys the negotiated Regular. The
+  // three *_is_manual flags answer it per field, and BLANK is a third state (UNKNOWN) rather than false —
+  // every row alive today has a blank flag, and reading those as false would classify the whole price book
+  // as system-owned in one deployment, with no operator ever asked.
+  //
+  // 01_ moves with it (the dispatch) and 63_ moves with it (the release, the registry entry, the manifest
+  // row, its own stamp and the action contract). 72_ does NOT move: the read owner is untouched and still
+  // publishes the same effective prices. 04_ does NOT move: it still creates a pricing row exactly as it
+  // did. APPEND-ONLY, at the end - stampAtOrAfter compares INDEXES.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R21'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

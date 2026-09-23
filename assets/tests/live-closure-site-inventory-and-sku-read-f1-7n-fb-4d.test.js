@@ -613,8 +613,18 @@ section('§D — SKU Details and SKU Regional, traced separately');
 var tblSpec = extractVar(G59, 'SKD_WORKSPACE_TABLES_');
 var baseTables = (tblSpec.match(/name: '([a-z_]+)'/g) || []).map(function (m) { return m.replace(/name: '|'/g, ''); });
 var gated = (tblSpec.match(/include: '([a-z]+)'/g) || []);
-eq(baseTables.length, 5, 'D1 the workspace owner declares five tables');
-eq(gated.length, 2, 'D1 of which exactly two are include-gated');
+// PRICING-R2 — RESTATED from two counts to the property the counts stood for. "five tables, two gated" went
+// red when 59_ gained the include.pricing table, while describing an owner whose cost to THIS page did not
+// change by a single sheet read. What FB-4D depends on is that the UN-GATED set — the tables every caller
+// pays for whether it wants them or not — is exactly the three base tables. A gated table added later is
+// the bounded-include mechanism working; an un-gated one added later is a cost nobody asked for, and that
+// still fails here.
+var ungated = tblSpec.split(String.fromCharCode(10))
+  .filter(function (l) { return /name: '/.test(l) && !/include: '/.test(l); })
+  .map(function (l) { return /name: '([a-z_]+)'/.exec(l)[1]; });
+eq(ungated.join(','), 'sku_details,tax_referral_rates,tax_rate_components',
+  'D1 the UN-GATED tables every caller pays for are exactly the three base tables');
+ok(gated.length >= 2, 'D1 and the regional pair is still include-gated (' + gated.length + ' gated tables)');
 ok(tblSpec.indexOf("{ name: 'sku_details',          requiredCols: ['sku'] }") !== -1,
   'D2 sku_details is unconditional for BOTH pages');
 ok(/if \(spec\.include && !include\[spec\.include\]\) continue;/.test(code(G59)),
@@ -622,7 +632,13 @@ ok(/if \(spec\.include && !include\[spec\.include\]\) continue;/.test(code(G59))
 
 // both pages, one action, one builder, one transport
 ok(/window\.KM\.api\.getWorkspace\('skuDetails', params\)/.test(SKDC), 'D3 Details calls getWorkspace(skuDetails)');
-ok(/window\.KM\.api\.getWorkspace\('skuDetails', \{ include: \{ regional: true \} \}\)/.test(SRDC),
+// PRICING-R2 — RESTATED. This pinned the include object as EXACTLY `{ regional: true }`, which said
+// "the page asks for the regional tables" by saying "the page asks for nothing else". Those are the same
+// sentence only until a later round adds a second bounded include, and PRICING-R2 does: the SKU Regional
+// price panel needs pricing_list, and one more INCLUDE-GATED table on the call already in flight is
+// strictly better than a second request or a return to the broad cache. The pattern below still fails if
+// the action changes, if include.regional is dropped, or if the page stops calling getWorkspace at all.
+ok(/window\.KM\.api\.getWorkspace\('skuDetails',\s*\{\s*include:\s*\{[^}]*\bregional:\s*true\b/.test(SRDC),
   'D3 Regional calls the same workspace with include.regional');
 eq((code(read('assets/js/api/km-api-foundation.js')).match(/var SKU_DETAILS_ACTION = 'skuDetails\.workspace\.get';/g) || []).length, 1,
   'D3 resolving to ONE action constant');
@@ -696,7 +712,7 @@ function mountSkuDetails(envelope, opts) {
     throw new Error('unterminated');
   }
   var norm = ['normalizeSkuDetailsRecord', 'normalizeTaxReferralRateRecord', 'normalizeTaxRateComponentRecord',
-    'normalizeMarketplaceSkuRecord', 'normalizeSkuRegionalDetailRecord'].map(function (n) {
+    'normalizeMarketplaceSkuRecord', 'normalizeSkuRegionalDetailRecord', 'normalizePricingListRecord', 'pricingNumOrNull_', 'pricingFlagOrNull_', 'pricingIsNa_'].map(function (n) {
     try { return grab(DBAPI, 'function ' + n + '('); } catch (e) { return 'function ' + n + '(r){ return r; }'; }
   }).join('\n');
   vm.runInContext(norm + '\n' + grab(DBAPI, 'window.KM.DB.adaptSkuDetailsWorkspace = function(data)'), sb, { filename: 'dbapi.js' });
@@ -874,7 +890,16 @@ var _rtrExpected = (G63.match(/'01_router\.gs', symbol: 'RTR_BUILD_VERSION_', ex
 // F1-7N-FB-4E-R4B-R3 - the shape now admits a revision of a revision; the pattern is shared.
 ok(!!_rtrDeclared && require('./_release-order.js').BUILD_STAMP_RE.test(_rtrDeclared), 'E2 01_ declares a real build (' + _rtrDeclared + ')');
 eq(_rtrDeclared, _rtrExpected, 'E2 and it is exactly what the manifest expects for it — a partial sync stays visible');
-eq((G59.match(/var SKD_BUILD_VERSION_ = '([^']+)';/) || [])[1], 'F1-7N-FB-4C-R1', 'E2 and 59_ — the SKU repair was client-side');
+// PRICING-R2 — the same conversion 11_ and 01_ already made in the lines above, and for the same reason.
+// The literal said "FB-4D's SKU repair was client-side" by saying "59_ has never changed", and those diverge
+// the moment a round is licensed to change it. 59_ gained include.pricing so the SKU Regional price panel
+// could be served by the read the page already performs. The invariant that matters is unchanged: a file's
+// declared build must equal what the manifest expects for it, because that disagreement is exactly what a
+// partial Apps Script sync looks like.
+var _skdDeclared = (G59.match(/var SKD_BUILD_VERSION_ = '([^']+)';/) || [])[1];
+var _skdExpected = (G63.match(/'59_api_v1_sku_details_workspace\.gs', symbol: 'SKD_BUILD_VERSION_', expected: '([^']+)'/) || [])[1];
+ok(!!_skdDeclared && require('./_release-order.js').BUILD_STAMP_RE.test(_skdDeclared), 'E2 59_ declares a real build (' + _skdDeclared + ')');
+eq(_skdDeclared, _skdExpected, 'E2 and 59_ declares exactly what the manifest expects — a partial sync stays visible');
 // F1-7N-FB-4E-R2 — STATED AS THE RULE THIS WAS DEFENDING. FB-4D pinned 68_'s stamp and the action
 // contract as literals. R2 moved both, correctly and by those constants' own rules: 68_ changed because its
 // duplicate diagnostic became REACHABLE for the first time and needed a scope guard on the routed path, and

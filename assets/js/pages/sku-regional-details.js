@@ -43,6 +43,8 @@
     var _srdSaving = false;
     var _srdSearchTimer = null;
     var _srdMktIndex = null;    // composite → [marketplace_skus records]
+    var _srdEditPricing = null; // PRICING-R2: the resolved pricing row the open editor may write, or null
+    var _srdImportLines = null; // PRICING-R2: the lines a PREVIEWED import would write, or null
     var _srdMasterIndex = null; // sku → sku_details record
 
     function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
@@ -102,6 +104,20 @@
         if (_srdReadModel) return _srdReadModel.marketplaceSkus || [];
         return (window.KM.DB.getMarketplaceSkus && window.KM.DB.getMarketplaceSkus()) || [];
     }
+    // Site prices. Workspace mode reads the scoped DTO; Legacy reads the broad-cache getter unchanged.
+    function _srdGetPricing() {
+        if (_srdReadModel) return _srdReadModel.pricingList || [];
+        return (window.KM.DB.getPricingList && window.KM.DB.getPricingList()) || [];
+    }
+    function _srdPricingApi() { return (window.KM && window.KM.SkuRegionalPricing) || null; }
+    // The pricing row for ONE regional record, resolved through its marketplace_skus row on all four parts
+    // of the business identity. Never a first-row fallback: an ambiguous link reports itself.
+    function _srdResolvePricing(r) {
+        var P = _srdPricingApi();
+        if (!P) return null;
+        return P.resolveFor(r, _srdGetMktSkus(), _srdGetPricing());
+    }
+
     function _srdGetTaxRates() {
         if (_srdReadModel) return _srdReadModel.taxReferralRates || [];
         return (window.KM.DB.getTaxReferralRates && window.KM.DB.getTaxReferralRates()) || [];
@@ -167,7 +183,10 @@
         if (!(window.KM && window.KM.api && typeof window.KM.api.getWorkspace === 'function')) {
             return Promise.reject({ code: 'WORKSPACE_UNAVAILABLE', message: 'SKU Details Workspace API unavailable.' });
         }
-        return Promise.resolve(window.KM.api.getWorkspace('skuDetails', { include: { regional: true } })).then(function (env) {
+        // PRICING-R2 — include.pricing rides the read this page ALREADY performs. A second request for the
+        // prices would double the page's cold-start cost, and the broad Operation DB cache is the thing this
+        // page deliberately stopped depending on; an un-requested include costs nothing server-side.
+        return Promise.resolve(window.KM.api.getWorkspace('skuDetails', { include: { regional: true, pricing: true } })).then(function (env) {
             if (mySeq !== _srdReadSeq) return _srdReadModel;   // a newer read superseded this one
             if (env && env.success && env.data) {
                 _srdReadModel = window.KM.DB.adaptSkuDetailsWorkspace(env.data);
@@ -461,7 +480,8 @@
                 fieldRow('Site SKU', r.siteSku) + fieldRow(pidLabel, r.marketplaceProductId) + fieldRow('Product URL', r.productUrl, true) +
                 fieldRow('Language', r.language) + fieldRow('Operational Status', statusText(st)) +
                 (st.launchDate ? fieldRow('Launch Date', st.launchDate) : '') +
-                (st.kind === 'ambiguous' ? '<div class="srd-taxwarn">Multiple marketplace_skus rows match this identity — operational status is ambiguous and not shown. Resolve the duplicate linkage.</div>' : '') + editBtn;
+                (st.kind === 'ambiguous' ? '<div class="srd-taxwarn">Multiple marketplace_skus rows match this identity — operational status is ambiguous and not shown. Resolve the duplicate linkage.</div>' : '') +
+                _srdPricingBlock(r) + editBtn;
         }
         if (srdState.activeSection === 'packaging') {
             return fieldRow('Packaging Regulation', r.packagingRegulation) + fieldRow('Regulation URL', r.regulationUrl, true) +
@@ -518,6 +538,17 @@
         var applic = tax.applicable ? '' : '<div class="srd-taxwarn">No currently-effective row for today; showing the latest by effective date.</div>';
         return body + compHtml + warn + applic +
             '<div class="srd-secnote">Read-only join. Tax SSOT = <code>tax_referral_rates</code>; nothing here is written from Regional Detail.</div>' + priceNote + openBtn;
+    }
+
+    // PRICING-R2 — the site-price block for the Marketplace section, plus its Import / Update entry point.
+    // Absent the module (a page loaded without it) this renders nothing rather than half a price panel.
+    function _srdPricingBlock(r) {
+        var P = _srdPricingApi(); if (!P) return '';
+        var res = _srdResolvePricing(r);
+        var head = '<div class="srd-drawer__sec" style="margin-top:16px;">Site Pricing</div>';
+        var tools = '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">' +
+            '<button type="button" class="srd-btn srd-btn--default" onclick="srdOpenPriceImport()">Import / Update</button></div>';
+        return head + P.sectionHtml(res) + tools;
     }
 
     // ---- Master SKU drawer (read-only) + Edit Master via shared form ----
@@ -586,10 +617,22 @@
             var lbl = (fd.key === 'marketplace_product_id' && r && isAmazon(r.marketplace)) ? 'Marketplace Product ID (ASIN)' : fd.label;
             return '<label class="' + (fd.wide ? 'wide' : '') + '">' + esc(lbl) + '<input id="srd-e-' + fd.key + '" type="text" value="' + esc(v) + '"></label>';
         }).join('');
+        // PRICING-R2 — the per-field price editor, on EDIT only. An Add has no marketplace_sku_id yet, so it
+        // has no pricing row to own; offering the controls there would promise a write that cannot be aimed.
+        _srdEditPricing = null;
+        var priceHtml = '';
+        var P = _srdPricingApi();
+        if (!isAdd && P) {
+            var res = _srdResolvePricing(r);
+            if (res && res.state === 'OK') {
+                _srdEditPricing = res;
+                priceHtml = '<div class="srd-modal__sec">Site Pricing</div>' + P.editorHtml(res.row);
+            }
+        }
         modal.innerHTML =
             '<div class="srd-modal__head"><span>' + (isAdd ? 'Add Regional Detail' : 'Edit Regional Detail — ' + esc(r.sku)) + '</span><button type="button" class="srd-x" aria-label="Close" onclick="srdCloseEdit()">×</button></div>' +
-            '<div class="srd-modal__body">' + identity + fields +
-                '<p class="srd-modal__hint">Editing <strong>Site SKU</strong> / <strong>Marketplace Product ID</strong> also syncs the matching <code>marketplace_skus</code> row (Regional = higher-priority source). No pricing / tax / Master fields are written here.</p>' +
+            '<div class="srd-modal__body">' + identity + fields + priceHtml +
+                '<p class="srd-modal__hint">Editing <strong>Site SKU</strong> / <strong>Marketplace Product ID</strong> also syncs the matching <code>marketplace_skus</code> row (Regional = higher-priority source). Tax and Master fields are not written here.</p>' +
             '</div>' +
             '<div class="srd-modal__foot"><button type="button" class="srd-btn srd-btn--default" onclick="srdCloseEdit()">Cancel</button>' +
                 '<button type="button" class="srd-btn srd-btn--primary" id="srd-save-btn" onclick="srdSaveEdit(' + (isAdd ? 'true' : 'false') + ')">' + (isAdd ? 'Create' : 'Review Changes & Save') + '</button></div>';
@@ -616,6 +659,24 @@
         var btn = el('srd-save-btn'); if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
         srdToast('Saving…');
         window.KM.DB.upsertSkuRegionalDetail(payload).then(function (data) {
+            // PRICING-R2 — the price is a SEPARATE write to a SEPARATE owner, and it is not folded into the
+            // regional payload: sku_regional_details has never held a price and must not start. When no price
+            // control was touched, nothing is sent at all.
+            var P = _srdPricingApi();
+            if (!P || !_srdEditPricing) return data;
+            var line = P.collectLine(_srdEditPricing.marketplaceSkuId,
+                (_srdEditPricing.row && _srdEditPricing.row.currency) || '',
+                function (id) { var e = el(id); return e ? e.value : ''; });
+            if (!P.lineTouches(line)) return data;
+            if (!window.KM.DB.updatePricing) { srdToast('Saved. Pricing was NOT saved: this build has no pricing writer.'); return data; }
+            return window.KM.DB.updatePricing({ changed_by: 'sku-regional-details', change_reason: 'SKU Regional Details price editor', lines: [line] })
+                .then(function (rec) { data = data || {}; data.__pricing = rec; return data; })
+                .catch(function (perr) {
+                    // The regional row DID save and the price did NOT. Saying "saved" would be a lie about
+                    // half of it, so the failure is surfaced with its own reason and the price is unchanged.
+                    data = data || {}; data.__pricingError = perr; return data;
+                });
+        }).then(function (data) {
             srdCloseEdit();
             srdState.selectedSku = sku;
             srdState.activeCountry = up(country);
@@ -623,7 +684,14 @@
             // F1-7J-A: scoped post-write reconcile (Workspace → re-read skuDetails include.regional then render; Legacy →
             // render immediately, the writer already reloaded the broad cache). No page-level broad Operation DB reload.
             _srdAfterWrite(function () { render(); });
-            srdToast('Saved.' + (data && data.synced ? ' marketplace_skus identity synced.' : (data && data.synced === false ? ' (No matching marketplace_skus row to sync.)' : '')));
+            var pmsg = '';
+            if (data && data.__pricingError) {
+                var pe = data.__pricingError;
+                pmsg = ' PRICE NOT SAVED: ' + (pe.message || pe) + ' (the price is unchanged).';
+            } else if (data && data.__pricing) {
+                pmsg = ' ' + (data.__pricing.written || 0) + ' price row(s) written, ' + (data.__pricing.logged || 0) + ' audit entries.';
+            }
+            srdToast('Saved.' + (data && data.synced ? ' marketplace_skus identity synced.' : (data && data.synced === false ? ' (No matching marketplace_skus row to sync.)' : '')) + pmsg);
         }).catch(function (err) {
             _srdSaving = false;
             var b = el('srd-save-btn'); if (b) { b.disabled = false; b.textContent = isAdd ? 'Create' : 'Review Changes & Save'; }
@@ -631,6 +699,183 @@
         });
     }
     function findByKey(key) { var rows = _rows(); for (var i = 0; i < rows.length; i++) if (rowKey(rows[i]) === key) return rows[i]; return null; }
+
+    // ======================================================================================================
+    // PRICING-R2 §6/§8/§9 — THE PRICE EDITOR'S CONTROLS AND THE TEMPLATE ROUND TRIP.
+    // ======================================================================================================
+
+    // MANUAL is the only mode that takes a number, so the box is enabled by the mode rather than the other
+    // way round. A price typed and then switched to USE AUTO is ignored (§8), and the box is cleared so the
+    // screen cannot show a number that will not be written.
+    function srdPriceModeChanged(fieldKey) {
+        var sel = el('srd-p-' + fieldKey + '-mode'), box = el('srd-p-' + fieldKey + '-value');
+        if (!sel || !box) return;
+        var manual = String(sel.value || '') === 'MANUAL';
+        box.disabled = !manual;
+        if (!manual) box.value = '';
+        else box.focus();
+    }
+
+    // A file the browser hands to the operator. Same-origin Blob; no network, no service.
+    function _srdDownload(filename, text) {
+        try {
+            var blob = new Blob(['\uFEFF' + text], { type: 'text/csv;charset=utf-8;' });
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url; a.download = filename;
+            document.body.appendChild(a); a.click();
+            document.body.removeChild(a);
+            setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+        } catch (e) { srdToast('Download failed: ' + (e && e.message ? e.message : e)); }
+    }
+
+    function _srdImportOverlay() {
+        var ov = el('srd-price-overlay');
+        if (ov) return ov;
+        ov = document.createElement('div');
+        ov.id = 'srd-price-overlay';
+        ov.className = 'srd-modal-overlay';
+        ov.style.display = 'none';
+        ov.innerHTML = '<div class="srd-modal" id="srd-price-modal"></div>';
+        ov.addEventListener('click', function (e) { if (e.target === ov) srdClosePriceImport(); });
+        // INSIDE the section, not on <body>: every rule in this page's stylesheet is scoped to
+        // #sku-regional-details-section, so an overlay parented to the body would render as an unstyled
+        // full-screen block — worse than no dialog. Falls back to the body only if the section is gone,
+        // which cannot happen while this handler is reachable.
+        (el('sku-regional-details-section') || document.body).appendChild(ov);
+        return ov;
+    }
+
+    function srdOpenPriceImport() {
+        var P = _srdPricingApi(); if (!P) { srdToast('Pricing module not loaded.'); return; }
+        if (!useDb()) { srdToast('Enable the cloud DB to import prices.'); return; }
+        _srdImportLines = null;
+        var rows = _srdGetPricing();
+        var census = P.census(rows);
+        var ov = _srdImportOverlay(), modal = el('srd-price-modal');
+        // The census is stated on the screen that offers to change prices, because it is the reason the
+        // badges say "Not set": nothing is wrong with those rows, nobody has yet said who owns them.
+        var censusHtml = '<div class="srd-secnote"><strong>' + census.total_rows + '</strong> pricing rows · ' +
+            'ownership recorded for <strong>' + (census.fields.manual_provable + census.fields.auto_provable) + '</strong> of ' +
+            (census.total_rows * P.FIELDS.length) + ' price fields (' +
+            census.fields.manual_provable + ' manual, ' + census.fields.auto_provable + ' auto), ' +
+            '<strong>' + census.fields.ambiguous + '</strong> not yet stated. ' +
+            'Nothing classifies them automatically — an unstated field is left exactly as it is.</div>';
+        modal.innerHTML =
+            '<div class="srd-modal__head"><span>Price Import / Update</span>' +
+            '<button type="button" class="srd-x" aria-label="Close" onclick="srdClosePriceImport()">×</button></div>' +
+            '<div class="srd-modal__body">' + censusHtml +
+            '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">' +
+            '<button type="button" class="srd-btn srd-btn--default" onclick="srdDownloadPriceTemplate()">Download Price Update Template</button>' +
+            '<button type="button" class="srd-btn srd-btn--default" onclick="srdDownloadCurrentPricing()">Download Current Regional Pricing</button>' +
+            '</div>' +
+            '<label class="wide">Upload Price Update Template<input id="srd-price-file" type="file" accept=".csv,text/csv"></label>' +
+            '<div id="srd-price-preview" class="srd-secnote">Choose a file, then <strong>Preview</strong>. Nothing is written until you confirm.</div>' +
+            '</div>' +
+            '<div class="srd-modal__foot">' +
+            '<button type="button" class="srd-btn srd-btn--default" onclick="srdClosePriceImport()">Cancel</button>' +
+            '<button type="button" class="srd-btn srd-btn--default" id="srd-price-preview-btn" onclick="srdPreviewPriceImport()">Preview</button>' +
+            '<button type="button" class="srd-btn srd-btn--primary" id="srd-price-confirm-btn" onclick="srdConfirmPriceImport()" disabled>Confirm &amp; Write</button>' +
+            '</div>';
+        ov.style.display = 'flex';
+    }
+    function srdClosePriceImport() {
+        _srdImportLines = null;
+        var ov = el('srd-price-overlay'); if (ov) ov.style.display = 'none';
+    }
+
+    function srdDownloadPriceTemplate() {
+        var P = _srdPricingApi(); if (!P) return;
+        var rows = _srdGetPricing();
+        if (!rows.length) { srdToast('There are no pricing rows to template.'); return; }
+        _srdDownload('price-update-template.csv', P.buildTemplateCsv(rows, _srdGetMktSkus()));
+    }
+    function srdDownloadCurrentPricing() {
+        var P = _srdPricingApi(); if (!P) return;
+        var rows = _srdGetPricing();
+        if (!rows.length) { srdToast('There are no pricing rows to export.'); return; }
+        _srdDownload('current-regional-pricing.csv', P.buildCurrentCsv(rows, _srdGetMktSkus()));
+    }
+
+    function _srdPriceErrorList(errors) {
+        return '<ul class="srd-errs">' + errors.slice(0, 50).map(function (e) {
+            return '<li>Line ' + (e.line || '?') + (e.field ? ' · ' + esc(e.field) : '') + ' — <strong>' + esc(e.code) + '</strong> ' + esc(e.detail || '') + '</li>';
+        }).join('') + '</ul>' + (errors.length > 50 ? '<div class="srd-secnote">' + (errors.length - 50) + ' more not listed.</div>' : '');
+    }
+
+    /**
+     * PREVIEW. Two validations, deliberately, and each is asked of whoever can answer it:
+     *   the FILE is checked here   — required columns, a duplicate identity inside the file, a mode that is
+     *                                not a mode, a MANUAL with no number;
+     *   the DATABASE is checked by the server — whether the id exists, whether the currency agrees, whether
+     *                                USE AUTO has anything to restore.
+     * The second half is the SAME code path the write uses, run with dry_run, so what is shown here is what
+     * would happen rather than a second implementation's opinion of it. NOTHING is written either way.
+     */
+    function srdPreviewPriceImport() {
+        var P = _srdPricingApi(); if (!P) return;
+        var input = el('srd-price-file'), out = el('srd-price-preview'), confirm = el('srd-price-confirm-btn');
+        _srdImportLines = null;
+        if (confirm) confirm.disabled = true;
+        if (!input || !input.files || !input.files.length) { out.innerHTML = 'Choose a file first.'; return; }
+        var reader = new FileReader();
+        reader.onload = function () {
+            var parsed = P.validateFile(String(reader.result || ''));
+            if (!parsed.ok) {
+                out.innerHTML = '<div class="srd-taxwarn">The file was rejected. <strong>Nothing was written.</strong></div>' + _srdPriceErrorList(parsed.errors);
+                return;
+            }
+            var touched = parsed.lines.filter(function (l) { return P.lineTouches(l); });
+            if (!touched.length) {
+                out.innerHTML = '<div class="srd-secnote">The file is valid and asks for no changes — every field is NO_CHANGE. Nothing to write.</div>';
+                return;
+            }
+            out.innerHTML = '<div class="srd-secnote">Checking ' + touched.length + ' row(s) against the database…</div>';
+            window.KM.DB.updatePricing({ dry_run: true, changed_by: 'sku-regional-details',
+                change_reason: 'Price template import (preview)', lines: touched })
+                .then(function (rec) {
+                    _srdImportLines = touched;
+                    var changed = (rec.rows || []).filter(function (r) { return r.changed; });
+                    var detail = changed.slice(0, 25).map(function (r) {
+                        var per = P.FIELDS.filter(function (s) { return r.fields[s.key] && r.fields[s.key].changed; })
+                            .map(function (s) { return s.label + ' → ' + r.fields[s.key].mode; }).join(', ');
+                        return '<li><code>' + esc(r.marketplace_sku_id) + '</code> — ' + esc(per) + '</li>';
+                    }).join('');
+                    out.innerHTML = '<div class="srd-secnote"><strong>' + changed.length + '</strong> row(s) would change; ' +
+                        (rec.unchanged_rows || 0) + ' already hold exactly this. Nothing has been written yet.</div>' +
+                        '<ul class="srd-errs">' + detail + '</ul>' +
+                        (changed.length > 25 ? '<div class="srd-secnote">' + (changed.length - 25) + ' more not listed.</div>' : '');
+                    if (confirm) confirm.disabled = changed.length === 0;
+                })
+                .catch(function (err) {
+                    out.innerHTML = '<div class="srd-taxwarn">The database rejected the file. <strong>Nothing was written.</strong> ' +
+                        esc(err && err.message ? err.message : String(err)) + '</div>' + _srdPriceErrorList((err && err.errors) || []);
+                });
+        };
+        reader.onerror = function () { out.innerHTML = 'Could not read that file.'; };
+        reader.readAsText(input.files[0]);
+    }
+
+    /** CONFIRM. Writes exactly the lines the preview validated — never the file re-read a second time. */
+    function srdConfirmPriceImport() {
+        var P = _srdPricingApi(); if (!P) return;
+        if (!_srdImportLines || !_srdImportLines.length) { srdToast('Preview the file first.'); return; }
+        var btn = el('srd-price-confirm-btn'), out = el('srd-price-preview');
+        if (btn) { btn.disabled = true; btn.textContent = 'Writing…'; }
+        window.KM.DB.updatePricing({ changed_by: 'sku-regional-details',
+            change_reason: 'Price template import', lines: _srdImportLines })
+            .then(function (rec) {
+                _srdImportLines = null;
+                srdClosePriceImport();
+                srdToast(rec.written + ' price row(s) written · ' + rec.logged + ' audit entries.');
+                _srdAfterWrite(function () { render(); });
+            })
+            .catch(function (err) {
+                if (btn) { btn.disabled = false; btn.textContent = 'Confirm & Write'; }
+                if (out) out.innerHTML = '<div class="srd-taxwarn">Write refused. <strong>Nothing was written.</strong> ' +
+                    esc(err && err.message ? err.message : String(err)) + '</div>' + _srdPriceErrorList((err && err.errors) || []);
+            });
+    }
 
     // ---- Selection + tabs + paging ----
     function selectSku(sku) {
@@ -748,6 +993,13 @@
     window.srdPage = srdPage;
     window.srdPageSize = srdPageSize;
     window.srdBackToResults = srdBackToResults;
+    window.srdPriceModeChanged = srdPriceModeChanged;
+    window.srdOpenPriceImport = srdOpenPriceImport;
+    window.srdClosePriceImport = srdClosePriceImport;
+    window.srdDownloadPriceTemplate = srdDownloadPriceTemplate;
+    window.srdDownloadCurrentPricing = srdDownloadCurrentPricing;
+    window.srdPreviewPriceImport = srdPreviewPriceImport;
+    window.srdConfirmPriceImport = srdConfirmPriceImport;
     window.srdRetry = srdRetry;
     window.srdRender = render;
     window.srdInvalidate = _srdInvalidate_;   // F1-7M-B2-HOTFIX: external same-session invalidation hook (see _srdInvalidate_)

@@ -796,8 +796,11 @@ mut('K16 an inventory number is changed with nothing to back it', function () {
   /* FC-SHARE-DUAL-MODEL-R1 — 80 became 81. index.html gained
      assets/js/core/supply-planning-forecast-share.js (KMFCS), the ONE forecast-share normalizer,
      replacing a page-local formula in fc-summary.js. Anchor moved for the reason stated above. */
+  /* PRICING-R2 — 81 became 82. index.html gained assets/js/pages/sku-regional-pricing.js, the site-price
+     panel, per-field editor and price-template reader for SKU Regional Details. Anchor moved for the
+     reason stated above: an anchor that stops matching is a mutant that silently stops biting. */
   return withSrc('docs/planning/S_SERIES_FRONTEND_API_MIGRATION_INVENTORY.md',
-    'LOADED_SCRIPTS: 81', 'LOADED_SCRIPTS: 78', function () {
+    'LOADED_SCRIPTS: 82', 'LOADED_SCRIPTS: 78', function () {
       var c = read('docs/planning/S_SERIES_FRONTEND_API_MIGRATION_INVENTORY.md');
       var n = /LOADED_SCRIPTS:\s*(\d+)/.exec(c);
       return !!n && Number(n[1]) !== scripts;

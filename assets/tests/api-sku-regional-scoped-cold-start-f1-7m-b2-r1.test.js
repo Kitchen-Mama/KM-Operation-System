@@ -46,7 +46,13 @@ ok(USEDB.indexOf('getSkuRegionalDetails') !== -1, 'useDb() still confirms a regi
 
 // ===================================================================================================================
 console.log('\n== Phase 3 — canonical workspace data contract unchanged ==');
-ok(/getWorkspace\('skuDetails', \{ include: \{ regional: true \} \}\)/.test(SRD), "primary read is getWorkspace('skuDetails', { include:{ regional:true } })");
+// PRICING-R2 — RESTATED. This pinned the include object as EXACTLY `{ regional: true }`, which said
+// "the page asks for the regional tables" by saying "the page asks for nothing else". Those are the same
+// sentence only until a later round adds a second bounded include, and PRICING-R2 does: the SKU Regional
+// price panel needs pricing_list, and one more INCLUDE-GATED table on the call already in flight is
+// strictly better than a second request or a return to the broad cache. The pattern below still fails if
+// the action changes, if include.regional is dropped, or if the page stops calling getWorkspace at all.
+ok(/getWorkspace\('skuDetails',\s*\{\s*include:\s*\{[^}]*\bregional:\s*true\b/.test(SRD), "primary read is getWorkspace('skuDetails', include.regional)");
 ok(/_srdReadModel = window\.KM\.DB\.adaptSkuDetailsWorkspace\(env\.data\)/.test(SRD), 'read-model built via adaptSkuDetailsWorkspace(env.data)');
 var effWs = extractFn(SRD, '_srdEffectiveWorkspace');
 ok(/workspaceApiActive\('skuDetails'\)/.test(effWs), '_srdEffectiveWorkspace() gates on cache-independent workspaceApiActive(skuDetails)');
