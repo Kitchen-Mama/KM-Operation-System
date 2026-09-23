@@ -278,7 +278,6 @@ function TEMP_PRICING_R2_POST_VERIFY() {
   p('4 · VALUE PRESERVATION — by NAME, never by column number');
 
   // (a) against the FROZEN BASELINE
-  var postIds = pvLogicalHash_(head, grid, ['pricing_id'], 'pricing_id');
   var idsOnly = [];
   var idCol = pvIndex_(head)['pricing_id'];
   for (var r = 1; r < grid.length; r++) idsOnly.push(pvStr_(grid[r][idCol]));
