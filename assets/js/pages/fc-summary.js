@@ -5723,6 +5723,28 @@ var _fcPrereqLoadedTables_ = {};
 function _fcPrereqMissing_(p) {
   return (_FC_PREREQ_TABLES_[p] || []).filter(function (t) { return !_fcPrereqLoadedTables_[t]; });
 }
+/* S2-R4B §10 — the two halves of the table index. Registering is unconditional; releasing only clears
+   entries THIS flight owns, so a later request for the same table is never dropped by an earlier one
+   settling. Both are total functions over the list, because a partial registration is how a duplicate
+   read gets back in. */
+function _fcMarkTablesInflight_(tables, flight) {
+  (tables || []).forEach(function (t) { _fcPrereqInflightTables_[t] = flight; });
+}
+function _fcReleaseTablesInflight_(tables, flight) {
+  (tables || []).forEach(function (t) {
+    if (_fcPrereqInflightTables_[t] === flight) delete _fcPrereqInflightTables_[t];
+  });
+}
+/* The flights already fetching any of `tables`, de-duplicated. A caller waits on these instead of
+   asking again; waiting on a request someone else is paying for costs nothing. */
+function _fcInflightFor_(tables) {
+  var out = [];
+  (tables || []).forEach(function (t) {
+    var f = _fcPrereqInflightTables_[t];
+    if (f && out.indexOf(f) === -1) out.push(f);
+  });
+  return out;
+}
 /* FC-SUMMARY-R2B-A3-R4 §7 — INVALIDATE THE PATH THE WRITE COULD HAVE STALED, AND ONLY THAT PATH.
  *
  * This cleared BOTH builder paths after EVERY successful FC write. Saving a Target % Rule therefore
@@ -5843,7 +5865,10 @@ function _fcPostWriteWarm_(scope) {
   if (!rc) return Promise.resolve([]);
   _fcMeta_.postWriteWarmStart = Date.now(); _fcMeta_.postWriteWarmEnd = null;
   _fcMeta_.postWriteWarmTables = need.slice();
-  return Promise.resolve(rc(need)).then(function () {
+  // S2-R4B §10 — ANNOUNCE THE REQUEST BEFORE AWAITING IT. A Builder reopened during this window now
+  // finds the tables listed as in flight and joins this promise instead of issuing the same read again.
+  var warm = Promise.resolve(rc(need)).then(function () {
+    _fcReleaseTablesInflight_(need, warm);
     _fcMeta_.postWriteWarmEnd = Date.now();
     need.forEach(function (t) { _fcPrereqLoadedTables_[t] = true; });
     _fcSecondaryLoaded = true;
@@ -5855,12 +5880,18 @@ function _fcPostWriteWarm_(scope) {
     });
     return need;
   }, function () {
+    // The index entry goes on failure too, and it goes FIRST. A table left marked in flight after the
+    // request that owned it has died would make the next reopen wait on a dead promise instead of
+    // asking — a duplicate read is wasteful, but a join to nothing is a permanent Loading.
+    _fcReleaseTablesInflight_(need, warm);
     _fcMeta_.postWriteWarmEnd = Date.now();
     // Deliberately silent and deliberately empty-handed. The WRITE succeeded and has already been
     // reported; a warm-up failure is not news the operator can act on, and latching nothing means the
     // next open asks for the table properly, with its own visible refusal surface if it fails again.
     return [];
   });
+  _fcMarkTablesInflight_(need, warm);
+  return warm;
 }
 // FC-SUMMARY-R1 — `_fcEnsureBroadCacheThen` was REMOVED, not kept beside its replacement. Its
 // `.catch(done)` swallowed the failure and re-entered the opener, which re-entered the loader, with
@@ -6255,6 +6286,16 @@ var FC_MSG_ = {
 
 var _fcPrereqState_ = FC_PREREQ_.IDLE;
 var _fcPrereqFlight_ = null;               // the ONE in-flight prerequisite promise (single-flight latch)
+/* S2-R4B §10 — THE SINGLE-FLIGHT WAS KEYED BY PATH, AND THE POST-WRITE WARM-UP DOES NOT HAVE A PATH.
+   _fcLoadPrerequisites_ registers its promise in _fcPrereqFlightByPath_, so two Builder opens share one
+   request. _fcPostWriteWarm_ called refreshCacheTables DIRECTLY and registered nothing, and it latches
+   _fcPrereqLoadedTables_ only when it RESOLVES — so a reopen during the warm-up saw the tables still
+   missing and no flight to join, and bought the identical read a second time.
+   This is an index of what is CURRENTLY BEING FETCHED, per table. It is not a cache and it holds no
+   data: entries are added when a request starts and removed when it settles, and the only question it
+   answers is "is this table already on its way". Both callers write it and both callers read it, which
+   is what makes it one authority rather than a second one. */
+var _fcPrereqInflightTables_ = {};          // table -> the in-flight promise currently fetching it
 var _fcPrereqLoads_ = 0;                   // logical prerequisite loads issued, ever
 /* SINGLE-FLIGHT IS TWO THINGS, NOT ONE. The promise latch stops a second REQUEST; this stops a second
    TRANSITION. Without it, five extra Next clicks each attached their own continuation to the one
@@ -6517,13 +6558,42 @@ function _fcLoadPrerequisites_(mode) {
     _fcPrereqLastError_ = null;   // §8 — every table is warm; there is nothing left to have failed
     return Promise.resolve();
   }
+  /* S2-R4B §10 — A TABLE ALREADY ON ITS WAY IS NOT A TABLE TO ASK FOR.
+     The post-write warm-up publishes what it is fetching, so a reopen in that window splits this list:
+     tables someone else is already paying for are JOINED, and only the remainder is requested. When the
+     remainder is empty nothing is sent at all and this still resolves when the data lands — which is the
+     whole point, because the alternative was buying the identical read twice.
+     WHAT THIS MUST NOT DO is answer early. A caller told "ready" while a table this path holds is still
+     in the air is worse than a duplicate read, so the remainder request and the joined flights are
+     awaited TOGETHER, and the path latch below is DERIVED from _fcPrereqMissing_ rather than asserted by
+     whichever half happened to finish. A joined flight that FAILS is not this path's failure to report —
+     its tables simply stay missing, and the settle below asks again for exactly those. */
+  var _joinSettle = [];
+  var joined = _fcInflightFor_(need);
+  if (joined.length) {
+    _joinSettle = joined.map(function (f) { return Promise.resolve(f).then(null, function () { return null; }); });
+    need = need.filter(function (t) { return !_fcPrereqInflightTables_[t]; });
+    if (!need.length) {
+      _fcPrereqState_ = FC_PREREQ_.LOADING;
+      var waitOnly = Promise.all(_joinSettle).then(function () {
+        _fcPrereqFlightByPath_[p] = null; _fcPrereqFlight_ = null;
+        return _fcSettlePrereqPath_(p, mode);
+      });
+      _fcPrereqFlightByPath_[p] = waitOnly; _fcPrereqFlight_ = waitOnly;
+      return waitOnly;
+    }
+  }
   _fcPrereqState_ = FC_PREREQ_.LOADING;
   _fcPrereqLoads_++;
   _fcMeta_.prereqStart = Date.now(); _fcMeta_.prereqEnd = null;
   var flight = Promise.resolve(rc(need)).then(function (v) {
+    _fcReleaseTablesInflight_(need, flight);
     _fcMeta_.prereqEnd = Date.now(); _fcPrereqFlightByPath_[p] = null; _fcPrereqFlight_ = null;
     need.forEach(function (t) { _fcPrereqLoadedTables_[t] = true; });
-    _fcPrereqLoadedPaths_[p] = true;
+    // S2-R4B §10 — DERIVED, not asserted. This request may have carried only PART of the path when the
+    // rest was already in flight elsewhere, so "my request landed" is not "the path is warm". When this
+    // request carried the whole path the two are identical and nothing changes.
+    if (!_fcPrereqMissing_(p).length) _fcPrereqLoadedPaths_[p] = true;
     // §8 — SUCCESS CLEARS THE PREVIOUS FAILURE. Data that has arrived outranks an error that
     // described its absence, and reopening the Builder must not resurrect the older of the two.
     _fcPrereqLastError_ = null;
@@ -6532,14 +6602,39 @@ function _fcLoadPrerequisites_(mode) {
   }, function (err) {
     // The latch is released on failure, so Retry issues a NEW request instead of re-awaiting a
     // promise that has already rejected. Nothing is swallowed into a silent re-entry.
+    _fcReleaseTablesInflight_(need, flight);
     _fcMeta_.prereqEnd = Date.now(); _fcPrereqFlightByPath_[p] = null; _fcPrereqFlight_ = null;
     _fcPrereqLastError_ = err || null;
     _fcPrereqState_ = _fcPrereqRetryable_(err) ? FC_PREREQ_.REFUSED : FC_PREREQ_.FAILED_PERMANENT;
     throw err;
   });
-  _fcPrereqFlightByPath_[p] = flight;
-  _fcPrereqFlight_ = flight;      // kept for the existing diagnostics that read the single latch
-  return flight;
+  _fcMarkTablesInflight_(need, flight);
+  /* S2-R4B §10 — when part of this path was joined rather than requested, the promise the caller holds
+     must not settle until BOTH halves have. The remainder's failure is still this path's failure and is
+     rethrown unchanged; the joined half can only leave tables missing, which _fcSettlePrereqPath_ then
+     asks for. With nothing joined this is the original flight, untouched. */
+  var exposed = _joinSettle.length
+    ? Promise.all([flight.then(function (v) { return { v: v }; }, function (e) { return { e: e }; })]
+        .concat(_joinSettle)).then(function (r) {
+        if (r[0] && r[0].e) throw r[0].e;
+        return _fcSettlePrereqPath_(p, mode);
+      })
+    : flight;
+  _fcPrereqFlightByPath_[p] = exposed;
+  _fcPrereqFlight_ = exposed;     // kept for the existing diagnostics that read the single latch
+  return exposed;
+}
+
+/* S2-R4B §10 — ONE PLACE THAT DECIDES A PATH IS READY, reached after any join. It re-reads the tables
+   rather than trusting whoever called it: if every table this path holds has arrived it latches READY,
+   and if some are still missing — because a joined flight failed — it issues ONE fresh request for
+   exactly those and returns that. It cannot loop, because a request that fails REJECTS rather than
+   returning here, and a request that succeeds latches the tables it carried. */
+function _fcSettlePrereqPath_(p, mode) {
+  if (_fcPrereqMissing_(p).length) { _fcPrereqState_ = FC_PREREQ_.REFUSED; return _fcLoadPrerequisites_(mode); }
+  _fcPrereqLoadedPaths_[p] = true; _fcSecondaryLoaded = true;
+  _fcPrereqState_ = FC_PREREQ_.READY; _fcPrereqLastError_ = null;
+  return Promise.resolve();
 }
 
 /* §7 — THE PREFETCH. It starts when the operator chooses a card, and it is the SAME single-flight the

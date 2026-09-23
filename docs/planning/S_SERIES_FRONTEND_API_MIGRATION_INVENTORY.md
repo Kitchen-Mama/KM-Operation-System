@@ -298,7 +298,31 @@ finding, and this document does not take it.
 > `LOCAL_UNVERIFIED` + `EXECUTION_PLAN_DB_STATE_UNKNOWN` now separate the two. `_IR_RECO_CACHE_KEY` is
 > untouched and remains a session cache with a server behind it.
 >
-> The `supplychain-canvas` and `shippingHistory` rows are **unchanged and still open.**
+> The `supplychain-canvas` row is **unchanged and still open.**
+
+> **ANSWERED — 2026-09-23, S2-R4B.** The `shippingHistory` rows are **closed**, and the answer was
+> already written down: `SHIPMENT_CENTER_SPEC.md` calls Shipment Overview a **status-filtered view over
+> `shipments` / `shipment_lines`**, says a future On-The-Way / world map "must read from the same shipment
+> data source, not create a parallel DB", and **no `shipping_history` or `shipment_history` table exists
+> anywhere** — not in Apps Script, not in the schema map, not in any spec. So the model is PROJECTION,
+> and there was never an entity to migrate.
+>
+> The canonical read was already built, already scoped and already fail-closed (`_shRefresh_` →
+> `getWorkspace('shipment')` → `adaptShipmentWorkspace`; on failure `_shRenderError_` nulls the read
+> model and shows a typed banner rather than falling back to anything). **What was still wrong was an
+> asymmetry:** the RENDER of the legacy shadow was gated on `_shUseDb()`, but its LOAD was not. Every
+> Shipment Overview entry in production pulled a sessionStorage array — or the 90-line
+> `shippingHistoryMockData` fixture — into `historyState.data` and held it as business state, with one
+> boolean between a demo dataset and the operator's history screen. `loadHistoryData` now returns an
+> empty set in canonical mode without reading the store at all; demo mode is unchanged.
+>
+> Worth recording because it decides how much this mattered: the only writer of that key,
+> `markAsDone` in `shipping-plan.js`, computes `totalCost` from a **hardcoded `unitCost = 2.5`** and a
+> carton count read out of `replenishmentMockData`. Those rows were never real, and the legacy renderer
+> that hosts its Done button returns early whenever the DB or the Weekly Workspace is on — so the writer
+> is demo-only too. **`SHIPPING_HISTORY_WRITES = 0`, no API was added, and no table is needed.**
+>
+> Proof: `assets/tests/s2-r4b-shipping-history-and-fc-warm-race.test.js` (sections A–D).
 
 > **ANSWERED — 2026-09-23, S2-R4A.** The `sku-overrides` and `utils/data.js` rows are **closed**, and the
 > census that closed them found the situation milder than the table implies: **every writer was already

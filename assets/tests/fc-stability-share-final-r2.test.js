@@ -216,7 +216,11 @@ function buildBox(opts) {
   vm.runInContext('var _fcPrereqLoads_ = 0; var _fcMeta_ = {}; var _fcPrereqState_ = "IDLE";', box);
   vm.runInContext('var FC_PREREQ_ = { IDLE: "IDLE", READY: "READY", LOADING: "LOADING", REFUSED: "REFUSED", FAILED_PERMANENT: "FAILED_PERMANENT" };', box);
   vm.runInContext('function _fcPrereqRetryable_() { return true; }', box);
+  // S2-R4B §10 — the loader joins a table already in flight rather than re-requesting it; the index it
+  // reads and the three helpers that maintain it are part of the loader now and join the sandbox with it.
+  vm.runInContext('var _fcPrereqInflightTables_ = {};', box);
   ['_fcPrereqMissing_', '_fcSliceTables_', '_fcReconcileFromReceipts_', '_fcResetSecondaryCache',
+   '_fcMarkTablesInflight_', '_fcReleaseTablesInflight_', '_fcInflightFor_', '_fcSettlePrereqPath_',
    '_fcPostWriteWarm_', '_fcPrereqPath_', '_fcLoadPrerequisites_']
     .forEach(function (n) { vm.runInContext(fnSrc(FCS, n), box); });
   return box;
@@ -1069,9 +1073,12 @@ var SHARE_RAW = read('assets/js/core/supply-planning-forecast-share.js');
 // N13 — the warm-up latches its tables BEFORE the read resolves.
 (function () {
   var box = buildBox({ failRefresh: true });
-  var faulted = fnSrc(FCS, '_fcPostWriteWarm_')
-    .split('  return Promise.resolve(rc(need)).then(function () {')
-    .join('  need.forEach(function (t) { _fcPrereqLoadedTables_[t] = true; });\n  return Promise.resolve(rc(need)).then(function () {');
+  var _n13src = fnSrc(FCS, '_fcPostWriteWarm_');
+  var _n13anchor = '  var warm = Promise.resolve(rc(need)).then(function () {';
+  if (_n13src.indexOf(_n13anchor) === -1) throw new Error('N13 anchor drifted — the mutant would inject nothing');
+  var faulted = _n13src
+    .split(_n13anchor)
+    .join('  need.forEach(function (t) { _fcPrereqLoadedTables_[t] = true; });\n  var warm = Promise.resolve(rc(need)).then(function () {');
   vm.runInContext(faulted, box);
   return vm.runInContext('_fcPostWriteWarm_({ slice: "events" })', box).then(function () {
     var latched = vm.runInContext('Object.keys(_fcPrereqLoadedTables_)', box);

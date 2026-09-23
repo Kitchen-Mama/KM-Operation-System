@@ -95,6 +95,9 @@ var VARS = [
   // INCIDENT-BOOT-FC-R1 §4D — the stage vocabulary the refusal banner names.
   'FC_STAGE_', 'FC_UNREADABLE_CODES_',
   '_fcPrereqState_', '_fcPrereqFlight_',
+  // S2-R4B §10 — the index of what is CURRENTLY being fetched, per table. The loader reads it to join
+  // a request already in flight instead of issuing the same one again.
+  '_fcPrereqInflightTables_',
   '_fcPrereqLoads_', '_fcPrereqTransition_', '_fcWriteState_', '_fcWriteFlight_', '_fcViewState_', '_fcReadbackFlight_',
   '_fcReadbackLoads_', '_fcLastReceipt_', '_fcMeta_', '_FC_SECONDARY_TABLES', '_fcSecondaryLoaded',
   // R2B-A3-R1 — prerequisites are now per BUILDER PATH: the table lists, the loaded-path latch and the
@@ -132,6 +135,12 @@ var FNS = [
   // they read. This rig publishes neither `refreshCacheTables` nor `reconcileCacheRow`, so the warm-up
   // issues nothing and the reconcile keeps nothing — every outcome asserted below is unchanged, which
   // is the point: a post-write optimisation must not change what the operator is TOLD happened.
+  // S2-R4B §10 — the post-write warm-up now publishes the tables it is fetching and the loader joins
+  // them, so a Builder reopened during the warm-up window issues nothing instead of the same read twice.
+  // The index and its three helpers are part of that pair and travel with them. Nothing this rig
+  // asserts about write OUTCOMES changes: it publishes no refreshCacheTables, so the warm-up still
+  // issues nothing and the join list is still empty.
+  '_fcMarkTablesInflight_', '_fcReleaseTablesInflight_', '_fcInflightFor_', '_fcSettlePrereqPath_',
   '_fcReconcileFromReceipts_', '_fcPostWriteWarm_', '_fcPrereqMissing_', '_fcSliceTables_',
   '_fcSettleWrite_', '_fcFailWrite_', '_fcAfterWrite', '_fcEffectiveWorkspace', '_fcErrDetail_',
   'proceedToFcMode', '_fcSetTargetSaveEnabled_'];
@@ -806,20 +815,31 @@ function runMutants() {
     /* Next is guarded TWICE, for two different reasons, so it takes two mutants. The promise latch stops
        a second REQUEST; the transition latch stops a second MODAL. An earlier draft had only the first
        mutant, and once the transition latch was added it began to SURVIVE — the second guard masked the
-       first. Two guarantees, two mutants, each driven at the level it actually protects. */
-    // M4 — the request latch
+       first. Two guarantees, two mutants, each driven at the level it actually protects.
+
+       S2-R4B — AND IT HAPPENED A SECOND TIME, exactly as the paragraph above predicts. The loader now
+       also keeps an index of which TABLES are in flight, so that a Builder reopened during a post-write
+       warm-up joins that request instead of repeating it. That index dedupes the REQUEST too, so
+       removing the path latch alone no longer produces a second call and this mutant began to survive
+       while describing correct code.
+       So it is driven where the path latch is the ONLY owner: PROMISE IDENTITY. Two callers of the same
+       path get the same promise object, which is what lets them transition together; the table index
+       dedupes the request but hands each caller its own promise. The request-count guarantee the index
+       provides is driven in s2-r4b-shipping-history-and-fc-warm-race (M1/M2), against the warm-up
+       reopen it was built for — which is the only place it is the sole guard. */
+    // M4 — the request latch, driven on the identity only it provides
     .then(function () {
-      return m('M4  the prerequisite request latch is removed (a second logical load is issued)',
+      return m('M4  the prerequisite request latch is removed (callers no longer share one promise)',
         '  if (_fcPrereqFlightByPath_[p]) return _fcPrereqFlightByPath_[p];',
         '  // latch removed',
         function (S) {
-          var calls = 0;
           var d = deferred();
-          S.window.KM.DB.refreshCacheTables = function () { calls++; return d.promise; };
+          S.window.KM.DB.refreshCacheTables = function () { return d.promise; };
           S.window._opDbCache = null;
-          S._fcLoadPrerequisites_(); S._fcLoadPrerequisites_(); S._fcLoadPrerequisites_();
+          var a = S._fcLoadPrerequisites_();
+          var b = S._fcLoadPrerequisites_();
           d.resolve();
-          return settle().then(function () { return calls > 1; });
+          return settle().then(function () { return a !== b; });
         });
     })
 

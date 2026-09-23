@@ -750,6 +750,12 @@ function prereqWorld() {
     'var _fcMeta_ = {};',
     'function _fcEffectiveWorkspace() { return true; }',
     fnSrc(FCS, '_fcPrereqPath_'), fnSrc(FCS, '_fcPrereqNeeded_'),
+    // S2-R4B §10 — the loader now JOINS a table already in flight instead of re-requesting it,
+    // so the in-flight index and its three helpers travel with it. Without them the sandbox runs a
+    // loader that throws on its own join branch.
+    varSrc(FCS, '_fcPrereqInflightTables_'), fnSrc(FCS, '_fcMarkTablesInflight_'),
+    fnSrc(FCS, '_fcReleaseTablesInflight_'), fnSrc(FCS, '_fcInflightFor_'),
+    fnSrc(FCS, '_fcSettlePrereqPath_'),
     varSrc(FCS, '_fcPrereqFlightByPath_'), fnSrc(FCS, '_fcLoadPrerequisites_'),
     fnSrc(FCS, '_fcOnModeSelected_')
   ].join('\n'), ctx, { filename: 'a3-prereq.js' });
@@ -789,7 +795,22 @@ function prereqWorld() {
   W._fcOnModeSelected_('regular');
   W._fcOnModeSelected_('event');
   eq(W.__calls.length, 2, 'F7  switching path fetches the newly required path');
-  eq(W.__calls[1], W._FC_PREREQ_TABLES_.event, 'F7a and only it — never both paths at once');
+  var _req2 = W.__calls[1].slice().sort();
+  var _event = W._FC_PREREQ_TABLES_.event.slice().sort();
+  var _regularOnly = W._FC_PREREQ_TABLES_.regular.filter(function (t) {
+    return W._FC_PREREQ_TABLES_.event.indexOf(t) === -1; });
+  eq(_req2.filter(function (t) { return _event.indexOf(t) === -1; }), [],
+    'F7a and only it — every table asked for belongs to the path just chosen');
+  eq(_req2.filter(function (t) { return _regularOnly.indexOf(t) !== -1; }), [],
+    'F7a1 never a table that belongs only to the path being left');
+  // S2-R4B §10 — and the shared ones are not bought twice: they are already in flight from F7's first
+  // request, so this request is the event path MINUS them, and never the same read a second time.
+  var _shared = W._FC_PREREQ_TABLES_.regular.filter(function (t) {
+    return W._FC_PREREQ_TABLES_.event.indexOf(t) !== -1; });
+  eq(_req2.filter(function (t) { return _shared.indexOf(t) !== -1; }), [],
+    'F7a2 nor a table the previous request is still fetching — it is joined, not re-requested');
+  eq(_req2, _event.filter(function (t) { return _shared.indexOf(t) === -1; }),
+    'F7a3 which leaves exactly the event-path tables nobody was already fetching');
 })();
 
 (function () {

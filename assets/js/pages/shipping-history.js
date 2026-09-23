@@ -110,7 +110,31 @@ const historyState = {
     }
 };
 
+// S2-R4B — "SHIPPING HISTORY" IS NOT AN ENTITY, AND THIS FUNCTION WAS THE LAST PLACE THAT THOUGHT IT WAS.
+//
+// SHIPMENT_CENTER_SPEC is unambiguous: Shipment Overview is a STATUS-FILTERED VIEW over shipments /
+// shipment_lines (§ "IMPLEMENTED / runtime-aligned"), and "Future On The Way / world map must read from
+// the same shipment data source, not create a parallel DB". There is no shipping_history table anywhere
+// in the repository — not in Apps Script, not in the schema map, not in any spec. The canonical read is
+// already built, already scoped, and already fail-closed: _shRefresh_ -> getWorkspace('shipment') ->
+// adaptShipmentWorkspace, and on failure _shRenderError_ nulls the read model and shows a typed banner
+// rather than falling back to anything.
+//
+// WHAT WAS STILL WRONG WAS THE ASYMMETRY. The render was gated on _shUseDb(); this LOAD was not. So on
+// every Shipment Overview entry, in production, the page pulled a sessionStorage array — or, failing
+// that, the 90-line shippingHistoryMockData demo fixture — into historyState.data and held it as
+// business state. One boolean stood between a demo dataset and the operator's history screen, and the
+// rows it would have drawn are fabrications: the writer that fills that key (markAsDone in
+// shipping-plan.js) computes totalCost from a HARDCODED unitCost of 2.5 and a unitsPerCarton read out
+// of replenishmentMockData. Invented money, one browser tab wide.
+//
+// Demo mode is a legitimate mode and keeps working exactly as before. What no longer happens is
+// production loading demo shipments into business state at all — an authority that is merely unrendered
+// is still an authority, and this is the round that stops it being loaded rather than stops it winning.
 function loadHistoryData() {
+    // Canonical mode: the shipment workspace owns this page. Nothing local is business data here, and an
+    // empty array is the honest starting point — renderShipmentOverview replaces it from the server read.
+    if (_shUseDb()) { historyState.data = []; return; }
     const storedHistory = sessionStorage.getItem('shippingHistory');
     if (storedHistory) {
         historyState.data = JSON.parse(storedHistory);
