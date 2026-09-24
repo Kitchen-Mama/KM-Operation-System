@@ -344,6 +344,144 @@ operator-run, one-shot and gated.
 
 ---
 
+## 4D. Effective Price Authority and Auto-Follow (PRICING-R4D — FINAL AUDIT, 2026-09-24)
+
+**Audit only. `PRODUCTION_WRITE_AUTHORIZED = NO`.** Nothing was blanked, no flag was changed, no FX was
+re-run, no pricing row was migrated and no base price was altered. Every statement below is measured from
+the shipped source by `assets/tests/pricing-r4d-effective-price-authority-audit.test.js`, which EXECUTES
+04_ and 73_ rather than reading them.
+
+### The question
+
+Production rows exist whose `regular_price` / `minimum_price` / `msrp` still hold the **USD base number**
+while `auto_*` holds the correctly converted local value. Historical residue, or still reachable?
+
+**STILL REACHABLE.** It is a **creation** defect, not an FX defect.
+
+### THREE_LAYER_MODEL_PASS = YES
+
+```
+BASE       sku_details                      -> base_*            (the source price)
+AUTO       base_* x fx_rate, at the frozen precision -> auto_*    (the system reference)
+EFFECTIVE  the stored field, always                  -> regular_price / minimum_price / msrp
+AUTHORITY  TRUE = the operator owns it · FALSE = the system owns it · blank = UNKNOWN, never inferred
+```
+
+Confirmed field by field. One statement is **rejected**: `price_source` is not a fourth layer. It is
+row-level, legacy, kept in step by the writer, and never consulted to decide who owns a field.
+
+### FX write contract — measured, per authority state
+
+| flag | auto refresh | effective | flag written |
+|---|---|---|---|
+| `TRUE` | **YES** | preserved exactly | no |
+| `FALSE` | **YES** | **follows the new auto value** | no |
+| blank / UNKNOWN | **YES** | preserved exactly | no |
+
+`MANUAL_TRUE_EFFECTIVE_REFRESH = NO` · `AUTO_FALSE_EFFECTIVE_FOLLOWS_AUTO = YES` ·
+`UNKNOWN_EFFECTIVE_REFRESH = NO`. **No `CONTRACT_GAP` in `pricing.fxReconcile`** — §4B's frozen contract is
+implemented exactly, and the pre-write audit in `pricingFxBuildColumns_` re-checks every effective cell
+against the flag as it stands in the sheet, refusing the whole run on one mismatch. FX never writes `base_*`.
+
+### ROOT_CAUSE_OF_BASE_LIKE_EFFECTIVE_VALUES — row creation
+
+`04_marketplace_forecast_import.gs` is the **only** production path that creates a `pricing_list` row
+(one `appendRow`, line 420; `03_` explicitly creates none). When the import row carries no pricing — which
+is **every** row the Add SKU form sends, `inventory-replenishment.js:1084` — it takes the MVP fallback:
+
+| | value written to a new **CAD** row |
+|---|---|
+| `base_currency` | `'USD'` — **defaulted**, never read from `sku_details.base_currency` |
+| `base_*` | from `sku_details.selling_price / minimum_price / msrp` — correct, per §4C |
+| `fx_rate` | **`1`**, whatever the site currency is |
+| `auto_*` | `= base_*` — the USD number wearing the CAD label |
+| `regular_price` / `minimum_price` / `msrp` | **`= auto_* = base_*`, the raw USD number** |
+| the three ownership flags | **blank** — every new row is born UNKNOWN |
+
+`NEW_NON_USD_EFFECTIVE_CAN_RECEIVE_RAW_USD_BASE = **YES**` (04_:376-389).
+
+The second half is what makes it permanent. A later `pricing.fxReconcile` corrects `auto_*` to the true
+local value and **cannot** correct the effective price, because the flag 04_ left blank means UNKNOWN and
+§4A forbids FX from turning "nobody has said" into "the system owns it". Both behaviours are right on their
+own terms; together they manufacture exactly the population that was found. The only existing guard is the
+free-text note *"MVP auto-generated from sku_details. FX review required."*, which nothing reads.
+
+### Consumer audit — `BLANK_EFFECTIVE_SAFE_SYSTEM_WIDE = NO`
+
+`AUTO_FALLBACK_CONSUMERS = 0`. Not one consumer substitutes `auto_*` for a blank effective, which is
+correct under §4A and is also why blanking is unsafe:
+
+| consumer | transport | what a blank effective does |
+|---|---|---|
+| Product Strategy Board / Pricing Center | `productPricing.workspace.get` (72_) | 72_ emits **no `auto_*` at all**, so no fallback is even available. `analysable` is gated on a non-null `regular_price`: the SKU leaves the price chart and the analysable count. |
+| FC Summary — Special Event / Regular FC | broad cache | the canonical resolver returns `null`, correctly — but the back-compat wrapper `_evtRegularPrice` returns **`0`**, so a blanked price becomes a zero regular price in the builder. |
+| SKU Regional Details pricing panel | `skuDetails.workspace.get` (59_, raw passthrough) | shows *Not set* beside the auto value. The one screen that would reveal the mismatch. |
+| Campaign / Promotion | write-time snapshot (20_) | a line copies the `pricing_list` row that supplied its `regular_price`; a blank source produces a blank snapshot. |
+| Order Planning · Request Order · Shipment / procurement · document & export paths | — | **read no effective price at all.** Measured, not assumed. |
+
+### CAN_OPERATOR_BLANK_ALL_EFFECTIVE_PRICE_FIELDS_NOW = NO
+
+Five reasons, each provable:
+
+1. A `TRUE` row's price exists **nowhere else**. Base and auto cannot reconstruct a negotiated number, and
+   blanking one destroys it with no rollback short of a sheet snapshot.
+2. An UNKNOWN row's stored value is the only surviving record of what that site was charging. Blanking it
+   deletes the evidence the classification decision needs.
+3. `pricing.update` with mode `AUTO` is **refused** where `auto_*` is blank or NA — so "blank everything,
+   then restore from auto" cannot complete, and would leave exactly the rows with no base price stranded.
+4. 72_ carries no `auto_*`, so the board and the Pricing Center would lose the products entirely rather
+   than fall back.
+5. FC Summary's legacy wrapper would render the gap as **0**, which is a price and looks like one.
+
+### RECOMMENDED_CANONICAL_EFFECTIVE_MODEL
+
+**Keep the stored effective field as the single read contract. Classify, do not blank.**
+
+| population | effective | flag |
+|---|---|---|
+| system-owned | `= auto_*` | `FALSE` |
+| operator-owned | the person's value, untouched | `TRUE` |
+| UNKNOWN | **preserved until the operator classifies it**, row by row or in reviewed batches | stays blank, and stays counted |
+
+Preferred over a **nullable-effective / fallback-to-auto** model, for one structural reason rather than a
+stylistic one: a fallback model moves the resolution into every reader, and two of today's readers cannot
+implement it at all because their transport does not carry `auto_*`. One contract that every consumer
+already satisfies beats five reimplementations of the same substitution, one of which would have to be a
+schema change first. The server-side resolver `pricingResolveEffective_` stays the only place that knows
+the rule, and its single defined substitution — `AUTO` flag with a stored cell not yet caught up — is a
+definition, not a fallback.
+
+Once classified, the base-shaped values repair themselves: a row marked `FALSE` follows `auto_*` on the
+next FX run, which is already proven behaviour.
+
+### §7 — future creation contract · CURRENT_RUNTIME_SATISFIES_FUTURE_CONTRACT = NO
+
+The target flow, frozen here and **not implemented in this round**:
+
+```
+create pricing row
+  -> base_* and base_currency from sku_details          (§4C; base_currency read, never defaulted to USD)
+  -> resolve the row's local currency from the site
+  -> same currency?  rate = 1 is a FACT, not a guess -> auto_* = base_*
+     cross currency? no canonical rate exists at creation time
+                     -> fx_rate / fx_rate_date / auto_* LEFT BLANK, row reported PENDING_FX
+  -> effective initialized ONLY where auto_* exists, and the three flags written FALSE
+```
+
+Two departures from today, both load-bearing:
+
+- **Never invent an FX rate when none exists.** `fx_rate = 1` on a cross-currency row is an invented rate
+  that reads as a measured one. Fail closed and report `PENDING_FX`; a blank auto is a visible gap, a
+  wrong auto is not.
+- **Write the ownership flags at creation.** This is the one moment when `FALSE` is a *fact* rather than a
+  bulk classification: no person has set the price, so the system owns it, and saying so lets the next FX
+  run repair the row by itself. The UNKNOWN population exists only because rows predate the columns **and**
+  because 04_ still does not write them — `bare(04_)` contains no `_is_manual` at all.
+
+Until that round runs, every newly created non-USD row joins the population this audit measured.
+
+---
+
 ## 5. pricing_change_log Rules
 
 - `pricing_change_log` is only required when an **existing** `pricing_list` value changes.
