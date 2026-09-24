@@ -300,6 +300,30 @@ auto price, and the row is not broken. A source value that is present but not a 
 thing and is **refused**. Where manual and auto are both absent the UI shows *Not set* / em dash —
 `sku-regional-pricing.js:53` (`num()` returns `null` for blank) and `:215` already do this.
 
+### Matched, unmatched, ambiguous — three outcomes, three different answers
+
+**Frozen by operator ruling, 2026-09-24.**
+
+| Outcome | What it means | What happens to `base_*` |
+|---|---|---|
+| **MATCHED** | exactly one `sku_details` row | synchronized from the source, field by field; a blank source field writes a blank target field |
+| **UNMATCHED** | no `sku_details` row reachable | `UNMATCHED_BASE_POLICY = PRESERVE_CURRENT_AND_REPORT` — every `base_*` and `base_currency` keeps exactly the value it has, the identity is reported, and the row **does not block the rows that did resolve** |
+| **AMBIGUOUS** | more than one candidate on either hop | **HARD STOP** for the whole execution. Never resolved by taking the first candidate |
+
+UNMATCHED is not ambiguity. There is deliberately **no flag** that turns preservation into blanking: a
+switch whose only setting is destructive is a switch that eventually gets flipped.
+
+One consequence is stated rather than left to be discovered. Preserving a `base_msrp` that is currently a
+`Date` preserves the `Date` — the quantity is intact (Sheets' epoch makes serial 35 read as `1900-02-03`)
+but the type is not, and no round is authorised to reshape a row it cannot identify. The dry run reports
+`UNMATCHED_ROWS_STILL_HOLDING_A_DATE_BASE_VALUE`. Giving those SKUs a `sku_details` row and re-running is
+what clears them.
+
+`base_currency` follows the same shape but for a different reason: a blank price is a valid commercial
+state, whereas a blank `base_currency` would disable the FX relationship for that row and is a separate
+data-quality condition. Either way it is preserved and counted (`BASE_CURRENCY_SOURCE_BLANK`,
+`BASE_CURRENCY_PRESERVED_DUE_TO_BLANK_SOURCE`), never blanked and never defaulted.
+
 ### Ongoing ownership — two responsibilities, kept apart
 
 | | Owner | Trigger | Touches |

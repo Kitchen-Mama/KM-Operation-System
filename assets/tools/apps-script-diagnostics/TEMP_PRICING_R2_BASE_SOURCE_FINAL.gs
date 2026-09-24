@@ -147,10 +147,12 @@ var PSF_DATE_FIELDS_ = ['fx_rate_date', 'created_at', 'updated_at'];
 var PSF_NUMERIC_FMT_ = '0.00';
 var PSF_TEXT_FMT_ = '@';
 
-// An UNMATCHED row has no SKU Details source, so under §0 it has no base price. Blanking a base
-// price that currently holds a value is data loss even when it is the correct conclusion, so it
-// requires a separate yes: while this is false the run reports the rows and returns NO-GO.
-var PSF_ALLOW_UNMATCHED_BLANKING_ = false;
+// AN UNMATCHED ROW IS PRESERVED. It has no SKU Details source, so this round has nothing to say about
+// its base prices and says nothing: every base_* and base_currency keeps exactly the value it has, the
+// identity is reported, and the row does not hold up the rows that DID resolve. There is deliberately no
+// flag that would let this be turned into blanking — a switch whose only setting is destructive is a
+// switch that will eventually be flipped by someone who did not read this comment.
+var PSF_UNMATCHED_BASE_POLICY_ = 'PRESERVE_CURRENT_AND_REPORT';
 
 // Paste from the DRY RUN before COMMIT.
 var PSF_EXPECT_LIVE_HEADER_HASH_ = '';
@@ -596,7 +598,7 @@ function psfRun_(commit) {
   var count = {};
   function bump(k) { count[k] = (count[k] || 0) + 1; }
   var invalids = [];
-  var unmatchedLosses = [];
+  var preservedUnmatched = [];        // { rec, field, current } for every value left exactly as found
   var legacyUnitRescuable = 0;
 
   J.rows.forEach(function (rec) {
@@ -605,26 +607,22 @@ function psfRun_(commit) {
       var tgt = m.target;
       var currentRaw = lIdx[tgt] === undefined ? '' : L.values[rec.row][lIdx[tgt]];
       if (rec.status !== 'MATCHED') {
-        // No source. Under §0 the row has no base price; §5 forbids keeping the Date value and forbids
-        // reaching for effective or auto. So the honest target is blank — and blanking something
-        // non-blank is reported as a loss and gated separately.
-        cell[tgt] = { value: '', from: 'UNMATCHED' };
-        bump(tgt + '_WOULD_BLANK');
-        if (!psfBlank_(currentRaw)) {
-          unmatchedLosses.push({ rec: rec, field: tgt, current: currentRaw });
-        }
+        // No source, so nothing to say. The cell keeps exactly what it holds, including its type: this
+        // round does not get to decide that a row nobody can identify has no price.
+        cell[tgt] = { value: currentRaw, from: 'PRESERVED_UNMATCHED' };
+        if (!psfBlank_(currentRaw)) preservedUnmatched.push({ rec: rec, field: tgt, current: currentRaw });
         return;
       }
       var read = psfReadSourcePrice_(rec.source[dIdx[m.source]]);
       if (read.blank) {
         cell[tgt] = { value: '', from: 'SOURCE_BLANK' };
-        bump(tgt + '_WOULD_BLANK');
+        bump(tgt + '_WOULD_BLANK'); bump('MATCHED_' + tgt + '_BLANK');
       } else if (read.invalid) {
         cell[tgt] = { value: '', from: 'SOURCE_INVALID' };
         invalids.push({ rec: rec, field: tgt, source: m.source, raw: read.raw, why: read.why });
       } else {
         cell[tgt] = { value: read.value, from: 'SOURCE' };
-        bump(tgt + '_WOULD_UPDATE');
+        bump(tgt + '_WOULD_UPDATE'); bump('MATCHED_' + tgt + '_NONBLANK');
       }
     });
 
@@ -632,19 +630,27 @@ function psfRun_(commit) {
     var curNow = lIdx['base_currency'] === undefined ? '' : psfStr_(L.values[rec.row][lIdx['base_currency']]);
     var curSrc = (rec.status === 'MATCHED' && haveSrcCurrency)
       ? psfStr_(rec.source[dIdx[PSF_BASE_CURRENCY_SOURCE_]]) : '';
+    var curRaw = lIdx['base_currency'] === undefined ? '' : L.values[rec.row][lIdx['base_currency']];
     if (curSrc !== '') {
       cell['base_currency'] = { value: curSrc, from: 'SOURCE' };
+      bump('BASE_CURRENCY_SOURCE_NONBLANK');
       if (curSrc !== curNow) bump('BASE_CURRENCY_WOULD_UPDATE');
     } else {
-      cell['base_currency'] = { value: lIdx['base_currency'] === undefined ? '' : L.values[rec.row][lIdx['base_currency']], from: 'PRESERVED' };
+      // A blank base_currency is NOT the same kind of fact as a blank price. A blank price is a valid
+      // commercial state; a blank base_currency would disable the FX relationship for the row, which is a
+      // data-quality condition and a separate conversation. Either way it is preserved, never blanked.
+      cell['base_currency'] = { value: curRaw, from: 'PRESERVED' };
       if (rec.status === 'MATCHED') {
-        bump('BASE_CURRENCY_BLANK_SOURCE_COUNT');
+        bump('BASE_CURRENCY_SOURCE_BLANK');
+        if (!psfBlank_(curRaw)) bump('BASE_CURRENCY_PRESERVED_DUE_TO_BLANK_SOURCE');
         if (rec.source) {
           var rescuable = PSF_BASE_CURRENCY_LEGACY_.some(function (h) {
             return dIdx[h] !== undefined && !psfBlank_(rec.source[dIdx[h]]);
           });
           if (rescuable) legacyUnitRescuable++;
         }
+      } else if (!psfBlank_(curRaw)) {
+        preservedUnmatched.push({ rec: rec, field: 'base_currency', current: curRaw });
       }
     }
     plan[rec.row] = cell;
@@ -655,9 +661,21 @@ function psfRun_(commit) {
       + '    <- ' + PSF_SKU_TAB_ + '.' + m.source);
     p((m.target + '_WOULD_BLANK').toUpperCase() + ' = ' + (count[m.target + '_WOULD_BLANK'] || 0));
   });
-  p('BASE_CURRENCY_WOULD_UPDATE = ' + (count['BASE_CURRENCY_WOULD_UPDATE'] || 0));
-  p('BASE_CURRENCY_BLANK_SOURCE_COUNT = ' + (count['BASE_CURRENCY_BLANK_SOURCE_COUNT'] || 0)
+
+  // The matched census, per field, blank beside nonblank — because 'WOULD_BLANK' alone cannot be read
+  // back as 'the source said nothing' rather than 'something went wrong'.
+  PSF_BASE_MAP_.forEach(function (m) {
+    var key = m.target.replace('base_', '').replace('_price', '').toUpperCase();
+    p('MATCHED_BASE_' + key + '_NONBLANK = ' + (count['MATCHED_' + m.target + '_NONBLANK'] || 0)
+      + '    MATCHED_BASE_' + key + '_BLANK = ' + (count['MATCHED_' + m.target + '_BLANK'] || 0));
+  });
+
+  p('BASE_CURRENCY_SOURCE_NONBLANK = ' + (count['BASE_CURRENCY_SOURCE_NONBLANK'] || 0));
+  p('BASE_CURRENCY_SOURCE_BLANK = ' + (count['BASE_CURRENCY_SOURCE_BLANK'] || 0));
+  p('BASE_CURRENCY_PRESERVED_DUE_TO_BLANK_SOURCE = '
+    + (count['BASE_CURRENCY_PRESERVED_DUE_TO_BLANK_SOURCE'] || 0)
     + '   (left exactly as they are; NOT blanked, NOT defaulted)');
+  p('BASE_CURRENCY_WOULD_UPDATE = ' + (count['BASE_CURRENCY_WOULD_UPDATE'] || 0));
   p('BASE_CURRENCY_LEGACY_UNIT_AVAILABLE = ' + legacyUnitRescuable
     + '   (' + PSF_BASE_CURRENCY_LEGACY_.join('/') + ' holds a value where base_currency is blank —');
   p('   operation-system-db-api.js:254 reads that fallback; this tool does NOT apply it. Adopting it is a decision.)');
@@ -681,26 +699,38 @@ function psfRun_(commit) {
       + 'someone entered; copying them would put a non-number in a price column. Fix them in SKU Details.');
   }
 
-  if (unmatchedLosses.length) {
-    p('');
-    p('UNMATCHED ROWS THAT CURRENTLY HOLD A BASE VALUE (' + unmatchedLosses.length + ').');
-    p('These rows have no SKU Details source, so under the frozen rule they have no base price — but the');
-    p('cell is not empty today, and emptying it is data loss even when the conclusion is right.');
-    p('  row | pricing_id | marketplace_sku_id | field | current raw | type | PRE value');
-    unmatchedLosses.slice(0, 40).forEach(function (x) {
-      var pre = sIdx[x.field] === undefined ? '' : S.values[x.rec.row][sIdx[x.field]];
+  // UNMATCHED — reported, never gated. An unmatched row is a row nobody can identify; that is a reason to
+  // leave it alone and say so, not a reason to hold up every row that DID resolve.
+  p('');
+  p('UNMATCHED_BASE_POLICY = ' + PSF_UNMATCHED_BASE_POLICY_);
+  var unmatchedRows = J.rows.filter(function (rec) { return rec.status !== 'MATCHED'; });
+  p('UNMATCHED_ROWS_PRESERVED = ' + unmatchedRows.length);
+  p('UNMATCHED_BASE_VALUES_PRESERVED_NONBLANK = ' + preservedUnmatched.length);
+  if (preservedUnmatched.length) {
+    p('  row | pricing_id | marketplace_sku_id | field | value kept | type | status');
+    preservedUnmatched.slice(0, 40).forEach(function (x) {
       p('  ' + (x.rec.row + 1) + ' | ' + x.rec.pricing_id + ' | ' + (x.rec.marketplace_sku_id || '(blank)')
         + ' | ' + x.field + ' | ' + JSON.stringify(x.current instanceof Date ? x.current.toISOString() : x.current)
-        + ' | ' + psfKind_(x.current)
-        + ' | ' + JSON.stringify(pre instanceof Date ? pre.toISOString() : pre));
+        + ' | ' + psfKind_(x.current) + ' | ' + x.rec.status);
     });
-    if (unmatchedLosses.length > 40) p('  ... and ' + (unmatchedLosses.length - 40) + ' more');
-    if (!PSF_ALLOW_UNMATCHED_BLANKING_) {
-      blockers.push('UNMATCHED_BASE_WOULD_BLANK_NONBLANK = ' + unmatchedLosses.length
-        + '. Set PSF_ALLOW_UNMATCHED_BLANKING_ = true to authorise it, or give these SKUs a SKU Details row.');
-    } else {
-      p('  PSF_ALLOW_UNMATCHED_BLANKING_ = true — authorised. These values will be blanked.');
-    }
+    if (preservedUnmatched.length > 40) p('  ... and ' + (preservedUnmatched.length - 40) + ' more');
+  }
+
+  // AND THE CONSEQUENCE, STATED RATHER THAN DISCOVERED. Preserving a base_msrp that is currently a Date
+  // preserves the Date. The quantity is intact — Sheets' epoch makes serial 35 read as 1900-02-03 — but
+  // every consumer of getValues() still receives a Date where a price belongs, and this round has no
+  // authority to change that on a row it cannot identify. Giving these SKUs a sku_details row and
+  // re-running is what clears them.
+  var unmatchedDates = preservedUnmatched.filter(function (x) { return x.current instanceof Date; });
+  p('UNMATCHED_ROWS_STILL_HOLDING_A_DATE_BASE_VALUE = ' + unmatchedDates.length);
+  if (unmatchedDates.length) {
+    p('  These rows keep the incident. The quantity is intact but the TYPE is not, and no repair here is');
+    p('  authorised to touch a row with no identified source. Their serials, from PRE, are:');
+    unmatchedDates.slice(0, 40).forEach(function (x) {
+      var pre = sIdx[x.field] === undefined ? '' : S.values[x.rec.row][sIdx[x.field]];
+      p('  ' + x.rec.pricing_id + ' | ' + x.field + ' | serial ' + psfSerial_(x.current)
+        + ' | PRE ' + JSON.stringify(pre instanceof Date ? pre.toISOString() : pre));
+    });
   }
 
   // =========================================================================================================
@@ -774,32 +804,71 @@ function psfRun_(commit) {
     blockers.push('THE PROJECTION MOVED A FIELD THIS ROUND MAY NOT TOUCH: ' + movedUntouched.join(', '));
   }
 
+  // UNMATCHED PRESERVATION, measured off the finished projection rather than trusted to the branch that
+  // built it. Every base field of every unmatched row must be byte-identical to what the sheet holds now.
+  var UNMATCHED_FIELDS = PSF_BASE_MAP_.map(function (m) { return m.target; }).concat(['base_currency']);
+  var unmatchedChanged = [];
+  J.rows.forEach(function (rec) {
+    if (rec.status === 'MATCHED') return;
+    UNMATCHED_FIELDS.forEach(function (f) {
+      var tc = target.indexOf(f);
+      if (tc === -1 || lIdx[f] === undefined) return;
+      if (psfStr_(projected[rec.row][tc]) !== psfStr_(L.values[rec.row][lIdx[f]])) {
+        unmatchedChanged.push(rec.pricing_id + ' / ' + f);
+      }
+    });
+  });
+  p('UNMATCHED_BASE_VALUES_CHANGED = ' + unmatchedChanged.length
+    + (unmatchedChanged.length ? '   ' + unmatchedChanged.slice(0, 10).join(', ') : ''));
+  if (unmatchedChanged.length) {
+    blockers.push('UNMATCHED_BASE_VALUES_CHANGED = ' + unmatchedChanged.length + '. An unmatched row is preserved, and the projection does not preserve it.');
+  }
+
   // §7's guarantee, asserted on the projection before it is ever written.
-  var projDates = 0, projDateWhere = [];
+  // Two populations, counted apart. A Date this round CHOSE to write is a defect and blocks; a Date it was
+  // told to preserve on a row nobody can identify is the incident being left where it is, on purpose, and
+  // must not be able to hide behind the same number.
+  var unmatchedRow = {};
+  J.rows.forEach(function (rec) { if (rec.status !== 'MATCHED') unmatchedRow[rec.row] = 1; });
+  var projDates = 0, projDateWhere = [], preservedDates = 0;
   PSF_NUMERIC_FIELDS_.forEach(function (f) {
     var tc = target.indexOf(f);
     if (tc === -1) return;
     for (var q2 = 1; q2 <= rowCount; q2++) {
-      if (projected[q2][tc] instanceof Date) { projDates++; if (projDateWhere.length < 10) projDateWhere.push(f + ' row ' + (q2 + 1)); }
+      if (!(projected[q2][tc] instanceof Date)) continue;
+      if (unmatchedRow[q2] && UNMATCHED_FIELDS.indexOf(f) !== -1) { preservedDates++; continue; }
+      projDates++; if (projDateWhere.length < 10) projDateWhere.push(f + ' row ' + (q2 + 1));
     }
   });
   var msrpCol = target.indexOf('base_msrp');
-  var projDateMsrp = 0;
-  for (var q3 = 1; q3 <= rowCount; q3++) if (projected[q3][msrpCol] instanceof Date) projDateMsrp++;
+  var projDateMsrp = 0, projDateMsrpMatched = 0;
+  for (var q3 = 1; q3 <= rowCount; q3++) {
+    if (!(projected[q3][msrpCol] instanceof Date)) continue;
+    projDateMsrp++;
+    if (!unmatchedRow[q3]) projDateMsrpMatched++;
+  }
   rule();
   p('§7 FORMAT / TYPE SAFETY');
   p('  formats are assigned by FIELD NAME, from PRE, and a numeric field can never receive a date format.');
-  p('BASE_MSRP_DATE_VALUE_COUNT_POST (projected) = ' + projDateMsrp);
-  p('NUMERIC_FIELDS_HOLDING_A_DATE (projected) = ' + projDates + (projDateWhere.length ? '   ' + projDateWhere.join(', ') : ''));
-  p('BASE_MSRP_DATE_CORRUPTION_REMOVED = ' + (dateMsrpPre > 0 && projDateMsrp === 0 ? 'YES'
+  p('BASE_MSRP_DATE_VALUE_COUNT_POST (projected, matched rows) = ' + projDateMsrpMatched);
+  p('BASE_MSRP_DATE_VALUE_COUNT_POST (projected, ALL rows)     = ' + projDateMsrp
+    + '   of which ' + (projDateMsrp - projDateMsrpMatched) + ' are preserved on unmatched rows');
+  p('NUMERIC_FIELDS_HOLDING_A_DATE (projected, this round\'s doing) = ' + projDates
+    + (projDateWhere.length ? '   ' + projDateWhere.join(', ') : ''));
+  p('NUMERIC_FIELDS_HOLDING_A_DATE (preserved, unmatched) = ' + preservedDates);
+  p('BASE_MSRP_DATE_CORRUPTION_REMOVED = ' + (dateMsrpPre > 0 && projDateMsrpMatched === 0
+    ? (projDateMsrp === 0 ? 'YES' : 'YES for every matched row; ' + (projDateMsrp - projDateMsrpMatched)
+        + ' preserved on unmatched rows by PSF_UNMATCHED_BASE_POLICY_')
     : (dateMsrpPre === 0 ? 'N/A — no Date values present' : 'NO')));
-  if (projDates > 0) blockers.push('A numeric field still holds a Date in the PROJECTION. Nothing is written.');
+  if (projDates > 0) blockers.push('A numeric field this round WRITES still holds a Date in the PROJECTION. '
+    + 'Nothing is written.');
 
   var fmtBad = [];
   PSF_NUMERIC_FIELDS_.forEach(function (f) {
     var tc = target.indexOf(f);
     if (tc === -1) return;
     for (var q4 = 1; q4 <= rowCount; q4++) {
+      if (projected[q4][tc] instanceof Date) continue;    // a preserved Date belongs in a date cell
       if (psfIsDateFormat_(formats[q4][tc])) { fmtBad.push(f + ' row ' + (q4 + 1)); return; }
     }
   });
@@ -983,19 +1052,45 @@ function psfRun_(commit) {
 
     PSF_NUMERIC_FIELDS_.forEach(function (f) {
       if (pIdx2[f] === undefined) return;
-      var dates = 0;
-      for (var px = 1; px <= rowCount; px++) if (post[px][pIdx2[f]] instanceof Date) dates++;
-      check(f + ' holds NO Date values', dates === 0, dates + ' Date cells');
+      var dates = 0, kept = 0;
+      for (var px = 1; px <= rowCount; px++) {
+        if (!(post[px][pIdx2[f]] instanceof Date)) continue;
+        if (unmatchedRow[px] && UNMATCHED_FIELDS.indexOf(f) !== -1) { kept++; continue; }
+        dates++;
+      }
+      check(f + ' holds no Date this round wrote', dates === 0,
+        dates + ' Date cells' + (kept ? ' (+' + kept + ' preserved on unmatched rows)' : ''));
     });
 
     PSF_BASE_MAP_.forEach(function (m) {
-      var bad = 0;
+      var bad = 0, keptB = 0;
       for (var py = 1; py <= rowCount; py++) {
         var v3 = post[py][pIdx2[m.target]];
-        if (!(psfBlank_(v3) || typeof v3 === 'number')) bad++;
+        if (psfBlank_(v3) || typeof v3 === 'number') continue;
+        // A value preserved on an unmatched row is whatever that row already held. This round did not
+        // choose it and is not entitled to reshape it; it is counted, not failed.
+        if (unmatchedRow[py]) { keptB++; continue; }
+        bad++;
       }
-      check(m.target + ' is number-or-blank on every row', bad === 0, bad + ' other');
+      check(m.target + ' is number-or-blank on every MATCHED row', bad === 0,
+        bad + ' other' + (keptB ? ' (+' + keptB + ' preserved on unmatched rows)' : ''));
     });
+
+    // THE PRESERVATION, RE-MEASURED AFTER THE WRITE. The dry run checked the projection; this checks the
+    // sheet, which is the only thing a later reader can go and look at.
+    var postUnmatchedChanged = [];
+    J.rows.forEach(function (rec) {
+      if (rec.status === 'MATCHED') return;
+      UNMATCHED_FIELDS.forEach(function (f) {
+        if (pIdx2[f] === undefined || lIdx[f] === undefined) return;
+        if (psfStr_(post[rec.row][pIdx2[f]]) !== psfStr_(L.values[rec.row][lIdx[f]])) {
+          postUnmatchedChanged.push(rec.pricing_id + ' / ' + f);
+        }
+      });
+    });
+    check('UNMATCHED_BASE_VALUES_CHANGED = 0', postUnmatchedChanged.length === 0,
+      postUnmatchedChanged.slice(0, 10).join(', ') || String(Object.keys(unmatchedRow).length)
+        + ' unmatched row(s) preserved');
 
     FLAGS.forEach(function (f) {
       var blank = 0;

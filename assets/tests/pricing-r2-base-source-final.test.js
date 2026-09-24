@@ -379,18 +379,18 @@ section('B · §3 THE JOIN — on the id, never on the local sku copy');
   ok(/NO_IDENTITY = 1/.test(d5), 'B8  a row with no marketplace_sku_id is NO_IDENTITY');
   ok(/BASE_SOURCE_FINAL_DRY_RUN = NO-GO/.test(d5), 'B8a and blocks');
 
-  // UNMATCHED is explicit, and is NOT a block on its own — but blanking a live value needs a yes.
+  // UNMATCHED is explicit, is PRESERVED, and never gates. Ambiguity is a hard stop; not knowing which
+  // product a row prices is a reason to leave the row alone, not a reason to hold up the rest.
   var w6 = world({ skuRows: rows(6, skuRow).filter(function (r, i) { return i !== 4; }) });
   var d6 = w6.TEMP_PRICING_R2_BASE_SOURCE_FINAL_DRY_RUN();
   ok(/SKU_DETAILS_UNMATCHED = 1/.test(d6), 'B9  a pricing row with no SKU Details row is UNMATCHED');
   ok(/NO_SKU_DETAILS = 1/.test(d6), 'B9a typed, not lumped in with ambiguity');
-  ok(/UNMATCHED ROWS THAT CURRENTLY HOLD A BASE VALUE \(3\)/.test(d6),
-    'B10 and the three base values it would destroy are listed by row');
-  ok(/BASE_SOURCE_FINAL_DRY_RUN = NO-GO/.test(d6), 'B10a which is NO-GO until someone authorises it');
-  w6.PSF_ALLOW_UNMATCHED_BLANKING_ = true;
-  var d6b = w6.TEMP_PRICING_R2_BASE_SOURCE_FINAL_DRY_RUN();
-  ok(!/UNMATCHED_BASE_WOULD_BLANK_NONBLANK/.test(d6b), 'B11 once authorised it is no longer a blocker');
-  ok(/BASE_SOURCE_FINAL_DRY_RUN = GO/.test(d6b), 'B11a and the run may proceed');
+  ok(/UNMATCHED_BASE_POLICY = PRESERVE_CURRENT_AND_REPORT/.test(d6), 'B10 the policy is stated');
+  ok(/UNMATCHED_ROWS_PRESERVED = 1/.test(d6), 'B10a the row is counted as preserved');
+  ok(/UNMATCHED_BASE_VALUES_CHANGED = 0/.test(d6), 'B10b and nothing of its own is changed');
+  ok(/BASE_SOURCE_FINAL_DRY_RUN = GO/.test(d6), 'B11 which is GO — an unmatched row does not gate');
+  ok(!/PSF_ALLOW_UNMATCHED_BLANKING_/.test(TOOL),
+    'B11a and there is no flag anywhere that would turn preservation into blanking');
 }
 
 // =============================================================================================================
@@ -468,7 +468,10 @@ section('D · §4/§5 THE SYNC — base comes from SKU Details and from nowhere 
   // §5 — the Date corruption is gone, and it was gone because a NUMBER was written, not because a format
   // was repainted over a Date.
   ok(/BASE_MSRP_DATE_VALUE_COUNT_PRE = 6/.test(r.dry), 'D8  the incident is measured, not assumed');
-  ok(/BASE_MSRP_DATE_VALUE_COUNT_POST \(projected\) = 0/.test(r.dry), 'D8a and the projection has none');
+  ok(/BASE_MSRP_DATE_VALUE_COUNT_POST \(projected, matched rows\) = 0/.test(r.dry),
+    'D8a and the projection has none on any matched row');
+  ok(/BASE_MSRP_DATE_VALUE_COUNT_POST \(projected, ALL rows\)     = 0/.test(r.dry),
+    'D8a1 nor on any other row, when every row is matched');
   ok(/BASE_MSRP_DATE_CORRUPTION_REMOVED = YES/.test(r.dry), 'D8b stated plainly');
   eq(typeof cell(w, 1, 'base_msrp'), 'number', 'D9  base_msrp reads back as a NUMBER after the write');
   ok(!(cell(w, 1, 'base_msrp') instanceof Date), 'D9a not a Date');
@@ -492,7 +495,9 @@ section('E · §4 base_currency — the source wins, but blank is never filled i
   eq(cell(w, 1, 'base_currency'), 'EUR', 'E1  a present source base_currency becomes the authority');
   eq(cell(w, 2, 'base_currency'), 'USD', 'E2  a blank source leaves the existing value ALONE — not blanked');
   ok(/BASE_CURRENCY_WOULD_UPDATE = 1/.test(r.dry), 'E3  the change is counted');
-  ok(/BASE_CURRENCY_BLANK_SOURCE_COUNT = 2/.test(r.dry), 'E4  and the silences are reported separately');
+  ok(/BASE_CURRENCY_SOURCE_BLANK = 2/.test(r.dry), 'E4  and the silences are reported separately');
+  ok(/BASE_CURRENCY_SOURCE_NONBLANK = 4/.test(r.dry), 'E4a beside the ones that spoke');
+  ok(/BASE_CURRENCY_PRESERVED_DUE_TO_BLANK_SOURCE = 2/.test(r.dry), 'E4b and what that preserved');
   ok(/BASE_CURRENCY_LEGACY_UNIT_AVAILABLE = 1/.test(r.dry),
     'E5  the legacy *_unit fallback is COUNTED, so adopting it stays a decision');
   eq(cell(w, 3, 'base_currency'), 'USD', 'E5a and is NOT silently applied');
@@ -823,15 +828,27 @@ mutant('J8  auto_msrp is overwritten from the new base value',
     return /NO-GO|THE PROJECTION MOVED A FIELD/.test(r.dry) || cell(w, 1, 'auto_msrp') === 39.99;
   });
 
-// J9 — the unmatched-blanking authorisation is defaulted to true, so a base price disappears from a row
-// nobody looked at.
-mutant('J9  blanking an unmatched row\'s live base price needs no authorisation',
-  'var PSF_ALLOW_UNMATCHED_BLANKING_ = false;',
-  'var PSF_ALLOW_UNMATCHED_BLANKING_ = true;',
+// J9 — an unmatched row is blanked instead of preserved. This is the shape the tool had before the
+// operator ruled on it, and it deletes a price from a row nobody was able to look up.
+mutant('J9  an unmatched row is blanked instead of preserved',
+  "        cell[tgt] = { value: currentRaw, from: 'PRESERVED_UNMATCHED' };",
+  "        cell[tgt] = { value: '', from: 'PRESERVED_UNMATCHED' };",
   function (m) {
     var w = world({ tool: m, skuRows: rows(6, skuRow).filter(function (r, i) { return i !== 4; }) });
     var d = w.TEMP_PRICING_R2_BASE_SOURCE_FINAL_DRY_RUN();
-    return !/NO-GO/.test(d);   // it would proceed to blank a live price with nobody asked
+    return !/UNMATCHED_BASE_VALUES_CHANGED = 0/.test(d) || /NO-GO/.test(d);
+  });
+
+// J10 — an unmatched row is allowed to hold up the matched ones. The operator ruled that it must not;
+// before the ruling it did, and the difference is invisible unless a world contains both kinds of row.
+mutant('J10 an unmatched row blocks the whole run',
+  "  p('UNMATCHED_ROWS_PRESERVED = ' + unmatchedRows.length);",
+  "  p('UNMATCHED_ROWS_PRESERVED = ' + unmatchedRows.length);\n" +
+  "  if (unmatchedRows.length) blockers.push('UNMATCHED = ' + unmatchedRows.length);",
+  function (m) {
+    var w = world({ tool: m, skuRows: rows(6, skuRow).filter(function (r, i) { return i !== 4; }) });
+    var d = w.TEMP_PRICING_R2_BASE_SOURCE_FINAL_DRY_RUN();
+    return /NO-GO/.test(d);
   });
 
 // =============================================================================================================
@@ -864,6 +881,92 @@ section('K · THIS FILE IS NOT ITS OWN EVIDENCE');
   ok(TOOL.indexOf("'regular_price_is_manual', 'minimum_price_is_manual', 'msrp_is_manual'") === -1,
     'K9  and the flag names are not re-listed locally where they could drift');
 }
+
+// =============================================================================================================
+section('L · THE OPERATOR RULING — the nine cases of the UNMATCHED / BLANK policy freeze');
+// =============================================================================================================
+{
+  // A world with BOTH kinds of row: SKU-3 is matched with blank prices, SKU-5 has no sku_details row at
+  // all. Testing them apart would never show that one does not interfere with the other.
+  var w = world({ skuRows: rows(6, skuRow).filter(function (r, i) { return i !== 4; }) });
+  var beforeAll = w.__price.getDataRange().getValues();
+  var r = runToCommit(w);
+
+  // A · matched SKU + blank selling_price -> base_regular blank
+  eq(cell(w, 3, 'base_regular_price'), '', 'L-A  matched SKU, blank selling_price -> base_regular blank');
+  // B · matched SKU + blank minimum_price -> base_minimum blank
+  eq(cell(w, 3, 'base_minimum_price'), '', 'L-B  matched SKU, blank minimum_price -> base_minimum blank');
+  // C · matched SKU + blank msrp -> base_msrp blank
+  eq(cell(w, 3, 'base_msrp'), '', 'L-C  matched SKU, blank msrp -> base_msrp blank');
+  ok(/MATCHED_BASE_MSRP_NONBLANK = 4    MATCHED_BASE_MSRP_BLANK = 1/.test(r.dry),
+    'L-C1 and the matched census counts blank beside nonblank');
+  ok(/MATCHED_BASE_REGULAR_NONBLANK = 4    MATCHED_BASE_REGULAR_BLANK = 1/.test(r.dry), 'L-C2 for regular');
+  ok(/MATCHED_BASE_MINIMUM_NONBLANK = 4    MATCHED_BASE_MINIMUM_BLANK = 1/.test(r.dry), 'L-C3 for minimum');
+
+  // D · unmatched SKU -> existing base values preserved EXACTLY, type included
+  var bR = LIVE.indexOf('base_regular_price'), bM = LIVE.indexOf('base_minimum_price');
+  var bS = LIVE.indexOf('base_msrp'), bC = LIVE.indexOf('base_currency');
+  eq(cell(w, 5, 'base_regular_price'), beforeAll[5][bR], 'L-D  unmatched: base_regular_price preserved');
+  eq(cell(w, 5, 'base_minimum_price'), beforeAll[5][bM], 'L-D1 unmatched: base_minimum_price preserved');
+  eq(String(cell(w, 5, 'base_msrp')), String(beforeAll[5][bS]), 'L-D2 unmatched: base_msrp preserved');
+  eq(cell(w, 5, 'base_currency'), beforeAll[5][bC], 'L-D3 unmatched: base_currency preserved');
+  ok(cell(w, 5, 'base_msrp') instanceof Date,
+    'L-D4 including its TYPE — a preserved Date stays a Date, which is the cost of the ruling and is');
+  ok(/UNMATCHED_ROWS_STILL_HOLDING_A_DATE_BASE_VALUE = 1/.test(r.dry),
+    'L-D5 reported in the dry run rather than left to be discovered');
+  ok(/PASS  UNMATCHED_BASE_VALUES_CHANGED = 0/.test(r.commit),
+    'L-D6 and re-measured on the written sheet, not just on the plan');
+
+  // E · unmatched SKU does not block the matched rows
+  ok(/BASE_SOURCE_FINAL_COMMIT = PASS/.test(r.commit), 'L-E  the run completes with an unmatched row in it');
+  eq(cell(w, 1, 'base_msrp'), 35, 'L-E1 and every matched row got its SKU Details price');
+  eq(cell(w, 1, 'base_regular_price'), 32.5, 'L-E2 for regular too');
+  eq(cell(w, 6, 'base_msrp'), 40, 'L-E3 including the rows after the unmatched one');
+
+  // F · ambiguous SKU Details mapping blocks the WHOLE execution
+  var wf = world({ skuRows: rows(6, skuRow).concat([skuRow(4)]) });
+  var df = wf.TEMP_PRICING_R2_BASE_SOURCE_FINAL_DRY_RUN();
+  ok(/JOIN_AMBIGUITY_COUNT = 1/.test(df), 'L-F  an ambiguous sku_details mapping is counted');
+  ok(/BASE_SOURCE_FINAL_DRY_RUN = NO-GO/.test(df), 'L-F1 and stops everything, not just that row');
+  eq(wf.__price.__rangeWrites, 0, 'L-F2 with nothing written for any row');
+
+  // G · matched row whose base_currency is blank keeps the pricing_list value
+  var srcG = rows(6, skuRow);
+  srcG[1] = srcG[1].slice(); srcG[1][SKUD.indexOf('base_currency')] = '';
+  var wg = world({ skuRows: srcG });
+  var rg = runToCommit(wg);
+  eq(cell(wg, 2, 'base_currency'), 'USD', 'L-G  blank source base_currency preserves the existing value');
+  ok(/BASE_CURRENCY_SOURCE_BLANK = 1/.test(rg.dry), 'L-G1 and is reported as BASE_CURRENCY_SOURCE_BLANK');
+  ok(/BASE_CURRENCY_SOURCE_NONBLANK = 5/.test(rg.dry), 'L-G2 beside the ones that had a source');
+  ok(/BASE_CURRENCY_PRESERVED_DUE_TO_BLANK_SOURCE = 1/.test(rg.dry), 'L-G3 and counted as preserved');
+
+  // H · no blank anywhere becomes zero
+  var zero = [1, 2, 3, 4, 5, 6].filter(function (i) {
+    return ['base_regular_price', 'base_minimum_price', 'base_msrp'].some(function (f) {
+      var v = cell(w, i, f);
+      return v === 0 || v === '0';
+    });
+  });
+  eq(zero, [], 'L-H  no base field on any row is 0');
+
+  // I · no effective or auto price is used as a base fallback, on any row, matched or not
+  // Matched rows only. On an unmatched row the value was preserved, not chosen, and auto == base is what
+  // an fx_rate of 1 produces — so equality there is arithmetic rather than evidence of a fallback. L-D
+  // already proves that row was left exactly as found.
+  var leaked = [];
+  [1, 2, 3, 4, 6].forEach(function (i) {
+    var eff = [cell(w, i, 'regular_price'), cell(w, i, 'minimum_price'), cell(w, i, 'msrp')];
+    var auto = [cell(w, i, 'auto_regular_price'), cell(w, i, 'auto_minimum_price'), cell(w, i, 'auto_msrp')];
+    [['base_regular_price', 0], ['base_minimum_price', 1], ['base_msrp', 2]].forEach(function (pair) {
+      var v = cell(w, i, pair[0]);
+      if (psfBlankish(v)) return;
+      if (v === eff[pair[1]]) leaked.push(i + ':' + pair[0] + '=effective');
+      if (v === auto[pair[1]]) leaked.push(i + ':' + pair[0] + '=auto');
+    });
+  });
+  eq(leaked, [], 'L-I  no base value equals this row\'s effective or auto value');
+}
+function psfBlankish(v) { return v === '' || v === null || v === undefined; }
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed, ' + mutCaught + ' mutants caught, '
   + mutSurvived + ' survived');
