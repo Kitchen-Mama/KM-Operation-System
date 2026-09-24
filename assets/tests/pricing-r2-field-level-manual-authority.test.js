@@ -17,6 +17,7 @@
 //   J  §8 the template round trip, and that a blank cell is NO_CHANGE rather than AUTO or delete
 //   K  §10 the census: counting only, one implementation, and zero ambiguous rows written
 //   L  the wiring: route, registry, manifest, contract versions, client pin, release order, cache token
+//   O  PRICING-R4: the WHOLE chain, browser template -> file -> server -> sheet -> audit
 //   M  mutants
 //
 // Run: node assets/tests/pricing-r2-field-level-manual-authority.test.js
@@ -835,6 +836,237 @@ section('N · THE SCREEN — three states are three badges, and every class has 
 }
 
 // =============================================================================================================
+section('O · PRICING-R4 — THE WHOLE CHAIN, BROWSER TEMPLATE TO SHEET TO AUDIT');
+// =============================================================================================================
+// Every part of this flow is tested above and the SEAM between the parts is not: section J stops at the
+// file, section E starts from hand-written lines. Nothing has ever taken what the browser actually writes
+// into a CSV, read it back with the real parser, and handed the result to the real handler. A key renamed
+// on one side of that seam passes both suites and breaks every import.
+//
+// The rows here are the production shape AFTER PRICING-R3: auto_* current, every ownership flag blank.
+{
+  var R4_MKT = [
+    { marketplaceSkuId: 'M1', sku: 'CO1100-R', company: 'KM', country: 'CA', marketplace: 'amazon', siteSku: 'SA1' },
+    { marketplaceSkuId: 'M2', sku: 'CO1150-AG', company: 'KM', country: 'US', marketplace: 'amazon', siteSku: 'SA2' },
+    { marketplaceSkuId: 'M3', sku: 'CO1200-B', company: 'KM', country: 'US', marketplace: 'amazon', siteSku: 'SA3' }
+  ];
+
+  // M1 is the interesting one: its minimum_price ALREADY equals auto_minimum_price, so USE AUTO on that
+  // field changes the ownership without moving the price a customer sees. That is the only shape of AUTO
+  // smoke that is safe to run against a live marketplace, and it needs to be provably distinguishable.
+  function r4SheetRows() {
+    return [
+      priceRow({ pricing_id: 'P1', marketplace_sku_id: 'M1', sku: 'CO1100-R', country: 'CA', marketplace: 'amazon',
+        site_sku: 'SA1', currency: 'CAD', base_currency: 'USD',
+        base_regular_price: 29.99, base_minimum_price: 24, base_msrp: 35,
+        fx_rate: 1.41095, fx_rate_date: '2026-09-24',
+        auto_regular_price: 42.31, auto_minimum_price: 33.86, auto_msrp: 49.38,
+        regular_price: 44.99, minimum_price: 33.86, msrp: 49.38 }),
+      priceRow({ pricing_id: 'P2', marketplace_sku_id: 'M2', sku: 'CO1150-AG', country: 'US', marketplace: 'amazon',
+        site_sku: 'SA2', currency: 'USD', base_currency: 'USD',
+        base_regular_price: 31.99, base_minimum_price: 26, base_msrp: 40,
+        fx_rate: 1, fx_rate_date: '2026-09-24',
+        auto_regular_price: 31.99, auto_minimum_price: 26, auto_msrp: 40,
+        regular_price: 34.99, minimum_price: 26, msrp: 40 }),
+      priceRow({ pricing_id: 'P3', marketplace_sku_id: 'M3', sku: 'CO1200-B', country: 'US', marketplace: 'amazon',
+        site_sku: 'SA3', currency: 'USD', base_currency: 'USD',
+        base_regular_price: 19.99, base_minimum_price: 15, base_msrp: 24,
+        fx_rate: 1, fx_rate_date: '2026-09-24',
+        auto_regular_price: 19.99, auto_minimum_price: 15, auto_msrp: 24,
+        regular_price: 22.99, minimum_price: 15, msrp: 24 })
+    ];
+  }
+
+  // The same three rows as the BROWSER holds them, which is what the template is built from.
+  var R4_CC = [
+    { pricingId: 'P1', marketplaceSkuId: 'M1', sku: 'CO1100-R', siteSku: 'SA1', country: 'CA', marketplace: 'amazon',
+      currency: 'CAD', regularPrice: 44.99, minimumPrice: 33.86, msrp: 49.38,
+      autoRegularPrice: 42.31, autoMinimumPrice: 33.86, autoMsrp: 49.38,
+      regularPriceIsManual: null, minimumPriceIsManual: null, msrpIsManual: null,
+      fxRate: 1.41095, fxRateDate: '2026-09-24', raw: {} },
+    { pricingId: 'P2', marketplaceSkuId: 'M2', sku: 'CO1150-AG', siteSku: 'SA2', country: 'US', marketplace: 'amazon',
+      currency: 'USD', regularPrice: 34.99, minimumPrice: 26, msrp: 40,
+      autoRegularPrice: 31.99, autoMinimumPrice: 26, autoMsrp: 40,
+      regularPriceIsManual: null, minimumPriceIsManual: null, msrpIsManual: null,
+      fxRate: 1, fxRateDate: '2026-09-24', raw: {} },
+    { pricingId: 'P3', marketplaceSkuId: 'M3', sku: 'CO1200-B', siteSku: 'SA3', country: 'US', marketplace: 'amazon',
+      currency: 'USD', regularPrice: 22.99, minimumPrice: 15, msrp: 24,
+      autoRegularPrice: 19.99, autoMinimumPrice: 15, autoMsrp: 24,
+      regularPriceIsManual: null, minimumPriceIsManual: null, msrpIsManual: null,
+      fxRate: 1, fxRateDate: '2026-09-24', raw: {} }
+  ];
+
+  // A person edits the downloaded file in a spreadsheet. Editing it as a GRID rather than by string
+  // surgery is what they actually do, and it still goes out through the real CSV writer and back in
+  // through the real parser.
+  function editTemplate(csv, edits, P) {
+    P = P || SRP;
+    var g = P.parseCsv(csv), h = g[0];
+    var rows = g.slice(1).map(function (r) {
+      var o = {}; h.forEach(function (c, i) { o[c] = r[i]; }); return o;
+    });
+    rows.forEach(function (o) {
+      var e = edits[o.marketplace_sku_id];
+      if (e) Object.keys(e).forEach(function (k) { o[k] = e[k]; });
+    });
+    return P.toCsv(h, rows);
+  }
+
+  // The columns an import must never touch. base_* is PRICING-R2's canonical source layer and auto_* is
+  // PRICING-R3's system reference; a manual price is neither, and an import that moved one would make the
+  // next FX run disagree with the prices it is supposed to be reconciling.
+  var R4_UNTOUCHABLE = ['base_currency', 'base_regular_price', 'base_minimum_price', 'base_msrp',
+    'auto_regular_price', 'auto_minimum_price', 'auto_msrp', 'fx_rate', 'fx_rate_date'];
+  function untouchableSnapshot(w) {
+    return w.__price.__grid.slice(1).map(function (r) {
+      return R4_UNTOUCHABLE.map(function (c) { return String(r[PRICING_HEADER.indexOf(c)]); }).join(String.fromCharCode(124));
+    }).join(' // ');
+  }
+  function cellOf(w, rowIx, name) { return w.__price.__grid[rowIx][PRICING_HEADER.indexOf(name)]; }
+
+  // ---- the template, as downloaded ----------------------------------------------------------------
+  var csv0 = SRP.buildTemplateCsv(R4_CC, R4_MKT);
+  var v0 = SRP.validateFile(csv0);
+  eq([v0.ok, v0.lines.length, v0.lines.filter(SRP.lineTouches).length], [true, 3, 0],
+    'O1  the downloaded template validates and asks for nothing');
+
+  // ---- the edit a person makes: three smoke rows, one per field, plus a mixed row -------------------
+  //
+  //   M1  regular MANUAL 45.99   ·  minimum AUTO  ·  msrp NO_CHANGE      <- the mixed row (§3)
+  //   M2  msrp MANUAL 41.50, everything else untouched
+  //   M3  minimum MANUAL 16.50, everything else untouched
+  var edited = editTemplate(csv0, {
+    M1: { regular_price_mode: 'MANUAL', regular_price: '45.99', minimum_price_mode: 'AUTO' },
+    M2: { msrp_mode: 'MANUAL', msrp: '41.50' },
+    M3: { minimum_price_mode: 'MANUAL', minimum_price: '16.50' }
+  });
+  var v1 = SRP.validateFile(edited);
+  eq([v1.ok, v1.errors.length], [true, 0], 'O2  the edited file passes file-shaped validation');
+  var touched = v1.lines.filter(SRP.lineTouches);
+  eq(touched.length, 3, 'O2a and three rows ask for something');
+
+  // THE SEAM. Every key the server reads must be a key the browser wrote, and this is the only place the
+  // two vocabularies meet.
+  eq(Object.keys(touched[0]).sort(), ['currency', 'marketplace_sku_id', 'minimum_price_mode', 'msrp_mode',
+    'regular_price', 'regular_price_mode'].sort(),
+    'O3  a MANUAL+AUTO+NO_CHANGE line carries exactly the keys the server reads');
+  ok(touched[0].minimum_price === undefined, 'O3a  and AUTO carries no value across the seam');
+
+  // ---- PREVIEW: the same code path, writing nothing --------------------------------------------------
+  var wPrev = makeWorld(GS73, { rows: r4SheetRows() });
+  var envPrev = wPrev.handlePricingUpdate_({ dry_run: true, changed_by: 'smoke',
+    change_reason: 'Price template import (preview)', lines: touched });
+  eq([envPrev.success, envPrev.data.dry_run, envPrev.data.written, envPrev.data.changed_rows],
+    [true, true, 0, 3], 'O4  the preview plans all three rows and writes nothing');
+  eq(wPrev.__price.__writes, 0, 'O4a  zero physical writes');
+  eq(wPrev.__log.__writes, 0, 'O4b  and nothing logged');
+  eq([envPrev.data.rows[0].fields.regular_price.mode, envPrev.data.rows[0].fields.minimum_price.mode,
+    envPrev.data.rows[0].fields.msrp.mode], ['MANUAL', 'AUTO', 'NO_CHANGE'],
+    'O4c  and the receipt names all three modes of the mixed row');
+
+  // ---- WRITE ----------------------------------------------------------------------------------------
+  var w = makeWorld(GS73, { rows: r4SheetRows() });
+  var before = untouchableSnapshot(w);
+  var env = w.handlePricingUpdate_({ changed_by: 'smoke', change_reason: 'PRICING-R4 smoke', lines: touched });
+  eq([env.success, env.data.written, env.data.changed_rows], [true, 3, 3], 'O5  three rows written');
+
+  // §3 THE MIXED ROW. One row, three different answers, and the third answer is silence.
+  eq(cellOf(w, 1, 'regular_price'), 45.99, 'O6  MANUAL wrote the regular price');
+  eq(cellOf(w, 1, 'regular_price_is_manual'), 'TRUE', 'O6a  and took ownership of it');
+  eq(cellOf(w, 1, 'minimum_price'), 33.86, 'O6b  AUTO restored the minimum price from auto_minimum_price');
+  eq(cellOf(w, 1, 'minimum_price_is_manual'), 'FALSE', 'O6c  and handed that field to the system');
+  eq(cellOf(w, 1, 'msrp'), 49.38, 'O6d  NO_CHANGE left the MSRP exactly as it was');
+  eq(cellOf(w, 1, 'msrp_is_manual'), '', 'O6e  and its ownership is still UNSTATED — not classified by a neighbour');
+
+  // The other two rows moved one field each and nothing else.
+  eq([cellOf(w, 2, 'msrp'), cellOf(w, 2, 'msrp_is_manual')], [41.5, 'TRUE'], 'O7  the MSRP-only row');
+  eq([cellOf(w, 2, 'regular_price'), cellOf(w, 2, 'regular_price_is_manual')], [34.99, ''],
+    'O7a  with its regular price and its unstated ownership both intact');
+  eq([cellOf(w, 3, 'minimum_price'), cellOf(w, 3, 'minimum_price_is_manual')], [16.5, 'TRUE'], 'O7b  the minimum-only row');
+  eq([cellOf(w, 3, 'msrp'), cellOf(w, 3, 'msrp_is_manual')], [24, ''], 'O7c  likewise untouched elsewhere');
+
+  // §8 — NOT ONE base_* OR auto_* CELL MOVED. Compared over the whole sheet rather than per row, because
+  // a manual import that wrote an auto value would most likely write it on a row nobody was looking at.
+  eq(untouchableSnapshot(w), before, 'O8  no base_*, auto_*, fx_rate or fx_rate_date cell changed anywhere');
+
+  // §6 — ONE AUDIT ENTRY PER FIELD THAT ACTUALLY CHANGED, and none for the field that did not.
+  var logs = w.__log.__grid.slice(1);
+  eq([env.data.logged, logs.length], [4, 4], 'O9  four field changes, four audit entries');
+  var lc = function (n) { return LOG_HEADER.indexOf(n); };
+  var seenLog = logs.map(function (r) { return r[lc('pricing_id')] + ':' + r[lc('field_name')] + ':' + r[lc('change_type')]; }).sort();
+  eq(seenLog, ['P1:minimum_price:RETURN_TO_AUTO', 'P1:regular_price:MANUAL_SET',
+    'P2:msrp:MANUAL_SET', 'P3:minimum_price:MANUAL_SET'],
+    'O9a  each typed by what happened, and the NO_CHANGE field has no entry at all');
+
+  // THE ONE ENTRY WHOSE VALUES AGREE. M1's minimum price already equalled its auto value, so USE AUTO
+  // changed only the OWNERSHIP — and an audit row with old_value === new_value is the correct record of
+  // that, not a bug. It is also the safest possible AUTO smoke against a live site.
+  var retAuto = logs.filter(function (r) { return r[lc('change_type')] === 'RETURN_TO_AUTO'; })[0];
+  eq([retAuto[lc('old_value')], retAuto[lc('new_value')]], ['33.86', '33.86'],
+    'O10 an ownership-only hand-back records the same value on both sides');
+
+  // ---- THE CONTEXT COLUMNS ARE CONTEXT ---------------------------------------------------------------
+  // master_sku / site_sku / company / country / marketplace exist so a person can see which row they are
+  // editing. If any of them could select the row, a stale download would write to the wrong site.
+  var relabelled = editTemplate(csv0, {
+    M1: { master_sku: 'CO9999-X', site_sku: 'WRONG', company: 'OTHER', country: 'JP', marketplace: 'rakuten',
+      regular_price_mode: 'MANUAL', regular_price: '45.99' }
+  });
+  var v2 = SRP.validateFile(relabelled);
+  var t2 = v2.lines.filter(SRP.lineTouches);
+  eq([v2.ok, t2.length, t2[0].marketplace_sku_id], [true, 1, 'M1'], 'O11 a relabelled row is still addressed by marketplace_sku_id');
+  ok(t2[0].master_sku === undefined && t2[0].site_sku === undefined && t2[0].company === undefined,
+    'O11a and none of the context columns crosses the seam at all');
+  var w2 = makeWorld(GS73, { rows: r4SheetRows() });
+  var env2 = w2.handlePricingUpdate_({ changed_by: 'smoke', lines: t2 });
+  eq([env2.data.written, cellOf(w2, 1, 'regular_price')], [1, 45.99], 'O11b and the write lands on M1 regardless');
+
+  // ---- REVERSIBILITY, AND ITS LIMIT ------------------------------------------------------------------
+  // THE VALUE IS REVERSIBLE. THE OWNERSHIP IS NOT. pricingWriteFlag_ returns TRUE or FALSE and there is no
+  // third word, so nothing in this action can return a flag to blank. An operator smoke leaves the row
+  // classified, and that is a property of the smoke rather than an accident of it.
+  var wRev = makeWorld(GS73, { rows: r4SheetRows() });
+  wRev.handlePricingUpdate_({ changed_by: 'smoke', lines: [{ marketplace_sku_id: 'M3', currency: 'USD',
+    regular_price_mode: 'MANUAL', regular_price: '25.99' }] });
+  eq([cellOf(wRev, 3, 'regular_price'), cellOf(wRev, 3, 'regular_price_is_manual')], [25.99, 'TRUE'],
+    'O12 the smoke sets a manual price');
+  var envBack = wRev.handlePricingUpdate_({ changed_by: 'smoke', lines: [{ marketplace_sku_id: 'M3', currency: 'USD',
+    regular_price_mode: 'MANUAL', regular_price: '22.99' }] });
+  eq([envBack.data.written, cellOf(wRev, 3, 'regular_price')], [1, 22.99],
+    'O12a and the original value is restorable exactly');
+  eq(cellOf(wRev, 3, 'regular_price_is_manual'), 'TRUE',
+    'O12b but the flag stays TRUE — the rollback restores the price, not the silence');
+  eq(W.pricingWriteFlag_(true) + '/' + W.pricingWriteFlag_(false), 'TRUE/FALSE',
+    'O12c because the writer has exactly two words and blank is not one of them');
+  ok(!/cells\[spec\.flag\]\s*=\s*''/.test(bare(GS73)),
+    'O12d and no branch writes an empty flag, so UNKNOWN is unreachable from here');
+
+  // ---- THE WRITE SET, ACROSS EVERY MODE --------------------------------------------------------------
+  // The per-field planner may only ever name the effective field, its own flag, and the legacy descriptor.
+  // Checked over every mode against a row that HAS a value in every column, so a leak has something to
+  // leak: a planner reading auto_* to write it back would look correct on a row where auto_* was blank.
+  var ALLOWED = {};
+  W.PRICING_FIELDS_.forEach(function (sp) { ALLOWED[sp.field] = 1; ALLOWED[sp.flag] = 1; });
+  ALLOWED.price_source = 1;
+  var leaked = [];
+  ['NO_CHANGE', 'MANUAL', 'AUTO'].forEach(function (mode) {
+    W.PRICING_FIELDS_.forEach(function (sp) {
+      var full = { currency: 'USD', regular_price: 10, minimum_price: 8, msrp: 12,
+        auto_regular_price: 9, auto_minimum_price: 7, auto_msrp: 11,
+        base_regular_price: 5, base_minimum_price: 4, base_msrp: 6, base_currency: 'USD',
+        fx_rate: 1, fx_rate_date: '2026-09-24' };
+      var line = { marketplace_sku_id: 'M' };
+      line[sp.mode] = mode;
+      if (mode === 'MANUAL') line[sp.field] = '99';
+      var pl = W.pricingPlanRow_(full, line);
+      Object.keys(pl.cells).forEach(function (k) { if (!ALLOWED[k]) leaked.push(mode + ':' + sp.field + ':' + k); });
+    });
+  });
+  eq(leaked, [], 'O13 no mode, on any field, ever names a base_*, auto_* or fx column in its write set');
+}
+
+
+// =============================================================================================================
 section('M · MUTANTS — every fault is one a person could plausibly write');
 // =============================================================================================================
 function nl(src, t) { return src.indexOf('\r\n') !== -1 ? t.split('\n').join('\r\n') : t; }
@@ -1008,6 +1240,65 @@ mut('M16 a pricing row is addressed by master SKU instead of marketplace_sku_id'
   "function pricingLineKey_(line) { return pricingStr_(line && line.marketplace_sku_id); }",
   "function pricingLineKey_(line) { return pricingStr_((line && line.marketplace_sku_id) || (line && line.master_sku)); }",
   function (w) { return w.pricingLineKey_({ master_sku: 'SKU-A' }) !== ''; });
+
+// M17 — the manual writer also writes back auto_*. Nothing visible breaks: the value written is the one
+// already there. It breaks the NEXT FX run, which compares its computed reference against a column a
+// price editor has been quietly maintaining.
+mut('M17 a manual-path write names an auto_* column in its write set',
+  "  out.cells[spec.field] = auto.value;",
+  "  out.cells[spec.field] = auto.value; out.cells[spec.auto] = auto.value;",
+  function (w) {
+    var pl = w.pricingPlanRow_({ currency: 'USD', regular_price: 12.5, auto_regular_price: 9.99 },
+      { marketplace_sku_id: 'M', regular_price_mode: 'AUTO' });
+    return pl.cells.auto_regular_price !== undefined;
+  });
+
+// M18 — NO_CHANGE classifies the field as AUTO. This is the whole round's hazard wearing the one mode
+// that is supposed to be silence: uploading an UNEDITED template would classify the entire price book.
+mut('M18 NO_CHANGE writes an ownership flag instead of nothing',
+  "  if (mode === 'NO_CHANGE') return out;",
+  "  if (mode === 'NO_CHANGE') { out.changed = true; out.cells[spec.flag] = pricingWriteFlag_(false); return out; }",
+  function (w) {
+    var pl = w.pricingPlanRow_({ currency: 'USD', regular_price: 10, minimum_price: 8, msrp: 12 },
+      { marketplace_sku_id: 'M' });
+    return Object.keys(pl.cells).length > 0;
+  });
+
+// M19 — THE SEAM ITSELF, mutated on the BROWSER side. The file validates, the preview looks right, and
+// the value never crosses into the payload. Only a test that runs the real parser into the real handler
+// can see it; section J would pass and section E would pass.
+function srpFaulted(from, to, tag) {
+  if (SRP_SRC.indexOf(from) === -1) throw new Error('anchor drifted :: ' + tag);
+  var S = { console: console, Object: Object, Array: Array, String: String, Number: Number,
+    Math: Math, JSON: JSON, isFinite: isFinite, RegExp: RegExp, module: { exports: {} } };
+  vm.createContext(S);
+  vm.runInContext(SRP_SRC.replace(from, to), S, { filename: 'sku-regional-pricing.js' });
+  return S.module.exports;
+}
+{
+  var label = 'M19 the browser drops a MANUAL price on its way into the payload';
+  var caught = false;
+  try {
+    var P = srpFaulted('line[spec.key] = val;', '/* the value never reaches the line */;', 'M19');
+    var mkt = [{ marketplaceSkuId: 'M1', sku: 'S', company: 'KM', country: 'US', marketplace: 'amazon', siteSku: 'SA' }];
+    var cc = [{ pricingId: 'P1', marketplaceSkuId: 'M1', sku: 'S', siteSku: 'SA', country: 'US',
+      marketplace: 'amazon', currency: 'USD', regularPrice: 10, autoRegularPrice: 9, raw: {} }];
+    var g = P.parseCsv(P.buildTemplateCsv(cc, mkt)), h = g[0];
+    var o = {}; h.forEach(function (c, i) { o[c] = g[1][i]; });
+    o.regular_price_mode = 'MANUAL'; o.regular_price = '11';
+    var vv = P.validateFile(P.toCsv(h, [o]));
+    // The file still passes — that is the point of the mutant.
+    var ww = makeWorld(GS73, { rows: [priceRow({ pricing_id: 'P1', marketplace_sku_id: 'M1',
+      currency: 'USD', regular_price: 10, auto_regular_price: 9 })] });
+    var ee = ww.handlePricingUpdate_({ changed_by: 't', lines: vv.lines.filter(P.lineTouches) });
+    caught = ee.success === false || ww.__price.__writes === 0;
+  } catch (e) {
+    if (/anchor drifted/.test(e.message)) { fail++; console.error('FAIL ' + label + ' — ' + e.message); }
+    else caught = true;
+  }
+  if (caught) { mutCaught++; console.log('ok   ' + label + ' (caught)'); }
+  else { mutSurvived++; fail++; console.error('FAIL ' + label + ' — MUTANT SURVIVED'); }
+}
 
 // =============================================================================================================
 console.log('\n' + pass + ' passed / ' + fail + ' failed   ·   ' + (mutCaught + mutSurvived) + ' mutants, ' + mutSurvived + ' survived');

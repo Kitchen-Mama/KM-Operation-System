@@ -489,6 +489,189 @@
         return out;
     };
 
+
+    // ---- the bulk-update target scope (PRICING-R4B) ------------------------------------------------------
+    //
+    // A bulk import is scoped to ONE country + ONE marketplace, and the list of targets is derived from the
+    // pricing rows that actually exist rather than from the marketplaces table. A marketplace with no
+    // pricing rows would offer a target whose template downloads empty, and an operator would reasonably
+    // read that as "there is nothing to price here" rather than "this list is not about pricing".
+    //
+    // THE CURRENCY COMES FROM pricing_list.currency, and that is a decision rather than a shortcut. The
+    // server refuses a line whose currency disagrees with THE ROW — its own refusal, named in 73_ — so a notice
+    // quoting any other source could tell an operator to fill a file the writer then rejects. The
+    // marketplaces table carries its own `currency` column; if the two ever disagree that is a data
+    // question for someone to settle, not something an import should silently pick a side in.
+    SRP.scopes = function (pricingRows, marketplaceSkus) {
+        var mix = indexMkt(marketplaceSkus);
+        var byKey = {};
+        (pricingRows || []).forEach(function (p) {
+            var raw = p.raw || {};
+            var msid = String(p.marketplaceSkuId || raw.marketplace_sku_id || '').trim();
+            if (!msid) return;
+            var m = mix[msid] || {};
+            var country = String(p.country || raw.country || m.country || '').trim().toUpperCase();
+            var marketplace = String(p.marketplace || raw.marketplace || m.marketplace || '').trim();
+            if (!country || !marketplace) return;
+            var key = country + '|' + marketplace;
+            var sc = byKey[key] || (byKey[key] = { key: key, country: country, marketplace: marketplace,
+                ids: {}, rows: [], counts: {}, companies: {} });
+            var cur = String(p.currency || raw.currency || '').trim().toUpperCase();
+            if (cur) sc.counts[cur] = (sc.counts[cur] || 0) + 1;
+            if (m.company) sc.companies[m.company] = 1;
+            sc.ids[msid] = 1;
+            sc.rows.push(p);
+        });
+        return Object.keys(byKey).sort().map(function (k) {
+            var sc = byKey[k];
+            sc.currencyList = Object.keys(sc.counts).sort();
+            // ONE currency or NONE. A target whose rows disagree is not importable, and picking the most
+            // common one would write the minority rows in a currency nobody chose.
+            sc.currency = sc.currencyList.length === 1 ? sc.currencyList[0] : null;
+            sc.companyList = Object.keys(sc.companies).sort();
+            sc.rowCount = sc.rows.length;
+            return sc;
+        });
+    };
+
+    SRP.countriesOf = function (scopes) {
+        var seen = {};
+        (scopes || []).forEach(function (sc) { seen[sc.country] = 1; });
+        return Object.keys(seen).sort();
+    };
+    SRP.scopesForCountry = function (scopes, country) {
+        var c = String(country || '').trim().toUpperCase();
+        return (scopes || []).filter(function (sc) { return sc.country === c; });
+    };
+    SRP.findScope = function (scopes, key) {
+        var hit = (scopes || []).filter(function (sc) { return sc.key === key; });
+        return hit.length === 1 ? hit[0] : null;
+    };
+
+    /**
+     * THE BULK FILE CHECK: the frozen file contract, plus the two things only a SCOPED import can know.
+     *
+     * SRP.validateFile is not changed and not re-implemented — it is called. It drops a value supplied
+     * beside AUTO, which is the safe reading and the reason a price cannot ride in behind a hand-back. A
+     * scoped import can afford to be stricter than safe: a file saying both AUTO and 45.99 for one field is
+     * saying two different things, and an operator should be told rather than have one of them discarded
+     * quietly. So the contradiction is REFUSED here while the frozen function keeps dropping it, and no
+     * second import contract exists — this is a gate in front of the same one.
+     */
+    SRP.validateBulkFile = function (text, scope) {
+        var out = { ok: true, errors: [], lines: [], rowCount: 0 };
+        if (!scope) {
+            out.ok = false;
+            out.errors.push({ line: 0, code: 'TARGET_NOT_SELECTED', detail: 'Choose a country and a marketplace before uploading.' });
+            return out;
+        }
+        if (!scope.currency) {
+            out.ok = false;
+            out.errors.push({ line: 0, code: 'TARGET_CURRENCY_AMBIGUOUS',
+                detail: scope.currencyList.length
+                    ? 'The pricing rows for this target carry more than one currency (' + scope.currencyList.join(', ') +
+                      '). An import cannot choose between them.'
+                    : 'No pricing row in this target carries a currency, so there is nothing to validate an upload against.' });
+            return out;
+        }
+
+        var base = SRP.validateFile(text);
+        out.rowCount = base.rowCount;
+        if (!base.ok) { out.ok = false; out.errors = base.errors.slice(); return out; }
+
+        // A VALUE BESIDE AUTO. Read off the GRID, because validateFile has already dropped it by the time
+        // it returns lines — which is exactly the behaviour being kept intact underneath.
+        var grid = SRP.parseCsv(text);
+        var headers = (grid[0] || []).map(function (h) { return String(h).trim().toLowerCase(); });
+        var cell = function (r, n) { var i = headers.indexOf(n); return i === -1 ? '' : String(r[i] == null ? '' : r[i]).trim(); };
+        for (var g = 1; g < grid.length; g++) {
+            SRP.FIELDS.forEach(function (spec) {
+                var mode = cell(grid[g], spec.mode).toUpperCase().replace(/[\s-]+/g, '_');
+                if (mode === 'AUTO' && cell(grid[g], spec.key) !== '') {
+                    out.ok = false;
+                    out.errors.push({ line: g + 1, code: 'AUTO_WITH_VALUE', field: spec.key,
+                        detail: 'AUTO and a price in the same row say two different things. Use Auto restores the price from the stored auto value; clear the price cell, or choose MANUAL.' });
+                }
+            });
+        }
+
+        // SCOPE MEMBERSHIP IS DECIDED BY marketplace_sku_id ALONE, never by the country or marketplace cell.
+        // Those columns are context: the import does not read them, so a row pasted from another target
+        // cannot be retargeted by editing them, and editing them on a row that IS in scope changes nothing.
+        base.lines.forEach(function (l) {
+            var id = String(l.marketplace_sku_id || '').trim();
+            if (!scope.ids[id]) {
+                out.ok = false;
+                out.errors.push({ line: 0, code: 'ROW_OUTSIDE_TARGET', marketplace_sku_id: id,
+                    detail: id + ' is not a pricing row of ' + scope.country + ' / ' + scope.marketplace +
+                        '. A file is addressed by marketplace_sku_id, so a row from another target lands outside this import rather than being moved into it.' });
+                return;
+            }
+            var cur = String(l.currency || '').trim().toUpperCase();
+            if (cur && cur !== scope.currency) {
+                out.ok = false;
+                out.errors.push({ line: 0, code: 'FILE_CURRENCY_NOT_TARGET', marketplace_sku_id: id,
+                    detail: 'This target prices in ' + scope.currency + '; the file says ' + cur +
+                        '. The currency is set by the marketplace and an import may not change it.' });
+                return;
+            }
+            out.lines.push(l);
+        });
+
+        if (!out.ok) out.lines = [];   // §9 — a rejected file offers nothing for writing
+        return out;
+    };
+
+    /**
+     * THE PREVIEW TABLE. It is driven by the SERVER receipt, not by a second opinion: the rows and fields
+     * shown are the ones the dry run said would change, and this only decorates them with the current value
+     * and the current owner, which the page already holds. Deciding here what would change would make the
+     * browser a second pricing authority — the thing §8 of the previous round was careful not to build.
+     */
+    SRP.previewRows = function (receiptRows, lines, pricingRows) {
+        var byId = SRP.indexByMarketplaceSkuId(pricingRows);
+        var lineById = {};
+        (lines || []).forEach(function (l) { lineById[String(l.marketplace_sku_id || '').trim()] = l; });
+        var out = [];
+        (receiptRows || []).forEach(function (rec) {
+            if (!rec || !rec.changed) return;
+            var id = String(rec.marketplace_sku_id || '').trim();
+            var row = byId[id], line = lineById[id] || {};
+            SRP.FIELDS.forEach(function (spec) {
+                var f = rec.fields && rec.fields[spec.key];
+                if (!f || !f.changed) return;
+                var view = row ? SRP.fieldView(row, spec) : { effective: null, auto: null, owner: SRP.OWNER_UNKNOWN };
+                var newValue = f.mode === 'AUTO' ? view.auto : num(line[spec.key]);
+                out.push({
+                    marketplace_sku_id: id,
+                    sku: String((row && (row.sku || (row.raw && row.raw.sku))) || ''),
+                    site_sku: String((row && (row.siteSku || (row.raw && row.raw.site_sku))) || ''),
+                    field: spec.key, label: spec.label, mode: f.mode,
+                    current_value: view.effective, new_value: newValue,
+                    current_owner: view.owner,
+                    new_owner: f.mode === 'AUTO' ? SRP.OWNER_AUTO : SRP.OWNER_MANUAL
+                });
+            });
+        });
+        return out;
+    };
+
+    /** What actually happened, counted off the write receipt rather than off the file that was sent. */
+    SRP.resultSummary = function (receiptRows) {
+        var out = { rows_updated: 0, fields_updated: 0, manual_fields: 0, auto_fields: 0 };
+        (receiptRows || []).forEach(function (rec) {
+            if (!rec || !rec.changed) return;
+            out.rows_updated++;
+            SRP.FIELDS.forEach(function (spec) {
+                var f = rec.fields && rec.fields[spec.key];
+                if (!f || !f.changed) return;
+                out.fields_updated++;
+                if (f.mode === 'AUTO') out.auto_fields++; else out.manual_fields++;
+            });
+        });
+        return out;
+    };
+
     global.KM = global.KM || {};
     global.KM.SkuRegionalPricing = SRP;
     if (typeof module !== 'undefined' && module.exports) module.exports = SRP;

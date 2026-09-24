@@ -23,6 +23,12 @@
 
 var TEMP_PR3C_TAB_ = 'pricing_list';
 
+// FX STALENESS IS A POLICY NOBODY HAS SET. There is no threshold in the schema, none in 73_, and none in
+// the task — so while this is blank the census reports the fx_rate_date DISTRIBUTION and says
+// FX_RATE_STALE_ROWS = NOT_DEFINED. Picking a number here would invent the very decision the operator is
+// supposed to make, and it would arrive disguised as a measurement.
+var TEMP_PR3C_STALE_BEFORE_ = '';        // 'YYYY-MM-DD' — fx_rate_date strictly before this counts as STALE
+
 function tempPr3cStr_(v) { return String(v === undefined || v === null ? '' : v).trim(); }
 function tempPr3cNum_(v) {
   var s = tempPr3cStr_(v);
@@ -89,8 +95,15 @@ function TEMP_PRICING_R3_CENSUS() {
     MISSING_BASE_REGULAR_ROWS: 0, MISSING_BASE_MINIMUM_ROWS: 0, MISSING_BASE_MSRP_ROWS: 0,
     DUPLICATE_PRICING_IDENTITY_ROWS: 0, INVALID_ROWS: 0,
     UNSUPPORTED_CURRENCY_ROWS: 0, IDENTITY_MISSING_ROWS: 0,
-    CROSS_CURRENCY_FX_RATE_1_PRE: 0
+    CROSS_CURRENCY_FX_RATE_1_PRE: 0,
+    FX_RATE_MISSING_ROWS: 0, FX_RATE_DATE_MISSING_ROWS: 0, FX_RATE_STALE_ROWS: 0, FX_RATE_INVALID_ROWS: 0
   };
+  // The AUTO reference census. auto_* is what an FX refresh rebuilds, so "how many already have one" is
+  // the difference between a refresh and a first fill, and the operator should know which they are about
+  // to authorise before the rates go in.
+  var autoCensus = { REGULAR: { existing: 0, blank: 0 }, MINIMUM: { existing: 0, blank: 0 }, MSRP: { existing: 0, blank: 0 } };
+  var baseCensus = { REGULAR: { available: 0, blank: 0 }, MINIMUM: { available: 0, blank: 0 }, MSRP: { available: 0, blank: 0 } };
+  var fxDates = [];
   var authority = { REGULAR: { MANUAL: 0, AUTO: 0, UNKNOWN: 0 }, MINIMUM: { MANUAL: 0, AUTO: 0, UNKNOWN: 0 }, MSRP: { MANUAL: 0, AUTO: 0, UNKNOWN: 0 } };
   var localCurrencies = {}, baseCurrencies = {}, pairs = {}, unsupported = {};
   var seen = {}, dupes = [], invalid = [], crossOnes = [];
@@ -120,6 +133,17 @@ function TEMP_PRICING_R3_CENSUS() {
 
     // THE POPULATION R3 EXISTS FOR: a converted site still carrying the seeded identity rate.
     var fx = tempPr3cNum_(cell(row, 'fx_rate'));
+    if (!fx.present) c.FX_RATE_MISSING_ROWS++;
+    if (fx.invalid) c.FX_RATE_INVALID_ROWS++;
+    var fxd = cell(row, 'fx_rate_date');
+    var fxdStr = (fxd instanceof Date)
+      ? Utilities.formatDate(fxd, Session.getScriptTimeZone(), 'yyyy-MM-dd')
+      : tempPr3cStr_(fxd);
+    if (fxdStr === '') c.FX_RATE_DATE_MISSING_ROWS++;
+    else {
+      fxDates.push(fxdStr);
+      if (TEMP_PR3C_STALE_BEFORE_ !== '' && fxdStr < TEMP_PR3C_STALE_BEFORE_) c.FX_RATE_STALE_ROWS++;
+    }
     if (loc && base && loc !== base && fx.present && fx.value === 1) {
       c.CROSS_CURRENCY_FX_RATE_1_PRE++;
       if (crossOnes.length < 25) crossOnes.push('row ' + (r + 1) + '  ' + pid + '  ' + base + '>' + loc + '  sku=' + tempPr3cStr_(cell(row, 'sku')));
@@ -134,8 +158,10 @@ function TEMP_PRICING_R3_CENSUS() {
         else c.MISSING_BASE_MSRP_ROWS++;
       }
       if (b.invalid) rowInvalid = true;
+      if (b.present) baseCensus[s.L].available++; else baseCensus[s.L].blank++;
       var a = tempPr3cNum_(cell(row, s.a));
       if (a.invalid) rowInvalid = true;
+      if (a.present) autoCensus[s.L].existing++; else autoCensus[s.L].blank++;
       var e = tempPr3cNum_(cell(row, s.f));
       if (e.invalid) rowInvalid = true;
       var auth = flagsPresent ? tempPr3cFlag_(cell(row, s.g)) : 'UNKNOWN';
@@ -148,7 +174,8 @@ function TEMP_PRICING_R3_CENSUS() {
 
   p('PRICING_ROWS_TOTAL              = ' + c.PRICING_ROWS_TOTAL);
   p('SAME_CURRENCY_ROWS              = ' + c.SAME_CURRENCY_ROWS);
-  p('FX_CONVERTIBLE_ROWS             = ' + c.FX_CONVERTIBLE_ROWS);
+  p('CROSS_CURRENCY_ROWS             = ' + c.FX_CONVERTIBLE_ROWS);
+  p('FX_CONVERTIBLE_ROWS             = ' + c.FX_CONVERTIBLE_ROWS + '   (the same rows, under the name earlier rounds used)');
   p('UNKNOWN_AUTHORITY_ROWS          = ' + c.UNKNOWN_AUTHORITY_ROWS);
   rule();
   p('AUTHORITY PER FIELD (three-state; blank = UNKNOWN, never false)');
@@ -156,14 +183,20 @@ function TEMP_PRICING_R3_CENSUS() {
     p('  ' + L + ':  MANUAL=' + authority[L].MANUAL + '  AUTO=' + authority[L].AUTO + '  UNKNOWN=' + authority[L].UNKNOWN);
   });
   rule();
-  p('SUPPORTED_CURRENCIES (live, local) :');
+  var localList = Object.keys(localCurrencies).sort();
+  var baseList = Object.keys(baseCurrencies).sort();
+  p('SUPPORTED_LOCAL_CURRENCIES      = ' + (localList.join(', ') || '(none)'));
+  p('SUPPORTED_BASE_CURRENCIES       = ' + (baseList.join(', ') || '(none)'));
+  rule();
+  p('SUPPORTED_LOCAL_CURRENCIES (from pricing_list.currency, with row counts) :');
   Object.keys(localCurrencies).sort().forEach(function (k) {
     p('  ' + k + '  rows=' + localCurrencies[k] + (Object.prototype.hasOwnProperty.call(DECIMALS, k) ? '  [' + DECIMALS[k] + 'dp]' : '  *** NOT IN THE FROZEN PRECISION CONTRACT ***'));
   });
-  p('BASE_CURRENCIES :');
+  p('SUPPORTED_BASE_CURRENCIES (from pricing_list.base_currency, with row counts) :');
   Object.keys(baseCurrencies).sort().forEach(function (k) { p('  ' + k + '  rows=' + baseCurrencies[k]); });
-  p('CURRENCY_PAIRS_REQUIRED (base>local, same-currency excluded — an identity needs no rate) :');
   var pk = Object.keys(pairs).sort();
+  p('CURRENCY_PAIRS_REQUIRED         = ' + (pk.join(', ') || '(none)'));
+  p('CURRENCY_PAIRS_REQUIRED (base>local, same-currency excluded — an identity needs no rate) :');
   if (!pk.length) p('  (none)');
   pk.forEach(function (k) { p('  ' + k + '  rows=' + pairs[k]); });
   rule();
@@ -175,12 +208,51 @@ function TEMP_PRICING_R3_CENSUS() {
   p('UNSUPPORTED_CURRENCY_ROWS       = ' + c.UNSUPPORTED_CURRENCY_ROWS);
   Object.keys(unsupported).sort().forEach(function (k) { p('    ' + k + ' : ' + unsupported[k] + ' rows — these FAIL CLOSED and are skipped, never converted at a guessed precision'); });
   p('IDENTITY_MISSING_ROWS           = ' + c.IDENTITY_MISSING_ROWS);
-  p('DUPLICATE_PRICING_IDENTITY_ROWS = ' + c.DUPLICATE_PRICING_IDENTITY_ROWS);
+  p('DUPLICATE_PRICING_IDENTITY_ROWS = ' + c.DUPLICATE_PRICING_IDENTITY_ROWS
+    + '   (two pricing_list rows sharing one marketplace_sku_id)');
+  p('JOIN_AMBIGUITY_COUNT            = NOT MEASURED HERE.');
+  p('  That is the sku_details join — pricing_list -> marketplace_skus -> sku_details — and it belongs to');
+  p('  TEMP_PRICING_R2_POST_VERIFY, which resolves it row by row. Measuring it here too would create a');
+  p('  second authority for one question, and two tools that can disagree about whether a row has exactly');
+  p('  one source is worse than one tool that answers it. The line above is a DIFFERENT question.');
   dupes.slice(0, 25).forEach(function (d) { p('    ' + d); });
   p('INVALID_ROWS                    = ' + c.INVALID_ROWS + '  (a price/FX cell that is neither a number, blank nor NA)');
   invalid.forEach(function (d) { p('    ' + d); });
   rule();
-  p('CROSS_CURRENCY_FX_RATE_1_PRE    = ' + c.CROSS_CURRENCY_FX_RATE_1_PRE);
+  p('CROSS_CURRENCY_FX_RATE_1_ROWS   = ' + c.CROSS_CURRENCY_FX_RATE_1_PRE);
+  p('CROSS_CURRENCY_FX_RATE_1_PRE    = ' + c.CROSS_CURRENCY_FX_RATE_1_PRE + '   (same number, earlier name)');
+  rule();
+  p('FX RATE STATE');
+  p('FX_RATE_MISSING_ROWS            = ' + c.FX_RATE_MISSING_ROWS);
+  p('FX_RATE_INVALID_ROWS            = ' + c.FX_RATE_INVALID_ROWS);
+  p('FX_RATE_DATE_MISSING_ROWS       = ' + c.FX_RATE_DATE_MISSING_ROWS);
+  var sortedDates = fxDates.slice().sort();
+  p('FX_RATE_DATE_OLDEST             = ' + (sortedDates.length ? sortedDates[0] : '(none)'));
+  p('FX_RATE_DATE_NEWEST             = ' + (sortedDates.length ? sortedDates[sortedDates.length - 1] : '(none)'));
+  var distinctDates = {};
+  sortedDates.forEach(function (d) { distinctDates[d] = (distinctDates[d] || 0) + 1; });
+  p('FX_RATE_DATE_DISTRIBUTION       :');
+  Object.keys(distinctDates).sort().slice(0, 20).forEach(function (d) {
+    p('  ' + d + '  x' + distinctDates[d]);
+  });
+  if (TEMP_PR3C_STALE_BEFORE_ === '') {
+    p('FX_RATE_STALE_ROWS              = NOT_DEFINED');
+    p('  No staleness threshold exists in the schema, in 73_, or anywhere else, so none is assumed here.');
+    p('  Choose a date from the distribution above, set TEMP_PR3C_STALE_BEFORE_, and re-run.');
+    p('  A number invented at this point would look exactly like a measurement.');
+  } else {
+    p('FX_RATE_STALE_ROWS              = ' + c.FX_RATE_STALE_ROWS + '   (fx_rate_date before ' + TEMP_PR3C_STALE_BEFORE_ + ')');
+  }
+  rule();
+  p('BASE AVAILABILITY (what an FX refresh has to work from)');
+  ['REGULAR', 'MINIMUM', 'MSRP'].forEach(function (L) {
+    p('  BASE_' + L + '_AVAILABLE = ' + baseCensus[L].available + '   BASE_' + L + '_BLANK = ' + baseCensus[L].blank);
+  });
+  p('AUTO REFERENCE (what an FX refresh would rebuild)');
+  ['REGULAR', 'MINIMUM', 'MSRP'].forEach(function (L) {
+    p('  AUTO_' + L + '_EXISTING = ' + autoCensus[L].existing + '   AUTO_' + L + '_BLANK = ' + autoCensus[L].blank);
+  });
+  p('  (a blank base leaves auto blank. It never becomes 0 — 0 is a price.)');
   p('  Rows whose local currency differs from their base currency and that still carry fx_rate = 1.');
   p('  This is the population PRICING-R3 exists for: 04_ seeds every auto-created row that way and nothing');
   p('  has recomputed it since, so their auto_* is the base number wearing the local currency label.');

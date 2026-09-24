@@ -36,6 +36,14 @@
  * This tool therefore does not assume a shape. It reads the live header, works out what would have to
  * happen, and proceeds ONLY if the answer is "insert these three columns at these positions". Anything
  * else is printed and blocked, because anything else is a decision a person has to make.
+ *
+ * SUPERSEDED FOR THE CURRENT PRODUCTION SHEET — and by its own refusal, which is the outcome it was built
+ * for. Run against production it reported that canonical position 3 expects `sku` while the live sheet has
+ * `marketplace_id`: pre-existing drift, older than PRICING-R2, invisible until something finally compared
+ * the two orders. Provisioning alone cannot fix that, so this tool correctly refuses to try.
+ * Use TEMP_PRICING_R2_SCHEMA_RECONCILE.gs instead: it repairs the ORDER and provisions the flags in one
+ * operation, with a PRE snapshot and a rollback. This file stays only for a project whose pricing_list is
+ * already in canonical order.
  */
 
 var TEMP_PR2M_PRICE_TAB_ = 'pricing_list';
@@ -156,6 +164,8 @@ function tempPr2mRun_(commit) {
     p('');
     p('  prodRequireSheet_ compares the first ' + CANON.length + ' positions IN ORDER, so this sheet would');
     p('  refuse every pricing write with HEADER_ORDER_MISMATCH even after the flag columns are added.');
+    p('  NEXT: run TEMP_PRICING_R2_SCHEMA_RECONCILE.gs, which repairs the order and provisions the flags in');
+    p('  one operation, with a PRE snapshot and a rollback. Do not hand-edit the column order.');
     p('  Columns 04_ writes by name but that are NOT canonical — marketplace_id, company, asin — are allowed,');
     p('  but only to the RIGHT of position ' + CANON.length + '. Report this output before changing anything.');
     return done();

@@ -979,6 +979,353 @@
     function srdRetry() { var n = el('srd-mode-note'); if (n) n.innerHTML = ''; loadAndInit(); }
 
     // Expose (inline handlers + lifecycle)
+    // =====================================================================================================
+    // PRICING-R4B — BULK UPDATE. One entry point, one scope, one write path.
+    //
+    // The pricing import contract was already proven and already wired; what was missing was a way to reach
+    // it that an operator could find, and a TARGET for it. The old entry sat inside one SKU's Marketplace
+    // tab and templated every pricing row in the workspace, so a "bulk update" meant downloading the whole
+    // price book to change four rows in one country. This adds the page-level entry and scopes the file to
+    // one country + one marketplace. It calls the SAME KM.DB.updatePricing, the SAME validator and the SAME
+    // template builder — there is no second import contract here, only a gate in front of the first.
+    // =====================================================================================================
+
+    // Categories are a LIST so a second one is a row rather than a redesign. Only Pricing is implemented;
+    // an unavailable category is shown disabled rather than hidden, because a category that appears the day
+    // it ships is indistinguishable from one that was always there and simply never worked.
+    var SRD_UPDATE_CATEGORIES = [
+        { key: 'pricing', label: 'Pricing', available: true,
+          description: 'Update marketplace-level Regular Price, Minimum Price and MSRP.' }
+    ];
+
+    var _srdBulk = null;
+
+    function _srdBulkOverlay() {
+        var ov = el('srd-bulk-overlay');
+        if (ov) return ov;
+        ov = document.createElement('div');
+        ov.id = 'srd-bulk-overlay';
+        ov.className = 'srd-modal-overlay';
+        ov.innerHTML = '<div class="srd-modal srd-modal--wide" id="srd-bulk-modal" role="dialog" aria-modal="true" aria-label="Update Regional SKU Data"></div>';
+        ov.addEventListener('click', function (e) { if (e.target === ov) srdCloseBulkUpdate(); });
+        // Inside the section: every rule in this stylesheet is scoped to #sku-regional-details-section.
+        (el('sku-regional-details-section') || document.body).appendChild(ov);
+        return ov;
+    }
+
+    function srdOpenBulkUpdate() {
+        var P = _srdPricingApi();
+        if (!P) { srdToast('Pricing module not loaded.'); return; }
+        if (!useDb()) { srdToast('Enable the cloud DB to run a bulk update.'); return; }
+        _srdBulk = { category: null, country: '', scopeKey: '', scope: null, stage: 'category',
+            fileName: null, lines: null, preview: null, result: null, scopes: P.scopes(_srdGetPricing(), _srdGetMktSkus()) };
+        _srdBulkOverlay();
+        _srdBulkRender();
+        el('srd-bulk-overlay').style.display = 'flex';
+    }
+    function srdCloseBulkUpdate() {
+        _srdBulk = null;
+        var ov = el('srd-bulk-overlay'); if (ov) ov.style.display = 'none';
+    }
+
+    function srdBulkPickCategory(key) {
+        if (!_srdBulk) return;
+        var cat = SRD_UPDATE_CATEGORIES.filter(function (c) { return c.key === key && c.available; })[0];
+        if (!cat) return;
+        _srdBulk.category = cat; _srdBulk.stage = 'scope';
+        _srdBulkRender();
+    }
+    function srdBulkSetCountry(c) {
+        if (!_srdBulk) return;
+        _srdBulk.country = String(c || '').trim().toUpperCase();
+        _srdBulk.scopeKey = ''; _srdBulk.scope = null;
+        _srdBulkReset();
+        _srdBulkRender();
+    }
+    function srdBulkSetMarketplace(key) {
+        if (!_srdBulk) return;
+        var P = _srdPricingApi(); if (!P) return;
+        _srdBulk.scopeKey = String(key || '');
+        _srdBulk.scope = P.findScope(_srdBulk.scopes, _srdBulk.scopeKey);
+        _srdBulkReset();
+        _srdBulkRender();
+    }
+    /** Changing the target throws away anything validated against the previous one. */
+    function _srdBulkReset() {
+        _srdBulk.fileName = null; _srdBulk.lines = null; _srdBulk.preview = null; _srdBulk.result = null;
+        if (_srdBulk.stage === 'preview' || _srdBulk.stage === 'confirm') _srdBulk.stage = 'scope';
+    }
+
+    function _srdScopeLabel(sc) {
+        return sc.country + ' · ' + sc.marketplace;
+    }
+
+    function _srdBulkTargetHtml() {
+        var P = _srdPricingApi();
+        var b = _srdBulk;
+        var countries = P.countriesOf(b.scopes);
+        if (!countries.length) {
+            return '<div class="srd-taxwarn">No pricing rows are loaded, so there is no target to update. ' +
+                'Pricing rows are created with the marketplace SKU; this screen never creates one.</div>';
+        }
+        var forCountry = b.country ? P.scopesForCountry(b.scopes, b.country) : [];
+        var countryOpts = ['<option value="">Select a country…</option>'].concat(countries.map(function (c) {
+            return '<option value="' + esc(c) + '"' + (b.country === c ? ' selected' : '') + '>' + esc(c) + '</option>';
+        })).join('');
+        var mktOpts = ['<option value="">Select a marketplace / site…</option>'].concat(forCountry.map(function (sc) {
+            return '<option value="' + esc(sc.key) + '"' + (b.scopeKey === sc.key ? ' selected' : '') + '>' +
+                esc(sc.marketplace) + ' (' + sc.rowCount + ' row' + (sc.rowCount === 1 ? '' : 's') + ')</option>';
+        })).join('');
+
+        var notice = '';
+        if (b.scope) {
+            if (b.scope.currency) {
+                notice = '<div class="srd-bulk__cur">' +
+                    '<strong>Pricing updates for this target use ' + esc(b.scope.currency) + '.</strong>' +
+                    '<div>All Regular Price, Minimum Price and MSRP values in the uploaded file must use ' +
+                    esc(b.scope.currency) + '. The currency is set by the selected marketplace and cannot be ' +
+                    'changed through this import.</div></div>';
+            } else {
+                notice = '<div class="srd-taxwarn"><strong>This target cannot be imported.</strong> Its pricing rows carry ' +
+                    (b.scope.currencyList.length ? 'more than one currency (' + esc(b.scope.currencyList.join(', ')) + ')' : 'no currency') +
+                    ', so there is no single currency to validate an upload against. Resolve that in pricing_list first — ' +
+                    'an import must not choose between them.</div>';
+            }
+        }
+        var chosen = b.scope ? '<div class="srd-bulk__target">' +
+            '<div><span>Country</span><strong>' + esc(b.scope.country) + '</strong></div>' +
+            '<div><span>Marketplace / Site</span><strong>' + esc(b.scope.marketplace) + '</strong></div>' +
+            '<div><span>Currency</span><strong>' + esc(b.scope.currency || 'not determinable') + '</strong></div>' +
+            (b.scope.companyList.length > 1 ? '<div><span>Companies</span><strong>' + esc(b.scope.companyList.join(', ')) + '</strong></div>' : '') +
+            '</div>' : '';
+
+        return '<label class="wide">Country<select id="srd-bulk-country" onchange="srdBulkSetCountry(this.value)">' + countryOpts + '</select></label>' +
+            '<label class="wide">Marketplace / Site<select id="srd-bulk-mkt" onchange="srdBulkSetMarketplace(this.value)"' +
+            (b.country ? '' : ' disabled') + '>' + mktOpts + '</select></label>' + chosen + notice;
+    }
+
+    function _srdBulkFilesHtml() {
+        var b = _srdBulk;
+        if (!b.scope || !b.scope.currency) return '';
+        return '<div class="srd-bulk__files">' +
+            '<button type="button" class="srd-btn srd-btn--default" onclick="srdBulkDownloadCurrent()">Download Current Pricing</button>' +
+            '<button type="button" class="srd-btn srd-btn--default" onclick="srdBulkDownloadTemplate()">Download Update Template</button>' +
+            '</div>' +
+            '<div class="srd-secnote">Current Pricing is your rollback reference — download and keep it before uploading anything. ' +
+            'The template covers only this target and ships every field as NO_CHANGE, so an unedited upload changes nothing.</div>' +
+            '<label class="wide">Upload Pricing Update<input id="srd-bulk-file" type="file" accept=".csv,text/csv"></label>';
+    }
+
+    function _srdBulkRender() {
+        var b = _srdBulk; if (!b) return;
+        var modal = el('srd-bulk-modal'); if (!modal) return;
+        var head = '<div class="srd-modal__head"><span>Update Regional SKU Data</span>' +
+            '<button type="button" class="srd-x" aria-label="Close" onclick="srdCloseBulkUpdate()">×</button></div>';
+
+        if (b.stage === 'category') {
+            var cards = SRD_UPDATE_CATEGORIES.map(function (c) {
+                return '<button type="button" class="srd-bulk__cat" ' +
+                    (c.available ? 'onclick="srdBulkPickCategory(\'' + c.key + '\')"' : 'disabled') + '>' +
+                    '<strong>' + esc(c.label) + '</strong><span>' + esc(c.description) + '</span>' +
+                    (c.available ? '' : '<em>Not available yet</em>') + '</button>';
+            }).join('');
+            modal.innerHTML = head +
+                '<div class="srd-modal__body"><div class="srd-secnote">What are you updating?</div>' + cards + '</div>' +
+                '<div class="srd-modal__foot"><button type="button" class="srd-btn srd-btn--default" onclick="srdCloseBulkUpdate()">Cancel</button></div>';
+            return;
+        }
+
+        if (b.stage === 'result') {
+            var s = b.result.summary;
+            modal.innerHTML = head +
+                '<div class="srd-modal__body"><div class="srd-bulk__ok"><strong>Pricing update completed.</strong></div>' +
+                '<div class="srd-bulk__target">' +
+                '<div><span>Rows updated</span><strong>' + s.rows_updated + '</strong></div>' +
+                '<div><span>Fields updated</span><strong>' + s.fields_updated + '</strong></div>' +
+                '<div><span>Manual fields</span><strong>' + s.manual_fields + '</strong></div>' +
+                '<div><span>Auto fields</span><strong>' + s.auto_fields + '</strong></div>' +
+                '</div><div class="srd-secnote">' + b.result.logged + ' audit entries written to pricing_change_log.</div></div>' +
+                '<div class="srd-modal__foot">' +
+                '<button type="button" class="srd-btn srd-btn--default" onclick="srdBulkDownloadResult()">Download Result</button>' +
+                '<button type="button" class="srd-btn srd-btn--primary" onclick="srdCloseBulkUpdate()">Close</button></div>';
+            return;
+        }
+
+        if (b.stage === 'confirm') {
+            modal.innerHTML = head +
+                '<div class="srd-modal__body"><div class="srd-bulk__confirm">' +
+                '<p>You are about to update <strong>' + b.preview.changedRows + '</strong> pricing row(s) for:</p>' +
+                '<div class="srd-bulk__target">' +
+                '<div><span>Country</span><strong>' + esc(b.scope.country) + '</strong></div>' +
+                '<div><span>Marketplace</span><strong>' + esc(b.scope.marketplace) + '</strong></div>' +
+                '<div><span>Currency</span><strong>' + esc(b.scope.currency) + '</strong></div></div>' +
+                '<p>This may change pricing ownership between MANUAL and AUTO.</p>' +
+                '<p>Continue?</p></div></div>' +
+                '<div class="srd-modal__foot">' +
+                '<button type="button" class="srd-btn srd-btn--default" onclick="srdBulkBackToPreview()">Cancel</button>' +
+                '<button type="button" class="srd-btn srd-btn--primary" id="srd-bulk-confirm-btn" onclick="srdBulkConfirm()">Confirm Update</button></div>';
+            return;
+        }
+
+        // scope / preview
+        var previewHtml = b.preview ? b.preview.html : '<div class="srd-secnote">Choose a file, then <strong>Preview</strong>. Nothing is written until you confirm.</div>';
+        modal.innerHTML = head +
+            '<div class="srd-modal__body">' +
+            '<div class="srd-secnote"><strong>' + esc(b.category.label) + '</strong> — ' + esc(b.category.description) + '</div>' +
+            _srdBulkTargetHtml() + _srdBulkFilesHtml() +
+            '<div id="srd-bulk-preview">' + previewHtml + '</div></div>' +
+            '<div class="srd-modal__foot">' +
+            '<button type="button" class="srd-btn srd-btn--default" onclick="srdCloseBulkUpdate()">Cancel</button>' +
+            '<button type="button" class="srd-btn srd-btn--default" id="srd-bulk-preview-btn" onclick="srdBulkPreview()"' +
+            (b.scope && b.scope.currency ? '' : ' disabled') + '>Preview</button>' +
+            '<button type="button" class="srd-btn srd-btn--primary" id="srd-bulk-continue-btn" onclick="srdBulkToConfirm()"' +
+            (b.preview && b.preview.changedRows > 0 ? '' : ' disabled') + '>Confirm Update</button></div>';
+    }
+
+    function srdBulkDownloadCurrent() {
+        var P = _srdPricingApi(), b = _srdBulk; if (!P || !b || !b.scope) return;
+        _srdDownload('current-pricing-' + b.scope.country + '-' + b.scope.marketplace + '.csv',
+            P.buildCurrentCsv(b.scope.rows, _srdGetMktSkus()));
+    }
+    function srdBulkDownloadTemplate() {
+        var P = _srdPricingApi(), b = _srdBulk; if (!P || !b || !b.scope) return;
+        _srdDownload('price-update-template-' + b.scope.country + '-' + b.scope.marketplace + '.csv',
+            P.buildTemplateCsv(b.scope.rows, _srdGetMktSkus()));
+    }
+
+    function _srdBulkErrs(errors) {
+        return '<ul class="srd-errs">' + errors.slice(0, 50).map(function (e) {
+            return '<li>' + (e.line ? 'Line ' + e.line : (e.marketplace_sku_id ? '<code>' + esc(e.marketplace_sku_id) + '</code>' : 'File')) +
+                (e.field ? ' · ' + esc(e.field) : '') + ' — <strong>' + esc(e.code) + '</strong> ' + esc(e.detail || '') + '</li>';
+        }).join('') + '</ul>' + (errors.length > 50 ? '<div class="srd-secnote">' + (errors.length - 50) + ' more not listed.</div>' : '');
+    }
+
+    /**
+     * PREVIEW. Two validations, each asked of whoever can answer it — the file and the target here, the
+     * database on the server's dry run. The dry run is the SAME code path the write uses, so what is shown
+     * is what would happen rather than a second implementation's opinion of it. Nothing is written either way.
+     */
+    function srdBulkPreview() {
+        var P = _srdPricingApi(), b = _srdBulk; if (!P || !b || !b.scope) return;
+        var input = el('srd-bulk-file'), out = el('srd-bulk-preview');
+        b.preview = null; b.lines = null;
+        var cont = el('srd-bulk-continue-btn'); if (cont) cont.disabled = true;
+        if (!input || !input.files || !input.files.length) { out.innerHTML = '<div class="srd-secnote">Choose a file first.</div>'; return; }
+        b.fileName = input.files[0].name;
+        var reader = new FileReader();
+        reader.onload = function () {
+            var parsed = P.validateBulkFile(String(reader.result || ''), b.scope);
+            if (!parsed.ok) {
+                b.preview = { html: '<div class="srd-taxwarn">The file was rejected. <strong>Nothing was written.</strong></div>' +
+                    _srdBulkErrs(parsed.errors), changedRows: 0 };
+                _srdBulkRender(); return;
+            }
+            var touched = parsed.lines.filter(function (l) { return P.lineTouches(l); });
+            if (!touched.length) {
+                b.preview = { html: '<div class="srd-secnote">The file is valid and asks for no changes — every field is NO_CHANGE. Nothing to write.</div>',
+                    changedRows: 0 };
+                _srdBulkRender(); return;
+            }
+            out.innerHTML = '<div class="srd-secnote">Checking ' + touched.length + ' row(s) against the database…</div>';
+            window.KM.DB.updatePricing({ dry_run: true, changed_by: 'sku-regional-details',
+                change_reason: 'Bulk pricing update (preview) ' + b.scope.country + '/' + b.scope.marketplace,
+                lines: touched })
+                .then(function (rec) {
+                    b.lines = touched;
+                    var rows = P.previewRows(rec.rows, touched, _srdGetPricing());
+                    var changed = (rec.rows || []).filter(function (x) { return x.changed; });
+                    b.previewRows = rows;
+                    b.preview = { changedRows: changed.length, html: _srdBulkPreviewHtml(parsed, touched, rec, rows) };
+                    _srdBulkRender();
+                })
+                .catch(function (err) {
+                    b.preview = { changedRows: 0, html: '<div class="srd-taxwarn">The database rejected the file. <strong>Nothing was written.</strong> ' +
+                        esc(err && err.message ? err.message : String(err)) + '</div>' + _srdBulkErrs((err && err.errors) || []) };
+                    _srdBulkRender();
+                });
+        };
+        reader.onerror = function () { out.innerHTML = '<div class="srd-taxwarn">Could not read that file.</div>'; };
+        reader.readAsText(input.files[0]);
+    }
+
+    function _srdOwnerTxt(P, o) { return P.ownerLabel(o).toUpperCase().replace(/ /g, ' '); }
+
+    function _srdBulkPreviewHtml(parsed, touched, rec, rows) {
+        var P = _srdPricingApi(), b = _srdBulk;
+        var money = function (v) { return v === null || v === undefined ? '—' : String(v); };
+        var head = '<div class="srd-bulk__target">' +
+            '<div><span>File</span><strong>' + esc(b.fileName || '') + '</strong></div>' +
+            '<div><span>Country</span><strong>' + esc(b.scope.country) + '</strong></div>' +
+            '<div><span>Marketplace / Site</span><strong>' + esc(b.scope.marketplace) + '</strong></div>' +
+            '<div><span>Currency</span><strong>' + esc(b.scope.currency) + '</strong></div>' +
+            '<div><span>Rows parsed</span><strong>' + parsed.rowCount + '</strong></div>' +
+            '<div><span>Rows valid</span><strong>' + parsed.lines.length + '</strong></div>' +
+            '<div><span>Rows rejected</span><strong>' + (parsed.rowCount - parsed.lines.length) + '</strong></div>' +
+            '<div><span>Rows that would change</span><strong>' + (rec.rows || []).filter(function (x) { return x.changed; }).length + '</strong></div>' +
+            '</div>';
+        if (!rows.length) {
+            return head + '<div class="srd-secnote">Every row already holds exactly what the file asks for. Nothing would change.</div>';
+        }
+        var body = rows.slice(0, 200).map(function (c) {
+            return '<tr><td><code>' + esc(c.sku) + '</code></td><td><code>' + esc(c.site_sku) + '</code></td>' +
+                '<td>' + esc(c.label) + '</td>' +
+                '<td>' + esc(money(c.current_value)) + ' → <strong>' + esc(money(c.new_value)) + '</strong></td>' +
+                '<td><span class="srd-own srd-own--' + c.current_owner.toLowerCase() + '">' + esc(P.ownerLabel(c.current_owner)) + '</span>' +
+                ' → <span class="srd-own srd-own--' + c.new_owner.toLowerCase() + '">' + esc(P.ownerLabel(c.new_owner)) + '</span></td></tr>';
+        }).join('');
+        return head + '<table class="srd-bulk__tbl"><thead><tr><th>SKU</th><th>Site SKU</th><th>Field</th>' +
+            '<th>Value</th><th>Ownership</th></tr></thead><tbody>' + body + '</tbody></table>' +
+            (rows.length > 200 ? '<div class="srd-secnote">' + (rows.length - 200) + ' more not listed.</div>' : '') +
+            '<div class="srd-secnote">Nothing has been written yet.</div>';
+    }
+
+    function srdBulkToConfirm() {
+        var b = _srdBulk; if (!b || !b.preview || !b.preview.changedRows) return;
+        b.stage = 'confirm'; _srdBulkRender();
+    }
+    function srdBulkBackToPreview() {
+        var b = _srdBulk; if (!b) return;
+        b.stage = 'scope'; _srdBulkRender();
+    }
+
+    /** CONFIRM. Writes exactly the lines the preview validated — never the file re-read a second time. */
+    function srdBulkConfirm() {
+        var P = _srdPricingApi(), b = _srdBulk; if (!P || !b || !b.lines || !b.lines.length) return;
+        var btn = el('srd-bulk-confirm-btn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Writing…'; }
+        window.KM.DB.updatePricing({ changed_by: 'sku-regional-details',
+            change_reason: 'Bulk pricing update ' + b.scope.country + '/' + b.scope.marketplace,
+            lines: b.lines })
+            .then(function (rec) {
+                b.result = { summary: P.resultSummary(rec.rows), logged: rec.logged || 0, rows: rec.rows || [] };
+                b.stage = 'result';
+                _srdBulkRender();
+                _srdAfterWrite(function () { render(); });
+            })
+            .catch(function (err) {
+                if (btn) { btn.disabled = false; btn.textContent = 'Confirm Update'; }
+                var modal = el('srd-bulk-modal');
+                if (modal) {
+                    var body = modal.querySelector('.srd-modal__body');
+                    if (body) body.innerHTML = '<div class="srd-taxwarn">Write refused. <strong>Nothing was written.</strong> ' +
+                        esc(err && err.message ? err.message : String(err)) + '</div>' + _srdBulkErrs((err && err.errors) || []);
+                }
+            });
+    }
+
+    function srdBulkDownloadResult() {
+        var P = _srdPricingApi(), b = _srdBulk; if (!P || !b || !b.result) return;
+        var cols = ['marketplace_sku_id', 'sku', 'site_sku', 'field', 'mode', 'current_value', 'new_value',
+            'current_owner', 'new_owner'];
+        var rows = (b.previewRows || []).map(function (c) {
+            return cols.map(function (k) { return c[k] === null || c[k] === undefined ? '' : c[k]; });
+        });
+        var csv = [cols.join(',')].concat(rows.map(function (r) {
+            return r.map(function (v) { var x = String(v); return /[",\r\n]/.test(x) ? '"' + x.replace(/"/g, '""') + '"' : x; }).join(',');
+        })).join('\r\n');
+        _srdDownload('pricing-update-result-' + b.scope.country + '-' + b.scope.marketplace + '.csv', csv);
+    }
+
     window.srdOpenEdit = srdOpenEdit;
     window.srdAddForCountry = srdAddForCountry;
     window.srdCloseEdit = srdCloseEdit;
@@ -994,6 +1341,18 @@
     window.srdPageSize = srdPageSize;
     window.srdBackToResults = srdBackToResults;
     window.srdPriceModeChanged = srdPriceModeChanged;
+    window.srdOpenBulkUpdate = srdOpenBulkUpdate;
+    window.srdCloseBulkUpdate = srdCloseBulkUpdate;
+    window.srdBulkPickCategory = srdBulkPickCategory;
+    window.srdBulkSetCountry = srdBulkSetCountry;
+    window.srdBulkSetMarketplace = srdBulkSetMarketplace;
+    window.srdBulkDownloadCurrent = srdBulkDownloadCurrent;
+    window.srdBulkDownloadTemplate = srdBulkDownloadTemplate;
+    window.srdBulkPreview = srdBulkPreview;
+    window.srdBulkToConfirm = srdBulkToConfirm;
+    window.srdBulkBackToPreview = srdBulkBackToPreview;
+    window.srdBulkConfirm = srdBulkConfirm;
+    window.srdBulkDownloadResult = srdBulkDownloadResult;
     window.srdOpenPriceImport = srdOpenPriceImport;
     window.srdClosePriceImport = srdClosePriceImport;
     window.srdDownloadPriceTemplate = srdDownloadPriceTemplate;

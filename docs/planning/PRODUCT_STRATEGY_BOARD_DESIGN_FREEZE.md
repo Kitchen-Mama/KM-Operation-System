@@ -231,9 +231,12 @@ positions, gaps, overlaps, and where a Deal price would cannibalise a neighbouri
   (`4x`–`9x` files). The only read path is the legacy full-DB read via
   `KM.DB.getPricingList()` — `assets/js/api/operation-system-db-api.js:2470`,
   normalised at `:1559`, tab-mapped at `:3065`. **This is a real architectural gap** (§12.3).
-- **`pricing_change_log` columns are `DOC-ONLY (NOT CODE-VERIFIED)`** — the table is registered in
-  `validTabs` (`03_…:35`) and in `filterRows_` (`02_core_sheet_db.gs:120`), but no shipped writer
-  defines its columns. The 8-column list in `PRICING_DATABASE_MAPPING.md` §5 is a specification.
+- **`pricing_change_log` columns are now CODE-VERIFIED and LIVE-VERIFIED** (was `DOC-ONLY`). `73_` declares
+  `PRICING_CHANGE_LOG_HEADERS_` — 9 columns — and gates the sheet on them through `prodRequireSheet_`; the
+  live sheet was measured on 2026-09-23 at **15 columns, 0 rows**, keyed `pricing_log_id` with six
+  contextual extensions. The table is also registered in `validTabs` (`03_…:35`) and `filterRows_`
+  (`02_core_sheet_db.gs:120`), both of which read the key **by name** as `log_id`. See
+  `PRICING_DATABASE_MAPPING.md` §5 for the live shape and the audited `pricing_log_id` → `log_id` rename.
 
 ### 3.5 Series
 

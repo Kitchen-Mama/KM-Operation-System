@@ -205,6 +205,27 @@
 #sku-regional-details-section .srd-own--auto { background: #F0FDF4; color: #15803D; border-color: #BBF7D0; }
 #sku-regional-details-section .srd-own--unknown { background: #F8FAFC; color: #94A3B8; border-color: #E2E8F0; }
 
+/* ---- PRICING-R4B bulk update ------------------------------------------------------------------------- */
+#sku-regional-details-section .srd-modal--wide { max-width: 900px; width: 92vw; }
+#sku-regional-details-section .srd-bulk__cat { display: block; width: 100%; text-align: left; margin: 8px 0 0; padding: 12px 14px; border: 1px solid #E2E8F0; border-radius: 10px; background: #fff; cursor: pointer; }
+#sku-regional-details-section .srd-bulk__cat:hover:not([disabled]) { border-color: #2563EB; background: #F8FAFF; }
+#sku-regional-details-section .srd-bulk__cat[disabled] { cursor: not-allowed; opacity: .55; }
+#sku-regional-details-section .srd-bulk__cat strong { display: block; font-size: 14px; color: #0F172A; }
+#sku-regional-details-section .srd-bulk__cat span { display: block; margin-top: 3px; font-size: 12px; color: #64748B; }
+#sku-regional-details-section .srd-bulk__cat em { display: block; margin-top: 6px; font-size: 11px; font-style: normal; color: #94A3B8; text-transform: uppercase; letter-spacing: .04em; }
+#sku-regional-details-section .srd-bulk__cur { margin: 12px 0; padding: 12px 14px; border: 1px solid #BFDBFE; border-left-width: 4px; border-radius: 8px; background: #EFF6FF; color: #1E3A8A; font-size: 13px; }
+#sku-regional-details-section .srd-bulk__cur div { margin-top: 4px; font-size: 12px; color: #1D4ED8; }
+#sku-regional-details-section .srd-bulk__target { display: flex; flex-wrap: wrap; gap: 10px 22px; margin: 12px 0; padding: 10px 14px; border: 1px solid #E2E8F0; border-radius: 8px; background: #F8FAFC; }
+#sku-regional-details-section .srd-bulk__target span { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: #94A3B8; }
+#sku-regional-details-section .srd-bulk__target strong { font-size: 13px; color: #0F172A; }
+#sku-regional-details-section .srd-bulk__files { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 6px; }
+#sku-regional-details-section .srd-bulk__tbl { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+#sku-regional-details-section .srd-bulk__tbl th { text-align: left; padding: 6px 8px; border-bottom: 1px solid #E2E8F0; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: #94A3B8; }
+#sku-regional-details-section .srd-bulk__tbl td { padding: 6px 8px; border-bottom: 1px solid #F1F5F9; color: #334155; vertical-align: top; }
+#sku-regional-details-section .srd-bulk__confirm { padding: 4px 2px; font-size: 13px; color: #0F172A; }
+#sku-regional-details-section .srd-bulk__confirm p { margin: 8px 0; }
+#sku-regional-details-section .srd-bulk__ok { padding: 12px 14px; border: 1px solid #BBF7D0; border-radius: 8px; background: #F0FDF4; color: #15803D; font-size: 14px; }
+
 #sku-regional-details-section .srd-modal__sec { grid-column: 1 / -1; font-size: 12px; font-weight: 700; color: #0F172A; margin: 10px 0 2px; border-bottom: 1px solid #E2E8F0; padding-bottom: 4px; }
 #sku-regional-details-section .srd-pe { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 8px; }
 #sku-regional-details-section .srd-pe__ctx { font-size: 11px; color: #64748B; }

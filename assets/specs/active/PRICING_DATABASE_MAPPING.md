@@ -91,7 +91,7 @@ created_by, created_at, updated_by, updated_at, note
 | `site_sku` | ← `marketplace_skus.site_sku` |
 | `asin` | ← `marketplace_skus.asin` |
 | `currency` | ← `marketplace_skus.currency` |
-| `base_currency`, `base_regular_price`, `base_minimum_price`, `base_msrp` | From `sku_details` or user / import input. |
+| `base_currency`, `base_regular_price`, `base_minimum_price`, `base_msrp` | **§4C.** `sku_details` is the authority. At row creation an import row may supply them instead; from PRICING-R2 BASE-SOURCE-FINAL onwards `sku_details` wins on any resync. |
 | `fx_rate`, `fx_rate_date` | Stored if FX conversion is used. |
 | `auto_regular_price`, `auto_minimum_price`, `auto_msrp` | System-calculated = `base_*` × `fx_rate`. |
 | `regular_price`, `minimum_price`, `msrp` | Final effective values. |
@@ -236,8 +236,111 @@ that produced it. One mismatch refuses the entire run.
 ### Provisioning
 
 Under RULE S0-2 the writer VALIDATES and fails closed; it never creates a sheet and never appends a column.
-The three flag columns and `pricing_change_log.change_type` are an **operator migration**. Until they exist,
-`pricing.update` and `pricing.fxReconcile` both refuse with `MISSING_REQUIRED_HEADER` having written nothing.
+The three flag columns are an **operator migration**. Until they exist, `pricing.update` and
+`pricing.fxReconcile` both refuse with `MISSING_REQUIRED_HEADER` having written nothing.
+
+Provisioning alone is **not enough**, and that was measured on the live sheet rather than assumed:
+`prodRequireSheet_` compares the first `expected.length` positions **in order**, so a sheet holding every
+required column can still refuse every write with `HEADER_ORDER_MISMATCH`. Both pricing tables are in that
+state today. The repair is `TEMP_PRICING_R2_SCHEMA_RECONCILE.gs`, which fixes the order and provisions in
+one reviewed operation, for both tables, with a PRE snapshot pair and a rollback.
+
+---
+
+## 4C. Base Price Source Authority (PRICING-R2 BASE-SOURCE-FINAL)
+
+**Frozen.** *SKU Details owns BASE pricing. `pricing_list` owns FX-derived AUTO pricing and final
+field-level authority.* The two never reach across that line.
+
+```
+SKU DETAILS  ->  base_regular_price / base_minimum_price / base_msrp / base_currency
+                 -> FX -> auto_regular_price / auto_minimum_price / auto_msrp
+                          -> field-level authority -> regular_price / minimum_price / msrp
+```
+
+### The map
+
+| `pricing_list` target | `sku_details` source |
+|---|---|
+| `base_regular_price` | `selling_price` |
+| `base_minimum_price` | `minimum_price` |
+| `base_msrp` | `msrp` |
+| `base_currency` | `base_currency` |
+
+The first three are what `04_marketplace_forecast_import.gs` has always written at row creation
+(04_:376-379); this section makes them the standing authority rather than a creation-time default.
+`base_currency` is new: 04_ takes it from the import row and defaults it to `USD`, never from
+`sku_details`. `sku_details.base_currency` is canonical when present, and
+`operation-system-db-api.js:254` still reads `selling_unit` / `minimum_price_unit` / `msrp_unit` as a
+legacy fallback — that fallback is **counted, never applied**, because adopting it is a decision.
+
+### The join travels on the id
+
+```
+pricing_list.marketplace_sku_id  ->  marketplace_skus.marketplace_sku_id
+marketplace_skus.sku             ->  sku_details.sku
+```
+
+72_api_v1_product_pricing_workspace.gs:1031-1034. It is deliberately **not**
+`pricing_list.sku -> sku_details.sku`: `pricing_list.sku` is a denormalised copy and `pricing_list` has
+no `company` column at all, so the local text can disagree with the row's actual product. A duplicate
+identity on either hop is **reported and refused**, never resolved by taking the first candidate.
+
+### Never reverse-derive
+
+A base price is never taken from `regular_price` / `minimum_price` / `msrp` (downstream of FX and of
+manual ownership), never from `auto_*`, never from a displayed value, and never from the row's current
+cell. `PRE__pricing_list__*` snapshots are rollback and forensic evidence only — not a price source.
+
+### Blank is a valid state
+
+A SKU may legitimately have no base price: phasing out, SKU Details not yet completed, deliberately
+unmaintained. **Blank source produces blank target.** Never `0`, never the effective price, never the
+auto price, and the row is not broken. A source value that is present but not a number is a different
+thing and is **refused**. Where manual and auto are both absent the UI shows *Not set* / em dash —
+`sku-regional-pricing.js:53` (`num()` returns `null` for blank) and `:215` already do this.
+
+### Matched, unmatched, ambiguous — three outcomes, three different answers
+
+**Frozen by operator ruling, 2026-09-24.**
+
+| Outcome | What it means | What happens to `base_*` |
+|---|---|---|
+| **MATCHED** | exactly one `sku_details` row | synchronized from the source, field by field; a blank source field writes a blank target field |
+| **UNMATCHED** | no `sku_details` row reachable | `UNMATCHED_BASE_POLICY = PRESERVE_CURRENT_AND_REPORT` — every `base_*` and `base_currency` keeps exactly the value it has, the identity is reported, and the row **does not block the rows that did resolve** |
+| **AMBIGUOUS** | more than one candidate on either hop | **HARD STOP** for the whole execution. Never resolved by taking the first candidate |
+
+UNMATCHED is not ambiguity. There is deliberately **no flag** that turns preservation into blanking: a
+switch whose only setting is destructive is a switch that eventually gets flipped.
+
+One consequence is stated rather than left to be discovered. Preserving a `base_msrp` that is currently a
+`Date` preserves the `Date` — the quantity is intact (Sheets' epoch makes serial 35 read as `1900-02-03`)
+but the type is not, and no round is authorised to reshape a row it cannot identify. The dry run reports
+`UNMATCHED_ROWS_STILL_HOLDING_A_DATE_BASE_VALUE`. Giving those SKUs a `sku_details` row and re-running is
+what clears them.
+
+`base_currency` follows the same shape but for a different reason: a blank price is a valid commercial
+state, whereas a blank `base_currency` would disable the FX relationship for that row and is a separate
+data-quality condition. Either way it is preserved and counted (`BASE_CURRENCY_SOURCE_BLANK`,
+`BASE_CURRENCY_PRESERVED_DUE_TO_BLANK_SOURCE`), never blanked and never defaulted.
+
+### Ongoing ownership — two responsibilities, kept apart
+
+| | Owner | Trigger | Touches |
+|---|---|---|---|
+| **BASE SYNC** | *none today* — `03_master_data_handlers.gs` edits `sku_details` only and explicitly creates no `pricing_list` row | a SKU Details base price is created or changed | `base_*` only |
+| **AUTO / FX** | `73_api_v1_pricing_write.gs` · `pricing.fxReconcile` | operator-run, with a supplied rate | `auto_*`, and an effective price only where that field's flag says AUTO |
+| **EFFECTIVE** | `73_api_v1_pricing_write.gs` · `pricing.update` | operator edit | `regular_price` / `minimum_price` / `msrp` + flags |
+
+Base sync **never** recalculates `auto_*` and **never** overwrites an effective price. FX reconciliation
+is a separate operation with its own rate. Changing `base_currency` therefore leaves that row's `auto_*`
+stale until FX runs, which is reported rather than silently repaired.
+
+**Smallest canonical implementation, when it is wanted:** one action on 73_ —
+`pricing.baseSync` — scoped to a list of master SKUs, resolving the join above, writing only the four
+base fields, refusing on ambiguity, and leaving `auto_*` and the effective prices alone. Until it exists
+the repository tool `TEMP_PRICING_R2_BASE_SOURCE_FINAL.gs` is the only base-sync path, and it is
+operator-run, one-shot and gated.
 
 ---
 
@@ -254,6 +357,25 @@ old_value, new_value,
 change_type,
 changed_by, changed_at, change_reason
 ```
+
+### Live shape (measured 2026-09-23, not specified)
+
+The production sheet carries **15 columns**: the 9 canonical ones plus six contextual extensions, and its
+primary key is spelled `pricing_log_id`. It holds **0 rows** — nothing has ever been written to it, because
+`prodRequireSheet_` has refused the sheet on every attempt.
+
+| Live column | Status |
+|---|---|
+| `pricing_log_id` | **renamed to `log_id`** by the R2 order reconciliation — see below |
+| `sku`, `country`, `marketplace`, `old_currency`, `new_currency`, `source` | **extensions**, preserved to the RIGHT of the canonical 9 |
+| the other 8 | canonical, reordered into canonical positions |
+
+`pricing_log_id` → `log_id` is a **declared** rename, audited before it was written down: the live name
+appears nowhere in this repository — no writer, no reader, no test, no spec — while every consumer of this
+table's key reads `log_id` **by name** (`02_core_sheet_db.gs` filters on `r.log_id`, the browser normalizer
+reads `r.log_id`, and `73_` **mints** `log_id`). With 0 rows there is no value whose meaning could be
+re-assigned. The six extensions are read by nothing and are kept anyway: a column nobody reads is still a
+column somebody made.
 
 `change_type` (PRICING-R2) is one of:
 
