@@ -131,7 +131,7 @@ function makeWorld(src, opts) {
     S.PRICING_MANUAL_FLAG_COLUMNS_ = FLAGS.slice();
     S.PRICING_CHANGE_LOG_HEADERS_ = LOGCANON.slice();
     S.PRICING_FX_DECIMALS_ = { USD: 2, CAD: 2, EUR: 2, GBP: 2, AUD: 2, JPY: 0, KRW: 0, TWD: 0 };
-    S.PRW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R22';
+    S.PRW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R23';
   }
   vm.createContext(S);
   vm.runInContext(src, S, { filename: 'tool.gs' });

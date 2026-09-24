@@ -16,10 +16,11 @@
 // Those two behaviours are each right on their own terms and together they manufacture the defect. That is
 // the finding, and it is a CREATION defect, not an FX defect — which is why nothing in 73_ is touched.
 //
-// WHAT THIS SUITE DELIBERATELY DOES NOT DO. It does not assert the fixed behaviour. PRODUCTION_WRITE_AUTHORIZED
-// = NO and §8 froze this round as audit-only, so section C pins what the code does TODAY and names it. When a
-// later round fixes 04_, C6/C7/C8 are the assertions that must be inverted, and they say so in their own text.
-// A characterisation test that does not announce itself as one becomes, six months later, a specification.
+// SECTION C WAS A CHARACTERISATION TEST AND IS NOW A GUARD. R4D froze this round as audit-only and pinned
+// what 04_ did on the day it was measured, saying in this paragraph that C6/C7/C8 were the assertions a fix
+// would have to invert. PRICING-R4E inverted them. The prose below still describes the defect, because a
+// guard whose text does not say what it is guarding against is a guard nobody can maintain — but every
+// assertion now states the CURRENT contract, and the R4E suite proves the same rule across six currencies.
 //
 //   A  §1 the three-layer model — confirmed or rejected from the code, field by field
 //   B  §2 the FX write contract, measured separately for TRUE / FALSE / blank
@@ -358,33 +359,50 @@ section('C · §3 NEW PRICING ROW INITIALIZATION — THE SHIPPED IMPORTER, EXECU
 
   eq(created.currency, 'CAD', 'C2  the row\'s local currency is the marketplace\'s — CAD');
   eq(created.base_currency, 'USD',
-    'C3  NEW_PRICING_ROW_BASE_SOURCE: base_currency is DEFAULTED to USD, never read from sku_details');
+    'C3  NEW_PRICING_ROW_BASE_SOURCE: base_currency — the fixture master row says USD, and it is honoured');
   eq([created.base_regular_price, created.base_minimum_price, created.base_msrp], [29.99, 24.99, 39.99],
     'C3b the base prices DO come from sku_details — selling_price / minimum_price / msrp');
   ok(/sd_sell = skuHeaders\.indexOf\('selling_price'\)/.test(GS04),
     'C3c by the §4C map, taken from the sku_details header rather than from the import row');
+  // PRICING-R4E — and base_currency is now read from the master row too, which is what C3's old label
+  // ("DEFAULTED to USD, never read from sku_details") was recording as the defect.
+  ok(/var sd_basecur = skuHeaders\.indexOf\('base_currency'\);/.test(GS04),
+    'C3d and base_currency is READ from sku_details rather than defaulted — R4E §2');
+  var eur = runImport(ADD_SKU_FORM_PAYLOAD,
+    ['KM-100', 'Openers', 'Core', 29.99, 24.99, 39.99, 'EUR', 'B0TEST']);
+  eq(prObject(eur.pricing.__appends[0]).base_currency, 'EUR',
+    'C3e proven by a master row that says EUR: the constant no longer overrules it');
 
-  eq(created.fx_rate, 1,
-    'C4  fx_rate is seeded as 1 on a CROSS-CURRENCY row — an FX rate invented where none exists');
-  eq([created.auto_regular_price, created.auto_minimum_price, created.auto_msrp], [29.99, 24.99, 39.99],
-    'C5  NEW_PRICING_ROW_AUTO_INITIALIZATION: auto_* = base_*, the USD number wearing a CAD label');
+  // WHAT THE DEFECT WAS, and what each of these asserted before PRICING-R4E:
+  //   C4  fx_rate = 1 on a CROSS-CURRENCY row — a rate invented where none exists
+  //   C5  auto_* = base_*, the USD number wearing a CAD label
+  //   C6  the effective price = the raw USD base
+  //   C7  all three ownership flags blank, so FX was forbidden to repair any of it
+  eq(created.fx_rate, '',
+    'C4  NO_INVENTED_FX_RATE_1 — a cross-currency row is created with NO rate at all');
+  eq([created.auto_regular_price, created.auto_minimum_price, created.auto_msrp], ['', '', ''],
+    'C5  NEW_PRICING_ROW_AUTO_INITIALIZATION: auto_* is BLANK, not the base number in another currency');
+  eq([created.regular_price, created.minimum_price, created.msrp], ['', '', ''],
+    'C6  NEW_NON_USD_EFFECTIVE_CAN_RECEIVE_RAW_USD_BASE = NO — the effective price is blank');
+  ok(created.regular_price !== created.base_regular_price,
+    'C6b and is not the base price under another name');
+  eq([created.base_regular_price, created.base_minimum_price, created.base_msrp], [29.99, 24.99, 39.99],
+    'C6c while base_* IS written — which is what lets the first FX run repair the row by itself');
 
-  // THE FINDING. This assertion pins DEFECTIVE behaviour deliberately — see the header. Inverting it is
-  // what a fix looks like.
-  eq([created.regular_price, created.minimum_price, created.msrp], [29.99, 24.99, 39.99],
-    'C6  NEW_NON_USD_EFFECTIVE_CAN_RECEIVE_RAW_USD_BASE = YES — the effective price IS the raw USD base');
-  eq(created.regular_price, created.base_regular_price,
-    'C6b measured as an identity, not as a coincidence of one fixture');
-
-  eq([created.regular_price_is_manual, created.minimum_price_is_manual, created.msrp_is_manual], ['', '', ''],
-    'C7  NEW_PRICING_ROW_AUTHORITY_INITIALIZATION: all three flags BLANK — every new row is born UNKNOWN');
-  ok(bare(GS04).indexOf('_is_manual') === -1,
-    'C7b the importer has no knowledge of the ownership columns at all');
+  eq([created.regular_price_is_manual, created.minimum_price_is_manual, created.msrp_is_manual],
+    ['FALSE', 'FALSE', 'FALSE'],
+    'C7  NEW_PRICING_ROW_AUTHORITY_INITIALIZATION: the system owns a row it made — FALSE, not blank');
+  // Checked on the RAW source: a column name can only ever appear as a string literal, and bare() strips
+  // those — which is why the original form of this assertion could only ever have been about their absence.
+  ok(/prCol\('regular_price_is_manual'\)/.test(GS04) && /prCol\('msrp_is_manual'\)/.test(GS04),
+    'C7b the importer now addresses the ownership columns by name');
 
   eq(created.price_source, 'auto_from_sku_details',
-    'C8  and the only trace is a LEGACY descriptive column no reader consults');
-  ok(/MVP auto-generated from sku_details\. FX review required\./.test(String(created.note)),
-    'C8b the row says "FX review required" in a free-text note — the whole of the existing guard');
+    'C8  and the legacy descriptive column is kept in step as before');
+  eq(created.price_status, 'pending_fx',
+    'C8b PENDING_FX is on the row in a column, not only in a free-text note');
+  ok(/pricing\.fxReconcile/.test(String(created.note)),
+    'C8c with a note naming the action that completes it');
 
   // ---- C9: the second seeding path — an import row that supplies prices ----
   var w2 = runImport(Object.assign({}, ADD_SKU_FORM_PAYLOAD, {
@@ -411,11 +429,11 @@ section('C · §3 NEW PRICING ROW INITIALIZATION — THE SHIPPED IMPORTER, EXECU
     auto_regular_price: created.auto_regular_price, regular_price: created.regular_price,
     regular_price_is_manual: created.regular_price_is_manual
   }, cadTable());
-  eq(afterFx.cells.auto_regular_price, 40.49, 'C11 a later FX run corrects auto_* to the true CAD value');
-  ok(!Object.prototype.hasOwnProperty.call(afterFx.cells, 'regular_price'),
-    'C11b and CANNOT correct the effective price, because the flag 04_ left blank means UNKNOWN');
-  eq(afterFx.fields.regular_price.authority, 'UNKNOWN',
-    'C11c ROOT_CAUSE_OF_BASE_LIKE_EFFECTIVE_VALUES: a creation-time seed that FX is forbidden to repair');
+  eq(afterFx.cells.auto_regular_price, 40.49, 'C11 a later FX run computes auto_* from the base on the row');
+  eq(afterFx.cells.regular_price, 40.49,
+    'C11b AND the effective price follows it — the flag R4E writes at creation says AUTO');
+  eq(afterFx.fields.regular_price.authority, 'AUTO',
+    'C11c THE ROOT CAUSE IS CLOSED: a pending row repairs itself on the first rate, with no migration');
 
   // ---- C12: no base mutation by the importer ----
   eq(w.skuDetails.__writes, 0, 'C12 the importer writes nothing back to sku_details — BASE is not mutated');
@@ -467,8 +485,12 @@ section('D · §4 THE CONSUMER AUDIT — AND WHAT A BLANK EFFECTIVE DOES TO EACH
     'D6  FC Summary reads the EFFECTIVE field, named, with no auto fallback');
   ok(/never marketplace_skus\)|never marketplace_skus/.test(FCSUM),
     'D6b explicitly not marketplace_skus and not sku_details');
-  ok(/function _evtRegularPrice\(sku\) \{[\s\S]{0,200}return r\.regularPrice == null \? 0 : r\.regularPrice;/.test(FCSUM),
-    'D6c BUT the back-compat wrapper turns a MISSING price into 0 — a blanked effective becomes a zero price');
+  // PRICING-R4E §5 — the back-compat wrapper turned a MISSING price into 0. It had no callers, which is the
+  // only reason it never cost anything, and it is deleted rather than corrected.
+  ok(FCSUM.indexOf('function _evtRegularPrice(') === -1,
+    'D6c FC_MISSING_PRICE_AS_ZERO_POST = NO — the zero-coercing wrapper is gone');
+  ok(/if \(pr\.regularPrice == null\) \{[\s\S]{0,200}missing_price/.test(FCSUM),
+    'D6d and the live path treats a missing price as MISSING, which is what it always did');
 
   // ---- D7: the Regional Details panel shows both and resolves neither ----
   var view = SRP.fieldView({ regularPrice: null, autoRegularPrice: 40.49, regularPriceIsManual: null },
@@ -553,10 +575,12 @@ section('E · §6 / §7 THE CLEANUP ANSWER AND THE FUTURE CONTRACT');
   // ---- E4: §7 — does the CURRENT runtime satisfy the future creation contract? ----
   ok(/Never invent an FX rate when none exists/i.test(DOC),
     'E4  the future contract forbids inventing a rate');
-  ok(/fxRate = 1;/.test(GS04),
-    'E4b CURRENT_RUNTIME_SATISFIES_FUTURE_CONTRACT = NO — 04_ still writes fx_rate = 1 unconditionally');
-  ok(/baseCurrency = String\(row\.base_currency \|\| 'USD'\)\.trim\(\);/.test(GS04),
-    'E4c ... and still defaults base_currency to USD instead of reading sku_details.base_currency');
+  // PRICING-R4E implemented it. Both of these asserted the gap and now assert its closure.
+  ok(!/fxRate = 1;/.test(GS04) && /if \(b !== l\) \{ out\.reason = 'NO_CANONICAL_FX_RATE'; return out; \}/.test(GS04),
+    'E4b CURRENT_RUNTIME_SATISFIES_FUTURE_CONTRACT = YES — a cross-currency row gets no invented rate');
+  ok(!/baseCurrency = String\(row\.base_currency \|\| 'USD'\)\.trim\(\);/.test(GS04) &&
+     /baseCurrency = baseCurFromMaster \|\| baseCurFromFile \|\| 'USD';/.test(GS04),
+    'E4c ... and base_currency is read from sku_details first, with USD only as a last resort');
 }
 
 // =============================================================================================================

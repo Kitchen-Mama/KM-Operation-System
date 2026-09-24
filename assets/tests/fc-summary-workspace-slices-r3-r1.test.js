@@ -414,8 +414,11 @@ ok(!/optional: true/.test(row58 ? HEALTH.slice(row58.index, HEALTH.indexOf('}', 
   ok(!!_campD && _campD === _campE,
     'E7c 20_ declares exactly what the manifest expects (' + _campD + ') — the round its batched campaign_sku_lines writer landed in');
 })();
-ok(/\{ file: '04_marketplace_forecast_import\.gs', symbol: '[A-Z_]+', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R19'/.test(HEALTH),
-  'E7c0 while 04_ keeps R19, the round IT last changed');
+// PRICING-R4E — 04_ MOVED. It kept R19 for three releases because nothing touched it; R4E changes the
+// pricing_list creation contract it owns, so its stamp advances with the file. The property this line
+// guards is unchanged: the manifest row and the file agree.
+ok(/\{ file: '04_marketplace_forecast_import\.gs', symbol: '[A-Z_]+', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R23'/.test(HEALTH),
+  'E7c0 while 04_ moves to the release, because PRICING-R4E changed the creation contract it owns');
 ok(/\{ file: '14_fc_write_handlers\.gs', symbol: '[A-Z_]+', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R18'/.test(HEALTH),
   'E7c1 while 14_ keeps R18, the round IT last changed');
 ok(/FC_SE_UNIQUENESS_FIELDS_/.test(require('fs').readFileSync(require('path').join(__dirname, '..',

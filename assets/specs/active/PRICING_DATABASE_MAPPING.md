@@ -414,7 +414,7 @@ correct under §4A and is also why blanking is unsafe:
 | consumer | transport | what a blank effective does |
 |---|---|---|
 | Product Strategy Board / Pricing Center | `productPricing.workspace.get` (72_) | 72_ emits **no `auto_*` at all**, so no fallback is even available. `analysable` is gated on a non-null `regular_price`: the SKU leaves the price chart and the analysable count. |
-| FC Summary — Special Event / Regular FC | broad cache | the canonical resolver returns `null`, correctly — but the back-compat wrapper `_evtRegularPrice` returns **`0`**, so a blanked price becomes a zero regular price in the builder. |
+| FC Summary — Special Event / Regular FC | broad cache | the canonical resolver returns `null`, correctly, and the builder shows *Missing Regular Price*. **CLOSED by PRICING-R4E §5:** the back-compat wrapper `_evtRegularPrice`, which returned **`0`** for a missing price, had no callers and was deleted. |
 | SKU Regional Details pricing panel | `skuDetails.workspace.get` (59_, raw passthrough) | shows *Not set* beside the auto value. The one screen that would reveal the mismatch. |
 | Campaign / Promotion | write-time snapshot (20_) | a line copies the `pricing_list` row that supplied its `regular_price`; a blank source produces a blank snapshot. |
 | Order Planning · Request Order · Shipment / procurement · document & export paths | — | **read no effective price at all.** Measured, not assumed. |
@@ -454,7 +454,7 @@ definition, not a fallback.
 Once classified, the base-shaped values repair themselves: a row marked `FALSE` follows `auto_*` on the
 next FX run, which is already proven behaviour.
 
-### §7 — future creation contract · CURRENT_RUNTIME_SATISFIES_FUTURE_CONTRACT = NO
+### §7 — future creation contract · **IMPLEMENTED by PRICING-R4E — see §4E**
 
 The target flow, frozen here and **not implemented in this round**:
 
@@ -478,7 +478,73 @@ Two departures from today, both load-bearing:
   run repair the row by itself. The UNKNOWN population exists only because rows predate the columns **and**
   because 04_ still does not write them — `bare(04_)` contains no `_is_manual` at all.
 
-Until that round runs, every newly created non-USD row joins the population this audit measured.
+That round was PRICING-R4E. §4E below is the shipped contract; everything above this line is the audit that
+asked for it, kept as the record of why.
+
+---
+
+## 4E. Pricing Row Creation Contract (PRICING-R4E — SHIPPED)
+
+**Owner:** `04_marketplace_forecast_import.gs` · **the only path that creates a `pricing_list` row.**
+`03_` creates none; the frontend creates none. Verified by census after implementation.
+
+```
+base_currency == local currency      base_currency != local currency
+  fx_rate       = 1                    fx_rate       = BLANK
+  fx_rate_date  = creation date        fx_rate_date  = BLANK
+  auto_*        = round(base_*)        auto_*        = BLANK
+  effective     = auto_*               effective     = BLANK
+  *_is_manual   = FALSE                *_is_manual   = FALSE
+  price_status  = <caller default>     price_status  = pending_fx
+```
+
+**base_* and `base_currency` are written either way**, from `sku_details` (§4C). That is the whole design:
+a pending row already carries the base price, and its flags already say AUTO, so the first
+`pricing.fxReconcile` that supplies a rate for the pair computes `auto_*` and the effective price follows.
+**A pending row repairs itself. No migration, no backfill, nobody classifies anything.**
+
+### Why rate 1 is a fact in one column and an invention in the other
+
+Same currency: "the rate is 1" is what *the same currency* means. It is not a claim about a market.
+
+Different currencies: **no canonical rate source exists** — there is no FX provider in this repository and
+no rate table in the database (§4B). A rate arrives with a `pricing.fxReconcile` request and nowhere else.
+So the "canonical FX available" branch is not merely unimplemented, it is **unreachable by construction**,
+and building one would mean inventing where the rate comes from. Every cross-currency creation is PENDING_FX.
+
+### Why `FALSE` at creation is not the bulk classification §4A forbids
+
+§4A forbids *inferring* an owner for a row that already exists, because a blank flag there means a person
+may have set that price before the columns existed. At creation there is no such person: the row is made by
+the system out of master data, and nothing has touched a price on it. This is the one moment when ownership
+is a fact rather than a guess — and recording it is what makes the self-repair above possible. Rows created
+before R4E keep their blank flags and are the subject of PRICING-R4F, not of this contract.
+
+### PENDING_FX needs no new column
+
+`price_status` carries it. No consumer filters on that column (`price_status_filtering: false` in 72_), no
+consumer translates it, and the Product Strategy Board counts its values "byte for byte, with no casing or
+trimming applied" — so a new value becomes one more bucket in a distribution chip and nothing else. The row
+also states the reason in `note`, and the import's per-row result carries `pricing_pending_fx`.
+
+### base_currency precedence
+
+`sku_details.base_currency` → the import row's `base_currency` → `'USD'` as a **last resort**. The defect
+R4D found was the constant *overruling* the master row, not the existence of a fallback; with the
+cross-currency path now fail-closed, the last resort can no longer produce a wrong price, only a wrong
+label on a row whose master table never said. Rows that reach it are worth finding and fixing in
+`sku_details`.
+
+### Fail-closed cases, each with its own reason on the row
+
+`NO_CANONICAL_FX_RATE` · `BASE_CURRENCY_UNKNOWN` · `LOCAL_CURRENCY_UNKNOWN` · `UNSUPPORTED_CURRENCY`
+(a currency outside the frozen precision table of §4A) · `PRECISION_AUTHORITY_UNAVAILABLE` (73_ not loaded
+in the project — the rounder is REUSED, never reimplemented, because two roundings of one price is two
+answers to one question).
+
+**Blank is never zero at any point.** A blank base produces a blank auto and a blank effective price. A base
+value that is present but not a number is reported on the row's result line and left blank, never coerced —
+`Number('')` is `0`, and that coercion is the one this contract exists to remove.
 
 ---
 

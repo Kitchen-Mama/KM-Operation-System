@@ -651,12 +651,17 @@ section('L. NON-REGRESSION — EVERY A3 CONTRACT STILL STANDS (§1)');
   ok(/POST_SPECIAL_WRITE_WARM_NEXT_PREREQ_READS = 3, never 6/.test(SPEC), 'L11b and the cache map');
   ok(/FCREG_BUILD_VERSION_/.test(HEALTH) && /04_marketplace_forecast_import\.gs/.test(HEALTH),
     'L12 04_ has a manifest row for the first time');
-  ok(/var FCREG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R19';/.test(GS),
+  // PRICING-R4E — 04_ moved off R19. What B1-PERF owns is that the file and its manifest row AGREE, and
+  // that the properties R19 bought still hold; both are asserted, and the second is what L12b adds.
+  var _fcregExpected = (HEALTH.match(/\{ file: '04_marketplace_forecast_import\.gs', symbol: 'FCREG_BUILD_VERSION_', expected: '([^']+)'/) || [])[1];
+  ok(_fcregExpected && new RegExp("var FCREG_BUILD_VERSION_ = '" + _fcregExpected + "';").test(GS),
     'L12a and declares the stamp that row expects');
-  // STAGE2-LARGE-BATCH — the release has since moved to R20 for a DIFFERENT file (20_). What B1-PERF
-  // owns is 04_'s stamp, and the property worth keeping here is that 04_ still declares R19 — the round
-  // it last changed — rather than being marched along with the release. L12a above asserts exactly that,
-  // so this line asserts the other half: the release is AT or AFTER R19, and 04_ is not it any more.
+  ok(_fcregExpected !== 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R19',
+    'L12b which is no longer R19 — PRICING-R4E changed the creation contract in this same file');
+  // STAGE2-LARGE-BATCH said the release had moved to R20 for a DIFFERENT file (20_), and that 04_ keeping
+  // R19 was the property worth guarding. PRICING-R4E changed 04_ itself, so its stamp moved WITH the file —
+  // which is the same rule, applied the other way round. L12a still asserts file and manifest row agree;
+  // this line asserts the release only ever moves forward.
   ok(/var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R(19|2[0-9])';/.test(HEALTH),
     'L13 the release moved once, and has not moved backwards since');
 })();

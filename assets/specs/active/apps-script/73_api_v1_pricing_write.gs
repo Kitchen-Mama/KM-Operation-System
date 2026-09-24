@@ -72,7 +72,7 @@
 // It belongs here rather than in a new owner because PRICING-R2 §7 made this the one write path into
 // pricing_list; two files writing one table would hold two locks and the field-level flags would stop
 // being checkable by reading a single writer.
-var PRW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R22';
+var PRW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R23';
 
 var PRW_ACTION_ = 'pricing.update';
 // The response SHAPE's own version, separate from the module build. A caller pins the shape, not the round.

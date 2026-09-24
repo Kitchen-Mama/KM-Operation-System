@@ -108,9 +108,19 @@ var RELEASE_OWNERS = {
     'the pricing.fxReconcile dispatch. A project holding the R21 copy has the R22 handler sitting present '
     + 'and healthy in 73_ and no way to reach it, which is the one partial sync this release can produce',
   '63_api_v1_system_health.gs':
-    'the R22 release identity, its own stamp, and the expected stamps for 73_ and 01_, plus the '
+    'the R22 release identity, its own stamp, and the expected stamps for 73_, 01_ and 04_, plus the '
     + 'action-contract bump the new route requires. SYS_REQUIRED_ACTIONS_ deliberately does NOT gain a '
-    + 'row: that list is the actions PAGES depend on, and a reconciliation is run by an operator'
+    + 'row: that list is the actions PAGES depend on, and a reconciliation is run by an operator',
+  '04_marketplace_forecast_import.gs':
+    'PRICING-R4E — THE CREATION CONTRACT. This file is the only path that creates a pricing_list row, and '
+    + 'until R22 it created every cross-currency row with an invented fx_rate of 1, auto_* copied from the '
+    + 'base prices and the effective price copied from auto_* — a base-currency number wearing the site\'s '
+    + 'currency label. It now writes rate 1 ONLY where the two currencies are identical, leaves fx_rate, '
+    + 'auto_* and the effective prices BLANK across a currency boundary with price_status = pending_fx, '
+    + 'reads base_currency from sku_details instead of defaulting it, and writes the three ownership flags '
+    + 'FALSE — which is a fact at creation and is what lets the first pricing.fxReconcile finish the row '
+    + 'without anybody classifying anything. It must be copied WITH 73_: a project holding the R19 copy '
+    + 'keeps manufacturing rows that the R22 reconciliation cannot repair'
 };
 // Owners that carry an EARLIER release and must keep it. Each is here because it did not change, and
 // marching any of them to the current release would destroy the manifest's only useful signal.
@@ -141,6 +151,11 @@ var RELEASE_UNMOVED = {
   // touches no campaign handler. Marching 20_ to R21 would erase the one fact its stamp carries, and a
   // project holding the R17 copy of it still cannot save a 90-SKU Special Event — which is exactly what
   // its stamp must keep saying.
+  // 04_ LEFT THIS LIST AT R22 — the seventh swap, and the first caused by a DEFECT rather than by a new
+  // surface. It held R19 because R19 hardened the regular-forecast writer and nothing since had touched it;
+  // PRICING-R4E changes what it writes into a NEW pricing_list row, which is a different responsibility in
+  // the same file. Its stamp moves because the file genuinely changed — the one thing a stamp is for.
+  //
   // 59_ JOINS THIS LIST AT R22 AND NOTHING TOOK ITS PLACE — the sixth swap this ledger has recorded, and
   // this one is a file LEAVING the owners set without a replacement, which is the shape of a round that
   // deepens an existing surface instead of widening it. R21 gave 59_ the include.pricing gate; R22 changes
@@ -148,7 +163,6 @@ var RELEASE_UNMOVED = {
   // it last actually changed — and marching it to R22 would erase that.
   '59_api_v1_sku_details_workspace.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R21',
   '20_campaign_write_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R20',
-  '04_marketplace_forecast_import.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R19',
   '14_fc_write_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R18',
   '58_api_v1_fc_summary_workspace.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R14',
   '13_procurement_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12',
@@ -282,9 +296,16 @@ ok(/KMPD\.resolveTargetRule/.test(PROC),
 // R16 — 14_ KEEPS ITS OWN ROUND. It was an R15 owner; R16 changes only how 20_ classifies a resolved
 // campaign row, and no handler in 14_ was touched. Asserting it declares the RELEASE would march a stamp
 // that exists precisely to record the round its file last changed.
-// R20 — 20_ IS the release. It changed, and 04_ — which WAS R19's owner — keeps R19.
-eq(declares(REGWRITE, 'FCREG_BUILD_VERSION_'), RELEASE_UNMOVED['04_marketplace_forecast_import.gs'],
-  'B2  04_ keeps R19, the round IT last changed — R20 touched no regular-forecast handler');
+// R20 — 20_ IS the release. It changed, and 04_ — which WAS R19's owner — kept R19.
+// R22 — 04_ MOVES. PRICING-R4E changes what it writes into a NEW pricing_list row, which is a different
+// responsibility living in the same file, so the stamp advances because the file genuinely changed. That is
+// the one thing a stamp is for, and it is why B2a below insists the new claim is really in the file.
+eq(declares(REGWRITE, 'FCREG_BUILD_VERSION_'), RELEASE,
+  'B2  04_ declares R22 — PRICING-R4E changed the pricing_list creation contract it owns');
+ok(/function pricingNewRowPlan_\(/.test(REGWRITE) && /NO_CANONICAL_FX_RATE/.test(REGWRITE),
+  'B2a and the change its stamp claims is really in the file — the creation planner and its fail-closed reason');
+ok(!/fxRate = 1;/.test(REGWRITE),
+  'B2b with the unconditional rate-1 seed it replaced gone, so the stamp is not decoration');
 eq(declares(WRITE, 'FCW_BUILD_VERSION_'), RELEASE_UNMOVED['14_fc_write_handlers.gs'],
   'B2-0 while 14_ keeps R18, the round IT last changed — no event or rule handler was touched');
 ok(/LockService\.getScriptLock\(\)/.test(REGWRITE) && /fcRegContiguousRuns_/.test(REGWRITE),

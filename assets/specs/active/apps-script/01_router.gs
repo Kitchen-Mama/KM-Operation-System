@@ -39,7 +39,7 @@
 // an action is indistinguishable from a deployment that never had the handler.
 // PRICING-R3 - R21 -> R22. Gained the pricing.fxReconcile dispatch, whose handler lives in the same owner
 // (73_) as pricing.update, so a project synced for R21 has the FILE but not the ROUTE.
-var RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R22';
+var RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R23';
 
 // =============================================================================================================
 // F1-7N-FB-4E-R4A1 §3 — READ ACTIONS ARE SERVED ON GET, AND THIS IS WHY.

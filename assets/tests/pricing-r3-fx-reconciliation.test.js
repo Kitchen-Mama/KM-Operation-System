@@ -686,12 +686,24 @@ section('L · §9/§10 CONSUMERS AND THE SCREEN — unchanged, and proven as a n
     ok(!/regular_price_is_manual|minimum_price_is_manual|msrp_is_manual/.test(code),
       'L1b ' + c[0] + ' does not read an ownership flag — ownership never sits between a reader and a price');
   });
-  // 04_ — THE ROW CREATOR. What matters for §9 is that it never RESOLVES a price from auto_*, and that R3
-  // did not change how it seeds a row. Its MVP fallback writes fx_rate = 1 and copies the base prices into
-  // auto_* whatever the site currency is, which is precisely the stale reference R3's reconciliation exists
-  // to rebuild — so it is left alone and reconciled over, rather than edited into a second FX implementation.
-  ok(/fxRate = 1;/.test(GS04), 'L1c 04_ still seeds fx_rate = 1 at creation — unchanged by this round');
-  ok(GS04.indexOf('PRICING-R3') === -1, 'L1d and R3 did not touch the creator at all');
+  // 04_ — THE ROW CREATOR. What matters for §9 is that it never RESOLVES a price from auto_*.
+  //
+  // R3 deliberately left the creator alone: its MVP fallback wrote fx_rate = 1 and copied the base prices
+  // into auto_* whatever the site currency was, and R3's position was that this is the stale reference a
+  // reconciliation exists to rebuild — reconcile over it rather than grow a second FX implementation inside
+  // the importer. PRICING-R4D then measured what that actually cost: the same fallback copied auto_* into
+  // the EFFECTIVE price and left the ownership flags blank, so the reconciliation could rebuild the
+  // reference and was forbidden to repair the price the site was serving. PRICING-R4E fixed the creator.
+  //
+  // R3's own claim is unaffected and is what this now asserts: the importer still performs NO conversion.
+  // It writes rate 1 only where the currencies are identical — which is not FX — and fails closed otherwise.
+  ok(!/fxRate = 1;/.test(GS04),
+    'L1c 04_ no longer seeds fx_rate = 1 unconditionally — PRICING-R4E closed that at the creator');
+  ok(/if \(b !== l\) \{ out\.reason = 'NO_CANONICAL_FX_RATE'; return out; \}/.test(GS04),
+    'L1c1 a cross-currency row is created with no rate at all, rather than with an invented one');
+  ok(!/\* *rate|rate *\*/.test(bare(GS04)),
+    'L1c2 and the importer still performs NO conversion — there is no second FX implementation in it');
+  ok(GS04.indexOf('PRICING-R3') === -1, 'L1d and R3 itself still did not touch the creator — R4E did');
   var fallback = /(regular_price|minimum_price|msrp)\s*\|\|\s*\w*[Aa]uto/;
   [['72_', GS72], ['58_', GS58], ['20_', GS20], ['04_', GS04], ['03_', GS03]].forEach(function (c) {
     ok(!fallback.test(bare(c[1])),
@@ -718,7 +730,8 @@ section('L · §9/§10 CONSUMERS AND THE SCREEN — unchanged, and proven as a n
 section('M · THE WIRING');
 // =============================================================================================================
 {
-  var R22 = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R22';
+  // PRICING-R4E — the release took its sub-round id when 04_ joined the same unshipped set.
+  var R22 = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R23';
 
   // ROUTED, and from the WRITE half only — a reconciliation must not be reachable by a pasted URL.
   var routerCode = bare(GS01);

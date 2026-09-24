@@ -22,6 +22,85 @@
  * Header-based column lookup; does not depend on column order.
  * Returns row-level results.
  */
+// =========================================================================================================
+// PRICING-R4E — WHAT A NEW pricing_list ROW RECEIVES, AND WHY IT IS FAIL-CLOSED ACROSS A CURRENCY BOUNDARY
+// =========================================================================================================
+//
+// THE DEFECT THIS REPLACES, measured by PRICING-R4D against this file: a new CAD row was written with
+// base_currency USD, fx_rate 1, auto_* copied straight from base_*, the effective price copied from auto_*,
+// and all three ownership flags blank. Every number in it was a USD number wearing a CAD label, and because
+// the flags were blank the later FX run — which is forbidden to touch an UNCLAIMED field — could correct
+// auto_* and NOT the price the site was actually serving. Two correct behaviours, one wrong price.
+//
+// THE RULE NOW. A rate is a business fact that arrives with a request; there is no FX provider in this
+// repository and no rate table in the database (PRICING_DATABASE_MAPPING §4B). So:
+//
+//   base_currency == local currency   the rate is 1. That is not an assumption about a market, it is what
+//                                     "the same currency" MEANS, so auto_* and the effective price are
+//                                     initialised and the row is complete.
+//   base_currency != local currency   NO RATE EXISTS AT CREATION TIME. fx_rate, auto_* and the effective
+//                                     price are all LEFT BLANK and the row is marked pending_fx. A blank
+//                                     auto is a visible gap; a wrong auto is not.
+//
+// WHY THE ROW REPAIRS ITSELF. base_* is written either way, from sku_details, and the three ownership flags
+// are written FALSE. At creation that is a FACT rather than a classification: the row was made by the
+// system out of master data and no person has touched a price on it. PRICING-R2 §4A forbids inferring
+// ownership for rows that already exist — this is the one moment when nobody has to be asked. So the first
+// pricing.fxReconcile that supplies a rate for the pair computes auto_* from the base this row already
+// carries, sees a flag that says AUTO, and moves the effective price with it. No migration, no backfill.
+//
+// BLANK IS NEVER ZERO, at any point below. A missing base price produces a missing auto and a missing
+// effective price; 0 is a price and writing one would be a commercial claim nobody made.
+
+/** The price_status a row carries while it waits for its first rate. No consumer filters on this column. */
+var PRICING_CREATE_PENDING_STATUS_ = 'pending_fx';
+var PRICING_CREATE_BANDS_ = ['regular', 'minimum', 'msrp'];
+
+/**
+ * Pure. Decides fx_rate / auto_* / effective / ownership for ONE new row. Takes no sheet and no clock.
+ *
+ * The precision table belongs to 73_ (PRICING_FX_DECIMALS_ / pricingRoundFx_) and is REUSED rather than
+ * copied: two roundings of one price is two answers to one question. When 73_ is not loaded the row is
+ * pending rather than rounded by a second rule invented here.
+ */
+function pricingNewRowPlan_(baseCurrency, localCurrency, base, asOf) {
+  var out = { pending: true, reason: null, fx_rate: '', fx_rate_date: '',
+    auto: { regular: '', minimum: '', msrp: '' },
+    effective: { regular: '', minimum: '', msrp: '' },
+    flag: 'FALSE', unreadable: [] };
+
+  var b = String(baseCurrency == null ? '' : baseCurrency).trim().toUpperCase();
+  var l = String(localCurrency == null ? '' : localCurrency).trim().toUpperCase();
+
+  if (!l) { out.reason = 'LOCAL_CURRENCY_UNKNOWN'; return out; }
+  if (!b) { out.reason = 'BASE_CURRENCY_UNKNOWN'; return out; }
+  // THE WHOLE POINT. A rate for this pair is not something this file is allowed to decide.
+  if (b !== l) { out.reason = 'NO_CANONICAL_FX_RATE'; return out; }
+
+  if (typeof pricingRoundFx_ !== 'function' || typeof pricingDecimalsFor_ !== 'function') {
+    out.reason = 'PRECISION_AUTHORITY_UNAVAILABLE'; return out;
+  }
+  if (pricingDecimalsFor_(l) === null) { out.reason = 'UNSUPPORTED_CURRENCY'; return out; }
+
+  out.pending = false;
+  out.fx_rate = 1;
+  out.fx_rate_date = asOf;
+  PRICING_CREATE_BANDS_.forEach(function (k) {
+    var raw = base ? base[k] : '';
+    var str = String(raw == null ? '' : raw).trim();
+    if (str === '') return;                       // a blank base leaves a blank auto AND a blank effective
+    var n = Number(str);
+    // Present but not a number is a DATA FAULT, not a price. It is reported rather than coerced, because
+    // Number('') is 0 and that is precisely the coercion this round exists to remove.
+    if (!isFinite(n) || n < 0) { out.unreadable.push(k); return; }
+    var r = pricingRoundFx_(n, l);
+    if (r === null) { out.unreadable.push(k); return; }
+    out.auto[k] = r;
+    out.effective[k] = r;
+  });
+  return out;
+}
+
 function handleImportMarketplaceSkusBatch_(body) {
   var rows = body.rows;
   if (!rows || !rows.length) {
@@ -54,6 +133,9 @@ function handleImportMarketplaceSkusBatch_(body) {
   var sd_sell = skuHeaders.indexOf('selling_price');
   var sd_min = skuHeaders.indexOf('minimum_price');
   var sd_msrp = skuHeaders.indexOf('msrp');
+  // §2 — base_currency comes from the MASTER row. It was never read here before, which is how every
+  // auto-created row ended up asserting USD whatever sku_details actually said.
+  var sd_basecur = skuHeaders.indexOf('base_currency');
   // ASIN lookup is OPTIONAL: prefer 'asin', fall back to 'amz_asin'; -1 means unavailable (no fail).
   var sd_asin = skuHeaders.indexOf('asin');
   if (sd_asin === -1) sd_asin = skuHeaders.indexOf('amz_asin');
@@ -67,6 +149,7 @@ function handleImportMarketplaceSkusBatch_(body) {
         sellingPrice: sd_sell !== -1 ? skuData[i][sd_sell] : '',
         minimumPrice: sd_min !== -1 ? skuData[i][sd_min] : '',
         msrp: sd_msrp !== -1 ? skuData[i][sd_msrp] : '',
+        baseCurrency: sd_basecur !== -1 ? String(skuData[i][sd_basecur] || '').trim() : '',
         asin: sd_asin !== -1 ? String(skuData[i][sd_asin] || '').trim() : ''
       };
     }
@@ -350,6 +433,8 @@ function handleImportMarketplaceSkusBatch_(body) {
       var priceSource, priceStatus, priceNote, baseCurrency;
       var baseRegular, baseMinimum, baseMsrp, fxRate, fxRateDate;
       var autoRegular, autoMinimum, autoMsrp, effRegular, effMinimum, effMsrp;
+      var priceFlag = '';          // PRICING-R4E — '' on the import branch, 'FALSE' on the derived branch
+      var pricePending = null;     // the reason this row carries no rate yet, for the row's own result line
 
       if (rowProvidesPricing) {
         // Import-provided pricing (existing behavior preserved).
@@ -369,22 +454,46 @@ function handleImportMarketplaceSkusBatch_(body) {
         effMinimum = (row.minimum_price !== undefined ? row.minimum_price : '');
         effMsrp = (row.msrp !== undefined ? row.msrp : '');
       } else {
-        // MVP fallback: derive base prices from sku_details. No real FX; fx_rate = 1.
+        // PRICING-R4E — derived from sku_details, and fail-closed across a currency boundary.
         priceSource = 'auto_from_sku_details';
-        priceStatus = 'draft';
-        priceNote = 'MVP auto-generated from sku_details. FX review required.';
-        baseCurrency = String(row.base_currency || 'USD').trim();
         baseRegular = (sdRef.sellingPrice !== undefined ? sdRef.sellingPrice : '');
         baseMinimum = (sdRef.minimumPrice !== undefined ? sdRef.minimumPrice : '');
         baseMsrp = (sdRef.msrp !== undefined ? sdRef.msrp : '');
-        fxRate = 1;
-        fxRateDate = now;
-        autoRegular = baseRegular;
-        autoMinimum = baseMinimum;
-        autoMsrp = baseMsrp;
-        effRegular = autoRegular;
-        effMinimum = autoMinimum;
-        effMsrp = autoMsrp;
+
+        // §2 — THE MASTER ROW WINS. The import row is the next-best statement of what the base price is
+        // denominated in, and 'USD' is a last resort that is recorded as one. The old code had only the
+        // last resort, so a master row saying EUR was overruled by a constant.
+        var baseCurFromMaster = String(sdRef.baseCurrency || '').trim();
+        var baseCurFromFile = String(row.base_currency || '').trim();
+        baseCurrency = baseCurFromMaster || baseCurFromFile || 'USD';
+
+        var plan = pricingNewRowPlan_(baseCurrency, currency,
+          { regular: baseRegular, minimum: baseMinimum, msrp: baseMsrp }, now);
+
+        fxRate = plan.fx_rate;
+        fxRateDate = plan.fx_rate_date;
+        autoRegular = plan.auto.regular; autoMinimum = plan.auto.minimum; autoMsrp = plan.auto.msrp;
+        effRegular = plan.effective.regular; effMinimum = plan.effective.minimum; effMsrp = plan.effective.msrp;
+
+        // Ownership is DETERMINABLE at creation and is recorded rather than left blank: the system made
+        // this row and no person has set a price on it. This is what lets the first FX run repair a
+        // pending row without anybody classifying anything.
+        priceFlag = plan.flag;
+
+        if (plan.pending) {
+          pricePending = plan.reason;
+          priceStatus = PRICING_CREATE_PENDING_STATUS_;
+          priceNote = 'Auto-created from sku_details. No FX rate exists for ' + baseCurrency + '>' +
+            String(currency || '(unknown)').trim() + ' at creation time (' + plan.reason + '), so fx_rate, ' +
+            'auto_* and the effective prices are intentionally blank. Run pricing.fxReconcile with a rate ' +
+            'for this pair; base_* is already on the row and the AUTO flags let the effective prices follow.';
+        } else {
+          priceStatus = priceStatusDefault;
+          priceNote = 'Auto-created from sku_details at ' + baseCurrency + ' = ' + currency + ' (rate 1).';
+        }
+        if (plan.unreadable.length) {
+          priceNote += ' Base value not readable as a price, left blank: ' + plan.unreadable.join(', ') + '.';
+        }
       }
 
       var newPr = new Array(prHeaders.length).fill('');
@@ -410,6 +519,14 @@ function handleImportMarketplaceSkusBatch_(body) {
       if (prCol('regular_price') !== -1) newPr[prCol('regular_price')] = effRegular;
       if (prCol('minimum_price') !== -1) newPr[prCol('minimum_price')] = effMinimum;
       if (prCol('msrp') !== -1) newPr[prCol('msrp')] = effMsrp;
+      // PRICING-R4E — the ownership flags. Written ONLY on the derived branch: an import row that supplied
+      // its own prices is a statement by a person about a file, and this file does not know whether that
+      // person meant to own those prices. Blank stays blank there, which is the UNKNOWN the schema means.
+      if (priceFlag) {
+        if (prCol('regular_price_is_manual') !== -1) newPr[prCol('regular_price_is_manual')] = priceFlag;
+        if (prCol('minimum_price_is_manual') !== -1) newPr[prCol('minimum_price_is_manual')] = priceFlag;
+        if (prCol('msrp_is_manual') !== -1) newPr[prCol('msrp_is_manual')] = priceFlag;
+      }
       if (prCol('price_source') !== -1) newPr[prCol('price_source')] = priceSource;
       if (prCol('price_status') !== -1) newPr[prCol('price_status')] = priceStatus;
       if (prCol('note') !== -1) newPr[prCol('note')] = priceNote;
@@ -452,10 +569,12 @@ function handleImportMarketplaceSkusBatch_(body) {
       rowIndex: rowIndex,
       sku: sku,
       status: 'created',
-      message: 'Created marketplace_sku' + (pricingId ? ' + pricing_list' : '') + (forecastId ? ' + fc_regular_forecast' : ''),
+      message: 'Created marketplace_sku' + (pricingId ? ' + pricing_list' : '') + (forecastId ? ' + fc_regular_forecast' : '') +
+        (pricePending ? ' — pricing row is PENDING_FX (' + pricePending + '): no rate exists for this currency pair yet, so its prices are blank rather than guessed' : ''),
       marketplace_sku_id: mpId,
       pricing_id: pricingId,
-      forecast_id: forecastId
+      forecast_id: forecastId,
+      pricing_pending_fx: pricePending || ''
     });
   }
 
@@ -499,7 +618,7 @@ function handleImportMarketplaceSkusBatch_(body) {
 // SHEET HEADER at runtime, so a reordered sheet changes the blocks rather than corrupting a column.
 
 var FC_REG_LOCK_MS_ = 30000;   // matches the campaign and target-rule writers
-var FCREG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R19';
+var FCREG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R23';
 
 /**
  * Group {c: zeroBasedCol, v: value} pairs into MAXIMAL CONTIGUOUS runs.

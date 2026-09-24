@@ -3839,11 +3839,19 @@ function _evtSkuPricing(sku) {
   return { inScope: !!m, marketplaceSkuId: ctx.marketplaceSkuId || (m ? m.marketplaceSkuId : ''),
     regularPrice: ctx.regularPrice, currency: ctx.currency };
 }
-// Back-compat: legacy callers expect a bare number (0 when missing).
-function _evtRegularPrice(sku) {
-  var r = _evtSkuPricing(sku);
-  return r.regularPrice == null ? 0 : r.regularPrice;
-}
+// PRICING-R4E §5 — _evtRegularPrice IS GONE, AND IT WAS NOT REPLACED.
+//
+// It was a back-compat shim returning a bare number, with `r.regularPrice == null ? 0 : ...` as its whole
+// body — so a SKU with no price on this site read as a price of zero, and a discount computed against it
+// would have been 100%. PRICING-R4D found it by reading the source; nothing in the shipped page called it,
+// which is the only reason it never cost anything.
+//
+// A shim with no callers that answers a missing price with 0 is not dead code, it is a loaded gun: the next
+// caller gets the wrong answer silently and correctly-looking. It is deleted rather than corrected, because
+// the correct version would be `_evtSkuPricing(sku).regularPrice` and that is what the two live call sites
+// already use. Both of them treat null as MISSING — the row shows "Missing Regular Price", the input stays
+// blank and priceState becomes 'missing_price' — which is the behaviour a blank effective price must have
+// now that PRICING-R4E creates rows that legitimately have one.
 
 // Resolve the canonical marketplace_id for the selected site (company + country + marketplace).
 function _evtResolveMarketplaceId(site) {
