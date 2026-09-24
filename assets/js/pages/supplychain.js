@@ -1,4 +1,26 @@
 // Supply Chain Canvas Controller - Stage 1
+//
+// S2-R4C OWNERSHIP RULING — THIS SURFACE OWNS NO BUSINESS TRUTH.
+//
+// The Supply Chain Canvas is a PRESENTATION ARTEFACT: a free-form diagram of the company's supply
+// chain, drawn by hand for planning, onboarding and discussion. SupplyChainCanvas_Spec.md §2.2 puts
+// "與 SKU / 補貨數據的自動關聯" and ERP / WMS / marketplace integration explicitly OUT OF SCOPE, and the
+// implementation agrees: this module issues no request of any kind, reads no canonical table, and its
+// stored document holds geometry, colour and free text — no quantity, status, SKU, warehouse, company
+// or allocation field exists in it.
+//
+// So `supplychain-canvas` is NOT browser business authority, and there is nothing here to retire. A
+// diagram is one person's drawing of how the business works; it is not a record OF the business, and
+// nothing else in the application reads this key.
+//
+// WHAT THAT RULING FORBIDS, for whoever extends this next: if the Canvas ever displays a real
+// quantity, status, shipment, inventory level, allocation or SKU lifecycle, that value must be READ
+// from its canonical owner on each render and must never be written into this document. The moment a
+// business number is persisted here it becomes a second answer that only one browser can see, which
+// is the class of defect S2-R4A retired from SKU Details.
+const SC_CANVAS_STORAGE_KEY = 'supplychain-canvas';
+const SC_CANVAS_QUARANTINE_KEY = 'supplychain-canvas.unreadable.v1';
+
 const CanvasController = {
     panX: 0,
     panY: 0,
@@ -131,6 +153,25 @@ const CanvasController = {
         console.log('CanvasController setup complete');
     },
 
+    // S2-R4C — THE SLIDER DRAG, HOISTED OUT OF THE PANELS AND ONTO THE THREE OWNED LISTENERS.
+    //
+    // WHAT WAS WRONG. setupOpacitySlider and setupArrowWidthSlider each added TWO anonymous document
+    // listeners, and both are called from createItemToolbar -> createItemElement -> renderItems, which
+    // runs for every item on every mount, every add, every delete, every colour change and every arrow
+    // edit. So a canvas with ten items added FORTY document listeners per render. They were anonymous,
+    // so nothing held a reference to them; they were not in _docMouseMove/_docMouseUp, so the unmount
+    // hook could not remove them; and they were on `document`, so they kept running on every mouse move
+    // in the whole application long after the user had navigated away from the Canvas.
+    //
+    // The idempotency work in Phase 2B-4 is what makes this visible as a defect rather than a style
+    // point: this controller already decided that document listeners are OWNED, bound remove-before-add
+    // and released on unmount. These four were the ones that never joined that contract.
+    //
+    // THE FIX IS A DRAG TARGET, NOT ANOTHER LISTENER. A slider mousedown records WHICH slider is being
+    // dragged; the controller's existing mousemove/mouseup do the work. Three document listeners total,
+    // whatever is on the canvas, and all three already removable.
+    _sliderDrag: null,     // { kind: 'opacity' | 'arrowWidth', itemId } while a slider is being dragged
+
     // Bind document-level listeners (mousemove / mouseup / keydown) idempotently. Stores refs so
     // they can be removed on unmount; remove-before-add guarantees no stacking across mounts.
     _bindDocListeners() {
@@ -153,6 +194,9 @@ const CanvasController = {
 
     // Remove the document-level listeners added by _bindDocListeners (called on unmount).
     _unbindDocListeners() {
+        // A drag in progress is released with the listeners that were driving it. Leaving it set would
+        // make the next mount resume a drag the user ended by navigating away.
+        this._sliderDrag = null;
         if (this._docMouseMove) { document.removeEventListener('mousemove', this._docMouseMove); this._docMouseMove = null; }
         if (this._docMouseUp) { document.removeEventListener('mouseup', this._docMouseUp); this._docMouseUp = null; }
         if (this._docKeydown) { document.removeEventListener('keydown', this._docKeydown); this._docKeydown = null; }
@@ -204,6 +248,12 @@ const CanvasController = {
     },
     
     onMouseMove(e) {
+        // S2-R4C — the slider drag, previously two document listeners per slider per render.
+        if (this._sliderDrag) {
+            if (this._sliderDrag.kind === 'opacity') this._opacityDragUpdate(this._sliderDrag.itemId, e);
+            else if (this._sliderDrag.kind === 'arrowWidth') this._arrowWidthDragUpdate(this._sliderDrag.itemId, e);
+        }
+
         if (this.isDraggingItem && this.draggedItem) {
             this.draggedItem.x = e.clientX / this.zoom - this.dragStartX;
             this.draggedItem.y = e.clientY / this.zoom - this.dragStartY;
@@ -254,6 +304,12 @@ const CanvasController = {
     },
     
     onMouseUp() {
+        // S2-R4C — a slider drag ends here and persists here, exactly as its own mouseup listener did.
+        if (this._sliderDrag) {
+            this._sliderDrag = null;
+            this.saveToStorage();
+        }
+
         if (this.isDraggingItem || this.isResizing) {
             this.saveToStorage();
         }
@@ -1000,82 +1056,76 @@ const CanvasController = {
         return panel;
     },
     
+    // Element listeners only. Both are on nodes that renderItems replaces, so they are collected with
+    // the node; neither reaches `document`, which is what made the previous pair unbounded.
     setupOpacitySlider(itemId) {
         const slider = document.getElementById(`opacitySlider-${itemId}`);
         const handle = document.getElementById(`opacityHandle-${itemId}`);
         if (!slider || !handle) return;
+
+        handle.addEventListener('mousedown', (e) => {
+            e.stopPropagation();
+            this._sliderDrag = { kind: 'opacity', itemId: itemId };
+        });
+
+        slider.addEventListener('mousedown', (e) => {
+            e.stopPropagation();
+            this._opacityDragUpdate(itemId, e);
+            this._sliderDrag = { kind: 'opacity', itemId: itemId };
+        });
+    },
+
+    // The former `updateOpacity` closure, unchanged in what it does. It re-reads its elements by id
+    // instead of closing over them, which is what lets ONE document listener serve every slider.
+    _opacityDragUpdate(itemId, e) {
+        const slider = document.getElementById(`opacitySlider-${itemId}`);
+        const handle = document.getElementById(`opacityHandle-${itemId}`);
+        if (!slider || !handle) return;
+        const rect = slider.getBoundingClientRect();
+        let x = e.clientX - rect.left;
+        x = Math.max(0, Math.min(x, rect.width));
+        const percent = (x / rect.width) * 100;
         
-        let isDragging = false;
+        handle.style.left = percent + '%';
+        document.getElementById(`opacityValue-${itemId}`).textContent = Math.round(percent) + '%';
         
-        const updateOpacity = (e) => {
-            const rect = slider.getBoundingClientRect();
-            let x = e.clientX - rect.left;
-            x = Math.max(0, Math.min(x, rect.width));
-            const percent = (x / rect.width) * 100;
+        if (!this.itemOpacity) this.itemOpacity = {};
+        this.itemOpacity[itemId] = percent / 100;
+        
+        // Apply opacity change to current color
+        if (this.currentColorTarget && this.itemBaseColor && this.itemBaseColor[itemId]) {
+            const baseColor = this.itemBaseColor[itemId];
+            const opacity = percent / 100;
+            const { colorType } = this.currentColorTarget;
+            const item = this.items.find(i => i.id === itemId);
             
-            handle.style.left = percent + '%';
-            document.getElementById(`opacityValue-${itemId}`).textContent = Math.round(percent) + '%';
-            
-            if (!this.itemOpacity) this.itemOpacity = {};
-            this.itemOpacity[itemId] = percent / 100;
-            
-            // Apply opacity change to current color
-            if (this.currentColorTarget && this.itemBaseColor && this.itemBaseColor[itemId]) {
-                const baseColor = this.itemBaseColor[itemId];
-                const opacity = percent / 100;
-                const { colorType } = this.currentColorTarget;
-                const item = this.items.find(i => i.id === itemId);
+            if (item && baseColor !== 'transparent') {
+                let finalColor = baseColor;
+                if (opacity < 1 && baseColor.startsWith('#')) {
+                    const r = parseInt(baseColor.slice(1, 3), 16);
+                    const g = parseInt(baseColor.slice(3, 5), 16);
+                    const b = parseInt(baseColor.slice(5, 7), 16);
+                    finalColor = `rgba(${r}, ${g}, ${b}, ${opacity})`;
+                }
                 
-                if (item && baseColor !== 'transparent') {
-                    let finalColor = baseColor;
-                    if (opacity < 1 && baseColor.startsWith('#')) {
-                        const r = parseInt(baseColor.slice(1, 3), 16);
-                        const g = parseInt(baseColor.slice(3, 5), 16);
-                        const b = parseInt(baseColor.slice(5, 7), 16);
-                        finalColor = `rgba(${r}, ${g}, ${b}, ${opacity})`;
-                    }
-                    
-                    if (colorType === 'bg') item.bgColor = finalColor;
-                    else if (colorType === 'border') item.borderColor = finalColor;
-                    else if (colorType === 'text') item.textColor = finalColor;
-                    
-                    // Update item directly without full re-render
-                    const el = document.querySelector(`[data-id="${itemId}"]`);
-                    if (el) {
-                        if (colorType === 'bg') el.style.background = finalColor;
-                        else if (colorType === 'border') el.style.borderColor = finalColor;
-                        else if (colorType === 'text') {
-                            const textEl = el.querySelector('[contenteditable], .sc-shape-text');
-                            if (textEl) textEl.style.color = finalColor;
-                        }
+                if (colorType === 'bg') item.bgColor = finalColor;
+                else if (colorType === 'border') item.borderColor = finalColor;
+                else if (colorType === 'text') item.textColor = finalColor;
+                
+                // Update item directly without full re-render
+                const el = document.querySelector(`[data-id="${itemId}"]`);
+                if (el) {
+                    if (colorType === 'bg') el.style.background = finalColor;
+                    else if (colorType === 'border') el.style.borderColor = finalColor;
+                    else if (colorType === 'text') {
+                        const textEl = el.querySelector('[contenteditable], .sc-shape-text');
+                        if (textEl) textEl.style.color = finalColor;
                     }
                 }
             }
-        };
-        
-        handle.addEventListener('mousedown', (e) => {
-            e.stopPropagation();
-            isDragging = true;
-        });
-        
-        slider.addEventListener('mousedown', (e) => {
-            e.stopPropagation();
-            updateOpacity(e);
-            isDragging = true;
-        });
-        
-        document.addEventListener('mousemove', (e) => {
-            if (isDragging) updateOpacity(e);
-        });
-        
-        document.addEventListener('mouseup', () => {
-            if (isDragging) {
-                isDragging = false;
-                this.saveToStorage();
-            }
-        });
+        }
     },
-    
+
     updateOpacitySliderGradient(color, itemId) {
         const slider = document.getElementById(`opacitySlider-${itemId}`);
         if (!slider || color === 'transparent') return;
@@ -1289,56 +1339,48 @@ const CanvasController = {
         return panel;
     },
     
+    // Same shape as setupOpacitySlider, and it leaked the same way. Element listeners only.
     setupArrowWidthSlider(itemId) {
         const slider = document.getElementById(`arrowWidthSlider-${itemId}`);
         const handle = document.getElementById(`arrowWidthHandle-${itemId}`);
         if (!slider || !handle) return;
-        
-        let isDragging = false;
-        
-        const updateWidth = (e) => {
-            const rect = slider.getBoundingClientRect();
-            let x = e.clientX - rect.left;
-            x = Math.max(0, Math.min(x, rect.width));
-            const percent = (x / rect.width) * 100;
-            
-            // Map 0-100% to 1-8px
-            const width = Math.round(1 + (percent / 100) * 7);
-            
-            handle.style.left = percent + '%';
-            document.getElementById(`arrowWidthValue-${itemId}`).textContent = width + 'px';
-            
-            // Apply width to connected arrows
-            const connectedArrows = this.arrows.filter(arrow => 
-                arrow.startItemId === itemId || arrow.endItemId === itemId
-            );
-            connectedArrows.forEach(arrow => {
-                arrow.strokeWidth = width;
-            });
-            this.renderArrows();
-        };
-        
+
         handle.addEventListener('mousedown', (e) => {
             e.stopPropagation();
-            isDragging = true;
+            this._sliderDrag = { kind: 'arrowWidth', itemId: itemId };
         });
-        
+
         slider.addEventListener('mousedown', (e) => {
             e.stopPropagation();
-            updateWidth(e);
-            isDragging = true;
+            this._arrowWidthDragUpdate(itemId, e);
+            this._sliderDrag = { kind: 'arrowWidth', itemId: itemId };
         });
+    },
+
+    // The former `updateWidth` closure, unchanged in what it does.
+    _arrowWidthDragUpdate(itemId, e) {
+        const slider = document.getElementById(`arrowWidthSlider-${itemId}`);
+        const handle = document.getElementById(`arrowWidthHandle-${itemId}`);
+        if (!slider || !handle) return;
+        const rect = slider.getBoundingClientRect();
+        let x = e.clientX - rect.left;
+        x = Math.max(0, Math.min(x, rect.width));
+        const percent = (x / rect.width) * 100;
         
-        document.addEventListener('mousemove', (e) => {
-            if (isDragging) updateWidth(e);
-        });
+        // Map 0-100% to 1-8px
+        const width = Math.round(1 + (percent / 100) * 7);
         
-        document.addEventListener('mouseup', () => {
-            if (isDragging) {
-                isDragging = false;
-                this.saveToStorage();
-            }
+        handle.style.left = percent + '%';
+        document.getElementById(`arrowWidthValue-${itemId}`).textContent = width + 'px';
+        
+        // Apply width to connected arrows
+        const connectedArrows = this.arrows.filter(arrow => 
+            arrow.startItemId === itemId || arrow.endItemId === itemId
+        );
+        connectedArrows.forEach(arrow => {
+            arrow.strokeWidth = width;
         });
+        this.renderArrows();
     },
     
     applyArrowColor(color, itemId) {
@@ -1523,22 +1565,65 @@ const CanvasController = {
     },
     
     saveToStorage() {
-        localStorage.setItem('supplychain-canvas', JSON.stringify({
-            items: this.items,
-            arrows: this.arrows,
-            nextId: this.nextId,
-            nextArrowId: this.nextArrowId
-        }));
+        try {
+            localStorage.setItem(SC_CANVAS_STORAGE_KEY, JSON.stringify({
+                items: this.items,
+                arrows: this.arrows,
+                nextId: this.nextId,
+                nextArrowId: this.nextArrowId
+            }));
+        } catch (e) {
+            // Quota, private mode, blocked site data. The canvas stays usable for this session; the
+            // alternative is an exception on every edit, which loses the same work AND the page.
+            console.warn('[SupplyChain] canvas could not be saved:', e);
+        }
     },
-    
+
+    // S2-R4C — AN UNREADABLE DOCUMENT USED TO BRICK THE PAGE.
+    //
+    // This was `JSON.parse(data)` with nothing around it, and init() sets `_initialized = true` on the
+    // line BEFORE it calls this. So one truncated localStorage value threw here, the element and
+    // toolbar listeners below the call were never wired, and every later mount took the
+    // `if (this._initialized) return` early exit — leaving a canvas whose toolbar did nothing, in a
+    // state a reload could not clear, because the reload re-read the same value and threw again.
+    //
+    // An unreadable UI-state store is not an error condition, it is an ABSENT PREFERENCE. That is how
+    // every other view-state store in this repository already treats it, and it is the only reading
+    // that keeps the page alive.
+    //
+    // THE UNREADABLE VALUE IS QUARANTINED, NOT DISCARDED. Starting empty means the next edit would
+    // overwrite the only copy of a document someone may have spent an afternoon on. It is moved aside
+    // first, and an existing quarantine is never overwritten — the first copy taken is the one nearest
+    // to whatever went wrong.
     loadFromStorage() {
-        const data = localStorage.getItem('supplychain-canvas');
-        if (data) {
-            const parsed = JSON.parse(data);
-            this.items = parsed.items || [];
-            this.arrows = parsed.arrows || [];
-            this.nextId = parsed.nextId || 1;
-            this.nextArrowId = parsed.nextArrowId || 1;
+        let data = null;
+        try { data = localStorage.getItem(SC_CANVAS_STORAGE_KEY); } catch (e) { data = null; }
+        if (!data) return;
+
+        let parsed = null;
+        try { parsed = JSON.parse(data); } catch (e) { parsed = null; }
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            this._quarantineUnreadableCanvas(data);
+            return;                          // empty canvas, working page
+        }
+
+        // Lenient about the fields, exactly as before — but a non-array cannot reach `items`, because
+        // renderItems would then throw on the first frame and reproduce the defect one line later.
+        this.items = Array.isArray(parsed.items) ? parsed.items : [];
+        this.arrows = Array.isArray(parsed.arrows) ? parsed.arrows : [];
+        this.nextId = parsed.nextId || 1;
+        this.nextArrowId = parsed.nextArrowId || 1;
+    },
+
+    _quarantineUnreadableCanvas(raw) {
+        try {
+            if (localStorage.getItem(SC_CANVAS_QUARANTINE_KEY) === null) {
+                localStorage.setItem(SC_CANVAS_QUARANTINE_KEY, raw);
+                console.warn('[SupplyChain] unreadable canvas document moved to '
+                    + SC_CANVAS_QUARANTINE_KEY + '; starting from an empty canvas.');
+            }
+        } catch (e) {
+            console.warn('[SupplyChain] unreadable canvas document could not be preserved:', e);
         }
     }
 };

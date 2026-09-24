@@ -1,8 +1,32 @@
 # Supply Chain Knowledge Canvas – Stage 1 Spec
 
-**Version:** 1.0  
-**Stage:** Stage 1 (Single-user, Knowledge Map)  
-**Last Updated:** 2025-01-XX  
+**Version:** 1.0
+**Stage:** Stage 1 (Single-user, Knowledge Map)
+**Last Updated:** 2025-01-XX
+**Ownership ruling:** `SUPPLYCHAIN_CANVAS_MODEL = PRESENTATION ARTEFACT` — S2-R4C, 2026-09-24.
+
+---
+
+## 0. Ownership — read this before adding anything to the Canvas
+
+This page owns **no business truth**. It is a drawing: `items` and `arrows` holding geometry, colour
+and free text, kept in `localStorage['supplychain-canvas']`, read by nothing else in the application.
+§2.2 below has said since v1.0 that SKU / replenishment association and ERP / WMS / marketplace
+integration are out of scope, and the implementation has always agreed — the module issues no request
+except the one that fetches its own markup.
+
+S2-R4C made that a ruling rather than a coincidence, with one forward-looking rule:
+
+> If the Canvas ever displays a real quantity, status, shipment, inventory level, allocation or SKU
+> lifecycle, that value must be **read from its canonical owner on each render** and must **never be
+> written into the canvas document**. A business number persisted here is a second answer that one
+> browser can see — the defect S2-R4A retired from SKU Details.
+
+`assets/tests/s2-r4c-supplychain-canvas-ownership.test.js` enforces it: §C runs the real item and arrow
+constructors and fails if the stored field vocabulary grows a business name. The full ruling, including
+the browser-authority, fail-closed, UI-state and demo policies, is in
+[`docs/planning/S_SERIES_FRONTEND_API_MIGRATION_INVENTORY.md`](../../../../../docs/planning/S_SERIES_FRONTEND_API_MIGRATION_INVENTORY.md)
+— the document that already owns this subject. This section is a pointer, not a second authority.
 
 ---
 

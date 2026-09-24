@@ -261,7 +261,7 @@ record is.
 | `pages/campaign-risk.js` | `km_campaign_promotion_records_v3` | **operator-entered promotion records**, every one stamped `source: 'overlay'` | **HIGHEST — a browser-local SSOT.** The page's *campaigns* come from the server (`loadScopedTables(['campaigns','campaign_sku_lines',…])`, `:654`); these promotion records do not. They exist on one machine in one browser profile and go with the cache. The page is honest about it — the records are labelled `overlay`, the default is empty and nothing is seeded (`:104-111`) — which makes this a known gap rather than a hidden one. |
 | `utils/sku-overrides.js` | `km_sku_data_overrides_v1`, `km_sku_image_overrides_v1`, `km_sku_lifecycle_overrides_v1` | SKU field, image and lifecycle overrides applied over server rows | **HIGH.** An override changes what other pages display, and only for the person who made it. |
 | `utils/data.js` | `weeklyShippingPlans`, `personalTodos` | shipping plans | **HIGH** for the plans; `personalTodos` is genuinely personal and low. |
-| `pages/supplychain.js` | `supplychain-canvas` | canvas layout + content | MED |
+| `pages/supplychain.js` | `supplychain-canvas` | a hand-drawn diagram: geometry, colour, free text | **NONE — ruled S2-R4C.** Not business authority and never was. See the ruling below. |
 | `pages/sku-details.js` | `KM_SKU_DETAILS_ADD_DRAFT_V1` | an unsubmitted add-SKU draft | LOW — a draft is the right thing to keep locally |
 | `pages/inventory-replenishment.js` | `REPLEN_ALLOC_DRAFT_KEY`, `_IR_RECO_CACHE_KEY`, `allShippingPlans` | allocation drafts, a recommendation cache, and a **cross-page handoff** | MED–HIGH: the handoff is two pages agreeing on a key rather than on a contract |
 | `pages/shipping-plan.js` | `allShippingPlans`, `shippingHistory` | the other end of the same handoff | MED–HIGH |
@@ -298,7 +298,68 @@ finding, and this document does not take it.
 > `LOCAL_UNVERIFIED` + `EXECUTION_PLAN_DB_STATE_UNKNOWN` now separate the two. `_IR_RECO_CACHE_KEY` is
 > untouched and remains a session cache with a server behind it.
 >
-> The `supplychain-canvas` row is **unchanged and still open.**
+> The `supplychain-canvas` row is **unchanged and still open.** *(Answered below, S2-R4C.)*
+
+> **ANSWERED — 2026-09-24, S2-R4C.** The row was open because an inventory cannot tell a drawing from
+> a record by looking at a storage key, and `supplychain-canvas` holds "canvas layout + content" —
+> which sounds like content. It is not. **`SUPPLYCHAIN_CANVAS_MODEL = PRESENTATION ARTEFACT`**: the
+> Supply Chain Canvas is a free-form diagram someone draws by hand, and it owns no business truth at
+> all. There is nothing here to retire.
+>
+> The evidence is one-sided in a way that made this the shortest ruling in the series. The module
+> contains no `KM.DB`, no `KM.api`, no `getWorkspace`, no `getTable`, no `google.script` and no
+> `fetch` — the only request it ever issues is the one that fetches its own markup, once. Its stored
+> document holds four keys (`items`, `arrows`, `nextId`, `nextArrowId`), and an item is
+> `{id, type, shapeType, x, y, width, height, text, bgColor, borderColor}` — geometry, colour and free
+> text. No quantity, status, SKU, warehouse, company, allocation or lifecycle field exists in it. And
+> `SupplyChainCanvas_Spec.md` §2.2 put "與 SKU / 補貨數據的自動關聯" and ERP / WMS / marketplace
+> integration **out of scope** in v1.0, so the spec and the implementation have agreed all along.
+>
+> So the categories this series has been using do not apply the way they did to the rows above it:
+>
+> | | |
+> |---|---|
+> | `CANONICAL_READ_OWNER` | **none — no canonical read exists.** The Canvas projects nothing. |
+> | `CANONICAL_WRITE_OWNER` | **none — `SUPPLYCHAIN_CANVAS_BUSINESS_WRITES = 0`.** |
+> | `CANVAS_UI_STATE_OWNER` | `localStorage['supplychain-canvas']`, written only by `CanvasController`. |
+> | `BROWSER_AUTHORITY_POLICY` | the key is `PRESENTATION_ONLY`. It cannot outrank canonical truth because it never carries any, and **no other module in the application reads it**. |
+> | `FAIL_CLOSED_POLICY` | vacuous for business data and now enforced for the document itself: an unreadable canvas is an ABSENT one, never an error that takes the page down. |
+> | `UI_STATE_POLICY` | geometry, colour, free text, and the canvas viewport. Nothing else. |
+> | `DEMO_POLICY` | there is no demo dataset in the module, so there is no demo fallback to make unreachable. |
+>
+> **THE RULING IS FORWARD-LOOKING, AND THAT IS THE ONLY PART WITH TEETH.** Today's code cannot go
+> wrong; the next round can. If the Canvas ever shows a real quantity, status, shipment, inventory
+> level, allocation or SKU lifecycle, that value must be **read from its canonical owner on each
+> render and never written into this document** — the moment a business number is persisted here it
+> becomes a second answer that one browser can see, which is exactly what S2-R4A retired from SKU
+> Details. `assets/tests/s2-r4c-supplychain-canvas-ownership.test.js` §C runs the real item and arrow
+> constructors and fails if the stored field vocabulary ever grows a business name.
+>
+> **TWO DEFECTS WERE FIXED, AND BOTH ARE LIFECYCLE RATHER THAN OWNERSHIP.**
+>
+> `setupOpacitySlider` and `setupArrowWidthSlider` each added **two anonymous `document` listeners**,
+> from a path that runs for every item on every render — so a ten-item canvas added forty per render,
+> nothing held a reference to them, the unmount hook could not remove them, and they went on handling
+> every mouse move in the application after the user navigated away. Phase 2B-4 had already decided
+> that this controller's document listeners are owned, bound remove-before-add and released on
+> unmount; these four never joined that contract. They are now one shared drag target driven by the
+> three listeners that already existed. **`LISTENER_DRIFT = 0`**, measured across four mounts.
+>
+> `loadFromStorage` called `JSON.parse` with nothing around it, one line after `init()` had set
+> `_initialized = true`. One truncated value threw, the toolbar wiring **below** the call never ran,
+> and every later mount took the `_initialized` early exit — a canvas whose buttons did nothing, in a
+> state a reload could not clear because the reload re-read the same value. An unreadable view-state
+> store is an absent preference, which is how every other view-state store in this repository already
+> treats it. The unreadable value is **quarantined to `supplychain-canvas.unreadable.v1` rather than
+> discarded**, and an existing quarantine is never overwritten: starting from an empty canvas means
+> the next edit would otherwise overwrite the only copy of a document someone may have spent an
+> afternoon on.
+>
+> **What was deliberately NOT done.** The canvas document still lives in one browser, unshared and
+> unbacked-up, and this round does not change that — a diagram is not business truth, so localStorage
+> is an acceptable owner for it, and giving it a table would be a cost with no reader. That is a
+> ruling, not an oversight: if the Canvas is ever meant to be a shared artefact, it needs a document
+> model and a write contract, and that is a scope decision this document does not take.
 
 > **ANSWERED — 2026-09-23, S2-R4B.** The `shippingHistory` rows are **closed**, and the answer was
 > already written down: `SHIPMENT_CENTER_SPEC.md` calls Shipment Overview a **status-filtered view over
