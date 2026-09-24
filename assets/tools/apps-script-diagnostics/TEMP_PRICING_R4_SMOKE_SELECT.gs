@@ -198,7 +198,8 @@ function TEMP_PRICING_R4_SMOKE_SELECT() {
     if (!country || !marketplace) return;
     var key = country + '|' + marketplace;
     var cur = pricingStr_(v.currency).toUpperCase();
-    var sc = scopeCur[key] || (scopeCur[key] = {});
+    var sc = scopeCur[key] || (scopeCur[key] = { __rows: 0 });
+    sc.__rows++;
     if (cur) sc[cur] = (sc[cur] || 0) + 1;
   });
 
@@ -225,7 +226,8 @@ function TEMP_PRICING_R4_SMOKE_SELECT() {
   });
   var scopeList = Object.keys(byScope).sort().map(function (k) {
     var sc = byScope[k];
-    sc.currencyList = Object.keys(scopeCur[k] || {}).sort();
+    sc.pricingRowCount = (scopeCur[k] && scopeCur[k].__rows) || 0;
+    sc.currencyList = Object.keys(scopeCur[k] || {}).filter(function (x) { return x !== '__rows'; }).sort();
     sc.currency = sc.currencyList.length === 1 ? sc.currencyList[0] : null;
     var d = dRowOf(sc.rows);
     sc.dRow = d ? d.row : null;
@@ -345,24 +347,44 @@ function TEMP_PRICING_R4_SMOKE_SELECT() {
   var scopesNeeded = chosen ? 1 : (plan ? plan.set.length : 0);
   p('SINGLE_SCOPE_SMOKE_AVAILABLE    = ' + (singleScope ? 'YES' : 'NO'));
   if (chosen) {
+    p('SMOKE_TARGET_COUNTRY            = ' + chosen.country);
+    p('SMOKE_TARGET_MARKETPLACE        = ' + chosen.marketplace);
+    p('SMOKE_TARGET_CURRENCY           = ' + chosen.currency);
+    p('TARGET_PRICING_ROW_COUNT        = ' + chosen.pricingRowCount + '   (every pricing_list row of this target)');
+    p('TARGET_CANDIDATE_ROW_COUNT      = ' + chosen.rows.length + '   (those that pass every smoke guard)');
     p('SMOKE_SCOPE                     = ' + chosen.key);
-    p('  country                       = ' + chosen.country);
-    p('  marketplace / site            = ' + chosen.marketplace);
-    p('  currency                      = ' + chosen.currency);
-    p('  healthy candidate rows        = ' + chosen.rows.length);
     p('MINIMUM_SCOPES_REQUIRED         = 1');
-    p('  Chosen from ' + complete.length + ' target(s) that could host all four, by most healthy rows then by name.');
-    p('  All four cases are one upload: Update -> Pricing -> ' + chosen.country + ' -> ' + chosen.marketplace + '.');
+    p('');
+    p('WHY_THIS_TARGET                 = most qualifying rows, then name');
+    p('  ' + complete.length + ' target(s) could host all four cases. Ranked:');
+    complete.forEach(function (sc, i) {
+      p('    ' + (i + 1) + '. ' + pad(sc.key, 26) + 'candidates=' + pad(sc.rows.length, 5)
+        + 'currency=' + pad(sc.currency, 6) + (i === 0 ? '  <- selected' : ''));
+    });
+    p('  Most qualifying rows wins because four rows are then the smallest fraction of what is live there,');
+    p('  and a replacement exists if one turns out unsuitable. Name breaks a tie, so two runs cannot differ.');
+    p('  All four cases are ONE upload: Update -> Pricing -> ' + chosen.country + ' -> ' + chosen.marketplace + '.');
   } else if (plan) {
+    p('SMOKE_TARGET_COUNTRY            = MULTIPLE — see the plan below');
+    p('SMOKE_TARGET_MARKETPLACE        = MULTIPLE — see the plan below');
+    p('SMOKE_TARGET_CURRENCY           = VARIES BY TARGET');
+    p('TARGET_PRICING_ROW_COUNT        = n/a — no single target hosts the smoke');
     p('MINIMUM_SCOPES_REQUIRED         = ' + plan.set.length + '   (one upload each — the UI scopes an import to one target)');
     p('  No single target can supply all four cases. Every target either has fewer than four healthy rows,');
     p('  has no field whose effective price already equals its auto value, or carries more than one currency.');
     p('  THE EQUALITY RULE IS NOT RELAXED to make a single target work: an AUTO restore on a row whose');
     p('  effective and auto differ would move a live price, which is the one thing the runbook forbids.');
     p('  The plan below is the fewest uploads that covers all four:');
-    plan.set.forEach(function (sc) {
-      p('    ' + pad(sc.key, 26) + 'currency=' + pad(sc.currency, 6) + 'rows=' + sc.rows.length
-        + (sc.key === plan.d.key ? '   <- hosts the AUTO case' : ''));
+    var caseOf = {};
+    if (rowA) (caseOf[rowA.scopeKey] = caseOf[rowA.scopeKey] || []).push('A');
+    if (rowB) (caseOf[rowB.scopeKey] = caseOf[rowB.scopeKey] || []).push('B');
+    if (rowC) (caseOf[rowC.scopeKey] = caseOf[rowC.scopeKey] || []).push('C');
+    if (rowD) (caseOf[rowD.scopeKey] = caseOf[rowD.scopeKey] || []).push('D');
+    plan.set.forEach(function (sc, i) {
+      p('    Scope ' + (i + 1) + ':  ' + sc.country + ' / ' + sc.marketplace
+        + '   currency=' + sc.currency + '   candidates=' + sc.rows.length);
+      p('              hosts ' + ((caseOf[sc.key] || []).join(', ') || '(nothing — drop this scope)')
+        + (sc.key === plan.d.key ? '   (the AUTO case is here)' : ''));
     });
   } else {
     p('MINIMUM_SCOPES_REQUIRED         = NOT ACHIEVABLE');
@@ -486,8 +508,11 @@ function TEMP_PRICING_R4_SMOKE_SELECT() {
   function req(k, v) { p(pad(k, 32) + '= ' + v); }
   function idOf(c) { return c ? c.id : 'NOT AVAILABLE'; }
   req('SINGLE_SCOPE_SMOKE_AVAILABLE', singleScope ? 'YES' : 'NO');
+  req('SMOKE_TARGET_COUNTRY', chosen ? chosen.country : 'MULTIPLE');
+  req('SMOKE_TARGET_MARKETPLACE', chosen ? chosen.marketplace : 'MULTIPLE');
+  req('SMOKE_TARGET_CURRENCY', chosen ? chosen.currency : 'VARIES BY TARGET');
+  req('TARGET_PRICING_ROW_COUNT', chosen ? chosen.pricingRowCount : 'n/a');
   req('SMOKE_SCOPE', chosen ? chosen.key : 'MULTIPLE — see the plan above');
-  req('SMOKE_SCOPE_CURRENCY', chosen ? chosen.currency : 'VARIES BY TARGET');
   req('MINIMUM_SCOPES_REQUIRED', scopesNeeded || 'NOT ACHIEVABLE');
   req('SMOKE_ROW_A', idOf(rowA));
   req('SMOKE_ROW_B', idOf(rowB));

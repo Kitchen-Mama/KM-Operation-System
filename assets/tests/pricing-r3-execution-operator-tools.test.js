@@ -961,6 +961,29 @@ function activeMsku(id, o) {
   // ONE TARGET FOR ALL FOUR. The bulk import is scoped to one country + marketplace, so four rows spread
   // across four targets would be four uploads and four chances to pick the wrong scope.
   ok(/SINGLE_SCOPE_SMOKE_AVAILABLE    = YES/.test(r), 'P4d all four cases come from one target');
+
+  // EVERY REQUIRED LABEL, BY NAME.
+  ['SMOKE_TARGET_COUNTRY', 'SMOKE_TARGET_MARKETPLACE', 'SMOKE_TARGET_CURRENCY',
+   'TARGET_PRICING_ROW_COUNT', 'TARGET_CANDIDATE_ROW_COUNT', 'SINGLE_SCOPE_SMOKE_AVAILABLE',
+   'MINIMUM_SCOPES_REQUIRED', 'WHY_THIS_TARGET', 'A_TEST_VALUE', 'B_TEST_VALUE', 'C_TEST_VALUE',
+   'AUTO_SELECTED_FIELD', 'AUTO_EFFECTIVE_VALUE', 'AUTO_REFERENCE_VALUE', 'EFFECTIVE_EQUALS_AUTO',
+   'ROW_D_EFFECTIVE_EQUALS_AUTO', 'PRICING_CHANGE_LOG_PRE_COUNT', 'SMOKE_PRE_SNAPSHOT_READY',
+   'PRODUCTION_WRITE_AUTHORIZED'].forEach(function (name) {
+    ok(new RegExp('(^|[\\n\\s])' + name + '\\s*=').test(r), 'P4r  the report answers ' + name + ' by name');
+  });
+
+  // THE TARGET'S OWN NUMBERS. Four good rows plus MDUP x2, MF, MK, MS, MZ all sit in US|amazon; MX has no
+  // bridge row so it belongs to no target at all.
+  ok(/SMOKE_TARGET_COUNTRY            = US/.test(r), 'P4j the country is named on its own line');
+  ok(/SMOKE_TARGET_MARKETPLACE        = amazon/.test(r), 'P4k and the marketplace');
+  ok(/SMOKE_TARGET_CURRENCY           = USD/.test(r), 'P4l and the currency, from the rows themselves');
+  ok(/TARGET_PRICING_ROW_COUNT        = 10/.test(r),
+    'P4m the target row count is every pricing row of the target, not only the healthy ones');
+  ok(/TARGET_CANDIDATE_ROW_COUNT      = 4/.test(r), 'P4n beside the count that passed every guard');
+
+  // WHY IT WON, stated rather than left to be inferred from a sort order nobody can see.
+  ok(/WHY_THIS_TARGET                 = most qualifying rows, then name/.test(r), 'P4o the ranking rule is stated');
+  ok(/1\. US\|amazon[\s\S]{0,80}<- selected/.test(r), 'P4p with the ranked list and which one was taken');
   ok(/SMOKE_SCOPE                     = US\|amazon/.test(r), 'P4e which is named');
   ok(/MINIMUM_SCOPES_REQUIRED         = 1/.test(r), 'P4f so the smoke is a single upload');
   eq((r.match(/TARGET \(upload scope\)\s+= US\|amazon/g) || []).length, 4,
@@ -1097,7 +1120,7 @@ function activeMsku(id, o) {
   var rT = smokeWorld(SEL, twoRows, twoMsk).TEMP_PRICING_R4_SMOKE_SELECT();
   ok(/SMOKE_SCOPE                     = US\|amazon/.test(rT),
     'P20  with two completable targets the one holding more healthy rows is chosen');
-  ok(/Chosen from 2 target\(s\) that could host all four/.test(rT), 'P20a and the tool says how many it chose between');
+  ok(/2 target\(s\) could host all four cases\. Ranked:/.test(rT), 'P20a and the tool says how many it chose between');
 
   // NO SINGLE TARGET: the minimum number of uploads is reported, and the equality rule is not relaxed to
   // manufacture one.
@@ -1115,7 +1138,13 @@ function activeMsku(id, o) {
   ok(/MINIMUM_SCOPES_REQUIRED         = 2/.test(rS), 'P21a and two uploads is the minimum, computed rather than guessed');
   ok(/THE EQUALITY RULE IS NOT RELAXED/.test(rS), 'P21b with the equality rule explicitly not traded away for a tidier answer');
   ok(/--- UPLOAD 1 of 2/.test(rS) && /--- UPLOAD 2 of 2/.test(rS), 'P21c and the template comes as one block per upload');
-  ok(/hosts the AUTO case/.test(rS), 'P21d naming which target carries the constrained case');
+  ok(/the AUTO case is here/.test(rS), 'P21d naming which target carries the constrained case');
+  ok(/Scope 1:  CA \/ amazon/.test(rS) && /Scope 2:  US \/ amazon/.test(rS),
+    'P21e the plan names each scope in the form the operator report asks for');
+  // The AUTO case must sit in the scope that can host it, and that scope fills up first: CA takes A and B
+  // alongside D, leaving C for the second upload. The mapping is the plan, so it is asserted exactly.
+  ok(/hosts A, B, D/.test(rS), 'P21f and which cases each one hosts');
+  ok(/hosts C\b/.test(rS), 'P21g including the scope that carries the single leftover case');
 
   // NOTHING AUTO-CAPABLE ANYWHERE is a different failure from "not in one target", and says so.
   var noAuto = [], noAutoMsk = [];
