@@ -1,6 +1,16 @@
 /**
  * TEMP — PRICING-R2 SURGICAL REPAIR — restore base_msrp from PRE, then complete the canonical schema.
  *
+ * ================================================================================================
+ * SUPERSEDED by TEMP_PRICING_R2_BASE_SOURCE_FINAL.gs. DO NOT RUN THIS.
+ * ================================================================================================
+ *
+ * This tool takes base_msrp from PRE__pricing_list__20260923-184134, which was the only authority
+ * anyone had for a base price when it was written. The business has since frozen a different one:
+ * SKU Details owns BASE pricing. A restore from PRE would reinstate a value that is no longer the
+ * source of truth — correct as forensics, wrong as a target. It is kept here as the record of the
+ * incident and of the evidence that closed it.
+ *
  *     TEMP_PRICING_R2_SURGICAL_REPAIR_DRY_RUN()   // reads only. Proves the damage is what we think it is.
  *     TEMP_PRICING_R2_SURGICAL_REPAIR_COMMIT()    // one bounded repair. Refuses unless the dry run still holds.
  *
@@ -162,6 +172,8 @@ function psrRun_(commit) {
   function done() { Logger.log(out.join('\n')); return out.join('\n'); }
 
   p('TEMP PRICING-R2 SURGICAL REPAIR — ' + (commit ? 'COMMIT' : 'DRY RUN'));
+  p('SUPERSEDED by TEMP_PRICING_R2_BASE_SOURCE_FINAL.gs — SKU Details now owns BASE pricing, and this');
+  p('tool would restore base_msrp from a PRE snapshot that is no longer the source of truth.');
   p('generated_at (script clock): ' + new Date().toISOString());
   rule();
 
