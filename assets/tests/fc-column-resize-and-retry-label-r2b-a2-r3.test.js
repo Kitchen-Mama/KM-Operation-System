@@ -196,6 +196,13 @@ function buildSection(dom, opts) {
   var section = mk('div', 'fc-summary-section');
   d.body.appendChild(section);
   var banner = mk('div', 'fc-view-banner'); section.appendChild(banner);
+  // The toolbar's More Options panel — the host _fcResizeResetBar_ appends each table's reset control
+  // to. Without it the reset controls have nowhere to exist, which is the point: the control is part of
+  // the toolbar now, and a fixture that omitted the toolbar would be testing a page that never shipped.
+  var moreBar = mk('div', 'fc-action-buttons'); section.appendChild(moreBar);
+  var moreMenu = mk('div', null, 'km-action-menu fc-more-menu'); moreBar.appendChild(moreMenu);
+  var moreBtn = mk('button', 'fc-more-options-btn'); moreMenu.appendChild(moreBtn);
+  var morePanel = mk('div', 'fc-more-options-panel', 'km-action-menu__panel'); moreMenu.appendChild(morePanel);
 
   function panel(panelId, headerId, bodyId, labels, rows) {
     var p = mk('div', panelId, 'fc-panel'); section.appendChild(p);
@@ -526,7 +533,16 @@ ok(!/#fc-summary-section \.scroll-(header \.header-cell|row \.scroll-cell):nth-c
     'F2 §2 ' + g + ' has its own table-scoped default-width rules');
 });
 // no ordinary resizable column may carry a blocking max-width
-var colRules = CSS.split('}').filter(function (r) { return /scroll-(header > \.header-cell|row > \.scroll-cell):nth-child/.test(r); });
+//
+// COMMENTS ARE STRIPPED FIRST, and that is not a loosening. Chunking on '}' cannot terminate a comment,
+// so a comment is absorbed into the rule that follows it — and the §4 comment a few lines up spends two
+// paragraphs saying that max-width is gone and that no !important is used. Reading those words as if
+// they were declarations of the first column rule made F4 and F7 fail the moment an unrelated rule that
+// happened to sit between them was deleted (DISPLAY-COLUMN-VISIBILITY-R1 removed .fc-rescol-bar). These
+// two checks are claims about DECLARATIONS; prose about a declaration is not one. A real max-width or a
+// real !important in a column rule still fails them.
+var CSS_DECL = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+var colRules = CSS_DECL.split('}').filter(function (r) { return /scroll-(header > \.header-cell|row > \.scroll-cell):nth-child/.test(r); });
 ok(colRules.length > 0, 'F3 the per-table column rules were found', colRules.length);
 eq(colRules.filter(function (r) { return /max-width/.test(r); }).length, 0,
   'F4 §4 NOT ONE per-column default rule pins max-width');

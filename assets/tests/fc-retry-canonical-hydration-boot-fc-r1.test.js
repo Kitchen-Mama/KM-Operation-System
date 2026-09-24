@@ -682,6 +682,26 @@ section('E. §6.1-6.12 — THE REQUIRED MATRIX');
     // 90d705c. The column LIST is data about the markup, and is proven where it belongs, by the A8/A8b
     // shape gate in fc-column-resize-and-retry-label-r2b-a2-r3.test.js, which derives the expected
     // columns FROM the shipped header instead of restating them.
+    //
+    // FC-SUMMARY-DISPLAY-COLUMN-VISIBILITY-R1 — two further spans leave the seal, and for the same
+    // reason the two widenings above give: this round DECLARES them, so sealing them would assert
+    // "whatever is there now" rather than "nothing moved that was not declared".
+    //
+    //   · the column-schema CONSTRUCTORS (_fcResizeCols_ / _fcMonthCols_). A column now carries its
+    //     display group beside its width, because that schema was already this page's canonical column
+    //     list and a second list would be a second answer. The constructors are data about the markup,
+    //     exactly like the declarations that left the seal before them, and the resize engine still
+    //     reads only `w` and `label` — proven live by the whole of fc-column-resize-and-retry-label,
+    //     re-run at 190 passed / 0 failed / 13 mutants / 0 survived.
+    //
+    //   · _fcResizeResetBar_. Its control moved from a bar above each panel into the toolbar's More
+    //     Options menu (§12.1), because §12.5 asks for one canonical entry per action. What the
+    //     function DOES is unchanged and is still proven live, in the place it was always proven:
+    //     E4-E10 require one reset control per table with the same id and the same label, and M9
+    //     still kills a reset that reaches past its own table.
+    //
+    // Everything else in the span — the mount, the shape gate, the drag maths, the persistence, the
+    // injected-rule construction, the minimum policy — is still compared byte for byte.
     function resizeBlockSansTarget(src) {
       var a = src.indexOf('var FC_RESIZE_MAX_');
       var b = src.indexOf('function _fcResizeInit_');
@@ -690,7 +710,24 @@ section('E. §6.1-6.12 — THE REQUIRED MATRIX');
       var ta = whole.indexOf('var FC_RESIZE_TABLES_ = [');
       var tb = whole.indexOf('];', ta);
       if (ta === -1 || tb === -1) throw new Error('FC_RESIZE_TABLES_ not located in the resize block');
-      return whole.slice(0, ta) + whole.slice(tb);
+      whole = whole.slice(0, ta) + whole.slice(tb);
+      // Cut [after <open>, before <close>), keeping both anchors. Both anchors must exist on BOTH
+      // sides or the excision is not symmetric, so a missing one throws rather than cutting nothing.
+      function cut(t, open, close, label) {
+        var i = t.indexOf(open);
+        if (i === -1) throw new Error('seal: ' + label + ' open anchor not located');
+        var s0 = i + open.length;
+        var j = t.indexOf(close, s0);
+        if (j === -1) throw new Error('seal: ' + label + ' close anchor not located');
+        return t.slice(0, s0) + '\n' + t.slice(j);
+      }
+      whole = cut(whole,
+        'function _fcResizeMin_(def) { return Math.min(FC_RESIZE_MIN_, def); }',
+        '// Each table declares its own header root', 'column-schema constructors');
+      whole = cut(whole,
+        "'{ width:' + wpx + '; min-width:' + wpx + '; max-width:' + wpx + '; }';",
+        'function _fcResizeMount_(spec) {', 'the reset control');
+      return whole;
     }
     ok(resizeBlockSansTarget(JS).length > 500, 'H1 the resize block was located');
     eq(resizeBlockSansTarget(JS), resizeBlockSansTarget(BASE_JS),
@@ -717,8 +754,11 @@ section('E. §6.1-6.12 — THE REQUIRED MATRIX');
       function (m, label) { _shareHeads.push(label); return m; });
     eq(_shareHeads.length, 2, 'H2b3 the markup ships exactly two share columns');
     ok(_shareHeads.length === 2 && _shareHeads.every(function (label) {
+      // [,)] rather than ) — the constructor gained a third argument (the column's display group,
+      // DISPLAY-COLUMN-VISIBILITY-R1 §2). What H2b3b is about is unchanged and still pinned exactly:
+      // the declaration names the same two share columns the markup ships, whatever they are called.
       return new RegExp("_fcResizeCols_\\(\\d+, '"
-        + label.replace(/[-\\^$*+?.()|[\]{}]/g, "\\$&") + "'\\)").test(JS_LF);
+        + label.replace(/[-\\^$*+?.()|[\]{}]/g, "\\$&") + "'[,)]").test(JS_LF);
     }), 'H2b3b ... and the resize declaration names the SAME two, whatever they are called', _shareHeads);
     // The stylesheet, everything outside the Target table's own rules. The excised span runs from the start
     // of the Target section to the shared fixed-column rules that follow it.
@@ -771,10 +811,38 @@ section('E. §6.1-6.12 — THE REQUIRED MATRIX');
           i = t.indexOf(sel);
         }
       });
+      // FC-SUMMARY-DISPLAY-COLUMN-VISIBILITY-R1 — two excisions, both styling this round declares.
+      //
+      //   · the R2B-A2-R3 §6 block. It hosted the per-panel reset bar; the control moved into the
+      //     toolbar's More Options menu (§12.1), where the shared .km-action-menu__item rule skins it,
+      //     so the host rule is dead and is gone. Cut from the sealed bytes too — the point is symmetry,
+      //     not an exemption for whatever is there now.
+      //   · the Display / Columns block appended at the end of the file. It is new text rather than a
+      //     moved value, so it is excised rather than normalised. Its own scoping is proven by B3 in
+      //     fc-summary-display-column-visibility-r1.test.js, which requires every selector in it to be
+      //     scoped to #fc-summary-section.
+      //
+      // Every other byte of the stylesheet is still compared against the sealed commit, and the rule
+      // this assertion exists for is unchanged: a round may not disturb styling it has not declared.
+      (function () {
+        var r0 = t.indexOf('/* FC-SUMMARY-R2B-A2-R3 \u00a76');
+        var r1 = t.indexOf('/* --- Regular Forecast:');
+        if (r0 === -1 || r1 === -1 || r1 < r0) throw new Error('fc-overview.css reset-bar region not located');
+        t = t.slice(0, r0) + t.slice(r1);
+      })();
+      var dv = t.indexOf('FC-SUMMARY-DISPLAY-COLUMN-VISIBILITY-R1 — the Display / Columns control');
+      if (dv !== -1) {
+        var dv0 = t.lastIndexOf('/*', dv);
+        t = t.slice(0, dv0 === -1 ? dv : dv0);
+      }
       // A run of blank lines is not styling. Levelling it on BOTH sides is what lets a rule be
       // removed from the sealed bytes and from the file by different mechanisms and still compare
       // equal; every non-blank byte outside the excisions is still compared exactly.
       t = t.replace(/\n{2,}/g, '\n\n');
+      // ... and for the same reason, the end of the file is levelled to a single newline. Cutting the
+      // appended block leaves behind the blank line that separated it from the rule above, which is one
+      // byte of whitespace at EOF and no styling at all. Levelled on BOTH sides.
+      t = t.replace(/\n*$/, '\n');
       var a = t.indexOf('/* R2B-A2-R5');
       if (a === -1) a = t.indexOf('/* --- Target % & Rules:');
       var b = t.indexOf('/* Fixed column');

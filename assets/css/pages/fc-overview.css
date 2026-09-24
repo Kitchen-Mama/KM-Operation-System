@@ -1657,13 +1657,11 @@
    and none is needed once the selectors stop reaching past their own table.
    ============================================================================================ */
 
-/* FC-SUMMARY-R2B-A2-R3 §6 — the per-table reset control's host. One bar per panel, above that panel's own
-   table, so the control sits with the columns it resets and can never be read as a page-wide action. */
-#fc-summary-section .fc-rescol-bar {
-    display: flex;
-    justify-content: flex-end;
-    margin: 0 0 6px 0;
-}
+/* FC-SUMMARY-R2B-A2-R3 §6 — the per-table reset control used to live in a bar above each panel. R1 of
+   FC-SUMMARY-DISPLAY-COLUMN-VISIBILITY moved it into the toolbar's More Options menu (§12.1), where it
+   is skinned by the shared .km-action-menu__item rule; the ".fc-rescol-bar" host is therefore gone. It
+   is STILL one control per table and still only the active table's is shown, so §6's requirement — that
+   a reset can never be read as page-wide — is unchanged. */
 
 /* --- Regular Forecast: 20 scroll columns --- */
 #fc-regular-scroll-header > .header-cell:nth-child(1),
@@ -1996,3 +1994,129 @@
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+/* ================================================================================================
+   FC-SUMMARY-DISPLAY-COLUMN-VISIBILITY-R1 — the Display / Columns control.
+   ================================================================================================
+   EVERYTHING VISUAL HERE IS BORROWED, NOT INVENTED. The trigger, the floating panel, the section
+   captions, the divider and the row hover all come from the shared .km-action-menu primitive in
+   components.css — the one that exists so a menu on any page renders identically to the SKU Details
+   "More Options" it was derived from. What follows adds only what a CHECKBOX LIST needs and that
+   primitive has no opinion about: the "Display" caption beside the trigger, the row geometry for a
+   label wrapping a checkbox, and the preset row.
+
+   Z-INDEX IS ALSO BORROWED, and deliberately not re-declared. .km-action-menu sets position:relative
+   with z-index:auto, which does NOT open a stacking context, so .km-action-menu__panel's z-index:200
+   competes in the root context — above the sticky .table-header-bar (120) and the .fc-filter-bar
+   (130). Giving .fc-tabs-container its own z-index here would have created a context that trapped the
+   panel underneath both.
+
+   Every rule is scoped to #fc-summary-section so nothing leaks to the pages that share this file.
+   ================================================================================================ */
+
+#fc-summary-section .fc-display-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* "Display" is a caption for the control, not a button: same muted weight as a filter label. */
+#fc-summary-section .fc-display-label {
+    font-size: var(--filter-label-font-size, 12px);
+    color: var(--filter-label-color, #64748b);
+    font-weight: var(--weight-medium, 600);
+    white-space: nowrap;
+}
+
+#fc-summary-section .fc-display-count {
+    color: var(--text-secondary, #64748b);
+    font-weight: 400;
+}
+
+/* Wider than an action menu because a column label is longer than a verb, and scrollable because the
+   Regular table has 21 of them. max-height keeps the panel inside the viewport on a laptop. */
+#fc-summary-section .fc-display-panel {
+    min-width: 260px;
+    max-height: min(420px, calc(100vh - 220px));
+    overflow-y: auto;
+}
+
+#fc-summary-section .fc-display-group {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+/* A label WRAPPING its checkbox, so the whole row is the hit target and no for/id pair can drift. */
+#fc-summary-section .fc-display-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: var(--radius-sm, 4px);
+    font-size: var(--font-size-body, 0.875rem);
+    color: var(--text-primary, #2D3748);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+#fc-summary-section .fc-display-item:hover {
+    background: var(--bg-surface, #f1f5f9);
+}
+
+#fc-summary-section .fc-display-item:focus-within {
+    background: var(--bg-surface, #f1f5f9);
+    outline: 2px solid var(--km-brand-blue, #0080bb);
+    outline-offset: -2px;
+}
+
+/* The page's own ".filter-group > input" rule sets a 120px min-width on inputs; a checkbox inside this
+   panel is not that kind of input and must stay a fixed 16px square. */
+#fc-summary-section .fc-display-item input[type="checkbox"] {
+    width: 16px; height: 16px; min-width: 16px; min-height: 16px;
+    margin: 0; padding: 0; flex: 0 0 auto; box-sizing: border-box;
+    border: none; border-radius: 0;
+    cursor: pointer;
+    accent-color: var(--km-brand-teal, #3abfb6);
+}
+
+#fc-summary-section .fc-display-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 2px 4px 4px;
+}
+
+/* Quiet, secondary chips: a preset is a shortcut through the checkboxes above, never a page action. */
+#fc-summary-section .fc-display-preset {
+    background: #f1f5f9;
+    color: #334155;
+    border: 1px solid var(--border-light, #E2E8F0);
+    border-radius: var(--radius-sm, 4px);
+    padding: 5px 10px;
+    font-size: 12px;
+    font-weight: var(--weight-medium, 600);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+#fc-summary-section .fc-display-preset:hover { background: #e2e8f0; }
+#fc-summary-section .fc-display-preset:focus-visible {
+    outline: 2px solid var(--km-brand-blue, #0080bb);
+    outline-offset: 1px;
+}
+
+#fc-summary-section .fc-display-note {
+    padding: 6px 8px 2px;
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--text-secondary, #64748b);
+    white-space: normal;
+}
+
+/* The relocated per-table width reset. It keeps the menu-item skin and only marks itself as the
+   UTILITY rank (§12.7) — the same restraint components.css gives a quiet row, not a second style. */
+#fc-summary-section .fc-mo-reset { color: var(--text-secondary, #64748b); }
+#fc-summary-section .fc-mo-reset:hover { color: var(--text-primary, #2D3748); }
+#fc-summary-section .km-action-menu__item[hidden],
+#fc-summary-section .km-action-menu__divider[hidden] { display: none; }

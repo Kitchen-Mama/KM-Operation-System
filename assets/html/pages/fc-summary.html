@@ -54,14 +54,34 @@
                         <button class="fc-tab" data-tab="event">Special Event</button>
                         <button class="fc-tab" data-tab="target">Target % Rules</button>
                     </div>
+                    <!-- FC-SUMMARY-DISPLAY-COLUMN-VISIBILITY-R1 §12.7 — the action area reads in three
+                         ranks, and the DOM order is the hierarchy: a VIEW CONTROL (Display), the PRIMARY
+                         business action (+ New FC Update) with the contextual edit/save controls beside
+                         it, and last the SECONDARY menu (More Options). Display is deliberately NOT inside
+                         More Options (§12.3): it is a frequently-used table-view control, not a secondary
+                         action. Both popovers use the shared .km-action-menu primitive from components.css,
+                         which exists precisely so a menu renders identically to the SKU Details
+                         "More Options" it was derived from — reused rather than re-styled per page. -->
                     <div class="fc-action-buttons" id="fc-action-buttons">
-                        <!-- Regular Forecast Buttons -->
+                        <!-- VIEW CONTROL — Display / Columns. Panel contents are built per ACTIVE TAB by
+                             fcRenderDisplayPanel_(), so a tab is never offered a column it does not render. -->
+                        <div class="fc-display-control">
+                            <span class="fc-display-label" id="fc-display-label">Display</span>
+                            <div class="km-action-menu fc-display-menu">
+                                <button type="button" class="km-action-menu__trigger fc-display-trigger" id="fc-display-btn"
+                                        aria-haspopup="true" aria-expanded="false" aria-controls="fc-display-panel"
+                                        aria-labelledby="fc-display-label fc-display-btn"
+                                        onclick="fcToggleDisplayMenu(event)">Columns <span class="fc-display-count" id="fc-display-count"></span> <span class="km-action-menu__icon" aria-hidden="true">▾</span></button>
+                                <div class="km-action-menu__panel fc-display-panel" id="fc-display-panel" role="group" aria-label="Column display" hidden></div>
+                            </div>
+                        </div>
+                        <!-- PRIMARY -->
                         <button class="fc-btn fc-btn--add fc-btn-event" onclick="openAddEventModal()">+ New FC Update</button>
-                        <button class="fc-btn fc-btn--edit fc-btn-regular" id="fc-edit-btn" onclick="enterFcEditMode()">Edit Base FC</button>
+                        <!-- Contextual edit controls. Save/Cancel were NOT relocated: they are modal to an
+                             edit session, and a control that ends an unsaved edit must not be one click deep. -->
                         <!-- + Add SKU removed (data safety): FC Summary must NOT create SKU / FC base rows.
                              SKU + FC base creation comes only from SKU Details / Inventory SKU flow.
                              See FC_SUMMARY_SPEC.md (FC Summary data ownership). -->
-                        <button class="fc-btn fc-btn--add fc-btn-regular" id="fc-import-btn" onclick="openFcImportModal()">Import Forecast</button>
                         <button class="fc-btn fc-btn--save fc-btn-regular" id="fc-save-btn" onclick="saveFcChanges()" style="display:none;">Save Changes</button>
                         <button class="fc-btn fc-btn--cancel fc-btn-regular" id="fc-cancel-btn" onclick="cancelFcEdit()" style="display:none;">Cancel</button>
                         <!-- Event Buttons -->
@@ -70,6 +90,26 @@
                         <button class="fc-btn fc-btn--cancel fc-btn-event" id="fc-event-cancel-btn" onclick="cancelEventEdit()" style="display:none;">Cancel</button>
                         <!-- Target Rules Buttons -->
                         <button class="fc-btn fc-btn--add fc-btn-target" onclick="openAddTargetRuleModal()" style="display:none;">+ Add Target Rule</button>
+                        <!-- SECONDARY — More Options. §12.5: Edit Base FC and Import Forecast are the SAME
+                             elements as before, carrying the same ids, the same `fc-btn-regular` tab marker
+                             and the same handlers, so updateActionButtons() and _fcSetEditLock() still own
+                             when they show and when they lock. Only their host and their skin changed; no
+                             second element and no second listener exists for either action. The per-table
+                             "Reset column widths" items are appended after the divider at mount by
+                             _fcResizeResetBar_ — one per table, only the active table's shown. -->
+                        <div class="km-action-menu fc-more-menu">
+                            <button type="button" class="km-action-menu__trigger" id="fc-more-options-btn"
+                                    aria-haspopup="true" aria-expanded="false" aria-controls="fc-more-options-panel"
+                                    onclick="fcToggleMoreOptions(event)">⋯ More Options</button>
+                            <div class="km-action-menu__panel" id="fc-more-options-panel" role="menu" aria-label="More options" hidden>
+                                <button type="button" class="km-action-menu__item fc-btn-regular" id="fc-edit-btn" role="menuitem"
+                                        onclick="enterFcEditMode(); fcCloseMoreOptions();">Edit Base FC</button>
+                                <button type="button" class="km-action-menu__item fc-btn-regular" id="fc-import-btn" role="menuitem"
+                                        onclick="openFcImportModal(); fcCloseMoreOptions();">Import Forecast</button>
+                                <!-- A table/UI utility, not a forecast data-management action — hence the rule. -->
+                                <div class="km-action-menu__divider" id="fc-more-options-divider"></div>
+                            </div>
+                        </div>
                     </div>
                     <!-- FC-SUMMARY-R1: non-blocking outcome/stale banner. Never replaces the table. -->
                     <div id="fc-view-banner" role="status" hidden
