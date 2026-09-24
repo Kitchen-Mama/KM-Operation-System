@@ -26,6 +26,7 @@ function readN(rel) { return read(rel).replace(/\r\n/g, '\n'); }
 var TOOLS = 'assets/tools/apps-script-diagnostics/';
 var MIG = readN(TOOLS + 'TEMP_PRICING_R2_MIGRATION.gs');
 var CEN = readN(TOOLS + 'TEMP_PRICING_R3_PRODUCTION_CENSUS.gs');
+var DEC = readN(TOOLS + 'TEMP_PRICING_R3_FX_DECOMPOSE.gs');
 var GS73 = readN('assets/specs/active/apps-script/73_api_v1_pricing_write.gs');
 
 var pass = 0, fail = 0, mutCaught = 0, mutSurvived = 0;
@@ -577,20 +578,281 @@ censusMutant('I4  a blank base price is counted as available',
   function (r) { return !/BASE_MSRP_AVAILABLE = 1   BASE_MSRP_BLANK = 2/.test(r); });
 
 // =============================================================================================================
+section('L · THE FX PLAN DECOMPOSITION — WHY A PER-FIELD COUNT CAN EXCEED THE CONVERTIBLE ROWS');
+// =============================================================================================================
+// A production dry run reported AUTO_MINIMUM_WOULD_UPDATE = 197 against FX_CONVERTIBLE_ROWS = 193. The
+// excess is not a defect and not an overflow: same-currency rows are PLANNED through a synthesised identity
+// rate rather than skipped, so a USD row whose auto_* disagrees with its own base price moves too. This
+// section builds a table where that is true by construction and checks the tool separates the two.
+//
+// The decomposition tool calls the DEPLOYED planner, so the world here loads 73_ alongside it exactly as
+// the Apps Script project would. A tool that recomputed the plan its own way could agree with itself and
+// still be wrong about the run it claims to be explaining.
+function decWorld(src, rows, opts) {
+  opts = opts || {};
+  var priceSheet = fakeSheet('pricing_list', [CANON].concat(rows));
+  var S = {
+    console: console, Object: Object, Array: Array, String: String, Number: Number, Math: Math,
+    JSON: JSON, isFinite: isFinite, Date: Date, RegExp: RegExp, parseFloat: parseFloat, isNaN: isNaN,
+    Logger: { log: function (x) { S.__logged = x; } },
+    SpreadsheetApp: {
+      getActiveSpreadsheet: function () {
+        return { getSheetByName: function (n) {
+          if (opts.missingSheet === n) return null;
+          return n === 'pricing_list' ? priceSheet : null;
+        } };
+      },
+      flush: function () {}
+    },
+    Session: { getScriptTimeZone: function () { return 'UTC'; } },
+    Utilities: { formatDate: function (d) { return d.toISOString().slice(0, 10); } },
+    __price: priceSheet
+  };
+  vm.createContext(S);
+  if (!opts.noAuthority) vm.runInContext(GS73, S, { filename: '73_.gs' });
+  vm.runInContext(src, S, { filename: 'decompose.gs' });
+  return S;
+}
+function decRow(o) { return CANON.map(function (h) { return Object.prototype.hasOwnProperty.call(o, h) ? o[h] : ''; }); }
+
+// THE TABLE, designed so every bucket below is derived by hand and not by running the tool first.
+//
+//   X1 CAD   all three bases present, auto_* still equal to base (what 04_ seeds)   -> 3 cross moves
+//   X2 JPY   regular and msrp present, minimum blank                                -> 2 cross moves
+//   X3 CAD   base_regular 0, auto 0. 0 x 1.41095 = 0, so a CROSS row that does NOT move -> 0
+//   I1 USD   auto already equals base exactly                                       -> 0 identity moves
+//   I2 USD   base 12.347 — more decimals than USD can hold, so ROUND moves it       -> BASE_NOT_ROUNDED
+//   I3 USD   auto blank                                                             -> AUTO_BLANK
+//   I4 USD   auto 37.5 against a base of 40                                         -> AUTO_STALE
+//   I5 USD   base_minimum blank while auto_minimum still holds 9.99                 -> the stale-auto count
+var DECROWS = [
+  decRow({ pricing_id: 'X1', marketplace_sku_id: 'MX1', sku: 'SKU-X1', currency: 'CAD', base_currency: 'USD',
+    base_regular_price: 29.99, base_minimum_price: 20, base_msrp: 39.99,
+    auto_regular_price: 29.99, auto_minimum_price: 20, auto_msrp: 39.99,
+    fx_rate: 1, regular_price: 34.99, minimum_price: 20, msrp: 39.99 }),
+  decRow({ pricing_id: 'X2', marketplace_sku_id: 'MX2', sku: 'SKU-X2', currency: 'JPY', base_currency: 'USD',
+    base_regular_price: 10, base_msrp: 5, auto_regular_price: 10, auto_msrp: 5, fx_rate: 1 }),
+  decRow({ pricing_id: 'X3', marketplace_sku_id: 'MX3', sku: 'SKU-X3', currency: 'CAD', base_currency: 'USD',
+    base_regular_price: 0, auto_regular_price: 0, fx_rate: 1 }),
+  decRow({ pricing_id: 'I1', marketplace_sku_id: 'MI1', sku: 'SKU-I1', currency: 'USD', base_currency: 'USD',
+    base_regular_price: 19.99, base_minimum_price: 15, base_msrp: 25,
+    auto_regular_price: 19.99, auto_minimum_price: 15, auto_msrp: 25, fx_rate: 1 }),
+  decRow({ pricing_id: 'I2', marketplace_sku_id: 'MI2', sku: 'SKU-I2', currency: 'USD', base_currency: 'USD',
+    base_regular_price: 12.347, auto_regular_price: 12.347, fx_rate: 1 }),
+  decRow({ pricing_id: 'I3', marketplace_sku_id: 'MI3', sku: 'SKU-I3', currency: 'USD', base_currency: 'USD',
+    base_regular_price: 30, fx_rate: 1 }),
+  decRow({ pricing_id: 'I4', marketplace_sku_id: 'MI4', sku: 'SKU-I4', currency: 'USD', base_currency: 'USD',
+    base_regular_price: 40, auto_regular_price: 37.5, fx_rate: 1 }),
+  decRow({ pricing_id: 'I5', marketplace_sku_id: 'MI5', sku: 'SKU-I5', currency: 'USD', base_currency: 'USD',
+    base_regular_price: 11, auto_regular_price: 11, auto_minimum_price: 9.99, fx_rate: 1 })
+];
+
+// The tool carries the PRODUCTION envelope as a constant. Against any other table it must say so rather
+// than explaining numbers that no longer describe what it just read — so the fake table is rewritten into
+// the constant for the tests that need the matching path, and left alone for the test that needs the other.
+var DEC_FAKE_ENVELOPE = DEC.replace(
+  /var TEMP_PR3D_ENVELOPE_ = \{[\s\S]*?\n\};/,
+  ['var TEMP_PR3D_ENVELOPE_ = {',
+   '  PRICING_ROWS_TOTAL: 8, SAME_CURRENCY_ROWS: 5, FX_CONVERTIBLE_ROWS: 3,',
+   '  rows_planned: 8, rows_changed: 8, skipped_count: 0, log_rows: 8,',
+   '  AUTO_REGULAR_WOULD_UPDATE: 5, AUTO_MINIMUM_WOULD_UPDATE: 1, AUTO_MSRP_WOULD_UPDATE: 2,',
+   '  EFFECTIVE_REGULAR_WOULD_FOLLOW: 0, EFFECTIVE_MINIMUM_WOULD_FOLLOW: 0, EFFECTIVE_MSRP_WOULD_FOLLOW: 0',
+   '};'].join('\n'));
+
+{
+  ok(DEC_FAKE_ENVELOPE !== DEC, 'L0  the envelope constant is rewritable for the fixture');
+
+  var wDef = decWorld(DEC, DECROWS);
+  var rDef = wDef.TEMP_PRICING_R3_FX_DECOMPOSE();
+
+  // THE FIRST THING THE TOOL OWES THE OPERATOR: this is not the table the envelope came from. A
+  // decomposition of a table that has moved since the dry run explains the wrong plan, and it would look
+  // exactly as authoritative.
+  ok(/ENVELOPE_STILL_DESCRIBES_TABLE  = NO/.test(rDef),
+    'L1  against a different table the tool says the envelope no longer describes it');
+  ok(/DECOMPOSITION_SUMS_MATCH        = NO/.test(rDef), 'L1a and does not claim the sums match');
+
+  var w = decWorld(DEC_FAKE_ENVELOPE, DECROWS);
+  var r = w.TEMP_PRICING_R3_FX_DECOMPOSE();
+
+  ok(/ENVELOPE_STILL_DESCRIBES_TABLE  = YES/.test(r), 'L2  with the envelope matching, the recount agrees');
+  ok(/rows_planned                    = 8   /.test(r), 'L2a  8 rows planned');
+  ok(/skipped_count                   = 0   /.test(r), 'L2b  none skipped');
+  ok(/SAME_CURRENCY_ROWS              = 5   /.test(r), 'L2c  5 same-currency');
+  ok(/FX_CONVERTIBLE_ROWS             = 3   /.test(r), 'L2d  3 cross-currency');
+
+  // THE ANSWER. 5 > 3 for the regular price, and the two extra are identity rows — which is the whole
+  // shape of the production anomaly, reproduced at eight rows.
+  ok(/AUTO_REGULAR_WOULD_UPDATE       = 5   /.test(r), 'L3  AUTO_REGULAR_WOULD_UPDATE = 5, above the 3 cross rows');
+  ok(/AUTO_REGULAR_WOULD_UPDATE[\s\S]*?CROSS_CURRENCY                = 2\r?\n  SAME_CURRENCY_IDENTITY        = 3/.test(r),
+    'L3a  and it decomposes 2 cross + 3 identity');
+  ok(/AUTO_MINIMUM_WOULD_UPDATE       = 1   /.test(r), 'L3b  AUTO_MINIMUM_WOULD_UPDATE = 1');
+  ok(/AUTO_MINIMUM_WOULD_UPDATE[\s\S]*?CROSS_CURRENCY                = 1\r?\n  SAME_CURRENCY_IDENTITY        = 0/.test(r),
+    'L3c  1 cross + 0 identity');
+  ok(/AUTO_MSRP_WOULD_UPDATE          = 2   /.test(r), 'L3d  AUTO_MSRP_WOULD_UPDATE = 2');
+  ok(/DECOMPOSITION_SUMS_MATCH        = YES/.test(r), 'L3e  and every part sums to its reported total');
+
+  // A CROSS-CURRENCY ROW THAT DOES NOT MOVE. X3 is a real counterexample to "all 193 convert": zero times
+  // any rate is still zero, so the cross bucket is a bound and not an identity.
+  ok(/cross-currency rows that did NOT move:[\s\S]*?AUTO_ALREADY_CURRENT 1/.test(r),
+    'L4  a cross row whose converted value equals its auto is reported as not moving');
+
+  // WHY EACH IDENTITY ROW MOVED — the distinction the operator actually needs, because a first fill and a
+  // stale value are different findings about the health of the table.
+  ok(/AUTO_BLANK           1/.test(r), 'L5  one identity row moved because auto was blank');
+  ok(/AUTO_STALE           1/.test(r), 'L5a  one because auto disagreed with its base');
+  ok(/BASE_NOT_ROUNDED     1/.test(r), 'L5b  one because the base carries more decimals than USD can hold');
+
+  // EVERY IDENTITY CHANGE IS THE ROUNDED BASE. Checked against pricingRoundFx_ rather than against a
+  // multiplication written in the test, because "times one" is the step a bug would also get right.
+  ok(/IDENTITY_TARGET_MISMATCHES      = 0/.test(r), 'L6  no identity change departs from ROUND(base)');
+  ok(/IDENTITY_AUTO_EQUALS_ROUNDED_BASE = YES/.test(r), 'L6a  stated as a verdict');
+  ok(/SKU-I2[\s\S]*?base=12\.347[\s\S]*?12\.35/.test(r), 'L6b  and 12.347 is shown becoming 12.35');
+
+  // THE LOG PROJECTION. 5 + 1 + 2 = 8, and not one of them is an effective-price log.
+  ok(/log rows from auto_\* changes    = 8/.test(r), 'L7  8 auto log rows');
+  ok(/log rows from effective changes = 0/.test(r), 'L7a  and no effective log rows');
+  ok(/LOG_ROWS_EQUALS_AUTO_SUM        = YES/.test(r), 'L7b  the log count is exactly the sum of the auto counts');
+
+  // THE WRITE SET, read off the plans rather than off the handler report.
+  ok(/columns_to_write                = auto_minimum_price, auto_msrp, auto_regular_price, fx_rate, fx_rate_date/.test(r),
+    'L8  the write set is the three auto columns and the two rate columns');
+  ok(/EFFECTIVE_IN_WRITE_SET          = NONE/.test(r), 'L8a  no effective price is written for UNKNOWN authority');
+  ok(/FLAG_IN_WRITE_SET               = NONE/.test(r), 'L8b  and no ownership flag is written at all');
+  ok(/FX_RATE_1_POST                  = 5   /.test(r), 'L8c  the rows left at rate 1 are exactly the identity rows');
+
+  // BLANK BASE WITH A STALE AUTO. The planner leaves these alone, so the count is a standing fact about
+  // the table rather than something this run changes.
+  ok(/BASE_REGULAR_BLANK_WITH_AUTO_NONBLANK   = 0/.test(r), 'L9  no regular price is blank beside a live auto');
+  ok(/BASE_MINIMUM_BLANK_WITH_AUTO_NONBLANK   = 1/.test(r), 'L9a  one minimum price is');
+  ok(/BASE_MSRP_BLANK_WITH_AUTO_NONBLANK      = 0/.test(r), 'L9b  no msrp is');
+  ok(/BLANK_BASE_STALE_AUTO_PRESENT   = YES/.test(r), 'L9c  and the verdict says so');
+  ok(/measured only — nothing is cleaned here/.test(r), 'L9d  while saying it did not clean them');
+
+  // THE AUTO CENSUS the dry-run envelope never carried.
+  ok(/AUTO_REGULAR_EXISTING\s+= 7\s+AUTO_REGULAR_BLANK\s+= 1/.test(r), 'L10  7 existing / 1 blank');
+  ok(/AUTO_MINIMUM_EXISTING\s+= 3\s+AUTO_MINIMUM_BLANK\s+= 5/.test(r), 'L10a  3 / 5');
+  ok(/AUTO_MSRP_EXISTING\s+= 3\s+AUTO_MSRP_BLANK\s+= 5/.test(r), 'L10b  3 / 5');
+
+  // READ ONLY, proved on the sheet rather than promised in a header.
+  eq(w.__price.__headerWrites + w.__price.__dataWrites, 0, 'L11  the tool writes nothing to the sheet');
+  ok(/DB_WRITES                       = 0/.test(r), 'L11a  and says so');
+  ok(/FX_EXECUTION_AUTHORIZED         = NO/.test(r), 'L11b  authorising nothing');
+
+  // WITHOUT THE PLANNER IT REFUSES. The alternative — falling back to its own arithmetic — would produce a
+  // decomposition that cannot be wrong in the same way as the thing it explains, which is the one property
+  // that makes it worth reading.
+  var wn = decWorld(DEC, DECROWS, { noAuthority: true });
+  var rn = wn.TEMP_PRICING_R3_FX_DECOMPOSE();
+  ok(/AUTHORITY_NOT_LOADED/.test(rn), 'L12  with 73_ absent the tool refuses');
+  ok(/missing: pricingPlanFxRow_/.test(rn), 'L12a  naming the planner it will not reimplement');
+  ok(/BLOCKED/.test(rn), 'L12b  and says BLOCKED');
+
+  // AN EXPLICIT AUTO FLAG IS THE CONTRAST. No production row carries one, so without this the write-set
+  // and effective-log checks above would pass on a table where they could not have failed.
+  var autoFlagRows = DECROWS.concat([
+    decRow({ pricing_id: 'A1', marketplace_sku_id: 'MA1', sku: 'SKU-A1', currency: 'CAD', base_currency: 'USD',
+      base_regular_price: 29.99, auto_regular_price: 29.99, regular_price: 29.99,
+      regular_price_is_manual: 'FALSE', fx_rate: 1 })
+  ]);
+  var wa = decWorld(DEC, autoFlagRows);
+  var ra = wa.TEMP_PRICING_R3_FX_DECOMPOSE();
+  ok(/EFFECTIVE_IN_WRITE_SET          = regular_price/.test(ra),
+    'L13  a row flagged AUTO does put its effective price in the write set');
+  ok(/EFFECTIVE_\*_WOULD_FOLLOW \(all\)  = 1/.test(ra), 'L13a  and is counted as following');
+  ok(/log rows from effective changes = 1/.test(ra), 'L13b  with its own log row');
+  ok(/LOG_ROWS_EQUALS_AUTO_SUM        = NO/.test(ra),
+    'L13c  so the log count is no longer purely the auto sum, and the tool says NO');
+  ok(/FLAG_IN_WRITE_SET               = NONE/.test(ra), 'L13d  the flag itself is still never written');
+}
+
+// =============================================================================================================
+section('M · MUTANTS FOR THE DECOMPOSITION');
+// =============================================================================================================
+// Convention, as elsewhere in this repo: the probe returns TRUE when the mutant is CAUGHT. It asserts the
+// BROKEN behaviour, not the correct one — a probe written the other way round reads SURVIVED for every
+// mutant and proves nothing.
+function decMutant(label, from, to, probe, rows, srcBase) {
+  var base = srcBase || DEC_FAKE_ENVELOPE;
+  if (base.indexOf(from) === -1) { fail++; console.error('FAIL ' + label + '   [anchor not found]'); return; }
+  if (base.split(from).length - 1 !== 1) { fail++; console.error('FAIL ' + label + '   [anchor not unique]'); return; }
+  var caught;
+  try {
+    var w = decWorld(base.replace(from, to), rows || DECROWS);
+    caught = probe(w.TEMP_PRICING_R3_FX_DECOMPOSE(), w);
+  } catch (e) { caught = true; }
+  if (caught) { mutCaught++; pass++; console.log('ok   ' + label + '  (mutant caught)'); }
+  else { mutSurvived++; fail++; console.error('SURVIVED ' + label); }
+}
+
+// M1 — every change is filed as cross-currency. The totals stay right and the decomposition becomes a
+// restatement of the number it was supposed to explain, which is the failure that looks most like success.
+decMutant('M1  the identity rows are filed as cross-currency',
+  "split[s.field][plan.identity ? 'IDENTITY' : 'CROSS']++;",
+  "split[s.field]['CROSS']++;",
+  function (r) { return !/CROSS_CURRENCY                = 2\r?\n  SAME_CURRENCY_IDENTITY        = 3/.test(r); });
+
+// M2 — the identity target is the raw base rather than the rounded base. 12.347 then reads as a mismatch,
+// and an operator would be told a legitimate rounding is an unrelated mutation.
+decMutant('M2  the identity target skips the rounding',
+  "      var target = pricingRoundFx_(b.value, localCurrency);",
+  "      var target = b.value;",
+  function (r) { return !/IDENTITY_AUTO_EQUALS_ROUNDED_BASE = YES/.test(r); });
+
+// M3 — the stale-auto probe is inverted. It would report blank-beside-blank as the finding and miss the
+// only row that has one.
+decMutant('M3  the blank-base stale-auto test is inverted',
+  "      if (!b.present && a.present) blankBaseStaleAuto[s.field]++;",
+  "      if (!b.present && !a.present) blankBaseStaleAuto[s.field]++;",
+  function (r) { return !/BASE_MINIMUM_BLANK_WITH_AUTO_NONBLANK   = 1/.test(r); });
+
+// M4 — the write-set audit stops looking for effective prices. Caught only on the AUTO-flag table, because
+// on the production shape no effective price is ever in the write set and the mutant injects nothing.
+decMutant('M4  the write-set audit stops noticing effective prices',
+  "    if (EFFECTIVE[k]) effectiveKeysInWriteSet.push(k);",
+  "    if (false) effectiveKeysInWriteSet.push(k);",
+  function (r) { return !/EFFECTIVE_IN_WRITE_SET          = regular_price/.test(r); },
+  DECROWS.concat([decRow({ pricing_id: 'A1', marketplace_sku_id: 'MA1', sku: 'SKU-A1', currency: 'CAD',
+    base_currency: 'USD', base_regular_price: 29.99, auto_regular_price: 29.99, regular_price: 29.99,
+    regular_price_is_manual: 'FALSE', fx_rate: 1 })]),
+  DEC);
+
+// M5 — the duplicate guard the batch planner applies is dropped here. The decomposition would then cover
+// rows the run would refuse, and the parts would stop adding up to a plan anybody could execute.
+decMutant('M5  the duplicate-identity guard is dropped from the replication',
+  "    if (seen[id]) { skipped++; skipReasons.DUPLICATE_IDENTITY = (skipReasons.DUPLICATE_IDENTITY || 0) + 1; return; }",
+  "    if (false) { return; }",
+  function (r) { return !/skipped_count                   = 1   /.test(r); },
+  DECROWS.concat([decRow({ pricing_id: 'DUP', marketplace_sku_id: 'MX1', sku: 'SKU-X1', currency: 'CAD',
+    base_currency: 'USD', base_regular_price: 29.99, auto_regular_price: 29.99, fx_rate: 1 })]),
+  DEC);
+
+// M6 — the envelope check is made unconditional. The tool would then say the production envelope still
+// describes whatever table it was pointed at, which is the one claim it exists to be careful about.
+decMutant('M6  the envelope reconciliation always reports YES',
+  "  var envOk = (rowsPlanned === TEMP_PR3D_ENVELOPE_.rows_planned)",
+  "  var envOk = true || (rowsPlanned === TEMP_PR3D_ENVELOPE_.rows_planned)",
+  function (r) { return !/ENVELOPE_STILL_DESCRIBES_TABLE  = NO/.test(r); },
+  DECROWS, DEC);
+
+
+// =============================================================================================================
 section('G · THE TOOLS ARE NOT RELEASE FILES');
 // =============================================================================================================
 {
   var health = readN('assets/specs/active/apps-script/63_api_v1_system_health.gs');
-  ['TEMP_PRICING_R2_MIGRATION.gs', 'TEMP_PRICING_R3_PRODUCTION_CENSUS.gs'].forEach(function (f, i) {
+  ['TEMP_PRICING_R2_MIGRATION.gs', 'TEMP_PRICING_R3_PRODUCTION_CENSUS.gs',
+    'TEMP_PRICING_R3_FX_DECOMPOSE.gs'].forEach(function (f, i) {
     ok(health.indexOf(f) === -1, 'G' + (i + 1) + '  ' + f + ' has no manifest row — it is not an owner');
     ok(!fs.existsSync(path.join(ROOT, 'assets/specs/active/apps-script', f)),
       'G' + (i + 1) + 'a and does not sit in the deployed directory');
   });
-  ok(/NOT part of any release/.test(MIG) && /NOT a release file/.test(CEN),
-    'G3  and both say so at the top, where an operator reads it');
+  ok(/NOT part of any release/.test(MIG) && /NOT a release file/.test(CEN) && /NOT a release file/.test(DEC),
+    'G3  and all three say so at the top, where an operator reads it');
   // They must not move the release identity either: a pasted tool is not a sync.
-  ok(!/SYS_DEPLOYMENT_RELEASE_/.test(MIG) && !/SYS_DEPLOYMENT_RELEASE_/.test(CEN),
-    'G4  neither declares or touches the release identity');
+  ok(!/SYS_DEPLOYMENT_RELEASE_/.test(MIG) && !/SYS_DEPLOYMENT_RELEASE_/.test(CEN)
+    && !/SYS_DEPLOYMENT_RELEASE_/.test(DEC),
+    'G4  none of them declares or touches the release identity');
 }
 
 // =============================================================================================================
