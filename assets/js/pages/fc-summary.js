@@ -571,6 +571,13 @@ function updateActionButtons(tab) {
       btn.style.display = 'inline-flex';
     });
   }
+  // FC-SUMMARY-DISPLAY-COLUMN-VISIBILITY-R1 §12.6 — the toolbar's popovers follow the tab. The two
+  // relocated menu items are the SAME elements the loop above just showed or hid, so nothing here
+  // decides their visibility a second time; this only picks the reset item for the table now on
+  // screen, hides the divider when nothing sits above it, and closes anything left open.
+  if (typeof fcCloseToolbarMenus_ === 'function') fcCloseToolbarMenus_();
+  if (typeof _fcMoreOptionsSyncTab_ === 'function') _fcMoreOptionsSyncTab_(tab);
+  if (typeof fcRenderDisplayPanel_ === 'function') fcRenderDisplayPanel_();
 }
 
 // Initialize Dropdown — Round 3: mount + populate the shared KM.ui.multiFilter controllers from the
@@ -7103,8 +7110,12 @@ var FC_RESIZE_MIN_ = 80;
 // their floor; every other column uses the 80px standard.
 function _fcResizeMin_(def) { return Math.min(FC_RESIZE_MIN_, def); }
 
-function _fcResizeCols_(w, label) { return { w: w, label: label }; }
-function _fcMonthCols_(names) { return names.map(function (n) { return _fcResizeCols_(70, n); }); }
+// FC-SUMMARY-DISPLAY-COLUMN-VISIBILITY-R1 §2 — `group` is the column's DISPLAY group, declared here
+// because this is already the canonical column schema. 'identity' | 'months' | 'summary' | 'control'.
+// A 'control' column holds buttons rather than a value, so it is never offered as a view choice.
+// The resize engine reads only `w` and `label`; adding this field changes no resize behaviour.
+function _fcResizeCols_(w, label, group) { return { w: w, label: label, group: group || 'identity' }; }
+function _fcMonthCols_(names) { return names.map(function (n) { return _fcResizeCols_(70, n, 'months'); }); }
 
 // Each table declares its own header root, body root, panel, persistence group, column defaults and the
 // 1-based positions that must NEVER receive a handle. Nothing here is shared between tables, so a width
@@ -7117,8 +7128,9 @@ var FC_RESIZE_TABLES_ = [
     cols: [_fcResizeCols_(100, 'Year'), _fcResizeCols_(120, 'Company'), _fcResizeCols_(120, 'Marketplace'),
            _fcResizeCols_(100, 'Country'), _fcResizeCols_(120, 'Category'), _fcResizeCols_(100, 'Series')]
       .concat(_fcMonthCols_(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']))
-      .concat([_fcResizeCols_(100, 'Total FC'),
-               _fcResizeCols_(150, 'Company Annual FC Share'), _fcResizeCols_(150, 'All-Site Annual FC Share')]) },
+      .concat([_fcResizeCols_(100, 'Total FC', 'summary'),
+               _fcResizeCols_(150, 'Company Annual FC Share', 'summary'),
+               _fcResizeCols_(150, 'All-Site Annual FC Share', 'summary')]) },
 
   { group: 'fc-event', panel: 'fc-panel-event',
     header: 'fc-event-scroll-header', body: 'fc-event-scroll-body',
@@ -7129,7 +7141,7 @@ var FC_RESIZE_TABLES_ = [
            // Event Period was previously caught by the Regular table's month rule and rendered at 70px,
            // which cannot show 2026-11-19~2026-11-30. It is not a month cell and is no longer treated as one.
            _fcResizeCols_(190, 'Event Period'),
-           _fcResizeCols_(90, 'FC Qty')] },
+           _fcResizeCols_(90, 'FC Qty', 'summary')] },
 
   { group: 'fc-target', panel: 'fc-panel-target',
     header: 'fc-target-scroll-header', body: 'fc-target-scroll-body',
@@ -7142,7 +7154,7 @@ var FC_RESIZE_TABLES_ = [
            _fcResizeCols_(120, 'Category'), _fcResizeCols_(100, 'Series'), _fcResizeCols_(120, 'SKU')]
       .concat(_fcMonthCols_(['Jan %', 'Feb %', 'Mar %', 'Apr %', 'May %', 'Jun %', 'Jul %', 'Aug %',
                              'Sep %', 'Oct %', 'Nov %', 'Dec %']))
-      .concat([_fcResizeCols_(90, 'Actions')]) }
+      .concat([_fcResizeCols_(90, 'Actions', 'control')]) }
 ];
 var _fcResizeCtl_ = {};        // group -> controller. One per table, torn down before any re-mount.
 
@@ -7155,25 +7167,31 @@ function _fcResizeCssRule_(spec, c, w) {
          '{ width:' + wpx + '; min-width:' + wpx + '; max-width:' + wpx + '; }';
 }
 
-/* One clear reset per table, hosted in that table's own panel. It calls the ENGINE's resetAll — there is no
-   second reset implementation, and no filter, page or row is touched. Zero API calls, zero writes. */
+/* One clear reset per table. It calls the ENGINE's resetAll — there is no second reset implementation,
+   and no filter, page or row is touched. Zero API calls, zero writes.
+
+   FC-SUMMARY-DISPLAY-COLUMN-VISIBILITY-R1 §12.1 — the HOST moved from a bar above each panel into the
+   toolbar's More Options menu, because a page-level toolbar is where this system keeps its secondary
+   actions and the old bar was a fourth place to look. Nothing else moved: still ONE button per table,
+   still carrying that table's own controller, still labelled the same. §12.5 asks for one canonical
+   entry per action, so the per-panel bar is gone rather than duplicated — and R2B-A2-R3 §6's real
+   requirement, that a reset can never be read as page-wide, is kept by _fcMoreOptionsSyncTab_ showing
+   only the item belonging to the table currently on screen. */
 function _fcResizeResetBar_(spec, ctl) {
   if (typeof document === 'undefined') return null;
-  var panel = document.getElementById(spec.panel); if (!panel) return null;
-  var old = panel.querySelector('.fc-rescol-bar');
+  var host = document.getElementById('fc-more-options-panel'); if (!host) return null;
+  var old = document.getElementById(spec.group + '-reset-widths');
   if (old && old.parentNode) old.parentNode.removeChild(old);      // idempotent across re-mounts
-  var bar = document.createElement('div');
-  bar.className = 'fc-rescol-bar';
   var b = document.createElement('button');
   b.type = 'button';
   b.id = spec.group + '-reset-widths';
-  b.className = 'fc-btn fc-btn--cancel';
+  b.className = 'km-action-menu__item fc-mo-reset';
+  b.setAttribute('role', 'menuitem');
   b.textContent = 'Reset column widths';
   b.onclick = function () { if (ctl && typeof ctl.resetAll === 'function') ctl.resetAll(); };
-  bar.appendChild(b);
-  var table = panel.querySelector('.dual-layer-table');
-  if (table) panel.insertBefore(bar, table); else panel.appendChild(bar);
-  return bar;
+  b.addEventListener('click', function () { if (typeof fcCloseMoreOptions === 'function') fcCloseMoreOptions(); });
+  host.appendChild(b);
+  return b;
 }
 
 function _fcResizeMount_(spec) {
@@ -7233,6 +7251,394 @@ function _fcResizeInit_() {
   return mounted;
 }
 
+
+// ================================================================================================
+// FC-SUMMARY-DISPLAY-COLUMN-VISIBILITY-R1 — COLUMN VISIBILITY: ONE REGISTRY, ONE RESOLVED SET,
+// ONE INJECTED STYLESHEET.
+// ================================================================================================
+// WHY A STYLESHEET AND NOT INLINE STYLES ON CELLS. This page rebuilds `scroll-body.innerHTML` from
+// scratch on every filter change, every page change, every tab activation and every save readback,
+// and the rebuilt cells carry no attributes at all — not even a column index. An implementation that
+// wrote `cell.style.display` would therefore be undone by the next render while the HEADER kept its
+// hidden state, which is precisely the defect SKU Details had to be repaired for (see
+// F1-7N-SKU-DETAILS-DISPLAY-INIT-R1). A rule addressed by :nth-child cannot be undone by a re-render,
+// because it is not stored on the elements. Nothing has to be re-applied after a render, so nothing
+// can forget to.
+//
+// It also keeps §5 true by construction: hiding a column changes ONE textContent on ONE <style>
+// element. No row is rebuilt, no filter is read, no page index is touched, no share is recomputed and
+// no request is issued, because none of that code is on this path at all.
+//
+// THE SELECTOR IS THE RESIZE SELECTOR, DELIBERATELY. Two ids, header and body in one rule — the same
+// shape _fcResizeCssRule_ uses and for the same reason: two ids outrank every single-id width rule in
+// fc-overview.css whatever its class count. Width and visibility are different PROPERTIES, so the two
+// injected sheets never compete; a hidden column keeps its stored width and gets it back on re-show
+// (§8). :nth-child positions do not shift when a sibling is display:none, so hiding a column cannot
+// move a width rule onto its neighbour.
+//
+// THE PREFERENCE STORES HIDDEN KEYS, NOT VISIBLE ONES. §6 requires that a column introduced later is
+// not silently hidden forever by an older preference. Storing the visible set would do exactly that;
+// storing the hidden set means an unknown column is simply absent from it and resolves to VISIBLE.
+// The storage name says `hiddenColumns` so the key can never disagree with what is in it.
+//
+// KEYS ARE SLUGGED LABELS, NEVER THE COLUMN INDEX. Inserting a column in the middle of a table (which
+// R2B-A2-R5 already did once, to Target) would otherwise shift every stored preference one column to
+// the right and hide the wrong thing.
+var FC_COLPREF_KEY_ = 'km.ui.fcSummary.hiddenColumns.v1';
+var FC_COLPREF_VERSION_ = 1;
+var FC_COLVIS_STYLE_ID_ = 'fc-colvis-style';
+
+// The panel's section order. `control` is deliberately absent: a control column is not a view choice.
+var FC_COLVIS_GROUPS_ = [
+  { key: 'identity', label: 'Identity' },
+  { key: 'months', label: 'Forecast Months' },
+  { key: 'summary', label: 'Summary' }
+];
+
+// group -> resolved column list. Re-read from storage on each mount and authoritative in between, so a
+// localStorage that cannot be read or written degrades to a session-only preference rather than to a
+// broken page.
+var _fcVisibleColsState = null;
+var _fcColVisBound = false;
+
+function _fcHasLocalStorage_() { try { return typeof localStorage !== 'undefined' && !!localStorage; } catch (e) { return false; } }
+
+function _fcColKey_(label) {
+  return String(label).toLowerCase().replace(/%/g, 'pct').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+function _fcColEsc_(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// THE REGISTRY IS DERIVED FROM FC_RESIZE_TABLES_, which is already this page's canonical column schema
+// (position, label and now group, declared once per column beside its width). A second list would be a
+// second answer, and the shape gate that keeps the resize declaration honest against the markup would
+// not cover it.
+function fcColumnRegistry_(group) {
+  var spec = null;
+  for (var i = 0; i < FC_RESIZE_TABLES_.length; i++) if (FC_RESIZE_TABLES_[i].group === group) spec = FC_RESIZE_TABLES_[i];
+  if (!spec) return [];
+  var out = [];
+  for (var c = 0; c < spec.cols.length; c++) {
+    var col = spec.cols[c];
+    out.push({ key: _fcColKey_(col.label), col: c + 1, label: col.label, group: col.group,
+      hideable: col.group !== 'control' });
+  }
+  return out;
+}
+
+function _fcColPrefRead_() {
+  if (!_fcHasLocalStorage_()) return null;
+  var raw;
+  try { raw = localStorage.getItem(FC_COLPREF_KEY_); } catch (e) { return null; }
+  if (!raw) return null;
+  var o;
+  try { o = JSON.parse(raw); } catch (e) { return null; }          // corrupt JSON -> no preference -> all visible
+  if (!o || typeof o !== 'object' || o.v !== FC_COLPREF_VERSION_) return null;
+  if (!o.hidden || typeof o.hidden !== 'object' || Object.prototype.toString.call(o.hidden) === '[object Array]') return null;
+  return o.hidden;
+}
+
+function _fcColPrefWrite_(hidden) {
+  if (!_fcHasLocalStorage_()) return false;
+  try { localStorage.setItem(FC_COLPREF_KEY_, JSON.stringify({ v: FC_COLPREF_VERSION_, hidden: hidden })); return true; }
+  catch (e) { return false; }                                      // quota / private mode -> session-only, page still works
+}
+
+/**
+ * THE SINGLE SOURCE OF TRUTH. Registry first, preference second.
+ *
+ * Reconciliation:
+ *   - a wrong version, a wrong shape or unreadable storage is NO preference -> everything visible
+ *   - a stored group that is not a table at all is never read, because the tables are the outer loop
+ *   - a stored key that is not in that table's registry is never read either, because the registry is
+ *     the inner loop and the stored set is only ever consulted AS `hidden[registryKey]`. Filtering the
+ *     stored list first would have looked like a guard and prevented nothing; the shape is the guard.
+ *   - a non-string entry cannot collide with a slugged key; duplicates collapse (it is a set)
+ *   - a registry column absent from the stored hidden list is VISIBLE (this is the new-column policy)
+ *   - a NON-HIDEABLE column is VISIBLE whatever the preference says. This is the one line standing
+ *     between a hand-edited or stale preference and a Target table whose rows have lost their Actions,
+ *     so it is stated once, here, and nowhere else.
+ */
+function fcResolveVisibleColumns_(forceReload) {
+  if (_fcVisibleColsState && !forceReload) return _fcVisibleColsState;
+  var stored = _fcColPrefRead_() || {};
+  var state = {};
+  FC_RESIZE_TABLES_.forEach(function (spec) {
+    var reg = fcColumnRegistry_(spec.group);
+    var hidden = {};
+    var list = stored[spec.group];
+    if (Object.prototype.toString.call(list) === '[object Array]') {
+      for (var j = 0; j < list.length; j++) if (typeof list[j] === 'string') hidden[list[j]] = true;
+    }
+    state[spec.group] = reg.map(function (c) {
+      return { key: c.key, col: c.col, label: c.label, group: c.group, hideable: c.hideable,
+        visible: c.hideable ? !hidden[c.key] : true };
+    });
+  });
+  _fcVisibleColsState = state;
+  return state;
+}
+
+function _fcColVisPersist_(state) {
+  var hidden = {};
+  FC_RESIZE_TABLES_.forEach(function (spec) {
+    var keys = [];
+    (state[spec.group] || []).forEach(function (c) { if (c.hideable && !c.visible) keys.push(c.key); });
+    if (keys.length) hidden[spec.group] = keys;                    // an all-visible table stores nothing
+  });
+  return _fcColPrefWrite_(hidden);
+}
+
+function _fcColVisCssRule_(spec, col) {
+  return '#fc-summary-section #' + spec.header + ' > .header-cell:nth-child(' + col + '), ' +
+         '#fc-summary-section #' + spec.body + ' .scroll-row > .scroll-cell:nth-child(' + col + ') ' +
+         '{ display: none; }';
+}
+
+/**
+ * THE ONLY WRITER of column visibility. One <style> element, replaced wholesale, holding the rules for
+ * ALL THREE tables — so switching tabs needs no re-apply and a re-mount cannot stack a second sheet.
+ * It re-renders nothing and reads no filter, page or edit state.
+ */
+function applyFcColumnVisibility_(state) {
+  state = state || fcResolveVisibleColumns_();
+  if (typeof document === 'undefined') return state;
+  var rules = [];
+  FC_RESIZE_TABLES_.forEach(function (spec) {
+    (state[spec.group] || []).forEach(function (c) { if (!c.visible) rules.push(_fcColVisCssRule_(spec, c.col)); });
+  });
+  var el = document.getElementById(FC_COLVIS_STYLE_ID_);
+  if (!el) {
+    el = document.createElement('style');
+    el.id = FC_COLVIS_STYLE_ID_;
+    (document.head || document.documentElement).appendChild(el);
+  }
+  el.textContent = rules.join('\n');
+  _fcSyncDisplayControl_(state);
+  return state;
+}
+
+// tab id -> resize/visibility group. One mapping, so a renamed tab cannot half-move the page.
+function fcActiveTabGroup_() {
+  var t = typeof document !== 'undefined' ? document.querySelector('.fc-tab--active') : null;
+  var tab = (t && t.dataset && t.dataset.tab) || 'regular';
+  return 'fc-' + tab;
+}
+
+/** Mirror the resolved set onto the control: checkbox states and the "n of m columns" count. */
+function _fcSyncDisplayControl_(state) {
+  if (typeof document === 'undefined') return;
+  state = state || fcResolveVisibleColumns_();
+  var cols = (state[fcActiveTabGroup_()] || []).filter(function (c) { return c.hideable; });
+  var panel = document.getElementById('fc-display-panel');
+  var vis = 0;
+  cols.forEach(function (c) {
+    if (c.visible) vis++;
+    if (!panel) return;
+    var cb = panel.querySelector('.fc-display-cb[data-colkey="' + c.key + '"]');
+    if (cb) cb.checked = c.visible;
+  });
+  var count = document.getElementById('fc-display-count');
+  if (count) count.textContent = cols.length ? '(' + vis + ' of ' + cols.length + ' columns)' : '';
+}
+
+/** Build the panel for the ACTIVE tab only — §7: never offer a column that tab does not render. */
+function fcRenderDisplayPanel_() {
+  if (typeof document === 'undefined') return null;
+  var panel = document.getElementById('fc-display-panel');
+  if (!panel) return null;
+  var group = fcActiveTabGroup_();
+  var cols = (fcResolveVisibleColumns_()[group] || []).filter(function (c) { return c.hideable; });
+  var html = [];
+  var present = {};
+  FC_COLVIS_GROUPS_.forEach(function (g) {
+    var inGroup = cols.filter(function (c) { return c.group === g.key; });
+    if (!inGroup.length) return;                                   // a group with no columns here is not drawn
+    present[g.key] = true;
+    html.push('<div class="fc-display-group">');
+    html.push('<div class="km-action-menu__section">' + _fcColEsc_(g.label) + '</div>');
+    inGroup.forEach(function (c) {
+      html.push('<label class="fc-display-item"><input type="checkbox" class="fc-display-cb" data-colkey="' +
+        _fcColEsc_(c.key) + '"' + (c.visible ? ' checked' : '') + '><span>' + _fcColEsc_(c.label) + '</span></label>');
+    });
+    html.push('</div>');
+  });
+  // Presets. Only the ones this tab can honour are offered; "Months Only" on a table with no month
+  // column would hide everything and mean nothing.
+  var presets = [{ p: 'all', label: 'Select All' }];
+  if (present.months) presets.push({ p: 'months', label: 'Months Only' });
+  if (present.summary) presets.push({ p: 'summary', label: 'Summary Only' });
+  presets.push({ p: 'reset', label: 'Reset Default' });
+  html.push('<div class="km-action-menu__divider"></div><div class="fc-display-presets">');
+  presets.forEach(function (x) {
+    html.push('<button type="button" class="fc-display-preset" data-preset="' + x.p + '">' + _fcColEsc_(x.label) + '</button>');
+  });
+  html.push('</div>');
+  // The identity column is OUTSIDE the scroll header (it is the frozen column), so it is absent from
+  // every registry and cannot be hidden by anything here. Saying so is cheaper than being asked.
+  html.push('<div class="fc-display-note">' + _fcColEsc_(group === 'fc-target' ? 'Scope' : 'SKU') +
+    ' is the row identity and is always shown.</div>');
+  panel.innerHTML = html.join('');
+  _fcSyncDisplayControl_();
+  return panel;
+}
+
+/** Flip ONE column. Writes the resolved set, persists it, re-applies. Nothing else. */
+function fcSetColumnVisible_(group, key, visible) {
+  var state = fcResolveVisibleColumns_();
+  var cols = state[group] || [];
+  for (var i = 0; i < cols.length; i++) {
+    if (cols[i].key === key && cols[i].hideable) { cols[i].visible = !!visible; break; }
+  }
+  _fcColVisPersist_(state);
+  return applyFcColumnVisibility_(state);
+}
+
+/**
+ * Presets. `all` states explicitly that nothing is hidden; `reset` DROPS this table's stored entry so a
+ * future change to the shipped default reaches a user who has pressed it. Both show everything today —
+ * they differ in what is left in storage, which is the only thing that could ever make them differ.
+ */
+function fcApplyColumnPreset_(preset, group) {
+  group = group || fcActiveTabGroup_();
+  var state = fcResolveVisibleColumns_();
+  var cols = state[group] || [];
+  cols.forEach(function (c) {
+    if (!c.hideable) return;
+    if (preset === 'all' || preset === 'reset') c.visible = true;
+    else if (preset === 'months') c.visible = c.group === 'months';
+    else if (preset === 'summary') c.visible = c.group === 'summary';
+  });
+  if (preset === 'reset') {
+    var stored = _fcColPrefRead_() || {};
+    delete stored[group];
+    _fcColPrefWrite_(stored);
+  } else {
+    _fcColVisPersist_(state);
+  }
+  applyFcColumnVisibility_(state);
+  fcRenderDisplayPanel_();
+  return state;
+}
+
+// ---- The two toolbar popovers ------------------------------------------------------------------
+// §12.6 — only one may be open. Opening either closes the other, and both close on outside click, on
+// Escape, and (More Options only) after an action is chosen. A checkbox click must NOT close Display.
+function fcCloseDisplayMenu() {
+  if (typeof document === 'undefined') return;
+  var p = document.getElementById('fc-display-panel'), b = document.getElementById('fc-display-btn');
+  if (p) p.hidden = true;
+  if (b) b.setAttribute('aria-expanded', 'false');
+}
+function fcCloseMoreOptions() {
+  if (typeof document === 'undefined') return;
+  var p = document.getElementById('fc-more-options-panel'), b = document.getElementById('fc-more-options-btn');
+  if (p) p.hidden = true;
+  if (b) b.setAttribute('aria-expanded', 'false');
+}
+function fcCloseToolbarMenus_() { fcCloseDisplayMenu(); fcCloseMoreOptions(); }
+
+function fcToggleDisplayMenu(ev) {
+  if (ev && ev.stopPropagation) ev.stopPropagation();
+  var p = document.getElementById('fc-display-panel'), b = document.getElementById('fc-display-btn');
+  if (!p) return;
+  var open = !!p.hidden;
+  fcCloseMoreOptions();
+  if (open) fcRenderDisplayPanel_();                               // always current with the active tab
+  p.hidden = !open;
+  if (b) b.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (open) { var first = p.querySelector('.fc-display-cb'); if (first && first.focus) first.focus(); }
+}
+
+function fcToggleMoreOptions(ev) {
+  if (ev && ev.stopPropagation) ev.stopPropagation();
+  var p = document.getElementById('fc-more-options-panel'), b = document.getElementById('fc-more-options-btn');
+  if (!p) return;
+  var open = !!p.hidden;
+  fcCloseDisplayMenu();
+  p.hidden = !open;
+  if (b) b.setAttribute('aria-expanded', open ? 'true' : 'false');
+}
+
+/**
+ * Per-tab contents of More Options. The two relocated data-management actions are the SAME elements
+ * `updateActionButtons` and `_fcSetEditLock` have always driven — same ids, same `.fc-btn-regular`
+ * marker, same handlers — so their tab rules and their edit-mode lock still apply without a second
+ * owner. This only hides the reset item belonging to a table that is not on screen, and hides the
+ * divider when nothing is left above it.
+ */
+function _fcMoreOptionsSyncTab_(tab) {
+  if (typeof document === 'undefined') return;
+  var active = document.querySelector('.fc-tab--active');
+  var group = 'fc-' + (tab || (active && active.dataset && active.dataset.tab) || 'regular');
+  var any = false;
+  FC_RESIZE_TABLES_.forEach(function (spec) {
+    var b = document.getElementById(spec.group + '-reset-widths');
+    if (b) b.hidden = spec.group !== group;
+  });
+  ['fc-edit-btn', 'fc-import-btn'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el && el.style.display !== 'none') any = true;
+  });
+  var sep = document.getElementById('fc-more-options-divider');
+  if (sep) sep.hidden = !any;
+}
+
+/** Bind ONCE. The panel body is rebuilt on every open, so per-element listeners would stack; these are
+ *  delegated to the containers, which are static markup and are never replaced. */
+function _fcColVisBind_() {
+  if (_fcColVisBound || typeof document === 'undefined') return;
+  var panel = document.getElementById('fc-display-panel');
+  if (!panel) return;
+  panel.addEventListener('change', function (e) {
+    var t = e.target;
+    if (!t || !t.classList || !t.classList.contains('fc-display-cb')) return;
+    fcSetColumnVisible_(fcActiveTabGroup_(), t.getAttribute('data-colkey'), !!t.checked);
+  });
+  panel.addEventListener('click', function (e) {
+    var t = e.target;
+    if (t && t.classList && t.classList.contains('fc-display-preset')) {
+      e.preventDefault();
+      fcApplyColumnPreset_(t.getAttribute('data-preset'));
+    }
+    if (e.stopPropagation) e.stopPropagation();                    // a click inside must not reach the outside-click closer
+  });
+  document.addEventListener('click', function (e) {
+    if (!document.getElementById('fc-summary-section')) return;
+    var inDisplay = e.target && e.target.closest && e.target.closest('.fc-display-menu');
+    var inMore = e.target && e.target.closest && e.target.closest('.fc-more-menu');
+    if (!inDisplay) fcCloseDisplayMenu();
+    if (!inMore) fcCloseMoreOptions();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    if (!document.getElementById('fc-summary-section')) return;
+    fcCloseToolbarMenus_();
+  });
+  _fcColVisBound = true;
+}
+
+/** Mount. Re-reads the preference, applies it, rebuilds the panel for the active tab, binds once. */
+function _fcColVisInit_() {
+  if (typeof document === 'undefined' || !document.getElementById('fc-summary-section')) return null;
+  var state = fcResolveVisibleColumns_(true);
+  applyFcColumnVisibility_(state);
+  fcRenderDisplayPanel_();
+  _fcMoreOptionsSyncTab_();
+  fcCloseToolbarMenus_();                                          // a re-entry never lands with a popover open
+  _fcColVisBind_();
+  return state;
+}
+
+if (typeof window !== 'undefined') {
+  window.fcToggleDisplayMenu = fcToggleDisplayMenu;
+  window.fcCloseDisplayMenu = fcCloseDisplayMenu;
+  window.fcToggleMoreOptions = fcToggleMoreOptions;
+  window.fcCloseMoreOptions = fcCloseMoreOptions;
+}
+
 // Extend the (already demo-patched) initFcSummaryPage to also wire the DB connection.
 var _prevInitFcSummaryPage = window.initFcSummaryPage;
 window.initFcSummaryPage = function() {
@@ -7242,7 +7648,12 @@ window.initFcSummaryPage = function() {
     // FC-SUMMARY-R2B-A2-R3 §2 — all THREE tables, each with its own column map and persistence group.
     // Header cells are static markup, so this runs once per mount and the handles survive body re-renders,
     // filtering and pagination; a re-mount tears the previous controllers down before rebuilding.
-    setTimeout(_fcResizeInit_, 120);
+    setTimeout(function () {
+      _fcResizeInit_();
+      // DISPLAY-COLUMN-VISIBILITY-R1 — after the resize mount, because the per-table reset items it
+      // appends to More Options are what _fcMoreOptionsSyncTab_ arranges.
+      _fcColVisInit_();
+    }, 120);
 };
 
 // ========================================

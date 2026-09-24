@@ -880,8 +880,12 @@ ok(!/M\+1\.\.M\+4/.test(HTML),
   'H27 §9 no heading claims the planning window any more — that grain is not what these columns show');
 
 // The column declaration and the stylesheet agree with the headings.
-ok(/_fcResizeCols_\(150, 'Company Annual FC Share'\)/.test(FCS) &&
-   /_fcResizeCols_\(150, 'All-Site Annual FC Share'\)/.test(FCS),
+// The trailing delimiter is [,)] rather than ) because the column schema now carries a third argument
+// (its DISPLAY group — FC-SUMMARY-DISPLAY-COLUMN-VISIBILITY-R1 §2). What H28 is about is unchanged and
+// still pinned exactly: each share column is declared with its shipped HEADING, verbatim, at its shipped
+// WIDTH. Matching the closing paren as well pinned the function's arity, which this check never meant.
+ok(/_fcResizeCols_\(150, 'Company Annual FC Share'[,)]/.test(FCS) &&
+   /_fcResizeCols_\(150, 'All-Site Annual FC Share'[,)]/.test(FCS),
   'H28 the resize declaration names the shipped headings');
 ok(/nth-child\(21\)[\s\S]{0,120}width: 150px/.test(CSS),
   'H29 ... and the stylesheet is wide enough to show the word "Annual" rather than ellipse it');
