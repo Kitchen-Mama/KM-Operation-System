@@ -23,10 +23,26 @@ A row you smoke-test ends up **classified**. That is correct behaviour, not a de
 
 **So: pick rows you are willing to leave classified.** If you want the blank restored afterwards, note the cell address before you start and clear it manually at the end.
 
+## Let the selector pick the rows
+
+Do not pick by scrolling the export. Three of the constraints are invisible in a spreadsheet — whether an
+id is unique, whether its `marketplace_skus` row is unique, and whether a field's effective price already equals
+its auto value — and the last one decides whether the AUTO smoke moves a live price or nothing at all.
+
+Paste `TEMP_PRICING_R4_SMOKE_SELECT.gs` into the Apps Script project **beside 73_**, run
+`TEMP_PRICING_R4_SMOKE_SELECT()`, and send the log. It is read-only and refuses to run without 73_ loaded.
+
+It now also guarantees **one target**: all four cases come from a single country + marketplace, so the smoke
+is a single upload. Where no target can supply all four it says `SINGLE_SCOPE_SMOKE_AVAILABLE = NO`, gives
+the minimum number of uploads and groups the template rows one block per upload. It does not relax the
+equality rule to manufacture a single target.
+
 ## Before you touch anything
 
-1. SKU Regional Details → **Download current pricing**. Save `current-regional-pricing.csv` somewhere you will still have it tomorrow. **This file is your rollback data.** It carries the effective price, the owner and the auto value for every row.
-2. From that file, pick your four rows and write down, for each: `marketplace_sku_id`, the field you will change, its current value, and its current owner (expect `NOT_SET` everywhere — all 495 rows are blank today).
+The bulk update now lives in the page toolbar: **SKU Regional Details → Update → Pricing → Country → Marketplace / Site**. Everything below happens inside that dialog, and one upload covers one target — which is why the selector puts all four rows in the same one.
+
+1. In that dialog, **Download Current Pricing**. Save it somewhere you will still have it tomorrow. **This file is your rollback data.** It carries the effective price, the owner and the auto value for every row of the target.
+2. The selector already names your four rows and their pre-smoke values. From the saved CSV, confirm for each: `marketplace_sku_id`, the field you will change, its current value, and its current owner (expect `NOT_SET` everywhere — all 495 rows are blank today).
 
 ### Picking row D — the one that costs nothing
 
@@ -57,18 +73,21 @@ Notes that matter:
 
 - **Do not fill a value beside `AUTO`.** It would be dropped anyway — at the file boundary and again at the writer — but leaving it empty is what the file should say.
 - **Do not edit `master_sku`, `site_sku`, `company`, `country` or `marketplace`.** They are there so you can see which row you are on. None of them is used to find the row, and none of them reaches the server.
-- **Do not edit `currency`.** A currency that disagrees with the row is refused as `CURRENCY_MISMATCH`, and the whole file is refused with it.
+- **Do not edit `currency`.** The dialog states the target currency and the import may not change it. A file that disagrees is refused as `FILE_CURRENCY_NOT_TARGET` before it is sent, and as `CURRENCY_MISMATCH` by the server if it ever got that far. Either way the whole file is refused.
+- **Do not paste in a row from another country or marketplace.** An import is addressed by `marketplace_sku_id`, so a foreign row is refused as `ROW_OUTSIDE_TARGET` — relabelling its country cell does not move it, because the import never reads that cell.
 - Delete the unedited rows if you prefer a short file. Keeping them is also fine — they ask for nothing.
 
 If you want three rows rather than four, drop row C. The spec lists four cases; this runbook covers all four.
 
 ## Running it
 
-1. SKU Regional Details → **Import price template** → choose the file → **Preview**.
+1. In the same dialog, **Upload Pricing Update** → choose the file → **Preview**.
 2. The preview must say **4 row(s) would change**. If it says anything else, stop and send me the screen — the file is not asking for what you think it is.
-3. A rejected file writes nothing and offers nothing: if the preview shows errors, fix the file and preview again. There is no partial import.
-4. **Confirm & Write.**
-5. Expect the toast: **4 price row(s) written · 4 audit entries.**
+3. Read the change table. Each line shows the field, the value moving, and the ownership moving — `UNKNOWN → MANUAL` for A/B/C, `UNKNOWN → AUTO` for D with the value unchanged on both sides.
+4. **Reject it if any line mentions `base_*`, `auto_*`, `fx_rate` or `fx_rate_date`.** It cannot happen — the write set can only name an effective price, its own flag and the legacy descriptor — but this is the check that would catch it if it did.
+5. A rejected file writes nothing and offers nothing: fix it and preview again. There is no partial import.
+6. **Confirm Update**, then read the confirmation screen: it names the row count, the country, the marketplace and the currency, and says ownership may move between MANUAL and AUTO. **Confirm Update** again.
+7. Expect: **Rows updated 4 · Fields updated 4 · Manual fields 3 · Auto fields 1**, and **Download Result** for your records.
 
 ## Checking it landed
 

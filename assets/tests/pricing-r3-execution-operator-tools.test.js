@@ -930,9 +930,13 @@ function activeMsku(id, o) {
     healthy({ pricing_id: 'PU2', marketplace_sku_id: 'MDUP' }),                           // duplicate identity
     healthy({ pricing_id: 'PN', marketplace_sku_id: '' })                                 // no identity at all
   ];
-  var MSKUS = ['MA', 'MB', 'MC', 'MD', 'MF', 'MK', 'MP', 'MQ', 'MDUP'].map(function (id) { return activeMsku(id); })
+  var MSKUS = ['MA', 'MB', 'MC', 'MD', 'MF', 'MK', 'MDUP'].map(function (id) { return activeMsku(id); })
     .concat([activeMsku('MS', { marketplace_sku_status: 'phasing_out' }),
-      activeMsku('MZ'), activeMsku('MZ')]);
+      activeMsku('MZ'), activeMsku('MZ'),
+      // The odd-currency rows live in their own targets. A stray currency does not just disqualify its own
+      // row — it makes its whole TARGET un-importable, which is asserted separately rather than here.
+      activeMsku('MP', { country: 'JP', marketplace: 'rakuten' }),
+      activeMsku('MQ', { country: 'XX', marketplace: 'other' })]);
 
   var w = smokeWorld(SEL, ROWS_OK.concat(ROWS_BAD), MSKUS);
   var r = w.TEMP_PRICING_R4_SMOKE_SELECT();
@@ -953,6 +957,16 @@ function activeMsku(id, o) {
   ok(/SMOKE_ROW_B   \(minimum MANUAL smoke\)[\s\S]*?marketplace_sku_id            = MB/.test(r), 'P4a row B is MB');
   ok(/SMOKE_ROW_C   \(msrp MANUAL smoke\)[\s\S]*?marketplace_sku_id            = MC/.test(r), 'P4b row C is MC');
   ok(/SMOKE_ROW_D   \(AUTO restore\)[\s\S]*?marketplace_sku_id            = MD/.test(r), 'P4c row D is MD');
+
+  // ONE TARGET FOR ALL FOUR. The bulk import is scoped to one country + marketplace, so four rows spread
+  // across four targets would be four uploads and four chances to pick the wrong scope.
+  ok(/SINGLE_SCOPE_SMOKE_AVAILABLE    = YES/.test(r), 'P4d all four cases come from one target');
+  ok(/SMOKE_SCOPE                     = US\|amazon/.test(r), 'P4e which is named');
+  ok(/MINIMUM_SCOPES_REQUIRED         = 1/.test(r), 'P4f so the smoke is a single upload');
+  eq((r.match(/TARGET \(upload scope\)\s+= US\|amazon/g) || []).length, 4,
+    'P4g and every one of the four rows says it belongs to that target');
+  ok(/--- UPLOAD 1 of 1   target US\|amazon ---/.test(r), 'P4h the template is one block');
+  ok(/--- RESTORE UPLOAD 1 of 1   target US\|amazon ---/.test(r), 'P4i and so is the restore');
   ok(/AUTO_SELECTED_FIELD\s+= minimum_price/.test(r),
     'P5  and D tests the MINIMUM price — the least customer-visible field that qualifies');
   ok(/EFFECTIVE_EQUALS_AUTO\s+= YES/.test(r), 'P5a  with its effective already equal to its auto');
@@ -1040,13 +1054,79 @@ function activeMsku(id, o) {
 
   // A ZERO-DECIMAL CURRENCY. The test value must stay an integer; a 0.01 delta would be refused at upload
   // as PRICE_PRECISION_UNSUPPORTED and the operator would find out at the Confirm step.
-  var jpy = [healthy({ pricing_id: 'PJ', marketplace_sku_id: 'AJ', currency: 'JPY', base_currency: 'USD',
-    base_regular_price: 29.99, base_minimum_price: 24, base_msrp: 35,
-    auto_regular_price: 4736, auto_minimum_price: 3789, auto_msrp: 5527,
-    regular_price: 4800, minimum_price: 3800, msrp: 5600 })];
-  var rJ = smokeWorld(SEL, jpy, [activeMsku('AJ')]).TEMP_PRICING_R4_SMOKE_SELECT();
+  function jpyRow(id, min, autoMin) {
+    return healthy({ pricing_id: 'P' + id, marketplace_sku_id: id, currency: 'JPY', base_currency: 'USD',
+      base_regular_price: 29.99, base_minimum_price: 24, base_msrp: 35,
+      auto_regular_price: 4736, auto_minimum_price: autoMin, auto_msrp: 5527,
+      regular_price: 4800, minimum_price: min, msrp: 5600 });
+  }
+  // Four rows so the target is completable; AJ4 is the AUTO-capable one. AJ sorts first, so it takes case A.
+  var jpy = [jpyRow('AJ', 3800, 3789), jpyRow('AJ2', 3800, 3789), jpyRow('AJ3', 3800, 3789),
+    jpyRow('AJ4', 3789, 3789)];
+  var rJ = smokeWorld(SEL, jpy, ['AJ', 'AJ2', 'AJ3', 'AJ4'].map(function (id) {
+    return activeMsku(id, { country: 'JP', marketplace: 'rakuten' }); })).TEMP_PRICING_R4_SMOKE_SELECT();
   ok(/currency                      = JPY   \(0 decimals\)/.test(rJ), 'P18 the currency precision is read from the deployed contract');
   ok(/A_TEST_VALUE\s+= 4801\b/.test(rJ), 'P18a and a 0-decimal currency gets a whole-number test value');
+  ok(/SINGLE_SCOPE_SMOKE_AVAILABLE    = YES/.test(rJ), 'P18b and it is still a single-target smoke');
+
+  // A STRAY CURRENCY POISONS ITS WHOLE TARGET, not just its own row. The bulk UI reads the target currency
+  // over every row of the target, so one un-migrated row makes the screen refuse the upload — and a smoke
+  // plan that pointed at that target would send the operator somewhere they cannot import.
+  var poison = ROWS_OK.concat([healthy({ pricing_id: 'PJX', marketplace_sku_id: 'MJX', currency: 'JPY',
+    regular_price: 4800, auto_regular_price: 4736, minimum_price: 3800, auto_minimum_price: 3789,
+    msrp: 5600, auto_msrp: 5527 })]);
+  var rP = smokeWorld(SEL, poison, MSKUS.concat([activeMsku('MJX')])).TEMP_PRICING_R4_SMOKE_SELECT();
+  ok(/US\|amazon[\s\S]{0,60}currency=AMBIGUOUS/.test(rP), 'P19  one stray currency makes the whole target ambiguous');
+  ok(/SINGLE_SCOPE_SMOKE_AVAILABLE    = NO/.test(rP), 'P19a so that target cannot host the smoke');
+
+  // TWO COMPLETE TARGETS: the bigger one wins, and the ranking is a ranking so two runs cannot disagree.
+  function famRow(id, cc, mk, cur, min, autoMin) {
+    return healthy({ pricing_id: 'P' + id, marketplace_sku_id: id, currency: cur,
+      regular_price: 50, auto_regular_price: 49, minimum_price: min, auto_minimum_price: autoMin,
+      msrp: 30, auto_msrp: 29 });
+  }
+  var twoRows = [], twoMsk = [];
+  ['A1', 'A2', 'A3', 'A4'].forEach(function (id, i) {
+    twoRows.push(famRow(id, 'CA', 'amazon', 'CAD', i === 3 ? 25 : 20, 25));
+    twoMsk.push(activeMsku(id, { country: 'CA', marketplace: 'amazon' }));
+  });
+  ['B1', 'B2', 'B3', 'B4', 'B5'].forEach(function (id, i) {
+    twoRows.push(famRow(id, 'US', 'amazon', 'USD', i === 4 ? 25 : 20, 25));
+    twoMsk.push(activeMsku(id, { country: 'US', marketplace: 'amazon' }));
+  });
+  var rT = smokeWorld(SEL, twoRows, twoMsk).TEMP_PRICING_R4_SMOKE_SELECT();
+  ok(/SMOKE_SCOPE                     = US\|amazon/.test(rT),
+    'P20  with two completable targets the one holding more healthy rows is chosen');
+  ok(/Chosen from 2 target\(s\) that could host all four/.test(rT), 'P20a and the tool says how many it chose between');
+
+  // NO SINGLE TARGET: the minimum number of uploads is reported, and the equality rule is not relaxed to
+  // manufacture one.
+  var splitRows = [], splitMsk = [];
+  ['C1', 'C2', 'C3'].forEach(function (id, i) {
+    splitRows.push(famRow(id, 'CA', 'amazon', 'CAD', i === 2 ? 25 : 20, 25));
+    splitMsk.push(activeMsku(id, { country: 'CA', marketplace: 'amazon' }));
+  });
+  ['D1'].forEach(function (id) {
+    splitRows.push(famRow(id, 'US', 'amazon', 'USD', 20, 19));
+    splitMsk.push(activeMsku(id, { country: 'US', marketplace: 'amazon' }));
+  });
+  var rS = smokeWorld(SEL, splitRows, splitMsk).TEMP_PRICING_R4_SMOKE_SELECT();
+  ok(/SINGLE_SCOPE_SMOKE_AVAILABLE    = NO/.test(rS), 'P21  three rows in one target and one in another is not a single-target smoke');
+  ok(/MINIMUM_SCOPES_REQUIRED         = 2/.test(rS), 'P21a and two uploads is the minimum, computed rather than guessed');
+  ok(/THE EQUALITY RULE IS NOT RELAXED/.test(rS), 'P21b with the equality rule explicitly not traded away for a tidier answer');
+  ok(/--- UPLOAD 1 of 2/.test(rS) && /--- UPLOAD 2 of 2/.test(rS), 'P21c and the template comes as one block per upload');
+  ok(/hosts the AUTO case/.test(rS), 'P21d naming which target carries the constrained case');
+
+  // NOTHING AUTO-CAPABLE ANYWHERE is a different failure from "not in one target", and says so.
+  var noAuto = [], noAutoMsk = [];
+  ['E1', 'E2', 'E3', 'E4'].forEach(function (id) {
+    noAuto.push(famRow(id, 'CA', 'amazon', 'CAD', 20, 19));
+    noAutoMsk.push(activeMsku(id, { country: 'CA', marketplace: 'amazon' }));
+  });
+  var rN = smokeWorld(SEL, noAuto, noAutoMsk).TEMP_PRICING_R4_SMOKE_SELECT();
+  ok(/MINIMUM_SCOPES_REQUIRED         = NOT ACHIEVABLE/.test(rN),
+    'P22  with no AUTO-capable row anywhere, no number of uploads helps and the tool says so');
+  ok(/SMOKE_ROW_D = NOT AVAILABLE/.test(rN), 'P22a and row D is still refused rather than approximated');
 }
 
 // =============================================================================================================
@@ -1085,14 +1165,18 @@ function smokeMutant(label, from, to, probe, rows, mskus) {
     healthy({ pricing_id: 'PU', marketplace_sku_id: 'MDUP' }),
     healthy({ pricing_id: 'PU2', marketplace_sku_id: 'MDUP' })
   ];
-  var QMSKUS = ['MA', 'MB', 'MC', 'MD', 'MF', 'MP', 'MDUP'].map(function (id) { return activeMsku(id); });
+  var QMSKUS = ['MA', 'MB', 'MC', 'MD', 'MF', 'MDUP'].map(function (id) { return activeMsku(id); })
+    .concat([activeMsku('MP', { country: 'JP', marketplace: 'rakuten' })]);
+  // The baseline must be a WORKING selection, or the probes below cannot tell a mutant from the fixture.
+  ok(/SINGLE_SCOPE_SMOKE_AVAILABLE    = YES/.test(smokeWorld(SEL, QROWS, QMSKUS).TEMP_PRICING_R4_SMOKE_SELECT()),
+    'Q0  the mutant baseline selects a complete single target, so a probe can tell the two apart');
 
   // Q1 — the AUTO row is chosen without checking the equality. It still LOOKS like a valid smoke row, and
   // uploading it would move a live price to a number nobody chose. This is the whole reason row D is
   // selected by a tool rather than by eye.
   smokeMutant('Q1  row D is chosen without the effective-equals-auto check',
-    "if (ff.eff.value === ff.auto.value) { rowD = c; rowDField = PREF[pi]; break; }",
-    "if (true) { rowD = c; rowDField = PREF[pi]; break; }",
+    "if (ff.eff.value === ff.auto.value) return { row: rows[ci], field: PREF[pi] };",
+    "if (true) return { row: rows[ci], field: PREF[pi] };",
     function (r) { return !/effective_equals_auto         = YES/.test(r); }, QROWS, QMSKUS);
 
   // Q2 — the duplicate-identity guard goes. Both rows of the pair become candidates, and a write aimed at
@@ -1124,11 +1208,24 @@ function smokeMutant(label, from, to, probe, rows, mskus) {
     "    return Math.round(raw);",
     function (r) { return !/TEST VALUE \(current \+ 1\)     = 45\.99/.test(r); }, QROWS, QMSKUS);
 
+  // Q7 — a target that cannot host all four is treated as if it could. The report would claim a
+  // single-target smoke while handing over rows from two targets, and the second upload would be refused
+  // as ROW_OUTSIDE_TARGET after the operator had built the file.
+  smokeMutant('Q7  an incomplete target is offered as a single-target smoke',
+    "sc.complete = !!(sc.importable && sc.dRow && sc.rows.length >= 4);",
+    "sc.complete = !!(sc.importable && sc.dRow);",
+    function (r) { return !/SINGLE_SCOPE_SMOKE_AVAILABLE    = NO/.test(r); },
+    [healthy({ pricing_id: 'PS1', marketplace_sku_id: 'S1', regular_price: 50, auto_regular_price: 49,
+       minimum_price: 25, auto_minimum_price: 25, msrp: 30, auto_msrp: 29 }),
+     healthy({ pricing_id: 'PS2', marketplace_sku_id: 'S2', regular_price: 50, auto_regular_price: 49,
+       minimum_price: 20, auto_minimum_price: 19, msrp: 30, auto_msrp: 29 })],
+    [activeMsku('S1'), activeMsku('S2')]);
+
   // Q6 — the restore file carries the TEST value instead of the original. The smoke would then be
   // irreversible in the one dimension the runbook promises is reversible.
   smokeMutant('Q6  the restore rows carry the test value instead of the original price',
-    "  if (rowA) p(templateLine(rowA, 'regular_price', 'MANUAL', rowA.f.regular_price.eff.value));",
-    "  if (rowA) p(templateLine(rowA, 'regular_price', 'MANUAL', testValue(rowA, 'regular_price')));",
+    "restoreRows.push({ c: rowA, field: 'regular_price', value: rowA.f.regular_price.eff.value });",
+    "restoreRows.push({ c: rowA, field: 'regular_price', value: testValue(rowA, 'regular_price') });",
     function (r) { var rest = r.split('§8 — RESTORE_TEMPLATE_ROWS')[1].split('§4 —')[0];
       return !/MANUAL,44\.99,/.test(rest); }, QROWS, QMSKUS);
 }

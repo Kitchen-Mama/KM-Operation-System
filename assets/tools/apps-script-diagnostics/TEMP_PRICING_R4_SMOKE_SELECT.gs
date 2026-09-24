@@ -13,6 +13,13 @@
  * price. So the constraints are applied here, once, and the output is the §2 block, the §3 template rows,
  * the §4 pre-snapshot and the §8 restore rows — all from the same read, so they cannot disagree.
  *
+ * ONE TARGET. A bulk import is scoped to one country + one marketplace, so four smoke rows spread across
+ * four targets would mean four uploads and four chances to get the scope wrong. All four cases are taken
+ * from a SINGLE target whenever one can supply them, chosen from production data rather than asked for:
+ * the completable targets are ranked by how many healthy rows they hold and then by name, so the answer is
+ * the same on every run. When no single target can supply all four the tool says so, gives the minimum
+ * number of uploads and the case-to-target plan, and does NOT quietly fall back to a spread selection.
+ *
  * IT IS DETERMINISTIC ON PURPOSE. Candidates are sorted by marketplace_sku_id and the first match wins, so
  * running it twice returns the same four rows. A selector that answered differently each run would make
  * the pre-snapshot describe rows the operator is no longer about to touch.
@@ -155,7 +162,11 @@ function TEMP_PRICING_R4_SMOKE_SELECT() {
     });
     if (!precisionOk) return no('EFFECTIVE_EXCEEDS_CURRENCY_PRECISION');
 
-    candidates.push({ id: id, rowNumber: r.rowNumber, v: v, m: m, currency: currency, f: f, status: status });
+    var country = tempPr4sStr_(v.country || m.country).toUpperCase();
+    var marketplace = tempPr4sStr_(v.marketplace || m.marketplace);
+    if (!country || !marketplace) return no('NO_COUNTRY_OR_MARKETPLACE');
+    candidates.push({ id: id, rowNumber: r.rowNumber, v: v, m: m, currency: currency, f: f, status: status,
+      country: country, marketplace: marketplace, scopeKey: country + '|' + marketplace });
   });
 
   // Deterministic order, so a re-run selects the same four rows and the pre-snapshot stays true.
@@ -174,26 +185,104 @@ function TEMP_PRICING_R4_SMOKE_SELECT() {
     p('BLOCKED'); return done();
   }
 
-  // ROW D FIRST, because it is the most constrained: it needs a field whose effective value ALREADY equals
-  // its auto value, so USE AUTO moves the ownership without moving the price a customer sees. Minimum is
-  // preferred, then MSRP, then Regular — least customer-visible first, so that even if the equality check
-  // were somehow wrong the blast radius is smallest.
-  var PREF = ['minimum_price', 'msrp', 'regular_price'];
-  var rowD = null, rowDField = null;
-  for (var pi = 0; pi < PREF.length && !rowD; pi++) {
-    for (var ci = 0; ci < candidates.length; ci++) {
-      var c = candidates[ci], ff = c.f[PREF[pi]];
-      if (ff.eff.value === ff.auto.value) { rowD = c; rowDField = PREF[pi]; break; }
-    }
-  }
+  // THE TARGET CURRENCY IS TAKEN OVER EVERY ROW OF THE TARGET, not over the healthy ones, because that is
+  // what the bulk update UI does: one unhealthy row carrying a second currency makes the whole target
+  // un-importable, and a smoke plan that ignored it would send the operator to a target the screen refuses.
+  var scopeCur = {};
+  state.rows.forEach(function (r) {
+    var v = r.values;
+    var id = tempPr4sStr_(v.marketplace_sku_id); if (!id) return;
+    var m = mIx[id] || {};
+    var country = tempPr4sStr_(v.country || m.country).toUpperCase();
+    var marketplace = tempPr4sStr_(v.marketplace || m.marketplace);
+    if (!country || !marketplace) return;
+    var key = country + '|' + marketplace;
+    var cur = pricingStr_(v.currency).toUpperCase();
+    var sc = scopeCur[key] || (scopeCur[key] = {});
+    if (cur) sc[cur] = (sc[cur] || 0) + 1;
+  });
 
-  var used = {};
-  if (rowD) used[rowD.id] = 1;
-  function pick() {
-    for (var i = 0; i < candidates.length; i++) if (!used[candidates[i].id]) { used[candidates[i].id] = 1; return candidates[i]; }
+  // ROW D IS THE CONSTRAINED ONE: it needs a field whose effective value ALREADY equals its auto value, so
+  // USE AUTO moves the ownership without moving the price a customer sees. Minimum is preferred, then MSRP,
+  // then Regular — least customer-visible first, so that even if the equality check were somehow wrong the
+  // blast radius is smallest.
+  var PREF = ['minimum_price', 'msrp', 'regular_price'];
+  function dRowOf(rows) {
+    for (var pi = 0; pi < PREF.length; pi++) {
+      for (var ci = 0; ci < rows.length; ci++) {
+        var ff = rows[ci].f[PREF[pi]];
+        if (ff.eff.value === ff.auto.value) return { row: rows[ci], field: PREF[pi] };
+      }
+    }
     return null;
   }
-  var rowA = pick(), rowB = pick(), rowC = pick();
+
+  var byScope = {};
+  candidates.forEach(function (c) {
+    var sc = byScope[c.scopeKey] || (byScope[c.scopeKey] = { key: c.scopeKey, country: c.country,
+      marketplace: c.marketplace, rows: [] });
+    sc.rows.push(c);
+  });
+  var scopeList = Object.keys(byScope).sort().map(function (k) {
+    var sc = byScope[k];
+    sc.currencyList = Object.keys(scopeCur[k] || {}).sort();
+    sc.currency = sc.currencyList.length === 1 ? sc.currencyList[0] : null;
+    var d = dRowOf(sc.rows);
+    sc.dRow = d ? d.row : null;
+    sc.dField = d ? d.field : null;
+    // Importable AND complete are different failures and are reported as different failures.
+    sc.importable = !!sc.currency;
+    sc.complete = !!(sc.importable && sc.dRow && sc.rows.length >= 4);
+    return sc;
+  });
+
+  rule();
+  p('TARGETS (country | marketplace), from the candidate rows');
+  rule();
+  scopeList.forEach(function (sc) {
+    p('  ' + pad(sc.key, 26) + 'rows=' + pad(sc.rows.length, 5)
+      + 'currency=' + pad(sc.currency || ('AMBIGUOUS ' + sc.currencyList.join('/')), 22)
+      + 'AUTO-capable=' + (sc.dRow ? 'YES (' + sc.dField + ')' : 'no')
+      + (sc.complete ? '   <- can host all four' : ''));
+  });
+
+  // THE RANKING, and it is a ranking rather than a preference so that two runs cannot disagree: the most
+  // healthy rows first, then the name. Most rows is not vanity — it is the target where four rows are the
+  // smallest fraction of what is live, and where a replacement row exists if one turns out unsuitable.
+  var complete = scopeList.filter(function (sc) { return sc.complete; })
+    .sort(function (a, b) { return b.rows.length - a.rows.length || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0); });
+
+  var chosen = complete.length ? complete[0] : null;
+  var rowA = null, rowB = null, rowC = null, rowD = null, rowDField = null;
+  var plan = null;
+
+  if (chosen) {
+    rowD = chosen.dRow; rowDField = chosen.dField;
+    var rest = chosen.rows.filter(function (c) { return c.id !== rowD.id; });
+    rowA = rest[0]; rowB = rest[1]; rowC = rest[2];
+  } else {
+    // NO SINGLE TARGET. The minimum number of uploads is computed exactly rather than guessed: for each
+    // target that can host the AUTO case, take it plus the largest others until four rows are covered, and
+    // keep the smallest count over all of them.
+    var usable = scopeList.filter(function (sc) { return sc.importable; });
+    var dScopes = usable.filter(function (sc) { return !!sc.dRow; });
+    dScopes.forEach(function (d) {
+      var others = usable.filter(function (sc) { return sc.key !== d.key; })
+        .sort(function (a, b) { return b.rows.length - a.rows.length || (a.key < b.key ? -1 : 1); });
+      var set = [d], total = d.rows.length, i = 0;
+      while (total < 4 && i < others.length) { set.push(others[i]); total += others[i].rows.length; i++; }
+      if (total >= 4 && (plan === null || set.length < plan.set.length)) plan = { set: set, d: d, total: total };
+    });
+    if (plan) {
+      // Assign the cases: AUTO to the target that can host it, then the MANUAL cases in target order.
+      rowD = plan.d.dRow; rowDField = plan.d.dField;
+      var pool = [];
+      plan.set.forEach(function (sc) {
+        sc.rows.forEach(function (c) { if (c.id !== rowD.id) pool.push(c); });
+      });
+      rowA = pool[0]; rowB = pool[1]; rowC = pool[2];
+    }
+  }
 
   var SPEC_BY_FIELD = {};
   PRICING_FIELDS_.forEach(function (sp) { SPEC_BY_FIELD[sp.field] = sp; });
@@ -214,6 +303,7 @@ function TEMP_PRICING_R4_SMOKE_SELECT() {
     }
     p('SMOKE_ROW_' + tag + '   (' + (mode === 'AUTO' ? 'AUTO restore' : LABEL[field] + ' MANUAL smoke') + ')');
     p('  ' + pad('pricing_id', 30) + '= ' + tempPr4sStr_(c.v.pricing_id));
+    p('  ' + pad('TARGET (upload scope)', 30) + '= ' + c.scopeKey);
     p('  ' + pad('marketplace_sku_id', 30) + '= ' + c.id);
     p('  ' + pad('master_sku', 30) + '= ' + tempPr4sStr_(c.v.sku || c.m.sku));
     p('  ' + pad('site_sku', 30) + '= ' + tempPr4sStr_(c.v.site_sku || c.m.site_sku));
@@ -246,6 +336,39 @@ function TEMP_PRICING_R4_SMOKE_SELECT() {
         + '   (current + ' + TEMP_PR4S_TEST_DELTA_ + ' whole ' + c.currency + ')');
       p('  ' + pad(tag + '_RESTORE_VALUE', 30) + '= ' + c.f[field].eff.value + '   (what §8 puts back)');
     }
+  }
+
+  rule();
+  p('THE SMOKE TARGET');
+  rule();
+  var singleScope = !!chosen;
+  var scopesNeeded = chosen ? 1 : (plan ? plan.set.length : 0);
+  p('SINGLE_SCOPE_SMOKE_AVAILABLE    = ' + (singleScope ? 'YES' : 'NO'));
+  if (chosen) {
+    p('SMOKE_SCOPE                     = ' + chosen.key);
+    p('  country                       = ' + chosen.country);
+    p('  marketplace / site            = ' + chosen.marketplace);
+    p('  currency                      = ' + chosen.currency);
+    p('  healthy candidate rows        = ' + chosen.rows.length);
+    p('MINIMUM_SCOPES_REQUIRED         = 1');
+    p('  Chosen from ' + complete.length + ' target(s) that could host all four, by most healthy rows then by name.');
+    p('  All four cases are one upload: Update -> Pricing -> ' + chosen.country + ' -> ' + chosen.marketplace + '.');
+  } else if (plan) {
+    p('MINIMUM_SCOPES_REQUIRED         = ' + plan.set.length + '   (one upload each — the UI scopes an import to one target)');
+    p('  No single target can supply all four cases. Every target either has fewer than four healthy rows,');
+    p('  has no field whose effective price already equals its auto value, or carries more than one currency.');
+    p('  THE EQUALITY RULE IS NOT RELAXED to make a single target work: an AUTO restore on a row whose');
+    p('  effective and auto differ would move a live price, which is the one thing the runbook forbids.');
+    p('  The plan below is the fewest uploads that covers all four:');
+    plan.set.forEach(function (sc) {
+      p('    ' + pad(sc.key, 26) + 'currency=' + pad(sc.currency, 6) + 'rows=' + sc.rows.length
+        + (sc.key === plan.d.key ? '   <- hosts the AUTO case' : ''));
+    });
+  } else {
+    p('MINIMUM_SCOPES_REQUIRED         = NOT ACHIEVABLE');
+    p('  Either no target has a field whose effective price already equals its auto value, or fewer than');
+    p('  four healthy rows exist across every importable target. Send this report back; which constraint');
+    p('  to relax is an operator decision, not a diagnostic one.');
   }
 
   rule();
@@ -286,23 +409,45 @@ function TEMP_PRICING_R4_SMOKE_SELECT() {
   rule();
   p('§3 — SMOKE_TEMPLATE_ROWS  (paste under the template header, unedited rows may stay or be deleted)');
   rule();
-  p(TCOLS.join(','));
-  if (rowA) p(templateLine(rowA, 'regular_price', 'MANUAL', testValue(rowA, 'regular_price')));
-  if (rowB) p(templateLine(rowB, 'minimum_price', 'MANUAL', testValue(rowB, 'minimum_price')));
-  if (rowC) p(templateLine(rowC, 'msrp', 'MANUAL', testValue(rowC, 'msrp')));
-  if (rowD) p(templateLine(rowD, rowDField, 'AUTO', ''));
-  p('');
+  // ONE BLOCK PER UPLOAD. A bulk import is scoped to one target, so rows from two targets in one file
+  // would be refused as ROW_OUTSIDE_TARGET — correctly, and after the operator had built the file.
+  var smokeRows = [];
+  if (rowA) smokeRows.push({ c: rowA, field: 'regular_price', mode: 'MANUAL', value: testValue(rowA, 'regular_price') });
+  if (rowB) smokeRows.push({ c: rowB, field: 'minimum_price', mode: 'MANUAL', value: testValue(rowB, 'minimum_price') });
+  if (rowC) smokeRows.push({ c: rowC, field: 'msrp', mode: 'MANUAL', value: testValue(rowC, 'msrp') });
+  if (rowD) smokeRows.push({ c: rowD, field: rowDField, mode: 'AUTO', value: '' });
+  var uploadKeys = [];
+  smokeRows.forEach(function (x) { if (uploadKeys.indexOf(x.c.scopeKey) === -1) uploadKeys.push(x.c.scopeKey); });
+  uploadKeys.sort();
+  uploadKeys.forEach(function (k, i) {
+    p('--- UPLOAD ' + (i + 1) + ' of ' + uploadKeys.length + '   target ' + k + ' ---');
+    p(TCOLS.join(','));
+    smokeRows.forEach(function (x) {
+      if (x.c.scopeKey === k) p(templateLine(x.c, x.field, x.mode, x.value));
+    });
+    p('');
+  });
   p('AUTO carries an EMPTY value cell. A number there would be dropped at the file boundary and again at');
   p('the writer, but the file should say what it means.');
 
   rule();
   p('§8 — RESTORE_TEMPLATE_ROWS  (run AFTER acceptance; sets A/B/C back to the values above)');
   rule();
-  p(TCOLS.join(','));
-  if (rowA) p(templateLine(rowA, 'regular_price', 'MANUAL', rowA.f.regular_price.eff.value));
-  if (rowB) p(templateLine(rowB, 'minimum_price', 'MANUAL', rowB.f.minimum_price.eff.value));
-  if (rowC) p(templateLine(rowC, 'msrp', 'MANUAL', rowC.f.msrp.eff.value));
-  p('');
+  var restoreRows = [];
+  if (rowA) restoreRows.push({ c: rowA, field: 'regular_price', value: rowA.f.regular_price.eff.value });
+  if (rowB) restoreRows.push({ c: rowB, field: 'minimum_price', value: rowB.f.minimum_price.eff.value });
+  if (rowC) restoreRows.push({ c: rowC, field: 'msrp', value: rowC.f.msrp.eff.value });
+  var restoreKeys = [];
+  restoreRows.forEach(function (x) { if (restoreKeys.indexOf(x.c.scopeKey) === -1) restoreKeys.push(x.c.scopeKey); });
+  restoreKeys.sort();
+  restoreKeys.forEach(function (k, i) {
+    p('--- RESTORE UPLOAD ' + (i + 1) + ' of ' + restoreKeys.length + '   target ' + k + ' ---');
+    p(TCOLS.join(','));
+    restoreRows.forEach(function (x) {
+      if (x.c.scopeKey === k) p(templateLine(x.c, x.field, 'MANUAL', x.value));
+    });
+    p('');
+  });
   p('ROW D HAS NO RESTORE LINE, and that is deliberate: its price never moved, and setting it MANUAL would');
   p('write TRUE — further from where it started, not closer. Its flag stays FALSE unless a person clears');
   p('the cell by hand.');
@@ -340,6 +485,10 @@ function TEMP_PRICING_R4_SMOKE_SELECT() {
   rule();
   function req(k, v) { p(pad(k, 32) + '= ' + v); }
   function idOf(c) { return c ? c.id : 'NOT AVAILABLE'; }
+  req('SINGLE_SCOPE_SMOKE_AVAILABLE', singleScope ? 'YES' : 'NO');
+  req('SMOKE_SCOPE', chosen ? chosen.key : 'MULTIPLE — see the plan above');
+  req('SMOKE_SCOPE_CURRENCY', chosen ? chosen.currency : 'VARIES BY TARGET');
+  req('MINIMUM_SCOPES_REQUIRED', scopesNeeded || 'NOT ACHIEVABLE');
   req('SMOKE_ROW_A', idOf(rowA));
   req('SMOKE_ROW_B', idOf(rowB));
   req('SMOKE_ROW_C', idOf(rowC));
