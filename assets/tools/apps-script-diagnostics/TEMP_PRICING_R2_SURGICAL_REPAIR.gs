@@ -58,6 +58,16 @@ var PSR_LOCK_MS_ = 30000;
 // different incident and stops the run.
 var PSR_REPAIR_FIELD_ = 'base_msrp';
 
+// The state the repair is authorised to start from. These are not a description of the sheet — they are
+// the shape the run REFUSES to start without, so a sheet that has moved on since the incident cannot be
+// repaired against a plan written for a different one.
+var PSR_EXPECT_LEGACY_ROW_COUNT_ = 495;
+var PSR_EXPECT_LEGACY_COLUMN_COUNT_ = 29;
+var PSR_EXPECT_EXTENSIONS_ = ['marketplace_id', 'company'];
+var PSR_EXPECT_LOG_EXTENSIONS_ = ['sku', 'country', 'marketplace', 'old_currency', 'new_currency', 'source'];
+var PSR_EXPECT_LOG_COLUMN_COUNT_ = 15;
+var PSR_EXPECT_LOG_ROW_COUNT_ = 0;
+
 // Every field the PRE sheet had, so "only base_msrp differs" is a claim about all of them.
 var PSR_PRE_FIELDS_ = [
   'pricing_id', 'marketplace_sku_id', 'marketplace_id', 'sku', 'company', 'country', 'marketplace',
@@ -92,6 +102,30 @@ function psrSerial_(v) {
   if (v instanceof Date) return (v.getTime() - Date.UTC(1899, 11, 30)) / 86400000;
   var f = parseFloat(v);
   return isNaN(f) ? null : f;
+}
+
+/**
+ * What a hard stop owes the operator. A count tells them something is wrong; this tells them WHICH row,
+ * which sku, what PRE held, what the cell holds now, what type it is wearing and what format put it there
+ * — which is the difference between a stop they can act on and a stop they have to come back and ask about.
+ */
+function psrOffenders_(field, L, S, lIdx, sIdx, rowsWanted, limit) {
+  var lines = [];
+  lines.push("  pricing_id | sku | field | PRE value | current raw | current type | current format");
+  for (var i = 0; i < rowsWanted.length && i < limit; i++) {
+    var r = rowsWanted[i];
+    var lv = L.values[r][lIdx[field]], sv = S.values[r][sIdx[field]];
+    lines.push("  row " + (r + 1)
+      + ' | ' + psrStr_(L.values[r][lIdx['pricing_id']])
+      + ' | ' + (lIdx['sku'] === undefined ? '(no sku column)' : psrStr_(L.values[r][lIdx['sku']]))
+      + ' | ' + field
+      + ' | ' + JSON.stringify(sv instanceof Date ? sv.toISOString() : sv)
+      + ' | ' + JSON.stringify(lv instanceof Date ? lv.toISOString() : lv)
+      + ' | ' + psrKind_(lv)
+      + ' | ' + JSON.stringify(L.formats[r][lIdx[field]]));
+  }
+  if (rowsWanted.length > limit) lines.push("  ... and " + (rowsWanted.length - limit) + " more");
+  return lines;
 }
 
 function psrKind_(v) {
@@ -197,20 +231,26 @@ function psrRun_(commit) {
     return done();
   }
 
+  var canonSet = {}; CANON.forEach(function (h) { canonSet[h] = 1; });
+  var extensionsEarly = L.header.filter(function (h) { return h !== '' && !canonSet[h]; });
+
   // ---- WHICH FIELDS DIFFER -------------------------------------------------------------------------------
   rule();
   p('DRIFT CENSUS — every PRE field, live against the snapshot');
-  var differing = [];
+  var differing = [], differingRows = {};
   PSR_PRE_FIELDS_.forEach(function (f) {
     if (lIdx[f] === undefined || sIdx[f] === undefined) {
       p('  ' + (f + '                      ').slice(0, 24) + 'ABSENT on one side');
-      differing.push(f); return;
+      differing.push(f); differingRows[f] = []; return;
     }
-    var n = 0;
+    var rowsD = [];
     for (var i = 1; i <= rowCount; i++) {
-      if (psrStr_(L.values[i][lIdx[f]]) !== psrStr_(S.values[i][sIdx[f]])) n++;
+      if (psrStr_(L.values[i][lIdx[f]]) !== psrStr_(S.values[i][sIdx[f]])) rowsD.push(i);
     }
-    if (n) { differing.push(f); p('  ' + (f + '                      ').slice(0, 24) + n + ' of ' + rowCount + ' rows differ'); }
+    if (rowsD.length) {
+      differing.push(f); differingRows[f] = rowsD;
+      p('  ' + (f + '                      ').slice(0, 24) + rowsD.length + ' of ' + rowCount + ' rows differ');
+    }
   });
   if (!differing.length) {
     p('  NO FIELD DIFFERS — there is nothing to repair. Run the schema migration, not this.');
@@ -220,6 +260,16 @@ function psrRun_(commit) {
   if (differing.length !== 1 || differing[0] !== PSR_REPAIR_FIELD_) {
     p('BLOCKED — this tool repairs exactly one field, ' + PSR_REPAIR_FIELD_ + ', and only when it is the ONLY');
     p('thing that differs. Anything else is a different incident and needs its own diagnosis before a write.');
+    differing.forEach(function (f) {
+      if (f === PSR_REPAIR_FIELD_) return;
+      p('');
+      p('OFFENDING FIELD: ' + f);
+      if (lIdx[f] === undefined || sIdx[f] === undefined) {
+        p('  the column is absent on one side, so there are no rows to list.');
+        return;
+      }
+      psrOffenders_(f, L, S, lIdx, sIdx, differingRows[f] || [], 20).forEach(p);
+    });
     return done();
   }
 
@@ -229,20 +279,20 @@ function psrRun_(commit) {
   rule();
   p('DAMAGE PROOF — ' + PSR_REPAIR_FIELD_ + ': did the quantity survive?');
   var kinds = { live: {}, snap: {} };
-  var serialMatch = 0, serialDiffer = 0, unreadable = 0, examples = [];
+  var serialMatch = 0, serialDiffer = 0, unreadable = 0, examples = [], badRows = [];
   for (var q = 1; q <= rowCount; q++) {
     var lv = L.values[q][lIdx[PSR_REPAIR_FIELD_]], sv = S.values[q][sIdx[PSR_REPAIR_FIELD_]];
     kinds.live[psrKind_(lv)] = (kinds.live[psrKind_(lv)] || 0) + 1;
     kinds.snap[psrKind_(sv)] = (kinds.snap[psrKind_(sv)] || 0) + 1;
     var a = psrSerial_(lv), b = psrSerial_(sv);
-    if (a === null || b === null) { unreadable++; }
+    if (a === null || b === null) { unreadable++; badRows.push(q); }
     else if (Math.abs(a - b) < 1e-9) {
       serialMatch++;
       if (examples.length < 6 && psrKind_(lv) !== psrKind_(sv)) {
         examples.push('  row ' + (q + 1) + '  snapshot ' + psrKind_(sv) + '(' + b + ')  ->  live '
           + psrKind_(lv) + '(' + (lv instanceof Date ? lv.toISOString().slice(0, 10) : String(lv)) + ')');
       }
-    } else { serialDiffer++; }
+    } else { serialDiffer++; badRows.push(q); }
   }
   function kindStr(o) { return Object.keys(o).map(function (k) { return k + '×' + o[k]; }).join(' '); }
   p('  snapshot cell kinds : ' + kindStr(kinds.snap));
@@ -250,16 +300,96 @@ function psrRun_(commit) {
   p('  underlying quantity : ' + serialMatch + ' identical, ' + serialDiffer + ' different, '
     + unreadable + ' unreadable');
   examples.forEach(function (e) { p(e); });
-  if (serialDiffer > 0) {
-    p('BLOCKED — ' + serialDiffer + ' row(s) hold a DIFFERENT quantity, not the same quantity wearing the');
-    p('wrong type. That is a different failure and this tool will not paper over it.');
+  if (serialDiffer > 0 || unreadable > 0) {
+    p('BLOCKED — ' + serialDiffer + ' row(s) hold a DIFFERENT quantity and ' + unreadable + ' are unreadable.');
+    p('That is not the same quantity wearing the wrong type, so it is a different failure and this tool will');
+    p('not paper over it. The rows:');
+    psrOffenders_(PSR_REPAIR_FIELD_, L, S, lIdx, sIdx, badRows, 20).forEach(p);
     return done();
   }
   p('  VERDICT = the quantity survived on every row; the TYPE did not. PRE is a faithful source.');
 
+  // ---- PHASE 1 PROOF — the state this repair is authorised to start from -----------------------------------
+  // Printed as PASS/FAIL per item rather than as prose, because "the dry run showed it was fine" is not
+  // something a later reader can check.
+  rule();
+  p('PHASE 1 PROOF');
+  var proof = [];
+  function prove(label, cond, detail) { proof.push({ label: label, ok: !!cond, detail: detail }); }
+
+  prove('pricing_list ROW_COUNT == ' + PSR_EXPECT_LEGACY_ROW_COUNT_,
+    rowCount === PSR_EXPECT_LEGACY_ROW_COUNT_, String(rowCount));
+  prove('pricing_list is the legacy ' + PSR_EXPECT_LEGACY_COLUMN_COUNT_ + '-column layout',
+    L.header.length === PSR_EXPECT_LEGACY_COLUMN_COUNT_, String(L.header.length));
+  prove('the three authority flags are NOT present yet',
+    FLAGS.every(function (f) { return L.header.indexOf(f) === -1; }),
+    FLAGS.filter(function (f) { return L.header.indexOf(f) !== -1; }).join(',') || 'none present');
+  prove('live header matches the PRE snapshot header exactly',
+    L.header.length === S.header.length && L.header.every(function (h, i) { return h === S.header[i]; }));
+  prove('extensions are exactly ' + PSR_EXPECT_EXTENSIONS_.join(', '),
+    extensionsEarly.length === PSR_EXPECT_EXTENSIONS_.length
+      && extensionsEarly.every(function (h, i) { return h === PSR_EXPECT_EXTENSIONS_[i]; }),
+    extensionsEarly.join(',') || '(none)');
+
+  // pricing_change_log — already migrated, and this run must not touch it.
+  var logSh = ss.getSheetByName(PSR_LOG_TAB_);
+  if (!logSh) {
+    prove('pricing_change_log is present', false, 'absent');
+  } else {
+    var logHead = logSh.getRange(1, 1, 1, logSh.getLastColumn()).getValues()[0].map(psrStr_);
+    var logRows = logSh.getLastRow() - 1;
+    var logExt = logHead.slice(LOGCANON.length);
+    prove('pricing_change_log COLUMN_COUNT == ' + PSR_EXPECT_LOG_COLUMN_COUNT_,
+      logHead.length === PSR_EXPECT_LOG_COLUMN_COUNT_, String(logHead.length));
+    prove('pricing_change_log canonical positions 1..' + LOGCANON.length + ' EXACT',
+      LOGCANON.every(function (h, i) { return logHead[i] === h; }), logHead.slice(0, LOGCANON.length).join(','));
+    prove('pricing_change_log PK is log_id at position 1', logHead[0] === 'log_id', String(logHead[0]));
+    prove('pricing_log_id is absent', logHead.indexOf('pricing_log_id') === -1);
+    prove('pricing_change_log extensions exact and in order',
+      PSR_EXPECT_LOG_EXTENSIONS_.every(function (h, i) { return logExt[i] === h; })
+        && logExt.length === PSR_EXPECT_LOG_EXTENSIONS_.length, logExt.join(','));
+    prove('pricing_change_log ROW_COUNT == ' + PSR_EXPECT_LOG_ROW_COUNT_,
+      logRows === PSR_EXPECT_LOG_ROW_COUNT_, String(logRows));
+  }
+
+  // Both snapshot tabs. The pricing_list one is the repair authority; the change_log one is the way back
+  // if this round ever has to be undone, and its absence is worth knowing before a write, not after.
+  var logSnapPresent = names.filter(function (n) { return n.indexOf('PRE__pricing_change_log__') === 0; }).length > 0;
+  prove('PRE pricing_list snapshot present', true, snapName);
+  prove('PRE pricing_change_log snapshot present', logSnapPresent);
+
+  prove('pricing_id identity matches PRE row for row', misaligned === 0, String(misaligned) + ' mismatched');
+  prove('base_msrp is the ONLY differing PRE field', differing.length === 1 && differing[0] === PSR_REPAIR_FIELD_,
+    differing.join(','));
+  prove('every current Date base_msrp matches PRE by serial', serialDiffer === 0 && unreadable === 0,
+    serialMatch + ' matched');
+
+  // The groups §4 wants answered one by one. They follow from "only base_msrp differs", but a report that
+  // makes the reader derive them is a report that will be misread.
+  [['FX_VALUES', ['fx_rate', 'fx_rate_date', 'currency']],
+   ['AUTO_VALUES', ['auto_regular_price', 'auto_minimum_price', 'auto_msrp']],
+   ['EFFECTIVE_VALUES', ['regular_price', 'minimum_price', 'msrp']],
+   ['EXTENSION_VALUES', PSR_EXPECT_EXTENSIONS_],
+   ['BASE_OTHER_THAN_MSRP', ['base_currency', 'base_regular_price', 'base_minimum_price']]
+  ].forEach(function (grp) {
+    var moved = grp[1].filter(function (f) { return differing.indexOf(f) !== -1; });
+    prove(grp[0] + '_UNCHANGED', moved.length === 0, moved.join(',') || '');
+  });
+
+  var proofOk = true;
+  proof.forEach(function (c) {
+    if (!c.ok) proofOk = false;
+    p('  ' + (c.ok ? 'PASS  ' : 'FAIL  ') + c.label + (c.detail ? '   [' + c.detail + ']' : ''));
+  });
+  if (!proofOk) {
+    p('');
+    p('BLOCKED — the sheet is not in the state this repair is authorised to start from. Nothing is written.');
+    p('SURGICAL_REPAIR_DRY_RUN = NO-GO');
+    return done();
+  }
+
   // ---- TARGET LAYOUT -------------------------------------------------------------------------------------
-  var canonSet = {}; CANON.forEach(function (h) { canonSet[h] = 1; });
-  var extensions = L.header.filter(function (h) { return h !== '' && !canonSet[h]; });
+  var extensions = extensionsEarly;
   var missingNonFlag = CANON.filter(function (h) { return L.header.indexOf(h) === -1 && FLAGS.indexOf(h) === -1; });
   if (missingNonFlag.length) {
     p('BLOCKED — canonical column(s) absent that this tool does not provision: ' + missingNonFlag.join(', '));
@@ -322,6 +452,22 @@ function psrRun_(commit) {
     p("  var PSR_EXPECT_LIVE_HEADER_HASH_ = '" + liveHeaderHash + "';");
     p('  var PSR_EXPECT_ROW_COUNT_ = ' + rowCount + ';');
     p("  var PSR_EXPECT_REPAIR_HASH_ = '" + repairHash + "';");
+    p('');
+    // Phase 2 re-runs this AFTER arming, and needs a verdict it can read rather than three strings to
+    // compare by eye. Comparing by eye is how a stale plan gets authorised.
+    var armed = PSR_EXPECT_ROW_COUNT_ !== -1 || PSR_EXPECT_LIVE_HEADER_HASH_ !== '' || PSR_EXPECT_REPAIR_HASH_ !== '';
+    if (!armed) {
+      p('CONSTANTS_ARMED = NO — paste the three above and run the DRY RUN again before COMMIT.');
+      p('SURGICAL_REPAIR_DRY_RUN = GO (proof passed; not yet authorised)');
+    } else {
+      var match = PSR_EXPECT_LIVE_HEADER_HASH_ === liveHeaderHash
+        && PSR_EXPECT_ROW_COUNT_ === rowCount && PSR_EXPECT_REPAIR_HASH_ === repairHash;
+      p('CONSTANTS_ARMED = YES');
+      p('  header hash  ' + (PSR_EXPECT_LIVE_HEADER_HASH_ === liveHeaderHash ? 'MATCH' : 'DRIFT'));
+      p('  row count    ' + (PSR_EXPECT_ROW_COUNT_ === rowCount ? 'MATCH' : 'DRIFT'));
+      p('  repair hash  ' + (PSR_EXPECT_REPAIR_HASH_ === repairHash ? 'MATCH' : 'DRIFT'));
+      p('SURGICAL_REPAIR_DRY_RUN = ' + (match ? 'GO / READY — COMMIT is authorised' : 'NO-GO — the armed constants do not match this sheet'));
+    }
     return done();
   }
 

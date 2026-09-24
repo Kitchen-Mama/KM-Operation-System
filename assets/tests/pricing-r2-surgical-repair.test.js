@@ -237,12 +237,14 @@ function makeWorld(opts) {
   S.PRICING_MANUAL_FLAG_COLUMNS_ = AUTH.FLAGS.slice();
   S.PRICING_CHANGE_LOG_HEADERS_ = AUTH.LOGCANON.slice();
   S.PRW_BUILD_VERSION_ = AUTH.BUILD;
-  var origCopy = price.copyTo;
-  price.copyTo = function () {
-    var c = origCopy();
-    var o = c.setName; c.setName = function (n) { extra[n] = c; return o.call(c, n); };
-    return c;
-  };
+  [price, log].forEach(function (sheet) {
+    var orig = sheet.copyTo;
+    sheet.copyTo = function () {
+      var c = orig();
+      var o = c.setName; c.setName = function (n) { extra[n] = c; return o.call(c, n); };
+      return c;
+    };
+  });
   vm.createContext(S);
   vm.runInContext(opts.repair || REPAIR, S, { filename: 'TEMP_PRICING_R2_SURGICAL_REPAIR.gs' });
   return S;
@@ -253,9 +255,16 @@ function damagedWorld(opts) {
   opts = opts || {};
   if (!opts.logHeader) opts.logHeader = MIGRATED_LOG;
   var w = makeWorld(opts);
-  // The PRE snapshot, taken before anything went wrong.
-  var snap = w.__price.copyTo();
-  snap.setName('PRE__pricing_list__20260923-184134');
+  // The PRE snapshot PAIR, taken before anything went wrong. Production has both, and the repair refuses
+  // without the change_log one — it is the way back if this round ever has to be undone, and its absence
+  // is worth knowing before a write rather than after.
+  w.__price.copyTo().setName('PRE__pricing_list__20260923-184134');
+  w.__log.copyTo().setName('PRE__pricing_change_log__20260923-184134');
+  // The row-count gate is an AUTHORISATION constant, not a description: production is 495 rows and the
+  // tool refuses to start anywhere else. The suite arms it for its own world exactly as it arms the drift
+  // constants, because a test world of 6 rows is still a world this repair has to be correct in.
+  w.PSR_EXPECT_LEGACY_ROW_COUNT_ = w.__price.__grid.length - 1;
+
   // THE DAMAGE, produced the way production produced it: physical column 14 was given a date format when
   // the reorder wrote fx_rate_date into it, and base_msrp's numbers were later restored into those cells.
   var col14 = LIVE.indexOf('base_msrp');
@@ -414,6 +423,100 @@ section('D · WHAT IT REFUSES');
 }
 
 // =============================================================================================================
+section('F · THE PHASE 1 PROOF, AND WHAT A HARD STOP OWES THE OPERATOR');
+// =============================================================================================================
+{
+  var w = damagedWorld({ rows: rows(6) });
+  var d = w.TEMP_PRICING_R2_SURGICAL_REPAIR_DRY_RUN();
+
+  // Every item the authorisation depends on is printed as PASS/FAIL, because "the dry run showed it was
+  // fine" is not something a later reader can check.
+  ok(/PHASE 1 PROOF/.test(d), 'F1  the dry run prints a PHASE 1 PROOF block');
+  [
+    'pricing_list ROW_COUNT ==',
+    'pricing_list is the legacy 29-column layout',
+    'the three authority flags are NOT present yet',
+    'live header matches the PRE snapshot header exactly',
+    'extensions are exactly marketplace_id, company',
+    'pricing_change_log COLUMN_COUNT == 15',
+    'pricing_change_log canonical positions 1..9 EXACT',
+    'pricing_change_log PK is log_id at position 1',
+    'pricing_log_id is absent',
+    'pricing_change_log extensions exact and in order',
+    'pricing_change_log ROW_COUNT == 0',
+    'PRE pricing_list snapshot present',
+    'PRE pricing_change_log snapshot present',
+    'pricing_id identity matches PRE row for row',
+    'base_msrp is the ONLY differing PRE field',
+    'every current Date base_msrp matches PRE by serial',
+    'FX_VALUES_UNCHANGED', 'AUTO_VALUES_UNCHANGED', 'EFFECTIVE_VALUES_UNCHANGED',
+    'EXTENSION_VALUES_UNCHANGED', 'BASE_OTHER_THAN_MSRP_UNCHANGED'
+  ].forEach(function (item) {
+    ok(d.indexOf('PASS  ' + item) !== -1, 'F2  proved: ' + item);
+  });
+  ok(!/FAIL  /.test(d), 'F3  and nothing in the proof fails on a sheet in the expected state');
+  ok(/SURGICAL_REPAIR_DRY_RUN = GO/.test(d), 'F4  the dry run ends in an explicit GO');
+
+  // THE CHANGE LOG, which the dry run did not look at before this round. If that table is not where the
+  // plan assumes, the operator has to learn it BEFORE authorising, not from a POST validator running on a
+  // pricing_list that has already been rewritten.
+  var wl = damagedWorld({ rows: rows(6), logHeader: LIVE_LOG });          // still pre-migration
+  var dl = wl.TEMP_PRICING_R2_SURGICAL_REPAIR_DRY_RUN();
+  ok(/FAIL  pricing_change_log PK is log_id at position 1/.test(dl),
+    'F5  a change_log that is NOT migrated is caught in the dry run');
+  ok(/SURGICAL_REPAIR_DRY_RUN = NO-GO/.test(dl), 'F5a and the verdict is NO-GO');
+  eq(wl.__price.__rangeWrites, 0, 'F5b with nothing written');
+
+  // The change_log snapshot is the way back if this round has to be undone. Missing it is a stop.
+  var ws = damagedWorld({ rows: rows(6) });
+  delete ws.__extra['PRE__pricing_change_log__20260923-184134'];
+  var ds = ws.TEMP_PRICING_R2_SURGICAL_REPAIR_DRY_RUN();
+  ok(/FAIL  PRE pricing_change_log snapshot present/.test(ds),
+    'F6  a missing change_log snapshot is caught before any write');
+  ok(/SURGICAL_REPAIR_DRY_RUN = NO-GO/.test(ds), 'F6a NO-GO');
+
+  // A HARD STOP HAS TO BE ACTIONABLE. A count says something is wrong; this says which row, which sku,
+  // what PRE held, what the cell holds now, what type it wears and what format put it there.
+  var wq = damagedWorld({ rows: rows(6) });
+  wq.__price.__grid[2][LIVE.indexOf('base_msrp')] = 999;
+  var dq = wq.TEMP_PRICING_R2_SURGICAL_REPAIR_DRY_RUN();
+  ok(/hold a DIFFERENT quantity/.test(dq), 'F7  a changed quantity stops the run');
+  ok(/pricing_id \| sku \| field \| PRE value \| current raw \| current type \| current format/.test(dq),
+    'F7a and the stop prints the columns the operator needs to act on it');
+  ok(/PRC-1002 \| SKU-2 \| base_msrp/.test(dq), 'F7b naming the offending pricing_id and sku');
+  ok(/\| Date \|/.test(dq),
+    'F7c with the current runtime TYPE — Date, because the cell still wears the format the incident gave it');
+
+  // A second differing field names its rows too.
+  var wf = damagedWorld({ rows: rows(6) });
+  wf.__price.__grid[1][LIVE.indexOf('regular_price')] = 1.11;
+  var df = wf.TEMP_PRICING_R2_SURGICAL_REPAIR_DRY_RUN();
+  ok(/OFFENDING FIELD: regular_price/.test(df), 'F8  a second differing field is named');
+  ok(/PRC-1001 \| SKU-1 \| regular_price/.test(df), 'F8a with its offending rows');
+
+  // Phase 2: arming the constants and re-running must produce a verdict, not three strings to eyeball.
+  var wa = damagedWorld({ rows: rows(6) });
+  var da = wa.TEMP_PRICING_R2_SURGICAL_REPAIR_DRY_RUN();
+  ok(/CONSTANTS_ARMED = NO/.test(da), 'F9  before arming, the dry run says so');
+  function grab(re) { var m = re.exec(da); return m ? m[1] : null; }
+  wa.PSR_EXPECT_LIVE_HEADER_HASH_ = grab(/LIVE_HEADER_HASH = (\S+)/);
+  wa.PSR_EXPECT_ROW_COUNT_ = Number(grab(/PSR_EXPECT_ROW_COUNT_ = (\d+);/));
+  wa.PSR_EXPECT_REPAIR_HASH_ = grab(/REPAIRED_LOGICAL_HASH = (\S+)/);
+  var da2 = wa.TEMP_PRICING_R2_SURGICAL_REPAIR_DRY_RUN();
+  ok(/CONSTANTS_ARMED = YES/.test(da2), 'F10 after arming, it re-checks them');
+  ok(/SURGICAL_REPAIR_DRY_RUN = GO \/ READY — COMMIT is authorised/.test(da2), 'F10a and authorises COMMIT');
+
+  // And if the sheet moves after arming, the same re-run says so rather than letting a stale plan through.
+  wa.__price.__grid[1][LIVE.indexOf('note')] = 'edited after the review';
+  var da3 = wa.TEMP_PRICING_R2_SURGICAL_REPAIR_DRY_RUN();
+  // Whichever guard catches it, the property is that an edited sheet does not read as authorised. Pinning
+  // one specific guard here would make the test brittle about WHICH one fires rather than THAT one does.
+  ok(!/GO \/ READY/.test(da3), 'F11 a sheet edited after arming does not read as READY');
+  ok(/BLOCKED — this tool repairs exactly one field/.test(da3),
+    'F11a it stops at the single-field gate, which runs before the proof block');
+}
+
+// =============================================================================================================
 section('E · MUTANTS');
 // =============================================================================================================
 function nl(src, t) { return src.indexOf('\r\n') !== -1 ? t.split('\n').join('\r\n') : t; }
@@ -487,7 +590,7 @@ mut('E4  the single-field gate is removed',
 
 // 5 — the serial proof is skipped, so a genuinely different price is restored as if it were a type fault.
 mut('E5  the quantity proof is skipped',
-  '  if (serialDiffer > 0) {',
+  '  if (serialDiffer > 0 || unreadable > 0) {',
   '  if (false) {',
   function (m) {
     var w = damagedWorld({ rows: rows(6), repair: m });
