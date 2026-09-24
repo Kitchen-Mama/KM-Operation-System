@@ -32,6 +32,31 @@
  * WHAT IT WILL NOT DO. It never writes, never takes a lock, never deletes a snapshot, never classifies a
  * blank authority flag, and never repairs anything it finds. A verifier that can fix what it measures stops
  * being a verifier.
+ *
+ * ============================================================================================
+ * TWO KINDS OF MIGRATION, AND THEY CANNOT SHARE ONE ACCEPTANCE RULE
+ * ============================================================================================
+ *
+ * The rule above — every PRE field unchanged — is correct for a migration that moves columns and
+ * changes no values. It is WRONG for one that was authorised to change values, and being wrong in
+ * that direction is dangerous in a specific way: it reports data loss on a correct sheet and
+ * recommends restoring a snapshot over it. A verifier that can order the destruction of a good
+ * migration is worse than no verifier.
+ *
+ *   PV_MODE_ = SCHEMA_ONLY        every PRE field must be unchanged. Nothing may move.
+ *   PV_MODE_ = BASE_SOURCE_SYNC   the four fields in PV_BASE_SYNC_FIELDS_ are EXPECTED to differ
+ *                                 from PRE, and are instead verified against sku_details. Every
+ *                                 other PRE field must still be unchanged, exactly as before.
+ *
+ * THE MUTATION SET IS EXPLICIT AND NARROW. It is four named fields, not "base-ish things", and not a
+ * relaxation of the comparison. The PRE check is not removed for them — it is REPLACED by a stronger
+ * one: their values must equal what sku_details says, row by row, resolved through the same two-hop
+ * join the workspace uses. Dropping the PRE check without adding that would leave those four columns
+ * verified by nothing at all, which is how "expected to change" becomes "unchecked".
+ *
+ * AND THE SOURCE READ IS THIS FILE'S OWN. It does not call psf*, does not read the migration's plan,
+ * and does not trust a count from a dry run. It goes to sku_details itself. Where the two agree, the
+ * agreement means something.
  */
 
 // The physical order this round was asked to prove, transcribed from the task. It is NOT the authority — 73_
@@ -87,8 +112,44 @@ var PV_GROUPS_ = [
   { key: 'EXTENSION_VALUES', fields: ['marketplace_id', 'company'] }
 ];
 
+// WHICH MIGRATION IS BEING VERIFIED. Set deliberately; it is not inferred from the sheet, because a
+// verifier that decides for itself which rules to apply can always find a set under which it passes.
+//   'SCHEMA_ONLY'       — columns moved, no value changed anywhere.
+//   'BASE_SOURCE_SYNC'  — PRICING-R2-BASE-SOURCE-FINAL: the four base fields were re-sourced from
+//                         sku_details on purpose, and are verified against it instead of against PRE.
+var PV_MODE_ = 'BASE_SOURCE_SYNC';
+
+// THE ENTIRE EXPECTED MUTATION SET. Four names. A field not on this list must be byte-identical to PRE
+// in either mode, and a field ON it is not thereby unchecked — see PV_BASE_SOURCE_MAP_.
+var PV_BASE_SYNC_FIELDS_ = ['base_regular_price', 'base_minimum_price', 'base_msrp', 'base_currency'];
+
+// The frozen source contract, transcribed from the task and cross-checked against 04_ at run time below.
+var PV_BASE_SOURCE_MAP_ = [
+  { target: 'base_regular_price', source: 'selling_price', numeric: true },
+  { target: 'base_minimum_price', source: 'minimum_price', numeric: true },
+  { target: 'base_msrp', source: 'msrp', numeric: true },
+  { target: 'base_currency', source: 'base_currency', numeric: false }
+];
+
+// Named rows the operator can check by eye against the spreadsheet. Sampling by sku rather than by row
+// number, because a row number means nothing once the layout has changed.
+var PV_SAMPLE_SKUS_ = ['CO1100-R', 'CO1150-AG'];
+
+// What the AUTHORISED dry run said it would do. This is a CROSS-CHECK, not an acceptance criterion: a
+// disagreement means production moved between the plan and the write, which is worth seeing, and it is
+// reported as a shape finding rather than as data loss. The seal is decided by the row-by-row comparison
+// against sku_details, which is a measurement rather than a number somebody typed.
+var PV_EXPECTED_BASE_CENSUS_ = {
+  base_regular_price: { nonblank: 493, blank: 2 },
+  base_minimum_price: { nonblank: 485, blank: 10 },
+  base_msrp: { nonblank: 490, blank: 5 },
+  base_currency: { nonblank: 495, blank: 0 }
+};
+
 var PV_PRICE_TAB_ = 'pricing_list';
 var PV_LOG_TAB_ = 'pricing_change_log';
+var PV_MSKU_TAB_ = 'marketplace_skus';
+var PV_SKU_TAB_ = 'sku_details';
 var PV_SNAP_PREFIX_ = 'PRE__pricing_list__';
 var PV_LOG_SNAP_PREFIX_ = 'PRE__pricing_change_log__';
 
@@ -151,6 +212,76 @@ function pvBaselineHash_(header, grid, fields) {
 }
 
 /** Blank / TRUE / FALSE / OTHER, counted from the RAW cell. A checkbox column returns booleans, not text. */
+/** A number, or null. Blank is not zero and a Date is not a price. */
+function pvNum_(v) {
+  if (v === null || v === undefined || v === '') return null;
+  if (v instanceof Date) return null;
+  if (typeof v === 'number') return isFinite(v) ? v : null;
+  var s = pvStr_(v);
+  if (s === '') return null;
+  var n = Number(s.replace(/[$,\s]/g, ''));
+  return isFinite(n) ? n : null;
+}
+
+function pvKind_(v) {
+  if (v === '' || v === null || v === undefined) return 'blank';
+  if (v instanceof Date) return 'Date';
+  if (typeof v === 'number') return 'number';
+  if (typeof v === 'boolean') return 'boolean';
+  return 'string';
+}
+
+/** Does this number format make a numeric cell come back as a Date? */
+function pvIsDateFormat_(f) {
+  var s = pvStr_(f);
+  if (s === '' || s === '@') return false;
+  if (/^[0#.,$%\s]+$/.test(s)) return false;
+  return /y{2,}|d{1,2}\/|m{1,2}\/|dd|mmm/.test(s);
+}
+
+/**
+ * THIS FILE'S OWN JOIN. pricing_list -> marketplace_skus -> sku_details, on the ids, the way
+ * 72_api_v1_product_pricing_workspace.gs:1031-1034 resolves site membership. It is written here rather
+ * than called from the migration tool for the same reason the digests are: if the verifier resolves the
+ * source through the migration's own code, then a join that attached to the wrong product would verify
+ * clean against itself.
+ *
+ * A duplicate on either hop is AMBIGUOUS and is never resolved by taking the first candidate.
+ */
+function pvResolveSource_(priceGrid, pIdx, mGrid, mIdx, dGrid, dIdx) {
+  var byId = {}, dupId = {};
+  for (var i = 1; i < mGrid.length; i++) {
+    var id = pvStr_(mGrid[i][mIdx['marketplace_sku_id']]);
+    if (id === '') continue;
+    if (Object.prototype.hasOwnProperty.call(byId, id)) dupId[id] = 1; else byId[id] = mGrid[i];
+  }
+  var bySku = {}, dupSku = {};
+  for (var j = 1; j < dGrid.length; j++) {
+    var sk = pvStr_(dGrid[j][dIdx['sku']]).toLowerCase();
+    if (sk === '') continue;
+    if (Object.prototype.hasOwnProperty.call(bySku, sk)) dupSku[sk] = 1; else bySku[sk] = dGrid[j];
+  }
+  var rows = [];
+  for (var r = 1; r < priceGrid.length; r++) {
+    var mid = pvStr_(priceGrid[r][pIdx['marketplace_sku_id']]);
+    var rec = { row: r, pricing_id: pvStr_(priceGrid[r][pIdx['pricing_id']]), msku: mid,
+      sku: '', status: '', src: null };
+    if (mid === '') { rec.status = 'NO_IDENTITY'; rows.push(rec); continue; }
+    if (dupId[mid]) { rec.status = 'AMBIGUOUS_MARKETPLACE_SKU'; rows.push(rec); continue; }
+    var m = byId[mid];
+    if (!m) { rec.status = 'NO_MARKETPLACE_SKU'; rows.push(rec); continue; }
+    rec.sku = pvStr_(m[mIdx['sku']]);
+    if (rec.sku === '') { rec.status = 'NO_MASTER_SKU'; rows.push(rec); continue; }
+    var key = rec.sku.toLowerCase();
+    if (dupSku[key]) { rec.status = 'AMBIGUOUS_SKU_DETAILS'; rows.push(rec); continue; }
+    var d = bySku[key];
+    if (!d) { rec.status = 'NO_SKU_DETAILS'; rows.push(rec); continue; }
+    rec.status = 'MATCHED'; rec.src = d;
+    rows.push(rec);
+  }
+  return { rows: rows, dupIds: Object.keys(dupId), dupSkus: Object.keys(dupSku) };
+}
+
 function pvFlagCensus_(header, grid, field) {
   var c = pvIndex_(header)[field];
   var out = { present: c !== undefined, blank: 0, TRUE: 0, FALSE: 0, OTHER: 0, booleanCells: 0, samples: [] };
@@ -191,6 +322,15 @@ function TEMP_PRICING_R2_POST_VERIFY() {
 
   p('TEMP PRICING-R2 SCHEMA RECONCILIATION — POST VERIFY (READ ONLY)');
   p('generated_at (script clock): ' + new Date().toISOString());
+  p('PV_MODE_ = ' + PV_MODE_);
+  var syncMode = PV_MODE_ === 'BASE_SOURCE_SYNC';
+  if (syncMode) {
+    p('  BASE_SOURCE_SYNC: ' + PV_BASE_SYNC_FIELDS_.join(', '));
+    p('  those four are EXPECTED to differ from PRE and are verified against sku_details instead.');
+    p('  Every other PRE field must still be byte-identical to the snapshot.');
+  } else {
+    p('  SCHEMA_ONLY: every PRE field must be byte-identical. No value may have moved.');
+  }
   rule();
 
   if (typeof PRICING_LIST_HEADERS_ === 'undefined' || typeof PRICING_MANUAL_FLAG_COLUMNS_ === 'undefined'
@@ -325,8 +465,20 @@ function TEMP_PRICING_R2_POST_VERIFY() {
   p('  INDEPENDENT_DIGEST     = ' + postIndependent + '   (this file\'s own encoding — not comparable to the frozen value, and not meant to be)');
   p('  (the HEADER hash is EXPECTED to differ — the layout changed on purpose. A header hash that survived');
   p('   this migration would mean the migration had not happened.)');
+  // Identity is untouched in BOTH modes, so this stays binding and stays snapshot-independent. It is the
+  // only value anchor that survives a deleted snapshot, which is why it is checked first.
   valueCheck('PRICING_IDS_HASH == frozen PRE', postIdsHash === PV_PRE_IDS_HASH_);
-  valueCheck('FULL_LOGICAL_HASH == frozen PRE', postLogical === PV_PRE_LOGICAL_HASH_);
+  if (syncMode) {
+    p('  FULL_LOGICAL_HASH is EXPECTED to differ here. The frozen constant covers every PRE field,');
+    p('  including the base prices this round was authorised to change, so comparing against it');
+    p('  would report data loss on a correct sheet. The binding comparisons are the NON-BASE subset');
+    p('  below and the row-by-row check against sku_details.');
+    check('FULL_LOGICAL_HASH differs from frozen PRE (expected after a base sync)',
+      postLogical !== PV_PRE_LOGICAL_HASH_,
+      postLogical === PV_PRE_LOGICAL_HASH_ ? 'IDENTICAL — no base value changed; did the sync run?' : '');
+  } else {
+    valueCheck('FULL_LOGICAL_HASH == frozen PRE', postLogical === PV_PRE_LOGICAL_HASH_);
+  }
 
   // (b) against the PRE SNAPSHOT — the actual bytes from before the write, compared field by field
   var names = ss.getSheets().map(function (s) { return s.getName(); });
@@ -367,18 +519,38 @@ function TEMP_PRICING_R2_POST_VERIFY() {
       }
       var a = pvLogicalHash_(snapHead, snapGrid, g.fields, 'pricing_id');
       var b = pvLogicalHash_(head, grid, g.fields, 'pricing_id');
-      p('  ' + (g.key + '                    ').slice(0, 20) + ' ' + (a === b ? 'UNCHANGED' : '*** CHANGED ***'));
-      valueCheck(g.key + '_UNCHANGED', a === b, a === b ? '' : a + ' vs ' + b);
+      var expectedToMove = syncMode && g.key === 'BASE_VALUES';
+      p('  ' + (g.key + '                    ').slice(0, 20) + ' '
+        + (a === b ? 'UNCHANGED' : (expectedToMove ? 'CHANGED (expected — base sync)' : '*** CHANGED ***')));
+      if (expectedToMove) {
+        // Not skipped. A base sync that changed NOTHING is also a finding: it means the write did not do
+        // what it was authorised to do, and the seal would be sealing the old data.
+        check('BASE_VALUES changed from PRE (expected in BASE_SOURCE_SYNC mode)', a !== b,
+          a === b ? 'identical to PRE — the base sync appears not to have run' : '');
+      } else {
+        valueCheck(g.key + '_UNCHANGED', a === b, a === b ? '' : a + ' vs ' + b);
+      }
     });
 
     // Every PRE column, not only the grouped ones — so a field nobody thought to group cannot slip through.
-    var allSame = true, movedFields = [];
+    var movedFields = [], movedExpected = [];
     PV_PRE_FIELDS_.forEach(function (f) {
       var x = pvLogicalHash_(snapHead, snapGrid, [f], 'pricing_id');
       var y = pvLogicalHash_(head, grid, [f], 'pricing_id');
-      if (x !== y) { allSame = false; movedFields.push(f); }
+      if (x === y) return;
+      if (syncMode && PV_BASE_SYNC_FIELDS_.indexOf(f) !== -1) movedExpected.push(f);
+      else movedFields.push(f);
     });
-    valueCheck('EVERY one of the ' + PV_PRE_FIELDS_.length + ' PRE fields is unchanged', allSame, movedFields.join(','));
+    // Narrowed by the four declared names and by nothing else. A field outside that list is still data
+    // loss, still names itself, and still asks for the snapshot back.
+    var scopeLabel = syncMode
+      ? 'EVERY PRE field OUTSIDE the declared mutation set is unchanged'
+      : 'EVERY one of the ' + PV_PRE_FIELDS_.length + ' PRE fields is unchanged';
+    valueCheck(scopeLabel, movedFields.length === 0, movedFields.join(','));
+    if (syncMode) {
+      p('  EXPECTED mutation observed in: ' + (movedExpected.join(', ') || '(none — see the finding above)'));
+      p('  UNEXPECTED mutation observed in: ' + (movedFields.join(', ') || '(none)'));
+    }
   }
 
   if (logSnapName) {
@@ -396,6 +568,176 @@ function TEMP_PRICING_R2_POST_VERIFY() {
     } else {
       p('  change_log had 0 rows and has 0 rows — the rename re-interpreted nothing, because there was');
       p('  nothing to re-interpret. That is a vacuous proof, and it is reported as one.');
+    }
+  }
+
+  // ---- 4B. BASE VALUES AGAINST sku_details ------------------------------------------------------------------------
+  // THE CHECK THAT REPLACES "unchanged from PRE". Without it the four declared fields would be verified by
+  // nothing at all, and "expected to change" would quietly mean "unchecked".
+  var baseStats = { matched: 0, unmatched: 0, ambiguous: 0, noIdentity: 0, fields: {}, ran: false };
+  var dateCounts = { base_msrp: { date: 0, number: 0, blank: 0, other: 0 } };
+  var numericFmtBad = 0;
+  var baseFieldDateTypes = {};
+  if (syncMode) {
+    rule();
+    p('4B · BASE VALUES verified against ' + PV_SKU_TAB_ + ' — row by row, resolved on the ids');
+
+    // §1 — the contract, re-derived rather than taken from the task text.
+    var contractProblems = [];
+    if (typeof handleImportMarketplaceSkusBatch_ === 'function') {
+      var src04 = String(handleImportMarketplaceSkusBatch_);
+      [['selling_price', 'base_regular_price'], ['minimum_price', 'base_minimum_price'],
+       ['msrp', 'base_msrp']].forEach(function (pair) {
+        if (src04.indexOf("indexOf('" + pair[0] + "')") === -1) contractProblems.push('04_ no longer reads sku_details.' + pair[0]);
+        if (src04.indexOf("prCol('" + pair[1] + "')") === -1) contractProblems.push('04_ no longer writes pricing_list.' + pair[1]);
+      });
+    } else {
+      contractProblems.push('04_marketplace_forecast_import.gs is not loaded — the map could not be re-derived');
+    }
+
+    var msh = ss.getSheetByName(PV_MSKU_TAB_), dsh = ss.getSheetByName(PV_SKU_TAB_);
+    if (!msh || !dsh) {
+      // In this mode the base columns have no other verifier. A missing source table is therefore data
+      // that cannot be checked at all, not a cosmetic gap, and it must not seal.
+      valueCheck('base source tables present (' + PV_MSKU_TAB_ + ', ' + PV_SKU_TAB_ + ')', false,
+        (!msh ? PV_MSKU_TAB_ : '') + ' ' + (!dsh ? PV_SKU_TAB_ : ''));
+      p('  BLOCKED for the base layer: with no source table the four declared fields are verified by');
+      p('  nothing. This is reported as a VALUE failure, because unverified is not the same as correct.');
+    } else {
+      var mGrid = msh.getDataRange().getValues();
+      var dGrid = dsh.getDataRange().getValues();
+      var mIdx = pvIndex_((mGrid[0] || []).map(pvStr_));
+      var dIdx = pvIndex_((dGrid[0] || []).map(pvStr_));
+      var pIdx = pvIndex_(head);
+
+      var joinCols = [[PV_MSKU_TAB_, mIdx, ['marketplace_sku_id', 'sku']],
+                      [PV_SKU_TAB_, dIdx, ['sku']], [PV_PRICE_TAB_, pIdx, ['marketplace_sku_id']]];
+      var joinMissing = [];
+      joinCols.forEach(function (t) {
+        t[2].forEach(function (c) { if (t[1][c] === undefined) joinMissing.push(t[0] + '.' + c); });
+      });
+      var srcMissing = PV_BASE_SOURCE_MAP_.filter(function (m) { return dIdx[m.source] === undefined; })
+        .map(function (m) { return PV_SKU_TAB_ + '.' + m.source; });
+
+      p('BASE_SOURCE_CONTRACT_AGREES = ' + (contractProblems.length === 0 && srcMissing.length === 0 ? 'YES' : 'NO'));
+      contractProblems.forEach(function (x) { p('  ! ' + x); });
+      srcMissing.forEach(function (x) { p('  ! missing source column ' + x); });
+      p('BASE_SOURCE_JOIN_AGREES = ' + (joinMissing.length === 0 ? 'YES' : 'NO')
+        + (joinMissing.length ? '   missing: ' + joinMissing.join(', ') : ''));
+      check('BASE_SOURCE_CONTRACT_AGREES', contractProblems.length === 0 && srcMissing.length === 0,
+        contractProblems.concat(srcMissing).join('; '));
+      check('BASE_SOURCE_JOIN_AGREES', joinMissing.length === 0, joinMissing.join(', '));
+
+      if (joinMissing.length || srcMissing.length) {
+        valueCheck('base values verifiable against ' + PV_SKU_TAB_, false, 'the join or the source map is incomplete');
+      } else {
+        var J = pvResolveSource_(grid, pIdx, mGrid, mIdx, dGrid, dIdx);
+        J.rows.forEach(function (rec) {
+          if (rec.status === 'MATCHED') baseStats.matched++;
+          else if (rec.status === 'NO_IDENTITY') baseStats.noIdentity++;
+          else if (rec.status.indexOf('AMBIGUOUS') === 0) baseStats.ambiguous++;
+          else baseStats.unmatched++;
+        });
+        baseStats.ran = true;
+        p('SKU_DETAILS_MATCHED = ' + baseStats.matched);
+        p('SKU_DETAILS_UNMATCHED = ' + baseStats.unmatched);
+        p('JOIN_AMBIGUITY_COUNT = ' + baseStats.ambiguous
+          + (J.dupIds.length ? '   dup marketplace_sku_id: ' + J.dupIds.slice(0, 5).join(',') : '')
+          + (J.dupSkus.length ? '   dup sku_details.sku: ' + J.dupSkus.slice(0, 5).join(',') : ''));
+        p('ROWS_WITH_NO_JOIN_IDENTITY = ' + baseStats.noIdentity);
+        check('SKU_DETAILS_MATCHED == ' + rowCount, baseStats.matched === rowCount, String(baseStats.matched));
+        valueCheck('JOIN_AMBIGUITY_COUNT == 0', baseStats.ambiguous === 0, String(baseStats.ambiguous));
+
+        // PER FIELD. A nonblank source must be reproduced; a blank source must leave a blank target.
+        // Those are two different correct outcomes and they are counted apart, so "490 match" can never
+        // be read as "490 rows have a price".
+        PV_BASE_SOURCE_MAP_.forEach(function (m) {
+          var st = { match: 0, blankMatch: 0, mismatch: 0, unmatchedRows: 0, samples: [] };
+          J.rows.forEach(function (rec) {
+            if (rec.status !== 'MATCHED') { st.unmatchedRows++; return; }
+            var sv = rec.src[dIdx[m.source]];
+            var tv = grid[rec.row][pIdx[m.target]];
+            var sBlank = pvStr_(sv) === '', tBlank = pvStr_(tv) === '';
+            var okRow;
+            if (sBlank) {
+              okRow = tBlank;
+            } else if (m.numeric) {
+              var a = pvNum_(sv), b = pvNum_(tv);
+              okRow = a !== null && b !== null && Math.abs(a - b) < 1e-9;
+            } else {
+              okRow = pvStr_(sv) === pvStr_(tv);
+            }
+            if (!okRow) {
+              st.mismatch++;
+              if (st.samples.length < 12) {
+                st.samples.push(rec.pricing_id + ' | ' + rec.sku + ' | source '
+                  + JSON.stringify(sv instanceof Date ? sv.toISOString() : sv) + ' (' + pvKind_(sv) + ')'
+                  + ' | pricing_list ' + JSON.stringify(tv instanceof Date ? tv.toISOString() : tv)
+                  + ' (' + pvKind_(tv) + ')');
+              }
+            } else if (sBlank) { st.blankMatch++; } else { st.match++; }
+          });
+          baseStats.fields[m.target] = st;
+          var KEY = m.target.replace('base_', 'BASE_').replace('_price', '').toUpperCase();
+          p(KEY + '_MATCH_COUNT = ' + st.match
+            + '   ' + KEY + '_BLANK_MATCH_COUNT = ' + st.blankMatch
+            + '   ' + KEY + '_MISMATCH_COUNT = ' + st.mismatch);
+          st.samples.forEach(function (s2) { p('    MISMATCH  ' + s2); });
+          valueCheck(m.target + ' matches ' + PV_SKU_TAB_ + '.' + m.source + ' on every matched row',
+            st.mismatch === 0, st.mismatch + ' mismatched');
+
+          // The authorised plan's census, as a CROSS-CHECK. A disagreement means production moved between
+          // the plan and the write; it is worth seeing and it is not by itself data loss.
+          var exp = PV_EXPECTED_BASE_CENSUS_[m.target];
+          if (exp) {
+            check(m.target + ' census agrees with the authorised dry run',
+              st.match === exp.nonblank && st.blankMatch === exp.blank,
+              'measured ' + st.match + '/' + st.blankMatch + '  planned ' + exp.nonblank + '/' + exp.blank);
+          }
+        });
+
+        // §3 — TYPE AND FORMAT. Read the RAW cell and the number format, never the displayed text.
+        rule();
+        p('4C · BASE TYPE / FORMAT PROOF — raw values and number formats, not display');
+        var fmts = sh.getRange(1, 1, grid.length, head.length).getNumberFormats();
+        ['base_regular_price', 'base_minimum_price', 'base_msrp'].forEach(function (f) {
+          var c = pIdx[f];
+          var st2 = { date: 0, number: 0, blank: 0, other: 0, dateFmt: 0 };
+          for (var r2 = 1; r2 <= rowCount; r2++) {
+            var v = grid[r2][c];
+            var k = pvKind_(v);
+            if (k === 'Date') st2.date++;
+            else if (k === 'number') st2.number++;
+            else if (k === 'blank') st2.blank++;
+            else st2.other++;
+            if (pvIsDateFormat_((fmts[r2] || [])[c])) st2.dateFmt++;
+          }
+          baseFieldDateTypes[f] = st2;
+          numericFmtBad += st2.dateFmt;
+          p('  ' + f + '   number=' + st2.number + '  blank=' + st2.blank + '  Date=' + st2.date
+            + '  other=' + st2.other + '  cells with a DATE FORMAT=' + st2.dateFmt);
+          valueCheck(f.toUpperCase() + '_DATE_VALUE_COUNT == 0', st2.date === 0, String(st2.date));
+          valueCheck(f.toUpperCase() + '_OTHER_TYPE_COUNT == 0', st2.other === 0, String(st2.other));
+          check(f + ' has no cell carrying a date number format', st2.dateFmt === 0, String(st2.dateFmt));
+        });
+        dateCounts.base_msrp = baseFieldDateTypes['base_msrp'];
+        valueCheck('NUMERIC_BASE_FIELDS_WITH_DATE_FORMAT == 0', numericFmtBad === 0, String(numericFmtBad));
+
+        // Named rows an operator can open the spreadsheet and check by eye.
+        p('  SAMPLES (by master sku, because a row number means nothing after a reorder)');
+        PV_SAMPLE_SKUS_.forEach(function (want) {
+          var hit = null;
+          J.rows.forEach(function (rec) {
+            if (!hit && rec.status === 'MATCHED' && rec.sku.toLowerCase() === want.toLowerCase()) hit = rec;
+          });
+          if (!hit) { p('    ' + want + '   NOT FOUND in this spreadsheet'); return; }
+          var sM = hit.src[dIdx['msrp']], tM = grid[hit.row][pIdx['base_msrp']];
+          p('    ' + want + '   sku_details.msrp = ' + JSON.stringify(sM) + ' (' + pvKind_(sM) + ')'
+            + '   pricing_list.base_msrp = ' + JSON.stringify(tM instanceof Date ? tM.toISOString() : tM)
+            + ' (' + pvKind_(tM) + ')'
+            + '   format ' + JSON.stringify((fmts[hit.row] || [])[pIdx['base_msrp']]));
+        });
+      }
     }
   }
 
@@ -451,12 +793,59 @@ function TEMP_PRICING_R2_POST_VERIFY() {
   p('CHANGE_LOG_PROD_REQUIRE_SHEET   = ' + prodLog);
   p('PRE_SNAPSHOT_TABS               = ' + (snaps.concat(logSnaps).join(', ') || '(none)'));
 
+  // ---- THE BASE LAYER, reported under the names the task asks for ------------------------------------------
+  if (syncMode) {
+    rule();
+    p('BASE LAYER');
+    function passOf(label) {
+      var row = null;
+      checks.forEach(function (c) { if (c.label === label) row = c; });
+      return !row ? 'NOT MEASURED' : (row.ok ? 'PASS' : 'FAIL');
+    }
+    p('SKU_DETAILS_MATCHED             = ' + (baseStats.ran ? baseStats.matched : 'NOT MEASURED'));
+    p('SKU_DETAILS_UNMATCHED           = ' + (baseStats.ran ? baseStats.unmatched : 'NOT MEASURED'));
+    p('JOIN_AMBIGUITY_COUNT            = ' + (baseStats.ran ? baseStats.ambiguous : 'NOT MEASURED'));
+    PV_BASE_SOURCE_MAP_.forEach(function (m) {
+      var st = baseStats.fields[m.target];
+      var KEY = (m.target.replace('base_', 'BASE_').replace('_price', '') + '_MATCH_PASS').toUpperCase();
+      p((KEY + '                                ').slice(0, 32) + '= '
+        + passOf(m.target + ' matches ' + PV_SKU_TAB_ + '.' + m.source + ' on every matched row')
+        + (st ? '   match=' + st.match + ' blankMatch=' + st.blankMatch + ' mismatch=' + st.mismatch : ''));
+    });
+    var bm = baseFieldDateTypes['base_msrp'];
+    p('BASE_MSRP_DATE_VALUE_COUNT      = ' + (bm ? bm.date : 'NOT MEASURED'));
+    p('BASE_MSRP_NONBLANK_NUMBER_COUNT = ' + (bm ? bm.number : 'NOT MEASURED'));
+    p('BASE_MSRP_BLANK_COUNT           = ' + (bm ? bm.blank : 'NOT MEASURED'));
+    p('BASE_MSRP_OTHER_TYPE_COUNT      = ' + (bm ? bm.other : 'NOT MEASURED'));
+    p('NUMERIC_BASE_FIELDS_WITH_DATE_FORMAT = ' + (baseStats.ran ? numericFmtBad : 'NOT MEASURED'));
+
+    var baseAllOk = baseStats.ran;
+    PV_BASE_SOURCE_MAP_.forEach(function (m) {
+      if (passOf(m.target + ' matches ' + PV_SKU_TAB_ + '.' + m.source + ' on every matched row') !== 'PASS') baseAllOk = false;
+    });
+    if (bm && (bm.date > 0 || bm.other > 0)) baseAllOk = false;
+    if (numericFmtBad > 0) baseAllOk = false;
+    p('BASE_SOURCE_MATCH_PASS          = ' + (baseAllOk ? 'YES' : 'NO'));
+    // The base layer seals on its own evidence. A schema fault does not make the base data wrong, and a
+    // base mismatch does not make the schema wrong; reporting one verdict for both would hide whichever
+    // of them was fine.
+    p('PRICING_R2_BASE_LAYER           = ' + (baseAllOk ? 'SEALED' : 'NOT SEALED'));
+  } else {
+    rule();
+    p('BASE LAYER                      = NOT APPLICABLE (PV_MODE_ = ' + PV_MODE_ + ')');
+  }
+
   // A value invariant failing means data is gone and the snapshot is the way back. A shape invariant failing
   // with every value intact does not: restoring would discard a correct migration to fix a cosmetic fault,
   // and re-running the reconciliation is both cheaper and reversible. The two are not the same event and are
   // not reported as one.
   p('ROLLBACK_REQUIRED               = ' + (valueFailures.length ? 'YES — ' + valueFailures.join('; ')
     : (allOk ? 'NO' : 'NO — every VALUE invariant passed; the failures above are shape, not data')));
+  if (syncMode) {
+    p('  base_* differing from PRE is NOT on that list and cannot get onto it: in this mode the PRE');
+    p('  comparison for those four fields is not a value invariant at all. What IS on the list is a');
+    p('  base value that disagrees with sku_details, which is the stronger claim it was replaced by.');
+  }
   p('');
   if (allOk) {
     p('PRICING_R2_DB_SCHEMA = SEALED');

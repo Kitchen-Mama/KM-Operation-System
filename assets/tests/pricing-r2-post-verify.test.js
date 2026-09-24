@@ -22,6 +22,7 @@ function readN(rel) { return read(rel).replace(/\r\n/g, '\n'); }
 var VERIFY = readN('assets/tools/apps-script-diagnostics/TEMP_PRICING_R2_POST_VERIFY.gs');
 var TOOL = readN('assets/tools/apps-script-diagnostics/TEMP_PRICING_R2_SCHEMA_RECONCILE.gs');
 var GS73 = readN('assets/specs/active/apps-script/73_api_v1_pricing_write.gs');
+var GS04 = readN('assets/specs/active/apps-script/04_marketplace_forecast_import.gs');
 var KMSAFE = require(path.join(ROOT, 'assets', 'js', 'core', 'supply-planning-production-safety.js'));
 
 var pass = 0, fail = 0, mutCaught = 0, mutSurvived = 0;
@@ -58,6 +59,11 @@ var LIVE_LOG = ['pricing_log_id', 'pricing_id', 'sku', 'country', 'marketplace',
 function fakeSheet(name, grid) {
   var g = grid.map(function (r) { return r.slice(); });
   var S = {
+    // Per-cell number formats, default "@". The verifier reads these to prove no numeric base column is
+    // carrying a date format. This fake stores them beside the values rather than coercing on read — a
+    // test that wants a Date IN the cell puts a real Date there, which is exactly what getValues would
+    // hand back, so both halves of the §3 proof are expressible without pretending to be Sheets.
+    __fmt: g.map(function (r) { return r.map(function () { return '@'; }); }),
     __grid: g, __name: name, __rangeWrites: 0, __cellWrites: 0, __cleared: 0, __widened: 0,
     getName: function () { return S.__name; },
     setName: function (n) { S.__name = n; return S; },
@@ -84,6 +90,15 @@ function fakeSheet(name, grid) {
       nr = nr || 1; nc = nc || 1;
       return {
         __sheet: S, __r: r, __c: c,
+        getNumberFormats: function () {
+          var o = [];
+          for (var i = 0; i < nr; i++) {
+            var row = [];
+            for (var j = 0; j < nc; j++) row.push(((S.__fmt[r - 1 + i] || [])[c - 1 + j]) || '@');
+            o.push(row);
+          }
+          return o;
+        },
         getValues: function () {
           var o = [];
           for (var i = 0; i < nr; i++) { var row = []; for (var j = 0; j < nc; j++) row.push((g[r - 1 + i] || [])[c - 1 + j]); o.push(row); }
@@ -186,8 +201,25 @@ function makeWorld(opts) {
     var o = c.setName; c.setName = function (n) { extra[n] = c; return o.call(c, n); }; return c; };
 
   vm.createContext(S);
+  // The REAL 04_marketplace_forecast_import.gs, so the verifier's §1 contract cross-check is measured
+  // against the actual import rather than against a stub written to agree with it. Nothing in it is ever
+  // CALLED here — only stringified.
+  if (opts.gs04 !== null) vm.runInContext(opts.gs04 || GS04, S, { filename: '04_marketplace_forecast_import.gs' });
   vm.runInContext(opts.tool || TOOL, S, { filename: 'TEMP_PRICING_R2_SCHEMA_RECONCILE.gs' });
   vm.runInContext(opts.verify || VERIFY, S, { filename: 'TEMP_PRICING_R2_POST_VERIFY.gs' });
+  // DECLARED, not inherited. Every case in this suite except section J verifies a SCHEMA-ONLY migration,
+  // where no value may move; leaving the mode at whatever the file happens to default to would mean these
+  // assertions silently changed meaning the next time that default did.
+  S.PV_MODE_ = opts.mode || 'SCHEMA_ONLY';
+  // The base-source tables, present so the sync-mode section can use them and absent-by-default behaviour
+  // stays honest: a SCHEMA_ONLY run must never consult them.
+  if (opts.mskuRows || opts.skuRows) {
+    extra['marketplace_skus'] = fakeSheet('marketplace_skus',
+      [opts.mskuHeader || ['marketplace_sku_id', 'sku']].concat(opts.mskuRows || []));
+    extra['sku_details'] = fakeSheet('sku_details',
+      [opts.skuHeader || ['sku', 'selling_price', 'minimum_price', 'msrp', 'base_currency']]
+        .concat(opts.skuRows || []));
+  }
   return S;
 }
 
@@ -630,8 +662,8 @@ mut('H7  a missing PRE snapshot is not reported as a gap',
 // 8 — only the grouped fields are compared, so a PRE column nobody thought to put in a group can move
 // unnoticed. price_status is in no group.
 mut('H8  only the grouped fields are compared, not every PRE field',
-  "    valueCheck('EVERY one of the ' + PV_PRE_FIELDS_.length + ' PRE fields is unchanged', allSame, movedFields.join(','));",
-  "    valueCheck('EVERY one of the ' + PV_PRE_FIELDS_.length + ' PRE fields is unchanged', true, '');",
+  "    valueCheck(scopeLabel, movedFields.length === 0, movedFields.join(','));",
+  "    valueCheck(scopeLabel, true, '');",
   function (m) {
     var r = migrateThenVerify({ rows: rows(10), verify: m, beforeVerify: function (w) {
       var c = w.__price.__grid[0].indexOf('price_status');
@@ -656,5 +688,300 @@ mut('H9  the frozen baseline is compared in an encoding it was never measured in
   });
 
 // =============================================================================================================
+// =============================================================================================================
+section('J · BASE_SOURCE_SYNC MODE — the acceptance rule that replaces "unchanged from PRE"');
+// =============================================================================================================
+{
+  // sku_details holds values DELIBERATELY different from the pre-migration pricing_list. A sync that did
+  // nothing would leave 29.99 / 20 / 39.99 in place, so "the target equals the source" cannot be satisfied
+  // by the tool simply not running.
+  var SKUD_HEAD = ['sku', 'selling_price', 'minimum_price', 'msrp', 'base_currency'];
+  function skuRows(over) {
+    var a = [];
+    for (var i = 1; i <= 5; i++) {
+      a.push(['SKU-' + i, 31.5 + i, 21, (i % 2 ? 35 : 40), 'USD']);
+    }
+    if (over) over(a);
+    return a;
+  }
+  function mskuRows() {
+    var a = [];
+    for (var i = 1; i <= 5; i++) a.push(['MSKU-' + i, 'SKU-' + i]);
+    return a;
+  }
+
+  /** Apply the authorised base sync to the POST sheet, the way the migration did on production. */
+  function applySync(w, sd) {
+    var g = w.__price.__grid;
+    var head = g[0];
+    var byId = {};
+    sd.forEach(function (r) { byId[r[0]] = r; });
+    var cSku = head.indexOf('sku');
+    var map = [['base_regular_price', 1], ['base_minimum_price', 2], ['base_msrp', 3], ['base_currency', 4]];
+    for (var r2 = 1; r2 < g.length; r2++) {
+      var src = byId[g[r2][cSku]];
+      if (!src) continue;
+      map.forEach(function (m) { g[r2][head.indexOf(m[0])] = src[m[1]]; });
+    }
+  }
+
+  function syncRun(opts) {
+    opts = opts || {};
+    var sd = skuRows(opts.overSource);
+    return migrateThenVerify({
+      rows: rows(5), mskuRows: mskuRows(), skuRows: sd, skuHeader: SKUD_HEAD,
+      beforeVerify: function (w) {
+        applySync(w, sd);
+        w.PV_MODE_ = 'BASE_SOURCE_SYNC';
+        // Production's census is 495 rows; this world is 5. The cross-check is armed for THIS world so a
+        // fixture size cannot masquerade as a production disagreement.
+        w.PV_EXPECTED_BASE_CENSUS_ = {
+          base_regular_price: { nonblank: 5, blank: 0 }, base_minimum_price: { nonblank: 5, blank: 0 },
+          base_msrp: { nonblank: 5, blank: 0 }, base_currency: { nonblank: 5, blank: 0 }
+        };
+        if (opts.after) opts.after(w);
+      }
+    });
+  }
+
+  // J1 — AN AUTHORISED BASE SYNC DOES NOT TRIGGER ROLLBACK. This is the whole reason the mode exists: the
+  // old rule reported data loss on this exact sheet and recommended restoring a snapshot over it.
+  var r1 = syncRun();
+  ok(/PV_MODE_ = BASE_SOURCE_SYNC/.test(r1.ver), 'J1  the run declares the mode it is judging by');
+  ok(/ROLLBACK_REQUIRED               = NO/.test(r1.ver), 'J1a an authorised base sync does NOT ask for rollback');
+  ok(/BASE_SOURCE_MATCH_PASS          = YES/.test(r1.ver), 'J1b because the base values match sku_details');
+  ok(/PRICING_R2_BASE_LAYER           = SEALED/.test(r1.ver), 'J1c and the base layer seals');
+  ok(/BASE_VALUES.*CHANGED \(expected — base sync\)/.test(r1.ver), 'J1d the mutation is named as expected');
+  ok(/EXPECTED mutation observed in: /.test(r1.ver), 'J1e and the moved fields are listed');
+  ok(/UNEXPECTED mutation observed in: \(none\)/.test(r1.ver), 'J1f with nothing outside the declared set');
+  ok(/BASE_SOURCE_CONTRACT_AGREES = YES/.test(r1.ver), 'J1g §1 contract re-derived and agreeing');
+  ok(/BASE_SOURCE_JOIN_AGREES = YES/.test(r1.ver), 'J1h §1 join re-derived and agreeing');
+  ok(/SKU_DETAILS_MATCHED = 5/.test(r1.ver), 'J1i every row resolved to exactly one source');
+  ok(/JOIN_AMBIGUITY_COUNT = 0/.test(r1.ver), 'J1j no ambiguity');
+
+  // AND THE SAME SHEET UNDER THE OLD RULE. If this did not fail, J1 would be proving nothing: the mode
+  // would be decorative and the sheet would have passed either way.
+  var rOld = migrateThenVerify({
+    rows: rows(5), mskuRows: mskuRows(), skuRows: skuRows(), skuHeader: SKUD_HEAD,
+    beforeVerify: function (w) { applySync(w, skuRows()); }      // mode stays SCHEMA_ONLY
+  });
+  ok(/ROLLBACK_REQUIRED               = YES/.test(rOld.ver),
+    'J2  the SAME sheet under SCHEMA_ONLY demands a rollback — which is the defect this mode fixes');
+  ok(/BASE_VALUES_UNCHANGED/.test(rOld.ver), 'J2a naming BASE_VALUES as the loss it thinks it found');
+
+  // J3 — a base value that does NOT match sku_details fails, and names the row.
+  var r3 = syncRun({ after: function (w) {
+    var g = w.__price.__grid; g[1][g[0].indexOf('base_msrp')] = 999;
+  } });
+  ok(/BASE_MSRP_MISMATCH_COUNT = 1/.test(r3.ver), 'J3  a base value disagreeing with sku_details is counted');
+  ok(/MISMATCH  PRC-1001 \| SKU-1 \| source 35/.test(r3.ver), 'J3a and the row is named, both sides shown');
+  ok(/ROLLBACK_REQUIRED               = YES/.test(r3.ver), 'J3b it is a VALUE failure, so rollback is required');
+  ok(/PRICING_R2_BASE_LAYER           = NOT SEALED/.test(r3.ver), 'J3c and the base layer does not seal');
+
+  // J4 — a blank source must leave a blank target; a blank source with a VALUE in pricing_list is a
+  // mismatch, not a pass. Blank is the one that is easiest to get wrong in the forgiving direction.
+  // applySync copies the source faithfully, blanks included, so blanking the source alone would blank the
+  // target too and prove nothing. The target is put back on purpose: a blank source against a price is the
+  // forgiving direction, and it is the one that has to fail.
+  var r4 = syncRun({
+    overSource: function (a) { a[2][3] = ''; },
+    after: function (w) { var g = w.__price.__grid; g[3][g[0].indexOf('base_msrp')] = 39.99; }
+  });
+  ok(/BASE_MSRP_MISMATCH_COUNT = 1/.test(r4.ver),
+    'J4  a blank source against a nonblank target is a mismatch, not a tolerated blank');
+  ok(/ROLLBACK_REQUIRED               = YES/.test(r4.ver), 'J4e and it is a value failure');
+  var r4b = syncRun({
+    overSource: function (a) { a[2][3] = ''; },
+    after: function (w) { var g = w.__price.__grid; g[3][g[0].indexOf('base_msrp')] = ''; }
+  });
+  ok(/BASE_MSRP_BLANK_MATCH_COUNT = 1/.test(r4b.ver), 'J4a blank source + blank target is a MATCH...');
+  ok(/BASE_MSRP_MISMATCH_COUNT = 0/.test(r4b.ver), 'J4b ...and counts zero mismatches');
+  ok(/BASE_SOURCE_MATCH_PASS          = YES/.test(r4b.ver), 'J4c and still seals');
+  ok(/BASE_MSRP_MATCH_COUNT = 4/.test(r4b.ver), 'J4d with the blank counted apart from the four matches');
+
+  // J5 — FX / auto / effective drift still fails, in sync mode, exactly as before. The narrowing is four
+  // names; it is not a relaxation.
+  [['fx_rate', 'FX_VALUES'], ['auto_msrp', 'AUTO_VALUES'], ['msrp', 'EFFECTIVE_VALUES'],
+   ['company', 'EXTENSION_VALUES'], ['marketplace_sku_id', 'PRICING_IDS']].forEach(function (pair) {
+    var rr = syncRun({ after: function (w) {
+      var g = w.__price.__grid; g[1][g[0].indexOf(pair[0])] = 'MOVED';
+    } });
+    ok(new RegExp('FAIL  ' + pair[1] + '_UNCHANGED').test(rr.ver),
+      'J5  ' + pair[0] + ' drifting still fails ' + pair[1] + '_UNCHANGED in sync mode');
+    ok(/ROLLBACK_REQUIRED               = YES/.test(rr.ver), 'J5a ' + pair[0] + ' drift still demands rollback');
+    ok(new RegExp('UNEXPECTED mutation observed in: .*' + pair[0]).test(rr.ver),
+      'J5b ' + pair[0] + ' is named as an UNEXPECTED mutation');
+  });
+
+  // J6 — a field outside the four, that nobody grouped, still gets caught by the all-fields sweep.
+  var r6 = syncRun({ after: function (w) {
+    var g = w.__price.__grid; g[1][g[0].indexOf('price_status')] = 'published';
+  } });
+  ok(/FAIL  EVERY PRE field OUTSIDE the declared mutation set is unchanged/.test(r6.ver),
+    'J6  an ungrouped field outside the declared set is still data loss');
+  ok(/ROLLBACK_REQUIRED               = YES/.test(r6.ver), 'J6a and still asks for the snapshot back');
+
+  // J7 — a base sync that changed NOTHING is a finding too. Sealing there would seal the old data.
+  var r7 = migrateThenVerify({
+    rows: rows(5), mskuRows: mskuRows(), skuRows: skuRows(), skuHeader: SKUD_HEAD,
+    beforeVerify: function (w) { w.PV_MODE_ = 'BASE_SOURCE_SYNC'; }        // no applySync
+  });
+  ok(/FAIL  BASE_VALUES changed from PRE \(expected in BASE_SOURCE_SYNC mode\)/.test(r7.ver),
+    'J7  a base sync that moved nothing is reported, not sealed as clean');
+  ok(/the base sync appears not to have run/.test(r7.ver), 'J7a in words the operator can act on');
+
+  // J8 — §3 type and format. A Date in base_msrp is the original incident; a date FORMAT on a numeric
+  // base cell is the mechanism that produced it. Both are reported, and the first is a value failure.
+  var r8 = syncRun({ after: function (w) {
+    var g = w.__price.__grid; g[1][g[0].indexOf('base_msrp')] = new Date(Date.UTC(1900, 1, 3));
+  } });
+  ok(/BASE_MSRP_DATE_VALUE_COUNT      = 1/.test(r8.ver), 'J8  a Date in base_msrp is counted');
+  ok(/ROLLBACK_REQUIRED               = YES/.test(r8.ver), 'J8a and is a value failure');
+  var r9 = syncRun({ after: function (w) {
+    w.__price.__fmt[1][w.__price.__grid[0].indexOf('base_msrp')] = 'yyyy-mm-dd';
+  } });
+  ok(/NUMERIC_BASE_FIELDS_WITH_DATE_FORMAT = 1/.test(r9.ver),
+    'J9  a date FORMAT on a numeric base cell is caught even while the value is still a number');
+  ok(/ROLLBACK_REQUIRED               = YES/.test(r9.ver), 'J9a it is the mechanism of the incident, so it blocks');
+
+  // J10 — ambiguity on either hop is never resolved by picking one.
+  var r10 = migrateThenVerify({
+    rows: rows(5), mskuRows: mskuRows().concat([['MSKU-2', 'SKU-2']]), skuRows: skuRows(), skuHeader: SKUD_HEAD,
+    beforeVerify: function (w) { applySync(w, skuRows()); w.PV_MODE_ = 'BASE_SOURCE_SYNC'; }
+  });
+  ok(/JOIN_AMBIGUITY_COUNT = 1/.test(r10.ver), 'J10 a duplicate marketplace_sku_id is ambiguous');
+  ok(/FAIL  JOIN_AMBIGUITY_COUNT == 0/.test(r10.ver), 'J10a and fails');
+
+  // J11 — with no source tables at all, the four declared fields are verified by NOTHING. That must not
+  // seal: unverified is not the same as correct, and this is the failure mode the narrowing could create.
+  var r11 = migrateThenVerify({
+    rows: rows(5),
+    beforeVerify: function (w) { w.PV_MODE_ = 'BASE_SOURCE_SYNC'; }        // no marketplace_skus/sku_details
+  });
+  ok(/FAIL  base source tables present/.test(r11.ver),
+    'J11 sync mode with no source table is a VALUE failure, not a quiet pass');
+  ok(/ROLLBACK_REQUIRED               = YES/.test(r11.ver), 'J11a and cannot seal');
+
+  ok(/PRICING_R2_DB_SCHEMA = SEALED/.test(r1.ver), 'J12 and the clean sync seals the schema too');
+}
+
+// =============================================================================================================
+section('K · MUTATION — the ways the narrowing could quietly become a relaxation');
+// =============================================================================================================
+
+// K1 — the narrowing is applied to EVERY field instead of the four declared ones, so nothing outside the
+// mutation set is checked any more. This is the one real danger in the whole change.
+mut('K1  sync mode skips the PRE check for every field, not just the declared four',
+  "      if (syncMode && PV_BASE_SYNC_FIELDS_.indexOf(f) !== -1) movedExpected.push(f);",
+  "      if (syncMode) movedExpected.push(f);",
+  function (m) {
+    var sd = [];
+    for (var i = 1; i <= 5; i++) sd.push(['SKU-' + i, 31.5 + i, 21, (i % 2 ? 35 : 40), 'USD']);
+    var ms = [];
+    for (var j = 1; j <= 5; j++) ms.push(['MSKU-' + j, 'SKU-' + j]);
+    var r = migrateThenVerify({
+      rows: rows(5), mskuRows: ms, skuRows: sd, verify: m,
+      skuHeader: ['sku', 'selling_price', 'minimum_price', 'msrp', 'base_currency'],
+      beforeVerify: function (w) {
+        var g = w.__price.__grid, hd = g[0];
+        var by = {}; sd.forEach(function (x) { by[x[0]] = x; });
+        for (var r2 = 1; r2 < g.length; r2++) {
+          var s2 = by[g[r2][hd.indexOf('sku')]];
+          if (!s2) continue;
+          [['base_regular_price', 1], ['base_minimum_price', 2], ['base_msrp', 3], ['base_currency', 4]]
+            .forEach(function (p2) { g[r2][hd.indexOf(p2[0])] = s2[p2[1]]; });
+        }
+        g[1][hd.indexOf('auto_msrp')] = 'MOVED';
+        w.PV_MODE_ = 'BASE_SOURCE_SYNC';
+        w.PV_EXPECTED_BASE_CENSUS_ = {
+          base_regular_price: { nonblank: 5, blank: 0 }, base_minimum_price: { nonblank: 5, blank: 0 },
+          base_msrp: { nonblank: 5, blank: 0 }, base_currency: { nonblank: 5, blank: 0 }
+        };
+      }
+    });
+    // The grouped AUTO_VALUES check still fires; what the mutant destroys is the all-fields sweep, so the
+    // fingerprint is that auto_msrp is no longer named as an UNEXPECTED mutation.
+    return !/UNEXPECTED mutation observed in: .*auto_msrp/.test(r.ver);
+  });
+
+// K2 — the base comparison always agrees. The four fields would then be "verified" by a function that
+// cannot fail, which is indistinguishable from not verifying them at all.
+mut('K2  the base-vs-sku_details comparison can never fail',
+  "            if (!okRow) {",
+  "            if (false) {",
+  function (m) {
+    var sd = [];
+    for (var i = 1; i <= 5; i++) sd.push(['SKU-' + i, 31.5 + i, 21, (i % 2 ? 35 : 40), 'USD']);
+    var ms = [];
+    for (var j = 1; j <= 5; j++) ms.push(['MSKU-' + j, 'SKU-' + j]);
+    var r = migrateThenVerify({
+      rows: rows(5), mskuRows: ms, skuRows: sd, verify: m,
+      skuHeader: ['sku', 'selling_price', 'minimum_price', 'msrp', 'base_currency'],
+      beforeVerify: function (w) {
+        var g = w.__price.__grid, hd = g[0];
+        var by = {}; sd.forEach(function (x) { by[x[0]] = x; });
+        for (var r2 = 1; r2 < g.length; r2++) {
+          var s2 = by[g[r2][hd.indexOf('sku')]];
+          if (!s2) continue;
+          [['base_regular_price', 1], ['base_minimum_price', 2], ['base_msrp', 3], ['base_currency', 4]]
+            .forEach(function (p2) { g[r2][hd.indexOf(p2[0])] = s2[p2[1]]; });
+        }
+        g[1][hd.indexOf('base_msrp')] = 999;            // a base value that disagrees with the source
+        w.PV_MODE_ = 'BASE_SOURCE_SYNC';
+        w.PV_EXPECTED_BASE_CENSUS_ = {
+          base_regular_price: { nonblank: 5, blank: 0 }, base_minimum_price: { nonblank: 5, blank: 0 },
+          base_msrp: { nonblank: 5, blank: 0 }, base_currency: { nonblank: 5, blank: 0 }
+        };
+      }
+    });
+    return !/BASE_MSRP_MISMATCH_COUNT = 1/.test(r.ver);
+  });
+
+// K3 — a missing source table is downgraded to a shape finding, so an unverifiable base layer seals.
+mut('K3  a missing source table no longer blocks the seal',
+  "      valueCheck('base source tables present (' + PV_MSKU_TAB_ + ', ' + PV_SKU_TAB_ + ')', false,",
+  "      check('base source tables present (' + PV_MSKU_TAB_ + ', ' + PV_SKU_TAB_ + ')', false,",
+  function (m) {
+    var r = migrateThenVerify({
+      rows: rows(5), verify: m, beforeVerify: function (w) { w.PV_MODE_ = 'BASE_SOURCE_SYNC'; }
+    });
+    return !/ROLLBACK_REQUIRED               = YES/.test(r.ver);
+  });
+
+// K4 — the mode is INFERRED from the sheet instead of declared. A verifier that picks its own rules can
+// always find a set under which the thing in front of it passes.
+mut('K4  the mode is inferred rather than declared',
+  "  var syncMode = PV_MODE_ === 'BASE_SOURCE_SYNC';",
+  "  var syncMode = true;",
+  function (m) {
+    // The sheet the mutant can actually hide: a SCHEMA_ONLY migration whose base values happen to agree
+    // with sku_details. The real file judges it by SCHEMA_ONLY rules and calls the drift data loss; the
+    // mutant judges it by sync rules, finds the base matching, and seals a migration nobody declared.
+    var sd = [];
+    for (var i = 1; i <= 5; i++) sd.push(['SKU-' + i, 31.5 + i, 21, (i % 2 ? 35 : 40), 'USD']);
+    var ms = [];
+    for (var j = 1; j <= 5; j++) ms.push(['MSKU-' + j, 'SKU-' + j]);
+    var r = migrateThenVerify({
+      rows: rows(5), mskuRows: ms, skuRows: sd, verify: m,
+      skuHeader: ['sku', 'selling_price', 'minimum_price', 'msrp', 'base_currency'],
+      beforeVerify: function (w) {
+        var g = w.__price.__grid, hd = g[0];
+        var by = {}; sd.forEach(function (x) { by[x[0]] = x; });
+        for (var r2 = 1; r2 < g.length; r2++) {
+          var s2 = by[g[r2][hd.indexOf('sku')]];
+          if (!s2) continue;
+          [['base_regular_price', 1], ['base_minimum_price', 2], ['base_msrp', 3], ['base_currency', 4]]
+            .forEach(function (p2) { g[r2][hd.indexOf(p2[0])] = s2[p2[1]]; });
+        }
+        w.PV_EXPECTED_BASE_CENSUS_ = {
+          base_regular_price: { nonblank: 5, blank: 0 }, base_minimum_price: { nonblank: 5, blank: 0 },
+          base_msrp: { nonblank: 5, blank: 0 }, base_currency: { nonblank: 5, blank: 0 }
+        };
+        // PV_MODE_ deliberately LEFT at SCHEMA_ONLY. That is the declaration under test.
+      }
+    });
+    return !/ROLLBACK_REQUIRED               = YES/.test(r.ver);
+  });
+
 console.log('\n' + pass + ' passed / ' + fail + ' failed   ·   ' + (mutCaught + mutSurvived) + ' mutants, ' + mutSurvived + ' survived');
 process.exit(fail === 0 ? 0 : 1);
