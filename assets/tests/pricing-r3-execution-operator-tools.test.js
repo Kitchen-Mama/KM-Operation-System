@@ -109,8 +109,12 @@ function makeWorld(src, opts) {
       },
       flush: function () {}
     },
+    Session: { getScriptTimeZone: function () { return 'UTC'; } },
     Utilities: {
       DigestAlgorithm: { SHA_256: 'SHA_256' }, Charset: { UTF_8: 'UTF_8' },
+      // A real fx_rate_date cell comes back from getValues as a Date, not a string, so the census has to
+      // normalise it before it can be compared or sorted. This models that.
+      formatDate: function (d) { return d.toISOString().slice(0, 10); },
       computeDigest: function (alg, s) {
         var h = crypto.createHash('sha256').update(String(s), 'utf8').digest();
         return Array.prototype.slice.call(h).map(function (b) { return b > 127 ? b - 256 : b; });
@@ -303,6 +307,58 @@ section('E · THE CENSUS — read-only, and what it counts');
 }
 
 // =============================================================================================================
+// =============================================================================================================
+section('H · THE FX PRECHECK CENSUS — the rate, its date, and what a refresh would rebuild');
+// =============================================================================================================
+{
+  var migrated2 = ROWS.map(function (row) {
+    var o = {}; PRE_HEADER.forEach(function (h, i) { o[h] = row[i]; });
+    return CANON.map(function (h) { return Object.prototype.hasOwnProperty.call(o, h) ? o[h] : ''; });
+  });
+  var wh = makeWorld(CEN, { priceHeader: CANON, logHeader: LOGCANON, rows: migrated2 });
+  var rh = wh.TEMP_PRICING_R3_CENSUS();
+  function v(k) { var m = new RegExp(k + '\\s*=\\s*(\\S+)').exec(rh); return m ? m[1] : null; }
+
+  eq(wh.__price.__headerWrites + wh.__price.__dataWrites, 0, 'H0  the extended census still writes nothing');
+
+  // THE RATE ITSELF.
+  eq(v('FX_RATE_MISSING_ROWS'), '0', 'H1  FX_RATE_MISSING_ROWS — every fixture row carries a rate');
+  eq(v('FX_RATE_DATE_MISSING_ROWS'), '2', 'H2  two rows have no fx_rate_date at all');
+  eq(v('FX_RATE_DATE_OLDEST'), '2026-01-01', 'H3  the oldest date is reported');
+  eq(v('FX_RATE_DATE_NEWEST'), '2026-01-01', 'H3a and the newest');
+  ok(/2026-01-01  x1/.test(rh), 'H4  with the distribution, so a threshold can be chosen from real data');
+
+  // STALENESS IS A POLICY, AND NOBODY HAS SET ONE. Reporting a number here would look exactly like a
+  // measurement, and the operator would act on it.
+  eq(v('FX_RATE_STALE_ROWS'), 'NOT_DEFINED', 'H5  FX_RATE_STALE_ROWS is NOT_DEFINED, not guessed');
+  ok(/No staleness threshold exists/.test(rh), 'H5a and the report says why');
+  wh.TEMP_PR3C_STALE_BEFORE_ = '2026-06-01';
+  var rh2 = wh.TEMP_PRICING_R3_CENSUS();
+  ok(/FX_RATE_STALE_ROWS              = 1   \(fx_rate_date before 2026-06-01\)/.test(rh2),
+    'H6  once the operator declares a threshold it is applied, and the threshold is shown with the count');
+
+  // WHAT A REFRESH WORKS FROM, AND WHAT IT WOULD REBUILD. These are different questions and a blank in
+  // either one means "no price", never zero.
+  ok(/BASE_REGULAR_AVAILABLE = 3   BASE_REGULAR_BLANK = 0/.test(rh), 'H7  base regular availability');
+  ok(/BASE_MINIMUM_AVAILABLE = 1   BASE_MINIMUM_BLANK = 2/.test(rh), 'H7a base minimum');
+  ok(/BASE_MSRP_AVAILABLE = 1   BASE_MSRP_BLANK = 2/.test(rh), 'H7b base msrp');
+  ok(/AUTO_REGULAR_EXISTING = 3   AUTO_REGULAR_BLANK = 0/.test(rh), 'H8  auto regular reference');
+  ok(/AUTO_MINIMUM_EXISTING = 1   AUTO_MINIMUM_BLANK = 2/.test(rh), 'H8a auto minimum');
+  ok(/AUTO_MSRP_EXISTING = 1   AUTO_MSRP_BLANK = 2/.test(rh), 'H8b auto msrp');
+  ok(/0 is a price/.test(rh), 'H9  and the report says a blank base never becomes 0');
+
+  // A Date-typed fx_rate_date is what the real sheet hands back; it must normalise, not stringify to
+  // something unsortable.
+  var dated = migrated2.map(function (x) { return x.slice(); });
+  dated[1][CANON.indexOf('fx_rate_date')] = new Date(Date.UTC(2025, 5, 15));
+  var wd = makeWorld(CEN, { priceHeader: CANON, logHeader: LOGCANON, rows: dated });
+  var rd = wd.TEMP_PRICING_R3_CENSUS();
+  eq((/FX_RATE_DATE_OLDEST\s*=\s*(\S+)/.exec(rd) || [])[1], '2025-06-15',
+    'H10 a Date-typed fx_rate_date is normalised and sorts correctly');
+  eq((/FX_RATE_DATE_MISSING_ROWS\s*=\s*(\d+)/.exec(rd) || [])[1], '1', 'H10a and counts as present');
+}
+
+// =============================================================================================================
 section('F · MUTANTS');
 // =============================================================================================================
 function nl(src, t) { return src.indexOf('\r\n') !== -1 ? t.split('\n').join('\r\n') : t; }
@@ -411,6 +467,52 @@ mut('F8  the census writes to the sheet', CEN,
     w.TEMP_PRICING_R3_CENSUS();
     return (w.__price.__headerWrites + w.__price.__dataWrites) > 0;
   });
+
+// =============================================================================================================
+section('I · MUTANTS FOR THE FX PRECHECK');
+// =============================================================================================================
+function censusMutant(label, from, to, probe) {
+  if (CEN.indexOf(from) === -1) { fail++; console.error('FAIL ' + label + '   [anchor not found]'); return; }
+  if (CEN.split(from).length - 1 !== 1) { fail++; console.error('FAIL ' + label + '   [anchor not unique]'); return; }
+  var m = CEN.replace(from, to);
+  var migrated3 = ROWS.map(function (row) {
+    var o = {}; PRE_HEADER.forEach(function (h, i) { o[h] = row[i]; });
+    return CANON.map(function (h) { return Object.prototype.hasOwnProperty.call(o, h) ? o[h] : ''; });
+  });
+  var caught;
+  try {
+    var w = makeWorld(m, { priceHeader: CANON, logHeader: LOGCANON, rows: migrated3 });
+    caught = probe(w.TEMP_PRICING_R3_CENSUS(), w);
+  } catch (e) { caught = true; }
+  if (caught) { mutCaught++; pass++; console.log('ok   ' + label + '  (mutant caught)'); }
+  else { mutSurvived++; fail++; console.error('SURVIVED ' + label); }
+}
+
+// I1 — a staleness threshold is invented. The operator would read a number that looks measured and act
+// on it, and nothing on screen would say it was a guess.
+censusMutant('I1  the census invents a staleness threshold instead of saying NOT_DEFINED',
+  "var TEMP_PR3C_STALE_BEFORE_ = '';",
+  "var TEMP_PR3C_STALE_BEFORE_ = '2026-06-01';",
+  function (r) { return !/FX_RATE_STALE_ROWS              = NOT_DEFINED/.test(r); });
+
+// I2 — a blank auto_* is counted as an existing reference, so a FIRST FILL is reported as a refresh and
+// the operator authorises a much larger change than they think.
+censusMutant('I2  a blank auto reference is counted as existing',
+  "      if (a.present) autoCensus[s.L].existing++; else autoCensus[s.L].blank++;",
+  "      autoCensus[s.L].existing++;",
+  function (r) { return !/AUTO_MSRP_EXISTING = 1   AUTO_MSRP_BLANK = 2/.test(r); });
+
+// I3 — a missing fx_rate_date is counted as present, which would make an undated rate look dated.
+censusMutant('I3  a blank fx_rate_date is treated as present',
+  "    if (fxdStr === '') c.FX_RATE_DATE_MISSING_ROWS++;",
+  "    if (false) c.FX_RATE_DATE_MISSING_ROWS++;",
+  function (r) { return !/FX_RATE_DATE_MISSING_ROWS       = 2/.test(r); });
+
+// I4 — a blank base is counted as available, so the census promises a refresh material it does not have.
+censusMutant('I4  a blank base price is counted as available',
+  "      if (b.present) baseCensus[s.L].available++; else baseCensus[s.L].blank++;",
+  "      baseCensus[s.L].available++;",
+  function (r) { return !/BASE_MSRP_AVAILABLE = 1   BASE_MSRP_BLANK = 2/.test(r); });
 
 // =============================================================================================================
 section('G · THE TOOLS ARE NOT RELEASE FILES');
