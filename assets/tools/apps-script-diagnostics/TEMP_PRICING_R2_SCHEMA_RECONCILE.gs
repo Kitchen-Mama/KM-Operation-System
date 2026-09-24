@@ -1,6 +1,24 @@
 /**
  * TEMP — PRICING-R2-SCHEMA-ORDER-RECONCILIATION-R1 — REPAIR pricing_list COLUMN ORDER, THEN PROVISION.
  *
+ * ############################################################################################
+ * SUPERSEDED FOR pricing_list. DO NOT RUN THIS AGAINST pricing_list. IT CORRUPTED base_msrp.
+ * ############################################################################################
+ *
+ * setValues moves VALUES. A number format belongs to the CELL and stays where it is, so writing a date
+ * field into a physical column that held a numeric field gives that column a date format — and any
+ * number later written there reads back as a Date. In the live layout physical column 14 held base_msrp
+ * and receives fx_rate_date, and base_msrp is the ONLY numeric field whose column receives a date field,
+ * which is exactly why it was the only casualty. Prices of 35 and 40 came back as 1900-02-03 and
+ * 1900-02-08 — the Sheets epoch is 1899-12-30, so those dates ARE the original numbers.
+ *
+ * Use TEMP_PRICING_R2_SURGICAL_REPAIR.gs instead. It restores base_msrp from the PRE snapshot and
+ * completes the canonical layout, applying NUMBER FORMATS per FIELD NAME so a field never inherits the
+ * formatting of whatever used to occupy its new physical column.
+ *
+ * The pricing_change_log half of this file is unaffected — that table migrated successfully and has no
+ * numeric column receiving a date field.
+ *
  * PASTE -> RUN DRY RUN -> REVIEW -> PASTE THE THREE EXPECT_ CONSTANTS -> RUN COMMIT -> VERIFY -> REMOVE.
  * Repository-only operator tool. NOT a release file, never synced as one, no manifest row, no stamp.
  *
@@ -120,6 +138,8 @@ function tempPr2sRun_(commit) {
   function done() { Logger.log(out.join('\n')); return out.join('\n'); }
 
   p('TEMP PRICING-R2 SCHEMA ORDER RECONCILIATION — ' + (commit ? 'COMMIT' : 'DRY RUN'));
+  p('*** SUPERSEDED FOR pricing_list — this tool moved values without their number formats and turned ***');
+  p('*** base_msrp into dates. Use TEMP_PRICING_R2_SURGICAL_REPAIR.gs. Read its header before running. ***');
   p('generated_at (script clock): ' + new Date().toISOString());
   rule();
 
