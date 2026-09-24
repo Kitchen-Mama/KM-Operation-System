@@ -27,6 +27,7 @@ var TOOLS = 'assets/tools/apps-script-diagnostics/';
 var MIG = readN(TOOLS + 'TEMP_PRICING_R2_MIGRATION.gs');
 var CEN = readN(TOOLS + 'TEMP_PRICING_R3_PRODUCTION_CENSUS.gs');
 var DEC = readN(TOOLS + 'TEMP_PRICING_R3_FX_DECOMPOSE.gs');
+var SEL = readN(TOOLS + 'TEMP_PRICING_R4_SMOKE_SELECT.gs');
 var GS73 = readN('assets/specs/active/apps-script/73_api_v1_pricing_write.gs');
 
 var pass = 0, fail = 0, mutCaught = 0, mutSurvived = 0;
@@ -837,21 +838,310 @@ decMutant('M6  the envelope reconciliation always reports YES',
 
 
 // =============================================================================================================
+section('P · PRICING-R4 §2/§3/§4 — SELECTING FOUR SMOKE ROWS THAT CANNOT BE PICKED BY EYE');
+// =============================================================================================================
+// Three of the selection constraints are invisible in a spreadsheet export: whether an id is unique in
+// pricing_list, whether its marketplace_skus row is unique, and whether a field's effective price already
+// equals its auto value. The last one decides whether the AUTO smoke moves a live price or not, so the
+// fixture below gives every exclusion rule exactly one row that ONLY it can catch — a rule that stopped
+// working would otherwise be covered by its neighbour.
+var MSKU_H = ['marketplace_sku_id', 'sku', 'company', 'country', 'marketplace', 'site_sku', 'marketplace_sku_status'];
+function mskuRow(o) { return MSKU_H.map(function (h) { return Object.prototype.hasOwnProperty.call(o, h) ? o[h] : ''; }); }
+
+function smokeWorld(src, rows, mskus, opts) {
+  opts = opts || {};
+  var priceSheet = fakeSheet('pricing_list', [CANON].concat(rows || []));
+  var mskuSheet = fakeSheet('marketplace_skus', [MSKU_H].concat(mskus || []));
+  var logSheet = fakeSheet('pricing_change_log', [LOGCANON].concat(opts.logRows || []));
+  var S = {
+    console: console, Object: Object, Array: Array, String: String, Number: Number, Math: Math,
+    JSON: JSON, isFinite: isFinite, Date: Date, RegExp: RegExp, parseFloat: parseFloat, isNaN: isNaN,
+    Logger: { log: function (x) { S.__logged = x; } },
+    SpreadsheetApp: {
+      getActiveSpreadsheet: function () {
+        return { getSheetByName: function (n) {
+          if (opts.missingSheet === n) return null;
+          if (n === 'pricing_list') return priceSheet;
+          if (n === 'marketplace_skus') return mskuSheet;
+          if (n === 'pricing_change_log') return logSheet;
+          return null;
+        } };
+      },
+      flush: function () {}
+    },
+    Session: { getScriptTimeZone: function () { return 'UTC'; } },
+    Utilities: { formatDate: function (d) { return d.toISOString().slice(0, 10); } },
+    __price: priceSheet, __msku: mskuSheet, __log: logSheet
+  };
+  vm.createContext(S);
+  if (!opts.noAuthority) vm.runInContext(GS73, S, { filename: '73_.gs' });
+  vm.runInContext(src, S, { filename: 'smoke-select.gs' });
+  return S;
+}
+
+// One healthy row: every base, auto and effective present, every flag blank, currency supported.
+function healthy(o) {
+  var base = {
+    base_currency: 'USD', currency: 'USD', fx_rate: 1, fx_rate_date: '2026-09-24',
+    base_regular_price: 30, base_minimum_price: 15, base_msrp: 25,
+    auto_regular_price: 30, auto_minimum_price: 15, auto_msrp: 25,
+    regular_price: 31, minimum_price: 16, msrp: 26,
+    price_status: 'active', updated_by: 'import', updated_at: '2026-09-01 00:00:00'
+  };
+  Object.keys(o).forEach(function (k) { base[k] = o[k]; });
+  return decRow(base);
+}
+function activeMsku(id, o) {
+  var b = { marketplace_sku_id: id, sku: 'SKU-' + id, company: 'KM', country: 'US',
+    marketplace: 'amazon', site_sku: 'S-' + id, marketplace_sku_status: 'active' };
+  Object.keys(o || {}).forEach(function (k) { b[k] = o[k]; });
+  return mskuRow(b);
+}
+
+{
+  // THE FOUR THAT SHOULD BE PICKED. Sorted by id, so A=MA, B=MB, C=MC — and D is MD because it is the
+  // only row whose effective already equals its auto anywhere.
+  var ROWS_OK = [
+    healthy({ pricing_id: 'PA', marketplace_sku_id: 'MA', sku: 'SKU-MA', site_sku: 'S-MA',
+      regular_price: 44.99, auto_regular_price: 42.31, minimum_price: 20, auto_minimum_price: 19,
+      msrp: 30.49, auto_msrp: 29 }),
+    healthy({ pricing_id: 'PB', marketplace_sku_id: 'MB', sku: 'SKU-MB', site_sku: 'S-MB',
+      regular_price: 50, auto_regular_price: 49, minimum_price: 20, auto_minimum_price: 19,
+      msrp: 30, auto_msrp: 29 }),
+    healthy({ pricing_id: 'PC', marketplace_sku_id: 'MC', sku: 'SKU-MC', site_sku: 'S-MC',
+      regular_price: 60, auto_regular_price: 59, minimum_price: 22, auto_minimum_price: 21,
+      msrp: 30.49, auto_msrp: 29.49 }),
+    // MD has BOTH its minimum and its msrp already equal to auto. Minimum must win: it is the least
+    // customer-visible of the three, so if the equality check were ever wrong the blast radius is least.
+    healthy({ pricing_id: 'PD', marketplace_sku_id: 'MD', sku: 'SKU-MD', site_sku: 'S-MD',
+      regular_price: 70, auto_regular_price: 69, minimum_price: 25, auto_minimum_price: 25,
+      msrp: 40, auto_msrp: 40 })
+  ];
+  // ONE ROW PER EXCLUSION RULE, each disqualified by exactly one thing.
+  var ROWS_BAD = [
+    healthy({ pricing_id: 'PX', marketplace_sku_id: 'MX' }),                              // no marketplace_skus row
+    healthy({ pricing_id: 'PS', marketplace_sku_id: 'MS' }),                              // phasing_out
+    healthy({ pricing_id: 'PZ', marketplace_sku_id: 'MZ' }),                              // two marketplace_skus rows
+    healthy({ pricing_id: 'PF', marketplace_sku_id: 'MF', regular_price_is_manual: 'TRUE' }),
+    healthy({ pricing_id: 'PK', marketplace_sku_id: 'MK', auto_msrp: '' }),               // blank auto
+    healthy({ pricing_id: 'PP', marketplace_sku_id: 'MP', currency: 'JPY', regular_price: 1000.5 }),
+    healthy({ pricing_id: 'PQ', marketplace_sku_id: 'MQ', currency: 'XYZ' }),             // unsupported currency
+    healthy({ pricing_id: 'PU', marketplace_sku_id: 'MDUP' }),
+    healthy({ pricing_id: 'PU2', marketplace_sku_id: 'MDUP' }),                           // duplicate identity
+    healthy({ pricing_id: 'PN', marketplace_sku_id: '' })                                 // no identity at all
+  ];
+  var MSKUS = ['MA', 'MB', 'MC', 'MD', 'MF', 'MK', 'MP', 'MQ', 'MDUP'].map(function (id) { return activeMsku(id); })
+    .concat([activeMsku('MS', { marketplace_sku_status: 'phasing_out' }),
+      activeMsku('MZ'), activeMsku('MZ')]);
+
+  var w = smokeWorld(SEL, ROWS_OK.concat(ROWS_BAD), MSKUS);
+  var r = w.TEMP_PRICING_R4_SMOKE_SELECT();
+
+  // ---- the funnel: every rule fires, and says which one ----
+  eq(w.__price.__headerWrites + w.__price.__dataWrites, 0, 'P1  the selector writes nothing');
+  ok(/DB_WRITES                       = 0/.test(r), 'P1a  and says so');
+  ok(/PRICING_ROWS_TOTAL              = 14/.test(r), 'P2  it read all fourteen rows');
+  ['NO_MARKETPLACE_SKUS_ROW', 'NOT_ACTIVE_phasing_out', 'AMBIGUOUS_MARKETPLACE_SKUS_SOURCE',
+   'AUTHORITY_ALREADY_STATED', 'BLANK_BASE_AUTO_OR_EFFECTIVE', 'EFFECTIVE_EXCEEDS_CURRENCY_PRECISION',
+   'CURRENCY_UNSUPPORTED', 'DUPLICATE_IN_PRICING_LIST', 'IDENTITY_MISSING'].forEach(function (why) {
+    ok(new RegExp('excluded ' + why + '\\s+\\d').test(r), 'P2a  the funnel names ' + why);
+  });
+  ok(/CANDIDATE_ROWS                  = 4/.test(r), 'P3  exactly the four healthy rows survive');
+
+  // ---- §2: the four rows, and D chosen for the right reason ----
+  ok(/SMOKE_ROW_A   \(regular MANUAL smoke\)[\s\S]*?marketplace_sku_id            = MA/.test(r), 'P4  row A is MA');
+  ok(/SMOKE_ROW_B   \(minimum MANUAL smoke\)[\s\S]*?marketplace_sku_id            = MB/.test(r), 'P4a row B is MB');
+  ok(/SMOKE_ROW_C   \(msrp MANUAL smoke\)[\s\S]*?marketplace_sku_id            = MC/.test(r), 'P4b row C is MC');
+  ok(/SMOKE_ROW_D   \(AUTO restore\)[\s\S]*?marketplace_sku_id            = MD/.test(r), 'P4c row D is MD');
+  ok(/selected field                = minimum_price/.test(r),
+    'P5  and D tests the MINIMUM price — the least customer-visible field that qualifies');
+  ok(/effective_equals_auto         = YES/.test(r), 'P5a  with its effective already equal to its auto');
+  ok(/company                       = KM/.test(r), 'P6  company comes from marketplace_skus, which is where it lives');
+  ok(/price_status \(reported, NOT used as a filter\)/.test(r),
+    'P7  price_status is reported and never filtered on — its default is still an open question');
+
+  // ---- §3: the test value keeps the minor units ----
+  ok(/TEST VALUE \(current \+ 1\)     = 45\.99/.test(r), 'P8  44.99 + 1 = 45.99 — the .99 ending is kept, not invented');
+  ok(/TEST VALUE \(current \+ 1\)     = 21\b/.test(r), 'P8a 20 + 1 = 21 — and a round price does not acquire an ending');
+  ok(/TEST VALUE \(current \+ 1\)     = 31\.49/.test(r), 'P8b 30.49 + 1 = 31.49');
+
+  // ---- §3: the template rows themselves ----
+  var tmpl = r.split('§3 — SMOKE_TEMPLATE_ROWS')[1].split('§8 —')[0];
+  ok(/MA,SKU-MA,S-MA,KM,US,amazon,USD,MANUAL,45\.99,NO_CHANGE,,NO_CHANGE,/.test(tmpl), 'P9  row A asks for regular only');
+  ok(/MB,SKU-MB,S-MB,KM,US,amazon,USD,NO_CHANGE,,MANUAL,21,NO_CHANGE,/.test(tmpl), 'P9a row B asks for minimum only');
+  ok(/MC,SKU-MC,S-MC,KM,US,amazon,USD,NO_CHANGE,,NO_CHANGE,,MANUAL,31\.49/.test(tmpl), 'P9b row C asks for msrp only');
+  ok(/MD,SKU-MD,S-MD,KM,US,amazon,USD,NO_CHANGE,,AUTO,,NO_CHANGE,/.test(tmpl), 'P9c row D asks for AUTO with an EMPTY value cell');
+
+  // THE TEMPLATE ROWS MUST SURVIVE THE REAL PARSER AND THE REAL WRITER. Generating a file the import
+  // then rejects is the one failure this tool exists to prevent, so the lines go through both.
+  var SRP = require('../js/pages/sku-regional-pricing.js');
+  var tl = tmpl.split(/\r?\n/);
+  var start = 0;
+  while (start < tl.length && tl[start].indexOf('marketplace_sku_id,master_sku') !== 0) start++;
+  var block = [];
+  for (var bi = start; bi < tl.length && tl[bi].trim() !== ''; bi++) block.push(tl[bi]);
+  var fileText = block.join('\r\n');
+  var parsed = SRP.validateFile(fileText);
+  eq([parsed.ok, parsed.errors.length], [true, 0], 'P10 the generated file passes the real browser validator');
+  var lines = parsed.lines.filter(SRP.lineTouches);
+  eq(lines.length, 4, 'P10a and all four rows ask for something');
+  ok(lines[3].minimum_price === undefined, 'P10b with AUTO carrying no value across the seam');
+
+  // ---- §8: the restore rows carry the ORIGINAL values, and D has none ----
+  var rest = r.split('§8 — RESTORE_TEMPLATE_ROWS')[1].split('§4 —')[0];
+  ok(/MA,SKU-MA,S-MA,KM,US,amazon,USD,MANUAL,44\.99,/.test(rest), 'P11 the restore puts A back to 44.99, not to the test value');
+  ok(/MANUAL,20,NO_CHANGE,/.test(rest), 'P11a and B back to 20');
+  ok(/MANUAL,30\.49/.test(rest), 'P11b and C back to 30.49');
+  ok(rest.indexOf('MD,') === -1, 'P11c row D has NO restore line — its price never moved');
+  ok(/OWNERSHIP_RETURNED_TO_UNKNOWN = NO, by design/.test(rest), 'P11d and the limit is stated where the restore is');
+
+  // ---- §4: the pre-snapshot ----
+  var snap = r.split('§4 — SMOKE_PRE_SNAPSHOT')[1];
+  ok(/pricing_id,marketplace_sku_id,currency,base_regular_price/.test(snap), 'P12 the snapshot carries the §4 columns in order');
+  ok(/^PA,MA,USD,30,15,25,42\.31,19,29,44\.99,20,30\.49,,,,/m.test(snap),
+    'P12a with base, auto, effective and three BLANK flags — blank being the UNKNOWN state');
+  ok(/CHANGE_LOG_PRE_COUNT            = 0/.test(r), 'P13 and the change-log baseline is counted, header excluded');
+  ok(/SMOKE_PRE_SNAPSHOT_READY        = YES/.test(r), 'P13a four rows found, so the snapshot is complete');
+
+  // ---- determinism: the pre-snapshot is only true if a re-run picks the same rows ----
+  var r2 = smokeWorld(SEL, ROWS_OK.concat(ROWS_BAD), MSKUS).TEMP_PRICING_R4_SMOKE_SELECT();
+  function ids(text) { return (text.match(/marketplace_sku_id            = \S+/g) || []).join('|'); }
+  eq(ids(r2), ids(r), 'P14 a second run selects exactly the same four rows');
+
+  // ---- the refusals ----
+  var wNo = smokeWorld(SEL, ROWS_OK, MSKUS, { noAuthority: true });
+  var rNo = wNo.TEMP_PRICING_R4_SMOKE_SELECT();
+  ok(/AUTHORITY_NOT_LOADED/.test(rNo) && /BLOCKED/.test(rNo), 'P15 without 73_ it refuses rather than guessing precision');
+
+  var wNone = smokeWorld(SEL, [healthy({ marketplace_sku_id: '' })], MSKUS);
+  var rNone = wNone.TEMP_PRICING_R4_SMOKE_SELECT();
+  ok(/CANDIDATE_ROWS                  = 0/.test(rNone) && /BLOCKED/.test(rNone), 'P16 no candidates is a BLOCK');
+  ok(/which constraint to relax is an operator decision/.test(rNone),
+    'P16a and it does not relax one of its own constraints to produce an answer');
+
+  // NO ROW D AT ALL. A/B/C are still usable, and the runbook rule is repeated where it matters.
+  var noEq = ROWS_OK.slice(0, 3).concat([
+    healthy({ pricing_id: 'PD', marketplace_sku_id: 'MD', regular_price: 70, auto_regular_price: 69,
+      minimum_price: 25, auto_minimum_price: 24, msrp: 40, auto_msrp: 39 })]);
+  var rNoD = smokeWorld(SEL, noEq, MSKUS).TEMP_PRICING_R4_SMOKE_SELECT();
+  ok(/SMOKE_ROW_D = NOT AVAILABLE/.test(rNoD), 'P17 with no equal-valued field anywhere, row D is refused');
+  ok(/every[\s\S]{0,40}AUTO restore would MOVE a live price/.test(rNoD), 'P17a for the reason that matters');
+  ok(/Rows A\/B\/C are unaffected/.test(rNoD), 'P17b while A, B and C stay usable');
+  ok(/SMOKE_PRE_SNAPSHOT_READY        = NO/.test(rNoD), 'P17c and the run is not declared ready');
+
+  // A ZERO-DECIMAL CURRENCY. The test value must stay an integer; a 0.01 delta would be refused at upload
+  // as PRICE_PRECISION_UNSUPPORTED and the operator would find out at the Confirm step.
+  var jpy = [healthy({ pricing_id: 'PJ', marketplace_sku_id: 'AJ', currency: 'JPY', base_currency: 'USD',
+    base_regular_price: 29.99, base_minimum_price: 24, base_msrp: 35,
+    auto_regular_price: 4736, auto_minimum_price: 3789, auto_msrp: 5527,
+    regular_price: 4800, minimum_price: 3800, msrp: 5600 })];
+  var rJ = smokeWorld(SEL, jpy, [activeMsku('AJ')]).TEMP_PRICING_R4_SMOKE_SELECT();
+  ok(/currency                      = JPY   \(0 decimals\)/.test(rJ), 'P18 the currency precision is read from the deployed contract');
+  ok(/TEST VALUE \(current \+ 1\)     = 4801\b/.test(rJ), 'P18a and a 0-decimal currency gets a whole-number test value');
+}
+
+// =============================================================================================================
+section('Q · MUTANTS FOR THE SMOKE SELECTOR');
+// =============================================================================================================
+// The probe returns TRUE when the mutant is CAUGHT: it asserts the BROKEN behaviour, never the correct one.
+function smokeMutant(label, from, to, probe, rows, mskus) {
+  if (SEL.indexOf(from) === -1) { fail++; console.error('FAIL ' + label + '   [anchor not found]'); return; }
+  if (SEL.split(from).length - 1 !== 1) { fail++; console.error('FAIL ' + label + '   [anchor not unique]'); return; }
+  var caught;
+  try {
+    var w = smokeWorld(SEL.replace(from, to), rows, mskus);
+    caught = probe(w.TEMP_PRICING_R4_SMOKE_SELECT(), w);
+  } catch (e) { caught = true; }
+  if (caught) { mutCaught++; pass++; console.log('ok   ' + label + '  (mutant caught)'); }
+  else { mutSurvived++; fail++; console.error('SURVIVED ' + label); }
+}
+
+
+{
+  var QROWS = [
+    healthy({ pricing_id: 'PA', marketplace_sku_id: 'MA', sku: 'SKU-MA', site_sku: 'S-MA',
+      regular_price: 44.99, auto_regular_price: 42.31, minimum_price: 20, auto_minimum_price: 19,
+      msrp: 30.49, auto_msrp: 29 }),
+    healthy({ pricing_id: 'PB', marketplace_sku_id: 'MB', sku: 'SKU-MB', site_sku: 'S-MB',
+      regular_price: 50, auto_regular_price: 49, minimum_price: 20, auto_minimum_price: 19,
+      msrp: 30, auto_msrp: 29 }),
+    healthy({ pricing_id: 'PC', marketplace_sku_id: 'MC', sku: 'SKU-MC', site_sku: 'S-MC',
+      regular_price: 60, auto_regular_price: 59, minimum_price: 22, auto_minimum_price: 21,
+      msrp: 30.49, auto_msrp: 29.49 }),
+    healthy({ pricing_id: 'PD', marketplace_sku_id: 'MD', sku: 'SKU-MD', site_sku: 'S-MD',
+      regular_price: 70, auto_regular_price: 69, minimum_price: 25, auto_minimum_price: 25,
+      msrp: 40, auto_msrp: 40 }),
+    healthy({ pricing_id: 'PF', marketplace_sku_id: 'MF', regular_price_is_manual: 'TRUE' }),
+    healthy({ pricing_id: 'PP', marketplace_sku_id: 'MP', currency: 'JPY', regular_price: 1000.5 }),
+    healthy({ pricing_id: 'PU', marketplace_sku_id: 'MDUP' }),
+    healthy({ pricing_id: 'PU2', marketplace_sku_id: 'MDUP' })
+  ];
+  var QMSKUS = ['MA', 'MB', 'MC', 'MD', 'MF', 'MP', 'MDUP'].map(function (id) { return activeMsku(id); });
+
+  // Q1 — the AUTO row is chosen without checking the equality. It still LOOKS like a valid smoke row, and
+  // uploading it would move a live price to a number nobody chose. This is the whole reason row D is
+  // selected by a tool rather than by eye.
+  smokeMutant('Q1  row D is chosen without the effective-equals-auto check',
+    "if (ff.eff.value === ff.auto.value) { rowD = c; rowDField = PREF[pi]; break; }",
+    "if (true) { rowD = c; rowDField = PREF[pi]; break; }",
+    function (r) { return !/effective_equals_auto         = YES/.test(r); }, QROWS, QMSKUS);
+
+  // Q2 — the duplicate-identity guard goes. Both rows of the pair become candidates, and a write aimed at
+  // one of them is refused by the server anyway — after the pre-snapshot has been taken against the wrong
+  // row.
+  smokeMutant('Q2  a duplicated marketplace_sku_id is offered as a smoke row',
+    "    if (pDupe[id]) return no('DUPLICATE_IN_PRICING_LIST');",
+    "    if (false) return null;",
+    function (r) { return !/excluded DUPLICATE_IN_PRICING_LIST/.test(r); }, QROWS, QMSKUS);
+
+  // Q3 — the precision pre-check goes. Caught on the FUNNEL rather than on the selection, because a row
+  // that sorts after the four picks would be masked by them: the mutant must be observable where it acts.
+  smokeMutant('Q3  a price the currency cannot hold is no longer screened out',
+    "    if (!precisionOk) return no('EFFECTIVE_EXCEEDS_CURRENCY_PRECISION');",
+    "    if (false) return null;",
+    function (r) { return !/excluded EFFECTIVE_EXCEEDS_CURRENCY_PRECISION/.test(r); }, QROWS, QMSKUS);
+
+  // Q4 — a row that someone has already classified is offered for a smoke whose entire premise is that
+  // the flags start blank.
+  smokeMutant('Q4  a row already carrying authority is offered as a smoke row',
+    "    if (!flagsClean) return no('AUTHORITY_ALREADY_STATED');",
+    "    if (false) return null;",
+    function (r) { return !/excluded AUTHORITY_ALREADY_STATED/.test(r); }, QROWS, QMSKUS);
+
+  // Q5 — the test value is rounded to whole units regardless of currency. 44.99 becomes 46, which is a
+  // real price change dressed as a test value, and the restore would not put back what was there.
+  smokeMutant('Q5  the test value is rounded away from the currency precision',
+    "    return Math.round(raw * fpow) / fpow;",
+    "    return Math.round(raw);",
+    function (r) { return !/TEST VALUE \(current \+ 1\)     = 45\.99/.test(r); }, QROWS, QMSKUS);
+
+  // Q6 — the restore file carries the TEST value instead of the original. The smoke would then be
+  // irreversible in the one dimension the runbook promises is reversible.
+  smokeMutant('Q6  the restore rows carry the test value instead of the original price',
+    "  if (rowA) p(templateLine(rowA, 'regular_price', 'MANUAL', rowA.f.regular_price.eff.value));",
+    "  if (rowA) p(templateLine(rowA, 'regular_price', 'MANUAL', testValue(rowA, 'regular_price')));",
+    function (r) { var rest = r.split('§8 — RESTORE_TEMPLATE_ROWS')[1].split('§4 —')[0];
+      return !/MANUAL,44\.99,/.test(rest); }, QROWS, QMSKUS);
+}
+
+
+// =============================================================================================================
 section('G · THE TOOLS ARE NOT RELEASE FILES');
 // =============================================================================================================
 {
   var health = readN('assets/specs/active/apps-script/63_api_v1_system_health.gs');
   ['TEMP_PRICING_R2_MIGRATION.gs', 'TEMP_PRICING_R3_PRODUCTION_CENSUS.gs',
-    'TEMP_PRICING_R3_FX_DECOMPOSE.gs'].forEach(function (f, i) {
+    'TEMP_PRICING_R3_FX_DECOMPOSE.gs', 'TEMP_PRICING_R4_SMOKE_SELECT.gs'].forEach(function (f, i) {
     ok(health.indexOf(f) === -1, 'G' + (i + 1) + '  ' + f + ' has no manifest row — it is not an owner');
     ok(!fs.existsSync(path.join(ROOT, 'assets/specs/active/apps-script', f)),
       'G' + (i + 1) + 'a and does not sit in the deployed directory');
   });
-  ok(/NOT part of any release/.test(MIG) && /NOT a release file/.test(CEN) && /NOT a release file/.test(DEC),
-    'G3  and all three say so at the top, where an operator reads it');
+  ok(/NOT part of any release/.test(MIG) && /NOT a release file/.test(CEN)
+    && /NOT a release file/.test(DEC) && /NOT a release file/.test(SEL),
+    'G3  and all four say so at the top, where an operator reads it');
   // They must not move the release identity either: a pasted tool is not a sync.
   ok(!/SYS_DEPLOYMENT_RELEASE_/.test(MIG) && !/SYS_DEPLOYMENT_RELEASE_/.test(CEN)
-    && !/SYS_DEPLOYMENT_RELEASE_/.test(DEC),
+    && !/SYS_DEPLOYMENT_RELEASE_/.test(DEC) && !/SYS_DEPLOYMENT_RELEASE_/.test(SEL),
     'G4  none of them declares or touches the release identity');
 }
 
