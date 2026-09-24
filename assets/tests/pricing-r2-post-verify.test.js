@@ -209,7 +209,10 @@ function armVerifier(w) {
   for (var r = 1; r < g.length; r++) ids.push(w.pvStr_(g[r][idCol]));
   w.PV_PRE_ROW_COUNT_ = g.length - 1;
   w.PV_PRE_IDS_HASH_ = w.pvSha_(ids.join('\n'));
-  w.PV_PRE_LOGICAL_HASH_ = w.pvLogicalHash_(head, g, w.PV_PRE_FIELDS_, 'pricing_id');
+  // Armed with the MIGRATION tool's digest, because that is what produced the frozen constant on production.
+  // If pvBaselineHash_ ever stops reproducing that encoding, every value test in this file fails — which is
+  // the only reason those tests mean anything about the shipped constant.
+  w.PV_PRE_LOGICAL_HASH_ = w.tempPr2sLogicalHash_(head, g, w.PV_PRE_FIELDS_);
   return w;
 }
 
@@ -230,15 +233,45 @@ section('A · THE VERIFIER SHARES NOTHING WITH THE THING IT VERIFIES');
     'A2  it carries its own digest and its own logical hash');
 
   // If the two implementations agreed by copy, a wrong digest would be wrong identically on both sides and
-  // the agreement would prove nothing. They differ in their separators, which is the cheapest way to be sure
-  // the agreement is about the DATA.
-  ok(/'\|#\|'/.test(TOOL) && !/'\|#\|'/.test(VERIFY),
-    'A3  and they are not the same implementation — different separators, so agreement is about the values');
+  // the agreement would prove nothing. So the independent digest is written in its own encoding — measured
+  // on the FUNCTION, because the file also contains a baseline digest that is REQUIRED to use the tool's
+  // encoding, and a whole-file check cannot tell those two apart.
+  function body(src, name) {
+    var i = src.indexOf('function ' + name + '(');
+    if (i === -1) return '';
+    var j = src.indexOf('\n}', i);
+    return src.slice(i, j === -1 ? src.length : j);
+  }
+  var indep = body(VERIFY, 'pvLogicalHash_');
+  var baseline = body(VERIFY, 'pvBaselineHash_');
+  ok(indep.length > 100 && baseline.length > 100, 'A3  both digest functions are found');
+  ok(!/\|~\||\|#\|/.test(indep),
+    'A3a the INDEPENDENT digest uses none of the reconciliation tool\'s separators');
+  ok(/\|~\|/.test(baseline) && /\|#\|/.test(baseline),
+    'A3b while the BASELINE digest uses exactly them — it has to be comparable to the frozen number');
+  ok(/'\|#\|'/.test(TOOL), 'A3c and that really is the tool\'s encoding');
 
   ok(!/setValue|setValues|appendRow|insertColumns|deleteColumn|deleteRow|\.clear\(/.test(B),
     'A4  READ ONLY BY CONSTRUCTION — no write call of any kind appears in the code');
   ok(!/LockService/.test(B), 'A5  and it takes no lock, because it changes nothing that needs one');
   ok(!/PRE__pricing_list__.*remove|deleteSheet/.test(B), 'A6  it never deletes a snapshot');
+
+  // AND YET ONE NUMBER MUST BE COMPARABLE. The frozen PV_PRE_LOGICAL_HASH_ came out of the reconciliation
+  // tool, in its encoding. A digest of a different encoding of the same rows is a different number, so
+  // comparing the two would fail on a perfect sheet and tell the operator to restore a snapshot over a
+  // correct migration. pvBaselineHash_ exists to be comparable; pvLogicalHash_ exists to be independent.
+  var w = makeWorld({ rows: rows(25) });
+  var g = w.__price.__grid;
+  var hd = g[0].map(w.pvStr_);
+  eq(w.pvBaselineHash_(hd, g, w.PV_PRE_FIELDS_), w.tempPr2sLogicalHash_(hd, g, w.PV_PRE_FIELDS_),
+    'A7  the BASELINE digest reproduces the reconciliation tool\'s, byte for byte');
+  ok(w.pvLogicalHash_(hd, g, w.PV_PRE_FIELDS_, 'pricing_id') !== w.tempPr2sLogicalHash_(hd, g, w.PV_PRE_FIELDS_),
+    'A7a while the INDEPENDENT digest deliberately does not — that is what makes agreement mean something');
+  // Both still have to be real digests of the data, not constants that happen to line up.
+  var g2 = g.map(function (r2) { return r2.slice(); });
+  g2[1][hd.indexOf('regular_price')] = 0.01;
+  ok(w.pvBaselineHash_(hd, g2, w.PV_PRE_FIELDS_) !== w.pvBaselineHash_(hd, g, w.PV_PRE_FIELDS_),
+    'A7b and the baseline digest still moves when a value moves');
 }
 
 // =============================================================================================================
@@ -593,6 +626,18 @@ mut('H8  only the grouped fields are compared, not every PRE field',
         w.PV_PRE_FIELDS_, 'pricing_id');
     } });
     return !/FAIL  EVERY one of the 29 PRE fields is unchanged/.test(r.ver);
+  });
+
+// 9 — THE BUG THIS FILE SHIPPED ONCE. The frozen baseline is compared in the wrong ENCODING: a digest of a
+// different serialisation of identical rows. Nothing is wrong with the sheet, nothing is wrong with the
+// migration, and the verifier reports a data loss and tells the operator to restore a snapshot over it.
+mut('H9  the frozen baseline is compared in an encoding it was never measured in',
+  "      parts.push(f[i] + '|~|' + (c === undefined ? '' : pvStr_(grid[r][c])));",
+  "      parts.push(f[i] + '=' + (c === undefined ? '' : pvStr_(grid[r][c])));",
+  function (m) {
+    var r = migrateThenVerify({ rows: rows(20), verify: m });
+    // A GOOD migration. Caught when the verifier calls it a data loss anyway.
+    return /SCHEMA_RECONCILE_PASS = YES/.test(r.com) && /ROLLBACK_REQUIRED               = YES/.test(r.ver);
   });
 
 // =============================================================================================================

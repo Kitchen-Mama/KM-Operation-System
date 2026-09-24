@@ -54,6 +54,14 @@ var PV_EXPECTED_LOG_CANONICAL_ = [
 var PV_EXPECTED_LOG_EXTENSIONS_ = ['sku', 'country', 'marketplace', 'old_currency', 'new_currency', 'source'];
 
 // The frozen PRE baseline. Both were reproduced by two consecutive live dry runs before the migration ran.
+//
+// READ THE NEXT SENTENCE BEFORE CHANGING EITHER DIGEST FUNCTION BELOW. PV_PRE_LOGICAL_HASH_ was produced by
+// the reconciliation tool, in ITS wire format. This file's own pvLogicalHash_ uses a different format on
+// purpose, so comparing the frozen constant against it would compare two digests of two different
+// encodings of the same data and report a mismatch on a perfectly good sheet — a false data-loss, and an
+// instruction to restore a snapshot over a correct migration. That is the worst thing this file could do.
+// pvBaselineHash_ therefore re-implements the frozen constant's ENCODING, from the format, not by calling
+// the tool. Matching a documented wire format is not sharing an implementation.
 var PV_PRE_ROW_COUNT_ = 495;
 var PV_PRE_IDS_HASH_ = 'de64de19de8b483c2ef51323ae42c6a678cf0b6f013cdd27636cdb3fdb19a63b';
 var PV_PRE_LOGICAL_HASH_ = 'a65a7638b6ba8bc8a9724192a9f6f3ef73b5adecaf89682f034fe89623bb2ba0';
@@ -115,6 +123,29 @@ function pvLogicalHash_(header, grid, fields, keyField) {
       parts.push(f[i] + '=' + (c === undefined ? '' : pvStr_(grid[r][c])));
     }
     lines.push(pvStr_(keyCol === undefined ? '' : grid[r][keyCol]) + '::' + parts.join(';;'));
+  }
+  return pvSha_(lines.join('\n'));
+}
+
+/**
+ * The FROZEN BASELINE digest, in the encoding PV_PRE_LOGICAL_HASH_ was measured in:
+ *     pricing_id + '|#|' + (field + '|~|' + value) joined by '|#|', fields SORTED, lines joined by newline.
+ * Written from that format rather than by calling tempPr2sLogicalHash_, so a defect in the reconciliation
+ * tool's implementation cannot reproduce itself here — but the number stays comparable to the one the
+ * operator froze before the migration ran, which is the only check that survives a deleted snapshot.
+ */
+function pvBaselineHash_(header, grid, fields) {
+  var idx = pvIndex_(header);
+  var f = fields.slice().sort();
+  var idCol = idx['pricing_id'];
+  var lines = [];
+  for (var r = 1; r < grid.length; r++) {
+    var parts = [];
+    for (var i = 0; i < f.length; i++) {
+      var c = idx[f[i]];
+      parts.push(f[i] + '|~|' + (c === undefined ? '' : pvStr_(grid[r][c])));
+    }
+    lines.push(pvStr_(idCol === undefined ? '' : grid[r][idCol]) + '|#|' + parts.join('|#|'));
   }
   return pvSha_(lines.join('\n'));
 }
@@ -282,11 +313,16 @@ function TEMP_PRICING_R2_POST_VERIFY() {
   var idCol = pvIndex_(head)['pricing_id'];
   for (var r = 1; r < grid.length; r++) idsOnly.push(pvStr_(grid[r][idCol]));
   var postIdsHash = pvSha_(idsOnly.join('\n'));
-  var postLogical = pvLogicalHash_(head, grid, PV_PRE_FIELDS_, 'pricing_id');
+  // TWO digests over the same rows, in two encodings, for two different jobs. The baseline one is
+  // comparable to the number frozen before the migration; the independent one is what the snapshot
+  // comparison below uses, and it is deliberately NOT the reconciliation tool's encoding.
+  var postLogical = pvBaselineHash_(head, grid, PV_PRE_FIELDS_);
+  var postIndependent = pvLogicalHash_(head, grid, PV_PRE_FIELDS_, 'pricing_id');
   p('  PRICING_IDS_POST_HASH  = ' + postIdsHash);
   p('    expected (frozen)    = ' + PV_PRE_IDS_HASH_ + (postIdsHash === PV_PRE_IDS_HASH_ ? '   MATCH' : '   *** MISMATCH ***'));
-  p('  FULL_LOGICAL_HASH_POST = ' + postLogical);
+  p('  FULL_LOGICAL_HASH_POST = ' + postLogical + '   (baseline encoding)');
   p('    expected (frozen)    = ' + PV_PRE_LOGICAL_HASH_ + (postLogical === PV_PRE_LOGICAL_HASH_ ? '   MATCH' : '   *** MISMATCH ***'));
+  p('  INDEPENDENT_DIGEST     = ' + postIndependent + '   (this file\'s own encoding — not comparable to the frozen value, and not meant to be)');
   p('  (the HEADER hash is EXPECTED to differ — the layout changed on purpose. A header hash that survived');
   p('   this migration would mean the migration had not happened.)');
   valueCheck('PRICING_IDS_HASH == frozen PRE', postIdsHash === PV_PRE_IDS_HASH_);
