@@ -469,6 +469,61 @@ mut('F8  the census writes to the sheet', CEN,
   });
 
 // =============================================================================================================
+section('J · THE CENSUS ANSWERS THE OPERATOR REPORT, FIELD BY FIELD, BY NAME');
+// =============================================================================================================
+{
+  // A census whose numbers are right and whose LABELS are not is a census the operator cannot transcribe.
+  // Three fields of the R22 closeout report had no matching name in this tool and one was not measured by
+  // it at all, which is only discoverable by reading the two side by side — so the list lives here now.
+  var REQUIRED = [
+    'PRICING_ROWS_TOTAL', 'SUPPORTED_BASE_CURRENCIES', 'SUPPORTED_LOCAL_CURRENCIES',
+    'CURRENCY_PAIRS_REQUIRED', 'SAME_CURRENCY_ROWS', 'CROSS_CURRENCY_ROWS',
+    'BASE_REGULAR_AVAILABLE', 'BASE_REGULAR_BLANK',
+    'BASE_MINIMUM_AVAILABLE', 'BASE_MINIMUM_BLANK',
+    'BASE_MSRP_AVAILABLE', 'BASE_MSRP_BLANK',
+    'AUTO_REGULAR_EXISTING', 'AUTO_REGULAR_BLANK',
+    'AUTO_MINIMUM_EXISTING', 'AUTO_MINIMUM_BLANK',
+    'AUTO_MSRP_EXISTING', 'AUTO_MSRP_BLANK',
+    'FX_RATE_MISSING_ROWS', 'FX_RATE_INVALID_ROWS', 'FX_RATE_DATE_MISSING_ROWS',
+    'CROSS_CURRENCY_FX_RATE_1_ROWS', 'FX_RATE_DATE_DISTRIBUTION',
+    'UNKNOWN_AUTHORITY_ROWS', 'JOIN_AMBIGUITY_COUNT'
+  ];
+  var migratedJ = ROWS.map(function (row) {
+    var o = {}; PRE_HEADER.forEach(function (h, i) { o[h] = row[i]; });
+    return CANON.map(function (h) { return Object.prototype.hasOwnProperty.call(o, h) ? o[h] : ''; });
+  });
+  var wj = makeWorld(CEN, { priceHeader: CANON, logHeader: LOGCANON, rows: migratedJ });
+  var rj = wj.TEMP_PRICING_R3_CENSUS();
+  REQUIRED.forEach(function (name) {
+    // Anywhere the name is followed by = or :. Some pairs legitimately share a line (AVAILABLE beside
+    // BLANK, which is how you see the two sum to the total), and demanding line-start would fail a
+    // report that is perfectly transcribable.
+    ok(new RegExp('(^|[\\n\\s])' + name + '\\s*[:=]').test(rj), 'J1  the census reports ' + name + ' by name');
+  });
+
+  // JOIN_AMBIGUITY_COUNT is answered, but by pointing at the tool that owns it rather than by measuring
+  // it a second time. Two tools that can disagree about whether a row has exactly one source is worse
+  // than one tool that answers it.
+  ok(/JOIN_AMBIGUITY_COUNT            = NOT MEASURED HERE/.test(rj),
+    'J2  JOIN_AMBIGUITY_COUNT is not silently measured twice');
+  ok(/TEMP_PRICING_R2_POST_VERIFY/.test(rj), 'J2a and its owner is named');
+  ok(/DIFFERENT question/.test(rj),
+    'J2b beside the duplicate-identity count it is easy to confuse with');
+
+  // The legacy names stay readable, so an earlier report does not become untranslatable.
+  ok(/FX_CONVERTIBLE_ROWS\s*=/.test(rj), 'J3  the earlier name for CROSS_CURRENCY_ROWS still prints');
+  ok(/CROSS_CURRENCY_FX_RATE_1_PRE\s*=/.test(rj), 'J3a and for CROSS_CURRENCY_FX_RATE_1_ROWS');
+
+  // The one-line summaries are what actually gets pasted into a report, so they carry values rather than
+  // being headings over an indented list.
+  ok(/SUPPORTED_LOCAL_CURRENCIES      = CAD, JPY, USD/.test(rj), 'J4  local currencies as one copyable line');
+  ok(/SUPPORTED_BASE_CURRENCIES       = USD/.test(rj), 'J4a base currencies likewise');
+  ok(/CURRENCY_PAIRS_REQUIRED         = USD>CAD, USD>JPY/.test(rj), 'J4b and the required pairs');
+  ok(!/CURRENCY_PAIRS_REQUIRED         = .*USD>USD/.test(rj),
+    'J4c with the same-currency identity still excluded from the copyable line');
+}
+
+// =============================================================================================================
 section('I · MUTANTS FOR THE FX PRECHECK');
 // =============================================================================================================
 function censusMutant(label, from, to, probe) {
@@ -507,6 +562,13 @@ censusMutant('I3  a blank fx_rate_date is treated as present',
   "    if (fxdStr === '') c.FX_RATE_DATE_MISSING_ROWS++;",
   "    if (false) c.FX_RATE_DATE_MISSING_ROWS++;",
   function (r) { return !/FX_RATE_DATE_MISSING_ROWS       = 2/.test(r); });
+
+// I5 — a required report name is dropped. The numbers stay right and the report becomes untranscribable,
+// which is the failure this whole section exists for and the one that does not look like a bug.
+censusMutant('I5  a required report field loses its name',
+  "  p('CROSS_CURRENCY_ROWS             = ' + c.FX_CONVERTIBLE_ROWS);",
+  "  p('' + c.FX_CONVERTIBLE_ROWS);",
+  function (r) { return !/(^|\n)\s*CROSS_CURRENCY_ROWS\s*[:=]/.test(r); });
 
 // I4 — a blank base is counted as available, so the census promises a refresh material it does not have.
 censusMutant('I4  a blank base price is counted as available',

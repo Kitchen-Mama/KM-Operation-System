@@ -174,7 +174,8 @@ function TEMP_PRICING_R3_CENSUS() {
 
   p('PRICING_ROWS_TOTAL              = ' + c.PRICING_ROWS_TOTAL);
   p('SAME_CURRENCY_ROWS              = ' + c.SAME_CURRENCY_ROWS);
-  p('FX_CONVERTIBLE_ROWS             = ' + c.FX_CONVERTIBLE_ROWS);
+  p('CROSS_CURRENCY_ROWS             = ' + c.FX_CONVERTIBLE_ROWS);
+  p('FX_CONVERTIBLE_ROWS             = ' + c.FX_CONVERTIBLE_ROWS + '   (the same rows, under the name earlier rounds used)');
   p('UNKNOWN_AUTHORITY_ROWS          = ' + c.UNKNOWN_AUTHORITY_ROWS);
   rule();
   p('AUTHORITY PER FIELD (three-state; blank = UNKNOWN, never false)');
@@ -182,14 +183,20 @@ function TEMP_PRICING_R3_CENSUS() {
     p('  ' + L + ':  MANUAL=' + authority[L].MANUAL + '  AUTO=' + authority[L].AUTO + '  UNKNOWN=' + authority[L].UNKNOWN);
   });
   rule();
-  p('SUPPORTED_CURRENCIES (live, local) :');
+  var localList = Object.keys(localCurrencies).sort();
+  var baseList = Object.keys(baseCurrencies).sort();
+  p('SUPPORTED_LOCAL_CURRENCIES      = ' + (localList.join(', ') || '(none)'));
+  p('SUPPORTED_BASE_CURRENCIES       = ' + (baseList.join(', ') || '(none)'));
+  rule();
+  p('SUPPORTED_LOCAL_CURRENCIES (from pricing_list.currency, with row counts) :');
   Object.keys(localCurrencies).sort().forEach(function (k) {
     p('  ' + k + '  rows=' + localCurrencies[k] + (Object.prototype.hasOwnProperty.call(DECIMALS, k) ? '  [' + DECIMALS[k] + 'dp]' : '  *** NOT IN THE FROZEN PRECISION CONTRACT ***'));
   });
-  p('BASE_CURRENCIES :');
+  p('SUPPORTED_BASE_CURRENCIES (from pricing_list.base_currency, with row counts) :');
   Object.keys(baseCurrencies).sort().forEach(function (k) { p('  ' + k + '  rows=' + baseCurrencies[k]); });
-  p('CURRENCY_PAIRS_REQUIRED (base>local, same-currency excluded — an identity needs no rate) :');
   var pk = Object.keys(pairs).sort();
+  p('CURRENCY_PAIRS_REQUIRED         = ' + (pk.join(', ') || '(none)'));
+  p('CURRENCY_PAIRS_REQUIRED (base>local, same-currency excluded — an identity needs no rate) :');
   if (!pk.length) p('  (none)');
   pk.forEach(function (k) { p('  ' + k + '  rows=' + pairs[k]); });
   rule();
@@ -201,12 +208,19 @@ function TEMP_PRICING_R3_CENSUS() {
   p('UNSUPPORTED_CURRENCY_ROWS       = ' + c.UNSUPPORTED_CURRENCY_ROWS);
   Object.keys(unsupported).sort().forEach(function (k) { p('    ' + k + ' : ' + unsupported[k] + ' rows — these FAIL CLOSED and are skipped, never converted at a guessed precision'); });
   p('IDENTITY_MISSING_ROWS           = ' + c.IDENTITY_MISSING_ROWS);
-  p('DUPLICATE_PRICING_IDENTITY_ROWS = ' + c.DUPLICATE_PRICING_IDENTITY_ROWS);
+  p('DUPLICATE_PRICING_IDENTITY_ROWS = ' + c.DUPLICATE_PRICING_IDENTITY_ROWS
+    + '   (two pricing_list rows sharing one marketplace_sku_id)');
+  p('JOIN_AMBIGUITY_COUNT            = NOT MEASURED HERE.');
+  p('  That is the sku_details join — pricing_list -> marketplace_skus -> sku_details — and it belongs to');
+  p('  TEMP_PRICING_R2_POST_VERIFY, which resolves it row by row. Measuring it here too would create a');
+  p('  second authority for one question, and two tools that can disagree about whether a row has exactly');
+  p('  one source is worse than one tool that answers it. The line above is a DIFFERENT question.');
   dupes.slice(0, 25).forEach(function (d) { p('    ' + d); });
   p('INVALID_ROWS                    = ' + c.INVALID_ROWS + '  (a price/FX cell that is neither a number, blank nor NA)');
   invalid.forEach(function (d) { p('    ' + d); });
   rule();
-  p('CROSS_CURRENCY_FX_RATE_1_PRE    = ' + c.CROSS_CURRENCY_FX_RATE_1_PRE);
+  p('CROSS_CURRENCY_FX_RATE_1_ROWS   = ' + c.CROSS_CURRENCY_FX_RATE_1_PRE);
+  p('CROSS_CURRENCY_FX_RATE_1_PRE    = ' + c.CROSS_CURRENCY_FX_RATE_1_PRE + '   (same number, earlier name)');
   rule();
   p('FX RATE STATE');
   p('FX_RATE_MISSING_ROWS            = ' + c.FX_RATE_MISSING_ROWS);
