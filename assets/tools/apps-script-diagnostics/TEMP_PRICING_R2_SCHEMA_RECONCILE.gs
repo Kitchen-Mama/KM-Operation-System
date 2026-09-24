@@ -634,8 +634,14 @@ function tempPr2sProdCheck_(ss, name, expectedHeaders) {
 function tempPr2sAutoRollback_(ss, snapName, logSnapName) {
   var out = ['AUTO_ROLLBACK — restoring BOTH tables from the snapshots taken moments ago.'];
   try {
-    out = out.concat(tempPr2sRestorePair_(ss, snapName, logSnapName));
-    out.push('AUTO_ROLLBACK = DONE. No automatic retry: re-run the DRY RUN, review it, and decide.');
+    var res = tempPr2sRestorePair_(ss, snapName, logSnapName);
+    out = out.concat(res.lines);
+    if (res.ok) {
+      out.push('AUTO_ROLLBACK = DONE. No automatic retry: re-run the DRY RUN, review it, and decide.');
+    } else {
+      out.push('*** AUTO_ROLLBACK DID NOT REPRODUCE THE SNAPSHOT PAIR — see the per-table lines above. ***');
+      out.push('BOTH tables were attempted. Do not run COMMIT again. Report this output.');
+    }
   } catch (e) {
     out.push('*** AUTO_ROLLBACK FAILED — ' + (e && e.message ? e.message : String(e)) + ' ***');
     out.push('The snapshots ' + snapName + ' and ' + logSnapName + ' are still in the spreadsheet. Restore by');
@@ -644,30 +650,68 @@ function tempPr2sAutoRollback_(ss, snapName, logSnapName) {
   return out;
 }
 
-/** Copy a snapshot pair back over the live tables and prove, by hash, that what landed is what was saved. */
+/**
+ * Copy a snapshot pair back over the live tables and prove, by hash, that what landed is what was saved.
+ *
+ * TWO DEFECTS ARE FIXED HERE, AND BOTH OF THEM HAPPENED.
+ *
+ * 1. IT USED TO ABORT BETWEEN THE TWO TABLES. Each restore was verified as it went and threw on the first
+ *    failure — inside a forEach, so the throw skipped the second table entirely. pricing_list came back to
+ *    its PRE shape, the throw fired on its verification, and pricing_change_log was left in its MIGRATED
+ *    shape: a pair in two different eras, which is precisely the state this function exists to prevent.
+ *    Both restores are now ATTEMPTED before either is judged, and nothing throws until both are done.
+ *
+ * 2. IT RESTORED VALUES BUT NOT TYPES. getValues + setValues carries the number and drops everything the
+ *    cell knows about itself. A column whose cells became date-typed during the migration stays date-typed
+ *    through a value-only restore, so getValues() keeps handing every reader a Date where a price belongs,
+ *    and the restore verifies as a failure against its own snapshot — which is how defect 1 got triggered.
+ *    copyTo carries values, types and formats, so the cells come back as the cells they were.
+ */
 function tempPr2sRestorePair_(ss, snapName, logSnapName) {
   var out = [];
-  [[snapName, TEMP_PR2S_PRICE_TAB_], [logSnapName, TEMP_PR2S_LOG_TAB_]].forEach(function (pair) {
-    var src = pair[0] ? ss.getSheetByName(pair[0]) : null;
-    if (!src) { out.push('  (no snapshot ' + pair[0] + ' — ' + pair[1] + ' left as it is)'); return; }
+  var plan = [[snapName, TEMP_PR2S_PRICE_TAB_], [logSnapName, TEMP_PR2S_LOG_TAB_]];
+  var results = [];
+
+  // ---- PHASE 1: attempt BOTH. No verification, no throwing, nothing that can skip the second table. ----
+  plan.forEach(function (pair) {
+    var r = { table: pair[1], snap: pair[0], done: false, error: null };
+    try {
+      var src = pair[0] ? ss.getSheetByName(pair[0]) : null;
+      if (!src) { r.error = 'no snapshot named ' + pair[0]; results.push(r); return; }
+      var dst = ss.getSheetByName(pair[1]);
+      dst.clear();
+      src.getDataRange().copyTo(dst.getRange(1, 1), SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
+      r.done = true;
+    } catch (e) {
+      r.error = (e && e.message) ? e.message : String(e);
+    }
+    results.push(r);
+  });
+  SpreadsheetApp.flush();
+
+  // ---- PHASE 2: judge both, having already attempted both. ----
+  var allOk = true;
+  results.forEach(function (r) {
+    if (r.error) {
+      out.push('  ' + r.table + ' NOT RESTORED — ' + r.error);
+      allOk = false; return;
+    }
+    var src = ss.getSheetByName(r.snap);
+    var dst = ss.getSheetByName(r.table);
     var g = src.getDataRange().getValues();
-    var dst = ss.getSheetByName(pair[1]);
-    dst.clear();
-    dst.getRange(1, 1, g.length, g[0].length).setValues(g);
-    SpreadsheetApp.flush();
     var back = dst.getDataRange().getValues();
     var srcHead = (g[0] || []).map(tempPr2sStr_), backHead = (back[0] || []).map(tempPr2sStr_);
     var fields = srcHead.filter(function (h) { return h !== ''; });
     var okHead = tempPr2sSha_(srcHead.join('|#|')) === tempPr2sSha_(backHead.join('|#|'));
     var okRows = (back.length - 1) === (g.length - 1);
     var okData = tempPr2sLogicalHash_(srcHead, g, fields) === tempPr2sLogicalHash_(backHead, back, fields);
-    out.push('  restored ' + pair[1] + ' from ' + pair[0]
+    if (!okHead || !okRows || !okData) allOk = false;
+    out.push('  restored ' + r.table + ' from ' + r.snap
       + '  rows ' + (back.length - 1) + '  header ' + (okHead ? 'MATCH' : '*** MISMATCH ***')
       + '  rowcount ' + (okRows ? 'MATCH' : '*** MISMATCH ***')
       + '  values ' + (okData ? 'MATCH' : '*** MISMATCH ***'));
-    if (!okHead || !okRows || !okData) throw new Error('restore of ' + pair[1] + ' did not reproduce the snapshot');
   });
-  return out;
+  return { ok: allOk, lines: out };
 }
 
 /**
@@ -693,9 +737,16 @@ function TEMP_PRICING_R2_SCHEMA_RECONCILE_ROLLBACK() {
     p('pricing_list will be restored, which leaves the pair inconsistent. Read this before continuing.');
   }
   try {
-    tempPr2sRestorePair_(ss, newest, logSnapName).forEach(p);
-    p('ROLLBACK COMPLETE — restored content reproduces the snapshot hashes.');
-    p('The snapshot sheets are left in place. Delete them by hand once you are satisfied.');
+    var rres = tempPr2sRestorePair_(ss, newest, logSnapName);
+    rres.lines.forEach(p);
+    if (rres.ok) {
+      p('ROLLBACK COMPLETE — restored content reproduces the snapshot hashes.');
+      p('The snapshot sheets are left in place. Delete them by hand once you are satisfied.');
+    } else {
+      p('*** ROLLBACK FAILED — the restore did not reproduce the snapshot for every table. ***');
+      p('BOTH tables were attempted, so neither is left in the other one\'s era. The snapshots are');
+      p('untouched. Do not run COMMIT. Report this output.');
+    }
   } catch (e) {
     p('*** ROLLBACK FAILED — ' + (e && e.message ? e.message : String(e)) + ' ***');
     p('The snapshots are untouched. Do not run COMMIT. Report this output.');

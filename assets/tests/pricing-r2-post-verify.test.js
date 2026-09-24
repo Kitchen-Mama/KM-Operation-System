@@ -66,10 +66,24 @@ function fakeSheet(name, grid) {
     getMaxColumns: function () { return g.length ? g[0].length : 0; },
     insertColumnsAfter: function (after, n) { S.__widened += n; g.forEach(function (r) { for (var i = 0; i < n; i++) r.push(''); }); },
     clear: function () { S.__cleared++; g.length = 0; },
-    getDataRange: function () { return { getValues: function () { return g.map(function (r) { return r.slice(); }); } }; },
+    getDataRange: function () {
+      return {
+        getValues: function () { return g.map(function (r) { return r.slice(); }); },
+        // Carries values, types and formats in the real API. Here it carries the cell objects as they are,
+        // which is the closest a fake gets; what the suite can prove is that the restore goes through
+        // THIS and not through setValues.
+        copyTo: function (destRange) {
+          var d = destRange.__sheet;
+          d.__grid.length = 0;
+          g.forEach(function (row) { d.__grid.push(row.slice()); });
+          d.__copyToWrites = (d.__copyToWrites || 0) + 1;
+        }
+      };
+    },
     getRange: function (r, c, nr, nc) {
       nr = nr || 1; nc = nc || 1;
       return {
+        __sheet: S, __r: r, __c: c,
         getValues: function () {
           var o = [];
           for (var i = 0; i < nr; i++) { var row = []; for (var j = 0; j < nc; j++) row.push((g[r - 1 + i] || [])[c - 1 + j]); o.push(row); }
@@ -149,7 +163,8 @@ function makeWorld(opts) {
           }
         };
       },
-      flush: function () {}
+      flush: function () {},
+      CopyPasteType: { PASTE_NORMAL: 'PASTE_NORMAL' }
     },
     Utilities: {
       DigestAlgorithm: { SHA_256: 'SHA_256' }, Charset: { UTF_8: 'UTF_8' },

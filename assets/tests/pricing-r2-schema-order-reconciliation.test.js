@@ -80,10 +80,24 @@ function fakeSheet(name, grid) {
     getMaxColumns: function () { return g.length ? g[0].length : 0; },
     insertColumnsAfter: function (after, n) { S.__widened += n; g.forEach(function (r) { for (var i = 0; i < n; i++) r.push(''); }); },
     clear: function () { S.__cleared++; g.length = 0; },
-    getDataRange: function () { return { getValues: function () { return g.map(function (r) { return r.slice(); }); } }; },
+    getDataRange: function () {
+      return {
+        getValues: function () { return g.map(function (r) { return r.slice(); }); },
+        // Carries values, types and formats in the real API. Here it carries the cell objects as they are,
+        // which is the closest a fake gets; what the suite can prove is that the restore goes through
+        // THIS and not through setValues.
+        copyTo: function (destRange) {
+          var d = destRange.__sheet;
+          d.__grid.length = 0;
+          g.forEach(function (row) { d.__grid.push(row.slice()); });
+          d.__copyToWrites = (d.__copyToWrites || 0) + 1;
+        }
+      };
+    },
     getRange: function (r, c, nr, nc) {
       nr = nr || 1; nc = nc || 1;
       return {
+        __sheet: S, __r: r, __c: c,
         getValues: function () {
           var o = [];
           for (var i = 0; i < nr; i++) { var row = []; for (var j = 0; j < nc; j++) row.push((g[r - 1 + i] || [])[c - 1 + j]); o.push(row); }
@@ -176,7 +190,8 @@ function makeWorld(src, opts) {
           }
         };
       },
-      flush: function () {}
+      flush: function () {},
+      CopyPasteType: { PASTE_NORMAL: 'PASTE_NORMAL' }
     },
     Utilities: {
       DigestAlgorithm: { SHA_256: 'SHA_256' }, Charset: { UTF_8: 'UTF_8' },
@@ -659,6 +674,44 @@ section('L · THE LOCK, AND A PARTIAL MIGRATION THAT ROLLS BOTH TABLES BACK');
   eq(res2.w.__price.__grid[0], LIVE, 'L11 pricing_list restored');
   eq(res2.w.__log.__grid[0], LIVE_LOG, 'L12 change_log restored');
   ok(/ROLLBACK COMPLETE/.test(rb), 'L13 and says so only after the proof');
+
+  // THE DEFECT THAT ACTUALLY HAPPENED IN PRODUCTION, as its own case.
+  //
+  // The restore used to verify each table as it went and throw on the first failure — inside a forEach, so
+  // the throw skipped the second table entirely. pricing_list came back to its PRE shape, its verification
+  // failed, and pricing_change_log was left in its MIGRATED shape: the two tables in two different eras,
+  // which is the one outcome a paired rollback exists to prevent. A failing FIRST restore must not be able
+  // to cancel the SECOND one.
+  var res3 = dryThenCommit(TOOL, { rows: rows(10), logRows: logRows(2) });
+  var w3 = res3.w;
+  var snapKey = Object.keys(w3.__extra).filter(function (k) { return /^PRE__pricing_list__/.test(k); })[0];
+  var priceSnap = w3.__extra[snapKey];
+  var realDR = priceSnap.getDataRange;
+  priceSnap.getDataRange = function () {
+    var dr = realDR.call(priceSnap);
+    var realCopy = dr.copyTo;
+    dr.copyTo = function (destRange) {
+      realCopy.call(dr, destRange);
+      // the cell comes back holding something other than what the snapshot holds — exactly the shape of
+      // the base_msrp drift that fired this path on production
+      destRange.__sheet.__grid[1][destRange.__sheet.__grid[0].indexOf('base_msrp')] = new Date(1900, 1, 8);
+    };
+    return dr;
+  };
+  var rb3 = w3.TEMP_PRICING_R2_SCHEMA_RECONCILE_ROLLBACK();
+  ok(/ROLLBACK FAILED/.test(rb3), 'L14 a restore that does not reproduce its snapshot FAILS loudly');
+  ok(/restored pricing_change_log/.test(rb3),
+    'L15 AND the second table is restored anyway — a failing first restore cannot cancel it');
+  eq(w3.__log.__grid[0], LIVE_LOG,
+    'L16 pricing_change_log really is back at its PRE 15-column header, not left in the migrated shape');
+  ok(/pricing_list[\s\S]*MISMATCH/.test(rb3), 'L17 with the failing table named');
+
+  // And the restore must go through copyTo, not setValues: a value-only restore leaves a date-typed cell
+  // date-typed, so every reader keeps getting a Date where a price belongs.
+  ok(/copyTo\(dst\.getRange\(1, 1\)/.test(TOOL),
+    'L18 the restore copies cells, not just their numbers');
+  ok(!/dst\.getRange\(1, 1, g\.length, g\[0\]\.length\)\.setValues\(g\)/.test(TOOL),
+    'L18a and no longer writes values into cells whose type it did not restore');
 }
 
 // =============================================================================================================
@@ -925,8 +978,8 @@ mut('H19 the POST state is not put through the real production gate',
 // 20 — ROLLBACK reports success without proving it. A write that was asked for is not a write that happened,
 // and a rollback nobody verified is the one thing you find out about at the worst moment.
 mut('H20 the rollback does not verify what it restored',
-  '    if (!okHead || !okRows || !okData) throw new Error(\'restore of \' + pair[1] + \' did not reproduce the snapshot\');',
-  '    if (false) throw new Error(\'unreachable\');',
+  '    if (!okHead || !okRows || !okData) allOk = false;',
+  '    if (false) allOk = false;',
   function (m) {
     var res = dryThenCommit(m, { rows: rows(5), logRows: logRows(2) });
     swallowWrites(res.w.__price);                       // the restore is asked for and silently does nothing
