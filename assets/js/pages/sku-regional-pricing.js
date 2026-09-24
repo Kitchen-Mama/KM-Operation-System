@@ -41,6 +41,58 @@
     SRP.OWNER_AUTO = 'AUTO';
     SRP.OWNER_UNKNOWN = 'UNKNOWN';
 
+    // ---- PRICING-R4C-R2 §1 — DISPLAY LABEL vs INTERNAL VALUE ------------------------------------------
+    //
+    // The three modes above are the WRITE CONTRACT and they do not move: 73_ accepts NO_CHANGE / MANUAL /
+    // AUTO, the flag columns stay TRUE / FALSE / blank, and nothing about the database changes here.
+    //
+    // What changes is the word a person reads. "MANUAL" is authority-implementation vocabulary: it names
+    // who will own the field afterwards, which is a consequence of the action rather than the action. The
+    // person is choosing "update this price"; that it makes them the owner is what the system does about
+    // it. Asking an operator to type the consequence is how "I want to change a price" became "I must
+    // understand the ownership model first".
+    //
+    //   No Change        NO_CHANGE
+    //   Update Price     MANUAL
+    //   Use Auto Price   AUTO
+    //
+    // BOTH SPELLINGS PARSE. The label is what the template ships and what the UI offers; the internal
+    // value keeps working because files already downloaded, already edited and already half-uploaded exist
+    // in the world, and a round that renames a vocabulary must not invalidate them.
+    SRP.ACTIONS = [
+        { value: 'NO_CHANGE', label: 'No Change',
+          help: 'Leave this price exactly as it is. The price cell must be blank.' },
+        { value: 'MANUAL', label: 'Update Price',
+          help: 'Enter the new price in the adjacent price column.' },
+        { value: 'AUTO', label: 'Use Auto Price',
+          help: 'Restore the system-calculated price. Leave the price cell blank.' }
+    ];
+
+    var ACTION_LABEL = {};
+    SRP.ACTIONS.forEach(function (a) { ACTION_LABEL[a.value] = a.label; });
+
+    /** The word a person sees for an internal mode. */
+    SRP.actionLabel = function (v) { return ACTION_LABEL[String(v || '').toUpperCase()] || ACTION_LABEL.NO_CHANGE; };
+
+    /** Every label, for an instruction block or a dropdown, in contract order. */
+    SRP.actionLabels = function () { return SRP.ACTIONS.map(function (a) { return a.label; }); };
+
+    /**
+     * Read one action cell into an internal mode, or null when it is not an action at all.
+     *
+     * BLANK IS NO CHANGE and nothing else — the frozen §8 rule, restated here because this function is now
+     * the only place that decides it. An unrecognised word is NULL rather than NO_CHANGE: silently ignoring
+     * a word someone typed on purpose is how an edit disappears without anyone being told.
+     */
+    SRP.readAction = function (cell) {
+        var s = String(cell == null ? '' : cell).trim().toUpperCase().replace(/[\s-]+/g, '_');
+        if (s === '') return 'NO_CHANGE';
+        if (s === 'NO_CHANGE') return 'NO_CHANGE';
+        if (s === 'MANUAL' || s === 'UPDATE_PRICE') return 'MANUAL';
+        if (s === 'AUTO' || s === 'USE_AUTO_PRICE' || s === 'USE_AUTO') return 'AUTO';
+        return null;
+    };
+
     function esc(s) {
         return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
             .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -186,11 +238,22 @@
     }
     SRP.money = money;
 
+    // §9 — TWO VOCABULARIES AGAIN, and for the same reason. On screen an operator is told what HAPPENED to
+    // the price ("a person updated it"); in an exported file the column holds the machine's own word, so a
+    // spreadsheet filter, a diff against an earlier export and a test all keep matching on one token. The
+    // two are separate functions so that changing the wording can never change the file.
     var OWNER_LABEL = {};
-    OWNER_LABEL[SRP.OWNER_MANUAL] = 'Manual';
+    OWNER_LABEL[SRP.OWNER_MANUAL] = 'User Updated';
     OWNER_LABEL[SRP.OWNER_AUTO] = 'Auto';
-    OWNER_LABEL[SRP.OWNER_UNKNOWN] = 'Not set';
-    SRP.ownerLabel = function (o) { return OWNER_LABEL[o] || 'Not set'; };
+    OWNER_LABEL[SRP.OWNER_UNKNOWN] = 'Not Set';
+    SRP.ownerLabel = function (o) { return OWNER_LABEL[o] || 'Not Set'; };
+
+    var OWNER_CODE = {};
+    OWNER_CODE[SRP.OWNER_MANUAL] = 'MANUAL';
+    OWNER_CODE[SRP.OWNER_AUTO] = 'AUTO';
+    OWNER_CODE[SRP.OWNER_UNKNOWN] = 'NOT_SET';
+    /** The token an EXPORTED FILE carries. Frozen, and deliberately not derived from the display label. */
+    SRP.ownerCode = function (o) { return OWNER_CODE[o] || 'NOT_SET'; };
 
     /** The read-only pricing block for the Marketplace section. */
     SRP.sectionHtml = function (resolved) {
@@ -229,7 +292,7 @@
 
         var anyUnknown = SRP.FIELDS.some(function (s) { return SRP.ownerOf(row, s) === SRP.OWNER_UNKNOWN; });
         var unknownNote = anyUnknown
-            ? '<div class="srd-secnote">A field marked <strong>Not set</strong> has no recorded owner. It is not the same as Auto, and no FX refresh will touch it until someone says which it is.</div>'
+            ? '<div class="srd-secnote">A field marked <strong>Not Set</strong> has no recorded owner. It is not the same as Auto, and no FX refresh will touch it until someone says which it is.</div>'
             : '';
 
         return '<div class="srd-pricing">' + head + rows + '</div>' + unknownNote +
@@ -253,16 +316,16 @@
                     '<label class="srd-pe__lbl">' + esc(spec.label) +
                         '<span class="srd-own srd-own--' + v.owner.toLowerCase() + '">' + esc(SRP.ownerLabel(v.owner)) + '</span></label>' +
                     '<select id="' + id + '-mode" onchange="srdPriceModeChanged(\'' + spec.key + '\')">' +
-                        '<option value="NO_CHANGE" selected>Leave unchanged</option>' +
-                        '<option value="AUTO">Use Auto (' + esc(autoTxt) + ')</option>' +
-                        '<option value="MANUAL">Manual</option>' +
+                        '<option value="NO_CHANGE" selected>' + esc(SRP.actionLabel('NO_CHANGE')) + '</option>' +
+                        '<option value="AUTO">' + esc(SRP.actionLabel('AUTO')) + ' (' + esc(autoTxt) + ')</option>' +
+                        '<option value="MANUAL">' + esc(SRP.actionLabel('MANUAL')) + '</option>' +
                     '</select>' +
                     '<input id="' + id + '-value" type="text" inputmode="decimal" disabled placeholder="' +
                         (v.effective === null ? 'enter a price' : esc(String(v.effective))) + '" value="">' +
                     '</div>';
             }).join('') +
-            '<p class="srd-modal__hint">Each price is owned separately: setting <strong>Regular</strong> to Manual does not change who owns <strong>Minimum</strong> or <strong>MSRP</strong>. ' +
-            '<strong>Use Auto</strong> hands the field back to the system and restores it from the stored auto value — it is refused when there is no auto value to restore, because writing 0 there would be a price.</p>' +
+            '<p class="srd-modal__hint">Each price is owned separately: choosing <strong>Update Price</strong> for <strong>Regular</strong> does not change who owns <strong>Minimum</strong> or <strong>MSRP</strong>. ' +
+            '<strong>Use Auto Price</strong> hands the field back to the system and restores it from the stored auto value — it is refused when there is no auto value to restore, because writing 0 there would be a price.</p>' +
             '</div>';
     };
 
@@ -349,17 +412,24 @@
     }
 
     /**
-     * The UPDATE template. Every mode column ships as NO_CHANGE, so a downloaded-and-re-uploaded file with
-     * no edits changes nothing at all. That is the property that makes the round trip safe to experiment
-     * with, and it is the reason the modes are written out rather than left blank.
+     * The UPDATE template. §3 — every action cell ships as "No Change" and every price cell ships BLANK, so
+     * a downloaded-and-re-uploaded file with no edits changes nothing at all, and an untouched template
+     * VISUALLY means "nothing will change". The current effective prices are deliberately NOT pre-filled:
+     * a file that arrives holding today's prices invites an operator to edit two of them and upload the
+     * other ninety-eight as manual claims nobody made. Current prices live in their own download.
+     *
+     * §1/§2 — the action cell carries the WORD A PERSON RECOGNISES rather than the internal token. CSV
+     * cannot carry dropdown validation, so the file cannot stop a wrong word being typed; what it can do
+     * is make the right word obvious, and the upload refuses anything else by name.
      */
     SRP.buildTemplateCsv = function (pricingRows, marketplaceSkus) {
         var mix = indexMkt(marketplaceSkus);
+        var nc = SRP.actionLabel('NO_CHANGE');
         var rows = (pricingRows || []).map(function (p) {
             var c = ctxOf(p, mix);
-            c.regular_price_mode = 'NO_CHANGE'; c.regular_price = '';
-            c.minimum_price_mode = 'NO_CHANGE'; c.minimum_price = '';
-            c.msrp_mode = 'NO_CHANGE'; c.msrp = '';
+            c.regular_price_mode = nc; c.regular_price = '';
+            c.minimum_price_mode = nc; c.minimum_price = '';
+            c.msrp_mode = nc; c.msrp = '';
             return c;
         });
         return SRP.toCsv(SRP.TEMPLATE_COLUMNS, rows);
@@ -373,7 +443,7 @@
             SRP.FIELDS.forEach(function (spec) {
                 var v = SRP.fieldView(p, spec);
                 c[spec.key] = v.effectiveIsNa ? 'NA' : (v.effective === null ? '' : v.effective);
-                c[spec.key + '_owner'] = SRP.ownerLabel(v.owner).toUpperCase().replace(' ', '_');
+                c[spec.key + '_owner'] = SRP.ownerCode(v.owner);
                 c[spec.autoKey] = v.auto === null ? '' : v.auto;
             });
             var raw = p.raw || {};
@@ -450,12 +520,13 @@
             var bad = false;
             SRP.FIELDS.forEach(function (spec) {
                 var modeRaw = col(r, spec.mode);
-                // §8 — a BLANK cell is NO_CHANGE. It is never a deletion and never AUTO.
-                var mode = modeRaw === '' ? 'NO_CHANGE' : modeRaw.toUpperCase().replace(/[\s-]+/g, '_');
-                if (SRP.MODES.indexOf(mode) === -1) {
+                // §8 — a BLANK cell is NO_CHANGE. It is never a deletion and never AUTO. SRP.readAction is
+                // the one place that decides this, and it accepts the display label as well as the token.
+                var mode = SRP.readAction(modeRaw);
+                if (mode === null) {
                     out.ok = false; bad = true;
                     out.errors.push({ line: lineNo, code: 'MODE_UNSUPPORTED', field: spec.key,
-                        detail: JSON.stringify(modeRaw) + ' is not one of ' + SRP.MODES.join(' / ') + '.' });
+                        detail: JSON.stringify(modeRaw) + ' is not one of ' + SRP.actionLabels().join(' / ') + '.' });
                     return;
                 }
                 line[spec.mode] = mode;
@@ -577,23 +648,51 @@
 
         var base = SRP.validateFile(text);
         out.rowCount = base.rowCount;
-        if (!base.ok) { out.ok = false; out.errors = base.errors.slice(); return out; }
+        // A FAILED FILE STILL GETS THE FULL READING. Returning here would report only the file-shape
+        // errors, and an operator fixing a blank Update Price would upload again to be told about the
+        // price they left beside a No Change. The scan below reads the GRID, not the lines, so it works
+        // just as well on a file that has already failed — and one round trip beats three.
+        if (!base.ok) { out.ok = false; out.errors = base.errors.slice(); }
 
-        // A VALUE BESIDE AUTO. Read off the GRID, because validateFile has already dropped it by the time
-        // it returns lines — which is exactly the behaviour being kept intact underneath.
+        // §4 — A PRICE BESIDE AN ACTION THAT TAKES NO PRICE. Read off the GRID, because validateFile has
+        // already dropped the value by the time it returns lines — which is exactly the behaviour being kept
+        // intact underneath.
+        //
+        // THE MISUSE THIS EXISTS FOR (§2): a person deletes the action word, types a price, and uploads. The
+        // frozen reader is right to treat a blank action as No Change, and right to drop the price — but the
+        // combination of the two means an operator who did the most natural thing in the world is told
+        // "valid, nothing to do" about a file they believe contains a price change. Dropping a value is the
+        // safe reading; it is not an honest one when the value was the entire point.
+        //
+        // So the scoped import REFUSES both contradictions and names them, while the frozen function keeps
+        // dropping. There is no second import contract — this is a gate in front of the same one.
         var grid = SRP.parseCsv(text);
         var headers = (grid[0] || []).map(function (h) { return String(h).trim().toLowerCase(); });
         var cell = function (r, n) { var i = headers.indexOf(n); return i === -1 ? '' : String(r[i] == null ? '' : r[i]).trim(); };
+        var NC = SRP.actionLabel('NO_CHANGE'), UP = SRP.actionLabel('MANUAL'), UA = SRP.actionLabel('AUTO');
         for (var g = 1; g < grid.length; g++) {
             SRP.FIELDS.forEach(function (spec) {
-                var mode = cell(grid[g], spec.mode).toUpperCase().replace(/[\s-]+/g, '_');
-                if (mode === 'AUTO' && cell(grid[g], spec.key) !== '') {
+                var raw = cell(grid[g], spec.mode);
+                var mode = SRP.readAction(raw);
+                var val = cell(grid[g], spec.key);
+                if (val === '') return;
+                if (mode === 'AUTO') {
                     out.ok = false;
                     out.errors.push({ line: g + 1, code: 'AUTO_WITH_VALUE', field: spec.key,
-                        detail: 'AUTO and a price in the same row say two different things. Use Auto restores the price from the stored auto value; clear the price cell, or choose MANUAL.' });
+                        detail: '"' + UA + '" and a price in the same row say two different things. ' + UA +
+                            ' restores the price from the stored auto value; clear the price cell, or choose "' + UP + '".' });
+                } else if (mode === 'NO_CHANGE') {
+                    out.ok = false;
+                    out.errors.push({ line: g + 1, code: 'NO_CHANGE_WITH_PRICE', field: spec.key,
+                        detail: (raw === ''
+                            ? 'The action cell is blank, which means "' + NC + '", but a price is filled in. '
+                            : '"' + NC + '" and a price in the same row say two different things. ') +
+                            'To change this price set the action to "' + UP + '". To leave it alone, clear the price cell.' });
                 }
             });
         }
+
+        if (!base.ok) { out.lines = []; return out; }
 
         // SCOPE MEMBERSHIP IS DECIDED BY marketplace_sku_id ALONE, never by the country or marketplace cell.
         // Those columns are context: the import does not read them, so a row pasted from another target
@@ -652,6 +751,67 @@
                     new_owner: f.mode === 'AUTO' ? SRP.OWNER_AUTO : SRP.OWNER_MANUAL
                 });
             });
+        });
+        return out;
+    };
+
+    /**
+     * §8 — ONE CARD PER SKU. previewRows emits one entry per CHANGED FIELD, which is the right shape for a
+     * receipt and the wrong shape for a person: a SKU whose Regular, Minimum and MSRP all move appears three
+     * times, in three places, with nothing tying them together. Grouping is presentation and it is done
+     * here rather than in the page so the grouping itself can be tested without a DOM.
+     *
+     * Order is preserved from the receipt. A "sorted by size of change" list would put the biggest number
+     * first, which reads as a ranking of importance that nobody computed.
+     */
+    SRP.groupPreview = function (previewRows) {
+        var order = [], byId = {};
+        (previewRows || []).forEach(function (r) {
+            var id = String(r.marketplace_sku_id || '').trim();
+            var g = byId[id];
+            if (!g) {
+                g = byId[id] = { marketplace_sku_id: id, sku: r.sku, site_sku: r.site_sku, changes: [] };
+                order.push(g);
+            }
+            g.changes.push(r);
+        });
+        return order;
+    };
+
+    /** §7 — how many SKU cards one screen shows before asking. Not a scroll limit: a render limit. */
+    SRP.PREVIEW_PAGE_SIZE = 20;
+
+    /**
+     * §6/§11 — THE NUMBERS ABOVE THE LIST, and the same numbers again on the confirmation.
+     *
+     * Every count is derived from the SERVER RECEIPT, never from the file: the receipt is what the dry run
+     * said would happen, and a browser-side recount would be a second opinion that can disagree with the
+     * thing about to be written. rowsInFile is the only figure that comes from the file, because it is a
+     * fact about the file.
+     *
+     * "Rows unchanged" deliberately counts rows the server said would not move — which includes a row whose
+     * file line asked for a price it already holds. Calling those "unchanged" rather than "skipped" is the
+     * honest word: the operator asked for something, and the answer is that it is already so.
+     */
+    SRP.previewSummary = function (parsed, receiptRows, previewRows) {
+        var rows = receiptRows || [];
+        var changedRows = rows.filter(function (r) { return r && r.changed; });
+        var out = {
+            rowsInFile: (parsed && parsed.rowCount) || 0,
+            rowsChecked: rows.length,
+            rowsChanging: changedRows.length,
+            rowsUnchanged: rows.length - changedRows.length,
+            rowsRejected: Math.max(0, ((parsed && parsed.rowCount) || 0) - (((parsed && parsed.lines) || []).length)),
+            errorCount: ((parsed && parsed.errors) || []).length,
+            fieldChanges: 0,
+            byField: {}, byAction: { MANUAL: 0, AUTO: 0 }
+        };
+        SRP.FIELDS.forEach(function (spec) { out.byField[spec.key] = 0; });
+        (previewRows || []).forEach(function (r) {
+            out.fieldChanges++;
+            if (out.byField[r.field] !== undefined) out.byField[r.field]++;
+            if (r.mode === 'AUTO') out.byAction.AUTO++;
+            else if (r.mode === 'MANUAL') out.byAction.MANUAL++;
         });
         return out;
     };

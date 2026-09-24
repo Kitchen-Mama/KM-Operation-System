@@ -319,8 +319,14 @@ section('H · PREVIEW BEFORE WRITE, AND ONE WRITE PATH');
   ok(/id=\\"srd-bulk-continue-btn\\"[\s\S]{0,160}disabled/.test(PAGE) || /continue-btn[\s\S]{0,200}changedRows > 0 \? '' : ' disabled'/.test(PAGE),
     'H2  Confirm Update is disabled until a preview has found something to change');
   ok(/b\.stage = 'confirm'/.test(PAGE), 'H3  and confirming goes through the confirmation step, not straight to the write');
-  ok(/You are about to update/.test(PAGE) && /This may change pricing ownership between MANUAL and AUTO/.test(PAGE),
-    'H4  which states the count, the target and what ownership may do');
+  // PRICING-R4C-R2 §11 — the confirmation leads with the number of CHANGES rather than the number of rows
+  // read, and §1/§9 removed "MANUAL" from it. Same claim, new words, plus the count requirement it lacked.
+  ok(PAGE.indexOf("sm.fieldChanges + ' price change'") !== -1,
+    'H4  the confirmation leads with the number of price CHANGES, not the number of rows uploaded');
+  ok(/srd-bulk__confirm-n/.test(PAGE) && /<span>Country<\/span>/.test(PAGE) && /<span>Currency<\/span>/.test(PAGE),
+    'H4b with the target and the currency stated beside it');
+  ok(/ownerLabel\('MANUAL'\)/.test(PAGE) && !/between MANUAL and AUTO/.test(PAGE),
+    'H4c and what ownership may do, in the words §9 allows rather than the schema\'s');
 
   // ONE WRITE PATH. Two transports into pricing_list is how the field-level flags stop being trustworthy:
   // the invariant that nothing else writes a price would stop being checkable.
@@ -404,8 +410,12 @@ section('J · THE ENTRY POINT EXISTS, AND EVERY CLASS IT EMITS HAS A RULE');
   // §9 — one vocabulary. The single-row editor and the bulk preview must not disagree about authority.
   ok(/SRP\.ownerLabel/.test(SRP_SRC) && /ownerLabel\(c\.current_owner\)/.test(PAGE),
     'J5  the bulk preview labels ownership with the same function the single-row editor uses');
-  eq([SRP.ownerLabel('MANUAL'), SRP.ownerLabel('AUTO'), SRP.ownerLabel('UNKNOWN')], ['Manual', 'Auto', 'Not set'],
+  // PRICING-R4C-R2 §9 — the SCREEN says what happened to the price; "MANUAL" is not shown to an operator.
+  eq([SRP.ownerLabel('MANUAL'), SRP.ownerLabel('AUTO'), SRP.ownerLabel('UNKNOWN')], ['User Updated', 'Auto', 'Not Set'],
     'J5a and the three states are the three the editor shows');
+  // ... while the EXPORTED FILE keeps the machine token, so a spreadsheet filter and a diff still match.
+  eq([SRP.ownerCode('MANUAL'), SRP.ownerCode('AUTO'), SRP.ownerCode('UNKNOWN')], ['MANUAL', 'AUTO', 'NOT_SET'],
+    'J5b and the export token is a SEPARATE function, so the wording cannot change the file');
 
   // Pricing stays regional. Master SKU Details gains nothing in this round.
   var MASTER = readN('assets/js/pages/sku-details.js');

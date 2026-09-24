@@ -219,12 +219,54 @@
 #sku-regional-details-section .srd-bulk__target span { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: #94A3B8; }
 #sku-regional-details-section .srd-bulk__target strong { font-size: 13px; color: #0F172A; }
 #sku-regional-details-section .srd-bulk__files { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 6px; }
-#sku-regional-details-section .srd-bulk__tbl { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
-#sku-regional-details-section .srd-bulk__tbl th { text-align: left; padding: 6px 8px; border-bottom: 1px solid #E2E8F0; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: #94A3B8; }
-#sku-regional-details-section .srd-bulk__tbl td { padding: 6px 8px; border-bottom: 1px solid #F1F5F9; color: #334155; vertical-align: top; }
+/* The bulk preview was a table of one row per changed FIELD until PRICING-R4C-R2; it is now one card per
+   SKU (.srd-bulk__card below), so .srd-bulk__tbl has no element left to style and its rules are gone. */
 #sku-regional-details-section .srd-bulk__confirm { padding: 4px 2px; font-size: 13px; color: #0F172A; }
 #sku-regional-details-section .srd-bulk__confirm p { margin: 8px 0; }
+#sku-regional-details-section .srd-bulk__confirm-n { font-size: 18px; font-weight: 700; color: #0F172A; margin: 2px 0 4px; }
 #sku-regional-details-section .srd-bulk__ok { padding: 12px 14px; border: 1px solid #BBF7D0; border-radius: 8px; background: #F0FDF4; color: #15803D; font-size: 14px; }
+
+/* ---- PRICING-R4C-R2 §5 — HOW TO UPDATE PRICES -----------------------------------------------------------
+   Visually SECONDARY on purpose. It sits between the download buttons and the file input because that is
+   where the question is asked, and it is quiet because the target and the currency beside it are the two
+   things a person must actually check. */
+#sku-regional-details-section .srd-bulk__how { margin: 8px 0 12px; padding: 10px 14px; border: 1px solid #E2E8F0; border-radius: 8px; background: #F8FAFC; font-size: 12px; color: #475569; }
+#sku-regional-details-section .srd-bulk__how-h { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #64748B; margin-bottom: 6px; }
+#sku-regional-details-section .srd-bulk__how ul { margin: 0; padding-left: 18px; }
+#sku-regional-details-section .srd-bulk__how li { margin-bottom: 3px; }
+#sku-regional-details-section .srd-bulk__how li strong { color: #0F172A; }
+#sku-regional-details-section .srd-bulk__how-t { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #E2E8F0; }
+#sku-regional-details-section .srd-bulk__how-t span { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: #94A3B8; }
+#sku-regional-details-section .srd-bulk__how-t strong { display: block; font-size: 13px; text-transform: none; letter-spacing: 0; color: #0F172A; }
+#sku-regional-details-section .srd-bulk__how-n { margin-top: 8px; font-size: 11px; color: #64748B; }
+
+/* ---- §6 THE SUMMARY. The arithmetic first, the file and target under it. ------------------------------- */
+#sku-regional-details-section .srd-bulk__sum { margin: 12px 0 8px; padding: 12px 14px; border: 1px solid #E2E8F0; border-radius: 8px; background: #fff; }
+#sku-regional-details-section .srd-bulk__sum-h { font-size: 18px; font-weight: 700; color: #0F172A; }
+#sku-regional-details-section .srd-bulk__sum-b { margin-top: 3px; font-size: 13px; color: #475569; }
+#sku-regional-details-section .srd-bulk__sum-b strong { color: #0F172A; }
+#sku-regional-details-section .srd-bulk__bad { color: #B91C1C; font-weight: 700; }
+#sku-regional-details-section .srd-bulk__sum-m { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 9px; padding-top: 9px; border-top: 1px solid #F1F5F9; }
+#sku-regional-details-section .srd-bulk__sum-m span { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: #94A3B8; }
+#sku-regional-details-section .srd-bulk__sum-m strong { font-size: 12px; text-transform: none; letter-spacing: 0; color: #334155; margin-left: 5px; }
+
+/* ---- §7/§8/§10 THE CHANGE CARDS -------------------------------------------------------------------------
+   The list is bounded twice and the two bounds do different jobs: the page size caps what is BUILT, and
+   max-height caps what is SHOWN so twenty cards cannot push the Confirm button off the modal. There is no
+   horizontal scroll at any width — the change line reflows to two rows instead. */
+#sku-regional-details-section .srd-bulk__cards { max-height: 42vh; overflow-y: auto; overflow-x: hidden; margin-top: 4px; }
+#sku-regional-details-section .srd-bulk__card { margin-bottom: 8px; padding: 10px 12px; border: 1px solid #E2E8F0; border-radius: 8px; background: #fff; }
+#sku-regional-details-section .srd-bulk__card-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: 6px; }
+#sku-regional-details-section .srd-bulk__card-h strong { font-size: 13px; color: #0F172A; }
+#sku-regional-details-section .srd-bulk__card-h span { font-size: 11px; color: #94A3B8; }
+#sku-regional-details-section .srd-bulk__chg { display: grid; grid-template-columns: minmax(110px, 1.1fr) minmax(130px, 1.3fr) minmax(150px, 1.5fr) minmax(90px, .9fr); gap: 4px 12px; align-items: center; padding: 5px 0; border-top: 1px solid #F1F5F9; font-size: 12px; }
+#sku-regional-details-section .srd-bulk__chg-f { color: #64748B; }
+#sku-regional-details-section .srd-bulk__chg-v { color: #334155; }
+#sku-regional-details-section .srd-bulk__chg-v strong { color: #0F172A; }
+#sku-regional-details-section .srd-bulk__chg i { font-style: normal; color: #CBD5E1; padding: 0 2px; }
+#sku-regional-details-section .srd-bulk__chg-a { font-size: 11px; color: #64748B; text-align: right; }
+#sku-regional-details-section .srd-bulk__more { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #F1F5F9; }
+#sku-regional-details-section .srd-bulk__more span { font-size: 11px; color: #64748B; }
 
 #sku-regional-details-section .srd-modal__sec { grid-column: 1 / -1; font-size: 12px; font-weight: 700; color: #0F172A; margin: 10px 0 2px; border-bottom: 1px solid #E2E8F0; padding-bottom: 4px; }
 #sku-regional-details-section .srd-pe { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 8px; }
@@ -241,5 +283,8 @@
 
 @media (max-width: 720px) {
   #sku-regional-details-section .srd-pe__row { grid-template-columns: 1fr; }
+  /* §10 — the change line reflows rather than scrolling sideways inside a modal that already scrolls. */
+  #sku-regional-details-section .srd-bulk__chg { grid-template-columns: 1fr 1fr; }
+  #sku-regional-details-section .srd-bulk__chg-a { text-align: left; }
   #sku-regional-details-section .srd-pr__row { flex-direction: column; align-items: flex-start; }
 }

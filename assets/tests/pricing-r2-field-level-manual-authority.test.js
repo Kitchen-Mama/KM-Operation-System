@@ -590,16 +590,24 @@ section('J · §8 THE TEMPLATE — a blank cell is NO_CHANGE, and a round trip c
   var csv = SRP.buildTemplateCsv(pricing, mkt);
   var v = SRP.validateFile(csv);
   eq([v.ok, v.lines.length], [true, 1], 'J3  an unedited template is valid');
-  eq(v.lines.filter(SRP.lineTouches).length, 0, 'J4  and asks for NOTHING — every mode ships as NO_CHANGE');
+  eq(v.lines.filter(SRP.lineTouches).length, 0, 'J4  and asks for NOTHING — every mode ships as No Change');
+
+  // THE ANCHOR THE FIXTURES BELOW EDIT, taken from the module rather than spelled out. PRICING-R4C-R2 §1
+  // changed the word the template SHIPS, and a hard-coded token turned three of these refusal tests into
+  // no-ops: the replace matched nothing, the untouched file was valid, and "valid" was the wrong answer to
+  // a question about a refusal. So the anchor is derived, and it is PROVEN to exist before anything uses it.
+  var NC = SRP.actionLabel('NO_CHANGE');
+  var TRIPLE = NC + ',,' + NC + ',,' + NC + ',';
+  ok(csv.indexOf(TRIPLE) !== -1, 'J4b the fixture anchor is present in the template — these tests can fail');
 
   // A BLANK mode cell is NO_CHANGE. Not delete. Not AUTO.
-  var blanked = csv.replace(/NO_CHANGE/g, '');
+  var blanked = csv.split(NC).join('');
   var vb = SRP.validateFile(blanked);
   eq([vb.ok, vb.lines[0].regular_price_mode, vb.lines.filter(SRP.lineTouches).length], [true, 'NO_CHANGE', 0],
     'J5  a BLANK mode cell reads as NO_CHANGE and asks for nothing');
 
   // AUTO drops a supplied value, at the file boundary as well as at the writer.
-  var withAuto = csv.replace('NO_CHANGE,,NO_CHANGE,,NO_CHANGE,', 'AUTO,999,NO_CHANGE,,NO_CHANGE,');
+  var withAuto = csv.replace(TRIPLE, 'AUTO,999,' + NC + ',,' + NC + ',');
   var va = SRP.validateFile(withAuto);
   eq([va.ok, va.lines[0].regular_price_mode, va.lines[0].regular_price], [true, 'AUTO', undefined],
     'J6  AUTO carries no value forward — a price cannot ride in behind it');
@@ -609,13 +617,13 @@ section('J · §8 THE TEMPLATE — a blank cell is NO_CHANGE, and a round trip c
   var r;
   r = SRP.validateFile('nope,at,all\n1,2,3');
   eq([r.ok, r.errors[0].code], [false, 'MISSING_REQUIRED_COLUMNS'], 'J7  a file without the required columns is refused');
-  r = bad(['NO_CHANGE,,NO_CHANGE,,NO_CHANGE,', 'MANUAL,,NO_CHANGE,,NO_CHANGE,']);
+  r = bad([TRIPLE, 'MANUAL,,' + NC + ',,' + NC + ',']);
   eq([r.ok, r.errors[0].code, r.lines.length], [false, 'MANUAL_PRICE_REQUIRED', 0], 'J8  MANUAL with a blank price is refused — blank is not zero');
-  r = bad(['NO_CHANGE,,NO_CHANGE,,NO_CHANGE,', 'MANUAL,abc,NO_CHANGE,,NO_CHANGE,']);
+  r = bad([TRIPLE, 'MANUAL,abc,' + NC + ',,' + NC + ',']);
   eq([r.ok, r.errors[0].code], [false, 'PRICE_NOT_NUMERIC'], 'J9  a non-numeric manual price is refused');
-  r = bad(['NO_CHANGE,,NO_CHANGE,,NO_CHANGE,', 'MANUAL,-5,NO_CHANGE,,NO_CHANGE,']);
+  r = bad([TRIPLE, 'MANUAL,-5,' + NC + ',,' + NC + ',']);
   eq([r.ok, r.errors[0].code], [false, 'PRICE_NEGATIVE'], 'J10 a negative manual price is refused');
-  r = bad(['NO_CHANGE,,NO_CHANGE,,NO_CHANGE,', 'DELETE,,NO_CHANGE,,NO_CHANGE,']);
+  r = bad([TRIPLE, 'DELETE,,' + NC + ',,' + NC + ',']);
   eq([r.ok, r.errors[0].code], [false, 'MODE_UNSUPPORTED'], 'J11 an unsupported mode is refused, never ignored');
   r = SRP.validateFile(csv + '\r\n' + csv.split(/\r?\n/)[1]);
   eq([r.ok, r.errors[0].code], [false, 'DUPLICATE_IDENTITY'], 'J12 the same identity twice inside the file is refused');

@@ -1018,7 +1018,8 @@
         if (!P) { srdToast('Pricing module not loaded.'); return; }
         if (!useDb()) { srdToast('Enable the cloud DB to run a bulk update.'); return; }
         _srdBulk = { category: null, country: '', scopeKey: '', scope: null, stage: 'category',
-            fileName: null, lines: null, preview: null, result: null, scopes: P.scopes(_srdGetPricing(), _srdGetMktSkus()) };
+            fileName: null, lines: null, preview: null, shown: 0, result: null,
+            scopes: P.scopes(_srdGetPricing(), _srdGetMktSkus()) };
         _srdBulkOverlay();
         _srdBulkRender();
         el('srd-bulk-overlay').style.display = 'flex';
@@ -1053,6 +1054,7 @@
     /** Changing the target throws away anything validated against the previous one. */
     function _srdBulkReset() {
         _srdBulk.fileName = null; _srdBulk.lines = null; _srdBulk.preview = null; _srdBulk.result = null;
+        _srdBulk.shown = 0;
         if (_srdBulk.stage === 'preview' || _srdBulk.stage === 'confirm') _srdBulk.stage = 'scope';
     }
 
@@ -1104,15 +1106,47 @@
             (b.country ? '' : ' disabled') + '>' + mktOpts + '</select></label>' + chosen + notice;
     }
 
+    /**
+     * §5 — HOW TO UPDATE PRICES, next to the buttons it is about.
+     *
+     * The three rules are generated from SRP.ACTIONS rather than written out here, so the words on this
+     * screen, the words in the template and the words the parser accepts cannot drift apart: there is one
+     * list and three readers of it.
+     *
+     * VISUALLY SECONDARY, deliberately. This is a reminder for someone who has done it before, not a manual
+     * for someone who has not — a block that shouts competes with the target and the file name, which are
+     * the two things a person must actually check before uploading.
+     */
+    function _srdBulkHowToHtml() {
+        var P = _srdPricingApi(), b = _srdBulk;
+        if (!P || !b.scope || !b.scope.currency) return '';
+        var rules = P.ACTIONS.map(function (a) {
+            return '<li><strong>' + esc(a.label) + '</strong> — ' + esc(a.help) + '</li>';
+        }).join('');
+        return '<div class="srd-bulk__how">' +
+            '<div class="srd-bulk__how-h">How to update prices</div>' +
+            '<ul>' + rules + '</ul>' +
+            '<div class="srd-bulk__how-t">' +
+            '<span>Target <strong>' + esc(b.scope.country) + ' · ' + esc(b.scope.marketplace) + '</strong></span>' +
+            '<span>Currency <strong>' + esc(b.scope.currency) + '</strong></span>' +
+            '</div>' +
+            '<div class="srd-bulk__how-n">All prices entered in this file must be in ' + esc(b.scope.currency) +
+            '. The action column and its price column are a pair: the action says what to do, the price ' +
+            'column carries the number only when the action asks for one.</div>' +
+            '</div>';
+    }
+
     function _srdBulkFilesHtml() {
-        var b = _srdBulk;
-        if (!b.scope || !b.scope.currency) return '';
+        var P = _srdPricingApi(), b = _srdBulk;
+        if (!P || !b.scope || !b.scope.currency) return '';
         return '<div class="srd-bulk__files">' +
             '<button type="button" class="srd-btn srd-btn--default" onclick="srdBulkDownloadCurrent()">Download Current Pricing</button>' +
             '<button type="button" class="srd-btn srd-btn--default" onclick="srdBulkDownloadTemplate()">Download Update Template</button>' +
             '</div>' +
+            _srdBulkHowToHtml() +
             '<div class="srd-secnote">Current Pricing is your rollback reference — download and keep it before uploading anything. ' +
-            'The template covers only this target and ships every field as NO_CHANGE, so an unedited upload changes nothing.</div>' +
+            'The template covers only this target; every action ships as <strong>' + esc(P.actionLabel('NO_CHANGE')) +
+            '</strong> with a blank price, so an unedited upload changes nothing.</div>' +
             '<label class="wide">Upload Pricing Update<input id="srd-bulk-file" type="file" accept=".csv,text/csv"></label>';
     }
 
@@ -1142,8 +1176,8 @@
                 '<div class="srd-bulk__target">' +
                 '<div><span>Rows updated</span><strong>' + s.rows_updated + '</strong></div>' +
                 '<div><span>Fields updated</span><strong>' + s.fields_updated + '</strong></div>' +
-                '<div><span>Manual fields</span><strong>' + s.manual_fields + '</strong></div>' +
-                '<div><span>Auto fields</span><strong>' + s.auto_fields + '</strong></div>' +
+                '<div><span>Updated by you</span><strong>' + s.manual_fields + '</strong></div>' +
+                '<div><span>Returned to Auto</span><strong>' + s.auto_fields + '</strong></div>' +
                 '</div><div class="srd-secnote">' + b.result.logged + ' audit entries written to pricing_change_log.</div></div>' +
                 '<div class="srd-modal__foot">' +
                 '<button type="button" class="srd-btn srd-btn--default" onclick="srdBulkDownloadResult()">Download Result</button>' +
@@ -1152,28 +1186,43 @@
         }
 
         if (b.stage === 'confirm') {
+            // §11 — WHAT WILL BE WRITTEN, not what was read. "87 price changes" is the number a person is
+            // agreeing to; "100 rows uploaded" is a fact about a file and agreeing to it means nothing.
+            var P2 = _srdPricingApi();
+            var sm = b.preview.summary;
+            var fieldBits = P2.FIELDS.map(function (spec) {
+                return '<div><span>' + esc(spec.label) + '</span><strong>' + (sm.byField[spec.key] || 0) + '</strong></div>';
+            }).join('');
             modal.innerHTML = head +
                 '<div class="srd-modal__body"><div class="srd-bulk__confirm">' +
-                '<p>You are about to update <strong>' + b.preview.changedRows + '</strong> pricing row(s) for:</p>' +
+                '<div class="srd-bulk__confirm-n">' + sm.fieldChanges + ' price change' + (sm.fieldChanges === 1 ? '' : 's') +
+                ' across ' + b.preview.changedRows + ' SKU' + (b.preview.changedRows === 1 ? '' : 's') + '</div>' +
                 '<div class="srd-bulk__target">' +
                 '<div><span>Country</span><strong>' + esc(b.scope.country) + '</strong></div>' +
                 '<div><span>Marketplace</span><strong>' + esc(b.scope.marketplace) + '</strong></div>' +
                 '<div><span>Currency</span><strong>' + esc(b.scope.currency) + '</strong></div></div>' +
-                '<p>This may change pricing ownership between MANUAL and AUTO.</p>' +
-                '<p>Continue?</p></div></div>' +
+                '<div class="srd-bulk__target">' + fieldBits + '</div>' +
+                '<div class="srd-bulk__target">' +
+                '<div><span>' + esc(P2.actionLabel('MANUAL')) + '</span><strong>' + sm.byAction.MANUAL + '</strong></div>' +
+                '<div><span>' + esc(P2.actionLabel('AUTO')) + '</span><strong>' + sm.byAction.AUTO + '</strong></div>' +
+                '<div><span>Errors</span><strong>' + (sm.rowsRejected || sm.errorCount) + '</strong></div></div>' +
+                '<p class="srd-modal__hint">Each price updated this way becomes <strong>' + esc(P2.ownerLabel('MANUAL')) +
+                '</strong> and a later FX run will leave it alone. ' + esc(P2.actionLabel('AUTO')) + ' hands the field ' +
+                'back to the system, so FX may refresh it again.</p>' +
+                '<p>Write these changes?</p></div></div>' +
                 '<div class="srd-modal__foot">' +
                 '<button type="button" class="srd-btn srd-btn--default" onclick="srdBulkBackToPreview()">Cancel</button>' +
-                '<button type="button" class="srd-btn srd-btn--primary" id="srd-bulk-confirm-btn" onclick="srdBulkConfirm()">Confirm Update</button></div>';
+                '<button type="button" class="srd-btn srd-btn--primary" id="srd-bulk-confirm-btn" onclick="srdBulkConfirm()">Write ' +
+                sm.fieldChanges + ' Price Change' + (sm.fieldChanges === 1 ? '' : 's') + '</button></div>';
             return;
         }
 
         // scope / preview
-        var previewHtml = b.preview ? b.preview.html : '<div class="srd-secnote">Choose a file, then <strong>Preview</strong>. Nothing is written until you confirm.</div>';
         modal.innerHTML = head +
             '<div class="srd-modal__body">' +
             '<div class="srd-secnote"><strong>' + esc(b.category.label) + '</strong> — ' + esc(b.category.description) + '</div>' +
             _srdBulkTargetHtml() + _srdBulkFilesHtml() +
-            '<div id="srd-bulk-preview">' + previewHtml + '</div></div>' +
+            '<div id="srd-bulk-preview">' + _srdBulkPreviewHtml() + '</div></div>' +
             '<div class="srd-modal__foot">' +
             '<button type="button" class="srd-btn srd-btn--default" onclick="srdCloseBulkUpdate()">Cancel</button>' +
             '<button type="button" class="srd-btn srd-btn--default" id="srd-bulk-preview-btn" onclick="srdBulkPreview()"' +
@@ -1214,16 +1263,18 @@
         b.fileName = input.files[0].name;
         var reader = new FileReader();
         reader.onload = function () {
+            b.shown = 0;
             var parsed = P.validateBulkFile(String(reader.result || ''), b.scope);
             if (!parsed.ok) {
-                b.preview = { html: '<div class="srd-taxwarn">The file was rejected. <strong>Nothing was written.</strong></div>' +
-                    _srdBulkErrs(parsed.errors), changedRows: 0 };
+                b.preview = { changedRows: 0, rejected: true, errors: parsed.errors, summary: null, groups: [] };
                 _srdBulkRender(); return;
             }
             var touched = parsed.lines.filter(function (l) { return P.lineTouches(l); });
             if (!touched.length) {
-                b.preview = { html: '<div class="srd-secnote">The file is valid and asks for no changes — every field is NO_CHANGE. Nothing to write.</div>',
-                    changedRows: 0 };
+                // §7 — a file of pure No Change is a SUMMARY, not an empty table. It parsed, it was
+                // understood, and the honest answer is the count rather than a blank panel.
+                b.preview = { changedRows: 0, noop: true, errors: [], groups: [],
+                    summary: P.previewSummary(parsed, [], []) };
                 _srdBulkRender(); return;
             }
             out.innerHTML = '<div class="srd-secnote">Checking ' + touched.length + ' row(s) against the database…</div>';
@@ -1235,12 +1286,16 @@
                     var rows = P.previewRows(rec.rows, touched, _srdGetPricing());
                     var changed = (rec.rows || []).filter(function (x) { return x.changed; });
                     b.previewRows = rows;
-                    b.preview = { changedRows: changed.length, html: _srdBulkPreviewHtml(parsed, touched, rec, rows) };
+                    b.preview = {
+                        changedRows: changed.length, errors: [],
+                        summary: P.previewSummary(parsed, rec.rows, rows),
+                        groups: P.groupPreview(rows)
+                    };
                     _srdBulkRender();
                 })
                 .catch(function (err) {
-                    b.preview = { changedRows: 0, html: '<div class="srd-taxwarn">The database rejected the file. <strong>Nothing was written.</strong> ' +
-                        esc(err && err.message ? err.message : String(err)) + '</div>' + _srdBulkErrs((err && err.errors) || []) };
+                    b.preview = { changedRows: 0, rejected: true, serverMessage: (err && err.message) ? err.message : String(err),
+                        errors: (err && err.errors) || [], summary: null, groups: [] };
                     _srdBulkRender();
                 });
         };
@@ -1248,35 +1303,118 @@
         reader.readAsText(input.files[0]);
     }
 
-    function _srdOwnerTxt(P, o) { return P.ownerLabel(o).toUpperCase().replace(/ /g, ' '); }
+    function _srdPriceTxt(v) { return v === null || v === undefined ? '—' : String(v); }
 
-    function _srdBulkPreviewHtml(parsed, touched, rec, rows) {
+    /**
+     * §6 — THE HEADLINE. One sentence of arithmetic, in the order a person checks it: how much was in the
+     * file, how much of it does something, how much does not, and whether anything is wrong.
+     */
+    function _srdBulkSummaryHtml(sum) {
+        var b = _srdBulk;
+        var bits = [];
+        bits.push('<strong>' + sum.rowsChanging + '</strong> ' + (sum.rowsChanging === 1 ? 'row changes' : 'rows change'));
+        bits.push(sum.rowsUnchanged + ' unchanged');
+        bits.push('<span class="' + (sum.rowsRejected || sum.errorCount ? 'srd-bulk__bad' : '') + '">' +
+            (sum.rowsRejected || sum.errorCount) + ' ' + ((sum.rowsRejected || sum.errorCount) === 1 ? 'error' : 'errors') + '</span>');
+        return '<div class="srd-bulk__sum">' +
+            '<div class="srd-bulk__sum-h">' + sum.rowsInFile + ' row' + (sum.rowsInFile === 1 ? '' : 's') + ' processed</div>' +
+            '<div class="srd-bulk__sum-b">' + bits.join(' · ') + '</div>' +
+            '<div class="srd-bulk__sum-m">' +
+            '<span>File <strong>' + esc(b.fileName || '') + '</strong></span>' +
+            '<span>Target <strong>' + esc(b.scope.country) + ' · ' + esc(b.scope.marketplace) + '</strong></span>' +
+            '<span>Currency <strong>' + esc(b.scope.currency) + '</strong></span>' +
+            '</div></div>';
+    }
+
+    /**
+     * §8 — ONE CARD PER SKU, and only for SKUs that change.
+     *
+     * The old table put one ROW per changed field, so a SKU whose Regular, Minimum and MSRP all moved was
+     * three unconnected lines sharing a code column — and the reader had to do the joining. A person reads
+     * "what is happening to this product", not "what is happening to this field", so the SKU is the card
+     * and the fields are its lines. Unchanged fields of a changing SKU are not drawn at all: they are not
+     * news, and printing "unchanged" beside a price is how a summary becomes a table again.
+     */
+    function _srdBulkCardHtml(P, g) {
+        var b = _srdBulk;
+        var lines = g.changes.map(function (c) {
+            var to = c.mode === 'AUTO' && c.new_value === null ? 'Auto' : _srdPriceTxt(c.new_value);
+            return '<div class="srd-bulk__chg">' +
+                '<span class="srd-bulk__chg-f">' + esc(c.label) + '</span>' +
+                '<span class="srd-bulk__chg-v">' + esc(_srdPriceTxt(c.current_value)) +
+                    ' <i>→</i> <strong>' + esc(to) + '</strong></span>' +
+                '<span class="srd-bulk__chg-o">' +
+                    '<span class="srd-own srd-own--' + c.current_owner.toLowerCase() + '">' + esc(P.ownerLabel(c.current_owner)) + '</span>' +
+                    ' <i>→</i> ' +
+                    '<span class="srd-own srd-own--' + c.new_owner.toLowerCase() + '">' + esc(P.ownerLabel(c.new_owner)) + '</span>' +
+                '</span>' +
+                '<span class="srd-bulk__chg-a">' + esc(P.actionLabel(c.mode)) + '</span>' +
+                '</div>';
+        }).join('');
+        return '<div class="srd-bulk__card">' +
+            '<div class="srd-bulk__card-h"><strong>' + esc(g.sku || g.marketplace_sku_id) + '</strong>' +
+            '<span>' + esc(b.scope.country) + ' · ' + esc(b.scope.marketplace) + ' · ' + esc(b.scope.currency) +
+            (g.site_sku ? ' · ' + esc(g.site_sku) : '') + '</span></div>' + lines + '</div>';
+    }
+
+    /**
+     * §7/§10 — CHANGE-ORIENTED, AND BOUNDED. Only changing SKUs reach the list; the unchanged ones are a
+     * number in the summary above it. A hundred-row file that changes one price renders one card.
+     *
+     * The cap is on what is BUILT, not on what is scrolled. Slicing the array before it becomes HTML is the
+     * difference between a modal that stays responsive at 500 changes and one that pauses while the browser
+     * lays out a table nobody asked to read.
+     *
+     * ERRORS ARE DRAWN FIRST AND ARE NEVER PAGED. A rejected file writes nothing at all, so its errors are
+     * the whole message; and on a file that passed, an error is rarer than a change and must not be pushed
+     * below twenty cards by a list that is merely long.
+     */
+    function _srdBulkPreviewHtml() {
         var P = _srdPricingApi(), b = _srdBulk;
-        var money = function (v) { return v === null || v === undefined ? '—' : String(v); };
-        var head = '<div class="srd-bulk__target">' +
-            '<div><span>File</span><strong>' + esc(b.fileName || '') + '</strong></div>' +
-            '<div><span>Country</span><strong>' + esc(b.scope.country) + '</strong></div>' +
-            '<div><span>Marketplace / Site</span><strong>' + esc(b.scope.marketplace) + '</strong></div>' +
-            '<div><span>Currency</span><strong>' + esc(b.scope.currency) + '</strong></div>' +
-            '<div><span>Rows parsed</span><strong>' + parsed.rowCount + '</strong></div>' +
-            '<div><span>Rows valid</span><strong>' + parsed.lines.length + '</strong></div>' +
-            '<div><span>Rows rejected</span><strong>' + (parsed.rowCount - parsed.lines.length) + '</strong></div>' +
-            '<div><span>Rows that would change</span><strong>' + (rec.rows || []).filter(function (x) { return x.changed; }).length + '</strong></div>' +
-            '</div>';
-        if (!rows.length) {
+        var pv = b && b.preview;
+        if (!pv) return '<div class="srd-secnote">Choose a file, then <strong>Preview</strong>. Nothing is written until you confirm.</div>';
+
+        if (pv.rejected) {
+            return '<div class="srd-taxwarn">' +
+                (pv.serverMessage
+                    ? 'The database rejected the file. <strong>Nothing was written.</strong> ' + esc(pv.serverMessage)
+                    : 'The file was rejected. <strong>Nothing was written.</strong>') +
+                '</div>' + _srdBulkErrs(pv.errors || []);
+        }
+
+        var sum = pv.summary;
+        var head = sum ? _srdBulkSummaryHtml(sum) : '';
+
+        if (pv.noop) {
+            return head + '<div class="srd-secnote">Every action in this file is <strong>' +
+                esc(P.actionLabel('NO_CHANGE')) + '</strong>. Nothing to write.</div>';
+        }
+        if (!pv.groups.length) {
             return head + '<div class="srd-secnote">Every row already holds exactly what the file asks for. Nothing would change.</div>';
         }
-        var body = rows.slice(0, 200).map(function (c) {
-            return '<tr><td><code>' + esc(c.sku) + '</code></td><td><code>' + esc(c.site_sku) + '</code></td>' +
-                '<td>' + esc(c.label) + '</td>' +
-                '<td>' + esc(money(c.current_value)) + ' → <strong>' + esc(money(c.new_value)) + '</strong></td>' +
-                '<td><span class="srd-own srd-own--' + c.current_owner.toLowerCase() + '">' + esc(P.ownerLabel(c.current_owner)) + '</span>' +
-                ' → <span class="srd-own srd-own--' + c.new_owner.toLowerCase() + '">' + esc(P.ownerLabel(c.new_owner)) + '</span></td></tr>';
-        }).join('');
-        return head + '<table class="srd-bulk__tbl"><thead><tr><th>SKU</th><th>Site SKU</th><th>Field</th>' +
-            '<th>Value</th><th>Ownership</th></tr></thead><tbody>' + body + '</tbody></table>' +
-            (rows.length > 200 ? '<div class="srd-secnote">' + (rows.length - 200) + ' more not listed.</div>' : '') +
+
+        var size = P.PREVIEW_PAGE_SIZE;
+        var shown = Math.min(pv.groups.length, Math.max(size, b.shown || size));
+        var cards = pv.groups.slice(0, shown).map(function (g) { return _srdBulkCardHtml(P, g); }).join('');
+        var shownChanges = pv.groups.slice(0, shown).reduce(function (n, g) { return n + g.changes.length; }, 0);
+        var more = shown < pv.groups.length
+            ? '<div class="srd-bulk__more"><span>Showing ' + shownChanges + ' of ' + sum.fieldChanges + ' changes (' +
+              shown + ' of ' + pv.groups.length + ' SKUs)</span>' +
+              '<button type="button" class="srd-btn srd-btn--default" onclick="srdBulkShowMore()">Show More</button></div>'
+            : (pv.groups.length > size
+                ? '<div class="srd-bulk__more"><span>Showing all ' + sum.fieldChanges + ' changes across ' + pv.groups.length + ' SKUs</span></div>'
+                : '');
+
+        return head + '<div class="srd-bulk__cards">' + cards + '</div>' + more +
             '<div class="srd-secnote">Nothing has been written yet.</div>';
+    }
+
+    /** §7 — one more page of cards. It re-renders an answer already held; the server is not asked again. */
+    function srdBulkShowMore() {
+        var P = _srdPricingApi(), b = _srdBulk;
+        if (!P || !b || !b.preview) return;
+        b.shown = Math.max(P.PREVIEW_PAGE_SIZE, b.shown || P.PREVIEW_PAGE_SIZE) + P.PREVIEW_PAGE_SIZE;
+        _srdBulkRender();
     }
 
     function srdBulkToConfirm() {
@@ -1342,6 +1480,7 @@
     window.srdBackToResults = srdBackToResults;
     window.srdPriceModeChanged = srdPriceModeChanged;
     window.srdOpenBulkUpdate = srdOpenBulkUpdate;
+    window.srdBulkShowMore = srdBulkShowMore;
     window.srdCloseBulkUpdate = srdCloseBulkUpdate;
     window.srdBulkPickCategory = srdBulkPickCategory;
     window.srdBulkSetCountry = srdBulkSetCountry;
