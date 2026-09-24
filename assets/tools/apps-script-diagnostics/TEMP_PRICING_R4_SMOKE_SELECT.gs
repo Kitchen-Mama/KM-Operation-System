@@ -213,28 +213,38 @@ function TEMP_PRICING_R4_SMOKE_SELECT() {
       return;
     }
     p('SMOKE_ROW_' + tag + '   (' + (mode === 'AUTO' ? 'AUTO restore' : LABEL[field] + ' MANUAL smoke') + ')');
-    p('  marketplace_sku_id            = ' + c.id);
-    p('  master_sku                    = ' + tempPr4sStr_(c.v.sku || c.m.sku));
-    p('  site_sku                      = ' + tempPr4sStr_(c.v.site_sku || c.m.site_sku));
-    p('  company                       = ' + tempPr4sStr_(c.m.company));
-    p('  country                       = ' + tempPr4sStr_(c.v.country || c.m.country));
-    p('  marketplace                   = ' + tempPr4sStr_(c.v.marketplace || c.m.marketplace));
-    p('  currency                      = ' + c.currency + '   (' + pricingDecimalsFor_(c.currency) + ' decimals)');
-    p('  marketplace_sku_status        = ' + (c.status || '(blank)'));
-    p('  price_status (reported, NOT used as a filter) = ' + (tempPr4sStr_(c.v.price_status) || '(blank)'));
+    p('  ' + pad('pricing_id', 30) + '= ' + tempPr4sStr_(c.v.pricing_id));
+    p('  ' + pad('marketplace_sku_id', 30) + '= ' + c.id);
+    p('  ' + pad('master_sku', 30) + '= ' + tempPr4sStr_(c.v.sku || c.m.sku));
+    p('  ' + pad('site_sku', 30) + '= ' + tempPr4sStr_(c.v.site_sku || c.m.site_sku));
+    p('  ' + pad('company', 30) + '= ' + tempPr4sStr_(c.m.company));
+    p('  ' + pad('country', 30) + '= ' + tempPr4sStr_(c.v.country || c.m.country));
+    p('  ' + pad('marketplace', 30) + '= ' + tempPr4sStr_(c.v.marketplace || c.m.marketplace));
+    p('  ' + pad('currency', 30) + '= ' + c.currency + '   (' + pricingDecimalsFor_(c.currency) + ' decimals)');
+    p('  ' + pad('price_status', 30) + '= ' + (tempPr4sStr_(c.v.price_status) || '(blank)')
+      + '   (reported only — never used as a filter)');
+    p('  ' + pad('marketplace_sku_status', 30) + '= ' + (c.status || '(blank)'));
+    PRICING_FIELDS_.forEach(function (sp) { p('  ' + pad(sp.base, 30) + '= ' + c.f[sp.field].base.value); });
+    PRICING_FIELDS_.forEach(function (sp) { p('  ' + pad(sp.auto, 30) + '= ' + c.f[sp.field].auto.value); });
     PRICING_FIELDS_.forEach(function (sp) {
-      p('  ' + pad('current ' + LABEL[sp.field], 30) + '= ' + c.f[sp.field].eff.value
-        + '   auto ' + LABEL[sp.field] + ' = ' + c.f[sp.field].auto.value
+      p('  ' + pad(sp.field, 30) + '= ' + c.f[sp.field].eff.value
         + (sp.field === field ? '   <- the field this row tests' : ''));
     });
+    // A BLANK FLAG IS PRINTED AS WHAT IT MEANS. An empty space after the '=' would be transcribed as an
+    // empty string or, worse, as FALSE — and the whole premise of the smoke is that these start unstated.
+    PRICING_FIELDS_.forEach(function (sp) {
+      var rawFlag = tempPr4sStr_(c.v[sp.flag]);
+      p('  ' + pad(sp.flag, 30) + '= ' + (rawFlag === '' ? '(blank = UNKNOWN)' : rawFlag));
+    });
     if (mode === 'AUTO') {
-      p('  selected field                = ' + field);
-      p('  effective                     = ' + c.f[field].eff.value);
-      p('  auto                          = ' + c.f[field].auto.value);
-      p('  effective_equals_auto         = ' + (c.f[field].eff.value === c.f[field].auto.value ? 'YES' : 'NO'));
+      p('  ' + pad('AUTO_SELECTED_FIELD', 30) + '= ' + field);
+      p('  ' + pad('AUTO_EFFECTIVE_VALUE', 30) + '= ' + c.f[field].eff.value);
+      p('  ' + pad('AUTO_REFERENCE_VALUE', 30) + '= ' + c.f[field].auto.value);
+      p('  ' + pad('EFFECTIVE_EQUALS_AUTO', 30) + '= ' + (c.f[field].eff.value === c.f[field].auto.value ? 'YES' : 'NO'));
     } else {
-      p('  TEST VALUE (current + ' + TEMP_PR4S_TEST_DELTA_ + ')     = ' + testValue(c, field));
-      p('  RESTORE VALUE (the current one) = ' + c.f[field].eff.value);
+      p('  ' + pad(tag + '_TEST_VALUE', 30) + '= ' + testValue(c, field)
+        + '   (current + ' + TEMP_PR4S_TEST_DELTA_ + ' whole ' + c.currency + ')');
+      p('  ' + pad(tag + '_RESTORE_VALUE', 30) + '= ' + c.f[field].eff.value + '   (what §8 puts back)');
     }
   }
 
@@ -319,13 +329,32 @@ function TEMP_PRICING_R4_SMOKE_SELECT() {
 
   var logPre = logSheet ? Math.max(0, logSheet.getLastRow() - 1) : null;
   p('');
-  p('CHANGE_LOG_PRE_COUNT            = ' + (logPre === null ? 'UNAVAILABLE — ' + TEMP_PR4S_LOG_TAB_ + ' not present' : logPre));
+  var logPreTxt = (logPre === null ? 'UNAVAILABLE — ' + TEMP_PR4S_LOG_TAB_ + ' not present' : String(logPre));
+  p('PRICING_CHANGE_LOG_PRE_COUNT    = ' + logPreTxt);
+  p('CHANGE_LOG_PRE_COUNT            = ' + logPreTxt + '   (the same number, under the name earlier rounds used)');
   p('  (data rows, header excluded. Expect this + 4 after the smoke, + 3 more after the restore.)');
 
   rule();
   var ready = !!(rowA && rowB && rowC && rowD);
-  p('SMOKE_PRE_SNAPSHOT_READY        = ' + (ready ? 'YES' : 'NO — see the missing row above'));
-  p('DB_WRITES                       = 0');
+  p('REQUIRED OUTPUT — copy this block whole');
+  rule();
+  function req(k, v) { p(pad(k, 32) + '= ' + v); }
+  function idOf(c) { return c ? c.id : 'NOT AVAILABLE'; }
+  req('SMOKE_ROW_A', idOf(rowA));
+  req('SMOKE_ROW_B', idOf(rowB));
+  req('SMOKE_ROW_C', idOf(rowC));
+  req('SMOKE_ROW_D', idOf(rowD));
+  req('A_TEST_VALUE', rowA ? testValue(rowA, 'regular_price') : 'NOT AVAILABLE');
+  req('B_TEST_VALUE', rowB ? testValue(rowB, 'minimum_price') : 'NOT AVAILABLE');
+  req('C_TEST_VALUE', rowC ? testValue(rowC, 'msrp') : 'NOT AVAILABLE');
+  req('ROW_D_EFFECTIVE_EQUALS_AUTO',
+    rowD ? (rowD.f[rowDField].eff.value === rowD.f[rowDField].auto.value ? 'YES' : 'NO') : 'NOT AVAILABLE');
+  req('PRICING_CHANGE_LOG_PRE_COUNT', logPreTxt);
+  req('SMOKE_PRE_SNAPSHOT_READY', ready ? 'YES' : 'NO — see the missing row above');
+  // Stated by the tool rather than left to the person writing the report, because a diagnostic that
+  // cannot write should say so in the same breath as the numbers it hands over.
+  req('PRODUCTION_WRITE_AUTHORIZED', 'NO');
+  req('DB_WRITES', '0');
   p('NOTHING HAS BEEN UPLOADED. This tool only reads.');
   rule();
   return done();

@@ -953,17 +953,25 @@ function activeMsku(id, o) {
   ok(/SMOKE_ROW_B   \(minimum MANUAL smoke\)[\s\S]*?marketplace_sku_id            = MB/.test(r), 'P4a row B is MB');
   ok(/SMOKE_ROW_C   \(msrp MANUAL smoke\)[\s\S]*?marketplace_sku_id            = MC/.test(r), 'P4b row C is MC');
   ok(/SMOKE_ROW_D   \(AUTO restore\)[\s\S]*?marketplace_sku_id            = MD/.test(r), 'P4c row D is MD');
-  ok(/selected field                = minimum_price/.test(r),
+  ok(/AUTO_SELECTED_FIELD\s+= minimum_price/.test(r),
     'P5  and D tests the MINIMUM price — the least customer-visible field that qualifies');
-  ok(/effective_equals_auto         = YES/.test(r), 'P5a  with its effective already equal to its auto');
+  ok(/EFFECTIVE_EQUALS_AUTO\s+= YES/.test(r), 'P5a  with its effective already equal to its auto');
+  ok(/ROW_D_EFFECTIVE_EQUALS_AUTO\s+= YES/.test(r), 'P5b  and again in the copyable required-output block');
   ok(/company                       = KM/.test(r), 'P6  company comes from marketplace_skus, which is where it lives');
-  ok(/price_status \(reported, NOT used as a filter\)/.test(r),
+  ok(/price_status\s+= .*reported only — never used as a filter/.test(r),
     'P7  price_status is reported and never filtered on — its default is still an open question');
 
   // ---- §3: the test value keeps the minor units ----
-  ok(/TEST VALUE \(current \+ 1\)     = 45\.99/.test(r), 'P8  44.99 + 1 = 45.99 — the .99 ending is kept, not invented');
-  ok(/TEST VALUE \(current \+ 1\)     = 21\b/.test(r), 'P8a 20 + 1 = 21 — and a round price does not acquire an ending');
-  ok(/TEST VALUE \(current \+ 1\)     = 31\.49/.test(r), 'P8b 30.49 + 1 = 31.49');
+  ok(/A_TEST_VALUE\s+= 45\.99/.test(r), 'P8  44.99 + 1 = 45.99 — the .99 ending is kept, not invented');
+  ok(/B_TEST_VALUE\s+= 21\b/.test(r), 'P8a 20 + 1 = 21 — and a round price does not acquire an ending');
+  ok(/C_TEST_VALUE\s+= 31\.49/.test(r), 'P8b 30.49 + 1 = 31.49');
+  // §2 asks for these per row, and the snapshot further down used to be the only place they appeared.
+  ok(/pricing_id\s+= PA/.test(r), 'P8c  the per-row block carries pricing_id');
+  ok(/base_regular_price\s+= 30/.test(r), 'P8d  the base prices, under their own column names');
+  ok(/regular_price_is_manual\s+= \(blank = UNKNOWN\)/.test(r),
+    'P8e  and a blank flag printed as what it MEANS — an empty space transcribes as FALSE');
+  ok(/PRODUCTION_WRITE_AUTHORIZED\s+= NO/.test(r),
+    'P8f  the tool states it authorises nothing, rather than leaving that to whoever writes the report');
 
   // ---- §3: the template rows themselves ----
   var tmpl = r.split('§3 — SMOKE_TEMPLATE_ROWS')[1].split('§8 —')[0];
@@ -1000,7 +1008,8 @@ function activeMsku(id, o) {
   ok(/pricing_id,marketplace_sku_id,currency,base_regular_price/.test(snap), 'P12 the snapshot carries the §4 columns in order');
   ok(/^PA,MA,USD,30,15,25,42\.31,19,29,44\.99,20,30\.49,,,,/m.test(snap),
     'P12a with base, auto, effective and three BLANK flags — blank being the UNKNOWN state');
-  ok(/CHANGE_LOG_PRE_COUNT            = 0/.test(r), 'P13 and the change-log baseline is counted, header excluded');
+  ok(/PRICING_CHANGE_LOG_PRE_COUNT\s+= 0/.test(r), 'P13 and the change-log baseline is counted, header excluded');
+  ok(/CHANGE_LOG_PRE_COUNT\s+= 0/.test(r), 'P13b under the earlier name too, so an old report stays readable');
   ok(/SMOKE_PRE_SNAPSHOT_READY        = YES/.test(r), 'P13a four rows found, so the snapshot is complete');
 
   // ---- determinism: the pre-snapshot is only true if a re-run picks the same rows ----
@@ -1037,7 +1046,7 @@ function activeMsku(id, o) {
     regular_price: 4800, minimum_price: 3800, msrp: 5600 })];
   var rJ = smokeWorld(SEL, jpy, [activeMsku('AJ')]).TEMP_PRICING_R4_SMOKE_SELECT();
   ok(/currency                      = JPY   \(0 decimals\)/.test(rJ), 'P18 the currency precision is read from the deployed contract');
-  ok(/TEST VALUE \(current \+ 1\)     = 4801\b/.test(rJ), 'P18a and a 0-decimal currency gets a whole-number test value');
+  ok(/A_TEST_VALUE\s+= 4801\b/.test(rJ), 'P18a and a 0-decimal currency gets a whole-number test value');
 }
 
 // =============================================================================================================
