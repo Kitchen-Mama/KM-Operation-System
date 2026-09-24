@@ -430,6 +430,89 @@ row is the strictest statement of that: its renderer throws rather than fall bac
 
 ---
 
+## 7b. S3-R1 — three production stability debts, and what they turned out to be
+
+> **ANSWERED — 2026-09-24, S3-R1.** A batch round against three open runtime debts. Two were real and
+> one was already closed; the two real ones were not what their labels said.
+>
+> ### FACTORY_INVENTORY_LOADING_STABILITY — two defects, each hiding the other
+>
+> **A failed read retried itself, without bound.** Measured from the shipped source against a backend
+> that always rejects: **one page entry issued 41 requests** and was still going when the harness cut it
+> off. The mechanism was two lines that are each defensible alone — the guard
+> `if (… && !_factoryDbLoadTried)`, and a rejection handler that cleared that flag and then called the
+> function whose guard reads it. F1-7N-FB-4E §D9 cleared the flag so a *later mount* could really retry,
+> which was right, and then made the later mount immediate.
+>
+> **The Inventory table never consulted the load state.** The same round built `_fsStateHtml_` so that
+> LOADING, a typed transport failure and an unconfigured API would be three different screens, wired it
+> into `renderFactoryMovementTable` and into the whole of `overseas-stock.js`, and did not wire it into
+> `renderFactoryStockTable` — the primary table. So all three, plus a genuinely empty result, printed
+> "尚未連接資料來源": the typed error was unreachable, its Retry button was never drawn, and the request
+> storm was invisible behind a screen asserting the one thing that was not true.
+>
+> The existing guard could not see it. F4 in `shared-api-transport-reliability` counted occurrences of
+> the **literal** phrase, and the copy in `renderFactoryStockTable` was written `\u5c1a\u672a…` — the same
+> eight characters on screen, different bytes in the file. It now decodes escapes before counting.
+>
+> **The same retry loop was in `overseas-stock.js`**, byte for byte, because both pages were repaired
+> from one template. The strengthened F6 found it the moment it stopped matching anywhere in the file.
+> Fixed identically; the two must not drift.
+>
+> | | |
+> |---|---|
+> | `FACTORY_INV_READ_OWNER` | ONE bounded `loadScopedTables` of four named tables. No `getOperationDb`, no `getTable` fallback; the broad reload survives only behind the `KM_SCOPED_PAGE_READS = false` kill switch. |
+> | `FACTORY_INV_LOADING_OWNER` | `_fsLoad.status` — and it is now the ONLY gate on starting a read. |
+> | lifecycle rule | a failure is **terminal for that entry**. It is left by an explicit Retry or by a **fresh route entry** (`_fsRearmOnEntry_`), never by the re-render the failure itself produced. |
+> | stale-response rule | monotonic `_fsReadGen_`, captured at dispatch and compared at the commit. No timing assumption, no delay, no backoff, no cap. |
+> | request budget | first entry 1 · re-entry 0 · three entries during one flight 1 · one Retry exactly 1 · a failing backend **1, not 41**. |
+>
+> ### SKU_DETAILS_TRANSPORT_REDIRECT_ERROR — CLOSED, no production file changed
+>
+> Not reproducible, and two earlier rounds are why. `F1-7N-FB-4E-R4A1` made the redirect cases separately
+> typed at the transport (`REQUEST_METHOD_DOWNGRADED` for a POST that arrived at doGet; a redirect-target
+> 404 ordered before the generic 404). `F1-7N-FB-4D §D3` removed anywhere for SKU Details to fall back
+> **to**: the workspace read is fail-closed, a missing read model returns before rendering, and the read
+> and the render are separate outcomes. The stale-response protection the incident needed was already
+> there — `_skReadSeq`, captured at dispatch and compared before the commit, with a `__superseded` marker
+> so the caller stands down instead of rendering a null model.
+> Canonical transport: `KM.api.getWorkspace('skuDetails')` → `skuDetails.workspace.get`, one dispatcher,
+> three callers. Closure evidence: `assets/tests/s3-r1b-sku-details-transport-redirect-closure.test.js`.
+>
+> ### FC_POSTWRITE_LIVE_SAVED_STALE_ROOT_CAUSE — the readback could join an answer older than the write
+>
+> R4B's work was sound and is untouched. One layer below it, `_fcSliceFetch_` opens with
+> `if (rec.flight) return rec.flight;` — correct for a read, wrong for a post-write readback, because the
+> flight it joins may have been **dispatched before the write**. That joined promise RESOLVES, so nothing
+> fails: the readback commits a pre-write answer, sets the view to CURRENT and clears the banner. The
+> operator is told the view is current while looking at a table missing what they just saved. It needs a
+> slow backend and a save issued while the tab's own first read is in the air — the shape of a live
+> demonstration, and the shape no unit test had.
+>
+> Separately, `FC_SUMMARY_READ_SUPERSEDED` is a rejection, and the post-write catch treated every
+> rejection as a refresh failure — so a readback merely *replaced* by a newer read raised "Saved
+> successfully, but the view could not refresh" and invited a Retry that was not needed.
+>
+> **The rule lives at the write, not in the fetcher.** "May I join?" is a question about what the caller
+> knows, and only the post-write path knows its answer is stale. `_fcSliceFetch_` stays unconditionally
+> single-flight for reads — which is why every existing assertion about its latch still passes unmodified.
+> Per-slice `rec.gen` stops the released flight from landing, and from clearing its successor's handle.
+>
+> ### §3 — the loading-state census, reported and NOT fixed
+>
+> Twelve pages use the shared `KM.loadState` contract. Counting `beginLoad` against settle calls:
+>
+> | | |
+> |---|---|
+> | **P0, zero settles** | `factory-stock.js`, `overseas-stock.js` — each calls `beginLoad` once and never settles that binding. Not a visible hang: the subsequent render replaces the region's markup wholesale, and after S3-R1 the state machine owns what is drawn. But the `KM.loadState` object is abandoned rather than settled, which is a second owner of the same region. |
+> | **P1** | `inventory-replenishment.js` — three `beginLoad` sites against two settles. Operational, worth a closer look than a count can give. |
+> | **P2** | the other nine each pair `beginLoad` with at least two settle calls. |
+>
+> **A count is not a proof** — it cannot tell which branch settles — so this is a list of where to look,
+> not a list of defects. The reusable pattern S3-R1 established, for that rollout: one state enum owns
+> "may a read start", a failure is terminal until an explicit action or a fresh route entry, and the
+> commit is gated by a monotonic request id rather than by timing.
+
 ## 8. The proposed S sequence
 
 | Round | Work | Why here |

@@ -556,8 +556,15 @@ ok(Object.keys(TP.CODES).every(function (k) { return tUI.uiState({ success: fals
 // §J11 — the two pages, at source. The phrase must be reachable from EMPTY_CONFIGURATION only.
 [['factory-stock.js', FS_C, '_fs'], ['overseas-stock.js', OS_C, '_os']].forEach(function (pg) {
   var name = pg[0], src = pg[1], pfx = pg[2];
-  var occurrences = src.split('尚未連接資料來源').length - 1;
-  eq(occurrences, 1, 'F4 ' + name + ' contains the phrase exactly ONCE (in code)');
+  // S3-R1 §A — COUNT WHAT IS RENDERED, NOT WHAT IS SPELLED. This counted the literal phrase, and
+  // factory-stock.js carried a SECOND copy written as 尚未… inside renderFactoryStockTable.
+  // Same eight characters on the operator's screen, different bytes in the file, so the count said one
+  // and passed — while the primary Factory Inventory table printed "not connected" for a read that was
+  // loading, for a read that had failed, and for a read that had succeeded with no rows. The escape
+  // sequence is decoded first, so the check now measures the sentence rather than its encoding.
+  var rendered = src.replace(/\\u([0-9a-fA-F]{4})/g, function (m, h) { return String.fromCharCode(parseInt(h, 16)); });
+  var occurrences = rendered.split('尚未連接資料來源').length - 1;
+  eq(occurrences, 1, 'F4 ' + name + ' can RENDER the phrase from exactly ONE place in code');
   var st = extractFn(src, pfx + 'StateHtml_');
   ok(st.indexOf('尚未連接資料來源') > 0, 'F4 ' + name + ' — and that one occurrence is inside the state renderer');
   ok(/EMPTY_CONFIGURATION/.test(st.slice(0, st.indexOf('尚未連接資料來源'))),
@@ -565,8 +572,26 @@ ok(Object.keys(TP.CODES).every(function (k) { return tUI.uiState({ success: fals
   // the read failure is CLASSIFIED, not swallowed
   ok(new RegExp('\\.catch\\(function \\(err\\)').test(src), 'F5 ' + name + ' — the scoped-read rejection is captured, not discarded');
   ok(new RegExp(pfx + 'ReadFailure_').test(src), 'F5 ' + name + ' — and turned into a typed reason');
-  // §D9 — recovery must not need a reload: the tried-flag is CLEARED on failure.
-  ok(/DbLoadTried = false/.test(src), 'F6 ' + name + ' — a failure CLEARS the tried-flag, so a later mount really retries');
+  // §D9 — recovery must not need a reload. THE ORIGINAL FORM OF THIS CHECK CAUSED THE DEFECT IT WAS
+  // MEANT TO PREVENT. It required the rejection handler to clear the tried-flag and then call the
+  // function whose guard reads it, which made every failure start the next request: one page entry
+  // against a failing backend issued 41 requests in S3-R1's harness and was still going. Worse, the
+  // regex matched anywhere in the file, so it kept passing off _fsRetryRead_ after the rejection
+  // handler stopped clearing anything.
+  //
+  // Both halves of §D9 are now required, of the RIGHT function each time: a failure must be
+  // recoverable without a browser reload, AND the failure must not re-arm itself.
+  ok(/RearmOnEntry_/.test(src),
+    'F6a ' + name + ' — a FRESH ROUTE ENTRY re-arms a failed read, so recovery still needs no reload');
+  ok(/MayStartRead_/.test(src) && /status === 'IDLE'/.test(src),
+    'F6b ' + name + ' — and one gate decides whether a read may start, so the state is the only answer');
+  // Read the REJECTION HANDLER itself rather than the whole file. The old check's regex matched
+  // anywhere, which is how it went on passing against _fsRetryRead_ — a different function, with a
+  // different job — after the handler had stopped clearing anything at all.
+  var catchBlock = (/\.catch\(function \(err\) \{[\s\S]*?\n\s{8}\}\);/.exec(src) || [''])[0];
+  ok(catchBlock.length > 40, 'F6c ' + name + ' — the scoped-read rejection handler was located');
+  ok(catchBlock.indexOf('DbLoadTried = false') === -1,
+    'F6d ' + name + ' — and it does NOT re-arm the gate it is about to re-enter (that was the retry loop)');
   // one Retry = one request
   ok(new RegExp(pfx + 'RetryRead_').test(src), 'F7 ' + name + ' — has an explicit Retry that issues one request');
   ok(/status === 'LOADING'\) return/.test(src), 'F7 ' + name + ' — and never starts a second concurrent read');

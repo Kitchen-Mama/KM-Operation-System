@@ -898,10 +898,14 @@ function runMutants() {
     // M7 — a dead controller is allowed to mutate the DOM
     .then(function () {
       return m('M7  a dead controller is allowed to draw into the page',
+        // S3-R1 §C inserted the superseded early-return between the ownership check and the comment
+        // this anchor used to end on, so the anchor moves down to the line that now follows the check.
+        // The mutation and the probe are unchanged: remove the ownership check, and a controller that
+        // has been routed away must still be unable to draw a banner into the page.
         '    if (!_fcOwns_(epoch)) return;\n'
-        + '    // THE LAST KNOWN TABLE IS KEPT.',
+        + '    /* S3-R1 §C — A SUPERSEDED READBACK IS NOT A FAILED ONE.',
         '    // ownership check removed\n'
-        + '    // THE LAST KNOWN TABLE IS KEPT.',
+        + '    /* S3-R1 §C — A SUPERSEDED READBACK IS NOT A FAILED ONE.',
         function (S) {
           var d = deferred();
           S._fcSliceFetch_ = function () { return d.promise; };

@@ -5440,9 +5440,36 @@ function _fcInvalidateModel_(reason) {
 }
 var _fcInvalidateReason_ = '';
 function _fcSliceRec_(n) {
-  if (!_fcSliceState_[n]) _fcSliceState_[n] = { state: FC_FRESH_.UNREAD, observedAt: null, flight: null, loads: 0, err: null };
+  if (!_fcSliceState_[n]) _fcSliceState_[n] = { state: FC_FRESH_.UNREAD, observedAt: null, flight: null, loads: 0, err: null, gen: 0 };
+  if (_fcSliceState_[n].gen === undefined) _fcSliceState_[n].gen = 0;
   return _fcSliceState_[n];
 }
+
+/* ============================================================================================
+   S3-R1 §C — A READBACK MUST BE NEWER THAN THE WRITE IT CONFIRMS.
+
+   _fcSliceFetch_ opens with `if (rec.flight) return rec.flight;`, which is the right thing for a
+   READ: two tabs asking for the same slice should share one request. It is the wrong thing for a
+   POST-WRITE READBACK, because the flight it joins may have been dispatched BEFORE the write, and
+   the server computed that answer from the rows as they were. The joined promise then resolves
+   successfully, the readback commits it, the view state is set to CURRENT and the banner is
+   cleared — so the operator is told the view is current while looking at a table that does not
+   contain what they just saved. No error is raised anywhere, because nothing failed.
+
+   It needs a slow backend and a save issued while the tab's own first read is still in the air,
+   which is exactly the shape of a live demonstration and exactly the shape no unit test had.
+
+   So the post-write path RELEASES the joinable flight for that slice before it reads (see
+   _fcPostWriteRefresh_), which makes the next call dispatch instead of join. The released flight is
+   still in the air, and it is stopped from landing by per-slice request identity — `rec.gen`, a
+   counter compared at the commit, never a timestamp. The older answer is dropped with the same typed
+   marker §14.2 already uses, so it cannot overwrite the newer one.
+
+   THE RULE LIVES AT THE WRITE, NOT IN THE FETCHER. "May I join?" is a question about what the caller
+   knows, and only the post-write path knows that an answer computed a moment ago is now out of date.
+   Giving _fcSliceFetch_ an option would have put that knowledge in the wrong place and given every
+   future caller a switch to get wrong; the fetcher stays single-flight for reads, unconditionally.
+   ============================================================================================ */
 function _fcSliceStates_() {
   var o = {}; Object.keys(_fcSliceState_).forEach(function (k) { o[k] = _fcSliceState_[k].state; }); return o;
 }
@@ -5505,6 +5532,7 @@ function _fcSliceFetch_(name) {
   var rec = _fcSliceRec_(name);
   if (rec.flight) return rec.flight;
   var gen = _fcModelGenNow_();     // §14.2 — the model this answer will be committed into
+  var myGen = ++rec.gen;           // S3-R1 §C — per-slice request identity, compared at the commit
   if (!(window.KM && window.KM.api && typeof window.KM.api.getWorkspace === 'function')) {
     return Promise.reject({ code: 'WORKSPACE_UNAVAILABLE', message: 'FC Summary Workspace API unavailable.' });
   }
@@ -5560,7 +5588,11 @@ function _fcSliceFetch_(name) {
       /* §14.2 — SUPERSEDED. The model this answer was asked for has since been discarded, so
          committing it would repopulate a model the page has already reported as gone and leave the
          ledger describing a mixture of two. Dropped, and said so, rather than merged. */
-      if (_fcModelGenNow_() !== gen) {
+      if (_fcModelGenNow_() !== gen || rec.gen !== myGen) {
+        /* Two ways to be superseded, one outcome. The model generation moved (the model this answer
+           was asked for has been discarded), or a NEWER REQUEST FOR THIS SLICE was dispatched — which
+           is what a post-write readback does deliberately, so that a pre-write answer can never be
+           the one that lands. */
         throw { code: 'FC_SUMMARY_READ_SUPERSEDED', superseded: true,
           message: 'A newer FC Summary read replaced this one; the older answer was discarded.' };
       }
@@ -5574,14 +5606,21 @@ function _fcSliceFetch_(name) {
          older than we would like. Only a slice with nothing behind it is REFUSED. */
       /* §14.2 — a record belonging to a discarded model describes nothing the page is showing. Marking
          it REFUSED would put a failure in the banner for a slice nobody is currently reading. */
-      if (_fcModelGenNow_() === gen) {
+      /* ... and a superseded answer's FAILURE is not this slice's failure either: the request that
+         replaced it owns the outcome, so recording REFUSED here would put a banner on a slice a newer
+         read is already answering. */
+      if (_fcModelGenNow_() === gen && rec.gen === myGen) {
         rec.state = had ? FC_FRESH_.STALE : FC_FRESH_.REFUSED;
         rec.err = err || null;
       }
       throw err;
     });
-  rec.flight = p.then(function (v) { rec.flight = null; return v; },
-                      function (e) { rec.flight = null; throw e; });
+  /* Clear the handle only if it is still THIS request's. A released flight (see _fcPostWriteRefresh_)
+     lands after its replacement has already stored a new handle, and an unconditional `rec.flight =
+     null` there would discard the live one — so the next caller would dispatch a duplicate instead of
+     joining it. The generation is what distinguishes them. */
+  rec.flight = p.then(function (v) { if (rec.gen === myGen) rec.flight = null; return v; },
+                      function (e) { if (rec.gen === myGen) rec.flight = null; throw e; });
   return rec.flight;
 }
 
@@ -6897,6 +6936,13 @@ function _fcAfterWrite(cb, scope) {
      has to ask. Chaining them would let a warm-up failure take down a readback that succeeded, and
      awaiting them together would make the operator wait for a request they are not looking at. */
   _fcPostWriteWarm_(_sc);
+  /* S3-R1 §C — RELEASE THE JOINABLE FLIGHT FIRST. A read already in the air for this slice was
+     dispatched before the write, so the server computed it from the rows as they were; joining it
+     would commit a pre-write answer, set the view to CURRENT and clear the banner over a table that
+     is missing what the operator just saved. Dropping the handle makes the call below DISPATCH. The
+     released flight is not cancelled — it cannot be — but rec.gen has moved, so when it lands it is
+     dropped as superseded instead of overwriting the newer answer. */
+  _fcSliceRec_(_slice).flight = null;
   _fcSliceFetch_(_slice).then(function () {
     _fcMeta_.readbackEnd = Date.now();
     if (!_fcOwns_(epoch)) return;                      // routed away → no DOM mutation
@@ -6908,6 +6954,13 @@ function _fcAfterWrite(cb, scope) {
   }).catch(function (err) {
     _fcMeta_.readbackEnd = Date.now();
     if (!_fcOwns_(epoch)) return;
+    /* S3-R1 §C — A SUPERSEDED READBACK IS NOT A FAILED ONE. FC_SUMMARY_READ_SUPERSEDED means a newer
+       read for this slice owns the answer and is either in flight or already committed; it is the
+       normal outcome of two refreshes overlapping, not a refresh that could not be done. Reporting it
+       as "Saved successfully, but the view could not refresh" put a stale warning over a view that was
+       about to be — or already had been — correctly updated, and invited the operator to press Retry
+       for a read that was not needed. The newer request owns the banner and the view state. */
+    if (err && err.superseded) return;
     // THE LAST KNOWN TABLE IS KEPT. _fcRenderError_ is deliberately NOT called: it nulls the read
     // model and replaces the rows with a red box, which is right on a cold load and wrong here,
     // because those rows are real and the write that produced them succeeded.

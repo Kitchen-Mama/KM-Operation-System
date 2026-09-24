@@ -70,8 +70,51 @@ function _fsAfterWrite(cb) {
 // outcomes are four different renders. "尚未連接資料來源" is reachable ONLY from EMPTY_CONFIGURATION — a
 // genuinely unconfigured API — which is the one case where it is true.
 // ============================================================================================================
+// ============================================================================================================
+// S3-R1 §A — THE FAILURE PATH WAS AN UNBOUNDED RETRY LOOP, AND THE TABLE COULD NOT SAY SO.
+// ------------------------------------------------------------------------------------------------------------
+// MEASURED, from the shipped source, against a backend that always rejects: ONE page entry issued 41 requests
+// and was still going when the harness cut it off. The mechanism is two lines that were each correct alone:
+//
+//     the guard          if (… && !_fsReadModel && !_factoryDbLoadTried) { _factoryDbLoadTried = true; read(); }
+//     the rejection      .catch(… { _factoryDbLoadTried = false; …; initFactoryStockPage(); })
+//
+// F1-7N-FB-4E cleared the tried-flag so that a later mount could really retry — which was right — and then
+// re-entered the very function whose guard reads that flag. So the "later mount" was immediate, and every
+// rejection started the next request as fast as the network could refuse it. Against a slow or failing backend
+// that is a request storm, and on screen it is a page that will not settle.
+//
+// THE FIX SEPARATES THE TWO QUESTIONS THE BOOLEAN WAS ANSWERING. "Has a read been attempted?" and "may another
+// one start now?" are not the same question, and _fsLoad.status already answers the second one properly:
+//
+//     IDLE                 nothing has been tried for this entry  → a read may start
+//     LOADING              one is in flight                       → never a second
+//     ERROR / EMPTY_CONF.  one was tried and failed               → only an explicit Retry or a fresh route
+//                                                                   entry may start another. NOT the re-render.
+//
+// Recovery without a browser reload — the property F1-7N-FB-4E §D9 exists to protect — is kept by BOTH of the
+// deliberate paths: _fsRetryRead_ and the lifecycle mount each return the state to IDLE. What no longer starts
+// a request is the re-render that the failure itself triggers.
+//
+// A-RC2 (below, in renderFactoryStockTable) is why nobody saw A-RC1: the table printed the same
+// "not connected" sentence for LOADING, for ERROR and for a genuinely empty read, so the storm was invisible.
+// ============================================================================================================
 var _fsLoad = { status: 'IDLE', error: null, requests: 0 };
+// Monotonic request identity (§A3): a response may only be committed if it is still the newest read dispatched.
+// Timing assumptions are not used anywhere on this path — the number is compared, never the clock.
+var _fsReadGen_ = 0;
 function _fsLoadState_() { return _fsLoad; }
+// The ONE gate on starting a scoped read. A failure is a terminal state for this entry; it is left by an
+// explicit operator action or by a fresh route entry, never by the render that the failure produced.
+function _fsMayStartRead_() { return _fsLoad.status === 'IDLE'; }
+// A fresh route entry re-arms a previous failure — and only a previous failure. LOADING keeps its flight,
+// READY keeps its data, so re-entry never duplicates a request that is already in the air or already answered.
+function _fsRearmOnEntry_() {
+    if (_fsLoad.status === 'ERROR' || _fsLoad.status === 'EMPTY_CONFIGURATION') {
+        _fsLoad = { status: 'IDLE', error: null, requests: _fsLoad.requests };
+        _factoryDbLoadTried = false;
+    }
+}
 function _fsConfiguredApi_() {
     try { return !!(window.KM && window.KM.DB && typeof window.KM.DB.isProductionWriteEligible === 'function'
         && typeof window.KM.DB.getApiBaseUrl === 'function' && window.KM.DB.getApiBaseUrl()); } catch (e) { return false; }
@@ -138,6 +181,8 @@ function _fsRetryRead_() {
     _factoryDbLoadTried = false;
     initFactoryStockPage();
 }
+window._fsMayStartRead_ = _fsMayStartRead_;
+window._fsRearmOnEntry_ = _fsRearmOnEntry_;
 window._fsRetryRead_ = _fsRetryRead_;
 window._fsLoadState_ = _fsLoadState_;
 
@@ -154,16 +199,22 @@ function initFactoryStockPage() {
     // Demo OFF: ensure the page data is loaded once, then re-init.
     // F1-7J-A3: canonical → bounded scoped read (factory_stock + movements + sku_details + warehouses); Legacy kill-switch
     // → broad loadOperationDb. Fail-closed: on scoped-read failure re-init WITHOUT a broad fallback (renders empty/bounded).
-    if (!demoOn && _fsScopedActive() && !_fsReadModel && !_factoryDbLoadTried) {
+    if (!demoOn && _fsScopedActive() && !_fsReadModel && _fsMayStartRead_()) {
         _factoryDbLoadTried = true;
+        var myGen = ++_fsReadGen_;      // §A3 — monotonic request identity, compared at the commit
         _fsLoad = { status: 'LOADING', error: null, requests: _fsLoad.requests + 1 };
         _fsShowInitialLoading_(root);   // F1-7M-D5: bounded INITIAL_LOADING affordance instead of a blank region
-        // F1-7N-FB-4E §C/§F/§D9 — see the note above _fsLoad: the rejection is classified and the tried-flag is
-        // cleared, so a transient failure no longer needs a browser reload to recover from.
+        // S3-R1 §A — the rejection is classified and LEFT classified. It does not clear the gate, because the
+        // re-render below would then start the next request, which is the loop this round removed.
         window.KM.DB.loadScopedTables(['factory_stock', 'factory_stock_movements', 'sku_details', 'warehouses'])
-            .then(function (m) { _fsReadModel = m; _fsLoad = { status: 'READY', error: null, requests: _fsLoad.requests }; initFactoryStockPage(); })
+            .then(function (m) {
+                if (myGen !== _fsReadGen_) return;          // a newer read owns the model
+                _fsReadModel = m;
+                _fsLoad = { status: 'READY', error: null, requests: _fsLoad.requests };
+                initFactoryStockPage();
+            })
             .catch(function (err) {
-                _factoryDbLoadTried = false;
+                if (myGen !== _fsReadGen_) return;          // a newer read owns the outcome, including the failure
                 _fsLoad = { status: _fsConfiguredApi_() ? 'ERROR' : 'EMPTY_CONFIGURATION',
                     error: _fsConfiguredApi_() ? _fsReadFailure_(err) : null, requests: _fsLoad.requests };
                 initFactoryStockPage();
@@ -334,6 +385,21 @@ function renderFactoryStockTable(root) {
         return;
     }
     
+    // S3-R1 §A — THE STATE RENDERER, WHICH THIS TABLE NEVER CONSULTED.
+    //
+    // F1-7N-FB-4E built _fsStateHtml_ so that LOADING, a typed transport failure and a genuinely unconfigured
+    // API would be three different screens. It wired it into renderFactoryMovementTable and into the whole of
+    // overseas-stock.js — and not into THIS function, the primary Factory Inventory table. So every one of the
+    // three, plus a real empty result, printed the same sentence: "尚未連接資料來源" ("no data source connected
+    // yet"). The typed error was unreachable, its Retry button was never drawn, and the request storm above was
+    // invisible behind a screen that said the data source was not connected — the one thing that was not true.
+    //
+    // The suite could not see it either. F4 counts occurrences of the literal phrase, and the copy that lived
+    // here was \u-escaped, so it counted one and passed while two different code paths rendered it. That check
+    // is replaced this round by one that decodes escapes first — spelling is not what the operator reads.
+    var _stF = _fsStateHtml_();
+    if (_stF) { fixedBody.innerHTML = ''; scrollBody.innerHTML = _stF; return; }
+
     // 檢查資料是否存在
     var _factoryData = null; // Default: no data
     if (window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled()) {
@@ -342,9 +408,11 @@ function renderFactoryStockTable(root) {
         _factoryData = _getDbFactoryStockData();
     }
     // === End Demo Data Layer ===
+    // Reaching here means the read SUCCEEDED and carried no rows, so the sentence says that and nothing else.
+    // "Not connected" is now owned solely by EMPTY_CONFIGURATION, inside the state renderer above.
     if (!_factoryData || _factoryData.length === 0) {
         fixedBody.innerHTML = '';
-        scrollBody.innerHTML = '<div style="padding:20px;text-align:center;color:#94A3B8">\u5c1a\u672a\u9023\u63a5\u8cc7\u6599\u4f86\u6e90</div>';
+        scrollBody.innerHTML = '<div style="padding:20px;text-align:center;color:#94A3B8">No factory stock rows.</div>';
         return;
     }
     
@@ -1732,6 +1800,11 @@ if (window.KM && window.KM.lifecycle) {
             _ensureFactoryStockMarkup().then(function() {
                 var sec = document.getElementById('factory-stock-section');
                 if (sec) sec.classList.add('active');
+                // S3-R1 §A — a FRESH ENTRY is the one automatic path allowed to re-arm a failed read. This is
+                // what keeps F1-7N-FB-4E §D9's promise (recovery needs no browser reload) now that the failure
+                // itself no longer re-arms: come back to the page and it tries once more. LOADING and READY are
+                // untouched, so re-entry never duplicates a live flight or re-reads data already held.
+                if (window._fsRearmOnEntry_) window._fsRearmOnEntry_();
                 if (window.initFactoryStockPage) {
                     window.initFactoryStockPage();
                 }

@@ -126,7 +126,22 @@ ok(/var _OS_TABLES = \['overseas_inventory_snapshot', 'overseas_inventory_moveme
 // loads _OS_TABLES through the scoped read and re-enters the page — is unchanged and is asserted on both arms.
 ok(/loadScopedTables\(_OS_TABLES\)/.test(OS), 'overseas cold first-open loads _OS_TABLES via scoped read');
 ok(/_osReadModel = m;[\s\S]{0,120}initOverseasStockPage\(\);/.test(OS), 'overseas: the success arm adopts the model and re-enters the page');
-ok(/\.catch\(function \(err\) \{[\s\S]{0,400}initOverseasStockPage\(\);/.test(OS), 'overseas: the failure arm re-enters too — but now with a classified reason');
+// S3-R1 §A — the window grew because the failure arm now carries the note explaining why it must NOT
+// re-arm the read gate (that was an unbounded retry loop). Rather than widen a character count that will
+// drift again, this asserts the two things the sentence actually claims: the arm classifies the failure,
+// and it re-enters the page. Both are read from the scoped-read catch block itself.
+// The scoped-read arm is the one that runs from `_osLoadPrimary_()` to the end of its own chain.
+// Sliced by index rather than matched by a shaped regex: a regex describing a whole promise chain is
+// one refactor away from silently matching nothing, which reads as a passing test.
+// (The file ships CRLF, so the slice is taken on a LF-normalised copy rather than on raw bytes.)
+var OS_LF = OS.replace(/\r\n/g, '\n');
+var OS_PRIMARY_AT = OS_LF.indexOf('        _osLoadPrimary_()');
+var OS_CATCH = OS_PRIMARY_AT === -1 ? '' : OS_LF.slice(OS_PRIMARY_AT, OS_LF.indexOf('        return;', OS_PRIMARY_AT));
+ok(OS_CATCH.length > 80, 'overseas: the scoped-read failure arm was located');
+ok(/_osReadFailure_\(err\)/.test(OS_CATCH), 'overseas: the failure arm classifies the reason');
+ok(/initOverseasStockPage\(\);/.test(OS_CATCH), 'overseas: the failure arm re-enters the page');
+ok(!/_overseasDbLoadTried = false/.test(OS_CATCH),
+  'overseas: ... and does NOT re-arm the read gate it is about to re-enter — that was the retry loop');
 ok(/_overseasDbLoadTried = false;/.test(OS), 'overseas: and it CLEARS the tried-flag, so recovery needs no browser reload');
 
 // ===================================================================================================================

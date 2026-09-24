@@ -85,7 +85,24 @@ function _osShowInitialLoading_(root) {
 // outcomes are four different renders. "尚未連接資料來源" is reachable ONLY from EMPTY_CONFIGURATION — a
 // genuinely unconfigured API — which is the one case where it is true.
 // ============================================================================================================
+// S3-R1 §A — THE SAME UNBOUNDED RETRY LOOP FACTORY INVENTORY HAD, for the same reason: the rejection
+// handler cleared the tried-flag and then re-entered the function whose guard reads it, so every failure
+// started the next request as fast as the network could refuse it. Both pages were built from one
+// template, so both carried it; a guard that matched anywhere in the file could not tell. The full
+// account is in factory-stock.js above _fsLoad. The fix is identical and the two must not drift.
 var _osLoad = { status: 'IDLE', error: null, requests: 0 };
+var _osReadGen_ = 0;
+// The ONE gate on starting a scoped read: a failure is terminal for this entry and is left only by an
+// explicit Retry or by a fresh route entry, never by the render the failure itself produced.
+function _osMayStartRead_() { return _osLoad.status === 'IDLE'; }
+// A fresh route entry re-arms a previous failure, and only a previous failure — LOADING keeps its
+// flight, READY keeps its data, so re-entry never duplicates a live request or re-reads held data.
+function _osRearmOnEntry_() {
+    if (_osLoad.status === 'ERROR' || _osLoad.status === 'EMPTY_CONFIGURATION') {
+        _osLoad = { status: 'IDLE', error: null, requests: _osLoad.requests };
+        _overseasDbLoadTried = false;
+    }
+}
 function _osLoadState_() { return _osLoad; }
 function _osConfiguredApi_() {
     try { return !!(window.KM && window.KM.DB && typeof window.KM.DB.isProductionWriteEligible === 'function'
@@ -154,6 +171,8 @@ function _osRetryRead_() {
     initOverseasStockPage();
 }
 window._osRetryRead_ = _osRetryRead_;
+window._osMayStartRead_ = _osMayStartRead_;
+window._osRearmOnEntry_ = _osRearmOnEntry_;
 window._osLoadState_ = _osLoadState_;
 
 // F1-7N-FB-4E-R3 §C — THE PRIMARY READ, AND THE ONE REASON THE OLD FAN-OUT IS STILL REACHABLE.
@@ -216,14 +235,23 @@ function initOverseasStockPage() {
     //
     // getOperationDb IS STILL NEVER CALLED and no timeout was raised. The only fallback below is the OLD FOUR-
     // TABLE FAN-OUT, and it is reachable for exactly one reason.
-    if (_osScopedActive() && !_osReadModel && !_overseasDbLoadTried) {
+    if (_osScopedActive() && !_osReadModel && _osMayStartRead_()) {
         _overseasDbLoadTried = true;
+        var myGen = ++_osReadGen_;      // §A3 — monotonic request identity, compared at the commit
         _osLoad = { status: 'LOADING', error: null, requests: _osLoad.requests + 1 };
         _osShowInitialLoading_(root);   // F1-7M-D5: bounded INITIAL_LOADING affordance instead of a blank region
         _osLoadPrimary_()
-            .then(function (m) { _osReadModel = m; _osLoad = { status: 'READY', error: null, requests: _osLoad.requests }; initOverseasStockPage(); })
+            .then(function (m) {
+                if (myGen !== _osReadGen_) return;                  // a newer read owns the model
+                _osReadModel = m;
+                _osLoad = { status: 'READY', error: null, requests: _osLoad.requests };
+                initOverseasStockPage();
+            })
             .catch(function (err) {
-                _overseasDbLoadTried = false;                       // recovery must not require a browser reload
+                if (myGen !== _osReadGen_) return;                  // a newer read owns the outcome
+                // Recovery still needs no browser reload — a fresh route entry re-arms this, see
+                // _osRearmOnEntry_. What is NOT allowed is re-arming here, one line before the
+                // re-render that would immediately start the next request.
                 _osLoad = { status: _osConfiguredApi_() ? 'ERROR' : 'EMPTY_CONFIGURATION',
                     error: _osConfiguredApi_() ? _osReadFailure_(err) : null, requests: _osLoad.requests };
                 initOverseasStockPage();
@@ -1684,6 +1712,7 @@ if (window.KM && window.KM.lifecycle) {
             _ensureOverseasStockMarkup().then(function() {
                 var sec = document.getElementById('overseas-stock-section');
                 if (sec) sec.classList.add('active');
+                if (window._osRearmOnEntry_) window._osRearmOnEntry_();   // S3-R1 §A — a fresh entry re-arms a failure
                 if (window.initOverseasStockPage) window.initOverseasStockPage();
             });
         },

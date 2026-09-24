@@ -631,7 +631,10 @@ await (async function () {
 await (async function () {
   // M3 the generation guard is removed
   var m = faulted(fnSrc(FCS, '_fcSliceFetch_'),
-    '      if (_fcModelGenNow_() !== gen) {', '      if (false) {', 'M3');
+    // S3-R1 §C — the guard gained a second disjunct (rec.gen !== myGen, per-slice request identity),
+    // so the anchor carries the whole condition. What M3 injects and proves is unchanged: with the
+    // supersession guard disabled, an answer belonging to a discarded model is committed anyway.
+    '      if (_fcModelGenNow_() !== gen || rec.gen !== myGen) {', '      if (false) {', 'M3');
   var W = readWorld({ src: { _fcSliceFetch_: m } });
   var release;
   W.__server = function (s) {
@@ -650,9 +653,13 @@ await (async function () {
 
 await (async function () {
   // M4 a failed slice keeps its single-flight handle — the "reload fixes it" bug
+  // S3-R1 §C — clearing the handle became conditional on the request still being the newest for its
+  // slice, so both arms carry that guard now. M4 injects the same fault it always did: the REJECTION
+  // arm stops releasing the handle, so a failed slice keeps a settled promise as its single-flight
+  // latch and every later read joins a dead answer until the page is reloaded.
   var m = faulted(fnSrc(FCS, '_fcSliceFetch_'),
-    '  rec.flight = p.then(function (v) { rec.flight = null; return v; },\n                      function (e) { rec.flight = null; throw e; });',
-    '  rec.flight = p.then(function (v) { rec.flight = null; return v; },\n                      function (e) { throw e; });', 'M4');
+    '  rec.flight = p.then(function (v) { if (rec.gen === myGen) rec.flight = null; return v; },\n                      function (e) { if (rec.gen === myGen) rec.flight = null; throw e; });',
+    '  rec.flight = p.then(function (v) { if (rec.gen === myGen) rec.flight = null; return v; },\n                      function (e) { throw e; });', 'M4');
   var W = readWorld({ src: { _fcSliceFetch_: m } });
   var n = 0;
   W.__server = function (s) { n++; return n === 1 ? timeoutEnv() : okEnv(s); };
