@@ -638,7 +638,30 @@ var ROUND_TOKENS = [
   //
   // utils/data.js joins the application set for the first time: it sat on `donenotice-20260811`, a token
   // that is not in this series at all and therefore would never have rotated with anything.
-  's2r4a-skuoverride-20260923'];
+  's2r4a-skuoverride-20260923',
+  // PRICING-R4G — ROTATED, AND THE REUSE RULE IS WHAT CLOSES IT, not a preference for a fresh name.
+  //
+  // The rule this series records is that a token may be reused until the bytes it names have actually
+  // been SERVED. s2r4a-skuoverride-20260923 has been: it is in origin/main at 280aae1, pushed
+  // 2026-09-24, and a push is the event that can serve it. The S2-R4A entry above minted a token for
+  // exactly this reason and stated the principle that decides it — unverifiable is not the same as
+  // false, and a token is the one place where guessing wrong is silent, because the page updates and
+  // the script does not.
+  //
+  // WHAT A BROWSER ON THE OLD BYTES DOES HERE IS NOT A RENDERING DIFFERENCE. R4G changes four files
+  // that have to agree with each other: psb-data-contract.js adds three required fields,
+  // km-product-pricing-adapter.js is what supplies them, operation-system-db-api.js resolves them for
+  // the cached transport and psb-selectors.js reads them. The board contract's rule is absolute —
+  // every row must carry every contract field or the row set is refused — so a returning browser that
+  // pairs a FRESH contract with a CACHED adapter does not lose one column. It gets CONTRACT_MISMATCH
+  // and renders nothing. A half-updated browser is the client-side twin of the partial Apps Script
+  // sync that PRICING_RESOLVER_UNAVAILABLE exists to report, and it is silent in the same way.
+  //
+  // THE WHOLE APPLICATION SET ROTATES TOGETHER, which is not a stylistic choice: staleAppTokenRefs
+  // fails any entry left on a superseded token that this series recognises, so a partial rotation is
+  // not expressible. All 44 index.html entries move, and the four in the P1-B8C acceptance page move
+  // with them because it loads the same application.
+  'r4g-resolvedprice-20260925'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

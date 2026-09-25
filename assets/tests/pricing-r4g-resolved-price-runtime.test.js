@@ -515,7 +515,11 @@ section('F · §16 THE RELEASE — FIVE FILES, ONE ID');
   eq(mismatched, [], 'F4  every file in the set declares the stamp its manifest row expects');
 
   // F5 — §18: every changed frontend asset carries the CURRENT cache token.
-  var TOKEN = 's2r4a-skuoverride-20260923';
+  // PRICING-FINAL — DERIVED, NOT PINNED. This read the literal, and a literal token is the
+  // equality-with-now that _release-order.js exists to end: it was correct until the first round that
+  // legitimately rotated the series, and then it failed while describing the right state. The authority
+  // is the series; ask it.
+  var TOKEN = require('./_release-order.js').currentAppToken();
   var changedAssets = ['operation-system-db-api.js', 'km-product-pricing-adapter.js', 'psb-selectors.js',
     'psb-data-contract.js', 'fc-summary.js', 'sku-regional-pricing.js', 'sku-regional-details.css'];
   var stale = changedAssets.filter(function (a) {
