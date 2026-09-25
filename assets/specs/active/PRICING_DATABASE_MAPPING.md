@@ -433,7 +433,14 @@ Five reasons, each provable:
    than fall back.
 5. FC Summary's legacy wrapper would render the gap as **0**, which is a price and looks like one.
 
-### RECOMMENDED_CANONICAL_EFFECTIVE_MODEL
+### RECOMMENDED_CANONICAL_EFFECTIVE_MODEL — **SUPERSEDED BY OPERATOR DECISION (PRICING-R4F, see §4F)**
+
+> R4D recommended keeping the stored effective field as the single read contract, and recommended it
+> over the nullable-override model the operator has since chosen. **The recommendation is superseded;
+> the reasoning is not.** Every cost this section names is real and is now a line item in §4F: the
+> fallback does move into the readers, 72_ genuinely cannot carry it today, and that transport change
+> is the largest piece of work R4G has. Kept in full, because a decision recorded without its
+> counter-argument reads later as the only option anyone had.
 
 **Keep the stored effective field as the single read contract. Classify, do not blank.**
 
@@ -545,6 +552,248 @@ answers to one question).
 **Blank is never zero at any point.** A blank base produces a blank auto and a blank effective price. A base
 value that is present but not a number is reported on the row's result line and left blank, never coerced —
 `Number('')` is `0`, and that coercion is the one this contract exists to remove.
+
+---
+
+## 4F. Nullable Manual Override and the Resolved Price (PRICING-R4F — FROZEN, NOT IMPLEMENTED)
+
+**Status:** architecture freeze + consumer audit. **No runtime behaviour changed in this round.**
+Implementation is `PRICING-R4G-RESOLVED-PRICE-RUNTIME-IMPLEMENTATION`.
+`EXISTING_PRODUCTION_ROWS_WRITTEN = 0` · `DB_MIGRATION_REQUIRED = NO`.
+
+`FINAL_PRICE_MODEL = BASE -> AUTO -> NULLABLE MANUAL OVERRIDE` · `MANUAL_OVERRIDE_NULLABLE = YES`
+
+### The model, frozen
+
+| layer | columns | meaning | nullable |
+|---|---|---|---|
+| BASE | `base_regular_price` · `base_minimum_price` · `base_msrp` | the source price, from `sku_details` (§4C) | yes |
+| AUTO | `auto_regular_price` · `auto_minimum_price` · `auto_msrp` | the system's price: BASE × FX, rounded (§4B) | yes — blank while `pending_fx` |
+| **MANUAL OVERRIDE** | `regular_price` · `minimum_price` · `msrp` | **a user-entered override, and nothing else** | **yes — blank means NO OVERRIDE EXISTS** |
+
+Blank override does **not** mean zero, does not mean a missing business price, and is not a validation
+error. It means nobody has overridden the system's price, which is the ordinary state of a healthy row.
+
+**This renames nothing.** The three columns keep their names and their positions; what changes is what a
+value in them *claims*. That is a semantic migration carried entirely by the resolver below, which is why
+it needs no DB migration and touches no existing row.
+
+### RESOLVED_PRICE_CONTRACT
+
+```
+resolved(band) = override(band)   when the override cell holds a number
+               = auto(band)       when it does not, and auto holds a number
+               = null             when neither does        <-- "Not Set", NEVER 0
+```
+
+Every band resolves independently, exactly as the flags already do (§4A): a row may carry an overridden
+Regular and an auto Minimum, and no band's state is evidence about another's.
+
+`NA` keeps its existing meaning and is **not** an override: it is a deliberate "this band does not apply",
+it is already distinguished from blank by `pricingIsNa_` / `*IsNa`, and it must not fall back to auto.
+Resolving `NA` to the auto value would answer "this product has no MSRP" with a number.
+
+### RESOLVED_PRICE_OWNER — one rule, two runtimes, named as a pair
+
+The codebase already has this exact shape for ownership flags — `pricingReadFlag_` in 73_ and
+`pricingFlagOrNull_` in `operation-system-db-api.js` — and it is the pattern to follow rather than invent:
+
+| side | owner | note |
+|---|---|---|
+| server | **`pricingResolveEffective_`** (73_api_v1_pricing_write.gs:782) | **it already exists and already returns `AUTO_REFERENCE`.** It is extended, never rewritten. |
+| wire | **72_ and 59_ must EMIT the resolved value and its source** | so no client re-derives it, and so the two transports stop disagreeing |
+| client | a mirror in **`normalizePricingListRecord`** (operation-system-db-api.js:557) | the only client path that already receives `auto_*` and the flags |
+
+**The server resolver is one line away from the target rule.** Today it substitutes `auto` for a blank
+override only when the flag reads `AUTO`. The target drops the flag gate: a blank override falls back to
+auto whatever the flag says. Nothing else in the function changes, and its `source` vocabulary
+(`STORED` / `AUTO_REFERENCE` / `NA` / `UNAVAILABLE`) already carries the distinction the display needs.
+
+### TRUE / FALSE / blank under the new model
+
+| flag | meaning | still load-bearing? |
+|---|---|---|
+| `TRUE` | an override exists and a person put it there | yes, but **derivable**: override present ⇔ TRUE |
+| `FALSE` | no override; the system's price stands | yes, **during the transition only** |
+| blank | **UNKNOWN — nobody has said.** Never FALSE. | yes: it marks the legacy population |
+
+`FALSE` is **schema debt, not yet removable**, and the reason is precise rather than cautious. In the
+converged model a populated override cell *is* the override, so the flag restates the cell and carries no
+information. It cannot be removed today because the legacy rows hold populated effective cells that are
+**not** overrides — base-shaped values written by the pre-R4E creation path (§4D). Until those are reviewed,
+`FALSE` and blank are the only things distinguishing "populated, and a person meant it" from "populated,
+and the row was born that way". **Do not remove the columns. Do not migrate them.**
+
+Flag readers, measured: 73_ (FX writability and the pre-write refusal guard), the db-api normalizer, and
+the SKU Regional Pricing owner badge. **Nothing else reads them at all** — 72_ does not, and the Product
+Strategy Board does not. When R4G stops FX from writing the override field, the flag's last *decision* use
+disappears and only display remains.
+
+### NEW_ROW contract — §4E is already correct, with one deletion
+
+R4E ships base_* and `base_currency` from `sku_details`, `fx_rate = 1` and `auto_* = round(base_*)` on a
+same-currency row, and `pending_fx` with everything blank across a currency boundary. **All of that stands.**
+
+One line changes: R4E's same-currency branch also copies `auto_*` into the override cells. Under this model
+that writes an override no user entered — the exact confusion the round exists to remove.
+
+```
+NEW_ROW_MANUAL_OVERRIDE_INITIALIZATION = BLANK        (all three bands, both branches)
+NEW_ROW_AUTO_INITIALIZATION            = round(base_*) same currency · BLANK cross currency (pending_fx)
+NEW_ROW_RESOLVED_PRICE                 = AUTO, by the resolver, because the override is blank
+```
+
+A new row therefore displays a price without holding one in the override column, and `base_* -> override`
+and `auto_* -> override` both become impossible at creation.
+
+### Consumer audit
+
+`DIRECT_EFFECTIVE_CONSUMER_COUNT = 11` code sites in 9 files. Classified:
+
+| consumer | class | what it needs, and what a blank override does to it today |
+|---|---|---|
+| 73_ `pricingPlanField_` (the write path) | MANUAL_OVERRIDE | the raw cell. It decides what to write. |
+| 73_ `pricingPlanFxRow_` (FX) | MANUAL_OVERRIDE | the raw cell plus the flag. |
+| 04_ creation | MANUAL_OVERRIDE | it writes the cell. §4E above. |
+| db-api `normalizePricingListRecord` | MANUAL_OVERRIDE | must keep carrying the raw value — and gains the resolved one. |
+| 59_ `skuDetails.workspace.get` | MANUAL_OVERRIDE | **raw passthrough**: it already carries `auto_*` and the flags, so the client CAN resolve. |
+| SKU Regional Pricing — the editor | MANUAL_OVERRIDE | it is the screen where the override is set and cleared. |
+| **72_ `productPricing.workspace.get`** | **RESOLVED** | **emits no `auto_*` at all.** A blank override becomes `null` on the wire with no fallback available. |
+| km-product-pricing-adapter | RESOLVED | verbatim passthrough of 72_ — inherits the gap. |
+| psb-selectors (`chartable`, `analysableSiteSkuCount`, `PRICING_SOURCE_MISSING`, the min→msrp band) | RESOLVED | the SKU leaves the price chart and enters Data Quality as a defect. |
+| psb-board-ui (the floor-to-list band) | RESOLVED | the band disappears. |
+| **fc-summary `resolveRegionalPricingContext`** | **RESOLVED** | reads the stored cell only (via `row.raw`). See below — this one refuses to save. |
+| SKU Regional Pricing — the top display line | RESOLVED | should show the resolved price; today shows the stored one. |
+| 20_ `campaign_sku_lines` snapshot | RESOLVED (via its caller) | 20_ stores what fc-summary hands it; a blank price is snapshotted blank. |
+
+`RESOLVED_CONSUMER_COUNT = 7` · `MANUAL_OVERRIDE_CONSUMER_COUNT = 6`.
+
+**NOT_RELEVANT, measured rather than assumed:** Order Planning · Request Order · Purchase Order ·
+Shipment / procurement · document and export paths · Forecast · 58_ · 02_ — **none reads an effective
+price at all**. SKU Details and SKU Handbook read `sku_details.minimum_price` / `.msrp`, which are the
+**master baseline at a different grain**, not this table. Campaign Risk reads
+`marketplace_skus.regular_price` / `.msrp`, which §3 of this document says must never be a pricing
+source — a pre-existing wrong-table defect, out of scope here and recorded below.
+
+### UNSAFE_BLANK_CONSUMERS = 5
+
+Consumers that misbehave **today** if an override is blank, in severity order:
+
+1. **fc-summary — the Special Event builder refuses to SAVE.** `resolveRegionalPricingContext` returns
+   `regularPrice = null`, and the save path halts with `MISSING_PRICING_LIST_ROW` on that row. This is the
+   only consumer where a blank override blocks a write rather than a view, and it is the reason R4G cannot
+   ship the creation change and the resolver in separate releases.
+2. **fc-summary — the Regular FC path**, same resolver, same null.
+3. **The PSB / Pricing Center chain** (72_ → adapter → selectors → board). Not fixable client-side: the
+   transport carries no `auto_*`. **72_ must change first.**
+4. **20_ campaign line snapshot** — a blank `regular_price` is written into `campaign_sku_lines`, where it
+   becomes a permanent historical record of a price that was never missing.
+5. **73_ `pricing.update` mode `AUTO`** — refused with `AUTO_VALUE_MISSING` when `auto_*` is blank. Correct
+   today (restoring from blank would write 0); wrong under the target model, where clearing an override on
+   a `pending_fx` row is exactly the right thing to allow. See the contract change below.
+
+### BLANK_TO_ZERO_DEFECTS = 6 sites in 3 files — **none of them on `pricing_list`**
+
+The server side is clean: `ppwNum_` (72_), `pricingReadNumber_` (73_), `pricingNumOrNull_` (db-api) all
+return `null` for blank, and there is no `|| 0` on any price in any `.gs` file.
+
+| file | lines | what it is |
+|---|---|---|
+| `assets/js/api/operation-system-db-api.js` | 394, 395, 396 | `parseFloat(r.regular_price) \|\| 0` in `normalizeMarketplaceSkuRecord` — the **`marketplace_skus`** price columns, not this table. |
+| `assets/js/pages/campaign-risk.js` | 136, 815 | `m.regularPrice \|\| 0`, then `parseFloat(s.regularPrice) \|\| parseFloat(s.msrp) \|\| 0`, rendered through `.toFixed(2)` as a real price. |
+| `assets/js/pages/fc-summary.js` | 4078 | `parseFloat(regRaw) \|\| 0` reading a typed **DOM** value: non-numeric input becomes `0`. Blank is already guarded. |
+
+**Not fixed in this round, and not for lack of boundedness.** Changing `normalizeMarketplaceSkuRecord` to
+return `null` changes the type its only consumer does arithmetic on, and Campaign Risk's real defect is the
+table it reads, not the coercion — fixing the `|| 0` there would make a wrong price vanish instead of
+being wrong, which is worse for finding it. Both belong to a Campaign Risk pricing-source round with its
+own tests. The fc-summary DOM read is a two-character fix and is listed for R4G, where the builder is
+already being opened.
+
+**A stale comment to delete in R4G:** fc-summary.js:3820 says "pricing_list normalizer coerces a missing
+`regular_price` to 0 — read raw to tell missing from 0". That has not been true since PRICING-R2;
+`pricingNumOrNull_` returns `null`. The comment is why the function reads `row.raw` instead of the
+normalized record, and the normalized record is where the resolved price will live.
+
+### §7 — THE CONTRACT CHANGE. `CONTRACT_CHANGE_REQUIRED = YES`
+
+This is the critical audit item, and the answer is yes — a real, behavioural, frozen-contract change in
+`pricingPlanField_` (73_api_v1_pricing_write.gs:264-286).
+
+| | current (frozen by PRICING-R2 §8, shipped) | target |
+|---|---|---|
+| `USE_AUTO` writes | `override := auto_*` **(a number)** and `flag := FALSE` | `override := BLANK` and `flag := FALSE` |
+| when `auto_*` is blank | **refused**: `AUTO_VALUE_MISSING` | **allowed** — clearing needs no value to copy |
+| change_type logged | `RETURN_TO_AUTO`, `new_value` = the auto number | `RETURN_TO_AUTO`, `new_value` = `''` |
+| what the row then shows | the auto number, frozen at the moment of the click | the auto number, **and it tracks future FX runs** |
+
+The current behaviour is not a bug. Under the stored-effective model, copying the value *was* returning to
+auto, and refusing on a blank auto was the only honest answer because writing blank would have published a
+free product. Under the nullable model both invert: the copy is what freezes the price, and the refusal
+blocks the one action that repairs a `pending_fx` row.
+
+Two consequences that must ship in the same release as the change:
+
+- **FX must stop writing the override column.** Once `USE_AUTO` clears rather than copies, a FALSE row has
+  no override to keep in step, and `pricingPlanFxRow_`'s effective-write branch becomes the second writer
+  of a field that now has one meaning. FX writes `auto_*`; the resolver does the rest.
+- **`MANUAL` with a blank price stays refused.** `MANUAL_PRICE_REQUIRED` is unchanged. "Clear the override"
+  is `USE_AUTO`, and it must stay a different, named action — a blank price field submitted as an update is
+  far more likely to be an accident than an intention.
+
+UX vocabulary (R4C) is already correct and needs no change: `No Change` / `Update Price` / `Use Auto Price`
+map onto `NO_CHANGE` / `MANUAL` / `AUTO`. Only what `Use Auto Price` *does* changes.
+
+### §8 — display contract
+
+SKU Regional Pricing already renders the stored value, the auto value and an owner badge side by side, so
+this is a relabelling and one added line, not a redesign. **S8 owns final styling.**
+
+```
+Regular Price   42.31 CAD     <- RESOLVED. the number the business acts on
+Auto            42.31 CAD     <- always shown, even when it is what resolved
+Override        Not set       <- the raw cell. "Not set" is a healthy state, not a warning
+```
+
+```
+Regular Price   39.99 CAD
+Auto            42.31 CAD
+Override        39.99 CAD
+```
+
+**A blank override and a blank resolved price must not render alike.** "Override: Not set" beside a
+resolved number is normal; "Regular Price: Not Set" means the row has no price from any layer and is the
+one that needs a person. The existing `diverges` hint (override ≠ auto) keeps its meaning and becomes more
+useful, because it can now only be true when an override genuinely exists.
+
+### Legacy population — `LEGACY_AUTOMATIC_MIGRATION_REQUIRED = NO`
+
+The operator will review and update existing marketplaces by hand. `OPERATOR_MANUAL_REVIEW_ALLOWED = YES`.
+
+**The target model is backward-safe for the existing rows, and this is what makes "no migration" coherent
+rather than merely permitted.** A legacy row holds a populated effective cell and a blank flag. Under
+`override present → override wins`, it resolves to exactly the number it resolves to today. Nothing moves,
+nothing disappears, no screen changes — the base-shaped values stay visible and stay wrong in precisely the
+way they are wrong now, which is what keeps them findable.
+
+**The cost, stated plainly:** once FX stops writing the override column, a legacy row can no longer be
+repaired by an FX run. Its only repair is a person clearing the override — which is `Use Auto Price`, which
+is the contract change above. The two are the same decision, and the census (`PRICING-R4D` TEMP tool, still
+`NOT_MEASURED`) is what sizes it.
+
+### FILES_REQUIRING_NEXT_IMPLEMENTATION (R4G)
+
+| file | change |
+|---|---|
+| `73_api_v1_pricing_write.gs` | drop the flag gate in `pricingResolveEffective_`; `USE_AUTO` clears instead of copying; FX stops writing the override column |
+| `72_api_v1_product_pricing_workspace.gs` | **the largest piece.** Emit the resolved price and its source; keep `analysable` gated on *resolved*, not stored |
+| `59_api_v1_sku_details_workspace.gs` | emit resolved alongside the raw passthrough (or confirm the client mirror is authoritative for this transport) |
+| `04_marketplace_forecast_import.gs` | `pricingNewRowPlan_`: stop copying `auto` into `effective` on the same-currency branch |
+| `operation-system-db-api.js` | the client mirror of the resolver in `normalizePricingListRecord` |
+| `km-product-pricing-adapter.js` | carry the new 72_ fields verbatim |
+| `psb-selectors.js` | read resolved for `chartable` / `analysableSiteSkuCount` / `PRICING_SOURCE_MISSING` / the band |
+| `fc-summary.js` | `resolveRegionalPricingContext` reads resolved; delete the stale 3820 comment; fix the 4078 DOM coercion |
+| `sku-regional-pricing.js` | the three-line display above; `Use Auto Price` copy follows the new behaviour |
 
 ---
 
