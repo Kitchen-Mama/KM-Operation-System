@@ -1,0 +1,169 @@
+{
+  "round": "S3-R6",
+  "captured": "2026-09-25",
+  "status": "AWAITING PRODUCTION NUMBERS — the structural census below is complete and derived from the Apps Script sources; every cost field is blank because no Apps Script runtime and no Sheets credential exist in this environment. §14 forbids fabricating them.",
+
+  "metadata_availability": {
+    "question": "§2 — does each mandatory target already report its own server cost, so no new timing infrastructure is needed?",
+    "answer": "YES for all eight. Every workspace handler builds its envelope with { requestId, serverDurationMs, tablesRead }, and the client preserves them: normalizeWorkspaceEnvelope copies any server meta key that the client envelope does not already define, and neither serverDurationMs nor tablesRead is one it defines. So env.meta.serverDurationMs and env.meta.tablesRead are readable in the browser today.",
+    "already_recorded_by_the_transport": {
+      "where": "KM.transport.metrics().samples and KM.transport.timeline()",
+      "fields": ["action", "code", "phase", "ms", "bytes", "attempts", "http_status", "redirected",
+                 "server_answered", "server_ms", "server_request_id", "concurrent_at_dispatch",
+                 "dispatch_ms", "settled_ms", "marks_source"],
+      "note": "server_ms is read from meta.serverDurationMs at the dispatch boundary, so the transport already carries the server's own duration for every action that reports one."
+    },
+    "gaps": {
+      "tables_read": "recorded by the SERVER in meta.tablesRead and readable from the envelope, but NOT projected into transport samples or timeline rows. The capture tool reads it off the envelope.",
+      "rows_returned": "not carried by the transport at all. Derived by the capture tool from env.data.counts, which every workspace view model emits.",
+      "wire_bytes": "the transport records the response body length as `bytes`. The capture tool reports it as wire_bytes and reports JSON.stringify length separately as decoded_bytes, because quoting one as the other misstates a payload budget.",
+      "pre_server_queue_wait": "NOT_MEASURABLE. Nothing in the envelope says when the server STARTED, only how long it ran. Client elapsed minus serverDurationMs is network plus bridge plus queue wait combined, and this round will not split what it cannot observe."
+    },
+    "production_code_changed_to_expose_metadata": "NONE. §15's allowance was not needed."
+  },
+
+  "table_census": {
+    "note": "§7. Every handler below reads each table with sheet.getDataRange().getValues() — one range read per table, header parsed once, no row-by-row calls. What none of them does is filter at the source: the whole sheet is read and the scope is applied afterwards, in the browser for the SKU pages and in server memory for Product Strategy. TOTAL_ROWS and the response contribution are production facts and are blank.",
+    "targets": [
+      {
+        "target": "A — SKU Details",
+        "action": "skuDetails.workspace.get",
+        "include": {},
+        "handler": "handleSkuDetailsWorkspaceGet_ (59_api_v1_sku_details_workspace.gs)",
+        "table_read_sequence": ["sku_details", "tax_referral_rates", "tax_rate_components"],
+        "tables_read": 3,
+        "whole_table_read": true,
+        "filter_location": "browser",
+        "row_cap": 50000,
+        "total_rows_per_table": "OPERATOR",
+        "rows_used_by_request": "OPERATOR"
+      },
+      {
+        "target": "B — SKU Regional Details",
+        "action": "skuDetails.workspace.get",
+        "include": { "regional": true, "pricing": true },
+        "handler": "handleSkuDetailsWorkspaceGet_ (59_)",
+        "table_read_sequence": ["sku_details", "tax_referral_rates", "tax_rate_components",
+                                 "marketplace_skus", "sku_regional_details", "pricing_list"],
+        "tables_read": 6,
+        "whole_table_read": true,
+        "filter_location": "browser",
+        "row_cap": 50000,
+        "total_rows_per_table": "OPERATOR",
+        "rows_used_by_request": "OPERATOR"
+      },
+      {
+        "target": "C — PSB site universe",
+        "action": "productPricing.siteUniverse.get",
+        "handler": "72_api_v1_product_pricing_workspace.gs",
+        "table_read_sequence": ["marketplace_skus"],
+        "tables_read": 1,
+        "whole_table_read": true,
+        "filter_location": "server (in memory, after the whole table is read)",
+        "total_rows_per_table": "OPERATOR"
+      },
+      {
+        "target": "D — PSB workspace",
+        "action": "productPricing.workspace.get",
+        "include": { "regional": true, "pricing": true, "campaigns": true },
+        "handler": "handleProductPricingWorkspaceGet_ (72_)",
+        "table_read_sequence": ["marketplace_skus", "sku_details", "sku_regional_details",
+                                 "pricing_list", "campaign_sku_lines", "campaigns"],
+        "tables_read": 6,
+        "whole_table_read": true,
+        "filter_location": "server (ppwMembership_ narrows to the chosen site AFTER the whole table has been read)",
+        "total_rows_per_table": "OPERATOR"
+      },
+      {
+        "target": "E — FC Summary bootstrap",
+        "action": "fcSummary.workspace.get",
+        "include": { "slice": "bootstrap" },
+        "handler": "58_api_v1_fc_summary_workspace.gs",
+        "table_read_sequence": ["fc_regular_forecast", "fc_special_events", "fc_target_rules", "marketplaces"],
+        "tables_read": 4,
+        "emits": ["fcTargetRules", "marketplaces"],
+        "whole_table_read": true,
+        "filter_location": "browser",
+        "note": "READS FOUR TABLES AND SENDS TWO. The asymmetry is deliberate and documented in the handler: the filter and year universes are derived from every Regular Forecast row, so the rows have to be read even though they are not sent."
+      },
+      {
+        "target": "F — FC Summary regular",
+        "action": "fcSummary.workspace.get",
+        "include": { "slice": "regular" },
+        "table_read_sequence": ["fc_regular_forecast"],
+        "tables_read": 1,
+        "whole_table_read": true,
+        "filter_location": "browser"
+      },
+      {
+        "target": "G — FC Summary events / rules",
+        "action": "fcSummary.workspace.get",
+        "include": { "slice": "events | rules" },
+        "table_read_sequence": ["fc_special_events"],
+        "table_read_sequence_rules": ["fc_target_rules"],
+        "tables_read": 1,
+        "whole_table_read": true,
+        "filter_location": "browser"
+      },
+      {
+        "target": "H — system.health",
+        "action": "system.health",
+        "handler": "63_api_v1_system_health.gs",
+        "table_read_sequence": [],
+        "tables_read": 0,
+        "note": "supporting measurement only, per §1H. Dispatched through _kmFetchBounded_ rather than km-transport's own runner, so its sample carries no server_ms."
+      }
+    ]
+  },
+
+  "structural_findings": {
+    "note": "Each of these is a fact about the code, established here. NONE of them is a cost claim: whether any of them matters is exactly what the production numbers decide.",
+    "fc_regular_forecast_is_read_twice_on_a_cold_load": {
+      "what": "A cold FC Summary entry issues the bootstrap slice and the regular slice concurrently. bootstrap READS fc_regular_forecast (for the facets) and does not send it; regular READS fc_regular_forecast again and sends it.",
+      "measured_client_side": "two concurrent fcSummary.workspace.get requests on a cold entry, with different include.slice values — confirmed off the wire in S3-R5A, which is also why they are not a duplicate in the coalescing sense",
+      "cost": "OPERATOR — if fc_regular_forecast is the large table on that page, the cold load pays for it twice"
+    },
+    "sku_pages_overlap_totally": {
+      "what": "SKU Details reads 3 tables; SKU Regional reads those same 3 plus 3 more. Visiting both costs two full workspace reads whose base is entirely shared.",
+      "SKU_DETAILS_AND_REGIONAL_TABLE_OVERLAP": "3 of 3 — every table SKU Details reads is already inside SKU Regional's six",
+      "SKU_DETAILS_AND_REGIONAL_PAYLOAD_OVERLAP": "OPERATOR — measurable as the ratio of the two responses' rows_returned for the shared arrays",
+      "not_changed": "§4 and §11 forbid implementing shared caching this round"
+    },
+    "every_read_is_serial_and_whole_table": {
+      "WHOLE_TABLE_READ_COUNT": "8 of 8 targets read every participating table in full",
+      "SERIAL_READ_COUNT": "every handler loops its table list in order; there is no concurrent sheet read anywhere",
+      "INDEPENDENT_READS": "all of them — no table's read depends on another table's contents in any of these handlers",
+      "SERIAL_DEPENDENCIES": "none found",
+      "POTENTIALLY_AVOIDABLE_READS": "NOT ESTABLISHED. §8 forbids calling a read avoidable or parallelizable without a safe implementation; SpreadsheetApp has no concurrent read within one execution, and whether the Advanced Sheets API batchGet is admissible here is an architecture question this round does not open."
+    }
+  },
+
+  "operator_owned": {
+    "why": "No Apps Script runtime and no Sheets credential exist in this environment. §14 is explicit that these must not be fabricated.",
+    "tool": "docs/evidence/s3-r6-server-read-cost/capture-console-snippet.js — read only, zero writes, zero locks, sequential, and it adds no timing infrastructure because every field it prints already exists",
+    "protocol": [
+      "hard reload, then: await __kmS3R6.measure('COLD', { company, country, marketplace })",
+      "immediately after: await __kmS3R6.measure('WARM', <same scope>)",
+      "a minute later: await __kmS3R6.measure('REPEAT', <same scope>)",
+      "then use FC Summary and the SKU pages normally, including anything that fails and that you retry, and run: __kmS3R6.passive()"
+    ],
+    "unfilled": [
+      "SKU_DETAILS_SERVER_MS", "SKU_DETAILS_CLIENT_TOTAL_MS", "SKU_DETAILS_RESPONSE_BYTES", "SKU_DETAILS_ROWS_RETURNED",
+      "SKU_REGIONAL_SERVER_MS", "SKU_REGIONAL_CLIENT_TOTAL_MS", "SKU_REGIONAL_RESPONSE_BYTES", "SKU_REGIONAL_ROWS_RETURNED",
+      "PSB_UNIVERSE_SERVER_MS", "PSB_WORKSPACE_SERVER_MS", "PSB_CLIENT_TOTAL_MS", "PSB_RESPONSE_BYTES",
+      "FC_INITIAL_SERVER_MS", "FC_INITIAL_CLIENT_TOTAL_MS", "FC_SPECIAL_SERVER_MS", "FC_TARGET_SERVER_MS",
+      "FC_NEXT_SERVER_MS", "FC_NEXT_TOTAL_TO_USEFUL_UI_MS",
+      "TOTAL_ROWS per table", "ROWS_USED_BY_REQUEST per table"
+    ],
+    "cannot_be_captured_by_this_tool": {
+      "FC_NEXT_CLICK_TO_REQUEST_MS": "a UI interaction boundary; the tool measures reads, not clicks",
+      "FC_NEXT_CLIENT_NORMALIZATION_MS": "no phase marker exists between response and render",
+      "FC_NEXT_RENDER_MS": "same",
+      "PRE_SERVER_WAIT_MS": "nothing reports when the server STARTED, only how long it ran"
+    }
+  },
+
+  "hypotheses_left_open": {
+    "BACKEND_SATURATION_HYPOTHESIS": "NOT_PROVEN — and it cannot be advanced from this side. The one derivation that would support it, client_total_ms minus server_ms minus a plausible network cost, lumps queue wait together with network and bridge, and §9 says to state NOT_MEASURABLE rather than split what cannot be observed. What the capture WILL settle is the cheaper question underneath it: if server_ms is already tens of seconds, the reads are slow on their own and queueing is a second-order effect; if server_ms is small while client_total_ms is thirty, then the time is going somewhere outside server execution and saturation becomes the leading candidate."
+  }
+}
