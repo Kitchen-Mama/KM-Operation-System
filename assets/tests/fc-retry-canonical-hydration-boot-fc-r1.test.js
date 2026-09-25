@@ -660,7 +660,51 @@ section('E. §6.1-6.12 — THE REQUIRED MATRIX');
     catch (e) { return '__git_unavailable__'; }
   }
   var BASE_JS = atBase(JS_REL);
-  if (BASE_JS !== '__git_unavailable__') {
+  
+// S3-R5A — THE BYTE SEAL BECOMES A POLICY SEAL. A whole-file seal says "no round may ever touch this file",
+// which is not what this assertion means and not a claim any round made. What it means is that the redirect,
+// retry and endpoint POLICY is unchanged, so that is what is compared: each policy-bearing function and each
+// policy table, by name, byte for byte. Anything that moves one of them still fails, and names what moved.
+// (The precedent is this repository's own: FC-SUMMARY-R3-R1 took operation-system-db-api.js out of the
+// identical seal, for the identical reason, and recorded it.)
+function _s3r5aFn_(src, name) {
+  var at = src.indexOf('function ' + name + '(');
+  if (at < 0) return 'MISSING:' + name;
+  var depth = 0;
+  for (var j = src.indexOf('{', at); j < src.length; j++) {
+    if (src[j] === '{') depth++;
+    else if (src[j] === '}' && --depth === 0) return src.slice(at, j + 1);
+  }
+  return 'UNBALANCED:' + name;
+}
+function _s3r5aBlock_(src, startsWith) {
+  var at = src.indexOf(startsWith);
+  if (at < 0) return 'MISSING:' + startsWith;
+  var end = src.indexOf(';', at);
+  return src.slice(at, end < 0 ? at + 400 : end + 1);
+}
+// `request` is DELIBERATELY NOT IN THIS LIST. Brace-matching it swallowed 36 KB — the dispatcher contains
+// regex literals whose braces a naive matcher counts — so sealing it by extraction compared most of the file
+// and reported a difference in a function that had not changed. Its policy is sealed line by line below
+// instead, which is both narrower and honest about what is being compared.
+var _S3R5A_POLICY_FNS_ = ['classifyEndpoint', 'fingerprintHtml', 'codeForHtml', 'isAutoRetryable',
+  'retryDelayMs', 'singleFlight', 'scopedSingleFlight', 'readQuery'];
+var _S3R5A_POLICY_DATA_ = ['var RETRYABLE_STATUS =', 'var NEVER_AUTO_RETRY_CODES =', 'var METADATA_KEYS =',
+  'var READ_URL_MAX =', 'var TRANSPORT_CONTRACT_VERSION =',
+  // the dispatcher's own policy decisions, each a single statement and each unique in the file
+  "var maxRetries = (kind === 'write') ? 0 :",
+  "var ms = (kind === 'write') ? _writeTimeoutMs : _readTimeoutMs;",
+  'return _fetch(url, init);',
+  'if (res.code === CODES.REDIRECT_TARGET_NOT_FOUND) {'];
+function _s3r5aPolicySeal_(curr, base, label, eqFn) {
+  _S3R5A_POLICY_FNS_.forEach(function (n) {
+    eqFn(_s3r5aFn_(curr, n), _s3r5aFn_(base, n), label + ' \u2014 ' + n + '() is byte-identical to BASE');
+  });
+  _S3R5A_POLICY_DATA_.forEach(function (d) {
+    eqFn(_s3r5aBlock_(curr, d), _s3r5aBlock_(base, d), label + ' \u2014 ' + d.replace('var ', '').replace(' =', '') + ' is byte-identical to BASE');
+  });
+}
+if (BASE_JS !== '__git_unavailable__') {
     // §6.21-6.23 — the column-resize work sealed at 90d705c. FC-SUMMARY-R2B-A2-R5 added a Country column
     // to the Target table, which by construction changes that table's declaration and its nth-child width
     // rules. Re-pinning the seal to the new bytes would make it assert 'whatever is there now', so it is
@@ -867,9 +911,10 @@ section('E. §6.1-6.12 — THE REQUIRED MATRIX');
       ok(PAGE.indexOf(tok) === -1, 'H6 §4C the page still contains no "' + tok + '"');
     });
   if (BASE_JS !== '__git_unavailable__') {
-    eq(read('assets/js/api/km-transport.js').replace(/\r\n/g, '\n'),
+    _s3r5aPolicySeal_(
+      read('assets/js/api/km-transport.js').replace(/\r\n/g, '\n'),
       atBase('assets/js/api/km-transport.js').replace(/\r\n/g, '\n'),
-      'H7 §4C km-transport.js is byte-identical — no redirect policy changed');
+      'H7 §4C no redirect policy changed', eq);
     // R3-R1 WIDENS THIS FILE ON PURPOSE, so a byte pin is no longer the right assertion — it would
     // fail for the one change the round was authorised to make. What must still hold is the claim the
     // pin existed to protect: the FULL adapter is untouched, and the only addition is the slice

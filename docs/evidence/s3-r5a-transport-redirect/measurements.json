@@ -1,0 +1,116 @@
+{
+  "round": "S3-R5A",
+  "captured": "2026-09-25",
+  "headline": "The hypothesis this round was raised on is FALSE. No client code persists or re-requests the expired Apps Script redirect target. The one defect found is in the instrument that was going to be used to judge the round.",
+
+  "operator_production_capture": {
+    "source": "KM.transport.metrics(), reported by the operator after the S3-R4 shipping-loop fix was published",
+    "requests": 50, "retries": 22, "coalesced": 9, "open_requests": 2,
+    "peak_concurrent_requests": 7, "recoveries": 22,
+    "byCode": { "SUCCESS": 17, "REQUEST_TIMEOUT": 15, "REDIRECT_TARGET_NOT_FOUND": 16, "REDIRECT_TARGET_RECOVERED": 2 },
+    "arithmetic_that_follows_from_it": {
+      "physical_http_attempts": "50 logical + 22 retries = 72; record() is called once per settled logical request, so `requests` is logical",
+      "failure_rate": "33 of 50 logical requests failed — 66%",
+      "recovery_success_rate": "22 recoveries were attempted and 16 requests still ended REDIRECT_TARGET_NOT_FOUND, so roughly 6 of 22 recoveries succeeded (~27%)",
+      "what_that_means": "The bounded single recovery is behaving exactly as designed and is not working most of the time. A fresh attempt 200-400 ms later is evidently landing in the same condition, which points at a condition that lasts longer than the retry delay rather than at a stale URL.",
+      "peak_is_a_floor": "peak_concurrent_requests counted only requests dispatched through km-transport's own run(). system.health, getTable, every gap read and every write leave through _kmFetchBounded_ and were never counted. 7 is a lower bound on what was actually in flight."
+    }
+  },
+
+  "endpoint_authority": {
+    "instrument": "assets/tests/_s3r5a-redirect-probe.js and section A of assets/tests/s3-r5a-transport-redirect-authority.test.js — the REAL km-transport module, created with an injected fetch, clock and sleep. Every URL below is a URL the shipped code built.",
+    "CANONICAL_WEB_APP_URL": "https://script.google.com/macros/s/<deployment>/exec — derived from KM.DB.getApiBaseUrl() on every request, never memoised",
+    "CURRENT_ENDPOINT_AUTHORITY_RULE": "The canonical /exec is rebuilt from endpoint() for every attempt, first and recovery alike. classifyEndpoint refuses script.googleusercontent.com as an endpoint class (USERCONTENT_REDIRECT) before any network call. There is no endpoint cache, no last-good endpoint and no setter anywhere in the module.",
+    "TARGET_ENDPOINT_AUTHORITY_RULE": "identical — the target rule is already the implemented rule, so this round changes nothing about it",
+    "USERCONTENT_REDIRECT_PERSISTED": "NO",
+    "USERCONTENT_REDIRECT_REUSED": "NO",
+    "EXPIRED_REDIRECT_REUSE_REACHABLE": "NO",
+    "proof": {
+      "scenario_1": "expired redirect then a good answer: 2 physical attempts, both to script.google.com, final SUCCESS",
+      "scenario_2": "expired redirect then another expired redirect: 2 physical attempts, both to script.google.com, final REDIRECT_TARGET_NOT_FOUND with html_source EXPIRED_USERCONTENT_REDIRECT — it stops rather than escalating",
+      "scenario_3": "an unanswered read: 1 physical attempt, settles REQUEST_TIMEOUT at the 60 s bound; the timeout is not auto-retryable, so the caller pays one budget and not two",
+      "hosts_requested_across_all_scenarios": ["script.google.com"],
+      "googleusercontent_requested": false
+    },
+    "three_dispatchers_all_follow_the_same_rule": {
+      "km-transport run()": "rebuilds from endpoint(); maxRetries 1 for reads, 0 for writes",
+      "operation-system-db-api _kmGapRead_": "its own bounded 2-attempt loop, url rebuilt from `base` each attempt, and it asks the shared transport's isAutoRetryable rather than deciding for itself",
+      "operation-system-db-api getOperationDbTableFromSheet": "one extra attempt on REDIRECT_TARGET_NOT_FOUND only, rebuilt from OP_DB_API_BASE_URL"
+    }
+  },
+
+  "recovery_contract": {
+    "REDIRECT_RECOVERY_MAX_ATTEMPTS": 1,
+    "RECOVERY_REUSES_CANONICAL_URL": "YES",
+    "RECOVERY_DUPLICATE_WRITES_POSSIBLE": "NO",
+    "why_not": "A write is refused by the retry predicate AND capped at zero retries by the dispatcher. Either alone would stop a replay; both are present. The mutation suite has to remove both to produce one, and does, so the redundancy is asserted rather than assumed.",
+    "retry_delay_ms": "200-400 (base 400, one attempt, 50-100% jitter)",
+    "recovery_is_replacement_not_parallel": "measured: peakConcurrentRequests never exceeds 1 for a recovered request, and openRequests returns to 0"
+  },
+
+  "concurrency": {
+    "instrument": "assets/tests/_s3r5a-concurrency.js — index.html in headless Chrome with a transport stub that HOLDS each answer for 900 ms, because a stub that answers instantly reports every page as perfectly serial.",
+    "defect_found": "peakConcurrentRequests() undercounts. Requests dispatched through _kmFetchBounded_ never incremented _openRequests.",
+    "PEAK_CONCURRENT_PRE": { "independently_observed": 4, "transport_reported": 3 },
+    "PEAK_CONCURRENT_POST": { "independently_observed": 4, "transport_reported": 4 },
+    "fix": "km-transport gains openExternal(), a counter-only handle that records no sample; _kmFetchBounded_ opens it and closes it in a finally. No request is shared, delayed, retried or cancelled.",
+    "rapid_navigation_walk": {
+      "description": "four routes with no settle window between them — fc-summary, skuDetails, sku-regional-details, shippingplan",
+      "requests": 4,
+      "max_open_at_once": 4,
+      "actions": [
+        "skuDetails.workspace.get[summary]",
+        "skuDetails.workspace.get[summary,regional,pricing]",
+        "system.health",
+        "weeklyShipping.workspace.get[summary,plans,details,filterOptions]"
+      ],
+      "ORPHANED_REQUESTS": "2 — the SKU Details and SKU Regional workspace reads both stayed in flight after their route had been left. Nothing aborts them.",
+      "SUPERSEDED_REQUESTS": "fc-summary issued nothing at all in this walk; it was superseded before dispatch",
+      "DUPLICATE_RECOVERY_REQUESTS": 0,
+      "not_fixed_this_round": "Aborting a read because its route was left is a lifecycle decision, not a transport one, and §13 reserves loading-architecture decisions for the operator. It is measured and recorded, not changed."
+    },
+    "sequential_walk": {
+      "fc_summary": "2 requests, max 2 open — slice=bootstrap and slice=regular. DIFFERENT questions, so staged hydration by design and NOT a duplicate; the include flags were read off the wire to establish that.",
+      "sku_details": "1 request",
+      "sku_regional_details": "1 request",
+      "product_strategy": "0 requests — feature-gated off in this build, refuses before the transport",
+      "weekly_shipping_plan": "2 requests on entry and 2 on re-entry — system.health and the workspace read, bounded, which is the S3-R4 fix holding",
+      "coalesced": 0
+    }
+  },
+
+  "health_probe": {
+    "HEALTH_PROBE_OWNER_COUNT": 1,
+    "owner": "KM.DB.checkDeploymentContract, reached only from KM.DB.checkPageDeploymentContract, called only from assets/js/pages/shipping-plan.js",
+    "HEALTH_PROBES_PER_ROUTE": 1,
+    "HEALTH_PROBES_PER_RECOVERY": 0,
+    "DUPLICATE_HEALTH_PROBES": "NOT PROVEN — measured in a browser, entering Weekly Shipping Plan twice issued one probe each time, sequentially. §5 forbids optimising a deliberate health check without proving duplication, so nothing was deduplicated.",
+    "what_14_probes_means": "14 page reads of Weekly Shipping Plan in that session, not a fan-out. One owner, one probe per read.",
+    "if_a_later_round_proves_it": "km-transport's metadata single-flight latch already names system.health and already evicts on either outcome; _kmGapRead_ simply does not route through it. That is where the deduplication would go.",
+    "dead_surface_noted": "KM.DB.getSystemHealth exists and has no caller in shipped code. It is an operator console affordance, unbounded and unclassified, and is left alone."
+  },
+
+  "timeout_interaction": {
+    "TIME_SPENT_BEFORE_CANONICAL_RETRY_MS": "200-400",
+    "TIMEOUT_BUDGET_CONSUMED_BY_RECOVERY": "NO",
+    "detail": "The 60 s bound is created per attempt, which would double the wait if a timeout were retryable — it is not, and the mutation suite plants the single edit that would make it so."
+  },
+
+  "correlation": {
+    "rule_applied": "§8 — do not claim a shared root cause unless measured. None of the four is claimed.",
+    "SKU_TIMEOUT_EXPLAINED_BY_TRANSPORT": "NOT_PROVEN",
+    "SKU_REGIONAL_TIMEOUT_EXPLAINED_BY_TRANSPORT": "NOT_PROVEN",
+    "PSB_TIMEOUT_EXPLAINED_BY_TRANSPORT": "NOT_PROVEN — and not reachable here at all: the feature is gated off in this build, so the board issues zero requests",
+    "FC_INSTABILITY_EXPLAINED_BY_TRANSPORT": "NOT_PROVEN",
+    "what_the_evidence_does_support": "The transport does what it claims. 66% of production requests failed, 15 of them at the 60 s bound, and the repository's own prior measurement (boot-read-arbiter.js) records a workspace read whose EXECUTION alone was 55 000 ms. A backend at or past its limit explains both families at once: a queued /exec means the single-use echo target can expire before the browser reads it, which surfaces as REDIRECT_TARGET_NOT_FOUND rather than as slowness. That is a coherent reading, not a measurement, and it is recorded as such.",
+    "what_would_settle_it": "One production capture of serverDurationMs and tablesRead from the response meta of skuDetails.workspace.get and productPricing.workspace.get. Both actions already return them; nothing has to be deployed to collect them."
+  },
+
+  "not_done_and_why": {
+    "workspace_splitting_or_lazy_loading": "§0 and §13 forbid it this round",
+    "health_probe_deduplication": "duplication not proven",
+    "orphan request cancellation": "measured, but cancelling a read because its route was left is a lifecycle decision the operator owns",
+    "raising the timeout": "§14 forbids it as a primary fix, and the backend is not proven bounded",
+    "anything on the write path": "§12 — the production case where Pricing Confirm reported 404 and the database had changed needs write identity, a receipt and commit truth before any replay is safe. WRITE_AUTOREPLAY_ADDED = NO."
+  }
+}

@@ -684,7 +684,19 @@ var ROUND_TOKENS = [
   // slightly differently; it is a page that never renders and takes a backend slot for ever, so serving a new
   // index against the cached page would leave the worst runtime defect this system has had in place while
   // reporting that it shipped.
-  's3r4-shippingloop-20260925'];
+  's3r4-shippingloop-20260925',
+  // S3-R5A — ROTATED. origin/main is at 4b94767 and carries the entry above, so its bytes have been served
+  // and the reuse rule closes it, exactly as it has for the three rounds before this one.
+  //
+  // TWO FILES CHANGE, AND THE CHANGE IS A COUNTER RATHER THAN A BEHAVIOUR: km-transport.js gains
+  // openExternal() and operation-system-db-api.js calls it around the one fetch it owns. A browser left on
+  // the old bytes issues exactly the same requests it does today — nothing is shared, delayed, retried or
+  // cancelled by this round. What it does is under-report peak concurrency, which is the defect being fixed,
+  // and a half-updated browser would be worse than either: a NEW db-api calling openExternal on an OLD
+  // transport that does not define it. That call is guarded on the function existing, so the failure would be
+  // silent under-counting rather than a thrown error — which is precisely the kind of quiet wrongness a
+  // rotation exists to prevent, because the number it produces is the number the next round will be judged on.
+  's3r5a-openexternal-20260925'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

@@ -476,11 +476,36 @@
     // forbids reading a wall clock at all (its own suite asserts it), and that rule is worth keeping: a
     // transport-foundation layer that branches on time is untestable. So an observer calls this, gets a closure,
     // and never touches a clock itself.
+    // S3-R5A §6 — THE CONCURRENCY COUNTER MUST COUNT EVERY REQUEST, NOT EVERY REQUEST THIS MODULE DISPATCHES.
+    //
+    // MEASURED, in a browser, on a four-route navigation with no settle window between the clicks: FOUR
+    // requests were open at once and this module reported THREE. The missing one was system.health, which goes
+    // out through `_kmFetchBounded_` in the db-api rather than through `run()` here — and so do getTable, every
+    // gap read and every write. `_openRequests` was only ever incremented by this module's own dispatcher, so
+    // `peakConcurrentRequests()` has always been a count of ONE SUBSET presented as a count of everything.
+    //
+    // That is not an academic gap. The production capture this round was raised on reports
+    // `peak_concurrent_requests = 7`, and the round's acceptance criteria about bounded concurrency were going
+    // to be read against it. Seven was a FLOOR.
+    //
+    // Observation only: nothing is shared, delayed, retried or cancelled. `close()` is idempotent, because a
+    // caller that closes twice must not drive the open count below zero and make the next peak meaningless.
+    function openExternal() {
+        _openRequests += 1;
+        if (_openRequests > _peakConcurrent) _peakConcurrent = _openRequests;
+        var closed = false;
+        return function close() { if (closed) return; closed = true; _openRequests -= 1; };
+    }
     function beginExternal(action, kind) {
         var t0 = _now();
+        var close = openExternal();
         return function done(code, bytes) {
-            return recordExternal({ action: action, kind: kind, code: code || null,
+            // Recorded BEFORE the close, so the sample's `concurrent_at_dispatch` still counts the request it
+            // describes. Closing first would make every external sample report one fewer than was in flight.
+            var r = recordExternal({ action: action, kind: kind, code: code || null,
                 phase: code ? 'DISPATCH' : 'SUCCESS', ms: (_now() - t0), bytes: bytes || 0 });
+            close();
+            return r;
         };
     }
     // F1-7N-FC-1B-E3-R4-A2-R1-R6-R6-R2 §5 — AN EXTERNAL SAMPLE NOW REACHES THE TIMELINE.
@@ -1198,6 +1223,9 @@
       timeline: timeline, openRequests: function () { return _openRequests; },
       peakConcurrentRequests: function () { return _peakConcurrent; },
       errorFields: errorFields, errorLine: errorLine, beginExternal: beginExternal,
+      // S3-R5A §6 — for a dispatcher this module does not own. Counter only; it records no sample, so a
+      // caller that already reports its own outcome cannot double-count itself by using this.
+      openExternal: openExternal,
       status: function () {
         var ep = endpoint();
         return { transport_build: TRANSPORT_BUILD, transport_contract_version: TRANSPORT_CONTRACT_VERSION,

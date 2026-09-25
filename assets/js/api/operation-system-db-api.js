@@ -4193,6 +4193,20 @@ async function _kmFetchBounded_(url, init, kind, action) {
         }, ms);
     });
     var opts = ctl ? Object.assign({}, init, { signal: ctl.signal }) : init;
+    // S3-R5A §6 — THIS IS THE OTHER DISPATCHER, and it was invisible to the shared concurrency counter.
+    //
+    // Every request that does not go through KM.transport's own `run()` leaves through here: system.health,
+    // getTable, every gap read and every write. None of them incremented `_openRequests`, so
+    // `peakConcurrentRequests()` under-reported by however many of them happened to be in flight — measured at
+    // one on a four-route navigation, and unknown but larger on the production capture that reported seven.
+    //
+    // Observation only, and wrapped so it can never affect the request: a missing or older transport module
+    // simply leaves the counter alone, exactly as today.
+    var _closeOpen = null;
+    try {
+        var _tpOpen = (typeof window !== 'undefined' && window.KM && window.KM.transport) || null;
+        if (_tpOpen && typeof _tpOpen.openExternal === 'function') _closeOpen = _tpOpen.openExternal();
+    } catch (eOpen) { _closeOpen = null; }
     try {
         return await Promise.race([fetch(url, opts), expiry]);
     } catch (err) {
@@ -4200,6 +4214,7 @@ async function _kmFetchBounded_(url, init, kind, action) {
         throw err;
     } finally {
         if (timer) clearTimeout(timer);
+        try { if (_closeOpen) _closeOpen(); } catch (eClose) { /* observation must never affect the request */ }
     }
 }
 // The typed transport result for an expired request. A read is retryable; a WRITE is INDETERMINATE — the

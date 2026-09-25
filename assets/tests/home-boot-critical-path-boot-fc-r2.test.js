@@ -626,8 +626,57 @@ function atRev(rev, rel2) {
 }
 // STILL SEALED AGAINST THE WORKING TREE. These are the shared files this round was forbidden to touch and
 // no later round has needed to; comparing the live tree keeps catching an edit the moment it happens.
-var SEALED = ['assets/js/core/lifecycle.js', 'assets/js/api/km-transport.js', 'assets/js/api/km-api-foundation.js',
+// S3-R5A — km-transport.js leaves the BYTE seal, on the precedent operation-system-db-api.js set directly
+// below and for the same stated reason. S3-R5A adds a concurrency counter to it under an authorised scope and
+// changes no policy; what the Home round cared about is asserted instead, immediately after this list, as a
+// byte seal on every policy-bearing function and table in the file.
+
+// S3-R5A — THE BYTE SEAL BECOMES A POLICY SEAL. A whole-file seal says "no round may ever touch this file",
+// which is not what this assertion means and not a claim any round made. What it means is that the redirect,
+// retry and endpoint POLICY is unchanged, so that is what is compared: each policy-bearing function and each
+// policy table, by name, byte for byte. Anything that moves one of them still fails, and names what moved.
+// (The precedent is this repository's own: FC-SUMMARY-R3-R1 took operation-system-db-api.js out of the
+// identical seal, for the identical reason, and recorded it.)
+function _s3r5aFn_(src, name) {
+  var at = src.indexOf('function ' + name + '(');
+  if (at < 0) return 'MISSING:' + name;
+  var depth = 0;
+  for (var j = src.indexOf('{', at); j < src.length; j++) {
+    if (src[j] === '{') depth++;
+    else if (src[j] === '}' && --depth === 0) return src.slice(at, j + 1);
+  }
+  return 'UNBALANCED:' + name;
+}
+function _s3r5aBlock_(src, startsWith) {
+  var at = src.indexOf(startsWith);
+  if (at < 0) return 'MISSING:' + startsWith;
+  var end = src.indexOf(';', at);
+  return src.slice(at, end < 0 ? at + 400 : end + 1);
+}
+// `request` is DELIBERATELY NOT IN THIS LIST. Brace-matching it swallowed 36 KB — the dispatcher contains
+// regex literals whose braces a naive matcher counts — so sealing it by extraction compared most of the file
+// and reported a difference in a function that had not changed. Its policy is sealed line by line below
+// instead, which is both narrower and honest about what is being compared.
+var _S3R5A_POLICY_FNS_ = ['classifyEndpoint', 'fingerprintHtml', 'codeForHtml', 'isAutoRetryable',
+  'retryDelayMs', 'singleFlight', 'scopedSingleFlight', 'readQuery'];
+var _S3R5A_POLICY_DATA_ = ['var RETRYABLE_STATUS =', 'var NEVER_AUTO_RETRY_CODES =', 'var METADATA_KEYS =',
+  'var READ_URL_MAX =', 'var TRANSPORT_CONTRACT_VERSION =',
+  // the dispatcher's own policy decisions, each a single statement and each unique in the file
+  "var maxRetries = (kind === 'write') ? 0 :",
+  "var ms = (kind === 'write') ? _writeTimeoutMs : _readTimeoutMs;",
+  'return _fetch(url, init);',
+  'if (res.code === CODES.REDIRECT_TARGET_NOT_FOUND) {'];
+function _s3r5aPolicySeal_(curr, base, label, eqFn) {
+  _S3R5A_POLICY_FNS_.forEach(function (n) {
+    eqFn(_s3r5aFn_(curr, n), _s3r5aFn_(base, n), label + ' \u2014 ' + n + '() is byte-identical to BASE');
+  });
+  _S3R5A_POLICY_DATA_.forEach(function (d) {
+    eqFn(_s3r5aBlock_(curr, d), _s3r5aBlock_(base, d), label + ' \u2014 ' + d.replace('var ', '').replace(' =', '') + ' is byte-identical to BASE');
+  });
+}
+var SEALED = ['assets/js/core/lifecycle.js', 'assets/js/api/km-api-foundation.js',
   'assets/js/utils/resizable-columns.js', 'assets/js/utils/dual-layer-resize.js'];
+var SEALED_POLICY_ONLY = 'assets/js/api/km-transport.js';
 // FC-SUMMARY-R3-R1 — operation-system-db-api.js leaves the BYTE seal, for the same reason fc-summary.js
 // did in R2B-A2-R5 and recorded directly above: a working-tree seal turns 'the Home round did not touch
 // this' into 'no round ever may', and R3-R1 widens the adapter under an authorised scope. What the Home
@@ -642,6 +691,8 @@ var DBAPI_R3 = 'assets/js/api/operation-system-db-api.js';
 var FC_OWNED = ['assets/css/pages/fc-overview.css', 'assets/js/pages/fc-summary.js'];
 var base = atRev('3b6d83f', SEALED[0]);
 if (base !== '__git_unavailable__') {
+  _s3r5aPolicySeal_(read(SEALED_POLICY_ONLY).replace(/\r\n/g, '\n'),
+    atRev('3b6d83f', SEALED_POLICY_ONLY), 'H14 §5 km-transport policy vs the FC release commit', eq);
   SEALED.forEach(function (f) {
     eq(read(f).replace(/\r\n/g, '\n'), atRev('3b6d83f', f),
       'H14 §5 byte-identical to the FC release commit: ' + f.split('/').pop());
