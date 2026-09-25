@@ -671,6 +671,10 @@ function _spCompleted(p) {
 // Workspace mode renders the canonical persisted Decision Snapshot; the cross-domain live fallback is a
 // Legacy-only display aid). No dual read; no silent fallback after a Workspace request starts.
 var _spReadSeq = 0;   // stale-response guard: only the newest load may update the page
+// S3-R4 §5 — the model the page is CURRENTLY showing. The deployment verdict arrives after the read and can
+// change one thing about the view (whether the recovery buttons are gated), so it needs something to repaint
+// FROM. Without it the only way to reflect a late verdict was to run the read again, which is the defect below.
+var _spLastModel = null;
 
 function _spCurrentFilters_() {
     // The current Weekly UI filters client-side (grouped-by-status view); server-side filter/sort/pagination
@@ -827,7 +831,32 @@ function renderShippingPlanFromDb() {
     // F1-7N-FC-1A §J.2 — the deployment verdict is refreshed alongside the read, not instead of it. It is
     // deliberately NOT awaited before rendering: a slow probe must never delay the plans, and an unanswered
     // probe leaves the buttons enabled rather than disabling a working page on no evidence.
-    _spRefreshContract_().then(function (v) { if (v && mySeq === _spReadSeq) renderShippingPlan(); });
+    //
+    // S3-R4 §5 — THIS CALLBACK USED TO CALL renderShippingPlan(), AND THAT IS AN UNBOUNDED READ LOOP.
+    //
+    // renderShippingPlan() is not a renderer. It is the page ENTRY POINT, and its first act in DB/Workspace
+    // mode is to call renderShippingPlanFromDb() — this function. So the verdict callback re-entered the read
+    // that had just dispatched it, which dispatched a fresh verdict probe, which re-entered the read again.
+    //
+    // The `mySeq === _spReadSeq` guard cannot stop it, and that is worth being precise about, because the
+    // guard LOOKS like the stop condition. Nothing bumps the sequence between the dispatch and this callback,
+    // so the comparison is always true; the re-entry then bumps it, which makes the ORIGINAL read's own `.then`
+    // see a stale sequence and discard the plans it just fetched. Every cycle threw away the data it read and
+    // started another one, so the page could never reach a first render at all.
+    //
+    // Measured in headless Chrome (S3-R4 §5): 12 705 000+ requests — one deployment health probe and one
+    // weeklyShipping workspace read per cycle — with the macrotask heartbeat frozen at the beat the navigation
+    // happened on, because each cycle completes in microtasks. That is the ">=900 s with no mount" S3-R3
+    // reproduced and could not explain.
+    //
+    // What the verdict is actually FOR is narrow: _spGateAttrs_() returns markup only when the verdict is a
+    // refusal. A verdict of ok, or no verdict at all, changes nothing on screen and needs no repaint. So the
+    // callback repaints the model already in hand, only when there is a refusal to show, and never reads again.
+    _spRefreshContract_().then(function (v) {
+        if (mySeq !== _spReadSeq) return;        // a newer load owns the page
+        if (!v || v.ok !== false) return;        // nothing about the view depends on a passing verdict
+        if (_spLastModel) _spRenderReadModel_(_spLastModel);
+    });
     Promise.resolve(loadWeeklyShippingReadModel_()).then(function(model) {
         if (mySeq !== _spReadSeq) return;   // a newer load superseded this one → ignore stale response
         _spRenderReadModel_(model);
@@ -838,6 +867,7 @@ function renderShippingPlanFromDb() {
 }
 
 function _spRenderReadModel_(model) {
+    _spLastModel = model;     // so a late deployment verdict can repaint this without re-reading
     _spSkuLogiCache = null;   // rebuild the sku logistics lookup from the freshest cache each render
     // F1-7J-A2: in Workspace mode the SKU logistics facts come from the scoped read-model projection (NOT the broad
     // cache). null in Legacy mode → _spSkuDetail falls back to getSkuDetails() unchanged.

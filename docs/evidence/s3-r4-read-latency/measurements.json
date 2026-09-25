@@ -1,0 +1,135 @@
+{
+  "round": "S3-R4",
+  "captured": "2026-09-25",
+  "instrument": "assets/tests/_s3r4-stall-bisect.js — headless Chrome, index.html loaded from disk with a stubbed transport, every boundary STREAMED to stderr so a run that is killed still says how far it got.",
+  "what_this_file_is_not": "It is not a latency measurement. There is no Apps Script runtime and no Sheets credential in this environment, so no SERVER_MS, no rows-scanned and no payload-bytes figure could be produced here. Every number below is a REQUEST COUNT or a QUEUE OBSERVATION, both of which a stubbed transport measures honestly. The latency fields §19 asks for are listed under operator_owned and are blank rather than estimated.",
+
+  "shipping_plan_stall": {
+    "status": "ROOT CAUSE PROVEN — FIXED — REPRODUCTION RETURNS",
+    "page": "Weekly Shipping Plan (showSection('shippingplan'))",
+    "defect": "renderShippingPlanFromDb() passed renderShippingPlan — the page ENTRY POINT, not a renderer — to the deployment-verdict .then. In DB/Workspace mode renderShippingPlan() calls renderShippingPlanFromDb(), so the verdict callback re-entered the read that had just dispatched it.",
+    "why_the_guard_did_not_stop_it": "Nothing bumps _spReadSeq between the dispatch and the callback, so `mySeq === _spReadSeq` was always true. The re-entry then bumped the sequence, which made the ORIGINAL read's own .then discard the plans it had just fetched. Every cycle threw away its own data and started another.",
+    "introduced_by": "d94d5bd (2026-09-03) — F1-7N-FC-1A §J.2, the page-scoped deployment gate.",
+    "before": {
+      "requests_observed": 12705000,
+      "requests_bounded": false,
+      "actions_per_cycle": ["system.health", "weeklyShipping.workspace.get"],
+      "macrotask_heartbeat_beat_at_navigation": 31,
+      "macrotask_heartbeat_final_beat": 31,
+      "mutationobserver_callbacks": 0,
+      "reading": "The heartbeat froze on the beat the navigation happened on and never advanced, while the request counter ran to twelve million. Macrotasks starved; the observer counter stayed at zero, so this is not observer recursion. Each cycle completes entirely in microtasks.",
+      "first_render_reached": false
+    },
+    "after_ok_transport": {
+      "requests_total": 3,
+      "requests_attributable_to_the_page": 2,
+      "actions": ["system.health", "weeklyShipping.workspace.get"],
+      "macrotask_heartbeat_final_beat": 260,
+      "post_nav_15s_phase_fired": true,
+      "post_nav_40s_phase_fired": true
+    },
+    "after_rejecting_transport": {
+      "requests_total": 4,
+      "requests_attributable_to_the_page": 3,
+      "note": "The third is REQ-C000001-R2 — the transport's own bounded single retry of the workspace read. Bounded, and it settles.",
+      "macrotask_heartbeat_final_beat": 600
+    },
+    "corrects_s3_r3": "S3-R3 recorded that the page's own '[ShippingPlan] mount' console line never appeared. Streamed, it does appear, immediately and every time. S3-R3's instrument published one JSON blob at the end of a twelve-page walk, so a page that stalled produced no record of anything it HAD done. The mount is not the boundary that fails; the first render is."
+  },
+
+  "read_shape": {
+    "instrument": "assets/tests/_s3r4-read-shape.js — the action and include flags are parsed out of the REQUEST (km_body), not read out of the source, so a page that documents one thing and sends another is reported on what it sent.",
+    "sku_details": {
+      "action": "skuDetails.workspace.get",
+      "include": { "summary": true },
+      "server_tables_read": ["sku_details", "tax_referral_rates", "tax_rate_components"],
+      "cold_entry_requests": 1,
+      "warm_re_entry_requests": 1,
+      "second_warm_re_entry_requests": 1,
+      "controls_probed": 15,
+      "controls_that_issue_a_request": ["⟳ Refresh DB"],
+      "interaction_duplicate_requests": 0,
+      "note": "Fourteen of fifteen controls — category and series filters, unit toggle, display menu, column reset, more-options, export, import — issue nothing. The one that reads is the explicit Refresh, which is what it is for."
+    },
+    "sku_regional_details": {
+      "action": "skuDetails.workspace.get",
+      "include": { "summary": true, "regional": true, "pricing": true },
+      "server_tables_read": ["sku_details", "tax_referral_rates", "tax_rate_components", "marketplace_skus", "sku_regional_details", "pricing_list"],
+      "cold_entry_requests": 1,
+      "warm_re_entry_requests": 0
+    },
+    "shared_backend_overlap": {
+      "finding": "The two pages do not share one read. Visiting both costs two full workspace requests, and all three tables SKU Details asks for are already inside the six SKU Regional Details asked for. The overlap is total, not partial.",
+      "classification": "duplicated reads across pages (group C) + a request contract broader than the page's need (group L)",
+      "optimised_this_round": false,
+      "why_not": "§2 forbids inferring performance from source, and the cost of the duplication is a server-side figure this environment cannot produce. Sharing the read would also change when each page sees fresh data, which is a freshness decision, not a performance one."
+    },
+    "product_strategy_board": {
+      "cold_entry_requests": 0,
+      "filter_requests": 0,
+      "selects_found": 0,
+      "reason": "The feature is gated off in this build — PRODUCT_STRATEGY_ENABLED_ is false and the capability mirror starts false — so the controller refuses before the transport. The production SOURCE_TIMED_OUT path is NOT reachable here. This matches S3-R3, which recorded the same zero and the same reason."
+    }
+  },
+
+  "server_path_structure": {
+    "disclaimer": "Read out of the Apps Script sources. This is what the handlers DO, not how long they take. It is listed so the operator's measurement has something to attribute a duration to, and must not be quoted as a performance result.",
+    "skuDetails.workspace.get": {
+      "handler": "handleSkuDetailsWorkspaceGet_ (59_api_v1_sku_details_workspace.gs)",
+      "read_per_table": "sheet.getDataRange().getValues() — ONE range read per table, not row by row, header parsed once",
+      "reads_are_serial": true,
+      "tables_when_include_empty": 3,
+      "tables_when_include_regional_and_pricing": 6,
+      "row_filter_at_source": "none — every table is read whole and the scope is applied in the browser",
+      "row_cap": 50000,
+      "response_meta_already_carries": ["serverDurationMs", "tablesRead"]
+    },
+    "productPricing.workspace.get": {
+      "handler": "handleProductPricingWorkspaceGet_ (72_api_v1_product_pricing_workspace.gs)",
+      "read_per_table": "sheet.getDataRange().getValues()",
+      "reads_are_serial": true,
+      "tables_ungated": ["marketplace_skus", "sku_details"],
+      "tables_gated": ["sku_regional_details", "pricing_list", "campaign_sku_lines", "campaigns"],
+      "tables_requested_by_the_board": 6,
+      "row_filter_at_source": "none — ppwMembership_ narrows to the chosen site in memory, after the whole table has been read"
+    },
+    "productPricing.siteUniverse.get": {
+      "handler": "handleProductPricingSiteUniverseGet_ (72_)",
+      "tables": ["marketplace_skus"],
+      "row_filter_at_source": "none"
+    }
+  },
+
+  "prior_repository_evidence": {
+    "source": "assets/js/core/boot-read-arbiter.js, header",
+    "what_it_recorded": "A hard reload followed by an immediate navigation dispatched four reads inside ~130 ms; three small reads settled at 5.4–6.7 s and the workspace read hit the 60 000 ms client bound. Reproduced against the real transport under a virtual clock with a queueing backend: queue_wait 6 480 ms + execution 55 000 ms → REQUEST_TIMEOUT; the same read alone → SUCCESS at 55 000 ms.",
+    "why_it_matters_here": "It is the only execution-time figure this repository holds for a workspace read, and it says the read itself is close to the bound before any queueing is added. §3's instruction not to simply raise the timeout is therefore the right call on this evidence: the backend is not proven bounded.",
+    "arbiter_adoption": {
+      "adopted_by": ["app.js", "inventory-replenishment.js", "fc-summary.js", "product-strategy-board.js"],
+      "not_adopted_by": ["sku-details.js", "sku-regional-details.js", "shipping-plan.js"],
+      "status": "OBSERVATION, NOT A PROVEN CAUSE. Both production timeouts named in this round are on pages that do not use the arbiter, and that is worth the operator knowing, but a correlation across two pages is not a measurement."
+    }
+  },
+
+  "operator_owned": {
+    "why": "No Apps Script runtime and no Sheets credential exist in this environment.",
+    "already_instrumented_in_production": "KM.transport.metrics() returns bounded per-request samples carrying action, code, phase, ms and bytes; skuDetails.workspace.get and productPricing.workspace.get both already return serverDurationMs and tablesRead in their response meta. Nothing new has to be deployed to collect the figures below.",
+    "unfilled": [
+      "SKU_DETAILS_ROWS_SCANNED", "SKU_DETAILS_PAYLOAD_BYTES",
+      "SKU_DETAILS_SERVER_MS_COLD", "SKU_DETAILS_SERVER_MS_WARM",
+      "SKU_DETAILS_CLIENT_TOTAL_MS_COLD", "SKU_DETAILS_CLIENT_TOTAL_MS_WARM",
+      "SKU_SELECTION_MS", "COUNTRY_SWITCH_MS", "MARKETPLACE_SWITCH_MS", "TAB_SWITCH_MS", "UPDATE_MODAL_OPEN_MS",
+      "PSB_ROWS_SCANNED", "PSB_PAYLOAD_BYTES",
+      "PSB_SERVER_MS_COLD", "PSB_SERVER_MS_WARM", "PSB_CLIENT_TOTAL_MS_COLD", "PSB_CLIENT_TOTAL_MS_WARM",
+      "PSB_FILTER_TO_RENDER_MS"
+    ],
+    "not_invented": "These are absent, not zero. §3 of the preceding round forbade inventing zeroes for unexecuted scenarios and the same rule is applied here."
+  },
+
+  "hypothesis_for_the_operator_to_test_first": {
+    "claim": "The shipping-plan loop is a candidate cause of the SKU and PSB production timeouts, not merely a separate bug.",
+    "mechanism": "Apps Script serialises executions per user. A browser tab sitting on Weekly Shipping Plan issued an unbounded stream of system.health and weeklyShipping.workspace.get requests for as long as it was open. Every one of those takes a backend slot, and a client timeout starts at DISPATCH — which is exactly the queue-wait arithmetic boot-read-arbiter.js already measured and wrote down.",
+    "status": "NOT PROVEN. It is consistent with the evidence and cheap to falsify: re-test SKU Details, SKU Regional Details and the Product Strategy Board once this fix is published, with no Weekly Shipping Plan tab open.",
+    "if_it_is_wrong": "The read-shape section above stands on its own and the operator measurement remains the next step."
+  }
+}

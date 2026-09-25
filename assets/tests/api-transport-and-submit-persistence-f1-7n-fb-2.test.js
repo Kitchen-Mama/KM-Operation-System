@@ -323,8 +323,20 @@ ok(/if \(_spEffectiveWorkspace\(\)\)/.test(loadFn), '8. mode selection happens u
 // stale-response guard
 ok(/var mySeq = \+\+_spReadSeq;/.test(SP) && /if \(mySeq !== _spReadSeq\) return;/.test(SP),
   '8. a stale response can never overwrite a newer one');
-eq((SP.match(/if \(mySeq !== _spReadSeq\) return;/g) || []).length, 2,
-  '8. guarded on BOTH the success and the failure path');
+// S3-R4 — THIS COUNTED THE GUARDS AND SO PINNED THE NUMBER TWO. It meant "the success path and the failure
+// path are each guarded", and it said "there are exactly two guards in this file", which is a different claim
+// and a weaker one: it fails the first time a THIRD callback is legitimately guarded, and it would pass if the
+// two guards it counted both sat on the same path. S3-R4 added a third — on the deployment-verdict callback —
+// and the assertion failed for that reason alone. It now asks what it meant: each of the read's two outcomes
+// carries the guard, wherever else the file may also carry it.
+// Sliced by marker rather than matched by a multi-line regex: the body of each callback starts at its own
+// `function (` and the guard, if it is there at all, is its first statement.
+function spAfter(marker) { var at = SP.indexOf(marker); return at < 0 ? '' : SP.slice(at, at + 400); }
+var spThen = spAfter('.then(function(model) {');
+var spCatch = spAfter('.catch(function(err) {');
+ok(spThen !== '' && spCatch !== '', '8. both read callbacks are findable');
+ok(/if \(mySeq !== _spReadSeq\) return;/.test(spThen), '8. the SUCCESS path is guarded');
+ok(/if \(mySeq !== _spReadSeq\) return;/.test(spCatch), '8. and so is the FAILURE path');
 
 // =======================================================================================================
 section('FB2-9. Submit persists through exactly ONE canonical backend owner');

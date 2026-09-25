@@ -673,7 +673,18 @@ var ROUND_TOKENS = [
   // painting any loading message at all once a read has failed. That is the defect this round closes,
   // so serving the new index against the cached page would deliver the fix to nobody while reporting
   // that it shipped.
-  's3r2-renderowner-20260925'];
+  's3r2-renderowner-20260925',
+  // S3-R4 — ROTATED, on the same rule for the third round running, and the evidence is the same kind:
+  // origin/main is at e9675b7 and carries the entry above, so the bytes it names have been served and it
+  // cannot be reused. Reuse is permitted only while a token provably has not reached a browser.
+  //
+  // ONE FILE CHANGES: shipping-plan.js. A browser left on the old bytes keeps the measured defect in full —
+  // the Weekly Shipping Plan never reaches a first render and issues an unbounded stream of system.health and
+  // weeklyShipping.workspace.get requests for as long as the tab is open. That is not a page that renders
+  // slightly differently; it is a page that never renders and takes a backend slot for ever, so serving a new
+  // index against the cached page would leave the worst runtime defect this system has had in place while
+  // reporting that it shipped.
+  's3r4-shippingloop-20260925'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the
