@@ -661,7 +661,19 @@ var ROUND_TOKENS = [
   // fails any entry left on a superseded token that this series recognises, so a partial rotation is
   // not expressible. All 44 index.html entries move, and the four in the P1-B8C acceptance page move
   // with them because it loads the same application.
-  'r4g-resolvedprice-20260925'];
+  'r4g-resolvedprice-20260925',
+  // S3-R2 — ROTATED, and the reuse rule closes it for the second round running. The entry above was
+  // minted BECAUSE it was about to be served; it now is — origin/main is at 2ed59b1 and carries it. So
+  // the same reasoning applies unchanged: reuse is permitted only while the bytes a token names
+  // provably have not reached a browser, and that evidence is gone the moment main moves.
+  //
+  // ONE FILE CHANGES: inventory-replenishment.js. The change is render OWNERSHIP — three of its four
+  // canonical reads stop painting a DOM node the search gate already owns. A browser on the old bytes
+  // keeps a page whose loading message is overwritten mid-wait by a generic one, and which stops
+  // painting any loading message at all once a read has failed. That is the defect this round closes,
+  // so serving the new index against the cached page would deliver the fix to nobody while reporting
+  // that it shipped.
+  's3r2-renderowner-20260925'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

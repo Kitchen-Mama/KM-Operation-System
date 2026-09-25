@@ -9294,7 +9294,16 @@ function _irBootstrapScope_() {
     var mySeq = ++_irSearch.seq;
     _irSearch.status = 'LOADING';
     _irSearch.error = null;
-    var rg = _irRegion_(); if (rg && window.KM && window.KM.loadState) rg.beginLoad(false);   // ONE loading state
+    // S3-R2 §11 — THE REGION NO LONGER PAINTS HERE, AND THAT IS THE WHOLE FIX: this body had TWO render
+    // owners. The line below used to call rg.beginLoad(false), which paints "Loading Inventory
+    // Replenishment…" into #replenScrollBody — and then the very next statement calls the search gate,
+    // which paints the same node again. The gate always won, so the region's paint was a flash at best.
+    //
+    // It was never harmless on the OTHER path. See the note on the SEARCH_CLICK read below.
+    //
+    // What settles this page's loading state is _irSearch.status, rendered by _irRenderSearchGate_, which
+    // is strictly better informed: it distinguishes PREPARING from READING, and its ERROR state carries a
+    // Retry button and the sentence that separates a read failure from an empty result. One owner.
     // R6-R5 §4 — PAINT THE WAITING STATE NOW. The bootstrap sets LOADING and then awaits; without this the
     // table's own bodies keep whatever they had until the first render after the reads resolve, so a user who
     // navigates immediately sees the pre-search sentence while a read is being prepared for them.
@@ -9302,7 +9311,12 @@ function _irBootstrapScope_() {
     // STARTED TOGETHER. The workspace read is scope-INDEPENDENT (the server returns the primary-render table set
     // and the client scopes it), which is exactly why it can overlap the validation instead of following it.
     var regP = Promise.resolve(_irEnsureRegistryLoaded_())['catch'](function () { return null; });
-    var wsP = Promise.resolve(_irWorkspaceRefresh_({ carrier: true,
+    // S3-R2 §11 — QUIET for the same reason as SEARCH_CLICK: the gate painted this body four lines above
+    // (R6-R5 §4, "PAINT THE WAITING STATE NOW"), so a second owner repainting it can only take the
+    // accurate message away. With this, the ONLY read that still drives the region is the post-write
+    // readback — which begins with content already on screen (REFRESHING, never blanking) and settles on
+    // both its success and its failure path. Every non-quiet read now settles on every terminal path.
+    var wsP = Promise.resolve(_irWorkspaceRefresh_({ carrier: true, quiet: true,
         owner: 'COALESCED_BOOTSTRAP',
         reason: 'a remembered scope: registry validation and the scoped workspace read run together' }))
         .then(function (m) { return { ok: true, model: m }; },
@@ -10109,7 +10123,22 @@ function searchReplenishment() {
         _irRenderSearchGate_();
         // F1-7N-FB-3 §C — Search is the ONLY thing that reads the inventory workspace. (FB-2A routed this
         // through the registry loader, which is what coupled selector loading to the table's load state.)
-        _irWorkspaceRefresh_({ carrier: true,
+        // S3-R2 §11 — QUIET, because _irRenderSearchGate_ above already owns this node and has already
+        // painted the LOADING state for this very search. Without this the region repainted OVER it, and
+        // the timing made that worse rather than cosmetic: rg.beginLoad runs INSIDE the post-arbiter call,
+        // so on a cold page the gate's "Preparing… waiting for the page to finish starting up" was
+        // replaced, seconds later, by a generic "Loading…" precisely while the arbiter was doing the
+        // waiting that message exists to explain.
+        //
+        // AND THE PAGE DID NOT DO THIS CONSISTENTLY, which is the part that makes it a reliability defect
+        // rather than a wording one. The region is RETAINED in _irRegionCtl and reused, and this path's
+        // catch settles _irSearch but never the region — so after the first failed search the region sat in
+        // INITIAL_LOADING, from which beginLoad is not a legal transition. It then silently did nothing for
+        // the rest of the session. Measured: transition=true on the first search, false on every one after,
+        // so the same page showed two different loading messages depending on whether a read had failed
+        // earlier. Settling it would have made the overwrite happen EVERY time instead of never; moving the
+        // ownership is what actually fixes it.
+        _irWorkspaceRefresh_({ carrier: true, quiet: true,
             owner: 'SEARCH_CLICK',
             reason: 'a person pressed Search, which always performs a fresh read' }).then(function () {
             _irSearch.inFlight = false;
