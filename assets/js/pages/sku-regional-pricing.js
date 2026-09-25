@@ -15,7 +15,12 @@
 // an operator that the whole price book is system-maintained and safe to refresh, which is exactly the
 // claim nobody has made. So the badge says what the data says, and the census below counts the gap.
 //
-// THE EFFECTIVE PRICE IS STILL THE EFFECTIVE PRICE. regular_price / minimum_price / msrp remain what every
+// PRICING-R4G — THESE THREE COLUMNS ARE USER OVERRIDES NOW. regular_price / minimum_price / msrp hold what
+// a PERSON typed, and blank means no override exists. What the site charges is the RESOLVED price: the
+// override when there is one, otherwise auto_*, otherwise Not Set. This screen is the one place that shows
+// all three, because it is the one place where the difference is the point.
+//
+// (superseded) THE EFFECTIVE PRICE IS STILL THE EFFECTIVE PRICE. regular_price / minimum_price / msrp remain what every
 // consumer reads. This screen shows the auto value NEXT TO it so a person can see whether they diverge —
 // it never resolves one from the other, and no consumer gains a fallback.
 //
@@ -133,16 +138,33 @@
         return owner(v);
     };
 
-    /** Everything the panel and the editor need about one field, with nothing resolved or substituted. */
+    /**
+     * Everything the panel and the editor need about one field.
+     *
+     * PRICING-R4G §10 — THREE NUMBERS, AND THEY ARE NOT INTERCHANGEABLE:
+     *
+     *   override   the raw user override cell. null means NO OVERRIDE EXISTS, which is healthy.
+     *   auto       the system reference, base x FX.
+     *   resolved   what the site charges: the override when there is one, otherwise auto, otherwise null.
+     *
+     * `effective` is kept as the former name of `override` because the template builders and the §10
+     * census read it, and renaming those here would be a second change riding on this one. It is the raw
+     * cell — never resolved — and `resolved` is the new field a display should use.
+     */
     SRP.fieldView = function (row, spec) {
         var raw = (row && row.raw) || {};
         var effective = num(row ? row[spec.cc] : null);
         if (effective === null) effective = num(raw[spec.key]);
         var auto = num(row ? row[spec.auto] : null);
         if (auto === null) auto = num(raw[spec.autoKey]);
+        var isNa = /^(NA|N\/A)$/i.test(String(raw[spec.key] == null ? '' : raw[spec.key]).trim());
+        // The client resolver's rule, and the only place this module applies it. NA never falls back.
+        var resolved = effective !== null ? effective : (isNa ? null : auto);
         return {
             key: spec.key, label: spec.label,
-            effective: effective, auto: auto,
+            effective: effective, override: effective, resolved: resolved, auto: auto,
+            resolvedSource: effective !== null ? 'OVERRIDE'
+                : (isNa ? 'NA' : (auto !== null ? 'AUTO' : 'NOT_SET')),
             effectiveIsNa: /^(NA|N\/A)$/i.test(String(raw[spec.key] == null ? '' : raw[spec.key]).trim()),
             owner: SRP.ownerOf(row, spec),
             // A divergence is a FACT, not a verdict. It says the two numbers differ; it does not say which
@@ -274,14 +296,22 @@
 
         var rows = SRP.FIELDS.map(function (spec) {
             var v = SRP.fieldView(row, spec);
+            // PRICING-R4G §10 — RESOLVED / AUTO / OVERRIDE, each on its own line and each labelled.
+            // "Override: Not set" beside a resolved number is the NORMAL state of a healthy row and must
+            // not read as a warning; "Regular Price: Not Set" means no layer has a price and is the row
+            // that needs a person. Conflating the two is the one thing this layout exists to prevent.
             var badge = '<span class="srd-own srd-own--' + v.owner.toLowerCase() + '">' + esc(SRP.ownerLabel(v.owner)) + '</span>';
-            var eff = v.effectiveIsNa ? '<em>NA</em>' : (v.effective === null ? '<em>Not set</em>' : esc(money(v.effective, currency)));
+            var resolved = v.effectiveIsNa ? '<em>NA</em>'
+                : (v.resolved === null ? '<em>Not set</em>' : esc(money(v.resolved, currency)));
             var auto = v.auto === null ? '<em>Not set</em>' : esc(money(v.auto, currency));
+            var override = v.effectiveIsNa ? '<em>NA</em>'
+                : (v.override === null ? '<em>Not set</em>' : esc(money(v.override, currency)));
             var note = v.diverges
-                ? '<div class="srd-pr__note">Effective differs from Auto. That is a fact about the two numbers, not a claim about who set either.</div>' : '';
+                ? '<div class="srd-pr__note">The override differs from Auto. That is a fact about the two numbers, not a claim about who set either.</div>' : '';
             return '<div class="srd-pr__row"><div class="srd-pr__lbl">' + esc(spec.label) + ' ' + badge + '</div>' +
-                '<div class="srd-pr__val"><span class="srd-pr__eff">' + eff + '</span>' +
-                '<span class="srd-pr__auto">Auto ' + auto + '</span></div>' + note + '</div>';
+                '<div class="srd-pr__val"><span class="srd-pr__eff">' + resolved + '</span>' +
+                '<span class="srd-pr__auto">Auto ' + auto + '</span>' +
+                '<span class="srd-pr__ovr">Override ' + override + '</span></div>' + note + '</div>';
         }).join('');
 
         var head = '<div class="srd-pr__head">' +
@@ -292,7 +322,7 @@
 
         var anyUnknown = SRP.FIELDS.some(function (s) { return SRP.ownerOf(row, s) === SRP.OWNER_UNKNOWN; });
         var unknownNote = anyUnknown
-            ? '<div class="srd-secnote">A field marked <strong>Not Set</strong> has no recorded owner. It is not the same as Auto, and no FX refresh will touch it until someone says which it is.</div>'
+            ? '<div class="srd-secnote">A field marked <strong>Not Set</strong> has no recorded owner. That does not stop it resolving: an empty override always falls back to Auto. It means nobody has recorded whether the stored override was set by a person.</div>'
             : '';
 
         return '<div class="srd-pricing">' + head + rows + '</div>' + unknownNote +
@@ -321,7 +351,7 @@
                         '<option value="MANUAL">' + esc(SRP.actionLabel('MANUAL')) + '</option>' +
                     '</select>' +
                     '<input id="' + id + '-value" type="text" inputmode="decimal" disabled placeholder="' +
-                        (v.effective === null ? 'enter a price' : esc(String(v.effective))) + '" value="">' +
+                        (v.resolved === null ? 'enter a price' : esc(String(v.resolved))) + '" value="">' +
                     '</div>';
             }).join('') +
             '<p class="srd-modal__hint">Each price is owned separately: choosing <strong>Update Price</strong> for <strong>Regular</strong> does not change who owns <strong>Minimum</strong> or <strong>MSRP</strong>. ' +

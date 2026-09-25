@@ -81,6 +81,10 @@ var F00 = GS + '00_config.gs', F01 = GS + '01_router.gs';
 var FMAN = 'docs/planning/P1_B8C_LIVE_READBACK_AND_ACTIVATION_MANIFEST.md';
 
 var SRCRB = read(FRB), SRC72 = read(F72), SRC29 = read(F29), SRC00 = read(F00), SRC01 = read(F01);
+// PRICING-R4G — the pricing WRITER. 72_ resolves prices by calling its canonical resolver, so it is
+// loaded beside the reader: Apps Script gives every .gs file in a project ONE global scope, and a
+// context holding 72_ alone models a deployment that cannot exist.
+var SRC73 = read(GS + '73_api_v1_pricing_write.gs');
 var SRCMAN = read(FMAN);
 
 var FN = 'RUN_P1_PRODUCT_STRATEGY_ROW_SHAPE_SAMPLE';
@@ -492,6 +496,10 @@ function ctxFor(db, opts) {
   vm.runInContext('var SYS_DEPLOYMENT_RELEASE_ = "REL"; var RTR_BUILD_VERSION_ = "RTR";'
     + ' var CONFIG_BUILD_VERSION_ = "CFG";', ctx);
   vm.runInContext(SRC29, ctx);
+  // PRICING-R4G — 73_ FIRST. 72_ resolves prices by CALLING pricingResolveEffective_, so a context
+  // holding 72_ alone is a project with a read owner and no writer, which no deployment is. Apps
+  // Script gives every .gs file in a project one global scope; this builds that scope.
+  vm.runInContext(SRC73, ctx);
   vm.runInContext(SRC72, ctx);
   vm.runInContext(opts.src || SRCRB, ctx);
   ctx.__log = log;
@@ -981,7 +989,21 @@ ok(wireKeys.length > 20, 'F0  the shipped builder\'s row keys were read from a r
 var F_ROWS = allRows(R);
 ok(F_ROWS.length > 0, 'F0a the report carries rows to inspect', F_ROWS.length);
 var sampleKeys = Object.keys(F_ROWS[0]).sort();
-var DROPPED = ['product_image', 'regional'];
+/* PRICING-R4G — NINE MORE DROPPED FIELDS, AND THE LIST IS THE ASSERTION. The wire gained twelve price
+   fields: three resolved values, three auto cells, three override cells and three source tokens. The
+   sample keeps the resolved three and drops the other nine, and naming them here is what makes that a
+   decision rather than an omission — F1 below compares the sample against (wire − this list), so a
+   tenth field appearing on the wire tomorrow fails until somebody says which side it belongs on.
+
+   Note which way round the override columns go. `regular_price` is NOT dropped: after R4G it is the
+   override cell, kept beside the resolved value so a reader can tell a typed price from a computed
+   one. `override_regular_price` IS dropped, because 72_ publishes it as a second name for that same
+   cell and a sample carrying both would be reporting one fact twice under two vocabularies — which is
+   the thing §4 of this round's spec forbids. */
+var DROPPED = ['product_image', 'regional',
+  'auto_regular_price', 'auto_minimum_price', 'auto_msrp',
+  'override_regular_price', 'override_minimum_price', 'override_msrp',
+  'regular_price_source', 'minimum_price_source', 'msrp_source'];
 var DERIVED = ['product_image_present', 'product_image_is_absolute_url', 'regional_present',
   'regional_language', 'campaign_count'];
 var expectedKeys = wireKeys.filter(function (k) { return DROPPED.indexOf(k) === -1; })
@@ -1052,6 +1074,24 @@ eq(ADAPTER.imageStateOf({ product_image: 'sp02.jpg',
 
 // F5 — THE REGIONAL JOIN IS A BOOLEAN. Every field on it is a locator or is not needed.
 ok(sampleKeys.indexOf('regional') === -1, 'F5  the regional sub-object is dropped whole');
+
+// F8 — PRICING-R4G, THE PRICE FIELDS, ASSERTED AS A PAIR OF FACTS RATHER THAN AS A KEY COUNT. F1 above
+// would pass if the resolved three were dropped and the nine kept; these two say which three.
+eq(['resolved_regular_price', 'resolved_minimum_price', 'resolved_msrp']
+    .filter(function (k) { return sampleKeys.indexOf(k) === -1; }), [],
+  'F8  PRODUCTION_READBACK_PRICE_FIELD — the sample carries all three RESOLVED prices');
+eq(['auto_regular_price', 'override_regular_price', 'regular_price_source']
+    .filter(function (k) { return sampleKeys.indexOf(k) !== -1; }), [],
+  'F8a and none of the pricing editor\'s layers — auto, override-alias or source token');
+ok(sampleKeys.indexOf('regular_price') !== -1,
+  'F8b while the override cell itself stays, under its own name, so a reader can compare the two');
+
+// F8c — the sample REPORTS a resolved price rather than composing one. A row whose resolution failed
+// upstream must arrive here as null; a sampler that filled it in would hide the only fault worth finding.
+var F8SRC = read('assets/tools/apps-script-diagnostics/'
+  + 'TEMP_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK.gs');
+ok(!/resolved_regular_price:\s*[^,]*(\|\||\?\?)/.test(F8SRC),
+  'F8c and it is copied verbatim — no fallback expression stands behind the resolved price');
 ok(F_ROWS.some(function (r) { return r.regional_present === true; })
   && F_ROWS.some(function (r) { return r.regional_present === false; }),
   'F5a while both sides of the join are still distinguishable');

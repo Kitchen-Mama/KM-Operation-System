@@ -283,10 +283,28 @@
       lifecycle_status: str(live.lifecycle) || null,
 
       // ---- prices, verbatim. `msrp` IS the list price — one band, two words in its name. ----
+      //
+      // PRICING-R4G §8/§12 — THESE THREE NOW CARRY THE RESOLVED PRICE, because 72_ now sends the resolved
+      // price under these names. Nothing in this adapter resolves anything: it carries what the server
+      // computed, which is the whole reason the board has no pricing formula of its own. The three layers
+      // travel separately below so a consumer that needs to tell them apart can, without guessing.
       currency: str(live.currency) || null,
       regular_price: live.regular_price === undefined ? null : live.regular_price,
       minimum_price: live.minimum_price === undefined ? null : live.minimum_price,
       msrp: live.msrp === undefined ? null : live.msrp,
+
+      resolved_regular_price: live.resolved_regular_price === undefined ? null : live.resolved_regular_price,
+      resolved_minimum_price: live.resolved_minimum_price === undefined ? null : live.resolved_minimum_price,
+      resolved_msrp: live.resolved_msrp === undefined ? null : live.resolved_msrp,
+      regular_price_source: str(live.regular_price_source) || null,
+      minimum_price_source: str(live.minimum_price_source) || null,
+      msrp_source: str(live.msrp_source) || null,
+      auto_regular_price: live.auto_regular_price === undefined ? null : live.auto_regular_price,
+      auto_minimum_price: live.auto_minimum_price === undefined ? null : live.auto_minimum_price,
+      auto_msrp: live.auto_msrp === undefined ? null : live.auto_msrp,
+      override_regular_price: live.override_regular_price === undefined ? null : live.override_regular_price,
+      override_minimum_price: live.override_minimum_price === undefined ? null : live.override_minimum_price,
+      override_msrp: live.override_msrp === undefined ? null : live.override_msrp,
 
       /* ---- P1-B8D — THE PRICE ROW'S OWN STATUS, PROMOTED AND NOT TRANSLATED ----
          72_ has always put `pricing_list.price_status` in the per-row provenance block, where it was

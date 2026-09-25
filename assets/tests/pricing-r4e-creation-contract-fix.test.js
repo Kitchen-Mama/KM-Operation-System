@@ -237,7 +237,12 @@ section('B · §3 SAME-CURRENCY CREATION');
     eq(c.row.fx_rate, 1, 'B1  ' + cur + ' -> ' + cur + ': rate 1 — a fact about two identical currencies');
     eq(c.row.fx_rate_date, CREATED_AT, 'B1b ' + cur + ' with the creation date recorded beside it');
     eq(c.row.auto_regular_price, dp ? 29.99 : 3200, 'B2  ' + cur + ': auto_* is the base at this currency\'s precision');
-    eq(c.row.regular_price, c.row.auto_regular_price, 'B3  ' + cur + ': the effective price initialises FROM auto');
+    // PRICING-R4G §7 — NEW_ROW_MANUAL_OVERRIDE_INITIALIZATION = BLANK, in every currency. R4E initialised
+    // the override from auto, which made every system-created row indistinguishable from one a person had
+    // priced. The row still DISPLAYS the auto value; it just does not claim someone chose it.
+    eq(c.row.regular_price, '', 'B3  ' + cur + ': the manual override initialises BLANK');
+    eq(W73.pricingResolveEffective_(c.row, W73.PRICING_FIELDS_[0]).value, c.row.auto_regular_price,
+      'B3a ' + cur + ': and the row RESOLVES to the auto value, which is what the site charges');
     eq([c.row.regular_price_is_manual, c.row.minimum_price_is_manual, c.row.msrp_is_manual],
       ['FALSE', 'FALSE', 'FALSE'], 'B4  ' + cur + ': ownership is FALSE — determinable, so it is recorded');
     eq(c.row.price_status, 'draft', 'B5  ' + cur + ': a complete row keeps the caller\'s status');
@@ -246,7 +251,9 @@ section('B · §3 SAME-CURRENCY CREATION');
   // §3 — ROUNDED. The precision table is 73_'s and is reused rather than copied.
   var jp = createRow({ currency: 'JPY', masterBaseCurrency: 'JPY', base: { selling: 3200.4, minimum: 2900, msrp: 3900 } });
   eq(jp.row.auto_regular_price, 3200, 'B6  a JPY master price of 3200.4 stores as a whole yen');
-  eq(jp.row.regular_price, 3200, 'B6b and the effective price is the SAME rounded number, not the raw one');
+  eq(jp.row.regular_price, '', 'B6b and the override is blank, so there is no second copy to round differently');
+  eq(W73.pricingResolveEffective_(jp.row, W73.PRICING_FIELDS_[0]).value, 3200,
+    'B6c while the row resolves to the SAME rounded number — one rounding, one answer');
   var us = createRow({ currency: 'USD', masterBaseCurrency: 'USD', base: { selling: 29.999, minimum: 24.99, msrp: 39.99 } });
   eq(us.row.auto_regular_price, 30, 'B6c a USD master price of 29.999 stores at 2 decimals');
   ok(/typeof pricingRoundFx_ !== 'function'/.test(GS04),
@@ -274,15 +281,21 @@ section('B · §3 SAME-CURRENCY CREATION');
   var one = createRow({ currency: 'USD', masterBaseCurrency: 'USD', base: { selling: 29.99, minimum: '', msrp: 39.99 } });
   eq([one.row.auto_regular_price, one.row.auto_minimum_price, one.row.auto_msrp], [29.99, '', 39.99],
     'B10 one blank base leaves ONE blank auto — fields are independent');
-  eq([one.row.regular_price, one.row.minimum_price, one.row.msrp], [29.99, '', 39.99],
-    'B10b and one blank effective price, never a zero');
+  eq([one.row.regular_price, one.row.minimum_price, one.row.msrp], ['', '', ''],
+    'B10b and three blank overrides, because a created row has none — never a zero either');
+  eq(W73.PRICING_FIELDS_.map(function (sp) { return W73.pricingResolveEffective_(one.row, sp).value; }),
+    [29.99, null, 39.99],
+    'B10c while the RESOLVED prices are 29.99 / Not Set / 39.99 — the blank band stays Not Set, not 0');
 
   // A base that is present but is not a number is a DATA FAULT, reported rather than coerced. Number('') is
   // 0, and that coercion is the whole reason this contract exists.
   var junk = createRow({ currency: 'USD', masterBaseCurrency: 'USD', base: { selling: 'n/a', minimum: 24.99, msrp: 39.99 } });
-  eq(junk.row.regular_price, '', 'B11 a non-numeric base price produces a BLANK effective price, never 0');
+  eq(junk.row.regular_price, '', 'B11 a non-numeric base price produces a BLANK override, never 0');
   ok(/not readable as a price/.test(String(junk.row.note)), 'B11b and is reported on the row');
-  eq(junk.row.minimum_price, 24.99, 'B11c while its siblings are unaffected');
+  eq(W73.pricingResolveEffective_(junk.row, W73.PRICING_FIELDS_[0]).value, null,
+    'B11c and the band RESOLVES to null — no auto was computed, so there is nothing to fall back to');
+  eq([junk.row.auto_minimum_price, W73.pricingResolveEffective_(junk.row, W73.PRICING_FIELDS_[1]).value],
+    [24.99, 24.99], 'B11d while its siblings are unaffected and resolve normally');
 }
 
 // =============================================================================================================
@@ -356,8 +369,13 @@ section('D · THE SELF-REPAIR — 04_\'s PENDING ROW, HANDED TO 73_');
 
   eq(plan.ok, true, 'D1  the first FX run converts the pending row');
   eq(plan.cells.auto_regular_price, 40.49, 'D2  auto_* is computed from the base the row already carried');
-  eq(plan.cells.regular_price, 40.49,
-    'D3  AND the effective price follows it — because creation wrote a flag that says AUTO');
+  // PRICING-R4G — the repair happens with NO write to the override column. The row was created with a
+  // blank override, so the instant auto_regular_price holds a number the row resolves to it.
+  ok(!Object.prototype.hasOwnProperty.call(plan.cells, 'regular_price'),
+    'D3  AND no override is written — §6 forbids it, and there is nothing to keep in step anyway');
+  eq(W73.pricingResolveEffective_({ regular_price: '', auto_regular_price: plan.cells.auto_regular_price,
+    regular_price_is_manual: created.regular_price_is_manual }, W73.PRICING_FIELDS_[0]).value, 40.49,
+    'D3a the row nevertheless RESOLVES to 40.49 — which is the whole self-repair, reached by reading');
   eq(plan.fields.regular_price.authority, 'AUTO', 'D3b reported as AUTO, not as UNKNOWN');
   eq(plan.cells.fx_rate, 1.35, 'D4  with the rate recorded on the row');
   ok(!Object.prototype.hasOwnProperty.call(plan.cells, 'regular_price_is_manual'),
@@ -452,8 +470,13 @@ section('F · §5 THE FC SUMMARY ZERO COERCION');
   ok(/placeholder = 'Missing Regular Price'/.test(FCSUM),
     'F2b and the input stays blank with a placeholder that says so');
   // §5 — genuinely numeric prices are untouched, including a real zero.
-  ok(/out\.regularPrice = \(rawPrice === '' \|\| rawPrice == null \|\| isNaN\(num\) \|\| num <= 0\) \? null : num;/.test(FCSUM),
-    'F3  and the resolver itself is unchanged — FC calculations for numeric prices are not touched');
+  // PRICING-R4G §11 — the lookup now reads the RESOLVED price, and the guard around it is untouched:
+  // blank, non-numeric and non-positive all still produce null, and a real numeric price still passes
+  // through unchanged. What moved is WHICH field is read, not what is done with the number.
+  ok(/out\.regularPrice = \(resolvedPrice === '' \|\| resolvedPrice == null \|\| isNaN\(num\) \|\| num <= 0\) \? null : num;/.test(FCSUM),
+    'F3  and the guard itself is unchanged — FC calculations for numeric prices are not touched');
+  ok(/var resolvedPrice = row\.resolvedRegularPrice;/.test(FCSUM),
+    'F3a while the field it guards is the resolved price, not the raw override cell');
 }
 
 // =============================================================================================================
@@ -470,8 +493,9 @@ section('G · §7/§9 NOTHING ELSE MOVED');
   var U = W73.pricingPlanFxRow_(row('', 29.99), rateTable('USD', 'CAD', 1.35));
   eq([T.cells.auto_regular_price, Object.prototype.hasOwnProperty.call(T.cells, 'regular_price')],
     [40.49, false], 'G1  FX_CONTRACT_UNCHANGED — TRUE: auto refreshes, the effective price is preserved');
-  eq([F.cells.auto_regular_price, F.cells.regular_price], [40.49, 40.49],
-    'G1b FALSE: auto refreshes and the effective price follows');
+  eq([F.cells.auto_regular_price, Object.prototype.hasOwnProperty.call(F.cells, 'regular_price')],
+    [40.49, false],
+    'G1b PRICING-R4G — FALSE: auto refreshes and NO override is written. §6 applies to every authority.');
   eq([U.cells.auto_regular_price, Object.prototype.hasOwnProperty.call(U.cells, 'regular_price')],
     [40.49, false], 'G1c blank: auto refreshes, the effective price is preserved');
   [T, F, U].forEach(function (p, i) {
@@ -484,8 +508,13 @@ section('G · §7/§9 NOTHING ELSE MOVED');
   var spec = W73.PRICING_FIELDS_[0];
   eq(W73.pricingPlanField_({ regular_price: 10, auto_regular_price: 9, regular_price_is_manual: '' },
     spec, 'NO_CHANGE', '', 'USD').changed, false, 'G2b NO_CHANGE still writes nothing');
-  ok(W73.pricingPlanField_({ regular_price: 10, auto_regular_price: '', regular_price_is_manual: '' },
-    spec, 'AUTO', '', 'USD').error, 'G2c AUTO is still refused with no auto value to restore');
+  // PRICING-R4G §4 — AUTO IS NO LONGER REFUSED HERE, and this is the assertion R4E flagged as the one a
+  // later round would have to invert. Clearing an override needs no auto value to copy, and a pending_fx
+  // row — which R4E itself creates, by the hundred — has no other repair.
+  var _autoOnPending = W73.pricingPlanField_({ regular_price: 10, auto_regular_price: '', regular_price_is_manual: '' },
+    spec, 'AUTO', '', 'USD');
+  eq([_autoOnPending.error, _autoOnPending.cells.regular_price], [null, ''],
+    'G2c AUTO CLEARS with no auto value — the repair for exactly the rows this file creates');
   eq([W73.pricingReadFlag_(''), W73.pricingReadFlag_('TRUE'), W73.pricingReadFlag_('FALSE')],
     ['UNKNOWN', 'MANUAL', 'AUTO'], 'G2d and blank is still UNKNOWN on read — the schema did not move');
 
@@ -551,22 +580,26 @@ section('H · MUTANTS');
     '  if (false) { return out; }',
     function () { return createRow({ currency: 'CAD', masterBaseCurrency: 'USD' }).row.fx_rate === 1; });
 
-  // M2 — the effective price is seeded from the raw base rather than from the rounded auto value.
-  mutant('M2', 'the effective price is seeded from the raw base instead of from auto',
-    '    out.auto[k] = r;\n    out.effective[k] = r;',
-    '    out.auto[k] = r;\n    out.effective[k] = n;',
+  // M2 — PRICING-R4G — THE SEEDING COMES BACK. R4E's mutant asked whether the seeded override came from
+  // the rounded auto or the raw base, which was the right question while a row WAS seeded. Nothing is
+  // seeded now, so the hazard is the assignment returning at all: a system-created row that arrives
+  // holding an override is indistinguishable, a week later, from one a person priced by hand.
+  mutant('M2', 'creation seeds the manual override from the computed auto value again',
+    '    out.auto[k] = r;',
+    '    out.auto[k] = r;\n    out.override[k] = r;',
     function () {
-      return createRow({ currency: 'USD', masterBaseCurrency: 'USD',
-        base: { selling: 29.999, minimum: 24.99, msrp: 39.99 } }).row.regular_price !== 30;
+      return createRow({ currency: 'USD', masterBaseCurrency: 'USD' }).row.regular_price !== '';
     });
 
   // M3 — a blank base becomes zero. B9b/B10b and the §6 matrix stand in its way.
   mutant('M3', 'a blank base price becomes 0',
-    "    if (str === '') return;                       // a blank base leaves a blank auto AND a blank effective",
-    "    if (str === '') { out.auto[k] = 0; out.effective[k] = 0; return; }",
+    "    if (str === '') return;                       // a blank base leaves a blank auto, and the override too",
+    "    if (str === '') { out.auto[k] = 0; out.override[k] = 0; return; }",
     function () {
       var r = createRow({ currency: 'USD', masterBaseCurrency: 'USD', base: { selling: '', minimum: '', msrp: '' } }).row;
-      return r.regular_price === 0;
+      // Either column becoming 0 is the defect: a zero auto resolves to a zero PRICE just as surely as a
+      // zero override is one, which is the reason the probe watches both.
+      return r.regular_price === 0 || r.auto_regular_price === 0;
     });
 
   // M4 — ownership is left blank at creation, which is what made the old rows unrepairable.

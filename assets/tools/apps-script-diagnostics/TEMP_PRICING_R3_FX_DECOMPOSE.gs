@@ -45,6 +45,12 @@ var TEMP_PR3D_ENVELOPE_ = {
   AUTO_REGULAR_WOULD_UPDATE: 194, AUTO_MINIMUM_WOULD_UPDATE: 197, AUTO_MSRP_WOULD_UPDATE: 194,
   EFFECTIVE_REGULAR_WOULD_FOLLOW: 0, EFFECTIVE_MINIMUM_WOULD_FOLLOW: 0, EFFECTIVE_MSRP_WOULD_FOLLOW: 0
 };
+// PRICING-R4G — THE ENVELOPE ABOVE IS A FROZEN HISTORICAL RECORD and its key names are the census key
+// names as they stood on the day it was measured. They are deliberately NOT renamed: the point of the
+// record is to be comparable to what the run actually printed, and editing it to match today's vocabulary
+// would make it agree with a run it never described. The three zeros in it are, in hindsight, the
+// measurement that made this round easy to justify — not one production row was having its effective price
+// maintained by FX, so removing that write took nothing away from anybody.
 
 var TEMP_PR3D_MAX_SAMPLES_ = 25;
 
@@ -166,7 +172,11 @@ function TEMP_PRICING_R3_FX_DECOMPOSE() {
     PRICING_FIELDS_.forEach(function (s) {
       var f = plan.fields[s.field];
       if (!f) return;
-      if (f.effective_changed) effectiveFollowed++;
+      // PRICING-R4G — `effective_changed` IS GONE from the planner, because no FX run writes an override
+      // column any more. `resolved_follows` is the fact that replaced it, and it is a different fact: not
+      // "this cell will be written" but "this field has no override, so moving auto_* moves what the site
+      // displays". A tool still reading the old property would print a permanent, confident zero.
+      if (f.resolved_follows && f.auto_changed) effectiveFollowed++;
       if (!f.auto_changed) {
         if (!plan.identity) crossNoMove[s.field][f.reason || 'AUTO_ALREADY_CURRENT'] =
           (crossNoMove[s.field][f.reason || 'AUTO_ALREADY_CURRENT'] || 0) + 1;
@@ -277,9 +287,12 @@ function TEMP_PRICING_R3_FX_DECOMPOSE() {
   p('5 · THE WRITE SET');
   rule();
   p('columns_to_write                = ' + Object.keys(writeKeys).sort().join(', '));
-  p('EFFECTIVE_IN_WRITE_SET          = ' + (effectiveKeysInWriteSet.length ? effectiveKeysInWriteSet.join(', ') : 'NONE'));
+  // Under PRICING-R4G this can only ever print NONE, and it is kept for exactly that reason: it is the
+  // line that would show the §6 contract being violated, and a check that can no longer fail is worth
+  // printing precisely when the thing it checks has become an invariant.
+  p('OVERRIDE_IN_WRITE_SET           = ' + (effectiveKeysInWriteSet.length ? effectiveKeysInWriteSet.join(', ') : 'NONE'));
   p('FLAG_IN_WRITE_SET               = ' + (flagKeysInWriteSet.length ? flagKeysInWriteSet.join(', ') : 'NONE'));
-  p('EFFECTIVE_*_WOULD_FOLLOW (all)  = ' + effectiveFollowed);
+  p('RESOLVED_*_WOULD_FOLLOW (all)   = ' + effectiveFollowed);
   p('FX_RATE_1_POST                  = ' + fxRate1Post + '   (rows left at rate 1 — every one an identity)');
 
   rule();

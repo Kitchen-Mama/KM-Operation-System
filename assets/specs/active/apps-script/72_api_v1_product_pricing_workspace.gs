@@ -60,7 +60,7 @@
 // productPricing.siteUniverse.get response published meta.action = workspace.get and the shipped
 // accessor rejected all of them. R9 is deployed and its behaviour is captured as evidence, so the
 // correction gets its own id: an id may not name two trees.
-var PPW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R10';
+var PPW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24';
 
 var PPW_ACTION_ = 'productPricing.workspace.get';
 // P1-B3 §8 — THE RESPONSE SHAPE'S OWN VERSION, separate from the module build and from the deployment
@@ -220,6 +220,39 @@ function ppwIsObj_(v) { return !!v && typeof v === 'object' && !(v instanceof Ar
 
 /** A number, or null. Never 0 for "absent" — a missing price is not a price of zero, and that difference is
  *  the whole reason a SKU without pricing is excluded from the axis rather than drawn at the bottom of it. */
+/**
+ * PRICING-R4G §8 — ONE BAND OF ONE PRICING ROW, resolved, with all three layers reported separately.
+ *
+ * THE RULE LIVES IN 73_ AND IS CALLED, NEVER COPIED. pricingResolveEffective_ is the canonical resolver;
+ * a second implementation here would be a second answer to one question, and the two would diverge on the
+ * day somebody fixed only one of them. Apps Script gives every .gs file in a project one global scope, so
+ * this is a direct call — the same reuse 04_ makes of the frozen precision table.
+ *
+ * WHEN 73_ IS NOT IN THE PROJECT this fails LOUDLY rather than guessing: resolved is null and the source
+ * says RESOLVER_UNAVAILABLE, which surfaces as a finding on the row. A locally reimplemented fallback
+ * would publish prices that look right and were computed by a rule nobody reviewed.
+ */
+function ppwResolveBand_(priceRow, spec) {
+  if (!priceRow) return { resolved: null, source: 'NO_PRICING_ROW', override: null, auto: null };
+  if (typeof pricingResolveEffective_ !== 'function') {
+    return { resolved: null, source: 'RESOLVER_UNAVAILABLE', override: null, auto: null };
+  }
+  var r = pricingResolveEffective_(priceRow, spec);
+  return { resolved: r.value, source: r.source, override: r.override, auto: r.auto };
+}
+
+/** The three bands, keyed the way 73_ keys them, so the two files cannot drift apart on field names. */
+function ppwPriceBands_(priceRow) {
+  var out = {};
+  var specs = (typeof PRICING_FIELDS_ !== 'undefined' && PRICING_FIELDS_)
+    ? PRICING_FIELDS_
+    : [{ field: 'regular_price', auto: 'auto_regular_price', flag: 'regular_price_is_manual' },
+       { field: 'minimum_price', auto: 'auto_minimum_price', flag: 'minimum_price_is_manual' },
+       { field: 'msrp', auto: 'auto_msrp', flag: 'msrp_is_manual' }];
+  specs.forEach(function (spec) { out[spec.field] = ppwResolveBand_(priceRow, spec); });
+  return out;
+}
+
 function ppwNum_(v) {
   if (v === null || v === undefined || v === '') return null;
   var n = Number(v);
@@ -679,8 +712,33 @@ function ppwNormalizeRow_(id, msku, skuIdx, regIdx, priceIdx, campIdx, include) 
   // evidence the listing exists, and "may be plotted" cannot be asserted without it. source_status
   // already carries REGIONAL_NOT_REQUESTED, so the two cases stay distinguishable.
   var regionalConfirmed = include.regional === true && regional !== null && !regionalAmbiguous;
+  // PRICING-R4G §8 — AND IT IS GATED ON THE RESOLVED PRICE, not on the override cell.
+  //
+  // THE EVIDENCE BELOW IS READ THROUGH A typeof GUARD, and that is not defensive habit. This branch is
+  // the one that fires when the project has been PARTIALLY SYNCED, and a partial sync is exactly the
+  // state in which another global may also be missing. A finding that threw while explaining why the
+  // read failed would replace a precise diagnosis with a stack trace, in the one situation where the
+  // diagnosis is the entire value of the read.
+  //
+  // It used to read `price.regular_price` directly, which under the nullable-override model asks "has a
+  // person overridden this site's price" — a question the price chart has no interest in. A site whose
+  // price comes from auto_* is exactly as plottable as one whose price was typed by hand; the axis does
+  // not care who chose the number. Reading the raw cell here would have dropped every correctly-priced
+  // new row off the chart and counted it as a data-quality defect at the same time.
+  var bands = ppwPriceBands_(price);
+  if (price !== null && bands.regular_price.source === 'RESOLVER_UNAVAILABLE') {
+    // A PARTIAL SYNC, AND THE ONE SHAPE THIS FILE CANNOT ABSORB. 72_ at R24 in a project still holding an
+    // older 73_ has no resolver to call, so it publishes no prices at all rather than publishing the
+    // override cells under the resolved names — which would be the old model's numbers wearing the new
+    // model's labels, and indistinguishable from correct.
+    sourceStatus.push('PRICING_RESOLVER_UNAVAILABLE');
+    findings.push({ code: 'PRICING_RESOLVER_UNAVAILABLE',
+      detail: '73_api_v1_pricing_write.gs is not present in this project, so no price can be resolved',
+      evidence: { required_release: (typeof SYS_DEPLOYMENT_RELEASE_ !== 'undefined')
+        ? SYS_DEPLOYMENT_RELEASE_ : null } });
+  }
   var analysable = include.pricing === true && price !== null && currency !== null
-    && ppwNum_(price.regular_price) !== null && !pricingAmbiguous && regionalConfirmed;
+    && bands.regular_price.resolved !== null && !pricingAmbiguous && regionalConfirmed;
 
   return {
     identity: 'MSKU:' + id,
@@ -701,9 +759,38 @@ function ppwNormalizeRow_(id, msku, skuIdx, regIdx, priceIdx, campIdx, include) 
     // DISPLAY ONLY. It is a statement about the product, never about membership of this site.
     lifecycle: master ? (ppwStr_(master.lifecycle) || null) : null,
     currency: currency,
-    regular_price: price ? ppwNum_(price.regular_price) : null,
-    minimum_price: price ? ppwNum_(price.minimum_price) : null,
-    msrp: price ? ppwNum_(price.msrp) : null,
+
+    /* ---- PRICING-R4G §8 — THE PRICE, AND WHERE IT CAME FROM ----------------------------------------
+       Three concepts get three names. `resolved_*` is the number the business acts on, `auto_*` is the
+       system reference, `override_*` is the raw user override — and `*_source` says which of them
+       answered, so no consumer has to infer it by comparing values. R4F's instruction was to expose all
+       three and not to overload one field so nobody can tell which it is.
+
+       WHY `regular_price` SURVIVES AS AN ALIAS OF `resolved_regular_price`. Renaming it outright would
+       have been cleaner on paper and worse in practice: every consumer this transport has is a business
+       display, every one of them wants the resolved number, and a consumer missed during the rename would
+       silently read `undefined` and draw a product with no price. The alias makes the migration safe, and
+       the test suite asserts the two are equal on every row so it can never drift into a second meaning.
+       It is an alias, not a second opinion. ---------------------------------------------------------- */
+    regular_price: price ? bands.regular_price.resolved : null,
+    minimum_price: price ? bands.minimum_price.resolved : null,
+    msrp: price ? bands.msrp.resolved : null,
+
+    resolved_regular_price: price ? bands.regular_price.resolved : null,
+    resolved_minimum_price: price ? bands.minimum_price.resolved : null,
+    resolved_msrp: price ? bands.msrp.resolved : null,
+
+    regular_price_source: price ? bands.regular_price.source : null,
+    minimum_price_source: price ? bands.minimum_price.source : null,
+    msrp_source: price ? bands.msrp.source : null,
+
+    auto_regular_price: price ? bands.regular_price.auto : null,
+    auto_minimum_price: price ? bands.minimum_price.auto : null,
+    auto_msrp: price ? bands.msrp.auto : null,
+
+    override_regular_price: price ? bands.regular_price.override : null,
+    override_minimum_price: price ? bands.minimum_price.override : null,
+    override_msrp: price ? bands.msrp.override : null,
     product_image: image,
     regional: regional ? {
       regional_detail_id: ppwStr_(regional.regional_detail_id) || null,
@@ -728,6 +815,9 @@ function ppwNormalizeRow_(id, msku, skuIdx, regIdx, priceIdx, campIdx, include) 
       campaigns: include.campaigns ? 'campaign_sku_lines by marketplace_sku_id → campaigns by campaign_id'
         : 'not requested',
       currency_authority: 'pricing_list.currency',
+      // PRICING-R4G §8 — the price is resolved by 73_, and the row says so. A consumer that wants to know
+      // whether a number was chosen by a person reads *_source, never the value.
+      price_authority: 'pricingResolveEffective_ (73_api_v1_pricing_write.gs) — override, else auto, else null',
       price_status_raw: price ? (ppwStr_(price.price_status) || null) : null,
       price_source_raw: price ? (ppwStr_(price.price_source) || null) : null,
       variant_group_source: variantGroup === null ? null : 'sku_details.series',

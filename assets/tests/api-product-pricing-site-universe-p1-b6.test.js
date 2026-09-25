@@ -33,6 +33,8 @@ function bare(src) {
 }
 
 var GS72 = read('assets/specs/active/apps-script/72_api_v1_product_pricing_workspace.gs');
+// PRICING-R4G — the pricing WRITER, loaded beside the reader because 72_ calls its resolver.
+var GS73 = read('assets/specs/active/apps-script/73_api_v1_pricing_write.gs');
 var ROUTER = read('assets/specs/active/apps-script/01_router.gs');
 var HEALTH = read('assets/specs/active/apps-script/63_api_v1_system_health.gs');
 var READBACK = read('assets/tools/apps-script-diagnostics/TEMP_P1_SITE_UNIVERSE_READBACK.gs');
@@ -122,6 +124,10 @@ var IO_SRC = [
 function ctxOf(src) {
   var ctx = vm.createContext({ console: console });
   vm.runInContext(IO_SRC, ctx);
+  // PRICING-R4G — 73_ FIRST. 72_ resolves prices by CALLING pricingResolveEffective_, so a context
+  // holding 72_ alone is a project with a read owner and no writer, which no deployment is. Apps
+  // Script gives every .gs file in a project one global scope; this builds that scope.
+  vm.runInContext(GS73, ctx);
   vm.runInContext(src || GS72, ctx);
   return ctx;
 }

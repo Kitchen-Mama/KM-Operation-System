@@ -554,8 +554,50 @@ function pricingFlagOrNull_(v) {
     return null;
 }
 
+/* PRICING-R4G §9 — THE CANONICAL RESOLVED-PRICE RESOLVER, client side. The mirror of
+ * pricingResolveEffective_ in 73_api_v1_pricing_write.gs, and the only implementation of this rule in the
+ * browser. Pages call nothing but this.
+ *
+ *   override is a number  -> RESOLVED = the override        source OVERRIDE
+ *   override is blank     -> RESOLVED = auto_*, if numeric  source AUTO
+ *   override is NA        -> RESOLVED = null, no fallback   source NA
+ *   neither               -> RESOLVED = null. NEVER 0.      source NOT_SET
+ *
+ * WHY A MIRROR EXISTS AT ALL, given that R4F asked for one owner. Two transports carry pricing_list and
+ * only one of them can resolve server-side: 72_ (productPricing.workspace.get) now emits resolved_* on the
+ * wire, but the BROAD CACHE is a raw table read with no pricing logic anywhere in its path, and SKU
+ * Regional Details / FC Summary both read it. So this function prefers the server's answer when the row
+ * carries one and computes the same rule when it does not — and the test suite runs both over one fixture
+ * set and asserts they never disagree, which is the only thing that keeps a mirror honest.
+ *
+ * THE FLAG IS NOT CONSULTED. A blank override means no override exists, whatever the flag says. That is
+ * the whole change PRICING-R4G made, and reintroducing the flag here would quietly re-break it for every
+ * page that reads the cache.
+ */
+function pricingResolveBand_(r, overrideKey, autoKey, serverKey, serverSourceKey) {
+    // The server spoke. Its answer wins outright — one authority per transport, never a second opinion.
+    if (r && r[serverKey] !== undefined && r[serverKey] !== null) {
+        return { value: pricingNumOrNull_(r[serverKey]),
+            source: String((r[serverSourceKey] || 'OVERRIDE')).toUpperCase() };
+    }
+    var ovr = pricingNumOrNull_(r ? r[overrideKey] : null);
+    if (ovr !== null) return { value: ovr, source: 'OVERRIDE' };
+    if (pricingIsNa_(r ? r[overrideKey] : null)) return { value: null, source: 'NA' };
+    var auto = pricingNumOrNull_(r ? r[autoKey] : null);
+    if (auto !== null) return { value: auto, source: 'AUTO' };
+    return { value: null, source: 'NOT_SET' };
+}
+
 function normalizePricingListRecord(raw) {
     var r = raw || {};
+    // PRICING-R4G — resolved ONCE per band. The first draft called the resolver twice for each band, once
+    // for the value and once for the source, which is the same work done twice on every row of the broad
+    // cache. Three calls, six fields.
+    var _resReg = pricingResolveBand_(r, 'regular_price', 'auto_regular_price',
+        'resolved_regular_price', 'regular_price_source');
+    var _resMin = pricingResolveBand_(r, 'minimum_price', 'auto_minimum_price',
+        'resolved_minimum_price', 'minimum_price_source');
+    var _resMsrp = pricingResolveBand_(r, 'msrp', 'auto_msrp', 'resolved_msrp', 'msrp_source');
     return {
         pricingId: String(r.pricing_id || '').trim(),
         marketplaceSkuId: String(r.marketplace_sku_id || '').trim(),
@@ -579,6 +621,9 @@ function normalizePricingListRecord(raw) {
         autoRegularPrice: pricingNumOrNull_(r.auto_regular_price),
         autoMinimumPrice: pricingNumOrNull_(r.auto_minimum_price),
         autoMsrp: pricingNumOrNull_(r.auto_msrp),
+        // PRICING-R4G — THE RAW USER OVERRIDE. These three keep their names and their meaning narrows:
+        // a number here is a price a PERSON set, and null means no override exists. Only the pricing
+        // EDITOR should read them; every business display reads resolved* below.
         regularPrice: pricingNumOrNull_(r.regular_price),
         minimumPrice: pricingNumOrNull_(r.minimum_price),
         msrp: pricingNumOrNull_(r.msrp),
@@ -587,9 +632,21 @@ function normalizePricingListRecord(raw) {
         minimumPriceIsNa: pricingIsNa_(r.minimum_price),
         msrpIsNa: pricingIsNa_(r.msrp),
         // PRICING-R2 §1 — FIELD-LEVEL ownership, three-state. null = nobody has said.
+        // PRICING-R4G — REPORTED, NEVER CONSULTED for resolution. The editor shows it; nothing decides on it.
         regularPriceIsManual: pricingFlagOrNull_(r.regular_price_is_manual),
         minimumPriceIsManual: pricingFlagOrNull_(r.minimum_price_is_manual),
         msrpIsManual: pricingFlagOrNull_(r.msrp_is_manual),
+
+        /* ---- PRICING-R4G §9 — THE RESOLVED PRICE. What the business acts on. ------------------------
+           This is the field a page shows, sums, compares or writes into a snapshot. `*Source` says which
+           layer answered (OVERRIDE / AUTO / NA / NOT_SET) so nothing has to infer it by comparing numbers,
+           and `null` means no layer had a price — which is Not Set, and is never rendered as 0. */
+        resolvedRegularPrice: _resReg.value,
+        resolvedMinimumPrice: _resMin.value,
+        resolvedMsrp: _resMsrp.value,
+        resolvedRegularPriceSource: _resReg.source,
+        resolvedMinimumPriceSource: _resMin.source,
+        resolvedMsrpSource: _resMsrp.source,
         // LEGACY and DESCRIPTIVE ONLY. price_source is one value for a whole row; it is never consulted to
         // decide who owns a field, and PRICING-R2 §1 forbids it standing in for the three flags above.
         priceSource: String(r.price_source || '').trim(),

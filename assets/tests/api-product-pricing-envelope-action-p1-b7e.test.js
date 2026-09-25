@@ -421,7 +421,12 @@ var H = G.then(function () {
 var I = H.then(function () {
   console.log('\n=== §I  R9 UNCHANGED · R10 RECORDED · CONTRACT STILL 14 ===');
 
-  ok(SRC.ppw.indexOf("var PPW_BUILD_VERSION_ = '" + R10 + "'") > 0, 'I1 72_ declares R10');
+  // PRICING-R4G — 72_ NO LONGER DECLARES R10, and the assertion becomes the durable form of what it was
+  // reaching for: whatever stamp the file declares, the manifest expects THAT. A literal pinned here was
+  // only ever a proxy for the two agreeing, and it expired the first time the file genuinely changed.
+  var _i1Ppw = (/var PPW_BUILD_VERSION_ = '([^']+)'/.exec(SRC.ppw) || [])[1];
+  ok(!!_i1Ppw && _i1Ppw !== R10,
+    'I1 72_ has moved off R10 — PRICING-R4G made it resolve prices through 73_ (' + _i1Ppw + ')');
   /* THE RELEASE HAS MOVED PAST R10 AND 72_'s STAMP HAS NOT — which is the rule this section was
      written to demonstrate, now visible in a single tree instead of across two rounds. I1 above still
      reads R10 from 72_ because 72_ has not changed since; P1-B8D minted R11 for the activation, and
@@ -443,8 +448,8 @@ var I = H.then(function () {
   ok(_ROB7E.BUILD_STAMP_RE.test(_i2aRel), 'I2b and it is a well-formed release stamp, not merely non-empty');
   ok(SRC.health.indexOf("var SYS_BUILD_VERSION_ = '" + R10 + "'") < 0,
     'I3 63_ moved with it, because the release lives in 63_ and changing it changes that file');
-  ok(SRC.health.indexOf("symbol: 'PPW_BUILD_VERSION_', expected: '" + R10 + "'") > 0,
-    'I4 and the manifest expects R10 from 72_ — a stamp without its manifest entry is a MIXED sync');
+  ok(SRC.health.indexOf("symbol: 'PPW_BUILD_VERSION_', expected: '" + _i1Ppw + "'") > 0,
+    'I4 and the manifest expects exactly that from 72_ — a stamp without its manifest entry is a MIXED sync');
   ok(SRC.health.indexOf("symbol: 'SYS_BUILD_VERSION_', expected: '" + R10 + "'") < 0,
     'I5 while 63_\'s own manifest row moved with 63_ — the self-referential row tracks the file, not the release');
   // PRICING-R2 — see E6. The claim "01_ did not change IN THIS ROUND" survives as the agreement between

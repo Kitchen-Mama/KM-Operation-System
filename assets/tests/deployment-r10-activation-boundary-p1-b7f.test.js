@@ -138,7 +138,9 @@ console.log('\n=== §B  THE THREE MANIFEST ROWS THIS ROUND IS ABOUT ===');
   R10_CAPTURE.health.module_builds.forEach(function (m) { rows[m.file] = m; });
 
   eq(rows['63_api_v1_system_health.gs'].declared_build, R10, 'B1 63_ declares R10 in the deployment');
-  eq(rows['72_api_v1_product_pricing_workspace.gs'].declared_build, R10, 'B2 72_ declares R10 — the file the fix is in');
+  eq(rows['72_api_v1_product_pricing_workspace.gs'].declared_build, R10,
+    'B2 72_ declared R10 IN THE CAPTURE — the file the fix was in. This is the immutable record of what '
+    + 'the live deployment answered, and it does not move when the repository does.');
 
   /* 01_router.gs IS THE INTERESTING ROW. No action was added, renamed or removed, so its stamp stayed
      at R9 through a release that moved everything around it. A manifest that agrees with that is the
@@ -152,8 +154,13 @@ console.log('\n=== §B  THE THREE MANIFEST ROWS THIS ROUND IS ABOUT ===');
 
   /* AND THE DEPLOYED STAMPS AGREE WITH THE REPOSITORY. This is what makes "the user synced the right
      files" a measured fact rather than a hope: the same two strings, read from the committed source. */
-  ok(SRC.ppw.indexOf("PPW_BUILD_VERSION_ = '" + R10 + "'") >= 0,
-    'B5 the committed 72_ declares the build the deployment reported');
+  /* PRICING-R4G — AND NOW THEY DISAGREE, WHICH IS THE INSTRUMENT WORKING. 72_ matched the deployment for
+     five releases; R4G changed it (it resolves prices through 73_ now), so the committed stamp is ahead of
+     what the live project answered. That gap is not a failure of this check — it IS the sync list. */
+  var _b5Ppw = (/PPW_BUILD_VERSION_ = '([^']+)'/.exec(SRC.ppw) || [])[1];
+  ok(!!_b5Ppw && _b5Ppw !== R10,
+    'B5 the committed 72_ is AHEAD of the build the deployment reported — that gap puts it on the sync list ('
+    + _b5Ppw + ' vs ' + R10 + ')');
   /* THE REPOSITORY HAS MOVED AHEAD OF THE DEPLOYMENT, AND THAT IS THE STATE THE RUNBOOK IS FOR.
      B6/B7 used to assert that the committed 63_ still declared R10 — "the user synced the right
      files", measured. P1-B8D minted R11 for the activation and synced nothing, so the two now
@@ -390,13 +397,18 @@ var J = clientChain(R10_CAPTURE.siteUniverse).then(function (r) {
   ok(!/km_force|debug_token|bypass|__enable/i.test(SRC.router + SRC.ppw + SRC.config),
     'H5 no bypass parameter, token or debug switch was added anywhere in the gate path');
 
-  /* AND THE SYNC LIST IS DERIVABLE FROM THE STAMPS RATHER THAN ASSERTED IN PROSE. 72_ did NOT change
-     at P1-B8D - no action, no response shape, no gate position - so its stamp is still R10 and it is
-     NOT in the sync list. 63_ did, and is. A module stamp that moved is a file that must be pasted;
-     one that did not is a file that must not be, because re-pasting an unchanged file is how an
-     unrelated edit gets deployed by accident. */
-  ok(SRC.ppw.indexOf("PPW_BUILD_VERSION_ = '" + R10 + "'") >= 0,
-    'H6 72_ did not change at the activation — its stamp is still R10, so it needs no sync');
+  /* AND THE SYNC LIST IS DERIVABLE FROM THE STAMPS RATHER THAN ASSERTED IN PROSE. A module stamp that
+     moved is a file that must be pasted; one that did not is a file that must not be, because re-pasting
+     an unchanged file is how an unrelated edit gets deployed by accident.
+     72_ did NOT change at P1-B8D — no action, no response shape, no gate position — and stayed off the
+     sync list for five releases on exactly that reasoning. PRICING-R4G is what ended it: the file now
+     resolves prices by calling 73_, and its three price fields carry a different concept than they did.
+     So it IS in the sync list now, and this line asserts the rule rather than the answer. */
+  var _h6Ppw = (/PPW_BUILD_VERSION_ = '([^']+)'/.exec(SRC.ppw) || [])[1];
+  ok(!!_h6Ppw && _h6Ppw !== R10,
+    'H6 72_ HAS changed since the activation (PRICING-R4G), so its stamp moved and it needs a sync');
+  ok(SRC.health.indexOf("symbol: 'PPW_BUILD_VERSION_', expected: '" + _h6Ppw + "'") > 0,
+    'H6b and the manifest expects exactly what the file declares, so the sync stays checkable');
   ok(SRC.health.indexOf("SYS_DEPLOYMENT_RELEASE_ = '" + R10 + "'") < 0,
     'H6a while 63_ carries the new release identity, so it does');
 

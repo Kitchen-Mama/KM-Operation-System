@@ -1127,9 +1127,31 @@ function p1b8cReduceRow_(row) {
     marketplace_sku_status: row.marketplace_sku_status === undefined ? null : row.marketplace_sku_status,
     lifecycle: row.lifecycle === undefined ? null : row.lifecycle,
     currency: row.currency === undefined ? null : row.currency,
+
+    /* THE THREE PRICES, RESOLVED — and the nine fields beside them on the wire, dropped on purpose.
+
+       PRICING-R4G split each band into layers. On the wire a row now carries, per band, an override
+       cell (blank unless a person typed a price), an auto cell (the base price converted at the
+       stored FX rate), a resolved value (the first of those two that is a number) and a source token
+       naming which one won. This sample keeps the resolved value, because the question a readback
+       answers is what a site sells at, and drops auto_*, override_* and *_source, because the
+       question it does NOT answer is how the pricing editor arrived there.
+
+       THE THREE OLD NAMES ARE KEPT AND STILL MEAN WHAT THEY MEANT: they are the override cells, so
+       most of them read blank on a healthy row and that is not a defect. They are worth carrying
+       precisely because of that — a reader comparing regular_price with resolved_regular_price can
+       see at a glance whether this site's price was chosen by a person or computed, which is the one
+       piece of the layering a census has any use for, and it costs three fields rather than nine.
+
+       If a future round needs the source token here, it is an allowlist: add the name. What must not
+       happen is this file starting to compute a resolved price of its own when one is missing. A
+       sample that repairs its input is a sample of something nobody ships. */
     regular_price: row.regular_price === undefined ? null : row.regular_price,
     minimum_price: row.minimum_price === undefined ? null : row.minimum_price,
     msrp: row.msrp === undefined ? null : row.msrp,
+    resolved_regular_price: row.resolved_regular_price === undefined ? null : row.resolved_regular_price,
+    resolved_minimum_price: row.resolved_minimum_price === undefined ? null : row.resolved_minimum_price,
+    resolved_msrp: row.resolved_msrp === undefined ? null : row.resolved_msrp,
 
     /* THE IMAGE IS REPORTED AS TWO FACTS AND NEVER AS AN ADDRESS.
        km-product-pricing-adapter.js `imageStateOf` picks between three states using exactly three inputs:

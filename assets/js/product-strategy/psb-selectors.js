@@ -46,6 +46,23 @@
     if (!isFinite(n)) return null;
     return Math.round(n * 100);
   };
+  /* PRICING-R4G §12 — THE RESOLVED PRICE OF ONE BAND, IN CENTS.
+   *
+   * THERE IS NO PRICING FORMULA IN THIS FILE AND THERE MUST NOT BE. 72_ resolves override-else-auto on the
+   * server and publishes the answer; the adapter carries it; this reads it. What the fallback below does is
+   * pick between TWO NAMES FOR THE SAME SERVER-COMPUTED NUMBER, not between two pricing layers:
+   * `resolved_regular_price` is the explicit name added in R4G, `regular_price` is the alias 72_ keeps so
+   * that no consumer lost its price on the day of the rename. Fixtures and the prototype preview carry only
+   * the alias, which is the other reason it is read.
+   *
+   * If this ever needs to consult auto_* or a flag to answer, something upstream has stopped resolving and
+   * the fix belongs there. */
+  S.resolvedCents = function (row, band) {
+    if (!row) return null;
+    var explicit = row['resolved_' + band];
+    if (explicit !== undefined && explicit !== null) return S.cents(explicit);
+    return S.cents(row[band]);
+  };
   S.fromCents = function (c) {
     return c === null || c === undefined ? null : (c / 100).toFixed(2);
   };
@@ -187,7 +204,9 @@
    */
   S.chartRefusalsFor = function (row) {
     var out = [];
-    if (S.cents(row.regular_price) === null) out.push('PRICING_SOURCE_MISSING');
+    // PRICING-R4G — the RESOLVED price. A site priced through auto_* with no override is fully priced,
+    // and refusing it a coordinate would have put every newly created row into Data Quality as a defect.
+    if (S.resolvedCents(row, 'regular_price') === null) out.push('PRICING_SOURCE_MISSING');
     if (S.regionalStateOf(row) === 'REGIONAL_DETAILS_MISSING') out.push('REGIONAL_DETAILS_MISSING');
     return out;
   };
@@ -238,7 +257,11 @@
 
       var regional = S.regionalStateOf(row);
       var categoryMissing = str(row.category) === '';
-      var noPrice = S.cents(row.regular_price) === null;
+      // PRICING-R4G — the RESOLVED price, and it has to be the same question the chart gate asks. This
+      // bucket and `chartRefusalsFor` are two authorities on one fact: whether this site SKU has a price.
+      // Leaving this one on the raw override would have reported every auto-priced row as a data-quality
+      // defect while the chart happily drew it — the same class of split-brain P1-B3 found in `analysable`.
+      var noPrice = S.resolvedCents(row, 'regular_price') === null;
       var masterMissing = (row.missing_reasons || []).indexOf('MASTER_SKU_RECORD_MISSING') >= 0;
 
       if (regional === 'REGIONAL_DETAILS_MISSING') dq.regional_details_missing.push(id);
@@ -332,7 +355,7 @@
       }
       seen[v].siteSkuCount++;
       var f = flags ? flags[str(r.identity)] : null;
-      if (f ? f.chartable : S.cents(r.regular_price) !== null) seen[v].analysableSiteSkuCount++;
+      if (f ? f.chartable : S.resolvedCents(r, 'regular_price') !== null) seen[v].analysableSiteSkuCount++;
     });
     order.sort();
     return {
@@ -850,7 +873,9 @@
        here: it is `source_status`, already in the frozen field list, already carried by the loop above. */
     o.regional = r.regional === undefined ? null : r.regional;
 
-    var canonicalRegular = S.cents(r.regular_price);
+    // PRICING-R4G — the canonical price a scenario simulates AGAINST is the resolved one. Simulating
+    // against the raw override would give a percentage move nothing to move on an un-overridden row.
+    var canonicalRegular = S.resolvedCents(r, 'regular_price');
     var canonicalProposed = S.cents(r.provenance && r.provenance.proposed_scenario_price);
 
     /* RESOLVED PER ROW, AGAINST THAT ROW'S OWN CANONICAL VALUE. A PERCENT override therefore moves
@@ -863,8 +888,8 @@
 
     o._regular_c = everydayOverride === null ? canonicalRegular : everydayOverride;
     o._proposed_c = proposedOverride === null ? canonicalProposed : proposedOverride;
-    o._min_c = S.cents(r.minimum_price);
-    o._msrp_c = S.cents(r.msrp);
+    o._min_c = S.resolvedCents(r, 'minimum_price');
+    o._msrp_c = S.resolvedCents(r, 'msrp');
     o._deal_c = S.cents(r.official_deal_price);
     o._deal_period_ok = !!(r.official_deal_start && r.official_deal_end);
     o._deal_live = o._deal_c !== null && o._deal_period_ok && S.withinPeriod(r, today);

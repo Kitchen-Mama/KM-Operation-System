@@ -1070,7 +1070,11 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // needs its own id: R22 and R23 are two different TREES, and 63_'s own R21 note states the rule —
   // two different trees may not both answer to one release id. 04_ joins the owners because the pricing
   // row CREATION contract changed; 73_, 01_ and 63_ carry it because they are the same unshipped set.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R23'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R23',
+  // PRICING-R4G — R23 never shipped, and that is not a licence to reuse it. The ruling 63_ records for
+  // R7, R10 and R11 is that an id naming two different trees cannot answer the question it exists for,
+  // and every one of those was a candidate nobody had deployed either. R24 names the tree that ships.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

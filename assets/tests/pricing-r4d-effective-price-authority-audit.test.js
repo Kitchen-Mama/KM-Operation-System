@@ -237,13 +237,17 @@ section('A · §1 THE THREE-LAYER MODEL — CONFIRMED OR REJECTED FROM THE CODE'
   eq(W73.pricingFxConvert_('', 1.35, 'CAD').value, null,
     'A8b a blank base produces a blank auto — never 0, because 0 is a price');
 
-  // EFFECTIVE is the stored field, ALWAYS, with exactly one defined substitution.
+  // PRICING-R4G — THE OVERRIDE WINS WHEN THERE IS ONE, and the flag decides nothing at all. R4D's version
+  // of this line read "EFFECTIVE is the stored value and the flag decides only who may write it"; the
+  // second half is what went, because no FX run may write an override under any flag.
   var r = W73.pricingResolveEffective_({ regular_price: 31.5, auto_regular_price: 40.49,
     regular_price_is_manual: 'TRUE' }, REG);
-  eq([r.value, r.source, r.authority, r.writable_by_fx], [31.5, 'STORED', 'MANUAL', false],
-    'A9  EFFECTIVE is the stored value and the flag decides only who may write it');
-  ok(/EFFECTIVE value is the stored\s*\n?\s*\*? ?field, always/.test(GS73.replace(/\s+/g, ' ')) ||
-     /the EFFECTIVE value is the stored field, always/.test(GS73.replace(/\s+/g, ' ')),
+  eq([r.value, r.source, r.authority], [31.5, 'OVERRIDE', 'MANUAL'],
+    'A9  an override that holds a number IS the resolved price, and the authority is reported beside it');
+  eq([r.override, r.auto], [31.5, 40.49],
+    'A9a with the raw override and the auto reference both reported separately — three facts, three fields');
+  ok(/USER OVERRIDES and\s*\n?\s*\*? ?nothing else/.test(GS73.replace(/\s+/g, ' ')) ||
+     /are USER OVERRIDES and nothing else/.test(GS73.replace(/\s+/g, ' ')),
     'A9b and the resolver says so in the file that implements it');
 
   // The document and the code agree about the direction of the chain.
@@ -288,9 +292,15 @@ section('B · §2 THE FX WRITE CONTRACT — MEASURED PER AUTHORITY STATE');
 
   // ---- flag FALSE ----
   eq(F.cells.auto_regular_price, 40.49, 'B4  AUTO_FALSE_AUTO_REFRESH = YES');
-  eq(F.cells.regular_price, 40.49, 'B5  AUTO_FALSE_EFFECTIVE_FOLLOWS_AUTO = YES — no CONTRACT_GAP here');
-  eq(F.cells.regular_price, F.cells.auto_regular_price,
-    'B5b and it follows to exactly the auto value, not to a separately rounded one');
+  // PRICING-R4G §6 — AUTO_FALSE_EFFECTIVE_FOLLOWS_AUTO IS NOW "NO WRITE, AND YES ANYWAY". R4D's finding
+  // was that a FALSE field's effective price followed auto_*, which it did, and that this was correct.
+  // R4G reaches the same OUTCOME with no write at all: the override is blank, so the resolver answers with
+  // auto_* on every read. The user-visible behaviour is identical; the cell is not touched.
+  ok(!Object.prototype.hasOwnProperty.call(F.cells, 'regular_price'),
+    'B5  FX_WRITES_MANUAL_OVERRIDE_COUNT = 0 — the effective column is not in the write set');
+  eq(W73.pricingResolveEffective_({ regular_price: '', auto_regular_price: F.cells.auto_regular_price,
+    regular_price_is_manual: 'FALSE' }, REG).value, 40.49,
+    'B5b and the field still RESOLVES to exactly the auto value — reached by reading, not by writing');
   ok(!Object.prototype.hasOwnProperty.call(F.cells, 'regular_price_is_manual'),
     'B6  AUTO_FALSE_FLAG_CHANGE = NO');
 
@@ -430,8 +440,13 @@ section('C · §3 NEW PRICING ROW INITIALIZATION — THE SHIPPED IMPORTER, EXECU
     regular_price_is_manual: created.regular_price_is_manual
   }, cadTable());
   eq(afterFx.cells.auto_regular_price, 40.49, 'C11 a later FX run computes auto_* from the base on the row');
-  eq(afterFx.cells.regular_price, 40.49,
-    'C11b AND the effective price follows it — the flag R4E writes at creation says AUTO');
+  // PRICING-R4G — the repair now needs no write to the override column at all. R4E's created row has a
+  // BLANK override, so the moment auto_regular_price holds a number the row resolves to it.
+  ok(!Object.prototype.hasOwnProperty.call(afterFx.cells, 'regular_price'),
+    'C11b AND no override is written — R4E creates the row blank, so there is nothing to keep in step');
+  eq(W73.pricingResolveEffective_({ regular_price: '', auto_regular_price: afterFx.cells.auto_regular_price,
+    regular_price_is_manual: 'FALSE' }, REG).value, 40.49,
+    'C11b1 the row nevertheless RESOLVES to the converted price, which is the repair');
   eq(afterFx.fields.regular_price.authority, 'AUTO',
     'C11c THE ROOT CAUSE IS CLOSED: a pending row repairs itself on the first rate, with no migration');
 
@@ -444,25 +459,34 @@ section('C · §3 NEW PRICING ROW INITIALIZATION — THE SHIPPED IMPORTER, EXECU
 section('D · §4 THE CONSUMER AUDIT — AND WHAT A BLANK EFFECTIVE DOES TO EACH');
 // =============================================================================================================
 {
-  // ---- D1-D3: the canonical resolver, on a blank effective, in each authority state ----
+  // ---- D1-D3: PRICING-R4G — THE FLAG NO LONGER CHANGES THE ANSWER, and that is the round in one block.
+  // R4D measured three different outcomes here from one blank cell and three flags, and was right to: under
+  // the stored-effective model a blank cell said nothing and the flag said everything. Under the nullable
+  // model the blank cell is the statement — no override exists — so all three resolve to auto.
   var blankUnknown = W73.pricingResolveEffective_({ regular_price: '', auto_regular_price: 40.49,
     regular_price_is_manual: '' }, REG);
-  eq([blankUnknown.value, blankUnknown.source], [null, 'UNAVAILABLE'],
-    'D1  blank effective + UNKNOWN resolves to NOTHING — auto is not a fallback');
+  eq([blankUnknown.value, blankUnknown.source], [40.49, 'AUTO'],
+    'D1  blank override + UNKNOWN resolves to AUTO — a blank flag no longer withholds the price');
   var blankAuto = W73.pricingResolveEffective_({ regular_price: '', auto_regular_price: 40.49,
     regular_price_is_manual: 'FALSE' }, REG);
-  eq([blankAuto.value, blankAuto.source], [40.49, 'AUTO_REFERENCE'],
-    'D2  blank effective + AUTO is the ONE defined substitution — the field is DEFINED to equal auto');
+  eq([blankAuto.value, blankAuto.source], [40.49, 'AUTO'],
+    'D2  blank override + AUTO resolves to AUTO — what was the one defined substitution is now the rule');
   var blankManual = W73.pricingResolveEffective_({ regular_price: '', auto_regular_price: 40.49,
     regular_price_is_manual: 'TRUE' }, REG);
-  eq([blankManual.value, blankManual.source], [null, 'UNAVAILABLE'],
-    'D3  blank effective + MANUAL resolves to nothing — a person\'s price cannot be reconstructed from auto');
+  eq([blankManual.value, blankManual.source], [40.49, 'AUTO'],
+    'D3  blank override + MANUAL resolves to AUTO too — a claim of ownership with no value is not a value');
+  eq([blankUnknown.authority, blankAuto.authority, blankManual.authority], ['UNKNOWN', 'AUTO', 'MANUAL'],
+    'D3a while the three authorities are still REPORTED — the flag is read, it simply decides nothing');
 
   // ---- D4: the workspace transport does not even CARRY auto_*, so a fallback is not available there ----
-  eq((bare(GS72).match(/auto_/g) || []).length, 0,
-    'D4  72_ (productPricing.workspace.get) emits NO auto_* field at all');
-  ok(/regular_price: price \? ppwNum_\(price\.regular_price\) : null/.test(GS72),
-    'D4b it emits the EFFECTIVE fields only, verbatim and unresolved');
+  // PRICING-R4G — THIS WAS THE BLOCKER AND IT IS THE THING THE ROUND FIXED. R4D measured zero auto_*
+  // anywhere in 72_'s payload, which is why it concluded that no client fix could reach around it.
+  ok((bare(GS72).match(/auto_/g) || []).length > 0,
+    'D4  72_ now carries auto_* — the fallback is available on this transport at all');
+  ok(/resolved_regular_price:/.test(GS72) && /override_regular_price:/.test(GS72) && /regular_price_source:/.test(GS72),
+    'D4a and all three layers travel under distinct names, with a source naming which one answered');
+  ok(/regular_price: price \? bands\.regular_price\.resolved : null/.test(GS72),
+    'D4b it emits the RESOLVED price, computed by the canonical server resolver');
   ok(/regular_price: live\.regular_price === undefined \? null : live\.regular_price/.test(ADAPTER),
     'D4c and the browser adapter passes them through without substituting anything');
   ok(/never computes a price, never substitutes one field for another/.test(
@@ -470,8 +494,8 @@ section('D · §4 THE CONSUMER AUDIT — AND WHAT A BLANK EFFECTIVE DOES TO EACH
     'D4d which the board data contract states as the adapter rule');
 
   // ---- D5: what a null effective costs on that transport ----
-  ok(/&& ppwNum_\(price\.regular_price\) !== null && !pricingAmbiguous && regionalConfirmed;/.test(GS72),
-    'D5  72_ gates `analysable` on a non-null regular_price — a blank one drops the SKU off the price chart');
+  ok(/&& bands\.regular_price\.resolved !== null && !pricingAmbiguous && regionalConfirmed;/.test(GS72),
+    'D5  72_ gates `analysable` on the RESOLVED price — a row priced through auto_* stays on the chart');
   var PSB = require('../js/product-strategy/psb-selectors.js');
   var S = PSB.PSB_SELECTORS || PSB;
   eq(S.chartRefusalsFor({ regular_price: null, regional: { regional_detail_id: 'X' } }).indexOf('PRICING_SOURCE_MISSING') > -1,
@@ -481,8 +505,8 @@ section('D · §4 THE CONSUMER AUDIT — AND WHAT A BLANK EFFECTIVE DOES TO EACH
 
   // ---- D6: FC Summary reads the effective field and has a legacy wrapper that turns a gap into zero ----
   ok(/pricing_list is the sole price source of truth/.test(FCSUM) &&
-     /effective field = `regular_price`/.test(FCSUM),
-    'D6  FC Summary reads the EFFECTIVE field, named, with no auto fallback');
+     /the RESOLVED price/.test(FCSUM) && /resolvedRegularPrice/.test(FCSUM),
+    'D6  FC Summary reads the RESOLVED price, from the canonical normalizer');
   ok(/never marketplace_skus\)|never marketplace_skus/.test(FCSUM),
     'D6b explicitly not marketplace_skus and not sku_details');
   // PRICING-R4E §5 — the back-compat wrapper turned a MISSING price into 0. It had no callers, which is the
@@ -548,14 +572,19 @@ section('D · §4 THE CONSUMER AUDIT — AND WHAT A BLANK EFFECTIVE DOES TO EACH
 section('E · §6 / §7 THE CLEANUP ANSWER AND THE FUTURE CONTRACT');
 // =============================================================================================================
 {
-  // ---- E1: "Use Auto" cannot repair a row whose auto value is absent, so blanking is not reversible ----
-  var refusal = W73.pricingPlanField_({ regular_price: 29.99, auto_regular_price: '',
+  // ---- E1: PRICING-R4G REMOVED THIS WHOLE ARGUMENT. R4D's third reason for CAN_OPERATOR_BLANK = NO was
+  // that "blank everything, then restore from auto" could not complete, because USE AUTO was refused
+  // wherever auto_* was absent — stranding exactly the rows with no base price. USE AUTO does not restore
+  // any more, it CLEARS, and clearing needs nothing to copy. The rows that would have been stranded are
+  // the pending_fx rows, and clearing is precisely their repair.
+  var pending = W73.pricingPlanField_({ regular_price: 29.99, auto_regular_price: '',
     regular_price_is_manual: '' }, REG, 'AUTO', '', 'CAD');
-  ok(refusal && refusal.error, 'E1  AUTO is REFUSED when there is no auto value to restore', refusal);
-  var restored = W73.pricingPlanField_({ regular_price: 29.99, auto_regular_price: 40.49,
+  eq([pending.error, pending.changed, pending.cells[REG.field]], [null, true, ''],
+    'E1  AUTO is ALLOWED when there is no auto value — it removes the override rather than restoring one');
+  var cleared = W73.pricingPlanField_({ regular_price: 29.99, auto_regular_price: 40.49,
     regular_price_is_manual: '' }, REG, 'AUTO', '', 'CAD');
-  eq(restored.cells[REG.field], 40.49, 'E1b and succeeds when there is one — so E1 is about the missing value');
-  eq(restored.cells[REG.flag], 'FALSE', 'E1c AUTO is the one operation that DOES classify the row');
+  eq(cleared.cells[REG.field], '', 'E1b and clears identically when there IS one — the auto value is never copied');
+  eq(cleared.cells[REG.flag], 'FALSE', 'E1c AUTO is the one operation that DOES classify the row');
 
   // ---- E2: a MANUAL price is not recoverable from base or auto, so blanking one destroys it ----
   var manual = W73.pricingResolveEffective_({ regular_price: 31.5, auto_regular_price: 40.49,
@@ -631,18 +660,27 @@ section('F · MUTANTS — each assertion above is asked to fail for a reason it 
 
   // M1 — blank read as FALSE. This is the single change that would let FX "repair" every legacy row, and
   // it is exactly the bulk reclassification §4A forbids. B8 is what stands in its way.
-  mutant('M1', 'a blank flag is read as AUTO, so FX rewrites every unclassified price',
+  // M1 — PRICING-R4G RETIRED THE DANGER THIS GUARDED. "A blank flag read as AUTO" was catastrophic while
+  // the flag decided whether FX could write an override: it would have rewritten every unclassified price
+  // in one run. FX writes no override under any flag now, so misreading the flag cannot reach a price at
+  // all — which is a real reduction in blast radius and is worth stating as a test rather than a comment.
+  mutant('M1', 'a blank flag is read as AUTO',
     "  if (s === '') return PRICING_OWNER_UNKNOWN_;",
     "  if (s === '') return PRICING_OWNER_AUTO_;",
     function (S) {
       var p = S.pricingPlanFxRow_(unknownRow(), cadRates(S));
-      return Object.prototype.hasOwnProperty.call(p.cells, 'regular_price');
+      // The mutant is CAUGHT by the authority it reports, not by any write, because there is no write to
+      // catch it with. If this ever starts being caught by a cell appearing in p.cells, §6 has regressed.
+      if (Object.prototype.hasOwnProperty.call(p.cells, 'regular_price')) return true;
+      return p.fields.regular_price.authority === 'AUTO';
     });
 
-  // M2 — the effective field follows on any authority. B2 is what stands in its way.
-  mutant('M2', 'the effective price follows auto regardless of who owns it',
-    '    if (eff.writable_by_fx) {',
-    '    if (true) {',
+  // M2 — THE OVERRIDE WRITE RETURNS. This replaces R4D's "follows regardless of who owns it": the hazard
+  // is no longer WHICH fields FX writes but THAT it writes one, and a MANUAL row is the sharpest fixture
+  // for it because the value it would destroy exists nowhere else.
+  mutant('M2', 'an FX run writes the manual override column again',
+    '    if (!eff.override_is_na && eff.override === null) view.resolved_follows = true;',
+    '    res.cells[spec.field] = conv.value;',
     function (S) {
       var r = { currency: 'CAD', base_currency: 'USD', base_regular_price: 29.99,
         base_minimum_price: '', base_msrp: '', auto_regular_price: 22.10,
@@ -662,13 +700,28 @@ section('F · MUTANTS — each assertion above is asked to fail for a reason it 
 
   // M4 — the resolver falls back to auto for an UNKNOWN row. That is reclassification carried out through
   // the screen instead of through the schema, and D1 is what stands in its way.
-  mutant('M4', 'the resolver substitutes auto for a blank effective on an UNKNOWN row',
-    "  if (!stored.present && !stored.na && authority === PRICING_OWNER_AUTO_ && auto.present) {",
-    "  if (!stored.present && !stored.na && auto.present) {",
+  // M4 — THE EXACT INVERSE OF WHAT R4D GUARDED, and the inversion is the round. R4D's mutant was "the
+  // resolver substitutes auto for a blank effective on an UNKNOWN row", which was then reclassification
+  // through the screen. That substitution is now the contract, so the mutant is the FLAG GATE COMING BACK:
+  // every row an operator has cleared with Use Auto Price would stop resolving and show Not Set, while
+  // legacy rows carried on working — a partial outage, which is the hardest kind to notice.
+  mutant('M4', 'the auto fallback is gated on the ownership flag again',
+    "  else if (auto.present) { value = auto.value; source = 'AUTO'; }",
+    "  else if (auto.present && authority === PRICING_OWNER_AUTO_) { value = auto.value; source = 'AUTO'; }",
     function (S) {
       var r = S.pricingResolveEffective_({ regular_price: '', auto_regular_price: 40.49,
         regular_price_is_manual: '' }, S.PRICING_FIELDS_[0]);
-      return r.value !== null;
+      return r.value === null;
+    });
+
+  // M4b — NA falls back. The one substitution the round did NOT make, and the only guard on it.
+  mutant('M4b', 'NA falls back to auto, answering "this band does not apply" with a number',
+    "  else if (stored.na) { source = 'NA'; }",
+    "  else if (stored.na && !auto.present) { source = 'NA'; }",
+    function (S) {
+      var r = S.pricingResolveEffective_({ regular_price: 'NA', auto_regular_price: 40.49,
+        regular_price_is_manual: 'FALSE' }, S.PRICING_FIELDS_[0]);
+      return r.value === 40.49;
     });
 
   // M5 — the rate is inverted. A1/A8 stand in its way, and the mutant is here because the reciprocal is the
@@ -687,14 +740,17 @@ section('F · MUTANTS — each assertion above is asked to fail for a reason it 
       return Object.keys(p.cells).some(function (k) { return /^base_/.test(k); });
     });
 
-  // M7 — the pre-write audit stops noticing. B11/B12 stand in its way.
-  mutant('M7', 'the pre-write audit accepts an effective write over a non-AUTO row',
-    '        if (flagNow !== PRICING_OWNER_AUTO_ && !identical) {',
-    '        if (false) {',
+  // M7 — the pre-write audit stops noticing. PRICING-R4G made the rule it enforces unconditional, so the
+  // condition the old anchor pointed at is gone: the audit no longer asks WHICH rows may be written, it
+  // refuses the presence of an override column in the write set at all. The fixture is stronger for it —
+  // the flag below reads FALSE, which under R4D made the write legal and made this fixture prove nothing.
+  mutant('M7', 'the pre-write audit accepts an override column in the write set',
+    '      if (Object.prototype.hasOwnProperty.call(effectiveNames, name)) {',
+    '      if (false) {',
     function (S) {
       var built = S.pricingFxBuildColumns_({
         col: function (n) { return PR_HEADER.indexOf(n); },
-        rows: [{ rowNumber: 2, values: { regular_price: 34.99, regular_price_is_manual: 'TRUE' } }]
+        rows: [{ rowNumber: 2, values: { regular_price: 34.99, regular_price_is_manual: 'FALSE' } }]
       }, [{ rowNumber: 2, changed: true, cells: { regular_price: 40.49 } }]);
       return built.violations.length === 0;
     });

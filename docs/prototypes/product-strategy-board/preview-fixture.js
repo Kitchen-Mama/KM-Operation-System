@@ -327,7 +327,19 @@
             variant_name: colour,
             company: site.company, country: site.country, marketplace: site.marketplace,
             currency: site.currency,
+            /* PRICING-R4G — THE RESOLVED PRICES, WHICH HERE EQUAL THE TYPED ONES, and that is a
+               statement about this fixture rather than a shortcut. Production splits each band into an
+               override cell and an FX-computed auto cell, and resolves between them. This prototype has
+               no FX and no auto layer: every price below was typed by a person, so the override IS the
+               resolved price. That is a real production shape — the same-currency rows are exactly this
+               — so the board renders against a shape it will actually meet, not against an invented one.
+
+               A FIXTURE THAT MODELLED THE OTHER SHAPE WOULD NEED THE OTHER COLUMNS, and it deliberately
+               does not have them: the board contract carries no auto_* or override_*, so a fixture
+               carrying them would be offering the board fields it must never read. The blank-override
+               case is covered where it belongs, in the pricing suites, against the real resolver. */
             regular_price: regular, minimum_price: min, msrp: msrp,
+            resolved_regular_price: regular, resolved_minimum_price: min, resolved_msrp: msrp,
             official_deal_price: deal === undefined ? null : deal,
             official_deal_start: m.deal_start === undefined ? null : m.deal_start,
             official_deal_end: m.deal_end === undefined ? null : m.deal_end,
@@ -532,6 +544,8 @@
       var siteSku = site.marketplace === 'Walmart' ? ('WMT-' + sku)
         : (site.marketplace === 'Rakuten' ? ('RKT-' + sku) : (sku + '-' + site.country));
       var regular = (priceC / 100).toFixed(2);
+      var minPrice = (priceC * 0.8 / 100).toFixed(2);
+      var msrpPrice = (priceC * 1.2 / 100).toFixed(2);
       rows.push({
         identity: 'STR-' + site.country + '-' + site.marketplace.slice(0, 3).toUpperCase()
           + '-' + sku,
@@ -549,9 +563,16 @@
         variant_name: null,
         company: site.company, country: site.country, marketplace: site.marketplace,
         currency: site.currency,
+        /* PRICING-R4G — see the note in the builder above. One price layer, so resolved equals typed.
+           Computed ONCE into locals rather than twice into two fields: a density fixture whose resolved
+           price could drift from its override by a rounding difference would be testing the chart
+           against a disagreement production cannot produce. */
         regular_price: regular,
-        minimum_price: (priceC * 0.8 / 100).toFixed(2),
-        msrp: (priceC * 1.2 / 100).toFixed(2),
+        minimum_price: minPrice,
+        msrp: msrpPrice,
+        resolved_regular_price: regular,
+        resolved_minimum_price: minPrice,
+        resolved_msrp: msrpPrice,
         official_deal_price: (idx % 7 === 0) ? (priceC * 0.75 / 100).toFixed(2) : null,
         official_deal_start: (idx % 7 === 0) ? '2026-09-01' : null,
         official_deal_end: (idx % 7 === 0) ? '2026-09-30' : null,

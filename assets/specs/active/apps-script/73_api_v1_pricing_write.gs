@@ -72,7 +72,7 @@
 // It belongs here rather than in a new owner because PRICING-R2 §7 made this the one write path into
 // pricing_list; two files writing one table would hold two locks and the field-level flags would stop
 // being checkable by reading a single writer.
-var PRW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R23';
+var PRW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24';
 
 var PRW_ACTION_ = 'pricing.update';
 // The response SHAPE's own version, separate from the module build. A caller pins the shape, not the round.
@@ -224,7 +224,7 @@ function pricingLineKey_(line) { return pricingStr_(line && line.marketplace_sku
  */
 function pricingPlanField_(row, spec, mode, suppliedValue, currency) {
   var out = { field: spec.field, mode: mode, changed: false, cells: {}, log: null, error: null };
-  var storedEff = pricingReadNumber_(row[spec.field]);
+  var storedEff = pricingReadNumber_(row[spec.field]);   // read by MANUAL; AUTO compares the raw cell
   var storedFlag = pricingReadFlag_(row[spec.flag]);
 
   if (mode === 'NO_CHANGE') return out;
@@ -261,28 +261,29 @@ function pricingPlanField_(row, spec, mode, suppliedValue, currency) {
     return out;
   }
 
-  // AUTO — return ownership to the system and restore the effective field FROM auto_*. The supplied manual
-  // value is ignored entirely (§8), so a template that carries both a price and AUTO cannot smuggle the
-  // price in through the back door.
-  var auto = pricingReadNumber_(row[spec.auto]);
-  if (auto.invalid) {
-    out.error = { code: 'AUTO_VALUE_NOT_NUMERIC', field: spec.field, detail: spec.auto + ' is not a number, so there is nothing to restore.' };
-    return out;
-  }
-  if (!auto.present) {
-    // The only honest refusal. Restoring from a blank would write 0, and 0 is a price.
-    out.error = { code: 'AUTO_VALUE_MISSING', field: spec.field,
-      detail: spec.auto + ' is ' + (auto.na ? 'NA' : 'blank') + '. USE AUTO cannot restore a value that does not exist; run the FX refresh first.' };
-    return out;
-  }
-  var effChangedA = !storedEff.present || storedEff.value !== auto.value;
+  // AUTO — REMOVE THE OVERRIDE. PRICING-R4G §4: the field is cleared and ownership returns to the system;
+  // the resolver then answers with auto_* for as long as the cell stays empty. The supplied manual value is
+  // ignored entirely (§8), so a template carrying both a price and AUTO cannot smuggle the price in.
+  //
+  // IT USED TO COPY auto_* IN, AND THAT IS THE DEFECT IT NOW FIXES. A copied number is a SNAPSHOT: the row
+  // shows the rate of the day somebody clicked, and every FX run afterwards moves auto_* while the copy
+  // sits there looking maintained. Clearing makes the row track.
+  //
+  // AND IT NO LONGER REFUSES ON A BLANK auto_*. That refusal was right when the action wrote a value —
+  // copying a blank would have written 0, and 0 is a price. Clearing needs no value to copy, so the refusal
+  // now blocks the one repair a pending_fx row has: remove the override and let the row resolve by itself
+  // when the first rate arrives. "There is no auto value yet" is a reason to clear, not a reason to refuse.
+  var wasBlank = pricingStr_(row[spec.field]) === '';
   var flagChangedA = storedFlag !== PRICING_OWNER_AUTO_;
-  if (!effChangedA && !flagChangedA) return out;
+  if (wasBlank && !flagChangedA) return out;   // already exactly this: no override, and the system owns it
   out.changed = true;
-  out.cells[spec.field] = auto.value;
+  out.cells[spec.field] = '';
   out.cells[spec.flag] = pricingWriteFlag_(false);
+  // The log records what was REMOVED. A RETURN_TO_AUTO whose old_value is a real number is the only trace
+  // that the price a site was serving is no longer stored anywhere, so it is the line an operator reads to
+  // undo this by hand.
   out.log = { field_name: spec.field, change_type: 'RETURN_TO_AUTO',
-    old_value: pricingStr_(row[spec.field]), new_value: String(auto.value) };
+    old_value: pricingStr_(row[spec.field]), new_value: '' };
   return out;
 }
 
@@ -608,9 +609,11 @@ function handlePricingUpdate_(body) {
 //        them even for a field a person owns, because an operator comparing their negotiated price against
 //        a stale reference is comparing against nothing.
 //
-//   regular_price / minimum_price / msrp                  ONLY when that field's own flag explicitly says
-//        AUTO. A flag reading MANUAL is a person's price. A flag reading BLANK is nobody's statement, and
-//        PRICING-R2 §10 forbids turning it into one. Both are left exactly as found.
+//   regular_price / minimum_price / msrp                  NEVER. PRICING-R4G §6. These are USER OVERRIDES
+//        and an FX run is not a user. TRUE, FALSE and blank are all left exactly as found — the first
+//        because it is a person's price, the second because there is nothing to keep in step any more, and
+//        the third because PRICING-R2 §10 still forbids turning "nobody has said" into a statement.
+//        A field with no override resolves through auto_* on every read, so refreshing auto_* IS the fix.
 //
 // AUTO_REFERENCE_REFRESH IS NOT AUTHORITY_CLASSIFICATION. This file never writes an ownership flag during a
 // reconciliation — not TRUE, not FALSE, and above all not FALSE over a blank. Refreshing what the system
@@ -766,35 +769,46 @@ function pricingFxConvert_(baseCell, rate, localCurrency) {
 }
 
 /**
- * THE CANONICAL EFFECTIVE-PRICE RESOLVER (PRICING-R3 §8), server side.
+ * THE CANONICAL RESOLVED-PRICE RESOLVER (PRICING-R4F §1, implemented by PRICING-R4G). Server side, and the
+ * only implementation of this rule anywhere on this side of the wire.
  *
- * It exists so that no caller ever writes `manual || auto`, which cannot tell the four cases apart: a price
- * of 0, a price nobody has set, a price the system maintains, and a price whose owner has never been
- * recorded. PRICING-R2 froze the rule and this reuses it verbatim — the EFFECTIVE value is the stored
- * field, always. auto_* is shown beside it, never resolved from it.
+ * WHAT THE THREE COLUMNS MEAN NOW. `regular_price` / `minimum_price` / `msrp` are USER OVERRIDES and
+ * nothing else. Blank means NO OVERRIDE EXISTS — not zero, not a missing business price, not an error. It
+ * is the ordinary state of a healthy row, and it is what a newly created row looks like.
  *
- *   MANUAL   a person's price. writable_by_fx = false.
- *   AUTO     the system's price. It must equal auto_*, so an FX run that moves auto_* moves it too.
- *   UNKNOWN  nobody has said. The stored value stands; FX may not touch it, and MUST NOT resolve it to
- *            auto_* for display either, because showing a legacy price as its newly-converted value is
- *            reclassification carried out through the screen instead of through the schema.
+ *   override is a number   -> RESOLVED = the override.                          source OVERRIDE
+ *   override is blank      -> RESOLVED = auto_*, when auto_* is a number.       source AUTO
+ *   override is NA         -> RESOLVED = null, and NA does NOT fall back.       source NA
+ *   neither is a number    -> RESOLVED = null. "Not Set". NEVER 0.              source NOT_SET
+ *
+ * WHAT CHANGED IN R4G, AND WHY IT IS ONE CONDITION. R3 made this substitution only when the field's flag
+ * explicitly read AUTO — correct under the stored-effective model, where a blank flag meant "nobody has
+ * said" and resolving it to auto_* would have been reclassification carried out through the screen. Under
+ * the nullable-override model the BLANK CELL ITSELF is the statement: there is no override, so there is
+ * nothing to reclassify and nothing a fallback could overwrite. The flag no longer gates resolution.
+ *
+ * NA IS STILL NOT A GAP. "This band does not apply" is a decision someone made, and answering it with the
+ * converted base price would turn a deliberate absence into a number. That guard stays exactly as it was.
+ *
+ * THE FLAG IS NO LONGER CONSULTED HERE AT ALL, and `writable_by_fx` is gone with it: after §6 an FX run
+ * writes no override column under any authority, so a property claiming otherwise could only mislead. The
+ * authority is still REPORTED, because the editing UI shows it — it just decides nothing.
  */
 function pricingResolveEffective_(row, spec) {
   var stored = pricingReadNumber_(row ? row[spec.field] : null);
   var auto = pricingReadNumber_(row ? row[spec.auto] : null);
   var authority = pricingReadFlag_(row ? row[spec.flag] : null);
-  var value = stored.present ? stored.value : null;
-  var source = stored.present ? 'STORED' : (stored.na ? 'NA' : 'UNAVAILABLE');
-  // The one substitution, and it is not a fallback: a field the flag says the system owns is DEFINED to
-  // equal auto_*, so when the stored cell has not caught up yet the auto value is not a guess about it.
-  if (!stored.present && !stored.na && authority === PRICING_OWNER_AUTO_ && auto.present) {
-    value = auto.value;
-    source = 'AUTO_REFERENCE';
-  }
+  var value = null;
+  var source;
+  if (stored.present) { value = stored.value; source = 'OVERRIDE'; }
+  else if (stored.na) { source = 'NA'; }
+  else if (auto.present) { value = auto.value; source = 'AUTO'; }
+  else { source = 'NOT_SET'; }
   return {
     field: spec.field, value: value, source: source, authority: authority,
-    auto: auto.present ? auto.value : null,
-    writable_by_fx: authority === PRICING_OWNER_AUTO_
+    override: stored.present ? stored.value : null,
+    override_is_na: stored.na === true,
+    auto: auto.present ? auto.value : null
   };
 }
 
@@ -825,7 +839,12 @@ function pricingPlanFxRow_(row, table) {
   PRICING_FIELDS_.forEach(function (spec) {
     var eff = pricingResolveEffective_(row, spec);
     var conv = pricingFxConvert_(row[spec.base], rate.rate, localCurrency);
-    var view = { authority: eff.authority, auto_changed: false, effective_changed: false, reason: null,
+    // `resolved_follows` is NOT a write. It records that this field's override is blank, so moving auto_*
+    // moves what the site DISPLAYS without a single cell of the override column being touched. That is the
+    // number an operator wants before running a reconciliation — "how many prices will look different
+    // afterwards" — and under the old model it was the same question as "how many cells will you write".
+    // It no longer is, and keeping the two apart is the point of reporting it separately.
+    var view = { authority: eff.authority, auto_changed: false, resolved_follows: false, reason: null,
       raw: conv.raw, value: conv.value };
 
     if (!conv.present) {
@@ -846,17 +865,17 @@ function pricingPlanFxRow_(row, table) {
       view.reason = 'AUTO_ALREADY_CURRENT';
     }
 
-    // The effective field follows ONLY an explicit AUTO flag. MANUAL and UNKNOWN are both left alone, and
-    // they are left alone for different reasons: one is owned, the other is unclaimed.
-    if (eff.writable_by_fx) {
-      var storedEff = pricingReadNumber_(row[spec.field]);
-      if (!storedEff.present || storedEff.value !== conv.value) {
-        view.effective_changed = true;
-        res.cells[spec.field] = conv.value;
-        res.logs.push({ field_name: spec.field, change_type: 'AUTO_FX_REFRESH',
-          old_value: pricingStr_(row[spec.field]), new_value: String(conv.value) });
-      }
-    }
+    // PRICING-R4G §6 — AN FX RUN WRITES NO OVERRIDE COLUMN. Not for TRUE, not for FALSE, not for blank.
+    //
+    // Under the stored-effective model this branch had to exist: a FALSE field was DEFINED to equal auto_*,
+    // so a run that moved auto_* and left the effective cell behind broke the invariant it had just
+    // asserted. Under the nullable model there is nothing to keep in step — a field with no override
+    // resolves through auto_* on every read, so the reconciliation's job ends when auto_* is correct.
+    //
+    // THIS IS THE CHANGE THAT MAKES A CLEARED OVERRIDE MEAN SOMETHING. If FX still wrote the column, the
+    // next run would refill what `Use Auto Price` had just emptied, and the two features would spend the
+    // table between them. One writer per meaning: the operator owns the override, FX owns the reference.
+    if (!eff.override_is_na && eff.override === null) view.resolved_follows = true;
     res.fields[spec.field] = view;
   });
 
@@ -879,7 +898,10 @@ function pricingPlanFxBatch_(rows, table) {
     PRICING_ROWS_TOTAL: 0, SAME_CURRENCY_ROWS: 0, FX_CONVERTIBLE_ROWS: 0,
     BASE_REGULAR_PRESENT: 0, BASE_MINIMUM_PRESENT: 0, BASE_MSRP_PRESENT: 0,
     AUTO_REGULAR_WOULD_UPDATE: 0, AUTO_MINIMUM_WOULD_UPDATE: 0, AUTO_MSRP_WOULD_UPDATE: 0,
-    EFFECTIVE_REGULAR_WOULD_FOLLOW: 0, EFFECTIVE_MINIMUM_WOULD_FOLLOW: 0, EFFECTIVE_MSRP_WOULD_FOLLOW: 0,
+    // PRICING-R4G — these counted CELLS THIS RUN WOULD WRITE into the effective columns. It writes none
+    // now, so the counter would be a permanent zero. They count the same operator-facing fact instead:
+    // fields whose override is blank, where moving auto_* moves the displayed price with no write at all.
+    RESOLVED_REGULAR_WOULD_FOLLOW: 0, RESOLVED_MINIMUM_WOULD_FOLLOW: 0, RESOLVED_MSRP_WOULD_FOLLOW: 0,
     MANUAL_REGULAR_PRESERVED: 0, MANUAL_MINIMUM_PRESERVED: 0, MANUAL_MSRP_PRESERVED: 0,
     UNKNOWN_AUTHORITY_FIELDS: 0, UNKNOWN_AUTHORITY_ROWS: 0,
     UNSUPPORTED_CURRENCY_ROWS: 0, MISSING_BASE_CURRENCY_ROWS: 0, MISSING_LOCAL_CURRENCY_ROWS: 0,
@@ -901,7 +923,7 @@ function pricingPlanFxBatch_(rows, table) {
   var seen = {};
   var MANUAL_KEY = { regular_price: 'MANUAL_REGULAR_PRESERVED', minimum_price: 'MANUAL_MINIMUM_PRESERVED', msrp: 'MANUAL_MSRP_PRESERVED' };
   var AUTO_KEY = { regular_price: 'AUTO_REGULAR_WOULD_UPDATE', minimum_price: 'AUTO_MINIMUM_WOULD_UPDATE', msrp: 'AUTO_MSRP_WOULD_UPDATE' };
-  var EFF_KEY = { regular_price: 'EFFECTIVE_REGULAR_WOULD_FOLLOW', minimum_price: 'EFFECTIVE_MINIMUM_WOULD_FOLLOW', msrp: 'EFFECTIVE_MSRP_WOULD_FOLLOW' };
+  var EFF_KEY = { regular_price: 'RESOLVED_REGULAR_WOULD_FOLLOW', minimum_price: 'RESOLVED_MINIMUM_WOULD_FOLLOW', msrp: 'RESOLVED_MSRP_WOULD_FOLLOW' };
   var BASE_KEY = { base_regular_price: 'BASE_REGULAR_PRESENT', base_minimum_price: 'BASE_MINIMUM_PRESENT', base_msrp: 'BASE_MSRP_PRESENT' };
 
   rows.forEach(function (r) {
@@ -957,7 +979,7 @@ function pricingPlanFxBatch_(rows, table) {
       var f = plan.fields[spec.field];
       if (!f) return;
       if (f.auto_changed) c[AUTO_KEY[spec.field]]++;
-      if (f.effective_changed) c[EFF_KEY[spec.field]]++;
+      if (f.auto_changed && f.resolved_follows) c[EFF_KEY[spec.field]]++;
     });
 
     out.plans.push(plan);
@@ -974,14 +996,18 @@ function pricingPlanFxBatch_(rows, table) {
  * columns (a constant) rather than with the number of SKUs.
  *
  * That speed is bought with a risk, and this function is where the risk is paid for: writing a whole column
- * means writing back every row the run did NOT change, so a defect in building the array would overwrite a
- * manual price with an auto one and leave no trace of what it replaced. So the array is not trusted.
- * Before anything is sent, every cell of the three EFFECTIVE columns is re-checked against the flag as it
- * stands in the sheet — not against the plan that produced it — and any row whose flag does not explicitly
- * say AUTO must be byte-identical to what was read. One mismatch refuses the entire run.
+ * means writing back every row the run did NOT change, so a defect in building the array would overwrite an
+ * override with an auto value and leave no trace of what it replaced. So the array is not trusted.
  *
- * It is a second opinion rather than a restatement: the planner decides from pricingResolveEffective_, the
- * audit decides from the raw flag cell, and a bug would have to occur identically in both to pass.
+ * PRICING-R4G MADE THIS AUDIT STRICTER BY MAKING THE RULE SIMPLER. It used to re-read each effective cell's
+ * flag and demand that any row not explicitly AUTO be byte-identical — a per-row judgement, because the
+ * planner was allowed to write some of those cells. The planner is now allowed to write NONE of them, so
+ * the audit no longer has a judgement to make: an override column appearing in the write set AT ALL is the
+ * violation, whatever the flag says and whatever the value would be.
+ *
+ * It is still a second opinion rather than a restatement: the planner decides field by field from
+ * pricingResolveEffective_, the audit decides from the set of column names about to be sent, and a bug
+ * would have to occur identically in both to pass.
  */
 function pricingFxBuildColumns_(sheetState, plans) {
   var byRow = {};
@@ -1005,13 +1031,13 @@ function pricingFxBuildColumns_(sheetState, plans) {
       var next = (p && Object.prototype.hasOwnProperty.call(p.cells, name)) ? p.cells[name] : original;
 
       if (Object.prototype.hasOwnProperty.call(effectiveNames, name)) {
+        // PRICING-R4G §6 — reached only if the planner put an override column in the write set, which it
+        // may never do. Reported per row so the refusal names the rows rather than only the column.
         var spec = effectiveNames[name];
-        var flagNow = pricingReadFlag_(r.values[spec.flag]);
-        var identical = String(next) === String(original);
-        if (flagNow !== PRICING_OWNER_AUTO_ && !identical) {
-          violations.push({ rowNumber: r.rowNumber, field: name, authority: flagNow,
-            was: pricingStr_(original), would_be: pricingStr_(next) });
-        }
+        violations.push({ rowNumber: r.rowNumber, field: name,
+          authority: pricingReadFlag_(r.values[spec.flag]),
+          was: pricingStr_(original), would_be: pricingStr_(next),
+          reason: 'FX_MAY_NOT_WRITE_MANUAL_OVERRIDE' });
       }
       values.push([next]);
     });

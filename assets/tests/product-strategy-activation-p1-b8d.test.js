@@ -523,8 +523,25 @@ eq((SRC.health.match(/symbol: 'SYS_BUILD_VERSION_', expected: '([^']+)'/) || [])
 // adds a WRITER, and a writer is not a reader. 01_ loses its literal, because R21 routed pricing.update
 // and a router that gains an action MUST move its stamp — a router that gained one and kept its stamp is
 // the one partial sync the manifest cannot otherwise report.
-ok(SRC.health.indexOf("symbol: 'PPW_BUILD_VERSION_', expected: '" + PREV_RELEASE + "'") > 0,
-  'G3.1 72_api_v1_product_pricing_workspace.gs did not change, so its stamp stayed at ' + PREV_RELEASE.slice(-3));
+//
+// PRICING-R4G — AND NOW 72_ LOSES ITS LITERAL TOO, for the same reason the router lost its own. It held
+// R10 through five releases and the literal was true every time, which is exactly why it was worth
+// keeping: a stamp that has not moved is an instruction not to re-paste the file. R4G moved it. 72_ no
+// longer reads the three price columns at all — it CALLS the resolver in 73_ and publishes the answer —
+// and a read owner whose fields changed meaning has changed as surely as one whose fields changed name.
+//
+// What replaces the literal is the property the literal was standing in for, stated the way G3.2 next
+// door already states it: the file and its manifest row agree. That survives R25 as well. The half of
+// the sentence that still needs saying out loud — this file is NOT unmoved any more — is said by
+// comparing against R10 rather than by typing the new value, so this assertion has nothing left in it
+// that expires.
+var _b8dPpw = (SRC.ppw.match(/var PPW_BUILD_VERSION_ = '([^']+)'/) || [])[1];
+ok(!!_b8dPpw && SRC.health.indexOf("symbol: 'PPW_BUILD_VERSION_', expected: '" + _b8dPpw + "'") > 0,
+  'G3.1 72_api_v1_product_pricing_workspace.gs declares exactly the build its manifest expects ('
+  + _b8dPpw + ')');
+ok(_b8dPpw !== PREV_RELEASE,
+  'G3.1a and it is no longer on ' + PREV_RELEASE.slice(-3) + ' — PRICING-R4G changed it, so it joined the'
+  + ' sync list rather than staying off it');
 var _b8dRtr = (SRC.router.match(/var RTR_BUILD_VERSION_ = '([^']+)'/) || [])[1];
 ok(!!_b8dRtr && SRC.health.indexOf("symbol: 'RTR_BUILD_VERSION_', expected: '" + _b8dRtr + "'") > 0,
   'G3.2 01_router.gs declares exactly the build its manifest expects (' + _b8dRtr + ')');

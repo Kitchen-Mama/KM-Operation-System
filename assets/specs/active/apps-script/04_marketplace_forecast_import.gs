@@ -57,7 +57,14 @@ var PRICING_CREATE_PENDING_STATUS_ = 'pending_fx';
 var PRICING_CREATE_BANDS_ = ['regular', 'minimum', 'msrp'];
 
 /**
- * Pure. Decides fx_rate / auto_* / effective / ownership for ONE new row. Takes no sheet and no clock.
+ * Pure. Decides fx_rate / auto_* / override / ownership for ONE new row. Takes no sheet and no clock.
+ *
+ * PRICING-R4G §7 — THE OVERRIDE FIELDS ALWAYS COME BACK BLANK, on both branches. `out.override` exists
+ * and is never written to; it is kept so the caller's shape is unchanged and so a reader can see that the
+ * blankness is a decision rather than an omission. A row is created with a price the system computed, and
+ * "the system computed it" is exactly what an EMPTY override plus a populated auto_* says. Writing the
+ * same number into the override as well would say something else — that a person chose it — and nothing
+ * afterwards could tell the two apart.
  *
  * The precision table belongs to 73_ (PRICING_FX_DECIMALS_ / pricingRoundFx_) and is REUSED rather than
  * copied: two roundings of one price is two answers to one question. When 73_ is not loaded the row is
@@ -66,7 +73,13 @@ var PRICING_CREATE_BANDS_ = ['regular', 'minimum', 'msrp'];
 function pricingNewRowPlan_(baseCurrency, localCurrency, base, asOf) {
   var out = { pending: true, reason: null, fx_rate: '', fx_rate_date: '',
     auto: { regular: '', minimum: '', msrp: '' },
-    effective: { regular: '', minimum: '', msrp: '' },
+    // PRICING-R4G — blank on every path out of this function. Nothing below assigns to it.
+    override: { regular: '', minimum: '', msrp: '' },
+    // FALSE, not blank, and this is the smallest value consistent with the frozen contract: at creation
+    // there IS no override, which is what FALSE means, and it is a fact rather than a classification
+    // because no person has touched the row. Resolution does not depend on it — a blank override resolves
+    // to auto whatever the flag says — but recording it keeps a new row out of the UNKNOWN population that
+    // the operator is reviewing by hand.
     flag: 'FALSE', unreadable: [] };
 
   var b = String(baseCurrency == null ? '' : baseCurrency).trim().toUpperCase();
@@ -88,7 +101,7 @@ function pricingNewRowPlan_(baseCurrency, localCurrency, base, asOf) {
   PRICING_CREATE_BANDS_.forEach(function (k) {
     var raw = base ? base[k] : '';
     var str = String(raw == null ? '' : raw).trim();
-    if (str === '') return;                       // a blank base leaves a blank auto AND a blank effective
+    if (str === '') return;                       // a blank base leaves a blank auto, and the override too
     var n = Number(str);
     // Present but not a number is a DATA FAULT, not a price. It is reported rather than coerced, because
     // Number('') is 0 and that is precisely the coercion this round exists to remove.
@@ -96,7 +109,9 @@ function pricingNewRowPlan_(baseCurrency, localCurrency, base, asOf) {
     var r = pricingRoundFx_(n, l);
     if (r === null) { out.unreadable.push(k); return; }
     out.auto[k] = r;
-    out.effective[k] = r;
+    // AND THAT IS ALL. Until PRICING-R4G this line had a partner — `out.effective[k] = r` — which copied
+    // the computed value into the override column, so every row created by the system was born looking
+    // like a row somebody had priced by hand.
   });
   return out;
 }
@@ -432,7 +447,7 @@ function handleImportMarketplaceSkusBatch_(body) {
       var sdRef = skuMap[sku] || {};
       var priceSource, priceStatus, priceNote, baseCurrency;
       var baseRegular, baseMinimum, baseMsrp, fxRate, fxRateDate;
-      var autoRegular, autoMinimum, autoMsrp, effRegular, effMinimum, effMsrp;
+      var autoRegular, autoMinimum, autoMsrp, ovrRegular, ovrMinimum, ovrMsrp;
       var priceFlag = '';          // PRICING-R4E — '' on the import branch, 'FALSE' on the derived branch
       var pricePending = null;     // the reason this row carries no rate yet, for the row's own result line
 
@@ -450,9 +465,13 @@ function handleImportMarketplaceSkusBatch_(body) {
         autoRegular = (row.auto_regular_price !== undefined ? row.auto_regular_price : '');
         autoMinimum = (row.auto_minimum_price !== undefined ? row.auto_minimum_price : '');
         autoMsrp = (row.auto_msrp !== undefined ? row.auto_msrp : '');
-        effRegular = (row.regular_price !== undefined ? row.regular_price : '');
-        effMinimum = (row.minimum_price !== undefined ? row.minimum_price : '');
-        effMsrp = (row.msrp !== undefined ? row.msrp : '');
+        // PRICING-R4G — THIS BRANCH KEEPS COPYING, and that is correct rather than an oversight. What it
+        // copies is a price a PERSON TYPED INTO THE IMPORT FILE, which is a user override by definition.
+        // §7 forbids copying BASE or AUTO into the override; it does not forbid storing an override the
+        // operator supplied. The flags stay blank here for the reason recorded at the write block below.
+        ovrRegular = (row.regular_price !== undefined ? row.regular_price : '');
+        ovrMinimum = (row.minimum_price !== undefined ? row.minimum_price : '');
+        ovrMsrp = (row.msrp !== undefined ? row.msrp : '');
       } else {
         // PRICING-R4E — derived from sku_details, and fail-closed across a currency boundary.
         priceSource = 'auto_from_sku_details';
@@ -473,7 +492,7 @@ function handleImportMarketplaceSkusBatch_(body) {
         fxRate = plan.fx_rate;
         fxRateDate = plan.fx_rate_date;
         autoRegular = plan.auto.regular; autoMinimum = plan.auto.minimum; autoMsrp = plan.auto.msrp;
-        effRegular = plan.effective.regular; effMinimum = plan.effective.minimum; effMsrp = plan.effective.msrp;
+        ovrRegular = plan.override.regular; ovrMinimum = plan.override.minimum; ovrMsrp = plan.override.msrp;
 
         // Ownership is DETERMINABLE at creation and is recorded rather than left blank: the system made
         // this row and no person has set a price on it. This is what lets the first FX run repair a
@@ -516,9 +535,11 @@ function handleImportMarketplaceSkusBatch_(body) {
       if (prCol('auto_regular_price') !== -1) newPr[prCol('auto_regular_price')] = autoRegular;
       if (prCol('auto_minimum_price') !== -1) newPr[prCol('auto_minimum_price')] = autoMinimum;
       if (prCol('auto_msrp') !== -1) newPr[prCol('auto_msrp')] = autoMsrp;
-      if (prCol('regular_price') !== -1) newPr[prCol('regular_price')] = effRegular;
-      if (prCol('minimum_price') !== -1) newPr[prCol('minimum_price')] = effMinimum;
-      if (prCol('msrp') !== -1) newPr[prCol('msrp')] = effMsrp;
+      // PRICING-R4G §7 — the MANUAL OVERRIDE columns. Blank on the derived branch, always. A site's
+      // displayed price comes from auto_* through the resolver until a person overrides it here.
+      if (prCol('regular_price') !== -1) newPr[prCol('regular_price')] = ovrRegular;
+      if (prCol('minimum_price') !== -1) newPr[prCol('minimum_price')] = ovrMinimum;
+      if (prCol('msrp') !== -1) newPr[prCol('msrp')] = ovrMsrp;
       // PRICING-R4E — the ownership flags. Written ONLY on the derived branch: an import row that supplied
       // its own prices is a statement by a person about a file, and this file does not know whether that
       // person meant to own those prices. Blank stays blank there, which is the UNKNOWN the schema means.
@@ -618,7 +639,7 @@ function handleImportMarketplaceSkusBatch_(body) {
 // SHEET HEADER at runtime, so a reordered sheet changes the blocks rather than corrupting a column.
 
 var FC_REG_LOCK_MS_ = 30000;   // matches the campaign and target-rule writers
-var FCREG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R23';
+var FCREG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24';
 
 /**
  * Group {c: zeroBasedCol, v: value} pairs into MAXIMAL CONTIGUOUS runs.

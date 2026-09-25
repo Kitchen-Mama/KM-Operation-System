@@ -24,10 +24,29 @@
   var C = {};
 
   C.CONTRACT_NAME = 'ProductStrategyDataContract';
-  C.CONTRACT_VERSION = 'P1-B2';
+  C.CONTRACT_VERSION = 'P1-B2-R4G';
   /* P1-B2 changed three things and nothing else: `regional` was appended, and `category` and `series`
-     became nullable on READ. See the two notes below and REGIONAL, at the bottom of this section. */
-  C.CONTRACT_VERSION_HISTORY = ['P0-R3', 'P0-R3-R2', 'P1-B2'];
+     became nullable on READ. See the two notes below and REGIONAL, at the bottom of this section.
+
+     P1-B2-R4G APPENDED THREE FIELDS AND REMOVED NONE. PRICING-R4G split what `regular_price` used to be
+     into two different facts: an OVERRIDE CELL, which is blank on most rows and means "nobody typed a
+     price here", and a RESOLVED PRICE, which is what the site actually sells at. 72_ resolves the second
+     from the first and publishes it under BOTH the new explicit name and the old one, so that no
+     consumer lost its price on the day of the rename.
+
+     THE BOARD TAKES THE EXPLICIT NAME, and that is the whole change. Reading the alias worked and would
+     go on working, but it works by coincidence: it is right only for as long as 72_ keeps publishing an
+     alias it has no other reason to keep. A board that names the field it means survives the day the
+     alias is retired, and fails loudly rather than quietly if resolution upstream ever stops.
+
+     WHAT WAS DELIBERATELY NOT ADDED: auto_*, override_* and *_source. Those are the pricing editor's
+     working parts — they exist so a person editing a price can see which layer a number came from. The
+     board is a business consumer. It asks what a product sells for, and it must never be in a position
+     to answer that question itself by composing override-else-auto, because then there would be two
+     implementations of the pricing model and no way to tell which one a chart was drawn from. If a
+     strategy screen ever genuinely needs to show WHY a price is what it is, that is a new field with a
+     named consumer, not a set of internals carried on the chance that someone wants them. */
+  C.CONTRACT_VERSION_HISTORY = ['P0-R3', 'P0-R3-R2', 'P1-B2', 'P1-B2-R4G'];
   C.AUDIT_SECTION = 'PRODUCT_STRATEGY_BOARD_DESIGN_FREEZE.md section 23 (source audit) + 24 (this contract)';
 
   /* ------------------------------------------------------------------------------------------------
@@ -200,6 +219,49 @@
       on_missing: 'SOURCE_MISSING',
       api_today: false, needs_p1b1: true,
       note: 'sku_details.msrp likewise exists at master grain. Same refusal.' },
+
+    /* ---------------------------------------------------------------------------------------------
+       THE THREE RESOLVED PRICES (PRICING-R4G). These are the fields a strategy screen should read.
+
+       They are DERIVED, not stored, and the derivation happens once, on the server, in
+       73_api_v1_pricing_write.gs `pricingResolveEffective_`. 72_ calls it per band and publishes the
+       answer. `source_column` below therefore names no single column, because the value is not in one:
+       it is the override cell when a person has typed one, the auto_* cell when they have not, and null
+       when neither is a number. NA is a fourth case and it does NOT fall back — a band marked "not
+       applicable" resolves to null on purpose, and a board that treated that as "no data yet" would be
+       reporting a decision as a defect.
+
+       A BLANK HERE IS AN ABSENT VALUE, and the file opens by drawing exactly that distinction. This row
+       has no price. It is NOT the other thing a null could mean — a project where 72_ has been synced
+       and 73_ has not, in which every row reads as priceless. 72_ reports that case separately, as the
+       PRICING_RESOLVER_UNAVAILABLE finding, because the two look identical on a chart and have nothing
+       in common.
+       --------------------------------------------------------------------------------------------- */
+
+    { field: 'resolved_regular_price', source_table: 'pricing_list',
+      source_column: 'DERIVED — regular_price (override) else auto_regular_price',
+      join_key: 'pricing_list.marketplace_sku_id = identity', nullable: true,
+      on_missing: 'SOURCE_MISSING',
+      api_today: 'skuDetails.workspace.get with include.pricing', needs_p1b1: false,
+      note: 'THE BAND BASIS (decision D-2, re-pointed by PRICING-R4G). regular_price remains on this'
+        + ' contract and carries the same number under the old name; this is the name to read. Still'
+        + ' never back-filled from sku_details.selling_price — resolution picks between two site-level'
+        + ' cells, and a master base input is not one of them.' },
+
+    { field: 'resolved_minimum_price', source_table: 'pricing_list',
+      source_column: 'DERIVED — minimum_price (override) else auto_minimum_price',
+      join_key: 'pricing_list.marketplace_sku_id = identity', nullable: true,
+      on_missing: 'SOURCE_MISSING',
+      api_today: 'skuDetails.workspace.get with include.pricing', needs_p1b1: false,
+      note: 'The SITE floor, resolved. sku_details.minimum_price is the master floor and is a different'
+        + ' number; it was not a fallback before R4G and resolution did not make it one.' },
+
+    { field: 'resolved_msrp', source_table: 'pricing_list',
+      source_column: 'DERIVED — msrp (override) else auto_msrp',
+      join_key: 'pricing_list.marketplace_sku_id = identity', nullable: true,
+      on_missing: 'SOURCE_MISSING',
+      api_today: 'skuDetails.workspace.get with include.pricing', needs_p1b1: false,
+      note: 'Same shape, same refusal against the master-grain sku_details.msrp.' },
 
     { field: 'official_deal_price', source_table: 'campaign_sku_lines', source_column: 'promo_price',
       join_key: 'campaign_sku_lines.marketplace_sku_id = identity', nullable: true,

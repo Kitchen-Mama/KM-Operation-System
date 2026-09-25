@@ -417,16 +417,24 @@ ok(!/optional: true/.test(row58 ? HEALTH.slice(row58.index, HEALTH.indexOf('}', 
 // PRICING-R4E — 04_ MOVED. It kept R19 for three releases because nothing touched it; R4E changes the
 // pricing_list creation contract it owns, so its stamp advances with the file. The property this line
 // guards is unchanged: the manifest row and the file agree.
-ok(/\{ file: '04_marketplace_forecast_import\.gs', symbol: '[A-Z_]+', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R23'/.test(HEALTH),
-  'E7c0 while 04_ moves to the release, because PRICING-R4E changed the creation contract it owns');
+// PRICING-R4G — and it moves AGAIN, to R24, because R4G changes what 04_ writes into the override columns
+// of a new row. The literal is gone: what this line defends is that 04_ declares the release, and reading
+// the release rather than typing it is what stops this assertion expiring every round.
+var _e7c0Rel = (/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)';/.exec(HEALTH) || [])[1];
+ok(!!_e7c0Rel && new RegExp("\\{ file: '04_marketplace_forecast_import\\.gs', symbol: '[A-Z_]+', expected: '"
+    + _e7c0Rel + "'").test(HEALTH),
+  'E7c0 while 04_ moves WITH the release, because PRICING-R4E/R4G changed the creation contract it owns');
 ok(/\{ file: '14_fc_write_handlers\.gs', symbol: '[A-Z_]+', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R18'/.test(HEALTH),
   'E7c1 while 14_ keeps R18, the round IT last changed');
 ok(/FC_SE_UNIQUENESS_FIELDS_/.test(require('fs').readFileSync(require('path').join(__dirname, '..',
   'specs', 'active', 'apps-script', '14_fc_write_handlers.gs'), 'utf8')),
   'E7d and the change its stamp claims is really in the file, so the stamp is not decoration');
+// PRICING-R4G — 72_ LEFT THIS LIST. It held R10 for five releases and the entries around it still hold,
+// which is the point of keeping the list: 13_ and 00_ genuinely have not changed. 72_ had, by R4G, changed
+// what its three price fields MEAN — they carry the resolved price now, resolved by calling 73_ — and a
+// read owner whose field changed meaning has changed as surely as one whose field changed name.
 [['13_procurement_handlers.gs', 'R6-R7-R12'],
- ['00_config.gs', 'R6-R7-R11'],
- ['72_api_v1_product_pricing_workspace.gs', 'R6-R7-R10']].forEach(function (p, i) {
+ ['00_config.gs', 'R6-R7-R11']].forEach(function (p, i) {
   var m = new RegExp("\\{ file: '" + p[0].replace(/\./g, '\\.') + "', symbol: '[A-Z_]+', expected: '([^']+)'").exec(HEALTH);
   ok(!!m && m[1].indexOf(p[1]) !== -1, 'E8.' + (i + 1) + '  ' + p[0] + ' still expects ' + p[1], m && m[1]);
 });

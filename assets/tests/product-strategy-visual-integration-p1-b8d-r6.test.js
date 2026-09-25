@@ -537,7 +537,23 @@ var R6_KNOWN_GS_CHANGES = ['assets/specs/active/apps-script/03_master_data_handl
   // the check, which is the whole point of the register.
   'assets/specs/active/apps-script/73_api_v1_pricing_write.gs',
   'assets/specs/active/apps-script/01_router.gs',
-  'assets/specs/active/apps-script/59_api_v1_sku_details_workspace.gs'];
+  'assets/specs/active/apps-script/59_api_v1_sku_details_workspace.gs',
+  // PRICING-R4G — AND THIS ONE IS DIFFERENT FROM EVERY ENTRY ABOVE IT, so it does not get their
+  // sentence. Each of those ends 'not reachable from Product Strategy's read path'. 72_ IS Product
+  // Strategy's read path. It is the file this page's workspace read runs in, and R4G changed what its
+  // three price fields mean: they used to be the override cells copied straight out of pricing_list,
+  // and they now carry the RESOLVED price, resolved by calling 73_.
+  //
+  // Declaring it here is therefore an admission, not a dismissal — this register exists so that 'a
+  // server file changed' is never a silent event, and the honest entry for this one says the change
+  // reached the page. What lets the VISUAL round still stand is narrower and is checked elsewhere
+  // rather than asserted here: no action was added or removed (A3/G3 above still hold, and the
+  // request log is measured, not remembered), no capability field changed, the feature flag is
+  // untouched, and the row shape the board receives gained fields without losing any — the resolved
+  // prices arrive beside the old names rather than instead of them. The claim that the page still
+  // LOOKS the same is made by sections A to F of this file, which render it; this line only records
+  // why a .gs under the board is allowed to have moved since R6.
+  'assets/specs/active/apps-script/72_api_v1_product_pricing_workspace.gs'];
 var gsChanged = changedSince(R6_PRE, 'assets/specs/active/apps-script');
 if (gsChanged !== '__git_unavailable__') {
   var unexpectedGs = gsChanged.split('\n').map(function (x) { return x.trim(); })

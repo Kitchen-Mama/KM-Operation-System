@@ -81,7 +81,10 @@
 // R12 - FOLLOWS THE RELEASE, which is this pin's stated rule rather than a courtesy. A census whose
 // pin lags SYS_DEPLOYMENT_RELEASE_ REFUSES A HEALTHY DEPLOYMENT: it reads the release off the project,
 // finds a build it was not written against, and reports a correctly synced R12 project as wrong.
-var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R23';
+// PRICING-R4G - and it follows again, to R24. R23 was minted for a pricing round that never shipped and
+// was superseded by name rather than reused, because an id that names two different trees cannot answer
+// the one question it exists for. Nothing in this census changed; the pin moved because the release did.
+var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24';
 
 /** Read-only row reader. The Sheet object stays inside this function — the caller gets values, never a writer. */
 // R6-R3 §2 — the OPTIONAL third argument is a metrics sink. §2 requires the diagnostic to report how many
@@ -7829,7 +7832,8 @@ function RUN_R6R7_CONTROLLED_NO_ACTION_ACTIVATION_MANIFEST() {
 // inferred from a red suite.
 // R12 - the deployment pin moves with the release for the same reason, and the manifest suite's BP3
 // requires it to equal SYS_DEPLOYMENT_RELEASE_ EXACTLY rather than merely be close to it.
-var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R23';
+// PRICING-R4G - same move, same reason. See TEMP_E3_CENSUS_BUILD_ above; BP3a requires the two to be equal.
+var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24';
 
 // ================================================================================================================
 // THE BROWSER HALF. Run in the page console; nothing here writes, and nothing here is a substitute for the

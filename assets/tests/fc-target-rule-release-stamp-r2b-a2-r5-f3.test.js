@@ -96,11 +96,16 @@ var BASE = 'fa73717';   // R22 starts here: the tree after PRICING-R2 and its lo
 // and checked against git below, rather than being read off git and believed.
 var RELEASE_OWNERS = {
   '73_api_v1_pricing_write.gs':
-    'THE SAME FILE, A SECOND ACTION. R21 made it the canonical pricing write; R22 gives auto_* an owner. '
-    + 'pricing.fxReconcile rebuilds auto_regular_price / auto_minimum_price / auto_msrp from the base '
-    + 'prices at rates supplied with the request, and it follows the EFFECTIVE price only where that '
-    + 'field\'s own flag explicitly says AUTO — a MANUAL flag is a person\'s price and a BLANK one is '
-    + 'nobody\'s statement, so neither is touched and no flag is ever written by a reconciliation. It '
+    'THE SAME FILE, A SECOND ACTION, AND THEN A NEW MEANING FOR THE FIRST. R21 made it the canonical '
+    + 'pricing write; R22 gives auto_* an owner — pricing.fxReconcile rebuilds auto_regular_price / '
+    + 'auto_minimum_price / auto_msrp from the base prices at rates supplied with the request. '
+    + 'PRICING-R4G then changes three contracts inside it, and they are one change rather than three: the '
+    + 'canonical resolver stops gating its auto fallback on the ownership flag (a blank override means no '
+    + 'override exists, whatever the flag says), `Use Auto Price` CLEARS the override instead of copying '
+    + 'auto into it and is no longer refused when auto is blank, and an FX run writes NO override column '
+    + 'under any authority. Shipping any one alone is a defect: the resolver without the clear leaves no '
+    + 'way to reach the fallback, the clear without the resolver blanks a live price, and FX still writing '
+    + 'the column would refill whatever the clear emptied. No flag is ever written by a reconciliation. It '
     + 'belongs in this file rather than a new one because pricing_list keeps ONE writer: two owners would '
     + 'hold two locks over one table and the field-level flags would stop being checkable by reading a '
     + 'single writer',
@@ -120,7 +125,20 @@ var RELEASE_OWNERS = {
     + 'reads base_currency from sku_details instead of defaulting it, and writes the three ownership flags '
     + 'FALSE — which is a fact at creation and is what lets the first pricing.fxReconcile finish the row '
     + 'without anybody classifying anything. It must be copied WITH 73_: a project holding the R19 copy '
-    + 'keeps manufacturing rows that the R22 reconciliation cannot repair'
+    + 'keeps manufacturing rows that the R22 reconciliation cannot repair. PRICING-R4G adds one deletion: '
+    + 'the same-currency branch no longer copies the computed auto value into the override columns, so a '
+    + 'created row holds a price the system computed and no override at all',
+  '72_api_v1_product_pricing_workspace.gs':
+    'PRICING-R4G — THE TRANSPORT THAT COULD NOT RESOLVE. It published pricing_list.regular_price / '
+    + 'minimum_price / msrp under exactly those names and carried no auto_* whatsoever, so when those '
+    + 'three columns became USER OVERRIDES every row priced through auto_* arrived at the Product '
+    + 'Strategy Board and the Pricing Center as a null — off the price chart, and counted in Data Quality '
+    + 'as a missing pricing source at the same time. No client fix could reach around it: the value simply '
+    + 'was not on the wire. It now calls the canonical 73_ resolver and emits resolved_* / auto_* / '
+    + 'override_* with a *_source naming which layer answered, and gates `analysable` on the RESOLVED '
+    + 'price. It must be copied WITH 73_ in both directions: this file at R24 beside an older 73_ has no '
+    + 'resolver to call and says so, while an older copy of it beside 73_ at R24 keeps publishing override '
+    + 'cells as prices — which looks completely correct and is the old model wearing the labels of the new one'
 };
 // Owners that carry an EARLIER release and must keep it. Each is here because it did not change, and
 // marching any of them to the current release would destroy the manifest's only useful signal.
@@ -167,12 +185,18 @@ var RELEASE_UNMOVED = {
   '58_api_v1_fc_summary_workspace.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R14',
   '13_procurement_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12',
   '00_config.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11',
-  // 72_ is the pricing READ owner and does NOT move: R21 adds a WRITER, and a writer is not a reader.
-  // Its response still publishes the same effective prices from the same three fields.
-  // R22 does not move it either, and the reason is sharper: the reconciliation changes what those three
-  // fields CONTAIN, not which field is read. A read owner that publishes the same field over new values
-  // has not changed, and giving it R22 would claim it needs syncing when it does not.
-  '72_api_v1_product_pricing_workspace.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R10'
+  // 72_ LEFT THIS LIST AT R24 — the eighth swap, and the one the previous three entries were building
+  // towards without knowing it. It stayed at R10 through R21 ("a writer is not a reader") and through R22
+  // ("the reconciliation changes what those fields CONTAIN, not which field is read"). Both were correct
+  // and both rested on the same premise: that the field this file publishes still means what it meant.
+  // PRICING-R4G is the round that broke the premise. regular_price is now a USER OVERRIDE, so publishing
+  // it under a business name publishes the wrong concept, and a read owner whose field changed MEANING has
+  // changed as surely as one whose field changed name.
+  //
+  // NOTHING TOOK ITS PLACE, and 59_ above is why that is worth saying. 59_ is the OTHER pricing read
+  // transport and it did NOT have to move: it is a raw passthrough that already carried base_*, auto_* and
+  // the flags, so the client resolves on that transport with the file untouched. Two read owners, one
+  // round, and only the one that reshaped its payload is on the sync list.
 };
 
 var HEALTH = read(GS + '63_api_v1_system_health.gs');

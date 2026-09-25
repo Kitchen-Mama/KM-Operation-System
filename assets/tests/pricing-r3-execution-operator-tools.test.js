@@ -131,7 +131,7 @@ function makeWorld(src, opts) {
     S.PRICING_MANUAL_FLAG_COLUMNS_ = FLAGS.slice();
     S.PRICING_CHANGE_LOG_HEADERS_ = LOGCANON.slice();
     S.PRICING_FX_DECIMALS_ = { USD: 2, CAD: 2, EUR: 2, GBP: 2, AUD: 2, JPY: 0, KRW: 0, TWD: 0 };
-    S.PRW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R23';
+    S.PRW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24';
   }
   vm.createContext(S);
   vm.runInContext(src, S, { filename: 'tool.gs' });
@@ -718,7 +718,7 @@ var DEC_FAKE_ENVELOPE = DEC.replace(
   // THE WRITE SET, read off the plans rather than off the handler report.
   ok(/columns_to_write                = auto_minimum_price, auto_msrp, auto_regular_price, fx_rate, fx_rate_date/.test(r),
     'L8  the write set is the three auto columns and the two rate columns');
-  ok(/EFFECTIVE_IN_WRITE_SET          = NONE/.test(r), 'L8a  no effective price is written for UNKNOWN authority');
+  ok(/OVERRIDE_IN_WRITE_SET           = NONE/.test(r), 'L8a  no override is written for UNKNOWN authority — nor for any other');
   ok(/FLAG_IN_WRITE_SET               = NONE/.test(r), 'L8b  and no ownership flag is written at all');
   ok(/FX_RATE_1_POST                  = 5   /.test(r), 'L8c  the rows left at rate 1 are exactly the identity rows');
 
@@ -749,21 +749,40 @@ var DEC_FAKE_ENVELOPE = DEC.replace(
   ok(/missing: pricingPlanFxRow_/.test(rn), 'L12a  naming the planner it will not reimplement');
   ok(/BLOCKED/.test(rn), 'L12b  and says BLOCKED');
 
-  // AN EXPLICIT AUTO FLAG IS THE CONTRAST. No production row carries one, so without this the write-set
-  // and effective-log checks above would pass on a table where they could not have failed.
+  // AN EXPLICIT AUTO FLAG WAS THE CONTRAST, and PRICING-R4G turned it into a confirmation. R3 added this
+  // fixture because no production row carried a FALSE flag, so the write-set and effective-log checks above
+  // would have passed on a table where they COULD NOT have failed — the classic vacuous green. It is kept
+  // for the same reason and now proves the opposite thing: even the one row-shape that used to produce an
+  // effective write produces none.
   var autoFlagRows = DECROWS.concat([
     decRow({ pricing_id: 'A1', marketplace_sku_id: 'MA1', sku: 'SKU-A1', currency: 'CAD', base_currency: 'USD',
-      base_regular_price: 29.99, auto_regular_price: 29.99, regular_price: 29.99,
+      // PRICING-R4G — the override is BLANK, which is what "the system owns this price" looks like now.
+      // R3's version of this row carried 29.99 in the override cell with the flag reading FALSE, because
+      // under the stored-effective model those two together WERE system ownership. Under the nullable
+      // model the populated cell is an override and stops the row following anything, so the fixture
+      // would have quietly stopped being a contrast at all.
+      base_regular_price: 29.99, auto_regular_price: 29.99, regular_price: '',
       regular_price_is_manual: 'FALSE', fx_rate: 1 })
   ]);
   var wa = decWorld(DEC, autoFlagRows);
   var ra = wa.TEMP_PRICING_R3_FX_DECOMPOSE();
-  ok(/EFFECTIVE_IN_WRITE_SET          = regular_price/.test(ra),
-    'L13  a row flagged AUTO does put its effective price in the write set');
-  ok(/EFFECTIVE_\*_WOULD_FOLLOW \(all\)  = 1/.test(ra), 'L13a  and is counted as following');
-  ok(/log rows from effective changes = 1/.test(ra), 'L13b  with its own log row');
-  ok(/LOG_ROWS_EQUALS_AUTO_SUM        = NO/.test(ra),
-    'L13c  so the log count is no longer purely the auto sum, and the tool says NO');
+  ok(/OVERRIDE_IN_WRITE_SET           = NONE/.test(ra),
+    'L13  PRICING-R4G — even a row flagged AUTO puts NO override in the write set');
+  // MEASURED AS A DELTA AGAINST THE SAME TABLE WITHOUT THIS ROW, which is what makes it a contrast rather
+  // than a number copied out of one run. The baseline rows have blank overrides of their own, so the
+  // absolute count says little; what the fixture proves is that adding one more blank-override row whose
+  // auto value moves adds exactly one to the follow count and nothing at all to the write set.
+  function followCount(report) {
+    return Number((report.match(/RESOLVED_\*_WOULD_FOLLOW \(all\)   = (\d+)/) || [])[1]);
+  }
+  ok(isFinite(followCount(r)) && isFinite(followCount(ra)),
+    'L13a0 both runs report a follow count at all');
+  eq(followCount(ra) - followCount(r), 1,
+    'L13a  it is counted as FOLLOWING instead: its displayed price moves, with no cell written');
+  ok(/log rows from effective changes = 0/.test(ra),
+    'L13b  and it has no log row, because the log records writes and there was none');
+  ok(/LOG_ROWS_EQUALS_AUTO_SUM        = YES/.test(ra),
+    'L13c  so the log count IS purely the auto sum now — which is the §6 contract, stated arithmetically');
   ok(/FLAG_IN_WRITE_SET               = NONE/.test(ra), 'L13d  the flag itself is still never written');
 }
 

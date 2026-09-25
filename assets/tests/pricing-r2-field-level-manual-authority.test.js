@@ -289,22 +289,37 @@ section('D · PER-FIELD PLANNING — independent, and what is refused rather tha
   p = W.pricingPlanField_(row({ regular_price: 12.5 }), SPEC, 'MANUAL', '12.50', 'USD');
   eq([p.changed, p.cells.regular_price_is_manual], [true, 'TRUE'], 'D9  the same value with no recorded owner DOES write the ownership');
 
-  // --- AUTO ---
+  // --- AUTO. PRICING-R4G REVERSED WHAT THIS DOES, and D10-D14 are the assertions that record it. ---
+  //
+  // It used to COPY auto_* into the override and refuse when auto_* was blank. Both were right under the
+  // stored-effective model — copying WAS returning to auto, and copying a blank would have written 0. Under
+  // the nullable-override model both are wrong: the copy is what FREEZES the price against every later FX
+  // run, and the refusal blocks the only repair a pending_fx row has. It now CLEARS.
   p = W.pricingPlanField_(row({ regular_price: 12.5, auto_regular_price: 9.99, regular_price_is_manual: 'TRUE' }), SPEC, 'AUTO', '', 'USD');
   eq([p.changed, p.cells.regular_price, p.cells.regular_price_is_manual, p.log.change_type],
-    [true, 9.99, 'FALSE', 'RETURN_TO_AUTO'], 'D10 USE AUTO restores from auto_* and hands ownership back');
+    [true, '', 'FALSE', 'RETURN_TO_AUTO'], 'D10 USE AUTO CLEARS the override and hands ownership back');
+  eq([p.log.old_value, p.log.new_value], ['12.5', ''],
+    'D10a and the log records the price that was REMOVED — the only trace of what the site was serving');
 
   // §8 — AUTO IGNORES a supplied value. A file carrying both must not smuggle the price in.
   p = W.pricingPlanField_(row({ regular_price: 12.5, auto_regular_price: 9.99 }), SPEC, 'AUTO', '999', 'USD');
-  eq(p.cells.regular_price, 9.99, 'D11 AUTO ignores any supplied manual value entirely');
+  eq(p.cells.regular_price, '', 'D11 AUTO ignores any supplied manual value entirely');
 
-  // You cannot restore a value that does not exist. Writing 0 there would be a price.
+  // PRICING-R4G §4 — AND IT IS ALLOWED WITH NO AUTO VALUE AT ALL. "There is no auto value yet" is a reason
+  // to clear the override, not a reason to refuse: the row then resolves by itself when the first rate lands.
   p = W.pricingPlanField_(row({ regular_price: 12.5, auto_regular_price: '' }), SPEC, 'AUTO', '', 'USD');
-  eq([p.changed, p.error.code], [false, 'AUTO_VALUE_MISSING'], 'D12 USE AUTO with a blank auto value is REFUSED, not written as 0');
+  eq([p.changed, p.error, p.cells.regular_price], [true, null, ''],
+    'D12 USE AUTO with a blank auto value CLEARS — it is the repair for a pending_fx row');
   p = W.pricingPlanField_(row({ regular_price: 12.5, auto_regular_price: 'NA' }), SPEC, 'AUTO', '', 'USD');
-  eq(p.error.code, 'AUTO_VALUE_MISSING', 'D13 and NA is not something to restore either');
+  eq([p.changed, p.error], [true, null], 'D13 and an NA auto is no obstacle either');
   p = W.pricingPlanField_(row({ regular_price: 12.5, auto_regular_price: 0 }), SPEC, 'AUTO', '', 'USD');
-  eq([p.changed, p.cells.regular_price], [true, 0], 'D14 but a real auto value of 0 IS restorable — zero is a price');
+  eq([p.changed, p.cells.regular_price], [true, ''], 'D14 a real auto value of 0 changes nothing here — the override is cleared, not copied');
+
+  // AND IT IS IDEMPOTENT. A field already clear and already owned by the system writes nothing at all, so
+  // re-uploading a template nobody edited does not touch a cell or advance updated_at.
+  p = W.pricingPlanField_(row({ regular_price: '', auto_regular_price: 9.99, regular_price_is_manual: 'FALSE' }), SPEC, 'AUTO', '', 'USD');
+  eq([p.changed, Object.keys(p.cells).length, p.log], [false, 0, null],
+    'D14a USE AUTO on a field that already has no override writes nothing');
 
   // --- INDEPENDENCE (§1/§6). Setting Regular must leave Minimum and MSRP exactly as they were. ---
   var full = { currency: 'USD', regular_price: 10, minimum_price: 8, msrp: 12,
@@ -511,33 +526,49 @@ section('G · §11 THE FROZEN FX PRECISION — and it never rounds an operator\'
 }
 
 // =============================================================================================================
-section('H · §2/§13 THE EFFECTIVE-PRICE CONTRACT — every consumer unchanged, proven by source');
+section('H · §2/§13 THE EFFECTIVE-PRICE CONTRACT — and where PRICING-R4G moved it');
 // =============================================================================================================
 {
-  // The final three fields are still the values consumers read. Nothing was cut over and nothing gained a
-  // fallback — which is checkable as a NEGATIVE: no consumer mentions auto_* or the ownership flags at all.
-  var CONSUMERS = {
-    'assets/js/pages/fc-summary.js': 'FC Summary',
-    'assets/js/api/km-product-pricing-adapter.js': 'Product Strategy pricing adapter',
+  // WHAT R2 ASSERTED HERE, AND WHY IT NO LONGER HOLDS. R2's claim was that its round changed the WRITE
+  // path and left every reader alone — checkable as a negative: no consumer mentioned auto_* or a flag.
+  // That was true for three releases. PRICING-R4G is the round that had to break it, because the three
+  // columns those consumers read stopped being the price and became the user OVERRIDE. A reader still
+  // reading them reads the wrong concept, and reads it silently.
+  //
+  // The negative is KEPT for the consumers that genuinely still do not care, because that set shrinking by
+  // accident is exactly what this check is for.
+  var UNCHANGED_CONSUMERS = {
     'assets/js/api/km-product-pricing-workspace.js': 'Product Strategy pricing accessor',
-    'assets/specs/active/apps-script/72_api_v1_product_pricing_workspace.gs': 'the bounded pricing READ owner',
     'assets/specs/active/apps-script/20_campaign_write_handlers.gs': 'the campaign snapshot writer'
   };
-  Object.keys(CONSUMERS).forEach(function (f) {
+  Object.keys(UNCHANGED_CONSUMERS).forEach(function (f) {
     var src = readN(f);
     ok(!/auto_regular_price|auto_minimum_price|auto_msrp/.test(src),
-      'H1  ' + CONSUMERS[f] + ' reads no auto_* field');
+      'H1  ' + UNCHANGED_CONSUMERS[f] + ' reads no auto_* field');
     ok(!/_is_manual/.test(src),
-      'H2  ' + CONSUMERS[f] + ' does not resolve ownership to find out what something costs');
+      'H2  ' + UNCHANGED_CONSUMERS[f] + ' does not resolve ownership to find out what something costs');
   });
 
-  // FC Summary still reads the effective regular price, from the raw row, exactly as before.
-  ok(/row\.raw \? row\.raw\.regular_price : row\.regularPrice/.test(readN('assets/js/pages/fc-summary.js')),
-    'H3  FC Summary still reads pricing_list.regular_price and nothing else');
+  // THE THREE THAT MOVED, each naming what it moved to.
+  var _fc = readN('assets/js/pages/fc-summary.js');
+  ok(/resolvedRegularPrice/.test(_fc) && !/row\.raw \? row\.raw\.regular_price : row\.regularPrice/.test(_fc),
+    'H3  PRICING-R4G — FC Summary reads the RESOLVED price, not the raw override cell');
+  var _ad = readN('assets/js/api/km-product-pricing-adapter.js');
+  ok(/resolved_regular_price/.test(_ad) && /auto_regular_price/.test(_ad) && /override_regular_price/.test(_ad),
+    'H3a the Product Strategy adapter carries resolved / auto / override, verbatim from 72_');
+  ok(/pricingResolveEffective_/.test(readN('assets/specs/active/apps-script/72_api_v1_product_pricing_workspace.gs')),
+    'H3b and 72_ resolves through 73_ rather than publishing the override cell as a price');
 
-  // 72_, the read owner, is untouched by this round: same build stamp, same schema contract.
-  ok(/PPW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R10'/.test(readN('assets/specs/active/apps-script/72_api_v1_product_pricing_workspace.gs')),
-    'H4  the pricing READ owner did not move — a writer is not a reader');
+  // 72_ MOVED. The stamp is READ from the manifest rather than pinned to a literal, so this line stops
+  // needing an edit every time the release advances for reasons of its own — the property it guards is
+  // that the file and its manifest row agree, which is what a partial sync breaks.
+  var _ppwExpected = (readN('assets/specs/active/apps-script/63_api_v1_system_health.gs')
+    .match(/\{ file: '72_api_v1_product_pricing_workspace\.gs', symbol: 'PPW_BUILD_VERSION_', expected: '([^']+)'/) || [])[1];
+  ok(_ppwExpected && new RegExp("PPW_BUILD_VERSION_ = '" + _ppwExpected + "'")
+      .test(readN('assets/specs/active/apps-script/72_api_v1_product_pricing_workspace.gs')),
+    'H4  the pricing READ owner declares the stamp its manifest row expects');
+  ok(_ppwExpected !== 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R10',
+    'H4a and it is no longer R10 — a writer is not a reader, but a reader whose FIELD CHANGED MEANING is');
 
   // The contract is written down, so a later round cannot re-derive it from the code by accident.
   ok(/effective-price contract is UNCHANGED/i.test(DOC), 'H5  and the mapping spec freezes it');
@@ -981,7 +1012,7 @@ section('O · PRICING-R4 — THE WHOLE CHAIN, BROWSER TEMPLATE TO SHEET TO AUDIT
   // §3 THE MIXED ROW. One row, three different answers, and the third answer is silence.
   eq(cellOf(w, 1, 'regular_price'), 45.99, 'O6  MANUAL wrote the regular price');
   eq(cellOf(w, 1, 'regular_price_is_manual'), 'TRUE', 'O6a  and took ownership of it');
-  eq(cellOf(w, 1, 'minimum_price'), 33.86, 'O6b  AUTO restored the minimum price from auto_minimum_price');
+  eq(cellOf(w, 1, 'minimum_price'), '', 'O6b  PRICING-R4G — AUTO CLEARED the minimum override; the row resolves through auto_minimum_price now');
   eq(cellOf(w, 1, 'minimum_price_is_manual'), 'FALSE', 'O6c  and handed that field to the system');
   eq(cellOf(w, 1, 'msrp'), 49.38, 'O6d  NO_CHANGE left the MSRP exactly as it was');
   eq(cellOf(w, 1, 'msrp_is_manual'), '', 'O6e  and its ownership is still UNSTATED — not classified by a neighbour');
@@ -1006,12 +1037,13 @@ section('O · PRICING-R4 — THE WHOLE CHAIN, BROWSER TEMPLATE TO SHEET TO AUDIT
     'P2:msrp:MANUAL_SET', 'P3:minimum_price:MANUAL_SET'],
     'O9a  each typed by what happened, and the NO_CHANGE field has no entry at all');
 
-  // THE ONE ENTRY WHOSE VALUES AGREE. M1's minimum price already equalled its auto value, so USE AUTO
-  // changed only the OWNERSHIP — and an audit row with old_value === new_value is the correct record of
-  // that, not a bug. It is also the safest possible AUTO smoke against a live site.
+  // STILL THE SAFEST POSSIBLE AUTO SMOKE AGAINST A LIVE SITE, and it stayed safe through the contract
+  // change. M1's minimum override already equalled its auto value, so clearing it changes what is STORED
+  // and not what the site charges: the resolver answers 33.86 before and after. The audit row is the only
+  // record of the removal, which is why old_value must still carry the number that was there.
   var retAuto = logs.filter(function (r) { return r[lc('change_type')] === 'RETURN_TO_AUTO'; })[0];
-  eq([retAuto[lc('old_value')], retAuto[lc('new_value')]], ['33.86', '33.86'],
-    'O10 an ownership-only hand-back records the same value on both sides');
+  eq([retAuto[lc('old_value')], retAuto[lc('new_value')]], ['33.86', ''],
+    'O10 the hand-back records the override that was REMOVED, and an empty new value');
 
   // ---- THE CONTEXT COLUMNS ARE CONTEXT ---------------------------------------------------------------
   // master_sku / site_sku / company / country / marketplace exist so a person can see which row they are
@@ -1103,13 +1135,16 @@ mut('M1  a blank ownership flag is read as AUTO instead of UNKNOWN',
   "  if (s === '') return PRICING_OWNER_AUTO_;",
   function (w) { return w.pricingReadFlag_('') !== 'UNKNOWN'; });
 
-// M2 — USE AUTO writes 0 when there is nothing to restore.
-mut('M2  USE AUTO restores from a MISSING auto value (writes 0)',
-  "  if (!auto.present) {",
-  "  if (false) {",
+// M2 — PRICING-R4G TURNED THIS GUARD AROUND. It protected "USE AUTO must refuse when auto is blank",
+// which was right while the action wrote a value. It clears now and needs no value, so the danger moved:
+// the mutant is USE AUTO going back to COPYING, which re-freezes the price against every later FX run and
+// re-breaks the one repair a pending_fx row has.
+mut('M2  USE AUTO copies auto into the override instead of clearing it',
+  "  out.cells[spec.field] = '';",
+  "  out.cells[spec.field] = pricingReadNumber_(row[spec.auto]).value;",
   function (w) {
-    var p = w.pricingPlanField_({ currency: 'USD', regular_price: 12, auto_regular_price: '' }, w.PRICING_FIELDS_[0], 'AUTO', '', 'USD');
-    return p.error === null;
+    var p = w.pricingPlanField_({ currency: 'USD', regular_price: 12, auto_regular_price: 9.99 }, w.PRICING_FIELDS_[0], 'AUTO', '', 'USD');
+    return p.cells.regular_price === 9.99;
   });
 
 // M3 — MANUAL accepts a blank price, which publishes a free product.
@@ -1253,8 +1288,8 @@ mut('M16 a pricing row is addressed by master SKU instead of marketplace_sku_id'
 // already there. It breaks the NEXT FX run, which compares its computed reference against a column a
 // price editor has been quietly maintaining.
 mut('M17 a manual-path write names an auto_* column in its write set',
-  "  out.cells[spec.field] = auto.value;",
-  "  out.cells[spec.field] = auto.value; out.cells[spec.auto] = auto.value;",
+  "  out.cells[spec.field] = '';",
+  "  out.cells[spec.field] = ''; out.cells[spec.auto] = pricingReadNumber_(row[spec.auto]).value;",
   function (w) {
     var pl = w.pricingPlanRow_({ currency: 'USD', regular_price: 12.5, auto_regular_price: 9.99 },
       { marketplace_sku_id: 'M', regular_price_mode: 'AUTO' });

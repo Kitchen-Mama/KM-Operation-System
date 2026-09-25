@@ -60,6 +60,8 @@ function extractFn(src, name) {
 }
 
 var GS72 = read('assets/specs/active/apps-script/72_api_v1_product_pricing_workspace.gs');
+// PRICING-R4G — the pricing WRITER, loaded beside the reader because 72_ calls its resolver.
+var GS73 = read('assets/specs/active/apps-script/73_api_v1_pricing_write.gs');
 var GS59 = read('assets/specs/active/apps-script/59_api_v1_sku_details_workspace.gs');
 var GS00 = read('assets/specs/active/apps-script/00_config.gs');
 var GS01 = read('assets/specs/active/apps-script/01_router.gs');
@@ -176,6 +178,10 @@ function ctxOf(src) {
   var ctx = vm.createContext({ console: console });
   vm.runInContext('var __TABLES = ' + JSON.stringify(TABLES) + ';', ctx);
   vm.runInContext(IO_SRC, ctx);
+  // PRICING-R4G — 73_ FIRST. 72_ resolves prices by CALLING pricingResolveEffective_, so a context
+  // holding 72_ alone is a project with a read owner and no writer, which no deployment is. Apps
+  // Script gives every .gs file in a project one global scope; this builds that scope.
+  vm.runInContext(GS73, ctx);
   vm.runInContext(src || GS72, ctx);
   return ctx;
 }
@@ -666,8 +672,14 @@ mut('M7 a currency conflict is resolved silently in favour of the site row', fun
 mut('M8 a missing price becomes zero, putting an unpriced SKU at the bottom of the ladder', function () {
   // The absent-ROW branch, not the absent-VALUE one: M5 has no pricing_list row at all, and a zero here is
   // a coordinate — the cheapest thing on the site, invented out of an absence.
-  var s = swap("    regular_price: price ? ppwNum_(price.regular_price) : null,",
-    "    regular_price: price ? ppwNum_(price.regular_price) : 0,");
+  // PRICING-R4G — RE-ANCHORED. The line this mutated became `bands.regular_price.resolved` when 72_
+  // started resolving through 73_. The property is untouched and is the one that matters most on this
+  // transport: a SKU with NO pricing row publishes null, never a zero that would plot as the cheapest
+  // thing on the site. Note what the drift cost — swap() returns the source unchanged when its anchor is
+  // gone, so this mutant reported SURVIVED rather than HARNESS ERROR, and a reader would have gone looking
+  // for a weakened guard instead of a moved line.
+  var s = swap("    regular_price: price ? bands.regular_price.resolved : null,",
+    "    regular_price: price ? bands.regular_price.resolved : 0,");
   var bad = m(s, full());
   return rowOf(run(full()), 'M5').regular_price === null && rowOf(bad, 'M5').regular_price === 0;
 });

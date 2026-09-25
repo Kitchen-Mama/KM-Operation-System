@@ -77,6 +77,10 @@ var FAD = 'assets/js/api/km-product-pricing-adapter.js';
 var FACC = 'assets/js/api/km-product-pricing-workspace.js';
 
 var SRC72 = read(F72), SRCRB = read(FRB), SRC00 = read(F00), SRC01 = read(F01), SRC63 = read(F63);
+// PRICING-R4G — the pricing WRITER. 72_ resolves prices by calling its canonical resolver, so it is
+// loaded beside the reader: Apps Script gives every .gs file in a project ONE global scope, and a
+// context holding 72_ alone models a deployment that cannot exist.
+var SRC73 = read(GS + '73_api_v1_pricing_write.gs');
 var SRC29 = read(F29), SRCAD = read(FAD), SRCACC = read(FACC);
 var ADAPTER = require(path.join(__dirname, '..', '..', FAD));
 // P1-B8C-R3: the adapter's image rule is the shared policy. The module object is the one the
@@ -187,10 +191,42 @@ if (addedLines !== null) {
 }
 
 // A3 — 72_'s complete external surface, named. A new name appearing here is a review event.
+//
+// PRICING-R4G HELD THAT REVIEW, and this is its record. The sixth name is pricingResolveEffective_, in
+// 73_api_v1_pricing_write.gs — a file whose name contains the word WRITE, reached from a package whose
+// entire claim is that it does not write. That is worth stopping on, and stopping on it is what §A is
+// for. Two things make it admissible and both are asserted below rather than argued here: the function
+// is PURE — it reads three cells off a row object it was handed and returns a verdict — and Apps Script
+// gives every .gs in a project ONE global scope, so calling it is a function call and not a channel to
+// anything. What would NOT be admissible is 72_ reaching a name like pricingApplyPlan_; the guard below
+// is written so that such a name arrives as a failure and not as a silently longer list.
 eq(externalCalls(SRC72),
-  ['prodAssertDbTarget_', 'prodExpectedDbId_', 'prodRequireColumns_', 'prodRequireSheet_',
-    'productStrategyEnabled_'],
-  'A3  72_ calls exactly five functions it does not define');
+  ['pricingResolveEffective_', 'prodAssertDbTarget_', 'prodExpectedDbId_', 'prodRequireColumns_',
+    'prodRequireSheet_', 'productStrategyEnabled_'],
+  'A3  72_ calls exactly six functions it does not define');
+
+// A3.1 — AND THE NEW ONE IS READ-ONLY, proved on the function's own body rather than on its file's. 73_
+// does write; this function does not, and the difference is the whole basis for the call being allowed.
+var RESOLVER_BODY = (function () {
+  var b = bare(SRC73), at = b.indexOf('function pricingResolveEffective_');
+  if (at < 0) return null;
+  var depth = 0, i = b.indexOf('{', at);
+  for (var j = i; j < b.length; j++) {
+    if (b.charAt(j) === '{') depth++;
+    else if (b.charAt(j) === '}' && --depth === 0) return b.slice(at, j + 1);
+  }
+  return null;
+}());
+ok(RESOLVER_BODY !== null, 'A3.1 the resolver body was located in 73_, so what follows measures something');
+if (RESOLVER_BODY !== null) {
+  eq(WRITERS.filter(function (w) { return new RegExp('\\.' + w + '\\s*\\(').test(RESOLVER_BODY); }), [],
+    'A3.2 pricingResolveEffective_ calls no writer method');
+  ok(!/SpreadsheetApp|getOperationDb|LockService|CacheService|PropertiesService|UrlFetchApp/
+    .test(RESOLVER_BODY),
+    'A3.3 nor does it open a spreadsheet, take a lock, touch a store or reach the network');
+  ok(!/getRange|getSheetByName|getDataRange/.test(RESOLVER_BODY),
+    'A3.4 and it does not read a sheet either — it is handed a row and answers about that row');
+}
 eq(serviceCalls(SRC72).filter(function (s) { return /^(SpreadsheetApp|DriveApp|Utilities|Logger)\./.test(s); }),
   ['SpreadsheetApp.openById'],
   'A3a and exactly one Google service method: openById');
@@ -532,6 +568,10 @@ function ctxFor(db, opts) {
   vm.runInContext('var SYS_DEPLOYMENT_RELEASE_ = "REL"; var RTR_BUILD_VERSION_ = "RTR";'
     + ' var CONFIG_BUILD_VERSION_ = "CFG";', ctx);
   vm.runInContext(SRC29, ctx);
+  // PRICING-R4G — 73_ FIRST. 72_ resolves prices by CALLING pricingResolveEffective_, so a context
+  // holding 72_ alone is a project with a read owner and no writer, which no deployment is. Apps
+  // Script gives every .gs file in a project one global scope; this builds that scope.
+  vm.runInContext(SRC73, ctx);
   vm.runInContext(SRC72, ctx);
   vm.runInContext(SRCRB, ctx);
   ctx.__log = log;
@@ -1023,6 +1063,7 @@ section('SECTION G  §8 THE CONTRACT, AND THE FIVE STATES');
 
 // G1 — the five states exist as a named set, and only four are servable.
 var L72 = vm.createContext({ console: console });
+vm.runInContext(SRC73, L72);
 vm.runInContext(SRC72, L72);
 eq(L72.PPW_SOURCE_STATES_,
   ['READY', 'SOURCE_EMPTY', 'SOURCE_PARTIALLY_READABLE', 'STOP_DATA_INTEGRITY', 'SOURCE_NOT_CONNECTED'],
@@ -1066,6 +1107,7 @@ ok(Ebad.dataQuality.some(function (q) { return q.code === 'SERVER_SENT_A_CLIENT_
 
 // G5 — a refusal MEASURES no state, so it reports null rather than pretending.
 var L = vm.createContext({ console: console });
+vm.runInContext(SRC73, L);
 vm.runInContext(SRC72, L);
 var refused = vm.runInContext('ppwRefusedData_(ppwValidateRequest_({}), [])', L);
 eq(refused.sourceState, null, 'G5  a refused request reports sourceState null');
@@ -1302,7 +1344,15 @@ function withSrc(which, a, b) {
   vm.runInContext('var PRODUCTION_DB_SPREADSHEET_ID_ = ' + JSON.stringify(DB_ID) + ';', ctx);
   vm.runInContext('var PRODUCT_STRATEGY_ENABLED_ = false;'
     + ' function productStrategyEnabled_() { return PRODUCT_STRATEGY_ENABLED_ === true; }', ctx);
+  // PRICING-R4G — THE SANDBOX IS A PROJECT, and a project has 73_ and a release constant in it. This
+  // helper used to build a scope holding 72_ alone, which no deployment is; after R4G that scope has a
+  // read owner and no resolver, so every row resolves to nothing and the mutant under test is drowned
+  // out by a fault the harness introduced. ctxFor above already builds the full scope; this is the same
+  // scope, and the two must not drift, or a mutant caught in one would survive in the other.
+  vm.runInContext('var SYS_DEPLOYMENT_RELEASE_ = "REL"; var RTR_BUILD_VERSION_ = "RTR";'
+    + ' var CONFIG_BUILD_VERSION_ = "CFG";', ctx);
   vm.runInContext(SRC29, ctx);
+  vm.runInContext(SRC73, ctx);
   vm.runInContext(m72, ctx);
   vm.runInContext(mrb, ctx);
   return vm.runInContext('JSON.parse(JSON.stringify(RUN_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK()))', ctx);
@@ -1422,7 +1472,11 @@ mut('M6 an absent source table is read as an empty one, so a missing sheet looks
     vm.runInContext('var PRODUCTION_DB_SPREADSHEET_ID_ = ' + JSON.stringify(DB_ID) + ';', ctx);
     vm.runInContext('var PRODUCT_STRATEGY_ENABLED_ = false;'
       + ' function productStrategyEnabled_() { return false; }', ctx);
-    vm.runInContext(SRC29, ctx); vm.runInContext(m72, ctx); vm.runInContext(mrb, ctx);
+    // PRICING-R4G — the same whole project as ctxFor and withSrc build. See the note in withSrc.
+    vm.runInContext('var SYS_DEPLOYMENT_RELEASE_ = "REL"; var RTR_BUILD_VERSION_ = "RTR";'
+      + ' var CONFIG_BUILD_VERSION_ = "CFG";', ctx);
+    vm.runInContext(SRC29, ctx); vm.runInContext(SRC73, ctx);
+    vm.runInContext(m72, ctx); vm.runInContext(mrb, ctx);
     var bad = vm.runInContext(
       'JSON.parse(JSON.stringify(RUN_P1_PRODUCT_STRATEGY_PRODUCTION_READBACK()))', ctx);
     return cleanAbsent === 'SOURCE_PARTIALLY_READABLE' && bad.verdict !== 'SOURCE_PARTIALLY_READABLE';

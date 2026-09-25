@@ -3788,7 +3788,8 @@ function _evtRoundMoney(value, currency) {
 // Event FC). Regular Price AND Currency come from ONE pricing_list row: matched by marketplace_sku_id
 // (preferred canonical identity), else by full business identity company|country|marketplace|sku|site_sku
 // (only when marketplace_sku_id is not held). pricing_list is the sole price source of truth
-// (PRICING_DATABASE_MAPPING §33; effective field = `regular_price`). NEVER: first-match by master SKU,
+// (PRICING_DATABASE_MAPPING §4F; the RESOLVED price — an override when one exists, else auto_*, and null
+// when neither does). NEVER: first-match by master SKU,
 // cross-country / cross-marketplace fallback, another site's price, marketplace_skus / sku_details price,
 // hardcoded USD, or a fabricated 0 (MISSING → regularPrice/currency = null). Returns
 // { marketplaceSkuId, sku, regularPrice(number|null), currency(string|null), source:'pricing_list', found }.
@@ -3817,10 +3818,22 @@ function resolveRegionalPricingContext(ctx) {
   if (row) {
     out.found = true;
     if (!out.marketplaceSkuId) out.marketplaceSkuId = String(row.marketplaceSkuId==null?'':row.marketplaceSkuId).trim();
-    // pricing_list normalizer coerces a missing regular_price to 0 — read raw to tell "missing" from "0".
-    var rawPrice = row.raw ? row.raw.regular_price : row.regularPrice;
-    var num = parseFloat(rawPrice);
-    out.regularPrice = (rawPrice === '' || rawPrice == null || isNaN(num) || num <= 0) ? null : num;
+    /* PRICING-R4G §11 — THE RESOLVED PRICE, from the canonical normalizer.
+     *
+     * This read `row.raw.regular_price` — the raw override cell — with a comment saying the normalizer
+     * coerced a missing price to 0. That comment had been false since PRICING-R2 (pricingNumOrNull_ has
+     * returned null throughout), and the raw read is what made it matter: under the nullable-override model
+     * a healthy row priced through auto_* has an EMPTY override cell, so this function would have reported
+     * "no price" for it — and the Special Event save path refuses a null price outright. A correctly priced
+     * site would have become unsaveable.
+     *
+     * resolvedRegularPrice is override-else-auto-else-null, computed once in operation-system-db-api.js.
+     * The <= 0 guard stays: a zero or negative site price is not a price, whichever layer produced it. */
+    var resolvedPrice = row.resolvedRegularPrice;
+    if (resolvedPrice === undefined) resolvedPrice = row.regularPrice;   // pre-R4G cached record
+    var num = parseFloat(resolvedPrice);
+    out.regularPrice = (resolvedPrice === '' || resolvedPrice == null || isNaN(num) || num <= 0) ? null : num;
+    out.priceSource = String(row.resolvedRegularPriceSource || '') || null;
     var cur = String(row.currency==null?'':row.currency).trim();
     out.currency = cur || null;
   }
@@ -4075,7 +4088,13 @@ function _evtReadSingleRows() {
       marketplaceSkuId: row.dataset.marketplaceSkuId || '',
       priceState: row.dataset.priceState || '',
       currency: row.dataset.currency || '',
-      regularPrice: (regRaw === '' || regRaw == null) ? null : (parseFloat(regRaw) || 0),
+      // PRICING-R4G §14 — `|| 0` turned anything the operator typed that was not a number into a price of
+      // zero. Blank was already guarded; this guards the rest, and an unreadable cell now reads as no price.
+      regularPrice: (function (v) {
+        if (v === '' || v == null) return null;
+        var n = parseFloat(v);
+        return isFinite(n) ? n : null;
+      }(regRaw)),
       discountPercent: parseFloat((row.querySelector('.evt-disc') || {}).value),
       dealPrice: parseFloat((row.querySelector('.evt-deal') || {}).value),
       fcQty: parseInt((row.querySelector('.evt-fc') || {}).value, 10),

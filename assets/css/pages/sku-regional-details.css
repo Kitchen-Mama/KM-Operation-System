@@ -199,6 +199,12 @@
 #sku-regional-details-section .srd-pr__val { display: flex; align-items: baseline; gap: 10px; }
 #sku-regional-details-section .srd-pr__eff { font-size: 13px; font-weight: 600; color: #0F172A; }
 #sku-regional-details-section .srd-pr__auto { font-size: 11px; color: #94A3B8; }
+/* PRICING-R4G §10 — the raw user override, beside the resolved price and the auto reference.
+   It is styled the same as .srd-pr__auto and deliberately so: both are SUPPORTING facts about the
+   number on the left, and giving "Override: Not set" any visual weight would make the ordinary state
+   of a healthy row look like a problem. The resolved price is the only one that carries emphasis. */
+#sku-regional-details-section .srd-pr__ovr { font-size: 11px; color: #94A3B8; }
+#sku-regional-details-section .srd-pr__val { flex-wrap: wrap; row-gap: 2px; }
 #sku-regional-details-section .srd-pr__note { flex-basis: 100%; font-size: 11px; color: #92400E; }
 #sku-regional-details-section .srd-own { font-size: 10px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; border-radius: 999px; padding: 1px 7px; border: 1px solid transparent; }
 #sku-regional-details-section .srd-own--manual { background: #EFF6FF; color: #1D4ED8; border-color: #BFDBFE; }
