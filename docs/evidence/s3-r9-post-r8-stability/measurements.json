@@ -1,0 +1,116 @@
+{
+  "round": "S3-R9",
+  "captured": "2026-09-26",
+  "headline": "Three consecutive production rounds passed with zero 404s and zero timeouts after the S3-R8 budget fix. That is not proof the failure is eliminated, and this file does not say it is. It says the failure was NOT REPRODUCED in three rounds, which is a different and smaller claim.",
+
+  "frozen_findings_carried_forward": {
+    "note": "§1. Not reopened. Nothing measured this round contradicts any of them.",
+    "APPLICATION_REDIRECT_REUSE": "NO",
+    "BROWSER_CACHE_ROOT_CAUSE": "NO",
+    "SERVICE_WORKER_ROOT_CAUSE": "NO",
+    "SHIPPING_PLAN_REQUEST_LOOP": "CLOSED",
+    "CLIENT_TIMEOUT_ORCHESTRATION_DEFECT": "FIXED",
+    "OPEN_REQUEST_LEAK_PROVEN": "NO"
+  },
+
+  "production_smoke": {
+    "note": "§2. The operator's evidence, recorded exactly and not rounded up into a stronger claim.",
+    "conditions": "same live browser session, no hard reload, three consecutive rounds",
+    "POST_R8_PRODUCTION_ROUNDS": 3,
+    "SKU_DETAILS_PASS": "3/3",
+    "SKU_REGIONAL_PASS": "3/3",
+    "FC_SUMMARY_PASS": "3/3",
+    "REGULAR_FORECAST_BUILDER_PASS": "3/3",
+    "SPECIAL_EVENT_BUILDER_PASS": "3/3",
+    "REDIRECT_404_OBSERVED": 0,
+    "REQUEST_TIMEOUT_OBSERVED": 0,
+    "CURRENT_FAILURE_REPRODUCTION": "NOT_REPRODUCED_IN_3_CONSECUTIVE_ROUNDS",
+    "what_this_is_not": "It is not permanent elimination, and it is not a rate. Three rounds in one warm session is a small sample against a failure whose prior rate was 5 of 9 logical requests. The honest reading is that the condition that produced 85 882 ms reads is gone and the failures that accompanied it did not recur under observation.",
+    "what_changed_that_could_explain_it": "S3-R8 bounded one logical read to one budget. The prior capture showed 5 recoveries in 9 requests; a recovery is a second physical dispatch, so it is also a second Apps Script execution. Failures stopping removes both the failure and its extra execution."
+  },
+
+  "execution_correlation": {
+    "note": "§3.",
+    "BROWSER_SUCCESS_WITH_SERVER_COMPLETION_COUNT": "all observed doGet executions in the smoke window completed, against 3/3 passes on five page surfaces. An exact one-to-one count is NOT claimed: request_id correlation was not available in the operator's execution view, and §3 forbids inferring the mapping without it.",
+    "BROWSER_FAILURE_WITH_SERVER_COMPLETION_COUNT": "0 observed in this window — there were no browser failures in this window to correlate",
+    "SERVER_EXECUTED_BUT_BROWSER_LOST_RESPONSE": "NOT_REPRODUCED_IN_THIS_WINDOW",
+    "server_durations_observed": "mostly a few seconds; some longer, including ~12 s, ~15 s and ~23 s",
+    "the_important_negative": "Executions of ~23 s produced NO browser-visible failure. Before S3-R8 a first attempt of ~25 s was exactly the shape that consumed part of the budget and handed the recovery a fresh 60 s, producing the 85 882 ms read. A ~23 s execution now completing cleanly is consistent with the budget being the defect rather than the duration.",
+    "historical_evidence_not_rewritten": "The Pricing case — browser reported 404 / nothing written while the DB had committed — stands unchanged as open debt. Nothing in this window speaks to it: it is a WRITE, and no write failure occurred here."
+  },
+
+  "warm_session_effect": {
+    "note": "§4. The operator observed fewer SIMULTANEOUSLY-RUNNING doGet rows in later rounds. Simultaneity is not the same measurement as count, and this section keeps them apart.",
+    "WARM_SESSION_EXECUTION_COUNT_APPEARS_LOWER": "YES — as an operator observation, not as a measurement taken by this round",
+    "KNOWN_CAUSES": [
+      "RETRIES STOPPED. The leading explanation and the only one tied to a change that was actually deployed. Every recovery is a second physical dispatch and therefore a second execution; the prior capture had 5 recoveries in 9 requests. Zero failures means zero recoveries means those extra executions are simply not issued.",
+      "scopedSingleFlight — in-flight coalescing keyed by action plus canonical scope. It evicts on settle (p.then(evict, evict)), so it reduces SIMULTANEOUS requests and never sequential ones. This is not a cache and retains no value.",
+      "singleFlight metadata latch — the same mechanism for system.health, getClientCapabilities, inventoryScope.registry.get, methodRegistry.get and deploymentContract.probe. Also evicts on either outcome.",
+      "_srdInFlight — a page-local re-entry guard on SKU Regional that suppresses a duplicate workspace fetch during a rapid re-mount."
+    ],
+    "POSSIBLE_CAUSES": [
+      "Apps Script warm containers. A warm execution completes faster than a cold one, so executions OVERLAP LESS even when the request count is identical. This is server-side and is not caching of any kind. It is a leading candidate precisely because the operator's observation was about simultaneity.",
+      "Mount sequencing. A cold entry mounts more surfaces at once than a warm re-entry, so fewer reads are in flight together."
+    ],
+    "UNPROVEN_CAUSES": [
+      "Browser HTTP cache — disproven in S3-R7: every read sends cache:'no-store' and carries a per-attempt unique URL.",
+      "window._opDbCache — it exists and is session-scoped, but the branches that consult it sit inside the LEGACY kill-switch path. skuDetails and fcSummary are canonical workspaces and enabled by default, so those branches are not taken in production. Checked rather than assumed.",
+      "KM.referenceCache — it exists and does retain settled reference values for the session, but its only key is `marketplaces`, and in workspace mode the pages take marketplaces from the workspace read-model rather than from it.",
+      "Workspace-level memoization — THERE IS NONE. KM.api.getWorkspace dispatches every time it is called; no workspace response is retained anywhere. This is the single most important negative in this section, because it is the assumption a reader is most likely to make."
+    ],
+    "NEW_CACHING_ADDED": "NONE. §4 forbids it and nothing here needed it.",
+    "what_would_settle_it": "KM.transport.metrics() at the end of a warm session: `coalesced` counts in-flight sharing directly, and `requests` against the execution-row count separates 'fewer requests' from 'less overlap'. Both already exist; neither was captured in this window."
+  },
+
+  "r8_seal": {
+    "note": "§5. Re-executed against the shipped transport, not reused from the previous round's report.",
+    "ATTEMPT_1_PLUS_ATTEMPT_2_TOTAL_BUDGET": "<= the configured logical request budget — measured at 1.05x of budget, where the residual is scheduling overhead rather than a second budget",
+    "RECOVERY_DOES_NOT_RESET_FULL_BUDGET": "YES",
+    "WRITE_PATH_UNCHANGED": "YES — a write makes one attempt and uses the write budget; a write meeting an expired redirect is dispatched exactly once",
+    "focused": "70 passed / 0 failed",
+    "mutation": "6 planted, 6 killed, 0 survived, 0 harness errors"
+  },
+
+  "product_strategy": {
+    "note": "§7.",
+    "PSB_PRODUCTION_STABILITY": "NOT_MEASURED_THIS_WINDOW",
+    "why": "Product Strategy was not part of the operator's three-round smoke. Its runtime suite passes (171 passed, 13 mutants caught, 0 survived), but a passing suite is not a production pass and this round will not present it as one.",
+    "prior_state": "S3-R8's capture recorded productPricing.workspace.get failing at 59 030 ms with REDIRECT_TARGET_NOT_FOUND. Whether the budget fix changed that is unknown."
+  },
+
+  "architecture": {
+    "ARCHITECTURE_DECISION_REQUIRED": "NO",
+    "why": "§8. Nothing contradicts the successful server-duration pattern: executions of a few seconds, with some at 12-23 s, all completing. The evidence continues to point away from a workspace split, lazy loading, source-side filtering, shared SKU caching or a new freshness policy."
+  },
+
+  "remaining_s3_debt": {
+    "note": "§9. Ranked by dependency and sequence only, NOT by business importance.",
+    "1_write_truthfulness": {
+      "id": "B",
+      "item": "Pricing write truthfulness — browser reported 404 / nothing written while the DB committed",
+      "dependency": "Shares the response-loss mechanic with the read-side REDIRECT_TARGET_NOT_FOUND family, and S3-R8 did not touch it: a write already made a single attempt, so the budget correction changed nothing on that path. It is therefore still open on its own terms.",
+      "sequencing_argument": "The read path has STOPPED reproducing response loss. That closes the cheap, safe channel through which the mechanic could be studied, and leaves the write path as the only place it is still observable. It also does not need reproduction to be fixed: write identity, a receipt and commit truth make the outcome decidable by construction rather than by diagnosis."
+    },
+    "2_psb_stability": {
+      "id": "A",
+      "item": "Product Strategy production stability",
+      "dependency": "Independent of the above. Needs one operator smoke round, not a development round."
+    },
+    "3_interaction_performance": {
+      "id": "C, D, F",
+      "item": "FC Next interaction latency; app-shell and menu route latency; SKU/Regional interaction latency",
+      "dependency": "Unblocked now that a stable transport baseline exists — these could not be measured while reads were failing at 60-86 s, because every interaction number would have been dominated by transport failure. They are ordered after write truthfulness only because they carry no correctness risk, not because they are less valuable."
+    },
+    "4_orphaned_reads": {
+      "id": "E",
+      "item": "Orphaned reads on rapid navigation (2 measured in S3-R5A)",
+      "dependency": "A lifecycle decision the operator owns; also the smallest. Best folded into the interaction-performance round rather than run alone."
+    }
+  },
+
+  "transport_baseline": {
+    "S3_TRANSPORT_STABILITY_BASELINE": "SEALED_WITH_3_ROUND_PRODUCTION_PASS",
+    "what_seals_it": "The R8 focused suite and its six mutants, re-executed this round; the three narrowed policy seals asserting the budget rule in the present tense; and the five page runtime suites.",
+    "what_would_unseal_it": "A single production REDIRECT_TARGET_NOT_FOUND or REQUEST_TIMEOUT on a read. The baseline is a statement about three observed rounds and nothing more."
+  }
+}
