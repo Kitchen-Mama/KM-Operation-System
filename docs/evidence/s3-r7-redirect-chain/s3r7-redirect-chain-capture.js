@@ -1,6 +1,10 @@
 /* =================================================================================================================
    S3-R7 §2/§4/§5/§6/§9 — REDIRECT CHAIN + BROWSER CACHE CAPTURE.  READ ONLY.
 
+   THIS FILE DEFINES  window.__kmS3R7   ← check this line before you paste.
+   Its sibling docs/evidence/s3-r6-server-read-cost/s3r6-read-cost-capture.js defines __kmS3R6 and is a
+   DIFFERENT tool. They are independent: loading both in one session leaves both globals intact.
+
    WHY THIS EXISTS
    ---------------
    S3-R5A proved that no APPLICATION code persists or re-requests an expired googleusercontent redirect target.

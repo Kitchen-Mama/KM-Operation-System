@@ -140,7 +140,7 @@
 
   "operator_owned": {
     "why": "No Apps Script runtime and no Sheets credential exist in this environment. §14 is explicit that these must not be fabricated.",
-    "tool": "docs/evidence/s3-r6-server-read-cost/capture-console-snippet.js — read only, zero writes, zero locks, sequential, and it adds no timing infrastructure because every field it prints already exists",
+    "tool": "docs/evidence/s3-r6-server-read-cost/s3r6-read-cost-capture.js — read only, zero writes, zero locks, sequential, and it adds no timing infrastructure because every field it prints already exists",
     "protocol": [
       "hard reload, then: await __kmS3R6.measure('COLD', { company, country, marketplace })",
       "immediately after: await __kmS3R6.measure('WARM', <same scope>)",

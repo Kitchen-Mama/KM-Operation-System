@@ -1,6 +1,12 @@
 /* =================================================================================================================
    S3-R6 §3 — PRODUCTION READ COST CAPTURE.  READ ONLY.
 
+   THIS FILE DEFINES  window.__kmS3R6   ← check this line before you paste.
+   Its sibling docs/evidence/s3-r7-redirect-chain/s3r7-redirect-chain-capture.js defines __kmS3R7 and is a
+   DIFFERENT tool. Both files were once called capture-console-snippet.js, which made them indistinguishable
+   in an editor tab strip and cost an operator a production session. The names are now distinct and each
+   file says which global it creates, on its second line, where it cannot be missed.
+
    HOW TO USE
    ----------
    1. Open the production site, sign in, and open the browser console (F12 → Console).
@@ -92,7 +98,7 @@
     return null;
   }
 
-  function record(label, env, clientMs, err) {
+  function record(label, env, clientMs, err, runLabel) {
     var meta = (env && env.meta) || {};
     var rid = meta.requestId || meta.request_id || null;
     var smp = sampleFor(rid);
@@ -101,6 +107,8 @@
       : (err ? String((err && err.code) || (err && err.message) || err).slice(0, 60)
              : String(((env && env.errors && env.errors[0] && env.errors[0].code)) || 'FAILED').slice(0, 60));
     return {
+      run: runLabel || NA,          // COLD / WARM / REPEAT — on the ROW, not only in the header,
+                                    // so a pasted-back table is still readable once it is out of context
       target: label,
       action: meta.action || (smp && smp.action) || NA,
       request_id: rid || NA,
@@ -120,12 +128,12 @@
 
   /* One read, timed around the call the page itself would make. A rejection is recorded, never swallowed:
      a target that fails is a measurement, and the slowest reads in production are the ones that fail. */
-  function timed(label, fn) {
+  function timed(label, fn, runLabel) {
     var t0 = now();
     return Promise.resolve()
       .then(fn)
-      .then(function (env) { return record(label, env, now() - t0, null); },
-            function (e) { return record(label, null, now() - t0, e); });
+      .then(function (env) { return record(label, env, now() - t0, null, runLabel); },
+            function (e) { return record(label, null, now() - t0, e, runLabel); });
   }
 
   function ws(name, include) {
@@ -140,7 +148,7 @@
   function table(rows) {
     if (root.console && typeof root.console.table === 'function') { try { root.console.table(rows); } catch (e) {} }
     // The pasteable form. console.table is easier to read and impossible to copy accurately.
-    var head = ['target', 'action', 'result', 'server_ms', 'client_total_ms', 'tables_read',
+    var head = ['run', 'target', 'action', 'result', 'server_ms', 'client_total_ms', 'tables_read',
       'rows_returned', 'wire_bytes', 'decoded_bytes', 'attempts', 'request_id'];
     var lines = [head.join('\t')];
     rows.forEach(function (r) { lines.push(head.map(function (k) { return String(r[k]); }).join('\t')); });
@@ -180,7 +188,7 @@
       // SEQUENTIAL. See the header: one at a time is what makes each number the cost of that read.
       var chain = Promise.resolve();
       steps.forEach(function (s) {
-        chain = chain.then(function () { return timed(s[0], s[1]); }).then(function (r) { out.push(r); });
+        chain = chain.then(function () { return timed(s[0], s[1], label); }).then(function (r) { out.push(r); });
       });
       return chain.then(function () {
         var t = tp();

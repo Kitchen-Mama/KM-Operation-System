@@ -60,8 +60,8 @@ function decomment(src) {
 const TP = require(path.join(ROOT, 'assets/js/api/km-transport.js'));
 const TPSRC = read('assets/js/api/km-transport.js');
 const DBSRC = read('assets/js/api/operation-system-db-api.js');
-const R7TOOL = 'docs/evidence/s3-r7-redirect-chain/capture-console-snippet.js';
-const R6TOOL = 'docs/evidence/s3-r6-server-read-cost/capture-console-snippet.js';
+const R7TOOL = 'docs/evidence/s3-r7-redirect-chain/s3r7-redirect-chain-capture.js';
+const R6TOOL = 'docs/evidence/s3-r6-server-read-cost/s3r6-read-cost-capture.js';
 
 const CANONICAL = 'https://script.google.com/macros/s/AKfycbTESTTESTTESTTESTTESTTESTTESTTESTTESTTESTTEST/exec';
 const ECHO = 'https://script.googleusercontent.com/macros/echo?user_content_key=';
@@ -484,7 +484,7 @@ section('A — EXECUTED: the S3-R7 capture tool, driven against a scripted backe
       .filter((f) => /^_s3r7/.test(f) && !/\.js$/.test(f));
     eq(strays, [], 'I1 no generated files were left behind in assets/tests');
     const evid = fs.readdirSync(path.join(ROOT, 'docs', 'evidence', 's3-r7-redirect-chain')).sort();
-    eq(evid, ['capture-console-snippet.js', 'measurements.json'],
+    eq(evid, ['measurements.json', 's3r7-redirect-chain-capture.js'],
       'I2 the evidence directory holds exactly the tool and the measurements');
   }
 

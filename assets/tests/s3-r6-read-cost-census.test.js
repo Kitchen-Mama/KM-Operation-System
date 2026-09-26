@@ -33,7 +33,7 @@ function decomment(src) {
   return src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
 }
 
-const TOOL_REL = 'docs/evidence/s3-r6-server-read-cost/capture-console-snippet.js';
+const TOOL_REL = 'docs/evidence/s3-r6-server-read-cost/s3r6-read-cost-capture.js';
 const TOOL = read(TOOL_REL);
 const CENSUS = JSON.parse(read('docs/evidence/s3-r6-server-read-cost/census.json'));
 const GS = (f) => read('assets/specs/active/apps-script/' + f);
@@ -80,7 +80,11 @@ function stubWin(extra) {
       'A7  with no KM present every target reports WHY it could not be measured');
     ok(/SKIPPED_NO_SCOPE/.test(text),
       'A8  and the scope-dependent target says it was skipped rather than reporting a zero');
-    const rows = text.split('\n').filter((l) => /^[A-I] {2}/.test(l));
+    // S3-R7 follow-up: a row now begins with the COLD/WARM/REPEAT label, so the target letter is the SECOND
+    // tab-separated field rather than the start of the line. Matched on the field, not on the line, because
+    // anchoring to the line start is what made this silently select nothing — and A10 below then passed
+    // vacuously against an empty set, which is worse than failing.
+    const rows = text.split('\n').filter((l) => /^[^\t]*\t[A-I] {2}/.test(l));
     eq(rows.length, 9, 'A9  all nine mandatory targets appear as rows even when none could run', rows.length);
     ok(!/\bundefined\b/.test(rows.join('\n')),
       'A10 and no cell is undefined — an absent field is the string NOT_AVAILABLE');
@@ -199,7 +203,7 @@ function stubWin(extra) {
   // ===============================================================================================================
   {
     const idx = read('index.html');
-    ok(idx.indexOf('capture-console-snippet') === -1,
+    ok(idx.indexOf('s3r6-read-cost-capture') === -1,
       'D1  the capture tool is NOT loaded by index.html — it is pasted into a console, never shipped');
     ok(TOOL_REL.indexOf('docs/') === 0,
       'D2  and it lives under docs/, outside every runtime asset path');

@@ -159,7 +159,7 @@
 
   "operator_owned": {
     "why": "§4 and §15. The shipped-code argument settles the verdict; these numbers settle it in the CURRENT production state and are the only way to close the one thing that could overturn it.",
-    "tool": "docs/evidence/s3-r7-redirect-chain/capture-console-snippet.js — read only, GET only, sequential, reuses the shipped classifier and the shipped URL builder, prints no key material",
+    "tool": "docs/evidence/s3-r7-redirect-chain/s3r7-redirect-chain-capture.js — read only, GET only, sequential, reuses the shipped classifier and the shipped URL builder, prints no key material",
     "protocol": [
       "Run the whole sequence TWICE: pass 1 with DevTools > Network > 'Disable cache' UNCHECKED, pass 2 with it CHECKED. That is the only difference between §4 scenario A and scenario B, and it is a browser setting, not a code path.",
       "__kmS3R7.env()                  — FIRST, because a stale service worker is the one finding that would overturn the verdict",
