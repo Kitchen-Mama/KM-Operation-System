@@ -1,0 +1,173 @@
+{
+  "round": "S3-R7",
+  "captured": "2026-09-26",
+  "headline": "The browser HTTP cache is not the root cause, and the strongest proof of it was already shipped. Every read in this application already sends cache:'no-store', and every read already builds a URL no earlier request can have used. getTable has carried BOTH of the fixes §8 would have authorised since the day it was written, and getTable is on the operator's own list of actions failing with REDIRECT_TARGET_NOT_FOUND. A cache cannot serve a response for a URL that has never been requested.",
+
+  "provenance": {
+    "why_this_matters": "§1 required the previous round's result to be kept and NOT over-read. S3-R5A proved something about the APPLICATION. This round is about four other layers, and each is answered on its own evidence below.",
+    "prior_live_capture": "P1-B8D-R10, 2026-09-14, recorded in docs/planning/API_MIGRATION_MASTER_PLAN.md and DEPLOYMENT_RELEASE_LOG.md. Live against production: every one of 24 attempts received a DISTINCT 354-character user_content_key, none shared across three read actions; and the /exec 302 was observed carrying `no-cache, no-store, max-age=0, must-revalidate`.",
+    "why_it_is_not_quoted_as_today": "That capture was taken against a production whose transient echo 404 rate was 4 in 40. The operator's current capture is 19 in 28. Same mechanism or not, a twelve-day-old measurement is not evidence about the present state, so it is used as corroboration and the capture tool re-asks the question in the current one.",
+    "this_environment": "No Apps Script runtime and no Sheets credential exist here. Nothing below marked OPERATOR has been fabricated."
+  },
+
+  "layer_separation": {
+    "note": "§1. These are five different claims about five different owners. They were being collapsed into one.",
+    "APPLICATION_REDIRECT_REUSE": "NO",
+    "APPLICATION_REDIRECT_PERSISTED": "NO",
+    "APPLICATION_basis": "S3-R5A, executed against the real transport with an injected fetch, and re-executed in section E of this round's suite: after four consecutive expired targets, not one is ever requested back. There is no endpoint cache, no last-good endpoint and no endpoint setter in the module.",
+    "BROWSER_HTTP_CACHE": "NOT THE ROOT CAUSE — see verdict.basis. Directly disprovable in the current production state by the capture tool; corroborated by the 2026-09-14 live observation that the 302 itself carries no-store.",
+    "FETCH_CACHE_MODE": "'no-store' on every read in every dispatcher — measured, see fetch_cache_audit",
+    "SERVICE_WORKER": "NONE in shipped code; the live browser answer is OPERATOR, because a worker registered by an earlier deploy would survive in the browser without appearing in this repository at all",
+    "GOOGLE_CDN_REDIRECT_BEHAVIOUR": "OPERATOR — this is the layer §9 hands the next round"
+  },
+
+  "fetch_cache_audit": {
+    "note": "§3. Every canonical Apps Script READ dispatcher, all three of them.",
+    "READ_FETCH_CACHE_MODE": "no-store",
+    "BROWSER_DEFAULT_CACHE_POLICY": "NO — the cache mode is set explicitly on every read, so the browser default never applies",
+    "dispatchers": [
+      {
+        "name": "km-transport.js request() / run()",
+        "where": "assets/js/api/km-transport.js — the read init",
+        "method": "GET",
+        "cache": "no-store",
+        "credentials": "not set — the fetch default (same-origin) applies, so no cookie crosses to Google",
+        "redirect": "not set — the fetch default ('follow') applies; the browser follows the 302 internally, which is why the intermediate hop is not observable from script",
+        "url_uniqueness": "km_rid is in the query on every physical attempt, and a recovery attempt gets its own id (requestId + '-R' + n)",
+        "evidence": "EXECUTED — section C and section D of assets/tests/s3-r7-redirect-chain-browser-cache.test.js"
+      },
+      {
+        "name": "operation-system-db-api.js _kmGapRead_",
+        "method": "GET",
+        "cache": "no-store",
+        "url_uniqueness": "a fresh _kmNextReadRequestId_() per attempt, inside its own bounded 2-attempt loop",
+        "evidence": "SOURCE — it needs a browser `window` to execute; the init is asserted structurally"
+      },
+      {
+        "name": "operation-system-db-api.js _kmGetTableOnce_ (action=getTable)",
+        "method": "GET",
+        "cache": "no-store",
+        "url_uniqueness": "&_ts=' + Date.now() — an explicit cache-busting value, already shipped",
+        "evidence": "SOURCE — same reason",
+        "why_this_one_decides_the_round": "getTable is the action that ALREADY carries both of §8's authorised fixes, and it is on the operator's failing-action list."
+      }
+    ],
+    "writes": "unchanged — POST, cache:'no-store', body in the body. No write was touched.",
+    "cache_options_anywhere_in_the_db_api_that_are_not_no_store": 0
+  },
+
+  "url_uniqueness": {
+    "note": "§7.",
+    "EXACT_CANONICAL_GET_REUSED": "NO",
+    "basis": "EXECUTED. Two reads of the same action with different request ids produce different URLs; an expired redirect produces exactly one recovery, and the recovery's URL differs from the URL that expired. Both are rebuilt from the canonical /exec.",
+    "caveat_recorded_rather_than_smoothed_over": "A read dispatched with NO requestId would omit km_rid and would then repeat its URL exactly. Every shipped read path supplies one — KM.api.getWorkspace mints it through makeRequestId(), and _kmGapRead_ mints its own — so this is a property of the call sites, not of readQuery(). It is written down because it is the one way the property could be lost by a future change without anything looking wrong.",
+    "READ_ONLY_NONCE_WOULD_BE_SAFE": "YES semantically — Apps Script doGet ignores unknown query parameters, and getTable already relies on exactly that. NOT APPLIED, because §8 authorises a fix only if browser cache reuse is PROVEN, and it is not. Adding one would also have to be excluded from the single-flight key by hand, and a key dimension that must be remembered to be excluded is a defect waiting to happen."
+  },
+
+  "redirect_chain": {
+    "note": "§2. What a browser will and will not tell a script about its own redirect chain — stated as limits rather than filled with plausible values.",
+    "INITIAL_URL": "https://script.google.com/macros/s/<deployment>/exec?action=...&km_via=get&km_tc=...&km_rid=...&km_body=... (masked; the endpoint id is never written to an evidence file)",
+    "INITIAL_HOST": "script.google.com",
+    "INITIAL_HTTP_STATUS": "NOT_OBSERVABLE_FROM_SCRIPT — fetch() with the default redirect:'follow' exposes only the FINAL response. The 302 is consumed by the browser and never surfaced. resp.redirected === true is the only evidence that a hop occurred, and it does not carry a count.",
+    "REDIRECT_COUNT": "AT_LEAST_1 when resp.redirected is true; the exact count is not exposed by the Fetch API",
+    "FINAL_HOST": "script.googleusercontent.com",
+    "FINAL_STATUS": "OPERATOR — 404 in the failing case, per the production error the operator reported",
+    "header_availability": {
+      "readable": ["cache-control", "content-type", "expires", "last-modified", "pragma", "content-language", "content-length"],
+      "not_readable": ["age", "etag", "location", "via", "x-cache"],
+      "why": "Only the CORS-safelisted response headers are exposed on a cross-origin response, and Apps Script sends no Access-Control-Expose-Headers. The browser HAS the others and refuses to hand them to script. The tool prints NOT_EXPOSED_BY_CORS for exactly these, which is a different statement from NOT_AVAILABLE: it is not evidence the header was absent.",
+      "consequence": "Age and X-Cache — the two headers that would most directly show a cached hit — are structurally unavailable to any in-page capture. If they are ever needed, they must come from the DevTools Network panel or a proxy, not from this tool."
+    },
+    "CANONICAL_EXEC_RESPONSE_CACHEABLE": "NO in practice. Two independent reasons, and neither is generic HTTP reasoning: the request is issued with cache:'no-store', which bypasses the HTTP cache for storing and for retrieving; and the 302 was observed live on 2026-09-14 carrying no-cache, no-store, max-age=0, must-revalidate.",
+    "REDIRECT_RESPONSE_CACHEABLE": "NO — same observed Cache-Control on the 302 itself",
+    "FINAL_USERCONTENT_RESPONSE_CACHEABLE": "OPERATOR — the tool reads the final response's Cache-Control, which IS CORS-safelisted, so this one is answerable in the current production state",
+    "RESOURCE_TIMING_AVAILABLE": "NO — Apps Script sends no Timing-Allow-Origin, so every phase of the cross-origin PerformanceResourceTiming entry reads 0. The tool reports that as a refusal rather than copying the zeros into a table as though they were durations."
+  },
+
+  "google_redirect_lifetime": {
+    "note": "§6.",
+    "USERCONTENT_KEY_CHANGES_PER_REQUEST": "YES as of the 2026-09-14 live capture (24 of 24 distinct). OPERATOR for the current state.",
+    "SAME_EXPIRED_KEY_REAPPEARS": "NO as of 2026-09-14. OPERATOR for the current state.",
+    "instrument_is_capable_of_the_other_answer": "Asserted, not assumed. Section A7 of the suite feeds the tool a server that reissues one key for every request and requires it to report SAME_EXPIRED_KEY_REAPPEARS = YES; A7b feeds it distinct keys and requires NO. An instrument that could only ever answer NO would report 'no reuse' against a server that reused every key, and the round would conclude the opposite of the truth.",
+    "secrets": "keys are reported as an 8-hex identity hash and a length. No key material is printed or committed."
+  },
+
+  "service_worker": {
+    "note": "§5.",
+    "SERVICE_WORKER_REGISTERED": "NONE in shipped code — no sw.js, no service-worker.js, no navigator.serviceWorker reference in index.html or in any module under assets/js",
+    "SERVICE_WORKER_CONTROLS_PAGE": "OPERATOR",
+    "CACHE_STORAGE_ENTRIES": "NONE in shipped code — nothing calls caches.open/match/keys",
+    "APP_LEVEL_FETCH_WRAPPER_CACHE": "NONE — no module replaces window.fetch",
+    "why_the_operator_is_still_asked": "§5 is explicit that GitHub Pages does not imply no service worker. A worker registered by an earlier deploy stays registered in the browser and keeps controlling the page regardless of what the repository contains today, and it would leave no trace in this repository at all. The tool asks the browser directly: getRegistrations(), serviceWorker.controller, caches.keys(), and whether window.fetch is still native."
+  },
+
+  "verdict": {
+    "BROWSER_CACHE_ROOT_CAUSE": "NO",
+    "basis": "getTable already ships with cache:'no-store' AND a per-attempt cache-busting value (&_ts=Date.now()), which together are both of the fixes §8 would have authorised. The operator's current production capture lists getTable among the actions failing with REDIRECT_TARGET_NOT_FOUND. A browser cache cannot serve a response for a URL it has never seen, so the failures on that action cannot be cache reuse. Every other read carries the same no-store and its own per-attempt request id, so the same argument covers them.",
+    "corroboration": "The 302 was observed live carrying no-store, and 24 of 24 live attempts received distinct keys (2026-09-14). Independently, S3-R5A proved the application never re-requests an expired target.",
+    "what_this_does_NOT_claim": "It does not claim the browser cache was ruled out by a scenario matrix run in the current production state. That capture is specified, the tool for it is committed, and it is OPERATOR. The verdict rests on the shipped-code argument above, which does not depend on it.",
+    "the_one_thing_that_would_overturn_it": "A service worker registered by an earlier deploy and still controlling the page. A service worker intercepts fetch BEFORE the HTTP cache is consulted and is not bound by cache:'no-store' or by URL uniqueness — it can answer any request however it likes. Shipped code contains none, but only the browser can say whether one is installed, which is why env() is the first command in the protocol rather than an afterthought.",
+    "NEXT_ROOT_CAUSE_LAYER": "Apps Script execution and Google redirect lifetime. The coherent reading — recorded as a reading, not a measurement — is that a queued or long-running /exec lets the single-use echo target expire before the browser reads it, which surfaces as REDIRECT_TARGET_NOT_FOUND rather than as slowness. That would explain why the 404s and the 60 s timeouts appear together, and why the failure rate rose from 4-in-40 to 19-in-28 with no transport change in between. It is settled by the S3-R6 capture, which is still outstanding: server_ms against client_total_ms."
+  },
+
+  "correlation_the_capture_is_designed_to_expose": {
+    "why_the_matrix_has_a_second_variable": "Cache mode alone can only fail to reject a hypothesis. The matrix crosses it with read COST — system.health, which touches no sheet, against getTable, which reads a whole one. If the 404 rate tracks cache mode, the cache is implicated. If it is flat across all four cache modes but concentrated on the expensive read, the mechanism is execution time and §9 applies. One run answers which.",
+    "CHEAP_ACTION": "system.health — on the GET read registry, reads no table",
+    "COSTLY_ACTION": "getTable&table=sku_details — a whole-sheet read, already on the failing list"
+  },
+
+  "production_regression": {
+    "note": "§10/§11. Nothing shipped changed this round, so there is nothing to regress and no post-fix numbers exist.",
+    "REDIRECT_404_PRE": "19 of 28 requests (operator capture)",
+    "REDIRECT_404_POST": "NOT APPLICABLE — no production behaviour changed",
+    "SKU_DETAILS_REDIRECT_404_POST": "NOT APPLICABLE",
+    "SKU_REGIONAL_REDIRECT_404_POST": "NOT APPLICABLE",
+    "FC_REDIRECT_404_POST": "NOT APPLICABLE",
+    "PSB_REDIRECT_404_POST": "NOT APPLICABLE",
+    "FC_SUMMARY_VALIDATION": "NOT PERFORMED — §11 asks for initial load, Regular, Special Event, Target Rules, New FC Update and both Next paths to be validated in production. No production change was made that could have altered them, and this environment cannot reach production. This is OPERATOR and is listed as unfilled rather than reported as passing.",
+    "TRANSPORT_PRODUCTION_STABILITY": "NO — 19 of 28 requests still fail. Nothing in this round was capable of changing that, and calling it stable from a unit harness is exactly what §10 forbids."
+  },
+
+  "write_safety": {
+    "note": "§13.",
+    "WRITE_AUTOREPLAY_ADDED": "NO",
+    "PRICING_WRITE_TRUTHFULNESS_TOUCHED": "NO",
+    "executed": "A write that meets an expired redirect is dispatched exactly ONCE and reported as a failure. The ban is enforced twice — the retry predicate refuses every write before it looks at anything else, and the dispatcher caps a write at zero retries.",
+    "the_open_debt": "Pricing Confirm reporting 404 while the database had committed remains open and untouched. It needs write identity, a receipt and commit truth before any replay can be safe, and no amount of cache-busting or retrying addresses it."
+  },
+
+  "diagnostic_repair": {
+    "note": "§12.",
+    "defect": "KM.transport.timeline() returns { epoch_offset_ms, request_timeline: [...], mutations: [...], mutation_requests, peak_concurrent_requests, requests, solitary_requests }. The S3-R6 capture tool called .forEach on it directly, which throws a TypeError.",
+    "consequence": "__kmS3R6.passive() produced nothing at all. That is the half of the S3-R6 capture reporting what production ACTUALLY did — its failures, its retries, its real concurrency — as opposed to what a scripted sample does. The scripted half worked, which is why the defect survived review: the tool appeared to run.",
+    "repair": "Read through .request_timeline, still accept a bare array, and print the totals the object carries and the array never did.",
+    "scope": "repository diagnostic only — no production runtime depends on this file",
+    "evidence": "EXECUTED against the real transport's real timeline() output, both shapes — section B"
+  },
+
+  "operator_owned": {
+    "why": "§4 and §15. The shipped-code argument settles the verdict; these numbers settle it in the CURRENT production state and are the only way to close the one thing that could overturn it.",
+    "tool": "docs/evidence/s3-r7-redirect-chain/capture-console-snippet.js — read only, GET only, sequential, reuses the shipped classifier and the shipped URL builder, prints no key material",
+    "protocol": [
+      "Run the whole sequence TWICE: pass 1 with DevTools > Network > 'Disable cache' UNCHECKED, pass 2 with it CHECKED. That is the only difference between §4 scenario A and scenario B, and it is a browser setting, not a code path.",
+      "__kmS3R7.env()                  — FIRST, because a stale service worker is the one finding that would overturn the verdict",
+      "await __kmS3R7.chain()          — one canonical read, traced",
+      "await __kmS3R7.matrix(2)        — 16 sequential requests; budget up to six minutes",
+      "__kmS3R7.report()               — the filled field block"
+    ],
+    "unfilled": [
+      "SERVICE_WORKER_REGISTERED (live)", "SERVICE_WORKER_CONTROLS_PAGE", "CACHE_STORAGE_ENTRIES (live)",
+      "CACHE_ENABLED_REDIRECT_404", "CACHE_DISABLED_REDIRECT_404", "NO_STORE_REDIRECT_404", "UNIQUE_URL_REDIRECT_404",
+      "CHEAP_REDIRECT_404 vs COSTLY_REDIRECT_404",
+      "USERCONTENT_KEY_CHANGES_PER_REQUEST (current state)", "SAME_EXPIRED_KEY_REAPPEARS (current state)",
+      "FINAL_USERCONTENT_RESPONSE_CACHEABLE",
+      "FC Summary §11 validation: initial load, Regular, Special Event, Target Rules, New FC Update, Regular to Next, Special Event to Next",
+      "the S3-R6 capture, still outstanding: server_ms against client_total_ms"
+    ],
+    "cannot_be_captured_by_any_in_page_tool": {
+      "Age / X-Cache / Via / ETag on the Apps Script response": "not CORS-exposed; they need the DevTools Network panel or a proxy",
+      "the 302's own status and Location": "fetch with redirect:'follow' never surfaces the intermediate response, and redirect:'manual' returns an opaque response with no headers at all",
+      "redirect-hop timing": "no Timing-Allow-Origin, so every Resource Timing phase reads 0"
+    }
+  }
+}

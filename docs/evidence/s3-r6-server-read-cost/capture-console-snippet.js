@@ -204,7 +204,25 @@
       var t = tp();
       if (!t) { root.console.log('KM.transport unavailable'); return ''; }
       var m = t.metrics();
-      var tl = (typeof t.timeline === 'function') ? t.timeline() : [];
+      // S3-R7 §12 — timeline() RETURNS AN OBJECT, NOT AN ARRAY, AND THIS TOOL ASSUMED OTHERWISE.
+      //
+      // The real shape is { epoch_offset_ms, request_timeline: [...], mutations: [...], mutation_requests,
+      // peak_concurrent_requests, requests, solitary_requests }. Calling .forEach on it threw a TypeError, so
+      // __kmS3R6.passive() — the half of the S3-R6 capture that reports what production ACTUALLY did, its
+      // failures and retries included — produced nothing at all. The scripted half worked, which is exactly
+      // why the defect survived review: the tool appeared to run.
+      //
+      // Read through the named field, and still accept a bare array, so that a diagnostic does not break a
+      // second time because the thing it observes was improved.
+      var _tlRaw = (typeof t.timeline === 'function') ? t.timeline() : null;
+      var tl = Array.isArray(_tlRaw) ? _tlRaw
+        : (_tlRaw && Array.isArray(_tlRaw.request_timeline)) ? _tlRaw.request_timeline
+        : [];
+      var tlSummary = (_tlRaw && !Array.isArray(_tlRaw)) ? {
+        requests: _tlRaw.requests, mutation_requests: _tlRaw.mutation_requests,
+        peak_concurrent_requests: _tlRaw.peak_concurrent_requests,
+        solitary_requests: _tlRaw.solitary_requests
+      } : null;
       var head = ['seq', 'action', 'kind', 'code', 'elapsed_ms', 'server_ms', 'server_answered',
         'http_status', 'redirected', 'attempts', 'concurrent_at_dispatch', 'dispatch_ms', 'settled_ms', 'marks_source'];
       var lines = [head.join('\t')];
@@ -213,6 +231,7 @@
         + JSON.stringify({ requests: m.requests, retries: m.retries, recoveries: m.recoveries,
             coalesced: m.coalesced, byCode: m.byCode, byAction: m.byAction,
             peak_concurrent: t.peakConcurrentRequests(), open: t.openRequests() }, null, 1)
+        + (tlSummary ? '\n--- timeline summary ---\n' + JSON.stringify(tlSummary) : '')
         + '\n--- timeline ---\n' + lines.join('\n')
         + '\nNOTE a row whose marks_source is EXTERNAL_RECONSTRUCTED had its start time derived from its'
         + '\n     duration rather than observed at dispatch; do not read overlap from those rows.';
