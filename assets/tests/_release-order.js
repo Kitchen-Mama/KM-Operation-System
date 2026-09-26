@@ -696,7 +696,20 @@ var ROUND_TOKENS = [
   // transport that does not define it. That call is guarded on the function existing, so the failure would be
   // silent under-counting rather than a thrown error — which is precisely the kind of quiet wrongness a
   // rotation exists to prevent, because the number it produces is the number the next round will be judged on.
-  's3r5a-openexternal-20260925'];
+  's3r5a-openexternal-20260925',
+  // S3-R8 — ROTATED. origin/main is at 0c7194d, which carries the entry above, so those bytes have been
+  // served and the reuse rule closes the token. That is the mechanical reason; the substantive one follows.
+  //
+  // ONE FILE CHANGES, AND THIS TIME IT IS A BEHAVIOUR. km-transport.js stops giving each ATTEMPT its own
+  // timeout and gives the whole logical request one budget. A browser left on the old bytes keeps the defect
+  // being fixed: a read whose first attempt fails slowly and whose recovery then hangs can occupy
+  // 2 x 60 000 ms plus the retry delay, which production measured at 85 882 ms on a single read.
+  //
+  // There is no half-update hazard between two files in this round, because only one file changes. The reason
+  // to rotate is simpler and harder to argue with: the whole point of the change is the wait a user actually
+  // experiences, and a cached transport means they keep experiencing the old one while every measurement
+  // taken afterwards says the fix shipped.
+  's3r8-requestbudget-20260926'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

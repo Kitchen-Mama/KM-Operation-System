@@ -350,8 +350,10 @@ const hostsOf = (seen) => seen.map((s) => (/^https?:\/\/([^/]+)/.exec(s.url) || 
 
     // J5 — the external counter stops counting. The defect this round repaired, planted back.
     await mutant('J5', 'openExternal stops holding the counter, so the other dispatcher is invisible again',
-      '        _openRequests += 1;\n        if (_openRequests > _peakConcurrent) _peakConcurrent = _openRequests;\n        var closed = false;',
-      '        var closed = false;',
+      // S3-R8 moved the line below this one (openExternal now records WHICH request is open), so the anchor
+      // is re-cut to the two lines that still carry the counter. The mutation is unchanged: stop holding it.
+      '      _openRequests += 1;\n      if (_openRequests > _peakConcurrent) _peakConcurrent = _openRequests;',
+      '      var _s3r8NoCount = 1;',
       async function (M) {
         const tp = M.create({ baseUrl: CANONICAL, frontendOrigin: 'https://x.github.io', fetch: () => Promise.resolve(jsonAnswer(GOOD)) });
         tp.openExternal(); tp.openExternal();
@@ -360,8 +362,10 @@ const hostsOf = (seen) => seen.map((s) => (/^https?:\/\/([^/]+)/.exec(s.url) || 
 
     // J6 — close() loses its idempotence, so a double close makes the open count negative and the next peak wrong.
     await mutant('J6', 'a double close drives the open count negative',
-      '        return function close() { if (closed) return; closed = true; _openRequests -= 1; };',
-      '        return function close() { _openRequests -= 1; };',
+      // S3-R8 gave close() a second job (dropping the open-request row), so the one-liner became a block.
+      // The mutation is the same one: remove the idempotence guard and let a double close go negative.
+      '        if (closed) return;\n        closed = true; _openRequests -= 1;',
+      '        closed = false; _openRequests -= 1;',
       async function (M) {
         const tp = M.create({ baseUrl: CANONICAL, frontendOrigin: 'https://x.github.io', fetch: () => Promise.resolve(jsonAnswer(GOOD)) });
         const c = tp.openExternal(); c(); c();

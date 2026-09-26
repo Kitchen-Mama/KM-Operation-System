@@ -1,0 +1,136 @@
+{
+  "round": "S3-R8",
+  "captured": "2026-09-26",
+  "headline": "A read whose server execution takes 1.8-3.4 seconds could occupy the client for 120 seconds, because the timeout bounded the ATTEMPT and not the REQUEST. A recovery opened a second full budget. 85 882 ms was not a mystery; it was 25 500 + 400 + 60 000.",
+
+  "frozen_conclusions_carried_forward": {
+    "note": "§1. Not reopened, and nothing measured this round contradicts any of them.",
+    "APPLICATION_REDIRECT_REUSE": "NO — S3-R5A, re-executed again in this round's section A",
+    "BROWSER_CACHE_ROOT_CAUSE": "NO — S3-R7",
+    "SERVICE_WORKER_ROOT_CAUSE": "NO — S3-R7 (shipped code registers none; the live browser check remains OPERATOR)",
+    "SHIPPING_PLAN_REQUEST_LOOP": "CLOSED — S3-R4",
+    "SERVER_HANDLER_GLOBALLY_SLOW": "NOT_SUPPORTED_BY_CURRENT_EVIDENCE — successful server execution measured at 1.8-3.4 s. This is NOT a claim that all handlers are fast: skuDetails failed before its server timing ever became observable, so its execution cost is simply unknown."
+  },
+
+  "the_85882ms_read": {
+    "question": "§7 — why did one read last 85 882 ms when the read timeout is 60 000 ms?",
+    "answer": "The timeout was created inside attempt(), so each attempt received its own full budget. A logical read that made a recovery could therefore last two budgets plus the retry delay.",
+    "arithmetic": "85 882 = ~25 482-25 682 (attempt 1, settling REDIRECT_TARGET_NOT_FOUND) + 200-400 (retry delay, base 400 with 50-100% jitter) + 60 000 (attempt 2, a FRESH budget, exhausted)",
+    "WORST_CASE_BEFORE": "120 400 ms for one logical read (2 x 60 000 + the maximum retry delay)",
+    "WORST_CASE_AFTER": "60 000 ms — the budget the caller was told about",
+    "cross_check": "The three two-attempt failures at 61 145 / 68 113 / 59 030 ms are consistent with the same model: both attempts returned 404 and neither reached the 60 000 ms bound, so their totals are execution-plus-network, not budget exhaustion.",
+    "measured_not_argued": "With a 500 ms budget, a read whose first attempt fails at 60% of budget and whose recovery hangs ran at 1.24x of one budget before the fix and 1.05x after. The residual 5% is scheduling overhead, not a second budget."
+  },
+
+  "the_fix": {
+    "what": "The budget is taken ONCE at dispatch (`_deadlineAt = t.start + _budgetMs`) and every attempt is bounded by what remains of it.",
+    "recovery_is_not_removed": "It still runs. What changed is that it spends the remainder of the caller's budget rather than opening a second one.",
+    "recovery_floor": "A recovery is not started when less than 2% of the budget would remain after the retry delay — 1.2 s at the production 60 s bound, 5 ms at a 500 ms test bound. Below that it could only convert a NAMED failure (REDIRECT_TARGET_NOT_FOUND, which says what went wrong) into an anonymous one (REQUEST_TIMEOUT, which says only that time ran out). The skip is recorded as `recovery_skipped: NO_BUDGET_REMAINING`, never silent.",
+    "why_proportional_and_not_a_constant": "An absolute 1 000 ms floor silently disables recovery for any caller on a short budget — which is every unit test in this repository. It was written that way first, and it made a budget correction look like a recovery regression.",
+    "writes_unchanged": "A write has maxRetries 0, so it makes one attempt and its budget behaviour is identical to before. The WRITE budget is still the write budget; the correction did not quietly shorten it."
+  },
+
+  "settlement_audit": {
+    "question": "§5 — the capture ended with open_requests = 3. Explain it.",
+    "OPEN_REQUESTS_PRE": 3,
+    "OPEN_REQUEST_LEAK_PROVEN": "NO",
+    "how_that_was_established": "Not by reading the code. The real transport was driven through EVERY settlement code and the counter required back at zero each time: SUCCESS, REQUEST_TIMEOUT, REDIRECT_TARGET_NOT_FOUND with recovery, 404-then-SUCCESS, HTTP_TRANSPORT_ERROR, REQUEST_ABORTED (superseded), a BUILD refusal, and a failed write. All return to 0.",
+    "recovery_does_not_double_count": "peak_concurrent stays at 1 for a single logical request that makes two attempts — the recovery REPLACES the attempt rather than running beside it.",
+    "the_two_readings_of_a_non_zero_count": [
+      "requests genuinely in flight at the moment the number was read — the tool's own reads are sequential, but the page is not idle",
+      "requests that will never settle"
+    ],
+    "why_the_number_could_not_be_explained": "openRequests() returned a bare integer. Three is what a leak looks like and three is also what three in-flight reads look like, and an integer cannot tell them apart.",
+    "resetMetrics_behaviour": "resetMetrics() deliberately does NOT reset _openRequests — the source says so, and it is the right choice, because a request already in flight will decrement when it settles. The consequence is that a capture beginning with reset() inherits whatever was already open, and the operator's protocol does begin with reset().",
+    "what_changed": "openRequestDetails() now returns the rows behind the count — action, kind, owner, dispatcher and age_ms, oldest first. age_ms is the field that separates the two readings: a few hundred milliseconds means in flight, minutes means never settled.",
+    "OPEN_REQUESTS_POST": "NOT APPLICABLE as a repair — there was no leak to repair. The next production capture can now answer the question directly.",
+    "one_ownership_gap_recorded_not_fixed": "km-api-foundation's private POST shim carries NO timeout at all. It is the FALLBACK used only when the transport module did not load, and in that case window.KM.transport is absent so it does not touch this counter either. Recorded because an unbounded fetch is worth knowing about, not fixed, because changing a fallback path is outside what this round proved."
+  },
+
+  "timeout_ownership": {
+    "note": "§7.",
+    "TIMEOUT_OWNER_COUNT": 4,
+    "owners": [
+      { "owner": "km-transport read", "duration_ms": 60000, "starts_at": "request() dispatch",
+        "stops_at": "the logical request settles",
+        "retry_resets_it": "NO — as of this round. It did before.",
+        "recovery_gets_a_fresh_budget": "NO — as of this round. It did before, and that is the 85 882 ms." },
+      { "owner": "km-transport write", "duration_ms": 300000, "starts_at": "request() dispatch",
+        "stops_at": "settle", "retry_resets_it": "N/A — a write makes one attempt",
+        "recovery_gets_a_fresh_budget": "N/A" },
+      { "owner": "operation-system-db-api _kmFetchBounded_ read (KM_READ_TIMEOUT_MS_)", "duration_ms": 45000,
+        "starts_at": "each _kmFetchBounded_ call", "stops_at": "that fetch settles",
+        "retry_resets_it": "YES — _kmGapRead_ and getOperationDbTableFromSheet run their own bounded loops, each attempt taking a fresh 45 s",
+        "recovery_gets_a_fresh_budget": "YES — NOT corrected this round; see not_done" },
+      { "owner": "operation-system-db-api write (KM_WRITE_TIMEOUT_MS_)", "duration_ms": 90000,
+        "starts_at": "each write fetch", "stops_at": "settle", "retry_resets_it": "N/A", "recovery_gets_a_fresh_budget": "N/A" }
+    ],
+    "apps_script_platform_limit": "6 minutes per execution — a platform fact, not a client clock, and not observable from the browser",
+    "two_read_bounds_disagree": "60 000 ms in the transport and 45 000 ms in the db-api. Both are real and they bound different dispatchers. That is recorded as a fact; reconciling them is a decision about what a read is allowed to cost, which is not this round's to make."
+  },
+
+  "recovery_cost": {
+    "note": "§6.",
+    "RECOVERY_ADDITIONAL_LATENCY_MS_BEFORE": "up to 60 400 — the retry delay (200-400 ms) plus an entire second budget",
+    "RECOVERY_ADDITIONAL_LATENCY_MS_AFTER": "the retry delay only (200-400 ms); the second attempt now spends time the caller had already committed",
+    "RECOVERY_EXTENDS_USER_WAIT_TO_60S": "YES before this round — and beyond it, to 85 882 ms measured and 120 400 ms possible. NO after.",
+    "RECOVERY_SUCCESS_RATE_IN_CAPTURE": "0 of 5 — five recoveries were counted and every request that entered recovery still ended REDIRECT_TARGET_NOT_FOUND or REQUEST_TIMEOUT. The recovery is not removed on that evidence, because §6 forbids it and because one capture of five is not a rate.",
+    "the_judgement": "A bounded retry that turns a 25-second failure into an 86-second failure is operationally harmful even when it is correct. The repair keeps the retry and removes the extension."
+  },
+
+  "end_to_end_trace": {
+    "note": "§2. The boundaries that exist and the boundaries that do not. §2 forbids inferring by subtraction where a boundary was not observed, so the unobservable ones are named rather than filled.",
+    "T0_application_dispatch": "OBSERVED — sample.dispatch_ms",
+    "T1_canonical_exec_fetch_issued": "OBSERVED — netStart inside attempt()",
+    "T2_canonical_response_or_redirect_received": "NOT_OBSERVABLE_FROM_SCRIPT — fetch() with the default redirect:'follow' consumes the 302 inside the browser and exposes only the final response",
+    "T3_googleusercontent_target_fetch_begins": "NOT_OBSERVABLE_FROM_SCRIPT — same reason; Resource Timing reports 0 for every phase because Apps Script sends no Timing-Allow-Origin",
+    "T4_target_response_or_404": "OBSERVED — the fetch promise resolves; http_status and resp.url are recorded",
+    "T5_transport_settles": "OBSERVED — sample.settled_ms",
+    "T6_workspace_promise_settles": "OBSERVED at the workspace layer",
+    "T7_page_load_state_settles": "OBSERVED via KM.loadState",
+    "SUCCESS_SERVER_MS": "1 800-3 380 ms (operator capture)",
+    "DOMINANT_FAILURE_WAIT_SEGMENT": "For the 85 882 ms read: the SECOND attempt's fresh 60 000 ms budget, which is observable because it is a client-side clock this code owns. For the single-attempt 60 005 ms timeout: the whole budget elapses between T1 and T4 with T2 and T3 unobservable, so it CANNOT be split into network / bridge / server execution from the client. That split needs the Apps Script execution log."
+  },
+
+  "unanswered_and_operator_owned": {
+    "note": "§4 and §16 — the ONE minimal capture this round asks for, not another census.",
+    "SERVER_EXECUTED_BUT_BROWSER_LOST_RESPONSE_COUNT": "OPERATOR — cannot be answered from the browser. For every failing request server_answered = false, which says only that no parseable envelope reached the client. Whether Apps Script ran and completed is recorded on Google's side and nowhere else.",
+    "why_it_matters": "If Apps Script executed successfully for requests the browser recorded as REDIRECT_TARGET_NOT_FOUND, then the work was done and only the answer was lost, and that is a different defect from a slow or failing handler. It also bears directly on the open Pricing write-truthfulness case.",
+    "the_capture": [
+      "Open the Apps Script project > Executions.",
+      "Filter to the window of the capture already taken.",
+      "For each execution, record: start time, duration, status (Completed / Failed / Timed out), and the function name.",
+      "Compare the COUNT of Completed executions against the client's 9 logical requests and 4 SUCCESS results.",
+      "If Completed executions materially exceed 4, SERVER_EXECUTED_BUT_BROWSER_LOST_RESPONSE_COUNT > 0 and the final hop is losing answers the server produced."
+    ],
+    "correlation_note": "km_rid travels in the query string, so an execution log that records the request parameters can be matched to a specific client sample. If the log does not show parameters, the comparison above is still decisive at the level of counts."
+  },
+
+  "action_cost_comparison": {
+    "note": "§9. Recorded WITHOUT collapsing two different things into one.",
+    "LIGHTWEIGHT_ACTION_RESULT": "productPricing.siteUniverse.get — 1 table, server 1.80-3.38 s, client 9.08-9.60 s, SUCCESS",
+    "MEDIUM_ACTION_RESULT": "fcSummary.workspace.get — server 2.65 s, client 12.16 s, SUCCESS",
+    "HEAVY_ACTION_RESULT": "skuDetails.workspace.get (3-6 tables) and productPricing.workspace.get (6 tables) — no server timing ever observed, because they failed before an envelope came back",
+    "the_distinction_that_must_not_be_lost": "SERVER_EXECUTION_TIME and END_TO_END_FAILURE_RATE are different measurements. The heavy actions are not measured as slow; they are measured as FAILING. Calling them slow because they fail after 60 s is exactly the inference §9 forbids, and it is the one that would have justified a workspace split.",
+    "unexplained_and_recorded": "Even the SUCCESSFUL reads spend 6-9 seconds outside server execution (9.6 s client against 3.38 s server). That gap is network plus the redirect bridge plus any queueing, and it cannot be split from the client for the reason given in end_to_end_trace. It is the largest single unexplained quantity left in this investigation."
+  },
+
+  "architecture": {
+    "ARCHITECTURE_DECISION_REQUIRED": "NO",
+    "why": "§10 permits data-architecture work only if this round proves server execution is the dominant cost. It proves the opposite: successful execution is 1.8-3.4 s while the client path spends 9-86 s. Splitting workspaces would reduce a cost that is not the one being paid."
+  },
+
+  "write_safety": {
+    "WRITE_AUTOREPLAY_ADDED": "NO",
+    "PRICING_WRITE_TRUTHFULNESS_TOUCHED": "NO",
+    "executed": "A write meeting an expired redirect is dispatched exactly once and reported as a failure. The budget correction does not alter the write path: a write already made one attempt."
+  },
+
+  "not_done_and_why": {
+    "db_api_per_attempt_budgets": "_kmGapRead_ and getOperationDbTableFromSheet run their own bounded loops in which each attempt takes a fresh 45 s, so they carry the same shape of defect the transport just lost. NOT corrected here: they are separate dispatchers with their own retry loops, the production capture that raised this round exercised the transport path, and fixing a second dispatcher on the strength of a defect proven in the first is the kind of change that is right in principle and unmeasured in fact. Recorded as open debt.",
+    "reconciling_45s_and_60s": "a decision about what a read may cost, not a defect",
+    "the_unbounded_POST_shim": "fallback-only, unreachable while the transport module loads",
+    "workspace_split_lazy_loading_shared_cache": "§10, and the evidence points away from it",
+    "removing_recovery": "§6 forbids it without evidence, and 0-of-5 in one capture is not a rate"
+  }
+}

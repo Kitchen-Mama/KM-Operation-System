@@ -371,6 +371,12 @@
     // ============================================================================================================
     var _epoch = _now();
     var _openRequests = 0;                 // requests dispatched and not yet settled
+    // S3-R8 §5 — WHAT is open, not only HOW MANY. A production capture ended with open_requests = 3 and there
+    // was no way to say which three: the counter is a single integer, so "a leak" and "three reads still in
+    // flight when you looked" produce the same 3. This registry makes the next capture decidable. Observation
+    // only — entries are added and removed alongside the counter and nothing reads them to make a decision.
+    var _openDetail = {};
+    var _openTick = 0;
     var _peakConcurrent = 0;
     var _seq = 0;
     var _metrics = { requests: 0, retries: 0, coalesced: 0, recoveries: 0, byAction: {}, byCode: {}, samples: [], shareSkipped: {} };
@@ -490,15 +496,24 @@
     //
     // Observation only: nothing is shared, delayed, retried or cancelled. `close()` is idempotent, because a
     // caller that closes twice must not drive the open count below zero and make the next peak meaningless.
-    function openExternal() {
-        _openRequests += 1;
-        if (_openRequests > _peakConcurrent) _peakConcurrent = _openRequests;
-        var closed = false;
-        return function close() { if (closed) return; closed = true; _openRequests -= 1; };
+    function openExternal(label) {
+      _openRequests += 1;
+      if (_openRequests > _peakConcurrent) _peakConcurrent = _openRequests;
+      var closed = false;
+      // S3-R8 §5 — named where the caller gave a name. A dispatcher this module does not own is exactly the
+      // one whose open requests are hardest to account for from outside, so it gets a row too.
+      var key = 'x' + (++_openTick);
+      _openDetail[key] = { key: key, action: str(label) || null, kind: null, owner: null,
+        dispatcher: 'external', opened_at_ms: _now() - _epoch };
+      return function close() {
+        if (closed) return;
+        closed = true; _openRequests -= 1;
+        delete _openDetail[key];
+      };
     }
     function beginExternal(action, kind) {
         var t0 = _now();
-        var close = openExternal();
+        var close = openExternal(action);
         return function done(code, bytes) {
             // Recorded BEFORE the close, so the sample's `concurrent_at_dispatch` still counts the request it
             // describes. Closing first would make every external sample report one fewer than was in flight.
@@ -712,7 +727,14 @@
       var _concurrentAtDispatch = _openRequests;
       if (_openRequests > _peakConcurrent) _peakConcurrent = _openRequests;
       var _settled = false;
-      function _closeRequest() { if (_settled) return; _settled = true; _openRequests -= 1; }
+      var _openKey = 'r' + (++_openTick);
+      _openDetail[_openKey] = { key: _openKey, action: action, kind: kind, owner: str(opts.owner) || null,
+        dispatcher: 'transport.request', opened_at_ms: t.start - _epoch };
+      function _closeRequest() {
+        if (_settled) return;
+        _settled = true; _openRequests -= 1;
+        delete _openDetail[_openKey];
+      }
       var _owner = str(opts.owner) || null;
       var _reason = str(opts.reason) || null;
       var _payloadFp = isObj(opts.payload) ? canonicalScope(opts.payload).slice(0, 200) : null;
@@ -722,6 +744,37 @@
           payload_fingerprint: _payloadFp };
       }
       var maxRetries = (kind === 'write') ? 0 : ((typeof opts.maxRetries === 'number') ? Math.max(0, Math.min(1, opts.maxRetries)) : 1);
+      // ==========================================================================================
+      // S3-R8 §7 — THE TIMEOUT BOUNDS THE ATTEMPT. IT DID NOT BOUND THE REQUEST.
+      //
+      // `ms` below was read per ATTEMPT, so a recovery started a brand-new full budget. One logical read
+      // could therefore last 2 x 60 000 ms plus the retry delay, and production measured exactly that:
+      // a capture recorded a single read settling at 85 882 ms. The arithmetic is not a guess —
+      // 85 882 = ~25 500 (attempt 1, returning REDIRECT_TARGET_NOT_FOUND) + ~400 (retry delay)
+      // + 60 000 (attempt 2, a fresh budget, exhausted). Nobody chose 120 seconds; it was the sum of two
+      // numbers that each looked like 60.
+      //
+      // The budget is now taken ONCE, here, and every attempt is bounded by what is LEFT of it. The
+      // recovery is not removed and no delay changes: what changes is that the recovery spends the
+      // remainder of the caller's budget instead of opening a second one.
+      //
+      // A caller who waited 60 seconds and got nothing is a bad outcome. A caller who waited 86 seconds
+      // for the same nothing is the same bad outcome plus 26 seconds, and the 26 seconds bought a second
+      // attempt the caller was never told about and could not have consented to.
+      // ==========================================================================================
+      var _budgetMs = (kind === 'write') ? _writeTimeoutMs : _readTimeoutMs;
+      var _deadlineAt = t.start + _budgetMs;
+      function _remainingMs() { return _deadlineAt - _now(); }
+      // A recovery needs enough budget left to be worth starting. Below this it would only convert a named
+      // failure (REDIRECT_TARGET_NOT_FOUND, which says what went wrong) into an anonymous one (REQUEST_TIMEOUT,
+      // which says only that time ran out), so the original result is kept and the skip is recorded.
+      //
+      // PROPORTIONAL, not a constant. A fixed floor of one second silently disables recovery for any caller
+      // running a short budget — which is every unit test in this repository, and would have made this change
+      // look like a recovery regression rather than a budget correction. 2% of the budget is 1.2 s at the
+      // production 60 s read bound and 5 ms at a 250 ms test bound, so the RULE is the same in both and only
+      // the scale differs.
+      var RECOVERY_MIN_BUDGET_MS = Math.max(1, Math.min(1000, Math.round(_budgetMs * 0.02)));
 
       // ---- BUILD ----
       if (action === '') {
@@ -806,7 +859,15 @@
           ? { method: 'GET', cache: 'no-store' }
           : { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' }, body: body };
         if (ctl) init.signal = ctl.signal;
-        var ms = (kind === 'write') ? _writeTimeoutMs : _readTimeoutMs;
+        // S3-R8 §7 — what is LEFT of the one budget, not a fresh one. On attempt 1 this is the full budget.
+        var ms = _remainingMs();
+        if (ms <= 0) {
+          // Nothing to unwind: no socket was opened and no abort listener has been attached yet.
+          return Promise.resolve(fail(PHASE.DISPATCH, CODES.REQUEST_TIMEOUT,
+            'No answer arrived within ' + Math.round(_budgetMs / 1000) + 's.',
+            { action: action, request_id: attemptRid || null, zero_write: (kind !== 'write'), retryable: false,
+              timeout_ms: _budgetMs, budget_exhausted: true, attempt: n }, t));
+        }
         var timedOut = false, aborted = false, timer = null;
         var external = opts.signal || null;
         if (external && external.aborted) {
@@ -928,6 +989,14 @@
                 res.details.recovery_request_id = ridForAttempt(n + 1);
               }
               var d = retryDelayMs(n, _random, deps.retryBaseMs, deps.retryCapMs);
+              // S3-R8 §7 — the delay is part of the budget too, so the question is what would be left AFTER it.
+              var _afterDelay = _remainingMs() - d;
+              if (_afterDelay < RECOVERY_MIN_BUDGET_MS) {
+                res.details.recovery_skipped = 'NO_BUDGET_REMAINING';
+                res.details.budget_remaining_ms = Math.max(0, Math.round(_remainingMs()));
+                res.details.budget_ms = _budgetMs;
+                return res;
+              }
               res.details.retry_scheduled_ms = d;
               return Promise.resolve(_sleep(d)).then(function () { return attempt(n + 1); });
             }
@@ -1221,6 +1290,21 @@
       metrics: metrics, resetMetrics: resetMetrics, recordExternal: recordExternal, uiState: uiState, describe: describe,
       // R6-R5 §2 — the chronological overlap report, and the live in-flight count the arbiter reads.
       timeline: timeline, openRequests: function () { return _openRequests; },
+      // S3-R8 §5 — the rows behind that integer, oldest first, with how long each has been open. `age_ms` is
+      // the number that separates the two readings of a non-zero count: a few hundred milliseconds means reads
+      // in flight, minutes means something never settled.
+      openRequestDetails: function () {
+        var now = _now();
+        var out = [];
+        for (var k in _openDetail) {
+          if (!Object.prototype.hasOwnProperty.call(_openDetail, k)) continue;
+          var d = _openDetail[k];
+          out.push({ action: d.action, kind: d.kind, owner: d.owner, dispatcher: d.dispatcher,
+            opened_at_ms: Math.round(d.opened_at_ms), age_ms: Math.round(now - _epoch - d.opened_at_ms) });
+        }
+        out.sort(function (a, b) { return b.age_ms - a.age_ms; });
+        return out;
+      },
       peakConcurrentRequests: function () { return _peakConcurrent; },
       errorFields: errorFields, errorLine: errorLine, beginExternal: beginExternal,
       // S3-R5A §6 — for a dispatcher this module does not own. Counter only; it records no sample, so a
