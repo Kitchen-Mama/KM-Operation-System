@@ -351,8 +351,16 @@ function prereqWorld(resetSrc) {
 // A3-R10 §14.4 — `marketplaces` is no longer a prerequisite on either path: the fcSummary bootstrap
 // slice emits it, adapted through the same normalizer and filter as the broad cache, so the Builder
 // reads it from the page model and issues no physical getTable for it.
+/* S3-R12 — FIVE, NOT SIX. fc_special_events left the Special prerequisite list because an
+   authoritative scoped owner already carries it: the fcSummary `events` slice, whose declared key set
+   is exactly ['fcSpecialEvents']. `_evtBuilderEventRows_` has always preferred the read model over the
+   broad cache, so the table was being fetched to fill a fallback. This is the same removal
+   R2-STABILITY §2 made for fc_regular_forecast on the Regular path, with the same replacement shape
+   (`_fcEnsureEventSource_` beside `_fcEnsureBaseFcSource_`). The WRITE census below is untouched: a
+   Special save still reaches three tables, and the third is now made current by the slice readback
+   rather than by a broad re-read. */
 var EVENT_TABLES = ['sku_details', 'marketplace_skus', 'campaigns',
-  'campaign_sku_lines', 'pricing_list', 'fc_special_events'];
+  'campaign_sku_lines', 'pricing_list'];
 // R2-STABILITY §1/§2 — `fc_regular_forecast` left this list. It was fetched once and read never: in
 // Workspace mode `_fcGetRegularForecast()` answers from the read model and does not fall through to
 // the broad cache, so the six Builder call sites that were asking `KM.DB.getFcRegularForecast()`
@@ -393,8 +401,11 @@ var SHARED = ['sku_details', 'marketplace_skus'];
   var W = prereqWorld();
   W.__load('regular');
   var second = W.__load('event').sort();
-  eq(second, ['campaign_sku_lines', 'campaigns', 'fc_special_events', 'pricing_list'],
-    'C5  Regular → Special fetches only the four the Special path does not already hold');
+  /* S3-R12 — fc_special_events left the Special prerequisite list: the fcSummary `events` slice is
+     its authoritative scoped owner, and `_evtBuilderEventRows_` has always preferred the read model.
+     The RULE each of these asserts is untouched; only the membership it is asserted over moved. */
+  eq(second, ['campaign_sku_lines', 'campaigns', 'pricing_list'],
+    'C5  Regular → Special fetches only the three the Special path does not already hold');
   eq(SHARED.filter(function (t) { return second.indexOf(t) !== -1; }), [],
     'C5a not one shared table is re-requested');
 })();
@@ -602,7 +613,7 @@ ok(/b\.disabled = _fcTargetSave_\.busy \|\| !_fcTargetSave_\.valid;/.test(TRENDE
   var W = prereqWorld();
   W.__load('event'); W.__load('regular');
   W._fcResetSecondaryCache('events');
-  eq(W._fcPrereqMissing_('event').sort(), ['campaign_sku_lines', 'campaigns', 'fc_special_events'],
+  eq(W._fcPrereqMissing_('event').sort(), ['campaign_sku_lines', 'campaigns'],
     'E7  a Special save still invalidates exactly three tables');
   eq(W._fcPrereqMissing_('regular'), [], 'E7a and leaves the Regular builder warm');
 })();

@@ -5763,10 +5763,27 @@ function _fcGetMarketplaces() {
 
    `sku_details` and `marketplace_skus` STAY, by the same test that removed this one: no authoritative
    read brings them, nothing else holds them, and the Builder genuinely reads them. */
+/* S3-R12 §5/§6 — fc_special_events LEAVES THIS LIST, and it is the same removal R2-STABILITY §2 made
+   for fc_regular_forecast on the Regular path, for the same reason and with the same replacement.
+
+   THE TEST THAT REMOVED IT is the one stated three comments up: a table stays only when no
+   authoritative read brings it. An authoritative read DOES bring this one — `events` is a declared FC
+   Summary slice whose key set is exactly ['fcSpecialEvents'], and `_evtBuilderEventRows_` has always
+   preferred the read model over the broad cache. So in workspace mode the broad table was being
+   fetched to populate a getter the builder only falls back to.
+
+   THE SLICE IS ALSO NARROWER. getTable returns the whole sheet; the slice is the server-scoped answer
+   the Event tab already reads. Replacing one with the other removes a full-table scan from the cold
+   path without moving the data anywhere the builder cannot see it.
+
+   LEGACY MODE IS UNAFFECTED, which is why this is safe rather than merely smaller. `_fcPrereqNeeded_`
+   returns false when the workspace is not effective, so this list is never consulted there; the broad
+   cache is loaded by the legacy full-DB read exactly as before, and `_evtBuilderEventRows_` falls
+   through to getFcSpecialEvents() exactly as before. */
 var _FC_PREREQ_TABLES_ = {
   regular: ['sku_details', 'marketplace_skus'],
   event: ['sku_details', 'marketplace_skus', 'campaigns', 'campaign_sku_lines',
-          'pricing_list', 'fc_special_events']
+          'pricing_list']
 };
 // The union, kept as the reset surface and as the CSV-import/Event-Assist fallback list. Nothing
 // loads it as a unit any more.
@@ -6601,10 +6618,33 @@ function _fcEnsureBaseFcSource_(mode) {
   if (!_fcBaseFcSourceMissing_(mode)) return Promise.resolve();
   return _fcSliceFetch_(FC_SLICE_.REGULAR);
 }
-/* Both prerequisites of an OPEN, settled together: the builder's broad-cache tables and, for the
-   Special path, the forecast slice its Base FC column reads. Neither owner is duplicated here. */
+/* S3-R12 — THE EVENT PATH'S OWN SOURCE, exactly symmetric with the Base FC one above.
+ *
+ * The Special builder reasons about persisted events — to tell a NEW event from an existing one, and
+ * to refuse a duplicate before anything is attempted. It reads them through `_evtBuilderEventRows_`,
+ * which prefers the read model and treats `null` as UNAVAILABLE rather than as none. So the model has
+ * to hold fcSpecialEvents by the time the builder opens, and this is what guarantees it.
+ *
+ * ONLY THE EVENT PATH. A Regular builder never calls `_evtBuilderEventRows_`, and fetching the events
+ * slice for it would put back an eager read of a tab nobody opened — which is the thing
+ * `_FC_SLICE_KEYS_` deliberately keeps out of bootstrap.
+ *
+ * AND ONLY WHEN THE MODEL LACKS IT. An operator who was already on the Event tab has the slice, and
+ * this then issues nothing at all — which is why the warm path stays at zero requests. */
+function _fcEventSourceMissing_(mode) {
+  return _fcPrereqPath_(mode) === 'event' && _fcWorkspaceMode_() && !_fcHas_('fcSpecialEvents');
+}
+function _fcEnsureEventSource_(mode) {
+  if (!_fcEventSourceMissing_(mode)) return Promise.resolve();
+  return _fcSliceFetch_(FC_SLICE_.EVENTS);
+}
+/* ALL prerequisites of an OPEN, settled together: the builder's broad-cache tables, the forecast
+   slice its Base FC column reads, and — S3-R12 — the events slice the Special builder reasons about.
+   Neither owner is duplicated here, and the three run CONCURRENTLY: a slice that had to wait for the
+   table reads to finish would have moved the cost rather than removed it. */
 function _fcPrereqAndSources_(mode) {
-  return Promise.all([_fcLoadPrerequisites_(mode), _fcEnsureBaseFcSource_(mode)]).then(function () {});
+  return Promise.all([_fcLoadPrerequisites_(mode), _fcEnsureBaseFcSource_(mode),
+    _fcEnsureEventSource_(mode)]).then(function () {});
 }
 function _fcPrereqNeeded_(mode) {
   if (!_fcEffectiveWorkspace()) return false;

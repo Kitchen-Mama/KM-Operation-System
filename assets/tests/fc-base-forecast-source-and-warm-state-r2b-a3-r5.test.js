@@ -179,7 +179,10 @@ ok(/_fcGetRegularForecast\(\)/.test(fnSrc(FCS, '_regularPrefillManual')),
     'B1a  marketplaces is NOT a prerequisite — an authoritative read already owns it');
   ok(sb._FC_PREREQ_TABLES_.event.indexOf('marketplace_skus') !== -1,
     'B1b  but marketplace_skus IS, because no workspace read carries it');
-  ok(sb._FC_PREREQ_TABLES_.event.length === 6, 'B1c  which leaves six');
+  // S3-R12 — five. fc_special_events moved to the events slice; see the note at EVENT_TABLES.
+  ok(sb._FC_PREREQ_TABLES_.event.indexOf('fc_special_events') === -1,
+    'B1c  and fc_special_events is NOT one either — the events slice owns it');
+  ok(sb._FC_PREREQ_TABLES_.event.length === 5, 'B1c1 which leaves five');
 })();
 var GETREG = fnSrc(FCS, '_evtBaseFcForSku');
 ok(/_fcGetRegularForecast\(\)/.test(GETREG),
@@ -407,9 +410,23 @@ function resetWorld(resetSrc) {
   return sb;
 }
 
+/* S3-R12 — FIVE, NOT SIX. fc_special_events left the Special prerequisite list because an
+   authoritative scoped owner already carries it: the fcSummary `events` slice, whose declared key set
+   is exactly ['fcSpecialEvents']. `_evtBuilderEventRows_` has always preferred the read model over the
+   broad cache, so the table was being fetched to fill a fallback. This is the same removal
+   R2-STABILITY §2 made for fc_regular_forecast on the Regular path, with the same replacement shape
+   (`_fcEnsureEventSource_` beside `_fcEnsureBaseFcSource_`). The WRITE census below is untouched: a
+   Special save still reaches three tables, and the third is now made current by the slice readback
+   rather than by a broad re-read. */
 var EVENT_TABLES = ['sku_details', 'marketplace_skus', 'campaigns',
-  'campaign_sku_lines', 'pricing_list', 'fc_special_events'];
+  'campaign_sku_lines', 'pricing_list'];
 var CHANGED_BY_SPECIAL = ['campaigns', 'campaign_sku_lines', 'fc_special_events'];
+/* The write census intersected with what the PREREQUISITE LIST still tracks. The difference between
+   the two is exactly fc_special_events, and that difference is the round: the table is still changed
+   by the save and still made current afterwards — by the slice readback rather than by this map. */
+var CHANGED_AND_TRACKED = CHANGED_BY_SPECIAL.filter(function (t) {
+  return EVENT_TABLES.indexOf(t) !== -1;
+});
 var UNCHANGED_BY_SPECIAL = ['sku_details', 'marketplace_skus', 'pricing_list'];
 
 (function () {
@@ -434,8 +451,14 @@ var UNCHANGED_BY_SPECIAL = ['sku_details', 'marketplace_skus', 'pricing_list'];
   W.__warmAll();
   eq(W._fcPrereqMissing_('event'), [], 'D4  a warm Special path asks for nothing');
   W._fcResetSecondaryCache('events');
-  eq(W._fcPrereqMissing_('event').sort(), CHANGED_BY_SPECIAL.slice().sort(),
-    'D5  after a Special save it asks for THREE tables, not all six');
+  eq(W._fcPrereqMissing_('event').sort(), CHANGED_AND_TRACKED.slice().sort(),
+    'D5  after a Special save it asks only for the tables it can change that this map still tracks');
+  // AND THE THIRD IS NOT FORGOTTEN — it is made current by the slice the save reads back. Asserting
+  // this is what keeps D5 from quietly becoming "one fewer table is refreshed".
+  eq(CHANGED_BY_SPECIAL.filter(function (t) { return CHANGED_AND_TRACKED.indexOf(t) === -1; }),
+    ['fc_special_events'], 'D5a the one it no longer tracks is fc_special_events');
+  ok(/_fcAfterWriteScoped_\(\{ slice: FC_SLICE_\.EVENTS/.test(FCS),
+    'D5b and the Special save reads the events SLICE back, which is what makes it current');
   eq(W._fcPrereqMissing_('regular'), [],
     'D6  and the Regular builder, which holds none of them, still asks for nothing');
 })();
@@ -466,7 +489,7 @@ var UNCHANGED_BY_SPECIAL = ['sku_details', 'marketplace_skus', 'pricing_list'];
   var W3 = resetWorld();
   W3.__warmAll();
   W3._fcResetSecondaryCache({ slice: 'events', merged: true });
-  eq(W3._fcPrereqMissing_('event').sort(), CHANGED_BY_SPECIAL.slice().sort(),
+  eq(W3._fcPrereqMissing_('event').sort(), CHANGED_AND_TRACKED.slice().sort(),
     'D9  the object form of the scope is read the same way as the bare string');
 })();
 
@@ -640,7 +663,8 @@ section('G. VACUITY — the unfaulted tree really does behave as the mutants ass
   R.__warmAll();
   ok(R._fcPrereqMissing_('event').length === 0, 'G2  a warm path really is warm, so M6/M7/M11 can fail');
   R._fcResetSecondaryCache('events');
-  ok(R._fcPrereqMissing_('event').length === 3, 'G2a and a Special save really does drop exactly three');
+  ok(R._fcPrereqMissing_('event').length === CHANGED_AND_TRACKED.length,
+    'G2a and a Special save really does drop exactly the tracked tables it can change');
   var w = tgtWorld();
   w.sb._fcSetTargetSaveEnabled_(false);
   ok(w.btn.textContent === 'Save', 'G3  the real renderer really does stay idle when merely invalid, so M1 can fail');

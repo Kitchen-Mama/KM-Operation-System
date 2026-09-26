@@ -118,9 +118,12 @@ var FNS = [
   '_fcRefreshViewNow_', '_fcPrereqPath_', '_fcPrereqNeeded_', '_fcPrereqMissing_',
   // A3-R9 §8 — the loader now classifies a failure as retryable or not before setting the state.
   '_fcPrereqRetryable_',
-  // R2B-A3-R5 — opening a builder settles TWO owners: the broad-cache tables and, for the Special
-  // path, the forecast slice its Base FC column reads. proceedToFcMode awaits both through here.
-  '_fcBaseFcSourceMissing_', '_fcEnsureBaseFcSource_', '_fcPrereqAndSources_',
+  // R2B-A3-R5 / S3-R12 — opening a builder settles THREE owners: the broad-cache tables, the
+  // forecast slice the Base FC column reads, and — for the Special path — the events slice the
+  // builder reasons about. proceedToFcMode awaits all three through _fcPrereqAndSources_, so all
+  // three have to be in the sandbox or it throws on the first mode selection.
+  '_fcBaseFcSourceMissing_', '_fcEnsureBaseFcSource_',
+  '_fcEventSourceMissing_', '_fcEnsureEventSource_', '_fcPrereqAndSources_',
   '_fcLoadPrerequisites_', '_fcOnModeSelected_', '_fcResetSecondaryCache',
   '_fcNextBtn_', '_fcSetNextBusy_', '_fcClearPrereqRefusal_',
   '_fcShowPrereqRefusal_', '_fcOpenBuilder_', '_fcWriteBegin_', '_fcWriteEnd_', '_fcClassifyWrite_',

@@ -1,0 +1,285 @@
+{
+ "round": "S3-R12",
+ "instrument": "assets/tests/_s3r11-interaction-runner.js, extended for R12 with: per-request sent/settled marks (so READ ROUNDS are visible, not just request counts), broad-cache getter instrumentation (so a table that is FETCHED but never READ is visible), a one-shot stall (so a read can be made to exceed its budget), and the Special Event Next path beside the Regular one.",
+ "harness_faults_found_and_fixed": [
+  "The R11 fixture answered EVERY fcSummary slice request with EVERY model key, including fcSpecialEvents. Real slices carry one key set each (_FC_SLICE_KEYS_). With fcSpecialEvents always present the events slice could never be missing, so _fcEnsureEventSource_ could not be observed firing at all — the fixture hid the exact state this round changes.",
+  "fc_special_events was an empty fixture table, so an EMPTY existing-event picker could not be told apart from an UNREADABLE one. It now carries 24 rows."
+ ],
+ "what_is_authoritative": [
+  "Request counts, read ROUNDS, and which broad-cache getters each path actually calls.",
+  "DOM outcomes: whether the existing-event picker is readable, whether a skeleton is stuck, whether any transport request is left open."
+ ],
+ "what_is_not": [
+  "pollMs — Chrome virtual time, as recorded in the R11 evidence. Production milliseconds remain operator-owned; the operator figures in this round (~6 s Regular, ~37 s Special) are approximate and are deliberately NOT converted into benchmarks."
+ ],
+ "path_diff": {
+  "REGULAR_COLD_TABLES": [
+   "sku_details",
+   "marketplace_skus"
+  ],
+  "SPECIAL_COLD_TABLES_PRE": [
+   "sku_details",
+   "marketplace_skus",
+   "campaigns",
+   "campaign_sku_lines",
+   "pricing_list",
+   "fc_special_events"
+  ],
+  "SPECIAL_COLD_TABLES_POST": [
+   "sku_details",
+   "marketplace_skus",
+   "campaigns",
+   "campaign_sku_lines",
+   "pricing_list"
+  ],
+  "SPECIAL_COLD_SLICE_POST": "fcSummary.workspace.get slice=events (scoped owner)",
+  "READ_POOL_SIZE": 2,
+  "TRUE_COLD_ROUNDS_PRE": "ceil(6/2) = 3",
+  "TRUE_COLD_ROUNDS_POST": "ceil(5/2) = 3, with the events slice concurrent",
+  "note": "The measured runs below show 4 extra requests / 2 rounds for Special because the harness opens the Regular builder first, which warms sku_details and marketplace_skus. The 6-table / 3-round figure is the declared list, and is what a session that goes straight to Special pays."
+ },
+ "getters_called_during_special_open": {
+  "called": [
+   "getSkuDetails",
+   "getMarketplaceSkus",
+   "getCampaigns",
+   "getFcSpecialEvents"
+  ],
+  "FETCHED_BUT_NEVER_CALLED": [
+   "getCampaignSkuLines",
+   "getPricingList"
+  ],
+  "why_it_matters": "campaign_sku_lines is read only by _evtHydrateExisting_, which runs when the operator picks an EXISTING event. pricing_list is read only by resolveRegionalPricingContext, which runs when a SKU row is given a SKU. Neither is needed to open the builder — but both ARE needed later, so removing them from the cold path is a deferral, which is §11 territory and is proposed rather than implemented."
+ },
+ "client_normalization_cost": {
+  "measured_with": "Node, real timers, the shipped normalizeOperationDb",
+  "mid_scale_total_ms": 71.8,
+  "large_scale_total_ms": 342.0,
+  "conclusion": "CLIENT_NORMALIZATION is ruled OUT as the dominant segment by measurement, not by argument: at 40 000 campaign_sku_lines and 9 000 pricing rows the whole six-table set normalizes in about a third of a second. The same fixtures serialize to ~3.9 MB (mid) and ~20 MB (large) of JSON for the Special set versus ~0.78 MB / ~2.8 MB for the Regular set, a 5-7x ratio that tracks the operator's observed ~37 s vs ~6 s. The cost is the reads."
+ },
+ "runs": {
+  "pre": {
+   "FC_NEXT_REGULAR": {
+    "api": 2,
+    "rounds": 1,
+    "dupes": 0,
+    "byAction": {
+     "getTable:sku_details": 1,
+     "getTable:marketplace_skus": 1
+    },
+    "getters": {
+     "getSkuDetails": 1,
+     "getMarketplaceSkus": 1,
+     "getCampaigns": 0,
+     "getCampaignSkuLines": 0,
+     "getPricingList": 0,
+     "getFcSpecialEvents": 0
+    },
+    "settled": true
+   },
+   "FC_NEXT_REGULAR_WARM": {
+    "api": 0,
+    "rounds": 0,
+    "dupes": 0,
+    "byAction": {},
+    "getters": {
+     "getSkuDetails": 2,
+     "getMarketplaceSkus": 2,
+     "getCampaigns": 0,
+     "getCampaignSkuLines": 0,
+     "getPricingList": 0,
+     "getFcSpecialEvents": 0
+    },
+    "settled": true
+   },
+   "FC_NEXT_SPECIAL": {
+    "api": 4,
+    "rounds": 2,
+    "dupes": 0,
+    "byAction": {
+     "getTable:campaigns": 1,
+     "getTable:campaign_sku_lines": 1,
+     "getTable:pricing_list": 1,
+     "getTable:fc_special_events": 1
+    },
+    "getters": {
+     "getSkuDetails": 1,
+     "getMarketplaceSkus": 1,
+     "getCampaigns": 1,
+     "getCampaignSkuLines": 0,
+     "getPricingList": 0,
+     "getFcSpecialEvents": 2
+    },
+    "settled": true
+   },
+   "FC_NEXT_SPECIAL_WARM": {
+    "api": 0,
+    "rounds": 0,
+    "dupes": 0,
+    "byAction": {},
+    "getters": {
+     "getSkuDetails": 1,
+     "getMarketplaceSkus": 1,
+     "getCampaigns": 1,
+     "getCampaignSkuLines": 0,
+     "getPricingList": 0,
+     "getFcSpecialEvents": 2
+    },
+    "settled": true
+   },
+   "SPECIAL_EXISTING_PICKER": {
+    "present": true,
+    "disabled": false,
+    "options": 1,
+    "unreadable": false,
+    "noteShown": false,
+    "noteText": null
+   }
+  },
+  "post": {
+   "FC_NEXT_REGULAR": {
+    "api": 2,
+    "rounds": 1,
+    "dupes": 0,
+    "byAction": {
+     "getTable:sku_details": 1,
+     "getTable:marketplace_skus": 1
+    },
+    "getters": {
+     "getSkuDetails": 1,
+     "getMarketplaceSkus": 1,
+     "getCampaigns": 0,
+     "getCampaignSkuLines": 0,
+     "getPricingList": 0,
+     "getFcSpecialEvents": 0
+    },
+    "settled": true
+   },
+   "FC_NEXT_REGULAR_WARM": {
+    "api": 0,
+    "rounds": 0,
+    "dupes": 0,
+    "byAction": {},
+    "getters": {
+     "getSkuDetails": 2,
+     "getMarketplaceSkus": 2,
+     "getCampaigns": 0,
+     "getCampaignSkuLines": 0,
+     "getPricingList": 0,
+     "getFcSpecialEvents": 0
+    },
+    "settled": true
+   },
+   "FC_NEXT_SPECIAL": {
+    "api": 4,
+    "rounds": 2,
+    "dupes": 0,
+    "byAction": {
+     "getTable:campaigns": 1,
+     "getTable:campaign_sku_lines": 1,
+     "fcSummary.workspace.get:events": 1,
+     "getTable:pricing_list": 1
+    },
+    "getters": {
+     "getSkuDetails": 1,
+     "getMarketplaceSkus": 1,
+     "getCampaigns": 1,
+     "getCampaignSkuLines": 0,
+     "getPricingList": 0,
+     "getFcSpecialEvents": 1
+    },
+    "settled": true
+   },
+   "FC_NEXT_SPECIAL_WARM": {
+    "api": 0,
+    "rounds": 0,
+    "dupes": 0,
+    "byAction": {},
+    "getters": {
+     "getSkuDetails": 1,
+     "getMarketplaceSkus": 1,
+     "getCampaigns": 1,
+     "getCampaignSkuLines": 0,
+     "getPricingList": 0,
+     "getFcSpecialEvents": 1
+    },
+    "settled": true
+   },
+   "SPECIAL_EXISTING_PICKER": {
+    "present": true,
+    "disabled": false,
+    "options": 1,
+    "unreadable": false,
+    "noteShown": false,
+    "noteText": null
+   },
+   "SRD_TIMEOUT_REFUSAL": {
+    "stalled": 1,
+    "refusalShown": true,
+    "refusalText": "Couldn’t load regional details: No answer arrived within 60s. [action skuDetails.workspace.get · REQUEST_TIMEOUT · request REQ-C000013]. Ret",
+    "stillSkeleton": 0,
+    "itemsRendered": 0,
+    "openRequests": 0
+   },
+   "SRD_TIMEOUT_RECOVERY": {
+    "api": 1,
+    "byAction": {
+     "skuDetails.workspace.get": 1
+    },
+    "itemsRendered": 50,
+    "stillSkeleton": 0,
+    "openRequests": 0
+   }
+  },
+  "s11_variant_measurement_only": {
+   "FC_NEXT_SPECIAL": {
+    "api": 2,
+    "rounds": 1,
+    "dupes": 0,
+    "byAction": {
+     "getTable:campaigns": 1,
+     "fcSummary.workspace.get:events": 1
+    },
+    "getters": {
+     "getSkuDetails": 1,
+     "getMarketplaceSkus": 1,
+     "getCampaigns": 1,
+     "getCampaignSkuLines": 0,
+     "getPricingList": 0,
+     "getFcSpecialEvents": 1
+    },
+    "settled": true
+   },
+   "FC_NEXT_SPECIAL_WARM": {
+    "api": 0,
+    "rounds": 0,
+    "dupes": 0,
+    "byAction": {},
+    "getters": {
+     "getSkuDetails": 1,
+     "getMarketplaceSkus": 1,
+     "getCampaigns": 1,
+     "getCampaignSkuLines": 0,
+     "getPricingList": 0,
+     "getFcSpecialEvents": 1
+    },
+    "settled": true
+   },
+   "SPECIAL_EXISTING_PICKER": {
+    "present": true,
+    "disabled": false,
+    "options": 1,
+    "unreadable": false,
+    "noteShown": false,
+    "noteText": null
+   },
+   "DISCLAIMER": "MEASURED AND REVERTED. This variant drops campaign_sku_lines and pricing_list from the Special cold path. It is NOT committed and NOT shipped: §11 requires operator approval before deferring data out of the cold path. It exists so the proposal carries a number instead of an adjective."
+  }
+ },
+ "sku_regional_timeout": {
+  "REPRODUCED_CAUSE": false,
+  "why": "The cause is a property of the Apps Script container and the network. A stub cannot produce it, and injecting a delay would only prove the timeout fires.",
+  "RECOVERY_SEALED": true,
+  "evidence": "SRD_TIMEOUT_REFUSAL / SRD_TIMEOUT_RECOVERY above, driven by stalling one real read past the 60 s budget in a real browser."
+ }
+}

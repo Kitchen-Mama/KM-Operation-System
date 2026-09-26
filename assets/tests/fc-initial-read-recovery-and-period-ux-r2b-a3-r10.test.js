@@ -325,9 +325,14 @@ section('D. MARKETPLACES HAS ONE OWNER (§14.4)');
     'D3  the Regular path is two tables');
   eq(sb._FC_PREREQ_TABLES_.regular.indexOf('fc_regular_forecast'), -1,
     'D3a  and the forecast table is not one of them — an authoritative read already owns it');
+  /* S3-R12 — fc_special_events left the Special prerequisite list: the fcSummary `events` slice is
+     its authoritative scoped owner, and `_evtBuilderEventRows_` has always preferred the read model.
+     The RULE each of these asserts is untouched; only the membership it is asserted over moved. */
   eq(sb._FC_PREREQ_TABLES_.event.slice().sort(),
-    ['campaign_sku_lines', 'campaigns', 'fc_special_events', 'marketplace_skus', 'pricing_list', 'sku_details'],
-    'D4  and the Special path six');
+    ['campaign_sku_lines', 'campaigns', 'marketplace_skus', 'pricing_list', 'sku_details'],
+    'D4  and the Special path five');
+  eq(sb._FC_PREREQ_TABLES_.event.indexOf('fc_special_events'), -1,
+    'D4a  with fc_special_events owned by the events slice rather than fetched as a table');
 
   ok(varSrc(FCS, '_FC_SLICE_KEYS_').indexOf('marketplaces') !== -1,
     'D5  because the bootstrap slice owns those rows');

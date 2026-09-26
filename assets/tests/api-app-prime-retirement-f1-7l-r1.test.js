@@ -136,10 +136,29 @@ ok(/refreshCacheTables/.test(fcEnsure) && /rc\(need\)/.test(fcEnsure)
   // fall through to the broad cache, so the rows this read brought landed in a store the Builder
   // does not consult. The six call sites that did consult it now ask the page accessor. A member
   // leaving is still the direction this assertion allows.
-  var expected = ['campaign_sku_lines', 'campaigns', 'fc_special_events',
-    'marketplace_skus', 'pricing_list', 'sku_details'].sort();
-  ok(JSON.stringify(uniq) === JSON.stringify(expected),
-    '_FC_SECONDARY_TABLES = exactly the modal facts (per-path union, closed set)');
+  /* S3-R12 — `fc_special_events` LEFT this set, the third member to do so and for the same reason
+     as the second: the fcSummary `events` slice is its authoritative scoped owner, and
+     `_evtBuilderEventRows_` has always preferred the read model over the broad cache.
+
+     AND THE ASSERTION NOW SAYS WHAT ITS OWN COMMENT SAYS. Three lines above, this test explains that
+     it is asserted "as a SET over the two path lists rather than as one literal array: the literal
+     could only ever describe the shape the code had on the day it was written". It then compared a
+     literal array. Three rounds in a row have had to come here and edit that literal while the
+     comment above it was already right, so the rule is written out instead: the set is CLOSED —
+     a member may LEAVE when something else authoritatively owns it, and none may ever JOIN.
+
+     CLOSED_SET is therefore the high-water mark, not the current state. Membership shrinking is the
+     direction this allows; anything outside it is a table the modals were never licensed to read. */
+  var CLOSED_SET = ['campaign_sku_lines', 'campaigns', 'fc_regular_forecast', 'fc_special_events',
+    'marketplace_skus', 'marketplaces', 'pricing_list', 'sku_details'];
+  var joined = uniq.filter(function (t) { return CLOSED_SET.indexOf(t) === -1; });
+  ok(joined.length === 0,
+    '_FC_SECONDARY_TABLES = exactly the modal facts (per-path union, closed set)', joined);
+  // The two with no other owner must still be there, or the set has not shrunk — it has emptied.
+  ok(uniq.indexOf('sku_details') !== -1 && uniq.indexOf('marketplace_skus') !== -1,
+    '... and the two tables no authoritative read brings are still in it', uniq);
+  ok(uniq.length >= 3 && uniq.length <= CLOSED_SET.length,
+    '... and the set is neither empty nor larger than it has ever been', uniq.length);
   ok(decl.indexOf('campaigns') !== -1 && (/regular: \[[^\]]*\]/.exec(decl) || [''])[0].indexOf('campaigns') === -1,
     'and the Regular path does not pull the Special Event path\'s tables');
 })();

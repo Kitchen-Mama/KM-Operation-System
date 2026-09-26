@@ -123,10 +123,25 @@ ok(PREREQ.regular.indexOf('sku_details') !== -1 && PREREQ.regular.indexOf('marke
 ok(!/_fcGetSkuDetails|_fcGetMarketplaceSkus/.test(FCS),
   'A5 ... and the page has no read-model accessor for either, which is why they stay');
 
-// The Special path is untouched. This round did not renegotiate what a Special open needs.
+/* S3-R12 — RENEGOTIATED, deliberately and with measurement. R2's sentence here was "this round did
+   not renegotiate what a Special open needs", which was true of R2 and became, as a verbatim pin, a
+   claim that no round ever may. S3-R12 is the round that did: a real Special builder open in a real
+   browser calls getCampaignSkuLines and getPricingList ZERO times, and reads its events through
+   `_evtBuilderEventRows_`, which prefers the workspace read model. So fc_special_events moved to the
+   `events` slice that already owns it, and the other two were measured, costed and left to the
+   operator under §11 rather than deferred unilaterally.
+
+   What is asserted now is the part that is durable in every round: Regular is a strict SUBSET of
+   Special, so the two paths stay separable and a Regular open can never be attached to a Special
+   load — which is the fault the per-path latch exists to prevent. */
 eq(PREREQ.event, ['sku_details', 'marketplace_skus', 'campaigns', 'campaign_sku_lines',
-                  'pricing_list', 'fc_special_events'],
-  'A6 the Special path prerequisite list is unchanged');
+                  'pricing_list'],
+  'A6 the Special path declares five tables — fc_special_events is owned by the events slice');
+ok(PREREQ.regular.every(function (t) { return PREREQ.event.indexOf(t) !== -1; })
+   && PREREQ.event.length > PREREQ.regular.length,
+  'A6a and Regular remains a strict subset of Special, so the paths stay separable');
+ok(/events: \['fcSpecialEvents'\]/.test(FCS),
+  'A6b with the events slice declaring exactly the key that left the table list');
 
 // §18-1 — the Builder consumes the page's one owner, not the broad cache.
 var BUILDER_FNS = ['_regularPrefillManual', '_populateRegularScopeSelects', '_fcRegularSiteOptions',
@@ -169,8 +184,15 @@ ok(baseGuard.indexOf("!== 'event'") === -1,
   'A13 §2 the regular-slice guard is no longer restricted to the Special path');
 ok(/_fcHas_\('fcRegularForecast'\)/.test(baseGuard),
   'A14 ... and both builders now declare they read the regular slice');
-ok(/Promise\.all\(\[_fcLoadPrerequisites_\(mode\), _fcEnsureBaseFcSource_\(mode\)\]\)/.test(FCS),
-  'A15 §19 the two prerequisites of an open are CONCURRENT, so the slice is not additive wall time');
+/* S3-R12 — THREE owners now, and the claim was never about how many. It is that they run TOGETHER:
+   a source made to wait for the table reads would have moved the cost rather than removed it. */
+var _all = /Promise\.all\(\[([\s\S]*?)\]\)\.then/.exec(fnSrc(FCS, '_fcPrereqAndSources_'));
+ok(!!_all && /_fcLoadPrerequisites_\(mode\)/.test(_all[1])
+   && /_fcEnsureBaseFcSource_\(mode\)/.test(_all[1])
+   && /_fcEnsureEventSource_\(mode\)/.test(_all[1]),
+  'A15 §19 every prerequisite of an open is settled CONCURRENTLY, so none is additive wall time');
+ok(!!_all && _all[1].indexOf('.then(') === -1,
+  'A15a and none of them is chained behind another');
 
 // §6 — the forbidden fixes. None of them was used.
 ok(!/REQUEST_TIMEOUT/.test(fnSrc(FCS, '_fcLoadPrerequisites_')),
@@ -354,7 +376,7 @@ chain.then(function () {
   ok(R.regularCold.tables.indexOf('fc_regular_forecast') === -1,
     'B2 §2 FC_REGULAR_FORECAST_GETTABLE_ON_NEXT = 0, measured');
   eq(R.regularWarm, 0, 'B3 Regular reopen without a write reads nothing');
-  eq(R.specialCold.n, 6, 'B4 the Special cold open is unchanged at 6 (this round did not touch it)');
+  eq(R.specialCold.n, 5, 'B4 the Special cold open reads FIVE tables — see A6');
   eq(R.specialWarm, 0, 'B5 §18-3 SPECIAL WARM reopen = 0 blocking prerequisite reads');
 
   eq(R.reconciled, ['campaigns'],
@@ -364,8 +386,15 @@ chain.then(function () {
   ok(R.latchedAfterInvalidation.indexOf('campaign_sku_lines') === -1 &&
      R.latchedAfterInvalidation.indexOf('fc_special_events') === -1,
     'B8 §18-6/7 the two PARTIAL receipts do not keep their tables current');
-  eq(R.inSaveWarm.tables, ['campaign_sku_lines', 'fc_special_events'],
-    'B9 §4 exactly those two are refreshed, ONCE, inside the save flow');
+  /* S3-R12 — ONE now, and the missing one is not forgotten. A Special save still reaches
+     fc_special_events; what changed is who makes it current afterwards. The save calls
+     `_fcAfterWriteScoped_({ slice: FC_SLICE_.EVENTS, ... })`, so the events slice is read back —
+     which is the same readback that now also serves the builder's cold open. B9a asserts that, so
+     this cannot silently decay into "one fewer table is refreshed". */
+  eq(R.inSaveWarm.tables, ['campaign_sku_lines'],
+    'B9 §4 the one table with no receipt and no slice owner is refreshed, ONCE, inside the save');
+  ok(/_fcAfterWriteScoped_\(\{ slice: FC_SLICE_\.EVENTS/.test(FCS),
+    'B9a and fc_special_events is made current by the events SLICE readback the save performs');
   eq(R.postWriteReopen, 0,
     'B10 §18-4 POST_SPECIAL_WRITE_NEXT_BLOCKING_READS = 0');
   eq(R.postWriteRegular, 0,
@@ -376,8 +405,8 @@ chain.then(function () {
   ok(R.failedWarmLatched.indexOf('campaign_sku_lines') === -1 &&
      R.failedWarmLatched.indexOf('fc_special_events') === -1,
     'B13 §18-8 incomplete data is NEVER marked CURRENT');
-  eq(R.reopenAfterFailedWarm.tables, ['campaign_sku_lines', 'fc_special_events'],
-    'B14 §18-9 ... and the next open reads them properly, with its own refusal surface');
+  eq(R.reopenAfterFailedWarm.tables, ['campaign_sku_lines'],
+    'B14 §18-9 ... and the next open reads it properly, with its own refusal surface');
 
   eq(R.rejectedReceipt, [],
     'B15 §18-8 a receipt the OWNING STORE refuses is not treated as reconciled');
@@ -391,8 +420,8 @@ chain.then(function () {
 
   eq(R.afterRulesSave, 0,
     'B19 the A3-R4 invariant holds: a Target Rule save disturbs neither builder path');
-  eq(R.afterUnknownScope, 6,
-    'B20 §4 fail-closed — an unknown write scope still discards everything');
+  eq(R.afterUnknownScope, PREREQ.event.length,
+    'B20 §4 fail-closed — an unknown write scope still discards EVERYTHING the path declares');
 
   runRest();
 }).catch(function (e) {
@@ -1140,8 +1169,15 @@ function more() {
       CALLS = [];
       return vm.runInContext('_fcPostWriteWarm_(' + RECEIPT + ')', box);
     }).then(function () {
+      /* S3-R12 — THE BASELINE WAS A LITERAL, AND THAT IS WHY THIS SURVIVED. `reads() !== 2` encoded
+         the healthy total of the SIX-table list; with five tables the mutant's extra read lands on
+         the old healthy number and the defect becomes invisible. The defect itself never needed a
+         total: it is that a table the receipt already RECONCILED gets bought again. So the probe
+         names the table instead of counting, which is both sharper and immune to the next list
+         change. B6 pins the healthy side (campaigns is reconciled, not re-read), so this is not
+         vacuous. */
       mutant('N16 §4 a complete receipt is discarded and its table is bought a second time',
-        reads() !== 2 && CALLS.length > 0 && CALLS[0].indexOf('campaigns') !== -1);
+        CALLS.length > 0 && CALLS.some(function (c) { return c.indexOf('campaigns') !== -1; }));
       n17();
     });
   }

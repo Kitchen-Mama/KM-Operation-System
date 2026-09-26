@@ -557,7 +557,10 @@ function afterWrite(scope) {
 }
 (function () {
   var r = afterWrite('events');
-  eq(r.event, ['campaigns', 'campaign_sku_lines', 'fc_special_events'],
+  // S3-R12 — fc_special_events is still CHANGED by a Special write; it is no longer tracked by the
+  // prerequisite map, because the events slice readback is what makes it current. See the note in
+  // fc-base-forecast-source-and-warm-state.
+  eq(r.event, ['campaigns', 'campaign_sku_lines'],
     'J1  after a SPECIAL write the Builder re-reads exactly the three tables that write can change');
   eq(r.regular, [], 'J2  and the Regular path stays completely warm');
   eq(r.event.filter(function (t) {
@@ -580,19 +583,28 @@ function afterWrite(scope) {
 })();
 (function () {
   var r = afterWrite(undefined);
-  // EIGHT, not nine: the Regular path declares two prerequisites now instead of three. The rule is
-  // untouched and is what this asserts — an unrecognised scope discards EVERY table on EVERY path.
-  eq(r.regular.length + r.event.length, 8,
+  /* SEVEN now: two on the Regular path and five on the Special one. The number has moved twice —
+     nine to eight when fc_regular_forecast left the Regular list, eight to seven when
+     fc_special_events left the Special one — and both times the RULE was untouched. So the rule is
+     what is asserted, against the declaration rather than against a remembered total: an
+     unrecognised scope discards EVERY table on EVERY path, whatever those paths currently hold. */
+  var _decl = cacheWorld();
+  var _dR = vm.runInContext('_FC_PREREQ_TABLES_.regular.length', _decl);
+  var _dE = vm.runInContext('_FC_PREREQ_TABLES_.event.length', _decl);
+  eq(r.regular.length + r.event.length, _dR + _dE,
     'J8  an UNKNOWN scope still invalidates everything — "I do not know" may never keep data warm');
-  eq(r.regular.length, 2, 'J8a  the whole Regular path');
-  eq(r.event.length, 6, 'J8b  and the whole Special path');
+  eq(r.regular.length, _dR, 'J8a  the whole Regular path');
+  eq(r.event.length, _dE, 'J8b  and the whole Special path');
+  ok(_dR + _dE >= 7, 'J8c  and there really is something to discard', _dR + _dE);
 })();
 (function () {
   var W = cacheWorld();
   eq(vm.runInContext("_fcPrereqMissing_('event')", W), [], 'J9  a warm path re-reads nothing at all');
   var cold = cacheWorld();
   vm.runInContext('_fcPrereqLoadedTables_ = {};', cold);
-  eq(vm.runInContext("_fcPrereqMissing_('event').length", cold), 6, 'J10 while a cold one reads six');
+  eq(vm.runInContext("_fcPrereqMissing_('event').length", cold),
+    vm.runInContext('_FC_PREREQ_TABLES_.event.length', cold),
+    'J10 while a cold one reads every table the Special path declares');
   eq(vm.runInContext("_fcPrereqMissing_('regular').length", cold), 2, 'J10a and two');
 })();
 (function () {

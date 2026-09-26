@@ -749,7 +749,22 @@ var ROUND_TOKENS = [
   // partial-loader.js, so the duplicate-fetch repair never reaches a returning browser and the round
   // ships as a no-op for exactly the people who already use the app. It is the failure H17 was written
   // for, and the first time that rule has fired on a real change.
-  's3r11-interaction-20260926'];
+  's3r11-interaction-20260926',
+  // S3-R12 — FC COLD PATH. A new token by the rule recorded above: origin/main is at dd97ac9, so R11's
+  // bytes have been served and its token is spent.
+  //
+  // ONE SHIPPED FILE CHANGED — fc-summary.js — and it is a pairing change rather than an isolated one,
+  // which is why the whole application set rotates rather than just its own entry. The Special Event
+  // builder no longer asks for the fc_special_events TABLE; it asks the fcSummary workspace for the
+  // `events` SLICE instead. A browser left on the old bundle keeps paying the full-table scan this
+  // round removed, which is the entire benefit lost for exactly the people who already use the app —
+  // the same failure the S3-R11 sweep caught one round ago on partial-loader.js.
+  //
+  // NO APPS SCRIPT COUNTERPART, and that is worth stating because a slice read looks like a new server
+  // dependency and is not: `fcSummary.workspace.get` with include.slice=events is an action the Event
+  // tab has always called, answered by the deployed R25 tree. Nothing server-side changed, the action
+  // contract stays at 17, and there is no sync set.
+  's3r12-fccoldpath-20260926'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the
