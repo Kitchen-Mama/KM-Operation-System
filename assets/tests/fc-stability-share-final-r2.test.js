@@ -134,9 +134,19 @@ ok(!/_fcGetSkuDetails|_fcGetMarketplaceSkus/.test(FCS),
    What is asserted now is the part that is durable in every round: Regular is a strict SUBSET of
    Special, so the two paths stay separable and a Regular open can never be attached to a Special
    load — which is the fault the per-path latch exists to prevent. */
-eq(PREREQ.event, ['sku_details', 'marketplace_skus', 'campaigns', 'campaign_sku_lines',
-                  'pricing_list'],
-  'A6 the Special path declares five tables — fc_special_events is owned by the events slice');
+/* S3-R13 — AND THE VERY NEXT ROUND MOVED IT AGAIN, which the comment above almost predicts: it says
+   the durable part is that Regular is a strict SUBSET of Special, and then spells the membership
+   anyway. campaign_sku_lines and pricing_list left on the operator's §11 decision, deferred to the
+   interactions that first read them. A CLOSED CEILING is the form that outlives this: members may
+   LEAVE the Special path, none may JOIN it, because a table joining it is a table added to the cold
+   path — which is the regression this file exists to prevent. A6a below is unchanged and is the claim
+   this section is actually about. */
+var A6_CEILING = ['sku_details', 'marketplace_skus', 'campaigns', 'campaign_sku_lines',
+  'pricing_list', 'fc_special_events', 'fc_regular_forecast', 'marketplaces'];
+ok(PREREQ.event.length > 0 && PREREQ.event.every(function (t) { return A6_CEILING.indexOf(t) !== -1; }),
+  'A6 the Special path holds no table outside the ceiling, and is not empty', PREREQ.event);
+ok(PREREQ.event.indexOf('fc_special_events') === -1,
+  'A6b and fc_special_events in particular is owned by the events slice, not by this list');
 ok(PREREQ.regular.every(function (t) { return PREREQ.event.indexOf(t) !== -1; })
    && PREREQ.event.length > PREREQ.regular.length,
   'A6a and Regular remains a strict subset of Special, so the paths stay separable');
@@ -234,6 +244,9 @@ function buildBox(opts) {
   vm.runInContext(PREREQ_SRC, box);
   vm.runInContext(varSrc(FCS, 'var _FC_SLICE_PREREQ_TABLES_ = {'), box);
   vm.runInContext('var _fcPrereqLoadedTables_ = {}; var _fcPrereqLoadedPaths_ = {}; var _fcSecondaryLoaded = false;', box);
+  // S3-R13 - the deferral globals _fcPostWriteWarm_ now reads. _fcDeferredEverUsed_ is empty here,
+  // so the warm-up holds exactly the tables the prerequisite lists declare, as it did before.
+  vm.runInContext("var _FC_DEFERRED_TABLES_ = { lines: 'campaign_sku_lines', pricing: 'pricing_list' }; var _fcDeferredEverUsed_ = {}; function _fcDeferralActive_() { return false; } function _fcDeferredPending_(t) { return _fcDeferralActive_() && !_fcPrereqLoadedTables_[t]; }", box);
   vm.runInContext('var _fcPrereqFlightByPath_ = {}; var _fcPrereqFlight_ = null; var _fcPrereqLastError_ = null;', box);
   vm.runInContext('var _fcPrereqLoads_ = 0; var _fcMeta_ = {}; var _fcPrereqState_ = "IDLE";', box);
   vm.runInContext('var FC_PREREQ_ = { IDLE: "IDLE", READY: "READY", LOADING: "LOADING", REFUSED: "REFUSED", FAILED_PERMANENT: "FAILED_PERMANENT" };', box);
@@ -285,6 +298,14 @@ var chain = Promise.resolve()
       .then(function () { return ev(box, '_fcLoadPrerequisites_("regular")'); })
       .then(function () {
         CALLS = [];
+        /* S3-R13 — THIS SESSION HAS OPENED A SAVED EVENT, which is what makes campaign_sku_lines
+           a table the page HOLDS. R2-STABILITY's guarantee is that the operator waits once, at
+           Save, and the next open waits for nothing; R13 deferred this table out of the cold
+           path, so 'the page holds it' became a fact about the SESSION rather than about the
+           list. `_fcDeferredEverUsed_` is that fact, and the warm-up reads it. Setting it here
+           is what the scenario has always assumed — a builder whose saved event was opened —
+           stated instead of implied. B9b below asserts the other half. */
+        ev(box, '_fcDeferredEverUsed_["campaign_sku_lines"] = true;');
         results.reconciled = ev(box, '_fcResetSecondaryCache(' + RECEIPT + ')');
         results.latchedAfterInvalidation = ev(box, 'Object.keys(_fcPrereqLoadedTables_).sort()');
         return ev(box, '_fcPostWriteWarm_(' + RECEIPT + ')');
@@ -301,12 +322,27 @@ var chain = Promise.resolve()
       })
       .then(function () { results.postWriteRegular = reads(); });
   })
+  /* S3-R13 §18-4 — THE OTHER HALF. A session that never opened a saved event does not hold
+     campaign_sku_lines, so the save must not buy it: warming a table nobody has read would be the
+     eager prefetch the §11 decision explicitly forbids. This is the same scenario as the one above
+     with one fact changed, which is the only way to show the fact is what decides it. */
+  .then(function () {
+    var box = buildBox();
+    return ev(box, '_fcLoadPrerequisites_("event")').then(function () {
+      CALLS = [];
+      ev(box, '_fcResetSecondaryCache(' + RECEIPT + ')');
+      return ev(box, '_fcPostWriteWarm_(' + RECEIPT + ')').then(function () {
+        results.inSaveWarmUnused = { n: reads(), tables: CALLS[0] || [] };
+      });
+    });
+  })
   // §18-8/9 a warm-up that FAILS.
   .then(function () {
     var box = buildBox({ failRefresh: true });
     box.window.KM.DB.refreshCacheTables = function (n) { CALLS.push(n.slice()); return Promise.resolve(); };
     return ev(box, '_fcLoadPrerequisites_("event")').then(function () {
       box.window.KM.DB.refreshCacheTables = function (n) { CALLS.push(n.slice()); return Promise.reject(new Error('REQUEST_TIMEOUT')); };
+      ev(box, '_fcDeferredEverUsed_["campaign_sku_lines"] = true;');   // S3-R13 — see the note above
       ev(box, '_fcResetSecondaryCache(' + RECEIPT + ')');
       CALLS = [];
       return ev(box, '_fcPostWriteWarm_({ slice: "events" })').then(function (got) {
@@ -376,7 +412,12 @@ chain.then(function () {
   ok(R.regularCold.tables.indexOf('fc_regular_forecast') === -1,
     'B2 §2 FC_REGULAR_FORECAST_GETTABLE_ON_NEXT = 0, measured');
   eq(R.regularWarm, 0, 'B3 Regular reopen without a write reads nothing');
-  eq(R.specialCold.n, 5, 'B4 the Special cold open reads FIVE tables — see A6');
+  /* S3-R13 — DERIVED. Five became three when campaign_sku_lines and pricing_list were deferred to
+     their first consumer, and this literal had already been edited by R2-STABILITY and S3-R12. The
+     claim is that a cold open reads exactly what its path DECLARES — one read per declared table, no
+     more — which is what this suite is about and what survives the list moving again. */
+  eq(R.specialCold.n, PREREQ.event.length,
+    'B4 the Special cold open reads exactly the tables its path declares', [R.specialCold.n, PREREQ.event]);
   eq(R.specialWarm, 0, 'B5 §18-3 SPECIAL WARM reopen = 0 blocking prerequisite reads');
 
   eq(R.reconciled, ['campaigns'],
@@ -393,6 +434,8 @@ chain.then(function () {
      this cannot silently decay into "one fewer table is refreshed". */
   eq(R.inSaveWarm.tables, ['campaign_sku_lines'],
     'B9 §4 the one table with no receipt and no slice owner is refreshed, ONCE, inside the save');
+  eq(R.inSaveWarmUnused.tables, [],
+    'B9b S3-R13 ... and NOT for a session that never opened a saved event — a deferred table nobody has read is not bought by a save');
   ok(/_fcAfterWriteScoped_\(\{ slice: FC_SLICE_\.EVENTS/.test(FCS),
     'B9a and fc_special_events is made current by the events SLICE readback the save performs');
   eq(R.postWriteReopen, 0,
@@ -405,8 +448,19 @@ chain.then(function () {
   ok(R.failedWarmLatched.indexOf('campaign_sku_lines') === -1 &&
      R.failedWarmLatched.indexOf('fc_special_events') === -1,
     'B13 §18-8 incomplete data is NEVER marked CURRENT');
-  eq(R.reopenAfterFailedWarm.tables, ['campaign_sku_lines'],
-    'B14 §18-9 ... and the next open reads it properly, with its own refusal surface');
+  /* S3-R13 — THE READ MOVED, THE GUARANTEE DID NOT. B14's claim is that a failed warm-up cannot make
+     things worse than not running: nothing is latched, so the data is fetched again by whoever needs
+     it, with a visible refusal of its own. What changed is WHO needs it. campaign_sku_lines is no
+     longer on the cold-path list, so the next OPEN correctly asks for nothing — and the next
+     REHYDRATE asks for it, behind the scoped surface s3-r13 §D10/D13 measures. B13 above already
+     states that nothing incomplete was latched; B14 now states the consequence at the path, derived,
+     and B14a names the table so this cannot decay into "and therefore nobody reads it". */
+  eq(R.reopenAfterFailedWarm.tables,
+    PREREQ.event.filter(function (t) { return R.failedWarmLatched.indexOf(t) === -1; }),
+    'B14 §18-9 ... and the next open re-reads exactly the path tables the failed warm left unlatched');
+  ok(R.failedWarmLatched.indexOf('campaign_sku_lines') === -1
+    && /_fcDeferredPending_\(_FC_DEFERRED_TABLES_\.lines\)/.test(FCS),
+    'B14a and campaign_sku_lines is still unlatched, so its own deferred consumer reads it — with its own refusal surface');
 
   eq(R.rejectedReceipt, [],
     'B15 §18-8 a receipt the OWNING STORE refuses is not treated as reconciled');
@@ -1106,6 +1160,11 @@ var SHARE_RAW = read('assets/js/core/supply-planning-forecast-share.js');
 // N13 — the warm-up latches its tables BEFORE the read resolves.
 (function () {
   var box = buildBox({ failRefresh: true });
+  /* S3-R13 — THIS BOX MODELS A SESSION THAT HAS OPENED A SAVED EVENT, which is what puts
+     campaign_sku_lines in the warm-up's reach at all now that it is deferred. Without the fact,
+     `held` excludes it, the warm-up has nothing to do, and this mutant becomes INERT — it would
+     report SURVIVED while proving nothing, which is worse than failing. */
+  vm.runInContext('_fcDeferredEverUsed_["campaign_sku_lines"] = true;', box);
   var _n13src = fnSrc(FCS, '_fcPostWriteWarm_');
   var _n13anchor = '  var warm = Promise.resolve(rc(need)).then(function () {';
   if (_n13src.indexOf(_n13anchor) === -1) throw new Error('N13 anchor drifted — the mutant would inject nothing');
@@ -1186,6 +1245,8 @@ function more() {
   //       ~15 s block the operator reported.
   function n17() {
     var box = buildBox();
+    // S3-R13 — a session that has opened a saved event; see the note at N13.
+    vm.runInContext('_fcDeferredEverUsed_["campaign_sku_lines"] = true;', box);
     var faulted = fnSrc(FCS, '_fcPostWriteWarm_')
       .split('function _fcPostWriteWarm_(scope) {')
       .join('function _fcPostWriteWarm_(scope) { if (true) return Promise.resolve([]);');
@@ -1197,8 +1258,18 @@ function more() {
       CALLS = [];
       return vm.runInContext('_fcLoadPrerequisites_("event")', box);
     }).then(function () {
-      mutant('N17 §17 the post-write warm-up is removed and the REOPEN blocks on reads again',
-        reads() !== 0);
+      /* S3-R13 — THE OBSERVATION MOVED BECAUSE THE READ DID, and measuring the old place would have
+         made this mutant INERT. N17 models the ~15 s block: the warm-up is removed, so the operator
+         pays for the same truth again after a save that had already succeeded. It used to be provable
+         from the next OPEN, because campaign_sku_lines was a cold-path table. It is deferred now, so a
+         reopen correctly reads nothing whether the warm-up ran or not — and a probe that kept counting
+         the reopen's reads would report SURVIVED while proving the opposite of what it claims.
+         What the warm-up still decides, and all it ever really decided, is whether the table is left
+         CURRENT. Unmutated it is; mutated it is not, and the next rehydrate pays. That is the same
+         defect observed at the place it is now visible. */
+      var latched = vm.runInContext('Object.keys(_fcPrereqLoadedTables_)', box);
+      mutant('N17 §17 the post-write warm-up is removed, so the table it should have made current is left stale',
+        reads() !== 0 || latched.indexOf('campaign_sku_lines') === -1);
       n18();
     });
   }

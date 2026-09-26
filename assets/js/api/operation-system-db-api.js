@@ -2680,6 +2680,33 @@ window.KM.DB.updatePricing = async function(payload) {
         e.errors = [];
         return e;
     }
+    /* S3-R13 §7/§8 — THE FOURTH STATE, WHICH THE PREVIEW PATH NEEDED AND DID NOT HAVE.
+     *
+     * R10 gave the WRITE path three outcomes and they are correct: a lost answer becomes OUTCOME_UNKNOWN
+     * and is then verified against pricing.write.status. The DRY RUN path was left on `rejected()`, so a
+     * redirect-404 during a preview produced CONFIRMED_REJECTED — an authoritative negative asserted from
+     * a transport failure, which is the exact thing R10 exists to forbid. The operator's own report is the
+     * proof: 'The database rejected the file. Nothing was written. The API redirect target for
+     * pricing.update had already expired.' The database said nothing. It was never reached.
+     *
+     * WHY NOT OUTCOME_UNKNOWN. Because nothing is unknown here, and pretending otherwise is its own lie.
+     * A dry run mints no write_id (see above, deliberately), carries `dry_run` in the SAME payload as the
+     * lines — so there is no arrival in which a server sees the rows but not the flag — and has no receipt
+     * to look up. UNKNOWN would also print R10's 'do not submit this again while we check', which is
+     * exactly the wrong instruction for a preview: the correct next action is to preview again.
+     *
+     * CONFIRMED_NOT_STARTED is the state that is actually true, and §7 lists it as one of the two that may
+     * claim zero-write. It says the write never began, which is what `dry_run: true` means, and it leaves
+     * the file's validity an OPEN question instead of answering it with a network error. */
+    function notStarted(code, detail) {
+        var e = new Error(detail || 'The preview could not be produced.');
+        e.write_outcome = 'CONFIRMED_NOT_STARTED';
+        e.write_id = null;              // a dry run mints none; inventing one would make it look replayable
+        e.error_code = code || 'PREVIEW_NOT_STARTED';
+        e.zero_write = true;
+        e.errors = [];
+        return e;
+    }
     function rejected(code, detail, errs) {
         var e = new Error(detail || 'Pricing update failed');
         e.write_outcome = 'CONFIRMED_REJECTED';
@@ -2706,7 +2733,8 @@ window.KM.DB.updatePricing = async function(payload) {
         resp = await _kmFetchBounded_(url, { method: 'POST', cache: 'no-store',
             headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(dto) }, 'write', 'pricing.update');
     } catch (netErr) {
-        if (dryRun) throw rejected('DRY_RUN_TRANSPORT_ERROR', 'The preview could not be produced: ' + ((netErr && netErr.message) || netErr));
+        if (dryRun) throw notStarted((netErr && netErr.kmTimeout) ? 'REQUEST_TIMEOUT' : 'HTTP_TRANSPORT_ERROR',
+            'The preview could not be produced: ' + ((netErr && netErr.message) || netErr));
         return await settle(unknown((netErr && netErr.kmTimeout) ? 'REQUEST_TIMEOUT' : 'HTTP_TRANSPORT_ERROR',
             (netErr && netErr.kmTimeout)
                 ? 'No answer arrived before the client time limit.'
@@ -2718,14 +2746,14 @@ window.KM.DB.updatePricing = async function(payload) {
     if (!cls.ok) {
         // A redirect-404 / HTML / non-2xx answer proves only that WE did not receive the answer. It proves
         // nothing whatsoever about the database, which is the defect this round exists to remove.
-        if (dryRun) throw rejected(cls.legacyCode, _kmTypedTransportMessage_('pricing.update', cls));
+        if (dryRun) throw notStarted(cls.typed && cls.typed.code, _kmTypedTransportMessage_('pricing.update', cls));
         return await settle(unknown(cls.typed && cls.typed.code, _kmTypedTransportMessage_('pricing.update', cls)));
     }
 
     var json;
     try { json = JSON.parse(String(text).trim()); }
     catch (pe) {
-        if (dryRun) throw rejected('NON_JSON_RESPONSE', 'The preview response was not readable.');
+        if (dryRun) throw notStarted('TRANSPORT_NON_JSON_RESPONSE', 'The preview response was not readable.');
         return await settle(unknown('TRANSPORT_NON_JSON_RESPONSE', 'The answer was not readable.'));
     }
 

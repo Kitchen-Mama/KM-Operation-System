@@ -764,7 +764,30 @@ var ROUND_TOKENS = [
   // dependency and is not: `fcSummary.workspace.get` with include.slice=events is an action the Event
   // tab has always called, answered by the deployed R25 tree. Nothing server-side changed, the action
   // contract stays at 17, and there is no sync set.
-  's3r12-fccoldpath-20260926'];
+  's3r12-fccoldpath-20260926',
+  // S3-R13 — ONE FINAL TOKEN FOR THE COMBINED R12+R13 TREE, and s3r12 may not carry it.
+  //
+  // R12 was never deployed on its own. Between then and now `origin/main` moved to c5f3162, so every
+  // byte behind `?v=s3r12-fccoldpath-20260926` HAS been served — the rule this series is built on says
+  // a token is spendable only until its bytes have been. More importantly, those bytes no longer
+  // describe the tree: a browser holding the s3r12 copy of fc-summary.js would have R12's prerequisite
+  // list and none of R13's deferral, which is a different application wearing the same name.
+  //
+  // WHY THE WHOLE APPLICATION SET ROTATES TOGETHER, as it did in R11 and R12: the changed modules are
+  // CO-DEPENDENT ACROSS FILES this round, not merely changed in parallel.
+  //   - fc-summary.js gains _fcEnsureDeferredTable_ and two scoped refusal surfaces; the markup that
+  //     hosts them lives in the fc-summary PARTIAL, which is fetched no-store and therefore always
+  //     current. A browser on the OLD script with the NEW partial shows two boxes nothing ever fills;
+  //     the NEW script against a cached old partial has nowhere to render a refusal and falls back to
+  //     alert(). Neither is shippable, and only a rotation makes the pair impossible.
+  //   - sku-regional-details.js now branches on CONFIRMED_NOT_STARTED, a write_outcome that only the
+  //     NEW operation-system-db-api.js produces. Old page + new API = a transport failure rendered as
+  //     a database rejection, which is the exact defect this round removes, still shipping. New page +
+  //     old API = the same, from the other direction. They are one release or they are a bug.
+  //
+  // NO APPS SCRIPT COUNTERPART. Nothing server-side changed, so the deployed contract pin stays at 17
+  // and no .gs file is in this release.
+  's3r13-specialdeferred-20260926'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

@@ -559,6 +559,11 @@ function pageWorld(events, campaigns, lines, opts) {
     'function _evtClearPeriodError() {}',
     'function _evtSwitchMode() {}',
     'function _evtUpdateAddRowBtn() {}',
+    // S3-R13 - _evtHydrateExisting_ now refuses to run before campaign_sku_lines has
+    // arrived, because hydrating from an empty table drops a saved event's discounts in
+    // silence. The guard is REAL source and answers false here (no workspace, no
+    // refreshCacheTables), so this box hydrates exactly as it always has.
+    "var _fcPrereqLoadedTables_ = {}; var _FC_DEFERRED_TABLES_ = { lines: 'campaign_sku_lines', pricing: 'pricing_list' }; var _fcDeferredEverUsed_ = {}; function _fcDeferralActive_() { return false; } function _fcDeferredPending_(t) { return _fcDeferralActive_() && !_fcPrereqLoadedTables_[t]; }",
     'function _evtApplyRowPricing() {}',
     'var _evtAddedRows = [];',
     // A3-R6 §7 — a single row labels its Qty control Current Event FC while an event is loaded.
@@ -768,8 +773,18 @@ function prereqWorld() {
   eq(W._FC_PREREQ_TABLES_.regular.indexOf('campaigns'), -1,
     'F1  the Regular path does not read campaigns');
   eq(W._FC_PREREQ_TABLES_.regular.indexOf('pricing_list'), -1, 'F1a nor pricing_list');
-  ok(W._FC_PREREQ_TABLES_.event.indexOf('campaign_sku_lines') !== -1,
-    'F2  the Special Event path DOES read campaign_sku_lines — rehydration needs the saved deal price');
+  /* S3-R13 — THE CLAIM IS TRUE AND HAS MOVED HOUSE. Rehydration really does need the saved deal
+     price, and that is exactly why the table is still fetched — but on the operator's §11 decision it
+     is fetched AT the rehydrate rather than before the builder opens, because a builder that is never
+     used to edit a saved event never needed it. Pinning the dependency to the COLD-PATH list asserted
+     the timing, not the dependency. It is now asserted at its real owner: the consumer that reads it,
+     and the declaration that names it as deferred. */
+  ok(/_FC_DEFERRED_TABLES_ = \{ lines: 'campaign_sku_lines'/.test(FCS),
+    'F2  campaign_sku_lines is DECLARED as a deferred Special-path table');
+  ok(/_fcDeferredPending_\(_FC_DEFERRED_TABLES_\.lines\)/.test(fnSrc(FCS, '_evtHydrateExisting_')),
+    'F2a and rehydration is the consumer that waits for it — the saved deal price is still read from it');
+  ok(/_evtCampaignLineRows_\(\)/.test(fnSrc(FCS, '_evtHydrateExisting_')),
+    'F2b which it still does through the campaign-lines accessor, unchanged');
   eq(W._FC_PREREQ_TABLES_.event.indexOf('fc_regular_forecast'), -1,
     'F3  and does not read the regular forecast (§7: only the SELECTED path)');
 })();

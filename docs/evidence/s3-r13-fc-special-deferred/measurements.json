@@ -1,0 +1,860 @@
+{
+ "round": "S3-R13",
+ "what_this_is": "The FC Special deferred-load implementation (operator decision, R13 S1), measured in real headless Chrome over a populated fixture world; plus the SKU Regional cold-entry matrix (S9).",
+ "instrument": "assets/tests/_s3r11-interaction-runner.js, extended for R13 with: the Special builder deferred boundaries (a SKU typed into a row, a group build, an existing event picked), a stall that can name a TABLE rather than only an action, and the S9 cold-entry matrix.",
+ "harness_faults_found_and_fixed": [
+  "THE getTable FIXTURE ANSWERED THE WRONG ENVELOPE, AND HAD SINCE R11. _kmGetTableOnce_ returns json.data.rows; the fixture answered { data: { <table>: rows } }, so EVERY getTable in this harness resolved to [] - a successful read of an empty table. Request counts were unaffected, which is why R11 and R12 request/round findings stand: a count is a property of control flow, not of the payload. What could never be exercised was anything reading the broad cache ROWS - which is exactly what this round defers. Left unfixed, every R13 assertion would have passed over an empty world.",
+  "THE EVENT FIXTURE WAS OUT OF SCOPE FOR THE BUILDER DEFAULTS. R12 rows were US/Amazon/this-year and used target_year / start_date / forecast_qty, while normalizeFcSpecialEventRecord reads year / event_start_date / fc_qty and _evtExistingEvents_ filters on raw.year. The builder opens on the FIRST country option and on fcTargetYear (NEXT year), so every row was filtered out. R12 recorded options:1, unreadable:false and read that as the picker being readable - which was true, and was not the question. The fixture now covers every scope the builder can open on, in both years it can default to.",
+  "campaigns and campaign_sku_lines were literally [] in the fixture, which would have made THE DEFERRED TABLE LOADED and THE DEFERRED TABLE IS EMPTY the same observation."
+ ],
+ "what_is_authoritative": [
+  "Request counts, read ROUNDS, and which broad-cache getters each path calls. Identical at serverMs 0 and 400, which is what makes them properties of the control flow.",
+  "DOM outcomes: the price cell state (pending vs missing vs ok), whether a subsection refusal is scoped, whether the rest of the builder is still rendered, whether a hydrate produced a discount."
+ ],
+ "what_is_not": [
+  "pollMs - Chrome virtual time, as recorded in the R11 and R12 evidence. Production milliseconds remain operator-owned. The operator figures carried into this round (~6s Regular, ~37s Special) are approximate and are NOT converted into benchmarks."
+ ],
+ "special_initial_path": {
+  "SPECIAL_INITIAL_REQUEST_COUNT_PRE": 4,
+  "SPECIAL_INITIAL_REQUEST_COUNT_POST": 2,
+  "SPECIAL_INITIAL_ROUNDS_PRE": 2,
+  "SPECIAL_INITIAL_ROUNDS_POST": 1,
+  "SPECIAL_INITIAL_TABLES_POST": [
+   "sku_details",
+   "marketplace_skus",
+   "campaigns"
+  ],
+  "SPECIAL_INITIAL_SLICE_POST": "fcSummary.workspace.get slice=events",
+  "note": "PRE is R12 measured and recorded in docs/evidence/s3-r12-fc-cold-path/measurements.json. Both figures are taken in the same harness after a Regular open has warmed sku_details and marketplace_skus. The DECLARED cold set moves from 5 tables (3 rounds at a read pool of 2) to 3 tables (2 rounds) for a session that goes straight to Special."
+ },
+ "runs": {
+  "serverMs0": {
+   "FC_NEXT_REGULAR": {
+    "pollMs": 8,
+    "api": 2,
+    "byAction": {
+     "getTable:sku_details": 1,
+     "getTable:marketplace_skus": 1
+    },
+    "dupes": 0,
+    "settled": true,
+    "rounds": 1,
+    "getters": {
+     "getSkuDetails": 1,
+     "getMarketplaceSkus": 1,
+     "getCampaigns": 0,
+     "getCampaignSkuLines": 0,
+     "getPricingList": 0,
+     "getFcSpecialEvents": 0
+    }
+   },
+   "FC_NEXT_REGULAR_WARM": {
+    "pollMs": 0,
+    "api": 0,
+    "byAction": {},
+    "dupes": 0,
+    "settled": true,
+    "rounds": 0,
+    "getters": {
+     "getSkuDetails": 2,
+     "getMarketplaceSkus": 2,
+     "getCampaigns": 0,
+     "getCampaignSkuLines": 0,
+     "getPricingList": 0,
+     "getFcSpecialEvents": 0
+    }
+   },
+   "FC_NEXT_SPECIAL": {
+    "pollMs": 7.9,
+    "api": 2,
+    "byAction": {
+     "getTable:campaigns": 1,
+     "fcSummary.workspace.get:events": 1
+    },
+    "dupes": 0,
+    "settled": true,
+    "rounds": 1,
+    "getters": {
+     "getSkuDetails": 1,
+     "getMarketplaceSkus": 1,
+     "getCampaigns": 1,
+     "getCampaignSkuLines": 0,
+     "getPricingList": 0,
+     "getFcSpecialEvents": 0
+    }
+   },
+   "FC_NEXT_SPECIAL_WARM": {
+    "pollMs": 0,
+    "api": 0,
+    "byAction": {},
+    "dupes": 0,
+    "settled": true,
+    "rounds": 0,
+    "getters": {
+     "getSkuDetails": 1,
+     "getMarketplaceSkus": 1,
+     "getCampaigns": 1,
+     "getCampaignSkuLines": 0,
+     "getPricingList": 0,
+     "getFcSpecialEvents": 0
+    }
+   },
+   "SPECIAL_EXISTING_PICKER": {
+    "present": true,
+    "disabled": false,
+    "options": 3,
+    "unreadable": false,
+    "noteShown": true,
+    "noteText": "2 saved events in this scope and year. Selecting one loads its saved values for editing."
+   },
+   "SPECIAL_SKU_FIXTURE": {
+    "sku": "KM-1000",
+    "rows": 1,
+    "baseUi": {
+     "modalOpen": true,
+     "scopeCountry": true,
+     "eventFlag": true,
+     "startDate": true,
+     "skuRows": 1,
+     "skuDatalist": 120,
+     "existingOptions": 3,
+     "existingDisabled": false,
+     "baseCampaigns": 5,
+     "permanentLoading": 0,
+     "countrySel": "CA",
+     "siteSel": "ResUS|CA|Amazon",
+     "siteOpts": 2,
+     "targetYear": "2027",
+     "mskus": 720,
+     "bcEvents": 0
+    }
+   },
+   "PRICING_PENDING_IMMEDIATE": {
+    "cells": [
+     {
+      "state": "pending",
+      "value": "",
+      "placeholder": "Loading price\u2026",
+      "currency": "\u2026"
+     }
+    ],
+    "host": {
+     "present": true,
+     "hidden": false,
+     "state": "loading",
+     "hasRetry": false,
+     "text": "Loading prices\u2026"
+    },
+    "api": 1,
+    "byAction": {
+     "getTable:pricing_list": 1
+    }
+   },
+   "PRICING_FAILURE_ISOLATION": {
+    "stalled": 1,
+    "api": 1,
+    "byAction": {
+     "getTable:pricing_list": 1
+    },
+    "host": {
+     "present": true,
+     "hidden": false,
+     "state": "refused",
+     "hasRetry": true,
+     "text": "Prices could not be loaded, so the Regular Price column is empty. Everything else in this form is unaffected, and nothing has been saved. The table read exceeded the clie"
+    },
+    "linesHost": {
+     "present": true,
+     "hidden": true,
+     "state": "",
+     "hasRetry": false,
+     "text": null
+    },
+    "baseUi": {
+     "modalOpen": true,
+     "scopeCountry": true,
+     "eventFlag": true,
+     "startDate": true,
+     "skuRows": 1,
+     "skuDatalist": 120,
+     "existingOptions": 3,
+     "existingDisabled": false,
+     "baseCampaigns": 5,
+     "permanentLoading": 0,
+     "countrySel": "CA",
+     "siteSel": "ResUS|CA|Amazon",
+     "siteOpts": 2,
+     "targetYear": "2027",
+     "mskus": 720,
+     "bcEvents": 0
+    },
+    "cells": [
+     {
+      "state": "pending",
+      "value": "",
+      "placeholder": "Loading price\u2026",
+      "currency": "\u2026"
+     }
+    ],
+    "openRequests": 0
+   },
+   "PRICING_RETRY": {
+    "api": 1,
+    "byAction": {
+     "getTable:pricing_list": 1
+    },
+    "host": {
+     "present": true,
+     "hidden": true,
+     "state": "",
+     "hasRetry": false,
+     "text": null
+    },
+    "cells": [
+     {
+      "state": "ok",
+      "value": "33.25",
+      "placeholder": "Loading price\u2026",
+      "currency": "CAD"
+     }
+    ],
+    "baseUi": {
+     "modalOpen": true,
+     "scopeCountry": true,
+     "eventFlag": true,
+     "startDate": true,
+     "skuRows": 1,
+     "skuDatalist": 120,
+     "existingOptions": 3,
+     "existingDisabled": false,
+     "baseCampaigns": 5,
+     "permanentLoading": 0,
+     "countrySel": "CA",
+     "siteSel": "ResUS|CA|Amazon",
+     "siteOpts": 2,
+     "targetYear": "2027",
+     "mskus": 720,
+     "bcEvents": 0
+    }
+   },
+   "PRICING_SECOND_ROW": {
+    "api": 0,
+    "byAction": {},
+    "cells": [
+     {
+      "state": "ok",
+      "value": "33.25",
+      "placeholder": "Loading price\u2026",
+      "currency": "CAD"
+     },
+     {
+      "state": "ok",
+      "value": "33.25",
+      "placeholder": "Regular",
+      "currency": "CAD"
+     }
+    ]
+   },
+   "LINES_PICKED": {
+    "campaignId": "CMP-10"
+   },
+   "LINES_FAILURE_ISOLATION": {
+    "stalled": 2,
+    "api": 1,
+    "byAction": {
+     "getTable:campaign_sku_lines": 1
+    },
+    "host": {
+     "present": true,
+     "hidden": false,
+     "state": "refused",
+     "hasRetry": true,
+     "text": "The saved SKU lines for this event could not be loaded, so it has not been opened for editing. The form still holds what you had; nothing has been saved. The table read e"
+    },
+    "pricingHost": {
+     "present": true,
+     "hidden": true,
+     "state": "",
+     "hasRetry": false,
+     "text": null
+    },
+    "baseUi": {
+     "modalOpen": true,
+     "scopeCountry": true,
+     "eventFlag": true,
+     "startDate": true,
+     "skuRows": 2,
+     "skuDatalist": 120,
+     "existingOptions": 3,
+     "existingDisabled": false,
+     "baseCampaigns": 5,
+     "permanentLoading": 0,
+     "countrySel": "CA",
+     "siteSel": "ResUS|CA|Amazon",
+     "siteOpts": 2,
+     "targetYear": "2027",
+     "mskus": 720,
+     "bcEvents": 0
+    },
+    "hydrated": false,
+    "editingBannerShown": false,
+    "cells": [
+     {
+      "state": "ok",
+      "value": "33.25",
+      "placeholder": "Loading price\u2026",
+      "currency": "CAD"
+     },
+     {
+      "state": "ok",
+      "value": "33.25",
+      "placeholder": "Regular",
+      "currency": "CAD"
+     }
+    ],
+    "openRequests": 0
+   },
+   "LINES_RETRY": {
+    "api": 1,
+    "byAction": {
+     "getTable:campaign_sku_lines": 1
+    },
+    "host": {
+     "present": true,
+     "hidden": true,
+     "state": "",
+     "hasRetry": false,
+     "text": null
+    },
+    "hydrated": true,
+    "editingBannerShown": true,
+    "rows": [
+     {
+      "sku": "KM-1020",
+      "deal": "24.99",
+      "disc": "16.7",
+      "state": "ok"
+     },
+     {
+      "sku": "KM-1021",
+      "deal": "24.99",
+      "disc": "16.7",
+      "state": "ok"
+     }
+    ],
+    "baseUi": {
+     "modalOpen": true,
+     "scopeCountry": true,
+     "eventFlag": true,
+     "startDate": true,
+     "skuRows": 2,
+     "skuDatalist": 120,
+     "existingOptions": 3,
+     "existingDisabled": false,
+     "baseCampaigns": 5,
+     "permanentLoading": 0,
+     "countrySel": "CA",
+     "siteSel": "ResUS|CA|Amazon",
+     "siteOpts": 2,
+     "targetYear": "2027",
+     "mskus": 720,
+     "bcEvents": 0
+    }
+   },
+   "LINES_SECOND_PICK": {
+    "api": 0,
+    "byAction": {},
+    "host": {
+     "present": true,
+     "hidden": true,
+     "state": "",
+     "hasRetry": false,
+     "text": null
+    },
+    "hydrated": true
+   },
+   "SKU_REGIONAL_ENTRY_TO_FIRST_MASTER_LIST": {
+    "pollMs": 18,
+    "api": 1,
+    "byAction": {
+     "skuDetails.workspace.get": 1
+    },
+    "dupes": 0,
+    "settled": true,
+    "rounds": 1,
+    "getters": null
+   },
+   "SRD_INVALIDATE_SEAM_STUCK": {
+    "api": 0,
+    "items": 0,
+    "skel": 2,
+    "active": true,
+    "retryOffered": false,
+    "openRequests": 0,
+    "errs": []
+   },
+   "SRD_INVALIDATE_SEAM_RETRY": {
+    "api": 1,
+    "byAction": {
+     "skuDetails.workspace.get": 1
+    },
+    "items": 50,
+    "skel": 0
+   },
+   "SRD_LEAVE_REENTER": {
+    "api": 0,
+    "byAction": {},
+    "itemsRendered": 50,
+    "stillSkeleton": 0,
+    "activeVisibleSectionCount": 1,
+    "openRequests": 0
+   },
+   "SRD_TIMEOUT_REFUSAL": {
+    "stalledTotal": 3,
+    "refusalShown": true,
+    "refusalText": "Couldn\u2019t load regional details: No answer arrived within 60s. [action skuDetails.workspace.get \u00b7 REQUEST_TIMEOUT \u00b7 request REQ-C000014]. Ret",
+    "stillSkeleton": 0,
+    "itemsRendered": 0,
+    "openRequests": 0
+   },
+   "SRD_TIMEOUT_RECOVERY": {
+    "api": 1,
+    "byAction": {
+     "skuDetails.workspace.get": 1
+    },
+    "itemsRendered": 50,
+    "stillSkeleton": 0,
+    "openRequests": 0
+   },
+   "SRD_REENTER_AFTER_FAILURE": {
+    "api": 1,
+    "byAction": {
+     "skuDetails.workspace.get": 1
+    },
+    "itemsRendered": 50,
+    "stillSkeleton": 0,
+    "note": "",
+    "openRequests": 0
+   }
+  },
+  "serverMs400": {
+   "FC_NEXT_REGULAR": {
+    "pollMs": 400,
+    "api": 2,
+    "byAction": {
+     "getTable:sku_details": 1,
+     "getTable:marketplace_skus": 1
+    },
+    "dupes": 0,
+    "settled": true,
+    "rounds": 1,
+    "getters": {
+     "getSkuDetails": 1,
+     "getMarketplaceSkus": 1,
+     "getCampaigns": 0,
+     "getCampaignSkuLines": 0,
+     "getPricingList": 0,
+     "getFcSpecialEvents": 0
+    }
+   },
+   "FC_NEXT_REGULAR_WARM": {
+    "pollMs": 0,
+    "api": 0,
+    "byAction": {},
+    "dupes": 0,
+    "settled": true,
+    "rounds": 0,
+    "getters": {
+     "getSkuDetails": 2,
+     "getMarketplaceSkus": 2,
+     "getCampaigns": 0,
+     "getCampaignSkuLines": 0,
+     "getPricingList": 0,
+     "getFcSpecialEvents": 0
+    }
+   },
+   "FC_NEXT_SPECIAL": {
+    "pollMs": 400,
+    "api": 2,
+    "byAction": {
+     "getTable:campaigns": 1,
+     "fcSummary.workspace.get:events": 1
+    },
+    "dupes": 0,
+    "settled": true,
+    "rounds": 1,
+    "getters": {
+     "getSkuDetails": 1,
+     "getMarketplaceSkus": 1,
+     "getCampaigns": 1,
+     "getCampaignSkuLines": 0,
+     "getPricingList": 0,
+     "getFcSpecialEvents": 0
+    }
+   },
+   "FC_NEXT_SPECIAL_WARM": {
+    "pollMs": 0,
+    "api": 0,
+    "byAction": {},
+    "dupes": 0,
+    "settled": true,
+    "rounds": 0,
+    "getters": {
+     "getSkuDetails": 1,
+     "getMarketplaceSkus": 1,
+     "getCampaigns": 1,
+     "getCampaignSkuLines": 0,
+     "getPricingList": 0,
+     "getFcSpecialEvents": 0
+    }
+   },
+   "SPECIAL_EXISTING_PICKER": {
+    "present": true,
+    "disabled": false,
+    "options": 3,
+    "unreadable": false,
+    "noteShown": true,
+    "noteText": "2 saved events in this scope and year. Selecting one loads its saved values for editing."
+   },
+   "SPECIAL_SKU_FIXTURE": {
+    "sku": "KM-1000",
+    "rows": 1,
+    "baseUi": {
+     "modalOpen": true,
+     "scopeCountry": true,
+     "eventFlag": true,
+     "startDate": true,
+     "skuRows": 1,
+     "skuDatalist": 120,
+     "existingOptions": 3,
+     "existingDisabled": false,
+     "baseCampaigns": 5,
+     "permanentLoading": 0,
+     "countrySel": "CA",
+     "siteSel": "ResUS|CA|Amazon",
+     "siteOpts": 2,
+     "targetYear": "2027",
+     "mskus": 720,
+     "bcEvents": 0
+    }
+   },
+   "PRICING_PENDING_IMMEDIATE": {
+    "cells": [
+     {
+      "state": "pending",
+      "value": "",
+      "placeholder": "Loading price\u2026",
+      "currency": "\u2026"
+     }
+    ],
+    "host": {
+     "present": true,
+     "hidden": false,
+     "state": "loading",
+     "hasRetry": false,
+     "text": "Loading prices\u2026"
+    },
+    "api": 1,
+    "byAction": {
+     "getTable:pricing_list": 1
+    }
+   },
+   "PRICING_FAILURE_ISOLATION": {
+    "stalled": 1,
+    "api": 1,
+    "byAction": {
+     "getTable:pricing_list": 1
+    },
+    "host": {
+     "present": true,
+     "hidden": false,
+     "state": "refused",
+     "hasRetry": true,
+     "text": "Prices could not be loaded, so the Regular Price column is empty. Everything else in this form is unaffected, and nothing has been saved. The table read exceeded the clie"
+    },
+    "linesHost": {
+     "present": true,
+     "hidden": true,
+     "state": "",
+     "hasRetry": false,
+     "text": null
+    },
+    "baseUi": {
+     "modalOpen": true,
+     "scopeCountry": true,
+     "eventFlag": true,
+     "startDate": true,
+     "skuRows": 1,
+     "skuDatalist": 120,
+     "existingOptions": 3,
+     "existingDisabled": false,
+     "baseCampaigns": 5,
+     "permanentLoading": 0,
+     "countrySel": "CA",
+     "siteSel": "ResUS|CA|Amazon",
+     "siteOpts": 2,
+     "targetYear": "2027",
+     "mskus": 720,
+     "bcEvents": 0
+    },
+    "cells": [
+     {
+      "state": "pending",
+      "value": "",
+      "placeholder": "Loading price\u2026",
+      "currency": "\u2026"
+     }
+    ],
+    "openRequests": 0
+   },
+   "PRICING_RETRY": {
+    "api": 1,
+    "byAction": {
+     "getTable:pricing_list": 1
+    },
+    "host": {
+     "present": true,
+     "hidden": true,
+     "state": "",
+     "hasRetry": false,
+     "text": null
+    },
+    "cells": [
+     {
+      "state": "ok",
+      "value": "33.25",
+      "placeholder": "Loading price\u2026",
+      "currency": "CAD"
+     }
+    ],
+    "baseUi": {
+     "modalOpen": true,
+     "scopeCountry": true,
+     "eventFlag": true,
+     "startDate": true,
+     "skuRows": 1,
+     "skuDatalist": 120,
+     "existingOptions": 3,
+     "existingDisabled": false,
+     "baseCampaigns": 5,
+     "permanentLoading": 0,
+     "countrySel": "CA",
+     "siteSel": "ResUS|CA|Amazon",
+     "siteOpts": 2,
+     "targetYear": "2027",
+     "mskus": 720,
+     "bcEvents": 0
+    }
+   },
+   "PRICING_SECOND_ROW": {
+    "api": 0,
+    "byAction": {},
+    "cells": [
+     {
+      "state": "ok",
+      "value": "33.25",
+      "placeholder": "Loading price\u2026",
+      "currency": "CAD"
+     },
+     {
+      "state": "ok",
+      "value": "33.25",
+      "placeholder": "Regular",
+      "currency": "CAD"
+     }
+    ]
+   },
+   "LINES_PICKED": {
+    "campaignId": "CMP-10"
+   },
+   "LINES_FAILURE_ISOLATION": {
+    "stalled": 2,
+    "api": 1,
+    "byAction": {
+     "getTable:campaign_sku_lines": 1
+    },
+    "host": {
+     "present": true,
+     "hidden": false,
+     "state": "refused",
+     "hasRetry": true,
+     "text": "The saved SKU lines for this event could not be loaded, so it has not been opened for editing. The form still holds what you had; nothing has been saved. The table read e"
+    },
+    "pricingHost": {
+     "present": true,
+     "hidden": true,
+     "state": "",
+     "hasRetry": false,
+     "text": null
+    },
+    "baseUi": {
+     "modalOpen": true,
+     "scopeCountry": true,
+     "eventFlag": true,
+     "startDate": true,
+     "skuRows": 2,
+     "skuDatalist": 120,
+     "existingOptions": 3,
+     "existingDisabled": false,
+     "baseCampaigns": 5,
+     "permanentLoading": 0,
+     "countrySel": "CA",
+     "siteSel": "ResUS|CA|Amazon",
+     "siteOpts": 2,
+     "targetYear": "2027",
+     "mskus": 720,
+     "bcEvents": 0
+    },
+    "hydrated": false,
+    "editingBannerShown": false,
+    "cells": [
+     {
+      "state": "ok",
+      "value": "33.25",
+      "placeholder": "Loading price\u2026",
+      "currency": "CAD"
+     },
+     {
+      "state": "ok",
+      "value": "33.25",
+      "placeholder": "Regular",
+      "currency": "CAD"
+     }
+    ],
+    "openRequests": 0
+   },
+   "LINES_RETRY": {
+    "api": 1,
+    "byAction": {
+     "getTable:campaign_sku_lines": 1
+    },
+    "host": {
+     "present": true,
+     "hidden": true,
+     "state": "",
+     "hasRetry": false,
+     "text": null
+    },
+    "hydrated": true,
+    "editingBannerShown": true,
+    "rows": [
+     {
+      "sku": "KM-1020",
+      "deal": "24.99",
+      "disc": "16.7",
+      "state": "ok"
+     },
+     {
+      "sku": "KM-1021",
+      "deal": "24.99",
+      "disc": "16.7",
+      "state": "ok"
+     }
+    ],
+    "baseUi": {
+     "modalOpen": true,
+     "scopeCountry": true,
+     "eventFlag": true,
+     "startDate": true,
+     "skuRows": 2,
+     "skuDatalist": 120,
+     "existingOptions": 3,
+     "existingDisabled": false,
+     "baseCampaigns": 5,
+     "permanentLoading": 0,
+     "countrySel": "CA",
+     "siteSel": "ResUS|CA|Amazon",
+     "siteOpts": 2,
+     "targetYear": "2027",
+     "mskus": 720,
+     "bcEvents": 0
+    }
+   },
+   "LINES_SECOND_PICK": {
+    "api": 0,
+    "byAction": {},
+    "host": {
+     "present": true,
+     "hidden": true,
+     "state": "",
+     "hasRetry": false,
+     "text": null
+    },
+    "hydrated": true
+   },
+   "SKU_REGIONAL_ENTRY_TO_FIRST_MASTER_LIST": {
+    "pollMs": 410,
+    "api": 1,
+    "byAction": {
+     "skuDetails.workspace.get": 1
+    },
+    "dupes": 0,
+    "settled": true,
+    "rounds": 1,
+    "getters": null
+   },
+   "SRD_INVALIDATE_SEAM_STUCK": {
+    "api": 0,
+    "items": 0,
+    "skel": 2,
+    "active": true,
+    "retryOffered": false,
+    "openRequests": 0,
+    "errs": []
+   },
+   "SRD_INVALIDATE_SEAM_RETRY": {
+    "api": 1,
+    "byAction": {
+     "skuDetails.workspace.get": 1
+    },
+    "items": 50,
+    "skel": 0
+   },
+   "SRD_LEAVE_REENTER": {
+    "api": 0,
+    "byAction": {},
+    "itemsRendered": 50,
+    "stillSkeleton": 0,
+    "activeVisibleSectionCount": 1,
+    "openRequests": 0
+   },
+   "SRD_TIMEOUT_REFUSAL": {
+    "stalledTotal": 3,
+    "refusalShown": true,
+    "refusalText": "Couldn\u2019t load regional details: No answer arrived within 60s. [action skuDetails.workspace.get \u00b7 REQUEST_TIMEOUT \u00b7 request REQ-C000014]. Ret",
+    "stillSkeleton": 0,
+    "itemsRendered": 0,
+    "openRequests": 0
+   },
+   "SRD_TIMEOUT_RECOVERY": {
+    "api": 1,
+    "byAction": {
+     "skuDetails.workspace.get": 1
+    },
+    "itemsRendered": 50,
+    "stillSkeleton": 0,
+    "openRequests": 0
+   },
+   "SRD_REENTER_AFTER_FAILURE": {
+    "api": 1,
+    "byAction": {
+     "skuDetails.workspace.get": 1
+    },
+    "itemsRendered": 50,
+    "stillSkeleton": 0,
+    "note": "",
+    "openRequests": 0
+   }
+  },
+  "boot0": {
+   "api": 1,
+   "partial": 1,
+   "errors": []
+  },
+  "boot400": {
+   "api": 1,
+   "partial": 1,
+   "errors": []
+  }
+ }
+}

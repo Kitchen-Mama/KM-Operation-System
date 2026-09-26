@@ -179,6 +179,9 @@ function fcWorld(mutations) {
     'var _fcSecondaryLoaded = false;',
     'var _fcPrereqLoadedPaths_ = {};',
     'var _fcPrereqLoadedTables_ = {};',
+    // S3-R13 - the deferral globals _fcPostWriteWarm_ now reads. Nothing has been used in this box,
+    // so `held` is exactly the prerequisite census and every count below is what it always was.
+    "var _FC_DEFERRED_TABLES_ = { lines: 'campaign_sku_lines', pricing: 'pricing_list' }; var _fcDeferredEverUsed_ = {}; function _fcDeferralActive_() { return false; } function _fcDeferredPending_(t) { return _fcDeferralActive_() && !_fcPrereqLoadedTables_[t]; }",
     'var _fcPrereqFlightByPath_ = {};',
     'var _fcPrereqInflightTables_ = {};',
     'var _fcPrereqState_ = "IDLE";',

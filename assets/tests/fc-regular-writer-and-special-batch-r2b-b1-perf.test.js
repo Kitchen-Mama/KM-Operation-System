@@ -560,8 +560,16 @@ function afterWrite(scope) {
   // S3-R12 — fc_special_events is still CHANGED by a Special write; it is no longer tracked by the
   // prerequisite map, because the events slice readback is what makes it current. See the note in
   // fc-base-forecast-source-and-warm-state.
-  eq(r.event, ['campaigns', 'campaign_sku_lines'],
-    'J1  after a SPECIAL write the Builder re-reads exactly the three tables that write can change');
+  /* S3-R13 — DERIVED, and the count in the old label had already stopped matching its own literal.
+     The claim is the INTERSECTION: a Special write invalidates exactly the tables it can change that
+     the Special path still holds. Spelling the members made this a fourth copy of the prerequisite
+     list, and the list has now moved in R2-STABILITY, S3-R12 and S3-R13. */
+  var _cw = cacheWorld();
+  var _changed = vm.runInContext('_FC_SLICE_PREREQ_TABLES_.events', _cw);
+  var _held = vm.runInContext('_FC_PREREQ_TABLES_.event', _cw);
+  eq(r.event.slice().sort(), _held.filter(function (t) { return _changed.indexOf(t) !== -1; }).sort(),
+    'J1  after a SPECIAL write the Builder re-reads exactly the tables that write can change and this path holds');
+  ok(r.event.length > 0, 'J1a  and that is not vacuously none');
   eq(r.regular, [], 'J2  and the Regular path stays completely warm');
   eq(r.event.filter(function (t) {
     return ['sku_details', 'marketplace_skus', 'pricing_list', 'marketplaces'].indexOf(t) !== -1;
@@ -595,7 +603,10 @@ function afterWrite(scope) {
     'J8  an UNKNOWN scope still invalidates everything — "I do not know" may never keep data warm');
   eq(r.regular.length, _dR, 'J8a  the whole Regular path');
   eq(r.event.length, _dE, 'J8b  and the whole Special path');
-  ok(_dR + _dE >= 7, 'J8c  and there really is something to discard', _dR + _dE);
+  /* S3-R13 — a FLOOR of seven was a floor under a total that has been shrinking by design for three
+     rounds: R2-STABILITY took one table out, S3-R12 another, S3-R13 two more. The non-vacuity claim is
+     that there IS something to discard, which is what the two lengths being positive says. */
+  ok(_dR > 0 && _dE > 0, 'J8c  and there really is something to discard on BOTH paths', [_dR, _dE]);
 })();
 (function () {
   var W = cacheWorld();

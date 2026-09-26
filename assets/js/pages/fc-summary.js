@@ -3249,7 +3249,8 @@ function _evtPopulateExistingSelect() {
 function _evtOnExistingChange() {
   var sel = document.getElementById('event-existing-select');
   var id = sel ? sel.value : '';
-  if (!id) { _evtClearEditing_(); return; }
+  // Back to '+ New event' — a refusal that belonged to an event nobody is opening any more goes with it.
+  if (!id) { _evtClearSubsection_(EVT_LINES_HOST_); _evtClearEditing_(); return; }
   _evtHydrateExisting_(id);
 }
 
@@ -3332,7 +3333,37 @@ function _evtSetEditingChrome_() {
 /* Load one persisted event into the form: its window, its label, and one row per saved SKU carrying
    the saved deal price, discount and forecast quantity — plus the three canonical ids and the version
    token each row's save must quote. */
+/* S3-R13 §3 — THE BOUNDARY IS THE CONSUMER, not the control that leads to it.
+ *
+ * `campaign_sku_lines` has exactly one reader in this page: the `lines` lookup below, which supplies a
+ * hydrated row's Deal Price and Discount %. Guarding HERE rather than in the picker's change handler
+ * means the guard cannot be walked around by a future second caller, and it is the same place the
+ * failure is scoped to.
+ *
+ * WITHOUT THE TABLE THIS FUNCTION STILL 'WORKS' — `_evtCampaignLineRows_()` returns [] and every row
+ * hydrates with a blank deal price. That is the false empty in its most dangerous form, because the
+ * operator would then be looking at a saved event with its discount silently missing, on a form whose
+ * next action is Save. So it refuses to run rather than run on [].
+ *
+ * REPEATED SELECTION SHARES ONE REQUEST. `_fcEnsureDeferredTable_` is single-flight per table, and the
+ * continuation re-reads the picker instead of closing over `campaignId` — so if the operator changes
+ * their mind while the read is in the air, the event they end on is the one that hydrates. */
 function _evtHydrateExisting_(campaignId) {
+  if (_fcDeferredPending_(_FC_DEFERRED_TABLES_.lines)) {
+    _evtShowSubsectionLoading_(EVT_LINES_HOST_, 'Loading the saved SKU lines for this event\u2026');
+    _fcEnsureDeferredTable_(_FC_DEFERRED_TABLES_.lines).then(function () {
+      _evtClearSubsection_(EVT_LINES_HOST_);
+      var sel = document.getElementById('event-existing-select');
+      var now = sel ? sel.value : campaignId;
+      if (now) _evtHydrateExisting_(now);       // un-deferred now; cannot re-enter a third time
+      else _evtClearEditing_();
+    }, function (err) {
+      _evtShowSubsectionRefusal_(EVT_LINES_HOST_,
+        'The saved SKU lines for this event could not be loaded, so it has not been opened for editing. The form still holds what you had; nothing has been saved.',
+        err, function () { _evtOnExistingChange(); });
+    });
+    return;
+  }
   var groups = _evtExistingEvents_();
   if (!Array.isArray(groups)) { _evtClearEditing_(); return; }
   var g = groups.filter(function (x) { return x.campaignId === campaignId; })[0];
@@ -3952,8 +3983,23 @@ function _evtPopulateBaseCampaigns() {
   function lo(v){ return String(v==null?'':v).trim().toLowerCase(); }
   var mkey = _fcResolveMarketplaceKey(site.marketplace);
   var cats = _evtMsValues('category'), series = _evtMsValues('series');
-  var campaigns = (window.KM && window.KM.DB && window.KM.DB.getCampaigns) ? window.KM.DB.getCampaigns() : [];
-  var events = (window.KM && window.KM.DB && window.KM.DB.getFcSpecialEvents) ? window.KM.DB.getFcSpecialEvents() : [];
+  var campaigns = _evtCampaignRows_();
+  /* S3-R13 - THE SAME OWNER THE REST OF THE BUILDER USES, and a regression R12 could not see.
+     R12 moved fc_special_events out of the broad-cache prerequisite list onto the scoped `events`
+     slice, which is where _evtBuilderEventRows_ reads it. THIS function still asked the broad cache
+     directly, so in workspace mode it began answering [] for every session - and [] renders as
+     '(no matching campaign with FC data)', which is a statement about the DATA rather than about the
+     read. The Apply Growth Rate baseline silently had no candidates.
+     The harness could not catch it in R12 because its getTable fixture answered the wrong envelope
+     and every broad table was empty either way; see the runner's own note.
+     UNREAD IS NOT EMPTY, here as everywhere else on this page: null disables the control and says so,
+     rather than reporting an absence nobody established. */
+  var events = _evtBuilderEventRows_();
+  if (!Array.isArray(events)) {
+    sel.disabled = true;
+    sel.innerHTML = '<option value="">(saved events could not be read)</option>';
+    return;
+  }
   // Which campaigns have valid scoped FC?
   var valid = {};
   events.forEach(function(e){
@@ -4026,6 +4072,76 @@ function _evtUpdateAddRowBtn() {
   if (wrap && btn) { var full = wrap.children.length >= _evtRowCap_(); btn.disabled = full; btn.style.opacity = full ? '0.5' : ''; }
 }
 // Apply a row's Regular Price + scope/missing-price state from the scoped pricing lookup.
+
+/* S3-R13 §5 — THE TWO SCOPED SURFACES, and the rule that makes them scoped.
+ *
+ * Each renders into ONE host element inside the already-open builder and touches nothing else. No
+ * modal is closed, no form is cleared, no other subsection is disabled, and the Save button is not
+ * taken away — a deferred read that failed must cost the operator that subsection and not their work.
+ * The single-row SKU list, the event window, the scope and the Base Campaign dropdown all came from
+ * the CRITICAL load and are unaffected by either failure.
+ *
+ * RETRY IS BOUNDED AND MANUAL. One click, one request, through the same single-flight entry point; the
+ * surface clears itself first so a second failure renders fresh rather than stacking. Nothing here
+ * schedules a retry, and nothing retries on its own. */
+function _evtSubsectionHost_(id) {
+  return (typeof document === 'undefined') ? null : document.getElementById(id);
+}
+function _evtClearSubsection_(id) {
+  var h = _evtSubsectionHost_(id);
+  if (h) { h.innerHTML = ''; h.hidden = true; h.removeAttribute('data-state'); }
+}
+function _evtShowSubsectionLoading_(id, text) {
+  var h = _evtSubsectionHost_(id);
+  if (!h) return;
+  h.innerHTML = '';
+  h.setAttribute('data-state', 'loading');
+  var p = document.createElement('div'); p.textContent = text; h.appendChild(p);
+  h.hidden = false;
+}
+function _evtShowSubsectionRefusal_(id, lead, err, onRetry) {
+  var text = lead + ' ' + _fcErrDetail_(err, FC_RETRY_.COLD_READ);
+  var h = _evtSubsectionHost_(id);
+  if (!h) { alert(text); return; }
+  h.innerHTML = '';
+  h.setAttribute('data-state', 'refused');
+  var p = document.createElement('div'); p.textContent = text; h.appendChild(p);
+  var b = document.createElement('button');
+  b.type = 'button'; b.className = 'fc-btn fc-btn--cancel'; b.id = id + '-retry';
+  b.textContent = 'Retry'; b.style.marginTop = '8px';
+  b.onclick = function () { _evtClearSubsection_(id); onRetry(); };
+  h.appendChild(b);
+  h.hidden = false;
+}
+var EVT_LINES_HOST_ = 'event-existing-refusal';
+var EVT_PRICING_HOST_ = 'event-pricing-refusal';
+
+/* Pricing has landed. Everything on screen that was drawn WITHOUT it is redrawn with it — the single
+   rows always, the group cards only when the operator had already built some. Redrawing cards nobody
+   asked for would be a build they did not request; leaving built cards showing blank prices would be
+   the false empty this round exists to remove. */
+function _evtOnPricingArrived_() {
+  _evtClearSubsection_(EVT_PRICING_HOST_);
+  _evtRefreshSingleRowPrices();
+  if (_evtGroups.length) _evtBuildGroups();
+}
+function _evtOnPricingFailed_(err) {
+  _evtShowSubsectionRefusal_(EVT_PRICING_HOST_,
+    'Prices could not be loaded, so the Regular Price column is empty. Everything else in this form is unaffected, and nothing has been saved.',
+    err, function () { _evtOnPricingRetry_(); });
+}
+function _evtOnPricingRetry_() {
+  _evtShowSubsectionLoading_(EVT_PRICING_HOST_, 'Loading prices\u2026');
+  _fcEnsureDeferredTable_(_FC_DEFERRED_TABLES_.pricing).then(_evtOnPricingArrived_, _evtOnPricingFailed_);
+}
+/* The deferred load the price cells themselves ask for. It is fire-and-forget by design: the row has
+   already been painted as PENDING, so the operator is not waiting on this promise for anything to
+   appear — they are waiting for a value to replace a stated placeholder. */
+function _evtRequestPricing_() {
+  if (_fcDeferredFlight_[_FC_DEFERRED_TABLES_.pricing]) return;   // one request, however many rows ask
+  _evtOnPricingRetry_();
+}
+
 function _evtApplyRowPricing(row) {
   var sku = ((row.querySelector('.evt-sku') || {}).value || '').trim();
   var regEl = row.querySelector('.evt-reg');
@@ -4045,6 +4161,22 @@ function _evtApplyRowPricing(row) {
     return;
   }
   if (skuEl) skuEl.classList.remove('is-invalid');
+  /* S3-R13 §4/§5 — 'NOT LOADED YET' IS NOT 'HAS NO PRICE', AND THE ROW MUST NOT SAY IT IS.
+     The branch below renders MISSING_PRICING_LIST_ROW: a statement that pricing_list was consulted and
+     holds nothing for this SKU on this site. Reaching it while pricing_list is simply unread would be
+     exactly the false empty §5 counts, and the operator's correct response to it — go and set a price
+     that already exists — would be wasted work. So PENDING is its own state, with its own placeholder
+     and its own save refusal, and it resolves itself the moment the table lands.
+     SCOPE IS ANSWERED ABOVE THIS, from marketplace_skus, which is CRITICAL and loaded. An out-of-scope
+     SKU is still told so immediately; only the PRICE waits. */
+  if (_fcDeferredPending_(_FC_DEFERRED_TABLES_.pricing)) {
+    if (regEl) { regEl.value = ''; regEl.placeholder = 'Loading price\u2026'; }
+    row.dataset.priceState = 'pending';
+    row.dataset.currency = '';
+    if (curEl) { curEl.textContent = '\u2026'; curEl.classList.remove('fc-evt-warn'); }
+    _evtRequestPricing_();
+    return;
+  }
   if (pr.regularPrice == null) {
     if (regEl) { regEl.value = ''; regEl.placeholder = 'Missing Regular Price'; }
     row.dataset.priceState = 'missing_price';
@@ -4326,6 +4458,18 @@ function _evtBuildBaselineForSku(sku) {
   return _evtEventBaseFcForSku(sku);          // the event's own month, as A3-R5 resolved it
 }
 function _evtBuildGroups() {
+  /* S3-R13 §4 — THE SECOND PRICING CONSUMER, and it is not row-at-a-time. _evtCandidateRows resolves a
+     price for every scoped SKU in one pass and the cards aggregate currencies across them, so a build
+     run half-priced would produce MIXED CURRENCY badges and blank columns that describe the load state
+     rather than the data. A build therefore waits for the table and says so, in its own surface. */
+  if (_fcDeferredPending_(_FC_DEFERRED_TABLES_.pricing)) {
+    _evtShowSubsectionLoading_(EVT_PRICING_HOST_, 'Loading prices before building the cards\u2026');
+    _fcEnsureDeferredTable_(_FC_DEFERRED_TABLES_.pricing).then(function () {
+      _evtClearSubsection_(EVT_PRICING_HOST_);
+      _evtBuildGroups();          // now un-deferred; this cannot re-enter a third time
+    }, _evtOnPricingFailed_);
+    return;
+  }
   _evtCloseAllMs();
   var rows = _evtCandidateRows();
   // Preserve prior per-row user entries keyed by category||series::sku.
@@ -4941,6 +5085,10 @@ async function saveEventUpdate() {
       var r = rows[i];
       if (!r.sku) { alert('Row ' + (i + 1) + ': SKU is required.'); return; }
       if (r.priceState === 'out_of_scope' || !r.marketplaceSkuId) { alert('Row ' + (i + 1) + ' (' + r.sku + '): SKU is not in the selected Company / Country / Marketplace scope (marketplace_sku_id unresolved).'); return; }
+      /* S3-R13 §4 — the third state reaches the save gate too. Falling through to the line below
+         would tell the operator their pricing_list has no row for this SKU, which is not something
+         this page currently knows. */
+      if (r.priceState === 'pending') { alert('Row ' + (i + 1) + ' (' + r.sku + '): the price list has not finished loading, so this row has no Regular Price yet. Nothing was written. Wait for the price to appear, or use Retry above the SKU rows.'); return; }
       if (r.priceState === 'missing_price' || r.regularPrice == null) { alert('Row ' + (i + 1) + ' (' + r.sku + '): MISSING_PRICING_LIST_ROW — no pricing_list price for company=' + company + ' / country=' + country + ' / marketplace=' + mkey + ' / marketplace_sku_id=' + (r.marketplaceSkuId || '(unresolved)') + ' / sku=' + r.sku + '. Set the price in pricing_list before saving (never substituted with 0).'); return; }
       if (!r.currency) { alert('Row ' + (i + 1) + ' (' + r.sku + '): MISSING_PRICING_LIST_ROW currency — the pricing_list row has no currency; cannot snapshot price_units.'); return; }
       if (isNaN(r.dealPrice)) { alert('Row ' + (i + 1) + ' (' + r.sku + '): Deal Price is required.'); return; }
@@ -4956,6 +5104,10 @@ async function saveEventUpdate() {
     }
   } else {
     if (!_evtGroups.length) { alert('Build the group cards first.'); return; }
+    /* A build cannot run while pricing is deferred, so cards always carry real prices — but a Special
+       Event save between the build and this Save invalidates pricing_list, and cards built before it
+       then describe prices this page no longer holds. Refuse and say which, rather than write them. */
+    if (_fcDeferredPending_(_FC_DEFERRED_TABLES_.pricing)) { alert('The price list is not loaded, so the group cards cannot be saved from. Nothing was written. Click Build / Refresh Group Cards to reload prices, then Save.'); return; }
     var skipped = 0;
     for (var gi = 0; gi < _evtGroups.length; gi++) {
       var g = _evtGroups[gi];
@@ -5780,10 +5932,29 @@ function _fcGetMarketplaces() {
    returns false when the workspace is not effective, so this list is never consulted there; the broad
    cache is loaded by the legacy full-DB read exactly as before, and `_evtBuilderEventRows_` falls
    through to getFcSpecialEvents() exactly as before. */
+/* S3-R13 §1/§2 — campaign_sku_lines AND pricing_list LEAVE THIS LIST, on the operator's decision.
+   They are NOT removed from the builder's dependencies. They are moved to the interaction that first
+   reads them, which R12 measured by execution rather than by reading the source:
+
+     campaign_sku_lines   read ONLY by _evtHydrateExisting_ — picking an existing event
+     pricing_list         read ONLY by resolveRegionalPricingContext — a SKU row given a SKU, or a
+                          group-card build
+
+   Opening the Special builder called NEITHER getter. Both tables were fetched, normalized and held so
+   that an interaction which may never happen would be instant, and the operator waited ~37 s for them.
+
+   THE TEST THIS LIST NOW STATES is 'does the FIRST USABLE builder UI read it', not 'does the builder
+   ever read it'. campaigns stays because _evtPopulateBaseCampaigns fills the Base Campaign dropdown on
+   open; sku_details and marketplace_skus stay because the scope and the SKU datalist are drawn from
+   them. That is three tables and one scoped events slice: 2 requests, 1 read round at a pool of 2.
+
+   WHAT THIS IS NOT. There is no cache here, no TTL, no prefetch and no framework. `_fcPrereqLoadedTables_`
+   — the SAME per-table freshness record the prerequisite loader has always used, and the same one a
+   write invalidates through _fcResetSecondaryCache — decides whether a deferred table is current. A
+   Special Event save still clears campaign_sku_lines, and the next hydrate still reads it. */
 var _FC_PREREQ_TABLES_ = {
   regular: ['sku_details', 'marketplace_skus'],
-  event: ['sku_details', 'marketplace_skus', 'campaigns', 'campaign_sku_lines',
-          'pricing_list']
+  event: ['sku_details', 'marketplace_skus', 'campaigns']
 };
 // The union, kept as the reset surface and as the CSV-import/Event-Assist fallback list. Nothing
 // loads it as a unit any more.
@@ -5947,6 +6118,18 @@ function _fcPostWriteWarm_(scope) {
   var held = {};
   Object.keys(_FC_PREREQ_TABLES_).forEach(function (p) {
     _FC_PREREQ_TABLES_[p].forEach(function (t) { held[t] = 1; });
+  });
+  /* S3-R13 §3 — A DEFERRED TABLE THIS SESSION HAS ALREADY USED IS STILL HELD.
+     R2-STABILITY's guarantee is that the operator waits once, at Save, and the next open waits for
+     nothing. Deferring campaign_sku_lines out of the OPEN must not quietly move that wait to the next
+     time they pick an existing event. So a deferred table joins this set once its consumer has been
+     reached — never before. A session that has not opened an existing event buys nothing here, which
+     is the eager-prefetch §1 forbids, and a session that has is left exactly as warm as R2-STABILITY
+     left it. `_fcDeferredEverUsed_` survives the invalidation on purpose: a write can make the rows
+     stale, but it cannot make it untrue that this operator uses them. */
+  Object.keys(_FC_DEFERRED_TABLES_).forEach(function (k) {
+    var t = _FC_DEFERRED_TABLES_[k];
+    if (_fcDeferredEverUsed_[t]) held[t] = 1;
   });
   var need = tables.filter(function (t) { return held[t] && !_fcPrereqLoadedTables_[t]; });
   if (!need.length) return Promise.resolve([]);
@@ -6638,6 +6821,93 @@ function _fcEnsureEventSource_(mode) {
   if (!_fcEventSourceMissing_(mode)) return Promise.resolve();
   return _fcSliceFetch_(FC_SLICE_.EVENTS);
 }
+
+/* S3-R13 §3/§4 — DEFERRED BUILDER TABLES. One bounded request, at the interaction that first reads it.
+ *
+ * WHY THIS IS NOT THE PREREQUISITE LOADER. That one answers 'is this PATH ready', is awaited by Next,
+ * and blocks a modal from opening. These two answer 'is this TABLE here yet', are awaited by one
+ * subsection, and must never be able to take the modal down with them (§5). Sharing the machinery
+ * would mean sharing the blocking, which is the entire thing this round removes.
+ *
+ * WHAT IS SHARED, deliberately, is the freshness record. `_fcPrereqLoadedTables_` is the page's one
+ * answer to 'is this table current', and a deferred table is latched there and invalidated there like
+ * any other. That is what makes this a deferral and not a cache: nothing here decides data is still
+ * good — it asks the existing owner, which a write can and does contradict.
+ *
+ * IN-FLIGHT SHARING IS SAME-MOUNT ONLY (§3). `_fcDeferredFlight_` lives for as long as the page does
+ * and holds a PROMISE, never rows; it is cleared the moment the request settles. Two clicks on the
+ * picker share one read. A reload shares nothing, because there is nothing left to share.
+ */
+var _FC_DEFERRED_TABLES_ = { lines: 'campaign_sku_lines', pricing: 'pricing_list' };
+var _fcDeferredFlight_ = {};        // table -> the ONE in-flight promise, or null
+var _fcDeferredError_ = {};         // table -> the last failure, for the scoped retry surface
+/* Tables this SESSION has actually reached the consumer for. Never cleared by an invalidation: it
+   records that the operator uses this data, which a write cannot make untrue. Read only by
+   _fcPostWriteWarm_, so a save re-warms what this session demonstrably needs and nothing else. */
+var _fcDeferredEverUsed_ = {};
+
+/* Deferral is active exactly where the prerequisite loader is: workspace mode, with a broad-cache
+   refresh available. In Legacy mode the full-DB read brings every table and `_fcPrereqLoadedTables_`
+   is never populated at all, so a check against it would pend forever on data that is already there.
+   Both consumers therefore behave byte-identically in Legacy, which is the only safe answer. */
+function _fcDeferralActive_() {
+  return _fcEffectiveWorkspace() &&
+    !!(window.KM && window.KM.DB && typeof window.KM.DB.refreshCacheTables === 'function');
+}
+function _fcDeferredPending_(t) { return _fcDeferralActive_() && !_fcPrereqLoadedTables_[t]; }
+
+/* ONE request for ONE table. Registered in the shared in-flight index BEFORE it is awaited, so a
+   prerequisite load or a post-write warm that wants the same table joins this instead of asking
+   again — and released on both outcomes, because a table left marked in flight after its request
+   died is a permanent Loading rather than a duplicate read. */
+function _fcDeferredFetch_(t) {
+  var rc = (window.KM && window.KM.DB && typeof window.KM.DB.refreshCacheTables === 'function')
+    ? window.KM.DB.refreshCacheTables : null;
+  if (!rc) return Promise.resolve();
+  var flight = Promise.resolve(rc([t])).then(function (v) {
+    _fcReleaseTablesInflight_([t], flight);
+    if (_fcDeferredFlight_[t] === flight) _fcDeferredFlight_[t] = null;
+    _fcPrereqLoadedTables_[t] = true;
+    _fcDeferredError_[t] = null;
+    return v;
+  }, function (err) {
+    // The latch is released on failure FIRST, so Retry issues a new request rather than re-awaiting a
+    // promise that has already rejected. Nothing is swallowed and nothing retries itself.
+    _fcReleaseTablesInflight_([t], flight);
+    if (_fcDeferredFlight_[t] === flight) _fcDeferredFlight_[t] = null;
+    _fcDeferredError_[t] = err || null;
+    throw err;
+  });
+  _fcMarkTablesInflight_([t], flight);
+  _fcDeferredFlight_[t] = flight;
+  return flight;
+}
+
+/* The one entry point. Resolves immediately when the table is current, joins whatever is already
+   fetching it, and otherwise buys exactly one read. It cannot loop: the join branch falls through to
+   _fcDeferredFetch_, which never re-enters here. */
+function _fcEnsureDeferredTable_(t) {
+  _fcDeferredEverUsed_[t] = true;
+  if (!_fcDeferralActive_()) return Promise.resolve();
+  if (_fcPrereqLoadedTables_[t]) return Promise.resolve();
+  if (_fcDeferredFlight_[t]) return _fcDeferredFlight_[t];
+  var joined = _fcInflightFor_([t]);
+  if (joined.length) {
+    // Someone else is already paying for this table. Wait on THEIR request; if it lands the data is
+    // here, and if it dies this asks once — a joined failure is not this caller's failure to inherit.
+    var wait = Promise.all(joined.map(function (f) {
+      return Promise.resolve(f).then(function () { return null; }, function () { return null; });
+    })).then(function () {
+      if (_fcDeferredFlight_[t] === wait) _fcDeferredFlight_[t] = null;
+      if (_fcPrereqLoadedTables_[t]) { _fcDeferredError_[t] = null; return null; }
+      return _fcDeferredFetch_(t);
+    });
+    _fcDeferredFlight_[t] = wait;
+    return wait;
+  }
+  return _fcDeferredFetch_(t);
+}
+
 /* ALL prerequisites of an OPEN, settled together: the builder's broad-cache tables, the forecast
    slice its Base FC column reads, and — S3-R12 — the events slice the Special builder reasons about.
    Neither owner is duplicated here, and the three run CONCURRENTLY: a slice that had to wait for the

@@ -625,6 +625,12 @@
                                         <option value="">+ New event</option>
                                     </select>
                                     <p class="fc-manual-help" id="event-existing-note" hidden></p>
+                                    <!-- S3-R13 §3/§5 - the DEFERRED campaign_sku_lines surface. Saved SKU
+                                         lines are read when an existing event is opened, not when the
+                                         builder opens, so their loading state and their failure belong
+                                         here and nowhere else. Nothing outside this box is disabled. -->
+                                    <div id="event-existing-refusal" role="status" aria-live="polite" hidden
+                                         style="margin:8px 0 0;padding:8px 10px;border-radius:6px;background:#FEF3C7;color:#92400E;text-align:left;overflow-wrap:break-word;"></div>
                                 </div>
                             </div>
                             <div id="event-editing-banner" role="status" aria-live="polite" hidden
@@ -691,6 +697,13 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <!-- S3-R13 §4/§5 - the DEFERRED pricing_list surface, shared by both modes
+                                 below because both read the same table and only one is on screen at a
+                                 time. Scope, the SKU datalist, the event window and Save all come from
+                                 the CRITICAL load and stay usable while this box is showing. -->
+                            <div id="event-pricing-refusal" role="status" aria-live="polite" hidden
+                                 style="margin:8px 0 0;padding:8px 10px;border-radius:6px;background:#FEF3C7;color:#92400E;text-align:left;overflow-wrap:break-word;"></div>
 
                             <!-- 3a. Single SKU mode -->
                             <div id="event-mode-single">

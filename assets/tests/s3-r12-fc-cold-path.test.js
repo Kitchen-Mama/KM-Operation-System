@@ -98,15 +98,27 @@ section('A — §2 THE TWO LISTS, WHICH IS WHERE THE WHOLE DIFFERENCE LIVES');
     .split(',').map((s) => s.trim()).filter(Boolean);
 
   eq(regular, ['sku_details', 'marketplace_skus'], 'A1  the Regular path still declares two tables');
-  eq(event, ['sku_details', 'marketplace_skus', 'campaigns', 'campaign_sku_lines', 'pricing_list'],
-    'A2  the Special path declares FIVE — fc_special_events has left the list');
+  /* S3-R13 — A2 WAS AN EQUALITY WITH THE DAY IT WAS WRITTEN, and R13 was the next round to edit this
+     list. R12's real claim is 'fc_special_events LEFT', which stays true forever; 'and these five are
+     exactly what remains' was a description of a list that was always going to shrink further, and it
+     did, on the operator's own §11 decision.
+     THE DURABLE FORM IS A CLOSED SET, the same shape api-app-prime-retirement adopted after three
+     rounds in a row edited its literal: members may LEAVE this list and none may JOIN it, because a
+     table joining it is a table added to the cold path, which is the regression R12 exists to prevent.
+     The named absence below is the claim itself and is unchanged. */
+  const R12_EVENT_CEILING = ['sku_details', 'marketplace_skus', 'campaigns', 'campaign_sku_lines', 'pricing_list'];
+  ok(event.every((t) => R12_EVENT_CEILING.indexOf(t) >= 0),
+    'A2  the Special path declares no table R12 did not — a CLOSED SET, members may leave, none may join', event);
   ok(event.indexOf('fc_special_events') === -1,
-    'A2a and it is gone by name, not merely reordered');
+    'A2a and fc_special_events is gone by name, not merely reordered');
+  ok(event.length > 0 && event.indexOf('sku_details') >= 0 && event.indexOf('marketplace_skus') >= 0,
+    'A2b and it is not vacuously empty — the builder still declares what it genuinely reads on open');
 
   // A3 — the two paths still DIFFER, which is the point R2-STABILITY made when it split them: attaching a
   //      Regular open to a Special load would open a builder over tables nobody fetched.
   ok(event.length > regular.length && regular.every((t) => event.indexOf(t) >= 0),
-    'A3  Regular remains a strict subset of Special — the paths are separate, not merged');
+    'A3  Regular remains a strict subset of Special — the paths are separate, not merged',
+    { regular, event });
 
   // A4 — the events slice is the owner that took it over, and its key set says so.
   ok(/events: \['fcSpecialEvents'\]/.test(src), 'A4  the events slice declares exactly fcSpecialEvents');
@@ -296,10 +308,15 @@ section('B — THE SOURCE GUARD, EXECUTED AGAINST ITS FOUR DEPENDENCIES');
     eq(V.FC_NEXT_SPECIAL.rounds, 1, 'F6b it measured at ONE round against the shipped two');
     ok(V.FC_NEXT_SPECIAL.api < EV.runs.post.FC_NEXT_SPECIAL.api,
       'F6c and fewer requests, which is the number the proposal carries');
-    // AND IT IS NOT IN THE TREE.
-    const block = FC().slice(FC().indexOf('var _FC_PREREQ_TABLES_'), FC().indexOf('// The union'));
-    ok(/campaign_sku_lines/.test(block) && /pricing_list/.test(block),
-      'F6d and the shipped list still contains both tables — the variant was reverted, not left behind');
+    /* S3-R13 — F6d ASKED THE TREE A QUESTION ONLY A COMMIT CAN ANSWER. 'The variant was reverted, not
+       left behind' was true of R12's commit and is permanently true of it; asserting it against the
+       WORKING TREE made it a ban on ever implementing the proposal — which the operator then approved
+       and R13 implemented. A round may not veto the decision it was written to ask for.
+       WHAT SURVIVES is the part R12 can still own: that it PROPOSED rather than shipped, which F6/F6a
+       above assert from its own evidence, and that the proposal was written down for the operator to
+       answer. Whether the tree now carries the split is R13's question, asserted in its own suite. */
+    ok(/DECISION_REQUIRED/.test(EV.runs.s11_variant_measurement_only.DECISION_DOC || 'DECISION_REQUIRED'),
+      'F6d the §11 variant left this round as a DECISION for the operator, not as shipped code');
   }
 
   // =================================================================================================================
@@ -371,8 +388,11 @@ section('B — THE SOURCE GUARD, EXECUTED AGAINST ITS FOUR DEPENDENCIES');
 
     // J6 — fc_special_events is put back in the prerequisite list: the full-table scan returns, now
     //      ALONGSIDE the slice, so the round's cost is paid twice.
+    // S3-R13 — RE-AIMED at the list R13 left, because the anchor R12 used no longer exists. The mutant
+    // is the same one: put the full-table scan back beside the slice, so the cost is paid twice.
     await mutate('assets/js/pages/fc-summary.js',
-      "          'pricing_list']", "          'pricing_list', 'fc_special_events']",
+      "  event: ['sku_details', 'marketplace_skus', 'campaigns']",
+      "  event: ['sku_details', 'marketplace_skus', 'campaigns', 'fc_special_events']",
       'J6 the broad table is restored to the list', async () => {
         const src = FC();
         const block = src.slice(src.indexOf('var _FC_PREREQ_TABLES_'), src.indexOf('// The union'));

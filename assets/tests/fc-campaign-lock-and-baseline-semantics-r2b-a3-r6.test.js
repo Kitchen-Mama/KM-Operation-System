@@ -359,8 +359,19 @@ function prereqWorld(resetSrc) {
    (`_fcEnsureEventSource_` beside `_fcEnsureBaseFcSource_`). The WRITE census below is untouched: a
    Special save still reaches three tables, and the third is now made current by the slice readback
    rather than by a broad re-read. */
-var EVENT_TABLES = ['sku_details', 'marketplace_skus', 'campaigns',
-  'campaign_sku_lines', 'pricing_list'];
+/* S3-R13 — DERIVED, NOT RESTATED, and this is the fourth round to edit this copy.
+   The list shrank in R2-STABILITY (fc_regular_forecast), in S3-R12 (fc_special_events) and again in
+   S3-R13 (campaign_sku_lines and pricing_list, deferred to their first consumer on the operator's §11
+   decision). Each time a copy here had to be edited in step, which means the copy was never testing
+   the list — it was testing that nobody had changed it.
+   The source already says what the right shape is: `_fcResetSecondaryCache` derives the affected
+   paths FROM `_FC_PREREQ_TABLES_`, so a path that gains or loses a table is covered without editing
+   anything. These assertions now read the declaration the same way the shipped code does, and keep
+   their independent content as named membership and a CLOSED CEILING: a table may LEAVE the list and
+   none may JOIN it, because a table joining it is a table added to the cold path. */
+var EVENT_TABLES = prereqWorld()._FC_PREREQ_TABLES_.event.slice();
+var EVENT_CEILING = ['sku_details', 'marketplace_skus', 'campaigns', 'campaign_sku_lines',
+  'pricing_list', 'fc_special_events', 'fc_regular_forecast', 'marketplaces'];
 // R2-STABILITY §1/§2 — `fc_regular_forecast` left this list. It was fetched once and read never: in
 // Workspace mode `_fcGetRegularForecast()` answers from the read model and does not fall through to
 // the broad cache, so the six Builder call sites that were asking `KM.DB.getFcRegularForecast()`
@@ -373,7 +384,10 @@ var SHARED = ['sku_details', 'marketplace_skus'];
 (function () {
   var W = prereqWorld();
   eq(W._FC_PREREQ_TABLES_.regular.slice().sort(), REGULAR_TABLES.slice().sort(), 'C0  the Regular path\'s tables');
-  eq(W._FC_PREREQ_TABLES_.event.slice().sort(), EVENT_TABLES.slice().sort(), 'C0a the Special path\'s tables');
+  ok(W._FC_PREREQ_TABLES_.event.length > 0
+    && W._FC_PREREQ_TABLES_.event.every(function (t) { return EVENT_CEILING.indexOf(t) !== -1; }),
+    'C0a the Special path holds no table outside the ceiling, and is not empty',
+    W._FC_PREREQ_TABLES_.event);
   // Derived from the SOURCE declarations, not from the two constants above — intersecting this file's
   // own lists asserted nothing about the page and would have survived either list moving.
   var shared = W._FC_PREREQ_TABLES_.regular.filter(function (t) {
@@ -392,7 +406,10 @@ var SHARED = ['sku_details', 'marketplace_skus'];
 (function () {
   // §12.10/§12.11 — B: cold Special, then Special again.
   var W = prereqWorld();
-  eq(W.__load('event').sort(), EVENT_TABLES.slice().sort(), 'C3  cold Special fetches its six tables');
+  // DERIVED: a cold Special open fetches exactly what its path DECLARES — which is the invariant,
+  // rather than the membership that declaration happened to have on the day this was written.
+  eq(W.__load('event').sort(), EVENT_TABLES.slice().sort(),
+    'C3  cold Special fetches exactly the tables its path declares');
   eq(W.__load('event'), [], 'C4  warm Special fetches NOTHING — 0 physical requests');
 })();
 
@@ -404,8 +421,10 @@ var SHARED = ['sku_details', 'marketplace_skus'];
   /* S3-R12 — fc_special_events left the Special prerequisite list: the fcSummary `events` slice is
      its authoritative scoped owner, and `_evtBuilderEventRows_` has always preferred the read model.
      The RULE each of these asserts is untouched; only the membership it is asserted over moved. */
-  eq(second, ['campaign_sku_lines', 'campaigns', 'pricing_list'],
-    'C5  Regular → Special fetches only the three the Special path does not already hold');
+  /* S3-R13 — DERIVED from the two declarations, so it survives either path changing. The claim is
+     the SET DIFFERENCE, which is what C5a then states from the other direction. */
+  eq(second, EVENT_TABLES.filter(function (t) { return REGULAR_TABLES.indexOf(t) === -1; }).sort(),
+    'C5  Regular → Special fetches only what the Special path does not already hold');
   eq(SHARED.filter(function (t) { return second.indexOf(t) !== -1; }), [],
     'C5a not one shared table is re-requested');
 })();
@@ -613,8 +632,15 @@ ok(/b\.disabled = _fcTargetSave_\.busy \|\| !_fcTargetSave_\.valid;/.test(TRENDE
   var W = prereqWorld();
   W.__load('event'); W.__load('regular');
   W._fcResetSecondaryCache('events');
-  eq(W._fcPrereqMissing_('event').sort(), ['campaign_sku_lines', 'campaigns'],
-    'E7  a Special save still invalidates exactly three tables');
+  /* S3-R13 — DERIVED. The claim is that a Special save drops exactly the tables it can CHANGE that
+     this path still HOLDS, and keeps everything else warm. Naming the members made it a re-statement
+     of the prerequisite list, which has now moved four times. */
+  var _changed = W._FC_SLICE_PREREQ_TABLES_.events;
+  eq(W._fcPrereqMissing_('event').sort(),
+    EVENT_TABLES.filter(function (t) { return _changed.indexOf(t) !== -1; }).sort(),
+    'E7  a Special save invalidates exactly the tables it can change that this path holds');
+  ok(W._fcPrereqMissing_('event').length > 0,
+    'E7b and that is not vacuously none — a Special save really does drop something');
   eq(W._fcPrereqMissing_('regular'), [], 'E7a and leaves the Regular builder warm');
 })();
 

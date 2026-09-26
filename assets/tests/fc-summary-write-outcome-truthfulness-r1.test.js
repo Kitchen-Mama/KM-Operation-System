@@ -885,8 +885,13 @@ function runMutants() {
     // M6 — the visible Retry control is removed
     .then(function () {
       return m('M6  the visible Retry control is removed',
-        '  b.textContent = \'Retry\'; b.style.marginTop = \'8px\';',
-        '  b.textContent = \'Retry\'; b.style.marginTop = \'8px\'; b.hidden = true; return;',
+        /* S3-R13 — RE-ANCHORED ON THE CONTROL'S IDENTITY, not on its label and margin. Those two
+           statements stopped being unique the moment a second refusal surface in this page grew its
+           own Retry button (the deferred-load surfaces), and a mutant whose anchor matches twice
+           mutates something other than what it names. The id IS the identity: it is what the probe
+           below looks up, and what a second button can never collide with. */
+        "  b.type = 'button'; b.id = 'fc-mode-retry-btn';",
+        "  b.type = 'button'; b.id = 'fc-mode-retry-btn'; b.hidden = true;",
         function (S) {
           S.window._opDbCache = null;
           S.window.KM.DB.refreshCacheTables = function () { return Promise.reject({ code: 'X', message: 'down' }); };

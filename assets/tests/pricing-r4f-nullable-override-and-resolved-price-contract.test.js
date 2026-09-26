@@ -391,7 +391,11 @@ section('D · §4 CONSUMER AUDIT — 11 SITES, CLASSIFIED FROM THE SOURCE');
     'D4b UNSAFE_BLANK_CONSUMER — and the Special Event save path HALTS on a null price, by design');
   eq((FCSUM.match(/regularPrice == null\) \{ alert\(/g) || []).length, 2,
     'D4c on BOTH save paths — the single-SKU rows and the grouped ones refuse separately');
-  eq((FCSUM.match(/MISSING_PRICING_LIST_ROW/g) || []).length, 4,
+  /* S3-R13 — COUNT THE REFUSALS, NOT THE WORD. This matched the bare identifier anywhere in the
+     file, so the first comment to explain what MISSING_PRICING_LIST_ROW means broke it — the same
+     trap S3-R10's F1 and S3-R11's E1a fell into, on its third outing. The refusals all read
+     `...: MISSING_PRICING_LIST_ROW ...` inside an alert; prose about the code does not. */
+  eq((FCSUM.match(/: MISSING_PRICING_LIST_ROW/g) || []).length, 4,
     'D4d four refusals in total: a price guard and a currency guard on each of the two paths');
 
   // D5 — the campaign snapshot. 20_ stores what the page hands it, so the fix belongs at the caller.

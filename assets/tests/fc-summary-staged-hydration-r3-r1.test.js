@@ -83,6 +83,10 @@ var PAGE_VARS = ['FC_SLICE_', 'FC_FRESH_', '_FC_TAB_SLICE_', '_FC_SLICE_KEYS_', 
                  // per-slice table map. Lifted rather than stubbed so this suite counts its real
                  // requests against the real lists.
                  '_FC_PREREQ_TABLES_', '_FC_SLICE_PREREQ_TABLES_', '_fcPrereqLoadedTables_',
+                 // S3-R13 — the warm-up also reads which DEFERRED tables this session has used, so a
+                 // table deferred out of the cold path is still re-warmed inside a save flow for an
+                 // operator who has actually opened one. Both lifted; neither is stubbed.
+                 '_FC_DEFERRED_TABLES_', '_fcDeferredEverUsed_',
                  '_fcPrereqLoadedPaths_', '_fcMeta_'];
 var PAGE_FNS = ['_fcSliceRec_', '_fcSliceStates_', '_fcWorkspaceMode_', '_fcHas_', '_fcSliceHasData_',
                 '_fcModelUsable_', '_fcTabNow_', '_fcMergeSlice_', '_fcSliceFetch_', '_fcFailedSlices_',

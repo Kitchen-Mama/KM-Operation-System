@@ -182,7 +182,13 @@ ok(/_fcGetRegularForecast\(\)/.test(fnSrc(FCS, '_regularPrefillManual')),
   // S3-R12 — five. fc_special_events moved to the events slice; see the note at EVENT_TABLES.
   ok(sb._FC_PREREQ_TABLES_.event.indexOf('fc_special_events') === -1,
     'B1c  and fc_special_events is NOT one either — the events slice owns it');
-  ok(sb._FC_PREREQ_TABLES_.event.length === 5, 'B1c1 which leaves five');
+  // S3-R13 — a COUNT was never the claim. R12's sentence was 'fc_special_events left', which B1c
+  // states by name and which stays true; 'and five remain' described a list that shrank again the
+  // very next round. What must hold is that the two tables the builder reads to DRAW ITSELF are on it.
+  ok(sb._FC_PREREQ_TABLES_.event.indexOf('sku_details') !== -1
+    && sb._FC_PREREQ_TABLES_.event.indexOf('campaigns') !== -1,
+    'B1c1 and the tables the builder reads to draw itself are still on it',
+    sb._FC_PREREQ_TABLES_.event);
 })();
 var GETREG = fnSrc(FCS, '_evtBaseFcForSku');
 ok(/_fcGetRegularForecast\(\)/.test(GETREG),
@@ -418,8 +424,22 @@ function resetWorld(resetSrc) {
    (`_fcEnsureEventSource_` beside `_fcEnsureBaseFcSource_`). The WRITE census below is untouched: a
    Special save still reaches three tables, and the third is now made current by the slice readback
    rather than by a broad re-read. */
-var EVENT_TABLES = ['sku_details', 'marketplace_skus', 'campaigns',
-  'campaign_sku_lines', 'pricing_list'];
+/* S3-R13 — DERIVED, NOT RESTATED, and this is the fourth round to edit this literal.
+   The list shrank in R2-STABILITY (fc_regular_forecast), in S3-R12 (fc_special_events) and again in
+   S3-R13 (campaign_sku_lines and pricing_list, deferred to their first consumer on the operator's §11
+   decision). Every time, a copy of it here had to be edited in step — which means the copy was never
+   testing the list, it was testing that nobody had changed it.
+   The source says what the right shape is, in `_fcResetSecondaryCache`'s own comment: the affected
+   paths are DERIVED from `_FC_PREREQ_TABLES_`, so that a path which later gains or loses a table is
+   covered without editing anything. The assertions below now read the declaration the same way the
+   shipped code does. What they still check independently — and what actually matters — is stated as
+   named membership and a CLOSED CEILING: a table may LEAVE this list, and none may JOIN it, because a
+   table joining it is a table added to the cold path. */
+var EVENT_TABLES = resetWorld()._FC_PREREQ_TABLES_.event.slice();
+/* The CEILING: every table this list has ever held on the Special path. Membership may shrink; it may
+   not grow. */
+var EVENT_CEILING = ['sku_details', 'marketplace_skus', 'campaigns', 'campaign_sku_lines',
+  'pricing_list', 'fc_special_events', 'fc_regular_forecast', 'marketplaces'];
 var CHANGED_BY_SPECIAL = ['campaigns', 'campaign_sku_lines', 'fc_special_events'];
 /* The write census intersected with what the PREREQUISITE LIST still tracks. The difference between
    the two is exactly fc_special_events, and that difference is the round: the table is still changed
@@ -427,14 +447,19 @@ var CHANGED_BY_SPECIAL = ['campaigns', 'campaign_sku_lines', 'fc_special_events'
 var CHANGED_AND_TRACKED = CHANGED_BY_SPECIAL.filter(function (t) {
   return EVENT_TABLES.indexOf(t) !== -1;
 });
-var UNCHANGED_BY_SPECIAL = ['sku_details', 'marketplace_skus', 'pricing_list'];
+// DERIVED too: what this path holds and a Special save cannot reach. A table that leaves the path
+// leaves this set with it, which is correct — it can no longer be 'kept warm' by anybody.
+var UNCHANGED_BY_SPECIAL = EVENT_TABLES.filter(function (t) { return CHANGED_BY_SPECIAL.indexOf(t) === -1; });
 
 (function () {
   var W = resetWorld();
   eq(W._FC_SLICE_PREREQ_TABLES_.events.slice().sort(), CHANGED_BY_SPECIAL.slice().sort(),
     'D1  the census: a Special Event save reaches exactly these three tables');
-  eq(W._FC_PREREQ_TABLES_.event.slice().sort(), EVENT_TABLES.slice().sort(),
-    'D1a and the Special path holds these six');
+  ok(W._FC_PREREQ_TABLES_.event.every(function (t) { return EVENT_CEILING.indexOf(t) !== -1; }),
+    'D1a and the Special path holds no table outside the ceiling — members may leave, none may join',
+    W._FC_PREREQ_TABLES_.event);
+  ok(W._FC_PREREQ_TABLES_.event.length > 0,
+    'D1b and it is not vacuously empty — the builder still declares what it reads on open');
   // 16 — the four it cannot touch stay warm
   W.__warmAll();
   W._fcResetSecondaryCache('events');
@@ -455,8 +480,13 @@ var UNCHANGED_BY_SPECIAL = ['sku_details', 'marketplace_skus', 'pricing_list'];
     'D5  after a Special save it asks only for the tables it can change that this map still tracks');
   // AND THE THIRD IS NOT FORGOTTEN — it is made current by the slice the save reads back. Asserting
   // this is what keeps D5 from quietly becoming "one fewer table is refreshed".
-  eq(CHANGED_BY_SPECIAL.filter(function (t) { return CHANGED_AND_TRACKED.indexOf(t) === -1; }),
-    ['fc_special_events'], 'D5a the one it no longer tracks is fc_special_events');
+  /* S3-R13 — 'THE ONE' became two when campaign_sku_lines was deferred. R12's claim was that
+     fc_special_events stops being tracked HERE and is made current by the slice readback instead;
+     that is still exactly true and D5b below is what carries it. The count was incidental. */
+  ok(CHANGED_BY_SPECIAL.filter(function (t) { return CHANGED_AND_TRACKED.indexOf(t) === -1; })
+      .indexOf('fc_special_events') !== -1,
+    'D5a fc_special_events is among the tables this map no longer tracks',
+    CHANGED_BY_SPECIAL.filter(function (t) { return CHANGED_AND_TRACKED.indexOf(t) === -1; }));
   ok(/_fcAfterWriteScoped_\(\{ slice: FC_SLICE_\.EVENTS/.test(FCS),
     'D5b and the Special save reads the events SLICE back, which is what makes it current');
   eq(W._fcPrereqMissing_('regular'), [],

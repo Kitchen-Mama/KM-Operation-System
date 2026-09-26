@@ -803,6 +803,39 @@
         }).join('') + '</ul>' + (errors.length > 50 ? '<div class="srd-secnote">' + (errors.length - 50) + ' more not listed.</div>' : '');
     }
 
+
+    // =====================================================================================================
+    // S3-R13 §7/§8 — WHAT A FAILED **PREVIEW** IS ALLOWED TO SAY.
+    //
+    // The sibling of _srdWriteFailureHtml_ below, for the other half of the same distinction. R10 fixed the
+    // sentence a failed WRITE prints; production then showed the same lie on the PREVIEW, where it had never
+    // been looked at: 'The database rejected the file. Nothing was written.' for a redirect-404 that never
+    // reached the database at all.
+    //
+    // TWO THINGS ARE WRONG WITH THAT SENTENCE and only one of them is about zero-write. 'Nothing was
+    // written' is true of a dry run whatever happened. 'The database rejected the file' is not true and is
+    // not harmless: it tells the operator their file is bad, so the next thing they do is go and edit a file
+    // that was fine. The operator's own recovery — retry, and it worked — is what that wording cost.
+    //
+    //   CONFIRMED_NOT_STARTED   we never got an answer. The file has not been judged. Retry.
+    //   CONFIRMED_REJECTED      the server read the file and refused it. Fix the file.
+    //
+    // There is no OUTCOME_UNKNOWN branch here, and there must not be one: a dry run cannot produce it (no
+    // write is dispatched and no write_id is minted), so a branch for it would be unreachable code
+    // pretending to be a safeguard.
+    // =====================================================================================================
+    function _srdPreviewFailureHtml_(err) {
+        var msg = esc(err && err.message ? err.message : String(err));
+        if (err && err.write_outcome === 'CONFIRMED_NOT_STARTED') {
+            return '<div class="srd-taxwarn">' +
+                '<strong>The file has not been checked yet \u2014 no answer came back.</strong> ' +
+                'Nothing was written, and the database has not seen this file. This is a connection problem, ' +
+                'not a problem with the file: preview it again. ' + msg + '</div>';
+        }
+        return '<div class="srd-taxwarn">The database rejected the file. <strong>Nothing was written.</strong> ' +
+            msg + '</div>';
+    }
+
     /**
      * PREVIEW. Two validations, deliberately, and each is asked of whoever can answer it:
      *   the FILE is checked here   — required columns, a duplicate identity inside the file, a mode that is
@@ -848,8 +881,7 @@
                     if (confirm) confirm.disabled = changed.length === 0;
                 })
                 .catch(function (err) {
-                    out.innerHTML = '<div class="srd-taxwarn">The database rejected the file. <strong>Nothing was written.</strong> ' +
-                        esc(err && err.message ? err.message : String(err)) + '</div>' + _srdPriceErrorList((err && err.errors) || []);
+                    out.innerHTML = _srdPreviewFailureHtml_(err) + _srdPriceErrorList((err && err.errors) || []);
                 });
         };
         reader.onerror = function () { out.innerHTML = 'Could not read that file.'; };
@@ -1437,7 +1469,11 @@
                     _srdBulkRender({ reveal: true });
                 })
                 .catch(function (err) {
-                    b.preview = { changedRows: 0, rejected: true, serverMessage: (err && err.message) ? err.message : String(err),
+                    // S3-R13 §7 — THE OUTCOME TRAVELS WITH THE MESSAGE. It was dropped here, which is why
+                    // one template could answer for both a refusal and a lost connection.
+                    b.preview = { changedRows: 0, rejected: true,
+                        outcome: (err && err.write_outcome) || '',
+                        serverMessage: (err && err.message) ? err.message : String(err),
                         errors: (err && err.errors) || [], summary: null, groups: [] };
                     _srdBulkRender({ reveal: true });
                 });
@@ -1525,11 +1561,14 @@
         if (!pv) return '<div class="srd-secnote">Choose a file, then <strong>Preview</strong>. Nothing is written until you confirm.</div>';
 
         if (pv.rejected) {
-            return '<div class="srd-taxwarn">' +
-                (pv.serverMessage
-                    ? 'The database rejected the file. <strong>Nothing was written.</strong> ' + esc(pv.serverMessage)
-                    : 'The file was rejected. <strong>Nothing was written.</strong>') +
-                '</div>' + _srdBulkErrs(pv.errors || []);
+            /* WITH a serverMessage the file reached the transport, and only the outcome can say whether it
+               reached the database — so the shared renderer decides. WITHOUT one, the file was refused HERE
+               by validateBulkGrid before anything was sent, which really is a file rejection and really is a
+               zero-write; that sentence is unchanged and is the one case entitled to it. */
+            return (pv.serverMessage
+                    ? _srdPreviewFailureHtml_({ write_outcome: pv.outcome, message: pv.serverMessage })
+                    : '<div class="srd-taxwarn">The file was rejected. <strong>Nothing was written.</strong></div>') +
+                _srdBulkErrs(pv.errors || []);
         }
 
         var sum = pv.summary;

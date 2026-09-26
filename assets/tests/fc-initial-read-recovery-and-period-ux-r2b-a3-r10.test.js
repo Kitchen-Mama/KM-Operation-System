@@ -328,9 +328,19 @@ section('D. MARKETPLACES HAS ONE OWNER (§14.4)');
   /* S3-R12 — fc_special_events left the Special prerequisite list: the fcSummary `events` slice is
      its authoritative scoped owner, and `_evtBuilderEventRows_` has always preferred the read model.
      The RULE each of these asserts is untouched; only the membership it is asserted over moved. */
-  eq(sb._FC_PREREQ_TABLES_.event.slice().sort(),
-    ['campaign_sku_lines', 'campaigns', 'marketplace_skus', 'pricing_list', 'sku_details'],
-    'D4  and the Special path five');
+  /* S3-R13 — DERIVED. This literal has now been edited by R2-STABILITY, S3-R12 and S3-R13, which is
+     three rounds of a copy that was testing not-the-list-changing rather than the list. What holds is
+     a CLOSED CEILING — a table may leave the Special path, none may join it, because joining is a
+     table added to the cold path — plus the named absences this round and R12 actually established. */
+  var _CEILING = ['sku_details', 'marketplace_skus', 'campaigns', 'campaign_sku_lines',
+    'pricing_list', 'fc_special_events', 'fc_regular_forecast', 'marketplaces'];
+  ok(sb._FC_PREREQ_TABLES_.event.length > 0
+    && sb._FC_PREREQ_TABLES_.event.every(function (t) { return _CEILING.indexOf(t) !== -1; }),
+    'D4  the Special path holds no table outside the ceiling, and is not empty',
+    sb._FC_PREREQ_TABLES_.event);
+  ok(sb._FC_PREREQ_TABLES_.event.indexOf('fc_regular_forecast') === -1
+    && sb._FC_PREREQ_TABLES_.event.indexOf('fc_special_events') === -1,
+    'D4a and neither table with an authoritative scoped owner is on it');
   eq(sb._FC_PREREQ_TABLES_.event.indexOf('fc_special_events'), -1,
     'D4a  with fc_special_events owned by the events slice rather than fetched as a table');
 

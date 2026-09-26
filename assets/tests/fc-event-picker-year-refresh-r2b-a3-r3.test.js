@@ -170,6 +170,11 @@ function pageWorld(events, opts) {
     'function _evtClearPeriodError() {}',
     'function _evtSwitchMode() {}',
     'function _evtUpdateAddRowBtn() {}',
+    // S3-R13 - _evtHydrateExisting_ now refuses to run before campaign_sku_lines has
+    // arrived, because hydrating from an empty table drops a saved event's discounts in
+    // silence. The guard is REAL source and answers false here (no workspace, no
+    // refreshCacheTables), so this box hydrates exactly as it always has.
+    "var _fcPrereqLoadedTables_ = {}; var _FC_DEFERRED_TABLES_ = { lines: 'campaign_sku_lines', pricing: 'pricing_list' }; var _fcDeferredEverUsed_ = {}; function _fcDeferralActive_() { return false; } function _fcDeferredPending_(t) { return _fcDeferralActive_() && !_fcPrereqLoadedTables_[t]; }",
     'function _evtApplyRowPricing() {}',
     'function _evtPopulateSkuDatalist() {}',
     'function _evtRefreshSingleRowPrices() {}',
