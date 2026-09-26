@@ -110,6 +110,18 @@
     "NEXT_ROOT_CAUSE_LAYER": "Apps Script execution and Google redirect lifetime. The coherent reading — recorded as a reading, not a measurement — is that a queued or long-running /exec lets the single-use echo target expire before the browser reads it, which surfaces as REDIRECT_TARGET_NOT_FOUND rather than as slowness. That would explain why the 404s and the 60 s timeouts appear together, and why the failure rate rose from 4-in-40 to 19-in-28 with no transport change in between. It is settled by the S3-R6 capture, which is still outstanding: server_ms against client_total_ms."
   },
 
+  "fresh_targets_still_fail_in_the_CURRENT_state": {
+    "note": "§15 acceptance B asks for evidence that FRESH canonical requests produce FRESH redirect targets that still fail. This is that evidence, and unlike the 2026-09-14 key capture it is derived from the operator's own numbers for the state being investigated.",
+    "operator_capture": { "requests": 28, "retries": 18, "recoveries": 18, "coalesced": 12,
+      "peak_concurrent_requests": 7, "open_requests": 1,
+      "byCode": { "REDIRECT_TARGET_NOT_FOUND": 19, "REQUEST_TIMEOUT": 4, "REDIRECT_TARGET_RECOVERED": 2, "SUCCESS": 3 } },
+    "arithmetic_check": "19 + 4 + 2 + 3 = 28, which equals `requests`. byCode is a partition of the logical requests, so nothing below is double-counted.",
+    "the_argument": "18 retries were issued. A retry in this system is not a re-request of anything: every attempt is rebuilt from the canonical /exec with its own request id, which is executed and asserted in section D of the suite. So each of those 18 was a brand-new canonical request, and each therefore received a brand-new single-use redirect target from the platform. 19 of 28 logical requests nevertheless ended REDIRECT_TARGET_NOT_FOUND. Fresh requests, fresh targets, still failing — in this production state, not in a twelve-day-old one.",
+    "what_it_rules_out": "Any mechanism that depends on an OLD URL or an OLD target being reused: browser HTTP cache, fetch cache mode, application-level redirect persistence. None of them can act on a request whose URL has never existed before.",
+    "what_it_does_not_rule_out": "A service worker, which intercepts before the HTTP cache is consulted and is bound by none of the above — see verdict.the_one_thing_that_would_overturn_it. That is why env() is the first command the operator runs.",
+    "REDIRECT_TARGET_RECOVERED_is_an_attempt_not_an_outcome": "getOperationDbTableFromSheet emits REDIRECT_TARGET_RECOVERED when it ENTERS recovery, before the second attempt is made. The 2 recorded are two recoveries begun, not two requests saved. It is written down because reading that counter as a success rate would flatter the recovery path by an unknown amount."
+  },
+
   "correlation_the_capture_is_designed_to_expose": {
     "why_the_matrix_has_a_second_variable": "Cache mode alone can only fail to reject a hypothesis. The matrix crosses it with read COST — system.health, which touches no sheet, against getTable, which reads a whole one. If the 404 rate tracks cache mode, the cache is implicated. If it is flat across all four cache modes but concentrated on the expensive read, the mechanism is execution time and §9 applies. One run answers which.",
     "CHEAP_ACTION": "system.health — on the GET read registry, reads no table",
