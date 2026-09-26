@@ -699,8 +699,16 @@ CHAIN = CHAIN.then(function () {
     'G15 whose published name is unchanged');
   ok(/return _kmMetadataSingleFlight_\('getClientCapabilities', function \(\) \{ return _kmGapRead_\('getClientCapabilities', \{\}\); \}\)/.test(SRC.dbapi),
     'G16 and whose single-flighted read is byte-identical to what it was');
-  eq((SRC.dbapi.match(/_kmClassifyAnswer_\(/g) || []).length, 5,
-    'G17 the SHARED classifier still has its four call sites and one definition — this round added none');
+  // S3-R10 — RE-EXPRESSED. The point of this assertion is that there is ONE classifier and everybody uses it,
+  // never that the number of callers is frozen: a new caller is the DESIRED outcome, and a second
+  // implementation is the feared one. Pinning the total conflated them, so a round that correctly routed one
+  // more dispatch through the shared classifier failed a test named for keeping the classifier shared.
+  // S3-R10 added exactly that: the pricing write now classifies its answer instead of reading resp.ok.
+  eq((SRC.dbapi.match(/function _kmClassifyAnswer_\(/g) || []).length, 1,
+    'G17 the SHARED classifier has exactly ONE definition');
+  ok((SRC.dbapi.match(/_kmClassifyAnswer_\(/g) || []).length >= 5,
+    'G17a and every dispatch that classifies an answer goes through it — call sites may only be ADDED',
+    (SRC.dbapi.match(/_kmClassifyAnswer_\(/g) || []).length);
   eq((SRC.accessor.match(/SERVER_AUTHORITATIVE_FALLBACK_CODES = \['SOURCE_TIMED_OUT', 'HTTP_NOT_FOUND'\]/g) || []).length, 1,
     'G18 the transient allowlist source is unchanged  [M5]');
   eq((SRC.page.match(/P\.RETRYABLE_CODES = \['SOURCE_TIMED_OUT', 'HTTP_NOT_FOUND', 'SOURCE_NOT_CONNECTED',\n    'RESPONSE_NOT_READABLE', 'BROWSER_OFFLINE'\]/g) || []).length, 1,

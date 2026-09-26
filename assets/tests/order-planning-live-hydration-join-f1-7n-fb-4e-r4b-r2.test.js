@@ -196,8 +196,14 @@ var readActions = gsCtx.rtrGetReadActionList_();
 // 21 -> 22: PRODUCT-STRATEGY-P1-B1 added `productPricing.workspace.get` to the GET read table. Only the
 // inventory COUNT moves. 1b.10 below is the actual guarantee — it EXECUTES every entry in the table — and
 // it now covers the new action too, so nothing this line was protecting has been weakened.
-eq(readActions.length, 23,
-  '1b.9 the read table has 23 actions — P1-B6 added productPricing.siteUniverse.get');
+// S3-R10 — A FLOOR. The comment two lines above already says 1b.10 is the actual guarantee, because it
+// EXECUTES every entry in the table and therefore covers whatever the table contains. An exact count here adds
+// nothing that 1b.10 does not already give, and subtracts the ability for any later round to route a read.
+// The surface census that exists to NOTICE a new anonymous action is identity-boundary-baseline-sec-a0 §B,
+// and that one is bumped deliberately, with a sentence, every time the number moves.
+ok(readActions.length >= 23,
+  '1b.9 the read table has at least the 23 actions it had when P1-B6 added productPricing.siteUniverse.get',
+  readActions.length);
 var emptyAnswers = readActions.filter(function (a) {
   var txt = gsCtx.doGet({ parameter: { action: a, km_via: 'get' } }).getContent();
   return String(txt).replace(/\s/g, '') === '{}';

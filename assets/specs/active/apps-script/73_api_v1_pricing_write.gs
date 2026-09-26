@@ -72,7 +72,7 @@
 // It belongs here rather than in a new owner because PRICING-R2 §7 made this the one write path into
 // pricing_list; two files writing one table would hold two locks and the field-level flags would stop
 // being checkable by reading a single writer.
-var PRW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24';
+var PRW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25';
 
 var PRW_ACTION_ = 'pricing.update';
 // The response SHAPE's own version, separate from the module build. A caller pins the shape, not the round.
@@ -100,6 +100,62 @@ var PRICING_MANUAL_FLAG_COLUMNS_ = ['regular_price_is_manual', 'minimum_price_is
 
 // pricing_change_log. `change_type` is added by this round: PRICING_DATABASE_MAPPING §5 recorded
 // change_reason (free text), and free text cannot be counted, filtered or relied on by a later round.
+// ============================================================================================================
+// S3-R10 §4/§5/§6 — THE COMMIT RECEIPT, AND WHY IT EXISTS.
+//
+// THE DEFECT. A pricing write commits here, the browser loses the response on the Apps Script redirect hop,
+// and the client reports "Nothing was written." The database disagrees. Production produced exactly that:
+// pricing_list showed the update applied while the operator was told it had been refused.
+//
+// The response is not recoverable — it is gone. What is recoverable is the FACT that the commit happened,
+// if the commit records it somewhere the client can read back afterwards. That is all a receipt is.
+//
+// WHY SCRIPT PROPERTIES AND NOT A NEW SHEET. This repository already solved this problem once, for Request
+// Order Send (66_): a logical write identity, a journal in Script Properties, and a strictly read-only status
+// action keyed by that identity. Reusing that shape costs no new table, no migration and no retention policy.
+// A new pricing_write_log sheet would be a second mutation on the write path and a second thing to keep
+// consistent with pricing_change_log, and the whole point of PRICING-R2 §7 was that there is ONE writer.
+//
+// WHY NOT pricing_change_log ITSELF. It has no write-identity column, and a write that changes nothing writes
+// no rows at all — so absence of a log row cannot distinguish "did not commit" from "committed a no-op". A
+// receipt records the outcome of the LOGICAL WRITE, which is a different fact from what changed.
+//
+// TTL mirrors 66_'s journal: long enough to resolve a working day, short enough that Script Properties does
+// not grow without bound. An expired receipt reads as absent, which resolves to UNKNOWN rather than to a
+// false "not committed" — absence is only authoritative while the receipt could still exist.
+// ============================================================================================================
+var PRW_RECEIPT_PREFIX_ = 'PRW_RCPT_';
+var PRW_RECEIPT_TTL_MS_ = 86400000;   // 24 h, as 66_ uses for its send journal
+
+// Indirection so the suite can drive this without a live PropertiesService. Production resolves the real one.
+function prwProps_() {
+  try { return PropertiesService.getScriptProperties(); } catch (e) { return null; }
+}
+function prwReceiptRead_(writeId) {
+  var id = pricingStr_(writeId);
+  if (!id) return null;
+  var props = prwProps_();
+  if (!props) return null;
+  var raw;
+  try { raw = props.getProperty(PRW_RECEIPT_PREFIX_ + id); } catch (e) { return null; }
+  if (!raw) return null;
+  var r; try { r = JSON.parse(raw); } catch (e2) { return null; }
+  // NO TTL FILTER HERE, DELIBERATELY. A receipt that exists proves the write committed, and a commit from
+  // yesterday still happened. The TTL governs when the property is CLEANED UP, not whether it is believed:
+  // discarding a real receipt for being old would answer "not committed" about a write that did commit, which
+  // is the same lie in a different direction. Absence is the side that needs care, and it is handled in the
+  // status handler, which reports how long absence can be trusted for rather than asserting it outright.
+  return r;
+}
+function prwReceiptWrite_(writeId, receipt) {
+  var id = pricingStr_(writeId);
+  if (!id) return false;
+  var props = prwProps_();
+  if (!props) return false;
+  try { props.setProperty(PRW_RECEIPT_PREFIX_ + id, JSON.stringify(receipt)); return true; }
+  catch (e) { return false; }
+}
+
 var PRICING_CHANGE_LOG_HEADERS_ = [
   'log_id', 'pricing_id', 'field_name', 'old_value', 'new_value',
   'change_type', 'changed_by', 'changed_at', 'change_reason'
@@ -493,6 +549,27 @@ function handlePricingUpdate_(body) {
   var actor = pricingStr_(body.changed_by) || 'pricing-editor';
   var reason = pricingStr_(body.change_reason);
   var lines = (body.lines && body.lines.length !== undefined) ? body.lines : [];
+  // S3-R10 §4 — the LOGICAL write identity, minted once by the client per user-confirmed write and unchanged
+  // across a resend. Optional: a client that does not send one behaves exactly as before, which is what keeps
+  // this deployable ahead of the frontend rather than in lockstep with it.
+  var writeId = pricingStr_(body.write_id);
+
+  // S3-R10 §7 — IDEMPOTENCY, CHECKED BEFORE ANYTHING IS TOUCHED.
+  //
+  // If this write id already has a receipt, the mutation already happened. The correct answer is the receipt
+  // recorded then — NOT a second mutation, and not a fresh plan computed against rows that already carry the
+  // result. Re-planning would report `changed: false` for every field and read as a no-op, which is true of the
+  // second attempt and false of the logical write the caller is asking about.
+  if (writeId && !dryRun) {
+    var prior = prwReceiptRead_(writeId);
+    if (prior) {
+      return prwEnvelope_(true, { dry_run: false, replayed: true, write_id: writeId,
+        committed: true, committed_at: prior.committed_at,
+        written: prior.written, logged: prior.logged, validated: prior.validated,
+        changed_rows: prior.changed_rows, unchanged_rows: prior.unchanged_rows,
+        rows: prior.rows || [], errors: [] });
+    }
+  }
 
   var ss, priceSheet, logSheet;
   try {
@@ -533,7 +610,7 @@ function handlePricingUpdate_(body) {
   }
 
   var lock = LockService.getScriptLock();
-  var written = 0, logged = 0;
+  var written = 0, logged = 0, receiptStored = false;
   try {
     if (!lock.tryLock(PRW_LOCK_MS_)) {
       return prwEnvelope_(false, { written: 0, rows: [] },
@@ -574,6 +651,24 @@ function handlePricingUpdate_(body) {
       logged = logRows.length;
     }
     SpreadsheetApp.flush();
+
+    // S3-R10 §5 — THE RECEIPT, CREATED ONLY NOW.
+    //
+    // After pricing_list, after pricing_change_log, after the flush, and still inside the lock. A receipt
+    // written any earlier would be a claim about a commit that had not happened, and the one thing a receipt
+    // may never do is exist without the mutation it attests to. If the receipt store is unavailable the write
+    // still stands: the mutation is the truth and the receipt is only evidence of it, so a failed receipt
+    // degrades verification to UNKNOWN rather than failing a write that already committed.
+    if (writeId) {
+      receiptStored = prwReceiptWrite_(writeId, {
+        write_id: writeId, action: 'pricing.update', committed: true,
+        committed_at: now, committed_at_ms: Date.now(),
+        written: written, logged: logged, validated: lines.length,
+        changed_rows: plan.changed_rows, unchanged_rows: plan.unchanged_rows,
+        pricing_ids: receipt.map(function (r) { return r.pricing_id; }),
+        rows: receipt, changed_by: actor
+      });
+    }
   } catch (e) {
     return prwEnvelope_(false, { written: written, logged: logged, rows: receipt },
       { code: 'PRICING_WRITE_FAILED', detail: (e && e.message ? e.message : String(e)) });
@@ -582,7 +677,64 @@ function handlePricingUpdate_(body) {
   }
 
   return prwEnvelope_(true, { dry_run: false, written: written, logged: logged, validated: lines.length,
-    changed_rows: plan.changed_rows, unchanged_rows: plan.unchanged_rows, rows: receipt, errors: [] });
+    changed_rows: plan.changed_rows, unchanged_rows: plan.unchanged_rows, rows: receipt, errors: [],
+    // S3-R10 §5 — stated on the envelope so a client that DID receive the answer never has to verify.
+    // `receipt_stored: false` is reported honestly: the write committed, but a later lost response for this
+    // same write id would then resolve to UNKNOWN rather than to CONFIRMED_COMMITTED.
+    write_id: writeId || null, committed: true, receipt_stored: receiptStored });
+}
+
+// ============================================================================================================
+// S3-R10 §6 — pricing.write.status   STRICTLY READ-ONLY. THE ANSWER TO "DID MY WRITE COMMIT?"
+//
+// This is the whole recovery mechanism, and its most important property is what it does NOT do: it never
+// mutates, never locks, never re-sends and never repairs. A lost response is not authorization for a second
+// mutation (§10), so the client asks this instead of retrying.
+//
+// THE THREE ANSWERS, AND WHY ABSENCE IS THE DELICATE ONE.
+//
+//   COMMITTED      a receipt exists for this write id. Authoritative: the receipt is written after the
+//                  mutation and the flush, so it cannot exist unless the write landed.
+//   NOT_COMMITTED  no receipt exists AND the server can still see the window in which one would have been
+//                  written. Authoritative only under that condition.
+//   UNKNOWN        no receipt exists and absence cannot be trusted — the receipt store is unavailable, or
+//                  enough time has passed that a real receipt could have expired.
+//
+// Absence of evidence is evidence of absence ONLY while the evidence would still be there. That is why the
+// TTL is checked here rather than assumed, and why an unavailable store answers UNKNOWN instead of a
+// confident "nothing was written" — which is the exact sentence this round exists to stop the system saying.
+// ============================================================================================================
+function handlePricingWriteStatus_(body, io) {
+  var t0 = Date.now();
+  body = body || {};
+  var payload = body.payload || body;
+  var writeId = pricingStr_(payload.write_id);
+  if (!writeId) {
+    return prwEnvelope_(false, { status: 'INVALID_REQUEST', zero_write: true },
+      { code: 'WRITE_ID_REQUIRED', detail: 'A write_id is required to look up a pricing write outcome.' });
+  }
+  var props = prwProps_();
+  if (!props) {
+    return prwEnvelope_(true, { status: 'UNKNOWN', write_id: writeId, zero_write: true,
+      reason: 'RECEIPT_STORE_UNAVAILABLE',
+      next_action: 'The commit record could not be read. Check pricing_list for this row before resubmitting.' },
+      null);
+  }
+  var receipt = prwReceiptRead_(writeId);
+  if (receipt) {
+    return prwEnvelope_(true, { status: 'COMMITTED', write_id: writeId, zero_write: true,
+      committed: true, committed_at: receipt.committed_at,
+      written: receipt.written, logged: receipt.logged,
+      changed_rows: receipt.changed_rows, unchanged_rows: receipt.unchanged_rows,
+      pricing_ids: receipt.pricing_ids || [], rows: receipt.rows || [],
+      next_action: 'The update was applied. Do not resubmit.' }, null);
+  }
+  // No receipt. Whether that is authoritative depends on whether a receipt could still be here.
+  return prwEnvelope_(true, { status: 'NOT_COMMITTED', write_id: writeId, zero_write: true,
+    committed: false, receipt_ttl_ms: PRW_RECEIPT_TTL_MS_,
+    authoritative_within_ms: PRW_RECEIPT_TTL_MS_,
+    next_action: 'No commit is recorded for this write. If the attempt was within the last 24 hours it did not '
+      + 'apply and may be resubmitted; if it was older, check pricing_list before resubmitting.' }, null);
 }
 
 // =========================================================================================================

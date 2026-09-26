@@ -220,7 +220,11 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 // older 73_ has no resolver to call and answers PRICING_RESOLVER_UNAVAILABLE rather than guessing; an
 // older 72_ beside 73_ at R24 keeps publishing override cells as prices, which looks entirely correct
 // and is the old model's numbers wearing the new model's labels.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24';
+// S3-R10: R24 -> R25. Three owners change together and must be copied together — 73_ gains the commit
+// receipt and the read-only status handler, 01_router routes pricing.write.status, and this file carries
+// the manifest row plus the contract and list versions. A project with 73_ at R25 and an OLD router cannot
+// reach the status handler at all, which is precisely the partial sync a release id exists to make visible.
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25';
 // 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
 // R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
 // not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
@@ -254,7 +258,7 @@ var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24';
 // several rounds, because an action was genuinely added to the vocabulary.
 // PRICING-R3 - moved because the registry gained pricing.fxReconcile, three manifest rows moved and the
 // action contract moved, all of which are changes to THIS FILE.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24';
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -320,7 +324,12 @@ var SYS_TRANSPORT_CONTRACT_VERSION_ = 1;
 // route, pricing.fxReconcile, and this number's rule is "bump whenever a router ACTION is added or removed".
 // A deployment at v15 has every pricing.update capability and cannot reconcile at all, and the two states
 // have to be distinguishable without calling the action to find out.
-var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 16;
+// S3-R10: 16 -> 17. 01_router.gs gained pricing.write.status, and this number's rule is "bump whenever a
+// router ACTION is added or removed". It matters more than usual here: a deployment at v16 serves
+// pricing.update but cannot answer whether a write committed, so a client that lost a response would be
+// unable to verify and would sit on OUTCOME_UNKNOWN forever. The two states have to be distinguishable
+// without calling the action to find out.
+var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 17;
 // Incremented when SYS_REQUIRED_ACTIONS_ changes, so a caller can tell a "nothing missing" answer from an
 // OLD list apart from a "nothing missing" answer from the CURRENT list.
 // F1-7N-FB-4E-R2: 7 -> 8. SYS_REQUIRED_ACTIONS_ gained four entries, and the whole purpose of this number is
@@ -349,7 +358,10 @@ var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 16;
 // run against the whole table, not a save a screen performs. Adding it would report every deployment that
 // has never needed it as missing something, which is how a registry of real partial-sync faults turns into
 // a list nobody reads. The same reason productPricing.workspace.get and createShipmentFromPlan both waited.
-var SYS_REQUIRED_ACTION_LIST_VERSION_ = 13;
+// S3-R10: 13 -> 14. SYS_REQUIRED_ACTIONS_ gained pricing.write.status. Unlike pricing.fxReconcile, which
+// deliberately stayed out, a PAGE depends on this one: SKU Regional Details calls it whenever a pricing
+// write loses its response, which is exactly the partial-sync fault this registry exists to surface.
+var SYS_REQUIRED_ACTION_LIST_VERSION_ = 14;
 
 // The router actions the affected pages depend on. A partial Apps Script sync is the one failure mode that
 // looks like a transport fault from the browser, so availability is reported per action by probing the handler
@@ -452,7 +464,8 @@ var SYS_REQUIRED_ACTIONS_ = [
   // exactly the partial sync this registry exists to name, and it is worse for a WRITE than for a read: a
   // read that fails is visibly empty, whereas a price that did not save looks identical to one that did
   // until someone reloads the page.
-  { action: 'pricing.update', handler: 'handlePricingUpdate_', used_by: 'SKU Regional Details — per-field price editor + price template import (owner = 73_)' }
+  { action: 'pricing.update', handler: 'handlePricingUpdate_', used_by: 'SKU Regional Details — per-field price editor + price template import (owner = 73_)' },
+  { action: 'pricing.write.status', handler: 'handlePricingWriteStatus_', used_by: 'SKU Regional Details — read-only commit-receipt lookup after a lost write response (owner = 73_)' }
   // PRICING-R3 — pricing.fxReconcile is DELIBERATELY ABSENT from this list, and that is the same restraint
   // recorded on SYS_REQUIRED_ACTION_LIST_VERSION_ above. This list is the actions PAGES depend on, probed so
   // that a partial sync stops looking like a transport fault; a reconciliation is run by an operator, and
@@ -516,7 +529,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
   // PRICING-R2 — 73_ IS REQUIRED FROM ITS FIRST RELEASE, AND DELIBERATELY NOT OPTIONAL, for the reason a
   // WRITE owner is always the worst partial sync: 01_router.gs dispatches pricing.update to
   // handlePricingUpdate_, so a deployment carrying the router without this file routes a live price write
@@ -528,7 +541,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // matters more than it did: pricing.fxReconcile can write every row in pricing_list in one call. A project
   // holding the R21 copy routes it (if 01_ was synced) into an undefined handler, and one holding R22
   // without the R22 router has the reconciliation and no way to ask for it.
-  { file: '73_api_v1_pricing_write.gs', symbol: 'PRW_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24', owns: 'the canonical pricing write AND the FX reconciliation: field-level manual ownership (three-state, blank = UNKNOWN), the per-field MANUAL / USE AUTO / NO_CHANGE contract, batch validation with zero writes until every line passes, the pricing_change_log audit writer with typed change_type, the frozen FX storage-precision table, and the auto_* rebuild that refreshes an effective price only where that field explicitly says AUTO' },
+  { file: '73_api_v1_pricing_write.gs', symbol: 'PRW_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25', owns: 'the canonical pricing write AND the FX reconciliation: field-level manual ownership (three-state, blank = UNKNOWN), the per-field MANUAL / USE AUTO / NO_CHANGE contract, batch validation with zero writes until every line passes, the pricing_change_log audit writer with typed change_type, the frozen FX storage-precision table, and the auto_* rebuild that refreshes an effective price only where that field explicitly says AUTO' },
   // FC-SUMMARY-R3-R1 §B — THE FC SUMMARY READ OWNER HAD NO ROW, AND ITS ABSENCE WAS SILENT.
   //
   // 58_ answers every primary render of the FC Summary page, and until now a project holding last round's
@@ -655,7 +668,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   { file: '22_shipment_dispatch_handlers.gs', symbol: 'CSD_BUILD_VERSION_', expected: 'F1-7N-FC-1A-R1', owns: 'Confirm Shipment & Dispatch: deduction + reservation release through the shared authority + the cancelled-shipment dispatch refusal' },
   // F1-7N-FB-4E-R4B-R3 §1 - moved with the file. R4B-R2 changed the GET read dispatch; leaving the manifest at
   // R4A1 would have made a CORRECTLY synced router report as stale, and an UNSYNCED one report as current.
-  { file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24', owns: 'doGet/doPost action routing (incl. the GET read table + cancelShipmentDraft) + typed handler/method response identity + the R6-R5 per-execution entry stamp handlers report as server evidence' },
+  { file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25', owns: 'doGet/doPost action routing (incl. the GET read table + cancelShipmentDraft) + typed handler/method response identity + the R6-R5 per-execution entry stamp handlers report as server evidence' },
   // F1-7N-FB-4E-R4B-R3 §1 - THE TWO OWNERS THAT CHANGED IN R4B AND HAD NO STAMP AT ALL. Both answer every one of
   // their actions when a round behind, so a resolvable action list can never see a partial sync of them; only a
   // declared build can. The stamp VALUE names the round in which each last changed BEHAVIOURALLY; the SYMBOL was

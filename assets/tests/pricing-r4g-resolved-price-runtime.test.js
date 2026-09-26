@@ -478,8 +478,13 @@ section('F · §16 THE RELEASE — FIVE FILES, ONE ID');
 // =============================================================================================================
 {
   var R24 = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24';
-  eq((GS63.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)';/) || [])[1], R24,
-    'F1  TARGET_RELEASE = R24');
+  // S3-R10 — AT OR AFTER. PRICING-R4G's target release was R24 and that was true when it shipped; it is not
+  // a property the tree keeps forever, because §17 of every round since requires a NEW release id whenever a
+  // server file changes. What stays true is that the release never goes backwards past the one this round
+  // needed. F1a keeps the sharp half: the files R4G changed still carry a stamp at or after R24.
+  var _r4gRel = (GS63.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)';/) || [])[1];
+  ok(!!_r4gRel && require('./_release-order.js').stampAtOrAfter(_r4gRel, R24),
+    'F1  TARGET_RELEASE is R24 or later', _r4gRel);
 
   // F2 — WHY_RELEASE_ID_IS_CORRECT, asserted from the policy this repository already records rather than
   // from a preference. R23 never shipped; neither did R7, R10 or R11, and each was superseded by name.
@@ -497,12 +502,17 @@ section('F · §16 THE RELEASE — FIVE FILES, ONE ID');
     '72_api_v1_product_pricing_workspace.gs': /PPW_BUILD_VERSION_ = '([^']+)'/,
     '73_api_v1_pricing_write.gs': /PRW_BUILD_VERSION_ = '([^']+)'/
   };
+  // S3-R10 — R4G's sync set was these five files at R24. A LATER release may move some of them and must not
+  // move the others: R25 moved 01_, 63_ and 73_ for the pricing commit receipt and left 04_ and 72_ exactly
+  // where R24 put them. So the durable claim is not "all five are at R24" — it is that none of them has gone
+  // BACKWARDS from the release R4G needed, which is what a mixed identity would look like.
   var syncSet = Object.keys(stamps).filter(function (f) {
-    return (readN('assets/specs/active/apps-script/' + f).match(stamps[f]) || [])[1] === R24;
+    var declared = (readN('assets/specs/active/apps-script/' + f).match(stamps[f]) || [])[1];
+    return !!declared && require('./_release-order.js').stampAtOrAfter(declared, R24);
   });
   eq(syncSet.sort(), ['01_router.gs', '04_marketplace_forecast_import.gs', '63_api_v1_system_health.gs',
     '72_api_v1_product_pricing_workspace.gs', '73_api_v1_pricing_write.gs'],
-    'F3  APPS_SCRIPT_SYNC_SET — five files, all at R24, no mixed identities');
+    'F3  APPS_SCRIPT_SYNC_SET — all five files are at R24 or later, no file left behind');
   ok((GS59.match(/SKD_BUILD_VERSION_ = '([^']+)'/) || [])[1] !== R24,
     'F3a and 59_ is NOT among them — it did not change, and marching it would destroy the signal');
 

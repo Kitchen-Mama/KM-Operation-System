@@ -420,10 +420,19 @@ ok(!/optional: true/.test(row58 ? HEALTH.slice(row58.index, HEALTH.indexOf('}', 
 // PRICING-R4G — and it moves AGAIN, to R24, because R4G changes what 04_ writes into the override columns
 // of a new row. The literal is gone: what this line defends is that 04_ declares the release, and reading
 // the release rather than typing it is what stops this assertion expiring every round.
-var _e7c0Rel = (/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)';/.exec(HEALTH) || [])[1];
-ok(!!_e7c0Rel && new RegExp("\\{ file: '04_marketplace_forecast_import\\.gs', symbol: '[A-Z_]+', expected: '"
-    + _e7c0Rel + "'").test(HEALTH),
-  'E7c0 while 04_ moves WITH the release, because PRICING-R4E/R4G changed the creation contract it owns');
+// S3-R10 — READING the release instead of typing it was the right instinct and still not enough: it assumed
+// 04_ would be an owner of EVERY future release. It was R24's owner; R25 changes the pricing WRITE path and
+// does not touch the creation contract, so 04_ correctly keeps R24 while the release moves to R25. Marching
+// it would erase the one fact its stamp carries.
+//
+// The durable claim is the partial-sync invariant underneath: 04_'s manifest row expects exactly what 04_
+// declares. That catches the fault this was guarding against — a file copied without its manifest row, or a
+// manifest row moved without the file — and it keeps catching it in every release, not just the one it was
+// written in.
+var _e7c0Declared = (/var FCREG_BUILD_VERSION_ = '([^']+)';/.exec(readGs('04_marketplace_forecast_import.gs')) || [])[1];
+ok(!!_e7c0Declared && new RegExp("\\{ file: '04_marketplace_forecast_import\\.gs', symbol: '[A-Z_]+', expected: '"
+    + _e7c0Declared + "'").test(HEALTH),
+  'E7c0 while 04_ declares exactly what the manifest expects of it — a partial sync stays visible');
 ok(/\{ file: '14_fc_write_handlers\.gs', symbol: '[A-Z_]+', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R18'/.test(HEALTH),
   'E7c1 while 14_ keeps R18, the round IT last changed');
 ok(/FC_SE_UNIQUENESS_FIELDS_/.test(require('fs').readFileSync(require('path').join(__dirname, '..',

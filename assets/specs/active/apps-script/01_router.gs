@@ -39,7 +39,7 @@
 // an action is indistinguishable from a deployment that never had the handler.
 // PRICING-R3 - R21 -> R22. Gained the pricing.fxReconcile dispatch, whose handler lives in the same owner
 // (73_) as pricing.update, so a project synced for R21 has the FILE but not the ROUTE.
-var RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24';
+var RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25';
 
 // =============================================================================================================
 // F1-7N-FB-4E-R4A1 §3 — READ ACTIONS ARE SERVED ON GET, AND THIS IS WHY.
@@ -103,6 +103,10 @@ function rtrGetReadHandlers_() {
     'requestOrder.send.status':                    handleRequestOrderSendStatus_,
     'requestOrderDraft.job.status':                handleGetRequestOrderDraftJobStatus_,
     'requestOrderDraft.getActive':                 handleGetActiveRequestOrderDraftReadback_,
+    // S3-R10 §6 — pricing write outcome lookup. STRICTLY READ-ONLY, and on the GET table because that is
+    // what makes it usable after a lost response: the client asks whether its write committed instead of
+    // resending it. The pricing.update twin stays POST-only and is deliberately absent from this table.
+    'pricing.write.status':                        handlePricingWriteStatus_,
     // Read-only diagnostics the pages consume
     'system.requestOrderSendDiagnosticStatus':     handleRequestOrderSendDiagnosticStatus_,
     'system.requestOrderSendReconcile':            handleRequestOrderSendReconcile_,
@@ -454,6 +458,11 @@ function doPost(e) {
     // starting a second execution. Answers "what does the server think is happening, and may I continue?".
     if (action === 'requestOrder.send.status') {
       return jsonResponse_(handleRequestOrderSendStatus_(body));
+    }
+    // S3-R10 §6 — "did my pricing write commit?" A lost response is not authorization for a second
+    // mutation, so this answers the question the client would otherwise answer by resending.
+    if (action === 'pricing.write.status') {
+      return jsonResponse_(handlePricingWriteStatus_(body));
     }
     // F1-7N-FB-3C §B — THE USER-AUTHORIZED DRAFT-CREATION BOUNDARY (owner = 15_). A deliberate user quantity
     // edit is now an authorized canonical draft-creation/update boundary, not only AI Plan. Find-or-create the

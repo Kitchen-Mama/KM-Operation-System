@@ -167,9 +167,15 @@ console.log('\n=== §B  THE SURFACE THAT SITS BEHIND IT, COUNTED FROM THE ROUTER
   // while ONE fxReconcile call rewrites auto_* across the entire table. It is dry-run by default and it
   // refuses to touch a manual or unclaimed price — but neither of those is an identity check, and this
   // census counts what is REACHABLE without one.
-  eq(s.all.length, 140, 'B1 140 actions are routed — the whole anonymous surface');
-  eq(s.readTable.length, 23, 'B2 23 of them on the GET read table');
-  eq(s.post.length, 138, 'B3 138 dispatched by doPost');
+  // S3-R10 — 140 -> 141, 23 -> 24. pricing.write.status is a GET read, so it joins the anonymous surface and
+  // is counted here rather than waved through. What it exposes is a commit receipt for ONE write id: the
+  // affected row count, the change-log count and the pricing_ids that write touched. It returns nothing for
+  // an id the caller does not already hold, and the id is a UUID minted client-side per write, so this widens
+  // the surface by a lookup that is useless without a secret rather than by a listable read. It is also the
+  // read that makes a lost write outcome decidable, which is why it is a read at all.
+  eq(s.all.length, 141, 'B1 141 actions are routed — the whole anonymous surface');
+  eq(s.readTable.length, 24, 'B2 24 of them on the GET read table');
+  eq(s.post.length, 139, 'B3 139 dispatched by doPost');
   eq(s.mutations.length, 78, 'B4 and 78 are unambiguous MUTATIONS, every one reachable without identity');
   ok(s.mutations.indexOf('pricing.update') !== -1,
     'B4a including pricing.update — PRICING-R2 added the first WRITE since this baseline was measured');

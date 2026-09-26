@@ -775,7 +775,14 @@ section('L · THE WIRING — route, registry, manifest, contract versions, pin, 
   ok(contract >= 15, 'L7  the action contract is at or above the version that introduced pricing.update', contract);
   ok(GS63.indexOf("{ action: 'pricing.update', handler: 'handlePricingUpdate_'") > 0,
     'L7a because the action it was raised for is still in the registry');
-  eq(listVer, 13, 'L8  and the required-action list version is the one pricing.update was added at');
+  // S3-R10 — A FLOOR, for the reason L7 gives three lines above and then failed to apply to itself. Pinning
+  // this to 13 forever says "no round may ever add a required action again", which is not what PRICING-R2
+  // claimed and not something it could have claimed. What it claimed is that the list moved when
+  // pricing.update joined, and the evidence for that is the action being in the registry at a list version
+  // of at least 13. (S3-R10 added pricing.write.status and moved it to 14.)
+  ok(listVer >= 13, 'L8  and the required-action list version is at or above the one pricing.update was added at', listVer);
+  ok(GS63.indexOf("{ action: 'pricing.update', handler: 'handlePricingUpdate_'") > 0,
+    'L8a which is evidenced by the action still being in SYS_REQUIRED_ACTIONS_');
 
   // L9 IS UNCHANGED, AND DELIBERATELY SO. PRICING-R3 tested this line: it added a backend action no page
   // calls, and leaving the pin behind looked reasonable. It is not how this repository works — eight suites

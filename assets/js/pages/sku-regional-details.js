@@ -872,8 +872,7 @@
             })
             .catch(function (err) {
                 if (btn) { btn.disabled = false; btn.textContent = 'Confirm & Write'; }
-                if (out) out.innerHTML = '<div class="srd-taxwarn">Write refused. <strong>Nothing was written.</strong> ' +
-                    esc(err && err.message ? err.message : String(err)) + '</div>' + _srdPriceErrorList((err && err.errors) || []);
+                if (out) out.innerHTML = _srdWriteFailureHtml_(err) + _srdPriceErrorList((err && err.errors) || []);
             });
     }
 
@@ -1427,6 +1426,35 @@
     }
 
     /** CONFIRM. Writes exactly the lines the preview validated — never the file re-read a second time. */
+
+    // =====================================================================================================
+    // S3-R10 §9 — WHAT A FAILED WRITE IS ALLOWED TO SAY.
+    //
+    // "Nothing was written." is a claim about the DATABASE. Before this round every post-dispatch failure
+    // made it, including the one that mattered: production showed "Write refused. Nothing was written. API
+    // returned 404" for a bulk update whose rows had committed. The 404 came from an expired Apps Script
+    // redirect target — it described the browser's journey, not the server's work.
+    //
+    // The rule is simple and it is about who knows what:
+    //   CONFIRMED_REJECTED   the SERVER said no. It validates every line before touching a cell, so this
+    //                        really is a zero-write, and saying so is correct.
+    //   OUTCOME_UNKNOWN      we did not get an answer. The write may be committed. We say we do not know,
+    //                        and — critically — we tell the operator not to submit it again, because a
+    //                        second submission is the one action that can turn this into real damage.
+    // =====================================================================================================
+    function _srdWriteFailureHtml_(err) {
+        var msg = esc(err && err.message ? err.message : String(err));
+        if (err && err.write_outcome === 'OUTCOME_UNKNOWN') {
+            return '<div class="srd-taxwarn">' +
+                '<strong>We couldn\u2019t confirm the result yet.</strong> ' +
+                'Do not submit this update again while the system checks whether it was committed. ' +
+                msg +
+                (err.write_id ? ' <span class="srd-dim">Reference: ' + esc(err.write_id) + '</span>' : '') +
+                '</div>';
+        }
+        return '<div class="srd-taxwarn">Update was rejected. <strong>Nothing was written.</strong> ' + msg + '</div>';
+    }
+
     function srdBulkConfirm() {
         var P = _srdPricingApi(), b = _srdBulk; if (!P || !b || !b.lines || !b.lines.length) return;
         var btn = el('srd-bulk-confirm-btn');
@@ -1445,8 +1473,7 @@
                 var modal = el('srd-bulk-modal');
                 if (modal) {
                     var body = modal.querySelector('.srd-modal__body');
-                    if (body) body.innerHTML = '<div class="srd-taxwarn">Write refused. <strong>Nothing was written.</strong> ' +
-                        esc(err && err.message ? err.message : String(err)) + '</div>' + _srdBulkErrs((err && err.errors) || []);
+                    if (body) body.innerHTML = _srdWriteFailureHtml_(err) + _srdBulkErrs((err && err.errors) || []);
                 }
             });
     }

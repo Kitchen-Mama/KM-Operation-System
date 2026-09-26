@@ -2655,25 +2655,151 @@ window.KM.DB.updatePricing = async function(payload) {
         console.warn('[KM.DB] API not configured, updatePricing skipped');
         return { success: false, error: 'API not configured' };
     }
-    var resp = await fetch(OP_DB_API_BASE_URL, {
-        method: 'POST',
-        cache: 'no-store',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(Object.assign({ action: 'pricing.update' }, payload))
-    });
-    if (!resp.ok) throw new Error('API returned ' + resp.status);
-    var json = await resp.json();
-    if (!json.success) {
-        var e = new Error(json.detail || json.error || 'Pricing update failed');
-        e.error_code = json.error || 'PRICING_WRITE_FAILED';
-        // The per-line problems, so the page can point at the row instead of restating the message.
-        e.errors = (json.data && json.data.errors) || [];
-        throw e;
+    var dryRun = !!(payload && payload.dry_run);
+    // S3-R10 §4 — THE LOGICAL WRITE IDENTITY. Minted ONCE here, per user-confirmed write, and never
+    // regenerated: not during verification, not on a resend of the same confirmed intent. It is what lets the
+    // server recognise a duplicate arrival, and what lets this client ask afterwards whether the write landed.
+    //
+    // NOT `_kmNextWriteRequestId_()`. That counter is per-SESSION and sequential — REQ-W000001 in every tab —
+    // so as an idempotency key two operators would collide on their first write of the day and the second
+    // would be answered from the first one's receipt and silently never applied. A correlation id and an
+    // idempotency key have different uniqueness requirements; this needs the stronger one.
+    var writeId = dryRun ? '' : _kmNewPricingWriteId_();
+    var url = (window.KM && window.KM.DB && typeof window.KM.DB.getApiBaseUrl === 'function' && window.KM.DB.getApiBaseUrl()) || OP_DB_API_BASE_URL;
+    var dto = Object.assign({ action: 'pricing.update' }, payload);
+    if (writeId) dto.write_id = writeId;
+
+    function unknown(reason, detail) {
+        // S3-R10 §1 — OUTCOME_UNKNOWN IS NOT REJECTION. The server may have committed after we stopped
+        // listening. Anything that says "nothing was written" from here is a guess presented as a fact.
+        var e = new Error(detail || 'The result of this update could not be confirmed.');
+        e.write_outcome = 'OUTCOME_UNKNOWN';
+        e.write_id = writeId || null;
+        e.error_code = reason || 'WRITE_OUTCOME_UNKNOWN';
+        e.zero_write = false;
+        e.errors = [];
+        return e;
     }
+    function rejected(code, detail, errs) {
+        var e = new Error(detail || 'Pricing update failed');
+        e.write_outcome = 'CONFIRMED_REJECTED';
+        e.write_id = writeId || null;
+        e.error_code = code || 'PRICING_WRITE_FAILED';
+        e.zero_write = true;
+        e.errors = errs || [];
+        return e;
+    }
+    // A resolved outcome is handed back by throwing, because every existing caller already treats a rejected
+    // promise as "the write did not succeed". The DIFFERENCE is that the error now says which of the three
+    // things happened, instead of every failure looking like a refusal.
+    async function settle(pending) {
+        var resolved = await _kmResolvePricingWriteOutcome_(writeId, pending);
+        if (resolved && resolved.kmPricingCommitted) return resolved.receipt;
+        throw resolved;
+    }
+
+    var resp, text = '';
+    try {
+        // BOUNDED, and typed. The old path was a raw fetch with `if (!resp.ok) throw 'API returned ' + status`,
+        // which is exactly how an expired redirect target became "Nothing was written" for a write that had
+        // already committed.
+        resp = await _kmFetchBounded_(url, { method: 'POST', cache: 'no-store',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(dto) }, 'write', 'pricing.update');
+    } catch (netErr) {
+        if (dryRun) throw rejected('DRY_RUN_TRANSPORT_ERROR', 'The preview could not be produced: ' + ((netErr && netErr.message) || netErr));
+        return await settle(unknown((netErr && netErr.kmTimeout) ? 'REQUEST_TIMEOUT' : 'HTTP_TRANSPORT_ERROR',
+            (netErr && netErr.kmTimeout)
+                ? 'No answer arrived before the client time limit.'
+                : 'The connection failed before an answer arrived.'));
+    }
+    try { text = await resp.text(); } catch (e) { text = ''; }
+
+    var cls = _kmClassifyAnswer_('pricing.update', 'write', resp, text, url);
+    if (!cls.ok) {
+        // A redirect-404 / HTML / non-2xx answer proves only that WE did not receive the answer. It proves
+        // nothing whatsoever about the database, which is the defect this round exists to remove.
+        if (dryRun) throw rejected(cls.legacyCode, _kmTypedTransportMessage_('pricing.update', cls));
+        return await settle(unknown(cls.typed && cls.typed.code, _kmTypedTransportMessage_('pricing.update', cls)));
+    }
+
+    var json;
+    try { json = JSON.parse(String(text).trim()); }
+    catch (pe) {
+        if (dryRun) throw rejected('NON_JSON_RESPONSE', 'The preview response was not readable.');
+        return await settle(unknown('TRANSPORT_NON_JSON_RESPONSE', 'The answer was not readable.'));
+    }
+
+    if (!json.success) {
+        // The SERVER answered and said no. That is authoritative: validation runs over every line before the
+        // first cell is touched, so a rejection really is a zero-write and may be corrected and resubmitted.
+        throw rejected(json.error, json.detail || json.error || 'Pricing update failed',
+            (json.data && json.data.errors) || []);
+    }
+
+    var data = json.data || {};
+    data.write_outcome = 'CONFIRMED_COMMITTED';
+    if (writeId) data.write_id = writeId;
     // A dry run changed nothing, so nothing downstream is stale and the broad reload is skipped.
-    if (!(payload && payload.dry_run)) await _kmWriterPostWrite_();
-    return json.data;
+    if (!dryRun) await _kmWriterPostWrite_();
+    return data;
 };
+
+// S3-R10 §4 — a write identity unique across sessions, tabs and operators, because an idempotency key that
+// collides silently discards somebody's write. Prefers the platform UUID; the fallback composes independent
+// sources so it never rests on the clock alone (§4 forbids timestamp-only identity).
+var _KM_PRICING_WRITE_SEQ_ = 0;
+function _kmNewPricingWriteId_() {
+    try {
+        if (typeof crypto !== 'undefined' && crypto && typeof crypto.randomUUID === 'function') {
+            return 'PRW-' + crypto.randomUUID();
+        }
+    } catch (e) {}
+    _KM_PRICING_WRITE_SEQ_ += 1;
+    return 'PRW-' + Date.now().toString(36)
+        + '-' + Math.random().toString(36).slice(2, 10)
+        + '-' + Math.random().toString(36).slice(2, 10)
+        + '-' + _KM_PRICING_WRITE_SEQ_;
+}
+
+// S3-R10 §6 — READ-ONLY. "Did the write with this id commit?" Never writes, never locks, never resends.
+window.KM.DB.getPricingWriteStatus = function (writeId) {
+    return _kmGapRead_('pricing.write.status', { payload: { write_id: String(writeId || '') } });
+};
+
+// S3-R10 §6 — UNKNOWN OUTCOME RECOVERY. Given a write whose answer was lost, ask the server what actually
+// happened and convert the pending guess into the truth. The only thing dispatched here is a READ.
+//
+// WRITE_AUTOREPLAY_ADDED = NO, and this function is where that rule is kept: there is no path from here to a
+// second mutation. The alternative to verifying is resending, and resending a write that may already have
+// committed is how a truthfulness bug becomes a data bug.
+async function _kmResolvePricingWriteOutcome_(writeId, pendingError) {
+    if (!writeId) return pendingError;                 // nothing to look up — stays UNKNOWN
+    var res;
+    try { res = await window.KM.DB.getPricingWriteStatus(writeId); }
+    catch (e) { return pendingError; }                 // verification itself failed — stays UNKNOWN
+    if (!res || !res.success) return pendingError;
+    var d = (res.data && res.data.data) || res.data || {};
+    var status = String(d.status || '');
+
+    if (status === 'COMMITTED') {
+        // The write landed. The caller asked for a result and there IS one, so hand it back as success.
+        var ok = new Error('COMMITTED');
+        ok.kmPricingCommitted = true;
+        ok.receipt = Object.assign({}, d, { write_outcome: 'CONFIRMED_COMMITTED', recovered: true });
+        return ok;
+    }
+    if (status === 'NOT_COMMITTED') {
+        var rej = new Error('The update was not applied. Nothing was written.');
+        rej.write_outcome = 'CONFIRMED_REJECTED';
+        rej.write_id = writeId;
+        rej.error_code = 'PRICING_WRITE_NOT_COMMITTED';
+        rej.zero_write = true;
+        rej.errors = [];
+        rej.verified = true;
+        return rej;
+    }
+    return pendingError;                               // UNKNOWN, or anything unrecognised, stays UNKNOWN
+}
 
 window.KM.DB.getFcRegularForecast = function() {
     if (!window._opDbCache) return [];
@@ -4345,7 +4471,10 @@ function _kmWriterError_(json, fallbackMessage) {
 // deployed contract are a MATCHED PAIR rather than a minimum: eight suites assert they are equal, in the
 // words "neither side may drift alone". Pinning below the contract would make a frontend and a backend
 // that shipped together indistinguishable from two that did not.
-var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 16;      // the minimum deployed_action_contract_version this build needs
+// S3-R10: 16 -> 17 — this build calls pricing.write.status to resolve a lost write outcome, so a
+// deployment that predates the action cannot serve it. The pin moves WITH the contract, because a client
+// that silently accepts an older deployment is a client that cannot verify a write and will not say so.
+var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 17;      // the minimum deployed_action_contract_version this build needs
 var KM_EXPECTED_REGISTRY_PROJECTION_VERSION_ = 'FB-3.1';
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT AXIS. Deliberately NOT folded into the action-contract number.
 //
@@ -5112,7 +5241,10 @@ var _KM_GET_READ_ACTIONS_ = {
     'system.requestOrderSendDiagnosticStatus': 1,
     'system.requestOrderSendReconcile': 1,
     'system.allocationDraftIdentityDiagnostic': 1,
-    'automationSchedule.get': 1
+    'automationSchedule.get': 1,
+    // S3-R10 §6 — the read-only "did my pricing write commit?" lookup. Its POST twin (pricing.update)
+    // is deliberately NOT here: this table is reads, and a lost response is not a licence to write again.
+    'pricing.write.status': 1
     // automationSchedule.update is DELIBERATELY ABSENT. It is a write.
 };
 var _KM_READ_RID_SEQ_ = 0;

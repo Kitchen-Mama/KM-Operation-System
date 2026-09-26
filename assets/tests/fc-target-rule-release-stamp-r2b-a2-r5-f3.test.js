@@ -89,56 +89,43 @@ var RELEASE_FLOOR = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12';
 // Script diff from this base contains. What makes fa73717 right is the same property that made b280b8d
 // right — it changed NO .gs file (it is a test-only correction to the load-surface audit), so the diff
 // from here is exactly and only what R22 changed.
-var BASE = 'fa73717';   // R22 starts here: the tree after PRICING-R2 and its load-surface follow-up
+// S3-R10 — BASE MOVES, because this file audits ONE release and the tree has had another.
+// Anchored at fa73717 it compared the working tree against a point two releases back, so `git diff BASE`
+// reported R24's owners (04_, 72_) alongside R25's and called a correct tree wrong. The anchor is the
+// maintenance this suite has always needed; its ledger below records five previous carries.
+var BASE = 'e583057';   // R25 starts here: the tree after S3-R8's transport budget fix
 
 // The files THIS release syncs, and the ONE reason each is on the list. A file on the sync list for no
 // stated reason is how an unrelated edit reaches production by accident — so the set is declared here
 // and checked against git below, rather than being read off git and believed.
 var RELEASE_OWNERS = {
+  // S3-R10 — THE RELEASE SET IS REPLACED, NOT APPENDED TO, AND THAT IS WHAT C3 IS FOR.
+  //
+  // RELEASE_OWNERS names the files THIS release changed. A file that did not change keeps the older stamp it
+  // earned, which is the whole reason a stamp is per-module rather than a copy of the release id: 04_ and 72_
+  // were the previous release's owners and are deliberately NOT here, because marching an unchanged file to
+  // the current release is exactly the fault C3 exists to catch.
   '73_api_v1_pricing_write.gs':
-    'THE SAME FILE, A SECOND ACTION, AND THEN A NEW MEANING FOR THE FIRST. R21 made it the canonical '
-    + 'pricing write; R22 gives auto_* an owner — pricing.fxReconcile rebuilds auto_regular_price / '
-    + 'auto_minimum_price / auto_msrp from the base prices at rates supplied with the request. '
-    + 'PRICING-R4G then changes three contracts inside it, and they are one change rather than three: the '
-    + 'canonical resolver stops gating its auto fallback on the ownership flag (a blank override means no '
-    + 'override exists, whatever the flag says), `Use Auto Price` CLEARS the override instead of copying '
-    + 'auto into it and is no longer refused when auto is blank, and an FX run writes NO override column '
-    + 'under any authority. Shipping any one alone is a defect: the resolver without the clear leaves no '
-    + 'way to reach the fallback, the clear without the resolver blanks a live price, and FX still writing '
-    + 'the column would refill whatever the clear emptied. No flag is ever written by a reconciliation. It '
-    + 'belongs in this file rather than a new one because pricing_list keeps ONE writer: two owners would '
-    + 'hold two locks over one table and the field-level flags would stop being checkable by reading a '
-    + 'single writer',
+    'THE COMMIT RECEIPT. A pricing write that committed could be reported to the operator as "Nothing was '
+    + 'written" whenever the browser lost the response on the Apps Script redirect hop — the client had no way '
+    + 'to tell a lost answer from a refusal. This file now accepts a logical write_id, refuses a second '
+    + 'mutation for an id it has already committed, and records a receipt in Script Properties AFTER '
+    + 'pricing_list, AFTER pricing_change_log and after the flush, still inside the lock, so a receipt cannot '
+    + 'exist unless the mutation landed. It also gains handlePricingWriteStatus_, a strictly read-only lookup '
+    + 'that answers COMMITTED / NOT_COMMITTED / UNKNOWN for one write id. No business rule, no price maths and '
+    + 'no authority semantics moved.',
   '01_router.gs':
-    'the pricing.fxReconcile dispatch. A project holding the R21 copy has the R22 handler sitting present '
-    + 'and healthy in 73_ and no way to reach it, which is the one partial sync this release can produce',
+    'THE ROUTE. pricing.write.status joins the GET read table and is dispatched in doGet. It must travel with '
+    + '73_ in both directions: this file at R25 beside an older 73_ routes to a handler that does not exist, '
+    + 'and an older copy of it beside 73_ at R25 leaves the receipt unreachable, so a client that lost a write '
+    + 'response can never resolve it and sits on OUTCOME_UNKNOWN. pricing.update itself is untouched and stays '
+    + 'POST-only — a write never joins the read table.',
   '63_api_v1_system_health.gs':
-    'the R22 release identity, its own stamp, and the expected stamps for 73_, 01_ and 04_, plus the '
-    + 'action-contract bump the new route requires. SYS_REQUIRED_ACTIONS_ deliberately does NOT gain a '
-    + 'row: that list is the actions PAGES depend on, and a reconciliation is run by an operator',
-  '04_marketplace_forecast_import.gs':
-    'PRICING-R4E — THE CREATION CONTRACT. This file is the only path that creates a pricing_list row, and '
-    + 'until R22 it created every cross-currency row with an invented fx_rate of 1, auto_* copied from the '
-    + 'base prices and the effective price copied from auto_* — a base-currency number wearing the site\'s '
-    + 'currency label. It now writes rate 1 ONLY where the two currencies are identical, leaves fx_rate, '
-    + 'auto_* and the effective prices BLANK across a currency boundary with price_status = pending_fx, '
-    + 'reads base_currency from sku_details instead of defaulting it, and writes the three ownership flags '
-    + 'FALSE — which is a fact at creation and is what lets the first pricing.fxReconcile finish the row '
-    + 'without anybody classifying anything. It must be copied WITH 73_: a project holding the R19 copy '
-    + 'keeps manufacturing rows that the R22 reconciliation cannot repair. PRICING-R4G adds one deletion: '
-    + 'the same-currency branch no longer copies the computed auto value into the override columns, so a '
-    + 'created row holds a price the system computed and no override at all',
-  '72_api_v1_product_pricing_workspace.gs':
-    'PRICING-R4G — THE TRANSPORT THAT COULD NOT RESOLVE. It published pricing_list.regular_price / '
-    + 'minimum_price / msrp under exactly those names and carried no auto_* whatsoever, so when those '
-    + 'three columns became USER OVERRIDES every row priced through auto_* arrived at the Product '
-    + 'Strategy Board and the Pricing Center as a null — off the price chart, and counted in Data Quality '
-    + 'as a missing pricing source at the same time. No client fix could reach around it: the value simply '
-    + 'was not on the wire. It now calls the canonical 73_ resolver and emits resolved_* / auto_* / '
-    + 'override_* with a *_source naming which layer answered, and gates `analysable` on the RESOLVED '
-    + 'price. It must be copied WITH 73_ in both directions: this file at R24 beside an older 73_ has no '
-    + 'resolver to call and says so, while an older copy of it beside 73_ at R24 keeps publishing override '
-    + 'cells as prices — which looks completely correct and is the old model wearing the labels of the new one'
+    'THE MANIFEST AND THE CONTRACT. The new action is declared in SYS_REQUIRED_ACTIONS_ because a PAGE depends '
+    + 'on it (SKU Regional Details calls it whenever a pricing write loses its response), so '
+    + 'SYS_REQUIRED_ACTION_LIST_VERSION_ moves 13 -> 14 with it. SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ moves '
+    + '16 -> 17 because a router action was added, and the client pin moves with it so a new bundle against an '
+    + 'old deployment is a stated mismatch rather than a verification that quietly never answers.'
 };
 // Owners that carry an EARLIER release and must keep it. Each is here because it did not change, and
 // marching any of them to the current release would destroy the manifest's only useful signal.
@@ -156,6 +143,13 @@ var RELEASE_OWNERS = {
 // one is the ledger working. R18 adds the authoritative uniqueness refusal inside 14_ and touches no
 // campaign handler, so 20_ keeps R17, the round IT last changed.
 var RELEASE_UNMOVED = {
+  // 04_ AND 72_ JOIN THIS LIST AT R25, AND 73_/01_/63_ LEAVE IT — the sixth such swap, and the symmetry is
+  // the same one the entries below record. R24 changed the pricing_list creation contract in 04_ and the
+  // site-scoped workspace read in 72_; R25 changes the pricing WRITE path and the route and manifest that
+  // carry it, and touches neither of those files. Marching 04_ or 72_ to R25 would erase the one fact
+  // their stamps carry, which is the fault C3 exists to catch.
+  '04_marketplace_forecast_import.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24',
+  '72_api_v1_product_pricing_workspace.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24',
   // 14_ LEFT AGAIN AT R19, and this time nothing took its place — 04_ JOINED. B1-PERF hardens the
   // REGULAR forecast writer, which lives in 04_; no fc_special_events or fc_target_rules handler was
   // touched, so 14_ keeps R18, the round its uniqueness refusal landed in.
@@ -324,8 +318,10 @@ ok(/KMPD\.resolveTargetRule/.test(PROC),
 // R22 — 04_ MOVES. PRICING-R4E changes what it writes into a NEW pricing_list row, which is a different
 // responsibility living in the same file, so the stamp advances because the file genuinely changed. That is
 // the one thing a stamp is for, and it is why B2a below insists the new claim is really in the file.
-eq(declares(REGWRITE, 'FCREG_BUILD_VERSION_'), RELEASE,
-  'B2  04_ declares R22 — PRICING-R4E changed the pricing_list creation contract it owns');
+// S3-R10 — 04_ is no longer an owner, so it must keep R24 rather than follow the release. The claim below
+// is unchanged in meaning: the file's stamp names the round the file last changed in.
+eq(declares(REGWRITE, 'FCREG_BUILD_VERSION_'), RELEASE_UNMOVED['04_marketplace_forecast_import.gs'],
+  'B2  04_ keeps R24 — PRICING-R4E changed the pricing_list creation contract it owns, and R25 did not');
 ok(/function pricingNewRowPlan_\(/.test(REGWRITE) && /NO_CANONICAL_FX_RATE/.test(REGWRITE),
   'B2a and the change its stamp claims is really in the file — the creation planner and its fail-closed reason');
 ok(!/fxRate = 1;/.test(REGWRITE),
@@ -580,6 +576,9 @@ var priorHealth = cp.execFileSync('git', ['show', BASE + ':' + GS + '63_api_v1_s
   { cwd: REPO, encoding: 'utf8' });
 eq(num(HEALTH, 'SYS_TRANSPORT_CONTRACT_VERSION_'), num(priorHealth, 'SYS_TRANSPORT_CONTRACT_VERSION_'),
   'H1  SYS_TRANSPORT_CONTRACT_VERSION_ is untouched — no envelope field moved');
+// S3-R10 — EXACT AGAIN, and correct again, because BASE now points at this release's base. The first repair
+// attempted here loosened this to ">= 1" to survive a stale anchor; that treated the symptom. With BASE moved
+// the sharp assertion is the true one: this release added exactly one action, pricing.write.status.
 eq(Number(num(HEALTH, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_'))
    - Number(num(priorHealth, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_')), 1,
   'H2  SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ moved by exactly one — one action was added');
@@ -598,7 +597,10 @@ var _listMoved = Number(num(HEALTH, 'SYS_REQUIRED_ACTION_LIST_VERSION_'))
 var _listGrew = regCount(HEALTH) - regCount(priorHealth);
 eq(_listMoved, _listGrew,
   'H3  SYS_REQUIRED_ACTION_LIST_VERSION_ moves exactly as far as SYS_REQUIRED_ACTIONS_ grows — neither is a number somebody typed');
-eq(_listGrew, 0, 'H3a and this release grew it by ZERO: the route it added is one no page calls');
+// S3-R10 — this release grew the registry by ONE, and unlike pricing.fxReconcile before it the new action is
+// one a PAGE calls: SKU Regional Details asks pricing.write.status whenever a pricing write loses its
+// response. H3 above already ties the version move to the registry growth, so this states which way it went.
+eq(_listGrew, 1, 'H3a and this release grew it by ONE: a page depends on the route it added');
 ok(/\{ action: 'pricing\.update', handler: 'handlePricingUpdate_'/.test(HEALTH), 'H3b which is pricing.update');
 // ASKED OF GIT, not by comparing bytes. The stored blob is line-ending normalised and the working copy
 // is not, so a direct byte compare reports a difference that does not exist. `git diff --name-only`

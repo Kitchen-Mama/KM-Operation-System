@@ -1,0 +1,160 @@
+{
+  "round": "S3-R10",
+  "captured": "2026-09-26",
+  "headline": "A write that committed was reported as 'Nothing was written.' The client had no way to distinguish a lost response from a refusal, so it asserted the one it could reach. This round makes the outcome decidable: a logical write identity, a commit receipt written after the mutation, and a read-only lookup the client calls INSTEAD of resending.",
+
+  "write_outcome_states": {
+    "note": "§1. Four states, and the whole defect was collapsing C into B.",
+    "CONFIRMED_COMMITTED": "the server returned an authoritative receipt, or verification found one afterwards",
+    "CONFIRMED_REJECTED": "the server authoritatively said no. Validation runs over every line before the first cell is touched, so this really is a zero-write and may be corrected and resubmitted.",
+    "OUTCOME_UNKNOWN": "the request may have reached and committed; the client has no authoritative proof either way",
+    "CONFIRMED_NOT_STARTED": "client-side validation refused before dispatch — the only place 'Nothing was written' was ever safe to say without asking anyone",
+    "CURRENT_UI_COLLAPSES_UNKNOWN_INTO_REJECTED": "YES before this round. Both post-dispatch failure surfaces in sku-regional-details.js rendered 'Write refused. Nothing was written.' for every error, including a 404 from an expired Apps Script redirect target. NO after."
+  },
+
+  "the_defect_shape": {
+    "note": "§3, reproduced by execution against the real client code rather than described.",
+    "SERVER_COMMIT_OCCURRED": "YES (simulated authoritatively: the receipt exists)",
+    "CLIENT_SUCCESS_RESPONSE_RECEIVED": "NO",
+    "CURRENT_UI_REPORTS_NOTHING_WRITTEN": "YES before this round — the shipped client was `if (!resp.ok) throw new Error('API returned ' + resp.status)`, a raw fetch with no bound, no classifier and no write identity. A statement about the browser's journey, reported as a statement about the database's contents.",
+    "no_production_data_touched": "All scenarios run against stubbed sheets and a stubbed Script Properties store."
+  },
+
+  "write_identity": {
+    "note": "§4.",
+    "WRITE_ACTION": "pricing.update",
+    "WRITE_FRONTEND_ENTRY": "KM.DB.updatePricing (assets/js/api/operation-system-db-api.js)",
+    "WRITE_TRANSPORT_OWNER": "_kmFetchBounded_ — previously a raw unbounded fetch",
+    "WRITE_SERVER_HANDLER": "handlePricingUpdate_ (73_api_v1_pricing_write.gs)",
+    "WRITE_DB_OWNER": "pricing_list, via 73_ — the single writer",
+    "WRITE_CHANGE_LOG_OWNER": "pricing_change_log, via 73_ — the single writer",
+    "WRITE_IDENTITY_OWNER": "the client, minted once per user-confirmed write",
+    "WRITE_IDENTITY_FIELD": "write_id, sent in the pricing.update body and echoed on the envelope",
+    "WRITE_IDENTITY_STABLE_ACROSS_RESPONSE_LOSS": "YES — verification asks about the SAME id that was dispatched, asserted by execution (E2)",
+    "why_not_the_existing_counter": "_kmNextWriteRequestId_() is per-SESSION and sequential — REQ-W000001 in every tab. As a correlation id that is fine. As an IDEMPOTENCY KEY it collides: two operators' first writes of the day would share an id, and the second would be answered from the first's receipt and silently never applied. A correlation id and an idempotency key have different uniqueness requirements, and this needed the stronger one. Section F asserts the counter is not used here.",
+    "identity_format": "PRW- plus crypto.randomUUID(), with a fallback composing time, two independent random draws and a sequence — never the clock alone (§4)"
+  },
+
+  "commit_receipt": {
+    "note": "§5.",
+    "COMMIT_RECEIPT_OWNER": "73_api_v1_pricing_write.gs — prwReceiptWrite_, stored in Script Properties under PRW_RCPT_<write_id>",
+    "COMMIT_RECEIPT_CREATED_BEFORE_WRITE": "NO",
+    "COMMIT_RECEIPT_CREATED_AFTER_COMMIT": "YES — after pricing_list, after pricing_change_log, after SpreadsheetApp.flush(), and still inside the lock. Asserted by source ORDER (F8), not by intention.",
+    "fields": ["write_id", "action", "committed", "committed_at", "committed_at_ms", "written (affected_row_count)",
+               "logged (change_log_count)", "validated", "changed_rows", "unchanged_rows", "pricing_ids", "rows", "changed_by"],
+    "why_script_properties_and_not_a_new_sheet": "This repository already solved this shape for Request Order Send (66_): an identity, a journal in Script Properties, and a read-only status action. Reusing it costs no new table, no DB migration and no retention policy. A new pricing_write_log sheet would also be a SECOND mutation on the write path — and PRICING-R2 §7's whole point is that there is one writer.",
+    "receipt_store_failure_is_not_write_failure": "If the store refuses, the write still succeeds and the envelope reports receipt_stored: false. The mutation is the truth; the receipt is only evidence of it. A later lost response for that write would then resolve to UNKNOWN rather than to a false CONFIRMED_COMMITTED."
+  },
+
+  "unknown_outcome_recovery": {
+    "note": "§6.",
+    "UNKNOWN_OUTCOME_READBACK_ACTION": "pricing.write.status — strictly read-only, on the GET read registry, routed in 01_router.gs, declared in 63_ SYS_REQUIRED_ACTIONS_",
+    "UNKNOWN_OUTCOME_AUTOREPLAY": "NO",
+    "resolution": {
+      "COMMITTED": "the pending failure becomes a success carrying the receipt (recovered: true)",
+      "NOT_COMMITTED": "becomes CONFIRMED_REJECTED with verified: true — and only here is zero_write claimed",
+      "UNKNOWN / verification unavailable / verification threw": "stays OUTCOME_UNKNOWN, zero_write: false"
+    },
+    "absence_is_only_evidence_while_the_evidence_would_still_be_there": "The receipt reader does NOT expire receipts: a commit from yesterday still happened, and discarding a real receipt for being old would answer 'not committed' about a write that did commit. The TTL (24 h, mirroring 66_) is a cleanup horizon. The status answer reports authoritative_within_ms so the CLIENT — which knows when it dispatched — decides whether absence is conclusive. The first draft of this round had that backwards; J3 now plants it as a mutant.",
+    "store_unavailable": "answers UNKNOWN with reason RECEIPT_STORE_UNAVAILABLE, never NOT_COMMITTED. J4 plants the opposite."
+  },
+
+  "idempotency": {
+    "note": "§7.",
+    "DUPLICATE_SAME_WRITE_ID_ALLOWED": "YES, arrival is allowed — it must be, because a client that lost a response cannot know whether to resend",
+    "DUPLICATE_SAME_WRITE_ID_EFFECT": "NONE on business state. The second arrival is answered from the receipt before anything is touched: no pricing_list mutation, no pricing_change_log row, no updated_at change, no manual-authority change. It returns replayed: true and the ORIGINAL counts.",
+    "proven_by": "execution — C3 (no duplicate log row), C5 (a replay with a DIFFERENT payload still mutates nothing), C6 (a dry run does not consume the write id)",
+    "server_side_not_browser_side": "the guard is in the handler, before the lock body acts. §7 forbids browser-only dedupe as the authority, and this is not one.",
+    "pre_existing_state": "There was NO idempotency of any kind before this round, and no write identity to build one on."
+  },
+
+  "change_log_as_evidence": {
+    "note": "§8.",
+    "CHANGE_LOG_CAN_PROVE_COMMIT": "NO",
+    "schema": ["log_id", "pricing_id", "field_name", "old_value", "new_value", "change_type", "changed_by", "changed_at", "change_reason"],
+    "exact_missing_field": "write_id. There is no column tying a log row to a LOGICAL write, so two submissions of the same intent are indistinguishable except by timestamp.",
+    "second_reason_it_cannot_serve": "A write that changes nothing writes no log rows at all, so absence of a row cannot separate 'did not commit' from 'committed a no-op'. A receipt records the outcome of the logical write, which is a different fact from what changed.",
+    "what_was_NOT_done": "change_reason was not overloaded as an identity. §8 forbids it, and it is operator-authored free text that two different writes routinely share.",
+    "no_schema_change": "pricing_change_log is untouched. DB_MIGRATION_REQUIRED = NO."
+  },
+
+  "post_write_readback": {
+    "note": "§11.",
+    "PRICING_POSTWRITE_READBACK_REQUIRED": "NO new one. The existing _kmWriterPostWrite_ refresh is unchanged and still runs only on a non-dry-run success.",
+    "PRICING_POSTWRITE_CAN_JOIN_PREWRITE_FLIGHT": "NO — verification is a separate action (pricing.write.status) keyed by a write id minted at dispatch, so it has no shared key with any read issued before the write and cannot be answered by one. The FC lesson is structurally inapplicable rather than merely avoided.",
+    "receipt_is_enough": "§11 allows the readback to be skipped when the receipt is authoritative. It is: it cannot exist unless the mutation landed."
+  },
+
+  "ui_truthfulness": {
+    "note": "§9.",
+    "before_dispatch_validation_failure": "'Nothing was written.' — still allowed, still used",
+    "authoritative_rejection": "'Update was rejected. Nothing was written.'",
+    "confirmed_commit": "unchanged success path",
+    "transport_failure_pending_verification": "'We couldn’t confirm the result yet. Do not submit this update again while the system checks whether it was committed.' — plus the write id as a reference",
+    "why_the_do_not_resubmit_line_matters": "Resubmitting is the one action that converts uncertainty into actual damage. The message has to carry that instruction, not merely withhold the false one.",
+    "surfaces_changed": ["bulk Confirm Update (the production incident path)", "price template import Confirm & Write"],
+    "single_helper": "_srdWriteFailureHtml_ — one place decides what a failed write is allowed to claim"
+  },
+
+  "authority_model": {
+    "note": "§13 — re-run, unchanged.",
+    "PRICING_AUTHORITY_MODEL_UNCHANGED": "YES — BASE → AUTO → nullable MANUAL OVERRIDE → RESOLVED",
+    "BASE_FIELDS_WRITEABLE": "NO",
+    "AUTO_FIELDS_WRITEABLE": "NO",
+    "FX_FIELDS_WRITEABLE": "NO",
+    "FIELD_LEVEL_INDEPENDENCE_PASS": "YES — an Update Price on one field leaves the other two fields and their flags untouched (G1-G3a)",
+    "use_auto": "clears the override; the resolved cell is emptied and auto_regular_price becomes the source again (G4/G4b). Note this is a CLEAR, not a copy — this round's first draft asserted the auto number was written into the resolved cell, which is not what the shipped code does and never was.",
+    "pricing_r2_suite": "266 passed / 0 failed, 19 mutants, 0 survived"
+  },
+
+  "release": {
+    "note": "§17.",
+    "CHANGED_FRONTEND_ASSETS": ["assets/js/api/operation-system-db-api.js", "assets/js/pages/sku-regional-details.js", "index.html"],
+    "TOKEN_ROTATION_REQUIRED": "YES — origin/main carries the previous token, so its bytes are served and the reuse rule closes it",
+    "FINAL_TOKEN": "s3r10-writereceipt-20260926",
+    "STALE_TOKEN_REFS": 0,
+    "APPS_SCRIPT_SYNC_SET": ["73_api_v1_pricing_write.gs", "01_router.gs", "63_api_v1_system_health.gs"],
+    "SYS_DEPLOYED_ACTION_CONTRACT_VERSION_": "16 -> 17 (01_router.gs gained a route)",
+    "SYS_REQUIRED_ACTION_LIST_VERSION_": "13 -> 14 (SYS_REQUIRED_ACTIONS_ gained pricing.write.status)",
+    "KM_EXPECTED_ACTION_CONTRACT_VERSION_": "16 -> 17 (this build calls the new action)",
+    "why_the_pin_moves_with_the_contract": "A NEW bundle against an OLD deployment finds no pricing.write.status. The pin turns that into a stated mismatch instead of a verification that quietly never answers. The reverse pairing — an OLD bundle against a NEW deployment — sends no write_id at all, records nothing and verifies nothing, which is the defect still shipping; that is what the token rotation prevents.",
+    "DB_MIGRATION_REQUIRED": "NO",
+    "SYS_DEPLOYMENT_RELEASE_": "R24 -> R25 — §17 requires a new release id when server files change. The three owners move together and must be copied together: 73_ at R25 beside an old router routes to a handler that does not exist, and an old router beside 73_ at R25 leaves the receipt unreachable.",
+    "MODULE_STAMPS_MOVED": ["73_api_v1_pricing_write.gs", "01_router.gs", "63_api_v1_system_health.gs"],
+    "MODULE_STAMPS_DELIBERATELY_UNMOVED": ["04_marketplace_forecast_import.gs", "72_api_v1_product_pricing_workspace.gs"],
+    "why_unmoved_matters": "They were R24's owners and did not change here. Marching an unchanged file to the current release erases the one fact its stamp carries, which is exactly the fault the release audit's C3 exists to catch."
+  },
+
+  "seals_loosened_and_why": {
+    "note": "Eight assertions across five suites failed on this round's changes. NONE was a defect in the change; every one was an absolute pin on a value a later round is allowed to move. They are recorded here rather than quietly edited, because a round that loosens a seal owes an account of it.",
+    "the_pattern": "Each said 'MY round did not move this'. Implemented as an exact pin on the current tree, it says instead 'no round may ever move this' — which is not a claim any of those rounds made, and not one they could have made. This repository has hit it three times in this session alone: an S3-R8 byte seal on a timeout line, pricing-r2's L8, and these.",
+    "identity-boundary-baseline-sec-a0 B1/B2/B3": "BUMPED, not loosened, with a sentence — this census's whole job is to notice a new anonymous-reachable action, and pricing.write.status is one. What it exposes is recorded: a receipt for one write id, useless without a UUID the caller already holds.",
+    "order-planning 1b.9": "made a floor. Its own comment already says 1b.10 is the real guarantee because it EXECUTES every table entry.",
+    "pricing-r3 M4/M5/M6/M10": "made floors over the release order. M5b — declared equals manifest expected, the partial-sync invariant — is untouched and is the assertion that carries the meaning.",
+    "product-strategy G17": "re-expressed. It is named for keeping ONE shared classifier, but was implemented as a frozen CALLER COUNT — so a round that correctly routed one more dispatch through the shared classifier failed a test for sharing the classifier. Now: exactly one definition, call sites may only be added.",
+    "fc-target-rule BASE": "CARRIED FORWARD, not loosened. It is a per-release audit anchored to a fixed revision, and its own ledger records five previous carries. Anchored two releases back it compared against the wrong tree; with BASE at this release's base, H2 and H3a return to exact deltas.",
+    "pricing-r2 L8": "made a floor, three lines below L7 explaining why that same number is a floor.",
+    "fc-summary E7c0 / pricing-r4g F1 and F3": "the same shape once more — both asserted that 04_ (and in F3, 72_) still track the CURRENT release. They were R24's owners; R25 does not touch them, so they correctly keep R24. E7c0 now asserts the partial-sync invariant it was really guarding (04_ declares what the manifest expects of it), and F3 asserts no file went BACKWARDS from the release R4G needed, which is what a mixed identity actually looks like.",
+    "NOT_loosened_two_were_real": "BP3/P7c/BP3a were NOT seal problems. The activation build pin and its companion census constant must FOLLOW SYS_DEPLOYMENT_RELEASE_, and moving the release without them left a pin lagging its release — which refuses a healthy deployment. A mutant survived on it (N13), which is the suite doing its job. Both were moved to R25. Likewise E4: a changed file MUST carry a current stamp, and the three owners duly moved."
+  },
+
+  "not_done_and_why": {
+    "write_auto_replay": "§10. WRITE_AUTOREPLAY_ADDED = NO, asserted by execution across every failure mode (E1).",
+    "other_write_paths": "Only pricing.update gained this. The same shape applies to every write in the system, but generalising it is a cross-module mutation identity standard, which §18 reserves for an operator decision. This round stayed pricing-local on purpose.",
+    "pricing_change_log_write_id_column": "not added — it would be a DB migration, and the receipt already answers the question without one",
+    "read_architecture": "untouched; the S3-R8 read budget seal was re-run before and after (70 passed, 6 mutants killed)"
+  },
+
+  "operator_owned": {
+    "PRODUCTION_WRITE_AUTHORIZED": "NO from this environment — nothing here wrote to production",
+    "runbook": "docs/evidence/s3-r10-write-truthfulness/PRODUCTION_SMOKE_RUNBOOK.md — ONE pricing row, four steps",
+    "unfilled": [
+      "MARKETPLACE_SKU_ID", "PRE price / owner", "PRE pricing_change_log count", "write_id",
+      "browser final outcome", "POST price / owner", "POST pricing_change_log count",
+      "status for the write_id (expect COMMITTED)", "status for a fabricated id (expect NOT_COMMITTED)",
+      "replayed on resend (expect true)", "price after resend (expect unchanged)",
+      "pricing_change_log count after resend (expect unchanged)", "row restored"
+    ],
+    "what_the_smoke_cannot_prove": "It cannot reproduce a genuinely lost response — that needs the platform to drop one on demand. It proves the EVIDENCE is being recorded and that a duplicate arrival cannot mutate twice. The lost-response path itself is driven end to end against the real client code in the focused suite."
+  }
+}

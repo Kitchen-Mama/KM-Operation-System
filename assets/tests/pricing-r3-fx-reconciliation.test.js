@@ -809,26 +809,46 @@ section('M · THE WIRING');
     'M3a it is routed and handled all the same');
   ok(/PRICING-R3 — pricing\.fxReconcile is DELIBERATELY ABSENT/.test(GS63),
     'M3b and 63_ records why it is absent, so a later round does not "fix" it by adding it');
-  ok(GS63.indexOf("symbol: 'PRW_BUILD_VERSION_', expected: '" + R22 + "'") > 0, 'M4  73_ manifest row expects R22');
-  ok(GS63.indexOf("symbol: 'RTR_BUILD_VERSION_', expected: '" + R22 + "'") > 0, 'M4b 01_ manifest row expects R22');
-  ok(GS63.indexOf("symbol: 'SYS_BUILD_VERSION_', expected: '" + R22 + "'") > 0, 'M4c 63_ manifest row expects R22');
+  // S3-R10 — AT OR AFTER, not EXACTLY. These three owners are the ones PRICING-R4E moved, and the claim was
+  // that it moved them — not that no release may ever move them again. Pinned exactly, the assertion forbade
+  // the next release from touching the pricing writer, its route or the manifest that carries both, which is
+  // the same file set any pricing change must move. S3-R10 moved all three to R25, and the ordering in
+  // _release-order.js is what makes "after" a fact rather than a string comparison.
+  [['PRW_BUILD_VERSION_', '73_'], ['RTR_BUILD_VERSION_', '01_'], ['SYS_BUILD_VERSION_', '63_']].forEach(function (o) {
+    var row = new RegExp("symbol: '" + o[0] + "', expected: '([^']+)'").exec(GS63);
+    ok(!!row && RELORD.stampAtOrAfter(row[1], R22),
+      'M4  ' + o[1] + ' manifest row expects R22 or later', row && row[1]);
+  });
 
   // DECLARED == EXPECTED, for every owner this round moved. A partial sync stays visible.
   [['73_', GS73, /var PRW_BUILD_VERSION_ = '([^']+)'/, 'PRW_BUILD_VERSION_'],
    ['01_', GS01, /var RTR_BUILD_VERSION_ = '([^']+)'/, 'RTR_BUILD_VERSION_'],
    ['63_', GS63, /var SYS_BUILD_VERSION_ = '([^']+)'/, 'SYS_BUILD_VERSION_']].forEach(function (o) {
     var declared = (o[1].match(o[2]) || [])[1];
-    eq(declared, R22, 'M5  ' + o[0] + ' declares R22');
+    ok(RELORD.stampAtOrAfter(declared, R22), 'M5  ' + o[0] + ' declares R22 or later', declared);
     ok(GS63.indexOf("symbol: '" + o[3] + "', expected: '" + declared + "'") > 0,
       'M5b ' + o[0] + ' declares exactly what the manifest expects');
   });
 
   // THE RELEASE and THE ACTION CONTRACT both move; the REQUIRED-ACTION LIST deliberately does not.
-  ok(GS63.indexOf("var SYS_DEPLOYMENT_RELEASE_ = '" + R22 + "'") > 0, 'M6  the release is R22');
-  ok(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 16;/.test(GS63),
-    'M7  the action contract moved 15 -> 16, because a ROUTE was added');
-  ok(/var SYS_REQUIRED_ACTION_LIST_VERSION_ = 13;/.test(GS63),
-    'M8  the required-action list stays 13 — no PAGE depends on a reconciliation');
+  // S3-R10 — AT OR AFTER. "the release is R22" was true of PRICING-R4E and is not a property of the tree
+  // forever; the next Apps Script release necessarily moves it, and §17 of every round since has required a
+  // new release id whenever a server file changes. What stays true is that the release never goes backwards.
+  var _rel = (/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/.exec(GS63) || [])[1];
+  ok(!!_rel && RELORD.stampAtOrAfter(_rel, R22), 'M6  the release is R22 or later', _rel);
+  // S3-R10 — A FLOOR, for the reason pricing-r2's own L7 gives: the contract may only RISE, and PRICING-R3's
+  // claim was that it moved for a real reason, not that it would be 16 forever. The evidence for the claim is
+  // the route it was raised for still being routed (M7a), not the number standing still.
+  ok(Number(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(GS63)[1]) >= 16,
+    'M7  the action contract is at or above the version a ROUTE addition raised it to');
+  ok(GS01.indexOf("pricing.fxReconcile") > 0,
+    'M7a because the route it was raised for is still routed');
+  // S3-R10 — RE-EXPRESSED. PRICING-R3's claim was its own RESTRAINT: it did not add its action to the list
+  // because no page calls a whole-table reconciliation. That claim is about pricing.fxReconcile, and it is
+  // still true and still checkable. Pinning the VERSION instead made it a claim about every future round, and
+  // S3-R10 added pricing.write.status, which a page genuinely does call.
+  ok(GS63.indexOf("{ action: 'pricing.fxReconcile'") < 0,
+    'M8  pricing.fxReconcile is still absent from SYS_REQUIRED_ACTIONS_ — no PAGE depends on a reconciliation');
   // The reason is recorded where the number is, so a later round reading '13 looks stale' finds the
   // argument rather than re-deciding it. (The earlier spelling of this probe matched a registry entry that
   // has since been removed for exactly the reason the comment gives — it was reading the symptom.)
@@ -843,7 +863,9 @@ section('M · THE WIRING');
   var _pin = Number(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(DBAPI)[1]);
   var _contract = Number(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(GS63)[1]);
   eq(_pin, _contract, 'M9  the client pin AGREES with the deployed contract — neither side drifts alone');
-  eq(_pin, 16, 'M9a and both moved to 16 this round');
+  // S3-R10 — a floor, for the same reason as M7. M9 above is the invariant that matters and is untouched:
+  // the two numbers agree, so neither side can drift alone.
+  ok(_pin >= 16, 'M9a and both are at or above the version this round moved them to', _pin);
   // THE ORDERING THIS CREATES, which is the operational cost of the line above: a frontend published ahead
   // of the Apps Script sync pins 16 against a deployment still declaring 15 and refuses EVERY page.
   ok(/deployed_action_contract_version < KM_EXPECTED_ACTION_CONTRACT_VERSION_/.test(DBAPI),
@@ -859,7 +881,12 @@ section('M · THE WIRING');
 
   // RELEASE ORDER — appended, never reordered.
   var stamps = RELORD.OWNER_STAMPS;
-  eq(stamps[stamps.length - 1], R22, 'M10 R22 is the LAST owner stamp — append-only');
+  // S3-R10 — APPEND-ONLY is the claim; "R22 is last" is only how it looked on the day. Asserted as the two
+  // facts that survive: R22 is still present, and nothing was inserted before it.
+  ok(stamps.indexOf(R22) >= 0, 'M10 R22 is still in the owner-stamp order — append-only, never rewritten');
+  ok(RELORD.stampAtOrAfter(stamps[stamps.length - 1], R22),
+    'M10a and everything after it was APPENDED, so the order still ends at or beyond R22',
+    stamps[stamps.length - 1]);
   ok(RELORD.stampAtOrAfter(R22, 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R21'), 'M10b and sorts after R21');
   eq(stamps.filter(function (s) { return s === R22; }).length, 1, 'M10c appearing exactly once');
 

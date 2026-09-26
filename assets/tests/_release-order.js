@@ -709,7 +709,20 @@ var ROUND_TOKENS = [
   // to rotate is simpler and harder to argue with: the whole point of the change is the wait a user actually
   // experiences, and a cached transport means they keep experiencing the old one while every measurement
   // taken afterwards says the fix shipped.
-  's3r8-requestbudget-20260926'];
+  's3r8-requestbudget-20260926',
+  // S3-R10 — ROTATED. origin/main carries the entry above, so those bytes are served and the reuse rule
+  // closes the token.
+  //
+  // THIS ROTATION MATTERS MORE THAN MOST, because the two halves must not be allowed to drift apart. The
+  // frontend gains a write identity and a verification call; the Apps Script project gains the receipt and
+  // the pricing.write.status route. A browser left on the OLD bundle against a NEW deployment sends no
+  // write_id, so nothing is recorded and nothing can be verified — it keeps saying "Nothing was written"
+  // about writes that committed, which is the entire defect still shipping.
+  //
+  // The reverse pairing is handled by the contract pin rather than by this token: a NEW bundle against an
+  // OLD deployment finds no pricing.write.status, and KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 17 makes that
+  // a stated mismatch instead of a verification that quietly never answers.
+  's3r10-writereceipt-20260926'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the
@@ -1145,7 +1158,10 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // PRICING-R4G — R23 never shipped, and that is not a licence to reuse it. The ruling 63_ records for
   // R7, R10 and R11 is that an id naming two different trees cannot answer the question it exists for,
   // and every one of those was a candidate nobody had deployed either. R24 names the tree that ships.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24',
+  // S3-R10 — the pricing commit receipt. 73_, 01_router and 63_ move together, and nothing else is
+  // marched: 04_ and 72_ were R24's owners and keep the stamp they earned there.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));
