@@ -1020,11 +1020,13 @@
             fileName: null, lines: null, preview: null, shown: 0, result: null,
             scopes: P.scopes(_srdGetPricing(), _srdGetMktSkus()) };
         _srdBulkOverlay();
+        _srdBulkPaintedStage_ = null;   // a fresh open has no position to preserve
         _srdBulkRender();
         el('srd-bulk-overlay').style.display = 'flex';
     }
     function srdCloseBulkUpdate() {
         _srdBulk = null;
+        _srdBulkPaintedStage_ = null;
         var ov = el('srd-bulk-overlay'); if (ov) ov.style.display = 'none';
     }
 
@@ -1140,16 +1142,90 @@
         if (!P || !b.scope || !b.scope.currency) return '';
         return '<div class="srd-bulk__files">' +
             '<button type="button" class="srd-btn srd-btn--default" onclick="srdBulkDownloadCurrent()">Download Current Pricing</button>' +
-            '<button type="button" class="srd-btn srd-btn--default" onclick="srdBulkDownloadTemplate()">Download Update Template</button>' +
+            '<button type="button" class="srd-btn srd-btn--primary" onclick="srdBulkDownloadTemplate()">Download Update Template (Excel)</button>' +
             '</div>' +
+            '<div class="srd-bulk__adv"><button type="button" class="srd-linkbtn" ' +
+            'onclick="srdBulkDownloadTemplateCsv()">Advanced: download the CSV template instead</button></div>' +
             _srdBulkHowToHtml() +
             '<div class="srd-secnote">Current Pricing is your rollback reference — download and keep it before uploading anything. ' +
             'The template covers only this target; every action ships as <strong>' + esc(P.actionLabel('NO_CHANGE')) +
             '</strong> with a blank price, so an unedited upload changes nothing.</div>' +
-            '<label class="wide">Upload Pricing Update<input id="srd-bulk-file" type="file" accept=".csv,text/csv"></label>';
+            '<label class="wide">Upload Pricing Update<input id="srd-bulk-file" type="file" ' +
+            'accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv">' +
+            '</label>';
     }
 
-    function _srdBulkRender() {
+    /* =============================================================================================
+       S3-R11 §12 — RE-RENDERING WITHOUT THROWING AWAY WHERE THE OPERATOR WAS.
+
+       THE DEFECT, PRECISELY. Nothing here ever scrolled anything. `_srdBulkPaint_` redraws by
+       assigning `modal.innerHTML`, which DESTROYS `.srd-modal__body` and builds a new one — and a
+       brand-new element's scrollTop is 0. The operator reported "the modal jumps to the top after
+       Preview"; what actually happened is that the element holding their position stopped existing.
+       That is why there is no scrollIntoView call to delete: the fix has to carry the position
+       across the replacement by hand.
+
+       THE RULE, AND WHY IT NEEDS NO FLAG AT THE CALL SITES. A STAGE CHANGE IS A NEW PAGE and starts
+       at the top — category to scope, scope to confirm, confirm to result. A re-render WITHIN a
+       stage is the same page redrawn, and keeps the position. Preview and Show More are both
+       within-stage, which is exactly the two places the jump was felt, and neither call site has to
+       remember to ask.
+
+       BOTH SCROLLERS, because there are two: the modal body, and the `.srd-bulk__cards` list nested
+       inside it with its own max-height. Show More appends into the inner one, so restoring only the
+       outer would still have thrown the operator back to the first card. */
+    var _srdBulkPaintedStage_ = null;
+
+    function _srdBulkScrollers_() {
+        var modal = el('srd-bulk-modal');
+        if (!modal) return { body: null, cards: null };
+        return { body: modal.querySelector('.srd-modal__body'),
+                 cards: modal.querySelector('.srd-bulk__cards') };
+    }
+    /** Clamp, because the new content may be shorter than the old — a stale offset would show blank. */
+    function _srdBulkSetTop_(elm, top) {
+        if (!elm || !top) return;
+        elm.scrollTop = Math.max(0, Math.min(top, elm.scrollHeight - elm.clientHeight));
+    }
+    /**
+     * §12 — THE MINIMAL SCROLL, AND ONLY WHEN ONE IS NEEDED.
+     * Already in view: do nothing at all. Above the viewport: bring its top to the top edge. Below:
+     * move by the smaller of the two distances that reveal it — its bottom to the bottom edge when it
+     * fits, its top to the top edge when it is taller than the viewport and cannot fit either way.
+     * Never scrollIntoView, which repositions even when the element is already perfectly visible.
+     */
+    function _srdBulkReveal_(body, id) {
+        if (!body) return;
+        var pv = el(id); if (!pv) return;
+        var top = pv.offsetTop, bottom = top + pv.offsetHeight;
+        var viewTop = body.scrollTop, viewBottom = viewTop + body.clientHeight;
+        if (top >= viewTop && top < viewBottom) return;          // its start is already on screen
+        if (top < viewTop) { _srdBulkSetTop_(body, top); return; }
+        _srdBulkSetTop_(body, Math.min(top, bottom - body.clientHeight));
+    }
+
+    /**
+     * Redraw the bulk modal. `opts.reveal` is passed only by Preview, which produced something the
+     * operator asked to see; every other caller redraws in place.
+     */
+    function _srdBulkRender(opts) {
+        var was = _srdBulkScrollers_();
+        var wasStage = _srdBulkPaintedStage_;
+        var wasBodyTop = was.body ? was.body.scrollTop : 0;
+        var wasCardsTop = was.cards ? was.cards.scrollTop : 0;
+
+        _srdBulkPaint_();
+
+        _srdBulkPaintedStage_ = _srdBulk ? _srdBulk.stage : null;
+        var now = _srdBulkScrollers_();
+        if (wasStage !== null && wasStage === _srdBulkPaintedStage_) {
+            _srdBulkSetTop_(now.body, wasBodyTop);
+            _srdBulkSetTop_(now.cards, wasCardsTop);
+        }
+        if (opts && opts.reveal) _srdBulkReveal_(now.body, 'srd-bulk-preview');
+    }
+
+    function _srdBulkPaint_() {
         var b = _srdBulk; if (!b) return;
         var modal = el('srd-bulk-modal'); if (!modal) return;
         var head = '<div class="srd-modal__head"><span>Update Regional SKU Data</span>' +
@@ -1163,7 +1239,7 @@
                     (c.available ? '' : '<em>Not available yet</em>') + '</button>';
             }).join('');
             modal.innerHTML = head +
-                '<div class="srd-modal__body"><div class="srd-secnote">What are you updating?</div>' + cards + '</div>' +
+                '<div class="srd-modal__body srd-modal__body--flow"><div class="srd-secnote">What are you updating?</div>' + cards + '</div>' +
                 '<div class="srd-modal__foot"><button type="button" class="srd-btn srd-btn--default" onclick="srdCloseBulkUpdate()">Cancel</button></div>';
             return;
         }
@@ -1171,7 +1247,7 @@
         if (b.stage === 'result') {
             var s = b.result.summary;
             modal.innerHTML = head +
-                '<div class="srd-modal__body"><div class="srd-bulk__ok"><strong>Pricing update completed.</strong></div>' +
+                '<div class="srd-modal__body srd-modal__body--flow"><div class="srd-bulk__ok"><strong>Pricing update completed.</strong></div>' +
                 '<div class="srd-bulk__target">' +
                 '<div><span>Rows updated</span><strong>' + s.rows_updated + '</strong></div>' +
                 '<div><span>Fields updated</span><strong>' + s.fields_updated + '</strong></div>' +
@@ -1193,7 +1269,7 @@
                 return '<div><span>' + esc(spec.label) + '</span><strong>' + (sm.byField[spec.key] || 0) + '</strong></div>';
             }).join('');
             modal.innerHTML = head +
-                '<div class="srd-modal__body"><div class="srd-bulk__confirm">' +
+                '<div class="srd-modal__body srd-modal__body--flow"><div class="srd-bulk__confirm">' +
                 '<div class="srd-bulk__confirm-n">' + sm.fieldChanges + ' price change' + (sm.fieldChanges === 1 ? '' : 's') +
                 ' across ' + b.preview.changedRows + ' SKU' + (b.preview.changedRows === 1 ? '' : 's') + '</div>' +
                 '<div class="srd-bulk__target">' +
@@ -1218,7 +1294,7 @@
 
         // scope / preview
         modal.innerHTML = head +
-            '<div class="srd-modal__body">' +
+            '<div class="srd-modal__body srd-modal__body--flow">' +
             '<div class="srd-secnote"><strong>' + esc(b.category.label) + '</strong> — ' + esc(b.category.description) + '</div>' +
             _srdBulkTargetHtml() + _srdBulkFilesHtml() +
             '<div id="srd-bulk-preview">' + _srdBulkPreviewHtml() + '</div></div>' +
@@ -1235,11 +1311,34 @@
         _srdDownload('current-pricing-' + b.scope.country + '-' + b.scope.marketplace + '.csv',
             P.buildCurrentCsv(b.scope.rows, _srdGetMktSkus()));
     }
+    /* =============================================================================================
+       S3-R11 §11 — XLSX IS THE OPERATOR TEMPLATE; CSV IS THE TECHNICAL FALLBACK.
+
+       The reason is the action column. It is a three-word enum, and a CSV cannot refuse a fourth
+       word — buildTemplateCsv's own comment says the file "cannot stop a wrong word being typed".
+       An XLSX can, with a dropdown, which moves MODE_UNSUPPORTED from a round trip through the
+       importer to the moment of typing.
+
+       IT FALLS BACK RATHER THAN FAILING. KM.templateExport rejects when ExcelJS is not loaded (a
+       blocked CDN, an offline shell). An operator who asked for a template should get a template, so
+       that rejection produces the CSV and says so, instead of a toast about a missing library. */
     function srdBulkDownloadTemplate() {
+        var P = _srdPricingApi(), b = _srdBulk; if (!P || !b || !b.scope) return;
+        var tx = (window.KM && window.KM.templateExport) ? window.KM.templateExport : null;
+        if (!tx || !tx.isReady || !tx.isReady()) { _srdBulkDownloadTemplateCsv_(true); return; }
+        try {
+            tx.buildAndDownload(P.templateXlsxSpec(b.scope, b.scope.rows, _srdGetMktSkus()))
+              .catch(function () { _srdBulkDownloadTemplateCsv_(true); });
+        } catch (e) { _srdBulkDownloadTemplateCsv_(true); }
+    }
+    /** The CSV template. Reachable on purpose (advanced action) and as the XLSX fallback. */
+    function _srdBulkDownloadTemplateCsv_(wasFallback) {
         var P = _srdPricingApi(), b = _srdBulk; if (!P || !b || !b.scope) return;
         _srdDownload('price-update-template-' + b.scope.country + '-' + b.scope.marketplace + '.csv',
             P.buildTemplateCsv(b.scope.rows, _srdGetMktSkus()));
+        if (wasFallback) srdToast('Excel export is unavailable here — downloaded the CSV template instead.');
     }
+    function srdBulkDownloadTemplateCsv() { _srdBulkDownloadTemplateCsv_(false); }
 
     function _srdBulkErrs(errors) {
         return '<ul class="srd-errs">' + errors.slice(0, 50).map(function (e) {
@@ -1253,6 +1352,51 @@
      * database on the server's dry run. The dry run is the SAME code path the write uses, so what is shown
      * is what would happen rather than a second implementation's opinion of it. Nothing is written either way.
      */
+    /* S3-R11 §11 — AN XLSX TEMPLATE THE OPERATOR CANNOT UPLOAD BACK IS A TRAP, so the reader admits
+       both. This is a TRANSPORT change, not a change of import semantics: an .xlsx becomes the same
+       grid a .csv becomes, and the grid meets SRP.validateBulkGrid — the same rules, the same error
+       codes, the same dry run. Detection is by the ZIP magic bytes rather than the extension, because
+       a renamed file is the operator's honest mistake and "PK" is what actually decides how to read
+       it; the extension is only the hint used when the bytes are unavailable. */
+    function _srdReadPricingGrid_(file, P) {
+        var isXlsx = /\.xlsx$/i.test(file.name || '');
+        return new Promise(function (resolve, reject) {
+            var reader = new FileReader();
+            reader.onerror = function () { reject(new Error('unreadable')); };
+            if (!isXlsx) {
+                reader.onload = function () { resolve(P.parseCsv(String(reader.result || ''))); };
+                reader.readAsText(file);
+                return;
+            }
+            reader.onload = function () {
+                var buf = reader.result;
+                var XL = window.ExcelJS;
+                if (!XL || !XL.Workbook) {
+                    reject(new Error('This browser session cannot read .xlsx files. '
+                        + 'Download the CSV template (Advanced) and upload that instead.'));
+                    return;
+                }
+                var wb = new XL.Workbook();
+                Promise.resolve(wb.xlsx.load(buf)).then(function () {
+                    // The FIRST worksheet that carries the identity column. The template writes one
+                    // data sheet plus a veryHidden _SYSTEM sheet, and an operator may have added
+                    // their own notes tab; picking by shape rather than by index survives both.
+                    var grid = [];
+                    wb.eachSheet(function (ws) {
+                        if (grid.length) return;
+                        var g = P.sheetToGrid(ws);
+                        if (g.length) grid = g;
+                    });
+                    resolve(grid);
+                }).catch(function () {
+                    reject(new Error('That .xlsx could not be opened. If it was exported from another '
+                        + 'tool, save it as .csv and upload that.'));
+                });
+            };
+            reader.readAsArrayBuffer(file);
+        });
+    }
+
     function srdBulkPreview() {
         var P = _srdPricingApi(), b = _srdBulk; if (!P || !b || !b.scope) return;
         var input = el('srd-bulk-file'), out = el('srd-bulk-preview');
@@ -1260,13 +1404,13 @@
         var cont = el('srd-bulk-continue-btn'); if (cont) cont.disabled = true;
         if (!input || !input.files || !input.files.length) { out.innerHTML = '<div class="srd-secnote">Choose a file first.</div>'; return; }
         b.fileName = input.files[0].name;
-        var reader = new FileReader();
-        reader.onload = function () {
+        out.innerHTML = '<div class="srd-secnote">Reading ' + esc(b.fileName) + '…</div>';
+        _srdReadPricingGrid_(input.files[0], P).then(function (grid) {
             b.shown = 0;
-            var parsed = P.validateBulkFile(String(reader.result || ''), b.scope);
+            var parsed = P.validateBulkGrid(grid, b.scope);
             if (!parsed.ok) {
                 b.preview = { changedRows: 0, rejected: true, errors: parsed.errors, summary: null, groups: [] };
-                _srdBulkRender(); return;
+                _srdBulkRender({ reveal: true }); return;
             }
             var touched = parsed.lines.filter(function (l) { return P.lineTouches(l); });
             if (!touched.length) {
@@ -1274,7 +1418,7 @@
                 // understood, and the honest answer is the count rather than a blank panel.
                 b.preview = { changedRows: 0, noop: true, errors: [], groups: [],
                     summary: P.previewSummary(parsed, [], []) };
-                _srdBulkRender(); return;
+                _srdBulkRender({ reveal: true }); return;
             }
             out.innerHTML = '<div class="srd-secnote">Checking ' + touched.length + ' row(s) against the database…</div>';
             window.KM.DB.updatePricing({ dry_run: true, changed_by: 'sku-regional-details',
@@ -1290,16 +1434,23 @@
                         summary: P.previewSummary(parsed, rec.rows, rows),
                         groups: P.groupPreview(rows)
                     };
-                    _srdBulkRender();
+                    _srdBulkRender({ reveal: true });
                 })
                 .catch(function (err) {
                     b.preview = { changedRows: 0, rejected: true, serverMessage: (err && err.message) ? err.message : String(err),
                         errors: (err && err.errors) || [], summary: null, groups: [] };
-                    _srdBulkRender();
+                    _srdBulkRender({ reveal: true });
                 });
-        };
-        reader.onerror = function () { out.innerHTML = '<div class="srd-taxwarn">Could not read that file.</div>'; };
-        reader.readAsText(input.files[0]);
+        // TWO ARGUMENTS, NOT .catch — a rejection handler passed here sees ONLY a failure of the
+        // READ. A .catch would also swallow anything thrown while validating or rendering above and
+        // report it to the operator as an unreadable file, which is a different fault with a
+        // different fix.
+        }, function (e) {
+            b.preview = { changedRows: 0, rejected: true, groups: [], summary: null,
+                errors: [{ line: 0, code: 'FILE_NOT_READABLE',
+                    detail: (e && e.message) ? e.message : 'Could not read that file.' }] };
+            _srdBulkRender({ reveal: true });
+        });
     }
 
     function _srdPriceTxt(v) { return v === null || v === undefined ? '—' : String(v); }
@@ -1514,6 +1665,7 @@
     window.srdBulkSetMarketplace = srdBulkSetMarketplace;
     window.srdBulkDownloadCurrent = srdBulkDownloadCurrent;
     window.srdBulkDownloadTemplate = srdBulkDownloadTemplate;
+    window.srdBulkDownloadTemplateCsv = srdBulkDownloadTemplateCsv;
     window.srdBulkPreview = srdBulkPreview;
     window.srdBulkToConfirm = srdBulkToConfirm;
     window.srdBulkBackToPreview = srdBulkBackToPreview;

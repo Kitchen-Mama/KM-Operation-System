@@ -1,0 +1,784 @@
+{
+ "round": "S3-R11",
+ "what_this_file_is": "Output of assets/tests/_s3r11-interaction-runner.js: real headless Chrome, the real index.html, the real router and every production page module, over a production-shaped fixture world of 120 master SKUs / 360 marketplace SKUs / 360 regional rows / 360 pricing rows across 3 countries x 2 marketplaces. The only substitution is the transport answering from fixtures instead of the network.",
+ "what_it_may_be_read_as": {
+  "authoritative": [
+   "REQUEST COUNTS per interaction, broken down by action (and by FC slice).",
+   "DUPLICATE counts — the same question asked twice inside one interaction window.",
+   "CONTROL FLOW and DOM outcomes: which section is visible, whether a skeleton is stuck, how many transport requests are still open."
+  ],
+  "NOT_authoritative": [
+   "pollMs. Chrome runs this with --virtual-time-budget, which pauses the virtual clock during task execution and advances it to the next due timer. performance.now() therefore measures the number of 8 ms poll ticks the settle condition waited, NOT elapsed work. It is recorded because it distinguishes \"settled immediately\" from \"waited\", and for nothing else. Real per-interaction milliseconds are OPERATOR-OWNED and are collected with docs/evidence/s3-r11-interaction-performance/OPERATOR_INTERACTION_CAPTURE.md."
+  ]
+ },
+ "server_ms_invariance": {
+  "claim": "A request count is a property of the control flow, not of the latency.",
+  "evidence": "The 0 ms and 400 ms runs below are identical on every api/dupes field.",
+  "identical": true
+ },
+ "partial_loader_fix": {
+  "interaction": "A -> B -> A in one tick, onto a page whose markup is not yet in the DOM",
+  "PRE_partial_requests": 2,
+  "POST_partial_requests": 1,
+  "sections_in_dom_after": 1,
+  "why_it_mattered": "Not the duplicated byte — it is a local file. Both .then() handlers ran target.innerHTML = html, so the second replacement destroyed the DOM the first mount had already wired listeners to and begun rendering into."
+ },
+ "runs": {
+  "pre_fix_serverMs_0": {
+   "world": {
+    "skus": 120,
+    "countries": [
+     "US",
+     "CA",
+     "JP"
+    ],
+    "marketplaces": [
+     "Amazon",
+     "Walmart"
+    ]
+   },
+   "boot": {
+    "api": 1,
+    "partial": 1,
+    "errors": []
+   },
+   "m": {
+    "MENU_CLICK_TO_ROUTE_VISIBLE_cold_sku": {
+     "pollMs": 18,
+     "api": 1,
+     "byAction": {
+      "skuDetails.workspace.get": 1
+     },
+     "dupes": 0,
+     "settled": true
+    },
+    "MENU_CLICK_TO_FIRST_USEFUL_UI_cold_sku": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "MENU_CLICK_TO_ROUTE_VISIBLE_warm_sku": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "MENU_RECLICK_SAME_PAGE": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true,
+     "mountedSections": 1
+    },
+    "MENU_DUPLICATE_PARTIAL": {
+     "partialRequests": 2,
+     "sectionCount": 1,
+     "mountedSections": 1
+    },
+    "SKU_ROWS_RENDERED": {
+     "rows": 120
+    },
+    "SKU_DETAILS_SEARCH": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "SKU_DETAILS_SEARCH_CLEAR": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "SKU_DETAILS_FILTER": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "SKU_DETAILS_EDIT_MODAL_OPEN": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "SKU_DETAILS_WARM_REENTRY": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "SKU_REGIONAL_ENTRY_TO_FIRST_MASTER_LIST": {
+     "pollMs": 18,
+     "api": 1,
+     "byAction": {
+      "skuDetails.workspace.get": 1
+     },
+     "dupes": 0,
+     "settled": true
+    },
+    "SRD_LIST_RENDERED": {
+     "items": 50
+    },
+    "SKU_SWITCH": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "COUNTRY_SWITCH": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "MARKETPLACE_SWITCH": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "TAB_SWITCH": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "UPDATE_MODAL_OPEN": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "SKU_REGIONAL_WARM_REENTRY": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "FC_ENTRY_TO_SHELL": {
+     "pollMs": 18,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "FC_ENTRY_TO_FIRST_ROWS": {
+     "pollMs": 20000,
+     "api": 2,
+     "byAction": {
+      "fcSummary.workspace.get:bootstrap": 1,
+      "fcSummary.workspace.get:regular": 1
+     },
+     "dupes": 0,
+     "settled": false
+    },
+    "FC_YEAR_OPTIONS": {
+     "options": 2,
+     "value": null,
+     "fixedRows": 0
+    },
+    "FC_ENTRY_TEXT": {
+     "tail": "Series * SKU * Load latest data Apply to all months (%) Jan % Feb % Mar % Apr % May % Jun % Jul % Aug % Sep % Oct % Nov % Dec % Cancel Save Showing 0-0 of 0 rows 25 50 100 ‹ Previous Page 0 / 0 Next ›"
+    },
+    "FC_NEW_UPDATE_OPEN": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "FC_NEXT_REGULAR": {
+     "pollMs": 7.9,
+     "api": 2,
+     "byAction": {
+      "getTable:sku_details": 1,
+      "getTable:marketplace_skus": 1
+     },
+     "dupes": 0,
+     "settled": true
+    },
+    "FC_NEXT_REGULAR_WARM": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "PSB_ENTRY_TO_SHELL": {
+     "pollMs": 18,
+     "api": 1,
+     "byAction": {
+      "productPricing.siteUniverse.get": 1
+     },
+     "dupes": 0,
+     "settled": true
+    },
+    "PSB_UNIVERSE_RAW": {
+     "success": true,
+     "sites": 6,
+     "refusals": [],
+     "meta": {
+      "action": "productPricing.siteUniverse.get",
+      "rowsReturned": 0
+     }
+    },
+    "PSB_STATE": {
+     "tail": "led on one axis. i Presentation Print / PDF CompanyResUSCountryChoose countryUSCAJPMarketplaceChoose country first Select a company, country and marketplace to begin. Print or save as PDF from the header. The findings drawer opens in print.",
+     "contract": "absent"
+    },
+    "RAPID_A_TO_B": {
+     "api": 1,
+     "byAction": {
+      "skuDetails.workspace.get": 1
+     },
+     "activeVisibleSectionCount": 1,
+     "activeVisibleSectionIds": [
+      "sku-section"
+     ],
+     "currentSection": "sku-section",
+     "lastDiscarded": null,
+     "srdListStillRendered": 50,
+     "skuRowsRendered": 120,
+     "openRequests": 0
+    },
+    "RAPID_THRASH": {
+     "api": 1,
+     "byAction": {
+      "skuDetails.workspace.get": 1
+     },
+     "activeVisibleSectionCount": 1,
+     "currentSection": "sku-regional-details-section",
+     "srdItems": 50,
+     "srdSkeleton": 0,
+     "openRequests": 0,
+     "transportOpen": 0
+    }
+   },
+   "errors": [],
+   "fatal": null
+  },
+  "post_fix_serverMs_0": {
+   "world": {
+    "skus": 120,
+    "countries": [
+     "US",
+     "CA",
+     "JP"
+    ],
+    "marketplaces": [
+     "Amazon",
+     "Walmart"
+    ]
+   },
+   "boot": {
+    "api": 1,
+    "partial": 1,
+    "errors": []
+   },
+   "m": {
+    "MENU_CLICK_TO_ROUTE_VISIBLE_cold_sku": {
+     "pollMs": 18,
+     "api": 1,
+     "byAction": {
+      "skuDetails.workspace.get": 1
+     },
+     "dupes": 0,
+     "settled": true
+    },
+    "MENU_CLICK_TO_FIRST_USEFUL_UI_cold_sku": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "MENU_CLICK_TO_ROUTE_VISIBLE_warm_sku": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "MENU_RECLICK_SAME_PAGE": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true,
+     "mountedSections": 1
+    },
+    "MENU_DUPLICATE_PARTIAL": {
+     "partialRequests": 1,
+     "sectionCount": 1,
+     "mountedSections": 1
+    },
+    "SKU_ROWS_RENDERED": {
+     "rows": 120
+    },
+    "SKU_DETAILS_SEARCH": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "SKU_DETAILS_SEARCH_CLEAR": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "SKU_DETAILS_FILTER": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "SKU_DETAILS_EDIT_MODAL_OPEN": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "SKU_DETAILS_WARM_REENTRY": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "SKU_REGIONAL_ENTRY_TO_FIRST_MASTER_LIST": {
+     "pollMs": 18,
+     "api": 1,
+     "byAction": {
+      "skuDetails.workspace.get": 1
+     },
+     "dupes": 0,
+     "settled": true
+    },
+    "SRD_LIST_RENDERED": {
+     "items": 50
+    },
+    "SKU_SWITCH": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "COUNTRY_SWITCH": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "MARKETPLACE_SWITCH": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "TAB_SWITCH": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "UPDATE_MODAL_OPEN": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "SKU_REGIONAL_WARM_REENTRY": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "FC_ENTRY_TO_SHELL": {
+     "pollMs": 17.9,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "FC_ENTRY_TO_FIRST_ROWS": {
+     "pollMs": 20000,
+     "api": 2,
+     "byAction": {
+      "fcSummary.workspace.get:bootstrap": 1,
+      "fcSummary.workspace.get:regular": 1
+     },
+     "dupes": 0,
+     "settled": false
+    },
+    "FC_YEAR_OPTIONS": {
+     "options": 2,
+     "value": null,
+     "fixedRows": 0
+    },
+    "FC_ENTRY_TEXT": {
+     "tail": "Series * SKU * Load latest data Apply to all months (%) Jan % Feb % Mar % Apr % May % Jun % Jul % Aug % Sep % Oct % Nov % Dec % Cancel Save Showing 0-0 of 0 rows 25 50 100 ‹ Previous Page 0 / 0 Next ›"
+    },
+    "FC_NEW_UPDATE_OPEN": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "FC_NEXT_REGULAR": {
+     "pollMs": 8.1,
+     "api": 2,
+     "byAction": {
+      "getTable:sku_details": 1,
+      "getTable:marketplace_skus": 1
+     },
+     "dupes": 0,
+     "settled": true
+    },
+    "FC_NEXT_REGULAR_WARM": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "PSB_ENTRY_TO_SHELL": {
+     "pollMs": 18,
+     "api": 1,
+     "byAction": {
+      "productPricing.siteUniverse.get": 1
+     },
+     "dupes": 0,
+     "settled": true
+    },
+    "PSB_UNIVERSE_RAW": {
+     "success": true,
+     "sites": 6,
+     "refusals": [],
+     "meta": {
+      "action": "productPricing.siteUniverse.get",
+      "rowsReturned": 0
+     }
+    },
+    "PSB_STATE": {
+     "tail": "led on one axis. i Presentation Print / PDF CompanyResUSCountryChoose countryUSCAJPMarketplaceChoose country first Select a company, country and marketplace to begin. Print or save as PDF from the header. The findings drawer opens in print.",
+     "contract": "absent"
+    },
+    "RAPID_A_TO_B": {
+     "api": 1,
+     "byAction": {
+      "skuDetails.workspace.get": 1
+     },
+     "activeVisibleSectionCount": 1,
+     "activeVisibleSectionIds": [
+      "sku-section"
+     ],
+     "currentSection": "sku-section",
+     "lastDiscarded": null,
+     "srdListStillRendered": 50,
+     "skuRowsRendered": 120,
+     "openRequests": 0
+    },
+    "RAPID_THRASH": {
+     "api": 1,
+     "byAction": {
+      "skuDetails.workspace.get": 1
+     },
+     "activeVisibleSectionCount": 1,
+     "currentSection": "sku-regional-details-section",
+     "srdItems": 50,
+     "srdSkeleton": 0,
+     "openRequests": 0,
+     "transportOpen": 0
+    }
+   },
+   "errors": [],
+   "fatal": null
+  },
+  "post_fix_serverMs_400": {
+   "world": {
+    "skus": 120,
+    "countries": [
+     "US",
+     "CA",
+     "JP"
+    ],
+    "marketplaces": [
+     "Amazon",
+     "Walmart"
+    ]
+   },
+   "boot": {
+    "api": 1,
+    "partial": 1,
+    "errors": []
+   },
+   "m": {
+    "MENU_CLICK_TO_ROUTE_VISIBLE_cold_sku": {
+     "pollMs": 18,
+     "api": 1,
+     "byAction": {
+      "skuDetails.workspace.get": 1
+     },
+     "dupes": 0,
+     "settled": true
+    },
+    "MENU_CLICK_TO_FIRST_USEFUL_UI_cold_sku": {
+     "pollMs": 392,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "MENU_CLICK_TO_ROUTE_VISIBLE_warm_sku": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "MENU_RECLICK_SAME_PAGE": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true,
+     "mountedSections": 1
+    },
+    "MENU_DUPLICATE_PARTIAL": {
+     "partialRequests": 1,
+     "sectionCount": 1,
+     "mountedSections": 1
+    },
+    "SKU_ROWS_RENDERED": {
+     "rows": 120
+    },
+    "SKU_DETAILS_SEARCH": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "SKU_DETAILS_SEARCH_CLEAR": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "SKU_DETAILS_FILTER": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "SKU_DETAILS_EDIT_MODAL_OPEN": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "SKU_DETAILS_WARM_REENTRY": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "SKU_REGIONAL_ENTRY_TO_FIRST_MASTER_LIST": {
+     "pollMs": 410,
+     "api": 1,
+     "byAction": {
+      "skuDetails.workspace.get": 1
+     },
+     "dupes": 0,
+     "settled": true
+    },
+    "SRD_LIST_RENDERED": {
+     "items": 50
+    },
+    "SKU_SWITCH": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "COUNTRY_SWITCH": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "MARKETPLACE_SWITCH": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "TAB_SWITCH": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "UPDATE_MODAL_OPEN": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "SKU_REGIONAL_WARM_REENTRY": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "FC_ENTRY_TO_SHELL": {
+     "pollMs": 18,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "FC_ENTRY_TO_FIRST_ROWS": {
+     "pollMs": 20000.1,
+     "api": 2,
+     "byAction": {
+      "fcSummary.workspace.get:bootstrap": 1,
+      "fcSummary.workspace.get:regular": 1
+     },
+     "dupes": 0,
+     "settled": false
+    },
+    "FC_YEAR_OPTIONS": {
+     "options": 2,
+     "value": null,
+     "fixedRows": 0
+    },
+    "FC_ENTRY_TEXT": {
+     "tail": "Series * SKU * Load latest data Apply to all months (%) Jan % Feb % Mar % Apr % May % Jun % Jul % Aug % Sep % Oct % Nov % Dec % Cancel Save Showing 0-0 of 0 rows 25 50 100 ‹ Previous Page 0 / 0 Next ›"
+    },
+    "FC_NEW_UPDATE_OPEN": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "FC_NEXT_REGULAR": {
+     "pollMs": 400,
+     "api": 2,
+     "byAction": {
+      "getTable:sku_details": 1,
+      "getTable:marketplace_skus": 1
+     },
+     "dupes": 0,
+     "settled": true
+    },
+    "FC_NEXT_REGULAR_WARM": {
+     "pollMs": 0,
+     "api": 0,
+     "byAction": {},
+     "dupes": 0,
+     "settled": true
+    },
+    "PSB_ENTRY_TO_SHELL": {
+     "pollMs": 17.9,
+     "api": 1,
+     "byAction": {
+      "productPricing.siteUniverse.get": 1
+     },
+     "dupes": 0,
+     "settled": true
+    },
+    "PSB_UNIVERSE_RAW": {
+     "success": true,
+     "sites": 6,
+     "refusals": [],
+     "meta": {
+      "action": "productPricing.siteUniverse.get",
+      "rowsReturned": 0
+     }
+    },
+    "PSB_STATE": {
+     "tail": "led on one axis. i Presentation Print / PDF CompanyResUSCountryChoose countryUSCAJPMarketplaceChoose country first Select a company, country and marketplace to begin. Print or save as PDF from the header. The findings drawer opens in print.",
+     "contract": "absent"
+    },
+    "RAPID_A_TO_B": {
+     "api": 1,
+     "byAction": {
+      "skuDetails.workspace.get": 1
+     },
+     "activeVisibleSectionCount": 1,
+     "activeVisibleSectionIds": [
+      "sku-section"
+     ],
+     "currentSection": "sku-section",
+     "lastDiscarded": null,
+     "srdListStillRendered": 50,
+     "skuRowsRendered": 120,
+     "openRequests": 0
+    },
+    "RAPID_THRASH": {
+     "api": 1,
+     "byAction": {
+      "skuDetails.workspace.get": 1
+     },
+     "activeVisibleSectionCount": 1,
+     "currentSection": "sku-regional-details-section",
+     "srdItems": 50,
+     "srdSkeleton": 0,
+     "openRequests": 0,
+     "transportOpen": 0
+    }
+   },
+   "errors": [],
+   "fatal": null
+  }
+ },
+ "harness_faults_found_and_fixed": [
+  "The stub omitted meta.action, so productPricing.siteUniverse.get was refused RESPONSE_ACTION_MISMATCH — a harness shape fault that would have read as a PSB defect.",
+  "The site-universe fixture carried only `sites`; the validator also requires `refusals`, `sourceState` and a schema contract_version. It refused RESPONSE_MISSING_REFUSALS.",
+  "fcSummary reads were keyed by ACTION alone, so a cold FC entry reported 1 duplicate. The two reads are the bootstrap slice and the regular slice — two different questions. Keyed by slice, the duplicate count is 0 and the earlier reading was the harness being too coarse.",
+  "The fc_regular_forecast fixture used target_year; the normalizer reads `year`."
+ ],
+ "not_measured_here": {
+  "FC_ENTRY_TO_FIRST_ROWS": "The FC table refuses to draw until a year is chosen (fc-year-select ships with a blank option selected), so the harness could not reach a populated table without simulating that choice, and its attempt to set the value was overwritten when the slice landed and the filter options were rebuilt. Recorded as an OBSERVATION for the operator smoke rather than as a defect: no evidence was obtained that the rebuild is unintended, and this round does not change behaviour it has not proven wrong."
+ }
+}

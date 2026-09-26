@@ -406,6 +406,52 @@
         'fx_rate', 'fx_rate_date'
     ];
 
+    /* =============================================================================================
+       S3-R11 §11 — THE HEADER A PERSON READS, AND THE KEY THE IMPORTER MATCHES.
+
+       §11 asks for human-readable headers and for no hidden internal token the operator has to
+       supply. `marketplace_sku_id` is neither readable nor optional: it is the identity, and a
+       pricing row is never addressed by master SKU alone. So the column stays, it ships PRE-FILLED
+       and LOCKED, and it is spelled in words.
+
+       BOTH SPELLINGS PARSE, for the same reason PRICING-R4C-R2 kept both action vocabularies: files
+       downloaded before this round exist in the world, and a round that renames a header must not
+       invalidate a file somebody is halfway through editing. This is the only place that decides,
+       so the CSV reader and the XLSX reader cannot drift apart — there is one contract with two
+       front doors, never two contracts. */
+    SRP.TEMPLATE_HEADER_LABELS = {
+        marketplace_sku_id: 'Marketplace SKU ID',
+        master_sku: 'Master SKU',
+        site_sku: 'Site SKU',
+        company: 'Company',
+        country: 'Country',
+        marketplace: 'Marketplace',
+        currency: 'Currency',
+        regular_price_mode: 'Regular Price Action',
+        regular_price: 'Regular Price',
+        minimum_price_mode: 'Minimum Price Action',
+        minimum_price: 'Minimum Price',
+        msrp_mode: 'MSRP Action',
+        msrp: 'MSRP'
+    };
+    var _HEADER_KEY_BY_LABEL = {};
+    function _hdrNorm(v) {
+        return String(v == null ? '' : v).trim().toLowerCase().replace(/[\s_\-]+/g, ' ');
+    }
+    Object.keys(SRP.TEMPLATE_HEADER_LABELS).forEach(function (k) {
+        _HEADER_KEY_BY_LABEL[_hdrNorm(SRP.TEMPLATE_HEADER_LABELS[k])] = k;
+        _HEADER_KEY_BY_LABEL[_hdrNorm(k)] = k;
+    });
+    /**
+     * One header cell -> the canonical column key, or the lowercased cell when it is neither.
+     * An unknown header is passed through rather than dropped: MISSING_REQUIRED_COLUMNS is the error
+     * that should fire for a wrong file, and swallowing the name here would hide which one it was.
+     */
+    SRP.headerKey = function (cell) {
+        var n = _hdrNorm(cell);
+        return _HEADER_KEY_BY_LABEL[n] || String(cell == null ? '' : cell).trim().toLowerCase();
+    };
+
     function csvCell(v) {
         var s = String(v == null ? '' : v);
         return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
@@ -453,16 +499,162 @@
      * is make the right word obvious, and the upload refuses anything else by name.
      */
     SRP.buildTemplateCsv = function (pricingRows, marketplaceSkus) {
+        // S3-R11 §11 — the rows are the shared ones, so the CSV fallback and the XLSX primary cannot
+        // describe different templates. The CSV keeps the MACHINE header spelling it has always
+        // shipped: those are the files already in circulation, and SRP.headerKey reads both.
+        return SRP.toCsv(SRP.TEMPLATE_COLUMNS, SRP.buildTemplateRows(pricingRows, marketplaceSkus));
+    };
+
+    /* -------------------------------------------------------------------------------------------
+       THE TEXT FRONT DOORS. Unchanged names, unchanged signatures, unchanged behaviour — a CSV is
+       parsed into a grid and handed to the rules. Every existing caller and every existing test
+       keeps working, and the XLSX reader enters through the SAME rules one function lower down.
+       ------------------------------------------------------------------------------------------- */
+    SRP.validateFile = function (text) { return SRP.validateGrid(SRP.parseCsv(text)); };
+    SRP.validateBulkFile = function (text, scope) { return SRP.validateBulkGrid(SRP.parseCsv(text), scope); };
+
+    /**
+     * S3-R11 §11 — ONE SET OF TEMPLATE ROWS, TWO FILE FORMATS.
+     * Lifted out of buildTemplateCsv unchanged so the XLSX cannot ship a different template from the
+     * CSV. §3 still holds: every action cell is "No Change" and every price cell is blank, so an
+     * unedited download that is uploaded again changes nothing at all.
+     */
+    SRP.buildTemplateRows = function (pricingRows, marketplaceSkus) {
         var mix = indexMkt(marketplaceSkus);
         var nc = SRP.actionLabel('NO_CHANGE');
-        var rows = (pricingRows || []).map(function (p) {
+        return (pricingRows || []).map(function (p) {
             var c = ctxOf(p, mix);
             c.regular_price_mode = nc; c.regular_price = '';
             c.minimum_price_mode = nc; c.minimum_price = '';
             c.msrp_mode = nc; c.msrp = '';
             return c;
         });
-        return SRP.toCsv(SRP.TEMPLATE_COLUMNS, rows);
+    };
+
+    /**
+     * S3-R11 §11 — THE XLSX TEMPLATE SPEC, for the shared KM.templateExport builder.
+     *
+     * WHY XLSX IS THE PRIMARY AND CSV IS THE FALLBACK. The action cell is a three-word enum, and CSV
+     * cannot carry validation — buildTemplateCsv's own comment says so: "the file cannot stop a wrong
+     * word being typed". A dropdown can, which turns MODE_UNSUPPORTED from a round trip through the
+     * importer into something the spreadsheet refuses at the point of typing.
+     *
+     * NO NEW DEPENDENCY. ExcelJS already ships in index.html for the Template UI Standard, and
+     * KM.templateExport already implements freeze pane, header style, per-kind fills, protection,
+     * dropdown validation and auto width. §11's STOP gate is about ADDING a library; this adds none.
+     *
+     * blankInputRows: 0 IS LOAD-BEARING. The shared builder appends 50 empty rows by default so an
+     * operator can add records. A pricing row cannot be ADDED from this template — it is addressed by
+     * an existing marketplace_sku_id — so those rows would arrive as 50 IDENTITY_MISSING errors on a
+     * file nobody typed in. The same reasoning rules out an example row.
+     */
+    /* Stamped into the hidden _SYSTEM sheet so a file that arrives months later can be traced to the
+       build that produced it. It is NOT read back on import and grants nothing: the importer decides
+       from the headers and the rules, exactly as it does for a CSV that carries no version at all. */
+    SRP.TEMPLATE_VERSION = 'S3-R11';
+
+    SRP.templateXlsxSpec = function (scope, pricingRows, marketplaceSkus) {
+        var rows = SRP.buildTemplateRows(pricingRows, marketplaceSkus);
+        var actions = SRP.actionLabels();
+        // Identity and context are LOCKED (grey, protected); the six action/price cells are BUSINESS
+        // EDITABLE (yellow, unlocked). The colouring is the instruction: what is yellow is yours.
+        var LOCKED = ['marketplace_sku_id', 'master_sku', 'site_sku', 'company', 'country',
+            'marketplace', 'currency'];
+        var columns = SRP.TEMPLATE_COLUMNS.map(function (key) {
+            var spec = SRP.FIELDS.filter(function (f) { return f.mode === key; })[0];
+            var isAction = !!spec;
+            var isPrice = SRP.FIELDS.some(function (f) { return f.key === key; });
+            var col = {
+                key: key,
+                header: SRP.TEMPLATE_HEADER_LABELS[key] || key,
+                kind: (LOCKED.indexOf(key) >= 0) ? 'locked' : 'business',
+                width: isAction ? 18 : 16
+            };
+            if (isAction) {
+                col.dropdown = actions;
+                col.comment = SRP.ACTIONS.map(function (a) { return a.label + ' — ' + a.help; }).join('\n');
+            } else if (isPrice) {
+                col.comment = 'Fill this in only when the action beside it is "'
+                    + SRP.actionLabel('MANUAL') + '". Blank is not zero.';
+            }
+            return col;
+        });
+        var country = (scope && scope.country) || '';
+        var marketplace = (scope && scope.marketplace) || '';
+        var currency = (scope && scope.currency) || '';
+        return {
+            filename: 'price-update-template-' + country + '-' + marketplace + '.xlsx',
+            sheetName: 'Price Update',
+            instructionRow: 'Prices are in ' + currency + ' for ' + country + ' / ' + marketplace
+                + '.  Choose an action from the dropdown in each yellow Action column; type a price only '
+                + 'beside "' + SRP.actionLabel('MANUAL') + '".  Grey columns identify the row and must not '
+                + 'be edited.  An unedited file changes nothing.',
+            columns: columns,
+            rows: rows,
+            blankInputRows: 0,
+            protect: true,
+            system: {
+                template_id: 'pricing-bulk-update',
+                template_name: 'Pricing Bulk Update',
+                template_version: SRP.TEMPLATE_VERSION,
+                module: 'sku-regional-details',
+                generated_at: new Date().toISOString(),
+                export_mode: 'update',
+                source_system: 'Kitchen Mama Operation System',
+                notes: country + '/' + marketplace + ' · ' + currency
+            }
+        };
+    };
+
+    /**
+     * S3-R11 §11 — ONE WORKSHEET -> THE SAME GRID A CSV PRODUCES.
+     *
+     * The HEADER ROW IS FOUND, not assumed to be row 1: the template writes an instruction banner
+     * above it, and an operator may add a note of their own. The row carrying the identity column is
+     * the header by definition, so that is what is looked for.
+     *
+     * A cell is read as the TEXT A PERSON SEES. ExcelJS hands back numbers, formula objects and rich
+     * text; the rules below were written against strings, and `readAction`/`num` already do the
+     * interpreting. Flattening here rather than teaching the rules about Excel types is what keeps
+     * this a reader and not a second contract.
+     */
+    SRP.sheetToGrid = function (ws) {
+        function flat(v) {
+            if (v === null || v === undefined) return '';
+            if (typeof v === 'object') {
+                if (v instanceof Date) return v.toISOString().slice(0, 10);
+                if (typeof v.text === 'string') return v.text;
+                if (Array.isArray(v.richText)) return v.richText.map(function (r) { return r.text || ''; }).join('');
+                if (v.result !== undefined) return flat(v.result);
+                if (v.formula !== undefined) return '';
+                if (v.hyperlink !== undefined && v.text !== undefined) return String(v.text);
+                return '';
+            }
+            return String(v);
+        }
+        var raw = [];
+        ws.eachRow({ includeEmpty: true }, function (row) {
+            var cells = [];
+            row.eachCell({ includeEmpty: true }, function (cell) { cells.push(flat(cell.value)); });
+            raw.push(cells);
+        });
+        var hdr = -1;
+        for (var i = 0; i < raw.length && i < 40; i++) {
+            var keys = raw[i].map(SRP.headerKey);
+            if (keys.indexOf('marketplace_sku_id') >= 0) { hdr = i; break; }
+        }
+        if (hdr === -1) return [];
+        var grid = raw.slice(hdr);
+        // A spreadsheet carries trailing empty rows almost every time. They are not rows a person
+        // typed, so they are dropped here rather than reported as IDENTITY_MISSING against a file
+        // that looks, to the operator, exactly as they left it.
+        while (grid.length > 1) {
+            var last = grid[grid.length - 1];
+            var any = last.some(function (c) { return String(c || '').trim() !== ''; });
+            if (any) break;
+            grid.pop();
+        }
+        return grid;
     };
 
     /** The CURRENT prices, for reading rather than for uploading. Ownership is spelled out per field. */
@@ -511,20 +703,29 @@
      * has anything to restore: those are facts about the DATABASE, and the server answers them on the
      * dry run. Answering them twice would make this a second pricing authority that drifts.
      */
-    SRP.validateFile = function (text) {
+    /**
+     * S3-R11 §11 — THE READER MOVED OUT; THE RULES DID NOT.
+     * Everything below this line is the frozen §8 contract, unchanged, operating on a GRID. CSV and
+     * XLSX both produce a grid, so both meet these rules by construction rather than by a second
+     * implementation that has to be kept in step.
+     */
+    SRP.validateGrid = function (grid) {
         var out = { ok: true, errors: [], lines: [], rowCount: 0 };
-        var grid = SRP.parseCsv(text);
+        grid = grid || [];
         if (!grid.length) {
             out.ok = false;
             out.errors.push({ line: 0, code: 'EMPTY_FILE', detail: 'The file has no rows.' });
             return out;
         }
-        var headers = grid[0].map(function (h) { return String(h).trim().toLowerCase(); });
+        var headers = grid[0].map(SRP.headerKey);
         var required = ['marketplace_sku_id'].concat(SRP.FIELDS.map(function (s) { return s.mode; }));
         var missing = required.filter(function (r) { return headers.indexOf(r) === -1; });
         if (missing.length) {
             out.ok = false;
-            out.errors.push({ line: 1, code: 'MISSING_REQUIRED_COLUMNS', detail: 'The file is missing: ' + missing.join(', ') + '. Download the template and edit that.' });
+            out.errors.push({ line: 1, code: 'MISSING_REQUIRED_COLUMNS',
+                detail: 'The file is missing: ' + missing.map(function (m) {
+                    return SRP.TEMPLATE_HEADER_LABELS[m] || m; }).join(', ') +
+                    '. Download the template and edit that.' });
             return out;
         }
         var col = function (r, name) { var i = headers.indexOf(name); return i === -1 ? '' : String(r[i] == null ? '' : r[i]).trim(); };
@@ -659,8 +860,9 @@
      * quietly. So the contradiction is REFUSED here while the frozen function keeps dropping it, and no
      * second import contract exists — this is a gate in front of the same one.
      */
-    SRP.validateBulkFile = function (text, scope) {
+    SRP.validateBulkGrid = function (grid, scope) {
         var out = { ok: true, errors: [], lines: [], rowCount: 0 };
+        grid = grid || [];
         if (!scope) {
             out.ok = false;
             out.errors.push({ line: 0, code: 'TARGET_NOT_SELECTED', detail: 'Choose a country and a marketplace before uploading.' });
@@ -676,7 +878,7 @@
             return out;
         }
 
-        var base = SRP.validateFile(text);
+        var base = SRP.validateGrid(grid);
         out.rowCount = base.rowCount;
         // A FAILED FILE STILL GETS THE FULL READING. Returning here would report only the file-shape
         // errors, and an operator fixing a blank Update Price would upload again to be told about the
@@ -696,8 +898,7 @@
         //
         // So the scoped import REFUSES both contradictions and names them, while the frozen function keeps
         // dropping. There is no second import contract — this is a gate in front of the same one.
-        var grid = SRP.parseCsv(text);
-        var headers = (grid[0] || []).map(function (h) { return String(h).trim().toLowerCase(); });
+        var headers = (grid[0] || []).map(SRP.headerKey);
         var cell = function (r, n) { var i = headers.indexOf(n); return i === -1 ? '' : String(r[i] == null ? '' : r[i]).trim(); };
         var NC = SRP.actionLabel('NO_CHANGE'), UP = SRP.actionLabel('MANUAL'), UA = SRP.actionLabel('AUTO');
         for (var g = 1; g < grid.length; g++) {

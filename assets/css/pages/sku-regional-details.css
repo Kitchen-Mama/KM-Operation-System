@@ -212,7 +212,17 @@
 #sku-regional-details-section .srd-own--unknown { background: #F8FAFC; color: #94A3B8; border-color: #E2E8F0; }
 
 /* ---- PRICING-R4B bulk update ------------------------------------------------------------------------- */
-#sku-regional-details-section .srd-modal--wide { max-width: 900px; width: 92vw; }
+/* S3-R11 §12 — THE BULK MODAL IS NOT A FORM, SO IT DOES NOT GET THE FORM'S TWO-COLUMN GRID.
+   `.srd-modal__body` is `display:grid; grid-template-columns: 1fr 1fr`, which is right for the edit
+   dialog it was written for: pairs of labelled fields. The bulk update modal reuses the same class
+   for prose, a target summary, a file picker and the preview cards, and every one of those became a
+   half-width cell with the other half empty — the "narrow left column with unused right-side
+   whitespace" in the operator's report. This is a modifier rather than an edit to the base rule so
+   the edit dialog's layout is untouched. */
+#sku-regional-details-section .srd-modal__body--flow { display: block; }
+#sku-regional-details-section .srd-modal--wide { max-width: 1040px; width: 94vw; }
+/* The preview list may now use the width it was given; 42vh was chosen when it was half as wide. */
+#sku-regional-details-section .srd-modal--wide .srd-bulk__cards { max-height: 46vh; }
 #sku-regional-details-section .srd-bulk__cat { display: block; width: 100%; text-align: left; margin: 8px 0 0; padding: 12px 14px; border: 1px solid #E2E8F0; border-radius: 10px; background: #fff; cursor: pointer; }
 #sku-regional-details-section .srd-bulk__cat:hover:not([disabled]) { border-color: #2563EB; background: #F8FAFF; }
 #sku-regional-details-section .srd-bulk__cat[disabled] { cursor: not-allowed; opacity: .55; }
@@ -225,6 +235,12 @@
 #sku-regional-details-section .srd-bulk__target span { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: #94A3B8; }
 #sku-regional-details-section .srd-bulk__target strong { font-size: 13px; color: #0F172A; }
 #sku-regional-details-section .srd-bulk__files { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 6px; }
+/* S3-R11 §11 — THE ADVANCED CSV ACTION. Present, reachable and deliberately quiet: CSV is the
+   technical fallback, so it reads as a link rather than as a second equal button. Hiding it would
+   have been worse — an operator whose browser cannot run the Excel export needs a way through. */
+#sku-regional-details-section .srd-bulk__adv { margin: 2px 0 10px; }
+#sku-regional-details-section .srd-linkbtn { padding: 0; border: 0; background: none; cursor: pointer; font-size: 11px; color: #64748B; text-decoration: underline; }
+#sku-regional-details-section .srd-linkbtn:hover { color: #2563EB; }
 /* The bulk preview was a table of one row per changed FIELD until PRICING-R4C-R2; it is now one card per
    SKU (.srd-bulk__card below), so .srd-bulk__tbl has no element left to style and its rules are gone. */
 #sku-regional-details-section .srd-bulk__confirm { padding: 4px 2px; font-size: 13px; color: #0F172A; }

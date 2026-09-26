@@ -722,7 +722,34 @@ var ROUND_TOKENS = [
   // The reverse pairing is handled by the contract pin rather than by this token: a NEW bundle against an
   // OLD deployment finds no pricing.write.status, and KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 17 makes that
   // a stated mismatch instead of a verification that quietly never answers.
-  's3r10-writereceipt-20260926'];
+  's3r10-writereceipt-20260926',
+  // S3-R11 — INTERACTION PERFORMANCE. A NEW token, not a reuse, and the rule is the one recorded above:
+  // a token may be reused only until its bytes have been served, and R10's have been — origin/main is at
+  // 7a29415, so every browser that has loaded the app since carries `?v=s3r10-writereceipt-20260926`.
+  //
+  // WHAT A HALF-UPDATED BUNDLE WOULD DO HERE, which is why the whole application set rotates together:
+  //   · partial-loader.js gains the in-flight join. A browser left on the old copy keeps issuing two
+  //     fetches for one partial and keeps letting the second one overwrite the DOM the first mount is
+  //     already using — the blank-page failure, still shipping.
+  //   · sku-regional-pricing.js and sku-regional-details.js are CO-DEPENDENT this round. The page calls
+  //     SRP.validateBulkGrid, SRP.templateXlsxSpec and SRP.sheetToGrid, none of which exist in the older
+  //     module; an old page against a new module offers no Excel template, and a NEW page against an OLD
+  //     module throws the moment an operator clicks Preview. That pairing is exactly what one shared
+  //     token exists to make impossible.
+  //   · sku-regional-details.css carries the --flow modifier the new markup emits. Old CSS with new
+  //     markup is the two-column bulk modal again; new CSS with old markup changes nothing, which is the
+  //     benign half and still not worth shipping.
+  //
+  // NO APPS SCRIPT COUNTERPART. Nothing server-side changed this round, so unlike R10 there is no
+  // deployment for this bundle to disagree with, and the contract pin stays at 17.
+  // AND partial-loader.js JOINS THE ROTATING SET AT THIS ROUND. It had sat on `donenotice-20260811`
+  // since Phase 0, when it genuinely was dormant; index.html therefore pinned it to a token that would
+  // never rotate again. This round changes it, and the S3-R11 canonical sweep caught that the reference
+  // was still on the frozen token — which would have meant a new index.html beside a CACHED old
+  // partial-loader.js, so the duplicate-fetch repair never reaches a returning browser and the round
+  // ships as a no-op for exactly the people who already use the app. It is the failure H17 was written
+  // for, and the first time that rule has fired on a real change.
+  's3r11-interaction-20260926'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

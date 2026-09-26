@@ -222,13 +222,33 @@ section('B · §2/§3 THE TEMPLATE');
   eq([v.ok, v.lines.length, v.lines.filter(SRP.lineTouches).length], [true, 3, 0],
     'B5  an untouched template is valid and asks for ZERO changes');
 
-  // §2 — CSV CANNOT CARRY DROPDOWN VALIDATION, and this round does not pretend it can.
-  ok(/\.csv,text\/csv/.test(PAGE) && !/xlsx|SheetJS|XLSX/i.test(bare(PAGE)),
-    'B6  §2 the import stays CSV — no XLSX path was introduced');
-  ok(!/xlsx/i.test(bare(SRP_SRC)), 'B6b and the module gained no second file format either');
-  // ONE contract: the scoped gate still calls the frozen validator rather than reimplementing it.
-  ok(/var base = SRP\.validateFile\(text\);/.test(SRP_SRC),
-    'B6c and validateBulkFile still CALLS validateFile — no second import contract');
+  /* S3-R11 — B6/B6b RE-EXPRESSED, AND THE REASON IS AN OPERATOR DECISION RATHER THAN A PREFERENCE.
+     PRICING-R4C-R2 §2 observed that CSV cannot carry dropdown validation and declined to build an
+     XLSX path in that round. That restraint was real and it was ITS OWN; written as a ban on the
+     string "xlsx" it became a claim that no later round may ever build one. S3-R11 §11 carries the
+     operator's decision in as many words — PRIMARY_OPERATOR_TEMPLATE = XLSX, CSV = TECHNICAL /
+     ADVANCED FALLBACK — so the thing this pin forbade is the thing the operator asked for.
+     What is durable, and is what R4C-R2 actually cared about, is that the CSV path REMAINS: an
+     operator whose browser cannot run the Excel export must still be able to get a template and
+     upload one. That is asserted below, and it is a stronger claim than the ban was. */
+  ok(/\.csv/.test(PAGE), 'B6  the CSV path is still reachable from the page');
+  ok(/buildTemplateCsv/.test(PAGE) && /srdBulkDownloadTemplateCsv/.test(PAGE),
+    'B6a and the CSV template is still built and still offered as the advanced action');
+  ok(typeof SRP.buildTemplateCsv === 'function' && typeof SRP.validateBulkFile === 'function',
+    'B6b the module still exposes the CSV builder and the text validator, unchanged in name');
+
+  /* B6c — THE CLAIM SURVIVES; THE LINE IT WAS WRITTEN AGAINST DID NOT. "ONE import contract" was
+     checked by looking for the exact call `SRP.validateFile(text)` inside the scoped gate. S3-R11
+     moved the rules onto a GRID so an .xlsx and a .csv could meet the SAME rules — which is the
+     single-contract property, held harder than before, not abandoned. So the invariant is asserted
+     directly: the scoped gate delegates to the frozen validator, and both text entry points are
+     compositions over the grid ones rather than second implementations. */
+  ok(/var base = SRP\.validateGrid\(grid\);/.test(SRP_SRC),
+    'B6c the scoped gate still DELEGATES to the frozen validator rather than reimplementing it');
+  ok(/SRP\.validateFile = function \(text\) \{ return SRP\.validateGrid\(SRP\.parseCsv\(text\)\); \};/.test(SRP_SRC),
+    'B6d and validateFile is exactly parse-then-validate — no second reading of the rules');
+  ok(/SRP\.validateBulkFile = function \(text, scope\) \{ return SRP\.validateBulkGrid\(SRP\.parseCsv\(text\), scope\); \};/.test(SRP_SRC),
+    'B6e as is validateBulkFile — so CSV and XLSX cannot drift apart');
 }
 
 // =============================================================================================================
