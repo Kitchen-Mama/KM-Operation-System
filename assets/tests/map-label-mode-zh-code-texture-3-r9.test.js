@@ -665,11 +665,25 @@ section('§G — the token manifest');
         ok(RO.mapTokenAtOrAfter(T[rel], R9),
             'G2b ' + rel.split('/').pop() + ' is never served OLDER than R9 (' + T[rel] + ')');
     });
-    // R9A moved exactly one of them, and only its own reference.
-    eq(T[PAGE_REL], 'map-labelcopy-r9a-20260831', 'G2c the map page carries the R9A token — its copy changed');
-    eq(T[GLOBE_REL], R9, 'G2d the globe engine was NOT rotated — its bytes did not move');
-    eq(T[CSS_REL], R9, 'G2e nor was the stylesheet — the new copy needed no CSS change');
-    eq((INDEX.match(/map-labelcopy-r9a-20260831/g) || []).length, 1, 'G2f exactly one reference carries the R9A token');
+    /* TEXTURE-3-R10 — AND THIS BLOCK DID IT AGAIN, which is worth saying plainly because the comment
+       twenty lines above is R9A's own account of the same mistake. R9 pinned its round as "now" and R9A
+       had to rewrite eleven assertions; R9A then wrote G2c-G2f, which pinned R9A as "now", and R10 rotated
+       two files and broke four more.
+
+       The durable form is the one G2b is already written in: a round's token is a FLOOR for the files that
+       round changed, never an equality with today. R9A's real claim — that it rotated the page and left the
+       globe and the stylesheet alone — is preserved as "the page is at or after R9A, and the other two are
+       at or after R9", which stays true however many rounds follow. Whether a file rotated THIS round is a
+       different question with a different owner: the derived G4c/G4d below, which reads each file's source
+       for the current marker and is the only assertion here that should ever mention the current token. */
+    ok(RO.mapTokenAtOrAfter(T[PAGE_REL], 'map-labelcopy-r9a-20260831'),
+        'G2c the map page is never served older than R9A — its copy changed there (' + T[PAGE_REL] + ')');
+    ok(RO.mapTokenAtOrAfter(T[GLOBE_REL], R9),
+        'G2d the globe engine is never served older than R9 (' + T[GLOBE_REL] + ')');
+    ok(RO.mapTokenAtOrAfter(T[CSS_REL], R9),
+        'G2e nor is the stylesheet (' + T[CSS_REL] + ')');
+    ok((INDEX.match(/map-labelcopy-r9a-20260831/g) || []).length <= 1,
+        'G2f R9A\'s token was only ever on one reference, and a later round may retire it');
     // The derived rule over the whole shared inventory.
     ok(RO.MAP_BROWSER_FILES.length >= 8, 'G3 the shared inventory now includes the stylesheet (' + RO.MAP_BROWSER_FILES.length + ')');
     ok(RO.MAP_BROWSER_FILES.indexOf(CSS_REL) !== -1, 'G3b explicitly');

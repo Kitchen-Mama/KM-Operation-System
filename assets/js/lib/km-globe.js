@@ -16,7 +16,10 @@
 //             getStatus(), destroy()
 //   KMGlobe.math -> pure functions (unit-tested in assets/tests/globe-math.test.js)
 //
-// Markers: [{ id, lat, lng, color:[r,g,b], size, ring:bool }] (r/g/b 0..1). lat/lng must be finite; the
+// Markers: [{ id, lat, lng, color:[r,g,b], size, ring:bool, icon?:string }] (r/g/b 0..1). The OPTIONAL
+// `icon` is one short glyph painted over the marker on the label overlay (see SHIPMENT MARKER GLYPHS
+// below): presentation only, never read back, and a marker without one renders exactly as it did.
+// lat/lng must be finite; the
 // caller is responsible for never passing fabricated (0,0). Arcs: [{ points:[[lat,lng],...], color:[r,g,b] }].
 
 (function () {
@@ -151,6 +154,12 @@
   // makes it read as a flight path rather than a painted line. They are documented here so §C's audit has one
   // place that lists every radius in the engine.
   var ARC_R_ = 1.006, MARKER_R_ = 1.012;
+  /* TEXTURE-3-R10 — SHIPMENT MARKER GLYPHS. Size is DERIVED from the marker's own size so the two cannot drift apart, and
+     clamped at both ends: under the floor a glyph is an unreadable smudge, over the ceiling it stops being a
+     marker and becomes an illustration. The ratio is below 1 on purpose, so a rim of the marker's own colour
+     survives around the glyph — that colour is what carries exception/delayed status, and a glyph that hid it
+     would trade one fact for another. */
+  var ICON_SIZE_RATIO_ = 0.82, ICON_MIN_PX_ = 9, ICON_MAX_PX_ = 22;
   var COUNTRY_R = BORDER_R;
   // Longer segments are subdivided along the GREAT CIRCLE. Two reasons, both measured against this dataset:
   //   · SAG. The dataset's longest single edge is ~18 deg (a simplified US ring). A straight chord across 18 deg
@@ -2125,6 +2134,12 @@
       // Shipment markers are the business objects; a geographic reference may never sit on top of one. They are
       // pre-sized rectangles rather than text, so they are never measured and never dropped.
       var markerRects = [];
+      /* Glyphs are collected HERE rather than in a pass of their own, because this loop already projects
+         every marker and a second pass would be the same trigonometry twice per frame. A marker with no
+         `icon` costs one falsy test. They are PAINTED after the label classes below, so a country name can
+         never land on top of a business object — the rule markerRects enforces for text, applied to the
+         marker's own decoration. */
+      var iconDraws = [];
       for (var m = 0; m < markers.length; m++) {
         var mk = markers[m];
         if (!isFinite(mk.lat) || !isFinite(mk.lng)) continue;
@@ -2132,6 +2147,7 @@
         if (!projectInto(mvp, model, mv3[0], mv3[1], mv3[2], W, H, _proj) || !_proj.front) continue;
         var half = ((mk.size || 10) / 2) + 3;
         markerRects.push({ x0: _proj.x - half, x1: _proj.x + half, y0: _proj.y - half, y1: _proj.y + half });
+        if (mk.icon) iconDraws.push({ g: String(mk.icon), x: _proj.x, y: _proj.y, size: (mk.size || 10) });
       }
 
       // ---- CLASS 1: COUNTRY --------------------------------------------------------------------------------
@@ -2295,6 +2311,27 @@
       lastAdmin1LabelStats = { considered: aConsidered, after_facing: aFacing, on_screen: aScreen,
                                measured: aMeasured, measure_cap: measureCap,
                                candidates: admin1Cands.length, drawn: adrawn.length, budget: budget };
+
+      /* PAINTED LAST, so a marker glyph is never covered by a country, continent or division name. The dark
+         halo is the same device the country labels use, and it is what keeps a glyph legible over ocean, over
+         land and over its own marker colour alike.
+
+         NOTHING HERE MOVES A MARKER. The coordinates are the marker's own projected centre, so a glyph cannot
+         shift a position, change a hit target or reflow anything: picking reads the GL points and never looks
+         at this canvas, and this canvas is pointer-events:none. */
+      if (iconDraws.length) {
+        labelCtx.lineJoin = 'round';
+        labelCtx.strokeStyle = 'rgba(6,10,20,0.85)';
+        labelCtx.fillStyle = 'rgba(255,255,255,0.98)';
+        for (var ic = 0; ic < iconDraws.length; ic++) {
+          var dI = iconDraws[ic];
+          var px = Math.max(ICON_MIN_PX_, Math.min(ICON_MAX_PX_, Math.round(dI.size * ICON_SIZE_RATIO_)));
+          labelCtx.font = fontFor(px, '700');
+          labelCtx.lineWidth = Math.max(2, Math.round(px / 5));
+          labelCtx.strokeText(dI.g, dI.x, dI.y);
+          labelCtx.fillText(dI.g, dI.x, dI.y);
+        }
+      }
 
       lastLabelMs = Math.round((nowMsGlobal_() - __lblT0) * 100) / 100;
     }

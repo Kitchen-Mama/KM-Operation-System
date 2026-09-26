@@ -788,6 +788,65 @@
   }
 
   // ---------- shipment list + pending tray ----------
+  /* =================================================================================================
+     TEXTURE-3-R10 — TRANSPORT MODE ICONS. PRESENTATION ONLY.
+
+     WHAT THIS READS. `shipment_routes.transport_mode` (normalized to `node.transportMode`) is the
+     canonical LEG-level field: SHIPMENT_DATABASE_SCHEMA lists it as an enum of air / sea / truck, and a
+     route carries one row per node, so an ocean leg followed by an inland leg really are two values on
+     one shipment. Where a leg has none, the shipment-level shipping method (`vm.method`) answers instead.
+     Nothing here is written back, and no stored value is changed to match a label.
+
+     WHY THE TOKEN LIST LOOKS LIKE THIS. It mirrors the server-side transport classifier that already owns
+     this exact question for the seeded route data, rather than inventing a second vocabulary for the same
+     field. (Named generically on purpose: this page carries no backend reference, and a guard enforces
+     that.) ONE DELIBERATE DIFFERENCE: that classifier folds parcel / courier / last-mile into `truck`,
+     because for ITS purpose — which corridor a leg uses — they are the same thing. For a map icon they are
+     not, so parcel is split out and is tested FIRST, since every parcel token would otherwise be caught by
+     the truck branch.
+
+     THE CJK FRAGMENTS are the ones `shipMode` below has always used. They are single characters used as
+     classification hints, never operator method labels: A0 §G.9 bans spelling the labels themselves
+     (co1100r-live-hydration-closure E12), and nothing here does.
+
+     WHY THIS IS NOT MERGED INTO `shipMode`. `shipMode` owns the tooltip's DISPLAY TEXT and returns the
+     raw method verbatim when it recognises nothing. Routing it through these classes would change the
+     tooltip wording for parcel and rail methods that currently print raw — a tooltip regression this
+     task forbids. They read the same field and answer different questions, so they stay separate. */
+  var TRANSPORT_ICONS = { air: '\u2708\uFE0F', rail: '\uD83D\uDE86', parcel: '\uD83D\uDCE6',
+                          truck: '\uD83D\uDE9A', sea: '\uD83D\uDEA2' };
+
+  function transportClass(mode) {
+    var m = low(mode);
+    if (!m) return 'unknown';
+    if (/air|flight|\u7a7a/.test(m)) return 'air';
+    if (/rail|train/.test(m)) return 'rail';
+    // BEFORE truck, deliberately — see above.
+    if (/parcel|courier|express|last.?mile|small.?package/.test(m)) return 'parcel';
+    if (/truck|road|inland|land|ground|ltl|ftl|drayage|\u9678/.test(m)) return 'truck';
+    if (/sea|ocean|maritime|vessel|container|fcl|lcl|barge|\u6d77/.test(m)) return 'sea';
+    return 'unknown';
+  }
+
+  /* One glyph for a transport mode, or '' when the mode is blank or unrecognised.
+     '' IS THE FALLBACK AND IT IS THE POINT: the renderer draws no glyph, so the shipment keeps the
+     generic marker it has always had. No shipment can leave the map because its mode is unreadable. */
+  function getShipmentTransportIcon(mode) {
+    return TRANSPORT_ICONS[transportClass(mode)] || '';
+  }
+
+  /* The mode of the leg the marker STANDS ON, which is the whole of §3. A shipment in ocean transit with
+     an inland leg still to come is on the ocean leg, and collapsing it to one shipment-level mode would
+     draw the wrong icon for most of its journey. The current node's own transport_mode is therefore
+     preferred, then the last completed one, and only then the shipment-level method. */
+  function legMode(vm) {
+    if (!vm) return '';
+    var cur = vm.currentNode && vm.currentNode.transportMode;
+    if (cur) return cur;
+    var done = vm.lastCompleted && vm.lastCompleted.transportMode;
+    if (done) return done;
+    return vm.method || '';
+  }
   function shipMode(vm) { var m = low(vm.method); if (/air|flight|空/.test(m)) return 'Air'; if (/sea|ocean|vessel|海|fcl|lcl/.test(m)) return 'Sea'; if (/truck|ground|road|land|陸/.test(m)) return 'Ground'; return vm.method || '—'; }
   function renderShipmentList() {
     var vms = filteredVms();
@@ -918,7 +977,8 @@
           var pl = resolveShipmentPlacement(v); if (pl.kind === 'pending') return;
           var isCur = pl.kind === 'current';
           var color = v.flags.exception || v.flags.delayed ? COL.exc : (isCur ? COL.pos : COL.endpoint);
-          markers.push({ id: v.shipmentId, lat: pl.lat, lng: pl.lng, color: color, size: isCur ? 16 : 13, elev: 1.024, ring: false });   // runtime priority: larger + higher elev than reference
+          markers.push({ id: v.shipmentId, lat: pl.lat, lng: pl.lng, color: color, size: isCur ? 16 : 13, elev: 1.024, ring: false,
+            icon: getShipmentTransportIcon(legMode(v)) });   // runtime priority: larger + higher elev than reference
           focusPts.push([pl.lat, pl.lng]);
         });
       }
@@ -973,12 +1033,15 @@
       var c = resolveNodeCoord(n); if (!c.drawable) return;
       var sc = nodeStatusClass(n.status), t = low(n.nodeType);
       var color = sc === 'exception' ? COL.exc : (/customs|clearance/.test(t) ? COL.customs : (sc === 'completed' || sc === 'current' ? COL.done : COL.upcoming));
-      markers.push({ id: 'node:' + n.shipmentRouteId, lat: c.lat, lng: c.lng, color: color, size: 11, elev: 1.02 });
+      // Each node carries its OWN leg mode, so a multi-leg route draws a different icon per leg.
+      markers.push({ id: 'node:' + n.shipmentRouteId, lat: c.lat, lng: c.lng, color: color, size: 11, elev: 1.02,
+        icon: getShipmentTransportIcon(n.transportMode) });
       seq.push([c.lat, c.lng]); focusPts.push([c.lat, c.lng]);
     });
     if (state.showPlannedRoute && seq.length > 1) arcs.push({ points: seq, color: vm.flags.exception ? COL.exc : COL.pos });
     var pos = resolveCurrentPosition(vm);
-    if (pos.drawable) { markers.push({ id: 'pos:' + vm.shipmentId, lat: pos.lat, lng: pos.lng, color: vm.flags.exception || vm.flags.delayed ? COL.exc : COL.pos, size: 18, elev: 1.03, ring: true }); focusPts.push([pos.lat, pos.lng]); }
+    if (pos.drawable) { markers.push({ id: 'pos:' + vm.shipmentId, lat: pos.lat, lng: pos.lng, color: vm.flags.exception || vm.flags.delayed ? COL.exc : COL.pos, size: 18, elev: 1.03, ring: true,
+      icon: getShipmentTransportIcon(legMode(vm)) }); focusPts.push([pos.lat, pos.lng]); }
   }
   function centroid(pts) {
     var x = 0, y = 0, z = 0;

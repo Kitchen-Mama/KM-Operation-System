@@ -754,10 +754,24 @@ try {
     .toString('utf8').split('\n').map(function (x) { return x.trim(); }).filter(Boolean);
 } catch (e) { changed = null; }
 if (changed) {
+  /* TEXTURE-3-R10 — "THE CURRENT TOKEN" IS A PER-FAMILY QUESTION, and this asked it of one family.
+     index.html versions its assets under THREE independent series: the application token, the map token
+     (MAP_BROWSER_FILES) and the Site Inventory stylesheet's own. `misplacedIndexTokens` already enforces
+     that each file carries a token from its own family, in BOTH directions — so comparing every changed
+     asset against currentAppToken() reported the two map files as stale for carrying exactly the token
+     the other rule requires of them. Two rules, opposite verdicts, same correct tree.
+
+     The claim is unchanged and is the one that caught a real defect one round ago: a file whose bytes
+     moved must not be served under a token a returning browser already has. Only "current" is now
+     resolved per family. */
   var tokens = REL.parseIndexTokens(INDEX);
-  var cur = REL.currentAppToken();
+  function currentFor(rel) {
+    if (REL.MAP_BROWSER_FILES.indexOf(rel) !== -1) return REL.currentMapToken();
+    if (rel === REL.IR_CSS_FILE) return REL.currentIrCssToken();
+    return REL.currentAppToken();
+  }
   var offToken = changed.filter(function (f) {
-    return Object.prototype.hasOwnProperty.call(tokens, f) && tokens[f] !== cur;
+    return Object.prototype.hasOwnProperty.call(tokens, f) && tokens[f] !== currentFor(f);
   });
   eq(offToken, [], 'H17 every changed, index-referenced asset carries the current cache token', offToken);
   // Anti-vacuity: the rule must actually be looking at files that ARE referenced by index.html.

@@ -796,7 +796,16 @@ var MAP_TOKEN_SERIES = [
   'map-texture3-r6-20260831',
   'map-texture3-r8-20260831',
   'map-labelmode-r9-20260831',
-  'map-labelcopy-r9a-20260831'
+  'map-labelcopy-r9a-20260831',
+  // TEXTURE-3-R10 — ON-THE-WAY-MAP TRANSPORT MODE ICONS. Both changed files are rotated because both
+  // changed: km-globe.js gained the optional marker glyph, and global-logistics-map.js decides which
+  // glyph a leg gets. A new token rather than a reuse, by the rule the application series records: R9
+  // and R9A are long published, so their bytes have been served and their tokens are spent.
+  //
+  // THE STYLESHEET IS DELIBERATELY NOT ROTATED. The glyph is painted on the existing label canvas and
+  // needed no CSS at all, so global-logistics-map.css does not carry this round's marker and must keep
+  // the token it has — which is what the derived rule (G4c/G4d) checks in both directions.
+  'map-transporticons-r10-20260926'
 ];
 
 // The newest entry is the current round's token, by construction rather than by restatement.
