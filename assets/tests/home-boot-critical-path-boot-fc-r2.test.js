@@ -663,15 +663,32 @@ var _S3R5A_POLICY_DATA_ = ['var RETRYABLE_STATUS =', 'var NEVER_AUTO_RETRY_CODES
   'var READ_URL_MAX =', 'var TRANSPORT_CONTRACT_VERSION =',
   // the dispatcher's own policy decisions, each a single statement and each unique in the file
   "var maxRetries = (kind === 'write') ? 0 :",
-  "var ms = (kind === 'write') ? _writeTimeoutMs : _readTimeoutMs;",
   'return _fetch(url, init);',
   'if (res.code === CODES.REDIRECT_TARGET_NOT_FOUND) {'];
+// S3-R8 — ONE ENTRY LEAVES THE BASE COMPARISON, AND IT IS REPLACED RATHER THAN DROPPED.
+//
+// The list above pinned the dispatcher's per-attempt timeout line against BASE. S3-R8 removed that line on
+// purpose: the timeout bounded the ATTEMPT, so a recovery opened a second full budget and one logical read
+// could last 2 x 60 000 ms — production measured 85 882 ms on a single read. A base comparison cannot express
+// 'this line was supposed to change', and re-pinning it to the new bytes would make it assert whatever is
+// there now, which is the failure mode this policy seal was created to escape in the first place.
+//
+// What these three rounds actually claimed was that the REDIRECT and RETRY policy did not move. None of them
+// claimed anything about the size of the budget. So the budget is asserted in the PRESENT TENSE instead: the
+// bound is still chosen by kind, the deadline is taken once, and an attempt is bounded by what REMAINS of it.
+var _S3R5A_POLICY_PRESENT_ = [
+  "var _budgetMs = (kind === 'write') ? _writeTimeoutMs : _readTimeoutMs;",
+  "var _deadlineAt = t.start + _budgetMs;",
+  "var ms = _remainingMs();"];
 function _s3r5aPolicySeal_(curr, base, label, eqFn) {
   _S3R5A_POLICY_FNS_.forEach(function (n) {
     eqFn(_s3r5aFn_(curr, n), _s3r5aFn_(base, n), label + ' \u2014 ' + n + '() is byte-identical to BASE');
   });
   _S3R5A_POLICY_DATA_.forEach(function (d) {
     eqFn(_s3r5aBlock_(curr, d), _s3r5aBlock_(base, d), label + ' \u2014 ' + d.replace('var ', '').replace(' =', '') + ' is byte-identical to BASE');
+  });
+  _S3R5A_POLICY_PRESENT_.forEach(function (d) {
+    eqFn(curr.indexOf(d) >= 0, true, label + ' — still present: ' + d);
   });
 }
 var SEALED = ['assets/js/core/lifecycle.js', 'assets/js/api/km-api-foundation.js',
