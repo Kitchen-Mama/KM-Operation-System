@@ -617,6 +617,10 @@ function renderSkuHandbookGroups(filtered) {
 }
 
 function renderSkuHandbook() {
+    // S4-R6 §7 - the refusal is checked HERE, ahead of getSkuHandbookData(), because that function is
+    // where the demo fallback lives. Checking it afterwards would mean deciding what to show only after
+    // the wrong thing had already been built.
+    if (_skuhReadState === 'FAILED') { renderSkuHandbookFilters(); _skuhRenderReadFailure_(); return; }
     const allData = getSkuHandbookData();
     renderSkuHandbookFilters();
     renderSkuHandbookStats(allData);
@@ -764,23 +768,102 @@ function clearSkuHandbookFilters() {
     renderSkuHandbook();
 }
 
+// S4-R6 §7 - A FAILED READ WAS SHOWING TWENTY-FIVE PRODUCTS.
+//
+// The read itself was already fail-closed in the sense it set out to be: it refuses to fall back to a
+// BROAD read, and it installs an empty scoped model so `_skuhKnowledgeItems()` returns []. What nobody
+// followed through was what `getSkuHandbookData()` does with an empty knowledge set - it falls through
+// to `getAllSkuDataWithOverrides()` and the built-in `upcomingSkuData` / `runningSkuData` /
+// `phasingOutSkuData` arrays. Measured on a refused cold load: a fully populated handbook, 25 Total /
+// 23 Running / 2 Upcoming, no message of any kind. The only hint was a "Data: Mock" badge, which reads
+// as a configuration state rather than as "the read you are looking at failed".
+//
+// That is worse than the false empty §7 names, because an empty page at least prompts a reload. So the
+// read now has a STATE, the state is consulted before any fallback content is assembled, and a failure
+// renders a refusal carrying the real transport reason plus a Retry that issues exactly one new read.
+// The demo arrays keep serving Legacy/demo mode, which is what they are for.
+var _skuhReadState = 'IDLE';        // IDLE | LOADING | READY | FAILED
+var _skuhReadError = null;
+
+function _skuhErrLine_(err) {
+    try {
+        if (window.KM && window.KM.transport && typeof window.KM.transport.errorLine === 'function') {
+            return window.KM.transport.errorLine(err);
+        }
+    } catch (e) {}
+    return String((err && err.message) || 'read failed') + ' [' + String((err && err.code) || 'READ_FAILED') + ']';
+}
+
+// The refusal replaces the CONTENT only. Filters and the search box stay usable, because neither needs
+// the knowledge tables and a page that disables its own controls on a transient network error is harder
+// to recover from than one that does not.
+function _skuhRenderReadFailure_() {
+    var container = document.getElementById('skuh-content');
+    if (!container) return;
+    container.innerHTML =
+        '<div class="skuh-read-error" role="alert" style="margin:12px 0;padding:12px 14px;border:1px solid #FCA5A5;' +
+        'background:#FEF2F2;color:#B91C1C;border-radius:6px;font-size:13px;line-height:1.6;white-space:normal;' +
+        'overflow-wrap:break-word;word-break:break-word;">' +
+        '<strong>Could not load the SKU Handbook.</strong><br>' +
+        _skuhEsc_(_skuhErrLine_(_skuhReadError)) +
+        '<br>Nothing is shown in place of the products that were not read. ' +
+        '<button type="button" class="btn btn-secondary" onclick="skuhRetryRead()" style="margin-top:8px;">Retry</button>' +
+        '</div>';
+    var stats = document.getElementById('skuh-stats');
+    if (stats) stats.innerHTML = '';
+}
+function _skuhEsc_(v) {
+    return String(v == null ? '' : v)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// ONE new read per press. FAILED is cleared first so the guard below does not short-circuit it.
+function skuhRetryRead() {
+    if (_skuhReadState === 'LOADING') return;
+    _skuhReadState = 'IDLE';
+    _skuhReadError = null;
+    _skuhReadModel = null;
+    _skuhLoadKnowledge_();
+}
+window.skuhRetryRead = skuhRetryRead;
+
+function _skuhLoadKnowledge_() {
+    _skuhReadState = 'LOADING';
+    window.KM.DB.loadScopedTables(['sku_details', 'product_features', 'sku_handbook_summaries'])
+        .then(function (m) {
+            _skuhReadModel = m; _skuhReadState = 'READY'; _skuhReadError = null;
+            renderSkuHandbook();
+        })
+        .catch(function (err) {
+            // Fail-closed, as before: an empty scoped model, NEVER a silent broad read. What is new is
+            // that the failure is now VISIBLE instead of being dressed as content.
+            _skuhReadModel = { skuDetails: [], productFeatures: [], skuHandbookSummaries: [] };
+            _skuhReadState = 'FAILED'; _skuhReadError = err || null;
+            renderSkuHandbook();
+        });
+}
+
 function initSkuHandbook() {
     updateSkuhLangButtons();
     // F1-7J-A3: canonical → bounded scoped read of the 3 knowledge tables (no whole-DB prime dependency), then render;
     // Legacy/demo → render from the broad getter. Fail-closed: on scoped-read failure render an empty knowledge set
     // (an empty scoped model), NEVER a silent broad read.
     if (_skuhScopedActive() && !_skuhReadModel) {
-        window.KM.DB.loadScopedTables(['sku_details', 'product_features', 'sku_handbook_summaries'])
-            .then(function (m) { _skuhReadModel = m; renderSkuHandbook(); })
-            .catch(function () { _skuhReadModel = { skuDetails: [], productFeatures: [], skuHandbookSummaries: [] }; renderSkuHandbook(); });
+        _skuhLoadKnowledge_();
     } else {
         renderSkuHandbook();
     }
 
     // Bind free-text search (instant). The Product Line / Brand / Lifecycle dropdowns are the shared
     // KM.ui.multiFilter component (mounted in renderSkuHandbookFilters) — no page-local dropdown wiring.
+    // S4-R6 §7 - BOUND ONCE. `#skuh-filter-search` survives every re-render and `initSkuHandbook` runs
+    // on every mount, so each visit added another `input` handler to the same element: measured at +1
+    // live listener per re-entry, each one re-filtering and re-rendering the whole group list on every
+    // keystroke.
     const searchInput = document.getElementById('skuh-filter-search');
-    if (searchInput) {
+    if (searchInput && !searchInput._skuhSearchBound) {
+        searchInput._skuhSearchBound = true;
         searchInput.addEventListener('input', function() {
             SkuHandbookState.search = this.value;
             const filtered = applySkuHandbookFilters(getSkuHandbookData());

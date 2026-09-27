@@ -1,0 +1,866 @@
+{
+ "round": "S4-R6",
+ "preSha": "75bdff0",
+ "serverMs": {
+  "probe": 400,
+  "drift": 0,
+  "expand": 400,
+  "states": 400
+ },
+ "note": "Request counts, dispatch counts, DOM outcomes and listener counts by target class are authoritative. Milliseconds are NOT: the virtual clock freezes while a task runs.",
+ "routeCount": 21,
+ "boot": {
+  "scriptTags": 69,
+  "localScripts": 67,
+  "bytes": 3849935,
+  "largest": [
+   {
+    "file": "assets/js/pages/fc-summary.js",
+    "bytes": 487792
+   },
+   {
+    "file": "assets/js/api/operation-system-db-api.js",
+    "bytes": 470154
+   },
+   {
+    "file": "assets/js/pages/request-order.js",
+    "bytes": 365885
+   },
+   {
+    "file": "assets/js/pages/sku-details.js",
+    "bytes": 157042
+   },
+   {
+    "file": "assets/js/utils/inventory-compat.js",
+    "bytes": 137371
+   },
+   {
+    "file": "assets/js/pages/shipping-history.js",
+    "bytes": 127514
+   },
+   {
+    "file": "assets/js/pages/sku-regional-details.js",
+    "bytes": 126569
+   },
+   {
+    "file": "assets/js/pages/factory-stock.js",
+    "bytes": 120715
+   }
+  ],
+  "over200KB": [
+   {
+    "file": "assets/js/pages/fc-summary.js",
+    "bytes": 487792
+   },
+   {
+    "file": "assets/js/api/operation-system-db-api.js",
+    "bytes": 470154
+   },
+   {
+    "file": "assets/js/pages/request-order.js",
+    "bytes": 365885
+   }
+  ]
+ },
+ "routes": {
+  "ops": {
+   "label": "Site Inventory (Inventory Replenishment)",
+   "initialRequests": 1,
+   "initialRounds": 1,
+   "actions": [
+    "inventoryScope.registry.get"
+   ],
+   "nodes": 297,
+   "listenerDrift": 0,
+   "intervalDrift": 0,
+   "openRequests": 0,
+   "failure": {
+    "errorSurfaces": 1,
+    "falseEmpty": false,
+    "retryControls": 1,
+    "retryRequests": 1,
+    "recovered": true,
+    "permanentLoading": 0
+   },
+   "failureBefore": {
+    "errorSurfaces": 1,
+    "falseEmpty": false,
+    "retryControls": 1,
+    "permanentLoading": 0
+   }
+  },
+  "factory-stock": {
+   "label": "Factory Inventory",
+   "initialRequests": 3,
+   "initialRounds": 2,
+   "actions": [
+    "getTable:factory_stock",
+    "getTable:sku_details",
+    "getTable:warehouses"
+   ],
+   "nodes": 929,
+   "listenerDrift": 0,
+   "intervalDrift": 0,
+   "openRequests": 0,
+   "failure": {
+    "errorSurfaces": 4,
+    "falseEmpty": false,
+    "retryControls": 1,
+    "retryRequests": 3,
+    "recovered": true,
+    "permanentLoading": 0
+   },
+   "failureBefore": {
+    "errorSurfaces": 4,
+    "falseEmpty": false,
+    "retryControls": 1,
+    "permanentLoading": 0
+   }
+  },
+  "overseas-stock": {
+   "label": "Overseas Inventory",
+   "initialRequests": 1,
+   "initialRounds": 1,
+   "actions": [
+    "overseasStock.workspace.get"
+   ],
+   "nodes": 309,
+   "listenerDrift": 0,
+   "intervalDrift": 0,
+   "openRequests": 0,
+   "failure": {
+    "errorSurfaces": 4,
+    "falseEmpty": false,
+    "retryControls": 1,
+    "retryRequests": 1,
+    "recovered": true,
+    "permanentLoading": 0
+   },
+   "failureBefore": {
+    "errorSurfaces": 4,
+    "falseEmpty": false,
+    "retryControls": 1,
+    "permanentLoading": 0
+   }
+  },
+  "forecast": {
+   "label": "Forecast",
+   "initialRequests": 0,
+   "initialRounds": 0,
+   "actions": [],
+   "nodes": 170,
+   "listenerDrift": 0,
+   "intervalDrift": 0,
+   "openRequests": 0,
+   "failure": "NO_READ_TO_FAIL",
+   "failureBefore": "NO_READ_TO_FAIL"
+  },
+  "fc-summary": {
+   "label": "FC Summary",
+   "initialRequests": 2,
+   "initialRounds": 1,
+   "actions": [
+    "fcSummary.workspace.get:bootstrap",
+    "fcSummary.workspace.get:regular"
+   ],
+   "nodes": 913,
+   "listenerDrift": 0,
+   "intervalDrift": 0,
+   "openRequests": 0,
+   "failure": {
+    "errorSurfaces": 3,
+    "falseEmpty": false,
+    "retryControls": 1,
+    "retryRequests": 1,
+    "recovered": true,
+    "permanentLoading": 0
+   },
+   "failureBefore": {
+    "errorSurfaces": 3,
+    "falseEmpty": false,
+    "retryControls": 1,
+    "permanentLoading": 0
+   }
+  },
+  "request-order": {
+   "label": "Order Planning",
+   "initialRequests": 2,
+   "initialRounds": 1,
+   "actions": [
+    "getTable:marketplaces",
+    "aiPlanFirstLayer.get"
+   ],
+   "nodes": 127,
+   "listenerDrift": 0,
+   "intervalDrift": 0,
+   "openRequests": 0,
+   "failure": {
+    "errorSurfaces": 1,
+    "falseEmpty": false,
+    "retryControls": 0,
+    "permanentLoading": 0
+   },
+   "failureBefore": {
+    "errorSurfaces": 1,
+    "falseEmpty": false,
+    "retryControls": 0,
+    "permanentLoading": 0
+   }
+  },
+  "shippingplan": {
+   "label": "Weekly Shipping Plan",
+   "initialRequests": 2,
+   "initialRounds": 1,
+   "actions": [
+    "system.health",
+    "weeklyShipping.workspace.get"
+   ],
+   "nodes": 36,
+   "listenerDrift": 0,
+   "intervalDrift": 0,
+   "openRequests": 0,
+   "failure": {
+    "errorSurfaces": 3,
+    "falseEmpty": false,
+    "retryControls": 1,
+    "retryRequests": 1,
+    "recovered": true,
+    "permanentLoading": 0
+   },
+   "failureBefore": {
+    "errorSurfaces": 3,
+    "falseEmpty": false,
+    "retryControls": 1,
+    "permanentLoading": 0
+   }
+  },
+  "shipment-draft": {
+   "label": "Shipment Draft",
+   "initialRequests": 1,
+   "initialRounds": 1,
+   "actions": [
+    "shipment.workspace.get"
+   ],
+   "nodes": 17,
+   "listenerDrift": 0,
+   "intervalDrift": 0,
+   "openRequests": 0,
+   "failure": {
+    "errorSurfaces": 1,
+    "falseEmpty": false,
+    "retryControls": 0,
+    "permanentLoading": 0
+   },
+   "failureBefore": {
+    "errorSurfaces": 1,
+    "falseEmpty": false,
+    "retryControls": 0,
+    "permanentLoading": 0
+   }
+  },
+  "shipment-overview": {
+   "label": "Shipment Overview",
+   "initialRequests": 0,
+   "initialRounds": 0,
+   "actions": [],
+   "nodes": 46,
+   "listenerDrift": 0,
+   "intervalDrift": 0,
+   "openRequests": 0,
+   "failure": "NO_READ_TO_FAIL",
+   "failureBefore": "NO_READ_TO_FAIL"
+  },
+  "global-logistics-map": {
+   "label": "On-the-Way Map",
+   "initialRequests": 1,
+   "initialRounds": 1,
+   "actions": [
+    "shipment.workspace.get"
+   ],
+   "nodes": 62,
+   "listenerDrift": 0,
+   "intervalDrift": 0,
+   "openRequests": 0,
+   "failure": {
+    "errorSurfaces": 3,
+    "falseEmpty": false,
+    "retryControls": 1,
+    "retryRequests": 1,
+    "recovered": true,
+    "permanentLoading": 0
+   },
+   "failureBefore": {
+    "errorSurfaces": 3,
+    "falseEmpty": false,
+    "retryControls": 1,
+    "permanentLoading": 0
+   }
+  },
+  "request-order-draft": {
+   "label": "Request Order Draft",
+   "initialRequests": 1,
+   "initialRounds": 1,
+   "actions": [
+    "requestOrder.workspace.get"
+   ],
+   "nodes": 20,
+   "listenerDrift": 0,
+   "intervalDrift": 0,
+   "openRequests": 0,
+   "failure": {
+    "errorSurfaces": 1,
+    "falseEmpty": false,
+    "retryControls": 0,
+    "permanentLoading": 0
+   },
+   "failureBefore": {
+    "errorSurfaces": 1,
+    "falseEmpty": false,
+    "retryControls": 0,
+    "permanentLoading": 0
+   }
+  },
+  "purchase-order-overview": {
+   "label": "Purchase Order Workspace",
+   "initialRequests": 1,
+   "initialRounds": 1,
+   "actions": [
+    "purchaseOrder.workspace.get"
+   ],
+   "nodes": 17,
+   "listenerDrift": 0,
+   "intervalDrift": 0,
+   "openRequests": 0,
+   "failure": {
+    "errorSurfaces": 1,
+    "falseEmpty": false,
+    "retryControls": 0,
+    "permanentLoading": 0
+   },
+   "failureBefore": {
+    "errorSurfaces": 1,
+    "falseEmpty": false,
+    "retryControls": 0,
+    "permanentLoading": 0
+   }
+  },
+  "purchase-order-list": {
+   "label": "Purchase Order Overview",
+   "initialRequests": 1,
+   "initialRounds": 1,
+   "actions": [
+    "purchaseOrder.workspace.get"
+   ],
+   "nodes": 120,
+   "listenerDrift": 0,
+   "intervalDrift": 0,
+   "openRequests": 0,
+   "failure": {
+    "errorSurfaces": 1,
+    "falseEmpty": false,
+    "retryControls": 0,
+    "permanentLoading": 0
+   },
+   "failureBefore": {
+    "errorSurfaces": 1,
+    "falseEmpty": false,
+    "retryControls": 0,
+    "permanentLoading": 0
+   }
+  },
+  "campaign-risk": {
+   "label": "Promotion Risk Tracker",
+   "initialRequests": 1,
+   "initialRounds": 1,
+   "actions": [
+    "getTable:marketplace_skus"
+   ],
+   "nodes": 73,
+   "listenerDrift": 0,
+   "intervalDrift": 0,
+   "openRequests": 0,
+   "failure": {
+    "errorSurfaces": 1,
+    "falseEmpty": false,
+    "retryControls": 1,
+    "retryRequests": 1,
+    "recovered": true,
+    "permanentLoading": 0
+   },
+   "failureBefore": {
+    "errorSurfaces": 0,
+    "falseEmpty": true,
+    "retryControls": 0,
+    "permanentLoading": 0
+   }
+  },
+  "skuDetails": {
+   "label": "SKU Details",
+   "initialRequests": 1,
+   "initialRounds": 1,
+   "actions": [
+    "skuDetails.workspace.get"
+   ],
+   "nodes": 3863,
+   "listenerDrift": 0,
+   "intervalDrift": 0,
+   "openRequests": 0,
+   "failure": {
+    "errorSurfaces": 5,
+    "falseEmpty": false,
+    "retryControls": 0,
+    "permanentLoading": 0
+   },
+   "failureBefore": {
+    "errorSurfaces": 5,
+    "falseEmpty": false,
+    "retryControls": 0,
+    "permanentLoading": 0
+   }
+  },
+  "sku-regional-details": {
+   "label": "SKU Regional Details",
+   "initialRequests": 1,
+   "initialRounds": 1,
+   "actions": [
+    "skuDetails.workspace.get"
+   ],
+   "nodes": 325,
+   "listenerDrift": 0,
+   "intervalDrift": 0,
+   "openRequests": 0,
+   "failure": {
+    "errorSurfaces": 2,
+    "falseEmpty": false,
+    "retryControls": 1,
+    "retryRequests": 1,
+    "recovered": true,
+    "permanentLoading": 0
+   },
+   "failureBefore": {
+    "errorSurfaces": 2,
+    "falseEmpty": false,
+    "retryControls": 1,
+    "permanentLoading": 0
+   }
+  },
+  "carrier-rate-card": {
+   "label": "Carrier Rate Card",
+   "initialRequests": 2,
+   "initialRounds": 1,
+   "actions": [
+    "getTable:carrier_rate_cards",
+    "getTable:carriers"
+   ],
+   "nodes": 141,
+   "listenerDrift": 0,
+   "intervalDrift": 0,
+   "openRequests": 0,
+   "failure": {
+    "errorSurfaces": 1,
+    "falseEmpty": false,
+    "retryControls": 1,
+    "retryRequests": 2,
+    "recovered": true,
+    "permanentLoading": 0
+   },
+   "failureBefore": {
+    "errorSurfaces": 0,
+    "falseEmpty": true,
+    "retryControls": 0,
+    "permanentLoading": 0
+   }
+  },
+  "sku-handbook": {
+   "label": "SKU Handbook",
+   "initialRequests": 3,
+   "initialRounds": 2,
+   "actions": [
+    "getTable:sku_details",
+    "getTable:product_features",
+    "getTable:sku_handbook_summaries"
+   ],
+   "nodes": 1252,
+   "listenerDrift": 0,
+   "intervalDrift": 0,
+   "openRequests": 0,
+   "failure": {
+    "errorSurfaces": 1,
+    "falseEmpty": false,
+    "retryControls": 1,
+    "retryRequests": 3,
+    "recovered": true,
+    "permanentLoading": 0
+   },
+   "failureBefore": {
+    "errorSurfaces": 0,
+    "falseEmpty": false,
+    "retryControls": 0,
+    "permanentLoading": 0
+   }
+  },
+  "supplychain": {
+   "label": "Supply Chain Canvas",
+   "initialRequests": 0,
+   "initialRounds": 0,
+   "actions": [],
+   "nodes": 76,
+   "listenerDrift": 0,
+   "intervalDrift": 0,
+   "openRequests": 0,
+   "failure": "NO_READ_TO_FAIL",
+   "failureBefore": "NO_READ_TO_FAIL"
+  },
+  "automation": {
+   "label": "Automation Schedule",
+   "initialRequests": 1,
+   "initialRounds": 1,
+   "actions": [
+    "automationSchedule.get"
+   ],
+   "nodes": 8,
+   "listenerDrift": 0,
+   "intervalDrift": 0,
+   "openRequests": 0,
+   "failure": {
+    "errorSurfaces": 1,
+    "falseEmpty": false,
+    "retryControls": 1,
+    "retryRequests": 1,
+    "recovered": true,
+    "permanentLoading": 0
+   },
+   "failureBefore": {
+    "errorSurfaces": 1,
+    "falseEmpty": false,
+    "retryControls": 0,
+    "permanentLoading": 1
+   }
+  },
+  "product-strategy": {
+   "label": "Product Strategy Board",
+   "initialRequests": 1,
+   "initialRounds": 1,
+   "actions": [
+    "productPricing.siteUniverse.get"
+   ],
+   "nodes": 37,
+   "listenerDrift": 0,
+   "intervalDrift": 0,
+   "openRequests": 0,
+   "failure": {
+    "errorSurfaces": 3,
+    "falseEmpty": false,
+    "retryControls": 1,
+    "retryRequests": 1,
+    "recovered": true,
+    "permanentLoading": 0
+   },
+   "failureBefore": {
+    "errorSurfaces": 3,
+    "falseEmpty": false,
+    "retryControls": 1,
+    "permanentLoading": 0
+   }
+  }
+ },
+ "expand": {
+  "skuDetails": {
+   "label": "SKU Details",
+   "rowsPresent": 120,
+   "rowSelector": "#sku-section .fixed-row[data-sku]",
+   "detailBefore": 0,
+   "clickSelector": ".fixed-row[data-sku]",
+   "apiSameTask": 0,
+   "detailSameTask": 0,
+   "settledQuiet": true,
+   "apiAfterFirstExpand": 0,
+   "flags": {
+    "roL2Ready": false,
+    "opMatCacheKey": null,
+    "useDb": true,
+    "hasRefresh": true
+   },
+   "byActionFirstExpand": {},
+   "detailAfterFirstExpand": 0,
+   "openAfterFirstExpand": 0,
+   "apiSameTaskSecond": 0,
+   "apiAfterSecondExpand": 0,
+   "byActionSecondExpand": {},
+   "flagsAfterSecond": {
+    "roL2Ready": false
+   },
+   "apiAfterThirdExpand": 0,
+   "byActionThirdExpand": {}
+  },
+  "sku-regional-details": {
+   "label": "SKU Regional Details",
+   "rowsPresent": 50,
+   "rowSelector": "#srd-list .srd-item",
+   "detailBefore": 5,
+   "clickSelector": ".srd-item",
+   "apiSameTask": 0,
+   "detailSameTask": 4,
+   "settledQuiet": true,
+   "apiAfterFirstExpand": 0,
+   "flags": {
+    "roL2Ready": false,
+    "opMatCacheKey": null,
+    "useDb": true,
+    "hasRefresh": true
+   },
+   "byActionFirstExpand": {},
+   "detailAfterFirstExpand": 4,
+   "openAfterFirstExpand": 0,
+   "apiSameTaskSecond": 0,
+   "apiAfterSecondExpand": 0,
+   "byActionSecondExpand": {},
+   "flagsAfterSecond": {
+    "roL2Ready": false
+   },
+   "apiAfterThirdExpand": 0,
+   "byActionThirdExpand": {}
+  },
+  "ops": {
+   "label": "Site Inventory",
+   "preErrs": [
+    null,
+    null,
+    null
+   ],
+   "apiAfterPre": 5,
+   "preByAction": {
+    "inventoryScope.registry.get": 1,
+    "inventoryReplenishment.workspace.get": 2,
+    "inventoryReplenishmentGap.get": 1,
+    "recommendation.workspace.get": 1
+   },
+   "preDiag": {
+    "country": {
+     "value": "US",
+     "options": 4
+    },
+    "marketplace": {
+     "value": "MK-US-Amazon",
+     "options": 3
+    },
+    "emptyText": null
+   },
+   "rowsPresent": 120,
+   "rowSelector": "#ops-section .fixed-row[data-sku]",
+   "detailBefore": 0,
+   "clickSelector": ".replen-row-chevron",
+   "apiSameTask": 0,
+   "detailSameTask": 2,
+   "settledQuiet": true,
+   "apiAfterFirstExpand": 0,
+   "flags": {
+    "roL2Ready": false,
+    "opMatCacheKey": null,
+    "useDb": true,
+    "hasRefresh": true
+   },
+   "byActionFirstExpand": {},
+   "detailAfterFirstExpand": 2,
+   "openAfterFirstExpand": 0,
+   "apiSameTaskSecond": 0,
+   "apiAfterSecondExpand": 0,
+   "byActionSecondExpand": {},
+   "flagsAfterSecond": {
+    "roL2Ready": false
+   },
+   "apiAfterThirdExpand": 0,
+   "byActionThirdExpand": {}
+  },
+  "request-order": {
+   "label": "Order Planning",
+   "preErrs": [
+    null
+   ],
+   "apiAfterPre": 4,
+   "preByAction": {
+    "getTable:marketplaces": 1,
+    "aiPlanFirstLayer.get": 1,
+    "requestOrderDraft.getActive": 2
+   },
+   "preDiag": {
+    "country": {
+     "value": "US",
+     "options": 4
+    },
+    "marketplace": {
+     "value": "MK-US-Amazon",
+     "options": 3
+    },
+    "emptyText": null
+   },
+   "rowsPresent": 50,
+   "rowSelector": ".ro-fixed-wrapper .fixed-row",
+   "detailBefore": 0,
+   "clickSelector": ".ro-sku-expand-toggle",
+   "apiSameTask": 3,
+   "detailSameTask": 3,
+   "settledQuiet": true,
+   "apiAfterFirstExpand": 8,
+   "flags": {
+    "roL2Ready": true,
+    "opMatCacheKey": "{\"company\":\"ResUS\",\"country\":\"US\",\"marketplace\":\"Amazon\"}",
+    "useDb": true,
+    "hasRefresh": true
+   },
+   "byActionFirstExpand": {
+    "getTable:fc_regular_forecast": 1,
+    "getTable:fc_special_events": 1,
+    "orderPlanningGap.get": 1,
+    "getTable:fc_target_rules": 1,
+    "getTable:factory_stock": 1,
+    "getTable:warehouses": 1,
+    "getTable:purchase_orders": 1,
+    "getTable:purchase_order_lines": 1
+   },
+   "detailAfterFirstExpand": 3,
+   "openAfterFirstExpand": 0,
+   "apiSameTaskSecond": 0,
+   "apiAfterSecondExpand": 0,
+   "byActionSecondExpand": {},
+   "flagsAfterSecond": {
+    "roL2Ready": true
+   },
+   "apiAfterThirdExpand": 1,
+   "byActionThirdExpand": {
+    "orderPlanningGap.get": 1
+   }
+  },
+  "request-order-draft": {
+   "label": "Request Order Draft",
+   "rowsPresent": 0,
+   "rowSelector": null,
+   "skipped": "no rows in this world"
+  },
+  "factory-stock": {
+   "label": "Factory Inventory",
+   "rowsPresent": 40,
+   "rowSelector": ".fixed-row",
+   "detailBefore": 0,
+   "clickSelector": "[class*=toggle]",
+   "apiSameTask": 0,
+   "detailSameTask": 0,
+   "settledQuiet": true,
+   "apiAfterFirstExpand": 0,
+   "flags": {
+    "roL2Ready": true,
+    "opMatCacheKey": "{\"company\":\"ResUS\",\"country\":\"US\",\"marketplace\":\"Walmart\"}",
+    "useDb": true,
+    "hasRefresh": true
+   },
+   "byActionFirstExpand": {},
+   "detailAfterFirstExpand": 0,
+   "openAfterFirstExpand": 0,
+   "apiSameTaskSecond": 0,
+   "apiAfterSecondExpand": 0,
+   "byActionSecondExpand": {},
+   "flagsAfterSecond": {
+    "roL2Ready": true
+   },
+   "apiAfterThirdExpand": 0,
+   "byActionThirdExpand": {}
+  }
+ },
+ "driftBefore": {
+  "request-order": {
+   "listenerDrift": 4,
+   "byType": {
+    "click": 3,
+    "scroll": 1
+   }
+  },
+  "sku-handbook": {
+   "listenerDrift": 1,
+   "byType": {
+    "input": 1
+   }
+  }
+ },
+ "driftAfter": {
+  "ops": 0,
+  "factory-stock": 0,
+  "overseas-stock": 0,
+  "forecast": 0,
+  "fc-summary": 0,
+  "request-order": 0,
+  "shippingplan": 0,
+  "shipment-draft": 0,
+  "shipment-overview": 0,
+  "global-logistics-map": 0,
+  "request-order-draft": 0,
+  "purchase-order-overview": 0,
+  "purchase-order-list": 0,
+  "campaign-risk": 0,
+  "skuDetails": 0,
+  "sku-regional-details": 0,
+  "carrier-rate-card": 0,
+  "sku-handbook": 0,
+  "supplychain": 0,
+  "automation": 0,
+  "product-strategy": 0
+ },
+ "totals": {
+  "falseEmptyBefore": 2,
+  "falseEmptyAfter": 0,
+  "permanentLoadingBefore": 1,
+  "permanentLoadingAfter": 0,
+  "driftRoutesBefore": 2,
+  "driftRoutesAfter": 0,
+  "noRetryControlAfter": [
+   "request-order",
+   "shipment-draft",
+   "request-order-draft",
+   "purchase-order-overview",
+   "purchase-order-list",
+   "skuDetails"
+  ],
+  "pagesWith4PlusInitialRequests": 0,
+  "pagesWith3PlusInitialRounds": 0,
+  "silentFailureBefore": [
+   "campaign-risk",
+   "carrier-rate-card",
+   "sku-handbook"
+  ],
+  "silentFailureAfter": [],
+  "zeroReadWarmReentry": [
+   "ops",
+   "factory-stock",
+   "overseas-stock",
+   "forecast",
+   "fc-summary",
+   "shipment-draft",
+   "shipment-overview",
+   "global-logistics-map",
+   "campaign-risk",
+   "sku-regional-details",
+   "carrier-rate-card",
+   "sku-handbook",
+   "supplychain"
+  ],
+  "warmRefetchRoutes": {
+   "request-order": 3,
+   "shippingplan": 1,
+   "request-order-draft": 1,
+   "purchase-order-overview": 1,
+   "purchase-order-list": 1,
+   "skuDetails": 1,
+   "product-strategy": 1,
+   "automation": 1
+  }
+ },
+ "windowErrors": {
+  "drift": 0,
+  "states": 0,
+  "expand": 0
+ },
+ "unhandled": {
+  "drift": 0,
+  "states": 0,
+  "expand": 0
+ }
+}

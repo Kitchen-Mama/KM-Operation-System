@@ -64,7 +64,29 @@ ok(M.boot.post.localScripts < M.boot.pre.localScripts, 'A1b and fewer script tag
    adds a script and forgets the document. */
 const live = RUN.bootSurface();
 eq(live.localCount, M.boot.post.localScripts, 'A1c the recorded count matches index.html as it stands');
-eq(live.bytes, M.boot.post.bytes, 'A1d and so do the recorded bytes');
+/* S4-R6 — THIS WAS `eq(live.bytes, M.boot.post.bytes)`, AND IT FAILED THE FIRST TIME ANYBODY FIXED A BUG.
+
+   The intent was right: a recorded census nobody recomputes drifts the moment someone adds a script and
+   forgets the document. But an EXACT byte total is not that claim — it also asserts that no file at boot
+   may ever change size again, for any reason. S4-R6 repaired five page modules and grew the total by
+   15 121 bytes, which broke this rule while leaving S4-R5's achievement completely intact.
+
+   So the drift check keeps the part that can only move for the reason this round cares about — WHICH
+   FILES are at boot, compared as a set — and the byte claim becomes the removal itself: the total is
+   still more than 1.5 MB below where this round found it. A script that crept back would change the set
+   and blow the ceiling; a bug fix changes neither. */
+const liveFiles = live.local.map(function (x) { return x.file; }).sort();
+const recordedFiles = M.boot.post.local
+  ? M.boot.post.local.map(function (x) { return x.file; }).sort()
+  : null;
+if (recordedFiles) {
+  eq(liveFiles, recordedFiles, 'A1d the boot script SET is the one this round recorded');
+} else {
+  eq(live.localCount, M.boot.post.localScripts, 'A1d the boot script count is the one this round recorded');
+}
+ok(live.bytes <= M.boot.pre.bytes - 1500 * 1024,
+  'A1d1 and the boot payload is still at least 1.5 MB below where this round found it',
+  { pre: M.boot.pre.bytes, now: live.bytes, removed: M.boot.pre.bytes - live.bytes });
 ok(M.boot.percentReducedFromS4R1 > 30,
   'A1e PERCENT_BOOT_BYTES_REDUCED_FROM_S4_R1_BASELINE', M.boot.percentReducedFromS4R1 + '%');
 
@@ -202,7 +224,18 @@ eq(X.unhandled, 0, 'E3b with no unhandled rejection');
    ================================================================================================== */
 section('F. TOKENS — three families, none collapsed');
 
-eq(RO.currentAppToken(), 's4r5-routepayload-20260927', 'F1  the application token for this round');
+/* S4-R6 — THIS ASSERTED A LITERAL AND THEREFORE ASSERTED THAT NO LATER ROUND MAY ROTATE.
+   currentAppToken() is the LAST entry in the series, so `=== 's4r5-...'` held for exactly as long as
+   S4-R5 was the most recent round and then began failing for the one reason it should not: the next
+   round doing its job. The claim worth keeping is that THIS round's token is a real member of the
+   application series and that the series has only ever grown past it — never been rewritten under it,
+   which is what would silently re-serve these bytes to a browser that already has them. */
+const R5_TOKEN = 's4r5-routepayload-20260927';
+ok(RO.ROUND_TOKENS.indexOf(R5_TOKEN) !== -1, 'F1  this round\u0027s token is in the application series');
+ok(RO.ROUND_TOKENS.indexOf(R5_TOKEN) === RO.ROUND_TOKENS.lastIndexOf(R5_TOKEN),
+  'F1a and it appears exactly once');
+ok(RO.ROUND_TOKENS.indexOf(RO.currentAppToken()) >= RO.ROUND_TOKENS.indexOf(R5_TOKEN),
+  'F1b and the current token is this one or a later one');
 eq(RO.staleAppTokenRefs(INDEX), [], 'F2  STALE_APPLICATION_TOKEN_REFS = 0 in index.html');
 eq(RO.staleRouteAssetTokenRefs(APP), [], 'F2a and 0 among the route-owned assets');
 eq(RO.misplacedReleaseTokens(INDEX, APP), [], 'F3  MISPLACED_TOKEN_FAMILY_REFS = 0 across the release');

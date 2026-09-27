@@ -844,7 +844,21 @@ var ROUND_TOKENS = [
   // bytes have been served. inventory-replenishment.js changed (its shared demo fixture moved out) and
   // it is now fetched by the router rather than by index.html, which is exactly the case where a
   // returning browser holding the old copy would never be told to ask again.
-  's4r5-routepayload-20260927'];
+  's4r5-routepayload-20260927',
+  // S4-R6 — the system-wide conformance pass. S4-R5 is on origin/main (75bdff0 was pushed), so by the
+  // rule recorded above its token has been published and cannot be reused.
+  //
+  // SEVEN SHIPPED FILES MOVE TOGETHER and they are not independent of one another. Four of them changed
+  // how a FAILURE is rendered — carrier-rate-card.js, campaign-risk.js, sku-handbook.js and
+  // automation-schedule.js — and two of those need a stylesheet that did not exist before
+  // (.crc-note--error, .auto-sched-error). A browser holding the new script and the old stylesheet would
+  // paint the refusal with no rule matching it, which is the unstyled-refusal defect this project has
+  // already shipped once; holding the old script and the new stylesheet would ship a rule nothing uses
+  // and keep the silent failure. request-order.js changed how it de-duplicates a second-layer read.
+  //
+  // automation-schedule.js and automation-schedule.css were still on donenotice-20260811 and join the
+  // current token here, because both of them changed.
+  's4r6-conformance-20260927'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

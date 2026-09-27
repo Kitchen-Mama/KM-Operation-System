@@ -530,10 +530,26 @@ function renderRiskTable() {
             return;
         }
     }
-    // STATE 1 — no site scope selected yet (guided empty state; no SKU query is run).
-    if (!crScopeReady()) { msg('Select a country and marketplace to view promotion risk.'); return; }
+    /* S4-R6 §7 — STATE 4 MOVED AHEAD OF STATE 1, AND THAT ORDER IS THE WHOLE DEFECT.
+
+       The error state existed, the loader set it, and the branch below rendered it with a Retry. It
+       was simply never reached on a COLD failure. `crScopeReady()` is false until a country and a
+       marketplace are chosen, and on a cold load the country selector is populated FROM the read that
+       just failed — so the scope can never be ready, STATE 1 wins every time, and the page says
+       "Select a country and marketplace to view promotion risk."
+
+       That sentence is indistinguishable from a healthy first visit. Measured on a refused cold load:
+       zero error surfaces, zero Retry controls, an empty-state region, and three neutral zero KPIs —
+       a page that invites an action the failure has made impossible, because the dropdown it is asking
+       the operator to use is empty for the same reason the table is.
+
+       S4-R4 made exactly this argument for the DEFERRED scope read and put STATE 0 ahead of the scope
+       check. The critical read needed the same move and did not get it. A refused read is not a
+       not-yet-chosen scope, and it must not be allowed to look like one. */
     // STATE 4 — API/load error (set by the loader). Show error + Retry, never treat as empty data.
     if (_crViewState === 'error') { msg('Could not load promotion data. <button type="button" class="cr-btn cr-btn--small" onclick="crReload()">Retry</button>', 'cr-empty-state--error'); return; }
+    // STATE 1 — no site scope selected yet (guided empty state; no SKU query is run).
+    if (!crScopeReady()) { msg('Select a country and marketplace to view promotion risk.'); return; }
 
     const master = getSkuMasterData();
     // STATE 2 — the site has no active marketplace SKUs.

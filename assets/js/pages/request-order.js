@@ -49,10 +49,31 @@ function _roUseDb() {
 // fact stays BEFORE==AFTER. Once per page load (guard); force=true re-reads after a second-layer FC/Target write.
 var _RO_L2_TABLES = ['fc_regular_forecast', 'fc_special_events', 'fc_target_rules', 'factory_stock', 'warehouses', 'purchase_orders', 'purchase_order_lines'];
 var _roL2Ready = false;
+// S4-R6 §14 - ONE SECOND-LAYER LOAD, HOWEVER MANY ROWS ARE EXPANDED WHILE IT IS IN FLIGHT.
+//
+// `_roL2Ready` is only set when the read RESOLVES, and there was nothing to consult in between. So
+// every expand that happened inside the load window passed the guard and started the whole set
+// again: measured at seven duplicate getTable requests for a second expand two seconds after the
+// first, on a page whose second-layer tables were already on their way.
+//
+// The fix is the in-flight promise itself, which is the same shape the scoped transport uses for a
+// shared open read and the same shape core/deferred-read.js uses for its LOADING state: the first
+// caller starts the work and every caller that arrives before it settles gets the SAME promise.
+// Cleared on settle, so a later expand after a FAILED load can still retry - which is the one thing
+// a plain "already started" boolean would have taken away.
+//
+// This changes no read, no table, no order and no rendered state. It removes duplicates only.
+var _roL2Flight = null;
 function _roEnsureL2Tables(force) {
   if (!_roUseDb() || !(window.KM && window.KM.DB && typeof window.KM.DB.refreshCacheTables === 'function')) return Promise.resolve();
   if (_roL2Ready && !force) return Promise.resolve();
-  return window.KM.DB.refreshCacheTables(_RO_L2_TABLES).then(function () { _roL2Ready = true; }).catch(function () {});
+  if (_roL2Flight && !force) return _roL2Flight;
+  var flight = window.KM.DB.refreshCacheTables(_RO_L2_TABLES)
+    .then(function () { _roL2Ready = true; })
+    .catch(function () {});
+  _roL2Flight = flight;
+  flight.then(function () { if (_roL2Flight === flight) _roL2Flight = null; });
+  return flight;
 }
 
 // Small helpers.
@@ -765,8 +786,19 @@ function initRequestOrderDropdowns() {
     });
   });
   
-  // Prevent panel from closing when clicking inside
+  // Prevent panel from closing when clicking inside.
+  //
+  // S4-R6 §7 - BOUND ONCE PER PANEL. The triggers above are cloned-and-replaced, which drops their
+  // old listeners with the old nodes; the PANELS are not, so every call to this function added one
+  // more click handler to each of the three surviving panel elements. `_roRenderAll` calls it on
+  // every mount AND on every filter change, so the count grew with use rather than with navigation:
+  // measured at +3 live listeners per re-entry against a page that should add none.
+  //
+  // The flag lives on the element, so it is dropped with the element if the markup is ever replaced
+  // - the same idiom `_roBindRowExpandDelegation` already uses for the two body containers.
   root.querySelectorAll('.ro-dropdown-panel').forEach(panel => {
+    if (panel._roPanelClickBound) return;
+    panel._roPanelClickBound = true;
     panel.addEventListener('click', (e) => {
       e.stopPropagation();
     });
@@ -3316,8 +3348,14 @@ function syncRequestOrderScroll() {
   const scrollHeader = document.getElementById('ro-scroll-header');
   
   if (!scrollCol || !scrollHeader) return;
-  
-  // Sync horizontal scroll between header and body
+
+  // Sync horizontal scroll between header and body.
+  //
+  // S4-R6 §7 - BOUND ONCE. `#ro-scroll-col` outlives every re-render, and this is called from
+  // `_roRenderAll`, so each render added another scroll handler to the same element - all of them
+  // live, all of them doing the identical transform on every scroll event.
+  if (scrollCol._roScrollSyncBound) return;
+  scrollCol._roScrollSyncBound = true;
   scrollCol.addEventListener('scroll', function() {
     scrollHeader.style.transform = `translateX(-${this.scrollLeft}px)`;
   });

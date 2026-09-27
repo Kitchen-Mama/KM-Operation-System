@@ -135,7 +135,11 @@
     var host = el('auto-sched-cards');
     if (!host) return;
     var jobs = (view && view.jobs) || [];
-    host.innerHTML = renderGroupsHtml(jobs) || '<div class="auto-sched-loading">No automations configured.</div>';
+    // S4-R6 §7 — a PROVEN empty list, told apart from a failed read by its own state. The grouped
+    // render stays ONE statement: F1-6B-R2 rule H reads this line to prove the flat jobs.map list is
+    // gone, and there is no reason for a state repair to cost that rule its anchor.
+    host.innerHTML = renderGroupsHtml(jobs);
+    if (!host.innerHTML) _autoSchedState('EMPTY', 'No automations configured.');
 
     // Seed the hour/minute/day selects (option lists are static; set the current value per card).
     jobs.forEach(function (job) {
@@ -233,22 +237,68 @@
     }
   }
 
-  function loadAndRender() {
+  // S4-R6 §7 — FOUR STATES WERE WEARING ONE CLASS.
+  //
+  // `auto-sched-loading` was the presentation for LOADING, for "API unavailable", for a failed read and
+  // for "No automations configured." Four different things a user needs to tell apart, rendered as the
+  // same grey box — and nothing in the DOM distinguished them either, so a probe reading the page could
+  // not say whether it was still loading or had given up. That is how this page registered as permanently
+  // loading: the failure message is styled, and named, as a loading message.
+  //
+  // Each state now carries its own class and a `data-state`, and the failure carries `role="alert"` plus
+  // the reason and a Retry. Nothing about the schedule data, the cadence or the write path changes.
+  function _autoSchedState(state, html, extra) {
     var host = el('auto-sched-cards');
-    if (host) host.innerHTML = '<div class="auto-sched-loading">Loading automation schedules…</div>';
+    if (!host) return;
+    var cls = { LOADING: 'auto-sched-loading', EMPTY: 'auto-sched-empty',
+      FAILED: 'auto-sched-error', UNAVAILABLE: 'auto-sched-error' }[state] || 'auto-sched-loading';
+    host.innerHTML = '<div class="' + cls + '" data-state="' + state + '"' +
+      ((state === 'FAILED' || state === 'UNAVAILABLE') ? ' role="alert"' : '') + '>' +
+      html + (extra || '') + '</div>';
+  }
+  function _autoSchedEsc(v) {
+    return String(v == null ? '' : v)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  function _autoSchedReason(err, res) {
+    try {
+      if (err && window.KM && window.KM.transport && typeof window.KM.transport.errorLine === 'function') {
+        return window.KM.transport.errorLine(err);
+      }
+    } catch (e) {}
+    if (err) return String((err && err.message) || err);
+    var e2 = res && res.error;
+    if (!e2) return 'The server did not say why.';
+    return String(e2.message || e2.code || e2);
+  }
+  // ONE new read per press; the button is replaced by the LOADING state before the read is issued, so a
+  // second press cannot stack a second request.
+  function autoSchedRetry() { loadAndRender(); }
+  window.autoSchedRetry = autoSchedRetry;
+
+  function loadAndRender() {
+    _autoSchedState('LOADING', 'Loading automation schedules\u2026');
     if (!(window.KM && window.KM.DB && typeof window.KM.DB.getAutomationSchedule === 'function')) {
-      if (host) host.innerHTML = '<div class="auto-sched-loading">Automation API is unavailable.</div>';
+      _autoSchedState('UNAVAILABLE', '<strong>The automation API is not available on this page.</strong>' +
+        '<br>Nothing is shown in place of the schedules that were not read.');
       return;
     }
     Promise.resolve(window.KM.DB.getAutomationSchedule()).then(function (res) {
       if (res && res.success && res.data) { render(res.data); }
       else {
         try { console.warn('[AutomationSchedule] load failed', res && res.error); } catch (e) {}
-        if (host) host.innerHTML = '<div class="auto-sched-loading">Could not load automation schedules.</div>';
+        _autoSchedState('FAILED', '<strong>Could not load automation schedules.</strong><br>' +
+          _autoSchedEsc(_autoSchedReason(null, res)) +
+          '<br>This is a read failure, not a proven-empty schedule list. ',
+          '<button type="button" class="btn btn-secondary" onclick="autoSchedRetry()" style="margin-top:8px;">Retry</button>');
       }
     }).catch(function (err) {
       try { console.warn('[AutomationSchedule] load error', err); } catch (e) {}
-      if (host) host.innerHTML = '<div class="auto-sched-loading">Could not load automation schedules.</div>';
+      _autoSchedState('FAILED', '<strong>Could not load automation schedules.</strong><br>' +
+        _autoSchedEsc(_autoSchedReason(err, null)) +
+        '<br>This is a read failure, not a proven-empty schedule list. ',
+        '<button type="button" class="btn btn-secondary" onclick="autoSchedRetry()" style="margin-top:8px;">Retry</button>');
     });
   }
 

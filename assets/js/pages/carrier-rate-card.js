@@ -73,7 +73,12 @@
     }
     function _crcAfterWrite(cb) {
         if (!_crcScopedActive()) { if (cb) cb(); return; }
-        window.KM.DB.loadScopedTables(_CRC_TABLES).then(function (m) { _crcReadModel = m; if (cb) cb(); }).catch(function () { if (cb) cb(); });
+        // S4-R6 §7 - a refresh that fails must not be read as "the write produced nothing". The last-good
+        // model is KEPT (never nulled) and the note says the view may be behind; the callback still runs so
+        // the write's own outcome reporting is untouched.
+        window.KM.DB.loadScopedTables(_CRC_TABLES)
+            .then(function (m) { _crcReadModel = m; _crcPrimaryError = null; if (cb) cb(); _crcRenderPrimaryError(); })
+            .catch(function (err) { _crcPrimaryError = err || { message: 'refresh failed' }; if (cb) cb(); _crcRenderPrimaryError(); });
     }
 
     // ---- data accessors (read-model-first) ----
@@ -350,6 +355,49 @@
         return true;
     }
 
+    // S4-R6 §7 - the primary read's failure, held so the surface below can name it. Null means "no
+    // failure outstanding"; it is cleared on every success, so a recovered page carries nothing.
+    var _crcPrimaryError = null;
+
+    function _crcErrLine(err) {
+        try {
+            if (window.KM && window.KM.transport && typeof window.KM.transport.errorLine === 'function') {
+                return window.KM.transport.errorLine(err);
+            }
+        } catch (e) {}
+        return String((err && err.message) || 'read failed') + ' [' + String((err && err.code) || 'READ_FAILED') + ']';
+    }
+
+    // THE NOTE, NOT THE TABLE. The table area already says "set filters and click Search", which is true
+    // and stays true; overwriting it would replace one accurate message with another and lose the first.
+    // What was missing is the reason the filters have nothing in them, and that belongs in the mode note.
+    function _crcRenderPrimaryError() {
+        var note = document.getElementById('crc-mode-note');
+        if (!note) return;
+        if (!_crcPrimaryError) { note.innerHTML = ''; return; }
+        note.innerHTML = '<span class="crc-note--error" role="alert">' +
+            '<strong>Could not load carrier rate cards.</strong> ' +
+            _crcEsc(_crcErrLine(_crcPrimaryError)) +
+            ' The filters below are empty because nothing was read, not because there is nothing to show. ' +
+            '<button type="button" class="crcf-link" onclick="crcRetryPrimary()">Retry</button></span>';
+    }
+    function _crcEsc(v) {
+        return String(v == null ? '' : v)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    // ONE new read per press, the same contract crcRetryLeadTimes states for the deferred one.
+    function crcRetryPrimary() {
+        if (!_crcScopedActive()) return;
+        var note = document.getElementById('crc-mode-note');
+        if (note) note.innerHTML = '<span class="crc-secondary-loading">Loading carrier rate cards\u2026</span>';
+        window.KM.DB.loadScopedTables(_CRC_TABLES)
+            .then(function (m) { _crcReadModel = m; _crcPrimaryError = null; _crcInit(); _crcRenderPrimaryError(); })
+            .catch(function (err) { _crcPrimaryError = err || { message: 'read failed' }; _crcInit(); _crcRenderPrimaryError(); });
+    }
+    window.crcRetryPrimary = crcRetryPrimary;
+
     // ---- load + init ----
     function loadAndInit() {
         var note = document.getElementById('crc-mode-note');
@@ -364,9 +412,23 @@
 
         // F1-7J-A3: canonical → bounded scoped read (carrier_rate_cards + carriers + carrier_lead_times); Legacy
         // kill-switch → broad loadOperationDb. Fail-closed: on scoped-read failure init WITHOUT a broad fallback.
+        //
+        // S4-R6 §7 - THE FAILURE USED TO BE `.catch(function () { _crcInit(); })`, WHICH IS INDISTINGUISHABLE
+        // FROM SUCCESS. Fail-closed was right and it was only half the job: with no read model, _crcGet falls
+        // back to the broad getters, those are empty on a cold page, and _crcInit then draws the page it would
+        // have drawn for a carrier list that is genuinely empty - "No options" in every filter and a blank
+        // table. Measured on a refused cold load: zero error surfaces, zero Retry controls, five empty-state
+        // regions. The operator is told nothing and given nothing to press.
+        //
+        // The page already owns both halves of the answer: `#crc-mode-note` is where it says why it cannot
+        // show data, and crcRetryLeadTimes is the shape of a one-request Retry. This is the same pair for the
+        // PRIMARY read. _crcInit still runs, so the toolbar, the filters and Import stay usable - a failed
+        // rate-card read does not make the Export buttons wrong.
         if (_crcScopedActive()) {
             if (_crcReadModel) { _crcInit(); return; }
-            window.KM.DB.loadScopedTables(_CRC_TABLES).then(function (m) { _crcReadModel = m; _crcInit(); }).catch(function () { _crcInit(); });
+            window.KM.DB.loadScopedTables(_CRC_TABLES)
+                .then(function (m) { _crcReadModel = m; _crcPrimaryError = null; _crcInit(); })
+                .catch(function (err) { _crcPrimaryError = err || { message: 'read failed' }; _crcInit(); _crcRenderPrimaryError(); });
         } else if (!window._opDbCache && window.KM.DB.loadOperationDb) {
             window.KM.DB.loadOperationDb({ force: true }).then(_crcInit).catch(_crcInit);
         } else {

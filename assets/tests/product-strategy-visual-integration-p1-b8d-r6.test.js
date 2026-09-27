@@ -272,6 +272,16 @@ var PAGE_CSS_CHANGED_BY_LATER_ROUNDS = {
     'notice above the table. An unstyled refusal is a refusal nobody sees, which reads as empty - ' +
     'the outcome the round counts as a defect. Nothing here is scoped to .psb-page and no Product ' +
     'Strategy selector was added, moved or removed.',
+  'assets/css/pages/automation-schedule.css':
+    'S4-R6 - the three states an Automation Schedule read can be in. LOADING, a failed read, an ' +
+    'unavailable API and a PROVEN-empty schedule list all shared the single class ' +
+    '.auto-sched-loading, so four different things a user has to tell apart rendered as the same ' +
+    'grey line - and a probe reading the page could not say whether it was still loading or had ' +
+    'given up. Rules APPENDED only, both scoped to #automation-schedule-section exactly as the ' +
+    'existing rule is; nothing existing was edited. .auto-sched-error and .auto-sched-empty. An ' +
+    'unstyled refusal is a refusal nobody sees, which reads as empty - the outcome the round ' +
+    'counts as a defect. Nothing here is scoped to .psb-page and no Product Strategy selector was ' +
+    'added, moved or removed.',
   'assets/css/pages/fc-overview.css':
     'FC-SUMMARY-R2B-A2-R3 - the FC Summary column width rules. They were scoped to ' +
     '#fc-summary-section rather than to a table, so the Regular tab 20-column plan (including a ' +

@@ -310,6 +310,83 @@ function probeScript(serverMs) {
     '          marketplaces_by_country: _mbc } };',
     '    } else if (action === "productPricing.workspace.get") {',
     '      d = { pricingList: pricingList, marketplaceSkus: marketplaceSkus, skuDetails: skuDetails };',
+    /* S4-R6 §6 - THE TWO ORDER PLANNING READS.
+
+       S4-R1 recorded Order Planning with `useful: 0` and every later round inherited it, because this
+       world answered its two reads with `{}`. That is not a small gap: Order Planning is one of the two
+       pages the operator UX rule names by name, and the rule is about what EXPANDING A ROW costs. A page
+       with no rows cannot be asked.
+
+       Both branches are ADDITIVE - both actions previously fell through to the empty default, so no
+       suite that ran before this can see a different byte.
+
+       The row fields are the ones renderRequestOrderTable actually reads, and company/country/
+       marketplace/sku are all non-empty because _opRecoScopeFor returns null without them and a null
+       scope would make the expand read look absent when it is merely unresolved. TWO COMPANIES over the
+       same country+marketplace, deliberately: the materialized gap cache is keyed by company+country+
+       marketplace, so a world with one scope could not tell "one read per page" from "one read per
+       scope", which is the whole question. */
+    /* S4-R6 §6 - THE TWO SITE INVENTORY READS.
+
+       Site Inventory is the OTHER page the operator UX rule names, and it was unaskable here for the
+       same reason Order Planning was: the scope registry answered `{}`, so no marketplace could be
+       selected, so the workspace read never fired and the table had no rows.
+
+       The workspace answer carries only the tables this world genuinely has. That is deliberate and it
+       is safe: _getCloudReplenishmentData builds its row set from marketplace_skus filtered to the
+       selected scope, and every other source table is documented to fall back to 0 / "--" when absent
+       rather than to fabricate. So the ROW COUNT is real and the CELL VALUES are mostly placeholders -
+       which is exactly the right trade for a round that is counting requests per expand, and would be
+       the wrong trade for a round making a claim about displayed quantities. Nothing here should be
+       reused to assert a number a cell shows.
+
+       The marketplace_skus rows carry no marketplace_id, so the scope match falls through to the
+       company+country+marketplace comparison - the same legacy path a real pre-identity row takes. */
+    '    } else if (action === "inventoryScope.registry.get") {',
+    '      d = { marketplaces: TABLES.marketplaces };',
+    '    } else if (action === "inventoryReplenishment.workspace.get") {',
+    '      d = { marketplaces: TABLES.marketplaces, marketplace_skus: _ms, sku_details: _sd,',
+    '        warehouses: TABLES.warehouses, factory_stock: TABLES.factory_stock,',
+    '        fc_regular_forecast: fcRegular, fc_special_events: fcEvents, fc_target_rules: [],',
+    '        amazon_inventory_snapshot: [], amazon_inventory_health_snapshot: [],',
+    '        amazon_daily_sales_snapshot: [], amazon_weekly_sales_snapshot: [],',
+    '        overseas_inventory_snapshot: [], shipments: [], shipment_lines: [],',
+    '        shipping_plans: [], shipping_plan_lines: [],',
+    '        shipping_allocation_drafts: [], shipping_allocation_draft_lines: [],',
+    '        carrier_lead_times: [], carrier_rate_cards: [],',
+    '        counts: { marketplace_skus: _ms.length } };',
+    '    } else if (action === "aiPlanFirstLayer.get") {',
+    '      var _opRows = [];',
+    '      ["ResUS", "KM"].forEach(function (co) {',
+    '        W.countries.forEach(function (cy) {',
+    '          W.marketplaces.forEach(function (mk) {',
+    '            skuDetails.slice(0, 5).forEach(function (sd, i) {',
+    '              _opRows.push({ company: co, country: cy, marketplace: mk, sku: sd.sku,',
+    '                siteSku: sd.sku + "-" + cy, category: sd.category, series: sd.series,',
+    '                risk: (i % 3 === 0) ? "HIGH" : "LOW",',
+    '                basicFcT3: 300 + i * 10, specialEventsFc: (i % 2) ? 120 : 0,',
+    '                siteStock: 400 + i * 5, thirdPartyStock: 40 + i, factoryStock: 900 - i * 7,',
+    '                totalOngoingOrders: 60 + i, remaining: 2 + i, leadTime: 30,',
+    '                shortageM1: -(50 + i * 3), shortageM2: -(20 + i), shortageM3: 0,',
+    '                boxSize: 12, _dbPlaceholder: false });',
+    '            });',
+    '          });',
+    '        });',
+    '      });',
+    '      d = { rows: _opRows, windowMonths: ["2026-09", "2026-10", "2026-11"] };',
+    /* The SECOND-LEVEL read the expand fires. One row per SKU of the requested scope - which is what
+       makes the per-scope cache observable: the first expand in a scope pays one request and every
+       later expand in that scope must pay none. */
+    '    } else if (action === "orderPlanningGap.get") {',
+    '      var _gScope = {};',
+    '      try { _gScope = JSON.parse(decodeURIComponent((/[?&]payload=([^&]+)/.exec(url) || [])[1] || "{}")).scope || {}; } catch (e) { _gScope = {}; }',
+    '      d = { rows: skuDetails.slice(0, 5).map(function (sd, i) {',
+    '        return { sku: sd.sku, calculation_month: "2026-09", calculation_status: "READY",',
+    '          t1_month: "2026-09", t1_gap_qty: 50 + i, t1_suggested_qty: 60 + i,',
+    '          t2_month: "2026-10", t2_gap_qty: 20 + i, t2_suggested_qty: 24 + i,',
+    '          t3_month: "2026-11", t3_gap_qty: 0,      t3_suggested_qty: 0,',
+    '          t4_month: "2026-12", t4_gap_qty: 0,      t4_suggested_qty: 0 };',
+    '      }), scope: _gScope };',
     '    } else if (action === "system.health") {',
     /* S4-R3 §6 — A HEALTH ANSWER A REAL DEPLOYMENT COULD HAVE GIVEN.
        The previous stub carried two fields, so checkDeploymentContract found no caller_probe and

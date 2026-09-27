@@ -20,6 +20,14 @@
 
 #carrier-rate-card-section .crc-note { margin: 4px 0 10px; font-size: 13px; }
 #carrier-rate-card-section .crc-note--demo { color: #92400E; background: #FEF3C7; border: 1px solid #FDE68A; border-radius: 6px; padding: 8px 10px; display: inline-block; }
+/* S4-R6 §7 — the primary read's refusal. Red rather than amber, because the demo note above is a
+   CONFIGURATION state the operator chose and this is a failure they did not. */
+#carrier-rate-card-section .crc-note--error {
+  color: #B91C1C; background: #FEF2F2; border: 1px solid #FCA5A5; border-radius: 6px;
+  padding: 8px 10px; display: inline-block; line-height: 1.6;
+  white-space: normal; overflow-wrap: break-word; word-break: break-word;
+}
+#carrier-rate-card-section .crc-note--error .crcf-link { margin-left: 6px; }
 
 /* Filters */
 #carrier-rate-card-section .crc-filters {
