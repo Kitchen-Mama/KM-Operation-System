@@ -54,7 +54,13 @@ var G03 = read('assets/specs/active/apps-script/03_master_data_handlers.gs');
 var G60 = read('assets/specs/active/apps-script/60_api_v1_inventory_replenishment_workspace.gs');
 var G63 = read('assets/specs/active/apps-script/63_api_v1_system_health.gs');
 var G16 = read('assets/specs/active/apps-script/16_shipping_allocation_handlers.gs');
-var INDEX = read('index.html');
+/* S4-R5 - THE RELEASE, not index.html alone. Two rounds moved sixteen scripts into
+   KM_ROUTE_ASSETS_ in app.js, where the router fetches them on first entry to their route, so the
+   cache-identity and load-order questions below stopped being answerable from index.html. This is
+   index.html plus those declarations rendered as the script tags they are equivalent to, appended
+   in the order they run. Where an assertion below says "index.html", it means the release - which
+   is the claim it was always making. */
+var INDEX = require('./_release-order.js').releaseScriptView(read('index.html'));
 var PAGEC = code(PAGE), DBAPIC = code(DBAPI), G03C = code(G03), G60C = code(G60);
 var RO = require(path.join(ROOT, 'assets/tests/_release-order.js'));
 
@@ -181,7 +187,7 @@ var TOKEN = RO.currentAppToken();
 // pattern survives being named. What A0 established is a FLOOR: A0 minted its own token rather than reusing
 // B6-R1's, and no later round may sit behind that point in the release order.
 ok(RO.tokenAtOrAfter(TOKEN, 'fb4ga0-livehydration-20260902'), 'A1  A0 minted its own app token, and the release order has not moved behind it');
-var idxTokens = RO.parseIndexTokens ? RO.parseIndexTokens(INDEX) : null;
+var idxTokens = RO.parseIndexTokens ? RO.parseReleaseTokens(INDEX) : null;
 function refToken(file) {
   var m = new RegExp(file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\?v=([A-Za-z0-9._-]+)').exec(INDEX);
   return m ? m[1] : '';

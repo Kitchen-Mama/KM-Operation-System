@@ -189,7 +189,13 @@ ok(/failSafeDefaults: \{[^}]*inventoryAiPlanDbGenerationEnabled: false/.test(fs.
 section('H. Unified release authority (R6E1A cumulative changed assets on one token)');
 var NS = fs.readFileSync(path.join(ROOT, 'js', 'core', 'namespace.js'), 'utf8');
 ok(/RELEASE:\s*'r6a1-request-send-20260822'/.test(NS), 'H1. KM.RELEASE = r6a1-request-send-20260822');
-var INDEX = fs.readFileSync(path.join(ROOT, '..', 'index.html'), 'utf8').replace(/\r\n/g, '\n');
+/* S4-R5 - THE RELEASE, not index.html alone. Two rounds moved sixteen scripts into
+   KM_ROUTE_ASSETS_ in app.js, where the router fetches them on first entry to their route, so the
+   cache-identity and load-order questions below stopped being answerable from index.html. This is
+   index.html plus those declarations rendered as the script tags they are equivalent to, appended
+   in the order they run. Where an assertion below says "index.html", it means the release - which
+   is the claim it was always making. */
+var INDEX = require('./_release-order.js').releaseScriptView(fs.readFileSync(path.join(ROOT, '..', 'index.html'), 'utf8').replace(/\r\n/g, '\n'));
 // F1-7N-FB-4D - see the block comment in
 // assets/tests/live-closure-site-inventory-and-sku-read-f1-7n-fb-4d.test.js §A2. This used to pin the LITERAL
 // release token of this round on assets that later rounds legitimately re-bump, which is why the FB-4B Addendum

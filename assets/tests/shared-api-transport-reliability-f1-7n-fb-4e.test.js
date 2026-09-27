@@ -66,7 +66,13 @@ var TPSRC = read('assets/js/api/km-transport.js');
 var DASRC = read('assets/js/api/km-data-access.js');
 var FS_PAGE = read('assets/js/pages/factory-stock.js');
 var OS_PAGE = read('assets/js/pages/overseas-stock.js');
-var HTML = read('index.html');
+/* S4-R5 - THE RELEASE, not index.html alone. Two rounds moved sixteen scripts into
+   KM_ROUTE_ASSETS_ in app.js, where the router fetches them on first entry to their route, so the
+   cache-identity and load-order questions below stopped being answerable from index.html. This is
+   index.html plus those declarations rendered as the script tags they are equivalent to, appended
+   in the order they run. Where an assertion below says "index.html", it means the release - which
+   is the claim it was always making. */
+var HTML = require('./_release-order.js').releaseScriptView(read('index.html'));
 var DBAPIC = code(DBAPI), FNDC = code(FND), FS_C = code(FS_PAGE), OS_C = code(OS_PAGE);
 
 var EXEC = 'https://script.google.com/macros/s/AKfycbTESTTESTTESTTESTTEST/exec';

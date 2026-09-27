@@ -109,16 +109,58 @@ const menuConfig = [
 // costs nothing. The regression suite asserts these triples MATCH the page’s own literals, which
 // is what keeps a repeated literal from becoming a second source of truth.
 var KM_ROUTE_ASSETS_ = {
+    /* S4-R5 - THE TWO LARGEST ROUTE PAYLOADS IN THE BUILD.
+
+       `ops` is one file of 947 KB. Its only tie to the rest of the app was a 7-row demo fixture that
+       Weekly Shipping Plan reads; that constant now has a file of its own at boot, and nothing else
+       outside this route names a symbol it defines. Its DOMContentLoaded handler was already a proven
+       no-op - it calls _inventoryReplenStaticInit(), which returns at once because #ops-section does
+       not exist until the partial is injected - so losing that callback loses nothing.
+
+       `global-logistics-map` is eight files of 809 KB, in the order index.html loaded them: names and
+       geometry, the resolver that reads them, the topology, the globe, the page. No file outside the
+       family names any symbol they export. Each keeps its OWN cache-token family - the map series for
+       the seven map browser files, and world-countries-110m.js on the boundary token it has always
+       had. Collapsing them onto the application token would be a misplaced-family defect, and the
+       release-order rules check for it in both directions.
+
+       Both pages load their own partial on mount. The `partial` entries below exist so the SHELL is
+       up before the code lands, and so a script-load refusal has somewhere truthful to render. */
+    'ops': {
+        sectionId: 'ops-section',
+        scripts: [
+            'assets/js/pages/inventory-replenishment.js?v=s4r5-routepayload-20260927'
+        ],
+        partial: { key: 'inventory-replenishment', url: 'assets/html/pages/inventory-replenishment.html',
+            target: '#inventory-replenishment-mount' },
+        label: 'Site Inventory'
+    },
+    'global-logistics-map': {
+        sectionId: 'global-logistics-map-section',
+        scripts: [
+            'assets/js/data/world-countries-110m.js?v=country-boundary-20260826',
+            'assets/js/data/geo-names-zh-hant.js?v=map-texture3-r4-20260827',
+            'assets/js/data/geo-display-aliases-zh-tw.js?v=map-texture3-r4-20260827',
+            'assets/js/data/geo-admin1-display-names-zh-tw.js?v=map-texture3-r4-20260827',
+            'assets/js/core/geo-name-resolver.js?v=map-texture3-r6-20260831',
+            'assets/js/lib/km-geo-topology.js?v=map-texture3-r4-20260827',
+            'assets/js/lib/km-globe.js?v=map-transporticons-r10-20260926',
+            'assets/js/pages/global-logistics-map.js?v=map-transporticons-r10-20260926'
+        ],
+        partial: { key: 'global-logistics-map', url: 'assets/html/pages/global-logistics-map.html',
+            target: '#global-logistics-map-mount' },
+        label: 'On the Way'
+    },
     'product-strategy': {
         sectionId: 'product-strategy-board-section',
         scripts: [
-            'assets/js/product-strategy/psb-data-contract.js?v=s4r4-deferredread-20260927',
-            'assets/js/product-strategy/km-product-strategy-site-universe.js?v=s4r4-deferredread-20260927',
-            'assets/js/product-strategy/km-product-strategy-live-adapter.js?v=s4r4-deferredread-20260927',
-            'assets/js/product-strategy/psb-selectors.js?v=s4r4-deferredread-20260927',
-            'assets/js/product-strategy/psb-chart-layout.js?v=s4r4-deferredread-20260927',
-            'assets/js/product-strategy/psb-board-ui.js?v=s4r4-deferredread-20260927',
-            'assets/js/pages/product-strategy-board.js?v=s4r4-deferredread-20260927'
+            'assets/js/product-strategy/psb-data-contract.js?v=s4r5-routepayload-20260927',
+            'assets/js/product-strategy/km-product-strategy-site-universe.js?v=s4r5-routepayload-20260927',
+            'assets/js/product-strategy/km-product-strategy-live-adapter.js?v=s4r5-routepayload-20260927',
+            'assets/js/product-strategy/psb-selectors.js?v=s4r5-routepayload-20260927',
+            'assets/js/product-strategy/psb-chart-layout.js?v=s4r5-routepayload-20260927',
+            'assets/js/product-strategy/psb-board-ui.js?v=s4r5-routepayload-20260927',
+            'assets/js/pages/product-strategy-board.js?v=s4r5-routepayload-20260927'
         ],
         partial: { key: 'product-strategy-board', url: 'assets/html/pages/product-strategy-board.html',
             target: '#product-strategy-board-mount' },
@@ -137,6 +179,24 @@ var _kmRouteNavSeq_ = 0;
  * The shell stays; the page is not mounted; every other route is untouched. No silent fall back to
  * a legacy global — there is no legacy global to fall back to, and inventing one would hide this.
  */
+/**
+ * Remove a route's refusal box once its code has actually arrived.
+ *
+ * kmRetryRouteScripts turns the refusal into 'Loading <page>…' and re-navigates; without this the
+ * successful load left that sentence on screen with nothing to resolve it. A page that has finished
+ * loading must not still say it is loading.
+ */
+function _kmClearRouteScriptFailure_(routeKey) {
+    var entry = KM_ROUTE_ASSETS_[routeKey];
+    if (!entry) return;
+    var host = document.getElementById(entry.sectionId);
+    if (!host) return;
+    var boxes = host.querySelectorAll('.km-route-script-error');
+    for (var i = 0; i < boxes.length; i++) {
+        if (boxes[i].parentNode) boxes[i].parentNode.removeChild(boxes[i]);
+    }
+}
+
 function _kmRenderRouteScriptFailure_(routeKey) {
     var entry = KM_ROUTE_ASSETS_[routeKey];
     if (!entry) return;
@@ -550,7 +610,7 @@ function showSection(section) {
             if (window.KM.lifecycle && window.KM.lifecycle.switchTo) {
                 window.KM.lifecycle.switchTo(routeAssets.sectionId);
             }
-            if (ok) return;
+            if (ok) { _kmClearRouteScriptFailure_(section); return; }
             // THE REFUSAL WAITS FOR THE MARKUP, and that is not politeness. A blocked script fails
             // almost immediately while the partial is still in the air; writing the refusal first put
             // it inside the mount element, and the partial’s innerHTML then wiped it. Measured: a

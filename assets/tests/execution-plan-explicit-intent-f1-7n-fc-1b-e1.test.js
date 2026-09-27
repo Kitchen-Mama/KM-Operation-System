@@ -824,7 +824,7 @@ eq((INDEX.match(/\?v=fc1ar1-cancelrelease-20260903/g) || []).length, 0,
   'K2  zero production references remain on HF1\'s published token');
 ok(RO.appTokenRefCount(INDEX) >= 19, 'K3  and the application set carries ONE current token (' + RO.appTokenRefCount(INDEX) + ' refs)');
 eq(RO.staleAppTokenRefs(INDEX).join(' | '), '', 'K4  nothing is left behind on a superseded application token');
-var idxT = RO.parseIndexTokens(INDEX);
+var idxT = RO.parseReleaseTokens(INDEX);
 eq(idxT['assets/js/pages/inventory-replenishment.js'], RO.currentAppToken(),
   'K5  the page this round changed carries the CURRENT token');
 eq(idxT['assets/js/utils/inventory-compat.js'], RO.currentAppToken(),

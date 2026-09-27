@@ -1053,7 +1053,12 @@ ok(RO.ROUND_TOKENS.indexOf('fc1be3r4a2r1r6r6r2-rowisolation-20260906')
   'Y2a after the published one it may not reuse');
 ok(RO.appTokenRefCount(INDEX) >= 20,
   'Y2c every asset in the co-deployed set rotated together (' + RO.appTokenRefCount(INDEX) + ')');
-ok(INDEX.indexOf('inventory-replenishment.js?v=' + RO.currentAppToken()) !== -1,
+/* S4-R5 - THE ASSET IS STILL CACHE-VERSIONED ON THE CURRENT TOKEN; the router asks for it now
+   rather than index.html. releaseAssetToken answers from whichever half of the release owns it, so
+   the claim - a changed asset must be served under a token a returning browser does not hold -
+   survives the move instead of being repealed by it. */
+ok(RO.releaseAssetToken('assets/js/pages/inventory-replenishment.js', INDEX, read('assets/js/app.js'))
+  === RO.currentAppToken(),
   'Y2d including inventory-replenishment.js, the file that actually changed this round');
 // NO SERVER CHANGE. The Save uses the shipped writer and the shipped router exactly as they are.
 // R6-R6-R4-R2 — 16_ IS TOUCHED THIS ROUND, and saying otherwise would be the comfortable lie. The writer

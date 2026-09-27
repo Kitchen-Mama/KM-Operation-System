@@ -19,7 +19,13 @@ function read(rel) { return fs.readFileSync(path.join(__dirname, '..', rel), 'ut
 
 var GLOBE = read('js/lib/km-globe.js');
 var MAPJS = read('js/pages/global-logistics-map.js');
-var INDEX = fs.readFileSync(path.join(__dirname, '..', '..', 'index.html'), 'utf8');
+/* S4-R5 - THE RELEASE, not index.html alone. Two rounds moved sixteen scripts into
+   KM_ROUTE_ASSETS_ in app.js, where the router fetches them on first entry to their route, so the
+   cache-identity and load-order questions below stopped being answerable from index.html. This is
+   index.html plus those declarations rendered as the script tags they are equivalent to, appended
+   in the order they run. Where an assertion below says "index.html", it means the release - which
+   is the claim it was always making. */
+var INDEX = require('./_release-order.js').releaseScriptView(fs.readFileSync(path.join(__dirname, '..', '..', 'index.html'), 'utf8'));
 var PROV = fs.readFileSync(path.join(__dirname, '..', '..', 'tools', 'geo', 'PROVENANCE.md'), 'utf8');
 var EARTH_PROV = fs.readFileSync(path.join(__dirname, '..', 'img', 'earth', 'PROVENANCE.md'), 'utf8');
 var FETCH = fs.readFileSync(path.join(__dirname, '..', '..', 'tools', 'geo', 'fetch-earth-textures.js'), 'utf8');

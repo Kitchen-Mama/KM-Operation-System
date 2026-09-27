@@ -76,7 +76,13 @@ var HLTH = read('assets/specs/active/apps-script/63_api_v1_system_health.gs');
 var KMWHA_SRC = read('assets/js/core/supply-planning-weekly-harvest-adapter.js');
 var MREG = read('assets/js/core/method-registry.js');
 var BUNDLE = read('assets/specs/active/apps-script/90_generated_supply_planning_bundle.gs');
-var INDEX = read('index.html');
+/* S4-R5 - THE RELEASE, not index.html alone. Two rounds moved sixteen scripts into
+   KM_ROUTE_ASSETS_ in app.js, where the router fetches them on first entry to their route, so the
+   cache-identity and load-order questions below stopped being answerable from index.html. This is
+   index.html plus those declarations rendered as the script tags they are equivalent to, appended
+   in the order they run. Where an assertion below says "index.html", it means the release - which
+   is the claim it was always making. */
+var INDEX = require('./_release-order.js').releaseScriptView(read('index.html'));
 var NL = PAGE.indexOf('\r\n') !== -1 ? '\r\n' : '\n';
 
 // ---- a sandbox carrying 60_ (pure parts) --------------------------------------------------------------------
@@ -647,7 +653,7 @@ ok(RO.tokenIndex('fc1b-e3r4-scopedread-20260904') > RO.tokenIndex('fc1b-e3r3r1-f
 ok(RO.tokenIndex(RO.currentAppToken()) >= RO.tokenIndex('fc1b-e3r4-scopedread-20260904'),
   'K1b and the series has not moved behind it (current: ' + RO.currentAppToken() + ')');
 eq(RO.staleAppTokenRefs(INDEX).join(' | '), '', 'K2  nothing is left behind on any superseded token');
-var IX = RO.parseIndexTokens(INDEX);
+var IX = RO.parseReleaseTokens(INDEX);
 eq(IX['assets/js/pages/inventory-replenishment.js'], RO.currentAppToken(), 'K3  the page carries it');
 eq(IX[RO.IR_CSS_FILE], RO.currentIrCssToken(), 'K4  the stylesheet stays on its own family token: it did NOT change');
 // RESTATED (A2-R1-R6-R1): a pinned stylesheet-token literal. R6-R1 adds `.ir-scope-company`,

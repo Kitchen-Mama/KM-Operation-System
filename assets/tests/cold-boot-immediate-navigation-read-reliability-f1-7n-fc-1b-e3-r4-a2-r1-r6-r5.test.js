@@ -98,8 +98,17 @@ ok(/company: '[^']+', country: '[^']+', marketplace: '[^']+', sku: '[^']+'/.test
 ok(RO.OWNER_STAMPS.indexOf('F1-7N-FC-1B-E3-R4-A2-R1-R6-R5') !== -1, 'A4  R6-R5 is a registered owner stamp');
 eq(RO.staleAppTokenRefs(INDEX), [], 'A5  no index.html asset is left behind on an older app token');
 ok(INDEX.indexOf('assets/js/core/boot-read-arbiter.js?v=') !== -1, 'A6  the arbiter is served with a cache token');
-var arbTag = INDEX.indexOf('boot-read-arbiter.js'), pageTag = INDEX.indexOf('pages/inventory-replenishment.js');
-ok(arbTag !== -1 && pageTag !== -1 && arbTag < pageTag, 'A6a and loads BEFORE the page that arbitrates through it');
+/* S4-R5 - ASKED OF THE RELEASE, NOT OF index.html. The two largest route payloads moved into
+   KM_ROUTE_ASSETS_ in app.js, where the router fetches them on first entry to their route. The claim
+   here is unchanged - this module loads before the page that consumes it - and releaseLoadOrder gives
+   the order assets actually run in: index.html's, then the route-owned ones. A module in neither
+   place has no position and still fails. */
+var APP_R5 = read('assets/js/app.js');
+var ORDER_R5 = RO.releaseLoadOrder(INDEX, APP_R5);
+function atR5(tail) { for (var i = 0; i < ORDER_R5.length; i++) { if (ORDER_R5[i].indexOf(tail) !== -1) return i; } return -1; }
+var arbTag = atR5('boot-read-arbiter.js'), pageTag = atR5('pages/inventory-replenishment.js');
+ok(arbTag !== -1 && pageTag !== -1 && arbTag < pageTag, 'A6a and loads BEFORE the page that arbitrates through it', [arbTag, pageTag]);
+eq(RO.staleRouteAssetTokenRefs(APP_R5), [], 'A6a1 and no route-owned asset is left behind on an older app token');
 // The SCRIPT TAG, not the first mention: index.html names app.js in a comment three hundred lines above where
 // it loads it, and matching that made this assertion about prose rather than about load order.
 var appTag = INDEX.indexOf('<script src="assets/js/app.js');

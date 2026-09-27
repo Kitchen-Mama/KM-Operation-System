@@ -316,7 +316,9 @@ eq(RO.currentIrCssToken(), 'ircompactrecon-20260905', 'C8  the stylesheet rotate
 ok(INDEX.indexOf('inventory-replenishment.css?v=' + RO.currentIrCssToken()) !== -1,
   'C8a and index.html serves the current member');
 eq(RO.staleAppTokenRefs(INDEX), [], 'C9  no application asset is left behind on an older token');
-ok(INDEX.indexOf('inventory-replenishment.js?v=' + RO.currentAppToken()) !== -1,
+/* S4-R5 - asked of the release rather than of index.html; the router owns this asset now. */
+ok(RO.releaseAssetToken('assets/js/pages/inventory-replenishment.js', INDEX, read('assets/js/app.js'))
+  === RO.currentAppToken(),
   'C9a and the page itself is on the current one');
 
 // ================================================================================================================

@@ -401,7 +401,11 @@ section('§C/§D.9–12 — the manifest, laziness, and what did NOT move');
         return out;
     })();
     // TEXTURE-3-R9 — the shared parser, which also reads <link href> so the inventory's stylesheet is visible.
-    function tokOf(src) { var m = RO.parseIndexTokens(INDEX); return (src in m) ? m[src] : null; }
+    /* S4-R5 - ASKED OF THE RELEASE. The whole map family is declared in KM_ROUTE_ASSETS_ in app.js
+       now, so parseIndexTokens - which reads index.html and only index.html - answered null for every
+       file this block is about, and the cache-identity rules it guards would have passed or failed on
+       nothing. releaseAssetToken answers from whichever half of the release declares the asset. */
+    function tokOf(src) { return RO.releaseAssetToken(src, INDEX, read('assets/js/app.js')); }
 
     // §D.11 — R8's rotation, stated as a FLOOR.
     //
@@ -538,19 +542,30 @@ function staleRefused(src) {
     var h = harness({ src: src }); h.seed(ADM1_REL); h.call();
     return h.scripts().length === 2 && h.scripts()[1]._attrs.src === EXPECTED_URL;
 }
-function indexOk(idx) {
+function indexOk(idx, appSrc) {
+    // S4-R5 - the third time this predicate has been broken by a correct tree, and the same lesson:
+    // it was pinned to index.html, and the map family is declared in KM_ROUTE_ASSETS_ in app.js now.
+    // Both halves of the release are read, so "this round's token is in use" is answerable again.
+    var APP_SRC = (appSrc == null) ? read('assets/js/app.js') : appSrc;
     // TEXTURE-3-R9 — was `r8 === 1`, which stopped being true the moment a later round moved the one file R8
     // had rotated. A negative test's baseline predicate has to be TRUE on a correct tree in EVERY future round,
     // or the baselines go dirty and the CAUGHT results become worthless — which is exactly what happened to N6
     // and N7 here. What must hold: this round's token is in use, the application token is untouched, and no
     // script is loaded twice.
-    var cur = (idx.match(new RegExp(RO.currentMapToken(), 'g')) || []).length;
+    var cur = (idx.match(new RegExp(RO.currentMapToken(), 'g')) || []).length
+        + (APP_SRC.match(new RegExp(RO.currentMapToken(), 'g')) || []).length;
     // ...and the same trap one line down: the application token was still a LITERAL here, so an
     // application round moving its own token dirtied both baselines exactly as R9's rotation did.
-    var app = (idx.match(new RegExp(RO.currentAppToken(), 'g')) || []).length;
-    var re = /<script src="([^"?]+)/g, m, seen = {}, dup = 0;
+    var app = (idx.match(new RegExp(RO.currentAppToken(), 'g')) || []).length
+        + (APP_SRC.match(new RegExp(RO.currentAppToken(), 'g')) || []).length;
+    // Loaded twice is the defect, and after S4-R5 a file could be declared once in each half - which
+    // scanning one of them cannot see. Both are counted into the same set.
+    var seen = {}, dup = 0, m;
+    var re = /<script[^>]*\ssrc="([^"?]+)/g;
     while ((m = re.exec(idx))) { if (seen[m[1]]) dup++; seen[m[1]] = 1; }
-    return cur >= 1 && RO.misplacedIndexTokens(idx).length === 0 && app >= 1 && dup === 0;
+    var reR = /'(assets\/js\/[^'?]+)(?:\?v=[^']*)?'/g;
+    while ((m = reR.exec(APP_SRC))) { if (seen[m[1]]) dup++; seen[m[1]] = 1; }
+    return cur >= 1 && RO.misplacedReleaseTokens(idx, APP_SRC).length === 0 && app >= 1 && dup === 0;
 }
 
 // N1 — the query token removed altogether.
@@ -590,6 +605,15 @@ mutate('N5 stale element allowed to satisfy the versioned request',
 mutate('N6 loader script tag duplicated',
     function () { return indexOk(INDEX); },
     function () {
+        // S4-R5 - the map page is declared in KM_ROUTE_ASSETS_ in app.js, so that is where a duplicate
+        // declaration can now appear. Located in the real source rather than reconstructed, for the
+        // reason the next comment gives.
+        var _app = read('assets/js/app.js');
+        var _needle = "'" + MAP_PAGE_REL + '?v=' + RO.currentMapToken() + "'";
+        var _at = _app.indexOf(_needle);
+        if (_at !== -1) return indexOk(INDEX, _app.replace(_needle, _needle + ',\r\n            ' + _needle));
+        // Not declared there: fall through to the index.html locator below, which throws loudly rather
+        // than letting a mutant report SURVIVED while asserting nothing.
         // INCIDENT-BOOT-FC-R2 — the tag may now carry attributes (`defer`), so it is located in the real
         // document rather than reconstructed. A reconstructed literal silently stopped matching, the
         // duplication never happened, and the mutant reported SURVIVED while asserting nothing.
@@ -667,7 +691,10 @@ mutate('N11 retry inherits the previous attempt\'s error reason',
 mutate('N12 a second copy of the digest introduced',
     function () {
         var hits = 0;
-        ['index.html', 'assets/js/lib/km-globe.js'].forEach(function (r) { hits += (read(r).match(new RegExp(EXPECTED_TOKEN, 'g')) || []).length; });
+        // S4-R5 - app.js joined the list because the map family is declared there now. The probe asks
+        // whether a SECOND copy of the digest exists anywhere a release can carry one; dropping the
+        // file that actually carries it would have made this mutant stop biting silently.
+        ['index.html', 'assets/js/app.js', 'assets/js/lib/km-globe.js'].forEach(function (r) { hits += (read(r).match(new RegExp(EXPECTED_TOKEN, 'g')) || []).length; });
         return hits === 0;
     },
     function () {

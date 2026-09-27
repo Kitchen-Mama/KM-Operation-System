@@ -372,7 +372,10 @@ function bootSurface() {
     bytes: bytes, local: local };
 }
 
-module.exports = { run, bootSurface, PILOT_ROUTES, CONTROL_ROUTE };
+// scriptProbe is exported so S4-R5 counts script fetches and executions with THIS instrument rather
+// than a second copy of it: two rounds disagreeing about a duplicate load must mean the loader changed,
+// not the probe.
+module.exports = { run, bootSurface, PILOT_ROUTES, CONTROL_ROUTE, scriptProbe };
 
 if (require.main === module) {
   const ms = parseInt(process.argv[2] || '400', 10);

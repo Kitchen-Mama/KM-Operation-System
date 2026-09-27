@@ -43,7 +43,13 @@ var GLOBE_REL = 'assets/js/lib/km-globe.js';
 var CSS_REL = 'assets/css/pages/global-logistics-map.css';
 var PAGE = read(PAGE_REL), PAGE_C = code(PAGE);
 var GLOBE = read(GLOBE_REL), GLOBE_C = code(GLOBE);
-var INDEX = read('index.html');
+/* S4-R5 - THE RELEASE, not index.html alone. Two rounds moved sixteen scripts into
+   KM_ROUTE_ASSETS_ in app.js, where the router fetches them on first entry to their route, so the
+   cache-identity and load-order questions below stopped being answerable from index.html. This is
+   index.html plus those declarations rendered as the script tags they are equivalent to, appended
+   in the order they run. Where an assertion below says "index.html", it means the release - which
+   is the claim it was always making. */
+var INDEX = require('./_release-order.js').releaseScriptView(read('index.html'));
 
 var FORMAL_CN = '中華人民共和國', FORMAL_TW = '中華民國', FORMAL_TW_CODE = '中華民國（TW）';
 var STORAGE_KEY = 'km.map.labelMode.v1';
@@ -650,7 +656,7 @@ section('§G — the token manifest');
     // which is why `G4d km-globe.js did not change this round` failed for a file R9A correctly left alone.
     var R9 = 'map-labelmode-r9-20260831';
     var CUR = RO.currentMapToken();
-    var T = RO.parseIndexTokens(INDEX);
+    var T = RO.parseReleaseTokens(INDEX);
     ok(RO.isMapToken(R9), 'G1 R9\'s token is in the shared series');
     eq(RO.mapRoundMarker(R9), 'TEXTURE-3-R9', 'G1b with its marker DERIVED from the token across a FAMILY change');
     eq(RO.mapRoundMarker('map-labelcopy-r9a-20260831'), 'TEXTURE-3-R9A',

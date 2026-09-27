@@ -1185,15 +1185,9 @@ document.addEventListener('DOMContentLoaded', () => {
 // Inventory Replenishment - 從 app.js 搬移 (批次 1: Mock Data + 核心計算渲染)
 // ========================================
 
-const replenishmentMockData = [
-    { sku: "CO1100-R", lifecycle: "Mature", productName: "Can Opener Pro", forecast90d: 450, onTheWay: 20, unitsPerCarton: 40 },
-    { sku: "CO1100-S", lifecycle: "New", productName: "Manual Opener Basic", forecast90d: 320, onTheWay: 15, unitsPerCarton: 50 },
-    { sku: "CO1150-R", lifecycle: "Mature", productName: "Kitchen Tool Set", forecast90d: 1100, onTheWay: 50, unitsPerCarton: 30 },
-    { sku: "CO1150-AG", lifecycle: "Mature", productName: "Electric Peeler", forecast90d: 380, onTheWay: 10, unitsPerCarton: 40 },
-    { sku: "SP3120-R", lifecycle: "New", productName: "Smart Opener", forecast90d: 600, onTheWay: 30, unitsPerCarton: 50 },
-    { sku: "SP3410-R", lifecycle: "Phasing Out", productName: "Classic Knife", forecast90d: 280, onTheWay: 5, unitsPerCarton: 30 },
-    { sku: "MO5600-R", lifecycle: "Mature", productName: "Food Processor", forecast90d: 750, onTheWay: 40, unitsPerCarton: 40 }
-];
+// S4-R5 - replenishmentMockData moved to assets/js/data/replenishment-mock-data.js, which loads at
+// boot. Weekly Shipping Plan reads it unguarded, and this page is now loaded when its route is
+// opened; a constant only this file declared could not survive that. Same binding, same rows.
 
 const specialEvents = [
     { name: "Spring Deal", startDate: "3/22", endDate: "3/29", month: 3, tag: "Special Event" },

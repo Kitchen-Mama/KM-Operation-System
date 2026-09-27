@@ -809,8 +809,12 @@ mut('K16 an inventory number is changed with nothing to back it', function () {
      Tracker, Factory Inventory and Carrier Rate Card. It holds no business rows, so it is a data
      PATH in this inventory and not a data owner. Anchor moved for the reason stated above: an
      anchor that stops matching is a mutant that silently stops biting. */
+  /* S4-R5 - 77 became 69. index.html LOST inventory-replenishment.js and the eight map-family files,
+     which moved into KM_ROUTE_ASSETS_ in app.js where the router fetches them on first route entry, and
+     GAINED data/replenishment-mock-data.js. All ten are still production data paths and are still listed
+     in the census. Anchor moved for the reason stated above. */
   return withSrc('docs/planning/S_SERIES_FRONTEND_API_MIGRATION_INVENTORY.md',
-    'LOADED_SCRIPTS: 77', 'LOADED_SCRIPTS: 79', function () {
+    'LOADED_SCRIPTS: 69', 'LOADED_SCRIPTS: 71', function () {
       var c = read('docs/planning/S_SERIES_FRONTEND_API_MIGRATION_INVENTORY.md');
       var n = /LOADED_SCRIPTS:\s*(\d+)/.exec(c);
       return !!n && Number(n[1]) !== scripts;

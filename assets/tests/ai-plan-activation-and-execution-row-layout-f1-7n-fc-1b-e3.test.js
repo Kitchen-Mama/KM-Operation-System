@@ -1348,7 +1348,7 @@ ok(RO.appTokenRefCount(INDEX) >= 19, 'K3  the application set carries ONE curren
 // serving the cached CSS would keep painting the AI notice into an unreachable box while the new page believed
 // it had spoken. What was actually missing was a LEDGER for that family - one suite kept the current value as
 // a literal, which is what the map series was given a ledger to stop.
-var idxT = RO.parseIndexTokens(INDEX);
+var idxT = RO.parseReleaseTokens(INDEX);
 ['assets/js/pages/inventory-replenishment.js', 'assets/js/utils/inventory-compat.js'].forEach(function (f) {
   eq(idxT[f], RO.currentAppToken(), 'K4  ' + f.split('/').pop() + ' carries it — the page and the shared module ship together');
 });

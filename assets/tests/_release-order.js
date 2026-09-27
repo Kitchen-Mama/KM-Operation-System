@@ -839,7 +839,12 @@ var ROUND_TOKENS = [
   // `?v=s4r3-routeownedcode-20260927`. Reusing it would leave all of them on the S4-R3 copy of three page
   // scripts that no longer load the same tables. A token may be reused only until its bytes have been
   // served, and a push serves them.
-  's4r4-deferredread-20260927'];
+  's4r4-deferredread-20260927',
+  // S4-R5 - a new token for the same reason as the last two: 48b471e is on origin/main, so S4-R4's
+  // bytes have been served. inventory-replenishment.js changed (its shared demo fixture moved out) and
+  // it is now fetched by the router rather than by index.html, which is exactly the case where a
+  // returning browser holding the old copy would never be told to ask again.
+  's4r5-routepayload-20260927'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the
@@ -1133,6 +1138,121 @@ function parseIndexTokens(indexHtml) {
 // number: a map browser file must carry a map-series token, and everything else must not. Adding an asset, or
 // moving the whole application set forward, cannot make it false; putting the map token on an application asset
 // — the thing N7 mutates — cannot make it true.
+/**
+ * The same two family questions, asked of the WHOLE release rather than of index.html alone.
+ *
+ * Every rule below is unchanged in what it claims. What changed is where a versioned asset can
+ * live: after S4-R5 the map family is declared in KM_ROUTE_ASSETS_ in app.js and appears in
+ * index.html not at all, so `misplacedIndexTokens` had stopped being able to see the files it was
+ * written to police. Passing appSrc is optional and omitting it gives exactly the old behaviour,
+ * so no existing caller changes meaning.
+ */
+/**
+ * WHAT TOKEN DOES THE RELEASE SERVE FOR THIS ASSET? - the whole release, not index.html alone.
+ *
+ * parseIndexTokens is named for what it reads and stays that way; rules that are genuinely ABOUT
+ * index.html still want it. But most callers were never asking about index.html - they were asking
+ * "is this asset cache-busted, and on which token", and index.html simply happened to be the only
+ * place a release could answer. S4-R3 moved seven files into KM_ROUTE_ASSETS_, S4-R5 moved nine more
+ * including the whole map family, and every one of those callers began answering `undefined` about a
+ * tree that versions all of them correctly.
+ *
+ * appSrc is optional: omitted, app.js is read from its place beside this module, so a call site
+ * changes by one word and needs no new local binding.
+ *
+ * @returns {Object} repo-relative path -> token (or null for an unversioned entry)
+ */
+/**
+ * THE RELEASE'S SCRIPT DECLARATIONS, RENDERED AS ONE DOCUMENT.
+ *
+ * Dozens of suites ask a question of index.html by pattern-matching its text: does this asset
+ * carry a ?v= token, which one, does it appear exactly once, does it appear before that one.
+ * Every one of those is really a question about THE RELEASE - index.html was simply the only
+ * place a release could declare a script when they were written.
+ *
+ * S4-R3 moved seven files into KM_ROUTE_ASSETS_ and S4-R5 moved nine more, including the whole
+ * map family, so those suites began answering "not declared at all" about a tree that declares
+ * and versions every one of them correctly. This returns index.html with the route-owned
+ * declarations appended as the <script> tags they are equivalent to, in the order they run -
+ * after index.html, which is a fact rather than a convenience: a route cannot be opened until
+ * index.html has finished.
+ *
+ * IT IS A VIEW, NOT A CLAIM ABOUT index.html. A suite that binds this and then says "index.html
+ * loads it" is asserting that THE RELEASE loads it, which is the claim it was always making.
+ * Where a rule is genuinely about index.html alone - what the parser blocks on, what the boot
+ * payload weighs - it must keep reading the real file, and the boot rules still do.
+ */
+function releaseScriptView(indexHtml, appSrc) {
+  var src = appSrc;
+  if (src == null) {
+    try { src = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'assets', 'js', 'app.js'), 'utf8'); }
+    catch (e) { src = ''; }
+  }
+  var route = parseRouteAssetTokens(src);
+  var already = parseIndexTokens(indexHtml);
+  var tags = [];
+  Object.keys(route).forEach(function (rel) {
+    // Declared in both places is a duplicate-load defect and belongs to the rule that counts them.
+    if (Object.prototype.hasOwnProperty.call(already, rel)) return;
+    var q = route[rel] ? ('?v=' + route[rel]) : '';
+    tags.push('    <script src="' + rel + q + '" defer></script>');
+  });
+  if (!tags.length) return indexHtml;
+  var marker = '    <!-- ROUTE-OWNED ASSETS: declared by KM_ROUTE_ASSETS_ in app.js, not here. The router'
+    + ' fetches each set on first entry to its route, with async = false so a set runs in its declared'
+    + ' order. Rendered as the equivalent script tags, after index.html own scripts, because that is'
+    + ' when they run. -->';
+  var blockTxt = marker + '\n' + tags.join('\n') + '\n';
+  var at = indexHtml.lastIndexOf('</body>');
+  return at === -1 ? (indexHtml + '\n' + blockTxt)
+    : (indexHtml.slice(0, at) + blockTxt + indexHtml.slice(at));
+}
+
+function parseReleaseTokens(indexHtml, appSrc) {
+  var out = parseIndexTokens(indexHtml);
+  var src = appSrc;
+  if (src == null) {
+    try { src = require('fs').readFileSync(require('path').join(__dirname, '..', '..', 'assets', 'js', 'app.js'), 'utf8'); }
+    catch (e) { src = ''; }
+  }
+  var route = parseRouteAssetTokens(src);
+  Object.keys(route).forEach(function (k) {
+    // index.html wins if an asset somehow appears in both - that is a duplicate-load defect and
+    // belongs to the rule that counts duplicates, not to this one.
+    if (!Object.prototype.hasOwnProperty.call(out, k)) out[k] = route[k];
+  });
+  return out;
+}
+
+function misplacedReleaseTokens(indexHtml, appSrc) {
+  var out = misplacedIndexTokens(indexHtml);
+  var toks = parseRouteAssetTokens(appSrc || '');
+  Object.keys(toks).forEach(function (p) {
+    var t = toks[p];
+    if (t == null) return;
+    var isMapFile = MAP_BROWSER_FILES.indexOf(p) !== -1;
+    if (isMapFile && !isMapToken(t)) out.push(p + ' is a map browser file but the router asks for ' + t);
+    if (!isMapFile && isMapToken(t)) out.push(p + ' is an application asset but the router asks for the map token ' + t);
+    if (isIrCssToken(t)) out.push(p + ' is not the Site Inventory stylesheet but the router asks for the IR-CSS token ' + t);
+  });
+  return out;
+}
+
+/**
+ * A route-owned application asset left behind on an older application token. Same claim as
+ * staleAppTokenRefs, same exemptions - the baseline and the current token are both fine, and a
+ * token from another FAMILY is not this rule's business (misplacedReleaseTokens owns that).
+ */
+function staleRouteAssetTokenRefs(appSrc) {
+  var toks = parseRouteAssetTokens(appSrc || ''), cur = currentAppToken(), base = ROUND_TOKENS[0], out = [];
+  Object.keys(toks).forEach(function (p) {
+    var t = toks[p];
+    if (t == null || t === cur || t === base) return;
+    if (tokenIndex(t) !== -1) out.push(p + ' is left behind on ' + t);
+  });
+  return out;
+}
+
 function misplacedIndexTokens(indexHtml) {
   var toks = parseIndexTokens(indexHtml), out = [], p;
   for (p in toks) {
@@ -1392,6 +1512,7 @@ module.exports = {
   misplacedIndexTokens: misplacedIndexTokens,
   appTokenRefCount: appTokenRefCount,
   staleAppTokenRefs: staleAppTokenRefs,
+  parseReleaseTokens: parseReleaseTokens, releaseScriptView: releaseScriptView, misplacedReleaseTokens: misplacedReleaseTokens, staleRouteAssetTokenRefs: staleRouteAssetTokenRefs,
   METHOD_REGISTRY_FILE: METHOD_REGISTRY_FILE,
   METHOD_REGISTRY_TOKEN_SERIES: METHOD_REGISTRY_TOKEN_SERIES,
   currentMethodRegistryToken: currentMethodRegistryToken,

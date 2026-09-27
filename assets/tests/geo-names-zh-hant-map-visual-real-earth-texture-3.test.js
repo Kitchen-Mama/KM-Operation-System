@@ -287,15 +287,22 @@ ok(!/countriesShort|shortNames|NAME_SHORT_ZH/.test(ASSET_SRC), 'F10 no invented 
 // ================================================================================================================
 section('G — load order, cache-bust, and observability');
 // ================================================================================================================
-var iData = INDEX.indexOf('assets/js/data/geo-names-zh-hant.js');
-var iRes = INDEX.indexOf('assets/js/core/geo-name-resolver.js');
-var iGlobe = INDEX.indexOf('assets/js/lib/km-globe.js');
-ok(iData !== -1, 'G1 the name asset is loaded by index.html');
+/* S4-R5 - THE MAP FAMILY IS ROUTE-OWNED NOW. All eight files moved into KM_ROUTE_ASSETS_ in app.js,
+   where the router fetches them on first entry to the map route, IN THIS ORDER - which is the order
+   index.html loaded them in. The claim is unchanged: this asset is loaded, and it loads before the
+   thing that reads it. releaseLoadOrder gives the order they actually run in, across both halves of
+   the release, so an asset in NEITHER has no position and still fails. */
+var RO_R5 = require('./_release-order.js');
+var ORDER_R5 = RO_R5.releaseLoadOrder(INDEX, read('assets/js/app.js'));
+var iData = ORDER_R5.indexOf('assets/js/data/geo-names-zh-hant.js');
+var iRes = ORDER_R5.indexOf('assets/js/core/geo-name-resolver.js');
+var iGlobe = ORDER_R5.indexOf('assets/js/lib/km-globe.js');
+ok(iData !== -1, 'G1 the name asset is loaded by the release');
 ok(iRes !== -1, 'G1 as is the resolver');
 ok(iData < iRes, 'G2 data BEFORE resolver — the resolver reads the global the data defines');
 ok(iRes < iGlobe, 'G2 and the resolver before its consumer km-globe.js');
-var tok = /geo-names-zh-hant\.js\?v=([^"']+)/.exec(INDEX);
-var tok2 = /geo-name-resolver\.js\?v=([^"']+)/.exec(INDEX);
+var tok = [null, RO_R5.releaseAssetToken('assets/js/data/geo-names-zh-hant.js', INDEX, read('assets/js/app.js'))];
+var tok2 = [null, RO_R5.releaseAssetToken('assets/js/core/geo-name-resolver.js', INDEX, read('assets/js/app.js'))];
 ok(!!tok && !!tok2, 'G3 both carry a cache-bust token');
 // TEXTURE-3-R5 §D — "one shared token" is replaced by "one token per file, moved when that file moves".
 // The protection G3 was really giving was against a STALE pairing: the resolver reading a global whose shape
@@ -416,7 +423,8 @@ ok(/function admin1LabelBudget/.test(GLOBE_C) && /function countryLabelTier/.tes
 // TEXTURE-3-R6 — the FIFTH copy of "the map set shares one token", restated on the derived rule like the
 // other four. km-globe.js changed in R6 and the name asset did not, so requiring them to be EQUAL would forbid
 // exactly what §G asks for. What must hold is that each file re-fetches when its own bytes move.
-var tok3 = /km-globe\.js\?v=([^"']+)/.exec(INDEX);
+// S4-R5 - asked of the release: km-globe.js is fetched by the router now.
+var tok3 = (function () { var t = RO_.releaseAssetToken('assets/js/lib/km-globe.js', INDEX, read('assets/js/app.js')); return t ? [null, t] : null; }());
 ok(!!tok3, 'I13 km-globe.js carries a cache-bust token');
 ok(RO_.isMapToken(tok3[1]), 'I13 ... from the map series (' + tok3[1] + ')');
 (function () {

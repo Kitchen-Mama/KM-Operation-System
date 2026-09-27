@@ -1,0 +1,433 @@
+{
+ "round": "S4-R5",
+ "mode": "Measured route-owned code expansion. The two largest route payloads in the build move off boot, using the loading contract S4-R3 proved and S4-R4 left unchanged.",
+ "preSha": "48b471e",
+ "serverMs": 400,
+ "instruments": {
+  "runner": "assets/tests/_s4r5-route-payload-runner.js - boot, routes, failure, lifecycle and crossroute over the real shipped code.",
+  "scriptProbe": "S4-R3's, imported rather than copied: two rounds disagreeing about a duplicate load must mean the loader changed, not the probe.",
+  "listenerProbe": "S4-R2's, likewise.",
+  "world": "S3-R11's fixture world, as extended by S4-R4."
+ },
+ "what_is_authoritative": [
+  "Script fetch and execution counts per URL, and mount counts from the lifecycle manager own debug blob.",
+  "Request counts by action - in particular that a refused route reads NOTHING.",
+  "DOM outcomes: menu completeness at boot, section visibility, the presence or absence of a refusal box.",
+  "Bytes, read from the files on disk against index.html and the router table."
+ ],
+ "what_is_not_claimed": [
+  "MILLISECONDS. Under --virtual-time-budget Chrome freezes the clock inside a task (S4-R1 measured it; S4-R3 and S4-R4 repeated it). Nothing here is a duration.",
+  "MAP FIDELITY from the browser. Markers, transport-mode icons, tooltips, multi-leg behaviour and camera state are not assertable against a WebGL globe in headless Chrome, and claiming them from there would be a comfortable lie. They are owned by the map suites that load the map sources into a vm, and this round changed NOT ONE BYTE of any map file - the fidelity evidence is those suites passing.",
+  "SHELL-BEFORE-CODE as an ORDERING PROOF. A file:// script resolves before the first poll under virtual time, so the observable question is asked instead: at boot, is the menu complete and has the route code NOT run."
+ ],
+ "boot": {
+  "pre": {
+   "localScripts": 75,
+   "bytes": 5488419,
+   "mb": 5.23
+  },
+  "post": {
+   "localScripts": 67,
+   "bytes": 3834814,
+   "mb": 3.66
+  },
+  "removedBytes": 1653605,
+  "removedKb": 1615,
+  "s4r1BaselineBytes": 6035912,
+  "percentReducedFromS4R1": 36.5,
+  "routeOwnedAssets": 16,
+  "routeOwnedBytes": 2239972,
+  "atBoot": {
+   "scriptsAppended": 0,
+   "menuItems": 31,
+   "markers": [
+    "ops=false",
+    "global-logistics-map=false"
+   ],
+   "routeLoaded": [
+    "ops=false",
+    "global-logistics-map=false"
+   ],
+   "errors": []
+  }
+ },
+ "inventoryReplenishment": {
+  "routeOnly": "YES, once one shared constant moved",
+  "ownerRoute": "ops -> ops-section",
+  "entrypoints": [
+   "KM.lifecycle.register('ops-section')",
+   "window.initReplenishment / renderReplenishment via its own partial"
+  ],
+  "bootBytesPre": 971079,
+  "bootBytesPost": 2500,
+  "evalTimeSideEffects": [
+   "document.addEventListener('DOMContentLoaded', _inventoryReplenStaticInit) - a PROVEN NO-OP: it returns at its second line because #ops-section does not exist until the partial is injected, and index.html carries no such element. Losing this callback loses nothing, and the mount calls the same function itself.",
+   "KM.lifecycle.register('ops-section', {...}) - runs when the script runs, which is now on first route entry, before switchTo is called.",
+   "window.IRMap and window.IRContext IIFEs - evaluate with the script, wherever that is."
+  ],
+  "externalSymbolsUsedOutsideItsRoute": [
+   "replenishmentMockData - read UNGUARDED by shipping-plan.js in three places. THE one blocker, and it moved to assets/js/data/replenishment-mock-data.js at boot, verbatim."
+  ],
+  "falsePositivesInvestigatedAndDismissed": [
+   "core/boot-read-arbiter.js and core/method-registry.js appeared to consume _irBootstrapScope_, _irResumeGapJobOnMount_, _execLastMileOptionsHtml and three _irCarrier* symbols. Every hit was in a COMMENT - both files DESCRIBE the defect they were built to fix. With comments stripped, neither names an IR symbol in code. Reading documentation as a dependency would have declared the largest file in the build un-movable on the strength of an explanatory sentence.",
+   "fc-summary.js appeared to consume `specialEvents`; the hit is an object KEY in a return literal, not a reference.",
+   "shipping-history.js appeared to consume replenishmentMockData; the hit is a comment describing the writer that does.",
+   "utils/inventory-compat.js: no code-level reference to any IR symbol."
+  ],
+  "route": {
+   "label": "Site Inventory",
+   "declared": 1,
+   "cold": {
+    "fetched": 1,
+    "executed": 1,
+    "dupFetch": 0,
+    "dupExec": 0,
+    "marker": true,
+    "active": true,
+    "useful": 1,
+    "errorBox": 0,
+    "api": 1,
+    "openRequests": 0,
+    "visibleSections": 1,
+    "mountedSections": 1
+   },
+   "mountedAfterCode": true,
+   "onLeave": {
+    "openRequests": 0,
+    "stillActive": false,
+    "mountedSections": 1
+   },
+   "warm": {
+    "fetched": 1,
+    "executed": 1,
+    "dupFetch": 0,
+    "dupExec": 0,
+    "marker": true,
+    "active": true,
+    "useful": 1,
+    "errorBox": 0,
+    "api": 0,
+    "openRequests": 0,
+    "visibleSections": 1,
+    "mountedSections": 1
+   },
+   "warmDelta": {
+    "fetched": 0,
+    "executed": 0
+   },
+   "rapid": {
+    "fetched": 1,
+    "executed": 1,
+    "dupFetch": 0,
+    "dupExec": 0,
+    "marker": true,
+    "active": true,
+    "useful": 1,
+    "errorBox": 0,
+    "api": 0,
+    "openRequests": 0,
+    "visibleSections": 1,
+    "mountedSections": 1
+   },
+   "rapidDelta": {
+    "fetched": 0,
+    "executed": 0,
+    "mountGrowth": 0
+   }
+  },
+  "failure": {
+   "label": "Site Inventory",
+   "onFailure": {
+    "fetched": 1,
+    "executed": 0,
+    "dupFetch": 0,
+    "dupExec": 0,
+    "marker": false,
+    "active": true,
+    "useful": 1,
+    "errorBox": 1,
+    "api": 0,
+    "openRequests": 0,
+    "visibleSections": 1,
+    "mountedSections": 0
+   },
+   "executedDelta": 0,
+   "blocked": 1,
+   "halfMounted": false,
+   "apiDuringFailure": 0,
+   "bodyText": "Site Inventory could not be loaded. Its code did not download, so the page has not been opened and nothing was read. This is a connection or deployment problem, not a problem with your data — every other page still works. Retry Site Inventory Monitor Country Select Country US CA UK DE FR AU JP SG ES",
+   "controlStillWorks": true,
+   "onRetry": {
+    "fetched": 3,
+    "executed": 1,
+    "dupFetch": 2,
+    "dupExec": 0,
+    "marker": true,
+    "active": true,
+    "useful": 1,
+    "errorBox": 0,
+    "api": 1,
+    "openRequests": 0,
+    "visibleSections": 1,
+    "mountedSections": 0
+   },
+   "retryFetchDelta": 1,
+   "retryExecutedDelta": 1,
+   "retryBlocked": 2,
+   "retryLoaderState": {
+    "isLoaded": true,
+    "isLoading": false
+   },
+   "retryMarker": true,
+   "recovered": true
+  }
+ },
+ "map": {
+  "routeOnly": "YES - no file outside the family names any symbol they export",
+  "files": [
+   {
+    "file": "assets/js/data/world-countries-110m.js",
+    "bytes": 138068
+   },
+   {
+    "file": "assets/js/data/geo-names-zh-hant.js",
+    "bytes": 127769
+   },
+   {
+    "file": "assets/js/data/geo-display-aliases-zh-tw.js",
+    "bytes": 10718
+   },
+   {
+    "file": "assets/js/data/geo-admin1-display-names-zh-tw.js",
+    "bytes": 28265
+   },
+   {
+    "file": "assets/js/core/geo-name-resolver.js",
+    "bytes": 36486
+   },
+   {
+    "file": "assets/js/lib/km-geo-topology.js",
+    "bytes": 17586
+   },
+   {
+    "file": "assets/js/lib/km-globe.js",
+    "bytes": 204320
+   },
+   {
+    "file": "assets/js/pages/global-logistics-map.js",
+    "bytes": 127119
+   }
+  ],
+  "bootBytesPre": 690331,
+  "bootBytesPost": 0,
+  "exports": {
+   "world-countries-110m.js": "KM_WORLD_COUNTRIES",
+   "geo-names-zh-hant.js": "KM_GEO_NAMES_ZH_HANT",
+   "geo-display-aliases-zh-tw.js": "KM_GEO_DISPLAY_ALIASES",
+   "geo-admin1-display-names-zh-tw.js": "KM_GEO_ADMIN1_DISPLAY_NAMES",
+   "geo-name-resolver.js": "KM.geoNames",
+   "km-geo-topology.js": "KM.geoTopology",
+   "km-globe.js": "KMGlobe",
+   "global-logistics-map.js": "KM_MAP_GLOBE_DIAGNOSTICS, _glmPendingSelect (and `glm`, used by its own partial)"
+  },
+  "cssStaysAtBoot": "assets/css/pages/global-logistics-map.css (44 KB) remains in index.html. Stylesheets are not what the script loader loads, and moving one is outside the contract this round is expanding.",
+  "route": {
+   "label": "On the Way",
+   "declared": 8,
+   "cold": {
+    "fetched": 8,
+    "executed": 8,
+    "dupFetch": 0,
+    "dupExec": 0,
+    "marker": true,
+    "active": true,
+    "useful": 62,
+    "errorBox": 0,
+    "api": 1,
+    "openRequests": 0,
+    "visibleSections": 1,
+    "mountedSections": 1
+   },
+   "mountedAfterCode": true,
+   "onLeave": {
+    "openRequests": 0,
+    "stillActive": false,
+    "mountedSections": 1
+   },
+   "warm": {
+    "fetched": 8,
+    "executed": 8,
+    "dupFetch": 0,
+    "dupExec": 0,
+    "marker": true,
+    "active": true,
+    "useful": 62,
+    "errorBox": 0,
+    "api": 0,
+    "openRequests": 0,
+    "visibleSections": 1,
+    "mountedSections": 1
+   },
+   "warmDelta": {
+    "fetched": 0,
+    "executed": 0
+   },
+   "rapid": {
+    "fetched": 8,
+    "executed": 8,
+    "dupFetch": 0,
+    "dupExec": 0,
+    "marker": true,
+    "active": true,
+    "useful": 62,
+    "errorBox": 0,
+    "api": 0,
+    "openRequests": 0,
+    "visibleSections": 1,
+    "mountedSections": 1
+   },
+   "rapidDelta": {
+    "fetched": 0,
+    "executed": 0,
+    "mountGrowth": 0
+   }
+  },
+  "failure": {
+   "label": "On the Way",
+   "onFailure": {
+    "fetched": 8,
+    "executed": 0,
+    "dupFetch": 0,
+    "dupExec": 0,
+    "marker": false,
+    "active": true,
+    "useful": 10,
+    "errorBox": 1,
+    "api": 0,
+    "openRequests": 0,
+    "visibleSections": 1,
+    "mountedSections": 0
+   },
+   "executedDelta": 0,
+   "blocked": 10,
+   "halfMounted": false,
+   "apiDuringFailure": 0,
+   "bodyText": "On the Way could not be loaded. Its code did not download, so the page has not been opened and nothing was read. This is a connection or deployment problem, not a problem with your data — every other page still works. Retry On-the-Way Shipment Map ↻ Refresh Track active shipments, route progress, ET",
+   "controlStillWorks": true,
+   "onRetry": {
+    "fetched": 24,
+    "executed": 8,
+    "dupFetch": 16,
+    "dupExec": 0,
+    "marker": true,
+    "active": true,
+    "useful": 7,
+    "errorBox": 0,
+    "api": 1,
+    "openRequests": 0,
+    "visibleSections": 1,
+    "mountedSections": 0
+   },
+   "retryFetchDelta": 8,
+   "retryExecutedDelta": 8,
+   "retryBlocked": 18,
+   "retryLoaderState": {
+    "isLoaded": true,
+    "isLoading": false
+   },
+   "retryMarker": true,
+   "recovered": true
+  }
+ },
+ "control": {
+  "active": true,
+  "api": 1,
+  "mountedSections": 1
+ },
+ "lifecycle": {
+  "ops": {
+   "listenerDrift": 0,
+   "openRequests": 0,
+   "mountedSections": 1,
+   "visibleSections": 1,
+   "undefinedGlobals": [],
+   "unhandled": 0,
+   "windowErrors": 0
+  },
+  "global-logistics-map": {
+   "listenerDrift": 0,
+   "openRequests": 0,
+   "mountedSections": 1,
+   "visibleSections": 1,
+   "undefinedGlobals": [],
+   "unhandled": 0,
+   "windowErrors": 0
+  }
+ },
+ "crossRoute": {
+  "siteInventoryEverLoaded": false,
+  "replenishmentMockDataTypeof": "object",
+  "routes": {
+   "shippingplan": {
+    "active": true,
+    "api": 2,
+    "nodes": 36,
+    "mountedSections": 1
+   },
+   "shipment-overview": {
+    "active": true,
+    "api": 1,
+    "nodes": 46,
+    "mountedSections": 1
+   }
+  },
+  "newWindowErrors": 0,
+  "newUndefinedGlobals": [],
+  "unhandled": 0
+ },
+ "directRoute": {
+  "A app starts elsewhere then navigates to target": "MEASURED - every route scenario boots at home and navigates.",
+  "B hard reload while the target route is selected": "NOT SUPPORTED BY THE APP, so not measured and not claimed. There is no hash route, no deep link and no restored-route mechanism: KM.pendingRoute is internal to the Product Strategy board. The app always boots to home, which is why the case is moot rather than untested."
+ },
+ "repairFound": {
+  "what": "A route refusal box was never removed once the code finally arrived.",
+  "detail": "kmRetryRouteScripts rewrites the refusal to 'Loading <page>…' and re-navigates. Nothing cleared it. A Retry that SUCCEEDED left the working page with a 'Loading…' banner pinned to the top of it forever - a false permanent-loading affordance on a page that had finished loading.",
+  "whyItSurvivedS4R3": "S4-R3's runner asked whether the route mounted and whether its code was present. Both were true. It never asked whether the refusal was GONE.",
+  "fix": "_kmClearRouteScriptFailure_(section) on the success branch of the router hook.",
+  "measured": "errorBox after Retry: 1 -> 0 on both routes, with the page mounted and its code present."
+ },
+ "internalSplitCensus": {
+  "note": "S4-R5 §3 AUDIT ONLY. Nothing here was implemented; §11 requires a decision instead.",
+  "fileBytes": 968579,
+  "topLevelFunctions": 490,
+  "byResponsibilityKb": {
+   "UNCLASSIFIED": 244,
+   "EXECUTION_PLAN": 162,
+   "ALLOCATION_DRAFT": 124,
+   "TABLE_RENDER": 81,
+   "SUBMIT_WRITE": 75,
+   "AI_PLAN": 62,
+   "SCOPE_BOOTSTRAP": 46,
+   "FILTERS": 46,
+   "HELPERS": 41,
+   "FORECAST_GAP": 23,
+   "IMPORT": 16,
+   "MODALS_DRAWERS": 14,
+   "EXPANDED_ROW": 8
+  },
+  "largestFunctionsKb": {
+   "applyFulfillmentLock": 37,
+   "_hydrateAllocationDraftFromDb": 24,
+   "_saveAllocationDraftFromDom": 23,
+   "submitReplenishmentPlans": 20,
+   "_irRunInventoryAiPlanGeneration_": 20,
+   "_getCloudReplenishmentData": 19
+  }
+ },
+ "tokens": {
+  "applicationToken": "s4r5-routepayload-20260927",
+  "mapToken": "map-transporticons-r10-20260926",
+  "applicationTokenChanges": "index.html + app.js rotated together; inventory-replenishment.js (changed) and the new data file carry it.",
+  "mapTokenChanges": "NONE. Not one map byte moved, and a file whose bytes have not moved must not be rotated or every browser refetches the whole map set for nothing. Each map file keeps the token it already had, and world-countries-110m.js keeps its own country-boundary family."
+ }
+}

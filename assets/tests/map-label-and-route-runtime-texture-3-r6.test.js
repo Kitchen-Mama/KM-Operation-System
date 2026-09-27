@@ -34,7 +34,13 @@ function sha256(buf) { return require('crypto').createHash('sha256').update(buf)
 var GLOBE_SRC = read('assets/js/lib/km-globe.js');
 var GLOBE_C = code(GLOBE_SRC);
 var RESOLVER_SRC = read('assets/js/core/geo-name-resolver.js');
-var INDEX = read('index.html');
+/* S4-R5 - THE RELEASE, not index.html alone. Two rounds moved sixteen scripts into
+   KM_ROUTE_ASSETS_ in app.js, where the router fetches them on first entry to their route, so the
+   cache-identity and load-order questions below stopped being answerable from index.html. This is
+   index.html plus those declarations rendered as the script tags they are equivalent to, appended
+   in the order they run. Where an assertion below says "index.html", it means the release - which
+   is the claim it was always making. */
+var INDEX = require('./_release-order.js').releaseScriptView(read('index.html'));
 
 var OPEN_OCEAN_KEY = 'Seven seas (open ocean)';
 var FORMAL_CN = '中華人民共和國', FORMAL_TW = '中華民國';
@@ -424,7 +430,7 @@ section('§G — cache tokens: only what changed, and nothing else');
     // And nothing in the map set is served from a token older than the round its own content last moved in.
     Object.keys(MAP_FILES).forEach(function (f) {
         if (!/TEXTURE-3-R6/.test(read(MAP_FILES[f]))) return;
-        var t = RO_.parseIndexTokens(INDEX)[f];
+        var t = RO_.parseReleaseTokens(INDEX)[f];
         ok(RO_.mapTokenIndex(t) >= RO_.mapTokenIndex(R6),
             'G3 ' + path.basename(f) + ' is served at or after R6 (' + t + ')');
     });

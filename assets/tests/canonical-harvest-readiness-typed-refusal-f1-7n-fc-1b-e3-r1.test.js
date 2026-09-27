@@ -824,9 +824,9 @@ eq(RO.staleAppTokenRefs(INDEX).join(' | '), '', 'J2a and nothing is left behind 
 // RESTATED (F1-7N-FC-1B-E3-R2): asserted that the page carried R1'S token, which was really two claims wearing
 // one hat — "the page is on the CURRENT token" (a permanent property of a correct tree) and "the current
 // token is R1's" (true only until the next round). Only the first is worth defending, and it is derived.
-eq(RO.parseIndexTokens(INDEX)['assets/js/pages/inventory-replenishment.js'], RO.currentAppToken(),
+eq(RO.parseReleaseTokens(INDEX)['assets/js/pages/inventory-replenishment.js'], RO.currentAppToken(),
   'J3  the page carries the CURRENT application token — it is one of the assets R1 changed');
-eq(RO.parseIndexTokens(INDEX)[RO.IR_CSS_FILE], RO.currentIrCssToken(),
+eq(RO.parseReleaseTokens(INDEX)[RO.IR_CSS_FILE], RO.currentIrCssToken(),
   'J4  and the stylesheet stays on its own family\'s token: it did NOT change this round');
 ok(RO.stampAtOrAfter('F1-7N-FC-1B-E3-R1', 'F1-7N-FC-1B-E3'), 'J5  the owner stamp is recorded, after E3\'s');
 ok(RO.BUILD_STAMP_RE.test('F1-7N-FC-1B-E3-R1'), 'J5a and the shared stamp validator accepts it');

@@ -743,7 +743,7 @@ ok(RO.tokenIndex('fc1b-e2-aiplancomposer-20260903') > RO.tokenIndex('fc1b-execut
 eq((INDEX.match(/\?v=fc1b-executionintent-20260903/g) || []).length, 0,
   'M3  zero production references remain on E1\'s token');
 eq(RO.staleAppTokenRefs(INDEX).join(' | '), '', 'M4  and nothing is left behind on a superseded token');
-var idxT = RO.parseIndexTokens(INDEX);
+var idxT = RO.parseReleaseTokens(INDEX);
 eq(idxT['assets/js/pages/inventory-replenishment.js'], RO.currentAppToken(), 'M5  the page carries it');
 eq(idxT['assets/js/utils/inventory-compat.js'], RO.currentAppToken(), 'M5a and so does the shared module');
 // §M.1 — no Apps Script byte moved.

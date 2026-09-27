@@ -58,10 +58,18 @@ ok(/Unicode CLDR/.test(A.meta.cldr.credit), 'F1 with the attribution string');
 ok(!/\[\s*-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?\s*\]/.test(ALIAS_SRC.replace(/"authority_order":\[[^\]]*\]/, '')),
   'F2 and no coordinate pair anywhere in it');
 ok(ALIAS_SRC.indexOf('https://raw.githubusercontent.com') !== -1, 'F2 the source URL is recorded for re-acquisition');
-ok(INDEX.indexOf('assets/js/data/geo-display-aliases-zh-tw.js') !== -1, 'F2 index.html loads it');
+/* S4-R5 - THE MAP FAMILY IS ROUTE-OWNED NOW. All eight files moved into KM_ROUTE_ASSETS_ in app.js,
+   where the router fetches them on first entry to the map route, IN THIS ORDER - which is the order
+   index.html loaded them in. The claim is unchanged: this asset is loaded, and it loads before the
+   thing that reads it. releaseLoadOrder gives the order they actually run in, across both halves of
+   the release, so an asset in NEITHER has no position and still fails. */
+var RO_R5 = require('./_release-order.js');
+var ORDER_R5 = RO_R5.releaseLoadOrder(INDEX, read('assets/js/app.js'));
+function atR5(tail) { for (var i = 0; i < ORDER_R5.length; i++) { if (ORDER_R5[i].indexOf(tail) !== -1) return i; } return -1; }
+ok(atR5('assets/js/data/geo-display-aliases-zh-tw.js') !== -1, 'F2 the release loads it');
 // It must load BEFORE the resolver, or the resolver's top two levels are empty on first paint.
-ok(INDEX.indexOf('geo-display-aliases-zh-tw.js') < INDEX.indexOf('geo-name-resolver.js'),
-  'F2 and loads BEFORE the resolver that reads it');
+ok(atR5('geo-display-aliases-zh-tw.js') < atR5('geo-name-resolver.js'),
+  'F2 and loads BEFORE the resolver that reads it', [atR5('geo-display-aliases-zh-tw.js'), atR5('geo-name-resolver.js')]);
 // §F — every alias carries the four things §F asks to be reported.
 function checkEntry(iso, e, where) {
   ok(!!e.display, 'F3 ' + where + ' ' + iso + ' has a displayed name');

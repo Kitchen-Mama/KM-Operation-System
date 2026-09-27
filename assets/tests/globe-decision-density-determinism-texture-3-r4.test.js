@@ -308,9 +308,17 @@ Object.keys(AD.wikidata).forEach(function (k) {
   ok(urls > 0, 'B6 the URLs it does carry are provenance (' + urls + ' of them), inside that data');
 })();
 ok(/same-origin <script>/.test(ADM1_SRC), 'B6 it is loaded as a same-origin script');
-ok(INDEX.indexOf('geo-admin1-display-names-zh-tw.js') !== -1, 'B6 and index.html loads it');
-var iAdm1 = INDEX.indexOf('geo-admin1-display-names-zh-tw.js');
-var iResolver = INDEX.indexOf('geo-name-resolver.js');
+/* S4-R5 - THE MAP FAMILY IS ROUTE-OWNED NOW. All eight files moved into KM_ROUTE_ASSETS_ in app.js,
+   where the router fetches them on first entry to the map route, IN THIS ORDER - which is the order
+   index.html loaded them in. The claim is unchanged: this asset is loaded, and it loads before the
+   thing that reads it. releaseLoadOrder gives the order they actually run in, across both halves of
+   the release, so an asset in NEITHER has no position and still fails. */
+var RO_R5 = require('./_release-order.js');
+var ORDER_R5 = RO_R5.releaseLoadOrder(INDEX, read('assets/js/app.js'));
+function atR5(tail) { for (var i = 0; i < ORDER_R5.length; i++) { if (ORDER_R5[i].indexOf(tail) !== -1) return i; } return -1; }
+ok(atR5('geo-admin1-display-names-zh-tw.js') !== -1, 'B6 and the release loads it');
+var iAdm1 = atR5('geo-admin1-display-names-zh-tw.js');
+var iResolver = atR5('geo-name-resolver.js');
 ok(iAdm1 < iResolver, 'B6 BEFORE the resolver that reads it');
 
 // B.7 — identity stays adm1_code.
@@ -877,9 +885,13 @@ ok(/jul2004/.test(GLOBE), 'G-R2 and it is still the July 2004 frame');
   var MAP_TOKEN_SERIES = RO_.MAP_TOKEN_SERIES;
   var CURRENT = RO_.currentMapToken();
   var CURRENT_MARKER = new RegExp(RO_.currentMapRoundMarker());
+  /* S4-R5 - the map family is route-owned; this asked index.html alone and would have reported every
+     one of these files as un-cache-busted against a release that versions all of them correctly. */
+  var APP_R5 = read('assets/js/app.js');
   var toks = files.map(function (f) {
-    var m = new RegExp(f.replace(/\./g, '\\.') + '\\?v=([^"\']+)').exec(INDEX);
-    ok(!!m, 'G index.html cache-busts ' + f);
+    var t = RO_.releaseAssetToken(SRC_OF[f], INDEX, APP_R5);
+    var m = t ? [null, t] : null;
+    ok(!!m, 'G the release cache-busts ' + f);
     return m ? m[1] : null;
   });
   toks.forEach(function (t, i) {

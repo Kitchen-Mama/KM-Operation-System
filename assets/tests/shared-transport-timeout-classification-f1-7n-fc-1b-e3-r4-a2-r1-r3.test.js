@@ -326,7 +326,7 @@ ok(RO.tokenIndex('fc1be3r4a2r1r3-transport-20260904') !== -1,
   'H2  this round minted a NEW application token, and the shared ledger records it');
 var _codep = ['assets/js/utils/inventory-compat.js', 'assets/js/api/km-transport.js',
  'assets/js/api/km-api-foundation.js', 'assets/js/pages/inventory-replenishment.js'];
-var _codepTokens = RO.parseIndexTokens(IDX);
+var _codepTokens = RO.parseReleaseTokens(IDX);
 _codep.forEach(function (f) {
   // The token these four carry must be the CURRENT one — whichever round that now is. A later round rotating
   // them together is the system working; a later round rotating only some of them is the defect.

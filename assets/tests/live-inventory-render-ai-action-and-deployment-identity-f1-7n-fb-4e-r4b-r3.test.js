@@ -36,7 +36,11 @@ function eq(a, b, m) { ok(JSON.stringify(a) === JSON.stringify(b), m + '  (got '
 function section(t) { console.log('\n' + t); }
 function read(p) { return fs.readFileSync(path.join(ROOT, p), 'utf8'); }
 
-var INDEX_HTML = read('index.html');
+/* S4-R5 - THE RELEASE, not index.html alone. Two rounds moved sixteen scripts into KM_ROUTE_ASSETS_
+   in app.js, where the router fetches them on first entry to their route, so the cache-identity and
+   load-order questions below stopped being answerable from index.html. This is index.html plus those
+   declarations rendered as the script tags they are equivalent to, appended in the order they run. */
+var INDEX_HTML = require('./_release-order.js').releaseScriptView(read('index.html'));
 
 // =============================================================================================================
 // A MINIMAL DOM.

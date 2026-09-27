@@ -40,7 +40,13 @@ function code(src) {
 var RESOLVER_REL = 'assets/js/core/geo-name-resolver.js';
 var RESOLVER = read(RESOLVER_REL);
 var RESOLVER_C = code(RESOLVER);
-var INDEX = read('index.html');
+/* S4-R5 - THE RELEASE, not index.html alone. Two rounds moved sixteen scripts into
+   KM_ROUTE_ASSETS_ in app.js, where the router fetches them on first entry to their route, so the
+   cache-identity and load-order questions below stopped being answerable from index.html. This is
+   index.html plus those declarations rendered as the script tags they are equivalent to, appended
+   in the order they run. Where an assertion below says "index.html", it means the release - which
+   is the claim it was always making. */
+var INDEX = require('./_release-order.js').releaseScriptView(read('index.html'));
 var ALIAS_REL = 'assets/js/data/geo-display-aliases-zh-tw.js';
 var GLOBE = read('assets/js/lib/km-globe.js');
 
@@ -387,7 +393,7 @@ var TAGS = (function () {
     var CUR = RO.currentMapToken(), MARK = RO.currentMapRoundMarkerRe();
     // TEXTURE-3-R9 — the local TAGS list reads <script> only, and the inventory now contains a STYLESHEET. The
     // parser moved to the shared authority rather than growing a second one here.
-    var IDX_TOKENS = RO.parseIndexTokens(INDEX);
+    var IDX_TOKENS = RO.parseReleaseTokens(INDEX);
     function tokOf(src) { return (src in IDX_TOKENS) ? IDX_TOKENS[src] : null; }
     // TEXTURE-3-R8 — THE FILE LIST WAS THE HALF OF THIS RULE R6 DID NOT DERIVE. It was six paths written out
     // here, and R8 changed a seventh (global-logistics-map.js, which owns the lazy ADM1 loader), so the

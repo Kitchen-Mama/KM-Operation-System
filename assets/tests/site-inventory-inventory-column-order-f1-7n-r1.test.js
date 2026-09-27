@@ -22,7 +22,13 @@ function idx(hay, needle, from) { return hay.indexOf(needle, from || 0); }
 
 var IR_JS = read('js/pages/inventory-replenishment.js');
 var IR_HTML = read('html/pages/inventory-replenishment.html');
-var INDEX = read('../index.html');
+/* S4-R5 - THE RELEASE, not index.html alone. Two rounds moved sixteen scripts into
+   KM_ROUTE_ASSETS_ in app.js, where the router fetches them on first entry to their route, so the
+   cache-identity and load-order questions below stopped being answerable from index.html. This is
+   index.html plus those declarations rendered as the script tags they are equivalent to, appended
+   in the order they run. Where an assertion below says "index.html", it means the release - which
+   is the claim it was always making. */
+var INDEX = require('./_release-order.js').releaseScriptView(read('../index.html'));
 
 eval(extractFn(IR_JS, '_irInventoryColumnModel'));
 

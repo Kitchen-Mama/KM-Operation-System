@@ -545,10 +545,15 @@ var MUTANTS = [
     c.initWorldTimes(); c.initWorldTimes();
     return c.__liveIntervals() === 1;
   }],
-  ['M5 a heavy route module is restored to the parser-blocking Home path', function (M) {
-    var t = M.undefer(TAGS, 'assets/js/pages/inventory-replenishment.js');
+  /* S4-R5 - RETARGETED, because this mutant went inert. It undefers inventory-replenishment.js in
+     index.html, and S4-R5 moved that file to KM_ROUTE_ASSETS_ - so the mutation became a no-op and
+     the probe passed against a "mutated" tree, which is a mutant that has stopped biting without
+     saying so. fc-summary.js is now the largest module on the Home path (476 KB, deferred), and the
+     claim is unchanged: nothing that big may block the parser. */
+  ['M5 a heavy module is restored to the parser-blocking Home path', function (M) {
+    var t = M.undefer(TAGS, 'assets/js/pages/fc-summary.js');
     return t.filter(function (x) { return !x.defer && !x.async; })
-            .every(function (x) { return rel(x) !== 'assets/js/pages/inventory-replenishment.js'; });
+            .every(function (x) { return rel(x) !== 'assets/js/pages/fc-summary.js'; });
   }],
   ['M6 an external library is restored to the Home critical path', function (M) {
     var t = M.undefer(TAGS, '~cdn.jsdelivr.net/npm/chart.js');

@@ -242,7 +242,11 @@ var SWITCHABLE = switchableSections(APP);
 // ================================================================================================
 section('A. THE GRAPH UNDER TEST IS THE ONE THE PAGE ACTUALLY DECLARES');
 // ================================================================================================
-ok(GRAPH.length >= 70, 'A1  index.html declares a full script graph (' + GRAPH.length + ' local scripts)');
+/* S4-R5 - THE RELEASE's graph, not index.html's half of it. FULL_GRAPH = index.html + the
+   route-owned assets app.js declares, which this suite already assembles two lines above. A floor
+   on index.html alone becomes a ban on ever moving a script to its route. */
+ok(FULL_GRAPH.length >= 70, 'A1  the release declares a full script graph (' + FULL_GRAPH.length
+  + ' scripts: ' + GRAPH.length + ' at boot + ' + ROUTE_GRAPH.length + ' route-owned)');
 ok(SWITCHABLE.length >= 20, 'A2  and the navigation can switch to ' + SWITCHABLE.length + ' sections');
 ok(GRAPH.some(function (g) { return g.rel === 'assets/js/pages/fc-summary.js'; }),
   'A3  fc-summary.js is in the graph');
@@ -315,7 +319,9 @@ ok(!/getEffectiveFc\s*:/.test(FCS), 'D5  and window.fcDebug no longer carries th
 // ================================================================================================
 section('E. LOAD ORDER — the shared resolver precedes every consumer');
 // ================================================================================================
-function idx(rel) { for (var i = 0; i < GRAPH.length; i++) if (GRAPH[i].rel === rel) return i; return -1; }
+/* Position in the RELEASE's load order. index.html's scripts all run before any route-owned one -
+   a route cannot be opened until index.html has finished - so concatenation IS the order. */
+function idx(rel) { for (var i = 0; i < FULL_GRAPH.length; i++) if (FULL_GRAPH[i].rel === rel) return i; return -1; }
 var RES = 'assets/js/core/supply-planning-planning-demand.js';
 eq(GRAPH.filter(function (g) { return g.rel === RES; }).length, 1, 'E1  the resolver is declared exactly once');
 ok(GRAPH[idx(RES)].deferred, 'E2  and deferred, so it is off the Home critical path');

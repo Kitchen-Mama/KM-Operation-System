@@ -349,10 +349,18 @@ checks.push(Promise.resolve().then(function () {
   var tag = /<script[^>]*\ssrc="assets\/js\/utils\/scope-select-modal\.js\?v=([^"]+)"[^>]*><\/script>/.exec(HTML);
   ok(!!tag, 'D1 DISPROVED HYPOTHESIS — the scope-select modal IS loaded by index.html');
   eq((HTML.match(/scope-select-modal\.js/g) || []).length, 1, 'D1 ... exactly once');
-  var modalAt = HTML.indexOf('scope-select-modal.js');
-  var roAt = HTML.indexOf('pages/request-order.js');
-  var irAt = HTML.indexOf('pages/inventory-replenishment.js');
-  ok(modalAt > -1 && modalAt < roAt && modalAt < irAt, 'D1 ... and BEFORE both pages that call it');
+  /* S4-R5 - ASKED OF THE RELEASE, NOT OF index.html. The two largest route payloads moved into
+     KM_ROUTE_ASSETS_ in app.js, where the router fetches them on first entry to their route. The claim
+     here is unchanged - this module loads before the page that consumes it - and releaseLoadOrder gives
+     the order assets actually run in: index.html's, then the route-owned ones. A module in neither
+     place has no position and still fails. */
+  var RO_R5 = require('./_release-order.js');
+  var ORDER_R5 = RO_R5.releaseLoadOrder(HTML, read('assets/js/app.js'));
+  var atR5 = function (tail) { for (var i = 0; i < ORDER_R5.length; i++) { if (ORDER_R5[i].indexOf(tail) !== -1) return i; } return -1; };
+  var modalAt = atR5('scope-select-modal.js');
+  var roAt = atR5('pages/request-order.js');
+  var irAt = atR5('pages/inventory-replenishment.js');
+  ok(modalAt > -1 && modalAt < roAt && modalAt < irAt, 'D1 ... and BEFORE both pages that call it', [modalAt, roAt, irAt]);
   ok(/window\.KM\.scopeModal = api/.test(read('assets/js/utils/scope-select-modal.js')),
     'D1 ... and the module registers window.KM.scopeModal on load');
 

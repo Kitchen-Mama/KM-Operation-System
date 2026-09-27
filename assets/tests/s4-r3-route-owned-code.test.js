@@ -63,9 +63,9 @@ ok(M.boot.removedBytes > 500 * 1024,
 const INDEX_LOCAL = (INDEX.match(/<script[^>]+src="(assets\/[^"?]+)/g) || []).length;
 ok(INDEX_LOCAL < M.boot.pre.localScripts,
   'A1b index.html still loads fewer scripts than before this round', [M.boot.pre.localScripts, INDEX_LOCAL]);
-ok(INDEX_LOCAL >= M.boot.post.localScripts,
-  'A1b1 and never fewer than S4-R3 left it — a later round may ADD a core script, not resurrect a route one',
-  [M.boot.post.localScripts, INDEX_LOCAL]);
+ok(RO.parseRouteAssetTokens(APP) && Object.keys(RO.parseRouteAssetTokens(APP)).length >= M.pilot.scriptCount,
+  'A1b1 and the route-owned set has only grown since S4-R3 declared it',
+  [M.pilot.scriptCount, Object.keys(RO.parseRouteAssetTokens(APP)).length]);
 /* What stops the pilot coming back is A3a below, which names each of the seven and asks index.html
    for it by name. That is the real seal; this pair is only the arithmetic around it. */
 
@@ -90,10 +90,18 @@ ok(M.pilot.bytes > 500 * 1024, 'A3c PILOT_BYTES_REMOVED_FROM_BOOT', M.pilot.kb +
 
 // §12 — moving a tag must not move a file out from under the cache-busting rule.
 const routeTokens = RO.parseRouteAssetTokens(APP);
-eq(Object.keys(routeTokens).length, M.pilot.scriptCount, 'A4  every route-loaded script carries a cache token');
+ok(Object.keys(routeTokens).length >= M.pilot.scriptCount,
+  'A4  every route-loaded script carries a cache token', Object.keys(routeTokens).length);
 Object.keys(routeTokens).forEach(function (f) {
-  const want = RO.MAP_BROWSER_FILES.indexOf(f) !== -1 ? RO.currentMapToken() : RO.currentAppToken();
-  eq(routeTokens[f], want, 'A4a ' + f.split('/').pop() + ' carries its family’s current token');
+  ok(!!routeTokens[f], 'A4a ' + f.split('/').pop() + ' is cache-versioned at all');
+});
+eq(RO.misplacedReleaseTokens(INDEX, APP), [],
+  'A4b and every one of them carries a token from its OWN family');
+eq(RO.staleRouteAssetTokenRefs(APP), [],
+  'A4c with no application asset left behind on a superseded application token');
+// The pilot itself, still route-owned and still on the application family's current token.
+M.pilot.scripts.forEach(function (f) {
+  eq(routeTokens[f], RO.currentAppToken(), 'A4d ' + f.split('/').pop() + ' is on the current application token');
 });
 ok(RO.releaseAssetToken('assets/js/product-strategy/psb-views.js', INDEX, APP) === RO.currentAppToken(),
   'A4b and releaseAssetToken finds it, so the rule can still be asked of it');

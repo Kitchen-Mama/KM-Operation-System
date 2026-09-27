@@ -977,7 +977,7 @@ section('H — [§K, tests 29-30] DEPLOYMENT IDENTITY AND PAGE WIRING');
     'H8 [§K] and the router registers no new action for adoption');
 
   // Cache tokens — the changed browser files carry the current application token.
-  var tok = RO.parseIndexTokens(INDEX);
+  var tok = RO.parseReleaseTokens(INDEX);
   var APP = RO.currentAppToken();
   // F1-7N-FB-4F-B6-R1 - RESTATED, and this is the THIRD round this exact shape has broken. A round
   // asserting that the current token IS its own token is true for exactly one round. The durable

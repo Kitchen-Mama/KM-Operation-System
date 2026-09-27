@@ -1148,7 +1148,7 @@ function runAssertions() {
     'K1a strictly after R1\'s, which was PUBLISHED (origin/main carries 951d58c)');
   eq((INDEX.match(/\?v=fc1b-e3r1-readiness-20260903/g) || []).length, 0, 'K2  zero production refs remain on it');
   eq(RO.staleAppTokenRefs(INDEX).join(' | '), '', 'K2a and nothing is left behind on any superseded token');
-  var IX = RO.parseIndexTokens(INDEX);
+  var IX = RO.parseReleaseTokens(INDEX);
   eq(IX['assets/js/pages/inventory-replenishment.js'], RO.currentAppToken(), 'K3  the page carries it');
   eq(IX['assets/js/utils/inventory-compat.js'], RO.currentAppToken(),
     'K3a and so does inventory-compat.js — it is where IRRouteUiState lives');

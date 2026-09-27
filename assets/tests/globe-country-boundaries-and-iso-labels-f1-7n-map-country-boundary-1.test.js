@@ -23,7 +23,13 @@ function read(rel) { return fs.readFileSync(path.join(ROOT, rel), 'utf8'); }
 var GLOBE = read('assets/js/lib/km-globe.js');
 var MAPJS = read('assets/js/pages/global-logistics-map.js');
 var MAPCSS = read('assets/css/pages/global-logistics-map.css');
-var INDEX = read('index.html');
+/* S4-R5 - THE RELEASE, not index.html alone. Two rounds moved sixteen scripts into
+   KM_ROUTE_ASSETS_ in app.js, where the router fetches them on first entry to their route, so the
+   cache-identity and load-order questions below stopped being answerable from index.html. This is
+   index.html plus those declarations rendered as the script tags they are equivalent to, appended
+   in the order they run. Where an assertion below says "index.html", it means the release - which
+   is the claim it was always making. */
+var INDEX = require('./_release-order.js').releaseScriptView(read('index.html'));
 var BUILDER = read('tools/geo/build-country-boundaries.js');
 var PROV = read('tools/geo/PROVENANCE.md');
 var ASSET_PATH = path.join(ROOT, 'assets', 'js', 'data', 'world-countries-110m.js');

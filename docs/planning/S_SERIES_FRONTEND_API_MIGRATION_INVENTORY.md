@@ -2,7 +2,13 @@
 
 > **Round:** P1-B8D-R8 §9. **READ-ONLY CENSUS. No page runtime outside Product Strategy was modified.**
 > **Repo:** `Operation System` · **Branch:** `feature/product-strategy-board-p0` · **PRE HEAD:** `d7a6061`.
-> **Scope:** the scripts `index.html` actually loads, in load order — **LOADED_SCRIPTS: 77**
+> **Scope:** the scripts `index.html` actually loads, in load order — **LOADED_SCRIPTS: 69**
+> (77 before S4-R5, which moved the two largest route payloads out of `index.html` and into
+> `KM_ROUTE_ASSETS_` in `app.js`: `pages/inventory-replenishment.js` (947 KB) and the eight-file
+> On-the-Way map family (809 KB). All nine are still production data paths and are still listed below;
+> what changed is only WHEN they are fetched. One file was ADDED —
+> `data/replenishment-mock-data.js`, the shared demo fixture Weekly Shipping Plan reads, which had to
+> stay at boot when the page that declared it stopped being loaded there.)
 > (76 before S4-R4, which added `core/deferred-read.js`: the state machine behind the deferred
 > secondary reads on Promotion Risk Tracker, Factory Inventory and Carrier Rate Card. It holds no
 > business rows — the tables it fetches land in each page's own read model, where they already

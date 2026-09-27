@@ -530,7 +530,7 @@ eq([String(Number((G63.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+);
   ok(RO.tokenAtOrAfter(APP, 'fb4fb6r1-etasnapshot-20260901'),
     'H6 [§H] B6-R1 minted its own application token, and the release order has not moved behind it');
   ok(RO.tokenAtOrAfter(APP, 'fb4fb6-legacyroute-20260901'), 'H7 [§H] strictly after B6 in the release order');
-  var tok = RO.parseIndexTokens(INDEX);
+  var tok = RO.parseReleaseTokens(INDEX);
   eq(tok['assets/js/pages/inventory-replenishment.js'], APP, 'H8 [§H] the changed page carries it');
   eq(tok['assets/js/utils/inventory-compat.js'], APP, 'H9 [§H] and so does the shared draft module');
   // RESTATED (F1-7N-FC-1A-R1-HF1): this was `=== 18`. The count is not the property — "rotated TOGETHER"

@@ -68,7 +68,13 @@ var G00 = read('assets/specs/active/apps-script/00_config.gs').replace(/\r\n/g, 
 var API = read('assets/js/api/operation-system-db-api.js').replace(/\r\n/g, NL);
 var PAGE = read('assets/js/pages/inventory-replenishment.js').replace(/\r\n/g, NL);
 var CENSUS = read('assets/tools/apps-script-diagnostics/TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3.gs').replace(/\r\n/g, NL);
-var IDX = read('index.html');
+/* S4-R5 - THE RELEASE, not index.html alone. Two rounds moved sixteen scripts into
+   KM_ROUTE_ASSETS_ in app.js, where the router fetches them on first entry to their route, so the
+   cache-identity and load-order questions below stopped being answerable from index.html. This is
+   index.html plus those declarations rendered as the script tags they are equivalent to, appended
+   in the order they run. Where an assertion below says "index.html", it means the release - which
+   is the claim it was always making. */
+var IDX = require('./_release-order.js').releaseScriptView(read('index.html'));
 var RO = require('./_release-order.js');
 var STAMP = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R4';
 

@@ -79,7 +79,13 @@ var CMP = read('assets/js/utils/inventory-compat.js');
 var SKD = read('assets/js/pages/sku-details.js');
 var SRD = read('assets/js/pages/sku-regional-details.js');
 var DBAPI = read('assets/js/api/operation-system-db-api.js');
-var INDEX = read('index.html');
+/* S4-R5 - THE RELEASE, not index.html alone. Two rounds moved sixteen scripts into
+   KM_ROUTE_ASSETS_ in app.js, where the router fetches them on first entry to their route, so the
+   cache-identity and load-order questions below stopped being answerable from index.html. This is
+   index.html plus those declarations rendered as the script tags they are equivalent to, appended
+   in the order they run. Where an assertion below says "index.html", it means the release - which
+   is the claim it was always making. */
+var INDEX = require('./_release-order.js').releaseScriptView(read('index.html'));
 var G16C = code(G16), IRC = code(IR), SKDC = code(SKD), SRDC = code(SRD), G68C = code(G68);
 
 var IRDraft = require(path.join(ROOT, 'assets/js/utils/inventory-compat.js')).IRDraft;

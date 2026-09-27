@@ -523,7 +523,7 @@ ok(RO.tokenIndex(RO.currentAppToken()) >= RO.tokenIndex('fc1b-e3r3r1-forecastzer
 eq((INDEX.match(/\?v=fc1b-e3r2-composerstate-20260903/g) || []).length, 0,
   'R2  zero production refs remain on R2\'s token');
 eq(RO.staleAppTokenRefs(INDEX).join(' | '), '', 'R2a and nothing is left behind on any superseded token');
-var IX = RO.parseIndexTokens(INDEX);
+var IX = RO.parseReleaseTokens(INDEX);
 eq(IX['assets/js/pages/inventory-replenishment.js'], RO.currentAppToken(),
   'R3  the page carries it - it is the ONE browser asset this round changes');
 eq(IX[RO.IR_CSS_FILE], RO.currentIrCssToken(),

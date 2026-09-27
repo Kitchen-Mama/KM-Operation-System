@@ -26,7 +26,13 @@ var MC = code(MODAL_SRC);
 var INV_JS = read('js/pages/inventory-replenishment.js');
 var RO_JS = read('js/pages/request-order.js');
 var DBAPI = read('js/api/operation-system-db-api.js');
-var INDEX = read(path.join('..', 'index.html'));
+/* S4-R5 - THE RELEASE, not index.html alone. Two rounds moved sixteen scripts into
+   KM_ROUTE_ASSETS_ in app.js, where the router fetches them on first entry to their route, so the
+   cache-identity and load-order questions below stopped being answerable from index.html. This is
+   index.html plus those declarations rendered as the script tags they are equivalent to, appended
+   in the order they run. Where an assertion below says "index.html", it means the release - which
+   is the claim it was always making. */
+var INDEX = require('./_release-order.js').releaseScriptView(read(path.join('..', 'index.html')));
 
 var REF = [{ marketplaceId: 'MP-US-AMZ', company: 'KM', country: 'US', marketplace: 'AMAZON_US', status: 'active' }];
 var BROAD_SENTINEL = [{ marketplaceId: 'MP-BROAD', company: 'KM', country: 'ZZ', marketplace: 'BROAD_ONLY', status: 'active' }];

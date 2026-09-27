@@ -469,9 +469,16 @@ ok(/'supply-planning-active-route-classification'/.test(BUILDER), 'H1 KMARC is i
 ok(/\['KMARC', 'supply-planning-active-route-classification'\]/.test(BUILDER), 'H2 and registered under KMARC');
 ok(new RegExp('supply-planning-active-route-classification\\.js\\?v=' + RO.currentAppToken()).test(INDEX),
   'H3 the browser loads it on the current application token');
-var kmarcTag = INDEX.indexOf('supply-planning-active-route-classification.js');
-var pageTag = INDEX.indexOf('pages/inventory-replenishment.js');
-ok(kmarcTag !== -1 && pageTag !== -1 && kmarcTag < pageTag, 'H4 and loads it BEFORE the page that consumes it');
+/* S4-R5 - ASKED OF THE RELEASE, NOT OF index.html. The two largest route payloads moved into
+   KM_ROUTE_ASSETS_ in app.js, where the router fetches them on first entry to their route. The claim
+   here is unchanged - this module loads before the page that consumes it - and releaseLoadOrder gives
+   the order assets actually run in: index.html's, then the route-owned ones. A module in neither
+   place has no position and still fails. */
+var ORDER_R5 = RO.releaseLoadOrder(INDEX, read('assets/js/app.js'));
+function atR5(tail) { for (var i = 0; i < ORDER_R5.length; i++) { if (ORDER_R5[i].indexOf(tail) !== -1) return i; } return -1; }
+var kmarcTag = atR5('supply-planning-active-route-classification.js');
+var pageTag = atR5('pages/inventory-replenishment.js');
+ok(kmarcTag !== -1 && pageTag !== -1 && kmarcTag < pageTag, 'H4 and loads it BEFORE the page that consumes it', [kmarcTag, pageTag]);
 // R6-R4 RESTATEMENT — same reasoning as the R6-R3 suite's A7. "The registry did not change THIS round" was a
 // true statement about R6-R2 and a false one about every round after it. The durable rule is that the registry
 // has its own token family and that index.html serves the current member.

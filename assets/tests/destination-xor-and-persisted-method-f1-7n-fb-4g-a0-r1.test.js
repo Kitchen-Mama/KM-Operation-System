@@ -54,7 +54,13 @@ var REG = read('assets/js/core/method-registry.js');
 var G69 = read('assets/specs/active/apps-script/69_api_v1_route_identity_contract.gs');
 var G16 = read('assets/specs/active/apps-script/16_shipping_allocation_handlers.gs');
 var G63 = read('assets/specs/active/apps-script/63_api_v1_system_health.gs');
-var INDEX = read('index.html');
+/* S4-R5 - THE RELEASE, not index.html alone. Two rounds moved sixteen scripts into
+   KM_ROUTE_ASSETS_ in app.js, where the router fetches them on first entry to their route, so the
+   cache-identity and load-order questions below stopped being answerable from index.html. This is
+   index.html plus those declarations rendered as the script tags they are equivalent to, appended
+   in the order they run. Where an assertion below says "index.html", it means the release - which
+   is the claim it was always making. */
+var INDEX = require('./_release-order.js').releaseScriptView(read('index.html'));
 var PAGEC = code(PAGE), CMPC = code(CMP), REGC = code(REG);
 var RO = require(path.join(ROOT, 'assets/tests/_release-order.js'));
 var COMPAT = require(path.join(ROOT, 'assets/js/utils/inventory-compat.js'));

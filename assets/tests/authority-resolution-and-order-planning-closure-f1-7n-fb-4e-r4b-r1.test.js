@@ -206,9 +206,17 @@ ok(!/factoryStock: factoryBySku\[aplUpper_\(sku\)\] \|\| 0/.test(G56), '1.25 ...
 ok(/factorySiteAllocation/.test(RO_SRC), '1.26 the Order Planning client builder calls it too');
 ok(!/factoryStock: factoryBySku\[_roUpper\(m\.sku\)\] \|\| 0/.test(RO_SRC), '1.27 ... and no longer emits the whole-pool sum either');
 ok(/supply-planning-factory-site-allocation\.js/.test(HTML), '1.28 the module is loaded by the page');
-var idxFSA = HTML.indexOf('supply-planning-factory-site-allocation.js');
-ok(idxFSA !== -1 && idxFSA < HTML.indexOf('pages/inventory-replenishment.js') && idxFSA < HTML.indexOf('pages/request-order.js'),
-  '1.29 ... BEFORE both consuming pages');
+/* S4-R5 - ASKED OF THE RELEASE, NOT OF index.html. The two largest route payloads moved into
+   KM_ROUTE_ASSETS_ in app.js, where the router fetches them on first entry to their route. The claim
+   here is unchanged - this module loads before the page that consumes it - and releaseLoadOrder gives
+   the order assets actually run in: index.html's, then the route-owned ones. A module in neither
+   place has no position and still fails. */
+var RO_R5 = require('./_release-order.js');
+var ORDER_R5 = RO_R5.releaseLoadOrder(HTML, fs.readFileSync(path.join(ROOT, 'assets/js/app.js'), 'utf8'));
+function atR5(tail) { for (var i = 0; i < ORDER_R5.length; i++) { if (ORDER_R5[i].indexOf(tail) !== -1) return i; } return -1; }
+var idxFSA = atR5('supply-planning-factory-site-allocation.js');
+ok(idxFSA !== -1 && idxFSA < atR5('pages/inventory-replenishment.js') && idxFSA < atR5('pages/request-order.js'),
+  '1.29 ... BEFORE both consuming pages', [idxFSA, atR5('pages/inventory-replenishment.js'), atR5('pages/request-order.js')]);
 // A missing module must never silently fall back to the physical total.
 var noModule = (function () {
   var save = global.window; global.window = undefined;
@@ -667,10 +675,17 @@ eq(Number(/var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = (\d+)/.exec(read('assets/j
 // The token is DERIVED from a coupled asset rather than listed here: a list of known literals has to be edited
 // every round to stay green, which makes it a chore instead of a contract. What this actually defends is
 // LOCKSTEP - every coupled asset on ONE token - and a monotonic floor on how many refs move together.
-var groupTok = (/pages\/inventory-replenishment\.js\?v=([a-z0-9.-]+)/.exec(HTML) || [])[1] || '';
-var COUPLED = ['pages/inventory-replenishment.js', 'pages/request-order.js', 'api/operation-system-db-api.js',
-  'core/supply-planning-factory-site-allocation.js', 'utils/scope-select-modal.js'];
-var offGroup = COUPLED.filter(function (f) { return HTML.indexOf(f + '?v=' + groupTok) === -1; });
+/* S4-R5 - LOCKSTEP IS THE CLAIM; index.html was only where it used to be readable. This derived the
+   group token by looking for inventory-replenishment.js in index.html, and that page is now fetched
+   by the router. releaseAssetToken answers from whichever half of the release declares an asset, so
+   the group is still checked as a group - and a member left behind on an older token still fails,
+   wherever it is declared. */
+var APP_R5 = read('assets/js/app.js');
+var COUPLED = ['assets/js/pages/inventory-replenishment.js', 'assets/js/pages/request-order.js',
+  'assets/js/api/operation-system-db-api.js', 'assets/js/core/supply-planning-factory-site-allocation.js',
+  'assets/js/utils/scope-select-modal.js'];
+var groupTok = RO_R5.releaseAssetToken(COUPLED[0], HTML, APP_R5) || '';
+var offGroup = COUPLED.filter(function (f) { return RO_R5.releaseAssetToken(f, HTML, APP_R5) !== groupTok; });
 ok(!!groupTok, '16.7 the frontend deployment group carries a release token (' + groupTok + ')');
 eq(offGroup, [], '16.7b ... and every coupled asset carries the SAME one');
 ok((HTML.match(new RegExp('\\?v=' + groupTok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length >= 17,

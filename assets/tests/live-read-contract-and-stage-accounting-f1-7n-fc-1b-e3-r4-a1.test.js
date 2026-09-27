@@ -340,7 +340,7 @@ ok(RO.tokenIndex('fc1be3r4a1-livecontract-20260904') > RO.tokenIndex('fc1b-e3r4-
 ok(RO.tokenIndex(RO.currentAppToken()) >= RO.tokenIndex('fc1be3r4a1-livecontract-20260904'),
   'K1b and the series has not moved behind it (current: ' + RO.currentAppToken() + ')');
 eq(RO.staleAppTokenRefs(INDEX).join(' | '), '', 'K2  nothing is left behind on a superseded token');
-var IX = RO.parseIndexTokens(INDEX);
+var IX = RO.parseReleaseTokens(INDEX);
 eq(IX['assets/js/api/km-api-foundation.js'], RO.currentAppToken(),
   'K3  km-api-foundation.js carries it — a cached copy keeps DROPPING recentWindow, which is the R4 defect');
 eq(IX['assets/js/pages/inventory-replenishment.js'], RO.currentAppToken(),

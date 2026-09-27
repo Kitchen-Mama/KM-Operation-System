@@ -112,7 +112,13 @@ ok(a1 === 'CREATED' && a2 === 'REUSED', '15. first CREATED, retry REUSED (serial
 ok(store.plans.filter(function (p) { return p.submit_batch_id === 'SB-CC'; }).length === 1, '15. exactly ONE plan for the batch (no duplicate)');
 
 section('A/16. request-order.js on the unified release token');
-var INDEX = fs.readFileSync(path.join(ROOT, '..', 'index.html'), 'utf8').replace(/\r\n/g, '\n');
+/* S4-R5 - THE RELEASE, not index.html alone. Two rounds moved sixteen scripts into
+   KM_ROUTE_ASSETS_ in app.js, where the router fetches them on first entry to their route, so the
+   cache-identity and load-order questions below stopped being answerable from index.html. This is
+   index.html plus those declarations rendered as the script tags they are equivalent to, appended
+   in the order they run. Where an assertion below says "index.html", it means the release - which
+   is the claim it was always making. */
+var INDEX = require('./_release-order.js').releaseScriptView(fs.readFileSync(path.join(ROOT, '..', 'index.html'), 'utf8').replace(/\r\n/g, '\n'));
 // F1-7N-FB-4D - see the block comment in
 // assets/tests/live-closure-site-inventory-and-sku-read-f1-7n-fb-4d.test.js §A2. This used to pin the LITERAL
 // release token of this round on assets that later rounds legitimately re-bump, which is why the FB-4B Addendum
