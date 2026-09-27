@@ -89,7 +89,36 @@
     // F1-7M-B2-HOTFIX: explicit same-session invalidation seam. Drops the canonical read-model so the NEXT mount re-reads
     // from the server. This-surface writes already refresh via _srdAfterWrite; this is exposed (window.srdInvalidate) for any
     // external surface that mutates sku_details / marketplace_skus / sku_regional_details to force a fresh read on re-entry.
-    function _srdInvalidate_() { _srdReadModel = null; }
+    function _srdInvalidate_() { _srdReadModel = null; _srdFreshness = null; _srdMustForce_ = true; }
+
+    // =================================================================================================
+    // S4-R2 §6 — WHAT THIS PAGE KNOWS ABOUT THE AGE OF WHAT IT IS SHOWING.
+    //
+    // Four states, named because the page now behaves differently in each and a boolean could not tell
+    // the last two apart. REFRESH_FAILED_WITH_LAST_GOOD is the one that did not exist before: a failed
+    // refresh used to null the model, so rows that were on screen and still perfectly good were thrown
+    // away because a later request could not reach the network.
+    //
+    // NO TTL, and no timestamp is invented. The version already in the file is _srdReadSeq, and that is
+    // what is reused: _srdModelSeq_ records which read produced the rows in hand. Nothing here decides
+    // that data has gone stale on its own — only a read, a write or an explicit invalidation moves it.
+    // =================================================================================================
+    var SRD_FRESHNESS = {
+        CURRENT: 'CURRENT',                                 // the rows are what the last successful read returned
+        REFRESHING: 'REFRESHING',                           // a read is out; whatever is on screen still stands
+        REFRESH_FAILED_WITH_LAST_GOOD: 'REFRESH_FAILED_WITH_LAST_GOOD',   // the read failed, the rows survived
+        FAILED_NO_MODEL: 'FAILED_NO_MODEL'                  // the read failed and there was nothing to fall back on
+    };
+    var _srdFreshness = null;       // null until the first read settles
+    var _srdModelSeq_ = 0;          // the _srdReadSeq that produced _srdReadModel
+    // Set by an invalidation and cleared by the next successful read. An invalidation says the data
+    // in hand is wrong; a request that was ALREADY in flight when it was declared wrong cannot be the
+    // answer, and the scoped single-flight would hand us exactly that. Measured: an invalidation
+    // followed by a re-entry rendered the pre-invalidation answer, because the second read joined the
+    // first instead of replacing it.
+    var _srdMustForce_ = false;
+    var _srdForcedFlight_ = null;   // the ONE forced refresh in flight, so Retry cannot start a second
+    function _srdFreshnessState_() { return _srdFreshness; }
 
     // read-model-first accessors: Workspace mode reads the scoped DTO; Legacy reads the broad-cache getters unchanged.
     function _srdGetRegional() {
@@ -152,7 +181,36 @@
     // fix. The classifier now names the real state, so this banner shows WHICH action failed, its code, its request
     // id, and offers Retry ONLY where retrying can help. Nothing here is auto-retried.
     var SRD_NO_RETRY_CODES = { DEPLOYMENT_CONTRACT_MISMATCH: 1, CLIENT_ACTION_REQUIRED: 1 };
+    // =================================================================================================
+    // S4-R2 §5 — A REFRESH THAT FAILS MUST NOT TAKE THE PAGE DOWN WITH IT.
+    //
+    // This function used to begin by nulling the read-model, which made every failure identical: the
+    // rows vanished, the list said "SKU Regional read error", and the only way back was a request that
+    // had just proven it could not be made. When the failure is a refresh over rows that are already on
+    // screen and still valid, that is the page destroying good data because of a network problem.
+    //
+    // So the two cases are now told apart. With a last-good model in hand the rows STAY, the state
+    // becomes REFRESH_FAILED_WITH_LAST_GOOD, and the page says what is true — these rows are from the
+    // last successful read and the refresh did not get through — with Retry beside it. With nothing to
+    // fall back on the original truthful error is unchanged, including the no-Retry deployment case.
+    // =================================================================================================
+    function _srdStaleNoticeHtml_(err) {
+        var message = (err && err.message) || 'the refresh did not get through';
+        return '<span class="srd-note--stale">Showing the last data that loaded \u2014 <strong>the refresh didn\u2019t get through</strong>. ' +
+            'Nothing here has changed, and nothing was lost: ' + esc(message) + ' ' +
+            '<button type="button" class="srd-btn srd-btn--default" onclick="srdRetry()">Retry</button></span>';
+    }
     function _srdRenderError_(err) {
+        if (_srdEffectiveWorkspace() && _srdReadModel) {
+            _srdFreshness = SRD_FRESHNESS.REFRESH_FAILED_WITH_LAST_GOOD;
+            var rgk = _srdRegion_();
+            if (rgk) rgk.set(window.KM.loadState.STATES.READY);   // the rows ARE ready; the refresh is what failed
+            var noteK = el('srd-mode-note');
+            if (noteK) noteK.innerHTML = _srdStaleNoticeHtml_(err);
+            render();                                              // repaint the rows we kept
+            return;
+        }
+        _srdFreshness = SRD_FRESHNESS.FAILED_NO_MODEL;
         _srdReadModel = null;
         var code = (err && err.code) || 'SKU_REGIONAL_READ_FAILED';
         var message = (err && err.message) || 'SKU Regional read failed';
@@ -177,8 +235,27 @@
     // The exact action this page depends on. Named here so the error banner and the deployment probe both refer to
     // the same string the transport actually sends.
     var SRD_READ_ACTION = 'skuDetails.workspace.get';
-    function _srdWorkspaceRefresh_() {
+    // `opts.force` means: this refresh may NOT be answered by a request that was already in flight.
+    //
+    // That is not a theoretical distinction. The scoped single-flight in the transport shares an OPEN
+    // request between two callers with the same scope, which is right for two mounts asking the same
+    // question — and wrong after a write, because the request already in the air was dispatched before
+    // the write and will answer with the row as it was. §6 forbids exactly that: a manual pricing or
+    // SKU edit must not be hidden behind an older answer.
+    //
+    // The seam for this already exists and is documented in km-api-foundation: a consumer that supplies
+    // its own AbortSignal is never handed a shared request (CONSUMER_SUPPLIED_ABORT_SIGNAL), because a
+    // shared request cannot be cancelled on one caller's behalf. Passing a fresh controller therefore
+    // buys a genuinely new dispatch through the ordinary path. It is never aborted here; the signal is
+    // the ticket, not a cancellation.
+    function _srdWorkspaceRefresh_(opts) {
+        var force = !!(opts && opts.force) || _srdMustForce_;
+        // Consumed at DISPATCH, not at commit. This read IS the post-invalidation read, so a re-mount
+        // that arrives while it is still running may join it in the ordinary way; leaving the flag up
+        // until the answer landed made every interrupted re-entry pay for a second request.
+        _srdMustForce_ = false;
         var mySeq = ++_srdReadSeq;
+        _srdFreshness = SRD_FRESHNESS.REFRESHING;
         var rg = _srdRegion_(); if (rg) rg.beginLoad(!!_srdReadModel);
         if (!(window.KM && window.KM.api && typeof window.KM.api.getWorkspace === 'function')) {
             return Promise.reject({ code: 'WORKSPACE_UNAVAILABLE', message: 'SKU Details Workspace API unavailable.' });
@@ -186,10 +263,16 @@
         // PRICING-R2 — include.pricing rides the read this page ALREADY performs. A second request for the
         // prices would double the page's cold-start cost, and the broad Operation DB cache is the thing this
         // page deliberately stopped depending on; an un-requested include costs nothing server-side.
-        return Promise.resolve(window.KM.api.getWorkspace('skuDetails', { include: { regional: true, pricing: true } })).then(function (env) {
+        var readOpts = (force && typeof AbortController === 'function')
+            ? { signal: new AbortController().signal }   // forces a new dispatch; see the note above
+            : undefined;
+        return Promise.resolve(window.KM.api.getWorkspace('skuDetails',
+            { include: { regional: true, pricing: true } }, readOpts)).then(function (env) {
             if (mySeq !== _srdReadSeq) return _srdReadModel;   // a newer read superseded this one
             if (env && env.success && env.data) {
                 _srdReadModel = window.KM.DB.adaptSkuDetailsWorkspace(env.data);
+                _srdModelSeq_ = mySeq;
+                _srdFreshness = SRD_FRESHNESS.CURRENT;
                 if (rg) rg.set((_srdReadModel.skuRegionalDetails && _srdReadModel.skuRegionalDetails.length) ? window.KM.loadState.STATES.READY : window.KM.loadState.STATES.EMPTY);
                 return _srdReadModel;
             }
@@ -200,7 +283,9 @@
     // reloaded); Legacy mode → cb immediately (the writer already reloaded the broad cache).
     function _srdAfterWrite(cb) {
         if (!_srdEffectiveWorkspace()) { if (typeof cb === 'function') cb(); return; }
-        _srdWorkspaceRefresh_().then(function () { if (typeof cb === 'function') cb(); }).catch(function (err) { _srdRenderError_(err); });
+        // FORCED: a post-write read may not be answered by a request dispatched before the write.
+        _srdWorkspaceRefresh_({ force: true }).then(function () { if (typeof cb === 'function') cb(); })
+            .catch(function (err) { _srdRenderError_(err); });
     }
 
     function _rows() { return _srdGetRegional(); }
@@ -990,7 +1075,12 @@
         // a failed load nulls it (_srdRenderError_) so Retry re-reads; _srdInvalidate_() drops it for external staleness.
         if (_srdEffectiveWorkspace() && _srdReadModel) { render(); return; }
         // in-flight dedupe: a rapid re-mount while the first fetch is still running must not issue a second request.
-        if (_srdEffectiveWorkspace() && _srdInFlight) return;
+        // S4-R2 §4-J — the in-flight guard has ONE exception. An invalidation declared the data in
+        // hand wrong; a read that was already running when that happened is carrying exactly the
+        // answer we were told to discard, so joining it renders the discarded data. Measured: after
+        // an invalidation mid-flight the page rendered the pre-invalidation rows. The seq guard in
+        // _srdWorkspaceRefresh_ then makes the older read bail rather than commit on top of us.
+        if (_srdEffectiveWorkspace() && _srdInFlight && !_srdMustForce_) return;
         el('srd-list').innerHTML = '<div class="srd-skel"><span style="width:60%"></span><span style="width:80%"></span></div><div class="srd-skel"><span style="width:50%"></span><span style="width:70%"></span></div>';
         var seq = ++_srdReqSeq;
         var done = function () { if (seq !== _srdReqSeq) return; render(); };
@@ -1007,7 +1097,29 @@
             window.KM.DB.loadOperationDb({ force: true }).then(done).catch(fail);
         } else { done(); }
     }
-    function srdRetry() { var n = el('srd-mode-note'); if (n) n.innerHTML = ''; loadAndInit(); }
+    // S4-R2 §5 — RETRY.
+    //
+    // With nothing on screen this is unchanged: loadAndInit paints the skeleton and reads once. With a
+    // last-good model on screen it must mean REFRESH, not re-render — loadAndInit would see a model,
+    // call render() and dispatch nothing, so the button would look like it worked and change nothing.
+    // The forced read is latched so a second click joins the first rather than starting a second, and
+    // a failure lands in _srdRenderError_, which now keeps the rows. Nothing retries itself: every
+    // dispatch here is one the operator asked for.
+    function srdRetry() {
+        var n = el('srd-mode-note'); if (n) n.innerHTML = '';
+        if (!(_srdEffectiveWorkspace() && _srdReadModel)) { loadAndInit(); return; }
+        if (_srdForcedFlight_) return _srdForcedFlight_;
+        var flight = _srdWorkspaceRefresh_({ force: true }).then(function (v) {
+            if (_srdForcedFlight_ === flight) _srdForcedFlight_ = null;
+            render();
+            return v;
+        }, function (err) {
+            if (_srdForcedFlight_ === flight) _srdForcedFlight_ = null;
+            _srdRenderError_(err);
+        });
+        _srdForcedFlight_ = flight;
+        return flight;
+    }
 
     // Expose (inline handlers + lifecycle)
     // =====================================================================================================
@@ -1718,7 +1830,9 @@
     window.srdConfirmPriceImport = srdConfirmPriceImport;
     window.srdRetry = srdRetry;
     window.srdRender = render;
-    window.srdInvalidate = _srdInvalidate_;   // F1-7M-B2-HOTFIX: external same-session invalidation hook (see _srdInvalidate_)
+    window.srdInvalidate = _srdInvalidate_;
+    // Read-only. The suite and the route census need to name the state; nothing sets it from outside.
+    window.srdFreshness = _srdFreshnessState_;   // F1-7M-B2-HOTFIX: external same-session invalidation hook (see _srdInvalidate_)
     window.initSkuRegionalDetailsPage = loadAndInit;
 
     function ensureMarkup() {

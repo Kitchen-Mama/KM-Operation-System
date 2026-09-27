@@ -29,6 +29,63 @@
     let _lastError = null;             // last mount/unmount error message (no secrets)
     const _mounted = Object.create(null); // sectionId -> true while considered mounted
 
+    // ---- S4-R2 §7 — LISTENER OWNERSHIP ------------------------------------------------------------
+    // The contract §7 states is: mount owns the listener, unmount releases it, and a remount produces
+    // ONE equivalent active set. Three pages were measured binding on elements that OUTLIVE the route
+    // (a search input, a scroll column, document itself) without ever releasing them, so ten return
+    // trips left ten live copies and one keystroke ran ten handlers.
+    //
+    // This is the lifecycle manager's job rather than each page's, because unmount is the only moment
+    // that knows a route is over, and it already lives here. A page asks for its scope and binds
+    // through it; switchTo releases the scope AFTER the page's own unmount hook, so a page that
+    // already removes a listener by hand keeps working and the scope simply finds nothing left.
+    //
+    // NOT a general event bus, and deliberately not clever: it remembers (target, type, handler,
+    // options) and calls removeEventListener with the same four. AbortController would be shorter,
+    // but a handler removed by hand before release must not then be double-counted, and an explicit
+    // ledger is what lets the regression suite COUNT what is live.
+    const _scopes = Object.create(null);      // pageName -> [{ target, type, handler, options }]
+    function _scopeList(pageName) {
+        if (!_scopes[pageName]) _scopes[pageName] = [];
+        return _scopes[pageName];
+    }
+    /**
+     * A page's listener scope. Everything bound through it is released when the page unmounts.
+     * @param {string} pageName - the section id the page registered under
+     */
+    KM.lifecycle.listenerScope = function(pageName) {
+        const name = String(pageName || '');
+        return {
+            on: function(target, type, handler, options) {
+                if (!target || typeof target.addEventListener !== 'function' || typeof handler !== 'function') return false;
+                target.addEventListener(type, handler, options);
+                _scopeList(name).push({ target: target, type: type, handler: handler, options: options });
+                return true;
+            },
+            // Release early (a page that tears a panel down before unmount). Idempotent.
+            release: function() { return KM.lifecycle.releaseListenerScope(name); },
+            size: function() { return _scopeList(name).length; }
+        };
+    };
+    /**
+     * Remove every listener the named page bound through its scope. Safe to call twice.
+     * @returns {number} how many registrations were released
+     */
+    KM.lifecycle.releaseListenerScope = function(pageName) {
+        const name = String(pageName || '');
+        const list = _scopes[name];
+        if (!list || !list.length) return 0;
+        let n = 0;
+        for (let i = 0; i < list.length; i++) {
+            const e = list[i];
+            try { e.target.removeEventListener(e.type, e.handler, e.options); n++; } catch (err) {}
+        }
+        _scopes[name] = [];
+        return n;
+    };
+    // Read-only, for the regression suite and the diagnostic.
+    KM.lifecycle.listenerScopeSize = function(pageName) { return _scopeList(String(pageName || '')).length; };
+
     /**
      * 註冊頁面生命週期
      * @param {string} pageName - 頁面名稱 (對應 section id)
@@ -88,9 +145,15 @@
             try {
                 registry[currentPage].unmount(my);
                 _mounted[currentPage] = false;
+                // AFTER the page's own hook: an explicit removeEventListener there still wins, and
+                // this only mops up what the page left bound through its scope.
+                KM.lifecycle.releaseListenerScope(currentPage);
                 console.log(`[Lifecycle] Unmounted: ${currentPage}`);
             } catch (error) {
                 _lastError = 'unmount(' + currentPage + '): ' + String(error && error.message || error);
+                // A hook that threw still loses its listeners — otherwise one broken teardown
+                // reintroduces the drift this exists to prevent.
+                try { KM.lifecycle.releaseListenerScope(currentPage); } catch (e2) {}
                 console.error(`[Lifecycle] Unmount error (${currentPage}):`, error);
             }
         }
@@ -174,6 +237,7 @@
             dbProviderGeneration: provider ? provider.generation : null,
             mountedSections: Object.keys(_mounted).filter(function (k) { return _mounted[k]; }),
             pendingAutosaveCount: autosave,
+            listenerScopes: (function () { var o = {}; for (var k in _scopes) if (_scopes[k].length) o[k] = _scopes[k].length; return o; }()),
             lastError: _lastError
         };
     };

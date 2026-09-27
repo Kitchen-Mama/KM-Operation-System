@@ -691,8 +691,14 @@ function _s3r5aPolicySeal_(curr, base, label, eqFn) {
     eqFn(curr.indexOf(d) >= 0, true, label + ' — still present: ' + d);
   });
 }
-var SEALED = ['assets/js/core/lifecycle.js', 'assets/js/api/km-api-foundation.js',
+var SEALED = ['assets/js/api/km-api-foundation.js',
   'assets/js/utils/resizable-columns.js', 'assets/js/utils/dual-layer-resize.js'];
+// S4-R2 §7 — lifecycle.js leaves the BYTE seal, on the precedent the two entries below already set
+// and for the identical reason: the byte seal was the Home round saying it had not touched the
+// navigation manager, and read against the working tree it became a rule that nobody may. S4-R2 adds
+// listener ownership to it — mount owns, unmount releases — under an authorised scope, and changes no
+// navigation policy. The narrower claim the Home round was making is asserted immediately below.
+var LIFECYCLE_S4R2 = 'assets/js/core/lifecycle.js';
 var SEALED_POLICY_ONLY = 'assets/js/api/km-transport.js';
 // FC-SUMMARY-R3-R1 — operation-system-db-api.js leaves the BYTE seal, for the same reason fc-summary.js
 // did in R2B-A2-R5 and recorded directly above: a working-tree seal turns 'the Home round did not touch
@@ -714,6 +720,33 @@ if (base !== '__git_unavailable__') {
     eq(read(f).replace(/\r\n/g, '\n'), atRev('3b6d83f', f),
       'H14 §5 byte-identical to the FC release commit: ' + f.split('/').pop());
   });
+  // ---- the narrower claim that replaces the byte seal on lifecycle.js ----------------------------
+  var lcNow = read(LIFECYCLE_S4R2).replace(/\r\n/g, '\n');
+  var lcThen = atRev('3b6d83f', LIFECYCLE_S4R2);
+  // Every entrypoint the boot path calls still exists, exactly as often as it did.
+  ['switchTo', 'register', 'unregister', 'currentEpoch', 'isCurrent', 'commitGuard',
+   'activeSectionId', 'getCurrentPage', 'enforceSingleActiveSection'].forEach(function (fn, i) {
+    eq((lcNow.match(new RegExp('KM\\.lifecycle\\.' + fn + ' = ', 'g')) || []).length,
+      (lcThen.match(new RegExp('KM\\.lifecycle\\.' + fn + ' = ', 'g')) || []).length,
+      'H14d.' + (i + 1) + ' §5 lifecycle entrypoint unchanged in count: ' + fn);
+  });
+  // And switchTo still performs the R6C navigation sequence in the same order: take the epoch, claim
+  // the single permitted-active section BEFORE mounting, unmount the old page, mount the new one,
+  // then enforce. A reordering here is the race the Home round closed, and it still fails this.
+  var lcSwitch = lcNow.slice(lcNow.indexOf('KM.lifecycle.switchTo = function'),
+    lcNow.indexOf('KM.lifecycle.currentEpoch'));
+  var _lcOrder = ['var my = ++_navEpoch;', '_activeSectionId = pageName;',
+    'registry[currentPage].unmount(my);', 'registry[pageName].mount(my);',
+    'enforceSingleActiveSection();'];
+  var _lcLast = -1, _lcOrdered = true;
+  _lcOrder.forEach(function (tok) { var at = lcSwitch.indexOf(tok); if (at <= _lcLast) _lcOrdered = false; _lcLast = at; });
+  ok(_lcOrdered, 'H14e §5 switchTo still takes the epoch, claims the section, unmounts, mounts, enforces — in that order');
+  // The ONLY growth is listener ownership, and the release is wired to unmount rather than to mount.
+  ok(lcNow.indexOf('listenerScope') > -1 && lcNow.length > lcThen.length,
+    'H14f §5 and the only growth since is the S4-R2 listener scope');
+  ok(lcSwitch.indexOf('releaseListenerScope(currentPage)') > lcSwitch.indexOf('registry[currentPage].unmount(my)'),
+    "H14g §5 which releases AFTER the page's own unmount hook, never before it");
+
   // The narrower claim that replaces the byte seal on the db-api file.
   var dbNow = read(DBAPI_R3).replace(/\r\n/g, '\n');
   var dbThen = atRev('3b6d83f', DBAPI_R3);

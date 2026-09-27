@@ -518,13 +518,33 @@ function showImportPreview(result) {
     showSkuStatusToast('Validation complete.');
 }
 
+// ============================================================================================
+// S4-R2 §7 — MOUNT-OWNED LISTENERS.
+// The four .scroll-col columns are static markup; syncSkuHeaderScroll runs on every mount, which left +4 live scroll handlers per return trip and ran the transform four times per scroll.
+// _skuOwned(x) routes addEventListener through the page's lifecycle listener scope, which
+// KM.lifecycle releases on unmount. Where the owner is absent (a sandbox loading this file
+// alone) it binds directly, so behaviour is unchanged wherever there is nothing to release it.
+// ============================================================================================
+function _skuOwned(t) {
+    if (!t || typeof t.addEventListener !== 'function') return { addEventListener: function () {} };
+    var sc = (window.KM && window.KM.lifecycle && typeof window.KM.lifecycle.listenerScope === 'function')
+        ? window.KM.lifecycle.listenerScope('sku-section') : null;
+    if (!sc) return t;
+    return { addEventListener: function (type, fn, opts) { sc.on(t, type, fn, opts); } };
+}
 function syncSkuHeaderScroll() {
+    // This runs from a setTimeout, so it can fire AFTER the operator has already left. The scope
+    // would still catch those listeners on the next unmount, but binding onto a page nobody is
+    // looking at leaves one set alive for a whole visit to another route. Measured as a bounded
+    // +4 after ten rapid switches; the current page is the cheapest way to refuse it outright.
+    if (window.KM && window.KM.lifecycle && typeof window.KM.lifecycle.getCurrentPage === 'function' &&
+        window.KM.lifecycle.getCurrentPage() !== 'sku-section') return;
     var sections = ['upcoming', 'running', 'phasing', 'closure'];
     sections.forEach(function(section) {
         var scrollCol = document.querySelector('#sku-section [data-section="' + section + '"] .scroll-col');
         var scrollHeader = document.querySelector('#sku-section [data-section="' + section + '"] .scroll-header');
         if (!scrollCol || !scrollHeader) return;
-        scrollCol.addEventListener('scroll', function() {
+        _skuOwned(scrollCol).addEventListener('scroll', function() {
             scrollHeader.style.transform = 'translateX(-' + scrollCol.scrollLeft + 'px)';
         });
     });

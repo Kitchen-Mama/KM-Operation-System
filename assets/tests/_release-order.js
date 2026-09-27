@@ -787,7 +787,29 @@ var ROUND_TOKENS = [
   //
   // NO APPS SCRIPT COUNTERPART. Nothing server-side changed, so the deployed contract pin stays at 17
   // and no .gs file is in this release.
-  's3r13-specialdeferred-20260926'];
+  's3r13-specialdeferred-20260926',
+
+  // S4-R2 — WARM RE-ENTRY + LISTENER OWNERSHIP. A NEW token rather than a reuse of R13's: 65d18e4 is on
+  // origin/main, so those bytes have been served and the rule this list records forbids reusing a token
+  // whose bytes a browser may already hold.
+  //
+  // ONE RELEASE, because two of these pairs are destructive apart:
+  //   - data.js RETIRES DataRepo.getForecastReviewData / ...LastYear / ...Summary, whose backing arrays
+  //     were deleted long ago and which therefore threw ReferenceError on every call. The new forecast.js
+  //     no longer calls them and derives its totals from the series it already fetches. Old forecast.js
+  //     against the new data.js is 'getForecastReviewSummary is not a function' — the same page broken a
+  //     second way. They go together or not at all.
+  //   - lifecycle.js gains the listener scope that forecast.js, factory-stock.js and sku-details.js bind
+  //     through. Those three fail SAFE against an old lifecycle.js (the helper binds directly, which is
+  //     exactly today's behaviour), so this pair is not destructive — but a half-shipped release would
+  //     silently keep the drift while the evidence says it is fixed, which is its own kind of wrong.
+  //   - sku-regional-details.js keeps its rows through a failed refresh and says so in a .srd-note--stale
+  //     banner. The CSS for that class ships in sku-regional-details.css: new script + old stylesheet is
+  //     an unstyled notice, which is the trap PSB's state classes already walked into once.
+  //
+  // NO APPS SCRIPT COUNTERPART. Nothing server-side changed; the deployed contract pin stays at 17 and no
+  // .gs file is in this release.
+  's4r2-reentrylisteners-20260927'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

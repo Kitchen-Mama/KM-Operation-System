@@ -336,7 +336,23 @@ ok(/if \(seq !== _srdReqSeq\) return;/.test(SRDC), 'G12 and its loader guards th
 ok(/_srdReadModel = null;/.test(SRDC), 'G13 a failed regional read NULLS the read model (no stale content survives)');
 ok(/_skReadModel = null;/.test(SKDC), 'G13 a failed SKU Details read likewise');
 var srdErr = SRDC.slice(SRDC.indexOf('function _srdRenderError_'), SRDC.indexOf('var SRD_READ_ACTION'));
-ok(srdErr.indexOf('render()') === -1, 'G13 the regional error path never calls render() (whose accessors would read the broad cache)');
+// S4-R2 re-expressed. G13 banned render() from the error path for ONE reason, stated in its own
+// message: render()'s accessors fall back to the broad getters when _srdReadModel is null, so a
+// failed read could paint itself from the whole-DB cache. That hazard is a property of the NULL
+// MODEL, not of render(). The error path now repaints deliberately in the one case where a model is
+// in hand — a refresh that failed over rows already on screen — and there the accessors read that
+// model and nothing else.
+//
+// So the ban becomes the invariant it always stood for: NO render() MAY FOLLOW THE NULLING OF THE
+// MODEL. Everything the original assertion protected against fails this, including a future edit
+// that moves the repaint below the null.
+var srdErrNullAt = srdErr.indexOf('_srdReadModel = null;');
+ok(srdErrNullAt !== -1, 'G13 the regional error path still nulls the read model when there is no last-good');
+ok(srdErr.indexOf('render()', srdErrNullAt) === -1,
+  'G13 and never calls render() after that point (whose accessors would read the broad cache)');
+var srdErrRender = srdErr.indexOf('render()');
+ok(srdErrRender === -1 || /_srdEffectiveWorkspace\(\) && _srdReadModel/.test(srdErr.slice(0, srdErrRender)),
+  'G13 any repaint it does do is guarded by a model being present');
 ok(srdErr.indexOf('_opDbCache') === -1, 'G13 and never touches the broad cache');
 ok(srdErr.indexOf('loadOperationDb') === -1, 'G13 nor the whole-DB loader');
 var skErr = SKDC.slice(SKDC.indexOf('function _skRenderError_'), SKDC.indexOf('function renderSkuDetailsTable'));

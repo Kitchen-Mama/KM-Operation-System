@@ -250,116 +250,13 @@ const DataRepo = {
         return skuInfo ? skuInfo.category : null;
     },
     
-    getForecastReviewData(filters = {}) {
-        let data = forecastReviewData.map(item => ({
-            ...item,
-            category: this.getSkuCategory(item.sku)
-        }));
-        
-        // Filter by date range
-        if (filters.startDate && filters.endDate) {
-            data = data.filter(item => {
-                const itemDate = parseDate(item.date);
-                const start = new Date(filters.startDate);
-                const end = new Date(filters.endDate);
-                return itemDate >= start && itemDate <= end;
-            });
-        }
-        
-        // Filter by countries (array)
-        if (filters.countries && filters.countries.length > 0) {
-            data = data.filter(item => filters.countries.includes(item.marketplace));
-        }
-        
-        // Filter by marketplaces (array)
-        if (filters.marketplaces && filters.marketplaces.length > 0) {
-            data = data.filter(item => filters.marketplaces.some(mp => item.channel.toLowerCase() === mp.toLowerCase()));
-        }
-        
-        // Filter by categories (array)
-        if (filters.categories && filters.categories.length > 0) {
-            data = data.filter(item => filters.categories.includes(item.category));
-        }
-        
-        // Filter by series (array) - use SKU Details mapping
-        if (filters.series && filters.series.length > 0) {
-            const skuSeriesMap = getSkuSeriesMap();
-            data = data.filter(item => {
-                const itemSeries = skuSeriesMap[item.sku];
-                return itemSeries && filters.series.includes(itemSeries);
-            });
-        }
-        
-        // Filter by SKU
-        if (filters.sku) {
-            data = data.filter(item => item.sku.toLowerCase().includes(filters.sku.toLowerCase()));
-        }
-        
-        return data;
-    },
-    
-    getForecastReviewDataLastYear(filters = {}) {
-        let data = forecastReviewDataLastYear.map(item => ({
-            ...item,
-            category: this.getSkuCategory(item.sku)
-        }));
-        
-        // Filter by countries (array)
-        if (filters.countries && filters.countries.length > 0) {
-            data = data.filter(item => filters.countries.includes(item.marketplace));
-        }
-        
-        // Filter by marketplaces (array)
-        if (filters.marketplaces && filters.marketplaces.length > 0) {
-            data = data.filter(item => filters.marketplaces.some(mp => item.channel.toLowerCase() === mp.toLowerCase()));
-        }
-        
-        // Filter by categories (array)
-        if (filters.categories && filters.categories.length > 0) {
-            data = data.filter(item => filters.categories.includes(item.category));
-        }
-        
-        // Filter by series (array) - use SKU Details mapping
-        if (filters.series && filters.series.length > 0) {
-            const skuSeriesMap = getSkuSeriesMap();
-            data = data.filter(item => {
-                const itemSeries = skuSeriesMap[item.sku];
-                return itemSeries && filters.series.includes(itemSeries);
-            });
-        }
-        
-        // Filter by SKU
-        if (filters.sku) {
-            data = data.filter(item => item.sku.toLowerCase().includes(filters.sku.toLowerCase()));
-        }
-        
-        return data;
-    },
-    
-    getForecastReviewSummary(filters = {}) {
-        const data = this.getForecastReviewData(filters);
-        const lastYearData = this.getForecastReviewDataLastYear(filters);
-        
-        const totalSalesUnits = data.reduce((sum, item) => sum + item.salesUnits, 0);
-        const totalSalesAmount = data.reduce((sum, item) => sum + item.salesAmount, 0);
-        const totalSessions = data.reduce((sum, item) => sum + item.session, 0);
-        
-        const lastYearSalesUnits = lastYearData.reduce((sum, item) => sum + item.salesUnits, 0);
-        const lastYearSalesAmount = lastYearData.reduce((sum, item) => sum + item.salesAmount, 0);
-        const lastYearSessions = lastYearData.reduce((sum, item) => sum + item.session, 0);
-        
-        return {
-            totalSalesUnits,
-            totalSalesAmount,
-            totalSessions,
-            avgUnitSessionPercentage: data.length > 0 ? data.reduce((sum, item) => sum + item.unitSessionPercentage, 0) / data.length : 0,
-            avgBuyBoxPercentage: data.length > 0 ? data.reduce((sum, item) => sum + item.buyBoxPercentage, 0) / data.length : 0,
-            totalPageViews: data.reduce((sum, item) => sum + item.pageView, 0),
-            lastYearSalesUnits,
-            lastYearSalesAmount,
-            lastYearSessions
-        };
-    }
+    // S4-R2 §9 — RETIRED. getForecastReviewData / ...LastYear / ...Summary read two module-level
+    // arrays, forecastReviewData and forecastReviewDataLastYear, that were removed with the rest of
+    // the mock data (the same cutover noted for weeklyShippingPlans above). The methods were left
+    // behind, so every call threw ReferenceError — measured as thirteen unhandled rejections in one
+    // route census. The Forecast page now derives its totals from the series fetchForecastSeries
+    // returns, which is the owner of that data now; nothing else called these three.
+    _forecastReviewMethodsRetired: true
 };
 
 

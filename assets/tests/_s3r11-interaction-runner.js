@@ -185,11 +185,19 @@ function probeScript(serverMs) {
     '',
     '  function envFor(action, url) {',
     '    var d = {};',
+    '    var _cap = P.skuCapFor[action];',
+    '    var _sd = skuDetails, _ms = marketplaceSkus, _srd = skuRegionalDetails, _pl = pricingList;',
+    '    if (_cap > 0) {',
+    '      _sd = skuDetails.slice(0, _cap);',
+    '      var _keep = {}; _sd.forEach(function (r) { _keep[r.sku] = 1; });',
+    '      var _f = function (a) { return a.filter(function (r) { return _keep[r.sku]; }); };',
+    '      _ms = _f(marketplaceSkus); _srd = _f(skuRegionalDetails); _pl = _f(pricingList);',
+    '    }',
     '    if (action === "skuDetails.workspace.get") {',
-    '      d = { skuDetails: skuDetails, taxReferralRates: [], taxRateComponents: [] };',
+    '      d = { skuDetails: _sd, taxReferralRates: [], taxRateComponents: [] };',
     '      // include.* rides the ONE read — mirrored here so the page sees what it asked for.',
-    '      if (/regional/.test(url)) { d.marketplaceSkus = marketplaceSkus; d.skuRegionalDetails = skuRegionalDetails; }',
-    '      if (/pricing/.test(url)) { d.pricingList = pricingList; }',
+    '      if (/regional/.test(url)) { d.marketplaceSkus = _ms; d.skuRegionalDetails = _srd; }',
+    '      if (/pricing/.test(url)) { d.pricingList = _pl; }',
     '    } else if (action === "fcSummary.workspace.get") {',
     '      var slice = (/%22slice%22%3A%22([a-z]+)%22/.exec(url) || /"slice":"([a-z]+)"/.exec(decodeURIComponent(url)) || [])[1] || null;',
     '      // ONE SLICE, ONE KEY SET — _FC_SLICE_KEYS_ is the contract and the server honours it.',
@@ -243,6 +251,20 @@ function probeScript(serverMs) {
     '     Apps Script container and cannot be reproduced here; what CAN be reproduced is the',
     '     behaviour around it, which is what the operator actually depended on. */',
     '  P.stallOnce = null;   // e.g. "skuDetails.workspace.get"',
+    /* S4-R2 §2 — A TRANSPORT-LEVEL FAILURE, which is what production actually reported.
+       `stallOnce` reproduces a request that never answers; this reproduces one that is REFUSED
+       by the network before any server sees it — fetch rejecting with a TypeError, which is
+       literally what "Failed to fetch" is. The transport classifies it HTTP_TRANSPORT_ERROR at
+       PHASE.DISPATCH. Counted per action so a scenario can fail a read N times and then let it
+       through, which is the difference between "Retry works" and "Retry never works". */
+    '  P.failFor = {};       // action-or-key -> remaining failures (use a large number for "always")',
+    '  P.failed = 0;',
+    /* S4-R2 §4-J — TWO RESPONSES THAT CAN BE TOLD APART, which is the only way to ask whether an
+       older answer overwrote a newer one. `skuCapFor` serves a NARROWER world for one action, so
+       the rendered row count names which response is on screen; `delayFor` makes the narrow one
+       arrive late. Both default to absent, so every existing scenario is byte-identical. */
+    '  P.skuCapFor = {};     // action-or-key -> serve only the first N SKUs',
+    '  P.delayFor = {};      // action-or-key -> extra milliseconds on top of SERVER_MS',
     '  P.stalled = 0;',
     '  function isApi(u) { return /script\\.google(usercontent)?\\.com|\\/macros\\//.test(u); }',
     '  var REAL_FETCH = window.fetch;',
@@ -264,6 +286,12 @@ function probeScript(serverMs) {
     '    P.marks.push(_mark);',
     '    // S3-R13 - the deferred reads are all getTable, so a stall target must be able to name the',
     '    // TABLE. Either form works: "skuDetails.workspace.get" or "getTable:pricing_list".',
+    '    var _fk = (P.failFor[key] > 0) ? key : ((P.failFor[action] > 0) ? action : null);',
+    '    if (_fk) {',
+    '      P.failFor[_fk] -= 1; P.failed++;',
+    '      _mark.settled = Math.round(performance.now());',
+    '      return Promise.reject(new TypeError("Failed to fetch"));',
+    '    }',
     '    if (P.stallOnce && (action === P.stallOnce || key === P.stallOnce)) {',
     '      P.stallOnce = null; P.stalled++;',
     '      // Never settles. The transport owns the deadline and must abort it on its own.',
@@ -278,7 +306,7 @@ function probeScript(serverMs) {
     '          json: function () { return Promise.resolve(JSON.parse(text)); },',
     '          text: function () { return Promise.resolve(text); } });',
     '        _mark.settled = Math.round(performance.now());',
-    '      }, SERVER_MS);',
+    '      }, SERVER_MS + (P.delayFor[key] || P.delayFor[action] || 0));',
     '    });',
     '  };',
     '  // Installed lazily (the DB module is not defined yet at this point in <head>).',

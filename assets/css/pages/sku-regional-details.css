@@ -9,6 +9,9 @@
 #sku-regional-details-section .srd-note { margin: 0 0 8px; font-size: 13px; }
 #sku-regional-details-section .srd-note--demo { color: #92400E; background: #FEF3C7; border: 1px solid #FDE68A; border-radius: 6px; padding: 8px 10px; display: inline-block; }
 #sku-regional-details-section .srd-note--error { color: #991B1B; background: #FEE2E2; border: 1px solid #FECACA; border-radius: 6px; padding: 8px 10px; display: flex; gap: 10px; align-items: center; }
+/* S4-R2 §5 — the rows are still good; only the refresh failed. Amber, not red: red is for a page
+   that has nothing to show, and this one is showing the last data that loaded. */
+#sku-regional-details-section .srd-note--stale { color: #92400E; background: #FFFBEB; border: 1px solid #FDE68A; border-radius: 6px; padding: 8px 10px; display: flex; gap: 10px; align-items: center; }
 
 /* Header */
 #sku-regional-details-section .srd-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }

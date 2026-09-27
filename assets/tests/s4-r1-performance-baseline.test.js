@@ -31,6 +31,13 @@ function ok(c, m, x) { if (c) { pass++; console.log('  ok   ' + m); } else { fai
 function eq(a, b, m) { const A = JSON.stringify(a), B = JSON.stringify(b); if (A === B) { pass++; console.log('  ok   ' + m); } else { fail++; console.log('  FAIL ' + m + '\n       exp ' + B + '\n       got ' + A); } }
 function section(t) { console.log('\n=== ' + t + ' ==='); }
 function read(rel) { return fs.readFileSync(path.join(ROOT, rel), 'utf8').replace(/\r\n/g, '\n'); }
+// A file as a COMMIT held it. Needed where a claim is about the tree this round measured rather than
+// about whatever the working tree holds later (see F3a).
+function atRev(rev, rel) {
+  try { return require('child_process').execFileSync('git', ['-C', ROOT, 'show', rev + ':' + rel],
+    { maxBuffer: 1 << 28 }).toString('utf8').replace(/\r\n/g, '\n'); }
+  catch (e) { return '__git_unavailable__'; }
+}
 
 const INDEX = read('index.html');
 const APP = read('assets/js/app.js');
@@ -234,9 +241,19 @@ section('F — THE ROUND STAYED INSIDE ITS MANDATE');
   // F3 — and the one defect found is RECORDED rather than repaired, which §11 asks for by name.
   ok(/forecastReviewData/.test(DOC) && /recorded for S4-R2/i.test(DOC),
     'F3  the undefined-global defect is carried forward, not fixed in a census round');
-  const DATA = read('assets/js/utils/data.js');
-  ok(/forecastReviewData\.map/.test(DATA),
-    'F3a and it is still there — the census describes the tree it was taken from');
+  // F3a — EVALUATED COMMIT-TO-COMMIT, for the reason home-boot-critical-path records at length: read
+  // against the working tree, "the census round did not repair this" becomes "no round ever may", and
+  // §11 carried the defect forward precisely so that a later round WOULD repair it. S4-R2 did — the
+  // retired DataRepo methods, and the Forecast page deriving its totals from the series it fetches.
+  // The claim that matters is about 26bb72d, the tree the census was taken from, and it still fails
+  // if that commit is ever rewritten to contain the repair.
+  const DATA_AT_CENSUS = atRev('26bb72d', 'assets/js/utils/data.js');
+  if (DATA_AT_CENSUS === '__git_unavailable__') {
+    ok(true, 'F3a (skipped: git unavailable)');
+  } else {
+    ok(/forecastReviewData\.map/.test(DATA_AT_CENSUS),
+      'F3a and it was still there at the census commit — the census describes the tree it was taken from');
+  }
 }
 
 console.log('\n' + (fail ? 'FAIL  ' : 'PASS  ') + pass + ' passed, ' + fail + ' failed');

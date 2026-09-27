@@ -242,10 +242,44 @@ __fb4dTokenMoved('pages/request-order.js', 'r6c-navlifecycle-20260822',
 // R6E1A (Objective A): the CUMULATIVE changed frontend assets since R6C1 are unified on r6a1-request-send-20260822
 // (namespace, operation-system-db-api, km-api-foundation, inventory-replenishment, request-order, app). lifecycle.js is
 // UNCHANGED so it legitimately keeps its R6C token; the runtime release gate reads KM.RELEASE regardless of any one asset token.
-// lifecycle.js was NOT changed by R6E1A and must NOT be force-churned — that half of the claim is still exact
-// and is kept as a literal. The two assets that later rounds DID change are asserted by the durable rule.
-ok(/lifecycle\.js\?v=r6c-navlifecycle-20260822/.test(INDEX),
-  'D: an UNCHANGED framework asset keeps its own token (lifecycle.js stays on R6C)');
+// S4-R2 — the literal becomes the DURABLE RULE this file already wrote for the other two assets, and for
+// the reason it states one line above: the claim is "a round that did not touch this file must not churn
+// its token", not "this file may never change again". Read as a literal it was the second, and S4-R2 §7
+// adds listener ownership to the lifecycle manager — a real change, which must rotate.
+//
+// Asked of the FILE rather than of a string, and against the RELEASED tree rather than a hard-coded SHA:
+//   unchanged since what origin/main ships  ->  it must still carry exactly the token origin/main gives it,
+//                                               so a force-churn of an untouched asset still fails;
+//   changed                                 ->  it must carry the CURRENT application token, so shipping
+//                                               moved bytes under a token a returning browser already holds
+//                                               fails just as loudly.
+// Both halves of the original intent survive, and neither depends on which round happens to be current.
+var __REL = require('./_release-order.js');
+var __LC = 'assets/js/core/lifecycle.js';
+var __lcToken = __fb4dTokenOf('core/lifecycle.js');
+ok(!!__lcToken, 'D: the lifecycle framework asset carries a cache-bust token');
+var __released = null;
+try {
+  var __cp = require('child_process'), __repo = path.join(ROOT, '..');
+  var __show = function (f) {
+    return __cp.execFileSync('git', ['-C', __repo, 'show', 'origin/main:' + f],
+      { maxBuffer: 1 << 26 }).toString('utf8').replace(/\r\n/g, '\n');
+  };
+  __released = { lc: __show(__LC), index: __show('index.html') };
+} catch (e) { __released = null; }
+if (!__released) {
+  ok(true, 'D: (origin/main unavailable — the lifecycle token rule is skipped, not assumed)');
+} else {
+  var __lcNow = fs.readFileSync(path.join(ROOT, 'js', 'core', 'lifecycle.js'), 'utf8').replace(/\r\n/g, '\n');
+  var __relTok = (/core\/lifecycle\.js\?v=([^"']+)/.exec(__released.index) || [])[1] || null;
+  if (__lcNow === __released.lc) {
+    ok(__lcToken === __relTok,
+      'D: an UNCHANGED framework asset keeps its own token (lifecycle.js stays on ' + __relTok + ')');
+  } else {
+    ok(__lcToken === __REL.currentAppToken(),
+      'D: lifecycle.js changed, so it ships on the CURRENT application token (' + __REL.currentAppToken() + ')');
+  }
+}
 ['core/namespace.js', 'api/operation-system-db-api.js'].forEach(function (a) {
   __fb4dTokenMoved(a, 'r6c-navlifecycle-20260822', 'D: changed framework asset ' + a);
 });

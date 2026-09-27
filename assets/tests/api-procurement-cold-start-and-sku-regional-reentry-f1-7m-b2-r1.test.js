@@ -59,20 +59,45 @@ var reuseIdx = loadInit.indexOf('_srdReadModel) { render(); return; }');
 var skelIdx = loadInit.indexOf('srd-skel');
 ok(reuseIdx !== -1 && skelIdx !== -1 && reuseIdx < skelIdx, 'reuse guard precedes the skeleton (no loading flash on re-entry)');
 // in-flight dedupe.
-ok(/if \(_srdEffectiveWorkspace\(\) && _srdInFlight\) return;/.test(loadInit), 'in-flight dedupe: concurrent re-mount does not issue a duplicate workspace request');
+// S4-R2 §4-J re-expressed. The claim is unchanged — a concurrent re-mount must not duplicate the
+// read — but the guard now has ONE exception, and the exception is the point: an invalidation says
+// the in-flight answer is already known to be wrong, so joining it would render discarded data.
+// Asserted as: the guard is still there, it still returns, and the ONLY thing that may bypass it is
+// the forced-read flag. A second condition of any other kind would fail this.
+var dedupe = /if \(_srdEffectiveWorkspace\(\) && _srdInFlight([^)]*)\) return;/.exec(loadInit);
+ok(!!dedupe, 'in-flight dedupe: concurrent re-mount does not issue a duplicate workspace request');
+ok(!dedupe || dedupe[1] === '' || dedupe[1] === ' && !_srdMustForce_',
+  'and the only permitted bypass is an explicit invalidation (no other escape hatch)');
 ok(/_srdInFlight = true;/.test(loadInit), 'sets _srdInFlight before the fetch');
 ok((loadInit.match(/_srdInFlight = false;/g) || []).length >= 2, 'clears _srdInFlight in BOTH then and catch (retryable after failure)');
 // explicit invalidation seam + exposure.
-ok(/function _srdInvalidate_\(\) \{ _srdReadModel = null; \}/.test(SRD), '_srdInvalidate_() drops the read-model (explicit invalidation)');
+// S4-R2 re-expressed: the durable claim is that invalidation DROPS THE MODEL, not that the function
+// body is one statement long. It now also clears the freshness state and demands that the next read
+// be a genuinely new dispatch, both of which serve the same claim rather than weakening it.
+var invFn = extractFn(SRD, '_srdInvalidate_');
+ok(/_srdReadModel = null;/.test(invFn), '_srdInvalidate_() drops the read-model (explicit invalidation)');
+ok(!/_srdReadModel =(?! null)/.test(invFn), 'and never assigns the model anything else');
 ok(/window\.srdInvalidate = _srdInvalidate_;/.test(SRD), 'invalidation seam exposed as window.srdInvalidate');
 // stale-response protection (seq guard) retained.
 ok(/mySeq !== _srdReadSeq/.test(SRD), 'stale-response protection retained (_srdReadSeq guard in _srdWorkspaceRefresh_)');
 // failed load nulls the model → Retry re-reads (no permanent empty).
-ok(/function _srdRenderError_\(err\) \{\s*\n\s*_srdReadModel = null;/.test(SRD), 'failed load nulls _srdReadModel → next entry / Retry performs a fresh read');
+// S4-R2 §5 re-expressed. The claim was: a failed load must not leave a model behind that makes the
+// next entry skip its read. That is still enforced — but only for the case it was ever about, a
+// failure with NOTHING to fall back on. A refresh that fails over rows already on screen now keeps
+// them, which is the repair; the nulling still happens on the other branch, after FAILED_NO_MODEL.
+var errFn = extractFn(SRD, '_srdRenderError_');
+ok(/_srdFreshness = SRD_FRESHNESS\.FAILED_NO_MODEL;\s*\r?\n\s*_srdReadModel = null;/.test(errFn),
+  'a failed load with no last-good model still nulls _srdReadModel → next entry / Retry performs a fresh read');
+ok(/SRD_FRESHNESS\.REFRESH_FAILED_WITH_LAST_GOOD/.test(errFn),
+  'and the other branch is named rather than implied: the rows survive a failed refresh');
 // this-surface write refreshes the model (post-write freshness) → re-entry cannot show stale records.
 ok(/_srdAfterWrite\(function \(\) \{ render\(\); \}\);/.test(SRD), 'save path calls _srdAfterWrite (re-read) → post-write freshness');
 var afterWrite = extractFn(SRD, '_srdAfterWrite');
-ok(/_srdWorkspaceRefresh_\(\)\.then/.test(afterWrite), '_srdAfterWrite re-reads the workspace (keeps _srdReadModel fresh across re-entry)');
+// S4-R2 §6 re-expressed and STRENGTHENED. Re-reading after a write was never enough on its own: the
+// scoped single-flight can answer it with a request dispatched BEFORE the write, which is the write
+// being hidden behind an older answer. The post-write read must therefore be forced.
+ok(/_srdWorkspaceRefresh_\(\{ force: true \}\)\.then/.test(afterWrite),
+  '_srdAfterWrite re-reads the workspace, FORCED (keeps _srdReadModel fresh, and not from a pre-write flight)');
 // cold first-open is still a real server read (reuse only triggers when a model already exists).
 ok(/_srdWorkspaceRefresh_\(\)\.then\(function \(\) \{ _srdInFlight = false;/.test(loadInit), 'cold first-open (no model) still performs the real getWorkspace read');
 // f13a0b6 cold-start gate preserved.

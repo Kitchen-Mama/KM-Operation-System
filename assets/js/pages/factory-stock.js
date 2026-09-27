@@ -186,6 +186,20 @@ window._fsRearmOnEntry_ = _fsRearmOnEntry_;
 window._fsRetryRead_ = _fsRetryRead_;
 window._fsLoadState_ = _fsLoadState_;
 
+// ============================================================================================
+// S4-R2 §7 — MOUNT-OWNED LISTENERS.
+// The SKU search box is static markup that outlives the route; binding it on every mount left +1 live input handler per return trip.
+// _fsOwned(x) routes addEventListener through the page's lifecycle listener scope, which
+// KM.lifecycle releases on unmount. Where the owner is absent (a sandbox loading this file
+// alone) it binds directly, so behaviour is unchanged wherever there is nothing to release it.
+// ============================================================================================
+function _fsOwned(t) {
+    if (!t || typeof t.addEventListener !== 'function') return { addEventListener: function () {} };
+    var sc = (window.KM && window.KM.lifecycle && typeof window.KM.lifecycle.listenerScope === 'function')
+        ? window.KM.lifecycle.listenerScope('factory-stock-section') : null;
+    if (!sc) return t;
+    return { addEventListener: function (type, fn, opts) { sc.on(t, type, fn, opts); } };
+}
 function initFactoryStockPage() {
     console.log('✅ Factory Stock: initFactoryStockPage called');
     const root = document.querySelector('#factory-stock-section');
@@ -295,7 +309,7 @@ function initFactoryStockPage() {
     // 綁定SKU input事件
     const skuInput = root.querySelector('#factory-sku-input');
     if (skuInput) {
-        skuInput.addEventListener('input', () => renderFactoryStockTable(root));
+        _fsOwned(skuInput).addEventListener('input', () => renderFactoryStockTable(root));
     }
     
     // 點擊外部關閉dropdown

@@ -70,6 +70,30 @@ function _forecastSyncFilterOptions(root) {
   });
 }
 
+// ============================================================================================
+// S4-R2 §7 — THIS PAGE'S LISTENERS BELONG TO ITS MOUNT.
+//
+// unmount() clears _forecastInitialized so the charts can be rebuilt, which means this whole
+// block runs again on every return trip. The controls it binds to — the SKU input, the date
+// trigger, the modal buttons, document itself — are NOT rebuilt: they are static markup that
+// outlives the route. Measured over ten return trips that left +11 document keydown handlers,
+// +66 element click handlers and +11 input handlers alive, so one Escape keypress ran eleven
+// close handlers.
+//
+// _fcOwned(x) returns a stand-in whose addEventListener routes through the page's lifecycle
+// listener scope, which KM.lifecycle releases on unmount. The call sites below keep their exact
+// shape, which is deliberate: this is a lifetime fix, not a rewrite of what the page listens to.
+// If the lifecycle helper is absent (a test sandbox that loads this file alone) it binds
+// directly, so behaviour is unchanged wherever the owner does not exist.
+// ============================================================================================
+function _fcOwned(t) {
+  if (!t || typeof t.addEventListener !== 'function') return { addEventListener: function () {} };
+  var sc = (window.KM && window.KM.lifecycle && typeof window.KM.lifecycle.listenerScope === 'function')
+    ? window.KM.lifecycle.listenerScope('forecast-section') : null;
+  if (!sc) return t;
+  return { addEventListener: function (type, fn, opts) { sc.on(t, type, fn, opts); } };
+}
+
 function initForecastReviewPage() {
   const root = document.querySelector('.page-forecast-review');
   if (!root) return;
@@ -96,11 +120,11 @@ function initForecastReviewPage() {
 
   // SKU filter
   const skuFilter = root.querySelector('.forecast-filter-sku');
-  if (skuFilter) skuFilter.addEventListener('input', () => handleForecastSearch(root));
+  if (skuFilter) _fcOwned(skuFilter).addEventListener('input', () => handleForecastSearch(root));
 
   // Date trigger
   if (dateTrigger) {
-    dateTrigger.addEventListener('click', (e) => {
+    _fcOwned(dateTrigger).addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
       openDateModal();
@@ -109,27 +133,27 @@ function initForecastReviewPage() {
 
   // Modal close
   if (cancelBtn) {
-    cancelBtn.addEventListener('click', () => {
+    _fcOwned(cancelBtn).addEventListener('click', () => {
       closeDateModal();
     });
   }
 
   // Modal apply
   if (applyBtn) {
-    applyBtn.addEventListener('click', () => {
+    _fcOwned(applyBtn).addEventListener('click', () => {
       applyDateRange();
     });
   }
 
   // Click backdrop to close
   if (backdrop) {
-    backdrop.addEventListener('click', () => {
+    _fcOwned(backdrop).addEventListener('click', () => {
       closeDateModal();
     });
   }
 
   // ESC to close
-  document.addEventListener('keydown', (e) => {
+  _fcOwned(document).addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && modal && modal.classList.contains('is-open')) {
       closeDateModal();
     }
@@ -138,7 +162,7 @@ function initForecastReviewPage() {
   // Preset items
   const presetItems = document.querySelectorAll('.fr-preset-item');
   presetItems.forEach(item => {
-    item.addEventListener('click', () => {
+    _fcOwned(item).addEventListener('click', () => {
       handlePresetClick(item.dataset.preset);
     });
   });
@@ -146,27 +170,27 @@ function initForecastReviewPage() {
   // Calendar navigation
   const navButtons = document.querySelectorAll('.fr-calendar-nav');
   navButtons.forEach(btn => {
-    btn.addEventListener('click', () => {
+    _fcOwned(btn).addEventListener('click', () => {
       handleCalendarNav(btn.dataset.nav);
     });
   });
 
   // Comparison toggle
   if (comparisonBtn) {
-    comparisonBtn.addEventListener('click', () => {
+    _fcOwned(comparisonBtn).addEventListener('click', () => {
       toggleComparison(root);
     });
   }
 
   // Unit switch
   if (unitSwitchBtn) {
-    unitSwitchBtn.addEventListener('click', () => {
+    _fcOwned(unitSwitchBtn).addEventListener('click', () => {
       toggleUnit(root);
     });
   }
 
   viewToggleButtons.forEach((btn) => {
-    btn.addEventListener('click', () => {
+    _fcOwned(btn).addEventListener('click', () => {
       handleChartViewToggle(btn, root);
     });
   });
@@ -920,7 +944,7 @@ function updateForecastChart(series) {
     chart.update();
     
     // Update summary stats
-    updateSummaryStats(actualData, forecastData, lastYearData, series.marketplaceBreakdown);
+    updateSummaryStats(actualData, forecastData, lastYearData, series.marketplaceBreakdown, series);
   }
   
   if (sessionChart && series) {
@@ -935,7 +959,38 @@ function updateForecastChart(series) {
   }
 }
 
-function updateSummaryStats(actualData, forecastData, lastYearData, marketplaceBreakdown) {
+// ============================================================================================
+// S4-R2 §9 — THE SUMMARY NOW COMES FROM THE SERIES THE PAGE ALREADY FETCHED.
+//
+// This block used to call DataRepo.getForecastReviewSummary(), which read two module-level
+// arrays — forecastReviewData and forecastReviewDataLastYear — that were retired with the rest
+// of the mock data and never replaced. The call therefore threw ReferenceError on every run,
+// inside a .then(), so it surfaced only as an unhandled rejection: thirteen of them in one
+// census. Nothing below this line ever executed in production, in either mode.
+//
+// fetchForecastSeries IS the owner now, and its series already carries every field the summary
+// needs — sales, units, sessions, and the three last-year counterparts. Summing them is the
+// same arithmetic the retired methods did, over the data that actually exists. With Demo off
+// the series is empty and the totals are zero, which is the honest reading: no figure here is
+// invented to fill the gap, and the two fields the retired summary carried but nothing ever
+// read (buy-box share, page views) are simply not reproduced.
+// ============================================================================================
+function _forecastSumSeries(a) {
+  return (Array.isArray(a) ? a : []).reduce(function (t, v) { return t + (Number(v) || 0); }, 0);
+}
+function _forecastSummaryFromSeries(series) {
+  var s = series || {};
+  return {
+    totalSalesUnits: _forecastSumSeries(s.salesUnits),
+    totalSalesAmount: _forecastSumSeries(s.salesAmount),
+    totalSessions: _forecastSumSeries(s.sessions),
+    lastYearSalesUnits: _forecastSumSeries(s.lastYearSalesUnits),
+    lastYearSalesAmount: _forecastSumSeries(s.lastYearSalesAmount),
+    lastYearSessions: _forecastSumSeries(s.lastYearSessions)
+  };
+}
+
+function updateSummaryStats(actualData, forecastData, lastYearData, marketplaceBreakdown, series) {
   // Demo mode: use chart series data directly
   if (window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled()) {
     var _demoTotalSales = (actualData || []).reduce(function(s,v){return s+v;}, 0);
@@ -962,13 +1017,7 @@ function updateSummaryStats(actualData, forecastData, lastYearData, marketplaceB
     return;
   }
 
-  const params = collectForecastFilterParams(document.querySelector('.page-forecast-review'));
-  
-  // Get filtered summary data
-  const summary = DataRepo.getForecastReviewSummary(params);
-  
-  console.log('Filter params:', params);
-  console.log('Summary data:', summary);
+  const summary = _forecastSummaryFromSeries(series);
   
   // Calculate YoY changes
   const salesChange = summary.lastYearSalesAmount > 0 
@@ -1119,9 +1168,18 @@ function toggleFCDetails(index) {
 
 
 // Achievement Summary Functions
+// S4-R2 §9 — the category/growth blocks need PER-SKU rows, and unlike the summary above there
+// is no owner left that supplies them: the series is aggregated by period, not by SKU. So this
+// asks for the rows through one named seam and gets none, and the three renderers below already
+// say "No data available" for an empty list. That is the truthful state, and it is reached
+// without a ReferenceError — which is all that ever stood between this page and its own message.
+// Restoring these blocks needs a per-SKU read that does not exist yet; it is not invented here.
+function _forecastReviewRowsBySku() {
+  return [];   // no per-SKU owner since the mock arrays were retired (see _forecastSummaryFromSeries)
+}
+
 function updateAchievementSummary() {
-  const params = collectForecastFilterParams(document.querySelector('.page-forecast-review'));
-  const data = DataRepo.getForecastReviewData(params);
+  const data = _forecastReviewRowsBySku();
   
   // Calculate Category Achievement
   const categoryData = calculateCategoryAchievement(data);
