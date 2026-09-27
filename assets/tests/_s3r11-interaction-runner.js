@@ -910,7 +910,10 @@ function run(serverMs) {
   }
 }
 
-module.exports = { run, WORLD, findChrome };
+/* S4-R1 —  JOINS THE EXPORTS so the route census can run over the SAME fixture world.
+   A second copy of the world would be a second thing to keep in step, and the round after that would
+   be comparing two pages that were never the same page. Nothing about this file behaves differently. */
+module.exports = { run, WORLD, findChrome, probeScript, driverScript };
 
 if (require.main === module) {
   const ms = parseInt(process.argv[2] || '0', 10);

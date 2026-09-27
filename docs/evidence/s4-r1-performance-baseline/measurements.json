@@ -1,0 +1,3170 @@
+{
+ "round": "S4-R1",
+ "mode": "MEASUREMENT AND CENSUS. No optimization performed. Every loading-order change is a DECISION_REQUIRED candidate in DECISION_BOARD.md.",
+ "instruments": {
+  "route_census": "assets/tests/_s4r1-route-census-runner.js - every user-visible route entered cold, left, and re-entered warm, in one real headless Chrome, over S3-R11's fixture world (imported, not copied).",
+  "shell_timing": "assets/tests/_s4r1-shell-timing-runner.js - the Chrome PROCESS timed from Node, because the page has no honest clock under virtual time."
+ },
+ "what_is_authoritative": [
+  "Request counts and the actions behind them. A count is a property of control flow, and the two serverMs settings demonstrate that rather than asserting it.",
+  "READ ROUNDS, but ONLY from the 400 ms run - see the caveat below.",
+  "DOM outcomes: shell-before-data, useful content, skeletons, visible-section count, open requests on leave.",
+  "Listener and interval drift, counted at addEventListener/removeEventListener and setInterval/clearInterval, wrapped before any application script runs.",
+  "The boot payload, read from disk against index.html."
+ ],
+ "what_is_not_observable": [
+  "MILLISECONDS OF CLIENT WORK. Measured, not assumed: under --virtual-time-budget Chrome freezes the clock while a task executes, so a page running `while (Date.now() - t < 300) {}` NEVER TERMINATES. performance.now() deltas count poll ticks.",
+  "Timing the Chrome process from outside does not rescue it at this scale: single-entry route deltas (-82 to +154 ms) sit INSIDE the baseline run's own spread (840 ms), and two of them are NEGATIVE - a route cannot cost less than doing nothing, which is what a measurement drowned in noise looks like. The 20-cycle amplification loops did not complete their cycles, so their per-entry figures are refused by name rather than published with a caveat.",
+  "SHELL vs PARTIAL vs JS vs RENDER cannot be separated from outside the process."
+ ],
+ "instrument_caveats": [
+  "ROUND COUNTS AT serverMs 0 ARE WRONG, AND THE 400 ms RUN IS WHY THEY ARE IN HERE TWICE. With instant settles, request N+1 is always SENT after request N SETTLED, so a pooled read looks perfectly sequential. campaign-risk reads 5/5 rounds at 0 ms and 5/3 at 400 ms; ceil(5/2) = 3 is the read pool (KM_SCOPED_READ_CONCURRENCY_ = 2) behaving exactly as designed. Every round count quoted in the report is the 400 ms one.",
+  "sku-handbook issues 3 requests at 0 ms and 2 at 400 ms. That is not noise: overlapping requests become eligible for the transport in-flight share, which cannot coalesce reads that never overlap.",
+  "Routes whose tables this fixture world does not carry render no rows. They are recorded with useful:0 and are NOT scored as \"never becomes useful\" - the census reports what each route ASKED FOR, which is fixture-independent.",
+  "The timeout counter in the shell block is contaminated by the instrument's own 8 ms polling and is not reported."
+ ],
+ "boot_payload": {
+  "scripts_total": 82,
+  "scripts_local": 80,
+  "scripts_external": [
+   "https://cdn.jsdelivr.net/npm/chart.js",
+   "https://cdn.jsdelivr.net/npm/exceljs/dist/exceljs.min.js"
+  ],
+  "scripts_deferred": 77,
+  "scripts_async": 0,
+  "js_total_kb": 5860,
+  "js_largest_kb": [
+   {
+    "kb": 946,
+    "file": "assets/js/pages/inventory-replenishment.js"
+   },
+   {
+    "kb": 476,
+    "file": "assets/js/pages/fc-summary.js"
+   },
+   {
+    "kb": 455,
+    "file": "assets/js/api/operation-system-db-api.js"
+   },
+   {
+    "kb": 355,
+    "file": "assets/js/pages/request-order.js"
+   },
+   {
+    "kb": 290,
+    "file": "assets/js/product-strategy/psb-board-ui.js"
+   },
+   {
+    "kb": 200,
+    "file": "assets/js/lib/km-globe.js"
+   },
+   {
+    "kb": 152,
+    "file": "assets/js/pages/sku-details.js"
+   },
+   {
+    "kb": 135,
+    "file": "assets/js/data/world-countries-110m.js"
+   },
+   {
+    "kb": 134,
+    "file": "assets/js/utils/inventory-compat.js"
+   },
+   {
+    "kb": 125,
+    "file": "assets/js/data/geo-names-zh-hant.js"
+   },
+   {
+    "kb": 125,
+    "file": "assets/js/pages/shipping-history.js"
+   },
+   {
+    "kb": 124,
+    "file": "assets/js/pages/global-logistics-map.js"
+   }
+  ],
+  "stylesheets": 24,
+  "css_total_kb": 724,
+  "note": "Every local script is loaded by index.html at boot. 79 of 82 carry `defer`, so they do not block HTML parsing - but defer still runs them all, in order, BEFORE DOMContentLoaded, which is when the menu becomes usable. Bytes are uncompressed on disk; the wire cost depends on server compression, but PARSE and EXECUTE cost is paid on these bytes regardless."
+ },
+ "runs": {
+  "serverMs0": {
+   "serverMs": 0,
+   "boot": {
+    "api": 1,
+    "partial": 1,
+    "byAction": {
+     "getClientCapabilities": 1
+    },
+    "errors": [],
+    "listeners": 31,
+    "intervals": 1,
+    "scriptsAppended": 0,
+    "menuItems": 31,
+    "menuItemsDisabled": 5,
+    "sectionsInDom": 0,
+    "sectionsActive": 0,
+    "mountedSections": [
+     "home-section"
+    ],
+    "domNodes": 386
+   },
+   "routes": {
+    "ops": {
+     "label": "Site Inventory",
+     "section": "ops-section",
+     "notInMenu": false,
+     "usefulBy": "#replen-dar-rows tr, #replen-detail-table tbody tr",
+     "cold": {
+      "api": 2,
+      "partial": 1,
+      "byAction": {
+       "inventoryScope.registry.get": 1,
+       "gapJob.status.get": 1
+      },
+      "rounds": 2,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 297,
+      "shell": {
+       "active": true,
+       "api": 2,
+       "partial": 1
+      },
+      "listenersAdded": 6,
+      "intervalsAdded": -1
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 20,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 1,
+      "partial": 0,
+      "byAction": {
+       "gapJob.status.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 297,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0
+      },
+      "listenersAdded": -1,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "factory-stock": {
+     "label": "Factory Inventory",
+     "section": "factory-stock-section",
+     "notInMenu": false,
+     "usefulBy": "#factory-stock-fixed-body tr",
+     "cold": {
+      "api": 4,
+      "partial": 1,
+      "byAction": {
+       "getTable:factory_stock": 1,
+       "getTable:factory_stock_movements": 1,
+       "getTable:sku_details": 1,
+       "getTable:warehouses": 1
+      },
+      "rounds": 4,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 348,
+      "shell": {
+       "active": true,
+       "api": 4,
+       "partial": 1
+      },
+      "listenersAdded": 65,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 1,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 0,
+      "partial": 0,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 348,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0
+      },
+      "listenersAdded": 60,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "overseas-stock": {
+     "label": "Overseas Inventory",
+     "section": "overseas-stock-section",
+     "notInMenu": false,
+     "usefulBy": "#overseas-snapshot-fixed-body tr",
+     "cold": {
+      "api": 1,
+      "partial": 1,
+      "byAction": {
+       "overseasStock.workspace.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 309,
+      "shell": {
+       "active": true,
+       "api": 1,
+       "partial": 1
+      },
+      "listenersAdded": 77,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 1,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 0,
+      "partial": 0,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 309,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0
+      },
+      "listenersAdded": 74,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "forecast": {
+     "label": "Forecast",
+     "section": "forecast-section",
+     "notInMenu": false,
+     "usefulBy": "shell-text",
+     "cold": {
+      "api": 0,
+      "partial": 1,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 1,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 159,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 1
+      },
+      "listenersAdded": 61,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": -13,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 0,
+      "partial": 0,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 1,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 159,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0
+      },
+      "listenersAdded": 38,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "request-order": {
+     "label": "Order Planning",
+     "section": "request-order-section",
+     "notInMenu": false,
+     "usefulBy": "#ro-fixed-body tr",
+     "cold": {
+      "api": 3,
+      "partial": 1,
+      "byAction": {
+       "getTable:marketplaces": 1,
+       "aiPlanFirstLayer.get": 1,
+       "gapJob.status.get": 1
+      },
+      "rounds": 3,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 127,
+      "shell": {
+       "active": true,
+       "api": 3,
+       "partial": 1
+      },
+      "listenersAdded": 12,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 3,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 2,
+      "partial": 0,
+      "byAction": {
+       "aiPlanFirstLayer.get": 1,
+       "gapJob.status.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 127,
+      "shell": {
+       "active": true,
+       "api": 2,
+       "partial": 0
+      },
+      "listenersAdded": 4,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "fc-summary": {
+     "label": "FC Summary",
+     "section": "fc-summary-section",
+     "notInMenu": false,
+     "usefulBy": "#fc-regular-fixed-body tr",
+     "cold": {
+      "api": 2,
+      "partial": 1,
+      "byAction": {
+       "fcSummary.workspace.get:bootstrap": 1,
+       "fcSummary.workspace.get:regular": 1
+      },
+      "rounds": 2,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 913,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 1
+      },
+      "listenersAdded": 379,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 3,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 0,
+      "partial": 0,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 913,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0
+      },
+      "listenersAdded": 336,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "shippingplan": {
+     "label": "Weekly Shipping Plan",
+     "section": "shippingplan-section",
+     "notInMenu": false,
+     "usefulBy": "table tbody tr, .wsp-card",
+     "cold": {
+      "api": 2,
+      "partial": 1,
+      "byAction": {
+       "system.health": 1,
+       "weeklyShipping.workspace.get": 1
+      },
+      "rounds": 2,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 36,
+      "shell": {
+       "active": true,
+       "api": 2,
+       "partial": 1
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 3,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 2,
+      "partial": 0,
+      "byAction": {
+       "system.health": 1,
+       "weeklyShipping.workspace.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 36,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "shipment-draft": {
+     "label": "Shipment Draft",
+     "section": "shipment-draft-section",
+     "notInMenu": false,
+     "usefulBy": "table tbody tr, .card, .sd-row",
+     "cold": {
+      "api": 1,
+      "partial": 1,
+      "byAction": {
+       "shipment.workspace.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 17,
+      "shell": {
+       "active": true,
+       "api": 1,
+       "partial": 1
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 3,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 0,
+      "partial": 0,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 17,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "shipment-overview": {
+     "label": "Shipment Overview",
+     "section": "shippinghistory-section",
+     "notInMenu": false,
+     "usefulBy": "table tbody tr, .sh-row, .card",
+     "cold": {
+      "api": 0,
+      "partial": 1,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 46,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 1
+      },
+      "listenersAdded": 7,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 3,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 0,
+      "partial": 0,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 46,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "global-logistics-map": {
+     "label": "On-the-Way Map",
+     "section": "global-logistics-map-section",
+     "notInMenu": false,
+     "usefulBy": "canvas",
+     "cold": {
+      "api": 1,
+      "partial": 1,
+      "byAction": {
+       "shipment.workspace.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 2,
+      "skeletons": 0,
+      "error": "0Customs Clearance",
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 62,
+      "shell": {
+       "active": true,
+       "api": 1,
+       "partial": 1
+      },
+      "listenersAdded": 8,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 3,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 0,
+      "partial": 0,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 2,
+      "skeletons": 0,
+      "error": "0Customs Clearance",
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 62,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "request-order-draft": {
+     "label": "Request Order Draft",
+     "section": "request-order-draft-section",
+     "notInMenu": false,
+     "usefulBy": "table tbody tr, .rod-row, .card",
+     "cold": {
+      "api": 1,
+      "partial": 1,
+      "byAction": {
+       "requestOrder.workspace.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 20,
+      "shell": {
+       "active": true,
+       "api": 1,
+       "partial": 1
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 3,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 1,
+      "partial": 0,
+      "byAction": {
+       "requestOrder.workspace.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 20,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "purchase-order-overview": {
+     "label": "Purchase Order Overview",
+     "section": "purchase-order-overview-section",
+     "notInMenu": false,
+     "usefulBy": "table tbody tr, .card",
+     "cold": {
+      "api": 1,
+      "partial": 1,
+      "byAction": {
+       "purchaseOrder.workspace.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 17,
+      "shell": {
+       "active": true,
+       "api": 1,
+       "partial": 1
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 3,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 1,
+      "partial": 0,
+      "byAction": {
+       "purchaseOrder.workspace.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 17,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "purchase-order-list": {
+     "label": "Purchase Order Workspace",
+     "section": "purchase-order-list-section",
+     "notInMenu": false,
+     "usefulBy": "#pol-tbody tr",
+     "cold": {
+      "api": 1,
+      "partial": 1,
+      "byAction": {
+       "purchaseOrder.workspace.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 1,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 120,
+      "shell": {
+       "active": true,
+       "api": 1,
+       "partial": 1
+      },
+      "listenersAdded": 17,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 3,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 1,
+      "partial": 0,
+      "byAction": {
+       "purchaseOrder.workspace.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 1,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 120,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "campaign-risk": {
+     "label": "Promotion Risk Tracker",
+     "section": "campaign-risk-section",
+     "notInMenu": false,
+     "usefulBy": "#cr-table-fixed-body tr, #cr-kpi-cards > *",
+     "cold": {
+      "api": 5,
+      "partial": 1,
+      "byAction": {
+       "getTable:campaigns": 1,
+       "getTable:campaign_sku_lines": 1,
+       "getTable:marketplace_skus": 1,
+       "getTable:sku_details": 1,
+       "getTable:marketplaces": 1
+      },
+      "rounds": 5,
+      "dupes": 0,
+      "useful": 3,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 73,
+      "shell": {
+       "active": true,
+       "api": 5,
+       "partial": 1
+      },
+      "listenersAdded": 67,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 0,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 0,
+      "partial": 0,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 3,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 73,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0
+      },
+      "listenersAdded": 63,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "skuDetails": {
+     "label": "SKU Details",
+     "section": "sku-section",
+     "notInMenu": false,
+     "usefulBy": "#sku-section .fixed-row[data-sku]",
+     "cold": {
+      "api": 1,
+      "partial": 1,
+      "byAction": {
+       "skuDetails.workspace.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 120,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 3863,
+      "shell": {
+       "active": true,
+       "api": 1,
+       "partial": 1
+      },
+      "listenersAdded": 678,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 3,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 1,
+      "partial": 0,
+      "byAction": {
+       "skuDetails.workspace.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 120,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 3863,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0
+      },
+      "listenersAdded": 1,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "sku-regional-details": {
+     "label": "SKU Regional Details",
+     "section": "sku-regional-details-section",
+     "notInMenu": false,
+     "usefulBy": "#srd-list .srd-item",
+     "cold": {
+      "api": 1,
+      "partial": 1,
+      "byAction": {
+       "skuDetails.workspace.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 50,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 325,
+      "shell": {
+       "active": true,
+       "api": 1,
+       "partial": 1
+      },
+      "listenersAdded": 11,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 3,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 0,
+      "partial": 0,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 50,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 325,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "product-strategy": {
+     "label": "Product Strategy Board",
+     "section": "product-strategy-board-section",
+     "notInMenu": true,
+     "usefulBy": "shell-text",
+     "cold": {
+      "api": 1,
+      "partial": 1,
+      "byAction": {
+       "productPricing.siteUniverse.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 1,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 37,
+      "shell": {
+       "active": true,
+       "api": 1,
+       "partial": 1
+      },
+      "listenersAdded": 2,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 3,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 1,
+      "partial": 0,
+      "byAction": {
+       "productPricing.siteUniverse.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 1,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 37,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0
+      },
+      "listenersAdded": -2,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "carrier-rate-card": {
+     "label": "Carrier Rate Card",
+     "section": "carrier-rate-card-section",
+     "notInMenu": false,
+     "usefulBy": "table tbody tr, .card",
+     "cold": {
+      "api": 3,
+      "partial": 1,
+      "byAction": {
+       "getTable:carrier_rate_cards": 1,
+       "getTable:carriers": 1,
+       "getTable:carrier_lead_times": 1
+      },
+      "rounds": 3,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 119,
+      "shell": {
+       "active": true,
+       "api": 3,
+       "partial": 1
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 3,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 0,
+      "partial": 0,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 119,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "sku-handbook": {
+     "label": "SKU Handbook",
+     "section": "sku-handbook-section",
+     "notInMenu": false,
+     "usefulBy": "shell-text",
+     "cold": {
+      "api": 3,
+      "partial": 1,
+      "byAction": {
+       "getTable:sku_details": 1,
+       "getTable:product_features": 1,
+       "getTable:sku_handbook_summaries": 1
+      },
+      "rounds": 3,
+      "dupes": 0,
+      "useful": 1,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 1252,
+      "shell": {
+       "active": true,
+       "api": 3,
+       "partial": 1
+      },
+      "listenersAdded": 13,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 3,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 0,
+      "partial": 0,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 1,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 1252,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0
+      },
+      "listenersAdded": -2,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "supplychain": {
+     "label": "Supply Chain Canvas",
+     "section": "supplychain-section",
+     "notInMenu": false,
+     "usefulBy": "shell-text",
+     "cold": {
+      "api": 0,
+      "partial": 0,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 1,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 76,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0
+      },
+      "listenersAdded": 0,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": true,
+      "visibleSections": 1,
+      "listenersDelta": 0,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 0,
+      "partial": 0,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 1,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 76,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0
+      },
+      "listenersAdded": 0,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "automation": {
+     "label": "Automation Schedule",
+     "section": "automation-schedule-section",
+     "notInMenu": false,
+     "usefulBy": "#auto-sched-cards > *",
+     "cold": {
+      "api": 1,
+      "partial": 1,
+      "byAction": {
+       "automationSchedule.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 1,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 8,
+      "shell": {
+       "active": true,
+       "api": 1,
+       "partial": 1
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 3,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 1,
+      "partial": 0,
+      "byAction": {
+       "automationSchedule.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 1,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 8,
+      "shell": {
+       "active": true,
+       "api": 1,
+       "partial": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    }
+   },
+   "transitions": {
+    "light:sku-handbook->sku-regional-details": {
+     "from": "sku-handbook",
+     "to": "sku-regional-details",
+     "api": 0,
+     "byAction": {},
+     "visibleSections": 1,
+     "visibleIds": [
+      "sku-regional-details-section"
+     ],
+     "lastDiscarded": null,
+     "aStillUseful": 1,
+     "bUseful": 50,
+     "aSkeletons": 0,
+     "bSkeletons": 0,
+     "openRequests": 0,
+     "backToA": {
+      "api": 0,
+      "byAction": {},
+      "useful": 1,
+      "skeletons": 0,
+      "visibleSections": 1,
+      "openRequests": 0
+     }
+    },
+    "medium:sku-regional-details->ops": {
+     "from": "sku-regional-details",
+     "to": "ops",
+     "api": 1,
+     "byAction": {
+      "gapJob.status.get": 1
+     },
+     "visibleSections": 1,
+     "visibleIds": [
+      "ops-section"
+     ],
+     "lastDiscarded": null,
+     "aStillUseful": 50,
+     "bUseful": 0,
+     "aSkeletons": 0,
+     "bSkeletons": 0,
+     "openRequests": 0,
+     "backToA": {
+      "api": 0,
+      "byAction": {},
+      "useful": 50,
+      "skeletons": 0,
+      "visibleSections": 1,
+      "openRequests": 0
+     }
+    },
+    "heavy:ops->sku-handbook": {
+     "from": "ops",
+     "to": "sku-handbook",
+     "api": 1,
+     "byAction": {
+      "gapJob.status.get": 1
+     },
+     "visibleSections": 1,
+     "visibleIds": [
+      "sku-handbook-section"
+     ],
+     "lastDiscarded": null,
+     "aStillUseful": 0,
+     "bUseful": 1,
+     "aSkeletons": 0,
+     "bSkeletons": 0,
+     "openRequests": 0,
+     "backToA": {
+      "api": 1,
+      "byAction": {
+       "gapJob.status.get": 1
+      },
+      "useful": 0,
+      "skeletons": 0,
+      "visibleSections": 1,
+      "openRequests": 0
+     }
+    }
+   },
+   "shell": {
+    "finalListeners": 2049,
+    "finalIntervals": 0,
+    "finalTimeouts": 64633,
+    "scriptsAppended": [],
+    "partialFetches": 0,
+    "domNodes": 8623,
+    "mountedSections": [
+     "supplychain-section"
+    ],
+    "errors": [
+     "REJECTION: forecastReviewData is not defined",
+     "REJECTION: forecastReviewData is not defined"
+    ]
+   },
+   "fatal": null,
+   "progress": null,
+   "done": true
+  },
+  "serverMs400": {
+   "serverMs": 400,
+   "boot": {
+    "api": 1,
+    "partial": 1,
+    "byAction": {
+     "getClientCapabilities": 1
+    },
+    "errors": [],
+    "listeners": 31,
+    "intervals": 1,
+    "scriptsAppended": 0,
+    "menuItems": 31,
+    "menuItemsDisabled": 5,
+    "sectionsInDom": 0,
+    "sectionsActive": 0,
+    "mountedSections": [
+     "home-section"
+    ],
+    "domNodes": 386
+   },
+   "routes": {
+    "ops": {
+     "label": "Site Inventory",
+     "section": "ops-section",
+     "notInMenu": false,
+     "usefulBy": "#replen-dar-rows tr, #replen-detail-table tbody tr",
+     "cold": {
+      "api": 2,
+      "partial": 1,
+      "byAction": {
+       "inventoryScope.registry.get": 1,
+       "gapJob.status.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 297,
+      "shell": {
+       "active": true,
+       "api": 2,
+       "partial": 1,
+       "settled": 0
+      },
+      "listenersAdded": 6,
+      "intervalsAdded": -1
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 20,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 1,
+      "partial": 0,
+      "byAction": {
+       "gapJob.status.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 297,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0,
+       "settled": 0
+      },
+      "listenersAdded": -1,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "factory-stock": {
+     "label": "Factory Inventory",
+     "section": "factory-stock-section",
+     "notInMenu": false,
+     "usefulBy": "#factory-stock-fixed-body tr",
+     "cold": {
+      "api": 4,
+      "partial": 1,
+      "byAction": {
+       "getTable:factory_stock": 1,
+       "getTable:factory_stock_movements": 1,
+       "getTable:sku_details": 1,
+       "getTable:warehouses": 1
+      },
+      "rounds": 2,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 348,
+      "shell": {
+       "active": true,
+       "api": 2,
+       "partial": 1,
+       "settled": 0
+      },
+      "listenersAdded": 65,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 1,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 0,
+      "partial": 0,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 348,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0,
+       "settled": 0
+      },
+      "listenersAdded": 60,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "overseas-stock": {
+     "label": "Overseas Inventory",
+     "section": "overseas-stock-section",
+     "notInMenu": false,
+     "usefulBy": "#overseas-snapshot-fixed-body tr",
+     "cold": {
+      "api": 1,
+      "partial": 1,
+      "byAction": {
+       "overseasStock.workspace.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 309,
+      "shell": {
+       "active": true,
+       "api": 1,
+       "partial": 1,
+       "settled": 0
+      },
+      "listenersAdded": 77,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 1,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 0,
+      "partial": 0,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 309,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0,
+       "settled": 0
+      },
+      "listenersAdded": 74,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "forecast": {
+     "label": "Forecast",
+     "section": "forecast-section",
+     "notInMenu": false,
+     "usefulBy": "shell-text",
+     "cold": {
+      "api": 0,
+      "partial": 1,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 1,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 159,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 1,
+       "settled": 0
+      },
+      "listenersAdded": 61,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": -13,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 0,
+      "partial": 0,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 1,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 159,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0,
+       "settled": 0
+      },
+      "listenersAdded": 38,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "request-order": {
+     "label": "Order Planning",
+     "section": "request-order-section",
+     "notInMenu": false,
+     "usefulBy": "#ro-fixed-body tr",
+     "cold": {
+      "api": 3,
+      "partial": 1,
+      "byAction": {
+       "getTable:marketplaces": 1,
+       "aiPlanFirstLayer.get": 1,
+       "gapJob.status.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 127,
+      "shell": {
+       "active": true,
+       "api": 3,
+       "partial": 1,
+       "settled": 0
+      },
+      "listenersAdded": 12,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 3,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 2,
+      "partial": 0,
+      "byAction": {
+       "aiPlanFirstLayer.get": 1,
+       "gapJob.status.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 127,
+      "shell": {
+       "active": true,
+       "api": 2,
+       "partial": 0,
+       "settled": 0
+      },
+      "listenersAdded": 4,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "fc-summary": {
+     "label": "FC Summary",
+     "section": "fc-summary-section",
+     "notInMenu": false,
+     "usefulBy": "#fc-regular-fixed-body tr",
+     "cold": {
+      "api": 2,
+      "partial": 1,
+      "byAction": {
+       "fcSummary.workspace.get:bootstrap": 1,
+       "fcSummary.workspace.get:regular": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 913,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 1,
+       "settled": 0
+      },
+      "listenersAdded": 379,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 3,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 0,
+      "partial": 0,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 913,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0,
+       "settled": 0
+      },
+      "listenersAdded": 336,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "shippingplan": {
+     "label": "Weekly Shipping Plan",
+     "section": "shippingplan-section",
+     "notInMenu": false,
+     "usefulBy": "table tbody tr, .wsp-card",
+     "cold": {
+      "api": 2,
+      "partial": 1,
+      "byAction": {
+       "system.health": 1,
+       "weeklyShipping.workspace.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 36,
+      "shell": {
+       "active": true,
+       "api": 2,
+       "partial": 1,
+       "settled": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 3,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 2,
+      "partial": 0,
+      "byAction": {
+       "system.health": 1,
+       "weeklyShipping.workspace.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 36,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0,
+       "settled": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "shipment-draft": {
+     "label": "Shipment Draft",
+     "section": "shipment-draft-section",
+     "notInMenu": false,
+     "usefulBy": "table tbody tr, .card, .sd-row",
+     "cold": {
+      "api": 1,
+      "partial": 1,
+      "byAction": {
+       "shipment.workspace.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 17,
+      "shell": {
+       "active": true,
+       "api": 1,
+       "partial": 1,
+       "settled": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 3,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 0,
+      "partial": 0,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 17,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0,
+       "settled": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "shipment-overview": {
+     "label": "Shipment Overview",
+     "section": "shippinghistory-section",
+     "notInMenu": false,
+     "usefulBy": "table tbody tr, .sh-row, .card",
+     "cold": {
+      "api": 0,
+      "partial": 1,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 46,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 1,
+       "settled": 0
+      },
+      "listenersAdded": 7,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 3,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 0,
+      "partial": 0,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 46,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0,
+       "settled": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "global-logistics-map": {
+     "label": "On-the-Way Map",
+     "section": "global-logistics-map-section",
+     "notInMenu": false,
+     "usefulBy": "canvas",
+     "cold": {
+      "api": 1,
+      "partial": 1,
+      "byAction": {
+       "shipment.workspace.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 2,
+      "skeletons": 0,
+      "error": "0Customs Clearance",
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 62,
+      "shell": {
+       "active": true,
+       "api": 1,
+       "partial": 1,
+       "settled": 0
+      },
+      "listenersAdded": 8,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 3,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 0,
+      "partial": 0,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 2,
+      "skeletons": 0,
+      "error": "0Customs Clearance",
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 62,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0,
+       "settled": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "request-order-draft": {
+     "label": "Request Order Draft",
+     "section": "request-order-draft-section",
+     "notInMenu": false,
+     "usefulBy": "table tbody tr, .rod-row, .card",
+     "cold": {
+      "api": 1,
+      "partial": 1,
+      "byAction": {
+       "requestOrder.workspace.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 20,
+      "shell": {
+       "active": true,
+       "api": 1,
+       "partial": 1,
+       "settled": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 3,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 1,
+      "partial": 0,
+      "byAction": {
+       "requestOrder.workspace.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 20,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0,
+       "settled": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "purchase-order-overview": {
+     "label": "Purchase Order Overview",
+     "section": "purchase-order-overview-section",
+     "notInMenu": false,
+     "usefulBy": "table tbody tr, .card",
+     "cold": {
+      "api": 1,
+      "partial": 1,
+      "byAction": {
+       "purchaseOrder.workspace.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 17,
+      "shell": {
+       "active": true,
+       "api": 1,
+       "partial": 1,
+       "settled": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 3,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 1,
+      "partial": 0,
+      "byAction": {
+       "purchaseOrder.workspace.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 17,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0,
+       "settled": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "purchase-order-list": {
+     "label": "Purchase Order Workspace",
+     "section": "purchase-order-list-section",
+     "notInMenu": false,
+     "usefulBy": "#pol-tbody tr",
+     "cold": {
+      "api": 1,
+      "partial": 1,
+      "byAction": {
+       "purchaseOrder.workspace.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 1,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 1,
+      "visibleSections": 1,
+      "nodes": 53,
+      "shell": {
+       "active": true,
+       "api": 1,
+       "partial": 1,
+       "settled": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 23,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 1,
+      "partial": 0,
+      "byAction": {
+       "purchaseOrder.workspace.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 1,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 1,
+      "visibleSections": 1,
+      "nodes": 120,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0,
+       "settled": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "campaign-risk": {
+     "label": "Promotion Risk Tracker",
+     "section": "campaign-risk-section",
+     "notInMenu": false,
+     "usefulBy": "#cr-table-fixed-body tr, #cr-kpi-cards > *",
+     "cold": {
+      "api": 5,
+      "partial": 1,
+      "byAction": {
+       "getTable:campaigns": 1,
+       "getTable:campaign_sku_lines": 1,
+       "getTable:marketplace_skus": 1,
+       "getTable:sku_details": 1,
+       "getTable:marketplaces": 1
+      },
+      "rounds": 3,
+      "dupes": 0,
+      "useful": 3,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 73,
+      "shell": {
+       "active": true,
+       "api": 2,
+       "partial": 1,
+       "settled": 0
+      },
+      "listenersAdded": 67,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 0,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 0,
+      "partial": 0,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 3,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 73,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0,
+       "settled": 0
+      },
+      "listenersAdded": 63,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "skuDetails": {
+     "label": "SKU Details",
+     "section": "sku-section",
+     "notInMenu": false,
+     "usefulBy": "#sku-section .fixed-row[data-sku]",
+     "cold": {
+      "api": 1,
+      "partial": 1,
+      "byAction": {
+       "skuDetails.workspace.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 120,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 3863,
+      "shell": {
+       "active": true,
+       "api": 1,
+       "partial": 1,
+       "settled": 0
+      },
+      "listenersAdded": 678,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 3,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 1,
+      "partial": 0,
+      "byAction": {
+       "skuDetails.workspace.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 120,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 1,
+      "visibleSections": 1,
+      "nodes": 3863,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0,
+       "settled": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "sku-regional-details": {
+     "label": "SKU Regional Details",
+     "section": "sku-regional-details-section",
+     "notInMenu": false,
+     "usefulBy": "#srd-list .srd-item",
+     "cold": {
+      "api": 1,
+      "partial": 1,
+      "byAction": {
+       "skuDetails.workspace.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 50,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 325,
+      "shell": {
+       "active": true,
+       "api": 1,
+       "partial": 1,
+       "settled": 0
+      },
+      "listenersAdded": 11,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 3,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 0,
+      "partial": 0,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 50,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 325,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0,
+       "settled": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "product-strategy": {
+     "label": "Product Strategy Board",
+     "section": "product-strategy-board-section",
+     "notInMenu": true,
+     "usefulBy": "shell-text",
+     "cold": {
+      "api": 1,
+      "partial": 1,
+      "byAction": {
+       "productPricing.siteUniverse.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 1,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 1,
+      "visibleSections": 1,
+      "nodes": 22,
+      "shell": {
+       "active": true,
+       "api": 1,
+       "partial": 1,
+       "settled": 0
+      },
+      "listenersAdded": 1,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 3,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 1,
+      "partial": 0,
+      "byAction": {
+       "productPricing.siteUniverse.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 1,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 1,
+      "visibleSections": 1,
+      "nodes": 22,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0,
+       "settled": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "carrier-rate-card": {
+     "label": "Carrier Rate Card",
+     "section": "carrier-rate-card-section",
+     "notInMenu": false,
+     "usefulBy": "table tbody tr, .card",
+     "cold": {
+      "api": 3,
+      "partial": 1,
+      "byAction": {
+       "getTable:carrier_rate_cards": 1,
+       "getTable:carriers": 1,
+       "getTable:carrier_lead_times": 1
+      },
+      "rounds": 2,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 119,
+      "shell": {
+       "active": true,
+       "api": 2,
+       "partial": 1,
+       "settled": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 3,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 0,
+      "partial": 0,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 0,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 119,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0,
+       "settled": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "sku-handbook": {
+     "label": "SKU Handbook",
+     "section": "sku-handbook-section",
+     "notInMenu": false,
+     "usefulBy": "shell-text",
+     "cold": {
+      "api": 2,
+      "partial": 1,
+      "byAction": {
+       "getTable:sku_details": 1,
+       "getTable:product_features": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 1,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 2,
+      "visibleSections": 1,
+      "nodes": 29,
+      "shell": {
+       "active": true,
+       "api": 2,
+       "partial": 1,
+       "settled": 0
+      },
+      "listenersAdded": -2,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 1,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 18,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 0,
+      "partial": 0,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 1,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 1252,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0,
+       "settled": 0
+      },
+      "listenersAdded": -2,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "supplychain": {
+     "label": "Supply Chain Canvas",
+     "section": "supplychain-section",
+     "notInMenu": false,
+     "usefulBy": "shell-text",
+     "cold": {
+      "api": 0,
+      "partial": 0,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 1,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 76,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0,
+       "settled": 0
+      },
+      "listenersAdded": 0,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": true,
+      "visibleSections": 1,
+      "listenersDelta": 0,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 0,
+      "partial": 0,
+      "byAction": {},
+      "rounds": 0,
+      "dupes": 0,
+      "useful": 1,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 0,
+      "visibleSections": 1,
+      "nodes": 76,
+      "shell": {
+       "active": true,
+       "api": 0,
+       "partial": 0,
+       "settled": 0
+      },
+      "listenersAdded": 0,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    },
+    "automation": {
+     "label": "Automation Schedule",
+     "section": "automation-schedule-section",
+     "notInMenu": false,
+     "usefulBy": "#auto-sched-cards > *",
+     "cold": {
+      "api": 1,
+      "partial": 1,
+      "byAction": {
+       "automationSchedule.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 1,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 1,
+      "visibleSections": 1,
+      "nodes": 8,
+      "shell": {
+       "active": true,
+       "api": 1,
+       "partial": 1,
+       "settled": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "onLeave": {
+      "api": 0,
+      "openRequests": 0,
+      "stillActive": false,
+      "visibleSections": 1,
+      "listenersDelta": 3,
+      "intervalsDelta": 0,
+      "mountedSections": 1
+     },
+     "warm": {
+      "api": 1,
+      "partial": 0,
+      "byAction": {
+       "automationSchedule.get": 1
+      },
+      "rounds": 1,
+      "dupes": 0,
+      "useful": 1,
+      "skeletons": 0,
+      "error": null,
+      "active": true,
+      "openRequests": 1,
+      "visibleSections": 1,
+      "nodes": 8,
+      "shell": {
+       "active": true,
+       "api": 1,
+       "partial": 0,
+       "settled": 0
+      },
+      "listenersAdded": -3,
+      "intervalsAdded": 0
+     },
+     "mountGrowth": 0
+    }
+   },
+   "transitions": {
+    "light:automation->sku-regional-details": {
+     "from": "automation",
+     "to": "sku-regional-details",
+     "api": 1,
+     "byAction": {
+      "automationSchedule.get": 1
+     },
+     "visibleSections": 1,
+     "visibleIds": [
+      "sku-regional-details-section"
+     ],
+     "lastDiscarded": null,
+     "aStillUseful": 1,
+     "bUseful": 50,
+     "aSkeletons": 0,
+     "bSkeletons": 0,
+     "openRequests": 0,
+     "backToA": {
+      "api": 1,
+      "byAction": {
+       "automationSchedule.get": 1
+      },
+      "useful": 1,
+      "skeletons": 0,
+      "visibleSections": 1,
+      "openRequests": 1
+     }
+    },
+    "medium:sku-regional-details->skuDetails": {
+     "from": "sku-regional-details",
+     "to": "skuDetails",
+     "api": 1,
+     "byAction": {
+      "skuDetails.workspace.get": 1
+     },
+     "visibleSections": 1,
+     "visibleIds": [
+      "sku-section"
+     ],
+     "lastDiscarded": null,
+     "aStillUseful": 50,
+     "bUseful": 120,
+     "aSkeletons": 0,
+     "bSkeletons": 0,
+     "openRequests": 0,
+     "backToA": {
+      "api": 0,
+      "byAction": {},
+      "useful": 50,
+      "skeletons": 0,
+      "visibleSections": 1,
+      "openRequests": 0
+     }
+    },
+    "heavy:skuDetails->campaign-risk": {
+     "from": "skuDetails",
+     "to": "campaign-risk",
+     "api": 1,
+     "byAction": {
+      "skuDetails.workspace.get": 1
+     },
+     "visibleSections": 1,
+     "visibleIds": [
+      "campaign-risk-section"
+     ],
+     "lastDiscarded": null,
+     "aStillUseful": 120,
+     "bUseful": 3,
+     "aSkeletons": 0,
+     "bSkeletons": 0,
+     "openRequests": 0,
+     "backToA": {
+      "api": 1,
+      "byAction": {
+       "skuDetails.workspace.get": 1
+      },
+      "useful": 120,
+      "skeletons": 0,
+      "visibleSections": 1,
+      "openRequests": 1
+     }
+    },
+    "roundsHeavy:campaign-risk->automation": {
+     "from": "campaign-risk",
+     "to": "automation",
+     "api": 1,
+     "byAction": {
+      "automationSchedule.get": 1
+     },
+     "visibleSections": 1,
+     "visibleIds": [
+      "automation-schedule-section"
+     ],
+     "lastDiscarded": null,
+     "aStillUseful": 3,
+     "bUseful": 1,
+     "aSkeletons": 0,
+     "bSkeletons": 0,
+     "openRequests": 0,
+     "backToA": {
+      "api": 0,
+      "byAction": {},
+      "useful": 3,
+      "skeletons": 0,
+      "visibleSections": 1,
+      "openRequests": 0
+     }
+    }
+   },
+   "shell": {
+    "finalListeners": 2245,
+    "finalIntervals": 0,
+    "finalTimeouts": 62450,
+    "scriptsAppended": [],
+    "partialFetches": 0,
+    "domNodes": 8623,
+    "mountedSections": [
+     "supplychain-section"
+    ],
+    "errors": [
+     "REJECTION: forecastReviewData is not defined",
+     "REJECTION: forecastReviewData is not defined"
+    ]
+   },
+   "fatal": null,
+   "progress": null,
+   "done": true
+  }
+ },
+ "shell_timing": {
+  "vtBudgetMs": 120000,
+  "serverMs": 0,
+  "repeats": 5,
+  "stops": {
+   "baseline": {
+    "key": null,
+    "cycles": null,
+    "runs": [
+     1530,
+     1693,
+     2370,
+     1749,
+     2273
+    ],
+    "medianWallMs": 1749,
+    "spreadMs": 840,
+    "reached": true,
+    "note": null
+   },
+   "shell": {
+    "key": null,
+    "cycles": null,
+    "runs": [
+     1886,
+     1742,
+     2099,
+     1903,
+     1924
+    ],
+    "medianWallMs": 1903,
+    "spreadMs": 357,
+    "reached": true,
+    "note": null
+   },
+   "menu": {
+    "key": null,
+    "cycles": null,
+    "runs": [
+     1825,
+     1894,
+     1611,
+     1852,
+     1582
+    ],
+    "medianWallMs": 1825,
+    "spreadMs": 312,
+    "reached": true,
+    "note": null
+   },
+   "light": {
+    "key": "automation",
+    "cycles": null,
+    "runs": [
+     1748,
+     2000,
+     1736,
+     1709,
+     1658
+    ],
+    "medianWallMs": 1736,
+    "spreadMs": 342,
+    "reached": true,
+    "note": null
+   },
+   "medium": {
+    "key": "sku-regional-details",
+    "cycles": null,
+    "runs": [
+     1667,
+     1553,
+     1721,
+     1460,
+     1789
+    ],
+    "medianWallMs": 1667,
+    "spreadMs": 329,
+    "reached": true,
+    "note": null
+   },
+   "heavy": {
+    "key": "skuDetails",
+    "cycles": null,
+    "runs": [
+     8690,
+     1870,
+     2022,
+     1448,
+     1774
+    ],
+    "medianWallMs": 1870,
+    "spreadMs": 7242,
+    "reached": true,
+    "note": null
+   },
+   "roundsHeavy": {
+    "key": "campaign-risk",
+    "cycles": null,
+    "runs": [
+     1768,
+     1841,
+     1647,
+     1551,
+     1839
+    ],
+    "medianWallMs": 1768,
+    "spreadMs": 290,
+    "reached": true,
+    "note": null
+   },
+   "loopLight": {
+    "key": "automation",
+    "cycles": 20,
+    "runs": [
+     1801,
+     1727,
+     1876,
+     1924,
+     1539
+    ],
+    "medianWallMs": 1801,
+    "spreadMs": 385,
+    "reached": false,
+    "note": null
+   },
+   "loopMedium": {
+    "key": "sku-regional-details",
+    "cycles": 20,
+    "runs": [
+     1628,
+     1919,
+     1971,
+     1986,
+     2041
+    ],
+    "medianWallMs": 1971,
+    "spreadMs": 413,
+    "reached": false,
+    "note": null
+   },
+   "loopHeavy": {
+    "key": "skuDetails",
+    "cycles": 20,
+    "runs": [
+     1928,
+     2199,
+     1886,
+     2001,
+     1788
+    ],
+    "medianWallMs": 1928,
+    "spreadMs": 411,
+    "reached": false,
+    "note": null
+   }
+  },
+  "deltasOverBaselineMs": {
+   "shell": 154,
+   "menu": 76,
+   "light": -13,
+   "medium": -82,
+   "heavy": 121,
+   "roundsHeavy": 19,
+   "loopLight": 52,
+   "loopMedium": 222,
+   "loopHeavy": 179
+  },
+  "perEntryMs": {
+   "shell": "NOT_OBSERVABLE: single entry is below the noise floor",
+   "menu": "NOT_OBSERVABLE: single entry is below the noise floor",
+   "light": "NOT_OBSERVABLE: single entry is below the noise floor",
+   "medium": "NOT_OBSERVABLE: single entry is below the noise floor",
+   "heavy": "NOT_OBSERVABLE: single entry is below the noise floor",
+   "roundsHeavy": "NOT_OBSERVABLE: single entry is below the noise floor",
+   "loopLight": "NOT_OBSERVABLE: the loop did not complete its cycles",
+   "loopMedium": "NOT_OBSERVABLE: the loop did not complete its cycles",
+   "loopHeavy": "NOT_OBSERVABLE: the loop did not complete its cycles"
+  },
+  "noiseFloorMs": 840,
+  "what_this_excludes": "Server latency (serverMs=0). Shell / partial / JS / render cannot be separated from outside the process and are reported as NOT_OBSERVABLE.",
+  "resolvedAboveNoise": [],
+  "verdict": "NO stop point exceeds the baseline spread. Per-route CLIENT cost is below this instrument\u2019s resolution (~840 ms), which is itself the finding: every route, including the heaviest, completes inside the same band as doing nothing at all. The seconds an operator waits in production are therefore not client render or script time."
+ }
+}
