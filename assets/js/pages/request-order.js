@@ -63,9 +63,52 @@ var _roL2Ready = false;
 // a plain "already started" boolean would have taken away.
 //
 // This changes no read, no table, no order and no rendered state. It removes duplicates only.
+//
+// S4-R7 §4 — AND NOW IT HAS THE FOUR WORDS, BECAUSE THE EXPAND HAS TO ASK.
+//
+// The in-flight promise above stopped two expands from both starting the read. It could not answer
+// the question this round needs answered: the expand handler no longer LOADS anything, so it has to
+// be able to ask what the state of the second layer is and say so truthfully. NOT_LOADED, LOADING,
+// READY and FAILED are exactly the four core/deferred-read.js was built to hold, and it already
+// carries the single-flight, the sticky FAILED, the one-read retry() and the epoch that stops a
+// superseded answer committing. Reusing it is the difference between one state machine in this
+// codebase and two that will disagree.
+//
+// The READ IS UNCHANGED — refreshCacheTables over the same seven tables, handed in as the custom
+// reader. Nothing about WHAT is read moved; only WHEN, and who is allowed to start it.
+var RO_L2 = 'orderPlanning.l2';
+function _roL2Registered_() {
+  if (!(window.KM && window.KM.deferredRead)) return false;
+  if (!_roL2Defined_) {
+    window.KM.deferredRead.define(RO_L2, {
+      tables: _RO_L2_TABLES,
+      read: function (tables) { return window.KM.DB.refreshCacheTables(tables); }
+    });
+    _roL2Defined_ = true;
+  }
+  return true;
+}
+var _roL2Defined_ = false;
+// The state, for a caller that must not start a read. NOT_LOADED when the helper is absent, which
+// is honest: nothing has been read and this page cannot say it has.
+function _roL2State_() {
+  if (!_roL2Registered_()) return _roL2Ready ? 'READY' : 'NOT_LOADED';
+  return window.KM.deferredRead.state(RO_L2);
+}
 var _roL2Flight = null;
 function _roEnsureL2Tables(force) {
   if (!_roUseDb() || !(window.KM && window.KM.DB && typeof window.KM.DB.refreshCacheTables === 'function')) return Promise.resolve();
+  if (_roL2Registered_()) {
+    var dr = window.KM.deferredRead;
+    if (force) dr.invalidate(RO_L2);
+    else if (dr.state(RO_L2) === 'FAILED') return Promise.resolve();   // sticky until the scoped Retry
+    return dr.ensure(RO_L2).then(function (r) {
+      // `_roL2Ready` stays the page-local truth because _roReloadAndRerender reads it to decide
+      // whether a post-write refresh may narrow to the one changed table.
+      _roL2Ready = !!(r && r.ok);
+      return r;
+    });
+  }
   if (_roL2Ready && !force) return Promise.resolve();
   if (_roL2Flight && !force) return _roL2Flight;
   var flight = window.KM.DB.refreshCacheTables(_RO_L2_TABLES)
@@ -532,8 +575,22 @@ function _opFirstLayerError_(err) {
   var fixedBody = (typeof document !== 'undefined') ? document.getElementById('ro-fixed-body') : null;
   var scrollBody = (typeof document !== 'undefined') ? document.getElementById('ro-scroll-body') : null;
   if (fixedBody) fixedBody.innerHTML = '';
-  if (scrollBody) scrollBody.innerHTML = '<div class="ro-empty-state" role="alert" style="color:#B91C1C;text-align:left;overflow-wrap:break-word;word-break:break-word;">AI Plan read error: ' + _roEsc(_roErrDetail_(err)) + '</div>';
+  // S4-R7 §8 — the message said "Press Retry" and there was nothing to press. The legacy empty-state
+  // branch of renderRequestOrderTable has had a Retry since R6B1; the COMPOSER error path never got
+  // one, so the canonical read had no operator recovery at all.
+  if (scrollBody) scrollBody.innerHTML = '<div class="ro-empty-state" role="alert" style="color:#B91C1C;text-align:left;overflow-wrap:break-word;word-break:break-word;">AI Plan read error: ' + _roEsc(_roErrDetail_(err)) +
+    ' <button type="button" class="btn btn-secondary ro-alloc-retry" onclick="roRetryFirstLayer()" style="margin-left:8px;padding:2px 10px;font-size:12px;cursor:pointer;">Retry</button></div>';
 }
+
+// ONE new composer read per press, through the SAME owner the mount uses. The refusal is replaced
+// before dispatch, so the button cannot be pressed twice and the operator sees that it took.
+function roRetryFirstLayer() {
+  var scrollBody = (typeof document !== 'undefined') ? document.getElementById('ro-scroll-body') : null;
+  if (scrollBody) scrollBody.innerHTML = '<div class="ro-empty-state ro-loading-state">Retrying\u2026</div>';
+  _roBaseDataStatus = 'LOADING';
+  _opLoadFirstLayerComposer_();
+}
+if (typeof window !== 'undefined') { window.roRetryFirstLayer = roRetryFirstLayer; }
 
 // F1-7N-FA-3C-R6B1 — SPA remount lifecycle. Each mount bumps _roMountEpoch and REBINDS the composer region to the
 // CURRENT DOM (the cached _opFirstLayerRegion pointed at the prior mount's detached node → remount showed zero rows +
@@ -591,6 +648,10 @@ function _roRenderAll() {
   initRequestOrderDropdowns();
   _roUpdateConfirmStatus();
   if (typeof _roRenderAiPlanResult_ === 'function') _roRenderAiPlanResult_();   // F1-7N-FA-3C-PRE3-R2 — keep the AI Plan result visible across re-renders + hide it on a scope change
+  // S4-R7 §3/§4 — prepare the second level for the sites now on screen. Fired AFTER the first layer
+  // has rendered and never awaited, so the rows are usable while it runs; idempotent, so the filter
+  // and tab re-renders that also land here cannot start a second wave.
+  if (typeof _opPrefetchL2ForCurrentScopes_ === 'function') { try { _opPrefetchL2ForCurrentScopes_(); } catch (e) {} }
 }
 
 // Canonical marketplace key for a row: marketplace_id when present (live), else the display string (demo).
@@ -1364,6 +1425,15 @@ function handleRequestOrderSearch() {
   // F1-7N-FA-3C-R6B — hydrate the persisted flat Draft for the searched scope(s) so Order Allocation shows the saved
   // order_qty/carton/note WITHOUT running AI Plan (read-only; silent; never opens the AI Plan Result popup).
   if (typeof _roHydratePersistedDraftsForLoadedScopes_ === 'function') { try { _roHydratePersistedDraftsForLoadedScopes_(); } catch (e) {} }
+  // S4-R7 §3 — AND PREPARE THE SECOND LEVEL FOR THE SITES THE SEARCH JUST REVEALED.
+  //
+  // The hook in _roRenderAll is not enough on its own and the reason is the Search gate: Search sets
+  // `searched` and then calls renderRequestOrderTable DIRECTLY, so the one render that first puts rows
+  // on the screen never passes through _roRenderAll. Measured: the prefetch ran zero times after a
+  // Search and the first expand still paid for its own scope. Both hooks are kept because they cover
+  // different arrivals — this one the explicit Search, the other a composer answer or a filter
+  // re-render — and the function is idempotent, so being called twice costs nothing.
+  if (typeof _opPrefetchL2ForCurrentScopes_ === 'function') { try { _opPrefetchL2ForCurrentScopes_(); } catch (e) {} }
 }
 
 // ---- F1-4B-FM5-R4J · "Recalculate All Sites" (Order Planning Gap) — BACKEND-OWNED RESUMABLE JOB -------------
@@ -2422,8 +2492,15 @@ function _roToggleRowByKey(rowKey) {
   // (forecast breakdown / Edit Target % / FC Update) read FC/factory/warehouse/PO facts. F1-7L: lazy-load ONLY
   // those bounded tables on the FIRST expand (KM.DB.refreshCacheTables — NOT the whole Operation DB), so the
   // panels keep working WITHOUT the retired startup prime and WITHOUT ever loading the whole DB.
+  // S4-R7 §4 — THE EXPAND NO LONGER LOADS. `_opPrefetchL2ForCurrentScopes_` starts the seven-table
+  // read when the searched rows reach the screen, so by the time a row can be clicked the read is
+  // READY or LOADING. Attaching to a LOADING read costs no request; NOT_LOADED and FAILED are
+  // reported by the panel with the scoped Retry rather than quietly fixed by sending another read,
+  // which is what made the first expand wait.
   if (_expanding && _opUseFirstLayerComposer()) {
-    _roEnsureL2Tables(false).then(function () { if (requestOrderState.expandedRowKey === rowKey) renderRequestOrderTable(); });
+    if (_roL2State_() === 'LOADING') {
+      _roEnsureL2Tables(false).then(function () { if (requestOrderState.expandedRowKey === rowKey) renderRequestOrderTable(); });
+    }
   }
   renderRequestOrderTable();
   // F1-4B-FM2: fire (or invalidate) the flag-gated, READ-ONLY Order-Planning recommendation read for the
@@ -2636,6 +2713,129 @@ function _opUseMaterializedGapRead() {
 }
 function _opMaterializedReaderReady() { return !!(window.KM && window.KM.DB && typeof window.KM.DB.getOrderPlanningGap === 'function'); }
 var _opMatCache = { key: null, bySku: {} };   // one scope (company/country/marketplace) cached; re-expand = no refetch
+
+// =================================================================================================
+// S4-R7 §3 — THE SECOND LEVEL IS PREPARED FOR THE SEARCHED SCOPE, NOT FOR THE ROW THAT WAS CLICKED.
+// =================================================================================================
+//
+// What this replaces: expanding a row started the seven-table second-layer read AND a materialized
+// gap read for that row's site. The first was once per page and the second once per site, so neither
+// was N+1 per SKU — but both made the FIRST expand wait on the network, which is the thing the
+// operator rule forbids.
+//
+// THE SCOPE VOCABULARY IS THE PAGE'S OWN. `_roScopesFromLoadedData_` already enumerates the concrete
+// company|country|marketplace sites present in the searched rows and `_roScopeKey3_` already spells
+// their key; the persisted-draft hydrator has used both since R6B1. Inventing a second notion of
+// "scope" here would give this page two answers to the question of what it is looking at.
+//
+// ONE REQUEST PER DISTINCT SITE, dispatched when the rows are on screen and never from an expand.
+// That is not per-SKU and it is not speculative: these are the sites the operator explicitly
+// searched for, and the data is the operational detail of the rows already rendered.
+//
+// BOUNDED, because an All-level search can name a dozen sites and an unbounded fan-out is exactly
+// the peak-pressure problem KM_SCOPED_READ_CONCURRENCY_ exists to hold down. The same width, read
+// from its owner rather than copied.
+var _opMatByScope_ = Object.create(null);   // scopeKey -> bySku   (no clock; see §6)
+var _opMatInFlight_ = Object.create(null);  // scopeKey -> promise (dedupe; never two for one site)
+var _opL2Epoch_ = 0;                        // bumped by every invalidation owner
+var _opL2ScopeError_ = null;                // the last scope prefetch refusal, for the scoped Retry
+function _opMatWidth_() {
+  try {
+    var w = window.KM.DB.getScopedReadConcurrency();
+    return (typeof w === 'number' && w > 0) ? w : 2;
+  } catch (e) { return 2; }
+}
+
+// A superseded answer must not land. The epoch is checked at COMMIT time, not at dispatch, because
+// that is the only moment at which "is this still the world I was asked about" has an answer.
+function _opMatReadScope_(scope) {
+  var mkey = _roScopeKey3_(scope);
+  if (_opMatByScope_[mkey]) return Promise.resolve(_opMatByScope_[mkey]);
+  if (_opMatInFlight_[mkey]) return _opMatInFlight_[mkey];
+  var myEpoch = _opL2Epoch_;
+  var mscope = { company: scope.company, country: scope.country, marketplace: scope.marketplace };
+  var flight = Promise.resolve(window.KM.DB.getOrderPlanningGap(mscope)).then(function (res) {
+    if (myEpoch !== _opL2Epoch_) return null;                       // STALE_L2_SCOPE_COMMIT refused
+    if (!res || !res.success) { _opL2ScopeError_ = (res && res.error) || { code: 'READ_FAILED' }; return null; }
+    var rows = (res.data && res.data.rows) || [];
+    var bySku = {};
+    rows.forEach(function (r) { if (r && r.sku != null) bySku[String(r.sku)] = r; });
+    _opMatByScope_[mkey] = bySku;
+    return bySku;
+  }).catch(function (err) {
+    if (myEpoch !== _opL2Epoch_) return null;
+    _opL2ScopeError_ = { code: 'READ_FAILED', message: String((err && err.message) || err) };
+    return null;
+  });
+  _opMatInFlight_[mkey] = flight;
+  flight.then(function () { if (_opMatInFlight_[mkey] === flight) delete _opMatInFlight_[mkey]; });
+  return flight;
+}
+
+// Prepare every site on screen. Idempotent: a site already stored or already in flight is skipped,
+// so the filter re-renders that call _roRenderAll cannot turn into a second wave of reads.
+function _opPrefetchL2ForCurrentScopes_() {
+  if (!requestOrderState.searched) return Promise.resolve(null);
+  if (!_roUseDb()) return Promise.resolve(null);
+  if (!(window.KM && window.KM.DB && typeof window.KM.DB.getOrderPlanningGap === 'function')) return Promise.resolve(null);
+  // The seven tables travel in the same wave, and neither waits for the other.
+  try { _roEnsureL2Tables(false).then(function () { _opRepaintExpandedPanel_(); }); } catch (e) {}
+  var scopes = _roScopesFromLoadedData_().filter(function (sc) {
+    var k = _roScopeKey3_(sc);
+    return !_opMatByScope_[k] && !_opMatInFlight_[k];
+  });
+  if (!scopes.length) return Promise.resolve(null);
+  // THE LOOP IS EPOCH-GUARDED TOO, not only the commit.
+  //
+  // Checking the epoch when an answer lands stops a superseded ANSWER from committing. It does not
+  // stop this loop from going on to DISPATCH the rest of a scope list that has since been
+  // invalidated — and with a bounded width most of the list is still undispatched when an
+  // invalidation arrives. Measured: an invalidation fired with three reads open left ten further
+  // sites to be read and committed by the run that had already been superseded.
+  //
+  // So a worker asks before each dispatch whether the world it was started for is still the current
+  // one, and stops if it is not. Whatever replaced it will prepare the sites that are now on screen.
+  var next = 0, width = Math.max(1, Math.min(_opMatWidth_(), scopes.length));
+  var runEpoch = _opL2Epoch_;
+  function worker() {
+    if (runEpoch !== _opL2Epoch_) return Promise.resolve();   // superseded: dispatch nothing more
+    if (next >= scopes.length) return Promise.resolve();
+    var sc = scopes[next++];
+    return _opMatReadScope_(sc).then(function () { return worker(); });
+  }
+  var lanes = [];
+  for (var i = 0; i < width; i++) lanes.push(worker());
+  return Promise.all(lanes).then(function () { _opRepaintExpandedPanel_(); return null; });
+}
+
+// A panel that was opened before its scope landed repaints itself when it does. It does NOT read.
+function _opRepaintExpandedPanel_() {
+  if (!requestOrderState.expandedRowKey) return;
+  var item = (typeof _opRecoExpandedItem === 'function') ? _opRecoExpandedItem() : null;
+  if (item) _opLoadMaterializedGap(item);
+  else if (typeof renderRequestOrderTable === 'function') { try { renderRequestOrderTable(); } catch (e) {} }
+}
+
+// §6 — THE INVALIDATION OWNERS, and there is no clock among them. A scope model is valid until an
+// authority that could have changed those rows says otherwise: the gap recalculation job finishing,
+// and a second-layer FC / Target write. Both already existed and both now reach this store.
+function _opInvalidateL2Scopes_() {
+  _opL2Epoch_++;
+  _opMatByScope_ = Object.create(null);
+  _opMatInFlight_ = Object.create(null);
+  _opL2ScopeError_ = null;
+}
+
+// §5 — ONE scope-level read per press, never one per SKU. Clearing the recorded refusal first is
+// what makes a second press after a second failure still reach the network.
+function roRetryL2Scopes() {
+  _opL2ScopeError_ = null;
+  if (_roL2State_() === 'FAILED' && window.KM && window.KM.deferredRead) {
+    window.KM.deferredRead.retry(RO_L2).then(function () { _opRepaintExpandedPanel_(); });
+  }
+  return _opPrefetchL2ForCurrentScopes_();
+}
+if (typeof window !== 'undefined') { window.roRetryL2Scopes = roRetryL2Scopes; }
 // Synthesize the frozen monthlyProjection line shape from ONE stored order_planning_gap row (verbatim; no math).
 function _opMatToLine(row, scope) {
   var tiers = [['T1', 't1'], ['T2', 't2'], ['T3', 't3'], ['T4', 't4']];
@@ -2654,6 +2854,12 @@ function _opLoadMaterializedGap(item) {
   if (_opRecoState.scopeKey === scopeKey && _opRecoState.loadedOk) return null;   // dedupe (re-render / re-expand)
   var mscope = { company: scope.company, country: scope.country, marketplace: scope.marketplace };
   var mkey = JSON.stringify(mscope);
+  // S4-R7 — THE SITE HAS ONE KEY, AND FOR A WHILE IT HAD TWO. `_opMatCache.key` has always been the
+  // JSON spelling; the prefetch store below is keyed by `_roScopeKey3_`, which is the page's own
+  // canonical scope key and is what §3 says to reuse. Two spellings of one site meant the lookup
+  // never hit and every first expand still paid for a scope that was already in memory - measured
+  // as one orderPlanningGap.get per expand with twenty-three requests already spent preparing it.
+  var skey = _roScopeKey3_(mscope);
   function applyFromCache() {
     var row = _opMatCache.bySku[String(scope.sku)] || null;
     if (!row) { _opRecoState = _opRecoBlank('NOT_CALCULATED'); }
@@ -2662,6 +2868,30 @@ function _opLoadMaterializedGap(item) {
     _opRepaintSuggestOrderCells_();   // FM5-R4UI-R5 §6A: refresh the main-table top Suggest Order cells from the cache
   }
   if (_opMatCache.key === mkey) { applyFromCache(); return null; }
+  // S4-R7 §3 — THE SCOPE WAS PREPARED WHEN THE ROWS WERE. Pointing _opMatCache at the stored rows
+  // costs nothing and leaves its meaning exactly as it was: the site of the row that is open. Every
+  // existing consumer of _opMatCache.bySku — the Suggest Order repaint, the recommendation DTO
+  // builder — therefore sees what it has always seen.
+  if (_opMatByScope_[skey]) {
+    _opMatCache = { key: mkey, bySku: _opMatByScope_[skey] };
+    applyFromCache();
+    return null;
+  }
+  // NOT PREPARED YET. This is where a per-SKU read would go and deliberately does not: the prefetch
+  // for this site is either in flight or has been refused, and in both cases starting another read
+  // here is the N+1 the operator rule forbids. Attach if one is running; otherwise say so.
+  if (_opMatInFlight_[skey]) {
+    _opRecoState = _opRecoBlank('LOADING'); _opRecoState.scopeKey = scopeKey; _opRecoState.sku = scope.sku;
+    _opRecoRerender();
+    _opMatInFlight_[skey].then(function () { if (requestOrderState.expandedRowKey) _opLoadMaterializedGap(item); });
+    return null;
+  }
+  if (_opL2ScopeError_) {
+    _opRecoState = _opRecoBlank('API_ERROR'); _opRecoState.scopeKey = scopeKey; _opRecoState.sku = scope.sku;
+    _opRecoState.errors = [_opL2ScopeError_];
+    _opRecoRerender();
+    return null;
+  }
   var my = ++_opRecoSeq;
   _opRecoState = _opRecoBlank('LOADING'); _opRecoState.scopeKey = scopeKey; _opRecoState.sku = scope.sku; _opRecoState.seq = my;
   _opRecoRerender();
@@ -2698,7 +2928,10 @@ function _opRepaintSuggestOrderCells_() {
     if (t !== null) cell.textContent = t > 0 ? t.toLocaleString() : '0';
   });
 }
-function refreshOrderPlanningGapAfterRecalc_() { _opMatCache = { key: null, bySku: {} }; _opRecoInvalidate('LOADING'); var item = _opRecoExpandedItem(); if (item) _opLoadMaterializedGap(item); }
+// S4-R7 §6 — the recalculation job is one of the two invalidation owners, so it clears the per-scope
+// store as well as the current one. Leaving the store behind would answer the next expand from rows
+// the recalculation has just replaced.
+function refreshOrderPlanningGapAfterRecalc_() { _opMatCache = { key: null, bySku: {} }; _opInvalidateL2Scopes_(); _opRecoInvalidate('LOADING'); var item = _opRecoExpandedItem(); if (item) _opLoadMaterializedGap(item); if (typeof _opPrefetchL2ForCurrentScopes_ === 'function') { try { _opPrefetchL2ForCurrentScopes_(); } catch (e) {} } }
 if (typeof window !== 'undefined') { window.refreshOrderPlanningGapAfterRecalc_ = refreshOrderPlanningGapAfterRecalc_; }
 
 // The read: at most ONE scope-only recommendation.workspace.get per expanded row. Deduped, stale-guarded.

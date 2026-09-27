@@ -126,6 +126,19 @@ function prelude() {
     '  function txt(el, n) { return el ? String(el.textContent || "").replace(/\\s+/g, " ").trim().slice(0, n || 160) : null; }',
     '  function sec(r) { return document.getElementById(r.section); }',
     '  function copy(o) { return JSON.parse(JSON.stringify(o)); }',
+    '  // QUIESCENCE, NOT "nothing open right now". `openReqs() === 0` is also true in the gap between',
+    '  // a click and the request it causes, and in the gap between one read settling and the next being',
+    '  // dispatched. Measuring there reports zero for work that is about to happen — which showed up as',
+    '  // mutants intermittently surviving, the worst kind of wrong answer because it reads as coverage.',
+    '  async function settle(capMs) {',
+    '    for (var si = 0; si < 8; si++) {',
+    '      await until(function () { return openReqs() === 0; }, capMs || 30000);',
+    '      var before = P.api;',
+    '      await tick(700);',
+    '      if (P.api === before && openReqs() === 0) return true;',
+    '    }',
+    '    return false;',
+    '  }',
     '  function rounds(marks) {',
     '    if (!marks.length) return 0;',
     '    var sorted = marks.slice().sort(function (a, b) { return a.sent - b.sent; });',
@@ -542,7 +555,10 @@ function statesDriver() {
     '        arm(READS[r.key]);',
     '        P.reset(); go(r);',
     '        await until(function () { return sectionActive(r.section); }, 12000);',
-    '        await tick(3000);',
+    '        await settle();',
+    '        // The refusal is DOM, not a request, so quiescence alone does not guarantee it is drawn.',
+    '        await until(function () { return errorBoxes(sec(r)).length > 0 || emptyBoxes(sec(r)).length > 0; }, 8000);',
+    '        await tick(600);',
     '        var s = sec(r);',
     '        var eb = errorBoxes(s), emb = emptyBoxes(s);',
     '        rec.failed = { api: P.api, failed: P.failed, errorBoxes: eb.length,',
@@ -564,7 +580,12 @@ function statesDriver() {
     '          P.reset();',
     '          try { rc[0].click(); } catch (e) { rec.retryThrew = String(e.message).slice(0, 120); }',
     '          await until(function () { return openReqs() === 0 && P.api > 0; }, 20000);',
-    '          await tick(2000);',
+    // QUIESCENCE, NOT A FIXED WAIT. "No request open" is true in the gap between a first read
+    // settling and a second being dispatched, so a Retry that issues two reads a tick apart could be
+    // measured as having issued one. Caught as an intermittent mutation survival — the same mutant
+    // killed on two runs out of three — which is worse than a failure, because it reads as coverage.
+    // The loop now waits for a quiet period: nothing open AND nothing new dispatched across it.
+    '          await settle();',
     '          s = sec(r);',
     '          rec.retry = { api: P.api, byAction: copy(P.byAction),',
     '            errorBoxes: errorBoxes(s).length, emptyBoxes: emptyBoxes(s).length,',
@@ -650,6 +671,163 @@ function l2raceDriver() {
 }
 
 /* ---------------------------------------------------------------------------------------------
+   MODE: l2  (S4-R7 §3–§6 — the Order Planning second level, prepared for the searched scope)
+
+   Six questions, one run, in the order they can only be asked in:
+
+     prepare    Search dispatches the scope preparation exactly once — seven tables plus one read
+                per distinct site — and a SECOND Search over the same sites dispatches nothing.
+     unblocked  the first-layer rows are on screen while that preparation is still in flight. Read
+                at the only moment that can answer it: with requests still open.
+     expand     three expands, none of which sends anything.
+     failure    the site reads refused. Rows survive, the panel says so, nothing is empty.
+     retry      the scoped Retry sends exactly one read PER SITE and none per SKU.
+     stale      a preparation invalidated while in flight does not commit.
+   --------------------------------------------------------------------------------------------- */
+function l2Driver() {
+  return [
+    '  OUT.l2 = {};',
+    '  var RO_SEC = "request-order-section";',
+    '  function toggles() { return qa("#" + RO_SEC + " .ro-sku-expand-toggle"); }',
+    '  function rows() { return qa("#" + RO_SEC + " .ro-fixed-wrapper .fixed-row").length; }',
+    '  function gapCount() { return P.byAction["orderPlanningGap.get"] || 0; }',
+    '  function l2TableCount() {',
+    '    var L2 = ["fc_regular_forecast", "fc_special_events", "fc_target_rules", "factory_stock",',
+    '      "warehouses", "purchase_orders", "purchase_order_lines"], n = 0, mx = 0;',
+    '    L2.forEach(function (t) { var c = P.byAction["getTable:" + t] || 0; n += c; if (c > mx) mx = c; });',
+    '    return { total: n, maxPerTable: mx };',
+    '  }',
+    '  function panelText() {',
+    '    var s2 = document.getElementById(RO_SEC); if (!s2) return null;',
+    '    var p2 = qa(".ro-sku-expand-panel, [class*=expand-panel]", s2)[0];',
+    '    return p2 ? String(p2.textContent || "").replace(/\\s+/g, " ").trim().slice(0, 200) : null;',
+    '  }',
+    '  function emptyish(s2) {',
+    '    return qa("[class*=empty]", s2).filter(function (e) {',
+    '      var t = String(e.textContent || "").trim();',
+    '      return !e.hidden && t && !/error|could not|failed|retry|preparing|loading/i.test(t);',
+    '    }).length;',
+    '  }',
+    '  async function search() { nav("handleRequestOrderSearch()"); }',
+    '  async function runL2() {',
+    '    OUT.progress = "l2"; publish();',
+    '    go({ key: "request-order" });',
+    '    await until(function () { return sectionActive(RO_SEC); }, 12000);',
+    '    await tick(2500);',
+    '    await until(function () { return openReqs() === 0; }, 30000);',
+
+    '    // ---- prepare + unblocked -------------------------------------------------------',
+    '    P.reset();',
+    '    await search();',
+    '    // FIRST LAYER WHILE PREPARATION RUNS. Polled until rows exist, then the open-request',
+    '    // count is read in the same task — rows AND work still outstanding is the claim §4 makes.',
+    '    var sawRowsWithWorkOpen = false, rowsAtThatMoment = 0;',
+    '    await until(function () {',
+    '      if (rows() > 0) {',
+    '        rowsAtThatMoment = rows();',
+    '        if (openReqs() > 0) sawRowsWithWorkOpen = true;',
+    '        return true;',
+    '      }',
+    '      return false;',
+    '    }, 25000);',
+    '    OUT.l2.firstLayerRows = rowsAtThatMoment;',
+    '    OUT.l2.firstLayerUsableWhilePreparing = sawRowsWithWorkOpen;',
+    '    await until(function () { return openReqs() === 0; }, 40000);',
+    '    await tick(1500);',
+    '    OUT.l2.prepare = { api: P.api, gapReads: gapCount(), tables: l2TableCount(),',
+    '      byAction: copy(P.byAction), rows: rows() };',
+
+    '    // ---- a second Search over the same sites prepares nothing again -----------------',
+    '    P.reset();',
+    '    await search();',
+    '    await until(function () { return openReqs() === 0; }, 30000);',
+    '    await tick(1500);',
+    '    OUT.l2.reSearch = { api: P.api, gapReads: gapCount(), tables: l2TableCount().total };',
+
+    '    // ---- three expands --------------------------------------------------------------',
+    '    var t3 = toggles();',
+    '    OUT.l2.toggleCount = t3.length;',
+    '    var expands = [];',
+    '    for (var i = 0; i < 3 && i < t3.length; i++) {',
+    '      P.reset();',
+    '      try { t3[i * Math.max(1, Math.floor(t3.length / 4))].click(); } catch (e) {}',
+    '      var sameTask = P.api;',
+    '      await settle();',
+    '      expands.push({ sameTask: sameTask, settled: P.api, byAction: copy(P.byAction) });',
+    '    }',
+    '    OUT.l2.expands = expands;',
+    '    OUT.l2.panelAfterExpand = panelText();',
+
+    '    // ---- failure isolation -----------------------------------------------------------',
+    '    // The store is emptied through its OWN invalidation owner, so the refusal is met by a page',
+    '    // in the state a real invalidation leaves it in rather than one the harness reached into.',
+    '    P.failFor["orderPlanningGap.get"] = 999;',
+    '    nav("_opInvalidateL2Scopes_()");',
+    '    P.reset();',
+    '    await search();',
+    '    await until(function () { return openReqs() === 0; }, 40000);',
+    '    await tick(2000);',
+    '    var secEl = document.getElementById(RO_SEC);',
+    '    var tf = toggles();',
+    '    if (tf.length) { try { tf[0].click(); } catch (e) {} }',
+    '    await tick(1500);',
+    '    OUT.l2.failure = { rowsAfter: rows(), api: P.api, gapReads: gapCount(),',
+    '      emptyBoxes: emptyish(secEl), panel: panelText(),',
+    '      open: openReqs() };',
+
+    '    // ---- the scoped Retry -------------------------------------------------------------',
+    '    P.failFor = {};',
+    '    P.reset();',
+    '    nav("roRetryL2Scopes()");',
+    '    await until(function () { return openReqs() === 0; }, 40000);',
+    '    await tick(1500);',
+    '    var per = {}; var mx = 0;',
+    '    Object.keys(P.byAction).forEach(function (k) { if (k === "orderPlanningGap.get") mx = P.byAction[k]; });',
+    '    OUT.l2.retry = { api: P.api, gapReads: gapCount(), rows: rows(), byAction: copy(P.byAction) };',
+
+    '    // and an expand afterwards costs nothing again',
+    '    var ta = toggles();',
+    '    if (ta.length > 1) {',
+    '      P.reset();',
+    '      try { ta[1].click(); } catch (e) {}',
+    '      await until(function () { return openReqs() === 0; }, 20000);',
+    '      await tick(900);',
+    '      OUT.l2.expandAfterRetry = P.api;',
+    '    }',
+
+    '    // ---- two preparations started in the same task ------------------------------------',
+    '    // The two hooks that start the preparation - the explicit Search and the render that',
+    '    // follows a filter change - can land close together, and the whole point of the in-flight',
+    '    // guards is that overlapping callers share one read. Asked directly rather than hoped for:',
+    '    // both calls are made before anything is awaited, so there is no window in which the first',
+    '    // could settle and let the second through legitimately.',
+    '    nav("_opInvalidateL2Scopes_()");',
+    '    P.reset();',
+    '    nav("_opPrefetchL2ForCurrentScopes_()");',
+    '    nav("_opPrefetchL2ForCurrentScopes_()");',
+    '    await until(function () { return openReqs() === 0; }, 40000);',
+    '    await tick(1500);',
+    '    OUT.l2.doubleStart = { api: P.api, gapReads: gapCount(), tables: l2TableCount(),',
+    '      byAction: copy(P.byAction) };',
+
+    '    // ---- a preparation invalidated while in flight must not commit --------------------',
+    '    nav("_opInvalidateL2Scopes_()");',
+    '    P.reset();',
+    '    await search();',
+    '    await tick(60);                                  // in flight, deliberately',
+    '    var midOpen = openReqs();',
+    '    nav("_opInvalidateL2Scopes_()");                  // the second invalidation supersedes it',
+    '    await until(function () { return openReqs() === 0; }, 40000);',
+    '    await tick(1500);',
+    '    var stored = nav("window.__l2probe = Object.keys(_opMatByScope_).length");',
+    '    OUT.l2.stale = { openAtInvalidate: midOpen, storedAfter: window.__l2probe,',
+    '      navErr: stored };',
+    '  }',
+    '  await runL2();'
+  ].join('\n');
+}
+
+/* ---------------------------------------------------------------------------------------------
    THE HARNESS.
    --------------------------------------------------------------------------------------------- */
 /* The routes a run covers. `only` is a list of keys; absent means all of them. It narrows the two
@@ -678,6 +856,7 @@ function driver(mode) {
     : mode === 'expand' ? expandDriver()
     : mode === 'states' ? statesDriver()
     : mode === 'l2race' ? l2raceDriver()
+    : mode === 'l2' ? l2Driver()
     : null;
   if (!body) throw new Error('unknown mode: ' + mode);
   return [
@@ -721,7 +900,7 @@ function _run(mode, serverMs, only) {
     const url = 'file:///' + file.split(path.sep).join('/').split(' ').join('%20');
     const r = cp.spawnSync(chrome, ['--headless=new', '--disable-gpu', '--no-sandbox', '--no-first-run',
       '--disable-extensions', '--allow-file-access-from-files', '--js-flags=--expose-gc',
-      '--virtual-time-budget=1500000', '--dump-dom', url],
+      '--virtual-time-budget=6000000', '--dump-dom', url],
       { encoding: 'utf8', timeout: parseInt(process.env.S4R6_TIMEOUT || '2400000', 10), maxBuffer: 256 * 1024 * 1024 });
     const m = /<pre id="__measurements">([\s\S]*?)<\/pre>/.exec(r.stdout || '');
     if (!m) return { noMeasurements: true, status: r.status, stderr: String(r.stderr || '').slice(0, 600) };

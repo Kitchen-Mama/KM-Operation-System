@@ -211,8 +211,14 @@ function _skRenderError_(err, phase) {
             '<br><span style="font-family:monospace;font-size:12px;">code ' + _skEsc_(code) +
             ' · action ' + _skEsc_(action) +
             (reqId ? ' · request ' + _skEsc_(reqId) : ' · request (none reported)') + '</span>' +
-            '<br>' + _skEsc_(advice);
+            '<br>' + _skEsc_(advice) +
+            // S4-R7 §8 — the advice has always read "Retry, or report the code and request id below"
+            // and there has never been a Retry. A DEPLOYMENT_MISMATCH is deliberately excluded: a new
+            // Apps Script version has to be published first, so a Retry there would be a button whose
+            // one honest outcome is the same error.
+            (mismatch ? '' : ' <button type="button" class="btn btn-secondary" onclick="skRetryRead()" style="margin-left:8px;padding:2px 10px;font-size:12px;cursor:pointer;">Retry</button>');
     }
+
     // The table region still has to say something, but it no longer CARRIES the diagnosis — and it is written to
     // every section so no section is left silently blank while another shows an error.
     var short = '<div class="fixed-row" style="color:#B91C1C;">' + _skEsc_(label) + ' — see the message above [' + _skEsc_(code) + ']</div>';
@@ -222,6 +228,17 @@ function _skRenderError_(err, phase) {
         if (sb) sb.innerHTML = '';
     });
 }
+
+// S4-R7 §8 — ONE scoped workspace re-read per press, through _skLoadAndRender: the same owner the
+// mount uses, so the Retry is not a second read implementation that could drift from the first. The
+// banner is replaced with "Retrying..." before dispatch, which is the loading feedback and also why
+// a second click cannot double-dispatch - the button it would need no longer exists.
+function skRetryRead() {
+    var host = _skReadBannerHost_();
+    if (host) { host.hidden = false; host.innerHTML = 'Retrying\u2026'; }
+    _skLoadAndRender();
+}
+if (typeof window !== 'undefined') { window.skRetryRead = skRetryRead; }
 
 // Scoped read: Workspace (canonical) → getWorkspace('skuDetails') → adapt → _skReadModel. Fail-closed (throws on error;
 // NO silent legacy broad fallback). Returns a Promise. Also the scoped POST-WRITE refresh path.

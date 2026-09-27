@@ -88,14 +88,23 @@
         }
     }
     // Fail-closed bounded region error (never a legacy full-DB render, never a "No records" empty-state).
+    // S4-R7 §8 — with a Retry, through loadAndRender, this page's one canonical read.
     function _polRenderError_(err) {
         _polReadModel = null;
         var rg = _polRegion_(); if (rg) rg.set(window.KM.loadState.STATES.ERROR);
         var tbody = document.getElementById('pol-tbody');
-        if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="procurement-empty" style="color:#B91C1C;">Purchase Order read error: ' + esc((err && err.message) || 'failed') + ' [' + esc((err && err.code) || 'READ_FAILED') + ']</td></tr>';
+        if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="procurement-empty" role="alert" style="color:#B91C1C;">Purchase Order read error: ' + esc((err && err.message) || 'failed') + ' [' + esc((err && err.code) || 'READ_FAILED') + ']' +
+            ' <button type="button" class="btn btn-secondary" onclick="polRetryRead()" style="margin-left:8px;padding:2px 10px;font-size:12px;cursor:pointer;">Retry</button></td></tr>';
         var meta0 = document.getElementById('pol-result-meta'); if (meta0) meta0.innerHTML = '';
         var pg0 = document.getElementById('pol-pagination'); if (pg0) pg0.style.display = 'none';
     }
+
+    function polRetryRead() {
+        var tbody = document.getElementById('pol-tbody');
+        if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="procurement-empty">Retrying\u2026</td></tr>';
+        loadAndRender();
+    }
+    if (typeof window !== 'undefined') { window.polRetryRead = polRetryRead; }
 
     // Pagination (25 PO rows / page). Reset to 1 on filter / search / reset / date-apply / tab-switch.
     var POL_PAGE_SIZE = 25;

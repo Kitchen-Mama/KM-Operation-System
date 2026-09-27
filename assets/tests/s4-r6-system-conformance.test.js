@@ -269,7 +269,18 @@ eq(RO.staleRouteAssetTokenRefs(APP), [], 'I4a  and 0 among the route-owned asset
 eq(RO.misplacedReleaseTokens(INDEX, APP), [], 'I5  MISPLACED_TOKEN_FAMILY_REFS = 0');
 
 /* Every file this round changed carries the new token, and the new token is new. */
-eq(RO.currentAppToken(), 's4r6-conformance-20260927', 'I6  the application token for this round');
+/* S4-R7 — THIS ASSERTED A LITERAL AND THEREFORE ASSERTED THAT NO LATER ROUND MAY ROTATE, which is
+   the same trap S4-R5's F1 set and S4-R6 had to undo. Writing down HOW a claim happened to be
+   spelled turns the spelling into a ban on the next round doing its job. The claim worth keeping is
+   that this round's token is a real member of the application series and that the series has only
+   grown past it - never been rewritten under it, which is what would re-serve these bytes to a
+   browser that already holds them. */
+const R6_TOKEN = 's4r6-conformance-20260927';
+ok(RO.ROUND_TOKENS.indexOf(R6_TOKEN) !== -1, 'I6  this round\u0027s token is in the application series');
+ok(RO.ROUND_TOKENS.indexOf(R6_TOKEN) === RO.ROUND_TOKENS.lastIndexOf(R6_TOKEN),
+  'I6-1 and it appears exactly once');
+ok(RO.ROUND_TOKENS.indexOf(RO.currentAppToken()) >= RO.ROUND_TOKENS.indexOf(R6_TOKEN),
+  'I6-2 and the current token is this one or a later one');
 const idxTok = RO.parseIndexTokens(INDEX);
 ['assets/js/pages/request-order.js', 'assets/js/pages/sku-handbook.js',
  'assets/js/pages/carrier-rate-card.js', 'assets/js/pages/campaign-risk.js',
@@ -392,12 +403,22 @@ mutant('K3 the handbook search box is re-bound on every mount', T.skuh,
   o => (o.drift['sku-handbook'] || {}).listenerDrift >= 1);
 
 /* --- the in-flight guard. Only a race can see it, which is what l2race is for. ------------------- */
-mutant('K4 two expands inside the load window each start the whole second-layer read', T.ro,
-  '  if (_roL2Flight && !force) return _roL2Flight;\n',
-  '',
-  'l2race', null,
-  o => (o.l2race || {}).maxPerL2Table >= 2);
+/* --- K4 RETIRED, AND NOT QUIETLY. -----------------------------------------------------------------
 
+   S4-R6 repaired `_roEnsureL2Tables` by giving it an in-flight promise, and K4 broke that promise to
+   prove the repair mattered. S4-R7 then moved the whole second-layer load OUT of the expand handler:
+   the seven tables are prepared for the searched scope through core/deferred-read.js, whose own
+   single-flight is sealed by the S4-R4 suite, and the line K4 used to break is now unreachable
+   fallback for a page loaded without that helper.
+
+   So the mutant stopped being a mutant. Breaking a line that no longer executes changes nothing, the
+   probe reports no difference, and it was recorded as SURVIVED - which reads as a missing defence
+   rather than as a defence that moved. An inert mutant is worse than no mutant, because it looks
+   like coverage.
+
+   The claim is not dropped: "one second-layer load however many callers ask for it" is asserted in
+   s4-r7-final-seal.test.js against the mechanism that now carries it, with a probe that starts two
+   preparations in the same task. */
 /* --- the four error-truth repairs. ------------------------------------------------------------- */
 mutant('K5 the promotion-risk refusal is checked after the no-scope state again', T.cr,
   "    if (_crViewState === 'error') { msg('Could not load promotion data. <button type=\"button\" class=\"cr-btn cr-btn--small\" onclick=\"crReload()\">Retry</button>', 'cr-empty-state--error'); return; }\n    // STATE 1 — no site scope selected yet (guided empty state; no SKU query is run).\n    if (!crScopeReady()) { msg('Select a country and marketplace to view promotion risk.'); return; }",

@@ -858,7 +858,16 @@ var ROUND_TOKENS = [
   //
   // automation-schedule.js and automation-schedule.css were still on donenotice-20260811 and join the
   // current token here, because both of them changed.
-  's4r6-conformance-20260927'];
+  's4r6-conformance-20260927',
+  // S4-R7 — the S4 closure round. S4-R6 is on origin/main (049bdbd was pushed), so by the rule above its
+  // token has been published and cannot be reused.
+  //
+  // SIX PAGE MODULES MOVE TOGETHER and they are one change, not six. Each of the six grew a Retry that
+  // calls its own canonical read owner, and request-order.js additionally moved the Order Planning
+  // second-layer load out of the expand handler and onto the searched scope. A browser holding the new
+  // request-order.js and an older core/deferred-read.js would define a dependency against a helper that
+  // cannot hold it; one holding an older request-order.js would still make every first expand wait.
+  's4r7-finalseal-20260927'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

@@ -803,8 +803,18 @@ function _shRenderError_(err) {
     _shReadModel = null;
     var rg = _shRegion_(); if (rg) rg.set(window.KM.loadState.STATES.ERROR);
     var el = _shActiveListEl_();
-    if (el) { el.hidden = false; el.innerHTML = '<div role="alert" style="color:#B91C1C;padding:12px;font-size:13px;text-align:left;overflow-wrap:break-word;word-break:break-word;">Shipment read error: ' + _shEsc(_shErrDetail_(err)) + '</div>'; }
+    // S4-R7 §8 — with a Retry, which this surface has never had.
+    if (el) { el.hidden = false; el.innerHTML = '<div role="alert" style="color:#B91C1C;padding:12px;font-size:13px;text-align:left;overflow-wrap:break-word;word-break:break-word;">Shipment read error: ' + _shEsc(_shErrDetail_(err)) +
+      ' <button type="button" class="btn btn-secondary" onclick="shRetryRead()" style="margin-left:8px;padding:2px 10px;font-size:12px;cursor:pointer;">Retry</button></div>'; }
 }
+
+// ONE scoped shipment workspace re-read per press, through the same owner the card actions use.
+function shRetryRead() {
+  var el = _shActiveListEl_();
+  if (el) { el.hidden = false; el.innerHTML = '<div style="padding:12px;font-size:13px;color:#6B7280;">Retrying\u2026</div>'; }
+  _shLoadAndRender();
+}
+if (typeof window !== 'undefined') { window.shRetryRead = shRetryRead; }
 
 // Re-render whichever Shipment page is currently active. Called by the card action handlers after a write. In Workspace
 // mode this is a SCOPED re-read of the shipment workspace (never a broad reload); in Legacy mode render-only (the write

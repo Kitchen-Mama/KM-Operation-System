@@ -106,12 +106,21 @@
             renderFromDb();
         }
     }
+    // S4-R7 §8 — the refusal was truthful and offered no way back. The Retry calls loadAndRender,
+    // which is this page's one canonical read; there is deliberately no second read implementation.
     function _roRenderError_(err) {
         _roReadModel = null;
         var rg = _roRegion_(); if (rg) rg.set(window.KM.loadState.STATES.ERROR);
         var groups = document.getElementById('ro-groups');
-        if (groups) groups.innerHTML = '<div class="procurement-empty" style="color:#B91C1C;">Request Order read error: ' + esc((err && err.message) || 'failed') + ' [' + esc((err && err.code) || 'READ_FAILED') + ']</div>';
+        if (groups) groups.innerHTML = '<div class="procurement-empty" role="alert" style="color:#B91C1C;">Request Order read error: ' + esc((err && err.message) || 'failed') + ' [' + esc((err && err.code) || 'READ_FAILED') + ']' +
+            ' <button type="button" class="btn btn-secondary" onclick="rodRetryRead()" style="margin-left:8px;padding:2px 10px;font-size:12px;cursor:pointer;">Retry</button></div>';
     }
+    function rodRetryRead() {
+        var groups = document.getElementById('ro-groups');
+        if (groups) groups.innerHTML = '<div class="procurement-empty">Retrying\u2026</div>';
+        loadAndRender();
+    }
+    if (typeof window !== 'undefined') { window.rodRetryRead = rodRetryRead; }
 
     // ---- load + render ----
     function loadAndRender() {

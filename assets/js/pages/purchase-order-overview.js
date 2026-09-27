@@ -104,13 +104,21 @@
             renderFromDb();
         }
     }
+    // S4-R7 §8 — with a Retry, through loadAndRender, this page's one canonical read.
     function _poRenderError_(err) {
         _poReadModel = null;
         var rg = _poRegion_(); if (rg) rg.set(window.KM.loadState.STATES.ERROR);
         var groups = document.getElementById('po-groups');
-        if (groups) groups.innerHTML = '<div class="procurement-empty" style="color:#B91C1C;">Purchase Order read error: ' + esc((err && err.message) || 'failed') + ' [' + esc((err && err.code) || 'READ_FAILED') + ']</div>';
+        if (groups) groups.innerHTML = '<div class="procurement-empty" role="alert" style="color:#B91C1C;">Purchase Order read error: ' + esc((err && err.message) || 'failed') + ' [' + esc((err && err.code) || 'READ_FAILED') + ']' +
+            ' <button type="button" class="btn btn-secondary" onclick="poRetryRead()" style="margin-left:8px;padding:2px 10px;font-size:12px;cursor:pointer;">Retry</button></div>';
         hideToolbar();
     }
+    function poRetryRead() {
+        var groups = document.getElementById('po-groups');
+        if (groups) groups.innerHTML = '<div class="procurement-empty">Retrying\u2026</div>';
+        loadAndRender();
+    }
+    if (typeof window !== 'undefined') { window.poRetryRead = poRetryRead; }
 
     var PO_STATUS_LABEL = {
         draft: 'Draft', issued: 'Issued / Sent', supplier_confirmed: 'Supplier Confirmed',

@@ -137,6 +137,11 @@ section('ORDER PLANNING · expand reads STORED T1–T4 (no getWorkspace), Order 
   global._roEsc = function (s) { return String(s == null ? '' : s); };
   global._roRowKey = function (item) { return [item.sku || '', item.company != null ? item.company : '', item.country || '', item.marketplace || ''].join('|'); };
   global._roPanelId = function (k) { return 'ro-expand-' + String(k == null ? '' : k).replace(/[^A-Za-z0-9_-]/g, '-'); };
+  // S4-R7 — the canonical scope key. _opLoadMaterializedGap reads the prepared per-site store under
+  // it, and it is defined outside the extracted slice, so it joins _roEsc / _roRowKey / _roPanelId as
+  // a stub. VERBATIM from request-order.js, not a convenient approximation: a key that disagreed with
+  // the page's would make this suite pass on a lookup the page could never perform.
+  global._roScopeKey3_ = function (s) { return [String((s && s.company) || '').trim().toUpperCase(), String((s && s.country) || '').trim().toUpperCase(), String((s && s.marketplace) || '').trim().toUpperCase()].join('|'); };
   var PANEL_ID = global._roPanelId(global._roRowKey(ITEM));
   var cells = {}; ['T1', 'T2', 'T3', 'T4'].forEach(function (t) { cells['gap:' + t] = { innerHTML: '' }; cells['suggested:' + t] = { innerHTML: '' }; cells['demand:' + t] = { innerHTML: '' }; });
   var orderQtyTouched = false;

@@ -1,5 +1,11 @@
 # F1-7M-PERFORMANCE-AND-INTERACTION-BASELINE-R1 — measure/audit baseline (NO code change)
 
+> **SUPERSEDED AS THE RUNTIME CONTRACT (S4-R7).** This remains the F1-7M measurement record and its
+> roadmap, and it is still the place to read what the system looked like before S4. What the system does
+> NOW - route-owned code, first useful UI, deferred reads, retained models, the Retry contract, expandable
+> SKU detail and the no-N+1 rule, listener ownership, caching policy - is owned by
+> `docs/planning/S4_RUNTIME_PERFORMANCE_BASELINE.md`. Where the two disagree, that one is current.
+
 **AUDIT / MEASUREMENT / DECISION ONLY.** No runtime/business/schema change. Establishes the post-migration performance
 baseline (source + request-count grounded) and a bounded optimization roadmap. PRE HEAD `70a90df`. Evidence: 5 read-only
 source audits (core pages · secondary/modals · write flows · Apps Script handlers · DOM/UX). **Every absolute
