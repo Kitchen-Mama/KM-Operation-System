@@ -56,8 +56,18 @@ ok(M.boot.post.localScripts < M.boot.pre.localScripts,
   'A1  fewer local scripts execute at boot than before this round', [M.boot.pre.localScripts, M.boot.post.localScripts]);
 ok(M.boot.removedBytes > 500 * 1024,
   'A1a and over 500 KB less JavaScript', M.boot.removedKb + ' KB');
-eq(M.boot.post.localScripts, (INDEX.match(/<script[^>]+src="(assets\/[^"?]+)/g) || []).length,
-  'A1b the recorded count matches index.html as it stands now');
+/* S4-R4 — A CEILING AND A NAMED SET, NOT AN EQUALITY. This read `recorded === actual`, which is a
+   true statement about the tree S4-R3 produced and a ban on every later round: S4-R4 added one core
+   script and the seal fired against a tree it still describes correctly. What S4-R3 proved is that
+   it took scripts OFF the boot list and that they stayed off, and that is what is asked now. */
+const INDEX_LOCAL = (INDEX.match(/<script[^>]+src="(assets\/[^"?]+)/g) || []).length;
+ok(INDEX_LOCAL < M.boot.pre.localScripts,
+  'A1b index.html still loads fewer scripts than before this round', [M.boot.pre.localScripts, INDEX_LOCAL]);
+ok(INDEX_LOCAL >= M.boot.post.localScripts,
+  'A1b1 and never fewer than S4-R3 left it — a later round may ADD a core script, not resurrect a route one',
+  [M.boot.post.localScripts, INDEX_LOCAL]);
+/* What stops the pilot coming back is A3a below, which names each of the seven and asks index.html
+   for it by name. That is the real seal; this pair is only the arithmetic around it. */
 
 // §8 — the question the boot count exists to answer, asked of the browser.
 ok(M.boot.menuItemsAtBoot >= 20, 'A2  MENU_AVAILABLE_BEFORE_ROUTE_SCRIPTS: the menu is complete at boot', M.boot.menuItemsAtBoot);

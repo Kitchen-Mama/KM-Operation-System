@@ -526,7 +526,9 @@ function run(serverMs, mode) {
   }
 }
 
-module.exports = { run, SRD, AWAY, READ, LISTENER_PAGES };
+// listenerProbe is exported so S4-R4 counts listeners with THIS instrument rather than a second
+// copy of it: two rounds disagreeing about listener drift must mean the app changed, not the probe.
+module.exports = { run, SRD, AWAY, READ, LISTENER_PAGES, listenerProbe };
 
 if (require.main === module) {
   const ms = parseInt(process.argv[2] || '0', 10);

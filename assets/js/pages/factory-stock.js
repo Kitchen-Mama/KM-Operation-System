@@ -9,6 +9,77 @@ var _factoryDbLoadTried = false;
 // getter. Factory Stock stays NOT company-owned (shared-factory pool summed as-is; no factory→company inference); no
 // Factory Stock initialization semantics change (read-only transport).
 var _fsReadModel = null;   // scoped read-model or null = Legacy
+
+// S4-R4 §5 — THE MOVEMENT LOG IS A HIDDEN TAB THAT WAS BEING PAID FOR ON EVERY MOUNT.
+//
+// factory_stock_movements has exactly one consumer, _getDbFactoryMovementData(), and two callers:
+// _populateFactoryMovFilters() and renderFactoryMovementTable(). The second is search-gated
+// (_factoryMovementSearched starts false and prints "click Search"). The FIRST ran at mount, from
+// _initFactoryMovementLog — filling the dropdowns of a panel whose markup carries style="display:none".
+// So the fourth read of every Factory Inventory mount populated filters nobody could see, for a table
+// nobody had searched.
+//
+// The snapshot's three tables stay critical and are NOT deferred: factory_stock is the row universe,
+// warehouses supplies company / factory name / country and sku_details supplies category / series —
+// all four are columns of the first visible table.
+var FS_MOVEMENTS = 'factoryInventory.movements';
+if (typeof window !== 'undefined' && window.KM && window.KM.deferredRead) {
+    window.KM.deferredRead.define(FS_MOVEMENTS, { tables: ['factory_stock_movements'] });
+}
+function _fsMovState_() {
+    if (!(typeof window !== 'undefined' && window.KM && window.KM.deferredRead)) return 'READY';
+    return window.KM.deferredRead.state(FS_MOVEMENTS);
+}
+function _fsAdoptMovements_(r) {
+    if (r && r.ok && r.model) {
+        _fsReadModel = _fsReadModel
+            ? Object.assign({}, _fsReadModel, { factoryStockMovements: r.model.factoryStockMovements || [] })
+            : r.model;
+    }
+}
+/* The first consumer: opening the Movement Log tab. Renders the panel's own state first, so the tab
+   is never blank while the read is in flight, and repaints when it settles. */
+function _fsEnsureMovements_(root) {
+    if (!(typeof window !== 'undefined' && window.KM && window.KM.deferredRead) || !_fsScopedActive()) return;
+    var st = _fsMovState_();
+    if (st === 'READY') return;
+    var myGen = _fsReadGen_;
+    window.KM.deferredRead.ensure(FS_MOVEMENTS).then(function (r) {
+        if (r && r.superseded) return;
+        /* STALE GUARD. _fsReadGen_ moves when a newer PRIMARY read takes ownership of the model; an
+           answer belonging to the previous one must not be merged into the new one. */
+        if (myGen !== _fsReadGen_) return;
+        _fsAdoptMovements_(r);
+        var rt = document.querySelector('#factory-stock-section');
+        if (!rt) return;
+        var panel = rt.querySelector('[data-fs-panel="movement"]');
+        if (r && r.ok && panel) _populateFactoryMovFilters(panel);
+        if (r && r.ok && panel) ['warehouse', 'movementType', 'category', 'series'].forEach(function (t) {
+            _updateFactoryMovFilterText(t, panel);
+        });
+        renderFactoryMovementTable(rt);
+    });
+}
+/* §7 — exactly one new canonical read, and only the Movement Log is affected. */
+function fmvRetrySecondary() {
+    if (!(typeof window !== 'undefined' && window.KM && window.KM.deferredRead)) return;
+    var myGen = _fsReadGen_;
+    var flight = window.KM.deferredRead.retry(FS_MOVEMENTS);
+    renderFactoryMovementTable();   // LOADING, immediately, before the answer
+    flight.then(function (r) {
+        if (r && r.superseded) return;
+        if (myGen !== _fsReadGen_) return;
+        _fsAdoptMovements_(r);
+        var rt = document.querySelector('#factory-stock-section');
+        var panel = rt && rt.querySelector('[data-fs-panel="movement"]');
+        if (r && r.ok && panel) {
+            _populateFactoryMovFilters(panel);
+            ['warehouse', 'movementType', 'category', 'series'].forEach(function (t) { _updateFactoryMovFilterText(t, panel); });
+        }
+        renderFactoryMovementTable(rt);
+    });
+}
+if (typeof window !== 'undefined') window.fmvRetrySecondary = fmvRetrySecondary;
 function _fsScopedActive() {
     return typeof window !== 'undefined' && window.KM_SCOPED_PAGE_READS !== false &&
         window.KM && window.KM.DB && typeof window.KM.DB.loadScopedTables === 'function' &&
@@ -39,11 +110,27 @@ function _fsShowInitialLoading_(root) {
         if (el && window.KM && window.KM.loadState) window.KM.loadState.bindElement(el, 'Loading factory stock…').beginLoad(false);
     } catch (e) {}
 }
+// S4-R4 §8 — A FACTORY WRITE CHANGES BOTH TABLES, so deferring one does not let it go stale.
+// An inventory adjustment appends to factory_stock_movements as well as updating factory_stock. Two
+// cases, and the difference is whether anyone is holding the movements model:
+//   · NOT holding it (the tab was never opened) — invalidate. Nothing on screen is wrong, and the next
+//     tab open reads the post-write rows. Re-reading a table nobody is looking at is the cost this
+//     round exists to remove.
+//   · holding it — re-read it with factory_stock, exactly as before. A visible Movement Log that did
+//     not gain the row the user just wrote would be a lie, and lazy loading must not create one.
 function _fsAfterWrite(cb) {
     if (!_fsScopedActive()) { if (cb) cb(); return; }
+    var holdsMovements = (_fsMovState_() === 'READY');
+    if (!holdsMovements && window.KM && window.KM.deferredRead) window.KM.deferredRead.invalidate(FS_MOVEMENTS);
     if (!_fsReadModel) {
-        window.KM.DB.loadScopedTables(['factory_stock', 'factory_stock_movements', 'sku_details', 'warehouses'])
+        window.KM.DB.loadScopedTables(['factory_stock', 'sku_details', 'warehouses'])
             .then(function (m) { _fsReadModel = m; if (cb) cb(); })
+            .catch(function () { if (cb) cb(); });
+        return;
+    }
+    if (!holdsMovements) {
+        window.KM.DB.loadScopedTables(['factory_stock'])
+            .then(function (m) { _fsReadModel = Object.assign({}, _fsReadModel, { factoryStock: m.factoryStock }); if (cb) cb(); })
             .catch(function () { if (cb) cb(); });
         return;
     }
@@ -220,7 +307,9 @@ function initFactoryStockPage() {
         _fsShowInitialLoading_(root);   // F1-7M-D5: bounded INITIAL_LOADING affordance instead of a blank region
         // S3-R1 §A — the rejection is classified and LEFT classified. It does not clear the gate, because the
         // re-render below would then start the next request, which is the loop this round removed.
-        window.KM.DB.loadScopedTables(['factory_stock', 'factory_stock_movements', 'sku_details', 'warehouses'])
+        // S4-R4 — three tables, not four. factory_stock_movements moved to FS_MOVEMENTS, read when the
+        // Movement Log tab is first opened.
+        window.KM.DB.loadScopedTables(['factory_stock', 'sku_details', 'warehouses'])
             .then(function (m) {
                 if (myGen !== _fsReadGen_) return;          // a newer read owns the model
                 _fsReadModel = m;
@@ -855,9 +944,14 @@ function _initFactoryMovementLog(root) {
     if (!root) root = document.querySelector('#factory-stock-section');
     var movPanel = root.querySelector('[data-fs-panel="movement"]');
     if (!movPanel) return;
-    _populateFactoryMovFilters(movPanel);
+    // S4-R4 — CONTROLS YES, DATA NO. Binding is free; _populateFactoryMovFilters reads
+    // factory_stock_movements, and this panel is display:none until the tab is clicked. The dropdowns
+    // are filled by _fsEnsureMovements_ when that happens.
     _bindFactoryMovControls(movPanel);
-    ['warehouse', 'movementType', 'category', 'series'].forEach(function(t) { _updateFactoryMovFilterText(t, movPanel); });
+    if (_fsMovState_() === 'READY') {
+        _populateFactoryMovFilters(movPanel);
+        ['warehouse', 'movementType', 'category', 'series'].forEach(function(t) { _updateFactoryMovFilterText(t, movPanel); });
+    }
     var skuInput = root.querySelector('#factory-mov-sku-input');
     if (skuInput) skuInput.oninput = function() { _factoryMovementSearched = false; renderFactoryMovementTable(); };
     // Bind the Forecast-Review-style date range picker (replaces the old preset <select>).
@@ -873,6 +967,24 @@ function renderFactoryMovementTable(root) {
     var fixedBody = root.querySelector('#factory-movement-fixed-body');
     var scrollBody = root.querySelector('#factory-movement-scroll-body');
     if (!fixedBody || !scrollBody) return;
+
+    /* S4-R4 §5/§7 — NOT_LOADED / LOADING / FAILED, each said out loud, ahead of the search gate.
+       "Click Search" would be a lie while the rows are still being fetched, and a lie of a worse kind
+       after the fetch was refused: it invites an action that cannot succeed and reads as "no data". */
+    var _mst = _fsMovState_();
+    if (_mst === 'LOADING' || _mst === 'NOT_LOADED') {
+        fixedBody.innerHTML = '';
+        scrollBody.innerHTML = '<div style="padding:20px;text-align:center;color:#94A3B8">Loading movement log\u2026</div>';
+        return;
+    }
+    if (_mst === 'FAILED') {
+        fixedBody.innerHTML = '';
+        scrollBody.innerHTML = '<div role="alert" class="fmv-secondary-error">' +
+            'The movement log could not be read. The Stock Snapshot tab is unaffected. ' +
+            '<button type="button" class="btn btn-secondary" onclick="fmvRetrySecondary()">Retry</button>' +
+            '</div>';
+        return;
+    }
 
     if (!_factoryMovementSearched) {
         fixedBody.innerHTML = '';
@@ -1166,7 +1278,9 @@ function switchFactoryTab(tab) {
     if (!root) return;
     root.querySelectorAll('.fs-tab').forEach(function(b) { b.classList.toggle('is-active', b.dataset.fsTab === tab); });
     root.querySelectorAll('.fs-tab-panel').forEach(function(p) { p.style.display = (p.dataset.fsPanel === tab) ? '' : 'none'; });
-    if (tab === 'movement') renderFactoryMovementTable(root);
+    // S4-R4 — THE FIRST CONSUMER. Opening this tab is the first moment anything needs the movement
+    // rows: both the dropdown options and the table itself come from them.
+    if (tab === 'movement') { _fsEnsureMovements_(root); renderFactoryMovementTable(root); }
     else renderFactoryStockTable(root);
 }
 

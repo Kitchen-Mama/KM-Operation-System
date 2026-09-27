@@ -29,6 +29,92 @@ function _crActive(status) { var s = String(status == null ? '' : status).trim()
 // window.KM_SCOPED_PAGE_READS = false → Legacy broad-cache. The scoped object is _opDbCache-shaped so `_crDB()` returns a
 // thin shim whose getters read the read-model (BEFORE == AFTER: same normalizers + filters as the broad getters).
 var _crReadModel = null;   // scoped read-model (normalizeOperationDb-shaped) or null = Legacy
+
+// S4-R4 §4 — WHY THIS PAGE ASKED FIVE QUESTIONS TO SHOW THREE ZEROS.
+//
+// CampaignRiskState.country starts '' and nothing restores it, so on a cold entry crScopeReady() is
+// FALSE. Every consumer of the other four tables is behind that gate: getSkuMasterData() returns []
+// without a scope, _crScopedPromotions() returns [] without a scope, and renderRiskKPIs() prints three
+// neutral zeros by design until a full site scope is chosen. The page CANNOT show a row or a non-zero
+// KPI on first entry, whatever the data says — and it was reading five tables over three sequential
+// rounds to get there.
+//
+// One table is genuinely critical: populateCrSiteFilters() builds the Country <select> from the
+// distinct countries of ACTIVE marketplace_skus. That select IS the first useful UI, and it is the
+// only thing the user can act on.
+//
+// The other four are read when a country is chosen — the gateway to everything downstream. Picking a
+// country resolves the marketplace (marketplaces), which completes the scope, which is what makes the
+// SKU universe (sku_details) and the risk maths (campaigns, campaign_sku_lines) mean anything. They
+// move together because they become necessary together; splitting them further would buy a round at
+// the cost of a second interaction that can fail on its own.
+var CR_SCOPE = 'promotionRisk.scope';
+var CR_CRITICAL_TABLES = ['marketplace_skus'];
+var CR_SCOPE_TABLES = ['marketplaces', 'sku_details', 'campaigns', 'campaign_sku_lines'];
+if (typeof window !== 'undefined' && window.KM && window.KM.deferredRead) {
+    window.KM.deferredRead.define(CR_SCOPE, { tables: CR_SCOPE_TABLES });
+}
+function _crScopeState_() {
+    if (!(typeof window !== 'undefined' && window.KM && window.KM.deferredRead)) return 'READY';
+    return window.KM.deferredRead.state(CR_SCOPE);
+}
+function _crAdoptScope_(r) {
+    if (!(r && r.ok && r.model)) return;
+    var m = r.model;
+    _crReadModel = _crReadModel ? Object.assign({}, _crReadModel, {
+        marketplaces: m.marketplaces || [],
+        skuDetails: m.skuDetails || [],
+        campaigns: m.campaigns || [],
+        campaignSkuLines: m.campaignSkuLines || []
+    }) : m;
+    _CR_SHIM = null;
+}
+/* The marketplace <select> while its master is in flight. NOT the legacy display-string fallback:
+   that path exists for a world with no marketplaces master at all, and using it here would quietly
+   present a different, weaker option list as though the read had succeeded. */
+function _crMarketplacePending_(text) {
+    var mpSel = document.getElementById('cr-marketplace');
+    if (!mpSel) return;
+    mpSel.innerHTML = '<option value="">' + _crEsc(text) + '</option>';
+    mpSel.disabled = true;
+}
+/* The first consumer. Resolves to `after` only when the data is really in hand; a refusal takes the
+   scoped-error path instead, so nothing downstream is ever computed from an absent table. */
+function _crEnsureScope_(after) {
+    if (!(typeof window !== 'undefined' && window.KM && window.KM.deferredRead) || !_crScopedActive()) {
+        if (after) after(); return;
+    }
+    if (_crScopeState_() === 'READY') { if (after) after(); return; }
+    var tok = _crLoadToken;
+    var flight = window.KM.deferredRead.ensure(CR_SCOPE);   // state is LOADING from here
+    _crMarketplacePending_('Loading\u2026');
+    crRenderScoped();                                        // say so, before the answer
+    flight.then(function (r) {
+        if (r && r.superseded) return;
+        /* STALE GUARD. _crLoadToken moves on every country/marketplace change, so an answer for the
+           scope the user has already left cannot repaint the one they are looking at. */
+        if (tok !== _crLoadToken) return;
+        if (r && r.ok) { _crAdoptScope_(r); if (after) after(); return; }
+        _crMarketplacePending_('Select Marketplace');
+        crRenderScoped();
+    });
+}
+/* §7 — exactly one new canonical read; the country picker above it is untouched throughout. */
+function crRetrySecondary() {
+    if (!(typeof window !== 'undefined' && window.KM && window.KM.deferredRead)) return;
+    var tok = _crLoadToken;
+    var flight = window.KM.deferredRead.retry(CR_SCOPE);
+    _crMarketplacePending_('Loading\u2026');
+    crRenderScoped();
+    flight.then(function (r) {
+        if (r && r.superseded) return;
+        if (tok !== _crLoadToken) return;
+        if (r && r.ok) { _crAdoptScope_(r); refreshCrMarketplaceOptions(); crRenderScoped(); return; }
+        _crMarketplacePending_('Select Marketplace');
+        crRenderScoped();
+    });
+}
+if (typeof window !== 'undefined') window.crRetrySecondary = crRetrySecondary;
 var _CR_SHIM = null;
 function _crScopedActive() {
     return typeof window !== 'undefined' && window.KM_SCOPED_PAGE_READS !== false &&
@@ -431,6 +517,19 @@ function renderRiskTable() {
         if (pagination) pagination.innerHTML = '';
     };
 
+    /* S4-R4 §7 — STATE 0: the scope tables are in flight, or were refused. Ahead of STATE 1 because
+       once a country is chosen "select a country and marketplace" is no longer what is happening, and
+       ahead of the row states because a refused read is not an empty result. */
+    if (CampaignRiskState.country) {
+        var _ss = _crScopeState_();
+        if (_ss === 'LOADING') { msg('Loading promotion data\u2026'); return; }
+        if (_ss === 'FAILED') {
+            msg('Could not load promotion data for this country. The country selector above is unaffected. ' +
+                '<button type="button" class="cr-btn cr-btn--small" onclick="crRetrySecondary()">Retry</button>',
+                'cr-empty-state--error');
+            return;
+        }
+    }
     // STATE 1 — no site scope selected yet (guided empty state; no SKU query is run).
     if (!crScopeReady()) { msg('Select a country and marketplace to view promotion risk.'); return; }
     // STATE 4 — API/load error (set by the loader). Show error + Retry, never treat as empty data.
@@ -614,8 +713,10 @@ function onCrCountryChange() {
     CampaignRiskState.company = '';
     _crResetScopeFilters();
     _crLoadToken++;                 // invalidate any prior async load
-    refreshCrMarketplaceOptions();
-    crRenderScoped();
+    // S4-R4 — THE FIRST CONSUMER. Clearing the country needs nothing new; choosing one needs the
+    // marketplaces master to resolve the site, and everything the resolved scope then computes.
+    if (!CampaignRiskState.country) { refreshCrMarketplaceOptions(); crRenderScoped(); return; }
+    _crEnsureScope_(function () { refreshCrMarketplaceOptions(); crRenderScoped(); });
 }
 function onCrMarketplaceChange() {
     var mpSel = document.getElementById('cr-marketplace');
@@ -651,7 +752,8 @@ function crReload() {
     if (_crScopedActive()) {
         if (_crReadModel) { done(); return; }
         var tok = ++_crLoadToken;
-        window.KM.DB.loadScopedTables(['campaigns', 'campaign_sku_lines', 'marketplace_skus', 'sku_details', 'marketplaces'])
+        // S4-R4 — ONE table, not five. The other four are CR_SCOPE, read when a country is chosen.
+        window.KM.DB.loadScopedTables(CR_CRITICAL_TABLES)
             .then(function (m) { if (tok !== _crLoadToken) return; _crReadModel = m; _CR_SHIM = null; done(); })
             .catch(function () { if (tok !== _crLoadToken) return; _crViewState = 'error'; crRenderScoped(); });
         return;

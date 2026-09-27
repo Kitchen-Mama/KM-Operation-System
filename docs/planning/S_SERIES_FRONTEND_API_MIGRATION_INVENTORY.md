@@ -2,7 +2,11 @@
 
 > **Round:** P1-B8D-R8 §9. **READ-ONLY CENSUS. No page runtime outside Product Strategy was modified.**
 > **Repo:** `Operation System` · **Branch:** `feature/product-strategy-board-p0` · **PRE HEAD:** `d7a6061`.
-> **Scope:** the scripts `index.html` actually loads, in load order — **LOADED_SCRIPTS: 76**
+> **Scope:** the scripts `index.html` actually loads, in load order — **LOADED_SCRIPTS: 77**
+> (76 before S4-R4, which added `core/deferred-read.js`: the state machine behind the deferred
+> secondary reads on Promotion Risk Tracker, Factory Inventory and Carrier Rate Card. It holds no
+> business rows — the tables it fetches land in each page's own read model, where they already
+> lived — so it adds a data PATH to this inventory without adding a data OWNER.)
 > (82 before S4-R3, which moved seven Product Strategy modules out of `index.html` and into
 > `KM_ROUTE_ASSETS_` in `app.js`, where the router loads them when the route is first opened, and
 > added `core/script-loader.js`. Those eight are still production data paths and are still listed

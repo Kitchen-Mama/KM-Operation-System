@@ -833,7 +833,13 @@ var ROUND_TOKENS = [
   // NO APPS SCRIPT COUNTERPART. system.health and gapJob.status.get are asked LESS often; neither
   // action, payload nor response shape changed, the contract pin stays at 17, and no .gs file is in
   // this release.
-  's4r3-routeownedcode-20260927'];
+  's4r3-routeownedcode-20260927',
+  // S4-R4 - A NEW TOKEN, AND THE REASON IS A FACT RATHER THAN A HABIT: 0bb42ed is on origin/main, so
+  // S4-R3's bytes have left the repository and every browser that has loaded since holds files stamped
+  // `?v=s4r3-routeownedcode-20260927`. Reusing it would leave all of them on the S4-R3 copy of three page
+  // scripts that no longer load the same tables. A token may be reused only until its bytes have been
+  // served, and a push serves them.
+  's4r4-deferredread-20260927'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

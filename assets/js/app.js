@@ -112,13 +112,13 @@ var KM_ROUTE_ASSETS_ = {
     'product-strategy': {
         sectionId: 'product-strategy-board-section',
         scripts: [
-            'assets/js/product-strategy/psb-data-contract.js?v=s4r3-routeownedcode-20260927',
-            'assets/js/product-strategy/km-product-strategy-site-universe.js?v=s4r3-routeownedcode-20260927',
-            'assets/js/product-strategy/km-product-strategy-live-adapter.js?v=s4r3-routeownedcode-20260927',
-            'assets/js/product-strategy/psb-selectors.js?v=s4r3-routeownedcode-20260927',
-            'assets/js/product-strategy/psb-chart-layout.js?v=s4r3-routeownedcode-20260927',
-            'assets/js/product-strategy/psb-board-ui.js?v=s4r3-routeownedcode-20260927',
-            'assets/js/pages/product-strategy-board.js?v=s4r3-routeownedcode-20260927'
+            'assets/js/product-strategy/psb-data-contract.js?v=s4r4-deferredread-20260927',
+            'assets/js/product-strategy/km-product-strategy-site-universe.js?v=s4r4-deferredread-20260927',
+            'assets/js/product-strategy/km-product-strategy-live-adapter.js?v=s4r4-deferredread-20260927',
+            'assets/js/product-strategy/psb-selectors.js?v=s4r4-deferredread-20260927',
+            'assets/js/product-strategy/psb-chart-layout.js?v=s4r4-deferredread-20260927',
+            'assets/js/product-strategy/psb-board-ui.js?v=s4r4-deferredread-20260927',
+            'assets/js/pages/product-strategy-board.js?v=s4r4-deferredread-20260927'
         ],
         partial: { key: 'product-strategy-board', url: 'assets/html/pages/product-strategy-board.html',
             target: '#product-strategy-board-mount' },

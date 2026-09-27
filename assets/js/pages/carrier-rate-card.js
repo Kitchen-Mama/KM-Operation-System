@@ -47,7 +47,19 @@
     // Kill switch: window.KM_SCOPED_PAGE_READS = false → Legacy. BEFORE == AFTER (same normalizers + filters). This is the
     // Carrier Rate Card MANAGEMENT page's own bounded owner — NOT coupled to the IR carrierPlanning include.
     var _crcReadModel = null;   // scoped read-model or null = Legacy
-    var _CRC_TABLES = ['carrier_rate_cards', 'carriers', 'carrier_lead_times'];
+    // S4-R4 §6 — LEAD TIME IS NOT PART OF THE FIRST SCREEN, AND THE PAGE ALREADY SAID SO.
+    // _crcInit() populates the faceted filters and then prints "Set filters and click Search": the table
+    // is empty by design until Search. The only consumer of carrier_lead_times is _crcLeadTimeMap(),
+    // reached from _crcRender(), reached only from search(). So the mount was paying for a third read to
+    // fill a column of a table nobody had asked to see yet.
+    //
+    // The facets DO need both other tables: options come from the rate-card rows, and the Carrier
+    // dropdown's LABELS come from carriers (F5, _crcCarrierOptions). Those two stay critical.
+    var _CRC_TABLES = ['carrier_rate_cards', 'carriers'];
+    var _CRC_LT = 'carrierRateCard.leadTimes';
+    if (window.KM && window.KM.deferredRead) {
+        window.KM.deferredRead.define(_CRC_LT, { tables: ['carrier_lead_times'] });
+    }
     function _crcScopedActive() {
         return typeof window !== 'undefined' && window.KM_SCOPED_PAGE_READS !== false &&
             window.KM && window.KM.DB && typeof window.KM.DB.loadScopedTables === 'function' &&
@@ -68,6 +80,90 @@
     function getCards() { return _crcGet('carrierRateCards', 'getCarrierRateCards'); }
     function getCarriers() { return _crcGet('carriers', 'getCarriers'); }
     function getLeadTimes() { return _crcGet('carrierLeadTimes', 'getCarrierLeadTimes'); }
+
+    /* THE DEFERRED READ LANDS WHERE THE EAGER ONE DID. Merging into _crcReadModel means getLeadTimes()
+       and _crcLeadTimeMap() are byte-identical to before — this round moved WHEN the rows arrive, not
+       what any consumer does with them. */
+    function _crcLtState() {
+        if (!(window.KM && window.KM.deferredRead)) return 'READY';   // no helper → nothing was deferred
+        return window.KM.deferredRead.state(_CRC_LT);
+    }
+    function _crcAdoptLeadTimes_(r) {
+        if (r && r.ok && r.model) {
+            _crcReadModel = _crcReadModel
+                ? Object.assign({}, _crcReadModel, { carrierLeadTimes: r.model.carrierLeadTimes || [] })
+                : r.model;
+        }
+    }
+    function _crcEnsureLeadTimes_(after) {
+        if (!(window.KM && window.KM.deferredRead) || !_crcScopedActive()) { if (after) after(); return; }
+        var myRows = crcCurrentRows;
+        window.KM.deferredRead.ensure(_CRC_LT).then(function (r) {
+            if (r && r.superseded) return;
+            /* STALE GUARD. The answer belongs to the row set that was on screen when it was asked for. A
+               Search that has happened since owns the table now, and repainting it with the older
+               question's answer is the §12.8 defect. */
+            if (myRows !== crcCurrentRows) return;
+            _crcAdoptLeadTimes_(r);
+            _crcPaintLeadTimes_();
+            if (after) after();
+        });
+    }
+    /* Repaints ONE COLUMN. The rate rows are primary data and are already correct; re-rendering the
+       whole table to fill a secondary column would throw away the user's scroll position for nothing. */
+    function _crcPaintLeadTimes_() {
+        var wrap = document.getElementById('crc-table-wrap');
+        if (!wrap) return;
+        var cells = wrap.querySelectorAll('td[data-crc-lt]');
+        var ltMap = (_crcLtState() === 'READY') ? _crcLeadTimeMap() : null;
+        for (var i = 0; i < cells.length; i++) {
+            var idx = parseInt(cells[i].getAttribute('data-crc-lt'), 10);
+            var card = crcCurrentRows[idx];
+            if (card) cells[i].innerHTML = _crcLtCellHtml_(card, ltMap);
+        }
+        _crcRenderLtNotice_();
+    }
+    /* FOUR STATES, AND A REFUSED READ MUST NOT PRINT WHAT AN ABSENT LANE PRINTS. A blank Lead Time is a
+       real answer here (§ the page's own contract: blank if no match); this is the absence of one. */
+    function _crcLtCellHtml_(card, ltMap) {
+        var st = _crcLtState();
+        if (st === 'FAILED') return '<span class="crc-lt crc-lt--failed" title="Lead times could not be read">&#9888;</span>';
+        if (st !== 'READY' || !ltMap) return '<span class="crc-lt crc-lt--pending">&hellip;</span>';
+        var v = _crcLeadTimeDisplay(card, ltMap);
+        return v ? esc(v) : '';
+    }
+    /* A notice SCOPED TO THE COLUMN. The rows above it are real and stay; §7 forbids replacing the page
+       with a global error, and forbids calling this empty. */
+    function _crcRenderLtNotice_() {
+        var host = document.getElementById('crc-lead-time-notice');
+        if (!host) return;
+        var st = _crcLtState();
+        if (st === 'FAILED') {
+            host.className = 'crc-secondary-error';
+            host.innerHTML = 'Lead Time could not be read. The rate rows below are unaffected. ' +
+                '<button type="button" class="crcf-link" onclick="crcRetryLeadTimes()">Retry</button>';
+        } else if (st === 'LOADING') {
+            host.className = 'crc-secondary-loading';
+            host.textContent = 'Loading Lead Time\u2026';
+        } else {
+            host.className = '';
+            host.textContent = '';
+        }
+    }
+    /* §7 — exactly one new canonical read. deferredRead.retry() clears FAILED and dispatches once;
+       pressed twice while one is in flight it joins that flight instead of sending a second. */
+    function crcRetryLeadTimes() {
+        if (!(window.KM && window.KM.deferredRead)) return;
+        var myRows = crcCurrentRows;
+        var flight = window.KM.deferredRead.retry(_CRC_LT);
+        _crcPaintLeadTimes_();   // show LOADING immediately, before the answer
+        flight.then(function (r) {
+            if (r && r.superseded) return;
+            if (myRows !== crcCurrentRows) return;
+            _crcAdoptLeadTimes_(r);
+            _crcPaintLeadTimes_();
+        });
+    }
 
     // ============================================================
     // F1 — Date-RANGE picker (self-contained; mirrors Forecast Review's contract, own crc- state/IDs).
@@ -564,7 +660,11 @@
         });
 
         crcCurrentRows = filtered;
+        // §11 — THE PRIMARY UI IS NOT HELD BEHIND THE SECONDARY READ. The rate rows are already in hand;
+        // they render now, and the Lead Time column fills itself in afterwards. A Search that waited for
+        // carrier_lead_times would have moved the mount's spinner onto the button, not removed it.
         _crcRender(filtered, nameById);
+        _crcEnsureLeadTimes_();
     }
 
     function _crcRender(rows, nameById) {
@@ -578,7 +678,9 @@
             return;
         }
 
-        var ltMap = _crcLeadTimeMap();
+        // Only ask for the map when the deferred read has landed; before that the column renders its
+        // own state and is repainted in place by _crcPaintLeadTimes_().
+        var ltMap = (_crcLtState() === 'READY') ? _crcLeadTimeMap() : null;
         function shipTo(c) {
             return c.destinationWarehouseCode || c.destinationCity || c.destinationCountry || '';
         }
@@ -591,14 +693,14 @@
             return esc(a) + ' ~ ' + (b ? esc(b) : '—');
         }
 
-        var body = rows.map(function (c) {
+        var body = rows.map(function (c, _i) {
             return '<tr>' +
                 '<td>' + esc(nameById[c.carrierId] || c.carrierId || '') + '</td>' +
                 '<td>' + esc(shipFrom(c)) + '</td>' +
                 '<td>' + esc(shipTo(c)) + '</td>' +
                 '<td>' + dash(c.shippingMethod) + '</td>' +
                 '<td>' + dash(c.lastMileDelivery) + '</td>' +
-                '<td>' + esc(_crcLeadTimeDisplay(c, ltMap)) + '</td>' +
+                '<td data-crc-lt="' + _i + '">' + _crcLtCellHtml_(c, ltMap) + '</td>' +
                 '<td>' + dash(c.chargeType) + '</td>' +
                 '<td>' + dash(c.chargeUnit) + '</td>' +
                 '<td class="crc-num">' + numDisp(c.minBoxWeight) + '</td>' +
@@ -1156,6 +1258,7 @@
     window.crcCloseMasterModal = closeMasterModal;
     window.crcModalDownloadMaster = modalDownloadMaster;
     window.crcModalImportMaster = modalImportMaster;
+    window.crcRetryLeadTimes = crcRetryLeadTimes;
     window.crcOpenImport = openImport;
     window.crcImportTemplate = importTemplate;
     window.initCarrierRateCardPage = loadAndInit;

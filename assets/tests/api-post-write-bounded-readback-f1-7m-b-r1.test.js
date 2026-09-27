@@ -152,21 +152,47 @@ eval(extractFn(RO, '_roReloadAndRerender'));
   };
 
   // ---- B4 Factory ----
+  /* S4-R4 — THE MOVEMENT TABLE IS NOW DEFERRED, so the post-write read has two shapes rather than
+     one, and both are asked here. The claim this section has always made is unchanged and is if
+     anything narrower: a post-write re-read touches ONLY what the write could have changed, and
+     never clobbers a static table it did not ask for.
+
+       · Movement Log OPEN  → factory_stock AND factory_stock_movements, exactly as before. A
+         visible log missing the row the user just wrote would be a lie.
+       · Movement Log CLOSED → factory_stock alone, and the movement model is INVALIDATED so the
+         next tab open pays for one read. Re-reading a table nobody is looking at is the cost
+         S4-R4 removed.
+
+     The deferred-read helper is stubbed rather than loaded: this is a source-extracted function
+     under eval, and the point is what _fsAfterWrite DECIDES, not what the helper does with it. */
   await (function () {
     var _fsReadModel, _fsScopedActive = function () { return true; };
+    var FS_MOVEMENTS = 'factoryInventory.movements';
+    var _movState = 'READY', _invalidated = [];
+    var _fsMovState_ = function () { return _movState; };
+    global.window.KM.deferredRead = { invalidate: function (n) { _invalidated.push(n); } };
     eval(extractFn(FS, '_fsAfterWrite'));
     _fsReadModel = _fullShape({ factoryStock: [{ sku: 'OLD_FS' }], skuDetails: [{ sku: 'MOUNT_DET' }], warehouses: [{ warehouseId: 'MOUNT_WH' }] });
-    _scopedCalls = [];
+    _scopedCalls = []; _invalidated = []; _movState = 'READY';
     return new Promise(function (done) {
       _fsAfterWrite(function () {
-        eq(_scopedCalls, [['factory_stock', 'factory_stock_movements']], 'B4: primed → post-write re-reads ONLY the 2 mutable tables');
+        eq(_scopedCalls, [['factory_stock', 'factory_stock_movements']], 'B4: primed + log OPEN → re-reads ONLY the 2 mutable tables');
         eq(_fsReadModel.factoryStock, [{ sku: 'FRESH_FS' }], 'B4: mutable factory_stock refreshed from server');
         eq(_fsReadModel.skuDetails, [{ sku: 'MOUNT_DET' }], 'B4: static sku_details RETAINED (not clobbered)');
         eq(_fsReadModel.warehouses, [{ warehouseId: 'MOUNT_WH' }], 'B4: static warehouses RETAINED (not clobbered)');
-        _fsReadModel = null; _scopedCalls = [];
+        eq(_invalidated, [], 'B4: a held model is refreshed, never invalidated out from under the screen');
+        // Movement Log CLOSED: the deferred model is not held, so it is invalidated instead of read.
+        _fsReadModel = _fullShape({ factoryStock: [{ sku: 'OLD_FS' }], skuDetails: [{ sku: 'MOUNT_DET' }], warehouses: [{ warehouseId: 'MOUNT_WH' }] });
+        _scopedCalls = []; _invalidated = []; _movState = 'NOT_LOADED';
         _fsAfterWrite(function () {
-          eq(_scopedCalls, [['factory_stock', 'factory_stock_movements', 'sku_details', 'warehouses']], 'B4: un-primed fallback → full 4-table read (unchanged)');
-          done();
+          eq(_scopedCalls, [['factory_stock']], 'B4: primed + log CLOSED → re-reads only factory_stock');
+          eq(_invalidated, [FS_MOVEMENTS], 'B4: and the unheld movement model is invalidated, not left stale');
+          eq(_fsReadModel.skuDetails, [{ sku: 'MOUNT_DET' }], 'B4: static sku_details still RETAINED on that branch');
+          _fsReadModel = null; _scopedCalls = []; _invalidated = []; _movState = 'NOT_LOADED';
+          _fsAfterWrite(function () {
+            eq(_scopedCalls, [['factory_stock', 'sku_details', 'warehouses']], 'B4: un-primed fallback → the mount read, which no longer carries movements');
+            done();
+          });
         });
       });
     });

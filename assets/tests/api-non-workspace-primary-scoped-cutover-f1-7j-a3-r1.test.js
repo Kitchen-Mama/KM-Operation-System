@@ -137,7 +137,19 @@ pageChecks('sku-handbook', SKUH_JS);
 ok((FS_JS.match(/_fsGet\('/g) || []).length >= 5 && !/window\.KM\.DB\.getFactoryStock\(\)/.test(FS_JS), 'factory-stock: reads via _fsGet; no direct getFactoryStock()');
 ok((OS_JS.match(/_osGet\('/g) || []).length >= 4 && !/window\.KM\.DB\.getOverseasInventorySnapshot\(\)/.test(OS_JS), 'overseas-stock: reads via _osGet');
 ok((OOP_JS.match(/_oopGet\('/g) || []).length >= 5 && !/window\.KM\.DB\.getShipments\(\)/.test(OOP_JS), 'overseas-ops-preview: reads via _oopGet');
-ok(/_crDB\(\)[\s\S]*_crReadModel/.test(CR_JS) && /loadScopedTables\(\['campaigns'/.test(CR_JS), 'campaign-risk: _crDB() shim reads _crReadModel');
+/* S4-R4 — ASKED OF THE DECLARATION, NOT OF A REMEMBERED LIST. What this rule is about is the
+   cutover: campaign-risk sources its tables from a bounded loadScopedTables and not from the broad
+   whole-DB cache. `loadScopedTables(['campaigns'` was one way to spell that, and freezing the
+   spelling turned it into a ban on ever changing which tables the page reads — which S4-R4 had to
+   do to stop reading four of them for a screen that cannot display any. The page now names its own
+   sets, so the rule asks for those instead, and still fails if the cutover is undone. */
+ok(/_crDB\(\)[\s\S]*_crReadModel/.test(CR_JS), 'campaign-risk: _crDB() shim reads _crReadModel');
+ok(/loadScopedTables\(\s*(CR_CRITICAL_TABLES|\[')/.test(CR_JS),
+  'campaign-risk: the canonical read is a bounded scoped read');
+/* And the four tables it stopped reading at mount are still READ — deferred to the first country
+   selection, not dropped. A round that removed a dependency outright would otherwise pass here. */
+ok(/CR_SCOPE_TABLES\s*=\s*\[[^\]]*'campaigns'[^\]]*'campaign_sku_lines'/.test(CR_JS),
+  'campaign-risk: campaigns and campaign_sku_lines are still owned by this page');
 ok(/function getCards\(\)\s*\{\s*return _crcGet/.test(CRC_JS) && /function getLeadTimes\(\)/.test(CRC_JS), 'carrier-rate-card: getCards/getCarriers/getLeadTimes read the scoped model');
 ok(/_skuhKnowledgeItems[\s\S]*buildSkuKnowledgeItems\(_skuhReadModel/.test(SKUH_JS), 'sku-handbook: knowledge merge from _skuhReadModel');
 // fail-closed: sku-handbook canonical-but-not-loaded returns [] (NEVER a silent broad read)

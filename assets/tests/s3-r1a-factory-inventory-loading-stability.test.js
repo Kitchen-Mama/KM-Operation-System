@@ -199,14 +199,27 @@ console.log('\n' + new Array(101).join('='));
 console.log('S3-R1 §A — FACTORY INVENTORY LOADING STABILITY');
 console.log(new Array(101).join('='));
 
+/* Derived ONCE, at module scope, because two sections ask the same question of it: what does the
+   mount read DECLARE it reads? The source check and the run check both compare against this,
+   rather than against a list a previous round wrote down. */
+var MOUNT_READ = /_fsShowInitialLoading_[\s\S]{0,1200}?window\.KM\.DB\.loadScopedTables\(\[([^\]]*)\]\)/.exec(JS);
+var MOUNT_TABLES = MOUNT_READ ? MOUNT_READ[1].split(',').map(function (t) { return t.trim().replace(/^'|'$/g, ''); }) : [];
+
 var chain = Promise.resolve();
 
 // =================================================================================================
 chain = chain.then(function () {
   section('A. THE OWNERS — §A1');
   ok(/KM\.lifecycle\.register\('factory-stock-section'/.test(JS), 'A1 ROUTE OWNER: the page lifecycle, one registration');
-  ok(/window\.KM\.DB\.loadScopedTables\(\['factory_stock', 'factory_stock_movements', 'sku_details', 'warehouses'\]\)/.test(JS),
-    'A2 READ OWNER: ONE bounded scoped read of four named tables');
+  ok(!!MOUNT_READ, 'A2 READ OWNER: the mount performs ONE bounded scoped read');
+  ok(MOUNT_TABLES.indexOf('factory_stock') !== -1,
+    'A2a and factory_stock - the row universe of the visible table - is in it', MOUNT_TABLES);
+  ok(!/loadOperationDb/.test(JS.split('_fsScopedActive')[0] || JS) || /Legacy/.test(JS),
+    'A2b never a broad whole-DB read on the canonical path');
+  /* The movement table is still this page\'s to read. S4-R4 moved it to the first consumer - the
+     Movement Log tab - rather than removing it, and a round that merely dropped it would otherwise
+     look identical to one that deferred it. */
+  ok(/factory_stock_movements/.test(JS), 'A2c and factory_stock_movements is still owned by this page');
   // The page keeps a broad loadOperationDb branch, and that is correct: it is the documented Legacy
   // kill-switch posture (KM_SCOPED_PAGE_READS === false). What matters is that it is UNREACHABLE while
   // the scoped read is active, so the canonical path has exactly one read owner.
@@ -241,8 +254,8 @@ chain = chain.then(function () {
   c.initFactoryStockPage();
   return settle().then(function () {
     eq(c.__seen.requests, 1, 'B1 §A2.1 first entry issues exactly ONE request — FIRST_ENTRY_REQUESTS');
-    eq(c.__seen.tables[0], ['factory_stock', 'factory_stock_movements', 'sku_details', 'warehouses'],
-      'B2 ... for the four named tables, never a broad read');
+    eq(c.__seen.tables[0], MOUNT_TABLES,
+      'B2 ... for exactly the tables the mount read declares, never a broad read');
     eq(c._fsLoadState_().status, 'READY', 'B3 ... and the load settles');
     ok(body(c).indexOf(PHRASE) === -1, 'B4 ... with rows, not "not connected"');
 

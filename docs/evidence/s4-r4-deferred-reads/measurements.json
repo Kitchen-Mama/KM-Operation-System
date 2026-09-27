@@ -1,0 +1,393 @@
+{
+ "round": "S4-R4",
+ "mode": "Bounded measured implementation. Three pages, one deferred dependency each, every number below read out of a real headless Chrome over S3-R11's fixture world.",
+ "preSha": "0bb42ed",
+ "serverMs": 400,
+ "instruments": {
+  "runner": "assets/tests/_s4r4-deferred-read-runner.js - five scenarios (shape, reentry, failure, stale, invalidation) over the real shipped page code.",
+  "world": "assets/tests/_s3r11-interaction-runner.js, extended this round with the six tables these three pages read. S4-R1 recorded factory-stock and carrier-rate-card with useful:0 because the world did not carry them; request counts were still true, but no scenario could reach a row.",
+  "listeners": "S4-R2's listener probe, imported rather than copied, so a disagreement about drift would mean the application changed and not the instrument."
+ },
+ "what_is_authoritative": [
+  "Request counts and the TABLES behind them. A count is a property of control flow and holds at any server speed.",
+  "READ ROUNDS, derived from sent/settled marks - with a bounded read pool the cost a user waits through is how many reads were paid for one after another.",
+  "DOM outcomes: what the first useful screen contains, whether a refusal is visible, whether the primary table survived it.",
+  "Deferred-dependency state transitions, read from KM.deferredRead.state()."
+ ],
+ "what_is_not_observable": [
+  "MILLISECONDS. Under --virtual-time-budget Chrome freezes the clock inside a task; S4-R1 measured this and S4-R3 repeated it. No figure in this file is a duration.",
+  "Whether the deferred read feels faster to a person. What IS measured is the two things §11 asks for: the first useful UI renders without the deferred data, and the secondary load does not block it."
+ ],
+ "instrument_corrections_this_round": [
+  "LISTENER DRIFT IS A MARGINAL RATE. A first reading took the census before a page's FIRST mount and reported +89 and +65 for two pages S4-R2 had sealed at 0. Those listeners are one-time registrations that a live page is entitled to - document-level handlers, and elements inside a section that is hidden rather than removed. The baseline now starts after one mount and one unmount, which is the statistic S4-R2 sealed, and all three pages read 0.",
+  "THE FAILURE SCENARIO LIFTS ITS REFUSALS BEFORE RETRY. A scoped read rejects its whole batch on the first refusal, so arming four tables and then pressing Retry re-refused the two the first attempt never reached - and reported the page as failing to recover from a network that was in fact still down.",
+  "TWO ERROR-BOX SELECTORS MATCHED STATIC HOSTS rather than errors, so a healthy page counted a refusal it had not had.",
+  "THE FACTORY SNAPSHOT RENDERS DIVS, NOT ROWS. S4-R1's census asked for `tr` and recorded useful:0 for a table that was full; the correct selector is .fixed-row and the table has 40."
+ ],
+ "totals": {
+  "initialRequestsPre": 12,
+  "initialRequestsPost": 6,
+  "initialRoundsPre": 7,
+  "initialRoundsPost": 4
+ },
+ "pages": {
+  "campaign-risk": {
+   "label": "Promotion Risk Tracker",
+   "dependency": "promotionRisk.scope",
+   "critical": [
+    "marketplace_skus"
+   ],
+   "deferred": [
+    "marketplaces",
+    "sku_details",
+    "campaigns",
+    "campaign_sku_lines"
+   ],
+   "firstConsumer": "a country is chosen (onCrCountryChange)",
+   "firstUsefulUi": "the Country <select>, built from the distinct countries of ACTIVE marketplace_skus",
+   "whyDeferrable": "CampaignRiskState.country starts empty and nothing restores it, so crScopeReady() is false on every cold entry. getSkuMasterData() and _crScopedPromotions() both return [] without a scope, and renderRiskKPIs() prints three neutral zeros by design. The page cannot show a row or a non-zero KPI on first entry whatever these four tables contain.",
+   "postWrite": "NONE. This page has no DB write: promotions are a localStorage overlay (savePromotionRecords). Nothing it can do changes campaigns, campaign_sku_lines, marketplaces or sku_details.",
+   "initial": {
+    "pre": {
+     "requests": 5,
+     "rounds": 3,
+     "tables": {
+      "getTable:campaigns": 1,
+      "getTable:campaign_sku_lines": 1,
+      "getTable:marketplace_skus": 1,
+      "getTable:sku_details": 1,
+      "getTable:marketplaces": 1
+     },
+     "firstUseful": 3,
+     "primary": 3,
+     "secondaryConsumed": 0
+    },
+    "post": {
+     "requests": 1,
+     "rounds": 1,
+     "tables": {
+      "getTable:marketplace_skus": 1
+     },
+     "firstUseful": 3,
+     "primary": 3,
+     "secondaryConsumed": 0
+    }
+   },
+   "firstConsumerCost": {
+    "requests": 4,
+    "rounds": 2,
+    "tables": {
+     "getTable:marketplaces": 1,
+     "getTable:sku_details": 1,
+     "getTable:campaigns": 1,
+     "getTable:campaign_sku_lines": 1
+    },
+    "dependencyReads": 1,
+    "note": "One READ of one dependency. The request count is the number of TABLES in that dependency, because a scoped read asks per table - it is not four dependencies."
+   },
+   "secondUse": {
+    "requests": 0,
+    "consumed": 2
+   },
+   "doubleFire": {
+    "note": "The interaction fired twice with no wait between, from a freshly invalidated state: two callers reaching ensure() while one read is in flight. Equal to firstConsumerCost is the contract.",
+    "api": 4,
+    "tables": {
+     "getTable:marketplaces": 1,
+     "getTable:sku_details": 1,
+     "getTable:campaigns": 1,
+     "getTable:campaign_sku_lines": 1
+    },
+    "consumed": 2,
+    "reads": 2
+   },
+   "primaryUnchanged": {
+    "preFirstUseful": 3,
+    "postFirstUseful": 3,
+    "prePrimary": 3,
+    "postPrimary": 3
+   },
+   "failure": {
+    "primaryBefore": 3,
+    "primaryAfter": 3,
+    "firstUsefulAfter": 3,
+    "errorBox": 1,
+    "sectionStillActive": true,
+    "retryRequests": 4,
+    "retryTables": {
+     "getTable:marketplaces": 1,
+     "getTable:sku_details": 1,
+     "getTable:campaigns": 1,
+     "getTable:campaign_sku_lines": 1
+    },
+    "errorBoxAfterRetry": 0,
+    "consumedAfterRetry": 2,
+    "primaryAfterRetry": 3
+   },
+   "stale": {
+    "stillActiveWhileAway": false,
+    "visibleSectionsWhileAway": 1,
+    "mountedWhileAway": 1,
+    "openRequestsWhileAway": 2,
+    "returnRequests": 0,
+    "returnPrimary": 3,
+    "returnConsumed": 2
+   },
+   "reentry": {
+    "cold": 1,
+    "warm": 0,
+    "afterSecondary": 0,
+    "secondaryAfterReturn": 0,
+    "rapid": 0,
+    "listenerDrift": 0,
+    "openRequestsOnLeave": 0,
+    "mountedSections": 1,
+    "visibleSections": 1
+   },
+   "invalidation": {
+    "stateAfterFirstUse": "READY",
+    "stateAfterInvalidate": "NOT_LOADED",
+    "requestsAfterInvalidate": 4,
+    "stateAfterReuse": "READY",
+    "requestsOnNextUse": 0,
+    "totalDependencyReads": 2,
+    "primaryAfterReuse": 3,
+    "consumedAfterReuse": 2
+   }
+  },
+  "factory-stock": {
+   "label": "Factory Inventory",
+   "dependency": "factoryInventory.movements",
+   "critical": [
+    "factory_stock",
+    "warehouses",
+    "sku_details"
+   ],
+   "deferred": [
+    "factory_stock_movements"
+   ],
+   "firstConsumer": "the Movement Log tab is opened (switchFactoryTab)",
+   "firstUsefulUi": "the Stock Snapshot table",
+   "whyDeferrable": "The Movement Log panel ships with style=\"display:none\". Its only data consumer, _getDbFactoryMovementData(), is reached from _populateFactoryMovFilters() - which ran at mount from _initFactoryMovementLog - and from renderFactoryMovementTable(), which is search-gated. The mount was filling dropdowns in a hidden panel.",
+   "postWrite": "INVALIDATE, and re-read when held. An inventory adjustment appends to factory_stock_movements. _fsAfterWrite re-reads the movements table when the tab is open (a visible log that lacked the row just written would be a lie) and invalidates it when it is not (the next tab open pays for one read).",
+   "initial": {
+    "pre": {
+     "requests": 4,
+     "rounds": 2,
+     "tables": {
+      "getTable:factory_stock": 1,
+      "getTable:factory_stock_movements": 1,
+      "getTable:sku_details": 1,
+      "getTable:warehouses": 1
+     },
+     "firstUseful": 40,
+     "primary": 40,
+     "secondaryConsumed": 3
+    },
+    "post": {
+     "requests": 3,
+     "rounds": 2,
+     "tables": {
+      "getTable:factory_stock": 1,
+      "getTable:sku_details": 1,
+      "getTable:warehouses": 1
+     },
+     "firstUseful": 40,
+     "primary": 40,
+     "secondaryConsumed": 1
+    }
+   },
+   "firstConsumerCost": {
+    "requests": 1,
+    "rounds": 1,
+    "tables": {
+     "getTable:factory_stock_movements": 1
+    },
+    "dependencyReads": 1,
+    "note": "One READ of one dependency. The request count is the number of TABLES in that dependency, because a scoped read asks per table - it is not four dependencies."
+   },
+   "secondUse": {
+    "requests": 0,
+    "consumed": 3
+   },
+   "doubleFire": {
+    "note": "The interaction fired twice with no wait between, from a freshly invalidated state: two callers reaching ensure() while one read is in flight. Equal to firstConsumerCost is the contract.",
+    "api": 1,
+    "tables": {
+     "getTable:factory_stock_movements": 1
+    },
+    "consumed": 3,
+    "reads": 2
+   },
+   "primaryUnchanged": {
+    "preFirstUseful": 40,
+    "postFirstUseful": 40,
+    "prePrimary": 40,
+    "postPrimary": 40
+   },
+   "failure": {
+    "primaryBefore": 40,
+    "primaryAfter": 40,
+    "firstUsefulAfter": 40,
+    "errorBox": 1,
+    "sectionStillActive": true,
+    "retryRequests": 1,
+    "retryTables": {
+     "getTable:factory_stock_movements": 1
+    },
+    "errorBoxAfterRetry": 0,
+    "consumedAfterRetry": 3,
+    "primaryAfterRetry": 40
+   },
+   "stale": {
+    "stillActiveWhileAway": false,
+    "visibleSectionsWhileAway": 1,
+    "mountedWhileAway": 1,
+    "openRequestsWhileAway": 0,
+    "returnRequests": 0,
+    "returnPrimary": 40,
+    "returnConsumed": 3
+   },
+   "reentry": {
+    "cold": 3,
+    "warm": 0,
+    "afterSecondary": 0,
+    "secondaryAfterReturn": 0,
+    "rapid": 0,
+    "listenerDrift": 0,
+    "openRequestsOnLeave": 0,
+    "mountedSections": 1,
+    "visibleSections": 1
+   },
+   "invalidation": {
+    "stateAfterFirstUse": "READY",
+    "stateAfterInvalidate": "NOT_LOADED",
+    "requestsAfterInvalidate": 1,
+    "stateAfterReuse": "READY",
+    "requestsOnNextUse": 0,
+    "totalDependencyReads": 2,
+    "primaryAfterReuse": 40,
+    "consumedAfterReuse": 3
+   }
+  },
+  "carrier-rate-card": {
+   "label": "Carrier Rate Card",
+   "dependency": "carrierRateCard.leadTimes",
+   "critical": [
+    "carrier_rate_cards",
+    "carriers"
+   ],
+   "deferred": [
+    "carrier_lead_times"
+   ],
+   "firstConsumer": "Search is clicked (search -> _crcRender -> _crcEnsureLeadTimes_)",
+   "firstUsefulUi": "the faceted filter bar; the table is empty by design until Search",
+   "whyDeferrable": "The single consumer of carrier_lead_times is _crcLeadTimeMap(), called only from _crcRender(), called only from search(). _crcInit() populates the facets and prints \"Set filters and click Search\". The facets need the rate cards (options) and carriers (labels) - not the lead times.",
+   "postWrite": "NONE REQUIRED. The only write on this page imports carrier_rate_cards. The page states the separation itself: Lead Time and transit_days are maintained in carrier_lead_times and are never stored on rate cards, so a rate-card import cannot make the lead-time model stale.",
+   "initial": {
+    "pre": {
+     "requests": 3,
+     "rounds": 2,
+     "tables": {
+      "getTable:carrier_rate_cards": 1,
+      "getTable:carriers": 1,
+      "getTable:carrier_lead_times": 1
+     },
+     "firstUseful": 3,
+     "primary": 3,
+     "secondaryConsumed": 0
+    },
+    "post": {
+     "requests": 2,
+     "rounds": 1,
+     "tables": {
+      "getTable:carrier_rate_cards": 1,
+      "getTable:carriers": 1
+     },
+     "firstUseful": 3,
+     "primary": 3,
+     "secondaryConsumed": 0
+    }
+   },
+   "firstConsumerCost": {
+    "requests": 1,
+    "rounds": 1,
+    "tables": {
+     "getTable:carrier_lead_times": 1
+    },
+    "dependencyReads": 1,
+    "note": "One READ of one dependency. The request count is the number of TABLES in that dependency, because a scoped read asks per table - it is not four dependencies."
+   },
+   "secondUse": {
+    "requests": 0,
+    "consumed": 18
+   },
+   "doubleFire": {
+    "note": "The interaction fired twice with no wait between, from a freshly invalidated state: two callers reaching ensure() while one read is in flight. Equal to firstConsumerCost is the contract.",
+    "api": 1,
+    "tables": {
+     "getTable:carrier_lead_times": 1
+    },
+    "consumed": 18,
+    "reads": 2
+   },
+   "primaryUnchanged": {
+    "preFirstUseful": 3,
+    "postFirstUseful": 3,
+    "prePrimary": 3,
+    "postPrimary": 3
+   },
+   "failure": {
+    "primaryBefore": 3,
+    "primaryAfter": 3,
+    "firstUsefulAfter": 3,
+    "errorBox": 1,
+    "sectionStillActive": true,
+    "retryRequests": 1,
+    "retryTables": {
+     "getTable:carrier_lead_times": 1
+    },
+    "errorBoxAfterRetry": 0,
+    "consumedAfterRetry": 18,
+    "primaryAfterRetry": 3
+   },
+   "stale": {
+    "stillActiveWhileAway": false,
+    "visibleSectionsWhileAway": 1,
+    "mountedWhileAway": 1,
+    "openRequestsWhileAway": 0,
+    "returnRequests": 0,
+    "returnPrimary": 3,
+    "returnConsumed": 18
+   },
+   "reentry": {
+    "cold": 2,
+    "warm": 0,
+    "afterSecondary": 0,
+    "secondaryAfterReturn": 0,
+    "rapid": 0,
+    "listenerDrift": 0,
+    "openRequestsOnLeave": 0,
+    "mountedSections": 1,
+    "visibleSections": 1
+   },
+   "invalidation": {
+    "stateAfterFirstUse": "READY",
+    "stateAfterInvalidate": "NOT_LOADED",
+    "requestsAfterInvalidate": 1,
+    "stateAfterReuse": "READY",
+    "requestsOnNextUse": 0,
+    "totalDependencyReads": 2,
+    "primaryAfterReuse": 3,
+    "consumedAfterReuse": 18
+   }
+  }
+ },
+ "errors": {
+  "shape": [],
+  "failure": [],
+  "stale": [],
+  "reentry": [],
+  "invalidation": []
+ }
+}

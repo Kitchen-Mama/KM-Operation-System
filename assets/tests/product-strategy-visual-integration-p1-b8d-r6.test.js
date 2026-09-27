@@ -263,6 +263,15 @@ var PAGE_CSS_CHANGED_BY_LATER_ROUNDS = {
     '--unknown) are deliberately three different looks, because "nobody has said who owns this price" ' +
     'must not read like "the system maintains it". Nothing here is scoped to .psb-page and no Product ' +
     'Strategy selector was added, moved or removed.',
+  'assets/css/pages/carrier-rate-card.css':
+    'S4-R4 - the three states a deferred Lead Time column can be in. carrier_lead_times is now read ' +
+    'when Search is clicked rather than at mount, so a cell can be pending or refused as well as ' +
+    'filled, and a blank Lead Time is already a REAL answer on this page (no matching lane) - the ' +
+    'two new states must not look like it. Rules APPENDED only, at the end of the file; nothing ' +
+    'existing was edited. .crc-lt--pending / --failed and the .crc-secondary-error / --loading ' +
+    'notice above the table. An unstyled refusal is a refusal nobody sees, which reads as empty - ' +
+    'the outcome the round counts as a defect. Nothing here is scoped to .psb-page and no Product ' +
+    'Strategy selector was added, moved or removed.',
   'assets/css/pages/fc-overview.css':
     'FC-SUMMARY-R2B-A2-R3 - the FC Summary column width rules. They were scoped to ' +
     '#fc-summary-section rather than to a table, so the Regular tab 20-column plan (including a ' +

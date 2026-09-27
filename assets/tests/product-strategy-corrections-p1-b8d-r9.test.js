@@ -804,8 +804,13 @@ mut('K16 an inventory number is changed with nothing to back it', function () {
      assets/js/core/script-loader.js. Those eight are still production data paths and are still listed
      in the census; what changed is when they are fetched, not whether. Anchor moved for the reason
      stated above: an anchor that stops matching is a mutant that silently stops biting. */
+  /* S4-R4 - 76 became 77. index.html gained assets/js/core/deferred-read.js, the NOT_LOADED /
+     LOADING / READY / FAILED state machine behind the deferred secondary reads on Promotion Risk
+     Tracker, Factory Inventory and Carrier Rate Card. It holds no business rows, so it is a data
+     PATH in this inventory and not a data owner. Anchor moved for the reason stated above: an
+     anchor that stops matching is a mutant that silently stops biting. */
   return withSrc('docs/planning/S_SERIES_FRONTEND_API_MIGRATION_INVENTORY.md',
-    'LOADED_SCRIPTS: 76', 'LOADED_SCRIPTS: 78', function () {
+    'LOADED_SCRIPTS: 77', 'LOADED_SCRIPTS: 79', function () {
       var c = read('docs/planning/S_SERIES_FRONTEND_API_MIGRATION_INVENTORY.md');
       var n = /LOADED_SCRIPTS:\s*(\d+)/.exec(c);
       return !!n && Number(n[1]) !== scripts;
