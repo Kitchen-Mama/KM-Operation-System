@@ -69,7 +69,14 @@ ok(/resumeIfRunning[\s\S]*?done: function \(\) \{(?:(?!announceManualDone)[\s\S]
 
 section('cache-version bump — changed assets refetch');
 var INDEX = read(path.join('..', 'index.html'));
-ok(/gap-recalc-transport\.js\?v=donenotice-20260811/.test(INDEX), 'index.html loads gap-recalc-transport.js with the bumped token');
+// S4-R3 - DERIVED, NOT PINNED. A literal token is correct until the first round that legitimately
+// rotates the file, and then it fails while describing a correct tree. S4-R3 gated the mount-time
+// job-status read inside this file and rotated it with the application family. The claim is unchanged
+// - a CHANGED asset must be cache-versioned so browsers refetch it - and asking the series makes it
+// survive every future rotation rather than needing an edit per round.
+var REL_ = require('./_release-order.js');
+ok(INDEX.indexOf('gap-recalc-transport.js?v=' + REL_.currentAppToken()) > -1,
+  'index.html loads gap-recalc-transport.js with the bumped token');
 ok(!/\?v=aiscope-20260811/.test(INDEX), 'no stale ?v=aiscope-20260811 remains');
 
 console.log('\n----------------------------------------');

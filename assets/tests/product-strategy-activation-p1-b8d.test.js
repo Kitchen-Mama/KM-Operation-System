@@ -681,7 +681,13 @@ ok(SRC.index.indexOf('productstrategy-p1b8b-20260912') < 0,
     the half-updated state this whole token mechanism exists to make impossible. */
  'assets/js/utils/km-repo-asset-manifest.js',
  'assets/js/app.js'].forEach(function (f, i) {
-  ok(SRC.index.indexOf(f + '?v=' + REL.currentAppToken()) > 0,
+  /* S4-R3 — ASKED OF THE RELEASE, NOT OF ONE FILE IN IT. The claim is unchanged and is the whole
+     point of this list: the co-deployed set ships on ONE token, so a returning browser can never hold
+     a half-updated mix of these files. What changed is that four of them are no longer requested by
+     index.html — they moved into KM_ROUTE_ASSETS_ in app.js, where the router fetches them on first
+     entry to the route. releaseAssetToken answers from both places, so the set is still checked whole
+     and a file this release does not ship at all still answers null and still fails. */
+  ok(REL.releaseAssetToken(f, SRC.index, SRC.app) === REL.currentAppToken(),
     'H5.' + (i + 1) + ' ' + f.split('/').pop() + ' is on the current co-deployed token');
 });
 // FC-SUMMARY-R2B-A2-R3 — 35 became 36. assets/css/pages/fc-overview.css joined the co-deployed set: it
@@ -722,15 +728,76 @@ ok(REL.appTokenRefCount(SRC.index) >= 40,
 
 /* LOAD ORDER. The board reads the policy through sku-overrides, and app.js builds its menu from
    PSB_VIEWS; both must already be defined when their reader runs. */
-function at(f) { return SRC.index.indexOf('src="' + f); }
-ok(at('assets/js/utils/km-image-reference-policy.js') < at('assets/js/utils/sku-overrides.js'),
+/* S4-R3 — ORDER IS STILL THE CLAIM; there are now two ordered documents that can carry it.
+
+   index.html was the only one, so a position in index.html WAS the load order. The board's modules
+   moved into KM_ROUTE_ASSETS_ in app.js, which is also an ordered list: the loader inserts every
+   member with async = false, the documented way to say "download in parallel, execute in document
+   order", so the declared order is the execution order exactly as the tags were.
+
+   Comparing a position in one document with a position in the other would be meaningless, so it is
+   refused rather than allowed to produce a confident wrong answer: loadsBefore returns false unless
+   both files are loaded by the SAME document, and a file this release does not ship at all has no
+   position in either. */
+function at(f) {
+  var i = SRC.index.indexOf('src="' + f);
+  if (i >= 0) return { doc: 'index', pos: i };
+  var start = SRC.app.indexOf('var KM_ROUTE_ASSETS_ = {');
+  if (start >= 0) {
+    var end = SRC.app.indexOf('if (window.KM) { window.KM.routeAssets', start);
+    var block = SRC.app.slice(start, end > 0 ? end : SRC.app.length);
+    var j = block.indexOf("'" + f);
+    if (j >= 0) return { doc: 'routes', pos: j };
+  }
+  return { doc: null, pos: -1 };
+}
+/* BOOT ALWAYS PRECEDES A ROUTE LOAD, so the two documents are ordered relative to each other and not
+   merely each within itself: a route-owned script cannot be inserted until a route is opened, which
+   cannot happen before index.html has finished running. A file this release does not ship at all has
+   no position in either, and still fails. */
+function loadsBefore(a, b) {
+  var x = at(a), y = at(b);
+  if (x.doc === null || y.doc === null) return false;
+  if (x.doc === y.doc) return x.pos < y.pos;
+  return x.doc === 'index';   // index.html runs before anything the router fetches
+}
+ok(loadsBefore('assets/js/utils/km-image-reference-policy.js', 'assets/js/utils/sku-overrides.js'),
   'H7  the image policy loads before sku-overrides.js');
-ok(at('assets/js/product-strategy/psb-views.js') < at('assets/js/pages/product-strategy-board.js'),
+ok(loadsBefore('assets/js/product-strategy/psb-views.js', 'assets/js/pages/product-strategy-board.js'),
   'H7a psb-views.js before the page controller');
-ok(at('assets/js/product-strategy/psb-board-ui.js') < at('assets/js/pages/product-strategy-board.js'),
+ok(loadsBefore('assets/js/product-strategy/psb-board-ui.js', 'assets/js/pages/product-strategy-board.js'),
   'H7b psb-board-ui.js before it too');
-ok(at('assets/js/product-strategy/psb-views.js') < at('assets/js/app.js'),
-  'H7c and PSB_VIEWS before app.js, whose menu is built from it');
+/* S4-R3 — THE CHAIN IS DELIBERATELY SPLIT, and the split is the interesting part.
+
+   psb-views.js stays at BOOT because the shell depends on it: mountStagedMenus() runs at boot and
+   builds the Product Strategy sidebar entry, whose six children come from PSB_VIEWS.VIEWS. Loading it
+   with the route produced a parent with ZERO children — measured, and silent, because stagedChildren
+   answers [] rather than throwing. The other seven modules are route-owned.
+
+   So the claim is no longer "one document" but the two facts that matter: the declaration the SHELL
+   needs is at boot, and the heavy modules the ROUTE needs are not. */
+eq(at('assets/js/product-strategy/psb-views.js').doc, 'index',
+  'H7c psb-views.js stays at boot — the sidebar builds its six children from it before any route opens');
+eq(at('assets/js/product-strategy/psb-board-ui.js').doc, 'routes',
+  'H7c1 while the 290 KB board renderer is fetched only when the route is opened');
+
+/* S4-R3 — THE ORDER CLAIM SURVIVES, AND IT IS LOAD-BEARING.
+
+   The original read "PSB_VIEWS before app.js, whose menu is built from it". That is exactly right and
+   it was nearly broken: moving psb-views.js to route-owned left mountStagedMenus() — which app.js
+   calls AT BOOT — reading a global that did not exist yet. It failed silently, because stagedChildren
+   answers [] rather than throwing, so the sidebar grew a Product Strategy parent with no children.
+
+   psb-views.js is therefore back at boot, and the order is asserted the same way it always was. The
+   tolerance in stagedChildren is asserted too, but as DEFENCE IN DEPTH rather than as the guarantee:
+   a menu that renders empty without complaining is how this regression stayed invisible, so the thing
+   that must hold is the order, not the graceful failure. */
+ok(loadsBefore('assets/js/product-strategy/psb-views.js', 'assets/js/app.js'),
+  'H7d PSB_VIEWS loads before app.js, whose menu is built from it');
+ok(/window\.KM\.nav\.mountStagedMenus\(\);/.test(SRC.app),
+  'H7e and app.js does build that menu at boot, which is why the order above is load-bearing');
+ok(/var V = window\.PSB_VIEWS;[\s\S]{0,160}?if \(!V \|\| !\(V\.VIEWS instanceof Array\)\) return \[\];/.test(SRC.app),
+  'H7f stagedChildren still tolerates an absent PSB_VIEWS — defence in depth, not the guarantee');
 ok(SRC.index.indexOf('assets/css/product-strategy-board.css') < SRC.index.indexOf('<nav class="sidebar"'),
   'H8  the stylesheet is in the head, before any markup it styles');
 ok(SRC.index.indexOf('<div id="product-strategy-board-mount"></div>') > 0,

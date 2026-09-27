@@ -51,6 +51,132 @@ const menuConfig = [
 // SO THIS BOOLEAN IS STILL THE WHOLE NAVIGATION AUTHORITY. Set it back to false and the next page load
 // has no Product Strategy menu at all - not a greyed-out one, not a hidden one, none - because nothing
 // built it. That is the property a hardcoded <div> would have cost.
+// ========================================
+// S4-R3 §2/§3 — ROUTE-OWNED CODE
+// ========================================
+//
+// Every script in index.html executes before the menu is usable. Deferred does not change that:
+// deferred scripts run, in order, before DOMContentLoaded. So a session that never opens the
+// On-the-Way Map still parses the globe renderer, the 110m world geometry and the zh-Hant place
+// name table, and every session parses a Product Strategy board that has no menu item.
+//
+// THE ON-THE-WAY MAP IS NOT HERE, AND THAT IS A DECISION RATHER THAN AN OVERSIGHT.
+//
+// Its four scripts are 584 KB for one route most sessions never open, which makes it the obvious
+// candidate and it was measured working: shell first, code second, mount once, nothing re-fetched
+// on return. What stopped it is that those files sit under a dense cache-identity and load-ORDER
+// rule set — roughly twenty-five assertions across seven suites — every one of which asks its
+// question of index.html, because index.html was where the tags were. Moving them turns a tag move
+// into a rewrite of deployment-safety rules this round did not author, in the same round that moves
+// the files. _release-order.js now knows how to answer "how is this asset cache-busted in this
+// release?" from BOTH places, which is the piece that was missing; re-expressing those suites on top
+// of it is its own round. The board below is 575 KB — the same win — and carries no such rules.
+//
+// This route is the pilot because it is the largest set owned by EXACTLY ONE
+// route and read by nothing at boot. That was established by reading the consumers, not assumed:
+//   - KMGlobe, KM_WORLD_COUNTRIES and KM_MAP_GLOBE_DIAGNOSTICS have no reader outside the map set.
+//   - KM_GEO_NAMES_ZH_HANT is read by core/geo-name-resolver.js, which reads it LAZILY inside
+//     dataset() and answers null when it is absent — and whose only caller is km-globe.js, which
+//     is itself in this set.
+//   - _glmPendingSelect is written on `window` by shipping-history.js before it calls showSection,
+//     so the value is already there when the map script arrives. Load-before-mount keeps it true.
+//   - PSB_VIEWS and KM.pages.productStrategyBoard are read by app.js in two places, both guarded
+//     and both null-tolerant; the one that MATTERS is handled explicitly in showProductStrategyView.
+//
+// psb-views.js IS NOT IN THIS LIST, AND THE REASON IS A MEASUREMENT.
+//
+// It looks like route code and it is not. mountStagedMenus() runs at BOOT and builds the Product
+// Strategy sidebar entry; its six children come from PSB_VIEWS.VIEWS, read through
+// KM.nav.stagedChildren. With psb-views.js loaded on route entry, that read happened before the file
+// existed — stagedChildren answers [] rather than throwing, so nothing failed loudly and the menu
+// was simply built with ZERO children. Measured in the browser: 1 staged parent, 0 children, where
+// there had been six.
+//
+// It is 7.9 KB and it is a DECLARATION the shell depends on, so it stays at boot. The 567 KB that is
+// genuinely route-only is what moved.
+//
+// EVERY URL CARRIES ITS CACHE TOKEN, because this table is now the only thing that asks for these
+// files. Six suites assert that the map assets are cache-busted and that the resolver loads before
+// its consumer; those claims were written against index.html because index.html was where the tags
+// were. Moving a tag must not quietly move a file out from under a rule, so _release-order.js reads
+// THIS table as well and the same rules now cover both places.
+//
+// THE PARTIAL IS NAMED HERE TOO, and that is deliberate rather than duplication. Both pages fetch
+// their own markup on mount, from a literal inside the page script — which cannot run until the
+// script has loaded, so the shell could not appear before a 584 KB download. Naming the partial
+// here lets the router start that 1.4 KB fetch IN PARALLEL with the scripts, so the shell is up
+// first. partialLoader is already load-once and in-flight-shared, so the page’s own call on mount
+// costs nothing. The regression suite asserts these triples MATCH the page’s own literals, which
+// is what keeps a repeated literal from becoming a second source of truth.
+var KM_ROUTE_ASSETS_ = {
+    'product-strategy': {
+        sectionId: 'product-strategy-board-section',
+        scripts: [
+            'assets/js/product-strategy/psb-data-contract.js?v=s4r3-routeownedcode-20260927',
+            'assets/js/product-strategy/km-product-strategy-site-universe.js?v=s4r3-routeownedcode-20260927',
+            'assets/js/product-strategy/km-product-strategy-live-adapter.js?v=s4r3-routeownedcode-20260927',
+            'assets/js/product-strategy/psb-selectors.js?v=s4r3-routeownedcode-20260927',
+            'assets/js/product-strategy/psb-chart-layout.js?v=s4r3-routeownedcode-20260927',
+            'assets/js/product-strategy/psb-board-ui.js?v=s4r3-routeownedcode-20260927',
+            'assets/js/pages/product-strategy-board.js?v=s4r3-routeownedcode-20260927'
+        ],
+        partial: { key: 'product-strategy-board', url: 'assets/html/pages/product-strategy-board.html',
+            target: '#product-strategy-board-mount' },
+        label: 'Product Strategy Board'
+    }
+};
+if (window.KM) { window.KM.routeAssets = KM_ROUTE_ASSETS_; }
+
+// LATEST NAVIGATION WINS, for the asynchronous half of showSection. A route whose code is still
+// downloading when the operator clicks elsewhere must not mount on arrival. KM.lifecycle owns this
+// for mounts it performs; this token covers the window BEFORE switchTo is reached.
+var _kmRouteNavSeq_ = 0;
+
+/**
+ * Show a truthful, route-scoped failure when a route’s own code could not be fetched.
+ * The shell stays; the page is not mounted; every other route is untouched. No silent fall back to
+ * a legacy global — there is no legacy global to fall back to, and inventing one would hide this.
+ */
+function _kmRenderRouteScriptFailure_(routeKey) {
+    var entry = KM_ROUTE_ASSETS_[routeKey];
+    if (!entry) return;
+    var host = document.getElementById(entry.sectionId);
+    if (!host) {
+        var mount = entry.partial && document.querySelector(entry.partial.target);
+        host = mount || null;
+    }
+    if (!host) return;
+    var box = host.querySelector('.km-route-script-error');
+    if (!box) {
+        box = document.createElement('div');
+        box.className = 'km-route-script-error';
+        host.insertBefore(box, host.firstChild);
+    }
+    box.innerHTML = '<strong>' + entry.label + ' could not be loaded.</strong> ' +
+        'Its code did not download, so the page has not been opened and nothing was read. ' +
+        'This is a connection or deployment problem, not a problem with your data \u2014 ' +
+        'every other page still works. ' +
+        '<button type="button" class="km-route-script-retry" onclick="kmRetryRouteScripts(\'' +
+        routeKey + '\')">Retry</button>';
+    host.classList.add('active');
+}
+
+/**
+ * Retry one route’s script load. Exactly ONE new attempt per click: the loader never remembers a
+ * failure, so this is a real fetch, and a click while one is already running joins it rather than
+ * starting a second.
+ */
+function kmRetryRouteScripts(routeKey) {
+    var entry = KM_ROUTE_ASSETS_[routeKey];
+    if (!entry) return;
+    if (window.KM.scriptLoader && window.KM.scriptLoader.isLoading(routeKey)) return;
+    var host = document.getElementById(entry.sectionId);
+    var box = host && host.querySelector('.km-route-script-error');
+    if (box) box.innerHTML = 'Loading ' + entry.label + '\u2026';
+    showSection(routeKey);
+}
+window.kmRetryRouteScripts = kmRetryRouteScripts;
+
 var KM_STAGED_SECTIONS_ = {
     'product-strategy': {
         sectionId: 'product-strategy-board-section',
@@ -258,11 +384,33 @@ window.KM.nav.mountStagedMenus = function (d) {
  * that opened. The view is recorded for the controller to pick up on mount; while the section is
  * staged, `showSection` returns before anything is mounted and the recorded route is never read.
  */
+// S4-R3 §2 — PSB_VIEWS NOW ARRIVES WITH THE ROUTE, NOT BEFORE IT.
+//
+// This resolved the requested view through window.PSB_VIEWS and stored the result. With the board’s
+// code loaded on demand, PSB_VIEWS is absent on the FIRST click, so the resolution silently produced
+// null and the operator landed on the default view instead of the one they asked for.
+//
+// The raw request is therefore kept, and resolved once the code is present. Nothing else changes:
+// KM.pendingRoute still holds a RESOLVED route and is still read by onMount and by nobody else.
 function showProductStrategyView(route) {
     var V = window.PSB_VIEWS;
     window.KM = window.KM || {};
     var wanted = (V && typeof V.routeOf === 'function') ? V.routeOf(V.resolve(route)) : null;
     window.KM.pendingRoute = wanted;
+    if (!wanted) {
+        window.KM.pendingRouteRaw = route;
+        var loader = window.KM.scriptLoader, entry = KM_ROUTE_ASSETS_['product-strategy'];
+        if (loader && entry) {
+            loader.ensure('product-strategy', entry.scripts).then(function (ok) {
+                if (!ok) return;
+                var V2 = window.PSB_VIEWS;
+                if (V2 && typeof V2.routeOf === 'function' && window.KM.pendingRouteRaw === route) {
+                    window.KM.pendingRoute = V2.routeOf(V2.resolve(route));
+                    window.KM.pendingRouteRaw = null;
+                }
+            });
+        }
+    }
     showSection('product-strategy');
 
     /* P1-B8D-R5 — AND THE SECOND CLICK HAS TO DO SOMETHING TOO.
@@ -333,6 +481,18 @@ function setHomeShellVisible(isVisible) {
 window.setHomeShellVisible = setHomeShellVisible;
 
 // 區塊切換函式
+// The menu highlight, lifted out of showSection so the asynchronous route path above keeps it. The
+// body is unchanged, including the `typeof event` guard that lets it run when called programmatically.
+function _kmUpdateMenuActive_() {
+    document.querySelectorAll('.menu-item').forEach(item => item.classList.remove('active'));
+    if (typeof event !== 'undefined' && event && event.target) {
+        const menuItem = event.target.closest('.menu-item');
+        if (menuItem) {
+            menuItem.classList.add('active');
+        }
+    }
+}
+
 function showSection(section) {
     // STAGED SECTIONS FIRST, AND BEFORE ANY SHELL MUTATION. Returning after setHomeShellVisible(false)
     // and the `.active` sweep below would leave NO section visible — a blank page, which reads as a
@@ -358,6 +518,52 @@ function showSection(section) {
     // from every section so exactly one page owns layout space. No colours/margins/offsets/overflow tricks.
     setHomeShellVisible(false);
     document.querySelectorAll('.module-section').forEach(function (sec) { sec.classList.remove('active'); });
+
+    // ---- S4-R3 §4 — LOAD-BEFORE-MOUNT, for routes that own their own code --------------------------
+    //
+    // The order is the contract: shell first, code second, mount third, exactly once.
+    //
+    // switchTo is DELAYED rather than skipped, and it runs on BOTH outcomes. That is what keeps a
+    // failed load from leaving the app half-navigated: switchTo unmounts the page the operator left,
+    // and with nothing registered under the target id it mounts nothing — a visible shell carrying a
+    // truthful refusal, which is exactly what §5 asks for. Skipping it would strand the previous page
+    // as mounted-but-invisible, with its listeners still bound.
+    var routeAssets = KM_ROUTE_ASSETS_[section];
+    if (routeAssets && window.KM && window.KM.scriptLoader) {
+        var myNav = ++_kmRouteNavSeq_;
+        var already = window.KM.scriptLoader.isLoaded(section);
+        // The markup is small and independent of the code, so it goes out at the same time and the
+        // shell is up long before 584 KB of JavaScript has landed.
+        var shellFlight = Promise.resolve(null);
+        if (!already && routeAssets.partial && window.KM.partialLoader) {
+            shellFlight = window.KM.partialLoader
+                .loadPartial(routeAssets.partial.key, routeAssets.partial.url, routeAssets.partial.target)
+                .then(function (target) {
+                    if (myNav !== _kmRouteNavSeq_) return target;   // superseded: reveal nothing
+                    var sec = document.getElementById(routeAssets.sectionId);
+                    if (sec) sec.classList.add('active');
+                    return target;
+                });
+        }
+        window.KM.scriptLoader.ensure(section, routeAssets.scripts).then(function (ok) {
+            if (myNav !== _kmRouteNavSeq_) return;           // a newer navigation owns the screen
+            if (window.KM.lifecycle && window.KM.lifecycle.switchTo) {
+                window.KM.lifecycle.switchTo(routeAssets.sectionId);
+            }
+            if (ok) return;
+            // THE REFUSAL WAITS FOR THE MARKUP, and that is not politeness. A blocked script fails
+            // almost immediately while the partial is still in the air; writing the refusal first put
+            // it inside the mount element, and the partial’s innerHTML then wiped it. Measured: a
+            // failed route showed an empty shell and no message at all. Waiting costs nothing — the
+            // partial is 1.4 KB — and it is the difference between a truthful refusal and a blank page.
+            Promise.resolve(shellFlight).then(function () {
+                if (myNav !== _kmRouteNavSeq_) return;
+                _kmRenderRouteScriptFailure_(section);
+            });
+        });
+        _kmUpdateMenuActive_();
+        return;
+    }
     
     // 呼叫生命週期切換（如果已註冊）
     if (window.KM && window.KM.lifecycle && window.KM.lifecycle.switchTo) {
@@ -437,14 +643,7 @@ function showSection(section) {
         // its lifecycle mount injects the markup and applies the 'active' class after load.
     }
     
-    // 更新選單狀態
-    document.querySelectorAll('.menu-item').forEach(item => item.classList.remove('active'));
-    if (typeof event !== 'undefined' && event && event.target) {
-        const menuItem = event.target.closest('.menu-item');
-        if (menuItem) {
-            menuItem.classList.add('active');
-        }
-    }
+    _kmUpdateMenuActive_();
     
     // forecast: 已由 lifecycle mount 接管，手動 init 已移除 (Phase 2B-2)
     // request-order: 已由 lifecycle mount 接管，手動 init 已移除 (Phase 2B-1)

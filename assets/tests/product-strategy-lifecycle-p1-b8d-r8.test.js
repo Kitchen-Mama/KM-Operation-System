@@ -566,10 +566,22 @@ ok(LOADED.length > 50, 'I1  the production load chain is readable from index.htm
 eq(LOADED.filter(function (f) { return /\.gs$/.test(f); }), [],
   'I2  and it contains no server-side .gs file — so none can be counted as a browser path');
 
-var psbFiles = LOADED.filter(function (f) {
+// S4-R3 — THE CHAIN IS STILL LOADED; index.html is no longer the only thing that loads it.
+// The eight board modules moved into KM_ROUTE_ASSETS_ in app.js, where the router fetches them when
+// the route is first opened. The claim — Product Strategy loads its own chain — is unchanged, so the
+// count is taken from BOTH places, which is what _release-order.js's releaseAssetToken exists for.
+var psbRouteFiles = (function () {
+  try {
+    var RO_ = require('./_release-order.js');
+    return Object.keys(RO_.parseRouteAssetTokens(read('assets/js/app.js')));
+  } catch (e) { return []; }
+}());
+var psbFiles = LOADED.concat(psbRouteFiles).filter(function (f) {
   return /product-strategy|product-pricing/.test(f) && /^assets\//.test(f);
 });
 ok(psbFiles.length >= 8, 'I3  Product Strategy loads its own chain', psbFiles.length);
+ok(psbRouteFiles.length === 0 || psbRouteFiles.every(function (f) { return LOADED.indexOf(f) === -1; }),
+  'I3a and a route-owned script is loaded by exactly ONE of the two, never both');
 /* CALLS, NOT MENTIONS. The board's own self-test names every one of these tokens in a STRING in
    order to assert their absence from its render path; a scan that counted those would report the
    test for the defect as the defect - the same trap as counting `!important` inside the comment

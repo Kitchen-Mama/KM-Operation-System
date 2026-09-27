@@ -270,15 +270,24 @@ try {
 if (!__released) {
   ok(true, 'D: (origin/main unavailable — the lifecycle token rule is skipped, not assumed)');
 } else {
-  var __lcNow = fs.readFileSync(path.join(ROOT, 'js', 'core', 'lifecycle.js'), 'utf8').replace(/\r\n/g, '\n');
-  var __relTok = (/core\/lifecycle\.js\?v=([^"']+)/.exec(__released.index) || [])[1] || null;
-  if (__lcNow === __released.lc) {
-    ok(__lcToken === __relTok,
-      'D: an UNCHANGED framework asset keeps its own token (lifecycle.js stays on ' + __relTok + ')');
-  } else {
-    ok(__lcToken === __REL.currentAppToken(),
-      'D: lifecycle.js changed, so it ships on the CURRENT application token (' + __REL.currentAppToken() + ')');
-  }
+  // S4-R3 — CORRECTED, and the correction is to something this suite said one round ago rather than
+  // to anything older. S4-R2 expressed the rule as "unchanged since origin/main -> it must keep exactly
+  // the token origin/main gives it". That is wrong about how this repo releases: the APPLICATION FAMILY
+  // MOVES TOGETHER, which _release-order.js's staleAppTokenRefs enforces and every release round has
+  // done — a file that did not change still rotates with the rest, so that one release is one token.
+  // The two rules collided the first time a release rotated the family without touching lifecycle.js.
+  //
+  // The durable claim R6E1A was making is that a round must not churn this file onto a token of its
+  // OWN, out of step with everything else. Family uniformity says that more strongly, so that is what
+  // is asserted, plus the floor: never older than the round that last changed it.
+  ok(__lcToken === __REL.currentAppToken(),
+    'D: lifecycle.js ships on the CURRENT application token, in step with the family (' + __lcToken + ')');
+  // The floor cannot be spelled as r6c-navlifecycle-20260822: that token predates ROUND_TOKENS and is
+  // not a member of it, so tokenAtOrAfter can never resolve it. What is checkable, and is the other
+  // half of the same claim, is that the token belongs to the APPLICATION series at all — a framework
+  // asset served under a map or stylesheet token would be exactly the misplacement this guards.
+  ok(__REL.ROUND_TOKENS.indexOf(__lcToken) !== -1,
+    'D: and it is a token from the application series, not another family (' + __lcToken + ')');
 }
 ['core/namespace.js', 'api/operation-system-db-api.js'].forEach(function (a) {
   __fb4dTokenMoved(a, 'r6c-navlifecycle-20260822', 'D: changed framework asset ' + a);

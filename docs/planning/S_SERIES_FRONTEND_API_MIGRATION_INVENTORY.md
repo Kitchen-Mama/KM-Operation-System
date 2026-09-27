@@ -2,7 +2,12 @@
 
 > **Round:** P1-B8D-R8 §9. **READ-ONLY CENSUS. No page runtime outside Product Strategy was modified.**
 > **Repo:** `Operation System` · **Branch:** `feature/product-strategy-board-p0` · **PRE HEAD:** `d7a6061`.
-> **Scope:** the scripts `index.html` actually loads, in load order — **LOADED_SCRIPTS: 82**
+> **Scope:** the scripts `index.html` actually loads, in load order — **LOADED_SCRIPTS: 76**
+> (82 before S4-R3, which moved seven Product Strategy modules out of `index.html` and into
+> `KM_ROUTE_ASSETS_` in `app.js`, where the router loads them when the route is first opened, and
+> added `core/script-loader.js`. Those eight are still production data paths and are still listed
+> below; what changed is only WHEN they are fetched. This number counts `index.html` alone, which
+> is what the check below re-counts.)
 > (78 when this census was taken at R8; the one that moved it is named in §1). That number is
 > re-counted from `index.html` by `product-strategy-corrections-p1-b8d-r9.test.js` §F, so it cannot
 > drift from the file it describes. A file nothing loads is not a

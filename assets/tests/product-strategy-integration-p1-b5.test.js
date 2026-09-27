@@ -531,9 +531,17 @@ console.log('\n=== §I  THE STRESS FIXTURE IS UNREACHABLE FROM PRODUCTION ===');
      as temporary for the obvious reason — an assertion that something is ABSENT expires the moment
      the thing is supposed to be present, and it cannot tell an installation from a menu item.
      Installed, the same rule has to be asserted against what actually keeps the page unreachable. */
-  ok(SRC.index.indexOf('assets/js/pages/product-strategy-board.js') > 0
+  /* S4-R3 — ASKED OF THE RELEASE, NOT OF index.html. Seven Product Strategy modules moved into
+     KM_ROUTE_ASSETS_ in app.js, where the router fetches them on first entry to the route. The controller is one of them.
+     releaseLoadOrder gives the order they actually run in — index.html's scripts, then the route-owned
+     ones, which is a fact rather than a convention: a route cannot open until index.html has finished,
+     and each set is inserted with async = false so it runs in its declared order. A module in neither
+     place has no position, and still fails. */
+  var RO_I6 = require('./_release-order.js');
+  var ORDER_I6 = RO_I6.releaseLoadOrder(SRC.index, read(path.join(ROOT, 'assets/js/app.js')));
+  ok(ORDER_I6.indexOf('assets/js/pages/product-strategy-board.js') !== -1
     && SRC.index.indexOf('product-strategy-board-mount') > 0,
-    'I6 index.html installs the board — the controller is loaded and a mount point exists');
+    'I6 the release installs the board — the controller is loaded and a mount point exists');
   ok(SRC.index.indexOf("showSection('product-strategy") < 0
     && SRC.index.indexOf('showSection("product-strategy') < 0,
     'I6a and nothing in index.html can show it: there is no menu item');

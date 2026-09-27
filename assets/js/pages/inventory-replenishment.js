@@ -10392,6 +10392,7 @@ function _irResumeGapJobNow_() {
   function resReset() { _irRecalcAllBusy = false; _irActiveRunId = null; _irShowCancel_(false); setBtn(label, false); }
   _irCancelRequested = false;
   return gr.resumeIfRunning(function () { return db.getGapJobStatus('INVENTORY'); }, {
+    product: 'INVENTORY',   // S4-R3 §7 — no known active job, no status read
     refresh: function () { if (typeof refreshInventoryGapAfterRecalc_ === 'function') return refreshInventoryGapAfterRecalc_(); },
     isCancelled: function () { return _irCancelRequested; },
     ui: {

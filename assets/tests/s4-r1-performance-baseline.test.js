@@ -213,9 +213,19 @@ section('E — THE FINDINGS THE NEXT ROUND WILL ACT ON ARE BACKED BY THE RUN');
   const reloads = Object.keys(R400.routes).filter((k) => ((R400.routes[k].warm || {}).partial || 0) > 0);
   eq(reloads, [], 'E4b and no route re-fetched its HTML partial on re-entry', { reloads });
 
-  // E5 — the boot payload, checked against index.html rather than remembered.
-  const local = (INDEX.match(/<script[^>]+src="(assets\/[^"?]+)/g) || []).length;
-  eq(EV.boot_payload.scripts_local, local, 'E5  the recorded local script count matches index.html today');
+  // E5 — EVALUATED COMMIT-TO-COMMIT, on the precedent F3a above already set. Read against the working
+  // tree this said "the boot payload may never change", which is the opposite of what the census was
+  // for: §8 ranked 5.86 MB of boot JavaScript as the largest measured debt precisely so that a later
+  // round would move some of it off boot, and S4-R3 moved 1.17 MB. The durable claim is about 26bb72d,
+  // the tree the census was taken from, and it still fails if that commit is ever rewritten.
+  const INDEX_AT_CENSUS = atRev('26bb72d', 'index.html');
+  if (INDEX_AT_CENSUS === '__git_unavailable__') {
+    ok(true, 'E5 (skipped: git unavailable)');
+  } else {
+    const localThen = (INDEX_AT_CENSUS.match(/<script[^>]+src="(assets\/[^"?]+)/g) || []).length;
+    eq(EV.boot_payload.scripts_local, localThen,
+      'E5  the recorded local script count matches index.html AT THE CENSUS COMMIT');
+  }
   ok(EV.boot_payload.js_total_kb > 4000,
     'E5a and the boot bundle is still measured in megabytes', EV.boot_payload.js_total_kb);
 }

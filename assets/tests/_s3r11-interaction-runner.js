@@ -230,7 +230,21 @@ function probeScript(serverMs) {
     '    } else if (action === "productPricing.workspace.get") {',
     '      d = { pricingList: pricingList, marketplaceSkus: marketplaceSkus, skuDetails: skuDetails };',
     '    } else if (action === "system.health") {',
-    '      d = { ok: true, deployed_action_contract_version: 17 };',
+    /* S4-R3 §6 — A HEALTH ANSWER A REAL DEPLOYMENT COULD HAVE GIVEN.
+       The previous stub carried two fields, so checkDeploymentContract found no caller_probe and
+       returned DEPLOYMENT_CONTRACT_MISMATCH — a verdict the session share deliberately does NOT
+       retain, which made the cadence unmeasurable rather than merely unproven. These are the fields
+       the identity is built from, at TOP LEVEL where handleSystemHealth_ puts them. */
+    '      return { success: true, ok: true, build_id: "km-build-s4r3-fixture",',
+    '        contract_version: 17, deployed_action_contract_version: 17,',
+    '        transport_contract_version: 1, router_build: "router-s4r3-fixture",',
+    '        deployment_release: "km-build-s4r3-fixture",',
+    '        system_health_module_build: "63-s4r3", workspace_module_build: "64-s4r3",',
+    '        required_action_list_version: 1, missing_actions: [], mixed_deployment: false,',
+    '        deployment_uniformity_verdict: "UNIFORM",',
+    '        module_build_stamps: { modules: [] },',
+    '        caller_probe: { all_present: true, missing_actions: [], missing_symbols: [] },',
+    '        handler: "doGet", action: action, meta: { action: action } };',
     '    } else if (action === "getTable") {',
     '      var t = (/[?&]table=([^&]+)/.exec(url) || [])[1];',
     '      t = t ? decodeURIComponent(t) : "";',

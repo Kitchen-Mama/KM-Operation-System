@@ -186,8 +186,28 @@ function buildPage(opts) {
      that had never loaded the code under test. The tags are RE-EMITTED attribute-free two lines below,
      which is what this harness needs and must keep: its own inline script has to run after app.js, and
      an inline script cannot defer. Only the match changes. */
-  var scripts = (index.match(/<script\s[^>]*\bsrc="([^"]+)"[^>]*><\/script>/g) || [])
-    .map(function (t) { return /src="([^"]+)"/.exec(t)[1]; })
+  /* S4-R3 — THE APPLICATION NOW LOADS FROM TWO PLACES, SO THIS READS BOTH.
+
+     The principle in the header is unchanged: this page carries what the APPLICATION carries, copied
+     from the application rather than re-typed. What changed is that index.html is no longer the only
+     thing that asks for a script. S4-R3 moved the eight Product Strategy modules into
+     KM_ROUTE_ASSETS_ in app.js, where the router fetches them when the route is first opened.
+
+     Reading only index.html therefore produced a page with ZERO Product Strategy scripts and the
+     same symptom the INCIDENT-BOOT-FC-R2 note above describes — "no measurements came back from the
+     browser" about a page that never loaded the code under test. These suites test what the board
+     DOES, not how it arrives, so the route-owned scripts are appended here in their declared order,
+     after the index-derived ones and before app.js: every dependency they had in index.html is in
+     that earlier list, so the order they need is preserved. */
+  var fromIndex = (index.match(/<script\s[^>]*\bsrc="([^"]+)"[^>]*><\/script>/g) || [])
+    .map(function (t) { return /src="([^"]+)"/.exec(t)[1]; });
+  var fromRoutes = [];
+  try {
+    var RO_ = require('./_release-order.js');
+    var appSrc = read(path.join(ROOT, 'assets/js/app.js'));
+    fromRoutes = Object.keys(RO_.parseRouteAssetTokens(appSrc));
+  } catch (e) { fromRoutes = []; }
+  var scripts = fromIndex.concat(fromRoutes)
     .filter(function (s) { return WANTED.test(s); })
     .map(function (s) { return '<script src="' + s.split('?')[0] + '"></script>'; })
     .join('\n  ');

@@ -532,8 +532,18 @@ section('F · §16 THE RELEASE — FIVE FILES, ONE ID');
   var TOKEN = require('./_release-order.js').currentAppToken();
   var changedAssets = ['operation-system-db-api.js', 'km-product-pricing-adapter.js', 'psb-selectors.js',
     'psb-data-contract.js', 'fc-summary.js', 'sku-regional-pricing.js', 'sku-regional-details.css'];
+  // S4-R3 — ASKED OF THE RELEASE, NOT OF index.html. psb-selectors.js and psb-data-contract.js are
+  // now fetched by the router from KM_ROUTE_ASSETS_, so scanning index.html reported two correctly
+  // versioned files as missing. releaseAssetToken answers from both places; a file this release does
+  // not ship at all still answers null and still fails, which is what keeps this falsifiable.
+  var REL_ = require('./_release-order.js');
+  var APP_ = read('assets/js/app.js');
+  var byBasename = {};
+  Object.keys(REL_.parseIndexTokens(INDEX)).concat(Object.keys(REL_.parseRouteAssetTokens(APP_)))
+    .forEach(function (rel) { byBasename[rel.split('/').pop()] = rel; });
   var stale = changedAssets.filter(function (a) {
-    return INDEX.indexOf(a + '?v=' + TOKEN) === -1;
+    var rel = byBasename[a];
+    return !rel || REL_.releaseAssetToken(rel, INDEX, APP_) !== TOKEN;
   });
   eq(stale, [],
     'F5  CACHE_TOKEN_CURRENT_FOR_ALL_CHANGED_ASSETS = YES — no repeat of the supplychain.js delivery failure');

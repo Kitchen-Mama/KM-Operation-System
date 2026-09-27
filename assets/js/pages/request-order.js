@@ -1701,6 +1701,7 @@ function _roResumeGapJobOnMount_() {
   function resReset() { _roRecalcAllBusy = false; _roActiveRunId = null; _roShowCancel_(false); setBtn(label, false); _roAiSupportTriggerIdle_('recalc'); }
   _roCancelRequested = false;
   return gr.resumeIfRunning(function () { return db.getGapJobStatus('ORDER_PLANNING'); }, {
+    product: 'ORDER_PLANNING',   // S4-R3 §7 — no known active job, no status read
     refresh: function () { if (typeof refreshOrderPlanningGapAfterRecalc_ === 'function') return refreshOrderPlanningGapAfterRecalc_(); },
     isCancelled: function () { return _roCancelRequested; },
     ui: {

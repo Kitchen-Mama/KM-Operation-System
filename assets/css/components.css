@@ -1179,3 +1179,17 @@ table td button {
 .km-scope-modal__btn--primary:hover { opacity: 0.9; }
 .km-scope-modal__btn--primary[disabled],
 .km-scope-modal__btn--primary[aria-disabled="true"] { background: #cbd5e1; color: #eef2f7; cursor: not-allowed; opacity: 1; }
+
+/* ============================================================================================
+   S4-R3 §5 — A ROUTE WHOSE OWN CODE DID NOT ARRIVE.
+   Amber, not red: nothing is wrong with the data and every other page still works. The box is
+   inserted by the router into the route shell, so it is styled globally rather than per page —
+   any route that later takes ownership of its code gets the refusal already dressed.
+   ============================================================================================ */
+.km-route-script-error { margin: 12px; padding: 12px 14px; border-radius: 8px;
+    background: #FFFBEB; border: 1px solid #FDE68A; color: #92400E;
+    font-size: 14px; line-height: 1.55; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.km-route-script-error strong { color: #78350F; }
+.km-route-script-retry { padding: 6px 14px; border: 1px solid #FDE68A; border-radius: 6px;
+    background: #fff; color: #92400E; font-weight: 600; cursor: pointer; }
+.km-route-script-retry:hover { background: #FEF3C7; }

@@ -169,12 +169,23 @@ ok(cmd.indexOf('_kmIsUnknownActionResponse_') < cmd.indexOf('_kmClassifyBusiness
   'C5. before the business classifier could flatten it to BUSINESS_COMMAND_ERROR');
 
 // the contract check compares the frontend's pinned expectation against the deployment's own identity
-var chk = extractFn(API, 'window.KM.DB.checkDeploymentContract');
+// S4-R3 — THE CHECK IS TWO FUNCTIONS NOW, AND THE CLAIMS ARE ASKED OF BOTH.
+//
+// checkDeploymentContract is what every caller still calls; it holds ONE verdict per app session,
+// keyed by the deployment identity, so a second page mount costs no request. The probe itself moved
+// to probeDeploymentContract_ unchanged. Splitting them moved the version comparisons out of the
+// function this test named, which is a change of address rather than of contract — so the comparisons
+// are asked of the pair. The never-throws rule is asked of BOTH, because a caller awaits the wrapper
+// and an unhandled rejection there is exactly what it forbids.
+var chkWrapper = extractFn(API, 'window.KM.DB.checkDeploymentContract');
+var chkProbe = extractFn(API, 'window.KM.DB.probeDeploymentContract_');
+var chk = chkWrapper + String.fromCharCode(10) + chkProbe;
 ok(/deployed_action_contract_version == null/.test(chk),
   'C6. a deployment that cannot report its action contract is itself proof of being older');
 ok(/< KM_EXPECTED_ACTION_CONTRACT_VERSION_/.test(chk), 'C6. and an older contract version is rejected');
 ok(/DEPLOYMENT_CONTRACT_MISMATCH/.test(chk), 'C6. with the same named code');
-ok(!/throw /.test(code(chk)), 'C6. it never throws — the caller always gets a verdict');
+ok(!/throw /.test(code(chkProbe)), 'C6. the probe never throws — the caller always gets a verdict');
+ok(!/throw /.test(code(chkWrapper)), 'C6. and neither does the session-sharing wrapper in front of it');
 
 // =======================================================================================================
 section('D. registry failure: PRE_SEARCH preserved, one Retry = one request, no navigation needed');

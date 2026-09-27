@@ -74,6 +74,13 @@ var SRC = {
   protoIndex: readRoot('docs/prototypes/product-strategy-board/index.html')
 };
 
+// S4-R3 — what this release loads, in the order it runs: index.html's scripts then the route-owned
+// ones. Seven Product Strategy modules are fetched by the router now, so index.html alone is no
+// longer the load graph.
+var RELEASE_ORDER = require('./_release-order.js')
+  .releaseLoadOrder(SRC.index, read(path.join(ROOT, 'assets/js/app.js')));
+
+
 var pass = 0, fail = 0, mutCaught = 0, mutSurvived = 0;
 function ok(cond, label, extra) {
   if (cond) { pass++; console.log('  ok   ' + label); }
@@ -222,7 +229,7 @@ console.log('\n=== §A  THE SHELL INSTALLS THE PAGE ===');
     'assets/js/pages/product-strategy-board.js'
   ];
   NEEDED.forEach(function (f, i) {
-    ok(SRC.index.indexOf('<script src="' + f) > 0, 'A1.' + (i + 1) + ' index.html loads ' + f);
+    ok(RELEASE_ORDER.indexOf(f) !== -1, 'A1.' + (i + 1) + ' the release loads ' + f);
   });
   ok(SRC.index.indexOf('assets/css/product-strategy-board.css') > 0,
     'A2 and the one stylesheet');
@@ -265,9 +272,15 @@ console.log('\n=== §B  THE SCRIPT ORDER IS THE DEPENDENCY ORDER, MEASURED ===')
     'assets/js/product-strategy/psb-board-ui.js': ['PSB_BOARD'],
     'assets/js/pages/product-strategy-board.js': ['KM.pages.productStrategyBoard']
   };
+  /* S4-R3 — ASKED OF THE RELEASE, NOT OF index.html. Seven Product Strategy modules moved into
+     KM_ROUTE_ASSETS_ in app.js, where the router fetches them on first entry to the route. A position in index.html is no longer the load order.
+     releaseLoadOrder gives the order they actually run in — index.html's scripts, then the route-owned
+     ones, which is a fact rather than a convention: a route cannot open until index.html has finished,
+     and each set is inserted with async = false so it runs in its declared order. A module in neither
+     place has no position, and still fails. */
   var files = Object.keys(DEFINES);
   var pos = {};
-  files.forEach(function (f) { pos[f] = SRC.index.indexOf('<script src="' + f); });
+  files.forEach(function (f) { pos[f] = RELEASE_ORDER.indexOf(f); });
 
   var violations = [];
   files.forEach(function (consumer) {
@@ -285,8 +298,12 @@ console.log('\n=== §B  THE SCRIPT ORDER IS THE DEPENDENCY ORDER, MEASURED ===')
 
   /* THE TRANSPORT IS ABOVE ALL OF THEM. The accessor reaches KM.api.transport, which km-api-foundation
      creates; a tag above that one is a TypeError on the first read rather than a slow degradation. */
-  ok(SRC.index.indexOf('assets/js/api/km-api-foundation.js')
-    < pos['assets/js/api/km-product-pricing-workspace.js'],
+  // S4-R3 — BOTH SIDES IN THE SAME UNITS. This compared a CHARACTER OFFSET in index.html against a
+  // position in the load order, which happened to agree while the two were the same list and stopped
+  // agreeing the moment they were not.
+  ok(RELEASE_ORDER.indexOf('assets/js/api/km-api-foundation.js') !== -1
+    && RELEASE_ORDER.indexOf('assets/js/api/km-api-foundation.js')
+       < pos['assets/js/api/km-product-pricing-workspace.js'],
     'B2 and the shared transport is created before the accessor that uses it');
   ok(/KM\.api/.test(bare(SRC.accessor)), 'B2a which the accessor does in fact use');
 
@@ -568,7 +585,9 @@ console.log('\n=== §G  ONE COPY OF EVERY DEPENDENCY ===');
     'km-product-strategy-live-adapter.js', 'psb-selectors.js', 'psb-chart-layout.js',
     'psb-board-ui.js', 'product-strategy-board.js'];
   files.forEach(function (f, i) {
-    var n = (SRC.index.match(new RegExp('<script src="[^"]*' + f.replace(/\./g, '\\.'), 'g')) || []).length;
+    // Counted across BOTH halves of the release: loaded twice is the defect, and it would now be
+    // possible to load a module once from each place, which scanning one file cannot see.
+    var n = RELEASE_ORDER.filter(function (rel) { return rel.split('/').pop() === f; }).length;
     eq(n, 1, 'G1.' + (i + 1) + ' ' + f + ' is loaded exactly once');
   });
   eq((SRC.index.match(/product-strategy-board\.css/g) || []).length, 1,

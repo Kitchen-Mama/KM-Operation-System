@@ -214,10 +214,37 @@ function changedSince(ref, file) {
   } catch (e) { return '__git_unavailable__'; }
 }
 var R6_PRE = 'c9429e6';
+// S4-R3 — THE SAME TREATMENT THE PAGE STYLESHEETS ALREADY GET, for the reason written below them:
+// this baseline accumulates, so without a written record the guard eventually reports honest work by
+// another feature as a Product Strategy leak. The claim is unchanged — NO PRODUCT STRATEGY STYLE MAY
+// REACH A SHARED STYLESHEET — and it keeps its teeth, because an allowed file must still contain no
+// .psb-page selector in what it added. Anything not named here still fails outright.
+var SHARED_CSS_CHANGED_BY_LATER_ROUNDS = {
+  'assets/css/components.css':
+    'S4-R3 §5 - .km-route-script-error and .km-route-script-retry, the refusal a route shows when its ' +
+    'OWN code could not be downloaded. It is router-level rather than page-level: any route that takes ' +
+    'ownership of its scripts renders it, so it belongs with the shared components and not in one page ' +
+    'stylesheet. Rules APPENDED only; nothing existing was edited, nothing is scoped to .psb-page, and ' +
+    'no Product Strategy selector was added, moved or removed.'
+};
 ['assets/css/base.css', 'assets/css/components.css', 'assets/css/layout.css',
  'assets/css/responsive-foundation.css'].forEach(function (f, i) {
   var d = changedSince(R6_PRE, f);
   if (d === '__git_unavailable__') { ok(true, 'B5.' + (i + 1) + ' (git unavailable — skipped) ' + f); return; }
+  if (d && Object.prototype.hasOwnProperty.call(SHARED_CSS_CHANGED_BY_LATER_ROUNDS, f)) {
+    var reason = SHARED_CSS_CHANGED_BY_LATER_ROUNDS[f];
+    ok(String(reason).length > 80, 'B5.' + (i + 1) + ' ' + f.split('/').pop() + ' changed, with a recorded reason');
+    // THE TEETH: an allowed change may still not carry a Product Strategy selector.
+    var added = (function () {
+      try {
+        return cp.execFileSync('git', ['diff', '-U0', R6_PRE, '--', f], { cwd: ROOT, encoding: 'utf8' })
+          .split('\n').filter(function (l) { return l.indexOf('+') === 0 && l.indexOf('+++') !== 0; }).join('\n');
+      } catch (e) { return ''; }
+    }());
+    ok(added.indexOf('.psb-page') === -1 && added.indexOf('psb-') === -1,
+      'B5.' + (i + 1) + 'a and what it added carries no Product Strategy selector');
+    return;
+  }
   eq(d, '', 'B5.' + (i + 1) + ' this round did not touch ' + f.split('/').pop(), d);
 });
 // A LATER ROUND MAY LEGITIMATELY EDIT A PAGE STYLESHEET, AND THIS GUARD'S BASELINE IS FIXED.
@@ -568,7 +595,12 @@ ok(/KM_STAGED_SECTIONS_/.test(SRC.app), 'G7  the staged-section registry is stil
 /* THE REGISTRY ENTRY, not the first mention of the words. `app.js` discusses this section in
    comments well before it declares it, so splitting on the name landed in prose and reported an
    enabled section as disabled. */
-var psbEntry = /'product-strategy':\s*\{([\s\S]*?)\n    \}/.exec(SRC.app);
+// S4-R3 — ANCHOR ON THE STAGED REGISTRY, because app.js now has TWO objects keyed 'product-strategy'.
+// KM_ROUTE_ASSETS_ declares which scripts the route owns and appears first, so the old pattern matched
+// it and reported an enabled section as disabled — the same class of mistake the note above records
+// about matching prose. The claim is about the STAGED-SECTION entry, so that is what is cut out.
+var stagedBlock = SRC.app.slice(SRC.app.indexOf('var KM_STAGED_SECTIONS_ = {'));
+var psbEntry = /'product-strategy':\s*\{([\s\S]*?)\n    \}/.exec(stagedBlock);
 ok(!!psbEntry, 'G8  the Product Strategy registry entry is present');
 ok(!!psbEntry && /enabled:\s*true/.test(psbEntry[1]),
   'G8a and it is still enabled', psbEntry && psbEntry[1].slice(0, 120));

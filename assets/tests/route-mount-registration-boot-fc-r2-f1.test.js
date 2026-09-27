@@ -216,6 +216,27 @@ function loadGraph(graph, overrides) {
 }
 
 var GRAPH = scriptGraph(INDEX);
+/* S4-R3 — THE SECOND HALF OF THE GRAPH.
+
+   index.html was the only thing that asked for a script, so the script graph WAS index.html. The
+   Product Strategy modules moved into KM_ROUTE_ASSETS_ in app.js, where the router fetches them when
+   the route is first opened — which means product-strategy-board.js, and therefore its
+   KM.lifecycle.register call, is no longer in the boot graph.
+
+   The claim below does not change: a section the navigation can reach must have a controller, because
+   one that does not goes ACTIVE and stays empty with no mount to draw it and no error to report. What
+   changes is that the graph which must contain that controller is BOTH halves of what the application
+   loads. Route-owned scripts are appended after the boot ones, which is the order they run in: a route
+   cannot be opened until index.html has finished. */
+var ROUTE_GRAPH = (function () {
+  try {
+    var RO_ = require('./_release-order.js');
+    return Object.keys(RO_.parseRouteAssetTokens(APP)).map(function (rel) {
+      return { rel: rel, tag: '<script src="' + rel + '">', deferred: false, routeOwned: true };
+    });
+  } catch (e) { return []; }
+}());
+var FULL_GRAPH = GRAPH.concat(ROUTE_GRAPH);
 var SWITCHABLE = switchableSections(APP);
 
 // ================================================================================================
@@ -231,7 +252,10 @@ ok(GRAPH.some(function (g) { return g.rel === 'assets/js/core/supply-planning-pl
 // ================================================================================================
 section('B. EVERY SHIPPED SCRIPT EVALUATES TO COMPLETION');
 // ================================================================================================
-var RUN = loadGraph(GRAPH);
+// EVALUATED OVER BOTH HALVES, for the reason recorded at ROUTE_GRAPH. B1 below still asks its
+// question of every shipped script, which is now what the application loads rather than what one
+// file lists — a route-owned script that throws at top level is exactly as fatal as a boot one.
+var RUN = loadGraph(FULL_GRAPH);
 eq(RUN.throws.map(function (t) { return t.rel + ':' + t.line + '  ' + t.name + ': ' + t.message; }), [],
   'B1  no shipped script throws at top level — a throw here silently discards the REST of that file');
 
@@ -252,6 +276,13 @@ ok(RUN.sections.indexOf('ops-section') !== -1, 'C4  ops-section (Inventory Reple
 ok(RUN.sections.indexOf('home-section') !== -1, 'C5  home-section still registers');
 ok(RUN.sections.indexOf('product-strategy-board-section') !== -1,
   'C6  product-strategy-board-section too, which only an EXECUTED check can see');
+/* AND IT IS REGISTERED BY THE HALF THAT OWNS IT. Passing C6 from the boot graph would mean the
+   splitting had been undone; passing it from neither would mean the section had been orphaned. */
+var ROUTE_OWNED_RELS = ROUTE_GRAPH.map(function (g) { return g.rel; });
+ok(ROUTE_OWNED_RELS.indexOf('assets/js/pages/product-strategy-board.js') !== -1,
+  'C6a and its controller is declared in KM_ROUTE_ASSETS_, so the router loads it before mounting');
+ok(!GRAPH.some(function (g) { return g.rel === 'assets/js/pages/product-strategy-board.js'; }),
+  'C6b and NOT in the boot graph — which is the whole point of this round');
 
 // No section may be claimed twice: two controllers for one id means one silently replaces the other.
 (function () {

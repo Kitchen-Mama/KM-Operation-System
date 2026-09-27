@@ -126,6 +126,51 @@
   // A non-DONE poll result the UI must treat as "could not confirm completion" (recoverable) rather than a hard
   // business failure — no automatic WRITE retry is ever issued for either (§5).
   function isUnconfirmedJob(status) { return status === 'STALLED' || status === 'POLL_TIMEOUT'; }
+  // ===========================================================================================================
+  // S4-R3 §7 — WHETHER TO ASK AT ALL.
+  //
+  // resumeIfRunning exists for mount/reload recovery: a job may have been started in another tab, or this tab
+  // may have been refreshed mid-run, and the page has to pick it up. Inventory Replenishment says so in its own
+  // comment, and adds the part that matters here: "a status poll for a gap job that is USUALLY NOT RUNNING,
+  // fired unconditionally on every mount". Measured at one request per mount on Site Inventory and Order
+  // Planning, cold and warm, whether or not anything was ever started.
+  //
+  // The gate is a LIVENESS MARKER, not a cache of the status. It records one fact — this product has a job that
+  // nobody has seen finish — and it is written by the code that starts a job and cleared by the code that sees a
+  // terminal one. Both live in this file, so there is exactly one owner.
+  //
+  // IT IS IN localStorage, and that is what makes the recovery survive. A marker in a module variable would be
+  // gone on the refresh that recovery exists for, and invisible to the second tab. localStorage is shared per
+  // origin, so the tab that STARTED the job writes a marker every other tab can see. It holds no business data
+  // and no status — a product name and a run id — so it is not the business-data cache §10 forbids.
+  //
+  // FAILURE MODE, STATED: a job already running when this ships has no marker, so it will not be resumed by a
+  // mount. It self-corrects after one job cycle, and the backend is unaffected — the job still completes.
+  // A marker left behind by a crashed tab costs exactly one status read on the next mount, which reads DONE and
+  // clears it.
+  // ===========================================================================================================
+  var LIVENESS_PREFIX = 'km.gapjob.live.';
+  function _lsGet(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
+  function _lsSet(k, v) { try { window.localStorage.setItem(k, v); return true; } catch (e) { return false; } }
+  function _lsDel(k) { try { window.localStorage.removeItem(k); return true; } catch (e) { return false; } }
+  function _productKey(product) { return LIVENESS_PREFIX + String(product || ('')).toUpperCase(); }
+
+  /** Record that a job MAY be running for this product. Called when a start succeeds. */
+  function markJobMayBeActive(product, runId) {
+    if (!product) return false;
+    return _lsSet(_productKey(product), JSON.stringify({ runId: runId || null, at: Date.now() }));
+  }
+  /** Forget it. Called on every terminal outcome, including ones the page treats as failures. */
+  function clearJobLiveness(product) {
+    if (!product) return false;
+    return _lsDel(_productKey(product));
+  }
+  /** Might a job be running for this product? The only question the mount gate asks. */
+  function mayHaveActiveJob(product) {
+    if (!product) return false;
+    return _lsGet(_productKey(product)) !== null;
+  }
+
   function _log(tag, st) { try { if (typeof console !== 'undefined' && console.log) console.log('[GapJob] ' + tag + (st ? ' ' + (((st.product || '') + (st.runId ? ' run=' + st.runId : '') + ' ' + Math.max(0, _progressOf(st)) + '/' + (st.scopesTotal != null ? st.scopesTotal : '?') + ' ' + (st.status || '')).trim()) : '')); } catch (e) {} }
 
   // Poll STATUS (READ ONLY) until terminal / NONE / bounded max / STALLED. statusFn()->Promise(status envelope).
@@ -201,10 +246,16 @@
       }
       var runId = (startRes.data && startRes.data.runId) || null;
       if (typeof opts.onRunId === 'function') { try { opts.onRunId(runId); } catch (e) {} }   // §6 give the page the runId for a targeted cancel
+      // §7 — a job now exists that a later mount, or another tab, has to be able to pick up.
+      markJobMayBeActive(opts.product, runId);
       _log('START', startRes.data);
       return pollJob(statusFn, { wait: opts.wait, interval: opts.interval, maxPolls: opts.maxPolls, maxStallPolls: opts.maxStallPolls, isCancelled: opts.isCancelled,
         onProgress: function (st) { if (typeof ui.progress === 'function') ui.progress(st); } }).then(function (finalState) {
         var status = finalState && finalState.status;
+        // §7 — the poll has ended. Whatever the outcome, nobody is waiting on this job any more, so the
+        // marker goes. An UNCONFIRMED end clears it too: the next mount then asks once, learns the truth
+        // from the backend, and that is a better answer than a marker that never expires.
+        clearJobLiveness(opts.product);
         _log(status === JOB_STATUS.DONE ? 'COMPLETED' : status === JOB_STATUS.CANCELLED ? 'CANCELLED' : (isUnconfirmedJob(status) ? 'UNCONFIRMED' : 'FAILED'), (finalState && finalState.last) ? finalState.last : finalState);
         // DONE or CANCELLED → refresh the materialized READ (cancelled keeps whatever completed); then reset the button.
         if (status === JOB_STATUS.DONE || status === JOB_STATUS.CANCELLED) {
@@ -233,14 +284,21 @@
   function resumeIfRunning(statusFn, opts) {
     opts = opts || {};
     var ui = opts.ui || {};
+    // §7 — NO KNOWN ACTIVE JOB, NO READ. `force` is the explicit-refresh path and always asks exactly once.
+    // A caller that names no product keeps the old unconditional behaviour, so this can never silently
+    // disable recovery for a caller that has not opted in.
+    if (opts.product && !opts.force && !mayHaveActiveJob(opts.product)) {
+      _log('RESUME_SKIPPED_NO_KNOWN_JOB', { product: opts.product });
+      return Promise.resolve({ status: 'NONE', skipped: 'NO_KNOWN_ACTIVE_JOB', product: opts.product });
+    }
     return Promise.resolve(statusFn()).then(function (res) {
       var st = _stateOf(res);
       _log('RESUME_CHECK', st);
       // §4 a page reload must NOT resurrect a terminal job. If the backend already says DONE, refresh the
       // materialized READ once and leave the button in its NORMAL idle state — never flash/keep Calculating.
-      if (st.status === JOB_STATUS.DONE) { _log('RESUME_SKIPPED', st); return Promise.resolve(opts.refresh ? opts.refresh() : null).then(function () { return st; }); }
+      if (st.status === JOB_STATUS.DONE) { clearJobLiveness(opts.product); _log('RESUME_SKIPPED', st); return Promise.resolve(opts.refresh ? opts.refresh() : null).then(function () { return st; }); }
       // §1 Any terminal / none status (FAILED / BLOCKED / ERROR / CANCELLED / STALLED / NONE) → stay idle. Backend authoritative.
-      if (st.status !== JOB_STATUS.PENDING && st.status !== JOB_STATUS.RUNNING) { _log('RESUME_SKIPPED', st); return st; }
+      if (st.status !== JOB_STATUS.PENDING && st.status !== JOB_STATUS.RUNNING) { clearJobLiveness(opts.product); _log('RESUME_SKIPPED', st); return st; }
       // §1/§4 do NOT infer active state merely because a PENDING/RUNNING Script Property exists — require worker/
       // continuation lifecycle evidence. A lifecycle-less non-terminal leftover stays idle (backend normalizes → STALLED).
       if (!_hasLiveness(st)) { _log('RESUME_SKIPPED', st); return st; }
@@ -332,6 +390,9 @@
     DEFAULT_JOB_MAX_STALL_POLLS: DEFAULT_JOB_MAX_STALL_POLLS, isUnconfirmedJob: isUnconfirmedJob,
     isRecovering: _isRecovering,   // LIVE10 §7/§11 — the page shows "Recovering…" while the backend self-heals the same run
     pollJob: pollJob, runJob: runJob, resumeIfRunning: resumeIfRunning,
+    // S4-R3 §7 — the liveness marker, exposed so a page can clear it on an explicit refresh and the
+    // regression suite can name the state. Read/clear only; only a START may declare a job live.
+    mayHaveActiveJob: mayHaveActiveJob, clearJobLiveness: clearJobLiveness,
     VERSION: 'gap-recalc-fm5r4jlive10-1'
   };
 });

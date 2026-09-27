@@ -77,7 +77,16 @@ section('§7 — Inventory / Order Planning parity via the SHARED .km-action-men
 ok(/class="km-action-menu__trigger"/.test(INV_HTML) && /class="km-action-menu__trigger"/.test(RO_HTML), 'both pages use the shared .km-action-menu trigger class (one component system)');
 
 section('deployment — changed CSS is cache-versioned so browsers refetch');
-ok(/assets\/css\/components\.css\?v=toolbarui-20260811/.test(INDEX), 'components.css cache token bumped');
+// S4-R3 — DERIVED, NOT PINNED, which is the lesson _release-order.js exists to carry. The literal
+// was right until the first round that legitimately rotated the file, and then it failed while
+// describing a correct tree: S4-R3 appended the route-refusal rules to components.css and rotated it
+// with the rest of the application family. The claim is unchanged — changed CSS must be cache-
+// versioned so browsers refetch — and asking the series makes it survive every future rotation.
+var REL_ = require('./_release-order.js');
+ok(INDEX.indexOf('assets/css/components.css?v=' + REL_.currentAppToken()) > -1,
+  'components.css carries the current application cache token (' + REL_.currentAppToken() + ')');
+ok(REL_.staleAppTokenRefs(INDEX).length === 0,
+  'and no member of the application set is left behind on an older one');
 // F1-7N-UX-SITE-INVENTORY-FULFILLMENT-AWARE-COLUMNS-R1 superseded the toolbarui token with a newer one (the file is
 // cumulative — the toolbar CSS ships under whatever the current token is). Assert cache-busting is present + not stale.
 ok(/assets\/css\/pages\/inventory-replenishment\.css\?v=[A-Za-z0-9_-]+/.test(INDEX), 'inventory-replenishment.css is cache-versioned (token present)');

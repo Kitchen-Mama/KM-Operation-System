@@ -302,8 +302,21 @@ console.log('\n=== §D  THE PAGE LIVES IN THE OPERATION SYSTEM, DISABLED ===');
   var order = ['psb-data-contract.js', 'km-product-strategy-site-universe.js',
     'km-product-strategy-live-adapter.js', 'psb-selectors.js', 'psb-chart-layout.js',
     'psb-board-ui.js', 'pages/product-strategy-board.js'];
-  var at = order.map(function (f) { return INDEX.indexOf(f); });
-  ok(at.every(function (x) { return x > 0; }), 'D5 every module is loaded by index.html');
+  /* S4-R3 — ASKED OF THE RELEASE, NOT OF index.html. Seven Product Strategy modules moved into
+     KM_ROUTE_ASSETS_ in app.js, where the router fetches them on first entry to the route. psb-views.js stays at boot because the sidebar builds from it.
+     releaseLoadOrder gives the order they actually run in — index.html's scripts, then the route-owned
+     ones, which is a fact rather than a convention: a route cannot open until index.html has finished,
+     and each set is inserted with async = false so it runs in its declared order. A module in neither
+     place has no position, and still fails. */
+  var RO_ = require('./_release-order.js');
+  var RELEASE_ORDER_ = RO_.releaseLoadOrder(INDEX, read('assets/js/app.js'));
+  var at = order.map(function (f) {
+    for (var i = 0; i < RELEASE_ORDER_.length; i++) {
+      if (RELEASE_ORDER_[i].indexOf(f) !== -1) return i;
+    }
+    return -1;
+  });
+  ok(at.every(function (x) { return x >= 0; }), 'D5 every module is loaded by the release', at);
   var ascending = at.every(function (x, i) { return i === 0 || x > at[i - 1]; });
   ok(ascending, 'D6 and in dependency order, controller last', at);
 

@@ -290,9 +290,15 @@ ok(/var PRODUCT_STRATEGY_ENABLED_ = true;/.test(SRC.cfg),
   'A1  the server flag is true in the config of record');
 ok(/product_strategy_enabled/.test(SRC.health63),
   'A1a and 63_ publishes product_strategy_enabled, so the server state is READABLE by a client');
-eq(SRC.app.indexOf("'product-strategy'") >= 0
-  && /enabled: true/.test(SRC.app.slice(SRC.app.indexOf("'product-strategy': {"),
-    SRC.app.indexOf("'product-strategy': {") + 400)), true,
+// S4-R3 — ANCHOR ON THE STAGED REGISTRY. app.js now holds TWO objects keyed 'product-strategy':
+// KM_STAGED_SECTIONS_, which decides whether the navigation exists, and KM_ROUTE_ASSETS_, which
+// declares the scripts the route owns. KM_ROUTE_ASSETS_ is declared first, so a search for the key
+// alone finds the wrong one and reports an enabled section as having no switch at all. The claim is
+// about the STAGED entry, so the search starts where that object does.
+var stagedSrc_ = SRC.app.slice(SRC.app.indexOf('var KM_STAGED_SECTIONS_ = {'));
+eq(stagedSrc_.indexOf("'product-strategy'") >= 0
+  && /enabled: true/.test(stagedSrc_.slice(stagedSrc_.indexOf("'product-strategy': {"),
+    stagedSrc_.indexOf("'product-strategy': {") + 400)), true,
   'A2  and the navigation authority is true, which is why the menu and six sub-tabs appear');
 
 /* THE CAPABILITY BOOTSTRAP RUNS, WITH THE REAL PAYLOAD, AT ITS MOST PERMISSIVE. */

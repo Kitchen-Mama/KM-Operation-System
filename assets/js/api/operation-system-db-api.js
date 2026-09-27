@@ -4691,7 +4691,74 @@ window.KM.DB.getEndpointClassification = function () {
     var c = tf.classifyEndpoint(raw, { frontendOrigin: fo });
     return { ok: c.ok, endpointClass: c.endpointClass, maskedEndpoint: c.maskedEndpoint, reason: c.reason || null };
 };
+// =============================================================================================
+// S4-R3 §6 — ONE DEPLOYMENT PROBE PER APP SESSION, KEYED BY THE DEPLOYMENT ITSELF.
+//
+// system.health answers a question about the DEPLOYMENT — build id, contract versions, which
+// actions and owner symbols the published Apps Script actually resolves. It is not business data
+// and it cannot change while the page is open: publishing a new version is an operator action that
+// produces a new build id, and the running tab is reading the old one until it is reloaded.
+//
+// Measured: exactly ONE production consumer (Weekly Shipping Plan’s mount, via
+// checkPageDeploymentContract), issuing one request per mount, cold and warm alike.
+//
+// NO TTL, and that is the point rather than an omission. Nothing here expires on a clock. The value
+// is held for the life of the app session and dropped only by:
+//   - a new app session (a reload; this is a plain module variable, so that is automatic),
+//   - an explicit invalidation when a capability mismatch is detected elsewhere
+//     (KM.DB.invalidateDeploymentContract()).
+//
+// ONLY A VERDICT WITH AN IDENTITY IS HELD. A failure is never retained — a probe that could not
+// reach the deployment must stay retryable, and caching "unreachable" would turn one bad moment
+// into a page that refuses for as long as the tab is open. A MISMATCH is not retained either: the
+// operator fixes it by publishing, and the next mount has to be able to see that they did.
+// =============================================================================================
+var _kmDeploymentVerdict_ = null;        // the one successful verdict for this app session
+var _kmDeploymentIdentityKey_ = null;    // the build identity it describes
+var _kmDeploymentFlight_ = null;         // the ONE probe in flight, so two mounts share one request
+
+/** Drop the held verdict. For an explicit recovery after a capability mismatch is observed. */
+window.KM.DB.invalidateDeploymentContract = function () {
+    _kmDeploymentVerdict_ = null; _kmDeploymentIdentityKey_ = null; return true;
+};
+/** Read-only, for the regression suite and the diagnostic. Never a setter. */
+window.KM.DB.deploymentContractIdentityKey = function () { return _kmDeploymentIdentityKey_; };
+
 window.KM.DB.checkDeploymentContract = async function () {
+    // Held from a previous mount in THIS session, for THIS deployment.
+    if (_kmDeploymentVerdict_) return _kmDeploymentVerdict_;
+    // Already on its way — join it. Two pages mounting in one burst must not probe twice.
+    if (_kmDeploymentFlight_) return _kmDeploymentFlight_;
+
+    var flight = window.KM.DB.probeDeploymentContract_().then(function (verdict) {
+        if (_kmDeploymentFlight_ === flight) _kmDeploymentFlight_ = null;
+        // The identity IS the key: it is what would have to change for the answer to change.
+        var id = verdict && verdict.identity;
+        var key = id ? [id.build_id, id.deployed_action_contract_version,
+            id.transport_contract_version, id.router_build].join('|') : null;
+        if (verdict && verdict.ok === true && key) {
+            _kmDeploymentVerdict_ = verdict;
+            _kmDeploymentIdentityKey_ = key;
+        }
+        return verdict;
+    }, function (err) {
+        if (_kmDeploymentFlight_ === flight) _kmDeploymentFlight_ = null;
+        // THE CALLER ALWAYS GETS A VERDICT. This function has never rejected, and a page that awaits
+        // it does so without a catch, so propagating here would turn a health probe into an unhandled
+        // rejection on somebody else's mount. A throw from the probe is itself a fact about the
+        // deployment being unreachable, so it is REPORTED as the verdict it is — the same shape the
+        // probe returns when the read fails — and it is deliberately NOT retained, so the next mount
+        // asks again.
+        return { ok: false, code: 'HEALTH_UNAVAILABLE', identity: null,
+            message: 'The deployment health probe could not be completed: ' +
+                String((err && err.message) || err || 'unknown error') };
+    });
+    _kmDeploymentFlight_ = flight;
+    return flight;
+};
+
+/** The probe itself, unchanged. Always issues a real system.health read. */
+window.KM.DB.probeDeploymentContract_ = async function () {
     // F1-7N-FB-4E §B6/§H — REFUSE LOCALLY FIRST. A wrong endpoint is knowable without the network, and
     // reporting it as a health failure (which is what happened before) makes an unreachable URL look like an
     // unhealthy deployment. These are different faults with different fixes, so they get different answers.

@@ -761,7 +761,13 @@ CHAIN = CHAIN.then(function () {
       { cwd: ROOT, encoding: 'utf8' }).trim();
     eq(d, '', 'I2.' + (i + 1) + ' this round did not touch ' + f.split('/').pop(), d);
   });
-  var stagedBlock = blockAfter(SRC.app, "'product-strategy': {");
+  // S4-R3 — ANCHOR ON THE STAGED REGISTRY. app.js now holds TWO objects keyed 'product-strategy':
+  // KM_STAGED_SECTIONS_, which decides whether the navigation exists, and KM_ROUTE_ASSETS_, which
+  // declares the scripts the route owns. KM_ROUTE_ASSETS_ is declared first, so a search for the key
+  // alone finds the wrong one and reports an enabled section as having no switch at all. The claim is
+  // about the STAGED entry, so the search starts where that object does.
+  var stagedSrc = SRC.app.slice(SRC.app.indexOf('var KM_STAGED_SECTIONS_ = {'));
+  var stagedBlock = blockAfter(stagedSrc, "'product-strategy': {");
   ok(!!stagedBlock, 'I2a the staged registry entry is found', stagedBlock === null);
   ok(!!stagedBlock && /enabled:\s*(?:true|false)/.test(stagedBlock),
     'I2a1 and it carries a literal boolean switch');
@@ -979,11 +985,16 @@ CHAIN = CHAIN.then(function () {
      there is exactly ONE switch in the entry; the defect to model is a SECOND one appearing beside
      it, which is how a registry ends up with two answers and no owner. */
   mut('J15  a second enabled switch appears in the staged entry — I2a2', function () {
-    var live = blockAfter(SRC.app, "'product-strategy': {");
+    // S4-R3 - the mutant must look where I2a2 now looks. app.js holds a SECOND object keyed
+    // 'product-strategy' (KM_ROUTE_ASSETS_) and it is declared first, so a search for the bare key
+    // found it, saw no enabled switch, and threw ANCHOR NOT FOUND - an anchorless mutant is scored
+    // as surviving, which is exactly the silent gap the note above was written about.
+    var stagedFrom = SRC.app.indexOf('var KM_STAGED_SECTIONS_ = {');
+    var live = blockAfter(SRC.app.slice(stagedFrom), "'product-strategy': {");
     if (!live || !/enabled:\s*(?:true|false)/.test(live)) throw new Error('ANCHOR NOT FOUND');
     var mutated = SRC.app.replace(live,
       live.replace(/(enabled:\s*(?:true|false),)/, '$1\n        enabled: false,'));
-    var block = blockAfter(mutated, "'product-strategy': {");
+    var block = blockAfter(mutated.slice(mutated.indexOf('var KM_STAGED_SECTIONS_ = {')), "'product-strategy': {");
     // I2a2'S OWN COMPARISON, run against the mutated source: exactly one switch, or this is caught.
     return !!block && (block.match(/enabled:\s*(?:true|false)/g) || []).length !== 1;
   });

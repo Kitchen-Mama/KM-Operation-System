@@ -799,8 +799,13 @@ mut('K16 an inventory number is changed with nothing to back it', function () {
   /* PRICING-R2 — 81 became 82. index.html gained assets/js/pages/sku-regional-pricing.js, the site-price
      panel, per-field editor and price-template reader for SKU Regional Details. Anchor moved for the
      reason stated above: an anchor that stops matching is a mutant that silently stops biting. */
+  /* S4-R3 - 82 became 76. index.html LOST seven Product Strategy modules, which moved into
+     KM_ROUTE_ASSETS_ in app.js where the router loads them on first entry to the route, and GAINED
+     assets/js/core/script-loader.js. Those eight are still production data paths and are still listed
+     in the census; what changed is when they are fetched, not whether. Anchor moved for the reason
+     stated above: an anchor that stops matching is a mutant that silently stops biting. */
   return withSrc('docs/planning/S_SERIES_FRONTEND_API_MIGRATION_INVENTORY.md',
-    'LOADED_SCRIPTS: 82', 'LOADED_SCRIPTS: 78', function () {
+    'LOADED_SCRIPTS: 76', 'LOADED_SCRIPTS: 78', function () {
       var c = read('docs/planning/S_SERIES_FRONTEND_API_MIGRATION_INVENTORY.md');
       var n = /LOADED_SCRIPTS:\s*(\d+)/.exec(c);
       return !!n && Number(n[1]) !== scripts;

@@ -809,7 +809,31 @@ var ROUND_TOKENS = [
   //
   // NO APPS SCRIPT COUNTERPART. Nothing server-side changed; the deployed contract pin stays at 17 and no
   // .gs file is in this release.
-  's4r2-reentrylisteners-20260927'];
+  's4r2-reentrylisteners-20260927',
+
+  // S4-R3 — ROUTE-OWNED CODE + HEALTH/STATUS CADENCE. A NEW token rather than a reuse of R2’s:
+  // 4ed2760 is on origin/main, so those bytes have been served.
+  //
+  // ONE RELEASE, and this one is genuinely inseparable:
+  //   - index.html no longer carries twelve <script> tags. The only thing that loads them now is
+  //     KM_ROUTE_ASSETS_ in app.js, through core/script-loader.js. An old index.html against the new
+  //     app.js still ships the scripts at boot and the router loads them a second time; a new
+  //     index.html against an old app.js has no loader at all, and the On-the-Way Map and the
+  //     Product Strategy board simply do not exist. Neither is shippable.
+  //   - script-loader.js is NEW and must be served before app.js runs. It is the first release of
+  //     this file, so there is no stale copy to displace — but a browser holding the old index.html
+  //     never requests it, which is the same half-deployment from the other side.
+  //   - components.css carries .km-route-script-error, the refusal a failed route load renders. New
+  //     app.js + old stylesheet is an unstyled block of text, which is the trap the Product Strategy
+  //     state classes already walked into once.
+  //   - operation-system-db-api.js holds one deployment verdict per app session, and
+  //     gap-recalc-transport.js stops asking for a job status nobody started. Both are behaviour the
+  //     pages above call into; shipping one without the other changes what a mount costs.
+  //
+  // NO APPS SCRIPT COUNTERPART. system.health and gapJob.status.get are asked LESS often; neither
+  // action, payload nor response shape changed, the contract pin stays at 17, and no .gs file is in
+  // this release.
+  's4r3-routeownedcode-20260927'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the
@@ -817,6 +841,72 @@ var ROUND_TOKENS = [
 // move the application token", and every one of them would have failed the first time an APPLICATION round
 // legitimately moved it. That is the equality-with-now this file exists to end.
 function currentAppToken() { return ROUND_TOKENS[ROUND_TOKENS.length - 1]; }
+
+// ---------------------------------------------------------------------------------------------------------
+// S4-R3 — A RELEASE HAS TWO PLACES THAT ASK FOR A FILE NOW.
+//
+// index.html was the only one, so every cache-identity rule in the suite scans index.html. S4-R3 moved twelve
+// scripts into KM_ROUTE_ASSETS_ in app.js, where the router loads them when their route is first opened. The
+// CLAIM those rules make — this asset is cache-busted, and never served under a token older than the round
+// that changed it — is unchanged and must keep holding. What changed is only where to look.
+//
+// So the question "how is this asset cache-busted in this release?" gets ONE answer here, and the suites ask
+// it instead of each scanning index.html. A file that is in neither place answers null, which is what makes
+// "the asset is still shipped at all" a question this can still fail on.
+// ---------------------------------------------------------------------------------------------------------
+function parseRouteAssetTokens(appSrc) {
+  var out = {};
+  if (!appSrc) return out;
+  var start = appSrc.indexOf('var KM_ROUTE_ASSETS_ = {');
+  if (start < 0) return out;
+  var end = appSrc.indexOf('if (window.KM) { window.KM.routeAssets', start);
+  var block = appSrc.slice(start, end > 0 ? end : appSrc.length);
+  var re = /['"](assets\/[A-Za-z0-9._\/-]+)\?v=([A-Za-z0-9._-]+)['"]/g, m;
+  while ((m = re.exec(block))) out[m[1]] = m[2];
+  return out;
+}
+/**
+ * The cache token this release serves `rel` under, from wherever the release asks for it.
+ * @param {string} rel      repo-relative asset path, no query
+ * @param {string} indexSrc index.html source
+ * @param {string} appSrc   app.js source (optional; route-loaded assets live there)
+ * @returns {string|null}   the token, or null if this release does not ask for the file at all
+ */
+function releaseAssetToken(rel, indexSrc, appSrc) {
+  var fromIndex = parseIndexTokens(indexSrc || '');
+  if (Object.prototype.hasOwnProperty.call(fromIndex, rel)) return fromIndex[rel];
+  var fromRoutes = parseRouteAssetTokens(appSrc || '');
+  if (Object.prototype.hasOwnProperty.call(fromRoutes, rel)) return fromRoutes[rel];
+  return null;
+}
+/**
+ * The scripts this release loads, IN THE ORDER THEY RUN: index.html's first, then the route-owned
+ * ones. That order is a fact, not a convention — a route cannot be opened until index.html has
+ * finished, and the loader inserts each set with async = false so a set runs in its declared order.
+ *
+ * Several suites assert dependency order by comparing positions in index.html. This is what they ask
+ * instead, so a module that MOVED is still ordered rather than reported missing.
+ * @returns {string[]} repo-relative paths, no query
+ */
+function releaseLoadOrder(indexSrc, appSrc) {
+  var out = [], seen = {};
+  var re = /<script[^>]*\ssrc="([^"]+)"[^>]*>/g, m;
+  while ((m = re.exec(indexSrc || '')) !== null) {
+    var src = m[1];
+    if (/^https?:|^\/\//.test(src)) continue;
+    var rel = src.split('?')[0];
+    if (!seen[rel]) { seen[rel] = 1; out.push(rel); }
+  }
+  Object.keys(parseRouteAssetTokens(appSrc || '')).forEach(function (rel) {
+    if (!seen[rel]) { seen[rel] = 1; out.push(rel); }
+  });
+  return out;
+}
+
+/** Is this asset loaded by the ROUTER rather than by index.html? */
+function isRouteLoadedAsset(rel, appSrc) {
+  return Object.prototype.hasOwnProperty.call(parseRouteAssetTokens(appSrc || ''), rel);
+}
 
 // ---------------------------------------------------------------------------------------------------------
 // THE MAP TOKEN SERIES — added in TEXTURE-3-R6, and the reason is the same failure one round later.
@@ -1273,6 +1363,8 @@ function tokenAtOrAfter(t, floorToken) {
 }
 
 module.exports = {
+  parseRouteAssetTokens: parseRouteAssetTokens, releaseAssetToken: releaseAssetToken,
+  isRouteLoadedAsset: isRouteLoadedAsset, releaseLoadOrder: releaseLoadOrder,
   ROUND_TOKENS: ROUND_TOKENS,
   MAP_TOKEN_SERIES: MAP_TOKEN_SERIES,
   MAP_BROWSER_FILES: MAP_BROWSER_FILES,

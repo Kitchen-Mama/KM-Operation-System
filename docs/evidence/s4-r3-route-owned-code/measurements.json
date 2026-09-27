@@ -1,0 +1,256 @@
+{
+ "round": "S4-R3 — app-shell code splitting, route-level load ownership, health/status cadence",
+ "pre_sha": "4ed2760",
+ "serverMs": 400,
+ "instruments": {
+  "boot": "assets/tests/_s4r3-code-split-runner.js bootSurface() — read from index.html, a property of the document",
+  "routes": "assets/tests/_s4r3-code-split-runner.js run(400, \"all\")",
+  "failure": "assets/tests/_s4r3-code-split-runner.js run(400, \"failure\")",
+  "world": "assets/tests/_s3r11-interaction-runner.js — the fixture world S3-R11, S4-R1 and S4-R2 used"
+ },
+ "what_is_authoritative": [
+  "SCRIPT COUNTS AND BYTES, read from index.html and the filesystem.",
+  "FETCH AND EXECUTION COUNTS PER URL, counted at script insertion before any application script runs.",
+  "MOUNT COUNTS, from the lifecycle manager’s own debug blob.",
+  "REQUEST COUNTS BY ACTION, which is how the §6/§7 cadence is measured rather than argued."
+ ],
+ "what_is_not_observable": {
+  "shell_before_code_ms": "NOT_OBSERVABLE, and the reason is the same one S4-R1 measured: under --virtual-time-budget the clock does not advance while a task runs, and a file:// script resolves before the first poll. atShell therefore reports the code as already loaded. What §8 actually asks IS observable and is recorded: at boot the route’s marker is undefined and the menu is complete, so the menu is usable before the route’s code exists at all."
+ },
+ "boot": {
+  "pre": {
+   "scriptTags": 82,
+   "localScripts": 80,
+   "bytes": 6036565,
+   "mb": 5.76
+  },
+  "post": {
+   "scriptTags": 76,
+   "localScripts": 74,
+   "bytes": 5461847,
+   "mb": 5.21
+  },
+  "removedBytes": 574718,
+  "removedKb": 561,
+  "loaderAddedBytes": 6344,
+  "top15_by_bytes_post": [
+   {
+    "rank": 1,
+    "kb": 947,
+    "file": "assets/js/pages/inventory-replenishment.js"
+   },
+   {
+    "rank": 2,
+    "kb": 476,
+    "file": "assets/js/pages/fc-summary.js"
+   },
+   {
+    "rank": 3,
+    "kb": 458,
+    "file": "assets/js/api/operation-system-db-api.js"
+   },
+   {
+    "rank": 4,
+    "kb": 355,
+    "file": "assets/js/pages/request-order.js"
+   },
+   {
+    "rank": 5,
+    "kb": 200,
+    "file": "assets/js/lib/km-globe.js"
+   },
+   {
+    "rank": 6,
+    "kb": 153,
+    "file": "assets/js/pages/sku-details.js"
+   },
+   {
+    "rank": 7,
+    "kb": 135,
+    "file": "assets/js/data/world-countries-110m.js"
+   },
+   {
+    "rank": 8,
+    "kb": 134,
+    "file": "assets/js/utils/inventory-compat.js"
+   },
+   {
+    "rank": 9,
+    "kb": 125,
+    "file": "assets/js/data/geo-names-zh-hant.js"
+   },
+   {
+    "rank": 10,
+    "kb": 125,
+    "file": "assets/js/pages/shipping-history.js"
+   },
+   {
+    "rank": 11,
+    "kb": 124,
+    "file": "assets/js/pages/global-logistics-map.js"
+   },
+   {
+    "rank": 12,
+    "kb": 124,
+    "file": "assets/js/pages/sku-regional-details.js"
+   },
+   {
+    "rank": 13,
+    "kb": 113,
+    "file": "assets/js/api/km-api-foundation.js"
+   },
+   {
+    "rank": 14,
+    "kb": 111,
+    "file": "assets/js/pages/factory-stock.js"
+   },
+   {
+    "rank": 15,
+    "kb": 106,
+    "file": "assets/js/pages/shipping-plan.js"
+   }
+  ],
+  "menuItemsAtBoot": 31,
+  "stagedParents": 1,
+  "psbMenuChildren": 6,
+  "pilotMarkersAtBoot": [
+   "product-strategy=false"
+  ],
+  "pilotLoadedAtBoot": [
+   "product-strategy=false"
+  ],
+  "scriptsAppendedDuringBoot": 0
+ },
+ "pilot": {
+  "routes": [
+   "product-strategy"
+  ],
+  "scripts": [
+   "assets/js/product-strategy/psb-data-contract.js",
+   "assets/js/product-strategy/km-product-strategy-site-universe.js",
+   "assets/js/product-strategy/km-product-strategy-live-adapter.js",
+   "assets/js/product-strategy/psb-selectors.js",
+   "assets/js/product-strategy/psb-chart-layout.js",
+   "assets/js/product-strategy/psb-board-ui.js",
+   "assets/js/pages/product-strategy-board.js"
+  ],
+  "scriptCount": 7,
+  "bytes": 581062,
+  "kb": 567,
+  "tokens": {
+   "assets/js/product-strategy/psb-data-contract.js": "s4r3-routeownedcode-20260927",
+   "assets/js/product-strategy/km-product-strategy-site-universe.js": "s4r3-routeownedcode-20260927",
+   "assets/js/product-strategy/km-product-strategy-live-adapter.js": "s4r3-routeownedcode-20260927",
+   "assets/js/product-strategy/psb-selectors.js": "s4r3-routeownedcode-20260927",
+   "assets/js/product-strategy/psb-chart-layout.js": "s4r3-routeownedcode-20260927",
+   "assets/js/product-strategy/psb-board-ui.js": "s4r3-routeownedcode-20260927",
+   "assets/js/pages/product-strategy-board.js": "s4r3-routeownedcode-20260927"
+  },
+  "not_in_pilot": {
+   "global-logistics-map": "MEASURED WORKING and then withdrawn. Its four scripts are 584 KB for one route most sessions never open, and the route behaved correctly under route ownership: shell first, mount once, nothing re-fetched on return. What stopped it is that those files sit under a cache-identity and load-ORDER rule set — roughly 25 assertions across 7 suites — every one of which asks its question of index.html. Moving them turns a tag move into a rewrite of deployment-safety rules this round did not author. _release-order.js now answers \"how is this asset cache-busted in this release?\" from both places, which was the missing piece; re-expressing those suites on it is its own round."
+  }
+ },
+ "routes": {
+  "product-strategy": {
+   "label": "Product Strategy Board",
+   "declaredScripts": 7,
+   "atShell": {
+    "visible": true,
+    "codeLoaded": true,
+    "markerDefined": true,
+    "executed": 7,
+    "mounted": true
+   },
+   "cold": {
+    "codeLoaded": true,
+    "markerDefined": true,
+    "mounted": true,
+    "active": true,
+    "fetched": 7,
+    "executed": 7,
+    "mountedSections": 1,
+    "visibleSections": 1,
+    "useful": 37,
+    "api": 1,
+    "openRequests": 0,
+    "errorBox": 0
+   },
+   "warm": {
+    "fetchedTotal": 7,
+    "executedTotal": 7,
+    "refetched": 0,
+    "reexecuted": 0,
+    "mounted": true,
+    "active": true,
+    "visibleSections": 1,
+    "api": 1
+   },
+   "rapid": {
+    "refetched": 0,
+    "reexecuted": 0,
+    "visibleSections": 1,
+    "mounted": true,
+    "mountedSections": 1,
+    "api": 1
+   }
+  }
+ },
+ "control": {
+  "label": "SKU Details (control)",
+  "mounted": true,
+  "active": true,
+  "api": 1,
+  "rows": 120,
+  "visibleSections": 1
+ },
+ "failure": {
+  "attempted": true,
+  "blocked": 7,
+  "shellVisible": true,
+  "errorBox": 1,
+  "errorText": "Product Strategy Board could not be loaded. Its code did not download, so the page has not been opened and nothing was read. This is a connection or d",
+  "halfMounted": false,
+  "markerDefined": false,
+  "codeLoaded": false,
+  "api": 0,
+  "openRequests": 0,
+  "otherRouteOk": true,
+  "retryFetchDelta": 1,
+  "stillHalfMounted": false,
+  "recovered": true,
+  "recoverFetchDelta": 1,
+  "recoveredMarker": true
+ },
+ "health": {
+  "firstMount": 1,
+  "secondMount": 0,
+  "identityKey": "km-build-s4r3-fixture|17|1|router-s4r3-fixture"
+ },
+ "gap": {
+  "siteInventory": 0,
+  "orderPlanning": 0,
+  "unrelated": 0,
+  "withKnownActiveJob": 1,
+  "markerSetOk": true,
+  "markerClearedAfterRead": true,
+  "mayHaveActive": false
+ },
+ "errors": [],
+ "contract": {
+  "MOUNT_BEFORE_SCRIPT_READY_COUNT": 0,
+  "DUPLICATE_SCRIPT_FETCH_COUNT": 0,
+  "DUPLICATE_SCRIPT_EXECUTION_COUNT": 0,
+  "DUPLICATE_MOUNT_COUNT": 0,
+  "SCRIPT_LOAD_FAILURE_FALSE_EMPTY": 0,
+  "HALF_MOUNT_COUNT": 0,
+  "RETRY_DUPLICATE_LOAD_COUNT": 0,
+  "MENU_AVAILABLE_BEFORE_ROUTE_SCRIPTS": "YES",
+  "ROUTE_SHELL_BEFORE_DATA": "YES",
+  "SYSTEM_HEALTH_SESSION_SHARE": "YES",
+  "SYSTEM_HEALTH_TTL": "NONE",
+  "SYSTEM_HEALTH_INVALIDATION_KEY": "deployment/build identity (build_id | action contract | transport contract | router build)",
+  "GAP_STATUS_UNRELATED_ROUTE_READS_POST": 0,
+  "GAP_STATUS_ACTIVE_JOB_READS": 1,
+  "GLOBAL_MISSING_SYMBOL_COUNT": 0
+ }
+}
