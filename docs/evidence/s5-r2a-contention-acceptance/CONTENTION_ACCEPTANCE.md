@@ -125,3 +125,38 @@ Three optional fields (`own_supply_qty_snapshot`, `overseas_supply_qty_snapshot`
 `committed_supply_qty_snapshot`) remain **proposed only** — listed again in Part III §38, not implemented.
 
 `NEXT_TASK = S5-R3 — Recommendation schema / mapping + implementation plan`
+
+---
+
+## Sweep: a pre-existing intermittent in the browser-driver mutation suites
+
+**The canonical failure set did NOT come back byte-identical, and that must not be reported as if it had.**
+
+Two full sweeps were run on `1a67403`. Both returned **556 passed / 562** with **six** failing suites rather
+than the canonical five — and the sixth was a **different suite each time**:
+
+| run | sixth suite | surviving mutant | canonical 13 lines |
+|---|---|---|---|
+| 1 | `s4-r3-route-owned-code` | `G4 a partially loaded set is recorded as loaded` | all present |
+| 2 | `s4-r7-final-seal` | `H1 the expand handler loads the second layer again` | all present |
+
+The **13 canonical fail lines are intact in both runs**; the digest moved only because each run added two
+extra lines from whichever suite flaked. The canonical five suites are stable.
+
+**It is not this round's change.** The commit adds two node-only test files and two documents; neither suite
+reads any of them. `s4-r3-route-owned-code` also reproduces the flake **standalone, with no sweep load at
+all** — five consecutive runs gave four clean and one with a survived mutant.
+
+**It is a timing intermittent in the headless-Chrome mutation probes**, the same class S4-R7 diagnosed and
+partially fixed: a probe that measures at a moment which is quiet for the wrong reason. Worth stating plainly
+— **S4-R7's `settle()` remediation reduced this but did not eliminate it**, and `H1` is one of the two mutants
+that round specifically repaired. Under full-sweep load it still slips roughly one run in five.
+
+**Not fixed here, deliberately.** This is a spec-only round with `BEHAVIOR_CHANGED = NO`, and the round's own
+gate says not to reopen S3/S4 unless a deterministic regression blocks S5 work. This is neither deterministic
+nor blocking. It is recorded as a bounded follow-up:
+
+> `SWEEP_MUTATION_INTERMITTENCY` — the browser-driver mutation suites (`s4-r3-route-owned-code`,
+> `s4-r7-final-seal`, and any sibling using the same probe pattern) need their mutant measurement points moved
+> from "nothing in flight" to a proven-quiescent state, as S4-R7 did for its retry probes. Roughly 1 run in 5.
+> An intermittently surviving mutant is worse than a failing one: it reads as coverage.
