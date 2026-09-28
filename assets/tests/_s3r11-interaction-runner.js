@@ -575,6 +575,14 @@ function driverScript() {
     '',
     '  (async function () {',
     '    try {',
+    // BOOT READINESS IS A LATCH, NOT A DURATION (S5-R2B). A fixed tick is not a boot: when the app had not
+    // yet produced its script loader and route table, mutation probes drove a dead page and reported
+    // surviving mutants. The cap is spent in VIRTUAL time, where an 80-script boot is not quick, and the
+    // wait returns the moment the condition holds - a healthy run pays nothing for the headroom.
+    '      OUT.bootReady = await until(function () {',
+    '        return !!(window.KM && window.KM.scriptLoader && window.KM.routeAssets',
+    '          && typeof window.KM.scriptLoader.isLoaded === "function");',
+    '      }, 300000);',
     '      await tick(500);',
     '      OUT.boot = { api: P.api, partial: P.partial, errors: P.errors.slice(0) };',
     '',

@@ -141,3 +141,40 @@ passing suite, so they were re-run under their real names rather than counted.
 
 `SWEEP_RUNNER_PROFILE_ISOLATION_PENDING` is now **closed**: every Chrome-launching runner under
 `assets/tests/` passes `--user-data-dir`.
+
+---
+
+## Correction: the boot latch was not "scenario-shaped", and the sweeps said so
+
+The section above applied profile isolation to the remaining runners and explicitly withheld the boot latch,
+reasoning that it belonged only with a measured failure. **Three more serial sweeps disproved that.**
+
+```
+run 1   6 suites   s4-r5-route-payloads   "H3 the router mounts without waiting for the code SURVIVED"
+run 2   6 suites   s4-r4-deferred-reads   "H1 the deferred tables go back on the mount read SURVIVED"
+run 3   canonical 5 · 13 lines · f809dca8…
+```
+
+Still rotating, and both failures are the same unbooted-page cause. Profile isolation removed one contributor;
+the latch is what actually closes it.
+
+**The scope is now the measured risk set, and it has a principle.** An unbooted page only becomes a *false
+SURVIVED* where there are mutation verdicts to corrupt — elsewhere it is a visible failure. So the latch went
+to every runner that drives a suite containing mutants, and to no others:
+
+| runner | suites | status |
+|---|---|---|
+| `_s4r3-code-split-runner` | s4-r3 | latch (earlier) |
+| `_s4r6-conformance-runner` | s4-r6, s4-r7 | latch (earlier) |
+| `_s4r4-deferred-read-runner` | s4-r4 | latch added |
+| `_s4r5-route-payload-runner` | s4-r5 | latch added |
+| `_s3r11-interaction-runner` | s3-r11, s3-r12, s3-r13 | latch added |
+| `_s4r2-reentry-runner` | s4-r2 | latch added |
+
+Two of the four already expose an `until()` helper and use it; the other two get a self-contained bounded
+poll rather than a new helper on their surface.
+
+```
+s4-r4-deferred-reads   6 / 6        s4-r5-route-payloads   6 / 6
+s3-r11  PASS   s3-r12  PASS   s3-r13  PASS   s4-r2  PASS   s4-r6  PASS
+```
