@@ -102,3 +102,42 @@ latent defect. This round repaired the two runners with proven failures and meas
 to the rest is a bounded follow-up that needs its own per-suite stability evidence, not a blanket edit.
 
 > `SWEEP_RUNNER_PROFILE_ISOLATION_PENDING` — 15 runners still share the default Chrome profile.
+
+---
+
+## The follow-up became part of the round, because sweep run 3 said so
+
+The first three serial sweeps after the G4/H1 repair returned:
+
+```
+run 1   canonical 5 · 13 lines · f809dca8…   ✓
+run 2   canonical 5 · 13 lines · f809dca8…   ✓
+run 3   6 suites · 15 lines · a6ec4faf…      ✗  s4-r4-deferred-reads, "H1 the deferred tables go
+                                                 back on the mount read SURVIVED"
+```
+
+A **third** suite, with the same shared-profile defect — one of the fifteen this document had just recorded as
+a bounded follow-up. Run 3 is the evidence that deferring it does not reach the round's goal, so the profile
+fix was extended to all ten remaining Chrome-launching runners in `assets/tests/`.
+
+**Deliberately narrower than the s4-r3/s4r6 repair.** Those two got a directory per *run*, because they were
+measured at 20/20 that way and are not being re-opened. The other ten get one directory per *process*, created
+at module load and removed on exit. Within a process every launch is `spawnSync` — sequential, already
+exited — so per-process isolation removes the cross-process contention with the smallest possible edit, and
+touches no runner's `try`/`finally` structure. No boot latch was added to them: that repair is scenario-shaped
+and belongs with a measured failure, not with a blanket edit.
+
+```
+s4-r4-deferred-reads        6 / 6 after the fix   (the run-3 flake)
+s3-r11-interaction-performance          PASS
+s4-r1-performance-baseline              PASS
+s4-r5-route-payloads                    PASS
+s4-r2-warm-reentry-and-listeners        PASS
+s3-r3-runtime-lifecycle-audit           PASS
+```
+
+Two of those were first checked under the wrong filename and reported "not found". A missing file is not a
+passing suite, so they were re-run under their real names rather than counted.
+
+`SWEEP_RUNNER_PROFILE_ISOLATION_PENDING` is now **closed**: every Chrome-launching runner under
+`assets/tests/` passes `--user-data-dir`.

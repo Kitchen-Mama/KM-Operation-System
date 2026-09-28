@@ -20,6 +20,15 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+
+/* A PRIVATE CHROME PROFILE FOR THIS PROCESS (S5-R2B).
+   Without --user-data-dir every headless launch shares the default profile and contends on its lock and
+   disk cache. Measured in the s4-r3 runner as a systematic every-third-run boot failure (RR.RR.RR), which
+   made mutation probes drive a page that had never booted and report surviving mutants. One directory per
+   process is enough here: within a process every launch is spawnSync, so they are already sequential. */
+const KM_CHROME_PROFILE = fs.mkdtempSync(path.join(require('os').tmpdir(), 'kmsweep-'));
+process.on('exit', function () { try { fs.rmSync(KM_CHROME_PROFILE, { recursive: true, force: true }); } catch (e) {} });
+
 const cp = require('child_process');
 
 const ROOT = path.join(__dirname, '..', '..');   // the repo root, not a machine-specific path
@@ -181,7 +190,7 @@ function run(opts) {
   fs.writeFileSync(file, html, 'utf8');
   try {
     const url = 'file:///' + file.split(path.sep).join('/').split(' ').join('%20');
-    const r = cp.spawnSync(chrome, ['--headless=new', '--disable-gpu', '--no-sandbox', '--no-first-run',
+    const r = cp.spawnSync(chrome, ['--headless=new', '--disable-gpu', '--no-sandbox', '--no-first-run', '--user-data-dir=' + KM_CHROME_PROFILE,
       '--disable-extensions', '--allow-file-access-from-files',
       '--virtual-time-budget=120000', '--enable-logging=stderr', '--log-level=0', '--dump-dom', url],
       { encoding: 'utf8', timeout: parseInt(opts.timeout || process.env.SP4_TIMEOUT || '180000', 10),
