@@ -96,3 +96,21 @@ S5 suites          R1 · R2 · R2A · R3 · R4/R4A · R5 · R6 · R7A · R8   al
 dependent          89 Request Order / Flat-V2 / Recommendation / performance suites, 0 failing
 FOCUSED            69/0      MUTATION  7/7
 ```
+
+## Sweep
+
+```
+563 passed / 568   canonical 5   19 lines   DIRTY 0   WORKTREE_CLEAN_AT_END = YES
+CANONICAL_DIGEST = 596eeb6448f3911ff876a3f7c21606e747a4892f43df9fa7c4186830ed9069ba
+CANONICAL_FAILURE_SET_CHANGED = NO — byte-identical to the §0 baseline
+```
+
+Canonical on the first run, which is what a closing round should look like: 568 rather than 567 because this
+round added one suite, and not one line moved.
+
+```
+S5_READY_FOR_INTEGRATION = YES
+S5_LARGE_FATIGUE_DEFERRED = YES
+FUTURE_FATIGUE_GATE = POST_S7_SYSTEM_FATIGUE_AND_WRITE_VALIDATION
+NEXT_TASK = S6-R1 — Shipping / Inventory Execution mainline contract audit
+```
