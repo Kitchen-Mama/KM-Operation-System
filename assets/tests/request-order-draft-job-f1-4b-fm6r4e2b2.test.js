@@ -10,6 +10,11 @@
 // NOTE: no top-level 'use strict' — the PURE blocks are eval'd into module scope (strict eval would sandbox them).
 
 var fs = require('fs'), path = require('path');
+// S5-R7A: the REAL recommendation owner, published the way this file already publishes the other real
+// modules. 47_ now asks KMREC for the canonical verdict, and KMREC resolves the cartonizer off the global,
+// so both are the genuine ones — a stub here would make the suite agree with something that is not shipped.
+global.KMCALC = require('../js/core/supply-planning-calculations.js');
+var KMREC = require('../js/core/supply-recommendation.js');
 var fail = 0, pass = 0;
 function ok(c, l) { if (!c) { fail++; console.error('FAIL ' + l); } else { pass++; } }
 function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A !== E) { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } else { pass++; } }

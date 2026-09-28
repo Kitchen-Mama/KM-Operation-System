@@ -11,6 +11,11 @@
 var fs = require('fs'), path = require('path'), vm = require('vm');
 var KMRDV2 = require('../js/core/supply-planning-request-draft-v2.js');
 var KMRDV2P = require('../js/core/supply-planning-request-draft-v2-persistence.js');
+// S5-R7A: the REAL recommendation owner, published the way this file already publishes the other real
+// modules. 47_ now asks KMREC for the canonical verdict, and KMREC resolves the cartonizer off the global,
+// so both are the genuine ones — a stub here would make the suite agree with something that is not shipped.
+global.KMCALC = require('../js/core/supply-planning-calculations.js');
+var KMREC = require('../js/core/supply-recommendation.js');
 var fail = 0, pass = 0;
 function ok(c, l) { if (c) { pass++; } else { fail++; console.error('FAIL ' + l); } }
 function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A === E) { pass++; } else { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } }
@@ -21,7 +26,7 @@ var GS48 = fs.readFileSync(path.join(__dirname, '..', 'specs', 'active', 'apps-s
 var AUG1_TAIPEI = new Date('2026-07-31T16:00:00.000Z');   // 2026-08-01 00:00 Asia/Taipei
 
 function fmt(d, tz, f) { var off = (tz === 'Asia/Taipei') ? 8 : 0; var t = new Date(d.getTime() + off * 3600000); return t.getUTCFullYear() + '-' + ('0' + (t.getUTCMonth() + 1)).slice(-2); }
-var sb = { KMRDV2: KMRDV2, KMRDV2P: KMRDV2P, SpreadsheetApp: { getActiveSpreadsheet: function () { return { getSpreadsheetTimeZone: function () { return 'Asia/Taipei'; } }; } }, Utilities: { formatDate: fmt }, Logger: { log: function () {} }, console: console };
+var sb = { KMRDV2: KMRDV2, KMRDV2P: KMRDV2P, KMREC: KMREC, SpreadsheetApp: { getActiveSpreadsheet: function () { return { getSpreadsheetTimeZone: function () { return 'Asia/Taipei'; } }; } }, Utilities: { formatDate: fmt }, Logger: { log: function () {} }, console: console };
 vm.createContext(sb); vm.runInContext(GS47, sb, { filename: '47_.gs' });
 
 function readyGapRow(sku, calcMonth) { return { company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: sku, calculation_status: 'READY', calculated_at: '2026-08-01', calculation_month: calcMonth, t1_month: '2026-08', t2_month: '2026-09', t3_month: '2026-10', t1_suggested_qty: 100, t2_suggested_qty: 50, t3_suggested_qty: 0, t1_gap_qty: 100, t2_gap_qty: 50, t3_gap_qty: 0 }; }

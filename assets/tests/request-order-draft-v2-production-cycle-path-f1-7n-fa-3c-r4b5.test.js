@@ -15,12 +15,17 @@ function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A =
 function section(n) { console.log('\n== ' + n + ' =='); }
 
 var GS47 = fs.readFileSync(path.join(__dirname, '..', 'specs', 'active', 'apps-script', '47_api_v1_recommendation_generation.gs'), 'utf8').replace(/\r\n/g, '\n');
+// S5-R7A: the REAL recommendation owner, published the way this file already publishes the other real
+// modules. 47_ now asks KMREC for the canonical verdict, and KMREC resolves the cartonizer off the global,
+// so both are the genuine ones — a stub here would make the suite agree with something that is not shipped.
+global.KMCALC = require('../js/core/supply-planning-calculations.js');
+var KMREC = require('../js/core/supply-recommendation.js');
 var AUG1_TAIPEI = new Date('2026-07-31T16:00:00.000Z');   // 2026-08-01 00:00 Asia/Taipei
 
 // deterministic Asia/Taipei (+8) 'yyyy-MM' formatter for the mock Utilities
 function fmt(d, tz, f) { var off = (tz === 'Asia/Taipei') ? 8 : 0; var t = new Date(d.getTime() + off * 3600000); var y = t.getUTCFullYear(), m = t.getUTCMonth() + 1; return y + '-' + (m < 10 ? '0' + m : '' + m); }
 var sb = {
-  KMRDV2: KMRDV2,
+  KMRDV2: KMRDV2, KMREC: KMREC,
   SpreadsheetApp: { getActiveSpreadsheet: function () { return { getSpreadsheetTimeZone: function () { return 'Asia/Taipei'; } }; } },
   Utilities: { formatDate: fmt }, Logger: { log: function () {} }, console: console
 };
@@ -59,7 +64,7 @@ eq([body.ok, body.body.planningCycle], [true, '2026-08'], 'body.planningCycle = 
 eq(KMRDV2.normalizePlanningCycleMonthly(body.body.planningCycle), '2026-08', 'downstream strict normalizer now ACCEPTS the canonical value (no throw)');
 
 section('a Date calculation_month with NO available timezone fails closed (never a clock fallback)');
-var sbNoTz = { KMRDV2: KMRDV2, SpreadsheetApp: { getActiveSpreadsheet: function () { return { getSpreadsheetTimeZone: function () { return ''; } }; } }, Utilities: { formatDate: fmt }, Logger: { log: function () {} } };
+var sbNoTz = { KMRDV2: KMRDV2, KMREC: KMREC, SpreadsheetApp: { getActiveSpreadsheet: function () { return { getSpreadsheetTimeZone: function () { return ''; } }; } }, Utilities: { formatDate: fmt }, Logger: { log: function () {} } };
 vm.createContext(sbNoTz); vm.runInContext(GS47, sbNoTz, {});
 var bodyNoTz = sbNoTz.recGenBuildGapDraftBody_({ company: 'ResUS', country: 'US', marketplace: 'Amazon', sku: 'SP5120-R' }, gapRow, 10, {});
 eq([bodyNoTz.ok, bodyNoTz.reason], [false, 'PLANNING_CYCLE_TIMEZONE_REQUIRED'], 'no tz → body fails closed with PLANNING_CYCLE_TIMEZONE_REQUIRED');

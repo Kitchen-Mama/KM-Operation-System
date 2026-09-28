@@ -120,18 +120,29 @@ var RELEASE_OWNERS = {
   // RELEASE_OWNERS names the files THIS release changed. A file that did not change keeps the older stamp it
   // earned, which is the whole reason a stamp is per-module rather than a copy of the release id.
   //
-  // S5-R6 — AND AT R28 IT IS EXACTLY ONE FILE, WHICH IS WHAT FORCED THE PARTITION BELOW. R25 was the last
-  // release cut against a SHIPPED tree. R26, R27 and R28 have all accumulated on top of it unshipped, so
-  // "what must be copied" (everything that differs from BASE) and "what changed THIS release" stopped being
-  // the same set — and this suite was asking both questions with one list. C3 checks stamps and must see
-  // only the second; I1 checks the operator's copy list and must see both. RELEASE_CARRIED is that second
-  // half, the same partition GENERATED_OWNERS already made for a file that is copied but never stamped.
+  // S5-R6 — AND IT FORCED THE PARTITION BELOW. R25 was the last release cut against a SHIPPED tree. R26
+  // onward have accumulated on top of it unshipped, so "what must be copied" (everything that differs from
+  // BASE) and "what changed THIS release" stopped being the same set — and this suite was asking both
+  // questions with one list. C3 checks stamps and must see only the second; I1 checks the operator's copy
+  // list and must see both. RELEASE_CARRIED is that second half, the same partition GENERATED_OWNERS already
+  // made for a file that is copied but never stamped.
+  //
+  // S5-R7A — 47_ JOINS, which is the ledger working rather than the set growing. R28 changed only the
+  // generated bundle and the manifest that identifies it; R29 changes a hand-written owner as well, and the
+  // two must travel together in both directions.
   '63_api_v1_system_health.gs':
-    'THE MANIFEST. The generated bundle\'s content hash moved — KMRDV2P gained the pure operator-decision '
-    + 'write-plan gate — so 90_\'s manifest row moves, which is a change to THIS file, which moves its own '
-    + 'stamp and the release with it. No action was added or removed and the action contract does NOT move: '
-    + 'a library function that no route reaches is not a new vocabulary, and telling every deployed client to '
-    + 're-check a byte-identical action list would be a lie about what this release contains.'
+    'THE MANIFEST. The generated bundle\'s content hash moved again — KMRDV2P now owns the write-eligibility '
+    + 'guard and consults it on the live generate path — and 47_\'s expected stamp moves with 47_ itself. Both '
+    + 'are changes to THIS file. The ACTION CONTRACT does not move: no action was added or removed, and a '
+    + 'guard that refuses a SKU through an existing response shape is not a new vocabulary.',
+  '47_api_v1_recommendation_generation.gs':
+    'THE VERDICT, ATTACHED WHERE THE GAP ROW STILL EXISTS. recGenBuildGapDraftBody_ is the only place a stored '
+    + 'order_planning_gap row becomes a draft body, and both live entries — the manual AI Plan job and the '
+    + 'scheduled driver — pass through it, so the canonical KMREC verdict is attached exactly once. It also '
+    + 'teaches recGenSummarizeDraftResult_ the two refusals the guard can now return; without that a truthful '
+    + 'zero-write outcome would reach the operator as FAILED, which is the R5C misreport in a new place. '
+    + 'A project holding the new bundle and an OLD 47_ is the dangerous half-sync: the guard exists, nothing '
+    + 'ever hands it a verdict, every SKU is written exactly as before, and every probe reports healthy.'
 };
 
 // Owners that must be COPIED but whose stamp belongs to an EARLIER unshipped release. Each entry is the

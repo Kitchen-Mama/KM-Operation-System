@@ -93,7 +93,7 @@ section('C. namespaces available in an Apps Script-like global (no require/modul
   // version scores -1, i.e. BELOW the floor, so 'newer than anything recorded' reads as 'regressed' - which
   // is why this fired on a correct tree. The version claim is now its own assertion so the next round that
   // forgets the append is told that, instead of being told the namespace is missing from the bundle.
-  var _P_VERSIONS = ['kmrdv2p-fa3c-r5a-1', 'kmrdv2p-fb4e-r4b-r1-1', 'kmrdv2p-s5r6-1'];
+  var _P_VERSIONS = ['kmrdv2p-fa3c-r5a-1', 'kmrdv2p-fb4e-r4b-r1-1', 'kmrdv2p-s5r6-1', 'kmrdv2p-s5r7a-1'];
   ok(ctx.KMRDV2P && _P_VERSIONS.indexOf(ctx.KMRDV2P.VERSION) >= _P_VERSIONS.indexOf('kmrdv2p-fa3c-r5a-1'),
     'C: KMRDV2P VERSION is at or above the recorded floor and is a version this append-only list knows ('
       + (ctx.KMRDV2P && ctx.KMRDV2P.VERSION) + ')');

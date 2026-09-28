@@ -607,7 +607,14 @@ var R6_KNOWN_GS_CHANGES = ['assets/specs/active/apps-script/03_master_data_handl
   // prices arrive beside the old names rather than instead of them. The claim that the page still
   // LOOKS the same is made by sections A to F of this file, which render it; this line only records
   // why a .gs under the board is allowed to have moved since R6.
-  'assets/specs/active/apps-script/72_api_v1_product_pricing_workspace.gs'];
+  'assets/specs/active/apps-script/72_api_v1_product_pricing_workspace.gs',
+  // S5-R7A — the Order Planning recommendation generator. recGenBuildGapDraftBody_ now asks KMREC for the
+  // canonical write-eligibility verdict and attaches it to the draft body, and recGenSummarizeDraftResult_
+  // classifies the two refusals that verdict can produce. It takes the 72_ sentence, not the earlier one: this
+  // is NOT reachable from Product Strategy, and the board reads nothing it writes. No action was added or
+  // removed, no capability field changed, no flag moved, and the response shapes this file touches are the
+  // per-SKU job outcomes, which the board never sees. Declared here rather than loosening the check.
+  'assets/specs/active/apps-script/47_api_v1_recommendation_generation.gs'];
 var gsChanged = changedSince(R6_PRE, 'assets/specs/active/apps-script');
 if (gsChanged !== '__git_unavailable__') {
   var unexpectedGs = gsChanged.split('\n').map(function (x) { return x.trim(); })

@@ -476,8 +476,13 @@ mut('M1 NO_ACTION is allowed to create an order candidate', function () {
 
 mut('M2 MANUAL_REVIEW alone is let through the non-order guard', function () {
   var mod = loadMutated(P_REL,
-    "    if (NON_ORDER_AUTHORIZING_ACTIONS[action]) return refuse(DECISION_REFUSAL.ACTION_AUTHORIZES_NO_ORDER, action);",
-    "    if (NON_ORDER_AUTHORIZING_ACTIONS[action] && action !== 'MANUAL_REVIEW') return refuse(DECISION_REFUSAL.ACTION_AUTHORIZES_NO_ORDER, action);");
+    "  var ORDER_AUTHORIZING_ACTIONS = { NEW_ORDER: 1, REALLOCATE_AND_NEW_ORDER: 1 };",
+    "  var ORDER_AUTHORIZING_ACTIONS = { NEW_ORDER: 1, REALLOCATE_AND_NEW_ORDER: 1, MANUAL_REVIEW: 1 };");
+  // S5-R7A re-anchor, AND THE MUTANT THAT WAS INERT IN S5-R6 IS NOW THE LIVE ONE. Then, the non-order guard ran
+  // first and held MANUAL_REVIEW whatever the order half said, so this edit changed nothing. The shared
+  // eligibility owner checks the ORDER half first, so promoting MANUAL_REVIEW there now really does authorize a
+  // write - and carving it out of the non-order half is what has become inert, because it falls through to the
+  // unknown-action refusal instead.
   // Adding MANUAL_REVIEW to the ORDER half instead is INERT — the non-order guard runs first and still
   // holds it — so the mutant carves it out of the guard that actually decides.
   return mod.planOperatorDecision(decisionInput(CASE.MANUAL_REVIEW)).authorized === true
@@ -502,8 +507,8 @@ mut('M4 visibility becomes authorization', function () {
 
 mut('M5 an unknown action is passed through instead of refused', function () {
   var mod = loadMutated(P_REL,
-    "    if (!ORDER_AUTHORIZING_ACTIONS[action] && !NON_ORDER_AUTHORIZING_ACTIONS[action]) {",
-    "    if (false) {");
+    "    return { eligible: false, reason: DECISION_REFUSAL.RECOMMENDATION_UNAVAILABLE, detail: 'ACTION_NOT_IN_CLOSED_SET' };",
+    "    return { eligible: true, reason: null, detail: 'ACTION_NOT_IN_CLOSED_SET' };");
   return mod.planOperatorDecision(decisionInput(CASE.NEW_ORDER, { recommendationAction: 'SHIP' })).authorized === true
     && KMRDV2P.planOperatorDecision({ recommendationAction: 'SHIP' }).authorized === false;
 });
@@ -542,12 +547,15 @@ mut('M9 a reallocation column is added to the frozen 53', function () {
     && KMRDV2.V2_HEADERS.filter(function (h) { return /realloc/i.test(h); }).length === 0;
 });
 
-mut('M10 the refusal precedence is reordered so a stale row is reported as unconfirmed', function () {
+mut('M10 the refusal precedence is reordered so a stale row is reported as ineligible', function () {
+  // S5-R7A re-anchor. The precedence now reads: unknown action -> stale -> ineligible -> unconfirmed, the
+  // first and third supplied by the shared eligibility owner. Swapping the middle pair is the same fault as
+  // before: a stale row is told about its action instead of about being stale.
   var mod = loadMutated(P_REL,
-    "    if (input.recommendationStale === true) return refuse(DECISION_REFUSAL.RECOMMENDATION_STALE, 'REFRESH_REQUIRED');\r\n    if (NON_ORDER_AUTHORIZING_ACTIONS[action]) return refuse(DECISION_REFUSAL.ACTION_AUTHORIZES_NO_ORDER, action);\r\n    if (input.operatorConfirmed !== true) return refuse(DECISION_REFUSAL.OPERATOR_AUTHORIZATION_REQUIRED, '');",
-    "    if (input.operatorConfirmed !== true) return refuse(DECISION_REFUSAL.OPERATOR_AUTHORIZATION_REQUIRED, '');\r\n    if (input.recommendationStale === true) return refuse(DECISION_REFUSAL.RECOMMENDATION_STALE, 'REFRESH_REQUIRED');\r\n    if (NON_ORDER_AUTHORIZING_ACTIONS[action]) return refuse(DECISION_REFUSAL.ACTION_AUTHORIZES_NO_ORDER, action);");
-  var inp = decisionInput(CASE.NEW_ORDER, { operatorConfirmed: false, recommendationStale: true });
-  return mod.planOperatorDecision(inp).refusal === 'OPERATOR_AUTHORIZATION_REQUIRED'
+    "    if (input.recommendationStale === true) return refuse(DECISION_REFUSAL.RECOMMENDATION_STALE, 'REFRESH_REQUIRED');\r\n    if (!elig.eligible) return refuse(elig.reason, elig.detail);",
+    "    if (!elig.eligible) return refuse(elig.reason, elig.detail);\r\n    if (input.recommendationStale === true) return refuse(DECISION_REFUSAL.RECOMMENDATION_STALE, 'REFRESH_REQUIRED');");
+  var inp = decisionInput(CASE.NO_ACTION, { recommendationStale: true });
+  return mod.planOperatorDecision(inp).refusal === 'ACTION_AUTHORIZES_NO_ORDER'
     && KMRDV2P.planOperatorDecision(inp).refusal === 'RECOMMENDATION_STALE';
 });
 

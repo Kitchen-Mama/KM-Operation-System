@@ -252,6 +252,20 @@ function recGenBuildGapDraftBody_(scope1, gapRow, upc, opts) {
   var cycleInput = (opts && (opts.planningCycle !== undefined && opts.planningCycle !== null && r4e2Str_(opts.planningCycle) !== '')) ? opts.planningCycle : gapRow.calculation_month;
   var pc = recGenProjectCalendarMonth_(cycleInput, tz);
   if (!pc.ok) return { ok: false, reason: pc.error };
+  // S5-R7A — LAST, NOT FIRST. Inserted above the readiness gates, this answered before them and replaced
+  // ORDER_PLANNING_GAP_NOT_READY / INVALID_PLANNING_CYCLE with its own reason — a caller asking why a SKU was
+  // skipped would have been told the bundle was missing when the real answer was a stringified cycle. Every
+  // pre-existing refusal keeps its own, more specific reason; this one only decides whether a body that is
+  // otherwise ready may be built without a verdict. It may not.
+  // FAIL CLOSED when the recommendation owner is absent. KMREC lives in the generated bundle and travels with
+  // this file in the same release; a project holding one and not the other would otherwise persist drafts with
+  // no eligibility verdict at all, which is the silent half-sync the release identity exists to prevent.
+  if (typeof KMREC === 'undefined' || !KMREC || typeof KMREC.generateOrderPlanningRecommendation !== 'function') {
+    return { ok: false, reason: 'RECOMMENDATION_OWNER_UNAVAILABLE' };
+  }
+  var recDto = KMREC.generateOrderPlanningRecommendation(gapRow, { unitsPerCarton: upc });
+  var rec = { action: (recDto && recDto.recommendationAction) || null,
+    sourceFingerprint: (recDto && recDto.sourceFingerprint) || null, stale: false };
   return { ok: true, body: {
     recommendationType: 'MONTHLY_ORDER',
     mode: (opts && opts.mode) || 'MANUAL_REGENERATE',
@@ -260,7 +274,12 @@ function recGenBuildGapDraftBody_(scope1, gapRow, upc, opts) {
       draft_purpose: (opts && opts.draft_purpose) || 'regular' },
     confirmRegenerateOverUserEdits: !!(opts && opts.confirmRegenerateOverUserEdits === true),
     actor: (opts && opts.actor) || 'system',
-    facts: { lines: built.lines, ready: true, formulaVersion: 'ORDER_PLANNING_GAP', sourceDataAsOf: sourceCalculatedAt }
+    facts: { lines: built.lines, ready: true, formulaVersion: 'ORDER_PLANNING_GAP', sourceDataAsOf: sourceCalculatedAt },
+    // S5-R7A §6 — the canonical KMREC verdict for THIS gap row, attached ONCE, here, because this is the only
+    // place a stored gap row becomes a draft body: the manual AI Plan job and the scheduled driver both arrive
+    // through it. KMREC is the recommendation owner and is asked rather than imitated — no action is derived,
+    // no quantity is recomputed, and the fingerprint is the one KMREC itself publishes on the DTO.
+    recommendation: rec
   } };
 }
 
@@ -287,6 +306,24 @@ function recGenSummarizeDraftResult_(sku, res) {
     }
     if (d.conflict === true || d.outcome === 'CONFLICT' || d.error === 'BLOCKED_CONFLICT' || d.reason === 'DUPLICATE_ACTIVE_DRAFT') {
       return { sku: sku, status: 'BLOCKED_CONFLICT', code: String(d.reason || d.error || 'BLOCKED_CONFLICT') };
+    }
+    // S5-R7A — THE TWO NEW REFUSALS ARE NOT FAILURES, AND WITHOUT THIS THEY WOULD BE REPORTED AS ONE.
+    //
+    // NOT_ELIGIBLE and STALE_RECOMMENDATION are truthful zero-write outcomes from the eligibility guard. They
+    // carry a reason this function does not recognise, so they would have fallen to the FAILED default below —
+    // the same class of mistake as the R5C incident, where every committed flat write was reported as
+    // GENERATION_FAILED because its shape was unrecognised.
+    //
+    // They map onto the EXISTING NOT_READY status deliberately. A new status would have to be taught to 48_'s
+    // per-SKU code map, which answers anything it does not know with F for FAILED, so inventing one here would
+    // reintroduce the very misreport two layers down. The reason is not lost: it travels in `code`.
+    if (d.outcome === 'NOT_ELIGIBLE') {
+      return { sku: sku, status: 'NOT_READY', code: String(d.detail || d.reason || 'NOT_ELIGIBLE'),
+        draftId: d.draftId || null, recommendationAction: d.recommendationAction || null };
+    }
+    if (d.outcome === 'STALE_RECOMMENDATION') {
+      return { sku: sku, status: 'NOT_READY', code: 'RECOMMENDATION_STALE',
+        draftId: d.draftId || null, recommendationAction: d.recommendationAction || null };
     }
     if (d.outcome === 'NON_ACTIONABLE') return { sku: sku, status: 'NOT_READY', code: String(d.reason || 'NON_ACTIONABLE_ZERO_RECOMMENDATION'), draftId: d.draftId || null };
     var freason = d.reason || d.error || 'GENERATION_FAILED';
@@ -461,7 +498,11 @@ var REQUEST_ORDER_DRAFT_READBACK_MAX_SCOPES_ = 25;
 // F1-7N-FB-4E-R4B-R3 §1 - OWNER BUILD STAMP. Registered in SYS_MODULE_BUILD_STAMPS_ (63_). The value names the
 // round this file last changed behaviourally (R4B-R2 added the bounded multi-scope readback); the constant itself
 // was introduced in R3, so a pre-R3 copy is reported ABSENT by the health manifest.
-var RECGEN_BUILD_VERSION_ = 'F1-7N-FB-4E-R4B-R2';
+// S5-R7A — moved because THIS FILE changed: recGenBuildGapDraftBody_ now asks KMREC for the canonical
+// verdict and attaches it to the draft body, and recGenSummarizeDraftResult_ classifies the two refusals
+// the eligibility guard can now return. Both are on the live generate path, so a project holding the older
+// copy would persist drafts with no verdict at all and report a truthful refusal as a failure.
+var RECGEN_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R29';
 
 function recGenNormalizeScopeList_(list) {
   if (!list || Object.prototype.toString.call(list) !== '[object Array]') {

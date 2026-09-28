@@ -247,6 +247,23 @@
   var ORDER_AUTHORIZING_ACTIONS = { NEW_ORDER: 1, REALLOCATE_AND_NEW_ORDER: 1 };
   var NON_ORDER_AUTHORIZING_ACTIONS = { REALLOCATE: 1, NO_ACTION: 1, MANUAL_REVIEW: 1 };
 
+  // S5-R7A §3 — THE ONE WRITE-ELIGIBILITY OWNER. Two callers ask this question: planOperatorDecision (the
+  // operator-decision path) and generateMonthlyFlat (the live gap-backed generate path, reached by BOTH the
+  // manual AI Plan job and the scheduled driver). They ask it HERE rather than each carrying its own switch,
+  // because an eligibility rule spelled twice is a rule that can disagree with itself — and the two halves
+  // would sit in different files, one of them a .gs the other cannot see.
+  //
+  // It is a property of the ACTION ALONE. It says nothing about who authorized the write or whether the
+  // recommendation is current; those are separate questions with separate answers, asked by the caller that
+  // knows them. Collapsing all three into one predicate is how a refusal ends up naming the wrong reason.
+  function actionAuthorizesOrderWrite(action) {
+    var a = str(action);
+    if (a === '') return { eligible: false, reason: DECISION_REFUSAL.RECOMMENDATION_UNAVAILABLE, detail: 'ACTION_ABSENT' };
+    if (ORDER_AUTHORIZING_ACTIONS[a] === 1) return { eligible: true, reason: null, detail: a };
+    if (NON_ORDER_AUTHORIZING_ACTIONS[a] === 1) return { eligible: false, reason: DECISION_REFUSAL.ACTION_AUTHORIZES_NO_ORDER, detail: a };
+    return { eligible: false, reason: DECISION_REFUSAL.RECOMMENDATION_UNAVAILABLE, detail: 'ACTION_NOT_IN_CLOSED_SET' };
+  }
+
   // Refusal precedence is FROZEN and is not the order the gates happen to be written in: the refusal names the
   // substantive obstacle first (unknown → stale → the action authorizes nothing), and only then the missing
   // operator authorization. An operator who confirms a stale row is told the row is stale, not that they
@@ -258,12 +275,13 @@
       return { authorized: false, refusal: reason, detail: str(detail), recommendationAction: action || null,
         planInput: null, plan: null, reallocationQtyWritten: false, actionPersisted: false };
     }
-    if (action === '') return refuse(DECISION_REFUSAL.RECOMMENDATION_UNAVAILABLE, 'ACTION_ABSENT');
-    if (!ORDER_AUTHORIZING_ACTIONS[action] && !NON_ORDER_AUTHORIZING_ACTIONS[action]) {
-      return refuse(DECISION_REFUSAL.RECOMMENDATION_UNAVAILABLE, 'ACTION_NOT_IN_CLOSED_SET');
-    }
+    // S5-R7A: the unknown/unclassified half of the precedence is now the shared owner's answer, so this path
+    // and the generate path cannot drift. Staleness is asked BETWEEN the two eligibility outcomes, which is
+    // what keeps a stale row reported as stale rather than as an ineligible action.
+    var elig = actionAuthorizesOrderWrite(action);
+    if (!elig.eligible && elig.reason === DECISION_REFUSAL.RECOMMENDATION_UNAVAILABLE) return refuse(elig.reason, elig.detail);
     if (input.recommendationStale === true) return refuse(DECISION_REFUSAL.RECOMMENDATION_STALE, 'REFRESH_REQUIRED');
-    if (NON_ORDER_AUTHORIZING_ACTIONS[action]) return refuse(DECISION_REFUSAL.ACTION_AUTHORIZES_NO_ORDER, action);
+    if (!elig.eligible) return refuse(elig.reason, elig.detail);
     if (input.operatorConfirmed !== true) return refuse(DECISION_REFUSAL.OPERATOR_AUTHORIZATION_REQUIRED, '');
 
     // Authorized. The plan input is assembled field by field — never spread from `input` — so a caller cannot
@@ -355,6 +373,36 @@
     var facts = deps.computeFacts();
     if (facts && facts.ready === false) return { success: false, error: facts.reason || 'FACTS_NOT_READY', stage: 'facts' };
 
+    // S5-R7A §6 — THE ELIGIBILITY GUARD, ON THE LIVE PATH, BEFORE ANYTHING IS PLANNED.
+    //
+    // command.recommendation is the canonical KMREC verdict for THIS gap row, attached once by 47_
+    // recGenBuildGapDraftBody_ — the single place that turns a stored gap row into this body, and the one
+    // both the manual AI Plan job and the scheduled driver go through. The verdict is carried as a VALUE:
+    // nothing here derives an action, a quantity or a fingerprint.
+    //
+    // A refusal returns the SAME non-writing shape the pre-existing NON_ACTIONABLE outcome already returns,
+    // so 47_'s summarizer classifies it truthfully instead of reading it as a generation failure.
+    //
+    // WHY OPERATOR CONFIRMATION IS NOT REQUIRED HERE, and it is not an oversight: this path also serves the
+    // SCHEDULED refresh (49_ -> 48_ -> here), which has no operator by design and predates S5. What it may
+    // write is already confined - `refresh` skips any tier a user edited, and nothing on this path creates a
+    // Request Order. Operator authorization is planOperatorDecision's question, on the decision path.
+    if (isObj(command.recommendation)) {
+      var rec = command.recommendation;
+      var e = actionAuthorizesOrderWrite(rec.action);
+      if (!e.eligible && e.reason === DECISION_REFUSAL.RECOMMENDATION_UNAVAILABLE) {
+        return { success: true, wrote: false, persisted: false, outcome: 'NOT_ELIGIBLE',
+          reason: e.reason, detail: e.detail, recommendationAction: str(rec.action) || null };
+      }
+      if (rec.stale === true) {
+        return { success: true, wrote: false, persisted: false, outcome: 'STALE_RECOMMENDATION',
+          reason: DECISION_REFUSAL.RECOMMENDATION_STALE, detail: 'REFRESH_REQUIRED', recommendationAction: str(rec.action) };
+      }
+      if (!e.eligible) {
+        return { success: true, wrote: false, persisted: false, outcome: 'NOT_ELIGIBLE',
+          reason: e.reason, detail: e.detail, recommendationAction: str(rec.action) };
+      }
+    }
     var manual = command.mode === 'manual' || command.mode === 'MANUAL';
     var action = command.action || (/REGENERATE/i.test(str(command.mode)) ? 'regenerate' : 'refresh');
     var plan = planFlat({
@@ -739,6 +787,7 @@
     tierTuples: tierTuples, expectedTokenForExisting: expectedTokenForExisting,
     tiersFromFactLines: tiersFromFactLines, loadActiveFlat: loadActiveFlat, loadFlatById: loadFlatById,
     planFlat: planFlat, planOperatorDecision: planOperatorDecision,
+    actionAuthorizesOrderWrite: actionAuthorizesOrderWrite,
     DECISION_REFUSAL: DECISION_REFUSAL,
     ORDER_AUTHORIZING_ACTIONS: ORDER_AUTHORIZING_ACTIONS,
     NON_ORDER_AUTHORIZING_ACTIONS: NON_ORDER_AUTHORIZING_ACTIONS,
@@ -750,6 +799,6 @@
     isConcreteScope: isConcreteScope, MAX_READBACK_SCOPES: 25,
     withFlatDefaults: withFlatDefaults_,
     planMigration: planMigration, validateStaging: validateStaging,
-    VERSION: 'kmrdv2p-s5r6-1'
+    VERSION: 'kmrdv2p-s5r7a-1'
   };
 });

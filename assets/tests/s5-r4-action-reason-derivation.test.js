@@ -313,8 +313,22 @@ var CONSUMER_FILES = ['assets/js/pages/request-order.js', 'assets/js/pages/inven
 var consumersReading = CONSUMER_FILES.filter(function (f) {
   return /recommendationAction|reasonTokens/.test(code(read(f)));
 });
-eq(consumersReading, ['assets/js/pages/request-order.js'],
-  'G7 exactly one consumer reads the derived fields — the S5-R5 read model');
+// S5-R7A — "EXACTLY ONE" WAS A COUNT, AND A COUNT IS A SNAPSHOT. The comment above this block already says
+// why a pinned reader list fails: it has to be edited by the first round that legitimately adds one. This was
+// still a count, so S5-R7A failed it by adding the second legitimate reader — 47_, which attaches the verdict
+// on the live generate path. What is durable is that every reader is DECLARED with a reason, so an undeclared
+// one still fails loudly, and that no reader derives (G8, unchanged).
+var DECLARED_READERS = {
+  'assets/js/pages/request-order.js':
+    'S5-R5 read model — renders the action and its reasons in the SKU expand. Read-only.',
+  "assets/specs/active/apps-script/47_api_v1_recommendation_generation.gs":
+    'S5-R7A — recGenBuildGapDraftBody_ attaches the canonical verdict to the draft body at the one place a '
+    + 'stored gap row becomes one. It ASKS KMREC for the DTO and copies the field; it derives nothing.'
+};
+eq(consumersReading.filter(function (f) { return !DECLARED_READERS[f]; }), [],
+  'G7 every file that reads the derived fields is a DECLARED consumer with a stated reason');
+ok(consumersReading.length >= 1,
+  'G7a and the check is not vacuous — at least one declared consumer really does read them');
 CONSUMER_FILES.forEach(function (f) {
   ok(!/deriveRecommendationAction|deriveReasonTokens/.test(code(read(f))),
     'G8 ' + path.basename(f) + ' reads the verdict but never derives it');

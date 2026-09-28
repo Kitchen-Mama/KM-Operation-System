@@ -232,7 +232,15 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 // request or response shape changed, and nothing new is routed — the gate is a library function no route
 // reaches yet. A project holding R27 simply lacks a function nothing calls, so this release has no
 // half-sync hazard of its own beyond copying the bundle and this file together.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R28';
+// S5-R7A: R28 -> R29. TWO owners change and must be copied together — 47_ attaches the canonical KMREC
+// verdict at the one place a gap row becomes a draft body, and the generated bundle carries the eligibility
+// owner that reads it. A project with 47_ at R29 and an older bundle gets RECOMMENDATION_OWNER_UNAVAILABLE
+// and writes nothing, which is the intended fail-closed half; the reverse — a new bundle beside an older 47_ —
+// is the dangerous one, because the guard exists and nothing ever hands it a verdict, so every SKU is written
+// exactly as before while the deployment reports itself healthy. That is the partial sync a release id is for.
+// R28 has not shipped, and that is not a licence to reuse its id: R28 and this tree differ, the ruling
+// recorded for R7, R10, R11, R22->R23, R23->R24 and R27->R28 above. 01_router and 73_ still do NOT move.
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R29';
 // 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
 // R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
 // not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
@@ -269,7 +277,9 @@ var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R28';
 // S5-R6 - moved because THIS FILE changed: the release above, its own expected stamp below, and 90_'s
 // manifest row, whose content hash moved with the bundle. No action was added or removed and the transport
 // contract is untouched; a pure planner that no route reaches is not a new vocabulary.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R28';
+// S5-R7A - moved because THIS FILE changed: the release above, its own expected stamp, 47_'s expected stamp
+// and 90_'s content hash. No action was added or removed and the transport contract is untouched.
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R29';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -540,7 +550,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R28', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R29', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
   // PRICING-R2 — 73_ IS REQUIRED FROM ITS FIRST RELEASE, AND DELIBERATELY NOT OPTIONAL, for the reason a
   // WRITE owner is always the worst partial sync: 01_router.gs dispatches pricing.update to
   // handlePricingUpdate_, so a deployment carrying the router without this file routes a live price write
@@ -675,7 +685,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // Its absence is NOT loud. 13_ guards on typeof KMPD.resolveTargetRule and returns null when it is missing,
   // and a null target is a SKIPPED month, not an error: an old bundle makes the procurement forecast quietly
   // drop months. An old-but-present bundle is worse still -- it resolves by the retired first-row-wins rule.
-  { file: '90_generated_supply_planning_bundle.gs', symbol: 'KM_BUNDLE_CONTENT_HASH_', expected: '1bdace5c2e48c6d56bc9563dfb2f27b5fa7b3c1bb1b098f512c0d3c6a3d37ea8', owns: 'the generated shared-core bundle (60 UMD modules) incl. KMPD.resolveTargetRule — the ONE Target Rule authority every server consumer delegates to; identified by content hash, never by a hand-typed stamp' },
+  { file: '90_generated_supply_planning_bundle.gs', symbol: 'KM_BUNDLE_CONTENT_HASH_', expected: 'c6080ffce8b0d4ac6ff888490c3d489e9824411ab2103281a1baad3d2d2b733d', owns: 'the generated shared-core bundle (60 UMD modules) incl. KMPD.resolveTargetRule — the ONE Target Rule authority every server consumer delegates to; identified by content hash, never by a hand-typed stamp' },
   { file: '22_shipment_dispatch_handlers.gs', symbol: 'CSD_BUILD_VERSION_', expected: 'F1-7N-FC-1A-R1', owns: 'Confirm Shipment & Dispatch: deduction + reservation release through the shared authority + the cancelled-shipment dispatch refusal' },
   // F1-7N-FB-4E-R4B-R3 §1 - moved with the file. R4B-R2 changed the GET read dispatch; leaving the manifest at
   // R4A1 would have made a CORRECTLY synced router report as stale, and an UNSYNCED one report as current.
@@ -685,7 +695,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // declared build can. The stamp VALUE names the round in which each last changed BEHAVIOURALLY; the SYMBOL was
   // introduced in R4B-R3, so a copy older than R3 reports ABSENT rather than stale - a stronger signal, not a
   // weaker one, and the reason the value is not bumped to R3 just to look current.
-  { file: '47_api_v1_recommendation_generation.gs', symbol: 'RECGEN_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R4B-R2', owns: 'recommendation generation + the bounded multi-scope order-draft readback' },
+  { file: '47_api_v1_recommendation_generation.gs', symbol: 'RECGEN_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R29', owns: 'recommendation generation + the bounded multi-scope order-draft readback' },
   { file: '56_api_v1_ai_plan_first_layer.gs', symbol: 'APL_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R4B-R1', owns: 'Order Planning AI Plan first layer + the KMFSA factory site-allocation share' },
   // PRICING-R2 — 59_ moves because it gained the include.pricing table. A deployment holding the FB-4C-R1
   // copy answers skuDetails.workspace.get perfectly and returns no prices, so the SKU Regional price panel
