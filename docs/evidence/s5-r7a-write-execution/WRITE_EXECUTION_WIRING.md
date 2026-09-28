@@ -168,5 +168,15 @@ s5-r6 112/0 12/12 · s5-r5 64/0 · s5-r4 96/0 16/16 · s5-r3 134/0
 
 sweep 1   567 suites · 9 failing · the four above
 sweep 2   567 suites · 6 failing · E4, repaired by squashing
-sweep 3   see below
+sweep 3   562 passed / 567 · canonical 5 · 19 lines · DIRTY 0 · clean
+
+CANONICAL_SUITE_COUNT = 5   CANONICAL_FAIL_LINE_COUNT = 19
+CANONICAL_DIGEST = 596eeb6448f3911ff876a3f7c21606e747a4892f43df9fa7c4186830ed9069ba
+CANONICAL_FAILURE_SET_CHANGED = NO   — byte-identical to the §0 baseline this round was given
 ```
+
+567 rather than 566 because this round added one suite.
+
+The digest returning to its starting value is the useful fact here. Sweep 1 moved it (four suites), sweep 2
+moved it again (E4), and sweep 3 landed back on the number §0 supplied — so every line that fires now is one
+that fired before this round began.
