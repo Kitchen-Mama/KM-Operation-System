@@ -1424,4 +1424,591 @@ S5_DECISION_FREEZE_COMPLETE = YES
 
 `NEXT_TASK = S5-R3 — Recommendation schema / mapping + implementation plan.`
 
-**End of contract.**
+**End of Part III.**
+
+---
+---
+
+# PART IV — S5-R3 SCHEMA / MAPPING FREEZE + IMPLEMENTATION PLAN
+
+*Database-first mapping round. No runtime implementation, no migration, no deploy, no Apps Script sync.*
+*Base `dce0550`. Sections §40–§52 are additive; Parts I–III are unchanged except where a banner says otherwise.*
+
+---
+
+## §40. The finding that reorders this round: the recommendation engine already exists
+
+Parts I–III treated the recommendation ACTION as something S5 would introduce. **It is not greenfield.**
+`assets/js/core/supply-recommendation.js` (`KMREC`, `VERSION = kmrec-fm6r1-1`) is already, in its own words,
+*"ONE pure, deterministic Phase-1 Recommendation owner"*. It already:
+
+- reads a **materialized** `order_planning_gap` row and owns no formula (`supply-recommendation.js:3-7`);
+- produces `recommendationId = 'ORDER_PLANNING_GAP:' + company||country||marketplace||sku`;
+- derives staleness — `isStale(dto, latestRow)` over `sourceFingerprint` (`:178-182`);
+- cartonizes **once** through the canonical `KMCALC` owner, never per tier (`:145-149`);
+- excludes T4 from the actionable total and keeps it as `forwardVisibility` (`:34`, `:130`);
+- is driven by **both** the manual button and the scheduled job — one owner, two callers
+  (`request-order.js:4416`, `47_api_v1_recommendation_generation.gs:81`).
+
+```
+RECOMMENDATION_ENGINE_IS_GREENFIELD = NO
+RECOMMENDATION_ENGINE_OWNER         = KMREC (assets/js/core/supply-recommendation.js)
+```
+
+This is decisive for the whole round. **S5-R3 is not a new engine; it is a bounded additive derivation on an
+existing one.** Every slice in §50 is written against `KMREC` for that reason, and the §44 rule
+(`SECOND_CALCULATION_PATH_COUNT = 0`) is satisfied structurally rather than by promise.
+
+---
+
+## §41A. Canonical owners (§1) — reconfirmed against code, not naming
+
+| CONCERN | OWNER | EVIDENCE |
+|---|---|---|
+| `GAP_OWNER` | `KMTPP.projectTimePhasedSupply`, materialized by `43_api_v1_gap_materialization.gs` into `order_planning_gap` | `42_:499`; `43_:143-186` |
+| `REALLOCATION_OWNER` | `KMFSR.runReallocation` (§41 intra-company), `KMAR.allocateFactoryCrossCompany` (R2G-B cross-company pre-pass) | `supply-planning-surplus-reallocation.js:169-231`; `43_:573-620` |
+| `RESIDUAL_OWNER` | `KMTPP` — sole owner (§44.4). `residualOrderNeedQty` is computed in `42_` with coverage terms pinned to literal `0` | `42_:505-507` |
+| `RECOMMENDATION_QTY_OWNER` | `KMREC.generateOrderPlanningRecommendation` → `totalRecommendedQty`; cartonized once by `KMCALC.calculateSuggestedOrderQty` | `supply-recommendation.js:145-149` |
+| `DRAFT_STORAGE_OWNER` | `KMRDV2` / `KMRDV2P` over `request_order_allocation_drafts` (flat V2, 53 columns) | `supply-planning-request-draft-v2.js:39-43` |
+| `RUN_OWNER` | `KMPR` over `recommendation_calculation_runs` (16 columns, 7 frozen stages) | `supply-planning-persistence-repository.js:31-40` |
+| `OPERATOR_DECISION_OWNER` | `KMRDV2.applyTierEdit` → `tN_order_qty` + `tN_user_edited`; **never** `tN_recommended_qty` | `supply-planning-request-draft-v2.js:141-150` |
+
+```
+NEW_OWNER_CREATED = NO      (every row above already existed before S5)
+```
+
+---
+
+## §42. Current data shape (§2) — audited, not inferred
+
+### 42.1 `order_planning_gap` — 24 columns
+
+```
+PRIMARY KEY   none (a Sheet tab; no surrogate id)
+BUSINESS KEY  company | country | marketplace | sku          (GAP_KEY_COLS_, 43_:53)
+WRITE OWNER   43_ gapUpsertByKey_ — latest-state UPSERT, no history, no duplicate
+READ OWNER    KMREC, request-order.js, 47_ generation job
+LIFECYCLE     overwritten in place per materialization run; calculated_at / updated_at are batch write stamps
+FIELDS        company, country, marketplace, sku, calculation_status, calculation_month,
+              t1..t4 { _month, _gap_qty, _suggested_qty }, note, calculated_at, updated_at,
+              factory_available_qty_snapshot, reallocation_in_qty_snapshot, reallocation_out_qty_snapshot
+```
+
+**Three facts here govern the whole mapping, and each contradicts a natural reading of the field names.**
+
+**(a) There is no `calculation_run_id` on this table.** `43_` upserts row by row keyed on the business key.
+`supply-planning-snapshot-freshness.js:38-40` states it in the source: *"The materialized table carries no run_id
+column … so 'this run finished' cannot be read off a row."* Any mapping that joins a gap row to a run by id is
+therefore fiction.
+
+**(b) There is no `destination_warehouse_id`, and on this mainline there cannot be one.** In the monthly
+MONTHLY_ORDER path `destinationWarehouseId` is accepted only as **deprecated compatibility input**, recorded on
+the result and *"NEVER used to drive fanout"* (`42_:60-63`, `:85`). A `platform_fulfilled` SKU expands to exactly
+one MARKETPLACE line with no warehouse at all (`42_:927`); a `self_fulfilled` SKU expands to several WAREHOUSE
+lines whose per-tier quantities `43_:167` then **sums into one row** — the warehouse axis is collapsed before
+persistence, deliberately.
+
+**(c) `tN_gap_qty` is the gap AFTER coverage, not before it.** Overseas and Factory coverage are folded into the
+single KMTPP **opening supply** (`42_:458-463`), so the residual's coverage terms are pinned to literal zero and
+`residualOrderNeedQty === destinationGapQty === remainingGapQty` (`42_:505-507`). `starting_gap_qty` and
+`remaining_shortage` are **not two stored columns — they are the same one**, and the pre-coverage number is
+nowhere on the row.
+
+### 42.2 `request_order_allocation_drafts` — flat V2, 53 columns
+
+```
+PRIMARY KEY   request_allocation_draft_id = RD::MONTHLY_ORDER::<YYYY-MM>::<sorted scopeKey>
+BUSINESS KEY  recommendationType | planning_cycle | company | country | marketplace | sku | draft_purpose
+WRITE OWNER   KMRDV2P (plan) -> KMPR (apply, under the optimistic token + LockService)
+LIFECYCLE     header status draft | partially_submitted | submitted | cancelled;
+              tier status  draft | submitted | cancelled;  T1..T3 only (T4 never persisted)
+```
+
+The fields §3 asks about **already live here, by name**:
+
+| ASKED | LIVES AS | EVIDENCE |
+|---|---|---|
+| recommended qty | `tN_recommended_qty` | `:36`, `:109` |
+| operator qty | `tN_order_qty` | `:37`, `:110` |
+| user edited | `tN_user_edited`, `tN_user_edited_by` | `:36-37`, `:150` |
+| draft version | `draft_version` | `:41` |
+| run lineage | `calculation_run_id`, `formula_version`, `calculated_at`, `source_data_as_of` | `:41-42` |
+
+`state` does **not** live here as a recommendation state. `tN_status` is a *submission lifecycle*
+(`draft|submitted|cancelled`), and the header `status` is its roll-up. Neither is the S5 recommendation state.
+
+### 42.3 `recommendation_calculation_runs` — 16 columns
+
+```
+PRIMARY KEY   calculation_run_id
+BUSINESS KEY  draft_id + planning_cycle + business_scope_key + draft_version
+WRITE OWNER   KMPR.applyPersistencePlan (stage journal)
+LIFECYCLE     run_status  RUNNING | PARTIAL | COMPLETED | FAILED
+              current_stage over the FROZEN 7-stage sequence
+              RUN_METADATA -> HEADER -> LINES -> RECONCILE -> LINEAGE -> TOTALS -> COMPLETED
+RELATIONSHIP  draft_id -> request_order_allocation_drafts.request_allocation_draft_id  (1 draft : N runs)
+              NO relationship to order_planning_gap — there is no run id on the gap row (§42.1a)
+```
+
+---
+
+## §43. Mapping (§3) — with the three fields that cannot be filled
+
+`AUTHORITY` is who may set the value. `PERSISTED` means a column exists today.
+
+| TARGET_FIELD | SOURCE_OWNER | SOURCE / DERIVATION | NULLABILITY | P/D | AUTHORITY |
+|---|---|---|---|---|---|
+| `master_sku` | gap | `order_planning_gap.sku` (the gap table stores the MASTER sku; `site_sku` is not on it) | NOT NULL | P | SKU master |
+| `company` | gap | `.company` | NOT NULL | P | scope |
+| `destination_warehouse_id` | — | **NOT_AVAILABLE** — deprecated on this mainline (§42.1b) | — | — | — |
+| `planning_cycle` | draft | `request_order_allocation_drafts.planning_cycle` (`YYYY-MM`) | NOT NULL | P | scheduler |
+| `required_by_date` | — | **NOT_AVAILABLE as a date** — the monthly grain stores `tN_month` (`YYYY-MM`) only | — | D | see §43.1 |
+| `starting_gap_qty` | — | **NOT_AVAILABLE** — the stored gap is post-coverage (§42.1c) | — | — | — |
+| `own_supply_used` | KMTPP | `composition.siteStockQty` — computed at `42_:463`, **never persisted** | — | — | NOT_AVAILABLE |
+| `cross_company_supply_used` | — | see §43.2 — the name does not match the stored number | — | — | corrected |
+| `reallocated_in_supply_used` | §41 KMFSR | `reallocation_in_qty_snapshot` | nullable (MISSING != 0) | P | KMFSR |
+| `factory_supply_used` | §41 identity | `MAX(0, factory_available_qty_snapshot − reallocation_out_qty_snapshot + reallocation_in_qty_snapshot)` — the `43_:565` identity, all three operands persisted | nullable | D | KMFSR |
+| `committed_supply_used` | KMOOR | folded into KMTPP incoming; not separable from a stored column | — | — | NOT_AVAILABLE |
+| `remaining_shortage` | KMTPP | `Σ tN_gap_qty` over T1–T3 (= `residualOrderNeedQty`, §42.1c) | nullable | P | KMTPP |
+| `recommendation_type` | **derived** | §45 ordered rule over already-authoritative values | NOT NULL | D | KMREC |
+| `recommendation_qty` | KMREC | `totalRecommendedQty` = `KMCALC.calculateSuggestedOrderQty(Σ raw T1–T3 gap, upc)` | nullable when UPC missing | D | KMREC |
+| `source_company` | — | **NOT_AVAILABLE** — and §43.2 shows it would be the receiver's own company anyway | — | — | — |
+| `source_warehouse_id` | §41 ledger | present in `transferLedger.sourceWarehouseId`, **discarded at `43_:567`** (reduced to a count) | — | — | NOT_AVAILABLE |
+| `reason_tokens` | **derived** | §46, evidence-gated | may be empty | D | KMREC |
+| `source_refs` | lineage | `calculation_run_id` + gap business key + `calculated_at` fingerprint | nullable | D | KMREC / KMPR |
+| `state` | KMREC | `STATUS` ∈ `READY | NO_ACTION | BLOCKED` | NOT NULL | D | KMREC |
+| `user_edited` | draft | `tN_user_edited` | NOT NULL | P | operator |
+| `draft_version` | draft | `draft_version` | NOT NULL | P | KMPR |
+| `calculation_run_id` | draft / run | `request_order_allocation_drafts.calculation_run_id` → `recommendation_calculation_runs` | NOT NULL | P | KMPR |
+
+### §43.1 `required_by_date` — honest at the grain that exists
+
+The monthly mainline's tier grain is a **month**, not a date. A `required_by_date` does exist inside the engine
+— `42_:627` passes one to KMCALC and `KMFSR` sorts receivers on it (`supply-planning-surplus-reallocation.js:170`)
+— but it is a *within-run* value, never persisted per tier.
+
+```
+REQUIRED_BY_DATE_PERSISTED     = NO
+REQUIRED_BY_DATE_TIER_GRAIN    = MONTH (tN_month, YYYY-MM)
+SYNTHESISING_A_DAY_FROM_A_MONTH = FORBIDDEN
+```
+
+Choosing a day-of-month would be inventing business policy. `tN_month` is exposed as the honest grain and the
+field is reported `NOT_AVAILABLE` at day precision.
+
+### §43.2 Correction — `reallocation_in_qty_snapshot` is **not** cross-company
+
+Part II §27 mapped `cross_company_supply_used` to `reallocation_in_qty_snapshot`, and the frozen §24 token set
+names the branch `CROSS_COMPANY_REALLOCATION`. **The stored number is intra-company.** `43_:542` groups §41
+receivers as `var g = r.company + '||' + r.sku;` — every donor and receiver in a KMFSR group shares one company,
+so a §41 transfer can never cross a company boundary.
+
+Cross-company arbitration is a **different, earlier** step: the R2G-B pre-pass (`43_:573-620`) allocates a
+contended physical Factory pool once across companies via `KMAR`. Its outcome lands inside
+`factory_available_qty_snapshot` as part of the *initial* allocation — and **whether a SKU was contended is not
+persisted**, so true cross-company usage cannot be read back from any stored column.
+
+```
+S5_R2_CROSS_COMPANY_FIELD_NAME = SUPERSEDED_BY_S5_R3_EVIDENCE
+CROSS_COMPANY_SUPPLY_USED      = NOT_AVAILABLE   (contention flag not persisted)
+REALLOCATED_IN_SUPPLY_USED     = AVAILABLE       (reallocation_in_qty_snapshot, intra-company)
+```
+
+The token rename this forces is §46.1. Parts I–III are **not** rewritten; the correction is recorded here, in the
+same way S5-R2A recorded S5-R1's contention premise.
+
+---
+
+## §44. Do not recompute (§4)
+
+Every mapped value in §43 is either read from a stored column or derived by an identity over stored columns.
+No slice in §50 calls `KMTPP`, `KMMSA`, `KMALLOC`, `KMAR`, `KMFSR` or a forecast reader.
+
+```
+RECOMPUTES_FORECAST                = NO
+RECOMPUTES_GAP                     = NO
+RERUNS_ALLOCATION                  = NO
+SUBTRACTS_COVERAGE_AGAIN           = NO     (see the two-sided guard below)
+RECALCULATES_RECOMMENDATION_QTY    = NO     (KMREC remains the only producer of the actionable total)
+SECOND_CALCULATION_PATH_COUNT      = 0
+```
+
+**One owner of the formula, several callers — and that is the intended shape.** The first version of this
+round's probe asserted a single *caller* of `KMCALC.calculateSuggestedOrderQty` and failed against four real
+ones (`supply-recommendation.js`, `supply-planning-destination-runtime.js`, `supply-planning-horizon-projection.js`,
+`supply-planning-source-facts.js`). The probe was wrong, not the repo: each of those **delegates** to the frozen
+owner, and per-tier cartonizing for display is explicitly legitimate — what must never happen is summing
+per-tier rounded values into a total, which is why `KMREC` cartonizes the raw sum **once**
+(`supply-recommendation.js:14-18`).
+
+The invariant that actually carries the claim, and is what the suite now pins:
+
+```
+CARTON_CEILING_DEFINERS          = 1   (supply-planning-calculations.js)
+INLINE_CARTON_REIMPLEMENTATIONS  = 1   (supply-planning-recommendation-audit.js — READ-ONLY authority audit,
+                                        reproduces the published formula to EXPLAIN a discrepancy, computes no
+                                        planning quantity, names KMCALC as owner)
+```
+
+That one exception is **named rather than filtered**, so it stays a recorded decision instead of becoming a gap
+nobody can see.
+
+**DC-1 restated for the mapping layer.** Because coverage is folded into opening supply, the stored
+`tN_gap_qty` is already net of Overseas and Factory. A mapper that "helpfully" subtracts
+`factory_supply_used` from `remaining_shortage` would subtract the same supply twice. `factory_supply_used` is
+**explanatory only**: it may be displayed, and it may gate a reason token; it may never enter an arithmetic
+path that produces a quantity.
+
+---
+
+## §45. Action derivation (§5) — pure, and at the grain the data supports
+
+```
+ACTION_ENUM  = { REALLOCATE, NEW_ORDER, NO_ACTION, MANUAL_REVIEW }     (frozen, Part II §22)
+ACTION_GRAIN = ROW  (company, country, marketplace, sku) — NOT per tier
+```
+
+**Why the grain is the row and not the tier.** `reallocation_in_qty_snapshot` exists once per gap row, and
+`totalRecommendedQty` is a single cartonize-once figure over T1–T3 (`supply-recommendation.js:34-37`). There is
+no per-tier reallocation number anywhere in storage, so a per-tier `REALLOCATE` could not be evidenced. Tiers
+remain display and trace, exactly as `KMREC` already treats them.
+
+| ACTION | INPUT CONDITION | OUTPUT | EVIDENCE REQUIRED |
+|---|---|---|---|
+| `MANUAL_REVIEW` | `calculation_status !== 'READY'` | `MANUAL_REVIEW` | `calculation_status` verbatim; qty stays `null`, never `0` |
+| `MANUAL_REVIEW` | `READY`, actionable gap > 0, but `totalRecommendedQty === null` (`UNITS_PER_CARTON_NOT_AVAILABLE`) | `MANUAL_REVIEW` | `totalUnavailableReason` |
+| `REALLOCATE` | `READY` and `reallocation_in_qty_snapshot > 0` | `REALLOCATE` | the stored snapshot column |
+| `NEW_ORDER` | `READY`, no reallocation in, and `totalRecommendedQty > 0` | `NEW_ORDER` | `actionableGapQty > 0` + cartonized total |
+| `NO_ACTION` | `READY`, no reallocation in, `actionableGapQty <= 0` | `NO_ACTION` | all three actionable tier gaps ≤ 0 |
+
+Evaluated **in that order**. `REALLOCATE` is tested before `NEW_ORDER` because a line may be both; the
+reallocation is the part that must be acted on first, and a residual that survives it is carried in
+`recommendation_qty` with `RESIDUAL_SHORTAGE` + `NEW_ORDER_REQUIRED` in the tokens, so nothing is lost.
+
+`MISSING` is never `0`: a `BLOCKED` row yields `MANUAL_REVIEW` with a null quantity, never a zero that would
+read as "checked, nothing needed".
+
+```
+ACTION_DERIVATION_IS_PURE     = YES   (a pure function of one row + the existing KMREC DTO)
+ACTION_DERIVATION_MUTATES_STATE = NO
+ACTION_DERIVATION_IS_PERSISTED  = NO
+```
+
+### §45.1 The enum collides with two live enums — and must not be conflated
+
+`NO_ACTION` is already a member of two **different** live enums with a different meaning:
+
+| enum | member set | meaning | file |
+|---|---|---|---|
+| `KMREC.STATUS` | `READY`, `NO_ACTION`, `BLOCKED` | **readiness** of a recommendation | `supply-recommendation.js:31` |
+| `KMREX.STATUS` | `ACTION`, `PARTIAL`, `NO_ACTION`, `BLOCKED` | **coverage** of an execution draft | `supply-execution-handoff.js:35` |
+| S5 action | `REALLOCATE`, `NEW_ORDER`, `NO_ACTION`, `MANUAL_REVIEW` | **what to do** | frozen, Part II §22 |
+
+These are three axes that share one token. The S5 action is therefore **namespaced at the DTO level**
+(`recommendationAction`), never assigned to `dto.status`, and every test that greps for it matches a whole token
+in a named field — the S5-R1 `MANUAL_REVIEW` / `NEEDS_MANUAL_REVIEW` substring trap applies here verbatim.
+
+---
+
+## §46. Reason tokens (§6) — evidence, source, and when forbidden
+
+| TOKEN | NUMERIC / LINEAGE EVIDENCE | SOURCE | WHEN EMITTED | WHEN FORBIDDEN |
+|---|---|---|---|---|
+| `FACTORY_SUPPLY_APPLIED` | `factory_supply_used > 0` | §41 identity over 3 stored columns | that identity is computable and positive | any operand MISSING |
+| `FACTORY_SURPLUS_REALLOCATION_APPLIED` | `reallocation_in_qty_snapshot > 0` | stored column | strictly positive | MISSING, `0`, or negative |
+| `RESIDUAL_SHORTAGE` | `Σ tN_gap_qty` (T1–T3) `> 0` | stored columns | `calculation_status === 'READY'` and the sum is positive | status not `READY` |
+| `NEW_ORDER_REQUIRED` | `totalRecommendedQty > 0` | `KMREC` | the residual cartonizes to a positive order | UPC unavailable → total `null` |
+| `NO_ACTION_REQUIRED` | `actionableGapQty <= 0` | `KMREC` | `READY` and nothing actionable | status not `READY` |
+| `MANUAL_REVIEW_REQUIRED` | `calculation_status !== 'READY'` **or** UPC unavailable | stored column / `KMREC` | the action cannot be truthfully derived | a truthful action exists |
+| `FORWARD_VISIBILITY_ONLY` | `t4_gap_qty > 0` and T1–T3 sum ≤ 0 | stored columns | need appears only in T4 | any actionable tier positive |
+
+```
+TOKEN_WITHOUT_EVIDENCE_COUNT = 0
+```
+
+### §46.1 Three frozen tokens are withdrawn, and why that is not a weakening
+
+Part II §24 froze a nine-token set from the *branch names* of §22 rather than from stored evidence. Three of
+them cannot be emitted from any persisted value, and §6 of this round is explicit that a token may not exist
+because a branch name sounds plausible:
+
+| FROZEN TOKEN | DISPOSITION | REASON |
+|---|---|---|
+| `CROSS_COMPANY_REALLOCATION` | **renamed** → `FACTORY_SURPLUS_REALLOCATION_APPLIED` | §43.2 — the evidence is real, the name is not. The new name is the live code's own: `transferLedger.reason = 'FACTORY_SURPLUS_REALLOCATION'` (`supply-planning-surplus-reallocation.js:225`) |
+| `OWN_SUPPLY_APPLIED` | **withdrawn** | its cited evidence `own_supply_used` is never persisted (§43) |
+| `OVERSEAS_SUPPLY_APPLIED` | **withdrawn** | its cited evidence `allocatedOverseasQty` is never persisted (§43) |
+| `COMMITTED_SUPPLY_APPLIED` | **withdrawn** | not separable from a stored column (§43) |
+
+Withdrawn tokens are **not deleted from history** — they return automatically, with no contract change, if the
+three optional snapshot columns proposed in Part II §38 are ever added, because each withdrawal is stated as a
+missing *column*, not as a missing concept. `FORWARD_VISIBILITY_ONLY` is added because `KMREC` already computes
+and surfaces that exact distinction (`supply-recommendation.js:130-137`) and it was previously unnamed.
+
+```
+S5_R2_TOKEN_SET = SUPERSEDED_BY_S5_R3_EVIDENCE
+REASON_TOKEN_SET_SIZE = 7   (was 9: 3 withdrawn, 1 renamed, 1 added)
+```
+
+---
+
+## §47. Explanation fields currently dropped (§7)
+
+| FIELD | COMPUTED | PERSISTED | EMITTED | OWNER | LOSS BOUNDARY | CLASS |
+|---|---|---|---|---|---|---|
+| `composition.siteStockQty` | YES `42_:463` | NO | runtime DTO only | KMTPP | not written by `43_ gapOpMapFromLines_` | **C** |
+| `composition.allocatedOverseasQty` | YES `42_:463` | NO | runtime DTO only | KMMSA | same | **C** |
+| `composition.allocatedFactoryQty` | YES `42_:463` | **derivable** | yes | KMFSR | — | **A** (§41 identity) |
+| `factory_available_qty_snapshot` | YES | YES | yes | KMFSR | — | **A** |
+| `reallocation_in_qty_snapshot` | YES | YES | yes | KMFSR | — | **A** |
+| `reallocation_out_qty_snapshot` | YES | YES | yes | KMFSR | — | **A** |
+| `transferLedger[]` (donor lineage) | YES | NO | **no** | KMFSR | reduced to `transfers += ledger.length` at `43_:567` | **C** |
+| `requiredByDate` per tier | YES `42_:627` | NO | partial (`currentMonthRemaining` only) | KMCALC | monthly grain is a month | **D** |
+| contention flag (R2G-B) | YES `43_:649` | NO | no | KMAR | partition consumed, flag discarded | **C** |
+| `residualOrderNeedQty` | YES | YES (as `tN_gap_qty`) | yes | KMTPP | — | **A** |
+| pre-coverage gap | **NO** | NO | no | — | never computed as a separate number (§42.1c) | **D** |
+
+```
+EXPLANATION_FIELD_CLASSIFICATION =
+  A DERIVED_AT_READ_TIME          5
+  B SAFE_TO_PERSIST_IN_EXISTING   0
+  C NEEDS_SCHEMA_EXTENSION        4
+  D CANNOT_BE_TRUTHFULLY_EXPOSED  2
+```
+
+**No column is added by this round.** Class C is a list of what a future authorized round *could* add; class D
+is a statement that two of these are not recoverable by adding a column to `order_planning_gap` at all — the
+pre-coverage gap is not computed anywhere, and a day-precision required-by date does not exist at the monthly
+grain.
+
+---
+
+## §48. Storage decision (§8)
+
+```
+NEW_TABLE_REQUIRED        = NO      (reconfirmed — Part III §38 unchanged)
+SCHEMA_EXTENSION_REQUIRED = NO      for the frozen Phase-1 scope as mapped in §43
+DB_MIGRATION_REQUIRED     = NO
+```
+
+Action, reason tokens, staleness and `factory_supply_used` are all **derived**. Nothing in §43 needs a column to
+become truthful; the fields that need one are reported `NOT_AVAILABLE` instead of being invented, which is the
+whole point of the classification.
+
+The Part II §38 optional columns are **not re-proposed here**. They were listed once, are unchanged, and adding
+them is a separate authorized decision — restating a proposal each round is how a proposal quietly becomes a
+plan.
+
+```
+PERSISTED_FIELDS     = master_sku · company · country · marketplace · planning_cycle · remaining_shortage ·
+                       reallocated_in_supply_used · draft_version · calculation_run_id · user_edited ·
+                       tN_recommended_qty · tN_order_qty · tN_month · tN_status
+DERIVED_FIELDS       = recommendation_type · recommendation_qty · reason_tokens · state · source_refs ·
+                       factory_supply_used · stale
+NOT_AVAILABLE_FIELDS = destination_warehouse_id · required_by_date (day precision) · starting_gap_qty ·
+                       own_supply_used · cross_company_supply_used · committed_supply_used ·
+                       source_company · source_warehouse_id
+```
+
+---
+
+## §49. Identities, staleness, and the operator boundary (§9–§11)
+
+```
+RECOMMENDATION_ID = 'ORDER_PLANNING_GAP:' + company||country||marketplace||sku     (KMREC, live)
+DRAFT_ID          = RD::MONTHLY_ORDER::<YYYY-MM>::<sorted scopeKey>                (KMRDV2, live)
+                    scopeKey = company | country | draft_purpose | marketplace | sku  (alphabetical)
+RUN_ID            = recommendation_calculation_runs.calculation_run_id             (KMPR, live)
+                    fallback when a caller supplies none: 'RUN::' + draftId + '::v' + draftVersion
+GAP_ID            = company || country || marketplace || sku                       (GAP_KEY_COLS_ 43_:53, live)
+SOURCE_REF_FORMAT = '<product>#<company>||<country>||<marketplace>||<sku>#<calculated_at>'
+                    — this IS KMREC.fingerprint (supply-recommendation.js:69)
+
+NEW_IDENTITY_MINTED = NO
+```
+
+### §49.1 Staleness (§10) — already derived, already owned
+
+```
+STALE_DERIVATION = KMREC.isStale(dto, latestGapRow)
+                   := dto.sourceFingerprint !== fingerprint(sourceType, latestGapRow)
+                   i.e. the gap row's calculated_at advanced under a recommendation generated from an older one
+STALE_PERSISTED  = NO
+STALE_MUTATES_RECOMMENDATION = NO      (display only — request-order.js:4372 renders a banner and nothing else)
+```
+
+A `calculation_run_id` comparison was considered and rejected on evidence: `order_planning_gap` has no run id
+(§42.1a), so that comparison has no left-hand side. The fingerprint is what the data actually supports, and it
+is already live on both consuming pages.
+
+Schedule-aware freshness of the snapshot itself is a **separate** question with a separate owner, `KMSNF`
+(`supply-planning-snapshot-freshness.js`). S5 does not duplicate it.
+
+### §49.2 Operator edit boundary (§11) — enforced by live code at three sites
+
+```
+SYSTEM_VALUE_OWNER     = tN_recommended_qty   (KMREC -> KMRDV2.projectFlatDraftRow)
+OPERATOR_VALUE_OWNER   = tN_order_qty         (KMRDV2.applyTierEdit; defaults to the recommendation, independent after)
+FINAL_VALUE_RESOLUTION = tN_order_qty is the submitted quantity; the recommendation is never back-filled from it
+SYSTEM_RECALC_OVERWRITES_USER_EDIT = NO
+```
+
+| site | guarantee | evidence |
+|---|---|---|
+| `KMRDV2.applyTierEdit` | writes `order_qty` / `carton_qty` / `note` and stamps `user_edited`; **never touches `recommended_qty`** | `supply-planning-request-draft-v2.js:141-150` |
+| `KMRDV2.refresh` | `if (user_edited === true) return;` — an edited tier is skipped entirely | `:184` |
+| `KMRDV2.regenerate` | overwrites only with `confirmRegenerateOverUserEdits === true`, and then clears the flag rather than leaving a stale claim | `:200-203` |
+| `KMPR` line upsert | independently re-protects: edited **or legacy-unknown** rows have the user-qty column deleted from the write | `supply-planning-persistence-repository.js:331-349` |
+
+The defence is doubled by design — `KMPR` treats an *unknown* `user_edited` as protected (`:151`, *"conservative
+protect when unknown"*), which is the repo's `missing is never false` rule applied to an operator's decision.
+The optimistic `{draft_version, userEditFingerprint}` token (`:104`) makes a concurrent edit a **conflict**, not
+a silent overwrite.
+
+---
+
+## §50. Implementation slices (§14)
+
+Ordered so that each is independently revertible and none changes behaviour until the last.
+
+### Slice A — pure action + reason derivation
+
+```
+NAME            A · recommendationAction
+FILES           assets/js/core/supply-recommendation.js   (additive export only)
+ALLOWED_FILES   that file + its test
+DO_NOT_TOUCH    42_, 43_, KMTPP, KMCALC, KMMSA, KMFSR, KMAR, any draft/persistence module
+BEHAVIOR_CHANGE none — a new pure export; no existing return value changes
+DEPENDENCIES    none
+ACCEPTANCE      §45 truth table exhaustive; §46 token table exhaustive; pure (same input -> same output,
+                no clock, no RNG, no mutation of the input row); ACTION never written to dto.status
+ROLLBACK        delete the export (nothing consumes it yet)
+```
+
+### Slice B — explanation mapper
+
+```
+NAME            B · recommendationExplanation
+FILES           assets/js/core/supply-recommendation.js   (additive export only)
+ALLOWED_FILES   that file + its test
+DO_NOT_TOUCH    as Slice A
+BEHAVIOR_CHANGE none
+DEPENDENCIES    A
+ACCEPTANCE      factory_supply_used via the 43_:565 identity, null when any operand is MISSING;
+                NOT_AVAILABLE fields absent from the DTO rather than present-and-null-and-labelled;
+                no arithmetic path consumes factory_supply_used (DC-1)
+ROLLBACK        delete the export
+```
+
+### Slice C — read-model exposure
+
+```
+NAME            C · workspace read model
+FILES           47_api_v1_recommendation_generation.gs  OR  the request-order read path — ONE of them
+ALLOWED_FILES   the chosen file + its test
+DO_NOT_TOUCH    43_ gap materialization; any write path
+BEHAVIOR_CHANGE additive response fields only; no existing field changes type or meaning
+DEPENDENCIES    A, B
+ACCEPTANCE      response is additive under the existing schema gate; a BLOCKED row exposes MANUAL_REVIEW with
+                a null qty; stale is computed by KMREC.isStale and never stored
+ROLLBACK        remove the additive fields
+```
+
+### Slice D — operator-facing workspace integration
+
+```
+NAME            D · UI surfacing
+FILES           assets/js/pages/request-order.js
+ALLOWED_FILES   that file + its test
+DO_NOT_TOUCH    any core module; any handler
+BEHAVIOR_CHANGE visible — the action and its tokens are rendered
+DEPENDENCIES    C
+ACCEPTANCE      MANUAL_REVIEW renders as a refusal with its cause, never as a zero; the existing stale banner
+                is reused, not re-implemented; no new page-local recommendation state
+ROLLBACK        revert the render
+```
+
+### Slice E — downstream candidate mapping
+
+```
+NAME            E · Request Order candidate
+FILES           assets/js/core/supply-planning-request-draft-v2-persistence.js
+ALLOWED_FILES   that file + its test
+DO_NOT_TOUCH    PO handlers (13_), shipment handlers, shipment draft, carrier modules
+BEHAVIOR_CHANGE none in Phase 1 — mapping is defined and tested, not wired to an auto-create
+DEPENDENCIES    A
+ACCEPTANCE      AUTO_CREATE_REQUEST_ORDER / _PO / _SHIPMENT all NO; a MANUAL_REVIEW action produces no candidate
+ROLLBACK        revert the mapping
+```
+
+```
+IMPLEMENTATION_SLICE_COUNT = 5
+SLICES_AUTHORIZED_BY_THIS_ROUND = 0
+```
+
+---
+
+## §51. Downstream mapping and Phase-1 separation (§12–§13)
+
+`DRAFT_ALLOCATION_INPUT_MAPPING` — the live path, unchanged; S5 supplies the tier facts and nothing else:
+
+| SOURCE | TARGET | TRANSFORMATION | REQUIRED |
+|---|---|---|---|
+| gap `company/country/marketplace/sku` | `scope` | verbatim | required |
+| `planning_cycle` | `planning_cycle` | `normalizePlanningCycleMonthly` — `YYYY-MM` or throw | required |
+| `tN_month` | `tN_month` | verbatim | required |
+| `tN_suggested_qty` | `tN_recommended_qty` | verbatim (`nn()` floors MISSING to 0 at the draft boundary) | required |
+| — | `tN_order_qty` | defaults to the recommendation; operator-owned thereafter | required |
+| `units_per_carton` | `tN_carton_qty` | `deriveCarton(order_qty, upc)` | optional (null when UPC missing) |
+| run lineage | `calculation_run_id`, `formula_version`, `calculated_at`, `source_data_as_of` | verbatim | required |
+| **T4** | — | **dropped** — `tiersFromFactLines` skips any bucket outside T1–T3 | — |
+
+`REQUEST_ORDER_CANDIDATE_MAPPING` — `KMRDV2.explodeSendRequestLines`, live and unchanged: tiers with
+`order_qty > 0` and status not `cancelled` become `{sku, company, country, marketplace, request_bucket,
+request_month, requested_qty, units_per_carton, carton_qty, request_allocation_draft_id}`. It is driven by the
+**operator** quantity, never by the recommendation.
+
+```
+SHIPPING_REQUIRED_QTY_IS_PURCHASE_DEMAND = NO
+AUTO_CREATE_REQUEST_ORDER = NO    AUTO_CREATE_PO = NO    AUTO_CREATE_SHIPMENT = NO
+PHASE2_FIELD_OR_ACTION_COUNT = 0
+```
+
+No S5 field reads a shipping-required quantity, a carrier, a lane, a lead time or an ETA. `13_procurement_handlers.gs:2334`
+remains the separation of record: *"Writes ONLY purchase_orders / purchase_order_lines. NEVER touches request
+orders / shipments."*
+
+---
+
+## §52. Data safety (§16) and S5-R3 status
+
+```
+PRODUCTION_DATA_TABLES = order_planning_gap · request_order_allocation_drafts ·
+                         request_order_allocation_draft_lines · shipping_allocation_drafts ·
+                         shipping_allocation_draft_lines · recommendation_calculation_runs ·
+                         marketplace_skus · sku_details · factory_stock · purchase_orders
+TEST_DATA_TABLES       = none identified — no table in this path is test-only
+MIXED_DATA_TABLES      = request_order_allocation_drafts · shipping_allocation_drafts
+                         (carry demo-seeded rows alongside real operator drafts)
+```
+
+`shipping_allocation_draft_lines` held **real** duplicated operator rows at 11:18:11 / 11:19:53 / 11:20:07
+(`PRODUCTION_DATA_INTEGRITY_CLOSURE_F1-7N-FB-4B.md` §B.2). These tables are production, and the round's default
+stands: **real master and reference data is READ-ONLY.**
+
+| slice | WRITE_TEST_REQUIRED | SAFE_TEST_TARGET | PRODUCTION_WRITE_AUTHORIZATION_REQUIRED |
+|---|---|---|---|
+| A | NO | in-memory row fixtures | NO |
+| B | NO | in-memory row fixtures | NO |
+| C | NO | fake sheet set (`KMPR` fixture precedent) | NO |
+| D | NO | DOM fixture | NO |
+| E | NO | in-memory draft row | NO |
+
+No slice requires a production write. If a later round does, it needs its own explicit authorization — the
+Order and Shipment tables must not be assumed test-only, and this record says so before anyone needs it to.
+
+```
+S5_MAPPING_FREEZE_READY = YES
+NEXT_TASK = S5-R4 — first bounded runtime implementation slice (Slice A: pure action + reason derivation)
+```
+
+**End of Part IV.**
