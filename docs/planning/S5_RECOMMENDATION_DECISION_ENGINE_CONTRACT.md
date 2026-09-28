@@ -2288,7 +2288,7 @@ IS_KMREC_SHARED_NODE_ONLY   = NO
 
 FRONTEND_DEPLOY_REQUIRED = YES
 TOKEN_ROTATION_REQUIRED  = YES
-FINAL_TOKEN              = s5r4-action-reason-20260928     (rotated on index.html:479 only)
+FINAL_TOKEN              = s5r4-actionreason-20260928     (rotated on index.html:479 only)
 APPS_SCRIPT_SYNC_REQUIRED = YES
 APPS_SCRIPT_SYNC_SET      = 90_generated_supply_planning_bundle.gs
 BUNDLE_REBUILD_REQUIRED   = YES — rebuilt, deterministic (identical hash on two consecutive builds)

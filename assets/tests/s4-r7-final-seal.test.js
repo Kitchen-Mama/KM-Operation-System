@@ -268,7 +268,12 @@ ok(M.boot.bytes < 3.95 * 1024 * 1024, 'G2  BOOT_JS_BYTES under the S4-R6 ceiling
 eq(RO.staleAppTokenRefs(INDEX), [], 'G3  STALE_APPLICATION_TOKEN_REFS = 0');
 eq(RO.staleRouteAssetTokenRefs(APP), [], 'G3a and 0 among the route-owned assets');
 eq(RO.misplacedReleaseTokens(INDEX, APP), [], 'G4  MISPLACED_TOKEN_FAMILY_REFS = 0');
-eq(RO.currentAppToken(), 's4r7-finalseal-20260927', 'G5  the application token for this round');
+// G5 (repaired S5-R4): was `currentAppToken() === 's4r7-finalseal-20260927'`, which made THIS round's token
+// the permanent definition of "current" and failed the first later application round — the same
+// equality-with-now _release-order.js was created to end. What S4-R7 can own durably is that its own token
+// is registered and that the series has not moved BACKWARDS past it.
+ok(RO.tokenAtOrAfter(RO.currentAppToken(), 's4r7-finalseal-20260927'),
+  'G5  the application token is registered and at or after this round\'s', RO.currentAppToken());
 const idxTok = RO.parseIndexTokens(INDEX);
 ['assets/js/pages/request-order.js', 'assets/js/pages/sku-details.js',
  'assets/js/pages/shipping-history.js', 'assets/js/pages/request-order-draft.js',

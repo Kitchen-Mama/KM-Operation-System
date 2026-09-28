@@ -84,25 +84,64 @@ it, and proves nothing about ordering. The honest note stays in the test: `Objec
 
 ---
 
-## Two spelling seals collided with a legitimate rebuild
+## The release identity, and the three passes it took to get right
 
-KMREC ships **twice** — browser-served at `index.html:479` and bundled verbatim into Apps Script — so the
-bundle was rebuilt. Two suites then failed, and they were not the same kind of failure:
+KMREC ships **twice** — browser-served from `index.html` and bundled verbatim into Apps Script — and that one
+fact drove everything below. The full sweep had to run three times; each run found something the previous
+dependent-suite selection had missed, because these gates live in suites that never name KMREC.
 
-**`live-inventory-render-…-r4b-r3` §1.6 was RIGHT.** It refused a bundle whose content hash no longer matched
-the `63_` manifest — precisely the half-synced deployment it exists to catch. The manifest's expectation moved
-with the bundle, in the same commit.
+### The rebuild was not optional, and it forced a release cut
 
-**Two others were seals on a spelling**, and both were repaired using a pattern already in the repo:
+`H9` and `B5` require the committed bundle to be byte-reproducible from the approved builder, so a changed core
+module **must** be rebuilt. Deferring would also have left the SCHEDULED path calling the old derivation while
+the manual path called the new one — the exact drift this slice forbids. From there the chain is forced:
+
+```
+bundle rebuilt -> content hash moved -> 63_ declares that hash, so 63_ changed
+              -> E4: a changed manifest owner must move its own stamp
+              -> E2: 63_'s two symbols must agree
+              -> A4: the declared release must be the newest owner stamp
+```
+
+The repo had already ruled on this for R23: *"an id naming two different trees cannot answer the question it
+exists for."* R25 is unshipped — the ledger records the deployed backend still at **R13** — and this is not
+R25's tree, so the in-flight batch becomes **R26** and its owners carry it. Marching `01_`/`73_` is not the
+fault `C1` forbids: editing a stamp is a change to the file, so file and stamp land in the same commit, and
+both are owners of the same undeployed batch.
+
+### Four things I had wrong
+
+| what | I did | what was true |
+|---|---|---|
+| cache token scope | invented a bespoke per-file token | the repo keeps **one append-only list**; the newest entry IS the current token and a round rotates the whole family. S4-R7 changed 7 source files and rotated **51** tokens |
+| where tokens live | rotated `index.html` only | 8 more are route assets inside `app.js` — same family, different loader |
+| token shape | `s5r4-action-reason-20260928` | the series is `^[a-z0-9]+-[a-z0-9]+-\d{8}$` — two segments, not three. A three-segment token is unrecognisable as application-family |
+| generated artifacts | added `90_` to `RELEASE_OWNERS` | its identity is a content **hash**, so `C3` can never see it — that fixed `I1` and broke `C3`. It needs its own list |
+
+The generated-owner repair follows the suite's own precedent: it had already met this shape once and answered
+by **partitioning** (a deletion is not a copy) rather than widening the expected set. So `GENERATED_OWNERS` is
+checked by `I1`, which is about copying, and excluded from `C3`, which is about stamps.
+
+### Gates that were right, and seals that were not
+
+`live-inventory-render §1.6` and `controlled-no-action BP3/P7c` were **correct** — a manifest hash and an
+activation pin that lag the release refuse a healthy deployment. Both moved with the release.
+
+Four probes were seals on a *spelling* rather than on behaviour, and each was rebuilt to derive from the
+declaration:
 
 | probe | was | now |
 |---|---|---|
-| `recommendation-generation` B2 | grepped the literal stamp `kmrec-fm6r1-1` to prove KMREC is bundled — so any stamp bump breaks a test whose subject is bundling | derives the expected stamp from the loaded module, proving the bundle carries the **current** KMREC, not merely some KMREC |
-| `fc-summary-workspace-slices` E9 | hardcoded the bundle hash to assert *that round* performed no rebuild | asserts manifest and bundle **agree**, derived from both declarations — the same shape `E8.3` three lines above already uses for `01_router.gs` |
+| `recommendation-generation` B2 | grepped the literal stamp `kmrec-fm6r1-1` | derives from the loaded module — proves the bundle carries the **current** KMREC |
+| `fc-summary` E9 | hardcoded the bundle hash to assert *that round* did no rebuild | asserts manifest and bundle **agree**, the shape `E8.3` uses three lines above |
+| `s4-r7` G5 | `currentAppToken() === 's4r7-finalseal-20260927'` | `tokenAtOrAfter(...)` — the series may move forward, never back |
 
-E9's original claim is about a release that shipped long ago and cannot be re-verified from today's tree; as a
-permanent seal it would fail every future round that legitimately rebuilds. Both replacements are strictly
-stronger and never need editing again.
+`s4-r7 G5` is worth naming: `_release-order.js` exists *because* four suites had pinned a literal token and
+"would have failed the first time an APPLICATION round legitimately moved it". S4-R7 re-introduced that exact
+defect one round later, and mine was the round that hit it.
+
+One probe error — `product-strategy-final-usability` L4 failing to open a 110 KB file that is present — did not
+reproduce and is recorded as transient rather than explained away.
 
 ---
 
@@ -110,17 +149,19 @@ stronger and never need editing again.
 
 ```
 s5-r4-action-reason-derivation   74 passed / 0 failed   10/10 mutants
-dependent suites (every suite naming KMREC, the bundle, or the builder)   all exit 0
-s5-r1 · s5-r2 · s5-r2a · s5-r3   all exit 0
+every release-identity and KMREC/bundle-dependent suite   exit 0
+s5-r1 · s5-r2 · s5-r2a · s5-r3   exit 0
 
-FILES_CHANGED = 7
-  assets/js/core/supply-recommendation.js            the slice
-  assets/specs/.../90_generated_supply_planning_bundle.gs   rebuilt (deterministic: same hash twice)
-  assets/specs/.../63_api_v1_system_health.gs        manifest hash moved with the bundle
-  index.html                                         cache token rotated, that one file only
-  assets/tests/s5-r4-action-reason-derivation.test.js   new
-  assets/tests/recommendation-generation-f1-4b-fm6.test.js   seal repaired
-  assets/tests/fc-summary-workspace-slices-r3-r1.test.js     seal repaired
+FILES_CHANGED = 16
+  assets/js/core/supply-recommendation.js                   the slice
+  assets/specs/.../90_generated_supply_planning_bundle.gs   rebuilt (deterministic)
+  assets/specs/.../63_api_v1_system_health.gs               bundle hash + release id + own stamp
+  assets/specs/.../01_router.gs, 73_api_v1_pricing_write.gs owner stamps -> R26
+  assets/tools/apps-script-diagnostics/TEMP_AI_PLAN_...gs   activation pin -> R26
+  index.html (52 tokens), assets/js/app.js (8 route assets)
+  assets/tests/_release-order.js                            token appended to the series
+  4 test suites: 1 new, 3 seals repaired
+  2 docs
 
 RECOMMENDATION_OWNER_COUNT = 1    SECOND_CALCULATION_PATH_COUNT = 0
 SHIPPING_ACTION_COUNT = 0         PHASE2_ORCHESTRATION_IMPLEMENTED = NO
@@ -132,15 +173,15 @@ MANUAL_SCHEDULED_DERIVATION_DRIFT = 0
 
 ```
 IS_KMREC_BROWSER_SERVED = YES     IS_KMREC_APPS_SCRIPT_RUNTIME = YES
+RELEASE   F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25 -> R26   (R25 unshipped; deployed backend still R13)
 FRONTEND_DEPLOY_REQUIRED  = YES
-TOKEN_ROTATION_REQUIRED   = YES   FINAL_TOKEN = s5r4-action-reason-20260928
+TOKEN_ROTATION_REQUIRED   = YES   FINAL_TOKEN = s5r4-actionreason-20260928
 APPS_SCRIPT_SYNC_REQUIRED = YES
 APPS_SCRIPT_SYNC_SET      = 90_generated_supply_planning_bundle.gs · 63_api_v1_system_health.gs
+                          · 01_router.gs · 73_api_v1_pricing_write.gs
+                          (TEMP_AI_PLAN_ACTIVATION_CENSUS is a diagnostic, synced only if in use)
 DB_MIGRATION_REQUIRED     = NO
 ```
-
-Only the changed file's token moved. `atomic-release-cache-identity-f1-7n-fc-1a-r1-hf1` records the failure
-that avoids — a round that *"measured the token it had moved rather than the files it had changed"*.
 
 ```
 S5_ACTION_REASON_SLICE_SEAL = YES
