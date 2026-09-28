@@ -282,6 +282,14 @@ var PAGE_CSS_CHANGED_BY_LATER_ROUNDS = {
     'unstyled refusal is a refusal nobody sees, which reads as empty - the outcome the round ' +
     'counts as a defect. Nothing here is scoped to .psb-page and no Product Strategy selector was ' +
     'added, moved or removed.',
+  'assets/css/pages/request-order.css':
+    'S5-R5 - the recommendation VERDICT and its evidence. KMREC now derives an action and a closed set of '
+    + 'reason tokens, and the Request Order expand renders them; every class the render emits needed a rule, '
+    + 'because an unstyled state class ships as an invisible one - the same defect the two entries above '
+    + 'record. New selectors ONLY, all scoped to #request-order-section exactly as the existing .ro-reco-* '
+    + 'rules are, and no existing rule was edited: the five action labels, the two independent quantity '
+    + 'figures, and the collapsed reason list. Nothing here is scoped to .psb-page and no Product Strategy '
+    + 'selector was added, moved or removed.',
   'assets/css/pages/fc-overview.css':
     'FC-SUMMARY-R2B-A2-R3 - the FC Summary column width rules. They were scoped to ' +
     '#fc-summary-section rather than to a table, so the Regular tab 20-column plan (including a ' +

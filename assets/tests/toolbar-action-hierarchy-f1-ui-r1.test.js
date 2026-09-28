@@ -90,7 +90,14 @@ ok(REL_.staleAppTokenRefs(INDEX).length === 0,
 // F1-7N-UX-SITE-INVENTORY-FULFILLMENT-AWARE-COLUMNS-R1 superseded the toolbarui token with a newer one (the file is
 // cumulative — the toolbar CSS ships under whatever the current token is). Assert cache-busting is present + not stale.
 ok(/assets\/css\/pages\/inventory-replenishment\.css\?v=[A-Za-z0-9_-]+/.test(INDEX), 'inventory-replenishment.css is cache-versioned (token present)');
-ok(/assets\/css\/pages\/request-order\.css\?v=toolbarui-20260811/.test(INDEX), 'request-order.css cache token bumped');
+// S5-R5: this pinned the literal `toolbarui-20260811`, which is the exact defect the comment twelve lines
+// above describes and which line 92 already avoids for inventory-replenishment.css. The file is cumulative
+// and ships under whatever the current token is; S5-R5 appended the recommendation-action rules and rotated
+// it with the application family. The claim that matters is unchanged: the stylesheet is cache-versioned
+// and is not left behind on an older token.
+ok(/assets\/css\/pages\/request-order\.css\?v=[A-Za-z0-9_-]+/.test(INDEX), 'request-order.css is cache-versioned (token present)');
+ok(REL_.staleAppTokenRefs(INDEX).indexOf('assets/css/pages/request-order.css') === -1,
+  'request-order.css is not left behind on an older application token');
 
 console.log('\n----------------------------------------');
 console.log('TOOLBAR ACTION HIERARCHY (F1-UI-PLANNING-ACTION-HIERARCHY-R1): ' + pass + ' passed, ' + fail + ' failed');

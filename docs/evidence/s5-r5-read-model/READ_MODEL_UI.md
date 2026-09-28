@@ -94,7 +94,10 @@ interaction can gain a request through it.
 
 ---
 
-## Two tests failed, and both were right
+## Four tests failed, and every one was right
+
+Two came from the dependent run and two more from the sweep — and they were not the same kind of thing.
+
 
 **`s5-r4 G7/G8`** asserted that *nothing* read the derived fields. True when S5-R4A wrote it; false the moment
 this round shipped a read model. A test pinning "nobody reads it" would have to be deleted the first time
@@ -104,6 +107,21 @@ never **derive** it.
 **`home-boot H17`** caught `request-order.css`, changed this round and still served at `toolbarui-20260811`,
 dated 2026-08-11. That is exactly the failure `atomic-release-cache-identity` records — a file whose bytes moved
 served under a token a returning browser already holds. Rotated to the current application token.
+
+**`toolbar-action-hierarchy`** then pinned that same literal token. Its own comment, twelve lines above, spells
+out why that is wrong — *"was right until the first round that legitimately rotated the file, and then it failed
+while describing a correct tree"* — and the line directly above it already asks the series instead of a literal,
+for `inventory-replenishment.css`. The lesson had been learned in the same file and applied to every line but
+this one. Repaired to match its neighbour.
+
+**`product-strategy B6`** was **not** a seal, and was not repaired. It is an allow-list that requires any round
+changing another page's stylesheet to record a substantive reason (`B6c` enforces the length, `B6b` forbids
+exempting Product Strategy's own sheet). That is the mechanism working exactly as designed, so this round added
+its entry: new selectors only, scoped to `#request-order-section` like the existing `.ro-reco-*` rules, nothing
+existing edited, nothing touching `.psb-page`.
+
+Telling those two apart mattered. Weakening `B6` would have removed a real guard; declaring a reason to
+`toolbar` would have left a literal that breaks again on the next rotation.
 
 ---
 
