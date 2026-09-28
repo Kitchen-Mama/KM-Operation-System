@@ -180,3 +180,11 @@ CANONICAL_FAILURE_SET_CHANGED = NO   — byte-identical to the §0 baseline this
 The digest returning to its starting value is the useful fact here. Sweep 1 moved it (four suites), sweep 2
 moved it again (E4), and sweep 3 landed back on the number §0 supplied — so every line that fires now is one
 that fired before this round began.
+
+```
+S5_WRITE_EXECUTION_WIRING_SEAL = YES
+OPEN_S5_DEBT = production write smoke (deferred - rollback is non-deterministic, see above)
+```
+
+*(Recorded in S5-R8. The seal was reported in the round output and not written down here, which is the whole
+difference between a claim and evidence — S5-R8's gate had to check it and found only my own turn text.)*

@@ -3095,3 +3095,192 @@ So:
 §14 is explicit that authorization must not be requested when rollback is not deterministic, so it is not
 requested. The proposal is recorded in full so the operator can see exactly what would be asked for, and what
 would have to change first.
+
+---
+---
+
+# PART X — S5-R8 ORDERING MAINLINE CLOSING / INTEGRATION READINESS SEAL
+
+*Closing audit + bounded reconciliation. No production write, no new business rule, no schema change.
+Base `7d2e54b`.*
+
+---
+
+## §92. The mainline, owner by owner
+
+Each stage verified from live code this round, not carried from a prior report.
+
+```
+FORECAST_OWNER               KMTPP.projectTimePhasedSupply
+                             (chronological balance; 42_ calls it exactly once)
+GAP_OWNER                    43_ gapOpMapFromLines_ -> order_planning_gap  (one row builder)
+REALLOCATION_OWNER           KMFSR §41 reallocatePreallocatedFactorySupply,
+                             applied from 43_ gapOpApplyFactorySurplusReallocation_ (one application point)
+RESIDUAL_OWNER               42_ — residualOrderNeedQty = MAX(0, KMTPP.remainingGapQty − overseas − factory),
+                             cartonized ONCE through KMCALC.calculateSuggestedOrderQty -> tN_suggested_qty
+RECOMMENDATION_OWNER         KMREC  (ORDER_TOTAL_AUTHORITY = SUM_T1_T3_RAW_GAP_CARTONIZE_ONCE)
+READ_MODEL_OWNER             _opMatCache.bySku -> _roRecoByKey
+OPERATOR_UI_OWNER            request-order.js — _roRecoActionHtml render, handleRequestOrderAiPlan entry
+WRITE_PLAN_OWNER             KMRDV2P.planOperatorDecision -> planFlat
+WRITE_EXECUTION_OWNER        rpoFlatLockedApply_ (24_:155)
+REQUEST_ORDER_TRANSITION     66_ rosBuildWorkset_ + checksum -> 13_ handleCreateRequestOrderDraft_
+
+SECOND_CALCULATION_PATH_COUNT = 0     SECOND_WRITE_PATH_COUNT = 0
+```
+
+The one name that is a constraint rather than a label: `KMPR.applyPersistencePlanWithLock` still exists in 23_
+and drives the **legacy line tables**. Under the flat cutover MONTHLY must never reach it, and the seal suite
+asserts that neither the orchestrator nor the generation owner calls it. Confusing those two is the mistake
+S5-R5 made, and it is now a test rather than a memory.
+
+---
+
+## §93. Quantity authority, reconciled end to end
+
+| field | owner | grain | can write | can override |
+|---|---|---|---|---|
+| `remainingGapQty` | KMTPP | destination × tier-month | system | no |
+| `tN_gap_qty` | 43_ (Σ over lines) — **post-coverage** | scope × tier | system | no |
+| reallocation in/out snapshot | KMFSR §41 via 43_ | `company‖sku` group | system | no |
+| `tN_suggested_qty` | 42_ + KMCALC, over the residual | scope × tier | system | no |
+| `totalRecommendedQty` | KMREC — **display only** | scope | **never** | n/a |
+| `tN_recommended_qty` | 47_, copying `tN_suggested_qty` verbatim | draft × tier | system | no — refresh skips an edited tier |
+| `tN_order_qty` | operator (`applyTierEdit`); defaults to the suggestion on create | draft × tier | operator | **yes** |
+| Send `requested_qty` | `explodeSendRequestLines`, from `tN_order_qty` | send line | derived | no |
+
+```
+KMREC_TOTAL_IS_TIER_WRITE_SOURCE = NO     REALLOCATION_QTY_MERGED_INTO_ORDER_QTY = NO
+SECOND_QUANTITY_AUTHORITY_COUNT = 0
+```
+
+The two order-side authorities are **different numbers** and the seal exhibits it rather than asserting it:
+`upc = 12`, gaps 13 and 13 → KMREC's cartonize-once total is 36, the written tiers are 24 and 24. Writing the
+display total would persist a different quantity than the live generation path persists for the same row.
+
+---
+
+## §94. Action / write matrix
+
+```
+NEW_ORDER                 order-side draft eligible
+REALLOCATE_AND_NEW_ORDER  order-side draft eligible — ONLY the new-order quantity enters the draft
+REALLOCATE                no order-side draft write
+NO_ACTION                 no actionable order write
+MANUAL_REVIEW             no automatic actionable order write
+ACTION_WRITE_MATRIX_PASS = YES
+```
+
+The matrix is asserted against the KMREC enum itself, so an action added upstream and left unclassified fails
+the seal instead of falling through. `recommendationType` remains derived: the draft lifecycle vocabulary
+shares no member with the action enum, and no column exists to persist one.
+
+---
+
+## §95. Operator authority, and the one documented exception
+
+```
+AUTO_OPERATOR_DECISION_COUNT = 0   AUTO_CREATE_REQUEST_ORDER = NO
+AUTO_ISSUE_REQUEST_ORDER = NO      AUTO_CREATE_PO = NO
+DUPLICATE_OPERATOR_DISPATCH = 0
+```
+
+**The scheduled refresh** (45_/47_ trigger → 49_ → 48_, mode `SCHEDULED_REFRESH`) is a real non-operator entry
+and predates S5. What bounds it is asserted, not assumed: `refresh` skips any tier carrying `user_edited`, and
+nothing on that path names a Request Order or PO writer. A schedule may move the system's own suggestion; it
+may not take the operator's quantity and it may not issue anything.
+
+---
+
+## §96. Release coherence — and the correction this round owes
+
+§12 asked for the sync set derived from the **last deployed baseline**, and that is not the base the previous
+rounds reported against.
+
+```
+LAST RECORDED PRODUCTION EVIDENCE   build_id R13, at commit 3249749
+                                    (DEPLOYMENT_RELEASE_LOG.md — append-only; no later entry records a deploy)
+RELEASE-IDENTITY BASE used by R6/R7A   e583057 ("R25 starts here")
+```
+
+Those are different questions, and the earlier rounds answered the narrower one. Measured from the tree
+production is recorded to hold:
+
+```
+FINAL_APPS_SCRIPT_SYNC_SET  (12 to copy, 1 to delete — since R13)
+  COPY    01_router.gs · 04_marketplace_forecast_import.gs · 14_fc_write_handlers.gs ·
+          20_campaign_write_handlers.gs · 47_api_v1_recommendation_generation.gs ·
+          58_api_v1_fc_summary_workspace.gs · 59_api_v1_sku_details_workspace.gs ·
+          63_api_v1_system_health.gs · 72_api_v1_product_pricing_workspace.gs ·
+          73_api_v1_pricing_write.gs (new file) · 90_generated_supply_planning_bundle.gs
+  DELETE  TEMP_migrate_fc_target_rules_header_r2ba2.gs (retired)
+FINAL_FRONTEND_DEPLOY_SET   46 files — index.html, 6 stylesheets, and 39 js modules/pages
+FINAL_BACKEND_RELEASE       F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R29
+FINAL_APPLICATION_TOKEN     s5r4-actionreason-20260928   TOKEN_ROTATION_REQUIRED = NO
+```
+
+The per-round reports named **five** Apps Script files, correctly labelled "since R25". An operator following
+those and nothing else would copy five and be short seven, plus a retirement. The five-file set was never
+wrong about what it claimed; it was answering the release-identity question while the operator needs the
+deployment question, and only this closing round asked for the second.
+
+`TOKEN_ROTATION_REQUIRED = NO` is decided by the served-byte rule, not by age: the log's last recorded token is
+`tgtrehydrate-r2ba2r5f5-20260919`, and `s5r4-actionreason-20260928` appears nowhere in it — so no returning
+browser holds bytes under the current token and rotating it would be churn.
+
+**One limit on all of the above**: the ledger records what was *entered*. It cannot prove that R14–R24 were not
+deployed without a log entry. Only the operator knows what was actually pasted, and this set should be read as
+*what the ledger supports*, not as a claim about the live project.
+
+---
+
+## §97. Debt, carried rather than closed
+
+| debt | status |
+|---|---|
+| D-S5-1 … D-S5-9 business decisions | **CLOSED** — `UNRESOLVED_DECISION_COUNT = 0` |
+| recommendation action + reason derivation | **CLOSED** (R4/R4A) |
+| operator-facing read model | **CLOSED** (R5) |
+| write-boundary mapping | **CLOSED** (R6) |
+| write-execution wiring + write truth | **CLOSED** (R7A) |
+| production write smoke | **DEFERRED_TO_POST_S7_FATIGUE** — rollback is non-deterministic |
+| large S5 fatigue / stress | **DEFERRED_TO_POST_S7_FATIGUE** — operator decision (§11) |
+| eleven D-S5-8 snapshot fields — `own_supply_used`, `own_supply_qty_snapshot`, `cross_company_supply_used`, `overseas_supply_qty_snapshot`, `committed_supply_used`, `committed_supply_qty_snapshot`, `starting_gap_qty`, `destination_warehouse_id`, `required_by_date`, `source_company`, `source_warehouse_id` | **DEFERRED_TO_PHASE2** — operator decided DO NOT ADD NOW; `NOT_AVAILABLE`, enforced as a closed set by `s5-r3 §J` in both storage tables |
+| day-precision `required_by_date` on the gap grain | **DEFERRED_TO_PHASE2** (part of the eleven) |
+| `starting_gap_qty` reconstruction | **DEFERRED_TO_PHASE2** (part of the eleven) |
+| physical cross-company reservation (§41.1) | **DEFERRED_TO_PHASE2** |
+| pre-existing A0 §G.9 label-ban hit at `carrier-rate-card.js:840` | **NOT S5** — predates the series, carried |
+
+```
+BLOCKING_DEBT = none
+```
+
+None of the deferred items disappears by being deferred: each has a named future gate, and the eleven fields
+are the only ones a test would let back in silently — which is why `s5-r3 §J3` pairs each withdrawn token with
+its evidence column in **both** directions, so the withdrawal reverses itself automatically if the column ever
+lands.
+
+---
+
+## §98. The closing rule
+
+```
+1  business decisions frozen              YES   UNRESOLVED_DECISION_COUNT = 0
+2  one calculation owner                  YES   SECOND_CALCULATION_PATH_COUNT = 0
+3  one write owner                        YES   SECOND_WRITE_PATH_COUNT = 0
+4  no quantity-authority conflict          YES   SECOND_QUANTITY_AUTHORITY_COUNT = 0
+5  action/write matrix coherent            YES   covers the enum exactly
+6  operator authority preserved            YES   with the scheduled refresh documented, not hidden
+7  user edit preservation                  YES   survives refresh AND unconfirmed regenerate
+8  stale / idempotency contracts           YES   two independent guards, zero mutation on refusal
+9  write truth                             YES   four states, run against the real owner
+10 no Shipping execution leakage           YES   SHIPPING_TABLE_WRITE_COUNT = 0
+11 no deterministic P0/P1 S5 defect        YES   canonical failure set unchanged since the R7A baseline
+12 deferred tests explicitly carried       YES   §97
+
+S5_READY_FOR_INTEGRATION = YES
+S5_LARGE_FATIGUE_DEFERRED = YES
+FUTURE_FATIGUE_GATE = POST_S7_SYSTEM_FATIGUE_AND_WRITE_VALIDATION
+```
+
+Production smoke is not required for this seal, per §14: rollback is non-deterministic and the operator
+deferred large write/fatigue validation to the post-S7 gate.
