@@ -2909,3 +2909,189 @@ SHIPPING_WRITE_COUNT = 0   PHASE2_ORCHESTRATION_IMPLEMENTED = NO
 AUTO_CREATE_REQUEST_ORDER = NO   AUTO_CREATE_PO = NO   AUTO_CREATE_SHIPMENT = NO
 IMPLEMENTATION_CLASS = C — pure mapping ready; write execution blocked on operator authorization.
 ```
+
+---
+---
+
+# PART IX — S5-R7A WRITE EXECUTION WIRING + WRITE-TRUTH SEAL
+
+*The S5-R6 guard, wired onto the path that actually writes. No production write. Base `7898f36`.*
+
+---
+
+## §83. One eligibility owner, consulted where the write happens
+
+S5-R6 produced the rule and left it in a function nothing called. This round makes it an owner and puts it on
+the live path.
+
+```
+WRITE_ELIGIBILITY_OWNER       = KMRDV2P.actionAuthorizesOrderWrite      COUNT = 1
+MONTHLY_FLAT_WRITE_OWNER      = rpoFlatLockedApply_ (24_:155)           COUNT = 1
+LEGACY_PARALLEL_WRITE_PATH_COUNT = 0
+```
+
+It answers one question — does this action authorize an order draft write — and nothing else. Who authorized
+the write and whether the recommendation is current are separate questions with separate answers, asked by the
+caller that knows them. Collapsing all three into one predicate is how a refusal ends up naming the wrong
+reason, which is why the refusal precedence is frozen and mutation-tested.
+
+Two callers ask it: `planOperatorDecision` (the operator-decision path) and `generateMonthlyFlat` (the live
+gap-backed path). A test asserts the eligible-action set is spelled in exactly one file, and that no `.gs`
+consumer derives the verdict for itself.
+
+---
+
+## §84. The verdict is attached once, where the gap row still exists
+
+```
+recGenBuildGapDraftBody_ (47_)  →  KMREC.generateOrderPlanningRecommendation(gapRow, { unitsPerCarton: upc })
+                                →  body.recommendation = { action, sourceFingerprint, stale:false }
+```
+
+That builder is the only place a stored `order_planning_gap` row becomes a draft body, and **both** live
+entries pass through it: the manual AI Plan job (page → 48_ → 47_) and the scheduled driver (49_ → 48_ → 47_).
+So the verdict is produced once, by the canonical owner, and read as a value everywhere after.
+
+It fails closed. A project holding 47_ without the bundle answers `RECOMMENDATION_OWNER_UNAVAILABLE` and writes
+nothing, rather than persisting drafts with no eligibility verdict at all.
+
+```
+EXECUTION_RECALCULATES_RECOMMENDATION = NO   EXECUTION_RECALCULATES_GAP = NO   EXECUTION_RECARTONIZES = NO
+WRITE_PLAN_IS_PURE = YES
+```
+
+---
+
+## §85. What the guard does on the live path
+
+```
+NEW_ORDER · REALLOCATE_AND_NEW_ORDER   → planned and applied
+REALLOCATE · NO_ACTION · MANUAL_REVIEW → outcome NOT_ELIGIBLE, reason ACTION_AUTHORIZES_NO_ORDER
+unknown / absent action                → outcome NOT_ELIGIBLE, reason RECOMMENDATION_UNAVAILABLE
+stale recommendation                   → outcome STALE_RECOMMENDATION
+```
+
+In every refusal the measured result is **zero draft rows, zero run rows, and zero entries into the writer** —
+the guard runs before `planFlat`, so there is nothing to discard.
+
+A caller that carries no verdict behaves exactly as before. That is deliberate and tested: it is what keeps
+the pre-existing scheduled refresh working while the guard is live for everything that does carry one.
+
+---
+
+## §86. The defect the wiring surfaced
+
+Both refusals carry a reason `recGenSummarizeDraftResult_` did not recognise. It would have fallen through to
+its default and reported a correct, deliberate, zero-write outcome to the operator as **FAILED**.
+
+That is the R5C incident in a new place: there, every committed flat write was classified `GENERATION_FAILED`
+because its result shape was unrecognised, and the operator saw *Failed 99* over 41 rows that had committed.
+
+The repair maps both onto the **existing** `NOT_READY` status rather than inventing one, because 48_'s per-SKU
+code map answers anything it does not know with `F` for FAILED — so a new status would have reintroduced the
+same misreport one layer further down. The reason is not lost; it travels in `code`.
+
+```
+codeFor('NOT_READY') = 'G'    codeFor('SOMETHING_NEW') = 'F'
+```
+
+---
+
+## §87. Operator authority, stated exactly
+
+```
+OPERATOR_ACTION_OWNER = assets/js/pages/request-order.js
+OPERATOR_ACTION_NAME  = handleRequestOrderAiPlan  (AI Support → scope modal → _roRunAiPlanJob_)
+DOUBLE_CLICK_DUPLICATE_DISPATCH = 0   — `if (_roAiPlanBusy) return Promise.resolve(null)` returns before
+                                        dispatch, and the button is disabled in the same turn
+```
+
+**And the honest qualification this round owes.** There is a second entry that is not operator-initiated: the
+scheduled ORDER_PLANNING refresh (45_/47_ trigger → 49_ → the same 48_ job, mode `SCHEDULED_REFRESH`). It
+predates S5 and is deliberate. So the required value holds for the path S5 introduces, and not universally:
+
+```
+WRITE_CAN_START_WITHOUT_OPERATOR_ACTION = NO   for the operator-decision path (planOperatorDecision)
+                                        = YES  for the pre-existing scheduled DRAFT REFRESH, by design
+```
+
+What makes the second acceptable is not that it is old. It is that a refresh can only move system-suggestion
+columns — `refresh` skips any tier a user has edited — and that nothing on the path creates a Request Order, a
+PO or a shipment. A draft is a proposal; issuing it remains an operator act.
+
+---
+
+## §88. Concurrency, edits, idempotency — measured on the real path
+
+```
+STALE_WRITE_CAN_COMMIT = NO          refused before planning; 0 rows, 0 writer entries
+TOKEN_MISMATCH_CAN_COMMIT = NO       applyFlat returns TOKEN_MISMATCH; the tables are byte-identical after
+USER_EDIT_SURVIVES_RECALC = YES      order_qty 999 survives a refresh AND an unconfirmed regenerate
+SYSTEM_VALUE_REMAINS_COMPARABLE = YES  tN_recommended_qty still 60 beside it
+DUPLICATE_DRAFT_ROW_COUNT = 0   DUPLICATE_RUN_ROW_COUNT = 0   DUPLICATE_DOWNSTREAM_CANDIDATE_COUNT = 0
+```
+
+A replay is counted rather than hidden: `attempt_count` advances to 2 while the draft row and run row stay at
+one each.
+
+The quantity authority did not move. The R6 counterexample is carried forward and re-measured **through the
+real generate path**: `units_per_carton = 12`, gaps 13 and 13 → the written tiers are 24 and 24, summing to 48,
+while KMREC's cartonize-once total is 36 and appears in no column.
+
+---
+
+## §89. Write truth, run rather than described
+
+§J lifts the real `rpoFlatLockedApply_` out of 24_ and executes it against fakes for all four states.
+
+```
+committed + verified    → WRITE_COMMITTED_VERIFIED
+committed + readback ✗  → WRITE_COMMITTED_READBACK_FAILED + requiresReconciliation + committedDraftId
+token/dup conflict      → WRITE_REJECTED
+lock not acquired       → WRITE_NOT_STARTED, and zero write attempts
+FALSE_NOT_WRITTEN_CLAIM_COUNT = 0   AUTOREPLAY_ON_UNKNOWN = NO
+```
+
+The unknown state is none of the three confident answers, and `applyFlat` is entered exactly once per call.
+
+---
+
+## §90. Boundaries
+
+```
+AUTO_CREATE_REQUEST_ORDER = NO   AUTO_ISSUE_REQUEST_ORDER = NO   AUTO_CREATE_PO = NO
+SHIPPING_TABLE_WRITE_COUNT = 0   AUTO_CREATE_SHIPMENT = NO   PHASE2_ORCHESTRATION_IMPLEMENTED = NO
+WRITTEN_TABLES = request_order_allocation_drafts · recommendation_calculation_runs   (exactly two, both Ordering)
+
+DRAFT_TO_REQUEST_ORDER_TRANSITION =
+  operator presses Send Request → 66_ rosBuildWorkset_ (tier scope only; every other control is DISPLAY_ONLY)
+  → preview persists a workset checksum → operator confirms → the checksum must be presented back or it is
+  SEND_WORKSET_DRIFT → KMRDV2.explodeSendRequestLines over tiers with tN_order_qty > 0 and not cancelled
+  → 13_ handleCreateRequestOrderDraft_ under its own ScriptLock and ROEXEC-<sha256> execution key
+  → only then does a Request Order exist.
+```
+
+The candidate is driven by `tN_order_qty`, the operator value, and does not even carry the system suggestion.
+
+---
+
+## §91. Why R7B is not ready to be authorized
+
+```
+PRODUCTION_WRITE_AUTHORIZED = NO   REAL_DB_WRITE_TEST_COUNT = 0   PRODUCTION_ROWS_WRITTEN = 0
+PRODUCTION_SMOKE_READY = NO
+```
+
+The blocker is rollback, and it is a property of the design rather than an oversight. **The canonical write
+owner has no delete.** `applyFlat` appends or replaces; `rprWriteBack_` records that terminal rows are never
+removed because the pure module only supersedes; `rpoKeyedDeltaWrite_` writes changed and appended rows only.
+So:
+
+- an INSERT smoke cannot be undone through any canonical path — `cancelMonthlyFlat` leaves a cancelled row, which
+  is a different state, not the prior one;
+- an UPDATE smoke cannot be undone either — restoring the values through `editMonthlyFlat` advances
+  `draft_version` and stamps `user_edited`, so the post-restore row is not the pre-state.
+
+§14 is explicit that authorization must not be requested when rollback is not deterministic, so it is not
+requested. The proposal is recorded in full so the operator can see exactly what would be asked for, and what
+would have to change first.
