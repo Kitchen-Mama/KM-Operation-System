@@ -183,6 +183,25 @@ APPS_SCRIPT_SYNC_SET      = 90_generated_supply_planning_bundle.gs · 63_api_v1_
 DB_MIGRATION_REQUIRED     = NO
 ```
 
+## Sweep
+
+```
+run 1   8 suites · 20 lines · digest changed   release identity: token family, generated owner, stamps
+run 2   9 suites · 20 lines · digest changed   token SHAPE, activation pin, s4-r7 self-seal
+run 3   559 passed / 564 · canonical 5 · 13 lines · DIRTY 0 · clean
+
+CANONICAL_DIGEST = f809dca8d4e41954d98bb87ce0c2f9eb69c65fea9530acd030d639405bfc76b1
+CANONICAL_FAILURE_SET_CHANGED = NO
+```
+
+564 rather than 563 because this round added one suite. Every failure across runs 1 and 2 was a release-identity
+gate doing its job on my own change — none was a pre-existing defect, and none was worked around.
+
+The lesson is the same one S5-R2B recorded and I repeated here: **choosing dependent suites by name misses the
+gates that never mention your subject.** I selected suites naming KMREC, the bundle or the builder; every
+failure came from suites naming none of them. Only the sweep finds those, and only running it to green proves
+anything.
+
 ```
 S5_ACTION_REASON_SLICE_SEAL = YES
 OPEN_S5_DEBT = D-S5-9 ACTION_MULTIPLICITY — operator decision required
