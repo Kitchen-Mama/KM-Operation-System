@@ -39,15 +39,20 @@
   // ---- S5-R4 (Slice A): DERIVED recommendation ACTION + evidence-backed REASON TOKENS ---------------------
   // Both are DESCRIPTIVE. They read values this module already produced and values already stored on the gap
   // row; they compute no quantity, touch no total, and are never persisted (D-S5-2 / D-S5-4).
-  var ACTION = { REALLOCATE: 'REALLOCATE', NEW_ORDER: 'NEW_ORDER', NO_ACTION: 'NO_ACTION', MANUAL_REVIEW: 'MANUAL_REVIEW' };
+  var ACTION = { REALLOCATE: 'REALLOCATE', NEW_ORDER: 'NEW_ORDER',
+    REALLOCATE_AND_NEW_ORDER: 'REALLOCATE_AND_NEW_ORDER',   // D-S5-9
+    NO_ACTION: 'NO_ACTION', MANUAL_REVIEW: 'MANUAL_REVIEW' };
 
-  // WHY REALLOCATE IS NOT EMITTED IN THIS SLICE. The live §41 allocator has a first-class outcome
-  // SURPLUS_REALLOCATION_PARTIAL — a receiver that took surplus IN and is STILL short (measured: in 30,
-  // remaining 70). So at this grain 'reallocation happened' and 'an order is still needed' are BOTH true at
-  // once, and the frozen enum holds one action per row. Picking either one silently would hide the other, so
-  // the action is WITHHELD with a typed reason and the operator owns the multiplicity decision. The reason
-  // tokens below still carry the full evidence, so nothing is lost — only the single-label verdict is deferred.
-  var ACTION_UNAVAILABLE_MULTIPLICITY = 'ACTION_MULTIPLICITY_DECISION_REQUIRED';
+  // D-S5-9, RESOLVED. The live §41 allocator has a first-class outcome SURPLUS_REALLOCATION_PARTIAL — a
+  // receiver that took surplus IN and is STILL short (measured: in 30, remaining 70). S5-R4 withheld the
+  // action rather than silently pick a primary; the operator's ruling is that BOTH are true and both are
+  // named, so the enum gains REALLOCATE_AND_NEW_ORDER.
+  //
+  // IT NAMES TWO ACTIONS, IT DOES NOT MERGE THEIR QUANTITIES. There is deliberately no combined qty field:
+  // the reallocation quantity stays the §41 snapshot and the order quantity stays KMREC's cartonize-once
+  // total. Adding them would invent a number no owner produces — and they are not even the same kind of
+  // thing, one being supply already assigned and the other supply that must be bought.
+  var ACTION_UNAVAILABLE_MULTIPLICITY = null;   // retired with D-S5-9; kept as a name so nothing reads a stale string
 
   // FROZEN CLOSED SET, in FROZEN DECLARATION ORDER (S5-R3 §46). Emitted order is this array's order — never
   // object-key insertion accident, which is not a guarantee JS makes for a caller to rely on.
@@ -193,13 +198,32 @@
   function deriveRecommendationAction(row, dto) {
     if (!row || !dto) return null;
     if (dto.status === STATUS.BLOCKED) return { action: ACTION.MANUAL_REVIEW, unavailableReason: null };
+
+    // HAS_REALLOCATION is a statement about EVIDENCE, not about the world. A MISSING snapshot is not a zero
+    // and is never read as one: it means §41 recorded nothing for this receiver, so the action simply does
+    // not claim a reallocation. Absence removes a claim; it does not create an ambiguity, because the order
+    // side is decided by fields that are present.
     var inQ = reallocatedInQty(row);
-    if (inQ !== null && inQ > 0) return { action: null, unavailableReason: ACTION_UNAVAILABLE_MULTIPLICITY };
+    var hasReallocation = (inQ !== null && inQ > 0);
+
+    // HAS_NEW_ORDER must be KNOWN, not merely not-positive. totalRecommendedQty is null when units-per-carton
+    // could not be resolved — that is UNKNOWN, and 'REALLOCATE' would be asserting no order is needed. A row
+    // whose order side cannot be read is MANUAL_REVIEW whatever its reallocation says.
+    var total = dto.totalRecommendedQty;
+    if (total === null || typeof total !== 'number' || !isFinite(total)) {
+      return { action: ACTION.MANUAL_REVIEW, unavailableReason: null };
+    }
+    var hasNewOrder = total > 0;
+
+    if (hasReallocation && hasNewOrder) return { action: ACTION.REALLOCATE_AND_NEW_ORDER, unavailableReason: null };
+    if (hasReallocation) return { action: ACTION.REALLOCATE, unavailableReason: null };
+    if (hasNewOrder) return { action: ACTION.NEW_ORDER, unavailableReason: null };
+
+    // Neither: only NO_ACTION if the row is canonically non-actionable. KMREC decides that, not this
+    // function — a READY row with nothing to order that KMREC did NOT call NO_ACTION is contradictory, and
+    // fails CLOSED rather than reporting 'nothing to do' for a row nobody can explain.
     if (dto.status === STATUS.NO_ACTION) return { action: ACTION.NO_ACTION, unavailableReason: null };
-    // READY with no derivable total (units-per-carton unavailable): the action cannot be stated truthfully.
-    if (dto.totalRecommendedQty === null) return { action: ACTION.MANUAL_REVIEW, unavailableReason: null };
-    if (dto.totalRecommendedQty > 0) return { action: ACTION.NEW_ORDER, unavailableReason: null };
-    return { action: ACTION.MANUAL_REVIEW, unavailableReason: null };   // READY, not NO_ACTION, no positive total -> contradictory
+    return { action: ACTION.MANUAL_REVIEW, unavailableReason: null };
   }
 
   // Evidence, not verdict. Tokens are emitted from the numbers that support them and are therefore safe even
@@ -219,7 +243,12 @@
       if (typeof dto.totalRecommendedQty === 'number' && dto.totalRecommendedQty > 0) on.NEW_ORDER_REQUIRED = 1;
       if (dto.totalRecommendedQty === null) on.MANUAL_REVIEW_REQUIRED = 1;
       if (typeof gap === 'number' && isFinite(gap) && gap <= 0) {
-        on.NO_ACTION_REQUIRED = 1;
+        // NO_ACTION_REQUIRED means NOTHING is required, so it may not sit beside a reallocation. Before
+        // D-S5-9 a reallocating row carried no action at all and the clash was invisible; now that such a
+        // row is REALLOCATE, emitting 'no action required' next to it would assert more than the evidence
+        // supports — the exact fault D-S5-7 exists to prevent. The order side alone is RESIDUAL_SHORTAGE's
+        // and NEW_ORDER_REQUIRED's to describe.
+        if (!(inQ !== null && inQ > 0)) on.NO_ACTION_REQUIRED = 1;
         var t4 = dto.forwardVisibility ? num(dto.forwardVisibility.t4GapQty) : null;
         if (t4 !== null && t4 > 0) on.FORWARD_VISIBILITY_ONLY = 1;   // need exists, just not in an actionable tier
       }
@@ -279,9 +308,9 @@
     generateOrderPlanningRecommendation: generateOrderPlanningRecommendation,
     generateForRow: generateForRow, generateBatch: generateBatch, isStale: isStale,
     ACTION: ACTION, REASON_TOKENS: REASON_TOKENS.slice(),
-    ACTION_UNAVAILABLE_MULTIPLICITY: ACTION_UNAVAILABLE_MULTIPLICITY,
+    ACTION_UNAVAILABLE_MULTIPLICITY: ACTION_UNAVAILABLE_MULTIPLICITY,   // null since D-S5-9
     factorySupplyUsed: factorySupplyUsed,
     deriveRecommendationAction: deriveRecommendationAction, deriveReasonTokens: deriveReasonTokens,
-    VERSION: 'kmrec-s5r4-1'
+    VERSION: 'kmrec-s5r4a-1'
   };
 });

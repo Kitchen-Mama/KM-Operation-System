@@ -3,15 +3,14 @@
 // WHAT SHIPPED. Two derived, descriptive fields on the canonical KMREC order-planning DTO: an action and a
 // closed set of reason tokens. Nothing is persisted, no quantity is touched, no second engine exists.
 //
-// WHAT DID NOT SHIP, AND WHY IT IS THE MOST IMPORTANT THING HERE. `REALLOCATE` is NOT emitted. The live §41
-// allocator has a first-class outcome `SURPLUS_REALLOCATION_PARTIAL` — a receiver that took surplus IN and is
-// STILL short. §D below runs the REAL allocator and measures it (in 30, remaining 70), so the coexistence is
-// demonstrated rather than argued. The frozen enum carries one action per row, so emitting either label there
-// would hide the other half of the truth. The action is withheld with a typed reason and the operator owns
-// the decision; the tokens still carry the full evidence, so the row explains itself completely either way.
+// D-S5-9, RESOLVED (S5-R4A). The live §41 allocator has a first-class outcome `SURPLUS_REALLOCATION_PARTIAL`
+// — a receiver that took surplus IN and is STILL short. §D runs the REAL allocator and measures it (in 30,
+// remaining 70). S5-R4 withheld the action rather than silently pick a primary; the operator ruled that both
+// are true and both are named, so the enum gained `REALLOCATE_AND_NEW_ORDER` and the withhold is gone.
 //
-// The suite therefore does NOT mutate a REALLOCATE branch: faking a mutant over a branch that deliberately
-// does not exist would be theatre, and §16 of the round says so explicitly.
+// THE COMBINED ACTION NAMES TWO ACTIONS AND MERGES NO QUANTITY. §G proves no combined field was invented:
+// the reallocation quantity stays the §41 snapshot and the order quantity stays KMREC's cartonize-once total.
+// They are not even the same kind of thing — one is supply already assigned, the other supply to be bought.
 //
 // PURITY IS TESTED, NOT ASSERTED. §E runs each fixture repeatedly, compares deep-equal output, and checks the
 // input row is unmutated. §F pins token ORDER against the frozen declaration, because object-key order is not
@@ -85,8 +84,11 @@ function gen(r, mod) { return (mod || KMREC).generateOrderPlanningRecommendation
 section('A. one owner, one vocabulary');
 // =========================================================================================================
 
-eq(Object.keys(KMREC.ACTION).sort(), ['MANUAL_REVIEW', 'NEW_ORDER', 'NO_ACTION', 'REALLOCATE'],
-  'A1 RECOMMENDATION_TYPE_ENUM is the frozen four');
+eq(Object.keys(KMREC.ACTION).sort(),
+  ['MANUAL_REVIEW', 'NEW_ORDER', 'NO_ACTION', 'REALLOCATE', 'REALLOCATE_AND_NEW_ORDER'],
+  'A1 RECOMMENDATION_TYPE_ENUM is the frozen five (D-S5-9)');
+eq(KMREC.ACTION_UNAVAILABLE_MULTIPLICITY, null,
+  'A1a the S5-R4 withhold is retired — the constant is null, so nothing can read a stale reason string');
 eq(KMREC.REASON_TOKENS, ['FACTORY_SUPPLY_APPLIED', 'FACTORY_SURPLUS_REALLOCATION_APPLIED', 'RESIDUAL_SHORTAGE',
   'NEW_ORDER_REQUIRED', 'NO_ACTION_REQUIRED', 'MANUAL_REVIEW_REQUIRED', 'FORWARD_VISIBILITY_ONLY'],
   'A2 the closed token set, in its frozen declaration order');
@@ -127,7 +129,7 @@ var b = gen(row({ calculation_status: 'BLOCKED' }));
 eq([b.totalRecommendedQty, b.actionableGapQty], [null, null], 'B6 a BLOCKED row carries nulls, not zeros');
 
 // =========================================================================================================
-section('C. the withheld action — REALLOCATE is not emitted, and the withholding is typed');
+section('C. the combined action — both truths named, neither discarded');
 // =========================================================================================================
 
 var partial = row({ t1_gap_qty: 70, reallocation_in_qty_snapshot: 30,
@@ -135,22 +137,34 @@ var partial = row({ t1_gap_qty: 70, reallocation_in_qty_snapshot: 30,
 var covered = row({ reallocation_in_qty_snapshot: 30,
   factory_available_qty_snapshot: 0, reallocation_out_qty_snapshot: 0 });
 
-eq(act(partial), null, 'C1 reallocation + residual -> no action label is asserted');
-eq(why(partial), 'ACTION_MULTIPLICITY_DECISION_REQUIRED', 'C2 and the withholding carries a typed reason');
-eq(act(covered), null, 'C3 reallocation with no residual is withheld too — one rule, not a special case');
-eq(why(covered), 'ACTION_MULTIPLICITY_DECISION_REQUIRED', 'C4 same typed reason');
+eq(act(partial), 'REALLOCATE_AND_NEW_ORDER', 'C1 reallocation + residual -> both are named');
+eq(why(partial), null, 'C2 and nothing is withheld any more');
+eq(act(covered), 'REALLOCATE', 'C3 reallocation that covered the need -> REALLOCATE alone');
+eq(act(row({ t1_gap_qty: 55 })), 'NEW_ORDER', 'C4 order need with no reallocation evidence -> NEW_ORDER alone');
 
-// The withheld row still explains itself in full. That is what makes withholding acceptable rather than lossy.
+// The combined row explains itself in full — the action names two things, the tokens evidence both.
 eq(gen(partial).reasonTokens,
   ['FACTORY_SUPPLY_APPLIED', 'FACTORY_SURPLUS_REALLOCATION_APPLIED', 'RESIDUAL_SHORTAGE', 'NEW_ORDER_REQUIRED'],
-  'C5 the contended row still emits its complete evidence');
+  'C5 and carries the evidence for both halves');
 
-// REALLOCATE is declared in the frozen enum but never produced by this slice.
+// NO_ACTION_REQUIRED may not sit beside a reallocation. Before D-S5-9 a reallocating row had no action at all
+// and the clash was invisible; now that such a row is REALLOCATE, 'no action required' would assert more than
+// the evidence supports — the fault D-S5-7 exists to prevent.
+eq(gen(covered).reasonTokens, ['FACTORY_SUPPLY_APPLIED', 'FACTORY_SURPLUS_REALLOCATION_APPLIED'],
+  'C6 a REALLOCATE row does NOT claim that no action is required');
+eq(gen(row({})).reasonTokens, ['NO_ACTION_REQUIRED'], 'C6a while a genuinely idle row still does');
+
+// HAS_NEW_ORDER must be KNOWN, not merely not-positive: an unreadable order side cannot be called REALLOCATE.
+eq(act(row({ t1_gap_qty: 55, units_per_carton: '', reallocation_in_qty_snapshot: 30,
+  factory_available_qty_snapshot: 0, reallocation_out_qty_snapshot: 0 })), 'MANUAL_REVIEW',
+  'C7 reallocation beside an UNKNOWN order quantity is MANUAL_REVIEW, never REALLOCATE');
+
 var EVERY_FIXTURE = [row({}), row({ t1_gap_qty: 55 }), partial, covered, row({ calculation_status: 'BLOCKED' }),
   row({ t4_gap_qty: 500 }), row({ t1_gap_qty: 55, units_per_carton: '' }),
   row({ t1_gap_qty: 12, t2_gap_qty: 7, t3_gap_qty: 3 })];
-eq(EVERY_FIXTURE.map(act).filter(function (a) { return a === 'REALLOCATE'; }), [],
-  'C6 REALLOCATE is never emitted while the multiplicity decision is open');
+var VALID = Object.keys(KMREC.ACTION).map(function (k) { return KMREC.ACTION[k]; });
+ok(EVERY_FIXTURE.every(function (r) { return VALID.indexOf(act(r)) !== -1; }),
+  'C8 every fixture yields a member of the closed enum — no null, no invented value');
 
 // =========================================================================================================
 section('D. the coexistence is MEASURED from the live allocator, not assumed');
@@ -178,7 +192,25 @@ var asGap = row({ t1_gap_qty: A.remainingShortageQty, reallocation_in_qty_snapsh
 var asDto = gen(asGap);
 ok(asDto.totalRecommendedQty > 0 && asGap.reallocation_in_qty_snapshot > 0,
   'D4 at the KMREC grain the row carries a positive order need AND reallocation evidence');
-eq(asDto.recommendationAction, null, 'D5 so no single action is asserted for it');
+eq(asDto.recommendationAction, 'REALLOCATE_AND_NEW_ORDER', 'D5 so the action names both');
+
+// §4 case B, also driven by the REAL allocator: a donor that fully covers the receiver.
+var outB = KMFSR.reallocatePreallocatedFactorySupply({
+  masterSku: 'KM-1', calculationDate: '2026-09-28', unusedFactorySupplyQty: 0,
+  receivers: [
+    { demandKey: 'A', requiredByDate: '2026-10-10', allocationPriority: 1, projectedRequirementQty: 30,
+      eligibleFactoryWarehouseIds: ['W1'], initialAllocationBySource: { W1: 0 } },
+    { demandKey: 'B', requiredByDate: '2026-10-20', allocationPriority: 1, projectedRequirementQty: 0,
+      eligibleFactoryWarehouseIds: ['W1'], initialAllocationBySource: { W1: 30 } }
+  ]
+});
+var AB = (outB.receivers || []).filter(function (r) { return r.demandKey === 'A'; })[0];
+eq([AB.reallocatedInQty, AB.remainingShortageQty, AB.coverageReason], [30, 0, 'SURPLUS_REALLOCATION_COVERED'],
+  'D6 the allocator fully covers the receiver and names that outcome itself');
+eq(gen(row({ t1_gap_qty: AB.remainingShortageQty, reallocation_in_qty_snapshot: AB.reallocatedInQty,
+  factory_available_qty_snapshot: AB.initialFactoryAllocationQty,
+  reallocation_out_qty_snapshot: AB.reallocatedOutQty })).recommendationAction, 'REALLOCATE',
+  'D7 which maps to REALLOCATE alone — derived from the live outcome, not from a hand-made row');
 
 // =========================================================================================================
 section('E. purity and determinism');
@@ -197,7 +229,7 @@ ok(unmutated, 'E2 ACTION_DERIVATION_MUTATES_STATE = NO — no input row was modi
 
 // The pure functions are callable directly and agree with what the DTO carries.
 var dPartial = KMREC.deriveRecommendationAction(partial, gen(partial));
-eq([dPartial.action, dPartial.unavailableReason], [null, 'ACTION_MULTIPLICITY_DECISION_REQUIRED'],
+eq([dPartial.action, dPartial.unavailableReason], ['REALLOCATE_AND_NEW_ORDER', null],
   'E3 the exported pure derivation agrees with the decorated DTO');
 eq(KMREC.deriveReasonTokens(null, null), [], 'E4 a missing input yields no tokens rather than throwing');
 eq(KMREC.deriveRecommendationAction(null, null), null, 'E5 and no action');
@@ -259,6 +291,30 @@ var inv = KMREC.generateInventoryRecommendation({ company: 'ResTW', country: 'JP
   d45_gap_qty: 0, d45_suggested_qty: 0, d90_gap_qty: 0, d90_suggested_qty: 0 }, { now: 'T' });
 ok(!('recommendationAction' in inv), 'G3 the inventory DTO is unchanged — the slice is order-planning only');
 
+// §3 — THE COMBINED ACTION MERGES NO QUANTITY. This is the specific hazard of naming two actions at once:
+// someone adds reallocationQty + orderQty and invents a number no owner produces. The DTO must carry exactly
+// the two independent authorities and no third.
+var comb = gen(partial);
+eq(comb.totalRecommendedQty, 70, 'G5 NEW_ORDER_QTY stays KMREC\'s cartonize-once total');
+eq(partial.reallocation_in_qty_snapshot, 30, 'G5a REALLOCATION_QTY stays the §41 snapshot on the row');
+var COMBINED_NAMES = ['combinedQty', 'combinedActionQty', 'totalActionQty', 'reallocationPlusOrderQty',
+  'recommendationCombinedQty', 'actionQty'];
+eq(COMBINED_NAMES.filter(function (k) { return k in comb; }), [],
+  'G6 COMBINED_QUANTITY_FIELD_CREATED = NO');
+ok(!Object.keys(comb).some(function (k) { return comb[k] === 100; }),
+  'G6a and no field happens to equal 30 + 70 — the sum exists nowhere in the DTO');
+
+// §10 — CONSUMER AUDIT. Nothing reads the derived fields yet; that is the intended state after Slice A, and
+// it is RECORDED rather than fixed by inventing an integration. S5-R5 owns the read model.
+var CONSUMER_FILES = ['assets/js/pages/request-order.js', 'assets/js/pages/inventory-replenishment.js',
+  'assets/js/core/supply-execution-handoff.js', GS + '47_api_v1_recommendation_generation.gs'];
+var consumersReading = CONSUMER_FILES.filter(function (f) {
+  return /recommendationAction|reasonTokens/.test(code(read(f)));
+});
+eq(consumersReading, [], 'G7 UNKNOWN_ACTION_CONSUMER_COUNT = 0 — no consumer reads the action yet');
+ok(!CONSUMER_FILES.some(function (f) { return /REALLOCATE_AND_NEW_ORDER/.test(code(read(f))); }),
+  'G8 and none hardcodes the combined member either');
+
 // Persistence: neither field may appear in any storage header.
 var V2 = require(path.join(ROOT, CORE + 'supply-planning-request-draft-v2.js')).V2_HEADERS;
 var gapHdr = eval((/var OP_GAP_HEADERS_ = (\[[\s\S]*?\]);/.exec(code(read(GS + '43_api_v1_gap_materialization.gs'))) || [])[1]);
@@ -274,8 +330,9 @@ section('H. caller parity — every caller gets it from the owner, none derives 
 // generateBatch is the scheduled path; the manual page calls generateOrderPlanningRecommendation directly.
 // Both must carry the derivation, because it lives inside the generator rather than at a call site.
 var batch = KMREC.generateBatch('ORDER_PLANNING', [row({ t1_gap_qty: 55 }), partial], { now: 'T' });
-eq(batch.recommendations.map(function (d) { return d.recommendationAction; }), ['NEW_ORDER', null],
-  'H1 the scheduled generateBatch path carries the action');
+eq(batch.recommendations.map(function (d) { return d.recommendationAction; }),
+  ['NEW_ORDER', 'REALLOCATE_AND_NEW_ORDER'],
+  'H1 the scheduled generateBatch path carries the action, combined member included');
 ok(batch.recommendations.every(function (d) { return Array.isArray(d.reasonTokens); }),
   'H2 and the reason tokens');
 eq(gen(row({ t1_gap_qty: 55 })).recommendationAction, batch.recommendations[0].recommendationAction,
@@ -315,7 +372,7 @@ mut('J1 the NO_ACTION branch is removed', function () {
 
 mut('J2 the NEW_ORDER branch is removed', function () {
   var mod = loadMutated(REL,
-    "    if (dto.totalRecommendedQty > 0) return { action: ACTION.NEW_ORDER, unavailableReason: null };",
+    "    if (hasNewOrder) return { action: ACTION.NEW_ORDER, unavailableReason: null };",
     "    /* branch removed */");
   return gen(row({ t1_gap_qty: 55 }), mod).recommendationAction !== 'NEW_ORDER' && act(row({ t1_gap_qty: 55 })) === 'NEW_ORDER';
 });
@@ -368,17 +425,65 @@ mut('J7 the emitted order stops following the frozen declaration', function () {
     && m.slice().sort().join(',') === live.slice().sort().join(',');   // same members, different order
 });
 
-mut('J8 the multiplicity guard is dropped and a primary action is silently chosen', function () {
+mut('J8a the mixed branch collapses to REALLOCATE', function () {
   var mod = loadMutated(REL,
-    "    if (inQ !== null && inQ > 0) return { action: null, unavailableReason: ACTION_UNAVAILABLE_MULTIPLICITY };",
-    "    if (inQ !== null && inQ > 0) return { action: ACTION.REALLOCATE, unavailableReason: null };");
-  return gen(partial, mod).recommendationAction === 'REALLOCATE' && gen(partial).recommendationAction === null;
+    "    if (hasReallocation && hasNewOrder) return { action: ACTION.REALLOCATE_AND_NEW_ORDER, unavailableReason: null };",
+    "    if (hasReallocation && hasNewOrder) return { action: ACTION.REALLOCATE, unavailableReason: null };");
+  return gen(partial, mod).recommendationAction === 'REALLOCATE'
+    && gen(partial).recommendationAction === 'REALLOCATE_AND_NEW_ORDER';
+});
+
+mut('J8b the mixed branch collapses to NEW_ORDER', function () {
+  var mod = loadMutated(REL,
+    "    if (hasReallocation && hasNewOrder) return { action: ACTION.REALLOCATE_AND_NEW_ORDER, unavailableReason: null };",
+    "    if (hasReallocation && hasNewOrder) return { action: ACTION.NEW_ORDER, unavailableReason: null };");
+  return gen(partial, mod).recommendationAction === 'NEW_ORDER'
+    && gen(partial).recommendationAction === 'REALLOCATE_AND_NEW_ORDER';
+});
+
+mut('J8c REALLOCATE starts requiring a positive order quantity', function () {
+  var mod = loadMutated(REL,
+    "    if (hasReallocation) return { action: ACTION.REALLOCATE, unavailableReason: null };",
+    "    if (hasReallocation && hasNewOrder) return { action: ACTION.REALLOCATE, unavailableReason: null };");
+  return gen(covered, mod).recommendationAction !== 'REALLOCATE' && gen(covered).recommendationAction === 'REALLOCATE';
+});
+
+mut('J8d an unknown order quantity falls through to NO_ACTION instead of failing closed', function () {
+  var mod = loadMutated(REL,
+    "      return { action: ACTION.MANUAL_REVIEW, unavailableReason: null };\r\n    }\r\n    var hasNewOrder = total > 0;",
+    "      return { action: ACTION.NO_ACTION, unavailableReason: null };\r\n    }\r\n    var hasNewOrder = total > 0;");
+  var r = row({ t1_gap_qty: 55, units_per_carton: '' });
+  return gen(r, mod).recommendationAction === 'NO_ACTION' && gen(r).recommendationAction === 'MANUAL_REVIEW';
+});
+
+mut('J8e the combined action suppresses NEW_ORDER_REQUIRED', function () {
+  var mod = loadMutated(REL,
+    "      if (typeof dto.totalRecommendedQty === 'number' && dto.totalRecommendedQty > 0) on.NEW_ORDER_REQUIRED = 1;",
+    "      if (typeof dto.totalRecommendedQty === 'number' && dto.totalRecommendedQty > 0 && !(inQ !== null && inQ > 0)) on.NEW_ORDER_REQUIRED = 1;");
+  return gen(partial, mod).reasonTokens.indexOf('NEW_ORDER_REQUIRED') === -1
+    && gen(partial).reasonTokens.indexOf('NEW_ORDER_REQUIRED') >= 0;
+});
+
+mut('J8f the combined action suppresses the reallocation evidence', function () {
+  var mod = loadMutated(REL,
+    "    if (inQ !== null && inQ > 0) on.FACTORY_SURPLUS_REALLOCATION_APPLIED = 1;",
+    "    if (inQ !== null && inQ > 0 && !(dto.totalRecommendedQty > 0)) on.FACTORY_SURPLUS_REALLOCATION_APPLIED = 1;");
+  return gen(partial, mod).reasonTokens.indexOf('FACTORY_SURPLUS_REALLOCATION_APPLIED') === -1
+    && gen(partial).reasonTokens.indexOf('FACTORY_SURPLUS_REALLOCATION_APPLIED') >= 0;
+});
+
+mut('J8g a MISSING reallocation snapshot is read as a reallocation', function () {
+  var mod = loadMutated(REL,
+    "    var hasReallocation = (inQ !== null && inQ > 0);",
+    "    var hasReallocation = (inQ === null || inQ > 0);");
+  return gen(row({ t1_gap_qty: 55 }), mod).recommendationAction === 'REALLOCATE_AND_NEW_ORDER'
+    && act(row({ t1_gap_qty: 55 })) === 'NEW_ORDER';
 });
 
 mut('J9 a shipping action is introduced into the frozen enum', function () {
   var mod = loadMutated(REL,
-    "  var ACTION = { REALLOCATE: 'REALLOCATE', NEW_ORDER: 'NEW_ORDER', NO_ACTION: 'NO_ACTION', MANUAL_REVIEW: 'MANUAL_REVIEW' };",
-    "  var ACTION = { REALLOCATE: 'REALLOCATE', NEW_ORDER: 'NEW_ORDER', NO_ACTION: 'NO_ACTION', MANUAL_REVIEW: 'MANUAL_REVIEW', CREATE_SHIPMENT: 'CREATE_SHIPMENT' };");
+    "    NO_ACTION: 'NO_ACTION', MANUAL_REVIEW: 'MANUAL_REVIEW' };",
+    "    NO_ACTION: 'NO_ACTION', MANUAL_REVIEW: 'MANUAL_REVIEW', CREATE_SHIPMENT: 'CREATE_SHIPMENT' };");
   return Object.keys(mod.ACTION).indexOf('CREATE_SHIPMENT') >= 0 && Object.keys(KMREC.ACTION).indexOf('CREATE_SHIPMENT') === -1;
 });
 

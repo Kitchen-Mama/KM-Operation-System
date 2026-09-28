@@ -2315,3 +2315,173 @@ OPEN_S5_DEBT = D-S5-9  ACTION_MULTIPLICITY — REALLOCATE vs NEW_ORDER on one co
 
 NEXT_TASK = operator decision on D-S5-9, then S5-R5 — Recommendation read-model + operator-facing integration
 ```
+
+
+---
+---
+
+# PART VI — S5-R4A: D-S5-9 RESOLVED
+
+*Bounded completion of S5-R4. No quantity, allocation, schema, UI or downstream change. Base `273af9a`.*
+
+---
+
+## §60. D-S5-9 — ACTION MULTIPLICITY
+
+The operator ruled that the grain can truthfully require **both** an internal reallocation and a residual new
+order, and that neither may be discarded.
+
+```
+D_S5_9_ACTION_MULTIPLICITY = FROZEN
+RECOMMENDATION_TYPE_ENUM   = { REALLOCATE, NEW_ORDER, REALLOCATE_AND_NEW_ORDER, NO_ACTION, MANUAL_REVIEW }
+UNRESOLVED_DECISION_COUNT  = 0
+ACTION_MULTIPLICITY_DECISION_REQUIRED_POST = NO
+```
+
+`recommendationType` stays a single string — not an array — and the S5-R4 withhold is retired.
+`ACTION_UNAVAILABLE_MULTIPLICITY` is now `null` rather than deleted, so nothing can read a stale reason.
+
+### §60.1 Rules
+
+```
+HAS_REALLOCATION = reallocation_in_qty_snapshot > 0      (evidence, not a claim about the world)
+HAS_NEW_ORDER    = KMREC totalRecommendedQty > 0         (must be KNOWN, not merely not-positive)
+
+R and not N            -> REALLOCATE
+not R and N            -> NEW_ORDER
+R and N                -> REALLOCATE_AND_NEW_ORDER
+neither, and KMREC called the row NO_ACTION -> NO_ACTION
+anything else          -> MANUAL_REVIEW   (fails closed)
+```
+
+**`HAS_NEW_ORDER` must be known.** `totalRecommendedQty` is `null` when units-per-carton could not be resolved.
+That is UNKNOWN, and `REALLOCATE` would be asserting that no order is needed — so a row whose order side cannot
+be read is `MANUAL_REVIEW` whatever its reallocation says.
+
+**A MISSING reallocation snapshot is never read as a zero.** It means §41 recorded nothing for this receiver, so
+the action simply does not claim a reallocation. Absence removes a claim; it does not create an ambiguity,
+because the order side is decided by fields that are present.
+
+**The last branch fails closed.** Neither side actionable, but KMREC did *not* call the row `NO_ACTION`, is a
+contradiction — and "nothing to do" is the dangerous answer for a row nobody can explain.
+
+### §60.2 The combined action merges no quantity
+
+```
+REALLOCATION_QTY_OWNER = §41 reallocation_in_qty_snapshot   (unchanged)
+NEW_ORDER_QTY_OWNER    = KMREC totalRecommendedQty          (unchanged)
+COMBINED_QUANTITY_FIELD_CREATED = NO
+RECOMMENDATION_QTY_OWNER_CHANGED = NO   REALLOCATION_QTY_OWNER_CHANGED = NO
+```
+
+This is the specific hazard of naming two actions at once: someone adds the two numbers and invents a quantity
+no owner produces. They are not even the same kind of thing — one is supply **already assigned**, the other
+supply that must be **bought**. The suite asserts no field equals their sum.
+
+### §60.3 Verified against the live allocator
+
+§4's cases A and B are derived from real `KMFSR` output, not hand-made rows:
+
+| case | live allocator | action |
+|---|---|---|
+| A | `in 30 · short 70 · SURPLUS_REALLOCATION_PARTIAL` | `REALLOCATE_AND_NEW_ORDER` |
+| B | `in 30 · short 0 · SURPLUS_REALLOCATION_COVERED` | `REALLOCATE` |
+| C | no reallocation, qty 60 | `NEW_ORDER` |
+| D | nothing actionable | `NO_ACTION` |
+| E | not READY | `MANUAL_REVIEW` |
+
+The allocator's own `coverageReason` names both reallocation outcomes, so the enum tracks a distinction the
+canonical owner already made.
+
+---
+
+## §61. One token had to be corrected — `NO_ACTION_REQUIRED`
+
+Case B surfaced a real defect. A covered row came out as `REALLOCATE` carrying `NO_ACTION_REQUIRED` — plainly
+self-contradictory. The token's evidence (`actionableGapQty <= 0`) is only about the **order** side, while its
+name asserts that *nothing* is required.
+
+Before D-S5-9 this never showed, because such a row had no action at all. It is the same fault D-S5-7 exists to
+prevent — a name asserting more than its evidence — so the token is now emitted only when there is no
+reallocation either. The closed set stays at seven; no `REALLOCATE_AND_NEW_ORDER_REASON` was invented.
+
+```
+MIXED_ACTION_REASON_TOKENS = FACTORY_SUPPLY_APPLIED · FACTORY_SURPLUS_REALLOCATION_APPLIED ·
+                             RESIDUAL_SHORTAGE · NEW_ORDER_REQUIRED
+TOKEN_WITHOUT_EVIDENCE_COUNT = 0
+```
+
+---
+
+## §62. Callers, consumers, boundaries
+
+```
+KMREC_CALLER_COUNT = 4        CALLERS_RECEIVING_ACTION = all ORDER_PLANNING paths (manual + scheduled)
+MANUAL_SCHEDULED_DERIVATION_DRIFT = 0        (the derivation lives inside the generator)
+
+STRICT_ACTION_CONSUMERS = 0   UNKNOWN_ACTION_CONSUMER_COUNT = 0   EXISTING_CONSUMER_REGRESSION_COUNT = 0
+```
+
+**Nothing reads `recommendationAction` or `reasonTokens` yet.** That is recorded, not fixed by inventing an
+integration — S5-R5 owns the read model. The suite asserts it, so the first real consumer is a deliberate act.
+
+```
+ACTION_PERSISTED = NO   NEW_TABLE_REQUIRED = NO   SCHEMA_EXTENSION_REQUIRED = NO   DB_MIGRATION_REQUIRED = NO
+SHIPPING_ACTION_COUNT = 0   AUTO_CREATE_REQUEST_ORDER/PO/SHIPMENT = NO   PHASE2_ORCHESTRATION_IMPLEMENTED = NO
+PRODUCTION_WRITE_REQUIRED = NO   PRODUCTION_ROWS_WRITTEN = 0
+```
+
+`REALLOCATE_AND_NEW_ORDER` means transfer **and** order. It does not mean ship: no carrier, shipment or PO is
+named anywhere in the owner.
+
+---
+
+## §63. Release — R27, because the rule says so
+
+§14 required inspecting the rule rather than assuming. `63_` records it across five precedents:
+
+> *"R22 has not shipped, so this is the SAME unshipped release with one more file in it — **and it takes a new
+> id** because R22 and R22-R1 are two different trees"* · *"R23 is SUPERSEDED AS A CANDIDATE and may not be
+> reused — its tree and this one differ, which is the ruling recorded for R7, R10 and R11 above, **each of them
+> likewise never deployed**."*
+
+Unshipped is explicitly **not** a licence to reuse. KMREC changed, so the bundle was rebuilt and its content
+hash moved; R26's tree and this one differ. **R26 -> R27.**
+
+```
+RELEASE    F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R27
+FINAL_TOKEN = s5r4-actionreason-20260928      (UNCHANGED — see below)
+APPS_SCRIPT_SYNC_REQUIRED = YES
+APPS_SCRIPT_SYNC_SET = 90_generated_supply_planning_bundle.gs · 63_api_v1_system_health.gs ·
+                       01_router.gs · 73_api_v1_pricing_write.gs
+FRONTEND_DEPLOY_REQUIRED = YES
+FRONTEND_DEPLOY_SET      = assets/js/core/supply-recommendation.js  (the only browser file this round changed)
+DB_MIGRATION_REQUIRED = NO
+```
+
+### §63.1 The token did NOT rotate, and that is deliberate
+
+The two identities answer different questions, and the repo states each hazard separately:
+
+| axis | question | hazard | rule applied |
+|---|---|---|---|
+| release id | which tree is deployed? | an id naming two trees cannot report a partial sync | never reuse — **explicitly including unshipped ids** |
+| cache token | must a browser refetch? | a browser keeps bytes it already holds | the token that was **published** must not be reused |
+
+`s5r4-actionreason-20260928` has never been pushed or deployed — `origin` is still at `2b82288` — so no browser
+holds anything under it, and the bytes it will first serve are these. Rotating would re-stamp 60 references to
+remove a hazard that does not exist. **Flagged as a judgement call**: if the operator prefers strict symmetry,
+rotating it is a one-line append plus a mechanical re-stamp.
+
+---
+
+## §64. Status
+
+```
+S5_ACTION_REASON_SLICE_FINAL_SEAL = YES
+D_S5_1..D_S5_9 = all FROZEN        UNRESOLVED_DECISION_COUNT = 0
+OPEN_S5_DEBT = none
+NEXT_TASK = S5-R5 — Recommendation read-model + operator-facing integration
+```
+
+**End of Part VI.**

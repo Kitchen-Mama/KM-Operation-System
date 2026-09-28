@@ -1504,7 +1504,12 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // S5-R4 — the action/reason slice. 63_ is the only single-stamp owner this round edits: the generated
   // bundle's content hash moved, and 63_ is where that hash is declared. 90_ carries no hand-typed stamp
   // (it is identified BY its content hash), and 01_/73_ keep the stamp they earned at R25.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R26'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R26',
+  // S5-R4A — D-S5-9 resolved. The SAME unshipped tree gains the combined action, so KMREC changes, the
+  // generated bundle is rebuilt and its content hash moves. R26 is unshipped, and the ruling 63_ records
+  // for R7, R10, R11 and R23 — each likewise never deployed — is that this is NOT a licence to reuse the
+  // id: R26's tree and this one differ, and an id naming two trees cannot answer the question it exists for.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R27'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));
