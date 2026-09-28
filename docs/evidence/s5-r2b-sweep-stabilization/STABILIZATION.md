@@ -178,3 +178,34 @@ poll rather than a new helper on their surface.
 s4-r4-deferred-reads   6 / 6        s4-r5-route-payloads   6 / 6
 s3-r11  PASS   s3-r12  PASS   s3-r13  PASS   s4-r2  PASS   s4-r6  PASS
 ```
+
+---
+
+## Final: three serial sweeps, all canonical
+
+```
+run 1   557 passed / 562 · canonical 5 · 13 lines · f809dca8… · DIRTY 0 · clean
+run 2   557 passed / 562 · canonical 5 · 13 lines · f809dca8… · DIRTY 0 · clean
+run 3   557 passed / 562 · canonical 5 · 13 lines · f809dca8… · DIRTY 0 · clean
+
+CANONICAL_FAILURE_SET_CHANGED = NO
+CANONICAL_DIGEST = f809dca8d4e41954d98bb87ce0c2f9eb69c65fea9530acd030d639405bfc76b1
+```
+
+562 rather than 559 because this series added three S5 contract suites; the five canonical failures and their
+thirteen lines are byte-identical to the S4 baseline.
+
+## What the scope history is worth recording
+
+The fix was scoped too narrowly twice, and the sweeps corrected it both times:
+
+1. repaired the two runners with proven failures → run 3 surfaced a third (`s4-r4`)
+2. gave the rest profile isolation but withheld the boot latch → two more sweeps surfaced `s4-r5` and `s4-r4`
+3. applied both fixes to every runner that drives a mutation suite → 3/3 canonical
+
+Each narrowing was defensible when made and wrong in fact, and only running the sweep three times showed it.
+A single green sweep would have "confirmed" step 1.
+
+The final scope has a principle rather than a guess: **an unbooted page only becomes a false SURVIVED where
+there are mutation verdicts to corrupt** — everywhere else it is an ordinary visible failure. So both fixes
+went to the six mutation-suite runners and to nothing else.
