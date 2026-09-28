@@ -527,8 +527,19 @@ Two display rules are inherited and are not S5's to change: a `BLOCKED` line sho
 
 ## §15. Decision gate
 
+> **SUPERSEDED BY PART II (S5-R2, 2026-09-28).** Five of these six are now operator-resolved and frozen in
+> Part II §21. **D-S5-1 is NOT resolved** — the operator's stated rule conflicts with live implemented
+> behaviour, measured in Part II §18. The options and reasoning below are retained as the record of what was
+> asked; Part II is authoritative for what was decided.
+>
+> **D-S5-1's premise below is CORRECTED in Part II §18.** It states that no owner "arbitrates between two
+> eligible receivers competing for the same surplus". That is wrong: `KMFSR.runReallocation` arbitrates, by a
+> deterministic receiver ordering, and has been live since FA-3B3b. S5-R1 read §41's prose, which fixes donor
+> protection and per-pair feasibility, and did not read the loop, which encodes the contention rule the prose
+> never spells out.
+
 ```
-DECISION_REQUIRED_COUNT = 6
+DECISION_REQUIRED_COUNT = 6   (at S5-R1; now 1 — see Part II §21)
 ```
 
 No S5 implementation may proceed around any of these. Each is genuinely unowned — verified by searching the
@@ -676,5 +687,526 @@ runtime or business defect and no file this round changed goes near it.
 
 ---
 
-**End of contract.** `S5_CONTRACT_FREEZE_READY = YES` for the frozen sections; the six §15 decisions gate
-S5-R2.
+# PART II — S5-R2 decision freeze (2026-09-28)
+
+**Status: FIVE OF SIX DECISIONS FROZEN · ONE CONTRACT CONFLICT, STOPPED.**
+Spec-only. `BEHAVIOR_CHANGED = NO`. Base `a119b62`.
+
+Part II is authoritative over Part I §15 wherever they differ.
+
+---
+
+## §17. Carried unchanged from Part I
+
+```
+RECOMMENDATION_RECOMPUTES_FORECAST      = NO
+RECOMMENDATION_RECOMPUTES_GAP           = NO
+OVERSEAS_COVERAGE_DOUBLE_SUBTRACTION    = FORBIDDEN
+FACTORY_COVERAGE_DOUBLE_SUBTRACTION     = FORBIDDEN
+SHIPPING_REQUIRED_QTY_IS_PURCHASE_DEMAND = NO
+SHIPMENT_PLAN_AUTO_CREATES_REQUEST_ORDER = NO      SHIPMENT_PLAN_AUTO_CREATES_PO = NO
+PURCHASE_ORDER_QTY_AUTO_CREATES_SHIPMENT = NO      REQUEST_ORDER_QTY_AUTO_CREATES_SHIPMENT = NO
+PHASE2_ORCHESTRATION_IMPLEMENTED         = NO
+```
+
+The two-sided double-count guard (Part I §5 DC-1) is re-run by the S5-R1 suite each round: the fold into
+opening supply must exist, and the residual must not re-subtract it. Both green at `a119b62`.
+
+Full ordering ↔ lead-time ↔ shipping orchestration remains Phase 2 and is not designed here.
+
+---
+
+## §18. D-S5-1 — CONTRACT CONFLICT (STOPPED, not frozen)
+
+**The operator's §3 rule contradicts live, implemented, wired behaviour.** Part I raised D-S5-1 on a premise
+that was wrong, so the decision was taken without this on the table. Correcting it is the substance of this
+section.
+
+### What Part I got wrong
+
+Part I §15 stated that §32A fixes per-pair eligibility and §41 fixes donor protection, *"but neither
+arbitrates between two eligible receivers competing for the same surplus."* **That is false.**
+`KMFSR.runReallocation` (`supply-planning-surplus-reallocation.js:169-231`) arbitrates explicitly:
+
+```
+receiverOrder = actionable sorted by requiredByDate asc -> allocationPriority desc -> demandKey asc
+donorOrder    = actionable sorted by requiredByDate asc -> demandKey asc
+
+for each receiver in receiverOrder:
+    for each donor in donorOrder, while receiver shortage > 0:
+        transfer MIN(receiverRemainingShortage, donorRemainingSurplus, timelyTransferableQty)
+```
+
+That is a **sequential greedy: serve each receiver in full, in a deterministic order**, over **N** receivers —
+not two. It is live: `43_:762` calls `gapOpApplyFactorySurplusReallocation_`, which calls
+`KMFSR.reallocatePreallocatedFactorySupply` (`43_:557`), landed by FA-3B3b.
+
+S5-R1 read §41's prose, which fixes donor protection and per-pair feasibility, and did not read the loop —
+where the contention rule actually lives and which the prose never states.
+
+### The divergence, measured
+
+The live module was executed against the operator's own three examples
+(`s5-r2-decision-freeze.test.js` §C):
+
+| Case | Operator rule (§3) | Live KMFSR (§41) | Agree |
+|---|---|---|---|
+| donor 100 · A 100 · B 100 | **50 / 50** | **100 / 0** | **NO** |
+| donor 100 · A 20 · B 100 | 20 / 80 | 20 / 80 | yes |
+| donor 100 · A 20 · B 30 | 20 / 30 (50 unused) | 20 / 30 (50 unused) | yes |
+
+The two agreements are **coincidental to the shape, not structural**. Case 3 has no contention at all (donor
+exceeds combined gap). Case 2 agrees only because A's gap is below its 50% share, so both rules give A its
+whole gap and B the remainder. **The rules differ exactly where contention is real** — donor surplus below
+combined receiver gap with both gaps above half — which is precisely the case §3 exists to legislate.
+
+### What the two rules mean commercially
+
+Both conserve supply and neither over-allocates; they answer a genuine business question differently.
+
+- **Live (serve in full, most urgent first).** One receiver gets shippable, whole coverage; the other orders.
+  Consistent with the carton rules the rest of the engine is built around (§31 FLOOR for shipment, CEILING for
+  order), and with §35's ordering used everywhere else.
+- **Operator §3 (share 50/50, cap, redistribute).** Both receivers get partial coverage. Under scarcity this
+  can leave *both* sites short enough to still require an order, raising total ordering rather than lowering
+  it — the outcome Part I §15 flagged as the risk of the proportional options.
+
+### Also in tension: §43.4
+
+§43.4 forbids *"largest-remainder / remainder redistribution"* for physical or committed supply *"unless a
+separately frozen rule explicitly overrides this section."* Step 3 of §3 redistributes an uncapped share. This
+is a **capacity** remainder, not a *rounding* remainder, so it is arguably outside §43.4's subject — but it is
+close enough that adopting §3 must record an explicit, named override rather than leave the reader to decide.
+Whichever way D-S5-1 resolves, §43.3 FLOOR still governs the integer conversion of the 0.5 ratio
+(`FLOOR(donor x 0.5)`), and §43.5/§43.6 still bound the result and permit an unallocated residual.
+
+### §18a — the rule is also under-specified for odd quantities
+
+Found by executing it. With donor 101 and two gaps of 100, §43.3 FLOOR gives each receiver
+`FLOOR(101 x 0.5) = 50`, leaving one unit. Step 3 then redistributes that unit — **to whichever receiver the
+implementation reaches first.** §3 gives no receiver ordering, so the destination of the odd unit is an
+artefact of iteration order, not a decision.
+
+This is not a rounding question (§43 answers that) but an **ordering** question, and it is the same gap that
+makes §3 silent at 3+ receivers: a proportional rule needs a tie-break, and the live greedy already has one
+(`requiredByDate` asc -> `allocationPriority` desc -> `demandKey` asc). Whichever way D-S5-1 resolves, if §3 is
+adopted it must name its receiver ordering, or two runs on the same data can differ by a unit.
+
+### Why this is not frozen here
+
+Part I's §6 gate is explicit: *"If Recommendation ordering differs from the live consumption order: STOP —
+CONTRACT_CONFLICT."* It does. Freezing §3 as written would specify a **behaviour change to a live, tested,
+production-wired allocator** inside a round whose own mandate is `BEHAVIOR_CHANGED = NO`, and would do it on a
+premise the operator was given incorrectly.
+
+```
+D_S5_1_DONOR_CONTENTION = CONTRACT_CONFLICT — OPERATOR DECISION REQUIRED
+```
+
+**OPTION A — keep the live greedy.** No code changes, no regression, N receivers already covered. §3's
+worked examples 2 and 3 already hold; only the symmetric-contention case differs. This is what Part I
+recommended, and it is already the system's behaviour.
+
+**OPTION B — adopt §3's 50/50 share.** Requires changing `KMFSR.runReallocation`, a frozen §41 core with 270 +
+99 existing assertions, re-validating FA-3B3b's live wiring, and recording an explicit §43.4 override. It also
+leaves 3+ receivers undefined (§19), so it must either stop at 2 or define N.
+
+**OPTION C — split by residual gap rather than 50/50.** Generalises to N without a special case and needs no
+"exactly two" rule, but is a larger change than B and still supersedes the live allocator.
+
+**RECOMMENDATION — Option A**, and if the operator wants sharing under scarcity, take it as its own slice with
+its own regression budget against §41, not as a spec clause inside a no-behaviour-change round.
+
+---
+
+## §19. Receiver-count behaviour — already owned
+
+The task asks to freeze `eligible_receiver_count > 2 -> MANUAL_REVIEW` *"unless another existing canonical
+spec already defines it."* **One does, and it is implemented.**
+
+Executed: donor 100, three receivers with gaps 100/100/100 -> live KMFSR returns `{A:100, B:0, C:0}` — a
+deterministic answer, no error, no manual-review path.
+
+```
+ZERO_RECEIVER_RULE       = no reallocation                       [frozen, §41 — no actionable receiver, no transfer]
+ONE_RECEIVER_RULE        = may consume up to its full residual gap from eligible donor surplus   [frozen, §41/§32A]
+TWO_RECEIVER_RULE        = CONTRACT_CONFLICT (§18)
+THREE_PLUS_RECEIVER_RULE = ALREADY OWNED by KMFSR.runReallocation (deterministic sequential greedy over N)
+```
+
+```
+THREE_PLUS_RECEIVER_BEHAVIOR = ALREADY_DEFINED — NOT MANUAL_REVIEW
+MORE_THAN_TWO_RECEIVER_POLICY = OWNED BY §41 (live), NOT newly frozen here
+```
+
+**Specifying `MANUAL_REVIEW` at 3+ would be a regression**, not a guard: it would withdraw a working,
+deterministic, tested answer and replace it with a stop. Recorded explicitly because the instruction's
+default, applied without checking, would have done exactly that.
+
+---
+
+## §20. D-S5-1 §4 — donor safety, from existing owners only
+
+All three quantities already have owners. None is invented here.
+
+```
+DONOR_AVAILABLE_QTY = releasableSurplusQty = MAX(0, initialFactoryAllocationQty - protectedFactoryQty)
+                      [§41.4; implemented supply-planning-surplus-reallocation.js:126-127]
+
+DONOR_SAFETY_FLOOR  = protectedFactoryQty  = MIN(initialFactoryAllocationQty, projectedRequirementQty)
+                      [§41.4; implemented :126]  — a REQUIREMENT floor, not a safety-stock policy
+
+DONOR_ALREADY_ALLOCATED_QTY = sourceSurplusRemaining[donor][warehouse], decremented once per transfer
+                      [§41.9(5); implemented :212-215]
+```
+
+**A safety-stock policy for factory donors is `NOT_DEFINED`, and none is invented.** The 18-day survival floor
+(§20.3/§24.4) governs *overseas shared-pool* allocation; it is not a factory donor protection and must not be
+borrowed as one. What protects a factory donor is its own actionable T1–T3 requirement, nothing more.
+
+Never consumable as donor surplus, each with its existing owner:
+
+| Not consumable | Owner |
+|---|---|
+| reserved stock | availability is `MAX(fac_current_stock - fac_reserved_stock, 0)` (§13.1) — reserved is outside the pool |
+| receiver-required stock | `protectedFactoryQty` (§41.4) — a donor is never reduced below its own requirement |
+| already-allocated supply | per-source remaining decremented once per transfer (§41.9(5)) |
+| same lineage twice | `supplyLineageRef` count-once; duplicate -> `SUPPLY_LINEAGE_CONFLICT`, effective qty 0 (§42.1) |
+| delivered-not-received as current stock | distinct active bucket (§39.5/§44.5) |
+| ineligible lifecycle bucket | `DRAFT` / `CANCELLED_INVALID` / `CORRECTION_REVERSAL` contribute 0 (§42.1) |
+| unallocated physical residual | §43.6 — residual is NOT receiver-attributed releasable surplus; live path passes `unusedFactorySupplyQty = 0` |
+| T4 / out-of-window | visibility-only, rank 0, excluded (§41.5) |
+
+```
+UNALLOCATED_SURPLUS_RULE = stays unallocated; never redistributed as donor surplus (§43.6)
+```
+
+---
+
+## §21. Decisions frozen
+
+```
+D_S5_1_DONOR_CONTENTION = CONTRACT_CONFLICT — NOT FROZEN (§18)
+D_S5_2_RECOMMENDATION_ACTION = FROZEN (§22)
+D_S5_3_PRIORITY              = FROZEN (§23)
+D_S5_4_EXPLAINABILITY        = FROZEN (§24)
+D_S5_5_STATE                 = FROZEN — STATE_VOCABULARY_CHANGED = NO
+D_S5_6_STALENESS             = FROZEN — DISPLAY_FLAG_ONLY
+
+UNRESOLVED_DECISION_COUNT = 1
+```
+
+**D-S5-5.** The canonical model is unchanged: tier `draft | submitted | cancelled`, header
+`draft | partially_submitted | submitted | cancelled`, plus `user_edited`, `user_edited_by`, `draft_version`.
+No second recommendation lifecycle is introduced. A UI concept such as "approved" maps onto existing
+semantics (an operator-set `tN_order_qty` on a `draft` tier) and must not become a competing status without a
+separate operator decision.
+
+**D-S5-6.** `STALE_RECOMMENDATION_BEHAVIOR = DISPLAY_FLAG_ONLY`. A recommendation may be presented as
+`CURRENT` or `STALE`. Staleness is **derived at read time** — it is not a stored status, so it cannot collide
+with the frozen vocabulary.
+
+```
+STALE_MUTATES_RECOMMENDATION     = NO
+STALE_MUTATES_OPERATOR_DECISION  = NO
+HISTORICAL_MUTATION_ALLOWED      = NO
+```
+
+Staleness must never cancel, rewrite, resubmit, change a quantity, change an operator decision, or change
+historical run contents. This is enforceable today by three existing protections and needs no new one:
+§36.1 (a changed live signal never overwrites a draft), §SC-1.11 (submitted-draft immutability), and PO-10
+(the `{draft_version, userEditFingerprint}` token).
+
+---
+
+## §22. D-S5-2 — recommendation action (FROZEN)
+
+```
+RECOMMENDATION_TYPE_ENUM = { REALLOCATE, NEW_ORDER, NO_ACTION, MANUAL_REVIEW }
+```
+
+Closed set of four. **No shipment action** — that is the other mainline (§17). **No factory action**: factory
+quantities exist upstream as *coverage*, and coverage is not an operator instruction. Whether coverage came
+from own stock, overseas, factory or committed production is **evidence** (§24), not a separate action.
+
+```
+ACTION_DERIVATION_RULE  (evaluated in order; first match wins; derived, never stored in this round)
+
+  MANUAL_REVIEW  <-  the engine cannot truthfully derive a deterministic action under frozen rules.
+                     Today exactly: calculation_status = BLOCKED (missing units_per_carton, missing forecast
+                     basis, SUPPLY_LINEAGE_CONFLICT, an unresolved destination), or any input the frozen rules
+                     do not determine. A BLOCKED line is MANUAL_REVIEW and is never rendered as a zero.
+
+  REALLOCATE     <-  reallocation_in_qty > 0 for this line — cross-company/internal reallocation is part of
+                     how this line's residual was reduced.
+
+  NEW_ORDER      <-  residualOrderNeedQty > 0 after all already-authoritative eligible supply logic.
+
+  NO_ACTION      <-  residualOrderNeedQty = 0 and reallocation_in_qty = 0 — no actionable residual remains.
+```
+
+`REALLOCATE` is tested before `NEW_ORDER` deliberately: a line may need both, and the reallocation is the part
+that requires an internal movement decision, whereas the residual is already carried by `recommendation_qty`.
+A line that reallocates **and** still has a residual is `REALLOCATE` with a non-zero `recommendation_qty`, and
+its `reason_tokens` carry `RESIDUAL_SHORTAGE` and `NEW_ORDER_REQUIRED` (§24) — so no information is lost by
+the single-label enum.
+
+**Store nothing yet.** The action is derivable from facts already produced; §25 confirms no column is needed.
+
+---
+
+## §23. D-S5-3 — priority (FROZEN)
+
+```
+RECOMMENDATION_PRIORITY  = EXISTING_CANONICAL_CONSUMPTION_ORDER
+CONSUMPTION_ORDER_OWNER  = SUPPLY_PLANNING_CALCULATION_RULES.md §44.6 (live operation order),
+                           composed with §41.3 (reallocation chain)
+```
+
+```
+CONSUMPTION_ORDER  (§44.6, verbatim sequence)
+  1  demand / gross gap
+  2  opening Site/Destination supply
+  3  Overseas coverage
+  4  KMMSA / KMAR initial factory allocation
+  5  §41 KMFSR surplus reallocation over the already-allocated coverage
+  6  KMOOP/KMOTA ongoing-order site supply -> KMTPP incoming
+  7  shipment ETA incoming
+  8  KMTPP.projectTimePhasedSupply
+  9  residualOrderNeedQty
+ 10  carton CEILING
+ 11  persistence
+```
+
+Steps 4–7 are composed as KMTPP opening/incoming inputs, **not** as a second residual formula. §41.3 fixes the
+chain inside step 5: initial allocation -> protect the receiver's own requirement -> releasable surplus ->
+legal reallocation -> remaining shortage.
+
+**The recommendation creates no second optimization order.** It reports the outcome of this one. The only
+place where a recommendation ordering could diverge is receiver contention inside step 5 — which is exactly
+§18, and is why §18 is a STOP rather than a freeze.
+
+---
+
+## §24. D-S5-4 — explainability (FROZEN)
+
+```
+EXPLANATION_MODEL      = CLOSED_REASON_TOKENS + NUMERIC EVIDENCE + LINEAGE REFERENCES
+FREE_TEXT_IS_AUTHORITY = NO
+```
+
+The operator `note` field stays free text and stays the operator's. **No business behaviour may read it.**
+
+```
+REASON_TOKEN_SET  (closed; derived from the actual branches of §22, one per branch plus evidence states)
+  OWN_SUPPLY_APPLIED          opening site stock reduced this line's gap            (own_supply_used > 0)
+  OVERSEAS_SUPPLY_APPLIED     allocated overseas coverage reduced it                (allocatedOverseasQty > 0)
+  FACTORY_SUPPLY_APPLIED      allocated factory coverage reduced it                 (factory_supply_used > 0)
+  COMMITTED_SUPPLY_APPLIED    ongoing-order incoming reduced it                     (committed_supply_used > 0)
+  CROSS_COMPANY_REALLOCATION  donor surplus was reallocated in                      (reallocation_in > 0)
+  RESIDUAL_SHORTAGE           a residual remained after all coverage                (residual > 0)
+  NEW_ORDER_REQUIRED          that residual cartonizes to a positive order          (recommendation_qty > 0)
+  NO_ACTION_REQUIRED          nothing actionable remained
+  MANUAL_REVIEW_REQUIRED      the action could not be truthfully derived
+```
+
+Every token is **evidence-backed**: each is emitted only when its cited numeric field supports it, so a token
+can never claim something the numbers do not. A token whose evidence field is unavailable is **not emitted** —
+absence is honest, a fabricated token is not.
+
+```
+NUMERIC_EVIDENCE_FIELDS = starting_gap_qty · own_supply_used · cross_company_supply_used ·
+                          factory_supply_used · committed_supply_used (where genuinely available) ·
+                          remaining_shortage · recommendation_qty
+SOURCE_LINEAGE_FIELDS   = calculation_run_id · demand sourceRef -> demandKey · supplyLineageRef ·
+                          §41 transferLedger (sourceWarehouseId, donorDemandKey, receiverDemandKey, qty)
+```
+
+**Do not populate a number that cannot be sourced truthfully.** `MISSING` is never `0` (SC-2); a field with no
+honest source is null and its token is absent.
+
+---
+
+## §25. Evidence field audit (§8) — computed vs emitted
+
+Traced through the live path. `SAFE_TO_EXPOSE` means transport-only: the value already exists upstream and is
+carried, **never recomputed downstream**.
+
+| Field | COMPUTED | CURRENTLY EMITTED | SOURCE_OWNER | SAFE_TO_EXPOSE |
+|---|---|---|---|---|
+| `starting_gap_qty` | YES | **YES** — `tN_gap_qty` | KMTPP `remainingGapQty` via `43_ gapOpMapFromLines_` | already exposed |
+| `own_supply_used` | YES — `composition.siteStockQty` | **NO** — runtime DTO only (`42_:662`) | `recoWsComposeOpeningSupply_` over KMDR site stock | YES |
+| `overseas_supply_used` | YES — `composition.allocatedOverseasQty` | **NO** — runtime DTO only | KMMSA | YES |
+| `factory_supply_used` (post-realloc) | YES — `composition.allocatedFactoryQty` | **DERIVABLE** — see below | KMMSA/KMAR + §41 | already recoverable |
+| `cross_company_supply_used` | YES — `reallocationInQty` | **YES** — `reallocation_in_qty_snapshot` | `43_ gapOpApplyFactorySurplusReallocation_` | already exposed |
+| `reallocation_out_qty` | YES | **YES** — `reallocation_out_qty_snapshot` | same | already exposed |
+| `factory_available_qty` (pre-realloc) | YES | **YES** — `factory_available_qty_snapshot` | same | already exposed |
+| `committed_supply_used` | YES — `mOngoing` events (`42_:647`) | **NO** — no total on the line, no column | KMOOR via `recoWsOngoingIncomingForReceiver_` | YES, with the caveat below |
+| `remaining_shortage` | YES — `residualOrderNeedQty` | implicitly, via `tN_suggested_qty` | KMTPP | already exposed |
+| `recommendation_qty` | YES | **YES** — `tN_recommended_qty` | KMCALC carton CEILING | already exposed |
+
+**`factory_supply_used` needs no new column.** The live identity is exact
+(`43_:566`): `factoryCoveredQty = MAX(0, initial - out + in)`, and all three inputs are already persisted
+columns. So
+
+```
+factory_supply_used = MAX(0, factory_available_qty_snapshot
+                            - reallocation_out_qty_snapshot
+                            + reallocation_in_qty_snapshot)
+```
+
+This is **transport arithmetic over stored facts, not a recomputation of coverage** — it reproduces the
+producer's own line rather than deriving coverage a second way.
+
+**`committed_supply_used` caveat.** A PO line with a blank or non-ISO `expected_completion_date` fails closed
+as `ONGOING_ORDER_ETA_UNRESOLVED` and contributes **zero timed incoming** while remaining admitted and
+traceable. So the exposed total must be *"committed supply that is timed into this window"*, not *"committed
+supply that exists"*. Exposing the second under the first field's name would overstate coverage.
+
+**Two genuinely unexposed fields remain: `own_supply_used` and `overseas_supply_used`** (and
+`committed_supply_used`). All three are computed today and dropped at the `order_planning_gap` boundary.
+
+---
+
+## §26. Storage (§12 re-audit after the action/explanation freeze)
+
+```
+STORAGE_OWNER = request_order_allocation_drafts  (flat V2, 53 columns)
+                  -> recommendation qty  tN_recommended_qty
+                  -> operator qty        tN_order_qty  ·  tN_carton_qty
+                  -> state               tN_status  (header status)
+                  -> version             draft_version
+                  -> operator edit       tN_user_edited · tN_user_edited_by
+                calculation evidence stays in order_planning_gap + recommendation_calculation_runs
+
+NEW_TABLE_REQUIRED = NO   (re-confirmed after the model grew — see below)
+DB_MIGRATION_REQUIRED = NO
+```
+
+The model did get richer, and the conclusion still holds:
+
+- **Action** — derived, stored nowhere (§22). A closed four-value enum computable from `residualOrderNeedQty`,
+  `reallocation_in_qty_snapshot` and `calculation_status` needs no column until something filters on it.
+- **Reason tokens** — derived from the same fields (§24). Each token's condition is an existing stored or
+  derivable number.
+- **Staleness** — derived at read time (§21), never stored.
+- **Factory supply used** — derivable from three stored columns (§25).
+
+So the classification the task asks for is **B — derived runtime/read model only**, for everything except two
+fields:
+
+```
+SCHEMA_EXTENSION_REQUIRED = NO for Phase 1 as specified
+                            CONDITIONAL YES only if own_supply_used / overseas_supply_used /
+                            committed_supply_used must be PERSISTED rather than recomputed per read
+```
+
+`PROPOSED_FIELDS_IF_ANY` — additive at the end of `OP_GAP_HEADERS_`, following the
+`OP_GAP_FACTORY_SNAPSHOT_COLS_` precedent exactly (name-based readers, order-agnostic, live-sheet migration by
+`prodMigrateAppendColumns_`), **proposed only, not created**:
+
+| FIELD | TYPE | NULLABILITY | OWNER | SOURCE | MUTABILITY | AUDIT |
+|---|---|---|---|---|---|---|
+| `own_supply_qty_snapshot` | integer >= 0 | nullable (MISSING != 0) | KMTPP opening composition | `composition.siteStockQty` | immutable in a run | `calculation_run_id` |
+| `overseas_supply_qty_snapshot` | integer >= 0 | nullable | KMMSA | `composition.allocatedOverseasQty` | immutable in a run | same |
+| `committed_supply_qty_snapshot` | integer >= 0 | nullable | KMOOR | Σ timed ongoing incoming | immutable in a run | same |
+
+No new recommendation table. Splitting the decision grain across two tables immediately after §44.19
+deliberately flattened it would undo that decision for no gain.
+
+---
+
+## §27. Recommendation output contract (§11)
+
+One row per `(planning_cycle, company, country, marketplace, sku, draft_purpose)` and tier `T1..T3`.
+`AUTHORITY` is who may set the value; `DERIVATION` is how it is obtained.
+
+| FIELD | SOURCE | DERIVATION | NULLABILITY | AUTHORITY |
+|---|---|---|---|---|
+| `calculation_run_id` | `recommendation_calculation_runs` | stamped at generation | NOT NULL | run journal |
+| `request_allocation_draft_id` | flat-V2 identity | `RD::MONTHLY_ORDER::<YYYY-MM>::<sorted scopeKey>` | NOT NULL | deterministic, never minted twice |
+| `master_sku` | `sku_details.sku` | stored | NOT NULL | SKU master |
+| `company` | scope | stored | NOT NULL | scope |
+| `destination_warehouse_id` | ledger grain | resolved; else `MISSING_DESTINATION_WAREHOUSE` | NOT NULL when resolved | warehouse master |
+| `planning_cycle` | run parameter | `YYYY-MM`, Asia/Taipei | NOT NULL | scheduler / caller |
+| `required_by_date` | tier month | `tN_month` -> required-by (KMTPP `tierByMonth`) | NOT NULL per populated tier | §27A / KMTPP |
+| `recommendation_type` | **derived** | §22 ordered rule | NOT NULL when a tier is populated | recommendation engine |
+| `recommendation_qty` | `tN_recommended_qty` | KMCALC carton CEILING of the residual | NOT NULL | engine; never back-filled from an operator qty |
+| `source_company` | §41 `transferLedger.donorDemandKey` | present only when `REALLOCATE` | nullable | §41 |
+| `source_warehouse_id` | §41 `transferLedger.sourceWarehouseId` | present only when `REALLOCATE` | nullable | §41 |
+| `starting_gap_qty` | `tN_gap_qty` | stored | nullable (MISSING != 0) | KMTPP |
+| `own_supply_used` | composition | §25 — transport, not recompute | nullable | KMTPP opening composition |
+| `cross_company_supply_used` | `reallocation_in_qty_snapshot` | stored | nullable | §41 |
+| `remaining_shortage` | `residualOrderNeedQty` | stored/derived | nullable | KMTPP (sole residual owner) |
+| `reason_tokens` | **derived** | §24 closed set, evidence-gated | may be empty, never fabricated | recommendation engine |
+| `source_refs` | lineage | `demandKey` · `supplyLineageRef` · transferLedger | nullable | ledgers / §41 |
+| `tN_order_qty` | operator | defaults to recommendation, independent after | NOT NULL once set | **operator** |
+| `tN_carton_qty` | derived | `order_qty / units_per_carton`; partial preserved, never re-rounded | nullable when UPC missing | §14/§37 |
+| `tN_status` | lifecycle | `draft \| submitted \| cancelled` | NOT NULL | §21 |
+| `tN_user_edited` | operator | stamped on a deliberate quantity edit | NOT NULL | operator |
+| `draft_version` | persistence | bumped per generation under the optimistic token | NOT NULL | persistence |
+
+**No field is added merely to complete the shape.** `source_company` / `source_warehouse_id` are nullable
+because they exist only on a `REALLOCATE` line; `committed_supply_used` is deliberately absent from the stored
+contract pending §26.
+
+---
+
+## §28. Idempotency and run history (§14)
+
+```
+RECOMMENDATION_IDENTITY = RD::MONTHLY_ORDER::<planning_cycle>::<sorted scopeKey>
+                          scopeKey = company | country | draft_purpose | marketplace | sku  (alphabetical)
+RUN_IDENTITY            = recommendation_calculation_runs.calculation_run_id
+SUPERSEDE_RULE          = within a cycle, a new run UPSERTs the same identity and bumps draft_version under
+                          the optimistic {draft_version, userEditFingerprint} token;
+                          across cycles, a new planning_cycle creates a NEW draft and never overwrites a prior
+                          month's (§36.2)
+HISTORICAL_MUTATION_ALLOWED = NO
+```
+
+Same input + same run identity does not duplicate artifacts: the identity is deterministic and content-free
+(no clock, no UUID), so a replay resolves to the same row. A new run may supersede the **presentation** state;
+it may not alter a submitted decision, an operator quantity, or a historical run's contents.
+
+---
+
+## §29. Downstream boundary (§13)
+
+```
+DRAFT_ALLOCATION_INPUT
+  gap tN_gap_qty -> (KMTPP residual, already applied) -> tN_recommended_qty
+  gap tN_month                                        -> tN_month
+  gap calculation_month                               -> planning_cycle (YYYY-MM)
+  sku_details.units_per_carton                        -> units_per_carton
+  run journal (calculation_run_id, formula_version, source_data_as_of) -> provenance columns
+  scope (company,country,marketplace,sku,draft_purpose)                -> deterministic draft identity
+
+REQUEST_ORDER_CANDIDATE_INPUT           (Send Request — S7, not implemented here)
+  tN_order_qty > 0  -> one request_order_lines row per tier
+  tN_order_qty = 0  -> tier EXCLUDED from the Send workset; draft stays ACTIVE and keeps its month
+  tN_carton_qty     -> carton qty; partial-carton override preserved, never re-rounded
+  units_per_carton missing -> Suggested BLOCKED and Send BLOCKED; no silent default (§14/§34)
+```
+
+```
+AUTO_CREATE_REQUEST_ORDER = NO      AUTO_CREATE_PO = NO      AUTO_CREATE_SHIPMENT = NO
+```
+
+**No shipping execution mapping exists in S5.** S5 emits an ordering-mainline decision row and nothing else.
+
+---
+
+## §30. S5-R2 status
+
+```
+S5_DECISION_FREEZE_COMPLETE = NO     (5 of 6 frozen; D-S5-1 is a CONTRACT_CONFLICT)
+UNRESOLVED_DECISION_COUNT   = 1
+```
+
+`NEXT_TASK = operator decision on D-S5-1 (§18)`. S5-R3 (schema / mapping implementation plan) is unblocked for
+everything except receiver contention, but the contention rule determines §41's live behaviour and should be
+settled before any implementation round touches that path.
+
+**End of contract.**
+
