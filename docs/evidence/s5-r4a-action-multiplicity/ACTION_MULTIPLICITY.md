@@ -133,3 +133,22 @@ FILES_CHANGED = 9
 
 PRODUCTION_ROWS_WRITTEN = 0     SHIPPING_ACTION_COUNT = 0     ACTION_DETERMINISTIC = YES
 ```
+
+## Sweep
+
+```
+559 passed / 564 · canonical 5 suites · 13 fail lines · DIRTY 0 · clean at end
+CANONICAL_DIGEST = f809dca8d4e41954d98bb87ce0c2f9eb69c65fea9530acd030d639405bfc76b1
+CANONICAL_FAILURE_SET_CHANGED = NO
+```
+
+Canonical on the first run, unlike S5-R4, which took three. The difference was method rather than luck: S5-R4
+selected dependent suites by name and missed every release-identity gate, so this round ran the whole
+release-identity set — the stamp suite, the manifest, the activation pin, the token series, the boot seal —
+before committing, because those are the gates that react to a release cut and never mention the subject.
+
+```
+S5_ACTION_REASON_SLICE_FINAL_SEAL = YES
+UNRESOLVED_DECISION_COUNT = 0     OPEN_S5_DEBT = none
+NEXT_TASK = S5-R5 — Recommendation read-model + operator-facing integration
+```
