@@ -220,6 +220,72 @@
     };
   }
 
+  // ---- S5-R6 §15 — the PURE operator-decision → write-plan gate --------------------------------------------
+  // Recommendation DTO + operator decision + current draft state -> a persistence plan, produced WITHOUT
+  // executing anything. It answers exactly one question — may this operator decision become a write, and with
+  // which input — and then hands that input to `planFlat`, which remains the ONE planner. It performs no DB
+  // access, no allocation, no cartonization and no recommendation derivation: `recommendationAction` arrives
+  // as a VALUE the caller read from KMREC, and `recommendationStale` as a boolean the caller obtained from
+  // KMREC.isStale, so neither authority is duplicated here.
+  //
+  // WHAT IT DELIBERATELY DOES NOT DO (S5-R6 §4/§8/§11):
+  //   · the action is never written into the plan — it describes a recommendation, it is not draft lifecycle;
+  //   · no reallocation quantity is read, carried or merged — the flat draft has no column for one, and the
+  //     §41 reallocation is already persisted by its own owner in order_planning_gap;
+  //   · quantities come only from the caller-supplied gap facts, exactly as the live generation path supplies
+  //     them. KMREC.totalRecommendedQty (cartonize the raw T1–T3 sum ONCE) is a DISPLAY total and is NOT a
+  //     write source — it does not equal Σ tN_suggested_qty, and writing it would create a second authority;
+  //   · `confirmRegenerateOverUserEdits` is never synthesized, so an operator edit survives by default.
+  var DECISION_REFUSAL = {
+    RECOMMENDATION_UNAVAILABLE: 'RECOMMENDATION_UNAVAILABLE',   // absent/unknown action — missing is not NO_ACTION
+    RECOMMENDATION_STALE: 'RECOMMENDATION_STALE',               // §10 — refuse; never silently upgrade to newer values
+    ACTION_AUTHORIZES_NO_ORDER: 'ACTION_AUTHORIZES_NO_ORDER',   // §7 — REALLOCATE / NO_ACTION / MANUAL_REVIEW
+    OPERATOR_AUTHORIZATION_REQUIRED: 'OPERATOR_AUTHORIZATION_REQUIRED'   // §2 — visible is not authorized
+  };
+  // The closed action set, partitioned by what it authorizes the ORDER write path to do. Every member of the
+  // KMREC enum appears in exactly one half; an action in neither is unknown, and unknown refuses.
+  var ORDER_AUTHORIZING_ACTIONS = { NEW_ORDER: 1, REALLOCATE_AND_NEW_ORDER: 1 };
+  var NON_ORDER_AUTHORIZING_ACTIONS = { REALLOCATE: 1, NO_ACTION: 1, MANUAL_REVIEW: 1 };
+
+  // Refusal precedence is FROZEN and is not the order the gates happen to be written in: the refusal names the
+  // substantive obstacle first (unknown → stale → the action authorizes nothing), and only then the missing
+  // operator authorization. An operator who confirms a stale row is told the row is stale, not that they
+  // failed to confirm. Every branch refuses, so the order changes the MESSAGE, never whether a write happens.
+  function planOperatorDecision(input) {
+    aType(isObj(input), 'planOperatorDecision: input object required');
+    var action = str(input.recommendationAction);
+    function refuse(reason, detail) {
+      return { authorized: false, refusal: reason, detail: str(detail), recommendationAction: action || null,
+        planInput: null, plan: null, reallocationQtyWritten: false, actionPersisted: false };
+    }
+    if (action === '') return refuse(DECISION_REFUSAL.RECOMMENDATION_UNAVAILABLE, 'ACTION_ABSENT');
+    if (!ORDER_AUTHORIZING_ACTIONS[action] && !NON_ORDER_AUTHORIZING_ACTIONS[action]) {
+      return refuse(DECISION_REFUSAL.RECOMMENDATION_UNAVAILABLE, 'ACTION_NOT_IN_CLOSED_SET');
+    }
+    if (input.recommendationStale === true) return refuse(DECISION_REFUSAL.RECOMMENDATION_STALE, 'REFRESH_REQUIRED');
+    if (NON_ORDER_AUTHORIZING_ACTIONS[action]) return refuse(DECISION_REFUSAL.ACTION_AUTHORIZES_NO_ORDER, action);
+    if (input.operatorConfirmed !== true) return refuse(DECISION_REFUSAL.OPERATOR_AUTHORIZATION_REQUIRED, '');
+
+    // Authorized. The plan input is assembled field by field — never spread from `input` — so a caller cannot
+    // smuggle an extra column (an action, a token, a reallocation qty) into the written row by adding a key.
+    var planInput = {
+      existingRow: input.existingRow || null,
+      scope: input.scope, planningCycle: input.planningCycle,
+      tiers: input.tiers, factLines: input.factLines,
+      unitsPerCarton: input.unitsPerCarton,
+      provenance: input.provenance || {},
+      generationType: input.generationType,
+      mode: input.mode, action: input.draftAction,
+      confirmRegenerateOverUserEdits: input.confirmRegenerateOverUserEdits === true,
+      actor: input.actor, now: input.now, businessScopeKey: input.businessScopeKey
+    };
+    return {
+      authorized: true, refusal: null, detail: '', recommendationAction: action,
+      planInput: planInput, plan: planFlat(planInput),
+      reallocationQtyWritten: false, actionPersisted: false
+    };
+  }
+
   // ---- pure flat apply: token-guard → single-row upsert (NO child lines) → shared run-journal COMPLETED row -----
   function rowObj_(headers, row) { var o = {}; for (var i = 0; i < headers.length; i++) o[headers[i]] = row[i]; return o; }
   function objRow_(headers, obj) { return headers.map(function (h) { return obj[h] !== undefined ? obj[h] : ''; }); }
@@ -672,7 +738,11 @@
     v2TableSpecs: v2TableSpecs, v2ExpectedHeaderCount: v2ExpectedHeaderCount,
     tierTuples: tierTuples, expectedTokenForExisting: expectedTokenForExisting,
     tiersFromFactLines: tiersFromFactLines, loadActiveFlat: loadActiveFlat, loadFlatById: loadFlatById,
-    planFlat: planFlat, applyFlat: applyFlat, generateMonthlyFlat: generateMonthlyFlat,
+    planFlat: planFlat, planOperatorDecision: planOperatorDecision,
+    DECISION_REFUSAL: DECISION_REFUSAL,
+    ORDER_AUTHORIZING_ACTIONS: ORDER_AUTHORIZING_ACTIONS,
+    NON_ORDER_AUTHORIZING_ACTIONS: NON_ORDER_AUTHORIZING_ACTIONS,
+    applyFlat: applyFlat, generateMonthlyFlat: generateMonthlyFlat,
     tokenForDraft: tokenForDraft, editMonthlyFlat: editMonthlyFlat, submitMonthlyFlat: submitMonthlyFlat,
     cancelMonthlyFlat: cancelMonthlyFlat, buildSendRequestLines: buildSendRequestLines,
     flatReadbackDto: flatReadbackDto, readActiveFlatForScope: readActiveFlatForScope,
@@ -680,6 +750,6 @@
     isConcreteScope: isConcreteScope, MAX_READBACK_SCOPES: 25,
     withFlatDefaults: withFlatDefaults_,
     planMigration: planMigration, validateStaging: validateStaging,
-    VERSION: 'kmrdv2p-fb4e-r4b-r1-1'
+    VERSION: 'kmrdv2p-s5r6-1'
   };
 });

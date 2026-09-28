@@ -72,7 +72,13 @@
 // It belongs here rather than in a new owner because PRICING-R2 §7 made this the one write path into
 // pricing_list; two files writing one table would hold two locks and the field-level flags would stop
 // being checkable by reading a single writer.
-var PRW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R27';
+// S5-R6 — ROLLED BACK FROM R27 TO R25, WHICH IS THE ROUND THIS FILE LAST ACTUALLY CHANGED.
+// `git log e583057..HEAD` on this path names three commits: the R25 pricing-receipt work, and then two
+// releases that touched nothing here but this line. A stamp records the round a file last changed; marching
+// it to keep a gate green is the exact fault the manifest exists to report, and it had made this stamp say
+// R27 about a file whose bytes have not moved since R25. The gate that forced the march has been repaired
+// to ask whether the file changed rather than to require that it always carries the release.
+var PRW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25';
 
 var PRW_ACTION_ = 'pricing.update';
 // The response SHAPE's own version, separate from the module build. A caller pins the shape, not the round.

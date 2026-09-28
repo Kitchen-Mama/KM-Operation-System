@@ -504,4 +504,4 @@ mut('J10 the derivation runs BEFORE the quantity is final', function () {
 section('RESULT');
 console.log('passed ' + pass + '  failed ' + fail + '  mutants killed ' + neg.caught + '/' + (neg.caught + neg.missed));
 if (fail > 0) { console.error('\nS5-R4 ACTION/REASON CONTRACT DRIFT'); process.exit(1); }
-console.log('ACTION_MULTIPLICITY_DECISION_REQUIRED = YES — REALLOCATE withheld, evidence complete');
+console.log('D_S5_9_ACTION_MULTIPLICITY = FROZEN — both actions named, no quantity merged');

@@ -89,8 +89,18 @@ section('C. namespaces available in an Apps Script-like global (no require/modul
   // (the flat reader disagreed with its own DTO about what a blank status / draft_purpose means, so persisted
   // rows were invisible to the readback). A monotonic floor over a known list keeps the guard without turning
   // every legitimate bump into a regression.
-  var _P_VERSIONS = ['kmrdv2p-fa3c-r5a-1', 'kmrdv2p-fb4e-r4b-r1-1'];
-  ok(ctx.KMRDV2P && _P_VERSIONS.indexOf(ctx.KMRDV2P.VERSION) >= _P_VERSIONS.indexOf('kmrdv2p-fa3c-r5a-1') && ctx.KMRDV2P.RECOMMENDATION_TYPE === 'MONTHLY_ORDER' && typeof ctx.KMRDV2P.generateMonthlyFlat === 'function' && typeof ctx.KMRDV2P.applyFlat === 'function' && typeof ctx.KMRDV2P.editMonthlyFlat === 'function' && typeof ctx.KMRDV2P.submitMonthlyFlat === 'function' && typeof ctx.KMRDV2P.flatReadbackDto === 'function' && typeof ctx.KMRDV2P.planMigration === 'function' && typeof ctx.KMRDV2P.validateStaging === 'function' && ctx.KMRDV2P.v2ExpectedHeaderCount() === 53 && typeof ctx.KMRDV2P.readSubmittedFlatForScope === 'function' && typeof ctx.KMRDV2P.auditFlatForScope === 'function' && typeof ctx.KMRDV2P.withFlatDefaults === 'function', 'C: KMRDV2P MONTHLY_ORDER flat persistence + R4B-R1 submitted/audit/blank-default readers + edit/submit + R4C migration planner/validator available in bundle (F1-7N-FA-3C-R4C; cutover ON in production)');
+  // S5-R6: the list is APPEND-ONLY and each round that bumps the module adds its version here. An unknown
+  // version scores -1, i.e. BELOW the floor, so 'newer than anything recorded' reads as 'regressed' - which
+  // is why this fired on a correct tree. The version claim is now its own assertion so the next round that
+  // forgets the append is told that, instead of being told the namespace is missing from the bundle.
+  var _P_VERSIONS = ['kmrdv2p-fa3c-r5a-1', 'kmrdv2p-fb4e-r4b-r1-1', 'kmrdv2p-s5r6-1'];
+  ok(ctx.KMRDV2P && _P_VERSIONS.indexOf(ctx.KMRDV2P.VERSION) >= _P_VERSIONS.indexOf('kmrdv2p-fa3c-r5a-1'),
+    'C: KMRDV2P VERSION is at or above the recorded floor and is a version this append-only list knows ('
+      + (ctx.KMRDV2P && ctx.KMRDV2P.VERSION) + ')');
+  ok(ctx.KMRDV2P && typeof ctx.KMRDV2P.planOperatorDecision === 'function' && ctx.KMRDV2P.DECISION_REFUSAL
+    && typeof ctx.KMRDV2P.planFlat === 'function',
+    'C: KMRDV2P S5-R6 pure operator-decision write-plan gate reaches the Apps Script global');
+  ok(ctx.KMRDV2P && ctx.KMRDV2P.RECOMMENDATION_TYPE === 'MONTHLY_ORDER' && typeof ctx.KMRDV2P.generateMonthlyFlat === 'function' && typeof ctx.KMRDV2P.applyFlat === 'function' && typeof ctx.KMRDV2P.editMonthlyFlat === 'function' && typeof ctx.KMRDV2P.submitMonthlyFlat === 'function' && typeof ctx.KMRDV2P.flatReadbackDto === 'function' && typeof ctx.KMRDV2P.planMigration === 'function' && typeof ctx.KMRDV2P.validateStaging === 'function' && ctx.KMRDV2P.v2ExpectedHeaderCount() === 53 && typeof ctx.KMRDV2P.readSubmittedFlatForScope === 'function' && typeof ctx.KMRDV2P.auditFlatForScope === 'function' && typeof ctx.KMRDV2P.withFlatDefaults === 'function', 'C: KMRDV2P MONTHLY_ORDER flat persistence + R4B-R1 submitted/audit/blank-default readers + edit/submit + R4C migration planner/validator available in bundle (F1-7N-FA-3C-R4C; cutover ON in production)');
   eq(ctx.KM_BUNDLE_INFO.modules.length, _DECLARED.length, 'C: KM_BUNDLE_INFO manifest present in runtime and matches the declared module order (' + _DECLARED.length + ')');
   // KMFSA must be REACHABLE in the Apps Script runtime, not merely listed: 56_ calls it on the live read path.
   ok(ctx.KMFSA && typeof ctx.KMFSA.project === 'function' && typeof ctx.KMFSA.siteFactoryAvailability === 'function',

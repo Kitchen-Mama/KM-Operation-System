@@ -39,7 +39,13 @@
 // an action is indistinguishable from a deployment that never had the handler.
 // PRICING-R3 - R21 -> R22. Gained the pricing.fxReconcile dispatch, whose handler lives in the same owner
 // (73_) as pricing.update, so a project synced for R21 has the FILE but not the ROUTE.
-var RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R27';
+// S5-R6 — ROLLED BACK FROM R27 TO R25, WHICH IS THE ROUND THIS FILE LAST ACTUALLY CHANGED.
+// `git log e583057..HEAD` on this path names three commits: the R25 pricing-receipt work, and then two
+// releases that touched nothing here but this line. A stamp records the round a file last changed; marching
+// it to keep a gate green is the exact fault the manifest exists to report, and it had made this stamp say
+// R27 about a file whose bytes have not moved since R25. The gate that forced the march has been repaired
+// to ask whether the file changed rather than to require that it always carries the release.
+var RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25';
 
 // =============================================================================================================
 // F1-7N-FB-4E-R4A1 §3 — READ ACTIONS ARE SERVED ON GET, AND THIS IS WHY.

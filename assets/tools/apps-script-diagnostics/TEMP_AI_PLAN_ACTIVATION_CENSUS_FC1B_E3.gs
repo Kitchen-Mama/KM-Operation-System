@@ -86,7 +86,7 @@
 // the one question it exists for. Nothing in this census changed; the pin moved because the release did.
 // S3-R10: R24 -> R25, moving with the activation pin above. BP3a requires the diagnostic and the build it
 // expects to move together — a census expecting a different build from the one it claims to be is unreadable.
-var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R27';
+var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R28';
 
 /** Read-only row reader. The Sheet object stays inside this function — the caller gets values, never a writer. */
 // R6-R3 §2 — the OPTIONAL third argument is a metrics sink. §2 requires the diagnostic to report how many
@@ -7837,7 +7837,7 @@ function RUN_R6R7_CONTROLLED_NO_ACTION_ACTIVATION_MANIFEST() {
 // PRICING-R4G - same move, same reason. See TEMP_E3_CENSUS_BUILD_ above; BP3a requires the two to be equal.
 // S3-R10: R24 -> R25. This pin FOLLOWS SYS_DEPLOYMENT_RELEASE_ (BP3/P7c) — a pin that lags the release
 // refuses a healthy deployment, reporting a correct production tree as stale.
-var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R27';
+var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R28';
 
 // ================================================================================================================
 // THE BROWSER HALF. Run in the page console; nothing here writes, and nothing here is a substitute for the

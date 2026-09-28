@@ -118,30 +118,31 @@ var RELEASE_OWNERS = {
   // S3-R10 — THE RELEASE SET IS REPLACED, NOT APPENDED TO, AND THAT IS WHAT C3 IS FOR.
   //
   // RELEASE_OWNERS names the files THIS release changed. A file that did not change keeps the older stamp it
-  // earned, which is the whole reason a stamp is per-module rather than a copy of the release id: 04_ and 72_
-  // were the previous release's owners and are deliberately NOT here, because marching an unchanged file to
-  // the current release is exactly the fault C3 exists to catch.
-  '73_api_v1_pricing_write.gs':
-    'THE COMMIT RECEIPT. A pricing write that committed could be reported to the operator as "Nothing was '
-    + 'written" whenever the browser lost the response on the Apps Script redirect hop — the client had no way '
-    + 'to tell a lost answer from a refusal. This file now accepts a logical write_id, refuses a second '
-    + 'mutation for an id it has already committed, and records a receipt in Script Properties AFTER '
-    + 'pricing_list, AFTER pricing_change_log and after the flush, still inside the lock, so a receipt cannot '
-    + 'exist unless the mutation landed. It also gains handlePricingWriteStatus_, a strictly read-only lookup '
-    + 'that answers COMMITTED / NOT_COMMITTED / UNKNOWN for one write id. No business rule, no price maths and '
-    + 'no authority semantics moved.',
-  '01_router.gs':
-    'THE ROUTE. pricing.write.status joins the GET read table and is dispatched in doGet. It must travel with '
-    + '73_ in both directions: this file at R25 beside an older 73_ routes to a handler that does not exist, '
-    + 'and an older copy of it beside 73_ at R25 leaves the receipt unreachable, so a client that lost a write '
-    + 'response can never resolve it and sits on OUTCOME_UNKNOWN. pricing.update itself is untouched and stays '
-    + 'POST-only — a write never joins the read table.',
+  // earned, which is the whole reason a stamp is per-module rather than a copy of the release id.
+  //
+  // S5-R6 — AND AT R28 IT IS EXACTLY ONE FILE, WHICH IS WHAT FORCED THE PARTITION BELOW. R25 was the last
+  // release cut against a SHIPPED tree. R26, R27 and R28 have all accumulated on top of it unshipped, so
+  // "what must be copied" (everything that differs from BASE) and "what changed THIS release" stopped being
+  // the same set — and this suite was asking both questions with one list. C3 checks stamps and must see
+  // only the second; I1 checks the operator's copy list and must see both. RELEASE_CARRIED is that second
+  // half, the same partition GENERATED_OWNERS already made for a file that is copied but never stamped.
   '63_api_v1_system_health.gs':
-    'THE MANIFEST AND THE CONTRACT. The new action is declared in SYS_REQUIRED_ACTIONS_ because a PAGE depends '
-    + 'on it (SKU Regional Details calls it whenever a pricing write loses its response), so '
-    + 'SYS_REQUIRED_ACTION_LIST_VERSION_ moves 13 -> 14 with it. SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ moves '
-    + '16 -> 17 because a router action was added, and the client pin moves with it so a new bundle against an '
-    + 'old deployment is a stated mismatch rather than a verification that quietly never answers.'
+    'THE MANIFEST. The generated bundle\'s content hash moved — KMRDV2P gained the pure operator-decision '
+    + 'write-plan gate — so 90_\'s manifest row moves, which is a change to THIS file, which moves its own '
+    + 'stamp and the release with it. No action was added or removed and the action contract does NOT move: '
+    + 'a library function that no route reaches is not a new vocabulary, and telling every deployed client to '
+    + 're-check a byte-identical action list would be a lie about what this release contains.'
+};
+
+// Owners that must be COPIED but whose stamp belongs to an EARLIER unshipped release. Each entry is the
+// round that file last actually changed, verified against git rather than assumed: `git log <BASE>..HEAD`
+// on both paths names the R25 pricing-receipt commit and then two releases that edited nothing but the
+// stamp line. Those two marches are undone in this round — a stamp that is advanced to keep a gate green
+// reports the round a release was cut in, not the round the file changed in, and then it can no longer
+// distinguish a synced copy from a stale one, which is the single thing it is for.
+var RELEASE_CARRIED = {
+  '01_router.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25',
+  '73_api_v1_pricing_write.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25'
 };
 // Owners that carry an EARLIER release and must keep it. Each is here because it did not change, and
 // marching any of them to the current release would destroy the manifest's only useful signal.
@@ -415,8 +416,18 @@ eq(declares(CONFIG, 'CONFIG_BUILD_VERSION_'), RELEASE_UNMOVED['00_config.gs'],
 // PRICING-R2 — R21 IS a vocabulary round, so this inverts: the router MOVED, because pricing.update
 // was routed. A router that gained an action and kept its stamp is the one partial sync the manifest
 // could not otherwise report — the deployment answers every action it knows and silently lacks one.
-eq(declares(ROUTER, 'RTR_BUILD_VERSION_'), RELEASE,
-  'C2  01_router.gs IS the release — an action was routed, so its stamp moved with it');
+// S5-R6 — DERIVED, NOT RESTATED, for the same reason the release itself is read from 63_ rather than pinned.
+// This said "the router IS the release", which was true of R21 because R21 routed an action. Three releases
+// later it was still demanding it, and the only way to stay green was to march a file that had not changed —
+// so a gate written to catch marched stamps was the thing requiring one. What must hold is that the router
+// declares the round IT last changed and that the manifest expects the same value, whichever round that is.
+eq(declares(ROUTER, 'RTR_BUILD_VERSION_'), RELEASE_CARRIED['01_router.gs'],
+  'C2  01_router.gs declares the round it last changed in, not the release it is being cut into');
+Object.keys(RELEASE_CARRIED).forEach(function (f, i) {
+  var row = manifestRows(HEALTH).filter(function (r) { return r.file === f; })[0];
+  eq(row ? row.expected : '(no row)', RELEASE_CARRIED[f],
+    'C2.' + (i + 1) + ' ' + f + ' is carried from an earlier unshipped release and the manifest says so');
+});
 var atRelease = manifestRows(HEALTH).filter(function (r) { return r.expected === RELEASE; })
   .map(function (r) { return r.file; }).sort();
 eq(atRelease, Object.keys(RELEASE_OWNERS).sort(),
@@ -488,7 +499,11 @@ ok(oldProc.stale_modules.join('|').indexOf('F1-7N-FC-1A-R1') !== -1,
 // the one R21 owner that a project can hold a WORKING earlier version of. That is the dangerous case:
 // an R9 router answers everything it knew and routes nothing new, so a price save fails with an
 // invalid-action refusal while every other probe reports a healthy deployment.
-var oldRouter = runManifest({ RTR_BUILD_VERSION_: PREV_RELEASE });
+// S5-R6: the old copy to present is the stamp this file carried BEFORE the round it last changed — R24.
+// PREV_RELEASE no longer names that: the router is carried at R25 while the release has moved on to R28, so
+// PREV_RELEASE is now a round in which the router was correct and unchanged.
+var ROUTER_PRIOR_STAMP = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24';
+var oldRouter = runManifest({ RTR_BUILD_VERSION_: ROUTER_PRIOR_STAMP });
 ok(oldRouter.stale_modules.join('|').indexOf('01_router.gs') !== -1,
   'F2  an OLD 01_ identity is rejected where this release requires the new one', oldRouter.stale_modules);
 var noCamp = runManifest({ CAMPAIGN_BUILD_VERSION_: null });
@@ -627,8 +642,8 @@ ok(/\{ action: 'pricing\.update', handler: 'handlePricingUpdate_'/.test(HEALTH),
 ok(cp.execFileSync('git', ['diff', '--name-only', BASE, '--', GS + '01_router.gs'],
   { cwd: REPO, encoding: 'utf8' }).trim() !== '',
   'H4  01_router.gs DID change this release — an action was routed');
-ok(Object.keys(RELEASE_OWNERS).indexOf('01_router.gs') !== -1,
-  'H4a and it is a declared release owner, so it reaches the operator\'s sync list');
+ok(Object.keys(RELEASE_CARRIED).indexOf('01_router.gs') !== -1,
+  'H4a and it is a declared carried owner, so it still reaches the operator\'s sync list');
 // R14 is the first release in this series to change manifest MEMBERSHIP, so the old assertion — that
 // membership never moves — is no longer true and is not the right thing to assert. What must hold is
 // that membership moved by EXACTLY the row this release declares, which is the stricter statement.
@@ -676,7 +691,10 @@ section('I. THE SYNC LIST IS EXACTLY THE DECLARED OWNERS');
   var copy = status.filter(function (r) { return r.st !== 'D'; }).map(function (r) { return r.file; }).sort();
   var gone = status.filter(function (r) { return r.st === 'D'; }).map(function (r) { return r.file; }).sort();
 
-  eq(copy, Object.keys(RELEASE_OWNERS).concat(Object.keys(GENERATED_OWNERS)).sort(),
+  // S5-R6: three kinds of member, one copy list — changed this release, carried from an earlier unshipped
+  // one, and generated. All three are pasted; only the first expects the current release.
+  eq(copy, Object.keys(RELEASE_OWNERS).concat(Object.keys(RELEASE_CARRIED))
+    .concat(Object.keys(GENERATED_OWNERS)).sort(),
     'I1  exactly the declared release owners are to be COPIED — no Apps Script file rode along');
   eq(gone, [],
     'I1a and NOTHING is to be deleted — the one-shot helper was retired in R2B-A2-R6, before this base');
@@ -737,12 +755,14 @@ mutant('M7', 'the manifest expecting a build no file declares', function () {
   // that no longer expects the release matches nothing and injects nothing, which is the one
   // mutation-testing failure that reports the wrong colour; the drift guard below is what turns a
   // missed rotation into an error instead of a green tick.
+  // S5-R6 — rotated onto 63_'s own row, for the reason this comment gives at every rotation: the anchor has
+  // to be a row that EXPECTS THE RELEASE, and at R28 that is 63_'s alone. The router has gone back to R25.
   var faked = HEALTH.replace(
-    "symbol: 'RTR_BUILD_VERSION_', expected: '" + RELEASE + "'",
-    "symbol: 'RTR_BUILD_VERSION_', expected: '" + PREV_RELEASE + "'");
+    "symbol: 'SYS_BUILD_VERSION_', expected: '" + RELEASE + "'",
+    "symbol: 'SYS_BUILD_VERSION_', expected: '" + PREV_RELEASE + "'");
   if (faked === HEALTH) throw new Error('M7 anchor drifted — the mutant would inject no fault');
-  var row = manifestRows(faked).filter(function (r) { return r.symbol === 'RTR_BUILD_VERSION_'; })[0];
-  return !!row && declares(ROUTER, 'RTR_BUILD_VERSION_') !== row.expected;
+  var row = manifestRows(faked).filter(function (r) { return r.symbol === 'SYS_BUILD_VERSION_'; })[0];
+  return !!row && declares(HEALTH, 'SYS_BUILD_VERSION_') !== row.expected;
 });
 mutant('M8', 'a double-quoted bundle hash, which makes every reader pass vacuously', function () {
   var faked = BUNDLE.replace(/var KM_BUNDLE_CONTENT_HASH_ = '([^']*)';/, 'var KM_BUNDLE_CONTENT_HASH_ = "$1";');
@@ -798,7 +818,7 @@ var vacuous = [];
  ['M4', function () { return runManifest().stale_modules.length === 0; }],
  ['M5', function () { return RO.stampAtOrAfter(RELEASE, PREV_RELEASE); }],
  ['M6', function () { return RO.BUILD_STAMP_RE.test(RELEASE); }],
- ['M7', function () { return declares(ROUTER, 'RTR_BUILD_VERSION_') === RELEASE; }],
+ ['M7', function () { return declares(HEALTH, 'SYS_BUILD_VERSION_') === RELEASE; }],
  ['M8', function () { return declares(BUNDLE, 'KM_BUNDLE_CONTENT_HASH_') !== null; }],
  ['M9', function () { return declares(BUNDLE, 'KM_BUNDLE_CONTENT_HASH_')
      === (BUNDLE.match(/^\/\/ bundle_sha256 = ([0-9a-f]{64})$/m) || [])[1]; }],
