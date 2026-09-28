@@ -2091,3 +2091,227 @@ NEXT_TASK = S5-R4 — Slice A: pure action + reason derivation
 ```
 
 **End of Part IV.**
+
+
+---
+---
+
+# PART V — S5-R4 ACTION + REASON DERIVATION (Slice A, implemented)
+
+*First S5 production-runtime slice. Additive to the canonical owner. No schema, no migration, no persistence,*
+*no UI. Base `2b82288`.*
+
+---
+
+## §54. The gate question, answered by measurement
+
+§4 of the round required establishing, **before implementing**, whether `REALLOCATE` and `NEW_ORDER` can
+truthfully coexist in one KMREC DTO. They can, and the live allocator already has a name for it.
+
+`supply-planning-surplus-reallocation.js:253` classifies a receiver that took surplus **in** and is **still
+short** as `SURPLUS_REALLOCATION_PARTIAL`. That is not an edge case bolted on — it sits in the same
+`coverageReason` ladder as `SURPLUS_REALLOCATION_COVERED` and `DONOR_SURPLUS_RELEASED`, so partial coverage is
+a first-class, expected outcome of §41.
+
+Run against the live allocator rather than reasoned about:
+
+```
+receivers: A needs 100, holds 0 factory · B needs 0, holds 30 factory
+
+A -> initial 0 · reallocatedIn 30 · reallocatedOut 0 · remainingShortage 70
+     coverageReason = SURPLUS_REALLOCATION_PARTIAL
+B -> initial 30 · reallocatedIn 0 · reallocatedOut 30 · remainingShortage 0
+     coverageReason = DONOR_SURPLUS_RELEASED
+transfers = 1
+```
+
+Flattened to the grain KMREC reads, receiver A is one gap row carrying `reallocation_in_qty_snapshot = 30`
+**and** a positive order need of 70. Both facts are true; the frozen enum holds one action per row.
+
+```
+ACTION_MULTIPLICITY_DECISION_REQUIRED = YES
+```
+
+### §54.1 What was therefore not built, and why that is the honest outcome
+
+**`REALLOCATE` is not emitted by this slice.** Choosing either label on a contended row would hide the other
+half of the truth, and §4 forbids silently picking a primary. Inventing an array would contradict a frozen
+contract that expects one action.
+
+**This also corrects S5-R3 §45.** That section proposed testing `REALLOCATE` before `NEW_ORDER` and justified
+it as "the reallocation is the part that must be acted on first". That is precisely the silent primary choice
+§4 rules out. The precedence rule is withdrawn; it was never implemented.
+
+```
+S5_R3_ACTION_PRECEDENCE_RULE = SUPERSEDED_BY_S5_R4_MEASUREMENT
+```
+
+**The withholding is typed, not silent.** A contended row carries
+`recommendationActionUnavailableReason = 'ACTION_MULTIPLICITY_DECISION_REQUIRED'`, following the module's own
+existing precedent of `totalUnavailableReason = 'UNITS_PER_CARTON_NOT_AVAILABLE'` — a shape the owner already
+uses to say "this could not be derived truthfully" rather than emitting a confident wrong value.
+
+**One rule, not a special case.** The action is withheld whenever `reallocation_in_qty_snapshot > 0`, including
+when the reallocation fully covered the need. Emitting `REALLOCATE` only for the covered case would quietly
+redefine the enum member as "reallocation was sufficient", which is not what it means.
+
+**Nothing is lost.** Reason tokens are evidence, not verdict, so they are emitted in full on contended rows.
+A withheld row still explains itself completely — only the single-label verdict waits for an operator.
+
+---
+
+## §55. What shipped
+
+All of it inside `assets/js/core/supply-recommendation.js`, the canonical owner.
+
+```
+RECOMMENDATION_OWNER        = KMREC (supply-recommendation.js)
+RECOMMENDATION_OWNER_COUNT  = 1
+SECOND_CALCULATION_PATH_COUNT = 0
+ACTION_DERIVATION_OWNER     = KMREC.deriveRecommendationAction   (pure, exported)
+VERSION                     = kmrec-fm6r1-1 -> kmrec-s5r4-1
+```
+
+### 55.1 Action rules
+
+| ACTION | CONDITION | EVIDENCE |
+|---|---|---|
+| `MANUAL_REVIEW` | `status === BLOCKED` | `calculation_status`; quantity stays `null`, never `0` |
+| *(withheld)* | `reallocation_in_qty_snapshot > 0` | typed `ACTION_MULTIPLICITY_DECISION_REQUIRED` |
+| `NO_ACTION` | `status === NO_ACTION` | `actionableGapQty <= 0` |
+| `MANUAL_REVIEW` | `totalRecommendedQty === null` | units-per-carton unavailable |
+| `NEW_ORDER` | `totalRecommendedQty > 0` | the cartonized residual |
+| `MANUAL_REVIEW` | anything else | READY, not NO_ACTION, no positive total — contradictory |
+
+**The last row fails closed deliberately.** It first returned `NO_ACTION`, which made the explicit `NO_ACTION`
+branch removable with no observable effect — a branch whose deletion changes nothing is dead weight, and it
+also made a mutant inert. Reporting "nothing to do" for a row nobody can explain is the dangerous answer;
+`MANUAL_REVIEW` is the safe one.
+
+### 55.2 Reason tokens — closed set, frozen order
+
+```
+FACTORY_SUPPLY_APPLIED                 MAX(0, initial - out + in) > 0        (43_:565 identity, 3 stored cols)
+FACTORY_SURPLUS_REALLOCATION_APPLIED   reallocation_in_qty_snapshot > 0
+RESIDUAL_SHORTAGE                      READY and actionableGapQty > 0
+NEW_ORDER_REQUIRED                     totalRecommendedQty > 0
+NO_ACTION_REQUIRED                     READY and actionableGapQty <= 0
+MANUAL_REVIEW_REQUIRED                 not READY, or no derivable total
+FORWARD_VISIBILITY_ONLY                t4_gap_qty > 0 while T1-T3 <= 0
+```
+
+Emission order is the **declaration array's** order, applied by a filter over that array — never object-key
+insertion order, which is not a guarantee a caller may rely on.
+
+```
+TOKEN_WITHOUT_EVIDENCE_COUNT      = 0
+UNSUPPORTED_FIELD_SYNTHESIS_COUNT = 0
+MISSING_AS_ZERO_COUNT             = 0
+```
+
+`factorySupplyUsed` returns `null` when **any** of its three operands is MISSING, so an incomplete row emits no
+factory token rather than a confident zero. D-S5-7 holds: no withdrawn token is restored, and
+`reallocation_in_qty_snapshot` never produces a cross-company claim.
+
+### 55.3 Quantity safety, captured rather than asserted
+
+Every fixture was run through the module **as committed at `2b82288`** (`git show`, compiled in memory) and
+through the working tree, and every pre-existing key compared:
+
+```
+fixtures                       10
+CHANGED_PRE_EXISTING_KEYS       0        (deep-equal on every key, every fixture)
+ADDED_KEYS                      3        recommendationAction · recommendationActionUnavailableReason · reasonTokens
+UNEXPECTED_ADDED_KEY_COUNT      0
+
+RECOMMENDATION_QTY_PRE == RECOMMENDATION_QTY_POST = IDENTICAL
+ACTION_DERIVATION_CHANGES_QTY = NO      REASON_DERIVATION_CHANGES_QTY = NO
+OVERSEAS_DOUBLE_SUBTRACTION   = 0       FACTORY_DOUBLE_SUBTRACTION    = 0
+```
+
+The decoration runs **after** the quantity build (`return decorateDecision(row, buildOrderPlanningDto(row, opts))`),
+so it structurally cannot alter a number it only ever reads. `factory_supply_used` is explanatory only — it
+gates a token and never enters an arithmetic path, which is what keeps DC-1 closed.
+
+---
+
+## §56. Caller parity
+
+The derivation lives **inside** the generator, so no caller derives anything.
+
+```
+KMREC_CALLER_COUNT = 4
+KMREC_CALLERS      = request-order.js (manual, ORDER_PLANNING)
+                     inventory-replenishment.js (manual, INVENTORY — unaffected by this slice)
+                     47_api_v1_recommendation_generation.gs (scheduled, via generateBatch)
+                     supply-execution-handoff.js (KMREX — consumes the DTO, allowlist projection)
+
+CALLERS_RECEIVING_ACTION  = the two ORDER_PLANNING paths (manual + scheduled)
+CALLERS_RECEIVING_REASONS = the same two
+MANUAL_SCHEDULED_DERIVATION_DRIFT = 0
+```
+
+No page or handler contains the action vocabulary; the suite asserts that, so a future caller-level derivation
+fails the build rather than silently forking the rule.
+
+`EXISTING_CONSUMER_REGRESSION_COUNT = 0`. `KMREX` projects an allowlist of DTO fields and `47_` reads only
+`summary`, so neither sees the new keys. The INVENTORY DTO is untouched — this slice is order-planning only.
+
+---
+
+## §57. Boundaries held
+
+```
+ACTION_PERSISTED = NO            REASON_TOKENS_PERSISTED = NO
+STATE_MACHINE_CHANGED = NO       USER_EDIT_CHANGED = NO
+SYSTEM_RECALC_OVERWRITES_USER_EDIT = NO
+SHIPPING_ACTION_COUNT = 0        PHASE2_ORCHESTRATION_IMPLEMENTED = NO
+AUTO_CREATE_REQUEST_ORDER = NO   AUTO_CREATE_PO = NO   AUTO_CREATE_SHIPMENT = NO
+PRODUCTION_WRITE_REQUIRED = NO   PRODUCTION_ROWS_WRITTEN = 0
+```
+
+The owner performs no I/O of any kind — no `SpreadsheetApp`, no `getRange`, no `setValues`, no `fetch` — and
+names no carrier, shipment or purchase order. Both are asserted against the stripped source, so a comment can
+never stand in for the property.
+
+---
+
+## §58. Release classification — derived from where the owner actually lives
+
+`supply-recommendation.js` ships **twice**, which is why this slice needs a deploy and a sync rather than
+neither:
+
+```
+IS_KMREC_BROWSER_SERVED     = YES   index.html:479
+IS_KMREC_APPS_SCRIPT_RUNTIME = YES  bundled verbatim into 90_generated_supply_planning_bundle.gs
+IS_KMREC_SHARED_NODE_ONLY   = NO
+
+FRONTEND_DEPLOY_REQUIRED = YES
+TOKEN_ROTATION_REQUIRED  = YES
+FINAL_TOKEN              = s5r4-action-reason-20260928     (rotated on index.html:479 only)
+APPS_SCRIPT_SYNC_REQUIRED = YES
+APPS_SCRIPT_SYNC_SET      = 90_generated_supply_planning_bundle.gs
+BUNDLE_REBUILD_REQUIRED   = YES — rebuilt, deterministic (identical hash on two consecutive builds)
+DB_MIGRATION_REQUIRED     = NO
+```
+
+**Only the changed file's token moved.** `atomic-release-cache-identity-f1-7n-fc-1a-r1-hf1` records the exact
+failure this avoids — a round that *"measured the token it had moved rather than the files it had changed"*,
+leaving the one file carrying a feature served under a stale token. One browser file changed here, and it is
+the one whose token rotated.
+
+The module's own stamp moved to `kmrec-s5r4-1`; the release `build_id` is a separate axis and is untouched.
+
+---
+
+## §59. Status
+
+```
+S5_ACTION_REASON_SLICE_SEAL = YES
+
+OPEN_S5_DEBT = D-S5-9  ACTION_MULTIPLICITY — REALLOCATE vs NEW_ORDER on one contended row.
+                       Operator decision required. Until then the action is withheld with a typed reason and
+                       the evidence is emitted in full.
+
+NEXT_TASK = operator decision on D-S5-9, then S5-R5 — Recommendation read-model + operator-facing integration
+```

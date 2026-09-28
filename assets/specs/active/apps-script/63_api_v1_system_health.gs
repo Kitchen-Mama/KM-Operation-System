@@ -664,7 +664,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // Its absence is NOT loud. 13_ guards on typeof KMPD.resolveTargetRule and returns null when it is missing,
   // and a null target is a SKIPPED month, not an error: an old bundle makes the procurement forecast quietly
   // drop months. An old-but-present bundle is worse still -- it resolves by the retired first-row-wins rule.
-  { file: '90_generated_supply_planning_bundle.gs', symbol: 'KM_BUNDLE_CONTENT_HASH_', expected: '830563effc604ba55a70424d8f7b95c627ae0bc4ce84aa981833fb75ac2ed64f', owns: 'the generated shared-core bundle (60 UMD modules) incl. KMPD.resolveTargetRule — the ONE Target Rule authority every server consumer delegates to; identified by content hash, never by a hand-typed stamp' },
+  { file: '90_generated_supply_planning_bundle.gs', symbol: 'KM_BUNDLE_CONTENT_HASH_', expected: '1801fee052cd23b8436e796f0f8100c835ae65959169f07d68a9ce8834231576', owns: 'the generated shared-core bundle (60 UMD modules) incl. KMPD.resolveTargetRule — the ONE Target Rule authority every server consumer delegates to; identified by content hash, never by a hand-typed stamp' },
   { file: '22_shipment_dispatch_handlers.gs', symbol: 'CSD_BUILD_VERSION_', expected: 'F1-7N-FC-1A-R1', owns: 'Confirm Shipment & Dispatch: deduction + reservation release through the shared authority + the cancelled-shipment dispatch refusal' },
   // F1-7N-FB-4E-R4B-R3 §1 - moved with the file. R4B-R2 changed the GET read dispatch; leaving the manifest at
   // R4A1 would have made a CORRECTLY synced router report as stale, and an UNSYNCED one report as current.

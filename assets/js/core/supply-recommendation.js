@@ -36,6 +36,24 @@
   var ORDER_TOTAL_AUTHORITY = 'SUM_T1_T3_RAW_GAP_CARTONIZE_ONCE';
   var ORDER_TOTAL_UPC_UNAVAILABLE = 'UNITS_PER_CARTON_NOT_AVAILABLE';
 
+  // ---- S5-R4 (Slice A): DERIVED recommendation ACTION + evidence-backed REASON TOKENS ---------------------
+  // Both are DESCRIPTIVE. They read values this module already produced and values already stored on the gap
+  // row; they compute no quantity, touch no total, and are never persisted (D-S5-2 / D-S5-4).
+  var ACTION = { REALLOCATE: 'REALLOCATE', NEW_ORDER: 'NEW_ORDER', NO_ACTION: 'NO_ACTION', MANUAL_REVIEW: 'MANUAL_REVIEW' };
+
+  // WHY REALLOCATE IS NOT EMITTED IN THIS SLICE. The live §41 allocator has a first-class outcome
+  // SURPLUS_REALLOCATION_PARTIAL — a receiver that took surplus IN and is STILL short (measured: in 30,
+  // remaining 70). So at this grain 'reallocation happened' and 'an order is still needed' are BOTH true at
+  // once, and the frozen enum holds one action per row. Picking either one silently would hide the other, so
+  // the action is WITHHELD with a typed reason and the operator owns the multiplicity decision. The reason
+  // tokens below still carry the full evidence, so nothing is lost — only the single-label verdict is deferred.
+  var ACTION_UNAVAILABLE_MULTIPLICITY = 'ACTION_MULTIPLICITY_DECISION_REQUIRED';
+
+  // FROZEN CLOSED SET, in FROZEN DECLARATION ORDER (S5-R3 §46). Emitted order is this array's order — never
+  // object-key insertion accident, which is not a guarantee JS makes for a caller to rely on.
+  var REASON_TOKENS = ['FACTORY_SUPPLY_APPLIED', 'FACTORY_SURPLUS_REALLOCATION_APPLIED', 'RESIDUAL_SHORTAGE',
+    'NEW_ORDER_REQUIRED', 'NO_ACTION_REQUIRED', 'MANUAL_REVIEW_REQUIRED', 'FORWARD_VISIBILITY_ONLY'];
+
   function str(v) { return String(v === undefined || v === null ? '' : v).trim(); }
   // MISSING vs ZERO: '' / null / undefined → null (never coerced to 0); a finite value (incl. 0) → that value.
   function num(v) { if (v === '' || v === null || v === undefined) return null; var n = Number(v); return isFinite(n) ? n : null; }
@@ -115,7 +133,9 @@
   }
 
   // ORDER PLANNING (§4): surface stored T1..T4 verbatim (display/trace) + the FROZEN actionable total (§1).
-  function generateOrderPlanningRecommendation(row, opts) {
+  // S5-R4: the quantity logic below is UNCHANGED. The public entry point wraps it and attaches the derived
+  // action/tokens afterwards, so the decoration provably cannot alter a number it only ever reads.
+  function buildOrderPlanningDto(row, opts) {
     if (!row) return null;
     var dto = baseDto(SOURCE_TYPE.ORDER_PLANNING, row, opts);
     dto.tiers = OP_TIERS.map(function (t) {
@@ -154,6 +174,75 @@
     return dto;
   }
 
+  // factory_supply_used — the 43_ identity MAX(0, initial - out + in) over three STORED columns. Every operand
+  // must be present: a MISSING snapshot is not a zero, so an incomplete row yields null and its token is absent.
+  function factorySupplyUsed(row) {
+    var init = num(row && row.factory_available_qty_snapshot);
+    var outQ = num(row && row.reallocation_out_qty_snapshot);
+    var inQ = num(row && row.reallocation_in_qty_snapshot);
+    if (init === null || outQ === null || inQ === null) return null;
+    return Math.max(0, init - outQ + inQ);
+  }
+  // Reallocated-IN is the §41 intra-company surplus transferred to this receiver. It does NOT prove a
+  // cross-company movement (43_ groups §41 by company||sku), which is why the token took the live transfer's
+  // own word, FACTORY_SURPLUS_REALLOCATION, rather than the name an earlier spec assumed.
+  function reallocatedInQty(row) { return num(row && row.reallocation_in_qty_snapshot); }
+
+  // PURE. (row, dto) in, a small plain object out. No clock, no RNG, no I/O, no mutation of either argument,
+  // and no arithmetic that could feed a quantity.
+  function deriveRecommendationAction(row, dto) {
+    if (!row || !dto) return null;
+    if (dto.status === STATUS.BLOCKED) return { action: ACTION.MANUAL_REVIEW, unavailableReason: null };
+    var inQ = reallocatedInQty(row);
+    if (inQ !== null && inQ > 0) return { action: null, unavailableReason: ACTION_UNAVAILABLE_MULTIPLICITY };
+    if (dto.status === STATUS.NO_ACTION) return { action: ACTION.NO_ACTION, unavailableReason: null };
+    // READY with no derivable total (units-per-carton unavailable): the action cannot be stated truthfully.
+    if (dto.totalRecommendedQty === null) return { action: ACTION.MANUAL_REVIEW, unavailableReason: null };
+    if (dto.totalRecommendedQty > 0) return { action: ACTION.NEW_ORDER, unavailableReason: null };
+    return { action: ACTION.MANUAL_REVIEW, unavailableReason: null };   // READY, not NO_ACTION, no positive total -> contradictory
+  }
+
+  // Evidence, not verdict. Tokens are emitted from the numbers that support them and are therefore safe even
+  // where the single-label action is withheld — a contended row still explains itself completely.
+  function deriveReasonTokens(row, dto) {
+    if (!row || !dto) return [];
+    var on = {};
+    var fsu = factorySupplyUsed(row);
+    if (fsu !== null && fsu > 0) on.FACTORY_SUPPLY_APPLIED = 1;
+    var inQ = reallocatedInQty(row);
+    if (inQ !== null && inQ > 0) on.FACTORY_SURPLUS_REALLOCATION_APPLIED = 1;
+    if (dto.status === STATUS.BLOCKED) {
+      on.MANUAL_REVIEW_REQUIRED = 1;                         // no gap-derived token: the numbers are not READY
+    } else {
+      var gap = dto.actionableGapQty;
+      if (typeof gap === 'number' && isFinite(gap) && gap > 0) on.RESIDUAL_SHORTAGE = 1;
+      if (typeof dto.totalRecommendedQty === 'number' && dto.totalRecommendedQty > 0) on.NEW_ORDER_REQUIRED = 1;
+      if (dto.totalRecommendedQty === null) on.MANUAL_REVIEW_REQUIRED = 1;
+      if (typeof gap === 'number' && isFinite(gap) && gap <= 0) {
+        on.NO_ACTION_REQUIRED = 1;
+        var t4 = dto.forwardVisibility ? num(dto.forwardVisibility.t4GapQty) : null;
+        if (t4 !== null && t4 > 0) on.FORWARD_VISIBILITY_ONLY = 1;   // need exists, just not in an actionable tier
+      }
+    }
+    return REASON_TOKENS.filter(function (t) { return on[t] === 1; });   // frozen declaration order
+  }
+
+  // ADDITIVE decoration. Every existing field is left exactly as the generator produced it; this only ATTACHES.
+  // Applied inside the owner so that every caller — manual button and scheduled job alike — receives the same
+  // derivation, and no caller is ever tempted to derive its own.
+  function decorateDecision(row, dto) {
+    if (!dto) return dto;
+    var d = deriveRecommendationAction(row, dto);
+    dto.recommendationAction = d ? d.action : null;
+    dto.recommendationActionUnavailableReason = d ? d.unavailableReason : null;
+    dto.reasonTokens = deriveReasonTokens(row, dto);
+    return dto;
+  }
+
+  function generateOrderPlanningRecommendation(row, opts) {
+    return decorateDecision(row, buildOrderPlanningDto(row, opts));
+  }
+
   // Shared dispatch used by BOTH the manual AI Plan button and the automatic backend generator (one owner).
   function generateForRow(product, row, opts) {
     var p = str(product).toUpperCase();
@@ -189,6 +278,10 @@
     generateInventoryRecommendation: generateInventoryRecommendation,
     generateOrderPlanningRecommendation: generateOrderPlanningRecommendation,
     generateForRow: generateForRow, generateBatch: generateBatch, isStale: isStale,
-    VERSION: 'kmrec-fm6r1-1'
+    ACTION: ACTION, REASON_TOKENS: REASON_TOKENS.slice(),
+    ACTION_UNAVAILABLE_MULTIPLICITY: ACTION_UNAVAILABLE_MULTIPLICITY,
+    factorySupplyUsed: factorySupplyUsed,
+    deriveRecommendationAction: deriveRecommendationAction, deriveReasonTokens: deriveReasonTokens,
+    VERSION: 'kmrec-s5r4-1'
   };
 });

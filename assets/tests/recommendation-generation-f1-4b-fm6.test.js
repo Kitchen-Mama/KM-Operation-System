@@ -100,7 +100,11 @@ ok(KMREC.isStale(o1, opRow({ calculated_at: '2099-01-01 00:00:00' })) === true, 
 
 section('bundle / wiring — KMREC bundled for the backend + loaded in the browser');
 ok(/supply-recommendation/.test(BUILD) && /\['KMREC', 'supply-recommendation'\]/.test(BUILD), 'B1 KMREC registered in the bundle MODULE_ORDER + GLOBALS');
-ok(/kmrec-fm6r1-1/.test(BUNDLE) && /supply-recommendation \(verbatim/.test(BUNDLE), 'B2 the rebuilt bundle contains the KMREC module (backend automatic path can call it)');
+// B2 (repaired S5-R4): the expected stamp is DERIVED from the loaded module, not spelled here. Hardcoding
+// it meant a routine stamp bump broke a test whose subject is bundling, and it only ever proved that SOME
+// version of KMREC was bundled. Derived, it proves the bundle carries the CURRENT one.
+ok(new RegExp("VERSION: '" + KMREC.VERSION + "'").test(BUNDLE) && /supply-recommendation \(verbatim/.test(BUNDLE),
+  'B2 the rebuilt bundle contains the CURRENT KMREC module, ' + KMREC.VERSION + ' (backend automatic path can call it)');
 ok(/assets\/js\/core\/supply-recommendation\.js/.test(INDEX), 'B3 KMREC loaded in index.html (browser manual AI Plan)');
 
 section('DTO shape (§9) — compact canonical decision output');

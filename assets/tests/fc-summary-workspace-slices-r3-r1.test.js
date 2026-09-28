@@ -459,8 +459,18 @@ ok(/FC_SE_UNIQUENESS_FIELDS_/.test(require('fs').readFileSync(require('path').jo
   ok(!!_rtrD && _rtrD === _rtrE,
     'E8.3  01_router.gs declares exactly what the manifest expects (' + _rtrD + ') — a partial sync stays visible');
 })();
-ok(/KM_BUNDLE_CONTENT_HASH_', expected: '830563effc604ba55a70424d8f7b95c627ae0bc4ce84aa981833fb75ac2ed64f'/.test(HEALTH),
-   'E9  the generated bundle hash is untouched — no rebuild');
+(function () {
+  // E9 (repaired S5-R4): was a hardcoded bundle hash asserting THIS round performed no rebuild. That is a
+  // claim about a past release that cannot be re-verified from the current tree, and as a permanent seal it
+  // fails every later round that legitimately rebuilds. Restated as the durable property — manifest and
+  // bundle AGREE — derived from both declarations, exactly as E8.3 does for 01_router.gs.
+  var _bunD = (/var KM_BUNDLE_CONTENT_HASH_ = '([^']+)'/.exec(
+    require('fs').readFileSync(require('path').join(__dirname, '..', 'specs', 'active', 'apps-script',
+      '90_generated_supply_planning_bundle.gs'), 'utf8')) || [])[1];
+  var _bunE = (/KM_BUNDLE_CONTENT_HASH_', expected: '([^']+)'/.exec(HEALTH) || [])[1];
+  ok(!!_bunD && _bunD === _bunE,
+     'E9  the generated bundle declares exactly what the manifest expects (' + _bunD + ') — a partial sync stays visible');
+})();
 ok(!/R6-R7-R14/.test(ROUTER), 'E10 01_router.gs is not part of this release');
 ok(/action === 'fcSummary\.workspace\.get'/.test(ROUTER) && /handleFcSummaryWorkspaceGet_\(body\)/.test(ROUTER),
    'E11 and still dispatches the SAME action — no new routed action was invented');
