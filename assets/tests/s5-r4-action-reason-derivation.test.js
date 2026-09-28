@@ -304,16 +304,21 @@ eq(COMBINED_NAMES.filter(function (k) { return k in comb; }), [],
 ok(!Object.keys(comb).some(function (k) { return comb[k] === 100; }),
   'G6a and no field happens to equal 30 + 70 — the sum exists nowhere in the DTO');
 
-// §10 — CONSUMER AUDIT. Nothing reads the derived fields yet; that is the intended state after Slice A, and
-// it is RECORDED rather than fixed by inventing an integration. S5-R5 owns the read model.
+// §10 — CONSUMER AUDIT. S5-R4A recorded that NOTHING read these fields yet. S5-R5 made the Request Order page
+// the first consumer, so that snapshot is superseded — and a test that pinned "nobody reads it" would have had
+// to be deleted the moment the read model shipped. The DURABLE claim is the one that must never change: a
+// consumer may READ the derived fields, and may never DERIVE them. That is what is asserted here now.
 var CONSUMER_FILES = ['assets/js/pages/request-order.js', 'assets/js/pages/inventory-replenishment.js',
   'assets/js/core/supply-execution-handoff.js', GS + '47_api_v1_recommendation_generation.gs'];
 var consumersReading = CONSUMER_FILES.filter(function (f) {
   return /recommendationAction|reasonTokens/.test(code(read(f)));
 });
-eq(consumersReading, [], 'G7 UNKNOWN_ACTION_CONSUMER_COUNT = 0 — no consumer reads the action yet');
-ok(!CONSUMER_FILES.some(function (f) { return /REALLOCATE_AND_NEW_ORDER/.test(code(read(f))); }),
-  'G8 and none hardcodes the combined member either');
+eq(consumersReading, ['assets/js/pages/request-order.js'],
+  'G7 exactly one consumer reads the derived fields — the S5-R5 read model');
+CONSUMER_FILES.forEach(function (f) {
+  ok(!/deriveRecommendationAction|deriveReasonTokens/.test(code(read(f))),
+    'G8 ' + path.basename(f) + ' reads the verdict but never derives it');
+});
 
 // Persistence: neither field may appear in any storage header.
 var V2 = require(path.join(ROOT, CORE + 'supply-planning-request-draft-v2.js')).V2_HEADERS;

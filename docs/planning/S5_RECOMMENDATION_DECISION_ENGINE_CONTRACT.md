@@ -2485,3 +2485,208 @@ NEXT_TASK = S5-R5 — Recommendation read-model + operator-facing integration
 ```
 
 **End of Part VI.**
+
+
+---
+---
+
+# PART VII — S5-R5 READ-MODEL + OPERATOR-FACING INTEGRATION
+
+*Read/display round. No write, no persistence, no quantity change, no allocation change. Base `a36c3fd`.*
+
+---
+
+## §65. The surface, found rather than invented
+
+§1 required locating the existing operator surface instead of designing a new page. It exists, and the
+recommendation already has a home in it.
+
+```
+PRIMARY_OPERATOR_SURFACE = Request Order page — assets/js/pages/request-order.js
+READ_MODEL_OWNER  = _opMatCache.bySku   (materialized order_planning_gap rows, loaded once per scope)
+PAGE_MODEL_OWNER  = _roRecoByKey        (sku -> KMREC DTO, produced by the AI Plan action)
+RENDER_OWNER      = _roRecoActionHtml   (Block 3 · "Recommendation Summary", inside the SKU expand)
+PLACEMENT         = B — second-level expanded detail, in the card that already carries
+                       Demand Summary + Order Allocation + Recommendation diagnostics
+```
+
+The recommendation is generated **in the browser from rows the scope read already loaded**
+(`request-order.js:4416`). That is why §10 and §12 are satisfied structurally rather than by promise: there is
+no per-SKU request to avoid, because the render makes no request at all.
+
+```
+KMREC_OUTPUT_OWNER = KMREC.generateOrderPlanningRecommendation   (manual button AND 47_ scheduled job)
+TRANSPORT_OWNER    = the existing scope-level gap read — unchanged, no new field on the wire
+ADAPTER_OWNER      = none — the page holds the DTO directly
+FRONTEND_REDERIVES_ACTION = NO    FRONTEND_REDERIVES_REASON_TOKENS = NO
+SECOND_RECOMMENDATION_CALCULATION_PATH = 0
+```
+
+---
+
+## §66. The defect this round fixes
+
+The page rendered its verdict from `dto.status` — which is a **readiness** state (`READY` / `NO_ACTION` /
+`BLOCKED`), not a decision:
+
+```js
+if (dto.status === 'NO_ACTION') return '... No order action required across T1–T4 ...';
+```
+
+A row whose need was **fully covered by a reallocation** has exactly that status. So it displayed *"No order
+action required"* while a transfer was in fact required — the operator would have believed it, and the
+`SURPLUS_REALLOCATION_COVERED` outcome would have been silently invisible.
+
+This was latent before D-S5-9 and became reachable the moment `REALLOCATE` could be emitted. The page now reads
+`recommendationAction` and derives nothing itself.
+
+---
+
+## §67. Display contract
+
+```
+ACTION_LABELS
+  REALLOCATE               -> Reallocate Supply
+  NEW_ORDER                -> New Order
+  REALLOCATE_AND_NEW_ORDER -> Reallocate + New Order
+  NO_ACTION                -> No Action
+  MANUAL_REVIEW            -> Manual Review
+```
+
+Labels are **presentation** and live in the page; the enum is **authority** and lives in KMREC. No canonical
+value was renamed to match copy, and no display string is read back as authority.
+
+An action the page has no label for renders *"Recommendation unavailable for this SKU"* — deliberately **not**
+`No Action`, because an action that cannot be named is unavailable, not absent.
+
+### §67.1 Two quantities, shown side by side, never added
+
+```
+Reallocation  30        <- the §41 snapshot on the gap row the page already holds
+New Order     70        <- KMREC totalRecommendedQty, cartonize-once
+COMBINED_QUANTITY_DISPLAY_COUNT = 0
+```
+
+The suite asserts the string `100` appears nowhere in the rendered markup for that row. A missing reallocation
+snapshot renders **no line at all** rather than a zero.
+
+### §67.2 Reason presentation
+
+Tokens are not dumped as an array. Each emitted token renders one human line inside a collapsed
+`<details>` — the page's own existing idiom (`_opRecoSubsectionHtml` already uses it for diagnostics) — with the
+canonical token retained beside it for diagnostics and tests.
+
+```
+RAW_TOKEN_AS_PRIMARY_UI = NO
+TOKEN_WITHOUT_EVIDENCE_COUNT = 0
+```
+
+Each line says exactly what its token's evidence establishes. In particular the reallocation line says
+**"from another site"**, not "cross-company": §41 groups receivers by `company||sku`, so the snapshot proves a
+site transfer, and claiming more is the fault D-S5-7 exists to prevent. A mutant that changes that word to
+"company" is killed.
+
+---
+
+## §68. Boundaries
+
+```
+ACTION_PERSISTED = NO    REASON_TOKENS_PERSISTED = NO
+RECOMMENDATION_ACTION_IS_WORKFLOW_STATE = NO    STATE_MACHINE_CHANGED = NO
+SYSTEM_RECALC_OVERWRITES_USER_EDIT = NO         (the render writes no state at all)
+UNSUPPORTED_DISPLAY_FIELD_COUNT = 0             MISSING_AS_ZERO_COUNT = 0
+SHIPPING_ACTION_COUNT = 0                       PHASE2_ORCHESTRATION_IMPLEMENTED = NO
+PRODUCTION_WRITE_REQUIRED = NO                  PRODUCTION_ROWS_WRITTEN = 0
+```
+
+None of the eight fields S5-R3 classified unavailable is rendered, under its own name or a friendly one.
+
+---
+
+## §69. Next write slice — audited, not implemented
+
+```
+NEXT_WRITE_OWNER   = KMRDV2P.planFlat -> KMPR.applyPersistencePlanWithLock
+                     (the optimistic {draft_version, userEditFingerprint} token + LockService boundary)
+NEXT_WRITE_TARGET  = request_order_allocation_drafts (flat V2, 53 col) + recommendation_calculation_runs
+NEXT_WRITE_PAYLOAD = scope + planning_cycle + per-tier { month, recommendedQty } + provenance
+                     { calculationRunId, formulaVersion, calculatedAt, sourceDataAsOf }
+                     — the action and reason tokens are NOT part of it; they stay derived
+PRODUCTION_DATA_CLASSIFICATION = PRODUCTION (mixed: real operator drafts alongside demo-seeded rows)
+```
+
+The action is a **verdict about** a draft, not a field **of** one. Writing it would create a second copy of a
+value KMREC already derives, which is the duplication D-S5-2 froze against.
+
+---
+
+## §70. Measured, not asserted
+
+Every figure below was measured on the live page with this change in place, by the harnesses that already own
+these questions — no new performance harness was invented.
+
+| observation | result | owner |
+|---|---|---|
+| cold entry | request count stable at 0 ms and 400 ms; no route left a request open on leave | `s4-r1` |
+| warm re-entry | **0 requests** — immediate return, delayed return, rapid A -> B -> A | `s4-r2 §A2` |
+| first / second / third SKU expand | **0 requests each**; the `ops` route specifically 0 | `s4-r7 §C1/§C4a` |
+| duplicate reads | `L2_PREFETCH_DUPLICATE_REQUEST_COUNT = 0` | `s4-r7 §B2` |
+| listeners / timers | `LISTENER_DRIFT = 0`, `TIMER_DRIFT = 0` after ten return trips | `s4-r2 §E` |
+
+```
+NEW_NETWORK_REQUESTS_FOR_ACTION_REASON = 0    PER_SKU_EXPAND_REQUEST_COUNT = 0
+ACTION_EXPAND_REQUEST_COUNT = 0               REASON_EXPAND_REQUEST_COUNT = 0
+DUPLICATE_REQUEST_COUNT = 0   LISTENER_DRIFT = 0   TIMER_DRIFT = 0   OPEN_REQUEST_LEAK_COUNT = 0
+```
+
+**SEARCH is stated honestly.** `s3-r11` measures zero-request search on SKU Details, not on Request Order, so
+no Request Order search figure is claimed. What is proven instead is structural and tested: the render function
+is synchronous and contains no `fetch`, no `Promise`/`await`, no `setTimeout` and no `addEventListener`
+(suite §G2–G5), so no interaction can gain a request through it.
+
+---
+
+## §71. Two tests failed, and both were right
+
+**`s5-r4 G7/G8`** asserted that *nothing* read the derived fields. That was true when S5-R4A wrote it and
+false the moment this round shipped a read model — a test pinning "nobody reads it" would have had to be
+deleted the first time anyone did. It is replaced by the claim that must never change: a consumer may **read**
+the verdict and may never **derive** it. Exactly one consumer now reads it.
+
+**`home-boot H17`** caught `request-order.css`, which this round changed and which was still served at
+`toolbarui-20260811` — dated 2026-08-11. That is precisely the failure `atomic-release-cache-identity` records:
+a file whose bytes moved being served under a token a returning browser already holds. The stylesheet now
+carries the current application token.
+
+---
+
+## §72. Release
+
+Only frontend bytes changed: no `assets/js/core/` module, no Apps Script file, so the generated bundle needed
+no rebuild and the backend tree that R27 names is untouched.
+
+```
+BACKEND_RELEASE = F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R27   UNCHANGED — the rule turns on the tree differing, and it does not
+APPLICATION_TOKEN = s5r4-actionreason-20260928         KEPT, per the operator decision and H17
+TOKEN_ROTATION_REQUIRED = NO
+
+APPS_SCRIPT_SYNC_REQUIRED (this round)  = NO — it changed no Apps Script file
+APPS_SCRIPT_SYNC_SET      (accumulated, still pending from S5-R4A) =
+    90_generated_supply_planning_bundle.gs · 63_api_v1_system_health.gs ·
+    01_router.gs · 73_api_v1_pricing_write.gs
+FRONTEND_DEPLOY_REQUIRED = YES
+FRONTEND_DEPLOY_SET = index.html · assets/js/pages/request-order.js · assets/css/pages/request-order.css
+DB_MIGRATION_REQUIRED = NO
+```
+
+---
+
+## §73. Status
+
+```
+S5_READ_MODEL_UI_SLICE_SEAL = YES
+OPEN_S5_DEBT = none
+NEXT_TASK = S5-R6 — operator decision -> Draft Allocation / Request Order candidate mapping
+```
+
+**End of Part VII.**

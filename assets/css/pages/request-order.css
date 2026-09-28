@@ -2179,6 +2179,30 @@
 #request-order-section .ro-reco-action__note { margin-top: 3px; color: var(--text-secondary, #6b7280); overflow-wrap: anywhere; }
 #request-order-section .ro-reco-action--ready { background: #ecfdf5; }
 #request-order-section .ro-reco-action--none { background: #f8fafc; }
+
+/* S5-R5 - the recommendation VERDICT, its two independent quantities, and the collapsed evidence.
+   Every class the render emits is styled here: an unstyled state class ships as an invisible one, which is
+   the defect PSB_STATE_CLASSES_HAVE_NO_CSS records. */
+#request-order-section .ro-reco-action__title--sub { margin-top: 8px; font-weight: 700; color: #374151; }
+#request-order-section .ro-reco-action__verdict { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin: 2px 0 4px; }
+#request-order-section .ro-reco-action__label { font-weight: 800; font-size: 12px; padding: 1px 7px; border-radius: 10px; background: #e5e7eb; color: #1f2937; white-space: nowrap; }
+#request-order-section .ro-reco-action__label--new_order { background: #d1fae5; color: #065f46; }
+#request-order-section .ro-reco-action__label--reallocate { background: #dbeafe; color: #1e40af; }
+#request-order-section .ro-reco-action__label--reallocate_and_new_order { background: #ede9fe; color: #5b21b6; }
+#request-order-section .ro-reco-action__label--no_action { background: #f1f5f9; color: #475569; }
+#request-order-section .ro-reco-action__label--manual_review { background: #fef3c7; color: #92400e; }
+#request-order-section .ro-reco-action__summary { color: var(--text-secondary, #6b7280); overflow-wrap: anywhere; }
+#request-order-section .ro-reco-qtys { display: flex; flex-wrap: wrap; gap: 14px; margin: 3px 0; }
+#request-order-section .ro-reco-qty { display: inline-flex; align-items: baseline; gap: 5px; }
+#request-order-section .ro-reco-qty__label { font-weight: 700; color: #374151; }
+#request-order-section .ro-reco-qty__val { font-weight: 800; font-size: 13px; color: #111827; font-variant-numeric: tabular-nums; }
+#request-order-section .ro-reco-reason { margin-top: 4px; }
+#request-order-section .ro-reco-reason__summary { cursor: pointer; font-weight: 700; color: #374151; }
+#request-order-section .ro-reco-reason__list { margin: 4px 0 0; padding-left: 16px; }
+#request-order-section .ro-reco-reason__list li { margin: 2px 0; }
+#request-order-section .ro-reco-reason__text { color: var(--text-secondary, #6b7280); }
+#request-order-section .ro-reco-reason__token { margin-left: 6px; font-size: 10px; color: #9ca3af; background: #f8fafc; padding: 0 4px; border-radius: 3px; }
+
 #request-order-section .ro-reco-action--blocked,
 #request-order-section .ro-reco-action--stale { color: #92400e; background: #fffbeb; }
 
