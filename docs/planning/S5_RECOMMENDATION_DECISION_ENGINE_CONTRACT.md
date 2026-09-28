@@ -718,6 +718,11 @@ Full ordering ↔ lead-time ↔ shipping orchestration remains Phase 2 and is no
 
 ## §18. D-S5-1 — CONTRACT CONFLICT (STOPPED, not frozen)
 
+> **DISCHARGED BY PART III §31 (S5-R2A).** The operator resolved this in favour of the live policy:
+> `D_S5_1_DONOR_CONTENTION = SEQUENTIAL_GREEDY`, frozen. The 50/50 split is rejected and is not a supported
+> branch. This section is retained as the record of why the decision was re-put — the measurement below is
+> what made the conflict visible — and is no longer a STOP.
+
 **The operator's §3 rule contradicts live, implemented, wired behaviour.** Part I raised D-S5-1 on a premise
 that was wrong, so the decision was taken without this on the table. Correcting it is the substance of this
 section.
@@ -885,8 +890,10 @@ UNALLOCATED_SURPLUS_RULE = stays unallocated; never redistributed as donor surpl
 
 ## §21. Decisions frozen
 
+> **SUPERSEDED BY PART III §39.** All six are now frozen and `UNRESOLVED_DECISION_COUNT = 0`.
+
 ```
-D_S5_1_DONOR_CONTENTION = CONTRACT_CONFLICT — NOT FROZEN (§18)
+D_S5_1_DONOR_CONTENTION = CONTRACT_CONFLICT — NOT FROZEN (§18)   [superseded: FROZEN, Part III §31]
 D_S5_2_RECOMMENDATION_ACTION = FROZEN (§22)
 D_S5_3_PRIORITY              = FROZEN (§23)
 D_S5_4_EXPLAINABILITY        = FROZEN (§24)
@@ -1208,5 +1215,213 @@ UNRESOLVED_DECISION_COUNT   = 1
 everything except receiver contention, but the contention rule determines §41's live behaviour and should be
 settled before any implementation round touches that path.
 
-**End of contract.**
+# PART III — S5-R2A decision freeze completion (2026-09-28)
 
+**Status: S5 BUSINESS DECISION FREEZE COMPLETE.** All six decisions frozen. `UNRESOLVED_DECISION_COUNT = 0`.
+Spec-only. `BEHAVIOR_CHANGED = NO`. Base `32e5541`.
+
+Part III is authoritative over Part II §18–§19 wherever they differ.
+
+---
+
+## §31. D-S5-1 — RESOLVED by operator decision
+
+```
+D_S5_1_DONOR_CONTENTION = SEQUENTIAL_GREEDY   (FROZEN)
+```
+
+**The operator accepted the already-live §41 policy.** The proposed 50/50 proportional split is **rejected and
+not carried forward** — it is not a supported branch, not modelled, and not tested as one. No
+receiver-count-specific rule is introduced.
+
+Part II §18 recorded this as a `CONTRACT_CONFLICT` and stopped. The conflict is resolved in favour of the
+running system, so §18's STOP is discharged; its measurement is retained as the record of why the decision was
+re-put to the operator.
+
+```
+S5_R1_CONTENTION_PREMISE = SUPERSEDED_BY_S5_R2_EVIDENCE
+```
+
+S5-R1's statement that receiver contention had no frozen owner was **incorrect**. The actual owner is
+`KMFSR.runReallocation`, wired live from `43_` since FA-3B3b. The historical S5-R1 evidence files are **not
+rewritten** — they record what was believed at the time. This line is the correction of record.
+
+---
+
+## §32. The canonical contention contract (FROZEN)
+
+```
+RECEIVER_SORT      = requiredByDate ASC
+                     -> allocationPriority DESC (higher priority first)
+                     -> demandKey ASC (stable tie-break)
+
+ALLOCATION_METHOD  = SEQUENTIAL_GREEDY
+
+DONOR_START_QTY    = eligible available surplus only
+                     = releasableSurplusQty = MAX(0, initialFactoryAllocationQty - protectedFactoryQty)
+
+RECEIVER_CAP       = eligible residual gap (preTransferRemainingShortageQty)
+```
+
+```
+for each receiver, in RECEIVER_SORT order:
+    for each eligible donor, in canonical donor order:
+        transfer MIN(receiver remaining residual, donor remaining surplus, timely transferable)
+    until the receiver's residual is 0
+continue until donor surplus is exhausted OR no receiver residual remains
+```
+
+Owner of record: `supply-planning-surplus-reallocation.js` `runReallocation` (:169-231), reached live through
+`43_:762 -> 43_:557`.
+
+**Invariants, all measured rather than asserted** (`s5-r2a-contention-policy-freeze.test.js`):
+
+```
+allocated_to_receiver <= receiver residual         RECEIVER_OVERFILL   = 0
+total_allocated_from_donor <= donor available      OVER_ALLOCATION     = 0
+same lineage cannot be consumed twice              DOUBLE_CONSUMPTION  = 0  (duplicate demandKey fails closed)
+reserved / ineligible supply never enters the pool §43.6, unusedFactorySupplyQty = 0
+deterministic, stable under input permutation      DETERMINISTIC       = YES
+```
+
+### One algorithm, every receiver count
+
+```
+ZERO_RECEIVER_RULE       = no actionable receiver -> no transfer
+ONE_RECEIVER_RULE        = consumes up to its full residual gap from eligible donor surplus
+TWO_RECEIVER_RULE        = SEQUENTIAL_GREEDY (no proportional split, no special case)
+THREE_PLUS_RECEIVER_RULE = SEQUENTIAL_GREEDY (no MANUAL_REVIEW path, no special case)
+```
+
+**All four derive from the same algorithm.** There is no receiver-count branch anywhere, and the suite proves
+it by running 0, 1, 2, 3 and 4 receivers against one model with no such branch (§D), and by planting a
+count-specific branch at 2 as a mutant (E7).
+
+---
+
+## §33. Worked examples — executed, with the winner derived from the sort
+
+Not a table of remembered numbers: each expectation is computed through the frozen `RECEIVER_SORT` and then
+compared against the live module. Which receiver is served first comes from the sort contract, never from a
+name. All receivers below share one `requiredByDate` and one `allocationPriority`, so the `demandKey` ASC
+tie-break decides — which is why A precedes B precedes C here and would not if the earlier axes differed.
+
+| # | Donor | Gaps | Result | Note |
+|---|---|---|---|---|
+| A | 100 | A 100 · B 100 | **A 100 · B 0** | first receiver served in full; second gets nothing |
+| B | 100 | A 20 · B 100 | **A 20 · B 80** | A capped at its residual, remainder flows on |
+| C | 100 | A 20 · B 30 | **A 20 · B 30**, 50 unallocated | donor exceeds combined demand; residual stays unallocated (§43.6) |
+| D | 101 | A 100 · B 100 | **A 100 · B 1** | odd quantity needs no rounding rule — there is no proportional split to round |
+| E | 100 | A/B/C 100 each | **A 100 · B 0 · C 0** | identical rule at three receivers; no special path |
+
+**Example D settles the odd-quantity question Part II §18a raised.** That question only existed because a
+proportional split has to divide an odd number. A sequential greedy never divides anything: each receiver is
+capped at its own residual and the remainder flows to the next. `ROUNDING_POLICY = NOT_APPLICABLE`.
+
+---
+
+## §34. The donor cap is enforced three times (measured)
+
+Found by two successive mutants that survived, not by reading the code. Three independent guards each cap a
+donor at its real surplus:
+
+1. `donorRemainingSurplus` — a term in the `MIN` inside `applyFeasibleReallocation`
+2. `timelyTransferableQty` — the §41.5A pass-through, the **same** `avail`, in that same `MIN`
+3. `df.releasableSurplusQty <= 0` — gates the donor loop, so an exhausted donor is skipped for the next receiver
+
+Removing one changed nothing. Removing two changed nothing. Only removing all three produces over-allocation.
+**A single-guard defect in this function cannot over-allocate a donor**, which is a stronger safety property
+than the contract asked for, and it is now asserted in both directions: the full removal over-allocates (E5),
+and the partial removal still conserves (E5a).
+
+This is the fifth round in this repository in which a defence turned out to be doubled.
+
+---
+
+## §35. The other five decisions — carried unchanged
+
+```
+D_S5_2_RECOMMENDATION_ACTION = FROZEN  { REALLOCATE, NEW_ORDER, NO_ACTION, MANUAL_REVIEW }   derived, stored nowhere
+D_S5_3_PRIORITY              = FROZEN  EXISTING_CANONICAL_CONSUMPTION_ORDER (§44.6 + §41.3)
+D_S5_4_EXPLAINABILITY        = FROZEN  CLOSED_REASON_TOKENS + numeric evidence + lineage refs
+                                       FREE_TEXT_IS_AUTHORITY = NO
+D_S5_5_STATE                 = FROZEN  STATE_VOCABULARY_CHANGED = NO
+                                       draft · submitted · cancelled · user_edited · draft_version
+D_S5_6_STALENESS             = FROZEN  DISPLAY_FLAG_ONLY · STALE_MUTATES_DECISION = NO
+```
+
+Full definitions in Part II §22–§24 and §21; nothing in them changed.
+
+---
+
+## §36. Phase-1 mainline separation — reasserted
+
+```
+SHIPPING_REQUIRED_QTY_IS_PURCHASE_DEMAND = NO
+SHIPMENT_PLAN_AUTO_CREATES_REQUEST_ORDER = NO      SHIPMENT_PLAN_AUTO_CREATES_PO = NO
+REQUEST_ORDER_AUTO_CREATES_SHIPMENT      = NO      PO_AUTO_CREATES_SHIPMENT      = NO
+PHASE2_ORCHESTRATION_IMPLEMENTED         = NO
+```
+
+Ordering/Supply Planning and Shipping/Logistics remain separate decision authorities in Phase 1. Shipping data
+may be consumed as supply-state evidence; shipping demand is never a purchase-order quantity authority. Full
+lead-time / order / shipping orchestration belongs to Phase 2 and is not designed here.
+
+Measured each round over comment-stripped sources (Part I §2A): the ordering mainline calls no shipment
+creator, and the shipping mainline names neither ordering table.
+
+---
+
+## §37. Double-count defence — re-run
+
+```
+RECOMMENDATION_RECOMPUTES_FORECAST = NO      RECOMMENDATION_RECOMPUTES_GAP = NO
+OVERSEAS_DOUBLE_SUBTRACTION = 0              FACTORY_DOUBLE_SUBTRACTION = 0
+```
+
+The two-sided guard holds: the fold into KMTPP opening supply exists (`42_:458-463`), and the residual does
+not re-subtract it (`42_:506-507`). Green at `32e5541` and at this round's HEAD.
+
+---
+
+## §38. Storage — reconfirmed after the freeze completed
+
+```
+STORAGE_OWNER = request_order_allocation_drafts (flat V2, 53 col) — recommendation qty, operator qty, state,
+                version, operator edit
+                order_planning_gap + recommendation_calculation_runs — calculation evidence and run lineage
+NEW_TABLE_REQUIRED        = NO
+SCHEMA_EXTENSION_REQUIRED = NO for Phase 1 as specified
+DB_MIGRATION_REQUIRED     = NO
+```
+
+Nothing in the D-S5-1 resolution changed the storage picture: accepting the live policy adds no field. Action,
+reason tokens and staleness remain **derived**; `factory_supply_used` remains derivable from three already
+persisted columns via the `43_:566` identity.
+
+Optional fields from Part II §26, **listed again and still not implemented**:
+
+| FIELD | TYPE | NULLABILITY | OWNER | SOURCE |
+|---|---|---|---|---|
+| `own_supply_qty_snapshot` | integer >= 0 | nullable (MISSING != 0) | KMTPP opening composition | `composition.siteStockQty` |
+| `overseas_supply_qty_snapshot` | integer >= 0 | nullable | KMMSA | `composition.allocatedOverseasQty` |
+| `committed_supply_qty_snapshot` | integer >= 0 | nullable | KMOOR | Σ timed ongoing incoming |
+
+Additive at the end of `OP_GAP_HEADERS_` following the `OP_GAP_FACTORY_SNAPSHOT_COLS_` precedent. **Proposed
+only. Not created, not migrated.**
+
+---
+
+## §39. S5 decision freeze status
+
+```
+D_S5_1 = FROZEN     D_S5_2 = FROZEN     D_S5_3 = FROZEN
+D_S5_4 = FROZEN     D_S5_5 = FROZEN     D_S5_6 = FROZEN
+
+UNRESOLVED_DECISION_COUNT   = 0
+S5_DECISION_FREEZE_COMPLETE = YES
+```
+
+`NEXT_TASK = S5-R3 — Recommendation schema / mapping + implementation plan.`
+
+**End of contract.**
