@@ -98,6 +98,22 @@ var BASE = 'e583057';   // R25 starts here: the tree after S3-R8's transport bud
 // The files THIS release syncs, and the ONE reason each is on the list. A file on the sync list for no
 // stated reason is how an unrelated edit reaches production by accident — so the set is declared here
 // and checked against git below, rather than being read off git and believed.
+// S5-R4 — GENERATED OWNERS: copied, but never stamped.
+//
+// A generated artifact is identified by its CONTENT HASH, not by a hand-typed stamp, so it can never appear
+// in C3's "rows whose expected === RELEASE" — putting it in RELEASE_OWNERS fixes I1 and breaks C3. It is a
+// third kind of member and gets its own list, the same way this suite already partitioned DELETED paths out
+// of the copy list rather than widening the expected set. I1 checks COPY, so it checks both lists; C3 checks
+// STAMPS, so it checks only the stamped one.
+var GENERATED_OWNERS = {
+  '90_generated_supply_planning_bundle.gs':
+    'THE GENERATED SHARED CORE. S5-R4 added the recommendation ACTION + reason derivation to KMREC, and this '
+    + 'bundle carries every assets/js/core module VERBATIM for the Apps Script runtime — so the SCHEDULED '
+    + 'generation path would call the OLD derivation until it is copied, which is exactly the manual/scheduled '
+    + 'drift the slice forbids. Byte-reproducible from the approved builder (B5/H9); its identity is '
+    + 'KM_BUNDLE_CONTENT_HASH_, declared in 63_ — which is why 63_ moves with it.'
+};
+
 var RELEASE_OWNERS = {
   // S3-R10 — THE RELEASE SET IS REPLACED, NOT APPENDED TO, AND THAT IS WHAT C3 IS FOR.
   //
@@ -660,7 +676,7 @@ section('I. THE SYNC LIST IS EXACTLY THE DECLARED OWNERS');
   var copy = status.filter(function (r) { return r.st !== 'D'; }).map(function (r) { return r.file; }).sort();
   var gone = status.filter(function (r) { return r.st === 'D'; }).map(function (r) { return r.file; }).sort();
 
-  eq(copy, Object.keys(RELEASE_OWNERS).sort(),
+  eq(copy, Object.keys(RELEASE_OWNERS).concat(Object.keys(GENERATED_OWNERS)).sort(),
     'I1  exactly the declared release owners are to be COPIED — no Apps Script file rode along');
   eq(gone, [],
     'I1a and NOTHING is to be deleted — the one-shot helper was retired in R2B-A2-R6, before this base');

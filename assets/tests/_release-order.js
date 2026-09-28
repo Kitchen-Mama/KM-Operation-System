@@ -867,7 +867,11 @@ var ROUND_TOKENS = [
   // second-layer load out of the expand handler and onto the searched scope. A browser holding the new
   // request-order.js and an older core/deferred-read.js would define a dependency against a helper that
   // cannot hold it; one holding an older request-order.js would still make every first expand wait.
-  's4r7-finalseal-20260927'];
+  's4r7-finalseal-20260927',
+  // S5-R4 — the recommendation ACTION + reason derivation. supply-recommendation.js is served from
+  // index.html AND bundled into Apps Script, so its bytes moved on both surfaces. A browser holding the
+  // s4r7 copy would render a recommendation workspace whose action/tokens simply are not in its KMREC.
+  's5r4-action-reason-20260928'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the
@@ -1496,7 +1500,11 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24',
   // S3-R10 — the pricing commit receipt. 73_, 01_router and 63_ move together, and nothing else is
   // marched: 04_ and 72_ were R24's owners and keep the stamp they earned there.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25',
+  // S5-R4 — the action/reason slice. 63_ is the only single-stamp owner this round edits: the generated
+  // bundle's content hash moved, and 63_ is where that hash is declared. 90_ carries no hand-typed stamp
+  // (it is identified BY its content hash), and 01_/73_ keep the stamp they earned at R25.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R26'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));
