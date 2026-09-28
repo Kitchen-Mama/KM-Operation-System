@@ -160,3 +160,25 @@ s5-r5-recommendation-read-model   64 passed / 0 failed   10/10 mutants
 FILES_CHANGED = 5    BEHAVIOR_CHANGED = YES (display only)
 BEHAVIOR_INTENTIONALLY_UNCHANGED = quantities · state machine · operator edit · network shape
 ```
+
+## Sweep
+
+```
+run 1   7 suites · 15 lines · digest changed   the two stylesheet gates above
+run 2   560 passed / 565 · canonical 5 · 13 lines · DIRTY 0 · clean
+
+CANONICAL_DIGEST = f809dca8d4e41954d98bb87ce0c2f9eb69c65fea9530acd030d639405bfc76b1
+CANONICAL_FAILURE_SET_CHANGED = NO
+```
+
+565 rather than 564 because this round added one suite.
+
+Worth recording: three of this round's four failures were **release and scope identity** gates, not anything
+about recommendations. The subject of a round is a poor predictor of what it will break — the gates that fire
+are the ones watching files, tokens and stylesheets, and none of them mentions KMREC.
+
+```
+S5_READ_MODEL_UI_SLICE_SEAL = YES
+OPEN_S5_DEBT = none
+NEXT_TASK = S5-R6 — operator decision -> Draft Allocation / Request Order candidate mapping
+```
