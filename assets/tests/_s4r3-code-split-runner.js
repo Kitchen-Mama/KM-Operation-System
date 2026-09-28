@@ -28,6 +28,7 @@
  */
 'use strict';
 const cp = require('child_process');
+const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const R11 = require('./_s3r11-interaction-runner.js');
@@ -139,6 +140,17 @@ function driver(mode) {
     '',
     '  (async function () {',
     '    try {',
+    // BOOT READINESS IS A LATCH, NOT A DURATION. The only gate here was a fixed 900ms tick, and the
+    // readiness signal it was standing in for was already being COMPUTED two lines later and merely
+    // recorded (`scriptLoaderReady`). On a loaded machine 900ms is sometimes not enough, the page has no
+    // window.KM.scriptLoader yet, and every later phase drives a page that cannot navigate. Measured: 2
+    // of 10 G4 mutant runs reported a surviving mutant purely because of this.
+    // The tick is KEPT after the latch so the boot-window counts below are measured over the same window
+    // as before; on a healthy run the latch resolves immediately and nothing changes.
+    '      OUT.bootReady = await until(function () {',
+    '        return !!(window.KM && window.KM.scriptLoader && window.KM.routeAssets',
+    '          && typeof window.KM.scriptLoader.isLoaded === "function");',
+    '      }, 300000);',
     '      await tick(900);',
     '      S.bootDone = true;',
     '      // Scripts APPENDED during boot. index.html\u2019s own tags are parsed by the HTML parser and',
@@ -238,7 +250,13 @@ function driver(mode) {
     '        // Force the route back to unloaded so the refusal path is reachable even in "all" mode.',
     '        nav("window.KM.scriptLoader && (window.KM.scriptLoader.loadedKeys().length, 0)");',
     '        var wasLoaded = loaded(fr.key);',
-    '        if (!wasLoaded) {',
+    // UNKNOWN IS NOT FALSE. loaded() answers null when there is no script loader to ask, and !null is
+    // truthy — so the old guard ENTERED the failure block on a page that could not navigate. Nothing was
+    // inserted, nothing was refused, and the mutant read exactly like the baseline. This is the repo's own
+    // missing-is-never-zero rule, in probe form: a probe that cannot tell must say so, not guess.
+    '        if (wasLoaded === null) {',
+    '          OUT.failure = { attempted: false, why: "script loader unavailable at failure phase" };',
+    '        } else if (!wasLoaded) {',
     '          S.failNext(furls);',
     '          P.reset();',
     '          go(fr.key);',
@@ -338,10 +356,17 @@ function run(serverMs, mode) {
   html = html.replace(/<\/body>/i, driver(mode));
   const file = path.join(ROOT, '__s4r3-split-' + serverMs + '-' + (mode || 'all') + '-' + process.pid + '.html');
   fs.writeFileSync(file, html, 'utf8');
+  // A PRIVATE PROFILE PER LAUNCH. Without --user-data-dir every headless run shares the default Chrome
+  // profile and contends on its lock and disk cache. That is measured, not theoretical: pre-fix, boot
+  // failed to produce window.KM.scriptLoader in 2 of 8 runs, in the pattern RR.RR.RR - every third run.
+  // A systematic period like that is shared state, not noise. A run whose boot never completed then drove
+  // a dead page and reported a surviving mutant, which is how an intermittent accuses working code.
+  // Precedent: _p1b8c-r3r2-image-consumer-runner.js.
+  const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kmsweep-'));
   try {
     const url = 'file:///' + file.split(path.sep).join('/').split(' ').join('%20');
     const r = cp.spawnSync(chrome, ['--headless=new', '--disable-gpu', '--no-sandbox', '--no-first-run',
-      '--disable-extensions', '--allow-file-access-from-files',
+      '--disable-extensions', '--allow-file-access-from-files', '--user-data-dir=' + profileDir,
       '--virtual-time-budget=900000', '--dump-dom', url],
       { encoding: 'utf8', timeout: parseInt(process.env.S4R3_TIMEOUT || '1500000', 10), maxBuffer: 256 * 1024 * 1024 });
     const m = /<pre id="__measurements">([\s\S]*?)<\/pre>/.exec(r.stdout || '');
@@ -350,6 +375,7 @@ function run(serverMs, mode) {
     try { return JSON.parse(raw); } catch (e) { return { parseError: String(e.message), raw: raw.slice(0, 1000) }; }
   } finally {
     try { fs.unlinkSync(file); } catch (e) {}
+    try { fs.rmSync(profileDir, { recursive: true, force: true }); } catch (e) {}
   }
 }
 

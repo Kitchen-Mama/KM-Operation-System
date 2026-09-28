@@ -317,6 +317,15 @@ function mutant(name, file, from, to, mode, only, detects) {
     console.log('HARNESS ERROR  ' + name + ' — ' + ((out && out.fatal) || (out && out.done !== true ? 'run did not finish (virtual-time budget?)' : 'no measurements')));
     return;
   }
+  /* AND A SCENARIO WITH NOTHING TO CLICK HAS NOT ANSWERED EITHER. `done === true` proves the run
+     finished, not that it measured anything: with no rows painted, toggles() answers 0, the expand loop
+     never runs, and `[].some(...)` is false — a surviving mutant reported as a defence holding. Measured
+     at 5 kills in 10 for H1 before the runner waited for the rows. */
+  if (mode === 'l2' && out.l2 && !(out.l2.toggleCount > 0)) {
+    harnessErrors++; failed++;
+    console.log('HARNESS ERROR  ' + name + ' — l2 scenario not exercised (no expand controls on screen)');
+    return;
+  }
   let caught = false, why = '';
   try { caught = !!detects(out); } catch (e) { caught = false; why = ' (probe threw: ' + e.message + ')'; }
   if (caught) { killed++; passed++; console.log('  ok   ' + name + ' KILLED'); }

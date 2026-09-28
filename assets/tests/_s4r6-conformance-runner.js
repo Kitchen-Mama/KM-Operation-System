@@ -44,6 +44,7 @@
  */
 'use strict';
 const cp = require('child_process');
+const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const R11 = require('./_s3r11-interaction-runner.js');
@@ -745,6 +746,11 @@ function l2Driver() {
     '    OUT.l2.reSearch = { api: P.api, gapReads: gapCount(), tables: l2TableCount().total };',
 
     '    // ---- three expands --------------------------------------------------------------',
+    // THE EXPANDS NEED ROWS, SO WAIT FOR ROWS — not for the network, and not for a fixed tick. The
+    // re-search above waits for quiescence and then ticks, but a settled network is not a painted table:
+    // on a slow run toggles() answered 0, the loop below never ran, and `[].some(...)` is false, which
+    // reads exactly like 'no expand sent a request'. Measured at 5 kills in 10 before this line existed.
+    '    await until(function () { return toggles().length > 0; }, 20000);',
     '    var t3 = toggles();',
     '    OUT.l2.toggleCount = t3.length;',
     '    var expands = [];',
@@ -868,6 +874,17 @@ function driver(mode) {
     prelude(),
     '  (async function () {',
     '    try {',
+    // BOOT READINESS IS A LATCH, NOT A DURATION — the same repair as the s4-r3 runner, and for the same
+    // measured reason. A fixed 700ms tick is not a boot: when the app had not yet produced its script loader
+    // and route table, every later phase drove a dead page. Search returned nothing, no rows painted,
+    // toggles() answered 0, the expand loop never ran, and `[].some(...)` read as "no expand sent a request".
+    // Measured at 13 kills in 20 for H1 with only the profile fix; the remaining failures were all boot.
+    // The cap is large because it is spent in VIRTUAL time, where an 80-script boot is not quick; `until`
+    // returns the moment the condition holds, so a healthy run pays nothing for the headroom.
+    '      OUT.bootReady = await until(function () {',
+    '        return !!(window.KM && window.KM.scriptLoader && window.KM.routeAssets',
+    '          && typeof window.KM.scriptLoader.isLoaded === "function");',
+    '      }, 300000);',
     '      await tick(700);',
     '      OUT.boot = { api: P.api, partial: P.partial, errors: P.errors.slice(0),',
     '        menuItems: qa(".menu-item").length, menuItemsDisabled: qa(".menu-item--disabled").length,',
@@ -896,10 +913,18 @@ function _run(mode, serverMs, only) {
   const tag = (only && only.length) ? ('-' + only.slice(0, 3).join('_').replace(/[^a-zA-Z0-9_]/g, '')) : '';
   const file = path.join(ROOT, '__s4r6-' + mode + '-' + serverMs + tag + '.html');
   fs.writeFileSync(file, html, 'utf8');
+  // A PRIVATE PROFILE PER LAUNCH. Without --user-data-dir every headless run shares the default Chrome
+  // profile and contends on its lock and disk cache. That is measured, not theoretical: pre-fix, boot
+  // failed to produce window.KM.scriptLoader in 2 of 8 runs, in the pattern RR.RR.RR - every third run.
+  // A systematic period like that is shared state, not noise. A run whose boot never completed then drove
+  // a dead page and reported a surviving mutant, which is how an intermittent accuses working code.
+  // Precedent: _p1b8c-r3r2-image-consumer-runner.js.
+  const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kmsweep-'));
   try {
     const url = 'file:///' + file.split(path.sep).join('/').split(' ').join('%20');
     const r = cp.spawnSync(chrome, ['--headless=new', '--disable-gpu', '--no-sandbox', '--no-first-run',
       '--disable-extensions', '--allow-file-access-from-files', '--js-flags=--expose-gc',
+      '--user-data-dir=' + profileDir,
       '--virtual-time-budget=6000000', '--dump-dom', url],
       { encoding: 'utf8', timeout: parseInt(process.env.S4R6_TIMEOUT || '2400000', 10), maxBuffer: 256 * 1024 * 1024 });
     const m = /<pre id="__measurements">([\s\S]*?)<\/pre>/.exec(r.stdout || '');
@@ -908,6 +933,7 @@ function _run(mode, serverMs, only) {
     try { return JSON.parse(raw); } catch (e) { return { parseError: String(e.message), raw: raw.slice(0, 900) }; }
   } finally {
     try { fs.unlinkSync(file); } catch (e) {}
+    try { fs.rmSync(profileDir, { recursive: true, force: true }); } catch (e) {}
   }
 }
 

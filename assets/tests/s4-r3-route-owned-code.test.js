@@ -282,6 +282,17 @@ function mutant(name, file, from, to, mode, detects) {
   try { if (mode === 'static') statik = RUN.bootSurface(); } catch (e) { threw = threw || e; }
   m.restore();
   if (threw) { harnessErrors++; failed++; console.log('HARNESS ERROR  ' + name + ' — ' + threw.message); return; }
+  /* A SCENARIO THAT DID NOT RUN HAS NOT ANSWERED. The failure-mode mutants are only observable if the
+     refusal actually happened; when boot was not ready the phase drove a dead page, blocked nothing, and
+     the verdict read as a surviving mutant. That is worse than a failure because it is intermittent and
+     it accuses working code. An unexercised scenario is now reported as a harness error, which still
+     FAILS the suite — it is made visible, not tolerated. */
+  if (mode === 'failure' && out && out.failure && (out.failure.attempted !== true || !(out.failure.blocked > 0))) {
+    harnessErrors++; failed++;
+    console.log('HARNESS ERROR  ' + name + ' — failure scenario not exercised (' +
+      (out.failure.why || ('blocked=' + out.failure.blocked)) + ')');
+    return;
+  }
   let caught = false, why = '';
   try { caught = !!detects(out, statik); } catch (e) { caught = false; why = ' (probe threw: ' + e.message + ')'; }
   if (caught) { killed++; passed++; console.log('  ok   ' + name + ' KILLED'); }
