@@ -2690,3 +2690,222 @@ NEXT_TASK = S5-R6 — operator decision -> Draft Allocation / Request Order cand
 ```
 
 **End of Part VII.**
+
+---
+---
+
+# PART VIII — S5-R6 OPERATOR DECISION → DRAFT ALLOCATION / REQUEST ORDER CANDIDATE + WRITE BOUNDARY
+
+*Write-boundary mapping + a bounded pure implementation. No production write, no schema change. Base `40e8f05`.*
+
+---
+
+## §74. The write owner, corrected
+
+S5-R5 recorded the next write owner as `KMRDV2P.planFlat -> KMPR.applyPersistencePlanWithLock`. The second
+half is wrong, and this round is the one that had to look.
+
+`applyPersistencePlanWithLock` (`23_recommendation_persistence_repository.gs:133`) is the **line engine's**
+boundary. Under the flat-V2 cutover MONTHLY_ORDER never reaches it: `24_` injects its own
+`lockedApply` dep, and every flat path — generate, edit, submit, cancel — goes through that one function.
+
+```
+DRAFT_WRITE_OWNER = rpoFlatLockedApply_          (24_recommendation_orchestrator.gs:155)
+RUN_WRITE_OWNER   = KMRDV2P.applyFlat            (the same call — one row + one journal row, never child lines)
+LOCK_OWNER        = LockService.getScriptLock() · tryLock(30000) · release in finally
+WRITE_ENTRYPOINT  = rpoGenerateMonthlyFlatResult_ / rpoEditMonthlyFlatResult_ / rpoSubmitMonthlyFlatResult_
+                    -> KMRDV2P.generateMonthlyFlat|editMonthlyFlat|submitMonthlyFlat -> deps.lockedApply
+WRITE_IDENTITY    = RD::MONTHLY_ORDER::<YYYY-MM>::<sorted scopeKey>   — deterministic, no clock, no UUID
+IDEMPOTENCY_RULE  = upsert by that id under an optimistic {draft_version, userEditFingerprint} token,
+                    revalidated UNDER the lock against the currently persisted row
+WRITE_OWNER_COUNT_AFTER_THIS_ROUND = 1   (unchanged)
+```
+
+---
+
+## §75. What this round implemented, and what it refused to
+
+```
+KMRDV2P.planOperatorDecision(input) -> { authorized, refusal, planInput, plan }
+WRITE_PLAN_IS_PURE = YES     WIRED_TO_A_ROUTE = NO (S5-R7 owns that)
+```
+
+It is a **gate**, not a planner. The plan it returns is produced by calling `planFlat`, so there is still
+exactly one planner and a test asserts the gate builds no row of its own. It reads no sheet, takes no lock,
+has no clock and no randomness, and it derives neither the recommendation nor its staleness — both arrive as
+values the caller read from KMREC, so neither authority is duplicated.
+
+### §75.1 The refusals, in a frozen precedence
+
+| order | refusal | why |
+|---|---|---|
+| 1 | `RECOMMENDATION_UNAVAILABLE` | absent or unknown action. **Missing is not `NO_ACTION`** — the S5-R5 rule, carried to the write boundary. |
+| 2 | `RECOMMENDATION_STALE` | §10 — refuse, never silently upgrade to newer values. |
+| 3 | `ACTION_AUTHORIZES_NO_ORDER` | `REALLOCATE` / `NO_ACTION` / `MANUAL_REVIEW`. |
+| 4 | `OPERATOR_AUTHORIZATION_REQUIRED` | §2 — a visible recommendation is not an authorized one. |
+
+Every branch refuses, so the order changes the **message**, never whether a write happens. It is frozen
+deliberately: an operator who confirms a stale row is told the row is stale, not that they failed to confirm.
+A mutant that reorders it is killed.
+
+The partition is checked against the KMREC enum itself, so an action added upstream and not classified here
+falls to `RECOMMENDATION_UNAVAILABLE` rather than through.
+
+---
+
+## §76. The recommendation authorizes; it does not price
+
+This is the finding with the most weight in the round, and it is arithmetic rather than opinion.
+
+```
+KMREC.totalRecommendedQty = cartonize(t1_gap + t2_gap + t3_gap) ONCE      ← ORDER_TOTAL_AUTHORITY
+draft.tN_recommended_qty  = order_planning_gap.tN_suggested_qty VERBATIM  ← each tier already cartonized
+```
+
+They are not the same number. With `units_per_carton = 12` and gaps of 13 and 13, the per-tier suggestion
+sums to **48** and the cartonize-once total is **36**. So a write plan that adopted the figure the operator
+sees on screen would not be taking a shortcut — it would be a **second quantity authority persisting a
+different number** than the live generation path persists for the same row.
+
+```
+KMREC_TOTAL_IS_WRITE_SOURCE = NO     SECOND_CALCULATION_PATH_COUNT = 0
+SYSTEM_RECOMMENDED_FIELD = tN_recommended_qty   (source: order_planning_gap.tN_suggested_qty, via 47_, unchanged)
+OPERATOR_QTY_FIELD       = tN_order_qty         (defaults to the suggestion on create; operator-owned after)
+FINAL_DRAFT_QTY_FIELD    = tN_order_qty         (it IS the final value — there is no third field)
+USER_EDIT_FLAG           = tN_user_edited · tN_user_edited_by
+VERSION_FIELD            = draft_version        (+ the derived userEditFingerprint half of the token)
+```
+
+---
+
+## §77. Action mapping
+
+```
+NEW_ORDER                 -> draft row, order half only            AUTHORIZED
+REALLOCATE_AND_NEW_ORDER  -> draft row, order half only            AUTHORIZED
+REALLOCATE                -> NO order write                        REFUSED (ACTION_AUTHORIZES_NO_ORDER)
+NO_ACTION                 -> NO order write                        REFUSED
+MANUAL_REVIEW             -> NO order write, never automatically    REFUSED
+```
+
+`REALLOCATE` refuses for a reason worth stating plainly: the Ordering write path has **nothing to add**. The
+§41 transfer is already persisted, by its own owner, in `order_planning_gap.reallocation_in_qty_snapshot`.
+And the live `nonActionableGate` already refuses an AI-created all-zero draft, so the refusal here agrees
+with a rule that was in place before S5 existed.
+
+```
+RECOMMENDATION_ACTION_IS_DRAFT_STATE = NO   ACTION_PERSISTED = NO   REASON_TOKENS_PERSISTED = NO
+```
+
+The draft lifecycle vocabulary (`draft` / `partially_submitted` / `submitted` / `cancelled`) shares no member
+with the action enum and is derived from quantities and tier status by `deriveHeaderStatus`, exactly as before.
+
+---
+
+## §78. There is no combined quantity to forbid
+
+§8 asks what happens if one field has to hold both meanings. It does not, and the reason is structural rather
+than a rule someone remembered to follow:
+
+```
+V2_HEADERS.filter(/realloc/) = []                 REALLOCATION_QTY_SOURCE = order_planning_gap (§41 owner)
+NEW_ORDER_QTY_SOURCE = order_planning_gap.tN_suggested_qty   COMBINED_QTY_WRITTEN = NO
+```
+
+The flat 53-column draft has no reallocation column at all. Only the new-order meaning has a home here, so
+the two cannot be merged into one — and the gate carries no reallocation input, which a test asserts by
+listing every reallocation token in its source: two, both the flag that *declares none was written*.
+
+`DECISION_REQUIRED` is therefore **NO**. The combined action writes its order half and says so.
+
+---
+
+## §79. Draft Allocation is not a Request Order candidate
+
+```
+DRAFT_ALLOCATION_MEANING          = the working document. One flat row per (scope × planning cycle) holding
+                                    the system suggestion and the operator's quantity, editable, versioned.
+REQUEST_ORDER_CANDIDATE_MEANING   = a formal request line, exploded from that row at Send time and written by
+                                    the existing canonical Request Order writer (13_).
+ENTRY_CONDITION_FOR_DRAFT               = AI Plan with Σ tN_recommended_qty > 0, OR a deliberate operator
+                                          order-quantity edit (FB-3C §B). A note alone never creates one.
+ENTRY_CONDITION_FOR_REQUEST_ORDER_CANDIDATE = explodeSendRequestLines: tN_order_qty > 0 and the tier is not
+                                          cancelled — the OPERATOR value, never recommended_qty.
+RECOMMENDATION_DIRECTLY_CREATES_REQUEST_ORDER = NO
+```
+
+`66_` states its own half of this: *"NOT A WRITER. Every mutation is delegated to an EXISTING canonical
+writer."* The candidate does not even carry the system suggestion, which is the cleanest possible proof that
+the recommendation is not what is being ordered.
+
+---
+
+## §80. Staleness, versions and the operator's edit
+
+Two independent guards, neither of them new, and this round adds a third in front of both.
+
+```
+STALE_WRITE_CHECK_OWNER = KMREC.isStale over sourceFingerprint = product#businessKey#calculated_at
+                          + the optimistic {draft_version, userEditFingerprint} token, revalidated under the lock
+STALE_WRITE_BEHAVIOR    = REFUSE. The gate refuses before planning; applyFlat returns
+                          { conflict:true, wrote:false, reason:'TOKEN_MISMATCH' } and writes zero rows.
+USER_EDIT_SURVIVES_RECALC = YES    SYSTEM_VALUE_STILL_AVAILABLE_FOR_COMPARISON = YES
+SYSTEM_RECALC_OVERWRITES_USER_EDIT = NO
+```
+
+`refresh` skips any tier with `user_edited === true`; `regenerate` bumps the version and still skips it
+without an explicit `confirmRegenerateOverUserEdits`. The gate **never synthesizes** that confirmation — it
+passes through only a literal `true` — and a mutant that defaults it on is killed by an operator quantity of
+999 reverting to the system's 60.
+
+```
+PROVENANCE_FIELDS = calculation_run_id · formula_version · calculated_at · source_data_as_of
+                    + business_scope_key and planning_cycle on the run-journal row
+MISSING_PROVENANCE_FIELDS = none for tracing run / source gap / scope.
+```
+Missing provenance stays blank rather than being faked, and the fallback run id is derived from the
+deterministic draft identity, not from a clock.
+
+---
+
+## §81. Idempotency, replay and write truth
+
+```
+DUPLICATE_WRITE_IDENTITY = the deterministic RD:: draft id (upstream) + ROEXEC-<sha256> (downstream, 13_)
+REPLAY_BEHAVIOR          = upsert. Same decision → same id → one draft row, one run row, attempt_count 2.
+SECOND_WRITE_MUTATES_STATE = only the run journal's attempt/completion fields; no duplicate business row.
+WRITE_TRUTH_OWNER      = rpoFlatLockedApply_ + rpoFlatVerifyWrittenRows_
+UNKNOWN_OUTCOME_POSSIBLE = YES — WRITE_COMMITTED_READBACK_FAILED carries requiresReconciliation and the
+                           committed id, so a committed-but-unverified write is never a clean success.
+AUTOREPLAY_PRESENT     = NO, and the operator surface says so where the operator can read it.
+```
+
+A replay is **counted rather than hidden**: `attempt_count` advances. That is the S3-R10 principle holding at
+this boundary without anything new being added for it.
+
+---
+
+## §82. Data safety, and why this round stops here
+
+The S5-R3 §52 classification is re-verified and unchanged.
+
+```
+PRODUCTION_DATA_TABLES = order_planning_gap · request_order_allocation_drafts ·
+                         request_order_allocation_draft_lines · recommendation_calculation_runs ·
+                         shipping_allocation_drafts · shipping_allocation_draft_lines ·
+                         marketplace_skus · sku_details · factory_stock · purchase_orders
+TEST_DATA_TABLES = none — no table in this path is test-only
+MIXED_DATA_TABLES = request_order_allocation_drafts · shipping_allocation_drafts
+PRODUCTION_WRITE_AUTHORIZATION_REQUIRED = YES
+PRODUCTION_ROWS_WRITTEN = 0
+```
+
+So no write test was performed, and the proposed one is stated rather than run — §22 carries it verbatim.
+Every test in this round runs against in-memory row fixtures and an in-memory sheet set built from the real
+`V2_HEADERS`, which is the `KMPR` fake-sheet precedent this repository already uses.
+
+```
+SHIPPING_WRITE_COUNT = 0   PHASE2_ORCHESTRATION_IMPLEMENTED = NO
+AUTO_CREATE_REQUEST_ORDER = NO   AUTO_CREATE_PO = NO   AUTO_CREATE_SHIPMENT = NO
+IMPLEMENTATION_CLASS = C — pure mapping ready; write execution blocked on operator authorization.
+```
