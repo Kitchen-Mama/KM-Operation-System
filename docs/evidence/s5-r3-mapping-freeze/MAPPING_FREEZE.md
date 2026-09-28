@@ -3,7 +3,7 @@
 **Base** `dce0550` · spec + tests only · `PRODUCTION_CODE_CHANGED = NO` · `BEHAVIOR_CHANGED = NO`
 `DB_MIGRATION_REQUIRED = NO` · `NEW_TABLE_REQUIRED = NO` · `SCHEMA_EXTENSION_REQUIRED = NO`
 
-Owner of record: `docs/planning/S5_RECOMMENDATION_DECISION_ENGINE_CONTRACT.md` **Part IV, §40–§52**.
+Owner of record: `docs/planning/S5_RECOMMENDATION_DECISION_ENGINE_CONTRACT.md` **Part IV, §40–§53**.
 
 ---
 
@@ -122,12 +122,12 @@ decision instead of a gap nobody can see. The contract's §44 was corrected to m
 ## Results
 
 ```
-s5-r3-mapping-freeze     126 passed / 0 failed     13/13 mutants killed
+s5-r3-mapping-freeze     134 passed / 0 failed     15/15 mutants killed
 s5-r1-recommendation-contract-freeze   99 / 0      9/9
 s5-r2-decision-freeze                  35 / 0      6/6
 s5-r2a-contention-policy-freeze        59 / 0      8/8
 
-FILES_CHANGED = 3   (1 spec, 1 new test suite, 1 evidence doc)
+FILES_CHANGED = 3   (1 spec, 1 new test suite, 1 evidence doc)  — unchanged by the decision round
 PRODUCTION_CODE_CHANGED = NO    BEHAVIOR_CHANGED = NO
 NEW_TABLE_REQUIRED = NO         SCHEMA_EXTENSION_REQUIRED = NO      DB_MIGRATION_REQUIRED = NO
 APPS_SCRIPT_SYNC_REQUIRED = NO  FRONTEND_DEPLOY_REQUIRED = NO       TOKEN_ROTATION_REQUIRED = NO
@@ -141,7 +141,34 @@ No table in this path is test-only. `shipping_allocation_draft_lines` held **rea
 tests against in-memory fixtures and needs no production write; if a later round does, it needs its own
 explicit authorization. The Order and Shipment tables must not be assumed test-only.
 
+---
+
+## Operator decisions — both accepted, and now enforced by structure
+
+**D-S5-7 · reason token correction = ACCEPT.** A token exists only where live evidence supports it; a token
+whose name asserts more than its evidence is renamed from the declaration in live code; a token whose evidence
+is discarded is withdrawn, stated as a missing column. The Part II list is superseded where evidence disproves
+it. `D_S5_4_EXPLAINABILITY` is unchanged — the explanation *model* is what found the bad members; D-S5-7 amends
+the set, not the model.
+
+**D-S5-8 · optional snapshot columns = DO NOT ADD NOW.** `NEW_TABLE_REQUIRED = NO`,
+`SCHEMA_EXTENSION_REQUIRED = NO`, `DB_MIGRATION_REQUIRED = NO`. The named fields stay `NOT_AVAILABLE`.
+
+Both were already the state of the tree, so nothing was implemented for them. What changed is that they are now
+**structurally enforced** rather than only written down (suite §J):
+
+- `J1/J2` walk the eleven deferred fields as a **closed set** against *both* storage tables.
+- `J3` asserts each withdrawn token and its evidence column as a **pairing**, in both directions — which is what
+  makes the withdrawal automatically reversible instead of a judgement someone must remember to revisit. If the
+  column ever lands, the test fails until the token comes back.
+- `J4` pins that the rename came from the live code's own word, not a fresh coinage.
+
+None of these greps the decision's prose. A test that pins how a decision was *worded* bans the next round from
+rewording it; what must not drift is the storage, so the storage is what is asserted.
+
 ```
-S5_MAPPING_FREEZE_READY = YES
+D_S5_7 = FROZEN     D_S5_8 = DEFERRED (decided)     UNRESOLVED_DECISION_COUNT = 0
+s5-r3-mapping-freeze  134 passed / 0 failed  15/15 mutants
+S5_MAPPING_FREEZE_COMPLETE = YES
 NEXT_TASK = S5-R4 — Slice A: pure action + reason derivation
 ```

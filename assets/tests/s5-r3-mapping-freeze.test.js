@@ -511,6 +511,63 @@ mut('I13 an inline carton CEILING appears outside the owner and the named audit'
 });
 
 // =========================================================================================================
+section('J. D-S5-7 / D-S5-8 — the accepted operator decisions, enforced structurally');
+// =========================================================================================================
+
+// D-S5-8: these fields are NOT_AVAILABLE by decision, and stay so until a separate authorized round says
+// otherwise. The probe is a CLOSED SET walked against BOTH storage tables, not a grep of the decision's prose
+// — a test that pins how a decision was WORDED bans the next round from rewording it, which is the trap this
+// repo keeps re-learning. What must not drift is the storage, so the storage is what is asserted.
+var NOT_AVAILABLE_BY_DECISION = [
+  'own_supply_used', 'own_supply_qty_snapshot',
+  'cross_company_supply_used', 'overseas_supply_qty_snapshot',
+  'committed_supply_used', 'committed_supply_qty_snapshot',
+  'starting_gap_qty', 'destination_warehouse_id', 'required_by_date',
+  'source_company', 'source_warehouse_id'
+];
+var leaked = NOT_AVAILABLE_BY_DECISION.filter(function (f) {
+  return GAP_HEADERS.indexOf(f) >= 0 || V2_HEADERS.indexOf(f) >= 0;
+});
+eq(leaked, [], 'J1 D-S5-8 — no NOT_AVAILABLE field has appeared in either storage table');
+eq(NOT_AVAILABLE_BY_DECISION.length, 11, 'J2 the deferred/closed set is the eleven fields the decision named');
+
+// D-S5-7: the withdrawal rule is a PAIRING, not a list. A withdrawn token is withdrawn BECAUSE a column is
+// absent, so token and column must move together or not at all. Asserting the pair is what makes the
+// withdrawal automatically reversible rather than a judgement someone has to remember to revisit.
+var WITHDRAWN_PAIRS = [
+  ['OWN_SUPPLY_APPLIED', 'own_supply_qty_snapshot'],
+  ['OVERSEAS_SUPPLY_APPLIED', 'overseas_supply_qty_snapshot'],
+  ['COMMITTED_SUPPLY_APPLIED', 'committed_supply_qty_snapshot']
+];
+WITHDRAWN_PAIRS.forEach(function (p) {
+  var tokenAbsent = TOKENS.indexOf(p[0]) === -1;
+  var columnAbsent = GAP_HEADERS.indexOf(p[1]) === -1;
+  ok(tokenAbsent === columnAbsent, 'J3 ' + p[0] + ' and ' + p[1] + ' agree — withdrawal tracks the column');
+});
+
+// D-S5-7: a renamed token must take the live code's own word, never a fresh coinage.
+ok(/reason: 'FACTORY_SURPLUS_REALLOCATION'/.test(code(FSR_SRC))
+  && TOKENS.indexOf('FACTORY_SURPLUS_REALLOCATION_APPLIED') >= 0
+  && TOKENS.indexOf('CROSS_COMPANY_REALLOCATION') === -1,
+  'J4 D-S5-7 — the rename is derived from the declaration in live code');
+
+mut('J5 a NOT_AVAILABLE field is quietly added to storage', function () {
+  var pretendGap = GAP_HEADERS.concat(['own_supply_qty_snapshot']);
+  var pretendLeak = NOT_AVAILABLE_BY_DECISION.filter(function (f) {
+    return pretendGap.indexOf(f) >= 0 || V2_HEADERS.indexOf(f) >= 0;
+  });
+  return pretendLeak.length === 1 && leaked.length === 0;
+});
+
+mut('J6 a token is withdrawn while its evidence column is present', function () {
+  // The pairing must break in BOTH directions, or it is not a pairing.
+  var pretendGap = GAP_HEADERS.concat(['own_supply_qty_snapshot']);
+  var tokenAbsent = TOKENS.indexOf('OWN_SUPPLY_APPLIED') === -1;
+  var columnAbsentNow = pretendGap.indexOf('own_supply_qty_snapshot') === -1;
+  return tokenAbsent === true && columnAbsentNow === false && (tokenAbsent === columnAbsentNow) === false;
+});
+
+// =========================================================================================================
 section('RESULT');
 console.log('passed ' + pass + '  failed ' + fail + '  mutants killed ' + neg.caught + '/' + (neg.caught + neg.missed));
 if (fail > 0) { console.error('\nS5-R3 MAPPING CONTRACT DRIFT'); process.exit(1); }

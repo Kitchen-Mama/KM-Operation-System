@@ -2011,4 +2011,83 @@ S5_MAPPING_FREEZE_READY = YES
 NEXT_TASK = S5-R4 — first bounded runtime implementation slice (Slice A: pure action + reason derivation)
 ```
 
+---
+
+## §53. S5-R3 operator decisions — ACCEPTED
+
+Both questions raised at the close of S5-R3 were answered by the operator. Neither changes the mapping; both
+promote a recorded finding to a **decision**, which is the difference between "the evidence says this" and
+"this is the rule".
+
+### D-S5-7 — reason token correction: **ACCEPT**
+
+> *"Reason token must be supported by actual live evidence. Unsupported / inaccurately named tokens are removed
+> or renamed. Historical Part-II token list is superseded where evidence disproves it."*
+
+```
+D_S5_7_REASON_TOKEN_EVIDENCE_RULE = FROZEN
+  A token exists only where a live, persisted (or identity-derivable) value supports it.
+  A token whose NAME asserts a property its evidence does not establish is RENAMED, from the
+  declaration in live code rather than from a new coinage.
+  A token whose evidence is computed and discarded is WITHDRAWN, stated as a missing COLUMN.
+
+PART_II_TOKEN_LIST = SUPERSEDED_WHERE_EVIDENCE_DISPROVES_IT
+```
+
+`D_S5_4_EXPLAINABILITY` is **unchanged and still FROZEN** — the explanation *model* was always
+`CLOSED_REASON_TOKENS + numeric evidence + lineage refs`, and that model is what found the four bad members.
+D-S5-7 amends the set, not the model. The frozen set is the §46 table, at seven members.
+
+**Why withdrawal is reversible by construction.** Each withdrawal names the column whose absence causes it, so
+none of the three is a judgement about the concept. If `own_supply_qty_snapshot` is ever added,
+`OWN_SUPPLY_APPLIED` returns with no contract change and no re-litigation. `s5-r3-mapping-freeze.test.js` §F6
+pins exactly that pairing — token absent **while** column absent — so the two can never drift apart silently.
+
+### D-S5-8 — optional snapshot columns: **DO NOT ADD NOW**
+
+```
+D_S5_8_OPTIONAL_SNAPSHOT_COLUMNS = DEFERRED — NOT A PENDING PLAN
+
+NEW_TABLE_REQUIRED        = NO
+SCHEMA_EXTENSION_REQUIRED = NO
+DB_MIGRATION_REQUIRED     = NO
+
+own_supply_used · cross_company_supply_used · committed_supply_used · starting_gap_qty ·
+destination_warehouse_id · required_by_date (day precision) · source_company · source_warehouse_id
+  = NOT_AVAILABLE, and they stay NOT_AVAILABLE until a separate authorized round says otherwise.
+```
+
+**`NOT_AVAILABLE` is the deliverable here, not a gap in it.** The alternative to an unavailable field is not a
+better field — it is a fabricated one, and §7 of this round is explicit that a number which cannot be sourced
+truthfully must not be populated. A reader of a recommendation must be able to trust that a present number came
+from somewhere.
+
+Two of these are not reachable by adding a column at all, and that distinction survives this decision:
+
+| field | class | why |
+|---|---|---|
+| `own_supply_used`, `cross_company_supply_used`, `committed_supply_used`, `source_warehouse_id` | **C** | computed, then discarded — a column would capture them |
+| `starting_gap_qty` | **D** | never computed as a separate value; the coverage identity does not exist to be stored |
+| `required_by_date` (day) | **D** | the monthly grain has no day; a column would need a policy, not a write |
+
+So D-S5-8 defers four fields and closes two. Re-opening the four is a schema decision; re-opening the two would
+first require a **business** decision about what the number means.
+
+**This proposal is not restated again.** It was listed once in Part II §38 and is now deferred by decision.
+Repeating an unexecuted proposal each round is how it quietly becomes a plan.
+
+### Status
+
+```
+D_S5_1 = FROZEN   D_S5_2 = FROZEN   D_S5_3 = FROZEN   D_S5_4 = FROZEN
+D_S5_5 = FROZEN   D_S5_6 = FROZEN   D_S5_7 = FROZEN   D_S5_8 = DEFERRED (decided)
+
+UNRESOLVED_DECISION_COUNT   = 0
+S5_DECISION_FREEZE_COMPLETE = YES
+S5_MAPPING_FREEZE_COMPLETE  = YES
+BEHAVIOR_CHANGED = NO   SCHEMA_CHANGED = NO   PRODUCTION_CODE_CHANGED = NO
+
+NEXT_TASK = S5-R4 — Slice A: pure action + reason derivation
+```
+
 **End of Part IV.**
