@@ -243,3 +243,22 @@ BEHAVIOR_CHANGED NO · PRODUCTION_ROWS_WRITTEN 0 · DB_MIGRATION_REQUIRED NO
 APPS_SCRIPT_SYNC_REQUIRED NO · FRONTEND_DEPLOY_REQUIRED NO · S6_BEHAVIOR_CHANGED NO
 FC_MARKETPLACE_ID_ROOT_CAUSE_PROVEN = YES (mechanism) / PENDING (incident — one operator check)
 ```
+
+## Sweep
+
+```
+sweep 1   565 passed / 571   SIX failing suites   20 canonical lines   <- my own suite broke a gate
+sweep 2   566 passed / 571   five failing suites  19 canonical lines   DIRTY 0   clean
+CANONICAL_FAILURE_SET_CHANGED = NO — diff-clean against the R8 artifact
+CANONICAL_DIGEST = ebcf7bc1651e792f7dbab73544cfa2593f91664a9ed399a04f9a5ba9c9bc4f92   (reproduced)
+WORKTREE_CLEAN_AT_END = YES
+```
+
+**The twentieth line was mine.** `demo-mode-retired-f1-small` D8 forbids any test file from naming the retired
+demo runtime, and my fixture comment spelled it — while explaining why the fixture does *not* use it. The
+repair is the mention removed, not a dynamically spelled name that slips past the check: the rule exists so
+that nothing references the runtime, not so that references are obfuscated. The fixture behaviour is
+unchanged.
+
+This is the second time in this repository that exact gate has fired on a suite written to drive a page's
+demo-or-live switch, which is why it is recorded here rather than quietly fixed.
