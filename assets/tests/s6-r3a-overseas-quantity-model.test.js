@@ -477,9 +477,18 @@ frozenV('MOVEMENT_SCHEMA_EXTENSION_REQUIRED', 'NO');
 var VOCAB = /declared\s+([a-z_ ·\r\n]+?)\r?\ncurrent axis/.exec(CONTRACT);
 ok(!!VOCAB, 'F1 the contract declares a CLOSED movement vocabulary');
 var VOCAB_SET = VOCAB[1].split(/[·\s]+/).filter(Boolean);
-var PROPOSED = ['reservation_acquire', 'reservation_release', 'shipment_out', 'inventory_import'];
+// The PROPOSED set is parsed out of PART V's OWN mapping table, not listed here. A suite that
+// hardcodes the four names checks its own array against the vocabulary and lets the contract invent a
+// fifth unnoticed — which is exactly what it did until M12 caught it.
+var MAPROWS = PARTV.split(/\r?\n/).filter(function (l) {
+  return /^\| (reserve|release|dispatch|import) \| `/.test(l);
+});
+eq(MAPROWS.length, 4, 'F1a the PART V mapping table declares four overseas movement events (computed)');
+var PROPOSED = MAPROWS.map(function (l) { return l.split('|')[2].trim().replace(/`/g, ''); });
+eq(PROPOSED, ['reservation_acquire', 'reservation_release', 'shipment_out', 'inventory_import'],
+  'F1b and names these four movement types (parsed from the contract)');
 eq(PROPOSED.filter(function (t) { return VOCAB_SET.indexOf(t) < 0; }), [],
-  'F1a and all four proposed overseas movement types are ALREADY in it — nothing is invented (computed)');
+  'F1c every one of which is ALREADY in the declared vocabulary — nothing is invented (computed)');
 
 // The direction values likewise come from the existing allowed set, tested as MEMBERSHIP in the set the
 // page spec declares rather than as the presence of a sentence somewhere in the file.
@@ -623,8 +632,10 @@ mut('M6 a client that forwarded only present columns would make the server fix s
 
 // M7 — the movement vocabulary check must compare against the CONTRACT's declared list. Hard-coding the
 // four names would let a fifth be invented later without anything noticing.
-mut('M7 an invented movement type is caught against the declared vocabulary', function () {
-  return VOCAB_SET.indexOf('reservation_acquire') >= 0 && VOCAB_SET.indexOf('overseas_reserve') < 0;
+mut('M7 a movement type invented IN THE CONTRACT TABLE is caught against the declared vocabulary', function () {
+  var invented = PROPOSED.concat(['overseas_reserve']);
+  return PROPOSED.filter(function (t) { return VOCAB_SET.indexOf(t) < 0; }).length === 0 &&
+         invented.filter(function (t) { return VOCAB_SET.indexOf(t) < 0; }).length === 1;
 });
 
 // M8 — the schema gate must be computed against the live header, not asserted.
