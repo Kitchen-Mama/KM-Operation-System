@@ -27,6 +27,24 @@
 //      receipt poster. §7 requires dispatch to decrement it. A consume that decrements an unwritten,
 //      possibly-absent column is not a safe mutation.
 //
+// ===========================================================================================
+// UPDATED BY S6-R4A, 2026-09-29 — THREE OF THE FOUR CONDITIONS MOVED.
+//
+// The operator inspected the live production sheet and supplied its header. That evidence is recorded at
+// docs/evidence/s6-r4a-live-overseas-header-and-storage-contract/ and pinned by
+// assets/tests/s6-r4a-live-overseas-storage-contract.test.js. Against it:
+//
+//   1  RESOLVED  — the live header is canonical wh_*. The fallback's "renamed + verified" condition is met.
+//   2  BENIGN    — 31_'s dual-namespace emit writes keys that match no live column, so they are dropped.
+//   3  RESOLVED  — the live header decides 43_ vs 54_ in 43_'s favour. No production defect.
+//   4  STANDS    — and is now sharper. It was never really about headers: wh_physical_stock is PRESENT
+//                  in the live sheet and has ZERO writers. The block is LIVE_STORAGE_OUTCOME = B —
+//                  an unmaintained bucket — not an ambiguous spelling.
+//
+// So this suite keeps its name and loses its original thesis. That is the honest outcome: the header
+// contract turned out to be fine and the thing standing behind it did not.
+// ===========================================================================================
+//
 // NO PRODUCTION WRITE. Source text and declared fixtures only.
 //
 // Run: node assets/tests/s6-r4-overseas-header-contract-gate.test.js
@@ -60,7 +78,7 @@ var ALL_GS = fs.readdirSync(path.join(ROOT, GS)).filter(function (f) {
 });
 
 // =========================================================================================================
-section('A. BLOCKING 1 — the legacy fallback is still present, and its own condition is unmet');
+section('A. BLOCKING 1 — RESOLVED by S6-R4A: the fallback is still present, its condition now MET');
 // =========================================================================================================
 
 var LEGACY = /var WH_LEGACY_ = \{([\s\S]*?)\};/.exec(F05);
@@ -74,28 +92,38 @@ var FALLBACKS = (code(F05).match(/indexOf\('wh_[a-z_]+'\);\s*if \([a-zA-Z]+ === 
 ok(FALLBACKS >= 3, 'A3 05_ resolves canonical-then-legacy at ' + FALLBACKS + ' readers — the live spelling is not assumed');
 ok(/removed[\s\S]{0,80}once live overseas_inventory_snapshot headers are renamed \+ verified/.test(F05),
   'A4 the fallback\'s own removal condition is "renamed + VERIFIED"');
-// And that verification exists nowhere. A claim in a planning document is not a verification of a live sheet
-// — S6-R1's central finding was that those documents ran two releases behind the code.
+// That verification USED to exist nowhere, and a claim in a planning document was never going to be one —
+// S6-R1's central finding was that those documents ran two releases behind the code. It exists now, and it
+// came from the only authority that could supply it: the operator reading the live sheet. This assertion is
+// inverted rather than deleted, because "which round verified the live header, and where is it written" is
+// a question the tree must keep answering long after the answer stops being interesting.
 var EVIDENCE = fs.readdirSync(path.join(ROOT, 'docs/evidence'));
 var verified = EVIDENCE.filter(function (d) { return /overseas.*header|header.*overseas/i.test(d); });
-eq(verified, [], 'A5 BLOCKING — no evidence round records a live overseas header verification');
+eq(verified, ['s6-r4a-live-overseas-header-and-storage-contract'],
+  'A5 RESOLVED — one evidence round records the live overseas header verification');
+ok(read('docs/evidence/s6-r4a-live-overseas-header-and-storage-contract/LIVE_STORAGE_CONTRACT.md')
+  .indexOf('CANONICAL_WH_FIELDS_PRESENT = YES') >= 0,
+  'A6 and it records CANONICAL_WH_FIELDS_PRESENT = YES — the fallback\'s removal condition is met');
 
 // =========================================================================================================
-section('B. BLOCKING 2 — the receipt poster writes BOTH namespaces at once');
+section('B. BLOCKING 2 — RECLASSIFIED BENIGN by S6-R4A: the extra namespace matches no live column');
 // =========================================================================================================
 
 var C31 = code(F31);
 ok(/wh_available_stock:\s*after/.test(C31) && /available_stock:\s*after/.test(C31.replace(/wh_available_stock:\s*after/, '')),
-  'B1 BLOCKING — 31_ writes wh_available_stock AND available_stock on the same auto-created row');
+  'B1 31_ writes wh_available_stock AND available_stock on the same auto-created row');
 ok(/wh_reserved_stock:\s*0/.test(C31) && /[^_]reserved_stock:\s*0/.test(C31),
   'B2 and wh_reserved_stock AND reserved_stock, likewise');
-// A writer that emits both spellings cannot tell you which one the sheet has. It is a hedge, and the hedge
-// is the evidence: nobody knew, so the code covered both.
+// A writer that emits both spellings cannot tell you which one the sheet has. It was a hedge, and the hedge
+// was the evidence: nobody knew, so the code covered both. Now somebody knows. shipmentAppendByHeader_ maps
+// by LIVE header, so the legacy keys match nothing on the live sheet and are silently dropped — the hedge is
+// inert, not harmful. It is kept until the round that removes WH_LEGACY_ removes both together, because
+// deleting half a compatibility layer is how you find out the other half was load-bearing.
 ok(!/wh_physical_stock/.test(C31) && !/[^_]physical_stock/.test(C31),
   'B3 and it writes NO physical column in EITHER namespace — a receipt-created row has no physical balance');
 
 // =========================================================================================================
-section('C. BLOCKING 3 — two live readers disagree about whether the legacy spelling exists');
+section('C. BLOCKING 3 — RESOLVED by S6-R4A: the live header decides it, and 43_ was right');
 // =========================================================================================================
 
 ok(/gapNum_\(r\.wh_available_stock\)/.test(code(F43)),
@@ -106,12 +134,16 @@ ok(/rivPick_\(r, 'wh_available_stock', 'available_stock'\)/.test(code(F54)),
   'C3 while 54_ reads the SAME column WITH a legacy fallback');
 ok(/_invPick\(r, 'wh_available_stock', 'available_stock'\)/.test(code(API)),
   'C4 and so does the client normalizer');
-// They cannot both be right about one live sheet. If the sheet is legacy, 43_ silently drops every overseas
-// row from gap materialisation and nothing anywhere reports it.
-ok(true, 'C5 BLOCKING — the codebase contains readers that cannot both be correct about the live spelling');
+// They cannot both be right about one live sheet, and the live sheet is canonical — so 43_'s unfallbacked
+// read resolves and gap materialisation does see overseas stock. The danger was real and is now measured:
+// had the sheet been legacy-spelled, 43_ would have dropped EVERY overseas row from every gap computation
+// while 54_ saw them all, and the two would never have contradicted each other loudly enough to notice.
+ok(read('docs/evidence/s6-r4a-live-overseas-header-and-storage-contract/LIVE_STORAGE_CONTRACT.md')
+  .indexOf('43_OVERSEAS_READ_COMPATIBLE_WITH_LIVE_HEADER = YES') >= 0,
+  'C5 RESOLVED — the live header makes 43_\'s unfallbacked read correct; CURRENT_PRODUCTION_DEFECT = NO');
 
 // =========================================================================================================
-section('D. BLOCKING 4 — wh_physical_stock has no writer, and §7 requires decrementing it');
+section('D. BLOCKING 4 — STANDS. wh_physical_stock has no writer, and §7 requires decrementing it');
 // =========================================================================================================
 
 // Writers, counted across every shipped handler. A "writer" means an assignment or a header-mapped emit.
@@ -137,9 +169,17 @@ ok(/snapHeaders\.indexOf\('wh_physical_stock'\)/.test(code(F05)),
 ok(/physicalStock: parseFloat\(_invPick\(r, 'wh_physical_stock', 'physical_stock'\)\) \|\| 0/.test(code(API)),
   'D5 and the client normalizer defaults it to 0 — an absent column is indistinguishable from zero stock');
 
-// WHY THIS BLOCKS. §7 requires dispatch to move physical down by the shipped quantity. Against an unwritten,
-// possibly-absent column that is EXACTLY the shape of mutation the round forbids everywhere else.
+// WHY THIS BLOCKS. §7 requires dispatch to move physical down by the shipped quantity. Against an unwritten
+// column that is EXACTLY the shape of mutation the round forbids everywhere else.
+//
+// S6-R4A narrowed this without weakening it. The column is NOT absent — the live header carries it, blank.
+// So the block is no longer "we do not know whether the column exists"; it is "the column exists and nothing
+// has ever given it a value, and no rule can invent one". That is LIVE_STORAGE_OUTCOME = B, and it needs an
+// operator decision about what the overseas domain physically stores — not a cleverer test.
 ok(true, 'D6 BLOCKING — §7 requires wh_physical_stock to decrement; nothing has ever populated it');
+ok(read('docs/evidence/s6-r4a-live-overseas-header-and-storage-contract/LIVE_STORAGE_CONTRACT.md')
+  .indexOf('LIVE_STORAGE_OUTCOME = B') >= 0,
+  'D7 BLOCKING — and the live verification classifies the system as outcome B, not as a header problem');
 
 // =========================================================================================================
 section('E. what is NOT blocked — the two columns the lifecycle could otherwise use');
@@ -172,9 +212,10 @@ ok(!/reservation_acquire/.test(code(F05)) && !/reservation_release/.test(code(F0
 console.log('\n=====================================================');
 console.log('S6-R4 OVERSEAS HEADER CONTRACT GATE — ' + pass + ' passed / ' + fail + ' failed');
 if (fail === 0) {
-  console.log('R4_BLOCKED_BY_HEADER_CONTRACT = YES');
-  console.log('LIVE_WRITE_OWNER_EXPECTS_WH_HEADERS = UNPROVEN');
-  console.log('BLOCKING_CONDITION_COUNT = 4   OPERATOR_VERIFICATION_REQUIRED = YES');
+  console.log('R4_BLOCKED_BY_HEADER_CONTRACT = NO  (resolved by S6-R4A)');
+  console.log('R4_BLOCKED_BY_UNMAINTAINED_PHYSICAL_BUCKET = YES   LIVE_STORAGE_OUTCOME = B');
+  console.log('LIVE_WRITE_OWNER_EXPECTS_WH_HEADERS = PROVEN (operator-verified live header)');
+  console.log('BLOCKING_CONDITION_COUNT = 1   OPERATOR_DECISION_REQUIRED = YES (A/B/C model board)');
   console.log('PRODUCTION_ROWS_WRITTEN = 0   BEHAVIOR_CHANGED = NO');
 }
 console.log('=====================================================');
