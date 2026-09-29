@@ -214,10 +214,27 @@ a `TEST_` prefix do it: the prefix scopes the rows somebody intended to write, n
 ```
 REAL_RECORDS_PRESENT              UNVERIFIED — requires a live read-only census (operator-run)
 SAFE_TEST_NAMESPACE_AVAILABLE     partially — the demo seed's classifier is the closest thing that exists
-DETERMINISTIC_ROLLBACK_AVAILABLE  NO for the shipment mainline: there is no shipment delete anywhere, and
-                                  cancellation leaves a `cancelled` row, which is a different state, not the
-                                  prior one — the same structural blocker S5-R7A found on the ordering side
+DETERMINISTIC_ROLLBACK_AVAILABLE  NO for the shipment mainline — see below
 NO WRITE TEST WAS PERFORMED.      PRODUCTION_SMOKE_READY = NO.
+```
+
+**Why rollback is non-deterministic, stated precisely.** Deletes *do* exist in this surface — four of them — and
+an earlier draft of this document said there were none. Measured across `05_` / `11_` / `12_` / `16_` / `21_` /
+`22_` / `31_` / `32_`:
+
+```
+11_:459  shippingPlanRollbackBatch_     same-call readback rollback of exactly this submit batch
+22_:121  dispatch journal rollback      same-call
+21_:642  factoryStockRollbackJournal_   same-call
+32_:257  draft allocation regeneration  draft stage only
+```
+
+Every one is a **same-transaction rollback or a draft-stage regeneration**. What does not exist is a path that
+deletes a *committed* shipment, plan or line after its own call closes — cancellation leaves a `cancelled` row,
+which is a different state, not the prior one. That is the structural blocker, and it is the same one S5-R7A
+found on the ordering side, so the two share a gate rather than each needing their own.
+
+```
 ```
 
 ---
@@ -279,6 +296,34 @@ APPS_SCRIPT_SYNC_REQUIRED NO — no .gs byte changed
 FRONTEND_DEPLOY_REQUIRED  NO — no frontend byte changed
 MUTATION_RESULT  8/8 (the round adds a suite, so N/A would have been the weaker answer)
 ```
+
+## Sweep, and the digest that had to be re-baselined
+
+```
+564 passed / 569   canonical 5   19 lines   DIRTY 0   WORKTREE_CLEAN_AT_END = YES   elapsed 884s
+569 rather than 568 because this round adds one suite. It contributed zero fail lines.
+CANONICAL_FAILURE_SET_CHANGED = NO
+```
+
+**The digest number moved and the failure set did not, and the distinction is the whole point.** S5-R8 recorded
+`CANONICAL_DIGEST = 596eeb64…`, but the runner that produced it was a session-local script that did not survive
+into this round. The rebuilt runner reports `6e49add2…` over the same five suites and the same nineteen lines.
+
+Rather than report a digest change as a regression, or quietly adopt a number that looks like agreement, the
+**set** was diffed directly against the S5-R8 artifact: nineteen lines against nineteen, five suites against
+five, `diff` clean both ways. Seven plausible reconstructions of the old formula were tried and none reproduces
+`596eeb64…`, so the formula is not recoverable and pretending otherwise would be inventing evidence.
+
+The resolution is to make the comparison survive the next runner:
+`docs/evidence/s6-r1-mainline-audit/CANONICAL_FAILURE_SET.txt` records the nineteen lines themselves, the five
+suite names, and the exact formula — sha256 over the sorted lines joined by `\n`, no trailing newline.
+
+```
+CANONICAL_DIGEST_S6R1 = ebcf7bc1651e792f7dbab73544cfa2593f91664a9ed399a04f9a5ba9c9bc4f92
+```
+
+A digest is only evidence if its input can be reproduced. From here the input is in the repository, and a
+future round compares **sets** and falls back to the number, not the other way round.
 
 ```
 S6_CONTRACT_AUDIT_COMPLETE = YES
