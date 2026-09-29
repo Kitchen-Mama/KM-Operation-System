@@ -298,7 +298,7 @@ draft job touches no shipping table.
 
 | # | debt | class |
 |---|---|---|
-| D-S6-1 | overseas-origin shipments reserve nothing — `wh_reserved_stock` has no writer | OPEN, not new |
+| D-S6-1 | **SUPERSEDED BY S6-R2 — understated here.** Overseas-origin shipments do not merely reserve nothing: they cannot be created at all, and the plan is then permanently stuck. See Part II / `D-S6-B`. | OPEN, raised |
 | D-S6-2 | `carrier_lead_times` has no maintenance handler; rows are typed into the tab by hand | OPEN, not new |
 | D-S6-3 | the dormant `KMPR` WEEKLY_SHIPPING deps in 61_ | OPEN, proposed R7 |
 | D-S6-4 | `SUPPLY_CHAIN_SYSTEM_FLOW` §5.4 / §11 B-1 and `DATABASE_RELATIONSHIP_MAP` §6.0 describe a superseded reserve trigger | annotated this round; formal supersession = operator |
@@ -359,4 +359,73 @@ APPS_SCRIPT_SYNC_REQUIRED  = NO
 FRONTEND_DEPLOY_REQUIRED   = NO
 DECISION_REQUIRED_COUNT    = 6
 NEXT_TASK                  = S6-R2 — operator shipping decision freeze
+```
+
+
+---
+
+# PART II — S6-R2 BUSINESS DECISION FREEZE
+
+*Operator decision freeze. No implementation, no migration, no production write. Base `9c11eac`.*
+Full board with options, examples and recommendations: `docs/evidence/s6-r2-decision-freeze/DECISION_BOARD.md`.
+Machine-checkable half: `assets/tests/s6-r2-decision-board.test.js` (46/0).
+
+---
+
+## §15. Key authorities, frozen
+
+```
+FACTORY_RESERVATION_TIMING        SHIPMENT_DRAFT_CREATION (Execution Commit) — no plan transition reserves
+OVERSEAS_RESERVATION_TIMING       NONE — no overseas movement addresses the reserved bucket
+SOURCE_SELECTION_AUTHORITY        OPERATOR (Execution Plan From picker); the AI Plan proposes factory only
+AUTOMATIC_SOURCE_PRIORITY_EXISTS  NO — marketplaces.allocation_priority is a RECEIVER priority
+WEEKLY_PLAN_AUTHORITY             approves quantities AND triggers the Execution Commit on approval
+                                  (it does not propose — the allocation draft does; it does not itself reserve)
+CARRIER_RECOMMENDATION_OWNER      KMMR (transport method) + rate-card comparison at the plan layer
+CARRIER_FINAL_SELECTION_AUTHORITY OPERATOR — the shipment resolves an EXACT rate card and never auto-switches
+DESTINATION_AVAILABILITY_EVENT    WAREHOUSE_RECEIPT — `delivered` posts no inventory, ever
+ROUTE_FREEZE_EVENT                CONFIRM_SHIPMENT_AND_DISPATCH
+POST_DISPATCH_ROUTE_EDIT_ALLOWED  FORWARD ADVANCE ONLY — backward refused, no leg added or removed
+ALREADY_FROZEN_COUNT              17
+```
+
+---
+
+## §16. The two findings this round proved
+
+**Overseas-origin shipping is blocked, not merely unreserved.** The Ship From picker offers an Active
+overseas 3PL as a canonical source; `createShipmentFromApprovedPlan_` checks sufficiency against
+`factory_stock` for whatever source the plan names, with no `is_factory_warehouse` branch; a missing row
+reads `available = 0`; so every positive quantity is short and the draft is refused with
+`INSUFFICIENT_FACTORY_STOCK`. Upstream, the guard asks the operator to *confirm a factory-stock overage*
+against a pool whose `pool_row_found` is `false`, and that confirmation is `overridable`, so it lets the
+approval through to a refusal one step later.
+
+**An approved plan with no shipment has no exit.** The transition set is `submit / approve / reject /
+cancel`; cancel requires `draft | pending_approval`, reject requires `pending_approval`, and Done requires
+both `approved` and a transferred shipment. So the state is terminal in the wrong sense — and because
+`approved` holds pool exposure until transfer, it permanently subtracts its full quantity from
+`available_to_allocate` with no release event of any kind. A ghost reservation held at the Decision Layer.
+
+Both are pinned as MECHANISM assertions rather than as "the bug exists", so a later round that changes
+either one fails the suite and must update the decision record instead of resolving an operator decision on
+the operator's behalf.
+
+---
+
+## §17. Decision status
+
+```
+DECISION_REQUIRED_COUNT = 7
+  D-S6-A  formally supersede B-1 reserve trigger          recommend A (Shipment Draft creation)
+  D-S6-B  overseas-origin shipping (supersedes D-S6-1)    recommend D for Phase 1, A for Phase 2
+  D-S6-C  the approved-plan dead end (new this round)     recommend A (cancel from approved, no shipment)
+  D-S6-D  movement vocabulary of seven + shipment_receipt recommend A
+  D-S6-E  PO over-receipt clamp vs refuse                 recommend A (keep the clamp)
+  D-S6-F  factory_stock_allocation_plans duplicate column recommend A (deprecate the second)
+  D-S6-G  scope of S6 production write validation         recommend A (fold into the post-S7 gate)
+
+PHASE2_DECISION_COUNT_IMPLEMENTED_NOW = 0
+S6_DECISION_FREEZE_READY = YES — pending operator answers
+NEXT_TASK = operator decisions, then S6-R3 — inventory / shipping mapping freeze
 ```
