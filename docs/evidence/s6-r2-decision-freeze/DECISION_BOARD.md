@@ -113,6 +113,13 @@ to deployed code. **Phase 2:** none.
 
 ### D-S6-B · Overseas-origin shipping (supersedes R1's D-S6-1)
 
+> **⚠ RECOMMENDATION SUPERSEDED — S6-R2A.** The operator chose **option A**: overseas is a first-class
+> Phase-1 shipping source, and the double-allocation protection must be BUILT rather than sidestepped. The
+> recommendation below (option D — remove overseas from the Ship From picker for Phase 1) is **not** the
+> decision. Read it as the argument that was considered and rejected, never as current advice.
+> Frozen: `OVERSEAS_ORIGIN_SUPPORTED_PHASE1 = YES`, `OVERSEAS_RESERVATION_REQUIRED = YES`,
+> `OVERSEAS_DOUBLE_ALLOCATION_ALLOWED = NO`. See the S6 contract Part III §18 / §20.
+
 **Question.** Overseas-origin Shipment Drafts are refused today against factory stock they can never have —
 should Phase 1 unblock them, and with what reservation model?
 **Current behavior.** Blocked, as proven above; the plan is then permanently stuck.
@@ -180,6 +187,13 @@ factory list while only ever written to the overseas ledger?
 **Recommendation: A**, in R3 — a constant and a document, no write.
 
 ### D-S6-E · PO over-receipt: clamp or refuse
+
+> **⚠ PREMISE WRONG, AND THE RECOMMENDATION WITH IT — corrected in S6-R2A.** The "current behavior"
+> stated below is stale. `FC-1A-R1 §K` had already replaced the silent clamp with a typed
+> `PO_RECEIPT_EXCEEDS_REMAINING_QTY` refusal carrying `attempted` / `remaining` / `excess`, evaluated
+> before any inventory mutation, with tolerance deliberately unimplemented. I cited `FC-1A §H.4` without
+> re-reading the code, across two rounds. The operator froze **option B** (refuse) — which deployed code
+> already does, so the decision needs no implementation. `PO_OVER_RECEIPT_SILENT_CLAMP = NO`.
 
 **Question.** Keep the frozen clamp, or refuse an over-receipt?
 **Current behavior.** Receiving 900 against 500 ordered receives 500 and stops (`if (recv > maxRecv) recv = maxRecv`).

@@ -429,3 +429,182 @@ PHASE2_DECISION_COUNT_IMPLEMENTED_NOW = 0
 S6_DECISION_FREEZE_READY = YES — pending operator answers
 NEXT_TASK = operator decisions, then S6-R3 — inventory / shipping mapping freeze
 ```
+
+
+---
+
+# PART III — S6-R2A OPERATOR DECISION FREEZE
+
+*Decision acceptance. No runtime implementation, no migration, no production write. Base `61ca8e5`.*
+Round evidence: `docs/evidence/s6-r2a-decision-freeze/ACCEPTANCE.md`.
+Machine-checkable half: `assets/tests/s6-r2a-decision-freeze-guards.test.js`.
+
+All seven decisions are FROZEN by the operator. Every token below is asserted by that suite, which reads
+them out of THIS document — so a freeze that is deleted here fails the suite.
+
+---
+
+## §18. The seven frozen decisions
+
+```
+D_S6_A = FROZEN  option A   factory reservation trigger = Shipment Draft creation
+D_S6_B = FROZEN  option A   overseas IS a Phase-1 shipping source, and must be protected
+D_S6_C = FROZEN  option A   an approved plan with no shipment gets a cancellation escape
+D_S6_D = FROZEN  option A   the movement vocabulary stays closed at seven
+D_S6_E = FROZEN  option B   an over-receipt is refused, never silently clamped
+D_S6_F = FROZEN  option A   one source-factory authority; the other is deprecated, not deleted
+D_S6_G = FROZEN  option A   no standalone S6 write smoke; it joins the pre-S8 cross-system gate
+
+UNRESOLVED_DECISION_COUNT = 0
+```
+
+### Reservation
+
+```
+FACTORY_RESERVATION_TIMING = SHIPMENT_DRAFT_CREATION
+    reserve  Shipment Draft creation   ·   release  Shipment Draft cancellation
+    consume  dispatch inventory movement
+B-1 (Ready to Ship) is SUPERSEDED where it conflicts with deployed canonical code.
+
+OVERSEAS_ORIGIN_SUPPORTED_PHASE1 = YES
+OVERSEAS_RESERVATION_REQUIRED = YES
+OVERSEAS_DOUBLE_ALLOCATION_ALLOWED = NO
+The defect is NOT to be closed by removing overseas from the picker. S6-R3 determines the canonical
+overseas reservation mechanism from the EXISTING overseas inventory domain — not by copying factory_stock.
+```
+
+### §2A — the overseas business role, frozen
+
+```
+FACTORY_CAN_PRODUCE = YES                         FACTORY_CAN_SHIP = YES
+OVERSEAS_CAN_PRODUCE = NO                         OVERSEAS_CAN_SHIP = YES
+OVERSEAS_CAN_RECEIVE_FACTORY_REPLENISHMENT = YES  OVERSEAS_CAN_TRANSFER_STOCK = YES
+OVERSEAS_CAN_SUPPORT_SELF_FULFILLED_OUTBOUND = YES
+CAN_ACT_AS_SHIPPING_SOURCE = YES  (both domains — but they remain SEPARATE storage models)
+
+OVERSEAS_REFURBISH_PHASE1 = NO    OVERSEAS_REFURBISH = DEFERRED
+Phase-1 overseas role: STORE -> ALLOCATE -> SHIP/TRANSFER -> TRACK LIFECYCLE -> RECEIVE.
+Not manufacture, not refurbish. No refurbish status, movement, reservation or schema during S6.
+```
+
+### §2B — the overseas lifecycle to be mapped (not invented)
+
+```
+AVAILABLE -> ALLOCATED/RESERVED FOR SHIPPING -> DISPATCHED/IN TRANSIT -> DESTINATION RECEIPT
+          (+ cancellation / release where applicable)
+S6-R3 must express this through the EXISTING inventory-movement and shipment authorities before proposing
+any schema change. Factory -> Overseas is a valid Phase-1 stock movement, and is SHIPPING EXECUTION:
+it must never be read as shipping shortage -> purchase demand / Request Order / PO.
+```
+
+### Plan lifecycle · movements · receiving · source authority · validation
+
+```
+APPROVED_WITHOUT_SHIPMENT_CAN_CANCEL = YES        GHOST_PLAN_EXPOSURE_ALLOWED = NO
+    allowed ONLY when no shipment has been created/transferred for that plan;
+    must release exposure, restore availability, leave an auditable terminal state, delete no history,
+    and may NEVER unwind a shipment that already exists.
+
+MOVEMENT_VOCABULARY_EXPANDED = NO
+    shipment_receipt is to be placed on the correct EXISTING axis/domain, not given a new type.
+    No movement semantic may be silently overloaded.
+
+PO_OVER_RECEIPT_SILENT_CLAMP = NO                 PO_OVER_RECEIPT_CAN_MUTATE_INVENTORY = NO
+    refuse before any inventory mutation, returning remaining / entered / excess.
+    No automatic PO increase, no exception inventory, no invented tolerance policy.
+
+SOURCE_FACTORY_AUTHORITY_COUNT = 1
+SOURCE_FACTORY_AUTHORITY = factory_stock_allocation_plans.warehouse_id
+DEPRECATED_SOURCE_FACTORY_FIELD = factory_stock_allocation_plans.source_factory_warehouse_id
+    DEPRECATED_NON_AUTHORITY. Not deleted, not migrated this round.
+
+S6_LARGE_FATIGUE_DEFERRED = YES                   S6_PRODUCTION_WRITE_SMOKE_DEFERRED = YES
+FUTURE_FATIGUE_GATE = PRE_S8_CROSS_SYSTEM_FATIGUE_WRITE_STABILITY_GATE
+    sequence: S5 ready -> S6 ready -> S7 ready -> pre-S8 gate.
+    This waives NOTHING else: focused, mutation, regression, canonical sweep and pure/harness write tests
+    all remain required every round.
+```
+
+### Phase boundary (unchanged, re-frozen)
+
+```
+ORDERING_SHIPPING_ORCHESTRATION_IMPLEMENTED = NO  PHASE2_DECISION_COUNT_IMPLEMENTED_NOW = 0
+WEEKLY_PLAN_AUTO_CREATES_PO = NO                  WEEKLY_PLAN_AUTO_CREATES_REQUEST_ORDER = NO
+SOURCE_SELECTION_AUTHORITY = OPERATOR             AUTOMATIC_SOURCE_PRIORITY_EXISTS = NO
+CARRIER_FINAL_SELECTION_AUTHORITY = OPERATOR
+DESTINATION_AVAILABILITY_EVENT = WAREHOUSE_RECEIPT
+ROUTE_FREEZE_EVENT = CONFIRM_SHIPMENT_AND_DISPATCH
+POST_DISPATCH_ROUTE_EDIT_ALLOWED = FORWARD_ADVANCE_ONLY
+ALREADY_FROZEN_COUNT = 17   (the S6-R2 rules, carried unchanged)
+```
+
+---
+
+## §19. Two decisions were already true, and one of those is a correction I owe
+
+**D-S6-A** matches deployed code exactly; freezing it closes the gap against the two stale planning
+documents rather than changing anything.
+
+**D-S6-E was already implemented, and both S6-R1 and S6-R2 said otherwise.** I reported a live silent clamp
+and recommended keeping it, citing `FC-1A §H.4`. `FC-1A-R1 §K` had already replaced it with a typed
+`PO_RECEIPT_EXCEEDS_REMAINING_QTY` refusal carrying `attempted` / `remaining` / `excess`, evaluated before
+any mutation, with tolerance deliberately left unimplemented — which is precisely what the operator has now
+frozen. `13_` is at `…R12`, its manifest expects `…R12`, and `63_` describes it as "the typed
+`PO_RECEIPT_EXCEEDS_REMAINING_QTY` refusal (no silent clamp)". I carried a document claim forward across two
+rounds without re-reading the code — the same failure this series exists to catch in other people's
+documents. The decision needs no implementation.
+
+```
+ALREADY_SATISFIED_BY_DEPLOYED_CODE = D-S6-A, D-S6-E
+AWAITING_S6_R3                     = D-S6-B, D-S6-C, D-S6-D  (+ D-S6-F as documentation)
+```
+
+---
+
+## §20. S6-R3 mapping implications
+
+Prepared, not implemented. Every answer below is from live code.
+
+| | A · overseas reservation | B · approved-plan cancel | C · shipment_receipt | D · over-receipt | E · source factory |
+|---|---|---|---|---|---|
+| CURRENT_OWNER | none — no writer | 11_ `spUpdateShippingPlanStatusCore_` | declared 21_, written 31_ | 13_ `poRcvEvaluateLine_` | none — table unread |
+| TARGET_OWNER | 05_/31_ overseas movement writers | the same function | the overseas domain | unchanged | `warehouse_id` |
+| TABLES | `overseas_inventory_snapshot`, `overseas_inventory_movements` | `shipping_plans` | `overseas_inventory_movements` | `purchase_order_lines` | `factory_stock_allocation_plans` |
+| FIELDS | `wh_reserved_stock`, `wh_available_stock`, `from_stock_type`→`to_stock_type`, `wh_before/after_reserved_stock` | `status`, `cancelled_by`, `cancelled_at`, `updated_*` | `movement_type` | — | `warehouse_id` vs `source_factory_warehouse_id` |
+| SCHEMA_CHANGE_REQUIRED | **NO** | **NO** | **NO** | **NO** | **NO** |
+| MIGRATION_REQUIRED | NO | NO | NO | NO | NO |
+| WRITE_PATHS_AFFECTED | shipment create / cancel / dispatch, + a new overseas availability term in KMFSG | one status branch | one literal + one constant list | none | **0** |
+
+**A — the overseas ledger already models what the reservation needs.** `overseas_inventory_movements`
+declares `from_stock_type` / `to_stock_type` with `reserved` in its allowed set, and carries
+`wh_before_reserved_stock` / `wh_after_reserved_stock` beside the available and physical pairs. So an
+`available → reserved` movement is expressible today, on the existing header, with no column added. What
+does not exist is a writer and an availability term: `KMFSG.availableToAllocate` reads factory balances only.
+That is the shape of the R3 work — a second availability owner for a second domain, NOT a merged one.
+
+**B — the escape needs no new field and no new release mechanism.** `KMFSG.PLAN_RELEASED_STATUSES` already
+contains `cancelled`, so setting the status releases the exposure automatically; `cancelled_by` /
+`cancelled_at` already exist and are already written by the draft/pending cancel path; and
+`shipmentFindForPlan_` already answers "does a shipment exist". The change is one precondition in one branch.
+
+**C — `shipment_receipt` is a misfiling, not a missing type.** It is declared in `FSTX_MOVEMENT_TYPES_` (the
+factory vocabulary) and is on neither factory axis, while `31_` writes it onto `overseas_inventory_movements`.
+The overseas domain declares no vocabulary constant at all. R3 gives the overseas domain its own declared
+set and removes the type from the factory list. Seven stays seven.
+
+**D — nothing to do.** See §19.
+
+**E — the cheapest decision in the series.** `factory_stock_allocation_plans` has **zero** references in any
+`.gs` or `.js` file in the repository. Naming `warehouse_id` the authority changes no write path and breaks
+nothing; the suite asserts the zero-reference fact, so the day something starts reading the table the freeze
+must be honoured in code rather than only here.
+
+---
+
+## §21. Position after R2A
+
+```
+S6_DECISION_FREEZE_COMPLETE = YES     UNRESOLVED_DECISION_COUNT = 0
+BEHAVIOR_CHANGED = NO   PRODUCTION_ROWS_WRITTEN = 0   DB_MIGRATION_REQUIRED = NO
+NEXT_TASK = S6-R3 — inventory / shipping DB + mapping freeze
+```
