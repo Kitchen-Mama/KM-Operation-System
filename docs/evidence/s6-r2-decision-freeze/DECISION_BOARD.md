@@ -254,3 +254,18 @@ MUTATION  N/A — no executable enforcement code was added (§18)
 FILES_CHANGED  1 new test      SPECS_CHANGED  1 new evidence doc + Part II of the S6 contract
 BEHAVIOR_CHANGED NO · DB_MIGRATION_REQUIRED NO · APPS_SCRIPT_SYNC_REQUIRED NO · FRONTEND_DEPLOY_REQUIRED NO
 ```
+
+## Sweep
+
+```
+565 passed / 570   canonical 5   19 lines   DIRTY 0   WORKTREE_CLEAN_AT_END = YES
+570 rather than 569 because this round adds one suite. It contributed zero fail lines.
+CANONICAL_FAILURE_SET_CHANGED = NO — diff-clean against the R8 artifact, line for line
+CANONICAL_DIGEST = ebcf7bc1651e792f7dbab73544cfa2593f91664a9ed399a04f9a5ba9c9bc4f92
+```
+
+**The digest reproduced, which is the first time in this series it has meant anything.** S6-R1 had to
+re-baseline it because the runner that produced S5-R8's `596eeb64…` was session-local and its formula was not
+recoverable; the input and the formula were committed as `CANONICAL_FAILURE_SET.txt` so the next round could
+compare numbers rather than only sets. This is that next round, and the number came back identical — so from
+here a moved digest is evidence of a moved failure set rather than evidence of a different script.
