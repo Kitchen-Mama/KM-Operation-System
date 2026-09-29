@@ -31,7 +31,7 @@
 // An OLD 14_ beside the new page is the dangerous pairing, and it is silent: the page would send
 // expected_row_version and the old handler would IGNORE it — accepting every stale write it was added
 // to refuse, while returning success. Only a declared build separates those two deployments.
-var FCW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R18';
+var FCW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R29';
 
 // fc_special_events header. event_name / event_month / fc_qty are the task-defined columns;
 // event_period + year are additional UI-continuity columns (FC Summary Event table shows/filters them).
@@ -436,6 +436,113 @@ function fcSeReceiptFor_(sheet, eventFcId) {
  * Returns { event_fc_id, created, unchanged, row_version, row } on success, or { refusal: {error,
  * detail, ...} } — a typed, zero-write refusal the callers turn into success:false.
  */
+/* ==========================================================================================
+   FC-ID-R2 §6 — CANONICAL MARKETPLACE IDENTITY, VALIDATED SERVER-SIDE. NEVER DERIVED.
+
+   WHAT THIS DEFENDS AGAINST, stated from the code below rather than from a scenario.
+
+   The UPDATE branch of fcSpecialEventUpsert_ writes `if (body.hasOwnProperty(h)) setCell(...)`.
+   That makes ABSENT and BLANK two genuinely different instructions:
+
+       marketplace_id ABSENT  -> the stored value is left alone.
+       marketplace_id BLANK   -> hasOwnProperty is TRUE, so the stored canonical id is ERASED.
+
+   The second case is reachable today. The Builder always includes marketplace_id, and FC-ID-R1B
+   proved it is blank whenever the runtime marketplaces registry is unhydrated. So an operator
+   editing an existing CA event's quantity, on a page whose registry failed, silently replaces a
+   correct MKT-RESTW-CA-AMAZON with ''. marketplace_id is also part of this table's FALLBACK row
+   key (campaign_id + marketplace_id + sku + event_month + year) and of FC_SE_FINGERPRINT_FIELDS_,
+   so the erasure changes both the row's identity and its version.
+
+   THE VALIDATION MIRRORS THE WRITER'S OWN CONTRACT rather than inventing a second one:
+
+       ABSENT              -> nothing to verify, nothing is written to that column. ALLOWED.
+                              (This is the Special-Event inline quantity edit, which sends
+                              event_fc_id + fc_qty + version and no identity columns at all.
+                              Refusing it would break a live caller to fix a different one.)
+       BLANK               -> REFUSED. A write may not assert "this event has no marketplace".
+       NON-BLANK           -> must name a real canonical row, and that row's company/country/
+                              marketplace must agree with the payload's.
+
+   IT DOES NOT DERIVE, and that is a deliberate refusal rather than an omission. Uniqueness of
+   (company, country, marketplace) is NOT enforced anywhere in this schema, so "look up the triple
+   and take the row" is a guess dressed as a repair. The server checks a claim; it never invents one.
+
+   COST: the registry is read AT MOST ONCE per request, and only when some row actually supplies a
+   non-blank id. A request that supplies none — the inline edit — reads nothing extra at all.
+   ========================================================================================== */
+var FC_SE_MKT_REFUSALS_ = {
+  BLANK: 'BLANK_MARKETPLACE_ID_REFUSED',
+  UNREADABLE: 'MARKETPLACE_REGISTRY_UNREADABLE',
+  NOT_CANONICAL: 'MARKETPLACE_ID_NOT_CANONICAL',
+  MISMATCH: 'MARKETPLACE_IDENTITY_MISMATCH'
+};
+
+function fcSeMktStr_(v) { return String(v == null ? '' : v).trim(); }
+function fcSeMktUp_(v) { return fcSeMktStr_(v).toUpperCase(); }
+
+/* Lazily-built, request-scoped index of the canonical registry. { ok, byId } or { ok:false, reason }.
+   byId maps UPPER(marketplace_id) -> { company, country, marketplace } as the registry states them. */
+function fcSeMarketplaceIndex_(ss) {
+  var sheet = ss.getSheetByName('marketplaces');
+  if (!sheet) return { ok: false, reason: 'marketplaces sheet not found' };
+  var s2 = fcWriteReadSheet_(sheet);
+  var iId = s2.col('marketplace_id'), iCo = s2.col('company'), iCt = s2.col('country'), iMk = s2.col('marketplace');
+  if (iId === -1) return { ok: false, reason: 'marketplaces.marketplace_id column not found' };
+  var byId = {};
+  for (var r = 1; r < s2.rows.length; r++) {
+    var id = fcSeMktUp_(s2.rows[r][iId]);
+    if (!id) continue;
+    byId[id] = {
+      company: iCo === -1 ? '' : fcSeMktStr_(s2.rows[r][iCo]),
+      country: iCt === -1 ? '' : fcSeMktStr_(s2.rows[r][iCt]),
+      marketplace: iMk === -1 ? '' : fcSeMktStr_(s2.rows[r][iMk])
+    };
+  }
+  return { ok: true, byId: byId };
+}
+
+/* Returns a refusal { error, detail } or null. `getIndex` is a thunk so the registry is read only when
+   a non-blank id actually needs checking. PURE apart from that thunk — no writes, no clock. */
+function fcSeValidateMarketplaceIdentity_(body, getIndex) {
+  body = body || {};
+  if (!Object.prototype.hasOwnProperty.call(body, 'marketplace_id')) return null;   // absent: not this write's business
+  var claimed = fcSeMktStr_(body.marketplace_id);
+  if (!claimed) {
+    return { error: FC_SE_MKT_REFUSALS_.BLANK,
+      detail: 'This save carries an empty marketplace_id. A blank canonical marketplace identity is not '
+        + 'accepted, and applying it would erase the identity already stored on this event. Nothing was '
+        + 'written. Reload the marketplace reference data and save again.' };
+  }
+  var idx = getIndex();
+  if (!idx || !idx.ok) {
+    return { error: FC_SE_MKT_REFUSALS_.UNREADABLE,
+      detail: 'The marketplace registry could not be read (' + ((idx && idx.reason) || 'unknown')
+        + '), so marketplace_id ' + claimed + ' cannot be verified. Nothing was written.' };
+  }
+  var canon = idx.byId[fcSeMktUp_(claimed)];
+  if (!canon) {
+    return { error: FC_SE_MKT_REFUSALS_.NOT_CANONICAL,
+      detail: 'marketplace_id ' + claimed + ' names no row in the marketplaces registry. Nothing was written.' };
+  }
+  /* The payload's own triple must AGREE. Each dimension is checked only when the payload supplies it,
+     because a caller that omits a column is not making a claim about it — the same absent/blank
+     distinction the id itself is held to. Comparison is case-insensitive, matching the client owner. */
+  var bad = [];
+  [['company', canon.company], ['country', canon.country], ['marketplace', canon.marketplace]].forEach(function (p) {
+    if (!Object.prototype.hasOwnProperty.call(body, p[0])) return;
+    var given = fcSeMktStr_(body[p[0]]);
+    if (!given) return;
+    if (fcSeMktUp_(given) !== fcSeMktUp_(p[1])) bad.push(p[0] + ' ' + given + ' != ' + p[1]);
+  });
+  if (bad.length) {
+    return { error: FC_SE_MKT_REFUSALS_.MISMATCH,
+      detail: 'marketplace_id ' + claimed + ' belongs to ' + canon.company + ' / ' + canon.country + ' / '
+        + canon.marketplace + ', which disagrees with this save (' + bad.join('; ') + '). Nothing was written.' };
+  }
+  return null;
+}
+
 function fcSpecialEventUpsert_(ss, body, actor) {
   var headers = FC_SPECIAL_EVENTS_HEADERS_;
   var sheet = fcWriteEnsureSheet_(ss, 'fc_special_events', headers, FC_SCHEMA_BY_NAME_);
@@ -563,6 +670,16 @@ function handleUpsertFcSpecialEvent_(body) {
     return jsonResponse_({ success: false, error: 'Invalid fc_qty (must be a number ≥ 0)' });
   }
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  // FC-ID-R2 §6 — identity is validated HERE, beside every other pre-write check, so the core upsert
+  // keeps one job and there is no second place that decides what an identity is.
+  var _mktIdx = null;
+  var _mktRef = fcSeValidateMarketplaceIdentity_(body, function () {
+    if (_mktIdx === null) _mktIdx = fcSeMarketplaceIndex_(ss);
+    return _mktIdx;
+  });
+  if (_mktRef) {
+    return jsonResponse_({ success: false, error: _mktRef.error, detail: _mktRef.detail, wrote: 0 });
+  }
   var result;
   try {
     result = fcSpecialEventUpsert_(ss, body, actor);
@@ -594,6 +711,10 @@ function handleImportFcSpecialEventsBatch_(body) {
   var actor = String(body.updated_by || body.actor || 'fc-summary').trim();
   if (!rows.length) return jsonResponse_({ success: false, error: 'No rows to save' });
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  // FC-ID-R2 §6 — ONE registry read for the whole batch, and only if some row actually claims an id.
+  // A batch that claims none (the Special-Event inline quantity edit) reads nothing extra.
+  var _mktIdx = null;
+  function _mktIndex_() { if (_mktIdx === null) _mktIdx = fcSeMarketplaceIndex_(ss); return _mktIdx; }
   var results = [], created = 0, updated = 0, skipped = 0, unchanged = 0;
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i] || {};
@@ -603,6 +724,15 @@ function handleImportFcSpecialEventsBatch_(body) {
     else if (!String(r.event_name || '').trim()) reason = 'missing_event_name';
     else { var q = Number(r.fc_qty); if (r.fc_qty === '' || r.fc_qty == null || isNaN(q) || q < 0) reason = 'invalid_fc_qty'; }
     if (reason) { skipped++; results.push({ index: i, event_fc_id: r.event_fc_id || '', skipped: true, reason: reason }); continue; }
+    // Identity is a per-ROW refusal with its own token, exactly like the stale/unlocatable refusals
+    // below: zero cells written for that row, and the rest of the batch still runs.
+    var _mref = fcSeValidateMarketplaceIdentity_(r, _mktIndex_);
+    if (_mref) {
+      skipped++;
+      results.push({ index: i, event_fc_id: r.event_fc_id || '', skipped: true,
+        reason: _mref.error, detail: _mref.detail });
+      continue;
+    }
     try {
       var res = fcSpecialEventUpsert_(ss, r, actor);   // canonical row upsert (event_fc_id exact, else business key)
       // R2B-A3-R1 — a stale or unlocatable row is REFUSED PER ROW, with its token, and the rest of the

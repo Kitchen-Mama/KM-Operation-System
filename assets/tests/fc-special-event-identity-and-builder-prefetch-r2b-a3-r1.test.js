@@ -100,7 +100,11 @@ var HDR = {
   fc_special_events: ['event_fc_id', 'campaign_id', 'campaign_sku_line_id', 'company', 'country',
     'marketplace', 'marketplace_id', 'scope_type', 'scope_id', 'sku', 'series', 'category', 'event_name',
     'event_period', 'event_start_date', 'event_end_date', 'event_month', 'year', 'fc_qty', 'note',
-    'created_by', 'created_at', 'updated_by', 'updated_at']
+    'created_by', 'created_at', 'updated_by', 'updated_at'],
+  // FC-ID-R2 — the canonical marketplace registry. 14_ now VALIDATES a supplied marketplace_id against
+  // it before the upsert, so the server world needs the row this suite has always claimed in its
+  // payloads. Adding it makes these existing cases exercise the healthy identity path for real.
+  marketplaces: ['marketplace_id', 'company', 'country', 'marketplace', 'status']
 };
 
 function makeSheet(name, values) {
@@ -156,7 +160,8 @@ function makeSs(tables) {
 }
 function emptyDb() {
   return { campaigns: [HDR.campaigns.slice()], campaign_sku_lines: [HDR.campaign_sku_lines.slice()],
-           fc_special_events: [HDR.fc_special_events.slice()] };
+           fc_special_events: [HDR.fc_special_events.slice()],
+           marketplaces: [HDR.marketplaces.slice(), ['MP-US-AMA', 'ResUS', 'US', 'Amazon', 'active']] };
 }
 function rowOf(table, obj) {
   return HDR[table].map(function (h) { return Object.prototype.hasOwnProperty.call(obj, h) ? obj[h] : ''; });
@@ -165,11 +170,12 @@ function rowOf(table, obj) {
 // The server world: the REAL handlers, nothing re-implemented.
 var SRV_NAMES_14_VARS = ['FC_SPECIAL_EVENTS_HEADERS_', 'FC_TARGET_RULES_HEADERS_', 'FC_SCHEMA_ORDERED_',
   'FC_SCHEMA_BY_NAME_', 'FC_SCHEMA_BY_NAME_TABLES_', 'FC_SE_FINGERPRINT_FIELDS_', 'FC_SE_FINGERPRINT_NUMERIC_',
-  'FC_SE_UNIQUENESS_FIELDS_'];
+  'FC_SE_UNIQUENESS_FIELDS_', 'FC_SE_MKT_REFUSALS_'];
 var SRV_NAMES_14_FNS = ['fcWriteSchemaByNameApproved_', 'fcWriteTimestamp_', 'fcWriteEnsureSheet_',
   'fcWriteEnsureColumns_', 'fcWriteReadSheet_', 'fcWriteAppendByHeader_', 'fcWriteUpsert_', 'fcEvtUp_',
   'fcSpecialEventFindRowByKey_', 'fcSeUniquenessKey_', 'fcSeUniquenessConflict_',
   'fcSeNum_', 'fcSeFingerprint_', 'fcSeRowAt_', 'fcSeReceiptFor_',
+  'fcSeMktStr_', 'fcSeMktUp_', 'fcSeMarketplaceIndex_', 'fcSeValidateMarketplaceIdentity_',
   'fcSpecialEventUpsert_', 'handleUpsertFcSpecialEvent_', 'handleImportFcSpecialEventsBatch_'];
 var SRV_NAMES_20_VARS = ['CAMPAIGNS_HEADERS_', 'CAMPAIGN_SKU_LINES_HEADERS_', 'CAMPAIGN_KEY_FIELDS_',
   'CAMPAIGN_LOCK_MS_', 'CAMPAIGN_FINGERPRINT_FIELDS_', 'CAMPAIGN_FINGERPRINT_NUMERIC_',

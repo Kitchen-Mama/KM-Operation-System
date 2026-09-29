@@ -498,6 +498,14 @@ function saveWorld(opts) {
     'function _fcResolveMarketplaceKey(v) { return String(v == null ? "" : v).trim(); }',
     'function _evtSelectedSite() { return { company: "ResUS", country: "US", marketplace: "Amazon" }; }',
     'function _evtResolveMarketplaceId() { return "MKT-1"; }',
+    // FC-ID-R2 — saveEventUpdate now gates on the classifier rather than the string. This suite's subject
+    // is the WINDOW policy, so identity is stubbed healthy: a READY_UNIQUE verdict is the precondition
+    // under which the window rules are the thing being tested.
+    'var FC_ID_ = { READY_UNIQUE: "READY_UNIQUE", UNREAD: "UNREAD", READ_FAILED: "READ_FAILED",'
+      + ' NO_MATCH: "NO_MATCH", AMBIGUOUS: "AMBIGUOUS" };',
+    'function _evtMarketplaceIdentity_() { return { state: "READY_UNIQUE", marketplaceId: "MKT-1",'
+      + ' matchCount: 1, registrySize: 1, company: "ResUS", country: "US", marketplace: "amazon" }; }',
+    'function _evtIdentityRefusalText_() { return "identity refused"; }',
     'function _evtComposePeriod(a, b) { return a + "~" + b; }',
     'function _evtEventMonthIdx() { return parseInt(String(__dom_start()).slice(5, 7), 10) - 1; }',
     'function __dom_start() { return document.getElementById("event-start-date").value; }',

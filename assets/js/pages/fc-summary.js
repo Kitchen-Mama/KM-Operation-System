@@ -3929,18 +3929,119 @@ function _evtSkuPricing(sku) {
 // blank and priceState becomes 'missing_price' — which is the behaviour a blank effective price must have
 // now that PRICING-R4E creates rows that legitimately have one.
 
-// Resolve the canonical marketplace_id for the selected site (company + country + marketplace).
-function _evtResolveMarketplaceId(site) {
+/* FC-ID-R2 §3 — WHY A LOOKUP RESULT IS NOT AN ANSWER.
+ *
+ * This function used to return a string, and '' had to mean five different things at once: the registry
+ * was never read, the read failed, the registry is genuinely empty, the triple matches nothing, or the
+ * triple matches more than one row. FC-ID-R1B proved the incident lives in exactly that collapse — a real
+ * CA row exists in the database, the picker offers the site out of fc_regular_forecast, and the resolver
+ * answers '' because the runtime registry is not the database.
+ *
+ * So the mapping now CLASSIFIES, and the classification is derived from the read-model vocabulary that
+ * already exists (`_fcHas_`, `_fcSliceRec_`, `FC_FRESH_`). No second lifecycle is introduced: readiness is
+ * asked of the same owner the table asks, and the five values below are a shape of the answer rather than
+ * a state machine that could drift from the model it describes.
+ *
+ * TWO THINGS ARE DELIBERATELY STRICTER THAN BEFORE.
+ *
+ * 1. All three dimensions must be PRESENT and must MATCH. The old filter skipped a dimension whenever the
+ *    site carried none (`!site.company || …`), so a site with no company would adopt the first row of any
+ *    company — a cross-company identity adoption that no caller wanted and nothing prevented. The save path
+ *    already refuses a blank company for its own reasons, so this closes a hole rather than changing a
+ *    behaviour anyone depends on.
+ *
+ * 2. `[0]` is gone. Uniqueness of (company, country, marketplace) is NOT enforced anywhere in the schema,
+ *    which is precisely why picking the first row is a guess. Two matches is an answerable question with no
+ *    single answer, and the boundary says so instead of choosing.
+ *
+ * A single match whose own marketplaceId is blank is NOT a resolution: the registry row exists but carries
+ * no canonical identity, so there is nothing to write. It reports NO_MATCH, because that is what the caller
+ * needs to act on.
+ */
+var FC_ID_ = { READY_UNIQUE: 'READY_UNIQUE', UNREAD: 'UNREAD', READ_FAILED: 'READ_FAILED',
+               NO_MATCH: 'NO_MATCH', AMBIGUOUS: 'AMBIGUOUS' };
+
+/* Is the marketplaces REGISTRY answerable at all — asked of whichever store is authoritative in this mode.
+   Identical in shape to `_fcRegularSourceReady_` / `_fcEventSourceReady_`, and separate from them for the
+   same reason: three model keys, three questions, and a shared predicate taking a key would invite passing
+   the wrong one. `marketplaces` rides the BOOTSTRAP slice (`_FC_SLICE_KEYS_`), not the event slice. */
+function _fcRegistrySourceReady_() {
+  if (_fcWorkspaceMode_()) return _fcHas_('marketplaces');
+  return !!(typeof window !== 'undefined' && window._opDbCache);
+}
+
+/* THE ONE canonical client-side marketplace identity owner. Returns
+     { state, marketplaceId, matchCount, registrySize, company, country, marketplace }
+   and never throws, because a caller that must refuse needs the reason more than it needs an exception. */
+function _evtMarketplaceIdentity_(site) {
+  site = site || {};
   function up(v){ return String(v==null?'':v).trim().toUpperCase(); }
   function lo(v){ return String(v==null?'':v).trim().toLowerCase(); }
-  var mkey = _fcResolveMarketplaceKey(site.marketplace);
+  var mkey = lo(_fcResolveMarketplaceKey(site.marketplace));
+  var out = { state: FC_ID_.NO_MATCH, marketplaceId: '', matchCount: 0, registrySize: 0,
+    company: String(site.company == null ? '' : site.company), country: String(site.country == null ? '' : site.country),
+    marketplace: mkey };
+  /* READINESS BEFORE LOOKUP. An accessor that answers [] for an unread slice cannot distinguish "no rows
+     yet" from "no rows at all", so the distinction is taken from the model BEFORE the rows are consulted. */
+  if (!_fcRegistrySourceReady_()) {
+    var rec = (typeof _fcSliceRec_ === 'function') ? _fcSliceRec_(FC_SLICE_.BOOTSTRAP) : null;
+    out.state = (rec && rec.state === FC_FRESH_.REFUSED) ? FC_ID_.READ_FAILED : FC_ID_.UNREAD;
+    return out;
+  }
   var mkts = _fcGetMarketplaces();                 // §14.4 — the page's one marketplaces owner
-  var m = mkts.filter(function(x){
-    return (!site.company || up(x.company) === up(site.company)) &&
-      (!site.country || up(x.country) === up(site.country)) &&
-      (!mkey || lo(x.marketplace) === lo(mkey));
-  })[0];
-  return m ? m.marketplaceId : '';
+  out.registrySize = mkts.length;
+  // A partial triple is not a narrower question, it is an unanswerable one. Never match on two of three.
+  if (!up(site.company) || !up(site.country) || !mkey) return out;
+  var hits = mkts.filter(function (x) {
+    return up(x.company) === up(site.company) && up(x.country) === up(site.country) &&
+      lo(x.marketplace) === mkey;
+  });
+  out.matchCount = hits.length;
+  if (hits.length > 1) { out.state = FC_ID_.AMBIGUOUS; return out; }
+  if (hits.length === 1) {
+    var id = String(hits[0].marketplaceId == null ? '' : hits[0].marketplaceId).trim();
+    if (id) { out.state = FC_ID_.READY_UNIQUE; out.marketplaceId = id; }
+  }
+  return out;
+}
+
+/* The string face of the SAME mapping, kept because four suites and the page's own history speak in it.
+   It is a thin accessor, not a second implementation: there is one filter, in one function, above. */
+function _evtResolveMarketplaceId(site) {
+  return _evtMarketplaceIdentity_(site).marketplaceId;
+}
+
+/* The refusal text for every non-READY state. Separate from the gate so the words can be tested without
+   driving a save, and so the three refusals cannot drift into each other. */
+function _evtIdentityRefusalText_(idr) {
+  var triple = (idr.company || '(no company)') + ' / ' + (idr.country || '(no country)') + ' / ' +
+    (idr.marketplace || '(no marketplace)');
+  var NL = String.fromCharCode(10);
+  var head = 'Nothing was written.' + NL + NL;
+  if (idr.state === FC_ID_.UNREAD || idr.state === FC_ID_.READ_FAILED) {
+    return head + 'The canonical marketplace reference data has not loaded, so the marketplace identity for '
+      + triple + ' cannot be verified.' + NL + NL
+      + 'Use Retry above the table to reload it, then press Save again. Your entries are unchanged and no '
+      + 'save was attempted.';
+  }
+  if (idr.state === FC_ID_.AMBIGUOUS) {
+    return head + 'The marketplace registry holds ' + idr.matchCount + ' rows for ' + triple + ', so the '
+      + 'canonical marketplace identity is ambiguous and this save will not guess between them.' + NL + NL
+      + 'Correct the duplicate registry rows, then press Save again. Your entries are unchanged.';
+  }
+  /* NO_MATCH, and the two causes read very differently to an operator. A registry that landed EMPTY is a
+     hydration symptom, not a statement about this site, and saying "no canonical identity for CA/Amazon"
+     in that case would send someone to edit master data that is perfectly correct. */
+  if (!idr.registrySize) {
+    return head + 'The marketplace registry loaded with no rows at all, so no marketplace identity can be '
+      + 'verified for ' + triple + '.' + NL + NL
+      + 'This is a reference-data loading problem rather than a problem with this event. Use Retry above the '
+      + 'table, then press Save again. Your entries are unchanged.';
+  }
+  return head + 'No canonical marketplace identity could be verified for ' + triple + '.' + NL + NL
+    + 'The marketplace registry loaded (' + idr.registrySize + ' rows) and contains no entry for that exact '
+    + 'company / country / marketplace. Check the marketplace master data for this site. Your entries are '
+    + 'unchanged and no save was attempted.';
 }
 
 // ADJUST base: fc_regular_forecast[baseYear][baseMonthIdx] for a SKU in the selected scope
@@ -5199,7 +5300,30 @@ async function saveEventUpdate() {
     if (_dupHits.length) { alert(_evtDuplicateRefusalText_(_dupHits, _dupCtx)); return; }
   }
 
-  var marketplaceId = _evtResolveMarketplaceId(site);
+  /* FC-ID-R2 §1/§4 — THE CANONICAL IDENTITY SAVE BOUNDARY.
+   *
+   * CANONICAL_MARKETPLACE_ID_REQUIRED_FOR_SAVE = YES. An FC Special Event write carries the canonical
+   * marketplace identity into three tables and into the server's own fallback row key
+   * (campaign_id + marketplace_id + sku + event_month + year), so a blank id is not merely an incomplete
+   * column — it degrades the identity the next save will be matched by.
+   *
+   * It is refused HERE, above `_fcWriteBegin_`, which is what makes the outcome CONFIRMED_NOT_STARTED
+   * rather than a failure: no logical write is opened, no request is dispatched, no write state is
+   * entered, and the form is untouched. That is the same shape as the unreadable-duplicates refusal a few
+   * lines above, deliberately — one refusal grammar on this boundary, not two.
+   *
+   * Retry is the operator's, not this function's. The refusal names the existing Retry control and stops;
+   * it does not reload anything and it does not re-enter the save. A boundary that repaired its own
+   * precondition and continued would be submitting a form the operator has not re-approved.
+   *
+   * Demo is exempt because the demo dataset has no registry to hydrate and writes nothing to a database.
+   */
+  var _idr = _evtMarketplaceIdentity_(site);
+  if (!demoOn && _idr.state !== FC_ID_.READY_UNIQUE) {
+    alert(_evtIdentityRefusalText_(_idr));
+    return;
+  }
+  var marketplaceId = _idr.marketplaceId;
   var eventMonth = (monthIdx == null) ? '' : (monthIdx + 1);   // fc_special_events.event_month (1–12)
 
   var campaignPayload = {

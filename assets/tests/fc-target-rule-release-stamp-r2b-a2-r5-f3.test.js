@@ -130,6 +130,16 @@ var RELEASE_OWNERS = {
   // S5-R7A — 47_ JOINS, which is the ledger working rather than the set growing. R28 changed only the
   // generated bundle and the manifest that identifies it; R29 changes a hand-written owner as well, and the
   // two must travel together in both directions.
+  '14_fc_write_handlers.gs':
+    'THE FC SPECIAL EVENT WRITE PATH. FC-ID-R2 adds canonical marketplace-identity validation before the '
+    + 'upsert: a BLANK marketplace_id is refused, and a supplied one must name a real marketplaces row whose '
+    + 'company/country/marketplace agrees with the payload. It VALIDATES and never DERIVES, because '
+    + '(company, country, marketplace) uniqueness is not enforced in the schema. The dangerous half-sync is '
+    + 'an OLD 14_ beside the new frontend: the client stops sending blanks, so nothing looks wrong, while the '
+    + 'server still accepts an erasing blank from any other caller — and the erasure is real, because the '
+    + 'UPDATE branch writes any column the body carries, so a present-but-blank id overwrites a stored '
+    + 'canonical one. ABSENT is deliberately still allowed: that is the Special-Event inline quantity edit, '
+    + 'which sends no identity columns at all.',
   '63_api_v1_system_health.gs':
     'THE MANIFEST. The generated bundle\'s content hash moved again — KMRDV2P now owns the write-eligibility '
     + 'guard and consults it on the live generate path — and 47_\'s expected stamp moves with 47_ itself. Both '
@@ -202,9 +212,13 @@ var RELEASE_UNMOVED = {
   // what the auto_* values CONTAIN and not which table any reader asks for, so 59_ keeps R21 — the round
   // it last actually changed — and marching it to R22 would erase that.
   '59_api_v1_sku_details_workspace.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R21',
-  '20_campaign_write_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R20',
-  '14_fc_write_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R18',
+  // 14_ LEFT THIS LIST AT R29 AND JOINED RELEASE_OWNERS — the ninth swap, and nothing took its place.
+  // FC-ID-R2 adds the canonical marketplace-identity validation to the fc_special_events write path, which
+  // is 14_'s own surface, so its stamp moves to the round it actually changed in. It joins the CURRENT
+  // unshipped release rather than minting a new one: R26 onward have accumulated unshipped, and cutting a
+  // fresh id would march 01_, 47_, 63_, 73_ and 90_ to a release none of them changed in.
   '58_api_v1_fc_summary_workspace.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R14',
+  '20_campaign_write_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R20',
   '13_procurement_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12',
   '00_config.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11',
   // 72_ LEFT THIS LIST AT R24 — the eighth swap, and the one the previous three entries were building
@@ -354,8 +368,15 @@ ok(/function pricingNewRowPlan_\(/.test(REGWRITE) && /NO_CANONICAL_FX_RATE/.test
   'B2a and the change its stamp claims is really in the file — the creation planner and its fail-closed reason');
 ok(!/fxRate = 1;/.test(REGWRITE),
   'B2b with the unconditional rate-1 seed it replaced gone, so the stamp is not decoration');
-eq(declares(WRITE, 'FCW_BUILD_VERSION_'), RELEASE_UNMOVED['14_fc_write_handlers.gs'],
-  'B2-0 while 14_ keeps R18, the round IT last changed — no event or rule handler was touched');
+// FC-ID-R2 — 14_ is an OWNER again. It kept R18 for as long as no event or rule handler was touched; this
+// round touches the fc_special_events write path itself, so its stamp moves with the change rather than
+// against it. The assertion follows the file between the two lists instead of pinning it to one.
+eq(declares(WRITE, 'FCW_BUILD_VERSION_'), RELEASE,
+  'B2-0 14_ carries THIS release — FC-ID-R2 changed the fc_special_events write path it owns');
+ok(/function fcSeValidateMarketplaceIdentity_\(/.test(WRITE) && /BLANK_MARKETPLACE_ID_REFUSED/.test(WRITE),
+  'B2-0a and the change its stamp claims is really in the file — the validator and its blank refusal');
+ok(!/fcSeValidateMarketplaceIdentity_[\s\S]{0,400}?byId\[[^\]]*\]\[0\]/.test(WRITE),
+  'B2-0b and it validates rather than deriving — no "take the first matching row" anywhere in it');
 ok(/LockService\.getScriptLock\(\)/.test(REGWRITE) && /fcRegContiguousRuns_/.test(REGWRITE),
   'B2-0a and the change 04_\'s stamp claims is really in the file — the lock and the bounded runs');
 // Scoped to the HANDLER, not the file: 04_ also holds handleImportMarketplaceSkusBatch_, which B1

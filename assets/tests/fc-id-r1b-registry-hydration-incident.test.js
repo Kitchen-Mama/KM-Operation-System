@@ -91,6 +91,18 @@ global._fcResolveMarketplaceKey = extractFn(PAGE, '_fcResolveMarketplaceKey');
 global._fcMarketplaceLabel = extractFn(PAGE, '_fcMarketplaceLabel');
 global.fcRegularMock = [];
 
+/* FC-ID-R2 — the mapping moved into `_evtMarketplaceIdentity_`; `_evtResolveMarketplaceId` is its string
+   face. Every assertion below is unchanged because the MECHANISM is unchanged — R2 hardened the SAVE, not
+   the lookup. The readiness predicate is lifted for real (not stubbed) because readiness is exactly what
+   this suite is about, and it must keep answering out of the same read model the page uses. */
+global.FC_ID_ = (function () { var m = /var FC_ID_ = (\{[\s\S]*?\});/.exec(PAGE); return eval('(' + m[1] + ')'); })();
+global.FC_SLICE_ = (function () { var m = /var FC_SLICE_ = (\{[\s\S]*?\});/.exec(PAGE); return eval('(' + m[1] + ')'); })();
+global.FC_FRESH_ = (function () { var m = /var FC_FRESH_ = (\{[\s\S]*?\});/.exec(PAGE); return eval('(' + m[1] + ')'); })();
+global._fcSliceState_ = {};
+global._fcSliceRec_ = extractFn(PAGE, '_fcSliceRec_');
+global._fcRegistrySourceReady_ = extractFn(PAGE, '_fcRegistrySourceReady_');
+global._evtMarketplaceIdentity_ = extractFn(PAGE, '_evtMarketplaceIdentity_');
+
 var resolveMarketplaceId = extractFn(PAGE, '_evtResolveMarketplaceId');
 var siteOptions = extractFn(PAGE, '_fcRegularSiteOptions');
 
@@ -225,8 +237,15 @@ section('G. §6 — the server cannot repair it');
 // =========================================================================================================
 
 var FCWC = code(FCW);
-ok(!/getSheetByName\('marketplaces'\)/.test(FCWC),
-  'G1 SERVER_CAN_REPAIR_CLIENT_IDENTITY = NO — 14_ never opens the registry');
+/* FC-ID-R2 — the claim this section makes is still true and is now true for a BETTER reason. It asserted
+   that 14_ never opens the registry, which proved the server could not repair a blank id. R2 gives 14_ a
+   registry read, and it still cannot repair one: a blank is REFUSED rather than filled in, because
+   (company, country, marketplace) uniqueness is not enforced and filling it in would be a guess. "Cannot
+   repair" was the invariant; "never reads" was only the evidence available before R2. */
+ok(!/function\s+\w*[Rr]esolveMarketplaceId\w*\s*\(/.test(FCWC),
+  'G1 SERVER_CAN_REPAIR_CLIENT_IDENTITY = NO — 14_ declares no id resolver');
+ok(/BLANK_MARKETPLACE_ID_REFUSED/.test(FCWC) && /idx\.byId\[fcSeMktUp_\(claimed\)\]/.test(FCWC),
+  'G1a and R2 makes the refusal explicit: a blank is rejected, and the registry is read BY THE CLAIMED ID only');
 ok(!/marketplace_id[^;]{0,60}(required|REQUIRED|validate)/.test(FCWC),
   'G2 …and never validates marketplace_id');
 ok(/body\.hasOwnProperty\(h\)/.test(FCWC),

@@ -357,8 +357,11 @@ section('D. MARKETPLACES HAS ONE OWNER (§14.4)');
   var GET = fnSrc(FCS, '_fcGetMarketplaces');
   ok(/if \(_fcHas_\('marketplaces'\)\) return _fcReadModel\.marketplaces;/.test(GET),
     'D9  which is read-model-first, so no second cache authority was created');
+  // FC-ID-R2 — the identity mapping moved from `_evtResolveMarketplaceId` (now a thin string face) into
+  // `_evtMarketplaceIdentity_`. The INVARIANT is unchanged and still worth asserting: the identity owner
+  // asks the page accessor, never the broad cache. It is asserted where the mapping now lives.
   ['_populateRegularScopeSelects', '_fcRegularSiteOptions', '_populateEventScopeSelects',
-   '_evtResolveMarketplaceId'].forEach(function (f, i) {
+   '_evtMarketplaceIdentity_'].forEach(function (f, i) {
     ok(/_fcGetMarketplaces\(\)/.test(fnSrc(FCS, f)),
       'D1' + String(i) + (i === 0 ? '0' : '') + ' ' + f + ' asks the page accessor');
   });

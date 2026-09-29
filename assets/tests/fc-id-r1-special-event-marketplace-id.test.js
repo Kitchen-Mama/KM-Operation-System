@@ -83,6 +83,15 @@ global._fcResolveMarketplaceKey = extractFn(PAGE, '_fcResolveMarketplaceKey');
 global._fcMarketplaceLabel = extractFn(PAGE, '_fcMarketplaceLabel');
 global.fcRegularMock = [];
 
+/* FC-ID-R2 — the mapping moved into `_evtMarketplaceIdentity_` and `_evtResolveMarketplaceId` is now the
+   string face of it. The MECHANISM this suite proves is unchanged, so nothing below is rewritten; the lift
+   simply follows the implementation. Readiness is stubbed TRUE here because this suite's subject is the
+   LOOKUP (the picker offers a site the registry cannot answer for) — readiness is FC-ID-R1B's subject, and
+   that suite lifts the real predicate. */
+global.FC_ID_ = (function () { var m = /var FC_ID_ = (\{[\s\S]*?\});/.exec(PAGE); return eval('(' + m[1] + ')'); })();
+global._fcRegistrySourceReady_ = function () { return true; };
+global._evtMarketplaceIdentity_ = extractFn(PAGE, '_evtMarketplaceIdentity_');
+
 var resolveMarketplaceId = extractFn(PAGE, '_evtResolveMarketplaceId');
 var siteOptions = extractFn(PAGE, '_fcRegularSiteOptions');
 
@@ -158,9 +167,23 @@ var FCWC = code(FCW);
 
 ok(/marketplace_id:\s*marketplaceId/.test(code(PAGE)),
   'D1 CLIENT_SENDS_MARKETPLACE_ID = YES — always as a property, blank or not');
-ok(!/function\s+\w*[Rr]esolveMarketplaceId\w*\s*\(/.test(FCWC) &&
-   !/getSheetByName\('marketplaces'\)/.test(FCWC),
-  'D2 SERVER_DERIVES_MARKETPLACE_ID = NO — 14_ never opens the marketplaces registry');
+/* FC-ID-R2 — SHARPENED, NOT WEAKENED. This asserted "14_ never opens the marketplaces registry", which was a
+   sound PROXY for "the server does not derive an id" only while no read existed at all. R2 gives 14_ a read
+   for the opposite purpose: it VALIDATES a claimed id against the registry and refuses a blank one. So the
+   proxy has to be replaced by the invariant it stood for, or it would fail on a change that strengthens the
+   very property it was defending. Derivation means going FROM the triple TO an id; that is what stays absent. */
+ok(!/function\s+\w*[Rr]esolveMarketplaceId\w*\s*\(/.test(FCWC),
+  'D2 SERVER_DERIVES_MARKETPLACE_ID = NO — 14_ declares no id resolver');
+var VALSRC = (function () {
+  var i = FCWC.indexOf('function fcSeValidateMarketplaceIdentity_');
+  if (i < 0) return '';
+  var j = FCWC.indexOf('\nfunction ', i + 10);
+  return FCWC.slice(i, j < 0 ? FCWC.length : j);
+})();
+ok(VALSRC && !/\)\s*\[0\]/.test(VALSRC),
+  'D2a and its validator indexes no lookup result — it verifies a claim rather than choosing a row');
+ok(/idx\.byId\[fcSeMktUp_\(claimed\)\]/.test(FCWC),
+  'D2b the only registry access is BY THE CLAIMED ID — a direction that can verify but cannot derive');
 ok(/headers\.forEach\(function \(h\) \{ if \(body\.hasOwnProperty\(h\)\)/.test(FCWC.replace(/\s+/g, ' ')) ||
    /body\.hasOwnProperty\(h\)/.test(FCWC),
   'D3 the write copies whatever the body carries — a blank is written as a blank');
@@ -189,23 +212,36 @@ mut('E1 the picker stops sourcing options from fc_regular_forecast', function ()
   return before === 1 && after === 0;
 });
 
+/* FC-ID-R2 — re-anchored onto the filter's new home. The invariant is the one this suite always defended
+   and the one FC-ID-R2 §10 requires: company and country are part of the identity comparison, and dropping
+   either lets one site adopt another's canonical id. Only the anchor text moved. */
 mut('E2 the resolver stops filtering on company', function () {
-  var src = PAGE.replace('(!site.company || up(x.company) === up(site.company)) &&', 'true &&');
+  var src = PAGE.replace('up(x.company) === up(site.company) && up(x.country) === up(site.country) &&',
+    'up(x.country) === up(site.country) &&');
   if (src === PAGE) throw new Error('E2 anchor drifted');
-  var mutated = extractFn(src, '_evtResolveMarketplaceId');
-  // With company ignored, KM/US/Amazon would wrongly pick up ResUS's US row.
-  return mutated({ company: 'KM', country: 'US', marketplace: 'Amazon' }) === 'MKT-US-AMZ' &&
-    resolveMarketplaceId({ company: 'KM', country: 'US', marketplace: 'Amazon' }) === '';
+  var mutated = extractFn(src, '_evtMarketplaceIdentity_');
+  // With company ignored, KM/US/Amazon wrongly resolves to ResUS's US row.
+  var m = mutated({ company: 'KM', country: 'US', marketplace: 'Amazon' });
+  var real = _evtMarketplaceIdentity_({ company: 'KM', country: 'US', marketplace: 'Amazon' });
+  return m.marketplaceId === 'MKT-US-AMZ' && m.state === FC_ID_.READY_UNIQUE &&
+    real.marketplaceId === '' && real.state === FC_ID_.NO_MATCH;
 });
 
 mut('E3 the resolver stops filtering on country', function () {
-  var src = PAGE.replace('(!site.country || up(x.country) === up(site.country)) &&', 'true &&');
+  var src = PAGE.replace('up(x.company) === up(site.company) && up(x.country) === up(site.country) &&',
+    'up(x.company) === up(site.company) &&');
   if (src === PAGE) throw new Error('E3 anchor drifted');
-  var mutated = extractFn(src, '_evtResolveMarketplaceId');
-  // With country ignored, CA would silently adopt the first ResUS/Amazon row it finds — a WRONG id
-  // rather than a blank one, which is strictly worse than the defect being investigated.
-  return mutated({ company: 'ResUS', country: 'CA', marketplace: 'Amazon' }) === 'MKT-UK-AMZ' &&
-    resolveMarketplaceId({ company: 'ResUS', country: 'CA', marketplace: 'Amazon' }) === '';
+  var mutated = extractFn(src, '_evtMarketplaceIdentity_');
+  /* THIS PROBE IS KILLED ON THE CLASSIFICATION, NOT ON THE ID, AND THAT IS THE POINT OF R2.
+     Before R2 the mutant produced a WRONG id (`[0]` of two ResUS/Amazon rows). Now dropping country makes
+     the lookup AMBIGUOUS, so both the real code and the mutant return a blank id and a string comparison
+     could not tell them apart — exactly the collapse this round removed. The state does tell them apart:
+     the real answer is "no such site" and the mutant's is "two sites match", which are different facts. */
+  var m = mutated({ company: 'ResUS', country: 'CA', marketplace: 'Amazon' });
+  var real = _evtMarketplaceIdentity_({ company: 'ResUS', country: 'CA', marketplace: 'Amazon' });
+  return m.state === FC_ID_.AMBIGUOUS && m.matchCount === 2 &&
+    real.state === FC_ID_.NO_MATCH && real.matchCount === 0 &&
+    m.marketplaceId === '' && real.marketplaceId === '';
 });
 
 mut('E4 the site option loses its company component', function () {
