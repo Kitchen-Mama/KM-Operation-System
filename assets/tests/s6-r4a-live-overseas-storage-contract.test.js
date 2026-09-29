@@ -158,9 +158,16 @@ ok(/wh_available_stock: after/.test(code(F31)),
 // No code anywhere reconstructs available from the other buckets. The mapping spec permits either a
 // reconstructable or a preserved source value; live production is the preserved-source branch, and the
 // absence of any derivation is what makes that unambiguous.
-var DERIVE = /wh_available_stock\s*=[^;\n]*wh_physical_stock|physicalStock\s*-\s*[a-zA-Z]*[Rr]eserved/;
-ok(!DERIVE.test(code(F05)) && !DERIVE.test(code(F31)) && !DERIVE.test(code(API)),
-  'C4 WH_AVAILABLE_STOCK_SEMANTIC = source-reported — no writer or reader derives it from physical');
+// The fault is a STATEMENT that computes an available balance out of a physical one. Naming two spellings
+// of it would only prove those two spellings are absent; this looks for the shape. A statement that
+// mentions both buckets and does arithmetic is a derivation whatever it is called.
+function derivations(src) {
+  return code(src).split(/[;]|,\s*\r?\n|\r?\n/).filter(function (st) {
+    return /avail[a-z]*_?[Ss]tock/i.test(st) && /physical_?[Ss]tock/i.test(st) && /[-+]/.test(st);
+  }).map(function (st) { return st.trim().slice(0, 90); });
+}
+eq([].concat(derivations(F05), derivations(F31), derivations(API), derivations(F43)), [],
+  'C4 WH_AVAILABLE_STOCK_SEMANTIC = source-reported — no statement anywhere derives it from physical');
 ok(/We do NOT recompute physical from available/.test(F05),
   'C5 and 05_ says so in its own words — the rule R4 needs is already the shipped rule');
 
