@@ -224,6 +224,21 @@ Shipment-line lookup path: `shipment_lines.sku → sku_details.sku → sku_detai
 >   ```
 >   It must **never** use `shipments.warehouse_id`, `destination_warehouse_id`, `warehouse_code`, `company`, or `factory_name` as the reservation identity (consistent with the `factory_stock_movements → factory_stock` key below and the endpoint-identity rule in §7). If the **origin is an Overseas Warehouse**, do **NOT** write `factory_stock` / `factory_stock_movements` — that reservation is the Overseas Outbound Lock / `wh_reserved_stock` lifecycle (`OVERSEAS_OUTBOUND_SPEC.md`). Reserve stays a **separate** event from the **Ship** (`fac_current_stock`) deduction at Confirm Shipment & Dispatch (`SHIPMENT_CENTER_SPEC.md` §7/§8/§15.1). **Cancel / release / negative-delta rollback status mapping remain B-8 (BLOCKED).** **No reserve writer / movement literal / transaction is added here — Implementation / Runtime / Deployment Not Started.**
 
+> **⚠ SUPERSEDED BY LIVE CODE — recorded S6-R1, 2026-09-29.** The reserve trigger above (Ready to Ship) and
+> the statement that *"No reserve logic exists in code yet; `fac_reserved_stock` is never written"* were both
+> true when written and are both **false now**. `F1-7N-FC-1A` implemented the reservation and put it at
+> **Shipment Draft creation** — the Approved-Plan → Draft Execution Commit — inside the same journalled
+> transaction that creates the shipment: `createShipmentFromApprovedPlan_` (`12_shipment_handlers.gs`) calls
+> `factoryStockAcquireReservationTx_` (`21_factory_inventory_handlers.gs`), and a failed acquire rolls the
+> whole draft back, so the outcome is a shipment **with** its reservation or neither. Release is
+> `cancelShipmentDraft`; consumption is the dispatch deduction, in one movement row. `12_` / `21_` / `22_`
+> carry `F1-7N-FC-1A-R1` and are unchanged since the last deployed baseline, so **the reservation is live in
+> production**. The trigger moved deliberately: at Ready to Ship the collision surfaced at Confirm Shipment,
+> after documents were prepared; at the Execution Commit it surfaces when the claim is made. Owner of record:
+> [`SHIPMENT_RECOVERY_AND_FACTORY_RESERVATION_F1-7N-FC-1A.md`](./SHIPMENT_RECOVERY_AND_FACTORY_RESERVATION_F1-7N-FC-1A.md)
+> §1/§4 and [`S6_SHIPPING_EXECUTION_MAINLINE_CONTRACT.md`](./S6_SHIPPING_EXECUTION_MAINLINE_CONTRACT.md) §5.
+> **B-1 itself is NOT withdrawn here** — formally superseding a frozen decision is the operator's call (S6-R2).
+
 > **Inventory Field Namespace Rule (canonical — finalized 2026-07-21):** `fac_*` fields belong **exclusively** to the Factory Stock domain (`factory_stock`); `wh_*` fields belong **exclusively** to the Overseas Warehouse Inventory domain (`overseas_inventory_snapshot` / `overseas_inventory_movements`). `fac_*` must never hold an overseas balance and `wh_*` never a factory balance; `wh_quantity` applies only to `overseas_inventory_movements`. Generic unprefixed stock/movement names must not be introduced into these two domains without explicit approval. **Entity-specific quantities outside these inventory tables** (e.g. `request_order_line_sources.current_stock` / `.on_the_way_qty`, `shipment_lines.snapshot_current_stock`, allocation-draft `available_stock_snapshot`) **retain their existing names — they are NOT renamed.**
 >
 > **Current `overseas_inventory_snapshot` columns (warehouse-side inventory):** `overseas_inventory_id`, `snapshot_date`, `warehouse_id`, `sku`, `site_sku`, `wh_physical_stock`, `wh_available_stock`, `wh_reserved_stock`, `wh_damaged_stock`, `wh_on_the_way_qty`, `wh_on_the_way_eta`, `wh_on_the_way_bucket`, `last_movement_at`, `updated_by`, `created_at`, `updated_at`, `note`. *(2026-07-21: `wh_*` supersede the earlier unprefixed names.)*
@@ -255,6 +270,10 @@ Shipment-line lookup path: `shipment_lines.sku → sku_details.sku → sku_detai
 > **Allocation rule:** existing inventory = **shared pool**; new POs may carry intended-company info but **factory allocation is recalculated weekly by FC Share** and is **never permanently bound to a company**.
 >
 > **Factory Stock lifecycle (inventory effects live only at the Execution Layer):** planning steps — allocation snapshot / Submit Plan / Weekly Shipping Plan / Approval / **Shipment Draft creation** — **move no inventory**: a Draft may be persisted but does **not** reserve, does **not** create an Inventory Movement, and does **not** affect physical inventory. The **only verified physical effect** is a hard **deduction of `fac_current_stock` at Confirm Shipment & Dispatch** (`22_shipment_dispatch_handlers.gs`). The **factory-stock Reserve Trigger — when `fac_reserved_stock` is written — is B-1 RESOLVED: the successful Ready to Ship transition (`draft → ready_to_ship`) = Formal Shipment Execution Commit** (owner `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.1; identity `origin_warehouse_id → factory_stock.warehouse_id + sku`). **Decision only — no reserve write exists in code; Implementation / Runtime / Deployment Not Started** (`SUPPLY_CHAIN_SYSTEM_FLOW.md` §11 B-1). *(2026-07-21: canonical `fac_*` names.)*
+
+> **⚠ SUPERSEDED — see the S6-R1 marker in §6.0 above.** Reservation is written at **Shipment Draft
+> creation**, not at Ready to Ship, and it is live in production. The rest of this paragraph still holds:
+> the allocation snapshot, Submit Plan, the Weekly Shipping Plan and approval move no inventory.
 
 > **`overseas_inbound` / `overseas_inbound_lines` (planned — Overseas Inbound planning input):** an **Overseas Stock planning input** (spec: [`OVERSEAS_INBOUND_SPEC.md`](./OVERSEAS_INBOUND_SPEC.md)), **not** a Shipment Draft. Header status `draft` / `submitted_to_shipping_plan` / `cancelled`; **Submit creates a Weekly Shipping Plan + `shipping_plan_lines` (Decision Layer)** — it does **NOT** create a Shipment Draft directly and does **NOT** write `overseas_inventory_snapshot.wh_available_stock` or deduct `factory_stock`. Overseas Stock is updated **only after the resulting shipment is `received`** (via `overseas_inventory_movements`). Flow: `Overseas Inbound → Weekly Shipping Plan (approval) → Shipment Draft → Ship → received → Overseas Stock`. Header/line columns in `OVERSEAS_INBOUND_SPEC.md` §4–§5. **Planned design — not implemented (no table/handler/UI yet).**
 
@@ -523,7 +542,14 @@ The **sensitive factory cost / sourcing master**: which factory/supplier produce
 
 ## 8. Shipping / Logistics Layer
 
-**Tables:** `shipping_plans`, `shipping_plan_lines`, `shipments`, `shipment_lines`, `shipment_events` *(spec only)*, `shipment_routes` *(spec only)*, `shipment_route_nodes` *(spec only, optional)*, `shipment_route_templates` *(Reference — ✅ manually completed by user)*, `shipment_route_template_nodes` *(Reference — ✅ manually completed by user)*
+**Tables:** `shipping_plans`, `shipping_plan_lines`, `shipments`, `shipment_lines`, `shipment_events` *(spec only)*, `shipment_routes` *(spec only)*, `shipment_route_nodes` *(spec only, optional)*
+
+> **⚠ LABEL STALE — recorded S6-R1, 2026-09-29.** `shipment_routes` and `shipment_events` are **implemented
+> and written**: `22_shipment_dispatch_handlers.gs` snapshots one `shipment_routes` row per template node
+> and appends the first `departed_origin` event at Confirm Shipment & Dispatch;
+> `31_shipment_receipt_route_handlers.gs` advances the current route point and appends lifecycle events
+> idempotently by `source_event_id`; `57_api_v1_shipment_workspace.gs` serves both to the On-the-Way map
+> behind include flags. Only **`shipment_route_nodes`** remains spec-only. The rest of §8 is unaffected., `shipment_route_templates` *(Reference — ✅ manually completed by user)*, `shipment_route_template_nodes` *(Reference — ✅ manually completed by user)*
 
 > **`shipping_plans` / `shipping_plan_lines` columns (authoritative definition in [`WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md`](./WEEKLY_SHIPPING_PLAN_MAPPING_SPEC.md); planned design, not yet migrated):**
 > - **`shipping_plans`:** `shipping_plan_id`, `shipping_plan_no`, `plan_name`, `company`, `country`, `marketplace`, `ship_from`, **`ship_from_warehouse_id`**, **`ship_from_type`**, `destination`, **`destination_warehouse_id`**, **`destination_type`**, `shipping_method`, **`plan_version`**, **`parent_shipping_plan_id`**, **`submit_batch_id`**, **`batch_status`**, `carrier_id`, `carrier_unit_rate`, `carrier_rate_type`, `estimated_freight_cost`, `estimated_duty`, `estimated_total_cost`, `currency`, `status`, `created_by`, `created_at`, `submitted_by`, `submitted_at`, `approved_by`, `approved_at`, `rejected_by`, `rejected_at`, `rejected_reason`, **`cancelled_by`**, **`cancelled_at`**, **`transferred_to_shipment_at`**, **`transferred_shipment_id`**, **`completed_at`**, **`completed_by`**, `note`, `source`, **`updated_by`**, `updated_at`.

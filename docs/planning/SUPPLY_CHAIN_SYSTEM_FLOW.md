@@ -314,6 +314,21 @@ Plan Approval
 
 > **B-1 RESOLVED — Factory Stock Reserve Trigger = the successful Ready to Ship transition (`draft → ready_to_ship`) = Formal Shipment Execution Commit** (single Canonical owner: `SUPPLY_CHAIN_ARCHITECTURE_PRINCIPLES.md` §8A.1). Plan approval, **Create Shipment Draft (the Approved-Plan → Draft Execution Commit)**, and Draft create / save / edit do **not** reserve. Reservation applies **only** to a **factory-origin** shipment; identity = **origin factory `warehouse_id (= shipments.origin_warehouse_id) + sku`** (never `shipments.warehouse_id` / `destination_warehouse_id` / `warehouse_code` / `company` / `factory_name`); an **overseas origin** uses the Overseas Outbound Lock / `wh_reserved_stock` (not `factory_stock`, §5.7). **Ship** deducts `fac_current_stock` + consumes `fac_reserved_stock`. **Cancel / unlock / reject / reopen / return-to-draft / negative-delta release / release status mapping remain BLOCKED under B-8** (§11). **Decision only — do NOT implement any reserve/release write from this alone; Implementation / Runtime / Deployment Not Started.**
 
+> **⚠ SUPERSEDED BY LIVE CODE — recorded S6-R1, 2026-09-29.** The reserve trigger above (Ready to Ship) and
+> the statement that *"No reserve logic exists in code yet; `fac_reserved_stock` is never written"* were both
+> true when written and are both **false now**. `F1-7N-FC-1A` implemented the reservation and put it at
+> **Shipment Draft creation** — the Approved-Plan → Draft Execution Commit — inside the same journalled
+> transaction that creates the shipment: `createShipmentFromApprovedPlan_` (`12_shipment_handlers.gs`) calls
+> `factoryStockAcquireReservationTx_` (`21_factory_inventory_handlers.gs`), and a failed acquire rolls the
+> whole draft back, so the outcome is a shipment **with** its reservation or neither. Release is
+> `cancelShipmentDraft`; consumption is the dispatch deduction, in one movement row. `12_` / `21_` / `22_`
+> carry `F1-7N-FC-1A-R1` and are unchanged since the last deployed baseline, so **the reservation is live in
+> production**. The trigger moved deliberately: at Ready to Ship the collision surfaced at Confirm Shipment,
+> after documents were prepared; at the Execution Commit it surfaces when the claim is made. Owner of record:
+> [`SHIPMENT_RECOVERY_AND_FACTORY_RESERVATION_F1-7N-FC-1A.md`](./SHIPMENT_RECOVERY_AND_FACTORY_RESERVATION_F1-7N-FC-1A.md)
+> §1/§4 and [`S6_SHIPPING_EXECUTION_MAINLINE_CONTRACT.md`](./S6_SHIPPING_EXECUTION_MAINLINE_CONTRACT.md) §5.
+> **B-1 itself is NOT withdrawn here** — formally superseding a frozen decision is the operator's call (S6-R2).
+
 ### 5.5 Procurement lifecycle (finalized)
 
 The finalized Request Order → Purchase Order chain. Draft layers are **editable recommendation scratchpads** (no procurement commitment); official records begin only at **Send Request** / **Approve**.
