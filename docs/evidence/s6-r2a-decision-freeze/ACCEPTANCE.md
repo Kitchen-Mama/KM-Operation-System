@@ -128,3 +128,14 @@ SPECS_CHANGED  Part III of the S6 contract · 1 new evidence doc · 2 annotation
 BEHAVIOR_CHANGED NO · PRODUCTION_ROWS_WRITTEN 0 · DB_MIGRATION_REQUIRED NO
 APPS_SCRIPT_SYNC_REQUIRED NO · FRONTEND_DEPLOY_REQUIRED NO
 ```
+
+## Sweep
+
+```
+567 passed / 572   canonical 5   19 lines   DIRTY 0   WORKTREE_CLEAN_AT_END = YES
+572 rather than 571 because this round adds one suite. It contributed zero fail lines.
+CANONICAL_FAILURE_SET_CHANGED = NO — diff-clean against the R8 artifact, line for line
+CANONICAL_DIGEST = ebcf7bc1651e792f7dbab73544cfa2593f91664a9ed399a04f9a5ba9c9bc4f92   (reproduced)
+```
+
+Canonical on the first sweep, and the third consecutive round to reproduce the re-baselined digest.
