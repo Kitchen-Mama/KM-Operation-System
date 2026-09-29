@@ -187,3 +187,15 @@ BEHAVIOR_CHANGED NO · PRODUCTION_ROWS_WRITTEN 0 · DB_MIGRATION_REQUIRED NO
 APPS_SCRIPT_SYNC_REQUIRED NO · FRONTEND_DEPLOY_REQUIRED NO · S6_BEHAVIOR_CHANGED NO
 CODE_FIX_REQUIRED = YES (proposed, not implemented — carries a product decision)
 ```
+
+## Sweep
+
+```
+568 passed / 573   canonical 5   19 lines   DIRTY 0   WORKTREE_CLEAN_AT_END = YES
+573 rather than 572 because this round adds one suite. It contributed zero fail lines.
+CANONICAL_FAILURE_SET_CHANGED = NO — diff-clean against the R8 artifact
+CANONICAL_DIGEST = ebcf7bc1651e792f7dbab73544cfa2593f91664a9ed399a04f9a5ba9c9bc4f92   (reproduced)
+```
+
+Canonical on the first sweep. The R1 suite still passes unchanged: its mechanism assertions were correct and
+only its incident conclusion was wrong, so nothing in it needed weakening.
