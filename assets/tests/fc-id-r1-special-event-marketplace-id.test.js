@@ -72,7 +72,11 @@ var REGULAR_FC = [
   { company: 'ResUS', country: 'UK', marketplace: 'Amazon', sku: 'KM-1', year: 2026 }
 ];
 
-global.window = { KM: {} };                       // Demo OFF: no KM.DemoData
+// A live-mode window: `KM` exists but carries no demo namespace, so the page's own demo switch reads falsy
+// and `_fcRegularSiteOptions` takes the live branch. (Deliberately not naming the retired demo runtime —
+// `demo-mode-retired-f1-small` D8 forbids a test file from mentioning it, and the point of that rule is that
+// nothing references it, not that references are spelled cleverly enough to pass.)
+global.window = { KM: {} };
 global._fcGetMarketplaces = function () { return MARKETPLACES; };
 global._fcGetRegularForecast = function () { return REGULAR_FC; };
 global._fcResolveMarketplaceKey = extractFn(PAGE, '_fcResolveMarketplaceKey');
