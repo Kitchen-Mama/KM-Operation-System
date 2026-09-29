@@ -667,8 +667,13 @@ times in different costumes.
 ## Sweep
 
 ```
-FULL_SWEEP_RESULT = <filled after sweep>
-CANONICAL_FAILURE_SET_CHANGED = <filled after sweep>
-CANONICAL_DIGEST = <filled after sweep>
-WORKTREE_CLEAN_AT_END = <filled after sweep>
+FULL_SWEEP_RESULT = 570 passed / 575     canonical 5 suites, 19 FAIL lines
+575 rather than 574 because this round adds one suite. It contributed zero fail lines.
+SUITES THAT LEFT THE TREE DIRTY = 0
+CANONICAL_FAILURE_SET_CHANGED = NO — diff-clean, all 19 lines identical to the R1 artifact
+CANONICAL_DIGEST = ebcf7bc1651e792f7dbab73544cfa2593f91664a9ed399a04f9a5ba9c9bc4f92   (reproduced)
+WORKTREE_CLEAN_AT_END = YES
 ```
+
+Canonical on the first sweep. The five long-standing suites are unchanged in membership and in every line,
+and the digest is the same number S6-R1 re-baselined and every round since has reproduced.
