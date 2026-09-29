@@ -1,9 +1,11 @@
 # FC-SUMMARY-STABILITY-R3 — SPECIAL EVENT PRICING SCOPED PROJECTION
 
 ```
-PRE_SHA = 40634a9   branch = feature/product-strategy-board-p0
-WORKTREE_CLEAN_AT_START = YES
+PRE_SHA = 40634a9   POST_SHA = df28d45   branch = feature/product-strategy-board-p0
+WORKTREE_CLEAN_AT_START = YES   WORKTREE_CLEAN_AT_END = YES
 PRODUCTION_ROWS_WRITTEN = 0   DB_MIGRATION_REQUIRED = NO
+SWEEP 575 / 580   DIRTY 0   CANONICAL_FAILURE_SET_CHANGED = NO
+CANONICAL_DIGEST = ebcf7bc1651e792f7dbab73544cfa2593f91664a9ed399a04f9a5ba9c9bc4f92   (reproduced)
 ```
 
 R2 closed the cold path and proved the pricing read was already isolated, already retried exactly once,
@@ -252,6 +254,9 @@ another site's row.
 ```
 FOCUSED   70 / 0        MUTATION 12 / 12
 DEPENDENT 8 suites repaired, all green
+SWEEP     575 / 580     DIRTY 0
+CANONICAL_FAILURE_SET_CHANGED = NO
+CANONICAL_DIGEST = ebcf7bc1651e792f7dbab73544cfa2593f91664a9ed399a04f9a5ba9c9bc4f92
 ```
 
 Dependent repairs, none relaxed:
@@ -288,6 +293,41 @@ are byte-identical. **Copy the backend first; the frontend deploy completes the 
 `fc-summary.js` has now changed in **four** unshipped rounds under one application token. Rotation at deploy
 is not optional: a returning browser on the cached copy would show all four repairs as shipped and run none
 of them.
+
+---
+
+## §14A — Two findings the sweep produced that no focused suite could
+
+Both were mine, both were caught by the tree, and both are worth writing down because the mechanism is
+reusable rather than incidental.
+
+### The manifest row that stopped existing
+
+`gs-load-surface-audit.js` parses a health-manifest row with a bounded tail — `[\s\S]{0,400}?` before the
+closing brace. My `owns:` prose for `58_` ran past that window, so the row was **not parsed at all**: the
+parsed count fell 26 → 25 and `apps-script-load-surface-slim-r1` A4's floor caught it. Trimmed; the long
+form of that sentence lives in the release comment and in §3 above, which is where prose belongs.
+
+The finding underneath it is not mine to fix here: **the tool already drops `73_`, `04_` and `20_` the same
+way.** A4 is a `>=` floor, so it has been passing over an undercount — the assertion is partly measuring
+the parser's window rather than the manifest. Widening the window is an audit-tool change with its own
+blast radius and does not belong in an FC round.
+
+Also worth stating because it cost a cycle: **the audit tool reads git `HEAD`, not the working tree.** A
+fix cannot be verified against it until it is committed.
+
+### The stamp gate, and the commit that split a release in two
+
+I first landed this round as three commits: the release, the FC-2 repair, and the manifest trim. The trim
+touched `63_`, so `63_`'s **last change** became a later commit than the one that set `SYS_BUILD_VERSION_`
+to R31 — and `E4` in `ai-plan-advice-boundary-…-r5` named it immediately. That gate checks the METHOD, not
+the instances a round happened to repair, and the rule it enforces is exactly the one the ledger records:
+*a release that moves a module stamp must land as ONE commit*, because the stamp's whole job is to say
+which commit the file last changed in.
+
+The three local commits were soft-reset and recommitted as one, which is also what §0 asked for — an
+atomic FC Summary repair. This is the third time this session that the release machinery has corrected me,
+and every time the correction has come from the tree rather than from an operator.
 
 ---
 
