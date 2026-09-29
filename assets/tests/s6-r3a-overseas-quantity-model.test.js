@@ -472,10 +472,10 @@ section('F. §35 / §36 — the ledger can tell the truth, and receiving already
 frozenV('NEW_MOVEMENT_TYPES_REQUIRED', '0');
 frozenV('MOVEMENT_SCHEMA_EXTENSION_REQUIRED', 'NO');
 
-// Every movement_type the mapping proposes is ALREADY in the closed vocabulary declared at §8. Computed
+// Every movement_type the mapping proposes is ALREADY in the seven-type vocabulary declared at §8. Computed
 // against the contract's own list, so inventing a convenient name later fails here rather than in review.
 var VOCAB = /declared\s+([a-z_ ·\r\n]+?)\r?\ncurrent axis/.exec(CONTRACT);
-ok(!!VOCAB, 'F1 the contract declares a CLOSED movement vocabulary');
+ok(!!VOCAB, 'F1 the contract declares the seven-type movement vocabulary');
 var VOCAB_SET = VOCAB[1].split(/[·\s]+/).filter(Boolean);
 // The PROPOSED set is parsed out of PART V's OWN mapping table, not listed here. A suite that
 // hardcodes the four names checks its own array against the vocabulary and lets the contract invent a
