@@ -685,8 +685,16 @@ section('L. NON-REGRESSION — EVERY A3 CONTRACT STILL STANDS (§1)');
   // R19 was the property worth guarding. PRICING-R4E changed 04_ itself, so its stamp moved WITH the file —
   // which is the same rule, applied the other way round. L12a still asserts file and manifest row agree;
   // this line asserts the release only ever moves forward.
-  ok(/var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R(19|2[0-9])';/.test(HEALTH),
-    'L13 the release moved once, and has not moved backwards since');
+  // FC-ID-R2 — DERIVED, not enumerated. This matched `R(19|2[0-9])`, which is a CEILING wearing the shape
+  // of a floor: it expired at R30 and failed while describing a perfectly ordered release. What the line
+  // claims is that the release only ever moves FORWARD, and the shared ledger is what knows the order — the
+  // same authority the stamp suite already asks. A range that has to be widened by hand is the
+  // equality-with-now `_release-order.js` exists to end.
+  var _RO = require(path.join(__dirname, '_release-order.js'));
+  var _rel = (HEALTH.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)';/) || [])[1];
+  ok(!!_rel && _RO.OWNER_STAMPS.indexOf(_rel) !== -1 &&
+     _RO.stampAtOrAfter(_rel, 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R19'),
+    'L13 the release is a registered stamp at or after R19 — it moved once and never backwards', _rel);
 })();
 
 // =========================================================================================================
