@@ -273,6 +273,16 @@ function renderFcRegularTable() {
     return;
   }
   
+  // FC-SUMMARY-STABILITY-R1 §3G — before anything is drawn from the rows, ask whether there ARE rows
+  // to draw from. An unread slice renders Loading…, never "No data found".
+  var _regGate = _fcTableGate_('regular');
+  if (_regGate) {
+    fixedBody.innerHTML = '';
+    scrollBody.innerHTML = _regGate.html;
+    updatePaginationInfo();
+    return;
+  }
+
   // === Data source: Demo ON -> demo mapping; Demo OFF -> Google Sheet fc_regular_forecast ===
   var _fcRegularSource = [];
   if (window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled()) {
@@ -345,6 +355,15 @@ function renderFcEventTable() {
     return;
   }
   
+  // FC-SUMMARY-STABILITY-R1 §3G — the Special Event half of the same gate.
+  var _evtGate = _fcTableGate_('event');
+  if (_evtGate) {
+    fixedBody.innerHTML = '';
+    scrollBody.innerHTML = _evtGate.html;
+    updatePaginationInfo();
+    return;
+  }
+
   // === Data source: Demo ON -> demo mapping; Demo OFF -> Google Sheet fc_special_events ===
   var _fcEventSource;
   if (window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled()) {
@@ -436,6 +455,19 @@ function updatePaginationInfo() {
   const tab = _fcActiveTab();
   if (tab === 'target') { if (pag) pag.style.display = 'none'; return; }
   if (pag) pag.style.display = '';
+
+  /* FC-SUMMARY-STABILITY-R1 §3L — a row count is a claim about an authoritative read, so it may not be
+     printed before one has completed. "Showing 0-0 of 0 rows / Page 0 / 0" under a Loading… table said
+     the read had returned nothing, which was the same falsehood the table itself was telling. While the
+     active tab is ungated the numbers are exactly what they were; while it is gated the controls report
+     nothing rather than zero, and the paging buttons are inert because there is no page to move to. */
+  if (typeof _fcTableGate_ === 'function' && _fcTableGate_(tab)) {
+    document.getElementById('fc-pagination-info').textContent = '';
+    document.getElementById('fc-page-number').textContent = '';
+    document.getElementById('fc-prev-page').disabled = true;
+    document.getElementById('fc-next-page').disabled = true;
+    return;
+  }
 
   const totalItems = _fcActiveFilteredCount();
   fcPaginationState.totalItems = totalItems;
@@ -5828,6 +5860,52 @@ function _fcRegularSourceReady_() {
   if (_fcWorkspaceMode_()) return _fcHas_('fcRegularForecast');
   return !!(typeof window !== 'undefined' && window._opDbCache);
 }
+/* FC-SUMMARY-STABILITY-R1 §3J — the EVENT half of `_fcRegularSourceReady_`, which existed alone.
+   Same question, same two stores, same answer shape: Workspace — has the slice landed; Legacy — has the
+   broad cache been built. It is a separate function rather than a parameter because the two tabs read
+   two different model keys, and a single predicate taking a key would invite passing the wrong one. */
+function _fcEventSourceReady_() {
+  if (_fcWorkspaceMode_()) return _fcHas_('fcSpecialEvents');
+  return !!(typeof window !== 'undefined' && window._opDbCache);
+}
+
+/* FC-SUMMARY-STABILITY-R1 §3G/§3H — UNREAD IS NOT EMPTY, AND THE RENDER NEVER ASKED.
+ *
+ * `_fcGetRegularForecast()` and `_fcGetSpecialEvents()` both answer `[]` for a slice that has not
+ * landed — deliberately, because a getter cannot throw at a caller that only wants rows. The slice
+ * contract carries the missing half in `_fcHas_`, and `_fcRegularSourceReady_` has asked it since R2B.
+ * But the TABLE RENDER never did: it mapped `[]` straight into `paginatedData.length === 0` and printed
+ * "No data found" — a claim that the authoritative read returned zero rows, made before the read had
+ * returned anything at all. The pagination row underneath it then reported "Showing 0-0 of 0 rows /
+ * Page 0 / 0", which is the same false claim in numbers.
+ *
+ * This is the identical shape as the FC-ID incident, one layer up: a distinction the model holds, and
+ * a consumer that reads through an accessor which has already discarded it. Both are repaired by asking.
+ *
+ * NO NEW STATE MACHINE. §3H says to reuse the canonical vocabulary and this does: the answer is derived
+ * from the EXISTING per-slice `FC_FRESH_` record plus the EXISTING readiness predicates. Nothing is
+ * stored, so it cannot drift from the thing it describes.
+ *
+ * Returns null when the model is in hand — the caller then renders rows, or a TRUE empty, exactly as
+ * before. Otherwise { kind, html } for the body, and the caller suppresses the pagination claim.
+ */
+function _fcTableGate_(tab) {
+  var demoOn = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
+  if (demoOn) return null;                       // the demo dataset is synchronous: nothing to wait for
+  var ready = (tab === 'event') ? _fcEventSourceReady_() : _fcRegularSourceReady_();
+  if (ready) return null;                        // rows, or a genuine zero-row result
+  var rec = (typeof _fcSliceRec_ === 'function') ? _fcSliceRec_(_FC_TAB_SLICE_[tab] || FC_SLICE_.REGULAR) : null;
+  var st = rec ? rec.state : FC_FRESH_.UNREAD;
+  /* REFUSED with no model is the one case that must NOT read as "still loading": the request settled,
+     it failed, and there is nothing coming. The banner owns the Retry control (`_fcRenderSliceBanner_`),
+     so this says what the table knows and does not grow a second retry button beside it. */
+  if (st === FC_FRESH_.REFUSED) {
+    return { kind: 'ERROR_NO_MODEL',
+      html: '<div class="empty-row">These rows could not be loaded. Use Retry above — nothing is missing from the data itself.</div>' };
+  }
+  return { kind: 'LOADING', html: '<div class="empty-row">Loading…</div>' };
+}
+
 function _fcGetSpecialEvents() {
   if (_fcHas_('fcSpecialEvents')) return _fcReadModel.fcSpecialEvents;
   if (_fcWorkspaceMode_()) return [];
