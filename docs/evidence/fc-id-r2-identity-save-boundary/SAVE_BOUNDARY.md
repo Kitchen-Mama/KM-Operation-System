@@ -328,8 +328,33 @@ asserts what must hold: the gate precedes both payloads that carry the id, and t
 ## Sweep
 
 ```
-FULL_SWEEP_RESULT = <filled after sweep>
-CANONICAL_FAILURE_SET_CHANGED = <filled after sweep>
-CANONICAL_DIGEST = <filled after sweep>
-DIRTY = <filled after sweep>
+FULL_SWEEP_RESULT = 571 passed / 576     canonical 5 suites, 19 FAIL lines
+576 rather than 575 because this round adds one suite. It contributed zero fail lines.
+SUITES THAT LEFT THE TREE DIRTY = 0
+CANONICAL_FAILURE_SET_CHANGED = NO — diff-clean, all 19 lines identical to the R1 artifact
+CANONICAL_DIGEST = ebcf7bc1651e792f7dbab73544cfa2593f91664a9ed399a04f9a5ba9c9bc4f92   (reproduced)
+WORKTREE_CLEAN_AT_END = YES
 ```
+
+Canonical on the THIRD sweep, and the two that came before it are the reason this round is right.
+
+**Sweep 1 — 570/576, 21 fail lines.** Two suites that the focused runs never touched:
+
+- `ai-plan-advice-boundary…R5` **E4**, a METHOD check, named `63_` as carrying a stamp older than its own
+  last change. That is what proved joining R29 was wrong and forced the R30 cut.
+- `fc-summary-workspace-slices` **E7c1** pinned 14_ at the literal R18.
+
+**Sweep 2 — 570/576, 21 fail lines.** The R30 cut fixed both, and exposed one more:
+
+- `fc-regular-writer-and-special-batch` **L13** claimed *the release only ever moves forward* and enforced
+  it with the literal range `R(19|2[0-9])` — a CEILING wearing the shape of a floor. It expired at R30 and
+  failed while describing a perfectly ordered release.
+
+**Three assertions this round were true of one release and were never rules** — E7c1, B2-0 and L13, all
+pinning a literal where the durable claim is a relationship. Each was repaired by deriving it (from the
+manifest row, or from the shared ledger that already owns stamp order) rather than by widening the
+literal, which is the fix this repository keeps prescribing in its own comments. I grepped for further
+ranges of L13's shape; there are none.
+
+None of the three was caught by any focused or dependent run. They only appear when the whole tree runs,
+which is the argument for sweeping before reporting rather than after.
