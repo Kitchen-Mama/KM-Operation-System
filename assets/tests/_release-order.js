@@ -1510,7 +1510,16 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // for R7, R10, R11 and R23 — each likewise never deployed — is that this is NOT a licence to reuse the
   // id: R26's tree and this one differ, and an id naming two trees cannot answer the question it exists for.
   'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R27', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R28',
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R29'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R29',
+  // FC-ID-R2 — the FC Special Event write path gains canonical marketplace-identity validation, so 14_
+  // changes and 63_ changes with it (its own manifest row plus 14_'s). This round first tried to JOIN R29
+  // on the reasoning that R29 is unshipped and still accumulating. The tree refused that in two places at
+  // once — the stamp-method check E4 named 63_ as carrying a stamp older than its own last change, and the
+  // note four lines above states the ruling outright: an unshipped id is NOT a licence to reuse, because an
+  // id naming two trees cannot answer the question it exists for. R29's tree and this one differ.
+  // 47_ keeps R29 and moves to RELEASE_CARRIED: it did not change, and marching it here would erase the one
+  // fact its stamp carries.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R30'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

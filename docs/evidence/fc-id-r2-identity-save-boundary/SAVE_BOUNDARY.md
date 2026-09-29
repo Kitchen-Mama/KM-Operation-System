@@ -229,18 +229,31 @@ FC-SUMMARY-STABILITY-R2's work.
 
 ## Release
 
-14_'s served bytes changed, so the repository's stamp rules apply — this is bookkeeping the rules require,
-not a release cut from assumption.
+14_'s served bytes changed, so the repository's stamp rules apply. This is bookkeeping the rules require,
+not a release cut from assumption — and the tree had to correct me once before it was right.
+
+**I first tried to JOIN R29**, reasoning that R29 is unshipped and still accumulating. Two independent
+gates refused that, and both were right:
+
+- `ai-plan-advice-boundary…R5` **E4** — a METHOD check rather than an instance — named `63_` as carrying a
+  stamp older than its own last change. I had edited 63_'s manifest while leaving its stamp at R29.
+- `_release-order.js` states the ruling outright, four lines above where I was appending: an unshipped id
+  is **not** a licence to reuse it, because *an id naming two trees cannot answer the question it exists
+  for*.
+
+So R30 is cut:
 
 ```
-FCW_BUILD_VERSION_   R18 -> R29   (14_ joins the CURRENT unshipped release)
-63_ manifest row     expected updated to match
-stamp suite          14_ moves from RELEASE_UNMOVED to RELEASE_OWNERS, with its reason
+_release-order.js     OWNER_STAMPS gains R30
+63_                   SYS_DEPLOYMENT_RELEASE_ R29 -> R30, SYS_BUILD_VERSION_ R29 -> R30,
+                      its own manifest row and 14_'s row updated
+14_                   FCW_BUILD_VERSION_ R18 -> R30
+47_                   KEEPS R29 and moves RELEASE_OWNERS -> RELEASE_CARRIED — it did not change
+TEMP census pins      R6R7_ACTIVATION_BUILD_ / TEMP_E3_CENSUS_BUILD_ R29 -> R30. A read-only
+                      diagnostic that refuses to run against a deployment whose release it cannot match.
+stamp suite           14_ moves RELEASE_UNMOVED -> RELEASE_OWNERS, with its reason
+workspace-slices E7c1 stops pinning the literal R18 and asserts the partial-sync invariant instead
 ```
-
-It joins R29 rather than minting R30 **because R26 onward have accumulated unshipped**, and cutting a fresh id
-would march `01_`, `47_`, `63_`, `73_` and `90_` to a release none of them changed in — the "unrelated release
-identities" §15 forbids rotating.
 
 ```
 FRONTEND_DEPLOY_REQUIRED = YES
@@ -248,19 +261,22 @@ FRONTEND_DEPLOY_SET      = assets/js/pages/fc-summary.js
 
 APPS_SCRIPT_SYNC_REQUIRED = YES
 APPS_SCRIPT_SYNC_SET      = 14_fc_write_handlers.gs, 63_api_v1_system_health.gs
-  (the full declared copy set for the R29 release remains 01_, 14_, 47_, 63_, 73_, 90_ — the gate's I1
-   list — of which THIS round changes the two above)
 
-BACKEND_RELEASE          = F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R29   (unchanged — joined, not rotated)
-APPLICATION_TOKEN        = s5r4-actionreason-20260928           (unchanged)
+The full declared COPY set for R30 is 01_, 14_, 47_, 63_, 73_, 90_ — the stamp gate I1 list. This round
+changes the two named above; the other four are carried unchanged from earlier unshipped releases and
+must still be copied, because none of them has ever been deployed.
+
+BACKEND_RELEASE          = F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R30   (R29 -> R30)
+APPLICATION_TOKEN        = s5r4-actionreason-20260928           (unchanged, deliberately)
 TOKEN_ROTATION_REQUIRED  = YES, AT DEPLOY — and not performed here
 ```
 
-**Worth your attention at deploy time.** `index.html` cache-busts `fc-summary.js` with the application token,
-and **two unshipped rounds have now changed that file under the same unrotated token** — FC-SUMMARY-STABILITY-R1
-and this one. A deploy that does not rotate it leaves returning browsers on the cached copy, so both repairs
-would appear to have shipped and neither would be running. Rotation is a release-wide act covering every
-application asset, which is why it is named here rather than done in a round whose deployment is on HOLD.
+**Worth your attention at deploy time.** index.html cache-busts fc-summary.js with the application token,
+and **two unshipped rounds have now changed that file under the same unrotated token** —
+FC-SUMMARY-STABILITY-R1 and this one. A deploy that does not rotate it leaves returning browsers on the
+cached copy, so both repairs would appear to have shipped and neither would be running. Rotation is a
+release-wide act covering every application asset, which is why it is named here rather than performed in
+a round whose deployment is on HOLD.
 
 ```
 S5_DEPLOYMENT = HOLD   S6_DEPLOYMENT = HOLD   S6_BEHAVIOR_CHANGED = NO

@@ -145,14 +145,6 @@ var RELEASE_OWNERS = {
     + 'guard and consults it on the live generate path — and 47_\'s expected stamp moves with 47_ itself. Both '
     + 'are changes to THIS file. The ACTION CONTRACT does not move: no action was added or removed, and a '
     + 'guard that refuses a SKU through an existing response shape is not a new vocabulary.',
-  '47_api_v1_recommendation_generation.gs':
-    'THE VERDICT, ATTACHED WHERE THE GAP ROW STILL EXISTS. recGenBuildGapDraftBody_ is the only place a stored '
-    + 'order_planning_gap row becomes a draft body, and both live entries — the manual AI Plan job and the '
-    + 'scheduled driver — pass through it, so the canonical KMREC verdict is attached exactly once. It also '
-    + 'teaches recGenSummarizeDraftResult_ the two refusals the guard can now return; without that a truthful '
-    + 'zero-write outcome would reach the operator as FAILED, which is the R5C misreport in a new place. '
-    + 'A project holding the new bundle and an OLD 47_ is the dangerous half-sync: the guard exists, nothing '
-    + 'ever hands it a verdict, every SKU is written exactly as before, and every probe reports healthy.'
 };
 
 // Owners that must be COPIED but whose stamp belongs to an EARLIER unshipped release. Each entry is the
@@ -162,6 +154,10 @@ var RELEASE_OWNERS = {
 // reports the round a release was cut in, not the round the file changed in, and then it can no longer
 // distinguish a synced copy from a stale one, which is the single thing it is for.
 var RELEASE_CARRIED = {
+  // 47_ JOINS AT R30 — the tenth swap. FC-ID-R2 changes 14_ and, through the manifest, 63_; it does not
+  // touch the recommendation generator, so 47_ keeps R29, the release it actually changed in. Marching
+  // it to R30 would erase the one fact its stamp carries, which is what C3 exists to catch.
+  '47_api_v1_recommendation_generation.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R29',
   '01_router.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25',
   '73_api_v1_pricing_write.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25'
 };

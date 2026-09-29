@@ -433,8 +433,15 @@ var _e7c0Declared = (/var FCREG_BUILD_VERSION_ = '([^']+)';/.exec(readGs('04_mar
 ok(!!_e7c0Declared && new RegExp("\\{ file: '04_marketplace_forecast_import\\.gs', symbol: '[A-Z_]+', expected: '"
     + _e7c0Declared + "'").test(HEALTH),
   'E7c0 while 04_ declares exactly what the manifest expects of it — a partial sync stays visible');
-ok(/\{ file: '14_fc_write_handlers\.gs', symbol: '[A-Z_]+', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R18'/.test(HEALTH),
-  'E7c1 while 14_ keeps R18, the round IT last changed');
+// FC-ID-R2 — the same repair E7c0 above already made for 04_, applied to 14_ for the same reason. This
+// pinned the literal R18, which was true of R18 and is not a rule: R30 adds canonical marketplace-identity
+// validation to the fc_special_events write path, so 14_ legitimately moves and a literal forbids it. The
+// DURABLE claim is the partial-sync invariant — 14_'s manifest row expects exactly what 14_ declares — and
+// that keeps catching a file copied without its row, or a row moved without the file, in every release.
+var _e7c1Declared = (/var FCW_BUILD_VERSION_ = '([^']+)';/.exec(readGs('14_fc_write_handlers.gs')) || [])[1];
+ok(!!_e7c1Declared && new RegExp("\\{ file: '14_fc_write_handlers\\.gs', symbol: '[A-Z_]+', expected: '"
+    + _e7c1Declared + "'").test(HEALTH),
+  'E7c1 and 14_ declares exactly what the manifest expects of it — a partial sync stays visible');
 ok(/FC_SE_UNIQUENESS_FIELDS_/.test(require('fs').readFileSync(require('path').join(__dirname, '..',
   'specs', 'active', 'apps-script', '14_fc_write_handlers.gs'), 'utf8')),
   'E7d and the change its stamp claims is really in the file, so the stamp is not decoration');

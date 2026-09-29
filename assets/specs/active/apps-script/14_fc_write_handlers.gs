@@ -31,7 +31,7 @@
 // An OLD 14_ beside the new page is the dangerous pairing, and it is silent: the page would send
 // expected_row_version and the old handler would IGNORE it — accepting every stale write it was added
 // to refuse, while returning success. Only a declared build separates those two deployments.
-var FCW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R29';
+var FCW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R30';
 
 // fc_special_events header. event_name / event_month / fc_qty are the task-defined columns;
 // event_period + year are additional UI-continuity columns (FC Summary Event table shows/filters them).
