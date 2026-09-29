@@ -189,8 +189,15 @@ section('E. SCENARIO 4 — second entry does NOT reload the registry');
 // state. The Special Event path declares its OWN prerequisites, and the registry is not among them.
 
 var PREREQ = /var _FC_PREREQ_TABLES_ = \{([\s\S]*?)\};/.exec(PAGE)[1];
-ok(/event:\s*\['sku_details',\s*'marketplace_skus',\s*'campaigns'\]/.test(PREREQ),
-  'E1 the event prerequisite list is sku_details + marketplace_skus + campaigns');
+/* FC-SUMMARY-STABILITY-R2 — this pinned the MEMBERSHIP of the event prerequisite list, and the
+   membership legitimately moved: `campaigns` is now deferred to its two real consumers, which takes the
+   Special cold path from two read rounds to one. The claim THIS suite makes is narrower and unchanged —
+   the marketplaces REGISTRY is not a prerequisite, so re-entering the builder cannot repair it. That is
+   what is asserted, and it no longer breaks when an unrelated table moves. */
+ok(!/marketplaces/.test(PREREQ),
+  'E1 the registry is NOT in the event prerequisite list — re-entry cannot reload it');
+ok(/event:\s*\[/.test(PREREQ) && /sku_details/.test(PREREQ) && /marketplace_skus/.test(PREREQ),
+  'E1a and the list the builder DOES declare is still the scope/datalist pair');
 ok(!/marketplaces/.test(PREREQ),
   'E2 SECOND_ENTRY_REFRESHES_MARKETPLACES = NO — `marketplaces` is in NEITHER prerequisite list');
 
@@ -305,8 +312,10 @@ mut('I3 _fcHas_ treats an absent key as empty rather than unread', function () {
 });
 
 mut('I4 the event prerequisite list gains the registry', function () {
-  var src = PAGE.replace("event: ['sku_details', 'marketplace_skus', 'campaigns']",
-    "event: ['sku_details', 'marketplace_skus', 'campaigns', 'marketplaces']");
+  // Re-anchored onto the current list. The mutant is unchanged in what it plants: the registry becoming
+  // a cold-path prerequisite, which is the thing E1 exists to forbid.
+  var src = PAGE.replace("event: ['sku_details', 'marketplace_skus']",
+    "event: ['sku_details', 'marketplace_skus', 'marketplaces']");
   if (src === PAGE) throw new Error('I4 anchor drifted');
   var p = /var _FC_PREREQ_TABLES_ = \{([\s\S]*?)\};/.exec(src)[1];
   return /marketplaces/.test(p) && !/marketplaces/.test(PREREQ);

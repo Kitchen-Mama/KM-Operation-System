@@ -3381,9 +3381,15 @@ function _evtSetEditingChrome_() {
  * continuation re-reads the picker instead of closing over `campaignId` — so if the operator changes
  * their mind while the read is in the air, the event they end on is the one that hydrates. */
 function _evtHydrateExisting_(campaignId) {
-  if (_fcDeferredPending_(_FC_DEFERRED_TABLES_.lines)) {
+  /* FC-SUMMARY-STABILITY-R2 §4 — campaigns is read a few lines below (the header row for this event),
+     so it is fetched at the SAME boundary as the lines rather than at modal open. Both are awaited
+     together: two sequential subsection waits for one operator action would move the cost rather than
+     remove it, and at two lanes they cost the slower of the two. */
+  var _hydNeed = [_FC_DEFERRED_TABLES_.lines, _FC_DEFERRED_TABLES_.campaigns]
+    .filter(function (t) { return _fcDeferredPending_(t); });
+  if (_hydNeed.length) {
     _evtShowSubsectionLoading_(EVT_LINES_HOST_, 'Loading the saved SKU lines for this event\u2026');
-    _fcEnsureDeferredTable_(_FC_DEFERRED_TABLES_.lines).then(function () {
+    Promise.all(_hydNeed.map(function (t) { return _fcEnsureDeferredTable_(t); })).then(function () {
       _evtClearSubsection_(EVT_LINES_HOST_);
       var sel = document.getElementById('event-existing-select');
       var now = sel ? sel.value : campaignId;
@@ -4111,6 +4117,22 @@ function _evtGrowthBaseForSku(campaignId, sku) {
 function _evtPopulateBaseCampaigns() {
   var sel = document.getElementById('event-assist-base-campaign');
   if (!sel) return;
+  /* FC-SUMMARY-STABILITY-R2 §4 — FIRST CONSUMER, so this is where campaigns is bought.
+     The control says what is true while it waits rather than reporting an absence nobody established —
+     the same rule the `events` branch below already applies, and the same rule FC-5 applied to the table.
+     A failure disables the control with its reason; it does not fail the form, because nothing else on
+     this modal depends on campaigns. */
+  if (_fcDeferredPending_(_FC_DEFERRED_TABLES_.campaigns)) {
+    sel.disabled = true;
+    sel.innerHTML = '<option value="">Loading campaigns\u2026</option>';
+    _fcEnsureDeferredTable_(_FC_DEFERRED_TABLES_.campaigns).then(function () {
+      if (_evtAssistMethod() === 'growth') _evtPopulateBaseCampaigns();   // re-enter once, un-deferred
+    }, function () {
+      sel.disabled = true;
+      sel.innerHTML = '<option value="">(campaigns could not be read \u2014 reopen to retry)</option>';
+    });
+    return;
+  }
   var site = _evtSelectedSite();
   function up(v){ return String(v==null?'':v).trim().toUpperCase(); }
   function lo(v){ return String(v==null?'':v).trim().toLowerCase(); }
@@ -6154,9 +6176,32 @@ function _fcGetMarketplaces() {
    — the SAME per-table freshness record the prerequisite loader has always used, and the same one a
    write invalidates through _fcResetSecondaryCache — decides whether a deferred table is current. A
    Special Event save still clears campaign_sku_lines, and the next hydrate still reads it. */
+/* FC-SUMMARY-STABILITY-R2 §3/§4 — THE THIRD TABLE WAS THE SECOND ROUND.
+ *
+ * `_kmReadTablesBounded_` issues ONE request PER TABLE at `KM_SCOPED_READ_CONCURRENCY_` lanes, and that
+ * knob is 2. So two tables are one round and three tables are TWO — the Special path paid a second
+ * serial 45s budget for one table, and the operator waited through it before the modal could open.
+ *
+ * THE COMMENT THIS REPLACES SAID `campaigns` STAYS "because _evtPopulateBaseCampaigns fills the Base
+ * Campaign dropdown on open". That is not what the code does. There are exactly two consumers:
+ *
+ *   _evtPopulateBaseCampaigns   called ONLY from the Event Assist method handler, and only on
+ *                               `method === 'growth'` — an assist control the operator opts into.
+ *   _evtHydrateExisting_        called when an EXISTING event is picked for editing, which already
+ *                               defers campaign_sku_lines at the same boundary for the same reason.
+ *
+ * Neither runs on open. So campaigns joins the deferred set and is fetched by whichever of those two
+ * consumers is reached first — which is the rule §2 states: "needed eventually" is not "must block
+ * modal open". It is NOT moved to Save: both consumers gate before they read, and the Save path
+ * validates its own prerequisites independently.
+ *
+ * What stays is what the FIRST USEFUL UI actually draws from: sku_details and marketplace_skus feed the
+ * scope selects and the SKU datalist, and marketplace_skus additionally answers "is this SKU in scope",
+ * which the price cell needs BEFORE pricing lands. Two tables, one round.
+ */
 var _FC_PREREQ_TABLES_ = {
   regular: ['sku_details', 'marketplace_skus'],
-  event: ['sku_details', 'marketplace_skus', 'campaigns']
+  event: ['sku_details', 'marketplace_skus']
 };
 // The union, kept as the reset surface and as the CSV-import/Event-Assist fallback list. Nothing
 // loads it as a unit any more.
@@ -7040,7 +7085,11 @@ function _fcEnsureEventSource_(mode) {
  * and holds a PROMISE, never rows; it is cleared the moment the request settles. Two clicks on the
  * picker share one read. A reload shares nothing, because there is nothing left to share.
  */
-var _FC_DEFERRED_TABLES_ = { lines: 'campaign_sku_lines', pricing: 'pricing_list' };
+/* FC-SUMMARY-STABILITY-R2 §4 — `campaigns` joins its two first-consumers. The machinery is unchanged:
+   one request per table, single-flight, released on both outcomes, and `_fcDeferredEverUsed_` still
+   decides what a post-write warm-up re-reads — so a session that edits existing events keeps the
+   R2-STABILITY guarantee of waiting once, and a session that never opens one buys nothing. */
+var _FC_DEFERRED_TABLES_ = { lines: 'campaign_sku_lines', pricing: 'pricing_list', campaigns: 'campaigns' };
 var _fcDeferredFlight_ = {};        // table -> the ONE in-flight promise, or null
 var _fcDeferredError_ = {};         // table -> the last failure, for the scoped retry surface
 /* Tables this SESSION has actually reached the consumer for. Never cleared by an invalidation: it

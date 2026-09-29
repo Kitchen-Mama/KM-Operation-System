@@ -567,9 +567,24 @@ function afterWrite(scope) {
   var _cw = cacheWorld();
   var _changed = vm.runInContext('_FC_SLICE_PREREQ_TABLES_.events', _cw);
   var _held = vm.runInContext('_FC_PREREQ_TABLES_.event', _cw);
+  /* FC-SUMMARY-STABILITY-R2 — THE INTERSECTION IS NOW EMPTY, AND THAT IS THE END STATE.
+     The formula is unchanged and still exact. What changed is its answer: with campaigns deferred to its
+     two real consumers, the Special path holds only sku_details and marketplace_skus, and NO FC write
+     scope changes either of them. So a Special write cools nothing this path needs.
+     The old J1a asserted the answer was non-empty, which was true while campaigns sat on the cold path and
+     is now exactly the condition this round removed. Asserting a count would re-pin the membership the
+     comment above already refused to spell, so what is asserted instead is the REASON: the builder cold
+     set and the FC write surface are disjoint. That is the durable claim, and it fails the moment a write
+     scope starts touching a table the builder blocks on — which is the regression worth catching. */
   eq(r.event.slice().sort(), _held.filter(function (t) { return _changed.indexOf(t) !== -1; }).sort(),
     'J1  after a SPECIAL write the Builder re-reads exactly the tables that write can change and this path holds');
-  ok(r.event.length > 0, 'J1a  and that is not vacuously none');
+  var _allChanged = {};
+  Object.keys(vm.runInContext('_FC_SLICE_PREREQ_TABLES_', _cw)).forEach(function (sl) {
+    vm.runInContext('_FC_SLICE_PREREQ_TABLES_', _cw)[sl].forEach(function (t) { _allChanged[t] = 1; });
+  });
+  var _allHeld = [].concat(_held, vm.runInContext('_FC_PREREQ_TABLES_', _cw).regular);
+  eq(_allHeld.filter(function (t) { return _allChanged[t]; }), [],
+    'J1a  and it is empty for a STATED reason — no FC write scope changes any builder prerequisite');
   eq(r.regular, [], 'J2  and the Regular path stays completely warm');
   eq(r.event.filter(function (t) {
     return ['sku_details', 'marketplace_skus', 'pricing_list', 'marketplaces'].indexOf(t) !== -1;

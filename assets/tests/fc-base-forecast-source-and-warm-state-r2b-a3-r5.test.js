@@ -185,8 +185,13 @@ ok(/_fcGetRegularForecast\(\)/.test(fnSrc(FCS, '_regularPrefillManual')),
   // S3-R13 — a COUNT was never the claim. R12's sentence was 'fc_special_events left', which B1c
   // states by name and which stays true; 'and five remain' described a list that shrank again the
   // very next round. What must hold is that the two tables the builder reads to DRAW ITSELF are on it.
+  /* FC-SUMMARY-STABILITY-R2 — `campaigns` was never one of them, and that is what this round fixed.
+     The builder draws itself from sku_details (the SKU datalist) and marketplace_skus (the scope, and
+     the in-scope answer the price cell needs before pricing lands). campaigns is read by the Base
+     Campaign selector and by existing-event rehydration, neither of which runs on open — so it is now
+     deferred, and naming it here asserted the old timing rather than the dependency this line is for. */
   ok(sb._FC_PREREQ_TABLES_.event.indexOf('sku_details') !== -1
-    && sb._FC_PREREQ_TABLES_.event.indexOf('campaigns') !== -1,
+    && sb._FC_PREREQ_TABLES_.event.indexOf('marketplace_skus') !== -1,
     'B1c1 and the tables the builder reads to draw itself are still on it',
     sb._FC_PREREQ_TABLES_.event);
 })();
@@ -650,10 +655,18 @@ mutant('M8 the scope ignored during reconciliation', (function () {
     'var tables = (typeof slice === \'string\') ? _fcSliceTables_(slice) : null;',
     'var tables = _fcSliceTables_(\'events\');');
   if (faulted === RESET) throw new Error('M8 anchor drifted');
+  /* FC-SUMMARY-STABILITY-R2 — THIS PROBE WENT BLIND AND HAD TO BE MOVED, NOT DROPPED.
+     It observed `_fcPrereqMissing_('event')`, which could see the fault only while `campaigns` was a
+     member of the event PATH. campaigns is now deferred, so a reset wrongly scoped to 'events' cools a
+     table no path holds and the path-level view reports nothing — the mutant survived while the guard
+     reported green. The invariant is unchanged (the reset must honour the scope it was GIVEN) and it is
+     still perfectly observable one level down, on the table freshness record the deferred consumers
+     read. Observing there also makes the probe independent of which tables happen to be on a path. */
   var W = resetWorld(faulted);
   W.__warmAll();
-  W._fcResetSecondaryCache('rules');                     // a Target Rule save must keep BOTH warm
-  return W._fcPrereqMissing_('event').length !== 0;
+  W._fcPrereqLoadedTables_['campaigns'] = true;          // a session that has used the deferred table
+  W._fcResetSecondaryCache('rules');                     // a Target Rule save must keep it warm
+  return W._fcPrereqLoadedTables_['campaigns'] !== true;  // the faulted reset cooled it anyway
 })());
 
 mutant('M9 a failed prerequisite read marked warm anyway', (function () {

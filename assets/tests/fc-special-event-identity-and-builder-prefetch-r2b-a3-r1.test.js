@@ -787,8 +787,15 @@ function prereqWorld() {
      and the declaration that names it as deferred. */
   ok(/_FC_DEFERRED_TABLES_ = \{ lines: 'campaign_sku_lines'/.test(FCS),
     'F2  campaign_sku_lines is DECLARED as a deferred Special-path table');
-  ok(/_fcDeferredPending_\(_FC_DEFERRED_TABLES_\.lines\)/.test(fnSrc(FCS, '_evtHydrateExisting_')),
+  /* FC-SUMMARY-STABILITY-R2 — the same lesson this section's own note records, one spelling further on.
+     Rehydration now waits for lines AND campaigns together (campaigns left the cold path), so the
+     dependency is expressed as a list rather than as one literal call. The DEPENDENCY is what matters and
+     is what is asserted: this consumer names that table and gates on its pendency. */
+  var _HYD = fnSrc(FCS, '_evtHydrateExisting_');
+  ok(/_FC_DEFERRED_TABLES_\.lines/.test(_HYD) && /_fcDeferredPending_\(/.test(_HYD),
     'F2a and rehydration is the consumer that waits for it — the saved deal price is still read from it');
+  ok(/_FC_DEFERRED_TABLES_\.campaigns/.test(_HYD),
+    'F2b and it waits for campaigns at the SAME boundary — the event header is read three lines below');
   ok(/_evtCampaignLineRows_\(\)/.test(fnSrc(FCS, '_evtHydrateExisting_')),
     'F2b which it still does through the campaign-lines accessor, unchanged');
   eq(W._FC_PREREQ_TABLES_.event.indexOf('fc_regular_forecast'), -1,
@@ -815,23 +822,53 @@ function prereqWorld() {
   var W = prereqWorld();
   W._fcOnModeSelected_('regular');
   W._fcOnModeSelected_('event');
-  eq(W.__calls.length, 2, 'F7  switching path fetches the newly required path');
-  var _req2 = W.__calls[1].slice().sort();
-  var _event = W._FC_PREREQ_TABLES_.event.slice().sort();
-  var _regularOnly = W._FC_PREREQ_TABLES_.regular.filter(function (t) {
-    return W._FC_PREREQ_TABLES_.event.indexOf(t) === -1; });
-  eq(_req2.filter(function (t) { return _event.indexOf(t) === -1; }), [],
-    'F7a and only it — every table asked for belongs to the path just chosen');
-  eq(_req2.filter(function (t) { return _regularOnly.indexOf(t) !== -1; }), [],
-    'F7a1 never a table that belongs only to the path being left');
-  // S2-R4B §10 — and the shared ones are not bought twice: they are already in flight from F7's first
-  // request, so this request is the event path MINUS them, and never the same read a second time.
-  var _shared = W._FC_PREREQ_TABLES_.regular.filter(function (t) {
-    return W._FC_PREREQ_TABLES_.event.indexOf(t) !== -1; });
-  eq(_req2.filter(function (t) { return _shared.indexOf(t) !== -1; }), [],
-    'F7a2 nor a table the previous request is still fetching — it is joined, not re-requested');
-  eq(_req2, _event.filter(function (t) { return _shared.indexOf(t) === -1; }),
-    'F7a3 which leaves exactly the event-path tables nobody was already fetching');
+  /* FC-SUMMARY-STABILITY-R2 — DERIVED, because the answer now depends on the two lists rather than on a
+     constant. With `campaigns` deferred both paths declare the same tables, so switching fetches NOTHING
+     — which is the improvement this round exists to make, not a lost assertion. Should the lists diverge
+     again the expectation moves with them, which is what the original line was really claiming. */
+  // Read from SOURCE rather than from the sandbox: the two lists are a fact about the page, and
+  // reaching into a vm context for them would couple this to the harness's shape as well.
+  // The two lists, parsed from the DECLARATION. A fact about the page, read without reaching into a vm
+  // context — so this cannot break on the harness's shape, only on the declaration actually changing.
+  var _PTSRC = /var _FC_PREREQ_TABLES_ = \{([\s\S]*?)\};/.exec(FCS)[1];
+  function _ptList(name) {
+    var m = new RegExp(name + ":\\s*\\[([^\\]]*)\\]").exec(_PTSRC);
+    return m ? (m[1].match(/'[^']+'/g) || []).map(function (q) { return q.replace(/'/g, ''); }) : [];
+  }
+  var _regL = _ptList('regular'), _evtL = _ptList('event');
+  ok(_regL.length > 0 && _evtL.length > 0, 'F7pre both prerequisite lists parsed from source');
+  var _newOnSwitch = _evtL.filter(function (t) { return _regL.indexOf(t) === -1; });
+  eq(W.__calls.length, _newOnSwitch.length ? 2 : 1,
+    'F7  switching path fetches exactly the tables the new path adds (' + _newOnSwitch.length + ' added)');
+  /* FC-SUMMARY-STABILITY-R2 — THESE FOUR CLAIM THINGS ABOUT THE SECOND REQUEST, AND THERE ISN'T ONE.
+     With `campaigns` deferred to its two real consumers, the Regular and Special paths declare the same
+     tables, so switching between them asks for nothing. Deleting the block would throw away four correct
+     assertions about how a divergent switch must behave; leaving them unguarded would read an undefined
+     request. They are therefore CONDITIONAL on a second request existing — which is exactly the condition
+     F7 above now derives — and the no-second-request case asserts its own fact. */
+  if (W.__calls.length > 1) {
+    var _req2 = W.__calls[1].slice().sort();
+    var _event = _evtL.slice().sort();
+    var _regularOnly = _regL.filter(function (t) { return _evtL.indexOf(t) === -1; });
+    eq(_req2.filter(function (t) { return _event.indexOf(t) === -1; }), [],
+      'F7a and only it — every table asked for belongs to the path just chosen');
+    eq(_req2.filter(function (t) { return _regularOnly.indexOf(t) !== -1; }), [],
+      'F7a1 never a table that belongs only to the path being left');
+    // S2-R4B §10 — and the shared ones are not bought twice: they are already in flight from F7's first
+    // request, so this request is the event path MINUS them, and never the same read a second time.
+    var _shared = _regL.filter(function (t) { return _evtL.indexOf(t) !== -1; });
+    eq(_req2.filter(function (t) { return _shared.indexOf(t) !== -1; }), [],
+      'F7a2 nor a table the previous request is still fetching — it is joined, not re-requested');
+    eq(_req2, _event.filter(function (t) { return _shared.indexOf(t) === -1; }),
+      'F7a3 which leaves exactly the event-path tables nobody was already fetching');
+  } else {
+    eq(_newOnSwitch, [],
+      'F7a the switch asked for nothing BECAUSE the new path adds no table — derived, not assumed');
+    eq(W.__calls[0].slice().sort(), _regL.slice().sort(),
+      'F7a1 and the one request that was issued is the first path\'s own list');
+    eq(_evtL.slice().sort(), _regL.slice().sort(),
+      'F7a3 and the two paths declare identical tables, which is WHY nothing was added');
+  }
 })();
 
 (function () {
@@ -1059,11 +1096,19 @@ mutant('M9  the Builder loads its prerequisites at page mount', function () {}, 
   return /_fcMountPrefetch_/.test(mutated) && !/_fcMountPrefetch_/.test(FCS);
 });
 
+/* FC-SUMMARY-STABILITY-R2 — THIS MUTANT WENT VACUOUS AND HAD TO BE GIVEN ITS TEETH BACK.
+   It concatenated the event list into regular and looked for 'campaigns' in the request. Once campaigns
+   moved to the deferred set the two paths declare the SAME tables, so the concat added only duplicates,
+   'campaigns' never appeared, and the mutant survived — a guard reported green while testing nothing.
+   A mutant pinned to a MEMBER dies when the membership moves. This one now plants a SENTINEL on the event
+   path and asserts the Regular path never asks for it, which is the property itself ("a path fetches only
+   its own tables") and cannot go vacuous however the two lists converge or diverge. */
 mutant('M10 selecting one path fetches BOTH', function () {}, function () {
   var W = prereqWorld();
-  vm.runInContext("_FC_PREREQ_TABLES_.regular = _FC_PREREQ_TABLES_.regular.concat(_FC_PREREQ_TABLES_.event);", W);
+  vm.runInContext("_FC_PREREQ_TABLES_.event = _FC_PREREQ_TABLES_.event.concat(['__event_only_sentinel__']);"
+    + "_FC_PREREQ_TABLES_.regular = _FC_PREREQ_TABLES_.regular.concat(_FC_PREREQ_TABLES_.event);", W);
   W._fcOnModeSelected_('regular');
-  return W.__calls[0].indexOf('campaigns') !== -1;   // the Regular path pulled the event path's tables
+  return W.__calls[0].indexOf('__event_only_sentinel__') !== -1;   // Regular pulled an event-path table
 });
 
 mutant('M11 Next issues a second request instead of reusing the flight', function () {}, function () {
@@ -1109,12 +1154,24 @@ Promise.all(asyncChecks).then(function () {
       return S.fcSeFingerprint_(Object.assign({}, EVENT_ROW, { event_start_date: new Date(2027, 10, 24) }))
         === S.fcSeFingerprint_(Object.assign({}, EVENT_ROW, { event_start_date: '2027-11-23T16:00:00.000Z' }));
     }],
+   /* FC-SUMMARY-STABILITY-R2 — DERIVED, for the same reason F7 above is. The baseline asserted two calls
+      and no 'campaigns' in the first, both of which were facts about a membership that has since moved:
+      with campaigns deferred, switching paths needs no new table and issues no second call. What the
+      baseline is FOR is that the clean tree satisfies per-path single flight — one call per distinct set
+      of needed tables, and never another path's exclusive table — so that is what it now computes. */
    ['M10/M11/M12 per-path single flight', function () {
       var W = prereqWorld();
+      var PT = /var _FC_PREREQ_TABLES_ = \{([\s\S]*?)\};/.exec(FCS)[1];
+      function list(n) {
+        var m = new RegExp(n + ":\\s*\\[([^\\]]*)\\]").exec(PT);
+        return m ? (m[1].match(/'[^']+'/g) || []).map(function (q) { return q.replace(/'/g, ''); }) : [];
+      }
+      var evtOnly = list('event').filter(function (t) { return list('regular').indexOf(t) === -1; });
       W._fcOnModeSelected_('regular');
       W._fcLoadPrerequisites_('regular');
       W._fcOnModeSelected_('event');
-      return W.__calls.length === 2 && W.__calls[0].indexOf('campaigns') === -1;
+      return W.__calls.length === (evtOnly.length ? 2 : 1) &&
+        W.__calls[0].filter(function (t) { return evtOnly.indexOf(t) !== -1; }).length === 0;
     }]
   ].forEach(function (p) {
     var held; try { held = !!p[1](); } catch (e) { held = false; }

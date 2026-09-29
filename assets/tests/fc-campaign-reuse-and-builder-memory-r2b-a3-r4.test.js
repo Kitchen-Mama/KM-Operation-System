@@ -356,7 +356,15 @@ ok(/function _fcResetSecondaryCache\(scope\)/.test(RESET), 'E0  the reset now re
   eq(sb._FC_PREREQ_TABLES_.regular.indexOf('fc_regular_forecast'), -1,
     'E3a  because the forecast table is not a prerequisite of the Regular path any more');
   warm(); sb._fcResetSecondaryCache('events');
-  eq(paths(), ['regular'], 'E4  an EVENTS write clears only the Special path');
+  /* FC-SUMMARY-STABILITY-R2 — an events write used to cool the whole Special PATH, because `campaigns`
+     was a member of it. campaigns is now deferred, so the write cools the TABLE and leaves both paths
+     warm — which is the same rule E3 states for Regular, arriving at Special. The invalidation itself is
+     unchanged and is asserted directly below: what a write can change, it still cools. */
+  eq(paths(), ['event', 'regular'], 'E4  an EVENTS write cools NEITHER path — neither holds a table it changes');
+  eq(sb._fcPrereqLoadedTables_['campaigns'], undefined,
+    'E4a  but it DOES cool the campaigns table, which is where that dependency now lives');
+  eq(sb._FC_PREREQ_TABLES_.event.indexOf('campaigns'), -1,
+    'E4b  because campaigns is no longer a prerequisite of the Special path');
   warm(); sb._fcResetSecondaryCache(undefined);
   eq(paths(), [], 'E5  an UNKNOWN scope clears everything — not knowing is never answered by staying warm');
   warm(); sb._fcResetSecondaryCache('somethingNew');
