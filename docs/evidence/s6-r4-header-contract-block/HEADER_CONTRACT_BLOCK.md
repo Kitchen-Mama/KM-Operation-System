@@ -215,5 +215,13 @@ FOCUSED   s6-r4-overseas-header-contract-gate   27 passed / 0 failed
            vacuity-checked in four directions: it catches an emitted object property and an
            index-resolved setValue, and rejects a pure read and a comment.)
 DEPENDENT s6-r1 · s6-r2 · s6-r2a · s6-r3 — all exit 0, unchanged
-FULL_SWEEP <filled after sweep>
+FULL_SWEEP 572 passed / 577   canonical 5 suites, 19 FAIL lines
+577 rather than 576 because this round adds one suite. It contributed zero fail lines.
+SUITES THAT LEFT THE TREE DIRTY = 0
+CANONICAL_FAILURE_SET_CHANGED = NO — diff-clean, all 19 lines identical to the R1 artifact
+CANONICAL_DIGEST = ebcf7bc1651e792f7dbab73544cfa2593f91664a9ed399a04f9a5ba9c9bc4f92   (reproduced)
+WORKTREE_CLEAN_AT_END = YES
 ```
+
+Canonical on the first sweep, which is the expected result for a round that changed no runtime file:
+the only additions are one suite and one evidence document.
