@@ -567,7 +567,7 @@ Prepared, not implemented. Every answer below is from live code.
 
 | | A · overseas reservation | B · approved-plan cancel | C · shipment_receipt | D · over-receipt | E · source factory |
 |---|---|---|---|---|---|
-| CURRENT_OWNER | none — no writer | 11_ `spUpdateShippingPlanStatusCore_` | declared 21_, written 31_ | 13_ `poRcvEvaluateLine_` | none — table unread |
+| CURRENT_OWNER | none — no writer | 11_ `spUpdateShippingPlanStatusCore_` | declared 21_, written 31_ | 13_ `poReceiptEvaluateLine_` | none — table unread |
 | TARGET_OWNER | 05_/31_ overseas movement writers | the same function | the overseas domain | unchanged | `warehouse_id` |
 | TABLES | `overseas_inventory_snapshot`, `overseas_inventory_movements` | `shipping_plans` | `overseas_inventory_movements` | `purchase_order_lines` | `factory_stock_allocation_plans` |
 | FIELDS | `wh_reserved_stock`, `wh_available_stock`, `from_stock_type`→`to_stock_type`, `wh_before/after_reserved_stock` | `status`, `cancelled_by`, `cancelled_at`, `updated_*` | `movement_type` | — | `warehouse_id` vs `source_factory_warehouse_id` |
@@ -607,4 +607,218 @@ must be honoured in code rather than only here.
 S6_DECISION_FREEZE_COMPLETE = YES     UNRESOLVED_DECISION_COUNT = 0
 BEHAVIOR_CHANGED = NO   PRODUCTION_ROWS_WRITTEN = 0   DB_MIGRATION_REQUIRED = NO
 NEXT_TASK = S6-R3 — inventory / shipping DB + mapping freeze
+```
+
+---
+
+# PART IV — S6-R3 INVENTORY / SHIPPING DB + MAPPING FREEZE
+
+*Mapping freeze. No runtime implementation, no migration, no production write. Base `fc3c67d`.*
+Round evidence: `docs/evidence/s6-r3-mapping-freeze/MAPPING_FREEZE.md`.
+Machine-checkable half: `assets/tests/s6-r3-inventory-shipping-mapping-freeze.test.js`, which reads every
+token below out of THIS document.
+
+---
+
+## §22. The domain model, frozen
+
+```
+FACTORY_OVERSEAS_STORAGE_MERGED = NO
+FACTORY_OVERSEAS_RESERVATION_OWNER_MERGED = NO
+OVERSEAS_PRODUCTION_SEMANTICS_ADDED = NO
+CAN_ACT_AS_SHIPPING_SOURCE = YES   (both domains, separate storage models)
+```
+
+The domains are separate because their **availability arithmetic genuinely differs**, not because their
+fields are named differently:
+
+```
+FACTORY_AVAILABLE_FORMULA  = fac_current_stock - fac_reserved_stock          (DERIVED, 21_/KMFSG)
+OVERSEAS_AVAILABLE_FORMULA = wh_available_stock                              (STORED, source-reported)
+OVERSEAS_THIRD_BUCKET = wh_damaged_stock   — no factory counterpart; the factory formula ignores it
+```
+
+`INVENTORY_TABLE_MAPPING_SPEC.md` §3.1 makes `wh_available_stock` the preserved source value where it is not
+reconstructable. Applying the factory derivation to overseas rows would overwrite a 3PL's own answer and
+count damaged units as shippable.
+
+## §23. KMFSG — the frozen input contracts
+
+```
+CURRENT_KMFSG_INPUT_CONTRACT = FACTORY_BALANCES_PLUS_DOMAIN_NEUTRAL_EXPOSURE
+    availableToAllocate({ balances, draftExposure, planExposure })
+    balances = normalizeBalances(factory_stock, { eligibleWarehouseIds: is_factory_warehouse })
+    physical term DERIVED as current - reserved
+    draftExposure / planExposure apply NO factory filter — they are already domain-neutral
+
+TARGET_KMFSG_INPUT_CONTRACT = OPTION_B
+    separate Factory / Overseas PHYSICAL availability owners, composed above KMFSG,
+    over ONE shared pool keyspace and the ONE existing exposure pair.
+
+KMFSG_INPUT_CONTRACT_CHANGED = NO
+OVERSEAS_ADDED_BY_FILTER_LOOSENING = NO
+SOURCE_DOMAIN_IDENTITY_PRESERVED = YES
+SECOND_AVAILABILITY_CALCULATION_PATH_CREATED = NO
+SECOND_EXPOSURE_CALCULATION_PATH_CREATED = NO
+```
+
+Pool keys are warehouse-scoped — `WH:<warehouse_id>||<sku>` — so a Factory pool and an Overseas pool can
+never be the same key and are never summed. Domain identity is preserved **structurally, by the key**.
+
+## §24. Overseas stock identity, frozen
+
+```
+OVERSEAS_POOL_KEY = WH:<warehouse_id>||<sku>
+OVERSEAS_WAREHOUSE_ID_FIELD = overseas_inventory_snapshot.warehouse_id
+OVERSEAS_SKU_FIELD = overseas_inventory_snapshot.sku
+OVERSEAS_CURRENT_STOCK_FIELD = wh_physical_stock
+OVERSEAS_RESERVED_STOCK_FIELD = wh_reserved_stock
+OVERSEAS_AVAILABLE_STOCK_FIELD = wh_available_stock
+OVERSEAS_DAMAGED_STOCK_FIELD = wh_damaged_stock
+
+OVERSEAS_RESERVED_FIELD_ALREADY_EXISTS = YES
+OVERSEAS_MOVEMENT_CAN_REPRESENT_RESERVATION = YES
+OVERSEAS_STOCK_TYPE_ALLOWED_SET_DECLARED_IN_CODE = NO
+```
+
+The `from_stock_type` / `to_stock_type` columns exist in both live overseas movement headers, and
+`INVENTORY_TABLE_MAPPING_SPEC.md` §3.2 canonically models `available -> reserved` and `reserved -> available`
+on them. The **allowed set is not declared in code** — it appears once as a comment at `05_:296`, and the only
+value any writer writes is `available`. Declaring that constant is R4 work and is not a vocabulary expansion.
+
+## §25. Overseas availability and lifecycle, frozen
+
+```
+OVERSEAS_AVAILABLE_FORMULA = wh_available_stock - active_allocation_draft_exposure - active_shipping_plan_exposure
+OVERSEAS_RESERVED_IS_SUBTRACTED_FROM_AVAILABLE = NO
+```
+
+An overseas reserve is an `available -> reserved` bucket transfer, so reserved units are already out of the
+available bucket. Subtracting `wh_reserved_stock` as well would remove them twice. The factory subtracts its
+reserved term; the overseas domain must not. Both satisfy the same invariant — a reservation moves no physical
+units.
+
+```
+OVERSEAS_RESERVE_OWNER_COUNT = 1
+OVERSEAS_RELEASE_OWNER_COUNT = 1
+OVERSEAS_CONSUME_OWNER_COUNT = 1
+OVERSEAS_RESERVE_CONSUMES_PHYSICAL_STOCK = NO
+OVERSEAS_CONSUME_DEDUCTS_TWICE = NO
+
+DOUBLE_SUBTRACTION_PATH_COUNT = 0
+DOUBLE_ALLOCATION_PATH_COUNT = 0
+DOUBLE_ALLOCATION_PATH_IF_SOURCE_UNBLOCKED_ALONE = 1
+R4_MUST_LAND_AS_ONE_CHANGE = YES
+```
+
+`planExposure` releases on `TRANSFERRED_TO_SHIPMENT`. For factory, `fac_reserved_stock` takes over in the same
+transaction; for overseas there is no term to take over. Unblocking the overseas source before the reserve
+writer and the availability term exist would therefore open a real double-allocation hole at the
+plan-to-shipment handoff. The availability term, the reserve writer and the source unblock land together.
+
+```
+OVERSEAS_ORIGIN_TODAY = REFUSED_AT_SUFFICIENCY_PRECHECK
+    12_ createShipmentFromApprovedPlan_ -> factoryStockReadBalanceTx_ returns available 0
+    -> reason INSUFFICIENT_FACTORY_STOCK, zero writes. Fail-closed; the defect's surface is a
+    misleading refusal naming factory stock for a warehouse that is not a factory.
+```
+
+## §26. Transfer, destination and source identity, frozen
+
+```
+FACTORY_TO_OVERSEAS_SOURCE_OWNER = 22_ dispatch -> factoryStockApplyDeltaTx_ (shipment_out)
+FACTORY_TO_OVERSEAS_DESTINATION_OWNER = 31_ shipment receipt overseas posting
+DESTINATION_INVENTORY_INCREASE_EVENT = WAREHOUSE_RECEIPT
+DELIVERED_INCREASES_OVERSEAS_AVAILABLE = NO
+FACTORY_TO_OVERSEAS_SCHEMA_CHANGE_REQUIRED = NO
+
+OVERSEAS_TO_FBA_SUPPORTED_BY_MODEL = YES
+OVERSEAS_TO_OVERSEAS_SUPPORTED_BY_MODEL = YES
+OVERSEAS_SELF_FULFILLED_SUPPORTED_BY_MODEL = YES
+SEPARATE_SHIPMENT_ENGINE_PER_SOURCE_TYPE = NO
+OMS_INTEGRATION_IN_S6 = NO
+
+SOURCE_WAREHOUSE_ID_OWNER = shipping_plans.source_warehouse_id -> shipments.source_warehouse_id
+SOURCE_DOMAIN_OWNER = warehouses.is_factory_warehouse + warehouses.warehouse_type
+SOURCE_DOMAIN_INFERENCE_AMBIGUOUS = NO
+SOURCE_DOMAIN_COLUMN_REQUIRED = NO
+```
+
+## §27. Plan lifecycle, movements, receiving, authority — frozen
+
+```
+APPROVED_CANCEL_OWNER = 11_ spUpdateShippingPlanStatusCore_
+NO_SHIPMENT_PROOF = shipmentFindForPlan_
+APPROVED_WITH_SHIPMENT_CAN_CANCEL = NO
+GHOST_PLAN_EXPOSURE_AFTER_CANCEL = NO
+APPROVED_CANCEL_SCHEMA_CHANGE_REQUIRED = NO
+APPROVED_CANCEL_EXPOSURE_RELEASE_OWNER = KMFSG.PLAN_RELEASED_STATUSES
+
+FACTORY_MOVEMENT_ENUM = FSTX_MOVEMENT_TYPES_
+OVERSEAS_MOVEMENT_ENUM_DECLARED_TODAY = NO
+SHIPMENT_RECEIPT_CURRENT_CLASSIFICATION = FACTORY_LIST_NEITHER_AXIS_OVERSEAS_WRITER
+SHIPMENT_RECEIPT_TARGET_CLASSIFICATION = OVERSEAS_DECLARED_VOCABULARY
+MOVEMENT_VOCABULARY_EXPANDED = NO
+SEVEN_WAS_A_CROSS_DOMAIN_COUNT = YES
+FACTORY_DECLARED_TYPES_AFTER_R4 = 6
+OVERSEAS_DECLARED_TYPES_AFTER_R4 = 4
+NEW_MOVEMENT_SEMANTIC_INVENTED = NO
+
+OVER_RECEIPT_VALIDATION_OWNER = poReceiptEvaluateLine_
+VALIDATION_BEFORE_MUTATION = YES
+SILENT_CLAMP_PATH_COUNT = 0
+OVER_RECEIPT_CHANGE_REQUIRED = NO
+
+SOURCE_FACTORY_AUTHORITY = factory_stock_allocation_plans.warehouse_id
+DEPRECATED_NON_AUTHORITY_FIELD = factory_stock_allocation_plans.source_factory_warehouse_id
+SOURCE_FACTORY_AUTHORITY_COUNT = 1
+SOURCE_FACTORY_TABLE_REFERENCE_COUNT = 0
+SOURCE_FACTORY_MIGRATION_THIS_ROUND = NO
+```
+
+## §28. Schema, quantity, write owners, boundary — frozen
+
+```
+NEW_TABLE_REQUIRED = NO
+SCHEMA_EXTENSION_REQUIRED = NO
+DB_MIGRATION_REQUIRED = NO
+BUSINESS_TRUTH_NOT_REPRESENTABLE_TODAY = NONE
+
+SHIPPING_QTY_OWNER = shipping_plan_lines.approved_qty
+SHIPMENT_QTY_OWNER = shipment_lines.shipment_qty
+RECEIPT_QTY_OWNER = shipment_lines.shipment_received_qty
+SHIPMENT_QTY_IMMUTABLE = YES
+PARTIAL_RECEIPT_PERMITTED = YES
+PARTIAL_SHIPMENT_PERMITTED = NO
+S5_RECOMMENDATION_IS_SHIPPING_QTY_AUTHORITY = NO
+REQUEST_ORDER_IS_SHIPPING_QTY_AUTHORITY = NO
+PO_IS_SHIPPING_QTY_AUTHORITY = NO
+
+FACTORY_RESERVE_OWNER = factoryStockAcquireReservationTx_
+FACTORY_RELEASE_OWNER = factoryStockReleaseReservationTx_
+FACTORY_CONSUME_OWNER = factoryStockApplyDeltaTx_
+SHIPPING_PLAN_STATUS_OWNER = spUpdateShippingPlanStatusCore_
+SHIPMENT_DRAFT_CREATION_OWNER = createShipmentFromApprovedPlan_
+SHIPMENT_DISPATCH_OWNER = 22_shipment_dispatch_handlers.gs
+WAREHOUSE_RECEIPT_OWNER = 31_shipment_receipt_route_handlers.gs
+SECOND_SHIPPING_WRITE_PATH_COUNT = 0
+DORMANT_WRITE_SHAPED_PATHS = 1
+DORMANT_WRITE_SHAPED_PATH_CLASSIFICATION = SAFE_DORMANT
+DORMANT_PATH_REMOVED_THIS_ROUND = NO
+
+AUTOREPLAY_PRESENT = NO
+UNKNOWN_OUTCOME_POSSIBLE = YES
+OVERSEAS_WRITE_USES_CALLER_LOCK_AND_JOURNAL = YES
+
+CROSS_MAINLINE_AUTO_EXECUTION_COUNT = 0
+PHASE2_ORCHESTRATION_COUNT = 0
+REFURBISH_IMPLEMENTATION_COUNT = 0
+```
+
+## §29. Position after R3
+
+```
+S6_MAPPING_FREEZE_COMPLETE = YES
+BEHAVIOR_CHANGED = NO   PRODUCTION_ROWS_WRITTEN = 0   DB_MIGRATION_REQUIRED = NO
+NEXT_TASK = S6-R4 — first implementation slice from the frozen mapping
 ```

@@ -47,7 +47,7 @@ S6-R1 recorded the PO over-receipt clamp as frozen live behaviour, and S6-R2 rec
 both citing `FC-1A §H.4`. `FC-1A-R1 §K` had already removed it:
 
 ```
-13_ poRcvEvaluateLine_   "THE SILENT CLAMP IS GONE."
+13_ poReceiptEvaluateLine_   "THE SILENT CLAMP IS GONE."
   if (recv > maxRecv) return { status: 'error', issue: 'PO_RECEIPT_EXCEEDS_REMAINING_QTY',
     attempted: recv, remaining: maxRecv, excess: recv - maxRecv, … }
   …evaluated BEFORE the `status: 'apply'` branch, so no inventory is mutated
