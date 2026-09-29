@@ -671,7 +671,7 @@ never be the same key and are never summed. Domain identity is preserved **struc
 OVERSEAS_POOL_KEY = WH:<warehouse_id>||<sku>
 OVERSEAS_WAREHOUSE_ID_FIELD = overseas_inventory_snapshot.warehouse_id
 OVERSEAS_SKU_FIELD = overseas_inventory_snapshot.sku
-OVERSEAS_CURRENT_STOCK_FIELD = wh_physical_stock
+OVERSEAS_CURRENT_STOCK_FIELD = wh_physical_stock     [SUPERSEDED BY R3A - see PART V §30]
 OVERSEAS_RESERVED_STOCK_FIELD = wh_reserved_stock
 OVERSEAS_AVAILABLE_STOCK_FIELD = wh_available_stock
 OVERSEAS_DAMAGED_STOCK_FIELD = wh_damaged_stock
@@ -822,3 +822,326 @@ S6_MAPPING_FREEZE_COMPLETE = YES
 BEHAVIOR_CHANGED = NO   PRODUCTION_ROWS_WRITTEN = 0   DB_MIGRATION_REQUIRED = NO
 NEXT_TASK = S6-R4 — first implementation slice from the frozen mapping
 ```
+
+---
+
+# PART V — S6-R3A OVERSEAS OPERATIONAL QUANTITY MODEL AMENDMENT
+
+*Contract / business-semantics amendment. No runtime implementation, no migration, no production write.*
+Base `7b8bb81`. Round evidence: `docs/evidence/s6-r3a-overseas-quantity-model/QUANTITY_MODEL.md`.
+Machine-checkable half: `assets/tests/s6-r3a-overseas-quantity-model.test.js`.
+
+This Part amends exactly ONE token frozen in Part IV. Every other Part IV token stands. The superseded
+line is left in §24 with a pointer rather than rewritten, so the R3 freeze remains readable as what R3
+actually decided — and `s6-r3-inventory-shipping-mapping-freeze.test.js` still pins it there.
+
+## §30. The operator decision, frozen
+
+```
+D_S6_OVERSEAS_OPERATIONAL_QUANTITY_MODEL = A
+D_S6_OVERSEAS_OPERATIONAL_QUANTITY_MODEL_STATUS = FROZEN
+S6_OVERSEAS_QUANTITY_MODEL_FREEZE = YES
+SUPERSEDED_S6_R3_TOKEN_COUNT = 1
+```
+
+Phase-1 overseas bucket semantics:
+
+```
+wh_available_stock  OPERATIONAL AVAILABLE — units allocatable to a new shipment reservation
+wh_reserved_stock   OPERATIONAL RESERVED  — units held by a Shipment Draft, unavailable to another
+wh_damaged_stock    separate NON-AVAILABLE bucket; no Phase-1 lifecycle, no refurbish semantics
+wh_physical_stock   PRESENT IN SCHEMA, NOT AN OPERATIONAL AUTHORITY — unmaintained; never backfilled,
+                    never derived, never used for availability, never decremented on dispatch
+```
+
+The amended token, superseding Part IV §24:
+
+```
+OVERSEAS_CURRENT_STOCK_FIELD = wh_available_stock
+OVERSEAS_CURRENT_STOCK_FIELD_SUPERSEDES = wh_physical_stock (PART IV §24)
+OVERSEAS_CURRENT_STOCK_DOMAIN = PHASE1_SHIPPING_EXECUTION_AND_AVAILABILITY
+PHYSICAL_STOCK_DECREMENT_ON_DISPATCH = NO
+OVERSEAS_PHYSICAL_STOCK_LIFECYCLE_PHASE = DEFERRED
+OVERSEAS_DAMAGED_STOCK_LIFECYCLE_PHASE = DEFERRED
+OVERSEAS_REFURBISH_PHASE1 = NO
+```
+
+R4A proved `wh_physical_stock` has zero writers in the entire tree — a statement about code, not about a
+blank sample. A current-stock authority nothing writes is not an authority; naming one was the single
+place where the R3 freeze ran ahead of live evidence.
+
+## §31. Reservation arithmetic, frozen
+
+```
+OVERSEAS_AVAILABILITY_AUTHORITY = wh_available_stock
+OVERSEAS_RESERVED_AUTHORITY = wh_reserved_stock
+OVERSEAS_RESERVE_MODEL = AVAILABLE_TO_RESERVED_TRANSFER
+OVERSEAS_RELEASE_MODEL = RESERVED_TO_AVAILABLE_TRANSFER
+OVERSEAS_DISPATCH_MODEL = RESERVED_DECREMENT_ONLY
+OVERSEAS_PHYSICAL_PARTICIPATES_IN_PHASE1_ARITHMETIC = NO
+```
+
+```
+RESERVE   wh_available_stock -= qty   wh_reserved_stock += qty   wh_physical_stock unchanged
+RELEASE   wh_reserved_stock  -= qty   wh_available_stock += qty   wh_physical_stock unchanged
+DISPATCH  wh_reserved_stock  -= qty   wh_available_stock unchanged   wh_physical_stock unchanged
+```
+
+```
+100/0 --reserve 30--> 70/30 --cancel 30--> 100/0
+100/0 --reserve 30--> 70/30 --dispatch 30--> 70/0
+```
+
+Because RESERVE already moves the quantity out of `wh_available_stock`, no consumer may compute
+`available - reserved` for the same pool. Part IV §25's `OVERSEAS_RESERVED_IS_SUBTRACTED_FROM_AVAILABLE
+= NO` is not merely preserved by this amendment — it is the invariant the amendment depends on.
+
+```
+OVERSEAS_DOUBLE_SUBTRACTION_GUARD = RESERVED_NEVER_SUBTRACTED_FROM_AVAILABLE
+OVERSEAS_CONSUME_DEDUCTS_TWICE = NO
+```
+
+## §32. Domain boundary — unchanged, restated
+
+```
+FACTORY_OVERSEAS_STORAGE_MERGED = NO
+FACTORY_OVERSEAS_RESERVATION_OWNER_MERGED = NO
+OVERSEAS_PRODUCTION_SEMANTICS_ADDED = NO
+OVERSEAS_CAN_PRODUCE = NO
+OVERSEAS_CAN_SHIP = YES
+OVERSEAS_CAN_BE_TRANSFER_SOURCE = YES
+OVERSEAS_CAN_RECEIVE_FACTORY_REPLENISHMENT = YES
+OVERSEAS_ADDED_BY_FILTER_LOOSENING = NO
+```
+
+Adopting Option A makes the two domains' arithmetic look *similar* — both now transfer between an
+available term and a reserved term — and that similarity is the new pressure on the boundary. It is not
+a reason to merge. Factory availability stays DERIVED (`fac_current_stock - fac_reserved_stock`);
+overseas availability stays STORED. An overseas row through `normalizeBalances` must keep failing closed
+as `fac_current_stock` unreadable rather than being admitted by relaxing the factory filter.
+
+## §33. Import field authority — the critical safety contract
+
+```
+IMPORT_FIELD_AUTHORITY_MATRIX = 5 fields classified
+IMPORT_WRITES_RESERVED = NO           (target; TODAY = YES — this is the R4 blocking hazard)
+ABSENT_COLUMN_SEMANTIC = NO_WRITE     (target; TODAY = WRITE_ZERO)
+BLANK_CELL_SEMANTIC = NO_WRITE        (target; TODAY = WRITE_ZERO)
+IMPORT_ZERO_REQUIRES_EXPLICIT_ZERO = YES
+```
+
+| FIELD | IMPORT_AUTHORITY | RUNTIME_AUTHORITY | BLANK_IMPORT_SEMANTIC | NONBLANK_IMPORT_SEMANTIC | CONFLICT_POLICY |
+|---|---|---|---|---|---|
+| `wh_available_stock` | YES (primary) | YES (reserve/release/receipt/adjust) | today 0 · **target NO_WRITE** | absolute set, CEILING | **GATED — see §34** |
+| `wh_reserved_stock` | today YES · **target NO** | YES (reserve/release/dispatch) | today 0 · **target NO_WRITE** | today overwrite · **target IGNORED** | RUNTIME_WINS_ALWAYS |
+| `wh_damaged_stock` | YES (sole) | NO (no Phase-1 writer) | today 0 · **target NO_WRITE** | absolute set, CEILING | IMPORT_WINS (no contender) |
+| `wh_physical_stock` | NO (not in `qtyFields`) | NO (zero writers) | n/a — never written | n/a — never written | NOT_APPLICABLE |
+| `wh_on_the_way_qty` | YES (sole) | NO | today 0 · **target NO_WRITE** | absolute set, CEILING | IMPORT_WINS (no contender) |
+
+```
+IMPORT_PROTECTION_OWNER_COUNT = 2
+  SERVER  05_ handleImportOverseasInventorySnapshotBatch_   qtyFields loop, both branches
+  CLIENT  assets/js/pages/overseas-stock.js                 OVERSEAS_QTY_FIELDS loop + import template
+```
+
+The client half is not cosmetic and it is not optional. `overseas-stock.js` materialises all four
+quantities onto every payload row — `if (v === '') { qtyObj[f] = 0; }` for a blank cell **and for a
+column that is not in the file at all** (`ci === -1`) — and then `OVERSEAS_QTY_FIELDS.forEach(function
+(f) { obj[f] = qtyObj[f]; })` puts every one of them on the request. So by the time a row reaches the
+server, "the operator omitted `reserved_stock`" and "the operator wrote 0" are the same request. A
+server-only fix cannot recover a distinction the client has already destroyed.
+
+The shipped import template is the delivery mechanism: it emits a `reserved_stock` column annotated
+*"Number >= 0. Blank = 0."* and an example row carrying `reserved_stock: 0`. The tree currently hands
+the operator a file that instructs them to zero the reservation bucket.
+
+```
+IMPORT_TEMPLATE_RESERVED_COLUMN = REMOVED (target)
+IMPORT_TEMPLATE_BLANK_COMMENT_CHANGED = YES (target) — "Blank = leave unchanged"
+IMPORT_DOC_OWNER = assets/specs/active/pages/OVERSEAS_STOCK_SPEC.md (Import + template sections)
+```
+
+Dropping `reserved_stock` from the template is semantically right, not merely safe: under Option A the
+column means *KM's* reservations, and a 3PL has no way to report those. A source-reported reserved
+quantity has no destination in the Phase-1 model, because `wh_available_stock` is already net of the
+source's own holdbacks (Part IV §22 · R4A §3).
+
+```
+EXTERNAL_SYNC_ARCHITECTURE_INTRODUCED = NO
+WH_AVAILABLE_EXTERNAL_SYNC_OWNER = NONE
+OVERSEAS_STOCK_SOURCE_TODAY = OPERATOR_IMPORT
+```
+
+## §34. Import + active reservation invariant — FROZEN INVARIANT, GATED ARITHMETIC
+
+The invariant is frozen and is not negotiable:
+
+```
+ACTIVE_RESERVATION_SURVIVES_IMPORT = YES (REQUIRED)
+IMPORT_MAY_ZERO_ACTIVE_RESERVATION = NO
+IMPORT_MAY_MAKE_RESERVED_UNITS_ALLOCATABLE_TWICE = NO
+```
+
+Preserving `wh_reserved_stock` is **necessary and not sufficient**. Given `available 70 / reserved 30`
+and a refresh reporting 100, writing `100 / 30` holds 130 units against 100 — the same defect as
+`100 / 0`, reached by a different route. The forbidden outcome is any post-import state in which the
+reserved units are allocatable again, not merely the state in which the reserved column is zero.
+
+What the imported `available` figure MEANS relative to a KM reservation is therefore load-bearing, and
+it is not decidable from the repository:
+
+```
+IMPORT_AMBIGUITY_COUNT = 1
+UNRESOLVED_IMPORT_DECISION_COUNT = 1
+GATE = IMPORT_AVAILABLE_SEMANTIC   STATUS = OPEN — OPERATOR DECISION REQUIRED
+```
+
+| OPTION | STORED AVAILABLE | RESERVED | 70/30 + refresh(100) | COST |
+|---|---|---|---|---|
+| **I — GROSS** *(recommended)* | `X - R`, refuse row if `X < R` | untouched | `70 / 30` | one named, ledgered subtraction |
+| II — NET | `X` verbatim | untouched | `100 / 30` — **forbidden state** | requires the operator to subtract units the 3PL portal does not show them |
+| III — REFUSE | not written when `R > 0` | untouched | `70 / 30`, row reported skipped | routine refreshes stop updating exactly the rows under shipment |
+
+Option I is recommended because two established facts point at it: a KM reservation moves no physical
+units (Part IV §25 · `OVERSEAS_RESERVE_CONSUMES_PHYSICAL_STOCK = NO`), and there is no outbound sync by
+which a source could learn of one (R4A §10 — no WMS feed, no scheduled job, no external sync owner in
+either direction). A source figure therefore necessarily counts the units KM is holding.
+
+It is nonetheless **not frozen here**, because the argument assumes the imported file is a faithful
+source export rather than one the operator has already netted by hand. That is an operational fact about
+how the file is produced, and no amount of code reading can settle it. Under Option I a hand-netted file
+double-subtracts silently; under Option II a source export over-reports silently. The gate is one
+sentence wide and only the operator holds the sentence.
+
+```
+IMPORT_ARITHMETIC_GUESSED = NO
+IMPORT_SILENT_SUBTRACTION_INTRODUCED = NO
+GATE_BLAST_RADIUS = rows with wh_reserved_stock > 0   (production count today: 0)
+```
+
+Whichever option is frozen, R4 must make the import's effect on both buckets auditable:
+
+```
+IMPORT_WRITES_MOVEMENT_ROW = YES (target)
+  movement_type = inventory_import   movement_scope = available_stock
+  wh_before/after_available_stock and wh_before/after_reserved_stock both real
+```
+
+## §35. Movement ledger mapping — no new vocabulary
+
+```
+NEW_MOVEMENT_TYPES_REQUIRED = 0
+MOVEMENT_SCHEMA_EXTENSION_REQUIRED = NO
+OVERSEAS_MOVEMENT_CAN_REPRESENT_RESERVATION = YES
+```
+
+| EVENT | movement_type | movement_scope | from_stock_type | to_stock_type | BALANCE PAIRS WRITTEN |
+|---|---|---|---|---|---|
+| reserve | `reservation_acquire` | `reserved_stock` | `available` | `reserved` | available + reserved (physical carried unchanged) |
+| release | `reservation_release` | `reserved_stock` | `reserved` | `available` | available + reserved (physical carried unchanged) |
+| dispatch | `shipment_out` | `reserved_stock` | `reserved` | `none` | reserved (available + physical carried unchanged) |
+| import | `inventory_import` | `available_stock` | `''` | `available` | available + reserved |
+
+Every name above is already declared. `reservation_acquire` · `reservation_release` · `shipment_out` ·
+`inventory_import` are four of the seven types in the closed vocabulary at §8, carrying in the overseas
+ledger exactly the meaning they carry in the factory one. `available` · `reserved` · `none` are three of
+the five values in the `from_stock_type` / `to_stock_type` allowed set. Nothing is invented and nothing
+is overloaded.
+
+Every column the mapping needs exists on the live `overseas_inventory_movements` header, including all
+three before/after balance pairs. `wh_before/after_physical_stock` are carried unchanged on every row,
+exactly as `05_`'s adjustment handler already does — a ledger truthfully recording that a bucket with no
+lifecycle did not move.
+
+```
+DISPATCH_RELEASE_RIDES_THE_SHIPMENT_OUT_ROW = YES
+DISPATCH_WRITES_SEPARATE_RELEASE_ROW = NO
+```
+
+The dispatch row carries its own reserved drop, as `22_` already does for factory. A second
+`reservation_release` row beside it would be the double count — §8 records the round that proved it.
+
+## §36. Receiving — unchanged
+
+```
+DELIVERED_INCREASES_OVERSEAS_AVAILABLE = NO
+WAREHOUSE_RECEIPT_IS_THE_INVENTORY_INCREASE_EVENT = YES
+OVERSEAS_RECEIPT_OWNER_COUNT = 1
+SECOND_RECEIPT_OWNER_CREATED = NO
+```
+
+`31_` adds the received delta to `wh_available_stock` and never touches `wh_reserved_stock` on an
+existing row; it writes `wh_reserved_stock: 0` only when creating a row that cannot yet hold a
+reservation. Received units land in the available bucket, which is where the amended model wants them.
+Receiving needs no change in R4.
+
+## §37. Schema gate
+
+```
+NEW_TABLE_REQUIRED = NO
+SCHEMA_EXTENSION_REQUIRED = NO
+DB_MIGRATION_REQUIRED = NO
+NEW_COLUMNS_REQUIRED = NONE
+TABLES_AFFECTED = NONE
+BACKFILL_REQUIRED = NO
+```
+
+Every column Option A needs is live: both operational buckets on the snapshot, all three before/after
+pairs plus the direction columns on the movements sheet. This amendment asks the operator to approve a
+meaning, not a column.
+
+## §38. S6-R4 implementation plan — ONE atomic change
+
+```
+R4_MUST_LAND_AS_ONE_CHANGE = YES
+R4_IMPLEMENTATION_OWNER_COUNT = 8
+R4_DEPLOYABLE_INTERMEDIATE_STATES = 0
+```
+
+| # | OWNER | FILE | WHAT LANDS |
+|---|---|---|---|
+| A | overseas availability owner | new `assets/js/core/` overseas guard + its composition point | STORED availability minus the existing draft/plan exposure pair; composed ABOVE KMFSG, never inside it |
+| B | reservation acquire | `05_overseas_inventory_handlers.gs` | available -= qty, reserved += qty, one ledger row |
+| C | reservation release | `05_overseas_inventory_handlers.gs` | the inverse; gives back at most what this owner holds; holding nothing is a no-op |
+| D | dispatch consume | `22_shipment_dispatch_handlers.gs` | reserved -= qty on the `shipment_out` row; available and physical untouched |
+| E | source enablement | `12_shipment_handlers.gs` | the sufficiency precheck and the acquire/release call sites route by source domain instead of reading `factory_stock` for a 3PL |
+| F | import protection (server) | `05_overseas_inventory_handlers.gs` | reserved never written; absent column and blank cell stop meaning zero; §34's frozen arithmetic |
+| F | import protection (client) | `assets/js/pages/overseas-stock.js` | stop materialising absent/blank quantities onto the payload; drop `reserved_stock` from the template |
+| G | movement truthfulness | `05_` / `22_` | §35's mapping, all balance pairs real |
+| H | failure atomicity | `05_` | the `05_` compensation pattern: ledger after balance, revert the balance if the ledger append throws |
+| — | documentation | `assets/specs/active/pages/OVERSEAS_STOCK_SPEC.md` | import contract + template columns restated |
+
+```
+SPLIT_FORBIDDEN_ACROSS_DEPLOYS = source enablement · reservation lifecycle · dispatch consume · import protection
+```
+
+The reason is Part IV §25, unchanged and now sharper: `planExposure` releases on
+`TRANSFERRED_TO_SHIPMENT`, and for overseas there is no term to take over unless the reservation writer
+exists. Unblocking the source alone opens a real double-allocation hole at the plan-to-shipment handoff.
+Landing the reservation lifecycle without the import protection is the mirror image of the same defect —
+the first routine stock refresh after the first reservation destroys it, and the exposure ledger goes on
+insisting the units are held.
+
+```
+KMFSG_INPUT_CONTRACT_CHANGED = NO
+SECOND_AVAILABILITY_CALCULATION_PATH_CREATED = NO
+SECOND_EXPOSURE_CALCULATION_PATH_CREATED = NO
+REQUEST_ORDER_BEHAVIOR_CHANGED = NO
+PO_BEHAVIOR_CHANGED = NO
+S5_RECOMMENDATION_BEHAVIOR_CHANGED = NO
+SHIPPING_TO_ORDERING_AUTO_ORCHESTRATION = NO
+```
+
+## §39. Position after R3A
+
+```
+S6_OVERSEAS_QUANTITY_MODEL_FREEZE = YES
+UNRESOLVED_IMPORT_DECISION_COUNT = 1
+S6_R4_RUNTIME_IMPLEMENTATION_AUTHORIZED = NO
+BEHAVIOR_CHANGED = NO   PRODUCTION_ROWS_WRITTEN = 0   DB_MIGRATION_REQUIRED = NO
+S5_READY_FOR_INTEGRATION = YES   S5_DEPLOYMENT = HOLD   S6_DEPLOYMENT = HOLD
+NEXT_TASK = S6-R3B — IMPORT_AVAILABLE_SEMANTIC decision gate (§34), then S6-R4B
+```
+
+The quantity model is frozen and the schema gate is clean. R4B is held on one open business decision —
+§34's gate — because R4 must land as one change and the importer is inside it.
