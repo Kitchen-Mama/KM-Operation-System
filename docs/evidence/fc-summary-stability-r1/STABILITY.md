@@ -211,3 +211,19 @@ OPEN_FC_DEBT
   FC-2            not reproduced; needs real DOM focus instrumentation
   FC-ID           save-boundary identity refusal — FC-ID-R2
 ```
+
+## Sweep
+
+```
+569 passed / 574   canonical 5   19 lines   DIRTY 0   WORKTREE_CLEAN_AT_END = YES
+574 rather than 573 because this round adds one suite. It contributed zero fail lines.
+CANONICAL_FAILURE_SET_CHANGED = NO — diff-clean against the R8 artifact
+CANONICAL_DIGEST = ebcf7bc1651e792f7dbab73544cfa2593f91664a9ed399a04f9a5ba9c9bc4f92   (reproduced)
+DEPENDENT: fc-summary-multiselect · fc-summary-display-column-visibility-r1 ·
+           fc-id-r1-special-event-marketplace-id · fc-id-r1b-registry-hydration-incident — all pass
+```
+
+Worth stating plainly: this is the **first round in the S5/S6/FC series to change a shipped runtime file**
+rather than only tests and documents. `assets/js/pages/fc-summary.js` gained 78 lines, and the canonical
+failure set came back byte-identical on the first sweep. That is the evidence that the FC-5 gate changed what
+the table says while changing nothing else the suites can observe.
