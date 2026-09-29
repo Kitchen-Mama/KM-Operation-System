@@ -150,8 +150,15 @@ section('E. §7/§8 — pricing isolation, which was already correct and must st
 // =========================================================================================================
 
 var RETRY = fnSrc(code(PAGE), '_evtOnPricingRetry_');
-ok(/_fcEnsureDeferredTable_\(_FC_DEFERRED_TABLES_\.pricing\)/.test(RETRY),
-  'E1 §8 Retry asks for pricing ALONE — PRICING_RETRY_REQUEST_COUNT = 1');
+/* FC-SUMMARY-STABILITY-R3 — the OWNER changed and the claim did not. Retry now goes through
+   _evtEnsurePricing_, which routes to the scoped projection in workspace mode and to the deferred whole
+   table everywhere else; both are single-flight and both ask for pricing and nothing else. What E1 forbids
+   is a retry that drags its siblings along, and that is asserted directly below by naming the tables that
+   must NOT appear — a claim that survives the next change of transport as well. */
+ok(/_evtEnsurePricing_\(\)/.test(RETRY),
+  'E1 §8 Retry asks for pricing ALONE, through the one pricing owner — PRICING_RETRY_REQUEST_COUNT = 1');
+ok(RETRY.indexOf('sku_details') < 0 && RETRY.indexOf('marketplace_skus') < 0 && RETRY.indexOf('campaigns') < 0,
+  'E1a and names no sibling table — a price retry re-reads prices, not the builder');
 ['sku_details', 'marketplace_skus', 'campaigns', 'fc_special_events'].forEach(function (t, i) {
   ok(RETRY.indexOf(t) < 0, 'E2.' + (i + 1) + ' and never re-reads ' + t + ' — no sibling is discarded');
 });
@@ -213,7 +220,8 @@ mut('G3 the lane pool is widened instead', function () {
 });
 
 mut('G4 pricing Retry reloads its siblings', function () {
-  var faked = RETRY.replace('_fcEnsureDeferredTable_(_FC_DEFERRED_TABLES_.pricing)',
+  // R3 — re-aimed at the new owner. Same planted fault: a retry that re-reads the builder's other tables.
+  var faked = RETRY.replace('_evtEnsurePricing_()',
     "window.KM.DB.refreshCacheTables(['pricing_list', 'sku_details', 'marketplace_skus'])");
   if (faked === RETRY) throw new Error('G4 anchor drifted');
   return /sku_details/.test(faked) && RETRY.indexOf('sku_details') < 0;

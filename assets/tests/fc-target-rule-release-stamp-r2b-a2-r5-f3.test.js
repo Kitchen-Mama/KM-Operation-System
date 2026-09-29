@@ -130,21 +130,26 @@ var RELEASE_OWNERS = {
   // S5-R7A — 47_ JOINS, which is the ledger working rather than the set growing. R28 changed only the
   // generated bundle and the manifest that identifies it; R29 changes a hand-written owner as well, and the
   // two must travel together in both directions.
-  '14_fc_write_handlers.gs':
-    'THE FC SPECIAL EVENT WRITE PATH. FC-ID-R2 adds canonical marketplace-identity validation before the '
-    + 'upsert: a BLANK marketplace_id is refused, and a supplied one must name a real marketplaces row whose '
-    + 'company/country/marketplace agrees with the payload. It VALIDATES and never DERIVES, because '
-    + '(company, country, marketplace) uniqueness is not enforced in the schema. The dangerous half-sync is '
-    + 'an OLD 14_ beside the new frontend: the client stops sending blanks, so nothing looks wrong, while the '
-    + 'server still accepts an erasing blank from any other caller — and the erasure is real, because the '
-    + 'UPDATE branch writes any column the body carries, so a present-but-blank id overwrites a stored '
-    + 'canonical one. ABSENT is deliberately still allowed: that is the Special-Event inline quantity edit, '
-    + 'which sends no identity columns at all.',
+  // FC-SUMMARY-STABILITY-R3 — 58_ JOINS AND 14_ LEAVES: the eleventh swap, and the exact mirror of the
+  // ninth. R30 changed the fc_special_events WRITE path; R31 changes the READ workspace and touches no
+  // write handler at all. Reading is not writing, in both directions.
+  '58_api_v1_fc_summary_workspace.gs':
+    'THE FC SUMMARY READ WORKSPACE. R31 gives it the SCOPED PRICING PROJECTION: a pricing slice that selects '
+    + 'only the pricing_list rows the client resolver could match for one company/country/marketplace, '
+    + 'projected to the twelve columns that resolver reads. It replaces a whole-table browser read that was '
+    + 'timing out on Build / Refresh Group Cards. The half-sync hazard is ASYMMETRIC and decides the copy '
+    + 'order. NEW frontend beside an OLD 58_ is the dangerous direction: an unrecognised slice resolves to '
+    + 'FULL, the answer carries no pricingList, and the page commits an empty projection — every card then '
+    + 'reads MISSING price for a site whose prices exist, with no error anywhere. The reverse is inert: '
+    + 'nothing asks for the slice and the four primary-render tables are byte-identical. So 58_ is copied '
+    + 'FIRST and the frontend deploy completes the repair. No resolution moved with it — the BASE -> AUTO -> '
+    + 'nullable OVERRIDE -> RESOLVED chain stays in the one client normalizer, and this slice only decides '
+    + 'which rows travel.',
   '63_api_v1_system_health.gs':
-    'THE MANIFEST. The generated bundle\'s content hash moved again — KMRDV2P now owns the write-eligibility '
-    + 'guard and consults it on the live generate path — and 47_\'s expected stamp moves with 47_ itself. Both '
-    + 'are changes to THIS file. The ACTION CONTRACT does not move: no action was added or removed, and a '
-    + 'guard that refuses a SKU through an existing response shape is not a new vocabulary.',
+    'THE MANIFEST. 58_\'s expected stamp moves with 58_ itself, and its `owns` text grows to name the scoped '
+    + 'pricing projection — both are changes to THIS file. The ACTION CONTRACT does not move: no action was '
+    + 'added or removed. A new SLICE on an existing action is not a new vocabulary, which is the same ruling '
+    + 'R3-R1 made when the slice mechanism itself landed on this action without touching 01_router.',
 };
 
 // Owners that must be COPIED but whose stamp belongs to an EARLIER unshipped release. Each entry is the
@@ -158,6 +163,12 @@ var RELEASE_CARRIED = {
   // touch the recommendation generator, so 47_ keeps R29, the release it actually changed in. Marching
   // it to R30 would erase the one fact its stamp carries, which is what C3 exists to catch.
   '47_api_v1_recommendation_generation.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R29',
+  // 14_ JOINS AT R31 — the eleventh swap, and it is the ninth one running backwards. It became an owner at
+  // R30 because FC-ID-R2 changed the fc_special_events write path; R31 changes the READ workspace and no
+  // write handler, so 14_ keeps R30. It must still be COPIED — R30 is unshipped, so 14_ differs from the
+  // deployed tree — which is precisely the distinction this list exists to draw: copied, but not stamped
+  // with this release.
+  '14_fc_write_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R30',
   '01_router.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25',
   '73_api_v1_pricing_write.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25'
 };
@@ -213,7 +224,10 @@ var RELEASE_UNMOVED = {
   // is 14_'s own surface, so its stamp moves to the round it actually changed in. It joins the CURRENT
   // unshipped release rather than minting a new one: R26 onward have accumulated unshipped, and cutting a
   // fresh id would march 01_, 47_, 63_, 73_ and 90_ to a release none of them changed in.
-  '58_api_v1_fc_summary_workspace.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R14',
+  // 58_ LEFT THIS LIST AT R31 AND JOINED RELEASE_OWNERS — the eleventh swap. It held R14 from the round
+  // the slice mechanism landed, through every write-path release since, on the rule that reading is not
+  // writing. R31 is the round that finally changes the READ owner: the scoped pricing projection is a new
+  // slice on its own action, so its stamp moves to the round it actually changed in.
   '20_campaign_write_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R20',
   '13_procurement_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12',
   '00_config.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11',
@@ -364,11 +378,12 @@ ok(/function pricingNewRowPlan_\(/.test(REGWRITE) && /NO_CANONICAL_FX_RATE/.test
   'B2a and the change its stamp claims is really in the file — the creation planner and its fail-closed reason');
 ok(!/fxRate = 1;/.test(REGWRITE),
   'B2b with the unconditional rate-1 seed it replaced gone, so the stamp is not decoration');
-// FC-ID-R2 — 14_ is an OWNER again. It kept R18 for as long as no event or rule handler was touched; this
-// round touches the fc_special_events write path itself, so its stamp moves with the change rather than
-// against it. The assertion follows the file between the two lists instead of pinning it to one.
-eq(declares(WRITE, 'FCW_BUILD_VERSION_'), RELEASE,
-  'B2-0 14_ carries THIS release — FC-ID-R2 changed the fc_special_events write path it owns');
+// FC-SUMMARY-STABILITY-R3 — 14_ is CARRIED again. It became an owner at R30 for the fc_special_events
+// write path; R31 touches no write handler, so it keeps R30 — and must still be copied, because R30 has
+// not shipped. The assertion follows the file between the lists, which is the whole reason it was written
+// against the partition rather than against a literal.
+eq(declares(WRITE, 'FCW_BUILD_VERSION_'), RELEASE_CARRIED['14_fc_write_handlers.gs'],
+  'B2-0 14_ keeps R30, the round it last changed — a read release may not march the write handler along');
 ok(/function fcSeValidateMarketplaceIdentity_\(/.test(WRITE) && /BLANK_MARKETPLACE_ID_REFUSED/.test(WRITE),
   'B2-0a and the change its stamp claims is really in the file — the validator and its blank refusal');
 ok(!/fcSeValidateMarketplaceIdentity_[\s\S]{0,400}?byId\[[^\]]*\]\[0\]/.test(WRITE),
@@ -398,8 +413,23 @@ ok(/FC_SE_UNIQUENESS_FIELDS_/.test(WRITE) && /DUPLICATE_SPECIAL_EVENT_IDENTITY/.
   'B2-3 and R18\'s change is still in 14_, so the stamp it KEEPS is not decoration either');
 // The mirror image, and the reason B2 could be rewritten rather than deleted: the READ owner is
 // untouched by a write-path release, so it must still declare the release it DID change in.
-eq(declares(WSREAD, 'FCSWS_BUILD_VERSION_'), RELEASE_UNMOVED['58_api_v1_fc_summary_workspace.gs'],
-  'B2a 58_ keeps R14 — writing an event is not reading one, and a release may not march it along');
+eq(declares(WSREAD, 'FCSWS_BUILD_VERSION_'), RELEASE,
+  'B2a 58_ carries THIS release — R31 changed the FC Summary READ workspace it owns');
+// And the change its stamp claims is really in the file, on the same test B2-0a/B2-0b apply to 14_ and 04_.
+ok(/function fcsPricingProject_\(/.test(WSREAD) && /pricing: \{ reads: \['pricing_list', 'marketplace_skus'\]/.test(WSREAD),
+  'B2a-1 and the change its stamp claims is really in the file — the projection and its scoped slice spec');
+// PROJECTS, NEVER RESOLVES. The three resolution-input columns appear in 58_ exactly where the projection
+// NAMES them — once each, inside FCS_PRICING_FIELDS_ — and nowhere else. A second mention would be a second
+// opinion: the moment this file compares an override against an auto value it has become a pricing
+// authority, and there is exactly one of those in the tree.
+// COMMENTS ARE NOT CODE, and this count is the reason to say so out loud: the projection's own comment
+// explains why resolved_regular_price must not be invented as a key, so the raw file names that column
+// twice and the file resolves nothing either time. Counting prose as implementation is the same error
+// class this repo has caught in the other direction — a declaration read as an execution.
+var _WSCODE = WSREAD.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+var _priceMentions = (_WSCODE.match(/auto_regular_price|resolved_regular_price|regular_price_source/g) || []).length;
+ok(_priceMentions === 3 && !/pricingResolveBand_|resolvedRegularPrice/.test(_WSCODE),
+  'B2a-2 and it PROJECTS rather than RESOLVES — each resolution input named once, in the field list, and no resolver', _priceMentions);
 ok(/FC_SE_FINGERPRINT_FIELDS_/.test(WRITE) && /STALE_SPECIAL_EVENT_VERSION/.test(WRITE),
   'B2b and the change 14_\'s stamp claims is really in the file — the event token and its refusal');
 ok(/CAMPAIGN_KEY_FIELDS_/.test(CAMPWRITE) && /start_date/.test(CAMPWRITE),

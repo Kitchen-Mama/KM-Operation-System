@@ -367,7 +367,11 @@ section('E — THE CONSUMERS, AND THE GUARD AT EACH ONE');
   const row = extract(src, '_evtApplyRowPricing');
   // E2 — SCOPE IS ANSWERED BEFORE PRICING IS AWAITED. marketplace_skus is critical and loaded, so an
   //      out-of-scope SKU is still told so immediately; only the PRICE waits.
-  ok(row.indexOf("priceState = 'out_of_scope'") < row.indexOf('_fcDeferredPending_'),
+  // FC-SUMMARY-STABILITY-R3 — the pendency question is asked of _evtPricingPending_ now (scope-aware:
+  // holding another site's projection is not holding this one). The ORDER is the claim and it is
+  // unchanged: scope comes from marketplace_skus, which is critical and loaded, so an out-of-scope SKU
+  // is still told so immediately and only the PRICE waits.
+  ok(row.indexOf("priceState = 'out_of_scope'") < row.indexOf('_evtPricingPending_'),
     'E2  an out-of-scope SKU is refused before the price is deferred');
   ok(row.indexOf('_fcDeferredPending_') < row.indexOf("priceState = 'missing_price'"),
     'E2a and PENDING is decided BEFORE missing_price, which is what keeps the false empty out');
@@ -384,7 +388,9 @@ section('E — THE CONSUMERS, AND THE GUARD AT EACH ONE');
     'E4  the save gate checks PENDING before MISSING_PRICING_LIST_ROW');
   ok(/price list has not finished loading/.test(save),
     'E4a and says the list has not loaded — never that the database has no price for this SKU');
-  ok(/if \(_fcDeferredPending_\(_FC_DEFERRED_TABLES_\.pricing\)\) \{ alert\('The price list is not loaded/.test(save),
+  // R3 — same gate, same message, asked of the scope-aware owner. It now also catches a case it could
+  // not before: cards built for one site and saved after the operator switched to another.
+  ok(/if \(_evtPricingPending_\(\)\) \{ alert\('The price list is not loaded/.test(save),
     'E4b the group-card branch has its own gate, for a write that invalidated pricing after the build');
 
   // E5 — R12's REGRESSION, FOUND BY THIS ROUND'S FIXTURE FIX. `_evtPopulateBaseCampaigns` asked the broad

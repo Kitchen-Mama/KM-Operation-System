@@ -58,6 +58,16 @@ var RO = require('./_release-order.js');
 var RELEASE_NOW = (require('fs').readFileSync(require('path').join(__dirname, '..', 'specs', 'active',
   'apps-script', '63_api_v1_system_health.gs'), 'utf8')
   .match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1] || '';
+/* FC-SUMMARY-STABILITY-R3 — AND THE SAME IS TRUE OF 58_'s OWN STAMP.
+
+   E1/E6/A10 compared it against the literal R14. That was correct while R3-R1 was the last round to
+   touch this file, and it became wrong the moment another round did — which is the module stamp working
+   exactly as designed: it records when the FILE last changed, and a test that pins it to one value is a
+   test that forbids the file from ever changing again. The two facts worth holding are that 58_'s
+   declared stamp is R14 OR LATER (this owner has not regressed behind the round that introduced slices)
+   and that it EQUALS what 63_'s manifest expects for it — which is the partial-sync question the manifest
+   exists to answer, and the only one a literal was ever standing in for. */
+var STAMP_58 = (WS.match(/var FCSWS_BUILD_VERSION_ = '([^']+)'/) || [])[1] || '';
 
 // ------------------------------------------------------------------ extraction ------------------
 function scanTo(s, from, semicolon) {
@@ -180,12 +190,21 @@ function makeRuntime(opts) {
   vm.runInContext('function prodSafetyBundle_() { return KMSAFE; }', sb);
   ['prodExpectedDbId_', 'prodSchemaError_', 'prodAssertDbTarget_', 'prodRequireSheet_', 'prodRequireColumns_']
     .forEach(function (f) { vm.runInContext(fnSrc(SAFE, f), sb); });
-  ['FCSWS_BUILD_VERSION_', 'FCS_WORKSPACE_TABLES_', 'FCS_WS_ROW_MAX_', 'FCS_SLICE_SPECS_', 'FCS_EMIT_SOURCE_']
+  /* FC-SUMMARY-STABILITY-R3 — the scoped pricing projection joins the sandbox. A harness that lags the
+     source does not test an older contract, it throws ReferenceError inside the handler and reports it as
+     'the handler did not answer' — which is what happened here first, and it is indistinguishable from a
+     real regression until you read the message. FCS_ALL_TABLES_ is derived from the two lists above it,
+     so the ORDER of this array is load-bearing. */
+  ['FCSWS_BUILD_VERSION_', 'FCS_WORKSPACE_TABLES_', 'FCS_SLICE_ONLY_TABLES_', 'FCS_ALL_TABLES_',
+   'FCS_FULL_TABLE_NAMES_', 'FCS_WS_ROW_MAX_', 'FCS_SLICE_SPECS_', 'FCS_PRICING_FIELDS_',
+   'FCS_EMIT_SOURCE_', 'FCS_PRICING_INACTIVE_']
     .forEach(function (v) { vm.runInContext(varSrc(WS, v), sb); });
   vm.runInContext('var FCS_WS_SEQ_ = 0;', sb);
   ['fcsWsStr_', 'fcsBuildEnvelope_', 'fcsCap_', 'fcsDistinctYears_', 'fcsDistinctAsc_', 'fcsBuildFacets_',
-   'fcsWorkspaceBuild_', 'fcsResolveSlice_', 'fcsSliceBuild_', 'fcsWsRowsToObjects_', 'fcsRowsFromValues_',
-   'fcsValidateHeader_', 'fcsReadTableOnce_', 'fcsWorkspaceDefaultIo_', 'handleFcSummaryWorkspaceGet_']
+   'fcsPriceUp_', 'fcsPricingMskuInScope_', 'fcsPricingPick_', 'fcsPricingProject_',
+   'fcsWorkspaceBuild_', 'fcsResolveSlice_', 'fcsResolveScope_', 'fcsSliceBuild_', 'fcsWsRowsToObjects_',
+   'fcsRowsFromValues_', 'fcsValidateHeader_', 'fcsReadTableOnce_', 'fcsWorkspaceDefaultIo_',
+   'handleFcSummaryWorkspaceGet_']
     .forEach(function (f) { vm.runInContext(fnSrc(WS, f), sb); });
 
   return {
@@ -223,7 +242,7 @@ ok(full.data.facets === undefined, 'A6  FULL gains NO facets key — a new key i
 ok(full.data.slice === undefined, 'A7  and no slice key');
 eq(full.meta.tablesRead, 4, 'A8  FULL still reads all four tables');
 eq(full.meta.slice, 'full', 'A9  meta names the slice, which is additive and safe');
-eq(full.meta.workspaceBuild, R14, 'A10 and carries the owner\'s build stamp');
+eq(full.meta.workspaceBuild, STAMP_58, 'A10 and carries the owner\'s build stamp');
 
 // An unknown or blank slice is FULL, not an error. A client one version ahead must never be able to make
 // the server refuse; it must simply receive everything, which is what it would have received anyway.
@@ -368,7 +387,8 @@ eq(regEnv.data.capped, { fcRegularForecast: false }, 'D14 and its own capped fla
 // ==================================================================================================
 section('E  Release identity and the manifest');
 // ==================================================================================================
-ok(new RegExp("var FCSWS_BUILD_VERSION_ = '" + R14 + "'").test(WS), 'E1  58_ declares R14');
+ok(!!STAMP_58 && RO.stampAtOrAfter(STAMP_58, R14),
+   'E1  58_ declares a stamp at or after R14 — the round that gave it slices', STAMP_58);
 ok(RO.stampAtOrAfter(RELEASE_NOW, R14), 'E3  the release is R14 or later', RELEASE_NOW);
 ok(new RegExp("var SYS_BUILD_VERSION_ = '" + RELEASE_NOW.replace(/[-]/g, '[-]') + "'").test(HEALTH),
    'E2  and 63_ declares whatever release it is carrying — the two never disagree');
@@ -377,7 +397,7 @@ var row58 = /\{ file: '58_api_v1_fc_summary_workspace\.gs', symbol: '([A-Z_]+)',
 ok(!!row58, 'E4  58_ now has a manifest row');
 if (row58) {
   eq(row58[1], 'FCSWS_BUILD_VERSION_', 'E5  keyed on the symbol 58_ actually declares');
-  eq(row58[2], R14, 'E6  and expected at R14');
+  eq(row58[2], STAMP_58, 'E6  and expected at exactly the stamp 58_ declares — the partial-sync check');
 }
 ok(!/optional: true/.test(row58 ? HEALTH.slice(row58.index, HEALTH.indexOf('}', row58.index)) : 'optional: true'),
    'E7  it is REQUIRED — an absent FC read owner is not an acceptable deployment');

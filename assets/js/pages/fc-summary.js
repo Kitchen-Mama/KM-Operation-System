@@ -3868,8 +3868,11 @@ function resolveRegionalPricingContext(ctx) {
   var out = { marketplaceSkuId: String(ctx.marketplaceSkuId==null?'':ctx.marketplaceSkuId).trim(),
     sku: String(ctx.sku==null?'':ctx.sku).trim(), regularPrice: null, currency: null,
     source: 'pricing_list', found: false };
-  var DB = (typeof window !== 'undefined') && window.KM && window.KM.DB;
-  var pl = (DB && DB.getPricingList) ? DB.getPricingList() : [];
+  /* FC-SUMMARY-STABILITY-R3 — the ROWS come from the scoped owner; the RESOLUTION below is unchanged.
+     `_fcPricingRows_` returns the bounded projection for the current site, or the broad cache in the
+     modes that have one. Both are normalised by the same normalizer, so nothing downstream can tell
+     which transport delivered a row — and the price semantics have exactly one implementation. */
+  var pl = (typeof _fcPricingRows_ === 'function') ? _fcPricingRows_() : [];
   var mkey = (typeof _fcResolveMarketplaceKey === 'function') ? _fcResolveMarketplaceKey(ctx.marketplace) : ctx.marketplace;
   var row = null;
   // 1) canonical: exact marketplace_sku_id match.
@@ -4287,13 +4290,16 @@ function _evtOnPricingFailed_(err) {
 }
 function _evtOnPricingRetry_() {
   _evtShowSubsectionLoading_(EVT_PRICING_HOST_, 'Loading prices\u2026');
-  _fcEnsureDeferredTable_(_FC_DEFERRED_TABLES_.pricing).then(_evtOnPricingArrived_, _evtOnPricingFailed_);
+  _evtEnsurePricing_().then(_evtOnPricingArrived_, _evtOnPricingFailed_);
 }
 /* The deferred load the price cells themselves ask for. It is fire-and-forget by design: the row has
    already been painted as PENDING, so the operator is not waiting on this promise for anything to
    appear — they are waiting for a value to replace a stated placeholder. */
 function _evtRequestPricing_() {
-  if (_fcDeferredFlight_[_FC_DEFERRED_TABLES_.pricing]) return;   // one request, however many rows ask
+  // One request, however many rows ask — now asked of whichever owner is active. The scoped owner's
+  // single-flight is per SCOPE, so this is the same guarantee keyed by the same thing the request is.
+  if (_evtPricingProjectionActive_()) { if (_fcPricingFlight_.p) return; }
+  else if (_fcDeferredFlight_[_FC_DEFERRED_TABLES_.pricing]) return;
   _evtOnPricingRetry_();
 }
 
@@ -4324,7 +4330,7 @@ function _evtApplyRowPricing(row) {
      and its own save refusal, and it resolves itself the moment the table lands.
      SCOPE IS ANSWERED ABOVE THIS, from marketplace_skus, which is CRITICAL and loaded. An out-of-scope
      SKU is still told so immediately; only the PRICE waits. */
-  if (_fcDeferredPending_(_FC_DEFERRED_TABLES_.pricing)) {
+  if (_evtPricingPending_()) {
     if (regEl) { regEl.value = ''; regEl.placeholder = 'Loading price\u2026'; }
     row.dataset.priceState = 'pending';
     row.dataset.currency = '';
@@ -4617,9 +4623,9 @@ function _evtBuildGroups() {
      price for every scoped SKU in one pass and the cards aggregate currencies across them, so a build
      run half-priced would produce MIXED CURRENCY badges and blank columns that describe the load state
      rather than the data. A build therefore waits for the table and says so, in its own surface. */
-  if (_fcDeferredPending_(_FC_DEFERRED_TABLES_.pricing)) {
+  if (_evtPricingPending_()) {
     _evtShowSubsectionLoading_(EVT_PRICING_HOST_, 'Loading prices before building the cards\u2026');
-    _fcEnsureDeferredTable_(_FC_DEFERRED_TABLES_.pricing).then(function () {
+    _evtEnsurePricing_().then(function () {
       _evtClearSubsection_(EVT_PRICING_HOST_);
       _evtBuildGroups();          // now un-deferred; this cannot re-enter a third time
     }, _evtOnPricingFailed_);
@@ -4722,13 +4728,64 @@ function _evtRenderGroupCards() {
           : '<span class="evt-line-ro" title="Currently stored for this event">'
             + (r.baseEventFc == null ? '—' : r.baseEventFc.toLocaleString()) + '</span>') +
         newCell +
-        '<span style="color:' + diffColor + '">' + diffTxt + '</span>' +
+        '<span class="evt-line-diff" style="color:' + diffColor + '">' + diffTxt + '</span>' +
         '<span></span>' +
       '</div>';
     }).join('');
     return '<div class="fc-evt-card"><div class="fc-evt-card-lines">' + head + colHead + body + '</div></div>';
   }).join('');
 }
+/* ==========================================================================================
+   FC-SUMMARY-STABILITY-R3 §10 — FC-2, AND WHY IT IS A RENDER BUG RATHER THAN A FOCUS BUG.
+
+   THE REPORT. 'New FC input occasionally needs two clicks before typing.' The word doing the work is
+   OCCASIONALLY, and it turns out to mean 'whenever you had just changed another value'.
+
+   THE MECHANISM, from the two facts that produce it:
+     1. every editable cell in a group card is wired `onchange`, and `change` fires on BLUR;
+     2. the handler called _evtRenderGroupCards(), which assigns `wrap.innerHTML` — destroying and
+        recreating EVERY input in the container.
+   Click from an edited field to another one and the order is: mousedown, blur on the first field,
+   `change`, full repaint, and only then does the click try to land — on an element that no longer
+   exists. Nothing appears to happen. The second click works because by then nothing is pending.
+
+   So the repaint is not refreshing the card, it is deleting the operator's target mid-gesture. The fix
+   is to stop repainting for an edit that changes two derived numbers: the row's Deal Price and its Diff.
+   Nothing else on the line can change — the price, the currency, the baseline and the stored event FC
+   are all inputs to the row rather than outputs of the edit — so re-rendering them was always work with
+   no result, and this round is the one that has to notice because it owns this render path.
+
+   IT FALLS BACK RATHER THAN FAILING. If the DOM is not the shape this expects — a card removed, a
+   different mode, a render that has not happened yet — the patcher reports false and the caller does the
+   full render it always did. A partial update that silently does nothing would be worse than a repaint. */
+function _evtPatchLine_(gi, ri, typingField) {
+  if (typeof document === 'undefined') return false;
+  var wrap = document.getElementById('event-group-cards'); if (!wrap) return false;
+  var card = wrap.querySelectorAll('.fc-evt-card')[gi]; if (!card) return false;
+  var lines = card.querySelectorAll('.fc-evt-line'); if (!lines || lines.length < 2) return false;
+  var line = lines[ri + 1];                      // +1: the first .fc-evt-line is the column header
+  if (!line || line.className.indexOf('fc-evt-line--head') !== -1) return false;
+  var g = _evtGroups[gi]; var r = g && g.rows && g.rows[ri]; if (!r) return false;
+  /* The field the operator is IN is never written back. Echoing their own keystrokes into the element
+     they are typing in is how a caret jumps to the end of a number half-entered. */
+  var disc = line.querySelector('.evt-line-disc');
+  if (disc && typingField !== 'discountPct') disc.value = isNaN(r.discountPct) ? '' : r.discountPct;
+  var deal = line.querySelector('.evt-line-deal');
+  if (deal && typingField !== 'dealPrice') deal.value = isNaN(r.dealPrice) ? '' : r.dealPrice;
+  var fc = line.querySelector('.evt-line-fc');
+  if (fc && typingField !== 'newFc') fc.value = isNaN(r.newFc) ? '' : r.newFc;
+  var diffEl = line.querySelector('.evt-line-diff');
+  if (diffEl) {
+    // The SAME arithmetic the renderer uses, and deliberately not a second copy of the forecast rules:
+    // Diff is newFc minus the baseline the card is already displaying. No formula moved.
+    var base = (r.baseFc == null) ? null : r.baseFc;
+    var diff = (!isNaN(r.newFc) && base != null) ? (r.newFc - base) : null;
+    diffEl.textContent = (diff == null) ? '\u2014' : ((diff > 0 ? '+' : '') + diff.toLocaleString());
+    diffEl.style.color = (diff == null) ? '#94a3b8' : (diff > 0 ? '#0f766e' : (diff < 0 ? '#dc2626' : '#64748b'));
+  }
+  return true;
+}
+
 // A card's Discount % (group-level) → set every row's discount + recompute its deal price.
 function _evtCardDiscount(i, val) {
   var g = _evtGroups[i]; if (!g) return;
@@ -4739,7 +4796,11 @@ function _evtCardDiscount(i, val) {
     // Deal Price uses the SAME pricing_list currency as its Regular Price (per-row) — no FX, no site guess.
     if (!isNaN(pct) && r.regularPrice != null) r.dealPrice = _evtRoundMoney(r.regularPrice * (1 - pct / 100), r.currency);
   });
-  _evtRenderGroupCards();
+  /* §10 — the group discount is the SAME defect one level up: it is an onchange on a card-level input and
+     it repainted the whole container, so clicking from it into a row's New Event FC lost the click. Every
+     row of THIS card is patched; a row that cannot be patched falls the whole card back to a render. */
+  var _patched = g.rows.every(function (r, ri) { return _evtPatchLine_(i, ri, null); });
+  if (!_patched) _evtRenderGroupCards();
 }
 // Edit one row field (discountPct → recompute deal; dealPrice / newFc direct).
 function _evtLineField(gi, ri, field, val) {
@@ -4750,7 +4811,8 @@ function _evtLineField(gi, ri, field, val) {
   if (field === 'discountPct' && !isNaN(num) && r.regularPrice != null) {
     r.dealPrice = _evtRoundMoney(r.regularPrice * (1 - num / 100), r.currency);
   }
-  _evtRenderGroupCards();
+  // §10 — patch the two derived cells; repaint only if the DOM is not the shape we expect.
+  if (!_evtPatchLine_(gi, ri, field)) _evtRenderGroupCards();
 }
 function _evtRemoveGroup(i) { _evtGroups.splice(i, 1); _evtRenderGroupCards(); _evtSetPreviewEnabled(_evtGroups.length > 0); }
 function _evtRemoveGroupSku(i, sku) {
@@ -5262,7 +5324,7 @@ async function saveEventUpdate() {
     /* A build cannot run while pricing is deferred, so cards always carry real prices — but a Special
        Event save between the build and this Save invalidates pricing_list, and cards built before it
        then describe prices this page no longer holds. Refuse and say which, rather than write them. */
-    if (_fcDeferredPending_(_FC_DEFERRED_TABLES_.pricing)) { alert('The price list is not loaded, so the group cards cannot be saved from. Nothing was written. Click Build / Refresh Group Cards to reload prices, then Save.'); return; }
+    if (_evtPricingPending_()) { alert('The price list is not loaded, so the group cards cannot be saved from. Nothing was written. Click Build / Refresh Group Cards to reload prices, then Save.'); return; }
     var skipped = 0;
     for (var gi = 0; gi < _evtGroups.length; gi++) {
       var g = _evtGroups[gi];
@@ -7157,6 +7219,131 @@ function _fcEnsureDeferredTable_(t) {
     return wait;
   }
   return _fcDeferredFetch_(t);
+}
+
+/* ==========================================================================================
+   FC-SUMMARY-STABILITY-R3 §3 — THE BOUNDED PRICING PROJECTION.
+
+   WHAT WAS WRONG. `Build / Refresh Group Cards` needed prices, prices lived in `pricing_list`, and the
+   only way to read a table was `getTable` — which has no row filter, because the table NAME is the
+   scope. So drawing the cards for ONE company/country/marketplace downloaded every price the business
+   has, and on a large list that read exceeded the client budget and returned REQUEST_TIMEOUT. R2 proved
+   the isolation and the retry were already correct; what it could not fix was the size of the read.
+
+   WHAT THIS IS. One request, to the slice owner that already exists (58_), for the rows the resolver
+   could actually select in this scope, projected to the columns it actually reads. Not a cache: there is
+   no TTL, no eviction policy and no second freshness authority — `_fcPricing_` holds the answer for ONE
+   scope key and any other key is a miss, which is the same rule `_fcPrereqLoadedTables_` applies to a
+   table. A write invalidates it through the same path everything else is invalidated by.
+
+   WHAT IT IS NOT. It is NOT a second pricing authority. The rows are normalised by
+   `normalizePricingListRecord` — the one that serves the broad cache — so BASE -> AUTO -> nullable
+   OVERRIDE -> RESOLVED is computed in exactly one place, from exactly the same columns. This layer
+   decides WHICH ROWS TRAVEL. It never decides what a price is.
+
+   AND IT IS NOT N+1. The scope is the SITE — company + country + marketplace — not the Category/Series
+   selection and never the SKU. Category/Series narrows which scoped SKUs get CARDS; it does not narrow
+   which prices the builder needs, because the Single-SKU path resolves a price for any scoped SKU from
+   the same store. One request per site, however many SKUs, however many builds.
+   ========================================================================================== */
+var FC_PRICING_SLICE_ = 'pricing';
+/* The committed projection: rows for ONE scope key, or nothing. `key` is the identity, not a timestamp. */
+var _fcPricing_ = { key: '', rows: null, err: null, projection: null };
+var _fcPricingFlight_ = { key: '', p: null };
+/* Instrumentation, read by tests and by nothing else. Counting is how §12 is answered with evidence
+   rather than with an argument about what the code probably does. */
+var _fcPricingStats_ = { requests: 0, stale: 0, joins: 0 };
+
+function _fcPricingUp_(v) { return String(v === undefined || v === null ? '' : v).trim().toUpperCase(); }
+/* The scope the builder is currently showing. `_evtSelectedSite` is the page's one answer to 'which
+   site', and the marketplace goes through the same key resolver every other consumer uses — a projection
+   asked for 'Amazon' and a lookup done against 'amazon' would silently match nothing. */
+function _evtPricingScope_() {
+  var site = (typeof _evtSelectedSite === 'function') ? _evtSelectedSite() : {};
+  var mk = (typeof _fcResolveMarketplaceKey === 'function') ? _fcResolveMarketplaceKey(site.marketplace) : site.marketplace;
+  return { company: String(site.company == null ? '' : site.company).trim(),
+           country: String(site.country == null ? '' : site.country).trim(),
+           marketplace: String(mk == null ? '' : mk).trim() };
+}
+function _evtPricingScopeKey_(sc) {
+  sc = sc || _evtPricingScope_();
+  return _fcPricingUp_(sc.company) + '|' + _fcPricingUp_(sc.country) + '|' + _fcPricingUp_(sc.marketplace);
+}
+function _evtPricingScopeEmpty_(k) { return (k || _evtPricingScopeKey_()) === '||'; }
+
+/* The projection is available exactly where the slice transport is. Legacy mode and Demo keep the
+   deferred whole-table path byte for byte, because in Legacy the broad cache already holds the table and
+   asking a workspace that is switched off would be asking nobody. */
+function _evtPricingProjectionActive_() {
+  return _fcWorkspaceMode_() && !!(window.KM && window.KM.api && typeof window.KM.api.getWorkspace === 'function');
+}
+
+/* Is the price data this builder needs missing? Scope-aware: holding the projection for a DIFFERENT site
+   is not holding it. A scope with no site selected pends on nothing — there is no question to answer yet,
+   and reporting PENDING there would put a permanent 'Loading price…' on a form the operator has not
+   finished filling in. */
+function _evtPricingPending_() {
+  if (!_evtPricingProjectionActive_()) return _fcDeferredPending_(_FC_DEFERRED_TABLES_.pricing);
+  var key = _evtPricingScopeKey_();
+  if (_evtPricingScopeEmpty_(key)) return false;
+  return !(_fcPricing_.rows && _fcPricing_.key === key);
+}
+
+/* The one entry point, and the single-flight boundary. Three rapid Builds inside one scope share ONE
+   request; a Build after the scope changed is a different question and gets its own. */
+function _evtEnsurePricing_() {
+  if (!_evtPricingProjectionActive_()) return _fcEnsureDeferredTable_(_FC_DEFERRED_TABLES_.pricing);
+  var sc = _evtPricingScope_(), key = _evtPricingScopeKey_(sc);
+  /* Recorded on the SAME ledger the deferred tables use, so a post-write warm still knows this session
+     reads prices. The transport changed; what the session demonstrably needs did not. */
+  _fcDeferredEverUsed_[_FC_DEFERRED_TABLES_.pricing] = true;
+  if (_evtPricingScopeEmpty_(key)) return Promise.resolve();
+  if (_fcPricing_.rows && _fcPricing_.key === key) return Promise.resolve();
+  if (_fcPricingFlight_.p && _fcPricingFlight_.key === key) { _fcPricingStats_.joins++; return _fcPricingFlight_.p; }
+  return _fcPricingFetch_(sc, key);
+}
+
+function _fcPricingFetch_(sc, key) {
+  _fcPricingStats_.requests++;
+  var p = Promise.resolve(window.KM.api.getWorkspace('fcSummary', { include: { slice: FC_PRICING_SLICE_, scope: sc } }))
+    .then(function (env) {
+      if (_fcPricingFlight_.p === p) { _fcPricingFlight_.p = null; _fcPricingFlight_.key = ''; }
+      if (!env || !env.success) {
+        throw (env && env.errors && env.errors[0]) ||
+          { code: 'FC_PRICING_PROJECTION_FAILED', message: 'The scoped price list could not be read.' };
+      }
+      /* §7 — THE STALE ANSWER IS DROPPED, NOT PAINTED. The scope is compared at the COMMIT, not at
+         dispatch, because the operator can change Country or Marketplace at any point while the request
+         is in the air. An answer for the site they have left is not late data, it is the wrong data, and
+         committing it would put another site's prices on this site's cards. No timer decides this — the
+         scope key does, which is the same identity the request was made under. */
+      if (_evtPricingScopeKey_() !== key) { _fcPricingStats_.stale++; return null; }
+      var adapt = (window.KM.DB && typeof window.KM.DB.adaptFcSummaryWorkspaceSlice === 'function')
+        ? window.KM.DB.adaptFcSummaryWorkspaceSlice(env.data || {}) : { pricingList: [] };
+      _fcPricing_ = { key: key, rows: adapt.pricingList || [], err: null, projection: adapt.projection || null };
+      return null;
+    }, function (err) {
+      if (_fcPricingFlight_.p === p) { _fcPricingFlight_.p = null; _fcPricingFlight_.key = ''; }
+      /* The failure is recorded only for the scope it belongs to, and NOTHING already committed is
+         discarded: §8 requires a pricing failure to leave the event fields, the scope, the typed
+         quantities and the last-good reference data exactly where they were. */
+      if (_evtPricingScopeKey_() === key) _fcPricing_.err = err || null;
+      throw err;
+    });
+  _fcPricingFlight_ = { key: key, p: p };
+  return p;
+}
+
+/* The rows the resolver reads. The projection when it is committed FOR THIS SCOPE, and otherwise the
+   broad cache — which is the Legacy/Demo path and, in workspace mode, an empty list that the PENDING
+   state above has already explained. Never another scope's rows: that is the whole point of the key. */
+function _fcPricingRows_() {
+  if (_evtPricingProjectionActive_()) {
+    if (_fcPricing_.rows && _fcPricing_.key === _evtPricingScopeKey_()) return _fcPricing_.rows;
+    if (!_evtPricingScopeEmpty_()) return [];
+  }
+  var DB = (typeof window !== 'undefined') && window.KM && window.KM.DB;
+  return (DB && DB.getPricingList) ? DB.getPricingList() : [];
 }
 
 /* ALL prerequisites of an OPEN, settled together: the builder's broad-cache tables, the forecast

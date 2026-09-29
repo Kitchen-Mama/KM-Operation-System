@@ -1519,7 +1519,13 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // id naming two trees cannot answer the question it exists for. R29's tree and this one differ.
   // 47_ keeps R29 and moves to RELEASE_CARRIED: it did not change, and marching it here would erase the one
   // fact its stamp carries.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R30'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R30',
+  // FC-SUMMARY-STABILITY-R3 — R31. 58_ gains the scoped pricing projection and 63_ moves with it because
+  // it carries 58_'s manifest row. R30 is unshipped and was NOT joined, for the reason recorded against
+  // R30 itself: an id naming two trees cannot answer the question it exists for, and R30's tree (14_ +
+  // 63_) is not this one (58_ + 63_). 14_ keeps R30 and moves to RELEASE_CARRIED — its stamp records the
+  // round IT last changed, and marching it here would erase that fact to make a number tidy.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R31'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

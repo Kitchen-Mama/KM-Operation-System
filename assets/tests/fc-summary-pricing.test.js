@@ -30,6 +30,14 @@ function extractFn(src, name) {
 global._fcResolveMarketplaceKey = function (mk) { return mk; };          // canonical marketplace passthrough
 var PL = [];
 global.window = { KM: { DB: { getPricingList: function () { return PL; } } } };
+/* FC-SUMMARY-STABILITY-R3 — the resolver's ROW SOURCE moved and its RESOLUTION did not, which is the whole
+   point of this suite continuing to pass unchanged below. _fcPricingRows_ returns the site-scoped pricing
+   projection in workspace mode and the broad cache everywhere else; this stub is the second of those, which
+   is exactly what `getPricingList` was standing for here. Every question this file asks — which row wins,
+   what a missing price means, whether a currency crosses a border — is a question about resolution, and the
+   answers must be identical whichever transport delivered the rows. That identity is the claim; F5 below
+   pins the source so a future round cannot quietly reintroduce a direct broad-cache read. */
+global._fcPricingRows_ = function () { return PL; };
 global._evtDealPrecision = extractFn(js, '_evtDealPrecision');
 var resolve = extractFn(js, 'resolveRegionalPricingContext');
 var round = extractFn(js, '_evtRoundMoney');
@@ -97,6 +105,12 @@ section('E. Deal Price rounding unchanged; uses the Regular currency precision')
 section('F. Source-scan — single shared resolver, no duplicate lookup');
 (function () {
   ok((js.match(/function resolveRegionalPricingContext/g) || []).length === 1, 'F1 exactly one canonical resolver defined');
+  // FC-SUMMARY-STABILITY-R3 — the resolver reads the scoped owner, never the broad cache directly. A direct
+  // getPricingList() here would be the full-table read returning through the back door, and it would look
+  // correct in every test that stubs the cache.
+  var _body = js.slice(js.indexOf('function resolveRegionalPricingContext'), js.indexOf('function _evtSkuPricing'));
+  ok(/_fcPricingRows_\(\)/.test(_body) && !/DB\.getPricingList\(\)/.test(_body),
+    'F1a and it reads rows from the scoped pricing owner, not from the broad cache');
   ok(/_evtSkuPricing[\s\S]{0,400}resolveRegionalPricingContext\(/.test(js), 'F2 Special Event flow (_evtSkuPricing) delegates to the shared resolver');
   ok(/source: 'pricing_list'/.test(js) && !/sku_details[\s\S]{0,60}selling_price/.test(js.slice(js.indexOf('function resolveRegionalPricingContext'), js.indexOf('function _evtSkuPricing'))), 'F3 resolver source is pricing_list only (no sku_details.selling_price)');
   // resolver body must NOT read marketplace_skus price as a fallback

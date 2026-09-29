@@ -240,7 +240,15 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 // exactly as before while the deployment reports itself healthy. That is the partial sync a release id is for.
 // R28 has not shipped, and that is not a licence to reuse its id: R28 and this tree differ, the ruling
 // recorded for R7, R10, R11, R22->R23, R23->R24 and R27->R28 above. 01_router and 73_ still do NOT move.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R30';
+// FC-SUMMARY-STABILITY-R3: R30 -> R31. ONE backend owner changes — 58_ gains the scoped pricing slice —
+// and 63_ moves with it because its manifest row for 58_ is part of this file. The half-sync hazard here
+// is ASYMMETRIC and worth stating, because it decides which file to copy first. A project holding the NEW
+// fc-summary.js against an OLD 58_ asks for slice 'pricing'; an unrecognised slice resolves to FULL, so
+// the answer carries no pricingList, the page commits an empty projection and every card reads MISSING
+// price for a site whose prices exist. The reverse — new 58_, old page — is inert: nothing asks for the
+// slice and the four primary-render tables are byte-identical to what they were. So the backend goes
+// first, and the frontend deploy is what completes the repair. 01_router, 14_, 47_ and 73_ do NOT move.
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R31';
 // 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
 // R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
 // not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
@@ -279,7 +287,7 @@ var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R30';
 // contract is untouched; a pure planner that no route reaches is not a new vocabulary.
 // S5-R7A - moved because THIS FILE changed: the release above, its own expected stamp, 47_'s expected stamp
 // and 90_'s content hash. No action was added or removed and the transport contract is untouched.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R30';
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R31';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -550,7 +558,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R30', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R31', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
   // PRICING-R2 — 73_ IS REQUIRED FROM ITS FIRST RELEASE, AND DELIBERATELY NOT OPTIONAL, for the reason a
   // WRITE owner is always the worst partial sync: 01_router.gs dispatches pricing.update to
   // handlePricingUpdate_, so a deployment carrying the router without this file routes a live price write
@@ -571,7 +579,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // the one-read-per-sheet IO are both invisible to an action list, because neither adds or removes an action.
   // A declared build is the only thing that can tell a half-finished sync from a finished one, so it now has
   // one. The stamp VALUE is the round in which the file last changed behaviourally, as everywhere else here.
-  { file: '58_api_v1_fc_summary_workspace.gs', symbol: 'FCSWS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R14', owns: 'the FC Summary READ workspace: the four primary-render tables, the bootstrap/regular/events/rules slices on one action, the server-derived filter facets that keep the page\'s non-cascading universes intact, and one Sheets read per sheet per request' },
+  { file: '58_api_v1_fc_summary_workspace.gs', symbol: 'FCSWS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R31', owns: 'the FC Summary READ workspace: the four primary-render tables, the bootstrap/regular/events/rules slices on one action, the server-derived filter facets that keep the page\'s non-cascading universes intact, one Sheets read per sheet per request, and the scoped pricing projection the Special Event group-card builder reads instead of the whole price list' },
   // F1-7N-FC-1B-E3 §E.9 — the CONFIG is an owner file too. It holds
   // INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_, so a project still running the previous copy of it writes no
   // allocation drafts while the repository says it should; without an entry here that difference had no name.

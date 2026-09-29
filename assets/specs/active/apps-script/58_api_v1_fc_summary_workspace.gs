@@ -71,7 +71,7 @@
 // F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R14 — this owner's first declared build stamp. It had none before, which meant a
 // partial sync of this file was invisible to system.health: the page could be answered by last round's read owner
 // and nothing in the deployment report would say so. The manifest in 63_ now carries a required row for it.
-var FCSWS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R14';
+var FCSWS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R31';
 
 var FCS_WS_SEQ_ = 0;   // API diagnostic-layer server correlation counter (not business runtime)
 
@@ -83,6 +83,20 @@ var FCS_WORKSPACE_TABLES_ = [
   { name: 'fc_target_rules',     requiredCols: [] },
   { name: 'marketplaces',        requiredCols: ['marketplace'] }
 ];
+
+/* FC-SUMMARY-STABILITY-R3 §3 — TABLES NO SLICE-LESS CALLER MAY EVER READ.
+ *
+ * FULL means 'everything the primary render needs', and it has meant exactly the four sheets above since
+ * this owner was written. The pricing projection needs two more, and adding them to the list above would
+ * have made every FULL request read them too — moving a cost the round exists to remove, onto the one path
+ * that never asked for it. So the read loop iterates FULL ∪ SLICE_ONLY and FULL is filtered to the four.
+ * The FULL view model is still byte-for-byte what it was, because fcsWorkspaceBuild_ never sees these. */
+var FCS_SLICE_ONLY_TABLES_ = [
+  { name: 'pricing_list',    requiredCols: [], optional: true },
+  { name: 'marketplace_skus', requiredCols: [], optional: true }
+];
+var FCS_ALL_TABLES_ = FCS_WORKSPACE_TABLES_.concat(FCS_SLICE_ONLY_TABLES_);
+var FCS_FULL_TABLE_NAMES_ = FCS_WORKSPACE_TABLES_.map(function (t) { return t.name; });
 
 // Generous safety backstop. In real data the FC tables (SKUs x marketplaces x years) are well under this; the cap only
 // guards against a runaway payload and is reported via `capped` so truncation is NEVER silent (would break BEFORE==AFTER).
@@ -109,14 +123,46 @@ var FCS_SLICE_SPECS_ = {
   },
   regular: { reads: ['fc_regular_forecast'], emits: ['fcRegularForecast'], facets: false },
   events:  { reads: ['fc_special_events'],   emits: ['fcSpecialEvents'],   facets: false },
-  rules:   { reads: ['fc_target_rules'],     emits: ['fcTargetRules'],     facets: false }
+  rules:   { reads: ['fc_target_rules'],     emits: ['fcTargetRules'],     facets: false },
+
+  /* PRICING — THE ONE SLICE THAT IS SCOPED, AND THE ONLY ONE THAT PROJECTS COLUMNS.
+   *
+   * Every other slice sends whole rows of a whole sheet, because the page filters those itself and the
+   * sheets are small. pricing_list is neither: the Special Event Builder needs the prices for ONE site,
+   * and getTable has no row filter — the table name IS the scope — so the browser downloaded the entire
+   * price list to draw the group cards for one company/country/marketplace. That full-table read is the
+   * REQUEST_TIMEOUT the operator sees on Build / Refresh Group Cards.
+   *
+   * It reads marketplace_skus as well, and that is not an extra cost looking for a justification. The
+   * client resolver matches a price by marketplace_sku_id FIRST and falls back to business identity only
+   * when it holds no id, so a projection filtered on company/country/marketplace alone would drop a row
+   * the resolver would have found — a price that exists becoming a price that is missing. Deriving the
+   * scoped id set here reproduces BOTH of the resolver's branches, which is what makes this projection
+   * truthful rather than merely smaller. See fcsPricingProject_.
+   *
+   * NO RESOLUTION HAPPENS HERE. Columns are copied, never combined: the BASE -> AUTO -> nullable OVERRIDE
+   * -> RESOLVED chain stays in normalizePricingListRecord, where it is the single pricing authority. This
+   * slice is transport. */
+  pricing: { reads: ['pricing_list', 'marketplace_skus'], emits: ['pricingList'], facets: false, scoped: true }
 };
+
+/* The columns the FC Summary pricing consumer reads, and no others. Derived from what
+ * normalizePricingListRecord + resolveRegionalPricingContext actually touch:
+ *   identity  pricing_id (the client's own drop-blank guard), marketplace_sku_id, sku, site_sku
+ *   scope     company, country, marketplace   (the resolver's second branch compares these)
+ *   money     currency + the four inputs of the regular band's resolution chain
+ * minimum_price / msrp / base_* / fx_* / *_is_manual are deliberately absent: the builder shows a Regular
+ * Price and a currency, and shipping the other two bands would be shipping data to be ignored. */
+var FCS_PRICING_FIELDS_ = ['pricing_id', 'marketplace_sku_id', 'sku', 'site_sku',
+  'company', 'country', 'marketplace', 'currency',
+  'regular_price', 'auto_regular_price', 'resolved_regular_price', 'regular_price_source'];
 
 var FCS_EMIT_SOURCE_ = {
   fcRegularForecast: 'fc_regular_forecast',
   fcSpecialEvents: 'fc_special_events',
   fcTargetRules: 'fc_target_rules',
-  marketplaces: 'marketplaces'
+  marketplaces: 'marketplaces',
+  pricingList: 'pricing_list'
 };
 
 // --------------------------------------------------------------------------------------------------------
@@ -128,6 +174,91 @@ function fcsBuildEnvelope_(ok, data, errors, meta) {
   var m = { apiVersion: '1', source: 'workspace', action: 'fcSummary.workspace.get', workspace: 'fcSummary', cached: false };
   if (meta) { for (var k in meta) m[k] = meta[k]; }
   return { success: !!ok, data: ok ? (data === undefined ? null : data) : null, meta: m, errors: ok ? [] : (errors || []) };
+}
+
+// ---- FC-SUMMARY-STABILITY-R3 — THE SCOPED PRICING PROJECTION (pure; no clock, no Spreadsheet) ---------
+
+function fcsPriceUp_(v) { return String(v === undefined || v === null ? '' : v).trim().toUpperCase(); }
+
+/* Is this marketplace_skus row in the requested site scope? Company is part of the key — KM Amazon SKUs
+   must never leak into a ResUS Amazon scope — and an explicitly-inactive row is excluded. Both rules are
+   the page's own (_evtScopedMskus); they are reproduced here rather than invented, because the projection
+   has to select for the SAME universe the consumer will iterate. */
+var FCS_PRICING_INACTIVE_ = { INACTIVE: 1, DISCONTINUED: 1, CLOSED: 1, ARCHIVED: 1, DELISTED: 1, INACTIVE_SKU: 1 };
+function fcsPricingMskuInScope_(m, scope) {
+  if (!m) return false;
+  if (scope.company && fcsPriceUp_(m.company) !== scope.company) return false;
+  if (scope.country && fcsPriceUp_(m.country) !== scope.country) return false;
+  if (scope.marketplace && fcsPriceUp_(m.marketplace) !== scope.marketplace) return false;
+  var st = fcsPriceUp_(m.marketplace_sku_status);
+  return !(st && FCS_PRICING_INACTIVE_[st]);
+}
+
+/* Copy the allowed columns, PRESERVING ABSENCE.
+ *
+ * This is not fussiness. pricingResolveBand_ asks `resolved_regular_price !== undefined` to decide whether
+ * the server already answered; a sheet with no such column yields a row with no such KEY, and the override
+ * -> NA -> auto chain runs. Emitting '' for a column that does not exist would answer `the server spoke,
+ * and it said nothing`, and every auto-priced row in the builder would read as having no price. A
+ * projection that invents a key is not a smaller row, it is a different one. */
+function fcsPricingPick_(row) {
+  var out = {};
+  for (var i = 0; i < FCS_PRICING_FIELDS_.length; i++) {
+    var k = FCS_PRICING_FIELDS_[i];
+    if (row && Object.prototype.hasOwnProperty.call(row, k)) out[k] = row[k];
+  }
+  return out;
+}
+
+/* THE PROJECTION. Returns exactly the pricing_list rows the client resolver could select for this scope,
+ * projected to the columns it reads.
+ *
+ * The two branches mirror resolveRegionalPricingContext one for one:
+ *   (a) it matches marketplace_sku_id ALONE when the caller holds one, ignoring company/country/
+ *       marketplace entirely — so every row whose id is in the scoped id set is kept, whatever its own
+ *       scope columns say. A price row with a blank company still answers today and must still answer.
+ *   (b) it falls back to sku-or-site_sku plus country plus marketplace (NOT company) — so rows matching
+ *       that predicate against the scoped SKU set are kept too.
+ * Their union is a superset of what the resolver can ever return here, and every row outside it is one
+ * the resolver provably cannot select. That is what makes this the smallest TRUTHFUL projection rather
+ * than the smallest one that passes a test.
+ *
+ * An EMPTY scope selects nothing. A caller that names no site is not asking for the whole price list — it
+ * is asking a question with no answer, and returning everything would restore the full-table read through
+ * the door this round closed. */
+function fcsPricingProject_(tables, scope) {
+  var pricing = (tables && tables.pricing_list) || [];
+  var mskus = (tables && tables.marketplace_skus) || [];
+  var sc = {
+    company: fcsPriceUp_(scope && scope.company),
+    country: fcsPriceUp_(scope && scope.country),
+    marketplace: fcsPriceUp_(scope && scope.marketplace)
+  };
+  var out = { rows: [], scope: sc, scopedSkuCount: 0, sourceRowCount: pricing.length };
+  if (!sc.company && !sc.country && !sc.marketplace) return out;
+
+  var idSet = {}, skuSet = {};
+  for (var i = 0; i < mskus.length; i++) {
+    var m = mskus[i];
+    if (!fcsPricingMskuInScope_(m, sc)) continue;
+    var id = fcsPriceUp_(m.marketplace_sku_id); if (id) idSet[id] = 1;
+    var sk = fcsPriceUp_(m.sku); if (sk) { skuSet[sk] = 1; out.scopedSkuCount++; }
+  }
+
+  for (var j = 0; j < pricing.length; j++) {
+    var p = pricing[j];
+    var keep = false;
+    var pid = fcsPriceUp_(p.marketplace_sku_id);
+    if (pid && idSet[pid]) keep = true;                                  // (a) canonical id match
+    if (!keep) {                                                          // (b) business identity
+      var hitSku = (skuSet[fcsPriceUp_(p.sku)] || skuSet[fcsPriceUp_(p.site_sku)]) ? true : false;
+      if (hitSku &&
+          (!sc.country || fcsPriceUp_(p.country) === sc.country) &&
+          (!sc.marketplace || fcsPriceUp_(p.marketplace) === sc.marketplace)) keep = true;
+    }
+    if (keep) out.rows.push(fcsPricingPick_(p));
+  }
+  return out;
 }
 
 // Cap an array to FCS_WS_ROW_MAX_, reporting whether truncation occurred (never silent).
@@ -222,14 +353,37 @@ function fcsResolveSlice_(payload) {
   var name = fcsWsStr_(include.slice || include.mode).toLowerCase();
   return FCS_SLICE_SPECS_[name] ? name : 'full';
 }
+// The scope a scoped slice was asked for. Carried on include beside the slice name, so no new routed
+// action and no new request shape: 01_router.gs still does not change.
+function fcsResolveScope_(payload) {
+  var include = (payload && payload.include && typeof payload.include === 'object') ? payload.include : {};
+  var sc = (include.scope && typeof include.scope === 'object') ? include.scope : {};
+  return { company: fcsWsStr_(sc.company), country: fcsWsStr_(sc.country), marketplace: fcsWsStr_(sc.marketplace) };
+}
 
 // A SLICE view model. It carries the same raw passthrough rows under the same keys as the full model, so the page
 // feeds them to the SAME normalizers — one row shape, one identity authority, no second normalization anywhere.
 // Keys the slice does not own are ABSENT rather than empty: [] would claim "I read this and there was nothing",
 // which is the exact confusion the Target Rule modal is being repaired for on the client side.
-function fcsSliceBuild_(sliceName, tables, observedAt) {
+function fcsSliceBuild_(sliceName, tables, observedAt, scope) {
   var spec = FCS_SLICE_SPECS_[sliceName];
   var out = { slice: sliceName, observed_at: observedAt, counts: {}, capped: {}, row_count: 0 };
+  /* A scoped slice answers for ONE scope and says which, in the payload. The client compares that echo
+     against the scope it is currently showing before it commits a single row — an answer for the site the
+     operator has already navigated away from is dropped, not painted. Returning the scope is what makes
+     that check possible without a timer and without a second identity scheme. */
+  if (spec.scoped) {
+    var proj = fcsPricingProject_(tables, scope || {});
+    var cappedP = fcsCap_(proj.rows);
+    out.pricingList = cappedP.rows;
+    out.counts.pricingList = cappedP.total;
+    out.capped.pricingList = cappedP.capped;
+    out.row_count = cappedP.total;
+    out.scope = proj.scope;
+    out.projection = { sourceRowCount: proj.sourceRowCount, scopedSkuCount: proj.scopedSkuCount,
+      fields: FCS_PRICING_FIELDS_.length };
+    return out;
+  }
   for (var i = 0; i < spec.emits.length; i++) {
     var key = spec.emits[i];
     var capped = fcsCap_(tables[FCS_EMIT_SOURCE_[key]] || []);
@@ -330,16 +484,18 @@ function handleFcSummaryWorkspaceGet_(body, io) {
 
     var ss = io.openTarget();
     var tables = {}, readCount = 0;
-    for (var i = 0; i < FCS_WORKSPACE_TABLES_.length; i++) {
-      var t = FCS_WORKSPACE_TABLES_[i];
-      // A slice reads only the sheets it needs. FULL keeps reading all four, in the same order, as before.
-      if (wanted && wanted.indexOf(t.name) === -1) continue;
+    for (var i = 0; i < FCS_ALL_TABLES_.length; i++) {
+      var t = FCS_ALL_TABLES_[i];
+      // A slice reads only the sheets it needs. FULL keeps reading the SAME FOUR, in the same order, as
+      // before — FCS_FULL_TABLE_NAMES_ is what stops the two slice-only sheets joining it.
+      var want = wanted || FCS_FULL_TABLE_NAMES_;
+      if (want.indexOf(t.name) === -1) continue;
       tables[t.name] = io.readTable(ss, t.name, t.requiredCols, t.optional === true);
       readCount++;
     }
 
     var observedAt = (io && typeof io.nowIso === 'function') ? io.nowIso() : new Date(io.now()).toISOString();
-    var vm = spec ? fcsSliceBuild_(slice, tables, observedAt) : fcsWorkspaceBuild_(tables, payload);
+    var vm = spec ? fcsSliceBuild_(slice, tables, observedAt, fcsResolveScope_(payload)) : fcsWorkspaceBuild_(tables, payload);
     return fcsBuildEnvelope_(true, vm, [], { requestId: reqId, serverDurationMs: (io.now() - t0),
       tablesRead: readCount, slice: slice, observedAt: observedAt, workspaceBuild: FCSWS_BUILD_VERSION_ });
   } catch (e) {

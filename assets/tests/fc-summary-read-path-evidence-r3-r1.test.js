@@ -141,12 +141,21 @@ function runServerCensus() {
   vm.runInContext('function prodSafetyBundle_() { return KMSAFE; }', sb);
   ['prodExpectedDbId_', 'prodSchemaError_', 'prodAssertDbTarget_', 'prodRequireSheet_', 'prodRequireColumns_']
     .forEach(function (f) { vm.runInContext(fnSrc(SAFE, f), sb); });
-  ['FCSWS_BUILD_VERSION_', 'FCS_WORKSPACE_TABLES_', 'FCS_WS_ROW_MAX_', 'FCS_SLICE_SPECS_', 'FCS_EMIT_SOURCE_']
+  /* FC-SUMMARY-STABILITY-R3 — the scoped pricing projection joins the sandbox. A harness that lags the
+     source does not test an older contract, it throws ReferenceError inside the handler and reports it as
+     'the handler did not answer' — which is what happened here first, and it is indistinguishable from a
+     real regression until you read the message. FCS_ALL_TABLES_ is derived from the two lists above it,
+     so the ORDER of this array is load-bearing. */
+  ['FCSWS_BUILD_VERSION_', 'FCS_WORKSPACE_TABLES_', 'FCS_SLICE_ONLY_TABLES_', 'FCS_ALL_TABLES_',
+   'FCS_FULL_TABLE_NAMES_', 'FCS_WS_ROW_MAX_', 'FCS_SLICE_SPECS_', 'FCS_PRICING_FIELDS_',
+   'FCS_EMIT_SOURCE_', 'FCS_PRICING_INACTIVE_']
     .forEach(function (v) { vm.runInContext(varSrc(WS, v), sb); });
   vm.runInContext('var FCS_WS_SEQ_ = 0;', sb);
   ['fcsWsStr_', 'fcsBuildEnvelope_', 'fcsCap_', 'fcsDistinctYears_', 'fcsDistinctAsc_', 'fcsBuildFacets_',
-   'fcsWorkspaceBuild_', 'fcsResolveSlice_', 'fcsSliceBuild_', 'fcsWsRowsToObjects_', 'fcsRowsFromValues_',
-   'fcsValidateHeader_', 'fcsReadTableOnce_', 'fcsWorkspaceDefaultIo_', 'handleFcSummaryWorkspaceGet_']
+   'fcsPriceUp_', 'fcsPricingMskuInScope_', 'fcsPricingPick_', 'fcsPricingProject_',
+   'fcsWorkspaceBuild_', 'fcsResolveSlice_', 'fcsResolveScope_', 'fcsSliceBuild_', 'fcsWsRowsToObjects_',
+   'fcsRowsFromValues_', 'fcsValidateHeader_', 'fcsReadTableOnce_', 'fcsWorkspaceDefaultIo_',
+   'handleFcSummaryWorkspaceGet_']
     .forEach(function (f) { vm.runInContext(fnSrc(WS, f), sb); });
 
   var env = vm.runInContext('handleFcSummaryWorkspaceGet_({ action: "fcSummary.workspace.get" }, undefined)', sb);

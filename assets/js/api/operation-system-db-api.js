@@ -3115,6 +3115,23 @@ window.KM.DB.adaptFcSummaryWorkspaceSlice = function(data) {
     if (Array.isArray(data.marketplaces)) {
         out.marketplaces = data.marketplaces.map(normalizeMarketplaceRecord).filter(function(r) { return r.marketplaceId || r.marketplace; });
     }
+    /* FC-SUMMARY-STABILITY-R3 — the SCOPED pricing projection.
+     *
+     * Identical normalizer and identical drop-blank filter to getPricingList(), so a projected record and
+     * a broad-cache record are the same shape and the same authority — the BASE -> AUTO -> nullable
+     * OVERRIDE -> RESOLVED chain runs here exactly as it runs there, from the columns the server sent.
+     * What differs is which ROWS arrive and which COLUMNS they carry, and neither is a pricing decision.
+     *
+     * The server projects columns by copying keys that EXIST, so a sheet without resolved_regular_price
+     * still produces a row without that key — and pricingResolveBand_ therefore still falls through to
+     * the override/NA/auto chain instead of reading an invented blank as 'the server answered nothing'. */
+    if (Array.isArray(data.pricingList)) {
+        out.pricingList = data.pricingList.map(normalizePricingListRecord).filter(function(r) { return r.pricingId || r.marketplaceSkuId || r.sku; });
+    }
+    // The scope a scoped slice answered FOR. Carried through so the page can compare it with the scope it
+    // is currently showing and drop an answer that arrived after the operator moved on.
+    if (data.scope && typeof data.scope === 'object') out.scope = data.scope;
+    if (data.projection && typeof data.projection === 'object') out.projection = data.projection;
     // Server-derived filter universes, carried through untouched. They are the page's own distinct()
     // applied to the complete tables before the rows were dropped, so the dropdowns are unchanged by a
     // slice that no longer ships the rows they used to be built from.

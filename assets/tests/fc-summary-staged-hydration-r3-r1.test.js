@@ -595,8 +595,14 @@ function world(opts) {
        'I2  and the function itself is gone, not merely unused');
     var live = FCS.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
     var calls = (live.match(/getWorkspace\s*\(\s*'fcSummary'\s*,\s*([^)]*)\)/g) || []);
-    ok(calls.length === 1 && /include:\s*\{\s*slice:/.test(calls[0]),
-       'I3  the page has exactly ONE getWorkspace call site and it always names a slice', calls);
+    /* FC-SUMMARY-STABILITY-R3 — there are TWO call sites now, and the claim was never about the count.
+       The hazard this line guards is a read that asks for the FULL workspace, which is what 'always names
+       a slice' says; 'exactly ONE' was a description of the page at the time, and it would have had to be
+       edited to 2, 3, 4 for every legitimate slice a later round adds. The scoped pricing projection is a
+       second caller of the same action with a slice of its own, which is the shape this assertion exists
+       to require — so it is stated as EVERY, and a slice-less call is still a failure. */
+    ok(calls.length >= 1 && calls.every(function (c) { return /include:\s*\{\s*slice:/.test(c); }),
+       'I3  every getWorkspace call site in the page names a slice — none asks for the FULL workspace', calls);
     ok(!/readTimeoutMs|60000|timeout\s*[:=]\s*\d{5,}/.test(live),
        'I4  no timeout was raised to make the symptom go away');
     ok(!/googleusercontent/.test(live), 'I5  and no redirect target is remembered anywhere');
