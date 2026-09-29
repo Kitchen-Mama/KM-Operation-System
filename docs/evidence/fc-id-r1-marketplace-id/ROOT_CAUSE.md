@@ -2,6 +2,22 @@
 
 **Base** `af116ac` · diagnostic only · `PRODUCTION_ROWS_WRITTEN = 0` · `S6_BEHAVIOR_CHANGED = NO`
 
+> **⚠ INCIDENT CONCLUSION DISPROVEN — FC-ID-R1B, superseding evidence.** Operator evidence confirms the
+> canonical row EXISTS in production: `MKT-RESTW-CA-AMAZON` (ResTW · CA · Amazon · active), with
+> `MKT-RESTW-UK-AMAZON` as the control. So `ROOT_CAUSE = A — marketplace master data missing` is **wrong**
+> and must not be acted on: **do not add a marketplace row.**
+>
+> **The MECHANISM below is unaffected and was re-proved.** The picker is built from the registry ∪
+> `fc_regular_forecast` while the resolver reads the registry alone, so a site the registry does not
+> answer for resolves blank. What was wrong is the assumption about WHY it did not answer: I inferred the
+> row was absent from the SHEET when the candidate is absence from the RUNTIME MODEL — the registry lives
+> in the bootstrap slice, the forecast rows in another, and they fail independently.
+>
+> Corrected analysis, the four executed scenarios and the revised repair direction:
+> `docs/evidence/fc-id-r1b-incident-correction/INCIDENT_CORRECTION.md`.
+> Current status: `FC_ID_R1_MECHANISM_PROVEN = YES`, `FC_ID_R1_INCIDENT_ROOT_CAUSE = NOT_PROVEN`.
+
+
 Suite: `assets/tests/fc-id-r1-special-event-marketplace-id.test.js` — 25 passed / 0 failed, 4/4 mutants.
 
 ```
