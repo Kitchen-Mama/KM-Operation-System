@@ -157,9 +157,21 @@ ok(/refreshCacheTables/.test(fcEnsure) && /rc\(need\)/.test(fcEnsure)
   // The two with no other owner must still be there, or the set has not shrunk — it has emptied.
   ok(uniq.indexOf('sku_details') !== -1 && uniq.indexOf('marketplace_skus') !== -1,
     '... and the two tables no authoritative read brings are still in it', uniq);
-  ok(uniq.length >= 3 && uniq.length <= CLOSED_SET.length,
+  /* FC-SUMMARY-STABILITY-R2 — the floor was 3 and the union is now 2: `campaigns` moved to the deferred
+     set, so the per-path union shrank by one. A floor that has to be lowered by hand each time the list
+     shrinks is measuring the wrong thing; the claim is that the set is NOT EMPTY and has not grown, and
+     the line above already names the two members that must always be in it. */
+  ok(uniq.length >= 2 && uniq.length <= CLOSED_SET.length,
     '... and the set is neither empty nor larger than it has ever been', uniq.length);
-  ok(decl.indexOf('campaigns') !== -1 && (/regular: \[[^\]]*\]/.exec(decl) || [''])[0].indexOf('campaigns') === -1,
+  /* FC-SUMMARY-STABILITY-R2 — this named `campaigns` as the Special-only table, and there no longer is
+     one: it is deferred, and both paths declare the same list. The claim — Regular never pulls a table
+     only Special needs — is asserted directly against the two lists, so it survives whichever table
+     happens to be exclusive next. */
+  var _regDecl = ((/regular: \[([^\]]*)\]/.exec(decl) || [, ''])[1].match(/'[^']+'/g) || [])
+    .map(function (q) { return q.replace(/'/g, ''); });
+  var _evtDecl = ((/event: \[([^\]]*)\]/.exec(decl) || [, ''])[1].match(/'[^']+'/g) || [])
+    .map(function (q) { return q.replace(/'/g, ''); });
+  ok(_regDecl.length > 0 && _regDecl.every(function (t) { return _evtDecl.indexOf(t) !== -1; }),
     'and the Regular path does not pull the Special Event path\'s tables');
 })();
 // A3-R4 — the reset now takes the write SCOPE and clears only the builder paths that write could have

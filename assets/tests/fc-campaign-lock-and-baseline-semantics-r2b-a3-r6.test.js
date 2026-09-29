@@ -639,8 +639,15 @@ ok(/b\.disabled = _fcTargetSave_\.busy \|\| !_fcTargetSave_\.valid;/.test(TRENDE
   eq(W._fcPrereqMissing_('event').sort(),
     EVENT_TABLES.filter(function (t) { return _changed.indexOf(t) !== -1; }).sort(),
     'E7  a Special save invalidates exactly the tables it can change that this path holds');
-  ok(W._fcPrereqMissing_('event').length > 0,
-    'E7b and that is not vacuously none — a Special save really does drop something');
+  /* FC-SUMMARY-STABILITY-R2 — a Special save now drops NOTHING from the path, and that is the end state.
+     E7 above computes the intersection of (what the save changes) with (what the path holds); with
+     campaigns deferred, the Special path holds only sku_details and marketplace_skus and no FC write
+     scope touches either. Asserting the intersection is non-empty would now forbid the improvement. The
+     non-vacuity that matters is that the two inputs are real and disjoint, which is the durable claim. */
+  eq(EVENT_TABLES.filter(function (t) { return _changed.indexOf(t) !== -1; }), [],
+    'E7b and it drops nothing — the Special cold set and the Special write surface are disjoint');
+  ok(EVENT_TABLES.length > 0 && _changed.length > 0,
+    'E7c with both inputs non-empty, so the disjointness is measured rather than assumed');
   eq(W._fcPrereqMissing_('regular'), [], 'E7a and leaves the Regular builder warm');
 })();
 

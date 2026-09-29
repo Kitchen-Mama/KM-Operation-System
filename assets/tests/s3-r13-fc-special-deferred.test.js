@@ -100,21 +100,43 @@ section('A — §1/§2 THE CRITICAL LIST IS NOW WHAT THE FIRST USABLE UI READS')
     .split(',').map((s) => s.trim()).filter(Boolean);
   const regular = /regular: \[([^\]]*)\]/.exec(block)[1].replace(/'/g, '').split(',').map((s) => s.trim());
 
-  eq(event, ['sku_details', 'marketplace_skus', 'campaigns'],
-    'A1  the Special path declares THREE — the tables opening the builder genuinely reads');
+  /* FC-SUMMARY-STABILITY-R2 — TWO, and the third is the point of that round. `_kmReadTablesBounded_`
+     issues one request per table at 2 lanes, so a third table is a SECOND serial 45s budget before the
+     modal opens. What the builder genuinely reads to draw itself is the scope/datalist pair; campaigns
+     is read by the Base Campaign selector and by existing-event rehydration, neither of which runs on
+     open. The claim is stated as the two tables by name rather than as a count, because a count is what
+     this line had to be edited for three rounds running. */
+  eq(event, ['sku_details', 'marketplace_skus'],
+    'A1  the Special path declares the tables opening the builder genuinely reads');
   ok(event.indexOf('campaign_sku_lines') === -1 && event.indexOf('pricing_list') === -1,
     'A1a and neither deferred table is on it');
   eq(regular, ['sku_details', 'marketplace_skus'],
     'A2  §6 — the REGULAR path is untouched, which is the regression this round most had to avoid');
 
-  // A3 — `campaigns` STAYS, and the reason is a consumer that runs on open. Without this the round would
-  //      look like "defer everything", which is a different and worse change.
-  ok(/function _evtPopulateBaseCampaigns\(\)/.test(src) && event.indexOf('campaigns') >= 0,
-    'A3  campaigns stays because _evtPopulateBaseCampaigns fills a control while the builder opens');
+  /* A3 — FC-SUMMARY-STABILITY-R2 CORRECTS THIS LINE, AND THIS LINE IS WHY THE DEFECT SURVIVED.
+     It asserted that campaigns stays on the cold path 'because _evtPopulateBaseCampaigns fills a control
+     while the builder opens'. That function is called from exactly one place — the Event Assist method
+     handler, and only on `method === 'growth'`. It does not run on open, and never did. The source
+     comment justifying the cold-path membership said the same thing, so the test and the code agreed
+     with each other and neither agreed with the runtime.
+     What is asserted now is the real rule: campaigns is deferred, and the deferral is anchored at the
+     consumers that actually read it — which is also what stops this being a 'defer everything' round. */
+  ok(/function _evtPopulateBaseCampaigns\(\)/.test(src) && event.indexOf('campaigns') === -1,
+    'A3  campaigns is DEFERRED — its selector runs on the growth method, never on open');
+  ok(/if \(method === 'growth'\) _evtPopulateBaseCampaigns\(\);/.test(src),
+    'A3a and that is provable from its ONE outer call site');
+  ok(/_fcDeferredPending_\(_FC_DEFERRED_TABLES_\.campaigns\)/.test(src),
+    'A3b with the selector itself gating on the deferred table — the consumer buys it');
 
   // A4 — the deferred tables are DECLARED, not scattered as string literals at their call sites.
-  ok(/var _FC_DEFERRED_TABLES_ = \{ lines: 'campaign_sku_lines', pricing: 'pricing_list' \};/.test(src),
-    'A4  the two deferred tables are declared in one place');
+  // FC-SUMMARY-STABILITY-R2 — three of them now. Membership is checked per table so the next addition
+  // does not have to rewrite the line, only extend the list it is checked against.
+  ok(/var _FC_DEFERRED_TABLES_ = \{[^}]*\};/.test(src),
+    'A4  the deferred tables are declared in one place');
+  ['campaign_sku_lines', 'pricing_list', 'campaigns'].forEach(function (t, i) {
+    ok(new RegExp("var _FC_DEFERRED_TABLES_ = \\{[^}]*'" + t + "'").test(src),
+      'A4.' + (i + 1) + ' and ' + t + ' is one of them');
+  });
   ok(!/_fcEnsureDeferredTable_\('campaign_sku_lines'\)/.test(src) && !/_fcEnsureDeferredTable_\('pricing_list'\)/.test(src),
     'A4a and every consumer names them through that declaration, never by raw string');
 }
@@ -638,11 +660,14 @@ section('J — MUTANTS');
   // J7 — the hydrate guard is removed: a saved event opens over an empty campaign_sku_lines and its
   //      discounts vanish without a word. This is the defect §5 calls FALSE_EMPTY.
   await mutate('assets/js/pages/fc-summary.js',
-    '  if (_fcDeferredPending_(_FC_DEFERRED_TABLES_.lines)) {',
+    // FC-SUMMARY-STABILITY-R2 — re-aimed. The hydrate now waits for lines AND campaigns through one
+    // list gate, so the anchor is the GATE rather than one of the tables it covers. Same defect planted:
+    // the saved event opens over an unread table and its discounts vanish without a word.
+    '  if (_hydNeed.length) {',
     '  if (false) {',
     'J7 the hydrate runs without its table', async () => {
       const hyd = extract(FC(), '_evtHydrateExisting_');
-      return !/_fcDeferredPending_\(_FC_DEFERRED_TABLES_\.lines\)/.test(hyd);
+      return !/if \(_hydNeed\.length\)/.test(hyd);
     });
 
   // J8 — the dry-run classifier goes back to `rejected`, which is the operator's screenshot exactly.

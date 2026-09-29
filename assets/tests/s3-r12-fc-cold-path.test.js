@@ -116,8 +116,14 @@ section('A — §2 THE TWO LISTS, WHICH IS WHERE THE WHOLE DIFFERENCE LIVES');
 
   // A3 — the two paths still DIFFER, which is the point R2-STABILITY made when it split them: attaching a
   //      Regular open to a Special load would open a builder over tables nobody fetched.
-  ok(event.length > regular.length && regular.every((t) => event.indexOf(t) >= 0),
-    'A3  Regular remains a strict subset of Special — the paths are separate, not merged',
+  /* FC-SUMMARY-STABILITY-R2 — SUBSET, no longer STRICT. The hazard this line guards is the one its own
+     comment names: attaching a Regular open to a Special load would open a builder over tables nobody
+     fetched. That can only happen when Special needs MORE than Regular. With `campaigns` deferred the two
+     declare the same tables, so a load of either genuinely satisfies both — the hazard is gone rather than
+     unguarded, and `>` would now forbid the improvement instead of the defect. The containment is what
+     must hold, and it still does; the loader remains keyed per path either way. */
+  ok(regular.every((t) => event.indexOf(t) >= 0),
+    'A3  Regular is contained in Special — a Special load always satisfies Regular',
     { regular, event });
 
   // A4 — the events slice is the owner that took it over, and its key set says so.
@@ -391,8 +397,10 @@ section('B — THE SOURCE GUARD, EXECUTED AGAINST ITS FOUR DEPENDENCIES');
     // S3-R13 — RE-AIMED at the list R13 left, because the anchor R12 used no longer exists. The mutant
     // is the same one: put the full-table scan back beside the slice, so the cost is paid twice.
     await mutate('assets/js/pages/fc-summary.js',
-      "  event: ['sku_details', 'marketplace_skus', 'campaigns']",
-      "  event: ['sku_details', 'marketplace_skus', 'campaigns', 'fc_special_events']",
+      // FC-SUMMARY-STABILITY-R2 — re-aimed again, at the list this round left. The mutant is unchanged:
+      // put the full-table scan back beside the slice, so the round's cost is paid twice.
+      "  event: ['sku_details', 'marketplace_skus']",
+      "  event: ['sku_details', 'marketplace_skus', 'fc_special_events']",
       'J6 the broad table is restored to the list', async () => {
         const src = FC();
         const block = src.slice(src.indexOf('var _FC_PREREQ_TABLES_'), src.indexOf('// The union'));

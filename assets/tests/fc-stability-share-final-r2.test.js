@@ -147,9 +147,14 @@ ok(PREREQ.event.length > 0 && PREREQ.event.every(function (t) { return A6_CEILIN
   'A6 the Special path holds no table outside the ceiling, and is not empty', PREREQ.event);
 ok(PREREQ.event.indexOf('fc_special_events') === -1,
   'A6b and fc_special_events in particular is owned by the events slice, not by this list');
-ok(PREREQ.regular.every(function (t) { return PREREQ.event.indexOf(t) !== -1; })
-   && PREREQ.event.length > PREREQ.regular.length,
-  'A6a and Regular remains a strict subset of Special, so the paths stay separable');
+  /* FC-SUMMARY-STABILITY-R2 — SUBSET, no longer STRICT. The hazard this line guards is the one its own
+     comment names: attaching a Regular open to a Special load would open a builder over tables nobody
+     fetched. That can only happen when Special needs MORE than Regular. With `campaigns` deferred the two
+     declare the same tables, so a load of either genuinely satisfies both — the hazard is gone rather than
+     unguarded, and `>` would now forbid the improvement instead of the defect. The containment is what
+     must hold, and it still does; the loader remains keyed per path either way. */
+ok(PREREQ.regular.every(function (t) { return PREREQ.event.indexOf(t) !== -1; }),
+  'A6a and Regular is contained in Special, so a Special load always satisfies Regular');
 ok(/events: \['fcSpecialEvents'\]/.test(FCS),
   'A6b with the events slice declaring exactly the key that left the table list');
 
@@ -246,7 +251,9 @@ function buildBox(opts) {
   vm.runInContext('var _fcPrereqLoadedTables_ = {}; var _fcPrereqLoadedPaths_ = {}; var _fcSecondaryLoaded = false;', box);
   // S3-R13 - the deferral globals _fcPostWriteWarm_ now reads. _fcDeferredEverUsed_ is empty here,
   // so the warm-up holds exactly the tables the prerequisite lists declare, as it did before.
-  vm.runInContext("var _FC_DEFERRED_TABLES_ = { lines: 'campaign_sku_lines', pricing: 'pricing_list' }; var _fcDeferredEverUsed_ = {}; function _fcDeferralActive_() { return false; } function _fcDeferredPending_(t) { return _fcDeferralActive_() && !_fcPrereqLoadedTables_[t]; }", box);
+  // FC-SUMMARY-STABILITY-R2 — campaigns joined the deferred set, so the stub must carry it too; a stub
+  // that lags the declaration makes _fcPostWriteWarm_ hold one table fewer than the page does.
+  vm.runInContext("var _FC_DEFERRED_TABLES_ = { lines: 'campaign_sku_lines', pricing: 'pricing_list', campaigns: 'campaigns' }; var _fcDeferredEverUsed_ = {}; function _fcDeferralActive_() { return false; } function _fcDeferredPending_(t) { return _fcDeferralActive_() && !_fcPrereqLoadedTables_[t]; }", box);
   vm.runInContext('var _fcPrereqFlightByPath_ = {}; var _fcPrereqFlight_ = null; var _fcPrereqLastError_ = null;', box);
   vm.runInContext('var _fcPrereqLoads_ = 0; var _fcMeta_ = {}; var _fcPrereqState_ = "IDLE";', box);
   vm.runInContext('var FC_PREREQ_ = { IDLE: "IDLE", READY: "READY", LOADING: "LOADING", REFUSED: "REFUSED", FAILED_PERMANENT: "FAILED_PERMANENT" };', box);
@@ -306,6 +313,12 @@ var chain = Promise.resolve()
            is what the scenario has always assumed — a builder whose saved event was opened —
            stated instead of implied. B9b below asserts the other half. */
         ev(box, '_fcDeferredEverUsed_["campaign_sku_lines"] = true;');
+        /* FC-SUMMARY-STABILITY-R2 — and campaigns, for exactly the reason above: opening a saved event
+           reads the campaign header as well as its lines, so this session HOLDS campaigns. R2 moved it
+           off the cold-path list, which is what turned 'the page holds it' into a fact about the
+           session for this table too. Latched as well as used, because B7 asks whether a COMPLETE
+           receipt keeps it current through the invalidation — a question about a table that was warm. */
+        ev(box, '_fcDeferredEverUsed_["campaigns"] = true; _fcPrereqLoadedTables_["campaigns"] = true;');
         results.reconciled = ev(box, '_fcResetSecondaryCache(' + RECEIPT + ')');
         results.latchedAfterInvalidation = ev(box, 'Object.keys(_fcPrereqLoadedTables_).sort()');
         return ev(box, '_fcPostWriteWarm_(' + RECEIPT + ')');
@@ -343,6 +356,7 @@ var chain = Promise.resolve()
     return ev(box, '_fcLoadPrerequisites_("event")').then(function () {
       box.window.KM.DB.refreshCacheTables = function (n) { CALLS.push(n.slice()); return Promise.reject(new Error('REQUEST_TIMEOUT')); };
       ev(box, '_fcDeferredEverUsed_["campaign_sku_lines"] = true;');   // S3-R13 — see the note above
+      ev(box, '_fcDeferredEverUsed_["campaigns"] = true;');            // R2 — campaigns is deferred now too
       ev(box, '_fcResetSecondaryCache(' + RECEIPT + ')');
       CALLS = [];
       return ev(box, '_fcPostWriteWarm_({ slice: "events" })').then(function (got) {
@@ -458,8 +472,14 @@ chain.then(function () {
   eq(R.reopenAfterFailedWarm.tables,
     PREREQ.event.filter(function (t) { return R.failedWarmLatched.indexOf(t) === -1; }),
     'B14 §18-9 ... and the next open re-reads exactly the path tables the failed warm left unlatched');
+  /* FC-SUMMARY-STABILITY-R2 — the consumer now gates on a LIST (lines and campaigns are both deferred and
+     are awaited together), so the single-call spelling is gone while the dependency is not. The claim is
+     that campaign_sku_lines has a deferred consumer which gates on its pendency — asserted against the
+     hydrate's own body rather than against one call shape it happens to use. */
+  var _HYDB = (function () { var i = FCS.indexOf('function _evtHydrateExisting_');
+    var j = FCS.indexOf('\nfunction ', i + 10); return FCS.slice(i, j < 0 ? FCS.length : j); })();
   ok(R.failedWarmLatched.indexOf('campaign_sku_lines') === -1
-    && /_fcDeferredPending_\(_FC_DEFERRED_TABLES_\.lines\)/.test(FCS),
+    && /_FC_DEFERRED_TABLES_\.lines/.test(_HYDB) && /_fcDeferredPending_\(/.test(_HYDB),
     'B14a and campaign_sku_lines is still unlatched, so its own deferred consumer reads it — with its own refusal surface');
 
   eq(R.rejectedReceipt, [],
@@ -1189,6 +1209,13 @@ function finish() {
       .join('      _fcPrereqLoadedPaths_[p] = true;');
     vm.runInContext(faulted, box);
     vm.runInContext('_fcPrereqLoadedTables_ = {};', box);
+    /* FC-SUMMARY-STABILITY-R2 — THIS PROBE WENT BLIND AND IS RE-ARMED, NOT DROPPED.
+       _fcPostWriteWarm_ warms (tables the write changes) ∩ (tables this session HOLDS). Once `campaigns`
+       left the cold-path list, an events-scoped warm in a fresh box intersected nothing, returned early,
+       and the planted fault never executed — so the mutant survived while the guard reported green.
+       Saying the session has used the deferred table restores the precondition the probe always had
+       implicitly, through the mechanism that now carries it. Same fault, same claim, observable again. */
+    vm.runInContext('_fcDeferredEverUsed_["campaigns"] = true;', box);
     vm.runInContext('_fcPostWriteWarm_({ slice: "events" })', box);
     // only the events tables were warmed; sku_details / marketplace_skus / pricing_list are still cold,
     // so the event PATH must not be latched.
@@ -1224,6 +1251,14 @@ function more() {
       .join('tables.forEach(function (t) { delete _fcPrereqLoadedTables_[t]; });');
     vm.runInContext(faulted, box);
     vm.runInContext('_fcLoadPrerequisites_("event")', box).then(function () {
+      /* FC-SUMMARY-STABILITY-R2 — RE-ARMED for the same reason N14 was. This probe asks whether a table the
+         receipt RECONCILED is bought again, and the table it names is `campaigns`. Once campaigns left the
+         cold-path list, the prerequisite load above no longer latched it and the warm-up no longer held it,
+         so the faulted reset had nothing to discard and nothing was re-read — the mutant survived against a
+         probe that had quietly stopped being able to see it. Saying the session has opened a saved event
+         (which reads the campaign header) restores both halves: latched, so there is something to discard,
+         and held, so a discarded table is bought again. */
+      vm.runInContext('_fcDeferredEverUsed_["campaigns"] = true; _fcPrereqLoadedTables_["campaigns"] = true;', box);
       vm.runInContext('_fcResetSecondaryCache(' + RECEIPT + ')', box);
       CALLS = [];
       return vm.runInContext('_fcPostWriteWarm_(' + RECEIPT + ')', box);
