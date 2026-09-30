@@ -803,10 +803,15 @@ section('§F — THE SHIPMENT DRAFT UI');
 section('§G — ONE MOVEMENT VOCABULARY OWNER, AND WHAT EACH TYPE MOVES');
 // ================================================================================================================
 (function () {
-  // §A / §N.12 — SEVEN, and the set is pinned so a later round cannot quietly revert it to five.
+  // §A / §N.12 — the set is pinned so a later round cannot quietly revert it to five.
+  //
+  // RESTATED (S6-R6): SIX. The seventh was shipment_receipt, which no factory writer emits and which
+  // R1's own axis table filed under 'neither axis, overseas_inventory_movements'. S6-R6 moved it to the
+  // Overseas vocabulary. The claim this line owns — the set is FIXED and cannot drift back to five — is
+  // unchanged, and N12 below still plants exactly that reversion.
   eq(prim.TYPES.slice().sort(), ['inventory_import', 'manual_adjustment', 'po_receipt', 'reservation_acquire',
-    'reservation_release', 'shipment_out', 'shipment_receipt'],
-    'H1  §A the canonical vocabulary is SEVEN');
+    'reservation_release', 'shipment_out'],
+    'H1  §A the canonical vocabulary is SIX');
   var owners = GS_FILES.filter(function (f) { return /var FSTX_MOVEMENT_TYPES_ = \[/.test(GS_SRC[f]); });
   eq(owners, ['21_factory_inventory_handlers.gs'], 'H2  §G defined exactly ONCE, in the stock authority');
   ['factoryStockIsKnownMovementType_', 'factoryStockIsReservationMovement_', 'factoryStockIsCurrentMovement_',
@@ -1495,18 +1500,25 @@ mut('N11 Retry REUSES the cancelled shipment', function () {
   var r = runRetry(w, { shipping_plan_id: 'SP-1', actor: 'op' }, g12);
   return r.success === true && r.data.outcome === 'REUSED' && w.shipments().length === 1;
 });
-mut('N12 the movement vocabulary reverts to FIVE', function () {
+// RENAMED (S6-R6): the reversion this plants is 'drop the reservation pair', which landed on FIVE when
+// the list held seven and lands on FOUR now that it holds six. The mutant is unchanged; only the count
+// it produces moved, and leaving the old number in the predicate made it survive.
+mut('N12 the movement vocabulary loses the reservation pair', function () {
   var g21 = G21.replace(
     "var FSTX_RESERVED_AXIS_TYPES_ = [FSTX_MOV_RESERVE_ACQUIRE_, FSTX_MOV_RESERVE_RELEASE_];",
     "var FSTX_RESERVED_AXIS_TYPES_ = [];");
   if (g21 === G21) throw new Error('mutation target absent: the reserved-axis list');
+  // S6-R6: the five-type reversion this mutant plants no longer spells FSTX_MOV_SHIPMENT_RECEIPT_,
+  // which is not declared in 21_ any more — planting it would have thrown a ReferenceError inside the
+  // compiled world and been scored as 'caught' for the wrong reason. The reversion is now to the five
+  // FC-0A actually measured, minus the reservation pair, which is what 'reverts to FIVE' always meant.
   var g21b = g21.replace(/var FSTX_MOVEMENT_TYPES_ = \[[\s\S]*?\];/,
-    "var FSTX_MOVEMENT_TYPES_ = [FSTX_MOV_INVENTORY_IMPORT_, FSTX_MOV_MANUAL_ADJUSTMENT_, FSTX_MOV_PO_RECEIPT_, FSTX_MOV_SHIPMENT_OUT_, FSTX_MOV_SHIPMENT_RECEIPT_];");
+    "var FSTX_MOVEMENT_TYPES_ = [FSTX_MOV_INVENTORY_IMPORT_, FSTX_MOV_MANUAL_ADJUSTMENT_, FSTX_MOV_PO_RECEIPT_, FSTX_MOV_SHIPMENT_OUT_];");
   if (g21b === g21) throw new Error('mutation target absent: the type list');
   var p = new Function('Utilities', 'SpreadsheetApp', 'fcWriteAppendByHeader_',
     'var OUT;' + core21(g21b) + NL + 'return { TYPES: FSTX_MOVEMENT_TYPES_, isKnown: factoryStockIsKnownMovementType_, isRes: factoryStockIsReservationMovement_ };')(
     gasServices().Utilities, { flush: function () {} }, appendByHeader);
-  return p.TYPES.length === 5 && p.isKnown('reservation_acquire') === false && p.isRes('reservation_acquire') === false;
+  return p.TYPES.length === 4 && p.isKnown('reservation_acquire') === false && p.isRes('reservation_acquire') === false;
 });
 mut('N13 a reservation row is treated as a CURRENT-stock delta', function () {
   var g21 = G21.replace(

@@ -248,7 +248,7 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 // price for a site whose prices exist. The reverse — new 58_, old page — is inert: nothing asks for the
 // slice and the four primary-render tables are byte-identical to what they were. So the backend goes
 // first, and the frontend deploy is what completes the repair. 01_router, 14_, 47_ and 73_ do NOT move.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R34';
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R35';
 // 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
 // R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
 // not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
@@ -287,7 +287,7 @@ var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R34';
 // contract is untouched; a pure planner that no route reaches is not a new vocabulary.
 // S5-R7A - moved because THIS FILE changed: the release above, its own expected stamp, 47_'s expected stamp
 // and 90_'s content hash. No action was added or removed and the transport contract is untouched.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R34';
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R35';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -558,7 +558,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R34', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R35', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
   // PRICING-R2 — 73_ IS REQUIRED FROM ITS FIRST RELEASE, AND DELIBERATELY NOT OPTIONAL, for the reason a
   // WRITE owner is always the worst partial sync: 01_router.gs dispatches pricing.update to
   // handlePricingUpdate_, so a deployment carrying the router without this file routes a live price write
@@ -648,8 +648,8 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   //   22_  deducts through its OLD inline implementation and never RELEASES the reservation, so available
   //        stock drifts permanently downward and shipments are refused for stock that is physically present.
   // The 12_ and 22_ cases are the dangerous ones precisely because they return success.
-  { file: '21_factory_inventory_handlers.gs', symbol: 'FSTX_BUILD_VERSION_', expected: 'F1-7N-FC-1A-R1', owns: 'THE single factory_stock mutation authority + the canonical seven-type movement vocabulary + reserved-balance reconciliation' },
-  { file: '05_overseas_inventory_handlers.gs', symbol: 'OVERSEAS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R33', owns: 'the overseas inventory snapshot import (GROSS semantic: stored available = source available - the reservation this system holds, the row refused IMPORT_RESERVATION_EXCEEDS_SOURCE_AVAILABLE when the source reports fewer units than are already committed, and wh_reserved_stock never written by an import), the inventory adjustment handler, and the OVERSEAS RESERVATION LIFECYCLE — acquire / release / dispatch-consume over wh_available_stock and wh_reserved_stock, with ovsAllocatableTx_ as the single place the allocatable rule is written' },
+  { file: '21_factory_inventory_handlers.gs', symbol: 'FSTX_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R35', owns: 'THE single factory_stock mutation authority + the canonical seven-type movement vocabulary + reserved-balance reconciliation' },
+  { file: '05_overseas_inventory_handlers.gs', symbol: 'OVERSEAS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R35', owns: 'the overseas inventory snapshot import (GROSS semantic: stored available = source available - the reservation this system holds, the row refused IMPORT_RESERVATION_EXCEEDS_SOURCE_AVAILABLE when the source reports fewer units than are already committed, and wh_reserved_stock never written by an import), the inventory adjustment handler, and the OVERSEAS RESERVATION LIFECYCLE — acquire / release / dispatch-consume over wh_available_stock and wh_reserved_stock, with ovsAllocatableTx_ as the single place the allocatable rule is written' },
   { file: '12_shipment_handlers.gs', symbol: 'SHIPMENT_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R34', owns: 'Shipment Draft creation + reservation acquire, pre-dispatch cancellation + reservation release, and the updateShipment status allowlist. R33 adds SOURCE DOMAIN ROUTING: the sufficiency precheck, the acquire, the cancellation release and the source-warehouse change each ask whether the source warehouse is FACTORY or OVERSEAS and forward to that domain lifecycle — composed, never merged, because factory availability is derived (current - reserved) and overseas availability is stored. A cross-domain source change is REFUSED rather than guessed' },
   // F1-7N-FC-1A-R1 §K — the PO receipt owner gains a stamp, because an old 13_ ALSO returns success.
   // It silently CLAMPS an over-receipt: an operator entering 900 against a remaining 500 is told the receipt

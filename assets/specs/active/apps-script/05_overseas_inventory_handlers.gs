@@ -359,16 +359,43 @@ function handleImportOverseasInventorySnapshotBatch_(body) {
 // both of which either work or visibly do not. It now owns a reservation lifecycle that 12_ and 22_ CALL by
 // name, so an old 05_ beside a new 12_ resolves ovsAcquireReservationTx_ to undefined and throws inside a
 // journalled transaction — which is precisely the half-synced state a per-module stamp exists to expose.
-var OVERSEAS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R33';
+var OVERSEAS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R35';
 
 var OVSTX_MOV_RESERVE_ACQUIRE_ = 'reservation_acquire';
 var OVSTX_MOV_RESERVE_RELEASE_ = 'reservation_release';
 var OVSTX_MOV_SHIPMENT_OUT_ = 'shipment_out';
 var OVSTX_MOV_INVENTORY_IMPORT_ = 'inventory_import';
-// PART V §35 declared all four. NEW_MOVEMENT_TYPES_REQUIRED = 0 and this list is the proof: nothing here is
-// invented and nothing is a synonym for an existing movement.
+// S6-R6 — TWO MEMBERS THIS LEDGER ALREADY CARRIED AND DID NOT DECLARE.
+//
+// `manual_adjustment` is written to overseas_inventory_movements by this file's own adjustment handler
+// and has been since long before R4B. `shipment_receipt` is written to the same table by 31_, the
+// warehouse receipt, and was declared in 21_'s FACTORY list — where its own comment recorded that it
+// moves no factory quantity and belongs to this table. Neither is new and neither is a synonym: they
+// are existing events that the declared vocabulary did not name, which is the one way a 'closed'
+// vocabulary can be wrong without anybody noticing.
+var OVSTX_MOV_MANUAL_ADJUSTMENT_ = 'manual_adjustment';
+var OVSTX_MOV_SHIPMENT_RECEIPT_ = 'shipment_receipt';
+
+/* THE OVERSEAS LEDGER VOCABULARY. Every movement_type that may appear in overseas_inventory_movements.
+ *
+ * inventory_import is DECLARED BUT NOT YET WRITTEN: PART V §35 named it and the snapshot importer
+ * updates balances without appending a movement row. It is kept rather than removed, because removing a
+ * declaration R4B made deliberately is a decision about that round's contract and not this round's to
+ * take — and because the importer growing a ledger row is a change to the writer, not to the meaning. */
 var OVSTX_MOVEMENT_TYPES_ = [OVSTX_MOV_RESERVE_ACQUIRE_, OVSTX_MOV_RESERVE_RELEASE_,
-  OVSTX_MOV_SHIPMENT_OUT_, OVSTX_MOV_INVENTORY_IMPORT_];
+  OVSTX_MOV_SHIPMENT_OUT_, OVSTX_MOV_INVENTORY_IMPORT_,
+  OVSTX_MOV_MANUAL_ADJUSTMENT_, OVSTX_MOV_SHIPMENT_RECEIPT_];
+
+/* WHAT THE SHARED TRANSACTION MAY EMIT — a STRICT SUBSET of the vocabulary above, and the guard
+ * ovsApplyDeltaTx_ enforces.
+ *
+ * The guard used to be the vocabulary itself, which conflated two different questions: 'is this a real
+ * overseas movement type' and 'may the reservation transaction write it'. Widening the first to cover
+ * the receipt and the adjustment would have widened the second with it, and ovsApplyDeltaTx_ would have
+ * accepted a request to book a warehouse receipt through the reservation path. Separating them makes
+ * this guard STRICTER than it was: inventory_import was accepted here and no caller ever passes it. */
+var OVSTX_TX_WRITABLE_TYPES_ = [OVSTX_MOV_RESERVE_ACQUIRE_, OVSTX_MOV_RESERVE_RELEASE_,
+  OVSTX_MOV_SHIPMENT_OUT_];
 /* THE TYPES WHOSE wh_quantity IS A RESERVED DELTA — and this list differs from 21_'s on purpose.
  *
  * 21_ EXCLUDES shipment_out from the FACTORY per-owner ledger, because a factory dispatch row's `qty` is the
@@ -491,7 +518,7 @@ function ovsApplyDeltaTx_(p) {
   var now = p.now;
   if (!warehouseId || !sku) throw new Error('ovsApplyDeltaTx_: warehouseId + sku required');
   if (!isFinite(availDelta) || !isFinite(resDelta)) throw new Error('ovsApplyDeltaTx_: deltas must be finite');
-  if (OVSTX_MOVEMENT_TYPES_.indexOf(String(p.movementType || '').trim()) === -1) {
+  if (OVSTX_TX_WRITABLE_TYPES_.indexOf(String(p.movementType || '').trim()) === -1) {
     throw new Error('ovsApplyDeltaTx_: unknown movement_type "' + p.movementType + '" (closed vocabulary)');
   }
 

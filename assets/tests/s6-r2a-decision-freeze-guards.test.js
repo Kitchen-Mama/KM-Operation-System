@@ -168,16 +168,21 @@ section('D. D-S6-D — the movement vocabulary stays closed at seven');
 frozen('MOVEMENT_VOCABULARY_EXPANDED', 'NO');
 var TYPES = /var FSTX_MOVEMENT_TYPES_ = \[([\s\S]*?)\];/.exec(F21)[1];
 var declared = (TYPES.match(/FSTX_MOV_[A-Z_]+_/g) || []).sort();
-eq(declared.length, 7, 'D1 exactly seven declared factory movement types');
+// RESTATED (S6-R6): six. D4 below said R3 would move shipment_receipt and would not add a type; the
+// move landed in R6 and that is exactly what it did.
+eq(declared.length, 6, 'D1 exactly six declared factory movement types');
 eq(declared, ['FSTX_MOV_INVENTORY_IMPORT_', 'FSTX_MOV_MANUAL_ADJUSTMENT_', 'FSTX_MOV_PO_RECEIPT_',
-  'FSTX_MOV_RESERVE_ACQUIRE_', 'FSTX_MOV_RESERVE_RELEASE_', 'FSTX_MOV_SHIPMENT_OUT_',
-  'FSTX_MOV_SHIPMENT_RECEIPT_'].sort(),
-  'D2 and they are exactly the canonical seven — no eighth may be added to fix the misfiling');
+  'FSTX_MOV_RESERVE_ACQUIRE_', 'FSTX_MOV_RESERVE_RELEASE_', 'FSTX_MOV_SHIPMENT_OUT_'].sort(),
+  'D2 [R6] and they are exactly the canonical six — the misfiling was fixed by MOVING a member, never '
+  + 'by adding one');
 // The misfiling itself, pinned so R3 must move it rather than mint a new type.
 ok(/movement_type: 'shipment_receipt'/.test(code(F31)),
   'D3 TRIPWIRE — shipment_receipt is still written onto the OVERSEAS ledger');
-ok(/'shipment_receipt'/.test(F21),
-  'D4 TRIPWIRE — while still declared in the FACTORY vocabulary. R3 moves it; it does not add a type.');
+// Measured on STRIPPED code: 21_ still DISCUSSES shipment_receipt in the comment recording why it left,
+// and a bare substring search would read that history as a live declaration.
+ok(!/'shipment_receipt'/.test(code(F21)) && !/FSTX_MOV_SHIPMENT_RECEIPT_/.test(code(F21)),
+  'D4 [R6] and it is no longer declared in the FACTORY vocabulary — neither as a member nor as a '
+  + 'constant. The tripwire said the move would not add a type, and D1/D2 above measure that it did not.');
 
 // =========================================================================================================
 section('E. D-S6-E — no silent clamp. ALREADY SATISFIED by deployed code.');
@@ -266,13 +271,16 @@ ok(/ALREADY_FROZEN_COUNT\s+17/.test(CONTRACT) || /ALREADY_FROZEN_COUNT = 17/.tes
 section('I. mutation');
 // =========================================================================================================
 
-mut('I1 an eighth movement type is added', function () {
+mut('I1 a seventh movement type is added', function () {
   // EOL-agnostic: these .gs files are CRLF, so an anchor spelling '\n' matches nothing.
-  var faked = F21.replace(/FSTX_MOV_SHIPMENT_RECEIPT_(\s*\]\s*;)/,
-    'FSTX_MOV_SHIPMENT_RECEIPT_, FSTX_MOV_REFURBISH_$1');
+  // RE-ANCHORED (S6-R6): the anchor was FSTX_MOV_SHIPMENT_RECEIPT_, the member that left the list. The
+  // mutant is unchanged in substance — an invented type is appended — and now lands on the new last
+  // member. Left alone it would have thrown 'anchor drifted', which is a probe error, not a caught mutant.
+  var faked = F21.replace(/FSTX_MOV_SHIPMENT_OUT_(\s*\]\s*;)/,
+    'FSTX_MOV_SHIPMENT_OUT_, FSTX_MOV_REFURBISH_$1');
   if (faked === F21) throw new Error('I1 anchor drifted');
   var t = /var FSTX_MOVEMENT_TYPES_ = \[([\s\S]*?)\];/.exec(faked)[1];
-  return (t.match(/FSTX_MOV_[A-Z_]+_/g) || []).length === 8 && declared.length === 7;
+  return (t.match(/FSTX_MOV_[A-Z_]+_/g) || []).length === 7 && declared.length === 6;
 });
 
 mut('I2 the silent clamp comes back', function () {

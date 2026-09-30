@@ -761,7 +761,7 @@ SHIPMENT_RECEIPT_TARGET_CLASSIFICATION = OVERSEAS_DECLARED_VOCABULARY
 MOVEMENT_VOCABULARY_EXPANDED = NO
 SEVEN_WAS_A_CROSS_DOMAIN_COUNT = YES
 FACTORY_DECLARED_TYPES_AFTER_R4 = 6
-OVERSEAS_DECLARED_TYPES_AFTER_R4 = 4
+OVERSEAS_DECLARED_TYPES_AFTER_R4 = 4   [RESTATED BY R6 — 6 declared, 5 written; see PART VIII §54]
 NEW_MOVEMENT_SEMANTIC_INVENTED = NO
 
 OVER_RECEIPT_VALIDATION_OWNER = poReceiptEvaluateLine_
@@ -1554,3 +1554,106 @@ NEXT_TASK = S6-R6 — movement / receipt vocabulary + source authority closure
 R6 inherits one open item from this round rather than a defect: §50's `NOT_REACHABLE` pair is a statement
 about the CURRENT ownership model. If a later round ever wants a plan to hold stock directly, that is a
 decision about reservation ownership and belongs in a decision round, not in a cancellation handler.
+
+---
+
+# PART VIII — S6-R6: THE MOVEMENT VOCABULARY, DERIVED FROM ITS WRITERS
+
+## §53. The Factory vocabulary is SIX
+
+R1 declared seven and its own axis table recorded the defect in the seventh:
+
+```
+shipment_receipt   axis: neither   table: overseas_inventory_movements
+```
+
+It was listed in the FACTORY enum so that a reader of the factory ledger could not call the type unknown.
+But no factory writer has ever emitted it — the only writer is `31_`, the warehouse receipt, which appends
+to the OVERSEAS ledger — so the one thing its membership bought was the opposite of what the list is for: a
+`shipment_receipt` row appearing in `factory_stock_movements` would have been silently accepted as known,
+when it is precisely the misfiling worth reporting. R3 measured this (`SEVEN_WAS_A_CROSS_DOMAIN_COUNT =
+YES`); R6 moves the member to the domain that writes it.
+
+```
+FACTORY_MOVEMENT_ENUM_OWNER = 21_ FSTX_MOVEMENT_TYPES_
+FACTORY_MOVEMENT_TYPE_COUNT = 6
+FACTORY_MOVEMENT_TYPES = inventory_import · manual_adjustment · po_receipt ·
+                         reservation_acquire · reservation_release · shipment_out
+SHIPMENT_RECEIPT_FACTORY_ENUM_COUNT_POST = 0
+```
+
+## §54. The Overseas vocabulary is SIX declared, FIVE written
+
+R6's instruction expected four (`reservation_acquire`, `reservation_release`, `shipment_out`,
+`shipment_receipt`). Derived from the writers, that is not the set. **`manual_adjustment` is written to
+`overseas_inventory_movements` by `05_`'s own adjustment handler and has been since long before R4B**, and
+it was not in the declared vocabulary either. It is not a synonym and not new; it is an existing event the
+declared list did not name — which is the one way a "closed" vocabulary can be wrong without anybody
+noticing.
+
+```
+OVERSEAS_MOVEMENT_ENUM_OWNER = 05_ OVSTX_MOVEMENT_TYPES_
+OVERSEAS_MOVEMENT_TYPE_COUNT = 6 declared, 5 written
+
+  reservation_acquire   05_ ovsAcquireReservationTx_    available -, reserved +
+  reservation_release   05_ ovsReleaseReservationTx_    available +, reserved -
+  shipment_out          05_ ovsConsumeReservationTx_    reserved - only
+  manual_adjustment     05_ adjustOverseasInventory     available only
+  shipment_receipt      31_ shipReceiptPostToOverseas_  available +
+  inventory_import      DECLARED, NOT YET WRITTEN
+
+SHIPMENT_RECEIPT_OVERSEAS_ENUM_COUNT_POST = 1
+MOVEMENT_VOCABULARY_EXPANDED = NO   no meaning was invented; two existing meanings were declared
+```
+
+`inventory_import` is kept rather than removed. PART V §35 named it deliberately and the snapshot importer
+updates balances without appending a ledger row. Removing a declaration R4B made is a decision about that
+round's contract, not this round's to take, and the importer growing a ledger row would be a change to the
+writer rather than to the meaning.
+
+## §55. The guard and the vocabulary are now two different things
+
+`ovsApplyDeltaTx_` validated against the vocabulary itself, which conflated "is this a real overseas
+movement type" with "may the reservation transaction write it". Widening the first would have widened the
+second, and the shared transaction would have accepted a request to book a warehouse receipt through the
+reservation path.
+
+```
+OVSTX_MOVEMENT_TYPES_    the ledger vocabulary (6)
+OVSTX_TX_WRITABLE_TYPES_ what ovsApplyDeltaTx_ may emit (3) — a STRICT SUBSET
+```
+
+The split makes the guard **stricter** than it was: it previously accepted `inventory_import`, which no
+caller passes.
+
+## §56. Receipt, source authority and the things R6 found already correct
+
+Audited and unchanged — each was already right, and R6 changed none of them:
+
+```
+SHIPMENT_QTY_AUTHORITY           shipment_lines.shipment_qty (IMMUTABLE once frozen)
+RECEIPT_QTY_AUTHORITY            shipment_lines.shipment_received_qty (CUMULATIVE)
+INVENTORY_INCREASE_QTY_AUTHORITY shipReceiptPostAmount_ = current cumulative - last posted cumulative
+                                 (the DELTA, reconciled through the ledger — never shipment_qty)
+PARTIAL_RECEIPT_SUPPORTED   YES
+RECEIPT_REMAINING_QTY_OWNER max(shipment_qty - shipment_received_qty, 0), 31_
+OVER_RECEIPT_REACHABLE      NO   shipReceiptValidateLine_ -> RECEIPT_OVER before any write
+RECEIPT_IDEMPOTENCY_OWNER   shipReceiptMovementRef_ = shipment_line_id + ':' + cumulative,
+                            read back out of the ledger's reference_ids
+PO_OVER_RECEIPT_BEHAVIOR    REFUSE (PO_RECEIPT_EXCEEDS_REMAINING_QTY), 0 mutations, 0 clamp paths
+
+SOURCE_FACTORY_AUTHORITY              factory_stock_allocation_plans.warehouse_id
+SOURCE_FACTORY_AUTHORITY_COUNT        1
+SOURCE_FACTORY_DEPRECATED_FIELD       source_factory_warehouse_id
+DEPRECATED_FIELD_RUNTIME_AUTHORITY_COUNT 0    (a comment in the site-allocation core, and an OUTPUT
+                                              field name in a read-only diagnostic that DERIVES it from
+                                              pool.warehouse_id — neither decides anything)
+COLUMN_DELETE_REQUIRED                NO
+SHIPPING_SOURCE_IDENTITY   warehouse_id, end to end       SOURCE_IDENTITY_DRIFT_COUNT = 0
+DELIVERED_INVENTORY_MUTATION_COUNT = 0   delivered is a STATUS; shipment_receipt is the mutation
+```
+
+```
+S6_R6_MOVEMENT_RECEIPT_SEAL = YES
+NEXT_TASK = S6-R7 — shipping / inventory operator read-model + end-to-end execution conformance
+```

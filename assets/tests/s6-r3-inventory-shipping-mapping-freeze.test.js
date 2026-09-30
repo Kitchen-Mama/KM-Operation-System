@@ -371,8 +371,11 @@ frozen('NEW_MOVEMENT_SEMANTIC_INVENTED', 'NO');
 
 var TYPES_BLOCK = /var FSTX_MOVEMENT_TYPES_ = \[([\s\S]*?)\];/.exec(F21)[1];
 var declared = TYPES_BLOCK.match(/FSTX_MOV_[A-Z_]+_/g) || [];
-eq(declared.length, 7, 'I1 the factory list still declares seven — unchanged by this round');
-ok(declared.indexOf('FSTX_MOV_SHIPMENT_RECEIPT_') >= 0, 'I2 and shipment_receipt is one of them');
+eq(declared.length, 6, 'I1 [R6] the factory list declares SIX. It declared seven when R3 measured it, and '
+  + 'SEVEN_WAS_A_CROSS_DOMAIN_COUNT = YES is why: the seventh was shipment_receipt.');
+ok(declared.indexOf('FSTX_MOV_SHIPMENT_RECEIPT_') === -1,
+  'I2 [R6] and shipment_receipt is NOT one of them — it was, which is what made SEVEN a cross-domain '
+  + 'count. I3/I4/I5 below are the evidence that finding rested on, and they are unchanged.');
 
 // It is on NEITHER factory axis. That is the misfiling, stated as data rather than as an opinion.
 var RES_AXIS = /var FSTX_RESERVED_AXIS_TYPES_ = \[([\s\S]*?)\];/.exec(F21)[1];

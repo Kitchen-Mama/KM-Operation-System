@@ -128,39 +128,32 @@ var RELEASE_OWNERS = {
   // path, the campaign line writer and the FC Summary read workspace; R33 changes the OVERSEAS INVENTORY
   // LIFECYCLE and the two shipment handlers that call it. 14_, 20_ and 58_ therefore leave and keep the R32
   // stamp they earned — marching them to R33 would erase the one fact a per-module stamp carries.
-  '11_shipping_plan_handlers.gs':
-    'THE APPROVED-PLAN CANCELLATION. R34 lets an approved plan be cancelled when — and only when — no '
-    + 'Shipment exists for it, which is the exit that did not exist: an approved plan whose Shipment Draft '
-    + 'creation failed could not be cancelled and could not be completed, so it held factory exposure for '
-    + 'ever while Retry was the only door. NOTHING IS RELEASED BY ARITHMETIC HERE, and that is the design '
-    + 'rather than an omission: a reservation is owned by a shipment and only by a shipment, so a plan '
-    + 'holds EXPOSURE, which KMFSG derives from status — the status write IS the release. The eligibility '
-    + 'check runs BEFORE the first cell is written, and an UNKNOWN shipment lookup REFUSES rather than '
-    + 'reading as absent, because releasing on an assumption is the one mistake this path can make. The '
-    + 'cancel is then read back from the row before it is claimed.',
-  '12_shipment_handlers.gs':
-    'R34 — DOES A SHIPMENT EXIST FOR THIS PLAN, ANSWERED IN THREE VALUES. shipmentStateForPlan_ separates '
-    + 'ABSENT (the sheet was read and no row names this plan) from UNKNOWN (the sheet is missing, carries '
-    + 'no plan reference, or the read threw), because S6-R5 is the first caller for which they differ: '
-    + 'cancelling an approved plan releases its exposure, and reading UNKNOWN as ABSENT would release a '
-    + 'plan whose shipment is alive. shipmentFindForPlan_ becomes a projection of it with its contract '
-    + 'bit-for-bit unchanged, so the four existing callers are untouched, and the plan-reference column '
-    + 'list is named once rather than copied into 11_. ALSO CARRIES R33: source-domain routing. R33 stopped '
-    + 'the sufficiency precheck reading factory_stock '
-    + 'for every source: it asks whether the source warehouse is FACTORY or OVERSEAS and forwards to that '
-    + 'domain lifecycle, at the precheck, the acquire, the cancellation release and the source-warehouse '
-    + 'change alike. The two domains are COMPOSED, never merged — the shim adds no arithmetic of its own — '
-    + 'and the pool key WH:<warehouse_id>||<sku> is unchanged on both sides. A CROSS-domain source change is '
-    + 'refused rather than guessed: releasing in one domain and acquiring in another would invent a physical '
-    + 'transfer nobody approved, and the pre-R33 code would additionally have MINTED a factory_stock row for '
-    + 'a 3PL warehouse on the way. The exposure ordering is INHERITED rather than re-derived: the acquire '
-    + 'still runs BEFORE transferred_to_shipment_at is stamped, inside the same lock and journal, so there is '
-    + 'no instant at which the plan exposure has been released and no reservation holds the units.',
+  '21_factory_inventory_handlers.gs':
+    'THE FACTORY MOVEMENT VOCABULARY, CORRECTED TO SIX. shipment_receipt leaves it. R1 listed the type '
+    + 'here so that a reader of the FACTORY ledger could not call it unknown, and its own entry in R1\'s '
+    + 'axis table recorded what was wrong with that: axis `neither`, table overseas_inventory_movements. '
+    + 'No factory writer has ever emitted it and the only writer that does — 31_, the warehouse receipt — '
+    + 'appends to the overseas ledger, so the one thing its membership bought was the opposite of what the '
+    + 'list is for: a shipment_receipt row in factory_stock_movements would have been silently accepted as '
+    + 'known when it is exactly the misfiling worth reporting. No writer changed and no stored row changed; '
+    + 'this file\'s first stamp rotation since FC-1A-R1, which is a nine-release gap.',
+  '05_overseas_inventory_handlers.gs':
+    'THE OVERSEAS MOVEMENT VOCABULARY, DERIVED FROM ITS WRITERS. It gains the two members this ledger '
+    + 'already carried and did not declare: manual_adjustment, written to overseas_inventory_movements by '
+    + 'this file\'s own adjustment handler since long before R4B, and shipment_receipt, written to the same '
+    + 'table by 31_. Neither is new and neither is a synonym — they are existing events the declared '
+    + 'vocabulary did not name, which is the one way a closed vocabulary can be wrong without anybody '
+    + 'noticing. The ovsApplyDeltaTx_ guard moves OFF the vocabulary and onto OVSTX_TX_WRITABLE_TYPES_, '
+    + 'which makes it STRICTER: it used to accept inventory_import, which no caller passes, and widening '
+    + 'the vocabulary without splitting the two would have let a warehouse receipt be booked through the '
+    + 'reservation transaction. inventory_import stays DECLARED BUT UNWRITTEN — removing a declaration R4B '
+    + 'made deliberately is a decision about that round\'s contract, not this round\'s to take.',
   '63_api_v1_system_health.gs':
-    'THE MANIFEST. R34 moves THREE expected stamps — 11_, 12_ and its own. 05_ and 22_ are deliberately NOT '
-    + 'moved: neither changed this round, and marching them would erase the R33 they earned. The ACTION '
-    + 'CONTRACT does not move either: no action was added or removed, and the four new refusal tokens are '
-    + 'outcomes of the updateShippingPlanStatus action that already existed.',
+    'THE MANIFEST. R35 moves THREE expected stamps — 21_, 05_ and its own. 11_ and 12_ are deliberately NOT '
+    + 'moved: neither changed this round, and marching them would erase the R34 they earned. NO ACTION, NO '
+    + 'HANDLER AND NO STORED ROW CHANGED IN R35 AT ALL — it is a vocabulary correction, which is precisely '
+    + 'the kind of change a per-module stamp exists to make visible, because nothing else about the '
+    + 'deployment would show it.',
 };
 
 // Owners that must be COPIED but whose stamp belongs to an EARLIER unshipped release. Each entry is the
@@ -170,13 +163,17 @@ var RELEASE_OWNERS = {
 // reports the round a release was cut in, not the round the file changed in, and then it can no longer
 // distinguish a synced copy from a stale one, which is the single thing it is for.
 var RELEASE_CARRIED = {
+  // S6-R6 — THE FIFTEENTH SWAP. 11_ and 12_ LEAVE OWNERSHIP AT R35 and keep the R34 they earned; 05_ comes
+  // BACK into ownership after one release out, and 21_ enters it for the first time since FC-1A-R1. A file
+  // moving out and back within two releases is the ledger doing its job in both directions.
+  '11_shipping_plan_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R34',
+  '12_shipment_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R34',
   // S6-R5 — THE FOURTEENTH SWAP. 05_ and 22_ LEAVE OWNERSHIP AT R34 and keep the R33 they earned. R34 is a
   // shipping-PLAN round: it changes the plan status owner and the shipment existence probe that owner asks.
   // Neither the overseas inventory lifecycle nor the dispatch consume was touched, and marching them to R34
   // would report the release this was cut in rather than the round the files changed in. 11_ enters
   // ownership from R5-R1, which is a nine-release gap and exactly the kind of jump a per-module stamp is
   // supposed to be able to express.
-  '05_overseas_inventory_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R33',
   '22_shipment_dispatch_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R33',
   // S6-R4B — 14_, 20_ and 58_ LEAVE OWNERSHIP AT R33 and keep R32, the release they actually changed in.
   // R33 is an overseas-inventory and shipping round; it touches no FC file. Marching their stamps forward

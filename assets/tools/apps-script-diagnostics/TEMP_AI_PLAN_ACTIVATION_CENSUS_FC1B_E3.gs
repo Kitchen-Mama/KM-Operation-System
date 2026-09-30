@@ -90,12 +90,12 @@
 // left behind is not a harmless lag - the live manifest STOPs on a deployment that is healthy. That is
 // the R2/R3 drift this diagnostic was rebuilt to make impossible, and R4B reproduced it by rotating 63_
 // without rotating here.
-// S6-R5: R33 -> R34. THIS PIN MOVES WITH EVERY RELEASE, WITHOUT EXCEPTION, AND NOT BECAUSE THIS CENSUS
+// S6-R6: R34 -> R35. THIS PIN MOVES WITH EVERY RELEASE, WITHOUT EXCEPTION, AND NOT BECAUSE THIS CENSUS
 // CHANGED. A pin behind its release makes the live manifest STOP on a deployment that is healthy. R4C
 // moved it R32 -> R33 after S6-R4B left it behind, and S6-R5 left it behind again within one round — so
 // the rule is written here rather than the reason: if SYS_DEPLOYMENT_RELEASE_ in 63_ moves, both pins
 // below move in the same commit.
-var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R34';
+var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R35';
 
 /** Read-only row reader. The Sheet object stays inside this function — the caller gets values, never a writer. */
 // R6-R3 §2 — the OPTIONAL third argument is a metrics sink. §2 requires the diagnostic to report how many
@@ -7852,12 +7852,12 @@ function RUN_R6R7_CONTROLLED_NO_ACTION_ACTIVATION_MANIFEST() {
 // left behind is not a harmless lag - the live manifest STOPs on a deployment that is healthy. That is
 // the R2/R3 drift this diagnostic was rebuilt to make impossible, and R4B reproduced it by rotating 63_
 // without rotating here.
-// S6-R5: R33 -> R34. THIS PIN MOVES WITH EVERY RELEASE, WITHOUT EXCEPTION, AND NOT BECAUSE THIS CENSUS
+// S6-R6: R34 -> R35. THIS PIN MOVES WITH EVERY RELEASE, WITHOUT EXCEPTION, AND NOT BECAUSE THIS CENSUS
 // CHANGED. A pin behind its release makes the live manifest STOP on a deployment that is healthy. R4C
 // moved it R32 -> R33 after S6-R4B left it behind, and S6-R5 left it behind again within one round — so
 // the rule is written here rather than the reason: if SYS_DEPLOYMENT_RELEASE_ in 63_ moves, both pins
 // below move in the same commit.
-var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R34';
+var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R35';
 
 // ================================================================================================================
 // THE BROWSER HALF. Run in the page console; nothing here writes, and nothing here is a substitute for the

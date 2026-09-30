@@ -352,7 +352,11 @@ function S1World(spec) {
   vm.runInContext([
     extractVar(G21V, 'FSTX_MOV_INVENTORY_IMPORT_'), extractVar(G21V, 'FSTX_MOV_MANUAL_ADJUSTMENT_'),
     extractVar(G21V, 'FSTX_MOV_PO_RECEIPT_'), extractVar(G21V, 'FSTX_MOV_SHIPMENT_OUT_'),
-    extractVar(G21V, 'FSTX_MOV_SHIPMENT_RECEIPT_'), extractVar(G21V, 'FSTX_MOV_RESERVE_ACQUIRE_'),
+    // S6-R6: FSTX_MOV_SHIPMENT_RECEIPT_ was extracted here and no longer exists in 21_ — the type
+    // moved to the Overseas vocabulary, where its only writer always appended. Extracting a name that
+    // is gone THROWS, which would have taken this whole suite out of the sweep rather than failing one
+    // line of it.
+    extractVar(G21V, 'FSTX_MOV_RESERVE_ACQUIRE_'),
     extractVar(G21V, 'FSTX_MOV_RESERVE_RELEASE_'),
     extractVar(G21V, 'FSTX_MOVEMENT_TYPES_'), extractVar(G21V, 'FSTX_RESERVED_AXIS_TYPES_'),
     extractVar(G21V, 'FSTX_CURRENT_AXIS_TYPES_'),
@@ -4640,8 +4644,9 @@ eq(AA22.filter(function (f) { return f.role === 'LEDGER_AXIS_SELECTOR'; })
   'AA22h and exactly one column is the ledger axis selector');
 // THE VOCABULARY IS 21_'s, EXECUTED.
 var AA22w = S1World(pos());
-eq(vm.runInContext('FSTX_MOVEMENT_TYPES_.length', AA22w.ctx), 7,
-  'AA22i 21_ declares seven movement types and the world runs them');
+eq(vm.runInContext('FSTX_MOVEMENT_TYPES_.length', AA22w.ctx), 6,
+  'AA22i [R6] 21_ declares SIX movement types and the world runs them — it was seven until S6-R6 '
+  + 'moved shipment_receipt to the Overseas vocabulary that its writer always used');
 eq(vm.runInContext('factoryStockIsKnownMovementType_("manual_adjustment")', AA22w.ctx), true,
   'AA22j so a canonical value is recognised as canonical');
 eq(vm.runInContext('factoryStockIsKnownMovementType_("")', AA22w.ctx), false,

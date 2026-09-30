@@ -1527,7 +1527,7 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // round IT last changed, and marching it here would erase that fact to make a number tidy.
   'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R31',
   'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32',
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R33', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R34'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R33', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R34', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R35'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

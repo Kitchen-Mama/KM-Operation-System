@@ -329,7 +329,8 @@ function factoryStockApplyDeltaTx_(p) {
 //
 // So this adds NO table, NO column and NO migration. It DOES add two values to the movement_type vocabulary
 // that FC-0A measured as closed at five (inventory_import, manual_adjustment, po_receipt, shipment_out,
-// shipment_receipt). That extension is reported as a DECISION in the completion report; it is additive to an
+// shipment_receipt — the last of which S6-R6 moved to the Overseas vocabulary, where its writer always
+// was). That extension is reported as a DECISION in the completion report; it is additive to an
 // existing column's value set, no reader validates movement_type against an allowlist (verified across every
 // non-generated .gs and the browser adapter), and it is exactly how inventory_import was introduced.
 // F1-7N-FC-1A §J DEPLOYMENT STAMP. A 21_ one round behind has no reservation primitives at all, so 12_ and
@@ -338,7 +339,7 @@ function factoryStockApplyDeltaTx_(p) {
 // F1-7N-FC-1A-R1: moved. This file gained the canonical seven-type vocabulary, the axis predicates and the
 // reserved-balance reconciliation. A 21_ one round behind has none of them, so the cancellation handler throws
 // on an undefined function and the reconciliation diagnostic refuses to run rather than guessing.
-var FSTX_BUILD_VERSION_ = 'F1-7N-FC-1A-R1';
+var FSTX_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R35';
 // ============================================================
 // F1-7N-FC-1A-R1 §G — THE ONE CANONICAL factory_stock_movements VOCABULARY, AND WHAT EACH TYPE MOVES.
 // ------------------------------------------------------------
@@ -356,9 +357,6 @@ var FSTX_BUILD_VERSION_ = 'F1-7N-FC-1A-R1';
 //   manual_adjustment     current   (signed delta from an operator-set available)
 //   po_receipt            current   (+received)
 //   shipment_out          current   AND reserved  (-shipped, and releases this shipment's own hold)
-//   shipment_receipt      neither   (overseas_inventory_movements; listed so the set is complete and a
-//                                    reader cannot conclude a type is unknown just because factory stock
-//                                    is not the table it moves)
 //   reservation_acquire   reserved  (+claimed)
 //   reservation_release   reserved  (-released; current NEVER changes)
 //
@@ -366,19 +364,32 @@ var FSTX_BUILD_VERSION_ = 'F1-7N-FC-1A-R1';
 // the two reservation types additively and R1 makes that canonical. movement_type is stored as a value and no
 // deployed reader rejects an unknown one (verified across every non-generated .gs and the browser adapter), so
 // there is no migration. Anything that still claims five is stale and is corrected in the same commit.
+//
+// S6-R6 SUPERSEDES THE COUNT, NOT THE METHOD: THE VOCABULARY IS SIX.
+//
+// R1's seventh member was `shipment_receipt`, and its own entry in the table above said what was wrong
+// with it: axis `neither`, table `overseas_inventory_movements`. It was listed here so that a reader of
+// the FACTORY ledger could not call the type unknown — but no factory writer has ever emitted it, and
+// the only writer that does (31_, the warehouse receipt) appends to the OVERSEAS ledger. So the one
+// thing its membership bought was the opposite of what the list is for: had a shipment_receipt row ever
+// appeared in factory_stock_movements it would have been silently accepted as known, when it is exactly
+// the misfiling worth reporting. S6-R3 measured this ('SEVEN_WAS_A_CROSS_DOMAIN_COUNT = YES') and
+// S6-R6 moves the member to the domain that writes it. No writer changed; no stored row changed; a
+// factory ledger row carrying it is now correctly reported as an unknown type.
 var FSTX_MOV_INVENTORY_IMPORT_ = 'inventory_import';
 var FSTX_MOV_MANUAL_ADJUSTMENT_ = 'manual_adjustment';
 var FSTX_MOV_PO_RECEIPT_ = 'po_receipt';
 var FSTX_MOV_SHIPMENT_OUT_ = 'shipment_out';
-var FSTX_MOV_SHIPMENT_RECEIPT_ = 'shipment_receipt';
+// S6-R6: FSTX_MOV_SHIPMENT_RECEIPT_ was declared here and is now OVSTX_MOV_SHIPMENT_RECEIPT_ in 05_,
+// beside the ledger its writer actually appends to. Nothing in this file ever used it except the list.
 var FSTX_MOV_RESERVE_ACQUIRE_ = 'reservation_acquire';
 var FSTX_MOV_RESERVE_RELEASE_ = 'reservation_release';
 
-// The canonical seven, in a stable order so a test can pin the SET without pinning an accident of iteration.
+// The canonical SIX, in a stable order so a test can pin the SET without pinning an accident of iteration.
 var FSTX_MOVEMENT_TYPES_ = [
   FSTX_MOV_INVENTORY_IMPORT_, FSTX_MOV_MANUAL_ADJUSTMENT_, FSTX_MOV_PO_RECEIPT_,
   FSTX_MOV_RESERVE_ACQUIRE_, FSTX_MOV_RESERVE_RELEASE_,
-  FSTX_MOV_SHIPMENT_OUT_, FSTX_MOV_SHIPMENT_RECEIPT_
+  FSTX_MOV_SHIPMENT_OUT_
 ];
 // The types whose `qty` is a RESERVED-stock delta. A reader that sums `qty` for a current-stock report must
 // exclude these, or a 800-unit reservation is reported as 800 units of physical movement that never occurred.
@@ -593,7 +604,7 @@ function factoryStockReconcileReservations_(stockRows, movRows) {
       }
       return;
     }
-    // inventory_import / manual_adjustment / po_receipt / shipment_receipt move no reserved quantity.
+    // inventory_import / manual_adjustment / po_receipt move no reserved quantity.
   });
 
   var rows = [], mismatches = [];
