@@ -3128,6 +3128,24 @@ window.KM.DB.adaptFcSummaryWorkspaceSlice = function(data) {
     if (Array.isArray(data.pricingList)) {
         out.pricingList = data.pricingList.map(normalizePricingListRecord).filter(function(r) { return r.pricingId || r.marketplaceSkuId || r.sku; });
     }
+    /* FC-SPECIAL-EVENT-WRITE-CONSISTENCY-R2 §3 — the authoritative GRAPH, carried through UNNORMALISED.
+     *
+     * Every other branch above maps rows through a normalizer, because those rows are rendered. These are
+     * not: they are canonical ids compared against canonical ids. Normalising them would rename the very
+     * fields the comparison is made on, and a receipt that has to translate identities before it can
+     * check them is a receipt with a place to go wrong. */
+    if (data.graph && typeof data.graph === 'object') {
+        out.graph = {
+            campaignId: String(data.graph.campaign_id || ''),
+            campaignFound: data.graph.campaign_found === true,
+            lineIds: Array.isArray(data.graph.lineIds) ? data.graph.lineIds.map(String) : [],
+            events: Array.isArray(data.graph.events) ? data.graph.events.map(function (e) {
+                return { eventFcId: String((e && e.event_fc_id) || ''),
+                    campaignSkuLineId: String((e && e.campaign_sku_line_id) || ''),
+                    sku: String((e && e.sku) || '') };
+            }) : []
+        };
+    }
     // The scope a scoped slice answered FOR. Carried through so the page can compare it with the scope it
     // is currently showing and drop an answer that arrived after the operator moved on.
     if (data.scope && typeof data.scope === 'object') out.scope = data.scope;
@@ -5059,7 +5077,18 @@ function _kmClassifyBusinessError_(msg) {
 //     is the most consequential to name: it means the write was refused BEFORE touching a cell, so it is a
 //     provable zero-write, and it will never succeed on retry until the schema is reconciled.
 // Naming them changes nothing about the backend contract; it stops the browser from discarding the reason.
-var KM_CANONICAL_CODES = ['BLOCKED_CONFLICT', 'MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1', 'PLAN_HEADER_INCOMPLETE',
+/* FC-SPECIAL-EVENT-WRITE-CONSISTENCY-R2 §4/§6 — the four refusals the FC write path gained. Each is a
+ * PROVEN zero-write named by the server before it touched a cell:
+ *   DANGLING_CAMPAIGN_SKU_LINE_REFERENCE   the event named a line that does not exist
+ *   CAMPAIGN_SKU_LINE_CAMPAIGN_MISMATCH    the line exists but under a different campaign
+ *   CAMPAIGN_SKU_LINE_REGISTRY_UNREADABLE  the line table could not be read, so nothing was proved
+ *   CAMPAIGN_SKU_LINE_LOCK_TIMEOUT         another line write held the lock
+ * They are registered here for the same reason every token above is: a refusal the client cannot name
+ * canonically is one it reports as a generic backend error, which is how a typed refusal stops being
+ * worth typing. */
+var KM_CANONICAL_CODES = ['DANGLING_CAMPAIGN_SKU_LINE_REFERENCE', 'CAMPAIGN_SKU_LINE_CAMPAIGN_MISMATCH',
+    'CAMPAIGN_SKU_LINE_REGISTRY_UNREADABLE', 'CAMPAIGN_SKU_LINE_LOCK_TIMEOUT',
+    'BLOCKED_CONFLICT', 'MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1', 'PLAN_HEADER_INCOMPLETE',
     'PLAN_LINE_INCOMPLETE', 'NO_ACTIVE_DRAFT', 'VERSION_CONFLICT', 'IMMUTABLE_TERMINAL_STATUS', 'SOURCE_AVAILABLE_QTY_EXCEEDED',
     'ROUTE_INCOMPLETE_NEW_DRAFT', 'LEGACY_ROUTE_RECONCILIATION_REQUIRED', 'K2_ROUTE_RECONCILIATION_REQUIRED',
     // F1-7N-FB-4B — identity/idempotency refusals the writer names. Each is a PROVEN zero-write except

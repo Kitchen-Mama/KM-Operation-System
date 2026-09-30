@@ -133,8 +133,38 @@ var RELEASE_OWNERS = {
   // FC-SUMMARY-STABILITY-R3 — 58_ JOINS AND 14_ LEAVES: the eleventh swap, and the exact mirror of the
   // ninth. R30 changed the fc_special_events WRITE path; R31 changes the READ workspace and touches no
   // write handler at all. Reading is not writing, in both directions.
+  //
+  // FC-SPECIAL-EVENT-WRITE-CONSISTENCY-R2 — 14_ COMES BACK AND 20_ JOINS IT, the twelfth swap, and the
+  // first time BOTH write handlers move in one release. They move for the same defect seen from two
+  // sides: an event could name a campaign_sku_line that did not exist (14_), and two concurrent saves
+  // could both mint one (20_). 58_ stays an owner for a THIRD reason — the graph readback that makes
+  // the save receipt a measurement — which is why this release has four.
+  '14_fc_write_handlers.gs':
+    'THE EVENT WRITE PATH, NOW REFERENTIALLY CLOSED. R32 makes fcSpecialEventUpsert_ PROVE that the '
+    + 'campaign_sku_line it is asked to reference exists and belongs to the same campaign before it '
+    + 'creates a row, and refuses with DANGLING_CAMPAIGN_SKU_LINE_REFERENCE / '
+    + 'CAMPAIGN_SKU_LINE_CAMPAIGN_MISMATCH / CAMPAIGN_SKU_LINE_REGISTRY_UNREADABLE when it cannot. An '
+    + 'UPDATE is gated ONLY when the reference changes, so the nine orphaned production events stay '
+    + 'editable — freezing them would punish the rows that are the evidence. Half-sync hazard: NEW '
+    + 'frontend beside an OLD 14_ simply gets no gate (the pre-R32 behaviour); an OLD frontend beside a '
+    + 'NEW 14_ is also safe, because the gate refuses writes that were already wrong. Neither direction '
+    + 'is dangerous, which is why this file has no ordering constraint against the others.',
+  '20_campaign_write_handlers.gs':
+    'THE CAMPAIGN LINE WRITE PATH, NOW ATOMIC. R32 puts handleUpsertCampaignSkuLines_ under the SAME '
+    + 'ScriptLock handleUpsertCampaign_ has taken since R17, across the authoritative read and the '
+    + 'append it computes from it — the read-then-append pair R1 proved was unprotected while the '
+    + 'identical pair one stage earlier was. The lock opens BEFORE the read and releases in a finally. '
+    + 'It is NOT R6\'s two-pass shape: this handler holds exactly one authoritative read (pinned at N '
+    + 'up to 200 by fc-special-stage2-large-batch-r1) and a second resolve pass would be a second read '
+    + 'on every write, so one read under the lock is both the smaller cost and the shorter hold.',
   '58_api_v1_fc_summary_workspace.gs':
-    'THE FC SUMMARY READ WORKSPACE. R31 gives it the SCOPED PRICING PROJECTION: a pricing slice that selects '
+    'THE FC SUMMARY READ WORKSPACE. R32 adds the AUTHORITATIVE GRAPH SLICE: campaigns + '
+    + 'campaign_sku_lines join the SLICE-ONLY table set (never FULL, so no healthy modal open pays for '
+    + 'them) and a `graph` slice scoped to one campaign_id answers in canonical ids — which lines exist '
+    + 'under it, which events, and what each event points at. That is what lets the save receipt be a '
+    + 'measurement instead of a payload count. Half-sync hazard: NEW frontend beside an OLD 58_ resolves '
+    + 'the unknown slice to FULL, the answer carries no graph, and the client reports OUTCOME_UNKNOWN — '
+    + 'truthful, not dangerous. R31 gave it the SCOPED PRICING PROJECTION: a pricing slice that selects '
     + 'only the pricing_list rows the client resolver could match for one company/country/marketplace, '
     + 'projected to the twelve columns that resolver reads. It replaces a whole-table browser read that was '
     + 'timing out on Build / Refresh Group Cards. The half-sync hazard is ASYMMETRIC and decides the copy '
@@ -146,7 +176,10 @@ var RELEASE_OWNERS = {
     + 'nullable OVERRIDE -> RESOLVED chain stays in the one client normalizer, and this slice only decides '
     + 'which rows travel.',
   '63_api_v1_system_health.gs':
-    'THE MANIFEST. 58_\'s expected stamp moves with 58_ itself, and its `owns` text grows to name the scoped '
+    'THE MANIFEST. R32 moves FOUR expected stamps — 14_, 20_, 58_ and its own — and the `owns` text of '
+    + 'each grows to name what changed. The ACTION CONTRACT still does not move: the graph slice rides '
+    + 'the existing workspace action, and the two new refusal tokens are outcomes of an existing one. '
+    + 'R31 note: 58_\'s expected stamp moves with 58_ itself, and its `owns` text grows to name the scoped '
     + 'pricing projection — both are changes to THIS file. The ACTION CONTRACT does not move: no action was '
     + 'added or removed. A new SLICE on an existing action is not a new vocabulary, which is the same ruling '
     + 'R3-R1 made when the slice mechanism itself landed on this action without touching 01_router.',
@@ -163,12 +196,10 @@ var RELEASE_CARRIED = {
   // touch the recommendation generator, so 47_ keeps R29, the release it actually changed in. Marching
   // it to R30 would erase the one fact its stamp carries, which is what C3 exists to catch.
   '47_api_v1_recommendation_generation.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R29',
-  // 14_ JOINS AT R31 — the eleventh swap, and it is the ninth one running backwards. It became an owner at
-  // R30 because FC-ID-R2 changed the fc_special_events write path; R31 changes the READ workspace and no
-  // write handler, so 14_ keeps R30. It must still be COPIED — R30 is unshipped, so 14_ differs from the
-  // deployed tree — which is precisely the distinction this list exists to draw: copied, but not stamped
-  // with this release.
-  '14_fc_write_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R30',
+  // 14_ LEFT AGAIN AT R32 and is an OWNER once more — the twelfth swap. It was carried at R31 because a
+  // read-workspace round has no business moving a write handler's stamp; R32 changes the write handler
+  // itself, so the stamp moves with the code that moved. This is the ledger working in both directions
+  // within two releases, which is the strongest evidence that the stamps are not being marched.
   '01_router.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25',
   '73_api_v1_pricing_write.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25'
 };
@@ -203,7 +234,10 @@ var RELEASE_UNMOVED = {
   // symmetry is exact: R19 batched the REGULAR forecast writer in 04_ and left the campaign line writer
   // alone; R20 batches the campaign line writer in 20_ and touches no regular-forecast handler. Marching
   // 04_ to R20 would erase the one fact its stamp carries.
-  // 20_ JOINS THIS LIST AT R21 AND 01_ LEAVES IT — the fifth such swap the ledger has recorded. R20
+  // 20_ LEFT THIS LIST AGAIN AT R32, its first move since R20 — the twelfth swap. R32 puts the campaign
+  // line writer under the ScriptLock stage 1 has held since R17, so the stamp moves with the code. The
+  // historical note below records why it sat here for eleven releases.
+  // 20_ JOINED THIS LIST AT R21 AND 01_ LEFT IT — the fifth such swap the ledger has recorded. R20
   // batched the campaign line writer in 20_ and routed nothing; R21 routes a new action in 01_ and
   // touches no campaign handler. Marching 20_ to R21 would erase the one fact its stamp carries, and a
   // project holding the R17 copy of it still cannot save a 90-SKU Special Event — which is exactly what
@@ -228,7 +262,6 @@ var RELEASE_UNMOVED = {
   // the slice mechanism landed, through every write-path release since, on the rule that reading is not
   // writing. R31 is the round that finally changes the READ owner: the scoped pricing projection is a new
   // slice on its own action, so its stamp moves to the round it actually changed in.
-  '20_campaign_write_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R20',
   '13_procurement_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12',
   '00_config.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R11',
   // 72_ LEFT THIS LIST AT R24 — the eighth swap, and the one the previous three entries were building
@@ -378,12 +411,14 @@ ok(/function pricingNewRowPlan_\(/.test(REGWRITE) && /NO_CANONICAL_FX_RATE/.test
   'B2a and the change its stamp claims is really in the file — the creation planner and its fail-closed reason');
 ok(!/fxRate = 1;/.test(REGWRITE),
   'B2b with the unconditional rate-1 seed it replaced gone, so the stamp is not decoration');
-// FC-SUMMARY-STABILITY-R3 — 14_ is CARRIED again. It became an owner at R30 for the fc_special_events
-// write path; R31 touches no write handler, so it keeps R30 — and must still be copied, because R30 has
-// not shipped. The assertion follows the file between the lists, which is the whole reason it was written
-// against the partition rather than against a literal.
-eq(declares(WRITE, 'FCW_BUILD_VERSION_'), RELEASE_CARRIED['14_fc_write_handlers.gs'],
-  'B2-0 14_ keeps R30, the round it last changed — a read release may not march the write handler along');
+// FC-SPECIAL-EVENT-WRITE-CONSISTENCY-R2 — 14_ IS AN OWNER AGAIN. It was carried at R31 because a
+// read-workspace round has no business moving a write handler's stamp; R32 changes the write handler
+// itself. The assertion reads whichever list the file is in, which is exactly why it was written against
+// the partition and not against a literal — it has now followed 14_ across three releases running.
+eq(declares(WRITE, 'FCW_BUILD_VERSION_'), RELEASE_OWNERS['14_fc_write_handlers.gs'] ? RELEASE : null,
+  'B2-0 14_ moves to R32, the round its referential-integrity gate landed in');
+ok(/DANGLING_CAMPAIGN_SKU_LINE_REFERENCE/.test(WRITE) && /CAMPAIGN_SKU_LINE_CAMPAIGN_MISMATCH/.test(WRITE),
+  'B2-0c and the change its stamp claims is really in the file — the two refusals the gate emits');
 ok(/function fcSeValidateMarketplaceIdentity_\(/.test(WRITE) && /BLANK_MARKETPLACE_ID_REFUSED/.test(WRITE),
   'B2-0a and the change its stamp claims is really in the file — the validator and its blank refusal');
 ok(!/fcSeValidateMarketplaceIdentity_[\s\S]{0,400}?byId\[[^\]]*\]\[0\]/.test(WRITE),
@@ -397,10 +432,13 @@ var REGHANDLER = REGWRITE.slice(REGWRITE.indexOf('function handleImportFcRegular
 ok(REGHANDLER.length > 500, 'B2-0b0 the Regular handler is locatable inside 04_');
 ok(!/\.setValue\(/.test(REGHANDLER) && !/\.appendRow\(/.test(REGHANDLER),
   'B2-0b with the per-cell and per-row mutations it replaced gone from THAT handler');
-// PRICING-R2 — 20_ LEAVES THE RELEASE and keeps R20, the round it last changed. Its batched-writer
-// properties below stay exactly as they are: they are what R20 bought, and they must keep holding.
-eq(declares(CAMPWRITE, 'CAMPAIGN_BUILD_VERSION_'), RELEASE_UNMOVED['20_campaign_write_handlers.gs'],
-  'B2-2 while 20_ stays on R20, the round its batched campaign_sku_lines writer landed in');
+// FC-SPECIAL-EVENT-WRITE-CONSISTENCY-R2 — 20_ RETURNS AT R32, its first move since R20. Everything R20
+// bought stays exactly as it was: the lock is added AROUND the batched writer, not inside it, so the one
+// authoritative read and the coalesced ranges below are untouched.
+eq(declares(CAMPWRITE, 'CAMPAIGN_BUILD_VERSION_'), RELEASE_OWNERS['20_campaign_write_handlers.gs'] ? RELEASE : null,
+  'B2-2 20_ moves to R32, the round its line writer got the lock stage 1 already had');
+ok(/CAMPAIGN_SKU_LINE_LOCK_TIMEOUT/.test(CAMPWRITE),
+  'B2-2a and the change its stamp claims is really in the file — the typed lock refusal');
 // And the change its stamp claims is really in the file, on the same test B2-0a/B2-0b apply to 04_:
 // the per-line whole-sheet re-read is gone and a full-width range write is there in its place.
 var CAMPHANDLER = CAMPWRITE.slice(CAMPWRITE.indexOf('function handleUpsertCampaignSkuLines_'));

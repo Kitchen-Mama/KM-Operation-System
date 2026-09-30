@@ -519,8 +519,15 @@ section('I. SPECIAL — PARTIAL COMMIT IS NEVER REPORTED AS SUCCESS (§11)');
 (function () {
   ok(/if \(evCls\.partial \|\| \(evCls\.refused > 0/.test(SAVE),
     'I1  a partial result takes its own branch before any success message');
-  ok(SAVE.indexOf('_evtPartialText_(evCls)') < SAVE.indexOf('closeFcModal();\n      if (zeroWrite)'),
-    'I2  and it returns BEFORE the modal closes, so the refused rows survive');
+  // FC-SPECIAL-EVENT-WRITE-CONSISTENCY-R2: the anchor moved because the modal no longer closes on the
+  // success path until the written graph has been VERIFIED — closeFcModal() now sits inside the
+  // readback's own branch. The property is unchanged and is asserted directly rather than by the
+  // position of a neighbouring line: the partial branch returns, and it is reached before any close.
+  ok(/_evtPartialText_\(evCls\)\);[\s\S]{0,40}return;/.test(SAVE),
+    'I2  a partial result returns immediately, so the refused rows survive');
+  ok(SAVE.indexOf('_evtPartialText_(evCls)') < SAVE.indexOf('_evtGraphReadback_('),
+    'I2a and it is reached before the graph verification, so a partial result never reaches a success '
+    + 'message by way of a readback');
   ok(/_evtApplyBatchReceipts_\(evCls\);/.test(SAVE),
     'I3  committed rows get their new identity written back');
   ok(SAVE.indexOf('_evtApplyBatchReceipts_') < SAVE.indexOf('_fcAfterWriteScoped_'),

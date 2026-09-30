@@ -31,7 +31,7 @@
 // An OLD 14_ beside the new page is the dangerous pairing, and it is silent: the page would send
 // expected_row_version and the old handler would IGNORE it — accepting every stale write it was added
 // to refuse, while returning success. Only a declared build separates those two deployments.
-var FCW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R30';
+var FCW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32';
 
 // fc_special_events header. event_name / event_month / fc_qty are the task-defined columns;
 // event_period + year are additional UI-continuity columns (FC Summary Event table shows/filters them).
@@ -543,6 +543,83 @@ function fcSeValidateMarketplaceIdentity_(body, getIndex) {
   return null;
 }
 
+/* FC-SPECIAL-EVENT-WRITE-CONSISTENCY-R2 §4/§5 — AN EVENT MAY NOT NAME A LINE THAT IS NOT THERE.
+ *
+ * WHAT R1 PROVED. `fcSpecialEventUpsert_` never read campaign_sku_lines. It accepted
+ * campaign_sku_line_id as an opaque string and wrote it, so an event pointing at a line that does not
+ * exist was a LEGAL write. The production EU BFCM incident is exactly that state: the events are
+ * present and well-formed, and every line they name is gone. Nothing in the writer could have
+ * noticed, and nothing downstream reports it.
+ *
+ * WHAT THIS GATE DOES, AND THE FOUR THINGS IT REFUSES TO DO. It proves the referenced line exists and
+ * belongs to the SAME campaign, and refuses with a typed error when it does not. It does NOT derive a
+ * replacement id, does NOT repoint to another line, does NOT search by SKU and adopt whatever it
+ * finds, and does NOT create the missing line. Line creation is stage 2's, and a writer that quietly
+ * repairs its own inputs is how the graph got into a state nobody could see.
+ *
+ * WHY AN UNREADABLE REGISTRY IS A REFUSAL ON CREATE. The same reasoning FC-ID-R2 applied to the
+ * marketplace registry: a create that cannot PROVE its reference is sound is the one case where
+ * guessing produces the defect this round exists to remove. It fails closed, with its own token, so
+ * an unreadable sheet is never reported as a dangling reference.
+ *
+ * WHY UPDATE IS DIFFERENT, AND THIS IS THE LOAD-BEARING PART. An UPDATE is gated only when the
+ * reference CHANGES. An event whose campaign_sku_line_id is untouched is editable even if that line
+ * is missing — which is precisely the state of the nine production orphans. Gating unchanged
+ * references would freeze them: the rows would become uneditable because of a defect they are the
+ * evidence for. §5 asks for both halves and they are not in tension — an edit may not move a
+ * reference into an invalid graph, and may not be blocked by one it did not create.
+ */
+function fcSeReadCampaignLines_(ss) {
+  // Returns { readable, byId } — readable:false is a fact about the SHEET, never about a reference.
+  try {
+    var sh = ss.getSheetByName('campaign_sku_lines');
+    if (!sh) return { readable: false, byId: {} };
+    var data = sh.getDataRange().getValues();
+    if (!data || data.length < 1) return { readable: false, byId: {} };
+    var head = data[0].map(function (h) { return String(h).trim(); });
+    var iId = head.indexOf('campaign_sku_line_id');
+    var iCamp = head.indexOf('campaign_id');
+    if (iId === -1 || iCamp === -1) return { readable: false, byId: {} };
+    var byId = {};
+    for (var r = 1; r < data.length; r++) {
+      var id = String(data[r][iId] == null ? '' : data[r][iId]).trim();
+      if (!id) continue;
+      if (!byId[fcEvtUp_(id)]) byId[fcEvtUp_(id)] = { id: id, campaign_id: String(data[r][iCamp] == null ? '' : data[r][iCamp]).trim() };
+    }
+    return { readable: true, byId: byId };
+  } catch (e) {
+    return { readable: false, byId: {} };
+  }
+}
+
+function fcSeLineRefCheck_(ss, body) {
+  var lineId = String((body && body.campaign_sku_line_id) || '').trim();
+  // An event that names no line cannot dangle. This is not a loophole: stage 3 of the FC Summary save
+  // refuses to run at all for a SKU stage 2 did not resolve (STAGE2-LARGE-BATCH §3.G), so a blank id
+  // here is a caller that genuinely has no line, not one that lost it.
+  if (!lineId) return { ok: true };
+  var campaignId = String((body && body.campaign_id) || '').trim();
+  var reg = fcSeReadCampaignLines_(ss);
+  if (!reg.readable) {
+    return { refusal: { error: 'CAMPAIGN_SKU_LINE_REGISTRY_UNREADABLE',
+      detail: 'campaign_sku_lines could not be read, so this event\u2019s reference to line ' + lineId
+        + ' could not be proved. Nothing was written.' } };
+  }
+  var hit = reg.byId[fcEvtUp_(lineId)];
+  if (!hit) {
+    return { refusal: { error: 'DANGLING_CAMPAIGN_SKU_LINE_REFERENCE',
+      detail: 'No campaign_sku_line exists with id ' + lineId + '. A special event may not be created against a line that is not there \u2014 write the line first. Nothing was written.',
+      campaign_sku_line_id: lineId } };
+  }
+  if (campaignId && fcEvtUp_(hit.campaign_id) !== fcEvtUp_(campaignId)) {
+    return { refusal: { error: 'CAMPAIGN_SKU_LINE_CAMPAIGN_MISMATCH',
+      detail: 'campaign_sku_line ' + lineId + ' belongs to campaign ' + (hit.campaign_id || '(blank)')
+        + ', not ' + campaignId + '. Nothing was written.',
+      campaign_sku_line_id: lineId, line_campaign_id: hit.campaign_id, event_campaign_id: campaignId } };
+  }
+  return { ok: true };
+}
+
 function fcSpecialEventUpsert_(ss, body, actor) {
   var headers = FC_SPECIAL_EVENTS_HEADERS_;
   var sheet = fcWriteEnsureSheet_(ss, 'fc_special_events', headers, FC_SCHEMA_BY_NAME_);
@@ -584,7 +661,9 @@ function fcSpecialEventUpsert_(ss, body, actor) {
   }
 
   if (targetRow === -1) {
-    // CREATE
+    // CREATE — §4: the reference is PROVED before the row is minted, never after.
+    var refCreate = fcSeLineRefCheck_(ss, body);
+    if (refCreate.refusal) return { refusal: refCreate.refusal };
     var id = explicitId || genId();
     var createObj = {}; createObj.event_fc_id = id;
     headers.forEach(function (h) { if (body.hasOwnProperty(h) && h !== 'event_fc_id') createObj[h] = body[h]; });
@@ -627,6 +706,20 @@ function fcSpecialEventUpsert_(ss, body, actor) {
   if (prior.id && fcSeFingerprint_(incoming) === prior.fingerprint) {
     return { event_fc_id: prior.id, created: false, unchanged: true,
       row_version: prior.fingerprint, row: fcSeReceiptFor_(sheet, prior.id) };
+  }
+
+  /* UPDATE — §5. Case A (the body omits the reference) and case A' (it repeats the stored one) are
+     not reference changes and are not gated: the edit is about fc_qty or a date, and blocking it
+     because a line is missing would make the very rows that evidence the defect uneditable. Case B —
+     an explicit change — is gated exactly like a create, so an edit can never MOVE a reference into
+     an invalid graph. Cases C and D are reached only from B, where failing closed is correct. */
+  var priorLineId = String(prior.row && prior.row.campaign_sku_line_id != null ? prior.row.campaign_sku_line_id : '').trim();
+  if (Object.prototype.hasOwnProperty.call(body, 'campaign_sku_line_id')) {
+    var incomingLineId = String(body.campaign_sku_line_id || '').trim();
+    if (fcEvtUp_(incomingLineId) !== fcEvtUp_(priorLineId)) {
+      var refUpd = fcSeLineRefCheck_(ss, body);
+      if (refUpd.refusal) return { refusal: refUpd.refusal };
+    }
   }
 
   // UPDATE — preserve existing id; backfill inline only if blank.

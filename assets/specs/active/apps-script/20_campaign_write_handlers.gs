@@ -32,7 +32,7 @@
 // sync of this file was invisible to system.health: an old 20_ still keys campaigns by NAME and
 // ignores expected_row_version, so it answers success to every save the new one refuses, and quietly
 // merges two event windows into one row. That is precisely the failure a manifest row exists to name.
-var CAMPAIGN_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R20';
+var CAMPAIGN_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32';
 
 // campaigns canonical header (existing columns + additive `company`, `marketplace_id`).
 var CAMPAIGNS_HEADERS_ = [
@@ -611,6 +611,31 @@ function handleUpsertCampaignSkuLines_(body) {
     }
   }
 
+  /* FC-SPECIAL-EVENT-WRITE-CONSISTENCY-R2 §6 — THE RACE STAGE 1 CLOSED AND STAGE 2 DID NOT.
+   *
+   * R1's finding, stated as code: handleUpsertCampaign_ takes a ScriptLock precisely because "two
+   * concurrent creates must not both read 'no match' and both append", and this handler ran the
+   * IDENTICAL read-then-append — campaignLineKeyLookup_ over one read, then a block append past
+   * s.rows.length — with no lock at all. Two concurrent saves of one campaign could both resolve a
+   * SKU to "no line" and both mint one. Nothing downstream would report the duplicate.
+   *
+   * WHY THE LOCK OPENS HERE AND NOT EARLIER. Validation (STEP 1) is pure and refuses before any read,
+   * so it stays outside. Everything from the authoritative read to the last setValues is the
+   * read-then-write pair the lock exists to make atomic, and it is all inside.
+   *
+   * WHY NOT R6's TWO-PASS SHAPE, WHICH STAGE 1 USES. Because stage 1's problem was its ZERO-WRITE
+   * path: the reuse branch wrote nothing and still queued behind the whole project for two to three
+   * whole-sheet reads. This handler holds exactly ONE read — fc-special-stage2-large-batch-r1 pins
+   * that at N up to 200 — and a second resolve pass would be a second authoritative read on every
+   * write. One read under the lock is both the smaller cost and the shorter hold.
+   */
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(CAMPAIGN_LOCK_MS_)) {
+    return jsonResponse_({ success: false, error: 'CAMPAIGN_SKU_LINE_LOCK_TIMEOUT',
+      detail: 'Another campaign line write is in progress. Nothing was written.' });
+  }
+  try {
+
   // ---- STEP 2: ONE AUTHORITATIVE READ ----------------------------------------------------------
   var s = fcWriteReadSheet_(sheet);
   var width = s.headers.length;
@@ -751,4 +776,10 @@ function handleUpsertCampaignSkuLines_(body) {
 
   return jsonResponse_({ success: true, data: { campaign_id: campaignId, upserted: out.length,
     created: created, updated: updated, unchanged: unchanged, lines: out } });
+
+  } finally {
+    // Released on every exit, including the early column-missing refusal and any throw: a lock this
+    // handler leaked would stall every writer in the project, not just this one.
+    try { lock.releaseLock(); } catch (e) {}
+  }
 }

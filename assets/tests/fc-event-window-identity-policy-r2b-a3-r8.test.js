@@ -445,7 +445,31 @@ function saveWorld(opts) {
     confirm: function () { return true; },
     document: { getElementById: function (id) { return dom[id] || null; },
       querySelector: function () { return null; } },
-    window: { KM: { DB: {
+    window: { KM: {
+      // §3's graph slice, answered from the fake server's own tables. adaptFcSummaryWorkspaceSlice is
+      // the real one; nothing here renames an identity on the way through.
+      api: { getWorkspace: function (name, opts) {
+        var cid = String((((opts || {}).include || {}).scope || {}).campaign_id || '');
+        var up2 = function (v) { return String(v == null ? '' : v).trim().toUpperCase(); };
+        return Promise.resolve({ data: { slice: 'graph', graph: {
+          campaign_id: cid,
+          campaign_found: db.campaigns.some(function (c) { return up2(c.campaign_id) === up2(cid); }),
+          lineIds: db.lines.filter(function (l) { return up2(l.campaign_id) === up2(cid); })
+            .map(function (l) { return l.campaign_sku_line_id; }),
+          events: db.events.filter(function (e) { return up2(e.campaign_id) === up2(cid); })
+            .map(function (e) { return { event_fc_id: e.event_fc_id,
+              campaign_sku_line_id: e.campaign_sku_line_id, sku: e.sku }; })
+        } } });
+      } },
+      DB: {
+      adaptFcSummaryWorkspaceSlice: function (d) {
+        var g = d && d.graph;
+        return !g ? {} : { graph: { campaignId: String(g.campaign_id || ''),
+          campaignFound: g.campaign_found === true,
+          lineIds: (g.lineIds || []).map(String),
+          events: (g.events || []).map(function (e) { return { eventFcId: String(e.event_fc_id || ''),
+            campaignSkuLineId: String(e.campaign_sku_line_id || ''), sku: String(e.sku || '') }; }) } };
+      },
       upsertCampaign: function (b) { return Promise.resolve(srv.upsertCampaign(b)); },
       upsertCampaignSkuLines: function (b) { return Promise.resolve(srv.upsertCampaignSkuLines(b)); },
       upsertFcSpecialEvent: function (b) { return Promise.resolve(srv.upsertFcSpecialEvent(b)); },
@@ -534,6 +558,13 @@ function saveWorld(opts) {
     varSrc(FCS, 'EVT_ROW_'), varSrc(FCS, 'EVT_REFUSAL_KIND_'),
     fnSrc(FCS, '_evtRefusalKind_'), fnSrc(FCS, '_evtClassifyBatch_'),
     fnSrc(FCS, '_evtApplyBatchReceipts_'), fnSrc(FCS, '_evtPartialText_'),
+    // FC-SPECIAL-EVENT-WRITE-CONSISTENCY-R2 §1/§3 — the save now VERIFIES the written graph before it
+    // reports success. All four helpers are the REAL ones; the fake answers at the transport seam
+    // (window.KM.api.getWorkspace, below) out of the same db the writers mutate, so the verification
+    // this suite's saves pass is a real one rather than a stub agreeing with itself.
+    varSrc(FCS, 'FC_GRAPH_SLICE_'),
+    fnSrc(FCS, '_evtGraphReadback_'), fnSrc(FCS, '_evtVerifyGraph_'),
+    fnSrc(FCS, '_evtGraphPartialText_'), fnSrc(FCS, '_evtGraphUnknownText_'),
     'function renderFcEventTable() {}',
     'function closeFcModal() {}',
     'function _evtShowWindowChangeNotice_(g) { __notices.push(g); }',

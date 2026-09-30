@@ -1525,7 +1525,8 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // R30 itself: an id naming two trees cannot answer the question it exists for, and R30's tree (14_ +
   // 63_) is not this one (58_ + 63_). 14_ keeps R30 and moves to RELEASE_CARRIED — its stamp records the
   // round IT last changed, and marching it here would erase that fact to make a number tidy.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R31'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R31',
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

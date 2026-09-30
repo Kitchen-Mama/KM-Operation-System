@@ -71,7 +71,7 @@
 // F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R14 — this owner's first declared build stamp. It had none before, which meant a
 // partial sync of this file was invisible to system.health: the page could be answered by last round's read owner
 // and nothing in the deployment report would say so. The manifest in 63_ now carries a required row for it.
-var FCSWS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R31';
+var FCSWS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32';
 
 var FCS_WS_SEQ_ = 0;   // API diagnostic-layer server correlation counter (not business runtime)
 
@@ -93,7 +93,14 @@ var FCS_WORKSPACE_TABLES_ = [
  * The FULL view model is still byte-for-byte what it was, because fcsWorkspaceBuild_ never sees these. */
 var FCS_SLICE_ONLY_TABLES_ = [
   { name: 'pricing_list',    requiredCols: [], optional: true },
-  { name: 'marketplace_skus', requiredCols: [], optional: true }
+  { name: 'marketplace_skus', requiredCols: [], optional: true },
+  /* FC-SPECIAL-EVENT-WRITE-CONSISTENCY-R2 §3 — the two tables the GRAPH readback needs, and the reason
+     they are HERE and not above. A save's receipt has to be able to prove that the campaign, its lines
+     and its events actually exist and refer to one another. Putting these in FULL would make every FC
+     Summary open pay for two sheets it never renders — the exact cost R3 removed. They are read only
+     when the `graph` slice asks for them, which is only ever after a write attempt. */
+  { name: 'campaigns',         requiredCols: [], optional: true },
+  { name: 'campaign_sku_lines', requiredCols: [], optional: true }
 ];
 var FCS_ALL_TABLES_ = FCS_WORKSPACE_TABLES_.concat(FCS_SLICE_ONLY_TABLES_);
 var FCS_FULL_TABLE_NAMES_ = FCS_WORKSPACE_TABLES_.map(function (t) { return t.name; });
@@ -143,7 +150,16 @@ var FCS_SLICE_SPECS_ = {
    * NO RESOLUTION HAPPENS HERE. Columns are copied, never combined: the BASE -> AUTO -> nullable OVERRIDE
    * -> RESOLVED chain stays in normalizePricingListRecord, where it is the single pricing authority. This
    * slice is transport. */
-  pricing: { reads: ['pricing_list', 'marketplace_skus'], emits: ['pricingList'], facets: false, scoped: true }
+  pricing: { reads: ['pricing_list', 'marketplace_skus'], emits: ['pricingList'], facets: false, scoped: true,
+    projector: 'pricing' },
+
+  /* §3 — THE AUTHORITATIVE GRAPH. Scoped to ONE campaign_id, answering in canonical ids only: which
+     lines exist under it, and which events, and what each event points at. The client compares that
+     against what it intended to write. It is deliberately NOT a count: R1's whole finding was that a
+     count taken from the payload proves nothing, and a count taken from the server still would not say
+     WHICH row is missing. Ids do. */
+  graph: { reads: ['campaigns', 'campaign_sku_lines', 'fc_special_events'], emits: ['graph'],
+    facets: false, scoped: true, projector: 'graph' }
 };
 
 /* The columns the FC Summary pricing consumer reads, and no others. Derived from what
@@ -358,13 +374,52 @@ function fcsResolveSlice_(payload) {
 function fcsResolveScope_(payload) {
   var include = (payload && payload.include && typeof payload.include === 'object') ? payload.include : {};
   var sc = (include.scope && typeof include.scope === 'object') ? include.scope : {};
-  return { company: fcsWsStr_(sc.company), country: fcsWsStr_(sc.country), marketplace: fcsWsStr_(sc.marketplace) };
+  // campaign_id is additive: the pricing slice ignores it, the graph slice is scoped by it, and no new
+  // routed action or request shape is introduced for either.
+  return { company: fcsWsStr_(sc.company), country: fcsWsStr_(sc.country), marketplace: fcsWsStr_(sc.marketplace),
+    campaign_id: fcsWsStr_(sc.campaign_id) };
 }
 
 // A SLICE view model. It carries the same raw passthrough rows under the same keys as the full model, so the page
 // feeds them to the SAME normalizers — one row shape, one identity authority, no second normalization anywhere.
 // Keys the slice does not own are ABSENT rather than empty: [] would claim "I read this and there was nothing",
 // which is the exact confusion the Target Rule modal is being repaired for on the client side.
+/* §3 — THE GRAPH PROJECTION. Pure: tables in, ids out. Nothing here counts payload rows, and nothing
+ * here matches on a display label — campaign_id and campaign_sku_line_id are the only identities used,
+ * which is what lets the client tell a missing row from a mis-scoped one.
+ *
+ * An empty campaign_id selects NOTHING, deliberately: a readback that answered for every campaign would
+ * verify a save against rows it never wrote. */
+function fcsGraphUp_(v) { return String(v == null ? '' : v).trim().toUpperCase(); }
+
+function fcsGraphProject_(tables, scope) {
+  var cid = fcsGraphUp_(scope && scope.campaign_id);
+  var out = { campaign_id: (scope && scope.campaign_id) || '', campaign_found: false,
+    lineIds: [], events: [], sourceRowCount: 0 };
+  var camps = tables['campaigns'] || [];
+  var lines = tables['campaign_sku_lines'] || [];
+  var evts = tables['fc_special_events'] || [];
+  out.sourceRowCount = camps.length + lines.length + evts.length;
+  if (!cid) return out;
+  for (var c = 0; c < camps.length; c++) {
+    if (fcsGraphUp_(camps[c].campaign_id) === cid) { out.campaign_found = true; break; }
+  }
+  for (var l = 0; l < lines.length; l++) {
+    if (fcsGraphUp_(lines[l].campaign_id) !== cid) continue;
+    var lid = String(lines[l].campaign_sku_line_id == null ? '' : lines[l].campaign_sku_line_id).trim();
+    if (lid) out.lineIds.push(lid);
+  }
+  for (var e = 0; e < evts.length; e++) {
+    if (fcsGraphUp_(evts[e].campaign_id) !== cid) continue;
+    out.events.push({
+      event_fc_id: String(evts[e].event_fc_id == null ? '' : evts[e].event_fc_id).trim(),
+      campaign_sku_line_id: String(evts[e].campaign_sku_line_id == null ? '' : evts[e].campaign_sku_line_id).trim(),
+      sku: String(evts[e].sku == null ? '' : evts[e].sku).trim()
+    });
+  }
+  return out;
+}
+
 function fcsSliceBuild_(sliceName, tables, observedAt, scope) {
   var spec = FCS_SLICE_SPECS_[sliceName];
   var out = { slice: sliceName, observed_at: observedAt, counts: {}, capped: {}, row_count: 0 };
@@ -372,6 +427,16 @@ function fcsSliceBuild_(sliceName, tables, observedAt, scope) {
      against the scope it is currently showing before it commits a single row — an answer for the site the
      operator has already navigated away from is dropped, not painted. Returning the scope is what makes
      that check possible without a timer and without a second identity scheme. */
+  if (spec.scoped && spec.projector === 'graph') {
+    var g = fcsGraphProject_(tables, scope || {});
+    out.graph = g;
+    out.counts.lineIds = g.lineIds.length;
+    out.counts.events = g.events.length;
+    out.row_count = g.lineIds.length + g.events.length;
+    out.scope = { campaign_id: g.campaign_id };
+    out.projection = { sourceRowCount: g.sourceRowCount, campaignFound: g.campaign_found };
+    return out;
+  }
   if (spec.scoped) {
     var proj = fcsPricingProject_(tables, scope || {});
     var cappedP = fcsCap_(proj.rows);

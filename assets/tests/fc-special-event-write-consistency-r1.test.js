@@ -168,40 +168,53 @@ ok(/_fcEbCommitted_\.push\('campaigns'\)/.test(SAVEC) && /_fcEbCommitted_\.push\
 ok(/still need reconciling/.test(fnSrc(FCS, '_fcBuilderFailure_')),
   'A7 and tells the operator to reconcile by hand, which is the honest report of a partial commit');
 
-// THE LOCK ASYMMETRY. Stage 1 locks. Stage 2 does not.
+// THE LOCK ASYMMETRY — R1's finding, and R2 §6's repair. Stage 1 locked; stage 2 did not, while doing
+// the identical read-then-append. Both lock now, and the assertion below is the one that moved.
 var H_CAMP = fnSrc(G20, 'handleUpsertCampaign_');
 var H_LINES = fnSrc(G20, 'handleUpsertCampaignSkuLines_');
 ok(/LockService\.getScriptLock\(\)/.test(code(H_CAMP)),
   'A8 stage 1 takes a ScriptLock — "two concurrent creates must not both read no match and both append"');
-ok(!/LockService/.test(code(H_LINES)),
-  'A9 STAGE 2 TAKES NO LOCK AT ALL, while doing exactly the read-then-append stage 1 locks against');
+ok(/LockService\.getScriptLock\(\)/.test(code(H_LINES)),
+  'A9 [R2 §6 REPAIRED] stage 2 now takes the SAME ScriptLock — the asymmetry R1 found is closed');
+ok(/CAMPAIGN_SKU_LINE_LOCK_TIMEOUT/.test(code(H_LINES)),
+  'A9a with its own typed timeout, so a contended line write is never mistaken for a campaign one');
+ok(/releaseLock/.test(code(H_LINES)),
+  'A9b and releases it in a finally — a leaked project-wide lock would stall every writer, not just this');
 
 // =========================================================================================================
-section('B. §2 — what the success receipt is made of');
+section('B. §2 — what the success receipt is made of  [R2: REPLACED]');
 // =========================================================================================================
 
-var RECEIPT = /alert\(FC_MSG_\.SAVED \+ ' campaigns: 1 \(' \+ campaignId \+ '\) · campaign_sku_lines: ' \+ (\w+)[\s\S]*?\);/.exec(SAVEC);
-ok(!!RECEIPT, 'B1 the success message is locatable');
-ok(/campaigns: 1 \(/.test(SAVEC),
-  'B2 SUCCESS_RECEIPT campaigns = THE LITERAL 1 — not a count, not a read, not a proof');
-eq(RECEIPT ? RECEIPT[1] : null, 'linePayloads',
-  'B3 SUCCESS_RECEIPT campaign_sku_lines = linePayloads.length — a CLIENT array built before the request');
-ok(/var linePayloads = lines\.map\(/.test(SAVEC),
-  'B4 and linePayloads is exactly that: lines.map(...), the SKUs the operator authored');
-ok(/fc_special_events: ' \+ written/.test(SAVEC) && /var written = evCls\.written/.test(SAVEC),
-  'B5 only fc_special_events comes from a server answer (_evtClassifyBatch_ of the stage-3 envelope)');
+/* WHAT R1 FOUND, kept in words because the shape must stay recognisable: the three numbers in
+   "Saved. campaigns: 1 · campaign_sku_lines: N · fc_special_events: M" came from three different
+   places and only M was a server answer. The 1 was a LITERAL. The N was linePayloads.length — the
+   length of the array the CLIENT had SENT — so the message could report five lines with zero rows
+   committed, and in production it did. R2 removes that receipt entirely. */
 
-// THE QUESTION §2 ASKS, ANSWERED.
-ok(!/lineRes[\s\S]{0,400}?campaign_sku_lines: /.test(SAVEC),
-  'B6 CAN_UI_REPORT_campaign_sku_lines_5_WITH_ZERO_ROWS_COMMITTED = YES — the stage-2 RESPONSE is never '
-  + 'counted into the message; only the request is');
-ok(!/readback|readBack|verifyGraph|assertGraph/i.test(SAVEC),
-  'B7 SUCCESS_RECEIPT_IS_AUTHORITATIVE = NO — no post-write read of the three tables exists');
-// The one readback that DOES happen is stage 1's row, and it is a receipt for the campaigns table alone.
+ok(!/campaigns: 1 \(/.test(SAVEC),
+  'B1 [R2 §1 REPAIRED] the literal "campaigns: 1" receipt is GONE from the save');
+ok(!/campaign_sku_lines: ' \+ linePayloads/.test(SAVEC),
+  'B2 [R2 §1 REPAIRED] and so is the client payload length — no sent-array length is reported as a count');
+ok(/_evtGraphReadback_\(campaignId\)/.test(SAVEC),
+  'B3 [R2 §1] SAVE_SUCCESS_AUTHORITY = POST_WRITE_AUTHORITATIVE_GRAPH_READBACK');
+ok(/_evtVerifyGraph_\(graph, _expectedGraph\)/.test(SAVEC),
+  'B4 compared against what the save INTENDED, which is built from stage 2\'s receipt — not its payload');
+ok(/_expectedGraph[\s\S]{0,400}?lineIdBySku/.test(SAVEC),
+  'B5 and the expected line ids are the SERVER\'s ids (lineIdBySku), which the payload never held');
+
+// SUCCESS IS NOW GATED: the saved message is reachable only through the verified branch.
+var VERIFIED_AT = SAVEC.indexOf('if (!v.verified)');
+var SAVED_AT = SAVEC.indexOf('Verified against the saved data:');
+ok(VERIFIED_AT > -1 && SAVED_AT > VERIFIED_AT,
+  'B6 SUCCESS_RECEIPT_IS_AUTHORITATIVE = YES — the saved message sits AFTER the verification gate, so an '
+  + 'unverified graph cannot reach it');
+ok(/if \(!graph\)[\s\S]{0,200}?_evtGraphUnknownText_/.test(SAVEC),
+  'B7 and a readback that cannot answer is OUTCOME_UNKNOWN — neither success nor "nothing was written"');
+ok(!/_evtGraphUnknownText_[\s\S]{0,300}?(retry|resend|again\()/i.test(SAVEC),
+  'B8 AUTOREPLAY_ON_UNKNOWN = NO — the unknown branch dispatches nothing');
+// Stage 1's own row is still handed over as a receipt; that did not change and is not the authority.
 ok(/receiptRows: \{ campaigns: \(camp && camp\.row\) \? \[camp\.row\] : null \}/.test(SAVEC),
-  'B8 POST_WRITE_CAMPAIGN_READBACK = the writer\'s returned row (reconciled, not re-read)');
-ok(!/campaign_sku_lines/.test(/receiptRows[\s\S]{0,200}/.exec(SAVEC)[0]),
-  'B9 POST_WRITE_CAMPAIGN_SKU_LINES_READBACK = NONE');
+  'B9 POST_WRITE_CAMPAIGN_RECEIPT = the writer\'s returned row, reconciled rather than re-read');
 
 // =========================================================================================================
 section('C. §3 — identity generation, and where each id is minted');
@@ -231,10 +244,13 @@ section('D. §6 — there is no referential integrity, so an orphan event is a L
     company: 'KM', country: 'DE', marketplace: 'Amazon', marketplace_id: 'MKT-1',
     scope_type: 'sku', scope_id: 'SKU-1', sku: 'SKU-1', event_name: 'BFCM',
     year: 2026, fc_qty: 10, source: 'campaign_sync' }], options: { actor: 't' } });
-  ok(res && res.success === true,
-    'D1 the event writer ACCEPTS a row naming a campaign_sku_line_id that does not exist');
-  eq(dataRows(w.sheets.fc_special_events).length, 1,
-    'D2 and commits it — ORPHAN_FC_SPECIAL_EVENT is a legal row, indistinguishable afterwards');
+  // [R2 §4 REPAIRED] The envelope still answers success — the batch contract refuses PER ROW — but the
+  // row is refused and NOTHING is written. Before R2 this committed, and an orphan was indistinguishable
+  // from a legitimate row ever after.
+  eq([res.success, res.data.summary.skipped, dataRows(w.sheets.fc_special_events).length], [true, 1, 0],
+    'D1 [R2 §4 REPAIRED] an event naming a line that does not exist is REFUSED and writes nothing');
+  ok(/DANGLING_CAMPAIGN_SKU_LINE_REFERENCE/.test(JSON.stringify(res.data.results)),
+    'D2 with its own typed reason — ORPHAN_FC_SPECIAL_EVENT is no longer a reachable write', res.data.results);
   ok(!/campaign_sku_lines/.test(code(fnSrc(G14, 'fcSpecialEventUpsert_'))),
     'D3 fcSpecialEventUpsert_ never reads campaign_sku_lines — nothing validates the link, in either direction');
 })();
@@ -282,9 +298,13 @@ section('E. §1/§5 — the unlocked stage 2 loses a concurrent write, and needs
     'E5 a read taken before B lands computes its append at row 2 — the row B has now written');
   ok(/sheet\.getRange\(s\.rows\.length \+ 1, 1, appends\.length, width\)/.test(code(H)),
     'E6 and the append position IS that stale number: s.rows.length + 1, from the earlier read');
-  // The consequence, stated as the invariant that is missing rather than as a simulated race.
-  ok(!/LockService/.test(code(H)) && /LockService\.getScriptLock\(\)/.test(code(H_CAMP)),
-    'E7 STAGE 2 LOST-WRITE IS REACHABLE: the same read-then-append stage 1 holds a lock for, unlocked');
+  // [R2 §6 REPAIRED] The append position is still computed from s.rows.length — that is not the defect
+  // and was never going to be. What was missing is that the read and the append were not atomic with
+  // respect to another writer. Both handlers now hold the same lock across that pair.
+  ok(/LockService\.getScriptLock\(\)/.test(code(H)) && /LockService\.getScriptLock\(\)/.test(code(H_CAMP)),
+    'E7 [R2 §6 REPAIRED] the read-then-append pair is now inside the lock in BOTH stages');
+  ok(code(H).indexOf('LockService') < code(H).indexOf('fcWriteReadSheet_(sheet)'),
+    'E7a and the lock opens BEFORE the authoritative read — locking after it would fence nothing');
 })();
 
 // =========================================================================================================
@@ -386,9 +406,15 @@ section('G. §10 — the twelve fixtures, driven against the real handlers');
       marketplace: 'Amazon', marketplace_id: 'M1', scope_type: 'sku', scope_id: l.sku, sku: l.sku,
       event_name: 'BFCM', year: 2026, fc_qty: 5, source: 'campaign_sync' };
   }), options: { actor: 't' } });
+  // [R2 §4 REPAIRED] This is the production incident's exact shape, and it can no longer be CREATED.
+  // Note what that does and does not mean: the nine rows already in production are untouched and still
+  // orphaned — this closes the door, it does not repair the room behind it.
   eq([r.success, dataRows(w.sheets.fc_special_events).length, dataRows(w.sheets.campaign_sku_lines).length],
-    [true, 5, 0],
-    'G-H THE INCIDENT B SHAPE IS REACHABLE AND REPORTS SUCCESS: 5 events, 0 lines, no refusal anywhere');
+    [true, 0, 0],
+    'G-H [R2 §4 REPAIRED] the INCIDENT B shape is no longer reachable — every event naming a missing '
+    + 'line is refused, and no orphan is written');
+  ok(/DANGLING_CAMPAIGN_SKU_LINE_REFERENCE/.test(JSON.stringify(r.data.results)),
+    'G-H1 each refusal names the reference it could not resolve', r.data.results);
 })();
 
 // J. marketplace identity unread — the registry is missing, so every row is refused per row.
@@ -591,12 +617,18 @@ ok(!/lineRes\.created|lineRes\.updated|lineRes\.unchanged|lineRes\.upserted/.tes
   'I6 and its created / updated / unchanged / upserted counts are NEVER read — the one stage whose '
   + 'rows went missing is the one whose own report the page discards');
 
-// The three numbers in one line, so the asymmetry is impossible to miss.
-eq(['LITERAL_1', 'CLIENT_PAYLOAD_LENGTH', 'SERVER_CLASSIFIED_PER_ROW'],
-  [/campaigns: 1 \(/.test(SAVEC) ? 'LITERAL_1' : '?',
-   /campaign_sku_lines: ' \+ linePayloads\.length/.test(SAVEC) ? 'CLIENT_PAYLOAD_LENGTH' : '?',
-   /fc_special_events: ' \+ written/.test(SAVEC) ? 'SERVER_CLASSIFIED_PER_ROW' : '?'],
-  'I7 SUCCESS_RECEIPT_COUNT_SOURCE = literal · client payload length · server-classified');
+/* The three numbers in one line, which is how R1 made the asymmetry impossible to miss. R2 closes it,
+   and the same comparison now says so: none of the three sources survives, and every figure in the
+   receipt is read back from the graph. The stage-3 classifier is untouched — it was never the weak
+   one — and its counts remain available as DIAGNOSTICS, which §1 expressly allows. */
+eq(['GONE', 'GONE', 'GRAPH_READBACK'],
+  [/campaigns: 1 \(/.test(SAVEC) ? 'LITERAL_1' : 'GONE',
+   /campaign_sku_lines: ' \+ linePayloads\.length/.test(SAVEC) ? 'CLIENT_PAYLOAD_LENGTH' : 'GONE',
+   /v\.committedLineCount[\s\S]{0,120}?v\.committedEventCount/.test(SAVEC) ? 'GRAPH_READBACK' : '?'],
+  'I7 [R2 §1 REPAIRED] SUCCESS_RECEIPT_COUNT_SOURCE = the graph readback, for every figure');
+ok(/var written = evCls\.written/.test(SAVEC),
+  'I7a the stage-3 classifier still runs — its counts stay as diagnostics, they are just no longer the '
+  + 'receipt (§1 allows exactly that)');
 
 // =========================================================================================================
 section('H. what this round can and cannot decide');
@@ -616,20 +648,28 @@ ok(true, 'H6 NOT PROVEN — WHICH of these produced INCIDENT B. The handler plac
 // =========================================================================================================
 // MUTATION
 // =========================================================================================================
-mut('M1 the receipt counts the stage-2 RESPONSE instead of the request', function () {
-  var faked = SAVEC.replace("campaign_sku_lines: ' + linePayloads.length", "campaign_sku_lines: ' + lineRes.lines.length");
-  if (faked === SAVEC) throw new Error('M1 anchor drifted');
-  return /lineRes\.lines\.length/.test(faked) && /linePayloads\.length/.test(SAVEC);
+/* M1 [R2-INVERTED] — put the payload-length receipt BACK. R1's version planted the opposite (count the
+   response instead of the request) and both are now gone, so the mutant that matters is the one that
+   reinstates a count taken from anything other than the graph. */
+mut('M1 a receipt that reports the client payload length is caught', function () {
+  var regressed = SAVEC.replace('v.committedLineCount', 'linePayloads.length');
+  if (regressed === SAVEC) throw new Error('M1 anchor drifted');
+  return /linePayloads\.length/.test(regressed)
+    && !/campaign_sku_lines: ' \+ linePayloads/.test(SAVEC)
+    && /v\.committedLineCount/.test(SAVEC);
 });
 mut('M2 the orphan check exists on the server', function () {
   var faked = code(G14).replace('function fcSpecialEventUpsert_', 'function fcSpecialEventUpsert_/*campaign_sku_lines*/');
   return /campaign_sku_lines/.test(faked) && !/campaign_sku_lines/.test(code(fnSrc(G14, 'fcSpecialEventUpsert_')));
 });
-mut('M3 stage 2 takes the lock stage 1 takes', function () {
-  var faked = H_LINES.replace('var ss = SpreadsheetApp.getActiveSpreadsheet();',
-    'var lock = LockService.getScriptLock(); lock.tryLock(30000); var ss = SpreadsheetApp.getActiveSpreadsheet();');
-  if (faked === H_LINES) throw new Error('M3 anchor drifted');
-  return /LockService/.test(faked) && !/LockService/.test(code(H_LINES));
+/* M3 [R2-INVERTED] — REMOVE the lock stage 2 now takes. R1's version added it, which is what R2 did for
+   real; the live question is whether taking it away is still noticed. */
+mut('M3 removing stage 2\'s ScriptLock is caught', function () {
+  var LOCK_DECL = 'var lock = LockService.getScriptLock();';
+  var live = code(H_LINES);
+  if (live.indexOf(LOCK_DECL) === -1) throw new Error('M3 anchor drifted');
+  var regressed = live.split(LOCK_DECL).join('');
+  return regressed.indexOf('LockService') === -1 && live.indexOf('LockService') > -1;
 });
 mut('M4 the stage-3 precondition stops trusting a client-held id', function () {
   var faked = SAVEC.replace('lineIdBySku[String(l.sku).toUpperCase()] || l.campaignSkuLineId',
@@ -637,13 +677,24 @@ mut('M4 the stage-3 precondition stops trusting a client-held id', function () {
   if (faked === SAVEC) throw new Error('M4 anchor drifted');
   return !/\|\| l\.campaignSkuLineId\);/.test(faked) && /\|\| l\.campaignSkuLineId\);/.test(SAVEC);
 });
-mut('M5 the event writer refuses an unknown campaign_sku_line_id', function () {
+/* M5 [R2-INVERTED] — the writer now REFUSES an unknown line id, so the mutant removes that gate and
+   checks the orphan comes back. Driven, not matched: the gate is neutered in the source and the real
+   handler is re-run against the same world. */
+mut('M5 removing the referential gate lets the orphan back in is caught', function () {
   var w = serverWorld({ lines: [], events: [], marketplaces: [['M', 'KM', 'DE', 'Amazon']] });
-  var res = w.sb.handleImportFcSpecialEventsBatch_({ rows: [{ campaign_id: 'C', campaign_sku_line_id: 'NOPE',
+  var body = { rows: [{ campaign_id: 'C', campaign_sku_line_id: 'NOPE',
     company: 'KM', country: 'DE', marketplace: 'Amazon', marketplace_id: 'M', scope_type: 'sku',
-    scope_id: 'S', sku: 'S', event_name: 'E', year: 2026, fc_qty: 1 }], options: {} });
-  // The mutant is the ASSERTION's opposite: if this ever starts refusing, D1/D2 are wrong and must change.
-  return res.success === true && dataRows(w.sheets.fc_special_events).length === 1;
+    scope_id: 'S', sku: 'S', event_name: 'E', year: 2026, fc_qty: 1 }], options: {} };
+  var guarded = w.sb.handleImportFcSpecialEventsBatch_(body);
+  var guardedRows = dataRows(w.sheets.fc_special_events).length;
+
+  // Neuter the gate and re-run the SAME request in a fresh world.
+  var w2 = serverWorld({ lines: [], events: [], marketplaces: [['M', 'KM', 'DE', 'Amazon']] });
+  vm.runInContext('fcSeLineRefCheck_ = function () { return { ok: true }; };', w2.sb);
+  w2.sb.handleImportFcSpecialEventsBatch_(body);
+  var ungatedRows = dataRows(w2.sheets.fc_special_events).length;
+
+  return guarded.success === true && guardedRows === 0 && ungatedRows === 1;
 });
 mut('M6 a duplicate SKU in one batch mints two rows', function () {
   var w = serverWorld({ lines: [] });
@@ -661,10 +712,10 @@ console.log('FC-SPECIAL-EVENT-WRITE-CONSISTENCY-R1 — ' + pass + ' passed / ' +
 console.log('MUTATION ' + (mutants - survived) + '/' + mutants + (survived ? '  SURVIVORS PRESENT' : '  no survivors'));
 if (fail === 0 && survived === 0) {
   console.log('WRITE_OWNER_COUNT = 3   TRANSACTIONAL_BOUNDARY_EXISTS = NO   ROLLBACK_EXISTS = NO');
-  console.log('PARTIAL_COMMIT_REACHABLE = YES   FALSE_SUCCESS_REACHABLE = YES');
-  console.log('SUCCESS_RECEIPT_IS_AUTHORITATIVE = NO   POST_WRITE_READBACK = campaigns ONLY');
-  console.log('REFERENTIAL_INTEGRITY_ENFORCED = NO   ORPHAN_FC_SPECIAL_EVENT_WRITABLE = YES');
-  console.log('STAGE2_UNLOCKED_WHILE_STAGE1_LOCKED = YES   RETRY_IDEMPOTENT = YES (per stage)');
+  console.log('PARTIAL_COMMIT_REACHABLE = YES   FALSE_SUCCESS_REACHABLE = NO  [R2]');
+  console.log('SUCCESS_RECEIPT_IS_AUTHORITATIVE = YES [R2]  POST_WRITE_READBACK = campaign GRAPH');
+  console.log('REFERENTIAL_INTEGRITY_ENFORCED = YES  ORPHAN_FC_SPECIAL_EVENT_WRITABLE = NO  [R2]');
+  console.log('STAGE2_UNLOCKED_WHILE_STAGE1_LOCKED = NO  [R2]   RETRY_IDEMPOTENT = YES (per stage)');
   console.log('PRODUCTION_ROWS_WRITTEN = 0   BEHAVIOR_CHANGED = NO');
 }
 console.log('=====================================================');

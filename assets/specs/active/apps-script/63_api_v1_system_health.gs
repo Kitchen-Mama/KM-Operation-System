@@ -248,7 +248,7 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 // price for a site whose prices exist. The reverse — new 58_, old page — is inert: nothing asks for the
 // slice and the four primary-render tables are byte-identical to what they were. So the backend goes
 // first, and the frontend deploy is what completes the repair. 01_router, 14_, 47_ and 73_ do NOT move.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R31';
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32';
 // 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
 // R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
 // not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
@@ -287,7 +287,7 @@ var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R31';
 // contract is untouched; a pure planner that no route reaches is not a new vocabulary.
 // S5-R7A - moved because THIS FILE changed: the release above, its own expected stamp, 47_'s expected stamp
 // and 90_'s content hash. No action was added or removed and the transport contract is untouched.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R31';
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -558,7 +558,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R31', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
   // PRICING-R2 — 73_ IS REQUIRED FROM ITS FIRST RELEASE, AND DELIBERATELY NOT OPTIONAL, for the reason a
   // WRITE owner is always the worst partial sync: 01_router.gs dispatches pricing.update to
   // handlePricingUpdate_, so a deployment carrying the router without this file routes a live price write
@@ -579,7 +579,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // the one-read-per-sheet IO are both invisible to an action list, because neither adds or removes an action.
   // A declared build is the only thing that can tell a half-finished sync from a finished one, so it now has
   // one. The stamp VALUE is the round in which the file last changed behaviourally, as everywhere else here.
-  { file: '58_api_v1_fc_summary_workspace.gs', symbol: 'FCSWS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R31', owns: 'the FC Summary READ workspace: the four primary-render tables, the bootstrap/regular/events/rules slices on one action, the server-derived filter facets that keep the page\'s non-cascading universes intact, one Sheets read per sheet per request, and the scoped pricing projection the Special Event group-card builder reads instead of the whole price list' },
+  { file: '58_api_v1_fc_summary_workspace.gs', symbol: 'FCSWS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32', owns: 'the FC Summary READ workspace: the four primary-render tables, the bootstrap/regular/events/rules slices on one action, the server-derived filter facets that keep the page\'s non-cascading universes intact, one Sheets read per sheet per request, and the scoped pricing projection the Special Event group-card builder reads instead of the whole price list' },
   // F1-7N-FC-1B-E3 §E.9 — the CONFIG is an owner file too. It holds
   // INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_, so a project still running the previous copy of it writes no
   // allocation drafts while the repository says it should; without an entry here that difference had no name.
@@ -678,12 +678,12 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // can repair them because R19 also leaves the ownership flags blank. That is the partial sync this row
   // exists to make visible.
   { file: '04_marketplace_forecast_import.gs', symbol: 'FCREG_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24', owns: 'the Regular Forecast batch writer: validate-all-before-first-mutation, the script lock over the authoritative read and the writes, column-bounded range writes and the one append block — AND the canonical pricing_list creation contract: base_currency read from sku_details, rate 1 only where the currencies are identical, fail-closed PENDING_FX across a currency boundary, and the ownership flags written FALSE at creation so the first reconciliation can finish the row' },
-  { file: '14_fc_write_handlers.gs', symbol: 'FCW_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R30', owns: 'the FC Summary write path: fc_special_events upsert/delete with its expected_row_version gate, its one-event-per-SKU-flag-year uniqueness refusal and unchanged short-circuit + the fc_target_rules upsert on the canonical business key, its script lock, its duplicate and identity-mismatch refusals, the single-range row write, and the saved-row receipt' },
+  { file: '14_fc_write_handlers.gs', symbol: 'FCW_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32', owns: 'the FC Summary write path: fc_special_events upsert/delete with its expected_row_version gate, its one-event-per-SKU-flag-year uniqueness refusal and unchanged short-circuit + the fc_target_rules upsert on the canonical business key, its script lock, its duplicate and identity-mismatch refusals, the single-range row write, and the saved-row receipt' },
   // R15 - THE CAMPAIGN WRITER'S FIRST REQUIRED ROW. The campaign business key IS the Special Event's
   // identity: an old copy keys on campaign_name, so two BFCM windows in one year resolve to one row and
   // the earlier event is overwritten by the later one with a success message. Nothing else in the
   // deployment report would say so, which is exactly why the row is required rather than optional.
-  { file: '20_campaign_write_handlers.gs', symbol: 'CAMPAIGN_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R20', owns: 'the campaigns + campaign_sku_lines write path: the canonical window-based campaign identity (company|country|marketplace|year|start_date|end_date), the one-time legacy adoption of a window-less row, the script lock held around the WRITE only (resolve and classify run unlocked, and every zero-write outcome answers without taking it), the duplicate-identity and identity-mismatch refusals, the expected_row_version stale-write gate applied ONLY to a real header mutation, the resolve-and-reuse branch for an identical header, and the per-line unchanged short-circuit' },
+  { file: '20_campaign_write_handlers.gs', symbol: 'CAMPAIGN_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32', owns: 'the campaigns + campaign_sku_lines write path: the canonical window-based campaign identity (company|country|marketplace|year|start_date|end_date), the one-time legacy adoption of a window-less row, the script lock held around the WRITE only (resolve and classify run unlocked, and every zero-write outcome answers without taking it), the duplicate-identity and identity-mismatch refusals, the expected_row_version stale-write gate applied ONLY to a real header mutation, the resolve-and-reuse branch for an identical header, and the per-line unchanged short-circuit' },
   // R12 - THE GENERATED BUNDLE, IDENTIFIED BY CONTENT RATHER THAN BY A STAMP. 90_ is the only manifest owner
   // that is BUILT, not written, so a hand-typed build stamp would be the wrong instrument twice over: it
   // would have to be edited in the builder every round, and it could be edited to look current without the

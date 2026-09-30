@@ -53,7 +53,9 @@ var G14_VARS_A3 = ['FC_SE_FINGERPRINT_FIELDS_', 'FC_SE_FINGERPRINT_NUMERIC_',
 var G14_FNS = ['fcWriteSchemaByNameApproved_', 'fcWriteTimestamp_', 'fcWriteEnsureSheet_', 'fcWriteEnsureColumns_',
   'fcWriteReadSheet_', 'fcWriteAppendByHeader_', 'fcWriteUpsert_', 'fcEvtUp_', 'fcSpecialEventFindRowByKey_',
   'fcSeUniquenessKey_', 'fcSeUniquenessConflict_',
-  'fcSeNum_', 'fcSeFingerprint_', 'fcSeRowAt_', 'fcSeReceiptFor_', 'fcSpecialEventUpsert_'];
+  'fcSeNum_', 'fcSeFingerprint_', 'fcSeRowAt_', 'fcSeReceiptFor_',
+  // R2 §4: fcSpecialEventUpsert_ now proves its campaign_sku_line reference before a create.
+  'fcSeReadCampaignLines_', 'fcSeLineRefCheck_', 'fcSpecialEventUpsert_'];
 var G20_VARS = ['CAMPAIGNS_HEADERS_', 'CAMPAIGN_SKU_LINES_HEADERS_', 'CAMPAIGN_KEY_FIELDS_',
   'CAMPAIGN_LOCK_MS_', 'CAMPAIGN_FINGERPRINT_FIELDS_', 'CAMPAIGN_FINGERPRINT_NUMERIC_',
   'CAMPAIGN_LINE_FINGERPRINT_FIELDS_', 'CAMPAIGN_LINE_FINGERPRINT_NUMERIC_'];
@@ -293,8 +295,23 @@ TABLES.forEach(function (t) {
   ok(res && res.data && res.data.upserted === 1 && res.data.created === 1, 'B6 one line, created');
 })();
 
+// R2 §4: an event create must be able to PROVE its campaign_sku_line reference, so a world that
+// exercises the create needs the line present. Before R2 this fixture created a dangling event and
+// nothing objected — which is the defect, not the setup.
+function dbWithLine(lineId, campaignId, sku) {
+  var db = liveDb();
+  var hdr = db.campaign_sku_lines[0];
+  db.campaign_sku_lines.push(hdr.map(function (h) {
+    if (h === 'campaign_sku_line_id') return lineId;
+    if (h === 'campaign_id') return campaignId;
+    if (h === 'sku') return sku || '';
+    return '';
+  }));
+  return db;
+}
+
 (function () {
-  var ss = makeSs(liveDb());
+  var ss = makeSs(dbWithLine('CSL-1', 'CMP-EXISTING1', 'SP3320-T'));
   var r = CTX.fcSpecialEventUpsert_(ss, {
     campaign_id: 'CMP-EXISTING1', campaign_sku_line_id: 'CSL-1', company: 'ResUS', country: 'US',
     marketplace: 'Amazon', marketplace_id: 'MP-US-AMA', scope_type: 'sku', scope_id: 'SP3320-T',
@@ -366,7 +383,8 @@ section('C. EVERY PRODUCED VALUE LANDS UNDER ITS INTENDED NAMED COLUMN');
 
 // fc_special_events carries BOTH `event` and `event_name` live. The writer must fill only the canonical one.
 (function () {
-  var ss = makeSs(liveDb());
+  // R2 §4: the create proves its line reference, so the world carries the line it names.
+  var ss = makeSs(dbWithLine('CSL-1', 'CMP-EXISTING1', 'SP3320-T'));
   CTX.fcSpecialEventUpsert_(ss, {
     campaign_id: 'CMP-EXISTING1', campaign_sku_line_id: 'CSL-1', company: 'ResUS', country: 'US',
     marketplace: 'Amazon', marketplace_id: 'MP-US-AMA', scope_type: 'sku', scope_id: 'SP3320-T',

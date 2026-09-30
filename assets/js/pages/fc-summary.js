@@ -5244,6 +5244,125 @@ function _evtPartialText_(cls) {
 // Complete idempotent 3-layer transaction. On live: writes campaigns → campaign_sku_lines →
 // fc_special_events in order; if any step fails, stops and reports the real error (never fake
 // success, never fc_special_events without a parent campaign line). Demo ON → in-memory illustration.
+/* ============================================================================================
+ * FC-SPECIAL-EVENT-WRITE-CONSISTENCY-R2 §1/§3 — THE SAVE RECEIPT BECOMES A MEASUREMENT.
+ *
+ * WHAT R1 PROVED. The three numbers in "Saved. campaigns: 1 · campaign_sku_lines: N ·
+ * fc_special_events: M" came from three different places and only one of them was a server answer:
+ * the 1 was a LITERAL, the N was `linePayloads.length` — the length of the array the CLIENT had
+ * SENT — and only M was classified per row. So the save reported most confidently about the stage
+ * hardest to get wrong, and said nothing checkable about the two before it. Two production incidents
+ * in opposite directions produced the same sentence.
+ *
+ * WHAT REPLACES IT. One bounded read of the campaign's GRAPH, by canonical id, after the write. The
+ * attempted counts are still reported — they are useful diagnostics — but they are no longer the
+ * receipt. SAVE_SUCCESS_AUTHORITY = POST_WRITE_AUTHORITATIVE_GRAPH_READBACK.
+ *
+ * THE FOUR OUTCOMES ARE S3-R10's, NOT NEW ONES. A verified graph is CONFIRMED_COMMITTED. A graph
+ * that comes back incomplete is a PARTIAL commit, reported as such and never as success. A readback
+ * that cannot be performed leaves the outcome UNKNOWN — which is not the same as rejected, and is
+ * never replayed.
+ * ========================================================================================== */
+var FC_GRAPH_SLICE_ = 'graph';
+
+function _evtGraphReadback_(campaignId) {
+  // Returns the adapted graph, or null when it cannot be read. Null is UNKNOWN, never 'empty'.
+  try {
+    if (!(window.KM && window.KM.api && typeof window.KM.api.getWorkspace === 'function')) return Promise.resolve(null);
+    return window.KM.api.getWorkspace('fcSummary', {
+      include: { slice: FC_GRAPH_SLICE_, scope: { campaign_id: String(campaignId || '') } }
+    }).then(function (res) {
+      var data = (res && res.data) || null;
+      if (!data) return null;
+      var adapted = (window.KM.DB && typeof window.KM.DB.adaptFcSummaryWorkspaceSlice === 'function')
+        ? window.KM.DB.adaptFcSummaryWorkspaceSlice(data) : data;
+      var g = adapted && adapted.graph;
+      if (!g) return null;
+      // An answer for a DIFFERENT campaign verifies nothing. Dropped rather than believed.
+      if (String(g.campaignId || '').toUpperCase() !== String(campaignId || '').toUpperCase()) return null;
+      return g;
+    }).catch(function () { return null; });
+  } catch (e) { return Promise.resolve(null); }
+}
+
+/* The comparison. EXPECTED comes from what the save set out to write; COMMITTED comes ONLY from the
+ * graph. §3's rule — payload cardinality is never committed cardinality — is enforced by the fact
+ * that `expected` and `committed` are read from different objects and never from the same one. */
+function _evtVerifyGraph_(graph, expected) {
+  var up = function (v) { return String(v == null ? '' : v).trim().toUpperCase(); };
+  var out = {
+    verified: false,
+    expectedCampaignCount: 1, committedCampaignCount: 0,
+    expectedLineCount: expected.lineIds.length, committedLineCount: 0,
+    expectedEventCount: expected.eventCount, committedEventCount: 0,
+    missingLineIds: [], missingEventSkus: [], orphanEventIds: [], identityMismatchIds: []
+  };
+  if (!graph) return out;
+  out.committedCampaignCount = graph.campaignFound ? 1 : 0;
+
+  var haveLine = {};
+  graph.lineIds.forEach(function (id) { haveLine[up(id)] = true; });
+  out.missingLineIds = expected.lineIds.filter(function (id) { return !haveLine[up(id)]; });
+  out.committedLineCount = expected.lineIds.length - out.missingLineIds.length;
+
+  // An event counts as committed only when it points at a line THIS campaign actually holds.
+  var eventsByLine = {};
+  graph.events.forEach(function (e) {
+    if (!haveLine[up(e.campaignSkuLineId)]) {
+      // The event is under this campaign but names a line the campaign does not have. That is the
+      // production incident's exact shape, and it is reported by id rather than counted away.
+      if (out.orphanEventIds.indexOf(e.eventFcId) < 0) out.orphanEventIds.push(e.eventFcId || ('(' + e.sku + ')'));
+      return;
+    }
+    eventsByLine[up(e.campaignSkuLineId)] = e;
+  });
+  expected.lineIds.forEach(function (id, i) {
+    if (!eventsByLine[up(id)]) out.missingEventSkus.push(expected.skus[i] || id);
+  });
+  out.committedEventCount = expected.lineIds.length - out.missingEventSkus.length;
+
+  out.verified = out.committedCampaignCount === 1
+    && out.missingLineIds.length === 0
+    && out.missingEventSkus.length === 0
+    && out.orphanEventIds.length === 0
+    && out.identityMismatchIds.length === 0;
+  return out;
+}
+
+// §7.C — a bounded, actionable sentence. Not a raw dump, and never the word 'saved'.
+function _evtGraphPartialText_(v, campaignId) {
+  var L = [];
+  L.push('PART of this save committed, and the saved data is INCOMPLETE. It was not fully saved.');
+  L.push('');
+  L.push('Campaign ' + campaignId + ': ' + (v.committedCampaignCount ? 'saved' : 'NOT FOUND'));
+  L.push('SKU lines: ' + v.committedLineCount + ' of ' + v.expectedLineCount + ' saved');
+  L.push('Special events: ' + v.committedEventCount + ' of ' + v.expectedEventCount + ' saved');
+  if (v.missingLineIds.length) {
+    L.push('');
+    L.push('Missing SKU line(s): ' + v.missingLineIds.slice(0, 8).join(', ')
+      + (v.missingLineIds.length > 8 ? ', \u2026' : ''));
+  }
+  if (v.missingEventSkus.length) {
+    L.push('Missing event(s) for: ' + v.missingEventSkus.slice(0, 8).join(', ')
+      + (v.missingEventSkus.length > 8 ? ', \u2026' : ''));
+  }
+  if (v.orphanEventIds.length) {
+    L.push('Event(s) pointing at a SKU line that is not there: ' + v.orphanEventIds.slice(0, 8).join(', ')
+      + (v.orphanEventIds.length > 8 ? ', \u2026' : ''));
+  }
+  L.push('');
+  L.push('Nothing has been undone and nothing was sent again. The form is still open. '
+    + 'Reload the latest data before saving again so the rows that DID commit are not rewritten.');
+  return L.join('\n');
+}
+
+// §7.D — unknown says so, and says what to do. It does not guess in either direction.
+function _evtGraphUnknownText_(campaignId) {
+  return 'This save was sent and the result could NOT be confirmed.\n\n'
+    + 'Campaign ' + campaignId + ' may or may not be fully saved. Nothing was sent again.\n\n'
+    + 'Reload the latest data and check this event before saving again.';
+}
+
 async function saveEventUpdate() {
   var site = _evtSelectedSite();
   var country = site.country || (document.getElementById('event-country') || {}).value || '';
@@ -5548,6 +5667,15 @@ async function saveEventUpdate() {
        operator saves again after a partial result, every previously-committed row would be refused
        STALE_SPECIAL_EVENT_VERSION — a refusal manufactured by this page, not by the data. */
     _evtApplyBatchReceipts_(evCls);
+    /* §3 — WHAT THE SAVE SET OUT TO WRITE, taken from stage 2's RECEIPT rather than from the payload.
+       The line ids are the server's own; the payload never held them. This is the one place the two
+       could have been confused, so they are read from different objects on purpose: `expected` comes
+       from receipts, `committed` comes only from the graph readback. */
+    var _expectedGraph = { lineIds: [], skus: [], eventCount: lines.length };
+    lines.forEach(function (l) {
+      var id = lineIdBySku[String(l.sku).toUpperCase()] || l.campaignSkuLineId || '';
+      if (id) { _expectedGraph.lineIds.push(id); _expectedGraph.skus.push(l.sku); }
+    });
     var written = evCls.written, unchangedCount = evCls.unchanged;
     _fcWriteEnd_('eventBuilder', FC_WRITE_.SUCCESS);
     _fcReceipt_('Special Event Builder Save', written, null);
@@ -5571,16 +5699,33 @@ async function saveEventUpdate() {
         alert(_evtPartialText_(evCls));
         return;
       }
-      closeFcModal();
       if (zeroWrite) {
+        // Nothing was written, so there is no graph to verify: the rows the operator is looking at are
+        // the rows that were already there. Closing here is unchanged behaviour.
+        closeFcModal();
         alert('Nothing to save — every value already matches what is stored. '
           + unchangedCount + ' event(s) unchanged; no rows were written.');
         return;
       }
-      alert(FC_MSG_.SAVED + ' campaigns: 1 (' + campaignId + ') · campaign_sku_lines: ' + linePayloads.length
-        + ' · fc_special_events: ' + written
-        + (unchangedCount ? (' (' + unchangedCount + ' unchanged, not written)') : '')
-        + ' (linked by campaign_id / campaign_sku_line_id).');
+      /* §1 — THE MODAL DOES NOT CLOSE UNTIL THE GRAPH IS VERIFIED. Closing first and verifying after
+         would put the operator back on a table while a sentence they cannot act on appears over it. */
+      _evtGraphReadback_(campaignId).then(function (graph) {
+        if (!graph) {
+          // §7.D — OUTCOME_UNKNOWN. Not success, not 'nothing was written', and not replayed.
+          alert(_evtGraphUnknownText_(campaignId));
+          return;
+        }
+        var v = _evtVerifyGraph_(graph, _expectedGraph);
+        if (!v.verified) {
+          alert(_evtGraphPartialText_(v, campaignId));    // §7.C — the form stays open
+          return;
+        }
+        closeFcModal();
+        alert(FC_MSG_.SAVED + ' Verified against the saved data: campaign ' + campaignId
+          + ' · ' + v.committedLineCount + ' SKU line(s) · ' + v.committedEventCount + ' special event(s)'
+          + (unchangedCount ? (' (' + unchangedCount + ' unchanged, not written)') : '')
+          + '.\n\nEvery event is linked to a SKU line that exists under this campaign.');
+      });
     });
   } catch (e) {
     _fcBuilderFailure_(e, _ebEpoch);
