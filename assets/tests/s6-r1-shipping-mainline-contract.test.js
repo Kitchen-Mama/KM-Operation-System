@@ -233,8 +233,14 @@ var CANCEL_BODY = (function () {
   return c.slice(i, j < 0 ? c.length : j);
 })();
 ok(CANCEL_BODY.length > 2000, 'D6a the cancel body was isolated, not truncated');
-ok(/factoryStockReleaseReservationTx_\s*\(/.test(CANCEL_BODY),
+// RESTATED (S6-R4B): this named the factory release FUNCTION inside the cancel handler, as a proxy for
+// 'cancellation returns the claim through the shared transaction'. R4B routes the release by source domain,
+// so the handler now calls shipmentDomainRelease_, which forwards to that domain's owner and adds no
+// arithmetic of its own. The proxy moved one level out; the claim did not. Both halves are asserted.
+ok(/shipmentDomainRelease_\s*\(/.test(CANCEL_BODY),
   'D6 RELEASE_EVENT = cancelShipmentDraft — a claim returned, no physical units moved');
+ok(/factoryStockReleaseReservationTx_\s*\(/.test(code(F12)) && /ovsReleaseReservationTx_\s*\(/.test(code(F12)),
+  'D6b and that forwarder reaches BOTH domain owners — neither domain releases through the other\'s rule');
 ok(/factoryStockApplyDeltaTx_\s*\(/.test(code(F22)) && /reservedDelta:\s*-give/.test(code(F22)),
   'D7 CONSUME_EVENT = dispatch — deduction and release land in ONE movement row, never two that can disagree');
 ok(/deltaQty:\s*-d\.take/.test(code(F22)),

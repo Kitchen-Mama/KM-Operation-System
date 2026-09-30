@@ -553,6 +553,13 @@ ok(/PRODUCT_STRATEGY_ENABLED_/.test(read('assets/specs/active/apps-script/00_con
 // gate. Neither file is reachable from Product Strategy's read path, and a visual round that touched a
 // handler would still be caught.
 var R6_KNOWN_GS_CHANGES = ['assets/specs/active/apps-script/03_master_data_handlers.gs',
+  // S6-R4B — the overseas reservation lifecycle and the source-domain routing that reaches it. None of the
+  // three is reachable from Product Strategy's read path: no action was added or removed, no capability
+  // field changed, the feature flag is untouched, and 63_ (which carries the R33 release and 05_'s new
+  // manifest row) is already declared below. A visual round that touched a handler would still be caught.
+  'assets/specs/active/apps-script/05_overseas_inventory_handlers.gs',
+  'assets/specs/active/apps-script/12_shipment_handlers.gs',
+  'assets/specs/active/apps-script/22_shipment_dispatch_handlers.gs',
   'assets/specs/active/apps-script/14_fc_write_handlers.gs',
   'assets/specs/active/apps-script/20_campaign_write_handlers.gs',
   // FC-SUMMARY-R2B-A2-R1 — the fc_target_rules additive header migration tool. Unrouted, USER-run, and

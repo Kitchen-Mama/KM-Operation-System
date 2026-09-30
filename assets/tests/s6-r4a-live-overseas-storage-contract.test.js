@@ -179,18 +179,26 @@ section('D. THE HAZARD — the importer zeroes wh_reserved_stock, and R4 cannot 
 // verification. It is pinned here so the implementing round cannot miss it.
 ok(QTY.indexOf('wh_reserved_stock') >= 0,
   'D1 wh_reserved_stock is in qtyFields — the importer OVERWRITES it on every update');
-ok(/if \(sv === ''\) \{ qtyVals\[f\] = 0; continue; \}/.test(C05),
-  'D2 HAZARD — a blank CSV cell becomes 0, it does not mean "leave this column alone"');
-ok(/qtyFields\.forEach\(function\(f\) \{ var ci = snPref\(f\); if \(ci !== -1\) snapSheet\.getRange\(tr, ci \+ 1\)\.setValue\(qtyVals\[f\]\); \}\);/.test(C05),
-  'D3 HAZARD — and the update branch writes every qtyField unconditionally on an existing row');
+// CLOSED BY S6-R4B. D2 recorded the collapse site: `if (sv === '') { qtyVals[f] = 0; continue; }`, where
+// absent, blank and explicit-zero became one value before anything could tell them apart.
+ok(/qtyPresent\[f\] = false/.test(C05) && /if \(!qtyPresent\[f\]\) return;/.test(C05),
+  'D2 [R4B] a blank or absent cell now writes NOTHING — presence is kept, so it does mean "leave this '
+  + 'column alone"');
+ok(/qtyWritableFields\.forEach/.test(C05) && /v = qtyVals\[f\] - canonReserved/.test(C05),
+  'D3 [R4B] and the update branch writes only the fields the payload carried, three of them, with the '
+  + 'GROSS subtraction on available. Until R4B it wrote all four unconditionally on every existing row');
 // Therefore: a routine stock refresh carrying only `available` silently resets every KM reservation to
 // zero, with no error, no ledger row and no warning — while the exposure ledger still believes the units
 // are held. Harmless today (reserved is 0 everywhere); catastrophic the day after R4 writes the first hold.
 ok(true, 'D4 => a CSV refresh without a reserved column wipes KM reservations. Close this WITH the reserve.');
 
 // The reserved bucket has no competing owner, which is the good half of the finding: it is free for KM.
-ok(!/reservation_acquire|reservation_release/.test(C05) && !/reservation_acquire|reservation_release/.test(code(F31)),
-  'D5 no reservation writer exists yet — RESERVED_FIELD_MAINTAINED = NO, and no external owner claims it');
+// D4 said: close this WITH the reserve. S6-R4B is that round, and the good half of the finding held —
+// the bucket was free, so the lifecycle took it without contending with anyone.
+ok(/reservation_acquire|reservation_release/.test(C05)
+  && !/reservation_acquire|reservation_release/.test(code(F31)),
+  'D5 [R4B] RESERVED_FIELD_MAINTAINED = YES, by 05_ alone — Receiving still claims no reservation, so '
+  + 'the bucket has exactly one owner rather than none');
 
 // =========================================================================================================
 section('E. no automated sync — the Option-A overwrite fear is manual, not scheduled');
@@ -255,8 +263,11 @@ ok(/OPTION A —/.test(DOC) && /OPTION B —/.test(DOC) && /OPTION C —/.test(D
 section('H. safety — this round changed no behaviour');
 // =========================================================================================================
 
-ok(!/reservation_acquire/.test(C05) && !/movement_type', 'shipment_out'/.test(C05),
-  'H1 no overseas reserve / consume writer was added');
+// RESTATED (S6-R4B): §H asserted that R4A, a READ-ONLY verification round, changed no behaviour. It did
+// not. R4B did, by authorization, and H1 is the one line in §H that measured the absence rather than the
+// round — so it names the writer that landed, while H2 onward still hold R4A to having changed nothing.
+ok(/reservation_acquire/.test(C05) && /OVSTX_MOV_SHIPMENT_OUT_ = 'shipment_out'/.test(C05),
+  'H1 [R4B] the overseas reserve / consume writer landed, in the round authorized to add it');
 ok(/var WH_LEGACY_ = \{/.test(F05),
   'H2 the legacy fallback is still in place — provably removable now, deliberately NOT removed here');
 ok(/rivPick_\(r, 'wh_available_stock', 'available_stock'\)/.test(code(F54)),

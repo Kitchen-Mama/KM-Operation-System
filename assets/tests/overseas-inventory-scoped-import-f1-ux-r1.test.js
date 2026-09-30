@@ -159,8 +159,15 @@ ok(/exampleRow: \{ warehouse_id: sc\.warehouseId/.test(tpl), '4 example row pref
 ok(/filename: 'Overseas_Inventory_' \+ fnamePart \+ '_Import_Template\.xlsx'/.test(tpl) && /_ovsSanitizeFilePart_\(sc\.company\)/.test(tpl) && /_ovsSanitizeFilePart_\(sc\.warehouse/.test(tpl), '3 filename contains sanitized company/country/warehouse scope');
 ok(/scope_company: sc\.company/.test(tpl) && /scope_warehouse_id: sc\.warehouseId/.test(tpl), '8 scope is stamped into the template system metadata');
 // 5/6 no company/country data columns added; the exact existing inventory columns retained
-OVERSEAS_IMPORT_HEADERS_EXPECTED = ['warehouse_id', 'sku', 'available_stock', 'reserved_stock', 'damaged_stock', 'on_the_way_qty', 'on_the_way_eta', 'note'];
+// RESTATED (S6-R4B): reserved_stock LEFT this list, and that is the decision rather than drift. S6-R3B
+// froze IMPORT_WRITES_RESERVED = NO - a 3PL's reserved figure is its own, not the hold KM is carrying -
+// so a template column inviting the operator to supply one could only mislead. The claim this line owns is
+// unchanged: a SCOPING round adds no data columns and loses none of the columns the import still writes.
+OVERSEAS_IMPORT_HEADERS_EXPECTED = ['warehouse_id', 'sku', 'available_stock', 'damaged_stock', 'on_the_way_qty', 'on_the_way_eta', 'note'];
 OVERSEAS_IMPORT_HEADERS_EXPECTED.forEach(function (h) { ok(new RegExp("key: '" + h + "'").test(tpl), '6 retained inventory column ' + h); });
+ok(!/key: 'reserved_stock'/.test(tpl),
+  '6a and reserved_stock is ABSENT — asserted, not merely unlisted, so it cannot drift back into a '
+  + 'template the operator fills in');
 ok(!/key: 'company'|key: 'country'|key: 'warehouse_name'/.test(tpl), '5 NO company/country/warehouse_name columns added to the row schema');
 ok(/decimals round UP|Number >= 0/.test(tpl), '7 numeric guidance retained');
 

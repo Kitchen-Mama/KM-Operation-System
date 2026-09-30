@@ -583,8 +583,13 @@ section('§E — THE RESERVATION: SOURCE OF TRUTH, ACQUIRE, RELEASE');
     ['shipment', String(w.shipments()[0].shipment_id)],
     'E10 §E the owner is the SHIPMENT — the reservation has lineage, not just a number');
   eq([String(mv[0].warehouse_id), String(mv[0].sku)], ['WH-F', 'CO1100-R'], 'E10a at the exact warehouse and SKU');
-  eq(r.data.shipment.factory_reservations, [{ sku: 'CO1100-R', warehouse_id: 'WH-F', reserved_qty: 800, applied: true, reason: 'RESERVED' }],
-    'E11 §E.5 and the answer reports what was reserved, so the UI never has to guess');
+  // RESTATED (S6-R4B): the receipt gained source_domain. Nothing was removed and no second vocabulary was
+  // invented — the overseas owner answers with the same applied / reason / alreadyHeld / movementId shape as
+  // the factory one — so a reader that knew this receipt still reads it. Naming the domain is what stops the
+  // ambiguity a mixed-source deployment would otherwise hand the UI, which is the very thing E11 is for.
+  eq(r.data.shipment.factory_reservations,
+    [{ sku: 'CO1100-R', warehouse_id: 'WH-F', source_domain: 'FACTORY', reserved_qty: 800, applied: true, reason: 'RESERVED' }],
+    'E11 §E.5 and the answer reports what was reserved, and in which domain, so the UI never has to guess');
 
   // §E.7 — REPLAY returns REUSED with a ZERO stock delta.
   var before = w.counts();

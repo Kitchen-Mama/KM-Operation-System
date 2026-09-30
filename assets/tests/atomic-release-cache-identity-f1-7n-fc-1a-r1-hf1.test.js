@@ -188,12 +188,23 @@ manifestRows.forEach(function (r) {
 eq(stampMismatch.join(' | '), '',
   'B1a and every one of them declares exactly the build its manifest entry expects');
 
-// B.2 — THE FINDING, stated as a specific fact rather than left to the sweep above. R1 changed this file and
-// left this constant behind; both halves now name the round whose guard the file contains.
-eq((/var CSD_BUILD_VERSION_ = '([^']*)'/.exec(G22) || [])[1], 'F1-7N-FC-1A-R1',
-  'B2  22_ declares F1-7N-FC-1A-R1 — the round that added its cancelled-shipment refusal');
-ok(/\{ file: '22_shipment_dispatch_handlers\.gs',[^}]*expected: 'F1-7N-FC-1A-R1'/.test(G63),
-  'B2a and the manifest expects that, so a 22_ left behind is DETECTABLE');
+// B.2 — THE FINDING. R1 changed this file and left its constant behind; both halves had to name the round
+// whose guard the file contains.
+//
+// RESTATED (S6-R4B): both halves spelled the literal FC-1A-R1, which made this a claim about whichever
+// round was in progress — S6-R4B routed the dispatch consume by source domain, legitimately changed 22_,
+// and rotated it to R33, and a correct file then read as wrong. The durable claim is a FLOOR against the
+// shared ledger (the form D7 below already uses), plus the part a version string never proved anyway: the
+// GUARD this stamp was minted for is still in the file. A stamp that names a round whose change is absent
+// is worse than a stale one, so the guard is asserted directly rather than through its label.
+var _csd22 = (/var CSD_BUILD_VERSION_ = '([^']*)'/.exec(G22) || [])[1];
+ok(RO.stampAtOrAfter(_csd22, 'F1-7N-FC-1A-R1'),
+  'B2  22_ declares a build at or after FC-1A-R1 — the round that added its cancelled-shipment refusal '
+  + '(declares ' + _csd22 + ')');
+var _m22 = (/\{ file: '22_shipment_dispatch_handlers\.gs',[^}]*?expected: '([^']*)'/.exec(G63) || [])[1];
+eq(_m22, _csd22,
+  'B2a and the manifest expects EXACTLY what the file declares, so a 22_ left behind is DETECTABLE — the '
+  + 'two are read from their own files, so they can only be edited together');
 // The guard the stamp now covers is in the file it claims to be in. A stamp that names a round whose change is
 // absent is worse than a stale one: it asserts a behaviour nobody can find.
 ok(/curStatus === 'cancelled'/.test(G22) && /SHIPMENT_CANCELLED/.test(G22),
@@ -313,15 +324,21 @@ ok(/^UNIFORM/.test(String(H.deployment_uniformity_verdict)),
 // same 22_ satisfied it, so an operator who forgot the one file that stops a cancelled shipment deducting stock
 // saw UNIFORM. Both directions are executed, because "the stamp catches it" is only a real claim if the
 // pre-fix state does not.
+// RESTATED (S6-R4B): the replacement spelled FC-1A-R1 on both sides, so the moment 22_ legitimately
+// rotated the replace became a no-op, the 'behind' deployment was not behind, and all three assertions
+// below reported a working guard as broken. The step back is DERIVED: whatever 22_ declares now, the
+// mutant is the previous registered release, so the probe keeps proving that a lagging 22_ is named.
+var _csdPrev = RO.OWNER_STAMPS[RO.OWNER_STAMPS.indexOf(_csd22) - 1];
+ok(!!_csdPrev && _csdPrev !== _csd22, 'D8a the step-back release was resolved from the shared ledger');
 var DEP_BEHIND = makeDeployment(function (f, src) {
   return f === '22_shipment_dispatch_handlers.gs'
-    ? src.replace("var CSD_BUILD_VERSION_ = 'F1-7N-FC-1A-R1';", "var CSD_BUILD_VERSION_ = 'F1-7N-FC-1A';")
+    ? src.replace("var CSD_BUILD_VERSION_ = '" + _csd22 + "';", "var CSD_BUILD_VERSION_ = '" + _csdPrev + "';")
     : src;
 });
 var HB = health(DEP_BEHIND);
 eq(HB.module_build_stamps.stale_modules,
-  ['22_shipment_dispatch_handlers.gs declares F1-7N-FC-1A, expected F1-7N-FC-1A-R1'],
-  'D9  EXECUTED: a 22_ left behind at FC-1A is now NAMED as stale');
+  ['22_shipment_dispatch_handlers.gs declares ' + _csdPrev + ', expected ' + _csd22],
+  'D9  EXECUTED: a 22_ left one release behind is NAMED as stale');
 eq(HB.mixed_deployment, true, 'D9a EXECUTED: and the deployment reports itself MIXED');
 ok(/MIXED_OR_PARTIAL_SYNC/.test(String(HB.deployment_uniformity_verdict)),
   'D9b EXECUTED: with a verdict telling the operator to re-copy and republish');

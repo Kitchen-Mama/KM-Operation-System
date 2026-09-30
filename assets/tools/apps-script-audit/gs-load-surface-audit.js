@@ -167,7 +167,14 @@ function analyze(opts) {
   var manifest = {};
   (function () {
     var raw = SRC[HEALTH] || '', m;
-    var re = /\{\s*file:\s*'([^']+)'\s*,\s*symbol:\s*'([^']+)'\s*,\s*expected:\s*'([^']*)'([\s\S]{0,400}?)\}/g;
+    /* The row tail is matched STRUCTURALLY, not by a length window. It used to be `[\s\S]{0,400}?`, and a
+       manifest entry whose `owns` prose ran past 400 characters was silently skipped - worse, the scan then
+       ran on into the NEXT entry and consumed that one too, so ONE over-long row hid TWO owners from this
+       audit, and the count went DOWN as owners were added. 05_overseas_inventory_handlers.gs was the first
+       row long enough to do it. The tail now consumes either non-brace characters or whole quoted strings,
+       so it stops at this row's own closing brace however long the prose is, and an apostrophe escaped
+       inside the prose cannot end it early. */
+    var re = /\{\s*file:\s*'([^']+)'\s*,\s*symbol:\s*'([^']+)'\s*,\s*expected:\s*'([^']*)'((?:[^{}']|'(?:[^'\\]|\\.)*')*?)\}/g;
     while ((m = re.exec(raw)) !== null) {
       manifest[m[1]] = { symbol: m[2], expected: m[3], optional: /optional:\s*true/.test(m[4]) };
     }

@@ -69,8 +69,13 @@ ok(/isOverseas3PL\s*\(\s*w\s*\)[^;]*from\.push\s*\(\s*w\s*\)/.test(CAND.replace(
 // is_factory_warehouse branch anywhere in the creator.
 var CREATE = fnBody(F12, 'createShipmentFromApprovedPlan_');
 ok(CREATE.length > 4000, 'A2a the creator body was isolated, not truncated');
-ok(/factoryStockReadBalanceTx_\s*\(\s*fcStockSheet\s*,\s*srcWarehouseId\s*,/.test(CREATE),
-  'A2 sufficiency is checked against factory_stock at the plan\'s source_warehouse_id');
+// RESTATED (S6-R4B): the original read 'sufficiency is checked against factory_stock at the plan's
+// source_warehouse_id', and the second half of that sentence was the decision — one source warehouse,
+// one sufficiency question, asked before anything is created. The first half was the DEFECT: factory
+// stock was consulted whatever kind of warehouse it was. R4B routes it; the source_warehouse_id half
+// is unchanged and is what this line now asserts.
+ok(/shipmentDomainAvailable_\s*\(\s*srcDomain\s*,\s*srcSheets\s*,\s*srcWarehouseId\s*,/.test(CREATE),
+  'A2 sufficiency is checked at the plan\'s source_warehouse_id, against THAT warehouse\'s domain');
 ok(!/is_factory_warehouse|isFactoryWarehouse/.test(CREATE),
   'A3 the creator has NO factory-warehouse branch — an overseas source takes the same path');
 
@@ -80,8 +85,11 @@ ok(!/is_factory_warehouse|isFactoryWarehouse/.test(CREATE),
 var BAL = fnBody(F21, 'factoryStockReadBalanceTx_');
 ok(/return\s*\{\s*found:\s*false,\s*current:\s*0,\s*reserved:\s*0,\s*available:\s*0\s*\}/.test(BAL.replace(/\s+/g, ' ')),
   'A4 a missing factory_stock row reads available = 0');
-ok(/reason:\s*'INSUFFICIENT_FACTORY_STOCK'/.test(CREATE),
-  'A5 the refusal the operator receives names FACTORY stock, at a warehouse that is not a factory');
+// RESTATED (S6-R4B): this recorded the defect — a 3PL shortfall wearing a factory-shaped refusal. The
+// durable claim is that a shortfall REFUSES, with a typed code naming the domain that was short.
+ok(/reason:[^\n]*'INSUFFICIENT_OVERSEAS_STOCK'[^\n]*'INSUFFICIENT_FACTORY_STOCK'/.test(CREATE),
+  'A5 a shortfall still refuses, and now names the DOMAIN that was short rather than telling a 3PL '
+  + 'operator about factory stock');
 
 // A6 — and the guard upstream asks the operator to CONFIRM an overage against that same non-factory pool.
 // Executed, because "the guard would report an overage" is exactly the kind of claim that should be run.
@@ -143,8 +151,10 @@ eq(stuck.byPool[KMFSG.poolKey('WH-F', 'S', '')].qty, 300,
 section('C. ALREADY FROZEN — reservation timing and effects');
 // =========================================================================================================
 
-ok(/factoryStockAcquireReservationTx_\s*\(/.test(CREATE),
-  'C1 FACTORY_RESERVATION_TIMING = Shipment Draft creation (Execution Commit)');
+// RESTATED (S6-R4B): the TIMING is the frozen decision and it has not moved — the reserve still happens
+// inside the Shipment Draft creator, at Execution Commit. Only the forwarder's name changed.
+ok(/shipmentDomainAcquire_\s*\(/.test(CREATE),
+  'C1 RESERVATION_TIMING = Shipment Draft creation (Execution Commit), for either domain');
 ok(!/factoryStockAcquireReservationTx_|factoryStockReleaseReservationTx_/.test(code(F11)),
   'C2 no plan transition reserves or releases — reservation is not a Decision-Layer effect');
 // The overseas ledger MODELS a reserved bucket (from_stock_type/to_stock_type carry `reserved` in their

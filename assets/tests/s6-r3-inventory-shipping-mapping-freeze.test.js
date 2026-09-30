@@ -165,8 +165,17 @@ ok(IRW.isFactory({ warehouseType: '3PL', isFactoryWarehouse: true }) === true,
   'B4 a flagged-factory row classifies as FACTORY even with warehouse_type 3PL — factory-first');
 ok(/if \(whRec\.isFactory === true\) return 'WAREHOUSE_NOT_OVERSEAS'/.test(code(F05)),
   'B5 the server applies the SAME precedence — factory excluded from overseas before type is consulted');
-ok(!/source_domain/.test(code(F11)) && !/source_domain/.test(code(F12)),
-  'B6 no source_domain column has been introduced');
+// RESTATED (S6-R4B): the CLAIM is that no source_domain COLUMN exists — the domain is derived from the
+// warehouses row, never stored beside it, so it cannot drift from its source. A bare substring search
+// could not tell a column from a response field, and R4B added the latter: four answers now name the
+// domain they acted in, which is exactly the truthfulness §5 asks a receipt for. The column claim is
+// asserted against the things that MAKE a column — a header array, or a cell write.
+var _sdHeaderOrWrite = /source_domain'\s*[,\]]/.test(code(F11) + code(F12))
+  || /setValue\([^)]*source_domain/.test(code(F11) + code(F12))
+  || /col\(\s*'source_domain'\s*\)/.test(code(F11) + code(F12));
+ok(!_sdHeaderOrWrite,
+  'B6 no source_domain COLUMN has been introduced — it appears only as a response field, never in a '
+  + 'header array and never written to a cell');
 
 // =========================================================================================================
 section('C. §19.3 / §19.15 — Overseas cannot produce, and nothing refurbishes');
@@ -245,7 +254,10 @@ ok(/available -> reserved/.test(CONTRACT) || /available -\> reserved/.test(CONTR
 section('F. §19.6 / §19.7 — cancel releases, dispatch consumes ONCE');
 // =========================================================================================================
 
-ok(/factoryStockReleaseReservationTx_\s*\(/.test(fnBody(F12, 'handleCancelShipmentDraft_')),
+// RESTATED (S6-R4B): the release is routed by source domain, so the handler calls the forwarder. The
+// claim — cancellation releases — is unchanged, and the forwarder is required to sweep BOTH domains,
+// because a draft's hold lives in whichever domain its source warehouse belongs to.
+ok(/shipmentDomainRelease_\s*\(/.test(fnBody(F12, 'handleCancelShipmentDraft_')),
   'F1 Shipment Draft cancellation releases the reservation');
 var REL = fnBody(F21, 'factoryStockReleaseReservationTx_');
 ok(/Math\.min\(want, held\)/.test(REL), 'F2 release gives back at most what THIS owner holds');

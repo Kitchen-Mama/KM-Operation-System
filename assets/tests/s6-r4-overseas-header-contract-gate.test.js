@@ -204,9 +204,18 @@ var CONTRACT = read('docs/planning/S6_SHIPPING_EXECUTION_MAINLINE_CONTRACT.md');
 ].forEach(function (t, i) {
   ok(CONTRACT.indexOf(t) >= 0, 'F' + (i + 1) + ' the R3 freeze still declares ' + t);
 });
-// Nothing in the overseas runtime changed this round.
-ok(!/reservation_acquire/.test(code(F05)) && !/reservation_release/.test(code(F05)),
-  'F5 no overseas reservation writer was added — R4 did not implement through an ambiguous mapping');
+// RESTATED (S6-R4B). F5 said 'no overseas reservation writer was added - R4 did not implement through an
+// ambiguous mapping', and that was the point of R4: it was a READ round, and writing a reservation while
+// the header mapping was still ambiguous would have been the failure. The mapping was then frozen by R4A
+// and the semantic by R3B, and R4B is the round authorized to implement against them. What is durable is
+// the ORDER, not the absence: the writer may exist only because the mapping it writes through is frozen.
+ok(/reservation_acquire/.test(code(F05)) && /reservation_release/.test(code(F05)),
+  'F5 [R4B] the overseas reservation writer now exists — added by the round that had a frozen mapping to '
+  + 'write through, not by R4, which did not');
+ok(CONTRACT.indexOf('S6_MAPPING_FREEZE_COMPLETE = YES') >= 0
+  && CONTRACT.indexOf('D_S6_IMPORT_AVAILABLE_SEMANTIC = GROSS') >= 0,
+  'F5a and both freezes it writes through are declared in the contract, so the order is checkable and not '
+  + 'merely asserted');
 
 // =========================================================================================================
 console.log('\n=====================================================');

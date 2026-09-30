@@ -72,9 +72,12 @@ section('A. D-S6-A — the factory reservation trigger, frozen at Shipment Draft
 
 frozen('FACTORY_RESERVATION_TIMING', 'SHIPMENT_DRAFT_CREATION');
 var CREATE = fnBody(F12, 'createShipmentFromApprovedPlan_');
-ok(/factoryStockAcquireReservationTx_\s*\(/.test(CREATE),
+// RESTATED (S6-R4B): both named a factory function as the proxy for WHERE in the lifecycle the two
+// events happen. R4B routes each by source domain, so the site is the forwarder; the decision — reserve
+// at draft creation, release at draft cancellation — is unchanged, and is what these assert.
+ok(/shipmentDomainAcquire_\s*\(/.test(CREATE),
   'A1 RESERVE happens inside the Shipment Draft creator — the decision matches deployed code');
-ok(/factoryStockReleaseReservationTx_\s*\(/.test(fnBody(F12, 'handleCancelShipmentDraft_')),
+ok(/shipmentDomainRelease_\s*\(/.test(fnBody(F12, 'handleCancelShipmentDraft_')),
   'A2 RELEASE happens on Shipment Draft cancellation');
 ok(/factoryStockApplyDeltaTx_\s*\(/.test(code(read(GS + '22_shipment_dispatch_handlers.gs'))),
   'A3 CONSUME happens at the dispatch movement');
@@ -96,13 +99,17 @@ frozen('OVERSEAS_CAN_SHIP', 'YES');
 frozen('OVERSEAS_CAN_PRODUCE', 'NO');
 frozen('OVERSEAS_REFURBISH_PHASE1', 'NO');
 
-// The tripwire: today the overseas source is offered and unprotected, and the shipment creator refuses it
-// against factory stock. When R3 fixes this, EVERY line below changes and this section must be rewritten
-// alongside the decision record — which is the point.
-ok(!/is_factory_warehouse|isFactoryWarehouse/.test(CREATE),
-  'B1 TRIPWIRE — the creator still has no factory/overseas branch (the R3 defect is still open)');
-ok(/reason:\s*'INSUFFICIENT_FACTORY_STOCK'/.test(CREATE),
-  'B2 TRIPWIRE — an overseas source still fails against FACTORY stock');
+// THE TRIPWIRE FIRED, AND S6-R4B IS THE ROUND THAT CLEARED IT. These three said: today the overseas
+// source is offered and unprotected, the creator has no domain branch, and it refuses an overseas source
+// against factory stock. Every one of them was a dated statement about an open defect, and the round
+// that closes the defect is the round that must rewrite them — which is what 'alongside the decision
+// record' meant. They now assert the CLOSURE, in the same three places.
+ok(/srcDomain\s*=\s*shipmentSourceDomain_\s*\(/.test(CREATE),
+  'B1 [R4B] the creator asks ONCE which domain the source warehouse belongs to — until R4B it had no '
+  + 'factory/overseas branch at all, which is what left the overseas source unprotected');
+ok(/INSUFFICIENT_OVERSEAS_STOCK/.test(CREATE),
+  'B2 [R4B] and an overseas source now fails against OVERSEAS stock. Until R4B it was measured against '
+  + 'factory stock, so it refused for the wrong reason at a warehouse that holds no factory rows');
 ok(!/wh_reserved_stock/.test(fnBody(F31, 'shipReceiptPostToOverseas_').replace(/wh_reserved_stock:\s*0/g, '')),
   'B3 TRIPWIRE — nothing yet writes a non-zero overseas reservation');
 

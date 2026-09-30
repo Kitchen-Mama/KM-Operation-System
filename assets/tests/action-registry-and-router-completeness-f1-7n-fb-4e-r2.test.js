@@ -719,6 +719,12 @@ GS_OWNED_SINCE_R1['20_campaign_write_handlers.gs'] = 'FC-SUMMARY-R2B-A the four 
 // answered every FC Summary read with the wrong file and reported a clean bill of health.
 GS_OWNED_SINCE_R1['58_api_v1_fc_summary_workspace.gs'] = 'FC-SUMMARY-R3-R1 the bootstrap/regular/events/rules slices on the EXISTING fcSummary.workspace.get action (no action added, no router change), one Sheets read per sheet instead of the measured two or three, the server-derived filter facets that keep the page\'s non-cascading universes intact while the rows stop crossing the wire, and this owner\'s first declared build stamp';GS_OWNED_SINCE_R1['04_marketplace_forecast_import.gs'] = 'FC-SUMMARY-R2B-B1-PERF the Regular Forecast batch writer hardening: the whole batch is validated before the first mutation so one bad row writes nothing at all, a script lock covers the authoritative read and the writes only (the sku_details reference read stays outside it), owned columns are written as bounded contiguous setValues blocks that cannot span fc_share or created_at, every insert joins ONE append block, and the file declares a build stamp and enters the 63_ manifest for the first time - until now a project running a stale copy of this writer was invisible to deployment health';
 
+// S6-R4B — the overseas reservation lifecycle. Declared here rather than loosening the check, which is the
+// whole point of the register. Nothing this suite measures moved: no action was added or removed, the router
+// is untouched, and the four actions this line owns resolve exactly as before. 12_ and 22_ are already in the
+// set from earlier rounds; 05_ enters it for the first time, because until R4B it held no routed behaviour
+// this line could reach.
+GS_OWNED_SINCE_R1['05_overseas_inventory_handlers.gs'] = 'S6-R4B the OVERSEAS RESERVATION LIFECYCLE - acquire / release / dispatch-consume over wh_available_stock and wh_reserved_stock, plus the GROSS import semantic (stored available = source available minus the reservation this system holds, the row refused IMPORT_RESERVATION_EXCEEDS_SOURCE_AVAILABLE when the source reports fewer units than are already committed, and wh_reserved_stock never written by an import). No router action was added: the lifecycle is reached only through 12_ and 22_, which already owned their actions';
 gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
 eq(gsUnexpected.join(','), '', "8. no Apps Script file outside this line's owned set changed since the R1 commit");
 

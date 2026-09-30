@@ -1235,8 +1235,16 @@ section('§L — CONTRACT VERSIONS AND REACHABILITY');
     'N7a §L chain 2/5 the adapter exists, on the command runner so typed codes survive');
   ok(/action === 'cancelShipmentDraft'/.test(code(G01)), 'N7b §L chain 3/5 the router dispatches it');
   ok(/function handleCancelShipmentDraft_/.test(code(G12)), 'N7c §L chain 4/5 the handler exists');
-  ok(/factoryStockReleaseReservationTx_\(/.test(code(extractFn(G12, 'handleCancelShipmentDraft_'))),
+  // RESTATED (S6-R4B): this named the factory release function inside the handler. R4B routes the release
+  // by source domain, so the handler calls shipmentDomainRelease_, which forwards to that domain's owner
+  // and adds no arithmetic. Both halves of the original sentence are asserted separately now: the chain
+  // still ENDS at a shared transaction (here, and in N8 below, which is the half that forbids a balance
+  // cell and which held throughout).
+  ok(/shipmentDomainRelease_\(/.test(code(extractFn(G12, 'handleCancelShipmentDraft_'))),
     'N7d §L chain 5/5 and it reaches the SHARED transaction, never a balance cell of its own');
+  ok(/factoryStockReleaseReservationTx_\(/.test(code(extractFn(G12, 'shipmentDomainRelease_')))
+    && /ovsReleaseReservationTx_\(/.test(code(extractFn(G12, 'shipmentDomainRelease_'))),
+    'N7e and the forwarder is exactly that — each domain\'s own transaction owner, called, never reimplemented');
   ok(!/getRange\([^)]*(curCol|resCol)[^)]*\)\s*\.setValue/.test(code(extractFn(G12, 'handleCancelShipmentDraft_'))),
     'N8  §L the cancel handler writes NO factory_stock balance cell directly');
 
@@ -1307,17 +1315,21 @@ section('§M — THE REMAINING SIMULATIONS');
 // ================================================================================================================
 section('§N — MUTATIONS. Each is applied to shipped source and must be caught.');
 // ================================================================================================================
+// RE-ANCHORED (S6-R4B): the three probes below planted their mutations on source text that R4B moved
+// when it made the release sweep both domains. The mutations are the SAME — suppress the release, turn
+// it into a current-stock deduction, cancel before the transaction succeeds — and each is anchored on
+// the line that now carries that behaviour.
 mut('N1  cancellation does NOT release the reservation', function () {
   var g12 = mutateFn(G12, 'handleCancelShipmentDraft_',
-    "    if (stockSheet && movSheet) {", "    if (false) {");
+    "      if (!d.stock || !d.mov) return;", "      return;");
   var w = reservedShipment();
   runCancel(w, { shipment_id: 'SHP-1', actor: 'op', reason: 'r' }, g12);
   return String(w.shipments()[0].status) === 'cancelled' && w.reserved() === 800;
 });
 mut('N2  cancellation DEDUCTS current stock', function () {
   var g12 = mutateFn(G12, 'handleCancelShipmentDraft_',
-    "        var rel = factoryStockReleaseReservationTx_({",
-    "        factoryStockApplyDeltaTx_({ stockSheet: stockSheet, movSheet: movSheet, warehouseId: parts[0], sku: parts[1], deltaQty: -qty, reservedDelta: -qty, journal: journal, now: now0, movementType: 'manual_adjustment', relatedEntityType: 'shipment', relatedEntityId: shipmentId, createdBy: actor });\n        var rel = { applied: true, released: qty, reason: 'RELEASED' } || factoryStockReleaseReservationTx_({");
+    "        var rel = shipmentDomainRelease_(d.domain, sheetsD, {",
+    "        factoryStockApplyDeltaTx_({ stockSheet: d.stock, movSheet: d.mov, warehouseId: parts[0], sku: parts[1], deltaQty: -qty, reservedDelta: -qty, journal: journal, now: now0, movementType: 'manual_adjustment', relatedEntityType: 'shipment', relatedEntityId: shipmentId, createdBy: actor });\n        var rel = { applied: true, released: qty, reason: 'RELEASED' } || shipmentDomainRelease_(d.domain, sheetsD, {");
   var w = reservedShipment();
   runCancel(w, { shipment_id: 'SHP-1', actor: 'op', reason: 'r' }, g12);
   return w.current() !== 1000;
@@ -1400,8 +1412,8 @@ mut('N7  the shipment is cancelled BEFORE the stock transaction succeeds', funct
   // The status write is moved AHEAD of the release, and the release then throws. Without the ordering the
   // rollback still saves it, so the rollback is removed too — this is the half-state N7 names.
   var g12 = mutateFn(G12, 'handleCancelShipmentDraft_',
-    "    var stockSheet = ss.getSheetByName('factory_stock');",
-    "    (function () { var c = sh.col('status'); if (c !== -1) shipSheet.getRange(row, c + 1).setValue(SHIPMENT_CANCELLED_STATUS_); })();\n    var stockSheet = ss.getSheetByName('factory_stock');");
+    "    var now0 = shipmentTimestamp_();",
+    "    (function () { var c = sh.col('status'); if (c !== -1) shipSheet.getRange(row, c + 1).setValue(SHIPMENT_CANCELLED_STATUS_); })();\n    var now0 = shipmentTimestamp_();");
   g12 = mutateFn(g12, 'handleCancelShipmentDraft_',
     "    factoryStockRollbackJournal_(journal);", "    if (false) factoryStockRollbackJournal_(journal);");
   var g21 = mutateFn(G21, 'factoryStockReleaseReservationTx_',

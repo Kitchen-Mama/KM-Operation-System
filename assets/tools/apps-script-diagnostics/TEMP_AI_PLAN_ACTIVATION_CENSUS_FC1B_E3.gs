@@ -86,7 +86,11 @@
 // the one question it exists for. Nothing in this census changed; the pin moved because the release did.
 // S3-R10: R24 -> R25, moving with the activation pin above. BP3a requires the diagnostic and the build it
 // expects to move together — a census expecting a different build from the one it claims to be is unreadable.
-var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32';
+// S6-R4B: R32 -> R33. Nothing in this census changed; the pin moves because the RELEASE did, and a pin
+// left behind is not a harmless lag - the live manifest STOPs on a deployment that is healthy. That is
+// the R2/R3 drift this diagnostic was rebuilt to make impossible, and R4B reproduced it by rotating 63_
+// without rotating here.
+var TEMP_E3_CENSUS_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R33';
 
 /** Read-only row reader. The Sheet object stays inside this function — the caller gets values, never a writer. */
 // R6-R3 §2 — the OPTIONAL third argument is a metrics sink. §2 requires the diagnostic to report how many
@@ -7839,7 +7843,11 @@ function RUN_R6R7_CONTROLLED_NO_ACTION_ACTIVATION_MANIFEST() {
 // refuses a healthy deployment, reporting a correct production tree as stale.
 // FC-SUMMARY-STABILITY-R3: R30 -> R31, same rule. The pin follows the release; it does not record a
 // round this file changed in, because this file is a diagnostics census and owns no runtime.
-var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32';
+// S6-R4B: R32 -> R33. Nothing in this census changed; the pin moves because the RELEASE did, and a pin
+// left behind is not a harmless lag - the live manifest STOPs on a deployment that is healthy. That is
+// the R2/R3 drift this diagnostic was rebuilt to make impossible, and R4B reproduced it by rotating 63_
+// without rotating here.
+var R6R7_ACTIVATION_BUILD_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R33';
 
 // ================================================================================================================
 // THE BROWSER HALF. Run in the page console; nothing here writes, and nothing here is a substitute for the
