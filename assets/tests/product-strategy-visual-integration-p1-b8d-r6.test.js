@@ -557,6 +557,11 @@ var R6_KNOWN_GS_CHANGES = ['assets/specs/active/apps-script/03_master_data_handl
   // three is reachable from Product Strategy's read path: no action was added or removed, no capability
   // field changed, the feature flag is untouched, and 63_ (which carries the R33 release and 05_'s new
   // manifest row) is already declared below. A visual round that touched a handler would still be caught.
+  // S6-R6 — the movement vocabulary correction. 21_ is the factory stock authority and joins the register
+  // for the first time; 05_, 12_ and 63_ are already declared above. It is not reachable from Product
+  // Strategy's read path: no action was added or removed, no capability field changed, the feature flag is
+  // untouched, and the change is a declaration list, not a handler.
+  'assets/specs/active/apps-script/21_factory_inventory_handlers.gs',
   'assets/specs/active/apps-script/05_overseas_inventory_handlers.gs',
   // S6-R5 — the approved-plan cancellation. 11_ owns shipping plan status and is not reachable from
   // Product Strategy's read path: no action was added or removed, no capability field changed, and the
