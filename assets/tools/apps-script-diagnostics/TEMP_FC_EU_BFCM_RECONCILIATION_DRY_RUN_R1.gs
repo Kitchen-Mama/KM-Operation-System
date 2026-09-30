@@ -270,6 +270,9 @@ function FCRC_classifyCampaign_(campaignId, campaignRow, lineRows, eventRows) {
       start_date: FCRC_str_(campaignRow.start_date), end_date: FCRC_str_(campaignRow.end_date)
     } : null,
     lines: lines, events: events, classified: classified, state_counts: counts,
+    // The WHOLE table, not this campaign's slice: a proposal has to be able to SEE an event elsewhere
+    // that names the same line id, which is exactly the conflict it must refuse.
+    all_events: eventRows,
     line_count: lines.length, event_count: events.length,
     expected_line_count: Object.keys(expectedIds).length,
     missing_line_ids: missingIds, missing_line_count: missingIds.length,
@@ -283,8 +286,13 @@ function FCRC_classifyCampaign_(campaignId, campaignRow, lineRows, eventRows) {
  * and a field with no authoritative source says so rather than acquiring a plausible value.
  */
 function FCRC_proposeLine_(lineId, view, mskuRows, pricingRows) {
-  var refEvents = view.classified.filter(function (c) {
-    return FCRC_up_(c.campaign_sku_line_id) === FCRC_up_(lineId);
+  var refEvents = (view.all_events || view.classified).filter(function (e) {
+    return FCRC_up_(e.campaign_sku_line_id) === FCRC_up_(lineId);
+  }).map(function (e) {
+    return { event_fc_id: FCRC_str_(e.event_fc_id), campaign_id: FCRC_str_(e.campaign_id),
+      sku: FCRC_str_(e.sku), series: FCRC_str_(e.series), category: FCRC_str_(e.category),
+      company: FCRC_str_(e.company), country: FCRC_str_(e.country),
+      marketplace: FCRC_str_(e.marketplace), marketplace_id: FCRC_str_(e.marketplace_id) };
   });
 
   var matrix = [], conflicts = [], notes = [];
@@ -309,7 +317,10 @@ function FCRC_proposeLine_(lineId, view, mskuRows, pricingRows) {
   if (Object.keys(distinctSkus).length > 1) conflicts.push('EVENTS_DISAGREE_ON_SKU');
 
   var sku = Object.keys(distinctSkus).length === 1 ? distinctSkus[Object.keys(distinctSkus)[0]] : '';
-  var e0 = refEvents[0] || {};
+  // Identity columns come from an event of the TARGET campaign; with a cross-campaign reference the row is
+  // refused anyway, but it must not be described using the other campaign's columns while that is decided.
+  var own = refEvents.filter(function (e) { return FCRC_up_(e.campaign_id) === FCRC_up_(view.campaign_id); });
+  var e0 = own[0] || refEvents[0] || {};
 
   // ---- marketplace_sku_id: derived, and only when the derivation is one-to-one ---------------------------
   var mskuMatches = (mskuRows || []).filter(function (m) {

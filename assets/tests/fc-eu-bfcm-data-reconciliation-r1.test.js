@@ -373,6 +373,22 @@ ok(splitRow.conflicts.indexOf('EVENTS_DISAGREE_ON_SKU') > -1,
   'G5 two events naming one line id with different SKUs -> refused', splitRow.conflicts);
 eq(splitRow.status, 'REFUSED_CONFLICT', 'G6 and the row is not proposed');
 
+/* A line id named by an event under a DIFFERENT campaign. Reconstructing it here would attach the row to
+   this campaign and leave the other event pointing at a line that is not its own - so it is refused, and
+   the refusal has to be reachable, which is the whole reason this fixture exists. */
+var gCross = incident([1]);
+gCross.campaigns.push({ campaign_id: 'CMP-2', company: 'CO', marketplace_id: 'MID-1',
+  campaign_name: 'OTHER', country: 'XX', marketplace: 'MP', event_flag: 'FLAG-2', year: 2026 });
+gCross.events.push({ event_fc_id: 'EVT-Z', campaign_id: 'CMP-2', campaign_sku_line_id: 'CSL-1',
+  company: 'CO', country: 'XX', marketplace: 'MP', marketplace_id: 'MID-1', sku: 'SKU-1',
+  series: 'SERIES-1', event_name: 'EVENT-OTHER', year: 2026 });
+var rCross = run(world(gCross), { campaign_id: 'CMP-1' });
+var crossRow = rCross.repair_plan.filter(function (p) { return p.campaign_sku_line_id === 'CSL-1'; })[0];
+ok(crossRow.conflicts.indexOf('EVENTS_DISAGREE_ON_CAMPAIGN') > -1,
+  'G12 an event under ANOTHER campaign naming the same line id -> refused', crossRow.conflicts);
+eq(crossRow.status, 'REFUSED_CONFLICT', 'G13 and the row is not proposed');
+eq(crossRow.campaign_id, 'CMP-1', 'G14 the row is still described by the TARGET campaign, not the other one');
+
 // The empty selector: "reconcile everything" is not reachable by omission.
 var rEmpty = run(world(incident([1])), {});
 eq(rEmpty.verdict, 'STOP', 'G7 an empty selector STOPS');
@@ -528,6 +544,18 @@ mut('M6 the census writing a single row', function () {
   var threw = false;
   try { run(w, { campaign_id: 'CMP-1' }); } catch (e) { threw = true; }
   return threw && w.writeLog.length > 0;
+});
+
+/* M8 restores the bug this suite found late: a reference set built from the campaign-filtered classification
+   can only ever contain this campaign's events, so the cross-campaign refusal becomes unreachable. */
+mut('M8 building the reference set from this campaign only', function () {
+  var src = CENSUS.replace('var refEvents = (view.all_events || view.classified).filter(function (e) {',
+    'var refEvents = (view.classified).filter(function (e) {');
+  if (src === CENSUS) throw new Error('M8 anchor drifted');
+  var r = run(world(gCross, src), { campaign_id: 'CMP-1' });
+  var row = r.repair_plan.filter(function (p) { return p.campaign_sku_line_id === 'CSL-1'; })[0];
+  return row.conflicts.indexOf('EVENTS_DISAGREE_ON_CAMPAIGN') === -1
+    && crossRow.conflicts.indexOf('EVENTS_DISAGREE_ON_CAMPAIGN') > -1;
 });
 
 mut('M7 reporting a refused row as ready', function () {

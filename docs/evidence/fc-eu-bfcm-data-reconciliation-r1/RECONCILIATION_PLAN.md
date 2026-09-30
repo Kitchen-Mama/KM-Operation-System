@@ -172,12 +172,20 @@ is named:
 CAMPAIGN_NOT_FOUND                  the campaign is not there                       (D10)
 LINE_ALREADY_EXISTS                 the id is no longer missing                     (M4)
 NO_EVENT_REFERENCES_THIS_LINE_ID    no authority for the id
-EVENTS_DISAGREE_ON_CAMPAIGN         two events claim different parents
+EVENTS_DISAGREE_ON_CAMPAIGN         an event ELSEWHERE names this line id             (G12-G14, M8)
 EVENT_CAMPAIGN_MISMATCH             the event's campaign is not the target
 EVENTS_DISAGREE_ON_SKU              one id, two SKUs                                (G5, G6)
 MARKETPLACE_SKU_AMBIGUOUS           marketplace_skus is not 1:1 in this scope       (F20, F21)
 IDENTITY_HELD_BY_<line id>          another line already holds campaign+SKU/MSKU    (G1, G2)
 ```
+
+**One of these was found unreachable during review, and the finding is worth recording.** The reference set
+was originally built from the campaign-filtered classification, so "the events that reference this line id"
+could only ever be *this* campaign's events — and the two checks that exist to catch a cross-campaign
+reference could never fire. They were satisfied by construction, which is not the same as being true, and a
+report that prints a check it cannot fail is worse than one that omits it. The set now scans the whole
+`fc_special_events` table; `G12`–`G14` drive an event under another campaign naming the same id, and `M8`
+puts the filtered version back to prove the fixture catches it.
 
 `IDENTITY_HELD_BY_` is the one that keeps §9's promise concrete. If some other line already occupies this
 campaign + SKU identity, reconstructing the missing id would create a duplicate identity — so the census
