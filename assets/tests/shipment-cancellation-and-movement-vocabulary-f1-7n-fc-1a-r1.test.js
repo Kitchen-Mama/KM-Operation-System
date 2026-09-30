@@ -422,11 +422,15 @@ section('§C — THE CANCELLATION AUTHORITY AUDIT, MEASURED');
 
   // (a) PLAN cancellation exists — and cannot reach an approved plan, which is the only kind that has a draft.
   ok(!!routerActions['updateShippingPlanStatus'], 'C1  updateShippingPlanStatus is routed');
-  var planCancel = code(G11).match(/transition === 'cancel'\)?\s*\{[\s\S]{0,400}/);
-  ok(planCancel && /curStatus !== 'draft' && curStatus !== 'pending_approval'/.test(planCancel[0]),
-    'C2  §C plan cancel is allowed ONLY from draft|pending_approval');
-  ok(planCancel && !/approved/.test(planCancel[0].split('setCell')[0]),
-    'C2a so an APPROVED plan — the only kind that HAS a Shipment Draft — cannot reach it');
+  // RESTATED (S6-R5): approved joined the set, on one condition. The durable claim is not WHICH statuses
+  // are listed — that was always going to move — but that a plan whose Shipment owns the units cannot
+  // cancel through this door. That is now a guard rather than an omission, and it is asserted as one.
+  var planCancel = code(G11).match(/else if \(transition === 'cancel'\)[\s\S]{0,1400}/);
+  ok(planCancel && /curStatus !== 'draft' && curStatus !== 'pending_approval' && curStatus !== 'approved'/.test(planCancel[0]),
+    'C2  §C plan cancel is allowed from draft|pending_approval|approved and nothing else');
+  ok(planCancel && /spApprovedCancelEligibility_/.test(planCancel[0].split("setCell('status'")[0]),
+    'C2a and an APPROVED plan — the only kind that can HAVE a Shipment Draft — reaches it only through '
+    + 'an eligibility check, which runs before the first cell is written');
 
   // (b)(c) two other cancel actions, both about different entities.
   ok(!!routerActions['cancelShippingAllocationDraft'], 'C3  cancelShippingAllocationDraft is routed (16_)');
@@ -714,18 +718,33 @@ section('§E — WHOLE-PLAN CANCELLATION: REPORTED, NOT INVENTED');
   var cancelEnd = cancelBlock.indexOf("setCell('cancelled_at'");
   ok(cancelEnd !== -1, 'F0a and its body is bounded');
   cancelBlock = cancelBlock.slice(0, cancelEnd);
-  ok(/curStatus !== 'draft' && curStatus !== 'pending_approval'/.test(cancelBlock),
-    'F1  §E plan cancel is gated to draft|pending_approval');
-  ok(cancelBlock.indexOf("=== 'approved'") === -1,
-    'F2  §E FINDING: an APPROVED plan CANNOT be cancelled at all, so "cancel an approved plan with an active ' +
-    'draft" is unreachable — the branch is STOPPED and reported, not invented');
+  // RESTATED (S6-R5). F1 kept passing after the widening because the old condition is a SUBSTRING of the
+  // new one, so it went on reporting a gate that had moved. It now names the whole set.
+  ok(/curStatus !== 'draft' && curStatus !== 'pending_approval' && curStatus !== 'approved'/.test(cancelBlock),
+    'F1  §E plan cancel is gated to draft|pending_approval|approved');
+  // F2 was a FINDING, not a rule: FC-1A met 'cancel an approved plan with an active draft', found the
+  // transition did not exist, and §E's instruction for that case was to STOP the branch and report it
+  // rather than invent a plan lifecycle. S6-R5 is the round that was allowed to invent one, and the
+  // finding's real content survives intact — the case is still unreachable, now because it is REFUSED
+  // rather than because the transition is missing.
+  ok(cancelBlock.indexOf("curStatus === 'approved'") !== -1
+    && /SHIPMENT_EXISTS_FOR_PLAN|spApprovedCancelEligibility_/.test(cancelBlock),
+    'F2  §E [R5] an approved plan can now be cancelled, and "cancel an approved plan WITH an active '
+    + 'draft" is still unreachable — it is refused, which is the same answer the finding asked for');
   // And the consequence worth stating: the reachable path to the same business outcome is per-shipment
   // cancellation, which R1 provides and which leaves the approval standing.
   ok(/handleCancelShipmentDraft_/.test(code(G12)),
     'F2a the reachable equivalent is per-shipment cancellation, which keeps the approval (D8) and frees the units (D3)');
   // No plan-lifecycle change was made. This is the assertion that would fail if a later round quietly widened it.
-  ok(!/curStatus === 'approved'[\s\S]{0,200}setCell\('status', 'cancelled'\)/.test(c11),
-    'F3  §E and NO approved-plan cancellation was added by this round');
+  // F3 was the assertion its own comment said 'would fail if a later round quietly widened it'. A later
+  // round widened it openly, and F3 did NOT fail — the eligibility block is longer than its 200-character
+  // window, so the guard it was watching for slipped through a gap in the instrument rather than past the
+  // claim. Re-aimed at what it was protecting: the widening exists and is GATED.
+  var _appr = c11.indexOf("curStatus === 'approved'", cancelStart);
+  var _set = c11.indexOf("setCell('status', 'cancelled')", _appr);
+  ok(_appr !== -1 && _set > _appr && /spApprovedCancelEligibility_/.test(c11.slice(_appr, _set)),
+    'F3  §E [R5] the approved-plan cancellation added by S6-R5 has an eligibility check between the '
+    + 'status test and the status write — measured across the WHOLE span, not a fixed window');
 })();
 
 // ================================================================================================================

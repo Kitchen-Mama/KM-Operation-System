@@ -432,8 +432,14 @@ section('§8 — THE CLIENT, AND §10 THE TOKEN');
 })();
 ok(/'IMPORT_RESERVATION_EXCEEDS_SOURCE_AVAILABLE'/.test(API),
   'Z1 the refusal token is registered in the canonical registry');
-ok(/KM_CANONICAL_CODES = \['IMPORT_RESERVATION_EXCEEDS_SOURCE_AVAILABLE'/.test(API),
-  'Z2 in KM_CANONICAL_CODES, not a parallel vocabulary');
+// RESTATED (S6-R5): this pinned the token's POSITION — first in the array — which is not a property of
+// anything. S6-R5 registered four cancellation codes and put them at the front, and a correct registry
+// read as wrong. The claim is MEMBERSHIP of the one registry, plus the part that actually matters: there
+// is only one such registry to be a member of.
+var _kcc = (/var KM_CANONICAL_CODES = \[([\s\S]*?)\];/.exec(API) || [])[1] || '';
+ok(/'IMPORT_RESERVATION_EXCEEDS_SOURCE_AVAILABLE'/.test(_kcc)
+  && (API.match(/var KM_CANONICAL_CODES\s*=/g) || []).length === 1,
+  'Z2 in KM_CANONICAL_CODES — the one canonical registry, not a parallel vocabulary and not a second copy');
 
 // =========================================================================================================
 section('§22 — MUTANTS');

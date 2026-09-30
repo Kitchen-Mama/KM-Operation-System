@@ -139,8 +139,16 @@ frozen('APPROVED_WITHOUT_SHIPMENT_CAN_CANCEL', 'YES');
 frozen('GHOST_PLAN_EXPOSURE_ALLOWED', 'NO');
 
 var STATUSCORE = fnBody(F11, 'spUpdateShippingPlanStatusCore_');
-ok(/Only a Draft or Pending Approval plan can be cancelled/.test(STATUSCORE),
-  'C1 TRIPWIRE — cancel is still refused from `approved` (the R3 change is still pending)');
+// THE TRIPWIRE FIRED, AND S6-R5 CLEARED IT. C1 said the change was still pending; the freeze two lines
+// above says APPROVED_WITHOUT_SHIPMENT_CAN_CANCEL = YES. They disagreed on purpose, so that the round
+// which made them agree would have to come here and say so. C2, C3 and C4 below predicted the shape of
+// the fix exactly — no new release field, and the shipment predicate already existed — and all three are
+// still green against the implementation, which is the strongest evidence this suite could offer that R5
+// implemented the frozen decision rather than a different one.
+ok(/Only a Draft, Pending Approval or Approved plan can be cancelled/.test(STATUSCORE)
+  && /spApprovedCancelEligibility_/.test(STATUSCORE),
+  'C1 [R5] cancel is ACCEPTED from `approved`, through an eligibility check — the code now matches the '
+  + 'decision frozen above it');
 
 // These two must hold AFTER the fix as well, so they are guards:
 ok(KMFSG.PLAN_RELEASED_STATUSES && KMFSG.PLAN_RELEASED_STATUSES.cancelled === 1,

@@ -127,10 +127,17 @@ eq(/var VALID_TRANSITIONS = \[([^\]]*)\]/.exec(code(F11))[1].replace(/['\s]/g, '
   'B1 the plan transition set is exactly four, and none of them starts from `approved`');
 
 var STATUSCORE = fnBody(F11, 'spUpdateShippingPlanStatusCore_');
-ok(/Only a Draft or Pending Approval plan can be cancelled/.test(STATUSCORE),
-  'B2 cancel is refused from `approved`');
-ok(/curStatus\s*!==\s*'draft'\s*&&\s*curStatus\s*!==\s*'pending_approval'/.test(STATUSCORE.replace(/\s+/g, ' ')),
-  'B3 the cancel precondition is exactly draft | pending_approval');
+// RESTATED (S6-R5). B2 recorded the DEFECT this board existed to name: an approved plan could not be
+// cancelled, so a plan whose Shipment Draft creation failed held factory exposure with no way out. R5
+// closes it, and the refusal text B2 matched is gone.
+ok(/Only a Draft, Pending Approval or Approved plan can be cancelled/.test(STATUSCORE)
+  && /spApprovedCancelEligibility_/.test(STATUSCORE),
+  'B2 [R5] cancel is now ACCEPTED from `approved` — but only when no Shipment exists, which is the '
+  + 'condition that makes it safe rather than merely possible');
+// Also restated: the old pattern is a SUBSTRING of the new condition, so it kept passing while describing
+// a precondition that had moved.
+ok(/curStatus !== 'draft' && curStatus !== 'pending_approval' && curStatus !== 'approved'/.test(STATUSCORE.replace(/\s+/g, ' ')),
+  'B3 the cancel precondition is exactly draft | pending_approval | approved');
 
 var COMPLETE = fnBody(F11, 'handleCompleteShippingPlan_');
 ok(/Only an Approved plan can be completed/.test(COMPLETE), 'B4 Done requires `approved`');
