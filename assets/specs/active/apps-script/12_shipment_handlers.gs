@@ -185,25 +185,70 @@ function shipmentReadSheet_(sheet) {
  * (or '' when none). Lets Weekly Shipping Plan Done detect the Execution Commit even when the
  * plan's own transferred_shipment_id column was never persisted. Shared global scope (used by 11_).
  */
-function shipmentFindForPlan_(ss, planId) {
+// S6-R5 §7 — DOES A SHIPMENT EXIST FOR THIS PLAN.  __SHIPMENT_STATE_FOR_PLAN_START__
+//
+// `shipmentFindForPlan_` answered this with a string, and an empty string meant three different things:
+// there is no shipment, the shipments sheet is not in this spreadsheet, and this sheet carries no column
+// that references a plan. Every caller so far reads the empty answer as 'creation is still pending', which
+// is safe for all three - it offers a retry.
+//
+// S6-R5 introduces the first caller for which they are NOT the same. Cancelling an approved plan releases
+// its exposure, and §7 is explicit that an UNKNOWN outcome must not become 'the shipment does not exist':
+// a missing sheet would otherwise let a plan whose shipment is alive be cancelled as though it were not.
+// So the question is answered in three values HERE, in the file that owns shipments, and the old function
+// becomes a thin projection of it with its contract bit-for-bit unchanged.
+var SHIPMENT_FOR_PLAN_EXISTS_ = 'EXISTS';
+var SHIPMENT_FOR_PLAN_ABSENT_ = 'ABSENT';
+var SHIPMENT_FOR_PLAN_UNKNOWN_ = 'UNKNOWN';
+// The reference columns, named ONCE. A second copy in another file would be a second answer to this
+// question the first time one of them gained a column and the other did not.
+var SHIPMENT_PLAN_REF_COLUMNS_ = ['shipping_plan_id', 'source_shipping_plan_id', 'plan_id'];
+
+/**
+ * { state: EXISTS | ABSENT | UNKNOWN, shipment_id, reason }.
+ *
+ * ABSENT is a POSITIVE finding: the sheet was read, it carries a plan reference, and no row names this
+ * plan. Anything that stops the read from reaching that conclusion is UNKNOWN, including a throw.
+ */
+function shipmentStateForPlan_(ss, planId) {
   planId = String(planId || '').trim();
-  if (!planId) return '';
-  var sheet = ss.getSheetByName('shipments');
-  if (!sheet) return '';
-  var s = shipmentReadSheet_(sheet);
-  var idCol = s.col('shipment_id');
-  var refCols = ['shipping_plan_id', 'source_shipping_plan_id', 'plan_id']
-    .map(function (n) { return s.col(n); }).filter(function (c) { return c !== -1; });
-  if (!refCols.length) return '';
-  for (var r = 1; r < s.rows.length; r++) {
-    for (var c = 0; c < refCols.length; c++) {
-      if (String(s.rows[r][refCols[c]]).trim() === planId) {
-        return idCol !== -1 ? String(s.rows[r][idCol]).trim() : 'MATCH';
+  if (!planId) return { state: SHIPMENT_FOR_PLAN_UNKNOWN_, shipment_id: '', reason: 'NO_PLAN_ID' };
+  try {
+    var sheet = ss.getSheetByName('shipments');
+    if (!sheet) return { state: SHIPMENT_FOR_PLAN_UNKNOWN_, shipment_id: '', reason: 'SHIPMENTS_SHEET_ABSENT' };
+    var s = shipmentReadSheet_(sheet);
+    var idCol = s.col('shipment_id');
+    var refCols = SHIPMENT_PLAN_REF_COLUMNS_
+      .map(function (n) { return s.col(n); }).filter(function (c) { return c !== -1; });
+    if (!refCols.length) {
+      return { state: SHIPMENT_FOR_PLAN_UNKNOWN_, shipment_id: '', reason: 'NO_PLAN_REFERENCE_COLUMN' };
+    }
+    for (var r = 1; r < s.rows.length; r++) {
+      for (var c = 0; c < refCols.length; c++) {
+        if (String(s.rows[r][refCols[c]]).trim() === planId) {
+          return { state: SHIPMENT_FOR_PLAN_EXISTS_,
+            shipment_id: idCol !== -1 ? String(s.rows[r][idCol]).trim() : 'MATCH', reason: '' };
+        }
       }
     }
+    return { state: SHIPMENT_FOR_PLAN_ABSENT_, shipment_id: '', reason: '' };
+  } catch (e) {
+    return { state: SHIPMENT_FOR_PLAN_UNKNOWN_, shipment_id: '',
+      reason: 'SHIPMENTS_READ_FAILED:' + String(e && e.message ? e.message : e) };
   }
-  return '';
 }
+
+/**
+ * The shipment id for a plan, or '' when there is none. UNCHANGED CONTRACT: '' still covers both 'no
+ * shipment' and 'could not tell', because every caller of THIS function treats them alike and widening
+ * them here would change four call sites to fix one. A caller that must distinguish them asks
+ * shipmentStateForPlan_ directly.
+ */
+function shipmentFindForPlan_(ss, planId) {
+  var st = shipmentStateForPlan_(ss, planId);
+  return st.state === SHIPMENT_FOR_PLAN_EXISTS_ ? st.shipment_id : '';
+}
+// __SHIPMENT_STATE_FOR_PLAN_END__
 
 /**
  * Validate the carton-number ranges (carton_no_start / carton_no_end) for a shipment's lines.
@@ -314,7 +359,7 @@ function shipmentExactRateAndCost_(ss, ctx) {
 // reservation), the updateShipment status allowlist, and the cancelled-skip in the retry idempotency scan. A
 // 12_ one round behind cannot cancel at all, and would let `status:'cancelled'` through updateShipment with no
 // release — stranding units while returning success.
-var SHIPMENT_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R33';
+var SHIPMENT_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R34';
 
 // ---- Execution Commit: Approved shipping_plan → shipments + shipment_lines (draft) ----
 

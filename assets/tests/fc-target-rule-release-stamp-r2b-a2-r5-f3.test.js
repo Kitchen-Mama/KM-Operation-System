@@ -128,21 +128,25 @@ var RELEASE_OWNERS = {
   // path, the campaign line writer and the FC Summary read workspace; R33 changes the OVERSEAS INVENTORY
   // LIFECYCLE and the two shipment handlers that call it. 14_, 20_ and 58_ therefore leave and keep the R32
   // stamp they earned — marching them to R33 would erase the one fact a per-module stamp carries.
-  '05_overseas_inventory_handlers.gs':
-    'THE OVERSEAS INVENTORY LIFECYCLE, AND ITS FIRST STAMP. R33 adds acquire / release / dispatch-consume '
-    + 'over wh_available_stock and wh_reserved_stock — a reserve TRANSFERS between the two stored buckets '
-    + '(available -= qty, reserved += qty) rather than raising reserved and letting a subtraction produce '
-    + 'availability, which is the factory model and is NOT this one. ovsAllocatableTx_ is the single place '
-    + 'the allocatable rule is written down: it is wh_available_stock, never available - reserved, because '
-    + 'the reserved units already left available when they were reserved. The importer implements the frozen '
-    + 'GROSS semantic (stored available = source available - the reservation this system holds), refuses a '
-    + 'row with IMPORT_RESERVATION_EXCEEDS_SOURCE_AVAILABLE when the source reports fewer units than are '
-    + 'already committed, and never writes wh_reserved_stock at all. HALF-SYNC HAZARD, AND IT DECIDES THE '
-    + 'COPY ORDER: an OLD 05_ beside a NEW 12_ resolves ovsAcquireReservationTx_ to undefined and throws '
-    + 'inside a journalled transaction, so 05_ is copied FIRST. The reverse is inert — a new 05_ beside an '
-    + 'old 12_ simply has functions nobody calls.',
+  '11_shipping_plan_handlers.gs':
+    'THE APPROVED-PLAN CANCELLATION. R34 lets an approved plan be cancelled when — and only when — no '
+    + 'Shipment exists for it, which is the exit that did not exist: an approved plan whose Shipment Draft '
+    + 'creation failed could not be cancelled and could not be completed, so it held factory exposure for '
+    + 'ever while Retry was the only door. NOTHING IS RELEASED BY ARITHMETIC HERE, and that is the design '
+    + 'rather than an omission: a reservation is owned by a shipment and only by a shipment, so a plan '
+    + 'holds EXPOSURE, which KMFSG derives from status — the status write IS the release. The eligibility '
+    + 'check runs BEFORE the first cell is written, and an UNKNOWN shipment lookup REFUSES rather than '
+    + 'reading as absent, because releasing on an assumption is the one mistake this path can make. The '
+    + 'cancel is then read back from the row before it is claimed.',
   '12_shipment_handlers.gs':
-    'SHIPMENT DRAFT CREATION, NOW SOURCE-ROUTED. R33 stops the sufficiency precheck reading factory_stock '
+    'R34 — DOES A SHIPMENT EXIST FOR THIS PLAN, ANSWERED IN THREE VALUES. shipmentStateForPlan_ separates '
+    + 'ABSENT (the sheet was read and no row names this plan) from UNKNOWN (the sheet is missing, carries '
+    + 'no plan reference, or the read threw), because S6-R5 is the first caller for which they differ: '
+    + 'cancelling an approved plan releases its exposure, and reading UNKNOWN as ABSENT would release a '
+    + 'plan whose shipment is alive. shipmentFindForPlan_ becomes a projection of it with its contract '
+    + 'bit-for-bit unchanged, so the four existing callers are untouched, and the plan-reference column '
+    + 'list is named once rather than copied into 11_. ALSO CARRIES R33: source-domain routing. R33 stopped '
+    + 'the sufficiency precheck reading factory_stock '
     + 'for every source: it asks whether the source warehouse is FACTORY or OVERSEAS and forwards to that '
     + 'domain lifecycle, at the precheck, the acquire, the cancellation release and the source-warehouse '
     + 'change alike. The two domains are COMPOSED, never merged — the shim adds no arithmetic of its own — '
@@ -152,20 +156,11 @@ var RELEASE_OWNERS = {
     + 'a 3PL warehouse on the way. The exposure ordering is INHERITED rather than re-derived: the acquire '
     + 'still runs BEFORE transferred_to_shipment_at is stamped, inside the same lock and journal, so there is '
     + 'no instant at which the plan exposure has been released and no reservation holds the units.',
-  '22_shipment_dispatch_handlers.gs':
-    'DISPATCH CONSUME, ROUTED. R33 keeps the factory branch byte-identical — current -= take and reserved -= '
-    + 'give on ONE row — and gives OVERSEAS its own arithmetic: reserved moves DOWN and wh_available_stock is '
-    + 'NOT touched, because those units left available when they were reserved. Deducting available a second '
-    + 'time here is the 70/30 -> 40/0 outcome the contract names as forbidden, and it is the single most '
-    + 'plausible wrong line in the file. The release of the hold rides the shipment_out row own reserved '
-    + 'before/after pair; no separate reservation_release row is written, which is the same asymmetry the '
-    + 'factory branch already relies on and the same double count it avoids.',
   '63_api_v1_system_health.gs':
-    'THE MANIFEST. R33 moves FOUR expected stamps — 12_, 22_, its own, and 05_ which enters the manifest for '
-    + 'the FIRST time. A file with no stamp cannot be reported as stale, and until this round 05_ owned '
-    + 'nothing whose absence would be silent; it now owns three functions that 12_ and 22_ call by name. The '
-    + 'ACTION CONTRACT does not move: no action was added or removed, and the new refusal tokens are outcomes '
-    + 'of existing ones.',
+    'THE MANIFEST. R34 moves THREE expected stamps — 11_, 12_ and its own. 05_ and 22_ are deliberately NOT '
+    + 'moved: neither changed this round, and marching them would erase the R33 they earned. The ACTION '
+    + 'CONTRACT does not move either: no action was added or removed, and the four new refusal tokens are '
+    + 'outcomes of the updateShippingPlanStatus action that already existed.',
 };
 
 // Owners that must be COPIED but whose stamp belongs to an EARLIER unshipped release. Each entry is the
@@ -175,6 +170,14 @@ var RELEASE_OWNERS = {
 // reports the round a release was cut in, not the round the file changed in, and then it can no longer
 // distinguish a synced copy from a stale one, which is the single thing it is for.
 var RELEASE_CARRIED = {
+  // S6-R5 — THE FOURTEENTH SWAP. 05_ and 22_ LEAVE OWNERSHIP AT R34 and keep the R33 they earned. R34 is a
+  // shipping-PLAN round: it changes the plan status owner and the shipment existence probe that owner asks.
+  // Neither the overseas inventory lifecycle nor the dispatch consume was touched, and marching them to R34
+  // would report the release this was cut in rather than the round the files changed in. 11_ enters
+  // ownership from R5-R1, which is a nine-release gap and exactly the kind of jump a per-module stamp is
+  // supposed to be able to express.
+  '05_overseas_inventory_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R33',
+  '22_shipment_dispatch_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R33',
   // S6-R4B — 14_, 20_ and 58_ LEAVE OWNERSHIP AT R33 and keep R32, the release they actually changed in.
   // R33 is an overseas-inventory and shipping round; it touches no FC file. Marching their stamps forward
   // would report the round a release was cut in rather than the round the file changed in, which is the one

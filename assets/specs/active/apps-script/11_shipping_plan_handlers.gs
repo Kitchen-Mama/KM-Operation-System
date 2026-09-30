@@ -26,7 +26,7 @@
 // recovery object, and the Weekly page BINDS to both. An 11_ one round behind still approves and still fails
 // to create the shipment, but reports plain success — the exact silence this round closes, and
 // indistinguishable from a healthy deployment without this stamp moving.
-var SP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1';
+var SP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R34';
 
 var SHIPPING_PLANS_HEADERS_ = [
   'shipping_plan_id', 'parent_shipping_plan_id', 'shipping_plan_no', 'plan_name',
@@ -957,6 +957,77 @@ function shippingPlanRoughQuote_(ss, meta, groupLines, today) {
 // 30 000 ms matches every other writer in this project (16_, 21_, 12_). A caller that cannot get the lock is told
 // to READ BACK rather than retry, because a submit that timed out waiting is indeterminate, not failed.
 // ==============================================================================================================
+// ==============================================================================================================
+// S6-R5 §2/§7 — MAY THIS APPROVED PLAN BE CANCELLED.  __SP_APPROVED_CANCEL_ELIGIBILITY_START__
+//
+// THE DEFECT THIS CLOSES. An approved plan whose Shipment Draft creation failed had no exit. It could not
+// be cancelled (cancel accepted only draft and pending_approval), and it went on holding plan exposure
+// against the factory pool for ever, because KMFSG counts `approved` as PLAN_EXPOSURE and releases it only
+// on `cancelled` / `completed`. Done refuses a plan that never transferred. Retry was the only door, and a
+// retry that keeps failing is not an exit. That is the ghost exposure S6-R2 recorded.
+//
+// WHY THIS IS A PURE ELIGIBILITY QUESTION AND RELEASES NOTHING. In the frozen model a RESERVATION is owned
+// by a shipment and only by a shipment - FSTX_RESERVATION_OWNER_TYPE_ and OVSTX_RESERVATION_OWNER_TYPE_ are
+// both 'shipment', and the only two acquire sites in the project pass a shipment_id as the owner. A plan
+// never owns one. What a plan owns is EXPOSURE, which KMFSG derives from its status, so cancelling it IS
+// the release: there is no quantity for this handler to move and no movement row for it to write. The
+// baton is passed exactly once - a transferred plan stops holding exposure in the same moment its shipment
+// starts holding a reservation - so there is no window in which both count and none in which neither does.
+//
+// WHICH IS WHY THE ONLY THING THAT MATTERS HERE IS WHETHER A SHIPMENT EXISTS. If one does, the shipment
+// owns the quantity and the plan may not cancel; rollback belongs to the shipment lifecycle. If one does
+// not, the plan may cancel and its exposure is released by the status write alone.
+//
+// AND WHY 'DO NOT KNOW' IS ITS OWN ANSWER. §7 is explicit that an UNKNOWN shipment lookup must not become
+// 'the shipment does not exist'. Reading a missing sheet as ABSENT would release the exposure of a plan
+// whose shipment is alive and holding a reservation against it. UNKNOWN therefore REFUSES, and says so.
+// ==============================================================================================================
+var SP_CANCEL_REFUSE_TRANSFERRED_ = 'PLAN_ALREADY_TRANSFERRED_TO_SHIPMENT';
+var SP_CANCEL_REFUSE_SHIPMENT_EXISTS_ = 'SHIPMENT_EXISTS_FOR_PLAN';
+var SP_CANCEL_REFUSE_SHIPMENT_UNKNOWN_ = 'SHIPMENT_EXISTENCE_UNKNOWN';
+var SP_CANCEL_REFUSE_SEAM_MISSING_ = 'SHIPMENT_STATE_SEAM_MISSING';
+
+/**
+ * { ok, code, message, shipment_state, shipment_id }. Nothing is written by this function, and it is
+ * called before the first setCell on the cancel path.
+ */
+function spApprovedCancelEligibility_(ss, planId, transferredId, transferredAt) {
+  // A MIXED DEPLOYMENT. 11_ is ahead of 12_, so the question cannot be asked at all — which is UNKNOWN,
+  // not ABSENT, and is refused for the same reason.
+  if (typeof shipmentStateForPlan_ !== 'function') {
+    return { ok: false, code: SP_CANCEL_REFUSE_SEAM_MISSING_, shipment_state: 'UNKNOWN', shipment_id: '',
+      message: 'SHIPMENT_STATE_SEAM_MISSING — 12_shipment_handlers.gs is not present in this Apps Script '
+        + 'project, so whether this plan has a Shipment cannot be determined. The cancellation is refused '
+        + 'rather than run on an assumption. Sync 12_shipment_handlers.gs and publish a new deployment.' };
+  }
+  // The plan's own handoff marker is checked FIRST and is sufficient on its own: a plan that recorded a
+  // transfer has handed its exposure over, whatever a later read of the shipments sheet says.
+  var marker = String(transferredId || '').trim() || String(transferredAt || '').trim();
+  if (marker) {
+    return { ok: false, code: SP_CANCEL_REFUSE_TRANSFERRED_, shipment_state: 'EXISTS',
+      shipment_id: String(transferredId || '').trim(),
+      message: 'PLAN_ALREADY_TRANSFERRED_TO_SHIPMENT — this plan has already handed its quantity to a '
+        + 'Shipment. Cancel the Shipment Draft instead; the Shipment lifecycle owns what happens after '
+        + 'creation.' };
+  }
+  // The marker may never have persisted, so its absence proves nothing. Ask the authoritative rows.
+  var st = shipmentStateForPlan_(ss, planId);
+  if (st.state === SHIPMENT_FOR_PLAN_EXISTS_) {
+    return { ok: false, code: SP_CANCEL_REFUSE_SHIPMENT_EXISTS_, shipment_state: st.state,
+      shipment_id: st.shipment_id,
+      message: 'SHIPMENT_EXISTS_FOR_PLAN — Shipment ' + st.shipment_id + ' was created for this plan, so '
+        + 'the plan is no longer the owner of rollback. Cancel the Shipment Draft instead.' };
+  }
+  if (st.state !== SHIPMENT_FOR_PLAN_ABSENT_) {
+    return { ok: false, code: SP_CANCEL_REFUSE_SHIPMENT_UNKNOWN_, shipment_state: st.state, shipment_id: '',
+      message: 'SHIPMENT_EXISTENCE_UNKNOWN — whether a Shipment exists for this plan could not be '
+        + 'established (' + st.reason + '). Cancelling would release this plan\'s exposure on an '
+        + 'assumption, so it is refused. Nothing was written.' };
+  }
+  return { ok: true, code: '', shipment_state: st.state, shipment_id: '', message: '' };
+}
+// __SP_APPROVED_CANCEL_ELIGIBILITY_END__
+
 function handleUpdateShippingPlanStatus_(body) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var lock = LockService.getScriptLock(), locked = false;
@@ -1101,6 +1172,7 @@ function spUpdateShippingPlanStatusCore_(ss, body) {
   var spExpectedStatus = transition === 'submit' ? 'pending_approval'
     : (transition === 'approve' ? 'approved' : (transition === 'reject' ? 'draft' : 'cancelled'));
   var overrideAudit = null;
+  var spCancelReleasedExposure = false;
   try {
     if (transition === 'submit') {
       if (curStatus !== 'draft') return jsonResponse_({ success: false, error: 'Only a Draft plan can be submitted (current: ' + curStatus + ')' });
@@ -1154,17 +1226,50 @@ function spUpdateShippingPlanStatusCore_(ss, body) {
       }
       setCell('status', 'draft'); // returns to Draft (editable again); resubmit will bump plan_version
     } else if (transition === 'cancel') {
-      // SOFT cancel: allowed from Draft or Pending Approval; row + lines are NEVER deleted.
-      if (curStatus !== 'draft' && curStatus !== 'pending_approval') {
-        return jsonResponse_({ success: false, error: 'Only a Draft or Pending Approval plan can be cancelled (current: ' + curStatus + ')' });
+      // SOFT cancel: row + lines are NEVER deleted, and no approved quantity is rewritten to make the
+      // transition easier — only the four cells below plus the shared updated_* pair.
+      //
+      // S6-R5 §0 — APPROVED joins Draft and Pending Approval, on ONE condition: no Shipment exists. That
+      // condition is evaluated BEFORE the first setCell, so a refusal cannot leave a partial transition.
+      if (curStatus !== 'draft' && curStatus !== 'pending_approval' && curStatus !== 'approved') {
+        return jsonResponse_({ success: false, error: 'Only a Draft, Pending Approval or Approved plan can be cancelled (current: ' + curStatus + ')' });
+      }
+      if (curStatus === 'approved') {
+        var spElig = spApprovedCancelEligibility_(ss, planId,
+          col('transferred_shipment_id') !== -1 ? rowVals[col('transferred_shipment_id')] : '',
+          col('transferred_to_shipment_at') !== -1 ? rowVals[col('transferred_to_shipment_at')] : '');
+        if (!spElig.ok) {
+          return jsonResponse_({ success: false, zero_write: true, stage: 'cancel_eligibility',
+            code: spElig.code, error: spElig.message,
+            data: { shipping_plan_id: planId, transition: 'cancel', status_unchanged: curStatus,
+              shipment_state: spElig.shipment_state, shipment_id: spElig.shipment_id,
+              inventory_unchanged: true, retry_safe: true } });
+        }
       }
       setCell('status', 'cancelled');
       setCell('cancelled_by', cancelledBy);
       setCell('cancelled_at', now);
+      spCancelReleasedExposure = true;
     }
 
     setCell('updated_by', updatedBy);
     setCell('updated_at', now);
+
+    // S6-R5 §8 — THE CANCELLATION IS CLAIMED FROM THE ROW, NOT FROM THE ABSENCE OF AN EXCEPTION.
+    //
+    // A cancel now RELEASES exposure, so 'cancelled' is a claim other readers act on: KMFSG stops counting
+    // this plan against the pool the moment the cell says so. Reporting success because setValue did not
+    // throw would be exactly the write-truth failure this project has met before — the API accepted it and
+    // the sheet does not carry it. The status is READ BACK, and a mismatch is a throw, which lands in the
+    // catch below and unwinds through the journal that is already there. No second transaction, no second
+    // rollback vocabulary. Scoped to cancel deliberately: submit / approve / reject are unchanged by this
+    // round and are not given new failure modes by it.
+    if (transition === 'cancel' && col('status') !== -1) {
+      var spBack = String(sheet.getRange(targetRow, col('status') + 1).getValue()).trim();
+      if (spBack !== 'cancelled') {
+        throw new Error('CANCEL_STATUS_READBACK_MISMATCH:' + JSON.stringify({ status_read_back: spBack }));
+      }
+    }
 
     // R6-R7-R5-R1 §4.6/§B — THE OVERRIDE AUDIT, IN THE SAME TRANSACTION AS THE STATUS IT JUSTIFIES.
     //
@@ -1277,6 +1382,15 @@ function spUpdateShippingPlanStatusCore_(ss, body) {
 
   return jsonResponse_({ success: true, data: {
     shipping_plan_id: planId, transition: transition, shipment: shipmentResult,
+    // S6-R5 §5 — stated, so 'the hold is gone' is a reported fact rather than something a caller infers
+    // from a status. Both numbers are ZERO BY CONSTRUCTION on this path: the exposure is released by the
+    // status cell itself, and a plan that owned a reservation would have been refused above.
+    cancellation: transition === 'cancel' ? {
+      exposure_released: spCancelReleasedExposure, exposure_release_owner: 'KMFSG.PLAN_RELEASED_STATUSES',
+      plan_active_exposure: 0, plan_owned_reservation: 0,
+      reservation_released_qty: 0, movement_rows_written: 0,
+      status_readback_verified: spCancelReleasedExposure
+    } : null,
     approval_committed: (transition === 'approve'),
     execution_commit: commitState,
     recovery: recovery,

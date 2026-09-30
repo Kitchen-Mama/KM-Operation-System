@@ -5089,7 +5089,9 @@ function _kmClassifyBusinessError_(msg) {
 // S6-R4B §10 — the overseas import contradiction. Registered in the EXISTING canonical registry rather than
 // beside a parallel vocabulary: a source figure that is smaller than the reservation this system already
 // holds is a row-level refusal, and the batch continues around it.
-var KM_CANONICAL_CODES = ['IMPORT_RESERVATION_EXCEEDS_SOURCE_AVAILABLE',
+var KM_CANONICAL_CODES = ['SHIPMENT_EXISTS_FOR_PLAN', 'SHIPMENT_EXISTENCE_UNKNOWN',
+    'PLAN_ALREADY_TRANSFERRED_TO_SHIPMENT', 'SHIPMENT_STATE_SEAM_MISSING',
+    'IMPORT_RESERVATION_EXCEEDS_SOURCE_AVAILABLE',
     'CROSS_DOMAIN_SOURCE_CHANGE_NOT_SUPPORTED', 'INSUFFICIENT_OVERSEAS_STOCK',
     'INSUFFICIENT_OVERSEAS_STOCK_AT_NEW_SOURCE',
     'DANGLING_CAMPAIGN_SKU_LINE_REFERENCE', 'CAMPAIGN_SKU_LINE_CAMPAIGN_MISMATCH',

@@ -1007,6 +1007,13 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
                             ? 'A retry is already running for this plan.'
                             : _spContractMsg_()) + '"')) +
                        ' onclick="spDbRetryShipment(\'' + pid + '\')">Retry Shipment Draft</button>';
+            // S6-R5 §13 — THE EXIT. Retry was the only door out of this state, and a retry that keeps
+            // failing is not an exit: the plan went on holding factory exposure with nothing an operator
+            // could do about it. Cancel is offered HERE and only here — approved, and no Shipment — which
+            // is the same condition the server evaluates. The server remains the authority: this branch
+            // reads the plan's transfer marker, which can be blank on a plan that DOES have a Shipment, so
+            // a button shown in error is refused with a typed code rather than acted on.
+            actions += '<button class="sp-btn sp-btn-cancel" onclick="spDbCancel(\'' + pid + '\', \'approved\')">Cancel</button>';
         }
 
         // F1-7N-FC-1A §D — the recoverable condition, stated on the card. Silence here is what let an
@@ -1696,8 +1703,15 @@ function spDbDone(planId) {
     }, { successMsg: 'Planning task marked as completed.', failPrefix: 'Done failed' });
 }
 
-function spDbCancel(planId) {
-    if (!confirm('Cancel this shipping plan?')) return;
+// `statusType` is passed by the approved call site only. An approved plan is the only one whose
+// cancellation releases anything, so it is the only one the operator is warned about; Draft and Pending
+// Approval keep the prompt they have always had, and an omitted argument keeps that behaviour.
+function spDbCancel(planId, statusType) {
+    if (!confirm(String(statusType || '') === 'approved'
+        ? 'Cancel this APPROVED shipping plan?\n\nIts quantity stops being held against factory stock and '
+          + 'becomes available again. The plan and its lines are kept. If a Shipment has already been '
+          + 'created for it, this will be refused.'
+        : 'Cancel this shipping plan?')) return;
     _spRunCommand_(planId + ':cancel', function () {
         return window.KM.DB.updateShippingPlanStatus({ shipping_plan_id: planId, transition: 'cancel', actor: 'operation-system' });
     }, { failPrefix: 'Cancel failed' });   // silent success (matches prior UX: Cancel just refreshes)
