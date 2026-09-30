@@ -18,7 +18,7 @@ Execution requires, in one explicit operator turn:
 
 ```
 D_FC_RECON_EXECUTE = ACCEPT
-DISCOUNT_VALUES_SUPPLIED = YES        (one per line id, from the census worksheet)
+DISCOUNT_PERCENT = 20                 (frozen by the operator in R1A §0)
 CAMPAIGN_SCOPE = <the campaign_id the census reported>
 ```
 
@@ -42,7 +42,8 @@ unknown_count                           = 0
 schema_extension_required               = NO
 new_line_id_mint_count                  = 0
 missing_line_count                      > 0
-every plan row's status                 = WAITING_OPERATOR_VALUE  (or READY_FOR_REPAIR)
+every plan row's status                 = READY_FOR_REPAIR    (R1A derives the prices; a row still
+                                          WAITING means the discount did not reach the census)
 ```
 
 The preflight runs **immediately before** the write, in the same session. A plan produced an hour earlier
@@ -50,21 +51,26 @@ describes a graph that may have moved.
 
 ---
 
-## 2 — Fill the worksheet
+## 2 — Review the worksheet  *(R1A: no longer a data-entry step)*
 
-Take `operator_required_discount_by_series` from the preflight and fill, per row:
+R1A froze the discount and derived the rest, so `operator_required_discount_by_series` now arrives FILLED:
 
 ```
-discount_percent    REQUIRED     no default, no inference from deal price
-promo_price         REQUIRED     the deal price the line held
-regular_price       REQUIRED     confirm or override the census's candidate from today's pricing_list
-price_units         REQUIRED     the currency snapshot
+discount_percent    OPERATOR_FIXED  20, from FCRC_R1A_DISCOUNT_PERCENT_ in the entry file
+regular_price       DERIVED         pricingResolveEffective_ (73_) over today's pricing_list row
+price_units         DERIVED         the currency of that same row
+promo_price         DERIVED         pricingRoundFx_ (73_) — the frozen precision contract
 ```
 
-The census offers today's `pricing_list` values as **candidates**. Accepting one is a decision the operator
-records; `price_units` exists because the snapshot is not supposed to be re-derived later.
+The operator's job here is to **read** the rows, not to fill them. Two things are worth reading for:
 
-Two Series do **not** share a discount unless the operator says so for each row.
+* a `regular_price_source` of `AUTO` means the site has no manual price and the figure came from the FX
+  chain — correct, and worth a glance before it is written into a commercial record;
+* the prices are **today's**, and the honest claim about them is `REPAIR_PRICE_PROVENANCE =
+  OPERATOR_AUTHORIZED_CURRENT_SITE_REGULAR_PRICE`. They are not proof of what the lost line held.
+
+Any row the census refused is NOT in this list. It is in `repair_plan` with its conflict named, and it
+stays out of the execution.
 
 ---
 
@@ -80,10 +86,10 @@ body   : { campaign_id: '<the campaign the census reported>',
            lines: [ { campaign_sku_line_id : '<the id the EVENT names>',   // supplied, never minted
                       sku                  : '<from the event>',
                       marketplace_sku_id   : '<census, 1:1 only>',
-                      discount_percent     : <operator>,
-                      promo_price          : <operator>,
-                      regular_price        : <operator>,
-                      price_units          : '<operator>',
+                      discount_percent     : <census: operator-fixed 20>,
+                      promo_price          : <census: pricingRoundFx_>,
+                      regular_price        : <census: pricingResolveEffective_>,
+                      price_units          : '<census: the pricing row currency>',
                       line_status          : 'active',
                       source               : 'fc_reconciliation' } ] }
 ```
@@ -99,7 +105,7 @@ Per row, in order, refusing rather than proceeding:
 3  at least one event references EXACTLY this id              else REFUSE (no authority for the id)
 4  every such event's campaign_id is the target campaign      else REFUSE (ambiguous parentage)
 5  no other line holds this campaign + SKU/MSKU identity      else REFUSE (would duplicate)
-6  the operator has supplied every REQUIRED field             else STOP for that row
+6  the census reported this row READY_FOR_REPAIR              else SKIP it (refused or waiting)
 7  write the single row
 8  re-read and confirm the id now resolves                    else STOP the whole run
 ```

@@ -156,6 +156,60 @@ function FCRC_resolveCampaigns_(campRows, opts) {
   return { ok: true, campaigns: matched, requested_ids: [], not_found: [], by: 'selector', filter: filter };
 }
 
+/* ---- PRICING, THROUGH THE CANONICAL OWNERS -----------------------------------------------------------
+ *
+ * Both helpers below CALL 73_ and never copy it. Apps Script gives every .gs file in a project one global
+ * scope, which is the same reuse 72_ makes (`ppwResolveBand_`: "THE RULE LIVES IN 73_ AND IS CALLED, NEVER
+ * COPIED") and the same reuse 04_ makes of the precision table. A locally reimplemented fallback would be
+ * a second pricing authority, and the two would diverge on the day somebody fixed only one.
+ *
+ * When 73_ is absent from the project these report it and the row is REFUSED. A census that guessed a
+ * price would produce a repair plan that looks complete and was priced by a rule nobody reviewed.
+ */
+function FCRC_regularPriceSpec_() {
+  // Reuse 73_'s own spec so the two files cannot drift apart on field names.
+  if (typeof PRICING_FIELDS_ !== 'undefined' && PRICING_FIELDS_) {
+    for (var i = 0; i < PRICING_FIELDS_.length; i++) {
+      if (PRICING_FIELDS_[i] && PRICING_FIELDS_[i].field === 'regular_price') return PRICING_FIELDS_[i];
+    }
+  }
+  return null;
+}
+
+/** The site's Regular Price, resolved by 73_. Returns { ok, value, source, reason }. */
+function FCRC_regularPrice_(priceRow) {
+  if (!priceRow) return { ok: false, value: null, source: '', reason: 'NO_PRICING_ROW_FOR_MARKETPLACE_SKU' };
+  var spec = FCRC_regularPriceSpec_();
+  if (!spec || typeof pricingResolveEffective_ !== 'function') {
+    return { ok: false, value: null, source: 'RESOLVER_UNAVAILABLE', reason: 'PRICING_RESOLVER_UNAVAILABLE' };
+  }
+  var r = pricingResolveEffective_(priceRow, spec);
+  var n = Number(r.value);
+  // The page's own guard, restated: a zero or negative site price is not a price, whichever layer
+  // produced it (resolveRegionalPricingContext, PRICING-R4G §11).
+  if (r.value === null || !isFinite(n) || n <= 0) {
+    return { ok: false, value: null, source: r.source, reason: 'REGULAR_PRICE_NOT_RESOLVED' };
+  }
+  return { ok: true, value: n, source: r.source, reason: '' };
+}
+
+/** The deal price, rounded by 73_'s FROZEN precision contract. Returns { ok, value, reason }. */
+function FCRC_promoPrice_(regular, discountPercent, currency) {
+  if (typeof pricingRoundFx_ !== 'function') {
+    return { ok: false, value: null, reason: 'PRICING_RESOLVER_UNAVAILABLE' };
+  }
+  var d = Number(discountPercent);
+  if (!isFinite(d)) return { ok: false, value: null, reason: 'DISCOUNT_PERCENT_NOT_SUPPLIED' };
+  // PERCENT_DENOMINATOR is a unit conversion, not a quantity. It is named so that the one numeric
+  // literal in this file which is not index arithmetic cannot be mistaken for a cardinality.
+  var PERCENT_DENOMINATOR = 100;
+  var v = pricingRoundFx_(regular * (1 - d / PERCENT_DENOMINATOR), currency);
+  // pricingRoundFx_ answers null for a currency outside the frozen contract. That is a refusal, not a
+  // zero: a converted price written at the wrong precision is a wrong price.
+  if (v === null) return { ok: false, value: null, reason: 'CURRENCY_OUTSIDE_FROZEN_PRECISION_CONTRACT' };
+  return { ok: true, value: v, reason: '' };
+}
+
 /** The line identity 20_ resolves by: campaign + marketplace_sku_id, falling back to campaign + sku. */
 function FCRC_lineIdentityKeys_(campaignId, marketplaceSkuId, sku) {
   var c = FCRC_up_(campaignId), out = [];
@@ -285,7 +339,7 @@ function FCRC_classifyCampaign_(campaignId, campaignRow, lineRows, eventRows) {
  * §5 / §7 — build ONE proposed row, with its field matrix and its status. Every field says where it came from,
  * and a field with no authoritative source says so rather than acquiring a plausible value.
  */
-function FCRC_proposeLine_(lineId, view, mskuRows, pricingRows) {
+function FCRC_proposeLine_(lineId, view, mskuRows, pricingRows, discountPercent) {
   var refEvents = (view.all_events || view.classified).filter(function (e) {
     return FCRC_up_(e.campaign_sku_line_id) === FCRC_up_(lineId);
   }).map(function (e) {
@@ -357,12 +411,33 @@ function FCRC_proposeLine_(lineId, view, mskuRows, pricingRows) {
   put('campaign_id', 'fc_special_events.campaign_id', 'YES', 'NO', 'NO', FCRC_str_(view.campaign_id));
   put('sku', 'fc_special_events.sku', Object.keys(distinctSkus).length === 1 ? 'YES' : 'NO', 'NO', 'NO', sku);
   put('marketplace_sku_id', 'marketplace_skus by sku + company/country/marketplace', mskuDet, mskuOp, 'NO', msku);
-  put('promo_price', 'NONE — the deal price is on the line and on no event column', 'NO', 'YES', 'NO', '');
-  put('regular_price', "pricing_list TODAY — NOT the snapshot the lost row held", 'NO', 'YES', 'NO',
-    priceRow ? priceRow.regular_price : '');
-  put('price_units', "pricing_list.currency TODAY — NOT the snapshot the lost row held", 'NO', 'YES', 'NO',
-    priceRow ? priceRow.currency : '');
-  put('discount_percent', 'NONE — on the line and on no event column', 'NO', 'YES', 'NO', '');
+  /* R1A — the three commercial fields, no longer blank.
+   *
+   * discount_percent is OPERATOR_FIXED: the operator froze it, so it is supplied rather than derived.
+   * regular_price and promo_price are DERIVED, by 73_, from today's canonical pricing row. They are NOT
+   * proof of what the lost line held - §5's provenance note is the honest statement of that - but they
+   * are the operator-authorized reconstruction, computed by the owner the builder itself resolves
+   * through rather than by arithmetic invented here. */
+  var cur = priceRow ? FCRC_str_(priceRow.currency) : '';
+  var reg = FCRC_regularPrice_(priceRow);
+  var promo = reg.ok ? FCRC_promoPrice_(reg.value, discountPercent, cur)
+    : { ok: false, value: null, reason: reg.reason };
+  var haveDiscount = isFinite(Number(discountPercent));
+
+  if (!reg.ok && reg.reason !== 'DISCOUNT_PERCENT_NOT_SUPPLIED') conflicts.push(reg.reason);
+  if (reg.ok && !promo.ok && promo.reason !== 'DISCOUNT_PERCENT_NOT_SUPPLIED') conflicts.push(promo.reason);
+  if (reg.ok && !cur) conflicts.push('PRICING_ROW_HAS_NO_CURRENCY');
+
+  put('promo_price', 'DERIVED — pricingRoundFx_(regular * (1 - discount/100), currency) [73_]',
+    promo.ok ? 'YES' : 'NO', promo.ok ? 'NO' : (haveDiscount ? 'NO' : 'YES'), 'NO',
+    promo.ok ? promo.value : '');
+  put('regular_price', 'DERIVED — pricingResolveEffective_(pricing_list row, regular_price) [73_]',
+    reg.ok ? 'YES' : 'NO', 'NO', 'NO', reg.ok ? reg.value : '');
+  put('price_units', 'pricing_list.currency of the SAME row that supplied regular_price',
+    cur ? 'YES' : 'NO', 'NO', 'NO', cur);
+  put('discount_percent', 'OPERATOR_FIXED — frozen by the operator for this repair',
+    haveDiscount ? 'YES' : 'NO', haveDiscount ? 'NO' : 'YES', 'NO',
+    haveDiscount ? Number(discountPercent) : '');
   put('special_condition', 'NONE', 'NO', 'NO', 'YES', '');
   put('lps', 'NONE', 'NO', 'NO', 'YES', '');
   put('line_status', 'default', 'NO', 'NO', 'YES', FCRC_DEFAULTS_.line_status);
@@ -389,6 +464,9 @@ function FCRC_proposeLine_(lineId, view, mskuRows, pricingRows) {
     marketplace: FCRC_str_(e0.marketplace), marketplace_id: FCRC_str_(e0.marketplace_id),
     marketplace_sku_id: msku,
     referenced_by_event_ids: refEvents.map(function (e) { return e.event_fc_id; }),
+    regular_price: reg.ok ? reg.value : null, regular_price_source: reg.source || '',
+    promo_price: promo.ok ? promo.value : null, discount_percent: haveDiscount ? Number(discountPercent) : null,
+    price_units: cur,
     field_matrix: matrix, waiting_fields: waiting, conflicts: conflicts, notes: notes,
     status: status,
     reason: conflicts.length ? conflicts.join('; ')
@@ -446,12 +524,16 @@ function TEMP_FC_EU_BFCM_RECONCILIATION_DRY_RUN_R1(opts) {
     });
 
     view.missing_line_ids.forEach(function (id) {
-      var row = FCRC_proposeLine_(id, view, tMsku.rows, tPrice.rows);
+      var row = FCRC_proposeLine_(id, view, tMsku.rows, tPrice.rows, opts.discount_percent);
       plan.push(row);
       if (row.status === 'WAITING_OPERATOR_VALUE' || row.status === 'READY_FOR_REPAIR') {
+        // R1A — the row carries its DERIVED values now. The worksheet stopped being a page of blanks to
+        // fill and became a page of values to review, which is a different and smaller ask.
         discountRows.push({ series: row.series || '(no series on the event)', sku: row.sku,
           campaign_sku_line_id: row.campaign_sku_line_id, campaign_id: row.campaign_id,
-          discount_percent: '', promo_price: '', regular_price: '', price_units: '' });
+          discount_percent: row.discount_percent, promo_price: row.promo_price,
+          regular_price: row.regular_price, price_units: row.price_units,
+          regular_price_source: row.regular_price_source });
       }
     });
 
@@ -493,9 +575,20 @@ function TEMP_FC_EU_BFCM_RECONCILIATION_DRY_RUN_R1(opts) {
     // §11 — reconstruct-missing-only.
     delete_campaign_count: 0, delete_event_count: 0, delete_valid_line_count: 0,
 
+    // The graph still cannot supply them. What changed in R1A is that the operator froze the discount and
+    // authorized deriving the prices from today's canonical pricing row - so they are RECONSTRUCTED, which
+    // is a different claim from RECOVERED and is recorded as such.
     discount_recoverable: 'NO',
     discount_recoverable_reason: 'discount_percent, promo_price and the price snapshot exist on ' +
       'campaign_sku_lines and on no fc_special_events column; the graph cannot supply them',
+    discount_percent_supplied: isFinite(Number(opts.discount_percent)) ? Number(opts.discount_percent) : null,
+    discount_percent_authority: isFinite(Number(opts.discount_percent)) ? 'OPERATOR_FIXED' : 'NOT_SUPPLIED',
+    regular_price_authority: 'pricingResolveEffective_ (73_api_v1_pricing_write.gs)',
+    promo_price_derivation_owner: 'pricingRoundFx_ (73_api_v1_pricing_write.gs) over regular * (1 - d/100)',
+    currency_rounding_owner: 'PRICING_FX_DECIMALS_ / pricingRoundFx_ (73_api_v1_pricing_write.gs)',
+    second_pricing_authority_created: 'NO',
+    pricing_resolver_present: (typeof pricingResolveEffective_ === 'function'
+      && typeof pricingRoundFx_ === 'function') ? 'YES' : 'NO',
     operator_required_discount_rows: discountRows,
     operator_required_discount_by_series: bySeries,
 
@@ -528,6 +621,74 @@ function TEMP_FC_EU_BFCM_RECONCILIATION_DRY_RUN_R1(opts) {
   return report;
 }
 
+/**
+ * FC-EU-BFCM-DATA-RECONCILIATION-R1A §1 — THE SELECTOR, DERIVED FROM THE DAMAGE.
+ *
+ * Returns every campaign that currently holds at least one event whose campaign_sku_line is missing,
+ * with the identity columns needed to recognise it and the counts needed to size it. Nothing else:
+ * no repair plan, no field matrix, no price, no proposed row. It is strictly less than the census.
+ *
+ * It reads the whole campaigns table, by necessity - an incident cannot be located by looking only where
+ * it already is. The census it feeds is then scoped to ONE campaign_id, which is what §1 asks for.
+ *
+ * DB_WRITES = 0.
+ */
+function TEMP_FC_RECONCILIATION_FIND_AFFECTED_CAMPAIGNS_R1A() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var tCamp = FCRC_readTable_(ss, 'campaigns');
+  var tLine = FCRC_readTable_(ss, 'campaign_sku_lines');
+  var tEvt = FCRC_readTable_(ss, 'fc_special_events');
+
+  var unreadable = [tCamp, tLine, tEvt].filter(function (t) { return !t.ok; })
+    .map(function (t) { return t.name + ':' + t.error; });
+  if (unreadable.length) {
+    var stop = { task: FCRC_R1_, mode: 'READ_ONLY_FINDER', verdict: 'STOP',
+      blocker: 'AUTHORITATIVE_TABLE_UNREADABLE', unreadable: unreadable,
+      production_rows_written: 0, db_writes: 0 };
+    Logger.log(JSON.stringify(stop, null, 2));
+    return stop;
+  }
+
+  var affected = [];
+  tCamp.rows.forEach(function (campRow) {
+    var view = FCRC_classifyCampaign_(FCRC_str_(campRow.campaign_id), campRow, tLine.rows, tEvt.rows);
+    if (!view.missing_line_count && !view.orphan_event_count) return;
+    var series = {}, skus = {};
+    view.classified.forEach(function (c) {
+      if (c.state !== 'MISSING_CAMPAIGN_SKU_LINE') return;
+      if (c.series) series[c.series] = (series[c.series] || 0) + 1;
+      if (c.sku) skus[c.sku] = true;
+    });
+    affected.push({
+      campaign_id: view.campaign_id,
+      company: view.campaign ? view.campaign.company : '',
+      country: view.campaign ? view.campaign.country : '',
+      marketplace: view.campaign ? view.campaign.marketplace : '',
+      marketplace_id: view.campaign ? view.campaign.marketplace_id : '',
+      event_flag: view.campaign ? view.campaign.event_flag : '',
+      year: view.campaign ? view.campaign.year : '',
+      campaign_name: view.campaign ? view.campaign.campaign_name : '',
+      event_count: view.event_count, line_count: view.line_count,
+      expected_line_count: view.expected_line_count,
+      missing_line_count: view.missing_line_count,
+      orphan_event_count: view.orphan_event_count,
+      state_counts: view.state_counts,
+      series_breakdown: series,
+      distinct_sku_count: Object.keys(skus).length
+    });
+  });
+
+  var out = { task: FCRC_R1_, mode: 'READ_ONLY_FINDER',
+    campaigns_scanned: tCamp.rows.length,
+    affected_campaign_count: affected.length,
+    affected_campaign_ids: affected.map(function (a) { return a.campaign_id; }),
+    affected: affected,
+    emits_repair_plan: 'NO', emits_prices: 'NO',
+    production_rows_written: 0, db_writes: 0 };
+  out.verdict = affected.length ? 'AFFECTED_CAMPAIGNS_FOUND' : 'NO_AFFECTED_CAMPAIGN';
+  Logger.log(JSON.stringify(out, null, 2));
+  return out;
+}
 /**
  * §10 — THE ACCEPTANCE TEST, for the future authorized execution. Run AFTER the repair. It re-runs the same
  * classification and accepts only a whole graph. It writes nothing either.

@@ -34,6 +34,9 @@ var CENSUS = read(CENSUS_REL);
 var G20 = read('specs/active/apps-script/20_campaign_write_handlers.gs');
 var G14 = read('specs/active/apps-script/14_fc_write_handlers.gs');
 var G58 = read('specs/active/apps-script/58_api_v1_fc_summary_workspace.gs');
+// 73_ is the pricing authority the census CALLS. In Apps Script every .gs in a project shares one
+// global scope, so loading it into the same context is what the production project looks like.
+var G73 = read('specs/active/apps-script/73_api_v1_pricing_write.gs');
 
 var pass = 0, fail = 0, mutants = 0, survived = 0;
 function ok(c, l, extra) { if (c) { pass++; console.log('ok   ' + l); } else { fail++; console.error('FAIL ' + l + (extra === undefined ? '' : '\n  got ' + JSON.stringify(extra))); } }
@@ -86,8 +89,9 @@ function roSheet(headers, objRows, name, writeLog) {
   };
 }
 
-function world(opts, srcOverride) {
+function world(opts, srcOverride, extra) {
   opts = opts || {};
+  if (extra) { for (var ek in extra) opts[ek] = extra[ek]; }
   var writeLog = [], logs = [];
   var sheets = {};
   function add(n, h, rows) { if (rows !== null) sheets[n] = roSheet(h, rows || [], n, writeLog); }
@@ -105,6 +109,8 @@ function world(opts, srcOverride) {
     SpreadsheetApp: { getActiveSpreadsheet: function () { return ss; } },
     Logger: { log: function (m) { logs.push(m); } } };
   vm.createContext(sb);
+  // `noPricingResolver` reproduces a project where 73_ was not pasted alongside the census.
+  if (!opts.noPricingResolver) vm.runInContext(G73, sb);
   vm.runInContext(srcOverride === undefined ? CENSUS : srcOverride, sb);
   return { sb: sb, writeLog: writeLog, logs: logs, sheets: sheets };
 }
@@ -126,8 +132,10 @@ function incident(seriesSizes, opts) {
         year: 2026, fc_qty: 10 });
       mskus.push({ marketplace_sku_id: 'MSKU-' + n, marketplace_id: 'MID-1', sku: sku, company: 'CO',
         country: 'XX', marketplace: 'MP', site_sku: sku, currency: 'EUR' });
+      // regular_price is the OVERRIDE band; auto_regular_price is what 73_ falls back to. Both are
+      // present so the resolver has a real chain to walk rather than a single cell.
       pricing.push({ pricing_id: 'P-' + n, marketplace_sku_id: 'MSKU-' + n, sku: sku, country: 'XX',
-        marketplace: 'MP', currency: 'EUR', regular_price: 100 + n });
+        marketplace: 'MP', currency: 'EUR', regular_price: 100 + n, auto_regular_price: 1 });
     }
   });
   return {
@@ -138,7 +146,14 @@ function incident(seriesSizes, opts) {
     events: events, mskus: mskus, pricing: pricing, campaignId: CID
   };
 }
-function run(w, opts) { return w.sb.TEMP_FC_EU_BFCM_RECONCILIATION_DRY_RUN_R1(opts); }
+/* R1A froze the discount, so the census is normally called WITH one. `run` supplies it unless the
+   case under test is specifically about its absence. */
+var OPERATOR_DISCOUNT = 20;
+function run(w, opts) {
+  opts = opts || {};
+  if (opts.discount_percent === undefined && !opts.__noDiscount) opts.discount_percent = OPERATOR_DISCOUNT;
+  return w.sb.TEMP_FC_EU_BFCM_RECONCILIATION_DRY_RUN_R1(opts);
+}
 
 // The operator's stated shape, used wherever the incident itself is under test. Four and five are the
 // operator's evidence; nothing downstream of this line is allowed to know that.
@@ -179,9 +194,20 @@ section('B — NO INCIDENT CARDINALITY IS REACHABLE FROM THE SOURCE');
 var literals = {};
 code(CENSUS).replace(/'[^'\n]*'|"[^"\n]*"/g, ' ')
   .replace(/(^|[^\w.$])(\d+(?:\.\d+)?)/g, function (m, pre, num) { literals[num] = (literals[num] || 0) + 1; return m; });
-var ALLOWED = ['0', '1', '2'];
+/* 0, 1 and 2 are index arithmetic and JSON.stringify's indent. 100 is R1A's percent denominator and is
+   the ONLY other literal allowed - so B1a pins it to that one use. A cardinality still cannot be written
+   down anywhere in this file, which is the whole point of the check. */
+var ALLOWED = ['0', '1', '2', '100'];
 var stray = Object.keys(literals).filter(function (n) { return ALLOWED.indexOf(n) === -1; });
-eq(stray, [], 'B1 the only numeric literals in the census are 0, 1 and 2');
+eq(stray, [], 'B1 the only numeric literals in the census are 0, 1, 2 and the percent denominator');
+// Counted in the CODE with string literals stripped, the same way B1 strips them: the field matrix and
+// the report both DESCRIBE the formula in prose, and a description is not an expression.
+var CENSUS_CODE_ONLY = code(CENSUS).replace(/'[^'\n]*'|"[^"\n]*"/g, ' ');
+var hundreds = CENSUS_CODE_ONLY.split('100').length - 1;
+ok(hundreds === 1 && /var PERCENT_DENOMINATOR = 100;/.test(CENSUS_CODE_ONLY),
+  'B1a and 100 appears exactly once in the code, as the named PERCENT_DENOMINATOR', hundreds);
+ok(/\/ PERCENT_DENOMINATOR\),/.test(code(CENSUS)) || /d \/ PERCENT_DENOMINATOR/.test(code(CENSUS)),
+  'B1b which is used as a divisor of the discount, not as a quantity');
 ok(!/\b(?:HARDCODED|EXPECTED_ROWS?|INCIDENT)\w*\s*=\s*\d/.test(code(CENSUS)),
   'B2 no constant declares an expected incident size');
 ok(!/BFCM|\bEU\b/i.test(CENSUS.replace(/TEMP_FC_EU_BFCM_RECONCILIATION_\w+/g, ' ')
@@ -303,19 +329,43 @@ eq(fieldOf(p0, 'campaign_sku_line_id').deterministic, 'YES', 'F1 the line id is 
 eq(fieldOf(p0, 'campaign_id').deterministic, 'YES', 'F2 the campaign id is deterministic');
 eq(fieldOf(p0, 'sku').deterministic, 'YES', 'F3 the SKU is deterministic — one event, one SKU');
 eq(fieldOf(p0, 'marketplace_sku_id').deterministic, 'YES', 'F4 a one-to-one marketplace_skus match is deterministic');
-eq(fieldOf(p0, 'discount_percent').operator_required, 'YES', 'F5 discount_percent is OPERATOR_REQUIRED');
-eq(fieldOf(p0, 'discount_percent').value, '', 'F6 and it is left blank, not guessed');
-eq(fieldOf(p0, 'promo_price').operator_required, 'YES', 'F7 promo_price (deal price) is OPERATOR_REQUIRED');
-eq(fieldOf(p0, 'promo_price').value, '', 'F8 and blank');
-eq(fieldOf(p0, 'regular_price').operator_required, 'YES',
-  "F9 regular_price is OPERATOR_REQUIRED — today's pricing_list is not the snapshot the lost row held");
-eq(fieldOf(p0, 'price_units').operator_required, 'YES', 'F10 price_units likewise');
+/* R1A — the four commercial fields. discount_percent is OPERATOR_FIXED; the other three are DERIVED by
+   73_, the authority the Special Event Builder itself resolves through. What has NOT changed is that
+   none of them is RECOVERED: §5's provenance note is the honest statement of that. */
+eq(fieldOf(p0, 'discount_percent').value, OPERATOR_DISCOUNT, 'F5 discount_percent is the operator-fixed value');
+eq(fieldOf(p0, 'discount_percent').operator_required, 'NO', 'F6 so nothing is awaited for it');
+ok(/OPERATOR_FIXED/.test(fieldOf(p0, 'discount_percent').source), 'F6a and it is labelled OPERATOR_FIXED');
+eq(fieldOf(p0, 'promo_price').operator_required, 'NO', 'F7 promo_price is DERIVED, not awaited');
+ok(/pricingRoundFx_/.test(fieldOf(p0, 'promo_price').source),
+  'F8 by 73_\'s frozen rounding owner, named in the matrix', fieldOf(p0, 'promo_price').source);
+ok(/pricingResolveEffective_/.test(fieldOf(p0, 'regular_price').source),
+  'F9 regular_price comes from 73_\'s canonical resolver — not reimplemented here');
+eq(fieldOf(p0, 'price_units').value, 'EUR',
+  'F10 price_units is the currency of the SAME pricing row that supplied regular_price');
 eq(fieldOf(p0, 'line_status').default_allowed, 'YES', 'F11 line_status has an allowed default');
 eq(fieldOf(p0, 'source').value, 'fc_reconciliation',
   'F12 source is NOT the builder token — a reconstructed row did not come from the builder');
-eq(p0.status, 'WAITING_OPERATOR_VALUE', 'F13 a row with unresolvable commercial fields is not READY');
-eq(rA.waiting_operator_value_count, expectedFromFixture, 'F14 every missing row waits on the operator');
-eq(rA.ready_for_repair_count, 0, 'F15 READY_FOR_REPAIR_COUNT = 0 until the operator supplies values');
+eq(p0.status, 'READY_FOR_REPAIR', 'F13 with the discount frozen and the price resolved, the row is READY');
+eq(rA.waiting_operator_value_count, 0, 'F14 nothing is left awaiting an operator value');
+eq(rA.ready_for_repair_count, expectedFromFixture, 'F15 every missing row is ready');
+// The arithmetic, end to end, through the real owner: 101 at 20% is 80.80 in a 2-decimal currency.
+eq([p0.regular_price, p0.discount_percent, p0.promo_price, p0.price_units],
+  [101, 20, 80.8, 'EUR'], 'F13a and the derived values are the canonical owner\'s, not this suite\'s');
+/* Absent the discount the row goes back to waiting - the frozen value is doing the work, not the round. */
+(function () {
+  var rNoD = run(world(incident(SMALL)), { campaign_id: 'CMP-1', __noDiscount: true });
+  eq(rNoD.repair_plan[0].status, 'WAITING_OPERATOR_VALUE',
+    'F13b without a discount the row waits — the value is supplied, not assumed');
+  eq(rNoD.discount_percent_authority, 'NOT_SUPPLIED', 'F13c and the report says so');
+})();
+/* And with no 73_ in the project every row is REFUSED rather than priced by a local rule. */
+(function () {
+  var rNoP = run(world(incident(SMALL), undefined, { noPricingResolver: true }), { campaign_id: 'CMP-1' });
+  eq(rNoP.pricing_resolver_present, 'NO', 'F13d a project without 73_ is detected');
+  eq(rNoP.repair_plan[0].status, 'REFUSED_CONFLICT', 'F13e and every row is refused, not priced');
+  ok(rNoP.repair_plan[0].conflicts.indexOf('PRICING_RESOLVER_UNAVAILABLE') > -1,
+    'F13f naming the missing authority', rNoP.repair_plan[0].conflicts);
+})();
 eq(rA.discount_recoverable, 'NO', 'F16 DISCOUNT_RECOVERABLE = NO');
 
 // The claim behind F16, checked against the real schema rather than asserted.
@@ -407,8 +457,10 @@ var bySeries = rA.operator_required_discount_by_series;
 eq(Object.keys(bySeries).sort(), ['SERIES-1', 'SERIES-2'], 'H1 the blanks are grouped by Series');
 eq(Object.keys(bySeries).map(function (k) { return bySeries[k].length; }), OPERATOR_SERIES_SIZES,
   'H2 each Series carries its own rows');
-ok(rA.operator_required_discount_rows.every(function (r) { return r.discount_percent === ''; }),
-  'H3 every discount is blank — the two Series are NOT assumed to share one');
+ok(rA.operator_required_discount_rows.every(function (r) { return r.discount_percent === OPERATOR_DISCOUNT; }),
+  'H3 every row carries the operator-fixed discount — still ONE VALUE PER ROW, not one per Series');
+ok(rA.operator_required_discount_rows.every(function (r) { return r.promo_price > 0 && r.regular_price > 0; }),
+  'H3a and each row carries its own derived prices, so the operator reviews values rather than supplying them');
 ok(rA.operator_required_discount_rows.every(function (r) { return r.sku && r.campaign_sku_line_id; }),
   'H4 each blank is addressed by SKU and line id, so it can be filled unambiguously');
 eq(rA.operator_required_discount_rows.length, expectedFromFixture, 'H5 one row per line awaiting a value');
@@ -528,12 +580,16 @@ mut('M4 dropping the already-exists refusal', function () {
     && row2.conflicts.indexOf('LINE_ALREADY_EXISTS') > -1;
 });
 
+/* M5 [R1A-REAIMED] — it checked the row's STATUS, which two independent rules can set: once the census
+   began refusing unpriceable rows too, removing the identity guard stopped changing it and the mutant
+   survived. It now checks the CONFLICT it removes, which only one rule can produce. */
 mut('M5 dropping the identity-occupancy refusal', function () {
   var src = CENSUS.replace("if (owner && FCRC_up_(owner) !== FCRC_up_(lineId)) conflicts.push('IDENTITY_HELD_BY_' + owner);", '');
   if (src === CENSUS) throw new Error('M5 anchor drifted');
   var r = run(world(gHeld, src), { campaign_id: 'CMP-1' });
   var row = r.repair_plan.filter(function (p) { return p.campaign_sku_line_id === 'CSL-1'; })[0];
-  return row.status !== 'REFUSED_CONFLICT' && heldRow.status === 'REFUSED_CONFLICT';
+  function held(x) { return x.conflicts.some(function (c) { return c.indexOf('IDENTITY_HELD_BY_') === 0; }); }
+  return !held(row) && held(heldRow);
 });
 
 mut('M6 the census writing a single row', function () {
