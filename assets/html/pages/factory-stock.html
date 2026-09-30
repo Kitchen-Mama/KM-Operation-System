@@ -317,10 +317,22 @@
                         <div class="fia-modal-body">
                             <p class="fia-hint">Select a stock record, then set the new <strong>Available</strong> quantity. Only Available is adjusted — <strong>Reserved is never changed</strong>. A Movement Log entry is recorded automatically.</p>
                             <div class="fia-grid">
-                                <div class="fia-field fia-field--full">
-                                    <label for="factory-adjust-record">Stock Record *</label>
-                                    <select id="factory-adjust-record" onchange="onFactoryAdjustRecordChange()">
-                                        <option value="">Select SKU / Warehouse…</option>
+                                <!-- FACTORY-INVENTORY-ADJUSTMENT-STABILITY-R1 §10 - two-step selection.
+                                     The Factory option VALUE is the canonical warehouse_id; the friendly
+                                     factory name is DISPLAY ONLY and is never used as identity. The SKU
+                                     select is scoped to the chosen warehouse_id and is disabled until one
+                                     is chosen - "Select a Factory first" is the truthful empty state, not
+                                     "No data found". -->
+                                <div class="fia-field">
+                                    <label for="factory-adjust-factory">Factory *</label>
+                                    <select id="factory-adjust-factory" onchange="onFactoryAdjustFactoryChange()">
+                                        <option value="">Select Factory…</option>
+                                    </select>
+                                </div>
+                                <div class="fia-field">
+                                    <label for="factory-adjust-record">SKU *</label>
+                                    <select id="factory-adjust-record" onchange="onFactoryAdjustRecordChange()" disabled>
+                                        <option value="">Select a Factory first</option>
                                     </select>
                                 </div>
                                 <div class="fia-field"><label>SKU</label><div class="fia-readout" id="factory-adjust-sku">—</div></div>
@@ -346,8 +358,14 @@
                             <div class="fia-result" id="factory-adjust-result" hidden></div>
                         </div>
                         <div class="fia-modal-actions">
-                            <button type="button" class="btn btn-secondary" onclick="closeFactoryInventoryAdjustModal()">Cancel</button>
+                            <!-- §8 - Done is a SEPARATE element wired to close, never the Confirm button
+                                 wearing a different word. Before this round "Done" WAS the Confirm button
+                                 with textContent rewritten, so it still carried the submit handler: it did
+                                 nothing while it happened to stay disabled, and re-enabling it (typing in
+                                 Reason re-runs the validity check) armed a second adjustment. -->
+                            <button type="button" class="btn btn-secondary" id="factory-adjust-cancel-btn" onclick="closeFactoryInventoryAdjustModal()">Cancel</button>
                             <button type="button" class="btn btn-primary" id="factory-adjust-confirm-btn" onclick="confirmFactoryInventoryAdjustment()" disabled>Confirm Adjustment</button>
+                            <button type="button" class="btn btn-primary" id="factory-adjust-done-btn" onclick="closeFactoryInventoryAdjustModal()" hidden>Done</button>
                         </div>
                     </div>
                 </div>

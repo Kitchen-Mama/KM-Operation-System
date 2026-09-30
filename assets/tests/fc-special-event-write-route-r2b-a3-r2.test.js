@@ -345,7 +345,7 @@ function drain() { return new Promise(function (r) { setImmediate(function () { 
   // M4 — fall back to the raw fetch when the transport is absent (the defect, reinstated)
   score('M4 raw-fetch fallback reinstated', await runMutant('M4',
     mutate(SRC_CANONICAL_WRITE,
-      "        throw new Error(action + ' was not sent: the shared transport is not loaded, so the action could not be'\n            + ' carried where a redirect cannot drop it. Nothing was written.');",
+      "        var _ns = new Error(action + ' was not sent: the shared transport is not loaded, so the action could not be'\n            + ' carried where a redirect cannot drop it. Nothing was written.');\n        _ns.__kmNotSent = true;\n        _ns.zero_write = true;\n        throw _ns;",
       "        var _r = await fetch(OP_DB_API_BASE_URL, { method: 'POST', cache: 'no-store',\n            headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(Object.assign({ action: action }, payload)) });\n        return await _r.json();",
       'M4'),
     async function (sb, disp, rawCount) {

@@ -1296,8 +1296,14 @@ window.renderFactoryMovementTable = renderFactoryMovementTable;
 // NOT an inline edit; a unique record must be selected first.
 // ============================================================================
 var _factoryAdjustRecords = [];
+var _factoryAdjustByFactory = {};      // R1 §12: warehouse_id -> [global index into _factoryAdjustRecords]
+var _factoryAdjustFactoryId = '';      // R1 §10: the CANONICAL warehouse_id, never the display label
 var _factoryAdjustSelected = null;
 var _factoryAdjustSubmitting = false;
+// R1 §8 - latched on CONFIRMED_COMMITTED and cleared only by reopening the modal. It is what makes
+// the post-success state one-way: Confirm can never be re-armed over a committed adjustment, which is
+// how typing one character in Reason used to turn "Done" back into a second -13,000.
+var _factoryAdjustCommitted = false;
 var _factoryAdjustKeyBound = false;
 
 function openFactoryInventoryAdjustModal() {
@@ -1305,19 +1311,39 @@ function openFactoryInventoryAdjustModal() {
     var modal = document.getElementById('factory-adjust-modal');
     if (!modal || !overlay) return;
     // Records come from the real DB-backed factory_stock join (this is a real write; never demo rows).
+    // R1 §11: the Factory selector is built from THIS ALREADY-LOADED MODEL. factory_stock is the Factory
+    // Inventory domain by definition, so every warehouse_id appearing here is an eligible factory stock
+    // warehouse - there is nothing to filter out and, more to the point, nothing to fetch.
     _factoryAdjustRecords = _getDbFactoryStockData() || [];
-    var sel = document.getElementById('factory-adjust-record');
-    if (sel) {
-        var opts = ['<option value="">Select SKU / Warehouse…</option>'];
-        _factoryAdjustRecords.forEach(function(rec, i) {
-            var label = rec.sku + ' — ' + (rec.factory || rec.warehouseId || '?') +
+    _factoryAdjustByFactory = {};
+    var factoryLabel = {};
+    _factoryAdjustRecords.forEach(function (rec, i) {
+        var wid = String(rec.warehouseId || '').trim();
+        if (!wid) return;                       // no canonical identity -> not selectable, never guessed
+        if (!_factoryAdjustByFactory[wid]) _factoryAdjustByFactory[wid] = [];
+        _factoryAdjustByFactory[wid].push(i);
+        if (!factoryLabel[wid]) {
+            factoryLabel[wid] = (rec.factory || wid) +
                 (rec.company ? ' (' + rec.company + (rec.country ? '/' + rec.country : '') + ')' : '');
-            opts.push('<option value="' + i + '">' + _fmvEscapeHtml(label) + '</option>');
+        }
+    });
+    var fsel = document.getElementById('factory-adjust-factory');
+    if (fsel) {
+        var fopts = ['<option value="">Select Factory…</option>'];
+        Object.keys(_factoryAdjustByFactory).sort(function (a, b) {
+            return String(factoryLabel[a]).localeCompare(String(factoryLabel[b]));
+        }).forEach(function (wid) {
+            // value = warehouse_id (identity). text = friendly label (display only).
+            fopts.push('<option value="' + _fmvEscapeHtml(wid) + '">' + _fmvEscapeHtml(factoryLabel[wid]) + '</option>');
         });
-        sel.innerHTML = opts.join('');
+        fsel.innerHTML = fopts.join('');
+        fsel.value = '';
     }
+    _factoryAdjustFactoryId = '';
+    _factoryAdjustClearSkuSelect();
     _factoryAdjustSelected = null;
     _factoryAdjustSubmitting = false;
+    _factoryAdjustCommitted = false;
     ['factory-adjust-sku', 'factory-adjust-warehouse', 'factory-adjust-company', 'factory-adjust-country', 'factory-adjust-current', 'factory-adjust-delta']
         .forEach(function(id) { var el = document.getElementById(id); if (el) el.textContent = '—'; });
     var newEl = document.getElementById('factory-adjust-new'); if (newEl) { newEl.value = ''; newEl.disabled = true; }
@@ -1325,7 +1351,10 @@ function openFactoryInventoryAdjustModal() {
     var refEl = document.getElementById('factory-adjust-reference'); if (refEl) refEl.value = '';
     var preview = document.getElementById('factory-adjust-preview'); if (preview) { preview.hidden = true; preview.innerHTML = ''; }
     var result = document.getElementById('factory-adjust-result'); if (result) { result.hidden = true; result.innerHTML = ''; }
-    var btn = document.getElementById('factory-adjust-confirm-btn'); if (btn) { btn.disabled = true; btn.textContent = 'Confirm Adjustment'; }
+    var btn = document.getElementById('factory-adjust-confirm-btn'); if (btn) { btn.disabled = true; btn.textContent = 'Confirm Adjustment'; btn.hidden = false; }
+    // R1 §16: reopening restores the PRE-WRITE shape exactly - Confirm back, Done gone.
+    var doneBtn = document.getElementById('factory-adjust-done-btn'); if (doneBtn) doneBtn.hidden = true;
+    var cancelBtn = document.getElementById('factory-adjust-cancel-btn'); if (cancelBtn) cancelBtn.hidden = false;
     overlay.classList.add('is-open');
     modal.classList.add('is-open');
     // Close on Escape (bound once).
@@ -1345,10 +1374,57 @@ function closeFactoryInventoryAdjustModal() {
     if (modal) modal.classList.remove('is-open');
 }
 
+// R1 §12 - the truthful empty state. "Select a Factory first" is an instruction; "No data found" is a
+// claim about the database, and it would be a false one.
+function _factoryAdjustClearSkuSelect() {
+    var sel = document.getElementById('factory-adjust-record');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">Select a Factory first</option>';
+    sel.value = '';
+    sel.disabled = true;
+}
+
+// R1 §10/§13 - STEP 1. Changing Factory CLEARS the SKU selection outright. The same SKU code can carry a
+// factory_stock row under two warehouses, and those are two different records; keeping the old selection
+// because the code still exists elsewhere is how the wrong row gets adjusted.
+function onFactoryAdjustFactoryChange() {
+    if (_factoryAdjustCommitted) return;
+    var fsel = document.getElementById('factory-adjust-factory');
+    var wid = fsel ? String(fsel.value || '').trim() : '';
+    _factoryAdjustFactoryId = wid;
+    _factoryAdjustSelected = null;
+    var sel = document.getElementById('factory-adjust-record');
+    if (!wid || !_factoryAdjustByFactory[wid]) {
+        _factoryAdjustClearSkuSelect();
+    } else if (sel) {
+        // ONLY this warehouse_id's records. No cross-factory row can be reached from here.
+        var opts = ['<option value="">Select SKU…</option>'];
+        _factoryAdjustByFactory[wid].slice().sort(function (a, b) {
+            return String(_factoryAdjustRecords[a].sku).localeCompare(String(_factoryAdjustRecords[b].sku));
+        }).forEach(function (i) {
+            opts.push('<option value="' + i + '">' + _fmvEscapeHtml(String(_factoryAdjustRecords[i].sku)) + '</option>');
+        });
+        sel.innerHTML = opts.join('');
+        sel.value = '';
+        sel.disabled = false;
+    }
+    // Every downstream readout belongs to the cleared record, so it is cleared with it.
+    ['factory-adjust-sku', 'factory-adjust-warehouse', 'factory-adjust-company', 'factory-adjust-country', 'factory-adjust-current', 'factory-adjust-delta']
+        .forEach(function(id) { var el = document.getElementById(id); if (el) el.textContent = '—'; });
+    var nEl = document.getElementById('factory-adjust-new'); if (nEl) { nEl.value = ''; nEl.disabled = true; }
+    var pv = document.getElementById('factory-adjust-preview'); if (pv) { pv.hidden = true; pv.innerHTML = ''; }
+    _factoryAdjustUpdateValidity();
+}
+
 function onFactoryAdjustRecordChange() {
+    if (_factoryAdjustCommitted) return;
     var sel = document.getElementById('factory-adjust-record');
     var idx = sel ? parseInt(sel.value, 10) : NaN;
     var rec = (!isNaN(idx) && _factoryAdjustRecords[idx]) ? _factoryAdjustRecords[idx] : null;
+    // R1 §12 - the option index resolves to a canonical factory_stock record, and that record must belong
+    // to the SELECTED factory. A mismatch means the list is stale relative to the Factory selector, so the
+    // selection is refused rather than committed against whatever row the index happens to point at.
+    if (rec && _factoryAdjustFactoryId && String(rec.warehouseId || '').trim() !== _factoryAdjustFactoryId) rec = null;
     _factoryAdjustSelected = rec;
     var set = function(id, v) { var el = document.getElementById(id); if (el) el.textContent = (v == null || v === '') ? '—' : v; };
     var newEl = document.getElementById('factory-adjust-new');
@@ -1405,12 +1481,106 @@ function _factoryAdjustUpdateValidity() {
     var noteEl = document.getElementById('factory-adjust-note');
     var noteOk = noteEl && String(noteEl.value).trim() !== '';
     // Confirm enabled only when: a record is loaded, New Available is a valid int != current, note is filled.
-    var valid = !!rec && nv.ok && nv.value !== Number(rec.availableStock || 0) && noteOk && !_factoryAdjustSubmitting;
+    // R1 §8: and NEVER once the adjustment has committed. Without that last clause the Reason field's own
+    // oninput re-armed this button after success - with the stale pre-write record still in hand, so the
+    // "different from current" test passed and the button came back live under the word "Done".
+    var valid = !!rec && nv.ok && nv.value !== Number(rec.availableStock || 0) && noteOk
+        && !_factoryAdjustSubmitting && !_factoryAdjustCommitted;
     btn.disabled = !valid;
 }
 
+// ============================================================================================================
+// R1 §3/§4 - WRITE TRUTH FOR THE FACTORY ADJUSTMENT.
+//
+// The four outcome classes are the SHARED ones (S3-R10, already used by the pricing write): no fifth
+// vocabulary is introduced here.
+//
+//   CONFIRMED_COMMITTED    the row holds the adjustment
+//   CONFIRMED_REJECTED     the SERVER answered and refused; 21_ validates everything before the first
+//                          cell is touched, so a refusal really is a zero write
+//   CONFIRMED_NOT_STARTED  the request never went out
+//   OUTCOME_UNKNOWN        the row cannot be read back; NOT a claim that nothing was written
+//
+// THE WRITE IDENTITY IS THE TARGET STATE, and that is what makes verification possible without a new
+// column, a new action or a second writer. This adjustment is an ABSOLUTE SET - the client sends
+// new_available, never a delta - so "did it commit?" is answered by reading the row and comparing
+// available to the target. A delta write could not be verified this way; this one can.
+//
+// Note what is NOT used as evidence: the HTTP status, and the router's own `zero_write`. A doGet answer
+// saying zero_write is telling the truth about the GET leg it handled, while doPost ran - and committed -
+// before the redirect that produced that GET ever existed. Trusting it is precisely how a committed
+// adjustment was reported as a failure.
+// ============================================================================================================
+
+// The typed code, never the message text (§6 forbids patching around this with string matching).
+function _factoryAdjustTransportCode(result) {
+    var t = result && result.transport;
+    return (t && t.code) ? String(t.code) : '';
+}
+
+// ONE bounded read, through an owner that already exists in each mode. It never writes, never locks and
+// never resends. If it cannot answer, the outcome stays unknown - a failed verification is not a verdict.
+function _factoryAdjustReadbackAvailable(warehouseId, sku) {
+    var find = function () {
+        var rows = _getDbFactoryStockData() || [];
+        for (var i = 0; i < rows.length; i++) {
+            if (String(rows[i].warehouseId || '') === String(warehouseId) && String(rows[i].sku || '') === String(sku)) {
+                return Number(rows[i].availableStock || 0);
+            }
+        }
+        return null;
+    };
+    try {
+        if (_fsScopedActive() && window.KM.DB.loadScopedTables) {
+            return window.KM.DB.loadScopedTables(['factory_stock']).then(function (m) {
+                _fsReadModel = _fsReadModel ? Object.assign({}, _fsReadModel, { factoryStock: m.factoryStock }) : m;
+                return find();
+            }).catch(function () { return null; });
+        }
+        if (window.KM && window.KM.DB && typeof window.KM.DB.refreshFactoryStockTables === 'function') {
+            return window.KM.DB.refreshFactoryStockTables().then(find).catch(function () { return null; });
+        }
+    } catch (e) {}
+    return Promise.resolve(null);
+}
+
+// ctx = { warehouseId, sku, before, target }
+function _factoryAdjustSettle(result, ctx) {
+    if (result && result.success) {
+        return Promise.resolve({ outcome: 'CONFIRMED_COMMITTED', data: result.data || {} });
+    }
+    var code = _factoryAdjustTransportCode(result);
+    if (code === 'BACKEND_BUSINESS_REJECTION') {
+        return Promise.resolve({ outcome: 'CONFIRMED_REJECTED',
+            message: (result && result.error) || 'The adjustment was rejected.' });
+    }
+    // No transport record at all means the canonical dispatcher never produced an attempt - the request
+    // was never sent. That is an inference from structure, not from a message.
+    if (!code) {
+        return Promise.resolve({ outcome: 'CONFIRMED_NOT_STARTED',
+            message: (result && result.error) || 'The adjustment was not sent. Nothing was written.' });
+    }
+    // A DELIVERY fault. It proves nothing about the row, so the row is asked.
+    return _factoryAdjustReadbackAvailable(ctx.warehouseId, ctx.sku).then(function (avail) {
+        if (avail !== null && avail === ctx.target) {
+            return { outcome: 'CONFIRMED_COMMITTED', data: {}, recovered: true };
+        }
+        if (avail !== null && avail === ctx.before) {
+            return { outcome: 'CONFIRMED_NOT_STARTED',
+                message: 'The answer was lost, and Available is still ' + ctx.before.toLocaleString()
+                    + ', so the adjustment was NOT applied. Nothing was written — you can confirm it again.' };
+        }
+        return { outcome: 'OUTCOME_UNKNOWN',
+            message: 'The answer to this adjustment was lost and the result could not be confirmed. '
+                + 'It may or may not have been applied. Do NOT submit it again yet — close this dialog, '
+                + 'refresh Factory Inventory and check the current Available and the Movement Log first.' };
+    });
+}
+
 function confirmFactoryInventoryAdjustment() {
-    if (_factoryAdjustSubmitting) return;              // double-submit guard (Part D rule 5)
+    // R1 §20: the double-submit guard now also refuses a click after the adjustment has committed, so a
+    // second Confirm cannot ride in behind a success.
+    if (_factoryAdjustSubmitting || _factoryAdjustCommitted) return;
     var rec = _factoryAdjustSelected;
     var nv = _factoryAdjustNewValue();
     var noteEl = document.getElementById('factory-adjust-note');
@@ -1434,27 +1604,65 @@ function confirmFactoryInventoryAdjustment() {
     _factoryAdjustSubmitting = true;
     var btn = document.getElementById('factory-adjust-confirm-btn');
     if (btn) { btn.disabled = true; btn.textContent = 'Applying…'; }
+    // The verification context, captured BEFORE the request so a lost answer can still be settled: the
+    // canonical record identity, the balance we are leaving, and the absolute target we are asking for.
+    var ctx = { warehouseId: String(rec.warehouseId || ''), sku: String(rec.sku || ''),
+        before: Number(rec.availableStock || 0), target: nv.value };
 
-    window.KM.DB.adjustFactoryInventory({
+    // Returned so the settlement is awaitable. The inline onclick ignores it; a caller that needs to
+    // know when the outcome is settled - a test, or any later sequencing - cannot work without it.
+    return window.KM.DB.adjustFactoryInventory({
         warehouse_id: rec.warehouseId,
         sku: rec.sku,
         new_available: nv.value,
         note: note,
         reference_id: reference,
         created_by: 'operation-system'          // Phase 1 runtime identity; not user-entered
-    }).then(function(result) {
+    }).then(function (result) {
+        return _factoryAdjustSettle(result, ctx);
+    }, function (err) {
+        // A THROW is not a verdict either. _kmCanonicalWrite_ throws only when the shared transport is
+        // absent, which means nothing was dispatched; anything else reaching here is settled by the row.
+        if (err && err.__kmNotSent) return { outcome: 'CONFIRMED_NOT_STARTED', message: err.message };
+        return _factoryAdjustSettle({ success: false, error: (err && err.message) || 'Adjustment request failed.',
+            transport: { code: 'CLIENT_EXCEPTION' } }, ctx);
+    }).then(function (settled) {
         _factoryAdjustSubmitting = false;
-        if (!result || result.success === false) {
+        if (settled.outcome !== 'CONFIRMED_COMMITTED') {
+            // Modal stays OPEN and Confirm comes back, because every one of these is a state the operator
+            // can still act on. OUTCOME_UNKNOWN says so without claiming the write did or did not land,
+            // and nothing here resends anything.
             if (btn) { btn.disabled = false; btn.textContent = 'Confirm Adjustment'; }
-            show(result && result.error ? result.error : 'Adjustment failed. API may not be configured.', true);
+            show(settled.message || 'Adjustment failed.', true);
+            _factoryAdjustUpdateValidity();
             return;
         }
-        var d = result.data || {};
-        show('<div style="color:#16a34a;font-weight:600;margin-bottom:4px;">Adjustment applied.</div>' +
-            '<div>Movement: ' + _fmvEscapeHtml(d.movement_id || '') + '</div>' +
-            '<div>Reference: ' + _fmvEscapeHtml(d.reference_id || '') + '</div>' +
-            '<div>Available: ' + _fmvEscapeHtml(String(d.before_available)) + ' &rarr; ' + _fmvEscapeHtml(String(d.after_available)) + ' (' + _fmvSignedQty(d.quantity) + ')</div>', false);
-        if (btn) { btn.textContent = 'Done'; }
+        _factoryAdjustCommitted = true;                 // one-way; only reopening clears it
+        var d = settled.data || {};
+        var lines = ['<div style="color:#16a34a;font-weight:600;margin-bottom:4px;">Adjustment applied.</div>'];
+        if (d.movement_id) lines.push('<div>Movement: ' + _fmvEscapeHtml(d.movement_id) + '</div>');
+        if (d.reference_id) lines.push('<div>Reference: ' + _fmvEscapeHtml(d.reference_id) + '</div>');
+        if (d.before_available !== undefined && d.after_available !== undefined) {
+            lines.push('<div>Available: ' + _fmvEscapeHtml(String(d.before_available)) + ' &rarr; '
+                + _fmvEscapeHtml(String(d.after_available)) + ' (' + _fmvSignedQty(d.quantity) + ')</div>');
+        } else {
+            lines.push('<div>Available: ' + _fmvEscapeHtml(String(ctx.before)) + ' &rarr; '
+                + _fmvEscapeHtml(String(ctx.target)) + ' (' + _fmvSignedQty(ctx.target - ctx.before) + ')</div>');
+        }
+        if (settled.recovered) {
+            // The receipt was lost, so no movement id is shown. Inventing one would be worse than
+            // admitting the delivery failed, and the Movement Log is where the real row can be seen.
+            lines.push('<div style="margin-top:4px;">The reply was lost in transit, so this was confirmed by '
+                + 'reading the record back. See the Movement Log for the recorded entry.</div>');
+        }
+        show(lines.join(''), false);
+        // §8: Confirm LEAVES, Done arrives. The submit handler is no longer reachable from this dialog.
+        if (btn) btn.hidden = true;
+        var doneBtn = document.getElementById('factory-adjust-done-btn'); if (doneBtn) doneBtn.hidden = false;
+        var cancelBtn = document.getElementById('factory-adjust-cancel-btn'); if (cancelBtn) cancelBtn.hidden = true;
+        // The form is settled; freeze its inputs so nothing can be edited into a committed adjustment.
+        ['factory-adjust-factory', 'factory-adjust-record', 'factory-adjust-new', 'factory-adjust-note', 'factory-adjust-reference']
+            .forEach(function (id) { var el = document.getElementById(id); if (el) el.disabled = true; });
         // F1-7J-A3: the writer re-GET the broad cache; canonical mode re-reads the SCOPED tables before re-render (keeps
         // filters); refresh the movement log if its tab is visible so the new row shows immediately.
         var root = document.querySelector('#factory-stock-section');
@@ -1464,15 +1672,12 @@ function confirmFactoryInventoryAdjustment() {
             var movVisible = movPanel && movPanel.style.display !== 'none';
             if (movVisible) { _factoryMovementSearched = true; renderFactoryMovementTable(root); }
         });
-    }).catch(function(err) {
-        _factoryAdjustSubmitting = false;
-        if (btn) { btn.disabled = false; btn.textContent = 'Confirm Adjustment'; }
-        show(err && err.message ? err.message : 'Adjustment request failed.', true);
     });
 }
 
 window.openFactoryInventoryAdjustModal = openFactoryInventoryAdjustModal;
 window.closeFactoryInventoryAdjustModal = closeFactoryInventoryAdjustModal;
+window.onFactoryAdjustFactoryChange = onFactoryAdjustFactoryChange;
 window.onFactoryAdjustRecordChange = onFactoryAdjustRecordChange;
 window.onFactoryAdjustQtyInput = onFactoryAdjustQtyInput;
 window.confirmFactoryInventoryAdjustment = confirmFactoryInventoryAdjustment;

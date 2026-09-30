@@ -153,7 +153,10 @@ console.log('\n== §17 error semantics: a FAILED write never invalidates (seam i
 // success-gated writers: the seam is wrapped in `if (json && json.success) { ... }`.
 ['confirmShipmentAndDispatch', 'updateShipmentReceipt', 'advanceShipmentRoutePoint', 'updateShipmentEta', 'importMarketplaceSkusBatch', 'importFcRegularForecastBatch', 'importOverseasInventorySnapshotBatch', 'adjustOverseasInventory', 'adjustFactoryInventory', 'importFcSpecialEventsBatch'].forEach(function (name) {
   // tolerate both the single-line and multi-line `if (json && json.success) { await _kmWriterPostWrite_(); }` forms.
-  ok(/if \(json && json\.success\) \{\s*await _kmWriterPostWrite_\(\);\s*\}/.test(bodies[name]), name + ': seam fires only when json.success (no invalidation on failure)');
+  // FACTORY-INVENTORY-ADJUSTMENT-STABILITY-R1: adjustFactoryInventory now receives the CANONICAL WRITE
+  // ENVELOPE rather than a parsed JSON body, so its variable is `res`, not `json`. The requirement is
+  // unchanged and still enforced here - the seam must be reachable ONLY through a success test.
+  ok(/if \((json|res) && \1\.success\) \{\s*await _kmWriterPostWrite_\(\);\s*\}/.test(bodies[name]), name + ': seam fires only on success (no invalidation on failure)');
 });
 
 // ===================================================================================================================

@@ -6475,8 +6475,13 @@ function _kmNextWriteRequestId_() { _KM_WRITE_RID_SEQ_++; return 'REQ-W' + ('000
 async function _kmCanonicalWrite_(action, payload) {
     var tp = _kmSharedTransport_();
     if (!tp || typeof tp.request !== 'function') {
-        throw new Error(action + ' was not sent: the shared transport is not loaded, so the action could not be'
+        // CONFIRMED_NOT_STARTED, marked structurally. A caller settling write truth must be able to tell
+        // "never dispatched" from "dispatched and the answer was lost" without reading this sentence.
+        var _ns = new Error(action + ' was not sent: the shared transport is not loaded, so the action could not be'
             + ' carried where a redirect cannot drop it. Nothing was written.');
+        _ns.__kmNotSent = true;
+        _ns.zero_write = true;
+        throw _ns;
     }
     var res = null;
     for (var attempt = 1; attempt <= 2; attempt++) {
@@ -6744,23 +6749,47 @@ window.KM.DB.adjustOverseasInventory = async function(payload) {
 // factory_stock_movements row atomically on the backend. Frontend sends the NEW available only;
 // the backend computes qty and generates all ids/timestamps. On success the DB cache is reloaded
 // so the snapshot + movement log re-render from the real tables (never a front-end-only patch).
+//
+// FACTORY-INVENTORY-ADJUSTMENT-STABILITY-R1 §2 - THIS WRITE LEAVES THE RAW fetch().
+//
+// THE LIVE DEFECT. The call above carried its action ONLY in the POST body. An Apps Script /exec
+// POST is always answered with a 302 to script.googleusercontent.com, and per the Fetch spec a 302
+// following a POST is re-issued as a GET WITH THE BODY DROPPED. doPost has ALREADY RUN by then -
+// the adjustment is committed - and only the delivery of its answer is at risk. Two things could
+// then happen, and the operator reported both, verbatim:
+//
+//   * the redirect chain resolves back to /exec, reaching doGet with nothing, and 01_router.gs
+//     answers its terminal "Missing or invalid action parameter. Use: getOperationDb, getTable,
+//     system.health or inventoryScope.registry.get" - which this accessor handed to the page as
+//     the adjustment's own error;
+//   * the single-use echo target has expired and answers 404 HTML, which `if (!resp.ok) throw new
+//     Error('API returned ' + resp.status)` reported as "Error: API returned 404".
+//
+// In BOTH the row was already written. The transport had no vocabulary for "the write may have
+// committed", so a delivery fault was reported as a write failure. That is a write-truth defect,
+// not a cosmetic one.
+//
+// WHAT CHANGES. Only the dispatch: _kmCanonicalWrite_ - the same one every other command in this
+// file uses. The write stays a POST with its payload in the BODY; the action and request id also
+// travel in the QUERY, for correlation only, which is what lets the router answer
+// POST_ONLY_ACTION_ON_GET instead of an anonymous missing parameter and lets the classifier type
+// the fault. The PAYLOAD IS UNCHANGED and the backend handler is untouched.
+//
+// WHAT THIS DOES NOT DO. It does not settle the outcome. A typed transport fault is still
+// INDETERMINATE for this action, and the caller - not this accessor - performs the bounded
+// authoritative readback. `transport` is returned so the caller can tell a SERVER refusal (which is
+// authoritative: 21_ validates every field before the first cell is touched) from a DELIVERY fault
+// (which proves nothing about the row) WITHOUT matching on message text.
 window.KM.DB.adjustFactoryInventory = async function(payload) {
     if (!isOperationDbApiConfigured()) {
         console.warn('[KM.DB] API not configured, adjustFactoryInventory skipped');
         return { success: false, error: 'API not configured' };
     }
-    var resp = await fetch(OP_DB_API_BASE_URL, {
-        method: 'POST',
-        cache: 'no-store',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify(Object.assign({ action: 'adjustFactoryInventory' }, payload))
-    });
-    if (!resp.ok) throw new Error('API returned ' + resp.status);
-    var json = await resp.json();
-    if (json && json.success) {
+    var res = await _kmCanonicalWrite_('adjustFactoryInventory', payload || {});
+    if (res && res.success) {
         await _kmWriterPostWrite_();
     }
-    return json;
+    return res;
 };
 
 // ========================================
