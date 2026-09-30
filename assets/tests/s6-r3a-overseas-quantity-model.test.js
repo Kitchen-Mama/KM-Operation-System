@@ -71,7 +71,11 @@ var KMFSG = require(path.join(ROOT, CORE + 'supply-planning-factory-stock-guard.
 // whole-document regex gets wrong.
 var PARTV_AT = CONTRACT.indexOf('# PART V — S6-R3A');
 var PARTIV_AT = CONTRACT.indexOf('# PART IV — S6-R3');
-var PARTV = PARTV_AT < 0 ? '' : CONTRACT.slice(PARTV_AT);
+// Bounded at the NEXT Part for the same reason PART IV is excluded: a later amendment must not be able
+// to satisfy an R3A assertion. R3B's PART VI restates several of these tokens.
+var PARTVI_AT = CONTRACT.indexOf('# PART VI — ');
+var PARTV = PARTV_AT < 0 ? ''
+  : (PARTVI_AT > PARTV_AT ? CONTRACT.slice(PARTV_AT, PARTVI_AT) : CONTRACT.slice(PARTV_AT));
 var PARTIV = (PARTIV_AT < 0 || PARTV_AT < 0) ? '' : CONTRACT.slice(PARTIV_AT, PARTV_AT);
 
 function tokenRe(token, value) {

@@ -992,8 +992,9 @@ it is not decidable from the repository:
 
 ```
 IMPORT_AMBIGUITY_COUNT = 1
-UNRESOLVED_IMPORT_DECISION_COUNT = 1
+UNRESOLVED_IMPORT_DECISION_COUNT = 1   [SUPERSEDED BY R3B — now 0; see PART VI §48]
 GATE = IMPORT_AVAILABLE_SEMANTIC   STATUS = OPEN — OPERATOR DECISION REQUIRED
+                                   [RESOLVED BY R3B — Option I / GROSS frozen; see PART VI §40]
 ```
 
 | OPTION | STORED AVAILABLE | RESERVED | 70/30 + refresh(100) | COST |
@@ -1136,8 +1137,8 @@ SHIPPING_TO_ORDERING_AUTO_ORCHESTRATION = NO
 
 ```
 S6_OVERSEAS_QUANTITY_MODEL_FREEZE = YES
-UNRESOLVED_IMPORT_DECISION_COUNT = 1
-S6_R4_RUNTIME_IMPLEMENTATION_AUTHORIZED = NO
+UNRESOLVED_IMPORT_DECISION_COUNT = 1     [SUPERSEDED BY R3B — now 0; see PART VI §48]
+S6_R4_RUNTIME_IMPLEMENTATION_AUTHORIZED = NO   [SUPERSEDED BY R3B — now YES; see PART VI §48]
 BEHAVIOR_CHANGED = NO   PRODUCTION_ROWS_WRITTEN = 0   DB_MIGRATION_REQUIRED = NO
 S5_READY_FOR_INTEGRATION = YES   S5_DEPLOYMENT = HOLD   S6_DEPLOYMENT = HOLD
 NEXT_TASK = S6-R3B — IMPORT_AVAILABLE_SEMANTIC decision gate (§34), then S6-R4B
@@ -1145,3 +1146,310 @@ NEXT_TASK = S6-R3B — IMPORT_AVAILABLE_SEMANTIC decision gate (§34), then S6-R
 
 The quantity model is frozen and the schema gate is clean. R4B is held on one open business decision —
 §34's gate — because R4 must land as one change and the importer is inside it.
+
+# PART VI — S6-R3B IMPORT AVAILABLE SEMANTIC DECISION FREEZE
+
+```
+ROUND = S6-R3B   MODE = CONTRACT / BUSINESS-SEMANTICS DECISION FREEZE
+BEHAVIOR_CHANGED = NO   PRODUCTION_ROWS_WRITTEN = 0   RUNTIME_IMPLEMENTED = NONE
+SUPERSEDES = §34's open gate (annotated in place, not rewritten)
+```
+
+R3A froze the quantity model and stopped at one sentence it could not write: what an imported `available`
+figure means when KM already holds a reservation. The operator has now written it. PART VI records the
+decision, derives everything that follows from it, and implements no runtime.
+
+## §40. The operator decision, frozen
+
+```
+D_S6_IMPORT_AVAILABLE_SEMANTIC = GROSS          STATUS = FROZEN
+```
+
+The `available` quantity an Overseas Inventory import supplies is the **source-reported** available quantity
+**before** KM's internal reservation is applied. This is §34's Option I, and the operational facts behind it
+are now stated by the operator rather than inferred:
+
+```
+EXTERNAL_SOURCE_KNOWS_KM_RESERVATION = NO
+OUTBOUND_RESERVATION_SYNC_EXISTS = NO
+CURRENT_IMPORT_COVERAGE = primarily initial available stock
+DAMAGED_REWORK_AUTHORITATIVE_IMPORT_FLOW = NOT_YET_POPULATED
+KM_RESERVATION_LIFECYCLE = SYSTEM_OWNED, SEPARATE
+```
+
+GROSS is **not** a reinterpretation of `wh_physical_stock`. Physical remains outside Phase-1 operational
+arithmetic, exactly as §31 and §32 froze it. A source figure counting the units KM is holding is not the same
+statement as a warehouse's physical count, and nothing in this amendment moves physical into the arithmetic.
+
+## §41. The frozen import arithmetic
+
+Given a source row reporting `available = S` and a canonical row holding `wh_reserved_stock = R`:
+
+```
+GUARD             refuse the row when S < R          <- evaluated FIRST
+wh_available_stock := S - R
+wh_reserved_stock  := R                              <- unchanged; import never writes it
+wh_physical_stock  := untouched                      <- never in this arithmetic
+```
+
+```
+IMPORT_AVAILABLE_FORMULA = S - R
+IMPORT_WRITES_RESERVED = NO
+ALLOCATABLE_OVERSEAS_QTY = wh_available_stock        (NOT available - reserved)
+```
+
+**§2 of the task and §5 of the task meet here, and the order settles them.** §2 writes the stored value as
+`max(0, S - R)`; §5 forbids silently clamping. Both hold only if the refusal is checked **before** the
+subtraction — then `S - R` is never negative and the floor never engages. Apply the floor first and §5 is
+violated by construction: `max(0, 20 - 30)` is a silent clamp wearing a formula's clothes, and it erases ten
+reserved units by arithmetic instead of by assignment.
+
+```
+CLAMP_REACHABLE_UNDER_GUARD = NO
+IMPORT_AVAILABLE_CLAMP = NOT_REQUIRED   (redundant given the guard; the GUARD is the safety property)
+```
+
+The guard is what is frozen. Whether R4B additionally writes a `max(0, …)` floor is an implementation
+detail with no reachable behaviour — but a floor that exists invites a later reordering to reach it, so the
+contract names the guard and not the floor as the thing that must be true.
+
+The worked case, end to end:
+
+```
+canonical   available 70   reserved 30
+source      available 100
+post-import available 70   reserved 30        <- S - R = 100 - 30
+
+NOT 100 / 30   (130 units held against 100 — §34's forbidden state, reached by preservation alone)
+NOT 100 / 0    (the reservation erased)
+```
+
+## §42. Source semantic is not operational semantic
+
+```
+SOURCE_AVAILABLE_SEMANTIC    = gross, source-reported, BEFORE KM reservation
+CANONICAL_AVAILABLE_SEMANTIC = operational, AFTER KM reservation has moved units out of it
+```
+
+The import field named `available` and the canonical column `wh_available_stock` share a word and not a
+meaning. They coincide exactly while `R = 0`, which is every row in production today, and that coincidence is
+why the defect has never been visible: the moment the first reservation exists the two diverge by `R`.
+
+```
+COLUMN_RENAME_IN_THIS_ROUND = NO
+NEW_COLUMNS_REQUIRED = NONE
+```
+
+No column is added to carry the distinction, because the distinction is between an **input** and a **stored
+value**, and a stored value already exists for each. A column holding "the last source-reported gross figure"
+would be a second availability authority, which §8 forbids and §34 already ruled out.
+
+## §43. Importer ownership — the three reserved cases, frozen
+
+Both owners are unchanged from §33 and both were re-read this round:
+
+```
+IMPORTER_CLIENT_NORMALIZATION_OWNER = assets/js/pages/overseas-stock.js
+                                      OVERSEAS_QTY_FIELDS loop (blank AND absent -> 0) + import template
+IMPORTER_SERVER_WRITE_OWNER         = 05_overseas_inventory_handlers.gs
+                                      handleImportOverseasInventorySnapshotBatch_ qtyFields loop, BOTH branches
+```
+
+Today, on both sides, three distinct operator intents collapse into one request:
+
+| OPERATOR INTENT | CLIENT TODAY | SERVER TODAY | REACHES THE SHEET AS |
+|---|---|---|---|
+| column absent from the file | `ci === -1` -> `''` -> `0` | `sv === ''` -> `0` | `0` |
+| cell present but blank | `''` -> `0` | `''` -> `0` | `0` |
+| operator wrote `0` | `0` | `0` | `0` |
+
+The frozen target separates them, and for `wh_reserved_stock` it collapses them the other way — to *no
+write at all*:
+
+```
+MISSING_RESERVED         -> PRESERVE canonical R   (no write)
+BLANK_RESERVED           -> PRESERVE canonical R   (no write) — blank NEVER means "clear the reservation"
+EXPLICIT_SOURCE_RESERVED -> IGNORED as write authority
+```
+
+**§4 asks whether the safest target is to stop accepting reserved as an import authority once the canonical
+row exists. It is safer still to stop accepting it at all**, and the new-row case is the reason. A source
+that reports `reserved = 5` on a SKU KM has never reserved is reporting *the source's own* holdback, not a KM
+reservation; writing it would mint a KM reservation KM does not own and immediately hide five units from
+allocation with no lifecycle able to release them. So:
+
+```
+IMPORT_WRITES_RESERVED = NO   (unconditionally — new rows and existing rows alike)
+NEW_ROW_RESERVED_SOURCE = row initialization (0), NOT the import payload
+```
+
+An explicitly supplied source `reserved` is not an error and is not written. R4B may surface it as an
+advisory diagnostic on the row result; it may not reach a cell.
+
+## §44. New row vs existing row
+
+The two cases are separated by the lookup the handler already performs (`bkToRow[warehouse_id|sku]`). No new
+read, no new key, no second resolution path.
+
+| CASE | R BEFORE | SOURCE S | RESULT | WHY |
+|---|---|---|---|---|
+| NEW row | none | 100 | `available 100 / reserved 0` | `S - 0`; reserved initialized, not imported |
+| EXISTING, no reservation | 0 | 100 | `available 100 / reserved 0` | `S - 0`; identical arithmetic, not a special case |
+| EXISTING, reserved 30 | 30 | 100 | `available 70 / reserved 30` | `S - R` |
+| EXISTING, fully reserved | 100 | 100 | `available 0 / reserved 100` | `S - R = 0`; nothing allocatable, nothing lost |
+| EXISTING, contradiction | 30 | 20 | **refused, no mutation** | §45 |
+
+```
+NEW_ROW_BEHAVIOR      = available := S      reserved := 0
+EXISTING_ROW_BEHAVIOR = available := S - R  reserved := R (untouched)
+ONE_ARITHMETIC_TWO_CASES = YES   (the new row is R = 0, not a different rule)
+```
+
+The new row is not given its own formula. It is the existing formula with `R = 0`, which is the property that
+makes a re-import of a row that has since acquired a reservation behave correctly without anyone remembering
+to update a second code path.
+
+## §45. Contradiction — fail closed
+
+```
+CONDITION   S < R
+BEHAVIOR    the row is REFUSED and NOTHING on it is written
+CODE        IMPORT_RESERVATION_EXCEEDS_SOURCE_AVAILABLE
+SHAPE       per-row result { status: 'error', code: <token>, message, snapshot_id: '' }
+SCOPE       ROW-level. The batch continues; other rows import normally.
+```
+
+Four outcomes are forbidden by name, because each one is a plausible-looking way to make the number fit:
+
+```
+NEGATIVE_AVAILABLE_WRITTEN     = NO
+RESERVED_SILENTLY_REDUCED      = NO
+AVAILABLE_SILENTLY_CLAMPED     = NO
+PHYSICAL_INVENTED_TO_BALANCE   = NO
+```
+
+**Vocabulary.** The existing tokens were surveyed before a new one was named: `INSUFFICIENT_FACTORY_STOCK` is
+the factory-domain refusal for a withdrawal larger than a balance; `FACTORY_RESERVATION_LEDGER_MISMATCH` is a
+consistency check inside a reservation ledger; `IMPORT_WAREHOUSE_SCOPE_INVALID` / `_MISMATCH` are this
+handler's own import refusals. None of them means *a source figure contradicts a reservation this system
+owns*, so one token is added rather than an existing one bent to fit.
+
+```
+EXISTING_TOKEN_REUSED = NO   (surveyed; no equivalent)
+NEW_TOKENS_ADDED = 1
+NAMING_CONVENTION_SOURCE = 05_'s own IMPORT_* row/scope refusal prefix
+```
+
+Row-level and not batch-level, deliberately. The batch-level gate in this handler exists for a scope error
+that makes the *whole file* wrong. A contradiction on one SKU says nothing about the other rows, and failing
+the batch would stop a routine refresh from updating dozens of correct rows because one SKU is under
+shipment — which is §34's Option III cost, arriving through the back door.
+
+```
+BUSINESS_DECISION_BEYOND_GROSS_REQUIRED = NO
+```
+
+The refusal follows from GROSS without a further decision: under GROSS, `S < R` asserts that the source holds
+fewer units than KM has already committed, and there is no truthful post-import state — so the truthful act is
+to write nothing and say which row and why.
+
+## §46. Import template contract
+
+```
+IMPORT_TEMPLATE_DECISION = A — REMOVE `reserved_stock` FROM THE SHIPPED TEMPLATE
+```
+
+The shipped template today emits a `reserved_stock` column commented *"Number >= 0. Blank = 0."* with an
+example row carrying `0`. Under GROSS that is a file instructing the operator to clear a KM-owned lifecycle
+value, and the comment states the exact rule §43 forbids.
+
+Option B — keep the column, ignore it as a write authority — was rejected for one reason: a column that is
+shipped, filled in, uploaded and then silently discarded teaches the operator that they control a number they
+do not. The template is documentation that happens to be a file.
+
+```
+IMPORT_TEMPLATE_RESERVED_COLUMN = REMOVED
+IMPORT_TEMPLATE_BLANK_COMMENT = "Blank = leave unchanged"   (for the remaining quantity columns)
+TEMPLATE_REMOVAL_IS_SUFFICIENT = NO
+```
+
+**Removal is necessary and not sufficient**, and this is the same shape of finding as §34's. The template is
+not the only way a file acquires a column: an operator-built or previously-downloaded file may still carry
+`reserved_stock`, and the client resolves columns by header name, not by template. The guarantee is §43's
+server-side rule that reserved is never written. The template removal stops the system *teaching* the hazard;
+the code change stops it *being* one.
+
+## §47. Ownership and the authorization boundary — restated, unchanged
+
+```
+KM_RESERVATION_AUTHORITY_COUNT = 1          OWNER = the S6-R4B reservation lifecycle
+IMPORTER_IS_RESERVATION_OWNER = NO
+RECEIVING_IS_RESERVATION_OWNER = NO
+EXTERNAL_SOURCE_IS_RESERVATION_OWNER = NO
+SECOND_RESERVATION_LIFECYCLE = NONE
+SECOND_AVAILABILITY_CALCULATION_PATH = NONE
+```
+
+```
+RECOMMENDATION_RESERVES_INVENTORY = NO
+SCHEDULED_CALCULATION_RESERVES_INVENTORY = NO
+RESERVATION_ACQUIRED_ONLY_BY = the authorized shipping execution path
+AUTO_CREATE_SHIPMENT = NO   AUTO_SUBMIT_SHIPPING_PLAN = NO
+REQUEST_ORDER_TOUCHED = NO  PO_TOUCHED = NO
+S5_S6_AUTHORITY_SEPARATION = INTACT
+```
+
+Automation calculates and recommends; Submit is the human authorization boundary. This amendment moves
+nothing across it.
+
+## §48. Schema gate and position after R3B
+
+```
+NEW_TABLE_REQUIRED = NO        SCHEMA_EXTENSION_REQUIRED = NO
+DB_MIGRATION_REQUIRED = NO     NEW_COLUMNS_REQUIRED = NONE
+BACKFILL_REQUIRED = NO         TABLES_AFFECTED = NONE
+DB_CHANGE_DECISION_REQUIRED = NO
+```
+
+Nothing in GROSS needs a column. `S` is an input and is not stored; `R` is stored and is not written by the
+import; the subtraction happens in the handler between a payload value and a cell it already reads.
+
+```
+BACKFILL_REQUIRED = NO — and the reason is worth recording: every production overseas row has
+wh_reserved_stock = 0 today, so S - R === S for all of them and no historical row is mis-stated by the
+frozen semantic. The decision has no retroactive effect. It has only a forward one.
+```
+
+### What GROSS changes about R4B's ordering
+
+One consequence is worth carrying into R4B, because it re-prioritises §38's owner F. Freezing
+`IMPORT_WRITES_RESERVED = NO` makes the **client's** blank-and-absent collapse harmless *for reserved* — the
+server will ignore that field whatever the client puts on the payload. It does nothing for the other three:
+
+```
+CLIENT_COLLAPSE_BLAST_RADIUS_AFTER_R3B:
+  wh_reserved_stock   NEUTRALISED by the server-side ignore
+  wh_available_stock  UNCHANGED — a file missing the column still zeroes available (or, with R > 0,
+                      now trips §45's guard and refuses, which is safer but is not the fix)
+  wh_damaged_stock    UNCHANGED
+  wh_on_the_way_qty   UNCHANGED
+```
+
+So the client fix is still required and is still inside the one atomic change; what changed is that the
+server rule now protects the one bucket that had a lifecycle, and the client rule protects the three that do
+not.
+
+```
+S6_OVERSEAS_QUANTITY_MODEL_FREEZE = YES
+S6_IMPORT_SEMANTIC_FREEZE = YES
+UNRESOLVED_IMPORT_DECISION_COUNT = 0
+OPEN_S6_BLOCKERS = NONE
+S6_R4_RUNTIME_IMPLEMENTATION_AUTHORIZED = YES
+BEHAVIOR_CHANGED = NO   PRODUCTION_ROWS_WRITTEN = 0   DB_MIGRATION_REQUIRED = NO
+S5_DEPLOYMENT = HOLD    S6_DEPLOYMENT = HOLD
+NEXT_TASK = S6-R4B — overseas availability + reserve/release/consume + shipping-source enablement
+```
+
+R4B inherits §38's eight owners unchanged, plus three obligations from this round: the §41 guard evaluated
+before the subtraction, the `IMPORT_RESERVATION_EXCEEDS_SOURCE_AVAILABLE` token registered where the
+repository registers canonical codes, and the template column removed with the blank comment rewritten.
