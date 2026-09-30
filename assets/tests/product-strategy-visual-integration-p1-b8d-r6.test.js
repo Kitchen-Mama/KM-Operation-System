@@ -558,6 +558,10 @@ var R6_KNOWN_GS_CHANGES = ['assets/specs/active/apps-script/03_master_data_handl
   // field changed, the feature flag is untouched, and 63_ (which carries the R33 release and 05_'s new
   // manifest row) is already declared below. A visual round that touched a handler would still be caught.
   'assets/specs/active/apps-script/05_overseas_inventory_handlers.gs',
+  // S6-R5 — the approved-plan cancellation. 11_ owns shipping plan status and is not reachable from
+  // Product Strategy's read path: no action was added or removed, no capability field changed, and the
+  // feature flag is untouched. 12_ and 63_ are already declared above.
+  'assets/specs/active/apps-script/11_shipping_plan_handlers.gs',
   'assets/specs/active/apps-script/12_shipment_handlers.gs',
   'assets/specs/active/apps-script/22_shipment_dispatch_handlers.gs',
   'assets/specs/active/apps-script/14_fc_write_handlers.gs',

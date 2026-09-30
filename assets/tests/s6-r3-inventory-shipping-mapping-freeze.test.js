@@ -301,15 +301,31 @@ section('H. §19.9 / §19.10 — approved/no-shipment MAY cancel; approved/with-
 // =========================================================================================================
 
 frozen('APPROVED_CANCEL_OWNER', '11_ spUpdateShippingPlanStatusCore_');
-frozen('NO_SHIPMENT_PROOF', 'shipmentFindForPlan_');
+frozen('NO_SHIPMENT_PROOF', 'shipmentStateForPlan_');
 frozen('APPROVED_WITH_SHIPMENT_CAN_CANCEL', 'NO');
 frozen('GHOST_PLAN_EXPOSURE_AFTER_CANCEL', 'NO');
 frozen('APPROVED_CANCEL_SCHEMA_CHANGE_REQUIRED', 'NO');
 
 // The proof of "no shipment exists" must be a DB fact, never UI state.
-var FIND = fnBody(F12, 'shipmentFindForPlan_');
-ok(/getSheetByName\('shipments'\)/.test(FIND) && /shipping_plan_id/.test(FIND),
+//
+// RESTATED (S6-R5): the reading moved. shipmentFindForPlan_ could not answer this question safely — it
+// returned '' for 'no shipment', for 'no shipments sheet' and for 'no plan-reference column' alike, and
+// a cancellation that read the second or third as the first would release the exposure of a plan whose
+// shipment is alive. 12_ now answers in three values and the old function is a projection of it, so the
+// DB read this line is about is in shipmentStateForPlan_.
+var FIND = fnBody(F12, 'shipmentStateForPlan_');
+ok(/getSheetByName\('shipments'\)/.test(FIND) && /SHIPMENT_PLAN_REF_COLUMNS_/.test(FIND),
   'H1 NO_SHIPMENT_PROOF reads the shipments table — not UI state, not the plan\'s own transferred column');
+ok(/SHIPMENT_FOR_PLAN_UNKNOWN_/.test(FIND) && /SHIPMENT_FOR_PLAN_ABSENT_/.test(FIND),
+  'H1a and it separates ABSENT from UNKNOWN, so "could not tell" can never be spent as "there is none"');
+// AND THE DIRECTION THE TRANSFER MARKER IS ALLOWED TO ARGUE IN. The eligibility check reads the plan's
+// own transferred column too — but only to REFUSE. Allowing a cancel always requires the DB read above
+// to return ABSENT, so the marker can make the handler more conservative and never less.
+var ELIG = fnBody(F11, 'spApprovedCancelEligibility_');
+var _markerAt = ELIG.indexOf('if (marker)'), _okAt = ELIG.lastIndexOf('ok: true');
+ok(_markerAt > -1 && _okAt > _markerAt && /SHIPMENT_FOR_PLAN_ABSENT_/.test(ELIG.slice(_markerAt, _okAt)),
+  'H1b the transfer marker only ever REFUSES — the ABSENT finding from the shipments table stands '
+  + 'between it and the one path that allows a cancellation');
 
 // The release mechanism already exists: `cancelled` is in the released set, so setting the status releases
 // the exposure. No new field, no new mechanism — which is why this slice is small.
@@ -324,15 +340,24 @@ eq([Object.keys(cancelReleased.byPool).length, cancelReleased.released.STATUS_RE
 // The audit fields already exist and are already written by the draft/pending cancel path.
 // Anchored on the BRANCH (`} else if (transition === 'cancel') {`), not on the bare comparison — the first
 // occurrence of that comparison in the file belongs to the Combined-Parent guard, which is a different rule.
+// RESTATED (S6-R5): the window was 600 characters, which was the whole branch until the eligibility
+// check landed inside it — after which H4 read a slice that stopped before the audit cells it was
+// looking for, and H5 went on matching a condition that had been widened. A fixed window is a measure
+// of the code's length, not of its shape. The branch is bounded by its own last write instead.
 var CANCEL_AT = code(F11).indexOf("else if (transition === 'cancel')");
-var CANCEL_BRANCH = CANCEL_AT < 0 ? '' : code(F11).slice(CANCEL_AT, CANCEL_AT + 600);
+var _cancelEnd = CANCEL_AT < 0 ? -1 : code(F11).indexOf("setCell('cancelled_at'", CANCEL_AT);
+var CANCEL_BRANCH = CANCEL_AT < 0 || _cancelEnd < 0 ? ''
+  : code(F11).slice(CANCEL_AT, _cancelEnd + 40);
 ok(CANCEL_BRANCH && /cancelled_by/.test(CANCEL_BRANCH) && /cancelled_at/.test(CANCEL_BRANCH),
   'H4 cancelled_by / cancelled_at are already written by the cancel branch');
 
-// TRIPWIRE — today `approved` cannot cancel at all. When R5 lands, this line must change alongside the
-// record, which is the point of stating it as an assertion rather than as prose.
-ok(/curStatus !== 'draft' && curStatus !== 'pending_approval'/.test(CANCEL_BRANCH),
-  'H5 TRIPWIRE — approved -> cancelled is still refused (the D-S6-C escape is still unimplemented)');
+// THE TRIPWIRE FIRED. It said `approved` could not cancel at all and that R5 would have to change this
+// line alongside the record — which is exactly what happened, and is why it was written as an assertion
+// rather than as prose. Note that it would NOT have fired on its own wording: the old condition is a
+// SUBSTRING of the widened one, so it kept matching. It is the bounded branch above that makes this
+// line honest, and the assertion below names the whole set rather than a prefix of it.
+ok(/curStatus !== 'draft' && curStatus !== 'pending_approval' && curStatus !== 'approved'/.test(CANCEL_BRANCH),
+  'H5 [R5] approved -> cancelled is IMPLEMENTED — the D-S6-C escape exists, gated on no Shipment');
 
 // =========================================================================================================
 section('I. §19.11 — shipment_receipt maps to the correct domain vocabulary');

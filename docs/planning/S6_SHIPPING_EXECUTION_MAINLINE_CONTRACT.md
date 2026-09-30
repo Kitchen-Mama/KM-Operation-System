@@ -748,7 +748,7 @@ SOURCE_DOMAIN_COLUMN_REQUIRED = NO
 
 ```
 APPROVED_CANCEL_OWNER = 11_ spUpdateShippingPlanStatusCore_
-NO_SHIPMENT_PROOF = shipmentFindForPlan_
+NO_SHIPMENT_PROOF = shipmentStateForPlan_   [RESTATED BY R5 — was shipmentFindForPlan_; see PART VII §49]
 APPROVED_WITH_SHIPMENT_CAN_CANCEL = NO
 GHOST_PLAN_EXPOSURE_AFTER_CANCEL = NO
 APPROVED_CANCEL_SCHEMA_CHANGE_REQUIRED = NO
@@ -1453,3 +1453,104 @@ NEXT_TASK = S6-R4B — overseas availability + reserve/release/consume + shippin
 R4B inherits §38's eight owners unchanged, plus three obligations from this round: the §41 guard evaluated
 before the subtraction, the `IMPORT_RESERVATION_EXCEEDS_SOURCE_AVAILABLE` token registered where the
 repository registers canonical codes, and the template column removed with the blank comment rewritten.
+
+---
+
+# PART VII — S6-R5: THE APPROVED-PLAN CANCELLATION, IMPLEMENTED
+
+## §49. What R5 changed about §27's frozen tokens
+
+`NO_SHIPMENT_PROOF` named `shipmentFindForPlan_`, and that function could not carry the claim. It answered
+with a string, and the empty string meant three different things: there is no shipment, there is no
+`shipments` sheet in this spreadsheet, and this sheet has no column that references a plan. Every caller it
+had reads all three the same way — as "creation is still pending" — which is safe, because the answer it
+offers is a retry.
+
+Cancellation is the first caller for which they are not the same. It RELEASES exposure, so reading "could
+not tell" as "there is none" would release the hold of a plan whose shipment is alive and reserving
+against it. `12_` therefore answers in three values — `EXISTS` / `ABSENT` / `UNKNOWN` — and
+`shipmentFindForPlan_` became a projection of it with its contract bit-for-bit unchanged, so its existing
+callers did not move.
+
+```
+NO_SHIPMENT_PROOF = shipmentStateForPlan_   (12_, the shipments owner)
+SHIPMENT_STATE_VALUES = EXISTS | ABSENT | UNKNOWN
+ABSENT_IS_A_POSITIVE_FINDING = YES     the sheet was read, it carries a plan reference, no row names it
+UNKNOWN_MAY_BE_SPENT_AS_ABSENT = NO    UNKNOWN refuses; releasing on an assumption is the one mistake
+                                       this path can make
+TRANSFER_MARKER_MAY_ALLOW_A_CANCEL = NO   it may only REFUSE — every allow requires ABSENT from the read
+```
+
+## §50. What R5 did NOT implement, and why
+
+The round's own §3/§4 asked for a reservation release on cancellation, with a worked example: overseas
+`70 / 30`, approved plan cancelled before a Shipment exists, result `100 / 0`. **That state is unreachable
+under the frozen ownership model, and R5 did not manufacture it.**
+
+```
+FACTORY_RESERVATION_OWNER_TYPE  = 'shipment'      (21_, FSTX_RESERVATION_OWNER_TYPE_)
+OVERSEAS_RESERVATION_OWNER_TYPE = 'shipment'      (05_, OVSTX_RESERVATION_OWNER_TYPE_)
+ACQUIRE_CALL_SITES_IN_PROJECT   = 5, all in 12_, all passing a shipment_id as the owner
+PLAN_OWNED_RESERVATION_POSSIBLE = NO
+```
+
+A plan never owns a reservation. The `30` in the example could only have been reserved by a shipment, and
+if a shipment exists the cancellation is refused by §0, §2 and §6. Producing `100 / 0` would require
+either cancelling a plan whose Shipment owns the stock, or giving a plan a reservation of its own — a
+second reservation owner, which the frozen model does not have and which R4B's §11 forbids inventing.
+
+What a plan owns is EXPOSURE, and KMFSG DERIVES that from status:
+
+```
+PLAN_EXPOSURE_STATUSES  = draft | pending_approval | approved      (and NOT transferred)
+PLAN_RELEASED_STATUSES  = cancelled | completed
+PLAN_EXPOSURE_RELEASE_ON_CANCEL = the status write ITSELF — no arithmetic, no movement row
+FACTORY_RESERVATION_RELEASE_ON_CANCEL  = NOT_REACHABLE (a plan holding one has a Shipment; refused)
+OVERSEAS_RESERVATION_RELEASE_ON_CANCEL = NOT_REACHABLE (same reason)
+```
+
+The baton passes exactly once: a plan stops holding exposure in the same moment its shipment starts
+holding a reservation, inside one lock and one journal (R4B §14). There is no window in which both count
+and none in which neither does — which is why `GHOST_PLAN_EXPOSURE_AFTER_CANCEL = NO` needs no new
+mechanism to be true.
+
+## §51. The eligibility contract
+
+```
+APPROVED_WITHOUT_SHIPMENT_CAN_CANCEL = YES
+APPROVED_WITH_SHIPMENT_CAN_CANCEL    = NO
+CANCEL_ELIGIBLE_STATUSES = draft | pending_approval | approved
+SHIPPING_PLAN_STATUS_MUTATION_OWNER       = 11_ spUpdateShippingPlanStatusCore_
+SHIPPING_PLAN_STATUS_MUTATION_OWNER_COUNT = 1
+
+REFUSAL TOKENS (all zero_write, all evaluated BEFORE the first setCell):
+  PLAN_ALREADY_TRANSFERRED_TO_SHIPMENT   the plan recorded a handoff
+  SHIPMENT_EXISTS_FOR_PLAN               the shipments table names one
+  SHIPMENT_EXISTENCE_UNKNOWN             the question could not be answered
+  SHIPMENT_STATE_SEAM_MISSING            12_ is not in this project (a mixed deployment)
+
+CANCEL_WRITE_TRUTH_OWNER = the status read-back, inside 11_'s existing spTxn journal
+CANCEL_ATOMICITY_OWNER   = the same journal + the ScriptLock 11_ already holds
+PARTIAL_CANCEL_COMMIT_REACHABLE = NO — the exposure release and the status change are ONE cell write
+CANCEL_CREATE_RACE_OWNER = the single ScriptLock domain both paths take
+```
+
+## §52. Schema
+
+```
+NEW_TABLE_REQUIRED = NO   NEW_COLUMNS_REQUIRED = NONE   SCHEMA_EXTENSION_REQUIRED = NO
+DB_MIGRATION_REQUIRED = NO   BACKFILL_REQUIRED = NO   DB_CHANGE_DECISION_REQUIRED = NO
+```
+
+`status`, `cancelled_by` and `cancelled_at` already existed and were already written by the draft/pending
+cancel path. R5 writes the same five cells for an approved plan and nothing else — no approved quantity is
+rewritten to ease the transition, and no plan line is touched.
+
+```
+S6_R5_CANCELLATION_SEAL = YES
+NEXT_TASK = S6-R6 — movement / receipt vocabulary + source authority closure
+```
+
+R6 inherits one open item from this round rather than a defect: §50's `NOT_REACHABLE` pair is a statement
+about the CURRENT ownership model. If a later round ever wants a plan to hold stock directly, that is a
+decision about reservation ownership and belongs in a decision round, not in a cancellation handler.
