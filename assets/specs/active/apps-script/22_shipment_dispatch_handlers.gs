@@ -54,7 +54,7 @@
 // A build stamp is only worth declaring if it moves whenever behaviour does. Two rounds now change this file
 // and only one of them said so; the stamp names the later round, because the later round is what a deployment
 // has to be at for the guard to exist.
-var CSD_BUILD_VERSION_ = 'F1-7N-FC-1A-R1';
+var CSD_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R33';
 var CSD_MOV_TYPE_ = 'shipment_out';                 // factory_stock_movements.movement_type for dispatch
 // F1-7N-FB-1 — the confirmation lifecycle event. Distinct from `departed_origin` (physical departure) so the
 // two facts can never be conflated. Registered in the canonical vocabulary alongside the existing types.
@@ -248,8 +248,46 @@ function handleConfirmShipmentAndDispatch_(body) {
     // itself reserved at Shipment Draft creation, per (warehouse_id, sku), so it can never release another
     // shipment's hold and can never drive fac_reserved_stock negative.
     var heldByKey = factoryStockOwnerReservedTx_(movSheet, FSTX_RESERVATION_OWNER_TYPE_, shipmentId);
+
+    /* S6-R4B §4 — OVERSEAS DISPATCH IS A DIFFERENT ARITHMETIC, NOT A DIFFERENT SHEET.
+     *
+     * Factory availability is DERIVED, so a dispatch deducts current stock and releases the hold on the same
+     * row. Overseas availability is STORED, and the dispatched units ALREADY left `wh_available_stock` when
+     * they were reserved — so overseas dispatch moves reserved DOWN and touches available not at all.
+     * Deducting available a second time here is exactly §4's forbidden 70/30 -> 40/0. */
+    var ovsSnap_ = (typeof ovsConsumeReservationTx_ === 'function') ? ss.getSheetByName('overseas_inventory_snapshot') : null;
+    var ovsMov_ = null;
+    var ovsHeldByKey_ = {};
+    if (ovsSnap_) {
+      ovsMov_ = ss.getSheetByName('overseas_inventory_movements');
+      if (ovsMov_) ovsHeldByKey_ = ovsOwnerReservedTx_(ovsMov_, OVSTX_RESERVATION_OWNER_TYPE_, shipmentId);
+    }
+    function dispatchDomain_(warehouseId) {
+      if (!ovsSnap_ || !ovsMov_ || typeof ovsWarehouseSourceDomain_ !== 'function') return 'FACTORY';
+      try {
+        var rec = ovsReadWarehouseRecord_(ss, warehouseId);
+        return rec ? ovsWarehouseSourceDomain_(rec) : 'FACTORY';
+      } catch (e) { return 'FACTORY'; }
+    }
+
     deductPlan.forEach(function (d) {
       var key = d.warehouseId + '||' + d.sku;
+      if (dispatchDomain_(d.warehouseId) === 'OVERSEAS') {
+        var heldO = Math.max(0, Math.round(ovsHeldByKey_[key] || 0));
+        var giveO = Math.min(heldO, d.take);
+        ovsHeldByKey_[key] = heldO - giveO;      // two rows for one key cannot consume it twice
+        if (giveO > 0) {
+          ovsConsumeReservationTx_({
+            snapSheet: ovsSnap_, movSheet: ovsMov_, warehouseId: d.warehouseId, sku: d.sku, qty: giveO,
+            ownerType: OVSTX_RESERVATION_OWNER_TYPE_, ownerId: shipmentId, journal: rollback,
+            now: now, movementDate: today, createdBy: actor,
+            note: 'Shipment dispatch | overseas reservation consumed ' + giveO
+          });
+          reservationReleased += giveO;
+          movementsCreated++;
+        }
+        return;
+      }
       var held = Math.max(0, Math.round(heldByKey[key] || 0));
       var give = Math.min(held, d.take);       // release at most what is actually held here
       heldByKey[key] = held - give;            // so two rows for the same key cannot release it twice

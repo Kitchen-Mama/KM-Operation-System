@@ -371,7 +371,7 @@ ok(/every production overseas row has\r?\nwh_reserved_stock = 0 today, so S - R 
   'E1 and BACKFILL = NO is REASONED: with R = 0 everywhere, S - R === S and no historical row is mis-stated');
 
 // =========================================================================================================
-section('F. LIVE — the SHIPPED server importer, today. MUST BREAK IN R4B.');
+section('F. LIVE — the SHIPPED server importer. R4B LANDED; these record the REPAIR.');
 // =========================================================================================================
 var SNAP_HEADERS = ['overseas_inventory_id', 'snapshot_date', 'warehouse_id', 'sku', 'site_sku',
   'wh_physical_stock', 'wh_available_stock', 'wh_reserved_stock', 'wh_damaged_stock',
@@ -424,46 +424,53 @@ function snapCell(snap, name) { return snap.__grid[1][SNAP_HEADERS.indexOf(name)
   var w = importWorld([snapRow(70, 30, 0)]);
   var r = w.sb.handleImportOverseasInventorySnapshotBatch_({
     rows: [{ warehouse_id: 'WH-3PL', sku: 'CO1100-T', wh_available_stock: 100 }], options: { createdBy: 't' } });
-  eq([r.success, snapCell(w.snap, 'wh_available_stock'), snapCell(w.snap, 'wh_reserved_stock')], [true, 100, 0],
-    'F1 TODAY the shipped importer turns 70/30 into 100/0. The contract now says 70/30. MUST BREAK IN R4B');
+  eq([r.success, snapCell(w.snap, 'wh_available_stock'), snapCell(w.snap, 'wh_reserved_stock')], [true, 70, 30],
+    'F1 [R4B] the importer now stores S - R: 70/30 survives a refresh reporting 100. Before R4B this '
+    + 'assertion read [true, 100, 0] — the reservation erased, with success:true and no warning.');
 })();
 (function () {
   var w = importWorld([snapRow(70, 30, 0)]);
   w.sb.handleImportOverseasInventorySnapshotBatch_({
     rows: [{ warehouse_id: 'WH-3PL', sku: 'CO1100-T', wh_available_stock: 20 }], options: { createdBy: 't' } });
-  eq([snapCell(w.snap, 'wh_available_stock'), snapCell(w.snap, 'wh_reserved_stock')], [20, 0],
-    'F2 TODAY the §45 contradiction is not detected at all — 20 is written over a 30-unit reservation. '
-    + 'The contract now REFUSES this row. MUST BREAK IN R4B');
+  eq([snapCell(w.snap, 'wh_available_stock'), snapCell(w.snap, 'wh_reserved_stock')], [70, 30],
+    'F2 [R4B] the §45 contradiction is REFUSED and the row is untouched. Before R4B this read [20, 0] — '
+    + '20 written over a 30-unit reservation with no error at all.');
+  var refused = w.sb.handleImportOverseasInventorySnapshotBatch_({
+    rows: [{ warehouse_id: 'WH-3PL', sku: 'CO1100-T', wh_available_stock: 20 }], options: { createdBy: 't' } });
+  eq(refused.data.results[0].code, 'IMPORT_RESERVATION_EXCEEDS_SOURCE_AVAILABLE',
+    'F2a and the refusal carries the token §45 froze');
 })();
 (function () {
   // The blank/absent collapse, at the exact line that causes it.
   var C05 = code(F05);
-  ok(/if \(sv === ''\) \{ qtyVals\[f\] = 0; continue; \}/.test(C05),
-    'F3 the server collapse site is present and unchanged: a blank or absent quantity becomes 0');
-  ok(/var qtyFields = \['wh_available_stock', 'wh_reserved_stock', 'wh_damaged_stock', 'wh_on_the_way_qty'\]/.test(C05),
-    'F4 and wh_reserved_stock is still inside the loop that writes every quantity field');
+  ok(/qtyPresent\[f\] = false/.test(C05) && /if \(!qtyPresent\[f\]\) return;/.test(C05),
+    'F3 [R4B] the server now keeps PRESENCE — a blank or absent quantity writes nothing. Before R4B the '
+    + 'collapse site read `if (sv === \'\') { qtyVals[f] = 0; continue; }` and all three intents were one.');
+  ok(/var qtyWritableFields = \['wh_available_stock', 'wh_damaged_stock', 'wh_on_the_way_qty'\]/.test(C05),
+    'F4 [R4B] and wh_reserved_stock has LEFT the writable set entirely');
   var updateBranch = C05.split('var existing = bkToRow[key];')[1] || '';
-  ok(/qtyFields\.forEach\(function\(f\) \{ var ci = snPref\(f\); if \(ci !== -1\) snapSheet\.getRange\(tr, ci \+ 1\)\.setValue\(qtyVals\[f\]\); \}\)/.test(updateBranch),
-    'F5 the UPDATE branch writes all four unconditionally — reserved included. MUST BREAK IN R4B');
-  ok(C05.indexOf('IMPORT_RESERVATION_EXCEEDS_SOURCE_AVAILABLE') === -1,
-    'F6 and the refusal token does not exist in the handler yet — R4B owes it');
+  ok(!/qtyFields\.forEach\(function\(f\) \{ var ci = snPref\(f\); if \(ci !== -1\) snapSheet\.getRange\(tr, ci \+ 1\)\.setValue\(qtyVals\[f\]\); \}\)/.test(updateBranch),
+    'F5 [R4B] the unconditional four-field write is GONE from the UPDATE branch');
+  ok(/qtyWritableFields\.forEach/.test(updateBranch) && /v = qtyVals\[f\] - canonReserved/.test(updateBranch),
+    'F5a replaced by a presence-gated write of three fields, with the GROSS subtraction on available');
+  ok(C05.indexOf('IMPORT_RESERVATION_EXCEEDS_SOURCE_AVAILABLE') > -1,
+    'F6 [R4B] and the refusal token now exists in the handler — R4B paid what it owed');
 })();
 
 // =========================================================================================================
-section('G. LIVE — the SHIPPED client and template, today. MUST BREAK IN R4B.');
+section('G. LIVE — the SHIPPED client and template. R4B LANDED; these record the REPAIR.');
 // =========================================================================================================
 (function () {
   var CC = code(CLIENT);
-  ok(/var OVERSEAS_QTY_FIELDS = \['available_stock', 'reserved_stock', 'damaged_stock', 'on_the_way_qty'\]/.test(CC),
-    'G1 the client still materialises reserved_stock onto every payload row');
-  ok(/var v = ci === -1 \? '' : String\(raw\[ci\] == null \? '' : raw\[ci\]\)\.trim\(\);/.test(CC)
-    && /if \(v === ''\) \{ qtyObj\[f\] = 0; continue; \}/.test(CC),
-    'G2 and an ABSENT column (ci === -1) takes the same path as a blank cell: both become 0. '
-    + 'A server-only fix cannot recover a distinction destroyed here. MUST BREAK IN R4B');
-  ok(/key: 'reserved_stock'[^\n]*comment: 'Number >= 0\. Blank = 0\.'/.test(CC),
-    'G3 the shipped template still teaches "Blank = 0" for reserved_stock. MUST BREAK IN R4B');
-  ok(/exampleRow: \{[^\n]*reserved_stock: 0/.test(CC),
-    'G4 and ships an example row carrying reserved_stock: 0. MUST BREAK IN R4B');
+  ok(/var OVERSEAS_QTY_FIELDS = \['available_stock', 'damaged_stock', 'on_the_way_qty'\]/.test(CC),
+    'G1 [R4B] reserved_stock is no longer materialised onto the payload');
+  ok(/if \(v === ''\) continue;/.test(CC) && /hasOwnProperty\.call\(qtyObj, f\)/.test(CC),
+    'G2 [R4B] an absent column and a blank cell are now OMITTED rather than sent as 0, so the distinction '
+    + 'reaches the server at all. Before R4B both took the `qtyObj[f] = 0` path.');
+  ok(!/key: 'reserved_stock'/.test(CC),
+    'G3 [R4B] the shipped template no longer offers a reserved_stock column');
+  ok(!/Blank = 0\./.test(CC) && /Blank = leave unchanged/.test(CC),
+    'G4 [R4B] and "Blank = 0." is gone from every column comment, replaced by what the server does');
 })();
 // The contract's own answer to G3/G4, and its honesty about the limit of that answer.
 ok(/IMPORT_TEMPLATE_RESERVED_COLUMN = REMOVED/.test(PARTVI), 'G5 PART VI removes the column from the template');

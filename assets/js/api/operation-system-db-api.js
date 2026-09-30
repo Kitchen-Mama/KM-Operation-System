@@ -5086,7 +5086,13 @@ function _kmClassifyBusinessError_(msg) {
  * They are registered here for the same reason every token above is: a refusal the client cannot name
  * canonically is one it reports as a generic backend error, which is how a typed refusal stops being
  * worth typing. */
-var KM_CANONICAL_CODES = ['DANGLING_CAMPAIGN_SKU_LINE_REFERENCE', 'CAMPAIGN_SKU_LINE_CAMPAIGN_MISMATCH',
+// S6-R4B §10 — the overseas import contradiction. Registered in the EXISTING canonical registry rather than
+// beside a parallel vocabulary: a source figure that is smaller than the reservation this system already
+// holds is a row-level refusal, and the batch continues around it.
+var KM_CANONICAL_CODES = ['IMPORT_RESERVATION_EXCEEDS_SOURCE_AVAILABLE',
+    'CROSS_DOMAIN_SOURCE_CHANGE_NOT_SUPPORTED', 'INSUFFICIENT_OVERSEAS_STOCK',
+    'INSUFFICIENT_OVERSEAS_STOCK_AT_NEW_SOURCE',
+    'DANGLING_CAMPAIGN_SKU_LINE_REFERENCE', 'CAMPAIGN_SKU_LINE_CAMPAIGN_MISMATCH',
     'CAMPAIGN_SKU_LINE_REGISTRY_UNREADABLE', 'CAMPAIGN_SKU_LINE_LOCK_TIMEOUT',
     'BLOCKED_CONFLICT', 'MULTIPLE_ROUTE_CONTEXTS_UNSUPPORTED_PHASE1', 'PLAN_HEADER_INCOMPLETE',
     'PLAN_LINE_INCOMPLETE', 'NO_ACTIVE_DRAFT', 'VERSION_CONFLICT', 'IMMUTABLE_TERMINAL_STATUS', 'SOURCE_AVAILABLE_QTY_EXCEEDED',

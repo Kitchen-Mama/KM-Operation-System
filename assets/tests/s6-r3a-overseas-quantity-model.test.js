@@ -296,21 +296,21 @@ ok(QTY_SET.indexOf('wh_physical_stock') < 0,
 // payload, so a column the operator never put in the file arrives at the server as an explicit zero.
 var PAGE = code(OVSPAGE);
 var CQTY = /var OVERSEAS_QTY_FIELDS = \[([^\]]+)\]/.exec(PAGE);
-ok(!!CQTY && /'reserved_stock'/.test(CQTY[1]),
-  'D3 the CLIENT carries its own quantity list, and reserved_stock is in it');
+ok(!!CQTY && !/'reserved_stock'/.test(CQTY[1]),
+  'D3 [R4B] reserved_stock has LEFT the client quantity list. Until R4B it was in it, so a column the '
+  + 'operator never wrote arrived at the server as an explicit zero.');
 ok(/ci === -1 \? '' :/.test(PAGE) || /var ci = idxOf\[f\];/.test(PAGE),
   'D3a and it reads a MISSING column as the empty string rather than skipping the field');
-ok(/if \(v === ''\) \{ qtyObj\[f\] = 0; continue; \}/.test(PAGE),
-  'D3b which it then turns into 0 — absent column and blank cell become the SAME value here');
-ok(/OVERSEAS_QTY_FIELDS\.forEach\(function\(f\) \{ obj\[f\] = qtyObj\[f\]; \}\)/.test(PAGE),
-  'D3c and every one of them is placed on the request unconditionally. THE DISTINCTION IS DESTROYED '
-  + 'BEFORE THE SERVER SEES IT — a server-only fix cannot recover it (this is why the owner count is 2)');
+ok(/if \(v === ''\) continue;/.test(PAGE) && !/qtyObj\[f\] = 0;/.test(PAGE),
+  'D3b [R4B] and a blank or absent cell is now OMITTED rather than turned into 0 — the two stopped being the same value here, which is what let the server tell them apart');
+ok(/hasOwnProperty\.call\(qtyObj, f\)/.test(PAGE),
+  'D3c [R4B] and only the keys actually present are placed on the request. Until R4B every field went unconditionally, which destroyed the distinction BEFORE the server saw it — the reason the owner count was 2 and the reason both halves had to land together');
 
 // The template is the delivery mechanism, not a passive document.
-ok(/key: 'reserved_stock', header: 'reserved_stock'/.test(PAGE),
-  'D4 the shipped import template EMITS a reserved_stock column');
-ok(/reserved_stock: 0/.test(PAGE),
-  'D4a with an example row that writes 0 into it — the tree hands the operator a file that zeroes the bucket');
+ok(!/key: 'reserved_stock', header: 'reserved_stock'/.test(PAGE),
+  'D4 [R4B] the shipped template no longer emits a reserved_stock column');
+ok(!/exampleRow: \{[^\n]*reserved_stock: 0/.test(PAGE),
+  'D4a [R4B] nor an example row writing 0 into it — the tree no longer hands the operator a file that zeroes a bucket this system owns');
 frozenV('IMPORT_TEMPLATE_RESERVED_COLUMN', 'REMOVED (target)');
 
 // =========================================================================================================
@@ -387,9 +387,9 @@ function snapCell(snap, name) { return snap.__grid[1][SNAP_HEADERS.indexOf(name)
   var w = importWorld([snapRow(70, 30, 0)]);
   var r = w.sb.handleImportOverseasInventorySnapshotBatch_({
     rows: [{ warehouse_id: 'WH-3PL', sku: 'CO1100-T', wh_available_stock: 100 }], options: { createdBy: 't' } });
-  eq([r.success, snapCell(w.snap, 'wh_available_stock'), snapCell(w.snap, 'wh_reserved_stock')], [true, 100, 0],
-    'E2 TODAY a routine refresh turns 70/30 into 100/0 — the reservation is ERASED, with success:true, '
-    + 'no error, no ledger row and no warning (executed, shipped code). THIS ASSERTION MUST BREAK IN R4');
+  eq([r.success, snapCell(w.snap, 'wh_available_stock'), snapCell(w.snap, 'wh_reserved_stock')], [true, 70, 30],
+    'E2 [R4B] a routine refresh of 70/30 reporting 100 now leaves 70/30 — the reservation SURVIVES. '
+    + 'Until R4B this assertion read [true, 100, 0]: the hold erased, with success:true and no warning.');
   eq(r.data.summary, { total: 1, created: 0, updated: 1, skipped: 0, error: 0 },
     'E2a and the operator is told the row was "updated" — the receipt is not merely silent, it is reassuring');
 })();
@@ -399,9 +399,9 @@ function snapCell(snap, name) { return snap.__grid[1][SNAP_HEADERS.indexOf(name)
   var w = importWorld([snapRow(70, 30, 0)]);
   w.sb.handleImportOverseasInventorySnapshotBatch_({
     rows: [{ warehouse_id: 'WH-3PL', sku: 'CO1100-T', wh_available_stock: 100 }], options: { createdBy: 't' } });
-  eq(snapCell(w.snap, 'wh_reserved_stock'), 0,
-    'E3 the request never MENTIONED reserved — absent is read as zero and written (executed). '
-    + 'Combined with D3c, the operator cannot avoid this by omitting the column. MUST BREAK IN R4');
+  eq(snapCell(w.snap, 'wh_reserved_stock'), 30,
+    'E3 [R4B] the request never MENTIONED reserved, and reserved is now left alone. Until R4B absent was '
+    + 'read as zero and written, so omitting the column was not an escape from it.');
 })();
 
 // E4 — the same blank-means-zero rule costs the damaged bucket too, which is §10.9 from the other side.
@@ -409,8 +409,9 @@ function snapCell(snap, name) { return snap.__grid[1][SNAP_HEADERS.indexOf(name)
   var w = importWorld([snapRow(70, 0, 40)]);
   w.sb.handleImportOverseasInventorySnapshotBatch_({
     rows: [{ warehouse_id: 'WH-3PL', sku: 'CO1100-T', wh_available_stock: 100 }], options: { createdBy: 't' } });
-  eq([snapCell(w.snap, 'wh_available_stock'), snapCell(w.snap, 'wh_damaged_stock')], [100, 0],
-    'E4 a damaged count is erased by the same rule — 40 damaged units silently become 0 (executed)');
+  eq([snapCell(w.snap, 'wh_available_stock'), snapCell(w.snap, 'wh_damaged_stock')], [100, 40],
+    'E4 [R4B] an omitted damaged count is PRESERVED. Until R4B the same absent-means-zero rule erased it, '
+    + 'which is why the client fix had to cover the three buckets that have no lifecycle as well.');
 })();
 
 // E5 — what the importer does NOT do, and this one is load-bearing in the right direction.
@@ -555,12 +556,15 @@ ok(/SPLIT_FORBIDDEN_ACROSS_DEPLOYS = source enablement · reservation lifecycle 
 // §10.10 — the source stays BLOCKED until those owners exist. Measured against the shipped refusal.
 (function () {
   var pre = code(F12);
-  ok(/factoryStockReadBalanceTx_\(fcStockSheet, srcWarehouseId, needSkus\[ns\]\)/.test(pre),
-    'G3 the shipment sufficiency precheck still reads FACTORY stock for ANY source warehouse');
-  ok(/reason: 'INSUFFICIENT_FACTORY_STOCK'/.test(pre),
-    'G3a so an overseas source still fails CLOSED with a factory-shaped refusal — blocked, not silently allowed');
-  ok(!/ovsStock(Acquire|Release)ReservationTx_|overseasStockAcquire/.test(code(F05 + F12 + F22)),
-    'G3b and no overseas reservation writer exists yet — R3A froze a contract, it did not implement one');
+  ok(/shipmentDomainAvailable_\(srcDomain, srcSheets, srcWarehouseId, needSkus\[ns\]\)/.test(pre),
+    'G3 [R4B] the precheck now ROUTES by source domain. Until R4B it read factory_stock for any source, which is what made an overseas source impossible — a restriction by accident rather than by rule');
+  ok(/INSUFFICIENT_OVERSEAS_STOCK/.test(pre) && /shortLabel/.test(pre),
+    'G3a and an overseas shortfall now refuses as OVERSEAS rather than wearing a factory-shaped message');
+  // R3A asserted the ABSENCE of these writers, because a contract round that had quietly implemented one
+  // would have been a different round. S6-R4B implemented them, in the files §38 named.
+  ok(/function ovsAcquireReservationTx_\(/.test(code(F05)) && /function ovsReleaseReservationTx_\(/.test(code(F05))
+    && /function ovsConsumeReservationTx_\(/.test(code(F05)),
+    'G3b [R4B] the overseas reservation writers now exist, and they are in 05_ as §38 planned');
 })();
 
 // §10.11 / §10.12 — nothing else moved. This round changed documentation and tests ONLY.
@@ -611,11 +615,20 @@ mut('M3 a dispatch that also decrements available is caught', function () {
 
 // M4 — the E-section hazard probe must be reading the SHEET, not the response. A probe that trusted
 // `success: true` would report the importer as safe, which is the exact defect class this round is about.
-mut('M4 a hazard probe that read the RESPONSE instead of the sheet would miss the erasure', function () {
+/* M4 [R4B-REAIMED] — it planted "a probe that reads the RESPONSE instead of the SHEET", and its force came
+   from the response looking healthy while the row had been erased. R4B removed the erasure, so that exact
+   premise is gone. The lesson is not: the response STILL cannot distinguish a GROSS-corrected write from a
+   naive one — both answer success with updated:1 — so a probe that trusts the flag is still the wrong probe,
+   and that is now what the mutant demonstrates. */
+mut('M4 the response alone cannot tell a GROSS-corrected write from a naive one', function () {
   var w = importWorld([snapRow(70, 30, 0)]);
   var r = w.sb.handleImportOverseasInventorySnapshotBatch_({
     rows: [{ warehouse_id: 'WH-3PL', sku: 'CO1100-T', wh_available_stock: 100 }], options: { createdBy: 't' } });
-  return r.success === true && snapCell(w.snap, 'wh_reserved_stock') === 0;
+  // The RESPONSE is identical to the pre-R4B one; only the SHEET distinguishes them.
+  var responseLooksSame = r.success === true && r.data.summary.updated === 1;
+  var sheetProvesTheRepair = snapCell(w.snap, 'wh_reserved_stock') === 30
+    && snapCell(w.snap, 'wh_available_stock') === 70;
+  return responseLooksSame && sheetProvesTheRepair;
 });
 
 // M5 — the physical census must ignore the before/after LEDGER columns, which legitimately carry the name.
@@ -628,10 +641,16 @@ mut('M5 a census that counted wh_before/after_physical_stock would report false 
 
 // M6 — the client-half finding. If overseas-stock.js only forwarded fields the file actually contained,
 // the server could tell absent from zero and the owner count would be 1, not 2.
-mut('M6 a client that forwarded only present columns would make the server fix sufficient', function () {
-  var forwardsAll = /OVERSEAS_QTY_FIELDS\.forEach\(function\(f\) \{ obj\[f\] = qtyObj\[f\]; \}\)/.test(PAGE);
-  var blankIsZero = /if \(v === ''\) \{ qtyObj\[f\] = 0; continue; \}/.test(PAGE);
-  return forwardsAll && blankIsZero;
+/* M6 [R4B-INVERTED] — it required the suite to notice that the client did NOT forward only the present
+   columns. R4B made it do exactly that, so the mutant's premise became the behaviour and it survived. It
+   now plants the REGRESSION: put the unconditional forwarding back and require it to be visible. */
+mut('M6 restoring the unconditional payload forwarding is caught', function () {
+  var regressed = PAGE.replace(/if \(Object\.prototype\.hasOwnProperty\.call\(qtyObj, f\)\) obj\[f\] = qtyObj\[f\];/,
+    'obj[f] = qtyObj[f];');
+  if (regressed === PAGE) throw new Error('M6 anchor drifted');
+  var stillGuardedNow = /hasOwnProperty\.call\(qtyObj, f\)/.test(PAGE);
+  var unguardedAfter = !/hasOwnProperty\.call\(qtyObj, f\)/.test(regressed);
+  return stillGuardedNow && unguardedAfter;
 });
 
 // M7 — the movement vocabulary check must compare against the CONTRACT's declared list. Hard-coding the

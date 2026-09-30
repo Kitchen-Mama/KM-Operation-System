@@ -869,8 +869,12 @@ function openOverseasInfo(idx) {
 // ----------------------------------------------------------------------------
 // Import Overseas Inventory Snapshot (mirror Import FC / Import SKU UX)
 // ----------------------------------------------------------------------------
+// `reserved_stock` stays in the ACCEPTED header list so an operator's existing file still parses — removing
+// it from the template does not un-write the files already on people's desktops. It is absent from
+// OVERSEAS_QTY_FIELDS, which is what the payload is built from, so a file that still carries the column is
+// read without complaint and the column is ignored. S6-R4B §7.
 var OVERSEAS_IMPORT_HEADERS = ['warehouse_id', 'sku', 'available_stock', 'reserved_stock', 'damaged_stock', 'on_the_way_qty', 'on_the_way_eta', 'note'];
-var OVERSEAS_QTY_FIELDS = ['available_stock', 'reserved_stock', 'damaged_stock', 'on_the_way_qty'];
+var OVERSEAS_QTY_FIELDS = ['available_stock', 'damaged_stock', 'on_the_way_qty'];
 
 // ===== F1-UX-OVERSEAS-INVENTORY-SCOPED-IMPORT-R1 — relationally-filtered import scope (Company/Country/Warehouse) =====
 // Company / Country / Warehouse come ONLY from the canonical `warehouses` master (active, NON-factory = Overseas/3PL).
@@ -1002,21 +1006,23 @@ function downloadOverseasImportTemplate() {
     var columns = [
         { key: 'warehouse_id', header: 'warehouse_id', kind: 'business', width: 26, comment: 'REQUIRED. Prefilled with the selected warehouse (' + sc.warehouseId + '). Do NOT change — one file = one warehouse; the server rejects any other warehouse_id.', dropdown: [sc.warehouseId] },
         { key: 'sku', header: 'sku', kind: 'business', width: 22, comment: 'REQUIRED. Canonical SKU.' },
-        { key: 'available_stock', header: 'available_stock', kind: 'business', width: 14, comment: 'Number >= 0 (decimals round UP). Blank = 0.' },
-        { key: 'reserved_stock', header: 'reserved_stock', kind: 'business', width: 14, comment: 'Number >= 0. Blank = 0.' },
-        { key: 'damaged_stock', header: 'damaged_stock', kind: 'business', width: 14, comment: 'Number >= 0. Blank = 0.' },
-        { key: 'on_the_way_qty', header: 'on_the_way_qty', kind: 'business', width: 14, comment: 'Number >= 0. Blank = 0.' },
+        // S6-R4B §9 — `reserved_stock` is GONE from the shipped template, and "Blank = 0." with it. Reserved is
+        // system-owned from this round onward; a column inviting an operator to type into it was an
+        // instruction to erase a reservation this system holds.
+        { key: 'available_stock', header: 'available_stock', kind: 'business', width: 14, comment: 'Number >= 0 (decimals round UP). This is the SOURCE available BEFORE our own reservation. Blank = leave unchanged.' },
+        { key: 'damaged_stock', header: 'damaged_stock', kind: 'business', width: 14, comment: 'Number >= 0. Blank = leave unchanged.' },
+        { key: 'on_the_way_qty', header: 'on_the_way_qty', kind: 'business', width: 14, comment: 'Number >= 0. Blank = leave unchanged.' },
         { key: 'on_the_way_eta', header: 'on_the_way_eta', kind: 'business', width: 16, comment: 'Optional ISO date YYYY-MM-DD.' },
         { key: 'note', header: 'note', kind: 'business', width: 30, comment: 'Optional note.' }
     ];
     var spec = {
         filename: 'Overseas_Inventory_' + fnamePart + '_Import_Template.xlsx',
         sheetName: 'Overseas Inventory Import',
-        instructionRow: 'This import updates ONE overseas warehouse only — Company: ' + sc.company + ' · Country: ' + sc.country + ' · Warehouse: ' + whName + ' (' + sc.warehouseId + '). warehouse_id is prefilled; do not mix warehouses. Imported quantities BECOME the current snapshot for warehouse_id + sku. The server rejects any other / Factory / inactive / unknown warehouse.',
+        instructionRow: 'This import updates ONE overseas warehouse only — Company: ' + sc.company + ' · Country: ' + sc.country + ' · Warehouse: ' + whName + ' (' + sc.warehouseId + '). warehouse_id is prefilled; do not mix warehouses. available_stock is the SOURCE figure BEFORE our own reservation; the system subtracts what it already holds. A BLANK quantity leaves that bucket unchanged. Reserved stock is system-owned and cannot be imported. The server rejects any other / Factory / inactive / unknown warehouse.',
         masterTemplate: true,
         columns: columns,
-        exampleRow: { warehouse_id: sc.warehouseId, sku: (skus[0] || 'SAMPLE-SKU'), available_stock: 0, reserved_stock: 0, damaged_stock: 0, on_the_way_qty: 0, on_the_way_eta: '', note: '' },
-        system: { template_id: 'overseas_inventory_import', template_name: 'Overseas Inventory Snapshot Import', template_version: '3', module: 'overseas_inventory', export_mode: 'import', source_system: 'operation-system', scope_company: sc.company, scope_country: sc.country, scope_warehouse_id: sc.warehouseId }
+        exampleRow: { warehouse_id: sc.warehouseId, sku: (skus[0] || 'SAMPLE-SKU'), available_stock: 0, damaged_stock: 0, on_the_way_qty: 0, on_the_way_eta: '', note: '' },
+        system: { template_id: 'overseas_inventory_import', template_name: 'Overseas Inventory Snapshot Import', template_version: '4', module: 'overseas_inventory', export_mode: 'import', source_system: 'operation-system', scope_company: sc.company, scope_country: sc.country, scope_warehouse_id: sc.warehouseId }
     };
     window.KM.templateExport.buildAndDownload(spec).catch(function (err) { alert('Template download failed: ' + (err && err.message ? err.message : err)); });
 }
@@ -1187,13 +1193,19 @@ function _ovsProcessImportCells(cells, runBtn) {
             dataRowNum++;
             var warehouseId = String(raw[idxOf['warehouse_id']] == null ? '' : raw[idxOf['warehouse_id']]).trim();
             var sku = String(raw[idxOf['sku']] == null ? '' : raw[idxOf['sku']]).trim();
+            /* S6-R4B §8 — ABSENCE IS PRESERVED, NOT NORMALISED AWAY.
+             *
+             * An absent column and a blank cell are both "the file makes no statement about this bucket", and
+             * neither is the number zero. They are left OFF the payload; the server reads a missing key as no
+             * statement and leaves the canonical cell alone. An explicit 0 is a statement — "the 3PL has
+             * none" — and is sent. */
             var qtyObj = {};
             var badQty = null;
             for (var qi = 0; qi < OVERSEAS_QTY_FIELDS.length; qi++) {
                 var f = OVERSEAS_QTY_FIELDS[qi];
                 var ci = idxOf[f];
                 var v = ci === -1 ? '' : String(raw[ci] == null ? '' : raw[ci]).trim();
-                if (v === '') { qtyObj[f] = 0; continue; }
+                if (v === '') continue;          // no key, no statement, no write
                 if (!NUMERIC_RE.test(v)) { badQty = { col: f, val: v }; break; }
                 qtyObj[f] = Math.ceil(parseFloat(v)); // round up to whole units
             }
@@ -1204,7 +1216,9 @@ function _ovsProcessImportCells(cells, runBtn) {
             if (!warehouseId) { clientErrors.push({ rowIndex: dataRowNum, sku: sku, status: 'error', message: 'warehouse_id is required' }); continue; }
             if (!sku) { clientErrors.push({ rowIndex: dataRowNum, sku: sku, status: 'error', message: 'sku is required' }); continue; }
             var obj = { warehouse_id: warehouseId, sku: sku };
-            OVERSEAS_QTY_FIELDS.forEach(function(f) { obj[f] = qtyObj[f]; });
+            OVERSEAS_QTY_FIELDS.forEach(function(f) {
+                if (Object.prototype.hasOwnProperty.call(qtyObj, f)) obj[f] = qtyObj[f];
+            });
             obj.on_the_way_eta = idxOf['on_the_way_eta'] === -1 ? '' : String(raw[idxOf['on_the_way_eta']] == null ? '' : raw[idxOf['on_the_way_eta']]).trim();
             obj.note = idxOf['note'] === -1 ? '' : String(raw[idxOf['note']] == null ? '' : raw[idxOf['note']]).trim();
             rows.push(obj);

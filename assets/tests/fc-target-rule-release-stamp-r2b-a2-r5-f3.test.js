@@ -122,67 +122,50 @@ var RELEASE_OWNERS = {
   //
   // S5-R6 — AND IT FORCED THE PARTITION BELOW. R25 was the last release cut against a SHIPPED tree. R26
   // onward have accumulated on top of it unshipped, so "what must be copied" (everything that differs from
-  // BASE) and "what changed THIS release" stopped being the same set — and this suite was asking both
-  // questions with one list. C3 checks stamps and must see only the second; I1 checks the operator's copy
-  // list and must see both. RELEASE_CARRIED is that second half, the same partition GENERATED_OWNERS already
-  // made for a file that is copied but never stamped.
+  // BASE) and "what changed THIS release" stopped being the same set. RELEASE_CARRIED is that second half.
   //
-  // S5-R7A — 47_ JOINS, which is the ledger working rather than the set growing. R28 changed only the
-  // generated bundle and the manifest that identifies it; R29 changes a hand-written owner as well, and the
-  // two must travel together in both directions.
-  // FC-SUMMARY-STABILITY-R3 — 58_ JOINS AND 14_ LEAVES: the eleventh swap, and the exact mirror of the
-  // ninth. R30 changed the fc_special_events WRITE path; R31 changes the READ workspace and touches no
-  // write handler at all. Reading is not writing, in both directions.
-  //
-  // FC-SPECIAL-EVENT-WRITE-CONSISTENCY-R2 — 14_ COMES BACK AND 20_ JOINS IT, the twelfth swap, and the
-  // first time BOTH write handlers move in one release. They move for the same defect seen from two
-  // sides: an event could name a campaign_sku_line that did not exist (14_), and two concurrent saves
-  // could both mint one (20_). 58_ stays an owner for a THIRD reason — the graph readback that makes
-  // the save receipt a measurement — which is why this release has four.
-  '14_fc_write_handlers.gs':
-    'THE EVENT WRITE PATH, NOW REFERENTIALLY CLOSED. R32 makes fcSpecialEventUpsert_ PROVE that the '
-    + 'campaign_sku_line it is asked to reference exists and belongs to the same campaign before it '
-    + 'creates a row, and refuses with DANGLING_CAMPAIGN_SKU_LINE_REFERENCE / '
-    + 'CAMPAIGN_SKU_LINE_CAMPAIGN_MISMATCH / CAMPAIGN_SKU_LINE_REGISTRY_UNREADABLE when it cannot. An '
-    + 'UPDATE is gated ONLY when the reference changes, so the nine orphaned production events stay '
-    + 'editable — freezing them would punish the rows that are the evidence. Half-sync hazard: NEW '
-    + 'frontend beside an OLD 14_ simply gets no gate (the pre-R32 behaviour); an OLD frontend beside a '
-    + 'NEW 14_ is also safe, because the gate refuses writes that were already wrong. Neither direction '
-    + 'is dangerous, which is why this file has no ordering constraint against the others.',
-  '20_campaign_write_handlers.gs':
-    'THE CAMPAIGN LINE WRITE PATH, NOW ATOMIC. R32 puts handleUpsertCampaignSkuLines_ under the SAME '
-    + 'ScriptLock handleUpsertCampaign_ has taken since R17, across the authoritative read and the '
-    + 'append it computes from it — the read-then-append pair R1 proved was unprotected while the '
-    + 'identical pair one stage earlier was. The lock opens BEFORE the read and releases in a finally. '
-    + 'It is NOT R6\'s two-pass shape: this handler holds exactly one authoritative read (pinned at N '
-    + 'up to 200 by fc-special-stage2-large-batch-r1) and a second resolve pass would be a second read '
-    + 'on every write, so one read under the lock is both the smaller cost and the shorter hold.',
-  '58_api_v1_fc_summary_workspace.gs':
-    'THE FC SUMMARY READ WORKSPACE. R32 adds the AUTHORITATIVE GRAPH SLICE: campaigns + '
-    + 'campaign_sku_lines join the SLICE-ONLY table set (never FULL, so no healthy modal open pays for '
-    + 'them) and a `graph` slice scoped to one campaign_id answers in canonical ids — which lines exist '
-    + 'under it, which events, and what each event points at. That is what lets the save receipt be a '
-    + 'measurement instead of a payload count. Half-sync hazard: NEW frontend beside an OLD 58_ resolves '
-    + 'the unknown slice to FULL, the answer carries no graph, and the client reports OUTCOME_UNKNOWN — '
-    + 'truthful, not dangerous. R31 gave it the SCOPED PRICING PROJECTION: a pricing slice that selects '
-    + 'only the pricing_list rows the client resolver could match for one company/country/marketplace, '
-    + 'projected to the twelve columns that resolver reads. It replaces a whole-table browser read that was '
-    + 'timing out on Build / Refresh Group Cards. The half-sync hazard is ASYMMETRIC and decides the copy '
-    + 'order. NEW frontend beside an OLD 58_ is the dangerous direction: an unrecognised slice resolves to '
-    + 'FULL, the answer carries no pricingList, and the page commits an empty projection — every card then '
-    + 'reads MISSING price for a site whose prices exist, with no error anywhere. The reverse is inert: '
-    + 'nothing asks for the slice and the four primary-render tables are byte-identical. So 58_ is copied '
-    + 'FIRST and the frontend deploy completes the repair. No resolution moved with it — the BASE -> AUTO -> '
-    + 'nullable OVERRIDE -> RESOLVED chain stays in the one client normalizer, and this slice only decides '
-    + 'which rows travel.',
+  // S6-R4B — THE THIRTEENTH SWAP, and the first that touches no FC file at all. R32 changed the event write
+  // path, the campaign line writer and the FC Summary read workspace; R33 changes the OVERSEAS INVENTORY
+  // LIFECYCLE and the two shipment handlers that call it. 14_, 20_ and 58_ therefore leave and keep the R32
+  // stamp they earned — marching them to R33 would erase the one fact a per-module stamp carries.
+  '05_overseas_inventory_handlers.gs':
+    'THE OVERSEAS INVENTORY LIFECYCLE, AND ITS FIRST STAMP. R33 adds acquire / release / dispatch-consume '
+    + 'over wh_available_stock and wh_reserved_stock — a reserve TRANSFERS between the two stored buckets '
+    + '(available -= qty, reserved += qty) rather than raising reserved and letting a subtraction produce '
+    + 'availability, which is the factory model and is NOT this one. ovsAllocatableTx_ is the single place '
+    + 'the allocatable rule is written down: it is wh_available_stock, never available - reserved, because '
+    + 'the reserved units already left available when they were reserved. The importer implements the frozen '
+    + 'GROSS semantic (stored available = source available - the reservation this system holds), refuses a '
+    + 'row with IMPORT_RESERVATION_EXCEEDS_SOURCE_AVAILABLE when the source reports fewer units than are '
+    + 'already committed, and never writes wh_reserved_stock at all. HALF-SYNC HAZARD, AND IT DECIDES THE '
+    + 'COPY ORDER: an OLD 05_ beside a NEW 12_ resolves ovsAcquireReservationTx_ to undefined and throws '
+    + 'inside a journalled transaction, so 05_ is copied FIRST. The reverse is inert — a new 05_ beside an '
+    + 'old 12_ simply has functions nobody calls.',
+  '12_shipment_handlers.gs':
+    'SHIPMENT DRAFT CREATION, NOW SOURCE-ROUTED. R33 stops the sufficiency precheck reading factory_stock '
+    + 'for every source: it asks whether the source warehouse is FACTORY or OVERSEAS and forwards to that '
+    + 'domain lifecycle, at the precheck, the acquire, the cancellation release and the source-warehouse '
+    + 'change alike. The two domains are COMPOSED, never merged — the shim adds no arithmetic of its own — '
+    + 'and the pool key WH:<warehouse_id>||<sku> is unchanged on both sides. A CROSS-domain source change is '
+    + 'refused rather than guessed: releasing in one domain and acquiring in another would invent a physical '
+    + 'transfer nobody approved, and the pre-R33 code would additionally have MINTED a factory_stock row for '
+    + 'a 3PL warehouse on the way. The exposure ordering is INHERITED rather than re-derived: the acquire '
+    + 'still runs BEFORE transferred_to_shipment_at is stamped, inside the same lock and journal, so there is '
+    + 'no instant at which the plan exposure has been released and no reservation holds the units.',
+  '22_shipment_dispatch_handlers.gs':
+    'DISPATCH CONSUME, ROUTED. R33 keeps the factory branch byte-identical — current -= take and reserved -= '
+    + 'give on ONE row — and gives OVERSEAS its own arithmetic: reserved moves DOWN and wh_available_stock is '
+    + 'NOT touched, because those units left available when they were reserved. Deducting available a second '
+    + 'time here is the 70/30 -> 40/0 outcome the contract names as forbidden, and it is the single most '
+    + 'plausible wrong line in the file. The release of the hold rides the shipment_out row own reserved '
+    + 'before/after pair; no separate reservation_release row is written, which is the same asymmetry the '
+    + 'factory branch already relies on and the same double count it avoids.',
   '63_api_v1_system_health.gs':
-    'THE MANIFEST. R32 moves FOUR expected stamps — 14_, 20_, 58_ and its own — and the `owns` text of '
-    + 'each grows to name what changed. The ACTION CONTRACT still does not move: the graph slice rides '
-    + 'the existing workspace action, and the two new refusal tokens are outcomes of an existing one. '
-    + 'R31 note: 58_\'s expected stamp moves with 58_ itself, and its `owns` text grows to name the scoped '
-    + 'pricing projection — both are changes to THIS file. The ACTION CONTRACT does not move: no action was '
-    + 'added or removed. A new SLICE on an existing action is not a new vocabulary, which is the same ruling '
-    + 'R3-R1 made when the slice mechanism itself landed on this action without touching 01_router.',
+    'THE MANIFEST. R33 moves FOUR expected stamps — 12_, 22_, its own, and 05_ which enters the manifest for '
+    + 'the FIRST time. A file with no stamp cannot be reported as stale, and until this round 05_ owned '
+    + 'nothing whose absence would be silent; it now owns three functions that 12_ and 22_ call by name. The '
+    + 'ACTION CONTRACT does not move: no action was added or removed, and the new refusal tokens are outcomes '
+    + 'of existing ones.',
 };
 
 // Owners that must be COPIED but whose stamp belongs to an EARLIER unshipped release. Each entry is the
@@ -192,6 +175,13 @@ var RELEASE_OWNERS = {
 // reports the round a release was cut in, not the round the file changed in, and then it can no longer
 // distinguish a synced copy from a stale one, which is the single thing it is for.
 var RELEASE_CARRIED = {
+  // S6-R4B — 14_, 20_ and 58_ LEAVE OWNERSHIP AT R33 and keep R32, the release they actually changed in.
+  // R33 is an overseas-inventory and shipping round; it touches no FC file. Marching their stamps forward
+  // would report the round a release was cut in rather than the round the file changed in, which is the one
+  // thing a per-module stamp is for.
+  '14_fc_write_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32',
+  '20_campaign_write_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32',
+  '58_api_v1_fc_summary_workspace.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32',
   // 47_ JOINS AT R30 — the tenth swap. FC-ID-R2 changes 14_ and, through the manifest, 63_; it does not
   // touch the recommendation generator, so 47_ keeps R29, the release it actually changed in. Marching
   // it to R30 would erase the one fact its stamp carries, which is what C3 exists to catch.
@@ -403,6 +393,18 @@ ok(/KMPD\.resolveTargetRule/.test(PROC),
 // R22 — 04_ MOVES. PRICING-R4E changes what it writes into a NEW pricing_list row, which is a different
 // responsibility living in the same file, so the stamp advances because the file genuinely changed. That is
 // the one thing a stamp is for, and it is why B2a below insists the new claim is really in the file.
+/* S6-R4B — THE PARTITION HAS THREE PARTS, AND THE EXPECTATION NOW READS ALL THREE.
+ *
+ * `RELEASE_OWNERS[f] ? RELEASE : null` was right while the only alternative to ownership was UNMOVED. It is
+ * not: a file can be CARRIED — changed in an earlier unshipped release, still awaiting copy — and a carried
+ * file keeps the stamp it earned rather than having none. Reading only the first list made every assertion
+ * below fail the moment its file was carried, which is what happened to 14_, 20_ and 58_ at R33. */
+function expectedStampFor_(file) {
+  if (RELEASE_OWNERS[file]) return RELEASE;
+  if (RELEASE_CARRIED[file]) return RELEASE_CARRIED[file];
+  return RELEASE_UNMOVED[file] || null;
+}
+
 // S3-R10 — 04_ is no longer an owner, so it must keep R24 rather than follow the release. The claim below
 // is unchanged in meaning: the file's stamp names the round the file last changed in.
 eq(declares(REGWRITE, 'FCREG_BUILD_VERSION_'), RELEASE_UNMOVED['04_marketplace_forecast_import.gs'],
@@ -415,8 +417,8 @@ ok(!/fxRate = 1;/.test(REGWRITE),
 // read-workspace round has no business moving a write handler's stamp; R32 changes the write handler
 // itself. The assertion reads whichever list the file is in, which is exactly why it was written against
 // the partition and not against a literal — it has now followed 14_ across three releases running.
-eq(declares(WRITE, 'FCW_BUILD_VERSION_'), RELEASE_OWNERS['14_fc_write_handlers.gs'] ? RELEASE : null,
-  'B2-0 14_ moves to R32, the round its referential-integrity gate landed in');
+eq(declares(WRITE, 'FCW_BUILD_VERSION_'), expectedStampFor_('14_fc_write_handlers.gs'),
+  'B2-0 14_ keeps the round its referential-integrity gate landed in — R33 is an overseas round and must not march it');
 ok(/DANGLING_CAMPAIGN_SKU_LINE_REFERENCE/.test(WRITE) && /CAMPAIGN_SKU_LINE_CAMPAIGN_MISMATCH/.test(WRITE),
   'B2-0c and the change its stamp claims is really in the file — the two refusals the gate emits');
 ok(/function fcSeValidateMarketplaceIdentity_\(/.test(WRITE) && /BLANK_MARKETPLACE_ID_REFUSED/.test(WRITE),
@@ -435,8 +437,8 @@ ok(!/\.setValue\(/.test(REGHANDLER) && !/\.appendRow\(/.test(REGHANDLER),
 // FC-SPECIAL-EVENT-WRITE-CONSISTENCY-R2 — 20_ RETURNS AT R32, its first move since R20. Everything R20
 // bought stays exactly as it was: the lock is added AROUND the batched writer, not inside it, so the one
 // authoritative read and the coalesced ranges below are untouched.
-eq(declares(CAMPWRITE, 'CAMPAIGN_BUILD_VERSION_'), RELEASE_OWNERS['20_campaign_write_handlers.gs'] ? RELEASE : null,
-  'B2-2 20_ moves to R32, the round its line writer got the lock stage 1 already had');
+eq(declares(CAMPWRITE, 'CAMPAIGN_BUILD_VERSION_'), expectedStampFor_('20_campaign_write_handlers.gs'),
+  'B2-2 20_ keeps the round its line writer got the lock stage 1 already had');
 ok(/CAMPAIGN_SKU_LINE_LOCK_TIMEOUT/.test(CAMPWRITE),
   'B2-2a and the change its stamp claims is really in the file — the typed lock refusal');
 // And the change its stamp claims is really in the file, on the same test B2-0a/B2-0b apply to 04_:
@@ -450,9 +452,10 @@ ok(!/fcWriteUpsert_\(/.test(CAMPHANDLER) && /\.setValues\(/.test(CAMPHANDLER),
 ok(/FC_SE_UNIQUENESS_FIELDS_/.test(WRITE) && /DUPLICATE_SPECIAL_EVENT_IDENTITY/.test(WRITE),
   'B2-3 and R18\'s change is still in 14_, so the stamp it KEEPS is not decoration either');
 // The mirror image, and the reason B2 could be rewritten rather than deleted: the READ owner is
-// untouched by a write-path release, so it must still declare the release it DID change in.
-eq(declares(WSREAD, 'FCSWS_BUILD_VERSION_'), RELEASE,
-  'B2a 58_ carries THIS release — R31 changed the FC Summary READ workspace it owns');
+// untouched by a write-path release, so it must still declare the release it DID change in. At R33 it is
+// untouched by an OVERSEAS release for the same reason, so it is carried at R32 and the partition says so.
+eq(declares(WSREAD, 'FCSWS_BUILD_VERSION_'), expectedStampFor_('58_api_v1_fc_summary_workspace.gs'),
+  'B2a 58_ keeps the release that changed the FC Summary READ workspace it owns');
 // And the change its stamp claims is really in the file, on the same test B2-0a/B2-0b apply to 14_ and 04_.
 ok(/function fcsPricingProject_\(/.test(WSREAD) && /pricing: \{ reads: \['pricing_list', 'marketplace_skus'\]/.test(WSREAD),
   'B2a-1 and the change its stamp claims is really in the file — the projection and its scoped slice spec');
@@ -758,8 +761,13 @@ var nowFiles = manifestRows(HEALTH).map(function (r) { return r.file; });
 // row since R21; this release gives that same file a SECOND ACTION, which changes what the file does and
 // not which files are probed. Membership must move by exactly nothing — the same strict statement in the
 // other direction, and the one that would catch a new owner file arriving undeclared.
-eq(nowFiles.filter(function (f) { return priorFiles.indexOf(f) === -1; }), [],
-  'H5  the manifest gained EXACTLY the rows this release declares — none');
+// R33 DECLARES ONE: 05_ enters the manifest for the first time. Until this round it owned an importer and
+// an adjustment handler, both of which either work or visibly do not; it now owns the overseas reservation
+// lifecycle, which 12_ and 22_ call BY NAME — so an old 05_ beside a new 12_ throws inside a journalled
+// transaction, and a file with no manifest row cannot be reported as stale. Membership must move by exactly
+// that row and no other, which is the same strict statement R21 made when 73_ arrived.
+eq(nowFiles.filter(function (f) { return priorFiles.indexOf(f) === -1; }), ['05_overseas_inventory_handlers.gs'],
+  'H5  the manifest gained EXACTLY the rows this release declares — 05_, and only 05_');
 eq(priorFiles.filter(function (f) { return nowFiles.indexOf(f) === -1; }), [],
   'H5a and lost none either — a probe silently dropped is a partial sync nobody can see');
 eq(priorFiles.filter(function (f) { return nowFiles.indexOf(f) === -1; }), [],

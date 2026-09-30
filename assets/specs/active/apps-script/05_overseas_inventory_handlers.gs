@@ -117,7 +117,11 @@ function handleImportOverseasInventorySnapshotBatch_(body) {
     wh_available_stock: 'available_stock', wh_reserved_stock: 'reserved_stock',
     wh_damaged_stock: 'damaged_stock', wh_on_the_way_qty: 'on_the_way_qty', wh_on_the_way_eta: 'on_the_way_eta'
   };
+  // The four quantity columns the snapshot holds. `qtyFields` remains the HEADER requirement (the sheet must
+  // still carry all four); `qtyWritableFields` is what an import may write, and wh_reserved_stock is
+  // deliberately not in it — S6-R4B §7, IMPORT_WRITES_RESERVED = NO.
   var qtyFields = ['wh_available_stock', 'wh_reserved_stock', 'wh_damaged_stock', 'wh_on_the_way_qty'];
+  var qtyWritableFields = ['wh_available_stock', 'wh_damaged_stock', 'wh_on_the_way_qty'];
 
   var snapData = snapSheet.getDataRange().getValues();
   var snapHeaders = snapData[0].map(function(h) { return String(h).trim().toLowerCase(); });
@@ -220,15 +224,24 @@ function handleImportOverseasInventorySnapshotBatch_(body) {
       continue;
     }
 
-    // Numeric (>= 0, CEILING) validation for quantity fields.
-    var qtyVals = {};
+    /* S6-R4B §8 — NUMERIC VALIDATION, WITH PRESENCE PRESERVED.
+     *
+     * `qtyPresent[f]` is the whole change. Before this round a blank cell, an absent column and an operator
+     * writing 0 all produced qtyVals[f] = 0 and all three were written, so "I did not mention damaged" and
+     * "damaged is zero" were the same request and the second one always won. They are now distinguishable,
+     * and §8's matrix says what each one means per field.
+     *
+     * wh_reserved_stock is EXCLUDED from this loop (§7). It is not validated, not collected and not written;
+     * a source-supplied reserved value is simply not the KM reservation authority. */
+    var qtyVals = {}, qtyPresent = {};
     var badQty = null;
-    for (var qi = 0; qi < qtyFields.length; qi++) {
-      var f = qtyFields[qi];
+    for (var qi = 0; qi < qtyWritableFields.length; qi++) {
+      var f = qtyWritableFields[qi];
       var rawVal = rowVal(row, f);   // accept canonical wh_ or legacy input key
       var sv = String(rawVal == null ? '' : rawVal).trim();
-      if (sv === '') { qtyVals[f] = 0; continue; }
+      if (sv === '') { qtyPresent[f] = false; qtyVals[f] = 0; continue; }
       if (!/^\d+(\.\d+)?$/.test(sv)) { badQty = { field: f, val: sv }; break; }
+      qtyPresent[f] = true;
       qtyVals[f] = Math.ceil(parseFloat(sv));
     }
     if (badQty) {
@@ -250,7 +263,39 @@ function handleImportOverseasInventorySnapshotBatch_(body) {
     var existing = bkToRow[key];
     if (existing && existing.row !== -1) {
       var tr = existing.row;
-      qtyFields.forEach(function(f) { var ci = snPref(f); if (ci !== -1) snapSheet.getRange(tr, ci + 1).setValue(qtyVals[f]); });
+
+      /* S6-R4B §6 — GROSS, AND THE GUARD BEFORE THE SUBTRACTION.
+       *
+       * The imported `available` is the SOURCE's figure, taken before KM's reservation exists (PART VI §40).
+       * The canonical operational value is therefore S - R. When the source reports FEWER units than KM has
+       * already committed there is no truthful post-import state, so the row is refused and nothing on it
+       * moves — not clamped to zero, not reconciled by quietly reducing the reservation.
+       *
+       * The guard is evaluated FIRST. Subtracting and then flooring at zero would erase (R - S) reserved
+       * units by arithmetic rather than by assignment, which is the same defect reached by a different route. */
+      var canonReserved = 0;
+      var resCi = snPref('wh_reserved_stock');
+      if (resCi !== -1) canonReserved = Math.round(parseFloat(snapData[tr - 1][resCi]) || 0);
+      if (qtyPresent['wh_available_stock'] && qtyVals['wh_available_stock'] < canonReserved) {
+        results.push(Object.assign({}, baseResult, { status: 'error',
+          code: 'IMPORT_RESERVATION_EXCEEDS_SOURCE_AVAILABLE',
+          message: 'Source available (' + qtyVals['wh_available_stock'] + ') is less than the reservation this ' +
+            'system already holds (' + canonReserved + '). Nothing on this row was changed.',
+          source_available: qtyVals['wh_available_stock'], canonical_reserved: canonReserved,
+          snapshot_id: existing.snapshotId }));
+        continue;   // §10 — ROW-level refusal. The batch continues; other rows import normally.
+      }
+
+      /* A blank or absent quantity writes NOTHING (§8). `wh_reserved_stock` is not in this list at all (§7),
+       * so no import path can reach that cell. */
+      qtyWritableFields.forEach(function(f) {
+        if (!qtyPresent[f]) return;
+        var ci = snPref(f);
+        if (ci === -1) return;
+        var v = qtyVals[f];
+        if (f === 'wh_available_stock') v = qtyVals[f] - canonReserved;   // GROSS -> operational
+        snapSheet.getRange(tr, ci + 1).setValue(v);
+      });
       if (etaCi !== -1) snapSheet.getRange(tr, etaCi + 1).setValue(etaVal);
       if (row.note !== undefined && snCol('note') !== -1) snapSheet.getRange(tr, snCol('note') + 1).setValue(noteVal);
       if (snCol('updated_at') !== -1) snapSheet.getRange(tr, snCol('updated_at') + 1).setValue(now);
@@ -261,7 +306,13 @@ function handleImportOverseasInventorySnapshotBatch_(body) {
       if (snIdCol() !== -1) newRow[snIdCol()] = sid;
       if (snCol('warehouse_id') !== -1) newRow[snCol('warehouse_id')] = warehouseId;
       if (snCol('sku') !== -1) newRow[snCol('sku')] = sku;
-      qtyFields.forEach(function(f) { var ci = snPref(f); if (ci !== -1) newRow[ci] = qtyVals[f]; });
+      /* A NEW row holds no KM reservation, so R = 0 and the GROSS arithmetic S - R is simply S — the same
+       * rule, not a special case. Reserved is INITIALIZED to 0 by row creation and is not read from the
+       * payload (§7): a source-reported reserved on a SKU this system has never reserved would mint a KM
+       * reservation that no lifecycle could ever release. */
+      qtyWritableFields.forEach(function(f) { var ci = snPref(f); if (ci !== -1) newRow[ci] = qtyVals[f]; });
+      var newResCi = snPref('wh_reserved_stock');
+      if (newResCi !== -1) newRow[newResCi] = 0;
       if (etaCi !== -1) newRow[etaCi] = etaVal;
       if (snCol('note') !== -1) newRow[snCol('note')] = noteVal;
       if (snCol('created_at') !== -1) newRow[snCol('created_at')] = now;
@@ -276,6 +327,408 @@ function handleImportOverseasInventorySnapshotBatch_(body) {
   results.forEach(function(x) { if (summary[x.status] !== undefined) summary[x.status]++; });
   return jsonResponse_({ success: true, data: { summary: summary, results: results } });
 }
+
+// ============================================================================================================
+// S6-R4B — THE OVERSEAS RESERVATION LIFECYCLE.  __OVS_LIFECYCLE_START__  (test extraction marker)
+// ------------------------------------------------------------------------------------------------------------
+// This is the overseas analogue of 21_'s factory reservation transaction layer, and it is DELIBERATELY NOT the
+// same arithmetic. The two domains store availability differently and the contract (PART V §31, PART VI §41)
+// froze the difference:
+//
+//   FACTORY    available is DERIVED:  available = fac_current_stock - fac_reserved_stock
+//              a reserve moves nothing; it raises reserved and available falls out of the subtraction.
+//
+//   OVERSEAS   available is STORED:   wh_available_stock IS the allocatable quantity
+//              a reserve TRANSFERS:   available -= qty AND reserved += qty, together, in one row.
+//
+// So ALLOCATABLE_OVERSEAS_QTY = wh_available_stock, never wh_available_stock - wh_reserved_stock. Subtracting
+// reserved a second time is the single most plausible wrong line in this file — the reserved units already left
+// available when the reservation was acquired — and ovsAllocatableTx_ exists as the one place that arithmetic
+// is written down, so a mutant can be pointed at it.
+//
+// wh_physical_stock takes no part in any of it (PART V §32). Every row below carries its before/after pair
+// unchanged, which is a ledger truthfully recording that a bucket with no lifecycle did not move.
+//
+// THE JOURNAL IS THE SAME SHAPE 21_ USES — { kind:'cell', sheet, row, col, prev } and { kind:'row', sheet, row }
+// — so factoryStockRollbackJournal_ undoes an overseas write as readily as a factory one. That is the whole
+// composition: ONE journal and ONE rollback across two domains, rather than a second rollback that could
+// disagree with the first about what "undo" means. 12_ therefore rolls a mixed transaction back atomically.
+// ============================================================================================================
+
+// S6-R4B — 05_'s FIRST build stamp. Before this round the file owned an importer and an adjustment handler,
+// both of which either work or visibly do not. It now owns a reservation lifecycle that 12_ and 22_ CALL by
+// name, so an old 05_ beside a new 12_ resolves ovsAcquireReservationTx_ to undefined and throws inside a
+// journalled transaction — which is precisely the half-synced state a per-module stamp exists to expose.
+var OVERSEAS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R33';
+
+var OVSTX_MOV_RESERVE_ACQUIRE_ = 'reservation_acquire';
+var OVSTX_MOV_RESERVE_RELEASE_ = 'reservation_release';
+var OVSTX_MOV_SHIPMENT_OUT_ = 'shipment_out';
+var OVSTX_MOV_INVENTORY_IMPORT_ = 'inventory_import';
+// PART V §35 declared all four. NEW_MOVEMENT_TYPES_REQUIRED = 0 and this list is the proof: nothing here is
+// invented and nothing is a synonym for an existing movement.
+var OVSTX_MOVEMENT_TYPES_ = [OVSTX_MOV_RESERVE_ACQUIRE_, OVSTX_MOV_RESERVE_RELEASE_,
+  OVSTX_MOV_SHIPMENT_OUT_, OVSTX_MOV_INVENTORY_IMPORT_];
+/* THE TYPES WHOSE wh_quantity IS A RESERVED DELTA — and this list differs from 21_'s on purpose.
+ *
+ * 21_ EXCLUDES shipment_out from the FACTORY per-owner ledger, because a factory dispatch row's `qty` is the
+ * CURRENT-stock delta and its reservation release is carried only by that row's before/after reserved pair;
+ * summing `qty` there would add a physical movement to a reservation total.
+ *
+ * An overseas dispatch is not that shape. It moves ONLY reserved, so its wh_quantity IS the reserved delta
+ * (-take), exactly as on acquire (+q) and release (-q). Excluding it left a consumed hold looking
+ * outstanding for ever: a second dispatch found the hold still standing against a reserved balance of zero
+ * and threw inside a journalled transaction instead of answering NO_RESERVATION. §21 case O caught it.
+ *
+ * The INVARIANT is 21_'s — the ledger must reconstruct the reserved balance. The membership follows from
+ * THIS domain's row shape rather than from that one's exclusion list, which is what I copied first. */
+var OVSTX_RESERVED_AXIS_TYPES_ = [OVSTX_MOV_RESERVE_ACQUIRE_, OVSTX_MOV_RESERVE_RELEASE_,
+  OVSTX_MOV_SHIPMENT_OUT_];
+var OVSTX_RESERVATION_OWNER_TYPE_ = 'shipment';
+var OVSTX_SOURCE_MODULE_ = 'overseas_inventory';
+
+/** Resolve the snapshot's columns once, canonical wh_* with the temporary legacy fallback. */
+function ovsStockColsTx_(headerRow) {
+  var H = (headerRow || []).map(function (h) { return String(h).trim().toLowerCase(); });
+  function pick(canon, legacy) { var i = H.indexOf(canon); return i !== -1 ? i : H.indexOf(legacy); }
+  return {
+    H: H,
+    wh: H.indexOf('warehouse_id'), sku: H.indexOf('sku'), siteSku: H.indexOf('site_sku'),
+    avail: pick('wh_available_stock', 'available_stock'),
+    res: pick('wh_reserved_stock', 'reserved_stock'),
+    phys: pick('wh_physical_stock', 'physical_stock'),
+    lastMov: H.indexOf('last_movement_at'), updatedAt: H.indexOf('updated_at'),
+    id: (function () { var i = H.indexOf('overseas_inventory_id'); return i !== -1 ? i : H.indexOf('snapshot_id'); })()
+  };
+}
+
+/**
+ * The (warehouse_id, sku) balance. A missing row reads as all-zero rather than throwing: "no row" and "zero
+ * stock" are the same availability fact, and the caller's job is to refuse on availability, not on row
+ * presence. Mirrors factoryStockReadBalanceTx_'s contract so the two domains answer the same SHAPE.
+ */
+function ovsStockReadBalanceTx_(snapSheet, warehouseId, sku) {
+  warehouseId = String(warehouseId == null ? '' : warehouseId).trim();
+  sku = String(sku == null ? '' : sku).trim();
+  var data = snapSheet.getDataRange().getValues();
+  var C = ovsStockColsTx_(data[0]);
+  if (C.wh === -1 || C.sku === -1 || C.avail === -1) {
+    throw new Error('ovsStockReadBalanceTx_: overseas_inventory_snapshot missing required columns');
+  }
+  for (var r = 1; r < data.length; r++) {
+    if (String(data[r][C.wh] || '').trim() !== warehouseId) continue;
+    if (String(data[r][C.sku] || '').trim() !== sku) continue;
+    return {
+      found: true, row: r + 1,
+      available: Math.round(parseFloat(data[r][C.avail]) || 0),
+      reserved: C.res === -1 ? 0 : Math.round(parseFloat(data[r][C.res]) || 0),
+      physical: C.phys === -1 ? '' : data[r][C.phys]
+    };
+  }
+  return { found: false, row: -1, available: 0, reserved: 0, physical: '' };
+}
+
+/**
+ * S6-R3A §31 / R4B §5 — THE ALLOCATABLE QUANTITY, IN ONE PLACE.
+ *
+ * It is the stored available bucket and nothing else. Writing `bal.available - bal.reserved` here would hold
+ * the reserved units against the pool a SECOND time: they left `available` when the reservation was acquired,
+ * so subtracting them again reports 40 allocatable on a 70/30 pool that genuinely has 70.
+ */
+function ovsAllocatableTx_(bal) {
+  return Math.round(Number((bal && bal.available) || 0));
+}
+
+/**
+ * The per-owner reservation ledger for ONE owner: { 'warehouse_id||sku': netHeldQty }.
+ *
+ * This is simultaneously the lifecycle status and the idempotency check — the same property 21_ relies on, and
+ * the reason §16 needs no new column. A replayed acquire sees its own earlier row and applies nothing; a
+ * release can never exceed what this owner actually holds.
+ */
+function ovsOwnerReservedTx_(movSheet, ownerType, ownerId) {
+  var out = {};
+  ownerType = String(ownerType == null ? '' : ownerType).trim();
+  ownerId = String(ownerId == null ? '' : ownerId).trim();
+  if (!ownerId) return out;
+  var data = movSheet.getDataRange().getValues();
+  var H = (data[0] || []).map(function (h) { return String(h).trim().toLowerCase(); });
+  var tC = H.indexOf('movement_type'), wC = H.indexOf('warehouse_id'), sC = H.indexOf('sku');
+  var qC = H.indexOf('wh_quantity'); if (qC === -1) qC = H.indexOf('quantity');
+  var rtC = H.indexOf('reference_type'), riC = H.indexOf('reference_id');
+  if (tC === -1 || qC === -1 || wC === -1 || sC === -1 || riC === -1) return out;
+  for (var r = 1; r < data.length; r++) {
+    var t = String(data[r][tC] || '').trim();
+    if (OVSTX_RESERVED_AXIS_TYPES_.indexOf(t) === -1) continue;
+    if (String(data[r][riC] || '').trim() !== ownerId) continue;
+    if (ownerType && rtC !== -1 && String(data[r][rtC] || '').trim() !== ownerType) continue;
+    var k = String(data[r][wC] || '').trim() + '||' + String(data[r][sC] || '').trim();
+    out[k] = (out[k] || 0) + Math.round(parseFloat(data[r][qC]) || 0);
+  }
+  return out;
+}
+
+/**
+ * APPLY. One (availableDelta, reservedDelta) pair, one snapshot update, one movement row, journalled.
+ *
+ * Both deltas are applied TOGETHER on one row. Writing them as two separate facts is precisely what would let
+ * a reserve deduct availability while failing to raise reserved — the state in which the units are held by
+ * nobody and allocatable by everybody.
+ *
+ * Invariants: neither bucket may go negative. There is deliberately NO `available - reserved >= 0` check here,
+ * because that is the FACTORY invariant; for overseas the two buckets are independent stores and their sum is
+ * the pool, not their difference.
+ */
+function ovsApplyDeltaTx_(p) {
+  var snapSheet = p.snapSheet, movSheet = p.movSheet;
+  var warehouseId = String(p.warehouseId || '').trim();
+  var sku = String(p.sku || '').trim();
+  var availDelta = (p.availableDelta === undefined || p.availableDelta === null || p.availableDelta === '')
+    ? 0 : Math.round(Number(p.availableDelta));
+  var resDelta = (p.reservedDelta === undefined || p.reservedDelta === null || p.reservedDelta === '')
+    ? 0 : Math.round(Number(p.reservedDelta));
+  var journal = p.journal || [];
+  var now = p.now;
+  if (!warehouseId || !sku) throw new Error('ovsApplyDeltaTx_: warehouseId + sku required');
+  if (!isFinite(availDelta) || !isFinite(resDelta)) throw new Error('ovsApplyDeltaTx_: deltas must be finite');
+  if (OVSTX_MOVEMENT_TYPES_.indexOf(String(p.movementType || '').trim()) === -1) {
+    throw new Error('ovsApplyDeltaTx_: unknown movement_type "' + p.movementType + '" (closed vocabulary)');
+  }
+
+  var data = snapSheet.getDataRange().getValues();
+  var C = ovsStockColsTx_(data[0]);
+  if (C.wh === -1 || C.sku === -1 || C.avail === -1 || C.res === -1) {
+    throw new Error('ovsApplyDeltaTx_: overseas_inventory_snapshot missing required columns');
+  }
+
+  var targetRow = -1;
+  for (var r = 1; r < data.length; r++) {
+    if (String(data[r][C.wh] || '').trim() === warehouseId && String(data[r][C.sku] || '').trim() === sku) {
+      targetRow = r + 1; break;
+    }
+  }
+  // A reservation against a pool with NO snapshot row is refused rather than creating one. An overseas row is
+  // created by Import, which is the only thing that knows the site_sku and the source identity; minting one
+  // here would invent a stock record as a side effect of reserving against it.
+  if (targetRow === -1) throw new Error('ovsApplyDeltaTx_: no overseas_inventory_snapshot row for ' + warehouseId + ' / ' + sku);
+
+  var beforeAvailable = Math.round(parseFloat(data[targetRow - 1][C.avail]) || 0);
+  var beforeReserved = Math.round(parseFloat(data[targetRow - 1][C.res]) || 0);
+  var physical = C.phys === -1 ? '' : data[targetRow - 1][C.phys];
+  var siteSku = C.siteSku === -1 ? '' : String(data[targetRow - 1][C.siteSku] || '').trim();
+  var afterAvailable = beforeAvailable + availDelta;
+  var afterReserved = beforeReserved + resDelta;
+  if (afterAvailable < 0) {
+    throw new Error('ovsApplyDeltaTx_: resulting wh_available_stock would be negative (' + beforeAvailable + ' + ' + availDelta + ')');
+  }
+  if (afterReserved < 0) {
+    throw new Error('ovsApplyDeltaTx_: resulting wh_reserved_stock would be negative (' + beforeReserved + ' + ' + resDelta + ')');
+  }
+
+  // Each cell is written ONLY when it actually changes, so a zero delta neither dirties a cell nor adds a
+  // journal entry nor makes a replay look like a write.
+  if (availDelta !== 0) {
+    snapSheet.getRange(targetRow, C.avail + 1).setValue(afterAvailable);
+    journal.push({ kind: 'cell', sheet: snapSheet, row: targetRow, col: C.avail, prev: beforeAvailable });
+  }
+  if (resDelta !== 0) {
+    snapSheet.getRange(targetRow, C.res + 1).setValue(afterReserved);
+    journal.push({ kind: 'cell', sheet: snapSheet, row: targetRow, col: C.res, prev: beforeReserved });
+  }
+  if (C.lastMov !== -1) {
+    journal.push({ kind: 'cell', sheet: snapSheet, row: targetRow, col: C.lastMov, prev: data[targetRow - 1][C.lastMov] });
+    snapSheet.getRange(targetRow, C.lastMov + 1).setValue(now);
+  }
+  if (C.updatedAt !== -1) {
+    journal.push({ kind: 'cell', sheet: snapSheet, row: targetRow, col: C.updatedAt, prev: data[targetRow - 1][C.updatedAt] });
+    snapSheet.getRange(targetRow, C.updatedAt + 1).setValue(now);
+  }
+  SpreadsheetApp.flush();
+
+  // The movement row. `wh_quantity` is the movement's PRIMARY quantity and each caller states which delta that
+  // is, because for a reservation BOTH buckets move and guessing produces a ledger that reads 0 for every
+  // owner — which would silently break acquire idempotency, the dispatch release and any reconciliation at
+  // once. 21_ learned this the same way; here it is a required parameter rather than an inference.
+  var movementId = 'OVMV-' + Utilities.getUuid().replace(/-/g, '').substring(0, 8);
+  var movHeaders = movSheet.getDataRange().getValues()[0].map(function (h) { return String(h).trim().toLowerCase(); });
+  var mvCol = function (n) { return movHeaders.indexOf(n); };
+  var mvQty = mvCol('wh_quantity'); if (mvQty === -1) mvQty = mvCol('quantity');
+  var mvQtyB = mvCol('wh_quantity_before'); if (mvQtyB === -1) mvQtyB = mvCol('quantity_before');
+  var mvQtyA = mvCol('wh_quantity_after'); if (mvQtyA === -1) mvQtyA = mvCol('quantity_after');
+  var movRow = new Array(movHeaders.length).fill('');
+  var setMv = function (name, val) { var i = mvCol(name); if (i !== -1) movRow[i] = val; };
+  setMv('movement_id', movementId);
+  setMv('movement_date', p.movementDate || now);
+  setMv('warehouse_id', warehouseId);
+  setMv('sku', sku);
+  setMv('site_sku', siteSku);
+  setMv('movement_type', p.movementType);
+  setMv('movement_scope', p.movementScope);
+  setMv('from_stock_type', p.fromStockType === undefined ? '' : p.fromStockType);
+  setMv('to_stock_type', p.toStockType === undefined ? '' : p.toStockType);
+  if (mvQty !== -1) movRow[mvQty] = Math.round(Number(p.primaryQty));
+  if (mvQtyB !== -1) movRow[mvQtyB] = (p.primaryAxis === 'available') ? beforeAvailable : beforeReserved;
+  if (mvQtyA !== -1) movRow[mvQtyA] = (p.primaryAxis === 'available') ? afterAvailable : afterReserved;
+  setMv('wh_before_available_stock', beforeAvailable);
+  setMv('wh_after_available_stock', afterAvailable);
+  setMv('wh_before_reserved_stock', beforeReserved);
+  setMv('wh_after_reserved_stock', afterReserved);
+  setMv('wh_before_physical_stock', physical);     // carried unchanged — physical has no Phase-1 lifecycle
+  setMv('wh_after_physical_stock', physical);
+  setMv('reference_type', p.referenceType || '');
+  setMv('reference_id', p.referenceId || '');
+  setMv('source_module', OVSTX_SOURCE_MODULE_);
+  setMv('created_by', p.createdBy || 'operation-system');
+  setMv('created_at', now);
+  setMv('note', p.note || '');
+  movSheet.appendRow(movRow);
+  journal.push({ kind: 'row', sheet: movSheet, row: movSheet.getLastRow() });
+  SpreadsheetApp.flush();
+
+  return { movementId: movementId, row: targetRow,
+    beforeAvailable: beforeAvailable, afterAvailable: afterAvailable,
+    beforeReserved: beforeReserved, afterReserved: afterReserved };
+}
+
+/**
+ * ACQUIRE — §2.  available -= qty, reserved += qty, in ONE row.
+ *
+ * Idempotent through the ledger, exactly as 21_ is: an owner already holding >= qty applies NOTHING, and a
+ * partially-applied prior attempt tops up the shortfall rather than reserving twice.
+ */
+function ovsAcquireReservationTx_(p) {
+  var qty = Math.round(Number(p.qty));
+  if (!isFinite(qty) || qty <= 0) throw new Error('ovsAcquireReservationTx_: qty must be a positive integer');
+  var ownerType = String(p.ownerType || OVSTX_RESERVATION_OWNER_TYPE_).trim();
+  var ownerId = String(p.ownerId || '').trim();
+  if (!ownerId) throw new Error('ovsAcquireReservationTx_: ownerId required (a reservation with no owner has no lineage)');
+  var key = String(p.warehouseId || '').trim() + '||' + String(p.sku || '').trim();
+  var held = (ovsOwnerReservedTx_(p.movSheet, ownerType, ownerId)[key] || 0);
+  if (held >= qty) return { applied: false, reason: 'ALREADY_RESERVED', reserved: 0, alreadyHeld: held, movementId: '' };
+  var need = qty - held;
+  var res = ovsApplyDeltaTx_({
+    snapSheet: p.snapSheet, movSheet: p.movSheet, warehouseId: p.warehouseId, sku: p.sku,
+    availableDelta: -need, reservedDelta: need,
+    movementType: OVSTX_MOV_RESERVE_ACQUIRE_, movementScope: 'reserved_stock',
+    fromStockType: 'available', toStockType: 'reserved',
+    primaryQty: need, primaryAxis: 'reserved',
+    referenceType: ownerType, referenceId: ownerId,
+    journal: p.journal, now: p.now, movementDate: p.movementDate, createdBy: p.createdBy,
+    note: p.note || ('Overseas stock reserved for ' + ownerType + ' ' + ownerId)
+  });
+  return { applied: true, reason: 'RESERVED', reserved: need, alreadyHeld: held, movementId: res.movementId,
+    beforeAvailable: res.beforeAvailable, afterAvailable: res.afterAvailable,
+    beforeReserved: res.beforeReserved, afterReserved: res.afterReserved };
+}
+
+/**
+ * RELEASE — §3.  reserved -= qty, available += qty.
+ *
+ * Gives back at most what THIS owner holds, so it can never release another owner's reservation and can never
+ * drive a bucket negative. Holding nothing is a no-op rather than an error, which is what makes cancellation
+ * and a replayed release safe.
+ */
+function ovsReleaseReservationTx_(p) {
+  var ownerType = String(p.ownerType || OVSTX_RESERVATION_OWNER_TYPE_).trim();
+  var ownerId = String(p.ownerId || '').trim();
+  if (!ownerId) throw new Error('ovsReleaseReservationTx_: ownerId required');
+  var key = String(p.warehouseId || '').trim() + '||' + String(p.sku || '').trim();
+  var held = (ovsOwnerReservedTx_(p.movSheet, ownerType, ownerId)[key] || 0);
+  if (held <= 0) return { applied: false, reason: 'NO_RESERVATION', released: 0, alreadyHeld: 0, movementId: '' };
+  var want = (p.qty === undefined || p.qty === null || p.qty === '') ? held : Math.round(Number(p.qty));
+  if (!isFinite(want) || want <= 0) return { applied: false, reason: 'NOTHING_TO_RELEASE', released: 0, alreadyHeld: held, movementId: '' };
+  var give = Math.min(want, held);
+  var res = ovsApplyDeltaTx_({
+    snapSheet: p.snapSheet, movSheet: p.movSheet, warehouseId: p.warehouseId, sku: p.sku,
+    availableDelta: give, reservedDelta: -give,
+    movementType: OVSTX_MOV_RESERVE_RELEASE_, movementScope: 'reserved_stock',
+    fromStockType: 'reserved', toStockType: 'available',
+    primaryQty: -give, primaryAxis: 'reserved',
+    referenceType: ownerType, referenceId: ownerId,
+    journal: p.journal, now: p.now, movementDate: p.movementDate, createdBy: p.createdBy,
+    note: p.note || ('Overseas stock reservation released for ' + ownerType + ' ' + ownerId +
+      (p.releaseReason ? (' | reason=' + p.releaseReason) : ''))
+  });
+  return { applied: true, reason: 'RELEASED', released: give, alreadyHeld: held, movementId: res.movementId,
+    beforeAvailable: res.beforeAvailable, afterAvailable: res.afterAvailable,
+    beforeReserved: res.beforeReserved, afterReserved: res.afterReserved };
+}
+
+/**
+ * CONSUME — §4.  reserved -= qty.  AVAILABLE IS NOT TOUCHED.
+ *
+ * This is the line §4 exists to protect. The units left `available` when the reservation was acquired; taking
+ * them out again at dispatch would turn 70/30 into 40/0 and destroy thirty units that were never shipped. The
+ * release of the hold rides this row's own reserved before/after pair — no separate reservation_release row is
+ * written, which is the same asymmetry 22_ already relies on for factory and the same double count it avoids.
+ */
+function ovsConsumeReservationTx_(p) {
+  var ownerType = String(p.ownerType || OVSTX_RESERVATION_OWNER_TYPE_).trim();
+  var ownerId = String(p.ownerId || '').trim();
+  if (!ownerId) throw new Error('ovsConsumeReservationTx_: ownerId required');
+  var key = String(p.warehouseId || '').trim() + '||' + String(p.sku || '').trim();
+  var held = (ovsOwnerReservedTx_(p.movSheet, ownerType, ownerId)[key] || 0);
+  if (held <= 0) return { applied: false, reason: 'NO_RESERVATION', consumed: 0, alreadyHeld: 0, movementId: '' };
+  var want = (p.qty === undefined || p.qty === null || p.qty === '') ? held : Math.round(Number(p.qty));
+  if (!isFinite(want) || want <= 0) return { applied: false, reason: 'NOTHING_TO_CONSUME', consumed: 0, alreadyHeld: held, movementId: '' };
+  var take = Math.min(want, held);
+  var res = ovsApplyDeltaTx_({
+    snapSheet: p.snapSheet, movSheet: p.movSheet, warehouseId: p.warehouseId, sku: p.sku,
+    availableDelta: 0, reservedDelta: -take,          // available: NOT touched. §4.
+    movementType: OVSTX_MOV_SHIPMENT_OUT_, movementScope: 'reserved_stock',
+    fromStockType: 'reserved', toStockType: 'none',
+    primaryQty: -take, primaryAxis: 'reserved',
+    referenceType: ownerType, referenceId: ownerId,
+    journal: p.journal, now: p.now, movementDate: p.movementDate, createdBy: p.createdBy,
+    note: p.note || ('Overseas stock dispatched for ' + ownerType + ' ' + ownerId)
+  });
+  return { applied: true, reason: 'CONSUMED', consumed: take, alreadyHeld: held, movementId: res.movementId,
+    beforeAvailable: res.beforeAvailable, afterAvailable: res.afterAvailable,
+    beforeReserved: res.beforeReserved, afterReserved: res.afterReserved };
+}
+
+/**
+ * THE SOURCE DOMAIN OF A WAREHOUSE — §11 / §12.
+ *
+ * Returns 'FACTORY' or 'OVERSEAS'. This is the ONLY thing that routes a shipment's sufficiency check and its
+ * reservation between the two lifecycles; the two storage owners and the two arithmetics stay entirely
+ * separate and are merely composed above by the caller.
+ *
+ * `is_factory_warehouse` is the canonical flag and `warehouse_type` is the fallback, which is the same
+ * precedence overseasImportWarehouseIssue_ already applies. An unknown warehouse answers FACTORY so that
+ * nothing about existing behaviour changes for a row this function cannot classify.
+ */
+function ovsWarehouseSourceDomain_(whRecord) {
+  if (!whRecord) return 'FACTORY';
+  if (whRecord.isFactory === true) return 'FACTORY';
+  if (String(whRecord.type == null ? '' : whRecord.type).trim().toUpperCase() === 'FACTORY') return 'FACTORY';
+  return 'OVERSEAS';
+}
+
+/** Read one warehouses row into the shape ovsWarehouseSourceDomain_ expects. Read-only. */
+function ovsReadWarehouseRecord_(ss, warehouseId) {
+  var whSheet = ss.getSheetByName('warehouses');
+  if (!whSheet) return null;
+  var data = whSheet.getDataRange().getValues();
+  var H = (data[0] || []).map(function (h) { return String(h).trim().toLowerCase(); });
+  var idC = H.indexOf('warehouse_id');
+  if (idC === -1) return null;
+  var facC = H.indexOf('is_factory_warehouse'), typeC = H.indexOf('warehouse_type');
+  var actC = H.indexOf('is_active'), stC = H.indexOf('status');
+  warehouseId = String(warehouseId == null ? '' : warehouseId).trim();
+  for (var r = 1; r < data.length; r++) {
+    if (String(data[r][idC] || '').trim() !== warehouseId) continue;
+    return {
+      warehouseId: warehouseId,
+      isFactory: facC === -1 ? false : overseasImportTruthy_(data[r][facC]),
+      type: typeC === -1 ? '' : String(data[r][typeC] || '').trim(),
+      isActive: actC !== -1 ? overseasImportTruthy_(data[r][actC])
+        : (stC !== -1 ? String(data[r][stC] || '').trim().toLowerCase() === 'active' : true)
+    };
+  }
+  return null;
+}
+// __OVS_LIFECYCLE_END__
 
 // ========================================
 // Overseas Inventory Adjustment Handler (renamed 2026-07-23: "Manual Adjustment" -> "Inventory Adjustment")

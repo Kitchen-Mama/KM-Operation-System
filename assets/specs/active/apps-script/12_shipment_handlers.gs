@@ -314,7 +314,7 @@ function shipmentExactRateAndCost_(ss, ctx) {
 // reservation), the updateShipment status allowlist, and the cancelled-skip in the retry idempotency scan. A
 // 12_ one round behind cannot cancel at all, and would let `status:'cancelled'` through updateShipment with no
 // release — stranding units while returning success.
-var SHIPMENT_BUILD_VERSION_ = 'F1-7N-FC-1A-R1';
+var SHIPMENT_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R33';
 
 // ---- Execution Commit: Approved shipping_plan → shipments + shipment_lines (draft) ----
 
@@ -442,6 +442,10 @@ function createShipmentFromApprovedPlan_(ss, planId, actor) {
     if (needBySku[nSku] === undefined) { needBySku[nSku] = 0; needSkus.push(nSku); }
     needBySku[nSku] += nQty;
   }
+  // S6-R4B §11 — WHICH DOMAIN OWNS THIS SOURCE. Resolved once, before any sheet is read, so the precheck
+  // and the acquire below cannot disagree about where the units live.
+  var srcDomain = shipmentSourceDomain_(ss, srcWarehouseId);
+  var srcSheets = null;
   var fcStockSheet = ss.getSheetByName('factory_stock');
   var FC_MOV_HEADERS_ = ['factory_stock_movement_id', 'movement_date', 'sku', 'warehouse_id', 'movement_type', 'qty',
     'related_entity_type', 'related_entity_id', 'before_current_stock', 'after_current_stock',
@@ -451,12 +455,20 @@ function createShipmentFromApprovedPlan_(ss, planId, actor) {
     // A plan with units to ship and no source warehouse cannot reserve anything, and reserving against a
     // guessed warehouse would be worse than refusing. Fail closed and name the missing field.
     if (!srcWarehouseId) { fcUnlock_(); return { created: false, reason: 'SOURCE_WAREHOUSE_REQUIRED_FOR_RESERVATION', shipping_plan_id: planId }; }
-    if (!fcStockSheet) { fcUnlock_(); return { created: false, reason: 'factory_stock_not_found' }; }
-    fcMovSheet = fcWriteEnsureSheet_(ss, 'factory_stock_movements', FC_MOV_HEADERS_);
-    fcWriteEnsureColumns_(fcMovSheet, FC_MOV_HEADERS_);
+    srcSheets = shipmentDomainSheets_(ss, srcDomain);
+    if (!srcSheets) {
+      fcUnlock_();
+      return { created: false, reason: srcDomain === SHIPMENT_DOMAIN_OVERSEAS_
+        ? 'overseas_inventory_snapshot_not_found' : 'factory_stock_not_found' };
+    }
+    if (srcDomain === SHIPMENT_DOMAIN_FACTORY_) {
+      fcMovSheet = fcWriteEnsureSheet_(ss, 'factory_stock_movements', FC_MOV_HEADERS_);
+      fcWriteEnsureColumns_(fcMovSheet, FC_MOV_HEADERS_);
+      srcSheets.movSheet = fcMovSheet;
+    }
     var shortfalls = [];
     for (var ns = 0; ns < needSkus.length; ns++) {
-      var bal = factoryStockReadBalanceTx_(fcStockSheet, srcWarehouseId, needSkus[ns]);
+      var bal = shipmentDomainAvailable_(srcDomain, srcSheets, srcWarehouseId, needSkus[ns]);
       if (bal.available < needBySku[needSkus[ns]]) {
         shortfalls.push({ sku: needSkus[ns], warehouse_id: srcWarehouseId, need: needBySku[needSkus[ns]],
           available: bal.available, current: bal.current, reserved: bal.reserved });
@@ -464,9 +476,14 @@ function createShipmentFromApprovedPlan_(ss, planId, actor) {
     }
     if (shortfalls.length) {
       fcUnlock_();
-      return { created: false, reason: 'INSUFFICIENT_FACTORY_STOCK', shipping_plan_id: planId,
+      // The refusal names the domain that refused, because 'insufficient factory stock' on a 3PL source was
+      // exactly the misleading message this round removes.
+      var shortLabel = srcDomain === SHIPMENT_DOMAIN_OVERSEAS_ ? 'overseas' : 'factory';
+      return { created: false,
+        reason: srcDomain === SHIPMENT_DOMAIN_OVERSEAS_ ? 'INSUFFICIENT_OVERSEAS_STOCK' : 'INSUFFICIENT_FACTORY_STOCK',
+        shipping_plan_id: planId, source_domain: srcDomain,
         source_warehouse_id: srcWarehouseId, shortfalls: shortfalls,
-        message: 'Insufficient available factory stock at ' + srcWarehouseId + ' for: ' + shortfalls.map(function (x) {
+        message: 'Insufficient available ' + shortLabel + ' stock at ' + srcWarehouseId + ' for: ' + shortfalls.map(function (x) {
           return x.sku + ' (need ' + x.need + ', available ' + x.available + ')'; }).join('; ') +
           '. No Shipment Draft was created and nothing was reserved.' };
     }
@@ -657,13 +674,12 @@ function createShipmentFromApprovedPlan_(ss, planId, actor) {
   if (needSkus.length) {
     try {
       for (var ra = 0; ra < needSkus.length; ra++) {
-        var acq = factoryStockAcquireReservationTx_({
-          stockSheet: fcStockSheet, movSheet: fcMovSheet, warehouseId: srcWarehouseId, sku: needSkus[ra],
-          qty: needBySku[needSkus[ra]], ownerType: FSTX_RESERVATION_OWNER_TYPE_, ownerId: shipmentId,
+        var acq = shipmentDomainAcquire_(srcDomain, srcSheets, {
+          warehouseId: srcWarehouseId, sku: needSkus[ra], qty: needBySku[needSkus[ra]], ownerId: shipmentId,
           journal: fcJournal, now: now, movementDate: today, createdBy: actor,
           note: 'Reserved for Shipment Draft ' + shipmentId + ' (shipping plan ' + planId + ')'
         });
-        reservationSummary.push({ sku: needSkus[ra], warehouse_id: srcWarehouseId,
+        reservationSummary.push({ sku: needSkus[ra], warehouse_id: srcWarehouseId, source_domain: srcDomain,
           reserved_qty: needBySku[needSkus[ra]], applied: acq.applied, reason: acq.reason });
       }
     } catch (eRes) {
@@ -695,6 +711,110 @@ function createShipmentFromApprovedPlan_(ss, planId, actor) {
   return { created: true, shipment_id: shipmentId, shipment_no: shipmentNo, line_count: lineCount,
     source_warehouse_id: srcWarehouseId, factory_reservations: reservationSummary };
 }
+
+// ==========================================================================================================
+// S6-R4B §11/§12 — SOURCE DOMAIN ROUTING.  __SHIPMENT_SOURCE_DOMAIN_START__
+//
+// One question, asked once per source warehouse: FACTORY or OVERSEAS. Everything below forwards to that
+// domain's own lifecycle and adds no arithmetic of its own. The pool key is unchanged on both sides -
+// `WH:<warehouse_id>||<sku>` (§12) - so nothing downstream can tell which domain answered.
+//
+// WHY THE TWO ARE NOT MERGED. Factory availability is DERIVED (current - reserved) and a factory reserve
+// moves no stored quantity; overseas availability is STORED and a reserve TRANSFERS between two cells. The
+// displayed number is the same kind of thing; the arithmetic that produces it is not, and a single owner
+// would have to pick one and be wrong for the other domain.
+// ==========================================================================================================
+var SHIPMENT_DOMAIN_FACTORY_ = 'FACTORY';
+var SHIPMENT_DOMAIN_OVERSEAS_ = 'OVERSEAS';
+
+/** FACTORY unless the warehouses row proves otherwise. An unclassifiable warehouse keeps today's behaviour. */
+function shipmentSourceDomain_(ss, warehouseId) {
+  if (typeof ovsReadWarehouseRecord_ !== 'function' || typeof ovsWarehouseSourceDomain_ !== 'function') {
+    return SHIPMENT_DOMAIN_FACTORY_;
+  }
+  try {
+    var rec = ovsReadWarehouseRecord_(ss, warehouseId);
+    if (!rec) return SHIPMENT_DOMAIN_FACTORY_;
+    return ovsWarehouseSourceDomain_(rec) === SHIPMENT_DOMAIN_OVERSEAS_
+      ? SHIPMENT_DOMAIN_OVERSEAS_ : SHIPMENT_DOMAIN_FACTORY_;
+  } catch (e) { return SHIPMENT_DOMAIN_FACTORY_; }
+}
+
+/** The two sheets that domain writes through. Returns null when the domain's tables are absent. */
+function shipmentDomainSheets_(ss, domain) {
+  if (domain === SHIPMENT_DOMAIN_OVERSEAS_) {
+    var snap = ss.getSheetByName('overseas_inventory_snapshot');
+    if (!snap) return null;
+    var mov = (typeof fcWriteEnsureSheet_ === 'function')
+      ? fcWriteEnsureSheet_(ss, 'overseas_inventory_movements', OVS_MOVEMENT_HEADERS_FOR_SHIPMENT_)
+      : ss.getSheetByName('overseas_inventory_movements');
+    if (!mov) return null;
+    return { domain: domain, stockSheet: snap, movSheet: mov };
+  }
+  var stk = ss.getSheetByName('factory_stock');
+  if (!stk) return null;
+  return { domain: domain, stockSheet: stk, movSheet: null };   // movSheet ensured by the caller as today
+}
+
+// The overseas movements header, mirrored so 12_ can ensure the sheet without reaching into 05_'s locals.
+var OVS_MOVEMENT_HEADERS_FOR_SHIPMENT_ = [
+  'movement_id', 'movement_date', 'warehouse_id', 'sku', 'site_sku',
+  'movement_type', 'movement_scope', 'from_stock_type', 'to_stock_type',
+  'wh_quantity', 'wh_quantity_before', 'wh_quantity_after',
+  'wh_before_physical_stock', 'wh_after_physical_stock',
+  'wh_before_reserved_stock', 'wh_after_reserved_stock',
+  'wh_before_available_stock', 'wh_after_available_stock',
+  'reference_type', 'reference_id', 'source_module', 'created_by', 'created_at', 'note'
+];
+
+/**
+ * ALLOCATABLE, per domain. This is the one place the two availability rules meet, and they meet by
+ * DELEGATION: factory subtracts its reservation because its availability is derived; overseas does NOT,
+ * because its reserved units already left the stored available bucket when they were reserved. Writing
+ * `available - reserved` for overseas here would hold the same units twice and report 40 on a 70/30 pool.
+ */
+function shipmentDomainAvailable_(domain, sheets, warehouseId, sku) {
+  if (domain === SHIPMENT_DOMAIN_OVERSEAS_) {
+    var b = ovsStockReadBalanceTx_(sheets.stockSheet, warehouseId, sku);
+    return { available: ovsAllocatableTx_(b), current: '', reserved: b.reserved, found: b.found };
+  }
+  var f = factoryStockReadBalanceTx_(sheets.stockSheet, warehouseId, sku);
+  return { available: f.available, current: f.current, reserved: f.reserved, found: f.found };
+}
+
+function shipmentDomainHeld_(domain, sheets, shipmentId) {
+  if (domain === SHIPMENT_DOMAIN_OVERSEAS_) {
+    return ovsOwnerReservedTx_(sheets.movSheet, OVSTX_RESERVATION_OWNER_TYPE_, shipmentId);
+  }
+  return factoryStockOwnerReservedTx_(sheets.movSheet, FSTX_RESERVATION_OWNER_TYPE_, shipmentId);
+}
+
+function shipmentDomainAcquire_(domain, sheets, p) {
+  if (domain === SHIPMENT_DOMAIN_OVERSEAS_) {
+    return ovsAcquireReservationTx_({
+      snapSheet: sheets.stockSheet, movSheet: sheets.movSheet, warehouseId: p.warehouseId, sku: p.sku,
+      qty: p.qty, ownerType: OVSTX_RESERVATION_OWNER_TYPE_, ownerId: p.ownerId, journal: p.journal,
+      now: p.now, movementDate: p.movementDate, createdBy: p.createdBy, note: p.note });
+  }
+  return factoryStockAcquireReservationTx_({
+    stockSheet: sheets.stockSheet, movSheet: sheets.movSheet, warehouseId: p.warehouseId, sku: p.sku,
+    qty: p.qty, ownerType: FSTX_RESERVATION_OWNER_TYPE_, ownerId: p.ownerId, journal: p.journal,
+    now: p.now, movementDate: p.movementDate, createdBy: p.createdBy, note: p.note });
+}
+
+function shipmentDomainRelease_(domain, sheets, p) {
+  if (domain === SHIPMENT_DOMAIN_OVERSEAS_) {
+    return ovsReleaseReservationTx_({
+      snapSheet: sheets.stockSheet, movSheet: sheets.movSheet, warehouseId: p.warehouseId, sku: p.sku,
+      qty: p.qty, ownerType: OVSTX_RESERVATION_OWNER_TYPE_, ownerId: p.ownerId, journal: p.journal,
+      now: p.now, movementDate: p.movementDate, createdBy: p.createdBy, releaseReason: p.releaseReason });
+  }
+  return factoryStockReleaseReservationTx_({
+    stockSheet: sheets.stockSheet, movSheet: sheets.movSheet, warehouseId: p.warehouseId, sku: p.sku,
+    qty: p.qty, ownerType: FSTX_RESERVATION_OWNER_TYPE_, ownerId: p.ownerId, journal: p.journal,
+    now: p.now, movementDate: p.movementDate, createdBy: p.createdBy, releaseReason: p.releaseReason });
+}
+// __SHIPMENT_SOURCE_DOMAIN_END__
 
 /**
  * Explicit action wrapper — the IDEMPOTENT RETRY of the Execution Commit.
@@ -869,26 +989,34 @@ function handleCancelShipmentDraft_(body) {
   var journal = [];
   var released = 0, movementsWritten = 0, releases = [];
   try {
-    var stockSheet = ss.getSheetByName('factory_stock');
-    var movSheet = ss.getSheetByName('factory_stock_movements');
-    if (stockSheet && movSheet) {
-      // Outstanding holds are read from THIS shipment's own ledger, so a release can never touch another
-      // shipment's reservation and can never exceed what this one actually holds.
-      var held = factoryStockOwnerReservedTx_(movSheet, FSTX_RESERVATION_OWNER_TYPE_, shipmentId);
-      var now0 = shipmentTimestamp_();
+    /* S6-R4B §3 — cancellation releases in BOTH domains.
+     *
+     * The cancelled shipment's own ledger is the authority in each: a release can never touch another
+     * shipment's hold and can never exceed what this one holds. Both domains are swept because a shipment
+     * sources from exactly one of them and cancellation must not have to know which — a factory shipment
+     * simply finds nothing held in the overseas ledger, and vice versa. Holding nothing is a no-op. */
+    var now0 = shipmentTimestamp_();
+    var domainSweep_ = [
+      { domain: SHIPMENT_DOMAIN_FACTORY_, stock: ss.getSheetByName('factory_stock'), mov: ss.getSheetByName('factory_stock_movements') },
+      { domain: SHIPMENT_DOMAIN_OVERSEAS_, stock: ss.getSheetByName('overseas_inventory_snapshot'), mov: ss.getSheetByName('overseas_inventory_movements') }
+    ];
+    domainSweep_.forEach(function (d) {
+      if (!d.stock || !d.mov) return;
+      var sheetsD = { domain: d.domain, stockSheet: d.stock, movSheet: d.mov };
+      var held = shipmentDomainHeld_(d.domain, sheetsD, shipmentId);
       Object.keys(held).sort().forEach(function (key) {
         var qty = Math.round(held[key] || 0);
         if (qty <= 0) return;
         var parts = key.split('||');
-        var rel = factoryStockReleaseReservationTx_({
-          stockSheet: stockSheet, movSheet: movSheet, warehouseId: parts[0], sku: parts[1], qty: qty,
-          ownerType: FSTX_RESERVATION_OWNER_TYPE_, ownerId: shipmentId, journal: journal, now: now0,
+        var rel = shipmentDomainRelease_(d.domain, sheetsD, {
+          warehouseId: parts[0], sku: parts[1], qty: qty, ownerId: shipmentId, journal: journal, now: now0,
           createdBy: actor, releaseReason: 'shipment_draft_cancelled' + (reason ? (':' + reason) : '')
         });
         if (rel.applied) { released += rel.released; movementsWritten++; }
-        releases.push({ warehouse_id: parts[0], sku: parts[1], released_qty: rel.released, reason: rel.reason });
+        releases.push({ warehouse_id: parts[0], sku: parts[1], source_domain: d.domain,
+          released_qty: rel.released, reason: rel.reason });
       });
-    }
+    });
 
     var now = shipmentTimestamp_();
     function setShip_(name, value) {
@@ -1110,9 +1238,32 @@ function handleUpdateShipment_(body) {
       catch (eLU_) { return jsonResponse_({ success: false, code: 'LOCK_ERROR', error: String(eLU_ && eLU_.message ? eLU_.message : eLU_) }); }
       // Availability at the NEW warehouse is validated for EVERY sku before the first write, so a refusal
       // leaves both warehouses byte-identical instead of half-moved.
+      /* S6-R4B §11 — the move is routed, and a CROSS-domain move is refused.
+       *
+       * Releasing in one domain and acquiring in another would be inventing a physical transfer between a
+       * factory and a 3PL that nobody approved, and the old code would additionally have MINTED a
+       * factory_stock row for the 3PL warehouse on the way. Same-domain moves route normally. */
+      var curDomain_ = shipmentSourceDomain_(ss, curSrc_);
+      var newDomain_ = shipmentSourceDomain_(ss, wantSrc_);
+      if (curDomain_ !== newDomain_) {
+        try { lockU_.releaseLock(); } catch (e) {}
+        return jsonResponse_({ success: false, code: 'CROSS_DOMAIN_SOURCE_CHANGE_NOT_SUPPORTED',
+          shipment_id: shipmentId,
+          data: { from_warehouse_id: curSrc_, from_domain: curDomain_, to_warehouse_id: wantSrc_, to_domain: newDomain_ },
+          error: 'This Shipment Draft is sourced from a ' + curDomain_ + ' warehouse and ' + wantSrc_ +
+            ' is ' + newDomain_ + '. Moving a reservation between inventory domains is not a source change; ' +
+            'cancel this draft and create one from the intended source. Nothing was changed.' });
+      }
+      var domSheets_ = shipmentDomainSheets_(ss, newDomain_);
+      if (!domSheets_) {
+        try { lockU_.releaseLock(); } catch (e) {}
+        return jsonResponse_({ success: false, code: 'SOURCE_DOMAIN_TABLES_NOT_FOUND', shipment_id: shipmentId,
+          error: 'The inventory tables for the ' + newDomain_ + ' domain were not found. Nothing was changed.' });
+      }
+      if (newDomain_ === SHIPMENT_DOMAIN_FACTORY_) { domSheets_.stockSheet = stkSheet_; domSheets_.movSheet = movSheet_; }
       var shortNew_ = [];
       for (var mv_ = 0; mv_ < moveList_.length; mv_++) {
-        var balNew_ = factoryStockReadBalanceTx_(stkSheet_, wantSrc_, moveList_[mv_].sku);
+        var balNew_ = shipmentDomainAvailable_(newDomain_, domSheets_, wantSrc_, moveList_[mv_].sku);
         if (balNew_.available < moveList_[mv_].qty) {
           shortNew_.push({ sku: moveList_[mv_].sku, warehouse_id: wantSrc_, need: moveList_[mv_].qty,
             available: balNew_.available, current: balNew_.current, reserved: balNew_.reserved });
@@ -1120,23 +1271,25 @@ function handleUpdateShipment_(body) {
       }
       if (shortNew_.length) {
         try { lockU_.releaseLock(); } catch (e) {}
-        return jsonResponse_({ success: false, code: 'INSUFFICIENT_FACTORY_STOCK_AT_NEW_SOURCE', shipment_id: shipmentId,
-          data: { from_warehouse_id: curSrc_, to_warehouse_id: wantSrc_, shortfalls: shortNew_ },
-          error: 'Cannot move this Shipment Draft to ' + wantSrc_ + ': insufficient available factory stock for ' +
+        return jsonResponse_({ success: false,
+          code: newDomain_ === SHIPMENT_DOMAIN_OVERSEAS_ ? 'INSUFFICIENT_OVERSEAS_STOCK_AT_NEW_SOURCE'
+            : 'INSUFFICIENT_FACTORY_STOCK_AT_NEW_SOURCE',
+          shipment_id: shipmentId,
+          data: { from_warehouse_id: curSrc_, to_warehouse_id: wantSrc_, source_domain: newDomain_, shortfalls: shortNew_ },
+          error: 'Cannot move this Shipment Draft to ' + wantSrc_ + ': insufficient available ' +
+            (newDomain_ === SHIPMENT_DOMAIN_OVERSEAS_ ? 'overseas' : 'factory') + ' stock for ' +
             shortNew_.map(function (x) { return x.sku + ' (need ' + x.need + ', available ' + x.available + ')'; }).join('; ') +
             '. The source warehouse was NOT changed and the existing reservation at ' + curSrc_ + ' is untouched.' });
       }
       var jU_ = [];
       try {
         for (var mw_ = 0; mw_ < moveList_.length; mw_++) {
-          factoryStockReleaseReservationTx_({
-            stockSheet: stkSheet_, movSheet: movSheet_, warehouseId: curSrc_, sku: moveList_[mw_].sku,
-            qty: moveList_[mw_].qty, ownerType: FSTX_RESERVATION_OWNER_TYPE_, ownerId: shipmentId,
+          shipmentDomainRelease_(newDomain_, domSheets_, {
+            warehouseId: curSrc_, sku: moveList_[mw_].sku, qty: moveList_[mw_].qty, ownerId: shipmentId,
             journal: jU_, now: now, createdBy: actor, releaseReason: 'source_warehouse_changed_to_' + wantSrc_
           });
-          factoryStockAcquireReservationTx_({
-            stockSheet: stkSheet_, movSheet: movSheet_, warehouseId: wantSrc_, sku: moveList_[mw_].sku,
-            qty: moveList_[mw_].qty, ownerType: FSTX_RESERVATION_OWNER_TYPE_, ownerId: shipmentId,
+          shipmentDomainAcquire_(newDomain_, domSheets_, {
+            warehouseId: wantSrc_, sku: moveList_[mw_].sku, qty: moveList_[mw_].qty, ownerId: shipmentId,
             journal: jU_, now: now, createdBy: actor,
             note: 'Reservation moved from ' + curSrc_ + ' for shipment ' + shipmentId
           });
