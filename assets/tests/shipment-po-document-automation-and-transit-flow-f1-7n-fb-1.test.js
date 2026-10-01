@@ -263,7 +263,10 @@ eval(extractFn(SH, '_shEsc') + '\n' + extractVar(SH, 'SH_DOC_PANEL_VISIBLE_ROWS_
      extractFn(SH, 'shDocPanelState') + '\n' + extractFn(SH, '_shDocIcon') + '\n' +
      extractFn(SH, '_shDocLink') + '\n' + extractFn(SH, '_shDocRowHtml') + '\n' +
      extractFn(SH, '_shDocHelp') + '\n' + extractFn(SH, '_shDocErrorHtml') + '\n' + extractFn(SH, 'shDocumentPanelHtml'));
-function doc(over) { var d = { generated_document_id: 'GD1', document_type: 'commercial_invoice', document_label: 'Commercial Invoice', file_name: 'KitchenMama_CI.xlsx', status: 'GENERATED', file_url: 'https://drive.google.com/file/d/ABC/view', generated_at: '2026-08-25 09:20:00' }; for (var k in (over || {})) d[k] = over[k]; return d; }
+// S7-R2B1 — related_entity_type / related_entity_id are part of EVERY row dgsDocumentDto_ emits (39_), and
+// the panel now uses them to aim Retry. Without them this fixture described a row the system cannot
+// produce, and the panel correctly declined to render a button it could not address.
+function doc(over) { var d = { generated_document_id: 'GD1', related_entity_type: 'shipment', related_entity_id: 'S1', document_type: 'commercial_invoice', document_label: 'Commercial Invoice', file_name: 'KitchenMama_CI.xlsx', status: 'GENERATED', file_url: 'https://drive.google.com/file/d/ABC/view', generated_at: '2026-08-25 09:20:00' }; for (var k in (over || {})) d[k] = over[k]; return d; }
 eq(shDocPanelState({ documents: [] }), 'NONE', '12. no documents -> NONE');
 eq(shDocPanelState({ documents: [], pending: true }), 'PENDING', '12. queued -> PENDING');
 eq(shDocPanelState({ documents: [doc({ status: 'GENERATING' })] }), 'GENERATING', '12. running -> GENERATING');
@@ -288,6 +291,14 @@ ok(htmlReady.indexOf('Download All') === -1, '12. no "Download All" is offered (
 ok(shDocumentPanelHtml({ documents: [doc({ status: 'FAILED_RETRYABLE' })], can_retry: true }).indexOf('Retry') !== -1, '12. Retry appears for a failed record when permitted');
 ok(shDocumentPanelHtml({ documents: [doc({ status: 'FAILED_RETRYABLE' })], can_retry: false }).indexOf('Retry') === -1, '12/36. Retry is hidden without permission (and the backend re-checks)');
 ok(shDocumentPanelHtml({ documents: [doc()], can_retry: true }).indexOf('Retry') === -1, '12. Retry is never offered for a healthy document');
+// S7-R2B1 — and never offered when the row cannot be ADDRESSED. document.retry is scoped to an entity
+// (type + id); with neither the model nor the row able to name one, a rendered button could only aim at a
+// guess — which is precisely the defect this round repaired.
+ok(shDocumentPanelHtml({ documents: [doc({ status: 'FAILED_RETRYABLE', related_entity_type: '', related_entity_id: '' })], can_retry: true }).indexOf('Retry') === -1,
+  '12. Retry is withheld when no entity type/id can be resolved for the row');
+ok(shDocumentPanelHtml({ entity_type: 'purchase_order', entity_id: 'PO-1', documents: [doc({ status: 'FAILED_RETRYABLE', related_entity_type: '', related_entity_id: '' })], can_retry: true })
+  .indexOf("shRetryDocument('purchase_order','PO-1',this)") !== -1,
+  '12. and the panel model supplies the identity when the row cannot');
 ok(shDocumentPanelHtml({ documents: [doc({ file_url: '', download_url: '' })] }).indexOf('>Download<') === -1, '12. Download is never claimed without a real downloadable artifact');
 // capped list + View all
 var many = []; for (var mi = 0; mi < 9; mi++) many.push(doc({ generated_document_id: 'GD' + mi }));
