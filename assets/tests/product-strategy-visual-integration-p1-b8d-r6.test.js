@@ -635,7 +635,14 @@ var R6_KNOWN_GS_CHANGES = ['assets/specs/active/apps-script/03_master_data_handl
   // It touches no Product Strategy read, no pricing table and no staged-section registry; it is recorded
   // here for the reason this list exists, which is that a .gs file moving without a stated reason is how
   // an unrelated edit reaches production.
-  'assets/specs/active/apps-script/57_api_v1_shipment_workspace.gs'];
+  'assets/specs/active/apps-script/57_api_v1_shipment_workspace.gs',
+  // S7-R3 — carrier lead-time maintenance. 17_ gains the one application write owner for
+  // carrier_lead_times plus a read-only duplicate census; 01_ routes the two new actions (its first change
+  // since R25); 63_ records both in its manifest and moves the action-contract version to 18. None of the
+  // three reads a Product Strategy table, a pricing row or the staged-section registry.
+  'assets/specs/active/apps-script/17_carrier_handlers.gs',
+  'assets/specs/active/apps-script/01_router.gs',
+  'assets/specs/active/apps-script/63_api_v1_system_health.gs'];
 var gsChanged = changedSince(R6_PRE, 'assets/specs/active/apps-script');
 if (gsChanged !== '__git_unavailable__') {
   var unexpectedGs = gsChanged.split('\n').map(function (x) { return x.trim(); })

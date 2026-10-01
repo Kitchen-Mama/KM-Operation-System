@@ -104,6 +104,33 @@
         <div class="crc-empty" id="crc-empty">Set filters and click <strong>Search</strong> to view carrier rate cards.</div>
     </div>
 
+
+    <!-- ============================================================================================
+         S7-R3 — CARRIER LEAD TIME MAINTENANCE.
+
+         Colocated with rate cards because an operator setting up a lane needs both, and SEPARATE
+         underneath because they are two authorities: carrier_rate_cards stores no transit time and
+         carrier_lead_times stores no price. Nothing here reads or writes a rate card.
+
+         A lane needs BOTH to be routable. Rate cards have been maintainable in the application since
+         the Rate Card round; lead times could only be typed into the sheet, so a lane could be priced
+         here and then not be finished here. This panel closes that.
+         ============================================================================================ -->
+    <div class="crc-leadtime" id="crc-leadtime" style="margin-top:28px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:8px;">
+            <h3 style="margin:0; font-size:16px; font-weight:600; color:#1E293B;">Lead Time</h3>
+            <button type="button" class="crc-btn crc-btn--primary" id="crcLtAddBtn" onclick="crcLtOpenAdd()">Add Lead Time</button>
+        </div>
+        <p class="crc-note" style="margin:0 0 10px;">
+            Transit days per lane. The planner resolves a lane on <strong>shipping method + origin + destination
+            + last-mile delivery</strong> and not on carrier, so one lane may hold only one definition.
+        </p>
+        <div id="crc-lt-note"></div>
+        <div class="crc-table-wrap" id="crc-lt-wrap">
+            <div class="crc-empty" id="crc-lt-empty">Loading lead times…</div>
+        </div>
+    </div>
+
     <!-- Update Rate Card modal (unified: carrier → download XLSX → fill → upload → import).
          Reuses the globally-loaded pc-modal styles (procurement.css). -->
     <div class="pc-modal-overlay" id="crc-update-modal" style="display:none;">
@@ -163,6 +190,54 @@
             <div class="pc-modal__foot">
                 <button type="button" class="pc-btn pc-btn--default" onclick="crcCloseMasterModal()">Close</button>
                 <button type="button" class="pc-btn pc-btn--primary" onclick="crcModalImportMaster()">Import</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- S7-R3 — Add / Edit Lead Time. ONE form for both: a lead_time_id in the hidden field makes it an
+         edit of that exact row, and its absence makes it a create. The lane fields are the planner's own
+         key, so the refusal an operator may see here is about the LANE, never about the carrier. -->
+    <div class="pc-modal-overlay" id="crc-lt-modal" style="display:none;">
+        <div class="pc-modal">
+            <div class="pc-modal__head">
+                <h3 id="crcLtModalTitle">Add Lead Time</h3>
+                <button type="button" class="pc-modal__close" onclick="crcLtCloseModal()">×</button>
+            </div>
+            <div class="pc-modal__body">
+                <input type="hidden" id="crcLtId">
+                <div class="crc-filter" style="margin-bottom:10px;">
+                    <label>Carrier <span style="color:#94A3B8; font-weight:400;">(metadata — not part of the lane the planner resolves)</span></label>
+                    <select id="crcLtCarrier" class="crc-input"><option value="">— none —</option></select>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                    <div class="crc-filter"><label>Origin country *</label>
+                        <input id="crcLtOrigin" class="crc-input" list="crcLtOriginOpts" placeholder="CN" autocomplete="off">
+                        <datalist id="crcLtOriginOpts"></datalist></div>
+                    <div class="crc-filter"><label>Destination country *</label>
+                        <input id="crcLtDest" class="crc-input" list="crcLtDestOpts" placeholder="JP" autocomplete="off">
+                        <datalist id="crcLtDestOpts"></datalist></div>
+                    <div class="crc-filter"><label>Shipping method *</label>
+                        <input id="crcLtMethod" class="crc-input" list="crcLtMethodOpts" placeholder="Air" autocomplete="off">
+                        <datalist id="crcLtMethodOpts"></datalist></div>
+                    <div class="crc-filter"><label>Last-mile delivery</label>
+                        <input id="crcLtMile" class="crc-input" list="crcLtMileOpts" placeholder="Parcel" autocomplete="off">
+                        <datalist id="crcLtMileOpts"></datalist></div>
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-top:10px;">
+                    <div class="crc-filter"><label>Min days</label><input id="crcLtMin" class="crc-input" inputmode="decimal" autocomplete="off"></div>
+                    <div class="crc-filter"><label>Avg days</label><input id="crcLtAvg" class="crc-input" inputmode="decimal" autocomplete="off"></div>
+                    <div class="crc-filter"><label>Max days</label><input id="crcLtMax" class="crc-input" inputmode="decimal" autocomplete="off"></div>
+                </div>
+                <p class="crc-note" style="margin:10px 0 0;">
+                    At least one figure is required, and they must read min ≤ avg ≤ max. The planner prefers
+                    <strong>avg</strong>. A blank is not a zero-day transit — it is no figure at all.
+                </p>
+                <div id="crcLtModalMsg" style="margin-top:10px;"></div>
+            </div>
+            <div class="pc-modal__foot">
+                <button type="button" class="pc-btn pc-btn--default" onclick="crcLtCloseModal()">Cancel</button>
+                <button type="button" class="pc-btn pc-btn--primary" id="crcLtSaveBtn" onclick="crcLtSave()">Save</button>
             </div>
         </div>
     </div>

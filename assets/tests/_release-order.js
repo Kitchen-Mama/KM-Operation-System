@@ -1555,7 +1555,7 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // means; 57_ itself carries no stamp (its manifest row proves it by symbol probe). No router action was
   // added or removed, so the action-contract version does NOT move. 90_ is not rebuilt: no core module
   // changed, so R37 owners keep R37.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R38'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R38', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R39'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

@@ -926,3 +926,308 @@ function handleSeedSinotransCarrier_(body) {
 
   return jsonResponse_({ success: true, data: out });
 }
+
+// ================================================================================================================
+// S7-R3 — CARRIER LEAD-TIME MAINTENANCE. The one application write owner for `carrier_lead_times`.
+// ================================================================================================================
+//
+// WHY THIS EXISTS. carrier_rate_cards has been application-maintainable since the Rate Card round;
+// carrier_lead_times never was. 61_ says so in as many words: a lead time had to be "entered directly in the
+// `carrier_lead_times` tab, or a maintenance handler must be added first". So a new lane could be PRICED in
+// the application and then could not be made ROUTABLE in it, because a lane needs both authorities.
+//
+// THE AMBIGUITY THIS GUARD EXISTS TO PREVENT. KMRA.leadDays resolves transit days on
+//     canonical method key + origin_country + destination_country + last_mile_delivery
+// and NOT on carrier_id, then takes the FIRST matching row. S6-R8A froze that same first-row pick out of
+// dispatch; resolveWarehouse in the same authority blocks on ambiguity rather than picking. leadDays still
+// picks, and S7-R2 froze that it must not change here (§15). So the maintenance path prevents the ambiguous
+// STATE instead: it refuses to create a second row the planner could reach with the same query.
+//
+// THE PREDICATES ARE KMRA'S OWN. This handler calls KMRA.canonicalMethodKey and KMRA.normalizeLeadTime
+// rather than reimplementing them, for one reason: a duplicate guard written in its own dialect drifts from
+// the resolver it is protecting, and the drift is invisible until two rows answer one query. 61_ guards the
+// same way (`typeof KMRA !== 'undefined'`), and so does this: with the bundle absent, the write REFUSES
+// rather than falling back to a private copy of the matching rules.
+//
+// NO SCHEMA CHANGE. The live table has 11 columns and no status / is_active / effective_from. Nothing here
+// adds one: uniqueness is enforced at the write path, and an edit addresses `lead_time_id` so a correction
+// replaces a row instead of appending a twin that would need a status column to disambiguate.
+// ================================================================================================================
+
+var CLT_LOCK_MS_ = 30000;
+
+function cltStr_(v) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim(); }
+function cltLow_(v) { return cltStr_(v).toLowerCase(); }
+function cltUp_(v) { return cltStr_(v).toUpperCase(); }
+// A transit figure is a non-negative number or NOTHING. A blank column is no transit authority, never a
+// zero-day transit — the same reading KMRA.normalizeLeadTime takes.
+function cltDays_(v) {
+  var t = cltStr_(v);
+  if (t === '') return { ok: true, present: false, value: '' };
+  if (!/^-?\d+(\.\d+)?$/.test(t)) return { ok: false };
+  var n = parseFloat(t);
+  if (!isFinite(n) || n < 0) return { ok: false };
+  return { ok: true, present: true, value: n };
+}
+function cltKmra_() { return (typeof KMRA !== 'undefined' && KMRA && typeof KMRA.canonicalMethodKey === 'function') ? KMRA : null; }
+
+// The planner-effective lane key, printed for operators and receipts. It is a LABEL: the actual conflict
+// test is cltLaneConflicts_ below, because a blank axis is a WILDCARD and two rows can collide without
+// their printed keys being equal.
+function cltLaneLabel_(methodKey, origin, dest, lastMile) {
+  return [cltLow_(methodKey) || '(no method)', cltUp_(origin) || '(any origin)',
+    cltUp_(dest) || '(any destination)', cltLow_(lastMile) || '(any last mile)'].join(' | ');
+}
+
+// DO TWO ROWS ANSWER ONE QUERY?
+//
+// Derived from KMRA.axisOk, which is what leadDays actually filters with:
+//     query blank          → the query does not constrain that axis
+//     row value blank      → the ROW is a wildcard on that axis
+//     both present         → they must be equal
+// The canonical METHOD KEY has no wildcard (leadDays requires lt.methodKey === key and returns early on a
+// blank query method), so methods must match exactly. On each remaining axis two rows are compatible when
+// they are equal or either is blank. All three compatible + the same method key ⇒ some lane query reaches
+// both rows ⇒ the first-row pick decides which transit time the planner uses. That is the state this
+// refuses to create.
+//
+// Note what this is NOT: plain tuple equality. A row with a blank origin is reachable by every origin, so
+// 'CN | JP | air | parcel' and '(any origin) | JP | air | parcel' have different printed keys and still
+// collide. Tuple equality alone would have let the second one in.
+function cltAxisCompatible_(a, b) {
+  var x = cltLow_(a), y = cltLow_(b);
+  if (x === '' || y === '') return true;   // one side is a wildcard over the other
+  return x === y;
+}
+function cltLaneConflicts_(candidate, row) {
+  if (!candidate.methodKey || !row.methodKey) return false;   // an unkeyed method is unreachable by leadDays
+  if (candidate.methodKey !== row.methodKey) return false;
+  return cltAxisCompatible_(candidate.originCountry, row.originCountry)
+    && cltAxisCompatible_(candidate.destinationCountry, row.destinationCountry)
+    && cltAxisCompatible_(candidate.lastMileDelivery, row.lastMileDelivery);
+}
+
+// Read every stored row through KMRA's own normalizer, so the guard sees exactly what the planner sees.
+function cltIndexRows_(s, kmra) {
+  var out = [];
+  for (var i = 1; i < s.rows.length; i++) {
+    var obj = {};
+    for (var c = 0; c < s.headers.length; c++) { if (s.headers[c]) obj[s.headers[c]] = s.rows[i][c]; }
+    if (!cltStr_(obj.lead_time_id) && !cltStr_(obj.shipping_method) && !cltStr_(obj.carrier_id)) continue;   // blank spacer row
+    var n = kmra.normalizeLeadTime(obj);
+    out.push({ rowNumber: i + 1, id: cltStr_(obj.lead_time_id), raw: obj,
+      methodKey: n.methodKey, shippingMethod: n.shippingMethod, carrierId: n.carrierId,
+      originCountry: n.originCountry, destinationCountry: n.destinationCountry,
+      lastMileDelivery: n.lastMileDelivery,
+      minDays: n.minDays, maxDays: n.maxDays, avgDays: n.avgDays });
+  }
+  return out;
+}
+
+// §7 VALIDATION. Reject malformed values; never silently clamp a figure into range.
+function cltValidateBody_(body, kmra) {
+  var origin = cltUp_(body.origin_country), dest = cltUp_(body.destination_country);
+  var method = cltStr_(body.shipping_method), lastMile = cltStr_(body.last_mile_delivery);
+  if (!origin) return { ok: false, error: 'CARRIER_LEAD_TIME_ORIGIN_REQUIRED', detail: 'origin_country is required.' };
+  if (!dest) return { ok: false, error: 'CARRIER_LEAD_TIME_DESTINATION_REQUIRED', detail: 'destination_country is required.' };
+  if (!method) return { ok: false, error: 'CARRIER_LEAD_TIME_METHOD_REQUIRED', detail: 'shipping_method is required.' };
+  var methodKey = kmra.canonicalMethodKey(method);
+  if (!methodKey) {
+    return { ok: false, error: 'CARRIER_LEAD_TIME_METHOD_UNRESOLVED',
+      detail: 'shipping_method "' + method + '" does not resolve to a canonical method, so the planner could '
+        + 'never read this row. Nothing was written.' };
+  }
+  var mn = cltDays_(body.min_days), mx = cltDays_(body.max_days), av = cltDays_(body.avg_days);
+  if (!mn.ok || !mx.ok || !av.ok) {
+    return { ok: false, error: 'CARRIER_LEAD_TIME_DAYS_INVALID',
+      detail: 'min_days / max_days / avg_days must each be a non-negative number or blank. Nothing was written.' };
+  }
+  if (!mn.present && !mx.present && !av.present) {
+    return { ok: false, error: 'CARRIER_LEAD_TIME_DAYS_REQUIRED',
+      detail: 'A lead-time row with no min, max or avg carries no transit authority at all. Nothing was written.' };
+  }
+  // §7 ORDERING — checked only across the figures that are PRESENT. A row carrying avg alone is the shape
+  // KMRA prefers (it reads avg first), and demanding all three would reject the system's own seed row.
+  if (mn.present && mx.present && mn.value > mx.value) {
+    return { ok: false, error: 'CARRIER_LEAD_TIME_DAYS_ORDER', detail: 'min_days must not exceed max_days. Nothing was written.' };
+  }
+  if (mn.present && av.present && mn.value > av.value) {
+    return { ok: false, error: 'CARRIER_LEAD_TIME_DAYS_ORDER', detail: 'min_days must not exceed avg_days. Nothing was written.' };
+  }
+  if (av.present && mx.present && av.value > mx.value) {
+    return { ok: false, error: 'CARRIER_LEAD_TIME_DAYS_ORDER', detail: 'avg_days must not exceed max_days. Nothing was written.' };
+  }
+  return { ok: true, norm: {
+    carrier_id: cltStr_(body.carrier_id),   // METADATA. It is not part of the planner key and is not validated as one.
+    origin_country: origin, destination_country: dest,
+    shipping_method: method, last_mile_delivery: lastMile,
+    min_days: mn.value, max_days: mx.value, avg_days: av.value
+  }, methodKey: methodKey, lane: cltLaneLabel_(methodKey, origin, dest, lastMile) };
+}
+
+/**
+ * carrierLeadTime.upsert — CREATE (no lead_time_id) or UPDATE (lead_time_id present).
+ * Body: { lead_time_id?, carrier_id?, origin_country, destination_country, shipping_method,
+ *         last_mile_delivery?, min_days?, max_days?, avg_days?, actor? }
+ * There is deliberately NO delete: with no status column, removing a lane silently un-routes it, and no
+ * current workflow asks for that. An edit addresses lead_time_id and replaces the row in place.
+ */
+function handleUpsertCarrierLeadTime_(body) {
+  body = body || {};
+  var kmra = cltKmra_();
+  if (!kmra || typeof kmra.normalizeLeadTime !== 'function') {
+    // The guard's whole value is that it uses the planner's predicates. Without them this would be a
+    // DIFFERENT rule wearing the same name, so it refuses rather than guessing.
+    return jsonResponse_({ success: false, error: 'KMRA_UNAVAILABLE',
+      detail: 'The shared route authority is not bundled, so the duplicate-lane guard cannot use the same '
+        + 'matching rules the planner uses. Nothing was written.' });
+  }
+  var v = cltValidateBody_(body, kmra);
+  if (!v.ok) return jsonResponse_({ success: false, error: v.error, detail: v.detail });
+
+  var suppliedId = cltStr_(body.lead_time_id);
+  var actor = cltStr_(body.actor) || 'carrier-lead-time-maintenance';
+  var lock = LockService.getScriptLock();
+  try {
+    // §9 — two operators creating the same effective lane must not both read "no match" and both append.
+    if (!lock.tryLock(CLT_LOCK_MS_)) {
+      return jsonResponse_({ success: false, error: 'CARRIER_LEAD_TIME_LOCK_TIMEOUT',
+        detail: 'Another lead-time write is in progress. Nothing was written.' });
+    }
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = fcWriteEnsureSheet_(ss, 'carrier_lead_times', CARRIER_LEAD_TIMES_HEADERS_);
+    fcWriteEnsureColumns_(sheet, CARRIER_LEAD_TIMES_HEADERS_);
+    var sh = fcWriteReadSheet_(sheet);
+    if (sh.col('lead_time_id') === -1) {
+      return jsonResponse_({ success: false, error: 'CARRIER_LEAD_TIME_SCHEMA',
+        detail: 'lead_time_id column not found in carrier_lead_times. Nothing was written.' });
+    }
+    var index = cltIndexRows_(sh, kmra);
+    var now = fcWriteTimestamp_();
+    var candidate = { methodKey: v.methodKey, originCountry: v.norm.origin_country,
+      destinationCountry: v.norm.destination_country, lastMileDelivery: v.norm.last_mile_delivery };
+
+    var targetRow = -1, leadTimeId = '', created = false;
+    if (suppliedId) {
+      var byId = index.filter(function (r) { return r.id === suppliedId; });
+      if (byId.length === 0) {
+        return jsonResponse_({ success: false, error: 'CARRIER_LEAD_TIME_NOT_FOUND',
+          detail: 'No row carries lead_time_id ' + suppliedId + '. Nothing was written.' });
+      }
+      if (byId.length > 1) {
+        return jsonResponse_({ success: false, error: 'DUPLICATE_CARRIER_LEAD_TIME_IDENTITY',
+          detail: byId.length + ' rows share lead_time_id ' + suppliedId + ' (rows '
+            + byId.map(function (r) { return r.rowNumber; }).join(', ') + '). Nothing was written.' });
+      }
+      targetRow = byId[0].rowNumber;
+      leadTimeId = suppliedId;
+    }
+
+    // §8 DUPLICATE LANE GUARD — on CREATE against every row; on UPDATE against every row EXCEPT the one
+    // being edited, so moving a row's own values around is not a collision with itself.
+    var clash = index.filter(function (r) {
+      if (suppliedId && r.id === suppliedId) return false;
+      return cltLaneConflicts_(candidate, r);
+    });
+    if (clash.length) {
+      return jsonResponse_({ success: false, error: 'DUPLICATE_CARRIER_LEAD_TIME_LANE',
+        lane: v.lane,
+        conflicts: clash.map(function (r) {
+          return { lead_time_id: r.id, carrier_id: r.carrierId, row: r.rowNumber,
+            lane: cltLaneLabel_(r.methodKey, r.originCountry, r.destinationCountry, r.lastMileDelivery) };
+        }),
+        detail: 'The planner already resolves this lane from lead_time_id ' + clash[0].id
+          + '. A second row would make which transit time it uses depend on row order. Edit the existing '
+          + 'row instead. Nothing was written.' });
+    }
+
+    var width = sh.headers.length;
+    if (targetRow === -1) {
+      leadTimeId = carrierNextLeadTimeId_(sh);
+      var createObj = { lead_time_id: leadTimeId, created_at: now, updated_at: now };
+      CARRIER_LEAD_TIMES_HEADERS_.forEach(function (h) {
+        if (Object.prototype.hasOwnProperty.call(v.norm, h)) createObj[h] = v.norm[h];
+      });
+      fcWriteAppendByHeader_(sheet, createObj);
+      created = true;
+    } else {
+      // ONE range write for the whole row rather than a cell at a time: an interruption must not leave a
+      // row carrying a new destination and an old transit time.
+      var existing = sheet.getRange(targetRow, 1, 1, width).getValues()[0];
+      for (var c = 0; c < width; c++) {
+        var h = sh.headers[c];
+        if (!h || h === 'created_at') continue;                 // creation audit is preserved
+        if (h === 'lead_time_id') { existing[c] = leadTimeId; continue; }
+        if (h === 'updated_at') { existing[c] = now; continue; }
+        if (Object.prototype.hasOwnProperty.call(v.norm, h)) existing[c] = v.norm[h];
+      }
+      sheet.getRange(targetRow, 1, 1, width).setValues([existing]);
+    }
+    SpreadsheetApp.flush();
+
+    // §10 WRITE TRUTH — the receipt is READ BACK from the sheet, not echoed from the request, so a caller
+    // can confirm what is stored rather than what was sent.
+    var after = fcWriteReadSheet_(sheet);
+    var saved = null;
+    var idCol = after.col('lead_time_id');
+    for (var k = 1; k < after.rows.length; k++) {
+      if (cltStr_(after.rows[k][idCol]) !== leadTimeId) continue;
+      saved = {};
+      for (var c2 = 0; c2 < after.headers.length; c2++) { if (after.headers[c2]) saved[after.headers[c2]] = after.rows[k][c2]; }
+      break;
+    }
+    return jsonResponse_({ success: true, data: {
+      lead_time_id: leadTimeId, created: created, updated: !created,
+      lane: v.lane, method_key: v.methodKey, actor: actor, row: saved,
+      summary: (created ? 'created ' : 'updated ') + leadTimeId + ' — ' + v.lane } });
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+/**
+ * carrierLeadTime.duplicateCensus — READ ONLY. Lists every pair of stored rows the planner could reach with
+ * one query, using the same predicates as the guard above. ZERO writes, no sheet created, no row touched.
+ *
+ * This exists because the guard can only prevent NEW ambiguity. Rows entered directly in the tab before
+ * this round may already be ambiguous, and §16 is explicit that such rows are not auto-deleted or merged —
+ * they are reported for operator reconciliation.
+ */
+function handleCarrierLeadTimeDuplicateCensus_(body) {
+  body = body || {};
+  var kmra = cltKmra_();
+  if (!kmra || typeof kmra.normalizeLeadTime !== 'function') {
+    return jsonResponse_({ success: false, error: 'KMRA_UNAVAILABLE',
+      detail: 'The shared route authority is not bundled, so the census cannot use the planner\'s matching rules.' });
+  }
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('carrier_lead_times');
+  if (!sheet) return jsonResponse_({ success: true, data: { rows: 0, duplicate_pairs: [], duplicate_row_count: 0, table_present: false } });
+  var sh = fcWriteReadSheet_(sheet);
+  var index = cltIndexRows_(sh, kmra);
+  var pairs = [], flagged = {};
+  for (var i = 0; i < index.length; i++) {
+    for (var j = i + 1; j < index.length; j++) {
+      if (!cltLaneConflicts_(index[i], index[j])) continue;
+      flagged[index[i].id || ('row' + index[i].rowNumber)] = 1;
+      flagged[index[j].id || ('row' + index[j].rowNumber)] = 1;
+      pairs.push({
+        a: { lead_time_id: index[i].id, carrier_id: index[i].carrierId, row: index[i].rowNumber,
+          lane: cltLaneLabel_(index[i].methodKey, index[i].originCountry, index[i].destinationCountry, index[i].lastMileDelivery) },
+        b: { lead_time_id: index[j].id, carrier_id: index[j].carrierId, row: index[j].rowNumber,
+          lane: cltLaneLabel_(index[j].methodKey, index[j].originCountry, index[j].destinationCountry, index[j].lastMileDelivery) },
+        // Which one the planner uses TODAY: leadDays takes the first row with a finite avg.
+        planner_would_use: (isFinite(index[i].avgDays) ? index[i].id : (isFinite(index[j].avgDays) ? index[j].id : null)),
+        different_carriers: cltUp_(index[i].carrierId) !== cltUp_(index[j].carrierId)
+      });
+    }
+  }
+  var n = 0; for (var k in flagged) { if (Object.prototype.hasOwnProperty.call(flagged, k)) n++; }
+  return jsonResponse_({ success: true, data: {
+    rows: index.length, duplicate_pairs: pairs, duplicate_row_count: n, table_present: true,
+    // A pair whose two rows carry DIFFERENT carriers is the case §4 says must STOP for a product decision:
+    // it means two carriers genuinely need different transit times on one planner-effective lane, which the
+    // current resolution rule cannot express.
+    carrier_specific_conflict_count: pairs.filter(function (p) { return p.different_carriers; }).length,
+    note: 'READ ONLY. Nothing was written. Duplicates require operator reconciliation, never an auto-merge.' } });
+}

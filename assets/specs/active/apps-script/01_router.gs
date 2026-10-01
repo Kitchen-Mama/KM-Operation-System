@@ -45,7 +45,7 @@
 // it to keep a gate green is the exact fault the manifest exists to report, and it had made this stamp say
 // R27 about a file whose bytes have not moved since R25. The gate that forced the march has been repaired
 // to ask whether the file changed rather than to require that it always carries the release.
-var RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25';
+var RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R39';
 
 // =============================================================================================================
 // F1-7N-FB-4E-R4A1 §3 — READ ACTIONS ARE SERVED ON GET, AND THIS IS WHY.
@@ -1054,6 +1054,17 @@ function doPost(e) {
     }
 
     // One-time manual carrier provisioning — 中外運 Sinotrans (CAR_SINOTRANS) CN→JP Air+Parcel. Idempotent.
+    // S7-R3 — carrier_lead_times maintenance. carrier_rate_cards has been application-maintainable since
+    // the Rate Card round and lead times never were, so a lane could be priced in the app and then not be
+    // made routable in it. The upsert is the ONE application write owner; the census is strictly read-only
+    // (zero writes, no row touched) and reports pre-existing ambiguity for operator reconciliation.
+    // See 17_carrier_handlers.gs.
+    if (action === 'carrierLeadTime.upsert') {
+      return handleUpsertCarrierLeadTime_(body);
+    }
+    if (action === 'carrierLeadTime.duplicateCensus') {
+      return handleCarrierLeadTimeDuplicateCensus_(body);
+    }
     if (action === 'seedSinotransCarrier') {
       return handleSeedSinotransCarrier_(body);
     }
@@ -1150,7 +1161,7 @@ function doPost(e) {
       return handleFactoryStockGuardGet_(body);
     }
 
-    return jsonResponse_({ success: false, error: 'Invalid POST action. Supported: updateSkuLifecycle, upsertSkuDetail, upsertMarketplaceSku, updateMarketplaceSkuModel, importMarketplaceSkusBatch, upsertMarketplace, importFcRegularForecastBatch, importOverseasInventorySnapshotBatch, adjustOverseasInventory, adjustFactoryInventory, factoryInventory.import.validate, factoryInventory.import.commit, runAmazonSnapshotImports, createShippingPlansBatch, updateShippingPlanStatus, updateShippingPlanLineQty, appendShippingPlanNote, completeShippingPlan, createShipmentFromPlan, cancelShipmentDraft, updateShipment, confirmShipmentAndDispatch, createRequestOrderDraft, updateRequestOrderStatus, updateRequestOrderLineQty, cancelRequestOrderTier, createPurchaseOrderFromRequest, updatePurchaseOrderStatus, updatePurchaseOrderLine, updatePurchaseOrderHeader, receivePurchaseOrderLines, upsertFcSpecialEvent, deleteFcSpecialEvent, upsertFcTargetRule, deleteFcTargetRule, upsertRequestOrderAllocationDraft, upsertRequestOrderAllocationDraftLines, submitRequestOrderAllocationDrafts, upsertRequestOrderSiteConfirmations, importCarrierRateCards, upsertSkuRegionalDetail, syncMarketplaceSkusToSkuRegionalDetails, pricing.update, pricing.fxReconcile, upsertTaxReferralRate, upsertTaxRateComponent, getShippingAllocationDraftWorkspace, cancelShippingAllocationDraft, warehouseAllocation.get, replenishmentDemandAllocation.save, factoryOperationConfig.get, factoryOperationConfig.save, factoryStockGuard.get',
+    return jsonResponse_({ success: false, error: 'Invalid POST action. Supported: updateSkuLifecycle, upsertSkuDetail, upsertMarketplaceSku, updateMarketplaceSkuModel, importMarketplaceSkusBatch, upsertMarketplace, importFcRegularForecastBatch, importOverseasInventorySnapshotBatch, adjustOverseasInventory, adjustFactoryInventory, factoryInventory.import.validate, factoryInventory.import.commit, runAmazonSnapshotImports, createShippingPlansBatch, updateShippingPlanStatus, updateShippingPlanLineQty, appendShippingPlanNote, completeShippingPlan, createShipmentFromPlan, cancelShipmentDraft, updateShipment, confirmShipmentAndDispatch, createRequestOrderDraft, updateRequestOrderStatus, updateRequestOrderLineQty, cancelRequestOrderTier, createPurchaseOrderFromRequest, updatePurchaseOrderStatus, updatePurchaseOrderLine, updatePurchaseOrderHeader, receivePurchaseOrderLines, upsertFcSpecialEvent, deleteFcSpecialEvent, upsertFcTargetRule, deleteFcTargetRule, upsertRequestOrderAllocationDraft, upsertRequestOrderAllocationDraftLines, submitRequestOrderAllocationDrafts, upsertRequestOrderSiteConfirmations, importCarrierRateCards, carrierLeadTime.upsert, carrierLeadTime.duplicateCensus, upsertSkuRegionalDetail, syncMarketplaceSkusToSkuRegionalDetails, pricing.update, pricing.fxReconcile, upsertTaxReferralRate, upsertTaxRateComponent, getShippingAllocationDraftWorkspace, cancelShippingAllocationDraft, warehouseAllocation.get, replenishmentDemandAllocation.save, factoryOperationConfig.get, factoryOperationConfig.save, factoryStockGuard.get',
       // F1-7N-FB-4E §L — stamped with the handler and method, so a doPost answer can NEVER be classified
       // as a method downgrade. This is the negative half of the proof and it was previously absent.
       handler: 'doPost', received_method: 'POST', router_build: RTR_BUILD_VERSION_,

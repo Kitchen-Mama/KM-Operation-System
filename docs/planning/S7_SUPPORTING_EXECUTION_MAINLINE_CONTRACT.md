@@ -1159,3 +1159,149 @@ BACKEND_RELEASE  unchanged   APPS_SCRIPT_SYNC_REQUIRED  NO
 FRONTEND_DEPLOY_SET  shipping-history.js, purchase-order-overview.js
 S7_R2B_DOCUMENT_PANEL_SEAL  YES   OPEN_S7_BLOCKERS  none
 ```
+
+---
+
+# PART VI - S7-R3: CARRIER LEAD-TIME MAINTENANCE + LANE-IDENTITY SAFETY CLOSURE
+
+PRE_SHA 6937abd.
+
+## Sec50 - THE GAP, RE-DERIVED FROM LIVE CODE
+
+| | |
+|---|---|
+| `CARRIER_LEAD_TIME_TABLE` | `carrier_lead_times` (11 columns; no status, no is_active) |
+| `CARRIER_LEAD_TIME_READ_OWNER` | `KM.DB.getCarrierLeadTimes` / scoped `loadScopedTables`; 60_ include `carrierPlanning`; 61_ harvest |
+| `CARRIER_LEAD_TIME_WRITE_OWNER_PRE` | **none** - `handleSeedSinotransCarrier_` only, a one-time seed |
+| `CARRIER_LEAD_TIME_CONSUMERS` | `KMRA.leadDays` (route-authority) - `supply-planning-weekly-route-derivation.leadDaysFor` - `supply-planning-method-recommendation` - `carrier-rate-card.js` `_crcLeadTimeMap` - 61_ `weeklyAiPlanCarrierReadiness_` |
+
+`LEADTIME_UI_MAINTENANCE_EXISTS_PRE = NO`, `LEADTIME_ROUTER_ACTION_EXISTS_PRE = NO`,
+`LEADTIME_ADAPTER_ACTION_EXISTS_PRE = NO`. 61_ records the gap in the runtime itself: a lead time had to be
+"entered directly in the `carrier_lead_times` tab, or a maintenance handler must be added first". A routable
+lane needs BOTH authorities, so a lane could be priced in the application and then not be finished in it.
+
+## Sec51 - PLANNER-EFFECTIVE LANE IDENTITY, AND WHY IT IS NOT A TUPLE
+
+`PLANNER_EFFECTIVE_LANE_KEY = canonical method key + origin_country + destination_country + last_mile_delivery`.
+`CARRIER_ID_AFFECTS_KMRA_LEADDAYS = NO` - `leadDays` never reads it, and then takes the **first** matching row.
+
+**The guard is not tuple equality, because `axisOk` treats a BLANK axis on a stored row as a WILDCARD.** A row
+with a blank origin is reachable by every origin query, so `CN | JP | air | parcel` and
+`(any origin) | JP | air | parcel` have different printed keys and still collide. Two rows are refused when
+their canonical method keys are equal AND, on each of origin / destination / last-mile, their values are
+equal or either is blank. That is derived from `axisOk` rather than invented, and tuple equality alone would
+have let the wildcard row in.
+
+**The guard calls `KMRA.canonicalMethodKey` and `KMRA.normalizeLeadTime` rather than reimplementing them.** A
+duplicate guard written in its own dialect drifts from the resolver it protects, and the drift is invisible
+until two rows answer one query. With the bundle absent the write REFUSES (`KMRA_UNAVAILABLE`) instead of
+falling back to a private copy of the matching rules - the same guard 61_ uses.
+
+`DUPLICATE_EFFECTIVE_LANE_ALLOWED = NO`. `KMRA_LEADDAYS_CHANGED = NO`: the first-row pick is byte-for-byte
+what it was, and is re-run against all three Sec-15 fixtures, including the duplicate one, where it still
+returns the first row. This round stops NEW ambiguity; it does not rewrite history.
+
+## Sec52 - THE WRITE OWNER
+
+```
+UI (Carrier Rate Card > Lead Time panel)
+  -> KM.DB.upsertCarrierLeadTime
+  -> carrierLeadTime.upsert            (01_router.gs)
+  -> handleUpsertCarrierLeadTime_      (17_carrier_handlers.gs)   CARRIER_LEADTIME_WRITE_OWNER_COUNT_POST = 1
+  -> carrier_lead_times
+```
+
+`LEADTIME_CREATE_SUPPORTED = YES`, `LEADTIME_UPDATE_SUPPORTED = YES`, `LEADTIME_DELETE_SUPPORTED = NO`.
+Delete was audited and deliberately not added: with no status column, removing a lane silently un-routes it,
+and no current workflow asks for that. An edit addresses `lead_time_id` (`LEADTIME_UPDATE_IDENTITY`) and
+replaces the row in place rather than appending a twin that would need a status column to disambiguate.
+
+`created_at` is preserved on update and only `updated_at` moves. No `created_by` / `updated_by` were invented -
+the table has no such columns and S9 owns identity.
+
+Concurrency reuses the existing `LockService.getScriptLock()` pattern (`handleUpsertFcTargetRule_`'s shape),
+so `CONCURRENT_DUPLICATE_LANE_REACHABLE = NO` with no second lock architecture.
+
+## Sec53 - CARRIER_ID, AND THE DECISION THAT IS NOT MINE
+
+`carrier_id` stays on the table as METADATA. It is not part of the planner key, is not validated as one, and
+is displayed on the panel because the business data uses it. 17_'s own carrier spec already says the system
+must not "treat `carrier_lead_times.carrier_id` as a carrier selection".
+
+`CARRIER_SPECIFIC_LEADTIME_DECISION_REQUIRED = NO` **for this round, on the evidence available.** If two
+carriers genuinely need different transit times on one planner-effective lane, the current resolution rule
+cannot express it and that is a product decision, not something to invent inside a maintenance slice. The
+read-only census reports exactly that case as `carrier_specific_conflict_count`, so it surfaces as a
+question rather than as a silently-picked row.
+
+## Sec54 - THE READ-ONLY DUPLICATE CENSUS
+
+`carrierLeadTime.duplicateCensus` lists every stored pair the planner could reach with one query, using the
+same predicates as the guard, and reports which row the planner uses TODAY. **Zero writes, no sheet created,
+no row touched** - asserted by counting appends, range writes and flushes against a fake sheet.
+
+`EXISTING_DUPLICATE_LANE_COUNT = 0` **against repository fixtures**; the only lead-time row the repository
+creates is the Sinotrans seed (CN -> JP Air/Parcel). `PRODUCTION_DUPLICATE_CENSUS_REQUIRED = YES` - the real
+answer can only come from the live sheet, and §16 is explicit that duplicates found there are reconciled by
+the operator, never auto-deleted or merged.
+
+`SINOTRANS_SEED_CLASSIFICATION = ONE_TIME_SEED`. It writes `carrier_lead_times`, is idempotent, was not
+removed and was not executed. Recorded for S7-R4's deploy-surface review.
+
+## Sec55 - THE SURFACE
+
+`LEADTIME_UI_SURFACE` = a Lead Time panel on the existing Carrier Rate Card page. `NEW_TOP_LEVEL_NAV_REQUIRED = NO`.
+Colocated because an operator setting up a lane needs both; separate underneath because they are two
+authorities. The panel reads the page's EXISTING scoped read model, so
+`ADDITIONAL_LEADTIME_REQUEST_COUNT = 0` and `PER_ROW_LEADTIME_REQUEST_COUNT = 0`; the rows were already being
+read to fill the rate table's Lead Time column.
+
+Four states, from the existing `KM.deferredRead` contract rather than a flag invented here: LOADING,
+READY_EMPTY, READY_WITH_ROWS, READ_FAILED. A failed read says so and offers Retry; it never reads as "no
+lanes". `LEADTIME_FALSE_EMPTY_COUNT = 0`, `LEADTIME_FALSE_SUCCESS_COUNT = 0`,
+`LEADTIME_FALSE_FAILURE_COUNT = 0` - a committed write whose refresh lags says the write is committed and the
+list may be behind. `LEADTIME_UNKNOWN_AUTOREPLAY_COUNT = 0`: a transport that threw says the outcome is
+unknown and is never resent, because a blind replay is how a refused duplicate becomes two rows.
+
+## Sec56 - RELEASE: THE NINETEENTH SWAP
+
+R39 is a WRITE round and the **first router change since R25** - a fourteen-release gap, which is exactly the
+jump a per-module stamp exists to express.
+
+```
+RELEASE_OWNERS    01_router.gs (R25 -> R39)   63_api_v1_system_health.gs (R39)
+STAMPLESS_OWNERS  17_carrier_handlers.gs (new)   57_api_v1_shipment_workspace.gs (carried)
+RELEASE_CARRIED   unchanged; 22_ keeps R37
+SYS_DEPLOYED_ACTION_CONTRACT_VERSION_  17 -> 18   KM_EXPECTED_ACTION_CONTRACT_VERSION_  17 -> 18
+SYS_REQUIRED_ACTION_LIST_VERSION_      unchanged
+```
+
+`SYS_REQUIRED_ACTIONS_` lists actions a PAGE DEPENDS ON AT MOUNT. `importCarrierRateCards` - the Rate Card
+page's own write action - is not in it, and `carrierLeadTime.upsert` is the same class: an operator-initiated
+write on a page that mounts and reads perfectly well without it.
+
+**Three assertions in the release ledger moved with 01_** out of `RELEASE_CARRIED` and into `RELEASE_OWNERS`
+(C2, H4a, and F2's old-router fixture, now R25). Each kept its intent; only which list it reads changed.
+**H2 changed from 1 to 2** and stayed EXACT: it measures the action-contract delta across the whole unshipped
+span, which now contains two action-adding releases. The convention is one bump per RELEASE that changes the
+action set, not one per action - 63_'s own history says so, where FB-4E-R2 moved the list version by one for
+four new entries. Loosening it to `>= 1` was explicitly rejected once before in this file and is rejected again.
+
+## Sec57 - ROUND OUTCOME
+
+```
+NEW_TABLE_REQUIRED  NO   NEW_COLUMNS_REQUIRED  NONE   DB_MIGRATION_REQUIRED  NO   BACKFILL_REQUIRED  NO
+PRODUCTION_ROWS_WRITTEN  0        RATE_CARD_WRITE_FROM_LEADTIME_COUNT  0
+DUPLICATE_CREATE_WRITE_COUNT  0   LEADTIME_WRITE_FROM_RATECARD_COUNT   0
+DUPLICATE_UPDATE_WRITE_COUNT  0   LEADTIME_WRITE_TRUTH_OWNER  the backend receipt, read back from the sheet
+BACKEND_RELEASE  F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R39
+APPS_SCRIPT_SYNC_REQUIRED  YES    SET  17_ - 01_ - 63_  (+ the TEMP activation census pin)
+FRONTEND_DEPLOY_REQUIRED   YES    SET  operation-system-db-api.js - carrier-rate-card.js - carrier-rate-card.html
+TOKEN_ROTATION_REQUIRED_AT_FINAL_DEPLOY  YES (deferred to the cumulative release)
+S7_R3_CARRIER_LEADTIME_SEAL  YES  OPEN_S7_BLOCKERS  none
+```
+
+**DEPLOY ORDER: 01_ and 17_ TOGETHER.** A router that routes `carrierLeadTime.upsert` to a handler that is
+not there answers with a reference error rather than a refusal; a 17_ without the router is unreachable. The
+browser pins contract v18, so a frontend that can call the action refuses a deployment that predates it
+instead of sending a write nothing will route.

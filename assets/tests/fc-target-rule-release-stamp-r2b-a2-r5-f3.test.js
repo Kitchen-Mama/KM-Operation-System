@@ -116,6 +116,18 @@ var BASE = 'e583057';   // R25 starts here: the tree after S3-R8's transport bud
 //
 // I1 checks COPY, so it checks this list. C3 checks STAMPS, so it does not.
 var STAMPLESS_OWNERS = {
+  // S7-R3 — 17_ JOINS. It declares no build symbol, exactly like 57_, so it is copied and stamped by
+  // nobody. R39 gives it the carrier_lead_times maintenance owner: a routable lane needs BOTH a rate card
+  // and a lead time, rate cards have been application-maintainable since the Rate Card round, and lead
+  // times could only be typed into the sheet — 61_ said so in the runtime. Without this file copied the
+  // router would dispatch carrierLeadTime.upsert to a handler that does not exist, so it must travel with
+  // 01_ or the action answers with a reference error rather than a refusal.
+  '17_carrier_handlers.gs':
+    'THE CARRIER HANDLERS. R39 adds handleUpsertCarrierLeadTime_ (the ONE application write owner for '
+    + 'carrier_lead_times, with the duplicate-effective-lane guard) and handleCarrierLeadTimeDuplicateCensus_ '
+    + '(read-only). The guard resolves through KMRA\'s own canonicalMethodKey / normalizeLeadTime rather than '
+    + 'reimplementing them, so it cannot drift from the leadDays resolution it protects. No schema change: '
+    + 'the live 11 columns are unchanged and no status column was invented.',
   '57_api_v1_shipment_workspace.gs':
     'THE SHIPMENT READ WORKSPACE. R38 adds the carriers master to its BASE table set and returns it raw, so '
     + 'the Shipment Draft, the Confirm summary and the On-the-Way Map can resolve carrier_id to a name. '
@@ -162,8 +174,21 @@ var RELEASE_OWNERS = {
   //
   // 90_ does NOT move: no core module changed, so the bundle is not rebuilt and its content hash is the same
   // bytes it was at R36.
+  // S7-R3 — THE NINETEENTH SWAP, and the first ROUTER change since R25. A fourteen-release gap is exactly
+  // the jump a per-module stamp exists to be able to express; marching 01_ along with every release since
+  // would have erased the fact that its routing table had not moved in fourteen rounds.
+  '01_router.gs':
+    'THE ROUTER. R39 adds carrierLeadTime.upsert and carrierLeadTime.duplicateCensus, the first actions '
+    + 'added since R25. Without this file copied, the frontend\'s lead-time save reaches the generic '
+    + '"Invalid POST action" refusal and the maintenance panel cannot work at all — which is why the '
+    + 'action-contract version moves to 18 and the browser pins 18, so a frontend that can call the action '
+    + 'refuses a deployment that predates it instead of sending a write nothing will route.',
   '63_api_v1_system_health.gs':
-    'THE MANIFEST. R38 moves exactly one expected value — its own — because carrying a release that changed '
+    'THE MANIFEST. R39 moves THREE values: its own build, 01_\'s expected stamp, and the action-contract '
+    + 'version 17 → 18 — which DOES move this time, because two router actions were genuinely added. '
+    + 'SYS_REQUIRED_ACTION_LIST_VERSION_ does NOT move: SYS_REQUIRED_ACTIONS_ lists actions a PAGE DEPENDS '
+    + 'ON AT MOUNT, and importCarrierRateCards — the Rate Card page\'s own write action — is not in it '
+    + 'either. R38 moved exactly one expected value — its own — because carrying a release that changed '
     + 'a sync-visible backend file IS a change to this file. 57_ gains the carriers master so the Shipment '
     + 'Draft, the Confirm summary and the On-the-Way Map resolve carrier_id to a name through ONE shared '
     + 'presentation resolver instead of printing the id. No router action was added or removed, so the '
@@ -217,7 +242,9 @@ var RELEASE_CARRIED = {
   // read-workspace round has no business moving a write handler's stamp; R32 changes the write handler
   // itself, so the stamp moves with the code that moved. This is the ledger working in both directions
   // within two releases, which is the strongest evidence that the stamps are not being marched.
-  '01_router.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25',
+  // S7-R3 — 01_ LEFT THIS LIST AT R39 and is an OWNER again, after fourteen releases carried here. That is
+  // the longest carry in this ledger, and the ledger releasing it only when the file actually changed is
+  // the strongest evidence there is that these stamps are not marched to keep a gate green.
   '73_api_v1_pricing_write.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25'
 };
 // Owners that carry an EARLIER release and must keep it. Each is here because it did not change, and
@@ -547,8 +574,11 @@ eq(declares(CONFIG, 'CONFIG_BUILD_VERSION_'), RELEASE_UNMOVED['00_config.gs'],
 // later it was still demanding it, and the only way to stay green was to march a file that had not changed —
 // so a gate written to catch marched stamps was the thing requiring one. What must hold is that the router
 // declares the round IT last changed and that the manifest expects the same value, whichever round that is.
-eq(declares(ROUTER, 'RTR_BUILD_VERSION_'), RELEASE_CARRIED['01_router.gs'],
-  'C2  01_router.gs declares the round it last changed in, not the release it is being cut into');
+// S7-R3 — the round it last changed in IS this release now: R39 adds carrierLeadTime.upsert and
+// carrierLeadTime.duplicateCensus, the first router change since R25. The claim is unchanged — the router
+// declares the round IT last changed — and that round is no longer an earlier one.
+eq(declares(ROUTER, 'RTR_BUILD_VERSION_'), RELEASE,
+  'C2  01_router.gs declares the round it last changed in, which this release is');
 Object.keys(RELEASE_CARRIED).forEach(function (f, i) {
   var row = manifestRows(HEALTH).filter(function (r) { return r.file === f; })[0];
   eq(row ? row.expected : '(no row)', RELEASE_CARRIED[f],
@@ -625,10 +655,12 @@ ok(oldProc.stale_modules.join('|').indexOf('F1-7N-FC-1A-R1') !== -1,
 // the one R21 owner that a project can hold a WORKING earlier version of. That is the dangerous case:
 // an R9 router answers everything it knew and routes nothing new, so a price save fails with an
 // invalid-action refusal while every other probe reports a healthy deployment.
-// S5-R6: the old copy to present is the stamp this file carried BEFORE the round it last changed — R24.
-// PREV_RELEASE no longer names that: the router is carried at R25 while the release has moved on to R28, so
-// PREV_RELEASE is now a round in which the router was correct and unchanged.
-var ROUTER_PRIOR_STAMP = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24';
+// S5-R6: the old copy to present is the stamp this file carried BEFORE the round it last changed.
+// S7-R3: that is now R25 — the stamp the router carried for the fourteen releases before R39 changed it.
+// A project still holding an R25 router routes nothing this release added, which is precisely the
+// dangerous case: it answers every older action and refuses carrierLeadTime.upsert as invalid, while every
+// other probe reports a healthy deployment.
+var ROUTER_PRIOR_STAMP = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25';
 var oldRouter = runManifest({ RTR_BUILD_VERSION_: ROUTER_PRIOR_STAMP });
 ok(oldRouter.stale_modules.join('|').indexOf('01_router.gs') !== -1,
   'F2  an OLD 01_ identity is rejected where this release requires the new one', oldRouter.stale_modules);
@@ -735,10 +767,17 @@ eq(num(HEALTH, 'SYS_TRANSPORT_CONTRACT_VERSION_'), num(priorHealth, 'SYS_TRANSPO
   'H1  SYS_TRANSPORT_CONTRACT_VERSION_ is untouched — no envelope field moved');
 // S3-R10 — EXACT AGAIN, and correct again, because BASE now points at this release's base. The first repair
 // attempted here loosened this to ">= 1" to survive a stale anchor; that treated the symptom. With BASE moved
-// the sharp assertion is the true one: this release added exactly one action, pricing.write.status.
+// the sharp assertion is the true one.
+//
+// S7-R3 — THE SPAN NOW HOLDS TWO ACTION-ADDING RELEASES, so the true delta is 2, and it stays EXACT rather
+// than being loosened to ">= 1" for exactly the reason recorded above. The unit is one bump per RELEASE that
+// changes the action set, not one per action — 63_'s own history says so (FB-4E-R2 moved the list version by
+// one for four new entries). R25..R38 contributed one: pricing.write.status. R39 contributes the second:
+// carrierLeadTime.upsert and carrierLeadTime.duplicateCensus, together, one bump.
+var ACTION_ADDING_RELEASES_SINCE_BASE = 2;
 eq(Number(num(HEALTH, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_'))
-   - Number(num(priorHealth, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_')), 1,
-  'H2  SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ moved by exactly one — one action was added');
+   - Number(num(priorHealth, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_')), ACTION_ADDING_RELEASES_SINCE_BASE,
+  'H2  SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ moved once per action-adding release in this span');
 // R22 — INVERTED AGAIN, AND IN THE OPPOSITE DIRECTION FROM R21. R21 was the first release in this series
 // to add a route AND a page dependency, so both numbers moved together. R22 adds a route that NO PAGE
 // CALLS: pricing.fxReconcile is an operator reconciliation. So the two numbers must now DISAGREE, and that
@@ -768,8 +807,9 @@ ok(/\{ action: 'pricing\.update', handler: 'handlePricingUpdate_'/.test(HEALTH),
 ok(cp.execFileSync('git', ['diff', '--name-only', BASE, '--', GS + '01_router.gs'],
   { cwd: REPO, encoding: 'utf8' }).trim() !== '',
   'H4  01_router.gs DID change this release — an action was routed');
-ok(Object.keys(RELEASE_CARRIED).indexOf('01_router.gs') !== -1,
-  'H4a and it is a declared carried owner, so it still reaches the operator\'s sync list');
+ok(Object.keys(RELEASE_OWNERS).indexOf('01_router.gs') !== -1,
+  'H4a and it is a declared OWNER, so it still reaches the operator\'s sync list — an undeclared router '
+  + 'change is how an action reaches production with nobody putting the file on a list');
 // R14 is the first release in this series to change manifest MEMBERSHIP, so the old assertion — that
 // membership never moves — is no longer true and is not the right thing to assert. What must hold is
 // that membership moved by EXACTLY the row this release declares, which is the stricter statement.
@@ -939,7 +979,7 @@ mutant('M12', 'a release that adds an action and forgets to bump the action cont
     'var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = ' + num(HEALTH, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_') + ';',
     'var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = ' + prior + ';');
   if (faked === HEALTH) throw new Error('M12 anchor drifted — the mutant would inject no fault');
-  return Number(num(faked, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_')) - Number(prior) !== 1;
+  return Number(num(faked, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_')) - Number(prior) !== ACTION_ADDING_RELEASES_SINCE_BASE;
 });
 
 // Vacuity — every mutant predicate must be FALSE against the unmutated tree, or it proves nothing.
@@ -959,10 +999,11 @@ var vacuous = [];
  ['M10', function () { return RO.OWNER_STAMPS[RO.OWNER_STAMPS.length - 1] === RELEASE
      && RO.stampAtOrAfter(RELEASE, PREV_RELEASE); }],
  ['M11', function () { return manifestRows(HEALTH).some(function (r) { return r.file === '14_fc_write_handlers.gs'; }); }],
- // M12's predicate must be FALSE against the unmutated tree: the real contract DID move by one.
+ // M12's predicate must be FALSE against the unmutated tree: the real contract DID move, once per
+ // action-adding release in this span.
  ['M12', function () {
    return Number(num(HEALTH, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_'))
-        - Number(num(priorHealth, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_')) === 1;
+        - Number(num(priorHealth, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_')) === ACTION_ADDING_RELEASES_SINCE_BASE;
  }]
 ].forEach(function (p) {
   var held; try { held = !!p[1](); } catch (e) { held = false; }

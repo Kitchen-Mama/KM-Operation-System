@@ -4572,7 +4572,7 @@ function _kmWriterError_(json, fallbackMessage) {
 // S3-R10: 16 -> 17 — this build calls pricing.write.status to resolve a lost write outcome, so a
 // deployment that predates the action cannot serve it. The pin moves WITH the contract, because a client
 // that silently accepts an older deployment is a client that cannot verify a write and will not say so.
-var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 17;      // the minimum deployed_action_contract_version this build needs
+var KM_EXPECTED_ACTION_CONTRACT_VERSION_ = 18;      // the minimum deployed_action_contract_version this build needs
 var KM_EXPECTED_REGISTRY_PROJECTION_VERSION_ = 'FB-3.1';
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT AXIS. Deliberately NOT folded into the action-contract number.
 //
@@ -6340,6 +6340,34 @@ window.KM.DB.importCarrierRateTemplate = async function(payload) {
     if (!json.success) throw new Error(json.error || 'Import carrier rate cards failed');
     await _kmWriterPostWrite_();
     return json.data;
+};
+
+// S7-R3 — carrier_lead_times maintenance. ONE adapter action for create and update: the presence of
+// lead_time_id is what distinguishes them, exactly as the backend reads it. The server is the write-truth
+// owner — this returns its receipt (read back from the sheet) rather than echoing the request, and it
+// NEVER retries: a lead-time write whose outcome is unknown is reported, not replayed.
+window.KM.DB.upsertCarrierLeadTime = async function(payload) {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, upsertCarrierLeadTime skipped');
+        return { success: false, error: 'API not configured', stage: 'config' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, { method: 'POST', cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ action: 'carrierLeadTime.upsert' }, payload || {})) });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    return await resp.json();
+};
+// READ ONLY. Lists stored rows the planner could reach with one query. Creates nothing, writes nothing.
+window.KM.DB.runCarrierLeadTimeDuplicateCensus = async function() {
+    if (!isOperationDbApiConfigured()) {
+        console.warn('[KM.DB] API not configured, runCarrierLeadTimeDuplicateCensus skipped');
+        return { success: false, error: 'API not configured', stage: 'config' };
+    }
+    var resp = await fetch(OP_DB_API_BASE_URL, { method: 'POST', cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'carrierLeadTime.duplicateCensus' }) });
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    return await resp.json();
 };
 
 // Request Order status transitions: { request_order_id, transition: submit|approve|reject|cancel|done,

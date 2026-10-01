@@ -397,6 +397,11 @@
             .catch(function (err) { _crcPrimaryError = err || { message: 'read failed' }; _crcInit(); _crcRenderPrimaryError(); });
     }
     window.crcRetryPrimary = crcRetryPrimary;
+    window.crcLtOpenAdd = crcLtOpenAdd;
+    window.crcLtOpenEdit = crcLtOpenEdit;
+    window.crcLtCloseModal = crcLtCloseModal;
+    window.crcLtSave = crcLtSave;
+    window.crcLtRetryRead = crcLtRetryRead;
 
     // ---- load + init ----
     function loadAndInit() {
@@ -440,6 +445,10 @@
         _crcPopulateFilters();
         // No data shown before Search.
         if (!crcSearched) _crcResetTable('Set filters and click <strong>Search</strong> to view carrier rate cards.');
+        // S7-R3 — the Lead Time panel IS its own first screen (unlike the rate table, which waits for
+        // Search), so it asks for the deferred lead-time read at mount and paints each state as it arrives.
+        _crcLtRender();
+        _crcEnsureLeadTimes_(function () { _crcLtRender(); });
     }
 
     // Populate all filter dropdowns (faceted) + the date trigger label. Table stays empty until Search.
@@ -1284,6 +1293,221 @@
     }
 
     // Expose inline handlers.
+
+    // ============================================================================================
+    // S7-R3 — CARRIER LEAD TIME MAINTENANCE.
+    //
+    // READ: getLeadTimes(), the page's EXISTING scoped read model. No new request, nothing per row.
+    // The rows were already being read to fill the rate table's Lead Time column; this panel renders
+    // the same array. The deferred-read helper owns whether they have arrived yet, which is where the
+    // LOADING / READY / FAILED distinction comes from rather than from a flag invented here.
+    //
+    // WRITE: KM.DB.upsertCarrierLeadTime → carrierLeadTime.upsert → ONE backend owner. The server holds
+    // the duplicate-lane guard and the write truth; this page never decides whether a lane is free.
+    // ============================================================================================
+
+    var _crcLtSaving = false;
+
+    function _crcLtNum(v) {
+        var t = String(v == null ? '' : v).trim();
+        return t === '' ? '' : t;
+    }
+    // The lane an operator reads, in the planner's own terms. '(any)' is not decoration: a blank axis is a
+    // WILDCARD that the planner matches against every value, which is why it may not be left silent.
+    function _crcLtLane(lt) {
+        return [String(lt.shippingMethod || '').trim() || '(no method)',
+            up(lt.originCountry) || '(any origin)',
+            up(lt.destinationCountry) || '(any destination)',
+            String(lt.lastMileDelivery || '').trim() || '(any last mile)'].join(' · ');
+    }
+    function _crcLtDaysCell(lt) {
+        function f(v) { return (v === '' || v == null) ? '—' : v; }
+        return f(lt.minDays) + ' / ' + f(lt.avgDays) + ' / ' + f(lt.maxDays);
+    }
+
+    // §19 — four states, and 'no rows' is only ever claimed once the read has actually answered.
+    function _crcLtRender() {
+        var wrap = document.getElementById('crc-lt-wrap');
+        if (!wrap) return;
+        var state = _crcLtState();
+        if (state === 'LOADING' || state === 'NOT_LOADED') {
+            wrap.innerHTML = '<div class="crc-empty">Loading lead times…</div>';
+            return;
+        }
+        if (state === 'FAILED') {
+            // READ_FAILED is NOT empty. Say which it is, and offer the retry rather than an empty table.
+            wrap.innerHTML = '<div class="crc-empty" role="alert" style="color:#B91C1C;">Lead times could not be read. '
+                + 'This is a read failure, not an empty lane list. '
+                + '<button type="button" class="crc-btn crc-btn--ghost" onclick="crcLtRetryRead()">Retry</button></div>';
+            return;
+        }
+        var rows = getLeadTimes() || [];
+        if (!rows.length) {
+            wrap.innerHTML = '<div class="crc-empty">No lead times are defined yet. Use <strong>Add Lead Time</strong> to define one.</div>';
+            return;
+        }
+        var nameById = {};
+        getCarriers().forEach(function (c) { if (c.carrierId) nameById[c.carrierId] = String(c.carrierName || '').trim(); });
+        var body = rows.map(function (lt) {
+            var cid = String(lt.carrierId || '').trim();
+            // Same carrier-display rule as everywhere else: the name when the master knows it, the id when
+            // it does not. Never 'no carrier' for an id we simply cannot name.
+            var carrier = cid ? (nameById[cid] ? (esc(nameById[cid]) + ' <span style="color:#94A3B8;">· ' + esc(cid) + '</span>') : esc(cid)) : '<span style="color:#94A3B8;">—</span>';
+            return '<tr>' +
+                '<td>' + carrier + '</td>' +
+                '<td>' + esc(up(lt.originCountry) || '(any)') + '</td>' +
+                '<td>' + esc(up(lt.destinationCountry) || '(any)') + '</td>' +
+                '<td>' + esc(String(lt.shippingMethod || '')) + '</td>' +
+                '<td>' + esc(String(lt.lastMileDelivery || '') || '(any)') + '</td>' +
+                '<td style="white-space:nowrap;">' + esc(_crcLtDaysCell(lt)) + '</td>' +
+                '<td><button type="button" class="crc-btn crc-btn--ghost" onclick="crcLtOpenEdit(\'' + esc(lt.leadTimeId) + '\')">Edit</button></td>' +
+            '</tr>';
+        }).join('');
+        wrap.innerHTML = '<table class="crc-table"><thead><tr>' +
+            '<th>Carrier</th><th>Origin</th><th>Destination</th><th>Method</th><th>Last Mile</th>' +
+            '<th>Min / Avg / Max</th><th></th>' +
+            '</tr></thead><tbody>' + body + '</tbody></table>';
+    }
+
+    // retry(), not invalidate(): this is the documented 'the user asked again after a refusal' path, which
+    // clears FAILED so one new read dispatches and a second press joins the flight instead of doubling it.
+    function crcLtRetryRead() {
+        if (window.KM && window.KM.deferredRead) window.KM.deferredRead.retry(_CRC_LT);
+        _crcLtRender();
+        _crcEnsureLeadTimes_(function () { _crcLtRender(); });
+    }
+
+    // Datalist options come from the data the page already holds, so a canonical value is offered rather
+    // than typed from memory. They are suggestions, not a whitelist: a genuinely new lane is the whole
+    // point of this panel, and the BACKEND is the authority that refuses an unresolvable method.
+    function _crcLtFillOptions() {
+        var cards = getCards() || [], lts = getLeadTimes() || [];
+        function fill(id, vals) {
+            var el = document.getElementById(id); if (!el) return;
+            var seen = {}, out = [];
+            vals.forEach(function (v) { var t = String(v == null ? '' : v).trim(); if (!t || seen[t]) return; seen[t] = 1; out.push(t); });
+            out.sort();
+            el.innerHTML = out.map(function (v) { return '<option value="' + esc(v) + '"></option>'; }).join('');
+        }
+        fill('crcLtOriginOpts', cards.map(function (c) { return up(c.originCountry); }).concat(lts.map(function (l) { return up(l.originCountry); })));
+        fill('crcLtDestOpts', cards.map(function (c) { return up(c.destinationCountry); }).concat(lts.map(function (l) { return up(l.destinationCountry); })));
+        fill('crcLtMethodOpts', cards.map(function (c) { return c.shippingMethod; }).concat(lts.map(function (l) { return l.shippingMethod; })));
+        fill('crcLtMileOpts', cards.map(function (c) { return c.lastMileDelivery; }).concat(lts.map(function (l) { return l.lastMileDelivery; })));
+        var sel = document.getElementById('crcLtCarrier');
+        if (sel) {
+            var opts = (getCarriers() || []).filter(function (c) { return c.carrierId; })
+                .map(function (c) { return { id: c.carrierId, label: c.carrierName || c.carrierId }; })
+                .sort(function (a, b) { return String(a.label).localeCompare(String(b.label)); });
+            sel.innerHTML = '<option value="">— none —</option>' +
+                opts.map(function (o) { return '<option value="' + esc(o.id) + '">' + esc(o.label) + '</option>'; }).join('');
+        }
+    }
+
+    function _crcLtSetMsg(html, color) {
+        var el = document.getElementById('crcLtModalMsg');
+        if (el) el.innerHTML = html ? ('<div role="alert" style="font-size:12px;color:' + (color || '#B91C1C') + ';">' + html + '</div>') : '';
+    }
+    function _crcLtFields(lt) {
+        function set(id, v) { var el = document.getElementById(id); if (el) el.value = v == null ? '' : v; }
+        set('crcLtId', lt ? lt.leadTimeId : '');
+        set('crcLtOrigin', lt ? up(lt.originCountry) : '');
+        set('crcLtDest', lt ? up(lt.destinationCountry) : '');
+        set('crcLtMethod', lt ? lt.shippingMethod : '');
+        set('crcLtMile', lt ? lt.lastMileDelivery : '');
+        set('crcLtMin', lt ? _crcLtNum(lt.minDays) : '');
+        set('crcLtAvg', lt ? _crcLtNum(lt.avgDays) : '');
+        set('crcLtMax', lt ? _crcLtNum(lt.maxDays) : '');
+        var sel = document.getElementById('crcLtCarrier');
+        if (sel) sel.value = lt ? String(lt.carrierId || '') : '';
+    }
+    function _crcLtOpenModal(title) {
+        var m = document.getElementById('crc-lt-modal');
+        var t = document.getElementById('crcLtModalTitle');
+        if (t) t.textContent = title;
+        _crcLtSetMsg('');
+        if (m) m.style.display = 'flex';
+    }
+    function crcLtCloseModal() {
+        var m = document.getElementById('crc-lt-modal'); if (m) m.style.display = 'none';
+    }
+    function crcLtOpenAdd() {
+        _crcEnsureLeadTimes_(function () {
+            _crcLtFillOptions(); _crcLtFields(null); _crcLtOpenModal('Add Lead Time');
+        });
+    }
+    function crcLtOpenEdit(leadTimeId) {
+        var rows = getLeadTimes() || [];
+        var lt = null;
+        for (var i = 0; i < rows.length; i++) { if (String(rows[i].leadTimeId) === String(leadTimeId)) { lt = rows[i]; break; } }
+        if (!lt) return;
+        _crcLtFillOptions(); _crcLtFields(lt); _crcLtOpenModal('Edit Lead Time');
+    }
+
+    // §13 — a duplicate lane is REFUSED, and the refusal says which row already owns the lane. It never
+    // overwrites the other row and never appends a second one.
+    function _crcLtRefusalHtml(json) {
+        var code = String((json && json.error) || 'WRITE_FAILED');
+        var detail = String((json && json.detail) || '');
+        if (code === 'DUPLICATE_CARRIER_LEAD_TIME_LANE') {
+            var c = (json.conflicts || [])[0] || {};
+            return '<strong>This lane already has a lead time.</strong><br>' +
+                esc(String(json.lane || '')) + '<br>' +
+                'Defined by ' + esc(String(c.lead_time_id || '')) + '. Edit that row instead — a second one would make the '
+                + 'planner\'s answer depend on row order. <em>Nothing was written.</em>';
+        }
+        return esc(detail || code) + ' <code>' + esc(code) + '</code>';
+    }
+
+    function crcLtSave() {
+        if (_crcLtSaving) return;                       // one click, one write
+        var db = window.KM && window.KM.DB;
+        if (!db || typeof db.upsertCarrierLeadTime !== 'function') { _crcLtSetMsg('Lead-time maintenance is unavailable in this build.'); return; }
+        function val(id) { var el = document.getElementById(id); return el ? String(el.value || '').trim() : ''; }
+        var payload = {
+            lead_time_id: val('crcLtId'),
+            carrier_id: val('crcLtCarrier'),
+            origin_country: up(val('crcLtOrigin')),
+            destination_country: up(val('crcLtDest')),
+            shipping_method: val('crcLtMethod'),
+            last_mile_delivery: val('crcLtMile'),
+            min_days: val('crcLtMin'), avg_days: val('crcLtAvg'), max_days: val('crcLtMax'),
+            actor: 'carrier-rate-card'
+        };
+        if (!payload.lead_time_id) delete payload.lead_time_id;   // absent id = create, exactly as the server reads it
+        _crcLtSaving = true;
+        var btn = document.getElementById('crcLtSaveBtn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+        _crcLtSetMsg('');
+        Promise.resolve(db.upsertCarrierLeadTime(payload)).then(function (json) {
+            _crcLtSaving = false;
+            if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+            if (!json || json.success !== true) { _crcLtSetMsg(_crcLtRefusalHtml(json)); return; }
+            // COMMITTED. The backend confirmed and returned the stored row, so a refresh that then fails
+            // must not be reported as a failed write - it is a stale view of a write that landed.
+            crcLtCloseModal();
+            var saved = (json.data && json.data.lead_time_id) || '';
+            // invalidate(), not retry(): it bumps the epoch, so a read dispatched BEFORE this save cannot
+            // land afterwards and repaint the panel with pre-write rows.
+            if (window.KM && window.KM.deferredRead) window.KM.deferredRead.invalidate(_CRC_LT);
+            _crcEnsureLeadTimes_(function () {
+                _crcLtRender();
+                var note = document.getElementById('crc-lt-note');
+                if (note) {
+                    var ok = _crcLtState() === 'READY';
+                    note.innerHTML = '<span class="crc-note" style="color:#047857;">Saved ' + esc(saved) +
+                        (ok ? '.' : ' — the write is committed; this list may be a moment behind.') + '</span>';
+                }
+            });
+        }).catch(function () {
+            // OUTCOME UNKNOWN. The request left and the transport threw, so we cannot say whether the row
+            // was written. Never resend it: a blind replay is how a refused duplicate becomes two rows.
+            _crcLtSaving = false;
+            if (btn) { btn.disabled = false; btn.textContent = 'Save'; }
+            _crcLtSetMsg('The save request failed in transit, so its outcome is unknown. Close this and reload '
+                + 'the lead-time list before trying again — it may already have been written.', '#B45309');
+        });
+    }
+
     window.crcSearch = search;
     // F1 — Date-range picker
     window.crcOpenDateModal = openDateModal;
