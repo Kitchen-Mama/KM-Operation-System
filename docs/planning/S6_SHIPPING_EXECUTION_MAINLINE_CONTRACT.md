@@ -1771,3 +1771,122 @@ S6_FINAL_SEAL = NO   - one open blocker: the dispatch selection gap above, which
                        behaviour question and an operator's decision to make.
 NEXT_TASK = withheld - S7 is not entered on the agent's authority while an S6 blocker is open.
 ```
+
+> **[CLOSED BY S6-R8A — see PART X.** The operator froze
+> `D_S6_DISPATCH_SOURCE_AUTHORITY = DECLARED_SOURCE_ONLY` and the dispatcher now consumes the warehouse its
+> Shipment declares. The block above is kept as the record of how the gap was found and what it cost.]**
+
+---
+
+# PART X - S6-R8A: DECLARED-SOURCE DISPATCH AUTHORITY, AND THE S6 SEAL
+
+## Sec65 - THE FROZEN DECISION
+
+```
+D_S6_DISPATCH_SOURCE_AUTHORITY            DECLARED_SOURCE_ONLY
+DISPATCH_INVENTORY_IDENTITY               warehouse_id + sku      (NOT sku alone)
+ANY_WAREHOUSE_FALLBACK                    NO
+AUTOMATIC_SOURCE_SUBSTITUTION_AT_DISPATCH NO
+APPLIES_TO                                FACTORY and OVERSEAS equally
+```
+
+A Shipment consumes inventory from the warehouse it declares, or dispatch refuses truthfully. The authority
+chain is one line with no second selector in it:
+
+    shipping decision -> selected source warehouse_id -> shipments.source_warehouse_id
+      -> reservation on that exact warehouse -> dispatch consume on that exact warehouse
+
+## Sec66 - WHAT CHANGED IN 22_
+
+```
+PRE_DISPATCH_SELECTION_KEY    sku
+POST_DISPATCH_SELECTION_KEY   source_warehouse_id + sku
+DISPATCH_DOMAIN_DECISION_POINT      from shipments.source_warehouse_id, via 12_ shipmentSourceDomain_
+DISPATCH_INVENTORY_SELECTION_POINT  csdDeclaredSourceSupply_(srcDomain, ...), AFTER the domain is decided
+DOMAIN_DECIDED_BEFORE_STOCK_SELECTION  YES
+```
+
+The order is the fix. A domain derived from a row that only `factory_stock` can produce will always say
+FACTORY, which is why the overseas branch R33 added was unreachable. `csdLoadFactoryStock_` is deleted with
+the search it served.
+
+`csdDeclaredSourceSupply_` answers what the ONE declared warehouse can give, and the domains answer
+differently on purpose:
+
+- **FACTORY** gives **current stock**. The hold is released on the same row by the same call, so asking
+  `current - reserved` would refuse a shipment the size of its own reservation.
+- **OVERSEAS** gives **the hold this shipment owns**. Those units left `wh_available_stock` when they were
+  reserved, so availability says nothing about what this shipment may consume; reading it would let a
+  shipment dispatch against another shipment's reservation.
+
+## Sec67 - TWO CORRECTIONS THE ROUND MADE TO ITSELF
+
+1. **A hard refusal on an unlisted warehouse was removed.** It was STRICTER than the path that creates the
+   shipment: 12_ requires a non-blank `source_warehouse_id` but lets `shipmentSourceDomain_` degrade to
+   FACTORY when the `warehouses` row is missing, so such a shipment can exist. Refusing it at dispatch would
+   strand it. The refusal now comes from sufficiency - a source nobody can find holds nothing - and the
+   answer carries `source_warehouse_known` so a typo is distinguishable from an empty warehouse.
+2. **A half-sync fallback was added.** 22_ now depends on 12_, and Apps Script is copied file by file. When
+   `shipmentDomainSheets_` is absent the FACTORY half degrades to `factory_stock` directly instead of
+   refusing every dispatch. WHICH warehouse never degrades. An OVERSEAS source still refuses, because
+   without 05_ there is nothing truthful to fall back to.
+
+## Sec68 - THE SUITE THAT HAD BEEN DESCRIBING THE OLD RULE
+
+`dual-mainline-topology-audit` is the only suite that drives `handleConfirmShipmentAndDispatch_` end to end.
+Its G10 asserted that one SKU spread over two factory warehouses ships from **both**, *"never a first-row
+pick"* - a faithful description of the dispatcher as it was, and exactly the behaviour now frozen out. It is
+rewritten to the new rule, keeps the account of the old one, and gains a companion case so that *"refuses
+everything"* cannot pass in its place. Its `shipments` header gained `source_warehouse_id`: it had none,
+which described a row 12_ has refused to create since R4B.
+
+## Sec69 - THE AI SOURCE-ALLOCATION / BORROW RULE, RECORDED ONLY
+
+The operator recorded a future **Recommendation / Planning** rule alongside this decision. It is written
+here so it is not lost, and it is **NOT implemented**: `IMPLEMENT_AI_ALLOCATION_CHANGE = NO`,
+`IMPLEMENT_BORROW_OVERRIDE = NO`, `CHANGE_DISPATCH_RULE = NO`.
+
+- **Normal allocation** walks eligible sources in the existing canonical priority order. For each source it
+  reads the canonical NORMAL ALLOCATABLE quantity, converts it to the largest **full-carton** quantity, and
+  allocates `min(remaining demand, full-carton allocatable)` before moving to the next source. AI never
+  allocates above NORMAL ALLOCATABLE. *(Demand 200, 24/carton: A allocatable 130 -> 120; remaining 80;
+  B allocatable 70 -> 48; recommended total 168, shortage 32.)*
+- **Insufficient total supply** recommends only the full-carton allocatable total and exposes
+  `SHORTAGE_QTY = max(0, requested_qty - recommended_allocatable_qty)` as the operator message
+  「庫存不足 XXX」. The shortage is explanatory, never a source.
+- **Borrow / over-allocatable override** is manual only: `BORROW_OVERRIDE_AUTOMATIC = NO`,
+  `BORROW_OVERRIDE_REQUIRES_OPERATOR_ACTION = YES`, `BORROW_OVERRIDE_REQUIRES_CONFIRMATION = YES`. Without
+  the acknowledgement 「已與 Operation 協調完毕，並確認額外庫存可供本次使用。」 a quantity above normal
+  allocatable is not submittable. Reserved/protected inventory is never redefined as normal available, and
+  AI never uses the override amount by itself.
+- **Audit** must keep NORMAL_ALLOCATABLE_QTY, SYSTEM_RECOMMENDED_QTY, OPERATOR_FINAL_QTY, OVERRIDE_USED,
+  OVERRIDE_CONFIRMATION and operator identity/timestamp distinguishable. **No DB columns are added here**;
+  at implementation time the existing Draft/Plan audit fields are audited first, and any genuine schema need
+  STOPS for an operator decision.
+- **Layer boundary.** This belongs to Recommendation/Planning and may propose sources BEFORE a Shipment
+  exists. Once a Shipment is created and its source declared, dispatch remains DECLARED_SOURCE_ONLY: no
+  dispatch-time fallback, no automatic substitution, no cross-warehouse consume. A future source change is a
+  separate authorized action - release A's reservation, change the Shipment's source, acquire B's, record
+  provenance, then dispatch B.
+
+## Sec70 - THE SEAL
+
+```
+FACTORY_END_TO_END_PATH_PASS           YES
+OVERSEAS_END_TO_END_PATH_PASS          YES   (handler path included; no factory_stock row required)
+SOURCE_IDENTITY_DRIFT_COUNT            0     (PART IX Sec62's 1 is closed)
+FACTORY_CROSS_WAREHOUSE_CONSUME_COUNT  0     CROSS_DOMAIN_CONSUME_COUNT 0
+RESERVATION_DISPATCH_SOURCE_MISMATCH   0     SOURCE_SUBSTITUTION_IMPLEMENTED NO
+DOUBLE_DISPATCH_EFFECT_COUNT           0     CROSS_WAREHOUSE_REPLAY_EFFECT_COUNT 0
+SHIPPING_QTY_AUTHORITY_CHANGED         NO
+CURRENT_DOC_CONTRADICTION_COUNT        0
+CANONICAL_FAILURE_SET_CHANGED          NO
+PRODUCTION_ROWS_WRITTEN                0
+
+S6_FINAL_SEAL = YES
+OPEN_S6_BLOCKERS = none
+NEXT_TASK = S7 - Phase-1 supporting / auxiliary execution mainlines
+```
+
+Carried to S8, none of it S6-blocking: the `s2-r4b` suite that prints FAIL and exits 0; the absent age bound
+on `CURRENT_PRE_SCHEDULE`; and the client-side factory-available / receipt-remaining display derivations.
