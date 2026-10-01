@@ -902,3 +902,145 @@ PRODUCTION_ROWS_WRITTEN  0
 S7_R2A_CARRIER_NAME_SEAL  YES      OPEN_S7_BLOCKERS  none
 NEXT_TASK = S7-R2B - PURCHASE ORDER DOCUMENT PANEL (re-scope against Sec35 first)
 ```
+
+---
+
+# PART IV - S7-R2B: EXISTING DOCUMENT PANEL COMPLETENESS + GENERATED-DOCUMENT REDISCOVERY
+
+PRE_SHA 8907f87. Verification-first round. Every count below is derived by
+`assets/tests/s7-r2b-document-panel-audit.test.js`, which RUNS the shipped panel renderer and the shipped
+39_ interpretation owners rather than pattern-matching them.
+
+## Sec37 - THE PREMISE, CORRECTED AND RE-CONFIRMED
+
+S7-R1 Sec5 concluded the Document Panels did not exist. PART III Sec35 withdrew that. This round confirms
+the withdrawal from the tree: ONE renderer (`shDocumentPanelHtml`, shipping-history.js), TWO surfaces
+(Shipment pages, Purchase Order Overview), ONE engine (39_), THREE router actions. Nothing here was built;
+it was audited.
+
+| Role | Owner | Responsibility |
+|---|---|---|
+| DOCUMENT_ENGINE_OWNER | `39_document_runtime_service.gs` | generation, retry planning, state interpretation |
+| DOCUMENT_LIST_OWNER | `39_` `handleEntityDocumentList_` | read `generated_documents` for one entity |
+| DOCUMENT_GET_OWNER | `39_` `handleGeneratedDocumentGet_` | one document by `document_id` |
+| DOCUMENT_RETRY_OWNER | `39_` `handleDocumentRetry_` | regenerate the missing/failed classes of one entity |
+| DOCUMENT_PANEL_RENDER_OWNER | `shipping-history.js` `shDocumentPanelHtml` | the one shared renderer |
+| PO_DOCUMENT_PANEL_CALLER | `purchase-order-overview.js` `renderPoDocumentsBlock` | `entity_type: purchase_order` |
+| SHIPMENT_DOCUMENT_PANEL_CALLER | `shipping-history.js` card renderer | `entity_type: shipment` |
+
+`DOCUMENT_ENGINE_OWNER_COUNT = 1` - `DOCUMENT_PANEL_RENDER_OWNER_COUNT = 1` - `DOCUMENT_PANEL_SURFACE_COUNT = 2`
+
+The surfaces are NOT the same feature set, and that is not a PO gap: the Shipment page additionally carries
+a Generate widget (`_shDocActionsHtml` / `shGenerateShipmentDoc`) with its own in-memory result cache for
+its immediate Download link. That cache is a second PRESENTATION path, not a second read authority - the
+panel never reads it, and rediscovery never depends on it.
+
+## Sec38 - WHAT IS COMPLETE
+
+**Rediscovery, both surfaces.** Each workspace declares `generated_documents` as a bounded, include-gated
+table and projects it through the ONE canonical DTO owner; each page asks for `include: { documents: true }`
+on its main read, and the PO bounded post-write readback asks for it too, so a write never blanks the panel.
+The renderer is pure: equal input gives equal output, so re-entry cannot drift. A document generated, left
+behind and returned to is found again from canonical read data alone.
+
+**Entity scope.** Both groupers drop every row whose `related_entity_type` is not theirs, and the direct
+`document.list` path refuses any type other than `shipment` / `purchase_order`. `DOCUMENT_ENTITY_SCOPE_DRIFT_COUNT = 0`.
+
+**Status truth.** A `generated` row with no `file_id` is GENERATING, not READY. One document of five
+expected is PARTIAL, not READY. A superseded attempt is filtered out of the live list, so one logical
+document shows one row. `DOCUMENT_FALSE_SUCCESS_COUNT = 0`, `DOCUMENT_FALSE_FAILURE_COUNT = 0`,
+`RETRY_CREATES_SECOND_LOGICAL_DOCUMENT_COUNT = 0`.
+
+**Budget and write truth.** The renderer is a pure string builder that reaches no adapter and no transport,
+so `PER_DOCUMENT_RENDER_REQUEST_COUNT = 0` and `DOCUMENT_PANEL_MOUNT_WRITE_COUNT = 0` are structural rather
+than counted. The list rides each page's existing workspace read: no separate document request exists to
+duplicate. Retry is the single write, from a click, behind a disable guard.
+
+**Open.** The list payload already carries `file_url` / `download_url`, so `document.get` is not required and
+is not forced. `KM.DB.getGeneratedDocument` exists and has no caller - a capability without a current need,
+which is exactly the distinction S7-R1 Sec5 got wrong about this subsystem.
+
+## Sec39 - FINDING 1 (BLOCKING, both surfaces): the Retry arguments are transposed
+
+`shRetryDocument(entityType, entityId, btnEl)` is invoked by the panel as
+`shRetryDocument(entityId, generated_document_id, this)`.
+
+So `document.retry` receives `related_entity_type` = an entity ID and `related_entity_id` = a DOCUMENT id.
+The backend lowercases the type, compares it against `'purchase_order'`, never matches, and runs the
+SHIPMENT generator against an id that is not a shipment. **Retry cannot work on either surface, and a PO
+retry could not reach the PO generator even with the right id.**
+
+The root cause is one parameter: `_shDocRowHtml(d, canRetry, entityId)` is never given the entity TYPE, so
+the button had nothing else to pass. The DTO carries `related_entity_type` on every row, so the row can
+always name its own entity once asked.
+
+## Sec40 - FINDING 2 (FUNCTIONAL, PO only): the post-retry refresh re-reads the wrong surface
+
+On success the handler calls `_shLoadAndRender()` unconditionally - the Shipment page's re-read. From the PO
+panel that issues a shipment workspace request and leaves the panel the operator is looking at untouched: a
+retry that landed looks like one that did nothing. The panel is shared, so the refresh has to be too.
+
+## Sec41 - FINDING 3 (MINOR): two panel state inputs have no producer
+
+`shDocPanelState` honours `checking` (UNREAD) and `pending`, and no caller ever supplies either; `pending`
+is read from `documentsPending`, which no adapter or backend produces. The four-state distinction
+UNREAD / READY_EMPTY / READY_WITH_DOCUMENTS / READ_FAILED is therefore only partly implemented.
+
+`DOCUMENT_FALSE_EMPTY_COUNT = 0` all the same, and the reason matters: both pages render cards only AFTER
+their canonical read resolves, so the panel is never asked to describe an unread model. READ_FAILED is owned
+one level up and identically on both pages - the read model is nulled and a typed banner with Retry replaces
+the list. That is an S4-R7 fail-closed decision, not a document behaviour, and this round did not touch it.
+
+## Sec42 - FINDING 4 (BLOCKER): the boot-payload floor has 58 bytes of headroom
+
+**This is why Findings 1 and 2 are not repaired in this round.**
+
+`s4-r5` A1d1 requires the boot payload to stay 1.5 MB below the S4-R1 baseline. At `8907f87` the measured
+margin is **58 bytes**. Both Document Panel owners - `shipping-history.js` and `purchase-order-overview.js` -
+are boot-loaded `<script defer>` tags, so every byte of any edit to them is spent against that floor. The
+smallest correct repair of both findings measures 2,246 bytes; stripped of every comment it is still roughly
+1.1 KB over. **No bug fix of any size fits in a boot-loaded file at this margin.**
+
+S4-R6 already replaced an exact-byte assertion here for precisely this reason - the file records that it
+"FAILED THE FIRST TIME ANYBODY FIXED A BUG" - and stated the replacement's intent in as many words: "a bug
+fix changes neither" the script set nor the ceiling. That promise no longer holds. The same failure mode has
+returned one generation later, because the achievement being floored (1,536,058 bytes removed) now sits 58
+bytes above the floor itself (1,536,000).
+
+Note that A1d already pins the boot script SET by name and A2 already asserts that no route script has been
+appended at boot. Those two carry the claim the round was written to protect; A1d1's byte floor was intended
+as a ceiling only a crept-back route script could blow.
+
+**OPERATOR DECISION REQUIRED. Two options, and this round does not choose between them:**
+
+1. **Re-encode A1d1 so it measures what it means.** The achievement is that Inventory Replenishment (947 KB)
+   and the globe (809 KB) are not at boot, which A1d/A2 already pin by name. A floor measured against total
+   boot bytes caps ordinary maintenance of every boot-loaded page as a side effect.
+2. **Move `shipping-history.js` and `purchase-order-overview.js` off the boot path.** They are route scripts;
+   this is what the gate actually wants, and it would restore real headroom rather than redefine it. It is
+   app-loading surgery and belongs to S8, not to a document round.
+
+Either way, the repair itself is small and fully specified by Sec39/Sec40, and the audit suite is written so
+that it FAILS the moment the defects are corrected - the repair round inherits a tree it must change, not a
+green one.
+
+## Sec43 - CORRECTION TO THE S7-R2A1 REPORT
+
+That report stated the boot budget had "1,904 bytes of headroom" after the round. The measured figure is
+**58 bytes**; the 1,904 came from an arithmetic slip comparing a CRLF working file against an LF-normalised
+git blob. The R2A1 change itself was and remains under the floor - only the stated margin was wrong.
+
+## Sec44 - ROUND OUTCOME
+
+```
+DOCUMENT_PANEL_EXISTS  YES          DOCUMENT_PANEL_SURFACE_COUNT  2
+PO_DOCUMENT_PANEL_EXISTED_PRE  YES  SHIPMENT_DOCUMENT_PANEL_EXISTED_PRE  YES
+PO_DOCUMENT_REDISCOVERY_SUPPORTED  YES   SHIPMENT_DOCUMENT_REDISCOVERY_SUPPORTED  YES
+PO_DOCUMENT_RETRY_SUPPORTED  NO     SHIPMENT_DOCUMENT_RETRY_SUPPORTED  NO     (Finding 1)
+PO_DOCUMENT_PANEL_PHASE1_COMPLETE_PRE  NO   POST  NO   (repair blocked by Finding 4)
+SHIPMENT_DOCUMENT_PANEL_PHASE1_COMPLETE_PRE  NO   POST  NO
+NEW_DOCUMENT_TYPE_COUNT  0          PRODUCTION_ROWS_WRITTEN  0
+BACKEND_RELEASE  unchanged          APPS_SCRIPT_SYNC_REQUIRED  NO
+FRONTEND_DEPLOY_REQUIRED  NO        (no runtime file changed)
+S7_R2B_DOCUMENT_PANEL_SEAL  NO      OPEN_S7_BLOCKERS  boot-payload floor (Sec42)
+```
