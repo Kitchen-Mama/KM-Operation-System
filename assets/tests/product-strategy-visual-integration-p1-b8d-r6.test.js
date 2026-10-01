@@ -630,7 +630,12 @@ var R6_KNOWN_GS_CHANGES = ['assets/specs/active/apps-script/03_master_data_handl
   // is NOT reachable from Product Strategy, and the board reads nothing it writes. No action was added or
   // removed, no capability field changed, no flag moved, and the response shapes this file touches are the
   // per-SKU job outcomes, which the board never sees. Declared here rather than loosening the check.
-  'assets/specs/active/apps-script/47_api_v1_recommendation_generation.gs'];
+  'assets/specs/active/apps-script/47_api_v1_recommendation_generation.gs',
+  // S7-R2A — 57_ gains the carriers master so three shipment surfaces can resolve carrier_id to a name.
+  // It touches no Product Strategy read, no pricing table and no staged-section registry; it is recorded
+  // here for the reason this list exists, which is that a .gs file moving without a stated reason is how
+  // an unrelated edit reaches production.
+  'assets/specs/active/apps-script/57_api_v1_shipment_workspace.gs'];
 var gsChanged = changedSince(R6_PRE, 'assets/specs/active/apps-script');
 if (gsChanged !== '__git_unavailable__') {
   var unexpectedGs = gsChanged.split('\n').map(function (x) { return x.trim(); })
