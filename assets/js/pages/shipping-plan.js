@@ -1615,7 +1615,7 @@ function spDbApprove(planId) {
                 msg += '\nShipment Draft created: ' + (sh.shipment_no || sh.shipment_id) + ' (' + (sh.line_count || 0) + ' lines).';
                 var rv = sh.factory_reservations || [];
                 if (rv.length) {
-                    msg += '\nFactory stock reserved at ' + (sh.source_warehouse_id || '') + ': ' +
+                    msg += '\n' + _spReservedStockLabel_(rv) + ' reserved at ' + (sh.source_warehouse_id || '') + ': ' +
                            rv.map(function (r) { return r.sku + ' x' + r.reserved_qty; }).join(', ') + '.';
                 }
             } else if (sh && sh.reason === 'already_exists') {
@@ -1676,7 +1676,7 @@ function spDbRetryShipment(planId) {
                       ' (' + (d.line_count || 0) + ' lines).';
             var rv = d.factory_reservations || [];
             if (rv.length) {
-                msg += '\nFactory stock reserved at ' + (d.source_warehouse_id || '') + ': ' +
+                msg += '\n' + _spReservedStockLabel_(rv) + ' reserved at ' + (d.source_warehouse_id || '') + ': ' +
                        rv.map(function (r) { return r.sku + ' x' + r.reserved_qty; }).join(', ') + '.';
             }
             return msg;
@@ -1684,6 +1684,22 @@ function spDbRetryShipment(planId) {
     });
 }
 
+// S6-R7 §3 — WHICH STOCK WAS ACTUALLY RESERVED, read off the receipt rather than assumed.
+//
+// `factory_reservations` keeps its field name for compatibility with every existing reader, but since
+// S6-R4B the rows it carries may describe an OVERSEAS reservation, and each one states which. Saying
+// "Factory stock reserved" over a 3PL's available bucket is not a wording problem: it tells the operator
+// the units came from somewhere they did not.
+//
+// This reads the authoritative field and never infers. An older server that does not send source_domain
+// gets the neutral word, which is true of both domains, rather than a guess that is wrong half the time.
+function _spReservedStockLabel_(reservations) {
+    var d = '';
+    (reservations || []).forEach(function (r) { if (!d && r && r.source_domain) d = String(r.source_domain); });
+    if (d === 'OVERSEAS') return 'Overseas stock';
+    if (d === 'FACTORY') return 'Factory stock';
+    return 'Source stock';
+}
 function spDbReject(planId) {
     var reason = prompt('Rejection reason (required):', '');
     if (reason == null) return;            // cancelled the prompt

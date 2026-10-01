@@ -1781,6 +1781,8 @@ function shConfirmShipment(shipmentId) {
         no: s.externalShipmentId || s.shipmentNo || shipmentId,
         lineCount: lines.length, units: units,
         origin: payload.ship_from || s.shipFrom || '—',
+        sourceWarehouseId: s.sourceWarehouseId || s.shipFrom || '',
+        sourceDomain: _shSourceDomain_(s.sourceWarehouseId),
         dest: (s.destination || payload.warehouse_code || s.warehouseId || '—'),
         carrier: payload.carrier_id || s.carrierId || '—',
         method: s.shippingMethodDisplay || payload.shipping_method || s.shippingMethod || '—',
@@ -1793,6 +1795,43 @@ function shConfirmShipment(shipmentId) {
 function _shCloseConfirmModal() {
     var o = document.getElementById('sh-confirm-overlay'); if (o) o.remove();
     var m = document.getElementById('sh-confirm-modal'); if (m) m.remove();
+}
+// S6-R7 §3 — THE SOURCE DOMAIN, FOR THE CONFIRMATION COPY.
+//
+// The Confirm & Dispatch modal told every operator that "Factory Stock is deducted", which stopped being
+// true when S6-R4B routed the dispatch consume by source domain: an OVERSEAS line moves reserved down and
+// leaves wh_available_stock alone — it deducts no factory stock at all. The operator was reading a
+// description of what the system was about to do, and for an overseas source it was the wrong one.
+//
+// THIS IS NOT A SECOND AUTHORITY. The modal opens before any server answer exists, so there is nothing to
+// read a domain off; it asks IRWarehouse, the shared classifier the server's own ovsWarehouseSourceDomain_
+// agrees with (factory flag first, then warehouse_type — s6-r3 pins both halves against it). When that
+// module or the warehouse row is missing it answers '', and the copy falls back to wording that is true of
+// BOTH domains rather than to the factory sentence. The server remains the authority for what is written.
+function _shSourceDomain_(sourceWarehouseId) {
+    var id = String(sourceWarehouseId || '').trim();
+    if (!id) return '';
+    var IRW = window.IRWarehouse;
+    if (!IRW || typeof IRW.isFactory !== 'function') return '';
+    var row = null;
+    (_shGetWarehouses() || []).forEach(function (w) {
+        if (!row && String(w.warehouseId || w.warehouse_id || '').trim() === id) row = w;
+    });
+    if (!row) return '';
+    try { return IRW.isFactory(row) ? 'FACTORY' : 'OVERSEAS'; } catch (e) { return ''; }
+}
+// What confirming actually does to stock, per domain. The neutral sentence is true of both and is what an
+// unresolved domain gets — a confirmation screen is the last place to state a specific effect on a guess.
+function _shDispatchStockSentence_(domain) {
+    if (domain === 'OVERSEAS') {
+        return 'the <strong>Overseas reservation</strong> this shipment holds is <strong>consumed</strong> '
+             + '(reserved goes down; available is <strong>not</strong> deducted again — those units left '
+             + 'available when they were reserved)';
+    }
+    if (domain === 'FACTORY') {
+        return 'Factory Stock is <strong>deducted</strong> (canonical movements)';
+    }
+    return 'the source warehouse\'s stock is <strong>consumed through its own canonical owner</strong>';
 }
 function _shOpenConfirmModal(shipmentId, sum, execPayload) {
     _shCloseConfirmModal();
@@ -1809,10 +1848,13 @@ function _shOpenConfirmModal(shipmentId, sum, execPayload) {
     modal.innerHTML =
         '<h3 style="margin:0 0 10px;font-size:16px;">Confirm Shipment</h3>' +
         row('Shipment No.', sum.no) + row('Lines / Total Units', sum.lineCount + ' / ' + (sum.units || 0).toLocaleString()) +
-        row('Origin → Destination', sum.origin + ' → ' + sum.dest) + row('Carrier', sum.carrier) + row('Shipping Method', sum.method) +
+        row('Origin → Destination', sum.origin + ' → ' + sum.dest) +
+        // §3 — the source, and WHICH DOMAIN it belongs to, stated rather than implied by a label.
+        row('Source', (sum.sourceWarehouseId || '—') + (sum.sourceDomain ? ('  ·  ' + sum.sourceDomain) : '')) +
+        row('Carrier', sum.carrier) + row('Shipping Method', sum.method) +
         row('Tracking / Container', sum.tracking + ' / ' + sum.container) + row('ETD / ETA', sum.etd + ' / ' + sum.eta) +
         '<div style="background:#FFFBEB;border:1px solid #FDE68A;color:#92400E;border-radius:6px;padding:8px 10px;margin:12px 0;font-size:12px;line-height:1.5;">' +
-          'On confirm: the shipment becomes <strong>Shipped</strong>; Factory Stock is <strong>deducted</strong> (canonical movements); the Shipment <strong>Route</strong> and an <strong>initial Event</strong> are created; the applicable <strong>documents</strong> are then generated into Drive. ' +
+          'On confirm: the shipment becomes <strong>Shipped</strong>; ' + _shDispatchStockSentence_(sum.sourceDomain) + '; the Shipment <strong>Route</strong> and an <strong>initial Event</strong> are created; the applicable <strong>documents</strong> are then generated into Drive. ' +
           'It moves to <strong>In Transit</strong> by itself on the first real progress beyond the origin. Required documents are checked <strong>before</strong> anything is written — if that check fails the shipment stays Ready to Ship.</div>' +
         '<div id="sh-confirm-status" role="status" aria-live="polite" style="min-height:18px;font-size:12.5px;margin:6px 0;"></div>' +
         '<div id="sh-confirm-actions" style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">' +
