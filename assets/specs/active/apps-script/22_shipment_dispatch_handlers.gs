@@ -54,7 +54,9 @@
 // A build stamp is only worth declaring if it moves whenever behaviour does. Two rounds now change this file
 // and only one of them said so; the stamp names the later round, because the later round is what a deployment
 // has to be at for the guard to exist.
-var CSD_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R33';
+// S6-R8A - R33 -> R37. The deduct plan is no longer a search. It is built for the warehouse the Shipment
+// DECLARES, in the domain that warehouse belongs to, decided before any inventory row is read.
+var CSD_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R37';
 var CSD_MOV_TYPE_ = 'shipment_out';                 // factory_stock_movements.movement_type for dispatch
 // F1-7N-FB-1 — the confirmation lifecycle event. Distinct from `departed_origin` (physical departure) so the
 // two facts can never be conflated. Registered in the canonical vocabulary alongside the existing types.
@@ -203,29 +205,94 @@ function handleConfirmShipmentAndDispatch_(body) {
     var tplNodes = csdTemplateNodes_(ss, templateId);
     if (tplNodes.length < 2) { lock.releaseLock(); return jsonResponse_({ success: false, error: 'Route Template "' + templateId + '" needs at least a start and end node (found ' + tplNodes.length + ').', stage: 'route_template' }); }
 
-    // ---------- VALIDATE factory stock sufficiency (per SKU) BEFORE any write ----------
-    var stockSheet = ss.getSheetByName('factory_stock');
-    if (!stockSheet) { lock.releaseLock(); return jsonResponse_({ success: false, error: 'factory_stock sheet not found', stage: 'stock' }); }
-    var stk = csdLoadFactoryStock_(stockSheet);   // {rows, headers, curCol, resCol, whCol, skuCol, sheet}
+    // ---------- S6-R8A - THE DECLARED SOURCE, RESOLVED BEFORE ANY INVENTORY IS LOOKED AT ----------
+    // __CSD_DECLARED_SOURCE_START__
+    //
+    // WHAT THIS REPLACED, AND WHY IT WAS WRONG. The deduct plan used to be built from every factory_stock
+    // row matching the SKU, sorted by warehouse_id, taking from them in that order; each planned line then
+    // carried the warehouse OF THE ROW IT HAD PICKED. The Shipment's own source_warehouse_id was never read
+    // - the string did not appear in this file at all. So the dispatcher was a second source selector, and it
+    // disagreed with the first one: 12_ reserves against the DECLARED source and by domain, while this chose
+    // a warehouse by alphabetical order and inferred the domain from whatever it had chosen. Two consequences
+    // neither half could see from inside itself - an OVERSEAS source was checked for sufficiency against
+    // factory_stock and refused 'Insufficient factory stock' for units sitting reserved in the overseas
+    // snapshot, and a FACTORY shipment could be deducted from a warehouse it never declared.
+    //
+    // D_S6_DISPATCH_SOURCE_AUTHORITY = DECLARED_SOURCE_ONLY. A Shipment consumes from the warehouse it
+    // declares, or it refuses and says so. There is NO fallback, NO 'first warehouse with stock', and no
+    // ordering of warehouses anywhere below this line: substituting a source is a decision about where goods
+    // come from, and a dispatch handler is the last place that decision should be taken silently.
+    //
+    // THE ORDER IS THE FIX. Domain is classified from the DECLARED warehouse FIRST, and the inventory row is
+    // resolved afterwards, inside that domain. Deciding it the other way round is what made the overseas
+    // branch unreachable: a domain derived from a row that only the factory table could produce is always
+    // going to say FACTORY.
+    //
+    // NO SECOND CLASSIFIER. shipmentSourceDomain_ and shipmentDomainSheets_ are 12_'s, the same owners the
+    // RESERVATION path uses, so the domain that reserved and the domain that consumes cannot disagree.
+    var srcWarehouseId = sc('source_warehouse_id');
+    if (!srcWarehouseId) {
+      lock.releaseLock();
+      return jsonResponse_({ success: false, code: 'SHIPMENT_SOURCE_WAREHOUSE_MISSING', stage: 'source',
+        shipment_id: shipmentId,
+        error: 'Cannot Confirm - this Shipment declares no source warehouse, and dispatch consumes only the '
+          + 'declared source. Nothing was written.' });
+    }
+    var srcRec = null;
+    try {
+      srcRec = (typeof ovsReadWarehouseRecord_ === 'function') ? ovsReadWarehouseRecord_(ss, srcWarehouseId) : null;
+    } catch (eSrcRec) { srcRec = null; }
+    // AND A MISSING WAREHOUSES ROW IS NOT A REFUSAL HERE, because it is not one at creation either.
+    // 12_ requires a non-blank source_warehouse_id and then lets shipmentSourceDomain_ degrade to FACTORY
+    // when the row is absent, so a shipment with an unlisted source CAN exist. A stricter gate here would
+    // strand it: created under one rule, undispatchable under another. The refusal still happens - a source
+    // nobody can find holds no inventory - but it comes from the sufficiency check, with the quantities
+    // named, and `source_warehouse_known` below lets an operator tell a typo from an empty warehouse.
+    var srcKnown = !!srcRec;
+    var srcDomain = (typeof shipmentSourceDomain_ === 'function')
+      ? shipmentSourceDomain_(ss, srcWarehouseId) : 'FACTORY';
+    var srcSheets = (typeof shipmentDomainSheets_ === 'function') ? shipmentDomainSheets_(ss, srcDomain) : null;
+    // A deployment mid-sync may hold this file against an older 12_. The FACTORY half needs nothing from
+    // 12_, so it degrades to today's tables rather than refusing every dispatch for the minutes it takes to
+    // copy the next file. The DECLARED-SOURCE rule is NOT what degrades: srcWarehouseId is still the only
+    // warehouse consulted. An OVERSEAS source has nothing truthful to fall back to and still refuses.
+    if (!srcSheets && srcDomain !== 'OVERSEAS') {
+      var fallbackStock_ = ss.getSheetByName('factory_stock');
+      if (fallbackStock_) srcSheets = { domain: 'FACTORY', stockSheet: fallbackStock_, movSheet: null };
+    }
+    if (!srcSheets || !srcSheets.stockSheet) {
+      lock.releaseLock();
+      return jsonResponse_({ success: false, code: 'DISPATCH_SOURCE_DOMAIN_UNAVAILABLE', stage: 'stock',
+        shipment_id: shipmentId, source_warehouse_id: srcWarehouseId, source_domain: srcDomain,
+        error: 'Cannot Confirm - the ' + srcDomain + ' inventory tables this source needs are not present in '
+          + 'this deployment. Nothing was written.' });
+    }
+    // The factory handle the write path below still uses. Only a FACTORY source needs it, which is what
+    // makes FACTORY_ROW_REQUIRED_FOR_OVERSEAS_DISPATCH = NO true rather than merely intended.
+    var stockSheet = (srcDomain === 'OVERSEAS') ? null : srcSheets.stockSheet;
     var needBySku = {}; lines.forEach(function (l) { needBySku[l.sku] = (needBySku[l.sku] || 0) + l.qty; });
-    var deductPlan = [];  // [{rowIdx, sku, warehouseId, beforeCurrent, beforeReserved, take}]
+    var deductPlan = [];  // [{sku, warehouseId, take}] - warehouseId is ALWAYS the declared source
     var stockErrors = [];
     Object.keys(needBySku).forEach(function (sku) {
       var need = needBySku[sku];
-      var cand = stk.rows.filter(function (rr) { return String(rr.vals[stk.skuCol] || '').trim() === sku; })
-        .sort(function (a, b) { return String(a.vals[stk.whCol]).localeCompare(String(b.vals[stk.whCol])); });
-      var avail = cand.reduce(function (a, rr) { return a + Math.max(0, Math.round(csdNum_(rr.vals[stk.curCol]))); }, 0);
-      if (avail < need) { stockErrors.push(sku + ' (need ' + need + ', available ' + avail + ')'); return; }
-      var remaining = need;
-      for (var ci = 0; ci < cand.length && remaining > 0; ci++) {
-        var cur = Math.max(0, Math.round(csdNum_(cand[ci].vals[stk.curCol])));
-        if (cur <= 0) continue;
-        var take = Math.min(cur, remaining);
-        deductPlan.push({ rowIdx: cand[ci].rowIdx, sku: sku, warehouseId: String(cand[ci].vals[stk.whCol]).trim(), beforeCurrent: Math.round(csdNum_(cand[ci].vals[stk.curCol])), beforeReserved: Math.round(csdNum_(cand[ci].vals[stk.resCol])), take: take });
-        remaining -= take;
+      var supply = csdDeclaredSourceSupply_(srcDomain, srcSheets, srcWarehouseId, sku, shipmentId);
+      if (supply.qty < need) {
+        stockErrors.push(sku + ' (need ' + need + ', ' + supply.basis + ' ' + supply.qty + ' at '
+          + srcWarehouseId + ')');
+        return;
       }
+      deductPlan.push({ sku: sku, warehouseId: srcWarehouseId, take: need });
     });
-    if (stockErrors.length) { lock.releaseLock(); return jsonResponse_({ success: false, error: 'Insufficient factory stock for: ' + stockErrors.join('; ') + '. No stock was deducted.', stage: 'stock' }); }
+    if (stockErrors.length) {
+      lock.releaseLock();
+      return jsonResponse_({ success: false, code: 'DECLARED_SOURCE_INSUFFICIENT', stage: 'stock',
+        shipment_id: shipmentId, source_warehouse_id: srcWarehouseId, source_domain: srcDomain,
+        source_warehouse_known: srcKnown, shortages: stockErrors,
+        error: 'Cannot Confirm - the declared source ' + srcWarehouseId + ' cannot fulfil: '
+          + stockErrors.join('; ') + '. No stock was deducted. Another warehouse holding this SKU is NOT '
+          + 'used automatically - moving the source is a separate, authorized decision.' });
+    }
+    // __CSD_DECLARED_SOURCE_END__
 
     // ---------- F1-5B-SHIP-R3B — VALIDATE + PLAN canonical PO allocation execution (before any write) ----------
     // Reuses the ONE R3A allocation authority (32_) — no second FIFO here. Fail closed (no partial dispatch): every
@@ -249,30 +316,28 @@ function handleConfirmShipmentAndDispatch_(body) {
     // shipment's hold and can never drive fac_reserved_stock negative.
     var heldByKey = factoryStockOwnerReservedTx_(movSheet, FSTX_RESERVATION_OWNER_TYPE_, shipmentId);
 
-    /* S6-R4B §4 — OVERSEAS DISPATCH IS A DIFFERENT ARITHMETIC, NOT A DIFFERENT SHEET.
+    /* S6-R4B §4 - OVERSEAS DISPATCH IS A DIFFERENT ARITHMETIC, NOT A DIFFERENT SHEET.
      *
      * Factory availability is DERIVED, so a dispatch deducts current stock and releases the hold on the same
      * row. Overseas availability is STORED, and the dispatched units ALREADY left `wh_available_stock` when
-     * they were reserved — so overseas dispatch moves reserved DOWN and touches available not at all.
-     * Deducting available a second time here is exactly §4's forbidden 70/30 -> 40/0. */
-    var ovsSnap_ = (typeof ovsConsumeReservationTx_ === 'function') ? ss.getSheetByName('overseas_inventory_snapshot') : null;
-    var ovsMov_ = null;
-    var ovsHeldByKey_ = {};
-    if (ovsSnap_) {
-      ovsMov_ = ss.getSheetByName('overseas_inventory_movements');
-      if (ovsMov_) ovsHeldByKey_ = ovsOwnerReservedTx_(ovsMov_, OVSTX_RESERVATION_OWNER_TYPE_, shipmentId);
-    }
-    function dispatchDomain_(warehouseId) {
-      if (!ovsSnap_ || !ovsMov_ || typeof ovsWarehouseSourceDomain_ !== 'function') return 'FACTORY';
-      try {
-        var rec = ovsReadWarehouseRecord_(ss, warehouseId);
-        return rec ? ovsWarehouseSourceDomain_(rec) : 'FACTORY';
-      } catch (e) { return 'FACTORY'; }
-    }
+     * they were reserved - so overseas dispatch moves reserved DOWN and touches available not at all.
+     * Deducting available a second time here is exactly §4's forbidden 70/30 -> 40/0.
+     *
+     * S6-R8A - AND THE DOMAIN IS NO LONGER ASKED HERE. It was decided above, from the warehouse the Shipment
+     * DECLARES, before any inventory row existed to infer it from. The local dispatchDomain_ that used to sit
+     * at this spot classified whichever row the old SKU-wide search had already picked, which is why an
+     * overseas source could never reach this branch: the row it would have classified only ever came out of
+     * factory_stock. One source decision, taken once, in the one place that knows what the Shipment says. */
+    var ovsSheets_ = (srcDomain === 'OVERSEAS') ? srcSheets : null;
+    var ovsSnap_ = ovsSheets_ ? ovsSheets_.stockSheet : null;
+    var ovsMov_ = ovsSheets_ ? ovsSheets_.movSheet : null;
+    var ovsHeldByKey_ = (ovsMov_ && typeof ovsOwnerReservedTx_ === 'function')
+      ? ovsOwnerReservedTx_(ovsMov_, OVSTX_RESERVATION_OWNER_TYPE_, shipmentId) : {};
 
     deductPlan.forEach(function (d) {
       var key = d.warehouseId + '||' + d.sku;
-      if (dispatchDomain_(d.warehouseId) === 'OVERSEAS') {
+      // S6-R8A - the domain decided from the DECLARED source, not re-derived from the row.
+      if (srcDomain === 'OVERSEAS') {
         var heldO = Math.max(0, Math.round(ovsHeldByKey_[key] || 0));
         var giveO = Math.min(heldO, d.take);
         ovsHeldByKey_[key] = heldO - giveO;      // two rows for one key cannot consume it twice
@@ -294,7 +359,7 @@ function handleConfirmShipmentAndDispatch_(body) {
       // ONE call, ONE movement row: current -= take AND reserved -= give together. Writing them as two
       // separate facts is what would allow a dispatch to deduct the units while keeping them reserved.
       factoryStockApplyDeltaTx_({
-        stockSheet: stk.sheet, movSheet: movSheet, warehouseId: d.warehouseId, sku: d.sku,
+        stockSheet: stockSheet, movSheet: movSheet, warehouseId: d.warehouseId, sku: d.sku,
         deltaQty: -d.take, reservedDelta: -give, journal: rollback, now: now, movementDate: today,
         movementType: CSD_MOV_TYPE_, relatedEntityType: 'shipment', relatedEntityId: shipmentId,
         note: 'Shipment dispatch deduction' + (give > 0 ? (' | reservation released ' + give) : ''),
@@ -517,12 +582,41 @@ function csdTemplateNodes_(ss, templateId) {
   out.sort(function (a, b) { return a.seq - b.seq; });
   return out;
 }
-function csdLoadFactoryStock_(stockSheet) {
-  var d = stockSheet.getDataRange().getValues();
-  var h = d[0].map(function (x) { return String(x).trim().toLowerCase(); });
-  var curCol = h.indexOf('fac_current_stock'); if (curCol === -1) curCol = h.indexOf('current_stock');
-  var resCol = h.indexOf('fac_reserved_stock'); if (resCol === -1) resCol = h.indexOf('reserved_stock');
-  var rows = [];
-  for (var i = 1; i < d.length; i++) rows.push({ rowIdx: i + 1, vals: d[i] });
-  return { sheet: stockSheet, rows: rows, headers: h, curCol: curCol, resCol: resCol, whCol: h.indexOf('warehouse_id'), skuCol: h.indexOf('sku') };
+/**
+ * S6-R8A - WHAT THE DECLARED SOURCE CAN ACTUALLY GIVE, and the two domains do not answer it the same way.
+ *
+ * FACTORY: the question is physical. Availability is DERIVED there, so what a dispatch can take is the
+ * CURRENT stock on that warehouse's row - the hold is released on the same row by the same call, and asking
+ * `current - reserved` here would refuse a shipment the quantity of its own reservation.
+ *
+ * OVERSEAS: the question is a HOLD. Those units left `wh_available_stock` when they were reserved, so
+ * available says nothing about what this shipment may consume; what it may consume is exactly what IT holds.
+ * Reading availability instead would let a shipment dispatch against another shipment's reservation.
+ *
+ * Both answers are scoped to ONE warehouse - the declared one. There is no sum across warehouses here and no
+ * candidate list to order, because there is nothing to choose between.
+ */
+function csdDeclaredSourceSupply_(domain, sheets, warehouseId, sku, shipmentId) {
+  var wid = String(warehouseId == null ? '' : warehouseId).trim();
+  var s = String(sku == null ? '' : sku).trim();
+  if (domain === 'OVERSEAS') {
+    if (!sheets || !sheets.movSheet || typeof ovsOwnerReservedTx_ !== 'function') {
+      return { qty: 0, basis: 'overseas reservation unreadable;' };
+    }
+    var held = ovsOwnerReservedTx_(sheets.movSheet, OVSTX_RESERVATION_OWNER_TYPE_, shipmentId) || {};
+    return { qty: Math.max(0, Math.round(held[wid + '||' + s] || 0)),
+      basis: 'reserved for this shipment' };
+  }
+  if (!sheets || !sheets.stockSheet || typeof factoryStockReadBalanceTx_ !== 'function') {
+    return { qty: 0, basis: 'factory stock unreadable;' };
+  }
+  var b = factoryStockReadBalanceTx_(sheets.stockSheet, wid, s);
+  return { qty: Math.max(0, Math.round(Number(b && b.current) || 0)), basis: 'current stock' };
 }
+// S6-R8A - csdLoadFactoryStock_ WAS REMOVED HERE, and its removal is the point rather than tidiness.
+//
+// It loaded EVERY factory_stock row so the dispatcher could search them by SKU and order them by warehouse.
+// That search was the defect this round closed: a Shipment now consumes from the warehouse it declares, so
+// there is no candidate set to build and nothing to sort. Leaving the loader in place would leave the
+// machinery for the retired behaviour sitting one call away from whoever next needs a factory row - and the
+// thing they would actually want, scoped to one warehouse, is factoryStockReadBalanceTx_ in 21_.

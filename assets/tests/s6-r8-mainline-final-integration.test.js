@@ -495,9 +495,10 @@ ok(!/source_factory_warehouse_id/.test(code(read('js/core/supply-planning-factor
   'H1b and ONLY in a comment — strip the comments and no code references it');
 ok(/source_warehouse_id/.test(code(F12)),
   'H2  the live source identity on a shipment is source_warehouse_id, written and read by the creator');
-// AND THE PLACE IT IS NOT READ. See section N: the dispatcher never consults it.
-eq(count(code(F22), /source_warehouse_id/g), 0,
-  'H2a while the DISPATCHER never reads it at all — recorded here, and measured properly in N');
+// AND THE PLACE IT ONCE WAS NOT READ. S6-R8 found the dispatcher never consulted it; S6-R8A made it the
+// only thing the dispatcher consults. Measured properly in N.
+ok(count(code(F22), /source_warehouse_id/g) > 0,
+  'H2a and the DISPATCHER reads it too, which is what S6-R8A closed');
 
 // =========================================================================================================
 section('I — §14 IMPORT / RESERVATION COHERENCE');
@@ -618,56 +619,60 @@ ok(/_shSourceDomain_/.test(code(SHIST)) && /IRW\.isFactory/.test(code(SHIST)),
   'L3  resolved through the shared warehouse classifier, not a local guess');
 
 // =========================================================================================================
-section('N — WHAT DISPATCH ACTUALLY SELECTS, and the gap between two seams that each pass alone');
+section('N — WHAT DISPATCH SELECTS: the declared source, and nothing else');
 // =========================================================================================================
-// EVERY CLAIM BELOW IS A PROPERTY OF ~12 LINES IN 22_, READ DIRECTLY. The dispatch handler itself is not
-// driven here and this suite does not pretend otherwise: its first gate is a Drive-reachability probe
-// (dgsShipmentReadiness_), followed by carton validation, route-template resolution and canonical PO
-// allocation. Standing all four up would mean driving my own stubs and calling the result an integration
-// test. What IS measurable without any of that is which table the deduct plan is built from and what it is
-// filtered by — and that turns out to be the whole finding.
+// WHAT THIS SECTION FOUND IN S6-R8, kept because it is the reason the code reads the way it does now.
+// The deduct plan was built from every factory_stock row matching the SKU, sorted by warehouse_id, and each
+// planned line carried the warehouse OF THE ROW IT HAD PICKED; `source_warehouse_id` did not appear in 22_
+// at all. So an OVERSEAS source was checked for sufficiency against factory_stock and refused 'Insufficient
+// factory stock' for units reserved and present in the overseas snapshot, and a FACTORY shipment could be
+// deducted from a warehouse it never declared. S6-R8A froze DECLARED_SOURCE_ONLY and closed it.
 //
-// THE SHAPE OF IT. 12_ routes reservation BY SOURCE DOMAIN: an overseas source reserves in
-// overseas_inventory_snapshot through 05_, a factory source in factory_stock through 21_. R4B proved that
-// and §D above drives it. But 22_ builds its deduct plan from factory_stock rows matched ON SKU ALONE, and
-// takes each line's warehouse FROM THE STOCK ROW it selected. The shipment's own source_warehouse_id is
-// never read. Two consequences follow, and neither is visible from inside either seam:
-//
-//   1. An OVERSEAS-sourced shipment is validated for sufficiency against factory_stock. Unless that 3PL
-//      warehouse also carries a factory_stock row, `avail < need` and the dispatch is refused with
-//      'Insufficient factory stock' — for a shipment whose units are reserved, and present, in the
-//      overseas snapshot. The OVERSEAS consume branch below it is reached only when a factory_stock row
-//      exists whose warehouse classifies as overseas.
-//   2. A FACTORY shipment may be deducted from a DIFFERENT warehouse than the one it declares, because
-//      the candidates are every factory_stock row for the SKU, ordered by warehouse_id.
-//
-// This is reported, not repaired. Which warehouse a dispatch may draw from is a business decision about
-// pooling — 'any factory may fulfil' is a defensible model and may well be the intended one — and S6-R8 is
-// a closure round with no mandate to choose. What it does have a mandate to do is say so.
-var CSD_PLAN = (function () {
-  var m = /var stk = csdLoadFactoryStock_\(stockSheet\);[\s\S]*?if \(stockErrors\.length\)/.exec(code(F22));
+// These assertions now measure the ABSENCE of all of that. The handler itself is still not driven here -
+// its first gate probes Drive - but the selection key, the ordering and the decision ORDER are properties
+// of the source, and the s6-r8a suite drives the parts that can be driven.
+var CSD_SRC = (function () {
+  var m = /__CSD_DECLARED_SOURCE_START__[\s\S]*?__CSD_DECLARED_SOURCE_END__/.exec(F22);
   return m ? m[0] : '';
 })();
-ok(CSD_PLAN.length > 0, 'N1  the deduct-plan block is where this round says it is');
-eq(count(CSD_PLAN, /getSheetByName/g), 0,
-  'N1a it opens no sheet of its own — it works on the factory_stock handle resolved above it');
-ok(/csdLoadFactoryStock_\(stockSheet\)/.test(CSD_PLAN)
-  && /getSheetByName\('factory_stock'\)/.test(code(F22)),
-  'N2  and the ONLY stock table it reads for sufficiency is factory_stock');
-eq(count(code(F22), /csdLoadOverseas|ovsStockReadBalanceTx_|ovsAllocatableTx_/g), 0,
-  'N2a the overseas balance is never consulted for sufficiency, in any form');
-ok(/\.filter\(function \(rr\) \{ return String\(rr\.vals\[stk\.skuCol\] \|\| ''\)\.trim\(\) === sku; \}\)/.test(CSD_PLAN),
-  'N3  the candidate rows are filtered on SKU and nothing else');
-eq(count(CSD_PLAN, /source_warehouse_id|sourceWarehouse/g), 0,
-  'N3a the shipment\'s declared source is not part of the filter');
-ok(/warehouseId: String\(cand\[ci\]\.vals\[stk\.whCol\]\)\.trim\(\)/.test(CSD_PLAN),
-  'N4  so each deduct line carries the warehouse of the STOCK ROW, not of the shipment');
-// And the domain routing sits DOWNSTREAM of that choice, which is why it cannot correct it.
-ok(code(F22).indexOf('deductPlan.push') < code(F22).indexOf('function dispatchDomain_'),
-  'N5  the plan is fixed BEFORE the domain router exists, so routing cannot reach a row the plan omitted');
-ok(/if \(!ovsSnap_ \|\| !ovsMov_ \|\| typeof ovsWarehouseSourceDomain_ !== 'function'\) return 'FACTORY';/.test(code(F22)),
-  'N5a and the router defaults to FACTORY when the overseas owner is absent, which is the safe default '
-  + 'for a factory-only plan and the wrong one for an overseas source that never got into the plan');
+ok(CSD_SRC.length > 0, 'N1  the declared-source block is marked and findable');
+ok(/var srcWarehouseId = sc\('source_warehouse_id'\);/.test(CSD_SRC),
+  'N2  it begins by reading the warehouse the SHIPMENT declares');
+ok(/shipmentSourceDomain_\(ss, srcWarehouseId\)/.test(CSD_SRC),
+  'N2a and classifies the domain from THAT warehouse, through 12_\'s owner — not a second classifier');
+eq(count(code(F22), /function (dispatchDomain_|csdLoadFactoryStock_)/g), 0,
+  'N2b the old local classifier and the SKU-wide loader are both gone');
+// The selection key, which is the whole decision.
+ok(/deductPlan\.push\(\{ sku: sku, warehouseId: srcWarehouseId, take: need \}\)/.test(CSD_SRC),
+  'N3  every planned deduction names the DECLARED warehouse — the key is warehouse + sku');
+eq(count(code(F22), /\.sort\(function \(a, b\) \{ return String\(a\.vals/g), 0,
+  'N3a nothing sorts warehouses to pick one, because nothing picks one');
+eq(count(code(F22), /stk\.rows\.filter|cand\[ci\]/g), 0,
+  'N3b and there is no candidate list left at all');
+// §6 — the ORDER. Deciding the domain from a row that only factory_stock can produce is what made the
+// overseas branch unreachable, so the order is the fix and is asserted as such.
+var IDX_DOMAIN = code(F22).indexOf('shipmentSourceDomain_(ss, srcWarehouseId)');
+var IDX_SELECT = code(F22).indexOf('csdDeclaredSourceSupply_(srcDomain');
+var IDX_CONSUME = code(F22).indexOf('deductPlan.forEach');
+ok(IDX_DOMAIN > 0 && IDX_SELECT > IDX_DOMAIN,
+  'N4  the domain is decided BEFORE any inventory row is resolved');
+ok(IDX_CONSUME > IDX_SELECT, 'N4a and the consume runs after both');
+ok(/if \(srcDomain === 'OVERSEAS'\) \{/.test(code(F22)),
+  'N4b the consume branches on the domain already decided, not on one re-derived from the row');
+// §5 — an overseas source must not need a factory row to exist.
+ok(/var stockSheet = \(srcDomain === 'OVERSEAS'\) \? null : srcSheets\.stockSheet;/.test(CSD_SRC),
+  'N5  an OVERSEAS source never opens factory_stock at all');
+eq(count(CSD_SRC, /factory_stock sheet not found/g), 0,
+  'N5a so a deployment with no factory row for that SKU cannot refuse an overseas dispatch for it');
+// §4 — the refusal is typed and says what it refused.
+ok(/code: 'DECLARED_SOURCE_INSUFFICIENT'/.test(CSD_SRC), 'N6  an insufficient declared source is refused');
+ok(/is NOT '\s*\+\s*'used automatically/.test(CSD_SRC) || /NOT \\n?.{0,40}used automatically/.test(CSD_SRC),
+  'N6a and the message tells the operator another warehouse was deliberately not used');
+ok(/code: 'SHIPMENT_SOURCE_WAREHOUSE_MISSING'/.test(CSD_SRC),
+  'N7  a BLANK declared source refuses rather than falling back to a search');
+ok(/code: 'DECLARED_SOURCE_INSUFFICIENT'/.test(CSD_SRC) && /source_warehouse_known: srcKnown/.test(CSD_SRC),
+  'N7a and an UNKNOWN one is refused by sufficiency, reporting that it could not be found — a hard gate '
+  + 'here would be stricter than the one that creates the shipment, which tolerates a missing row');
 
 // =========================================================================================================
 section('M — MUTATIONS');

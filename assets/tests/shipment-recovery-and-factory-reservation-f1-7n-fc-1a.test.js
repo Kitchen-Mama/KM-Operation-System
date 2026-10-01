@@ -1496,9 +1496,12 @@ mut('L9  ANOTHER shipment\'s reservation is released (owner scoping removed)', f
   return r.applied === true && w.reserved() === 0;
 });
 mut('L10 22_ BYPASSES the shared transaction (its own inline write comes back)', function () {
+  // S6-R8A re-anchor. The inline write went through stk.sheet / d.rowIdx, both removed with the SKU-wide
+  // search. The claim is unchanged - 22_ must never write a factory balance cell itself - so the mutant
+  // writes one directly: row 2, column 4 is fac_current_stock on this single-row fixture.
   var g22 = mutateFn(G22, 'handleConfirmShipmentAndDispatch_',
     "      factoryStockApplyDeltaTx_({",
-    "      stk.sheet.getRange(d.rowIdx, stk.curCol + 1).setValue(d.beforeCurrent - d.take);\n      movementsCreated++;\n      if (false) factoryStockApplyDeltaTx_({");
+    "      stockSheet.getRange(2, 4).setValue(1000 - d.take);\n      movementsCreated++;\n      if (false) factoryStockApplyDeltaTx_({");
   var w = dispatchWorld({
     stock: [{ factory_stock_id: 'FS-1', warehouse_id: 'WH-F', sku: 'CO1100-R', fac_current_stock: 1000, fac_reserved_stock: 800 }],
     movements: [{ factory_stock_movement_id: 'FSMV-A', movement_date: '2026-09-01', sku: 'CO1100-R', warehouse_id: 'WH-F',

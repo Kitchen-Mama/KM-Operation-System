@@ -1533,7 +1533,12 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // is declared. The shape is R26's exactly, and so is the ruling: 63_ is the ONLY single-stamp owner this
   // round edits, 90_ carries no hand-typed stamp because it is identified BY its content hash, and R35's
   // owners (05_, 21_) keep the stamp they earned there — neither file changed.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R36'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R36',
+  // S6-R8A — DECLARED_SOURCE_ONLY. The dispatcher stops searching factory_stock by SKU and consumes the
+  // warehouse the Shipment declares. 22_ changes and 63_ moves with it, because 63_ carries 22_'s manifest
+  // row. 90_ is NOT rebuilt: no core module changed, so its content hash does not move and R36's owners
+  // keep R36. 22_ returns to ownership after four releases carried at R33.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R37'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

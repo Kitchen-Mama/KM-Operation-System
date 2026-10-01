@@ -128,18 +128,29 @@ var RELEASE_OWNERS = {
   // path, the campaign line writer and the FC Summary read workspace; R33 changes the OVERSEAS INVENTORY
   // LIFECYCLE and the two shipment handlers that call it. 14_, 20_ and 58_ therefore leave and keep the R32
   // stamp they earned — marching them to R33 would erase the one fact a per-module stamp carries.
+  // S6-R8A — THE SEVENTEENTH SWAP. 22_ comes BACK into ownership after four releases carried at R33, and
+  // the reason is the one a per-module stamp exists for: the dispatcher's source selection changed, which
+  // is invisible in every other part of a deployment report. 90_ does NOT move — no core module changed, so
+  // the bundle is not rebuilt and its content hash is the same bytes it was at R36.
+  '22_shipment_dispatch_handlers.gs':
+    'DECLARED_SOURCE_ONLY. The deduct plan was built from every factory_stock row matching the SKU, sorted '
+    + 'by warehouse_id, each planned line carrying the warehouse of the row it had picked \u2014 the Shipment\'s '
+    + 'own source_warehouse_id did not appear in this file at all. So an OVERSEAS source was checked for '
+    + 'sufficiency against factory_stock and refused "Insufficient factory stock" for units reserved and '
+    + 'present in the overseas snapshot, and a FACTORY shipment could be deducted from a warehouse it never '
+    + 'declared. R37 resolves the declared warehouse first, classifies its domain through 12_\'s owner, and '
+    + 'resolves ONE inventory row inside that domain. The SKU-wide loader is gone with it. NO quantity '
+    + 'authority changed and no stored row shape changed.',
   // S6-R7A — THE SIXTEENTH SWAP, and the smallest release this ledger has recorded: ONE stamped owner.
   // R36 changes nothing an operator can see in a handler. It changes KMSNF, inside the generated bundle,
   // so that the freshness authority stops refusing a complete snapshot from the previous business day
   // merely because the month rolled over between them. 05_ and 21_ LEAVE OWNERSHIP AT R36 and keep the R35
   // they earned — neither file changed, and R35's vocabulary correction is the one fact their stamps carry.
   '63_api_v1_system_health.gs':
-    'THE MANIFEST, AND THE ONLY STAMPED OWNER. R36 moves exactly two expected values: 90_\'s content hash, '
-    + 'because KMSNF changed and the bundle was rebuilt from it, and 63_\'s own, because moving that hash IS '
-    + 'a change to this file. The shape is R26\'s precisely, and this suite\'s own note against GENERATED_OWNERS '
-    + 'explains why it cannot be anything else: a generated artifact is identified by its content hash and '
-    + 'never by a hand-typed stamp, so 90_ can never appear in C3\'s stamped set. NO ACTION, NO HANDLER AND NO '
-    + 'STORED ROW CHANGED, and no .gs file outside this one was edited at all.',
+    'THE MANIFEST. R37 moves exactly two expected values: 22_\'s, because the dispatcher changed, and its '
+    + 'own, because carrying 22_\'s row IS a change to this file. 90_\'s content hash is NOT touched \u2014 no core '
+    + 'module changed, so the bundle was not rebuilt, and marching a content hash that nothing produced would '
+    + 'be the one thing a content hash is supposed to make impossible. R36\'s owners keep R36.',
 };
 
 // Owners that must be COPIED but whose stamp belongs to an EARLIER unshipped release. Each entry is the
@@ -166,7 +177,10 @@ var RELEASE_CARRIED = {
   // would report the release this was cut in rather than the round the files changed in. 11_ enters
   // ownership from R5-R1, which is a nine-release gap and exactly the kind of jump a per-module stamp is
   // supposed to be able to express.
-  '22_shipment_dispatch_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R33',
+  //
+  // 22_ LEFT THIS LIST AT R37 and is an OWNER again — the seventeenth swap, after four releases carried
+  // here. The ledger working in both directions over four releases is the strongest evidence there is that
+  // these stamps are not being marched to keep a gate green.
   // S6-R4B — 14_, 20_ and 58_ LEAVE OWNERSHIP AT R33 and keep R32, the release they actually changed in.
   // R33 is an overseas-inventory and shipping round; it touches no FC file. Marching their stamps forward
   // would report the round a release was cut in rather than the round the file changed in, which is the one

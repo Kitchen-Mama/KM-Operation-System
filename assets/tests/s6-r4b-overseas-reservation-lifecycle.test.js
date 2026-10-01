@@ -573,10 +573,13 @@ mut('M14 the source domain resolver calls everything FACTORY', function () {
 });
 
 mut('M15 the dispatch consume routes overseas lines to the factory writer', function () {
+  // S6-R8A re-anchor. The branch used to ask a local dispatchDomain_ about whichever stock row the SKU-wide
+  // search had picked. It now tests the domain already decided from the Shipment's DECLARED source, which is
+  // the same claim about routing made one decision earlier.
   var src22 = code(F22);
-  ok(/dispatchDomain_\(d\.warehouseId\) === 'OVERSEAS'/.test(src22), 'M15 anchor present');
-  var broken = F22.replace("if (dispatchDomain_(d.warehouseId) === 'OVERSEAS') {", 'if (false) {');
-  return broken !== F22 && !/if \(dispatchDomain_\(d\.warehouseId\) === 'OVERSEAS'\) \{/.test(code(broken));
+  ok(/if \(srcDomain === 'OVERSEAS'\) \{/.test(src22), 'M15 anchor present');
+  var broken = F22.replace("if (srcDomain === 'OVERSEAS') {", 'if (false) {');
+  return broken !== F22 && !/if \(srcDomain === 'OVERSEAS'\) \{/.test(code(broken));
 });
 
 mut('M16 the movement type vocabulary is opened up', function () {

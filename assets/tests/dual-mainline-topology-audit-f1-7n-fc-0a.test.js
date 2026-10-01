@@ -477,7 +477,11 @@ var MOV_H = ['factory_stock_movement_id', 'movement_date', 'sku', 'warehouse_id'
 // ================================================================================================================
 // G-A. CONFIRM SHIPMENT: the deduction, executed on 22_'s real orchestration.
 // ================================================================================================================
+// S6-R8A - source_warehouse_id joins this header because the live table has carried it since the
+// 2026-07-28 DB sync and 12_ refuses to create a shipment without it. A fixture missing the column was
+// describing a row the system can no longer produce, and the dispatcher now reads it.
 var SHIP_H = ['shipment_id', 'shipping_plan_id', 'status', 'external_shipment_id', 'reference_id', 'warehouse_code',
+  'source_warehouse_id',
   'carrier_id', 'shipping_method', 'etd', 'eta', 'shipment_total_qty', 'total_qty', 'ship_from', 'destination',
   'destination_warehouse_id', 'route_template_id', 'shipped_at', 'shipped_by', 'actual_departure_date',
   'updated_at', 'updated_by'];
@@ -493,6 +497,7 @@ function confirmWorld(opts) {
     shipments: new MemSheet('shipments', gridOf(SHIP_H, [Object.assign({
       shipment_id: 'SHP-1', shipping_plan_id: 'SP-1', status: 'ready_to_ship',
       external_shipment_id: 'EXT-1', reference_id: 'REF-1', warehouse_code: 'US3PL01',
+      source_warehouse_id: 'WH-TW-CN-FACTORY-YOUXIN',
       carrier_id: 'CR-1', shipping_method: 'sea', etd: '2026-09-10', eta: '2026-10-10',
       shipment_total_qty: 800, total_qty: 800, ship_from: 'CNYOUXIN', destination: 'US3PL01',
       destination_warehouse_id: 'WH-US-3PL-01', route_template_id: 'RT-1'
@@ -545,6 +550,9 @@ function runConfirm(world, body, mutatedSrc, mutated21) {
     extractFn(g21, 'factoryStockApplyDeltaTx_'),
     extractFn(g21, 'factoryStockOwnerReservedTx_'),
     extractFn(g21, 'factoryStockRollbackJournal_'),
+    // S6-R8A - the dispatcher asks 21_ what the DECLARED warehouse holds instead of scanning the table
+    // itself, so the balance reader joins the three primitives this sandbox already borrows.
+    extractFn(g21, 'factoryStockReadBalanceTx_'),
     "var FSTX_MOV_RESERVE_ACQUIRE_ = 'reservation_acquire';",
     "var FSTX_MOV_RESERVE_RELEASE_ = 'reservation_release';",
     "var FSTX_RESERVATION_OWNER_TYPE_ = 'shipment';"
@@ -631,6 +639,7 @@ function runConfirm(world, body, mutatedSrc, mutated21) {
       extractFn(G21, 'factoryStockApplyDeltaTx_'),
       extractFn(G21, 'factoryStockOwnerReservedTx_'),
       extractFn(G21, 'factoryStockRollbackJournal_'),
+      extractFn(G21, 'factoryStockReadBalanceTx_'),   // S6-R8A - the declared-source balance lookup
       "var FSTX_MOV_RESERVE_ACQUIRE_ = 'reservation_acquire';",
       "var FSTX_MOV_RESERVE_RELEASE_ = 'reservation_release';",
       "var FSTX_RESERVATION_OWNER_TYPE_ = 'shipment';"
@@ -681,32 +690,68 @@ function runConfirm(world, body, mutatedSrc, mutated21) {
 
 (function () {
   // §G.11 — the frozen negative-stock policy: refuse BEFORE any write. Not invented here; measured.
-  var w = confirmWorld({ stock: [{ factory_stock_id: 'FS-1', warehouse_id: 'WH-A', sku: 'CO1100-R', fac_current_stock: 100, fac_reserved_stock: 0 }] });
+  // S6-R8A - the shipment now DECLARES the warehouse this world stocks. It always meant to: a blank source
+  // is a shipment 12_ has refused to create since R4B.
+  var w = confirmWorld({ shipment: { source_warehouse_id: 'WH-A' },
+    stock: [{ factory_stock_id: 'FS-1', warehouse_id: 'WH-A', sku: 'CO1100-R', fac_current_stock: 100, fac_reserved_stock: 0 }] });
   var r = runConfirm(w, { shipment_id: 'SHP-1', actor: 'op' });
   eq(r.success, false, 'G9  §G.11 insufficient factory stock REFUSES the confirmation');
-  ok(/Insufficient factory stock/.test(String(r.error)) && /No stock was deducted/.test(String(r.error)),
-    'G9a naming the shortfall and stating that nothing was deducted');
+  eq(String(r.code), 'DECLARED_SOURCE_INSUFFICIENT',
+    'G9a typed, and about the DECLARED source rather than about factory stock in general');
+  ok(/No stock was deducted/.test(String(r.error)) && /need 800, current stock 100 at WH-A/.test(String(r.error)),
+    'G9a1 naming the shortfall, the warehouse, and that nothing was deducted');
   eq(Number(w.stock()[0].fac_current_stock), 100, 'G9b and the balance is untouched');
   eq(w.movements().length, 0, 'G9c with no movement row');
   eq(w.mutated(), [], 'G9d §G.2 not one table was mutated — the refusal is before every write');
 })();
 
 (function () {
-  // §G.12 — warehouse identity. The deduction plan is keyed on warehouse_id, and the movement records it.
-  var w = confirmWorld({ stock: [
-    { factory_stock_id: 'FS-1', warehouse_id: 'WH-B-SECOND', sku: 'CO1100-R', fac_current_stock: 300, fac_reserved_stock: 0 },
-    { factory_stock_id: 'FS-2', warehouse_id: 'WH-A-FIRST', sku: 'CO1100-R', fac_current_stock: 600, fac_reserved_stock: 0 }
-  ] });
+  // §G.12 — WAREHOUSE IDENTITY, AND THE RULE HERE CHANGED IN S6-R8A.
+  //
+  // THIS ASSERTION USED TO READ: 'one SKU spread over two factory warehouses still ships' — success, two
+  // movement rows, ['WH-A-FIRST', 'WH-B-SECOND'], 900 - 800 = 100 left. That was a faithful description of
+  // the dispatcher as it then was: it searched factory_stock by SKU, ordered the hits by warehouse_id and
+  // drew from them in turn. It is kept here in words because it was deliberate, not a bug, and because the
+  // operator decision that replaced it (D_S6_DISPATCH_SOURCE_AUTHORITY = DECLARED_SOURCE_ONLY) is the kind
+  // of thing a future reader will want to find a reason for.
+  //
+  // The shipment declares WH-A-FIRST, which holds 600 against a need of 800. WH-B-SECOND holds the other
+  // 300 and is NOT used: a dispatch consumes the warehouse its Shipment names, or it refuses.
+  var w = confirmWorld({
+    shipment: { source_warehouse_id: 'WH-A-FIRST' },
+    stock: [
+      { factory_stock_id: 'FS-1', warehouse_id: 'WH-B-SECOND', sku: 'CO1100-R', fac_current_stock: 300, fac_reserved_stock: 0 },
+      { factory_stock_id: 'FS-2', warehouse_id: 'WH-A-FIRST', sku: 'CO1100-R', fac_current_stock: 600, fac_reserved_stock: 0 }
+    ] });
   var r = runConfirm(w, { shipment_id: 'SHP-1', actor: 'op' });
-  eq(r.success, true, 'G10 §J.10 one SKU spread over two factory warehouses still ships');
-  var mv = w.movements();
-  eq(mv.length, 2, 'G10a §G.2 one movement row PER warehouse — never one merged row');
-  eq(mv.map(function (m) { return String(m.warehouse_id); }), ['WH-A-FIRST', 'WH-B-SECOND'],
-    'G10b §G.12 each names its own warehouse_id (deterministic order, never a first-row pick)');
-  eq(mv.reduce(function (a, m) { return a + Math.abs(Number(m.qty)); }, 0), 800,
-    'G10c §J.15 the movements sum to exactly the shipped quantity');
+  eq(r.success, false, 'G10 §J.10 the declared source holds 600 of the 800 needed, so the dispatch REFUSES');
+  eq(r.code, 'DECLARED_SOURCE_INSUFFICIENT', 'G10a named, not a generic failure');
+  eq(r.source_warehouse_id, 'WH-A-FIRST', 'G10b and it names the warehouse it was told to use');
+  eq(w.movements().length, 0, 'G10c §G.2 no movement row was written');
   var left = w.stock().reduce(function (a, s) { return a + Number(s.fac_current_stock); }, 0);
-  eq(left, 100, 'G10d and 900 - 800 = 100 remains');
+  eq(left, 900, 'G10d and NOTHING was deducted — WH-B-SECOND\'s 300 is untouched, which is the whole point');
+})();
+
+(function () {
+  // The other half of the same rule: when the declared source CAN cover it, exactly one movement row is
+  // written and it names that warehouse. Without this, G10 above would also pass on a dispatcher that
+  // refused everything.
+  var w = confirmWorld({
+    shipment: { source_warehouse_id: 'WH-A-FIRST' },
+    stock: [
+      { factory_stock_id: 'FS-1', warehouse_id: 'WH-B-SECOND', sku: 'CO1100-R', fac_current_stock: 5000, fac_reserved_stock: 0 },
+      { factory_stock_id: 'FS-2', warehouse_id: 'WH-A-FIRST', sku: 'CO1100-R', fac_current_stock: 800, fac_reserved_stock: 0 }
+    ] });
+  var r = runConfirm(w, { shipment_id: 'SHP-1', actor: 'op' });
+  eq(r.success, true, 'G12 the declared source covers 800, so the dispatch completes');
+  var mv = w.movements();
+  eq(mv.length, 1, 'G12a ONE movement row — there is only ever one warehouse in play now');
+  eq(String(mv[0].warehouse_id), 'WH-A-FIRST', 'G12b naming the DECLARED warehouse');
+  eq(Math.abs(Number(mv[0].qty)), 800, 'G12c for the whole shipped quantity');
+  var byWh = {};
+  w.stock().forEach(function (st) { byWh[String(st.warehouse_id)] = Number(st.fac_current_stock); });
+  eq(byWh['WH-A-FIRST'], 0, 'G12d the declared source gave all 800');
+  eq(byWh['WH-B-SECOND'], 5000, 'G12e and the warehouse with far more stock was never touched');
 })();
 
 // ================================================================================================================
@@ -797,7 +842,7 @@ section('§G — WHO MAY MOVE FACTORY STOCK AT ALL');
   eq(balanceWriters, [], 'G32d §G and NO file outside 21_ writes a factory_stock balance cell');
   ok(/resulting fac_current_stock would be negative/.test(code(G21)),
     'G33 §G.11 the shared transaction refuses to go negative');
-  ok(/Insufficient factory stock/.test(code(G22)),
+  ok(/DECLARED_SOURCE_INSUFFICIENT/.test(code(G22)) && /No stock was deducted/.test(code(G22)),
     'G33a and the dispatch path refuses up front — both honour the same frozen policy by different code');
 })();
 
@@ -963,6 +1008,7 @@ section('§J — CROSS-FLOW QUANTITY CONSERVATION');
 (function () {
   // §J.2/§J.3 — factory short by 300: 700 ships now, and the PO receipt restores the balance for the rest.
   var w = confirmWorld({
+    shipment: { source_warehouse_id: 'WH-F' },
     lines: [{ shipment_line_id: 'SL-1', shipment_id: 'SHP-1', sku: 'CO1100-R', shipment_qty: 700, carton_qty: 35, units_per_carton: 20, shipped_qty: 0 }],
     stock: [{ factory_stock_id: 'FS-1', warehouse_id: 'WH-F', sku: 'CO1100-R', fac_current_stock: 700, fac_reserved_stock: 0 }]
   });
@@ -983,18 +1029,20 @@ section('§J — CROSS-FLOW QUANTITY CONSERVATION');
 
 (function () {
   // §J.4 — two sites competing for one factory pool. The SECOND confirmation is refused, not silently netted.
-  var w = confirmWorld({ stock: [{ factory_stock_id: 'FS-1', warehouse_id: 'WH-F', sku: 'CO1100-R', fac_current_stock: 1000, fac_reserved_stock: 0 }] });
+  var w = confirmWorld({ shipment: { source_warehouse_id: 'WH-F' },
+    stock: [{ factory_stock_id: 'FS-1', warehouse_id: 'WH-F', sku: 'CO1100-R', fac_current_stock: 1000, fac_reserved_stock: 0 }] });
   runConfirm(w, { shipment_id: 'SHP-1', actor: 'op' });                       // 800 out
   var w2 = confirmWorld({
-    shipment: { shipment_id: 'SHP-2', external_shipment_id: 'EXT-2', reference_id: 'REF-2' },
+    shipment: { shipment_id: 'SHP-2', external_shipment_id: 'EXT-2', reference_id: 'REF-2',
+      source_warehouse_id: 'WH-F' },
     lines: [{ shipment_line_id: 'SL-2', shipment_id: 'SHP-2', sku: 'CO1100-R', shipment_qty: 800, carton_qty: 40, units_per_carton: 20, shipped_qty: 0 }],
     stock: w.stock()   // the SAME pool, as the first shipment left it
   });
   var r2 = runConfirm(w2, { shipment_id: 'SHP-2', actor: 'op' });
   eq(r2.success, false, 'J3  §J.4 a second site cannot confirm 800 against the 200 the first one left');
   eq(w2.movements().length, 0, 'J3a and the refusal writes nothing');
-  ok(/need 800, available 200/.test(String(r2.error)),
-    'J3b naming exactly what was needed and what was there');
+  ok(/need 800, current stock 200 at WH-F/.test(String(r2.error)),
+    'J3b naming exactly what was needed, what was there, and WHERE');
   ok(true, 'J3c NOTE §G.6 — nothing RESERVED the first 800, so both sites saw 1000 available while planning; ' +
     'the collision is only discovered at the confirmation, which is the last possible moment');
 })();
@@ -1043,7 +1091,8 @@ mut('M1  the deduction happens twice for one shipment', function () {
     "    if (false) {");
   // 2000 on hand, not 1000: with only 1000 the SUFFICIENCY gate refuses the second pass and the mutant is
   // masked by a different guard, which would have proved nothing about the idempotency guard being removed.
-  var w = confirmWorld({ stock: [{ factory_stock_id: 'FS-1', warehouse_id: 'WH-F', sku: 'CO1100-R', fac_current_stock: 2000, fac_reserved_stock: 0 }] });
+  var w = confirmWorld({ shipment: { source_warehouse_id: 'WH-F' },
+    stock: [{ factory_stock_id: 'FS-1', warehouse_id: 'WH-F', sku: 'CO1100-R', fac_current_stock: 2000, fac_reserved_stock: 0 }] });
   runConfirm(w, { shipment_id: 'SHP-1', actor: 'op' }, src);
   var afterFirst = Number(w.stock()[0].fac_current_stock);
   runConfirm(w, { shipment_id: 'SHP-1', actor: 'op' }, src);
@@ -1058,13 +1107,17 @@ mut('M2  stock is deducted without writing a movement row (mutating the SHARED a
   return Number(w.stock()[0].fac_current_stock) === 200 && w.movements().length === 0;
 });
 mut('M3  the sufficiency gate is removed and stock goes negative', function () {
+  // S6-R8A - re-anchored on the gate as it now reads. The gate moved and was renamed; what it does -
+  // refuse before any write when the DECLARED source cannot cover the shipment - did not change.
   var src = mutateFn(G22, 'handleConfirmShipmentAndDispatch_',
-    "    if (stockErrors.length) { lock.releaseLock(); return jsonResponse_({ success: false, error: 'Insufficient factory stock for: ' + stockErrors.join('; ') + '. No stock was deducted.', stage: 'stock' }); }",
-    "    stockErrors = [];");
-  var w = confirmWorld({ stock: [{ factory_stock_id: 'FS-1', warehouse_id: 'WH-A', sku: 'CO1100-R', fac_current_stock: 100, fac_reserved_stock: 0 }] });
+    "    if (stockErrors.length) {",
+    "    stockErrors = [];" + NL + "    if (false) {");
+  var w = confirmWorld({ shipment: { source_warehouse_id: 'WH-A' },
+    stock: [{ factory_stock_id: 'FS-1', warehouse_id: 'WH-A', sku: 'CO1100-R', fac_current_stock: 100, fac_reserved_stock: 0 }] });
   var r = runConfirm(w, { shipment_id: 'SHP-1', actor: 'op' }, src);
   // the shipped code refuses; the mutant proceeds (and may under-deduct or leave the balance wrong)
-  var clean = confirmWorld({ stock: [{ factory_stock_id: 'FS-1', warehouse_id: 'WH-A', sku: 'CO1100-R', fac_current_stock: 100, fac_reserved_stock: 0 }] });
+  var clean = confirmWorld({ shipment: { source_warehouse_id: 'WH-A' },
+    stock: [{ factory_stock_id: 'FS-1', warehouse_id: 'WH-A', sku: 'CO1100-R', fac_current_stock: 100, fac_reserved_stock: 0 }] });
   var cr = runConfirm(clean, { shipment_id: 'SHP-1', actor: 'op' });
   return cr.success === false && r.success !== false;
 });
