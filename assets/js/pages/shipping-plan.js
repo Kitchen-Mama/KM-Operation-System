@@ -690,7 +690,9 @@ function _spWorkspacePlanRecord(p) {
         company: p.company, country: p.country, marketplace: p.marketplace,
         status: p.status, planVersion: _spNum(p.planVersion) || 1,
         shippingMethod: p.shippingMethod, lastMileDelivery: p.lastMileDelivery, customsType: p.customsType,
+        // S7-R2A1 — 40_ joins the master and serves carrier { id, name }; the name was dropped here.
         carrierId: (p.carrier && p.carrier.id) || '',
+        carrierName: (p.carrier && p.carrier.name) || '',
         estimatedTotalCost: (raw.estimated_total_cost == null ? '' : raw.estimated_total_cost),
         estimatedFreightCost: (raw.estimated_freight_cost == null ? '' : raw.estimated_freight_cost),
         estimatedDuty: (raw.estimated_duty == null ? '' : raw.estimated_duty),
@@ -1067,7 +1069,13 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
         var cbTotalCost = (plan.estimatedTotalCost === '' || plan.estimatedTotalCost == null) ? '--' : ('$' + _spNum(plan.estimatedTotalCost).toFixed(2));
         var cbFreight = _spHasRaw(plan, 'estimated_freight_cost') ? ('$' + _spNum(plan.estimatedFreightCost).toFixed(2)) : '--';
         var cbDuty = _spHasRaw(plan, 'estimated_duty') ? ('$' + _spNum(plan.estimatedDuty).toFixed(2)) : '--';
-        var cbCarrier = plan.carrierId ? _spEsc(plan.carrierId) : '--';
+        // Carrier: name primary, id beside it — the Confirm-summary pair form. An id with no name is
+        // UNRESOLVED and shows the id; only a missing id may read as '--'. Legacy records carry no name.
+        var cbCarrierName = String(plan.carrierName || '').trim();
+        var cbCarrierId = String(plan.carrierId || '').trim();
+        var cbCarrier = !cbCarrierId
+            ? '--'
+            : (cbCarrierName ? (_spEsc(cbCarrierName) + '  ·  ' + _spEsc(cbCarrierId)) : _spEsc(cbCarrierId));
         var costBreakdown =
             '<div class="sp-section">' +
                 '<h4 class="sp-section-title">Cost Breakdown</h4>' +

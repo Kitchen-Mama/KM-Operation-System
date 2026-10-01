@@ -283,17 +283,20 @@ mut('F4a would catch the filter being switched to match on the display label', f
 // ==========================================================================================================
 section('G  WHAT THIS ROUND DID NOT DO');
 // ==========================================================================================================
-// §15.H asked that the Weekly plan's "existing correct carrier name" be left unchanged. The premise is false
-// and the finding is reported rather than quietly acted on: 40_ SERVES carrier { id, name } and the page
-// reads only `.id` and prints it. What H really protects is that this round does not disturb it, and it does
-// not — the assertion is pinned to the behaviour as found.
+// §15.H asked that the Weekly plan's "existing correct carrier name" be left unchanged. The premise was
+// false and the finding was reported rather than quietly acted on: 40_ SERVES carrier { id, name }, the
+// page read only `.id` and printed it, and R2A pinned that behaviour AS FOUND because H's instruction was
+// sound even where its premise was not. S7-R2A1 is the round the operator opened to close it, so what G
+// now protects is the half that never moved: this round touched no carrier SELECTION, no rate and no
+// payload on that page. The label itself is owned by s7-r2a1-weekly-carrier-label.test.js, which RUNS it.
 var SP = read('js/pages/shipping-plan.js');
 ok(/carrierId: \(p\.carrier && p\.carrier\.id\) \|\| '',/.test(SP),
-  'G1  the Weekly page still reads only carrier.id from a read model that also carries the name');
-ok(/var cbCarrier = plan\.carrierId \? _spEsc\(plan\.carrierId\) : '--';/.test(SP),
-  'G1a and still renders the raw id — UNCHANGED by this round, and a recorded finding, not a fix');
+  'G1  the Weekly page reads carrier.id exactly as it did — the identity never moved');
+ok(/carrierName: \(p\.carrier && p\.carrier\.name\) \|\| '',/.test(SP),
+  'G1a and R2A1 added the NAME beside it, from the same pair 40_ had always served');
 eq(count(code(SP), /KM\.display\.carrierDisplay/g), 0,
-  'G1b the Weekly page was not touched: no resolver call was added to it');
+  'G1b with no resolver call: on that path the join already happened in 40_, against the real master, so '
+  + 'calling the resolver would mean handing it a one-row list built from its own answer');
 
 // §13: nothing about selection, rate or quantity moved.
 // shipment_qty was ALWAYS passed through here - 57_'s contract says so in as many words - so asserting its
