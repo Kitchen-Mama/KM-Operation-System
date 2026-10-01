@@ -1126,18 +1126,46 @@ if (typeof window !== 'undefined') {
         shippingMethod: codeDisplay_.shippingMethod,
         lastMileDelivery: codeDisplay_.lastMileDelivery,
         customsType: codeDisplay_.customsType,
-        carrierName: function (carrierId) {
+        // S7-R2A — THE ONE CARRIER PRESENTATION RESOLVER, repaired.
+        //
+        // It used to read `KM.DB.getOperationDb()`, a member the API migration removed and nothing ever
+        // reassigned — so its typeof guard was permanently false and it returned '' for every carrier that
+        // has ever existed. No page called it, which is the only reason that was invisible.
+        //
+        // It is now PURE: the caller hands it the carrier master its own canonical read model already holds.
+        // That is deliberate and not merely convenient. A resolver with a private global cache can answer
+        // from one page's stale data on another page, and can answer AT ALL when nothing has been read —
+        // the two failures §12 of this round forbids. With the data passed in, 'nothing was read' is a
+        // distinguishable argument rather than an indistinguishable empty result.
+        //
+        // THREE STATES, AND THEY ARE NOT INTERCHANGEABLE:
+        //   NONE      no carrier id on the row          → the row has no carrier
+        //   UNREAD    carriers is null/undefined        → we do not know; NEVER claim the carrier is missing
+        //   UNKNOWN   id present, no master row         → show the ID, say it is unresolved, hide nothing
+        //   RESOLVED  master row found with a name      → show the name
+        carrierDisplay: function (carrierId, carriers) {
             var id = String(carrierId == null ? '' : carrierId).trim();
-            if (!id) return '';
-            try {
-                var db = (window.KM.DB && typeof window.KM.DB.getOperationDb === 'function') ? window.KM.DB.getOperationDb() : null;
-                var carriers = (db && (db.carriers || [])) || [];
-                for (var i = 0; i < carriers.length; i++) {
-                    var c = carriers[i] || {};
-                    if (String(c.carrierId || c.carrier_id || '').trim() === id) return String(c.carrierName || c.carrier_name || '').trim();
-                }
-            } catch (e) { /* carriers not loaded yet → blank */ }
-            return '';
+            if (!id) return { state: 'NONE', text: '', carrierId: '', carrierName: '' };
+            if (carriers === null || carriers === undefined) {
+                return { state: 'UNREAD', text: id, carrierId: id, carrierName: '' };
+            }
+            var list = carriers || [];
+            for (var i = 0; i < list.length; i++) {
+                var c = list[i] || {};
+                if (String(c.carrierId || c.carrier_id || '').trim() !== id) continue;
+                var nm = String(c.carrierName || c.carrier_name || '').trim();
+                // A master row with a blank name resolves to UNKNOWN rather than to an empty label: the row
+                // exists, but it cannot name the carrier, and an empty string on screen is not an answer.
+                if (!nm) return { state: 'UNKNOWN', text: id, carrierId: id, carrierName: '' };
+                return { state: 'RESOLVED', text: nm, carrierId: id, carrierName: nm };
+            }
+            return { state: 'UNKNOWN', text: id, carrierId: id, carrierName: '' };
+        },
+        // The plain-name projection of the SAME answer — one resolver, two shapes, never two data paths.
+        // Returns '' when the name is not known, so a caller that wants a name gets a name or nothing, and
+        // a caller that wants something truthful to render uses carrierDisplay above.
+        carrierName: function (carrierId, carriers) {
+            return window.KM.display.carrierDisplay(carrierId, carriers).carrierName;
         }
     };
 }
@@ -3064,7 +3092,14 @@ window.KM.DB.adaptShipmentWorkspace = function(data) {
     var shipmentLines = (data.shipmentLines || []).map(normalizeShipmentLineRecord).filter(function(r) { return r.shipmentLineId || r.shipmentId; });
     var warehouses = (data.warehouses || []).map(normalizeWarehouseRecord).filter(function(r) { return r.warehouseId || r.warehouseName; });
     var carrierRateCards = (data.carrierRateCards || []).map(normalizeCarrierRateCardRecord).filter(function(r) { return r.rateCardId || r.carrierId; });
-    var out = { shipments: shipments, shipmentLines: shipmentLines, warehouses: warehouses, carrierRateCards: carrierRateCards };
+    // S7-R2A — the carrier MASTER. `undefined` and `[]` are kept apart deliberately: a workspace answer from a
+    // deployment that predates 57_'s carriers table has no `carriers` key at all, and that is UNREAD, not
+    // "there are no carriers". KM.display.carrierDisplay reads exactly that distinction, so collapsing it to
+    // [] here would turn a half-synced backend into a confident claim that every carrier is unknown.
+    var carriers = (data.carriers === undefined || data.carriers === null)
+        ? null
+        : (data.carriers || []).map(normalizeCarrierRecord).filter(function(r) { return r.carrierId || r.carrierName; });
+    var out = { shipments: shipments, shipmentLines: shipmentLines, warehouses: warehouses, carrierRateCards: carrierRateCards, carriers: carriers };
     // Map-extras (On-the-Way) — same normalizers + filters as normalizeOperationDb; [] when the include was not requested.
     out.shipmentRoutes = (data.shipmentRoutes || []).map(normalizeShipmentRouteRecord).filter(function(r) { return r.shipmentRouteId || r.shipmentId || r.locationName || r.latitude !== null; });
     out.shipmentEvents = (data.shipmentEvents || []).map(normalizeShipmentEventRecord).filter(function(r) { return r.shipmentEventId || r.shipmentId || r.eventType; });

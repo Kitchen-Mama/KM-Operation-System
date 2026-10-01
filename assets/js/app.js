@@ -145,7 +145,7 @@ var KM_ROUTE_ASSETS_ = {
             'assets/js/core/geo-name-resolver.js?v=map-texture3-r6-20260831',
             'assets/js/lib/km-geo-topology.js?v=map-texture3-r4-20260827',
             'assets/js/lib/km-globe.js?v=map-transporticons-r10-20260926',
-            'assets/js/pages/global-logistics-map.js?v=map-transporticons-r10-20260926'
+            'assets/js/pages/global-logistics-map.js?v=map-carriername-r11-20261001'
         ],
         partial: { key: 'global-logistics-map', url: 'assets/html/pages/global-logistics-map.html',
             target: '#global-logistics-map-mount' },

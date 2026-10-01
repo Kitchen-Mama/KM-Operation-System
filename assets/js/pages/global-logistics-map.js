@@ -267,13 +267,17 @@
       if (l.factoryId && validCoord(l.latitude, l.longitude) && !locByFactory[l.factoryId]) locByFactory[l.factoryId] = l;
     });
     var whById = {}; rm.warehouses.forEach(function (w) { if (w.warehouseId) whById[w.warehouseId] = w; });
+    // TEXTURE-3-R11 — the carrier master, held as the ARRAY the shared resolver takes rather than as an index,
+    // so null (unread) survives the trip. An index would turn "not read" into an empty object, which reads as
+    // "no carrier matches" and is the one answer this must never invent.
+    var carriersRm = (rm.carriers === undefined) ? null : rm.carriers;
     var eventsByShip = {}; rm.shipmentEvents.forEach(function (e) { (eventsByShip[e.shipmentId] = eventsByShip[e.shipmentId] || []).push(e); });
     Object.keys(eventsByShip).forEach(function (k) { eventsByShip[k].sort(function (a, b) { return (a.eventSequence - b.eventSequence) || String(a.eventTime).localeCompare(String(b.eventTime)); }); eventsByShip[k] = dedupeEvents(eventsByShip[k]); });
     var nodesByShip = {}; rm.shipmentRoutes.forEach(function (n) { (nodesByShip[n.shipmentId] = nodesByShip[n.shipmentId] || []).push(n); });
     Object.keys(nodesByShip).forEach(function (k) { nodesByShip[k].sort(function (a, b) { return a.sequenceNo - b.sequenceNo; }); });
     var linesByShip = {}; rm.shipmentLines.forEach(function (l) { (linesByShip[l.shipmentId] = linesByShip[l.shipmentId] || []).push(l); });
     state.rm = rm;
-    state.idx = { locById: locById, locByWh: locByWh, locByFactory: locByFactory, whById: whById, eventsByShip: eventsByShip, nodesByShip: nodesByShip, linesByShip: linesByShip };
+    state.idx = { locById: locById, locByWh: locByWh, locByFactory: locByFactory, whById: whById, carriers: carriersRm, eventsByShip: eventsByShip, nodesByShip: nodesByShip, linesByShip: linesByShip };
     state.vms = buildShipmentViewModels();
     var missing = [];
     if (!rm.shipmentRoutes.length) missing.push('shipment_routes');
@@ -308,7 +312,11 @@
       var originCountry = (nodes[0] && nodes[0].country) || '';
       var vm = {
         shipmentId: s.shipmentId, shipmentNo: s.shipmentNo || s.shipmentId, company: s.company || '',
-        carrier: s.carrierId || '', method: s.shippingMethodDisplay || s.shippingMethod || '',
+        // TEXTURE-3-R11 — `carrier` REMAINS the carrier_id: it is the filter key and the join key, and
+        // filteredVms compares it. carrierLabel is what a person reads; it falls back to the id, never to a
+        // blank, so an unresolved carrier is still identified.
+        carrier: s.carrierId || '', carrierLabel: glmCarrierLabel_(s.carrierId, idx.carriers),
+        method: s.shippingMethodDisplay || s.shippingMethod || '',
         originCountry: originCountry, destCountry: s.country || '', destWarehouseId: s.warehouseId || '',
         destWarehouse: (idx.whById[s.warehouseId] && idx.whById[s.warehouseId].warehouseName) || s.warehouseId || (s.destination || ''),
         shipFrom: s.shipFrom || '', destination: s.destination || '', status: s.status || '',
@@ -406,6 +414,26 @@
   // ---------- KPIs / filters ----------
   function computeKpis() { var vms = allVms(); return KPIS.map(function (k) { return { id: k.id, label: k.label, tone: k.tone, value: vms.filter(function (v) { return v.flags[k.id]; }).length }; }); }
   function optSet(vms, fn) { var s = {}; vms.forEach(function (v) { var x = (fn(v) || '').toString().trim(); if (x) s[x] = 1; }); return Object.keys(s).sort(); }
+  // TEXTURE-3-R11 — options whose VALUE and LABEL differ, for a field whose identity is not its display text.
+  // Values stay unique; the label of the first vm carrying a value wins (they agree, both deriving from the
+  // same master row).
+  function optPairs(vms, valFn, labFn) {
+    var seen = {}, out = [];
+    vms.forEach(function (v) {
+      var val = (valFn(v) || '').toString().trim(); if (!val || seen[val]) return;
+      seen[val] = 1; out.push({ v: val, l: ((labFn(v) || '').toString().trim() || val) });
+    });
+    return out.sort(function (a, b) { return a.l.localeCompare(b.l); });
+  }
+  // TEXTURE-3-R11 — the map's ONLY carrier-name call, into the one shared presentation resolver
+  // (KM.display.carrierDisplay). No second resolver and no second data source: `carriers` is the master the
+  // 57_ workspace now returns. null means UNREAD and the resolver answers with the id, not with a blank.
+  function glmCarrierLabel_(carrierId, carriers) {
+    if (window.KM && window.KM.display && window.KM.display.carrierDisplay) {
+      return window.KM.display.carrierDisplay(carrierId, carriers).text;
+    }
+    return String(carrierId == null ? '' : carrierId);
+  }
   function filteredVms() {
     var f = state.filters, q = f.search.trim().toLowerCase();
     return allVms().filter(function (v) {
@@ -526,9 +554,16 @@
   }
 
   // ---------- filters (compact horizontal bar; presentation only — SAME data-filter keys + semantics) ----------
+  // TEXTURE-3-R11 — an option may now be a plain string (value === label, every existing caller) or a
+  // { v, l } pair for a field whose identity is not its display text. The SELECTED value is compared against
+  // `v` in both forms, so filtering never depends on what is painted.
   function selHtml(label, key, opts, cur, cls) {
     return '<label class="glm-field' + (cls ? ' ' + cls : '') + '"><span>' + esc(label) + '</span><select data-filter="' + key + '"><option value="">All</option>' +
-      opts.map(function (o) { return '<option value="' + esc(o) + '"' + (cur === o ? ' selected' : '') + '>' + esc(o) + '</option>'; }).join('') + '</select></label>';
+      opts.map(function (o) {
+        var val = (o && typeof o === 'object') ? o.v : o;
+        var lab = (o && typeof o === 'object') ? o.l : o;
+        return '<option value="' + esc(val) + '"' + (cur === val ? ' selected' : '') + '>' + esc(lab) + '</option>';
+      }).join('') + '</select></label>';
   }
   // R12 — ONE consolidated in-map control panel (upper-left, collapsible): View · Filters · Layers · Legend. It
   // REPLACES the page-level filter bar + the separate in-map Map View selector, layer toggles and bottom legend.
@@ -777,7 +812,7 @@
       '<label class="glm-field glm-field--panel glm-field--search"><span>Search</span><input type="text" data-filter="search" value="' + esc(f.search) + '" placeholder="Shipment / Tracking / Container…"></label>' +
       selHtml('Company', 'company', optSet(vms, function (v) { return v.company; }), f.company, PC) +
       selHtml('Destination', 'destWarehouse', optSet(vms, function (v) { return v.destWarehouse; }), f.destWarehouse, PC) +
-      selHtml('Carrier', 'carrier', optSet(vms, function (v) { return v.carrier; }), f.carrier, PC) +
+      selHtml('Carrier', 'carrier', optPairs(vms, function (v) { return v.carrier; }, function (v) { return v.carrierLabel; }), f.carrier, PC) +
       selHtml('Method', 'method', optSet(vms, function (v) { return v.method; }), f.method, PC) +
       '<label class="glm-field glm-field--panel glm-field--eta"><span>ETA Date</span><span class="glm-eta-range">' +
         '<input type="date" data-filter="etaFrom" value="' + esc(f.etaFrom) + '" aria-label="ETA from">' +
@@ -873,7 +908,7 @@
         '<div class="glm-ship__idrow"><span class="glm-ship__no">' + esc(v.shipmentNo) + '</span></div>' +
         '<div class="glm-ship__badges">' + statusPill + flag + issueBadge + posBadge + '</div>' +
         '<div class="glm-ship__route">' + esc(v.originCountry || v.shipFrom || '?') + ' → ' + esc(v.destCountry || v.destWarehouse || '?') + '</div>' +
-        '<div class="glm-ship__meta">' + esc(v.carrier || '—') + ' · ' + esc(shipMode(v)) + '</div>' +
+        '<div class="glm-ship__meta">' + esc(v.carrierLabel || '—') + ' · ' + esc(shipMode(v)) + '</div>' +
         '<div class="glm-ship__meta">Stage: <strong>' + esc(v.stage) + '</strong> · ETA: ' + esc(v.eta || '—') + '</div>' +
         '</div>';
     }).join('');
@@ -1162,7 +1197,7 @@
     _glmReadModel.shipmentLines = repl(_glmReadModel.shipmentLines, mini.shipmentLines);
     _glmReadModel.shipmentRoutes = repl(_glmReadModel.shipmentRoutes, mini.shipmentRoutes);
     _glmReadModel.shipmentEvents = repl(_glmReadModel.shipmentEvents, mini.shipmentEvents);
-    return true;   // logisticsLocations / route templates / nodes / warehouses / carrierRateCards → RETAINED (not overwritten)
+    return true;   // logisticsLocations / templates / nodes / warehouses / carrierRateCards / carriers → RETAINED
   }
   function receiptMsg(text, tone) {
     var el = document.querySelector('[data-glm="receipt-msg"]'); if (!el) return;
@@ -1405,7 +1440,11 @@
     els.title.textContent = vm.shipmentNo;
     els.body.innerHTML =
       '<section class="glm-dsec"><h4 class="glm-dsec__h--close">Identity<button type="button" class="glm-dsec__close" data-act="drawer-close" aria-label="Close shipment details" title="Close (Esc)">&times;</button></h4>' +
-        kv('Shipment No.', vm.shipmentNo) + kv('Company', vm.company) + kv('Carrier', vm.carrier) + kv('Shipping Method', vm.method) +
+        // The drawer is the identity section, so it shows BOTH: the name an operator recognises and the id
+        // every join and support conversation is actually about.
+        kv('Shipment No.', vm.shipmentNo) + kv('Company', vm.company) +
+        kv('Carrier', vm.carrierLabel === vm.carrier ? vm.carrier : (vm.carrierLabel + '  ·  ' + vm.carrier)) +
+        kv('Shipping Method', vm.method) +
         kv('Origin → Destination', (vm.originCountry || vm.shipFrom || '?') + ' → ' + (vm.destCountry || vm.destWarehouse || '?')) +
         kv('Destination Warehouse', vm.destWarehouse) + kv('Tracking / Container', [vm.tracking, vm.container].filter(Boolean).join(' / ')) +
         kv('Status', vm.status) + kv('Route Template', vm.routeTemplateId) + '</section>' +

@@ -151,6 +151,11 @@ CARRIER_API_DISCONNECT_COUNT   1
 
 ## Sec5 - FINDING 3: A DOCUMENT CAN BE GENERATED AND THEN NEVER FOUND AGAIN
 
+> **[WITHDRAWN BY S7-R2A - see PART III Sec35. THIS FINDING IS WRONG.** Both Document Panels exist and
+> share one renderer. The probe behind it searched for `KM.DB.listEntityDocuments` call sites and found
+> none, which is true and proves nothing: the panels are fed by each workspace's `documents` include, not
+> by `document.list`. The section is kept as written so the mistake is legible.]**
+
 The document runtime is complete on three of its four layers and absent on the fourth.
 
 ```
@@ -748,4 +753,152 @@ NEW_TABLE_REQUIRED  NO   NEW_COLUMNS_REQUIRED  NONE   DB_MIGRATION_REQUIRED  NO
 PRODUCTION_ROWS_WRITTEN      0        PRODUCTION_WRITE_AUTHORIZED  NO
 
 NEXT_TASK = S7-R2A - SHIPMENT CARRIER NAME READ-MODEL COMPLETION
+```
+
+---
+
+# PART III - S7-R2A: SHIPMENT CARRIER NAME READ-MODEL COMPLETION
+
+```
+PRE_SHA  5d4f53a        POST_SHA  (this commit)      branch  feature/product-strategy-board-p0
+BACKEND_RELEASE  F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R38
+```
+
+## Sec32 - WHAT WAS WRONG AND WHAT IS NOW TRUE
+
+`carrier_id` is the identity and `carrier_name` is deliberately never stored beside it, so any surface that
+wants to SHOW a carrier must resolve the id against the `carriers` master. 40_ loaded that master. 57_ - the
+read behind Shipment Draft, the Confirm summary and the On-the-Way Map - did not, and the browser resolver
+built for exactly this gap asked `KM.DB.getOperationDb`, a member the API migration removed and nothing ever
+reassigned. Its `typeof` guard was permanently false, so it returned the empty string for every carrier that
+has ever existed. No page called it, which is the only reason that stayed invisible.
+
+```
+CURRENT_CARRIER_NAME_RESOLVER   KM.display.carrierName
+CURRENT_RESOLVER_DATA_OWNER     KM.DB.getOperationDb - ASSIGNED NOWHERE
+CURRENT_RESOLVER_REACHABLE      NO
+
+CARRIER_MASTER_TABLE    carriers        CARRIER_MASTER_READ_OWNER  57_ (base table) . 40_ (already)
+CARRIER_ID_FIELD        carrier_id      CARRIER_NAME_FIELD         carrier_name
+TARGET_READMODEL_OWNER  57_api_v1_shipment_workspace.gs
+TARGET_SURFACES         Shipment Draft . Confirm summary . On-the-Way Map (card, drawer, filter)
+```
+
+57_ now declares `carriers` a BASE table with the same `requiredCols: ['carrier_id']` 40_ uses, and returns
+the rows raw, so the browser normalizes them with the same `normalizeCarrierRecord` the broad path runs. No
+new request exists anywhere: the master rides the slice these surfaces were already reading.
+
+## Sec33 - THE RESOLVER IS PURE, AND THAT IS THE DESIGN DECISION
+
+```
+CARRIER_DISPLAY_RESOLVER_OWNER  KM.display.carrierDisplay  (carrierName is its projection)
+CARRIER_DISPLAY_RESOLVER_COUNT  1
+```
+
+The caller hands the resolver the master its own read model holds. A resolver with a private cache can answer
+from one page's stale data on another page, and can answer AT ALL when nothing has been read - the two
+failures §12 forbids. Passing the data in makes *nothing was read* a distinguishable argument rather than an
+indistinguishable empty result. Four states, and none of them interchangeable:
+
+| state | when | what the operator sees |
+|---|---|---|
+| `NONE` | the row carries no carrier id | the existing blank convention |
+| `UNREAD` | master is null/undefined | **the id**, never a claim that the carrier is missing |
+| `UNKNOWN` | id present, no master row (or a row with a blank name) | **the id**, marked unresolved |
+| `RESOLVED` | master row found with a name | the name |
+
+`CARRIER_NAME_MISSING_BEHAVIOR` = show the carrier_id and say which unresolved state it is in - *carrier list
+not loaded* versus *not in the carrier master*. Identity is never hidden and an unknown carrier is never
+turned into "No carrier". An `[]` master is UNKNOWN (a lookup that genuinely failed); a `null` master is
+UNREAD. The adapter preserves that distinction deliberately: a workspace answer from a deployment that
+predates this release has no `carriers` key at all, and collapsing that to `[]` would turn a half-synced
+backend into a confident claim that every carrier is unknown.
+
+## Sec34 - WHAT EACH SURFACE DOES NOW
+
+- **Shipment Draft** - the read-only carrier field shows the name with the id beneath it. Read-only because
+  the carrier is chosen on the plan; showing the name ALONE would hide the value every join and every support
+  conversation is about.
+- **Confirm summary** - name and id together. It is the last screen before stock moves, so it does not choose
+  between them.
+- **On-the-Way Map** - the card and the drawer show the name; the drawer keeps the id beside it. **The Carrier
+  filter still matches on `carrier_id`** - only its labels changed - because a filter that matched display
+  text would break the moment two carriers shared a name.
+
+```
+DRAFT_CARRIER_WRITE_FIELD   carrier_id      DRAFT_CARRIER_NAME_WRITE_COUNT  0
+OVERVIEW_RAW_ID_ONLY_WHEN_NAME_AVAILABLE_COUNT  0
+CARRIER_SELECTION_CHANGED  NO   RATE_SELECTION_CHANGED  NO   SHIPMENT_WRITE_PAYLOAD_CHANGED  NO
+SECOND_CARRIER_MASTER_CREATED  NO   SECOND_CARRIER_RATE_AUTHORITY_COUNT  0
+PER_SHIPMENT_CARRIER_REQUEST_COUNT  0   DUPLICATE_CARRIER_FETCH_COUNT  0
+LEGACY_WHOLE_DB_GETTER_REINTRODUCED  NO   STALE_LEGACY_DIRECT_CALL_COUNT_POST  0
+CARRIER_FALSE_EMPTY_COUNT  0  CARRIER_ID_NAME_MISMATCH_COUNT  0  LAST_GOOD_CARRIER_MAP_LOSS_COUNT  0
+```
+
+The map's bounded single-shipment refresh never assigns `carriers`, so the held master survives it by
+construction rather than by somebody remembering to copy it - which is what the last-good assertion pins.
+
+## Sec35 - TWO FINDINGS THIS ROUND WITHDRAWS
+
+### 1. The Document Panels exist. PART I Sec5 is wrong.
+
+`shDocumentPanelHtml` is defined in `shipping-history.js`, exported on `window`, and called by BOTH that page
+and `purchase-order-overview.js`. Each feeds it from its own workspace's `documents` include - 57_ for
+shipments, 50_ for purchase orders - and retry is wired through `db.retryDocumentGeneration`. One renderer,
+two surfaces, both live.
+
+PART I searched for `KM.DB.listEntityDocuments` call sites, found none, and concluded the capability had no
+surface. The search result was correct; the conclusion did not follow. **"This adapter method has no caller"
+and "this capability has no surface" are different claims, and only the first was tested.** The panels get
+their list from the workspace projection, which is the better design - one read rather than two - and
+`document.list` / `document.get` remain genuinely uncalled, which is a different and much smaller fact.
+
+**This changes S7-R2B.** D-S7-2 froze a PO Document Panel as Phase-1 required on the premise that none
+existed. One does. R2B should begin by establishing what the existing panel does NOT do - if anything -
+rather than by building it. That is an operator decision and this round does not take it.
+
+### 2. The Weekly Shipping Plan also shows a raw carrier id.
+
+PART I Sec4 said 40_ serves `carrier { id, name }` so the Weekly surface "can print a carrier". It serves it;
+the page throws it away. `shipping-plan.js` reads `carrierId: (p.carrier && p.carrier.id)` and renders
+`_spEsc(plan.carrierId)`.
+
+**Left unchanged, deliberately.** §3 of this round names four surfaces and Weekly is not among them, §20
+forbids broadening, and §15.H asks that Weekly be left alone - the reason given for that is false, but the
+instruction is not. The fix is one line against data the page already receives. It is recorded here as the
+smallest outstanding carrier-name gap, for the operator to schedule.
+
+## Sec36 - RELEASE
+
+```
+BACKEND_RELEASE  F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R38
+APPS_SCRIPT_SYNC_REQUIRED  YES     APPS_SCRIPT_SYNC_SET  57_ . 63_
+FRONTEND_DEPLOY_REQUIRED   YES     FRONTEND_DEPLOY_SET   operation-system-db-api.js .
+                                   shipping-history.js . global-logistics-map.js . app.js
+TOKEN_ROTATION_REQUIRED_AT_FINAL_DEPLOY  YES
+```
+
+**THE EIGHTEENTH SWAP.** 22_ leaves ownership at R38 and keeps the R37 it earned one release ago; 63_ is the
+only stamped owner. 57_ is the file this round actually changed and it carries no stamp at all - 63_'s
+manifest proves it by probing the CALLER's symbol, as it already does for 16_ and 31_ - so it becomes a
+FOURTH kind of ledger member, `STAMPLESS_OWNERS`: copied, and stamped by nobody. S5-R4 set that precedent for
+the generated bundle with the same argument, that putting such a file in `RELEASE_OWNERS` fixes the copy
+check and breaks the stamp check. Minting a stamp for 57_ to satisfy a ledger would have overturned a
+standing design decision from inside a round about a read projection.
+
+No router action was added or removed, so the action-contract version does **not** move. 90_ is not rebuilt.
+
+**TEXTURE-3-R11** rotates exactly one map file. `global-logistics-map.js` changed and carries the R11 marker;
+`km-globe.js` and the stylesheet did not and keep the tokens they have, which is what the derived map rules
+check in both directions.
+
+**DEPLOY ORDER: 57_ BEFORE the frontend.** With an older 57_ deployed, the workspace answer has no `carriers`
+key, the adapter reads that as UNREAD and every surface shows the id - the behaviour this release set out to
+fix, failing quietly rather than loudly. Nothing breaks; nothing improves either.
+
+```
+NEW_TABLE_REQUIRED  NO   NEW_COLUMNS_REQUIRED  NONE   DB_MIGRATION_REQUIRED  NO   BACKFILL_REQUIRED  NO
+PRODUCTION_ROWS_WRITTEN  0
+S7_R2A_CARRIER_NAME_SEAL  YES      OPEN_S7_BLOCKERS  none
+NEXT_TASK = S7-R2B - PURCHASE ORDER DOCUMENT PANEL (re-scope against Sec35 first)
 ```

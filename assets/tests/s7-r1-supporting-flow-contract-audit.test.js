@@ -194,29 +194,35 @@ ok(/\{\s*name:\s*'carriers'/.test(F40),
 ok(/carrier:\s*\{\s*id:[^}]*name:/.test(F40),
   'B1a and emits carrier { id, name } — the Weekly surface can print a name');
 
-eq(count(F57, /\{\s*name:\s*'carriers'/g), 0,
-  'B2  the Shipment Draft / Overview read (57_) does NOT load the carriers master');
-ok(/carrierId:\s*shipWsStr_\(r\.carrier_id\)/.test(F57),
-  'B2a it serves carrierId only, so that surface has an identity and no name');
+// S7-R2A CLOSED THIS. What R1 found, kept because the finding is the point: 57_ loaded rate cards and NOT
+// the carriers master, so Shipment Draft, the Confirm summary and the On-the-Way Map had nothing to resolve
+// an id against; and the browser resolver built for that gap asked KM.DB.getOperationDb, a member the API
+// migration removed and nothing reassigned, so its guard was permanently false. The assertions below are
+// re-aimed at the rule as it now stands - CARRIER_API_DISCONNECT_COUNT is 0.
+ok(/\{ name: 'carriers',\s+requiredCols: \['carrier_id'\] \}/.test(F57),
+  'B2  57_ now loads the carriers master, with the same declaration 40_ uses');
+ok(/carriers: carriers,/.test(F57) && /carrierId:\s*shipWsStr_\(r\.carrier_id\)/.test(F57),
+  'B2a and emits it beside the carrierId it always served — identity AND the master to resolve it');
 
-// The browser-side resolver that exists for exactly this, and the link that is missing under it.
-ok(/carrierName:\s*function\s*\(carrierId\)/.test(ADAPTER),
-  'B3  KM.display.carrierName is the render-time resolver built for the gap');
-ok(/KM\.DB\.getOperationDb\s*===\s*'function'/.test(ADAPTER),
-  'B3a and it resolves its data through KM.DB.getOperationDb');
-eq(count(bare(ADAPTER), /KM\.DB\.getOperationDb\s*=[^=]/g), 0,
-  'B3b which is assigned NOWHERE in the adapter');
+// The resolver, and the link that is now under it.
+ok(/carrierDisplay: function \(carrierId, carriers\)/.test(ADAPTER),
+  'B3  the resolver takes the master as an ARGUMENT — no private cache to go stale, and no answer at all '
+  + 'when nothing has been read');
+eq(count(bare(ADAPTER), /KM\.DB\.getOperationDb/g), 0,
+  'B3a and no longer reaches for the whole-DB getter it could never have found');
 var anyGetOperationDbMember = 0;
 ALL_JS.forEach(function (s) { anyGetOperationDbMember += count(bare(s), /KM\.DB\.getOperationDb\s*=[^=]/g); });
 eq(anyGetOperationDbMember, 0,
-  'B3c nor anywhere else in the browser — so the typeof guard is always false and the resolver always '
-  + 'returns the empty string. CARRIER_API_DISCONNECT_COUNT = 1');
+  'B3b that member is still assigned nowhere in the browser, which is why depending on it was the defect');
 
+// code(), not bare(). bare() also strips STRING LITERALS, and it does so with a quote-pairing regex that is
+// unsound on a file where an apostrophe appears inside a double-quoted string - it pairs across the region
+// and deletes real code with it. Measured here: this call counts 2 under code() and 0 under bare(). The
+// claim is about code, so comments-stripped is the right instrument and strings are irrelevant to it.
 var displayConsumers = 0;
-PAGE_FILES.forEach(function (f) { displayConsumers += count(bare(PAGES[f]), /KM\.display\./g); });
-eq(displayConsumers, 0,
-  'B3d and no page calls it, so this is a latent trap rather than a live wrong answer — which is why the '
-  + 'report classifies it DISCONNECTED and not BLOCKING');
+PAGE_FILES.forEach(function (f) { displayConsumers += count(code(PAGES[f]), /KM\.display\.carrierDisplay\(/g); });
+ok(displayConsumers >= 2,
+  'B3c and the surfaces now CALL it — the resolver is reachable, which it had never been', displayConsumers);
 
 // One rate authority. The AI Plan is forbidden to price, by its own contract.
 eq(count(F17, /^function shippingFreight_/gm), 1,
@@ -277,9 +283,9 @@ mut('B5 would catch a second module opening the lead-time table', function () {
   return /getSheetByName\(\s*'carrier_lead_times'/.test(code(m));
 });
 
-mut('B2 would catch 57_ quietly adopting the carriers master without the UI being told', function () {
-  var m = F57.replace("{ name: 'carrier_rate_cards',", "{ name: 'carriers', requiredCols: [] },\n  { name: 'carrier_rate_cards',");
-  return count(m, /\{\s*name:\s*'carriers'/g) === 1;
+mut('B2 would catch the carriers master being dropped from the read again', function () {
+  var m = F57.replace(/\{ name: 'carriers',\s+requiredCols: \['carrier_id'\] \},/, '');
+  return !/\{ name: 'carriers',\s+requiredCols: \['carrier_id'\] \}/.test(m);
 });
 mut('B3c would catch the missing link being supplied', function () {
   var m = ADAPTER + '\nwindow.KM.DB.getOperationDb = function () { return window._opDbCache; };\n';

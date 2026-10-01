@@ -978,7 +978,17 @@ var MAP_TOKEN_SERIES = [
   // THE STYLESHEET IS DELIBERATELY NOT ROTATED. The glyph is painted on the existing label canvas and
   // needed no CSS at all, so global-logistics-map.css does not carry this round's marker and must keep
   // the token it has — which is what the derived rule (G4c/G4d) checks in both directions.
-  'map-transporticons-r10-20260926'
+  'map-transporticons-r10-20260926',
+  // S7-R2A / TEXTURE-3-R11 — ON-THE-WAY SHOWS THE CARRIER'S NAME. The map printed `carrier_id` on the
+  // shipment card, in the detail drawer and in the Carrier filter, because the workspace it reads did not
+  // carry the carrier master. 57_ carries it now, so the page resolves a name through the one shared
+  // presentation resolver.
+  //
+  // ONE FILE ROTATES. global-logistics-map.js changed and carries the R11 marker; km-globe.js was not
+  // touched (the label is page-side, the globe paints what it is given) and neither was the stylesheet, so
+  // both keep the tokens they have. A new token rather than a reuse, by the rule this series records: R10
+  // is published, so its bytes have been served and its token is spent.
+  'map-carriername-r11-20261001'
 ];
 
 // The newest entry is the current round's token, by construction rather than by restatement.
@@ -1538,7 +1548,14 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // warehouse the Shipment declares. 22_ changes and 63_ moves with it, because 63_ carries 22_'s manifest
   // row. 90_ is NOT rebuilt: no core module changed, so its content hash does not move and R36's owners
   // keep R36. 22_ returns to ownership after four releases carried at R33.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R37'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R37',
+  // S7-R2A — THE CARRIER MASTER REACHES THE SHIPMENT SURFACES. 57_ gains the carriers table, so the
+  // Shipment Draft, the Confirm summary and the On-the-Way Map can resolve a carrier_id to a name instead
+  // of printing the id. 63_ moves with it because a sync-visible backend change is what its release stamp
+  // means; 57_ itself carries no stamp (its manifest row proves it by symbol probe). No router action was
+  // added or removed, so the action-contract version does NOT move. 90_ is not rebuilt: no core module
+  // changed, so R37 owners keep R37.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R38'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

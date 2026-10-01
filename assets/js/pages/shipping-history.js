@@ -752,6 +752,24 @@ var _shRegionEl = null, _shRegion = null;
 function _shGetShipments() { return _shReadModel ? _shReadModel.shipments : ((window.KM.DB.getShipments && window.KM.DB.getShipments()) || []); }
 function _shGetShipmentLines() { return _shReadModel ? _shReadModel.shipmentLines : ((window.KM.DB.getShipmentLines && window.KM.DB.getShipmentLines()) || []); }
 function _shGetCarrierRateCards() { return _shReadModel ? _shReadModel.carrierRateCards : ((window.KM.DB.getCarrierRateCards && window.KM.DB.getCarrierRateCards()) || []); }
+// S7-R2A — the carrier MASTER, and the one getter in this file that may return null on purpose.
+//
+// Every other getter here answers [] when it has nothing, because an empty list and an unread list mean the
+// same thing to a list render. For the carrier master they do NOT: [] would make KM.display.carrierDisplay
+// report every carrier UNKNOWN, which is a confident claim about data nobody has read. null means UNREAD and
+// the resolver keeps the id on screen without passing judgement on it.
+//
+// The LEGACY branch returns null rather than KM.DB.getCarriers(): that getter reads the broad whole-DB cache,
+// and this round is forbidden to reintroduce a dependency on it. On the legacy path the id is shown unresolved,
+// which is honest.
+function _shGetCarriers() { return _shReadModel ? _shReadModel.carriers : null; }
+// The single call site shape, so the two renders below cannot drift apart.
+function _shCarrierCell_(carrierId) {
+    var d = (window.KM && window.KM.display && window.KM.display.carrierDisplay)
+        ? window.KM.display.carrierDisplay(carrierId, _shGetCarriers())
+        : { state: 'UNREAD', text: String(carrierId == null ? '' : carrierId), carrierId: carrierId, carrierName: '' };
+    return d;
+}
 function _shGetWarehouses() { return _shReadModel ? _shReadModel.warehouses : ((window.KM.DB.getWarehouses && window.KM.DB.getWarehouses()) || []); }
 
 function _shActiveListEl_() {
@@ -1060,6 +1078,27 @@ function _shRenderDbCard(s, planLines, mode) {
             '<label style="font-size:11px;color:#64748B;">' + label + '</label>' +
             '<div style="padding:5px 0;font-size:13px;color:#1E293B;">' + (_shEsc(val) || '--') + '</div></div>';
     }
+    // S7-R2A — the carrier, named rather than numbered.
+    //
+    // The identity stays carrier_id and stays visible: this field is read-only here (the carrier is chosen on
+    // the plan, not here), so showing the name ALONE would hide the value every join, every export and every
+    // support conversation is actually about. Name first because that is what an operator reads; id beneath it
+    // because that is what the system means. When the name is not known the id is still the headline - the one
+    // thing this must never do is replace an identity it cannot resolve with a reassuring blank.
+    function carrierField() {
+        var d = _shCarrierCell_(s.carrierId);
+        if (d.state === 'NONE') return roField('Carrier (from plan)', '');
+        var sub = (d.state === 'RESOLVED')
+            ? _shEsc(d.carrierId)
+            : (d.state === 'UNREAD'
+                ? 'carrier list not loaded'
+                : 'not in the carrier master');
+        return '<div style="display:flex;flex-direction:column;gap:2px;">' +
+            '<label style="font-size:11px;color:#64748B;">Carrier (from plan)</label>' +
+            '<div style="padding:5px 0;font-size:13px;color:#1E293B;">' + _shEsc(d.text) +
+            '<span style="display:block;font-size:11px;color:#94A3B8;">' + sub + '</span>' +
+            '</div></div>';
+    }
     // Customs Type SNAPSHOT (shipments.shipments_customs_type; legacy customs_type read-fallback). Editable while Draft; read-only otherwise. Options =
     // distinct nonblank carrier_rate_cards.customs_type (never invented). Prefill = the shipment's stored
     // value, else the selected Rate Card's customs_type. Read from the stored snapshot in Overview (never
@@ -1170,7 +1209,7 @@ function _shRenderDbCard(s, planLines, mode) {
         '<div style="font-size:11px;color:#94A3B8;margin-bottom:8px;">Internal ID: ' + _shEsc(sid) + ' <span style="color:#CBD5E1;">(system, not editable)</span></div>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;">' +
             fld('Shipment ID (external)', 'external_shipment_id', s.externalShipmentId) +
-            roField('Carrier (from plan)', s.carrierId) +
+            carrierField() +
             customsFld() +
             fld('Reference ID', 'reference_id', s.referenceId) +
             warehouseFld() +
@@ -1784,7 +1823,14 @@ function shConfirmShipment(shipmentId) {
         sourceWarehouseId: s.sourceWarehouseId || s.shipFrom || '',
         sourceDomain: _shSourceDomain_(s.sourceWarehouseId),
         dest: (s.destination || payload.warehouse_code || s.warehouseId || '—'),
-        carrier: payload.carrier_id || s.carrierId || '—',
+        // S7-R2A — the same resolver the Draft grid uses. The confirm step is the last screen before stock
+        // moves, so it names the carrier and keeps the id beside it rather than choosing between them.
+        carrier: (function () {
+            var d = _shCarrierCell_(payload.carrier_id || s.carrierId);
+            if (d.state === 'NONE') return '—';
+            if (d.state === 'RESOLVED') return d.carrierName + '  ·  ' + d.carrierId;
+            return d.carrierId;
+        })(),
         method: s.shippingMethodDisplay || payload.shipping_method || s.shippingMethod || '—',
         tracking: payload.tracking_number || s.trackingNumber || '—',
         container: payload.container_no || s.containerNo || '—',

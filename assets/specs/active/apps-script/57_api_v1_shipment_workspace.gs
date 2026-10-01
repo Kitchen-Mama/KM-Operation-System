@@ -34,6 +34,14 @@ var SHIP_WORKSPACE_TABLES_ = [
   { name: 'shipment_lines',                requiredCols: ['shipment_id'] },
   { name: 'warehouses',                    requiredCols: ['warehouse_id'] },
   { name: 'carrier_rate_cards',            requiredCols: [] },
+  // S7-R2A — THE CARRIER MASTER, which this read did not carry and all three of its surfaces need.
+  // carrier_name is never stored on a shipment or a rate card (17_ says so in as many words), so a
+  // surface that wants to show a carrier has to resolve the id against this table. 40_ already loads it
+  // for the Weekly read; without it here, Shipment Draft, Shipment Overview and the On-the-Way Map had
+  // nothing to resolve against and printed the raw id. Declared BASE, like 40_, because every surface
+  // this workspace serves displays a carrier - an include flag that every caller must set is a base
+  // table with one extra way to forget.
+  { name: 'carriers',                      requiredCols: ['carrier_id'] },
   { name: 'shipment_routes',               requiredCols: [], optional: true, include: 'routes' },
   { name: 'shipment_events',               requiredCols: [], optional: true, include: 'events' },
   { name: 'logistics_locations',           requiredCols: [], optional: true, include: 'locations' },
@@ -280,6 +288,7 @@ function shipWorkspaceBuild_(tables, payload) {
   tables = tables || {}; payload = payload || {};
   var shipments = tables.shipments || [], lines = tables.shipment_lines || [];
   var warehouses = tables.warehouses || [], carrierRateCards = tables.carrier_rate_cards || [];
+  var carriers = tables.carriers || [];
   var include = payload.include || {};
 
   var linesByShipment = {}; for (var i = 0; i < lines.length; i++) { var sid = shipWsStr_(lines[i].shipment_id); if (sid === '') continue; (linesByShipment[sid] = linesByShipment[sid] || []).push(lines[i]); }
@@ -302,6 +311,9 @@ function shipWorkspaceBuild_(tables, payload) {
     shipmentLines: pageLines,
     warehouses: warehouses,
     carrierRateCards: carrierRateCards,
+    // Raw passthrough, like every other master here: the browser runs the SAME normalizeCarrierRecord the
+    // broad path runs, so the adapted array equals the legacy getCarriers() array exactly.
+    carriers: carriers,
     pagination: { pageNumber: pageResult.pageNumber, pageSize: pageResult.pageSize, totalItems: pageResult.totalItems, totalPages: pageResult.totalPages }
   };
   // MAP-extra tables (On-the-Way) — returned ONLY when requested (bounded includes). F1-7M-B2-1: when the exact-shipment

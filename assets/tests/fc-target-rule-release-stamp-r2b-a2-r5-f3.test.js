@@ -105,6 +105,26 @@ var BASE = 'e583057';   // R25 starts here: the tree after S3-R8's transport bud
 // third kind of member and gets its own list, the same way this suite already partitioned DELETED paths out
 // of the copy list rather than widening the expected set. I1 checks COPY, so it checks both lists; C3 checks
 // STAMPS, so it checks only the stamped one.
+// S7-R2A — STAMPLESS OWNERS: copied, and stamped by nobody.
+//
+// The FOURTH kind of member, and it arrives by the same argument the third did. 57_ changed this release and
+// must be pasted, but it declares no build symbol at all — 63_'s manifest proves it by probing the CALLER's
+// symbol, the way it already does for 16_ and 31_. So it can never appear in C3's "rows whose expected ===
+// RELEASE", and putting it in RELEASE_OWNERS would fix I1 and break C3 for precisely the reason recorded
+// above. Minting a stamp for it to satisfy this ledger would overturn a standing design decision from inside
+// a round whose whole subject is a read projection.
+//
+// I1 checks COPY, so it checks this list. C3 checks STAMPS, so it does not.
+var STAMPLESS_OWNERS = {
+  '57_api_v1_shipment_workspace.gs':
+    'THE SHIPMENT READ WORKSPACE. R38 adds the carriers master to its BASE table set and returns it raw, so '
+    + 'the Shipment Draft, the Confirm summary and the On-the-Way Map can resolve carrier_id to a name. '
+    + 'Without this file copied, those surfaces receive no carriers key at all — which the browser reads as '
+    + 'UNREAD and renders as the bare id, i.e. exactly the behaviour this release set out to fix, failing '
+    + 'quietly rather than loudly. It authors no business logic and no action was added, so the router and '
+    + 'the action-contract version are untouched.'
+};
+
 var GENERATED_OWNERS = {
   '90_generated_supply_planning_bundle.gs':
     'THE GENERATED SHARED CORE. S5-R4 added the recommendation ACTION + reason derivation to KMREC, and this '
@@ -128,29 +148,27 @@ var RELEASE_OWNERS = {
   // path, the campaign line writer and the FC Summary read workspace; R33 changes the OVERSEAS INVENTORY
   // LIFECYCLE and the two shipment handlers that call it. 14_, 20_ and 58_ therefore leave and keep the R32
   // stamp they earned — marching them to R33 would erase the one fact a per-module stamp carries.
-  // S6-R8A — THE SEVENTEENTH SWAP. 22_ comes BACK into ownership after four releases carried at R33, and
-  // the reason is the one a per-module stamp exists for: the dispatcher's source selection changed, which
-  // is invisible in every other part of a deployment report. 90_ does NOT move — no core module changed, so
-  // the bundle is not rebuilt and its content hash is the same bytes it was at R36.
-  '22_shipment_dispatch_handlers.gs':
-    'DECLARED_SOURCE_ONLY. The deduct plan was built from every factory_stock row matching the SKU, sorted '
-    + 'by warehouse_id, each planned line carrying the warehouse of the row it had picked \u2014 the Shipment\'s '
-    + 'own source_warehouse_id did not appear in this file at all. So an OVERSEAS source was checked for '
-    + 'sufficiency against factory_stock and refused "Insufficient factory stock" for units reserved and '
-    + 'present in the overseas snapshot, and a FACTORY shipment could be deducted from a warehouse it never '
-    + 'declared. R37 resolves the declared warehouse first, classifies its domain through 12_\'s owner, and '
-    + 'resolves ONE inventory row inside that domain. The SKU-wide loader is gone with it. NO quantity '
-    + 'authority changed and no stored row shape changed.',
-  // S6-R7A — THE SIXTEENTH SWAP, and the smallest release this ledger has recorded: ONE stamped owner.
-  // R36 changes nothing an operator can see in a handler. It changes KMSNF, inside the generated bundle,
-  // so that the freshness authority stops refusing a complete snapshot from the previous business day
-  // merely because the month rolled over between them. 05_ and 21_ LEAVE OWNERSHIP AT R36 and keep the R35
-  // they earned — neither file changed, and R35's vocabulary correction is the one fact their stamps carry.
+  // S7-R2A — THE EIGHTEENTH SWAP, and the smallest owner set this ledger has carried: 63_ alone.
+  //
+  // 22_ LEAVES OWNERSHIP AT R38 and keeps the R37 it earned one release ago. R38 is a READ round: 57_ gains
+  // the carriers master so three shipment surfaces can name a carrier instead of printing its id. The
+  // dispatcher was not touched, and marching its stamp would erase the one fact it carries — that
+  // DECLARED_SOURCE_ONLY landed in R37.
+  //
+  // 57_ IS THE FILE THIS ROUND CHANGED AND IT IS NOT HERE, which is not an omission. It declares no build
+  // symbol; 63_'s manifest proves it by probing the CALLER's symbol instead, and this map is keyed by files
+  // that carry a stamp. The release moves because 57_ is sync-visible; the stamp moves on the manifest that
+  // records it.
+  //
+  // 90_ does NOT move: no core module changed, so the bundle is not rebuilt and its content hash is the same
+  // bytes it was at R36.
   '63_api_v1_system_health.gs':
-    'THE MANIFEST. R37 moves exactly two expected values: 22_\'s, because the dispatcher changed, and its '
-    + 'own, because carrying 22_\'s row IS a change to this file. 90_\'s content hash is NOT touched \u2014 no core '
-    + 'module changed, so the bundle was not rebuilt, and marching a content hash that nothing produced would '
-    + 'be the one thing a content hash is supposed to make impossible. R36\'s owners keep R36.',
+    'THE MANIFEST. R38 moves exactly one expected value — its own — because carrying a release that changed '
+    + 'a sync-visible backend file IS a change to this file. 57_ gains the carriers master so the Shipment '
+    + 'Draft, the Confirm summary and the On-the-Way Map resolve carrier_id to a name through ONE shared '
+    + 'presentation resolver instead of printing the id. No router action was added or removed, so the '
+    + 'action-contract version does NOT move; bumping it to look current is the self-reference this file\'s '
+    + 'own header warns about. 90_\'s content hash is untouched — no core module changed.',
 };
 
 // Owners that must be COPIED but whose stamp belongs to an EARLIER unshipped release. Each entry is the
@@ -160,6 +178,9 @@ var RELEASE_OWNERS = {
 // reports the round a release was cut in, not the round the file changed in, and then it can no longer
 // distinguish a synced copy from a stale one, which is the single thing it is for.
 var RELEASE_CARRIED = {
+  // S7-R2A — THE EIGHTEENTH SWAP. 22_ LEAVES OWNERSHIP AT R38 after one release as an owner and keeps R37,
+  // the round DECLARED_SOURCE_ONLY actually landed in. R38 changes a read projection and no handler.
+  '22_shipment_dispatch_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R37',
   // S6-R7A — THE SIXTEENTH SWAP. 05_ and 21_ LEAVE OWNERSHIP AT R36 after one release as owners. R36 is a
   // snapshot-freshness round inside the generated bundle; it touches no handler, no vocabulary and no stored
   // row, so marching either stamp would report the release this was cut in rather than the round the file
@@ -801,10 +822,11 @@ section('I. THE SYNC LIST IS EXACTLY THE DECLARED OWNERS');
   var copy = status.filter(function (r) { return r.st !== 'D'; }).map(function (r) { return r.file; }).sort();
   var gone = status.filter(function (r) { return r.st === 'D'; }).map(function (r) { return r.file; }).sort();
 
-  // S5-R6: three kinds of member, one copy list — changed this release, carried from an earlier unshipped
-  // one, and generated. All three are pasted; only the first expects the current release.
+  // S5-R6 / S7-R2A: FOUR kinds of member, one copy list — changed this release, carried from an earlier
+  // unshipped one, generated, and changed-but-stampless. All four are pasted; only the first expects the
+  // current release.
   eq(copy, Object.keys(RELEASE_OWNERS).concat(Object.keys(RELEASE_CARRIED))
-    .concat(Object.keys(GENERATED_OWNERS)).sort(),
+    .concat(Object.keys(GENERATED_OWNERS)).concat(Object.keys(STAMPLESS_OWNERS)).sort(),
     'I1  exactly the declared release owners are to be COPIED — no Apps Script file rode along');
   eq(gone, [],
     'I1a and NOTHING is to be deleted — the one-shot helper was retired in R2B-A2-R6, before this base');
