@@ -248,7 +248,11 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 // price for a site whose prices exist. The reverse — new 58_, old page — is inert: nothing asks for the
 // slice and the four primary-render tables are byte-identical to what they were. So the backend goes
 // first, and the frontend deploy is what completes the repair. 01_router, 14_, 47_ and 73_ do NOT move.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R35';
+// S6-R7A — R36. The ONLY runtime change is inside the generated bundle: KMSNF no longer refuses a complete
+// snapshot from the previous business day merely because the month rolled over, which it did for most of a
+// working day on the 1st of every month. 63_ moves because it declares 90_'s content hash. No other .gs file
+// changed and no other stamp moves. BACKEND FIRST is not asymmetric here — there is no frontend half.
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R36';
 // 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
 // R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
 // not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
@@ -287,7 +291,8 @@ var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R35';
 // contract is untouched; a pure planner that no route reaches is not a new vocabulary.
 // S5-R7A - moved because THIS FILE changed: the release above, its own expected stamp, 47_'s expected stamp
 // and 90_'s content hash. No action was added or removed and the transport contract is untouched.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R35';
+// S6-R7A - moved for the same reason again: the release above, its own expected stamp and 90_'s content hash.
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R36';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -558,7 +563,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R35', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R36', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
   // PRICING-R2 — 73_ IS REQUIRED FROM ITS FIRST RELEASE, AND DELIBERATELY NOT OPTIONAL, for the reason a
   // WRITE owner is always the worst partial sync: 01_router.gs dispatches pricing.update to
   // handlePricingUpdate_, so a deployment carrying the router without this file routes a live price write
@@ -694,7 +699,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // Its absence is NOT loud. 13_ guards on typeof KMPD.resolveTargetRule and returns null when it is missing,
   // and a null target is a SKIPPED month, not an error: an old bundle makes the procurement forecast quietly
   // drop months. An old-but-present bundle is worse still -- it resolves by the retired first-row-wins rule.
-  { file: '90_generated_supply_planning_bundle.gs', symbol: 'KM_BUNDLE_CONTENT_HASH_', expected: 'c6080ffce8b0d4ac6ff888490c3d489e9824411ab2103281a1baad3d2d2b733d', owns: 'the generated shared-core bundle (60 UMD modules) incl. KMPD.resolveTargetRule — the ONE Target Rule authority every server consumer delegates to; identified by content hash, never by a hand-typed stamp' },
+  { file: '90_generated_supply_planning_bundle.gs', symbol: 'KM_BUNDLE_CONTENT_HASH_', expected: '46ae3945061fefe45748f5fc7e8adf7624e20057da44b9ba9746be5a6eea5695', owns: 'the generated shared-core bundle (60 UMD modules) incl. KMPD.resolveTargetRule — the ONE Target Rule authority every server consumer delegates to; identified by content hash, never by a hand-typed stamp' },
   { file: '22_shipment_dispatch_handlers.gs', symbol: 'CSD_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R33', owns: 'Confirm Shipment & Dispatch: deduction + reservation release through the shared authority + the cancelled-shipment dispatch refusal. R33 routes the consume by source domain: a factory line deducts current stock and releases its hold on one row, while an OVERSEAS line moves reserved DOWN and leaves wh_available_stock alone, because those units left available when they were reserved' },
   // F1-7N-FB-4E-R4B-R3 §1 - moved with the file. R4B-R2 changed the GET read dispatch; leaving the manifest at
   // R4A1 would have made a CORRECTLY synced router report as stale, and an UNSYNCED one report as current.

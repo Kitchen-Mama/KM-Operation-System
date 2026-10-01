@@ -133,6 +133,48 @@ eq(assess({ nowMs: at('2026-09-04', '10:41'), snapshotDates: [snap('2026-08-20')
   'LINEAGE_MISMATCH', 'S8  §12.8 a snapshot from another planning cycle blocks');
 eq(assess({ nowMs: at('2026-09-04', '10:41'), snapshotDates: [snap('2026-09-05')] }).state,
   'LINEAGE_MISMATCH', 'S8a a FUTURE-dated snapshot is wrong, not fresh');
+// ---- S6-R7A. THE MONTH BOUNDARY, which this authority got wrong for twelve days of every year ----------
+//
+// The cycle on both sides of the lineage comparison is derived from a DATE (61_ builds the snapshot's as
+// 'RECO-' + calculation_date.slice(0, 7); the plan's comes from today). So the comparison was
+// monthOf(snapshot) === monthOf(today), and on the 1st it ran BEFORE the schedule rules and overruled them:
+// a complete snapshot from the last day of the previous month was refused LINEAGE_MISMATCH all morning.
+// Measured on the tree before the fix, at 15:00 Taipei: 09-30 and 10-15 accepted, 10-01, 11-01 and 01-01
+// refused. These five cases are written by hand so the suite states the boundary rather than deriving it
+// from a clock and asserting whatever that clock produces.
+function roll(nowYmd, hhmm, snapYmd) {
+  return KMSNF.assess({ nowMs: at(nowYmd, hhmm), utcOffsetMinutes: TZ, schedule: SCH,
+    expectedPlanningCycle: 'RECO-' + nowYmd.slice(0, 7), snapshotDates: [snap(snapYmd)] });
+}
+eq(roll('2026-10-01', '15:00', '2026-09-30').state, 'CURRENT_DURING_REFRESH',
+  'S8b  on the 1st, the previous day complete snapshot is still the authority INSIDE the refresh window');
+ok(roll('2026-10-01', '15:00', '2026-09-30').ok === true, 'S8b1 and it is accepted');
+eq(roll('2026-10-01', '02:00', '2026-09-30').state, 'CURRENT_PRE_SCHEDULE',
+  'S8c  and before the run is due it is current, not stale - nothing newer exists');
+eq(roll('2027-01-01', '15:00', '2026-12-31').state, 'CURRENT_DURING_REFRESH',
+  'S8d  the YEAR rollover is the same day of the same rule, and was failing too');
+eq(roll('2028-03-01', '15:00', '2028-02-29').state, 'CURRENT_DURING_REFRESH',
+  'S8e  and a leap February rolls over on its 29th');
+// AND THE EXEMPTION IS ONE DAY WIDE, in every direction. These are the claims that stop it becoming a
+// general age tolerance, which is exactly what the top of the module says this must never be.
+eq(roll('2026-10-01', '18:00', '2026-09-30').state, 'REFRESH_OVERDUE',
+  'S8f  past the overdue hour the SAME row is refused - and now with the truthful code, not a lineage one');
+ok(roll('2026-10-01', '18:00', '2026-09-30').ok !== true, 'S8f1 and it is not accepted');
+eq(roll('2026-10-02', '02:00', '2026-09-30').state, 'LINEAGE_MISMATCH',
+  'S8g  two days back across the boundary is still a foreign lineage, at any hour');
+eq(roll('2026-11-01', '02:00', '2026-09-30').state, 'LINEAGE_MISMATCH',
+  'S8h  and a whole month back is refused even pre-schedule, where no other rule would catch it');
+// The plan's cycle is NOT always the current month - 61_ takes body.planningCycle when the client sends
+// one. A first version of the fix exempted the previous business day outright and accepted this; B7 in the
+// typed-sheet suite caught it. Pinned here too, at the boundary, where it is easiest to get wrong again.
+eq(KMSNF.assess({ nowMs: at('2026-10-01', '15:00'), utcOffsetMinutes: TZ, schedule: SCH,
+  expectedPlanningCycle: 'RECO-2026-08', snapshotDates: [snap('2026-09-30')] }).state, 'LINEAGE_MISMATCH',
+  'S8i  planning an EXPLICIT past cycle still refuses yesterday - the exemption is for the current cycle only');
+ok(roll('2026-10-01', '15:00', '2026-09-30').detail.monthRolloverCarry === true,
+  'S8j  and the verdict SAYS it took the rollover branch, so this is visible in a diagnostic');
+ok(roll('2026-10-15', '15:00', '2026-10-14').detail.monthRolloverCarry === false,
+  'S8j1 while an ordinary day never takes it - there is no mismatch to exempt');
+ok(roll('2026-10-15', '15:00', '2026-10-14').ok === true, 'S8j2 and is accepted by the schedule rules alone');
 eq(assess({ nowMs: at('2026-09-04', '10:41'), snapshotDates: [] }).state,
   'NO_COMPLETE_SNAPSHOT', 'S9  §12.9 nothing at any date blocks');
 eq(assess({ nowMs: at('2026-09-04', '10:41'), snapshotDates: [snap('2026-09-03', { status: 'BLOCKED' })] }).state,
@@ -478,11 +520,34 @@ mut('N7  the module reads its own clock instead of being given one', function ()
   return /!isInt\(input\.nowMs\)/.test(KMSNF_SRC) && !/!isInt\(input\.nowMs\)/.test(m);
 });
 mut('N8  a stale-lineage snapshot from another cycle is accepted', function () {
-  var m = swap(KMSNF_SRC, "    if (wantCycle && haveCycle && wantCycle !== haveCycle) {", "    if (false) {");
+  var m = swap(KMSNF_SRC,
+    "    if (wantCycle && haveCycle && wantCycle !== haveCycle && !isMonthRolloverCarry) {", "    if (false) {");
   var K = loadKmsnf(m);
   return K.assess({ nowMs: at('2026-09-04', '10:41'), utcOffsetMinutes: TZ, schedule: SCH,
     expectedPlanningCycle: 'RECO-2026-09', snapshotDates: [snap('2026-08-20')] }).ok === true;
 });
+var NLX = '\r\n';
+// S6-R7A - the rollover exemption, widened into the general age tolerance the module forbids. Without this,
+// the whole clause could be loosened to `only.date === prevDay` and every assertion above would still pass
+// except B7's cousin S8i - and a mutant that only one far-away claim catches is one nobody will trust.
+mut('N8a the month-rollover exemption is widened into a plain previous-day tolerance', function () {
+  var m = swap(KMSNF_SRC,
+    "      && (wantCycle === 'RECO-' + now.ymd.slice(0, 7))" + NLX
+    + "      && (haveCycle === 'RECO-' + prevDay.slice(0, 7));", "      && true;");
+  var K = loadKmsnf(m);
+  return K.assess({ nowMs: at('2026-10-01', '15:00'), utcOffsetMinutes: TZ, schedule: SCH,
+    expectedPlanningCycle: 'RECO-2026-08', snapshotDates: [snap('2026-09-30')] }).ok === true;
+});
+// And the opposite direction: the exemption removed altogether is the defect this round repaired.
+mut('N8b the month-rollover exemption is removed, so the 1st of the month refuses a healthy snapshot',
+  function () {
+    var m = swap(KMSNF_SRC,
+      "    var isMonthRolloverCarry = (wantCycle !== haveCycle) && (only.date === prevDay)",
+      "    var isMonthRolloverCarry = false && (only.date === prevDay)");
+    var K = loadKmsnf(m);
+    return K.assess({ nowMs: at('2026-10-01', '15:00'), utcOffsetMinutes: TZ, schedule: SCH,
+      expectedPlanningCycle: 'RECO-2026-10', snapshotDates: [snap('2026-09-30')] }).state === 'LINEAGE_MISMATCH';
+  });
 mut('N9  the scope allowlist can be widened from a request', function () {
   var m = swap(CFG, "  if (!c || !k || !m || !s) return false;", "  if (!c || !k || !m || !s) return true;");
   var c2 = vm.createContext({ String: String, RegExp: RegExp, console: console });

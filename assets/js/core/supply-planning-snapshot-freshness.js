@@ -70,6 +70,21 @@
 
   // The business calendar day and minute-of-day at an epoch instant, in a FIXED-offset zone. Asia/Taipei has no
   // DST, which is why a fixed offset is correct here and would not be for a zone that observes it.
+  // The business day BEFORE a business day. String arithmetic, not Date subtraction: a Date minus 86400000 is
+  // an instant, and the question here is which calendar day precedes this one across a month, a year and a leap
+  // February. 43_ owns the same derivation for the job context; this module takes no dependency on it, by design.
+  function prevYmd(ymd) {
+    var y = +ymd.slice(0, 4), m = +ymd.slice(5, 7), d = +ymd.slice(8, 10);
+    d -= 1;
+    if (d < 1) {
+      m -= 1;
+      if (m < 1) { m = 12; y -= 1; }
+      var leap = (y % 4 === 0 && y % 100 !== 0) || (y % 400 === 0);
+      d = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1];
+    }
+    return y + '-' + (m < 10 ? '0' : '') + m + '-' + (d < 10 ? '0' : '') + d;
+  }
+
   function businessNow(nowMs, offsetMinutes) {
     var d = new Date(nowMs + offsetMinutes * 60000);
     var y = d.getUTCFullYear(), m = d.getUTCMonth() + 1, day = d.getUTCDate();
@@ -237,10 +252,45 @@
     out.detail.snapshotDate = only.date;
 
     // ---- (3) LINEAGE ---------------------------------------------------------------------------------------
+    // S6-R7A — AND THE PREVIOUS BUSINESS DAY IS NOT ANOTHER LINEAGE. IT IS WHAT RULE (1) IS ABOUT.
+    //
+    // The caller holds no independent cycle for a snapshot: 61_ builds `planningCycle` as
+    // 'RECO-' + calculation_date.slice(0, 7), and the fallback on the next line does the same. So on BOTH sides
+    // of this comparison the cycle is a RESTATEMENT OF A DATE, and comparing them is monthOf(snapshot) ===
+    // monthOf(today) wearing a lineage name — the exact calendar comparison the top of this file exists to have
+    // removed. It agrees with the schedule on twenty-nine days in thirty and contradicts it on the first of the
+    // month, where it runs FIRST and so decides instead of it.
+    //
+    // WHAT THAT COST IN PRODUCTION. Between midnight and the hour today's 13:30 materialization is overdue, the
+    // newest snapshot in existence is the previous day's. On the 1st that day is in the previous month, so every
+    // scope was refused LINEAGE_MISMATCH — a code meaning 'this snapshot came from another run', about data that
+    // was complete and healthy. Twelve days a year, the 1st of January among them, each for most of a working day.
+    // Measured at 15:00 Taipei on a clean tree: 09-30 CURRENT_DURING_REFRESH, 10-01 LINEAGE_MISMATCH,
+    // 10-15 CURRENT_DURING_REFRESH, 11-01 LINEAGE_MISMATCH, 12-31 CURRENT_DURING_REFRESH, 01-01 LINEAGE_MISMATCH.
+    //
+    // NOTHING ELSE IS WEAKENED, AND THE EXEMPTION NAMES THE ONE SITUATION IT IS FOR. `expectedPlanningCycle` is
+    // not always the current month: 61_ takes body.planningCycle when the client sends one, so an operator
+    // planning a PAST cycle is a real request, and a recent snapshot must stay refused for it. A first version of
+    // this exempted 'the previous business day' outright and accepted that too — the owner suite's B7 caught it,
+    // which is the whole reason it is written as a specific case here rather than as a general tolerance. All
+    // three conditions must hold: the plan is for TODAY's cycle, the snapshot is YESTERDAY's, and each cycle is
+    // the plain month of its own date. Any other mismatch returns LINEAGE_MISMATCH exactly as before, and rules
+    // (1) and (2) still decide whether the exempted row may actually be USED — before the run is due it is
+    // CURRENT_PRE_SCHEDULE, in flight CURRENT_DURING_REFRESH, and past the overdue hour the same row is refused
+    // REFRESH_OVERDUE, which is the truthful diagnosis this case always deserved. On the other ~353 days of the
+    // year the previous day shares today's month, so this clause cannot change an outcome at all.
     var wantCycle = str(input.expectedPlanningCycle);
     var haveCycle = only.planningCycle || ('RECO-' + only.date.slice(0, 7));
     out.detail.snapshotCycle = haveCycle;
-    if (wantCycle && haveCycle && wantCycle !== haveCycle) {
+    var prevDay = prevYmd(now.ymd);
+    // The flag is the EXEMPTION, not the shape: it is true only when a mismatch exists AND this is the carry
+    // across the month boundary. A version of it that was also true on ordinary days (where the cycles simply
+    // agree) would be reported in every diagnostic and mean nothing in any of them.
+    var isMonthRolloverCarry = (wantCycle !== haveCycle) && (only.date === prevDay)
+      && (wantCycle === 'RECO-' + now.ymd.slice(0, 7))
+      && (haveCycle === 'RECO-' + prevDay.slice(0, 7));
+    out.detail.monthRolloverCarry = isMonthRolloverCarry;
+    if (wantCycle && haveCycle && wantCycle !== haveCycle && !isMonthRolloverCarry) {
       out.state = STATES.LINEAGE_MISMATCH;
       out.reason = 'the snapshot belongs to ' + haveCycle + ' and this plan is ' + wantCycle;
       return out;

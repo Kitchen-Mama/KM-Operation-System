@@ -1527,7 +1527,13 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // round IT last changed, and marching it here would erase that fact to make a number tidy.
   'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R31',
   'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32',
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R33', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R34', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R35'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R33', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R34', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R35',
+  // S6-R7A — the snapshot freshness authority stops refusing a healthy snapshot on the first of the month.
+  // KMSNF changes, so the generated bundle is rebuilt and its content hash moves, and 63_ is where that hash
+  // is declared. The shape is R26's exactly, and so is the ruling: 63_ is the ONLY single-stamp owner this
+  // round edits, 90_ carries no hand-typed stamp because it is identified BY its content hash, and R35's
+  // owners (05_, 21_) keep the stamp they earned there — neither file changed.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R36'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));
