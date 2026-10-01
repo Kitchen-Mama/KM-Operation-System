@@ -128,32 +128,18 @@ var RELEASE_OWNERS = {
   // path, the campaign line writer and the FC Summary read workspace; R33 changes the OVERSEAS INVENTORY
   // LIFECYCLE and the two shipment handlers that call it. 14_, 20_ and 58_ therefore leave and keep the R32
   // stamp they earned — marching them to R33 would erase the one fact a per-module stamp carries.
-  '21_factory_inventory_handlers.gs':
-    'THE FACTORY MOVEMENT VOCABULARY, CORRECTED TO SIX. shipment_receipt leaves it. R1 listed the type '
-    + 'here so that a reader of the FACTORY ledger could not call it unknown, and its own entry in R1\'s '
-    + 'axis table recorded what was wrong with that: axis `neither`, table overseas_inventory_movements. '
-    + 'No factory writer has ever emitted it and the only writer that does — 31_, the warehouse receipt — '
-    + 'appends to the overseas ledger, so the one thing its membership bought was the opposite of what the '
-    + 'list is for: a shipment_receipt row in factory_stock_movements would have been silently accepted as '
-    + 'known when it is exactly the misfiling worth reporting. No writer changed and no stored row changed; '
-    + 'this file\'s first stamp rotation since FC-1A-R1, which is a nine-release gap.',
-  '05_overseas_inventory_handlers.gs':
-    'THE OVERSEAS MOVEMENT VOCABULARY, DERIVED FROM ITS WRITERS. It gains the two members this ledger '
-    + 'already carried and did not declare: manual_adjustment, written to overseas_inventory_movements by '
-    + 'this file\'s own adjustment handler since long before R4B, and shipment_receipt, written to the same '
-    + 'table by 31_. Neither is new and neither is a synonym — they are existing events the declared '
-    + 'vocabulary did not name, which is the one way a closed vocabulary can be wrong without anybody '
-    + 'noticing. The ovsApplyDeltaTx_ guard moves OFF the vocabulary and onto OVSTX_TX_WRITABLE_TYPES_, '
-    + 'which makes it STRICTER: it used to accept inventory_import, which no caller passes, and widening '
-    + 'the vocabulary without splitting the two would have let a warehouse receipt be booked through the '
-    + 'reservation transaction. inventory_import stays DECLARED BUT UNWRITTEN — removing a declaration R4B '
-    + 'made deliberately is a decision about that round\'s contract, not this round\'s to take.',
+  // S6-R7A — THE SIXTEENTH SWAP, and the smallest release this ledger has recorded: ONE stamped owner.
+  // R36 changes nothing an operator can see in a handler. It changes KMSNF, inside the generated bundle,
+  // so that the freshness authority stops refusing a complete snapshot from the previous business day
+  // merely because the month rolled over between them. 05_ and 21_ LEAVE OWNERSHIP AT R36 and keep the R35
+  // they earned — neither file changed, and R35's vocabulary correction is the one fact their stamps carry.
   '63_api_v1_system_health.gs':
-    'THE MANIFEST. R35 moves THREE expected stamps — 21_, 05_ and its own. 11_ and 12_ are deliberately NOT '
-    + 'moved: neither changed this round, and marching them would erase the R34 they earned. NO ACTION, NO '
-    + 'HANDLER AND NO STORED ROW CHANGED IN R35 AT ALL — it is a vocabulary correction, which is precisely '
-    + 'the kind of change a per-module stamp exists to make visible, because nothing else about the '
-    + 'deployment would show it.',
+    'THE MANIFEST, AND THE ONLY STAMPED OWNER. R36 moves exactly two expected values: 90_\'s content hash, '
+    + 'because KMSNF changed and the bundle was rebuilt from it, and 63_\'s own, because moving that hash IS '
+    + 'a change to this file. The shape is R26\'s precisely, and this suite\'s own note against GENERATED_OWNERS '
+    + 'explains why it cannot be anything else: a generated artifact is identified by its content hash and '
+    + 'never by a hand-typed stamp, so 90_ can never appear in C3\'s stamped set. NO ACTION, NO HANDLER AND NO '
+    + 'STORED ROW CHANGED, and no .gs file outside this one was edited at all.',
 };
 
 // Owners that must be COPIED but whose stamp belongs to an EARLIER unshipped release. Each entry is the
@@ -163,6 +149,12 @@ var RELEASE_OWNERS = {
 // reports the round a release was cut in, not the round the file changed in, and then it can no longer
 // distinguish a synced copy from a stale one, which is the single thing it is for.
 var RELEASE_CARRIED = {
+  // S6-R7A — THE SIXTEENTH SWAP. 05_ and 21_ LEAVE OWNERSHIP AT R36 after one release as owners. R36 is a
+  // snapshot-freshness round inside the generated bundle; it touches no handler, no vocabulary and no stored
+  // row, so marching either stamp would report the release this was cut in rather than the round the file
+  // changed in — and R35 is the round they changed in.
+  '05_overseas_inventory_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R35',
+  '21_factory_inventory_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R35',
   // S6-R6 — THE FIFTEENTH SWAP. 11_ and 12_ LEAVE OWNERSHIP AT R35 and keep the R34 they earned; 05_ comes
   // BACK into ownership after one release out, and 21_ enters it for the first time since FC-1A-R1. A file
   // moving out and back within two releases is the ledger doing its job in both directions.
