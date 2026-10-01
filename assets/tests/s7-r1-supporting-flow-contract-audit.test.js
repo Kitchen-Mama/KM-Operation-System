@@ -72,6 +72,10 @@ var ROUTER = SRC['01_router.gs'];
 var ADAPTER = read(JSA + 'operation-system-db-api.js');
 var PAGES = {};
 PAGE_FILES.forEach(function (f) { PAGES[f] = read(JSP + f); });
+var index = read('../index.html');
+var APPJS = read('js/app.js');
+// The staged-section registry is the repo's existing mechanism for withholding a route from production.
+var KM_STAGED = (/var KM_STAGED_SECTIONS_ = \{([\s\S]*?)\n\};/.exec(APPJS) || ['', ''])[1];
 
 // ---- the three joins, as functions, so a mutant can re-run them over a changed source --------------------
 function routerActions(routerSrc) {
@@ -691,6 +695,136 @@ mut('L2 would catch a routed handler defined twice', function () {
   return files.filter(function (f) {
     return new RegExp('^function\\s+' + h + '\\s*\\(', 'm').test(src[f]);
   }).length === 2;
+});
+
+// ==========================================================================================================
+section('M  S7-R2 DECISION FREEZE — each decision as the property of the tree it constrains');
+// ==========================================================================================================
+
+// ---- D-S7-1  FORECAST REVIEW = DEFERRED_UNCHANGED ------------------------------------------------
+// Superseded in flight: the first instruction was to hide it, the operator then froze it UNCHANGED. So
+// the assertion is not about a nav guard — it is that S7 leaves the page exactly as it found it. The
+// audit finding stands and is recorded; it is simply not S7's to act on.
+eq(count(index, /showSection\('forecast'\)/g), 1,
+  'M1  the Forecast navigation entry is still present and unguarded');
+ok(PAGE_FILES.indexOf('forecast.js') !== -1 && PAGES['forecast.js'].length > 50000,
+  'M1a the source is intact — FORECAST_REVIEW_SOURCE_DELETED = NO');
+eq(count(bare(PAGES['forecast.js']), /KM\.DB\.|KM\.api\./g), 0,
+  'M1b and it still makes no backend call, which is the recorded finding rather than a defect to fix');
+eq(KM_STAGED.indexOf('forecast'), -1,
+  'M1c it was NOT added to the staged-section registry — no nav mechanism was applied to it');
+
+// ---- D-S7-2  PO DOCUMENT PANEL = PHASE1_REQUIRED -------------------------------------------------
+// The freeze is that the panel is a READ/RECOVERY PROJECTION over the existing engine. What a future
+// round must not do is build a second index, so the constraint is stated as owner identity.
+['document.list', 'document.get', 'document.retry'].forEach(function (a, i) {
+  ok(RACT.indexOf(a) !== -1, 'M2.' + (i + 1) + ' the panel read owner already exists: ' + a);
+});
+var docHandlerOwners = ['handleEntityDocumentList_', 'handleGeneratedDocumentGet_', 'handleDocumentRetry_']
+  .map(function (h) {
+    return AS_FILES.filter(function (f) {
+      return new RegExp('^function\\s+' + h + '\\s*\\(', 'm').test(SRC[f]);
+    }).join(',');
+  });
+eq(uniq(docHandlerOwners), ['39_document_runtime_service.gs'],
+  'M2a all three are owned by ONE module — DOCUMENT_PANEL_SECOND_READ_AUTHORITY_COUNT = 0');
+eq(uniq(AS_FILES.filter(function (f) { return /function handleShipmentDocumentGenerate_/.test(SRC[f]); })),
+  ['36_document_template_handlers.gs'],
+  'M2b and generation keeps its own existing owner — SECOND_DOCUMENT_ENGINE_CREATED = NO');
+
+// ---- D-S7-3  TEMP DEPLOYABLE POLICY -------------------------------------------------------------
+eq(AS_TEMP.length, 7, 'M3  DEPLOYABLE_TEMP_COUNT_PRE = 7');
+eq(tempCalledByProduction, [],
+  'M3a PRODUCTION_REQUIRED_TEMP_COUNT = 0 — no production code calls a TEMP symbol, so the final deploy '
+  + 'target of 0 is reachable without proving an exception');
+// The demo seed is the named safety case, and the claim is that it really can write.
+var SEED = SRC['TEMP_demo_shipping_shipment_map_seed_v2.gs'];
+ok(/DEMO4A_WRITE_ORDER_\s*=\s*\[/.test(SEED) && /appendRow\(/.test(SEED) && /deleteRow\(/.test(SEED),
+  'M3b TEMP_demo_shipping_shipment_map_seed_v2 has a real write path (appendRow + deleteRow rollback)');
+['shipping_plans', 'shipping_plan_lines', 'shipments', 'shipment_lines', 'shipment_routes',
+  'shipment_events'].forEach(function (t) {
+  ok(SEED.indexOf("'" + t + "'") !== -1, 'M3b1 and it names the business table ' + t);
+});
+
+// ---- Sec7  DEAD TEMP REFERENCES, and a correction to S7-R1 --------------------------------------
+// R1 reported that retiring the three SAFE-TO-RETIRE files would strand three production messages. That
+// conflated two sets. Every symbol named in a production message belongs to a ONE-TIME MIGRATION file,
+// and none belongs to a safe-to-retire one — which is what makes the R4 cleanup cheap.
+var NAMED_IN_MESSAGES = ['TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY',
+  'TEMP_AI_LIFECYCLE_MIGRATE_DRY_RUN', 'TEMP_AI_LIFECYCLE_MIGRATE_COMMIT',
+  'TEMP_AI_LIFECYCLE_SCHEMA_VALIDATE'];
+var SAFE_TO_RETIRE = ['TEMP_request_order_send_diagnostics.gs', 'TEMP_draft_migration_diagnostic.gs',
+  'TEMP_order_planning_draft_readback_diagnose.gs'];
+var namedHomes = NAMED_IN_MESSAGES.map(function (n) {
+  return AS_TEMP.filter(function (f) {
+    return new RegExp('^function\\s+' + n + '\\s*\\(', 'm').test(SRC[f]);
+  }).join(',');
+});
+eq(uniq(namedHomes), ['TEMP_migrate_request_order_draft_v2.gs',
+  'TEMP_migrate_shipping_allocation_ai_lifecycle.gs'],
+  'M4  every symbol named in a production message lives in a one-time MIGRATION file');
+eq(namedHomes.filter(function (h) { return SAFE_TO_RETIRE.indexOf(h) !== -1; }), [],
+  'M4a and NONE of them lives in a safe-to-retire file — so removing those three strands no message. '
+  + 'S7-R1 said otherwise and was wrong');
+NAMED_IN_MESSAGES.forEach(function (n, i) {
+  ok(AS_PERM.some(function (f) { return SRC[f].indexOf(n) !== -1; }),
+    'M4b.' + (i + 1) + ' ' + n + ' is still named in production guidance — DEAD_TEMP_REFERENCE_ALLOWED = NO');
+});
+
+// ---- Sec2  CARRIER NAME: id canonical, name derived --------------------------------------------
+eq(count(code(SRC['12_shipment_handlers.gs']), /carrier_name/g), 0,
+  'M5  carrier_name is NOT persisted by the shipment owner');
+eq(count(code(SRC['11_shipping_plan_handlers.gs']), /carrier_name/g), 0,
+  'M5a nor by the plan owner — CARRIER_NAME_PERSISTENCE_REQUIRED = NO');
+ok(/carrier:\s*\{\s*id:[^}]*name:/.test(F40),
+  'M5b the Weekly read already DERIVES the name at read time, which is the shape R2A must copy');
+
+// ---- Sec4  CARRIER LEAD TIME: the live schema, audited before the slice is frozen ---------------
+var LT_HEADERS = /var CARRIER_LEAD_TIMES_HEADERS_ = \[([\s\S]*?)\]/.exec(F17)[1]
+  .split(',').map(function (x) { return x.replace(/['\s]/g, ''); }).filter(Boolean);
+eq(LT_HEADERS, ['lead_time_id', 'carrier_id', 'origin_country', 'destination_country',
+  'shipping_method', 'last_mile_delivery', 'min_days', 'max_days', 'avg_days',
+  'created_at', 'updated_at'],
+  'M6  the live carrier_lead_times header, read from the owner rather than from a document');
+eq(LT_HEADERS.filter(function (c) { return /status|is_active|active/.test(c); }), [],
+  'M6a there is NO status/active column, so the slice inherits no status semantics and must invent none '
+  + '— NEW_COLUMNS_REQUIRED = NONE');
+
+// The constraint that decides what the maintenance path must refuse.
+var RA = read('js/core/supply-planning-route-authority.js');
+var LEAD_FN = /function leadDays\(query, leadTimes, method, opts\)[\s\S]*?\n  }/.exec(RA)[0];
+eq(count(LEAD_FN, /carrierId/g), 0,
+  'M7  leadDays does NOT join on carrier — a lead time resolves as a LANE property');
+ok(/lt\.methodKey === key/.test(LEAD_FN) && /axisOk\(lt\.originCountry/.test(LEAD_FN)
+  && /axisOk\(lt\.destinationCountry/.test(LEAD_FN) && /lt\.lastMileDelivery/.test(LEAD_FN),
+  'M7a its key is methodKey + origin + destination + last-mile');
+ok(/\.filter\(function \(r\) \{ return isFinite\(r\.avgDays\); \}\)\[0\]/.test(LEAD_FN),
+  'M7b and it takes the FIRST matching row. Two rows on one lane tuple are silently resolved to one — '
+  + 'the same first-row pick S6-R8A froze out of dispatch. S7-R3 must refuse a duplicate lane at the '
+  + 'WRITE path, because this read will not');
+
+mut('M3a would catch production acquiring a dependency on a deployable TEMP file', function () {
+  var p = permBare + '\nfunction y_() { return TEMP_AI_LIFECYCLE_SCHEMA_VALIDATE(); }\n';
+  var hits = [];
+  AS_TEMP.forEach(function (f) {
+    topLevelSymbols(SRC[f]).forEach(function (n) {
+      if (!permTop[n] && new RegExp('\\b' + n + '\\s*\\(').test(p)) hits.push(n);
+    });
+  });
+  return hits.length === 1;
+});
+mut('M6a would catch a status column being added to the lead-time header', function () {
+  // Anchored INSIDE the lead-time array: 17_ carries that same two-column tail twice (line 33 is another
+  // header), and a plain replace patched the wrong array and left this assertion unmoved.
+  var m = F17.replace(/(var CARRIER_LEAD_TIMES_HEADERS_ = \[[\s\S]*?)'avg_days',/,
+    "$1'avg_days', 'is_active',");
+  var h = /var CARRIER_LEAD_TIMES_HEADERS_ = \[([\s\S]*?)\]/.exec(m)[1]
+    .split(',').map(function (x) { return x.replace(/['\s]/g, ''); }).filter(Boolean);
+  return h.filter(function (c) { return /is_active/.test(c); }).length === 1;
+});
+mut('M5 would catch carrier_name being persisted to solve display', function () {
+  var m = SRC['12_shipment_handlers.gs'] + '\n  row.carrier_name = carrierName;\n';
+  return count(code(m), /carrier_name/g) === 1;
 });
 
 // ==========================================================================================================

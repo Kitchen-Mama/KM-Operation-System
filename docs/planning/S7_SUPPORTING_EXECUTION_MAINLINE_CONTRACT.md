@@ -467,3 +467,285 @@ PRODUCTION_ROWS_WRITTEN      0            PRODUCTION_WRITE_AUTHORIZED  NO
 
 NEXT_TASK = S7-R2 - OPERATOR DECISION FREEZE
 ```
+
+> **[ANSWERED BY S7-R2 - see PART II.** All three decisions are frozen. One correction PART II makes to
+> PART I is recorded in Sec25: Sec9's claim that retiring the three SAFE-TO-RETIRE TEMP files would strand
+> three production error messages conflated two sets, and is wrong.]**
+
+---
+
+# PART II - S7-R2: OPERATOR DECISION FREEZE + SUPPORTING EXECUTION FREEZE
+
+```
+PRE_SHA  03f56b9        POST_SHA  (this commit)      branch  feature/product-strategy-board-p0
+MODE     decision freeze / contract only             RUNTIME FILES CHANGED  0
+ENTERED UNDER  S5_SEAL_HELD = YES . S6_FINAL_SEAL = YES . S7_CONTRACT_AUDIT_COMPLETE = YES
+               OPEN_S7_BLOCKERS = none
+```
+
+`origin/main` advanced independently to `1a0ca13`, a branding-only commit adding
+`assets/img/logo_only_red.png`. This branch carries the identical blob `6f547ec4` through
+UI-BRAND-FAVICON-R1. It is NOT S5/S6/S7 runtime drift and is not treated as any.
+
+## Sec19 - THE THREE DECISIONS, AS FROZEN
+
+### D-S7-1 FORECAST REVIEW = **DEFERRED_UNCHANGED**
+
+```
+FORECAST_REVIEW_CHANGED_IN_S7           NO
+FORECAST_REVIEW_PRODUCTION_NAV_CHANGED  NO
+FORECAST_REVIEW_SOURCE_DELETED          NO
+SECOND_FORECAST_AUTHORITY_CREATED       NO
+FORECAST_REVIEW_S7_SCOPE                NONE - the page is out of S7 scope entirely
+```
+
+This decision was revised in flight. The first instruction was to hide the page from production
+navigation; the operator then froze it UNCHANGED. The later instruction governs, and S7 now may not hide,
+delete, relabel, re-wire, re-route or restyle it.
+
+The audit finding stands and is recorded rather than acted on: **the Forecast Review page is not backed by
+canonical production forecast data** - it issues no backend read of any kind and synthesises its series with
+`Math.random()`. That is known and intentionally deferred. It is NOT reopened by any S7 implementation round.
+
+The S7-R4 slice that PART I Sec16 gated on this decision is therefore **withdrawn**, and S7-R4 becomes the
+TEMP deployment-surface cleanup alone.
+
+### D-S7-2 PURCHASE ORDER DOCUMENT PANEL = **PHASE1_REQUIRED**
+
+```
+PO_DOCUMENT_PANEL_PHASE1_REQUIRED          YES
+SECOND_DOCUMENT_ENGINE_CREATED             NO
+DOCUMENT_PANEL_READ_OWNER                  39_ document.list / document.get / document.retry
+DOCUMENT_PANEL_SECOND_READ_AUTHORITY_COUNT   0
+DOCUMENT_PANEL_SECOND_WRITE_AUTHORITY_COUNT  0
+```
+
+The missing capability is operator RETRIEVAL after generation, not generation. The panel is a read and
+recovery projection over the engine that already exists, and all three read actions resolve to one owner
+(39_), with generation keeping its own existing owner (36_). A future round may not build a second document
+index, scan Drive independently while the canonical list answers, or invent a new status model.
+
+### D-S7-3 TEMP DEPLOYABLE POLICY = **REMOVE_NON_RUNTIME_TEMP_FROM_PRODUCTION_DEPLOY_SURFACE**
+
+```
+DEPLOYABLE_TEMP_COUNT_PRE                        7
+PRODUCTION_REQUIRED_TEMP_COUNT                   0
+FINAL_DEPLOY_TEMP_TARGET_COUNT                   0
+NON_RUNTIME_TEMP_IN_FINAL_PRODUCTION_DEPLOY_SET  0
+DEAD_TEMP_REFERENCE_ALLOWED                      NO
+```
+
+Repository retention and deployment surface are different questions, and this decision only moves the second.
+Nothing is deleted in R2.
+
+| file | class | prod runtime dep | deploy disposition | must reconcile first |
+|---|---|---|---|---|
+| TEMP_demo_shipping_shipment_map_seed_v2.gs | C diagnostic / demo seed | none | **REMOVE — safety** | nothing |
+| TEMP_migrate_request_order_draft_v2.gs | B one-time migration | none | REMOVE, retain in repo | nothing (see Sec25) |
+| TEMP_migrate_shipping_allocation_ai_lifecycle.gs | B one-time migration | none | REMOVE, retain in repo | nothing (see Sec25) |
+| TEMP_document_diagnostics.gs | C diagnostic | none (it CALLS 39_) | REMOVE, retain in repo | nothing |
+| TEMP_request_order_send_diagnostics.gs | D safe to retire | none | REMOVE | nothing |
+| TEMP_draft_migration_diagnostic.gs | D safe to retire | none | REMOVE | nothing |
+| TEMP_order_planning_draft_readback_diagnose.gs | D safe to retire | none | REMOVE | nothing |
+
+`PRODUCTION_REQUIRED_TEMP_COUNT = 0` is measured, not assumed: no permanent file calls any TEMP top-level
+symbol once comments AND string literals are stripped, and no TEMP file shadows a production name in the one
+shared global scope. So the target of zero is reachable without proving an exception for anything.
+
+**The named safety case holds.** `TEMP_demo_shipping_shipment_map_seed_v2.gs` really is a writer: it carries
+`DEMO4A_WRITE_ORDER_`, an `appendRow` insert path and a `deleteRow` rollback, over six business tables -
+`shipping_plans`, `shipping_plan_lines`, `shipments`, `shipment_lines`, `shipment_routes`, `shipment_events`.
+It is not required by production runtime and must not sit in the deployed project. It is not executed.
+
+## Sec20 - THE THREE READY SLICES, RECONFIRMED FROM LIVE CODE
+
+```
+S7_READY_SLICE_COUNT  3
+
+S7-R2A  Shipment / Shipment Overview carrier display resolution
+S7-R2B  Document Panel - generated-document rediscovery
+S7-R3   Carrier lead-time maintenance
+```
+
+## Sec21 - CARRIER NAME SLICE FREEZE
+
+```
+CARRIER_ID_REMAINS_CANONICAL      YES
+CARRIER_NAME_DISPLAY_IS_DERIVED   YES
+CARRIER_NAME_PERSISTENCE_REQUIRED NO
+```
+
+Measured rather than asserted: neither 12_ nor 11_ writes `carrier_name` anywhere, so nothing persists it
+today and the slice must not start. 40_ already derives `carrier: { id, name }` at read time against the
+`carriers` master - that is the existing canonical read path, and it is the shape R2A copies rather than
+reinvents. No second carrier registry.
+
+## Sec22 - DOCUMENT PANEL SLICE FREEZE
+
+Frozen as stated in Sec19. The panel is a projection; generation stays where it is. Document families are
+limited to what 39_ already serves - `shipment` and `purchase_order` - and the slice does not add one.
+
+## Sec23 - CARRIER LEAD-TIME FREEZE, AND THE LIVE SCHEMA AUDIT IT REQUIRED
+
+```
+CARRIER_RATE_AND_LEADTIME_AUTHORITY_MERGED   NO
+CARRIER_LEADTIME_MAINTENANCE_PHASE1_REQUIRED YES
+NEW_TABLE_REQUIRED  NO    NEW_COLUMNS_REQUIRED  NONE
+```
+
+The live header, read from its owner (17_) rather than from a document:
+
+```
+lead_time_id . carrier_id . origin_country . destination_country . shipping_method .
+last_mile_delivery . min_days . max_days . avg_days . created_at . updated_at
+```
+
+It can represent the whole contract: lane scope, method, the lead-time fields and the identity. **There is no
+`status` or `is_active` column**, so the brief's "status/active semantics IF ALREADY PRESENT" resolves to
+absent - the slice inherits none and must invent none. No new table and no new column.
+
+**One constraint the audit found, and it decides what the maintenance path must refuse.** `KMRA.leadDays`
+resolves a lead time on `methodKey + origin_country + destination_country + last_mile_delivery`, with a blank
+axis acting as a wildcard - and then takes the **first matching row**. It does not join on `carrier_id` at
+all, so a lead time behaves as a property of a LANE rather than of a carrier, despite carrying one. Two rows
+on one lane tuple are therefore resolved silently to whichever comes first.
+
+That is the same first-row pick S6-R8A spent a round freezing out of dispatch, and the sibling resolver in
+the same file (`resolveWarehouse`) blocks on ambiguity rather than picking. So:
+
+- S7-R3 must **refuse a duplicate lane tuple at the WRITE path**, because this read will not; and
+- S7-R3 must **not change `leadDays`** - altering planner resolution is a separate, operator-visible decision
+  and is not inside a maintenance slice.
+
+A maintenance UI must also not imply that choosing a carrier narrows the lane, because resolution ignores it.
+Pre-existing duplicates in production data, if any, remain first-row-picked; that is a production-data
+question for the parallel S8 testing period, not a Phase-1 blocker.
+
+Lead time and rate card remain distinct business authorities. Lead-time fields are NOT merged into
+`carrier_rate_cards` for UI convenience - the rate-card import refuses them by name today, and that refusal
+stays.
+
+## Sec24 - FORECAST REVIEW
+
+No S7 scope. See Sec19. The finding is recorded; the page is untouched.
+
+## Sec25 - A CORRECTION TO PART I
+
+PART I Sec9 said that retiring the three safe-to-retire TEMP files would leave three production error
+messages naming functions that no longer exist. **That conflated two sets and is wrong.** Every symbol named
+in production guidance belongs to a ONE-TIME MIGRATION file:
+
+| symbol named in production text | home file | named by |
+|---|---|---|
+| TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY | TEMP_migrate_request_order_draft_v2.gs | 61_ |
+| TEMP_AI_LIFECYCLE_MIGRATE_DRY_RUN | TEMP_migrate_shipping_allocation_ai_lifecycle.gs | 69_ |
+| TEMP_AI_LIFECYCLE_MIGRATE_COMMIT | TEMP_migrate_shipping_allocation_ai_lifecycle.gs | 69_ |
+| TEMP_AI_LIFECYCLE_SCHEMA_VALIDATE | TEMP_migrate_shipping_allocation_ai_lifecycle.gs | 69_ |
+
+None of the three safe-to-retire files is named anywhere, so removing them strands nothing.
+
+And the rule bites on RETIREMENT, not on the deploy surface. Those messages instruct an operator to PASTE AND
+RUN a tool, which already presumes the tool is not deployed - so removing all seven from the production
+deploy surface, with the repository copies retained, breaks no message at all. **This makes S7-R4 materially
+cheaper than PART I implied**: it is a deployment-set decision, not a text-reconciliation exercise.
+
+`DEAD_TEMP_REFERENCE_ALLOWED = NO` still stands for any future RETIREMENT: a TEMP helper may not be deleted
+from the repository while production-facing guidance still tells an operator to invoke it. Those messages must
+first be moved to a valid recovery path or a truthful escalation instruction.
+
+## Sec26 - IMPORT / PERMISSION BOUNDARY
+
+```
+S9_PERMISSION_WORK_IMPLEMENTED_IN_S7  NO
+```
+
+S9 owns visibility and authorization for Import and admin-grade tools. S7 may classify and clean unsafe
+deployment artifacts and may NOT build Google Login, a user registry, role checks, capability checks or
+data-scope access control. The per-import capability names recorded in PART I Sec8 are input for S9, not a
+design S7 implements.
+
+## Sec27 - S8 DEBT, CARRIED UNCHANGED
+
+```
+OPEN_S8_DEBT_COUNT  7
+
+1  s2-r4b shipping-history / FC warm-race harness prints FAIL A3 but exits 0
+2  CURRENT_PRE_SCHEDULE has no explicit maximum age
+3  Factory available / receipt remaining read-contract consolidation
+4  SKU Details cold timeout
+5  SKU Regional Details cold timeout / workspace performance
+6  carrier-rate-card legacy .catch(_crcInit) fail-silent residue
+7  KM.loadState incomplete adoption across backend-reading pages
+```
+
+Not fixed in R2. Item 5 is PART I's single SKU-workspace entry split into its two surfaces, as the brief
+lists them; the count is 7 either way.
+
+## Sec28 - LATER ROADMAP, RECORDED
+
+**S9** Google Login . user mapping . role / capability / data scope . Admin UI . import permission
+enforcement. Initial roles ADMIN / COO / OPERATIONS / FACTORY_USER.
+
+**S10** Factory Order Number automation . Tcode requirement generation . Tcode ordering and matching . Tcode
+inventory . 1 pcs = 1 Tcode where required . explicit Tcode opt-out.
+
+**S11** Product Strategy completion . Competitor Analysis . Control Tower . cross-site sales monitoring.
+
+**The AI source-allocation rule is preserved unchanged** from S6-R8A PART X Sec69: full-carton allocatable
+from source A first, remaining demand to B, continuing in canonical source priority, with any shortage shown
+truthfully as 「庫存不足 XXX」. A manual quantity above normal allocatable requires an explicit
+Operation-coordination acknowledgement and is never automatic AI borrowing. Dispatch remains
+DECLARED_SOURCE_ONLY regardless.
+
+No S9 / S10 / S11 runtime exists in S7.
+
+## Sec29 - S7 EXECUTION ORDER
+
+```
+S7-R2A   Shipment carrier name read-model completion
+S7-R2B   Document Panel - generated-document rediscovery
+S7-R3    Carrier lead-time maintenance
+S7-R4    Production-surface safety cleanup - TEMP / migration deployment surface
+         (the Forecast Review half is WITHDRAWN by D-S7-1)
+S7-R5    Supporting-mainline final integration + closing seal
+```
+
+The order is not immutable if an implementation round proves a real dependency - but **no implementation
+round may silently absorb another slice.** A round that finds it needs a neighbour's work stops and says so.
+
+## Sec30 - POST-S7 RELEASE CHECKPOINT, FROZEN
+
+```
+POST_S7_NEXT_GATE = PHASE-1 CUMULATIVE RELEASE RECONCILIATION
+
+S7 FINAL SEAL
+  -> PHASE-1 CUMULATIVE RELEASE RECONCILIATION
+  -> reconcile the latest origin/main branding commit
+  -> determine the exact backend sync set
+  -> determine the exact frontend deploy set
+  -> generated bundle / hash reconciliation
+  -> TEMP deployment disposition            (D-S7-3 feeds this directly)
+  -> global application cache-token rotation
+  -> remote push / merge preparation
+  -> coherent production deployment
+  -> targeted production smoke
+  -> S8 begins, with production acceptance running in parallel
+```
+
+S8 does NOT follow S7 directly. None of these actions is performed in S7-R2.
+
+One item already waiting at that gate, from UI-BRAND-FAVICON-R1: `km-repo-asset-manifest.js` changed its
+bytes without changing its cache token, so a returning browser serves the cached older manifest until the
+global rotation. Rotating it early was forbidden and correctly so; the rotation step above is what clears it.
+
+## Sec31 - THE FREEZE
+
+```
+S7_DECISION_FREEZE_COMPLETE  YES
+OPEN_S7_BLOCKERS             none
+RUNTIME_FILES_CHANGED        0        RELEASE_CUT  none
+NEW_TABLE_REQUIRED  NO   NEW_COLUMNS_REQUIRED  NONE   DB_MIGRATION_REQUIRED  NO
+PRODUCTION_ROWS_WRITTEN      0        PRODUCTION_WRITE_AUTHORIZED  NO
+
+NEXT_TASK = S7-R2A - SHIPMENT CARRIER NAME READ-MODEL COMPLETION
+```
