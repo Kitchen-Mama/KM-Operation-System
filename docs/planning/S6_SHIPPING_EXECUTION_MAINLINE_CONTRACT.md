@@ -1657,3 +1657,117 @@ DELIVERED_INVENTORY_MUTATION_COUNT = 0   delivered is a STATUS; shipment_receipt
 S6_R6_MOVEMENT_RECEIPT_SEAL = YES
 NEXT_TASK = S6-R7 — shipping / inventory operator read-model + end-to-end execution conformance
 ```
+
+---
+
+# PART IX - S6-R8: THE MAINLINE, DRIVEN END TO END, AND WHERE TWO SEAMS DISAGREE
+
+S6-R8 is a closure round. It added no feature and changed no runtime file. What it did was drive the whole
+Phase-1 execution line in ONE world over the real handlers, instead of one seam at a time, and ask whether
+the seams agree with each other. Eleven of twelve claims held. One did not, and it is recorded here rather
+than repaired, because repairing it means choosing a business rule and that is not a closure round's to make.
+
+## Sec61 - THE OWNER MAP, measured
+
+```
+SHIPPING_PLAN_OWNER            11_shipping_plan_handlers.gs       WRITE  shipping_plans / _lines
+PLAN_APPROVAL_OWNER            11_ handleUpdateShippingPlanStatus_  WRITE  one status transition owner
+SHIPMENT_CREATION_OWNER        12_ handleCreateShipmentFromPlan_    WRITE  shipments / shipment_lines
+FACTORY_RESERVATION_OWNER      21_ factoryStockAcquire/Release      WRITE  factory_stock(.fac_reserved_stock)
+OVERSEAS_RESERVATION_OWNER     05_ ovsAcquire/Release/Consume       WRITE  overseas_inventory_snapshot
+SHIPMENT_DISPATCH_OWNER        22_ handleConfirmShipmentAndDispatch_ WRITE shipments + both ledgers
+ROUTE_LEG_OWNER                22_ (snapshot at dispatch) / 31_ handleAdvanceShipmentRoutePoint_
+SHIPMENT_STATUS_OWNER          12_ handleUpdateShipment_            WRITE  shipments.status
+WAREHOUSE_RECEIPT_OWNER        31_ handleUpdateShipmentReceipt_     WRITE  shipment_lines + overseas snapshot
+FACTORY_MOVEMENT_OWNER         21_ factoryStockApplyDeltaTx_        the ONE implementation
+OVERSEAS_MOVEMENT_OWNER        05_ ovsApplyDeltaTx_                 the ONE implementation
+SHIPMENT_OVERVIEW_READ_OWNER   57_ handleShipmentWorkspaceGet_      READ ONLY
+ON_THE_WAY_READ_OWNER          57_ + 31_ route reads, rendered by global-logistics-map.js   READ ONLY
+
+SECOND_SHIPPING_EXECUTION_OWNER_COUNT = 0
+SECOND_INVENTORY_MUTATION_OWNER_COUNT = 0
+FACTORY_MUTATION_CALLERS = 22_ (dispatch) + 13_ (PO receipt). Two callers, ONE implementation - which is
+                           the rule working. A caller census that called 13_ a defect would be wrong.
+```
+
+## Sec62 - THE DISPATCH SELECTION GAP (the finding)
+
+12_ routes RESERVATION by source domain. 22_ does not route SELECTION at all.
+
+Its deduct plan is built from `factory_stock` rows matched on **SKU alone**, sorted by `warehouse_id`, and
+each planned line takes the warehouse **of the stock row it selected**. The shipment's own
+`source_warehouse_id` is never read - the string does not occur anywhere in 22_. The domain router
+(`dispatchDomain_`) sits downstream of that choice and classifies the warehouse the plan already picked, so
+it cannot reach a row the plan omitted, and it defaults to `FACTORY` when the overseas owner is absent.
+
+```
+DISPATCH_SUFFICIENCY_SOURCE        factory_stock ONLY
+DISPATCH_CANDIDATE_FILTER          sku
+DISPATCH_WAREHOUSE_SOURCE          the selected stock row, NOT shipments.source_warehouse_id
+SOURCE_IDENTITY_DRIFT_COUNT        1   (at dispatch; 0 everywhere else)
+```
+
+Two consequences, neither visible from inside either seam:
+
+1. An **overseas-sourced** shipment is checked for sufficiency against `factory_stock`. Unless that 3PL
+   warehouse also carries a `factory_stock` row, the dispatch is refused *"Insufficient factory stock"* for
+   units that are reserved and present in the overseas snapshot. The OVERSEAS consume branch R33 added is
+   reachable only when such a row exists.
+2. A **factory** shipment may be deducted from a warehouse other than the one it declares, because every
+   `factory_stock` row for the SKU is a candidate.
+
+This CORRECTS PART VIII Sec56's `SHIPPING_SOURCE_IDENTITY = warehouse_id, end to end /
+SOURCE_IDENTITY_DRIFT_COUNT = 0`. That statement was true of every seam R6 examined; it is not true of the
+dispatcher, which R6 did not examine for this property. PART VIII is left standing as the record of what
+was measured then.
+
+**Why it is not fixed here.** "Which warehouse may a dispatch draw from" is a business decision about
+pooling. *Any factory may fulfil* is a defensible model and may be the intended one; *only the declared
+source may fulfil* is equally defensible and is what the reservation half already assumes. Picking one
+changes what dispatch does to real stock. It belongs to a round that owns the decision.
+
+## Sec63 - WHAT THE ROUND CONFIRMED, driven
+
+```
+FACTORY_END_TO_END          reserve 30 -> 100/30 (reserved only) -> dispatch -> 70/0, 2 movements, 0 overseas
+OVERSEAS_END_TO_END         100/0 -> reserve 30 -> 70/30 -> dispatch 30 -> 70/0, NEVER 40/0, 0 factory rows
+ALLOCATABLE                  ovsAllocatableTx_(70/30) = 70
+DELIVERED_INVENTORY_MUTATION_COUNT = 0      status write moves no stock and writes no movement
+RECEIPT_CONTRACT            CUMULATIVE, not a delta. 60 then 100 is the two-receipt case; a second call of
+                            40 is RECEIPT_BACKWARD and is refused. The page sends the cumulative and skips
+                            unchanged lines, so backend and UI agree.
+RECEIPT_IDEMPOTENT = YES    keyed shipment_line_id + cumulative; a replayed save posts nothing
+OVER_RECEIPT_REFUSED = YES  RECEIPT_OVER, fail-closed, 0 rows written
+IMPORT_WRITES_RESERVED = NO qtyWritableFields excludes wh_reserved_stock
+IMPORT_CONFLICT_FAIL_CLOSED = YES   IMPORT_RESERVATION_EXCEEDS_SOURCE_AVAILABLE, 0 mutations
+OVER_RESERVATION_REACHABLE = NO     a second owner past the pool throws on the negative-balance guard
+SAME_OWNER_REserve = idempotent     ALREADY_RESERVED, applied:false - a double click is not a second hold
+DOUBLE_RELEASE / DOUBLE_CONSUME     typed no-ops (NO_RESERVATION), 0 effect
+ORDERING_TO_SHIPPING_AUTO_EXECUTION_COUNT = 0   SHIPPING_TO_ORDERING_AUTO_EXECUTION_COUNT = 0
+AUTO_RESERVATION_FROM_RECOMMENDATION_COUNT = 0  READMODEL_MUTATION_COUNT = 0
+```
+
+## Sec64 - DOCUMENTATION
+
+Eight statements still read as current while describing a runtime that stopped behaving that way. Each is
+now marked SUPERSEDED in place rather than rewritten, because what the system once intended is what a
+reader needs when they find a reservation happening where the page says none can:
+
+- `SHIPMENT_CENTER_SPEC.md` x5 - *factory-origin only* and *Ready to Ship = the reserve event*
+- `RECOMMENDATION_RUNTIME_IMPLEMENTATION_SPEC.md` x2 - the same trigger, one of them asserting it
+  *supersedes any looser reading that Shipment-Draft creation reserves*, which is now the live behaviour
+- `DATABASE_RELATIONSHIP_MAP.md` x1 - the B-1 registry row's *no reserve write exists in code yet*
+- `SYSTEM_RUNTIME_ARCHITECTURE.md` x1 - the B-1 reserve-trigger row
+
+The third claim in each marker is the one R6 did not have to make: reservation is **not** factory-origin
+only. R4B made an overseas source real and these pages were written when only a factory could be one.
+
+```
+CURRENT_DOC_CONTRADICTION_COUNT = 0
+```
+
+```
+S6_FINAL_SEAL = NO   - one open blocker: the dispatch selection gap above, which is an operator-visible
+                       behaviour question and an operator's decision to make.
+NEXT_TASK = withheld - S7 is not entered on the agent's authority while an S6 blocker is open.
+```
