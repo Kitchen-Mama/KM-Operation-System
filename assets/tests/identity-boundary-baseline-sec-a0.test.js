@@ -173,9 +173,16 @@ console.log('\n=== §B  THE SURFACE THAT SITS BEHIND IT, COUNTED FROM THE ROUTER
   // an id the caller does not already hold, and the id is a UUID minted client-side per write, so this widens
   // the surface by a lookup that is useless without a secret rather than by a listable read. It is also the
   // read that makes a lost write outcome decidable, which is why it is a read at all.
-  eq(s.all.length, 141, 'B1 141 actions are routed — the whole anonymous surface');
+  // S7-R3 — 141 -> 143, 139 -> 141. carrierLeadTime.upsert and carrierLeadTime.duplicateCensus are both
+  // doPost actions and neither joins the GET read table, so B2 does not move. They are counted here rather
+  // than waved through: the upsert WRITES carrier_lead_times and is reachable without identity, exactly like
+  // every other write on this surface, and the census exists to say so rather than to look small. What they
+  // do NOT widen is the data a caller can enumerate — the census action reports only the duplicate pairs
+  // already present in a table the read surface served before this round, and the upsert refuses anything
+  // that would make the planner's lane resolution ambiguous. S9 owns closing this surface; S7 does not.
+  eq(s.all.length, 143, 'B1 143 actions are routed — the whole anonymous surface');
   eq(s.readTable.length, 24, 'B2 24 of them on the GET read table');
-  eq(s.post.length, 139, 'B3 139 dispatched by doPost');
+  eq(s.post.length, 141, 'B3 141 dispatched by doPost');
   eq(s.mutations.length, 78, 'B4 and 78 are unambiguous MUTATIONS, every one reachable without identity');
   ok(s.mutations.indexOf('pricing.update') !== -1,
     'B4a including pricing.update — PRICING-R2 added the first WRITE since this baseline was measured');

@@ -402,6 +402,7 @@
     window.crcLtCloseModal = crcLtCloseModal;
     window.crcLtSave = crcLtSave;
     window.crcLtRetryRead = crcLtRetryRead;
+    window.crcLtShow = crcLtShow;
 
     // ---- load + init ----
     function loadAndInit() {
@@ -445,10 +446,10 @@
         _crcPopulateFilters();
         // No data shown before Search.
         if (!crcSearched) _crcResetTable('Set filters and click <strong>Search</strong> to view carrier rate cards.');
-        // S7-R3 — the Lead Time panel IS its own first screen (unlike the rate table, which waits for
-        // Search), so it asks for the deferred lead-time read at mount and paints each state as it arrives.
+        // S7-R3 — the Lead Time panel renders at mount and READS NOTHING. S4-R4 §6 took the lead-time read
+        // off this page's first screen, and a maintenance panel is no more entitled to it than the rate
+        // column was: the rows load when the operator asks for them.
         _crcLtRender();
-        _crcEnsureLeadTimes_(function () { _crcLtRender(); });
     }
 
     // Populate all filter dropdowns (faceted) + the date trigger label. Table stays empty until Search.
@@ -1307,6 +1308,15 @@
     // ============================================================================================
 
     var _crcLtSaving = false;
+    var _crcLtAsked = false;    // has the operator asked for these rows yet?
+
+    // The one place the panel starts a read. Everything else either already has the rows or is reacting to
+    // a write the operator just made.
+    function crcLtShow() {
+        _crcLtAsked = true;
+        _crcLtRender();
+        _crcEnsureLeadTimes_(function () { _crcLtRender(); });
+    }
 
     function _crcLtNum(v) {
         var t = String(v == null ? '' : v).trim();
@@ -1330,6 +1340,14 @@
         var wrap = document.getElementById('crc-lt-wrap');
         if (!wrap) return;
         var state = _crcLtState();
+        // NOT_LOADED is not LOADING, and saying 'Loading…' for a read nobody has asked for would be a lie
+        // about what the page is doing. OFFERED is its own state: nothing has been read, and nothing will be
+        // until the operator asks.
+        if (state === 'NOT_LOADED' && !_crcLtAsked) {
+            wrap.innerHTML = '<div class="crc-empty">Lead times load on demand. '
+                + '<button type="button" class="crc-btn crc-btn--ghost" onclick="crcLtShow()">Show lead times</button></div>';
+            return;
+        }
         if (state === 'LOADING' || state === 'NOT_LOADED') {
             wrap.innerHTML = '<div class="crc-empty">Loading lead times…</div>';
             return;
@@ -1372,6 +1390,7 @@
     // retry(), not invalidate(): this is the documented 'the user asked again after a refusal' path, which
     // clears FAILED so one new read dispatches and a second press joins the flight instead of doubling it.
     function crcLtRetryRead() {
+        _crcLtAsked = true;
         if (window.KM && window.KM.deferredRead) window.KM.deferredRead.retry(_CRC_LT);
         _crcLtRender();
         _crcEnsureLeadTimes_(function () { _crcLtRender(); });
@@ -1431,8 +1450,9 @@
         var m = document.getElementById('crc-lt-modal'); if (m) m.style.display = 'none';
     }
     function crcLtOpenAdd() {
+        _crcLtAsked = true;   // opening the form IS asking for the rows
         _crcEnsureLeadTimes_(function () {
-            _crcLtFillOptions(); _crcLtFields(null); _crcLtOpenModal('Add Lead Time');
+            _crcLtFillOptions(); _crcLtFields(null); _crcLtOpenModal('Add Lead Time'); _crcLtRender();
         });
     }
     function crcLtOpenEdit(leadTimeId) {
@@ -1488,6 +1508,7 @@
             var saved = (json.data && json.data.lead_time_id) || '';
             // invalidate(), not retry(): it bumps the epoch, so a read dispatched BEFORE this save cannot
             // land afterwards and repaint the panel with pre-write rows.
+            _crcLtAsked = true;   // a save is an ask
             if (window.KM && window.KM.deferredRead) window.KM.deferredRead.invalidate(_CRC_LT);
             _crcEnsureLeadTimes_(function () {
                 _crcLtRender();

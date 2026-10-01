@@ -141,7 +141,9 @@ var CACT = clientActions(ALL_JS);
 var DEFS = definedFunctions(SRC);
 var DISP = dispatchedHandlers(ROUTER);
 
-eq(RACT.length, 141, 'A1  the router dispatches 141 distinct actions');
+// S7-R3 — 141 → 143. carrierLeadTime.upsert and carrierLeadTime.duplicateCensus are the first actions
+// routed since R25, and they are what closes the B5 finding below.
+eq(RACT.length, 143, 'A1  the router dispatches 143 distinct actions');
 
 var missingRouter = CACT.filter(function (a) { return RACT.indexOf(a) === -1; });
 eq(missingRouter, [], 'A2  MISSING_ROUTER_ACTION_COUNT is 0 — every action the browser sends has a dispatch branch');
@@ -249,34 +251,46 @@ AS_PERM.forEach(function (f) {
 });
 eq(ltWriters, ['17_carrier_handlers.gs'],
   'B5  exactly one module ever opens carrier_lead_times for writing');
-var seedOnly = /function handleSeedSinotransCarrier_[\s\S]*?'carrier_lead_times'/.test(code(F17));
-ok(seedOnly,
-  'B5a and the only place it does so is inside handleSeedSinotransCarrier_ — a one-time seed for a single '
-  + 'CN to JP lane, not a maintenance path');
-eq(RACT.filter(function (a) { return /leadTime/i.test(a) && !/raw/.test(a); }), [],
-  'B5b there is NO routed action for creating or editing a lead time');
+// S7-R3 CLOSED THIS. What R1 found, kept because the finding is the point: the ONLY writer of
+// carrier_lead_times was handleSeedSinotransCarrier_, a one-time seed for a single CN→JP lane, and no
+// routed action could create or edit a lead time at all. 61_ said the same thing in the runtime. So a lane
+// could be PRICED in the application — carrier_rate_cards has had an importer since the Rate Card round —
+// and then not be made ROUTABLE in it, because a routable lane needs both authorities.
+ok(/function handleSeedSinotransCarrier_[\s\S]*?'carrier_lead_times'/.test(code(F17)),
+  'B5a the one-time Sinotrans seed still writes the table, and was not removed');
+eq(RACT.filter(function (a) { return /leadTime/i.test(a) && !/raw/.test(a); }).sort(),
+  ['carrierLeadTime.duplicateCensus', 'carrierLeadTime.upsert'],
+  'B5b and there is now a routed maintenance path: ONE write owner plus a read-only duplicate census');
+ok(/function handleUpsertCarrierLeadTime_\(body\)/.test(F17)
+  && /kmra\.canonicalMethodKey\(method\)/.test(F17) && /kmra\.normalizeLeadTime\(obj\)/.test(F17),
+  'B5b1 whose duplicate-lane guard resolves through KMRA\'s own predicates, so it cannot drift from the '
+  + 'leadDays resolution it protects');
 // code(), not bare(): the page names the table inside a deferred-read table list, which is a string.
 var ltPage = PAGE_FILES.filter(function (f) { return /carrier_lead_times/.test(code(PAGES[f])); });
 eq(ltPage, ['carrier-rate-card.js', 'inventory-replenishment.js'],
   'B5c TWO pages read it — the Carrier Rate Card joins it for display and the Execution Plan method '
   + 'registry builds lane options from it. Both depend on a table neither of them, nor any other '
   + 'surface, can write');
-var ltWriteUi = PAGE_FILES.filter(function (f) {
-  return /KM\.DB\.[a-zA-Z0-9_]*[Ll]eadTime[a-zA-Z0-9_]*\s*\(/.test(code(PAGES[f]));
-});
-eq(ltWriteUi, [], 'B5c1 and no page calls any lead-time adapter method at all');
-mut('B5c1 would catch a lead-time maintenance call appearing on a page', function () {
-  var p = PAGES['carrier-rate-card.js'] + '\nKM.DB.upsertCarrierLeadTime(row);\n';
-  return /KM\.DB\.[a-zA-Z0-9_]*[Ll]eadTime[a-zA-Z0-9_]*\s*\(/.test(code(p));
+// S7-R3 — AND THE PROBE HAD TO BE WIDENED TO SEE IT. This read `KM.DB.<x>LeadTime(` only, and the page
+// calls it through a local `db` alias, so the original probe would have reported 'no page calls it' while a
+// page called it. That is the same blind spot R1 §5 hit on the Document Panel and PART III Sec35 recorded:
+// a KM.DB.<name> probe tests whether that SPELLING appears, not whether the capability has a caller.
+var LT_CALL_RE = /(?:KM\.DB|\bdb)\.[a-zA-Z0-9_]*[Ll]eadTime[a-zA-Z0-9_]*\s*\(/;
+var ltWriteUi = PAGE_FILES.filter(function (f) { return LT_CALL_RE.test(code(PAGES[f])); });
+eq(ltWriteUi, ['carrier-rate-card.js'],
+  'B5c1 the Carrier Rate Card page now calls the lead-time maintenance adapter — and exactly one page does');
+mut('B5c1 would catch the maintenance call disappearing from the page again', function () {
+  var p = code(PAGES['carrier-rate-card.js']).replace(/(?:KM\.DB|\bdb)\.upsertCarrierLeadTime\s*\(/g, 'noop(');
+  return !LT_CALL_RE.test(p);
 });
 ok(/Lead Time \/ transit columns are not allowed in a Carrier Rate Template/.test(F17),
-  'B5d and the rate-card import explicitly REJECTS lead-time columns, so the one import surface that '
-  + 'exists is closed to them by design. A lane can be priced through the UI and timed only by hand — '
-  + 'this is the roundest Phase-1 supporting gap found');
+  'B5d and the rate-card import still REJECTS lead-time columns — the two authorities stayed separate. '
+  + 'R1 found that a lane could be priced through the UI and timed only by hand; S7-R3 gave lead times '
+  + 'their own maintenance path rather than merging them into the rate template');
 
-mut('B5b would catch a lead-time write action being added', function () {
-  return routerActions(ROUTER + "\n    if (action === 'carrierLeadTime.upsert') { return h_(body); }\n")
-    .filter(function (a) { return /leadTime/i.test(a) && !/raw/.test(a); }).length === 1;
+mut('B5b would catch the lead-time maintenance action being removed again', function () {
+  var m = ROUTER.replace(/\s*if \(action === 'carrierLeadTime\.upsert'\) \{[\s\S]*?\}/, '');
+  return routerActions(m).filter(function (a) { return /leadTime/i.test(a) && !/raw/.test(a); }).length !== 2;
 });
 mut('B5 would catch a second module opening the lead-time table', function () {
   var m = SRC['11_shipping_plan_handlers.gs'] + "\nvar lt = ss.getSheetByName('carrier_lead_times');\n";
@@ -681,7 +695,9 @@ Object.keys(ACTION_HANDLER).sort().forEach(function (a) {
   if (isSupporting && reachesWrite(f, h)) supportingWrites.push(a);
 });
 
-eq(supportingWrites.length, 25, 'L1  SUPPORTING_WRITE_FLOW_COUNT = 25', supportingWrites);
+// S7-R3 — 25 → 26. carrierLeadTime.upsert is the twenty-sixth supporting write flow, and the first one
+// this series ADDED rather than counted: every other entry already existed when R1 took the census.
+eq(supportingWrites.length, 26, 'L1  SUPPORTING_WRITE_FLOW_COUNT = 26', supportingWrites);
 eq(ownerDuplicates, [],
   'L2  SECOND_WRITE_OWNER_COUNT = 0 — no routed handler is defined in two modules');
 eq(unknownOwner, [],
