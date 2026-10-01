@@ -1044,3 +1044,118 @@ BACKEND_RELEASE  unchanged          APPS_SCRIPT_SYNC_REQUIRED  NO
 FRONTEND_DEPLOY_REQUIRED  NO        (no runtime file changed)
 S7_R2B_DOCUMENT_PANEL_SEAL  NO      OPEN_S7_BLOCKERS  boot-payload floor (Sec42)
 ```
+
+---
+
+# PART V - S7-R2B1: BOOT-PAYLOAD GATE CORRECTION + DOCUMENT RETRY REPAIR
+
+PRE_SHA b64f6a2. `D_S7_BOOT_PAYLOAD_GATE = REENCODE_TO_BOOT_TOPOLOGY_INVARIANT`.
+
+## Sec45 - WHAT A1d1 WAS DEFENDING, AND WHAT IT HAD BECOME
+
+`A1D1_ORIGINAL_INTENT` - that the two large route payloads S4-R5 moved off the boot path (Inventory
+Replenishment 947 KB, the globe family 809 KB) do not come back. S4-R6 had already replaced an exact-byte
+assertion here because it "FAILED THE FIRST TIME ANYBODY FIXED A BUG", and wrote that the replacement meant
+"a script that crept back would change the set and blow the ceiling; a bug fix changes neither".
+
+Inspecting the executable assertions rather than the comments found two things.
+
+**The floor was a budget, not an invariant.** An aggregate historical total shrinks every time anyone
+maintains an approved boot owner, and runs out at a moment nobody chose. By S7-R2B it had 58 bytes left and
+a two-line repair to a blocking defect could not land. It had stopped defending the architecture and was
+defending its own arithmetic.
+
+**`A1D_BOOT_SET_GUARD` was not running at all.** The branch read
+`M.boot.post.local ? <set comparison> : <count comparison>`, and S4-R5 never recorded `post.local`. The live
+gate was `localCount === 67`. Swapping one boot script for another passed it; adding one and removing one
+passed it. The guard everyone cited - including S7-R2B's own report - was a tally.
+
+`A2_ROUTE_APPEND_GUARD` was real but narrow: A2 reads a RECORDED headless value, and the live checks (A3,
+A3b) named nine specific files. A route asset added to the registry after S4-R5 was not covered.
+
+## Sec46 - THE RE-ENCODING
+
+`assets/tests/_boot-topology.js` declares the 67 boot scripts **by name, in index order** and derives the
+live topology. The threshold was not raised; it was replaced by the claim it stood in for, and on the
+structural side the result is **strictly stronger than what it replaces**:
+
+| | before | after |
+|---|---|---|
+| boot set | count only (`67 === 67`) | pinned by name |
+| boot order | invisible (both sides sorted) | pinned |
+| route-at-boot | 9 remembered filenames | the whole 16-file registry, live |
+| byte growth in an approved owner | functional failure | measured and printed |
+
+```
+BOOT_SCRIPT_SET_UNEXPECTED_CHANGE_COUNT  0     NEW_ROUTE_SCRIPT_AT_BOOT_COUNT  0
+UNDECLARED_BOOT_SCRIPT_COUNT             0     BOOT_ORDER_DRIFT_COUNT          0
+BOOT_PAYLOAD_BYTES_PRE   3,952,361
+BOOT_PAYLOAD_BYTES_POST  3,955,022
+BOOT_PAYLOAD_DELTA         +2,661       (the retry repair, in two boot-loaded owners)
+BOOT_PAYLOAD_PERFORMANCE_DEBT_OWNER  S8_BOOT_PAYLOAD_HEADROOM_AND_LOADING_ARCHITECTURE
+```
+
+Six mutants prove the corrected gate still catches what S4 cared about: a route script appended to boot, an
+undeclared boot script, a removed boot script, a reordering (which the old sorted comparison could not see
+at all), the whole pre-S4-R5 eager shape restored, and **a route script swapped in for an approved one with
+the count unchanged - which the old gate would have passed**. A seventh case proves the opposite direction:
+4 KB added to an already-approved owner changes no topology claim.
+
+Route-script lazy loading was NOT chosen and the two panel owners were NOT moved off boot. That is S8.
+
+## Sec47 - THE RETRY REPAIR
+
+```
+RETRY_ENTITY_TYPE_SOURCE  model.entity_type, falling back to the row DTO's related_entity_type
+RETRY_ENTITY_ID_SOURCE    model.entity_id,   falling back to the row DTO's related_entity_id
+RETRY_DOCUMENT_ID_SOURCE  none - document.retry is ENTITY-scoped by contract and takes no document id
+SHIPMENT_DOCUMENT_REFRESH_OWNER  _shLoadAndRender (shipping-history.js)
+PO_DOCUMENT_REFRESH_OWNER        _poBoundedReadback_ (purchase-order-overview.js)
+```
+
+`_shDocRowHtml` gains the entity TYPE as a fourth parameter, and the button passes `(type, id)` in the order
+`shRetryDocument` declares them. Entity type is never inferred from an id format: when the caller's model
+does not declare it, the row's own DTO answers, and when neither can, **no Retry button is rendered** - a
+button aimed at a guess is how the defect happened.
+
+The `|| 'shipment'` default is gone. A retry missing either half of its target is not sent.
+
+`SH_DOC_REFRESH_` is a per-entity-type refresh registry on the ONE shared panel: the Shipment page registers
+`_shLoadAndRender`, the PO page registers `_poBoundedReadback_` (which already asks `documents: true` and
+degrades to a full read on a miss). `DOCUMENT_PANEL_RENDER_OWNER_COUNT` stays 1 - presentation stayed
+shared, only the refresh became surface-specific. A surface with no registered refresh is told the retry
+landed and the screen is stale, rather than being silently left with stale data or sent a foreign re-read.
+
+`§11 OUTCOME_UNKNOWN`: the catch path used to reset the button to a plain `Retry`, which reads as "nothing
+happened" when in fact the request had left and we cannot know whether it ran. It now says `Outcome
+unknown` and never replays.
+
+## Sec48 - TWO SELF-CORRECTIONS
+
+**The S7-R2B report credited A1d with pinning the boot script set by name.** It does not and never did -
+see Sec45. The conclusion that round drew (the floor was the blocker) was right; one of its supporting
+claims was wrong, and the error flattered the existing gate.
+
+**Two mutants in this round's own suite were silently passing.** `mut()` compares `fn() === true`, and an
+async mutant returns a PROMISE, which is never `true` - so E3 and E5 reported SURVIVED regardless of what
+they found. They now run through a separate async tally. A mutant harness that cannot fail is worse than no
+mutant, because it reads as coverage.
+
+## Sec49 - ROUND OUTCOME
+
+```
+PO_RETRY_ENTITY_TYPE_CORRECT  YES   PO_RETRY_ENTITY_ID_CORRECT  YES
+PO_RETRY_REFRESH_OWNER_CORRECT  YES  PO_RETRY_SHIPMENT_WORKSPACE_REQUEST_COUNT  0
+SHIPMENT_RETRY_ENTITY_TYPE_CORRECT / _ID_ / _REFRESH_OWNER_  YES / YES / YES
+RETRY_REQUEST_COUNT_PER_CLICK  1    DOCUMENT_AUTORETRY_COUNT  0
+RETRY_CREATES_SECOND_LOGICAL_DOCUMENT_COUNT  0
+DOCUMENT_RETRY_FALSE_SUCCESS_COUNT  0   DOCUMENT_RETRY_AUTOREPLAY_COUNT  0
+REDISCOVERY (PO / Shipment / re-entry / id preserved)  all unchanged, YES
+SECOND_DOCUMENT_READ_AUTHORITY_COUNT  0   PER_DOCUMENT_RENDER_REQUEST_COUNT  0
+DOCUMENT_GENERATION_AUTHORITY_CHANGED  NO   DOCUMENT_IDENTITY_CHANGED  NO
+BUSINESS_DATA_WRITE_PATH_CHANGED  NO       PRODUCTION_ROWS_WRITTEN  0
+NEW_TABLE / COLUMNS / MIGRATION / BACKFILL  NO / NONE / NO / NO
+BACKEND_RELEASE  unchanged   APPS_SCRIPT_SYNC_REQUIRED  NO
+FRONTEND_DEPLOY_SET  shipping-history.js, purchase-order-overview.js
+S7_R2B_DOCUMENT_PANEL_SEAL  YES   OPEN_S7_BLOCKERS  none
+```

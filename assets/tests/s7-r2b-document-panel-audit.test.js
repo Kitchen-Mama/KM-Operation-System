@@ -16,10 +16,14 @@
 //   SHIPMENT page's re-read. From the PO panel that issues a shipment workspace request and leaves the panel
 //   the operator is looking at untouched: a retry that landed looks like one that did nothing.
 //
-// NEITHER IS REPAIRED IN THIS COMMIT, and section P says why in a number: the s4-r5 boot-payload floor has 58
-// bytes of headroom, and both panel owners are boot-loaded scripts. The smallest correct fix is ~2.2 KB. The
-// assertions below therefore pin the defects AS FOUND — the same adjudication S7-R2A made for the Weekly
-// carrier render — so that the repair round inherits a failing-shaped tree it must change, not a green one.
+// NEITHER WAS REPAIRED IN R2B, and section P said why in a number: the s4-r5 boot-payload floor had 58 bytes
+// of headroom and both panel owners are boot-loaded scripts, so the smallest correct fix could not land. The
+// assertions pinned the defects AS FOUND so the repair round would inherit a failing-shaped tree.
+//
+// S7-R2B1 REPAIRED BOTH, after re-encoding that gate around boot topology instead of a historical byte
+// total. G and P below are re-aimed at the rule as it now stands; the account of what was wrong is kept,
+// because the finding is the point. The pinning worked: G2, G3, Q11 and P2 all failed the moment the
+// repair landed, which is what a finding pinned as found is for.
 //
 // NO PRODUCTION READ. NO PRODUCTION WRITE. NO NETWORK. NO DRIVE. Fixtures only.
 // TEST_DATA_CLASSIFICATION = SYNTHETIC_FIXTURE   PRODUCTION_WRITE_AUTHORIZED = NO
@@ -273,28 +277,31 @@ ok(/window\.KM\.DB\.retryDocumentGeneration = function\(entityType, entityId\)/.
 ok(/function shRetryDocument\(entityType, entityId, btnEl\)/.test(SH),
   'G1c and the handler declares (entityType, entityId, btnEl)');
 
-// FINDING 1 — the call site. This is the defect, asserted as the tree stands.
-ok(/onclick="shRetryDocument\(\\'' \+ _shEsc\(entityId\) \+ '\\',\\'' \+ _shEsc\(\(d && d\.generated_document_id\) \|\| ''\) \+ '\\',this\)"/.test(SH),
-  'G2  FINDING 1 — the Retry button passes (entityId, generated_document_id): the entity id lands in the '
-  + 'TYPE slot and a DOCUMENT id lands in the entity-id slot. BLOCKING, both surfaces');
-// Arity, not absence: the declaration text also matches any call, so 'this string is missing' could never
-// have passed. What is true is that the row renderer takes THREE parameters and no caller supplies a fourth.
-ok(/function _shDocRowHtml\(d, canRetry, entityId\) \{/.test(SH),
-  'G2a the row renderer takes three parameters — the entity TYPE is not among them');
-eq(count(code(SH), /_shDocRowHtml\(d, model\.can_retry === true, model\.entity_id\)/g), 2,
-  'G2b and both call sites stop at entity_id, which is why the button had nothing else to pass');
-// What the backend would then do with it — run, not argued.
-eq(('SHP-0001'.toLowerCase() === 'purchase_order'), false,
-  'G2c so a PO retry can never reach the PO generator: the lowercased entity id is not purchase_order');
+// FINDING 1, CLOSED BY S7-R2B1. What it was: the button passed (entityId, generated_document_id) into a
+// handler declared (entityType, entityId, btnEl), so document.retry received an entity id where the TYPE
+// belongs and a DOCUMENT id where the entity id belongs - it never matched 'purchase_order' and ran the
+// shipment generator against a non-shipment id. The root cause was one missing parameter.
+ok(/function _shDocRowHtml\(d, canRetry, entityId, entityType\) \{/.test(SH),
+  'G2  the row renderer now takes the entity TYPE as a fourth parameter');
+eq(count(code(SH), /_shDocRowHtml\(d, model\.can_retry === true, model\.entity_id, model\.entity_type\)/g), 2,
+  'G2a and both call sites supply it');
+ok(/onclick="shRetryDocument\(\\'' \+ _shEsc\(retryType\) \+ '\\',\\'' \+ _shEsc\(retryId\) \+ '\\',this\)"/.test(SH),
+  'G2b so the button passes (type, id) in the order the handler declares them');
+ok(/var retryType = String\(entityType \|\| \(d && d\.related_entity_type\) \|\| ''\)\.trim\(\);/.test(SH),
+  'G2c with the row DTO as the fallback source of truth — never inferred from the id format');
 
-// FINDING 2 — the refresh. Also asserted as found.
-ok(/if \(res && res\.success\) \{ _shLoadAndRender\(\); return; \}/.test(SH),
-  'G3  FINDING 2 — on success the handler always re-reads the SHIPMENT workspace, from whichever surface '
-  + 'invoked it. FUNCTIONAL, PO only');
-eq(count(code(SH), /SH_DOC_REFRESH_|shRegisterDocumentRefresh/g), 0,
-  'G3a there is no per-surface refresh hook yet — the repair round adds one');
-ok(/db\.retryDocumentGeneration\(entityType \|\| 'shipment', entityId\)/.test(SH),
-  "G3b and the 'shipment' default silently mislabels any surface that passes nothing");
+// FINDING 2, CLOSED BY S7-R2B1. What it was: success called _shLoadAndRender() unconditionally, so a PO
+// retry re-read the SHIPMENT workspace and left the panel the operator was looking at untouched.
+eq(count(code(SH), /_shLoadAndRender\(\); return; \}/g), 0,
+  'G3  the unconditional shipment re-read is gone');
+ok(/function shRegisterDocumentRefresh\(entityType, fn\)/.test(SH),
+  'G3a each surface registers how to re-read ITSELF');
+ok(/shRegisterDocumentRefresh\('shipment', function \(\) \{ _shLoadAndRender\(\); \}\);/.test(SH),
+  'G3b the Shipment page registers its own re-read');
+ok(/window\.shRegisterDocumentRefresh\('purchase_order', function \(poId\) \{ _poBoundedReadback_\(poId\); \}\);/.test(POJS),
+  'G3c and the PO page registers its bounded single-PO readback');
+eq(count(code(SH), /retryDocumentGeneration\(entityType \|\| 'shipment'/g), 0,
+  "G3d the 'shipment' default is gone — a retry whose target is unknown is not sent");
 
 // What is NOT wrong with retry: the backend never duplicates a logical document.
 ok(/if \(row && dgsRowState_\(row\) === 'READY'\) reuse\.push/.test(G39),
@@ -395,23 +402,34 @@ ok(/function _kmDocumentAction\(action, payload\)[\s\S]{0,400}fetch\(OP_DB_API_B
 });
 
 // ==========================================================================================================
-section('P  WHY THE REPAIR IS NOT IN THIS COMMIT — the blocker, as a number');
+section('P  THE BLOCKER THAT HELD THE REPAIR — and how S7-R2B1 resolved it');
 // ==========================================================================================================
-// s4-r5 A1d1 requires the boot payload to stay 1.5 MB below the S4-R1 baseline. Both Document Panel owners are
-// boot-loaded <script defer> tags, so ANY edit to them spends that margin. S4-R6 replaced an exact-byte
-// assertion here precisely because it "FAILED THE FIRST TIME ANYBODY FIXED A BUG", and wrote that a bug fix
-// "changes neither" the script set nor the ceiling. That promise no longer holds, and this measures by how far.
+// WHAT HELD IT: s4-r5 A1d1 required the boot payload to stay 1.5 MB below the S4-R1 baseline, and that
+// aggregate historical floor had 58 bytes of headroom. Both Document Panel owners are boot-loaded <script
+// defer> tags, so ANY edit to them spent that margin. S4-R6 had already replaced an exact-byte assertion
+// there because it "FAILED THE FIRST TIME ANYBODY FIXED A BUG", promising a bug fix "changes neither" the
+// script set nor the ceiling - a promise that was false by 58 bytes.
+//
+// S7-R2B1 re-encoded the gate around TOPOLOGY rather than raising the threshold, and on the structural side
+// the result is stronger than what it replaced: the boot SET is pinned by name (A1d had degraded to a bare
+// count of 67, because S4-R5 never recorded post.local), the ORDER is pinned, and route-at-boot is checked
+// against the whole route registry. Byte growth in an approved owner is measured and printed, not gated.
 var RUNNER = require('./_s4r5-route-payload-runner.js');
+var BOOTTOPO = require('./_boot-topology.js');
 var MEAS = JSON.parse(read('../docs/evidence/s4-r5-route-payloads/measurements.json'));
-var bootFloor = MEAS.boot.pre.bytes - 1500 * 1024;
-var bootLive = RUNNER.bootSurface().bytes;
-var margin = bootFloor - bootLive;
-ok(margin >= 0, 'P1  the boot payload is under the s4-r5 floor at HEAD', { floor: bootFloor, live: bootLive });
-ok(margin < 1024,
-  'P2  FINDING 4 — and the margin is under 1 KB, so no bug fix fits in a boot-loaded file', margin + ' bytes');
+var bootLive = RUNNER.bootSurface();
+var topo = BOOTTOPO.bootTopology(bootLive.local, bootLive.routeAssets);
+eq([topo.setChangeCount, topo.orderDriftCount, topo.routeAtBoot.length], [0, 0, 0],
+  'P1  the boot topology is intact: declared set, declared order, and no route asset at boot');
+ok(bootLive.bytes < MEAS.boot.pre.bytes,
+  'P2  the boot payload is still smaller than before S4-R5 deferred the two route payloads',
+  { pre: MEAS.boot.pre.bytes, now: bootLive.bytes });
+eq(count(read('tests/s4-r5-route-payloads.test.js'), /M\.boot\.pre\.bytes - 1500 \* 1024/g), 0,
+  'P3  and the brittle aggregate byte floor is gone from the gate — boot payload budgeting is now '
+  + 'S8_BOOT_PAYLOAD_HEADROOM_AND_LOADING_ARCHITECTURE');
 ok(/<script src="assets\/js\/pages\/shipping-history\.js/.test(read('../index.html'))
   && /<script src="assets\/js\/pages\/purchase-order-overview\.js/.test(read('../index.html')),
-  'P3  and both Document Panel owners are boot-loaded, which is why this round could not repair them');
+  'P4  both Document Panel owners remain boot-loaded — moving them off boot is S8 work, not this round\'s');
 
 // ==========================================================================================================
 section('Q  MUTANTS');
@@ -474,10 +492,14 @@ mut('Q10 would catch a second Document Panel renderer appearing anywhere in the 
   });
   return n !== 1;
 });
-mut('Q11 would catch the Retry call site being quietly corrected without this suite noticing', function () {
-  var m = SH.replace("_shEsc(entityId) + '\\',\\'' + _shEsc((d && d.generated_document_id) || '')",
-    "_shEsc(entityType) + '\\',\\'' + _shEsc(entityId)");
-  return !/onclick="shRetryDocument\(\\'' \+ _shEsc\(entityId\) \+ '\\',\\'' \+ _shEsc\(\(d && d\.generated_document_id\) \|\| ''\) \+ '\\',this\)"/.test(m);
+mut('Q11 would catch the Retry call site regressing to the transposed argument order', function () {
+  var m = SH.replace("_shEsc(retryType) + '\\',\\'' + _shEsc(retryId)",
+    "_shEsc(retryId) + '\\',\\'' + _shEsc((d && d.generated_document_id) || '')");
+  return !/onclick="shRetryDocument\(\\'' \+ _shEsc\(retryType\) \+ '\\',\\'' \+ _shEsc\(retryId\) \+ '\\',this\)"/.test(m);
+});
+mut('Q12 would catch the per-surface refresh registry being removed again', function () {
+  var m = SH.replace("shRegisterDocumentRefresh('shipment', function () { _shLoadAndRender(); });", '');
+  return !/shRegisterDocumentRefresh\('shipment'/.test(m);
 });
 
 console.log('\n' + (fail ? 'FAILED' : 'PASSED') + '  ' + pass + ' passed / ' + fail + ' failed'

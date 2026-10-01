@@ -71,21 +71,44 @@ eq(live.localCount, M.boot.post.localScripts, 'A1c the recorded count matches in
    may ever change size again, for any reason. S4-R6 repaired five page modules and grew the total by
    15 121 bytes, which broke this rule while leaving S4-R5's achievement completely intact.
 
-   So the drift check keeps the part that can only move for the reason this round cares about — WHICH
-   FILES are at boot, compared as a set — and the byte claim becomes the removal itself: the total is
-   still more than 1.5 MB below where this round found it. A script that crept back would change the set
-   and blow the ceiling; a bug fix changes neither. */
-const liveFiles = live.local.map(function (x) { return x.file; }).sort();
-const recordedFiles = M.boot.post.local
-  ? M.boot.post.local.map(function (x) { return x.file; }).sort()
-  : null;
-if (recordedFiles) {
-  eq(liveFiles, recordedFiles, 'A1d the boot script SET is the one this round recorded');
-} else {
-  eq(live.localCount, M.boot.post.localScripts, 'A1d the boot script count is the one this round recorded');
-}
-ok(live.bytes <= M.boot.pre.bytes - 1500 * 1024,
-  'A1d1 and the boot payload is still at least 1.5 MB below where this round found it',
+   So the byte claim became the removal itself — the total is still more than 1.5 MB below where this
+   round found it — on the reasoning that "a script that crept back would change the set and blow the
+   ceiling; a bug fix changes neither".
+
+   S7-R2B1 — THAT PROMISE WAS FALSE BY 58 BYTES, AND THE SET GUARD WAS NEVER RUNNING.
+
+   An aggregate floor measured against a historical total is a budget, not an invariant: it shrinks every
+   time anyone maintains an approved boot owner, and it runs out at an arbitrary moment nobody chose. By
+   S7-R2B the headroom was 58 bytes, and a two-line repair to a BLOCKING defect in the shared Document
+   Panel — a boot-loaded file — could not land. The floor had stopped defending the architecture and was
+   defending its own arithmetic.
+
+   And the set comparison below never executed. It read `M.boot.post.local ? <set> : <count>`, and S4-R5
+   never recorded post.local — so the live gate was `localCount === 67`. Swapping one boot script for
+   another passed it. Adding one and removing one passed it. The guard everybody cited was a tally.
+
+   SO THE GATE IS RE-ENCODED AROUND TOPOLOGY (_boot-topology.js), and on the structural side it is now
+   STRICTLY STRONGER than what it replaces: the SET is pinned by name, the ORDER is pinned (the old
+   comparison sorted both sides and could not see a reordering), and route-at-boot is checked against the
+   WHOLE route registry rather than the nine files this round happened to move. What it stops doing is
+   failing a bug fix because an approved owner grew by a few hundred bytes. The payload is still measured
+   and printed on every run; budgeting it is S8_BOOT_PAYLOAD_HEADROOM_AND_LOADING_ARCHITECTURE. */
+const BT = require('./_boot-topology.js');
+const topo = BT.bootTopology(live.local, live.routeAssets);
+eq(topo.undeclared, [],
+  'A1d  UNDECLARED_BOOT_SCRIPT_COUNT = 0 — every script index.html loads is in the declared census');
+eq(topo.missing, [],
+  'A1d1 and no declared boot script has silently stopped loading');
+eq(topo.setChangeCount, 0,
+  'A1d2 BOOT_SCRIPT_SET_UNEXPECTED_CHANGE_COUNT = 0 — a swap is visible now, which it was not before');
+eq(topo.orderDriftCount, 0,
+  'A1d3 BOOT_ORDER_DRIFT_COUNT = 0 — and they still load in the declared order');
+eq(topo.routeAtBoot, [],
+  'A1d4 NEW_ROUTE_SCRIPT_AT_BOOT_COUNT = 0 — no file app.js owns as a ROUTE asset is loaded at boot, '
+  + 'checked across the whole registry rather than against nine remembered names');
+ok(live.bytes < M.boot.pre.bytes,
+  'A1d5 and boot is still smaller than before this round deferred the two payloads. BOOT PAYLOAD IS '
+  + 'REPORTED, NOT GATED — S8 owns the budget',
   { pre: M.boot.pre.bytes, now: live.bytes, removed: M.boot.pre.bytes - live.bytes });
 ok(M.boot.percentReducedFromS4R1 > 30,
   'A1e PERCENT_BOOT_BYTES_REDUCED_FROM_S4_R1_BASELINE', M.boot.percentReducedFromS4R1 + '%');

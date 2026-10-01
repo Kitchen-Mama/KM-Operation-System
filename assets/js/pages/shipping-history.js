@@ -1585,7 +1585,8 @@ function _shDocLink(url, label, strong) {
     return '<a href="' + _shEsc(u) + '" target="_blank" rel="noopener noreferrer" ' +
         'style="font-size:12px;color:#3B82F6;text-decoration:none;' + (strong ? 'font-weight:600;' : '') + '">' + _shEsc(label) + '</a>';
 }
-function _shDocRowHtml(d, canRetry, entityId) {
+// S7-R2B1 — entityType: document.retry is scoped to an ENTITY (type + id), not to one document.
+function _shDocRowHtml(d, canRetry, entityId, entityType) {
     var st = String((d && d.status) || '').toUpperCase();
     var isFailed = (st === 'FAILED' || st === 'FAILED_RETRYABLE');
     var name = String((d && d.file_name) || '').trim();
@@ -1593,9 +1594,13 @@ function _shDocRowHtml(d, canRetry, entityId) {
     // Download only when a genuinely downloadable artifact exists (never a fabricated export link).
     if (d && d.download_url) actions += (actions ? ' · ' : '') + _shDocLink(d.download_url, 'Download');
     else if (d && d.pdf_file_url) actions += (actions ? ' · ' : '') + _shDocLink(d.pdf_file_url, 'Download PDF');
-    if (isFailed && canRetry) {
+    // The DTO names its own entity, so a row can answer even if the model did not. With neither, there is
+    // no honest retry target — and a button that guesses one is how this defect happened. Offer none.
+    var retryType = String(entityType || (d && d.related_entity_type) || '').trim();
+    var retryId = String(entityId || (d && d.related_entity_id) || '').trim();
+    if (isFailed && canRetry && retryType && retryId) {
         actions += (actions ? ' · ' : '') +
-            '<button type="button" class="sh-doc-retry" onclick="shRetryDocument(\'' + _shEsc(entityId) + '\',\'' + _shEsc((d && d.generated_document_id) || '') + '\',this)" ' +
+            '<button type="button" class="sh-doc-retry" onclick="shRetryDocument(\'' + _shEsc(retryType) + '\',\'' + _shEsc(retryId) + '\',this)" ' +
             'style="background:none;border:none;padding:0;color:#DC2626;font-size:12px;cursor:pointer;">Retry</button>';
     }
     return '<div class="sh-doc-row" style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #F1F5F9;">' +
@@ -1688,11 +1693,11 @@ function shDocumentPanelHtml(model) {
         body = '<div style="font-size:12px;color:#94A3B8;">' + _shEsc(SH_DOC_STATE_LABEL_[state] || SH_DOC_STATE_LABEL_.NONE) + '</div>';
     } else {
         var shown = docs.slice(0, SH_DOC_PANEL_VISIBLE_ROWS_);
-        body = shown.map(function (d) { return _shDocRowHtml(d, model.can_retry === true, model.entity_id); }).join('');
+        body = shown.map(function (d) { return _shDocRowHtml(d, model.can_retry === true, model.entity_id, model.entity_type); }).join('');
         if (docs.length > shown.length) {
             body += '<button type="button" class="sh-doc-viewall" onclick="shDocViewAll(this)" aria-expanded="false" ' +
                 'style="margin-top:6px;background:none;border:none;padding:0;color:#3B82F6;font-size:12px;cursor:pointer;">View all (' + docs.length + ')</button>' +
-                '<div class="sh-doc-rest" style="display:none;">' + docs.slice(shown.length).map(function (d) { return _shDocRowHtml(d, model.can_retry === true, model.entity_id); }).join('') + '</div>';
+                '<div class="sh-doc-rest" style="display:none;">' + docs.slice(shown.length).map(function (d) { return _shDocRowHtml(d, model.can_retry === true, model.entity_id, model.entity_type); }).join('') + '</div>';
         }
     }
     var alert = !!SH_DOC_ALERT_STATE_[state];
@@ -1701,20 +1706,46 @@ function shDocumentPanelHtml(model) {
         head + body + _shDocErrorHtml(model, state) + '<div style="margin-top:6px;">' + badge + '</div>' +
     '</div>';
 }
+// S7-R2B1 — the panel is SHARED, so the post-retry refresh is too: each surface registers how to re-read
+// ITSELF. This always called _shLoadAndRender(), which from the PO panel re-read the SHIPMENT workspace.
+var SH_DOC_REFRESH_ = {};
+function shRegisterDocumentRefresh(entityType, fn) {
+    var t = String(entityType || '').trim();
+    if (t && typeof fn === 'function') SH_DOC_REFRESH_[t] = fn;
+}
+shRegisterDocumentRefresh('shipment', function () { _shLoadAndRender(); });
+
 // F1-7N-FB-1B §Q/§O — Retry. It regenerates ONLY the missing/failed documents: the backend reuses every
 // already-generated output, so a retry can never duplicate a folder, a file, a PDF or a registry row, and it
 // never re-runs the business transition. Frontend visibility is not authorization — the backend re-checks.
+// S7-R2B1 — entityType is a TYPE ('shipment' | 'purchase_order'). The panel passed the entity id here and
+// a document id in entityId, so retry fell through to the shipment generator with a non-shipment id. The
+// 'shipment' default is gone: a retry whose target is unknown is not sent.
 function shRetryDocument(entityType, entityId, btnEl) {
     var db = window.KM && window.KM.DB;
     if (!db || typeof db.retryDocumentGeneration !== 'function') return;
+    var type = String(entityType || '').trim();
+    var id = String(entityId || '').trim();
+    if (!type || !id) return;
     if (btnEl) { if (btnEl.disabled) return; btnEl.disabled = true; btnEl.textContent = 'Retrying…'; }
-    return Promise.resolve(db.retryDocumentGeneration(entityType || 'shipment', entityId)).then(function (res) {
+    return Promise.resolve(db.retryDocumentGeneration(type, id)).then(function (res) {
         if (btnEl) { btnEl.disabled = false; btnEl.textContent = 'Retry'; }
-        if (res && res.success) { _shLoadAndRender(); return; }
+        if (res && res.success) {
+            // No registered refresh → say so rather than leave the operator with a silently stale screen.
+            var refresh = SH_DOC_REFRESH_[type];
+            if (typeof refresh === 'function') refresh(id);
+            else if (btnEl) { btnEl.textContent = 'Retried — reload'; btnEl.title = 'The retry succeeded. Reload this page to see the result.'; }
+            return;
+        }
         var reason = (res && (res.error || (res.result && res.result.reason))) || 'Retry failed';
         if (btnEl) { btnEl.style.color = '#B91C1C'; btnEl.textContent = 'Retry failed'; btnEl.title = String(reason); }
     }).catch(function () {
-        if (btnEl) { btnEl.disabled = false; btnEl.textContent = 'Retry'; }
+        // OUTCOME UNKNOWN. The request left and the transport threw, so we cannot say whether the retry ran;
+        // resetting to a plain 'Retry' would read as 'nothing happened'. Say what we know, and never replay.
+        if (btnEl) {
+            btnEl.disabled = false; btnEl.style.color = '#B45309'; btnEl.textContent = 'Outcome unknown';
+            btnEl.title = 'The retry request failed in transit. It may or may not have run — reload before trying again.';
+        }
     });
 }
 function shDocViewAll(btnEl) {
@@ -2141,6 +2172,7 @@ window.shDocumentPanelHtml = shDocumentPanelHtml;
 window.shDocPanelState = shDocPanelState;
 window.shDocViewAll = shDocViewAll;
 window.shRetryDocument = shRetryDocument;
+window.shRegisterDocumentRefresh = shRegisterDocumentRefresh;
 window._shToggleCardEl = _shToggleCardEl;
 window._shCardFromEvent = _shCardFromEvent;
 window.shSaveExecution = shSaveExecution;

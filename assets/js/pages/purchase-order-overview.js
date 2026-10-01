@@ -833,6 +833,11 @@
     window.poSetPo = setPo;
     window.poGoPage = goPage;
     window.initPurchaseOrderOverviewPage = loadAndRender;
+    // S7-R2B1 — the shared panel's Retry cannot know how to re-read THIS page. Register the bounded single-PO
+    // readback (already asks documents: true; degrades to loadAndRender on a miss) as this type's refresh.
+    if (typeof window.shRegisterDocumentRefresh === 'function') {
+        window.shRegisterDocumentRefresh('purchase_order', function (poId) { _poBoundedReadback_(poId); });
+    }
 
     if (window.KM && window.KM.lifecycle) {
         KM.lifecycle.register('purchase-order-overview-section', {
