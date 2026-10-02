@@ -365,8 +365,18 @@ ok(fs.existsSync(path.join(TOOLS_DIAG, TEMP_FILE)), 'H1b it is in assets/tools/a
         'H4d and the other round\'s own diagnostic is still owned, untouched by B1');
 })();
 (function () {
+    // S7-R4 — the OTHER TEMP tools are no longer in the deploy directory; they are in assets/tools/. The
+    // claim H5 makes is a SCOPE claim — B1 did not touch them — so it is asserted where they now live,
+    // plus the fact that none was left behind.
     var still = fs.readdirSync(GS).filter(function (f) { return f.indexOf('TEMP_') === 0; });
-    ok(still.length >= 1, 'H5 other TEMP_ files remain in the deploy directory (' + still.length + ') — not B1\'s scope');
+    eq(still, [], 'H5 no TEMP_ file remains in the deploy directory — S7-R4 moved every one of them out');
+    var elsewhere = ['apps-script-migrations', 'apps-script-diagnostics', 'apps-script-seeds']
+        .reduce(function (acc, d) {
+            return acc.concat(fs.readdirSync(path.join(__dirname, '..', 'tools', d))
+                .filter(function (f) { return f.indexOf('TEMP_') === 0; }));
+        }, []);
+    ok(elsewhere.length >= 1, 'H5a and they are retained under assets/tools/ (' + elsewhere.length + ') — '
+        + 'relocated, not destroyed, and still not B1\'s scope');
     ok(still.indexOf(TEMP_FILE) === -1, 'H5b and this one is not among them');
 })();
 

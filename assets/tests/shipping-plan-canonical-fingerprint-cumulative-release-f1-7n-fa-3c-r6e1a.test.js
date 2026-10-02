@@ -147,7 +147,15 @@ ok(!/\?v=r6e1-flags-shipping-20260822/.test(INDEX) && !/\?v=r6d1-invplan-2026082
 var NS = fs.readFileSync(path.join(ROOT, 'js', 'core', 'namespace.js'), 'utf8');
 ok(/RELEASE:\s*'r6a1-request-send-20260822'/.test(NS), '17. KM.RELEASE is the unified token (agrees with the asset tokens)');
 var apiDir = path.join(ROOT, 'specs', 'active', 'apps-script');
-['00_config.gs', '01_router.gs', '03_master_data_handlers.gs', '11_shipping_plan_handlers.gs', 'TEMP_migrate_request_order_draft_v2.gs'].forEach(function (f) {
+// S7-R4 — THE MIGRATION HELPER IS NO LONGER PART OF THE CUMULATIVE PASTE SET, and that is the point of
+// the round rather than a gap in this manifest: a one-shot writer is pasted for its window and removed,
+// not carried in the list of files a release copies. It is checked where it lives, and checked NOT to be
+// in the runtime folder, so the two halves cannot drift.
+ok(fs.existsSync(path.join(ROOT, 'tools', 'apps-script-migrations', 'TEMP_migrate_request_order_draft_v2.gs')),
+  '17. the Request Order V2 migration is retained as repository tooling');
+ok(!fs.existsSync(path.join(apiDir, 'TEMP_migrate_request_order_draft_v2.gs')),
+  '17. and is NOT in the runtime folder, so no release copies it by default');
+['00_config.gs', '01_router.gs', '03_master_data_handlers.gs', '11_shipping_plan_handlers.gs'].forEach(function (f) {
   ok(fs.existsSync(path.join(apiDir, f)), '17. cumulative BE manifest file present: ' + f);
 });
 var DOC = fs.readFileSync(path.join(ROOT, '..', 'docs', 'planning', 'REQUEST_ORDER_ALLOCATION_DRAFT_V2_FLATTEN_DESIGN_FREEZE.md'), 'utf8');

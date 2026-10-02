@@ -452,13 +452,26 @@ ok(!/R4A1'/.test(ROUTER) && !/expected: 'F1-7N-FB-4E-R4A1'/.test(HEALTH),
 // manifest expects of it. This is what fails when a behaviourally changed file keeps a pre-change stamp.
 (function () {
   var manifest = [];
-  var re = /\{\s*file:\s*'([^']+)',\s*symbol:\s*'([^']+)',\s*expected:\s*'([^']+)'/g, m;
-  while ((m = re.exec(HEALTH))) manifest.push({ file: m[1], symbol: m[2], expected: m[3] });
+  // S7-R4 — the OPTIONAL flag is captured, because it decides where the file is allowed to live.
+  var re = /\{\s*file:\s*'([^']+)',\s*symbol:\s*'([^']+)',\s*expected:\s*'([^']+)'([^}]*)\}/g, m;
+  while ((m = re.exec(HEALTH))) manifest.push({ file: m[1], symbol: m[2], expected: m[3],
+    optional: /optional:\s*true/.test(m[4]) });
   ok(manifest.length >= 12, '1.4 the module manifest was parsed (' + manifest.length + ' entries)');
   var mismatches = [], missingFiles = [];
   manifest.forEach(function (e) {
+    // S7-R4 — AN OPTIONAL ROW MAY LIVE OUTSIDE THE RUNTIME FOLDER, which is what `optional` means: 63_
+    // registers the one-shot lifecycle migration optional so that removing it is not a partial sync.
+    // R4 moved it to assets/tools/apps-script-migrations/. It must still EXIST — a mistyped filename is
+    // the thing this line really catches — so it is resolved against the tooling directories instead.
     var p = 'assets/specs/active/apps-script/' + e.file;
-    if (!fs.existsSync(path.join(ROOT, p))) { missingFiles.push(e.file); return; }
+    if (!fs.existsSync(path.join(ROOT, p))) {
+      var elsewhere = ['assets/tools/apps-script-migrations', 'assets/tools/apps-script-diagnostics',
+        'assets/tools/apps-script-seeds'].filter(function (d) {
+        return fs.existsSync(path.join(ROOT, d, e.file));
+      });
+      if (!(e.optional && elsewhere.length)) missingFiles.push(e.file);
+      return;
+    }
     var src = read(p);
     var dm = new RegExp('var\\s+' + e.symbol + '\\s*=\\s*\'([^\']+)\'').exec(src);
     if (!dm) { mismatches.push(e.file + ' declares no ' + e.symbol); return; }

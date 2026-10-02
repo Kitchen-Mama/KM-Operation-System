@@ -489,11 +489,28 @@ eq(Object.keys(seenAction).length, regRows.length, 'G3 the registry has no dupli
 
 // G5 — the module manifest must expect the stamps the files actually declare, or a correct deployment reports
 //      itself partially synced.
-var manifest = [], mre = /\{ file: '([^']+)', symbol: '([^']+)', expected: '([^']+)'/g, mm;
-while ((mm = mre.exec(G63))) manifest.push({ file: mm[1], symbol: mm[2], expected: mm[3] });
+// S7-R4 — the row's OPTIONAL flag is captured now, because it changes where the file is allowed to be.
+var manifest = [], mre = /\{ file: '([^']+)', symbol: '([^']+)', expected: '([^']+)'([^}]*)\}/g, mm;
+while ((mm = mre.exec(G63))) manifest.push({ file: mm[1], symbol: mm[2], expected: mm[3],
+  optional: /optional:\s*true/.test(mm[4]) });
 ok(manifest.length >= 11, 'G5 the module build-stamp manifest is populated (' + manifest.length + ' files)');
+// An OPTIONAL owner is a paste-run-remove tool: 63_ registers it so that its absence from the project is
+// a reported fact rather than a partial sync, and S7-R4 moved it out of the runtime folder entirely. It
+// must still declare the build the manifest expects — a stale pasted copy is the fault worth naming —
+// so it is read from wherever it now lives.
+var TOOL_DIRS_G5 = ['assets/tools/apps-script-migrations', 'assets/tools/apps-script-diagnostics',
+  'assets/tools/apps-script-seeds'];
+function g5Source(m) {
+  try { return fs.readFileSync(path.join(GS_DIR, m.file), 'utf8'); } catch (e) { /* not runtime */ }
+  if (!m.optional) return null;
+  for (var i = 0; i < TOOL_DIRS_G5.length; i++) {
+    try { return fs.readFileSync(path.join(ROOT, TOOL_DIRS_G5[i], m.file), 'utf8'); } catch (e2) { /* next */ }
+  }
+  return null;
+}
 var g5bad = manifest.filter(function (m) {
-  var src; try { src = fs.readFileSync(path.join(GS_DIR, m.file), 'utf8'); } catch (e) { return true; }
+  var src = g5Source(m);
+  if (src === null) return true;
   var d = new RegExp('var ' + m.symbol + " = '([^']+)'").exec(src);
   return !d || d[1] !== m.expected;
 });
@@ -726,6 +743,25 @@ GS_OWNED_SINCE_R1['58_api_v1_fc_summary_workspace.gs'] = 'FC-SUMMARY-R3-R1 the b
 // this line could reach.
 GS_OWNED_SINCE_R1['05_overseas_inventory_handlers.gs'] = 'S6-R4B the OVERSEAS RESERVATION LIFECYCLE - acquire / release / dispatch-consume over wh_available_stock and wh_reserved_stock, plus the GROSS import semantic (stored available = source available minus the reservation this system holds, the row refused IMPORT_RESERVATION_EXCEEDS_SOURCE_AVAILABLE when the source reports fewer units than are already committed, and wh_reserved_stock never written by an import). No router action was added: the lifecycle is reached only through 12_ and 22_, which already owned their actions';
 GS_OWNED_SINCE_R1['57_api_v1_shipment_workspace.gs'] = 'S7-R2A the carriers master joins this read as a BASE table, with the same declaration 40_ already uses, so the Shipment Draft, the Confirm summary and the On-the-Way Map can resolve carrier_id to a NAME instead of printing the id - carrier_name is never stored on a shipment or a rate card, so a surface that shows a carrier has to resolve it against the master. Raw passthrough like every other master here. NO action was added or removed and the router is untouched; no business logic, and no rate, cost or quantity field joined it';
+// S7-R4 — FIVE RELOCATIONS, DECLARED RATHER THAN FILTERED. These files did not change: `git diff` reports
+// them because they LEFT assets/specs/active/apps-script/, byte for byte, for assets/tools/. Membership in
+// that folder is the claim 'this is synced into the Apps Script project as runtime', and a demo seed whose
+// COMMIT entry point writes six business tables and whose CLEAR entry point empties them was making that
+// claim. The other two of the seven are already declared above, by the rounds that created them.
+var S7R4_RELOCATED_ = ' — S7-R4 RELOCATED out of the runtime folder to assets/tools/, bytes unchanged. '
+  + 'It was never deployed (SLIM-R1 live typeof probe, 31 corroborating symbol probes) and now cannot be.';
+GS_OWNED_SINCE_R1['TEMP_demo_shipping_shipment_map_seed_v2.gs'] =
+  'the demo shipping/shipment map seed — SEED, writes and clears six business tables' + S7R4_RELOCATED_;
+GS_OWNED_SINCE_R1['TEMP_migrate_request_order_draft_v2.gs'] =
+  'the Request Order draft V2 flatten migration — ONE_TIME_MIGRATION' + S7R4_RELOCATED_;
+GS_OWNED_SINCE_R1['TEMP_migrate_shipping_allocation_ai_lifecycle.gs'] =
+  'the AI Plan lifecycle schema migration — ONE_TIME_MIGRATION, and the one relocated tool that keeps an '
+  + 'OPTIONAL manifest row, because 69_ refuses until its columns exist' + S7R4_RELOCATED_;
+GS_OWNED_SINCE_R1['TEMP_document_diagnostics.gs'] =
+  'the document runtime diagnostic — DIAGNOSTIC, read-only' + S7R4_RELOCATED_;
+GS_OWNED_SINCE_R1['TEMP_draft_migration_diagnostic.gs'] =
+  'the draft migration readiness probe — DIAGNOSTIC despite its name: its own header says strictly '
+  + 'READ-ONLY and it records no mutation' + S7R4_RELOCATED_;
 gsUnexpected = gsList.filter(function (f) { return !GS_OWNED_SINCE_R1[f]; });
 eq(gsUnexpected.join(','), '', "8. no Apps Script file outside this line's owned set changed since the R1 commit");
 

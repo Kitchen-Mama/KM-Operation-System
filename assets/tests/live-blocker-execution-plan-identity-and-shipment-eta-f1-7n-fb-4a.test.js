@@ -657,12 +657,26 @@ ok(GDEMOSEED.indexOf('F1-7N-FB-4A') === -1, '20. and carries no FB-4A marker at 
 // scope, so a second definition would not be a harmless copy: whichever file loaded last would silently win.
 var ALL_GS = fs.readdirSync(path.join(__dirname, '..', 'specs', 'active', 'apps-script'))
   .filter(function (f) { return /\.gs$/.test(f); });
+// S7-R4 — 'ACROSS THE WHOLE PROJECT' NOW MEANS IT. This enumerated the deploy folder and called that the
+// project, which was true while every .gs lived there. R4 moved seven tools to assets/tools/ and the
+// census then found ZERO definitions of three symbols and reported that as a broken rule — when the rule
+// (one definition, because a duplicate in one shared global scope silently replaces the production
+// function) was never in question. Widening the scope also makes it stricter: a duplicate introduced in a
+// tooling file is caught now and would not have been before.
+var TEMP_TOOL_DIRS_ = ['tools/apps-script-migrations', 'tools/apps-script-diagnostics',
+  'tools/apps-script-seeds'];
 function definitionsAcrossProject(pattern) {
   var total = 0, files = [];
   ALL_GS.forEach(function (f) {
     var src = read('specs/active/apps-script/' + f);
     var n = (src.match(pattern) || []).length;
     if (n) { total += n; files.push(f + ':' + n); }
+  });
+  TEMP_TOOL_DIRS_.forEach(function (d) {
+    fs.readdirSync(path.join(__dirname, '..', d)).filter(function (f) { return /\.gs$/.test(f); }).forEach(function (f) {
+      var n = (read(d + '/' + f).match(pattern) || []).length;
+      if (n) { total += n; files.push(f + ':' + n); }
+    });
   });
   return { total: total, files: files };
 }
@@ -751,8 +765,17 @@ var SYS_DEPLOYMENT_RELEASE_ = (G63.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)
 // OWN file for its OWN symbol, so the guard below cannot be outrun by the manifest it guards.
 var declaredBy = {};
 SYS_MODULE_BUILD_STAMPS_.forEach(function (m) {
+  // S7-R4 — an OPTIONAL owner is a paste-run-remove tool and may live outside the runtime folder; R4 moved
+  // the AI-lifecycle migration to assets/tools/apps-script-migrations/. Its stamp still has to match (a
+  // stale pasted copy is the fault the row exists to name), so it is read from wherever it now is.
   var body = '';
   try { body = read('specs/active/apps-script/' + m.file); } catch (e) { body = ''; }
+  if (!body) {
+    TEMP_TOOL_DIRS_.forEach(function (d) {
+      if (body) return;
+      try { body = read(d + '/' + m.file); } catch (e2) { /* next */ }
+    });
+  }
   declaredBy[m.symbol] = (body.match(new RegExp('var\\s+' + m.symbol + " = '([^']+)';")) || [])[1];
 });
 // Guard the guard: a manifest entry with no declaredBy lookup would make the comparison vacuous.

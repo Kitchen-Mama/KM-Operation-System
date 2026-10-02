@@ -63,11 +63,21 @@ function mut(label, fn) {
 // ---- the files the audit reads ---------------------------------------------------------------------------
 var AS_FILES = lsdir(GS).filter(function (f) { return /\.gs$/.test(f); });
 var AS_PERM = AS_FILES.filter(function (f) { return f.indexOf('TEMP_') !== 0; });
-var AS_TEMP = AS_FILES.filter(function (f) { return f.indexOf('TEMP_') === 0; });
+// S7-R4 — AS_TEMP FOLLOWS THE TOOLS, AND IT HAS TO. This read the DEPLOY FOLDER, so when R4 moved the
+// seven out it went empty and F2 below — 'no permanent file CALLS a TEMP symbol' — became vacuous. Its
+// mutant proved it by SURVIVING. That claim matters more after a relocation, not less: a relocation is
+// precisely what would break such a dependency, so the thing to scan is the tools, not the folder.
+var TEMP_DIRS = ['tools/apps-script-migrations', 'tools/apps-script-diagnostics', 'tools/apps-script-seeds'];
+var TEMP_HOME = {};
+TEMP_DIRS.forEach(function (d) {
+  lsdir(d).forEach(function (f) { if (/^TEMP_.*\.gs$/.test(f)) TEMP_HOME[f] = d; });
+});
+var AS_TEMP = Object.keys(TEMP_HOME).sort();
 var PAGE_FILES = lsdir(JSP).filter(function (f) { return /\.js$/.test(f); });
 
 var SRC = {};
 AS_FILES.forEach(function (f) { SRC[f] = read(GS + f); });
+AS_TEMP.forEach(function (f) { SRC[f] = read(TEMP_HOME[f] + '/' + f); });
 var ROUTER = SRC['01_router.gs'];
 var ADAPTER = read(JSA + 'operation-system-db-api.js');
 var PAGES = {};
@@ -472,12 +482,21 @@ section('F  TEMP / MIGRATION CENSUS — what is in the DEPLOYABLE folder, and wh
 // under tools/ is paste-run-remove and never ships. Only the first kind can break a deployment by being
 // removed, and that has happened once already.
 
-eq(AS_TEMP.length, 7, 'F1  seven TEMP files sit in the deployable folder');
+// S7-R4 CLOSED THIS. What R1 found, kept because the finding is the point: SEVEN TEMP files sat in the
+// deployable folder — the folder whose membership IS the claim 'this is synced into the project as
+// runtime' — and one of them was a demo seed that writes and clears six business tables. R4 moved all
+// seven into assets/tools/, where the repository already kept two migration tools for this reason.
+eq(AS_FILES.filter(function (f) { return f.indexOf('TEMP_') === 0; }), [],
+  'F1  NO TEMP file sits in the deployable folder any more — DEPLOYABLE_TEMP_COUNT_POST = 0');
 var TOOLS_DIAG = lsdir('tools/apps-script-diagnostics').filter(function (f) { return /\.gs$/.test(f); });
 var TOOLS_MIG = lsdir('tools/apps-script-migrations').filter(function (f) { return /\.gs$/.test(f); });
-eq(TOOLS_DIAG.length, 30, 'F1a thirty diagnostics live under tools/, outside the deploy folder');
-eq(TOOLS_MIG.length, 2, 'F1b and two migrations');
-eq(AS_TEMP.length + TOOLS_DIAG.length + TOOLS_MIG.length, 39, 'F1c TEMP_SCRIPT_COUNT = 39');
+var TOOLS_SEED = lsdir('tools/apps-script-seeds').filter(function (f) { return /\.gs$/.test(f); });
+eq(TOOLS_DIAG.length, 34, 'F1a thirty-four diagnostics live under tools/, outside the deploy folder');
+eq(TOOLS_MIG.length, 4, 'F1b four migrations');
+eq(TOOLS_SEED.length, 1, 'F1b1 and the one seed has a directory of its own, because burying the tool '
+  + 'that can empty six tables among ordinary migrations loses the only fact about it that matters');
+eq(TOOLS_DIAG.length + TOOLS_MIG.length + TOOLS_SEED.length, 39, 'F1c TEMP_SCRIPT_COUNT = 39');
+eq(AS_TEMP.length, 39, 'F1d and the census below reads all 39, not the empty folder');
 
 var permTop = {};
 AS_PERM.forEach(function (f) { topLevelSymbols(SRC[f]).forEach(function (n) { permTop[n] = 1; }); });
@@ -755,7 +774,10 @@ eq(uniq(AS_FILES.filter(function (f) { return /function handleShipmentDocumentGe
   'M2b and generation keeps its own existing owner — SECOND_DOCUMENT_ENGINE_CREATED = NO');
 
 // ---- D-S7-3  TEMP DEPLOYABLE POLICY -------------------------------------------------------------
-eq(AS_TEMP.length, 7, 'M3  DEPLOYABLE_TEMP_COUNT_PRE = 7');
+// S7-R4 — the policy is satisfied, not just stated. D_S7_3_TEMP_DEPLOYABLE_POLICY asked for
+// REMOVE_NON_RUNTIME_TEMP_FROM_PRODUCTION_DEPLOY_SURFACE; the surface is now empty of them.
+eq(AS_FILES.filter(function (f) { return f.indexOf('TEMP_') === 0; }).length, 0,
+  'M3  NON_RUNTIME_TEMP_IN_FINAL_PRODUCTION_DEPLOY_SET = 0 (DEPLOYABLE_TEMP_COUNT_PRE was 7)');
 eq(tempCalledByProduction, [],
   'M3a PRODUCTION_REQUIRED_TEMP_COUNT = 0 — no production code calls a TEMP symbol, so the final deploy '
   + 'target of 0 is reachable without proving an exception');

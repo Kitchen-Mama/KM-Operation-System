@@ -642,7 +642,19 @@ var R6_KNOWN_GS_CHANGES = ['assets/specs/active/apps-script/03_master_data_handl
   // three reads a Product Strategy table, a pricing row or the staged-section registry.
   'assets/specs/active/apps-script/17_carrier_handlers.gs',
   'assets/specs/active/apps-script/01_router.gs',
-  'assets/specs/active/apps-script/63_api_v1_system_health.gs'];
+  'assets/specs/active/apps-script/63_api_v1_system_health.gs',
+  // S7-R4 — SEVEN RELOCATIONS, NOT SEVEN EDITS. These paths appear in the diff because the files LEFT
+  // assets/specs/active/apps-script/ for assets/tools/, byte for byte. Membership in that folder is the
+  // claim 'this is synced into the Apps Script project as runtime', and a demo seed that writes and clears
+  // six business tables was making it. None of the seven reads a Product Strategy table, a pricing row or
+  // the staged-section registry — which is the property this register exists to protect.
+  'assets/specs/active/apps-script/TEMP_demo_shipping_shipment_map_seed_v2.gs',
+  'assets/specs/active/apps-script/TEMP_document_diagnostics.gs',
+  'assets/specs/active/apps-script/TEMP_draft_migration_diagnostic.gs',
+  'assets/specs/active/apps-script/TEMP_migrate_request_order_draft_v2.gs',
+  'assets/specs/active/apps-script/TEMP_migrate_shipping_allocation_ai_lifecycle.gs',
+  'assets/specs/active/apps-script/TEMP_order_planning_draft_readback_diagnose.gs',
+  'assets/specs/active/apps-script/TEMP_request_order_send_diagnostics.gs'];
 var gsChanged = changedSince(R6_PRE, 'assets/specs/active/apps-script');
 if (gsChanged !== '__git_unavailable__') {
   var unexpectedGs = gsChanged.split('\n').map(function (x) { return x.trim(); })
