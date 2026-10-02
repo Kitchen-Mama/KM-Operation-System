@@ -1442,3 +1442,117 @@ added, so the action contract stays at 18 and the browser's pin stays at 18.
 THIS release" while `01_` was an owner; R40 carries it, and the narrowed form demanded exactly the marched
 stamp that `C2`'s own comment says it was rewritten to stop requiring - one release after it was
 narrowed. Both now read the ledger, so they hold in either state and discriminate in both.
+
+---
+
+# PART VIII - S7-R5: SUPPORTING EXECUTION MAINLINE FINAL INTEGRATION + S7 CLOSING SEAL
+
+`PRE_SHA ff8246e` -> `POST_SHA <this round>` - `feature/product-strategy-board-p0`
+
+## Sec65 - WHAT A CLOSING SEAL HAD TO ASK
+
+Every S7 round has a suite and every one proves its own internals. Re-running them is necessary and is
+not sufficient, because S7-R1's finding was never that the parts were missing. It was *"three supporting
+flows whose parts exist and do not meet"*. A seal assembled from the per-part suites would be blind to
+exactly the defect the series opened with.
+
+So `s7-r5-supporting-mainline-final-integration` asks only cross-cutting questions: how many owners each
+responsibility has, whether every surface reaches its canonical owner through the canonical adapter,
+whether a supporting flow can execute a business mainline, and whether the three seams still behave.
+Executed where execution is possible - the shipped carrier resolver, the shipped Weekly label and the
+shipped Document Panel all run in a `vm` against fixtures.
+
+## Sec66 - FINAL OWNERS, COUNTED RATHER THAN CARRIED FORWARD
+
+```
+CARRIER_MASTER_OWNER            carriers (sheet) - declared by 40_ and 57_, one required id column
+CARRIER_DISPLAY_RESOLVER_OWNER  KM.display.carrierDisplay            count 1
+DOCUMENT_ENGINE_OWNER           39_ (dgsDocumentDto_, dgsRowState_)  count 1
+DOCUMENT_PANEL_RENDER_OWNER     shDocumentPanelHtml                  count 1
+DOCUMENT_RETRY_OWNER            39_ handleDocumentRetry_ / shRetryDocument   count 1 each
+CARRIER_LEADTIME_WRITE_OWNER    17_ handleUpsertCarrierLeadTime_     count 1
+APPS_SCRIPT_DEPLOY_SURFACE_OWNER  directory membership, declared once
+```
+
+Two DECLARATIONS of the `carriers` master are not two masters: both name the same sheet with the same
+required identity column, and neither derives a carrier from anything else.
+
+## Sec67 - EIGHT OF MY OWN ASSERTIONS WERE WRONG, AND ALL OF THEM THE SAME WAY
+
+The suite failed its first run with eight failures and two surviving mutants. Not one was a defect in the
+tree. Every one was a predicate that asked whether a FILE mentions a thing and whether that FILE also does
+a thing, instead of asking whether one FUNCTION does both:
+
+| it reported | what was actually true |
+|---|---|
+| `03_` is a `carrier_lead_times` writer | it spells the name in two `validTabs` allow-lists, both consumed by `readSheetAsObjects_` |
+| `17_` persists `carrier_name` | it writes that column to the **carriers master**, the one table where it is canonical; the file states the rule itself - *"carrier_name is NEVER stored on plans / shipments / rate_cards"* |
+| `13_` is a second document write authority | it records outcomes by calling `dgsUpdateRegistry_`, which `39_` defines once; a caller of the single primitive is what one authority looks like |
+| the rate importer names `carrier_lead_times` | once, inside the refusal that rejects a Lead Time column - the assertion scored the **enforcement** of the separation as a breach of it |
+| `22_` touches the document registry | it names it as a label in a response payload and delegates to `39_`; it never acquires the sheet |
+
+This is the same error S7-R3 made (counting a *mention* of `carrier_lead_times` in a refusal rather than a
+*write*), which makes it the second time in this series. The repair is structural rather than per-case: a
+brace-matching `topFns()` plus `writersOf(table)`, so "writer" means one function that both names the table
+and writes. Where even that is too coarse - the registry writers take the sheet name from a shared constant
+- the question is asked on **sheet acquisition** instead, which is the only thing that can touch it.
+
+Both surviving mutants were the same defect in the instrument. `I5` asserted that a mis-scoped document
+row cannot make a PO panel act on a shipment, but its fixture had status `READY`, which renders no retry
+control at all - so there was no address to get wrong. `I10` appended a real write to a body extracted by
+a non-greedy regex that stopped at the first nested `}`. **A mutant that survives is the instrument
+reporting on itself, and both reports were correct.**
+
+## Sec68 - RELEASE CONTRIBUTION, ACROSS EVERY S7 ROUND
+
+```
+S7_BACKEND_CHANGED_OWNER_SET   01_router.gs - 17_carrier_handlers.gs
+                               57_api_v1_shipment_workspace.gs - 63_api_v1_system_health.gs
+S7_FRONTEND_CHANGED_ASSET_SET  operation-system-db-api.js - app.js - carrier-rate-card.js
+                               global-logistics-map.js - purchase-order-overview.js
+                               shipping-history.js - shipping-plan.js
+S7_HTML_CHANGED_ASSET_SET      assets/html/pages/carrier-rate-card.html
+S7_REPO_TOOLING_RELOCATION_SET the seven TEMP tools, to assets/tools/{migrations,diagnostics,seeds}/
+BACKEND_RELEASE                F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R40   (carried; R5 cuts no release)
+```
+
+No ordering, shipping, factory, overseas, dispatch or receipt owner changed in any S7 round - asserted
+against the whole S7 span rather than the last commit. `index.html` and `km-repo-asset-manifest.js` also
+differ across that span and are **not** S7: they belong to the branding commit `03f56b9`, which §26 of this
+round assigns to the cumulative release gate.
+
+**DEPLOY ORDER.** `57_` before the frontend carrier-name consumers, or a page resolves against a master
+the workspace does not yet serve. `01_` and `17_` together, or the router dispatches `carrierLeadTime.upsert`
+to a handler that is not there and answers with a reference error rather than a refusal. `63_` last or
+alone - it is the manifest, and a stale copy mis-reports every other file.
+
+## Sec69 - WHAT S7 HANDS TO S8, UNFIXED ON PURPOSE
+
+1. `s2-r4b` Shipping History / FC harness prints `FAIL A3` while exiting 0
+2. `CURRENT_PRE_SCHEDULE` has no explicit maximum snapshot age
+3. Factory available / receipt remaining client-side read-contract consolidation
+4. SKU Details workspace cold timeout
+5. SKU Regional Details workspace cold timeout / performance
+6. carrier-rate-card legacy `.catch(_crcInit)` fail-silent residue
+7. `KM.loadState` incomplete adoption across backend-reading pages
+8. boot payload / loading architecture, after R2B1 removed the brittle byte-floor gate
+9. production performance validation after a coherent deployment
+
+S9 (login, roles, capability, admin UI, import permission), S10 (Factory Order Number / Tcode) and S11
+(Product Strategy completion, Competitor Analysis, Control Tower) are preserved and carry no runtime work
+here, including the full-carton allocation rule and its 庫存不足 shortage display.
+
+## Sec70 - S7 FINAL SEAL
+
+```
+S7_FINAL_SEAL = YES          OPEN_S7_BLOCKERS = none
+S5_SEAL_HELD = YES           S6_FINAL_SEAL_HELD = YES
+S7_TO_S5_BEHAVIOR_DRIFT_COUNT = 0    S7_TO_S6_BEHAVIOR_DRIFT_COUNT = 0
+NEW_TABLE / COLUMNS / SCHEMA / MIGRATION / BACKFILL = NO / NONE / NO / NO / NO
+PRODUCTION_ROWS_WRITTEN = 0
+```
+
+S7 closed supporting and auxiliary execution without becoming a third mainline. The carrier a plan already
+knew is now named on screen; a document that exists can be found again and retried on both entities; a lane
+that can be priced in the application can now be timed in it; and the folder whose membership means "this
+is deployed" no longer holds a seed that can empty six business tables.
