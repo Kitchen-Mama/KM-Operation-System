@@ -122,7 +122,69 @@ For static frontend changes: user pushes the approved commit → GitHub Pages de
 
 ---
 
-## 9. Relationship to S0/S0.5 safety and API migration
+## 9. Production Apps Script deploy surface (S7-R4, 2026-10-02)
+
+**`APPS_SCRIPT_DEPLOY_SURFACE_OWNER` = `assets/specs/active/apps-script/` — directory membership.**
+Membership in that folder *is* the claim "this file is synced into the Apps Script project as runtime".
+`63_api_v1_system_health.gs` states the same rule from the other side, explaining why a tool outside the
+folder gets no manifest row: *"every manifest reader resolves `assets/specs/active/apps-script/<file>`
+and only that, because this manifest lists the files SYNCED INTO THE PROJECT AS RUNTIME."*
+
+`APPS_SCRIPT_DEPLOY_SELECTION_MECHANISM` has two levels, and conflating them is the mistake this section
+exists to prevent:
+
+| level | what it is | where it is declared |
+|---|---|---|
+| **runtime universe** | every file *eligible* to exist in the Production project | directory membership, pinned by name in `assets/tests/_production-deploy-surface.js` |
+| **per-release sync set** | the files this release actually copies | `APPS_SCRIPT_SYNC_REQUIRED` in the Completion Report (§4 above) |
+
+The sync set is a subset of the universe, never a superset. §4 already forbids copying every `.gs` on
+every release; this section says what the universe is, so "every `.gs`" has a safe meaning if anyone ever
+does it.
+
+### Non-runtime tooling is excluded structurally, not by memory
+
+Operator tools, one-time migrations and seeds live **outside** the runtime folder and are never copied by
+a normal release:
+
+```
+assets/tools/apps-script-migrations/   ONE_TIME_MIGRATION   paste - run - remove, under an authorized window
+assets/tools/apps-script-diagnostics/  DIAGNOSTIC           read-only operator tools, pasted for one session
+assets/tools/apps-script-seeds/        SEED                 data construction; never a production deploy
+```
+
+A tooling directory is **not** a source of runtime membership. A file added to one tomorrow cannot reach
+production by sitting there, because the universe is a declared list rather than a scan.
+`assets/tests/s7-r4-production-deploy-surface.test.js` fails if a `.gs` appears in the runtime folder
+without a declaration, and a second, independent name-shaped net catches a `TEMP_*` file that is added to
+the declaration as well as to the folder.
+
+**`NON_RUNTIME_TEMP_IN_FINAL_PRODUCTION_DEPLOY_SET = 0`.** Seven tools were relocated in S7-R4 — 808,195
+bytes, including a demo seed whose COMMIT entry point writes six business tables (`shipping_plans`,
+`shipping_plan_lines`, `shipments`, `shipment_lines`, `shipment_routes`, `shipment_events`) and whose
+CLEAR entry point empties them. None of it was ever deployed; nothing structural was keeping it that way.
+
+### The DELETE set — a copy list is not enough
+
+**Removing a file from the repository does not remove it from the Apps Script project.** The cumulative
+release therefore needs a DELETE set as well as a COPY set. It is declared as
+`PRODUCTION_DELETE_SET_CANDIDATE` in `fc-target-rule-release-stamp-r2b-a2-r5-f3.test.js`, beside the copy
+list, and the release ledger fails if a file leaves the runtime folder without being named there.
+
+The APPS-SCRIPT-RUNTIME-SLIM-R1 live `typeof` probe found all seven **absent** from the deployment, so the
+expected result of checking is that there is nothing to delete. That is a prediction from evidence, not a
+reason to skip the check: the probe can only ask about names it already knows, and a file pasted into the
+project by hand would never have appeared in it. Confirm each name in the project before the release and
+record the result.
+
+### Classification of a tool is evidence, not filename
+
+`TEMP_draft_migration_diagnostic.gs` calls itself a migration and is strictly read-only; the demo seed
+calls itself a seed and is the most destructive tool in the set. Classify from what a file *can do* —
+sheet writes, locks, property writes, named entry points — not from what it is called.
+
+---
+## 10. Relationship to S0/S0.5 safety and API migration
 
 - Schema safety (S0/S0.5) is enforced in code; this governance layer adds the **human release gate** on top. Neither replaces the other.
 - **Future API migration releases (API-1+) follow this same manual, user-controlled deployment** — see `API_MIGRATION_MASTER_PLAN.md`. The API cutover phases (API-5 Verification Copy, checkpoints F5/F6) are release events governed by this document.

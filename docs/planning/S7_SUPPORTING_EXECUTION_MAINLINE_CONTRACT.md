@@ -1305,3 +1305,140 @@ S7_R3_CARRIER_LEADTIME_SEAL  YES  OPEN_S7_BLOCKERS  none
 not there answers with a reference error rather than a refusal; a 17_ without the router is unreachable. The
 browser pins contract v18, so a frontend that can call the action refuses a deployment that predates it
 instead of sending a write nothing will route.
+
+---
+
+# PART VII - S7-R4: TEMP / MIGRATION PRODUCTION DEPLOY-SURFACE CLEANUP
+
+`PRE_SHA 085c2fd` -> `POST_SHA <this round>` - `feature/product-strategy-board-p0`
+
+## Sec58 - THE FOLDER WAS THE CLAIM
+
+APPS-SCRIPT-RUNTIME-SLIM-R1 asked the live Apps Script project, one top-level symbol at a time, which
+files it contained. Seven `TEMP_*` files answered **absent** - 808,195 bytes - with 31 corroborating
+symbol probes, positive controls present, negative controls absent, and the live manifest independently
+reporting the lifecycle migration in `absent_optional_modules`. Two mechanisms, one answer.
+
+That audit was right, and it left one question open: **why would they stay out?**
+
+`63_` answers it, in a note explaining why a sibling tool gets no manifest row:
+
+> every manifest reader resolves `assets/specs/active/apps-script/<file>` and only that, because this
+> manifest lists the files SYNCED INTO THE PROJECT AS RUNTIME ... the precedent is the folder, not being
+> a migration.
+
+So membership in that folder **is** the claim "this is production runtime". And the folder held
+`TEMP_demo_shipping_shipment_map_seed_v2.gs`, whose `DEMO4A_WRITE_ORDER_` names six business tables -
+`shipping_plans`, `shipping_plan_lines`, `shipments`, `shipment_lines`, `shipment_routes`,
+`shipment_events` - and whose `DEMO4A_CLEAR_ORDER_` names the same six in reverse. Nothing structural
+kept it out of a release. Only nobody having pasted it yet.
+
+## Sec59 - RELOCATED, ON EVIDENCE RATHER THAN ON FILENAME
+
+```
+apps-script-migrations/   TEMP_migrate_request_order_draft_v2.gs              418,557 B  writes
+                          TEMP_migrate_shipping_allocation_ai_lifecycle.gs     36,728 B  writes
+apps-script-diagnostics/  TEMP_order_planning_draft_readback_diagnose.gs       17,404 B  read-only
+                          TEMP_document_diagnostics.gs                         15,423 B  read-only
+                          TEMP_request_order_send_diagnostics.gs               12,609 B  read-only
+                          TEMP_draft_migration_diagnostic.gs                    7,292 B  read-only
+apps-script-seeds/        TEMP_demo_shipping_shipment_map_seed_v2.gs          300,182 B  writes + clears
+```
+
+The two existing tooling directories were already the repository's answer to this question - the
+override-audit provisioning tool and the allocation two-column append migration live there, and `63_`
+records that neither has a manifest row. `apps-script-seeds/` is new, because burying the one tool that
+can empty six tables among ordinary migrations loses the only fact about it that matters.
+
+`TEMP_draft_migration_diagnostic.gs` is classified **DIAGNOSTIC** although the audit tool classes it
+D_FUTURE_MIGRATION from its name. Its own header says *"strictly READ-ONLY ... it NEVER creates, writes,
+or repairs any Sheet"*, and it has zero recorded mutations. The file is the evidence; the name is not.
+
+`UNKNOWN_TEMP_CLASSIFICATION_COUNT = 0`.
+
+## Sec60 - WHAT THE LEDGER ALREADY KNEW
+
+The release ledger partitions the Apps Script diff into COPY and DELETE and says *"an unexplained
+deletion is as much of a ride-along as an unexplained edit"*. Seven files left the folder, so `I1a` fired
+on the first run with all seven named. Widening it to whatever git reports would have turned a guard into
+a mirror, so `PRODUCTION_DELETE_SET_CANDIDATE` declares them and `I1a` is aimed at the declaration: an
+**eighth** file leaving is still a failure.
+
+This matters beyond bookkeeping. **Removing a file from the repository does not remove it from Apps
+Script.** A copy list alone would leave the old files in the project, compiled on every execution.
+
+## Sec61 - THE ONE RUNTIME BYTE CHANGE, AND WHY IT IS NOT BOOKKEEPING
+
+`63_`'s note ended "the lifecycle migration above has a row because it lives in that folder". After the
+move that file is in `assets/tools/apps-script-migrations/` and its row stayed - so the stated rule now
+predicts the opposite of what the file does.
+
+The row was kept rather than removed. Removing it would have emptied `absent_optional_modules`, whose
+count is asserted by `positive-residual-and-submit-readiness-census`, **one of the five canonical failing
+suites** - changing the canonical failure set to tidy a rule is not a trade worth making. And the row is
+still earning its place: the real reason was always stated four lines above it. *Absence is ACTIONABLE* -
+`69_` refuses until the columns exist and this tool is the only supported way to add them, so an operator
+who cannot tell "the run is blocked" from "the tool was never pasted" is stuck. `optional: true` is
+exactly right for a file that is not runtime: absent is normal, present-but-stale is the fault.
+
+The comment is corrected rather than carried. A manifest that mis-states its own admission rule is the
+comment-versus-assertion drift S7-R2B1 was convened to repair, and carrying it would have been the third
+time this series read a comment instead of the code.
+
+## Sec62 - THE EDGE I INVENTED, AND THE TOOL THAT HAD ALREADY WARNED ME
+
+The new suite's F6 asks whether any runtime file still references a symbol that left. On its first run it
+reported `66_api_v1_request_order_send.gs`. The mention is a **line comment** at `66_:1453`; `66_` is the
+file those wrappers call into, which is why FB-4G-A2-R4 reduced them to editor wrappers.
+
+The load-surface audit tool records this exact error, in the opposite direction, as the reason it was
+rebuilt: `46_` names two trigger handlers in a line comment and depends on neither, so *"a scan that
+simply grepped for the name would invent that edge and report a file as load-bearing when it is not -
+which is how dead code stays deployed forever."* I invented that edge, in a suite written beside the tool
+that documents it.
+
+Comments are stripped before the scan; string literals are kept, because a refusal message naming a tool
+is a real guidance edge. The comment mention is then asserted **positively** (`F6a`/`F6b`) and a mutant
+guards the distinction, so it is tested rather than merely avoided.
+
+F6 also named only the FILE and not the SYMBOL, which cost three runs. It reports pairs now. An assertion
+that announces a failure without saying what it found is a worse instrument than one that says nothing,
+because it looks like an answer.
+
+## Sec63 - GUIDANCE STAYED TRUTHFUL, AND WAS NOT TOUCHED
+
+`61_` tells an operator to run `TEMP_R6F2_PREFLIGHT_INVENTORY_K2_ROUTE_AUTHORITY()`; `69_` names the
+three AI-lifecycle entry points; `00_config` names the activation census. All three were checked against
+the relocated sources and all resolve. `PRODUCTION_GUIDANCE_DEAD_TOOL_REFERENCE_COUNT = 0`.
+
+None of those messages was edited. They say "run it **in the Apps Script project**", which has always
+meant paste-then-run: the live probe proved none of these tools was in the project before the move
+either. Relocation changed where the operator finds the file, not whether the instruction was true -
+and editing `61_` would have rotated a 240 KB runtime owner and its manifest row to improve a sentence
+that was already correct.
+
+## Sec64 - ROUND OUTCOME
+
+```
+TEMP_ARTIFACT_COUNT                              41   (39 tooling .gs + 1 tmp/ live-paste copy
+                                                      + 1 sealed retired fixture)
+UNKNOWN_TEMP_CLASSIFICATION_COUNT                 0
+DEPLOYABLE_TEMP_COUNT_PRE                         7
+PRODUCTION_REQUIRED_TEMP_COUNT                    0
+NON_RUNTIME_TEMP_IN_FINAL_PRODUCTION_DEPLOY_SET   0
+FINAL_PRODUCTION_APPS_SCRIPT_RUNTIME_FILE_COUNT  77   (+ appsscript.json)
+TEMP_EXCLUSION_STRUCTURALLY_ENFORCED            YES
+MISSING_ROUTER_HANDLER_COUNT                      0
+ORPHAN_PRODUCTION_ACTION_COUNT                    0
+DEAD_TEMP_REFERENCE_COUNT_POST                    0
+PRODUCTION_ROWS_WRITTEN                           0
+BACKEND_RELEASE      F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R40   (63_ only; one corrected comment)
+```
+
+**THE TWENTIETH SWAP.** `01_` leaves ownership after exactly one release and keeps R39. No action was
+added, so the action contract stays at 18 and the browser's pin stays at 18.
+
+`C2` and `H4a` both had to go back to the durable claim. R3 had narrowed `C2` to "the router declares
+THIS release" while `01_` was an owner; R40 carries it, and the narrowed form demanded exactly the marched
+stamp that `C2`'s own comment says it was rewritten to stop requiring - one release after it was
+narrowed. Both now read the ledger, so they hold in either state and discriminate in both.
