@@ -455,11 +455,36 @@ CANONICAL_FAILURE_SET           gap-job-done-notice-f1-small-r1
                                 positive-residual-and-submit-readiness-census-f1-7n-fc-1b-e3-r4-a2-r1-r6-r7-r5-r1
                                 replen-header-toggle
                                 supply-planning-route-inventory
-CANONICAL_FAIL_LINES            19
-CANONICAL_DIGEST                596eeb6448f3911ff876a3f7c21606e747a4892f43df9fa7c4186830ed9069ba
-CANONICAL_FAILURE_SET_CHANGED = NO        <- required
+CANONICAL_FAILURE_SET_CHANGED = NO        <- required. THE SUITE SET ABOVE IS THE GATE.
 WORKTREE_DIRTY                = NO        <- required; `git status --porcelain` empty after the sweep
+SUITES THAT LEFT THE TREE DIRTY = 0       <- required
 ```
+
+### The FAIL-line count and digest are properties of the SCRIPT, not only of the tree
+
+Do not gate on them without reproducing the instrument. Measured at `368d49f`, with a sweep that captures
+FAIL lines from **every** suite regardless of exit code:
+
+```
+CANONICAL FAIL LINES  20      CANONICAL_DIGEST  e53d5afe46a511a1838181903f92058e9582575b3edf7cbf5616bd6b0438dda9
+```
+
+The reconciliation round recorded 19 lines and digest `596eeb64...`. The difference is one line, and it is
+fully accounted for:
+
+```
+s2-r4b-shipping-history-and-fc-warm-race :: FAIL A3
+    "no shipping_history / shipment_history table is declared in any spec or handler"
+    -> the suite EXITS 0. It has never been in the failing-suite set, and it is S7 carried debt #1,
+       recorded three times in S7_SUPPORTING_EXECUTION_MAINLINE_CONTRACT.md and again in §23 below.
+```
+
+A sweep that keys only on exit codes cannot see it — which is the standing warning in this repository: a
+suite whose promise never settles exits 0 while a FAIL line is on the screen. Capturing it is the stricter
+and more honest measurement, so the count went **up by one without anything in the tree changing**.
+
+**Therefore:** gate on the five-suite set and on a clean tree. Treat the line count and digest as
+comparable only against a run of the *same* sweep script, and record which script produced them.
 
 If `CANONICAL_FAILURE_SET_CHANGED = YES`, or the tree is dirty, **STOP**. A suite that left the tree dirty
 left a mutant behind; restore with `git checkout -- <path>` only after identifying which suite did it.
