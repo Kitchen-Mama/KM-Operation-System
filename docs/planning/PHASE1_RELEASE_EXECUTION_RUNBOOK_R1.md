@@ -171,6 +171,79 @@ GATE 0A's answer is load-bearing only if the live build turns out to be R16 or l
 
 ---
 
+# GATE 0A RESULT — EXECUTED 2026-10-03 AGAINST LIVE PRODUCTION
+
+`system.health` was read from the live `/exec` deployment. **Production is at R25**, not R14 and not R15.
+Both the reconciliation’s finding and §0.6’s refinement of it were stale.
+
+```
+LIVE_BUILD_ID                   F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25
+LIVE_RELEASE_ID                 F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25
+LIVE_ACTION_CONTRACT_VERSION    17            (HEAD declares 18 — this release moves it)
+LIVE_GENERATED_BUNDLE_HASH      830563effc604ba55a70424d8f7b95c627ae0bc4ce84aa981833fb75ac2ed64f
+LIVE_MIXED_DEPLOYMENT           false
+LIVE_MISSING_REQUIRED_MODULES   []            LIVE_STALE_REQUIRED_MODULES   []
+LIVE_ABSENT_OPTIONAL_MODULES    ["TEMP_migrate_shipping_allocation_ai_lifecycle.gs"]
+LIVE_PRODUCT_STRATEGY_ENABLED   true          <- the pricing surface is LIVE. §3 is NOT moot.
+required_action_list_version    14   required_action_count 46   missing_actions []
+verdict                         "UNIFORM — every probed owner file declares the build its manifest expects"
+```
+
+## The live tree identified by content, not by its release id
+
+A release id is a label and `51575e8` records that **R25 once named two different trees**. So the baseline
+was settled on content instead:
+
+```
+live 90_ KM_BUNDLE_CONTENT_HASH_   830563ef...  ==  7a29415’s 90_        ==  7a29415’s 63_ expectation
+live 63_ / 01_ / 73_ stamps        R25          ==  7a29415
+live 58_ R14 · 14_ R18 · 20_ R20 · 04_ R24 · 72_ R24 · 59_ R21   all == 7a29415
+
+PRODUCTION == 7a29415   "fix(pricing): a write that committed, reported as Nothing was written"
+git merge-base --is-ancestor 7a29415 HEAD  ->  YES
+```
+
+Because `7a29415` is an ancestor of HEAD, every live runtime byte is one this release also carries.
+**GATE_0A_PASS_CONDITION is satisfied on content, not merely on a release id**, and no live bytes are
+unaccounted for. STOP conditions (a) (b) (c) (d) are all clear.
+
+## What this changes
+
+```
+TRUE DELTA  git diff 7a29415 HEAD -- assets/specs/active/apps-script/   =  15 modified + 7 deleted
+
+PROVEN NO-OPS against live (byte-identical, already deployed at R24/R21):
+    04_marketplace_forecast_import.gs      live R24 == HEAD R24
+    59_api_v1_sku_details_workspace.gs     live R21 == HEAD R21
+    72_api_v1_product_pricing_workspace.gs live R24 == HEAD R24
+```
+
+These are the exact three §1’s continuation clause named in advance. The approved 18-file set therefore
+remains **valid and safe** — it is a superset whose three extra members are provably byte-identical. Copying
+15 or 18 are both correct; 15 is the minimum, and every unnecessary paste is one more chance to paste wrong.
+
+> **⚠ `73_api_v1_pricing_write.gs` ALREADY EXISTS IN PRODUCTION** at R25. §11 step 1 says to create it as a
+> new script file — that instruction was written against the R14 baseline and is now **wrong**. Creating it
+> again would put two copies of the one pricing write owner into the project. **OVERWRITE it, as with every
+> other file in the set.** No file in the corrected set is an addition; all 15 are overwrites.
+
+`04_`, `59_` and `72_` are no longer “omitted by the ledger list” defects: the ledger’s `BASE = e583057`
+tracked the R25 line all along, so on this point the ledger was right and the reconciliation was wrong.
+
+## Still outstanding at CHECKPOINT A
+
+```
+A2  live TEMP membership   6 of 7 UNRESOLVED. system.health reports only the lifecycle migration
+                           (absent_optional_modules); the other six carry no manifest row, so the
+                           health endpoint cannot speak to them. The project FILE LIST must be read.
+A3  pricing headers        UNRESOLVED and REQUIRED — product_strategy_enabled is true, so §3 is live.
+                           Reading row 1 of a Spreadsheet needs authenticated access to the bound DB.
+
+LIVE_PRECHECK_PASS = NO   (incomplete, not failed — A1 passed outright)
+```
+
+---
+
 # PART A — PREFLIGHT
 
 ## 1. GATE 0A — LIVE BUILD IDENTITY
@@ -632,8 +705,9 @@ client, or any automation: `APPS_SCRIPT_SYNC_OWNER = USER` and `clasp push` / `c
 
 For each file, in stage order:
 
-1. Open the target file in the Apps Script editor (for `73_`, create a new script file named
-   `73_api_v1_pricing_write` — it is the one **added** file).
+1. Open the target file in the Apps Script editor. **Every file in the corrected set is an OVERWRITE,
+   including `73_api_v1_pricing_write.gs`, which GATE 0A proved is already live at R25.** Do not create
+   a second copy of it.
 2. Select all in the editor, delete, and paste the full contents of the repository file at
    `TESTED_RELEASE_SHA`.
 3. Save. Confirm the editor reports no parse error.
