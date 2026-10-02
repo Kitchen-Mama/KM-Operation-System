@@ -22,7 +22,7 @@ var RTR = read('specs/active/apps-script/01_router.gs');
 var SH = read('js/pages/shipping-history.js');
 var POJS = read('js/pages/purchase-order-overview.js');
 var API = read('js/api/operation-system-db-api.js');
-var TEMPD = read('specs/active/apps-script/TEMP_document_diagnostics.gs');
+var TEMPD = read('tools/apps-script-diagnostics/TEMP_document_diagnostics.gs');
 var SPEC = read('../docs/planning/DOCUMENT_GENERATION_SYSTEM_SPEC.md');
 
 var fail = 0, pass = 0;
@@ -894,7 +894,7 @@ ok(/---- STAGE 2 \(no lock held\) ----/.test(G13), 'A. and the source says so ex
 // innocuous-looking helper. So this builds the TRANSITIVE CLOSURE of every function that can reach Drive, then
 // tracks lock DEPTH through each file and asserts no closure member is called while depth > 0.
 // ---------------------------------------------------------------------------------------------------------
-var ALL_GS = [G13, G22, G34, G35, G36, G37, G38, G39, RTR, read('specs/active/apps-script/TEMP_document_diagnostics.gs')];
+var ALL_GS = [G13, G22, G34, G35, G36, G37, G38, G39, RTR, read('tools/apps-script-diagnostics/TEMP_document_diagnostics.gs')];
 // any expression that reaches the Drive API directly, MUTATING OR NOT
 var DRIVE_PRIMITIVE = /DriveApp|DocumentApp|getFolderById|getFileById|makeCopy\(|\.getAs\(|createFile\(|createFolder\(|setTrashed\(|getFolders\(|getFiles\(|SpreadsheetApp\.openById/;
 function allFunctions(sources) {

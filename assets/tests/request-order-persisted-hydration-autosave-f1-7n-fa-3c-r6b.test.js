@@ -15,7 +15,7 @@ function done() { console.log('\n' + '-'.repeat(40)); console.log('R6B PERSISTED
 
 var RO = fs.readFileSync(path.join(__dirname, '..', 'js', 'pages', 'request-order.js'), 'utf8').replace(/\r\n/g, '\n');
 var INV = fs.readFileSync(path.join(__dirname, '..', 'js', 'pages', 'inventory-replenishment.js'), 'utf8').replace(/\r\n/g, '\n');
-var GSTEMP = fs.readFileSync(path.join(__dirname, '..', 'specs', 'active', 'apps-script', 'TEMP_migrate_request_order_draft_v2.gs'), 'utf8').replace(/\r\n/g, '\n');
+var GSTEMP = fs.readFileSync(path.join(__dirname, '..', 'tools', 'apps-script-migrations', 'TEMP_migrate_request_order_draft_v2.gs'), 'utf8').replace(/\r\n/g, '\n');
 var V2 = KMRDV2.V2_HEADERS, HDR = KMRDV2P.HEADER_TABLE;
 var TARGET = 'RD::MONTHLY_ORDER::2026-08::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=CO1100-R';
 // brace-matched function extractor (handles one-liners + multi-line)

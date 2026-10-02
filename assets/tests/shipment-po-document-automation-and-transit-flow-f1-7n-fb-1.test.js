@@ -351,8 +351,8 @@ ok(/getFolders\(\)/.test(IO38) && /createFolder\(/.test(IO38), '14. the io bound
 ok(/getFiles\(|setSharing|addEditor|addViewer|getAs\(/.test(IO38) === false, '9. it never enumerates files and never changes Drive sharing/permissions');
 
 section('FB1-15. the validated Demo seed is untouched and still readable');
-ok(fs.existsSync(path.join(ROOT, 'specs/active/apps-script/TEMP_demo_shipping_shipment_map_seed_v2.gs')), '45. the Demo seed tool is still present');
-var DEMO = read('specs/active/apps-script/TEMP_demo_shipping_shipment_map_seed_v2.gs');
+ok(fs.existsSync(path.join(ROOT, 'tools/apps-script-seeds/TEMP_demo_shipping_shipment_map_seed_v2.gs')), '45. the Demo seed tool is still present');
+var DEMO = read('tools/apps-script-seeds/TEMP_demo_shipping_shipment_map_seed_v2.gs');
 ok(/PASTE_DEMO_SEED_CHECKSUM_HERE/.test(DEMO) && /PASTE_DEMO_CLEAR_TOKEN_HERE/.test(DEMO), '45. both Demo confirmation constants remain placeholders — no seed/clear can run');
 ok(DEMO.indexOf('f53a7ef7') === -1, '45. the live Demo checksum is still pinned nowhere');
 

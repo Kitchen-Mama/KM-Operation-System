@@ -762,7 +762,7 @@ ok(code66.indexOf('PropertiesService') !== -1,
 // =============================================================================================================
 section('16. no Demo mutation, no email, and the deployment identity moved');
 
-const DEMO = read('specs/active/apps-script/TEMP_demo_shipping_shipment_map_seed_v2.gs');
+const DEMO = read('tools/apps-script-seeds/TEMP_demo_shipping_shipment_map_seed_v2.gs');
 ok(DEMO.length > 0, '16. the Demo seed file is present');
 [G66, code(RO).slice(RO.indexOf('async function handleSendRequest')), code66].forEach(function (src, i) {
   ['MailApp', 'GmailApp', 'sendEmail', 'TEMP_demo_', 'DEMO_SEED'].forEach(function (k) {

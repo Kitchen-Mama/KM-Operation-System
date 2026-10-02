@@ -13,7 +13,7 @@ function ok(c, l) { if (c) { pass++; } else { fail++; console.error('FAIL ' + l)
 function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A === E) { pass++; } else { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } }
 function section(n) { console.log('\n== ' + n + ' =='); }
 
-var GS_PATH = path.join(__dirname, '..', 'specs', 'active', 'apps-script', 'TEMP_migrate_request_order_draft_v2.gs');
+var GS_PATH = path.join(__dirname, '..', 'tools', 'apps-script-migrations', 'TEMP_migrate_request_order_draft_v2.gs');
 var GS = fs.readFileSync(GS_PATH, 'utf8').replace(/\r\n/g, '\n');
 var RD_ID = 'RD::MONTHLY_ORDER::Sat Aug 01 2026 00:00:00 GMT+0800 (台北標準時間)::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=SP5120-R';
 var ACTIVE_RAD = ['RAD-A92D17B1-8', 'RAD-3A0A8227-F', 'RAD-06053044-1', 'RAD-72ABD506-3', 'RAD-17DC0322-0'];

@@ -13,7 +13,7 @@ function ok(c, l) { if (c) { pass++; } else { fail++; console.error('FAIL ' + l)
 function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A === E) { pass++; } else { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } }
 function section(n) { console.log('\n== ' + n + ' =='); }
 
-var GS = fs.readFileSync(path.join(__dirname, '..', 'specs', 'active', 'apps-script', 'TEMP_migrate_request_order_draft_v2.gs'), 'utf8').replace(/\r\n/g, '\n');
+var GS = fs.readFileSync(path.join(__dirname, '..', 'tools', 'apps-script-migrations', 'TEMP_migrate_request_order_draft_v2.gs'), 'utf8').replace(/\r\n/g, '\n');
 
 var HDR_TAB = 'request_order_allocation_drafts', LINE_TAB = 'request_order_allocation_draft_lines', RUN_TAB = 'recommendation_calculation_runs';
 var HCOLS = ['request_allocation_draft_id', 'planning_cycle', 'company', 'country', 'marketplace', 'sku', 'status', 'generation_type', 'draft_purpose', 'draft_version', 'calculation_run_id', 'formula_version', 'created_by', 'created_at', 'updated_by', 'updated_at', 'submitted_at'];

@@ -174,7 +174,7 @@ ok(/snapshot_fc_context: shippingPlanSnapshotValue_/.test(GS) && /snapshot_event
 // ==================================================================================================================
 section('G. R6D1 staged Inventory state preserved (no regression)');
 ok(api.inventoryAiPlanDbGenerationEnabled() === false || true, 'G1. inventory mirror present');   // presence
-var TEMP = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', 'TEMP_migrate_request_order_draft_v2.gs'), 'utf8');
+var TEMP = fs.readFileSync(path.join(ROOT, 'tools', 'apps-script-migrations', 'TEMP_migrate_request_order_draft_v2.gs'), 'utf8');
 ok(/function TEMP_R6D1_VALIDATE_INVENTORY_AI_PLAN_READY\(\)/.test(TEMP), 'G2. R6D1 validator still present');
 ok(/GAP_JOB_INVENTORY/.test(TEMP) && /EMPTY_ORPHAN_SAFE_TO_CANCEL/.test(TEMP), 'G2. R6D1 GAP-INV run authority + blank-orphan classification preserved');
 // RESTATED (F1-7N-FC-1B-E3): see B1. What §G needed here is that enabling Inventory generation cannot

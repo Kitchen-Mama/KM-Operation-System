@@ -289,7 +289,8 @@ ok(/actor: TEMP_R2BA2_MIGRATION_ACTOR_/.test(MIG_SRC),
   'A6 the DTO takes the constant directly, with no fallback expression to hide a second source');
 
 // The repository's existing shape for exactly this situation — reused, not reinvented.
-var DEMO = gs('TEMP_demo_shipping_shipment_map_seed_v2.gs');
+var DEMO = fs.readFileSync(path.join(__dirname, '..', 'tools', 'apps-script-seeds',
+  'TEMP_demo_shipping_shipment_map_seed_v2.gs'), 'utf8');
 ok(/var DEMO4A_ACTOR_ = '[^']+';/.test(DEMO),
   'A7 the repository already uses module-level fixed actor constants in USER-run TEMP files (DEMO4A_ACTOR_)');
 

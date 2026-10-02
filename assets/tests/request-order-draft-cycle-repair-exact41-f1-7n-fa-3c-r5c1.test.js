@@ -14,7 +14,7 @@ function ok(c, l) { if (c) { pass++; } else { fail++; console.error('FAIL ' + l)
 function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A === E) { pass++; } else { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } }
 function section(n) { console.log('\n== ' + n + ' =='); }
 
-var GSTEMP = fs.readFileSync(path.join(__dirname, '..', 'specs', 'active', 'apps-script', 'TEMP_migrate_request_order_draft_v2.gs'), 'utf8').replace(/\r\n/g, '\n');
+var GSTEMP = fs.readFileSync(path.join(__dirname, '..', 'tools', 'apps-script-migrations', 'TEMP_migrate_request_order_draft_v2.gs'), 'utf8').replace(/\r\n/g, '\n');
 var V2 = KMRDV2.V2_HEADERS, CANON = 'request_order_allocation_drafts', LINES = 'request_order_allocation_draft_lines';
 var CY = 'planning_cycle', ID = 'request_allocation_draft_id';
 var OFFENDER_ISO = '2026-07-31T16:00:00.000Z';

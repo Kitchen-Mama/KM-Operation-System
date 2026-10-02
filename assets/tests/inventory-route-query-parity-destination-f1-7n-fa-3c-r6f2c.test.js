@@ -133,7 +133,7 @@ ok(/agg\[id\] === undefined\) \{ agg\[id\] = 0; order\.push\(id\); \}/.test(GS61
   'B4b breakdown entries are aggregated PER WAREHOUSE first (two entries for one warehouse are not two lines)');
 ok(/var destination = weeklyAiPlanClassifyDestination_\(l, whById\)/.test(GS61) && !/if \(d && s\(d\.destinationKind\)/.test(GS61), 'B5 the allocated-line builder classifies at the adapter (weeklyAiPlanClassifyDestination_), not the broken resolveWorkspaceLineDestination/destinationKind path');
 
-var TEMP = read('specs/active/apps-script/TEMP_migrate_request_order_draft_v2.gs');
+var TEMP = read('tools/apps-script-migrations/TEMP_migrate_request_order_draft_v2.gs');
 ok(/candidate_parity/.test(TEMP) && /manual_method_option_mismatch_count/.test(TEMP) && /ai_rankable_route_pair_mismatch_count/.test(TEMP) && /selected_route_invalid_count/.test(TEMP), 'B6 diagnostic reports the three-layer candidate_parity mismatch counters (R6F2D)');
 ok(/unmapped_method_raw_tokens_CLEARTEXT/.test(TEMP), 'B7 diagnostic reveals unmapped raw method tokens in cleartext (so Truck etc. can be confirmed)');
 ok(/stage_tally/.test(TEMP) && /method_ai_ranked/.test(TEMP) && /method_manual_only/.test(TEMP), 'B8 dry assembly carries the ai_ranked/manual_only stage tally');

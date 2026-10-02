@@ -10,7 +10,7 @@
 'use strict';
 var fs = require('fs'), path = require('path'), vm = require('vm');
 function read(rel) { return fs.readFileSync(path.join(__dirname, '..', rel), 'utf8'); }
-var TEMP = read('specs/active/apps-script/TEMP_migrate_request_order_draft_v2.gs');
+var TEMP = read('tools/apps-script-migrations/TEMP_migrate_request_order_draft_v2.gs');
 var pass = 0, fail = 0;
 function ok(c, l) { if (!c) { fail++; console.error('FAIL ' + l); } else { pass++; } }
 function eq(a, b, l) { ok(a === b, l + '  (got ' + JSON.stringify(a) + ' exp ' + JSON.stringify(b) + ')'); }

@@ -15,7 +15,7 @@ function ok(c, l) { if (c) { pass++; } else { fail++; console.error('FAIL ' + l)
 function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A === E) { pass++; } else { fail++; console.error('FAIL ' + l + '\n  exp ' + E + '\n  got ' + A); } }
 function section(n) { console.log('\n== ' + n + ' =='); }
 
-var GS_PATH = path.join(__dirname, '..', 'specs', 'active', 'apps-script', 'TEMP_migrate_request_order_draft_v2.gs');
+var GS_PATH = path.join(__dirname, '..', 'tools', 'apps-script-migrations', 'TEMP_migrate_request_order_draft_v2.gs');
 var GS = fs.readFileSync(GS_PATH, 'utf8').replace(/\r\n/g, '\n');
 var RD6_ID = 'RD::MONTHLY_ORDER::Sat Aug 01 2026 00:00:00 GMT+0800 (台北標準時間)::company=ResUS|country=US|draft_purpose=regular|marketplace=Amazon|sku=SP5120-R';
 // The six frozen R4B5 canonical active identities (source marketplace → migrated marketplace).
@@ -165,7 +165,7 @@ var cfg = fs.readFileSync(path.join(__dirname, '..', 'specs', 'active', 'apps-sc
 // R6E1: the flat V2 cutover is COMPLETE — the flag is now permanently true (authority = 00_config.gs). The R4 paste-
 // ready migration tool still NEVER flips it (it is set by config, not by the tool). Assert the completed posture.
 ok(/REQUEST_ORDER_DRAFT_V2_FLAT_CUTOVER_\s*=\s*true/.test(cfg), 'cutover flag is true (R6E1 completed the production cutover)');
-var tempSrc = fs.readFileSync(path.join(__dirname, '..', 'specs', 'active', 'apps-script', 'TEMP_migrate_request_order_draft_v2.gs'), 'utf8');
+var tempSrc = fs.readFileSync(path.join(__dirname, '..', 'tools', 'apps-script-migrations', 'TEMP_migrate_request_order_draft_v2.gs'), 'utf8');
 ok(!/REQUEST_ORDER_DRAFT_V2_FLAT_CUTOVER_\s*=/.test(tempSrc), 'the R4 migration tool never assigns/flips the cutover flag');
 
 // ==========================================================================

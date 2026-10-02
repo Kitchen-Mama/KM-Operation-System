@@ -248,7 +248,7 @@ var HANDLER_SOURCES = [read('specs/active/apps-script/01_router.gs'), G13, G16, 
   // F1-7N-FB-4A §C — the read-only Execution Plan conflict diagnostic's owner.
   read('specs/active/apps-script/68_api_v1_execution_plan_conflict_diagnostic.gs'),
   // F1-7N-FB-4A addendum §C/§D — the SINGLE owner of the Request Order Send TEMP diagnostics.
-  read('specs/active/apps-script/TEMP_request_order_send_diagnostics.gs'),
+  read('tools/apps-script-diagnostics/TEMP_request_order_send_diagnostics.gs'),
   read('specs/active/apps-script/22_shipment_dispatch_handlers.gs'),
   read('specs/active/apps-script/34_shipment_final_output_handlers.gs'),
   read('specs/active/apps-script/58_api_v1_fc_summary_workspace.gs'),
@@ -389,7 +389,7 @@ ok(!/DemoData\.isEnabled|KM\.DemoData/.test(extractFn(INV, 'submitReplenishmentP
 var CHANGED = [API, INV, SP, POJS, RTR, G63, G50].join('\n');
 ok(!/TEMP_demo_shipping_shipment_map_seed_v2|DEMO4A_|demoSeedCommit|COMMIT_CONFIRM|CLEAR_CONFIRM/.test(CHANGED),
   '10. no changed file references the Demo seed tool, its helpers or its confirmation constants');
-ok(fs.existsSync(path.join(ROOT, 'specs/active/apps-script/TEMP_demo_shipping_shipment_map_seed_v2.gs')),
+ok(fs.existsSync(path.join(ROOT, 'tools/apps-script-seeds/TEMP_demo_shipping_shipment_map_seed_v2.gs')),
   '10. and the Demo seed source is still present, unmodified by this task');
 
 // =======================================================================================================
@@ -434,7 +434,7 @@ ok(/dgsDriveReadiness_\(dofProbeIo_\(\)/.test(extractFn(G39, 'dgsPoRenderPrepare
   '12. readiness still probes in STAGE 2, outside the lock');
 eq((G13.match(/setStatus\('issued'\)/g) || []).length, 1, '12. there is still exactly ONE order_status = issued writer');
 ok(/poFin\.authorizes_issue !== true/.test(G13), '12. gated on the verifier authorization');
-ok(fs.existsSync(path.join(ROOT, 'specs/active/apps-script/TEMP_document_diagnostics.gs')),
+ok(fs.existsSync(path.join(ROOT, 'tools/apps-script-diagnostics/TEMP_document_diagnostics.gs')),
   '12. the TEMP document diagnostics are retained');
 eq((RTR.match(/action === 'document\.(list|get|retry)'/g) || []).length, 3, '12. the production document actions survive');
 ok(/action === 'document\.diagnostic\.purchaseOrder'/.test(RTR) && /action === 'document\.diagnostic\.shipment'/.test(RTR),

@@ -18,7 +18,7 @@ var G39 = read('specs/active/apps-script/39_document_runtime_service.gs');
 var G63 = read('specs/active/apps-script/63_api_v1_system_health.gs');
 var G64 = read('specs/active/apps-script/64_api_v1_scope_registry.gs');
 var G65 = read('specs/active/apps-script/65_api_v1_flow_diagnostics.gs');
-var TEMPDOC = read('specs/active/apps-script/TEMP_document_diagnostics.gs');
+var TEMPDOC = read('tools/apps-script-diagnostics/TEMP_document_diagnostics.gs');
 
 var fail = 0, pass = 0;
 function ok(c, l) { if (c) { pass++; } else { fail++; console.error('FAIL ' + l); } }

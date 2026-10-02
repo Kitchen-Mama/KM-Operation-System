@@ -17,7 +17,7 @@ function extractFn(src, name) { var s = src.indexOf('function ' + name + '('); i
 
 var G16 = read('specs/active/apps-script/16_shipping_allocation_handlers.gs');
 var G61 = read('specs/active/apps-script/61_api_v1_weekly_ai_plan.gs');
-var TEMP = read('specs/active/apps-script/TEMP_migrate_request_order_draft_v2.gs');
+var TEMP = read('tools/apps-script-migrations/TEMP_migrate_request_order_draft_v2.gs');
 
 // ---- the pure 16_ id helpers (shared by the sandbox + the direct unit tests) ------------------------------------
 var SAD_ID_HELPERS = ['sadFnv1a_', 'sadLineNaturalKey_', 'sadDeterministicLineId_', 'sadK2LineNaturalKey_',

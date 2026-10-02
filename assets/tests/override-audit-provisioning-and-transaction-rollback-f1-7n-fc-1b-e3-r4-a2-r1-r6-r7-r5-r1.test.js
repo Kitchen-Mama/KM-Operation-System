@@ -909,11 +909,11 @@ section('D. §D — THE TEMP INVENTORY, EVERY ROW BACKED BY A MEASUREMENT');
 // which is what decides whether deleting it from the REPO is safe — a separate question from whether it can be
 // removed from the Apps Script project.
 var TEMP_INVENTORY = [
-  { file: 'assets/specs/active/apps-script/TEMP_migrate_request_order_draft_v2.gs',
+  { file: 'assets/tools/apps-script-migrations/TEMP_migrate_request_order_draft_v2.gs',
     verdict: 'KEEP_UNTIL_R5_VALIDATION', extract: true },
-  { file: 'assets/specs/active/apps-script/TEMP_demo_shipping_shipment_map_seed_v2.gs',
+  { file: 'assets/tools/apps-script-seeds/TEMP_demo_shipping_shipment_map_seed_v2.gs',
     verdict: 'UNKNOWN_NEEDS_EVIDENCE', extract: false },
-  { file: 'assets/specs/active/apps-script/TEMP_migrate_shipping_allocation_ai_lifecycle.gs',
+  { file: 'assets/tools/apps-script-migrations/TEMP_migrate_shipping_allocation_ai_lifecycle.gs',
     verdict: 'REMOVE_AFTER_MIGRATION_VALIDATED', extract: false },
   { file: 'assets/tools/apps-script-diagnostics/TEMP_migrate_create_idempotency_key_a2_r3.gs',
     verdict: 'REMOVE_AFTER_MIGRATION_VALIDATED', extract: false },
@@ -989,7 +989,7 @@ ok(/'system\.requestOrderSendDiagnosticStatus':\s*handleRequestOrderSendDiagnost
 ok(/function handleRequestOrderSendDiagnosticStatus_/.test(G66),
   'D4a … and its handler lives in 66_, so removing the TEMP file cannot break the deployment contract');
 ok(!/function handleRequestOrderSendDiagnosticStatus_/
-  .test(read(GS + 'TEMP_request_order_send_diagnostics.gs')),
+  .test(read('assets/tools/apps-script-diagnostics/TEMP_request_order_send_diagnostics.gs')),
   'D4b the TEMP file holds only editor wrappers — the ownership move is real, not documented');
 
 // D5 — KEEP_UNTIL_R5_VALIDATION is not a feeling. Each KEEP file must own an entry point this round's release
@@ -1009,7 +1009,7 @@ ok(/approved_without_shipment|fc1aApprovedWithoutShipment_/
 // D6 — EXTRACT_TO_FORMAL_MODULE, and it is one specific thing rather than a tidy-up wish: a TEMP file MINTS
 // the internal controlled authority and calls the REAL production generator. Whatever else is true of that
 // file, production generation reachable only from a file marked for deletion is a structural problem.
-var RODV2 = read('assets/specs/active/apps-script/TEMP_migrate_request_order_draft_v2.gs');
+var RODV2 = read('assets/tools/apps-script-migrations/TEMP_migrate_request_order_draft_v2.gs');
 ok(/WeeklyAiPlanControlledAuthority_\.mint\(/.test(RODV2) && /weeklyAiPlanGenerateK2_\(/.test(RODV2),
   'D6  §D.5 TEMP_migrate_request_order_draft_v2 mints the controlled authority and calls the real generator');
 eq(TEMP_INVENTORY.filter(function (r) { return r.extract; }).map(function (r) { return r.file.split('/').pop(); }),

@@ -20,7 +20,7 @@ function done() { console.log('\n' + '-'.repeat(40)); console.log('R6F2G5 K2-REU
 var ROOT = path.join(__dirname, '..');
 function extractFn(src, name) { var s = src.indexOf('function ' + name + '('); if (s < 0) throw new Error('missing fn ' + name); var i = src.indexOf('{', s), d = 0; for (; i < src.length; i++) { if (src[i] === '{') d++; else if (src[i] === '}') { d--; if (!d) return src.slice(s, i + 1); } } throw new Error('unbalanced ' + name); }
 var G16 = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', '16_shipping_allocation_handlers.gs'), 'utf8').replace(/\r\n/g, '\n');
-var TEMP = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', 'TEMP_migrate_request_order_draft_v2.gs'), 'utf8').replace(/\r\n/g, '\n');
+var TEMP = fs.readFileSync(path.join(ROOT, 'tools', 'apps-script-migrations', 'TEMP_migrate_request_order_draft_v2.gs'), 'utf8').replace(/\r\n/g, '\n');
 
 eval(G16.match(/var SAD_STATUSES_ = \{[\s\S]*?\};/)[0]);
 eval(G16.match(/var SAD_RECOMMENDATION_FIELDS_ = \[[\s\S]*?\];/)[0]);

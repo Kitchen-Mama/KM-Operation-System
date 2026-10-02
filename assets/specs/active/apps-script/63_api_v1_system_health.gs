@@ -261,7 +261,7 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 // shipmentSourceDomain_ / shipmentDomainSheets_ and 05_'s ovsOwnerReservedTx_, so a new 22_ against an old
 // 12_ or 05_ resolves those to undefined INSIDE the dispatch lock. 05_ and 12_ are already ahead of 22_ in
 // the standing order; this release does not change that, it depends on it.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R39';
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R40';
 // 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
 // R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
 // not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
@@ -302,7 +302,7 @@ var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R39';
 // and 90_'s content hash. No action was added or removed and the transport contract is untouched.
 // S6-R7A - moved for the same reason again: the release above, its own expected stamp and 90_'s content hash.
 // S6-R8A - and again: the release above, its own expected stamp and 22_'s. 90_'s hash is unchanged.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R39';
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R40';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -573,7 +573,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R39', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R40', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
   // PRICING-R2 — 73_ IS REQUIRED FROM ITS FIRST RELEASE, AND DELIBERATELY NOT OPTIONAL, for the reason a
   // WRITE owner is always the worst partial sync: 01_router.gs dispatches pricing.update to
   // handlePricingUpdate_, so a deployment carrying the router without this file routes a live price write
@@ -745,8 +745,22 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   //
   // I put a row here first, reasoning from the row above. That analogy was wrong, and three suites said so
   // in one step: every manifest reader resolves `assets/specs/active/apps-script/<file>` and only that,
-  // because this manifest lists the files SYNCED INTO THE PROJECT AS RUNTIME. The lifecycle migration above
-  // has a row because it lives in that folder — the precedent is the folder, not being a migration.
+  // because this manifest lists the files SYNCED INTO THE PROJECT AS RUNTIME.
+  //
+  // S7-R4 — THE FOLDER IS NO LONGER WHAT DISTINGUISHES THEM, AND IT SHOULD NEVER HAVE BEEN. This note used
+  // to end 'the lifecycle migration above has a row because it lives in that folder'. S7-R4 moved every
+  // non-runtime TEMP tool out of the runtime folder, the lifecycle migration included, and its row stayed —
+  // so that sentence would now predict the opposite of the truth.
+  //
+  // The real distinction was already stated four lines above the row itself: ABSENCE IS ACTIONABLE. The AI
+  // Plan refuses until the columns exist and this tool is the only supported way to add them, so an operator
+  // who cannot tell 'the run is blocked' from 'the tool was never pasted' is stuck. system.health is where
+  // that question gets answered, which is what buys the row — and the row is OPTIONAL precisely because the
+  // file is NOT runtime: absent is the normal state, present-but-stale is the fault worth naming.
+  //
+  // The override-audit provisioning tool needs none of that: its own refusal, FACTORY_STOCK_OVERRIDE_AUDIT_
+  // SCHEMA_MISSING, carries the file name and both functions to run, so whoever hits the wall is told the way
+  // through it without asking this manifest. Discovery at the point of failure beats a registry entry.
   //
   // The override-audit provisioning tool lives in assets/tools/apps-script-migrations/, beside the allocation
   // two-column append migration — which has no row either, and whose own suite asserts that its filename

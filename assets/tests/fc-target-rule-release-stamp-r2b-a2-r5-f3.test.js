@@ -146,6 +146,21 @@ var GENERATED_OWNERS = {
     + 'KM_BUNDLE_CONTENT_HASH_, declared in 63_ — which is why 63_ moves with it.'
 };
 
+// S7-R4 - THE PRODUCTION DELETE SET. Files that left assets/specs/active/apps-script/ since BASE and must
+// therefore be checked for - and removed from - the Production Apps Script project at the cumulative
+// release. A copy list alone cannot express this: pasting the new files leaves the old ones sitting in
+// the project, compiled on every execution, including a demo seed that writes and clears six business
+// tables.
+var PRODUCTION_DELETE_SET_CANDIDATE = [
+  'TEMP_demo_shipping_shipment_map_seed_v2.gs',
+  'TEMP_document_diagnostics.gs',
+  'TEMP_draft_migration_diagnostic.gs',
+  'TEMP_migrate_request_order_draft_v2.gs',
+  'TEMP_migrate_shipping_allocation_ai_lifecycle.gs',
+  'TEMP_order_planning_draft_readback_diagnose.gs',
+  'TEMP_request_order_send_diagnostics.gs'
+];
+
 var RELEASE_OWNERS = {
   // S3-R10 — THE RELEASE SET IS REPLACED, NOT APPENDED TO, AND THAT IS WHAT C3 IS FOR.
   //
@@ -177,23 +192,27 @@ var RELEASE_OWNERS = {
   // S7-R3 — THE NINETEENTH SWAP, and the first ROUTER change since R25. A fourteen-release gap is exactly
   // the jump a per-module stamp exists to be able to express; marching 01_ along with every release since
   // would have erased the fact that its routing table had not moved in fourteen rounds.
-  '01_router.gs':
-    'THE ROUTER. R39 adds carrierLeadTime.upsert and carrierLeadTime.duplicateCensus, the first actions '
-    + 'added since R25. Without this file copied, the frontend\'s lead-time save reaches the generic '
-    + '"Invalid POST action" refusal and the maintenance panel cannot work at all — which is why the '
-    + 'action-contract version moves to 18 and the browser pins 18, so a frontend that can call the action '
-    + 'refuses a deployment that predates it instead of sending a write nothing will route.',
+  // S7-R4 - THE TWENTIETH SWAP, and the first release in this ledger whose runtime change is a CORRECTED
+  // SENTENCE. 01_ LEAVES OWNERSHIP AT R40 after exactly one release and keeps the R39 it earned. R40 adds
+  // no action, so the action-contract version stays 18 and the browser's pin stays 18.
+  //
+  // The round moved seven non-runtime TEMP tools OUT of assets/specs/active/apps-script/. That is a
+  // repository-layout change and alters no deployed byte - which is why 63_ is the ONLY owner here, and
+  // also why it is an owner at all.
   '63_api_v1_system_health.gs':
-    'THE MANIFEST. R39 moves THREE values: its own build, 01_\'s expected stamp, and the action-contract '
-    + 'version 17 → 18 — which DOES move this time, because two router actions were genuinely added. '
-    + 'SYS_REQUIRED_ACTION_LIST_VERSION_ does NOT move: SYS_REQUIRED_ACTIONS_ lists actions a PAGE DEPENDS '
-    + 'ON AT MOUNT, and importCarrierRateCards — the Rate Card page\'s own write action — is not in it '
-    + 'either. R38 moved exactly one expected value — its own — because carrying a release that changed '
-    + 'a sync-visible backend file IS a change to this file. 57_ gains the carriers master so the Shipment '
-    + 'Draft, the Confirm summary and the On-the-Way Map resolve carrier_id to a name through ONE shared '
-    + 'presentation resolver instead of printing the id. No router action was added or removed, so the '
-    + 'action-contract version does NOT move; bumping it to look current is the self-reference this file\'s '
-    + 'own header warns about. 90_\'s content hash is untouched — no core module changed.',
+    'THE MANIFEST. R40 moves TWO values and no behaviour: the release, and its own build. 01_\'s expected '
+    + 'stamp stays at R39 because 01_ did not change - which is the entire reason those are separate '
+    + 'constants. The action-contract version stays 18: no router action was added or removed, and '
+    + 'bumping it to look current is the self-reference this file\'s own header warns about. '
+    + 'SYS_REQUIRED_ACTION_LIST_VERSION_ stays 14 for the same reason - no page gained a mount dependency. '
+    + 'WHAT CHANGED IS A COMMENT, AND IT IS LOAD-BEARING. This manifest justified an OPTIONAL row for the '
+    + 'AI-lifecycle migration by saying it "has a row because it lives in that folder". S7-R4 moved that '
+    + 'file to assets/tools/apps-script-migrations/ and the row stayed, so the stated rule now predicts '
+    + 'the opposite of what this file does. The real reason was always the one given four lines above the '
+    + 'row - absence is ACTIONABLE, because 69_ refuses until the columns exist and that tool is the only '
+    + 'supported way to add them. A manifest that mis-states its own admission rule is the comment-versus-'
+    + 'assertion drift S7-R2B1 was convened to repair, so it is repaired rather than carried. 90_\'s '
+    + 'content hash is untouched - no core module changed.',
 };
 
 // Owners that must be COPIED but whose stamp belongs to an EARLIER unshipped release. Each entry is the
@@ -203,6 +222,12 @@ var RELEASE_OWNERS = {
 // reports the round a release was cut in, not the round the file changed in, and then it can no longer
 // distinguish a synced copy from a stale one, which is the single thing it is for.
 var RELEASE_CARRIED = {
+  // S7-R4 - THE TWENTIETH SWAP. 01_ LEAVES OWNERSHIP AT R40 after ONE release as an owner and keeps R39,
+  // the round its routing table actually changed in. R40 moves no action and no handler; it is a deploy-
+  // surface round whose only runtime edit is a corrected comment in 63_. Marching the router to R40 would
+  // erase the fact the R39 entry was written to preserve - that 01_ had not moved in fourteen releases,
+  // and then moved exactly once.
+  '01_router.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R39',
   // S7-R2A — THE EIGHTEENTH SWAP. 22_ LEAVES OWNERSHIP AT R38 after one release as an owner and keeps R37,
   // the round DECLARED_SOURCE_ONLY actually landed in. R38 changes a read projection and no handler.
   '22_shipment_dispatch_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R37',
@@ -577,8 +602,16 @@ eq(declares(CONFIG, 'CONFIG_BUILD_VERSION_'), RELEASE_UNMOVED['00_config.gs'],
 // S7-R3 — the round it last changed in IS this release now: R39 adds carrierLeadTime.upsert and
 // carrierLeadTime.duplicateCensus, the first router change since R25. The claim is unchanged — the router
 // declares the round IT last changed — and that round is no longer an earlier one.
-eq(declares(ROUTER, 'RTR_BUILD_VERSION_'), RELEASE,
-  'C2  01_router.gs declares the round it last changed in, which this release is');
+// S7-R4 - AND NOW IT IS AN EARLIER ONE AGAIN. R40 changes no routing; 01_ moves to RELEASE_CARRIED at
+// R39. Leaving this pinned to RELEASE would demand exactly the marched stamp the paragraph above says
+// this gate was rewritten to stop requiring, one release after it was narrowed. The claim is read from
+// the ledger instead, so it holds in both states and discriminates in both: an owner must declare THIS
+// release, a carried file must declare the earlier one the ledger names for it.
+var ROUTER_DECLARED_EXPECT = Object.prototype.hasOwnProperty.call(RELEASE_OWNERS, '01_router.gs')
+  ? RELEASE : RELEASE_CARRIED['01_router.gs'];
+ok(!!ROUTER_DECLARED_EXPECT, 'C2a the ledger declares the router somewhere - owned or carried');
+eq(declares(ROUTER, 'RTR_BUILD_VERSION_'), ROUTER_DECLARED_EXPECT,
+  'C2  01_router.gs declares the round it last changed in, which the ledger names');
 Object.keys(RELEASE_CARRIED).forEach(function (f, i) {
   var row = manifestRows(HEALTH).filter(function (r) { return r.file === f; })[0];
   eq(row ? row.expected : '(no row)', RELEASE_CARRIED[f],
@@ -807,9 +840,12 @@ ok(/\{ action: 'pricing\.update', handler: 'handlePricingUpdate_'/.test(HEALTH),
 ok(cp.execFileSync('git', ['diff', '--name-only', BASE, '--', GS + '01_router.gs'],
   { cwd: REPO, encoding: 'utf8' }).trim() !== '',
   'H4  01_router.gs DID change this release — an action was routed');
-ok(Object.keys(RELEASE_OWNERS).indexOf('01_router.gs') !== -1,
-  'H4a and it is a declared OWNER, so it still reaches the operator\'s sync list — an undeclared router '
-  + 'change is how an action reaches production with nobody putting the file on a list');
+// S7-R4 - the property this always meant is REACHES THE SYNC LIST, which its own message says. Owner and
+// carried are two ways onto that list; R40 carries the router, and reading only RELEASE_OWNERS would have
+// reported an unsynced router while the operator's list contained it.
+ok(Object.keys(RELEASE_OWNERS).concat(Object.keys(RELEASE_CARRIED)).indexOf('01_router.gs') !== -1,
+  'H4a and it is DECLARED - owned or carried - so it still reaches the operator\'s sync list; an '
+  + 'undeclared router change is how an action reaches production with nobody putting the file on a list');
 // R14 is the first release in this series to change manifest MEMBERSHIP, so the old assertion — that
 // membership never moves — is no longer true and is not the right thing to assert. What must hold is
 // that membership moved by EXACTLY the row this release declares, which is the stricter statement.
@@ -868,8 +904,22 @@ section('I. THE SYNC LIST IS EXACTLY THE DECLARED OWNERS');
   eq(copy, Object.keys(RELEASE_OWNERS).concat(Object.keys(RELEASE_CARRIED))
     .concat(Object.keys(GENERATED_OWNERS)).concat(Object.keys(STAMPLESS_OWNERS)).sort(),
     'I1  exactly the declared release owners are to be COPIED — no Apps Script file rode along');
-  eq(gone, [],
-    'I1a and NOTHING is to be deleted — the one-shot helper was retired in R2B-A2-R6, before this base');
+  // S7-R4 - THERE IS NOW A DELETE SET, AND IT IS DECLARED RATHER THAN DISCOVERED.
+  //
+  // This read `eq(gone, [])` because nothing had left the folder since BASE. Seven files left it in R40,
+  // and the honest repair is NOT to widen the expectation to whatever git reports - that turns the guard
+  // into a mirror. The names are declared, exactly as the copy list is, so an EIGHTH file leaving the
+  // folder is still a failure.
+  //
+  // WHAT THE OPERATOR DOES WITH THIS LIST IS NOT 'nothing'. Removing a file from the repository does not
+  // remove it from the Apps Script project. SLIM-R1's live typeof probe found all seven ABSENT from the
+  // deployment - 31 corroborating symbol probes, plus the live manifest independently reporting the
+  // lifecycle migration in absent_optional_modules - so the expected result of checking is that there is
+  // nothing to delete. That is a prediction from evidence, not a licence to skip the check: the probe can
+  // only ask about names it already knows, and a file pasted in by hand would never have appeared in it.
+  eq(gone, PRODUCTION_DELETE_SET_CANDIDATE,
+    'I1a and exactly the declared non-runtime tools are to be DELETED from the folder - relocated to '
+    + 'assets/tools/, not destroyed, and every one is still readable at its new path');
   // The retired file carried no build stamp and owned no manifest row, which is why removing it
   // moves no release identity. If it ever had, this would have to rotate the release too.
   ok(Object.keys(RELEASE_OWNERS).indexOf('TEMP_migrate_fc_target_rules_header_r2ba2.gs') === -1,

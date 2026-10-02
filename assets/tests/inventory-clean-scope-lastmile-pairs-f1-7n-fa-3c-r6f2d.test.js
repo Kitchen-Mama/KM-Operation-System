@@ -82,7 +82,7 @@ eq(selectClean(tieScopes).marketplace, 'US Amazon', 'D3 equal positive → stabl
 
 // =====================================================================================================
 section('D/source — the dry assembly computes mk.clean and selects the smallest clean scope');
-var TEMP = read('specs/active/apps-script/TEMP_migrate_request_order_draft_v2.gs');
+var TEMP = read('tools/apps-script-migrations/TEMP_migrate_request_order_draft_v2.gs');
 ok(/mk\.clean = \(mk\.positive > 0 && mk\.ai_ranked === mk\.positive && mk\.manual_only === 0 && mk\.authority_required === 0 && mk\.no_method === 0/.test(TEMP), 'D4 a clean marketplace scope requires every positive line AI-ranked + zero manual/authority/no-method blocks');
 ok(/cleanScopes\.sort\(function \(a, b\) \{[\s\S]*?a\.positive - b\.positive/.test(TEMP), 'D5 clean scopes sorted by smallest positive first');
 ok(/method_authority_required/.test(TEMP), 'D6 the stage tally tracks the AUTHORITY_REQUIRED bucket');

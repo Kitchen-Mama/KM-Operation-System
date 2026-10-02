@@ -786,7 +786,7 @@ ok(code66.indexOf('PropertiesService') !== -1, '19. the durable record is a SERV
 // =============================================================================================================
 section('20. no Demo mutation, no email');
 
-const DEMO = read('specs/active/apps-script/TEMP_demo_shipping_shipment_map_seed_v2.gs');
+const DEMO = read('tools/apps-script-seeds/TEMP_demo_shipping_shipment_map_seed_v2.gs');
 ok(DEMO.length > 0, '20. the Demo seed file is present');
 ok(DEMO.indexOf('F1-7N-FB-3C') === -1, '20. and carries no FB-3C marker — it was not touched');
 [G66, G67, EEE, code(SEND), code(LOOP)].forEach(function (src, i) {

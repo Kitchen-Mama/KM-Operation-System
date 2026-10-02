@@ -378,10 +378,11 @@ ok(PLAN_DOC.indexOf('COL_COUNT_31_EXPECTED_30') !== -1, 'C9 and quotes the measu
 // ==============================================================================================================
 section('D — the ordering constraint between two queued migrations');
 // ==============================================================================================================
-ok(fs.existsSync(path.join(GS, 'TEMP_migrate_shipping_allocation_ai_lifecycle.gs')),
-    'D1 a second append-only migration against the same table exists and is queued');
+ok(fs.existsSync(path.join(ROOT, 'assets/tools/apps-script-migrations/TEMP_migrate_shipping_allocation_ai_lifecycle.gs')),
+    'D1 a second append-only migration against the same table exists and is queued — S7-R4 moved it into '
+    + 'the repository migration tooling, which is where a one-shot writer belongs');
 // Its own safety rule: the live header must be an exact prefix of ITS canonical order with no unknown extra.
-var AIMIG = readGs('TEMP_migrate_shipping_allocation_ai_lifecycle.gs');
+var AIMIG = read('assets/tools/apps-script-migrations/TEMP_migrate_shipping_allocation_ai_lifecycle.gs');
 ok(/append_only_safe|appendOnly/.test(AIMIG), 'D2 and it gates on an exact-prefix append-only check');
 ok(/!extra\.length/.test(AIMIG), 'D3 which refuses ANY unknown extra column');
 // So appending destination_marketplace at index 30 would permanently block it.

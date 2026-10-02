@@ -18,7 +18,7 @@ function done() { console.log('\n' + '-'.repeat(40)); console.log('R6F2G6 TRUE-Z
 var ROOT = path.join(__dirname, '..');
 function extractFn(src, name) { var s = src.indexOf('function ' + name + '('); if (s < 0) throw new Error('missing fn ' + name); var i = src.indexOf('{', s), d = 0; for (; i < src.length; i++) { if (src[i] === '{') d++; else if (src[i] === '}') { d--; if (!d) return src.slice(s, i + 1); } } throw new Error('unbalanced ' + name); }
 var G16 = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', '16_shipping_allocation_handlers.gs'), 'utf8').replace(/\r\n/g, '\n');
-var TEMP = fs.readFileSync(path.join(ROOT, 'specs', 'active', 'apps-script', 'TEMP_migrate_request_order_draft_v2.gs'), 'utf8').replace(/\r\n/g, '\n');
+var TEMP = fs.readFileSync(path.join(ROOT, 'tools', 'apps-script-migrations', 'TEMP_migrate_request_order_draft_v2.gs'), 'utf8').replace(/\r\n/g, '\n');
 
 var LOAD = [];
 ['SAD_K2_HEADER_FP_', 'SAD_K2_LINE_FP_', 'SAD_K2_FP_DATE_FIELDS_', 'SAD_K2_FP_NUMERIC_FIELDS_', 'SAD_K2_SEM_CONTRACT_', 'SAD_K2_SEM_EXCLUDE_', 'SAD_K2_SEM_EXCLUDED_LIFECYCLE_', 'SAD_K2_SEM_OPTIONAL_PRESERVE_'].forEach(function (n) { LOAD.push(G16.match(new RegExp('var ' + n + ' = [\\[{\'][\\s\\S]*?[\\]}\'];'))[0]); });

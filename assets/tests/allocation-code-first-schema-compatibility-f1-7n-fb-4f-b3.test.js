@@ -771,7 +771,7 @@ section('K — [test 31] the lifecycle migration is still compatible and still i
     ok(CANON.indexOf('destination_marketplace') === -1,
         'K3 [test 31] and NOT carrying destination_marketplace — the lifecycle tool must never append the route column');
     // Its own append-only check, run on the shapes it will actually meet.
-    var AIMIG = readGs('TEMP_migrate_shipping_allocation_ai_lifecycle.gs');
+    var AIMIG = read('assets/tools/apps-script-migrations/TEMP_migrate_shipping_allocation_ai_lifecycle.gs');
     ok(/tmigCanonicalHeaders_/.test(AIMIG), 'K4 [test 31] the migration reads the canonical list through its own accessor');
     var sb = { String: String, Object: Object, Math: Math, Number: Number, Array: Array, console: console };
     sb.globalThis = sb;

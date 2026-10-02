@@ -16,7 +16,7 @@ function ok(c, l) { if (!c) { fail++; console.error('FAIL ' + l); } else { pass+
 function eq(a, b, l) { ok(a === b, l + '  (got ' + JSON.stringify(a) + ' exp ' + JSON.stringify(b) + ')'); }
 function section(n) { console.log('\n== ' + n + ' =='); }
 
-var TEMP = read('specs/active/apps-script/TEMP_migrate_request_order_draft_v2.gs');
+var TEMP = read('tools/apps-script-migrations/TEMP_migrate_request_order_draft_v2.gs');
 var GS61 = read('specs/active/apps-script/61_api_v1_weekly_ai_plan.gs');
 
 // ---- balanced-brace extractor + expression eval (repo pattern; strict mode blocks declaration leakage) -----------

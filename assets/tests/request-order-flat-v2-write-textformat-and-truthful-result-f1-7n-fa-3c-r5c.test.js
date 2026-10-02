@@ -22,7 +22,7 @@ var DIR = path.join(__dirname, '..', 'specs', 'active', 'apps-script');
 var GS24 = fs.readFileSync(path.join(DIR, '24_recommendation_orchestrator.gs'), 'utf8').replace(/\r\n/g, '\n');
 var GS47 = fs.readFileSync(path.join(DIR, '47_api_v1_recommendation_generation.gs'), 'utf8').replace(/\r\n/g, '\n');
 var GS48 = fs.readFileSync(path.join(DIR, '48_api_v1_request_order_draft_job.gs'), 'utf8').replace(/\r\n/g, '\n');
-var GSTEMP = fs.readFileSync(path.join(DIR, 'TEMP_migrate_request_order_draft_v2.gs'), 'utf8').replace(/\r\n/g, '\n');
+var GSTEMP = fs.readFileSync(path.join(__dirname, '..', 'tools', 'apps-script-migrations', 'TEMP_migrate_request_order_draft_v2.gs'), 'utf8').replace(/\r\n/g, '\n');
 
 var HDR = KMRDV2P.HEADER_TABLE, JRN = 'recommendation_calculation_runs';
 var V2 = KMRDV2.V2_HEADERS;

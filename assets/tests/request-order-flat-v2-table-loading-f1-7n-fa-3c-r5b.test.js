@@ -15,7 +15,7 @@ function eq(a, e, l) { var A = JSON.stringify(a), E = JSON.stringify(e); if (A =
 function section(n) { console.log('\n== ' + n + ' =='); }
 
 var GS23 = fs.readFileSync(path.join(__dirname, '..', 'specs', 'active', 'apps-script', '23_recommendation_persistence_repository.gs'), 'utf8').replace(/\r\n/g, '\n');
-var GSTEMP = fs.readFileSync(path.join(__dirname, '..', 'specs', 'active', 'apps-script', 'TEMP_migrate_request_order_draft_v2.gs'), 'utf8').replace(/\r\n/g, '\n');
+var GSTEMP = fs.readFileSync(path.join(__dirname, '..', 'tools', 'apps-script-migrations', 'TEMP_migrate_request_order_draft_v2.gs'), 'utf8').replace(/\r\n/g, '\n');
 var GS47 = fs.readFileSync(path.join(__dirname, '..', 'specs', 'active', 'apps-script', '47_api_v1_recommendation_generation.gs'), 'utf8').replace(/\r\n/g, '\n');
 var GS24 = fs.readFileSync(path.join(__dirname, '..', 'specs', 'active', 'apps-script', '24_recommendation_orchestrator.gs'), 'utf8').replace(/\r\n/g, '\n');
 

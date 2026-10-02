@@ -121,7 +121,7 @@ eq(KMRA.resolveWarehouse({ code: 'NOPE' }, idx).block, 'WAREHOUSE_UNKNOWN', 'D7 
 
 // =====================================================================================================
 section('F — per-stage accounting: resolved + blocked == incoming at every stage (the 176/5/171 leak fixed)');
-var stageFn = extractFn(read('specs/active/apps-script/TEMP_migrate_request_order_draft_v2.gs'), 'TEMP_r6f2bStageAccounting_');
+var stageFn = extractFn(read('tools/apps-script-migrations/TEMP_migrate_request_order_draft_v2.gs'), 'TEMP_r6f2bStageAccounting_');
 var TEMP_r6f2bStageAccounting_ = eval('(' + stageFn + ')');
 // R6F2C — the accounting now derives from the canonical per-line stage_tally (not a histogram). Live-reported shape:
 // 176 positive, 5 source-blocked (multi-pool/unknown), 171 method-blocked, 0 fully routed.
@@ -149,7 +149,7 @@ ok(G2.stage_accounting_ok === true && G2.source_resolved === 10 && G2.last_mile_
 
 // =====================================================================================================
 section('A — GAP_JOB_INVENTORY authority: reader maps the real serialized shape + MONTHLY_ORDER exclusion');
-var TEMP = read('specs/active/apps-script/TEMP_migrate_request_order_draft_v2.gs');
+var TEMP = read('tools/apps-script-migrations/TEMP_migrate_request_order_draft_v2.gs');
 ok(/PropertiesService\.getScriptProperties\(\)\.getProperty\('GAP_JOB_INVENTORY'\)/.test(TEMP), 'A1 reads the GAP_JOB_INVENTORY script property');
 ok(/\/\^GAP-INV-\/\.test\(String\(st\.runId/.test(TEMP), 'A2 requires a GAP-INV-* runId (never a MONTHLY_ORDER journal run)');
 ok(/run_status:\s*TEMP_str_\(st\.status\)/.test(TEMP) && /calculation_date:\s*TEMP_str_\(st\.calculationDate\)/.test(TEMP), 'A3 maps the camelCase serialized fields (status/calculationDate/…)');

@@ -397,7 +397,7 @@ function stripComments(src) {
     var i = l.indexOf('//'); return i === -1 ? l : l.slice(0, i);
   }).join(NL);
 }
-var DIAG = read('assets/specs/active/apps-script/TEMP_order_planning_draft_readback_diagnose.gs');
+var DIAG = read('assets/tools/apps-script-diagnostics/TEMP_order_planning_draft_readback_diagnose.gs');
 var DIAG_CODE = stripComments(DIAG);
 ok(/DB_WRITES: 0/.test(DIAG_CODE), '2.16 the diagnostic reports DB_WRITES = 0');
 ok(!/setValue|appendRow|insertSheet|deleteRow|getScriptLock|PropertiesService|newTrigger/.test(DIAG_CODE),

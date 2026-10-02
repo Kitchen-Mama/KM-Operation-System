@@ -44,7 +44,7 @@ function extractVar(src, name) {
 var G16 = read('assets/specs/active/apps-script/16_shipping_allocation_handlers.gs');
 var G61 = read('assets/specs/active/apps-script/61_api_v1_weekly_ai_plan.gs');
 var G69 = read('assets/specs/active/apps-script/69_api_v1_ai_plan_lifecycle.gs');
-var GMIG = read('assets/specs/active/apps-script/TEMP_migrate_shipping_allocation_ai_lifecycle.gs');
+var GMIG = read('assets/tools/apps-script-migrations/TEMP_migrate_shipping_allocation_ai_lifecycle.gs');
 var G63 = read('assets/specs/active/apps-script/63_api_v1_system_health.gs');
 var SPEC = read('docs/planning/INVENTORY_AI_PLAN_DRAFT_LIFECYCLE.md');
 var G16C = code(G16), G61C = code(G61), G69C = code(G69), GMIGC = code(GMIG);

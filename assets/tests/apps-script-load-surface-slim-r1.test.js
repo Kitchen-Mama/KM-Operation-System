@@ -44,7 +44,9 @@ A.report.forEach(function (r) { byFile[r.file] = r; });
 // ---------------------------------------------------------------------------------------------------
 section('A  the directory the tool reads');
 // ---------------------------------------------------------------------------------------------------
-ok(A.directoryFiles >= 80, 'A1 the apps-script directory holds the whole server source', A.directoryFiles);
+// S7-R4 — 84 -> 77. Seven non-runtime TEMP tools left this directory for assets/tools/. The floor
+// moves with them; it is a floor against the server source vanishing, not a record of the old count.
+ok(A.directoryFiles >= 75, 'A1 the apps-script directory holds the whole server source', A.directoryFiles);
 eq(A.entryPoints, ['01_router.gs'], 'A2 there is exactly ONE web entry point, and it is the router');
 ok(A.distinctRoutedActions >= 60, 'A3 the router resolves a substantial action surface', A.distinctRoutedActions);
 ok(A.manifestRows >= 26, 'A4 the health manifest declares its required owners', A.manifestRows);
@@ -79,54 +81,58 @@ ok(sched.classification === 'H_AMBIGUOUS_TRIGGER_OWNER',
 // ---------------------------------------------------------------------------------------------------
 section('C  what the audit found, as findings a later round will act on');
 // ---------------------------------------------------------------------------------------------------
-// The seven files the live probe found ABSENT from the deployment. Pinned by name because the next
-// round's first question is "is this still true", and a changed list must be re-probed, not assumed.
-var NOT_DEPLOYED = [
-  'TEMP_demo_shipping_shipment_map_seed_v2.gs',
-  'TEMP_document_diagnostics.gs',
-  'TEMP_draft_migration_diagnostic.gs',
-  'TEMP_migrate_request_order_draft_v2.gs',
-  'TEMP_migrate_shipping_allocation_ai_lifecycle.gs',
-  'TEMP_order_planning_draft_readback_diagnose.gs',
-  'TEMP_request_order_send_diagnostics.gs'
+// THE GAP IS CLOSED, FROM THE OTHER END. SLIM-R1 probed the live project and found these seven files
+// ABSENT: 808,195 bytes of TEMP source that sat in the runtime directory and was never deployed. The
+// measurement was right and the conclusion was uncomfortable — the directory and the deployment were
+// two different sets, and nothing structural kept them that way. A later paste of 'everything in the
+// folder' would have deployed a demo seed that writes six business tables.
+//
+// S7-R4 moved all seven into assets/tools/. Same bytes, same files, different folder. So this section
+// no longer asserts a DIFFERENCE between the directory and the deployment; it asserts there is none.
+var RELOCATED = [
+  ['apps-script-seeds', 'TEMP_demo_shipping_shipment_map_seed_v2.gs', 300182],
+  ['apps-script-diagnostics', 'TEMP_document_diagnostics.gs', 15423],
+  ['apps-script-diagnostics', 'TEMP_draft_migration_diagnostic.gs', 7292],
+  ['apps-script-migrations', 'TEMP_migrate_request_order_draft_v2.gs', 418557],
+  ['apps-script-migrations', 'TEMP_migrate_shipping_allocation_ai_lifecycle.gs', 36728],
+  ['apps-script-diagnostics', 'TEMP_order_planning_draft_readback_diagnose.gs', 17404],
+  ['apps-script-diagnostics', 'TEMP_request_order_send_diagnostics.gs', 12609]
 ];
-NOT_DEPLOYED.forEach(function (n, i) {
-  ok(!!byFile[n], 'C1.' + (i + 1) + ' ' + n + ' still exists in the repository (source is retained)');
+var relocatedBytes = 0;
+RELOCATED.forEach(function (r, i) {
+  var dir = r[0], name = r[1], expected = r[2];
+  ok(!byFile[name], 'C1.' + (i + 1) + ' ' + name + ' is NO LONGER in the runtime directory');
+  var p = path.join(REPO, 'assets', 'tools', dir, name);
+  ok(fs.existsSync(p), 'C1.' + (i + 1) + 'a and it is RETAINED at assets/tools/' + dir + '/ — relocated, not deleted');
+  var bytes = fs.readFileSync(p, 'latin1').split(String.fromCharCode(13)).join('').length;
+  eq(bytes, expected, 'C1.' + (i + 1) + 'b with its bytes unchanged by the move');
+  relocatedBytes += bytes;
 });
-var notDeployedBytes = NOT_DEPLOYED.reduce(function (a, n) { return a + (byFile[n] ? byFile[n].bytes : 0); }, 0);
-ok(notDeployedBytes > 800000, 'C2 together they are the 808 KB the round assumed was deployed', notDeployedBytes);
-/* PRICING-R2 — THE DEPLOYED PROJECT CROSSED 4.2 MB, AND THAT IS A FINDING RATHER THAN A FAILURE.
-   Measured through this same tool: 4,190,083 bytes at b280b8d, 4,219,703 at R21. The 29.6 KB that moved
-   it is 73_api_v1_pricing_write.gs, the canonical pricing writer — a new REQUIRED owner, not a TEMP file
-   and not something retirable.
+eq(relocatedBytes, 808195,
+  'C2 and together they are the SAME 808,195 bytes SLIM-R1 measured — the audit was never wrong about the '
+  + 'size, only about where the bytes had to live');
 
-   4.2 MB was never a platform limit. It was what the SLIM-R1 audit measured, and C3's claim — stated in
-   its own label — is the GAP: the project a person pastes into Apps Script is materially smaller than the
-   directory, by the ~808 KB of source that is retained but never deployed. That claim is unchanged and
-   is asserted directly below, where it cannot be crossed by adding one owner file.
+// C3 — the ceiling stays, and now it measures the thing it always meant to measure.
+ok(A.directoryBytes < 4500000, 'C3 the production runtime universe is under 4.5 MB', A.directoryBytes);
+eq(A.report.filter(function (r) { return /^TEMP_/.test(r.file); }), [],
+  'C3a and NO TEMP file remains in it — the directory IS the deployable set, so the two cannot drift apart '
+  + 'again the way SLIM-R1 found them apart');
 
-   The ceiling stays, because a runaway is still worth catching; it moves to 4.5 MB, which is the measured
-   size plus room for a few more owners rather than a number chosen to make today pass. The crossing is
-   carried as OPEN_DEBT in the round report: the audit named three orphan files (~12 KB) as the only
-   retirable deployed surface, so the next round that needs headroom has to find it somewhere new. */
-ok(A.directoryBytes - notDeployedBytes < 4500000,
-  'C3 so the DEPLOYED project is under 4.5 MB', A.directoryBytes - notDeployedBytes);
-ok(notDeployedBytes > 800000 && A.directoryBytes - notDeployedBytes < A.directoryBytes - 800000,
-  'C3a and it is smaller than the directory by the 808 KB of retained-but-undeployed source — which is what this line has always been about',
-  { directory: A.directoryBytes, deployed: A.directoryBytes - notDeployedBytes, gap: notDeployedBytes });
-
-// The two the round named as its candidates are the two largest, and both are already out.
-ok(byFile['TEMP_migrate_request_order_draft_v2.gs'].bytes > 400000, 'C4 the Request Order V2 helper is the largest single TEMP file',
-  byFile['TEMP_migrate_request_order_draft_v2.gs'].bytes);
-ok(byFile['TEMP_demo_shipping_shipment_map_seed_v2.gs'].bytes > 290000, 'C5 the shipping demo seed is the second largest',
-  byFile['TEMP_demo_shipping_shipment_map_seed_v2.gs'].bytes);
-ok(byFile['TEMP_migrate_request_order_draft_v2.gs'].inboundFiles.length === 0
-  && byFile['TEMP_migrate_request_order_draft_v2.gs'].inboundStringFiles.length === 0,
-  'C6 no runtime file depends on the V2 migration helper, by code OR by string');
-ok(byFile['TEMP_demo_shipping_shipment_map_seed_v2.gs'].inboundFiles.length === 0
-  && byFile['TEMP_demo_shipping_shipment_map_seed_v2.gs'].inboundStringFiles.length === 0,
-  'C7 nor on the demo seed');
-
+// C4-C7 — the two files the original round proposed retiring, re-asked where they now live. The claims
+// that mattered were never about the folder: nothing depends on either, by code or by string.
+var V2 = fs.readFileSync(path.join(REPO, 'assets/tools/apps-script-migrations/TEMP_migrate_request_order_draft_v2.gs'));
+var SEED = fs.readFileSync(path.join(REPO, 'assets/tools/apps-script-seeds/TEMP_demo_shipping_shipment_map_seed_v2.gs'));
+ok(V2.length > 400000, 'C4 the Request Order V2 helper is still the largest single relocated tool', V2.length);
+ok(SEED.length > 290000, 'C5 the shipping demo seed is still the second largest', SEED.length);
+var runtimeSrc = A.report.map(function (r) { return r.file; });
+ok(runtimeSrc.indexOf('TEMP_migrate_request_order_draft_v2.gs') === -1
+  && runtimeSrc.indexOf('TEMP_demo_shipping_shipment_map_seed_v2.gs') === -1,
+  'C6 neither is enumerated as runtime source any more');
+eq(A.report.filter(function (r) {
+  return (r.inboundFiles || []).some(function (f) { return /^TEMP_/.test(f); })
+      || (r.inboundStringFiles || []).some(function (f) { return /^TEMP_/.test(f); });
+}).map(function (r) { return r.file; }), [],
+  'C7 and no runtime file is depended upon BY a TEMP file in a way the move could have broken');
 // The cutover flag that decides whether the V2 migration helper could still be needed.
 var CFG = read('assets/specs/active/apps-script/00_config.gs');
 ok(/var\s+REQUEST_ORDER_DRAFT_V2_FLAT_CUTOVER_\s*=\s*true\s*;/.test(CFG),
@@ -145,9 +151,9 @@ ORPHANS.forEach(function (n, i) {
 });
 var orphanBytes = ORPHANS.reduce(function (a, n) { return a + byFile[n].bytes; }, 0);
 ok(orphanBytes < 12000, 'C12 the entire remaining retirement surface is under 12 KB', orphanBytes);
-ok(orphanBytes / (A.directoryBytes - notDeployedBytes) < 0.005,
+ok(orphanBytes / A.directoryBytes < 0.005,
   'C13 which is under half a percent of the deployed project — a cleanup, never a latency fix',
-  (100 * orphanBytes / (A.directoryBytes - notDeployedBytes)).toFixed(2) + '%');
+  (100 * orphanBytes / A.directoryBytes).toFixed(2) + '%');
 
 // The generated bundle is the largest single deployed file and is REQUIRED.
 var bundle = byFile['90_generated_supply_planning_bundle.gs'];

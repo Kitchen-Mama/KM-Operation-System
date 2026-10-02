@@ -18,7 +18,7 @@ var G16 = read('specs/active/apps-script/16_shipping_allocation_handlers.gs');
 var G29 = read('specs/active/apps-script/29_production_safety_adapter.gs');
 var G41 = read('specs/active/apps-script/41_shipping_allocation_schema_audit.gs');
 var G63 = read('specs/active/apps-script/63_api_v1_system_health.gs');
-var TEMPDOC = read('specs/active/apps-script/TEMP_document_diagnostics.gs');
+var TEMPDOC = read('tools/apps-script-diagnostics/TEMP_document_diagnostics.gs');
 
 var fail = 0, pass = 0;
 function ok(c, l) { if (c) { pass++; } else { fail++; console.error('FAIL ' + l); } }
