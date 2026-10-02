@@ -871,7 +871,11 @@ var ROUND_TOKENS = [
   // S5-R4 — the recommendation ACTION + reason derivation. supply-recommendation.js is served from
   // index.html AND bundled into Apps Script, so its bytes moved on both surfaces. A browser holding the
   // s4r7 copy would render a recommendation workspace whose action/tokens simply are not in its KMREC.
-  's5r4-actionreason-20260928'];
+  's5r4-actionreason-20260928',
+  // PHASE-1 CUMULATIVE RELEASE. The deployed site is 74aca0b; every token above it, including the one on
+  // the line before this, has never been served. This is the token the whole unshipped frontend ships
+  // under, so a browser cannot hold one file from the deployed release and one from this one.
+  'p1-cumulative-20261002'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the

@@ -129,7 +129,7 @@ var KM_ROUTE_ASSETS_ = {
     'ops': {
         sectionId: 'ops-section',
         scripts: [
-            'assets/js/pages/inventory-replenishment.js?v=s5r4-actionreason-20260928'
+            'assets/js/pages/inventory-replenishment.js?v=p1-cumulative-20261002'
         ],
         partial: { key: 'inventory-replenishment', url: 'assets/html/pages/inventory-replenishment.html',
             target: '#inventory-replenishment-mount' },
@@ -154,13 +154,13 @@ var KM_ROUTE_ASSETS_ = {
     'product-strategy': {
         sectionId: 'product-strategy-board-section',
         scripts: [
-            'assets/js/product-strategy/psb-data-contract.js?v=s5r4-actionreason-20260928',
-            'assets/js/product-strategy/km-product-strategy-site-universe.js?v=s5r4-actionreason-20260928',
-            'assets/js/product-strategy/km-product-strategy-live-adapter.js?v=s5r4-actionreason-20260928',
-            'assets/js/product-strategy/psb-selectors.js?v=s5r4-actionreason-20260928',
-            'assets/js/product-strategy/psb-chart-layout.js?v=s5r4-actionreason-20260928',
-            'assets/js/product-strategy/psb-board-ui.js?v=s5r4-actionreason-20260928',
-            'assets/js/pages/product-strategy-board.js?v=s5r4-actionreason-20260928'
+            'assets/js/product-strategy/psb-data-contract.js?v=p1-cumulative-20261002',
+            'assets/js/product-strategy/km-product-strategy-site-universe.js?v=p1-cumulative-20261002',
+            'assets/js/product-strategy/km-product-strategy-live-adapter.js?v=p1-cumulative-20261002',
+            'assets/js/product-strategy/psb-selectors.js?v=p1-cumulative-20261002',
+            'assets/js/product-strategy/psb-chart-layout.js?v=p1-cumulative-20261002',
+            'assets/js/product-strategy/psb-board-ui.js?v=p1-cumulative-20261002',
+            'assets/js/pages/product-strategy-board.js?v=p1-cumulative-20261002'
         ],
         partial: { key: 'product-strategy-board', url: 'assets/html/pages/product-strategy-board.html',
             target: '#product-strategy-board-mount' },
