@@ -209,6 +209,76 @@
   function isObj(v) { return !!v && typeof v === 'object' && Object.prototype.toString.call(v) !== '[object Array]'; }
   function str(v) { return (v === undefined || v === null) ? '' : String(v); }
 
+  // The router's COMPLETE action vocabulary, pinned from 01_router.gs (the GET read table + the POST if-chain
+  // + doGet's own branches). It exists for ONE job: deciding whether an arbitrary string pulled out of a
+  // request URL is an application action at all.
+  //
+  // The CDP guard needs that, because A FORBIDDEN ACTION IS FORBIDDEN WHEREVER IT IS POINTED, not only when
+  // it is aimed at the deployment host. A guard that asks "is this the application host?" first will wave the
+  // same action through to any other address — which is not a hypothetical: the local interception proof
+  // aimed gapJob.status.get at a sink on 127.0.0.1 and watched it arrive.
+  //
+  // Pinned rather than derived at runtime because this module also loads in a browser, where there is no .gs
+  // file to read. The R4A suite re-derives it from the router and fails on any drift.
+  var ROUTER_VOCABULARY = [
+    'adjustFactoryInventory', 'adjustOverseasInventory', 'aiPlanFirstLayer.get', 'appendShippingPlanNote',
+    'auditFcSpecialEventIds', 'automationSchedule.get', 'automationSchedule.update',
+    'backfillFcSpecialEventIds', 'cancelRequestOrderTier', 'cancelShipmentDraft',
+    'cancelShippingAllocationDraft', 'carrierLeadTime.duplicateCensus', 'carrierLeadTime.upsert',
+    'completeShippingPlan', 'confirmShipmentAndDispatch', 'createPurchaseOrderFromRequest',
+    'createRequestOrderDraft', 'createShipmentFromPlan', 'createShippingPlansBatch', 'deleteFcSpecialEvent',
+    'deleteFcTargetRule', 'document.diagnostic.purchaseOrder', 'document.diagnostic.shipment',
+    'document.get', 'document.list', 'document.retry', 'documentTemplate.getFields',
+    'documentTemplate.list', 'factoryInventory.import.commit', 'factoryInventory.import.validate',
+    'factoryOperationConfig.get', 'factoryOperationConfig.save', 'factoryStockGuard.get',
+    'fcSummary.raw.get', 'fcSummary.workspace.get', 'finalizeShipmentFinalOutput',
+    'flowASchemaLineagePreflight', 'gapJob.status.get', 'generateRecommendationDraftLocked',
+    'generateShipmentLineAllocations', 'getClientCapabilities', 'getOperationDb',
+    'getRecommendationDraftToken', 'getShipmentFinalOutput', 'getShippingAllocationDraftWorkspace',
+    'getShippingMethodCandidates', 'getTable', 'importCarrierRateCards', 'importFcRegularForecastBatch',
+    'importFcSpecialEventsBatch', 'importMarketplaceSkusBatch', 'importOverseasInventorySnapshotBatch',
+    'inventoryReplenishment.workspace.get', 'inventoryReplenishmentGap.get',
+    'inventoryReplenishmentGap.job.cancel', 'inventoryReplenishmentGap.job.start',
+    'inventoryReplenishmentGap.recalculate.all', 'inventoryScope.registry.get', 'leadTime.raw.get',
+    'openPoRemaining.raw.get', 'orderPlanningGap.get', 'orderPlanningGap.job.cancel',
+    'orderPlanningGap.job.start', 'orderPlanningGap.recalculate.all', 'overseasStock.workspace.get',
+    'pricing.fxReconcile', 'pricing.update', 'pricing.write.status', 'productPricing.siteUniverse.get',
+    'productPricing.workspace.get', 'purchaseOrder.workspace.get', 'rawInventory.get',
+    'receivePurchaseOrderLines', 'recommendation.workspace.get', 'renderShipmentDocument',
+    'replenishmentDemandAllocation.save', 'requestOrder.allocationDraft.ensureAndEdit',
+    'requestOrder.send.orchestrate', 'requestOrder.send.status', 'requestOrder.sendWorkset.get',
+    'requestOrder.workspace.get', 'requestOrderDraft.generateFromGap', 'requestOrderDraft.getActive',
+    'requestOrderDraft.job.cancel', 'requestOrderDraft.job.continue', 'requestOrderDraft.job.start',
+    'requestOrderDraft.job.status', 'retireShipmentLabelColumns', 'runAmazonSnapshotImports',
+    'seedSinotransCarrier', 'shipment.eta.update', 'shipment.receipt.update', 'shipment.route.advance',
+    'shipment.workspace.get', 'shipmentDocument.generate', 'shipmentDocument.get', 'shipmentDocument.list',
+    'skuDetails.workspace.get', 'submitAllocationDraftsToShippingPlans',
+    'submitRequestOrderAllocationDrafts', 'submitShippingAllocationDrafts',
+    'syncMarketplaceSkusToSkuRegionalDetails', 'system.allocationDraftIdentityDiagnostic',
+    'system.executionPlanConflictDiagnostic', 'system.executionPlanDuplicateLineDiagnostic',
+    'system.health', 'system.requestOrderSendDiagnostic', 'system.requestOrderSendDiagnosticStatus',
+    'system.requestOrderSendReconcile', 'system.shippingAllocationDraftDiagnostic',
+    'system.shippingAllocationSchemaDiagnostic', 'system.submitFlowDiagnostic',
+    'system.twoVerticalFlowsDiagnostic', 'updateMarketplaceSkuModel', 'updatePurchaseOrderHeader',
+    'updatePurchaseOrderLine', 'updatePurchaseOrderStatus', 'updateRecommendationDecisionLocked',
+    'updateRequestOrderLineQty', 'updateRequestOrderStatus', 'updateShipment', 'updateShippingPlanLineQty',
+    'updateShippingPlanStatus', 'updateSkuLifecycle', 'upsertCampaign', 'upsertCampaignSkuLines',
+    'upsertFcSpecialEvent', 'upsertFcTargetRule', 'upsertMarketplace', 'upsertMarketplaceSku',
+    'upsertRequestOrderAllocationDraft', 'upsertRequestOrderAllocationDraftLines',
+    'upsertRequestOrderSiteConfirmations', 'upsertShippingAllocationDraft',
+    'upsertShippingAllocationDraftAtomic', 'upsertShippingAllocationDraftLines', 'upsertSkuDetail',
+    'upsertSkuRegionalDetail', 'upsertTaxRateComponent', 'upsertTaxReferralRate', 'warehouseAllocation.get',
+    'weeklyAiPlan.generate', 'weeklyShipping.workspace.get'
+  ];
+  var _VOCAB = {};
+  ROUTER_VOCABULARY.forEach(function (a) { _VOCAB[a] = 1; });
+  function isKnownAction(a) {
+    var s = str(a).trim();
+    return s !== '' && (_VOCAB[s] === 1 ||
+      Object.prototype.hasOwnProperty.call(APPROVED, s) ||
+      Object.prototype.hasOwnProperty.call(FORBIDDEN_ACTIONS, s) ||
+      Object.prototype.hasOwnProperty.call(EXCLUDED, s));
+  }
   function approvedActions() { return Object.keys(APPROVED).sort(); }
   // The actions whose owner refuses an unscoped request. Exposed so a runner can label the sample rather than
   // average a 1 ms validation refusal into a surface's measured cost - which is how a round reports a defect
@@ -342,6 +412,8 @@
     APPROVED_TABLES: APPROVED_TABLES,
     BOUNDED_READ_NOT_REGISTERED: BOUNDED_READ_NOT_REGISTERED,
     approvedActions: approvedActions,
+    ROUTER_VOCABULARY: ROUTER_VOCABULARY,
+    isKnownAction: isKnownAction,
     scopeRequiredActions: scopeRequiredActions,
     surfaceOf: surfaceOf,
     buildDto: buildDto,
