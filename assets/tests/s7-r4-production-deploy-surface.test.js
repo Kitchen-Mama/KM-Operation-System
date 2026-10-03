@@ -281,9 +281,9 @@ eq(S.declared.filter(function (f) { return /login|role|capability|permission/i.t
 // ----------------------------------------------------------------------------------------------------------
 section('J  the whole TEMP census, so the reported count is asserted rather than claimed');
 // ----------------------------------------------------------------------------------------------------------
-eq(S.toolingByClass, { ONE_TIME_MIGRATION: 4, DIAGNOSTIC: 34, SEED: 1 },
-  'J1  TEMP tooling by class — 4 migrations, 34 diagnostics, 1 seed');
-eq(S.toolingCount, 39, 'J2  39 .gs tools live in the tooling directories');
+eq(S.toolingByClass, { ONE_TIME_MIGRATION: 4, DIAGNOSTIC: 35, SEED: 1 },
+  'J1  TEMP tooling by class — 4 migrations, 35 diagnostics, 1 seed');
+eq(S.toolingCount, 40, 'J2  40 .gs tools live in the tooling directories');
 
 // Two TEMP artifacts are in neither place, and both are accounted for rather than ignored.
 var LIVE_PASTE = 'tmp/TEMP_AI_PLAN_ACTIVATION_CENSUS_FC1B_E3_LIVE_PASTE.gs';
@@ -297,7 +297,7 @@ ok(fs.existsSync(path.join(REPO, SEALED)),
   'J4  and the fc_target_rules migration retired in R2B-A2-R6 survives as a SHA-256-sealed fixture — the '
   + 'precedent this round followed, one round before it was asked for');
 ok(!/\.gs$/.test(SEALED), 'J4a it is a .txt fixture, which is why it is not a deployable artifact');
-eq(S.toolingCount + 2, 41, 'J5  TEMP_ARTIFACT_COUNT = 41, and UNKNOWN_TEMP_CLASSIFICATION_COUNT = 0');
+eq(S.toolingCount + 2, 42, 'J5  TEMP_ARTIFACT_COUNT = 42, and UNKNOWN_TEMP_CLASSIFICATION_COUNT = 0');
 
 // ----------------------------------------------------------------------------------------------------------
 section('I  mutants — every guard above is load-bearing');
