@@ -236,6 +236,79 @@
   };
 
   // =============================================================================================================
+  // S8-R2 CLOSEOUT — THE LIVE CENSUS RESULT, recorded as data so the suite can assert it.
+  // Executed manually by the operator in the Production Apps Script project. Zero writes, zero deletions,
+  // zero schema change, zero property writes, zero locks.
+  // =============================================================================================================
+  var CENSUS_RESULT = {
+    census_complete: true,
+    live_s8t_collision_count: 0,
+    by_token: { namespace: 0, actor: 0, lineage_type: 0 },
+    tables_scanned: 57,
+    tables_absent: ['replenishment_demand_allocation_rules'],
+    namespace_approved: true,
+    // The registry carries 58 entries and 57 tabs physically exist. The absent one is the legacy tab whose
+    // storage was retired to Script Properties (50_), so its absence CONFIRMS the classification rather than
+    // contradicting it: it is still a canonical read key in supply-planning-production-source.js and the
+    // reader already treats it as optional. It stays registered, and stays PROTECTED_MASTER.
+    registry_entries: 58,
+    physically_present: 57
+  };
+
+  // =============================================================================================================
+  // THE 43 EXTRA LIVE TABS — observed in Production, outside the registry (S8-R2 §3 / §7).
+  //
+  // THEY ARE RECORDED, NOT REGISTERED. Naming them does not authorize them and does not extend the write
+  // surface: every one classifies UNAUTHORIZED_UNKNOWN exactly as an unnamed table would. The difference is
+  // only in what `classify()` can say — "observed live in Production, never audited" instead of "never heard
+  // of it" — and that difference matters to a preflight, because the two have different next steps. The first
+  // needs an audit round; the second might be a typo.
+  //
+  // A WRITE to any of them requires operator approval. A READ must be DECLARED in the DB TOUCH PREFLIGHT so
+  // the operator can see it. Two of them are already read by live Phase-1 surfaces — see UNREGISTERED_READS.
+  // =============================================================================================================
+  var EXTRA_LIVE_TABS = [
+    // 3PL / WMS integration family — no deployed .gs reads any of these
+    'warehouse_integrations', 'warehouse_inbounds', 'warehouse_inbound_lines', 'warehouse_inbound_packages',
+    'warehouse_inbound_package_items', 'warehouse_receipts', 'warehouse_receipt_lines', 'warehouse_outbounds',
+    'warehouse_outbound_lines', 'warehouse_outbound_allocations', 'external_sku_mappings',
+    'warehouse_operation_integrations', 'warehouse_integration_events',
+    // Amazon-derived snapshots beyond the three registered ones
+    'amazon_monthly_sales_summary_snapshot', 'amazon_inventory_health_snapshot',
+    // replenishment / shipment / carrier extensions
+    'inventory_replenishment_overrides', 'inventory_replenishment_daily_status',
+    'shipment_plan_links', 'shipment_revision_log', 'replenishment_route_rules',
+    'carrier_service_schedules', 'carrier_rate_breakdowns', 'carrier_fee_types', 'carrier_quote_history',
+    'carrier_import_jobs', 'carrier_import_job_details',
+    // planning / ERP / procurement
+    'factory_stock_allocation_plans', 'sales_orders', 'sales_order_lines', 'request_order_po_links',
+    'production_schedule', 'payment_terms_master', 'supplier_price_list', 'mixed_carton_rules',
+    'factory_price_list', 'product_features', 'sku_handbook_summaries',
+    // legacy / backup / pre-migration snapshots — never a test target under any circumstances
+    'request_order_allocation_drafts_legacy_pre_v2_20260822_0851',
+    'request_order_allocation_drafts_backup', 'request_order_allocation_draft_lines_backup',
+    'PRE__pricing_list__20260923-184134', 'PRE__pricing_change_log__20260923-184134',
+    'PREBASE__pricing_list__20260924-130125'
+  ];
+
+  // Unregistered tables that LIVE Phase-1 read surfaces already read. Measured from the owners' own declared
+  // table constants, not inferred. These are why §7 exists: S8-R3 cannot exercise these two surfaces without
+  // reading an unregistered table, and the gate says that is a STOP, not a footnote.
+  var UNREGISTERED_READS = [
+    { table: 'supplier_price_list', optional: false,
+      read_by: ['requestOrder.workspace.get (51_:36, requiredCols [sku])', 'leadTime.raw.get (55_)'],
+      consequence: 'REQUIRED — the owner fails closed without it, so Request Order and the lead-time read '
+        + 'cannot be exercised at all while it is unauthorized' },
+    { table: 'amazon_inventory_health_snapshot', optional: true,
+      read_by: ['inventoryReplenishment.workspace.get (60_:63, optional: true)'],
+      consequence: 'OPTIONAL — the surface degrades rather than failing, so Site Inventory can be exercised '
+        + 'without it, but the run would not be measuring the shipped read' }
+  ];
+
+  var EXTRA_BY_NAME = {};
+  EXTRA_LIVE_TABS.forEach(function (t) { EXTRA_BY_NAME[t] = 1; });
+
+  // =============================================================================================================
   // LOOKUP + AUTHORIZATION
   // =============================================================================================================
   var BY_TABLE = {};
@@ -245,12 +318,17 @@
 
   // The fail-closed classifier. An unregistered table is UNAUTHORIZED_UNKNOWN — never "probably a transaction".
   function classify(table) {
-    var e = BY_TABLE[str(table)];
+    var t = str(table);
+    var e = BY_TABLE[t];
     if (!e) {
-      return { table: str(table), cls: CLASS.UNAUTHORIZED_UNKNOWN, policy: POLICY.NEVER_TOUCH, registered: false,
-        why: 'not in the S8 registry — no round has classified or authorized this table' };
+      return { table: t, cls: CLASS.UNAUTHORIZED_UNKNOWN, policy: POLICY.NEVER_TOUCH, registered: false,
+        observed_live: !!EXTRA_BY_NAME[t],
+        why: EXTRA_BY_NAME[t]
+          ? 'observed live in Production outside the registry (S8-R2 §3) and never audited — READ must be '
+            + 'declared in the DB TOUCH PREFLIGHT, WRITE requires operator approval'
+          : 'not in the S8 registry and not observed in the live census — no round has classified this table' };
     }
-    return { table: e.table, cls: e.cls, policy: e.policy, registered: true, why: e.why };
+    return { table: e.table, cls: e.cls, policy: e.policy, registered: true, observed_live: true, why: e.why };
   }
 
   function tablesIn(cls) {
@@ -363,6 +441,9 @@
     POLICY: POLICY,
     REGISTRY: REGISTRY,
     GAP_FINDING: GAP_FINDING,
+    CENSUS_RESULT: CENSUS_RESULT,
+    EXTRA_LIVE_TABS: EXTRA_LIVE_TABS,
+    UNREGISTERED_READS: UNREGISTERED_READS,
     INVENTORY_RECOVERY_MODEL: INVENTORY_RECOVERY_MODEL,
     APPROVAL_TRIGGERS: APPROVAL_TRIGGERS,
     MOVEMENT_DELETE_ALLOWED: false,

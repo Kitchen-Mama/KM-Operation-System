@@ -731,6 +731,134 @@ ok(CLEAN.planCandidates(A, planOpts).candidate_count === 2, 'N3  the real planne
 ok(RUN.dimensionConflict(dimA, dimB).conflict === true, 'N4  the real overlap rule really does fire');
 ok(RUN.cleanupEligible(failed).ok === false, 'N5  the real eligibility check really does refuse FAILED_RETAINED');
 
+// ============================================================================================================
+section('O. S8-R2 CLOSEOUT + S8-R3A PREFLIGHT — the live census, the 43 extra tabs, and the read surface');
+// ============================================================================================================
+var CEN = CLS.CENSUS_RESULT;
+eq(CEN.live_s8t_collision_count, 0, 'O1  LIVE_S8T_COLLISION_COUNT = 0');
+eq(CEN.by_token, { namespace: 0, actor: 0, lineage_type: 0 }, 'O2  zero on all THREE tokens, not just the prefix');
+eq(CEN.census_complete, true, 'O3  CENSUS_COMPLETE = true — a partial slice would not have approved the namespace');
+eq(CEN.namespace_approved, true, 'O4  S8T_NAMESPACE_APPROVED');
+eq(CEN.tables_scanned + CEN.tables_absent.length, CLS.REGISTRY.length,
+  'O5  57 scanned + 1 absent accounts for all 58 registered tables');
+eq(CEN.tables_absent, ['replenishment_demand_allocation_rules'],
+  'O6  the one absent tab is the legacy one whose storage was retired to Script Properties (50_)');
+// Its absence must NOT quietly downgrade it — it is still a canonical read key and still protected.
+eq(CLS.classify('replenishment_demand_allocation_rules').cls, CLS.CLASS.PROTECTED_MASTER,
+  'O7  and it stays registered and PROTECTED_MASTER despite being physically absent');
+
+// ---- the 43 extra live tabs ------------------------------------------------------------------------------
+eq(CLS.EXTRA_LIVE_TABS.length, 43, 'O8  43 extra live tabs recorded');
+eq(CLS.EXTRA_LIVE_TABS.filter(function (v, i, a) { return a.indexOf(v) !== i; }), [], 'O9  with no duplicates');
+eq(CLS.EXTRA_LIVE_TABS.filter(function (t) { return CLS.classify(t).registered; }), [],
+  'O10 and none of them is in the registry — recording is not registering');
+CLS.EXTRA_LIVE_TABS.forEach(function (t) {
+  var c = CLS.classify(t);
+  if (c.cls !== CLS.CLASS.UNAUTHORIZED_UNKNOWN || c.policy !== CLS.POLICY.NEVER_TOUCH) {
+    ok(false, 'O11 ' + t + ' must be UNAUTHORIZED_UNKNOWN / NEVER_TOUCH', c);
+  }
+});
+ok(true, 'O11 every one of the 43 classifies UNAUTHORIZED_UNKNOWN / NEVER_TOUCH');
+ok(CLS.EXTRA_LIVE_TABS.every(function (t) { return CLS.authorizeWrite(t, 'RUNTIME_OWNER').ok === false; }),
+  'O12 and every one of them refuses a write');
+ok(CLS.EXTRA_LIVE_TABS.every(function (t) { return CLS.authorizeDelete(t).ok === false; }),
+  'O13 and refuses a delete');
+eq(CLS.counts().total_registered, 58, 'O14 the AUTHORIZED surface is unchanged — still 58 registered');
+eq(CLS.counts().authorized_write_tables, 27, 'O15 and still 27 writable');
+// Recording them has to BUY something, or it is just a longer list.
+ok(CLS.classify('supplier_price_list').observed_live === true
+  && CLS.classify('a_table_nobody_has_ever_seen').observed_live === false,
+  'O16 classify() can now tell "observed live, never audited" from "never heard of it" — different next steps');
+
+// ---- the two unregistered tables that LIVE read surfaces already read -------------------------------------
+eq(CLS.UNREGISTERED_READS.map(function (u) { return u.table; }).sort(),
+  ['amazon_inventory_health_snapshot', 'supplier_price_list'],
+  'O17 two unregistered tables are read by shipped Phase-1 surfaces');
+ok(CLS.UNREGISTERED_READS.every(function (u) { return CLS.EXTRA_LIVE_TABS.indexOf(u.table) !== -1; }),
+  'O18 both are among the 43 the operator observed — so neither is a surprise tab');
+var spl = CLS.UNREGISTERED_READS.filter(function (u) { return u.table === 'supplier_price_list'; })[0];
+eq(spl.optional, false, 'O19 supplier_price_list is REQUIRED by its owner, so the surface fails closed without it');
+// The claim is checked against the owner source, not taken from the note.
+var o51 = read('specs/active/apps-script/51_api_v1_request_order_workspace.gs');
+ok(/name:\s*'supplier_price_list',\s*requiredCols/.test(o51) && !/'supplier_price_list'[^}]*optional:\s*true/.test(o51),
+  'O20 and 51_ really does declare it without optional:true');
+var o60 = read('specs/active/apps-script/60_api_v1_inventory_replenishment_workspace.gs');
+ok(/name:\s*'amazon_inventory_health_snapshot'[\s\S]{0,60}optional:\s*true/.test(o60),
+  'O21 while 60_ really does declare amazon_inventory_health_snapshot optional');
+
+// ---- the one read endpoint that can mutate ----------------------------------------------------------------
+// gapJob.status.get is ON the GET read table, and the R4A1 suite proves zero writes for the path it executes.
+// That proof is conditional on the state the action is run against: on a STALE NON-TERMINAL job it persists a
+// terminal state AND re-arms a continuation trigger, and that continuation runs the materialization slice.
+var j46 = read('specs/active/apps-script/46_api_v1_gap_materialization_job.gs');
+// Slice the ACTUAL function body rather than guessing a character window — the window is the kind of thing
+// that silently stops covering the line it was written for the moment a comment above it grows.
+function gsBody(src, fn) {
+  var i = src.indexOf('function ' + fn + '(');
+  if (i === -1) return '';
+  var j = src.indexOf('\nfunction ', i + 1);
+  return src.slice(i, j === -1 ? src.length : j);
+}
+var statusBody = gsBody(j46, 'gapJobStatus_');
+ok(statusBody.indexOf('gapJobMarkStalled_') !== -1,
+  'O22 gapJob.status.get can persist a terminal STALLED state');
+ok(statusBody.indexOf('gapJobRearmRecovery_') !== -1,
+  'O23 and can re-arm a continuation — which is a trigger CREATE, not just a property write');
+ok(/function gapJobRearmRecovery_[\s\S]{0,400}scheduleContinuation/.test(j46),
+  'O24 the re-arm really does schedule a continuation');
+ok(j46.indexOf('gapProcessScopeSlice_') !== -1,
+  'O25 and the continuation worker reaches the gap materialization slice — so a READ can reach a gap WRITE');
+// The gap tables are exactly the ones S8-R2 declared off-limits, which is what makes this a STOP.
+ok(CLS.authorizeWrite('inventory_replenishment_gap', 'RUNTIME_OWNER').ok === false
+  && CLS.authorizeWrite('order_planning_gap', 'RUNTIME_OWNER').ok === false,
+  'O26 and those tables are unwritable under the S8 boundary — hence STOP, not a footnote');
+
+// ---- every other read owner is structurally write-free ------------------------------------------------------
+var READ_OWNERS = ['40_api_v1_weekly_workspace.gs', '42_api_v1_recommendation_workspace.gs',
+  '50_api_v1_purchase_order_workspace.gs', '51_api_v1_request_order_workspace.gs',
+  '52_api_v1_open_po_remaining_owner.gs', '53_api_v1_fc_summary_raw_owner.gs',
+  '54_api_v1_raw_inventory_owner.gs', '55_api_v1_lead_time_owner.gs', '57_api_v1_shipment_workspace.gs',
+  '58_api_v1_fc_summary_workspace.gs', '59_api_v1_sku_details_workspace.gs',
+  '60_api_v1_inventory_replenishment_workspace.gs', '64_api_v1_scope_registry.gs',
+  '70_api_v1_overseas_stock_workspace.gs', '72_api_v1_product_pricing_workspace.gs'];
+function bareGs(s) {
+  return s.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ')
+          .replace(/'(?:\\.|[^'\\])*'/g, "''").replace(/"(?:\\.|[^"\\])*"/g, '""');
+}
+var WRITE_PRIMS = ['setValue(', 'setValues(', 'appendRow(', 'insertSheet(', 'deleteRow(', 'clearContent',
+  'LockService', 'setProperty(', 'DriveApp', 'newTrigger('];
+READ_OWNERS.forEach(function (f) {
+  var s = bareGs(read('specs/active/apps-script/' + f));
+  var hits = WRITE_PRIMS.filter(function (w) { return s.indexOf(w) !== -1; });
+  eq(hits, [], 'O27 ' + f.replace('_api_v1', '').replace('.gs', '') + ' holds no write primitive at all');
+});
+
+// ---- the planned R3 read surface -----------------------------------------------------------------------------
+// The tables S8-R3 would read, derived earlier from each owner's own declared *_TABLES_ constant. Pinned here
+// so the preflight in the report cannot drift from the classification it claims.
+var R3_READ = ['amazon_daily_sales_snapshot', 'amazon_inventory_health_snapshot', 'amazon_inventory_snapshot',
+  'amazon_weekly_sales_snapshot', 'campaign_sku_lines', 'campaigns', 'carrier_lead_times', 'carrier_rate_cards',
+  'carriers', 'factory_stock', 'factory_stock_override_audit', 'fc_regular_forecast', 'fc_special_events',
+  'fc_target_rules', 'generated_documents', 'inventory_replenishment_gap', 'logistics_locations',
+  'marketplace_skus', 'marketplaces', 'order_planning_gap', 'overseas_inventory_movements',
+  'overseas_inventory_snapshot', 'pricing_list', 'purchase_order_lines', 'purchase_orders',
+  'request_order_line_sources', 'request_order_lines', 'request_orders', 'shipment_events', 'shipment_lines',
+  'shipment_route_template_nodes', 'shipment_route_templates', 'shipment_routes', 'shipments',
+  'shipping_allocation_draft_lines', 'shipping_allocation_drafts', 'shipping_plan_lines', 'shipping_plans',
+  'sku_details', 'sku_regional_details', 'supplier_price_list', 'tax_rate_components', 'tax_referral_rates',
+  'warehouses'];
+eq(R3_READ.length, 44, 'O28 S8-R3 would read 44 distinct physical tables');
+// 18 of the 44 ARE write-authorized in principle (16 TEST_OWNED + 2 REBUILDABLE). That is the point worth
+// pinning: R3 being read-only is a property of the PREFLIGHT declaring ACCESS=READ for all 44, not something
+// the registry enforces for it. The registry only guarantees the other 26 can never be written at all.
+eq(R3_READ.filter(function (t) { return CLS.authorizeWrite(t, 'RUNTIME_OWNER').ok === true; }).length, 18,
+  'O29 18 of the 44 are write-authorized in principle — so R3 read-only rests on the preflight, not the registry');
+eq(R3_READ.filter(function (t) { return CLS.authorizeWrite(t, 'RUNTIME_OWNER').ok === false; }).length, 26,
+  'O29a and the registry hard-refuses a write to the other 26 regardless of what any preflight says');
+eq(R3_READ.filter(function (t) { return !CLS.classify(t).registered; }).sort(),
+  ['amazon_inventory_health_snapshot', 'supplier_price_list'],
+  'O30 and exactly 2 of the 44 are unregistered — the §7 declaration');
+
 console.log('\n' + new Array(101).join('='));
 console.log((fail === 0 ? 'PASS  ' : 'FAIL  ') + pass + ' passed, ' + fail + ' failed, '
   + mutants + ' mutants, ' + survived + ' survived');

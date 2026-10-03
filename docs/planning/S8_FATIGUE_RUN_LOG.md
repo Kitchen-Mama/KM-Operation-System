@@ -47,6 +47,30 @@ leak_count / leaked_rows
 non_test_row_touched_count    MUST be 0. Any value above 0 halts the S8 programme.
 ```
 
+## S8T identity — CLOSED, operator-executed 2026-10-03
+
+The live collision census was run manually in the Production Apps Script project and the namespace is
+approved. Recorded here because a Script Property can be cleared and a commit cannot.
+
+```
+CENSUS_COMPLETE            = true
+LIVE_S8T_COLLISION_COUNT   = 0      namespace 0 · actor 0 · lineage_type 0
+tables_scanned             = 57     (58 registered; replenishment_demand_allocation_rules is absent)
+EXTRA_TABS_NOT_IN_REGISTRY = 43     all UNAUTHORIZED_UNKNOWN
+S8T_NAMESPACE_APPROVED     = YES
+
+zero-write proof: db_writes 0 · rows_deleted 0 · rows_modified 0 · schema_changes 0 ·
+                  drive_writes 0 · property_writes 0 · locks_taken 0
+```
+
+Zero on **all three tokens**, which is the part that matters: `S8_FATIGUE_TEST` begins `S8_`, not `S8T`, so a
+prefix-only census would have approved the namespace while an actor collision sat waiting to satisfy guard G2
+for a row no test ever made.
+
+Rule 1 below is therefore satisfied. The census file is removed from the Production project by the operator.
+
+---
+
 ## Rules a run must satisfy before it starts
 
 1. `LIVE_S8T_COLLISION_COUNT = 0` from a **complete** census (`CENSUS_COMPLETE: true`). A zero from a partial
