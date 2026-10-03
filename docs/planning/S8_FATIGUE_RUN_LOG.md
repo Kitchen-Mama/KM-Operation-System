@@ -89,10 +89,34 @@ Rule 1 below is therefore satisfied. The census file is removed from the Product
 
 | run_id | status | tier | scope | started | finished | created rows | inventory touched | leaks | non-test touches | cleanup |
 |---|---|---|---|---|---|---|---|---|---|---|
-| _(none yet — S8-R2 executed no fatigue)_ | | | | | | | | | | |
+| _(none - no WRITE fatigue has run)_ | | | | | | | | | | |
+
+**No run_id has been issued.** The `S8T-<YYYYMMDD>-R<NNN>` identity belongs to runs that CREATE data. S8-R3B
+was read-only, so it created nothing, needed no lineage and has no cleanup obligation - and giving it a run_id
+would put the reserved namespace into a round that has no rows to own.
 
 ```
-PRODUCTION_FATIGUE_EXECUTED = NO
+PRODUCTION_FATIGUE_EXECUTED = READ-ONLY ONLY (S8-R3B)
 PRODUCTION_ROWS_WRITTEN     = 0
 PRODUCTION_ROWS_DELETED     = 0
 ```
+
+---
+
+## Read-only fatigue runs
+
+| round | date | requests | surfaces | failures | rows written | rows deleted | result |
+|---|---|---|---|---|---|---|---|
+| S8-R3B | 2026-10-03 | 127 (118 GET / 9 POST) | 11 | 4 real + 18 harness-fault | **0** | **0** | 2 BLOCKING_TIMEOUT, 2 FUNCTIONAL_DEFECT |
+
+Full results: [S8_R3B_READ_PATH_FATIGUE_RESULTS.md](S8_R3B_READ_PATH_FATIGUE_RESULTS.md).
+
+```
+scope used            ResUS / US / Amazon   (derived from fcSummary.workspace.get -> marketplaces[0 active])
+row-count invariant   9 owners . 83 successful reads . 47 count keys . 0 moved
+refused dispatches    0        forbidden-action attempts  0        gapJob.status.get polls  0
+```
+
+Eighteen of the Run A samples measured an owner's scope VALIDATOR rather than a surface, because the harness
+sent no scope. That is this round's own fault, it is recorded as such, and the two affected reads were
+re-measured. It is in this log because a run log that only records the clean part of a run is not a log.
