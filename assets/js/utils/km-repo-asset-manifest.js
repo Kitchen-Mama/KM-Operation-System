@@ -33,6 +33,7 @@
     'assets/img/earth/earth-albedo-5400.jpg',
     'assets/img/earth/earth-albedo-8192.jpg',
     'assets/img/logo 2.png',
+    'assets/img/logo_1024_1024-removebg_2.png',
     'assets/img/logo_500_500-removebg.png',
     'assets/img/logo_only_red.png',
     'assets/img/products/CO0560.jpg',
@@ -175,7 +176,7 @@
     'assets/img/products/SP5120-R.jpg'
   ];
 
-  M.count = 147;
+  M.count = 148;
 
   /* Lookup sets, built on first use. `LOWER` answers "does a file with this name in some other CASE
      exist" — the difference between a row pointing at nothing and a row pointing at the right file with
