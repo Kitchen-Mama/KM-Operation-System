@@ -261,6 +261,11 @@ TEMP_SCRIPT_COUNT  39
    2   assets/tools/apps-script-migrations/
 ```
 
+> **This block is R1's measurement and is kept as the finding.** S7-R4 moved all seven out of the deployable
+> folder, and S8-R2 added `TEMP_S8T_NAMESPACE_COLLISION_CENSUS.gs`. The LIVE census is pinned by
+> `s7-r1-supporting-flow-contract-audit.test.js` F1a/F1c/F1d, which now reads 35 diagnostics + 4 migrations +
+> 1 seed = `TEMP_SCRIPT_COUNT 40`, and 0 in the deployable folder.
+
 The split is the whole point. A TEMP file under `specs/active/apps-script` is in the folder whose contents go
 into the live Apps Script project, so only those seven can break a deployment by being removed - and that has
 happened once already, when `TEMP_request_order_send_diagnostics.gs` still owned a REQUIRED action and

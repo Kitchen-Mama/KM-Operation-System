@@ -491,12 +491,12 @@ eq(AS_FILES.filter(function (f) { return f.indexOf('TEMP_') === 0; }), [],
 var TOOLS_DIAG = lsdir('tools/apps-script-diagnostics').filter(function (f) { return /\.gs$/.test(f); });
 var TOOLS_MIG = lsdir('tools/apps-script-migrations').filter(function (f) { return /\.gs$/.test(f); });
 var TOOLS_SEED = lsdir('tools/apps-script-seeds').filter(function (f) { return /\.gs$/.test(f); });
-eq(TOOLS_DIAG.length, 34, 'F1a thirty-four diagnostics live under tools/, outside the deploy folder');
+eq(TOOLS_DIAG.length, 35, 'F1a thirty-five diagnostics live under tools/, outside the deploy folder');
 eq(TOOLS_MIG.length, 4, 'F1b four migrations');
 eq(TOOLS_SEED.length, 1, 'F1b1 and the one seed has a directory of its own, because burying the tool '
   + 'that can empty six tables among ordinary migrations loses the only fact about it that matters');
-eq(TOOLS_DIAG.length + TOOLS_MIG.length + TOOLS_SEED.length, 39, 'F1c TEMP_SCRIPT_COUNT = 39');
-eq(AS_TEMP.length, 39, 'F1d and the census below reads all 39, not the empty folder');
+eq(TOOLS_DIAG.length + TOOLS_MIG.length + TOOLS_SEED.length, 40, 'F1c TEMP_SCRIPT_COUNT = 40');
+eq(AS_TEMP.length, 40, 'F1d and the census below reads all 40, not the empty folder');
 
 var permTop = {};
 AS_PERM.forEach(function (f) { topLevelSymbols(SRC[f]).forEach(function (n) { permTop[n] = 1; }); });
