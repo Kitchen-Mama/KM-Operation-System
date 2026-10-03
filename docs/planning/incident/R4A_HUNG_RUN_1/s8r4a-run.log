@@ -1,0 +1,182 @@
+S8-R4A BROWSER FATIGUE
+frontend http://127.0.0.1:51540   (served from this worktree)
+profile  C:\Users\viczh\AppData\Local\Temp\s8r4a-profile-DyXtrT   EPHEMERAL — OPERATOR_PROFILE_TOUCHED = NO
+allowlist 16 actions, frozen
+
+AUTOMATED_FATIGUE_STATUS = RUNNING
+HUMAN_TEST_SAFE = YES
+HUMAN_TEST_AVOID = the surface named in each window below, while that window is open
+
+chrome Chrome/154.0.8037.95
+SCENARIO A — COLD OPEN
+  A-cold      FC Summary              stable=    8967  data=    6707  req=  5  app= 2  dup=0  abort=0  rows=    1
+  A-cold      SKU Details             stable=    9912  data=    7472  req=137  app= 1  dup=0  abort=0  rows=    -
+  A-cold      SKU Regional Details    stable=   12962  data=   10937  req=  3  app= 1  dup=0  abort=0  rows=   50
+  A-cold      Factory Inventory       stable=   15579  data=   13430  req=  7  app= 3  dup=0  abort=0  rows=  112
+  A-cold      Overseas Inventory      stable=   12421  data=   10177  req=  3  app= 1  dup=0  abort=0  rows=  240
+  A-cold      Weekly Shipping Plan    stable=   12626  data=   10556  req=  5  app= 2  dup=0  abort=0  rows=    -
+  A-cold      Shipment Overview       stable=   11075  data=    8827  req=  3  app= 1  dup=0  abort=0  rows=    -
+  A-cold      Shipment Draft          stable=   14463  data=   12295  req=  3  app= 1  dup=0  abort=0  rows=    -
+  A-cold      On-the-Way Map          stable=   16822  data=   14297  req= 12  app= 1  dup=0  abort=0  rows=    -
+  A-cold      PO Overview             stable=   10812  data=    8701  req=  3  app= 1  dup=0  abort=0  rows=    -
+  A-cold      Carrier Rate Card       stable=    7622  data=    5374  req=  5  app= 2  dup=0  abort=0  rows=    -
+  A-cold      Site Inventory          stable=    6852  data=    4716  req=  4  app= 1  dup=0  abort=0  rows=    0
+
+SCENARIO B — WARM RETURN
+  B-return    FC Summary              stable=    8203  data=    6162  req=  5  app= 2  dup=0  abort=0  rows=    1
+  B-return    FC Summary              stable=    2377  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    1
+  B-return    FC Summary              stable=    2381  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    1
+  B-return    SKU Details             stable=   11676  data=    9394  req=  2  app= 1  dup=0  abort=0  rows=    -
+  B-return    SKU Details             stable=   10599  data=    8351  req=  2  app= 1  dup=0  abort=0  rows=    -
+  B-return    SKU Details             stable=   10075  data=    7995  req=  2  app= 1  dup=0  abort=0  rows=    -
+  B-return    SKU Regional Details    stable=    2121  data=       -  req=  0  app= 0  dup=0  abort=0  rows=   50
+  B-return    SKU Regional Details    stable=    2091  data=       -  req=  0  app= 0  dup=0  abort=0  rows=   50
+  B-return    SKU Regional Details    stable=    2103  data=       -  req=  0  app= 0  dup=0  abort=0  rows=   50
+  B-return    Factory Inventory       stable=    2125  data=       -  req=  0  app= 0  dup=0  abort=0  rows=  112
+  B-return    Factory Inventory       stable=    2119  data=       -  req=  0  app= 0  dup=0  abort=0  rows=  112
+  B-return    Factory Inventory       stable=    2121  data=       -  req=  0  app= 0  dup=0  abort=0  rows=  112
+  B-return    Overseas Inventory      stable=    2161  data=       -  req=  0  app= 0  dup=0  abort=0  rows=  240
+  B-return    Overseas Inventory      stable=    2148  data=       -  req=  0  app= 0  dup=0  abort=0  rows=  240
+  B-return    Overseas Inventory      stable=    2153  data=       -  req=  0  app= 0  dup=0  abort=0  rows=  240
+  B-return    Weekly Shipping Plan    stable=   13424  data=   11330  req=  2  app= 1  dup=0  abort=0  rows=    -
+  B-return    Weekly Shipping Plan    stable=   12888  data=   10710  req=  2  app= 1  dup=0  abort=0  rows=    -
+  B-return    Weekly Shipping Plan    stable=   11637  data=    9455  req=  2  app= 1  dup=0  abort=0  rows=    -
+  B-return    Shipment Overview       stable=    2123  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  B-return    Shipment Overview       stable=    2097  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  B-return    Shipment Overview       stable=    2094  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  B-return    Shipment Draft          stable=    2121  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  B-return    Shipment Draft          stable=    2120  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  B-return    Shipment Draft          stable=    2107  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  B-return    On-the-Way Map          stable=    2121  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  B-return    On-the-Way Map          stable=    2135  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  B-return    On-the-Way Map          stable=    2102  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  B-return    PO Overview             stable=   14515  data=   12448  req=  2  app= 1  dup=0  abort=0  rows=    -
+  B-return    PO Overview             stable=   13755  data=   11702  req=  2  app= 1  dup=0  abort=0  rows=    -
+  B-return    PO Overview             stable=   14525  data=   12342  req=  2  app= 1  dup=0  abort=0  rows=    -
+  B-return    Carrier Rate Card       stable=    2122  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  B-return    Carrier Rate Card       stable=    2112  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  B-return    Carrier Rate Card       stable=    2102  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  B-return    Site Inventory          stable=    2122  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    0
+  B-return    Site Inventory          stable=    2097  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    0
+  B-return    Site Inventory          stable=    2103  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    0
+
+SCENARIO C — REPEATED ROUTE CYCLES (8)
+  C-cycle     FC Summary              stable=   10036  data=    7864  req=  5  app= 2  dup=0  abort=0  rows=    1
+  C-cycle     SKU Details             stable=    8246  data=    5822  req=137  app= 1  dup=0  abort=0  rows=    -
+  C-cycle     SKU Regional Details    stable=   13452  data=   11410  req=  3  app= 1  dup=0  abort=0  rows=   50
+  C-cycle     Factory Inventory       stable=   13233  data=   10992  req=  7  app= 3  dup=0  abort=0  rows=  112
+  C-cycle     Overseas Inventory      stable=   11609  data=    9560  req=  3  app= 1  dup=0  abort=0  rows=  240
+  C-cycle     Weekly Shipping Plan    stable=   12447  data=   10404  req=  5  app= 2  dup=0  abort=0  rows=    -
+  C-cycle     Shipment Overview       stable=   12924  data=   10871  req=  3  app= 1  dup=0  abort=0  rows=    -
+  C-cycle     Shipment Draft          stable=    2109  data=       -  req=  1  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     On-the-Way Map          stable=   20305  data=   17932  req= 12  app= 1  dup=0  abort=0  rows=    -
+  C-cycle     PO Overview             stable=   12925  data=   10922  req=  3  app= 1  dup=0  abort=0  rows=    -
+  C-cycle     Carrier Rate Card       stable=    7904  data=    5893  req=  5  app= 2  dup=0  abort=0  rows=    -
+  C-cycle     Site Inventory          stable=    7934  data=    5781  req=  4  app= 1  dup=0  abort=0  rows=    0
+  C-cycle     FC Summary              stable=    2386  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    1
+  C-cycle     SKU Details             stable=   10652  data=    8426  req=  2  app= 1  dup=0  abort=0  rows=    -
+  C-cycle     SKU Regional Details    stable=    2119  data=       -  req=  0  app= 0  dup=0  abort=0  rows=   50
+  C-cycle     Factory Inventory       stable=    2123  data=       -  req=  0  app= 0  dup=0  abort=0  rows=  112
+  C-cycle     Overseas Inventory      stable=    2153  data=       -  req=  0  app= 0  dup=0  abort=0  rows=  240
+  C-cycle     Weekly Shipping Plan    stable=   12656  data=   10404  req=  2  app= 1  dup=0  abort=0  rows=    -
+  C-cycle     Shipment Overview       stable=    2114  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     Shipment Draft          stable=    2113  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     On-the-Way Map          stable=    2092  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     PO Overview             stable=   12447  data=   10441  req=  2  app= 1  dup=0  abort=0  rows=    -
+  C-cycle     Carrier Rate Card       stable=    2105  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     Site Inventory          stable=    2126  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    0
+  C-cycle     FC Summary              stable=    2385  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    1
+  C-cycle     SKU Details             stable=   12174  data=    9885  req=  2  app= 1  dup=0  abort=0  rows=    -
+  C-cycle     SKU Regional Details    stable=    2102  data=       -  req=  0  app= 0  dup=0  abort=0  rows=   50
+  C-cycle     Factory Inventory       stable=    2114  data=       -  req=  0  app= 0  dup=0  abort=0  rows=  112
+  C-cycle     Overseas Inventory      stable=    2153  data=       -  req=  0  app= 0  dup=0  abort=0  rows=  240
+  C-cycle     Weekly Shipping Plan    stable=   12154  data=    9965  req=  2  app= 1  dup=0  abort=0  rows=    -
+  C-cycle     Shipment Overview       stable=    2117  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     Shipment Draft          stable=    2120  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     On-the-Way Map          stable=    2134  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     PO Overview             stable=   13198  data=   10980  req=  2  app= 1  dup=0  abort=0  rows=    -
+  C-cycle     Carrier Rate Card       stable=    2120  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     Site Inventory          stable=    2122  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    0
+  C-cycle     FC Summary              stable=    2382  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    1
+  C-cycle     SKU Details             stable=    9800  data=    7512  req=  2  app= 1  dup=0  abort=0  rows=    -
+  C-cycle     SKU Regional Details    stable=    2119  data=       -  req=  0  app= 0  dup=0  abort=0  rows=   50
+  C-cycle     Factory Inventory       stable=    2119  data=       -  req=  0  app= 0  dup=0  abort=0  rows=  112
+  C-cycle     Overseas Inventory      stable=    2156  data=       -  req=  0  app= 0  dup=0  abort=0  rows=  240
+  C-cycle     Weekly Shipping Plan    stable=   15325  data=   13309  req=  2  app= 1  dup=0  abort=0  rows=    -
+  C-cycle     Shipment Overview       stable=    2118  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     Shipment Draft          stable=    2123  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     On-the-Way Map          stable=    2133  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     PO Overview             stable=   11902  data=    9679  req=  2  app= 1  dup=0  abort=0  rows=    -
+  C-cycle     Carrier Rate Card       stable=    2117  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     Site Inventory          stable=    2135  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    0
+  C-cycle     FC Summary              stable=    2374  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    1
+  C-cycle     SKU Details             stable=   12481  data=   10381  req=  2  app= 1  dup=0  abort=0  rows=    -
+  C-cycle     SKU Regional Details    stable=    2112  data=       -  req=  0  app= 0  dup=0  abort=0  rows=   50
+  C-cycle     Factory Inventory       stable=    2118  data=       -  req=  0  app= 0  dup=0  abort=0  rows=  112
+  C-cycle     Overseas Inventory      stable=    2150  data=       -  req=  0  app= 0  dup=0  abort=0  rows=  240
+  C-cycle     Weekly Shipping Plan    stable=   13727  data=   11615  req=  2  app= 1  dup=0  abort=0  rows=    -
+  C-cycle     Shipment Overview       stable=    2117  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     Shipment Draft          stable=    2108  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     On-the-Way Map          stable=    2126  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     PO Overview             stable=   11108  data=    9100  req=  2  app= 1  dup=0  abort=0  rows=    -
+  C-cycle     Carrier Rate Card       stable=    2122  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     Site Inventory          stable=    2117  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    0
+  C-cycle     FC Summary              stable=    2380  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    1
+  C-cycle     SKU Details             stable=   11191  data=    8978  req=  2  app= 1  dup=0  abort=0  rows=    -
+  C-cycle     SKU Regional Details    stable=    2119  data=       -  req=  0  app= 0  dup=0  abort=0  rows=   50
+  C-cycle     Factory Inventory       stable=    2108  data=       -  req=  0  app= 0  dup=0  abort=0  rows=  112
+  C-cycle     Overseas Inventory      stable=    2150  data=       -  req=  0  app= 0  dup=0  abort=0  rows=  240
+  C-cycle     Weekly Shipping Plan    stable=   11381  data=    9170  req=  2  app= 1  dup=0  abort=0  rows=    -
+  C-cycle     Shipment Overview       stable=    2116  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     Shipment Draft          stable=    2114  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     On-the-Way Map          stable=    2114  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     PO Overview             stable=   12682  data=   10659  req=  2  app= 1  dup=0  abort=0  rows=    -
+  C-cycle     Carrier Rate Card       stable=    2117  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     Site Inventory          stable=    2128  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    0
+  C-cycle     FC Summary              stable=    2379  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    1
+  C-cycle     SKU Details             stable=   10918  data=    8713  req=  2  app= 1  dup=0  abort=0  rows=    -
+  C-cycle     SKU Regional Details    stable=    2124  data=       -  req=  0  app= 0  dup=0  abort=0  rows=   50
+  C-cycle     Factory Inventory       stable=    2133  data=       -  req=  0  app= 0  dup=0  abort=0  rows=  112
+  C-cycle     Overseas Inventory      stable=    2163  data=       -  req=  0  app= 0  dup=0  abort=0  rows=  240
+  C-cycle     Weekly Shipping Plan    stable=   14501  data=   12360  req=  2  app= 1  dup=0  abort=0  rows=    -
+  C-cycle     Shipment Overview       stable=    2116  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     Shipment Draft          stable=    2113  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     On-the-Way Map          stable=    2092  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     PO Overview             stable=   14505  data=   12411  req=  2  app= 1  dup=0  abort=0  rows=    -
+  C-cycle     Carrier Rate Card       stable=    2119  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     Site Inventory          stable=    2120  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    0
+  C-cycle     FC Summary              stable=    2391  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    1
+  C-cycle     SKU Details             stable=   10324  data=    8243  req=  2  app= 1  dup=0  abort=0  rows=    -
+  C-cycle     SKU Regional Details    stable=    2125  data=       -  req=  0  app= 0  dup=0  abort=0  rows=   50
+  C-cycle     Factory Inventory       stable=    2130  data=       -  req=  0  app= 0  dup=0  abort=0  rows=  112
+  C-cycle     Overseas Inventory      stable=    2165  data=       -  req=  0  app= 0  dup=0  abort=0  rows=  240
+  C-cycle     Weekly Shipping Plan    stable=   13444  data=   11271  req=  2  app= 1  dup=0  abort=0  rows=    -
+  C-cycle     Shipment Overview       stable=    2105  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     Shipment Draft          stable=    2088  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     On-the-Way Map          stable=    2102  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     PO Overview             stable=   11879  data=    9660  req=  2  app= 1  dup=0  abort=0  rows=    -
+  C-cycle     Carrier Rate Card       stable=    2115  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    -
+  C-cycle     Site Inventory          stable=    2122  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    0
+
+SCENARIO D — RAPID BURST
+  D-burst      10 switches in 19144 ms, 179 requests
+
+SCENARIO E — IDLE + RETURN
+  E-before    FC Summary              stable=    8211  data=    6100  req=  5  app= 2  dup=0  abort=0  rows=    1
+  E-before    Site Inventory          stable=    8200  data=    6200  req=  4  app= 1  dup=0  abort=0  rows=    0
+  idling 300 s …
+  E-return    FC Summary              stable=    2383  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    1
+  E-return    Site Inventory          stable=    2119  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    0
+
+SCENARIO F — READ-ONLY UI
+  F-interact   FC Summary              6 read-only clicks, 0 requests
+  F-interact   SKU Details             2 read-only clicks, 0 requests
+  F-interact   SKU Regional Details    2 read-only clicks, 0 requests
+  F-interact   Factory Inventory       2 read-only clicks, 0 requests
+  F-interact   Overseas Inventory      2 read-only clicks, 0 requests
+  F-interact   Weekly Shipping Plan    5 read-only clicks, 0 requests
+  F-interact   Shipment Overview       3 read-only clicks, 0 requests
+  F-interact   Shipment Draft          0 read-only clicks, 0 requests
+  F-interact   On-the-Way Map          0 read-only clicks, 0 requests
+  F-interact   PO Overview             6 read-only clicks, 0 requests
+  F-interact   Carrier Rate Card       5 read-only clicks, 1 requests

@@ -31,6 +31,7 @@ var cp = require('child_process');
 
 var AL = require('./s8-r4a-action-allowlist.js');
 var G = require('./s8-r4a-cdp-guard.js');
+var R = require('./s8-r4a-resilience.js');
 
 var ROOT = path.resolve(__dirname, '..', '..', '..');
 var CHROME = process.env.KM_CHROME || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
@@ -113,33 +114,55 @@ function serveRepo() {
 }
 
 // ---- minimal CDP client over Node's global WebSocket ---------------------------------------------------------
-function cdp(wsUrl) {
+//
+// EVERY command is bounded. The first version resolved only on a matching reply id, which is how one
+// unanswered Runtime.evaluate parked the measurement loop for three hours inside an `await` that the loop's
+// own MAX_WAIT_MS deadline could never interrupt. The registry owns id allocation, the timers and the
+// tombstones; see s8-r4a-resilience.js §3 for why timed-out ids are never reused.
+function cdp(wsUrl, opts) {
+  opts = opts || {};
   var ws = new WebSocket(wsUrl);
-  var id = 0, pending = {}, handlers = {};
+  var handlers = {};
+  var reg = R.createPendingRegistry({ timeoutMs: opts.timeoutMs, onTimeout: opts.onTimeout });
+  var ctx = opts.context || function () { return {}; };
   var ready = new Promise(function (res, rej) {
     ws.addEventListener('open', function () { res(); });
     ws.addEventListener('error', function () { rej(new Error('devtools websocket error')); });
   });
   ws.addEventListener('message', function (ev) {
     var msg; try { msg = JSON.parse(ev.data); } catch (e) { return; }
-    if (msg.id && pending[msg.id]) { pending[msg.id](msg); delete pending[msg.id]; }
+    if (typeof msg.id === 'number') { reg.deliver(msg); }
     else if (msg.method && handlers[msg.method]) { handlers[msg.method](msg.params || {}); }
   });
+  // A dead socket must settle every live command. Otherwise the process parks exactly as it did before.
+  ws.addEventListener('close', function () { reg.rejectAll('devtools socket closed'); });
   return {
     ready: ready,
+    registry: reg,
     on: function (m, fn) { handlers[m] = fn; },
     send: function (method, params) {
-      id++;
-      var myId = id;
-      return new Promise(function (res) {
-        pending[myId] = res;
-        try { ws.send(JSON.stringify({ id: myId, method: method, params: params || {} })); }
-        catch (e) { res({ error: String(e) }); }
-      });
+      var myId = reg.nextId();
+      var p = reg.register(myId, method, ctx());
+      try { ws.send(JSON.stringify({ id: myId, method: method, params: params || {} })); }
+      catch (e) { reg.deliver({ id: myId, error: String(e) }); }
+      return p;
+    },
+    // Fire-and-forget, for the abort/continue commands whose reply the measurement never reads. Without this
+    // every intercepted request would leave a pending entry that could only ever end as a timeout.
+    emit: function (method, params) {
+      var myId = reg.nextId();
+      var p = reg.register(myId, method, ctx());
+      p.catch(function () {});
+      try { ws.send(JSON.stringify({ id: myId, method: method, params: params || {} })); } catch (e) {}
     },
     close: function () { try { ws.close(); } catch (e) {} }
   };
 }
+// Resource teardown, reachable from the top-level catch. A failure before the run proper used to leave the
+// process alive forever: process.exitCode only takes effect when the event loop drains, and a spawned Chrome
+// plus a listening server keep it from ever draining. The hang this round repaired had a second mouth.
+var teardown = function () {};
+
 function httpJson(url) {
   return new Promise(function (res, rej) {
     http.get(url, function (r) {
@@ -186,7 +209,35 @@ function httpJson(url) {
   log('chrome ' + version['Browser']);
 
   var targets = await httpJson('http://127.0.0.1:' + DEBUG_PORT + '/json/list');
-  var c = cdp(targets.filter(function (t) { return t.type === 'page'; })[0].webSocketDebuggerUrl);
+  var windowTag = { surface: null, scenario: null, cycle: 0 };
+  var cdpTimeouts = [];
+  var ckpt = R.createCheckpointWriter(OUT);
+  var dialogs = R.createDialogHandler();
+  var watchdog = R.createWatchdog({
+    thresholdMs: parseInt(arg('watchdog', String(R.WATCHDOG_THRESHOLD_MS)), 10),
+    onTrip: function (dump) { onWatchdogTrip(dump); }
+  });
+
+  var c = cdp(targets.filter(function (t) { return t.type === 'page'; })[0].webSocketDebuggerUrl, {
+    timeoutMs: parseInt(arg('cdptimeout', String(R.CDP_COMMAND_TIMEOUT_MS)), 10),
+    context: function () { return windowTag; },
+    onTimeout: function (info) {
+      cdpTimeouts.push(info);
+      log('  !! CDP_COMMAND_TIMEOUT ' + info.method + ' after ' + info.elapsedMs + 'ms' +
+          (info.surface ? ' on ' + info.surface + ' [' + info.scenario + ']' : ''));
+    }
+  });
+  // Everything that can hold the event loop open is now known, so the failure path can release it. And the
+  // watchdog is armed HERE — before the CDP domains are enabled — because a hang during setup is still a
+  // hang, and the first version armed it only once the run proper had started.
+  teardown = function () {
+    try { watchdog.stop(); } catch (e) {}
+    try { c.close(); } catch (e) {}
+    try { chrome.kill(); } catch (e) {}
+    try { server.close(); } catch (e) {}
+  };
+  watchdog.start();
+
   await c.ready;
 
   // ---- instrumentation state --------------------------------------------------------------------------------
@@ -194,7 +245,6 @@ function httpJson(url) {
   var open = {};              // requestId -> { action, t0 }
   var events = [];            // every request, with the window it belonged to
   var consoleErrors = [];
-  var windowTag = { surface: null, scenario: null, cycle: 0 };
   var lastActivity = Date.now();
   var SAFETY = {
     GAP_JOB_STATUS_REQUEST_SENT_COUNT: 0,
@@ -253,8 +303,11 @@ function httpJson(url) {
     events.push(rec);
     if (d.cls === G.CLASS.APPROVED_READ && p.networkId) open[p.networkId] = { rec: rec, t0: Date.now() };
 
+    // emit, not send: the measurement never reads the reply to a continue/abort, and registering a command
+    // whose result is discarded would leave one pending entry per intercepted request, each of which could
+    // only ever end its life as a timeout.
     var cmd = G.commandFor(d, p.requestId);
-    c.send(cmd.method, cmd.params);
+    c.emit(cmd.method, cmd.params);
   });
 
   function settleFrom(id) {
@@ -290,14 +343,36 @@ function httpJson(url) {
     }
   });
 
+  // ---- §4 JavaScript dialogs ---------------------------------------------------------------------------------
+  // An open native dialog blocks the renderer, so every later Runtime.evaluate hangs. That is the most likely
+  // trigger of the three-hour stall in R4A_HUNG_RUN_1, and it is unobservable without this handler.
+  //
+  // The dialog is ALWAYS answered, and for an application dialog always with DISMISS — the outcome that
+  // performs no write. A confirm() is the last gate in front of a destructive action, so accepting one is the
+  // single click that could turn a read-only run into a write; CONFIRM_ACCEPTED_COUNT is an invariant.
+  var abortSurface = null;    // set when a dialog cannot be proven read-only-safe
+  c.on('Page.javascriptDialogOpening', function (p) {
+    var out = dialogs.handle(p, windowTag);
+    log('  !! DIALOG ' + out.record.type + ' -> ' + out.decision.action +
+        ' on ' + (windowTag.surface || '?') + ' [' + (windowTag.scenario || '?') + ']  "' +
+        out.record.message.slice(0, 120) + '"');
+    if (out.decision.action === 'ABORT_SURFACE') { abortSurface = out.record; }
+    c.emit(out.command.method, out.command.params);
+    lastActivity = Date.now();
+  });
+
   await c.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] });
   await c.send('Network.enable');
   await c.send('Page.enable');
   await c.send('Runtime.enable');
   await c.send('Log.enable');
 
+  // A timed-out evaluate returns undefined rather than throwing. The caller is a measurement loop whose job
+  // is to keep its own deadline; turning one dead command into a thrown run is the opposite of the repair.
   async function evalJs(expr) {
-    var r = await c.send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: false });
+    var r;
+    try { r = await c.send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: false }); }
+    catch (e) { return undefined; }
     return r && r.result && r.result.result ? r.result.result.value : undefined;
   }
 
@@ -368,15 +443,23 @@ function httpJson(url) {
   // ---- one measured page open --------------------------------------------------------------------------------
   async function openSurface(S, scenario, cycle) {
     windowTag = { surface: S.name, scenario: scenario, cycle: cycle };
+    abortSurface = null;
+    var tmo0 = cdpTimeouts.length;
     var mark = events.length;
     var t0 = Date.now();
     lastActivity = t0;
+    watchdog.progress(scenario + ':' + S.name);
     await installObserver(S.sectionId);
     await evalJs('window.showSection(' + JSON.stringify(S.routeKey) + ')');
 
-    var firstContentMs = null, stableMs = null, st = null, why = null;
+    var firstContentMs = null, stableMs = null, st = null, why = null, ended = null;
     while (Date.now() - t0 < MAX_WAIT_MS) {
       await sleep(250);
+      // A surface whose dialog could not be proven read-only-safe is abandoned for measurement, and a surface
+      // whose commands are timing out is not being measured either — in both cases continuing to poll would
+      // spend the remaining budget learning nothing.
+      if (abortSurface) { ended = 'DIALOG_ABORT'; break; }
+      if (cdpTimeouts.length - tmo0 >= 2) { ended = 'CDP_TIMEOUT'; break; }
       st = await sectionState(S.sectionId);
       if (firstContentMs === null && st && st.present && st.active) firstContentMs = Date.now() - t0;
       var quietNet = Date.now() - lastActivity;
@@ -420,6 +503,9 @@ function httpJson(url) {
       PAGE_DATA_READY_MS: dataReadyMs,
       PAGE_FULL_STABLE_MS: stableMs,
       timed_out: stableMs === null,
+      ended: ended,
+      dialog_abort: abortSurface ? { type: abortSurface.type, message: abortSurface.message } : null,
+      cdp_timeouts: cdpTimeouts.length - tmo0,
       stall_reason: stableMs === null ? why : null,
       REQUEST_COUNT_TOTAL: mine.length,
       APPLICATION_READ_REQUEST_COUNT: appReads.length,
@@ -449,8 +535,55 @@ function httpJson(url) {
   // ---- the run ------------------------------------------------------------------------------------------------
   var list = SURFACES.filter(function (S) { return !ONLY || ONLY === true || S.routeKey === String(ONLY); });
   var samples = [];
+
+  // §5 — every completed window is durable the moment it completes. The previous runner wrote samples once,
+  // at the end, so a single unsettled promise cost three hours of real measurement. Losing window N+1 must
+  // cost window N+1 and nothing else.
+  function persist(r) {
+    watchdog.progress((r && r.scenario) + ':' + (r && r.surface));
+    ckpt.record(r, { scenario: r && r.scenario, surface: r && r.surface, cycle: r && r.cycle,
+                     status: 'RUNNING', safety: safetySnapshot() });
+  }
+  function safetySnapshot() {
+    return { GAP_JOB_STATUS_REQUEST_SENT_COUNT: SAFETY.GAP_JOB_STATUS_REQUEST_SENT_COUNT,
+             GAP_JOB_STATUS_REQUEST_INTERCEPTED_COUNT: SAFETY.GAP_JOB_STATUS_REQUEST_INTERCEPTED_COUNT,
+             UNKNOWN_APPLICATION_REQUEST_SENT_COUNT: SAFETY.UNKNOWN_APPLICATION_REQUEST_SENT_COUNT,
+             UNKNOWN_APPLICATION_REQUEST_ABORT_COUNT: SAFETY.UNKNOWN_APPLICATION_REQUEST_ABORT_COUNT,
+             WRITE_ACTIONS_SENT: SAFETY.WRITE_ACTIONS_SENT,
+             CONFIRM_ACCEPTED_COUNT: dialogs.confirmAcceptedCount(),
+             DIALOG_COUNT: dialogs.count(),
+             CDP_COMMAND_TIMEOUT_COUNT: cdpTimeouts.length,
+             EPHEMERAL_PROFILE_ONLY: true, ledger: ledger };
+  }
+
+  // §6 — the watchdog dumps what the run was doing and exits non-zero. It is a CLIENT exit: it sends nothing
+  // to Production and cancels no Production request. The worst it can do is stop measuring.
+  // Defensive about everything it reads: the watchdog is armed BEFORE the CDP domains are enabled, so it can
+  // trip while half of this state is still undefined. A dump that throws is a watchdog that does not fire.
+  function onWatchdogTrip(dump) {
+    try { dump.windowTag = windowTag; } catch (e) {}
+    try { dump.pendingCdpCommands = c.registry.snapshot(); } catch (e) { dump.pendingCdpCommands = 'unavailable'; }
+    try { dump.openRequests = Object.keys(open).map(function (k) { return open[k].rec.action; }); } catch (e) { dump.openRequests = 'unavailable'; }
+    try { dump.dialogs = dialogs.dialogs().slice(-5); } catch (e) { dump.dialogs = 'unavailable'; }
+    try { dump.cdpTimeouts = cdpTimeouts.slice(-5); } catch (e) { dump.cdpTimeouts = 'unavailable'; }
+    try { dump.completedWindows = samples.length; } catch (e) { dump.completedWindows = 0; }
+    log('');
+    log('WATCHDOG TRIPPED — no progress for ' + dump.idleMs + ' ms (threshold ' + dump.thresholdMs + ')');
+    log('  last progress     : ' + dump.lastProgress);
+    log('  pending CDP cmds  : ' + JSON.stringify(dump.pendingCdpCommands));
+    log('  open requests     : ' + JSON.stringify(dump.openRequests));
+    log('  dialogs seen      : ' + JSON.stringify(dump.dialogs));
+    ckpt.consolidate('s8-r4a-watchdog-dump.json', dump);
+    ckpt.note({ scenario: windowTag.scenario, surface: windowTag.surface, cycle: windowTag.cycle,
+                status: 'WATCHDOG_EXIT', detail: dump });
+    log('AUTOMATED_FATIGUE_STATUS = WATCHDOG_EXIT');
+    teardown();
+    process.exit(3);
+  }
+
   function note(r) {
     samples.push(r);
+    persist(r);
     log('  ' + String(r.scenario).padEnd(12) + String(r.surface).padEnd(24) +
       'stable=' + String(r.PAGE_FULL_STABLE_MS === null ? 'TIMEOUT' : r.PAGE_FULL_STABLE_MS).padStart(8) +
       '  data=' + String(r.PAGE_DATA_READY_MS === null ? '-' : r.PAGE_DATA_READY_MS).padStart(8) +
@@ -482,6 +615,19 @@ function httpJson(url) {
       if (Object.keys(open).length === 0 && Date.now() - lastActivity > 1500) break;
     }
   }
+
+  // ---- §11 human test coordination ---------------------------------------------------------------------------
+  // Manual testing may run alongside this. Only ONE surface is under timing measurement at a time, and the
+  // live surface is in s8-r4a-progress.json, rewritten after every window — so the avoid-list is readable
+  // while the matrix runs rather than only in this banner.
+  log('');
+  log('AUTOMATED_FATIGUE_STATUS = RUNNING');
+  log('HUMAN_TEST_SAFE = YES');
+  log('HUMAN_TEST_AVOID = the surface named in ' + ckpt.files.progress + ' (one at a time)');
+  log('HUMAN_TEST_SAFE_SURFACES = every other surface of the ' + list.length + ' measured');
+  log('ALSO AVOID = starting a gap recalculation during Site Inventory measurement');
+  log('');
+  ckpt.note({ status: 'RUNNING', detail: { human_test_safe: true, surfaces: list.length } });
 
   // A — COLD OPEN. One hard reload, then first open of each surface. The reload is what makes it cold:
   // window._opDbCache and every in-page cache are gone with the document.
@@ -528,13 +674,14 @@ function httpJson(url) {
     }
     await sleep(15000);
     var burst = events.slice(burstMark);
-    samples.push({ surface: 'RAPID_BURST', scenario: 'D-burst', cycle: 1,
+    var burstSample = { surface: 'RAPID_BURST', scenario: 'D-burst', cycle: 1,
       REQUEST_COUNT_TOTAL: burst.length,
       APPLICATION_READ_REQUEST_COUNT: burst.filter(function (e) { return e.cls === G.CLASS.APPROVED_READ; }).length,
       FORBIDDEN_REQUEST_ABORT_COUNT: burst.filter(function (e) { return e.cls === G.CLASS.FORBIDDEN_ACTION; }).length,
       UNKNOWN_REQUEST_ABORT_COUNT: burst.filter(function (e) { return e.cls === G.CLASS.UNKNOWN; }).length,
       DUPLICATE_REQUEST_COUNT: 0, PAGE_FULL_STABLE_MS: Date.now() - bt0,
-      switches: 10, actions: burst.filter(function (e) { return e.cls === G.CLASS.APPROVED_READ; }).map(function (e) { return e.action; }) });
+      switches: 10, actions: burst.filter(function (e) { return e.cls === G.CLASS.APPROVED_READ; }).map(function (e) { return e.action; }) };
+    samples.push(burstSample); persist(burstSample);
     log('  D-burst      10 switches in ' + (Date.now() - bt0) + ' ms, ' + burst.length + ' requests');
   }
 
@@ -547,7 +694,11 @@ function httpJson(url) {
     if (!pick.length) pick = [list[0]];
     for (var e1 = 0; e1 < pick.length; e1++) note(await openSurface(pick[e1], 'E-before', 1));
     log('  idling ' + (idleMs / 1000) + ' s …');
+    // Paused rather than given a wider threshold: a threshold wide enough to cover a planned five-minute
+    // idle would also hide a real five-minute stall everywhere else in the run.
+    watchdog.pause('scenario-E-idle');
     await sleep(idleMs);
+    watchdog.resume();
     for (var e2 = 0; e2 < pick.length; e2++) note(await openSurface(pick[e2], 'E-return', 1));
   }
 
@@ -576,14 +727,16 @@ function httpJson(url) {
         'return n; })()');
       await sleep(6000);
       var fEv = events.slice(fMark);
-      samples.push({ surface: S3.name, n: S3.n, scenario: 'F-interact', cycle: 1,
+      var fSample = { surface: S3.name, n: S3.n, scenario: 'F-interact', cycle: 1,
         clicks: clicked || 0, PAGE_FULL_STABLE_MS: Date.now() - ft0,
         REQUEST_COUNT_TOTAL: fEv.length,
         APPLICATION_READ_REQUEST_COUNT: fEv.filter(function (e) { return e.cls === G.CLASS.APPROVED_READ; }).length,
         FORBIDDEN_REQUEST_ABORT_COUNT: fEv.filter(function (e) { return e.cls === G.CLASS.FORBIDDEN_ACTION; }).length,
         UNKNOWN_REQUEST_ABORT_COUNT: fEv.filter(function (e) { return e.cls === G.CLASS.UNKNOWN; }).length,
         DUPLICATE_REQUEST_COUNT: 0,
-        actions: fEv.filter(function (e) { return e.cls === G.CLASS.APPROVED_READ; }).map(function (e) { return e.action; }) });
+        dialog_abort: abortSurface ? { type: abortSurface.type, message: abortSurface.message } : null,
+        actions: fEv.filter(function (e) { return e.cls === G.CLASS.APPROVED_READ; }).map(function (e) { return e.action; }) };
+      samples.push(fSample); persist(fSample);
       log('  F-interact   ' + S3.name.padEnd(24) + clicked + ' read-only clicks, ' + fEv.length + ' requests');
     }
   }
@@ -591,6 +744,7 @@ function httpJson(url) {
   // ---- listener / lifecycle duplication, measured once at the end of the cycles ------------------------------
   var listeners = await evalJs('(function(){ try { return document.querySelectorAll("*").length; } catch(e){ return null; } })()');
 
+  watchdog.stop();
   c.close(); chrome.kill();
   await new Promise(function (r) { server.close(r); });
 
@@ -602,9 +756,27 @@ function httpJson(url) {
     ephemeral_profile: profile, operator_profile_touched: false,
     safety: SAFETY, ledger: ledger, samples: samples,
     console_errors: consoleErrors, dom_nodes_at_end: listeners,
+    // S8-R4A1 resilience evidence. Recorded in the report because "the harness did not hang" is a claim that
+    // has to be checkable after the fact, not a thing the absence of a hang implies.
+    resilience: {
+      CDP_COMMAND_TIMEOUT_MS: c.registry.timeoutMs,
+      CDP_COMMAND_TIMEOUT_COUNT: cdpTimeouts.length,
+      CDP_COMMAND_TIMEOUTS: cdpTimeouts,
+      CDP_PENDING_AT_EXIT: c.registry.pendingCount(),
+      WATCHDOG_THRESHOLD_MS: watchdog.thresholdMs,
+      WATCHDOG_TRIPPED: watchdog.isTripped(),
+      DIALOG_COUNT: dialogs.count(),
+      DIALOG_DEFAULT_ACTION: dialogs.defaultAction,
+      CONFIRM_ACCEPTED_COUNT: dialogs.confirmAcceptedCount(),
+      DIALOGS: dialogs.dialogs(),
+      ABORTED_SURFACES: dialogs.abortedSurfaces(),
+      CHECKPOINT_WRITES: ckpt.writeCount(),
+      CHECKPOINTED_WINDOWS: ckpt.count()
+    },
     events: events
   };
   fs.writeFileSync(path.join(OUT, 's8-r4a-samples.json'), JSON.stringify(report, null, 1));
+  ckpt.note({ status: 'COMPLETE', scenario: null, surface: null, cycle: null });
 
   log('');
   log('AUTOMATED_FATIGUE_STATUS = COMPLETE');
@@ -617,7 +789,15 @@ function httpJson(url) {
       '   intercepted = ' + SAFETY.GAP_JOB_STATUS_REQUEST_INTERCEPTED_COUNT);
   log('UNKNOWN_APPLICATION_REQUEST_SENT_COUNT = ' + SAFETY.UNKNOWN_APPLICATION_REQUEST_SENT_COUNT);
   log('WRITE_ACTIONS_SENT = ' + SAFETY.WRITE_ACTIONS_SENT);
+  log('CONFIRM_ACCEPTED_COUNT = ' + dialogs.confirmAcceptedCount() +
+      '   DIALOG_COUNT = ' + dialogs.count() +
+      '   CDP_COMMAND_TIMEOUT_COUNT = ' + cdpTimeouts.length +
+      '   WATCHDOG_TRIPPED = ' + (watchdog.isTripped() ? 'YES' : 'NO'));
 })().catch(function (e) {
   log('RUNNER FAILED: ' + (e && e.stack || e));
-  process.exitCode = 1;
+  log('AUTOMATED_FATIGUE_STATUS = FAILED');
+  // Tear down explicitly and exit. Setting process.exitCode alone leaves a spawned Chrome and a listening
+  // server holding the event loop open, which is a hang wearing a failure's clothes.
+  try { teardown(); } catch (e2) {}
+  process.exit(1);
 });
