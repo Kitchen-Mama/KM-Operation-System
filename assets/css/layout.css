@@ -42,8 +42,19 @@
    aspect ratio (no distortion, no crop, stays centered via .header-left align-items:center). This is a SHARED shell
    rule — it applies to every page's header, not an Inventory-only hack. The element's inline max-width still caps
    the width; both bounds compose, so the image never exceeds either. */
+/* HEADER-BASELINE-R2 — display:block, because an INLINE image sits on a text baseline.
+   Measured in headless Chrome on the shipped stylesheets: .logo-text rendered 47.59px around a 41px
+   image — 6.59px taller than its only child. `.logo-text` is a bare block div, so the image joined an
+   inline formatting context and the line box reserved descender space BELOW it (line-height 25.6px =
+   1.6 × 16px). That dead strip lives INSIDE the wrapper, so centring the wrapper centred the strip too
+   and pushed the logo 3.80px ABOVE the header centre — space above 3.70px, below 11.30px.
+
+   display:block removes the image from the inline context; the wrapper then measures the image and
+   nothing else (47.59 → 41px, gap 0). vertical-align:middle and a flex wrapper were both probed and
+   land identically, so this is the smallest of three equal fixes and the only one that needs no new
+   formatting context. It is NOT a nudge: no margin, no offset, no transform, and the PNG is untouched. */
 .top-header .header-left img,
-.top-header .logo-text img { max-height: 41px; width: auto; height: auto; }   /* R5A §9: 36px × 1.15 ≈ 41px (+15%) */
+.top-header .logo-text img { display: block; max-height: 41px; width: auto; height: auto; }   /* R5A §9: 36px × 1.15 ≈ 41px (+15%) */
 
 .header-right {
     margin-left: auto;
