@@ -57,6 +57,26 @@
   var RUN_ID_RE = /^S8T-(\d{4})(\d{2})(\d{2})-R(\d{3})$/;
   var COMPACT_RE = /^S8T(\d{8})R(\d{3})$/;
 
+  // ------------------------------------------------------------------------------------------------------
+  // THE GUARD INPUT SET. These two lists are what G2 and G3 actually read, and the live collision census
+  // scans EXACTLY these columns plus each table's primary key. That coupling is asserted by the suite, because
+  // a lineage field the census does not scan is a lineage field whose collision risk has never been measured.
+  //
+  // `note` IS NOT HERE, and its removal is deliberate. It was a lineage carrier in the first draft, which meant
+  // the census had to read every free-text column in the database to measure the risk — a far wider Production
+  // read than the question needs. Every table that looked like it depended on `note` has a STRUCTURED carrier:
+  // shipping_allocation_drafts has `create_idempotency_key`, request_order_allocation_drafts has
+  // `request_allocation_draft_id`, and every child inherits through its FK. So dropping it costs nothing and
+  // buys two things — a bounded census, and a guard that cannot be satisfied by something a human typed in a
+  // comment box. `note` is still written for human readability; it is simply not evidence.
+  var LINEAGE_FIELDS = ['source_ref_id', 'reference_id', 'external_shipment_id', 'submit_batch_id',
+    'request_allocation_draft_id', 'allocation_draft_id', 'create_idempotency_key', 'idempotency_key',
+    'import_batch_id', 'calculation_run_id'];
+  var ACTOR_FIELDS = ['created_by', 'generated_by', 'started_by', 'updated_by'];
+  // The §15 lineage-type marker a fatigue request order sets, kept here so the census and the harness agree on it.
+  var LINEAGE_TYPE_FIELD = 'source_ref_type';
+  var LINEAGE_TYPE_VALUE = 's8_fatigue_test';
+
   // S8-R1 §12 / S8-R2 §9. Only READY_FOR_CLEANUP is eligible for cleanup: FAILED_RETAINED is a refusal state,
   // because the point of retaining a failed run is that its evidence outlives the impulse to tidy up.
   var STATUS = {
@@ -141,9 +161,8 @@
     var runId = str(ctx.runId);
     if (!isRunId(runId)) return { ok: false, mode: 'NONE', code: 'RUN_ID_NOT_CANONICAL' };
 
-    var actorFields = ctx.actorFields || ['created_by', 'generated_by', 'started_by', 'updated_by'];
-    var lineageFields = ctx.lineageFields || ['source_ref_id', 'reference_id', 'external_shipment_id',
-      'submit_batch_id', 'request_allocation_draft_id', 'note'];
+    var actorFields = ctx.actorFields || ACTOR_FIELDS;
+    var lineageFields = ctx.lineageFields || LINEAGE_FIELDS;
 
     var actorOk = false;
     for (var i = 0; i < actorFields.length; i++) {
@@ -349,6 +368,10 @@
   return {
     NAMESPACE: NAMESPACE,
     TEST_ACTOR: TEST_ACTOR,
+    LINEAGE_FIELDS: LINEAGE_FIELDS,
+    ACTOR_FIELDS: ACTOR_FIELDS,
+    LINEAGE_TYPE_FIELD: LINEAGE_TYPE_FIELD,
+    LINEAGE_TYPE_VALUE: LINEAGE_TYPE_VALUE,
     RUN_ID_RE: RUN_ID_RE,
     STATUS: STATUS,
     CLEANUP_ELIGIBLE_STATUS: CLEANUP_ELIGIBLE_STATUS,

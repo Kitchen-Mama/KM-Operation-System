@@ -215,6 +215,49 @@ var censusCode = census.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[
 ok(/getRange\(2, colIndex, lastRow - 1, 1\)/.test(censusCode), 'F2  it reads ONE bounded column at a time');
 ok(censusCode.indexOf('getDataRange') === -1, 'F3  and never getDataRange — the unbounded read it exists to avoid');
 ok(/S8T_CENSUS_MAX_EXAMPLES_/.test(censusCode), 'F4  examples are bounded');
+
+// ---- the declared READ scope: bounded identifier columns only -------------------------------------------
+// Slice the literal array out of the census source by index rather than by a constructed RegExp — the name and
+// the bracket class are both data here, and building a pattern out of them is how a helper starts failing for
+// reasons that have nothing to do with what it is checking.
+function censusList(name) {
+  var start = census.indexOf(name + ' = [');
+  if (start === -1) return [];
+  var open = census.indexOf('[', start), close = census.indexOf('];', open);
+  return census.slice(open, close).match(/'[a-z0-9_]+'/g) || [];
+}
+function censusSet(name) { return censusList(name).map(function (x) { return x.replace(/'/g, ''); }).sort(); }
+var IDENT = censusSet('S8T_CENSUS_IDENTITY_HEADERS_');
+var ACTORC = censusSet('S8T_CENSUS_ACTOR_HEADERS_');
+var LTYPE = censusSet('S8T_CENSUS_LINEAGE_TYPE_HEADERS_');
+
+// THE COUPLING INVARIANT, both directions. A lineage carrier the census does not scan is a carrier whose
+// collision risk has never been measured; a scanned column no guard reads is a Production read the declared
+// scope does not authorize. Neither is acceptable, so the two sets must be EQUAL, not merely overlapping.
+eq(IDENT, RUN.LINEAGE_FIELDS.slice().sort(),
+  'F4a the census identity columns are EXACTLY KMS8RUN.LINEAGE_FIELDS — nothing unmeasured, nothing extra');
+ok(RUN.ACTOR_FIELDS.every(function (f) { return ACTORC.indexOf(f) !== -1; }),
+  'F4b and the census actor columns cover every field guard G2 reads');
+ok(ACTORC.length > RUN.ACTOR_FIELDS.length,
+  'F4c deliberately a SUPERSET — created_by is client-asserted, so the actor string could sit in any *_by column');
+eq(LTYPE, [RUN.LINEAGE_TYPE_FIELD], 'F4d and one lineage-type column, the §15 marker');
+
+// FREE TEXT IS OUT OF SCOPE. These were read by the first draft and are not read now.
+['note', 'plan_name', 'error_summary', 'rejected_reason', 'rejected_comment', 'closure_reason', 'raw_status',
+ 'file_name', 'km_po_no', 'booking_no', 'container_no', 'bl_no', 'invoice_no', 'tracking_number',
+ 'master_tracking_number', 'cancel_reason'].forEach(function (h) {
+  ok(IDENT.indexOf(h) === -1 && ACTORC.indexOf(h) === -1 && LTYPE.indexOf(h) === -1,
+    'F4e no free-text column is read: ' + h);
+});
+ok(/free_text_headers: 0/.test(census), 'F4f and the report declares free_text_headers: 0');
+
+// TWO TOKENS, BECAUSE THE ACTOR DOES NOT START WITH THE NAMESPACE. This is the gap a one-token census had.
+ok(RUN.TEST_ACTOR.toLowerCase().indexOf('s8t') !== 0,
+  'F4g S8_FATIGUE_TEST does NOT begin with S8T — a prefix-only census would have missed an actor collision');
+ok(/S8T_CENSUS_ACTOR_ = 'S8_FATIGUE_TEST'/.test(census) && /'EXACT'/.test(censusCode),
+  'F4h so the actor is censused by EXACT match as a second token');
+ok(RUN.LINEAGE_TYPE_VALUE.toLowerCase().indexOf('s8t') !== 0 && /S8T_CENSUS_LINEAGE_TYPE_VALUE_/.test(census),
+  'F4i and the lineage-type marker likewise');
 ok(/CENSUS_COMPLETE/.test(censusCode) && /resume_with_S8T_CENSUS_START_INDEX_/.test(censusCode),
   'F5  an incomplete slice is visibly incomplete and says where to resume');
 ok(/is not evidence that the namespace is clean/.test(census),
@@ -474,6 +517,23 @@ ok(RUN.isRunId('S8T-20261006-R001') && !RUN.isRunId('S8T-2026106-R1') && !RUN.is
 throws(function () { RUN.mintRunId('2026-10-06', 1000); }, /1\.\.999/, 'L10 the serial is bounded');
 eq(RUN.scopedId('S8T-20261006-R001', 'SH', 3), 'S8T-20261006-R001-SH03', 'L11 scoped ids carry the run id');
 eq(RUN.TEST_ACTOR, 'S8_FATIGUE_TEST', 'L12 one actor value');
+
+// `note` IS NOT EVIDENCE. It was a lineage carrier in the first draft, which forced the census to read every
+// free-text column in the database to measure the risk. It is still written for humans; it no longer decides
+// anything, and a row whose only carrier is a comment box does not resolve to a run.
+ok(RUN.LINEAGE_FIELDS.indexOf('note') === -1, 'L12a note is not a lineage carrier');
+var noteOnly = { request_order_id: 'RO-NOTE', created_by: RUN.TEST_ACTOR,
+  note: 'created by S8T-20261006-R001 fatigue run' };
+ok(RUN.resolveLineage(noteOnly, { runId: 'S8T-20261006-R001' }).ok === false,
+  'L12b a row carrying the run id ONLY in note does not resolve');
+// ...while the structured carriers do, including the two the drafts depend on now that note is gone.
+['source_ref_id', 'create_idempotency_key', 'request_allocation_draft_id', 'submit_batch_id',
+ 'external_shipment_id', 'reference_id'].forEach(function (f) {
+  var row = { created_by: RUN.TEST_ACTOR };
+  row[f] = 'S8T-20261006-R001-X01';
+  var r = RUN.resolveLineage(row, { runId: 'S8T-20261006-R001' });
+  ok(r.ok === true && r.mode === 'DIRECT', 'L12c ' + f + ' resolves DIRECT', r);
+});
 // The manifest refuses a non-canonical run id at birth.
 throws(function () { RUN.newManifest({ runId: 'QA_RUN_1', tier: 'T1' }); }, /runId must match/, 'L13 a foreign namespace cannot open a manifest');
 eq(RUN.validateManifest(makeRun('S8T-20261006-R001', {})).ok, true, 'L14 a fresh manifest validates');
@@ -635,6 +695,31 @@ mut('an unrecorded inventory touch being accepted silently', RUN_F,
     var m = M.newManifest({ runId: 'S8T-20261006-R001', tier: 'T1' });
     M.recordInventoryTouch(m, { table: 'factory_stock' });
     return m.touched_inventory_identities.length === 1;
+  });
+
+// The coupling invariant is the one that silently rots, because both halves look fine on their own. These two
+// mutants move each half independently and require the comparison to notice.
+mut('a lineage carrier being added that the census does not scan', RUN_F,
+  "var LINEAGE_FIELDS = ['source_ref_id',",
+  "var LINEAGE_FIELDS = ['note', 'source_ref_id',",
+  function (M) {
+    return JSON.stringify(M.LINEAGE_FIELDS.slice().sort()) !== JSON.stringify(IDENT);
+  });
+
+mut('a lineage carrier being removed while the census still reads its column', RUN_F,
+  "'import_batch_id', 'calculation_run_id'];",
+  "'import_batch_id'];",
+  function (M) {
+    return JSON.stringify(M.LINEAGE_FIELDS.slice().sort()) !== JSON.stringify(IDENT);
+  });
+
+mut('the actor identity being renamed to something the census prefix WOULD have caught', RUN_F,
+  "var TEST_ACTOR = 'S8_FATIGUE_TEST';",
+  "var TEST_ACTOR = 'S8T_FATIGUE_TEST';",
+  function (M) {
+    // Not a safety defect by itself — but it silently invalidates the reason the census carries a second
+    // token, and the census file still names the old value. The pair must stay in step.
+    return census.indexOf("S8T_CENSUS_ACTOR_ = '" + M.TEST_ACTOR + "'") === -1;
   });
 
 // ============================================================================================================

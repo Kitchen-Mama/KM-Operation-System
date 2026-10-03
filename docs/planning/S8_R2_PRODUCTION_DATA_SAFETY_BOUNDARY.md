@@ -100,8 +100,8 @@ Deterministic linkage back to the run is carried by fields that already exist:
 
 | Ledger | run id | test entity | owner |
 |---|---|---|---|
-| `factory_stock_movements` | `reference_id` (caller-supplied, `21_:106`) | `note`, `created_by` | `related_entity_type` + `related_entity_id` = the owning shipment |
-| `overseas_inventory_movements` | `reference_id` (caller-supplied, `05_:884`) | `note`, `created_by` | `reference_type` + `source_module` |
+| `factory_stock_movements` | `reference_id` (caller-supplied, `21_:106`) | `created_by` | `related_entity_type` + `related_entity_id` = the owning shipment |
+| `overseas_inventory_movements` | `reference_id` (caller-supplied, `05_:884`) | `created_by` | `reference_type` + `source_module` |
 | `factory_stock_override_audit` | `created_by` + the plan it justifies | | the shipping plan |
 
 ---
@@ -218,15 +218,55 @@ forbids adding it merely for identification.
 `assets/tools/apps-script-diagnostics/TEMP_S8T_NAMESPACE_COLLISION_CENSUS.gs` — editor-run, read-only, not
 routed, not deployed, not in the 77-file runtime set.
 
+### Declared scope
+
+```
+READ     58 registered Production tables → ONLY the bounded identifier columns required for collision
+         detection: each table's primary key, the 10 identifier columns the guards read, the 15 actor
+         (*_by) columns, and 1 lineage-type column.
+WRITE    NONE        DELETE   NONE        SCHEMA   NONE
+PRODUCTION BUSINESS DATA MUTATION   NONE
+FREE-TEXT COLUMNS READ   0
+```
+
+**Free text is out of scope, and removing it changed the harness.** The first draft also read `note`,
+`plan_name`, `rejected_reason`, `booking_no`, `invoice_no` and a dozen other free-text columns — because `note`
+was then a lineage carrier, so its collision risk had to be measured. Reading every comment box in the database
+to answer a question about identifiers is a far wider Production read than the question needs. So `note` was
+removed from the guard input set (`KMS8RUN.LINEAGE_FIELDS`) instead. Every table that looked like it depended on
+it has a structured carrier — `shipping_allocation_drafts` has `create_idempotency_key`,
+`request_order_allocation_drafts` has `request_allocation_draft_id`, every child inherits through its FK — so
+the removal costs nothing and buys two things: a bounded census, and a guard that cannot be satisfied by
+something a human typed in a comment box. `note` is still written for readability; it is no longer evidence.
+
+### Two tokens, because only one of the harness's identities begins with `S8T`
+
+| Token | Match | Columns | Why |
+|---|---|---|---|
+| `S8T` | prefix | primary key + the 10 identifier columns | a guard keyed on the prefix could mistake a real business value for a test one |
+| `S8_FATIGUE_TEST` | exact | the 15 actor columns | **`S8_FATIGUE_TEST` does not begin with `S8T`** — it begins `S8_` |
+| `s8_fatigue_test` | exact | `source_ref_type` | the §15 lineage-type marker, likewise outside the prefix |
+
+The second token is not belt-and-braces. A prefix-only census would have reported a clean namespace while an
+existing row carrying `created_by = S8_FATIGUE_TEST` sat there ready to satisfy guard G2 for a row no test ever
+made — the exact failure the census exists to rule out. The narrowing is what surfaced it.
+
+### Properties
+
 | Property | How |
 |---|---|
 | runs next to the data | pasted into the Apps Script project; counts inside Apps Script, never over the browser transport |
 | bounded | reads **one column at a time** with `getRange(2, col, lastRow-1, 1)`; **no `getDataRange` anywhere** |
-| targeted | column 1 (the primary key) plus the ~55 caller-writable headers; a server-minted id cannot collide, and scanning column 1 turns that argument into a measurement |
+| targeted | column 1 plus 26 named identifier/actor/type headers — and nothing else |
 | resumable | `S8T_CENSUS_START_INDEX_` / `S8T_CENSUS_MAX_TABLES_`; each slice reports where to resume |
 | honest when incomplete | `CENSUS_COMPLETE` is false unless slice 0 covered every table, and the verdict then says in words that a zero *is not evidence the namespace is clean* |
 | zero-write, structurally | contains no `setValue(s)`, `appendRow`, `insertSheet`, `deleteRow`, `clear*`, `LockService`, `DriveApp`, `PropertiesService` write or `UrlFetchApp` — asserted by the suite against the stripped source, not by trusting a comment |
-| cannot drift | the suite asserts its 58-table list is **exactly** the `KMS8CLASS` registry |
+| cannot drift | the suite asserts its 58-table list is **exactly** the `KMS8CLASS` registry, and its identity columns are **exactly** `KMS8RUN.LINEAGE_FIELDS` |
+
+**The coupling invariant, checked in both directions.** A lineage carrier the census does not scan is a carrier
+whose collision risk has never been measured. A column the census scans that no guard reads is a Production
+read this scope does not authorize. So the two sets must be *equal*, not merely overlapping — and three mutants
+move each half independently to prove the comparison notices.
 
 ```
 LIVE_S8T_COLLISION_COUNT = NOT YET RUN — OPERATOR ACTION REQUIRED
@@ -393,7 +433,7 @@ operator decision before it may run.
 | Test-owned | all 8 writes |
 | Rebuildable | none written |
 | Recovery | delete by manifest, order 14–21 |
-| Lineage | `source_ref_type = 's8_fatigue_test'` + `source_ref_id = <run id>`, `created_by`, `note`. **Never** `source_ref_type = 'request_order_allocation_batch'` — there `source_ref_id` is the exactly-once execution key (`13_:675-690`) and the lineage mark would collide with the idempotency key |
+| Lineage | `source_ref_type = 's8_fatigue_test'` + `source_ref_id = <run id>`, `created_by`. **Never** `source_ref_type = 'request_order_allocation_batch'` — there `source_ref_id` is the exactly-once execution key (`13_:675-690`) and the lineage mark would collide with the idempotency key |
 | **Approval required** | **NO** |
 
 ### 3 · PURCHASE ORDER
@@ -414,7 +454,7 @@ operator decision before it may run.
 | Reads | `shipping_allocation_drafts(+_lines)`, `sku_details`, `warehouses`, `carriers`, `carrier_rate_cards` |
 | Writes | `shipping_plans`, `shipping_plan_lines` |
 | Protected dependency | READ ONLY — carrier reference is read, never written |
-| Test-owned | both; lineage `submit_batch_id` + `created_by` + `note` |
+| Test-owned | both; lineage `submit_batch_id` + `created_by` |
 | Recovery | delete by manifest, order 10–11 |
 | Note | rollback journal lives in Script Properties (`11_:842`); a failure between journal write and rollback leaves the journal as the only evidence — a thing S8-R7 should deliberately provoke |
 | **Approval required** | **NO** |
@@ -491,7 +531,7 @@ operator decision before it may run.
 
 ## §16 — TESTS
 
-`assets/tests/s8-r2-fatigue-harness-safety.test.js` — **235 assertions, 0 failures, 21 mutants, 0 survived.**
+`assets/tests/s8-r2-fatigue-harness-safety.test.js` — **270 assertions, 0 failures, 24 mutants, 0 survived.**
 
 Each mutant breaks one load-bearing guard and the suite must notice: the write gate failing open, the
 protected-master refusal removed, the direct-cell-write bar lifted, a movement ledger made deletable, the gap
@@ -501,6 +541,10 @@ G4 removed, a refusal skipping the row instead of abandoning the plan, the row g
 required, reservation release reordered after the shipment delete, ambiguous parentage resolved by picking the
 first, the actor check dropped, `FAILED_RETAINED` made cleanup-eligible, the overlap rule disabled, `canAdopt`
 accepting a non-manifest row, and an unrecorded inventory touch accepted silently.
+
+Three of the 24 exist for the §7 coupling invariant specifically, because it is the kind that rots silently —
+both halves look fine on their own. They add a lineage carrier the census does not scan, remove one the census
+still reads, and rename the actor to a value the prefix *would* have caught.
 
 A vacuity section then proves the unmutated tree really does behave as the mutants assume, so a mutant cannot be
 "caught" by an assertion that was already failing.
