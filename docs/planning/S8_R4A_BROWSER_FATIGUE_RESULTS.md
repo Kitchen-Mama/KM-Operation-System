@@ -235,3 +235,25 @@ The ten observed actions are a subset of the sixteen approved. `gapJob.status.ge
 never reached the network. One dialog was raised and dismissed; no confirm was ever accepted.
 
 Console errors across the whole matrix: **1** — a single 404 on a static resource.
+
+## 10. Sweep
+
+```
+FULL_SWEEP                   = 605 suites, 7 problems
+CANONICAL_FAILURE_SET_CHANGED = NO
+```
+
+The seven are the pre-existing canonical set, unchanged by this round, name for name:
+
+```
+gap-job-done-notice-f1-small-r1                    announceManualDone called EXACTLY once
+order-planning-monthly-projection-consumer-f1-4b-fm3d   K/W manual Order Qty default (frozen write path)
+positive-residual-and-submit-readiness-census-…    M1a live positive-residual world READY_TO_AUTHORIZE
+product-strategy-visual-integration-p1-b8d-r6      B5.3 this round did not touch layout.css
+replen-header-toggle                               A1 leaf header sequence
+s2-r4b-shipping-history-and-fc-warm-race           A3 no shipping_history table declared   (exit=0, FAIL line)
+supply-planning-route-inventory                    D locked generation delegates to KMORCH
+```
+
+The suite count rose from 604 to 605: this round's `s8-r4a1-harness-resilience.test.js`, which passes.
+No Product repair was made in this round, and none of the seven moved.
