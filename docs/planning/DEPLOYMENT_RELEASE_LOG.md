@@ -4094,3 +4094,120 @@ DB_WRITES                       0
 FRONTEND_DEPLOY_REQUIRED        YES
 GIT_PUSH_REQUIRED               YES - USER-owned, after review
 ```
+
+---
+
+## S8-R4B-1 — RELEASE `F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41` — THE FACTORY GUARD READ STOPS TRAVELLING ON A WRITE VERB
+
+```
+BASE    ff8246e   S7-R4's last commit; R40 ends there
+BRANCH  feature/product-strategy-board-p0   main = origin/main = 26e5f10
+DATE    2026-10-04
+SCOPE   TRANSPORT RECLASSIFICATION. factoryStockGuard.get moves from the POST write chain onto the
+        canonical GET read table. No handler changed, no action was added or removed, no payload or
+        response shape changed, no schema, no stored row. Two runtime files and one frontend file.
+
+RELEASE ID                   F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41
+PURPOSE                      Factory Guard read-transport correction
+SUPERSEDES                   nothing. R40 is CUT and remains valid; R41 follows it.
+STATUS                       PREPARED, NOT SYNCED, NOT DEPLOYED. No Apps Script project carries it,
+                             no Web App version exists, and Production is NOT R41.
+
+WHY A NEW RELEASE AND NOT A RIDE-ALONG ON R40
+-------------------------------------------------------------------------------------------------------
+  The repair first stamped 01_router.gs with R40, which is coherent only if a stamp means "the newest id
+  in the tree". It does not. R40 was already CUT, against a tree in which 01_ did NOT change - its owner
+  set is 63_ alone, and the ledger deliberately carries 01_ at R39 there, with a written reason: that the
+  router had not moved in fourteen releases and then moved exactly once. Stamping it R40 made one id name
+  two different trees, and three independent gates said so:
+
+    E4   (ai-plan)       63_ carries a stamp older than its own last change
+    C2/C2.1/C3 (ledger)  01_ is not an owner of R40, so it may not expect R40
+    H2   (deploy surf.)  R40 changed exactly one runtime file; the tree now shows two
+
+  None of the three was wrong. A runtime change that arrives after a cut needs a new cut.
+
+WHAT CHANGED
+-------------------------------------------------------------------------------------------------------
+  01_router.gs     rtrGetReadHandlers_ gains 'factoryStockGuard.get'. The POST branch is KEPT: every
+                   GET-routed read in this router is reachable from BOTH tables, verified across five
+                   sampled actions, so removing it would be the exception rather than the cleanup.
+  63_api_v1_system_health.gs
+                   the release, its own build stamp, and 01_'s expected stamp - the row it carries.
+
+  Frontend (published separately, by the user):
+  assets/js/api/operation-system-db-api.js
+                   KM.DB.factoryStockGuardGet stops calling the write dispatcher _kmWeeklyCommand_ and
+                   calls _kmGapRead_; 'factoryStockGuard.get' joins _KM_GET_READ_ACTIONS_. The request
+                   stays FLAT - { action, shipping_plan_id, requestId } - because the handler reads
+                   shipping_plan_id at the top level and a payload wrapper would bury it.
+
+THE DEFECT THIS REPAIRS
+-------------------------------------------------------------------------------------------------------
+  A POST to /exec cannot survive the 302 to script.googleusercontent.com/macros/echo: the redirect drops
+  the body. factoryStockGuard.get was the last approved READ in the system still travelling that way, so
+  it inherited the write path's 90s bound, a write request id, and the "may have been committed" error
+  vocabulary - for a read that cannot commit anything. Measured 2 failures in 9 cold-open attempts.
+
+STAMP MOVEMENT - OLD -> NEW
+-------------------------------------------------------------------------------------------------------
+  63_  SYS_DEPLOYMENT_RELEASE_    R40    -> R41        the RELEASE
+  63_  SYS_BUILD_VERSION_         R40    -> R41        63_ own module stamp (63_ changed)
+  01_  RTR_BUILD_VERSION_         R39    -> R41        the routing table changed; R40 is skipped, not joined
+  71_  FSG_BUILD_VERSION_         R5-R1  -> R5-R1      UNCHANGED. The handler did not change, only the
+                                                       verb that reaches it. 71_ is NOT an R41 owner.
+  90_  KM_BUNDLE_CONTENT_HASH_    unchanged            no assets/js/core module moved; no rebuild
+
+RELEASE OWNERS
+-------------------------------------------------------------------------------------------------------
+  01_router.gs                   runtime owner    (re-enters ownership after ONE release carried at R39)
+  63_api_v1_system_health.gs     manifest owner
+
+ACTION CONTRACT
+-------------------------------------------------------------------------------------------------------
+  SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 18, UNCHANGED, and the browser's pin stays 18.
+  The rule is "bump whenever a router ACTION is added or removed". factoryStockGuard.get already existed
+  on the POST chain and still does. A ROUTE was added for an action that was already in the vocabulary.
+  SYS_REQUIRED_ACTION_LIST_VERSION_ stays 14: no page gained a mount dependency.
+
+DEPLOY ORDER - FROZEN, NOT YET EXECUTED
+-------------------------------------------------------------------------------------------------------
+  1  Apps Script backend sync: 01_router.gs, 63_api_v1_system_health.gs
+  2  save all required backend files
+  3  create ONE new deployment version on the existing Production Web App
+  4  verify system.health reports R41 coherent (deployment_build == R41, mixed_deployment == false,
+     stale_modules == [], absent_modules == [], missing_actions == [], contract version == 18)
+  5  publish frontend/main
+  6  targeted n=20 Factory Guard read regression (read-only, 7 approved tables)
+  7  Weekly Shipping Plan UI read-only smoke
+
+  THE ORDER IS LOAD-BEARING. The frontend must not send factoryStockGuard.get as a GET before the
+  deployed router recognises it as one; a published frontend against an R40 backend answers the Weekly
+  Shipping Plan guard indicator with POST_ONLY_ACTION_ON_GET on every read.
+
+KNOWN LEDGER GAP, NOT INTRODUCED HERE
+-------------------------------------------------------------------------------------------------------
+  R39 and R40 were cut without an entry in this log. They are not backfilled here, because this round has
+  no evidence about what those rounds intended beyond their stamps. Separately,
+  PHASE1_CUMULATIVE_RELEASE_RECONCILIATION_R1.md pins CURRENT_HEAD_BACKEND_RELEASE = R40 and its
+  BACKEND_HEALTH_GATE expects R40. That document is pinned at PRE_SHA b783076 and is a HISTORICAL
+  artifact - at that commit HEAD really was R40 - so it is left as written. Anyone executing that runbook
+  after R41 must re-derive gate 1 from 63_ rather than from the number printed there.
+```
+
+```
+GS_FILES_CHANGED                 01_router.gs, 63_api_v1_system_health.gs
+APPS_SCRIPT_SYNC_REQUIRED        YES - 01_router.gs, 63_api_v1_system_health.gs
+APPS_SCRIPT_NEW_VERSION_REQUIRED YES
+BUNDLE_REBUILD_REQUIRED          NO - no assets/js/core module changed
+PRODUCTION_BACKEND_RELEASE       NOT R41. Production is unverified at R14 per the last live probe.
+DB_SCHEMA_CHANGE                 NONE
+DB_WRITES                        0
+DB_DELETES                       0
+FRONTEND_DEPLOY_REQUIRED         YES - assets/js/api/operation-system-db-api.js
+APPS_SCRIPT_DEPLOYMENT_PERFORMED NO
+FRONTEND_PUBLICATION_PERFORMED   NO
+GIT_PUSH_REQUIRED                YES - USER-owned, after review
+```
+
+**STATUS: NOT DEPLOYED · NOT SYNCED.**

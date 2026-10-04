@@ -261,8 +261,20 @@ section('H  what this round did NOT touch');
 // PINNED TO THE ROUND'S PRE_SHA, NOT TO HEAD~1. The round lands in more than one commit, so HEAD~1 would
 // make this mean 'the last commit' and it would go quiet the moment a docs-only commit followed. What must
 // hold is that across the WHOLE round exactly one runtime file changed.
+//
+// S8-R4B-1A - AND THE OTHER END IS PINNED NOW TOO, WHICH IS THE WHOLE REPAIR. This read
+// `PRE_SHA..HEAD`. While S7-R4 was the newest round that was the same interval, so the bug was
+// invisible; the moment ANY later round touched a runtime file, a claim about what S7-R4 changed
+// started reporting what every round since had changed, and S8-R4B-1 made it fail by adding
+// 01_router.gs. The assertion was RIGHT and its interval was wrong.
+//
+// This is a HISTORICAL_RELEASE_INVARIANT: a fact about R40 that must read the same in ten rounds'
+// time, so it is pinned at BOTH ends. The CURRENT_HEAD_RELEASE_INVARIANT - what the NEWEST release
+// changed - is a different claim and is asserted separately below, so neither can quietly stand in
+// for the other.
 var PRE_SHA = '085c2fd';
-var changed = cp.execFileSync('git', ['diff', '--name-only', PRE_SHA, 'HEAD'],
+var POST_SHA = 'ff8246e';   // S7-R4's last commit: the sweep-found guard repair. R40 ends here.
+var changed = cp.execFileSync('git', ['diff', '--name-only', PRE_SHA, POST_SHA],
   { cwd: REPO, encoding: 'utf8' }).trim().split('\n').filter(Boolean);
 eq(changed.filter(function (f) { return /forecast-review/i.test(f); }), [],
   'H1  FORECAST_REVIEW_CHANGED_IN_S7_R4 = NO');
@@ -270,7 +282,27 @@ eq(changed.filter(function (f) { return /forecast-review/i.test(f); }), [],
 var runtimeChanged = changed.filter(function (f) { return f.indexOf('assets/specs/active/apps-script/') === 0; });
 eq(runtimeChanged.filter(function (f) { return f.indexOf('/TEMP_') === -1; }),
   ['assets/specs/active/apps-script/63_api_v1_system_health.gs'],
-  'H2  exactly ONE runtime file changed, and the seven relocations are renames git reports separately');
+  'H2  exactly ONE runtime file changed IN R40, and the seven relocations are renames git reports '
+  + 'separately');
+// S8-R4B-1A - THE CURRENT-HEAD HALF, stated rather than inherited. R41 reclassifies
+// factoryStockGuard.get from the POST write chain onto the GET read table, so the router changed and
+// the manifest that carries its expected stamp changed with it. TWO runtime files, named - and 71_ is
+// deliberately not among them: the Factory Guard handler was not touched, only the verb reaching it.
+var sinceR40 = cp.execFileSync('git', ['diff', '--name-only', POST_SHA, 'HEAD'],
+  { cwd: REPO, encoding: 'utf8' }).trim().split('\n').filter(Boolean);
+eq(sinceR40.filter(function (f) {
+  return f.indexOf('assets/specs/active/apps-script/') === 0 && f.indexOf('/TEMP_') === -1;
+}), ['assets/specs/active/apps-script/01_router.gs',
+     'assets/specs/active/apps-script/63_api_v1_system_health.gs'],
+  'H2a and since R40 ended, EXACTLY the two runtime files R41 owns have changed');
+var R41_ID = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41';
+eq((read(GS + '01_router.gs').match(/var RTR_BUILD_VERSION_ = '([^']+)'/) || [])[1], R41_ID,
+  'H2b both of them declare R41 - the router, whose routing table changed');
+eq((G63.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1], R41_ID,
+  'H2c ...and the manifest, which is where a release is cut');
+ok(!/R41/.test(read(GS + '71_api_v1_factory_stock_guard.gs')),
+  'H2d 71_ is NOT stamped R41 - the handler did not change, and stamping an unchanged owner to make '
+  + 'a release look complete is the one thing these stamps exist to prevent');
 ok(/S7-R4 — THE FOLDER IS NO LONGER WHAT DISTINGUISHES THEM/.test(G63),
   'H3  and what changed in it is the manifest rule that the relocation falsified');
 ok(/absence is ACTIONABLE/i.test(G63) || /ABSENCE IS ACTIONABLE/.test(G63),

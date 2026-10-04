@@ -261,7 +261,13 @@ var SYS_API_CONTRACT_VERSION_ = '1';
 // shipmentSourceDomain_ / shipmentDomainSheets_ and 05_'s ovsOwnerReservedTx_, so a new 22_ against an old
 // 12_ or 05_ resolves those to undefined INSIDE the dispatch lock. 05_ and 12_ are already ahead of 22_ in
 // the standing order; this release does not change that, it depends on it.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R40';
+// S8-R4B-1 - R41. 01_router.gs reclassifies factoryStockGuard.get from the POST write chain onto the GET
+// read table. That is a RUNTIME change to the router, and R40 was already cut against a tree in which 01_
+// did not change, so R40 cannot absorb it: an id that names two trees cannot answer the question it exists
+// for. R41 owns 01_ and this file. The Factory Guard HANDLER owner (71_) did NOT change and is NOT an R41
+// owner. No action was added or removed - the action already existed on the POST chain - so the
+// action-contract version stays at 18, and 90_'s content hash is untouched because no core module moved.
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41';
 // 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
 // R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
 // not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
@@ -302,7 +308,8 @@ var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R40';
 // and 90_'s content hash. No action was added or removed and the transport contract is untouched.
 // S6-R7A - moved for the same reason again: the release above, its own expected stamp and 90_'s content hash.
 // S6-R8A - and again: the release above, its own expected stamp and 22_'s. 90_'s hash is unchanged.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R40';
+// S8-R4B-1 - and again: the release above, its own expected stamp and 01_'s. 90_'s hash is unchanged.
+var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41';
 // ------------------------------------------------------------------------------------------------------------
 // F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
 //
@@ -573,7 +580,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
   // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
   // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R40', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
+  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
   // PRICING-R2 — 73_ IS REQUIRED FROM ITS FIRST RELEASE, AND DELIBERATELY NOT OPTIONAL, for the reason a
   // WRITE owner is always the worst partial sync: 01_router.gs dispatches pricing.update to
   // handlePricingUpdate_, so a deployment carrying the router without this file routes a live price write
@@ -713,7 +720,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   { file: '22_shipment_dispatch_handlers.gs', symbol: 'CSD_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R37', owns: 'Confirm Shipment & Dispatch: deduction + reservation release through the shared authority + the cancelled-shipment dispatch refusal. R33 routes the consume by source domain: a factory line deducts current stock and releases its hold on one row, while an OVERSEAS line moves reserved DOWN and leaves wh_available_stock alone, because those units left available when they were reserved. R37 fixes WHICH warehouse is consumed: the deduct plan is built for the Shipment\'s DECLARED source_warehouse_id, in the domain that warehouse belongs to, decided before any inventory row is read \u2014 it no longer searches factory_stock by SKU and orders the results by warehouse_id, which could deduct a warehouse the Shipment never declared and made an OVERSEAS source unreachable' },
   // F1-7N-FB-4E-R4B-R3 §1 - moved with the file. R4B-R2 changed the GET read dispatch; leaving the manifest at
   // R4A1 would have made a CORRECTLY synced router report as stale, and an UNSYNCED one report as current.
-  { file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R40', owns: 'doGet/doPost action routing (incl. the GET read table + cancelShipmentDraft) + typed handler/method response identity + the R6-R5 per-execution entry stamp handlers report as server evidence. R40 adds factoryStockGuard.get to the GET read table, the last approved read that still travelled on POST. It ADDS NO ACTION - the action already existed on the POST chain and keeps it - so the action-contract version stays at 18' },
+  { file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41', owns: 'doGet/doPost action routing (incl. the GET read table + cancelShipmentDraft) + typed handler/method response identity + the R6-R5 per-execution entry stamp handlers report as server evidence. R41 adds factoryStockGuard.get to the GET read table, the last approved read that still travelled on POST. It ADDS NO ACTION - the action already existed on the POST chain and keeps it - so the action-contract version stays at 18. R41 exists rather than R40 absorbing it because R40 was cut against a tree in which this file had not changed' },
   // F1-7N-FB-4E-R4B-R3 §1 - THE TWO OWNERS THAT CHANGED IN R4B AND HAD NO STAMP AT ALL. Both answer every one of
   // their actions when a round behind, so a resolvable action list can never see a partial sync of them; only a
   // declared build can. The stamp VALUE names the round in which each last changed BEHAVIOURALLY; the SYMBOL was

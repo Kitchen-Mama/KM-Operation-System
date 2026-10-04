@@ -199,8 +199,36 @@ var RELEASE_OWNERS = {
   // The round moved seven non-runtime TEMP tools OUT of assets/specs/active/apps-script/. That is a
   // repository-layout change and alters no deployed byte - which is why 63_ is the ONLY owner here, and
   // also why it is an owner at all.
+  // S8-R4B-1 - THE TWENTY-FIRST SWAP, and the ledger moving in the OTHER direction one release later.
+  // 01_ RE-ENTERS OWNERSHIP AT R41 after exactly one release carried at R39. R40's entry above argued that
+  // marching the router to R40 would erase the fact its routing table had not moved in fourteen releases
+  // and then moved exactly once; R41 does not march it, it RECORDS a routing-table change that actually
+  // happened - factoryStockGuard.get leaves the POST write chain for the GET read table. The two entries
+  // are the same rule applied to opposite facts, which is the only evidence that it is a rule and not a
+  // habit.
+  //
+  // 71_ OWNS THE FACTORY GUARD HANDLER AND IS NOT HERE. The handler did not change; only the verb that
+  // reaches it did. Stamping an unchanged owner to make a release look complete is the exact failure C3
+  // exists to catch, and it would be this round committing it.
+  //
+  // 90_ does NOT move: no core module changed, so the bundle is not rebuilt and its content hash is the
+  // bytes it was at R36.
+  '01_router.gs':
+    'THE ROUTER. R41 adds factoryStockGuard.get to rtrGetReadHandlers_, the LAST approved read in the system '
+    + 'that still travelled on POST - and a POST cannot survive the /exec 302 to script.googleusercontent.com, '
+    + 'because the redirect drops the body. The POST branch is KEPT: every GET-routed read in this file is '
+    + 'reachable from both tables, so removing it would be the exception, not the cleanup. NO ACTION WAS '
+    + 'ADDED OR REMOVED - factoryStockGuard.get already existed on the POST chain - so the action-contract '
+    + 'version stays at 18 and the browser pin stays at 18. A transport reclassification is not a contract '
+    + 'change.',
   '63_api_v1_system_health.gs':
-    'THE MANIFEST. R40 moves TWO values and no behaviour: the release, and its own build. 01_\'s expected '
+    'THE MANIFEST. R41 moves the release, its own build, and the ROUTER ROW IT CARRIES - which is the '
+    + 'whole reason those are separate constants: 01_ changed, so its expected stamp moves, and this file '
+    + 'moves because it is where that stamp is written down. The action-contract version stays 18 and '
+    + 'SYS_REQUIRED_ACTION_LIST_VERSION_ stays 14: no action was added or removed, and no page gained a '
+    + 'mount dependency. 90_ is not rebuilt - no core module changed. WHAT R40 CHANGED HERE IS STILL TRUE '
+    + 'AND IS KEPT RATHER THAN OVERWRITTEN: '
+    + 'R40 moves TWO values and no behaviour: the release, and its own build. 01_\'s expected '
     + 'stamp stays at R39 because 01_ did not change - which is the entire reason those are separate '
     + 'constants. The action-contract version stays 18: no router action was added or removed, and '
     + 'bumping it to look current is the self-reference this file\'s own header warns about. '
@@ -222,12 +250,16 @@ var RELEASE_OWNERS = {
 // reports the round a release was cut in, not the round the file changed in, and then it can no longer
 // distinguish a synced copy from a stale one, which is the single thing it is for.
 var RELEASE_CARRIED = {
-  // S7-R4 - THE TWENTIETH SWAP. 01_ LEAVES OWNERSHIP AT R40 after ONE release as an owner and keeps R39,
-  // the round its routing table actually changed in. R40 moves no action and no handler; it is a deploy-
-  // surface round whose only runtime edit is a corrected comment in 63_. Marching the router to R40 would
-  // erase the fact the R39 entry was written to preserve - that 01_ had not moved in fourteen releases,
-  // and then moved exactly once.
-  '01_router.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R39',
+  // S7-R4 - THE TWENTIETH SWAP. 01_ LEFT OWNERSHIP AT R40 after ONE release as an owner and kept R39, the
+  // round its routing table actually changed in. R40 moved no action and no handler; it was a deploy-
+  // surface round whose only runtime edit was a corrected comment in 63_. Marching the router to R40 would
+  // have erased the fact the R39 entry was written to preserve - that 01_ had not moved in fourteen
+  // releases, and then moved exactly once.
+  //
+  // S8-R4B-1 - AND 01_ LEFT THIS LIST AGAIN AT R41, after exactly one release carried here. It is in
+  // RELEASE_OWNERS above because R41 changes its routing table for real. The R40 paragraph is kept rather
+  // than deleted: it records WHY the router was held at R39 through a release that did not touch it, and
+  // that reason is what makes R41's promotion evidence rather than drift.
   // S7-R2A — THE EIGHTEENTH SWAP. 22_ LEAVES OWNERSHIP AT R38 after one release as an owner and keeps R37,
   // the round DECLARED_SOURCE_ONLY actually landed in. R38 changes a read projection and no handler.
   '22_shipment_dispatch_handlers.gs': 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R37',
@@ -927,6 +959,42 @@ section('I. THE SYNC LIST IS EXACTLY THE DECLARED OWNERS');
 })();
 
 // ================================================================================================
+section('K. THE RELEASE IS WRITTEN DOWN WHERE GOVERNANCE LOOKS FOR IT');
+// ================================================================================================
+// S8-R4B-1A. A release that exists only as a string in two .gs files is a release nobody can review.
+// CLAUDE.md names DEPLOYMENT_RELEASE_LOG.md as a governance owner and DEPLOYMENT_RELEASE_GOVERNANCE.md
+// calls it the append-only ledger, so the HEAD release must have an entry there.
+//
+// THE BACKLOG IS NOT THIS ROUND'S TO INVENT, AND IT IS BIGGER THAN IT LOOKS. Measured when this
+// section was written: of the releases at or after the R12 floor, only R12 and R13 have an entry.
+// R14 THROUGH R40 - twenty-seven consecutive releases - were cut without one. That is a standing
+// governance gap, discovered here rather than created here, and backfilling twenty-seven entries
+// from their stamps alone would be INVENTING the record rather than keeping it: this round has no
+// evidence about what those rounds intended.
+//
+// So the gap is FROZEN as a census instead of being papered over. K1 holds the line that matters
+// going forward - the HEAD release is written down - and K1a pins the backlog exactly, so a
+// twenty-eighth unlogged release (a future round cutting without logging) fails here loudly rather
+// than joining a gap nobody is counting.
+var RELEASE_LOG = read('docs/planning/DEPLOYMENT_RELEASE_LOG.md');
+ok(RELEASE_LOG.indexOf(RELEASE) !== -1,
+  'K1  the HEAD release has an entry in DEPLOYMENT_RELEASE_LOG.md', RELEASE);
+var UNLOGGED = RO.OWNER_STAMPS.filter(function (t) {
+  return RO.stampAtOrAfter(t, RELEASE_FLOOR) && RELEASE_LOG.indexOf(t) === -1;
+});
+var UNLOGGED_BACKLOG = [];
+for (var _u = 14; _u <= 40; _u++) { UNLOGGED_BACKLOG.push('F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R' + _u); }
+eq(UNLOGGED, UNLOGGED_BACKLOG,
+  'K1a the unlogged backlog is EXACTLY R14..R40, the twenty-seven releases cut before this check '
+  + 'existed - a twenty-eighth means a release was cut this round without being written down');
+ok(UNLOGGED.indexOf(RELEASE) === -1,
+  'K1a1 and the HEAD release is not among them, which is the half of K1a that will still be true '
+  + 'after the backlog is someday paid down');
+ok(/NOT DEPLOYED/.test(RELEASE_LOG.slice(RELEASE_LOG.indexOf(RELEASE))),
+  'K1b the HEAD entry records that it has NOT been deployed - the ledger may not claim a deployment '
+  + 'that nobody performed');
+
+// ================================================================================================
 section('J. MUTATION — each guard above is load-bearing');
 // ================================================================================================
 var mutants = [], survived = [];
@@ -1031,6 +1099,31 @@ mutant('M12', 'a release that adds an action and forgets to bump the action cont
   if (faked === HEALTH) throw new Error('M12 anchor drifted — the mutant would inject no fault');
   return Number(num(faked, 'SYS_DEPLOYED_ACTION_CONTRACT_VERSION_')) - Number(prior) !== ACTION_ADDING_RELEASES_SINCE_BASE;
 });
+mutant('M13', 'the router changes but is left out of the release owner set', function () {
+  // The fault: 01_ is edited, its stamp is rotated, and the ledger still calls it CARRIED. C3 reads
+  // the owner set, so a router that expects the release while sitting in RELEASE_CARRIED is exactly
+  // the half-done cut this round started from.
+  var owners = Object.keys(RELEASE_OWNERS).filter(function (f) { return f !== '01_router.gs'; });
+  var atRel = manifestRows(HEALTH).filter(function (r) { return r.expected === RELEASE; })
+    .map(function (r) { return r.file; }).sort();
+  return JSON.stringify(atRel) !== JSON.stringify(owners.sort());
+});
+mutant('M14', 'R40 history rewritten so the router looks like it was an owner all along', function () {
+  // The fault this round was told NOT to commit: making the past describe the present. R40's owner
+  // set is 63_ alone. If 01_ were retro-fitted into it, the one fact the R39/R40 entries exist to
+  // preserve - that the router did not change in R40 - would be gone, and H2 in the deploy-surface
+  // suite would have nothing left to be a historical invariant ABOUT.
+  var r40 = cp.execFileSync('git', ['diff', '--name-only', '085c2fd', 'ff8246e'],
+    { cwd: REPO, encoding: 'utf8' }).trim().split(String.fromCharCode(10)).filter(Boolean)
+    .filter(function (f) { return f.indexOf(GS) === 0 && f.indexOf('/TEMP_') === -1; });
+  // git is the witness, and it does not agree with the rewritten claim.
+  return r40.indexOf(GS + '01_router.gs') === -1 && r40.length === 1;
+});
+mutant('M15', 'the release is cut in the source but never written into the governance ledger',
+function () {
+  var stripped = RELEASE_LOG.split(RELEASE).join('R-NOT-LOGGED');
+  return stripped.indexOf(RELEASE) === -1 && RELEASE_LOG.indexOf(RELEASE) !== -1;
+});
 
 // Vacuity — every mutant predicate must be FALSE against the unmutated tree, or it proves nothing.
 var vacuous = [];
@@ -1049,6 +1142,13 @@ var vacuous = [];
  ['M10', function () { return RO.OWNER_STAMPS[RO.OWNER_STAMPS.length - 1] === RELEASE
      && RO.stampAtOrAfter(RELEASE, PREV_RELEASE); }],
  ['M11', function () { return manifestRows(HEALTH).some(function (r) { return r.file === '14_fc_write_handlers.gs'; }); }],
+ ['M13', function () {
+   var atRel = manifestRows(HEALTH).filter(function (r) { return r.expected === RELEASE; })
+     .map(function (r) { return r.file; }).sort();
+   return JSON.stringify(atRel) === JSON.stringify(Object.keys(RELEASE_OWNERS).sort());
+ }],
+ ['M14', function () { return Object.prototype.hasOwnProperty.call(RELEASE_OWNERS, '01_router.gs'); }],
+ ['M15', function () { return RELEASE_LOG.indexOf(RELEASE) !== -1; }],
  // M12's predicate must be FALSE against the unmutated tree: the real contract DID move, once per
  // action-adding release in this span.
  ['M12', function () {

@@ -191,7 +191,20 @@ section('E. THE STAMPS MOVED EXACTLY AS FAR AS THEY SHOULD');
 var rtrDecl = (ROUTER.match(/var RTR_BUILD_VERSION_ = '([^']+)'/) || [])[1];
 var rtrExpect = (HEALTH.match(/\{ file: '01_router\.gs',[^}]*expected: '([^']+)'/) || [])[1];
 eq(rtrDecl, rtrExpect, 'E1 the router stamp and the health mirror agree — they must move in ONE commit');
-ok(/R40$/.test(rtrDecl), 'E2 the router stamp advanced, because 01_router.gs changed', rtrDecl);
+// S8-R4B-1A - RE-AIMED FROM R40 TO R41, AND THE REASON IS THE ASSERTION BELOW IT. The repair first
+// stamped the router R40, which is coherent only if you read a stamp as "the newest id in the tree". R40
+// was already CUT, against a tree whose owner set is 63_ alone and which deliberately carries 01_ at R39 -
+// so stamping the router R40 made one id name two different trees, and the release ledger caught it in
+// three places. R41 is the release this change actually belongs to.
+eq(rtrDecl, 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41',
+   'E2 the router stamp advanced to R41, because 01_router.gs changed');
+var headRelease = (HEALTH.match(/var SYS_DEPLOYMENT_RELEASE_ = '([^']+)'/) || [])[1];
+eq(rtrDecl, headRelease,
+   'E2a and it equals the HEAD release, which is what makes 01_ an OWNER of it rather than a file carried '
+   + 'into it');
+ok(headRelease !== 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R40',
+   'E2b R40 was NOT reopened to absorb this change - an id that names two trees cannot answer the question '
+   + 'it exists for, which is the rule the ledger states against R30, R31 and now R41', headRelease);
 var fsgDecl = (GUARD.match(/var FSG_BUILD_VERSION_ = '([^']+)'/) || [])[1];
 eq(fsgDecl, 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1',
    'E3 the Factory Guard stamp did NOT move — 71_ is untouched, and a stamp records the round a FILE changed');
@@ -258,12 +271,45 @@ mut('the router GET read table loses the action', ROUTER_F,
 // The anchor names the ROUTER entry in full. `expected: '…R40'` alone is ambiguous — SYS_BUILD_VERSION_'s
 // own entry already carries the same release string and appears first, so a bare replace mutates the wrong
 // line and the mutant survives while appearing to test the mirror. Found by this mutant surviving.
-var ROUTER_MIRROR = "{ file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R40'";
+var ROUTER_MIRROR = "{ file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41'";
 mut('the health mirror drifts from the router stamp', HEALTH_F,
-  ROUTER_MIRROR, ROUTER_MIRROR.replace('-R40', '-R39'),
+  ROUTER_MIRROR, ROUTER_MIRROR.replace('-R41', '-R39'),
   function () {
-    var src = read(HEALTH_F).replace(ROUTER_MIRROR, ROUTER_MIRROR.replace('-R40', '-R39'));
+    var src = read(HEALTH_F).replace(ROUTER_MIRROR, ROUTER_MIRROR.replace('-R41', '-R39'));
     return (src.match(/\{ file: '01_router\.gs',[^}]*expected: '([^']+)'/) || [])[1] !== rtrDecl;
+  });
+
+// S8-R4B-1A - THE RELEASE-CUT MUTANTS. Each is a way the R41 cut could be half-done and still look right.
+mut('the router stamp is not rotated with the file it belongs to', ROUTER_F,
+  "var RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41';",
+  "var RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R40';",
+  function () {
+    var src = read(ROUTER_F).replace("-R7-R41';", "-R7-R40';");
+    return (src.match(/var RTR_BUILD_VERSION_ = '([^']+)'/) || [])[1] !== headRelease;
+  });
+mut('the release is cut but 63_ keeps the build stamp of the previous one', HEALTH_F,
+  "var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41';",
+  "var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R40';",
+  function () {
+    var src = read(HEALTH_F).replace("var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41';",
+      "var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R40';");
+    var own = (src.match(/\{ file: '63_api_v1_system_health\.gs',[^}]*expected: '([^']+)'/) || [])[1];
+    return (src.match(/var SYS_BUILD_VERSION_ = '([^']+)'/) || [])[1] !== own;
+  });
+mut('the action-contract version is bumped because the router changed', HEALTH_F,
+  'var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 18;',
+  'var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 19;',
+  function () {
+    var src = read(HEALTH_F).replace('var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 18;',
+      'var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 19;');
+    return Number((src.match(/var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = (\d+)/) || [])[1]) !== 18;
+  });
+mut('71_ is stamped R41 to make the release look complete, though it never changed', GUARD_F,
+  "var FSG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1';",
+  "var FSG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41';",
+  function () {
+    var src = read(GUARD_F).replace("-R7-R5-R1';", "-R7-R41';");
+    return (src.match(/var FSG_BUILD_VERSION_ = '([^']+)'/) || [])[1] !== 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1';
   });
 
 // ============================================================================================================

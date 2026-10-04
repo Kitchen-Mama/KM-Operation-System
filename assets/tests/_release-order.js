@@ -1559,7 +1559,16 @@ var OWNER_STAMPS = ['F1-7N-FB-4D', 'F1-7N-FB-4F-B1', 'F1-7N-FB-4F-B3', 'F1-7N-FB
   // means; 57_ itself carries no stamp (its manifest row proves it by symbol probe). No router action was
   // added or removed, so the action-contract version does NOT move. 90_ is not rebuilt: no core module
   // changed, so R37 owners keep R37.
-  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R38', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R39', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R40'];
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R38', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R39', 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R40',
+  // S8-R4B-1 — THE FACTORY GUARD READ STOPS TRAVELLING ON A WRITE VERB. factoryStockGuard.get moves from
+  // the POST write chain onto 01_'s GET read table, so the router's routing table changed and 01_ returns
+  // to ownership after ONE release carried at R39. 63_ moves with it because it carries 01_'s manifest row
+  // and its own. 71_, which owns the handler, did NOT change and keeps the stamp it earned.
+  //
+  // R40 WAS NOT JOINED, and the reason is the one recorded against R30 and R31 above: R40 is already cut,
+  // its owner set is 63_ alone, and its tree is not this one. An id that names two trees cannot answer the
+  // question it exists for. APPEND-ONLY, at the end — stampAtOrAfter compares INDEXES.
+  'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41'];
 // True when `stamp` is a known owner stamp at or after `floor` in that order.
 function stampAtOrAfter(stamp, floor) {
   var i = OWNER_STAMPS.indexOf(String(stamp)), f = OWNER_STAMPS.indexOf(String(floor));

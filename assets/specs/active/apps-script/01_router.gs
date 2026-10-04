@@ -45,7 +45,11 @@
 // it to keep a gate green is the exact fault the manifest exists to report, and it had made this stamp say
 // R27 about a file whose bytes have not moved since R25. The gate that forced the march has been repaired
 // to ask whether the file changed rather than to require that it always carries the release.
-var RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R40';
+// S8-R4B-1 - R41. The GET read table gains factoryStockGuard.get, so this file's routing table changed and
+// its stamp moves with it. R40 was already CUT against a tree in which 01_ did not change - its owner set
+// is 63_ alone, and the ledger deliberately carries 01_ at R39 there - so joining R40 would make one id
+// name two trees. A new release is the only honest way to record a runtime change that arrives after a cut.
+var RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R41';
 
 // =============================================================================================================
 // F1-7N-FB-4E-R4A1 §3 — READ ACTIONS ARE SERVED ON GET, AND THIS IS WHY.
