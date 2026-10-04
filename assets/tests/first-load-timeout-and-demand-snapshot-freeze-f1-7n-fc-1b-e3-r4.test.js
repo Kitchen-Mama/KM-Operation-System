@@ -154,6 +154,15 @@ ok(/_readTimeoutMs\s*=\s*\(deps\.readTimeoutMs > 0\)/.test(read('assets/js/api/k
 // ================================================================================================================
 section('§B/§C — the CLIENT, executed. Blank scope costs nothing; a complete scope costs the same read.');
 // ================================================================================================================
+// S8-R4B-2B — the first-layer and exposure table lists are LIFTED from the page, never restated here, for the
+// same reason the owner vocabulary is: a restated copy drifts, and a drifted copy is what this suite exists to
+// catch. The refresh now reads IR_FIRST_LAYER_TABLES_, so the built client has to carry it or it throws.
+var IR_FIRST_SRC = (PAGE.match(/var IR_FIRST_LAYER_TABLES_ = \[[\s\S]*?\];/) || [''])[0];
+var IR_EXPOSURE_SRC = (PAGE.match(/var IR_EXPOSURE_TABLES_ = \[[\s\S]*?\];/) || [''])[0];
+ok(!!IR_FIRST_SRC, 'B0a the page declares its first-layer table list');
+ok(!!IR_EXPOSURE_SRC, 'B0b the page declares its exposure table list');
+var IR_FIRST13 = new Function(IR_FIRST_SRC + NL + 'return IR_FIRST_LAYER_TABLES_;')();
+var IR_EXPOSURE6 = new Function(IR_EXPOSURE_SRC + NL + 'return IR_EXPOSURE_TABLES_;')();
 function buildClient(opt) {
   opt = opt || {};
   var calls = [], alerts = [], state = { fail: !!opt.fail };
@@ -174,7 +183,7 @@ function buildClient(opt) {
   // restated copy could drift from the real list, which is exactly what the ledger exists to prevent.
   var OWNERS_SRC = (PAGE.match(/var IR_READ_OWNERS_ = \[[\s\S]*?\];/) || [''])[0];
   ok(!!OWNERS_SRC, 'B0  the page declares its dispatch-owner vocabulary');
-  var src = [OWNERS_SRC, 'var _irReadDispatches = [];',
+  var src = [OWNERS_SRC, IR_FIRST_SRC, 'var _irReadDispatches = [];',
     extractFn(PAGE, '_irReadPayloadFingerprint_'), extractFn(PAGE, '_irRecordReadDispatch_'),
     extractFn(PAGE, '_irWorkspaceRefresh_'), extractFn(PAGE, 'searchReplenishment'),
     extractFn(PAGE, '_irPendingFilters_')].join(NL);
@@ -212,6 +221,11 @@ IMATRIX.push(later(function () {
   ok(!/"(company|country|marketplace|sku)"/.test(JSON.stringify(h4.calls[0].payload)),
     'I4a and THE REQUEST STILL CARRIES NO SCOPE — this is the finding, not a leftover');
   eq(h4.calls[0].payload.recentWindow, true, 'I4b what it DOES carry is the recentWindow opt-in');
+  // S8-R4B-2B — and the explicit first layer. The read the screen waits on asks for thirteen sheets, not
+  // nineteen; the six it no longer asks for are read lazily, once per site, when a SKU is actually expanded.
+  eq(h4.calls[0].payload.only, IR_FIRST13, 'I4b1 and the explicit THIRTEEN-table first layer, lifted from the page');
+  eq(h4.calls[0].payload.only.filter(function (t) { return IR_EXPOSURE6.indexOf(t) !== -1; }), [],
+    'I4b2 with NOT ONE of the six exposure tables among them');
   h4.calls.length = 0;
   h4.api.search();
   return later(function () {
@@ -811,8 +825,10 @@ Promise.all(IMATRIX).then(function () {
   // for the bounded payload, so a cached page keeps issuing the unbounded request), re-anchored on what the
   // payload is now.
   mut('N19 the page stops asking for the bounded payload (a cached page keeps timing out)', function () {
-    var m = swap(PAGE, 'var _wsPayload = { recentWindow: true };', 'var _wsPayload = {};');
-    return /_wsPayload = \{ recentWindow: true \};/.test(PAGE) && !/_wsPayload = \{ recentWindow: true \};/.test(m);
+    var m = swap(PAGE, 'var _wsPayload = { recentWindow: true, only: IR_FIRST_LAYER_TABLES_.slice() };',
+      'var _wsPayload = {};');
+    var RE = /_wsPayload = \{ recentWindow: true, only: IR_FIRST_LAYER_TABLES_\.slice\(\) \};/;
+    return RE.test(PAGE) && !RE.test(m);
   });
   mut('N20 an asset is left behind on a superseded token', function () {
     var cur = RO.currentAppToken(), prev = 'fc1b-e3r3r1-forecastzero-20260904';

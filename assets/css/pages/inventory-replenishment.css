@@ -2108,6 +2108,49 @@
 #ops-section .replen-card__row--overdue .replen-card__label,
 #ops-section .replen-card__row--overdue .replen-card__value { color: #dc2626; font-weight: 600; }
 
+/* ================================================================================================
+   S8-R4B-2B — THE SECOND-LAYER STATES ON THE SHIPPING SHIPMENT CARD.
+
+   These five classes exist because the card now has something to say that it could not say before.
+   Its five ETA buckets used to be `${skuData?.within18days || 0}`, so a site whose shipment tables
+   had not been read printed a confident 0 — a statement about incoming stock that nobody had made.
+   The tables are read lazily now, once per site, and the card reports which of those states it is in.
+
+   They are STYLED, not merely named. A state class with no rule is a state the operator cannot see,
+   and this repository has shipped that mistake before.
+   ================================================================================================ */
+
+/* Not yet read. Muted and quiet — it must not read as a quantity, and it must not read as an error. */
+#ops-section .replen-card__value--pending { color: var(--text-secondary); opacity: 0.75; letter-spacing: 1px; }
+
+/* The one line that explains the pending marks, so "…" is an answer rather than a puzzle. */
+#ops-section .replen-card__note {
+    font-size: 11px; line-height: 1.35; color: var(--text-secondary);
+    margin: 2px 0 4px; white-space: normal;
+}
+
+/* A failed second-layer read. Same vocabulary as .ir-reveal__error, at card scale. */
+#ops-section .replen-card__row--error {
+    display: block; margin-top: 4px; padding: 6px 8px; border-radius: 4px;
+    background: #FEF2F2; border: 1px solid #FECACA;
+    font-size: 11px; overflow-wrap: break-word; word-break: break-word; white-space: normal;
+}
+#ops-section .replen-card__row--error .replen-card__label { color: #B91C1C; white-space: normal; overflow: visible; }
+
+/* The trailing row that carries Refresh. Right-aligned, and visually subordinate to the numbers. */
+#ops-section .replen-card__row--meta { margin-top: 6px; justify-content: flex-end; }
+
+/* One request per click, and the same affordance for both: Retry after a failure, Refresh after success. */
+#ops-section .ir-exposure-retry,
+#ops-section .ir-exposure-refresh {
+    border-radius: 4px; padding: 1px 8px; font-size: 11px; font-weight: 600; cursor: pointer;
+    background: #fff;
+}
+#ops-section .ir-exposure-retry { border: 1px solid #FCA5A5; color: #B91C1C; }
+#ops-section .ir-exposure-retry:hover { background: #FEF2F2; }
+#ops-section .ir-exposure-refresh { border: 1px solid var(--border-color, #E2E8F0); color: var(--text-secondary); font-weight: 500; }
+#ops-section .ir-exposure-refresh:hover { background: #F8FAFC; color: var(--text-primary); }
+
 
 /* ================================================================================================
    F1-7N-FB-4G-A1-R1 - PANEL-LOCAL PLANNING REVEAL (Recommendation Summary / Execution Plan).

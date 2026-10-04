@@ -155,7 +155,32 @@ H60({ payload: { recentWindow: true } }, io60(rB));
 H60({ payload: { include: { carrierPlanning: true }, only: ['carrier_lead_times', 'carrier_rate_cards'] } }, io60(rC));
 H60({ payload: { only: ['carrier_rate_cards'] } }, io60(rD));
 eq(rA.length, 21, 'T1  today\'s default still reads twenty-one tables — the contract is unchanged for old callers');
-eq(rB.length, 19, 'T2  the PRIMARY render reads nineteen: it no longer pays for carrier reference data');
+eq(rB.length, 19, 'T2  the DEFAULT payload still reads nineteen: the include gate alone drops the two carrier sheets');
+// ----------------------------------------------------------------------------------------------------------
+// S8-R4B-2B — T2 is a statement about the SERVER fed a payload THIS TEST writes. The primary render no longer
+// sends it: it names its thirteen first-layer tables explicitly, and the six exposure tables are read lazily,
+// once per site, by a second scoped request of the same action. Both lists are LIFTED from the page so this
+// suite cannot drift from the shipped contract, and the union is checked against the nineteen above — which is
+// what proves the split DROPPED NOTHING and INVENTED NOTHING.
+// ----------------------------------------------------------------------------------------------------------
+function liftList(name) {
+  var m = (PAGE.match(new RegExp('var ' + name + ' = \\[[\\s\\S]*?\\];')) || [''])[0];
+  ok(!!m, 'T2-lift the page declares ' + name);
+  return new Function(m + NL + 'return ' + name + ';')();
+}
+var FIRST13 = liftList('IR_FIRST_LAYER_TABLES_');
+var EXPOSURE6 = liftList('IR_EXPOSURE_TABLES_');
+eq(FIRST13.length, 13, 'T2a the page names THIRTEEN first-layer tables');
+eq(EXPOSURE6.length, 6, 'T2b and SIX exposure tables');
+eq(FIRST13.filter(function (t) { return EXPOSURE6.indexOf(t) !== -1; }), [], 'T2c the two layers are DISJOINT');
+eq(FIRST13.concat(EXPOSURE6).slice().sort(), rB.slice().sort(),
+  'T2d together they are EXACTLY the nineteen the primary read used to take — nothing dropped, nothing invented');
+var rE = []; H60({ payload: { recentWindow: true, only: FIRST13 } }, io60(rE));
+eq(rE.slice().sort(), FIRST13.slice().sort(), 'T2e the server reads exactly those thirteen for the first layer');
+eq(rE.filter(function (t) { return EXPOSURE6.indexOf(t) !== -1; }), [],
+  'T2f and NOT ONE of the six exposure tables is touched by the first-layer read');
+var rF = []; H60({ payload: { recentWindow: true, only: EXPOSURE6 } }, io60(rF));
+eq(rF.slice().sort(), EXPOSURE6.slice().sort(), 'T2g and exactly those six for the exposure read');
 eq(rC.sort(), ['carrier_lead_times', 'carrier_rate_cards'], 'T3  the CATALOGUE reads exactly two sheets, not twenty-one');
 eq(rD.length, 0, 'T4  `only` cannot reach an include-gated table without the include — it narrows, it never widens');
 ok(/only: \['carrier_lead_times', 'carrier_rate_cards'\]/.test(MREG), 'T5  the method registry names its two tables');
@@ -169,7 +194,8 @@ eq(/carrierPlanning/.test(_payloadR6R2), false,
   'T6  and the read the SCREEN waits on no longer asks for the include at all');
 eq(/getWorkspace\('inventoryReplenishment', \{ include/.test(ops(extractFn(PAGE, '_irWorkspaceRefresh_'))), false,
   'T6b nor does it pass an inline include object to the workspace call');
-ok(/var _wsPayload = \{ recentWindow: true \};/.test(PAGE), 'T6a its payload is the bounded one, unconditionally');
+ok(/var _wsPayload = \{ recentWindow: true, only: IR_FIRST_LAYER_TABLES_\.slice\(\) \};/.test(PAGE),
+  'T6a its payload is the bounded one, unconditionally — recentWindow PLUS the explicit thirteen');
 // PURITY — four suites lift sirWorkspaceBuild_ by itself.
 var lifted = new Function('SIR_WORKSPACE_TABLES_', 'sirWsStr_', 'sirCap_', 'SIR_WS_RECENT_WINDOW_', 'sirWsRecentWindow_',
   extractFn(G60, 'sirWorkspaceBuild_') + NL + 'return sirWorkspaceBuild_;')(
@@ -407,8 +433,8 @@ mut('N5  `only` can reach an include-gated table WITHOUT the include', function 
   return reads.indexOf('carrier_rate_cards') !== -1;
 });
 mut('N6  the primary read goes back to carrying the carrier include', function () {
-  var m = swap(PAGE, 'var _wsPayload = { recentWindow: true };',
-    'var _wsPayload = { include: { carrierPlanning: true }, recentWindow: true };');
+  var m = swap(PAGE, 'var _wsPayload = { recentWindow: true, only: IR_FIRST_LAYER_TABLES_.slice() };',
+    'var _wsPayload = { include: { carrierPlanning: true }, recentWindow: true, only: IR_FIRST_LAYER_TABLES_.slice() };');
   // The MUTANT payload nests an object, so the extractor has to tolerate one level of braces — otherwise
   // it fails to match the very thing the mutation introduces, and the probe errors instead of catching it.
   function payloadOf(src) { return /var _wsPayload = \{(?:[^{}]|\{[^{}]*\})*\};/.exec(ops(src))[0]; }

@@ -73,8 +73,21 @@ function stripComments(s) { return s.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s
 var live = IR.slice(IR.indexOf('function _getCloudReplenishmentData'));
 live = live.slice(0, live.indexOf('\nfunction '));
 ok(/get\('getShipments'\)/.test(live) && /get\('getShipmentLines'\)/.test(live), 'cloud path reads real getShipments + getShipmentLines');
-ok(/_irBuildShipmentRemainingByReceiver\(shipments, shipmentLines/.test(live), 'cloud path builds the receiver projection');
-ok(/within18days: shipRem\.d0_18/.test(live) && /within45plus: shipRem\.d45_plus/.test(live), 'cloud row sources card buckets from the real projection (no more within18days: 0)');
+// S8-R4B-2B — THE PROJECTION MOVED, THE TRUTH DID NOT. The four source tables are second-layer now, read
+// lazily once per site, so the join is built ONCE on the transition to READY rather than once per render. It
+// is the same function, over the same tables, producing the same identities — only the timing and the location
+// of the read changed. Both halves are pinned: the builder calls it, and the row builder consumes exactly it.
+ok(/_irBuildShipmentRemainingByReceiver\(model\.getShipments \|\| \[\], model\.getShipmentLines \|\| \[\], todayMs, lineReceiverById\)/
+  .test(extractFn(IR, '_irBuildExposureIndexes_')), 'exposure index builder builds the receiver projection');
+ok(/shipRemainByReceiver = _expIdx\.shipRemainByReceiver/.test(live), 'cloud path consumes exactly that projection');
+ok(/within18days: shipRem \? shipRem\.d0_18 : null/.test(live) && /within45plus: shipRem \? shipRem\.d45_plus : null/.test(live),
+  'cloud row sources card buckets from the real projection (no more within18days: 0)');
+// AND IT CARRIES NULL, NOT 0, WHEN IT HAS NOT BEEN READ. `|| 0` here is the false-empty this round exists to
+// remove: it would report "no incoming shipments" about a table nobody has opened.
+ok(!/within18days: shipRem\.d0_18 \|\| 0/.test(live) && !/within18days: \(shipRem[^)]*\) \|\| 0/.test(live),
+  'an unread shipment family is never laundered into a zero bucket');
+ok(/var shipRemainByReceiver = null;/.test(live),
+  'and the projection itself is NULL until READY — never {}, which would make every lookup miss and every row zero');
 ok(!/within18days: 0/.test(live), 'cloud path no longer hard-codes within18days: 0');
 ok(!/wh_on_the_way/.test(stripComments(IR.slice(IR.indexOf('function _irBuildShipmentRemainingByReceiver'), IR.indexOf('function _irBuildShipmentRemainingByReceiver') + 1400))), 'projection owner never reads wh_on_the_way_*');
 // card render rows: Overdue (conditional) + 45+ added, three buckets present

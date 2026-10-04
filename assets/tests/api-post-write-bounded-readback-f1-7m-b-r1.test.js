@@ -232,8 +232,18 @@ eval(extractFn(RO, '_roReloadAndRerender'));
   // bounded endpoint it is waiting for still does not exist.
   // RESTATED AGAIN (A2-R1-R3): an owner LABEL was added to this call. The deferral it records is about the
   // PAYLOAD, which is unchanged, so the assertion now reads the payload rather than the argument list.
-  ok(/function _irAfterWrite\(cb\)[\s\S]{0,600}_irWorkspaceRefresh_\(/.test(IR),
-    'B3 IR post-write readback still the full unfiltered workspace (deferred — needs a new bounded endpoint)');
+  // S8-R4B-2B — B3'S DEFERRAL IS DISCHARGED. The bounded endpoint it was waiting for turned out to already
+  // exist: 60_'s `only` contract has shipped since the deployed SIR stamp. The readback now asks for the
+  // thirteen first-layer tables and then re-reads the ACTIVE site's six exposure tables, so it is bounded
+  // WITHOUT losing the rows it exists to reconcile — the allocation drafts a write on this page just changed.
+  // Still no sku filter, and still no scope in the request; that part of the original observation stands.
+  var AFTER_WRITE = extractFn(IR, '_irAfterWrite');
+  ok(/_irWorkspaceRefresh_\(/.test(AFTER_WRITE),
+    'B3 IR post-write readback still reaches the one workspace refresh');
+  ok(/_irInvalidateActiveExposure_\(\)/.test(AFTER_WRITE) && /_irEnsureExposureLoaded_\(\)/.test(AFTER_WRITE),
+    'B3a and is now BOUNDED — thirteen first-layer tables plus the active site exposure the write changed');
+  ok(!/sku:|scope:/.test(AFTER_WRITE),
+    'B3b with still no per-sku or per-scope filter in the request, which the handler has never accepted');
   ok(!/function _irAfterWrite\(cb\)[\s\S]{0,600}carrier:\s*true/.test(IR),
     'B3a and it deliberately carries NO include — a readback reconciles a write, not reference data');
   ok(/function _irAfterWrite\(cb\)/.test(IR), 'B3 IR _irAfterWrite present and unchanged');

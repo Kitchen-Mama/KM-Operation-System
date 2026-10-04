@@ -1048,6 +1048,18 @@
     var S = IR_REVEAL_STATES, C = IR_READINESS_CODES;
     if (!input.readModelReady) return mk(S.LOADING, '', null);
     if (input.hydrationInFlight) return mk(S.LOADING, '', null);
+    // S8-R4B-2B - THE FIFTH INPUT. The persisted routes are a SECOND-LAYER table now, read lazily once per
+    // site. Until that read settles this panel cannot tell "this station has no plan" from "nobody has looked",
+    // and painting the first means rendering an empty-plan composer over a station that has routes - which is
+    // the historical Qty 0 defect arriving by a new road. LOADING is the honest answer, and the skeleton it
+    // holds is the one this gate already owns.
+    var exposure = String(input.exposureState || '');
+    if (exposure === 'LOADING' || exposure === 'NOT_LOADED') return mk(S.LOADING, '', null);
+    // A failed second-layer read is a NAMED failure with a Retry beside it, never an empty plan.
+    if (exposure === 'FAILED') {
+        return mk(S.ERROR, classifyReadFailure(input.exposureError),
+            input.exposureError || { code: 'IR_EXPOSURE_READ_FAILED' });
+    }
     var cat = String(input.catalogue || '');
     // A catalogue that could not be read is a settled, NAMED failure with a Retry beside it - never an empty
     // plan, which would read as "there is nothing to ship".

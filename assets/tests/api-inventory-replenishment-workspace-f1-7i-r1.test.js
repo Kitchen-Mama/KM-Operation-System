@@ -138,11 +138,26 @@ ok(_irWsGet('getShipments')[0].shipmentId === 'LEG', 'Legacy: _irWsGet reads the
 ok(_replenActiveMarketplaces()[0].marketplace === 'legacy', 'Legacy: _replenActiveMarketplaces reads getMarketplaces');
 _irReadModel = adapted;
 window.KM.DB.getShipments = function () { throw new Error('primary path must not hit the broad-cache getter in Workspace mode'); };
+window.KM.DB.getSkuDetails = function () { throw new Error('primary path must not hit the broad-cache getter in Workspace mode'); };
 window.KM.DB.getMarketplaces = function () { throw new Error('no getter'); };
-ok(_irWsGet('getShipments') === adapted.getShipments, 'Workspace: _irWsGet reads the scoped read-model (not the getter)');
+// S8-R4B-2B — THE READ-MODEL CLAIM MOVED TO A FIRST-LAYER GETTER, BECAUSE THAT IS WHERE IT IS STILL TRUE.
+// The six exposure getters left the primary read model this round: they are read lazily, once per site, and
+// _irWsGet answers them from that cache instead. Asserting the old claim on getShipments would assert
+// something the shipped page no longer does — and it would PASS here only because this sandbox defines no
+// _irEffectiveWorkspace, which is a property of the harness and not of the page. A green light for a
+// behaviour that no longer exists is worse than no light at all.
+ok(_irWsGet('getSkuDetails') === adapted.getSkuDetails, 'Workspace: _irWsGet reads the scoped read-model (not the getter)');
+ok(/if \(typeof _irEffectiveWorkspace === 'function' && _irEffectiveWorkspace\(\) && IR_EXPOSURE_GETTER_TABLE_\[name\]\) \{/.test(IR_JS),
+  'Workspace: and the six EXPOSURE getters route to the per-site lazy cache AHEAD of the read model');
 ok(_replenActiveMarketplaces().length === adapted.getMarketplaces.filter(function (m) { var s = (m.status || '').toLowerCase(); return !s || s === 'active'; }).length, 'Workspace: _replenActiveMarketplaces reads the read-model');
 // the local get() choke point inside _getCloudReplenishmentData consults _irReadModel
-ok(/function get\(name\) \{ if \(_irReadModel\) return _irReadModel\[name\] \|\| \[\]; return \(DB\[name\]\)/.test(IR_JS), 'the main-assembly get() choke point consults the scoped read-model first');
+var GETFN = extractFn(IR_JS, '_getCloudReplenishmentData');
+GETFN = GETFN.slice(GETFN.indexOf('function get(name)'));
+GETFN = GETFN.slice(0, GETFN.indexOf('}') + 1 + GETFN.slice(GETFN.indexOf('}') + 1).indexOf('}') + 1);
+ok(/if \(_irReadModel\) return _irReadModel\[name\] \|\| \[\];/.test(GETFN) && /return \(DB\[name\]\)/.test(GETFN),
+  'the main-assembly get() choke point consults the scoped read-model first');
+ok(/if \(_irEffectiveWorkspace\(\) && IR_EXPOSURE_GETTER_TABLE_\[name\]\) return _irExposureGet_\(name\);/.test(GETFN),
+  'and routes the six exposure getters to the per-site lazy cache before it');
 
 console.log('\n== source guards: 60_ read-only, no getOperationDb, no Gap/Reco/allocation/FIFO/PO/Request-Order ==');
 var code60 = GS60.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');

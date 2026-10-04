@@ -97,7 +97,17 @@ ok(!/destination_warehouse|destinationWarehouseId/.test(extractFn(IR, '_irBuildS
 // no live FC Share anywhere in the projection / lineage build
 function stripComments(s) { return s.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, ''); }
 var live = IR.slice(IR.indexOf('function _getCloudReplenishmentData')); live = live.slice(0, live.indexOf('\nfunction '));
-ok(/getShippingPlanLines/.test(live) && /getShippingPlans/.test(live) && /lineReceiverById/.test(live), 'cloud path builds lineReceiverById from shipping_plan_lines + shipping_plans');
+// S8-R4B-2B — THE LINEAGE BUILD MOVED, THE LINEAGE DID NOT. shipping_plans / shipping_plan_lines are
+// second-layer tables now, read lazily once per site, so the receiver map is built ONCE when that read settles
+// rather than once per render. Same tables, same identities, same frozen dispatch-time lineage; only the
+// timing and the location of the read changed. Both halves are pinned so neither can quietly disappear.
+var IDXFN = extractFn(IR, '_irBuildExposureIndexes_');
+ok(/getShippingPlanLines/.test(IDXFN) && /getShippingPlans/.test(IDXFN) && /lineReceiverById/.test(IDXFN),
+  'cloud path builds lineReceiverById from shipping_plan_lines + shipping_plans');
+ok(/_irBuildExposureIndexes_/.test(live) && /_expIdx\.shipRemainByReceiver/.test(live),
+  'and the cloud row builder consumes exactly that one projection');
+ok(/_irBuildShipmentRemainingByReceiver\(model\.getShipments/.test(IDXFN),
+  'with the receiver projection fed from the SAME exposure model the lineage came from');
 var lineageBuild = stripComments(live.slice(0, live.indexOf('rows = filtered.map')));
 ok(!/fcShare|fc_share/i.test(lineageBuild), 'no live FC Share used to build lineage (code, not comments)');
 

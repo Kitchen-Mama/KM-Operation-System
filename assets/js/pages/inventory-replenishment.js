@@ -2089,6 +2089,19 @@ function _irSuggestedCellHtml(item) {
 function _recSummaryRows(skuData) {
     function num(v) { return (typeof v === 'number') ? v : (parseInt(v, 10) || 0); }
     var draftLines = skuData && skuData._recDraftLines;   // persisted snapshot (Draft), when hydrated
+    // S8-R4B-2B FALSE-EMPTY #3 — "No recommendation generated" is a statement about what the DATABASE holds.
+    // It is true for READY-and-empty and false for not-yet-read, and before this round the two were the same
+    // value. The row now carries null for unread and [] for genuinely empty, and they are answered apart.
+    // No request is issued here: this label waits for the one lazy read the expand already started.
+    var _recExp = (skuData && skuData.exposureState) || '';
+    if (draftLines === null &&
+        (_recExp === 'NOT_LOADED' || _recExp === 'LOADING' || _recExp === 'FAILED')) {
+        if (_recExp === 'FAILED') {
+            return '<tr><td colspan="5" class="replen-recsum-empty" role="alert">The stored recommendation could not be read for this site. '
+                + '<button type="button" class="ir-exposure-retry" onclick="_irExposureRefresh_(event)">Retry</button></td></tr>';
+        }
+        return '<tr><td colspan="5" class="replen-recsum-empty" aria-live="polite">Loading the stored recommendation for this site&hellip;</td></tr>';
+    }
     var windows;
     if (draftLines && draftLines.length) {
         var byWin = {}; draftLines.forEach(function (l) { byWin[l.window_code || l.windowCode] = l; });
@@ -2265,7 +2278,13 @@ function _irExecReadinessInput_(sku) {
         ? !!_irReadModel : true;                                   // Legacy reads the broad cache, already present
     var rows = (typeof _allocationDraftRowsFor === 'function') ? _allocationDraftRowsFor(sku) : null;
     var hasRoutes = !!(rows && rows.length) || !!_irRevealSkuData_(sku);
-    return { readModelReady: readModelReady, hydrationInFlight: !!_irDraftHydrateInFlight, catalogue: cat, error: err, hasRoutes: hasRoutes };
+    // S8-R4B-2B — the FIFTH readiness input. The persisted routes live in a second-layer table, so until the
+    // lazy exposure read settles this panel cannot tell an empty plan from an unread one.
+    var expState = _irExposureStateForRender_();
+    var expEntry = _irExposureActiveEntry_();
+    return { readModelReady: readModelReady, hydrationInFlight: !!_irDraftHydrateInFlight, catalogue: cat, error: err,
+        hasRoutes: hasRoutes, exposureState: expState,
+        exposureError: (expEntry && expEntry.error) || null };
 }
 // Each panel reports independently, at the points its OWN source already settles. Neither call reads the
 // other panel's state, and there is no code path that makes one wait for the other.
@@ -2302,6 +2321,12 @@ function _irRevealBegin_(sku) {
     }
     var ctx = _irRevealCtx_(sku);
     rg.begin(ctx); eg.begin(ctx);
+    // S8-R4B-2B — THE ONE PLACE THE SECOND LAYER IS ASKED FOR. It runs BEFORE the pumps so the very first pump
+    // already sees LOADING and holds the panel in its skeleton rather than flashing an empty plan. A site whose
+    // entry is READY resolves synchronously and costs ZERO requests, which is the ordinary case from the second
+    // expand onward; concurrent expands inside the loading window join the SAME promise and issue no second
+    // request; and a FAILED entry is NOT retried here, because a render must never start a request.
+    try { _irEnsureExposureLoaded_(); } catch (_eX) {}
     // The catalogue is deduped and cached per applied scope, and after a Search it has normally been ADOPTED
     // from the workspace read - so this is a cache hit costing zero requests. It remains here for the paths
     // where adoption was not possible.
@@ -2928,13 +2953,8 @@ function toggleReplenRow(sku) {
                                 <div class="replen-card__row"><span class="replen-card__label">Over 90+</span><span class="replen-card__value">${skuData?.over90 || 0}</span></div>
                                 <div class="replen-card__row"><span class="replen-card__label">Over 180+</span><span class="replen-card__value">${skuData?.over180 || 0}</span></div>
                             </article>
-                            <article class="replen-card replen-card--shipping">
-                                <h4 class="replen-card__title">Shipping Shipment</h4>
-                                ${(skuData?.shipOverdue || 0) > 0 ? ('<div class="replen-card__row replen-card__row--overdue"><span class="replen-card__label">Overdue</span><span class="replen-card__value">' + (skuData.shipOverdue) + '</span></div>') : ''}
-                                <div class="replen-card__row"><span class="replen-card__label">Within 18 days</span><span class="replen-card__value">${skuData?.within18days || 0}</span></div>
-                                <div class="replen-card__row"><span class="replen-card__label">Within 30 days</span><span class="replen-card__value">${skuData?.within30days || 0}</span></div>
-                                <div class="replen-card__row"><span class="replen-card__label">Within 45 days</span><span class="replen-card__value">${skuData?.within45days || 0}</span></div>
-                                <div class="replen-card__row"><span class="replen-card__label">45+ days</span><span class="replen-card__value">${skuData?.within45plus || 0}</span></div>
+                            <article class="replen-card replen-card--shipping" id="ir-ship-card-${sku}" data-ir-exposure="${_irExposureStateOf_(skuData)}">
+                                ${_irShipCardInnerHtml_(sku, skuData)}
                             </article>
                             <article class="replen-card replen-card--third-party">
                                 <h4 class="replen-card__title">3rd Party Stock</h4>
@@ -5959,8 +5979,15 @@ function _hydrateAllocationDraftFromDb(ctx, opts) {
         // _irWsGet is read-model-first and falls back to the SAME broad getter in Legacy mode, so Legacy
         // behaviour is byte-identical and Workspace mode now reads the rows the Search already fetched.
         if (typeof _irWsGet !== 'function') return false;
-        var drafts = _irWsGet('getShippingAllocationDrafts') || [];
-        var lines = _irWsGet('getShippingAllocationDraftLines') || [];
+        // S8-R4B-2B — `|| []` WAS THE WHOLE DEFECT IN MINIATURE. With the draft tables deferred, an unread
+        // table and an empty one both became [], the hydrate returned false, and the Execution Plan rendered
+        // its empty-plan composer over a station that has routes. That is the historical Qty 0 defect arriving
+        // by a new road. A NULL source is refused here, and the Execution gate holds the panel in its skeleton
+        // until the lazy read settles — so nothing is painted that would have to be taken back.
+        var drafts = _irWsGet('getShippingAllocationDrafts');
+        var lines = _irWsGet('getShippingAllocationDraftLines');
+        if (drafts === null || lines === null) return false;
+        drafts = drafts || []; lines = lines || [];
         function lo(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
         // F1-7N-FB-4B-ADDENDUM §F.9 — HYDRATE EVERY ACTIVE HEADER FOR THE STATION, NOT JUST THE NEWEST.
         // This used to sort by updated_at and take [0]. Under the frozen K2 contract one station legitimately holds
@@ -6227,7 +6254,7 @@ window._hydrateAllocationDraftFromDb = _hydrateAllocationDraftFromDb;
 // scope-guarded, so a superseded Search cannot paint an older station's routes.
 var _irDraftHydrateInFlight = false;
 var _irDraftHydrateScopeKey = '';
-function _irHydrateDraftForAppliedScope_() {
+function _irHydrateDraftForAppliedScope_(opts) {
     var ctx = (typeof _replenCtx === 'function') ? _replenCtx() : null;
     if (!ctx || !(ctx.country || ctx.marketplace)) return Promise.resolve(false);
     var key = [ctx.company, ctx.country, ctx.marketplace].join('|');
@@ -6260,7 +6287,11 @@ function _irHydrateDraftForAppliedScope_() {
                 // _restoreAllocationDraftFromSession applies after its own successful hydrate.
                 _irUnsavedRoutes = {};
                 try { _irRenderUnsavedBanner_(); } catch (eB) {}
-                try { renderReplenishment(); } catch (eR) {}
+                // S8-R4B-2B — a caller that is already INSIDE an open row must be able to refuse this repaint.
+                // renderReplenishment() nulls currentExpandedRow and abandons both reveal generations, which
+                // closes the expanded panel; that is correct after a Search and wrong after a lazy second-layer
+                // read that the open panel itself asked for. The default is unchanged.
+                if (!(opts && opts.skipRerender)) { try { renderReplenishment(); } catch (eR) {} }
             }
             // F1-7N-FB-4G-A1-R1 - hydration is one of the EXECUTION panel's four readiness inputs and none of
             // the Recommendation's, so only that gate is told.
@@ -8961,12 +8992,315 @@ function _irEffectiveWorkspace() {
 var _irReadModel = null;   // workspace-sourced { getX: [...] } keyed by getter name, or null = Legacy
 var _irReadSeq = 0;
 
+// ================================================================================================================
+// S8-R4B-2B - THE SECOND LAYER IS READ ONCE PER SITE, AND "NOT LOADED" IS NOT ZERO.
+//
+// R4B-2 measured this page's cost as PER SHEET, not per row: a 6-row table costs 1.24 s and a 3,814-row table
+// costs ~3 s, so nineteen sheets cost 14-22 s of handler time whatever the data holds. Six of those nineteen
+// feed ONLY the expanded SKU panel. They are now read lazily, ONCE per site scope, and held.
+//
+// The map is keyed by SITE and never by SKU, and an entry is never discarded because the operator moved to a
+// different site: US -> CA -> US -> CA costs 1, 1, 0, 0 requests. It lives in this module scope beside
+// _irReadModel, which is the state the ops-section unmount already leaves alone, so route away and back and the
+// held exposure is still here. A hard reload loses it, deliberately - no localStorage, no sessionStorage, no
+// server cache, no freshness window.
+//
+// WHAT MAKES THIS SAFE IS THE SENTINEL. adaptInventoryReplenishmentWorkspace maps `(data.shipments || [])`, so a
+// table the request did not ASK FOR arrives as [] - byte-identical to a site that genuinely has no shipments.
+// Every exposure read therefore goes through _irExposureGet_, which answers NULL until the entry is READY:
+//   null = NOT LOADED, and no number may be derived from it
+//   []   = LOADED, and genuinely empty, and 0 is the truth
+// Four UI surfaces turn on that difference and each one is handled by name (the Shipping Shipment card, the row
+// builder's shipRem default, the Recommendation Summary's "not generated", and the Execution Plan editor whose
+// fabricated zero was the historical Qty 0 defect).
+// ================================================================================================================
+// The FIRST LAYER. Every one of these feeds a COLLAPSED-ROW column, so none of them can be deferred without the
+// primary table lying. Ordered as 60_ SIR_WORKSPACE_TABLES_ lists them, which is the order the server reads.
+var IR_FIRST_LAYER_TABLES_ = [
+    'marketplaces', 'marketplace_skus', 'sku_details', 'warehouses',
+    'amazon_inventory_snapshot', 'amazon_inventory_health_snapshot',
+    'amazon_daily_sales_snapshot', 'amazon_weekly_sales_snapshot',
+    'fc_regular_forecast', 'fc_target_rules', 'fc_special_events',
+    'overseas_inventory_snapshot', 'factory_stock'
+];
+// The SECOND LAYER. All six are consumed only by the expanded panel. shipping_plans / shipping_plan_lines are
+// read for ONE purpose - the receiver lineage that attributes a merged (MULTI) shipment's lines - so they defer
+// with the shipment family or not at all.
+var IR_EXPOSURE_TABLES_ = [
+    'shipments', 'shipment_lines', 'shipping_plans', 'shipping_plan_lines',
+    'shipping_allocation_drafts', 'shipping_allocation_draft_lines'
+];
+// Getter name -> physical table, so the read-model accessors and the `only` list cannot drift apart.
+var IR_EXPOSURE_GETTER_TABLE_ = {
+    getShipments: 'shipments', getShipmentLines: 'shipment_lines',
+    getShippingPlans: 'shipping_plans', getShippingPlanLines: 'shipping_plan_lines',
+    getShippingAllocationDrafts: 'shipping_allocation_drafts',
+    getShippingAllocationDraftLines: 'shipping_allocation_draft_lines'
+};
+var IR_EXPOSURE_STATES_ = { NOT_LOADED: 'NOT_LOADED', LOADING: 'LOADING', READY: 'READY', FAILED: 'FAILED' };
+// key -> { key, state, promise, model, indexes, loadedAt, generation, error }. ONE authority; nothing else on
+// this page caches an exposure row.
+var _irExposureByScope = {};
+var _irExposureSeq = 0;
+
+// The SITE identity, and nothing else. company | country | marketplace_id - the same triple
+// _irHydrateDraftForAppliedScope_ already uses as its scope key. SKU, row index, pagination, sort and filter
+// text are all deliberately absent: a cache keyed by any of them would re-read on every expand, which is the
+// N+1 this round exists to prevent.
+//
+// It reads the APPLIED scope, never the live selectors, for the same reason every other consumer does -
+// changing a dropdown must not silently repoint the data already on screen.
+function _irExposureScopeKey_() {
+    var a = (typeof _irSearch !== 'undefined' && _irSearch) ? _irSearch.applied : null;
+    if (!a || !a.marketplaceId) return '';
+    var list = [];
+    try { list = _irWsGet('getMarketplaces') || []; } catch (e) { list = []; }
+    var rec = null;
+    for (var i = 0; i < list.length; i++) {
+        if (String(list[i] && list[i].marketplaceId) === String(a.marketplaceId)) { rec = list[i]; break; }
+    }
+    return [(rec && rec.company) || '', (rec && rec.country) || a.country || '', a.marketplaceId].join('|');
+}
+function _irExposureActiveEntry_() {
+    var k = _irExposureScopeKey_();
+    return k ? (_irExposureByScope[k] || null) : null;
+}
+// What the RENDER may assume. 'LEGACY' means the kill switch is off and the broad cache still holds all
+// nineteen tables, so there is no second layer and nothing about that path changes.
+function _irExposureStateForRender_() {
+    if (typeof _irEffectiveWorkspace === 'function' && !_irEffectiveWorkspace()) return 'LEGACY';
+    // No applied site means there is no scope to attribute a shipment to and nothing to load. Reported as its
+    // own state so a panel can settle on it instead of waiting forever for a read that can never be issued.
+    if (!_irExposureScopeKey_()) return 'NO_SCOPE';
+    var e = _irExposureActiveEntry_();
+    return e ? e.state : IR_EXPOSURE_STATES_.NOT_LOADED;
+}
+// THE SENTINEL. null until READY - never [], because [] is an answer and this is the absence of one.
+function _irExposureGet_(name) {
+    var e = _irExposureActiveEntry_();
+    if (!e || e.state !== IR_EXPOSURE_STATES_.READY || !e.model) return null;
+    return e.model[name] || [];
+}
+// The joins, built ONCE on the transition to READY, by the SAME function the row builder used to call inline.
+// Same source tables, same identities, same truth; only the timing and the location of the read moved.
+function _irBuildExposureIndexes_(model) {
+    model = model || {};
+    var plans = model.getShippingPlans || [];
+    var planLines = model.getShippingPlanLines || [];
+    var planById = {};
+    plans.forEach(function (p) { if (p && p.shippingPlanId) planById[p.shippingPlanId] = p; });
+    var lineReceiverById = {};
+    planLines.forEach(function (pl) {
+        if (!pl || !pl.shippingPlanLineId) return;
+        var p = planById[pl.shippingPlanId] || {};
+        lineReceiverById[pl.shippingPlanLineId] = { company: p.company || '', country: p.country || '', marketplace: p.marketplace || '' };
+    });
+    var d = new Date();
+    var todayMs = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+    return {
+        planById: planById, lineReceiverById: lineReceiverById,
+        shipRemainByReceiver: _irBuildShipmentRemainingByReceiver(model.getShipments || [], model.getShipmentLines || [], todayMs, lineReceiverById),
+        builtForDayMs: todayMs
+    };
+}
+// LAZY ONCE PER ACTIVE SITE SCOPE, REUSE MANY.
+//
+//   READY       -> resolved immediately. ZERO requests, for the second SKU and for the twentieth.
+//   LOADING     -> the SAME in-flight promise. Three SKUs expanded inside the window issue ONE request, not three.
+//   FAILED      -> resolved with the failed entry and NO new request. A render must never start a retry; only an
+//                  explicit operator act (opts.retry) may, and that is one request, not a loop.
+//   NOT_LOADED  -> exactly one scoped request for THIS site. No other site is touched, and none is prefetched.
+function _irEnsureExposureLoaded_(opts) {
+    if (typeof _irEffectiveWorkspace === 'function' && !_irEffectiveWorkspace()) return Promise.resolve(null);
+    var key = _irExposureScopeKey_();
+    if (!key) return Promise.resolve(null);
+    var e = _irExposureByScope[key];
+    if (e) {
+        if (e.state === IR_EXPOSURE_STATES_.READY) return Promise.resolve(e);
+        if (e.state === IR_EXPOSURE_STATES_.LOADING) return e.promise;
+        if (e.state === IR_EXPOSURE_STATES_.FAILED && !(opts && opts.retry)) return Promise.resolve(e);
+    }
+    if (!(window.KM && window.KM.api && typeof window.KM.api.getWorkspace === 'function')) {
+        // A MISSING API IS A FAILURE, NOT A PAUSE. Resolving null here would leave the entry NOT_LOADED, and
+        // NOT_LOADED is what holds the Execution Plan in its skeleton - so the operator would watch a spinner
+        // that nothing was ever going to settle. FAILED is both true and terminal, and it carries a Retry.
+        _irExposureByScope[key] = { key: key, state: IR_EXPOSURE_STATES_.FAILED, promise: null, model: null,
+            indexes: null, loadedAt: 0, generation: ++_irExposureSeq,
+            error: { code: 'WORKSPACE_UNAVAILABLE', message: 'Inventory Replenishment Workspace API unavailable.' } };
+        _irOnExposureSettled_(key);
+        return Promise.resolve(_irExposureByScope[key]);
+    }
+    var gen = ++_irExposureSeq;
+    var entry = { key: key, state: IR_EXPOSURE_STATES_.LOADING, promise: null, model: null, indexes: null,
+        loadedAt: 0, generation: gen, error: null, requestedAt: (typeof _irNowMs_ === 'function') ? _irNowMs_() : 0 };
+    _irExposureByScope[key] = entry;
+    // The SAME canonical action the primary read uses, with an exposure-only `only` list. No new action, no
+    // router change, no contract bump - 60_ has owned the `only` contract since the deployed SIR stamp.
+    var payload = { recentWindow: true, only: IR_EXPOSURE_TABLES_.slice() };
+    entry.promise = Promise.resolve(window.KM.api.getWorkspace('inventoryReplenishment', payload))
+        .then(function (env) {
+            if (_irExposureByScope[key] !== entry) return entry;   // invalidated in flight - nothing to install
+            if (!(env && env.success && env.data)) {
+                throw (env && env.errors && env.errors[0]) ||
+                    { code: 'IR_EXPOSURE_READ_FAILED', message: 'The shipment / allocation detail could not be read.' };
+            }
+            entry.model = window.KM.DB.adaptInventoryReplenishmentWorkspace(env.data);
+            entry.indexes = _irBuildExposureIndexes_(entry.model);
+            entry.state = IR_EXPOSURE_STATES_.READY;
+            entry.loadedAt = (typeof _irNowMs_ === 'function') ? _irNowMs_() : 0;
+            _irOnExposureSettled_(key);
+            return entry;
+        })
+        // Resolves rather than rejects, so every joined consumer settles and none of them raises an unhandled
+        // rejection. FAILED is the outcome; it is read, not thrown.
+        ['catch'](function (err) {
+            if (_irExposureByScope[key] !== entry) return entry;
+            entry.state = IR_EXPOSURE_STATES_.FAILED;
+            entry.error = { code: (err && err.code) || 'IR_EXPOSURE_READ_FAILED',
+                message: (err && err.message) || 'The shipment / allocation detail could not be read.' };
+            _irOnExposureSettled_(key);
+            return entry;
+        });
+    return entry.promise;
+}
+// ONLY the second-layer surfaces repaint. The table, the filters, the sorting and every collapsed-row column
+// were never waiting on this and are not touched.
+function _irOnExposureSettled_(key) {
+    if (key !== _irExposureScopeKey_()) return;            // the operator moved on; this answer has no home
+    var sku = (typeof currentExpandedRow !== 'undefined' && currentExpandedRow) ? currentExpandedRow : '';
+    try { _irRepaintExposureCard_(sku); } catch (e) {}
+    // The persisted routes are an exposure table, so the hydrate could not have run before now. It pumps the
+    // Execution gate itself on completion, which is what releases that panel from its skeleton.
+    //
+    // skipRerender IS NOT AN OPTIMISATION. renderReplenishment() sets currentExpandedRow = null and abandons
+    // both reveal generations, so letting the hydrate repaint the table here would CLOSE THE VERY ROW whose
+    // expand started this read — the operator would open a SKU, wait, and watch it collapse. Nothing on the
+    // collapsed row depends on these six tables (On the Way is the literal 0; Suggested Qty comes from the
+    // materialised gap state), so there is nothing in the table to repaint. The expanded panel's own gates
+    // paint the panel, which is the whole point of them.
+    try {
+        if (typeof _irHydrateDraftForAppliedScope_ === 'function') _irHydrateDraftForAppliedScope_({ skipRerender: true });
+    } catch (e2) {}
+    try { _irRepaintRecoCard_(sku); } catch (e3) {}
+    try { if (typeof _irRevealPumpExec_ === 'function') _irRevealPumpExec_(); } catch (e4) {}
+}
+// PER ENTRY, NEVER GLOBAL. The only callers are an explicit operator act and this page's own successful write;
+// a site switch, a route-away, an expand, a collapse, a filter or a sort never reaches here.
+function _irInvalidateExposureForKey_(key) {
+    if (!key || !_irExposureByScope[key]) return false;
+    delete _irExposureByScope[key];
+    return true;
+}
+function _irInvalidateActiveExposure_() { return _irInvalidateExposureForKey_(_irExposureScopeKey_()); }
+// The operator's explicit re-read of THIS site, and the one explicit retry a FAILED entry is allowed. Other
+// sites' entries are untouched - that is the whole point of a per-site map. Until a canonical write signal
+// exists, this is the user-controlled path to exposure truth after a write made elsewhere.
+function _irExposureRefresh_(event, sku) {
+    if (event) { event.stopPropagation(); if (event.preventDefault) event.preventDefault(); }
+    _irInvalidateActiveExposure_();
+    try { _irRepaintExposureCard_(sku || (typeof currentExpandedRow !== 'undefined' ? currentExpandedRow : '')); } catch (e) {}
+    _irEnsureExposureLoaded_({ retry: true });
+    return false;
+}
+window._irExposureRefresh_ = _irExposureRefresh_;
+window._irEnsureExposureLoaded_ = _irEnsureExposureLoaded_;
+window._irExposureStateForRender_ = _irExposureStateForRender_;
+function _irExposureStateOf_(skuData) {
+    return (skuData && skuData.exposureState) || _irExposureStateForRender_();
+}
+// ONE builder for the Shipping Shipment card, used by the first paint and by the repaint when the lazy read
+// settles, so the two cannot drift into different markup.
+//
+// THE FIVE BUCKETS WERE `${skuData?.within18days || 0}`. With the shipment family deferred that prints 0 for a
+// site nobody has read yet - a statement about incoming stock that no one has made. The number is now rendered
+// only from a READY entry; every other state says what it actually is.
+function _irShipCardInnerHtml_(sku, skuData) {
+    var state = _irExposureStateOf_(skuData);
+    var head = '<h4 class="replen-card__title">Shipping Shipment</h4>';
+    function row(label, value, cls) {
+        return '<div class="replen-card__row' + (cls ? ' ' + cls : '') + '"><span class="replen-card__label">' +
+            label + '</span><span class="replen-card__value">' + value + '</span></div>';
+    }
+    if (state === IR_EXPOSURE_STATES_.NOT_LOADED || state === IR_EXPOSURE_STATES_.LOADING) {
+        var pend = '<span class="replen-card__value--pending" title="Reading this site\'s incoming shipments">&hellip;</span>';
+        return head + '<div class="replen-card__note" role="status" aria-live="polite">Incoming shipments load once for this site.</div>'
+            + row('Within 18 days', pend) + row('Within 30 days', pend)
+            + row('Within 45 days', pend) + row('45+ days', pend);
+    }
+    if (state === IR_EXPOSURE_STATES_.FAILED) {
+        var e = _irExposureActiveEntry_();
+        var msg = (e && e.error && e.error.message) || 'The shipment detail could not be read.';
+        return head + '<div class="replen-card__row replen-card__row--error" role="alert">'
+            + '<span class="replen-card__label">' + _irEsc_(msg) + '</span>'
+            + '<span class="replen-card__value"><button type="button" class="ir-exposure-retry" '
+            + 'onclick="_irExposureRefresh_(event, \'' + sku + '\')">Retry</button></span></div>';
+    }
+    if (state === 'NO_SCOPE') {
+        return head + row('Within 18 days', '&mdash;') + row('Within 30 days', '&mdash;')
+            + row('Within 45 days', '&mdash;') + row('45+ days', '&mdash;');
+    }
+    // READY (or LEGACY, where the broad cache holds all nineteen tables). These zeroes are measured.
+    var overdue = (skuData && skuData.shipOverdue) || 0;
+    return head
+        + (overdue > 0 ? row('Overdue', overdue, 'replen-card__row--overdue') : '')
+        + row('Within 18 days', (skuData && skuData.within18days) || 0)
+        + row('Within 30 days', (skuData && skuData.within30days) || 0)
+        + row('Within 45 days', (skuData && skuData.within45days) || 0)
+        + row('45+ days', (skuData && skuData.within45plus) || 0)
+        + (state === IR_EXPOSURE_STATES_.READY
+            ? ('<div class="replen-card__row replen-card__row--meta"><span class="replen-card__label"></span>'
+                + '<span class="replen-card__value"><button type="button" class="ir-exposure-refresh" '
+                + 'title="Re-read the shipment and allocation detail for THIS site. No other site is affected." '
+                + 'onclick="_irExposureRefresh_(event, \'' + sku + '\')">Refresh</button></span></div>')
+            : '');
+}
+// In-place repaint of the one second-layer card that is not already owned by a reveal gate. Returns false when
+// no row is expanded, which is the ordinary case for a load the operator started and then collapsed.
+function _irRepaintExposureCard_(sku) {
+    if (typeof document === 'undefined' || !sku) return false;
+    var el = document.getElementById('ir-ship-card-' + sku);
+    if (!el) return false;
+    var skuData = (typeof _irRevealSkuData_ === 'function') ? _irRevealSkuData_(sku) : null;
+    el.setAttribute('data-ir-exposure', _irExposureStateOf_(skuData));
+    el.innerHTML = _irShipCardInnerHtml_(sku, skuData);
+    return true;
+}
+// The Recommendation Summary's persisted snapshot (_recDraftLines) is an exposure table too, so a panel that
+// was revealed before the lazy read settled is holding a truthful "loading" row that now has an answer. It is
+// repainted through _irRecoSummaryCardBody — the ONE builder all three reco sources already go through — so
+// this cannot drift from what the reveal paints.
+//
+// A panel still in its SKELETON is left alone: its gate owns it and has not revealed yet, and painting over a
+// pending reveal is the second render transaction the reveal barrier exists to prevent.
+function _irRepaintRecoCard_(sku) {
+    if (typeof document === 'undefined' || !sku) return false;
+    var host = document.getElementById('ir-reveal-reco-' + sku);
+    if (!host || host.getAttribute('data-reveal-state') !== 'ready') return false;
+    var card = document.getElementById('recommendation-summary-' + sku);
+    if (!card || typeof _irRecoSummaryCardBody !== 'function') return false;
+    card.innerHTML = '<h4 class="replen-card__title">Recommendation Summary</h4>'
+        + _irRecoSummaryCardBody(_irRevealSkuData_(sku));
+    return true;
+}
+window._irShipCardInnerHtml_ = _irShipCardInnerHtml_;
+window._irRepaintExposureCard_ = _irRepaintExposureCard_;
+window._irRepaintRecoCard_ = _irRepaintRecoCard_;
+
 // Read-model-first table access: Workspace mode → scoped DTO array; Legacy → the broad-cache getter unchanged.
 // F1-7N-FB-3 §C — the SLIM SCOPE REGISTRY sits between them for the scope slice only: before a Search there is
 // no inventory read model, but the selectors (and _replenSelectedScope, which resolves company/country/
 // marketplace from a marketplace_id) still need `getMarketplaces`. The registry supplies exactly that slice and
 // nothing else, so scope resolution works pre-Search without any inventory read.
 function _irWsGet(name) {
+    // S8-R4B-2B - the six exposure tables are no longer in the first-layer read model. In Workspace mode they
+    // come from the per-site lazy cache, which answers NULL until it is READY; in Legacy mode the broad cache
+    // still holds all nineteen and this function behaves exactly as it always did.
+    // The mode test comes FIRST, and it must be POSITIVE. In Legacy the broad cache holds all nineteen and
+    // this branch must not exist at all; where the mode cannot even be asked, the honest answer is the
+    // behaviour that predates this round rather than a lazy cache nobody has populated.
+    if (typeof _irEffectiveWorkspace === 'function' && _irEffectiveWorkspace() && IR_EXPOSURE_GETTER_TABLE_[name]) {
+        return _irExposureGet_(name);
+    }
     if (_irReadModel) return _irReadModel[name] || [];
     if (name === 'getMarketplaces' && typeof _irRegistry !== 'undefined' && _irRegistry && _irRegistry.model) return _irRegistry.model.getMarketplaces || [];
     return (window.KM && window.KM.DB && window.KM.DB[name]) ? (window.KM.DB[name]() || []) : [];
@@ -9972,7 +10306,13 @@ function _irWorkspaceRefresh_(opts) {
     // Adoption from the primary read is therefore no longer possible, and `_irReadModelHasCarrier` stays false
     // — which is the correct answer, not a regression: adopting a payload that did not carry the include would
     // install two empty tables as a settled catalogue and report a configuration problem that does not exist.
-    var _wsPayload = { recentWindow: true };
+    // S8-R4B-2B - THE FIRST LAYER ASKS FOR THIRTEEN SHEETS, NOT NINETEEN.
+    //
+    // R4B-2 proved the cost is per sheet: 19 sheets cost 14-22 s of handler time whatever the rows contain, and
+    // six of them feed only the expanded panel. `only` is an EXISTING contract owned by 60_ and already live in
+    // Production (the carrier catalogue has been using it), so this adds no action, moves no router and bumps
+    // no contract version. The six are read lazily, once per site, by _irEnsureExposureLoaded_.
+    var _wsPayload = { recentWindow: true, only: IR_FIRST_LAYER_TABLES_.slice() };
     var _dispatch = { owner: _owner, reason: (opts && opts.reason) ? String(opts.reason) : null,
         at: _irNowMs_ ? _irNowMs_() : 0, seq: mySeq, quiet: quiet,
         payload_fingerprint: _irReadPayloadFingerprint_(_wsPayload),
@@ -10074,8 +10414,19 @@ function _irWorkspaceRefresh_(opts) {
 // documented bounded-readback deferral (7M-B / 7M-B2) which this round does not disturb.
 function _irAfterWrite(cb) {
     if (!_irEffectiveWorkspace()) { if (typeof cb === 'function') cb(); return; }
+    // S8-R4B-2B — THIS PAGE'S OWN SUCCESSFUL WRITE IS THE ONE CANONICAL INVALIDATION SIGNAL THAT EXISTS TODAY.
+    //
+    // The allocation drafts this readback exists to reconcile are second-layer tables, so a readback that
+    // re-read the first layer alone would reconcile everything EXCEPT the rows the write just changed. Only the
+    // ACTIVE site's entry is dropped and re-read: every other site's held exposure is still true, and a write
+    // to US has no business discarding what is known about CA.
+    //
+    // Writes made on OTHER pages still cannot signal this cache. That is recorded as debt, not hidden: until a
+    // canonical signal exists, the Refresh on the Shipping Shipment card is the operator's path to re-read.
+    _irInvalidateActiveExposure_();
     _irWorkspaceRefresh_({ owner: 'POST_WRITE_READBACK',
         reason: 'reconciling what a write just persisted' })
+        .then(function () { return _irEnsureExposureLoaded_(); })
         .then(function () { if (typeof cb === 'function') cb(); }).catch(function (err) { _irRenderError_(err); });
 }
 
@@ -11512,7 +11863,17 @@ function _getCloudReplenishmentData() {
     function eqv(a, b) { return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase(); }
     // F1-7I: single choke point — Workspace mode reads the scoped read-model (keyed by getter name); Legacy reads the
     // broad-cache getter unchanged. The whole main-table assembly below therefore needs NO broad Operation DB in Workspace mode.
-    function get(name) { if (_irReadModel) return _irReadModel[name] || []; return (DB[name]) ? (DB[name]() || []) : []; }
+    // S8-R4B-2B - exposure getters are answered by the per-site lazy cache (null until READY); everything else
+    // is unchanged. Workspace mode -> the scoped read model; Legacy -> the broad-cache getter, byte-identical.
+    function get(name) {
+        if (_irEffectiveWorkspace() && IR_EXPOSURE_GETTER_TABLE_[name]) return _irExposureGet_(name);
+        if (_irReadModel) return _irReadModel[name] || [];
+        return (DB[name]) ? (DB[name]() || []) : [];
+    }
+    // What this render may assume about the second layer. READY/LEGACY -> real numbers; anything else -> the
+    // row carries NULL and every consumer must say "not loaded" rather than invent a zero.
+    var _irExpState = _irExposureStateForRender_();
+    var _irExpReady = (_irExpState === IR_EXPOSURE_STATES_.READY || _irExpState === 'LEGACY');
 
     // Source tables — all safe [] when not yet exposed to the frontend.
     var marketplacesReg = get('getMarketplaces');
@@ -11551,23 +11912,22 @@ function _getCloudReplenishmentData() {
     // for this marketplace scope. REMAINING = MAX(0, shipment_qty − shipment_received_qty); terminal
     // shipments + fully-received lines contribute 0; MULTI/merged shipments are excluded from per-marketplace
     // attribution (MERGED_SHIPMENT_FROZEN_SHARE_AUTHORITY_GAP — see completion report).
-    var shipments = get('getShipments');
-    var shipmentLines = get('getShipmentLines');
-    // R6 — FROZEN receiver lineage map: shipping_plan_line_id → {company,country,marketplace} resolved via
-    // shipping_plan_lines → shipping_plans. Lets a merged (MULTI) shipment's lines attribute to their real
-    // receivers deterministically (dispatch-time lineage; NOT live FC Share, NOT destination text).
-    var planLinesReg = get('getShippingPlanLines');
-    var plansReg = get('getShippingPlans');
-    var _planById = {}; plansReg.forEach(function (p) { if (p && p.shippingPlanId) _planById[p.shippingPlanId] = p; });
-    var lineReceiverById = {};
-    planLinesReg.forEach(function (pl) {
-        if (!pl || !pl.shippingPlanLineId) return;
-        var p = _planById[pl.shippingPlanId] || {};
-        lineReceiverById[pl.shippingPlanLineId] = { company: p.company || '', country: p.country || '', marketplace: p.marketplace || '' };
-    });
-    var _irNow = new Date();
-    var _irTodayMs = Date.UTC(_irNow.getFullYear(), _irNow.getMonth(), _irNow.getDate());
-    var shipRemainByReceiver = _irBuildShipmentRemainingByReceiver(shipments, shipmentLines, _irTodayMs, lineReceiverById);
+    // S8-R4B-2B - THE JOIN IS BUILT ONCE PER LOAD, NOT ONCE PER RENDER, and only when the four tables it needs
+    // have actually been read. _irBuildExposureIndexes_ is the SAME lineage + remaining-by-receiver logic that
+    // stood inline here; it moved to the cache entry so twenty expands rebuild nothing.
+    //
+    // When the second layer is not READY this stays NULL. A {} here would be worse than useless: every lookup
+    // would miss, every row would take the zeroed default, and the screen would report "no incoming shipments"
+    // about tables nobody has read.
+    var shipRemainByReceiver = null;
+    if (_irExpReady) {
+        var _expEntry = _irExposureActiveEntry_();
+        var _expIdx = (_expEntry && _expEntry.indexes) ? _expEntry.indexes : _irBuildExposureIndexes_({
+            getShipments: get('getShipments') || [], getShipmentLines: get('getShipmentLines') || [],
+            getShippingPlans: get('getShippingPlans') || [], getShippingPlanLines: get('getShippingPlanLines') || []
+        });
+        shipRemainByReceiver = _expIdx.shipRemainByReceiver;
+    }
 
     // F1-7N-FB-4E-R4B-R1 - the factory projection's window anchor is INJECTED (the module never reads a clock),
     // and the whole-SKU projection is computed ONCE per SKU rather than once per marketplace row.
@@ -11615,8 +11975,12 @@ function _getCloudReplenishmentData() {
             series: det.series || '', category: det.category || det.productLine || ''
         };
         // R5 — real Shipping Shipment buckets for THIS receiver (canonical company/country/marketplace/sku).
-        var shipRem = shipRemainByReceiver[_irReceiverKey(scopeMkt.company, scopeMkt.country, scopeMkt.marketplace, mp.sku)]
-            || { overdue: 0, d0_18: 0, d19_30: 0, d31_45: 0, d45_plus: 0 };
+        // S8-R4B-2B FALSE-EMPTY #2 — the zeroed default is reached ONLY when the tables have been read and this
+        // receiver genuinely has nothing incoming. Before that, shipRem is null and the DTO carries null.
+        var shipRem = shipRemainByReceiver
+            ? (shipRemainByReceiver[_irReceiverKey(scopeMkt.company, scopeMkt.country, scopeMkt.marketplace, mp.sku)]
+                || { overdue: 0, d0_18: 0, d19_30: 0, d31_45: 0, d45_plus: 0 })
+            : null;
 
         var inv = IR.latestSnapshot(invSnaps, scope);
         var health = IR.latestSnapshot(healthSnaps, scope);
@@ -11635,7 +11999,11 @@ function _getCloudReplenishmentData() {
         // Recommendation Summary snapshot: hydrate the read-only system recommendation from the persisted
         // shipping_allocation_draft (the SSOT, §11.4) when one exists for this scope + SKU; otherwise the
         // Recommendation Summary renders its honest "not generated" empty state (engine is inactive).
-        var recDraftLines = _shippingDraftLinesFor(scope, get('getShippingAllocationDrafts'), get('getShippingAllocationDraftLines'));
+        // S8-R4B-2B FALSE-EMPTY #3 — null, not [], until the draft tables have been read. [] is what the
+        // Recommendation Summary renders as "No recommendation generated", which is a claim about the database.
+        var recDraftLines = _irExpReady
+            ? _shippingDraftLinesFor(scope, get('getShippingAllocationDrafts') || [], get('getShippingAllocationDraftLines') || [])
+            : null;
         // 3rd Party Stock card = PHYSICAL 3PL availability (Round 4 Decision A). Summary total and the
         // expanded detail use the SAME shared breakdown rows (IRWarehouse.buildPhysicalThirdPartyBreakdown);
         // it is NEVER sitePlanningAvailable (the 18-day virtual planning allocation stays in the planning
@@ -11717,7 +12085,10 @@ function _getCloudReplenishmentData() {
             // First Layer Summary
             currentInventory: currentStock,
             onTheWay: 0,                       // Shipping Shipment — pending mapping (spec §9)
-            _recDraftLines: recDraftLines,               // persisted Recommendation Summary snapshot (raw draft lines) or []
+            _recDraftLines: recDraftLines,               // persisted snapshot (raw draft lines), [] when loaded-empty, NULL when not loaded
+            // S8-R4B-2B — the second layer's state travels WITH the row, so every consumer answers from the
+            // same fact instead of each one guessing from a missing value.
+            exposureState: _irExpState,
             thirdPartyStock: thirdPartyDisplay,          // Site Planning Available (or state label)
             thirdPartyPlan: thirdPartyPlan,              // full allocation detail (tooltip/expand)
             thirdPartyDetailHtml: _irRenderThirdPartyDetail(thirdPartyPlan),
@@ -11750,8 +12121,10 @@ function _getCloudReplenishmentData() {
             over90: lts.over90,
             over180: lts.over180,
             // Shipping Shipment — REAL shipment-derived remaining incoming, mutually-exclusive ETA buckets (R5).
-            within18days: shipRem.d0_18, within30days: shipRem.d19_30, within45days: shipRem.d31_45,
-            within45plus: shipRem.d45_plus, shipOverdue: shipRem.overdue,
+            // NULL when the shipment family has not been read for this site. Never 0 — see FALSE-EMPTY #1.
+            within18days: shipRem ? shipRem.d0_18 : null, within30days: shipRem ? shipRem.d19_30 : null,
+            within45days: shipRem ? shipRem.d31_45 : null, within45plus: shipRem ? shipRem.d45_plus : null,
+            shipOverdue: shipRem ? shipRem.overdue : null,
             // 3rd Party detail (only aggregate available in Phase 1)
             winitStock: 0, onusStock: 0,
             // Forecast breakdown (next 3 months)

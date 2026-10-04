@@ -149,11 +149,21 @@ console.log('\n== IR HALT + safety invariants ==');
 // RESTATED AGAIN (A2-R1-R3): the call now declares a dispatch OWNER, which is a diagnostic label and not a
 // payload. Matching the empty argument list reported that label as a schema change. The claim is checked on
 // what it is about: the readback reaches the workspace refresh, and asks for NO carrier include.
-ok(/function _irAfterWrite\(cb\)[\s\S]{0,600}_irWorkspaceRefresh_\(/.test(IR_JS) &&
-   !/function _irAfterWrite\(cb\)[\s\S]{0,600}carrier:\s*true/.test(IR_JS),
-  'IR: post-write readback UNCHANGED (full workspace, no include) — HALT (schema-change / not-equivalent)');
-ok(/function _irAfterWrite\(cb\)[\s\S]{0,600}owner: 'POST_WRITE_READBACK'/.test(IR_JS),
+// S8-R4B-2B — THE DEFERRAL IS RESOLVED, AND BY THE ENDPOINT THAT ALREADY EXISTED. This readback is no longer
+// "the full unfiltered workspace": it asks for the THIRTEEN first-layer tables through 60_'s shipped `only`
+// contract, and then re-reads the ACTIVE site's six exposure tables — which are precisely the rows a write on
+// this page changes, and which a thirteen-table readback alone would have reconciled everything EXCEPT. No new
+// endpoint was needed, which is what the deferral had been waiting for.
+//
+// The two properties the HALT was actually about are unchanged and are asserted on the function body rather
+// than on a character window, which is what broke when the reasoning above was written down beside the code.
+var AFTER_WRITE = extractFn(IR_JS, '_irAfterWrite');
+ok(/_irWorkspaceRefresh_\(/.test(AFTER_WRITE) && !/carrier:\s*true/.test(AFTER_WRITE),
+  'IR: post-write readback reaches the workspace refresh and asks for NO carrier include — HALT (schema-change / not-equivalent)');
+ok(/owner: 'POST_WRITE_READBACK'/.test(AFTER_WRITE),
   'IR: and it now NAMES itself as the post-write readback, so a duplicate read is attributable');
+ok(/_irInvalidateActiveExposure_\(\)/.test(AFTER_WRITE) && /_irEnsureExposureLoaded_\(\)/.test(AFTER_WRITE),
+  'IR: and it re-reads the ACTIVE site exposure the write just changed — bounded, and still complete');
 ok(GLM_JS.indexOf('loadOperationDb') !== -1 ? /Legacy/.test(GLM_JS) : true, 'map: no new whole-DB load introduced (bounded readback is a scoped getWorkspace)');
 ok(read('js/app.js').indexOf('loadOperationDb') === -1, 'app prime remains 0');
 eq((read('js/api/operation-system-db-api.js').split('await loadOperationDb({ force: true });').length - 1), 2, 'writer full-reload remains 0');
