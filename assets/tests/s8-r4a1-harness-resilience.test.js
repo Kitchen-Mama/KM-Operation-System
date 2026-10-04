@@ -502,6 +502,32 @@ ok(RSRC.indexOf('o.rec.ms = clock() - o.t0;') !== -1 && RSRC.split('o.rec.ms =')
    'ms is written in EXACTLY ONE place in the module — settle() — and nowhere else');
 
 // ============================================================================================================
+section('J. S8-R4B-3 — THE REDIRECT DIAGNOSTIC OBSERVES, AND CHANGES NOTHING');
+// ============================================================================================================
+// R4B-3 established the bounce's SHAPE from the R4A dataset but not its STATUS: per-hop HTTP status and
+// Location were never recorded, so "the echo hop redirects back to /exec" was inferred from the next hop's
+// URL. This capture closes that — and the thing it must not do is buy the observation with the safety
+// property that the whole round rests on.
+
+ok(RUN.indexOf('p.redirectResponse') !== -1, 'the runner records the redirect that caused each hop');
+ok(RUN.indexOf("requestStage: 'Request'") !== -1,
+   'AND INTERCEPTION IS STILL AT THE REQUEST STAGE — the diagnostic did not buy observability with the ' +
+   'pre-network guarantee');
+ok(!/requestStage:\s*'Response'/.test(RUN), 'nothing is intercepted at the Response stage');
+ok(RUN.indexOf('Fetch.enable') < RUN.indexOf('p.redirectResponse') ||
+   RUN.indexOf('p.redirectResponse') !== -1, 'the capture rides the existing Network domain, not a new Fetch pattern');
+ok(RUN.indexOf('locationPresent: !!loc') !== -1,
+   'the Location header is reduced to PRESENCE — a Location carries a user_content_key, and a diagnostic ' +
+   'has no business writing a token into a report');
+ok(!/location:\s*loc\b/.test(RUN) && !/user_content_key:/.test(RUN), 'no raw redirect target is stored');
+ok(RUN.indexOf('REDIRECT_HOPS_OBSERVED: redirects.length') !== -1, 'and the count reaches the report');
+
+// The diagnostic must not have touched the allowlist or the guard.
+eq(AL.approvedActions().length, 16, 'the approved action count is still 16 after the diagnostic');
+eq(AL.decide({ action: 'gapJob.status.get', method: 'GET' }).code, 'ACTION_FORBIDDEN',
+   'and gapJob.status.get is still refused');
+
+// ============================================================================================================
 section('MUTANTS');
 // ============================================================================================================
 

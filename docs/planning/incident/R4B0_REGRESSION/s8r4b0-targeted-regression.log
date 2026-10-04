@@ -1,0 +1,36 @@
+S8-R4A BROWSER FATIGUE
+frontend http://127.0.0.1:50358   (served from this worktree)
+profile  C:\Users\viczh\AppData\Local\Temp\s8r4a-profile-m8l0GL   EPHEMERAL — OPERATOR_PROFILE_TOUCHED = NO
+allowlist 16 actions, frozen
+
+AUTOMATED_FATIGUE_STATUS = RUNNING
+HUMAN_TEST_SAFE = YES
+HUMAN_TEST_AVOID = the surface named in each window below, while that window is open
+
+chrome Chrome/154.0.8037.95
+
+AUTOMATED_FATIGUE_STATUS = RUNNING
+HUMAN_TEST_SAFE = YES
+HUMAN_TEST_AVOID = the surface named in C:\Users\viczh\AppData\Local\Temp\s8r4b0-reg\s8-r4a-progress.json (one at a time)
+HUMAN_TEST_SAFE_SURFACES = every other surface of the 12 measured
+ALSO AVOID = starting a gap recalculation during Site Inventory measurement
+
+
+SCENARIO D — RAPID BURST
+  D-burst      10 switches in 19132 ms, 177 requests
+
+SCENARIO E — IDLE + RETURN
+  !! OPEN_MAP_EVICTION DOCUMENT_REPLACED  shipment.workspace.get  open 15864ms  from D-burst/RAPID_BURST
+  E-before    FC Summary              stable=   10051  data=    7992  req=  5  app= 2  dup=0  abort=0  rows=    1
+  E-before    Site Inventory          stable=    7655  data=    5474  req=  4  app= 1  dup=0  abort=0  rows=    0
+  idling 60 s …
+  E-return    FC Summary              stable=    2386  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    1
+  E-return    Site Inventory          stable=    2116  data=       -  req=  0  app= 0  dup=0  abort=0  rows=    0
+
+AUTOMATED_FATIGUE_STATUS = COMPLETE
+wrote C:\Users\viczh\AppData\Local\Temp\s8r4b0-reg\s8-r4a-samples.json
+requests total=381  app_read=18  static=346  third_party=17  forbidden_abort=0  unknown_abort=0
+GAP_JOB_STATUS_REQUEST_SENT_COUNT = 0   intercepted = 0
+UNKNOWN_APPLICATION_REQUEST_SENT_COUNT = 0
+WRITE_ACTIONS_SENT = 0
+CONFIRM_ACCEPTED_COUNT = 0   DIALOG_COUNT = 0   CDP_COMMAND_TIMEOUT_COUNT = 0   WATCHDOG_TRIPPED = NO

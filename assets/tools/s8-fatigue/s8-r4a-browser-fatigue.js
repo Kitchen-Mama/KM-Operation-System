@@ -345,7 +345,41 @@ function httpJson(url) {
     if (o && p.response) { o.rec.http = p.response.status; o.rec.mime = p.response.mimeType; }
     lastActivity = Date.now();
   });
-  c.on('Network.requestWillBeSent', function () { lastActivity = Date.now(); });
+  // S8-R4B-3 — OBSERVE THE REDIRECT THAT CAUSES THE BOUNCE.
+  //
+  // R4B-3 could establish the bounce's SHAPE from the R4A dataset (exec -> echo -> exec, one networkId, one
+  // km_rid, a new user_content_key per exec hop) but not its STATUS: the per-hop HTTP status and Location
+  // were never recorded, so "the echo hop redirects back to /exec" was an inference from the next hop's URL.
+  //
+  // `Network.requestWillBeSent.redirectResponse` carries the status and headers of the redirect that caused
+  // this request. It is pure observation and needs NO change to the interception stage: Fetch stays at
+  // 'Request', nothing is intercepted at 'Response', and the pre-network safety property is untouched. The
+  // header is reduced to a CLASS, never stored verbatim — a Location can carry a user_content_key, and a
+  // diagnostic has no business writing a token into a report.
+  var redirects = [];
+  function urlClassOf(u) {
+    u = String(u || '');
+    if (/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec/.test(u)) return 'EXEC';
+    if (/^https:\/\/script\.googleusercontent\.com\/macros\/echo/.test(u)) return 'ECHO';
+    if (/^https:\/\/script\.google/.test(u)) return 'GOOGLE_OTHER';
+    return 'OTHER';
+  }
+  c.on('Network.requestWillBeSent', function (p) {
+    lastActivity = Date.now();
+    var rr = p && p.redirectResponse;
+    if (!rr) return;
+    var loc = (rr.headers && (rr.headers.location || rr.headers.Location)) || '';
+    redirects.push({
+      nid: p.requestId || null, at: Date.now(),
+      surface: windowTag.surface, scenario: windowTag.scenario, cycle: windowTag.cycle,
+      from: urlClassOf(rr.url), to: urlClassOf(loc || p.request && p.request.url),
+      status: rr.status === undefined ? null : rr.status,
+      statusText: String(rr.statusText || '').slice(0, 40),
+      // Presence and class only. No token, no key, no full URL.
+      locationPresent: !!loc,
+      mime: String(rr.mimeType || '').slice(0, 60)
+    });
+  });
   c.on('Runtime.consoleAPICalled', function (p) {
     if (p.type === 'error') {
       var text = (p.args || []).map(function (a) { return String(a.value || a.description || ''); }).join(' ');
@@ -800,6 +834,8 @@ function httpJson(url) {
       CONFIRM_ACCEPTED_COUNT: dialogs.confirmAcceptedCount(),
       DIALOGS: dialogs.dialogs(),
       ABORTED_SURFACES: dialogs.abortedSurfaces(),
+      REDIRECT_HOPS_OBSERVED: redirects.length,
+      REDIRECT_HOPS: redirects,
       OPEN_MAP_EVICTION_COUNT: openMap.evictionCount(),
       OPEN_MAP_EVICTIONS: openMap.evictionList(),
       OPEN_MAP_STALE_BOUND_MS: openMap.staleMs,
