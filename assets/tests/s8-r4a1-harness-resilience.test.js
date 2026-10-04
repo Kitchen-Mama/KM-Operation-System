@@ -416,6 +416,92 @@ ok(RUN.indexOf('Fetch.enable') !== -1 && RUN.indexOf("requestStage: 'Request'") 
 ok(RUN.indexOf('fs.mkdtempSync(path.join(os.tmpdir()') !== -1, 'and the browser profile is still ephemeral');
 
 // ============================================================================================================
+section('I. S8-R4B-0 — ABANDONED READS LEAVE THE OPEN MAP, AND AN EVICTION IS NEVER A COMPLETION');
+// ============================================================================================================
+// The R4A matrix lost the stable time of 4 of 161 windows because scenario D's deliberate mid-flight
+// navigation left a read in the map that nothing could ever remove. The repair must remove it WITHOUT
+// inventing a duration for it and WITHOUT making a page look stable that is not.
+
+var envM = fakeEnv();
+var om = R.createOpenMap({ now: envM.now, staleMs: 90000 });
+var recA = { action: 'fcSummary.workspace.get', surface: 'FC Summary', scenario: 'A-cold', cycle: 0 };
+om.add('net-1', recA);
+eq(om.size(), 1, 'an intercepted read is tracked as open');
+eq(om.ids(), ['net-1'], 'by its network id');
+eq(om.actions(), ['fcSummary.workspace.get'], 'and the action is reportable while it is in flight');
+eq(om.add(null, {}), false, 'a request with no network id is NOT tracked — an untrackable entry could never be removed');
+eq(om.add('', {}), false, 'and neither is an empty one');
+eq(om.size(), 1, 'so the map is unchanged by either');
+
+// A REAL completion.
+envM.advance(8100);
+var doneRec = om.settle('net-1');
+eq(doneRec.ms, 8100, 'a settled read records its measured backend duration');
+eq(om.size(), 0, 'and leaves the map');
+eq(doneRec.abandoned, undefined, 'a settled read is NOT marked abandoned');
+eq(om.evictionCount(), 0, 'and no eviction is recorded for it');
+eq(om.settle('net-1'), null, 'settling it twice is a no-op, so a duration cannot be overwritten');
+
+// AN EVICTION.
+var envN = fakeEnv();
+var om2 = R.createOpenMap({ now: envN.now, staleMs: 90000 });
+var recB = { action: 'shipment.workspace.get', surface: 'Shipment Overview', scenario: 'D-burst', cycle: 1 };
+om2.add('net-2', recB);
+envN.advance(5000);
+var ev = om2.evict('net-2', 'DOCUMENT_REPLACED');
+eq(recB.ms, undefined, 'AN EVICTED READ NEVER GAINS AN `ms` — BACKEND_DURATION_MUTATED = NO');
+eq(recB.http, undefined, 'and never gains an http status');
+eq(recB.abandoned, 'DOCUMENT_REPLACED', 'it is marked abandoned, with the reason');
+eq(recB.abandoned_after_ms, 5000, 'and how long it had been open — a field that cannot be mistaken for a duration');
+eq(om2.size(), 0, 'it leaves the map, so it can no longer block stability');
+eq(om2.evictionCount(), 1, 'the eviction is RECORDED, never silent');
+eq([ev.action, ev.surface, ev.scenario, ev.why], ['shipment.workspace.get', 'Shipment Overview', 'D-burst', 'DOCUMENT_REPLACED'],
+   'with the action, surface, scenario and reason — enough to attribute it afterwards');
+eq(om2.settle('net-2'), null, 'AND IT CANNOT BE RESURRECTED — a late settle on an evicted id does nothing');
+eq(recB.ms, undefined, 'so a late event still cannot give it a duration');
+
+// evictAll — the navigation case, which is the defect that was observed.
+var envO = fakeEnv();
+var om3 = R.createOpenMap({ now: envO.now, staleMs: 90000 });
+om3.add('n1', { action: 'a' }); om3.add('n2', { action: 'b' }); om3.add('n3', { action: 'c' });
+envO.advance(1200);
+var all = om3.evictAll('DOCUMENT_REPLACED');
+eq(all.length, 3, 'a navigation evicts every open entry');
+eq(om3.size(), 0, 'the map is empty afterwards — this is the four-window defect, removed');
+eq(om3.evictionList().map(function (e) { return e.why; }), ['DOCUMENT_REPLACED', 'DOCUMENT_REPLACED', 'DOCUMENT_REPLACED'],
+   'and all three are recorded');
+
+// evictStale — the in-document case.
+var envP = fakeEnv();
+var om4 = R.createOpenMap({ now: envP.now, staleMs: 90000 });
+om4.add('fresh', { action: 'live' });
+envP.advance(89999);
+eq(om4.evictStale().length, 0, 'a read still inside the bound is NOT evicted');
+eq(om4.size(), 1, 'it stays open, because it can still answer');
+envP.advance(2);
+eq(om4.evictStale().length, 1, 'past the bound it is evicted');
+eq(om4.evictionList()[0].why, 'STALE_BEYOND_CLIENT_BOUND', 'with the reason that justifies it');
+eq(om4.size(), 0, 'and the map is clear');
+
+eq(R.CLIENT_READ_BOUND_MS, 45000, 'the bound is derived from the application, not chosen: KM_READ_TIMEOUT_MS_');
+eq(R.STALE_OPEN_MS, 90000, 'and the stale bound is TWICE it');
+ok(R.STALE_OPEN_MS > R.CLIENT_READ_BOUND_MS,
+   'FALSE_STABILITY_POSSIBLE = NO rests on this: past twice its own abort bound the application has ' +
+   'provably stopped listening, so an evicted response can no longer mutate the page');
+
+// Wiring.
+ok(RUN.indexOf('R.createOpenMap(') !== -1, 'the runner uses the module map rather than a second inline one');
+ok(!/(?<![\w.])open\[/.test(RUN), 'and no bare open[...] access survives in the runner');
+ok(RUN.indexOf("openMap.evictAll('DOCUMENT_REPLACED')") !== -1, 'a navigation evicts in the runner');
+ok(RUN.indexOf('openMap.evictAll') > RUN.indexOf("await c.send('Page.navigate'"),
+   'and it happens AFTER Page.navigate, not before, so it clears the document that is actually gone');
+ok(RUN.indexOf('openMap.evictStale()') !== -1, 'the measurement loop ages out abandoned reads');
+ok(RUN.indexOf('open_map_evictions: openMap.evictionCount() - evi0') !== -1,
+   'and every window records how many evictions happened inside it, so a contaminated measurement is identifiable');
+ok(RSRC.indexOf('o.rec.ms = clock() - o.t0;') !== -1 && RSRC.split('o.rec.ms =').length === 2,
+   'ms is written in EXACTLY ONE place in the module — settle() — and nowhere else');
+
+// ============================================================================================================
 section('MUTANTS');
 // ============================================================================================================
 
@@ -573,6 +659,59 @@ mut('progress stops resetting the idle clock, so an advancing run is killed', R_
     var w = m.createWatchdog({ thresholdMs: 300000, now: e.now, setTimer: e.setTimer, clearTimer: e.clearTimer });
     e.advance(200000); w.progress('a'); e.advance(200000);
     return w.check() !== null;
+  });
+
+// ---- S8-R4B-0 ----------------------------------------------------------------------------------------------
+mut('an eviction writes ms, inventing a backend duration for a read that never answered', R_F,
+  "      o.rec.abandoned = why;\n      o.rec.abandoned_after_ms = openMs;     // deliberately NOT `ms`",
+  "      o.rec.abandoned = why;\n      o.rec.ms = openMs;",
+  async function (m) {
+    var e = fakeEnv(), g = m.createOpenMap({ now: e.now, staleMs: 90000 });
+    var r = { action: 'x' }; g.add('n', r); e.advance(1000); g.evict('n', 'DOCUMENT_REPLACED');
+    return r.ms !== undefined;
+  });
+
+mut('a navigation leaves the entries in the map — the original four-window defect', R_F,
+  "      return Object.keys(open).map(function (k) { return evict(k, why); }).filter(Boolean);",
+  "      return [];",
+  async function (m) {
+    var e = fakeEnv(), g = m.createOpenMap({ now: e.now, staleMs: 90000 });
+    g.add('n', { action: 'x' }); g.evictAll('DOCUMENT_REPLACED');
+    return g.size() !== 0;
+  });
+
+mut('the stale bound drops to zero, so a live in-flight read is evicted and the page can look stable early', R_F,
+  '  var STALE_OPEN_MS = CLIENT_READ_BOUND_MS * 2;', '  var STALE_OPEN_MS = 0;',
+  async function (m) {
+    var e = fakeEnv(), g = m.createOpenMap({ now: e.now });   // takes the module default
+    g.add('n', { action: 'x' });
+    return g.evictStale().length > 0;                          // evicted with 0 ms elapsed
+  });
+
+mut('an evicted id can be resurrected by a late settle, giving it a duration after all', R_F,
+  '    function settle(id) {\n      var o = open[id];\n      if (!o) { return null; }',
+  '    function settle(id) {\n      var o = open[id] || { rec: {}, t0: clock() };',
+  async function (m) {
+    var e = fakeEnv(), g = m.createOpenMap({ now: e.now, staleMs: 90000 });
+    g.add('n', { action: 'x' }); g.evict('n', 'DOCUMENT_REPLACED');
+    return g.settle('n') !== null;
+  });
+
+mut('evictions stop being recorded, so a forgiven request becomes invisible', R_F,
+  '      evictions.push(ev);', '      void ev;',
+  async function (m) {
+    var e = fakeEnv(), g = m.createOpenMap({ now: e.now, staleMs: 90000 });
+    g.add('n', { action: 'x' }); g.evict('n', 'DOCUMENT_REPLACED');
+    return g.evictionCount() === 0;
+  });
+
+mut('a request with no network id is tracked anyway, creating an entry nothing can ever remove', R_F,
+  "      if (id === null || id === undefined || id === '') { return false; }",
+  "      if (false) { return false; }",
+  async function (m) {
+    var e = fakeEnv(), g = m.createOpenMap({ now: e.now, staleMs: 90000 });
+    g.add(null, { action: 'x' });
+    return g.size() > 0;
   });
 
 await runMutants();

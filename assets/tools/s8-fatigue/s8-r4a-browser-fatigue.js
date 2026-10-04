@@ -242,7 +242,14 @@ function httpJson(url) {
 
   // ---- instrumentation state --------------------------------------------------------------------------------
   var ledger = G.newLedger();
-  var open = {};              // requestId -> { action, t0 }
+  // S8-R4B-0 — the open-request map lives in the resilience module so its eviction rules can be driven
+  // by a test with an injected clock. See that module for why an eviction is never a completion.
+  var openMap = R.createOpenMap({ onEvict: function (ev) {
+    // Every eviction is announced. A silently forgiven request is how the first defect survived a whole
+    // matrix: the run simply stopped being able to call anything stable and never said why.
+    log('  !! OPEN_MAP_EVICTION ' + ev.why + '  ' + (ev.action || '(no action)') +
+        '  open ' + ev.openMs + 'ms  from ' + ev.scenario + '/' + ev.surface);
+  } });
   var events = [];            // every request, with the window it belonged to
   var consoleErrors = [];
   var lastActivity = Date.now();
@@ -301,7 +308,7 @@ function httpJson(url) {
       cls: d.cls, allow: d.allow, code: d.code, action: d.action, method: req.method,
       url: String(req.url).slice(0, 900), bodyKey: bodyKeyOf(req.url, req.postData), nid: p.networkId || null };
     events.push(rec);
-    if (d.cls === G.CLASS.APPROVED_READ && p.networkId) open[p.networkId] = { rec: rec, t0: Date.now() };
+    if (d.cls === G.CLASS.APPROVED_READ && p.networkId) openMap.add(p.networkId, rec);
 
     // emit, not send: the measurement never reads the reply to a continue/abort, and registering a command
     // whose result is discarded would leave one pending entry per intercepted request, each of which could
@@ -311,20 +318,30 @@ function httpJson(url) {
   });
 
   function settleFrom(id) {
-    var o = open[id];
-    if (!o) return;
-    o.rec.ms = Date.now() - o.t0;
-    delete open[id];
+    if (!openMap.settle(id)) return;
     lastActivity = Date.now();
   }
+
+  // ---- S8-R4B-0 — ABANDONED READS LEAVE THE OPEN MAP ---------------------------------------------------------
+  //
+  // THE DEFECT. `open` was written on Fetch.requestPaused and deleted only by settleFrom. Scenario D's rapid
+  // burst navigates away mid-flight BY DESIGN; a read the renderer drops without a matching
+  // Network.loadingFinished or loadingFailed stayed in the map forever, and the stability predicate
+  // `stillOpen.length === 0` could never be true again. Four of 161 windows reported a null stable time.
+  //
+  // AN EVICTION IS NOT A COMPLETION, and the whole correctness of this rests on that distinction. `ms` is the
+  // measured backend duration and is written ONLY by settleFrom, from a real Network event. Writing it here
+  // would invent a duration for a request that never answered, and that invented number would then flow into
+  // every median in the report. An evicted record carries `abandoned` and `abandoned_after_ms` instead —
+  // named so they cannot be read as a duration — and never gains an `ms`, an `http` or a success.
   c.on('Network.loadingFinished', function (p) { settleFrom(p.requestId); lastActivity = Date.now(); });
   c.on('Network.loadingFailed', function (p) {
-    var o = open[p.requestId];
+    var o = openMap.get(p.requestId);
     if (o) { o.rec.failed = String(p.errorText || 'failed'); }
     settleFrom(p.requestId); lastActivity = Date.now();
   });
   c.on('Network.responseReceived', function (p) {
-    var o = open[p.requestId];
+    var o = openMap.get(p.requestId);
     if (o && p.response) { o.rec.http = p.response.status; o.rec.mime = p.response.mimeType; }
     lastActivity = Date.now();
   });
@@ -445,6 +462,7 @@ function httpJson(url) {
     windowTag = { surface: S.name, scenario: scenario, cycle: cycle };
     abortSurface = null;
     var tmo0 = cdpTimeouts.length;
+    var evi0 = openMap.evictionCount();
     var mark = events.length;
     var t0 = Date.now();
     lastActivity = t0;
@@ -460,16 +478,20 @@ function httpJson(url) {
       // spend the remaining budget learning nothing.
       if (abortSurface) { ended = 'DIALOG_ABORT'; break; }
       if (cdpTimeouts.length - tmo0 >= 2) { ended = 'CDP_TIMEOUT'; break; }
+      // Age out reads the application itself has already abandoned. This can only REMOVE a blocker on
+      // `stillOpen.length === 0`; the quiet-network and quiet-DOM conditions below are untouched, so an
+      // eviction cannot by itself make a page look stable.
+      openMap.evictStale();
       st = await sectionState(S.sectionId);
       if (firstContentMs === null && st && st.present && st.active) firstContentMs = Date.now() - t0;
       var quietNet = Date.now() - lastActivity;
       // No mutation at all is maximally quiet, not zero quiet. The old default was the second, which is how a
       // page that had finished rendering could never be called stable.
       var quietDom = (st && st.lastMut) ? (Date.now() - st.lastMut) : (Date.now() - t0);
-      var stillOpen = Object.keys(open);
+      var stillOpen = openMap.ids();
       // A TIMEOUT must say which condition never came true, or the next person debugging it repeats this run.
       why = { firstContent: firstContentMs !== null, openRequests: stillOpen.length,
-              openActions: stillOpen.map(function (k) { return open[k].rec.action; }),
+              openActions: openMap.actions(),
               quietNet: quietNet, quietDom: quietDom };
       if (firstContentMs !== null && stillOpen.length === 0 && quietNet >= SETTLE_MS && quietDom >= SETTLE_MS) {
         stableMs = Date.now() - t0;
@@ -506,6 +528,10 @@ function httpJson(url) {
       ended: ended,
       dialog_abort: abortSurface ? { type: abortSurface.type, message: abortSurface.message } : null,
       cdp_timeouts: cdpTimeouts.length - tmo0,
+      // Recorded per window so a measurement taken while a read was abandoned is identifiable afterwards,
+      // rather than silently indistinguishable from a clean one.
+      open_map_evictions: openMap.evictionCount() - evi0,
+      evicted: openMap.evictionList().slice(evi0).map(function (e) { return e.why + ':' + (e.action || '?'); }),
       stall_reason: stableMs === null ? why : null,
       REQUEST_COUNT_TOTAL: mine.length,
       APPLICATION_READ_REQUEST_COUNT: appReads.length,
@@ -553,6 +579,7 @@ function httpJson(url) {
              CONFIRM_ACCEPTED_COUNT: dialogs.confirmAcceptedCount(),
              DIALOG_COUNT: dialogs.count(),
              CDP_COMMAND_TIMEOUT_COUNT: cdpTimeouts.length,
+             OPEN_MAP_EVICTION_COUNT: openMap.evictionCount(),
              EPHEMERAL_PROFILE_ONLY: true, ledger: ledger };
   }
 
@@ -563,7 +590,7 @@ function httpJson(url) {
   function onWatchdogTrip(dump) {
     try { dump.windowTag = windowTag; } catch (e) {}
     try { dump.pendingCdpCommands = c.registry.snapshot(); } catch (e) { dump.pendingCdpCommands = 'unavailable'; }
-    try { dump.openRequests = Object.keys(open).map(function (k) { return open[k].rec.action; }); } catch (e) { dump.openRequests = 'unavailable'; }
+    try { dump.openRequests = openMap.actions(); } catch (e) { dump.openRequests = 'unavailable'; }
     try { dump.dialogs = dialogs.dialogs().slice(-5); } catch (e) { dump.dialogs = 'unavailable'; }
     try { dump.cdpTimeouts = cdpTimeouts.slice(-5); } catch (e) { dump.cdpTimeouts = 'unavailable'; }
     try { dump.completedWindows = samples.length; } catch (e) { dump.completedWindows = 0; }
@@ -600,6 +627,9 @@ function httpJson(url) {
   // entirely the harness's — which is the most expensive kind of wrong measurement.
   async function hardReload() {
     await c.send('Page.navigate', { url: origin + '/index.html' });
+    // The old document is gone and so is any read it had in flight. Entries left here would otherwise block
+    // the stability predicate for the rest of the run — which is exactly what happened to scenario E.
+    openMap.evictAll('DOCUMENT_REPLACED');
     var t0 = Date.now(), ready = false;
     while (Date.now() - t0 < 60000) {
       await sleep(200);
@@ -612,7 +642,7 @@ function httpJson(url) {
     var q0 = Date.now();
     while (Date.now() - q0 < 15000) {
       await sleep(250);
-      if (Object.keys(open).length === 0 && Date.now() - lastActivity > 1500) break;
+      if (openMap.size() === 0 && Date.now() - lastActivity > 1500) break;
     }
   }
 
@@ -770,6 +800,9 @@ function httpJson(url) {
       CONFIRM_ACCEPTED_COUNT: dialogs.confirmAcceptedCount(),
       DIALOGS: dialogs.dialogs(),
       ABORTED_SURFACES: dialogs.abortedSurfaces(),
+      OPEN_MAP_EVICTION_COUNT: openMap.evictionCount(),
+      OPEN_MAP_EVICTIONS: openMap.evictionList(),
+      OPEN_MAP_STALE_BOUND_MS: openMap.staleMs,
       CHECKPOINT_WRITES: ckpt.writeCount(),
       CHECKPOINTED_WINDOWS: ckpt.count()
     },

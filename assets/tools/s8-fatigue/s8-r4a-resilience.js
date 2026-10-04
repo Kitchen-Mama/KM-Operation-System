@@ -338,8 +338,93 @@
              lastProgress: function () { return lastLabel; } };
   }
 
+  // =========================================================================================================
+  // §R4B-0 — the open-request map, and why an eviction is not a completion
+  //
+  // THE DEFECT. The map was written on Fetch.requestPaused and deleted only on a matching Network settle
+  // event. Scenario D's rapid burst navigates away mid-flight BY DESIGN; a read the renderer dropped without
+  // a matching loadingFinished or loadingFailed stayed in the map forever, and the stability predicate
+  // `openCount === 0` could never be true again. Four of 161 windows lost their stable time to it.
+  //
+  // THE WHOLE CORRECTNESS OF THE REPAIR IS ONE DISTINCTION. `ms` is the measured backend duration and is
+  // written ONLY by settle(), from a real Network event. An eviction writes `abandoned` and
+  // `abandoned_after_ms` — named so they cannot be read as a duration — and never writes `ms`, `http` or a
+  // success. Inventing a duration for a request that never answered would put that invented number into
+  // every median in the report, which is a worse defect than the one being fixed.
+  //
+  // AND EVICTION CANNOT MANUFACTURE STABILITY. It removes one blocker, `openCount === 0`. The quiet-network
+  // and quiet-DOM conditions are untouched and still have to be satisfied on their own. The two eviction
+  // reasons are each sound for a different reason: a replaced document cannot receive a response at all,
+  // and a request older than twice the application's own abort bound has provably stopped being listened to.
+  // =========================================================================================================
+  var CLIENT_READ_BOUND_MS = 45000;      // operation-system-db-api.js — KM_READ_TIMEOUT_MS_
+  var STALE_OPEN_MS = CLIENT_READ_BOUND_MS * 2;
+
+  function createOpenMap(opts) {
+    opts = opts || {};
+    var clock = opts.now || now;
+    var staleMs = opts.staleMs || STALE_OPEN_MS;
+    var onEvict = opts.onEvict || function () {};
+    var open = Object.create(null);
+    var evictions = [];
+
+    function add(id, rec) {
+      if (id === null || id === undefined || id === '') { return false; }
+      open[id] = { rec: rec || {}, t0: clock() };
+      return true;
+    }
+
+    // A REAL completion, from a Network event. The only writer of `ms`.
+    function settle(id) {
+      var o = open[id];
+      if (!o) { return null; }
+      o.rec.ms = clock() - o.t0;
+      delete open[id];
+      return o.rec;
+    }
+
+    function evict(id, why) {
+      var o = open[id];
+      if (!o) { return null; }
+      delete open[id];
+      var openMs = clock() - o.t0;
+      o.rec.abandoned = why;
+      o.rec.abandoned_after_ms = openMs;     // deliberately NOT `ms`
+      var ev = { nid: id, action: o.rec.action || null, surface: o.rec.surface || null,
+                 scenario: o.rec.scenario || null, cycle: o.rec.cycle === undefined ? null : o.rec.cycle,
+                 openMs: openMs, why: why, at: clock() };
+      evictions.push(ev);
+      try { onEvict(ev); } catch (e) {}
+      return ev;
+    }
+
+    function evictAll(why) {
+      return Object.keys(open).map(function (k) { return evict(k, why); }).filter(Boolean);
+    }
+    function evictStale() {
+      var t = clock();
+      return Object.keys(open).map(function (k) {
+        return (t - open[k].t0 >= staleMs) ? evict(k, 'STALE_BEYOND_CLIENT_BOUND') : null;
+      }).filter(Boolean);
+    }
+
+    function get(id) { return open[id] || null; }
+    function ids() { return Object.keys(open); }
+    function actions() { return Object.keys(open).map(function (k) { return open[k].rec.action; }); }
+
+    return { add: add, settle: settle, evict: evict, evictAll: evictAll, evictStale: evictStale,
+             get: get, ids: ids, actions: actions,
+             staleMs: staleMs,
+             size: function () { return Object.keys(open).length; },
+             evictionCount: function () { return evictions.length; },
+             evictionList: function () { return evictions.slice(); } };
+  }
+
   return {
     ROUND: ROUND,
+    CLIENT_READ_BOUND_MS: CLIENT_READ_BOUND_MS,
+    STALE_OPEN_MS: STALE_OPEN_MS,
+    createOpenMap: createOpenMap,
     CDP_COMMAND_TIMEOUT_MS: CDP_COMMAND_TIMEOUT_MS,
     WATCHDOG_THRESHOLD_MS: WATCHDOG_THRESHOLD_MS,
     DIALOG_TYPES: DIALOG_TYPES,
