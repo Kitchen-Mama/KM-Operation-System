@@ -875,7 +875,25 @@ var ROUND_TOKENS = [
   // PHASE-1 CUMULATIVE RELEASE. The deployed site is 74aca0b; every token above it, including the one on
   // the line before this, has never been served. This is the token the whole unshipped frontend ships
   // under, so a browser cannot hold one file from the deployed release and one from this one.
-  'p1-cumulative-20261002'];
+  'p1-cumulative-20261002',
+  // S8-R4B-2B + S8-R4B-2D — THE SITE INVENTORY TWO-LAYER READ. p1-cumulative-20261002 is on origin/main
+  // (8856aeb was pushed), so by the rule this list states four rounds running its bytes have reached a
+  // browser and it cannot be reused.
+  //
+  // FOUR FILES MOVE AND THEY ARE ONE CHANGE. inventory-replenishment.js splits the nineteen-table read into
+  // a 13-table first layer and a lazily-loaded 6-table exposure layer and sends the active site with it;
+  // inventory-compat.js gains the fifth readiness input that keeps NOT_LOADED out of the empty states;
+  // km-api-foundation.js whitelists siteScope, without which the field never reaches Apps Script at all;
+  // and the Site Inventory stylesheet carries the six rules the new states need (its own family rotates
+  // with it, below).
+  //
+  // A HALF-UPDATED BROWSER IS THE REASON THIS IS NOT COSMETIC, and this round has two distinct halves.
+  // Holding the OLD page against the new index keeps the nineteen-sheet read: the entire architecture ships
+  // to nobody who already uses the app, while every measurement taken afterwards says it shipped. Holding
+  // the old km-api-foundation.js against the new page is worse and is specific to R4B-2D - the page sends a
+  // siteScope the DTO whitelist silently discards, so the request becomes the all-site read it was before
+  // and nothing on screen says so.
+  's8r4c-lazyexposure-20261004'];
 
 // The newest entry is the current APPLICATION token, by construction rather than by restatement - the same
 // treatment currentMapToken() already gives the map series, and for the same reason. Four suites had pinned the
@@ -1096,7 +1114,15 @@ var IR_CSS_TOKEN_SERIES = [
   // R6-R6: the reconciliation strip stops wrapping and loses its box and its full-width note; the flag that
   // replaces the note is a NEW rule. A cached six-rule copy renders the compact markup with no flag styling
   // and with the old wrapping box, which is the paragraph's footprint without the paragraph's content.
-  'ircompactrecon-20260905'
+  'ircompactrecon-20260905',
+  // S8-R4B-2B — the lazy-exposure states. SIX rules are NEW: .replen-card__value--pending,
+  // .replen-card__note, .replen-card__row--error, .replen-card__row--meta, .ir-exposure-retry and
+  // .ir-exposure-refresh. A browser serving the cached stylesheet has ZERO rules for every one of them, so
+  // the pending ellipsis renders as unstyled body text beside real quantities, the failure row loses its
+  // alert framing, and Retry/Refresh render as default browser buttons inside a data card. The STATES
+  // would still be correct and would look like a bug - which is the exact shape of the
+  // .replen-ai-plan-result defect two entries above, and the reason this family exists at all.
+  'irlazyexposure-20261004'
 ];
 // F1-7N-FC-1B-E3-R4-A1 — method-registry.js HAS ITS OWN TOKEN FAMILY, AND IT HAD NO LEDGER.
 //

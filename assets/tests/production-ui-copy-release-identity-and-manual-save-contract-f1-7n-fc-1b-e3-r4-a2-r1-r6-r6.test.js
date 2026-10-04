@@ -312,7 +312,23 @@ eq((tracks.match(/TRACK/g) || []).length + (tracks.match(/\b\d+px\b/g) || []).le
 eq((PAGE.match(/<span>From<\/span><span>To<\/span>[\s\S]{0,200}?<span>Action<\/span>/g) || []).length, 1,
   'C7a and the header still names seven columns in one row');
 ok(/<span>Last Mile<\/span>/.test(PAGE), 'C7b including Last Mile, which R6-R4 added');
-eq(RO.currentIrCssToken(), 'ircompactrecon-20260905', 'C8  the stylesheet rotated with its own family');
+// S8-R4C-P1 — C8 WAS EQUALITY WITH NOW, which is the one defect _release-order.js was built to end and
+// which it documents at length for the application and map series. Pinning currentIrCssToken() to a LITERAL
+// says "R6-R6 rotated the stylesheet", but what it ENFORCES is "no later round may rotate it" - and the IR
+// CSS family exists precisely so that later rounds can. S8-R4B-2B added six new rules and minted
+// irlazyexposure-20261004, so the literal failed while describing a correct tree.
+//
+// What C8 is FOR is answerable from the series without a literal: the stylesheet's token is a member of the
+// IR CSS FAMILY (not the application one, which is the confusion this family was split out to prevent), and
+// it is at or after the token R6-R6 itself minted. Both halves still fail if the family is skipped.
+var _irTok = RO.currentIrCssToken();
+ok(RO.isIrCssToken(_irTok), 'C8  the stylesheet is on its OWN token family, not the application series', _irTok);
+ok(RO.irCssTokenAtOrAfter(_irTok, 'ircompactrecon-20260905'),
+  'C8a and at or after ircompactrecon-20260905 — the token THIS round minted, which is the durable half of '
+  + 'the claim the literal was making', _irTok);
+// The served reference is the thing that actually reaches a browser, so it is asserted rather than implied.
+eq((/inventory-replenishment\.css\?v=([^"]+)/.exec(read('index.html')) || [])[1], _irTok,
+  'C8b and index.html serves the stylesheet on exactly that token');
 ok(INDEX.indexOf('inventory-replenishment.css?v=' + RO.currentIrCssToken()) !== -1,
   'C8a and index.html serves the current member');
 eq(RO.staleAppTokenRefs(INDEX), [], 'C9  no application asset is left behind on an older token');

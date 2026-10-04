@@ -222,6 +222,10 @@ CURRENT_APPLICATION_TOKEN = p1-cumulative-20261002
 CURRENT_IR_CSS_TOKEN      = ircompactrecon-20260905
 ```
 
+> **CLOSED BY S8-R4C-P1.** The paragraph above records what was true of THIS round and is left as written.
+> The rotation was performed in the next round — `s8r4c-lazyexposure-20261004` and `irlazyexposure-20261004`
+> — see `S8_R4C_P1_RELEASE_FREEZE.md`. The half-update analysis below is what that round acted on.
+
 Three frontend files change in this round and they sit under two token series. Rotation is deferred to
 **S8-R4C-P1 by instruction (§22)**, because R4C publication must use the *final* runtime bytes — rotating now
 would spend two tokens that cannot be reused if anything moves again.
