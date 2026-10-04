@@ -181,7 +181,10 @@ console.log('\n=== §B  THE SURFACE THAT SITS BEHIND IT, COUNTED FROM THE ROUTER
   // already present in a table the read surface served before this round, and the upsert refuses anything
   // that would make the planner's lane resolution ambiguous. S9 owns closing this surface; S7 does not.
   eq(s.all.length, 143, 'B1 143 actions are routed — the whole anonymous surface');
-  eq(s.readTable.length, 24, 'B2 24 of them on the GET read table');
+  // S8-R4B-1 — 24 -> 25. factoryStockGuard.get moved off the write transport onto the GET read table; it
+  // was already one of the 143 routed actions, so B1 and B3 are unchanged (it keeps its POST route, as
+  // every other GET-routed read does). The count stays PINNED: a census that derives itself notices nothing.
+  eq(s.readTable.length, 25, 'B2 25 of them on the GET read table');
   eq(s.post.length, 141, 'B3 141 dispatched by doPost');
   eq(s.mutations.length, 78, 'B4 and 78 are unambiguous MUTATIONS, every one reachable without identity');
   ok(s.mutations.indexOf('pricing.update') !== -1,
