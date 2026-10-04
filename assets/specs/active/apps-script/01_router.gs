@@ -45,7 +45,7 @@
 // it to keep a gate green is the exact fault the manifest exists to report, and it had made this stamp say
 // R27 about a file whose bytes have not moved since R25. The gate that forced the march has been repaired
 // to ask whether the file changed rather than to require that it always carries the release.
-var RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R39';
+var RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R40';
 
 // =============================================================================================================
 // F1-7N-FB-4E-R4A1 §3 — READ ACTIONS ARE SERVED ON GET, AND THIS IS WHY.
@@ -118,7 +118,13 @@ function rtrGetReadHandlers_() {
     'system.requestOrderSendReconcile':            handleRequestOrderSendReconcile_,
     'system.allocationDraftIdentityDiagnostic':    handleAllocationDraftIdentityDiagnostic_,
     // Config read (Script Properties; the UPDATE twin stays POST-only and is deliberately absent here)
-    'automationSchedule.get':                      handleAutomationScheduleGet_
+    'automationSchedule.get':                      handleAutomationScheduleGet_,
+    // S8-R4B-1 — the Weekly Shipping Plan factory-availability indicator. It was the one approved read in
+    // the system that travelled on POST, and a POST cannot survive the /exec 302: the redirect is re-issued
+    // as a GET with the body dropped, which is the failure R3B reproduced twice in nine attempts. The
+    // handler was never the problem and does not change — its reachable graph holds no write primitive at
+    // any depth. Only the way it is reached does.
+    'factoryStockGuard.get':                       handleFactoryStockGuardGet_
   };
 }
 

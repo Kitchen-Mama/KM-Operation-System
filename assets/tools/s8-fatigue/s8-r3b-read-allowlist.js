@@ -57,10 +57,11 @@
   // ---------------------------------------------------------------------------------------------------------
   // THE APPROVED SET — eleven actions, each one named in the S8-R3A preflight §2 surface audit.
   //
-  // `verb` is the verb the SHIPPED CLIENT uses, not a verb chosen here. Ten reads are on the router's GET read
-  // table and the client sends them as GET. factoryStockGuard.get is in the POST if-chain and the client sends
-  // it through _kmWeeklyCommand_ (a POST); its HANDLER is read-only and returns zero_write:true (71_:266-280),
-  // which is why it is a read in this round despite travelling on the write verb.
+  // `verb` is the verb the SHIPPED CLIENT uses, not a verb chosen here. S8-R4B-1 made that uniform: all
+  // ELEVEN are now on the router's GET read table and the client sends every one of them as GET.
+  // factoryStockGuard.get used to be the exception — POST, through _kmWeeklyCommand_ — although its handler
+  // is read-only and returns zero_write:true. A POST cannot survive the /exec 302 (the redirect is re-issued
+  // as a GET with the body dropped), which is the failure R3B reproduced twice in nine attempts.
   // ---------------------------------------------------------------------------------------------------------
   var APPROVED = {
     'fcSummary.workspace.get': {
@@ -156,9 +157,18 @@
         return { scope: { company: sc.company, country: sc.country, marketplace: sc.marketplace } };
       }
     },
+    // S8-R4B-1 — moved from POST/command to GET/gapReadFlat. It was the one approved read travelling on the
+    // write verb; the exception is gone. R4A also corrected the surface: Factory Inventory never calls this
+    // action, the Weekly Shipping Plan draft-card indicator is its only caller.
     'factoryStockGuard.get': {
-      surface: 'Factory Inventory / Weekly Shipping Plan guard indicator', surfaceNo: 4, owner: '71_', verb: 'POST', envelope: 'command',
-      build: function () { return {}; }
+      surface: 'Weekly Shipping Plan guard indicator', surfaceNo: 4, owner: '71_', verb: 'GET', envelope: 'gapReadFlat',
+      // The shipped caller always passes a shipping_plan_id, and the id is what selects the PLAN branch
+      // (fsgEvaluatePlanOverage_) over the no-plan branch. Carrying it here is what lets the fixture model
+      // the request the product actually makes rather than a degenerate one.
+      build: function (ctx) {
+        var id = (ctx && ctx.shipping_plan_id) || null;
+        return id ? { shipping_plan_id: id } : {};
+      }
     }
   };
 
@@ -302,6 +312,12 @@
     if (spec.envelope === 'gapRead') {
       // operation-system-db-api.js _kmGapRead_: dto = Object.assign({action}, {payload:{...}}) + requestId.
       return { action: action, payload: payload, requestId: requestId };
+    }
+    if (spec.envelope === 'gapReadFlat') {
+      // The SAME dispatcher, called WITHOUT the payload wrapper — _kmGapRead_(action, payload) rather than
+      // _kmGapRead_(action, {payload}). Its handler reads the fields at the top level of the body, so the
+      // two shapes are not interchangeable: wrapping would put them where the handler never looks.
+      return Object.assign({ action: action }, payload, { requestId: requestId });
     }
     // _kmWeeklyCommand_: body = Object.assign({action}, payload). No apiVersion, no context, no requestId field.
     return Object.assign({ action: action }, payload);

@@ -55,19 +55,46 @@ function eq(a, e, l) {
 function section(n) { console.log('\n== ' + n + ' =='); }
 
 var MODCACHE = {};
+// S8-R4B-1 — A MISSING ANCHOR IS A HARNESS FAILURE, NOT A CAUGHT MUTANT.
+//
+// It used to be both, and that is worse than either. `mut()` wrapped everything in
+// `catch (e) { caught = true; }`, so when a refactor deleted the text a mutation was anchored on,
+// loadMutated threw "anchor not found", the catch recorded CAUGHT, and the suite printed
+// "ok MUTANT CAUGHT" for a mutation that had never been applied to anything. Coverage could evaporate
+// while the scoreboard stayed green — which is exactly what this round's verb change would have done to
+// the two mutants anchored on `verb: 'POST'` and `envelope: 'command'`.
+//
+// A missing anchor is now its own typed error, counted and reported as a FAILURE. The ordinary catch is
+// kept for the probe, because a mutant that makes the module throw IS legitimately caught.
+function MutationAnchorMissing(rel, from) {
+  var e = new Error('MUTATION ANCHOR NOT FOUND in ' + rel + ': ' + JSON.stringify(from.slice(0, 90)));
+  e.anchorMissing = true;
+  return e;
+}
 function loadMutated(rel, from, to) {
   var src = MODCACHE[rel] || (MODCACHE[rel] = read(rel));
-  if (src.indexOf(from) === -1) throw new Error('mutation anchor not found in ' + rel + ': ' + from);
+  if (src.indexOf(from) === -1) throw MutationAnchorMissing(rel, from);
   var mod = { exports: {} };
   new Function('module', 'exports', 'require', src.replace(from, to))(mod, mod.exports, function () {
     throw new Error('the allowlist must not require anything');
   });
   return mod.exports;
 }
+var anchorsMissing = 0;
 function mut(label, rel, from, to, probe) {
   mutants++;
-  var caught = false;
-  try { caught = probe(loadMutated(rel, from, to)) === true; } catch (e) { caught = true; }
+  var caught = false, m;
+  try { m = loadMutated(rel, from, to); }
+  catch (e) {
+    if (e && e.anchorMissing) {
+      anchorsMissing++; survived++; fail++;
+      console.error('FAIL MUTANT NOT APPLIED — ' + label + '\n  ' + e.message);
+      return;
+    }
+    // The module refused to load under the mutation — a real catch.
+    pass++; console.log('ok   MUTANT CAUGHT — ' + label); return;
+  }
+  try { caught = probe(m) === true; } catch (e2) { caught = true; }
   if (caught) { pass++; console.log('ok   MUTANT CAUGHT — ' + label); }
   else { survived++; fail++; console.error('FAIL MUTANT SURVIVED — ' + label); }
 }
@@ -115,8 +142,13 @@ ACTIONS.forEach(function (a) {
   if (spec.verb === 'GET') ok(onGet, 'A4  ' + a + ' is on the router GET read table');
   else ok(!onGet && ROUTER.indexOf("action === '" + a + "'") !== -1, 'A4  ' + a + ' is dispatched from the POST chain');
 });
-ok(AL.APPROVED['factoryStockGuard.get'].verb === 'POST',
-  'A5  factoryStockGuard.get is the ONE approved read that travels on POST');
+// S8-R4B-1 — A5 RE-AIMED, NOT RELAXED. It used to record an exception: one approved read travelling on the
+// write verb. The exception is gone, so the assertion now states the stronger property the repair created —
+// EVERY approved read is a GET, and there is no POST-dispatched read left to make an exception for.
+ok(AL.APPROVED['factoryStockGuard.get'].verb === 'GET',
+  'A5  factoryStockGuard.get travels on GET, like every other approved read');
+eq(Object.keys(AL.APPROVED).filter(function (a) { return AL.APPROVED[a].verb !== 'GET'; }), [],
+  'A5b NO approved read travels on a write verb — the one exception this suite used to record is gone');
 
 // ============================================================================================================
 section('B. DENY BY DEFAULT');
@@ -303,10 +335,19 @@ eq(recoScoped, { company: 'KM', country: 'US', marketplace: 'Amazon', sku: null,
 ok(/VALIDATION_FAILED/.test(ALSRC) && /INVALID_SCOPE/.test(ALSRC),
   'E38 both owners\' refusal codes are recorded in the allowlist');
 
+// S8-R4B-1 — E27/E28 re-aimed from the write transport to the canonical read transport.
 var guardDto = dtoOf('factoryStockGuard.get');
-eq(Object.keys(guardDto), ['action'], 'E27 the guard command carries action only');
-ok(DBAPI.indexOf("_kmWeeklyCommand_('factoryStockGuard.get'") !== -1,
+eq(Object.keys(guardDto), ['action', 'requestId'],
+  'E27 the guard read carries action + a READ request id, FLAT — no payload envelope');
+var guardScoped = AL.buildDto('factoryStockGuard.get', 'REQ-G000001', { shipping_plan_id: 'SP-1' });
+eq(guardScoped.shipping_plan_id, 'SP-1',
+  'E27b shipping_plan_id sits at the TOP LEVEL, where handleFactoryStockGuardGet_ reads it');
+ok(!Object.prototype.hasOwnProperty.call(guardScoped, 'payload'),
+  'E27c and is NOT nested under payload — nesting would silently route the handler to its no-plan branch');
+ok(DBAPI.indexOf("_kmGapRead_('factoryStockGuard.get'") !== -1,
   'E28 …and that is the path operation-system-db-api.js uses');
+ok(DBAPI.indexOf("_kmWeeklyCommand_('factoryStockGuard.get'") === -1,
+  'E28b the write dispatcher no longer carries it');
 ok(body(DBAPI, '_kmWeeklyCommand_').indexOf("Object.assign({ action: command }, payload || {})") !== -1,
   'E29 _kmWeeklyCommand_ builds exactly {action, ...payload}');
 
@@ -539,12 +580,23 @@ mut('the recommendation page size is tidied', AL_F,
 mut('the gap read is given the foundation envelope', AL_F,
   "envelope: 'gapRead',", "envelope: 'foundation',",
   function (m) { return Object.keys(m.buildDto('inventoryReplenishmentGap.get', 'R')).indexOf('apiVersion') !== -1; });
-mut('the guard command is given the foundation envelope', AL_F,
-  "envelope: 'command',", "envelope: 'foundation',",
-  function (m) { return Object.keys(m.buildDto('factoryStockGuard.get', 'R')).length !== 1; });
-mut('the guard is re-declared a GET', AL_F,
-  "surfaceNo: 4, owner: '71_', verb: 'POST'", "surfaceNo: 4, owner: '71_', verb: 'GET'",
-  function (m) { return m.APPROVED['factoryStockGuard.get'].verb !== 'POST'; });
+// S8-R4B-1 — both guard mutants re-aimed at the repaired contract. The old pair was anchored on
+// `envelope: 'command'` and `verb: 'POST'`; this round deletes both strings, so left alone they would have
+// thrown "anchor not found" and been scored CAUGHT while testing nothing.
+//
+// THE ENVELOPE MUTANT NOW TESTS THE TRAP THAT MATTERS. Giving the guard the nested `gapRead` envelope is
+// not a hypothetical slip — it is what copying any neighbouring caller would do, and it fails SILENTLY:
+// shipping_plan_id lands under `payload`, where handleFactoryStockGuardGet_ never looks, so the handler
+// takes its no-plan branch and answers without `guard_available`.
+mut('the guard is given the NESTED gapRead envelope, burying shipping_plan_id under payload', AL_F,
+  "owner: '71_', verb: 'GET', envelope: 'gapReadFlat',", "owner: '71_', verb: 'GET', envelope: 'gapRead',",
+  function (m) {
+    var dto = m.buildDto('factoryStockGuard.get', 'R', { shipping_plan_id: 'SP-1' });
+    return Object.prototype.hasOwnProperty.call(dto, 'payload');
+  });
+mut('the guard is re-declared a POST, putting it back on the write verb', AL_F,
+  "surfaceNo: 4, owner: '71_', verb: 'GET'", "surfaceNo: 4, owner: '71_', verb: 'POST'",
+  function (m) { return m.APPROVED['factoryStockGuard.get'].verb !== 'GET'; });
 mut('a 45th table is slipped into the approved list', AL_F,
   "'supplier_price_list', 'amazon_inventory_health_snapshot'\n  ];",
   "'supplier_price_list', 'amazon_inventory_health_snapshot', 'sales_orders'\n  ];",
@@ -579,9 +631,13 @@ mut('the scope context is ignored by the recommendation builder', AL_F,
 mut('the GET body ceiling is raised past the router', AL_F,
   "var GET_BODY_MAX = 4000;", "var GET_BODY_MAX = 999999;",
   function (m) { return m.GET_BODY_MAX !== 4000; });
+// S8-R4B-1 — RE-ANCHORED. This mutant had NEVER been applied: its anchor was written as one line while the
+// source wraps the scope across two, so loadMutated threw "anchor not found" on every run and the old
+// harness reported it as CAUGHT. It was a false pass from the day it was written, and it is unrelated to
+// the Factory Guard repair — the hardened harness in this round is simply the first thing that could see it.
 mut('the recommendation scope gains a server-owned field', AL_F,
-  "scope: { company: null, country: null, marketplace: null, sku: null, siteSku: null },",
-  "scope: { company: null, country: null, marketplace: null, sku: null, siteSku: null, calculationMonth: '2026-10' },",
+  "                   sku: null, siteSku: null },",
+  "                   sku: null, siteSku: null, calculationMonth: '2026-10' },",
   function (m) { return JSON.stringify(m.buildDto('recommendation.workspace.get', 'R')).indexOf('calculationMonth') !== -1; });
 mut('a gap job start is dropped from the forbidden set', AL_F,
   "'orderPlanningGap.job.start':", "'orderPlanningGap.job.startX':",

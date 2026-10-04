@@ -1,0 +1,78 @@
+{
+ "captured": "2026-10-04T01:14:45.592Z",
+ "planId": "DEMO-20260824-SP-1",
+ "before_post": {
+  "status": 200,
+  "ms": 12102,
+  "shape": "{data:{affected:array,build:string,code:object,contract:string,guard_available:boolean,inventory_snapshot_fingerprint:string,mechanism:string,ok:boolean,overage_pools:array,overridable:boolean,pools:array,reason_options:array,shipping_plan_id:string,tables_read:array,total_overage_qty:number,verdict:string},success:boolean,zero_write:boolean}",
+  "body": {
+   "success": true,
+   "zero_write": true,
+   "data": {
+    "contract": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5 - one shared factory pool (warehouse_id||sku, never filtered by company), availability = (fac_current_stock - fac_reserved_stock) - active allocation-draft exposure - active shipping-plan exposure not yet transferred to a shipment. AI is hard-limited and can never override; a human with submit authority may confirm an overage against a fingerprinted snapshot.",
+    "mechanism": "MANUAL_OVERAGE_CONFIRMATION",
+    "shipping_plan_id": "DEMO-20260824-SP-1",
+    "ok": true,
+    "verdict": "OK",
+    "code": null,
+    "overridable": true,
+    "inventory_snapshot_fingerprint": "28534018",
+    "pools": [],
+    "overage_pools": [],
+    "total_overage_qty": 0,
+    "reason_options": [
+     {
+      "value": "cross_site_reallocation",
+      "label": "Cross-site reallocation"
+     },
+     {
+      "value": "incoming_production_confirmed",
+      "label": "Incoming production confirmed"
+     },
+     {
+      "value": "physical_stock_pending_system_update",
+      "label": "Physical stock pending system update"
+     },
+     {
+      "value": "other",
+      "label": "Other"
+     }
+    ],
+    "affected": [],
+    "guard_available": true,
+    "build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1",
+    "tables_read": [
+     "warehouses",
+     "factory_stock",
+     "shipping_allocation_drafts",
+     "shipping_allocation_draft_lines",
+     "shipping_plans",
+     "shipping_plan_lines",
+     "marketplaces"
+    ]
+   }
+  }
+ },
+ "after_get": {
+  "status": 200,
+  "ms": 5482,
+  "shape": "{action_present_in_query:boolean,attempted_action:string,client_transport_contract:string,code:string,error:string,handler:string,message:string,next_action:string,post_body_present:boolean,received_method:string,request_id:string,router_build:string,sent_as_post:boolean,success:boolean,zero_write:boolean}",
+  "body": {
+   "success": false,
+   "error": "Missing or invalid action parameter. Use: getOperationDb, getTable, system.health or inventoryScope.registry.get",
+   "code": "POST_ONLY_ACTION_ON_GET",
+   "received_method": "GET",
+   "handler": "doGet",
+   "router_build": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R39",
+   "post_body_present": false,
+   "action_present_in_query": true,
+   "attempted_action": "factoryStockGuard.get",
+   "request_id": "REQ-G000003",
+   "client_transport_contract": "1",
+   "sent_as_post": false,
+   "zero_write": true,
+   "message": "The action \"factoryStockGuard.get\" is served by doPost, but this request arrived as a GET. A POST answered by the GET handler means a redirect follow dropped the request body. Nothing was read or written.",
+   "next_action": "Retry the read; if it repeats on every first load, hard-reload the page so the Apps Script session redirect is re-established."
+  }
+ }
+}

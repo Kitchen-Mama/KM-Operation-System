@@ -5341,7 +5341,16 @@ window.KM.DB.updateShippingPlanStatus = function(payload) { return _kmWeeklyComm
 // availability picture (the same function the submit gate runs); without one it answers the whole pool census.
 // There is no confirm method, on purpose: confirming goes through updateShippingPlanStatus above, so the
 // browser has no path to a write that skips the gate.
-window.KM.DB.factoryStockGuardGet = function(payload) { return _kmWeeklyCommand_('factoryStockGuard.get', payload || {}); };
+// S8-R4B-1 — THE PAYLOAD IS PASSED FLAT, AND THAT IS LOAD-BEARING.
+//
+// Most _kmGapRead_ callers wrap in `{ payload: {...} }` because THEIR handlers read `body.payload.x`.
+// handleFactoryStockGuardGet_ reads `body.shipping_plan_id` at the TOP level — the same flat shape
+// _kmWeeklyCommand_ sent before this repair. Wrapping it here would not fail loudly: the plan id would
+// land where the handler never looks, `planId` would be empty, the handler would take its NO-PLAN branch,
+// and the answer would be whole-factory pool data with no `guard_available` field at all. The indicator
+// would then print "could not be read" — a plausible-looking failure that is really a wrong request.
+// The flat form has precedent: system.health and system.requestOrderSendDiagnosticStatus both use it.
+window.KM.DB.factoryStockGuardGet = function(payload) { return _kmGapRead_('factoryStockGuard.get', payload || {}); };
 // Edit approved_qty (Draft only): { lines: [ { shipping_plan_line_id, approved_qty } ] }.
 window.KM.DB.updateShippingPlanLineQty = function(payload) { return _kmWeeklyCommand_('updateShippingPlanLineQty', payload); };
 // Append a note to shipping_plans.note (append-only history): { shipping_plan_id, note, actor? }.
@@ -5428,7 +5437,13 @@ var _KM_GET_READ_ACTIONS_ = {
     'automationSchedule.get': 1,
     // S3-R10 §6 — the read-only "did my pricing write commit?" lookup. Its POST twin (pricing.update)
     // is deliberately NOT here: this table is reads, and a lost response is not a licence to write again.
-    'pricing.write.status': 1
+    'pricing.write.status': 1,
+    // S8-R4B-1 — the Weekly Shipping Plan factory-availability indicator. It was the last approved read
+    // still dispatched through _kmWeeklyCommand_, and a POST cannot survive the /exec 302: the redirect is
+    // re-issued as a GET with the body dropped. Its reachable handler graph holds no write primitive at any
+    // depth, so a read request id, a 45 s read bound and retryable read-timeout semantics are what it
+    // should always have had.
+    'factoryStockGuard.get': 1
     // automationSchedule.update is DELIBERATELY ABSENT. It is a write.
 };
 var _KM_READ_RID_SEQ_ = 0;

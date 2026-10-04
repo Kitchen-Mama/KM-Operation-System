@@ -91,7 +91,13 @@ var derived = derivedGet.concat(derivedPost).concat(derivedBranch)
   .filter(function (a, i, z) { return z.indexOf(a) === i; }).sort();
 eq(AL.ROUTER_VOCABULARY, derived, 'A1  the pinned vocabulary equals the router\'s own');
 ok(derived.length > 100, 'A2  …and it is the whole vocabulary, not a fragment', derived.length);
-eq(derivedGet.length, 24, 'A3  the GET read table is 24 actions');
+// S8-R4B-1 — 24 -> 25. The census stays PINNED rather than derived: its whole job is to make a silent
+// addition to the GET read table impossible, and a self-deriving count would notice nothing. The one
+// addition is factoryStockGuard.get, which moved off the write transport in this round; A4 below
+// independently proves every approved action is a real router action.
+eq(derivedGet.length, 25, 'A3  the GET read table is 25 actions');
+ok(derivedGet.indexOf('factoryStockGuard.get') !== -1,
+   'A3b …and the 25th is factoryStockGuard.get, the read that used to travel on POST');
 // Every approved and every forbidden action is a real router action. A name that is not routed cannot be
 // measured and cannot be refused for a reason that means anything.
 AL.approvedActions().forEach(function (a) {
