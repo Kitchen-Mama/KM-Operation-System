@@ -472,8 +472,27 @@ eq(count(code(CRC), /createShipment|createShippingPlan|createPurchaseOrder|creat
 section('G  what S7 did NOT touch');
 // ==========================================================================================================
 var S7_BASE = 'd5f038a0a0c2154a712c42a2d0f9a68b67e89e73';
-var s7Changed = cp.execFileSync('git', ['diff', '--name-only', '-M', S7_BASE, 'HEAD'],
-  { cwd: REPO, encoding: 'utf8' }).trim().split('\n').filter(Boolean);
+// S8-R4B-2D — S7_END EXISTS NOW, AND G3 BELOW IS PINNED TO IT. These three assertions read S7_BASE..HEAD,
+// which is the interval bug this repository has now hit four times: a claim about ONE phase, written as a
+// claim about every round that would ever follow it. G1 and G2 survive against HEAD because what they
+// assert is a STANDING invariant - forecast is deferred and the S5/S6 owners are not S7's to touch - and
+// they are deliberately left reading HEAD, where they are strictly stronger.
+//
+// G3 is not that kind of claim. "S7_BACKEND_CHANGED_OWNER_SET = exactly four" is a statement about S7, and
+// against HEAD it silently becomes "no round after S7 may change a backend owner" - which S8-R4B-1 already
+// contradicted by luck (it changed 01_ and 63_, both already in the list) and S8-R4B-2D contradicts for
+// real by changing 60_. So G3 reads the S7 interval, where it is true and discriminating.
+//
+// NO COVERAGE IS LOST. The current-head equivalent is owned by two gates that already pin it per release:
+// fc-target-rule C3 (the manifest rows expecting the release == the declared owner set, exactly) and
+// s7-r4-production-deploy-surface H2c (the runtime files changed since the previous release, exactly).
+var S7_END = 'b783076';   // S7-R5's own commit: the last S7 round
+function changedBetween(a, b) {
+  return cp.execFileSync('git', ['diff', '--name-only', '-M', a, b],
+    { cwd: REPO, encoding: 'utf8' }).trim().split('\n').filter(Boolean);
+}
+var s7Changed = changedBetween(S7_BASE, 'HEAD');
+var s7Only = changedBetween(S7_BASE, S7_END);
 eq(s7Changed.filter(function (f) { return /forecast/i.test(f); }), [],
   'G1  FORECAST_REVIEW_CHANGED_IN_S7 = NO — no file whose path names forecast changed in ANY S7 round');
 ok(fs.existsSync(path.join(REPO, 'assets/specs/active/pages/forecast/Forecast_Review_Aggregation_Master_Spec.md')),
@@ -489,11 +508,15 @@ eq(s7Changed.filter(function (f) {
 }), [], 'G2  S7_TO_S5_BEHAVIOR_DRIFT_COUNT = 0 and S7_TO_S6_BEHAVIOR_DRIFT_COUNT = 0 — no ordering, '
   + 'shipping, factory, overseas, dispatch or receipt owner changed in any S7 round');
 // The backend owners S7 DID change, declared.
-var s7Backend = s7Changed.filter(function (f) { return f.indexOf(GS) === 0; })
+var s7Backend = s7Only.filter(function (f) { return f.indexOf(GS) === 0; })
   .map(function (f) { return f.slice(GS.length); }).sort();
 eq(s7Backend.filter(function (f) { return f.indexOf('TEMP_') !== 0; }),
   ['01_router.gs', '17_carrier_handlers.gs', '57_api_v1_shipment_workspace.gs', '63_api_v1_system_health.gs'],
-  'G3  S7_BACKEND_CHANGED_OWNER_SET = exactly four, and every one is a supporting-flow owner');
+  'G3  IN S7 - between S7_BASE and S7-R5 - S7_BACKEND_CHANGED_OWNER_SET = exactly four, and every one is '
+  + 'a supporting-flow owner');
+ok(S7_END !== 'HEAD' && changedBetween(S7_END, 'HEAD').length > 0,
+  'G3a and the interval really is closed - there ARE commits after S7, which is the whole reason G3 had '
+  + 'to stop reading HEAD');
 
 // ==========================================================================================================
 section('H  BOOT topology — the corrected R2B1 contract still holds');
